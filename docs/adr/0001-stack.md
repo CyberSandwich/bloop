@@ -1,0 +1,50 @@
+# ADR 0001: stack
+
+Status: accepted (provisional until the owner reviews it; the seams keep a reversal cheap)
+
+## Context
+bloop pairs a shared screen with a phone, then hands the screen one short-lived file link. It needs real-time pairing, a strict CSP on every response, EU data location, £0 running cost at MVP scale, and a full local run with no cloud account. It is built to last ten years: simplicity, maintainability and zero debt decide, not speed of first build. Evidence: the stack research (R1, about 45 sources, a local Durable Object test) and the criteria below, which were written before reading R1's recommendation.
+
+## Criteria and scores (0 to 5, weight x score)
+| criterion | weight | Cloudflare | Node container plus SQLite (Hetzner or Fly) |
+|---|---|---|---|
+| simplicity | 25 | 4: one vendor, one language, one runtime; three storage products | 3: a box, a TLS proxy, OS patching, backups |
+| maintainability | 20 | 4 | 4 |
+| zero debt | 15 | 4: all GA; churned test packages avoided | 5 |
+| reliability | 10 | 4: managed edge; a 39 min storage incident on 2026-11-22 | 2: one machine |
+| security | 10 | 4: headers on every response, platform secrets, `eu` jurisdiction (no UK option) | 4: EU company, but self-patched |
+| exit path | 10 | 3: Durable Objects are proprietary | 5 |
+| local end to end, no account | 5 | 5: `wrangler dev` ran a SQLite Durable Object, hibernating WebSocket and alarm with no login | 5 |
+| £0 at MVP scale | 5 | 5 (R2 likely needs a card on file) | 0: from about €5.49 a month |
+| **total** | | **400** | **365, and fails the £0 hard gate** |
+
+## Decision
+| layer | choice | why | replaces | how to remove |
+|---|---|---|---|---|
+| runtime and hosting | Cloudflare Workers with static assets | headers on every response, edge, £0 | GitHub Pages (cannot set headers) | serve the same `fetch` handler from Node behind any host |
+| routing | the Worker `fetch` handler and `URLPattern` (platform) | a dozen routes need no framework; plain `fetch` is the portable layer | Hono | nothing to remove |
+| real-time pairing | one Durable Object per screen, SQLite-backed, hibernating native WebSocket, alarm for auto-end; plain polling fallback | a single-threaded object makes single use and attempt counts exact | a separate realtime vendor | reimplement one module on a Node process with `ws` and a timer |
+| records | D1 (`eu` jurisdiction) with numbered raw SQL migrations | SQLite, one dialect with the Durable Object, SQL dump export | Postgres, an ORM | export the dump into any SQLite or Postgres |
+| guest files | R2 (`eu` jurisdiction) behind the guest-drop interface, deleted at session end, 1-day lifecycle backstop | streams with no SDK | storing blobs in the database | swap the interface for any S3-compatible store |
+| OAuth to Microsoft | `oauth4webapi` (zero dependencies, certified OpenID library) plus own sessions and token vault | `fetch` and Web Crypto only; keeps the refresh token in our hands | Arctic (deprecated July 2026), Better Auth (2026 auth-bypass advisories, very high churn), MSAL Node (hides refresh tokens) | hand-written code-plus-PKCE flow |
+| token protection | AES-256-GCM per-user data key wrapped by a key-encryption key held as a secret, with a `kid` for rotation (Web Crypto) | envelope encryption, rotatable | a KMS vendor | nothing to remove |
+| validation | Zod 4, server side, at every trust boundary | hand-rolled validation of untrusted input is riskier than a mature library | hand-written guards | replace the schemas with guards |
+| frontend | static HTML, CSS and native ES modules, typed by JSDoc and checked by `tsc --checkJs`; shared protocol types in one `.ts` file | no bundler to migrate off; the browser runs the source | Vite, Astro, SvelteKit | nothing to remove |
+| QR | `uqr` vendored as one file with its license | small, MIT, no network | a custom encoder | swap for another generator behind `qr.js` |
+| types, lint, format | TypeScript (pinned to the release whose `checkJs` passes the JSDoc imports), Biome | one tool for lint and format | ESLint plus Prettier | nothing to remove |
+| tests | Vitest and fast-check for pure modules (state machine, crypto, validation); integration against a real `wrangler dev` with Node's native WebSocket; Playwright, axe and Lighthouse CI in GitHub Actions only | proven locally; avoids Cloudflare's test packages, mid-migration | `@cloudflare/vitest-pool-workers` (legacy) and its successor (first release 2026-08) | nothing to remove |
+| package manager and CI | npm, GitHub Actions | the default; one fewer tool | pnpm, bun | nothing to remove |
+| observability | audit and event rows in D1; Workers logs | the audit log is a product feature anyway | a SaaS logger | nothing to remove |
+| rate limits | exact counts inside the Durable Object; the platform rate-limit binding for coarse floods | exact where it matters | a vendor | nothing to remove |
+| malware scanning | none at MVP: `.pptx` and `.pdf` only, size cap, structure check, Office Protected View | every scanner breaks £0 or simplicity | a scanner service | add one behind the guest-drop interface |
+
+Runtime dependencies: `zod`, `oauth4webapi`, vendored `uqr`. Everything else is a dev dependency.
+
+## Rejected
+- **Node container plus SQLite** (Hetzner or Fly): best exit path and no US provider, but it costs money from day one and is a single machine to patch. It remains the exit: the code is plain `fetch` and SQL, so only the Durable Object module would need rewriting.
+- **Firebase:** proprietary SDK throughout, Blaze plan needs a card. **Supabase:** idle free projects pause.
+
+## Revisit when
+- a buyer requires UK-only processing (Cloudflare has no UK jurisdiction; Worker code and TLS run at the nearest edge);
+- PowerPoint does not follow a redirect from the short file URL (M0 test T3): the open path then streams, and the privacy wording changes;
+- Durable Objects pricing or terms change, or the free tier stops covering 100 sessions a day.
