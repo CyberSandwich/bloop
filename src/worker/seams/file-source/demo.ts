@@ -1,9 +1,10 @@
-// The demo account's files: the sample decks from test/fixtures/decks, bundled as data (tools/make-fixtures.mjs
-// writes them). Kept apart from mock.ts so unit tests can build a MockFileSource without the bundler.
+// The demo account's files, bundled as data: a real deck and its PDF export in demo-files/ (slimmed losslessly,
+// author fields blank; size budgets in package.json), plus one synthetic deck from test/fixtures/decks.
+// Kept apart from mock.ts so unit tests can build a MockFileSource without the bundler.
 
 import quarterly from "../../../../test/fixtures/decks/quarterly-review.pptx";
-import deck from "../../../../test/fixtures/decks/sample-deck.pptx";
-import handout from "../../../../test/fixtures/decks/sample-handout.pdf";
+import deck from "./demo-files/demo-deck.pptx";
+import handout from "./demo-files/demo-handout.pdf";
 import { MockFileSource } from "./mock.ts";
 
 export const demoSource = (): MockFileSource =>

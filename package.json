@@ -61,6 +61,20 @@
       "limit": "55 kB"
     },
     {
+      "name": "demo deck",
+      "path": "src/worker/seams/file-source/demo-files/demo-deck.pptx",
+      "gzip": false,
+      "brotli": false,
+      "limit": "85 kB"
+    },
+    {
+      "name": "demo PDF",
+      "path": "src/worker/seams/file-source/demo-files/demo-handout.pdf",
+      "gzip": false,
+      "brotli": false,
+      "limit": "145 kB"
+    },
+    {
       "name": "site CSS",
       "path": "public/css/app.css",
       "gzip": true,

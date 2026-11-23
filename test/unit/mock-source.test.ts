@@ -105,6 +105,14 @@ function unzip(bytes: Uint8Array): Map<string, string> {
     expect(view.getUint32(local, true)).toBe(0x04034b50);
     const dataStart = local + 30 + view.getUint16(local + 26, true) + view.getUint16(local + 28, true);
     const packed = bytes.subarray(dataStart, dataStart + packedSize);
+    if (!/\.(xml|rels)$/.test(name)) {
+      // Media: checked for size only, never decoded as text; listed with empty text so targets resolve.
+      expect([0, 8]).toContain(method);
+      expect((method === 0 ? packed : inflateRawSync(packed)).byteLength).toBe(size);
+      out.set(name, "");
+      at += 46 + nameLength + extra + comment;
+      continue;
+    }
     expect(method).toBe(8);
     const text = inflateRawSync(packed).toString("utf8");
     expect(text.length).toBeGreaterThan(0);
@@ -113,6 +121,29 @@ function unzip(bytes: Uint8Array): Map<string, string> {
     at += 46 + nameLength + extra + comment;
   }
   return out;
+}
+
+/** Relationship targets exist, slides have content types, slide ids resolve. Returns the slide part names. */
+function expectConsistentDeck(parts: Map<string, string>, slides: number): string[] {
+  const slideParts = [...parts.keys()].filter((n) => /^ppt\/slides\/slide\d+\.xml$/.test(n));
+  expect(slideParts).toHaveLength(slides);
+  for (const [name, text] of parts) {
+    if (!name.endsWith(".rels")) continue;
+    const base = name.replace(/_rels\/[^/]*$/, "");
+    for (const [rel] of text.matchAll(/<Relationship [^>]*>/g)) {
+      if (rel.includes('TargetMode="External"')) continue;
+      const target = /Target="([^"]+)"/.exec(rel)?.[1] as string;
+      const resolved = new URL(target, `http://x/${base}`).pathname.slice(1);
+      expect(parts.has(resolved), `${name} -> ${resolved}`).toBe(true);
+    }
+  }
+  const types = parts.get("[Content_Types].xml") as string;
+  for (const slide of slideParts) expect(types).toContain(`PartName="/${slide}"`);
+  const rels = parts.get("ppt/_rels/presentation.xml.rels") as string;
+  for (const [, id] of (parts.get("ppt/presentation.xml") as string).matchAll(/<p:sldId [^>]*r:id="([^"]+)"/g)) {
+    expect(rels).toContain(`Id="${id}"`);
+  }
+  return slideParts;
 }
 
 describe("sample decks (tools/make-fixtures.mjs)", () => {
@@ -133,24 +164,7 @@ describe("sample decks (tools/make-fixtures.mjs)", () => {
       ]) {
         expect(parts.has(required), required).toBe(true);
       }
-      const slideParts = [...parts.keys()].filter((n) => /^ppt\/slides\/slide\d+\.xml$/.test(n));
-      expect(slideParts).toHaveLength(slides);
-      // Every relationship target exists and every part has a content type.
-      for (const [name, text] of parts) {
-        if (!name.endsWith(".rels")) continue;
-        const base = name.replace(/_rels\/[^/]*$/, "");
-        for (const [, target] of text.matchAll(/Target="([^"]+)"/g)) {
-          const resolved = new URL(target as string, `http://x/${base}`).pathname.slice(1);
-          expect(parts.has(resolved), `${name} -> ${resolved}`).toBe(true);
-        }
-      }
-      const types = parts.get("[Content_Types].xml") as string;
-      for (const slide of slideParts) expect(types).toContain(`PartName="/${slide}"`);
-      // Slide ids in the presentation point at relationships that exist.
-      const rels = parts.get("ppt/_rels/presentation.xml.rels") as string;
-      for (const [, id] of (parts.get("ppt/presentation.xml") as string).matchAll(/<p:sldId [^>]*r:id="([^"]+)"/g)) {
-        expect(rels).toContain(`Id="${id}"`);
-      }
+      const slideParts = expectConsistentDeck(parts, slides);
       for (const slide of slideParts) expect(parts.get(slide)).toMatch(/<a:t>[^<]+<\/a:t>/);
     });
   }
@@ -168,5 +182,27 @@ describe("sample decks (tools/make-fixtures.mjs)", () => {
     for (const [i, offset] of entries.entries()) expect(text.startsWith(`${i + 1} 0 obj\n`, offset)).toBe(true);
     expect(text).toContain("/Type /Catalog");
     expect(text.match(/\/Type \/Page /g)).toHaveLength(2);
+  });
+});
+
+describe("demo files (src/worker/seams/file-source/demo-files)", () => {
+  const demo = new URL("../../src/worker/seams/file-source/demo-files/", import.meta.url);
+  const readDemo = (name: string) => new Uint8Array(readFileSync(new URL(name, demo)));
+
+  it("demo-deck.pptx is a consistent 2-slide package with blank author fields", () => {
+    const parts = unzip(readDemo("demo-deck.pptx"));
+    expect([...parts.keys()][0]).toBe("[Content_Types].xml");
+    expectConsistentDeck(parts, 2);
+    const core = parts.get("docProps/core.xml") as string;
+    expect(core).not.toMatch(/<dc:creator>[^<]/);
+    expect(core).not.toMatch(/<cp:lastModifiedBy>[^<]/);
+  });
+
+  it("demo-handout.pdf is a PDF with blank author fields", () => {
+    const text = Buffer.from(readDemo("demo-handout.pdf")).toString("latin1");
+    expect(text.startsWith("%PDF-")).toBe(true);
+    expect(text.trimEnd().endsWith("%%EOF")).toBe(true);
+    expect(text).not.toMatch(/\/Author\s*\((?!\))/);
+    expect(text).not.toMatch(/<dc:creator>\s*<rdf:Seq>\s*<rdf:li>[^<]/);
   });
 });

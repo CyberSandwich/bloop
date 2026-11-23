@@ -266,7 +266,7 @@ test/
   unit/                    vitest + fast-check: machine, codes, names, zip, vault, csv, headers
   integration/             against a real wrangler dev (wrangler.ts starts one on a free port): every route, sockets, timers, threat tests
   e2e/                     Playwright, two contexts (screen, phone), axe, CI only
-  fixtures/decks/          the demo account's sample decks (written by tools/make-fixtures.mjs), later polyglots, zip bombs, macro decks
+  fixtures/decks/          synthetic sample decks (written by tools/make-fixtures.mjs; the demo serves one), later polyglots, zip bombs, macro decks
   fixtures/graph/          synthetic Graph JSON for the contract tests (README says so)
   fixtures/jsdoc/          a good and a bad browser module, proving JSDoc @import of protocol.ts is type-checked
 ```

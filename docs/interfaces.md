@@ -374,8 +374,9 @@ export interface FileSource {
   resolvePdf(ctx: SourceContext, fileId: string): Promise<{ ok: true; file: Resolved } | { ok: false; error: SourceError | "pdf_unavailable" }>;
 }
 
-/** The demo account and local runs. Default. `demo.ts` builds it from the sample decks in test/fixtures/decks,
- *  imported as raw bytes through the `rules` entry in wrangler.jsonc (tools/make-fixtures.mjs writes them). */
+/** The demo account and local runs. Default. `demo.ts` builds it from a real deck and its PDF export in
+ *  src/worker/seams/file-source/demo-files/ plus one synthetic deck from test/fixtures/decks, all imported as raw
+ *  bytes through the `rules` entry in wrangler.jsonc. */
 export interface MockFixture {
   id: string; name: string; type: FileType; bytes: Uint8Array;
   editedMinutesAgo: number;     // listed relative to now, so the list always looks recent

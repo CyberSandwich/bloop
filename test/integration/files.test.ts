@@ -33,7 +33,6 @@ describe("GET /api/files with the mock source", () => {
       expect(Object.keys(f).sort()).toEqual(["id", "modifiedAt", "name", "size", "type"]);
       expect(f.modifiedAt).toBeLessThanOrEqual(Date.now());
       expect(f.size).toBeGreaterThan(0);
-      expect(f.size).toBeLessThan(50_000);
     }
     expect(res.body.files.map((f) => f.type)).toEqual(["pptx", "pptx", "pdf"]);
     expect(res.headers.get("Cache-Control")).toBe("no-store");

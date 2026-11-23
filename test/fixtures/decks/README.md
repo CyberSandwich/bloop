@@ -1,12 +1,12 @@
 # Sample decks
 
-The demo account's files, served by `MockFileSource` (`src/worker/seams/file-source/demo.ts` bundles them as raw bytes through the `rules` entry in `wrangler.jsonc`).
+Synthetic decks for tests. The demo account serves `quarterly-review.pptx` from here; its other two files are real ones in `src/worker/seams/file-source/demo-files/` (`demo.ts` bundles all three as raw bytes through the `rules` entry in `wrangler.jsonc`).
 
 | File | What it is |
 | --- | --- |
 | `sample-deck.pptx` | 3 slides of plain text |
-| `quarterly-review.pptx` | 2 slides of plain text |
-| `sample-handout.pdf` | 2 pages of plain text; also the PDF rendition both decks fall back to |
+| `quarterly-review.pptx` | 2 slides of plain text; served by the demo |
+| `sample-handout.pdf` | 2 pages of plain text |
 
 All three are under 8 KB and contain only made-up sample text.
 
