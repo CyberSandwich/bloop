@@ -530,7 +530,7 @@ Until pose meshes exist the stills show the whole-object poses: look turns the b
 | Item | Spec |
 |---|---|
 | API | ES module: `mountRobin(canvas, src, {control, tiltArea, pose, onTurn})` returns `{setPose(pose, {t, yaw}), turn(dir), hop(), stop()}`. `pose` is `perch`, `look`, `turn`, `carry` or `away`, or a weight map of them (`{look: 0.3, turn: 0.7}`, normalized); `t` in 0 to 1 sits that far from the last settled pose to this one at once (scroll); without `t` it tweens over `--d3`. Poses blend the whole-object transform in the model matrix; with pose meshes the same API lerps positions in the vertex shader. `control` takes the drag (yaw only, eases back over `--d4`) and arrows and Home; `turn(-1 / 1)` is Turn Left and Turn Right (30 degrees, held 1.2 s, then eased back). The page calls `setPose` from scroll, chips and session events, and `hop()` when the stage fires `bloop:demo` with state `scanned` (the demo module's one event, `detail.state`; the landing maps states to poses with `demoPose`) |
-| Size | served unminified (no build step, ADR 0001): 6.0 KB gzip for `robin.js` plus `robin-math.js`, budget 6.5 KB (size-limit). The 3.1 KB research measure was before `setPose`, the input mapping, the tilt and JSDoc types |
+| Size | served unminified (no build step, ADR 0001): 6.0 KB gzip for `robin.js` plus `robin-math.js`, budget in the `size-limit` entry. The 3.1 KB research measure was before `setPose`, the input mapping, the tilt and JSDoc types |
 | Graphics | WebGL 1, one program, one draw call; flat shading from per-face normals; one key light plus ambient; transparent canvas |
 | Camera, canvas | fixed framing shared with the stills (`CAMERA`: half field of view 0.32 rad, distance 1.7, feet near the box floor); rest yaw -0.7 rad; the poster's box at `min(devicePixelRatio, 2)`. The stills come from a separate rasterizer, so the poster-to-canvas fade can show antialiasing differences, never a jump |
 | Frames | capped at 30 fps; none at rest; stops off-screen (`IntersectionObserver`) and on a hidden tab (`visibilitychange`) |
@@ -566,7 +566,7 @@ Stack and system architecture: `docs/architecture.md` and `docs/adr/`.
 
 ### Loading order (every page)
 1. HTML with the one CSS `<link>` in the head; no inline styles or scripts (the CSP forbids them).
-2. Font preload (`<link rel="preload" as="font" type="font/woff2" crossorigin>`) for the one subset: `fonttools varLib.instancer` to `wght=400:600` (keep `opsz` if the file stays under 55 KB), then `pyftsubset` to the section 4 range; the metric-matched fallback means the swap shifts nothing.
+2. Font preload (`<link rel="preload" as="font" type="font/woff2" crossorigin>`) for the one subset: `fonttools varLib.instancer` to `wght=400:600` (keep `opsz` if the file stays within its `size-limit` entry), then `pyftsubset` to the section 4 range; the metric-matched fallback means the swap shifts nothing.
 3. Poster preload with `fetchpriority="high"` (landing and `/s`).
 4. `<script type="module">` app glue, deferred by default.
 5. After LCP, on idle: the renderer and `robin.bin`; near the explorer: pose files and stills (the first lazy, the others prefetched on idle within 400 px).
@@ -580,12 +580,8 @@ Every late element (poster, canvas, code, stage UI, stills) has a reserved box. 
 | First-view requests | 6 or fewer (HTML, CSS, font, poster, app.js, favicon) | 6 or fewer | 5 or fewer |
 | First-view transfer | 165 KB or less | 120 KB | 100 KB |
 | HTML (gzip) | 14 KB | 6 KB | 6 KB |
-| CSS (gzip, shared file) | 12 KB | same | same |
-| Font | 1 file, 55 KB or less | same | same |
+| CSS, font, browser JS, live demo module, robin renderer, robin mesh | the `size-limit` entries in `package.json`, the only owner | same | same |
 | JS before interaction (gzip) | 30 KB: glue plus the QR library; excludes the robin and the live demo module | 30 KB | 20 KB |
-| Live demo module (deferred, desktop only, loaded when the stage nears the viewport) | 4 KB brotli (3.6 measured; its own size-limit entry for `public/js/demo/`) | not loaded | not loaded |
-| Robin renderer (deferred, never before LCP) | 6.5 KB unminified (6.0 measured) | not loaded | not loaded |
-| Robin mesh `robin.bin` (deferred) | 21 KB raw (20.1 measured; about 15 gzip, but gzip size of this binary varies by about 1 KB between zlib builds, so the budget counts raw bytes) | none | none |
 | Robin poses (deferred, near the explorer) | 20 KB for four | none | none |
 | Poster | AVIF 36 KB | AVIF 14 KB | none |
 | Full scroll, everything | 400 KB | | |
@@ -716,7 +712,7 @@ Font: Inter (SIL OFL 1.1), subset from the official `InterVariable.woff2`, licen
 | 8 | Opening in installed PowerPoint (Protected View, download blocks, license prompts); the PDF fallback | Download It Instead visible from the start |
 | 9 | Phone account needs (connect once, admin consent, sign-in lifetime) | first-use body "bloop reads your slides from OneDrive." |
 | 10 | Guest flow and its file size limit `{N}` | story card 2 and the guest states removed |
-| 11 | Inter subset size with `opsz` kept (settled: 44,268 bytes, under 55 KB, `opsz` kept); fallback metrics measured against it (open: needs a browser) | keep the starting metrics |
+| 11 | Inter subset size with `opsz` kept (settled: 44,268 bytes, within its `size-limit` entry, `opsz` kept); fallback metrics measured against it (open: needs a browser) | keep the starting metrics |
 | 12 | Camera apps keep the `?c=` query (iOS, Android, common in-app scanners); the log and Referer exposure of a one-use 60 s code | move the code into a path on the API origin |
 | 13 | Final name, host and a public role address | keep `SITE_NAME` and `{host}` placeholders out of production |
 | 14 | API origin; WebSocket allowed on campus networks | long-polling every 2 s |

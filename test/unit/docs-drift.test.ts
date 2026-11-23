@@ -94,6 +94,24 @@ describe("architecture layout", () => {
   });
 });
 
+describe("size budgets", () => {
+  it("only package.json size-limit states a budget: docs name no entry next to a size", () => {
+    const entries: { name: string }[] = JSON.parse(read("package.json"))["size-limit"];
+    expect(entries.length).toBeGreaterThan(5);
+    const restated: string[] = [];
+    for (const doc of DOCS) {
+      read(doc)
+        .split("\n")
+        .forEach((line, i) => {
+          const sized = /\b\d+(\.\d+)?\s?(kB|KB|kb)\b/.test(line);
+          const named = entries.some((e) => new RegExp(`\\b${e.name.replace(/[()]/g, "\\$&")}\\b`, "i").test(line));
+          if (sized && named) restated.push(`${doc}:${i + 1}`);
+        });
+    }
+    expect(restated).toEqual([]);
+  });
+});
+
 describe("threat model", () => {
   it("every mitigated row has its id in a test title", () => {
     const rows = read("docs/threat-model.md")
