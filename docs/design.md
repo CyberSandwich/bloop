@@ -348,7 +348,7 @@ Send Me the Link calls `navigator.share({title, text, url})`; without it, it cop
 - No nav pill (a kiosk page); wordmark top left at 32 inset; status chip top right.
 - Left: the QR panel (card treatment, quiet zone inside) at 50 percent of the viewport height, with the robin's 160 px poster perched on its top edge (poster only, CSS hop on scan). Right, 64 px away, vertically centered: heading 48, line 28/34 400, the refresh capsule (a 48 x 8 pill whose `--acc-ink` fill grows linearly over the code's 60 s, `aria-hidden`, no seconds counter), then "Can't scan? On your phone, go to {host}/code and enter" with the typed code at 34 px 600.
 - Footer line in every state: "Phone not with you? Sign in to this PC as usual." 17 px `--t2`.
-- 834: stacked, QR first. Under 600: no QR; "This page is for the room's screen." / "Scan the code on the screen with your phone." / Enter a Code.
+- 834: stacked, QR first. Under 600: no QR; "Open this on the room's screen." (32) / "Then scan its code with your phone." (lead 19) / Enter a Code; no status chip and no footer.
 
 | State | Heading | Line | Controls |
 |---|---|---|---|

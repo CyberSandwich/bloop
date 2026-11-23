@@ -451,6 +451,16 @@ h1[tabindex="-1"]:focus {
   .narrow .btn {
     margin-top: 24px;
   }
+  .narrow .line {
+    margin-top: 8px;
+    font-size: 19px;
+    line-height: 1.43;
+    letter-spacing: -0.015em;
+  }
+  body.page-screen > .bar .chip,
+  body.page-screen > .foot {
+    display: none;
+  }
   .bar {
     padding: 24px 24px 0;
   }

@@ -337,7 +337,7 @@ test.describe("screen page", () => {
       if (r.url().includes("/api/screens")) created.push(r.url());
     });
     await page.goto("/s");
-    await expect(page.getByText("This page is for the room's screen.")).toBeVisible();
+    await expect(page.getByText("Open this on the room's screen.")).toBeVisible();
     await expect(page.getByRole("link", { name: "Enter a Code" })).toHaveAttribute("href", "/code");
     await expect(page.locator("#qr")).toBeHidden();
     await expectNoAxeViolations(page);

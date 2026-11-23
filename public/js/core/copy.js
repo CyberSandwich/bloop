@@ -146,8 +146,8 @@ export function screenCopy(key, f) {
     case "phone_width":
       return {
         ...base,
-        heading: "This page is for the room's screen.",
-        line: "Scan the code on the screen with your phone.",
+        heading: "Open this on the room's screen.",
+        line: "Then scan its code with your phone.",
       };
   }
 }
