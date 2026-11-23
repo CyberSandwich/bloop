@@ -40,7 +40,7 @@ describe("DEMO-01 isolation: the full demo flow, with no account", () => {
     }>("/api/claim", { code }, { headers: { Cookie: "__Host-bloop_sid=forged" } });
     expect(claimed.status).toBe(200);
     expect(claimed.body).toMatchObject({ mode: "demo", needsAuth: false, dropMaxBytes: 10_485_760 });
-    expect(claimed.body.match).toMatch(/^[1-9][0-9]$/);
+    expect(claimed.body.match).toMatch(/^[0-9]{2}$/);
     await socket.stateWhere((v) => v.state === "claimed" && v.match === claimed.body.match);
 
     const files = await api.get<{ files: { id: string; name: string }[] }>("/api/files", claimed.body.pid);

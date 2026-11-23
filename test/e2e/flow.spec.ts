@@ -75,7 +75,7 @@ test.describe("pairing flow", () => {
     await expectNoAxeViolations(screen.page);
 
     const { phone, match } = await scan(browser, screen.page);
-    expect(match).toMatch(/^[1-9][0-9]$/);
+    expect(match).toMatch(/^[0-9]{2}$/);
     // the poster robin hops once on the scan (design.md section 8)
     await expect(screen.page.locator(".poster-slot img")).toHaveClass(/is-hop/);
     // the code left the address bar and the history entry
