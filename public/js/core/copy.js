@@ -333,6 +333,13 @@ export function phoneCopy(key, f) {
         body: "Open it on this phone, then scan the code again.",
         actions: [DONE],
       };
+    case "guest_off":
+      return {
+        ...base,
+        title: "This screen can't take files.",
+        body: "Sign in to the PC as usual to open your file.",
+        actions: [DONE],
+      };
     case "opening":
       return { ...base, title: `Opening on ${f.room}.`, body: file };
     case "open": {

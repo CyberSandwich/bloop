@@ -51,6 +51,7 @@ const PHONE_KEYS: PhoneStateKey[] = [
   "guest_refused",
   "guest_sent",
   "guest_pass_needed",
+  "guest_off",
 ];
 
 const sf = {
@@ -191,6 +192,14 @@ describe("phone copy", () => {
       body: "Open it on the screen when you're ready.",
     });
     expect(phoneCopy("guest_pass_needed", f).title).toBe("Ask your host for a guest link.");
+  });
+
+  it("a guest drop that is switched off says so plainly, with the way out", () => {
+    expect(phoneCopy("guest_off", pf)).toMatchObject({
+      title: "This screen can't take files.",
+      body: "Sign in to the PC as usual to open your file.",
+    });
+    expect(phoneCopy("guest_off", pf).actions.map((a) => a.label)).toEqual(["Done"]);
   });
 
   it("only the sending state shows a progress bar", () => {

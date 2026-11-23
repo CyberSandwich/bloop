@@ -204,6 +204,7 @@ export type PhoneStateKey =
   | "framed"
   | "rate_limited"
   | "guest_pass_needed"
+  | "guest_off"
   | "busy"; // last three: new strings, section 9
 export type ScreenStateKey =
   | "waiting"

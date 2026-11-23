@@ -118,7 +118,7 @@ export type PhoneStateKey =
   | "needs_admin" | "empty" | "approving" | "opening" | "open" | "open_fallback" | "pdf_fallback"
   | "pdf_file" | "ended" | "canceled" | "expired" | "taken" | "offline" | "error" | "guest_choose"
   | "guest_confirm" | "guest_sending" | "guest_refused" | "guest_sent" | "typed_wrong" | "framed"
-  | "rate_limited" | "guest_pass_needed" | "busy";          // last four: strings added to design.md section 7 (section 9)
+  | "rate_limited" | "guest_pass_needed" | "guest_off" | "busy";          // last five: strings added to design.md section 7 (section 9)
 export type ScreenStateKey =
   | "waiting" | "scanned" | "choosing" | "approved" | "opening" | "open" | "open_fallback"
   | "pdf_fallback" | "pdf_file" | "guest_open" | "ended" | "offline" | "service_down" | "error" | "phone_width";
@@ -626,7 +626,7 @@ export const ERRORS = {
   pdf_unavailable:     { status: 404, phone: "error",         screen: "error" },
   mint_limit:          { status: 429, phone: null,            screen: "error" },
   // guest drop
-  drop_disabled:    { status: 403, phone: "error",             screen: null },
+  drop_disabled:    { status: 403, phone: "guest_off",         screen: null },
   pass_required:    { status: 403, phone: "guest_pass_needed", screen: null },
   pass_invalid:     { status: 403, phone: "guest_pass_needed", screen: null },
   length_required:  { status: 411, phone: "guest_refused",     screen: null },

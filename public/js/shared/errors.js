@@ -33,7 +33,7 @@ export const ERRORS = {
   pdf_unavailable: { status: 404, phone: "error", screen: "error" },
   mint_limit: { status: 429, phone: null, screen: "error" },
   // guest drop
-  drop_disabled: { status: 403, phone: "error", screen: null },
+  drop_disabled: { status: 403, phone: "guest_off", screen: null },
   pass_required: { status: 403, phone: "guest_pass_needed", screen: null },
   pass_invalid: { status: 403, phone: "guest_pass_needed", screen: null },
   length_required: { status: 411, phone: "guest_refused", screen: null },

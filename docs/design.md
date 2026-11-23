@@ -406,6 +406,7 @@ Top to bottom: wordmark 17 px centered; title 28/34 600; room row (Lucide `monit
 | guest: file refused | This file can't be sent. | Choose a .pptx or .pdf file under {N} MB. `[V-10]` | Choose File |
 | guest: sent | Sent to Room 2.14. | Open it on the screen when you're ready. | Cancel |
 | guest: pass needed | Ask your host for a guest link. | Open it on this phone, then scan the code again. | Done |
+| guest: off | This screen can't take files. | Sign in to the PC as usual to open your file. (the room's guest drop is switched off) | Done |
 | rate limited | Too many tries. | Wait a minute, then scan the code again. | Done |
 | busy (storage full) | bloop can't take files right now. | Try again in a few minutes, or sign in to the PC as usual. | Done |
 | framed | Open this page directly to approve. | | none |

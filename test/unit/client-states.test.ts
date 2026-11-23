@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { type PhoneCtx, phoneKey, type ScreenCtx, screenKey } from "../../public/js/core/states.js";
+import { ERRORS } from "../../public/js/shared/errors.js";
 import type { FileEntry, PhoneView, ScreenView, SessionState } from "../../src/shared/protocol.ts";
 
 const screenView = (state: SessionState, over: Partial<ScreenView> = {}): ScreenView => ({
@@ -134,6 +135,11 @@ describe("phone state to view mapping", () => {
     ["open", "pdf", "pdf_fallback"],
   ] as const)("a %s session with open mode %s shows %s", (state, openMode, key) => {
     expect(phoneKey(ctx({ view: phoneView(state, { openMode }) }))).toBe(key);
+  });
+
+  it("a refused drop on a screen with guest drop off reads as guest_off, not a generic error", () => {
+    expect(ERRORS.drop_disabled.phone).toBe("guest_off");
+    expect(phoneKey(ctx({ error: "guest_off" }))).toBe("guest_off");
   });
 
   it("F10 an original PDF on the phone shows pdf_file", () => {
