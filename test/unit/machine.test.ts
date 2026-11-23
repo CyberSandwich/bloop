@@ -562,6 +562,24 @@ describe("machine: sockets and closeAt", () => {
     expect(must(claimedOwner(), { e: "restart", now: T0 + sec(6) }).next.closeAt).toBe(T0 + sec(606));
   });
 
+  it("F1 a poll with no socket writes nothing: the same machine comes back until the deadline needs a refresh", () => {
+    const polling = must(waiting(), { e: "socket", now: T0 + sec(5), open: 0 }).next;
+    for (const at of [7, 9, 30, 50]) {
+      expect(must(polling, { e: "socket", now: T0 + sec(at), open: 0 }).next).toBe(polling);
+    }
+    // 10 percent of the 600 s window (60 s) past the last write: a real refresh, so a polling screen never closes.
+    const refreshed = must(polling, { e: "socket", now: T0 + sec(5 + 66), open: 0 }).next;
+    expect(refreshed).not.toBe(polling);
+    expect(refreshed.closeAt).toBe(T0 + sec(5 + 66 + 600));
+  });
+
+  it("F1 a socket count that changes is always a write", () => {
+    const polling = must(waiting(), { e: "socket", now: T0 + sec(5), open: 0 }).next;
+    expect(must(polling, { e: "socket", now: T0 + sec(6), open: 1 }).next.closeAt).toBeNull();
+    const open = must(polling, { e: "socket", now: T0 + sec(6), open: 1 }).next;
+    expect(must(open, { e: "socket", now: T0 + sec(7), open: 1 }).next).toBe(open);
+  });
+
   it("leaves closeAt null in states that have their own deadline", () => {
     expect(must(claimedOwner(), { e: "socket", now: T0 + sec(5), open: 0 }).next.closeAt).toBeNull();
   });

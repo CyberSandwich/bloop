@@ -403,6 +403,12 @@ export function transition(m: Machine, ev: Event, cfg: MachineConfig): Step {
 
     case "socket": {
       const closeAt = m.state === "waiting" || m.state === "ended" ? closeAtFor(ev.open, now, cfg) : null;
+      // A poll arrives every couple of seconds and must not become a storage write each time: keep the
+      // same machine until the sliding deadline is a tenth of its window stale.
+      const slack = (cfg.closeAfterSeconds * SECOND) / 10;
+      const unchanged =
+        closeAt === m.closeAt || (closeAt !== null && m.closeAt !== null && closeAt - m.closeAt < slack);
+      if (ev.open === m.sockets && unchanged) return ok(m);
       return ok({ ...m, sockets: ev.open, closeAt });
     }
 

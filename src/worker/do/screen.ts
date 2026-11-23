@@ -607,7 +607,13 @@ export class Screen extends DurableObject<Env> implements PairingStore {
       if (att && !att.authed && ws.readyState === OPEN) times.push(att.helloBy);
     }
     const due = times.filter((t): t is number => t !== null);
-    if (due.length === 0) await this.ctx.storage.deleteAlarm();
-    else await this.ctx.storage.setAlarm(Math.min(...due));
+    const current = await this.ctx.storage.getAlarm();
+    if (due.length === 0) {
+      if (current !== null) await this.ctx.storage.deleteAlarm();
+    } else {
+      // A poll re-arms to the same time: reading the alarm is free, setting it is a write.
+      const next = Math.min(...due);
+      if (current !== next) await this.ctx.storage.setAlarm(next);
+    }
   }
 }
