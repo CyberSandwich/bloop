@@ -169,11 +169,12 @@ test.describe("desktop robin", () => {
     await page.goto("/");
     await expect(page.locator("#hero-robin canvas")).toHaveClass(/is-live/, { timeout: 10_000 });
     // Compared on the page's own clock: a fast page can reach load before Playwright sees domcontentloaded.
-    const timing = await page.evaluate(() => {
-      const nav = performance.getEntriesByType("navigation")[0] as PerformanceNavigationTiming;
+    // A string, because the test tsconfig has no DOM types.
+    const timing = (await page.evaluate(`(() => {
+      const nav = performance.getEntriesByType("navigation")[0];
       const robin = performance.getEntriesByType("resource").find((e) => e.name.endsWith("/js/robin.js"));
-      return { loadStart: nav.loadEventStart, robinStart: robin?.startTime ?? -1 };
-    });
+      return { loadStart: nav.loadEventStart, robinStart: robin ? robin.startTime : -1 };
+    })()`)) as { loadStart: number; robinStart: number };
     expect(timing.robinStart).toBeGreaterThanOrEqual(timing.loadStart);
   });
 
