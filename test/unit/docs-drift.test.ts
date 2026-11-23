@@ -2,6 +2,7 @@ import { existsSync, readdirSync, readFileSync, statSync } from "node:fs";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
+import { ERRORS } from "../../public/js/shared/errors.js";
 import { CONFIG_VARS } from "../../src/worker/config.ts";
 
 const ROOT = fileURLToPath(new URL("../../", import.meta.url));
@@ -133,6 +134,14 @@ describe("worker vars", () => {
       .split("\n")
       .filter((line) => /^[A-Z][A-Z0-9_]+=/.test(line));
     expect(listed).toEqual([]);
+  });
+});
+
+describe("error table", () => {
+  it("interfaces.md section 8 points at errors.js and restates no code", () => {
+    const section = read("docs/interfaces.md").split("## 8. ")[1]?.split("\n## ")[0] ?? "";
+    expect(section).toContain("public/js/shared/errors.js");
+    expect(Object.keys(ERRORS).filter((code) => new RegExp(`\\b${code}\\b`).test(section))).toEqual([]);
   });
 });
 
