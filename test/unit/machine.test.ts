@@ -61,6 +61,14 @@ describe("machine: code.next", () => {
     expect(next.endReason).toBeNull();
   });
 
+  it("keeps the reason of a drop to waiting through rotation, and clears it after an ended session", () => {
+    const dropped = must(claimedOwner(), { e: "restart", now: T0 + sec(50) }).next;
+    expect(dropped.endReason).toBe("canceled");
+    const rotated = must(dropped, { e: "code.next", now: T0 + sec(51), value: "NEWNEW" }).next;
+    expect(rotated.endReason).toBe("canceled");
+    expect(must(ended(T0 + sec(20)), { e: "code.next", now: T0 + sec(30), value: "X" }).next.endReason).toBeNull();
+  });
+
   it("is refused while a phone is paired", () => {
     expect(refused(claimedOwner(), { e: "code.next", now: T0 + sec(2), value: "X" })).toBe("wrong_state");
   });

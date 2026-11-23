@@ -253,7 +253,8 @@ export function transition(m: Machine, ev: Event, cfg: MachineConfig): Step {
         pairing: null,
         session: null,
         endedAt: null,
-        endReason: null,
+        // A drop back to waiting keeps its reason through rotation; only a new session start clears it.
+        endReason: m.state === "ended" ? null : m.endReason,
         closeAt: closeAtFor(m.sockets, now, cfg),
       };
       const effects: Effect[] = [{ fx: "directory.put", code: code.value, expiresAt: code.expiresAt }];
