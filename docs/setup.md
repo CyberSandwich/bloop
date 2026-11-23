@@ -8,7 +8,7 @@ Steps only the owner can do, because they need the owner's accounts. Everything 
 2. **D1:** `npx wrangler d1 create bloop --jurisdiction eu`; put the printed id into `wrangler.jsonc` `database_id` (it is all zeros now) and commit it. Then `npx wrangler d1 migrations apply bloop --remote`.
 3. **R2:** the bucket and its lifecycle rule, in the next section.
 4. **Worker secrets**, each with `npx wrangler secret put <NAME>`: `COOKIE_KEY`, `HASH_PEPPER`, `TOKEN_KEKS` (JSON of key id to base64 key, as in `.dev.vars.example`; `TOKEN_KEK_CURRENT` in `vars` names the current key), `ROOM_ENROLL_KEY`, `IT_EXPORT_TOKEN` (optional; the export stays closed without it), `ENTRA_CLIENT_SECRET` (only with the Entra step). Generate each with `openssl rand -base64 32`; never reuse the `.dev.vars` values.
-5. **GitHub:** the owner's settings script holds the repo's settings: features, merge options, a default-branch ruleset (no deletion, no force push, linear history; direct pushes to `main` still work), a tag ruleset, Actions locked to GitHub-owned actions with a read-only token, Dependabot, secret scanning with push protection, private vulnerability reporting, CodeQL, and the `production` environment (you as required reviewer, `main` only). It needs `gh` logged in, so it runs outside the Claude Code sandbox. In order:
+5. **GitHub:** the owner's settings script holds the repo's settings: features, merge options, a default-branch ruleset (no deletion, no force push, linear history; direct pushes to `main` still work), a tag ruleset, Actions locked to GitHub-owned actions with a read-only token, Dependabot, secret scanning with push protection, private vulnerability reporting, CodeQL, and the `production` environment (`main` only, no required reviewer: a push to `main` deploys once `npm run check` passes in the job). It needs `gh` logged in, so it runs outside the Claude Code sandbox. In order:
    0. Once, in Terminal (interactive): `gh auth refresh -h github.com -s read:user`, so the script can read the account plan.
    1. Plan: shows every difference and writes nothing.
    2. Apply: changes only what differs and prints each change. Lines starting `!` are left for you (visibility, unknown collaborators, keys or hooks, a missing `SECURITY.md`).
@@ -16,7 +16,7 @@ Steps only the owner can do, because they need the owner's accounts. Everything 
    4. Check: exits 1 on any drift; rerun it after changing settings by hand.
 6. **Placeholders:** replace the addresses and the absolute `og:image` per "Site pages" below.
 7. **Address:** the Worker serves at `https://bloop.<account subdomain>.workers.dev` (`PUBLIC_ORIGIN` in `wrangler.jsonc`); a custom domain needs the domain's DNS on Cloudflare (a Workers custom domain), then `PUBLIC_ORIGIN` changes to it in the same commit.
-8. **Deploy:** merge or push to `main` and approve the `production` run.
+8. **Deploy:** merge or push to `main`; the `production` run deploys after the check passes.
 
 ## Checks only a person can do
 
