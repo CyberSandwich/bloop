@@ -99,10 +99,21 @@ describe("screen copy", () => {
     expect(screenCopy("waiting", sf)).toMatchObject({ heading: "Room 2.14", line: "", controls: [] });
   });
 
-  it("scanned and choosing show only Check your phone.; the match code is a line for screen readers", () => {
+  it("headings are Title Case with no period; lines stay sentences", () => {
+    for (const key of SCREEN_KEYS) {
+      const c = screenCopy(key, { ...sf, file: null, demo: true });
+      expect(c.heading, key).not.toMatch(/\.$/);
+      const small = new Set("a an the and but or nor for as at by in of on to with bloop".split(" "));
+      const lower = c.heading.split(" ").filter((w) => /^[a-z]/.test(w) && !small.has(w));
+      expect(lower, key).toEqual([]);
+    }
+    for (const key of PHONE_KEYS) expect(phoneCopy(key, pf).title, key).not.toMatch(/\.$/);
+  });
+
+  it("scanned and choosing show only Check Your Phone; the match code is a line for screen readers", () => {
     for (const key of ["scanned", "choosing"] as const) {
       expect(screenCopy(key, { ...sf, match: "42" })).toMatchObject({
-        heading: "Check your phone.",
+        heading: "Check Your Phone",
         line: "It should show 42.",
         controls: ["start_over"],
       });
@@ -115,7 +126,7 @@ describe("screen copy", () => {
       line: "Opened as a PDF.",
       controls: ["end"],
     });
-    expect(phoneCopy("pdf_file", pf)).toMatchObject({ title: "Opened as a PDF on Room 2.14.", body: "Lecture 4.pptx" });
+    expect(phoneCopy("pdf_file", pf)).toMatchObject({ title: "Opened as a PDF on Room 2.14", body: "Lecture 4.pptx" });
   });
 
   it("Start Over is on scanned, choosing and the guest offer, and nowhere else", () => {
@@ -143,9 +154,9 @@ describe("screen copy", () => {
   });
 
   it("open claims PowerPoint only when the screen launched it", () => {
-    expect(screenCopy("open", { ...sf, openMode: "protocol" }).heading).toBe("Lecture 4.pptx is open in PowerPoint.");
-    expect(screenCopy("open", { ...sf, openMode: null }).heading).toBe("Lecture 4.pptx is open.");
-    expect(screenCopy("open", sf).heading).toBe("Lecture 4.pptx is open.");
+    expect(screenCopy("open", { ...sf, openMode: "protocol" }).heading).toBe("Lecture 4.pptx Is Open in PowerPoint");
+    expect(screenCopy("open", { ...sf, openMode: null }).heading).toBe("Lecture 4.pptx Is Open");
+    expect(screenCopy("open", sf).heading).toBe("Lecture 4.pptx Is Open");
   });
 
   it("DEMO-01 a demo screen offers this device as the phone, and only while it shows a code", () => {
@@ -184,17 +195,17 @@ describe("screen copy", () => {
 
   it("only an error alerts", () => {
     expect(SCREEN_KEYS.filter((k) => screenCopy(k, sf).alert)).toEqual(["error"]);
-    expect(screenCopy("error", { ...sf, file: null }).heading).toBe("Unable to open your slides.");
+    expect(screenCopy("error", { ...sf, file: null }).heading).toBe("Unable to Open Your Slides");
   });
 
   it("F16 a refused create says the caps are full, demo or live, and points at no other way in", () => {
     expect(screenCopy("rate_limited", { ...sf, demo: true })).toMatchObject({
-      heading: "Too many demos open right now.",
+      heading: "Too Many Demos Open Right Now",
       line: "Try again in a few minutes.",
       controls: [],
       alert: false,
     });
-    expect(screenCopy("rate_limited", sf).heading).toBe("Too many screens started here.");
+    expect(screenCopy("rate_limited", sf).heading).toBe("Too Many Screens Started Here");
   });
 
   it("the footer line is the one design.md gives", () => {
@@ -207,30 +218,51 @@ describe("phone copy", () => {
     for (const text of allText(phoneCopy(key, pf))) expectVoice(text);
   });
 
-  it("approve is titled by the room, over its code and the list to tick, with Approve then Cancel", () => {
+  it("approve is titled by the room over the list to tick, with Cancel then Approve", () => {
     const c = phoneCopy("approve", pf);
-    expect(c).toMatchObject({ title: "Room 2.14", room: true, match: true, files: "list", add: true });
-    expect(c.actions.map((a) => a.label)).toEqual(["Approve", "Cancel"]);
+    expect(c).toMatchObject({ title: "Room 2.14", room: true, files: "list", add: true });
+    expect(c.actions.map((a) => a.label)).toEqual(["Cancel", "Approve"]);
     expect(c.scope).toBe("Only the items you tick go to the screen. The screen never gets your account.");
   });
 
   it("the demo room is the title too, with no demo line and no account line", () => {
     const c = phoneCopy("approve_demo", { ...pf, room: "Demo Room", demo: true });
     expect(c).toMatchObject({ title: "Demo Room", body: "", scope: "", files: "list", add: true });
-    expect(c.actions.map((a) => a.label)).toEqual(["Approve", "Cancel"]);
+    expect(c.actions.map((a) => a.label)).toEqual(["Cancel", "Approve"]);
     expect(phoneCopy("approving", { ...pf, demo: true }).scope).toBe("");
   });
 
-  it("Disconnect OneDrive appears only for a signed-in phone, last and as a text action", () => {
+  it("the match digits ride on the button that commits, so the person compares them with the screen", () => {
+    for (const key of ["approve", "approve_demo", "unregistered"] as const) {
+      expect(phoneCopy(key, { ...pf, match: "42" }).actions.at(-1)).toEqual({
+        id: "approve",
+        label: "Approve (Code 42)",
+        kind: "primary",
+      });
+    }
+    expect(phoneCopy("guest_confirm", { ...pf, match: "42" }).actions.at(-1)?.label).toBe("Send (Code 42)");
+  });
+
+  it("side by side the primary comes last; app.css stacks it on top on a phone", () => {
+    for (const key of PHONE_KEYS) {
+      for (const back of [false, true]) {
+        const actions = phoneCopy(key, { ...pf, back }).actions;
+        const primary = actions.findIndex((a) => a.kind === "primary");
+        if (primary >= 0) expect(primary, key).toBe(actions.length - 1);
+      }
+    }
+  });
+
+  it("Disconnect OneDrive appears only for a signed-in phone, first and as a text action", () => {
     for (const key of ["choose", "approve", "unregistered"] as const) {
       expect(phoneCopy(key, pf).actions.map((a) => a.id)).not.toContain("disconnect");
       const withAccount = phoneCopy(key, { ...pf, account: true }).actions;
-      expect(withAccount.at(-1)).toEqual({ id: "disconnect", label: "Disconnect OneDrive", kind: "text" });
+      expect(withAccount.at(0)).toEqual({ id: "disconnect", label: "Disconnect OneDrive", kind: "text" });
     }
     expect(phoneCopy("approve", { ...pf, account: true }).actions.map((a) => a.label)).toEqual([
-      "Approve",
-      "Cancel",
       "Disconnect OneDrive",
+      "Cancel",
+      "Approve",
     ]);
     expect(phoneCopy("approve_demo", { ...pf, account: true }).actions.map((a) => a.id)).not.toContain("disconnect");
     expect(phoneCopy("first_use", { ...pf, account: true }).actions.map((a) => a.id)).not.toContain("disconnect");
@@ -239,33 +271,33 @@ describe("phone copy", () => {
   it("F5 guest states carry the design.md strings, with the room, the file and the size cap filled in", () => {
     const f = { room: "Room 2.14", file: "Talk.pptx", maxMB: 50 };
     expect(phoneCopy("guest_choose", f)).toMatchObject({
-      title: "Send a file to Room 2.14?",
+      title: "Send a File to Room 2.14?",
       body: "Choose one file from this phone. Only this file goes to the screen.",
     });
-    expect(phoneCopy("guest_choose", f).actions.map((a) => a.label)).toEqual(["Choose File", "Cancel"]);
+    expect(phoneCopy("guest_choose", f).actions.map((a) => a.label)).toEqual(["Cancel", "Choose File"]);
     expect(phoneCopy("guest_confirm", f)).toMatchObject({
       title: "Send Talk.pptx to Room 2.14?",
       body: "bloop deletes its copy when this ends.",
     });
-    expect(phoneCopy("guest_confirm", f).actions.map((a) => a.label)).toEqual(["Send", "Cancel"]);
+    expect(phoneCopy("guest_confirm", f).actions.map((a) => a.label)).toEqual(["Cancel", "Send"]);
     expect(phoneCopy("guest_sending", f)).toMatchObject({ title: "Sending Talk.pptx", progress: true });
     expect(phoneCopy("guest_sending", f).actions.map((a) => a.label)).toEqual(["Cancel"]);
     expect(phoneCopy("guest_refused", f)).toMatchObject({
-      title: "This file can't be sent.",
+      title: "This File Can't Be Sent",
       body: "Choose a .pptx or .pdf file under 50 MB.",
     });
     expect(phoneCopy("guest_refused", { ...f, maxMB: 10 }).body).toContain("under 10 MB");
     expect(phoneCopy("guest_refused", f).actions.map((a) => a.label)).toEqual(["Choose File"]);
     expect(phoneCopy("guest_sent", f)).toMatchObject({
-      title: "Sent to Room 2.14.",
+      title: "Sent to Room 2.14",
       body: "Open it on the screen when you're ready.",
     });
-    expect(phoneCopy("guest_pass_needed", f).title).toBe("Ask your host for a guest link.");
+    expect(phoneCopy("guest_pass_needed", f).title).toBe("Ask Your Host for a Guest Link");
   });
 
   it("a guest drop that is switched off says so plainly, with the way out", () => {
     expect(phoneCopy("guest_off", pf)).toMatchObject({
-      title: "This screen can't take files.",
+      title: "This Screen Can't Take Files",
       body: "Sign in to the PC as usual to open your file.",
     });
     expect(phoneCopy("guest_off", pf).actions.map((a) => a.label)).toEqual(["Done"]);
@@ -295,7 +327,7 @@ describe("phone copy", () => {
     const c = phoneCopy("approving", pf);
     expect(c.loading).toBe(true);
     expect(c.add).toBe(false);
-    expect(c.actions[0]).toMatchObject({ id: "approve", label: "Approving..." });
+    expect(c.actions.at(-1)).toMatchObject({ id: "approve", label: "Approving..." });
   });
 
   it("the unregistered screen adds a warning", () => {
@@ -327,11 +359,11 @@ describe("phone copy", () => {
     const back = { id: "back", label: "See It on the Screen", kind: "primary", href: "/s?mode=demo" };
     for (const key of ["opening", "open"] as const) {
       expect(phoneCopy(key, { ...pf, back: true }).actions, key).toEqual([
-        back,
         { id: "end", label: "Revoke", kind: "secondary" },
+        back,
       ]);
     }
-    expect(phoneCopy("guest_sent", { ...pf, back: true }).actions[0]).toEqual(back);
+    expect(phoneCopy("guest_sent", { ...pf, back: true }).actions.at(-1)).toEqual(back);
     const withBack = PHONE_KEYS.filter((k) => phoneCopy(k, { ...pf, back: true }).actions.some((a) => a.id === "back"));
     expect(withBack).toEqual(["opening", "open", "guest_sent"]);
     expect(PHONE_KEYS.filter((k) => phoneCopy(k, pf).actions.some((a) => a.id === "back"))).toEqual([]);
@@ -347,8 +379,8 @@ describe("phone copy", () => {
     expect(phoneCopy("ended", pf).body).toBe("");
   });
 
-  it("the match state shows the room and code over a skeleton list", () => {
-    expect(phoneCopy("match", pf)).toMatchObject({ title: "Room 2.14", room: true, match: true, files: "skeleton" });
+  it("the match state shows the room over a skeleton list", () => {
+    expect(phoneCopy("match", pf)).toMatchObject({ title: "Room 2.14", room: true, files: "skeleton" });
   });
 
   it("every state with actions has a primary or text action, never two primaries", () => {
@@ -363,5 +395,7 @@ describe("phone copy", () => {
   it("the typed-code page gets one line per failure", () => {
     expect(typedError("typed_wrong")).toBe("Check the code on the screen and try again.");
     expect(typedError("offline")).toBe("You're offline. Connect to Wi-Fi or mobile data, then try again.");
+    expect(typedError("expired")).toBe("This code has expired. Enter the new code on the screen.");
+    expect(typedError("busy")).toBe("Unable to check the code. Try again.");
   });
 });

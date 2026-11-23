@@ -1,6 +1,5 @@
-// The phone page (/a): claims the code from the QR, shows the room and match code, lists the items to tick,
-// and approves them; once approved it shows what the screen got, the time left and Revoke. The code leaves the
-// address bar first (core/boot-code.js).
+// The phone page (/a): claims the QR's code (it leaves the address bar first, core/boot-code.js), lists the items to
+// tick and approves them with the match digits on the button; then the items, the time left and Revoke.
 
 /** @import {ClaimResponse, Entry, ErrorCode, Item, PhoneStateKey, PhoneView} from "../../src/shared/protocol.ts" */
 import { createApi } from "./core/api.js";
@@ -26,11 +25,8 @@ const title = byId("title");
 const skelTitle = byId("skel-title");
 const body = byId("body");
 const roomSub = byId("room-sub");
-const matchBlock = byId("match-block");
-const matchDigits = byId("match-digits");
 const warn = byId("warn");
 const warnText = byId("warn-text");
-const filesForm = byId("files");
 const fileList = byId("file-list");
 const scope = byId("scope");
 const ends = byId("ends");
@@ -76,7 +72,7 @@ function fail(/** @type {ErrorCode} */ code, /** @type {(() => void) | null} */ 
 
 const look = () => ({ mode: c.info?.mode ?? "live", kind: "owner" });
 
-const tickMark = () => el("span", { class: "tick" }, [icon(ICON_CHECK, 20)]);
+const tickMark = () => el("span", { class: "tick" }, [icon(ICON_CHECK)]);
 
 /** The list to tick: one checkbox row per entry, then "Add a file", the guest path for a file not in it. */
 function buildRows(/** @type {Entry[]} */ entries, /** @type {boolean} */ add) {
@@ -161,6 +157,7 @@ function render() {
     account: c.account,
     demo,
     maxMB: wholeMB(c.maxBytes),
+    match: c.info?.match ?? null,
     // This tab holds the sid of the demo screen it claimed: it came from /s by "Approve on This Device" and can go back.
     back: demo && sameScreen(store.get(SID_KEY), c.pid),
   });
@@ -172,12 +169,10 @@ function render() {
   setText(body, copy.body);
 
   show(roomSub, copy.room && !!c.info?.registered && VERIFIED.roomRegistration);
-  show(matchBlock, copy.match);
-  setText(matchDigits, c.info?.match ?? "");
   show(warn, copy.warn !== "");
   setText(warnText, copy.warn);
 
-  show(filesForm, copy.files !== "none");
+  show(fileList, copy.files !== "none");
   const source = copy.files === "list" ? c.files : copy.files === "items" ? (v?.items ?? null) : null;
   const rows = `${copy.files}:${copy.add}`;
   if (copy.files === "skeleton" && c.rows !== rows) buildSkeleton();

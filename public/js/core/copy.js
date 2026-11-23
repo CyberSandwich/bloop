@@ -1,5 +1,5 @@
-// Every user-facing string of /s, /a and /code, from docs/design.md sections 3 and 7. A string marked
-// [V-n] there is gated by verified.js.
+// Every user-facing string of /s, /a and /code (docs/design.md sections 3 and 7): headings in Title Case with no
+// period, lines as sentences. A string marked [V-n] there is gated by verified.js.
 /** @import {PhoneStateKey, ScreenStateKey} from "../../../src/shared/protocol.ts" */
 /** @import {PhoneAction, PhoneCopy, PhoneFacts, ScreenControl, ScreenCopy, ScreenFacts} from "../types.js" */
 import { VERIFIED } from "./verified.js";
@@ -16,6 +16,7 @@ export const SESSION_ENDED = "Session Ended";
  */
 export function screenCopy(key, f) {
   const file = f.file ?? "your slides";
+  const title = f.file ?? "Your Slides";
   const base = { line: "", controls: /** @type {ScreenControl[]} */ ([]), alert: false };
   /** @type {ScreenControl[]} */
   const END = ["end"];
@@ -27,14 +28,14 @@ export function screenCopy(key, f) {
       // The line is for screen readers: the digits on the QR card show it (app.css hides it there).
       return {
         ...base,
-        heading: "Check your phone.",
+        heading: "Check Your Phone",
         line: `It should show ${f.match ?? ""}.`,
         controls: ["start_over"],
       };
     case "approved":
-      return { ...base, heading: "Approved.", line: `Opening ${file}.`, controls: END };
+      return { ...base, heading: "Approved", line: `Opening ${file}.`, controls: END };
     case "opening":
-      return { ...base, heading: `Opening ${file}`, line: "in PowerPoint on this PC.", controls: ["end", "download"] };
+      return { ...base, heading: `Opening ${title}`, line: "In PowerPoint on this PC.", controls: ["end", "download"] };
     case "open": {
       const ends = f.endsAt;
       const line = f.guest
@@ -47,7 +48,7 @@ export function screenCopy(key, f) {
       return {
         ...base,
         // Only a protocol launch put it in PowerPoint; a fetch with no launch report says no more than it knows.
-        heading: f.openMode === "protocol" ? `${file} is open in PowerPoint.` : `${file} is open.`,
+        heading: f.openMode === "protocol" ? `${title} Is Open in PowerPoint` : `${title} Is Open`,
         line,
         controls: ["end", "download"],
       };
@@ -55,23 +56,23 @@ export function screenCopy(key, f) {
     case "open_fallback":
       return {
         ...base,
-        heading: "PowerPoint didn't open.",
+        heading: "PowerPoint Didn't Open",
         line: "Download the file, then open it from Downloads.",
         controls: ["download", "pdf", "end"],
       };
     case "pdf_fallback":
       return {
         ...base,
-        heading: `Showing ${file} as a PDF.`,
+        heading: `Showing ${title} as a PDF`,
         line: "PowerPoint can't open it on this PC. Animations and videos won't play.",
         controls: END,
       };
     case "pdf_file":
-      return { ...base, heading: file, line: "Opened as a PDF.", controls: END };
+      return { ...base, heading: title, line: "Opened as a PDF.", controls: END };
     case "guest_open":
       return {
         ...base,
-        heading: file,
+        heading: title,
         line: "Sent by a guest. Open it here when you're ready.",
         controls: ["open", "start_over"],
       };
@@ -80,29 +81,29 @@ export function screenCopy(key, f) {
     case "offline":
       return {
         ...base,
-        heading: "This screen is offline.",
+        heading: "This Screen Is Offline",
         line: f.offlineLong ? `Reconnecting. ${SIGN_IN_HINT}` : "Reconnecting.",
       };
     case "service_down":
-      return { ...base, heading: "bloop isn't responding.", line: "Sign in to this PC as usual." };
+      return { ...base, heading: "bloop Isn't Responding", line: "Sign in to this PC as usual." };
     case "rate_limited":
       return {
         ...base,
-        heading: f.demo ? "Too many demos open right now." : "Too many screens started here.",
+        heading: f.demo ? "Too Many Demos Open Right Now" : "Too Many Screens Started Here",
         line: "Try again in a few minutes.",
       };
     case "error":
       return {
         ...base,
-        heading: `Unable to open ${file}.`,
+        heading: `Unable to Open ${title}`,
         line: "Try again on your phone, or sign in to this PC as usual.",
         alert: true,
       };
     case "phone_width":
-      return { ...base, heading: "Open this on the room's screen.", line: "Then scan its code with your phone." };
+      return { ...base, heading: "Open This on the Room's Screen", line: "Then scan its code with your phone." };
     case "demo_open":
       // The viewer: the item's name heads the stage; Present and Download belong to the item, not the state.
-      return { ...base, heading: file, controls: END };
+      return { ...base, heading: title, controls: END };
   }
 }
 
@@ -123,11 +124,13 @@ const BACK = {
   kind: /** @type {const} */ ("primary"),
   href: "/s?mode=demo",
 };
-/** Revoke, or with the way back to the demo screen first, which then takes the primary. */
+/** Revoke, or with the way back to the demo screen after it, which then takes the primary. */
 const revokeActions = (/** @type {PhoneFacts} */ f) =>
-  /** @type {PhoneAction[]} */ (f.back ? [BACK, { ...REVOKE, kind: "secondary" }] : [REVOKE]);
+  /** @type {PhoneAction[]} */ (f.back ? [{ ...REVOKE, kind: "secondary" }, BACK] : [REVOKE]);
 
 /**
+ * Actions run in reading order side by side, the primary last (Cancel then Approve); stacked, app.css puts the
+ * primary on top.
  * @param {PhoneStateKey} key
  * @param {PhoneFacts} f
  * @returns {PhoneCopy}
@@ -137,7 +140,6 @@ export function phoneCopy(key, f) {
     title: "",
     body: "",
     room: false,
-    match: false,
     files: /** @type {PhoneCopy["files"]} */ ("none"),
     add: false,
     ends: false,
@@ -149,12 +151,14 @@ export function phoneCopy(key, f) {
   };
   const file = f.file ?? "your slides";
   const disconnect = f.account ? [DISCONNECT] : [];
-  const APPROVE = { id: "approve", label: "Approve", kind: /** @type {const} */ ("primary") };
+  // The match digits ride on the button that commits: the person compares them with the screen.
+  const code = f.match ? ` (Code ${f.match})` : "";
+  const APPROVE = { id: "approve", label: `Approve${code}`, kind: /** @type {const} */ ("primary") };
   const accountLine = VERIFIED.accountNeverReaches
     ? "Only the items you tick go to the screen. The screen never gets your account."
     : "Only the items you tick go to the screen.";
-  /** The room as the title over its code and the list (match to approving). */
-  const room = { ...base, title: f.room, room: true, match: true, files: /** @type {const} */ ("list"), add: true };
+  /** The room as the title over the list (match to approving). */
+  const room = { ...base, title: f.room, room: true, files: /** @type {const} */ ("list"), add: true };
   switch (key) {
     case "checking":
       return { ...base, body: "Checking the code" };
@@ -163,92 +167,89 @@ export function phoneCopy(key, f) {
     case "choose":
       return { ...room, actions: disconnect };
     case "approve":
-      return { ...room, scope: accountLine, actions: [APPROVE, CANCEL, ...disconnect] };
+      return { ...room, scope: accountLine, actions: [...disconnect, CANCEL, APPROVE] };
     case "approve_demo":
-      return { ...room, actions: [APPROVE, CANCEL] };
+      return { ...room, actions: [CANCEL, APPROVE] };
     case "unregistered":
       return {
         ...room,
         warn: "This screen isn't registered. Only approve if you can see it in front of you.",
         scope: accountLine,
-        actions: [APPROVE, CANCEL, ...disconnect],
+        actions: [...disconnect, CANCEL, APPROVE],
       };
     case "approving":
       return {
         ...room,
         add: false,
         scope: f.demo ? "" : accountLine,
-        actions: [{ ...APPROVE, label: "Approving..." }, CANCEL],
+        actions: [CANCEL, { ...APPROVE, label: "Approving..." }],
         loading: true,
       };
     case "first_use":
       return {
         ...base,
-        title: "Connect your OneDrive.",
+        title: "Connect Your OneDrive",
         body: VERIFIED.oneDriveOnce
           ? "bloop reads your slides from OneDrive. You do this once, on this phone."
           : "bloop reads your slides from OneDrive.",
         room: true,
-        match: true,
-        actions: [{ id: "connect", label: "Connect OneDrive", kind: "primary" }, CANCEL, SEND_FILE],
+        actions: [SEND_FILE, CANCEL, { id: "connect", label: "Connect OneDrive", kind: "primary" }],
       };
     case "needs_admin":
       return {
         ...base,
-        title: "Your organization needs to approve bloop.",
+        title: "Your Organization Needs to Approve bloop",
         body: "Ask your IT team, or sign in to the PC as usual.",
         actions: [DONE],
       };
     case "empty":
       return {
         ...base,
-        title: "No slides found.",
+        title: "No Slides Found",
         body: "Save a .pptx file to OneDrive, then scan again.",
-        actions: [DONE, SEND_FILE],
+        actions: [SEND_FILE, DONE],
       };
     case "guest_choose":
       return {
         ...base,
-        title: `Send a file to ${f.room}?`,
+        title: `Send a File to ${f.room}?`,
         body: "Choose one file from this phone. Only this file goes to the screen.",
-        match: true,
-        actions: [PICK, CANCEL],
+        actions: [CANCEL, PICK],
       };
     case "guest_confirm":
       return {
         ...base,
         title: `Send ${file} to ${f.room}?`,
         body: VERIFIED.guestDelete ? "bloop deletes its copy when this ends." : "",
-        match: true,
-        actions: [{ id: "send", label: "Send", kind: "primary" }, CANCEL],
+        actions: [CANCEL, { id: "send", label: `Send${code}`, kind: "primary" }],
       };
     case "guest_sending":
       return { ...base, title: `Sending ${file}`, progress: true, actions: [CANCEL] };
     case "guest_refused":
       return {
         ...base,
-        title: "This file can't be sent.",
+        title: "This File Can't Be Sent",
         body: `Choose a .pptx or .pdf file under ${f.maxMB ?? 50} MB.`,
         actions: [PICK],
       };
     case "guest_sent":
       return {
         ...base,
-        title: `Sent to ${f.room}.`,
+        title: `Sent to ${f.room}`,
         body: "Open it on the screen when you're ready.",
-        actions: f.back ? [BACK, CANCEL] : [CANCEL],
+        actions: f.back ? [CANCEL, BACK] : [CANCEL],
       };
     case "guest_pass_needed":
       return {
         ...base,
-        title: "Ask your host for a guest link.",
+        title: "Ask Your Host for a Guest Link",
         body: "Open it on this phone, then scan the code again.",
         actions: [DONE],
       };
     case "guest_off":
       return {
         ...base,
-        title: "This screen can't take files.",
+        title: "This Screen Can't Take Files",
         body: "Sign in to the PC as usual to open your file.",
         actions: [DONE],
       };
@@ -264,79 +265,85 @@ export function phoneCopy(key, f) {
     case "open_fallback":
       return {
         ...base,
-        title: "PowerPoint didn't open on the screen.",
+        title: "PowerPoint Didn't Open on the Screen",
         body: "Tap Download on the screen to open it there.",
         actions: [REVOKE],
       };
     case "pdf_fallback":
       return {
         ...base,
-        title: `Showing as a PDF on ${f.room}.`,
+        title: `Showing as a PDF on ${f.room}`,
         body: "PowerPoint can't open it there. Animations and videos won't play.",
         actions: [REVOKE],
       };
     case "pdf_file":
-      return { ...base, title: `Opened as a PDF on ${f.room}.`, body: file, actions: [REVOKE] };
+      return { ...base, title: `Opened as a PDF on ${f.room}`, body: file, actions: [REVOKE] };
     case "ended":
       return {
         ...base,
-        title: "Ended.",
+        title: "Ended",
         body: VERIFIED.endedLink ? "The screen's link to your file has stopped working." : "",
         actions: [DONE],
       };
     case "canceled":
-      return { ...base, title: "Canceled.", body: "Nothing was opened on the screen.", actions: [DONE] };
+      return { ...base, title: "Canceled", body: "Nothing was opened on the screen.", actions: [DONE] };
     case "expired":
       return {
         ...base,
-        title: "This code has expired.",
+        title: "This Code Has Expired",
         body: "Scan the new code on the screen.",
         actions: [ENTER_CODE],
       };
     case "taken":
       return {
         ...base,
-        title: "This code was already used.",
+        title: "This Code Was Already Used",
         body: "Scan the new code on the screen.",
         actions: [ENTER_CODE],
       };
     case "typed_wrong":
-      return { ...base, title: "Check the code on the screen and try again.", actions: [ENTER_CODE] };
+      return { ...base, title: "Check the Code", body: TYPED_WRONG, actions: [ENTER_CODE] };
     case "offline":
       return {
         ...base,
-        title: "You're offline.",
+        title: "You're Offline",
         body: "Connect to Wi-Fi or mobile data, then try again.",
         actions: [TRY_AGAIN],
       };
     case "rate_limited":
       return {
         ...base,
-        title: "Too many tries.",
+        title: "Too Many Tries",
         body: "Wait a minute, then scan the code again.",
         actions: [DONE],
       };
     case "busy":
       return {
         ...base,
-        title: "bloop can't take files right now.",
+        title: "bloop Can't Take Files Right Now",
         body: "Try again in a few minutes, or sign in to the PC as usual.",
         actions: [DONE],
       };
     case "framed":
-      return { ...base, title: "Open this page directly to approve." };
+      return { ...base, title: "Open This Page Directly to Approve" };
     default:
       return {
         ...base,
-        title: "Unable to open your slides.",
+        title: "Unable to Open Your Slides",
         body: "Check the file opens on your phone, then try again.",
         actions: [TRY_AGAIN],
       };
   }
 }
 
-/** Typed-code page: the line beside the field for a failed claim. */
-export const typedError = (/** @type {PhoneStateKey} */ key) => {
-  const c = phoneCopy(key, { room: "", file: null });
-  return [c.title, c.body].filter(Boolean).join(" ");
-};
+const TYPED_WRONG = "Check the code on the screen and try again.";
+/** The typed-code page's one sentence beside the field, per failure a claim can return. */
+const TYPED = /** @type {Partial<Record<PhoneStateKey, string>>} */ ({
+  typed_wrong: TYPED_WRONG,
+  expired: "This code has expired. Enter the new code on the screen.",
+  taken: "This code was already used. Enter the new code on the screen.",
+  offline: "You're offline. Connect to Wi-Fi or mobile data, then try again.",
+  rate_limited: "Too many tries. Wait a minute, then try again.",
+  framed: "Open this page directly to enter a code.",
+});
+export const typedError = (/** @type {PhoneStateKey} */ key) => TYPED[key] ?? "Unable to check the code. Try again.";

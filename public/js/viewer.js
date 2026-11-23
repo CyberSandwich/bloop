@@ -1,6 +1,5 @@
-// The demo screen's viewer (DEMO-01, docs/design.md section 7). Nothing launches: the page fetches the launched link
-// itself, so the session reaches `open`. An image is its view link in an <img> kept for the session: the CSP allows
-// no blob: URL, and a second mint would spend the budget. A link is a card opened in a new tab, never a frame.
+// The demo viewer (DEMO-01, design.md section 7). Nothing launches: the page fetches the launched link itself.
+// An image's <img> is kept for the session: the CSP has no blob:, and a second mint spends the budget.
 /** @import {Item, OpenMode, ScreenView} from "../../src/shared/protocol.ts" */
 /** @import {Minted} from "./types.js" */
 import { openTarget, pagesOf, stepPage, thumbOf } from "./core/demo.js";
@@ -26,7 +25,6 @@ const KEYS = /** @type {Record<string, number>} */ ({
 });
 /** Up to this many pages show as dots; more show "3 of 9". */
 const MAX_DOTS = 6;
-const SWIPE_PX = 40;
 
 /**
  * @param {{relink: (item: number) => Promise<Minted>, onChange: () => void}} deps
@@ -143,7 +141,7 @@ export function createViewer(deps) {
     handle.replaceChildren(
       ...rowFace(item, thumbOf(item, v)),
       el("span", { class: "small" }, [`${v.items.length} items`]),
-      icon(["m18 15-6-6-6 6"], 20),
+      icon(["M15.25 14.25 12 10.75l-3.25 3.5"]),
     );
 
     const p = pages();
@@ -204,14 +202,6 @@ export function createViewer(deps) {
     if (!view || !step || e.altKey || e.ctrlKey || e.metaKey || !pages()) return;
     e.preventDefault();
     go(step);
-  });
-  let downX = 0;
-  frame.addEventListener("pointerdown", (e) => {
-    downX = e.clientX;
-  });
-  frame.addEventListener("pointerup", (e) => {
-    const dx = e.clientX - downX;
-    if (Math.abs(dx) >= SWIPE_PX) go(dx < 0 ? 1 : -1);
   });
 
   return {

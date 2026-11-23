@@ -13,21 +13,22 @@
   <body class="page-screen">
     <a class="skip" href="#main">Skip to Content</a>
     <header class="bar">
-      <a class="round" id="b-back" href="/"><svg class="icon" viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="m12 19-7-7 7-7"/><path d="M19 12H5"/></svg><span class="sr">Home</span></a>
-      <button type="button" class="round" id="b-start-over" aria-label="Start Over" hidden><svg class="icon" viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="m12 19-7-7 7-7"/><path d="M19 12H5"/></svg></button>
-      <button type="button" class="brand" id="b-home" aria-label="bloop, End and Go Home" hidden><img src="/favicon.svg" width="28" height="28" alt="">bloop</button>
-      <a class="btn secondary" id="b-here" href="/a" hidden>Approve on This Device</a>
-      <button type="button" class="btn secondary" id="b-end" hidden>End</button>
+      <a class="framed" id="b-back" href="/"><svg class="icon" viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M10.25 6.75 4.75 12l5.5 5.25"/><path d="M19.25 12H5"/></svg>Back</a>
+      <button type="button" class="framed" id="b-start-over" hidden><svg class="icon" viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M10.25 6.75 4.75 12l5.5 5.25"/><path d="M19.25 12H5"/></svg>Back</button>
+      <button type="button" class="framed" id="b-home" aria-label="bloop, End and Go Home" hidden><img src="/favicon.svg" width="28" height="28" alt="">bloop</button>
+      <a class="framed" id="b-here" href="/a" hidden>Approve on This Device</a>
+      <button type="button" class="framed" id="b-end" hidden>End</button>
     </header>
     <main id="main">
       <noscript><p class="nojs">This screen needs JavaScript to show a code.</p></noscript>
       <div class="narrow">
-        <p class="narrow-title">Open this on the room's screen.</p>
+        <p class="narrow-title">Open This on the Room's Screen</p>
         <p class="line">Then scan its code with your phone.</p>
         <a class="btn secondary" href="/code">Enter a Code</a>
       </div>
       <div class="side glass" id="side" popover hidden>
-        <ul class="items" id="items" aria-label="Items"></ul>
+        <h2 class="side-head" id="side-head">Items</h2>
+        <ul class="items" id="items" aria-labelledby="side-head"></ul>
       </div>
       <div class="pane" id="pane">
         <button type="button" class="handle glass" id="handle" popovertarget="side" hidden></button>
@@ -37,21 +38,27 @@
         </div>
         <div class="qr-card" id="qr-panel">
           <svg id="qr" role="img" aria-label="QR code. Scan it with your phone camera to open bloop." viewBox="0 0 41 41" width="205" height="205" shape-rendering="crispEdges" focusable="false"><rect width="41" height="41" fill="#FFFFFF"/><path id="qr-path" fill="#1D1D1F" d=""/></svg>
+          <svg class="ring" id="ring" aria-hidden="true" focusable="false"><rect id="ring-rect" width="100%" height="100%" rx="28" pathLength="100"/></svg>
           <p class="match" id="match" hidden></p>
-          <div class="drain" aria-hidden="true"><span id="drain"></span></div>
         </div>
-        <p class="code-card"><span class="code" id="typed-code"></span></p>
-        <p class="hint" id="hint">Scan with your phone, or enter the code at <span id="typed-host"></span>/code</p>
+        <div class="hint" id="hint">
+          <p class="scan">Scan with your phone.</p>
+          <p>Or enter the code at <span id="typed-host"></span>/code</p>
+        </div>
+        <div class="code-row">
+          <button type="button" class="framed code-card" id="b-copy"><svg class="icon" viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M6.5 15.25c-.97 0-1.75-.78-1.75-1.75V6.75c0-1.1.9-2 2-2h6.75c.97 0 1.75.78 1.75 1.75"/><path d="M10.75 8.75h6.5a2 2 0 0 1 2 2v6.5a2 2 0 0 1-2 2h-6.5a2 2 0 0 1-2-2v-6.5a2 2 0 0 1 2-2Z"/></svg><svg class="icon done" viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="m5.75 12.87 2.59 3.54c.81 1.12 2.48 1.1 3.26-.04l6.65-9.62"/></svg><span class="sr">Copy</span> <span class="code" id="typed-code"></span></button>
+          <button type="button" class="framed square" id="b-new" aria-label="New Code"><svg class="icon" viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M11.25 4.75 8.75 7l2.5 2.25"/><path d="M12.75 19.25 15.25 17l-2.5-2.25"/><path d="M9.75 7h3.5a6 6 0 0 1 6 6v.25"/><path d="M14.25 17h-3.5a6 6 0 0 1-6-6v-.25"/></svg></button>
+        </div>
         <div class="frame" id="frame" hidden></div>
         <div class="pager" id="pager" hidden>
-          <button type="button" class="round glass" id="prev" aria-label="Previous page"><svg class="icon" viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="m15 18-6-6 6-6"/></svg></button>
+          <button type="button" class="round glass" id="prev" aria-label="Previous Page"><svg class="icon" viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M13.25 8.75 9.75 12l3.5 3.25"/></svg></button>
           <span class="dots" id="dots" aria-hidden="true"></span>
-          <button type="button" class="round glass" id="next" aria-label="Next page"><svg class="icon" viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="m9 18 6-6-6-6"/></svg></button>
+          <button type="button" class="round glass" id="next" aria-label="Next Page"><svg class="icon" viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="m10.75 8.75 3.5 3.25-3.5 3.25"/></svg></button>
         </div>
         <div class="actions-row" id="controls">
-          <button type="button" class="btn primary" id="b-present" hidden>Present</button>
+          <button type="button" class="btn secondary" id="b-present" hidden>Present</button>
           <button type="button" class="btn primary" id="b-open" hidden>Open</button>
-          <button type="button" class="btn secondary" id="b-download" hidden>Download</button>
+          <button type="button" class="btn primary" id="b-download" hidden>Download</button>
           <button type="button" class="btn text" id="b-pdf" hidden>Show as PDF Instead</button>
         </div>
       </div>

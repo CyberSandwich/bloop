@@ -114,27 +114,29 @@ export function itemLine(item, date = null) {
 /** A row's name: a link's title, a file's name. @param {Item} item */
 export const itemName = (item) => (item.kind === "link" ? item.title : item.name);
 
-/** Lucide icon paths (24 viewBox, stroke 2). Only where an icon carries meaning: type tiles, arrows, the tick, add. */
+/** Iconic icon paths (free set, 24 viewBox, stroke 1.5): projector, file-text, photo, link, plus. */
 const ICONS = {
-  pptx: ["M2 3h20", "M21 3v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V3", "m7 21 5-5 5 5"],
+  pptx: [
+    "M18.25 7.75H5.75v7.5c0 1.1.9 2 2 2h8.5a2 2 0 0 0 2-2v-7.5Z",
+    "M18.25 4.75H5.75a1 1 0 0 0-1 1v1a1 1 0 0 0 1 1h12.5a1 1 0 0 0 1-1v-1a1 1 0 0 0-1-1Z",
+    "M12 17.5v1.75",
+  ],
   pdf: [
-    "M15 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7Z",
-    "M14 2v4a2 2 0 0 0 2 2h4",
-    "M10 9H8",
-    "M16 13H8",
-    "M16 17H8",
+    "M7.75 19.25h8.5a2 2 0 0 0 2-2V9L14 4.75H7.75a2 2 0 0 0-2 2v10.5c0 1.1.9 2 2 2Z",
+    "M18 9.25h-4.25V5",
+    "M9.75 15.25h4.5",
+    "M9.75 12.25h4.5",
   ],
   image: [
-    "M5 3h14a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2Z",
-    "M7 9a2 2 0 1 0 4 0a2 2 0 1 0-4 0",
-    "m21 15-3.086-3.086a2 2 0 0 0-2.828 0L6 21",
+    "m4.75 16 2.75-3.49a2 2 0 0 1 3.09-.07L13 15.25m-2.09-2.43 2.59-3.32a2 2 0 0 1 3.09-.06L19 12.25M6.75 19.25h10.5a2 2 0 0 0 2-2V6.75a2 2 0 0 0-2-2H6.75a2 2 0 0 0-2 2v10.5c0 1.1.9 2 2 2Z",
   ],
   link: [
-    "M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71",
-    "M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71",
+    "M16.75 13.25 18 12a4.24 4.24 0 0 0-6-6l-1.25 1.25",
+    "M7.25 10.75 6 12a4.24 4.24 0 0 0 6 6l1.25-1.25",
+    "m14.25 9.75-4.5 4.5",
   ],
 };
-export const ICON_ADD = ["M5 12h14", "M12 5v14"];
+export const ICON_ADD = ["M12 5.75v12.5", "M18.25 12H5.75"];
 
 /** The type tile's glyph: slides, a document for a PDF, a picture for an image, a link. @param {Item} item */
 export function itemIcon(item) {

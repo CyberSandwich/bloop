@@ -186,8 +186,6 @@ export interface PhoneCopy {
   body: string;
   /** The "Registered screen" line under a room title. */
   room: boolean;
-  /** The match code card. */
-  match: boolean;
   /** The list to tick, or the approved items read only. */
   files: "none" | "skeleton" | "list" | "items";
   /** The "Add a file" row closes the list: the guest path, for a file not in it `[V-10]`. */
@@ -216,6 +214,8 @@ export interface PhoneFacts {
   maxMB?: number;
   /** This tab is also the demo screen (the one-device round trip), so it can go back to it. */
   back?: boolean;
+  /** The 2 match digits the screen shows, carried on the button that commits. */
+  match?: string | null;
 }
 
 export interface ScreenCtx {

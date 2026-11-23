@@ -1,5 +1,4 @@
-// The room screen (/s): shows the QR and the typed code, follows the session through its Screen object, and offers
-// the back arrow (Start Over), End, Open and the download and PDF fallbacks; a demo screen shows the viewer.
+// The room screen (/s): the QR and typed code, the session through its Screen object, the fallbacks; the demo's viewer.
 /** @import {ScreenView} from "../../src/shared/protocol.ts" */
 import { createApi } from "./core/api.js";
 import { openChannel } from "./core/channel.js";
@@ -30,6 +29,8 @@ const DEMO = new URLSearchParams(location.search).get("mode") === "demo";
 
 const main = byId("main");
 const pane = byId("pane");
+const ring = byId("ring");
+const ringRect = byId("ring-rect");
 const stage = byId("stage");
 const heading = byId("heading");
 const line = byId("line");
@@ -37,7 +38,6 @@ const qrPanel = byId("qr-panel");
 const qrSvg = byId("qr");
 const qrPathEl = byId("qr-path");
 const matchEl = byId("match");
-const drain = byId("drain");
 const typedHost = byId("typed-host");
 const typedCode = byId("typed-code");
 const buttons = {
@@ -45,6 +45,8 @@ const buttons = {
   start_over: byId("b-start-over"),
   home: byId("b-home"),
   here: byId("b-here"),
+  copy: byId("b-copy"),
+  renew: /** @type {HTMLButtonElement} */ (byId("b-new")),
   end: byId("b-end"),
   present: byId("b-present"),
   open: byId("b-open"),
@@ -99,7 +101,6 @@ const residue = createResidue({
   cleanUrl: () => history.replaceState(null, "", location.pathname + location.search),
 });
 
-const reduceMotion = matchMedia("(prefers-reduced-motion: reduce)").matches;
 const serverNow = () => Date.now() + s.skew;
 
 /** One named timer: setting it again replaces the old one. */
@@ -109,10 +110,14 @@ function after(/** @type {string} */ name, /** @type {number} */ ms, /** @type {
 }
 const cancel = (/** @type {string} */ name) => clearTimeout(s.timers[name]);
 
+/** The ring is the card's edge (radius 28, as app.css): its dash starts at the top center and runs clockwise. */
 function fitQr() {
   const size = qrSize(innerHeight, devicePixelRatio || 1);
   qrSvg.setAttribute("width", String(size));
   qrSvg.setAttribute("height", String(size));
+  const r = 28;
+  const perimeter = 4 * (size - 2 * r) + 2 * Math.PI * r;
+  ringRect.setAttribute("stroke-dashoffset", String((-100 * (size / 2 - r)) / perimeter));
 }
 
 function drawCode(/** @type {import("../../src/shared/protocol.ts").CodeView} */ code) {
@@ -123,10 +128,10 @@ function drawCode(/** @type {import("../../src/shared/protocol.ts").CodeView} */
     qrPathEl.setAttribute("d", qrPath(qrMatrix(code.qrUrl)));
     qrSvg.setAttribute("aria-label", qrLabel(code.code, location.host));
     setText(typedCode, format(code.code));
-    drain.style.transition = "none";
-    drain.style.transform = "";
-    void drain.offsetWidth;
-    drain.style.transition = "";
+    ring.classList.add("snap");
+    updateRing();
+    void ring.getBoundingClientRect();
+    ring.classList.remove("snap");
     qrPanel.classList.remove("is-swapping");
   };
   if (first) paint();
@@ -136,11 +141,12 @@ function drawCode(/** @type {import("../../src/shared/protocol.ts").CodeView} */
   }
 }
 
-function updateDrain() {
+/** The ring's length is the code's life left; the transition glides between the 1 s steps. */
+function updateRing() {
   if (!s.view?.code) return;
   const from = s.view.code.expiresAt - CODE_TTL_MS;
-  const p = (serverNow() - from) / (CODE_TTL_MS - CODE_GRACE_MS);
-  drain.style.transform = `scaleX(${1 - Math.min(1, Math.max(0, p))})`;
+  const left = 100 - 100 * Math.min(1, Math.max(0, (serverNow() - from) / (CODE_TTL_MS - CODE_GRACE_MS)));
+  ringRect.setAttribute("stroke-dasharray", `${left} ${100 - left}`);
 }
 
 const MODE = {
@@ -153,21 +159,14 @@ const MODE = {
 
 const keyNow = () => screenKey({ view: s.view, link: s.link, errored: s.errored, limited: s.limited });
 
-/**
- * Every change of scene (a state, or the item on the stage) enters with the shared motion: the View Transitions API
- * where there is one, else a class that replays the same keyframes; reduced motion swaps at once.
- */
+/** A change of scene (a state, or the item on the stage) replays the enter keyframes. */
 function render() {
   const key = keyNow();
   const scene = `${MODE[/** @type {keyof typeof MODE} */ (key)] ?? key}:${key === "demo_open" ? viewer?.at() : ""}`;
   const changed = s.scene !== null && scene !== s.scene;
   s.scene = scene;
-  if (!changed || reduceMotion) return paint();
-  if (document.startViewTransition) {
-    document.startViewTransition(paint);
-    return;
-  }
   paint();
+  if (!changed) return;
   pane.classList.remove("enter");
   void pane.offsetWidth;
   pane.classList.add("enter");
@@ -205,7 +204,7 @@ function paint() {
   setText(matchEl, mode === "scanned" ? (v?.match ?? "") : "");
 
   const has = (/** @type {import("./types.js").ScreenControl} */ c) => copy.controls.includes(c);
-  // Top left: the back arrow home, Start Over as the back arrow, or in a session the mark that ends it, then goes home.
+  // Top left: Back home, Back as Start Over, or in a session the mark that ends it, then goes home.
   show(buttons.back, !has("start_over") && !has("end") && key !== "ended");
   show(buttons.start_over, has("start_over"));
   show(buttons.home, has("end"));
@@ -228,7 +227,7 @@ function paint() {
   show(buttons.present, viewing && !!viewer?.presentable());
 
   if (changed && lostFocus()) focusTitle(heading);
-  if (mode === "waiting") updateDrain();
+  if (mode === "waiting") updateRing();
   schedule(key);
 }
 
@@ -263,6 +262,7 @@ function recover() {
 
 function onView(/** @type {ScreenView} */ view) {
   s.view = view;
+  buttons.renew.disabled = false;
   s.skew = view.now - Date.now();
   if (view.state === "ended" || view.state === "closed") residue.clear();
   // The credential is the screen's own, not the session's: it comes back so a reload resumes the waiting screen.
@@ -313,6 +313,23 @@ buttons.home.addEventListener("click", async () => {
   location.assign("/");
 });
 buttons.present.addEventListener("click", () => viewer?.present());
+buttons.copy.addEventListener("click", () => {
+  const code = s.shown;
+  navigator.clipboard?.writeText(code ? format(code) : "").then(
+    () => {
+      buttons.copy.classList.add("is-copied");
+      after("copied", 1500, () => buttons.copy.classList.remove("is-copied"));
+    },
+    () => {},
+  );
+});
+// New Code: a fresh screen by the end and create path. A waiting screen may refuse the end; dropping its sid and
+// socket lets it close by itself. A refused create shows the rate-limited state and retries, as at boot.
+buttons.renew.addEventListener("click", async () => {
+  buttons.renew.disabled = true;
+  await api.post("/api/screen/end", {}, s.sid);
+  renew();
+});
 buttons.open.addEventListener("click", () => {
   if (s.view?.state !== "offered") return launcher.click();
   if (!s.channel?.send({ t: "open.click" })) flagError();
@@ -408,7 +425,7 @@ function start() {
   document.addEventListener("visibilitychange", () => {
     if (!document.hidden) s.channel?.nudge();
   });
-  setInterval(() => (main.dataset.mode === "waiting" ? updateDrain() : undefined), reduceMotion ? 10_000 : 1000);
+  setInterval(() => (main.dataset.mode === "waiting" ? updateRing() : undefined), 1000);
   boot();
 }
 

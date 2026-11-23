@@ -1,5 +1,4 @@
-// Small DOM helpers shared by the pages. Never innerHTML: the CSP requires Trusted Types, which this
-// site disables, so every node is built with the DOM API and text goes in as text.
+// DOM helpers. Never innerHTML: the CSP's Trusted Types forbid it, so text goes in as text.
 
 /** @param {string} id @returns {HTMLElement} */
 export function byId(id) {
@@ -55,16 +54,16 @@ export function el(tag, attrs = {}, children = []) {
 
 const SVG = "http://www.w3.org/2000/svg";
 
-/** A Lucide icon (24 viewBox, stroke 2) from path data. */
-export function icon(/** @type {string[]} */ paths, size = 24) {
+/** An Iconic icon (free set: 24 viewBox, stroke 1.5) from path data, as the pages inline it. */
+export function icon(/** @type {string[]} */ paths) {
   const svg = document.createElementNS(SVG, "svg");
   for (const [k, v] of Object.entries({
     viewBox: "0 0 24 24",
-    width: String(size),
-    height: String(size),
+    width: "24",
+    height: "24",
     fill: "none",
     stroke: "currentColor",
-    "stroke-width": "2",
+    "stroke-width": "1.5",
     "stroke-linecap": "round",
     "stroke-linejoin": "round",
     "aria-hidden": "true",
@@ -81,7 +80,7 @@ export function icon(/** @type {string[]} */ paths, size = 24) {
   return svg;
 }
 
-export const ICON_CHECK = ["M20 6 9 17l-5-5"];
+export const ICON_CHECK = ["m5.75 12.87 2.59 3.54c.81 1.12 2.48 1.1 3.26-.04l6.65-9.62"];
 
 /** Runs `fn` at most once per animation frame. */
 export function frameThrottle(/** @type {() => void} */ fn) {

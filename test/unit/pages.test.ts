@@ -103,15 +103,24 @@ describe("the demo screen", () => {
     for (const file of ["js/viewer.js", "js/screen.js", "s.html"]) expect(read(file), file).not.toMatch(/iframe/i);
   });
 
-  it("one h1 per app page, a back arrow first in its bar, and the logo home on the phone pages", () => {
-    expect(read("s.html")).toMatch(/<header class="bar">\s*<a class="round" id="b-back" href="\/">/);
-    for (const page of ["a.html", "code.html"]) {
+  it("one labeled Back pill in the house frame, first in the corner bar of every app page; no logo on the phone pages", () => {
+    for (const page of ["s.html", "a.html", "code.html"]) {
       const html = read(page);
       expect(html, page).toMatch(
-        /<header class="phone-bar">\s*<a class="round"[^>]*>.*?<span class="sr">Back<\/span><\/a>/s,
+        /<header class="bar">\s*<a class="framed"[^>]* href="\/"><svg[\s\S]*?<\/svg>Back<\/a>/,
       );
-      expect(html, page).toMatch(/<a class="brand" href="\/">/);
     }
+    for (const page of ["a.html", "code.html"])
+      expect(read(page), page).not.toMatch(/class="brand"|favicon\.svg" width/);
+  });
+
+  it("icons are the Iconic free set as inlined: one 1.5 px stroke, never Lucide's 2", () => {
+    for (const page of ["s.html", "a.html", "code.html"]) {
+      const icons = read(page).match(/<svg class="icon"[^>]*>/g) ?? [];
+      expect(icons.length, page).toBeGreaterThan(0);
+      for (const svg of icons) expect(svg, page).toContain('stroke-width="1.5"');
+    }
+    expect(read("js/core/ui.js")).toContain('"stroke-width": "1.5"');
   });
 });
 

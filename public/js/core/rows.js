@@ -4,8 +4,8 @@
 import { itemIcon, itemLine, itemName, splitName } from "./format.js";
 import { el, icon } from "./ui.js";
 
-/** A 40 px tile holding a 20 px glyph. @param {string[]} paths */
-export const tile = (paths) => el("span", { class: "thumb" }, [icon(paths, 20)]);
+/** A 40 px tile holding the type glyph. @param {string[]} paths */
+export const tile = (paths) => el("span", { class: "thumb" }, [icon(paths)]);
 
 /**
  * @param {Item} item

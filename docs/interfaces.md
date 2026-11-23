@@ -554,7 +554,7 @@ export interface PurgeReport {
   accessTokenDropped: boolean; // in-memory access token for this session
 }
 
-/** Screen side. `clear` runs on "ended" and "closed" (the page re-stores its own credential when the screen waits again, so a reload resumes the screen); pagehide only closes the PDF window. A stored sid resumes only a screen of the page's own mode; a screen of the other mode that still exists is ended (`POST /api/screen/end`) and then `forget` runs; the demo's one-device round trip (`/s?mode=demo` to `/a` and back in one tab) is that resume, and `clear` also drops the pid the tab took on `/a`. */
+/** Screen side. `clear` runs on "ended" and "closed" (the page re-stores its own credential when the screen waits again, so a reload resumes the screen); pagehide only closes the PDF window. A stored sid resumes only a screen of the page's own mode; a screen of the other mode that still exists is ended (`POST /api/screen/end`) and then `forget` runs; the demo's one-device round trip (`/s?mode=demo` to `/a` and back in one tab) is that resume, and `clear` also drops the pid the tab took on `/a`. New Code on a waiting screen is the same pair of calls: `POST /api/screen/end` (which closes a waiting screen), then the boot path creates a new one; no route of its own. */
 export interface ScreenResidue {
   clear(): void;               // launcher.reset (links, timers, the PDF window this page opened), sessionStorage bloop.*,
                                // history.replaceState to the same path and query (the demo mode stays)
@@ -630,6 +630,6 @@ The shared state strings have no slot for these. Wording is a design.md decision
 - `guest_pass_needed` (phone): "Ask your host for a guest link." / "Open it on this phone, then scan the code again."
 - `busy` (phone): "bloop can't take files right now." / "Try again in a few minutes, or sign in to the PC as usual."
 - Screen `guest_open` (offered state): heading "{file name}", line "Sent by a guest. Open it here when you're ready.", control "Open". The click is the proof of presence at the lectern, and no guest file opens without it.
-- Screen "Start Over" (decided, OD-6; text button in the scanned, choosing and offered states): ends a claim nobody at the lectern recognizes (PAIR-02).
+- Screen "Start Over" (decided, OD-6; the labeled Back pill in the scanned, choosing and offered states): ends a claim nobody at the lectern recognizes (PAIR-02).
 - `guest_refused` fills `{N}` from `PhoneView.dropMaxBytes` (`GUEST_MAX_BYTES`, default 50 MB; demo 10 MB), in whole megabytes.
 - Added with the guest drop (module f), now in design.md section 7: `guest_sent` (phone, after the upload: "Sent to {room}." / "Open it on the screen when you're ready.", Cancel) and the text action "Send a File Instead", which is how a phone that scanned as an owner chooses to send its own file.

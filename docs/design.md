@@ -101,12 +101,12 @@ Tokens live in `public/css/app.css` `:root`; this list restates them, and the dr
 | Token | Use |
 |---|---|
 | `--paper:#f3f3f0` | page ground everywhere |
-| `--surface:#ffffff` | cards: FAQ items, the QR and code cards, the stage frame, item lists, the warn card, the provider list, the panel rows, chips |
-| `--ink:#1e1e1c` | text, primary pills, the tick, an on toggle, the active page dot, progress and drain fills, the focus ring |
+| `--surface:#ffffff` | cards: FAQ items, the QR card and the house frame (section 6), the stage frame, item lists, the warn card, the provider list, the panel rows, chips |
+| `--ink:#1e1e1c` | text, primary pills, the tick, an on toggle, the active page dot, the progress fill and the QR ring, the focus ring |
 | `--ink-2:#3a3a36` | the nav's Waitlist pill (solid, never a gradient), nav links, text on a tinted card, the stage's line |
 | `--muted:#6c6c66` | secondary text (4.75:1 on paper); never on a pastel |
 | `--g2:#a3a39c` | the outline pill's ring, the empty tick ring, field rings; never text |
-| `--g1:#dcdcd7` | skeletons, drain and progress tracks, page dots, the selected sidebar row, the sheet grab bar, the hero stage, an off toggle |
+| `--g1:#dcdcd7` | skeletons, the progress track, page dots, the selected sidebar row, the sheet grab bar, the hero stage, an off toggle |
 | `--hairline:rgba(0,0,0,.08)` | rules and card rings, drawn as `box-shadow`, never a border; row hover and press |
 | `--sky:#cfe0e8` `--butter:#f6e7b2` `--lav:#d8d1ef` `--sage:#dde3d6` | tints, site pages only: each bento card fades from white to one; the panel on `/privacy` and `/security` fades from sky to paper. Text on a tint is `--ink` or `--ink-2` |
 
@@ -136,17 +136,19 @@ Headings `text-wrap:balance`; no mono, no eyebrow, no uppercase label, no grey s
 ### Radii, shadows, motion, layout
 | Token | Use |
 |---|---|
-| `--r-chip:8px` | skeletons, the summary focus ring, the 40 px row thumbnails and type tiles |
+| `--r-chip:8px` | skeletons, the summary focus ring |
 | `--r-field:14px` | the code field, the stage frame, the menu sheet's rows |
-| `--r-card:20px` | every white card, the floating sidebar, the phone's grouped lists |
-| `--r-stage:28px` | the hero stage (16 under 640), bento cards, the privacy and security panel, the QR card, the phone card from 640 |
+| `--r-card:20px` | every white card, the house frame, the floating sidebar, the phone's grouped lists; a row inside is `--r-card` - 6, its 40 px thumbnail `--r-card` - 16 (concentric, section 6) |
+| `--r-stage:28px` | the hero stage (16 under 640), bento cards, the privacy and security panel, the QR card and its ring |
 | `--r-sheet:24px` | the top corners of the viewer's bottom sheet |
-| `--r-pill:9999px` | buttons, chips, the nav pill, toggles, the QR drain bar |
-| `--sh-frame:0 0 0 1px rgba(0,0,0,.06),0 30px 60px -30px rgba(0,0,0,.35)` | the stage frame, the QR card, the phone card from 640 |
+| `--r-pill:9999px` | buttons, chips, the nav pill, toggles |
+| `--sh-frame:0 0 0 1px rgba(0,0,0,.06),0 30px 60px -30px rgba(0,0,0,.35)` | the viewer's page or picture, the QR card |
 | `--sh-nav:0 0 0 0.5px rgba(0,0,0,.08),0 4px 18px rgba(0,0,0,.05)` | the nav pill at the top of the page |
 | `--sh-pill:0 0 0 0.5px rgba(0,0,0,.08),0 10px 30px rgba(0,0,0,.12)` | glass at rest in the app (sidebar, sheet, handle, prev and next, the page count), the nav pill once scrolled, the menu sheet, the skip link |
 | `--side:280px` | the viewer sidebar's width |
 | `--row:60px` | one item row, the viewer sidebar and the phone list alike |
+| `--inset:24px` | the app's corner inset, top and side alike, so both corner controls mirror |
+| `--frame-h:56px` | the house frame's height: Back, Approve on This Device, End, the code card, New Code |
 | `--ease-out:cubic-bezier(.22,1,.36,1)` | the workhorse: reveals, the FAQ, the nav's scrolled look |
 | `--ease-ui:cubic-bezier(.4,0,.2,1)` | press feedback |
 | `--pad:24px` | page side padding; 40 from 640 |
@@ -164,7 +166,7 @@ One recipe, named once (`.glass` in `app.css`, the nav rules use the same tokens
 
 Reduced transparency: `--surface`, no filter. The nav eases background and shadow over 240 ms `--ease-out`; app glass enters with the shared motion only.
 
-White cards are flat on paper with no shadow (the stage frame, the QR card, the phone card from 640 and glass are the only lifted things). Concentric rule: `r_inner = r_outer - inset`, floored at 4 px; a bar holding a pill is a pill. Content width `min(100% - 2 * --pad, 1136px)`; text columns 760. Breakpoints 640, 768, 1024; check at 390, 834 and 1440.
+White cards are flat on paper with no shadow (the viewer's page, the QR card and glass are the only lifted things). Concentric rule: `r_inner = r_outer - inset`, floored at 4 px; a bar holding a pill is a pill. Content width `min(100% - 2 * --pad, 1136px)`; text columns 760. Breakpoints 640, 768, 1024; check at 390, 834 and 1440.
 
 ## 5. Layout
 
@@ -179,17 +181,20 @@ Shared states: focus is `outline:2px solid var(--ink)` on `:focus-visible`, neve
 ### Buttons
 | Type | Look | Use |
 |---|---|---|
-| primary | ink pill, paper label, 48 tall, padding 0 24 (44 under the stage) | the one action per view: Try the demo, Approve, Continue, Present, Revoke, Open vevox.com |
+| primary | ink pill, paper label, 48 tall, padding 0 24 (44 under the stage) | the one action per view: Try the demo, Approve, Continue, Download, Revoke, Open vevox.com |
 | waitlist | `--ink-2` pill, paper label, 44 tall, padding 0 20, 15 px | Waitlist, in the nav only |
-| secondary | outline pill: `inset 0 0 0 1.5px var(--g2)` ring, ink label (40 tall, 15 px in the screen bar) | End, Cancel, Approve on This Device, Download, Download It Instead |
+| secondary | white pill (`--surface`), a `--hairline` ring that darkens to `--g2` on hover, ink label | Cancel, Present, Enter a Code on a narrow screen |
 | text | no fill, 44 hit area | Show as PDF Instead, Add a File (only where no list ends with its row), Enter a Code |
-| stacked (phone pages) | full width, 52 tall, gap 8 | Approve then Cancel; Revoke |
-| round | 44 circle, no fill (`--wash` on hover), or glass with `--sh-pill` | the back arrows; prev and next on the stage, hidden (not disabled-grey) at either end |
+| phone pages | 52 tall, gap 8; side by side from 640 in reading order, the primary last (Cancel then Approve; Ends in then Revoke; Revoke then See It on the Screen); stacked under 640 with the primary on top (`column-reverse`, Apple's order) | Approve, Cancel, Revoke |
+| round | 44 glass circle, `--sh-pill` | prev and next on the stage, hidden (not disabled-grey) at either end |
+
+### House frame (`.framed`)
+The typed code card's look, kept exactly, for every small framed thing: white, `--r-card`, no shadow, `--frame-h` tall, padding 0 20, 17/600, an icon 24 at its start pulled 6 px in; hover adds a `--g2` ring, press scales .97, disabled is .38 with its icon turning. Users: the labeled Back pill (Iconic `arrow-left` and "Back", top left of `/s`, `/a` and `/code`; on a claimed screen it is Start Over), Approve on This Device and End (top right), the session's logo button, the code card (Iconic `copy` at its start; a click copies the code and shows `check` for 1.5 s) and New Code (a `--frame-h` square, Iconic `refresh`). The corner bar holds them at `--inset` from the top and the side, so both corners mirror.
 
 No gradient, no gloss, no destructive variant.
 
 ### Icons
-Only where an icon carries meaning at a glance: the menu button, provider marks, item type tiles (Lucide `presentation`, `file-text`, `image`, `link`), the add tile (`plus`), back (`arrow-left`) and prev/next (`chevron-left`, `chevron-right`), the sheet handle (`chevron-up`), the tick (`check`, stroke 2.5). Never decoration. One style: Lucide, stroke 2, round caps, `currentColor`, `aria-hidden` beside a visible or `aria-label` name. Provider marks ship as small SVGs only where the brand's guidelines allow it; until then the list shows the name only.
+Only where an icon carries meaning at a glance: the menu button, item type tiles (`projector`, `file-text`, `photo`, `link`), the add tile (`plus`), Back (`arrow-left`), prev and next (`chevron-left`, `chevron-right`), the sheet handle (`chevron-up`), the tick (`check`), copy (`copy`), New Code (`refresh`), the warning (`warning-triangle`). Never decoration. One style: the Iconic free set (Make-Lemonade/iconicicons; free licence, any use, no attribution; Pro icons are never used), inline SVG, 24 viewBox, stroke 1.5, round caps and joins, `currentColor`, `aria-hidden` beside a visible or `aria-label` name; the original path data, never redrawn. Provider marks ship as small SVGs only where the brand's guidelines allow it; until then the list shows the name only.
 
 ### Top nav (every site page)
 `<header class="nav">` holding `<nav class="nav-pill" aria-label="Primary">`: fixed 14 px from the top (10 under 640), centered, `pointer-events` only on the pill. The pill: 60 tall, padding 0 8 0 16, gap 6, glass (section 4), `--sh-nav`. Contents: the logo and bloop (home, 19 px); the links Features, Privacy, Security (44 tall, padding 0 14, a pill hover of `--wash`; `aria-current="page"` on the page's own link); the Waitlist pill. Scrolled: once a 12 px sentinel at the top of the landing leaves the view (an `IntersectionObserver` in `site.js`, never a scroll listener), `is-scrolled` raises the glass to `--glass-firm` and the shadow to `--sh-pill` over 240 ms `--ease-out`; no hide on scroll, no size change. Other site pages keep the resting look (they run no script).
@@ -215,113 +220,116 @@ Width 1136, a top hairline, padding 56 above. A row that wraps: at the start the
 One soft full-bleed panel under the h1 of `/privacy` and `/security`: 1136 wide (the viewport less the padding below that), centered on the text column, `--r-stage`, a fade from sky to paper, padding 24 (56 from 768). It holds two groups side by side from 768: "What the screen gets" (rows with an on toggle) and "What stays on your phone" (rows with an off toggle). A group is a 17/600 label over a white `--r-card` list of 56 px rows, 600 text at the start, a 40 x 24 toggle at the end (`aria-hidden`; on is ink with the knob right, off `--g1` with the knob left). It is a picture of the split, not a control.
 
 ### Item row (the viewer sidebar and the phone list, one face: `core/rows.js`)
-`--row` tall, gap 12. Leading 40 px square, `--r-chip`, a `--hairline` ring: a picture where one exists without a mint (page 1 of the demo deck and PDF, the demo photo's own 120 px thumbnail), else a `--paper` type tile with a 20 px glyph. Line 1 the name 17/600, one line, ellipsis in the middle so the extension stays. Line 2 14 `--muted`: the kind (PowerPoint, PDF, JPEG image, PNG image, WebP image; a link reads "Link"), then " · " and the size when the item has bytes (a link: its host), then a date only when the source gives one (a live phone: "Edited 10 min ago"; demo items show none rather than a made-up one). Files A to Z, then links.
+`--row` tall, padding 10, gap 12, inside a `--r-card` container with padding 6, so the row is `--r-card` - 6 (14) and its leading 40 px square, 10 in, `--r-card` - 16 (4), with a `--hairline` ring: a picture where one exists without a mint (page 1 of the demo deck and PDF, the demo photo's own 120 px thumbnail), else a `--paper` type tile with a 24 px ink glyph. The handle stands alone at `--r-card`, so its thumbnail is `--r-card` - 10. Separators between phone rows run from the text edge (62) to 10 from the end. Line 1 the name 17/600, one line, ellipsis in the middle so the extension stays. Line 2 14 `--muted`: the kind (PowerPoint, PDF, JPEG image, PNG image, WebP image; a link reads "Link"), then " · " and the size when the item has bytes (a link: its host), then a date only when the source gives one (a live phone: "Edited 10 min ago"; demo items show none rather than a made-up one). Files A to Z, then links.
 
 ## 7. Screens
 
 ### Screen page (`/s`, the room PC; `/s?mode=demo`, the Demo Room)
 Checked at 1440, 834 and the narrowest window. Model for the viewer: the iCloud Drive web app, restated in bloop's tokens; each deviation and its reason is in "Viewer deviations" below.
-- **Bar:** no site header (a kiosk page). It floats over the page (absolute, padding 14 `--pad`), so what the page holds is centered on the whole viewport. Top left: the back arrow home (waiting, busy states), the back arrow as Start Over (scanned, choosing, a guest's offer), or in a session the logo and bloop, which ends the session and then goes home. Top right: Approve on This Device (demo, waiting, 40 tall) or End (in a session). "Session Ended" shows nothing else.
-- **Waiting, truly centered, one column, gap 16:** the room name (28/600); the QR card (white, `--r-stage`, padding 24, `--sh-frame`; the QR at half the viewport height, section 10); inside the card under the QR a 4 px drain bar, QR wide, `--g1` track, ink fill that drains right to left over the code's life (`scaleX(1 - elapsed)` from the left edge, 1 s linear steps, `aria-hidden`); a code card (white, `--r-card`, padding 12 20, the code 22/600 tabular, +0.06em); one line 14 `--muted`: "Scan with your phone, or enter the code at {host}/code".
-- **Claimed:** "Check your phone." over the QR card at .12, the match digits 120/600 tabular over it; no code card, no line.
+- **Corner bar** (`/s`, `/a`, `/code` alike): no site header (a kiosk page). It floats over the page (absolute, `--inset` from the top and the side), so what the page holds is centered on the whole viewport; every control in it is the house frame (section 6). Top left: Back home (waiting, busy states), Back as Start Over (scanned, choosing, a guest's offer), or in a session the logo and bloop, which ends the session and then goes home. Top right: Approve on This Device (demo, waiting) or End (in a session). "Session Ended" shows nothing else.
+- **Waiting, truly centered.** The QR card: white, `--r-stage`, `--sh-frame`, no padding of its own: the QR's 4-module quiet zone is the padding (the QR at half the viewport height, section 10). Its edge is the countdown: a 4 px ink stroke on the card's rounded edge (an SVG `rect`, `pathLength=100`, half outside the card, so it never touches a module) that starts at the top center and shortens toward it, clockwise, over the code's life (`stroke-dasharray` set once a second, a 1 s linear transition between steps; under reduced motion the safety net drops the transition, so it steps once a second; `aria-hidden`). Then two short lines, "Scan with your phone." / "Or enter the code at {host}/code", and the code row: the code card (house frame, Iconic `copy` at its start, the code 22/600 tabular, +0.06em) beside New Code.
+  - **Wide (900 and up, landscape):** two columns, centered as a block, gap 48 to 112: the QR card on the left; on the right the room name (56 to 96 px, 600, -0.035em), the two lines at 28 px `--ink-2`, then the code row. Under that, one column: the room name 44, the card, the lines at 17 `--muted`, the code row.
+  - **New Code:** ends the waiting screen (`POST /api/screen/end`, which closes a waiting screen and frees its demo slot) and creates a new one by the boot path (fresh QR, code and full ring); disabled, its arrow turning, until the new screen's view arrives; a refused create shows the rate-limited state and retries as boot does.
+- **Claimed:** "Check Your Phone" over the QR card at .12, the match digits 120/600 tabular over it; no ring, no code row, no lines.
 - **Busy states** (live launch states, offline, service down, rate limited, error): the heading and line centered, no QR.
 - **Ended:** "Session Ended" centered alone, no bar controls; a fresh code after `ENDED_QR_RETURN_MS` (3 s; the server holds `ended` that long).
 - **Footer line** on a live screen in every state: "Phone not with you? Sign in to this PC as usual." None on a demo screen, which has no PC to sign in to.
-- **Under 600:** a live screen shows "Open this on the room's screen." (32) / "Then scan its code with your phone." / Enter a Code and starts nothing. A demo screen runs, with no QR: the visitor approves on the same device.
+- **Under 600:** a live screen shows "Open This on the Room's Screen" (32) / "Then scan its code with your phone." / Enter a Code and starts nothing. A demo screen runs, with no QR and no "Scan with your phone.": the visitor approves on the same device.
 
 **The viewer (`/s?mode=demo`, approved to open; `viewer.js`).** Built from the screen's view, so a reload shows it again; nothing launches.
-- **Sidebar (2 items or more):** a floating glass panel, `--side` wide, 76 px from the top, 12 from the left and bottom, `--r-card`, padding 8, `--sh-pill`, its own scroll. Item rows (section 6) as buttons, radius 12; the selected row `--g1` with `aria-current`, hover `--hairline`, both instant. Links follow the files under one hairline inset 64 px (to the text edge). The page column moves right of it.
+- **Sidebar (2 items or more):** a floating glass panel, `--side` wide, under the corner bar and `--inset` from the left and bottom, `--r-card`, padding 6, `--sh-pill`, its own scroll. iCloud Drive's cues: a header "Items" (14/600 `--muted`, as its sidebar headers); item rows (section 6) as buttons; the selected row `--g1` with `aria-current`, filled ink with paper text while the list holds focus (its tint fill, in bloop's one ink), hover `--wash`, all instant. Links follow the files under one hairline from the text edge. The page column moves right of it. The stage then carries no visible name: the sidebar shows it (the h1 stays for screen readers).
 - **Under 768:** the sidebar becomes a glass bottom sheet (`popover`, opened by a handle row under the actions: the current item's row, "4 items" and a chevron): full width, `max-height:min(72dvh,600px)`, `--r-sheet` top corners, a 36 x 4 `--g1` grab bar, backdrop `rgba(0,0,0,.18)`, rising from below over 300 ms `--ease-out` (`@starting-style`); light dismiss, Escape, or a pick closes it.
-- **Stage:** the item's name (22/600, one line, ellipsis) over the frame: white, `--r-field`, `--sh-frame`, 16:9, as wide as the window allows while the name, the pager and the actions stay on screen; content contained and letterboxed white.
-  - Deck or PDF (the demo account's): its pre-rendered pages (`public/img/demo-slide-*`, the same pages for both; alt "Slide 1 of 2" or "Page 1 of 2"). Under the frame one row, gap 12, one centerline: prev, the indicator, next (44 px glass circles, hidden at either end). 6 pages or fewer: 7 px dots, the current one ink; more: an "n of N" pill 32 tall, 14/600 tabular. Arrow keys and Page Up/Down step pages; a 40 px horizontal swipe too.
-  - Image: its minted view link in an `<img>`, contained. The `<img>` is kept for the session and dropped at the end: the CSP has no `blob:`, and a second mint would spend the item's budget. Until the link arrives the frame is empty white; a refused mint shows the card.
-  - Link: a white card, max 440, `--r-card`, padding 32: the type tile, the host 22/600, the title 14 `--muted`, and "Open vevox.com" (primary, `target="_blank"`, `rel="noopener noreferrer"`, https only). Never a frame.
+- **Stage:** with no sidebar, the item's name (22/600, one line, ellipsis) on top. The stage fills the height left between the corner bar and the pager and actions; the page or picture is the frame itself (`--r-field`, `--sh-frame`), at its own aspect ratio, as large as fits both ways (`max-width` and `max-height` 100% in a one-cell grid), so nothing is ever cut or letterboxed.
+  - Deck or PDF (the demo account's): its pre-rendered pages (`public/img/demo-slide-*`, the same pages for both; alt "Slide 1 of 2" or "Page 1 of 2"). Under the frame one row, gap 12, one centerline: prev, the indicator, next (44 px glass circles, hidden at either end). 6 pages or fewer: 7 px dots, the current one ink; more: an "n of N" pill 32 tall, 14/600 tabular. Arrow keys and Page Up/Down step pages.
+  - Image: its minted view link in an `<img>`, contained. The `<img>` is kept for the session and dropped at the end: the CSP has no `blob:`, and a second mint would spend the item's budget. Until the link arrives the stage is empty; a refused mint shows the card.
+  - Link: a white card, max 440, `--r-card`, padding 32, centered in the stage: the type tile, the host 22/600, the title 14 `--muted`, and "Open vevox.com" (primary, `target="_blank"`, `rel="noopener noreferrer"`, https only). Never a frame.
   - A guest's own file (no pages, no view): the same card with its kind and size.
-- **Actions,** one centered row under the stage, gap 8, 44 tall, only those that apply: Present (primary; full screen of the frame, for pages and a loaded image, where the browser allows it) and Download (secondary; a file once the session has left `approved`; it mints that item's download link, or restarts one it started under a minute ago).
+- **Actions,** one centered row under the stage, gap 8, 44 tall, only those that apply: Present (secondary, white; full screen of the stage on ink, for pages and a loaded image, where the browser allows it) then Download (primary, ink; a file once the session has left `approved`; it mints that item's download link, or restarts one it started under a minute ago).
 - **One item:** no sidebar and no handle; a lone deck or PDF is stage plus pager and actions, a lone image the stage and its actions, a lone link the centered card.
 
 | State | Heading | Line | Controls |
 |---|---|---|---|
 | waiting | Room 2.14 (or "Unregistered screen") `[V-7]`; Demo Room | (the code card and its line) | demo: Approve on This Device (a same-tab link to `/a?c=` the code) |
-| scanned, choosing | Check your phone. | It should show 42. (for screen readers only: the digits are on the QR card) | back arrow = Start Over |
-| approved (live) | Approved. | Opening Lecture 4.pptx. | End |
-| opening (live) | Opening Lecture 4.pptx | in PowerPoint on this PC. | End; Download It Instead (after 5 s); Open (primary) only when the launch had no user gesture or a popup was blocked |
-| open (live) | Lecture 4.pptx is open in PowerPoint. (only after a PowerPoint launch; otherwise "Lecture 4.pptx is open.") | Ends by itself at 11:35. `[V-2]` | End, Download It Instead |
+| scanned, choosing | Check Your Phone | It should show 42. (for screen readers only: the digits are on the QR card) | Back = Start Over |
+| approved (live) | Approved | Opening Lecture 4.pptx. | End |
+| opening (live) | Opening Lecture 4.pptx | In PowerPoint on this PC. | End; Download It Instead (after 5 s); Open (primary) only when the launch had no user gesture or a popup was blocked |
+| open (live) | Lecture 4.pptx Is Open in PowerPoint (only after a PowerPoint launch; otherwise "Lecture 4.pptx Is Open") | Ends by itself at 11:35. `[V-2]` | End, Download It Instead |
 | demo, approved to open | the item on the stage | (the viewer) | End; Present, Download as they apply |
-| open fallback | PowerPoint didn't open. | Download the file, then open it from Downloads. | Download, Show as PDF Instead (text), End |
-| PDF fallback | Showing Lecture 4.pptx as a PDF. | PowerPoint can't open it on this PC. Animations and videos won't play. | End |
+| open fallback | PowerPoint Didn't Open | Download the file, then open it from Downloads. | Download, Show as PDF Instead (text), End |
+| PDF fallback | Showing Lecture 4.pptx as a PDF | PowerPoint can't open it on this PC. Animations and videos won't play. | End |
 | PDF file | Lecture 4.pdf | Opened as a PDF. (the file is a PDF, so nothing failed) | End |
-| guest offer | Talk.pptx | Sent by a guest. Open it here when you're ready. | Open, back arrow = Start Over |
-| guest file open (live) | Talk.pptx is open in PowerPoint. | bloop deletes its copy when this ends at 11:35. `[V-5]` | End |
+| guest offer | Talk.pptx | Sent by a guest. Open it here when you're ready. | Open, Back = Start Over |
+| guest file open (live) | Talk.pptx Is Open in PowerPoint | bloop deletes its copy when this ends at 11:35. `[V-5]` | End |
 | ended | Session Ended | | none |
 | expired | no change: the code already refreshed; the phone explains | | |
-| offline | This screen is offline. | Reconnecting. After 5 s add: Sign in to this PC as usual to open your slides. | none (retry 5 s, backing off to 30 s) |
-| service down | bloop isn't responding. | Sign in to this PC as usual. | none |
-| rate limited (creating the screen was refused, `rate_limited`) | Too many demos open right now. (`/s?mode=demo`); Too many screens started here. (live) | Try again in a few minutes. | none (retries by itself: 5 s, 10 s, then every 30 s) |
-| error | Unable to open Lecture 4.pptx. | Try again on your phone, or sign in to this PC as usual. | none (new QR after 5 s) |
+| offline | This Screen Is Offline | Reconnecting. After 5 s add: Sign in to this PC as usual to open your slides. | none (retry 5 s, backing off to 30 s) |
+| service down | bloop Isn't Responding | Sign in to this PC as usual. | none |
+| rate limited (creating the screen was refused, `rate_limited`) | Too Many Demos Open Right Now (`/s?mode=demo`); Too Many Screens Started Here (live) | Try again in a few minutes. | none (retries by itself: 5 s, 10 s, then every 30 s) |
+| error | Unable to Open Lecture 4.pptx | Try again on your phone, or sign in to this PC as usual. | none (new QR after 5 s) |
 
 Each heading change is announced in a `role="status"` region; error uses `role="alert"`. A live screen keeps its PowerPoint launch ladder; the viewer is the demo's.
 
 **Viewer deviations from the iCloud Drive model (each with its reason)**
 | bloop | iCloud Drive | Why |
 |---|---|---|
-| floating glass sidebar, 280 wide, inset 12 | flat full-height pane, 250, 1 px divider | the owner's ruling: one glass across the product; wider because rows carry larger type read from across a room |
+| floating glass sidebar, 280 wide, at `--inset` | flat full-height pane, 250, 1 px divider | the owner's ruling: one glass across the product; wider because rows carry larger type read from across a room |
 | 60 px two-line rows, 40 px thumbnails, name 17/600 | 32 px one-line rows, 20 px glyphs; list rows 41 or 61 px, 24 px thumbnails, name 17/400 | read from a distance; kind and size fold into line 2 because a column layout needs 600 px or more; 600 because the system has only 400 and 600 |
-| selected row `--g1`, no tint fill | gray5, tint fill when focused | bloop has no accent; the ink focus ring carries keyboard focus |
-| no section labels, no row separators, one inset rule before the links | headers, 1 px separators | 1 to 12 items need no labels; separators add noise beside a selected row |
-| no sort headers, no path bar | sort menu, 35 px path bar | a fixed order (files A to Z, links last), and the stage title already names the item; 12 px is unreadable from the back of a room |
+| selected row `--g1`, ink fill when the list holds focus | gray5, tint fill when focused | bloop's controls have no accent color; ink is its one fill |
+| one header ("Items"), no row separators, one inset rule before the links | headers per section, 1 px separators | one section; separators add noise beside a selected row |
+| no sort headers, no path bar, no name over the stage | sort menu, 35 px path bar | a fixed order (files A to Z, links last), and the selected row already names the item; 12 px is unreadable from the back of a room |
 | bottom sheet under 768 | the pane slides in over the content | the stage must stay visible under the list |
 | prev and next under the frame, in one row with the indicator | (no stage) | the plan wants buttons, dots and count on one centerline; on the frame's edges they would cover the slide |
 | QR at half the viewport height, match digits 120 | spec draft: QR 240, digits 64 | the distance table in section 10: 240 px reads to about 1.5 m on a 65 inch display |
-| the drain bar's fill shrinks toward the left | spec draft: `transform-origin:right` | the plan says it drains right to left; a right origin would empty it from the left |
+| the countdown is the QR card's own edge | spec draft: a 4 px bar under the QR | the owner's ruling: the frame is the timer, as a watch ring; the bar was one more thing under the code |
 | reduced motion swaps at once | spec draft: a 150 ms cross-fade | the house safety net at the end of `app.css` already turns every animation off; one rule, no exception |
 
 ### Phone page (`/a`, opened by the camera)
-- **Frame** (`/a` and `/code` alike): a column, max 440, padding 12 `--pad` above `env(safe-area-inset-bottom)`; from 640 the same column as a white card (`--r-stage`, padding 24, `--sh-frame`) centered both ways, its inner cards on `--paper`. Header: the back arrow (44, left; home, or back to `/s?mode=demo` when this tab is also the demo screen), the logo 32 and bloop 22/600 centered, linking home.
-- **Approve:** the title is the room (28/600, centered; "Registered screen" 14 `--muted` under a registered room `[V-7]`); the code card ("Code on screen" 14 `--muted`, the digits 44/600 tabular, `--r-card`, padding 16 20); "Gives access to" (14/600 `--muted`, inset 20) over a grouped list (`--r-card`, separators inset 68 px): one row per item (section 6), the whole 60 px row a checkbox, a trailing light tick (Lucide `check` 20, stroke 2.5, ink, no disc) on ticked rows and nothing on the rest, press `--hairline`; the last row "Add a file" (a `--paper` plus tile, no tick) opens the guest path. A demo room ticks its whole catalog; a live phone starts with its newest file. Then the scope line (live only) and Approve then Cancel, stacked.
-- **Approved:** "Authorized on Demo Room" (no period), the approved items read only with their ticks, "Ends in 59:12" (15 `--muted` tabular, counted down here from the view's `endsAt` and `now`) `[V-2]`, and Revoke (primary), which ends the session as End did.
+- **Frame** (`/a` and `/code` alike): the corner bar with Back alone (home, or back to `/s?mode=demo` when this tab is also the demo screen; no logo), then a column on paper, max 480, one viewport tall, padding `--pad`, its buttons at the foot. The list scrolls inside its own card, so the buttons stay in reach.
+- **Desktop (900 and up, with a list):** two columns, max 1040, gap 64: the room title (48), its lines, the scope and the buttons side by side on the left (400); the list on the right, scrolling within the viewport.
+- **Approve:** the title is the room (34/600, -0.035em, left, as the screen's room title; "Registered screen" 14 `--muted` under a registered room `[V-7]`); then the list, no label over it (`aria-label="Items"`): one row per item (section 6), the whole 60 px row a checkbox, a trailing Iconic `check` on ticked rows and nothing on the rest, press `--wash`; the last row "Add a file" (a `--paper` plus tile, no tick) opens the guest path. A demo room ticks its whole catalog; a live phone starts with its newest file. Then the scope line (live only) and Cancel then Approve. The match digits ride on the primary, "Approve (Code 42)" (and "Send (Code 42)" for a guest): the person compares them with the screen before the tap that commits, so they sit where the eye already is.
+- **Approved:** "Authorized on Demo Room", the approved items read only with their ticks, then "Ends in 59:12" (15 `--muted` tabular, counted down here from the view's `endsAt` and `now`) `[V-2]` and Revoke (primary), which ends the session as End did.
 
 | State | Title | Body | Buttons |
 |---|---|---|---|
 | checking | (skeleton title bar) | Checking the code | none |
-| match | Room 2.14 | the code card over a skeleton list | continues to choose |
+| match | Room 2.14 | a skeleton list | continues to choose |
 | choose (nothing ticked) | Room 2.14 | the list | none besides the Add a file row |
-| approve | Room 2.14 | the list; Only the items you tick go to the screen. The screen never gets your account. `[V-4]` | Approve, Cancel |
-| approve, demo | Demo Room | the list, the whole catalog ticked | Approve, Cancel |
-| unregistered screen | as approve, plus one card (Lucide `triangle-alert` 20, sentence in `--ink` 600; no tint, no stripe) | This screen isn't registered. Only approve if you can see it in front of you. `[V-7]` | Approve, Cancel |
-| (choose, approve, unregistered screen, signed in to OneDrive) | as that state | as that state | plus Disconnect OneDrive (text): deletes bloop's stored access and signs this phone out, then shows first use |
-| first use | Connect your OneDrive. | bloop reads your slides from OneDrive. You do this once, on this phone. `[V-9]` | Connect OneDrive, Cancel, Add a File (text, the guest path) `[V-10]` |
-| needs admin | Your organization needs to approve bloop. | Ask your IT team, or sign in to the PC as usual. | Done |
+| approve | Room 2.14 | the list; Only the items you tick go to the screen. The screen never gets your account. `[V-4]` | Cancel, Approve (Code 42) |
+| approve, demo | Demo Room | the list, the whole catalog ticked | Cancel, Approve (Code 42) |
+| unregistered screen | as approve, plus one card (Iconic `warning-triangle`, sentence in `--ink` 600; no tint, no stripe) | This screen isn't registered. Only approve if you can see it in front of you. `[V-7]` | Cancel, Approve (Code 42) |
+| (choose, approve, unregistered screen, signed in to OneDrive) | as that state | as that state | Disconnect OneDrive (text) first: deletes bloop's stored access and signs this phone out, then shows first use |
+| first use | Connect Your OneDrive | bloop reads your slides from OneDrive. You do this once, on this phone. `[V-9]` | Add a File (text, the guest path) `[V-10]`, Cancel, Connect OneDrive |
+| needs admin | Your Organization Needs to Approve bloop | Ask your IT team, or sign in to the PC as usual. | Done |
 | sign-in declined (`/auth/callback` page) | bloop wasn't given access. | bloop can't read your slides without it. Scan the code on the screen to try again. | Enter a Code |
 | sign-in failed (`/auth/callback` page: state, issuer, exchange) | Couldn't sign you in. | Scan the code on the screen to try again, or sign in to the PC as usual. | Enter a Code |
 | needs admin (`/auth/callback` page) | as needs admin | as needs admin | none |
-| empty | No slides found. | Save a .pptx file to OneDrive, then scan again. | Done, Add a File (text) |
-| approving | as approve | | Approving... (button loading), Cancel |
+| empty | No Slides Found | Save a .pptx file to OneDrive, then scan again. | Add a File (text), Done |
+| approving | as approve | | Cancel, Approving... (button loading) |
 | opening, open | Authorized on Room 2.14 | the items read only; Ends in 59:12 | Revoke |
-| (opening, open and guest sent, when this tab is also the demo screen) | as that state | as that state | See It on the Screen (primary, back to `/s?mode=demo`) first; Revoke becomes secondary |
-| open fallback | PowerPoint didn't open on the screen. | Tap Download on the screen to open it there. | Revoke |
-| PDF fallback | Showing as a PDF on Room 2.14. | PowerPoint can't open it there. Animations and videos won't play. | Revoke |
-| PDF file | Opened as a PDF on Room 2.14. | Lecture 4.pdf | Revoke |
-| ended | Ended. | The screen's link to your file has stopped working. `[V-1]` | Done |
-| canceled | Canceled. | Nothing was opened on the screen. | Done |
-| expired | This code has expired. | Scan the new code on the screen. | Enter a Code (text) |
-| taken | This code was already used. | Scan the new code on the screen. | Enter a Code (text) |
-| offline | You're offline. | Connect to Wi-Fi or mobile data, then try again. | Try Again |
-| error | Unable to open your slides. | Check the file opens on your phone, then try again. | Try Again |
-| guest: choose | Send a file to Room 2.14? | Choose one file from this phone. Only this file goes to the screen. | Choose File, Cancel |
-| guest: confirm | Send Talk.pptx to Room 2.14? | bloop deletes its copy when this ends. `[V-5]` | Send, Cancel |
+| (opening, open and guest sent, when this tab is also the demo screen) | as that state | as that state | Revoke becomes secondary, then See It on the Screen (primary, back to `/s?mode=demo`) |
+| open fallback | PowerPoint Didn't Open on the Screen | Tap Download on the screen to open it there. | Revoke |
+| PDF fallback | Showing as a PDF on Room 2.14 | PowerPoint can't open it there. Animations and videos won't play. | Revoke |
+| PDF file | Opened as a PDF on Room 2.14 | Lecture 4.pdf | Revoke |
+| ended | Ended | The screen's link to your file has stopped working. `[V-1]` | Done |
+| canceled | Canceled | Nothing was opened on the screen. | Done |
+| expired | This Code Has Expired | Scan the new code on the screen. | Enter a Code (text) |
+| taken | This Code Was Already Used | Scan the new code on the screen. | Enter a Code (text) |
+| offline | You're Offline | Connect to Wi-Fi or mobile data, then try again. | Try Again |
+| error | Unable to Open Your Slides | Check the file opens on your phone, then try again. | Try Again |
+| guest: choose | Send a File to Room 2.14? | Choose one file from this phone. Only this file goes to the screen. | Cancel, Choose File |
+| guest: confirm | Send Talk.pptx to Room 2.14? | bloop deletes its copy when this ends. `[V-5]` | Cancel, Send (Code 42) |
 | guest: sending | Sending Talk.pptx | (progress bar) | Cancel |
-| guest: file refused | This file can't be sent. | Choose a .pptx or .pdf file under {N} MB. `[V-10]` | Choose File |
-| guest: sent | Sent to Room 2.14. | Open it on the screen when you're ready. | Cancel |
-| guest: pass needed | Ask your host for a guest link. | Open it on this phone, then scan the code again. | Done |
-| guest: off | This screen can't take files. | Sign in to the PC as usual to open your file. (the room's guest drop is switched off) | Done |
-| rate limited | Too many tries. | Wait a minute, then scan the code again. | Done |
-| busy (storage full, or this month's R2 operation cap reached) | bloop can't take files right now. | Try again in a few minutes, or sign in to the PC as usual. | Done |
-| framed | Open this page directly to approve. | | none |
+| guest: file refused | This File Can't Be Sent | Choose a .pptx or .pdf file under {N} MB. `[V-10]` | Choose File |
+| guest: sent | Sent to Room 2.14 | Open it on the screen when you're ready. | Cancel |
+| guest: pass needed | Ask Your Host for a Guest Link | Open it on this phone, then scan the code again. | Done |
+| guest: off | This Screen Can't Take Files | Sign in to the PC as usual to open your file. (the room's guest drop is switched off) | Done |
+| rate limited | Too Many Tries | Wait a minute, then scan the code again. | Done |
+| busy (storage full, or this month's R2 operation cap reached) | bloop Can't Take Files Right Now | Try again in a few minutes, or sign in to the PC as usual. | Done |
+| framed | Open This Page Directly to Approve | | none |
 
 The page moves focus to the new title on each state change. "its copy" is deliberate: bloop's stored upload is deleted, but a downloaded copy on the PC is open item 1.
 
-Typed code page (`/code`, the same frame): title "Enter the code on the screen."; one field 56 tall, `--r-field`, of 16 px or more, 6 characters, label "Code", `autocapitalize="characters"`, `autocomplete="one-time-code"`, `inputmode="text"`, shown in two groups of 3; Continue (primary) enabled at 6 characters; a wrong code shows "Check the code on the screen and try again." beside the field; success goes to the match state.
+Typed code page (`/code`, the same frame, one column): title "Enter the Code on the Screen"; one field 56 tall, `--r-field`, of 16 px or more, 6 characters, label "Code", `autocapitalize="characters"`, `autocomplete="one-time-code"`, `inputmode="text"`, shown in two groups of 3; Continue (primary) enabled at 6 characters; a failed claim shows one sentence beside the field (`typedError` in `copy.js`: "Check the code on the screen and try again.", or the expired, used, offline and too-many-tries sentences); success goes to the match state.
 
 ### Security page (`/security`; `/it` answers 301 to it from `public/_redirects`)
 h1 "The screen never gets your account." `[V-4]`, then the panel (section 6): What the screen gets: "The items you approve", "A link to each, which expires"; What stays on your phone: "Your account", "Your other files". Then four points:
@@ -359,7 +367,7 @@ Then the detail table (each row `[V-5]` until the build confirms it; compact sta
 
 ## 8. Motion
 
-One language: `--ease-out` for anything that appears or moves, `--ease-ui` for presses, linear for progress and opacity dips. Only `transform` and `opacity` animate, plus the FAQ's height and the nav's glass. A scene change on `/s` runs through the View Transitions API (`view-transition-name:pane` on the page column, the root unanimated); without it the column replays the same enter keyframes by a class. Glass enters with the scene and nothing else: no refraction, no sheen.
+One language: `--ease-out` for anything that appears or moves, `--ease-ui` for presses, linear for progress and opacity dips. Only `transform` and `opacity` animate, plus the FAQ's height and the nav's glass. A scene change on `/s` replays the enter keyframes on the page column by a class (no View Transitions: one path, and the bytes went to the v3.1 controls). Glass enters with the scene and nothing else: no refraction, no sheen.
 
 | What | When | Duration | Easing |
 |---|---|---|---|
@@ -368,12 +376,13 @@ One language: `--ease-out` for anything that appears or moves, `--ease-ui` for p
 | FAQ open, close | toggle | 380 ms height, 250 ms fade, 300 ms "+" turn | `--ease-out` |
 | nav scrolled | the top sentinel leaves or enters view | 240 ms glass and shadow | `--ease-out` |
 | QR refresh | every 60 s | 150 ms out, 150 ms in | linear opacity |
-| `/s` drain bar | each second | 1 s | linear |
-| `/s` scene change (a state, or the item on the stage) | enter | 380 ms opacity 0 and 12 px rise to rest; the old scene leaves over 220 ms to opacity 0 and -4 px | `--ease-out` |
+| `/s` QR ring | each second | 1 s between steps | linear |
+| New Code arrow | while the new screen loads | 0.8 s a turn | linear |
+| `/s` scene change (a state, or the item on the stage) | enter | 380 ms opacity 0 and 12 px rise to rest | `--ease-out` |
 | viewer bottom sheet | open | 300 ms from below | `--ease-out` |
 | page step, row selection, hover | input | instant | |
 
-Reduced motion (`prefers-reduced-motion:reduce`): the stage rests flat; the FAQ switches instantly; the `/s` drain bar updates in 10 s steps; scene changes swap at once; the blanket rule at the end of `app.css` is the safety net. Nothing autoplays; the QR refresh is essential (a code must expire), so it has no pause.
+Reduced motion (`prefers-reduced-motion:reduce`): the stage rests flat; the FAQ switches instantly; the `/s` QR ring steps once a second with no glide; scene changes swap at once; the blanket rule at the end of `app.css` is the safety net. Nothing autoplays; the QR refresh is essential (a code must expire), so it has no pause.
 
 ## 9. Logo and social image
 
@@ -412,7 +421,7 @@ Stack and system architecture: `docs/architecture.md` and `docs/adr/`.
 | Metric | Landing | `/s` | `/a` |
 |---|---|---|---|
 | First-view requests | 5 or fewer (HTML, CSS, font, site.js, favicon) | 6 or fewer | 5 or fewer |
-| CSS, font, browser JS, landing JS | the `size-limit` entries in `package.json`, the only owner | same | same |
+| CSS, font, browser JS, landing JS | the `size-limit` entries in `package.json`, the only owner. The v3.1 app pass raised browser JS and the CSS entry, after cutting the swipe handler, the View Transitions path and long header comments: the house frame, the QR ring, Copy and New Code, the match digits on Approve, and the approver's desktop layout cost more than the cuts gave back | same | same |
 | LCP | 1.2 s desktop, 1.8 s on slow 4G [2.5 s] | 1.5 s | 1.5 s on 4G |
 | CLS | 0.02 [0.1] | 0 | 0.02 |
 | INP | 100 ms [200 ms] | 100 ms | 100 ms |
