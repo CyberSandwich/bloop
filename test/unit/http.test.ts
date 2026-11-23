@@ -1,0 +1,118 @@
+import { describe, expect, it } from "vitest";
+import { z } from "zod";
+import { MAX_FRAME_BYTES, phoneFrame, screenFrame } from "../../src/worker/frames.ts";
+import { bearer, checkWrite, fail, readJson } from "../../src/worker/http.ts";
+
+const ORIGIN = "https://bloop.example";
+const post = (headers: Record<string, string>, body = "{}") =>
+  new Request(`${ORIGIN}/api/approve`, { method: "POST", headers, body });
+const GOOD = { Origin: ORIGIN, "Content-Type": "application/json", "Sec-Fetch-Site": "same-origin" };
+
+const code = async (r: Response | null) => (r ? ((await r.json()) as { code: string }).code : null);
+
+describe("PAIR-06 csrf: checkWrite", () => {
+  it("accepts a same-origin JSON post, with or without Sec-Fetch-Site", async () => {
+    expect(checkWrite(post(GOOD), ORIGIN)).toBeNull();
+    expect(checkWrite(post({ Origin: ORIGIN, "Content-Type": "application/json; charset=utf-8" }), ORIGIN)).toBeNull();
+  });
+
+  it("refuses a cross-origin or missing Origin", async () => {
+    expect(await code(checkWrite(post({ ...GOOD, Origin: "https://evil.example" }), ORIGIN))).toBe("forbidden_origin");
+    expect(await code(checkWrite(post({ ...GOOD, Origin: `${ORIGIN}.evil.example` }), ORIGIN))).toBe(
+      "forbidden_origin",
+    );
+    expect(await code(checkWrite(post({ "Content-Type": "application/json" }), ORIGIN))).toBe("forbidden_origin");
+    expect(await code(checkWrite(post({ ...GOOD, Origin: "null" }), ORIGIN))).toBe("forbidden_origin");
+  });
+
+  it("refuses a request the browser marks cross-site", async () => {
+    for (const site of ["cross-site", "same-site", "none"]) {
+      expect(await code(checkWrite(post({ ...GOOD, "Sec-Fetch-Site": site }), ORIGIN))).toBe("forbidden_origin");
+    }
+  });
+
+  it("refuses a form post and a missing content type with 415", async () => {
+    for (const type of [
+      "application/x-www-form-urlencoded",
+      "text/plain",
+      "multipart/form-data",
+      "application/jsonx",
+      "",
+    ]) {
+      const headers: Record<string, string> = { Origin: ORIGIN };
+      if (type) headers["Content-Type"] = type;
+      const r = checkWrite(post(headers), ORIGIN);
+      expect(r?.status, type).toBe(415);
+    }
+  });
+});
+
+describe("readJson", () => {
+  const schema = z.object({ fileId: z.string().min(1) }).strict();
+  const read = (body: string) => readJson(post(GOOD, body), schema);
+
+  it("parses a valid body and treats an empty body as {}", async () => {
+    expect(await read('{"fileId":"a"}')).toEqual({ ok: true, value: { fileId: "a" } });
+    const empty = await readJson(post(GOOD, ""), z.object({}).strict());
+    expect(empty.ok).toBe(true);
+  });
+
+  it("refuses unknown keys, wrong types, bad JSON and oversized bodies with 400", async () => {
+    for (const body of ['{"fileId":"a","x":1}', '{"fileId":1}', "{", "[]", `{"fileId":"${"a".repeat(5000)}"}`]) {
+      const r = await read(body);
+      expect(r.ok, body.slice(0, 20)).toBe(false);
+      expect(!r.ok && r.response.status).toBe(400);
+    }
+  });
+});
+
+describe("http helpers", () => {
+  it("fail() takes the status from the shared error table", async () => {
+    const r = fail("code_expired");
+    expect(r.status).toBe(410);
+    expect(r.headers.get("Content-Type")).toBe("application/problem+json");
+    expect(await r.json()).toEqual({ type: "about:blank", status: 410, code: "code_expired" });
+  });
+
+  it("bearer reads only a Bearer header", () => {
+    const req = (auth?: string) => new Request(ORIGIN, auth ? { headers: { Authorization: auth } } : {});
+    expect(bearer(req("Bearer abc"))).toBe("abc");
+    expect(bearer(req("Basic abc"))).toBeNull();
+    expect(bearer(req())).toBeNull();
+  });
+});
+
+describe("frames", () => {
+  it("accepts exactly the documented screen frames", () => {
+    for (const f of [
+      { v: 1, t: "hello", sid: "x" },
+      { v: 1, t: "code.next" },
+      { v: 1, t: "open.click" },
+      { v: 1, t: "launched", mode: "download" },
+      { v: 1, t: "ping" },
+    ]) {
+      expect(screenFrame.safeParse(f).success, f.t).toBe(true);
+    }
+  });
+
+  it("refuses unknown types, extra keys, wrong versions and bad modes", () => {
+    for (const f of [
+      { v: 1, t: "state" },
+      { v: 2, t: "ping" },
+      { v: 1, t: "ping", extra: 1 },
+      { v: 1, t: "launched", mode: "rm -rf" },
+      { v: 1, t: "hello" },
+      { t: "ping" },
+    ]) {
+      expect(screenFrame.safeParse(f).success, JSON.stringify(f)).toBe(false);
+    }
+  });
+
+  it("gives a phone only hello and ping", () => {
+    expect(phoneFrame.safeParse({ v: 1, t: "hello", pid: "x" }).success).toBe(true);
+    expect(phoneFrame.safeParse({ v: 1, t: "ping" }).success).toBe(true);
+    expect(phoneFrame.safeParse({ v: 1, t: "code.next" }).success).toBe(false);
+    expect(phoneFrame.safeParse({ v: 1, t: "open.click" }).success).toBe(false);
+    expect(MAX_FRAME_BYTES).toBe(4096);
+  });
+});
