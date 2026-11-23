@@ -30,7 +30,7 @@ async function exportData(request: Request, env: Env, config: Config): Promise<R
   const data = q.get("data") ?? "audit";
   const now = Date.now();
   const range = exportRange(q.get("from"), q.get("to"), now);
-  if (!(format in FORMATS) || !["audit", "metrics"].includes(data) || !range) return fail("bad_request");
+  if (!Object.hasOwn(FORMATS, format) || !["audit", "metrics"].includes(data) || !range) return fail("bad_request");
   const kind = format as keyof typeof FORMATS;
 
   // An export nobody can later see is worse than a failed one: the run is recorded first.

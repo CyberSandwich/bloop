@@ -140,6 +140,8 @@ describe("SITE-07 export-auth: one bearer token, compared by hash", () => {
   it("refuses a bad format, data kind or range with 400, and a non-GET with 405", async () => {
     for (const q of [
       "?format=xml",
+      "?format=toString",
+      "?format=__proto__",
       "?data=files",
       "?from=nope",
       "?from=2026-02-01&to=2026-01-01",
