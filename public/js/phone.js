@@ -12,6 +12,7 @@ import { ago, clock, splitName } from "./core/format.js";
 import { phoneKey } from "./core/states.js";
 import { PID_KEY, sessionStore } from "./core/store.js";
 import {
+  ariaFlag,
   byId,
   el,
   focusTitle,
@@ -143,7 +144,7 @@ function renderActions(/** @type {import("./core/copy.js").PhoneAction[]} */ act
     const busy = loading && a.id === "approve";
     node.replaceChildren(...(busy ? [el("span", { class: "spinner", "aria-hidden": "true" }), a.label] : [a.label]));
     if (node instanceof HTMLButtonElement) node.disabled = loading;
-    node.toggleAttribute("aria-busy", busy);
+    ariaFlag(node, "aria-busy", busy);
   }
 }
 

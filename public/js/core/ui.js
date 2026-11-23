@@ -18,6 +18,16 @@ export function show(el, visible) {
   el.hidden = !visible;
 }
 
+/**
+ * ARIA states are enumerated, not boolean attributes: an empty value reads as false, so `toggleAttribute`
+ * cannot set one (test/unit/pages.test.ts bans it). On writes "true"; off removes the attribute.
+ * @param {Element} el @param {`aria-${string}`} name @param {boolean} on
+ */
+export function ariaFlag(el, name, on) {
+  if (on) el.setAttribute(name, "true");
+  else el.removeAttribute(name);
+}
+
 /** Moves focus to a heading, which is made focusable by tabindex="-1" in the HTML. */
 export function focusTitle(/** @type {HTMLElement} */ title) {
   title.focus({ preventScroll: true });

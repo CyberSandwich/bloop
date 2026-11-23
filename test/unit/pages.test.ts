@@ -1,4 +1,4 @@
-import { readFileSync } from "node:fs";
+import { readdirSync, readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
 
@@ -58,6 +58,15 @@ describe("client code under the strict CSP", () => {
     expect(code).not.toMatch(/new Function\s*\(/);
     expect(code).not.toMatch(/\.(innerHTML|outerHTML)\s*=|insertAdjacentHTML|document\.write/);
     expect(code).not.toMatch(/setTimeout\(\s*["'`]/);
+  });
+
+  it('never toggles an ARIA state, which would write the empty value that reads as false (aria-invalid="")', () => {
+    const dir = fileURLToPath(new URL("../../public/js/", import.meta.url));
+    const sources = readdirSync(dir, { recursive: true, encoding: "utf8" }).filter(
+      (f) => f.endsWith(".js") && !f.startsWith("vendor"),
+    );
+    expect(sources).toContain("code.js");
+    for (const file of sources) expect(read(`js/${file}`), file).not.toMatch(/toggleAttribute\(\s*["'`]aria-/);
   });
 
   it("never puts a credential in a URL", () => {
