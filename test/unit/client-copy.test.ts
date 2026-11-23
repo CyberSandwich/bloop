@@ -202,6 +202,10 @@ describe("phone copy", () => {
     expect(phoneCopy("guest_off", pf).actions.map((a) => a.label)).toEqual(["Done"]);
   });
 
+  it("F13 only the ended state shows the 96 px away still", () => {
+    expect(PHONE_KEYS.filter((k) => phoneCopy(k, pf).still)).toEqual(["ended"]);
+  });
+
   it("only the sending state shows a progress bar", () => {
     expect(PHONE_KEYS.filter((k) => phoneCopy(k, pf).progress)).toEqual(["guest_sending"]);
   });

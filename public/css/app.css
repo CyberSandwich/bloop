@@ -516,6 +516,15 @@ main:not([data-mode]) .typed {
   margin-top: 8px;
   color: var(--t2);
 }
+.away-still {
+  display: block;
+  margin-top: 16px;
+}
+.away-still img {
+  display: block;
+  width: 96px;
+  height: 96px;
+}
 .body:empty {
   display: none;
 }
