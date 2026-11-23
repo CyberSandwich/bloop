@@ -65,6 +65,13 @@
       "path": "public/css/app.css",
       "gzip": true,
       "limit": "9.5 kB"
+    },
+    {
+      "name": "hero image",
+      "path": "public/img/hero-viewer-2000.avif",
+      "gzip": false,
+      "brotli": false,
+      "limit": "58 kB"
     }
   ],
   "dependencies": {
