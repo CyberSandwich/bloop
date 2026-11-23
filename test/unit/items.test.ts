@@ -2,11 +2,11 @@ import { describe, expect, it } from "vitest";
 import { migrate, SCHEMA_KEY, SCHEMA_VERSION } from "../../src/worker/do/schema.ts";
 import { policyOf, withHeaders } from "../../src/worker/headers.ts";
 import {
+  allowedLink,
   fileAt,
   type ItemRef,
   itemView,
   LINK_HOSTS,
-  allowedLink,
   MAX_ITEMS,
   orderItems,
 } from "../../src/worker/items.ts";

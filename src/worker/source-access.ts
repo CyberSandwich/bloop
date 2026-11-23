@@ -66,10 +66,16 @@ export async function listEntries(
 ): Promise<{ ok: true; entries: Entry[] } | { ok: false; error: SourceError }> {
   const listed = await access.source.listRecent(access.ctx, LIST_LIMIT);
   if (!listed.ok) return listed;
-  return { ok: true, entries: [...listed.files, ...access.links.flatMap((l) => {
+  return {
+    ok: true,
+    entries: [
+      ...listed.files,
+      ...access.links.flatMap((l) => {
         const url = allowedLink(l.url);
         return url ? [{ ...l, url }] : [];
-      })] };
+      }),
+    ],
+  };
 }
 
 /** The server's own record of the entries the phone named by id: each must be in the current list (SRC-02). */

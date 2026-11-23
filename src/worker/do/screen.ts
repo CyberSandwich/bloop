@@ -445,7 +445,11 @@ export class Screen extends DurableObject<Env> implements PairingStore {
       this.m = step.next;
       this.ctx.storage.kv.put("machine", step.next);
     }
-    const { collided, minted } = await runEffects(step.effects, { meta, prev: m, next: step.next, now: ev.now }, this.deps());
+    const { collided, minted } = await runEffects(
+      step.effects,
+      { meta, prev: m, next: step.next, now: ev.now },
+      this.deps(),
+    );
     const after = this.m;
     if (!after) return { ok: true, collided, next: step.next, minted }; // closed: storage is gone
     if (!after.pairing) this.closePhoneSockets();
