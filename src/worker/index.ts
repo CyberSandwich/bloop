@@ -1,27 +1,15 @@
-import { DurableObject } from "cloudflare:workers";
+import { Directory } from "./do/directory.ts";
+import { Screen } from "./do/screen.ts";
 import type { Env } from "./env.ts";
 import { type Policy, withHeaders } from "./headers.ts";
 import { json, problem } from "./http.ts";
-
-type Handler = (request: Request, env: Env, match: URLPatternResult) => Response | Promise<Response>;
-
-interface Route {
-  methods: readonly string[];
-  pattern: URLPattern;
-  policy: Policy;
-  handler: Handler;
-}
-
-const route = (methods: readonly string[], pathname: string, policy: Policy, handler: Handler): Route => ({
-  methods,
-  pattern: new URLPattern({ pathname }),
-  policy,
-  handler,
-});
+import { type Route, route } from "./router.ts";
+import { pairingRoutes } from "./routes/pairing.ts";
 
 /** First match wins. Later modules add their routes here, one line each. */
 const routes: readonly Route[] = [
   route(["GET"], "/api/health", "api", () => json({ status: "ok" })),
+  ...pairingRoutes,
   route(["GET", "HEAD"], "/f/:token/:name", "api", () => problem(404, "link_unknown")),
 ];
 
@@ -45,12 +33,12 @@ async function dispatch(request: Request, env: Env): Promise<{ response: Respons
 export default {
   async fetch(request, env): Promise<Response> {
     const { response, policy } = await dispatch(request, env);
-    return withHeaders(response, policy);
+    // A WebSocket upgrade response must reach the runtime untouched.
+    return response.status === 101 ? response : withHeaders(response, policy);
   },
 
   // Hourly backstop and daily retention jobs land in retention.ts.
   async scheduled() {},
 } satisfies ExportedHandler<Env>;
 
-export class Screen extends DurableObject<Env> {}
-export class Directory extends DurableObject<Env> {}
+export { Directory, Screen };
