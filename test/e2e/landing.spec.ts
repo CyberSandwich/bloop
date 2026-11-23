@@ -5,7 +5,7 @@ import { expect, test } from "@playwright/test";
 // The callbacks below run in the browser; the test tsconfig has no DOM library, so these names are
 // declared here, for this file only.
 interface El {
-  getBoundingClientRect(): { top: number; bottom: number; width: number; height: number };
+  getBoundingClientRect(): { top: number; bottom: number; left: number; right: number; width: number; height: number };
   textContent: string | null;
   closest(selector: string): El | null;
 }
@@ -16,7 +16,12 @@ declare const document: {
   fonts?: { ready: Promise<unknown> };
 };
 declare const innerWidth: number;
-declare const getComputedStyle: (el: El) => { visibility: string; lineHeight: string; transform: string };
+declare const getComputedStyle: (el: El) => {
+  visibility: string;
+  lineHeight: string;
+  transform: string;
+  backgroundColor: string;
+};
 
 const VIEWPORTS = [
   { name: "1440", width: 1440, height: 900, touch: false },
@@ -65,13 +70,45 @@ for (const vp of VIEWPORTS) {
       expect(small).toEqual([]);
     });
 
-    test("Try the demo is the hero's one button, in the first view, and opens the demo screen", async ({ page }) => {
+    test("Try the Demo is the hero's one button, in the first view, and opens the demo screen", async ({ page }) => {
       await page.goto("/");
       const actions = page.locator(".hero-actions").getByRole("link");
       await expect(actions).toHaveCount(1);
-      await expect(actions).toHaveText("Try the demo");
+      await expect(actions).toHaveText("Try the Demo");
       await expect(actions).toBeInViewport();
       await expect(actions).toHaveAttribute("href", "/s?mode=demo");
+    });
+
+    test("the hero block sits in the middle of the first view, and the stage starts below the fold", async ({
+      page,
+    }) => {
+      await page.goto("/");
+      await page.evaluate(() => document.fonts?.ready);
+      const box = await page.evaluate(() => {
+        const top = document.querySelector(".hero h1")?.getBoundingClientRect().top ?? 0;
+        const bottom = document.querySelector(".hero-actions")?.getBoundingClientRect().bottom ?? 0;
+        return {
+          middle: (top + bottom) / 2,
+          stage: document.querySelector(".stage")?.getBoundingClientRect().top ?? 0,
+        };
+      });
+      // The nav's clearance is padded on both sides, so the block's middle is the viewport's within a few px.
+      expect(Math.abs(box.middle - vp.height / 2)).toBeLessThan(24);
+      expect(box.stage).toBeGreaterThanOrEqual(vp.height - 1);
+    });
+
+    test("the logo pill and the links pill are separate and share one height", async ({ page }) => {
+      await page.goto("/");
+      const box = (selector: string) =>
+        page.locator(selector).evaluate((el) => {
+          const r = (el as unknown as El).getBoundingClientRect();
+          return { top: r.top, left: r.left, right: r.right, height: r.height };
+        });
+      const logo = await box(".nav-logo");
+      const pill = await box(".nav-pill");
+      expect(logo.right).toBeLessThan(pill.left);
+      expect(logo.height).toBe(pill.height);
+      expect(logo.top).toBe(pill.top);
     });
 
     test("the nav stays on top, firms up once scrolled, and its Waitlist is a mail", async ({ page }) => {
@@ -116,9 +153,28 @@ test.describe("reduced motion", () => {
   test("the stage rests flat", async ({ page }) => {
     await page.goto("/");
     const stage = page.locator(".stage");
-    await expect(stage).toHaveText("Demo video coming soon");
+    await expect(stage).toHaveText("Demo Video Coming Soon");
     expect(await stage.evaluate((el) => getComputedStyle(el as unknown as El).transform)).toBe("none");
+    await stage.scrollIntoViewIfNeeded();
+    expect(await stage.evaluate((el) => (el as unknown as { getAnimations(): unknown[] }).getAnimations().length)).toBe(
+      0,
+    );
   });
+});
+
+test.describe("site nav", () => {
+  test.use({ viewport: { width: 1440, height: 900 } });
+
+  for (const path of ["/privacy", "/security"]) {
+    test(`${path} shows its own link as the selected pill`, async ({ page }) => {
+      await page.goto(path);
+      const current = page.getByRole("navigation", { name: "Primary" }).locator('a[aria-current="page"]');
+      await expect(current).toHaveAttribute("href", path);
+      expect(await current.evaluate((el) => getComputedStyle(el as unknown as El).backgroundColor)).not.toBe(
+        "rgba(0, 0, 0, 0)",
+      );
+    });
+  }
 });
 
 test.describe("site pages", () => {
@@ -134,6 +190,6 @@ test.describe("site pages", () => {
   test("/it moves to /security", async ({ page }) => {
     const res = await page.goto("/it");
     expect(new URL(res?.url() ?? "").pathname).toBe("/security");
-    await expect(page.locator("h1")).toHaveText("The screen never gets your account.");
+    await expect(page.locator("h1")).toHaveText("The Screen Never Gets Your Account");
   });
 });
