@@ -1,0 +1,78 @@
+// The one header policy (docs/architecture.md section 10). public/_headers must produce the same
+// values for static pages; test/unit/headers.test.ts enforces it.
+
+export type Policy = "landing" | "app" | "minimal" | "api" | "file-pptx" | "file-pdf";
+
+const PERMISSION_FEATURES = [
+  "accelerometer",
+  "autoplay",
+  "browsing-topics",
+  "camera",
+  "display-capture",
+  "encrypted-media",
+  "fullscreen",
+  "geolocation",
+  "gyroscope",
+  "hid",
+  "idle-detection",
+  "magnetometer",
+  "microphone",
+  "midi",
+  "payment",
+  "publickey-credentials-get",
+  "screen-wake-lock",
+  "serial",
+  "usb",
+  "xr-spatial-tracking",
+];
+
+/** Features the screen page `/s` keeps for itself. */
+const SCREEN_ALLOWED = new Set(["fullscreen", "screen-wake-lock"]);
+
+export function permissionsPolicy(screen = false): string {
+  return PERMISSION_FEATURES.map((f) => `${f}=${screen && SCREEN_ALLOWED.has(f) ? "(self)" : "()"}`).join(", ");
+}
+
+export const BASE_HEADERS: Readonly<Record<string, string>> = {
+  "Strict-Transport-Security": "max-age=63072000; includeSubDomains",
+  "X-Content-Type-Options": "nosniff",
+  "Referrer-Policy": "no-referrer",
+  "Cross-Origin-Opener-Policy": "same-origin",
+  "Cross-Origin-Resource-Policy": "same-origin",
+  "Origin-Agent-Cluster": "?1",
+  "X-Frame-Options": "DENY",
+  "Permissions-Policy": permissionsPolicy(),
+};
+
+const PAGE_TAIL =
+  "base-uri 'none'; form-action 'none'; frame-ancestors 'none'; require-trusted-types-for 'script'; trusted-types 'none'; upgrade-insecure-requests";
+const SELF = "script-src 'self'; style-src 'self'; img-src 'self'; font-src 'self'";
+
+export const CSP: Readonly<Record<Policy, string>> = {
+  landing: `default-src 'none'; ${SELF}; connect-src 'self'; manifest-src 'self'; ${PAGE_TAIL}`,
+  app: `default-src 'none'; ${SELF}; connect-src 'self'; ${PAGE_TAIL}`,
+  minimal: `default-src 'none'; ${SELF}; ${PAGE_TAIL}`,
+  api: "default-src 'none'; frame-ancestors 'none'",
+  "file-pptx": "default-src 'none'; sandbox; frame-ancestors 'none'",
+  "file-pdf": "default-src 'none'; frame-ancestors 'none'",
+};
+
+const EXTRA: Readonly<Record<Policy, Record<string, string>>> = {
+  landing: {},
+  app: {},
+  minimal: {},
+  api: { "Cache-Control": "no-store" },
+  "file-pptx": { "Content-Disposition": "attachment", "Cache-Control": "no-store" },
+  "file-pdf": { "Content-Disposition": "inline", "Cache-Control": "no-store" },
+};
+
+export function headersFor(policy: Policy): Record<string, string> {
+  return { ...BASE_HEADERS, "Content-Security-Policy": CSP[policy], ...EXTRA[policy] };
+}
+
+/** Returns a copy of `response` with the policy applied; the policy wins over anything already set. */
+export function withHeaders(response: Response, policy: Policy): Response {
+  const out = new Response(response.body, response);
+  for (const [name, value] of Object.entries(headersFor(policy))) out.headers.set(name, value);
+  return out;
+}

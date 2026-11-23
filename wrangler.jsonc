@@ -1,0 +1,68 @@
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "bloop",
+  "main": "src/worker/index.ts",
+  "compatibility_date": "2026-11-22",
+  "assets": {
+    "directory": "./public",
+    "binding": "ASSETS",
+    "html_handling": "drop-trailing-slash",
+    "not_found_handling": "404-page",
+    "run_worker_first": ["/api/*", "/f/*", "/auth/*"]
+  },
+  "durable_objects": {
+    "bindings": [{ "name": "SCREEN", "class_name": "Screen" }, { "name": "DIRECTORY", "class_name": "Directory" }]
+  },
+  "migrations": [{ "tag": "v1", "new_sqlite_classes": ["Screen", "Directory"] }],
+  // The id is a placeholder: `wrangler d1 create bloop --jurisdiction=eu` prints the real one.
+  "d1_databases": [
+    {
+      "binding": "DB",
+      "database_name": "bloop",
+      "database_id": "00000000-0000-0000-0000-000000000000",
+      "migrations_dir": "migrations"
+    }
+  ],
+  "r2_buckets": [{ "binding": "GUEST_FILES", "bucket_name": "bloop-guest-files", "jurisdiction": "eu" }],
+  "ratelimits": [
+    { "name": "RL_CREATE", "namespace_id": "1001", "simple": { "limit": 10, "period": 60 } },
+    { "name": "RL_CLAIM", "namespace_id": "1002", "simple": { "limit": 20, "period": 60 } },
+    { "name": "RL_FETCH", "namespace_id": "1003", "simple": { "limit": 60, "period": 60 } },
+    { "name": "RL_UPLOAD", "namespace_id": "1004", "simple": { "limit": 5, "period": 60 } },
+    { "name": "RL_AUTH", "namespace_id": "1005", "simple": { "limit": 10, "period": 60 } },
+    { "name": "RL_EXPORT", "namespace_id": "1006", "simple": { "limit": 10, "period": 60 } }
+  ],
+  "triggers": { "crons": ["0 * * * *", "30 3 * * *"] },
+  "vars": {
+    "PUBLIC_ORIGIN": "https://bloop.saputra.co.uk",
+    "FILE_SOURCE": "mock",
+    "OPEN_PATH_MODE": "redirect",
+    "TOKEN_MODE": "refresh",
+    "CODE_LENGTH": "6",
+    "CODE_TTL_SECONDS": "60",
+    "CODE_GRACE_SECONDS": "10",
+    "CLAIM_TIMEOUT_SECONDS": "300",
+    "UPLOAD_TIMEOUT_SECONDS": "900",
+    "SESSION_MAX_MINUTES": "90",
+    "LINK_FIRST_FETCH_SECONDS": "600",
+    "LINK_FETCH_WINDOW_SECONDS": "120",
+    "LINK_MAX_FETCHES": "10",
+    "LINK_MINTS_PER_SESSION": "5",
+    "LINK_BINDING_DEFAULT": "log",
+    "GRAPH_DOWNLOAD_HOSTS": "*.sharepoint.com,*.files.1drv.com,my.microsoftpersonalcontent.com",
+    "GUEST_DROP": "open",
+    "GUEST_MAX_BYTES": "52428800",
+    "GUEST_STORAGE_BUDGET_BYTES": "5368709120",
+    "DEMO_ENABLED": "true",
+    "DEMO_SESSION_MINUTES": "10",
+    "DEMO_GUEST_MAX_BYTES": "10485760",
+    "AUDIT_RETENTION_DAYS": "180",
+    "METRICS_RETENTION_DAYS": "90",
+    "DEMO_RETENTION_DAYS": "7",
+    "GRANT_IDLE_DAYS": "30",
+    "ENTRA_AUTHORITY": "https://login.microsoftonline.com/organizations/v2.0",
+    "ENTRA_CLIENT_ID": "",
+    "ENTRA_SCOPES": "openid offline_access Files.Read",
+    "TOKEN_KEK_CURRENT": "k1"
+  }
+}
