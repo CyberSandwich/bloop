@@ -539,7 +539,7 @@ At most one prop (the slide card, carry pose only); phones, screens and files ar
 | Item | Spec |
 |---|---|
 | Library | an established generator, not a custom encoder: uqr 0.1.3 (MIT, an ESM port of Nayuki's generator; `encode(text, {ecc:'M', minVersion:4, maxVersion:4, border:4})` returns the matrix, drawn as one SVG path); 7.8 KB gzip unminified, in the JS budget; qrcode-generator is the alternative |
-| Content | `https://{host}/a#{id}`: 12 characters of lowercase Crockford base32 (60 bits), single use, after the fragment so it never reaches the static host's logs `[V-12]` |
+| Content | `https://{host}/a?c={code}`: the 6-character pairing code, in the query because camera apps may drop a fragment `[V-12]`. The phone strips it with `history.replaceState` when its modules load. The query can reach request logs and a Referer, which is bounded: a code works once and lives 60 seconds (10 s grace) |
 | Mode, version | byte mode, level M, pinned to version 4 (33 x 33 modules) so the size never jumps |
 | Quiet zone | 4 modules each side, inside the white panel: 41 modules across |
 | Rendering | integer device pixels per module, `shape-rendering:crispEdges`, no CSS scaling after layout, square modules, #1D1D1F on #FFFFFF, never inverted, no logo, no rounded or colored modules, never animated while shown |
@@ -709,7 +709,7 @@ Font: Inter (SIL OFL 1.1), subset from the official `InterVariable.woff2`, licen
 | 9 | Phone account needs (connect once, admin consent, sign-in lifetime) | first-use body "bloop reads your slides from OneDrive." |
 | 10 | Guest flow and its file size limit `{N}` | story card 2 and the guest states removed |
 | 11 | Inter subset size with `opsz` kept (settled: 44,268 bytes, under 55 KB, `opsz` kept); fallback metrics measured against it (open: needs a browser) | keep the starting metrics |
-| 12 | Camera apps keep the `#id` fragment (iOS, Android, common in-app scanners) | move the id into a path on the API origin |
+| 12 | Camera apps keep the `?c=` query (iOS, Android, common in-app scanners); the log and Referer exposure of a one-use 60 s code | move the code into a path on the API origin |
 | 13 | Final name, host and a public role address | keep `SITE_NAME` and `{host}` placeholders out of production |
 | 14 | API origin; WebSocket allowed on campus networks | long-polling every 2 s |
 | 15 | Clickjacking of `/a` without `frame-ancestors` | the JS frame guard (the framed state) |
