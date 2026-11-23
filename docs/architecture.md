@@ -215,7 +215,7 @@ tsconfig.json              Worker + shared, strict, workers-types
 tsconfig.node.json         tests and tools, node types (the two type sets clash if mixed)
 tsconfig.public.json       checkJs over public/ (JSDoc), DOM lib, imports types from src/shared via @import
 vitest.config.ts  vitest.int.config.ts  playwright.config.ts  lighthouserc.json  .htmlvalidate.json
-.dev.vars.example  .env.example
+.dev.vars.example
 migrations/                0001_init.sql, numbered, raw SQL (wrangler d1 migrations)
 src/shared/
   protocol.ts              type-only contracts: messages, views, error codes (never served; browser JS imports them through JSDoc @import)
@@ -240,7 +240,7 @@ src/worker/
   routes/{pairing,files,open,drop,auth,export,common}.ts
   retention.ts             cron jobs: closeStaleSessions (hourly), runRetention (daily)
 public/                    wrangler's assets directory, served as it is. Everything here is public: no secrets, no server-only logic
-  index.html it.html privacy.html s.html a.html code.html g.html me.html 404.html
+  index.html it.html privacy.html s.html a.html code.html 404.html   (the /g and /me pages are not built yet)
   _headers                 static security headers (section 10)
   css/app.css              the one stylesheet (task pages and site pages)
   js/{screen,phone,code,launcher,residue}.js   task pages; js/vendor/uqr.js (+ LICENSE)
@@ -258,7 +258,7 @@ public/                    wrangler's assets directory, served as it is. Everyth
   .well-known/security.txt
 src/robin.glb src/fonts/InterVariable.woff2   sources of the robin mesh and the font subset, never served
 tools/
-  dev-secrets.mjs          writes .dev.vars with fresh random keys
+  make-fixtures.mjs        writes the sample decks the mock file source serves
   pack.py render-stills.py robin-poses.json   GLB to robin.bin; the stills, drawn by a plain-Python rasterizer with the live camera and poses
   render-og.py og.svg      the social image and its SVG source
   subset-font.py           Inter to the Latin subset, wght 400 to 600, opsz kept
@@ -511,13 +511,7 @@ ROOM_ENROLL_KEY=<base64url 32 bytes>
 ```
 Test-only variable: `TEST_TIMING=1`, never set in a deployment. It lowers the floors `config.ts` enforces (production: `CODE_TTL_SECONDS` at least 30, `CODE_GRACE_SECONDS` at least 5, `CLAIM_TIMEOUT_SECONDS` at least 60, `SESSION_MAX_MINUTES` 1 to 240, `DEMO_SESSION_MINUTES` at most `SESSION_MAX_MINUTES`), allows fractional minutes, and skips the platform rate-limit bindings. `config.ts` refuses it unless `PUBLIC_ORIGIN` is a local address. The integration tests set it through `startPairing()` in `test/integration/pairing-client.ts`, with short timings such as `CODE_TTL_SECONDS=2` and `SESSION_MAX_MINUTES=0.05`.
 
-`.env.example` (tools and CI only, never read by the Worker):
-
-```ini
-CLOUDFLARE_ACCOUNT_ID=
-CLOUDFLARE_API_TOKEN=            # scoped: Workers Scripts edit, D1 edit, R2 edit on this account
-BLOOP_PREVIEW_URL=               # for the post-deploy header scan
-```
+Deploy-only values (`CLOUDFLARE_ACCOUNT_ID`, `CLOUDFLARE_API_TOKEN`, `BLOOP_PREVIEW_URL`) are GitHub environment secrets read by `.github/workflows/deploy.yml`, never by the Worker; there is no `.env` file. Token scopes: `docs/setup.md`.
 Bindings in `wrangler.jsonc` (not env vars): `ASSETS`, `SCREEN` and `DIRECTORY` (Durable Objects, SQLite classes), `DB` (D1, `eu`), `GUEST_FILES` (R2, `jurisdiction: "eu"`), `RL_CREATE`, `RL_CLAIM`, `RL_FETCH`, `RL_UPLOAD`, `RL_AUTH`, `RL_EXPORT`, `RL_FILES` (rate limits), and two crons (`0 * * * *` hourly backstop, `30 3 * * *` daily retention). The D1 database id in `wrangler.jsonc` is not a secret.
 
 ## 10. Security headers
