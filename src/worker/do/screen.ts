@@ -241,8 +241,19 @@ export class Screen extends DurableObject<Env> implements PairingStore {
     const used = this.links.use(tokenHash, now, limits, binding);
     const sessionId = m.pairing.sessionId;
     if (!used.ok) {
-      if (used.error !== "link_unknown")
+      if (used.error !== "link_unknown") {
         await this.auditLink(sessionId, now, "link.refused", { cause: used.error, ...via });
+        await bestEffort(
+          metricsFor(this.env).record({
+            at: now,
+            mode: meta.mode,
+            kind: m.pairing.kind,
+            roomId: meta.roomId,
+            name: "failure",
+            cause: used.error,
+          }),
+        );
+      }
       return fail(used.error);
     }
     if (!session) return fail("link_revoked"); // ended: the file reference is gone with the session

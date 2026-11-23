@@ -294,6 +294,7 @@ describe("machine: guest upload and the Open click", () => {
       actor: "phone",
       cause: "bad_structure",
     });
+    expect(failed.effects).toContainEqual({ fx: "metric", name: "failure", cause: "bad_structure" });
   });
 
   it("opens an offer only on open.click, as the screen, and sets the session end (DROP-06)", () => {

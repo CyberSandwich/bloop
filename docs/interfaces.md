@@ -530,8 +530,11 @@ export interface ScreenResidue {
 import type { Actor, ErrorCode, Kind, Mode } from "../shared/protocol.ts";
 import type { AuditType, MetricName } from "./machine.ts";
 
+/** Lets the first event create the `session` row; later events find it by sessionId. Set by the machine's effects. */
+export interface SessionContext { screenRef: string; roomId: string | null; mode: Mode; kind: Kind; userId: string | null; }
+
 export interface AuditEvent {
-  sessionId: string; at: number; actor: Actor;
+  sessionId: string; at: number; actor: Actor; session?: SessionContext;
   type: AuditType | "grant.created" | "grant.deleted" | "user.erased" | "export.run" | "pass.created";
   /** Allowed keys only. Never tokens, codes, URLs, IPs or Graph ids. */
   detail: { fileName?: string; source?: "mock" | "graph" | "guest"; purpose?: string;
@@ -539,12 +542,13 @@ export interface AuditEvent {
             /** An /f/ request: method, class of client (never the raw User-Agent), fetch count. */
             method?: string; client?: "office" | "browser" | "other"; count?: number };
 }
-export interface AuditRow extends AuditEvent { id: number; roomName: string | null; userEmail: string | null; mode: Mode; kind: Kind; }
+/** mode and kind are null for a row with no session (an export run). */
+export interface AuditRow extends Omit<AuditEvent, "session"> { id: number; roomName: string | null; userEmail: string | null; mode: Mode | null; kind: Kind | null; }
 
 export interface AuditLog {
   record(e: AuditEvent): Promise<void>;
   forUser(userId: string, limit: number, before?: number): Promise<AuditRow[]>;
-  /** IT export. CSV cells starting with = + - @ tab or CR get a leading apostrophe. */
+  /** IT export of [from, to), paged out of D1 as a stream. CSV cells starting with = + - @ tab or CR get a leading apostrophe. */
   export(q: { orgId: string | null; from: number; to: number; format: "csv" | "json" }): Promise<ReadableStream<Uint8Array>>;
   purge(now: number, retention: { liveDays: number; demoDays: number }): Promise<number>;
   /** Erasure: keeps session, room and time; drops user id and file name. */
@@ -554,14 +558,26 @@ export interface AuditLog {
 export type FailureCause = ErrorCode | "screen_offline" | "phone_offline";
 export interface MetricEvent { at: number; mode: Mode; kind: Kind; roomId: string | null; name: MetricName; ms?: number; cause?: FailureCause; }
 
+/** `cause` is "" when there is none. Percentiles are nearest-rank over the rows that carry a duration. */
+export interface MetricSummary { mode: Mode; name: MetricName; cause: string; n: number; p50Ms: number | null; p90Ms: number | null; }
+
 export interface Metrics {
   record(e: MetricEvent): Promise<void>;
-  /** Week-3 return: one row per pseudonymous user per ISO week. */
+  /** Week-3 return: one row per pseudonymous user per ISO week, pseudonym = HMAC(HASH_PEPPER, user id). */
   activeWeek(userId: string, now: number): Promise<void>;
-  rollup(day: string): Promise<void>;     // metric_event to metric_daily
+  /** Time to first open and failures by cause over [from, to), from metric_event (the retention window). */
+  summary(from: number, to: number): Promise<MetricSummary[]>;
+  rollup(day: string): Promise<void>;     // metric_event to metric_daily, replacing that day
+  /** Rolls each event day older than `days` into metric_daily, then deletes those events; also drops daily counts past 2 years and weeks past 120 days. */
   purge(now: number, days: number): Promise<number>;
 }
 ```
+
+Implementations: `audit-d1.ts` (`D1AuditLog`) and `metrics-d1.ts` (`D1Metrics`), picked in `stores.ts`. The `session` row is created by the first event that carries a `SessionContext` (`claimed`) and updated by `approved`, `guest.uploaded`, `link.fetched` (first open), `ended` and `canceled`. A demo session never keeps a user id. `detail` is filtered to the keys of `AuditEvent["detail"]` before the write. The `failure` metric carries the cause: a refused guest upload (`upload.failed`) and a refused `/f/` request (`link.refused`). `screen_offline` and `phone_offline` causes have no emitter yet.
+
+`GET /api/it/export` (`routes/export.ts`): Bearer `IT_EXPORT_TOKEN`; query `format=json|csv` (default json), `data=audit|metrics` (default audit), `from` and `to` as inclusive UTC days (default: the last 30 days; at most 366 days); `RL_EXPORT` per pseudonymous IP; each run writes an `export.run` row (actor `it`, session id `export`) first. Audit CSV columns: `id,time,session,room,mode,kind,actor,type,user,file_name,source,purpose,cause,reason,bytes,ip_match,method,client,count`; metrics: `mode,name,cause,n,p50_ms,p90_ms`.
+
+Cron (`retention.ts`, `index.ts` `scheduled`): hourly `0 * * * *` runs the guest sweep and `closeStaleSessions(env, now)`; daily `30 3 * * *` runs `runRetention(env, config, now)`, which returns a report of rows deleted per table and the auth maintenance report. Both are plain functions with the clock passed in.
 
 ## 8. Error codes, HTTP status and user-facing state (`public/js/shared/errors.js`)
 ```js

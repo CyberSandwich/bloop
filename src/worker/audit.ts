@@ -1,6 +1,16 @@
-// AuditLog seam (docs/interfaces.md section 7). The Screen object calls `record` at each transition.
+// AuditLog seam (docs/interfaces.md section 7). The Screen object calls `record` at each transition;
+// the D1 implementation is audit-d1.ts, picked in stores.ts.
 import type { Actor, ErrorCode, Kind, Mode } from "../shared/protocol.ts";
 import type { AuditType } from "./machine.ts";
+
+/** Where a session sits, so the first event can create its `session` row. Never a secret, IP or token. */
+export interface SessionContext {
+  screenRef: string;
+  roomId: string | null;
+  mode: Mode;
+  kind: Kind;
+  userId: string | null;
+}
 
 export interface AuditEvent {
   sessionId: string;
@@ -21,43 +31,54 @@ export interface AuditEvent {
     client?: "office" | "browser" | "other";
     count?: number;
   };
+  /** Present on the machine's events; later events find the row by `sessionId`. */
+  session?: SessionContext;
 }
-export interface AuditRow extends AuditEvent {
+export interface AuditRow extends Omit<AuditEvent, "session"> {
   id: number;
   roomName: string | null;
   userEmail: string | null;
-  mode: Mode;
-  kind: Kind;
+  /** Null for a row with no session (an export run). */
+  mode: Mode | null;
+  kind: Kind | null;
+}
+
+export interface AuditQuery {
+  orgId: string | null;
+  from: number;
+  to: number;
+  format: "csv" | "json";
 }
 
 export interface AuditLog {
   record(e: AuditEvent): Promise<void>;
   forUser(userId: string, limit: number, before?: number): Promise<AuditRow[]>;
-  /** IT export. CSV cells starting with = + - @ tab or CR get a leading apostrophe. */
-  export(q: {
-    orgId: string | null;
-    from: number;
-    to: number;
-    format: "csv" | "json";
-  }): Promise<ReadableStream<Uint8Array>>;
+  /** IT export of `[from, to)`. CSV cells starting with = + - @ tab or CR get a leading apostrophe. */
+  export(q: AuditQuery): Promise<ReadableStream<Uint8Array>>;
   purge(now: number, retention: { liveDays: number; demoDays: number }): Promise<number>;
   /** Erasure: keeps session, room and time; drops user id and file name. */
   anonymizeUser(userId: string): Promise<number>;
 }
 
-/** Stub: keeps nothing. The D1 implementation replaces it in stores.ts. */
-export const noopAudit: AuditLog = {
-  async record() {},
-  async forUser() {
-    return [];
-  },
-  async export() {
-    return new ReadableStream({ start: (c) => c.close() });
-  },
-  async purge() {
-    return 0;
-  },
-  async anonymizeUser() {
-    return 0;
-  },
-};
+/** The detail keys a row may hold. Anything else is dropped before the write, so a caller cannot leak by mistake. */
+export const DETAIL_KEYS = [
+  "fileName",
+  "source",
+  "purpose",
+  "cause",
+  "reason",
+  "bytes",
+  "ipMatch",
+  "method",
+  "client",
+  "count",
+] as const;
+
+export function sanitizeDetail(detail: AuditEvent["detail"]): AuditEvent["detail"] {
+  const src = detail as Record<string, unknown>;
+  const out: Record<string, unknown> = {};
+  for (const key of DETAIL_KEYS) {
+    if (src[key] !== undefined) out[key] = src[key];
+  }
+  return out as AuditEvent["detail"];
+}

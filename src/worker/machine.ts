@@ -345,6 +345,7 @@ export function transition(m: Machine, ev: Event, cfg: MachineConfig): Step {
       if (m.state !== "uploading") return fail("wrong_state");
       return ok({ ...m, state: "claimed", uploadAt: null }, [
         { fx: "audit", type: "guest.refused", actor: "phone", cause: ev.error },
+        { fx: "metric", name: "failure", cause: ev.error },
         { fx: "push", to: "both" },
       ]);
     }

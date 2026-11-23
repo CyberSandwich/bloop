@@ -25,7 +25,7 @@ export const noopSeams: SessionSeams = {
 export interface EffectDeps {
   directory: Pick<CodeDirectory, "put" | "remove">;
   audit: Pick<AuditLog, "record">;
-  metrics: Pick<Metrics, "record">;
+  metrics: Pick<Metrics, "record" | "activeWeek">;
   seams: SessionSeams;
   push(to: "screen" | "phone" | "both"): void;
   /** Close sockets and delete all storage. */
@@ -100,8 +100,19 @@ export async function runEffects(
               actor: fx.actor,
               type: fx.type,
               detail: auditDetail(fx, ctx),
+              session: {
+                screenRef: meta.screenRef,
+                roomId: meta.roomId,
+                mode: meta.mode,
+                kind: pairing.kind,
+                userId: pairing.userId,
+              },
             }),
           );
+          // Demo has no accounts; a live approval marks the account active this ISO week.
+          if (fx.type === "approved" && pairing.userId && meta.mode === "live") {
+            await bestEffort(deps.metrics.activeWeek(pairing.userId, now));
+          }
         }
         break;
       case "metric":

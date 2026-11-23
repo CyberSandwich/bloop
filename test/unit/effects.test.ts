@@ -30,7 +30,10 @@ function fakes(over: Partial<EffectDeps> = {}) {
       },
     },
     audit: { record: async (e) => void audits.push(e) },
-    metrics: { record: async (e) => void metrics.push(e) },
+    metrics: {
+      record: async (e) => void metrics.push(e),
+      activeWeek: async (userId) => void log.push(`active ${userId}`),
+    },
     seams: {
       mint: async (p) => void log.push(`mint ${p}`),
       revokeLinks: async () => void log.push("revoke"),
@@ -52,7 +55,35 @@ describe("effects: audit and metrics hooks at each transition", () => {
       { meta: META, prev, next: prev, now: T0 + 5 },
       f.deps,
     );
-    expect(f.audits).toEqual([{ sessionId: "s1", at: T0 + 5, actor: "phone", type: "claimed", detail: {} }]);
+    expect(f.audits).toEqual([
+      {
+        sessionId: "s1",
+        at: T0 + 5,
+        actor: "phone",
+        type: "claimed",
+        detail: {},
+        session: { screenRef: "ref", roomId: "room-1", mode: "live", kind: "owner", userId: null },
+      },
+    ]);
+  });
+
+  it("a live approval marks the account active, a demo one does not", async () => {
+    const next = approved();
+    const withUser = { ...next, pairing: next.pairing && { ...next.pairing, userId: "u1" } };
+    const live = fakes();
+    await runEffects(
+      [{ fx: "audit", type: "approved", actor: "phone" }],
+      { meta: META, prev: claimedOwner(), next: withUser, now: T0 },
+      live.deps,
+    );
+    expect(live.log).toContain("active u1");
+    const demo = fakes();
+    await runEffects(
+      [{ fx: "audit", type: "approved", actor: "phone" }],
+      { meta: { ...META, mode: "demo" }, prev: claimedOwner(), next: withUser, now: T0 },
+      demo.deps,
+    );
+    expect(demo.log).not.toContain("active u1");
   });
 
   it("records approved with the file name and source only", async () => {
@@ -105,7 +136,10 @@ describe("effects: audit and metrics hooks at each transition", () => {
   it("keeps going when audit or metrics throw", async () => {
     const f = fakes({
       audit: { record: async () => Promise.reject(new Error("d1 down")) },
-      metrics: { record: async () => Promise.reject(new Error("d1 down")) },
+      metrics: {
+        record: async () => Promise.reject(new Error("d1 down")),
+        activeWeek: async () => Promise.reject(new Error("d1 down")),
+      },
     });
     const prev = approved();
     const step = must(prev, { e: "end", now: T0 + sec(70), by: "phone" });
