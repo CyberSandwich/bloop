@@ -12,6 +12,15 @@ Guest uploads (ADR 0005) live in one private R2 bucket in the `eu` jurisdiction.
 4. **The limits** are plain variables in `wrangler.jsonc`: `GUEST_DROP` (`open`, `pass` or `off`), `GUEST_MAX_BYTES` (50 MB; the platform allows at most 100 MB per request body), `DEMO_GUEST_MAX_BYTES` and `GUEST_STORAGE_BUDGET_BYTES` (5 GiB of live guest files; above it drops get "bloop can't take files right now."). The `RL_UPLOAD` binding (5 uploads a minute per address) is in the same file.
 5. **After the first deploy**, run `wrangler tail`, send a file from a phone through a live screen, open it, End the session, and confirm the object is gone: `npx wrangler r2 object get bloop-guest-files/<key> --remote --jurisdiction eu` should fail with "not found". The key is in the D1 `guest_file` row (`wrangler d1 execute bloop --remote --command "select r2_key, deleted_at from guest_file order by created_at desc limit 1"`).
 
+## Audit export, retention and the cron jobs
+
+| Name | Kind | Value |
+|---|---|---|
+| `IT_EXPORT_TOKEN` | secret | at least 32 characters: `openssl rand -base64 32`. Until it is set, `GET /api/it/export` answers 401 to everyone. Give it to IT only; `curl -H "Authorization: Bearer $TOKEN" "$ORIGIN/api/it/export?format=csv&from=2026-01-01&to=2026-01-31"` |
+| `AUDIT_RETENTION_DAYS`, `METRICS_RETENTION_DAYS`, `DEMO_RETENTION_DAYS` | var | `180`, `90`, `7` (defaults, pending the legal lane, OD-5) |
+
+The two cron triggers (`0 * * * *` hourly, `30 3 * * *` daily) are declared in `wrangler.jsonc` and created by `wrangler deploy`; there is no dashboard step. After the first deploy, check once that both fired: Workers dashboard, the Worker, Logs, filter `retention` and `hourly`. The daily line reports the rows it deleted per table. Apply the migrations first: `wrangler d1 migrations apply bloop --remote`.
+
 ## Microsoft Entra app registration
 
 Do this once per deployment. It turns on real OneDrive sign-in. Until then bloop runs on the demo account and every `/auth/*` and `/api/me*` route answers `source_unavailable`.

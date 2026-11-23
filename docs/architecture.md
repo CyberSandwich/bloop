@@ -178,7 +178,7 @@ sequenceDiagram
   Note over W,S: the screen end response carries Clear-Site-Data storage
   Note over W,R: every /f/ token now answers 410 (revoked), until the screen object closes
 ```
-Backstops: an hourly cron ends any D1 `session` row still open 95 minutes after approval (module g), and (built) lists `g/` in the bucket and deletes any guest object older than 2 hours, closing the matching `guest_file` rows. The R2 lifecycle rule (`tools/r2-lifecycle.json`, applied by `deploy.yml`) deletes anything under `g/` older than 1 day.
+Backstops: an hourly cron ends any D1 `session` row still open 95 minutes after approval or claim (`closeStaleSessions`, `end_reason` `auto`), and lists `g/` in the bucket and deletes any guest object older than 2 hours, closing the matching `guest_file` rows. The R2 lifecycle rule (`tools/r2-lifecycle.json`, applied by `deploy.yml`) deletes anything under `g/` older than 1 day.
 
 ### 4.4 Guest drop (host absent)
 
@@ -229,11 +229,13 @@ src/worker/
   seams/open-path/{index,redirect,stream,select,links}.ts   OpenPath interface; the 302 and the streaming answer; the mode switch; link minting, life rules, client class
   do/ledger.ts             the per-screen link record (hashes and counters, revoked tombstones)
   seams/guest-drop/{index,select,r2,purge,validate,zip}.ts   GuestDrop interface and limits; the one place that picks R2; the R2 and D1 ledger adapter; deletion at session end; type and structure checks; zip directory reader
-  seams/residue.ts  audit.ts  metrics.ts
+  audit.ts audit-d1.ts   AuditLog interface and the D1 store (one row per event, session row mirror, export stream, purge, erasure)
+  metrics.ts metrics-d1.ts   Metrics interface, percentile and ISO-week math, and the D1 store (events, rollup, summary)
+  export-format.ts         CSV with formula-injection protection, export columns, date range parsing
+  stores.ts                the one place that picks the AuditLog and Metrics implementations
   auth/{oauth,vault,sessions,cookies,services,db}.ts   oauth4webapi flow; token vault; phone sessions; cookie format and AEAD seal; per-request objects and the daily job; the D1 slice
-  routes/{pairing,files,open,drop,auth,common}.ts
-  db/queries.ts            every SQL statement, typed
-  retention.ts             cron jobs
+  routes/{pairing,files,open,drop,auth,export,common}.ts
+  retention.ts             cron jobs: closeStaleSessions (hourly), runRetention (daily)
 public/                    wrangler's assets directory, served as it is. Everything here is public: no secrets, no server-only logic
   index.html it.html s.html a.html code.html g.html me.html 404.html
   _headers                 static security headers (section 10)
@@ -282,7 +284,7 @@ test/
 | GET                      | `/api/me/audit`                              | session cookie                        | the user's own audit rows                                      |
 | POST                     | `/api/me/disconnect`                         | session cookie, Origin                | delete the grant and every session of the user                 |
 | DELETE                   | `/api/me`                                    | session cookie, Origin                | erase the user (DATA-05)                                       |
-| GET                      | `/api/it/export`                             | Bearer IT export token                | `?format=csv` or `json`, `&from&to`                            |
+| GET                      | `/api/it/export`                             | Bearer IT export token; 401 while unset | `?format=json` (default) or `csv`, `&data=audit` (default) or `metrics`, `&from&to` as UTC days (default last 30, at most 366); 400 otherwise; `attachment`, `no-store` |
 | POST                     | `/api/rooms/enroll`                          | enrollment key in body, Origin        | sets the room cookie on a lectern (ADR 0008)                   |
 | GET                      | `/api/health`                                | none                                  | status line probe, no state                                    |
 | GET                      | `/auth/start`                                | none; 10 per 60 s per IP              | 302 to Entra; no return parameter exists                       |
@@ -303,7 +305,7 @@ Every state-changing route checks four things: `Origin` equals `PUBLIC_ORIGIN`; 
 | `/f/`                   | 60 per 60 s per IP; per link: 10 fetches                                             | binding; exact      |
 | `PUT /api/drop`         | 5 per 60 s per IP (every attempt past the Origin and credential checks counts); one accepted file per session; live bytes under `GUEST_STORAGE_BUDGET_BYTES` | binding; exact; D1  |
 | `/auth/start`           | 10 per 60 s per IP                                                                   | binding             |
-| `/api/it/export`        | 10 per 60 s per token                                                                | binding             |
+| `/api/it/export`        | 10 per 60 s per IP, checked before the token (a per-token key would not slow guessing) | binding             |
 | demo screens            | binding as above, plus a 10-min session and a 10 MB drop cap                         | config              |
 
 IPs are never stored. Limits use `HMAC(HASH_PEPPER, ip)` of `CF-Connecting-IP` (Cloudflare sets it; a local run has none and shares one key), kept only in DO storage until the window ends. The rate-limit bindings run in `wrangler dev` too. `TEST_TIMING=1` skips them so one integration run can create more screens than the per-IP limit allows; the exact limits in the objects stay on.

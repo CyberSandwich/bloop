@@ -40,6 +40,11 @@ const schema = z
     LINK_BINDING_DEFAULT: z.enum(["off", "log", "enforce"]).default("log"),
     TOKEN_MODE: z.enum(["refresh", "session"]).default("refresh"),
     GRANT_IDLE_DAYS: int(1, 90).default(30),
+    AUDIT_RETENTION_DAYS: int(1, 3650).default(180),
+    METRICS_RETENTION_DAYS: int(1, 3650).default(90),
+    DEMO_RETENTION_DAYS: int(1, 3650).default(7),
+    /** At least 32 characters; the export answers 401 while it is unset. */
+    IT_EXPORT_TOKEN: optional(z.string().min(32)),
     GRAPH_DOWNLOAD_HOSTS: z.string().default("*.sharepoint.com,*.files.1drv.com,my.microsoftpersonalcontent.com"),
     ENTRA_AUTHORITY: z.url().default("https://login.microsoftonline.com/organizations/v2.0"),
     ENTRA_CLIENT_ID: optional(z.string().min(1)),
@@ -124,6 +129,10 @@ export interface Config {
   links: LinkConfig;
   tokenMode: "refresh" | "session";
   grantIdleDays: number;
+  auditRetentionDays: number;
+  metricsRetentionDays: number;
+  demoRetentionDays: number;
+  itExportToken: string | null;
   downloadHosts: string[];
   graph: GraphConfig | null;
   codeLength: number;
@@ -169,6 +178,10 @@ export function parseConfig(env: Record<string, unknown>): ConfigResult {
       },
       tokenMode: v.TOKEN_MODE,
       grantIdleDays: v.GRANT_IDLE_DAYS,
+      auditRetentionDays: v.AUDIT_RETENTION_DAYS,
+      metricsRetentionDays: v.METRICS_RETENTION_DAYS,
+      demoRetentionDays: v.DEMO_RETENTION_DAYS,
+      itExportToken: v.IT_EXPORT_TOKEN ?? null,
       downloadHosts: v.GRAPH_DOWNLOAD_HOSTS.split(",")
         .map((h) => h.trim())
         .filter(Boolean),

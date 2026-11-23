@@ -66,6 +66,24 @@ describe("config", () => {
     expect(r.ok && r.config.testTiming).toBe(true);
   });
 
+  it("DATA-02 retention: periods default to 180, 90 and 7 days and are configurable", () => {
+    const d = parseConfig(PROD);
+    expect(d.ok && [d.config.auditRetentionDays, d.config.metricsRetentionDays, d.config.demoRetentionDays]).toEqual([
+      180, 90, 7,
+    ]);
+    const c = parseConfig({ ...PROD, AUDIT_RETENTION_DAYS: "30", METRICS_RETENTION_DAYS: "14" });
+    expect(c.ok && [c.config.auditRetentionDays, c.config.metricsRetentionDays]).toEqual([30, 14]);
+    expect(problems({ ...PROD, AUDIT_RETENTION_DAYS: "0" }).join()).toContain("AUDIT_RETENTION_DAYS");
+  });
+
+  it("SITE-07 export-auth: the export token is absent when unset or empty and must be 32 characters otherwise", () => {
+    const unset = parseConfig(PROD);
+    expect(unset.ok && unset.config.itExportToken).toBeNull();
+    const empty = parseConfig({ ...PROD, IT_EXPORT_TOKEN: "" });
+    expect(empty.ok && empty.config.itExportToken).toBeNull();
+    expect(problems({ ...PROD, IT_EXPORT_TOKEN: "short" }).join()).toContain("IT_EXPORT_TOKEN");
+  });
+
   it("TEST_TIMING is refused on any non-local origin", () => {
     expect(problems({ ...PROD, TEST_TIMING: "1", CODE_TTL_SECONDS: "2" }).join()).toContain("TEST_TIMING");
     expect(problems({ ...PROD, TEST_TIMING: "1", PUBLIC_ORIGIN: "https://127.0.0.1.evil.example" }).join()).toContain(
