@@ -834,7 +834,8 @@ html .touch {
   width: min(100%, 1024px);
   height: 52px;
   margin-inline: auto;
-  padding: 8px 8px 8px 20px;
+  /* Even padding: an uneven one moves the grid, and the links, off the pill center. The wordmark takes the extra inset. */
+  padding: 8px;
   border-radius: var(--rr);
   background: rgba(255, 255, 255, 0.96);
   box-shadow:
@@ -847,6 +848,9 @@ html .touch {
     -webkit-backdrop-filter: blur(20px) saturate(180%);
     backdrop-filter: blur(20px) saturate(180%);
   }
+}
+.nav > .wordmark {
+  margin-left: 12px;
 }
 .nav-links {
   display: flex;
@@ -891,6 +895,9 @@ html .touch {
   text-align: center;
 }
 .hero h1 {
+  /* The box hugs the two beats: a full-width block would outsize the robin as a measured visual. */
+  width: fit-content;
+  margin-inline: auto;
   font-size: 64px;
   line-height: 1.06;
   letter-spacing: -0.032em;
@@ -1543,9 +1550,6 @@ html .touch {
   .footer-legal {
     grid-column: 10 / 13;
   }
-  .page-site .footer-links a {
-    min-height: 28px;
-  }
 }
 
 .toast {
@@ -1753,7 +1757,10 @@ html .touch {
   }
   .nav {
     height: 48px;
-    padding: 6px 6px 6px 16px;
+    padding: 6px;
+  }
+  .nav > .wordmark {
+    margin-left: 10px;
   }
   .nav-links {
     display: none;

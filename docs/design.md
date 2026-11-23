@@ -233,7 +233,7 @@ Measure 60 to 72 characters (`max-width:36em`). Nothing under 12 px. Headings `t
 The robin's head and body sit in the first viewport; the stage's screen and phone come up within the first 300 px of scroll. The stage is 1200 wide and `max(560px, 76vh)` tall.
 
 ### Nav centering rule
-The nav pill's center and its link group's center each sit within 1 px of the viewport's center (`document.documentElement.clientWidth / 2`, scrollbar excluded) at every width from 360 to 1920, measured by a script in 10 px steps, never judged by eye. Build: the pill is centered with `margin-inline:auto`; its content is a grid `1fr auto 1fr` (wordmark start, links center, CTA end), so a wider wordmark or CTA never shifts the links; the CTA keeps its space while hidden.
+The nav pill's center and its link group's center each sit within 1 px of the viewport's center (`document.documentElement.clientWidth / 2`, scrollbar excluded) at every width from 360 to 1920, measured by a script in 10 px steps, never judged by eye. Build: the pill is centered with `margin-inline:auto`; its content is a grid `1fr auto 1fr` (wordmark start, links center, CTA end), so a wider wordmark or CTA never shifts the links; the pill's inline padding is even (the wordmark carries its extra inset as a margin), since uneven padding moves the whole grid off center; the CTA keeps its space while hidden.
 
 ## 6. Components
 
@@ -312,7 +312,7 @@ In a grouped list (the card treatment, hairlines inset 20). Row 60 tall: Lucide 
 - **Status chip** (`/s` only): `--bg2` pill, 28 tall, padding 0 12, 14 px 600 `--t1`, text only, never a dot or a tint, shown only after the object itself shows the state: Scanned; Lucide `check` 14 then Approved; Lucide `wifi-off` 14 then Offline. If removing it loses no information, remove it.
 - **Toast**: bottom center, 24 above the safe area, `max-width:min(360px,100% - 48px)`, pill, `--card`, hairline, `--sh2`, 15 px `--t1`, 4 s, paused on hover or focus, `role="status"`. Strings: "Link Copied", "New Code Ready".
 - **Data-flow panel** (`/it` only): one `--card` panel, padding 24, three labeled nodes on one hairline with arrowheads: "Phone: you choose and approve", "bloop: keeps your Microsoft sign-in, encrypted", "Screen: gets one file link". One diagram, not three cards.
-- **Footer**: top hairline, padding 48 0 calc(48px + safe area), 14/20 `--t2`; large: wordmark and line (columns 1 to 4), links (6 to 9), credit and legal (10 to 12); compact: stacked, links in 44 px rows.
+- **Footer**: top hairline, padding 48 0 calc(48px + safe area), 14/20 `--t2`; large: wordmark and line (columns 1 to 4), links (6 to 9), credit and legal (10 to 12); compact: stacked; links in 44 px rows at every width (the target minimum).
 
 ## 7. Screens
 
