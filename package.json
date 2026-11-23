@@ -50,8 +50,9 @@
     {
       "name": "robin mesh",
       "path": "public/robin.bin",
-      "gzip": true,
-      "limit": "16 kB"
+      "gzip": false,
+      "brotli": false,
+      "limit": "21 kB"
     },
     {
       "name": "font",

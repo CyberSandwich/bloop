@@ -585,7 +585,7 @@ Every late element (poster, canvas, code, stage UI, stills) has a reserved box. 
 | JS before interaction (gzip) | 30 KB: glue plus the QR library; excludes the robin and the live demo module | 30 KB | 20 KB |
 | Live demo module (deferred, desktop only, loaded when the stage nears the viewport) | 4 KB brotli (3.6 measured; its own size-limit entry for `public/js/demo/`) | not loaded | not loaded |
 | Robin renderer (deferred, never before LCP) | 6.5 KB unminified (6.0 measured) | not loaded | not loaded |
-| Robin mesh `robin.bin` (deferred) | 16 KB (15.2 measured) | none | none |
+| Robin mesh `robin.bin` (deferred) | 21 KB raw (20.1 measured; about 15 gzip, but gzip size of this binary varies by about 1 KB between zlib builds, so the budget counts raw bytes) | none | none |
 | Robin poses (deferred, near the explorer) | 20 KB for four | none | none |
 | Poster | AVIF 36 KB | AVIF 14 KB | none |
 | Full scroll, everything | 400 KB | | |
