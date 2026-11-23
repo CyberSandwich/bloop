@@ -4,7 +4,7 @@ Status: accepted (provisional until the owner reviews it; the seams keep a rever
 
 ## Context
 
-bloop pairs a shared screen with a phone, then hands the screen one short-lived file link. It needs real-time pairing, a strict CSP on every response, EU data location, £0 running cost at MVP scale, and a full local run with no cloud account. It is built to last ten years: simplicity, maintainability and zero debt decide, not speed of first build. Evidence: the stack research (R1, about 45 sources, a local Durable Object test) and the criteria below, which were written before reading R1's recommendation.
+bloop pairs a shared screen with a phone, then hands the screen one short-lived file link. It needs real-time pairing, a strict CSP on every response, EU data location, £0 running cost at MVP scale, and a full local run with no cloud account. It is built to last ten years: simplicity, maintainability and zero debt decide, not speed of first build. Evidence: the stack research (about 45 sources and a local Durable Object test) and the criteria below, which were written before reading the research's recommendation.
 
 ## Criteria and scores (0 to 5, weight x score)
 

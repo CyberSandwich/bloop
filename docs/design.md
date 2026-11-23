@@ -725,7 +725,7 @@ Font: Inter (SIL OFL 1.1), subset from the official `InterVariable.woff2`, licen
 | 17 | Demo flow: the phone's demo path, the sample deck, rate limits | the demo states as written |
 | 18 | Match code as compare-only passes a security review | as written |
 | 19 | The hero passes a 5-second test with 5 people ("you scan the screen with your phone and your slides open, and the screen never gets your account") | rewrite the sub, not the layout |
-| 20 | Free early access wording stays within the rules for offering it | remove the closing line, keep the button |
+| 20 | Free early access wording makes no commercial offer | remove the closing line, keep the button |
 | 21 | Robin device matrix: iOS Safari, Android Chrome, Windows Edge on a room PC, Firefox (first frame, drag with page scroll, pause on hidden tab, context loss, `setPose` blend) | OGL, then three.js; the poster meanwhile |
 | 22 | uqr minified gzip size; its version 4, level M codes read by two phone cameras | qrcode-generator |
 | 23 | Pose meshes: Blender wing edits keep the base topology so `setPose` can blend | in effect: whole-object poses (yaw, pitch, roll, lift, shift) for every step, with stills rendered from them; no wings, no slide card |
