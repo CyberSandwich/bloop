@@ -12,8 +12,9 @@ menu?.addEventListener("click", (e) => {
   if (e.target instanceof Element && e.target.closest("a") && menu.matches(":popover-open")) menu.hidePopover();
 });
 
-// The CSS tilt's range (entry 0% to cover 30%) through a spring (k 120, c 30, m .4, implicit damping) into a paused
-// animation, which outranks the CSS one; only while the stage is in view.
+// The CSS tilt (range: the stage's entry) through a spring (k 120, c 30, m .4, implicit step) into a paused
+// animation that outranks it. The loop stops once settled; over the entry the visible share changes with the goal,
+// so the observer's 1% thresholds wake it.
 const stage = document.querySelector(".stage");
 const tiltable = matchMedia("(prefers-reduced-motion: no-preference) and (min-width: 900px)");
 if (stage && tiltable.matches) {
@@ -26,20 +27,23 @@ if (stage && tiltable.matches) {
   /** @param {number} now */
   const step = (now) => {
     const r = stage.getBoundingClientRect();
-    const goal = Math.min(1, Math.max(0, (innerHeight - r.top) / (0.3 * (innerHeight + r.height))));
+    const goal = Math.min(1, Math.max(0, (innerHeight - r.top) / Math.min(r.height, innerHeight)));
     const dt = Math.min(now - last, 64) / 1000;
     last = now;
     if (x < 0) x = goal;
     v = (v - 300 * (x - goal) * dt) / (1 + 75 * dt);
     x += v * dt;
     tilt.currentTime = tiltable.matches ? x * 1000 : 1000;
-    frame = requestAnimationFrame(step);
+    frame = Math.abs(x - goal) + Math.abs(v) > 1e-3 ? requestAnimationFrame(step) : 0;
   };
-  new IntersectionObserver(([entry]) => {
-    cancelAnimationFrame(frame);
-    last = performance.now();
-    if (entry?.isIntersecting) frame = requestAnimationFrame(step);
-  }).observe(stage);
+  new IntersectionObserver(
+    ([e]) => {
+      cancelAnimationFrame(frame);
+      last = performance.now();
+      frame = e?.isIntersecting ? requestAnimationFrame(step) : 0;
+    },
+    { threshold: Array.from({ length: 101 }, (_, i) => i / 100) },
+  ).observe(stage);
 }
 
 const still = matchMedia("(prefers-reduced-motion: reduce)");
