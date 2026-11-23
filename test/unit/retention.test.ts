@@ -119,6 +119,7 @@ describe("DATA-02 retention: the daily job moves past each period", () => {
       metricEvents: 0,
       guestFileRows: 0,
       guestPasses: 0,
+      r2OpRows: 0,
       userRows: 0,
       auth: { idleGrants: 0, expiredSessions: 0, staleKeys: 0 },
     });
@@ -145,5 +146,28 @@ describe("DATA-02 retention: the hourly closer", () => {
       { id: "stale-approved", ended_at: NOW, end_reason: "auto" },
       { id: "stale-claimed", ended_at: NOW, end_reason: "auto" },
     ]);
+  });
+});
+
+describe("R2 cap: retention of the operation counters", () => {
+  it("keeps 13 months and drops older ones", async () => {
+    const db = testDb();
+    for (const month of ["2025-04", "2025-05", "2026-06"]) {
+      db.raw.prepare("INSERT INTO r2_ops (month, class, n) VALUES (?, 'A', 1)").run(month);
+    }
+    const report = await runRetention({ DB: db }, config(), NOW);
+    expect(report.r2OpRows).toBe(1);
+    expect(db.raw.prepare("SELECT month FROM r2_ops ORDER BY month").all()).toEqual([
+      { month: "2025-05" },
+      { month: "2026-06" },
+    ]);
+  });
+
+  it("defaults the caps to 80% of the free tier and reads them from the variables", () => {
+    expect(config()).toMatchObject({ r2ClassAMonthlyCap: 800_000, r2ClassBMonthlyCap: 8_000_000 });
+    expect(config({ R2_CLASS_A_MONTHLY_CAP: "7", R2_CLASS_B_MONTHLY_CAP: "9" })).toMatchObject({
+      r2ClassAMonthlyCap: 7,
+      r2ClassBMonthlyCap: 9,
+    });
   });
 });

@@ -10,6 +10,7 @@ import { sha256Hex } from "../ids.ts";
 import { type Route, route } from "../router.ts";
 import type { Resolved } from "../seams/file-source/index.ts";
 import type { GuestDrop } from "../seams/guest-drop/index.ts";
+import { QuotaExhausted } from "../seams/guest-drop/index.ts";
 import { guestDropFor } from "../seams/guest-drop/select.ts";
 import { sourceFailure } from "../seams/open-path/index.ts";
 import { clientClass, parseToken } from "../seams/open-path/links.ts";
@@ -47,8 +48,14 @@ function guestResolved(used: UsedLink, drop: GuestDrop): Resolved {
     size: null,
     url: null,
     body: async () => {
-      const object = await drop.read(file.ref);
-      return object ? { ok: true, stream: object.body, length: object.size } : { ok: false, error: "file_not_found" };
+      try {
+        const object = await drop.read(file.ref);
+        return object ? { ok: true, stream: object.body, length: object.size } : { ok: false, error: "file_not_found" };
+      } catch (e) {
+        // The month's R2 read cap: the open path answers it as `upstream_failed` (502), the existing "the file's store cannot serve it now" state.
+        if (e instanceof QuotaExhausted) return { ok: false, error: "source_throttled" };
+        throw e;
+      }
     },
   };
 }

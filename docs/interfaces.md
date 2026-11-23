@@ -483,6 +483,7 @@ export interface GuestDrop {
   reserve(sessionId: string, bytes: number, name: string, type: FileType): Promise<Reservation>;
   /** Streams to storage through a fixed-length stream and a digest, then validates by range reads. Deletes on any failure. */
   accept(u: Upload, maxBytes: number): Promise<{ ok: true; file: GuestFile } | { ok: false; error: DropError }>;
+  /** Throws `QuotaExhausted` (exported here) when the month's R2 class B cap is reached; reserve answers `storage_full` at either cap. */
   read(r2Key: string): Promise<{ body: ReadableStream<Uint8Array>; size: number } | null>;
   delete(r2Key: string): Promise<void>;          // idempotent
   /** Deletes the session's object and closes its ledger row, by key and by session id. True when something existed. Idempotent. */

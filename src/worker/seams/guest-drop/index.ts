@@ -8,6 +8,9 @@ export type GuestPolicy = "off" | "pass" | "open";
 export const effectivePolicy = (room: GuestPolicy | null, mode: Mode, configured: GuestPolicy): GuestPolicy =>
   mode === "demo" ? "open" : (room ?? configured);
 
+/** Thrown by `read` when this month's R2 operation cap is reached (meter.ts); the bytes stay in the bucket. */
+export class QuotaExhausted extends Error {}
+
 export type Reservation = { ok: true; r2Key: string } | { ok: false; error: DropError };
 
 export interface Upload {
@@ -36,12 +39,13 @@ export type Accepted = { ok: true; file: GuestFile } | { ok: false; error: DropE
 export interface GuestDrop {
   /** Streams to storage, then validates by range reads. Deletes the object on any failure. */
   accept(u: Upload, maxBytes: number): Promise<Accepted>;
+  /** Throws `QuotaExhausted` when the month's class B cap is reached. */
   read(r2Key: string): Promise<{ body: ReadableStream<Uint8Array>; size: number } | null>;
   /** Idempotent. */
   delete(r2Key: string): Promise<void>;
   /** Deletes the session's object and ledger row: by its key when known, else by session. Returns whether an object existed. */
   purge(sessionId: string | null, r2Key: string | null): Promise<boolean>;
-  /** Picks the object key and reserves budget for one session's file before any byte is stored: `storage_full` when it would pass the budget. */
+  /** Picks the object key and reserves budget for one session's file before any byte is stored: `storage_full` when it would pass the budget or the month's R2 operation caps are reached. */
   reserve(sessionId: string, bytes: number, name: string, type: FileType): Promise<Reservation>;
   /** Hourly backstop: deletes objects older than the given age. Returns the count. */
   sweep(olderThanMs: number): Promise<number>;

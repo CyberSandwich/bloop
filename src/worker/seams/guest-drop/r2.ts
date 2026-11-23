@@ -2,7 +2,15 @@
 // `g/<128-bit random>`: the key is the capability, and it is only ever handed to /f/ through the session.
 import type { Db } from "../../auth/db.ts";
 import { newRef } from "../../ids.ts";
-import type { Accepted, GuestDrop, RangeReader, Reservation, Upload } from "./index.ts";
+import {
+  type Accepted,
+  type GuestDrop,
+  QuotaExhausted,
+  type RangeReader,
+  type Reservation,
+  type Upload,
+} from "./index.ts";
+import { DEFAULT_OP_CAPS, type OpCaps, R2Meter } from "./meter.ts";
 import { validate } from "./validate.ts";
 
 /** The slice of an R2 bucket this file uses; the platform binding satisfies it (see `bucketOf`). */
@@ -43,9 +51,21 @@ export class R2GuestDrop implements GuestDrop {
     private readonly db: Db,
     private readonly budgetBytes: number,
     private readonly now: () => number = Date.now,
-  ) {}
+    caps: OpCaps = DEFAULT_OP_CAPS,
+  ) {
+    this.meter = new R2Meter(db, caps, now);
+  }
+
+  private readonly meter: R2Meter;
+
+  /** Counts one billed operation before it runs (meter.ts); refuses it at the cap, and when the count cannot be written. */
+  private async metered<T>(cls: "A" | "B", op: () => Promise<T>): Promise<T> {
+    if (!(await this.meter.charge(cls))) throw new QuotaExhausted();
+    return op();
+  }
 
   async reserve(sessionId: string, bytes: number, name: string, type: "pptx" | "pdf"): Promise<Reservation> {
+    if (!(await this.meter.hasRoom())) return { ok: false, error: "storage_full" };
     const r2Key = `${PREFIX}${newRef()}`;
     // One statement, so concurrent drops cannot both pass the budget check.
     const res = await this.db
@@ -61,12 +81,20 @@ export class R2GuestDrop implements GuestDrop {
 
   async accept(u: Upload, maxBytes: number): Promise<Accepted> {
     if (u.length > maxBytes) return { ok: false, error: "too_large" };
-    const stored = await this.store(u);
-    if (!stored) {
+    let stored: { size: number; sha256: string } | null;
+    let checked: Awaited<ReturnType<typeof validate>> | null = null;
+    try {
+      stored = await this.store(u);
+      if (stored) checked = await validate(this.ranges(u.r2Key, stored.size), u.declaredType);
+    } catch (e) {
+      if (!(e instanceof QuotaExhausted)) throw e;
+      await this.delete(u.r2Key);
+      return { ok: false, error: "storage_full" };
+    }
+    if (!stored || !checked) {
       await this.delete(u.r2Key);
       return { ok: false, error: "upload_aborted" };
     }
-    const checked = await validate(this.ranges(u.r2Key, stored.size), u.declaredType);
     if (!checked.ok) {
       await this.delete(u.r2Key);
       return checked;
@@ -87,6 +115,7 @@ export class R2GuestDrop implements GuestDrop {
    */
   private async store(u: Upload): Promise<{ size: number; sha256: string } | null> {
     if (typeof FixedLengthStream === "undefined" || !crypto.DigestStream) throw new Error("needs the Workers runtime");
+    if (!(await this.meter.charge("A"))) throw new QuotaExhausted();
     const fixed = new FixedLengthStream(u.length);
     const digest = new crypto.DigestStream("SHA-256");
     const hasher = digest.getWriter();
@@ -109,14 +138,14 @@ export class R2GuestDrop implements GuestDrop {
       size,
       read: async (offset, length) => {
         if (length <= 0 || offset >= size) return new Uint8Array();
-        const part = await this.bucket.get(key, { range: { offset, length } });
+        const part = await this.metered("B", () => this.bucket.get(key, { range: { offset, length } }));
         return part ? new Uint8Array(await part.arrayBuffer()) : new Uint8Array();
       },
     };
   }
 
   async read(r2Key: string) {
-    const object = await this.bucket.get(r2Key);
+    const object = await this.metered("B", () => this.bucket.get(r2Key));
     return object ? { body: object.body, size: object.size } : null;
   }
 
@@ -132,7 +161,11 @@ export class R2GuestDrop implements GuestDrop {
           .first<{ r2_key: string }>()
       : null;
     const keys = [...new Set([r2Key, row?.r2_key].filter((k): k is string => !!k))];
-    const found = (await Promise.all(keys.map((k) => this.bucket.head(k)))).some((o) => o !== null);
+    // The existence check only feeds the audit: past the cap, or when the count fails, the (free) delete still runs.
+    const heads = await Promise.all(
+      keys.map(async (k) => (await this.meter.charge("B").catch(() => false)) && (await this.bucket.head(k)) !== null),
+    );
+    const found = heads.some(Boolean);
     if (keys.length > 0) await this.bucket.delete(keys);
     // Marked only after the delete returned: a failed delete leaves the row for the sweep (DROP-07).
     if (sessionId) {
@@ -149,6 +182,8 @@ export class R2GuestDrop implements GuestDrop {
     let cursor: string | undefined;
     let deleted = 0;
     for (let page = 0; page < MAX_SWEEP_PAGES; page++) {
+      // Past the cap the sweep stops and leaves its rows open: the 1-day lifecycle rule still deletes the objects.
+      if (!(await this.meter.charge("A"))) return deleted;
       const listed = await this.bucket.list({ prefix: PREFIX, ...(cursor ? { cursor } : {}) });
       const old = listed.objects.filter((o) => o.uploaded.getTime() < cutoff).map((o) => o.key);
       if (old.length > 0) {

@@ -70,6 +70,9 @@ const schema = z
     /** Demo screens one IP hash may hold at once, so one address cannot fill the cap. */
     DEMO_MAX_PER_IP: int(1, 10_000).default(2),
     GUEST_STORAGE_BUDGET_BYTES: int(1, Number.MAX_SAFE_INTEGER).default(5_368_709_120),
+    /** R2 operations bloop may perform per UTC month: 80% of the free tier's 1M class A and 10M class B. */
+    R2_CLASS_A_MONTHLY_CAP: int(1, Number.MAX_SAFE_INTEGER).default(800_000),
+    R2_CLASS_B_MONTHLY_CAP: int(1, Number.MAX_SAFE_INTEGER).default(8_000_000),
     /** Test only. "1" lowers the floors below and is refused unless PUBLIC_ORIGIN is a local address. */
     TEST_TIMING: z.enum(["0", "1"]).default("0"),
   })
@@ -152,6 +155,8 @@ export interface Config {
   /** How long a demo screen holds one of the concurrent slots: a claim window plus one session. */
   demoHoldMs: number;
   guestStorageBudgetBytes: number;
+  r2ClassAMonthlyCap: number;
+  r2ClassBMonthlyCap: number;
   /** Test only: the platform rate-limit bindings are skipped; the exact limits in the objects stay on. */
   testTiming: boolean;
   machine: MachineConfig;
@@ -216,6 +221,8 @@ export function parseConfig(env: Record<string, unknown>): ConfigResult {
       demoMaxPerIp: v.DEMO_MAX_PER_IP,
       demoHoldMs: (v.CLAIM_TIMEOUT_SECONDS + v.DEMO_SESSION_MINUTES * 60) * 1000,
       guestStorageBudgetBytes: v.GUEST_STORAGE_BUDGET_BYTES,
+      r2ClassAMonthlyCap: v.R2_CLASS_A_MONTHLY_CAP,
+      r2ClassBMonthlyCap: v.R2_CLASS_B_MONTHLY_CAP,
       testTiming: v.TEST_TIMING === "1",
       machine: {
         codeTtlSeconds: v.CODE_TTL_SECONDS,

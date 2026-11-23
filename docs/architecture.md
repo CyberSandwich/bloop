@@ -420,6 +420,10 @@ CREATE TABLE guest_file (                -- row: 30 days after deleted_at; objec
   session_id TEXT PRIMARY KEY, r2_key TEXT NOT NULL, bytes INTEGER NOT NULL,
   type TEXT NOT NULL CHECK (type IN ('pptx','pdf')), sha256 TEXT NOT NULL,
   name TEXT NOT NULL, created_at INTEGER NOT NULL, deleted_at INTEGER);
+
+CREATE TABLE r2_ops (                    -- R2 operations bloop performed; 13 months (migration 0002)
+  month TEXT NOT NULL, class TEXT NOT NULL CHECK (class IN ('A','B')), n INTEGER NOT NULL,
+  PRIMARY KEY (month, class));          -- month 'YYYY-MM' UTC; A = put, list; B = get, head
 ```
 
 ### 8.2 Screen Durable Object storage (all deleted at session end, or with `deleteAll()` at close)
@@ -482,6 +486,8 @@ GRAPH_DOWNLOAD_HOSTS=*.sharepoint.com,*.files.1drv.com,my.microsoftpersonalconte
 GUEST_DROP=open                  # off | open | pass; every guest drop waits for the Open click on the screen
 GUEST_MAX_BYTES=52428800
 GUEST_STORAGE_BUDGET_BYTES=5368709120
+R2_CLASS_A_MONTHLY_CAP=800000    # R2 puts and lists a month (UTC); at the cap drops get storage_full
+R2_CLASS_B_MONTHLY_CAP=8000000   # R2 gets and heads a month; at the cap /f/ reads of guest files get upstream_failed (502)
 DEMO_ENABLED=true
 DEMO_SESSION_MINUTES=10
 DEMO_GUEST_MAX_BYTES=10485760
