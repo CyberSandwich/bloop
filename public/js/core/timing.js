@@ -1,0 +1,31 @@
+// Client timings. The code values mirror the config defaults and only drive visuals and the rotation
+// request; the server decides what is valid.
+export const CODE_TTL_MS = 60_000;
+export const CODE_GRACE_MS = 10_000;
+/** The screen asks for the next code this long before the shown one hard-expires. */
+export const ROTATE_AHEAD_MS = CODE_GRACE_MS;
+export const ENDED_QR_RETURN_MS = 3000;
+export const ERROR_RECOVER_MS = 5000;
+export const OFFLINE_HINT_MS = 5000;
+
+/** Reconnect delays after the 1st, 2nd, ... failure; the last repeats. */
+export const RECONNECT_DELAYS = [1000, 2000, 5000, 10_000, 30_000];
+/** Failed reconnects before the polling fallback starts. */
+export const POLL_AFTER_FAILURES = 3;
+export const POLL_MS = 3000;
+/** Poll delays after the 1st, 2nd, ... failed poll; the last repeats. */
+export const POLL_BACKOFF = [5000, 10_000, 30_000];
+export const PING_MS = 25_000;
+/** A socket that has said nothing for this long is dropped and reconnected. */
+export const SILENCE_MS = 70_000;
+
+/** @param {number} failures consecutive failures, 1 for the first */
+export const reconnectDelay = (failures) =>
+  RECONNECT_DELAYS[Math.min(Math.max(failures, 1), RECONNECT_DELAYS.length) - 1] ?? 30_000;
+
+/** @param {number} failures */
+export const shouldPoll = (failures) => failures >= POLL_AFTER_FAILURES;
+
+/** @param {number} pollFailures consecutive failed polls, 0 when the last one worked */
+export const pollDelay = (pollFailures) =>
+  pollFailures <= 0 ? POLL_MS : (POLL_BACKOFF[Math.min(pollFailures, POLL_BACKOFF.length) - 1] ?? 30_000);
