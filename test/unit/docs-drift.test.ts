@@ -92,8 +92,9 @@ describe("doc paths", () => {
           .replace(/:\d+(-\d+)?$/, "")
           .replace(/^\.\//, "")
           .replace(/\/$/, "");
-        // Skipped: URLs, routes, parent-folder (private) paths, assignments, npm scopes, home paths, MIME types, globs.
-        if (/^(https?:|\/|\.\.\/|[A-Z_]+=|@|~|application\/)|[*<>{}()\s:|+]/.test(ref) || NOT_IN_REPO.has(ref))
+        // Skipped: URLs, routes, parent-folder (private) paths, elided URL tails (`.../runs`), assignments, npm
+        // scopes, home paths, MIME types, globs.
+        if (/^(https?:|\/|\.\.\.?\/|[A-Z_]+=|@|~|application\/)|[*<>{}()\s:|+]/.test(ref) || NOT_IN_REPO.has(ref))
           continue;
         const shaped = ref.includes("/") || new RegExp(`^[\\w.-]+\\.(${CODE_EXT})$`).test(ref);
         if (!shaped) continue;
