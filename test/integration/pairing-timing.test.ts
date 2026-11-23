@@ -1,7 +1,7 @@
 // Timers with the test-only short timings. TEST_TIMING=1 lowers the config floors and is refused unless
 // PUBLIC_ORIGIN is a local address; production never sets it (docs/architecture.md section 11).
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
-import { Api, claim, openScreen, phoneSocket, Socket, startPairing } from "./pairing-client.ts";
+import { Api, claim, openScreen, phoneSocket, silentSocketOutcome, startPairing } from "./pairing-client.ts";
 import type { Wrangler } from "./wrangler.ts";
 
 let wrangler: Wrangler;
@@ -116,16 +116,13 @@ describe("session timers", () => {
     socket.close();
   });
 
-  it("a socket that never says hello is closed with 1008 after 5 s", async () => {
+  it("a screen socket that sends no frame at all gets an error frame, then close 1008 after 5 s", async () => {
     const created = await api.post<{ sid: string }>("/api/screens", { mode: "demo" });
     const ref = created.body.sid.split(".")[0];
-    const socket = await Socket.open(api.base, `/api/screen/ws?ref=${ref}`);
-    // A frame the object sees (the exact ping string is answered by the runtime, so use another spelling).
-    // workerd does not deliver a server close to a client that has sent nothing at all (unverified in production).
-    socket.send('{"v": 1, "t": "ping"}');
     const started = Date.now();
-    const closed = await socket.waitClosed(9000);
-    expect(closed.code).toBe(1008);
+    const { texts, close } = await silentSocketOutcome(api.base, `/api/screen/ws?ref=${ref}`, 9000);
+    expect(close).toEqual({ code: 1008, reason: "hello timeout" });
     expect(Date.now() - started).toBeGreaterThan(4000);
+    expect(texts.map((t) => JSON.parse(t))).toEqual([expect.objectContaining({ t: "error", code: "unauthorized" })]);
   });
 });

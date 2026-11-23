@@ -1,5 +1,6 @@
 // Test clients for the pairing API: an HTTP caller and a WebSocket wrapper that keeps every frame.
 import { request as httpRequest } from "node:http";
+import { connect as netConnect } from "node:net";
 import { startWrangler, type Wrangler } from "./wrangler.ts";
 
 /** Fake pepper for HMAC of IPs; the Worker refuses to serve pairing routes without one. */
@@ -69,6 +70,54 @@ export interface Frame {
 const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 
 /** A WebSocket that records every frame, so a test can wait for one that already arrived. */
+/**
+ * Opens a WebSocket by hand, sends no frame, and resolves with what the server wrote: its text frames and the close
+ * frame. Node's WebSocket cannot assert a server close: it waits for the TCP close, which `wrangler dev` never sends
+ * after the closing handshake, so its `close` event does not fire. Reads the wire instead. Frames under 126 bytes.
+ */
+export const silentSocketOutcome = (
+  base: string,
+  path: string,
+  ms = 9000,
+): Promise<{ texts: string[]; close: { code: number; reason: string } | null }> =>
+  new Promise((resolve) => {
+    const url = new URL(base);
+    const texts: string[] = [];
+    let buf = Buffer.alloc(0);
+    let head = true;
+    const sock = netConnect(Number(url.port), url.hostname);
+    const done = (close: { code: number; reason: string } | null) => {
+      clearTimeout(timer);
+      sock.destroy();
+      resolve({ texts, close });
+    };
+    const timer = setTimeout(() => done(null), ms);
+    sock.on("connect", () =>
+      sock.write(
+        `GET ${path} HTTP/1.1\r\nHost: ${url.host}\r\nUpgrade: websocket\r\nConnection: Upgrade\r\n` +
+          `Sec-WebSocket-Key: dGhlIHNhbXBsZSBub25jZQ==\r\nSec-WebSocket-Version: 13\r\nOrigin: ${base}\r\n\r\n`,
+      ),
+    );
+    sock.on("data", (chunk: Buffer) => {
+      buf = Buffer.concat([buf, chunk]);
+      if (head) {
+        const end = buf.indexOf("\r\n\r\n");
+        if (end < 0) return;
+        buf = buf.subarray(end + 4);
+        head = false;
+      }
+      while (buf.length >= 2) {
+        const opcode = (buf[0] as number) & 0x0f;
+        const len = (buf[1] as number) & 0x7f;
+        if (buf.length < 2 + len) return;
+        const payload = buf.subarray(2, 2 + len);
+        buf = buf.subarray(2 + len);
+        if (opcode === 1) texts.push(payload.toString("utf8"));
+        if (opcode === 8) return done({ code: payload.readUInt16BE(0), reason: payload.subarray(2).toString("utf8") });
+      }
+    });
+  });
+
 export class Socket {
   readonly frames: Frame[] = [];
   closed: { code: number; reason: string } | null = null;
