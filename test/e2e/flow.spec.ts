@@ -84,7 +84,9 @@ test.describe("pairing flow", () => {
     await expectNoAxeViolations(phone.page);
 
     await expect(heading(screen.page)).toHaveText("Check your phone.");
-    await expect(screen.page.locator("#line")).toHaveText(`It should show ${match}.`);
+    // The phone's title above means it has listed its files, so the screen is past scanned and in choosing
+    // (design.md, screen page states); the match code stays beside the line.
+    await expect(screen.page.locator("#line")).toHaveText("Choose a file, then tap Approve.");
     await expect(screen.page.locator("#match")).toHaveText(match);
     await expect(screen.page.locator("#chip")).toContainText("Scanned");
     await expect(screen.page.getByRole("button", { name: "Start Over" })).toBeVisible();
