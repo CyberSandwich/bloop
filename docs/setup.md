@@ -16,7 +16,6 @@ Steps only the owner can do, because they need the owner's accounts. Everything 
 ## Checks only a person can do
 
 - **Header grade:** after deploy, `npx @mdn/mdn-http-observatory https://bloop.saputra.co.uk` should grade A or better.
-- **WebSocket hello timeout (F3):** open a raw socket to `/api/screen/ws` from a browser console on the site's origin and send nothing; it must close within the hello timeout. `wrangler dev` does not enforce this, production should.
 - **Browser walk:** allow `127.0.0.1` and `localhost` once in Claude in Chrome, so every page and state can be checked at 1440, 834 and 390 locally. CI's Playwright and axe runs cover the same pages on every push.
 - **QR from 2 m:** on a real lectern screen, scan `/s` from the back of the front row with three phones (iPhone camera, Android camera, Android Chrome).
 - **Field test T3** on a lectern PC (below), including the PDF view and residue check.
