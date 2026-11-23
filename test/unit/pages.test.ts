@@ -44,10 +44,11 @@ describe.each(PAGES)("%s under the strict CSP", (page) => {
 describe("client code under the strict CSP", () => {
   const files = [
     "screen.js",
-    "screen-demo.js",
+    "viewer.js",
     "phone.js",
     "code.js",
     "core/demo.js",
+    "core/rows.js",
     "core/ui.js",
     "core/channel.js",
     "core/api.js",
@@ -72,7 +73,7 @@ describe("client code under the strict CSP", () => {
   });
 
   it("never puts a credential in a URL", () => {
-    for (const file of ["screen.js", "screen-demo.js", "phone.js", "core/channel.js"]) {
+    for (const file of ["screen.js", "viewer.js", "phone.js", "core/channel.js"]) {
       const code = read(`js/${file}`);
       expect(code, file).not.toMatch(/[?&](sid|pid)=/);
     }
@@ -93,6 +94,24 @@ describe("the demo screen", () => {
     expect(read("s.html")).toMatch(/<p class="foot">Phone not with you\?/);
     expect(read("js/screen.js")).toContain('document.body.classList.add("is-demo")');
     expect(read("css/app.css")).toMatch(/\.is-demo > \.foot \{\s*display: none;\s*\}/);
+  });
+
+  it("LINK-01 a link item opens in a new tab with no opener or referrer, and is never framed", () => {
+    const viewer = read("js/viewer.js");
+    expect(viewer).toMatch(/target: "_blank", rel: "noopener noreferrer"/);
+    expect(viewer).toContain('startsWith("https://")');
+    for (const file of ["js/viewer.js", "js/screen.js", "s.html"]) expect(read(file), file).not.toMatch(/iframe/i);
+  });
+
+  it("one h1 per app page, a back arrow first in its bar, and the logo home on the phone pages", () => {
+    expect(read("s.html")).toMatch(/<header class="bar">\s*<a class="round" id="b-back" href="\/">/);
+    for (const page of ["a.html", "code.html"]) {
+      const html = read(page);
+      expect(html, page).toMatch(
+        /<header class="phone-bar">\s*<a class="round"[^>]*>.*?<span class="sr">Back<\/span><\/a>/s,
+      );
+      expect(html, page).toMatch(/<a class="brand" href="\/">/);
+    }
   });
 });
 

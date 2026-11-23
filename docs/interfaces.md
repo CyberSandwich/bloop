@@ -128,7 +128,7 @@ export type ScreenStateKey =
   | "waiting" | "scanned" | "choosing" | "approved" | "opening" | "open" | "open_fallback"
   | "pdf_fallback" | "pdf_file" | "guest_open" | "ended" | "offline" | "service_down" | "error" | "phone_width"
   | "rate_limited"   // a refused screen create (DEMO-02): its own design.md row, retried with backoff
-  | "demo_open";     // a demo screen from approved to open: the file in the page, whatever the open mode (DEMO-01)
+  | "demo_open";     // a demo screen from approved to open: the viewer, whatever the open mode (DEMO-01)
 ```
 
 ## 2. Pairing and the session state machine
@@ -465,17 +465,18 @@ export declare function clientClass(userAgent: string | null): "office" | "brows
 
 The status of each `/f/` refusal is the one in `public/js/shared/errors.js` (`link_unknown` 404, `link_expired`, `link_exhausted` and `link_revoked` 410, `link_binding_failed` 403, `upstream_failed` 502, `pdf_unavailable` 404, `mint_limit` 429); 410 tells Office the file is gone for good. The name segment of the link comes from `public/js/shared/names.js`: `[A-Za-z0-9-]`, 1 to 60 characters, no dots except the extension, sized so the whole link fits 200 characters for the configured origin (`PUBLIC_ORIGIN` is capped at 120 characters), which keeps the `ms-powerpoint:ofv|u|` URI under Office's 256.
 
-Screen side (`public/js/launcher.js`, JSDoc; `createLauncher(deps)` takes every browser effect as a dependency, so it is unit tested without a browser):
+Screen side (`public/js/launcher.js`; its types are in `public/js/types.d.ts`; `createLauncher(deps)` takes every browser effect as a dependency, so it is unit tested without a browser):
 ```ts
 /** Launch ladder: protocol, then Download after 5 s with no fetch, then the PDF view. Each link is acted on once, whether it arrived as an `open` frame or as a /api/screen/link answer. */
 type Minted = "ok" | "spent" | "failed";
 export interface ScreenLauncher {
-  launch(links: LinkSet): void;            // protocol: location.assign + one "launched" report; pdf: window.open("bloop-pdf"); download: <a download>
+  launch(links: LinkSet, item?: number): void; // protocol: location.assign + one "launched" report; pdf and view (an image): window.open("bloop-pdf"), reported as pdf or view; download: <a download>. The demo passes pdf and view to the viewer instead (`viewer.js`: a HEAD for a PDF, the stage <img> for an image)
   click(): void;                           // the Open control: launch again, or open a PDF the popup blocker refused, under a user gesture
-  download(): Promise<Minted>;             // the link it started under a minute ago again (3 starts at most), else POST /api/screen/link {purpose:"download"} (the first file) and launch the answer
+  download(item?: number): Promise<Minted>; // the link it started for that item under a minute ago again (3 starts at most), else POST /api/screen/link {purpose:"download", item} (no item: the first file) and launch the answer
   showPdf(): Promise<Minted>;              // POST /api/screen/link {purpose:"pdf"}
-  spent(): boolean;                        // a mint met `mint_limit`: the page hides Download and Show as PDF Instead, flags no error
-  onView(view: ScreenView): void;          // recovers a lost link (approved, no link after 1.5 s), times the 5 s, resets at the end
+  relink(item: number): Promise<Minted>;   // POST /api/screen/link {purpose:"protocol", item}: another item's launch link (an image's view link), no mode change
+  spent(item?: number): boolean;           // a mint for that item (none: the first file) met `mint_limit`, which is per item: the page hides that item's Download and Show as PDF Instead, flags no error
+  onView(view: ScreenView): void;          // recovers a lost link (approved with a file, no link after 1.5 s; a links-only session mints none), times the 5 s, resets at the end
   needsClick(): boolean;                   // the launch had no user activation, or a popup was blocked
   downloadReady(): boolean;
   closePdf(): void;

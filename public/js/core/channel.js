@@ -2,36 +2,13 @@
 // polled every 3 s once 3 reconnects have failed (docs/architecture.md section 7). The credential
 // travels in the first frame, never in the URL. Works for both the screen and the phone.
 /** @import {ErrorCode} from "../../../src/shared/protocol.ts" */
+/** @import {ChannelOptions, SocketLike} from "../types.js" */
 import { PING_MS, pollDelay, reconnectDelay, SILENCE_MS, shouldPoll } from "./timing.js";
 
 /** Errors after which the credential is dead and retrying is pointless. */
 export const FATAL = /** @type {ReadonlySet<ErrorCode>} */ (
   new Set(["unauthorized", "pairing_invalid", "screen_gone"])
 );
-
-/**
- * @typedef {object} SocketLike
- * @property {(data: string) => void} send
- * @property {() => void} close
- * @property {((e: any) => void) | null} onopen
- * @property {((e: any) => void) | null} onmessage
- * @property {((e: any) => void) | null} onclose
- * @property {((e: any) => void) | null} onerror
- */
-
-/**
- * @typedef {object} ChannelOptions
- * @property {string} url full ws(s) URL, carrying only the non-secret ref
- * @property {string} statePath polling route
- * @property {string} credential sid or pid
- * @property {"sid" | "pid"} helloKey
- * @property {import("./api.js").Api} api
- * @property {(url: string) => SocketLike} connect
- * @property {(view: any) => void} onView
- * @property {(code: ErrorCode, view?: any) => void} onError a pushed error frame, or a fatal poll error
- * @property {(frame: any) => void} [onFrame] `open` and any other frame the page handles
- * @property {(link: "ok" | "offline" | "down") => void} onLink
- */
 
 /** @param {ChannelOptions} o */
 export function openChannel(o) {

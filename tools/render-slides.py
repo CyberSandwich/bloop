@@ -5,7 +5,7 @@ The PDF is the deck exported, so one set of images shows both catalog items, Sam
 
 Use: python3 -I tools/render-slides.py   (needs poppler's pdftoppm, cwebp and avifenc on PATH)
 Writes public/img/demo-slide-<n>.webp and .avif, 1920 px wide, one pair per PDF page. The page count must equal
-SLIDES in public/js/screen-demo.js and the deck's slide count (test/unit/mock-source.test.ts checks both).
+SLIDES in public/js/core/demo.js and the deck's slide count (test/unit/mock-source.test.ts checks both).
 Re-run whenever demo-deck.pptx or demo-handout.pdf changes.
 """
 import subprocess

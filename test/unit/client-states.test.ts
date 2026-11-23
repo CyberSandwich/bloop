@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
-import { type PhoneCtx, phoneKey, type ScreenCtx, screenKey } from "../../public/js/core/states.js";
+import { phoneKey, screenKey } from "../../public/js/core/states.js";
 import { ERRORS } from "../../public/js/shared/errors.js";
+import type { PhoneCtx, ScreenCtx } from "../../public/js/types.js";
 import type { FileEntry, PhoneView, ScreenView, SessionState } from "../../src/shared/protocol.ts";
 
 const screenView = (state: SessionState, over: Partial<ScreenView> = {}): ScreenView => ({
@@ -118,7 +119,7 @@ describe("phone state to view mapping", () => {
     info: { roomName: "Room 2.14", registered: true, match: "42", mode: "live" },
     view: phoneView("claimed"),
     files: null,
-    selected: null,
+    selected: [],
     approving: false,
     canceled: false,
     drop: null,
@@ -131,11 +132,17 @@ describe("phone state to view mapping", () => {
 
   it("shows the match while the list loads, then approve with the first file selected", () => {
     expect(phoneKey(ctx({}))).toBe("match");
-    expect(phoneKey(ctx({ files: [file("a")], selected: "a" }))).toBe("approve");
+    expect(phoneKey(ctx({ files: [file("a")], selected: ["a"] }))).toBe("approve");
   });
 
-  it("choose is the state of a loaded list with nothing selected", () => {
-    expect(phoneKey(ctx({ files: [file("a")], selected: null }))).toBe("choose");
+  it("choose is the state of a loaded list with nothing ticked", () => {
+    expect(phoneKey(ctx({ files: [file("a")], selected: [] }))).toBe("choose");
+  });
+
+  it("any mix can be approved: several ticks, or links alone", () => {
+    const link = { kind: "link", id: "l", url: "https://www.vevox.com/", title: "Vevox" } as const;
+    expect(phoneKey(ctx({ files: [file("a"), file("b"), link], selected: ["a", "l"] }))).toBe("approve");
+    expect(phoneKey(ctx({ files: [link], selected: ["l"] }))).toBe("approve");
   });
 
   it("an empty list is the empty state", () => {
@@ -145,14 +152,14 @@ describe("phone state to view mapping", () => {
   it("demo and unregistered rooms change the approve state", () => {
     const files = [file("a")];
     const info = { roomName: "Room 2.14", registered: true, match: "42", mode: "live" } as const;
-    expect(phoneKey(ctx({ files, selected: "a", info: { ...info, mode: "demo", registered: false } }))).toBe(
+    expect(phoneKey(ctx({ files, selected: ["a"], info: { ...info, mode: "demo", registered: false } }))).toBe(
       "approve_demo",
     );
-    expect(phoneKey(ctx({ files, selected: "a", info: { ...info, registered: false } }))).toBe("unregistered");
+    expect(phoneKey(ctx({ files, selected: ["a"], info: { ...info, registered: false } }))).toBe("unregistered");
   });
 
   it("approving shows while the call is in flight", () => {
-    expect(phoneKey(ctx({ files: [file("a")], selected: "a", approving: true }))).toBe("approving");
+    expect(phoneKey(ctx({ files: [file("a")], selected: ["a"], approving: true }))).toBe("approving");
   });
 
   it.each([
@@ -212,7 +219,7 @@ describe("phone state to view mapping", () => {
 
   it("a phone that chose to send a file walks choose, confirm, sending in its own order", () => {
     for (const drop of ["choose", "confirm", "sending"] as const) {
-      expect(phoneKey(ctx({ drop, files: [file("a")], selected: "a" }))).toBe(`guest_${drop}`);
+      expect(phoneKey(ctx({ drop, files: [file("a")], selected: ["a"] }))).toBe(`guest_${drop}`);
     }
   });
 
@@ -230,7 +237,7 @@ describe("phone state to view mapping", () => {
   });
 
   it("an error replaces the flow", () => {
-    expect(phoneKey(ctx({ error: "taken", files: [file("a")], selected: "a" }))).toBe("taken");
+    expect(phoneKey(ctx({ error: "taken", files: [file("a")], selected: ["a"] }))).toBe("taken");
     expect(phoneKey(ctx({ error: "taken", info: null, view: null }))).toBe("taken");
   });
 });

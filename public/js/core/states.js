@@ -1,6 +1,7 @@
 // State to view mapping: the server's view plus what only the client knows become one state key.
 // Pure; the pages render the key through copy.js.
-/** @import {FileEntry, FileItem, Item, PhoneStateKey, PhoneView, ScreenStateKey, ScreenView} from "../../../src/shared/protocol.ts" */
+/** @import {FileItem, Item, PhoneStateKey, PhoneView, ScreenStateKey, ScreenView} from "../../../src/shared/protocol.ts" */
+/** @import {PhoneCtx, ScreenCtx} from "../types.js" */
 
 /**
  * The first file of a view's items, or null: the one an approval launches.
@@ -12,14 +13,6 @@ export const firstFile = (items) => /** @type {FileItem | undefined} */ (items.f
 /** A deck shown as a PDF is the fallback; a file that is a PDF is just opened as one. */
 const pdfKey = (/** @type {ScreenView | PhoneView} */ v) =>
   firstFile(v.items)?.type === "pdf" ? "pdf_file" : "pdf_fallback";
-
-/**
- * @typedef {object} ScreenCtx
- * @property {ScreenView | null} view
- * @property {"ok" | "offline" | "down"} link
- * @property {boolean} errored an action or a pushed error failed; clears after a pause
- * @property {boolean} [limited] creating the screen was refused with `rate_limited` (the demo caps, DEMO-02); the page retries
- */
 
 /**
  * @param {ScreenCtx} c
@@ -59,26 +52,6 @@ export function screenKey(c) {
 }
 
 /**
- * @typedef {object} PhoneInfo what the claim or a resumed view says about the room
- * @property {string} roomName
- * @property {boolean} registered
- * @property {string} match
- * @property {"live" | "demo"} mode
- */
-
-/**
- * @typedef {object} PhoneCtx
- * @property {PhoneStateKey | null} error a failure to show in place of the flow
- * @property {PhoneInfo | null} info null while the claim is in flight
- * @property {PhoneView | null} view the latest pushed or fetched view
- * @property {FileEntry[] | null} files null while loading
- * @property {string | null} selected a file id
- * @property {boolean} approving the approve call is in flight
- * @property {boolean} canceled this phone canceled the pairing
- * @property {"choose" | "confirm" | "sending" | null} drop where the guest flow is, which only this phone knows
- */
-
-/**
  * @param {PhoneCtx} c
  * @returns {PhoneStateKey}
  */
@@ -107,7 +80,7 @@ export function phoneKey(c) {
   if (!c.files) return "match";
   if (c.files.length === 0) return "empty";
   if (c.approving) return "approving";
-  if (c.selected === null) return "choose";
+  if (c.selected.length === 0) return "choose";
   if (c.info.mode === "demo") return "approve_demo";
   return c.info.registered ? "approve" : "unregistered";
 }

@@ -92,11 +92,11 @@ describe("api client", () => {
 });
 
 describe("file list", () => {
-  it("returns the files among the items the route sends", async () => {
-    const files = [{ kind: "file", id: "a", name: "A.pptx", type: "pptx", modifiedAt: 1, size: null }];
+  it("returns every item the route sends, files then links, in its order", async () => {
+    const file = { kind: "file", id: "a", name: "A.pptx", type: "pptx", modifiedAt: 1, size: null };
     const link = { kind: "link", id: "l", url: "https://www.vevox.com/", title: "Vevox" };
-    const f = fakeFetch(() => ok({ items: [...files, link] }));
-    expect(await loadFiles(createApi({ fetch: f.fetch }), "p.q")).toEqual({ ok: true, files });
+    const f = fakeFetch(() => ok({ items: [file, link] }));
+    expect(await loadFiles(createApi({ fetch: f.fetch }), "p.q")).toEqual({ ok: true, files: [file, link] });
   });
 
   it("treats a body without a list as an empty list", async () => {

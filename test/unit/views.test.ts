@@ -78,7 +78,7 @@ describe("views", () => {
   });
 
   it("PAIR-03 label: a screen is registered only with a room id", () => {
-    expect(roomView(META)).toEqual({ name: "Demo room", registered: false });
+    expect(roomView(META)).toEqual({ name: "Demo Room", registered: false });
     expect(roomView({ ...META, mode: "live" })).toEqual({ name: "Unregistered screen", registered: false });
     expect(roomView({ ...META, mode: "live", roomId: "r1", roomName: "Room 2.14" })).toEqual({
       name: "Room 2.14",

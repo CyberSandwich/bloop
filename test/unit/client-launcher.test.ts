@@ -22,7 +22,7 @@ const view = (state: ScreenView["state"]): ScreenView => ({
   state,
   mode: "demo",
   kind: "owner",
-  room: { name: "Demo room", registered: false },
+  room: { name: "Demo Room", registered: false },
   code: null,
   match: "42",
   items: [{ kind: "file", name: "Deck.pptx", type: "pptx", size: null }],
@@ -36,6 +36,7 @@ function harness(opts: { gesture?: boolean; popups?: boolean; minted?: LinkSet |
   const calls = {
     assign: [] as string[],
     windows: [] as string[],
+    views: [] as { item: number; mode: string }[],
     downloads: [] as string[],
     reports: [] as string[],
     posts: [] as { path: string; body: unknown; auth: unknown }[],
@@ -50,13 +51,18 @@ function harness(opts: { gesture?: boolean; popups?: boolean; minted?: LinkSet |
         if (opts.minted === "pdf_unavailable") return { ok: false, error: "pdf_unavailable" };
         return opts.minted === "fail" || !opts.minted
           ? { ok: false, error: "mint_limit" }
-          : { ok: true, value: { links: opts.minted }, headers: { get: () => null } };
+          : {
+              ok: true,
+              value: { item: (body as { item?: number }).item ?? 0, links: opts.minted },
+              headers: { get: () => null },
+            };
       },
     } as never,
     sid: () => "sid.secret",
     assign: (url) => void calls.assign.push(url),
-    openWindow: (url) => {
+    openWindow: (url, item, mode) => {
       calls.windows.push(url);
+      calls.views.push({ item, mode });
       return state.popups ? { close: () => void calls.closed++ } : null;
     },
     startDownload: (url) => void calls.downloads.push(url),
@@ -177,6 +183,16 @@ describe("download and showPdf", () => {
     expect(launcher.spent()).toBe(false);
   });
 
+  it("the budget is per item: a spent item leaves every other item mintable", async () => {
+    const { launcher } = harness({ minted: "fail" });
+    expect(await launcher.download(2)).toBe("spent");
+    expect(launcher.spent(2)).toBe(true);
+    expect(launcher.spent(1)).toBe(false);
+    expect(launcher.spent()).toBe(false);
+    expect(await launcher.relink(1)).toBe("spent");
+    expect(launcher.spent(1)).toBe(true);
+  });
+
   it("any other refused mint (a missing PDF, the network) fails and starts nothing", async () => {
     const { launcher, calls } = harness({ minted: "pdf_unavailable" });
     expect(await launcher.download()).toBe("failed");
@@ -212,6 +228,46 @@ describe("download and showPdf", () => {
     launcher.launch(links({ pdf }));
     expect(calls.windows).toEqual([pdf]);
     expect(calls.reports).toEqual(["pdf"]);
+  });
+});
+
+describe("items other than the first file", () => {
+  const VIEW = "https://bloop.test/f/t6/Dog.jpg";
+
+  it("an image's view link opens like the PDF view, names its item, and reports the launch as view", () => {
+    const { launcher, calls } = harness();
+    launcher.launch(links({ view: VIEW }), 0);
+    launcher.launch(links({ view: VIEW }), 0);
+    expect(calls.windows).toEqual([VIEW]);
+    expect(calls.views).toEqual([{ item: 0, mode: "view" }]);
+    expect(calls.reports).toEqual(["view"]);
+  });
+
+  it("relink asks for that item's launch link, which needs no fallback mode", async () => {
+    const { launcher, calls } = harness({ minted: links({ view: VIEW }) });
+    expect(await launcher.relink(2)).toBe("ok");
+    expect(calls.posts).toEqual([
+      { path: "/api/screen/link", body: { purpose: "protocol", item: 2 }, auth: "sid.secret" },
+    ]);
+    expect(calls.views).toEqual([{ item: 2, mode: "view" }]);
+  });
+
+  it("Download of one item never reuses the link started for another", async () => {
+    const url = "https://bloop.test/f/t7/Deck.pdf";
+    const { launcher, calls } = harness({ minted: links({ download: url }) });
+    await launcher.download(1);
+    await launcher.download(1);
+    expect(calls.posts).toHaveLength(1);
+    await launcher.download(2);
+    expect(calls.posts).toHaveLength(2);
+    expect(calls.posts[1]?.body).toEqual({ purpose: "download", item: 2 });
+  });
+
+  it("a links-only session mints nothing at approval, so the screen asks for no link", async () => {
+    const { launcher, calls } = harness({ minted: links({ protocol: PROTOCOL }) });
+    launcher.onView({ ...view("approved"), items: [{ kind: "link", url: "https://www.vevox.com/", title: "Vevox" }] });
+    await vi.advanceTimersByTimeAsync(RELINK_WAIT_MS * 2);
+    expect(calls.posts).toEqual([]);
   });
 });
 

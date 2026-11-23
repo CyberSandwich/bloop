@@ -1,8 +1,14 @@
 import { existsSync } from "node:fs";
 import { describe, expect, it } from "vitest";
-import { nextSlide, openTarget, SLIDES } from "../../public/js/core/demo.js";
+import { openTarget, PHOTO_THUMB, pagesOf, SLIDES, stepPage, thumbOf } from "../../public/js/core/demo.js";
+import type { Item } from "../../src/shared/protocol.ts";
 
 const ORIGIN = "https://bloop.example";
+const deck: Item = { kind: "file", name: "Sample deck.pptx", type: "pptx", size: 82_000 };
+const pdf: Item = { kind: "file", name: "Sample deck.pdf", type: "pdf", size: 83_000 };
+const photo: Item = { kind: "file", name: "Dog.jpg", type: "jpg", size: 70_000 };
+const link: Item = { kind: "link", url: "https://www.vevox.com/", title: "Vevox" };
+const demo = { mode: "demo", kind: "owner" } as const;
 
 describe("DEMO-01 the demo screen's own open", () => {
   it("fetches the link PowerPoint would have fetched, on this origin only", () => {
@@ -14,18 +20,43 @@ describe("DEMO-01 the demo screen's own open", () => {
     expect(openTarget("not a url", ORIGIN)).toBeNull();
   });
 
-  it("steps through the slides without running past either end", () => {
-    expect(nextSlide(0, 1)).toBe(1);
-    expect(nextSlide(SLIDES.length - 1, 1)).toBe(SLIDES.length - 1);
-    expect(nextSlide(0, -1)).toBe(0);
-    expect(nextSlide(1, -1)).toBe(0);
+  it("steps through the pages without running past either end", () => {
+    expect(stepPage(0, 1, 2)).toBe(1);
+    expect(stepPage(1, 1, 2)).toBe(1);
+    expect(stepPage(0, -1, 2)).toBe(0);
+    expect(stepPage(1, -1, 2)).toBe(0);
+    expect(stepPage(0, 1, 1)).toBe(0);
   });
 
-  it("every sample slide is served same-origin as AVIF and WebP (tools/render-slides.py)", () => {
+  it("every sample page is served same-origin as AVIF and WebP (tools/render-slides.py)", () => {
     expect(SLIDES.length).toBeGreaterThan(1);
     for (const base of SLIDES) {
       expect(base).toMatch(/^\/img\/[a-z0-9-]+$/);
       for (const ext of ["avif", "webp"]) expect(existsSync(`public${base}.${ext}`), `${base}.${ext}`).toBe(true);
     }
+    expect(existsSync(`public${PHOTO_THUMB}`)).toBe(true);
+  });
+});
+
+describe("DEMO-01 what the viewer shows per item", () => {
+  it("the demo account's deck and its PDF export show the same pre-rendered pages", () => {
+    expect(pagesOf(deck, demo)).toBe(SLIDES);
+    expect(pagesOf(pdf, demo)).toBe(SLIDES);
+  });
+
+  it("a photo, a link, a guest's own file and anything live have no pages", () => {
+    expect(pagesOf(photo, demo)).toBeNull();
+    expect(pagesOf(link, demo)).toBeNull();
+    expect(pagesOf(deck, { mode: "demo", kind: "guest" })).toBeNull();
+    expect(pagesOf(deck, { mode: "live", kind: "owner" })).toBeNull();
+  });
+
+  it("thumbnails are page 1 and the photo's own; a link and a guest file get the type tile", () => {
+    expect(thumbOf(deck, demo)).toBe(`${SLIDES[0]}.webp`);
+    expect(thumbOf(pdf, demo)).toBe(`${SLIDES[0]}.webp`);
+    expect(thumbOf(photo, demo)).toBe(PHOTO_THUMB);
+    expect(thumbOf(link, demo)).toBeNull();
+    expect(thumbOf(deck, { mode: "demo", kind: "guest" })).toBeNull();
+    expect(thumbOf(photo, { mode: "live", kind: "owner" })).toBeNull();
   });
 });

@@ -28,7 +28,7 @@ describe("DEMO-01 isolation: the full demo flow, with no account", () => {
 
   it("DEMO-01 flow: create, claim, match, list, approve, fetch the open link, end", async () => {
     const { screen, socket, code } = await openScreen(api, "demo");
-    expect(screen.view).toMatchObject({ state: "waiting", mode: "demo", room: { name: "Demo room" } });
+    expect(screen.view).toMatchObject({ state: "waiting", mode: "demo", room: { name: "Demo Room" } });
 
     // A phone holding a stale or forged account cookie is ignored: the demo never reads it.
     const claimed = await api.post<{

@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { Api } from "../../public/js/core/api.js";
-import { openChannel, type SocketLike } from "../../public/js/core/channel.js";
+import { openChannel } from "../../public/js/core/channel.js";
+import type { SocketLike } from "../../public/js/types.js";
 import type { ErrorCode } from "../../src/shared/protocol.ts";
 
 class FakeSocket implements SocketLike {

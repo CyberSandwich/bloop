@@ -1,14 +1,17 @@
-// The phone page (/a): claims the code from the QR, shows the room and match code, lists files,
-// and approves one. The code leaves the address bar first (core/boot-code.js).
+// The phone page (/a): claims the code from the QR, shows the room and match code, lists the items to tick,
+// and approves them; once approved it shows what the screen got, the time left and Revoke. The code leaves the
+// address bar first (core/boot-code.js).
 
-/** @import {ClaimResponse, ErrorCode, FileEntry, PhoneStateKey, PhoneView} from "../../src/shared/protocol.ts" */
+/** @import {ClaimResponse, Entry, ErrorCode, Item, PhoneStateKey, PhoneView} from "../../src/shared/protocol.ts" */
 import { createApi } from "./core/api.js";
 import { bootCode } from "./core/boot-code.js";
 import { openChannel } from "./core/channel.js";
 import { phoneCopy } from "./core/copy.js";
+import { thumbOf } from "./core/demo.js";
 import { sendable, sendFile, wholeMB } from "./core/drop.js";
 import { loadFiles } from "./core/files.js";
-import { ago, clock, fileIcon, splitName } from "./core/format.js";
+import { ago, countdown, ICON_ADD } from "./core/format.js";
+import { rowFace, tile } from "./core/rows.js";
 import { firstFile, phoneKey } from "./core/states.js";
 import { PID_KEY, refOf, SID_KEY, sameScreen, sessionStore } from "./core/store.js";
 import { ariaFlag, byId, el, focusTitle, ICON_CHECK, icon, isFramed, setText, show, wsUrl } from "./core/ui.js";
@@ -18,11 +21,10 @@ import { ERRORS } from "./shared/errors.js";
 const api = createApi();
 const store = sessionStore();
 
+const back = byId("back");
 const title = byId("title");
 const skelTitle = byId("skel-title");
 const body = byId("body");
-const roomRow = byId("room");
-const roomName = byId("room-name");
 const roomSub = byId("room-sub");
 const matchBlock = byId("match-block");
 const matchDigits = byId("match-digits");
@@ -31,29 +33,20 @@ const warnText = byId("warn-text");
 const filesForm = byId("files");
 const fileList = byId("file-list");
 const scope = byId("scope");
-const scopeText = byId("scope-text");
+const ends = byId("ends");
 const actionsEl = byId("actions");
 const polite = byId("polite");
 const filePick = /** @type {HTMLInputElement} */ (byId("file-pick"));
 const barWrap = byId("bar-wrap");
 const bar = /** @type {HTMLProgressElement} */ (byId("bar"));
 
-/**
- * @type {{
- *   error: PhoneStateKey | null, info: import("./core/states.js").PhoneInfo | null, view: PhoneView | null,
- *   files: FileEntry[] | null, selected: string | null, approving: boolean, canceling: boolean, canceled: boolean,
- *   pid: string | null, channel: ReturnType<typeof openChannel> | null, retry: (() => void) | null,
- *   key: PhoneStateKey | null, rows: FileEntry[] | null, actionIds: string, account: boolean,
- *   drop: import("./core/states.js").PhoneCtx["drop"], file: File | null, maxBytes: number,
- *   upload: { abort: () => void } | null, progress: number
- * }}
- */
+/** @type {import("./types.js").PhonePage} */
 const c = {
   error: null,
   info: null,
   view: null,
   files: null,
-  selected: null,
+  selected: [],
   approving: false,
   canceling: false,
   canceled: false,
@@ -61,9 +54,11 @@ const c = {
   channel: null,
   retry: null,
   key: null,
-  rows: null,
+  rows: "",
+  source: null,
   actionIds: "",
   account: false,
+  skew: 0,
   drop: null,
   file: null,
   maxBytes: 0,
@@ -79,33 +74,53 @@ function fail(/** @type {ErrorCode} */ code, /** @type {(() => void) | null} */ 
   render();
 }
 
-function buildRows(/** @type {FileEntry[]} */ files) {
+const look = () => ({ mode: c.info?.mode ?? "live", kind: "owner" });
+
+const tickMark = () => el("span", { class: "tick" }, [icon(ICON_CHECK, 20)]);
+
+/** The list to tick: one checkbox row per entry, then "Add a file", the guest path for a file not in it. */
+function buildRows(/** @type {Entry[]} */ entries, /** @type {boolean} */ add) {
+  const demo = c.info?.mode === "demo";
   fileList.replaceChildren(
-    ...files.map((f) => {
-      const [head, tail] = splitName(f.name);
-      const input = el("input", { type: "radio", name: "file", value: f.id });
+    ...entries.map((entry) => {
+      const input = el("input", { type: "checkbox", value: entry.id });
       input.addEventListener("change", () => {
-        c.selected = f.id;
+        const on = new Set(c.selected);
+        if (input.checked) on.add(entry.id);
+        else on.delete(entry.id);
+        c.selected = entries.filter((e) => on.has(e.id)).map((e) => e.id);
         render();
       });
-      const tick = el("span", { class: "tick" });
-      tick.append(icon(ICON_CHECK, 16));
+      // A demo entry's date is made up by the catalog, so it shows none (design.md section 6).
+      const date = entry.kind === "file" && !demo ? `Edited ${ago(Date.now(), entry.modifiedAt)}` : null;
       return el("li", {}, [
-        el("label", { class: "row" }, [
-          input,
-          icon(fileIcon(f.name)),
-          el("span", { class: "row-text" }, [
-            el("span", { class: "row-name" }, [
-              el("span", { class: "head" }, [head]),
-              el("span", { class: "tail" }, [tail]),
-            ]),
-            el("span", { class: "small" }, [`Edited ${ago(Date.now(), f.modifiedAt)}`]),
-          ]),
-          tick,
-        ]),
+        el("label", { class: "row" }, [input, ...rowFace(entry, thumbOf(entry, look()), date), tickMark()]),
       ]);
     }),
+    ...(add
+      ? [
+          el("li", {}, [
+            el("button", { type: "button", class: "row", "data-action": "send-file" }, [
+              tile(ICON_ADD),
+              el("span", { class: "row-text row-name" }, ["Add a file"]),
+            ]),
+          ]),
+        ]
+      : []),
   );
+}
+
+function buildItems(/** @type {Item[]} */ items) {
+  fileList.replaceChildren(
+    ...items.map((item) =>
+      el("li", {}, [el("div", { class: "row is-on" }, [...rowFace(item, thumbOf(item, look())), tickMark()])]),
+    ),
+  );
+}
+
+function setView(/** @type {PhoneView} */ view) {
+  c.view = view;
+  c.skew = view.now - Date.now();
 }
 
 function buildSkeleton() {
@@ -113,7 +128,7 @@ function buildSkeleton() {
 }
 
 /** Rebuilds the action buttons only when the set changes, so a button keeps focus while it shows progress. */
-function renderActions(/** @type {import("./core/copy.js").PhoneAction[]} */ actions, /** @type {boolean} */ loading) {
+function renderActions(/** @type {import("./types.js").PhoneAction[]} */ actions, /** @type {boolean} */ loading) {
   const ids = actions.map((a) => a.id).join();
   if (ids !== c.actionIds) {
     c.actionIds = ids;
@@ -139,24 +154,23 @@ function renderActions(/** @type {import("./core/copy.js").PhoneAction[]} */ act
 function render() {
   const key = phoneKey(c);
   const v = c.view;
-  const picked = c.files?.find((f) => f.id === c.selected);
+  const demo = c.info?.mode === "demo";
   const copy = phoneCopy(key, {
     room: c.info?.roomName ?? v?.room.name ?? "",
-    file: c.drop ? (c.file?.name ?? null) : (firstFile(v?.items ?? [])?.name ?? picked?.name ?? null),
-    endsAt: v?.endsAt ? clock(v.endsAt) : null,
+    file: c.drop ? (c.file?.name ?? null) : (firstFile(v?.items ?? [])?.name ?? null),
     account: c.account,
+    demo,
     maxMB: wholeMB(c.maxBytes),
     // This tab holds the sid of the demo screen it claimed: it came from /s by "Approve on This Device" and can go back.
-    back: c.info?.mode === "demo" && sameScreen(store.get(SID_KEY), c.pid),
+    back: demo && sameScreen(store.get(SID_KEY), c.pid),
   });
 
+  back.setAttribute("href", demo && sameScreen(store.get(SID_KEY), c.pid) ? "/s?mode=demo" : "/");
   show(skelTitle, key === "checking");
   show(title, key !== "checking");
   setText(title, copy.title);
   setText(body, copy.body);
 
-  show(roomRow, copy.room);
-  setText(roomName, c.info?.roomName ?? "");
   show(roomSub, copy.room && !!c.info?.registered && VERIFIED.roomRegistration);
   show(matchBlock, copy.match);
   setText(matchDigits, c.info?.match ?? "");
@@ -164,17 +178,21 @@ function render() {
   setText(warnText, copy.warn);
 
   show(filesForm, copy.files !== "none");
-  if (copy.files === "skeleton") {
-    if (c.rows !== null || fileList.children.length !== 5) buildSkeleton();
-    c.rows = null;
-  } else if (copy.files === "list" && c.files && c.rows !== c.files) {
-    buildRows(c.files);
-    c.rows = c.files;
+  const source = copy.files === "list" ? c.files : copy.files === "items" ? (v?.items ?? null) : null;
+  const rows = `${copy.files}:${copy.add}`;
+  if (copy.files === "skeleton" && c.rows !== rows) buildSkeleton();
+  else if (source && (c.rows !== rows || c.source !== source)) {
+    if (copy.files === "list") buildRows(/** @type {Entry[]} */ (source), copy.add);
+    else buildItems(source);
+    c.source = source;
   }
-  for (const input of fileList.querySelectorAll("input")) input.checked = input.value === c.selected;
+  c.rows = rows;
+  for (const input of fileList.querySelectorAll("input")) input.checked = c.selected.includes(input.value);
 
   show(scope, copy.scope !== "");
-  setText(scopeText, copy.scope);
+  setText(scope, copy.scope);
+  show(ends, copy.ends && !!v?.endsAt);
+  countDown();
   show(barWrap, copy.progress);
   bar.value = Math.round(c.progress * 100);
   renderActions(copy.actions, copy.loading);
@@ -185,6 +203,16 @@ function render() {
     if (key !== "checking" && key !== "approving") focusTitle(title);
   }
 }
+
+/** "Ends in 59:12": the server's end time on the server's clock, counted down here. */
+function countDown() {
+  const at = c.view?.endsAt;
+  if (!ends.hidden && at) setText(ends, `Ends in ${countdown(at - (Date.now() + c.skew))}`);
+}
+
+fileList.addEventListener("click", (e) => {
+  if (e.target instanceof Element && e.target.closest("[data-action='send-file']")) chooseFile();
+});
 
 actionsEl.addEventListener("click", (e) => {
   const target = e.target instanceof Element ? e.target.closest("[data-action]") : null;
@@ -225,13 +253,13 @@ function done() {
 }
 
 async function approve() {
-  if (!c.selected || c.approving) return;
+  if (c.selected.length === 0 || c.approving) return;
   c.approving = true;
   render();
-  const res = await api.post("/api/approve", { ids: [c.selected] }, c.pid);
+  const res = await api.post("/api/approve", { ids: c.selected }, c.pid);
   c.approving = false;
   if (res.ok) {
-    c.view = res.value;
+    setView(res.value);
     render();
   } else fail(res.error, approve);
 }
@@ -278,7 +306,7 @@ async function send() {
   if (stopped) return;
   c.drop = null;
   if (res.ok) {
-    c.view = res.view;
+    setView(res.view);
     render();
   } else fail(res.error, send);
 }
@@ -300,18 +328,19 @@ async function cancelPairing() {
 async function endSession() {
   const res = await api.post("/api/end", {}, c.pid);
   if (!res.ok) return fail(res.error, endSession);
-  c.view = res.value;
+  setView(res.value);
   render();
 }
 
 async function listFiles() {
   c.files = null;
-  c.selected = null;
+  c.selected = [];
   render();
   const res = await loadFiles(api, /** @type {string} */ (c.pid));
   if (!res.ok) return fail(res.error, listFiles);
   c.files = res.files;
-  c.selected = res.files[0]?.id ?? null;
+  // A demo room approves its whole catalog as one list; a live phone starts from its newest file alone.
+  c.selected = (c.info?.mode === "demo" ? res.files : res.files.slice(0, 1)).map((e) => e.id);
   render();
   c.account = c.info?.mode === "live" && (await signedInToOneDrive());
   render();
@@ -341,7 +370,7 @@ function attach(/** @type {string} */ pid) {
     api,
     connect: (url) => new WebSocket(url),
     onView: (view) => {
-      c.view = view;
+      setView(view);
       render();
     },
     onError: (code) => {
@@ -384,7 +413,7 @@ async function resume(/** @type {string} */ pid) {
   }
   const view = /** @type {PhoneView} */ (res.value);
   c.info = { roomName: view.room.name, registered: view.room.registered, match: view.match, mode: view.mode };
-  c.view = view;
+  setView(view);
   c.maxBytes = view.dropMaxBytes;
   attach(pid);
   render();
@@ -398,6 +427,7 @@ function start() {
     return;
   }
   render();
+  setInterval(countDown, 1000);
   const pid = store.get(PID_KEY);
   if (bootCode) claim(bootCode);
   else if (pid) resume(pid);

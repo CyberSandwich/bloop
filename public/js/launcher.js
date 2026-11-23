@@ -3,45 +3,19 @@
 // last resort. It acts on links as the server pushes them (`open` frames) or answers them (`/api/screen/link`),
 // each URL once. Every browser effect is injected, so the logic runs under test without a browser.
 /** @import {LinkSet, OpenMode, ScreenView} from "../../src/shared/protocol.ts" */
-/** @import {Api} from "./core/api.js" */
+/** @import {LauncherDeps, Minted, ScreenLauncher} from "./types.js" */
+import { firstFile } from "./core/states.js";
 import { DOWNLOAD_REUSE_MS, DOWNLOAD_STARTS_PER_LINK, LAUNCH_TIMEOUT_MS, RELINK_WAIT_MS } from "./core/timing.js";
-
-/**
- * @typedef {object} LauncherDeps
- * @property {Api} api
- * @property {() => string | null} sid the screen credential
- * @property {(url: string) => void} assign navigate to a protocol URI
- * @property {(url: string) => unknown} openWindow open the PDF view; null or undefined when a popup blocker refused
- * @property {(url: string) => void} startDownload
- * @property {() => boolean} hasGesture the page has transient user activation right now
- * @property {(mode: OpenMode) => boolean} report tell the server which launch this was; false when it could not be sent
- * @property {() => void} onChange state the page renders from changed
- */
-
-/**
- * @typedef {object} ScreenLauncher
- * @property {(links: LinkSet) => void} launch act on a pushed or fetched link set
- * @property {() => void} click the Open control: relaunch, or open a blocked PDF, under a user gesture
- * @property {() => Promise<Minted>} download start the recent download link again, or mint one and start it
- * @property {() => Promise<Minted>} showPdf mint the PDF link and open it
- * @property {() => boolean} spent the session's mint budget ran out (`mint_limit`), so no fallback can be minted
- * @property {(view: ScreenView) => void} onView follow the session: recover a lost link, time the launch, reset at the end
- * @property {() => boolean} needsClick a click is needed to open (no gesture at launch, or a blocked popup)
- * @property {() => boolean} downloadReady the launch has waited long enough that Download may show
- * @property {() => void} closePdf close the PDF window this page opened
- * @property {() => void} reset drop every link and timer (the residue step)
- */
-
-/** @typedef {"ok" | "spent" | "failed"} Minted `spent`: the mint limit, which the page shows by hiding the controls */
 
 /** @param {LauncherDeps} deps @returns {ScreenLauncher} */
 export function createLauncher(deps) {
   /** @type {Set<string>} */
   const used = new Set();
   /** @type {{
-   *   protocol: string | null, pendingPdf: string | null, pdfWindow: {close?: () => void} | null,
-   *   reported: boolean, needsClick: boolean, waitedOut: boolean, haveLink: boolean, spent: boolean,
-   *   download: {url: string, at: number, starts: number} | null,
+   *   protocol: string | null, pendingPdf: {url: string, item: number, mode: OpenMode} | null,
+   *   pdfWindow: {close?: () => void} | null,
+   *   reported: boolean, needsClick: boolean, waitedOut: boolean, haveLink: boolean, spent: Set<number>,
+   *   download: {url: string, item: number, at: number, starts: number} | null,
    *   waiting: ReturnType<typeof setTimeout> | undefined, recovering: ReturnType<typeof setTimeout> | undefined
    * }} */
   const s = {
@@ -52,7 +26,7 @@ export function createLauncher(deps) {
     needsClick: false,
     waitedOut: false,
     haveLink: false,
-    spent: false,
+    spent: new Set(),
     download: null,
     waiting: undefined,
     recovering: undefined,
@@ -64,17 +38,18 @@ export function createLauncher(deps) {
     s.reported = deps.report(mode);
   }
 
-  function openPdf(/** @type {string} */ url) {
-    const win = deps.openWindow(url);
+  /** The PDF view, or an image's view: both open in a window of their own (the demo shows them in the page). */
+  function openPdf(/** @type {{url: string, item: number, mode: OpenMode}} */ view) {
+    const win = deps.openWindow(view.url, view.item, view.mode);
     if (win) {
-      used.add(url);
+      used.add(view.url);
       s.pdfWindow = /** @type {{close?: () => void}} */ (win);
       s.pendingPdf = null;
       s.needsClick = false;
-      reportOnce("pdf");
+      reportOnce(view.mode);
     } else {
       // A popup blocker refused: keep the link for the Open control, whose click is the gesture.
-      s.pendingPdf = url;
+      s.pendingPdf = view;
       s.needsClick = true;
     }
   }
@@ -88,41 +63,50 @@ export function createLauncher(deps) {
     if (!deps.hasGesture()) s.needsClick = true;
   }
 
-  /** @param {LinkSet} links */
-  function launch(links) {
+  /** @param {LinkSet} links @param {number} [item] -1 when the sender did not say (the first file) */
+  function launch(links, item = -1) {
     s.haveLink = true;
     if (links.protocol && !used.has(links.protocol)) launchProtocol(links.protocol);
-    if (links.pdf && !used.has(links.pdf)) openPdf(links.pdf);
+    for (const mode of /** @type {const} */ (["pdf", "view"])) {
+      const url = links[mode];
+      if (url && !used.has(url)) openPdf({ url, item, mode });
+    }
     if (links.download && !used.has(links.download)) {
       used.add(links.download);
-      s.download = { url: links.download, at: Date.now(), starts: 1 };
+      s.download = { url: links.download, item, at: Date.now(), starts: 1 };
       deps.startDownload(links.download);
     }
     deps.onChange();
   }
 
-  /** @param {OpenMode} purpose @returns {Promise<Minted>} */
-  async function request(purpose) {
-    const res = await deps.api.post("/api/screen/link", { purpose }, deps.sid());
+  /** @param {OpenMode} purpose @param {number} [item] @returns {Promise<Minted>} */
+  async function request(purpose, item) {
+    const body = item === undefined ? { purpose } : { purpose, item };
+    const res = await deps.api.post("/api/screen/link", body, deps.sid());
     if (!res.ok) {
       if (res.error !== "mint_limit") return "failed";
-      s.spent = true;
+      s.spent.add(item ?? -1);
       deps.onChange();
       return "spent";
     }
-    launch(res.value.links);
+    launch(res.value.links, res.value.item ?? item);
     return "ok";
   }
 
-  /** @returns {Promise<Minted>} */
-  async function download() {
+  /** @param {number} [item] @returns {Promise<Minted>} */
+  async function download(item) {
     const last = s.download;
-    if (last && last.starts < DOWNLOAD_STARTS_PER_LINK && Date.now() - last.at < DOWNLOAD_REUSE_MS) {
+    if (
+      last &&
+      (item === undefined || last.item === item) &&
+      last.starts < DOWNLOAD_STARTS_PER_LINK &&
+      Date.now() - last.at < DOWNLOAD_REUSE_MS
+    ) {
       last.starts += 1;
       deps.startDownload(last.url);
       return "ok";
     }
-    return request("download");
+    return request("download", item);
   }
 
   function reset() {
@@ -138,7 +122,7 @@ export function createLauncher(deps) {
       needsClick: false,
       waitedOut: false,
       haveLink: false,
-      spent: false,
+      spent: new Set(),
       download: null,
     });
     deps.onChange();
@@ -167,10 +151,14 @@ export function createLauncher(deps) {
 
     download,
     showPdf: () => request("pdf"),
-    spent: () => s.spent,
+    // `protocol` with an item: in every session state the server mints that item's launch link (an image's view
+    // link) with no mode change and no fallback metric (docs/interfaces.md section 2.2).
+    relink: (item) => request("protocol", item),
+    spent: (item) => s.spent.has(item ?? -1),
 
     onView(view) {
-      if (view.state === "approved" && !s.haveLink && s.recovering === undefined) {
+      // A links-only session mints nothing at approval, so there is no link to recover.
+      if (view.state === "approved" && !s.haveLink && s.recovering === undefined && firstFile(view.items)) {
         // The `open` frame never came (a reload, a dropped socket): ask for the link again.
         s.recovering = setTimeout(() => {
           s.recovering = undefined;

@@ -1,10 +1,10 @@
-// The room screen (/s): shows the QR and the typed code, follows the session through its Screen
-// object, and offers Start Over, End, Open and the download and PDF fallbacks. State strings live in core/copy.js.
+// The room screen (/s): shows the QR and the typed code, follows the session through its Screen object, and offers
+// the back arrow (Start Over), End, Open and the download and PDF fallbacks; a demo screen shows the viewer.
 /** @import {ScreenView} from "../../src/shared/protocol.ts" */
 import { createApi } from "./core/api.js";
 import { openChannel } from "./core/channel.js";
 import { screenCopy } from "./core/copy.js";
-import { clock, qrLabel } from "./core/format.js";
+import { clock, itemName, qrLabel } from "./core/format.js";
 import { qrMatrix, qrPath, qrSize } from "./core/qr.js";
 import { firstFile, screenKey } from "./core/states.js";
 import { refOf, SID_KEY, sessionStore } from "./core/store.js";
@@ -20,46 +20,39 @@ import {
 import { byId, el, focusTitle, frameThrottle, isFramed, lostFocus, setText, show, wsUrl } from "./core/ui.js";
 import { createLauncher } from "./launcher.js";
 import { createResidue } from "./residue.js";
-import { createDemoResult, fetchOpen } from "./screen-demo.js";
 import { format } from "./shared/codes.js";
 import { ERRORS } from "./shared/errors.js";
+import { createViewer, fetchOpen } from "./viewer.js";
 
 const api = createApi();
 const store = sessionStore();
 const DEMO = new URLSearchParams(location.search).get("mode") === "demo";
 
 const main = byId("main");
+const pane = byId("pane");
 const stage = byId("stage");
 const heading = byId("heading");
 const line = byId("line");
-const chip = byId("chip");
-const chipText = byId("chip-text");
-const chipCheck = byId("chip-check");
-const chipWifi = byId("chip-wifi");
 const qrPanel = byId("qr-panel");
 const qrSvg = byId("qr");
 const qrPathEl = byId("qr-path");
 const matchEl = byId("match");
-const capsuleFill = byId("capsule-fill");
+const drain = byId("drain");
 const typedHost = byId("typed-host");
 const typedCode = byId("typed-code");
 const buttons = {
+  back: byId("b-back"),
   start_over: byId("b-start-over"),
+  home: byId("b-home"),
+  here: byId("b-here"),
   end: byId("b-end"),
+  present: byId("b-present"),
   open: byId("b-open"),
   download: byId("b-download"),
   pdf: byId("b-pdf"),
-  here: byId("b-here"),
 };
-const demoResult = DEMO ? createDemoResult(byId("result")) : null;
 
-/**
- * @type {{
- *   view: ScreenView | null, skew: number, link: "ok" | "offline" | "down", errored: boolean, limited: boolean,
- *   sid: string | null, channel: ReturnType<typeof openChannel> | null, shown: string | null,
- *   expiresAt: number, offlineSince: number | null, timers: Record<string, ReturnType<typeof setTimeout> | undefined>
- * }}
- */
+/** @type {import("./types.js").ScreenPage} */
 const s = {
   view: null,
   skew: 0,
@@ -69,17 +62,19 @@ const s = {
   sid: null,
   channel: null,
   shown: null,
-  expiresAt: 0,
+  scene: null,
   offlineSince: null,
   timers: {},
 };
 
-// A demo launches nothing (no PowerPoint, no popup): it fetches the link itself and shows the file in the page.
+const viewer = DEMO ? createViewer({ relink: (item) => launcher.relink(item), onChange: () => render() }) : null;
+
+// A demo launches nothing (no PowerPoint, no popup): it fetches the link itself and shows the item in the page.
 const launcher = createLauncher({
   api,
   sid: () => s.sid,
   assign: (url) => (DEMO ? fetchOpen(url) : location.assign(url)),
-  openWindow: (url) => (DEMO ? fetchOpen(url) : window.open(url, "bloop-pdf")),
+  openWindow: (url, item, mode) => (viewer ? viewer.take(url, item, mode) : window.open(url, "bloop-pdf")),
   startDownload(url) {
     const a = el("a", { href: url, download: "" });
     document.body.append(a);
@@ -128,10 +123,10 @@ function drawCode(/** @type {import("../../src/shared/protocol.ts").CodeView} */
     qrPathEl.setAttribute("d", qrPath(qrMatrix(code.qrUrl)));
     qrSvg.setAttribute("aria-label", qrLabel(code.code, location.host));
     setText(typedCode, format(code.code));
-    capsuleFill.style.transition = "none";
-    capsuleFill.style.transform = "scaleX(0)";
-    void capsuleFill.offsetWidth;
-    capsuleFill.style.transition = "";
+    drain.style.transition = "none";
+    drain.style.transform = "";
+    void drain.offsetWidth;
+    drain.style.transition = "";
     qrPanel.classList.remove("is-swapping");
   };
   if (first) paint();
@@ -141,11 +136,11 @@ function drawCode(/** @type {import("../../src/shared/protocol.ts").CodeView} */
   }
 }
 
-function updateCapsule() {
+function updateDrain() {
   if (!s.view?.code) return;
   const from = s.view.code.expiresAt - CODE_TTL_MS;
   const p = (serverNow() - from) / (CODE_TTL_MS - CODE_GRACE_MS);
-  capsuleFill.style.transform = `scaleX(${Math.min(1, Math.max(0, p))})`;
+  drain.style.transform = `scaleX(${1 - Math.min(1, Math.max(0, p))})`;
 }
 
 const MODE = {
@@ -153,23 +148,45 @@ const MODE = {
   scanned: "scanned",
   choosing: "scanned",
   guest_open: "scanned",
-  demo_open: "result",
+  demo_open: "viewer",
 };
 
+const keyNow = () => screenKey({ view: s.view, link: s.link, errored: s.errored, limited: s.limited });
+
+/**
+ * Every change of scene (a state, or the item on the stage) enters with the shared motion: the View Transitions API
+ * where there is one, else a class that replays the same keyframes; reduced motion swaps at once.
+ */
 function render() {
-  const key = screenKey({ view: s.view, link: s.link, errored: s.errored, limited: s.limited });
+  const key = keyNow();
+  const scene = `${MODE[/** @type {keyof typeof MODE} */ (key)] ?? key}:${key === "demo_open" ? viewer?.at() : ""}`;
+  const changed = s.scene !== null && scene !== s.scene;
+  s.scene = scene;
+  if (!changed || reduceMotion) return paint();
+  if (document.startViewTransition) {
+    document.startViewTransition(paint);
+    return;
+  }
+  paint();
+  pane.classList.remove("enter");
+  void pane.offsetWidth;
+  pane.classList.add("enter");
+}
+
+function paint() {
+  const key = keyNow();
   const v = s.view;
+  viewer?.render(key === "demo_open" ? v : null);
+  const item = viewer?.item() ?? firstFile(v?.items ?? []);
   const copy = screenCopy(key, {
     room: v?.room.name ?? "",
     match: v?.match ?? null,
-    file: firstFile(v?.items ?? [])?.name ?? null,
+    file: item ? itemName(item) : null,
     endsAt: v?.endsAt ? clock(v.endsAt) : null,
     guest: v?.kind === "guest",
     offlineLong: s.offlineSince !== null && Date.now() - s.offlineSince >= OFFLINE_HINT_MS,
     demo: DEMO,
     openMode: v?.openMode ?? null,
-    fileType: firstFile(v?.items ?? [])?.type ?? null,
-    fetched: !!v && v.state !== "approved",
   });
 
   const changed = heading.textContent !== copy.heading;
@@ -187,30 +204,31 @@ function render() {
   show(matchEl, mode === "scanned" && !!v?.match);
   setText(matchEl, mode === "scanned" ? (v?.match ?? "") : "");
 
-  show(chip, copy.chip !== null);
-  setText(chipText, copy.chip ?? "");
-  show(chipCheck, copy.chipIcon === "check");
-  show(chipWifi, copy.chipIcon === "wifi-off");
-
-  show(buttons.start_over, copy.controls.includes("start_over"));
-  show(buttons.end, copy.controls.includes("end"));
-  // Open: the guest's offer, or a launch that needs a click (no user gesture, or a blocked popup).
-  show(buttons.open, copy.controls.includes("open") || launcher.needsClick());
-  // A spent mint budget hides the fallbacks: another click could only be refused.
-  const mintable = !launcher.spent();
-  show(
-    buttons.download,
-    mintable && copy.controls.includes("download") && (key !== "opening" || launcher.downloadReady()),
-  );
-  show(buttons.pdf, mintable && copy.controls.includes("pdf"));
-  setText(buttons.download, key === "open_fallback" || key === "demo_open" ? "Download" : "Download It Instead");
+  const has = (/** @type {import("./types.js").ScreenControl} */ c) => copy.controls.includes(c);
+  // Top left: the back arrow home, Start Over as the back arrow, or in a session the mark that ends it, then goes home.
+  show(buttons.back, !has("start_over") && !has("end") && key !== "ended");
+  show(buttons.start_over, has("start_over"));
+  show(buttons.home, has("end"));
+  show(buttons.end, has("end"));
   // This device as the phone: same tab to /a, which claims the code; /a links back here, and the stored sid resumes.
-  show(buttons.here, copy.controls.includes("here") && !!code);
+  show(buttons.here, has("here") && !!code);
   if (code) buttons.here.setAttribute("href", `/a?c=${code.code}`);
-  demoResult?.render(key === "demo_open" ? v : null);
+  // Open: the guest's offer, or a launch that needs a click (no user gesture, or a blocked popup).
+  show(buttons.open, has("open") || launcher.needsClick());
+  // A spent mint budget hides the item's fallbacks: another click could only be refused.
+  const mintable = !launcher.spent(target());
+  const viewing = key === "demo_open";
+  // The viewer's Download is the item's; `approved` refuses a download mint until the first fetch opens the session.
+  const download = viewing
+    ? item?.kind === "file" && v?.state !== "approved"
+    : has("download") && (key !== "opening" || launcher.downloadReady());
+  show(buttons.download, mintable && download);
+  setText(buttons.download, viewing || key === "open_fallback" ? "Download" : "Download It Instead");
+  show(buttons.pdf, mintable && has("pdf"));
+  show(buttons.present, viewing && !!viewer?.presentable());
 
   if (changed && lostFocus()) focusTitle(heading);
-  if (mode === "waiting") updateCapsule();
+  if (mode === "waiting") updateDrain();
   schedule(key);
 }
 
@@ -290,15 +308,26 @@ async function act(/** @type {string} */ path) {
 
 buttons.start_over.addEventListener("click", () => act("/api/screen/restart"));
 buttons.end.addEventListener("click", () => act("/api/screen/end"));
+buttons.home.addEventListener("click", async () => {
+  await act("/api/screen/end");
+  location.assign("/");
+});
+buttons.present.addEventListener("click", () => viewer?.present());
 buttons.open.addEventListener("click", () => {
   if (s.view?.state !== "offered") return launcher.click();
   if (!s.channel?.send({ t: "open.click" })) flagError();
 });
+/** The fallbacks' item: the viewer's, else the first file. */
+const target = () => (viewer?.item() ? viewer.at() : undefined);
+
 /** A fallback that failed shows the error state, which recovers by itself; a spent budget only hides the controls. */
-const fallback = (/** @type {() => Promise<import("./launcher.js").Minted>} */ run) => async () => {
+const fallback = (/** @type {() => Promise<import("./types.js").Minted>} */ run) => async () => {
   if ((await run()) === "failed") flagError();
 };
-buttons.download.addEventListener("click", fallback(launcher.download));
+buttons.download.addEventListener(
+  "click",
+  fallback(() => launcher.download(target())),
+);
 buttons.pdf.addEventListener("click", fallback(launcher.showPdf));
 
 function connect(/** @type {string} */ sid) {
@@ -313,13 +342,11 @@ function connect(/** @type {string} */ sid) {
     onView,
     onError,
     onFrame: (frame) => {
-      if (frame.t === "open") launcher.launch(frame.links);
+      if (frame.t === "open") launcher.launch(frame.links, frame.item);
     },
     onLink,
   });
 }
-
-/** @typedef {{ok: true, sid: string, view: ScreenView} | {ok: false, error: string}} Booted */
 
 /**
  * The stored screen, when it still exists and is of this page's mode; null otherwise. Only the tab that created a
@@ -330,17 +357,17 @@ async function resume() {
   if (!sid) return null;
   const res = await api.get("/api/screen/state", sid);
   if (!res.ok && (res.error === "offline" || res.error === "service_down")) {
-    return /** @type {Booted} */ ({ ok: false, error: res.error });
+    return /** @type {import("./types.js").Booted} */ ({ ok: false, error: res.error });
   }
   if (res.ok && res.value.mode === (DEMO ? "demo" : "live"))
-    return /** @type {Booted} */ ({ ok: true, sid, view: res.value });
+    return /** @type {import("./types.js").Booted} */ ({ ok: true, sid, view: res.value });
   // A screen of the other mode would otherwise keep its session (and a demo slot) until it timed out.
   if (res.ok) await api.post("/api/screen/end", {}, sid);
   residue.forget();
   return null;
 }
 
-/** @returns {Promise<Booted>} */
+/** @returns {Promise<import("./types.js").Booted>} */
 async function create() {
   const res = await api.post("/api/screens", { mode: DEMO ? "demo" : "live" });
   if (!res.ok) return { ok: false, error: res.error };
@@ -361,6 +388,8 @@ async function boot(attempt = 0) {
   }
   s.link = "ok";
   s.offlineSince = null;
+  // The sid first: the first view can already ask for a link.
+  s.sid = booted.sid;
   onView(booted.view);
   connect(booted.sid);
 }
@@ -379,7 +408,7 @@ function start() {
   document.addEventListener("visibilitychange", () => {
     if (!document.hidden) s.channel?.nudge();
   });
-  setInterval(() => (main.dataset.mode === "waiting" ? updateCapsule() : undefined), reduceMotion ? 10_000 : 1000);
+  setInterval(() => (main.dataset.mode === "waiting" ? updateDrain() : undefined), reduceMotion ? 10_000 : 1000);
   boot();
 }
 

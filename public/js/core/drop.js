@@ -1,6 +1,7 @@
 // The guest upload: PUT /api/drop with the raw file (docs/architecture.md section 4.4). XMLHttpRequest, not
 // fetch, because only XHR reports upload progress in every phone browser.
-/** @import {ErrorCode, PhoneView} from "../../../src/shared/protocol.ts" */
+/** @import {ErrorCode} from "../../../src/shared/protocol.ts" */
+/** @import {SendResult, Xhr} from "../types.js" */
 import { ERRORS } from "../shared/errors.js";
 
 const MB = 1024 * 1024;
@@ -20,25 +21,6 @@ export const sendable = (file, maxBytes) => EXTENSION.test(file.name) && file.si
 
 /** @param {unknown} code @returns {code is ErrorCode} */
 const isErrorCode = (code) => typeof code === "string" && Object.hasOwn(ERRORS, code);
-
-/**
- * @typedef {{ok: true, view: PhoneView} | {ok: false, error: ErrorCode}} SendResult
- */
-
-/**
- * The slice of XMLHttpRequest used here, so tests can fake it (the Node config has no DOM types).
- * @typedef {object} Xhr
- * @property {(method: string, url: string) => void} open
- * @property {(name: string, value: string) => void} setRequestHeader
- * @property {(body: unknown) => void} send
- * @property {() => void} abort
- * @property {{onprogress: ((e: {lengthComputable: boolean, loaded: number, total: number}) => void) | null}} upload
- * @property {(() => void) | null} onload
- * @property {(() => void) | null} onerror
- * @property {(() => void) | null} onabort
- * @property {number} status
- * @property {string} responseText
- */
 
 /** @returns {Xhr} */
 const browserXhr = () => new /** @type {any} */ (globalThis).XMLHttpRequest();

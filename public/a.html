@@ -14,41 +14,34 @@
   <body class="page-phone">
     <a class="skip" href="#title">Skip to Content</a>
     <main id="main" class="column">
-      <p class="brand"><img src="/favicon.svg" width="24" height="24" alt="">bloop</p>
+      <header class="phone-bar">
+        <a class="round" id="back" href="/"><svg class="icon" viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="m12 19-7-7 7-7"/><path d="M19 12H5"/></svg><span class="sr">Back</span></a>
+        <a class="brand" href="/"><img src="/favicon.svg" width="32" height="32" alt="">bloop</a>
+      </header>
       <noscript><p class="nojs">Approving needs JavaScript. Turn it on, then scan again.</p></noscript>
-      <p class="desk-note">This page is meant for your phone. You can approve here too.</p>
       <div class="flow" id="flow">
         <h1 class="title" id="title" tabindex="-1" hidden>Approve on bloop</h1>
         <div class="skel skel-title" id="skel-title" hidden></div>
+        <p class="small sub" id="room-sub" hidden>Registered screen</p>
         <p class="body" id="body"></p>
-        <div class="room" id="room">
-          <svg class="icon" viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><rect width="20" height="14" x="2" y="3" rx="2"/><line x1="8" x2="16" y1="21" y2="21"/><line x1="12" x2="12" y1="17" y2="21"/></svg>
-          <div>
-            <p class="room-name" id="room-name"></p>
-            <p class="small" id="room-sub" hidden>Registered screen</p>
-          </div>
-        </div>
         <div class="match-block" id="match-block">
-          <p class="small">Code on the screen</p>
+          <p class="small">Code on screen</p>
           <p class="digits" id="match-digits"></p>
-          <p class="small">Check it matches the screen.</p>
         </div>
         <p class="warn" id="warn" hidden>
           <svg class="icon" viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="m21.73 18-8-14a2 2 0 0 0-3.48 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3"/><path d="M12 9v4"/><path d="M12 17h.01"/></svg>
           <span id="warn-text"></span>
         </p>
         <fieldset class="files" id="files" hidden>
-          <legend class="sr">Your recent slides</legend>
+          <legend class="group-label">Gives access to</legend>
           <ul class="list" id="file-list"></ul>
         </fieldset>
         <div class="bar-wrap" id="bar-wrap" hidden>
           <progress class="bar" id="bar" max="100" value="0" aria-label="Sending"></progress>
         </div>
         <input class="sr" id="file-pick" type="file" tabindex="-1" aria-label="Choose a file" accept=".pptx,.pdf,application/pdf,application/vnd.openxmlformats-officedocument.presentationml.presentation">
-        <p class="scope" id="scope" hidden>
-          <svg class="icon" viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><rect width="18" height="11" x="3" y="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>
-          <span id="scope-text"></span>
-        </p>
+        <p class="scope" id="scope" hidden></p>
+        <p class="ends" id="ends" hidden></p>
       </div>
       <div class="actions" id="actions"></div>
       <p class="sr" id="polite" role="status"></p>

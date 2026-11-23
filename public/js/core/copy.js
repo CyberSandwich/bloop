@@ -1,34 +1,13 @@
 // Every user-facing string of /s, /a and /code, from docs/design.md sections 3 and 7. A string marked
 // [V-n] there is gated by verified.js.
-/** @import {FileType, OpenMode, PhoneStateKey, ScreenStateKey} from "../../../src/shared/protocol.ts" */
+/** @import {PhoneStateKey, ScreenStateKey} from "../../../src/shared/protocol.ts" */
+/** @import {PhoneAction, PhoneCopy, PhoneFacts, ScreenControl, ScreenCopy, ScreenFacts} from "../types.js" */
 import { VERIFIED } from "./verified.js";
 
 export const FOOTER_LINE = "Phone not with you? Sign in to this PC as usual.";
 export const SIGN_IN_HINT = "Sign in to this PC as usual to open your slides.";
-
-/** @typedef {"start_over" | "end" | "open" | "download" | "pdf" | "here"} ScreenControl `here` is the demo's "Approve on This Device" link */
-/**
- * @typedef {object} ScreenCopy
- * @property {string} heading
- * @property {string} line
- * @property {ScreenControl[]} controls
- * @property {boolean} alert announce assertively
- * @property {string | null} chip text of the status chip, only after the object shows the state
- * @property {string | null} [chipIcon]
- */
-/**
- * @typedef {object} ScreenFacts
- * @property {string} room
- * @property {string | null} match
- * @property {string | null} file
- * @property {string | null} endsAt local time, "11:35"
- * @property {boolean} guest
- * @property {boolean} offlineLong the screen has been offline for a while
- * @property {boolean} [demo] a demo screen (`/s?mode=demo`)
- * @property {OpenMode | null} [openMode] how the screen opened the file; only `protocol` is a PowerPoint launch
- * @property {FileType | null} [fileType]
- * @property {boolean} [fetched] the file was fetched, so the session left `approved`, which refuses a download mint
- */
+/** The one string that names the session, by the owner's ruling (design.md section 3). */
+export const SESSION_ENDED = "Session Ended";
 
 /**
  * @param {ScreenStateKey} key
@@ -37,51 +16,25 @@ export const SIGN_IN_HINT = "Sign in to this PC as usual to open your slides.";
  */
 export function screenCopy(key, f) {
   const file = f.file ?? "your slides";
-  const base = { controls: /** @type {ScreenControl[]} */ ([]), alert: false, chip: null };
+  const base = { line: "", controls: /** @type {ScreenControl[]} */ ([]), alert: false };
+  /** @type {ScreenControl[]} */
+  const END = ["end"];
   switch (key) {
     case "waiting":
-      return f.demo
-        ? {
-            ...base,
-            heading: f.room,
-            line: "Scan with your phone camera, or approve on this device.",
-            controls: ["here"],
-          }
-        : { ...base, heading: f.room, line: "Scan with your phone camera to present your slides." };
+      return { ...base, heading: f.room, controls: f.demo ? ["here"] : [] };
     case "scanned":
+    case "choosing":
+      // The line is for screen readers: the digits on the QR card show it (app.css hides it there).
       return {
         ...base,
         heading: "Check your phone.",
         line: `It should show ${f.match ?? ""}.`,
         controls: ["start_over"],
-        chip: "Scanned",
-      };
-    case "choosing":
-      return {
-        ...base,
-        heading: "Check your phone.",
-        line: "Choose a file, then tap Approve.",
-        controls: ["start_over"],
-        chip: "Scanned",
       };
     case "approved":
-      return {
-        ...base,
-        heading: "Approved.",
-        line: `Opening ${file}.`,
-        controls: ["end"],
-        chip: "Approved",
-        chipIcon: "check",
-      };
+      return { ...base, heading: "Approved.", line: `Opening ${file}.`, controls: END };
     case "opening":
-      return {
-        ...base,
-        heading: `Opening ${file}`,
-        line: "in PowerPoint on this PC.",
-        controls: ["end", "download"],
-        chip: "Approved",
-        chipIcon: "check",
-      };
+      return { ...base, heading: `Opening ${file}`, line: "in PowerPoint on this PC.", controls: ["end", "download"] };
     case "open": {
       const ends = f.endsAt;
       const line = f.guest
@@ -97,8 +50,6 @@ export function screenCopy(key, f) {
         heading: f.openMode === "protocol" ? `${file} is open in PowerPoint.` : `${file} is open.`,
         line,
         controls: ["end", "download"],
-        chip: "Approved",
-        chipIcon: "check",
       };
     }
     case "open_fallback":
@@ -107,44 +58,30 @@ export function screenCopy(key, f) {
         heading: "PowerPoint didn't open.",
         line: "Download the file, then open it from Downloads.",
         controls: ["download", "pdf", "end"],
-        chip: "Approved",
-        chipIcon: "check",
       };
     case "pdf_fallback":
       return {
         ...base,
         heading: `Showing ${file} as a PDF.`,
         line: "PowerPoint can't open it on this PC. Animations and videos won't play.",
-        controls: ["end"],
-        chip: "Approved",
-        chipIcon: "check",
+        controls: END,
       };
     case "pdf_file":
-      return {
-        ...base,
-        heading: file,
-        line: "Opened as a PDF.",
-        controls: ["end"],
-        chip: "Approved",
-        chipIcon: "check",
-      };
+      return { ...base, heading: file, line: "Opened as a PDF.", controls: END };
     case "guest_open":
       return {
         ...base,
         heading: file,
         line: "Sent by a guest. Open it here when you're ready.",
         controls: ["open", "start_over"],
-        chip: "Scanned",
       };
     case "ended":
-      return { ...base, heading: "Ended.", line: "Scan the new code to present." };
+      return { ...base, heading: SESSION_ENDED };
     case "offline":
       return {
         ...base,
         heading: "This screen is offline.",
         line: f.offlineLong ? `Reconnecting. ${SIGN_IN_HINT}` : "Reconnecting.",
-        chip: "Offline",
-        chipIcon: "wifi-off",
       };
     case "service_down":
       return { ...base, heading: "bloop isn't responding.", line: "Sign in to this PC as usual." };
@@ -162,69 +99,33 @@ export function screenCopy(key, f) {
         alert: true,
       };
     case "phone_width":
-      return {
-        ...base,
-        heading: "Open this on the room's screen.",
-        line: "Then scan its code with your phone.",
-      };
-    case "demo_open": {
-      const done = { ...base, chip: "On Screen", chipIcon: "check" };
-      if (!f.guest) {
-        return { ...done, heading: file, line: "On a room PC this opens in PowerPoint.", controls: ["end"] };
-      }
-      return {
-        ...done,
-        heading: "Your file reached the screen.",
-        line: f.fileType === "pdf" ? "On a room PC it opens as a PDF." : "On a room PC it opens in PowerPoint.",
-        controls: f.fetched ? ["end", "download"] : ["end"],
-      };
-    }
+      return { ...base, heading: "Open this on the room's screen.", line: "Then scan its code with your phone." };
+    case "demo_open":
+      // The viewer: the item's name heads the stage; Present and Download belong to the item, not the state.
+      return { ...base, heading: file, controls: END };
   }
 }
-
-/** @typedef {{id: string, label: string, kind: "primary" | "secondary" | "text", href?: string}} PhoneAction */
-/**
- * @typedef {object} PhoneCopy
- * @property {string} title
- * @property {string} body
- * @property {boolean} room the room row
- * @property {boolean} match the match code block
- * @property {"none" | "skeleton" | "list"} files
- * @property {string} scope the scope line under the files, with a lock
- * @property {string} warn the unregistered-screen card
- * @property {PhoneAction[]} actions
- * @property {boolean} loading the primary action shows its progress label
- * @property {boolean} progress the upload progress bar
- */
-/**
- * @typedef {object} PhoneFacts
- * @property {string} room
- * @property {string | null} file
- * @property {string | null} endsAt
- * @property {boolean} [account] the phone is signed in to OneDrive, so it can disconnect
- * @property {number} [maxMB] the largest guest file, in whole megabytes
- * @property {boolean} [back] this tab is also the demo screen (the one-device round trip), so it can go back to it
- */
 
 const ENTER_CODE = { id: "code", label: "Enter a Code", kind: /** @type {const} */ ("text"), href: "/code" };
 /** Revokes the stored OneDrive access (docs/architecture.md section 6, /api/me/disconnect). */
 const DISCONNECT = { id: "disconnect", label: "Disconnect OneDrive", kind: /** @type {const} */ ("text") };
-/** The guest entry: a phone that scanned with no OneDrive to choose from sends its own file instead. */
-const SEND_FILE = { id: "send-file", label: "Send a File Instead", kind: /** @type {const} */ ("text") };
+/** The guest entry where there is no list to end with the "Add a file" row. */
+const SEND_FILE = { id: "send-file", label: "Add a File", kind: /** @type {const} */ ("text") };
 const PICK = { id: "pick", label: "Choose File", kind: /** @type {const} */ ("primary") };
 const CANCEL = { id: "cancel", label: "Cancel", kind: /** @type {const} */ ("secondary") };
 const DONE = { id: "done", label: "Done", kind: /** @type {const} */ ("primary") };
 const TRY_AGAIN = { id: "retry", label: "Try Again", kind: /** @type {const} */ ("primary") };
-const END = { id: "end", label: "End", kind: /** @type {const} */ ("primary") };
+/** Ends the session, as End did: every link stops working. */
+const REVOKE = { id: "end", label: "Revoke", kind: /** @type {const} */ ("primary") };
 const BACK = {
   id: "back",
   label: "See It on the Screen",
   kind: /** @type {const} */ ("primary"),
   href: "/s?mode=demo",
 };
-/** End, or with the way back to the demo screen first, which then takes the primary. */
-const endActions = (/** @type {PhoneFacts} */ f) =>
-  /** @type {PhoneAction[]} */ (f.back ? [BACK, { ...END, kind: "secondary" }] : [END]);
+/** Revoke, or with the way back to the demo screen first, which then takes the primary. */
+const revokeActions = (/** @type {PhoneFacts} */ f) =>
+  /** @type {PhoneAction[]} */ (f.back ? [BACK, { ...REVOKE, kind: "secondary" }] : [REVOKE]);
 
 /**
  * @param {PhoneStateKey} key
@@ -237,7 +138,9 @@ export function phoneCopy(key, f) {
     body: "",
     room: false,
     match: false,
-    files: /** @type {"none" | "skeleton" | "list"} */ ("none"),
+    files: /** @type {PhoneCopy["files"]} */ ("none"),
+    add: false,
+    ends: false,
     scope: "",
     warn: "",
     actions: /** @type {PhoneAction[]} */ ([]),
@@ -246,73 +149,36 @@ export function phoneCopy(key, f) {
   };
   const file = f.file ?? "your slides";
   const disconnect = f.account ? [DISCONNECT] : [];
-  const approveActions = /** @type {PhoneAction[]} */ ([
-    { id: "approve", label: "Approve", kind: "primary" },
-    CANCEL,
-    SEND_FILE,
-    ...disconnect,
-  ]);
+  const APPROVE = { id: "approve", label: "Approve", kind: /** @type {const} */ ("primary") };
   const accountLine = VERIFIED.accountNeverReaches
-    ? "Only this file goes to the screen. The screen never gets your account."
-    : "Only this file goes to the screen.";
+    ? "Only the items you tick go to the screen. The screen never gets your account."
+    : "Only the items you tick go to the screen.";
+  /** The room as the title over its code and the list (match to approving). */
+  const room = { ...base, title: f.room, room: true, match: true, files: /** @type {const} */ ("list"), add: true };
   switch (key) {
     case "checking":
       return { ...base, body: "Checking the code" };
     case "match":
-      return { ...base, title: "Open slides on this screen?", room: true, match: true, files: "skeleton" };
+      return { ...room, files: "skeleton", add: false };
     case "choose":
-      return {
-        ...base,
-        title: "Choose your slides.",
-        body: "Your recent slides",
-        room: true,
-        match: true,
-        files: "list",
-        actions: [SEND_FILE, ...disconnect],
-      };
+      return { ...room, actions: disconnect };
     case "approve":
-      return {
-        ...base,
-        title: `Open ${file} on ${f.room}?`,
-        room: true,
-        match: true,
-        files: "list",
-        scope: accountLine,
-        actions: approveActions,
-      };
+      return { ...room, scope: accountLine, actions: [APPROVE, CANCEL, ...disconnect] };
     case "approve_demo":
-      return {
-        ...base,
-        title: `Open ${file} here?`,
-        room: true,
-        match: true,
-        files: "list",
-        scope: "This is a demo. You don't need an account.",
-        actions: approveActions.filter((a) => a.id !== DISCONNECT.id),
-      };
+      return { ...room, actions: [APPROVE, CANCEL] };
     case "unregistered":
       return {
-        ...base,
-        title: `Open ${file} on ${f.room}?`,
-        room: true,
-        match: true,
-        files: "list",
+        ...room,
         warn: "This screen isn't registered. Only approve if you can see it in front of you.",
         scope: accountLine,
-        actions: approveActions,
+        actions: [APPROVE, CANCEL, ...disconnect],
       };
     case "approving":
       return {
-        ...base,
-        title: `Open ${file} on ${f.room}?`,
-        room: true,
-        match: true,
-        files: "list",
-        scope: accountLine,
-        actions: [
-          { id: "approve", label: "Approving...", kind: "primary" },
-          { id: "cancel", label: "Cancel", kind: "secondary" },
-        ],
+        ...room,
+        add: false,
+        scope: f.demo ? "" : accountLine,
+        actions: [{ ...APPROVE, label: "Approving..." }, CANCEL],
         loading: true,
       };
     case "first_use":
@@ -345,7 +211,6 @@ export function phoneCopy(key, f) {
         ...base,
         title: `Send a file to ${f.room}?`,
         body: "Choose one file from this phone. Only this file goes to the screen.",
-        room: true,
         match: true,
         actions: [PICK, CANCEL],
       };
@@ -354,7 +219,6 @@ export function phoneCopy(key, f) {
         ...base,
         title: `Send ${file} to ${f.room}?`,
         body: VERIFIED.guestDelete ? "bloop deletes its copy when this ends." : "",
-        room: true,
         match: true,
         actions: [{ id: "send", label: "Send", kind: "primary" }, CANCEL],
       };
@@ -389,27 +253,30 @@ export function phoneCopy(key, f) {
         actions: [DONE],
       };
     case "opening":
-      return { ...base, title: `Opening on ${f.room}.`, body: file, actions: endActions(f) };
-    case "open": {
-      const ends = VERIFIED.autoEnd && f.endsAt ? ` Ends by itself at ${f.endsAt}.` : "";
-      return { ...base, title: `Open on ${f.room}.`, body: `${file}.${ends}`, actions: endActions(f) };
-    }
+    case "open":
+      return {
+        ...base,
+        title: `Authorized on ${f.room}`,
+        files: "items",
+        ends: VERIFIED.autoEnd,
+        actions: revokeActions(f),
+      };
     case "open_fallback":
       return {
         ...base,
         title: "PowerPoint didn't open on the screen.",
         body: "Tap Download on the screen to open it there.",
-        actions: [END],
+        actions: [REVOKE],
       };
     case "pdf_fallback":
       return {
         ...base,
         title: `Showing as a PDF on ${f.room}.`,
         body: "PowerPoint can't open it there. Animations and videos won't play.",
-        actions: [END],
+        actions: [REVOKE],
       };
     case "pdf_file":
-      return { ...base, title: `Opened as a PDF on ${f.room}.`, body: file, actions: [END] };
+      return { ...base, title: `Opened as a PDF on ${f.room}.`, body: file, actions: [REVOKE] };
     case "ended":
       return {
         ...base,
@@ -470,6 +337,6 @@ export function phoneCopy(key, f) {
 
 /** Typed-code page: the line beside the field for a failed claim. */
 export const typedError = (/** @type {PhoneStateKey} */ key) => {
-  const c = phoneCopy(key, { room: "", file: null, endsAt: null });
+  const c = phoneCopy(key, { room: "", file: null });
   return [c.title, c.body].filter(Boolean).join(" ");
 };

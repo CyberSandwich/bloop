@@ -1,4 +1,5 @@
 // Pure formatting shared by the pages.
+/** @import {Item} from "../../../src/shared/protocol.ts" */
 import { normalize } from "../shared/codes.js";
 
 /**
@@ -79,17 +80,64 @@ export function spelled(code) {
 export const qrLabel = (code, host) =>
   `QR code. Scan it with your phone camera to open bloop. Or enter the code ${spelled(code)} at ${host} slash code.`;
 
-/** Lucide icon paths for a file row. */
-const ICON_PRESENTATION = ["M2 3h20", "M21 3v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V3", "m7 21 5-5 5 5"];
-const ICON_DOCUMENT = [
-  "M15 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7Z",
-  "M14 2v4a2 2 0 0 0 2 2h4",
-  "M10 9H8",
-  "M16 13H8",
-  "M16 17H8",
-];
+/** "1:05" or "59:12": minutes and seconds left, never negative. @param {number} ms */
+export function countdown(ms) {
+  const s = Math.max(0, Math.ceil(ms / 1000));
+  return `${Math.floor(s / 60)}:${String(s % 60).padStart(2, "0")}`;
+}
 
-/** A document icon for PDFs, slides otherwise. */
-export function fileIcon(/** @type {string} */ name) {
-  return /\.pdf$/i.test(name) ? ICON_DOCUMENT : ICON_PRESENTATION;
+/** The host a link card and a row name ("vevox.com"); "" for a URL that does not parse. @param {string} url */
+export function hostOf(url) {
+  try {
+    return new URL(url).hostname.replace(/^www\./, "");
+  } catch {
+    return "";
+  }
+}
+
+const KINDS = { pptx: "PowerPoint", pdf: "PDF", jpg: "JPEG image", png: "PNG image", webp: "WebP image" };
+
+/**
+ * A row's second line: the kind, then the size when the item has bytes, then the date only when the source gave one.
+ * A link reads "Link" and its host.
+ * @param {Item} item
+ * @param {string | null} [date] "Edited 10 min ago"
+ */
+export function itemLine(item, date = null) {
+  const parts =
+    item.kind === "link"
+      ? ["Link", hostOf(item.url)]
+      : [KINDS[item.type], item.size === null ? "" : sizeLabel(item.size), date ?? ""];
+  return parts.filter(Boolean).join(" · ");
+}
+
+/** A row's name: a link's title, a file's name. @param {Item} item */
+export const itemName = (item) => (item.kind === "link" ? item.title : item.name);
+
+/** Lucide icon paths (24 viewBox, stroke 2). Only where an icon carries meaning: type tiles, arrows, the tick, add. */
+const ICONS = {
+  pptx: ["M2 3h20", "M21 3v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V3", "m7 21 5-5 5 5"],
+  pdf: [
+    "M15 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7Z",
+    "M14 2v4a2 2 0 0 0 2 2h4",
+    "M10 9H8",
+    "M16 13H8",
+    "M16 17H8",
+  ],
+  image: [
+    "M5 3h14a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2Z",
+    "M7 9a2 2 0 1 0 4 0a2 2 0 1 0-4 0",
+    "m21 15-3.086-3.086a2 2 0 0 0-2.828 0L6 21",
+  ],
+  link: [
+    "M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71",
+    "M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71",
+  ],
+};
+export const ICON_ADD = ["M5 12h14", "M12 5v14"];
+
+/** The type tile's glyph: slides, a document for a PDF, a picture for an image, a link. @param {Item} item */
+export function itemIcon(item) {
+  if (item.kind === "link") return ICONS.link;
+  return item.type === "pptx" || item.type === "pdf" ? ICONS[item.type] : ICONS.image;
 }
