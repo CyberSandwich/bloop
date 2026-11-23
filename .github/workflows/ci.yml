@@ -22,7 +22,13 @@ jobs:
           node-version-file: .nvmrc
           cache: npm
       - run: npm ci
-      - run: npm run check
+      # The same steps as `npm run check`, one per step so a failure names its check.
+      - run: npm run typecheck
+      - run: npm run lint
+      - run: npm test
+      - run: npm run test:int
+      - run: npm run html-validate
+      - run: npm run size
 
   browser:
     runs-on: ubuntu-latest
