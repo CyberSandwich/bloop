@@ -9,7 +9,8 @@ export default defineConfig({
   reporter: process.env.CI ? [["github"], ["html", { open: "never" }]] : "list",
   use: { baseURL: "http://127.0.0.1:8787", trace: "retain-on-failure" },
   webServer: {
-    command: "npm run dev",
+    // TEST_TIMING skips the platform rate limits, which a suite creating many screens a minute would trip.
+    command: "npm run dev -- --var TEST_TIMING:1",
     url: "http://127.0.0.1:8787/api/health",
     reuseExistingServer: !process.env.CI,
     timeout: 120_000,

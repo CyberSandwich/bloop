@@ -35,6 +35,8 @@ jobs:
           cache: npm
       - run: npm ci
       - run: npx playwright install --with-deps chromium
+      # The pairing routes fail closed without the fake secrets.
+      - run: cp .dev.vars.example .dev.vars
       # Playwright starts `npm run dev` itself (playwright.config.ts); the axe specs run inside it.
       - run: npm run test:e2e
       # Lighthouse CI starts its own `npm run dev` and asserts the budgets in lighthouserc.json.
