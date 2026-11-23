@@ -30,6 +30,7 @@ npm run check                    # typecheck, lint, unit and integration tests, 
 - Architecture: [docs/architecture.md](docs/architecture.md)
 - Seam contracts: [docs/interfaces.md](docs/interfaces.md)
 - Threat model: [docs/threat-model.md](docs/threat-model.md)
+- Owner setup (Microsoft Entra app, switching to OneDrive): [docs/setup.md](docs/setup.md)
 - Decisions: [docs/adr/](docs/adr/), starting with [0001 stack](docs/adr/0001-stack.md)
 
 ## License

@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { createApi } from "../../public/js/core/api.js";
-import { loadFiles, stubFiles } from "../../public/js/core/files.js";
+import { loadFiles } from "../../public/js/core/files.js";
 import { createStore } from "../../public/js/core/store.js";
 
 interface Seen {
@@ -98,11 +98,14 @@ describe("file list", () => {
     expect(await loadFiles(createApi({ fetch: f.fetch }), "p.q")).toEqual({ ok: true, files });
   });
 
-  it("falls back to the two stub fixtures only while the route does not exist", async () => {
+  it("treats a body without a list as an empty list", async () => {
+    const f = fakeFetch(() => ok({}));
+    expect(await loadFiles(createApi({ fetch: f.fetch }), "p.q")).toEqual({ ok: true, files: [] });
+  });
+
+  it("has no stub fallback: a missing route is an error", async () => {
     const f = fakeFetch(() => problem(404, "not_found"));
-    const got = await loadFiles(createApi({ fetch: f.fetch }), "p.q", () => 1_000_000);
-    expect(got).toEqual({ ok: true, files: stubFiles(1_000_000) });
-    expect(stubFiles(0).map((x) => x.id)).toEqual(["demo-deck", "demo-pdf"]);
+    expect(await loadFiles(createApi({ fetch: f.fetch }), "p.q")).toEqual({ ok: false, error: "not_found" });
   });
 
   it("passes every other failure through", async () => {

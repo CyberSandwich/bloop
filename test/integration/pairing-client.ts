@@ -6,8 +6,8 @@ import { startWrangler, type Wrangler } from "./wrangler.ts";
 export const PEPPER = "fake-test-pepper-fake-test-pepper-0000";
 
 /** `vars` override wrangler.jsonc vars. TEST_TIMING lowers the config floors and skips the platform bindings. */
-export const startPairing = (vars: Record<string, string> = {}): Promise<Wrangler> =>
-  startWrangler({ HASH_PEPPER: PEPPER, TEST_TIMING: "1", ...vars });
+export const startPairing = (vars: Record<string, string> = {}, options?: { migrate?: boolean }): Promise<Wrangler> =>
+  startWrangler({ HASH_PEPPER: PEPPER, TEST_TIMING: "1", ...vars }, options);
 
 export interface Reply<T = Record<string, unknown>> {
   status: number;

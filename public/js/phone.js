@@ -50,7 +50,7 @@ const polite = byId("polite");
  *   error: PhoneStateKey | null, info: import("./core/states.js").PhoneInfo | null, view: PhoneView | null,
  *   files: FileEntry[] | null, selected: string | null, approving: boolean, canceled: boolean,
  *   pid: string | null, channel: ReturnType<typeof openChannel> | null, retry: (() => void) | null,
- *   key: PhoneStateKey | null, rows: FileEntry[] | null, actionIds: string
+ *   key: PhoneStateKey | null, rows: FileEntry[] | null, actionIds: string, account: boolean
  * }}
  */
 const c = {
@@ -67,6 +67,7 @@ const c = {
   key: null,
   rows: null,
   actionIds: "",
+  account: false,
 };
 
 /** Failed calls become the state key the shared error table names; offline and generic errors can retry. */
@@ -142,6 +143,7 @@ function render() {
     room: c.info?.roomName ?? v?.room.name ?? "",
     file: v?.fileName ?? picked?.name ?? null,
     endsAt: v?.endsAt ? clock(v.endsAt) : null,
+    account: c.account,
   });
 
   show(skelTitle, key === "checking");
@@ -187,6 +189,7 @@ actionsEl.addEventListener("click", (e) => {
   else if (id === "done") done();
   else if (id === "retry") retry();
   else if (id === "connect") location.assign("/auth/start");
+  else if (id === "disconnect") disconnect();
 });
 
 function retry() {
@@ -240,6 +243,21 @@ async function listFiles() {
   c.files = res.files;
   c.selected = res.files[0]?.id ?? null;
   render();
+  c.account = c.info?.mode === "live" && (await signedInToOneDrive());
+  render();
+}
+
+/** Only the Graph source has an account to disconnect; the mock and demo sources answer `source: mock`. */
+async function signedInToOneDrive() {
+  const res = await api.get("/api/me");
+  return res.ok && res.value?.source === "graph" && res.value?.signedIn === true;
+}
+
+async function disconnect() {
+  const res = await api.post("/api/me/disconnect", {});
+  if (!res.ok) return fail(res.error, disconnect);
+  c.account = false;
+  listFiles();
 }
 
 /** Follows the pairing live; a pushed error ends it (cancel elsewhere, Start Over, timeout). */

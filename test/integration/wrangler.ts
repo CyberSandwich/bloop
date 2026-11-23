@@ -1,4 +1,4 @@
-import { type ChildProcess, spawn } from "node:child_process";
+import { type ChildProcess, spawn, spawnSync } from "node:child_process";
 import { mkdtempSync, rmSync } from "node:fs";
 import { createServer } from "node:net";
 import { tmpdir } from "node:os";
@@ -39,13 +39,27 @@ function exited(child: ChildProcess): Promise<void> {
 /**
  * Starts `wrangler dev` on a free port with a throwaway state directory and resolves once
  * `/api/health` answers. Needs no Cloudflare login. `vars` override wrangler.jsonc vars.
+ * `migrate` applies migrations/ to the throwaway D1 first, for tests that touch the database.
  */
-export async function startWrangler(vars: Record<string, string> = {}): Promise<Wrangler> {
+export async function startWrangler(
+  vars: Record<string, string> = {},
+  options: { migrate?: boolean } = {},
+): Promise<Wrangler> {
   const [port, inspectorPort] = [await freePort(), await freePort()];
   const url = `http://127.0.0.1:${port}`;
   const state = mkdtempSync(join(tmpdir(), "bloop-wrangler-"));
   const varArgs = Object.entries({ PUBLIC_ORIGIN: url, ...vars }).flatMap(([k, v]) => ["--var", `${k}:${v}`]);
   const chunks: string[] = [];
+  const env = { ...process.env, XDG_CONFIG_HOME: join(state, "config"), WRANGLER_SEND_METRICS: "false", CI: "1" };
+
+  if (options.migrate) {
+    const done = spawnSync(bin, ["d1", "migrations", "apply", "bloop", "--local", "--persist-to", state], {
+      cwd: root,
+      env,
+      encoding: "utf8",
+    });
+    if (done.status !== 0) throw new Error(`d1 migrations failed:\n${done.stdout}${done.stderr}`);
+  }
 
   // Own process group, so stop() also takes down workerd. XDG_CONFIG_HOME keeps wrangler's logs and
   // registry out of the home directory, which a sandbox or CI runner may not allow it to write.
@@ -66,7 +80,7 @@ export async function startWrangler(vars: Record<string, string> = {}): Promise<
     {
       cwd: root,
       detached: true,
-      env: { ...process.env, XDG_CONFIG_HOME: join(state, "config"), WRANGLER_SEND_METRICS: "false", CI: "1" },
+      env,
     },
   );
   child.stdout.on("data", (d) => chunks.push(String(d)));

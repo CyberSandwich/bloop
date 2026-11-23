@@ -375,6 +375,7 @@ Top to bottom: wordmark 17 px centered; title 28/34 600; room row (Lucide `monit
 | approve | Open Lecture 4.pptx on Room 2.14? | Only this file goes to the screen. The screen never gets your account. `[V-4]` | Approve, Cancel |
 | approve, demo | Open the sample deck here? | This is a demo. You don't need an account. | Approve, Cancel |
 | unregistered screen | as approve, plus one card (Lucide `triangle-alert` 20, sentence in `--t1` 600; no tint, no stripe) | This screen isn't registered. Only approve if you can see it in front of you. `[V-7]` | Approve, Cancel |
+| (any of choose file, approve, unregistered screen, signed in to OneDrive) | as that state | as that state | plus Disconnect OneDrive (text): deletes bloop's stored access and signs this phone out, then shows first use |
 | first use | Connect your OneDrive. | bloop reads your slides from OneDrive. You do this once, on this phone. `[V-9]` | Connect OneDrive, Cancel |
 | needs admin | Your organization needs to approve bloop. | Ask your IT team, or sign in to the PC as usual. | Done |
 | empty | No slides found. | Save a .pptx file to OneDrive, then scan again. | Done |

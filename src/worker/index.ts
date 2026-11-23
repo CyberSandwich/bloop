@@ -4,12 +4,16 @@ import type { Env } from "./env.ts";
 import { type Policy, withHeaders } from "./headers.ts";
 import { json, problem } from "./http.ts";
 import { type Route, route } from "./router.ts";
+import { authRoutes } from "./routes/auth.ts";
+import { fileRoutes } from "./routes/files.ts";
 import { pairingRoutes } from "./routes/pairing.ts";
 
 /** First match wins. Later modules add their routes here, one line each. */
 const routes: readonly Route[] = [
   route(["GET"], "/api/health", "api", () => json({ status: "ok" })),
   ...pairingRoutes,
+  ...fileRoutes,
+  ...authRoutes,
   route(["GET", "HEAD"], "/f/:token/:name", "api", () => problem(404, "link_unknown")),
 ];
 

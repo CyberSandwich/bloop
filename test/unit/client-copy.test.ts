@@ -128,6 +128,21 @@ describe("phone copy", () => {
     expect(c.files).toBe("list");
   });
 
+  it("Disconnect OneDrive appears only for a signed-in phone, last and as a text action", () => {
+    for (const key of ["choose", "approve", "unregistered"] as const) {
+      expect(phoneCopy(key, pf).actions.map((a) => a.id)).not.toContain("disconnect");
+      const withAccount = phoneCopy(key, { ...pf, account: true }).actions;
+      expect(withAccount.at(-1)).toEqual({ id: "disconnect", label: "Disconnect OneDrive", kind: "text" });
+    }
+    expect(phoneCopy("approve", { ...pf, account: true }).actions.map((a) => a.label)).toEqual([
+      "Approve",
+      "Cancel",
+      "Disconnect OneDrive",
+    ]);
+    expect(phoneCopy("approve_demo", { ...pf, account: true }).actions.map((a) => a.id)).not.toContain("disconnect");
+    expect(phoneCopy("first_use", { ...pf, account: true }).actions.map((a) => a.id)).not.toContain("disconnect");
+  });
+
   it("approving keeps the buttons and marks the primary as loading", () => {
     const c = phoneCopy("approving", pf);
     expect(c.loading).toBe(true);

@@ -240,22 +240,22 @@ describe("pairing: validation at every boundary", () => {
     const pass = await api.post("/api/claim", { code: live.code, pass: "whatever", kind: "guest" });
     expect(pass.body).toEqual(problem("pass_invalid"));
     const claimed = await claim(api, live.code);
-    expect(claimed.body.needsAuth).toBe(true);
+    // FILE_SOURCE=mock: the demo account is the user, so there is nothing to sign in to.
+    expect(claimed.body.needsAuth).toBe(false);
     const approve = await api.post("/api/approve", { fileId: "demo-deck" }, { auth: claimed.body.pid });
     expect(approve.status).toBe(404);
     expect(approve.body).toEqual(problem("file_not_found"));
     live.socket.close();
   });
 
-  it("a demo guest can claim but cannot approve its own file; an unknown file id is refused", async () => {
+  it("a demo guest can claim but cannot approve or list: guests have no account", async () => {
     const { socket, code } = await openScreen(api);
     const guest = await claim(api, code, "guest");
     expect(guest.body).toMatchObject({ kind: "guest", needsAuth: false });
     const approve = await api.post("/api/approve", { fileId: "demo-deck" }, { auth: guest.body.pid });
     expect(approve.status).toBe(409);
     expect(approve.body).toEqual(problem("wrong_state"));
-    const unknown = await api.post("/api/approve", { fileId: "../../etc/passwd" }, { auth: guest.body.pid });
-    expect(unknown.body).toEqual(problem("file_not_found"));
+    expect((await api.get("/api/files", guest.body.pid)).body).toEqual(problem("wrong_state"));
     socket.close();
   });
 

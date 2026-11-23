@@ -2,14 +2,14 @@
 // (PAIR-06), then the platform rate limit, then Zod on the body, then one call into a Durable Object.
 import { z } from "zod";
 import { normalize } from "../../../public/js/shared/codes.js";
-import { type Config, configFor } from "../config.ts";
+import { phoneUser, servicesFor } from "../auth/services.ts";
+import type { Config } from "../config.ts";
 import type { Env } from "../env.ts";
-import { bearer, checkOrigin, checkWrite, fail, json, readJson } from "../http.ts";
-import { hmacHex, newRef, parseCredential } from "../ids.ts";
-import { type Handler, type Route, route } from "../router.ts";
-import type { Result } from "../seams/pairing.ts";
+import { checkOrigin, fail, json } from "../http.ts";
+import { newRef } from "../ids.ts";
+import { type Route, route } from "../router.ts";
 import { directoryStub, screenStub } from "../stubs.ts";
-import { resolveStubFile } from "./stub-files.ts";
+import { ipHash, limited, respond, withConfig, withScreen, write } from "./common.ts";
 
 const mode = z.enum(["live", "demo"]);
 const createBody = z.object({ mode }).strict();
@@ -20,62 +20,9 @@ const claimBody = z
     kind: z.enum(["owner", "guest"]).optional(),
   })
   .strict();
-const approveBody = z.object({ fileId: z.string().min(1).max(256) }).strict();
 const emptyBody = z.object({}).strict();
 
 const REF = /^[A-Za-z0-9_-]{22}$/;
-
-type WithConfig = (request: Request, env: Env, config: Config) => Response | Promise<Response>;
-
-/** Fails closed with 500 when the configuration is invalid. */
-const withConfig =
-  (handler: WithConfig): Handler =>
-  (request, env) => {
-    const config = configFor(env);
-    if (!config.ok) {
-      console.error(`config invalid: ${config.problems.join("; ")}`);
-      return fail("internal");
-    }
-    return handler(request, env, config.config);
-  };
-
-const respond = <T>(result: Result<T>, status = 200): Response =>
-  result.ok ? json(result.value, status) : fail(result.error);
-
-/** Coarse platform limit per pseudonymous IP. Skipped when the binding is absent or under TEST_TIMING. */
-async function limited(binding: RateLimit | undefined, request: Request, config: Config): Promise<Response | null> {
-  if (config.testTiming || typeof binding?.limit !== "function") return null;
-  const key = await ipHash(request, config);
-  return (await binding.limit({ key })).success ? null : fail("rate_limited");
-}
-
-/** Never stored raw: HMAC with the pepper. Local dev has no CF-Connecting-IP and shares one key. */
-const ipHash = (request: Request, config: Config): Promise<string> =>
-  hmacHex(config.hashPepper, request.headers.get("CF-Connecting-IP") ?? "local");
-
-/** A write route: checks, then the JSON body. */
-async function write<T>(
-  request: Request,
-  config: Config,
-  schema: z.ZodType<T>,
-): Promise<{ ok: true; value: T } | { ok: false; response: Response }> {
-  const refused = checkWrite(request, config.origin);
-  return refused ? { ok: false, response: refused } : readJson(request, schema);
-}
-
-/** Runs `call` against the Screen object a credential names, or answers 401. */
-async function withScreen<T>(
-  request: Request,
-  env: Env,
-  call: (stub: ReturnType<typeof screenStub>, credential: string) => Promise<Result<T>>,
-  ok: (value: T) => Response,
-): Promise<Response> {
-  const value = bearer(request);
-  const cred = value ? parseCredential(value) : null;
-  if (!value || !cred) return fail("unauthorized");
-  const result = await call(screenStub(env, cred.ref), value);
-  return result.ok ? ok(result.value) : fail(result.error);
-}
 
 /** WebSocket upgrade: the Origin must be ours; the credential is the first frame, so the URL carries only the ref. */
 async function upgrade(request: Request, env: Env, config: Config): Promise<Response> {
@@ -174,10 +121,12 @@ export const pairingRoutes: readonly Route[] = [
       const hashed = await ipHash(request, config);
       const found = await directoryStub(env).lookup(code, hashed, Date.now());
       if (!found.ok) return fail(found.error);
+      // Only the Graph source has accounts. The Screen object drops the user for a demo screen.
+      const userId = config.graph ? await phoneUser(request, servicesFor(env, config)) : null;
       const claimed = await screenStub(env, found.screenRef).claim(code, {
         kind: body.value.kind ?? "owner",
         ipHash: hashed,
-        userId: null,
+        userId,
         passHash: null,
       });
       return respond(claimed);
@@ -198,24 +147,6 @@ export const pairingRoutes: readonly Route[] = [
         (view) => json(view),
       ),
     ),
-  ),
-
-  route(
-    ["POST"],
-    "/api/approve",
-    "api",
-    withConfig(async (request, env, config) => {
-      const body = await write(request, config, approveBody);
-      if (!body.ok) return body.response;
-      const file = resolveStubFile(body.value.fileId);
-      if (!file) return fail("file_not_found");
-      return withScreen(
-        request,
-        env,
-        (stub, pid) => stub.approve(pid, body.value.fileId, file),
-        (view) => json(view),
-      );
-    }),
   ),
 
   route(

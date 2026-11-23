@@ -90,6 +90,8 @@ export class Screen extends DurableObject<Env> implements PairingStore {
     const secret = newSecret();
     const secretHash = await sha256Hex(secret);
     const match = drawMatch();
+    // A demo screen never carries an account (architecture 4.5), whatever the route resolved.
+    const userId = this.meta.mode === "demo" ? null : phone.userId;
     const applied = await this.apply({
       e: "claim",
       now: Date.now(),
@@ -98,7 +100,7 @@ export class Screen extends DurableObject<Env> implements PairingStore {
       secretHash,
       match,
       kind: phone.kind,
-      userId: phone.userId,
+      userId,
       passHash: phone.passHash,
     });
     if (!applied.ok) return applied;
@@ -111,7 +113,8 @@ export class Screen extends DurableObject<Env> implements PairingStore {
         match,
         mode: meta.mode,
         kind: phone.kind,
-        needsAuth: meta.mode === "live" && phone.kind === "owner",
+        // Only the Graph source has accounts, and a phone already signed in needs nothing more.
+        needsAuth: meta.mode === "live" && phone.kind === "owner" && this.config().graph !== null && userId === null,
       },
     };
   }

@@ -154,9 +154,12 @@ export function screenCopy(key, f) {
  * @property {string} room
  * @property {string | null} file
  * @property {string | null} endsAt
+ * @property {boolean} [account] the phone is signed in to OneDrive, so it can disconnect
  */
 
 const ENTER_CODE = { id: "code", label: "Enter a Code", kind: /** @type {const} */ ("text"), href: "/code" };
+/** Revokes the stored OneDrive access (docs/architecture.md section 6, /api/me/disconnect). */
+const DISCONNECT = { id: "disconnect", label: "Disconnect OneDrive", kind: /** @type {const} */ ("text") };
 const DONE = { id: "done", label: "Done", kind: /** @type {const} */ ("primary") };
 const TRY_AGAIN = { id: "retry", label: "Try Again", kind: /** @type {const} */ ("primary") };
 
@@ -178,9 +181,11 @@ export function phoneCopy(key, f) {
     loading: false,
   };
   const file = f.file ?? "your slides";
+  const disconnect = f.account ? [DISCONNECT] : [];
   const approveActions = /** @type {PhoneAction[]} */ ([
     { id: "approve", label: "Approve", kind: "primary" },
     { id: "cancel", label: "Cancel", kind: "secondary" },
+    ...disconnect,
   ]);
   const accountLine = VERIFIED.accountNeverReaches
     ? "Only this file goes to the screen. The screen never gets your account."
@@ -198,6 +203,7 @@ export function phoneCopy(key, f) {
         room: true,
         match: true,
         files: "list",
+        actions: disconnect,
       };
     case "approve":
       return {
@@ -217,7 +223,7 @@ export function phoneCopy(key, f) {
         match: true,
         files: "list",
         scope: "This is a demo. You don't need an account.",
-        actions: approveActions,
+        actions: approveActions.filter((a) => a.id !== DISCONNECT.id),
       };
     case "unregistered":
       return {

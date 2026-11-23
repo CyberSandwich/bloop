@@ -221,11 +221,13 @@ src/worker/
   config.ts                Zod schema for env, fails closed at startup
   machine.ts               pure session state machine (interfaces.md)
   do/screen.ts  do/directory.ts
-  seams/file-source/{mock,graph}.ts
+  seams/file-source/{index,mock,demo,graph}.ts   interface; MockFileSource; the bundled demo account; GraphFileSource
+  source-access.ts         which source serves a screen (mode and FILE_SOURCE), and the server-side resolve of an approved id
   seams/open-path/{redirect,stream}.ts
   seams/guest-drop/{r2,validate,zip}.ts
   seams/residue.ts  audit.ts  metrics.ts
-  auth/{oauth,vault,sessions}.ts
+  auth/{oauth,vault,sessions,cookies,services,db}.ts   oauth4webapi flow; token vault; phone sessions; cookie format and AEAD seal; per-request objects and the daily job; the D1 slice
+  routes/{pairing,files,auth,common}.ts
   db/queries.ts            every SQL statement, typed
   retention.ts             cron jobs
 public/                    wrangler's assets directory, served as it is. Everything here is public: no secrets, no server-only logic
@@ -243,7 +245,8 @@ test/
   unit/                    vitest + fast-check: machine, codes, names, zip, vault, csv, headers
   integration/             against a real wrangler dev (wrangler.ts starts one on a free port): every route, sockets, timers, threat tests
   e2e/                     Playwright, two contexts (screen, phone), axe, CI only
-  fixtures/decks/          mock decks, polyglots, zip bombs, macro decks
+  fixtures/decks/          the demo account's sample decks (written by tools/make-fixtures.mjs), later polyglots, zip bombs, macro decks
+  fixtures/graph/          synthetic Graph JSON for the contract tests (README says so)
   fixtures/jsdoc/          a good and a bad browser module, proving JSDoc @import of protocol.ts is type-checked
 ```
 `.wrangler/` is gitignored. There is no copy or build step for assets: `wrangler.jsonc` sets `assets.directory` to `./public`. The Worker imports `public/js/shared/*.js` by relative path, and wrangler's own esbuild bundles it. Type-only contracts stay in `src/shared/*.ts` so they are never served.
@@ -265,21 +268,22 @@ test/
 | POST                     | `/api/claim`                                 | none; rate-limited                    | `{code, pass?}` to `{pid, room, match, mode, kind, needsAuth}` |
 | GET                      | `/api/pair/ws?ref=<screenRef>`               | `hello{pid}`, Origin                  | phone socket                                                   |
 | GET                      | `/api/pair/state`                            | Bearer pid                            | polling fallback                                               |
-| GET                      | `/api/files`                                 | Bearer pid + session cookie (live)    | up to 5 recent decks                                           |
-| POST                     | `/api/approve`                               | Bearer pid + cookie (live), Origin    | `{fileId}`                                                     |
+| GET                      | `/api/files`                                 | Bearer pid, plus session cookie when `FILE_SOURCE=graph` and the screen is live | up to 5 recent decks as `{files: FileEntry[]}`; tells the Screen object the ids shown |
+| POST                     | `/api/approve`                               | Bearer pid, plus cookie as above, Origin | `{fileId}`; the Worker resolves the file from the source's list, so an id not in it is `file_not_found` |
 | PUT                      | `/api/drop`                                  | Bearer pid, Origin                    | guest upload, raw body, `X-Bloop-Name` header                  |
 | POST                     | `/api/cancel`                                | Bearer pid, Origin                    | cancel before approve                                          |
 | POST                     | `/api/end`                                   | Bearer pid, Origin                    | end from the phone                                             |
 | POST                     | `/api/guest-passes`                          | session cookie, Origin                | host creates a guest link                                      |
-| GET                      | `/api/me`                                    | session cookie                        | account, connected source                                      |
+| GET                      | `/api/me`                                    | session cookie                        | `{source, signedIn, email}`; with `FILE_SOURCE=mock` it is `{source: "mock", signedIn: true, email: null}` |
+| POST                     | `/api/me/signout`                            | session cookie, Origin                | delete this session, clear the cookie; the grant stays         |
 | GET                      | `/api/me/audit`                              | session cookie                        | the user's own audit rows                                      |
-| POST                     | `/api/me/disconnect`                         | session cookie, Origin                | delete grant and sessions                                      |
+| POST                     | `/api/me/disconnect`                         | session cookie, Origin                | delete the grant and every session of the user                 |
 | DELETE                   | `/api/me`                                    | session cookie, Origin                | erase the user (DATA-05)                                       |
 | GET                      | `/api/it/export`                             | Bearer IT export token                | `?format=csv` or `json`, `&from&to`                            |
 | POST                     | `/api/rooms/enroll`                          | enrollment key in body, Origin        | sets the room cookie on a lectern (ADR 0008)                   |
 | GET                      | `/api/health`                                | none                                  | status line probe, no state                                    |
-| GET                      | `/auth/start`                                | none                                  | 302 to Entra; no return parameter exists                       |
-| GET                      | `/auth/callback`                             | AEAD state cookie                     | code exchange, then 302 to `/a` (fixed)                        |
+| GET                      | `/auth/start`                                | none; 10 per 60 s per IP              | 302 to Entra; no return parameter exists                       |
+| GET                      | `/auth/callback`                             | AEAD state cookie                     | code exchange, then 302 to `/a` (fixed). 400 `bad_request` for a state, cookie or expiry failure (no cookie set), 403 `consent_declined` or `admin_consent_required` for an Entra refusal, 401 `unauthorized` when the ID token fails validation, 502 `source_unavailable` for a failed exchange |
 | GET, HEAD                | `/f/:token/:name`                            | the token                             | open path; query string ignored                                |
 | OPTIONS, PROPFIND, other | `/f/*`                                       | none                                  | 405 `Allow: GET, HEAD`                                         |
 
@@ -350,11 +354,11 @@ CREATE TABLE token_grant (                 -- deleted on disconnect, erase, or G
   user_id TEXT PRIMARY KEY REFERENCES app_user(id) ON DELETE CASCADE,
   kid TEXT NOT NULL,                     -- KEK that wraps dek
   dek_wrapped BLOB NOT NULL,             -- AES-KW of the per-user data key
-  rt_ct BLOB NOT NULL, rt_iv BLOB NOT NULL,        -- refresh token, AES-256-GCM, AAD = user_id|version
+  rt_ct BLOB, rt_iv BLOB,                          -- refresh token (NULL in TOKEN_MODE=session), AES-256-GCM, AAD = user_id|version|rt
   at_ct BLOB, at_iv BLOB, at_exp INTEGER,          -- cached access token, at most 1 h
-  scope TEXT NOT NULL, folder_id TEXT,
+  scope TEXT NOT NULL, folder_id TEXT,   -- folder_id: the only folder listed (NULL: the drive root)
   version INTEGER NOT NULL,              -- compare-and-swap on refresh
-  updated_at INTEGER NOT NULL);
+  updated_at INTEGER NOT NULL);          -- last use, the GRANT_IDLE_DAYS clock
 
 CREATE TABLE phone_session (             -- 30 days idle, 90 days absolute
   id_hash TEXT PRIMARY KEY, user_id TEXT NOT NULL REFERENCES app_user(id) ON DELETE CASCADE,
@@ -510,7 +514,9 @@ CSP per page type. Every page uses no inline script or style and no HTML string 
 
 `connect-src 'self'` covers `wss:` to the same host under CSP Level 3. A Playwright test asserts that no CSP violation is reported on any page. COEP is not set: nothing on the site needs cross-origin isolation, and it would add a failure mode.
 
-Cookies: `__Host-bloop_sid` (phone session; HttpOnly, Secure, SameSite=Lax, Path=/), `__Host-bloop_oauth` (state, PKCE verifier and nonce, AEAD with `COOKIE_KEY`, 10 min, SameSite=Lax), and `__Host-bloop_room` (registered screens; HttpOnly, Secure, SameSite=Strict).
+Every `/auth/*` and `/api/me*` route (and the `/api/files` listing for a live Graph screen) answers `source_unavailable` (502) unless `FILE_SOURCE=graph` and the Entra settings are present; `config.ts` already refuses to start on `graph` with a partial configuration, so `source_unavailable` is what a mock deployment returns. With `FILE_SOURCE=mock` the demo account is the user: no sign-in, `needsAuth` is false, and live screens list the same sample decks as demo screens. With `graph`, only a live screen builds `GraphFileSource` and reads the phone cookie; a demo screen ignores a cookie it is sent and always uses the demo account (SRC-04). The claim route resolves the cookie only under `graph`, so a signed-in phone claims with `needsAuth` false.
+
+Cookies: `__Host-bloop_sid` (phone session: a random 256-bit value, only its SHA-256 in `phone_session`; HttpOnly, Secure, SameSite=Lax, Path=/, 90 days; sign-in issues a new value and deletes the presented one), `__Host-bloop_oauth` (state, PKCE verifier and nonce, AES-GCM with `COOKIE_KEY` and the cookie name as AAD, 10 min, SameSite=Lax; cleared by the callback), and `__Host-bloop_room` (registered screens; HttpOnly, Secure, SameSite=Strict).
 
 Logging: Worker logs record the route pattern, status, `ErrorCode` and duration. They never record a URL, header, body, token, code, IP or file name. `http.ts` exposes one `log()` that takes a fixed shape, and a test greps the captured `wrangler dev` output for secrets after the integration run.
 
@@ -519,8 +525,8 @@ Logging: Worker logs record the route pattern, status, `ErrorCode` and duration.
 - `npm run dev`: `wrangler dev --ip 127.0.0.1 --port 8787 --persist-to .wrangler/state`. This needs no Cloudflare login. DO, D1, R2 and the rate-limit bindings run locally, and `FILE_SOURCE=mock`. It serves plain HTTP: browsers treat `localhost` as a secure context, so `__Host-` cookies work. Trying it from a phone on the LAN needs HTTPS (`--local-protocol https`, accepting the self-signed certificate once) and `PUBLIC_ORIGIN` set to that origin.
 - `npm run setup`: `tools/dev-secrets.mjs` writes `.dev.vars`, and `wrangler d1 migrations apply DB --local` applies the schema.
 - `npm run typecheck`: `tsc` for the Worker, for tests and tools (`tsconfig.node.json`), and for the browser JS (`tsconfig.public.json`). `npm run lint`: Biome (markdown is excluded). `npm test`: Vitest unit tests. `npm run check` runs typecheck, lint, test, test:int, html-validate and size-limit (browser JS budget 40 kB brotli).
-- `npm run test:int`: each test file starts `wrangler dev` on a free port through `test/integration/wrangler.ts` (throwaway state directory, `PUBLIC_ORIGIN` set to that port, torn down after), drives the screen and phone with Node's native `WebSocket` (with an `Origin` header) and `fetch`, and moves time by running the Worker with short timings under `TEST_TIMING=1` (section 9) instead of a clock header: Durable Object alarms use real time. Three files cover pairing: `pairing.test.ts` (flows, validation, CSRF, sockets), `pairing-timing.test.ts` (short timings: expiry, rotation, claim timeout, auto-end, hello timeout) and `pairing-limits.test.ts` (production timing, so the rate-limit bindings and the exact guess limit are live, and a config that fails closed). `wrangler dev` does not implement Durable Object jurisdictions, so `stubs.ts` skips `eu` when `PUBLIC_ORIGIN` is local.
-- Task pages (`public/s.html`, `a.html`, `code.html`, `css/app.css`, `js/screen.js`, `phone.js`, `code.js`): pure client logic lives in `public/js/core/` (state mapping `states.js`, every string `copy.js`, `channel.js` for the WebSocket with reconnect 1, 2, 5, 10, 30 s and the 3 s polling fallback, `api.js`, `qr.js`). `/s?mode=demo` opens a demo screen (default `live`). The QR link is `/a?c=<code>`; the phone strips `?c=` with `history.replaceState` when its modules load. `GET /api/files` answers `{files: FileEntry[]}`; until it exists the phone falls back to the two stub fixtures (`core/files.js`). `public/js/launcher.js` is the null seam the open module fills (Download controls and the `open` frame). Claims marked `[V-n]` in design.md ship only while their flag in `core/verified.js` is true.
+- `npm run test:int`: each test file starts `wrangler dev` on a free port through `test/integration/wrangler.ts` (`{migrate: true}` applies `migrations/` to its throwaway D1 first; `auth.test.ts` uses that, with a local fake Entra on a free port and `ENTRA_AUTHORITY` set to it) (throwaway state directory, `PUBLIC_ORIGIN` set to that port, torn down after), drives the screen and phone with Node's native `WebSocket` (with an `Origin` header) and `fetch`, and moves time by running the Worker with short timings under `TEST_TIMING=1` (section 9) instead of a clock header: Durable Object alarms use real time. Three files cover pairing: `pairing.test.ts` (flows, validation, CSRF, sockets), `pairing-timing.test.ts` (short timings: expiry, rotation, claim timeout, auto-end, hello timeout) and `pairing-limits.test.ts` (production timing, so the rate-limit bindings and the exact guess limit are live, and a config that fails closed). `wrangler dev` does not implement Durable Object jurisdictions, so `stubs.ts` skips `eu` when `PUBLIC_ORIGIN` is local.
+- Task pages (`public/s.html`, `a.html`, `code.html`, `css/app.css`, `js/screen.js`, `phone.js`, `code.js`): pure client logic lives in `public/js/core/` (state mapping `states.js`, every string `copy.js`, `channel.js` for the WebSocket with reconnect 1, 2, 5, 10, 30 s and the 3 s polling fallback, `api.js`, `qr.js`). `/s?mode=demo` opens a demo screen (default `live`). The QR link is `/a?c=<code>`; the phone strips `?c=` with `history.replaceState` when its modules load. `GET /api/files` answers `{files: FileEntry[]}` (`core/files.js` has no fallback: an error is an error). A signed-in live phone shows a Disconnect OneDrive text action (it asks `GET /api/me` once after listing). `public/js/launcher.js` is the null seam the open module fills (Download controls and the `open` frame). Claims marked `[V-n]` in design.md ship only while their flag in `core/verified.js` is true.
 - `npm run test:e2e` (CI): Playwright with two browser contexts (screen at 1440, phone at 390), started with `TEST_TIMING=1` and `.dev.vars` from the example. It runs the full demo flow, the guest flow with fixtures (upload, then the Open click on the screen), every state string, axe, and the header assertions.
 - Unit coverage targets: the state machine (fast-check: no transition leaves `ended` except `code.next`, a code is consumed at most once, every timer state has a deadline), the code alphabet and normalizer, the name sanitizer, the zip central-directory reader (fuzzed), the vault (round trip, AAD swap fails, rotation), CSV escaping, and header generation.
 - Every threat in threat-model.md names its test. CI fails if a threat id marked "mitigated" has no test with that id in its title.
