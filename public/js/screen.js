@@ -1,5 +1,5 @@
 // The room screen (/s): shows the QR and the typed code, follows the session through its Screen
-// object, and offers Start Over, End and the guest Open. State strings live in core/copy.js.
+// object, and offers Start Over, End, Open and the download and PDF fallbacks. State strings live in core/copy.js.
 /** @import {ScreenView} from "../../src/shared/protocol.ts" */
 import { createApi } from "./core/api.js";
 import { openChannel } from "./core/channel.js";
@@ -17,8 +17,9 @@ import {
   pollDelay,
   ROTATE_AHEAD_MS,
 } from "./core/timing.js";
-import { byId, focusTitle, frameThrottle, isFramed, lostFocus, setText, show, wsUrl } from "./core/ui.js";
-import { launcher } from "./launcher.js";
+import { byId, el, focusTitle, frameThrottle, isFramed, lostFocus, setText, show, wsUrl } from "./core/ui.js";
+import { createLauncher } from "./launcher.js";
+import { createResidue } from "./residue.js";
 import { format } from "./shared/codes.js";
 import { ERRORS } from "./shared/errors.js";
 
@@ -45,6 +46,7 @@ const buttons = {
   end: byId("b-end"),
   open: byId("b-open"),
   download: byId("b-download"),
+  pdf: byId("b-pdf"),
 };
 
 /**
@@ -66,6 +68,35 @@ const s = {
   offlineSince: null,
   timers: {},
 };
+
+const launcher = createLauncher({
+  api,
+  sid: () => s.sid,
+  assign: (url) => location.assign(url),
+  openWindow: (url) => window.open(url, "bloop-pdf"),
+  startDownload(url) {
+    const a = el("a", { href: url, download: "" });
+    document.body.append(a);
+    a.click();
+    a.remove();
+  },
+  hasGesture: () => navigator.userActivation?.isActive ?? true,
+  report: (mode) => s.channel?.send({ t: "launched", mode }) ?? false,
+  onChange: () => render(),
+});
+
+const residue = createResidue({
+  store,
+  launcher,
+  storage: (() => {
+    try {
+      return globalThis.sessionStorage;
+    } catch {
+      return null;
+    }
+  })(),
+  cleanUrl: () => history.replaceState(null, "", location.pathname + location.search),
+});
 
 const reduceMotion = matchMedia("(prefers-reduced-motion: reduce)").matches;
 const serverNow = () => Date.now() + s.skew;
@@ -152,8 +183,10 @@ function render() {
 
   show(buttons.start_over, copy.controls.includes("start_over"));
   show(buttons.end, copy.controls.includes("end"));
-  show(buttons.open, copy.controls.includes("open"));
-  show(buttons.download, copy.controls.includes("download") && launcher !== null);
+  // Open: the guest's offer, or a launch that needs a click (no user gesture, or a blocked popup).
+  show(buttons.open, copy.controls.includes("open") || launcher.needsClick());
+  show(buttons.download, copy.controls.includes("download") && (key !== "opening" || launcher.downloadReady()));
+  show(buttons.pdf, copy.controls.includes("pdf"));
   setText(buttons.download, key === "open_fallback" ? "Download" : "Download It Instead");
 
   if (changed && lostFocus()) focusTitle(heading);
@@ -193,6 +226,10 @@ function recover() {
 function onView(/** @type {ScreenView} */ view) {
   s.view = view;
   s.skew = view.now - Date.now();
+  if (view.state === "ended" || view.state === "closed") residue.clear();
+  // The credential is the screen's own, not the session's: it comes back so a reload resumes the waiting screen.
+  else if (view.state === "waiting" && s.sid && store.get(SID_KEY) !== s.sid) store.set(SID_KEY, s.sid);
+  launcher.onView(view);
   render();
 }
 
@@ -234,9 +271,15 @@ async function act(/** @type {string} */ path) {
 buttons.start_over.addEventListener("click", () => act("/api/screen/restart"));
 buttons.end.addEventListener("click", () => act("/api/screen/end"));
 buttons.open.addEventListener("click", () => {
+  if (s.view?.state !== "offered") return launcher.click();
   if (!s.channel?.send({ t: "open.click" })) flagError();
 });
-buttons.download.addEventListener("click", () => launcher?.download());
+/** A fallback that could not be minted shows the error state, which recovers by itself. */
+const fallback = (/** @type {() => Promise<boolean>} */ run) => async () => {
+  if (!(await run())) flagError();
+};
+buttons.download.addEventListener("click", fallback(launcher.download));
+buttons.pdf.addEventListener("click", fallback(launcher.showPdf));
 
 function connect(/** @type {string} */ sid) {
   s.sid = sid;
@@ -250,7 +293,7 @@ function connect(/** @type {string} */ sid) {
     onView,
     onError,
     onFrame: (frame) => {
-      if (frame.t === "open") launcher?.launch(frame.links);
+      if (frame.t === "open") launcher.launch(frame.links);
     },
     onLink,
   });
@@ -303,6 +346,7 @@ function start() {
   fitQr();
   addEventListener("resize", frameThrottle(fitQr));
   addEventListener("online", () => s.channel?.nudge());
+  addEventListener("pagehide", () => launcher.closePdf());
   document.addEventListener("visibilitychange", () => {
     if (!document.hidden) s.channel?.nudge();
   });

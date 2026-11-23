@@ -351,9 +351,9 @@ Send Me the Link calls `navigator.share({title, text, url})`; without it, it cop
 | scanned | Check your phone. | It should show 42. (QR at .12, match code 120 px over it, chip Scanned) | none |
 | choosing | Check your phone. | Choose a file, then tap Approve. | none |
 | approved | Approved. | Opening Lecture 4.pptx. (64 px check for 400 ms) | none |
-| opening | Opening Lecture 4.pptx | in PowerPoint on this PC. | Download It Instead (text, after 5 s) |
+| opening | Opening Lecture 4.pptx | in PowerPoint on this PC. | Download It Instead (text, after 5 s); Open (primary) only when the launch had no user gesture or a popup was blocked |
 | open | Lecture 4.pptx is open in PowerPoint. | Ends by itself at 11:35. `[V-2]` | End (secondary), Download It Instead |
-| open fallback | PowerPoint didn't open. | Download the file, then open it from Downloads. | Download, End |
+| open fallback | PowerPoint didn't open. | Download the file, then open it from Downloads. | Download, Show as PDF Instead (text), End |
 | PDF fallback | Showing Lecture 4.pptx as a PDF. | PowerPoint can't open it on this PC. Animations and videos won't play. | End |
 | guest file open | Talk.pptx is open in PowerPoint. | bloop deletes its copy when this ends at 11:35. `[V-5]` | End |
 | ended | Ended. | Scan the new code to present. (QR returns after 3 s) | none |

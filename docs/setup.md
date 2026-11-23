@@ -79,3 +79,52 @@ Demo screens (`/s?mode=demo`) always use the demo account, with `graph` or `mock
 - Whether a stolen refresh token really fails after the secret rotates.
 - Personal Microsoft accounts need an authority other than `organizations` and a different issuer rule; not supported yet.
 - The `email` shown by `/api/me` needs the `profile` scope in `ENTRA_SCOPES`; with the default scopes it may be empty (unverified).
+
+
+## Field test T3: does PowerPoint open the link
+
+Run this once on a lectern PC (or a PC built like one) before trusting the open path. It answers four questions from ADR 0003: does PowerPoint follow the 302, which HTTP methods it sends, whether it appends a query, and whether the browser needs a click before it will launch PowerPoint. It also covers the PDF view (F-PDF).
+
+You need: a deployed bloop (or a tunnel to `wrangler dev`) with `FILE_SOURCE=graph` and a real OneDrive account, because only Graph gives the redirect something to redirect to (the mock streams in both modes); a phone; the lectern PC with desktop PowerPoint and the browser the room uses (Edge or Chrome); and a terminal on your own machine running `npx wrangler tail --format json` against the deployed Worker. The Worker logs one line per `/f/` request, with no token, address or User-Agent text:
+
+```
+{"evt":"open.fetch","method":"GET","client":"office","query":true,"range":false,"status":302}
+```
+
+Redirect is the default (`OPEN_PATH_MODE=redirect`). Do the steps in order and write down every answer.
+
+### 1. The launch, and whether a click is needed
+1. On the PC, sign in to nothing. Open `https://<host>/s` in the room's browser and leave it alone: do not click the page.
+2. On the phone, scan the code, connect OneDrive if asked, pick a small `.pptx`, tap Approve.
+3. Watch the PC.
+   - **PowerPoint opens by itself, no click:** a click is not needed. Record the browser's own prompt, if any ("Open Microsoft PowerPoint?", with or without "Always allow"). If there was a prompt, answer it, tick Always allow once, and repeat from step 1 to see whether the second run is silent.
+   - **Nothing opens and an Open button shows on the screen:** click it. If PowerPoint opens now, a click is needed: the guest flow already supplies one, and the owner flow needs the button. Record that.
+   - **Nothing opens and no Open button shows:** the browser had activation but still refused. Wait 5 s for Download It Instead, and record the browser version and any message on the page or in its address bar.
+
+### 2. Does PowerPoint follow the 302
+1. In `wrangler tail`, find the `open.fetch` lines for the launch. In redirect mode a working run shows `"status":302` for the GET from the PC, then PowerPoint opens the deck.
+2. **Opens, deck is the right file and is current (edit it on the phone's OneDrive beforehand and check the edit is there):** PowerPoint follows the redirect. Redirect stays the default.
+3. **A 302 was logged but PowerPoint shows an error, a blank window or Protected View with no content:** it does not follow it. Switch to stream mode (below) and repeat step 1.
+4. Record whether the deck opened in Protected View, whether it was read-only (`ofv` should open read-only), and any license or sign-in prompt PowerPoint showed.
+
+### 3. Which methods PowerPoint sends, and whether it appends a query
+From the same `wrangler tail`, for one launch, list every `open.fetch` line:
+- the methods seen (expected: GET, maybe HEAD first; OPTIONS and PROPFIND would show as `"status":405`, which is the intended answer);
+- `"query":true` means Office appended something such as `?OR=ProtocolHandler&CID=...` (the Worker ignores it);
+- `"range":true` means it asked for byte ranges (not supported: the Worker answers 200 with the whole file; if PowerPoint then fails, say so);
+- how many lines in total. `LINK_MAX_FETCHES` is 10 and the window after the first fetch is 120 s; if one launch used more than about 6, raise the limit.
+- `"client"`: `office` means the User-Agent looked like Office. `other` for a GET from the PC means Office sends a User-Agent the Worker does not recognize; note it and keep going.
+
+### 4. The Download fallback and the PDF view
+1. Approve again. Before PowerPoint opens, or after closing it without ending the session, wait for Download It Instead (5 s after the launch with no fetch, so close PowerPoint's window first and approve a new session if it already fetched).
+2. Click it. The browser should save `<name>.pptx`. Record where it went and whether a download prompt appeared.
+3. The screen now says "PowerPoint didn't open." with Show as PDF Instead. Click it. A second window should open and show the PDF with the browser's built-in viewer. **If it is blank, grey, or offers a download instead of showing the PDF, record the browser and version: that is F-PDF failing.** Then check the console of that window for a Content Security Policy message, and try changing `file-pdf` in `src/worker/headers.ts` to plain `default-src 'none'; frame-ancestors 'none'` (or add `object-src 'self'` if it is missing) and redeploy.
+4. Click End on the screen. In the browser, open `chrome://version` or `edge://version`, then check the screen tab's Application storage: it should hold no `bloop.*` keys. Try the old PowerPoint link (the browser history keeps none; use a `.url` shortcut or Recent list if PowerPoint made one): it must answer 410.
+
+### Switch to stream mode if the redirect fails
+1. Set `OPEN_PATH_MODE` to `stream` in `wrangler.jsonc` `vars` (locally, in `.dev.vars`) and deploy, or restart `npm run dev`. No other change is needed.
+2. Repeat step 1 of the launch test. In stream mode the log shows `"status":200` for the GET and the deck bytes pass through the Worker, unstored.
+3. Tell whoever writes `/it` and the privacy wording: stream mode changes "bloop keeps no copy" to "passes through, not stored", and it closes the window in which the Graph URL could outlive the session (threat model OPEN-03).
+
+### What to report
+Browser and version; Windows and Office build; for each of steps 1 to 4 the observation in bold above; the `open.fetch` lines for one launch; which mode you leave the deployment in.

@@ -6,6 +6,10 @@ export const CODE_GRACE_MS = 10_000;
 export const ROTATE_AHEAD_MS = CODE_GRACE_MS;
 export const ENDED_QR_RETURN_MS = 3000;
 export const ERROR_RECOVER_MS = 5000;
+/** No /f/ fetch this long after the launch: Download It Instead appears (design.md, opening). */
+export const LAUNCH_TIMEOUT_MS = 5000;
+/** An approved screen that has received no link by now asks for one. */
+export const RELINK_WAIT_MS = 1500;
 export const OFFLINE_HINT_MS = 5000;
 
 /** Reconnect delays after the 1st, 2nd, ... failure; the last repeats. */

@@ -6,7 +6,7 @@ import { VERIFIED } from "./verified.js";
 export const FOOTER_LINE = "Phone not with you? Sign in to this PC as usual.";
 export const SIGN_IN_HINT = "Sign in to this PC as usual to open your slides.";
 
-/** @typedef {"start_over" | "end" | "open" | "download"} ScreenControl */
+/** @typedef {"start_over" | "end" | "open" | "download" | "pdf"} ScreenControl */
 /**
  * @typedef {object} ScreenCopy
  * @property {string} heading
@@ -87,7 +87,7 @@ export function screenCopy(key, f) {
         ...base,
         heading: "PowerPoint didn't open.",
         line: "Download the file, then open it from Downloads.",
-        controls: ["download", "end"],
+        controls: ["download", "pdf", "end"],
         chip: "Approved",
         chipIcon: "check",
       };

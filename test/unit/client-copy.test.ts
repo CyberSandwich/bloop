@@ -96,6 +96,11 @@ describe("screen copy", () => {
     });
   });
 
+  it("the PDF view is offered only where Download already failed to open PowerPoint", () => {
+    expect(SCREEN_KEYS.filter((k) => screenCopy(k, sf).controls.includes("pdf"))).toEqual(["open_fallback"]);
+    expect(screenCopy("open_fallback", sf).controls).toEqual(["download", "pdf", "end"]);
+  });
+
   it("open says when it ends by itself, and a guest open drops the unverified deletion claim", () => {
     expect(screenCopy("open", sf).line).toBe("Ends by itself at 11:35.");
     expect(screenCopy("open", { ...sf, guest: true }).line).toBe("");

@@ -1,13 +1,174 @@
-// Seam for the open path (docs/interfaces.md section 4): the open module replaces this with a
-// ScreenLauncher. While it is null the screen shows no Download controls and ignores `open` frames.
-/** @import {LinkSet} from "../../src/shared/protocol.ts" */
+// The screen's launch ladder (docs/interfaces.md section 4, ADR 0003): the protocol link opens PowerPoint;
+// if no fetch is seen within LAUNCH_TIMEOUT_MS the Download control appears; the labeled PDF view is the
+// last resort. It acts on links as the server pushes them (`open` frames) or answers them (`/api/screen/link`),
+// each URL once. Every browser effect is injected, so the logic runs under test without a browser.
+/** @import {LinkSet, OpenMode, ScreenView} from "../../src/shared/protocol.ts" */
+/** @import {Api} from "./core/api.js" */
+import { LAUNCH_TIMEOUT_MS, RELINK_WAIT_MS } from "./core/timing.js";
+
+/**
+ * @typedef {object} LauncherDeps
+ * @property {Api} api
+ * @property {() => string | null} sid the screen credential
+ * @property {(url: string) => void} assign navigate to a protocol URI
+ * @property {(url: string) => unknown} openWindow open the PDF view; null or undefined when a popup blocker refused
+ * @property {(url: string) => void} startDownload
+ * @property {() => boolean} hasGesture the page has transient user activation right now
+ * @property {(mode: OpenMode) => boolean} report tell the server which launch this was; false when it could not be sent
+ * @property {() => void} onChange state the page renders from changed
+ */
 
 /**
  * @typedef {object} ScreenLauncher
- * @property {(links: LinkSet) => void} launch
- * @property {() => Promise<void>} download
- * @property {() => Promise<void>} showPdf
+ * @property {(links: LinkSet) => void} launch act on a pushed or fetched link set
+ * @property {() => void} click the Open control: relaunch, or open a blocked PDF, under a user gesture
+ * @property {() => Promise<boolean>} download mint a download link and start it; false on failure
+ * @property {() => Promise<boolean>} showPdf mint the PDF link and open it; false on failure
+ * @property {(view: ScreenView) => void} onView follow the session: recover a lost link, time the launch, reset at the end
+ * @property {() => boolean} needsClick a click is needed to open (no gesture at launch, or a blocked popup)
+ * @property {() => boolean} downloadReady the launch has waited long enough that Download may show
+ * @property {() => void} closePdf close the PDF window this page opened
+ * @property {() => void} reset drop every link and timer (the residue step)
  */
 
-/** @type {ScreenLauncher | null} */
-export const launcher = null;
+/** @param {LauncherDeps} deps @returns {ScreenLauncher} */
+export function createLauncher(deps) {
+  /** @type {Set<string>} */
+  const used = new Set();
+  /** @type {{
+   *   protocol: string | null, pendingPdf: string | null, pdfWindow: {close?: () => void} | null,
+   *   reported: boolean, needsClick: boolean, waitedOut: boolean, haveLink: boolean,
+   *   waiting: ReturnType<typeof setTimeout> | undefined, recovering: ReturnType<typeof setTimeout> | undefined
+   * }} */
+  const s = {
+    protocol: null,
+    pendingPdf: null,
+    pdfWindow: null,
+    reported: false,
+    needsClick: false,
+    waitedOut: false,
+    haveLink: false,
+    waiting: undefined,
+    recovering: undefined,
+  };
+
+  /** The first launch of a session says so to the server, which moves approved to opening (any other state ignores it). */
+  function reportOnce(/** @type {OpenMode} */ mode) {
+    if (s.reported) return;
+    s.reported = deps.report(mode);
+  }
+
+  function openPdf(/** @type {string} */ url) {
+    const win = deps.openWindow(url);
+    if (win) {
+      used.add(url);
+      s.pdfWindow = /** @type {{close?: () => void}} */ (win);
+      s.pendingPdf = null;
+      s.needsClick = false;
+      reportOnce("pdf");
+    } else {
+      // A popup blocker refused: keep the link for the Open control, whose click is the gesture.
+      s.pendingPdf = url;
+      s.needsClick = true;
+    }
+  }
+
+  function launchProtocol(/** @type {string} */ url) {
+    used.add(url);
+    s.protocol = url;
+    deps.assign(url);
+    reportOnce("protocol");
+    // Without activation the browser may refuse the external-protocol launch silently; the Open control retries under a click.
+    if (!deps.hasGesture()) s.needsClick = true;
+  }
+
+  /** @param {LinkSet} links */
+  function launch(links) {
+    s.haveLink = true;
+    if (links.protocol && !used.has(links.protocol)) launchProtocol(links.protocol);
+    if (links.pdf && !used.has(links.pdf)) openPdf(links.pdf);
+    if (links.download && !used.has(links.download)) {
+      used.add(links.download);
+      deps.startDownload(links.download);
+    }
+    deps.onChange();
+  }
+
+  /** @param {OpenMode} purpose */
+  async function request(purpose) {
+    const res = await deps.api.post("/api/screen/link", { purpose }, deps.sid());
+    if (!res.ok) return false;
+    launch(res.value.links);
+    return true;
+  }
+
+  function reset() {
+    clearTimeout(s.waiting);
+    clearTimeout(s.recovering);
+    s.waiting = s.recovering = undefined;
+    closePdf();
+    used.clear();
+    Object.assign(s, {
+      protocol: null,
+      pendingPdf: null,
+      reported: false,
+      needsClick: false,
+      waitedOut: false,
+      haveLink: false,
+    });
+    deps.onChange();
+  }
+
+  function closePdf() {
+    try {
+      s.pdfWindow?.close?.();
+    } catch {
+      // already closed
+    }
+    s.pdfWindow = null;
+  }
+
+  return {
+    launch,
+
+    click() {
+      if (s.pendingPdf) openPdf(s.pendingPdf);
+      else if (s.protocol) {
+        deps.assign(s.protocol);
+        s.needsClick = false;
+      }
+      deps.onChange();
+    },
+
+    download: () => request("download"),
+    showPdf: () => request("pdf"),
+
+    onView(view) {
+      if (view.state === "approved" && !s.haveLink && s.recovering === undefined) {
+        // The `open` frame never came (a reload, a dropped socket): ask for the link again.
+        s.recovering = setTimeout(() => {
+          s.recovering = undefined;
+          if (!s.haveLink) void request("protocol");
+        }, RELINK_WAIT_MS);
+      }
+      if (view.state === "opening" && !s.waitedOut && s.waiting === undefined) {
+        s.waiting = setTimeout(() => {
+          s.waitedOut = true;
+          deps.onChange();
+        }, LAUNCH_TIMEOUT_MS);
+      }
+      if (view.state === "open") {
+        s.needsClick = false;
+        clearTimeout(s.waiting);
+      }
+      if (view.state === "ended" || view.state === "waiting" || view.state === "closed") {
+        if (s.haveLink || s.pdfWindow || s.needsClick) reset();
+      }
+    },
+
+    needsClick: () => s.needsClick,
+    downloadReady: () => s.waitedOut,
+    closePdf,
+    reset,
+  };
+}

@@ -46,6 +46,11 @@ async function scan(browser: Browser, screen: Page): Promise<{ phone: Opened; co
   return { phone, code, match };
 }
 
+/** The screen launches PowerPoint as soon as it is approved, so it may already say Opening. */
+async function expectApprovedOrOpening(page: Page) {
+  await expect(heading(page)).toHaveText(/^(Approved\.|Opening Sample deck\.pptx)$/);
+}
+
 async function expectNoAxeViolations(page: Page) {
   const results = await new AxeBuilder({ page }).withTags(["wcag2a", "wcag2aa", "wcag21aa", "wcag22aa"]).analyze();
   expect(results.violations).toEqual([]);
@@ -85,8 +90,7 @@ test.describe("pairing flow", () => {
 
     await phone.page.getByRole("button", { name: "Approve" }).click();
     await expect(heading(phone.page)).toHaveText("Opening on Demo room.");
-    await expect(heading(screen.page)).toHaveText("Approved.");
-    await expect(screen.page.locator("#line")).toHaveText("Opening Sample deck.pptx.");
+    await expectApprovedOrOpening(screen.page);
     await expect(screen.page.getByRole("button", { name: "Start Over" })).toBeHidden();
 
     expect([...screen.csp, ...phone.csp]).toEqual([]);
@@ -184,7 +188,7 @@ test.describe("pairing flow", () => {
     const screen = await demoScreen(browser);
     const { phone } = await scan(browser, screen.page);
     await phone.page.getByRole("button", { name: "Approve" }).click();
-    await expect(heading(screen.page)).toHaveText("Approved.");
+    await expectApprovedOrOpening(screen.page);
 
     await endFromPhone(phone.page);
     await expect(heading(phone.page)).toHaveText("Ended.");
@@ -209,6 +213,46 @@ test.describe("pairing flow", () => {
     await expect(heading(screen.page)).toHaveText("Check your phone.");
     await phone.page.reload();
     await expect(heading(phone.page)).toHaveText("Open the sample deck here?");
+    await screen.context.close();
+    await phone.context.close();
+  });
+});
+
+test.describe("open path", () => {
+  test("launch, the Download fallback after 5 s, the PDF view, and End clearing the screen's storage", async ({
+    browser,
+  }) => {
+    const screen = await demoScreen(browser);
+    const { phone } = await scan(browser, screen.page);
+    await phone.page.getByRole("button", { name: "Approve" }).click();
+
+    // PowerPoint is not installed here: no fetch arrives, so after the launch timeout Download appears.
+    await expect(heading(screen.page)).toHaveText("Opening Sample deck.pptx");
+    const download = screen.page.getByRole("button", { name: "Download It Instead" });
+    await expect(download).toBeHidden();
+    await expect(download).toBeVisible({ timeout: 10_000 });
+    await expectNoAxeViolations(screen.page);
+
+    // The download is the first fetch of /f/: the session opens, as the fallback.
+    const saved = screen.page.waitForEvent("download");
+    await download.click();
+    expect((await saved).suggestedFilename()).toBe("Sample-deck.pptx");
+    await expect(heading(screen.page)).toHaveText("PowerPoint didn't open.");
+    await expect(screen.page.getByRole("button", { name: "Show as PDF Instead" })).toBeVisible();
+    await expect(heading(phone.page)).toHaveText("PowerPoint didn't open on the screen.");
+    await expectNoAxeViolations(screen.page);
+
+    // The labeled PDF view opens in a second window under the PDF route's own CSP.
+    const popup = screen.context.waitForEvent("page");
+    await screen.page.getByRole("button", { name: "Show as PDF Instead" }).click();
+    expect((await popup).url()).toMatch(/\/f\/[A-Za-z0-9_-]{54}\/Sample-deck\.pdf$/);
+    await expect(heading(screen.page)).toHaveText("Showing Sample deck.pptx as a PDF.");
+
+    // End: the screen forgets its credential, and every link is dead.
+    await screen.page.getByRole("button", { name: "End" }).click();
+    await expect(heading(screen.page)).toHaveText("Ended.");
+    expect(await screen.page.evaluate(() => sessionStorage.getItem("bloop.sid"))).toBeNull();
+    await expect(heading(phone.page)).toHaveText("Ended.");
     await screen.context.close();
     await phone.context.close();
   });
