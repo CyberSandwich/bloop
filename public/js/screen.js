@@ -7,7 +7,7 @@ import { screenCopy } from "./core/copy.js";
 import { clock, qrLabel } from "./core/format.js";
 import { qrMatrix, qrPath, qrSize } from "./core/qr.js";
 import { screenKey } from "./core/states.js";
-import { SID_KEY, sessionStore } from "./core/store.js";
+import { refOf, SID_KEY, sessionStore } from "./core/store.js";
 import {
   CODE_GRACE_MS,
   CODE_TTL_MS,
@@ -304,7 +304,7 @@ buttons.pdf.addEventListener("click", fallback(launcher.showPdf));
 function connect(/** @type {string} */ sid) {
   s.sid = sid;
   s.channel = openChannel({
-    url: `${wsUrl("/api/screen/ws")}?ref=${sid.split(".")[0]}`,
+    url: `${wsUrl("/api/screen/ws")}?ref=${refOf(sid)}`,
     statePath: "/api/screen/state",
     credential: sid,
     helloKey: "sid",

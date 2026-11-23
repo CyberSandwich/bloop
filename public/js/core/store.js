@@ -2,6 +2,13 @@
 export const SID_KEY = "bloop.sid";
 export const PID_KEY = "bloop.pid";
 
+/** A sid and a pid are both `<screenRef>.<secret>`; the ref routes a socket and is no secret. */
+export const refOf = (/** @type {string} */ credential) => credential.split(".")[0] ?? "";
+
+/** The sid this tab holds and the pid it just took name the same screen: the claim came from this tab's own screen. */
+export const sameScreen = (/** @type {string | null} */ sid, /** @type {string | null} */ pid) =>
+  sid !== null && pid !== null && refOf(sid) === refOf(pid);
+
 /**
  * @param {Pick<Storage, "getItem" | "setItem" | "removeItem"> | null} [area]
  */

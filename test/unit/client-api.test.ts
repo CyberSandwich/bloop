@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { createApi } from "../../public/js/core/api.js";
 import { loadFiles } from "../../public/js/core/files.js";
-import { createStore } from "../../public/js/core/store.js";
+import { createStore, refOf, sameScreen } from "../../public/js/core/store.js";
 
 interface Seen {
   path: string;
@@ -111,6 +111,21 @@ describe("file list", () => {
   it("passes every other failure through", async () => {
     const f = fakeFetch(() => problem(401, "auth_required"));
     expect(await loadFiles(createApi({ fetch: f.fetch }), "p.q")).toEqual({ ok: false, error: "auth_required" });
+  });
+});
+
+describe("credentials", () => {
+  it("refOf is the screen ref both a sid and a pid start with", () => {
+    expect(refOf("ref1.secret")).toBe("ref1");
+    expect(refOf("ref1")).toBe("ref1");
+  });
+
+  it("DEMO-01 round trip: a pid pairs with this tab's screen only when both name the same screen", () => {
+    expect(sameScreen("ref1.sidsecret", "ref1.pidsecret")).toBe(true);
+    // A sid left from another screen (a typed code from elsewhere, an old demo) is not this claim's screen.
+    expect(sameScreen("ref0.sidsecret", "ref1.pidsecret")).toBe(false);
+    expect(sameScreen(null, "ref1.pidsecret")).toBe(false);
+    expect(sameScreen("ref1.sidsecret", null)).toBe(false);
   });
 });
 

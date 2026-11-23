@@ -10,7 +10,7 @@ import { sendable, sendFile, wholeMB } from "./core/drop.js";
 import { loadFiles } from "./core/files.js";
 import { ago, clock, fileIcon, splitName } from "./core/format.js";
 import { phoneKey } from "./core/states.js";
-import { PID_KEY, SID_KEY, sessionStore } from "./core/store.js";
+import { PID_KEY, refOf, SID_KEY, sameScreen, sessionStore } from "./core/store.js";
 import { ariaFlag, byId, el, focusTitle, ICON_CHECK, icon, isFramed, setText, show, wsUrl } from "./core/ui.js";
 import { VERIFIED } from "./core/verified.js";
 import { ERRORS } from "./shared/errors.js";
@@ -146,8 +146,8 @@ function render() {
     endsAt: v?.endsAt ? clock(v.endsAt) : null,
     account: c.account,
     maxMB: wholeMB(c.maxBytes),
-    // This tab also holds a demo screen's sid: it came from /s by "Approve on This Device" and can go back.
-    back: c.info?.mode === "demo" && store.get(SID_KEY) !== null,
+    // This tab holds the sid of the demo screen it claimed: it came from /s by "Approve on This Device" and can go back.
+    back: c.info?.mode === "demo" && sameScreen(store.get(SID_KEY), c.pid),
   });
 
   show(skelTitle, key === "checking");
@@ -334,7 +334,7 @@ async function disconnect() {
 function attach(/** @type {string} */ pid) {
   c.pid = pid;
   c.channel = openChannel({
-    url: `${wsUrl("/api/pair/ws")}?ref=${pid.split(".")[0]}`,
+    url: `${wsUrl("/api/pair/ws")}?ref=${refOf(pid)}`,
     statePath: "/api/pair/state",
     credential: pid,
     helloKey: "pid",
