@@ -1,6 +1,28 @@
 # Owner setup
 
-Steps only the owner can do, because they need the owner's accounts. Everything else runs locally with `FILE_SOURCE=mock` and needs none of this. The Cloudflare steps (account, D1, R2, DNS) are in [architecture.md](architecture.md) section 12.
+Steps only the owner can do, because they need the owner's accounts. Everything else runs locally with `FILE_SOURCE=mock` and needs none of this. How CI and deploy fit together is in [architecture.md](architecture.md) section 12.
+
+## First deploy, in order
+
+1. **Cloudflare account** (free plan), then `npx wrangler login` on your own machine.
+2. **D1:** `npx wrangler d1 create bloop --jurisdiction eu`; put the printed id into `wrangler.jsonc` `database_id` (it is all zeros now) and commit it. Then `npx wrangler d1 migrations apply bloop --remote`.
+3. **R2:** the bucket and its lifecycle rule, in the next section.
+4. **Worker secrets**, each with `npx wrangler secret put <NAME>`: `COOKIE_KEY`, `HASH_PEPPER`, `TOKEN_KEKS` (JSON of key id to base64 key, as in `.dev.vars.example`; `TOKEN_KEK_CURRENT` in `vars` names the current key), `ROOM_ENROLL_KEY`, `IT_EXPORT_TOKEN` (optional; the export stays closed without it), `ENTRA_CLIENT_SECRET` (only with the Entra step). Generate each with `openssl rand -base64 32`; never reuse the `.dev.vars` values.
+5. **GitHub:** create the environment `production` with yourself as required reviewer, and add the secrets `CLOUDFLARE_API_TOKEN` (a token with Workers Scripts, D1 and R2 edit on this account only) and `CLOUDFLARE_ACCOUNT_ID`. Until they exist, the deploy workflow passes and only prints a skip notice.
+6. **Placeholders:** replace the addresses and the absolute `og:image` per "Site pages" below.
+7. **DNS:** add `bloop.saputra.co.uk` as a Workers custom domain (Workers dashboard, the Worker, Settings, Domains); `PUBLIC_ORIGIN` in `wrangler.jsonc` already names it.
+8. **Deploy:** merge or push to `main` and approve the `production` run.
+
+## Checks only a person can do
+
+- **Header grade:** after deploy, `npx @mdn/mdn-http-observatory https://bloop.saputra.co.uk` should grade A or better.
+- **WebSocket hello timeout (F3):** open a raw socket to `/api/screen/ws` from a browser console on the site's origin and send nothing; it must close within the hello timeout. `wrangler dev` does not enforce this, production should.
+- **Browser walk:** allow `127.0.0.1` and `localhost` once in Claude in Chrome, so every page and state can be checked at 1440, 834 and 390 locally. CI's Playwright and axe runs cover the same pages on every push.
+- **QR from 2 m:** on a real lectern screen, scan `/s` from the back of the front row with three phones (iPhone camera, Android camera, Android Chrome).
+- **Field test T3** on a lectern PC (below), including the PDF view and residue check.
+- **Five-person test** (design open item 19): five people who have never seen bloop read the landing for five seconds, then say what it does and what they would do next.
+- **Publisher verification** in Entra needs a company (Microsoft Partner Network id); until then, consent screens show "unverified".
+- **Privacy roles:** decide controller or processor per buyer type (threat model DATA-01) and have the `/privacy` draft reviewed before the first real user.
 
 ## Cloudflare R2 bucket for guest files
 
