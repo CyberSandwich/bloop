@@ -462,7 +462,7 @@ Worker runtime variables:
 
 ```ini
 # vars (wrangler.jsonc)
-PUBLIC_ORIGIN=https://bloop.saputra.co.uk   # .dev.vars: http://127.0.0.1:8787
+PUBLIC_ORIGIN=https://bloop.dsap.workers.dev   # .dev.vars: http://127.0.0.1:8787
 FILE_SOURCE=mock                 # mock | graph
 OPEN_PATH_MODE=redirect          # redirect | stream (ADR 0003, decided by T3)
 LINK_FIRST_FETCH_SECONDS=600     # an unused link dies this long after minting

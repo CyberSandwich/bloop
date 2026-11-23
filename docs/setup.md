@@ -14,12 +14,12 @@ Steps only the owner can do, because they need the owner's accounts. Everything 
    3. In Terminal, not on a `!` line, since it prompts with hidden input: `0-system/scripts/repo/repo-settings secrets CyberSandwich/bloop --profile public-app` asks for `CLOUDFLARE_API_TOKEN` (a token with Workers Scripts, D1 and R2 edit on this account only) and `CLOUDFLARE_ACCOUNT_ID` and stores them as `production` environment secrets. Until they exist, the deploy workflow passes and only prints a skip notice.
    4. `! 0-system/scripts/repo/repo-settings check CyberSandwich/bloop --profile public-app` exits 1 on any drift; rerun it after changing settings by hand.
 6. **Placeholders:** replace the addresses and the absolute `og:image` per "Site pages" below.
-7. **DNS:** add `bloop.saputra.co.uk` as a Workers custom domain (Workers dashboard, the Worker, Settings, Domains); `PUBLIC_ORIGIN` in `wrangler.jsonc` already names it.
+7. **Address:** the Worker serves at `https://bloop.<account subdomain>.workers.dev` (`PUBLIC_ORIGIN` in `wrangler.jsonc`); a custom domain needs the domain's DNS on Cloudflare (a Workers custom domain), then `PUBLIC_ORIGIN` changes to it in the same commit.
 8. **Deploy:** merge or push to `main` and approve the `production` run.
 
 ## Checks only a person can do
 
-- **Header grade:** after deploy, `npx @mdn/mdn-http-observatory https://bloop.saputra.co.uk` should grade A or better.
+- **Header grade:** after deploy, `npx @mdn/mdn-http-observatory "$PUBLIC_ORIGIN"` should grade A or better.
 - **Browser walk:** allow `127.0.0.1` and `localhost` once in Claude in Chrome, so every page and state can be checked at 1440, 834 and 390 locally. CI's Playwright and axe runs cover the same pages on every push.
 - **QR from 2 m:** on a real lectern screen, scan `/s` from the back of the front row with three phones (iPhone camera, Android camera, Android Chrome).
 - **Field test T3** on a lectern PC (below), including the PDF view and residue check.

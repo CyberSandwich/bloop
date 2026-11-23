@@ -39,7 +39,7 @@
   ],
   "triggers": { "crons": ["0 * * * *", "30 3 * * *"] },
   "vars": {
-    "PUBLIC_ORIGIN": "https://bloop.saputra.co.uk",
+    "PUBLIC_ORIGIN": "https://bloop.dsap.workers.dev",
     "FILE_SOURCE": "mock",
     "OPEN_PATH_MODE": "redirect",
     "TOKEN_MODE": "refresh",

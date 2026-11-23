@@ -4,7 +4,7 @@ import { QR_MODULES, qrMatrix, qrPath, qrSize } from "../../public/js/core/qr.js
 describe("QR drawing", () => {
   it("draws a link as a 41 module square, the same size for any code", () => {
     for (const code of ["K7MQ9X", "23456A", "ZZZZZZ"]) {
-      const m = qrMatrix(`https://bloop.saputra.co.uk/a?c=${code}`);
+      const m = qrMatrix(`https://bloop.dsap.workers.dev/a?c=${code}`);
       expect(m).toHaveLength(QR_MODULES);
       expect(m.every((row) => row.length === QR_MODULES)).toBe(true);
     }
