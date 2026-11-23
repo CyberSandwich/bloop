@@ -9,6 +9,7 @@
     "node": ">=24"
   },
   "scripts": {
+    "predev": "wrangler d1 migrations apply bloop --local --persist-to .wrangler/state",
     "dev": "wrangler dev --ip 127.0.0.1 --port 8787 --persist-to .wrangler/state",
     "typecheck": "tsc -p tsconfig.json && tsc -p tsconfig.node.json && tsc -p tsconfig.public.json",
     "lint": "biome check .",

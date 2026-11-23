@@ -17,7 +17,7 @@ npm run check                    # typecheck, lint, unit and integration tests, 
 
 | command | does |
 |---|---|
-| `npm run dev` | `wrangler dev` on 127.0.0.1:8787, state in `.wrangler/state` |
+| `npm run dev` | applies `migrations/` to the local D1 (`predev`), then `wrangler dev` on 127.0.0.1:8787, state in `.wrangler/state` |
 | `npm run typecheck` | `tsc` for the Worker, for tests and tools, and for the browser JS (JSDoc, `checkJs`) |
 | `npm run lint` / `npm run format` | Biome check / check and fix |
 | `npm test` | Vitest unit tests |

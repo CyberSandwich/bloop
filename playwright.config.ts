@@ -11,6 +11,7 @@ export default defineConfig({
   webServer: {
     // TEST_TIMING skips the platform rate limits, which a suite creating many screens a minute would trip.
     // Every browser shares one IP hash, so the per-IP demo cap (DEMO-02) would refuse the third demo screen.
+    // `predev` applies migrations/ to the local D1 first: without the tables every guest drop fails.
     command: "npm run dev -- --var TEST_TIMING:1 --var DEMO_MAX_PER_IP:1000",
     url: "http://127.0.0.1:8787/api/health",
     reuseExistingServer: !process.env.CI,
