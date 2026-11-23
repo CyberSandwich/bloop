@@ -17,7 +17,7 @@ menu?.addEventListener("click", (e) => {
 // Browsers without `interpolate-size` get the same open and close as a WAAPI height tween.
 const still = matchMedia("(prefers-reduced-motion: reduce)");
 if (!CSS.supports("interpolate-size", "allow-keywords")) {
-  for (const details of document.querySelectorAll(".faq details")) {
+  for (const details of /** @type {NodeListOf<HTMLDetailsElement>} */ (document.querySelectorAll(".faq details"))) {
     // The state asked for, which `open` does not show while a close is still running.
     let opening = details.open;
     // Find in page opens a match without a click; follow it.
