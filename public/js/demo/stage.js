@@ -66,12 +66,14 @@ export function stageCopy(state, match) {
 }
 
 /**
- * The real phone sheet the stage's phone mock echoes, or null while the phone has nothing to show.
+ * The real phone sheet the stage's phone mock echoes, or null after an error or a refusal. Waiting shows the first sheet a phone reaches after a scan.
  * @param {StageState} state
  * @returns {PhoneStateKey | null}
  */
 export function phoneMockKey(state) {
   switch (state) {
+    case "waiting":
+      return "checking";
     case "scanned":
       return "approve_demo";
     case "approved":

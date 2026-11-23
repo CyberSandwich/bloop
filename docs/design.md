@@ -268,7 +268,7 @@ The opsis stage and the ample orbit in one component: a big rounded `--tint` gro
 | Ground | `--tint`, `--r-stage` 32, no shadow, no border, full container width, `max(560px, 76vh)` tall |
 | Robin | the largest object: a `--robin-hero` square at the stage's right, feet on the stage floor line, top 25 percent above the stage edge; poster first, then the live renderer (section 9) |
 | Screen | a display mock (thin `--t1` bezel, 20 outer, 12 inner) at the stage's left showing the real `/s` component in its demo state with the live code at `41 x --qr-mod`; `/s` runs full screen in a room, so the mock has no browser chrome |
-| Phone | the phone mock at the robin's left, overlapping the screen's lower right corner by 48 px, showing the real `/a` sheet in sync with the demo state |
+| Phone | the phone mock at the robin's left, overlapping the screen's lower right corner by 48 px, showing the real `/a` sheet in sync with the demo state (waiting: the "Checking the code" sheet a phone reaches right after a scan; blank only for busy and error) |
 | File | one file row as a floating `--card` pill between phone and screen: "Sample deck.pptx" |
 | Orbit | the three objects sit on an ellipse around the robin; their places are fixed and change only with demo state (the file row moves from the phone to the screen on approved, over `--d3`); nothing circles or loops |
 | Live demo | desktop only (`(hover:hover) and (pointer:fine)`): scanning drives the demo states in section 3; the robin reacts per section 8; one change at a time. Built: a lazy module (`public/js/demo/`) starts when the stage nears the viewport; the stage shows the open state until its first live state, and again if the module fails to load. Try the Demo scrolls to the stage (`#demo`) |

@@ -409,15 +409,15 @@ h1[tabindex="-1"]:focus {
 }
 [data-mode="waiting"] .match,
 [data-mode="idle"] .match,
-main:not([data-mode]) .match {
+.page-screen main:not([data-mode]) .match {
   display: none;
 }
 [data-mode="idle"] .stage,
 [data-mode="idle"] .capsule,
 [data-mode="idle"] .typed,
-main:not([data-mode]) .stage,
-main:not([data-mode]) .capsule,
-main:not([data-mode]) .typed {
+.page-screen main:not([data-mode]) .stage,
+.page-screen main:not([data-mode]) .capsule,
+.page-screen main:not([data-mode]) .typed {
   visibility: hidden;
 }
 [data-mode="scanned"] .capsule,
@@ -1173,8 +1173,8 @@ html .touch {
     transform: none;
   }
 }
-/* The phone mock has nothing to show until a phone has scanned, and none after an error or a refusal. */
-.orbit.is-live:is([data-demo="waiting"], [data-demo="busy"], [data-demo="error"]) .orbit-phone .mock-scale {
+/* The phone mock shows nothing after an error or a refusal. */
+.orbit.is-live:is([data-demo="busy"], [data-demo="error"]) .orbit-phone .mock-scale {
   visibility: hidden;
 }
 
