@@ -48,14 +48,9 @@ Guest uploads (ADR 0005) live in one private R2 bucket in the `eu` jurisdiction.
 
 The two cron triggers (`0 * * * *` hourly, `30 3 * * *` daily) are declared in `wrangler.jsonc` and created by `wrangler deploy`; there is no dashboard step. After the first deploy, check once that both fired: Workers dashboard, the Worker, Logs, filter `retention` and `hourly`. The daily line reports the rows it deleted per table. Apply the migrations first: `wrangler d1 migrations apply bloop --remote`.
 
-## Site pages: placeholders to replace before the first deploy
+## Site pages: the contact address and what to renew
 
-The public pages ship with placeholder addresses on the reserved `bloop.example` domain, so no personal address is ever committed. Replace each with a role address you own (design.md open item 13), in the same commit:
-
-| File | Placeholder | What it is |
-|---|---|---|
-| `public/.well-known/security.txt` | `security@bloop.example` | security contact (RFC 9116). Also renew `Expires` (at most a year ahead; `test/integration/site.test.ts` fails once it is past or more than about 13 months out) |
-| `public/privacy.html` | `privacy@bloop.example` | privacy contact |
+Every contact on the public pages is one role address, ventures@saputra.co.uk: the Waitlist mail, the footer, the privacy notice and `public/.well-known/security.txt` (RFC 9116). Change them together; `test/unit/site-pages.test.ts` fails on any other address. Renew `Expires` in `security.txt` at most a year ahead (`test/integration/site.test.ts` fails once it is past or more than about 13 months out).
 
 - **Privacy notice:** `/privacy` is a draft (it says so on the page and is `noindex`). The legal lane (OD-5) confirms roles, lawful bases and the retention periods it lists before launch; it repeats `threat-model.md` section 10, so change both together.
 - **Social image:** `og:image` and `og:url` in `public/index.html` name the host absolutely, as link previews need; change them with the host.

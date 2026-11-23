@@ -246,11 +246,12 @@ src/worker/
 public/                    wrangler's assets directory, served as it is. Everything here is public: no secrets, no server-only logic
   index.html security.html privacy.html s.html a.html code.html 404.html   (the /g and /me pages are not built yet)
   _headers                 static security headers (section 10)
-  _redirects               /it answers 301 to /security
+  _redirects               /it answers 301 to /security; /demo 302 to /s?mode=demo
   css/app.css              the one stylesheet (task pages and site pages)
   js/{screen,phone,code,launcher,residue}.js   task pages; js/vendor/uqr.js (+ LICENSE)
   js/viewer.js js/core/demo.js   the demo screen's viewer (sidebar, stage, pager, link card, its own link fetch); its pure parts
   img/demo-slide-{n}.{avif,webp}   the sample deck's pages, shown for the deck and its PDF (tools/render-slides.py)
+  img/hero-viewer-{1000,2000}.{avif,webp}   the landing stage's screenshot of the Demo Room
   js/site.js               the landing: the nav's scrolled look, closing the menu on a same-page link, the stage tilt's spring, the FAQ's height tween where CSS cannot (no other site page runs a script)
   og.png apple-touch-icon.png (tools/render-og.py); favicon.svg, the logo, drawn as paths
   fonts/inter-latin.woff2  the one font file (tools/subset-font.py) + Inter.LICENSE.txt

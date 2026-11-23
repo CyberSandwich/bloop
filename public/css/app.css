@@ -35,11 +35,13 @@
   --g1: #dcdcd7;
   --hairline: rgba(0, 0, 0, 0.08);
   --sky: #cfe0e8;
-  --butter: #f6e7b2;
-  --lav: #d8d1ef;
-  --sage: #dde3d6;
+  --mint: #cce8df;
+  --mint-ink: #1e3d35;
+  --amber: #f6e7b2;
+  --amber-ink: #57420f;
   --robin: #f4ba8b;
   --robin-ink: #a64f15;
+  --robin-deep: #c8632a;
   --lead: #62625c;
 
   --r-chip: 8px;
@@ -58,6 +60,7 @@
   --glass-filter: blur(24px) saturate(2);
   --glass-edge: inset 0 1px 0 rgba(255, 255, 255, 0.7);
   --nav-h: 56px;
+  --wordmark: 22px;
   --wash: rgba(120, 120, 128, 0.1);
   --r-sheet: 24px;
   --side: 280px;
@@ -178,7 +181,7 @@ h1[tabindex="-1"]:focus {
   align-items: center;
   gap: 10px;
   min-height: 44px;
-  font-size: 21px;
+  font-size: var(--wordmark);
   font-weight: 600;
   letter-spacing: -0.03em;
   line-height: 1;
@@ -1001,7 +1004,7 @@ html:has(.page-site) {
 /* The robin wash: one stop pair and a midpoint hint; extra linear stops showed as rings. */
 .page-site {
   background:
-    radial-gradient(ellipse 70% 640px at 50% 0, color-mix(in srgb, var(--robin) 50%, transparent), 30%, transparent)
+    radial-gradient(ellipse 70% 640px at 50% 0, color-mix(in srgb, var(--robin) 32%, transparent), 30%, transparent)
     no-repeat,
     var(--paper);
 }
@@ -1046,7 +1049,6 @@ html:has(.page-site) {
 .nav-logo {
   justify-self: start;
   padding: 0 20px 0 12px;
-  font-size: 19px;
 }
 .nav-pill {
   grid-column: 2;
@@ -1114,8 +1116,10 @@ html:has(.page-site) {
     background: var(--wash);
   }
 }
+/* The links' own 16 px padding sits between their text; the same space before the dark pill keeps one rhythm. */
 .btn.waitlist {
   min-height: 44px;
+  margin-left: 16px;
   padding: 0 20px;
   background: var(--ink-2);
   color: var(--paper);
@@ -1179,9 +1183,28 @@ html:has(.page-site) {
   line-height: 1;
   letter-spacing: -0.05em;
 }
-/* Static, not a sheen: design.md section 8. */
-.glow {
-  text-shadow: 0 0 0.4em var(--robin);
+/* Ink into deep robin, with one light band passing once (design.md section 8); plain ink where clipping fails. */
+@supports (background-clip: text) or (-webkit-background-clip: text) {
+  .sheen {
+    background:
+      linear-gradient(100deg, transparent 40%, rgba(255, 255, 255, 0.6) 50%, transparent 60%) 0 0 / 300% 100% no-repeat,
+      linear-gradient(100deg, var(--ink) 15%, var(--robin-deep));
+    -webkit-background-clip: text;
+    background-clip: text;
+    color: transparent;
+  }
+  @media (prefers-reduced-motion: no-preference) {
+    .sheen {
+      animation: sheen 1.4s var(--ease-out) 0.3s backwards;
+    }
+  }
+}
+@keyframes sheen {
+  from {
+    background-position:
+      100% 0,
+      0 0;
+  }
 }
 .lead {
   max-width: 640px;
@@ -1212,27 +1235,28 @@ html:has(.page-site) {
   }
 }
 
-/* The fallback; site.js's spring outranks it. */
+/* The tilt's fallback; site.js's spring outranks it. */
 .tilt {
   width: min(100% - 2 * var(--pad), 1136px);
   margin: 0 auto;
   perspective: 2200px;
   perspective-origin: 50% 0;
 }
+/* The screenshot's ground is the page's own paper, so only the frame says it is a picture. */
 .stage {
-  display: grid;
-  place-items: center;
-  aspect-ratio: 16 / 9;
+  overflow: hidden;
   border-radius: var(--r-stage);
   background: var(--g1);
-  color: var(--ink-2);
-  font-size: 20px;
-  font-weight: 600;
+  box-shadow: var(--sh-frame);
   transform-origin: 50% 0;
+}
+.stage img {
+  display: block;
+  width: 100%;
+  height: auto;
 }
 @media (max-width: 639.98px) {
   .stage {
-    aspect-ratio: 4 / 3;
     border-radius: 16px;
   }
 }
@@ -1251,22 +1275,23 @@ html:has(.page-site) {
   }
 }
 
-/* Section heads share one size; text columns are 760, the bento, stage and doc cards the full 1136. */
-:is(.features, .connect, .faq) > h2,
+/* Section heads share one size; text columns are 760, the grids, stage and doc cards the full 1136. */
+:is(.how, .features, .connect, .faq, .close) > h2,
 .doc h1 {
   font-size: 38px;
   line-height: 1.04;
   letter-spacing: -0.035em;
 }
-:is(.features, .connect, .faq) > h2 {
+:is(.how, .features, .connect, .faq, .close) > h2 {
   text-align: center;
 }
 @media (min-width: 768px) {
-  :is(.features, .connect, .faq) > h2,
+  :is(.how, .features, .connect, .faq, .close) > h2,
   .doc h1 {
     font-size: 54px;
   }
 }
+.how,
 .features,
 .connect,
 .faq {
@@ -1282,95 +1307,141 @@ html:has(.page-site) {
   padding-bottom: var(--section);
 }
 
-.bento {
+/* How It Works: white step cards, each naming its device, over a still of that step. */
+.steps,
+.grid {
   display: grid;
   gap: 16px;
   margin: 40px 0 0;
   padding: 0;
   list-style: none;
 }
-@media (min-width: 768px) {
-  .bento {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-  }
-}
-.card {
+.step {
   display: flex;
   flex-direction: column;
-  min-height: 300px;
-  padding: 28px;
-  border-radius: var(--r-stage);
-  background: var(--tint);
+  padding: 24px;
+  border-radius: var(--r-sheet);
+  background: var(--surface);
 }
-.card.sky {
-  --tint: var(--sky);
+.step-device {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: var(--muted);
+  font-size: 14px;
 }
-.card.butter {
-  --tint: var(--butter);
-}
-.card.lav {
-  --tint: var(--lav);
-}
-.card.sage {
-  --tint: var(--sage);
-}
-.card h3 {
-  margin: 0;
+.step h3 {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin: 16px 0 0;
   font-size: 22px;
-  line-height: 1.2;
   letter-spacing: -0.025em;
 }
-.card p {
-  margin: 8px 0 28px;
+.step-n {
+  display: grid;
+  place-items: center;
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  background: var(--ink);
+  color: var(--paper);
+  font-size: 15px;
+}
+.step h3 + p,
+.cell p {
+  margin-top: 6px;
   color: var(--ink-2);
 }
-/* A still of the app, never controls. */
-.mock {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  justify-content: center;
-  gap: 8px;
-  min-height: 112px;
-  margin: auto -16px -16px;
-  padding: 24px 16px;
-  border-radius: 16px;
-  background: var(--surface);
+.frag {
+  display: grid;
+  gap: 4px;
+  margin-top: auto;
+  padding: 12px;
+  border-radius: var(--r-field);
+  background: var(--paper);
   user-select: none;
 }
-.mock-btn,
-.mock-tag {
-  display: inline-flex;
+.step h3 + p {
+  margin-bottom: 24px;
+}
+.frag-row {
+  display: flex;
   align-items: center;
-  height: 40px;
-  padding: 0 18px;
-  border-radius: var(--r-pill);
+  gap: 10px;
+  min-height: 40px;
   font-size: 15px;
   font-weight: 600;
 }
-.mock-btn {
-  box-shadow: inset 0 0 0 1.5px var(--g2);
+.frag-row.off {
+  opacity: 0.4;
 }
-.mock-btn.ink {
-  background: var(--ink);
-  color: var(--paper);
-  box-shadow: none;
+.frag-tile {
+  display: grid;
+  place-items: center;
+  width: 32px;
+  height: 32px;
+  border-radius: var(--r-chip);
+  background: var(--surface);
 }
-.mock-tag {
-  height: 36px;
-  padding: 0 14px;
-  background: var(--paper);
-  color: var(--ink-2);
+.frag-meta,
+.frag-row .tick {
+  margin-left: auto;
 }
-.mock-text {
+.frag-meta,
+.frag-label {
   color: var(--muted);
-  font-size: 15px;
+  font-size: 14px;
+  font-weight: 400;
+  font-variant-numeric: tabular-nums;
+}
+.frag-code {
+  font-size: 26px;
+  font-weight: 600;
+  letter-spacing: 0.06em;
   font-variant-numeric: tabular-nums;
 }
 
-.connect .sub {
-  margin-top: 16px;
-  color: var(--muted);
+/* The grid sits on a white band, so the cells' paper reads as the one neutral fill. */
+.features {
+  padding-bottom: var(--section);
+  margin-top: var(--section);
+  background: var(--surface);
+  box-shadow: 0 0 0 100vmax var(--surface);
+  clip-path: inset(0 -100vmax);
+}
+@media (min-width: 640px) {
+  .grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+@media (min-width: 1024px) {
+  .steps,
+  .grid {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+}
+.cell {
+  padding: 24px;
+  border-radius: var(--r-card);
+  background: var(--paper);
+}
+.cell h3 {
+  margin: 16px 0 0;
+  font-size: 19px;
+  line-height: 1.3;
+  letter-spacing: -0.02em;
+}
+.cell p {
+  font-size: 16px;
+}
+.cell a {
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+
+.close {
+  padding: 0 var(--pad) var(--section);
   text-align: center;
 }
 
@@ -1423,12 +1494,13 @@ html:has(.page-site) {
   margin-left: auto;
   padding: 6px 12px;
   border-radius: var(--r-pill);
-  background: var(--paper);
-  color: var(--muted);
+  background: var(--amber);
+  color: var(--amber-ink);
   font-size: 14px;
 }
 .status.on {
-  color: var(--ink);
+  background: var(--mint);
+  color: var(--mint-ink);
 }
 .toggle {
   flex: none;
@@ -1532,9 +1604,6 @@ html:has(.page-site) {
   flex-wrap: wrap;
   justify-content: space-between;
   gap: 24px 48px;
-}
-.footer .brand {
-  font-size: 19px;
 }
 .footer-about p {
   max-width: 420px;

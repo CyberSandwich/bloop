@@ -62,7 +62,11 @@ for (const vp of VIEWPORTS) {
         [...document.querySelectorAll("a, button, summary")]
           .filter((el) => {
             const r = el.getBoundingClientRect();
-            return getComputedStyle(el).visibility !== "hidden" && r.width > 0 && el.closest(".skip, .faq p") === null;
+            return (
+              getComputedStyle(el).visibility !== "hidden" &&
+              r.width > 0 &&
+              el.closest(".skip, .faq p, .cell p") === null
+            );
           })
           .map((el) => ({ text: el.textContent?.trim(), h: Math.round(el.getBoundingClientRect().height) }))
           .filter((t) => t.h < 44),
@@ -72,11 +76,13 @@ for (const vp of VIEWPORTS) {
 
     test("Try the Demo is the hero's one button, in the first view, and opens the demo screen", async ({ page }) => {
       await page.goto("/");
-      const actions = page.locator(".hero-actions").getByRole("link");
+      const actions = page.locator(".hero .hero-actions").getByRole("link");
       await expect(actions).toHaveCount(1);
       await expect(actions).toHaveText("Try the Demo");
       await expect(actions).toBeInViewport();
-      await expect(actions).toHaveAttribute("href", "/s?mode=demo");
+      await expect(actions).toHaveAttribute("href", "/demo");
+      await actions.click();
+      await expect(page).toHaveURL(/\/s\?mode=demo$/);
     });
 
     test("the hero block sits in the middle of the first view, and the stage starts below the fold", async ({
@@ -109,6 +115,19 @@ for (const vp of VIEWPORTS) {
       expect(logo.right).toBeLessThan(pill.left);
       expect(logo.height).toBe(pill.height);
       expect(logo.top).toBe(pill.top);
+    });
+
+    test("the space from Privacy to Security equals the space from Security to the Waitlist pill", async ({ page }) => {
+      test.skip(vp.width < 640, "the links fold into the menu");
+      await page.goto("/");
+      await page.evaluate(() => document.fonts?.ready);
+      // A string, since Range is a DOM type this tsconfig lacks; text edges, not link boxes, are what the eye sees.
+      const [privacyToSecurity = 0, securityToWaitlist = 99] = (await page.evaluate(`(() => {
+        const text = (s) => { const r = document.createRange(); r.selectNodeContents(document.querySelector(s)); return r.getBoundingClientRect(); };
+        const p = text('.nav-links a[href="/privacy"]'), s = text('.nav-links a[href="/security"]');
+        return [s.left - p.right, document.querySelector(".nav .waitlist").getBoundingClientRect().left - s.right];
+      })()`)) as number[];
+      expect(Math.abs(privacyToSecurity - securityToWaitlist)).toBeLessThanOrEqual(1);
     });
 
     test("the nav stays on top, firms up once scrolled, and its Waitlist is a mail", async ({ page }) => {
@@ -153,7 +172,8 @@ test.describe("reduced motion", () => {
   test("the stage rests flat", async ({ page }) => {
     await page.goto("/");
     const stage = page.locator(".stage");
-    await expect(stage).toHaveText("Demo Video Coming Soon");
+    await expect(stage).toHaveText("");
+    await expect(stage.getByRole("img")).toHaveAttribute("alt", /^The Demo Room screen/);
     expect(await stage.evaluate((el) => getComputedStyle(el as unknown as El).transform)).toBe("none");
     await stage.scrollIntoViewIfNeeded();
     expect(await stage.evaluate((el) => (el as unknown as { getAnimations(): unknown[] }).getAnimations().length)).toBe(
@@ -190,6 +210,6 @@ test.describe("site pages", () => {
   test("/it moves to /security", async ({ page }) => {
     const res = await page.goto("/it");
     expect(new URL(res?.url() ?? "").pathname).toBe("/security");
-    await expect(page.locator("h1")).toHaveText("The Screen Never Gets Your Account");
+    await expect(page.locator("h1")).toHaveText("Security");
   });
 });

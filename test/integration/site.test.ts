@@ -44,6 +44,16 @@ describe("/it", () => {
   });
 });
 
+describe("/demo", () => {
+  it("goes, for now, to the demo screen, keeping its query", async () => {
+    const res = await fetch(`${wrangler.url}/demo`, { redirect: "manual" });
+    expect(res.status).toBe(302);
+    const to = new URL(res.headers.get("Location") ?? "", wrangler.url);
+    expect(to.pathname + to.search).toBe("/s?mode=demo");
+    await res.arrayBuffer();
+  });
+});
+
 describe("security.txt (RFC 9116)", () => {
   it("has a Contact and an Expires in the future, within a year and a bit", async () => {
     const text = await (await fetch(`${wrangler.url}/.well-known/security.txt`)).text();

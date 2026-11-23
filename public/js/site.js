@@ -1,5 +1,4 @@
-// The landing (design.md section 6): the nav's scrolled look, the menu closing on a same-page link, the sprung stage
-// tilt, and the FAQ height tween where CSS cannot. No inline style writes (the CSP test) and no scroll listener.
+// The landing (design.md section 6). No inline style writes (the CSP) and no scroll listener.
 
 const nav = document.querySelector(".nav");
 const sentinel = document.getElementById("sentinel");
@@ -12,9 +11,8 @@ menu?.addEventListener("click", (e) => {
   if (e.target instanceof Element && e.target.closest("a") && menu.matches(":popover-open")) menu.hidePopover();
 });
 
-// The CSS tilt (range: the stage's entry) through a spring (k 120, c 30, m .4, implicit step) into a paused
-// animation that outranks it. The loop stops once settled; over the entry the visible share changes with the goal,
-// so the observer's 1% thresholds wake it.
+// The spring (k 120, c 30, m .4, implicit step) drives a paused animation that outranks the CSS tilt. Over the entry
+// the visible share tracks the goal, so 1% thresholds wake the loop that stops once settled.
 const stage = document.querySelector(".stage");
 const tiltable = matchMedia("(prefers-reduced-motion: no-preference) and (min-width: 900px)");
 if (stage && tiltable.matches) {
@@ -49,7 +47,7 @@ if (stage && tiltable.matches) {
 const still = matchMedia("(prefers-reduced-motion: reduce)");
 if (!CSS.supports("interpolate-size", "allow-keywords")) {
   for (const details of /** @type {NodeListOf<HTMLDetailsElement>} */ (document.querySelectorAll(".faq details"))) {
-    // The asked state (`open` lags while a close runs); find in page opens one without a click.
+    // The asked state: `open` lags while a close runs, and find in page opens one without a click.
     let opening = details.open;
     details.addEventListener("toggle", () => {
       if (!details.getAnimations().length) opening = details.open;
