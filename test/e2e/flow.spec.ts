@@ -54,7 +54,9 @@ async function scan(
   const phone = await open(browser, "phone", `/a?c=${code}`);
   await expect(heading(phone.page)).toHaveText(expected.title);
   await expect(phone.page.getByRole("button", { name: "Approve" })).toBeEnabled();
-  const match = ((await phone.page.locator("#match-digits").textContent()) ?? "").trim();
+  // The match digits ride on the Approve button: "Approve (Code 42)".
+  const label = (await phone.page.getByRole("button", { name: /^Approve \(Code \d{2}\)$/ }).textContent()) ?? "";
+  const match = label.match(/\d{2}/)?.[0] ?? "";
   return { phone, code, match };
 }
 
@@ -102,22 +104,23 @@ test.describe("pairing flow", () => {
   test("pair by QR link, match, approve", async ({ browser }) => {
     const screen = await demoScreen(browser);
     await expect(screen.page.locator("#qr-path")).toHaveAttribute("d", /^M/);
-    await expect(screen.page.getByText("Scan with your phone, or enter the code at")).toBeVisible();
+    await expect(screen.page.getByText("Scan with your phone.")).toBeVisible();
+    await expect(screen.page.getByText("Or enter the code at")).toBeVisible();
     await expectNoAxeViolations(screen.page);
 
     const { phone, match } = await scan(browser, screen.page);
     expect(match).toMatch(/^[0-9]{2}$/);
     // the code left the address bar and the history entry
     expect(new URL(phone.page.url()).search).toBe("");
-    await expect(phone.page.getByText("Gives access to")).toBeVisible();
+    await expect(phone.page.getByRole("list", { name: "Items" })).toBeVisible();
     await expect(phone.page.locator("#file-list input:checked")).toHaveCount(CATALOG.length);
     await expect(phone.page.getByRole("button", { name: "Add a file" })).toBeVisible();
     await expectNoAxeViolations(phone.page);
 
-    await expect(heading(screen.page)).toHaveText("Check your phone.");
+    await expect(heading(screen.page)).toHaveText("Check Your Phone");
     await expect(screen.page.locator("#match")).toHaveText(match);
     await expect(screen.page.locator("#line")).toHaveText(`It should show ${match}.`);
-    await expect(screen.page.getByRole("button", { name: "Start Over" })).toBeVisible();
+    await expect(screen.page.getByRole("button", { name: "Back", exact: true })).toBeVisible();
     await expectNoAxeViolations(screen.page);
 
     await phone.page.getByRole("button", { name: "Approve" }).click();
@@ -125,7 +128,7 @@ test.describe("pairing flow", () => {
     await expect(phone.page.locator("#ends")).toHaveText(/^Ends in \d+:\d{2}$/);
     await expect(phone.page.getByRole("button", { name: "Revoke" })).toBeVisible();
     await expectViewer(screen.page);
-    await expect(screen.page.getByRole("button", { name: "Start Over" })).toBeHidden();
+    await expect(screen.page.getByRole("button", { name: "Back", exact: true })).toBeHidden();
 
     expect([...screen.csp, ...phone.csp]).toEqual([]);
     await screen.context.close();
@@ -149,7 +152,7 @@ test.describe("pairing flow", () => {
 
     await expect(phone.page).toHaveURL(/\/a$/);
     await expect(heading(phone.page)).toHaveText(DEMO.title);
-    await expect(heading(screen.page)).toHaveText("Check your phone.");
+    await expect(heading(screen.page)).toHaveText("Check Your Phone");
     await screen.context.close();
     await phone.context.close();
   });
@@ -164,16 +167,16 @@ test.describe("pairing flow", () => {
     await phone.context.close();
   });
 
-  test("the back arrow on a claimed screen drops the claim and issues a new code", async ({ browser }) => {
+  test("Back on a claimed screen drops the claim and issues a new code", async ({ browser }) => {
     const screen = await demoScreen(browser);
     const before = await typedCodeOf(screen.page);
     const phone = await open(browser, "phone", `/a?c=${before}`);
     await expect(heading(phone.page)).toHaveText(DEMO.title);
 
-    await screen.page.getByRole("button", { name: "Start Over" }).click();
+    await screen.page.getByRole("button", { name: "Back", exact: true }).click();
     await expect(heading(screen.page)).toHaveText("Demo Room");
     expect(await typedCodeOf(screen.page)).not.toBe(before);
-    await expect(heading(phone.page)).toHaveText("This code has expired.");
+    await expect(heading(phone.page)).toHaveText("This Code Has Expired");
     await expect(phone.page.getByRole("link", { name: "Enter a Code" })).toHaveAttribute("href", "/code");
     await expectNoAxeViolations(phone.page);
     await screen.context.close();
@@ -184,7 +187,7 @@ test.describe("pairing flow", () => {
     const screen = await demoScreen(browser);
     const { phone } = await scan(browser, screen.page);
     await phone.page.getByRole("button", { name: "Cancel" }).click();
-    await expect(heading(phone.page)).toHaveText("Canceled.");
+    await expect(heading(phone.page)).toHaveText("Canceled");
     await expect(phone.page.locator("#body")).toHaveText("Nothing was opened on the screen.");
     await expect(heading(screen.page)).toHaveText("Demo Room");
     await screen.context.close();
@@ -195,7 +198,7 @@ test.describe("pairing flow", () => {
     const screen = await demoScreen(browser);
     const { phone, code } = await scan(browser, screen.page);
     const replay = await open(browser, "phone", `/a?c=${code}`);
-    await expect(heading(replay.page)).toHaveText("This code was already used.");
+    await expect(heading(replay.page)).toHaveText("This Code Was Already Used");
     await expect(replay.page.getByRole("link", { name: "Enter a Code" })).toBeVisible();
     // the first phone is unaffected
     await expect(heading(phone.page)).toHaveText(DEMO.title);
@@ -207,14 +210,14 @@ test.describe("pairing flow", () => {
 
   test("a code that never existed shows as expired on a scan", async ({ browser }) => {
     const phone = await open(browser, "phone", "/a?c=222222");
-    await expect(heading(phone.page)).toHaveText("This code has expired.");
+    await expect(heading(phone.page)).toHaveText("This Code Has Expired");
     expect(new URL(phone.page.url()).search).toBe("");
     await phone.context.close();
   });
 
   test("a phone page with no pairing says so", async ({ browser }) => {
     const phone = await open(browser, "phone", "/a");
-    await expect(heading(phone.page)).toHaveText("This code has expired.");
+    await expect(heading(phone.page)).toHaveText("This Code Has Expired");
     await phone.context.close();
   });
 
@@ -225,7 +228,7 @@ test.describe("pairing flow", () => {
     await expectViewer(screen.page);
 
     await phone.page.getByRole("button", { name: "Revoke" }).click();
-    await expect(heading(phone.page)).toHaveText("Ended.");
+    await expect(heading(phone.page)).toHaveText("Ended");
     await expect(heading(screen.page)).toHaveText("Session Ended");
     await expect(screen.page.locator("#line")).toBeHidden();
     await expect(screen.page.locator("#items")).toBeHidden();
@@ -246,7 +249,7 @@ test.describe("pairing flow", () => {
     const screen = await demoScreen(browser);
     const { phone } = await scan(browser, screen.page);
     await screen.page.reload();
-    await expect(heading(screen.page)).toHaveText("Check your phone.");
+    await expect(heading(screen.page)).toHaveText("Check Your Phone");
     await phone.page.reload();
     await expect(heading(phone.page)).toHaveText(DEMO.title);
     await screen.context.close();
@@ -272,7 +275,7 @@ test.describe("guest drop", () => {
     await expectNoAxeViolations(phone.page);
 
     await phone.page.getByRole("button", { name: "Add a file" }).click();
-    await expect(heading(phone.page)).toHaveText("Send a file to Demo Room?");
+    await expect(heading(phone.page)).toHaveText("Send a File to Demo Room?");
     await expectNoAxeViolations(phone.page);
 
     // a wrong type is refused on the phone before a byte leaves it
@@ -281,7 +284,7 @@ test.describe("guest drop", () => {
       mimeType: "application/octet-stream",
       buffer: Buffer.from("MZ"),
     });
-    await expect(heading(phone.page)).toHaveText("This file can't be sent.");
+    await expect(heading(phone.page)).toHaveText("This File Can't Be Sent");
     await expect(phone.page.locator("#body")).toHaveText("Choose a .pptx or .pdf file under 10 MB.");
     await expectNoAxeViolations(phone.page);
 
@@ -290,7 +293,7 @@ test.describe("guest drop", () => {
     await expect(phone.page.locator("#body")).toHaveText("bloop deletes its copy when this ends.");
     await phone.page.getByRole("button", { name: "Send" }).click();
 
-    await expect(heading(phone.page)).toHaveText("Sent to Demo Room.");
+    await expect(heading(phone.page)).toHaveText("Sent to Demo Room");
     await expect(heading(screen.page)).toHaveText("sample-deck.pptx");
     await expect(screen.page.locator("#line")).toHaveText("Sent by a guest. Open it here when you're ready.");
     // nothing opens by itself
@@ -325,7 +328,7 @@ test.describe("guest drop", () => {
     const { phone } = await scan(browser, screen.page);
     await phone.page.getByRole("button", { name: "Add a file" }).click();
     await phone.page.getByRole("button", { name: "Cancel" }).click();
-    await expect(heading(phone.page)).toHaveText("Canceled.");
+    await expect(heading(phone.page)).toHaveText("Canceled");
     await expect(heading(screen.page)).toHaveText("Demo Room");
     await screen.context.close();
     await phone.context.close();
@@ -353,9 +356,9 @@ test.describe("open path", () => {
     const saved = screen.page.waitForEvent("download");
     await download.click();
     expect((await saved).suggestedFilename()).toBe("Sample-deck.pptx");
-    await expect(heading(screen.page)).toHaveText("PowerPoint didn't open.");
+    await expect(heading(screen.page)).toHaveText("PowerPoint Didn't Open");
     await expect(screen.page.getByRole("button", { name: "Show as PDF Instead" })).toBeVisible();
-    await expect(heading(phone.page)).toHaveText("PowerPoint didn't open on the screen.");
+    await expect(heading(phone.page)).toHaveText("PowerPoint Didn't Open on the Screen");
     await expectNoAxeViolations(screen.page);
 
     // The labeled PDF view opens in a second window under the PDF route's own CSP.
@@ -364,13 +367,13 @@ test.describe("open path", () => {
     const pdf = screen.context.waitForEvent("request", (r) => r.url().includes("/f/"));
     await screen.page.getByRole("button", { name: "Show as PDF Instead" }).click();
     expect((await pdf).url()).toMatch(/\/f\/[A-Za-z0-9_-]{54}\/Sample-deck\.pdf$/);
-    await expect(heading(screen.page)).toHaveText("Showing Sample deck.pptx as a PDF.");
+    await expect(heading(screen.page)).toHaveText("Showing Sample deck.pptx as a PDF");
 
     // End: the screen forgets its credential, and every link is dead.
     await screen.page.getByRole("button", { name: "End", exact: true }).click();
     await expect(heading(screen.page)).toHaveText("Session Ended");
     expect(await screen.page.evaluate(() => sessionStorage.getItem("bloop.sid"))).toBeNull();
-    await expect(heading(phone.page)).toHaveText("Ended.");
+    await expect(heading(phone.page)).toHaveText("Ended");
     await screen.context.close();
     await phone.context.close();
   });
@@ -396,11 +399,11 @@ test.describe("demo viewer", () => {
     await expect(heading(screen.page)).toHaveText("Sample deck.pptx");
     await expect(sidebarItem(screen.page, "Sample deck.pptx")).toHaveAttribute("aria-current", "true");
     await expect(screen.page.getByRole("img", { name: "Slide 1 of 2" })).toBeVisible();
-    await expect(screen.page.getByRole("button", { name: "Previous page" })).toBeHidden();
-    await screen.page.getByRole("button", { name: "Next page" }).click();
+    await expect(screen.page.getByRole("button", { name: "Previous Page" })).toBeHidden();
+    await screen.page.getByRole("button", { name: "Next Page" }).click();
     await expect(screen.page.getByRole("img", { name: "Slide 2 of 2" })).toBeVisible();
-    await expect(screen.page.getByRole("button", { name: "Next page" })).toBeHidden();
-    await screen.page.getByRole("button", { name: "Previous page" }).click();
+    await expect(screen.page.getByRole("button", { name: "Next Page" })).toBeHidden();
+    await screen.page.getByRole("button", { name: "Previous Page" }).click();
     await expect(screen.page.getByRole("img", { name: "Slide 1 of 2" })).toBeVisible();
     await screen.page.keyboard.press("ArrowRight");
     await expect(screen.page.getByRole("img", { name: "Slide 2 of 2" })).toBeVisible();
@@ -436,7 +439,7 @@ test.describe("demo viewer", () => {
 
     await screen.page.getByRole("button", { name: "End", exact: true }).click();
     await expect(heading(screen.page)).toHaveText("Session Ended");
-    await expect(heading(phone.page)).toHaveText("Ended.");
+    await expect(heading(phone.page)).toHaveText("Ended");
     expect([...screen.csp, ...phone.csp]).toEqual([]);
     await screen.context.close();
     await phone.context.close();
@@ -464,7 +467,7 @@ test.describe("demo viewer", () => {
     await expectViewer(screen.page);
     await screen.page.getByRole("button", { name: /^bloop/ }).click();
     await expect(screen.page).toHaveURL("/");
-    await expect(heading(phone.page)).toHaveText("Ended.");
+    await expect(heading(phone.page)).toHaveText("Ended");
     await screen.context.close();
     await phone.context.close();
   });
@@ -521,7 +524,7 @@ test.describe("screen page", () => {
       if (r.url().includes("/api/screens")) created.push(r.url());
     });
     await page.goto("/s");
-    await expect(page.getByText("Open this on the room's screen.")).toBeVisible();
+    await expect(page.getByText("Open This on the Room's Screen")).toBeVisible();
     await expect(page.getByRole("link", { name: "Enter a Code" })).toHaveAttribute("href", "/code");
     await expect(page.locator("#qr")).toBeHidden();
     await expectNoAxeViolations(page);
@@ -542,7 +545,7 @@ test.describe("screen page", () => {
       }),
     );
     await page.goto("/s?mode=demo");
-    await expect(heading(page)).toHaveText("Too many demos open right now.");
+    await expect(heading(page)).toHaveText("Too Many Demos Open Right Now");
     await expect(page.locator("#line")).toHaveText("Try again in a few minutes.");
     await page.unroute("**/api/screens");
     // The first retry waits 5 s.
@@ -550,7 +553,7 @@ test.describe("screen page", () => {
     await context.close();
   });
 
-  test("the waiting screen is centered, and the QR is one path in a 41 module square with the required label", async ({
+  test("the wide waiting screen has the QR on the left of the room title, and the QR is one path in a 41 module square with the required label", async ({
     browser,
   }) => {
     const screen = await demoScreen(browser);
@@ -565,8 +568,31 @@ test.describe("screen page", () => {
     expect(box?.width).toBeGreaterThan(300);
     expect(Number.isInteger((box?.width ?? 0) / 41)).toBe(true);
     const card = await screen.page.locator("#qr-panel").boundingBox();
-    expect(Math.abs((card?.x ?? 0) + (card?.width ?? 0) / 2 - SCREEN.width / 2)).toBeLessThan(2);
+    const title = await heading(screen.page).boundingBox();
+    expect(title?.x ?? 0).toBeGreaterThan((card?.x ?? 0) + (card?.width ?? 0));
+    // The card's padding is the QR's own quiet zone: the card is the QR.
+    expect(Math.round(card?.width ?? 0)).toBe(Math.round(box?.width ?? 0));
     await screen.context.close();
+  });
+
+  test("New Code ends the waiting screen and shows a fresh code; Copy puts the code on the clipboard", async ({
+    browser,
+  }) => {
+    const screen = await demoScreen(browser);
+    await screen.context.grantPermissions(["clipboard-read", "clipboard-write"]);
+    const before = await typedCodeOf(screen.page);
+    await screen.page.getByRole("button", { name: "New Code" }).click();
+    await expect.poll(() => typedCodeOf(screen.page)).not.toBe(before);
+    await expect(screen.page.getByRole("button", { name: "New Code" })).toBeEnabled();
+    // The old code is dead: its screen is gone.
+    const stale = await open(browser, "phone", `/a?c=${before}`);
+    await expect(heading(stale.page)).toHaveText("This Code Has Expired");
+
+    const code = await screen.page.locator("#typed-code").textContent();
+    await screen.page.getByRole("button", { name: /^Copy / }).click();
+    expect(await screen.page.evaluate("navigator.clipboard.readText()")).toBe(code);
+    await screen.context.close();
+    await stale.context.close();
   });
 
   test("SITE-01 frame: the page is not frameable", async ({ browser, baseURL }) => {
@@ -584,7 +610,9 @@ test.describe("screen page", () => {
 });
 
 test.describe("phone pages on a laptop and the way home", () => {
-  test("/a on a laptop is one centered card about 440 wide", async ({ browser }) => {
+  test("/a on a laptop is two columns: the room and its buttons on the left, the list on the right", async ({
+    browser,
+  }) => {
     const screen = await demoScreen(browser);
     const code = await typedCodeOf(screen.page);
     const laptop = await screen.context.browser()?.newContext({ viewport: SCREEN });
@@ -592,16 +620,28 @@ test.describe("phone pages on a laptop and the way home", () => {
     if (!page || !laptop) throw new Error("no laptop context");
     await page.goto(`/a?c=${code}`);
     await expect(heading(page)).toHaveText("Demo Room");
-    const card = await page.locator("main.column").boundingBox();
-    expect(card?.width).toBeLessThanOrEqual(440);
-    expect(card?.width).toBeGreaterThan(400);
-    expect(Math.abs((card?.x ?? 0) + (card?.width ?? 0) / 2 - SCREEN.width / 2)).toBeLessThan(2);
+    const title = await heading(page).boundingBox();
+    const list = await page.locator("#file-list").boundingBox();
+    const approve = await page.getByRole("button", { name: /^Approve/ }).boundingBox();
+    const cancel = await page.getByRole("button", { name: "Cancel" }).boundingBox();
+    expect(list?.x ?? 0).toBeGreaterThan((title?.x ?? 0) + (title?.width ?? 0));
+    // Side by side, Cancel then Approve.
+    expect(approve?.y).toBe(cancel?.y);
+    expect(approve?.x ?? 0).toBeGreaterThan(cancel?.x ?? 0);
     await expectNoAxeViolations(page);
     await laptop.close();
     await screen.context.close();
   });
 
-  for (const path of ["/code", "/a", "/privacy", "/security"]) {
+  for (const path of ["/code", "/a"]) {
+    test(`Back on ${path} goes home`, async ({ page }) => {
+      await page.goto(path);
+      await page.getByRole("link", { name: "Back", exact: true }).click();
+      await expect(page).toHaveURL("/");
+    });
+  }
+
+  for (const path of ["/privacy", "/security"]) {
     test(`the logo on ${path} goes home`, async ({ page }) => {
       await page.goto(path);
       await page.getByRole("link", { name: "bloop", exact: true }).first().click();
