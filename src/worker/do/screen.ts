@@ -3,17 +3,29 @@
 // Concurrency rule: async work (hashing, drawing) happens before the check-and-`apply` pair, and
 // `apply` commits before its first await, so a credential cannot go stale between check and commit.
 import { DurableObject } from "cloudflare:workers";
-import type { ClaimResponse, CodeView, ErrorCode, PhoneView, ScreenView } from "../../shared/protocol.ts";
+import type {
+  ClaimResponse,
+  CodeView,
+  ErrorCode,
+  LinkSet,
+  OpenMode,
+  PhoneView,
+  ScreenView,
+} from "../../shared/protocol.ts";
+import type { AuditEvent } from "../audit.ts";
 import { type Config, configFor } from "../config.ts";
 import type { Env } from "../env.ts";
 import { MAX_FRAME_BYTES, phoneFrame, screenFrame } from "../frames.ts";
 import { drawCode, drawMatch, newRef, newSecret, parseCredential, safeEqual, sha256Hex } from "../ids.ts";
 import { createMachine, type Event, type FileRef, type Machine, nextDeadline, transition } from "../machine.ts";
-import type { PairingStore, PhoneInfo, Result, ScreenCreated } from "../seams/pairing.ts";
+import { ipHash } from "../routes/common.ts";
+import { type ClientClass, mintLink, protocolUri } from "../seams/open-path/links.ts";
+import type { PairingStore, PhoneInfo, Result, ScreenCreated, UsedLink } from "../seams/pairing.ts";
 import { auditFor, metricsFor } from "../stores.ts";
 import { directoryStub } from "../stubs.ts";
 import { type Meta, phoneView, roomView, screenView } from "../views.ts";
-import { type EffectDeps, noopSeams, runEffects } from "./effects.ts";
+import { bestEffort, type EffectDeps, noopSeams, runEffects, type SessionSeams } from "./effects.ts";
+import { LinkLedger } from "./ledger.ts";
 
 const HELLO_MS = 5000;
 const MAX_CODE_DRAWS = 3;
@@ -37,9 +49,13 @@ const fail = (error: ErrorCode): { ok: false; error: ErrorCode } => ({ ok: false
 export class Screen extends DurableObject<Env> implements PairingStore {
   private meta: Meta | null;
   private m: Machine | null;
+  private readonly links: LinkLedger;
+  /** The link set the last mint produced, for the call that asked for it. */
+  private lastLinks: LinkSet | null = null;
 
   constructor(ctx: DurableObjectState, env: Env) {
     super(ctx, env);
+    this.links = new LinkLedger(ctx.storage.kv);
     this.meta = ctx.storage.kv.get<Meta>("meta") ?? null;
     this.m = ctx.storage.kv.get<Machine>("machine") ?? null;
     ctx.setWebSocketAutoResponse(new WebSocketRequestResponsePair(PING, PONG));
@@ -123,13 +139,14 @@ export class Screen extends DurableObject<Env> implements PairingStore {
     return this.phoneEvent(pid, () => ({ e: "listed", now: Date.now(), ids }));
   }
 
-  async approve(pid: string, fileId: string, file: FileRef): Promise<Result<PhoneView>> {
+  async approve(pid: string, fileId: string, file: FileRef, userId: string | null): Promise<Result<PhoneView>> {
     if (file.ref !== fileId) return fail("bad_request");
     return this.phoneEvent(pid, () => ({
       e: "approve",
       now: Date.now(),
       file,
       maxMinutes: this.sessionMinutes(),
+      userId: this.meta?.mode === "demo" ? null : userId,
     }));
   }
 
@@ -166,6 +183,49 @@ export class Screen extends DurableObject<Env> implements PairingStore {
     return this.phoneResult(auth.hash);
   }
 
+  async mintFallback(sid: string, mode: OpenMode): Promise<Result<LinkSet>> {
+    const auth = await this.screenAuth(sid);
+    if (!auth.ok) return auth;
+    this.lastLinks = null;
+    const applied = await this.apply({ e: "fallback", now: Date.now(), mode, maxMints: this.config().links.maxMints });
+    if (!applied.ok) return applied;
+    return this.lastLinks ? { ok: true, value: this.lastLinks } : fail("internal");
+  }
+
+  async useLink(
+    tokenHash: string,
+    ipHashed: string,
+    via: { method: string; client: ClientClass },
+  ): Promise<Result<UsedLink>> {
+    const { m, meta } = this;
+    const session = m?.session;
+    if (!m || !meta || !m.pairing) return fail("link_unknown");
+    const now = Date.now();
+    const { links: limits } = this.config();
+    const screenIp = this.ctx.storage.kv.get<string>("screenIp");
+    const ipMatch = screenIp === undefined ? null : screenIp === ipHashed;
+    const binding = limits.binding === "enforce" && ipMatch === false ? "link_binding_failed" : null;
+    const used = this.links.use(tokenHash, now, limits, binding);
+    const sessionId = m.pairing.sessionId;
+    if (!used.ok) {
+      if (used.error !== "link_unknown")
+        await this.auditLink(sessionId, now, "link.refused", { cause: used.error, ...via });
+      return fail(used.error);
+    }
+    if (!session) return fail("link_revoked"); // ended: the file reference is gone with the session
+    await this.auditLink(sessionId, now, "link.fetched", {
+      purpose: used.record.purpose,
+      count: used.record.fetches,
+      ...(limits.binding !== "off" && ipMatch !== null ? { ipMatch } : {}),
+      ...via,
+    });
+    await this.apply({ e: "fetched", now });
+    return {
+      ok: true,
+      value: { file: session.file, purpose: used.record.purpose, mode: meta.mode, userId: m.pairing.userId },
+    };
+  }
+
   // ---- WebSockets ---------------------------------------------------------------------------
 
   override async fetch(request: Request): Promise<Response> {
@@ -173,6 +233,7 @@ export class Screen extends DurableObject<Env> implements PairingStore {
     if (request.headers.get("Upgrade") !== "websocket") return new Response(null, { status: 426 });
     const role: Role = new URL(request.url).pathname.endsWith("/screen/ws") ? "screen" : "phone";
     const [client, server] = Object.values(new WebSocketPair()) as [WebSocket, WebSocket];
+    if (role === "screen") this.ctx.storage.kv.put("screenIp", await ipHash(request, this.config()));
     this.ctx.acceptWebSocket(server, [role]);
     server.serializeAttachment({ role, authed: false, helloBy: Date.now() + HELLO_MS } satisfies SocketAttachment);
     await this.apply({ e: "socket", now: Date.now(), open: this.openSockets() });
@@ -397,12 +458,65 @@ export class Screen extends DurableObject<Env> implements PairingStore {
     }
   }
 
+  private async auditLink(
+    sessionId: string,
+    at: number,
+    type: "link.minted" | "link.fetched" | "link.refused",
+    detail: AuditEvent["detail"],
+  ): Promise<void> {
+    await bestEffort(auditFor(this.env).record({ sessionId, at, actor: "system", type, detail }));
+  }
+
+  /** The link seams (docs/interfaces.md section 4): mint pushes the link to the screen, revoke kills them all. */
+  private linkSeams(): Pick<SessionSeams, "mint" | "revokeLinks"> {
+    return {
+      mint: async (purpose) => {
+        const { m, meta } = this;
+        const file = m?.session?.file;
+        if (!m?.pairing || !meta || !file) return;
+        const now = Date.now();
+        const link = await mintLink(meta.screenRef, file, purpose, this.config().origin);
+        this.links.add({
+          tokenHash: link.tokenHash,
+          purpose: link.purpose,
+          mintedAt: now,
+          firstFetchAt: null,
+          fetches: 0,
+          revoked: false,
+        });
+        const links: LinkSet = {
+          protocol: link.purpose === "protocol" ? protocolUri(link.url) : null,
+          download: link.purpose === "download" ? link.url : null,
+          pdf: link.purpose === "pdf" ? link.url : null,
+        };
+        this.lastLinks = links;
+        this.sendOpen(links);
+        await this.auditLink(m.pairing.sessionId, now, "link.minted", { purpose: link.purpose });
+      },
+      revokeLinks: async () => void this.links.revokeAll(),
+    };
+  }
+
+  /** The `open` frame: sent once per mint to the screen sockets, never repeated in `state`. */
+  private sendOpen(links: LinkSet): void {
+    const frame = JSON.stringify({ v: 1, t: "open", links, now: Date.now() });
+    for (const ws of this.ctx.getWebSockets("screen")) {
+      const att = ws.deserializeAttachment() as SocketAttachment | null;
+      if (!att?.authed) continue;
+      try {
+        ws.send(frame);
+      } catch {
+        // the socket closed under us; the screen asks again on its next view
+      }
+    }
+  }
+
   private deps(): EffectDeps {
     return {
       directory: directoryStub(this.env),
       audit: auditFor(this.env),
       metrics: metricsFor(this.env),
-      seams: noopSeams,
+      seams: { ...noopSeams, ...this.linkSeams() },
       push: (to) => this.push(to),
       deleteAll: async () => {
         for (const ws of this.ctx.getWebSockets()) {

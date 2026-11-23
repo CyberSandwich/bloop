@@ -147,7 +147,9 @@ sequenceDiagram
     W-->>O: 200 streamed body, attachment, no-store
   end
 ```
-If no fetch arrives within 5 s of the screen's launch, the screen shows "PowerPoint didn't open." with Download. Download and PDF each mint a fresh link for the same approved file (`POST /api/screen/link`), at most 5 per session. ADR 0003 covers the details.
+The Worker answers a `/f/` request in this order: the platform rate limit, the token's shape, the Screen object's link rules (`useLink`), the source (`resolve`, or `resolvePdf` for a PDF link), then the OpenPath answer. A token that is malformed, unknown, or from a screen that no longer exists is the same 404. A source with no download URL (the mock, guest files) streams in either mode, with `Content-Length` when the size is known. HEAD answers from the metadata and counts as a fetch, as GET does. Range requests are not supported (T3 records whether Office sends them).
+
+The screen reports `launched` once. If no fetch arrives within 5 s of the launch, the screen shows Download It Instead; Download mints a fresh link for the same approved file (`POST /api/screen/link`, at most 5 per session), and the fetch of it moves the session to `open` with `openMode: download`, which both pages show as "PowerPoint didn't open.". There the screen also offers Show as PDF Instead, which mints the `pdf` link and opens it in a second window. A launch made without user activation also shows an Open button, whose click launches again: the browser may refuse an external-protocol launch that no gesture caused (field check T3). After a reload, an approved screen that gets no `open` frame asks for the protocol link itself. A fetch of any link, whatever its purpose, is the first accepted fetch. ADR 0003 covers the details.
 
 ### 4.3 End and auto-end
 
@@ -174,6 +176,7 @@ sequenceDiagram
   R-->>S: state ended
   S->>S: residue.clear(), new code after 3 s
   Note over W,S: the screen end response carries Clear-Site-Data storage
+  Note over W,R: every /f/ token now answers 410 (revoked), until the screen object closes
 ```
 Backstops: an hourly cron ends any D1 `session` row still open 95 minutes after approval, and deletes any guest object older than 2 hours. The R2 lifecycle rule deletes anything older than 1 day.
 
@@ -223,20 +226,21 @@ src/worker/
   do/screen.ts  do/directory.ts
   seams/file-source/{index,mock,demo,graph}.ts   interface; MockFileSource; the bundled demo account; GraphFileSource
   source-access.ts         which source serves a screen (mode and FILE_SOURCE), and the server-side resolve of an approved id
-  seams/open-path/{redirect,stream}.ts
+  seams/open-path/{index,redirect,stream,select,links}.ts   OpenPath interface; the 302 and the streaming answer; the mode switch; link minting, life rules, client class
+  do/ledger.ts             the per-screen link record (hashes and counters, revoked tombstones)
   seams/guest-drop/{r2,validate,zip}.ts
   seams/residue.ts  audit.ts  metrics.ts
   auth/{oauth,vault,sessions,cookies,services,db}.ts   oauth4webapi flow; token vault; phone sessions; cookie format and AEAD seal; per-request objects and the daily job; the D1 slice
-  routes/{pairing,files,auth,common}.ts
+  routes/{pairing,files,open,auth,common}.ts
   db/queries.ts            every SQL statement, typed
   retention.ts             cron jobs
 public/                    wrangler's assets directory, served as it is. Everything here is public: no secrets, no server-only logic
   index.html it.html s.html a.html code.html g.html me.html 404.html
   _headers                 static security headers (section 10)
-  css/ js/{landing,screen,phone,ws,residue,qr}.js js/vendor/uqr.js (+ LICENSE)
+  css/ js/{landing,screen,phone,code,launcher,residue}.js js/vendor/uqr.js (+ LICENSE)
   js/shared/               runtime code shared by browser and Worker: plain JSDoc-typed ES modules
     codes.js               code alphabet, normalize, format "K7M Q9X" (pure)
-    names.js               file-name sanitizer for paths and display (pure)
+    names.js               the /f/ link's name segment: an ASCII slug (pure)
     errors.js              error code to HTTP status and user-facing state (pure)
   .well-known/security.txt
 tools/
@@ -262,8 +266,7 @@ test/
 | GET                      | `/api/screen/ws?ref=<screenRef>`             | `hello{sid}` as first message, Origin | screen socket (the ref only routes to the object; it is no secret) |
 | GET                      | `/api/screen/state`                          | Bearer sid                            | polling fallback; also the rotation clock when there is no socket |
 | POST                     | `/api/screen/restart`                        | Bearer sid                            | "Start Over" on the screen: drop an unapproved claim, new code |
-| POST                     | `/api/screen/link`                           | Bearer sid                            | new link for the approved file `{purpose: download or pdf}`    |
-| POST                     | `/api/screen/event`                          | Bearer sid                            | `launched`, `fallback` (metrics only)                          |
+| POST                     | `/api/screen/link`                           | Bearer sid                            | one more link for the approved file `{purpose: protocol, download or pdf}` to `{links}`; counts against `LINK_MINTS_PER_SESSION`; `protocol` only from `approved` (the screen lost its link) |
 | POST                     | `/api/screen/end`                            | Bearer sid                            | end; response carries `Clear-Site-Data: "storage"`             |
 | POST                     | `/api/claim`                                 | none; rate-limited                    | `{code, pass?}` to `{pid, room, match, mode, kind, needsAuth}` |
 | GET                      | `/api/pair/ws?ref=<screenRef>`               | `hello{pid}`, Origin                  | phone socket                                                   |
@@ -284,7 +287,7 @@ test/
 | GET                      | `/api/health`                                | none                                  | status line probe, no state                                    |
 | GET                      | `/auth/start`                                | none; 10 per 60 s per IP              | 302 to Entra; no return parameter exists                       |
 | GET                      | `/auth/callback`                             | AEAD state cookie                     | code exchange, then 302 to `/a` (fixed). 400 `bad_request` for a state, cookie or expiry failure (no cookie set), 403 `consent_declined` or `admin_consent_required` for an Entra refusal, 401 `unauthorized` when the ID token fails validation, 502 `source_unavailable` for a failed exchange |
-| GET, HEAD                | `/f/:token/:name`                            | the token                             | open path; query string ignored                                |
+| GET, HEAD                | `/f/:token/:name`                            | the token                             | open path; query string and name ignored; 404 for any unknown or malformed token, 410 for a dead one |
 | OPTIONS, PROPFIND, other | `/f/*`                                       | none                                  | 405 `Allow: GET, HEAD`                                         |
 
 Every state-changing route checks four things: `Origin` equals `PUBLIC_ORIGIN`; `Sec-Fetch-Site` is `same-origin` when present; `Content-Type: application/json` (or the declared upload type); and a Zod-parsed body. Bearer credentials come from `sessionStorage` and travel in `Authorization`, never in a URL. Errors are `application/problem+json` with an `ErrorCode` (interfaces.md). A POST with no fields still sends `Content-Type: application/json` and a body of `{}` (or no body): that header is what turns a cross-site form post into a 415. Bodies are at most 4 KB, and Zod schemas refuse unknown keys. `POST /api/claim` takes `{code, pass?, kind?}`: `kind` defaults to `owner`, and a phone that wants the guest drop path sends `guest`. A `pass` is refused with `pass_invalid` until guest passes exist.
@@ -313,10 +316,10 @@ Both sockets are JSON text frames of at most 4 KB, `{"v":1,"t":<type>,...}`. A s
 | ---------------- | ----------- | ----------------------------------------------------------------------------------- |
 | screen to server | `hello`     | `sid`                                                                               |
 |                  | `code.next` | none (also sent when the tab becomes visible)                                       |
-|                  | `launched`  | `mode: protocol, download or pdf`                                                   |
+|                  | `launched`  | `mode: protocol or pdf`, sent once, at the first launch (any other state ignores it) |
 |                  | `ping`      | none                                                                                |
 | server to screen | `state`     | `ScreenView` (state, room, code, match, file name, endsAt)                          |
-|                  | `open`      | `links: {protocol, download, pdf?}` (sent once per mint; never repeated in `state`) |
+|                  | `open`      | `links: {protocol, download, pdf}`, one field set per mint (sent once per mint; never repeated in `state`) |
 |                  | `error`     | `code: ErrorCode`                                                                   |
 | phone to server  | `hello`     | `pid`                                                                               |
 | server to phone  | `state`     | `PhoneView` (state, room, match, file name, endsAt, mode, kind)                     |
@@ -404,7 +407,8 @@ CREATE TABLE guest_file (                -- row: 30 days after deleted_at; objec
 | ------------------ | -------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------- |
 | `meta`             | `screenRef`, mode, room id and name, `screenSecretHash`, created                                                                 | until the screen closes (10 min with no socket and no session) |
 | `machine`          | the whole pure-machine record (`src/worker/machine.ts`): state, current and previous code (value, issuedAt, expiresAt, consumed), code request times, pairing (session id, secret hash, kind, match, claimedAt, listed ids, pass hash, user id), session (file ref, approvedAt, endsAt, open mode, mints), deadlines, end reason, open socket count | rewritten on every transition; pairing and session fields are dropped at end |
-| `links`            | per link: `tokenHash`, purpose, mintedAt, firstFetchAt, fetches, screen `ipHash` (added with the open path)                      | until end                                                      |
+| `links`            | per link: `tokenHash`, purpose, mintedAt, firstFetchAt, fetches, revoked. At end every record is marked revoked and kept, so a holder of a real token gets 410 while a guess gets 404 | until the screen closes |
+| `screenIp`         | HMAC of the IP the screen's socket connected from, for the link binding check (ADR 0003)                                         | until the screen closes                                        |
 | socket attachments | `{role, authed}`                                                                                                                 | the socket's life                                              |
 
 ### 8.3 Directory Durable Object storage
@@ -436,6 +440,11 @@ Worker runtime variables:
 PUBLIC_ORIGIN=https://bloop.saputra.co.uk   # .dev.vars: http://127.0.0.1:8787
 FILE_SOURCE=mock                 # mock | graph
 OPEN_PATH_MODE=redirect          # redirect | stream (ADR 0003, decided by T3)
+LINK_FIRST_FETCH_SECONDS=600     # an unused link dies this long after minting
+LINK_FETCH_WINDOW_SECONDS=120    # after its first fetch a link lives this long
+LINK_MAX_FETCHES=10              # GET and HEAD both count
+LINK_MINTS_PER_SESSION=5         # extra links per session (download, PDF, protocol again)
+LINK_BINDING_DEFAULT=log         # off | log | enforce: compare the fetching IP with the screen's
 TOKEN_MODE=refresh               # refresh | session (ADR 0004)
 CODE_LENGTH=6
 CODE_TTL_SECONDS=60
@@ -510,7 +519,7 @@ CSP per page type. Every page uses no inline script or style and no HTML string 
 | IT `/it`, `404`                  | `default-src 'none'; script-src 'self'; style-src 'self'; img-src 'self'; font-src 'self'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'; require-trusted-types-for 'script'; trusted-types 'none'; upgrade-insecure-requests` (no `connect-src`)                       |
 | `/api/*`, `/auth/*`              | `default-src 'none'; frame-ancestors 'none'`, plus `Cache-Control: no-store`                                                                                                                                                                                                          |
 | `/f/*` `.pptx`                   | `default-src 'none'; sandbox; frame-ancestors 'none'`, `Content-Disposition: attachment`, `Cache-Control: no-store`                                                                                                                                                                   |
-| `/f/*` `.pdf` (inline view)      | `default-src 'none'; frame-ancestors 'none'`, `Content-Disposition: inline`, `Cache-Control: no-store`. `sandbox` is left out because Chromium does not render a PDF in a sandboxed document (unverified, test OPEN-08)                                                               |
+| `/f/*` PDF view (purpose `pdf`)  | `default-src 'none'; object-src 'self'; frame-ancestors 'none'`, `Content-Disposition: inline`, `Cache-Control: no-store`. `sandbox` is left out because Chromium does not render a PDF in a sandboxed document, and `object-src 'self'` is the one hole because its viewer is an embedded plugin that the `default-src` fallback would block (both unverified, field check F-PDF, ADR 0003) |
 
 `connect-src 'self'` covers `wss:` to the same host under CSP Level 3. A Playwright test asserts that no CSP violation is reported on any page. COEP is not set: nothing on the site needs cross-origin isolation, and it would add a failure mode.
 
@@ -525,9 +534,9 @@ Logging: Worker logs record the route pattern, status, `ErrorCode` and duration.
 - `npm run dev`: `wrangler dev --ip 127.0.0.1 --port 8787 --persist-to .wrangler/state`. This needs no Cloudflare login. DO, D1, R2 and the rate-limit bindings run locally, and `FILE_SOURCE=mock`. It serves plain HTTP: browsers treat `localhost` as a secure context, so `__Host-` cookies work. Trying it from a phone on the LAN needs HTTPS (`--local-protocol https`, accepting the self-signed certificate once) and `PUBLIC_ORIGIN` set to that origin.
 - `npm run setup`: `tools/dev-secrets.mjs` writes `.dev.vars`, and `wrangler d1 migrations apply DB --local` applies the schema.
 - `npm run typecheck`: `tsc` for the Worker, for tests and tools (`tsconfig.node.json`), and for the browser JS (`tsconfig.public.json`). `npm run lint`: Biome (markdown is excluded). `npm test`: Vitest unit tests. `npm run check` runs typecheck, lint, test, test:int, html-validate and size-limit (browser JS budget 40 kB brotli).
-- `npm run test:int`: each test file starts `wrangler dev` on a free port through `test/integration/wrangler.ts` (`{migrate: true}` applies `migrations/` to its throwaway D1 first; `auth.test.ts` uses that, with a local fake Entra on a free port and `ENTRA_AUTHORITY` set to it) (throwaway state directory, `PUBLIC_ORIGIN` set to that port, torn down after), drives the screen and phone with Node's native `WebSocket` (with an `Origin` header) and `fetch`, and moves time by running the Worker with short timings under `TEST_TIMING=1` (section 9) instead of a clock header: Durable Object alarms use real time. Three files cover pairing: `pairing.test.ts` (flows, validation, CSRF, sockets), `pairing-timing.test.ts` (short timings: expiry, rotation, claim timeout, auto-end, hello timeout) and `pairing-limits.test.ts` (production timing, so the rate-limit bindings and the exact guess limit are live, and a config that fails closed). `wrangler dev` does not implement Durable Object jurisdictions, so `stubs.ts` skips `eu` when `PUBLIC_ORIGIN` is local.
-- Task pages (`public/s.html`, `a.html`, `code.html`, `css/app.css`, `js/screen.js`, `phone.js`, `code.js`): pure client logic lives in `public/js/core/` (state mapping `states.js`, every string `copy.js`, `channel.js` for the WebSocket with reconnect 1, 2, 5, 10, 30 s and the 3 s polling fallback, `api.js`, `qr.js`). `/s?mode=demo` opens a demo screen (default `live`). The QR link is `/a?c=<code>`; the phone strips `?c=` with `history.replaceState` when its modules load. `GET /api/files` answers `{files: FileEntry[]}` (`core/files.js` has no fallback: an error is an error). A signed-in live phone shows a Disconnect OneDrive text action (it asks `GET /api/me` once after listing). `public/js/launcher.js` is the null seam the open module fills (Download controls and the `open` frame). Claims marked `[V-n]` in design.md ship only while their flag in `core/verified.js` is true.
-- `npm run test:e2e` (CI): Playwright with two browser contexts (screen at 1440, phone at 390), started with `TEST_TIMING=1` and `.dev.vars` from the example. It runs the full demo flow, the guest flow with fixtures (upload, then the Open click on the screen), every state string, axe, and the header assertions.
+- `npm run test:int`: each test file starts `wrangler dev` on a free port through `test/integration/wrangler.ts` (`{migrate: true}` applies `migrations/` to its throwaway D1 first; `auth.test.ts` uses that, with a local fake Entra on a free port and `ENTRA_AUTHORITY` set to it) (throwaway state directory, `PUBLIC_ORIGIN` set to that port, torn down after), drives the screen and phone with Node's native `WebSocket` (with an `Origin` header) and `fetch`, and moves time by running the Worker with short timings under `TEST_TIMING=1` (section 9) instead of a clock header: Durable Object alarms use real time. `open.test.ts` and `open-timing.test.ts` cover the open path (mint, fetch, methods, the 11th fetch, short windows, stream mode, fallback links, end). Three files cover pairing: `pairing.test.ts` (flows, validation, CSRF, sockets), `pairing-timing.test.ts` (short timings: expiry, rotation, claim timeout, auto-end, hello timeout) and `pairing-limits.test.ts` (production timing, so the rate-limit bindings and the exact guess limit are live, and a config that fails closed). `wrangler dev` does not implement Durable Object jurisdictions, so `stubs.ts` skips `eu` when `PUBLIC_ORIGIN` is local.
+- Task pages (`public/s.html`, `a.html`, `code.html`, `css/app.css`, `js/screen.js`, `phone.js`, `code.js`): pure client logic lives in `public/js/core/` (state mapping `states.js`, every string `copy.js`, `channel.js` for the WebSocket with reconnect 1, 2, 5, 10, 30 s and the 3 s polling fallback, `api.js`, `qr.js`). `/s?mode=demo` opens a demo screen (default `live`). The QR link is `/a?c=<code>`; the phone strips `?c=` with `history.replaceState` when its modules load. `GET /api/files` answers `{files: FileEntry[]}` (`core/files.js` has no fallback: an error is an error). A signed-in live phone shows a Disconnect OneDrive text action (it asks `GET /api/me` once after listing). `public/js/launcher.js` is the screen's launch ladder (the `open` frame, the Download control after 5 s, the PDF view, the Open click when the launch had no user gesture) and `public/js/residue.js` clears the page's state at `ended` and `closed`. Claims marked `[V-n]` in design.md ship only while their flag in `core/verified.js` is true.
+- `npm run test:e2e` (CI): Playwright with two browser contexts (screen at 1440, phone at 390), started with `TEST_TIMING=1` and `.dev.vars` from the example. It runs the full demo flow, the open path (launch, the Download fallback after the 5 s timeout, the PDF view, End clearing the screen's storage), the guest flow with fixtures (upload, then the Open click on the screen), every state string, axe, and the header assertions.
 - Unit coverage targets: the state machine (fast-check: no transition leaves `ended` except `code.next`, a code is consumed at most once, every timer state has a deadline), the code alphabet and normalizer, the name sanitizer, the zip central-directory reader (fuzzed), the vault (round trip, AAD swap fails, rotation), CSV escaping, and header generation.
 - Every threat in threat-model.md names its test. CI fails if a threat id marked "mitigated" has no test with that id in its title.
 

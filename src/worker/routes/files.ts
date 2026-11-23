@@ -62,7 +62,9 @@ export const fileRoutes: readonly Route[] = [
       if (!phone.ok) return phone.response;
       const file = await resolveListed(phone.access, body.value.fileId);
       if (!file.ok) return fail(file.error);
-      return respond(await phone.screen.stub.approve(phone.screen.credential, body.value.fileId, file.file));
+      return respond(
+        await phone.screen.stub.approve(phone.screen.credential, body.value.fileId, file.file, phone.access.ctx.userId),
+      );
     }),
   ),
 ];

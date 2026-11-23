@@ -48,7 +48,12 @@ export interface PhoneView {
   now: number;
 }
 
-export interface LinkSet { protocol: string; download: string; pdf: string | null; }
+// One mint fills one field; the others stay null.
+export interface LinkSet {
+  protocol: string | null;   // ms-powerpoint:ofv|u|<url>, pptx only
+  download: string | null;
+  pdf: string | null;        // a PDF file's own view, or a deck's PDF rendition
+}
 
 // WebSocket frames, all {v: 1, t: ...}, at most 4 KB. The upgrade URL carries the non-secret screenRef
 // (`/api/screen/ws?ref=<screenRef>`, `/api/pair/ws?ref=<screenRef>`): the first frame is the credential.
@@ -149,7 +154,8 @@ export type ScreenStateKey =
 | uploading | `upload.failed(e)` | | claimed | delete object; push both `state`; audit `guest.refused` with cause `e` (the drop route answers the phone with `e`) |
 | approved | `launched(mode)` | from the screen | opening | record mode; metric |
 | approved, opening | `fetched(link)` | first fetch of any link | open | `first_open_at`; metric `scan_to_open_ms`; push both |
-| opening, open | `fallback(mode)` | mints left | (same) | mint a link for `mode`; push screen `open` |
+| opening, open | `fallback(mode)` | mints left | (same) | mint a link for `mode`; set the open mode (`download` or `pdf`); metric `fallback`; push `open` to the screen and `state` to both |
+| approved | `fallback(protocol)` | mints left | (same) | the screen lost its link: mint the protocol link again, no mode change, no metric |
 | claimed, choosing, uploading, offered | `cancel` | from the phone | waiting | end reason `canceled`; audit; delete any object; both codes wiped, a fresh one issued; phone sockets get `error pairing_invalid` and close |
 | claimed, choosing, uploading, offered | `restart` | from the screen ("Start Over") | waiting | end reason `canceled`, actor screen; audit; delete any object; as cancel |
 | approved, opening, open | `end(by)` | | ended | revoke links; residue purge; audit `ended`; metric; push both |
@@ -263,7 +269,8 @@ export interface PairingStore {
   nextCode(sid: string): Promise<Result<CodeView>>;
   claim(code: string, phone: PhoneInfo): Promise<Result<ClaimResponse>>;
   listed(pid: string, ids: string[]): Promise<Result<PhoneView>>;
-  approve(pid: string, fileId: string, file: FileRef): Promise<Result<PhoneView>>;
+  /** `userId`: the account the approving phone is signed in as now; the object keeps it for /f/ (null for demo and guest). */
+  approve(pid: string, fileId: string, file: FileRef, userId: string | null): Promise<Result<PhoneView>>;
   cancel(pid: string): Promise<Result<PhoneView>>;
   restart(sid: string): Promise<Result<ScreenView>>;
   endFromScreen(sid: string): Promise<Result<ScreenView>>;
@@ -271,8 +278,16 @@ export interface PairingStore {
   /** Polling fallback. A screen poll also rotates the code when it is due and re-arms closeAt. */
   screenView(sid: string): Promise<Result<ScreenView>>;
   phoneView(pid: string): Promise<Result<PhoneView>>;
-  // Added with the open path: mintFallback(sid, mode) and useLink(tokenHash, ipHash).
+  /** Mints one more link for the approved file (a download, the PDF view, or a relaunch) and pushes it to the screen. */
+  mintFallback(sid: string, mode: OpenMode): Promise<Result<LinkSet>>;
+  /**
+   * An /f/ request arrived. Applies the link rules, counts the fetch, audits it, and moves the session to
+   * open on the first accepted one. A hash that names no link is link_unknown whatever the reason (OPEN-01).
+   */
+  useLink(tokenHash: string, ipHash: string, via: { method: string; client: "office" | "browser" | "other" }): Promise<Result<UsedLink>>;
 }
+/** What an accepted /f/ request needs: the file, the link's purpose, and whose account reads it (Graph). */
+export interface UsedLink { file: FileRef; purpose: OpenMode; mode: Mode; userId: string | null; }
 
 /**
  * One instance. Routes typed codes; counts misses exactly (ADR 0002). An expired code keeps routing to its
@@ -370,58 +385,53 @@ export declare class GraphFileSource implements FileSource {
 
 `source-access.ts` picks the source: `MockFileSource` for a demo screen and whenever `FILE_SOURCE=mock`; `GraphFileSource` only for a live screen under `FILE_SOURCE=graph`, for the user the session cookie names. `approve` calls `listRecent` (the same 5 the phone was shown) and builds the `FileRef` from the entry whose id matches, so the client's id is the only thing trusted and an id not in the list is `file_not_found`.
 
-## 4. `OpenPath` (`src/worker/seams/open-path/index.ts`)
+## 4. `OpenPath` (`src/worker/seams/open-path/`)
+Minting and the link rules do not depend on the mode, so they are plain functions in `links.ts`; the seam (`index.ts`) is only how an accepted request is answered. `select.ts` picks the class from `OPEN_PATH_MODE`.
 ```ts
-import type { LinkSet, OpenError, OpenMode } from "../../../shared/protocol.ts";
-import type { FileRef } from "../../machine.ts";
-import type { FileSource, SourceContext } from "../file-source/index.ts";
-
-export interface MintedLink {
-  token: string;        // screenRef (22) + secret (32), base64url; only its SHA-256 is stored
-  tokenHash: string;
-  purpose: OpenMode;
-  url: string;          // https://<host>/f/<token>/<safe-name>.<ext>, at most 200 characters
-}
+import type { OpenMode, SourceError } from "../../../shared/protocol.ts";
+import type { Resolved } from "../file-source/index.ts";
 
 export interface OpenPath {
   readonly mode: "redirect" | "stream";
-  /** Builds the link set the screen gets. protocol = "ms-powerpoint:ofv|u|" + url (pptx only). */
-  mint(screenRef: string, file: FileRef, purpose: OpenMode, origin: string): Promise<MintedLink>;
-  links(protocol: MintedLink | null, download: MintedLink, pdf: MintedLink | null): LinkSet;
-  /** Serves an accepted /f/ request. GET and HEAD only; the caller already ran useLink. */
-  serve(req: Request, file: FileRef, ctx: SourceContext, source: FileSource | GuestReader): Promise<Response>;
-}
-export interface GuestReader { read(r2Key: string): Promise<ReadableStream<Uint8Array> | null>; }
-
-/** 302 to the resolved Graph URL (default until T3). Guest files always stream. */
-export declare class RedirectOpenPath implements OpenPath {
-  readonly mode: "redirect";
-  mint(screenRef: string, file: FileRef, purpose: OpenMode, origin: string): Promise<MintedLink>;
-  links(protocol: MintedLink | null, download: MintedLink, pdf: MintedLink | null): LinkSet;
-  serve(req: Request, file: FileRef, ctx: SourceContext, source: FileSource | GuestReader): Promise<Response>;
-}
-/** Streams bytes through the Worker. */
-export declare class StreamOpenPath implements OpenPath {
-  readonly mode: "stream";
-  mint(screenRef: string, file: FileRef, purpose: OpenMode, origin: string): Promise<MintedLink>;
-  links(protocol: MintedLink | null, download: MintedLink, pdf: MintedLink | null): LinkSet;
-  serve(req: Request, file: FileRef, ctx: SourceContext, source: FileSource | GuestReader): Promise<Response>;
+  /** Serves an accepted GET or HEAD. The caller already ran the link rules and resolved the file. */
+  serve(request: Request, file: Resolved, purpose: OpenMode): Promise<Response>;
 }
 
-/** HTTP status the /f/ route returns per error. 410 tells Office the file is gone for good. */
-export const OPEN_STATUS: Record<OpenError, number> = {
-  link_unknown: 404, link_expired: 410, link_exhausted: 410, link_revoked: 410,
-  link_binding_failed: 403, upstream_failed: 502, launch_timeout: 504, pdf_unavailable: 404, mint_limit: 429,
-};
+/** A missing file stays 404; any other source failure is 502 upstream_failed. */
+export declare function sourceFailure(error: SourceError | "pdf_unavailable"): Response;
+
+/** 302 to the source's own URL, after checking its host against GRAPH_DOWNLOAD_HOSTS again (502 otherwise). A source with no URL (mock, guest) streams. */
+export declare class RedirectOpenPath implements OpenPath { /* ... */ }
+/** The bytes through the Worker: Content-Type from the detected type, Content-Length when known, attachment (inline for purpose "pdf"), no-store; HEAD answers from the metadata. */
+export declare class StreamOpenPath implements OpenPath { /* ... */ }
 ```
-
-Screen side (`public/js/screen.js`, JSDoc):
+`links.ts` (`src/worker/seams/open-path/links.ts`):
 ```ts
-/** Launch ladder: protocol, then download after 5 s with no fetch, then PDF if Download fails or is refused. */
+export interface MintedLink { token: string; tokenHash: string; purpose: OpenMode; url: string; }   // url: https://<host>/f/<token>/<slug>.<ext>, at most 200 characters
+/** token = screenRef (22) + 32 base64url characters (192 bits) of secret. A PDF file's "protocol" launch mints a "pdf" link. */
+export declare function mintLink(screenRef: string, file: FileRef, purpose: OpenMode, origin: string): Promise<MintedLink>;
+export declare const protocolUri: (url: string) => string;      // "ms-powerpoint:ofv|u|" + url
+export declare function parseToken(token: string): { screenRef: string } | null;
+export declare function refusal(rec: LinkRecord, now: number, limits: LinkConfig): OpenError | null;   // revoked, exhausted, expired
+export declare function clientClass(userAgent: string | null): "office" | "browser" | "other";
+```
+`do/ledger.ts` keeps the `LinkRecord`s in the Screen object (`tokenHash`, `purpose`, `mintedAt`, `firstFetchAt`, `fetches`, `revoked`). `use` checks a link and counts the fetch in one synchronous step, so two requests cannot take the last allowed fetch. `revokeAll` marks records revoked and keeps them until the object closes.
+
+The status of each `/f/` refusal is the one in `public/js/shared/errors.js` (`link_unknown` 404, `link_expired`, `link_exhausted` and `link_revoked` 410, `link_binding_failed` 403, `upstream_failed` 502, `pdf_unavailable` 404, `mint_limit` 429); 410 tells Office the file is gone for good. The name segment of the link comes from `public/js/shared/names.js`: `[A-Za-z0-9-]`, 1 to 60 characters, no dots except the extension, sized so the whole link fits 200 characters for the configured origin (`PUBLIC_ORIGIN` is capped at 120 characters), which keeps the `ms-powerpoint:ofv|u|` URI under Office's 256.
+
+Screen side (`public/js/launcher.js`, JSDoc; `createLauncher(deps)` takes every browser effect as a dependency, so it is unit tested without a browser):
+```ts
+/** Launch ladder: protocol, then Download after 5 s with no fetch, then the PDF view. Each link is acted on once, whether it arrived as an `open` frame or as a /api/screen/link answer. */
 export interface ScreenLauncher {
-  launch(links: LinkSet): void;            // location.assign(links.protocol); reports "launched"
-  download(): Promise<void>;               // POST /api/screen/link {purpose:"download"}, then <a download>
-  showPdf(): Promise<void>;                // POST /api/screen/link {purpose:"pdf"}, window.open, keeps the ref
+  launch(links: LinkSet): void;            // protocol: location.assign + one "launched" report; pdf: window.open("bloop-pdf"); download: <a download>
+  click(): void;                           // the Open control: launch again, or open a PDF the popup blocker refused, under a user gesture
+  download(): Promise<boolean>;            // POST /api/screen/link {purpose:"download"}, then launch the answer
+  showPdf(): Promise<boolean>;             // POST /api/screen/link {purpose:"pdf"}
+  onView(view: ScreenView): void;          // recovers a lost link (approved, no link after 1.5 s), times the 5 s, resets at the end
+  needsClick(): boolean;                   // the launch had no user activation, or a popup was blocked
+  downloadReady(): boolean;
+  closePdf(): void;
+  reset(): void;
 }
 ```
 
@@ -467,7 +477,7 @@ export const ZIP_LIMITS = {
 ```
 Validation rules: a `.pptx` starts with `PK\x03\x04`, has no `%PDF` in its first 1 KB, has an EOCD record whose central directory is inside the file and within the limits, and passes the part rules. A `.pdf` starts with `%PDF-`, has `%%EOF` in its last 1 KB, and has no ZIP EOCD signature in its last 64 KB. The extension must match the detected type. `Content-Type` on the way out comes from the detected type, never from the upload.
 
-## 6. `Residue` (`src/worker/seams/residue.ts` and `public/js/residue.js`)
+## 6. `Residue` (`public/js/residue.js`; the server half is `revokeLinks` and `purge` in `do/effects.ts`)
 ```ts
 import type { FileRef } from "../machine.ts";
 
@@ -482,10 +492,10 @@ export interface PurgeReport {
   accessTokenDropped: boolean; // in-memory access token for this session
 }
 
-/** Screen side. Runs on "ended", on "closed", and on pagehide. */
+/** Screen side. `clear` runs on "ended" and "closed" (the page re-stores its own credential when the screen waits again, so a reload resumes the screen); pagehide only closes the PDF window. */
 export interface ScreenResidue {
-  clear(): void;               // sessionStorage bloop.*, in-memory links, revoke object URLs,
-                               // close the PDF window if this page opened it, history.replaceState("/s")
+  clear(): void;               // launcher.reset (links, timers, the PDF window this page opened), sessionStorage bloop.*,
+                               // history.replaceState to the same path and query (the demo mode stays)
   /** What a web page cannot clean. Shown on /it, measured per room by the T20 audit. */
   readonly beyondReach: readonly ("downloads_folder" | "office_recent_list" | "office_cache"
     | "jump_lists" | "browser_download_history" | "temp_internet_files")[];
@@ -503,7 +513,9 @@ export interface AuditEvent {
   type: AuditType | "grant.created" | "grant.deleted" | "user.erased" | "export.run" | "pass.created";
   /** Allowed keys only. Never tokens, codes, URLs, IPs or Graph ids. */
   detail: { fileName?: string; source?: "mock" | "graph" | "guest"; purpose?: string;
-            cause?: ErrorCode; reason?: string; bytes?: number; ipMatch?: boolean };
+            cause?: ErrorCode; reason?: string; bytes?: number; ipMatch?: boolean;
+            /** An /f/ request: method, class of client (never the raw User-Agent), fetch count. */
+            method?: string; client?: "office" | "browser" | "other"; count?: number };
 }
 export interface AuditRow extends AuditEvent { id: number; roomName: string | null; userEmail: string | null; mode: Mode; kind: Kind; }
 

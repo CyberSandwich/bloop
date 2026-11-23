@@ -6,6 +6,7 @@ import type { MachineConfig } from "./machine.ts";
 
 const int = (min: number, max: number) => z.coerce.number().int().min(min).max(max);
 const LOCAL_HOSTS = new Set(["localhost", "127.0.0.1", "[::1]"]);
+const MAX_ORIGIN_CHARS = 120;
 
 /** True for an origin on this machine. Test timing and the missing local jurisdiction hang off it. */
 export const isLocalOrigin = (origin: string): boolean => LOCAL_HOSTS.has(new URL(origin).hostname);
@@ -26,9 +27,16 @@ const optional = <T extends z.ZodType>(type: T) => z.preprocess((v) => (v === ""
 
 const schema = z
   .object({
-    PUBLIC_ORIGIN: z.url(),
+    /** Capped so a /f/ link (origin, token, name) always fits the 200-character link budget (ADR 0003). */
+    PUBLIC_ORIGIN: z.url().max(MAX_ORIGIN_CHARS),
     HASH_PEPPER: z.string().min(32),
     FILE_SOURCE: z.enum(["mock", "graph"]).default("mock"),
+    OPEN_PATH_MODE: z.enum(["redirect", "stream"]).default("redirect"),
+    LINK_FIRST_FETCH_SECONDS: z.coerce.number().min(1).default(600),
+    LINK_FETCH_WINDOW_SECONDS: z.coerce.number().min(1).default(120),
+    LINK_MAX_FETCHES: int(1, 100).default(10),
+    LINK_MINTS_PER_SESSION: int(0, 50).default(5),
+    LINK_BINDING_DEFAULT: z.enum(["off", "log", "enforce"]).default("log"),
     TOKEN_MODE: z.enum(["refresh", "session"]).default("refresh"),
     GRANT_IDLE_DAYS: int(1, 90).default(30),
     GRAPH_DOWNLOAD_HOSTS: z.string().default("*.sharepoint.com,*.files.1drv.com,my.microsoftpersonalcontent.com"),
@@ -90,10 +98,25 @@ export interface GraphConfig {
   cookieKey: string;
 }
 
+/** The open path's limits (ADR 0003): how long and how often a /f/ link works. */
+export interface LinkConfig {
+  /** A link never fetched dies this long after minting. */
+  firstFetchSeconds: number;
+  /** After the first fetch a link lives this long. */
+  fetchWindowSeconds: number;
+  maxFetches: number;
+  /** Extra links per session beyond the first (download, PDF, a relaunch). */
+  maxMints: number;
+  /** Compare the fetching IP with the screen's: `log` records a mismatch, `enforce` refuses it. */
+  binding: "off" | "log" | "enforce";
+}
+
 export interface Config {
   origin: string;
   hashPepper: string;
   fileSource: "mock" | "graph";
+  openPathMode: "redirect" | "stream";
+  links: LinkConfig;
   tokenMode: "refresh" | "session";
   grantIdleDays: number;
   downloadHosts: string[];
@@ -128,6 +151,14 @@ export function parseConfig(env: Record<string, unknown>): ConfigResult {
       origin: new URL(v.PUBLIC_ORIGIN).origin,
       hashPepper: v.HASH_PEPPER,
       fileSource: v.FILE_SOURCE,
+      openPathMode: v.OPEN_PATH_MODE,
+      links: {
+        firstFetchSeconds: v.LINK_FIRST_FETCH_SECONDS,
+        fetchWindowSeconds: v.LINK_FETCH_WINDOW_SECONDS,
+        maxFetches: v.LINK_MAX_FETCHES,
+        maxMints: v.LINK_MINTS_PER_SESSION,
+        binding: v.LINK_BINDING_DEFAULT,
+      },
       tokenMode: v.TOKEN_MODE,
       grantIdleDays: v.GRANT_IDLE_DAYS,
       downloadHosts: v.GRAPH_DOWNLOAD_HOSTS.split(",")

@@ -51,7 +51,7 @@ function auditDetail(fx: Extract<Effect, { fx: "audit" }>, { prev, next }: Effec
 }
 
 /** A failing audit or metrics write must not stop the session from ending or the screen from updating. */
-async function bestEffort(write: Promise<void>): Promise<void> {
+export async function bestEffort(write: Promise<void>): Promise<void> {
   try {
     await write;
   } catch {

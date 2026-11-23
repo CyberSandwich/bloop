@@ -54,7 +54,9 @@ export const CSP: Readonly<Record<Policy, string>> = {
   minimal: `default-src 'none'; ${SELF}; ${PAGE_TAIL}`,
   api: "default-src 'none'; frame-ancestors 'none'",
   "file-pptx": "default-src 'none'; sandbox; frame-ancestors 'none'",
-  "file-pdf": "default-src 'none'; frame-ancestors 'none'",
+  // `object-src 'self'` is the one hole: Chromium's PDF viewer is an embedded plugin, which the
+  // `default-src 'none'` fallback would block (ADR 0003, field check F-PDF). `sandbox` stays out: it stops the viewer.
+  "file-pdf": "default-src 'none'; object-src 'self'; frame-ancestors 'none'",
 };
 
 const EXTRA: Readonly<Record<Policy, Record<string, string>>> = {
@@ -69,6 +71,17 @@ const EXTRA: Readonly<Record<Policy, Record<string, string>>> = {
 export function headersFor(policy: Policy): Record<string, string> {
   return { ...BASE_HEADERS, "Content-Security-Policy": CSP[policy], ...EXTRA[policy] };
 }
+
+const chosen = new WeakMap<Response, Policy>();
+
+/** Lets a handler pick the policy for one response, where the route's own policy does not fit (/f/ files). */
+export function withPolicy(response: Response, policy: Policy): Response {
+  chosen.set(response, policy);
+  return response;
+}
+
+/** The policy a handler chose for this response, else the route's. */
+export const policyOf = (response: Response, fallback: Policy): Policy => chosen.get(response) ?? fallback;
 
 /** Returns a copy of `response` with the policy applied; the policy wins over anything already set. */
 export function withHeaders(response: Response, policy: Policy): Response {

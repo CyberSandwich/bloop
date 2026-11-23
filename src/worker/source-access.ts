@@ -21,12 +21,21 @@ export type Access = { ok: true; source: FileSource; ctx: SourceContext } | { ok
  * Only a live screen with FILE_SOURCE=graph builds a GraphFileSource, for the user the session cookie names.
  */
 export async function accessFor(request: Request, env: Env, config: Config, mode: Mode): Promise<Access> {
+  if (mode === "demo" || !config.graph) return accessForUser(env, config, mode, null);
+  const userId = await phoneUser(request, servicesFor(env, config));
+  return userId ? accessForUser(env, config, mode, userId) : { ok: false, response: fail("auth_required") };
+}
+
+/**
+ * The same choice for a request with no phone cookie: PowerPoint fetching /f/ reads as the account the
+ * session approved with, which the Screen object kept (`UsedLink.userId`).
+ */
+export async function accessForUser(env: Env, config: Config, mode: Mode, userId: string | null): Promise<Access> {
   if (mode === "demo" || !config.graph) {
     return { ok: true, source: demoSource(), ctx: { mode, userId: null, folderId: null, accessToken: noToken } };
   }
-  const services = servicesFor(env, config);
-  const userId = await phoneUser(request, services);
   if (!userId) return { ok: false, response: fail("auth_required") };
+  const services = servicesFor(env, config);
   const refresh = refresher(config.graph, { fetch: (input, init) => fetch(input, init) });
   return {
     ok: true,

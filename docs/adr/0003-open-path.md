@@ -1,6 +1,6 @@
 # ADR 0003: open path, redirect or stream behind one interface
 
-Status: proposed. Default `redirect`; M0 test T3 decides.
+Status: accepted as built. Default `redirect`; field test T3 decides (docs/setup.md, "Field test T3").
 
 ## Context
 The screen must open the user's file in installed PowerPoint, with no account on the PC. Facts:
@@ -8,31 +8,40 @@ The screen must open the user's file in installed PowerPoint, with no account on
 - Graph's `@microsoft.graph.downloadUrl` is pre-authenticated, long, and lives "minutes" to "1 hour", and bloop cannot revoke it.
 - Some Office builds append `?OR=ProtocolHandler&CID=...` and write the full URL into a `.url` shortcut.
 - Whether PowerPoint follows a 302 is undocumented.
+- A browser may refuse an external-protocol launch that no user gesture caused (unverified for the lectern browsers, T3).
 
 ## Decision
 - **One link shape:** `https://<host>/f/<token>/<safe-name>.<ext>`, at most 200 characters.
-  - `token` is `screenRef` (22) plus a secret (32), base64url, and only its hash is stored.
-  - `safe-name` comes from `names.js`: unsafe characters removed, NFC, at most 60 characters.
-  - The name segment and any query are ignored by the server.
-- **One `OpenPath` interface, two implementations, chosen by `OPEN_PATH_MODE`:**
-  - `RedirectOpenPath` (default): at fetch time, resolve the Graph URL, check its host against `GRAPH_DOWNLOAD_HOSTS`, and answer 302 with `no-store`. bloop never carries deck bytes.
-  - `StreamOpenPath`: resolve, then stream the body with `Content-Disposition: attachment` and `no-store`. Guest files always stream from R2.
-- **Resolve at fetch, not at approve:** download URLs can expire in minutes, and the edit made just before the tap is then the one that opens.
-- **Link life:** a link dies at session end, 10 min after mint if never fetched, and 2 min after its first fetch. It allows at most 10 fetches. It is not single-use, because Office sends several requests (probe, HEAD, GET). T3 counts them and the limits follow.
-- **Methods:** GET and HEAD only. OPTIONS, PROPFIND and every write method get 405 with `Allow: GET, HEAD`. `ofv` opens read-only.
-- **Binding:** the screen's IP hash, compared per fetch. Modes `off`, `log` (default) or `enforce` per room (OD-4).
+  - `token` is `screenRef` (22) plus 32 base64url characters of secret (192 bits), and only its hash is stored.
+  - `safe-name` comes from `public/js/shared/names.js`: an ASCII slug (`[A-Za-z0-9-]`, accents folded, every other run of characters one hyphen, 60 characters at most, `file` when nothing is left). A strict slug rather than a removal list, so no banned character, `..` or percent-encoding can appear and the length is exactly what it looks like (fix F7). The name is cut further so the whole link fits 200 characters for the configured origin; `PUBLIC_ORIGIN` is capped at 120 characters so that is always at least 17. With the `ms-powerpoint:ofv|u|` prefix the URI stays at 220 or less, under Office's 256 (unit-tested on the longest name and the longest origin).
+  - The name segment and any query are ignored by the server. Names with no Latin letters or digits become `file`.
+- **One `OpenPath` interface, two implementations, chosen by `OPEN_PATH_MODE`.** Minting and the link rules are mode-independent functions, not part of the interface:
+  - `RedirectOpenPath` (default): at fetch time the source resolves the file; the answer is a 302 to its pre-authenticated URL, after the host is checked against `GRAPH_DOWNLOAD_HOSTS` here as well as in the source (502 otherwise). Nothing from the request reaches the `Location`. bloop never carries deck bytes. A source with no URL (the mock, guest files) streams instead.
+  - `StreamOpenPath`: resolves, then streams the body with the detected `Content-Type`, `Content-Length` when known, `Content-Disposition: attachment` and `no-store`. HEAD answers from the metadata without opening the stream. Guest files always stream from R2.
+- **Resolve at fetch, not at approve:** download URLs can expire in minutes, and the edit made just before the tap is then the one that opens. The account that reads the file is the one the approving phone was signed in as; the Screen object keeps its id for the session (the machine's `approve` carries it).
+- **Link life:** a link dies at session end, `LINK_FIRST_FETCH_SECONDS` (600) after mint if never fetched, and `LINK_FETCH_WINDOW_SECONDS` (120) after its first fetch. It allows at most `LINK_MAX_FETCHES` (10) fetches, GET and HEAD alike. It is not single-use, because Office sends several requests (probe, HEAD, GET). T3 counts them and the limits follow. The check and the count are one synchronous step in the Screen object, so concurrent requests cannot both take the last fetch.
+- **Refusals:** a token that is malformed, unknown, or belongs to a screen that has closed is `404 link_unknown`, the same body each time. At session end every record is marked revoked and kept until the Screen object closes: a holder of a real token then gets `410 link_revoked`, a guesser still gets 404, and neither can tell from the answer whether a token ever existed. Exhausted and expired links are `410`.
+- **Methods:** GET and HEAD only. OPTIONS, PROPFIND and every write method get 405 with `Allow: GET, HEAD`, before any token is looked at. `ofv` opens read-only. Range requests are not supported.
+- **Binding:** the IP hash of the screen's socket is kept, and each fetch's is compared. `LINK_BINDING_DEFAULT`: `off`, `log` (default, an audit flag) or `enforce` (403 `link_binding_failed`). Per room (OD-4) waits for rooms.
+- **Audit:** the minted link and every fetch or refusal are written to the audit seam with the method, the class of client (`office`, `browser`, `other`; never the raw User-Agent) and the fetch count.
 - **Fallback ladder (screen):**
-  1. protocol launch;
-  2. if no fetch is seen within 5 s, "PowerPoint didn't open." with Download (a fresh `download` link);
-  3. a labeled PDF view in a new tab (a fresh `pdf` link; Graph converts with `format=pdf`, mock and guest PDFs are served as is).
-  - At most 5 extra mints per session, all for the approved file.
-- **"Open" is measured server-side:** the first accepted fetch moves the session to `open` and records `scan_to_open_ms`.
+  1. protocol launch (`location.assign`), reported once as `launched`. If the page had no user activation, an Open button also shows, and its click launches again;
+  2. if no fetch is seen within 5 s, Download It Instead appears. It mints a `download` link, which the browser saves as an attachment. The fetch moves the session to `open` with open mode `download`, and both pages show "PowerPoint didn't open.";
+  3. there, Show as PDF Instead mints a `pdf` link (the deck's PDF rendition, or a PDF file itself) and opens it in a named second window under the PDF CSP below. The control is an addition to design.md's open-fallback row: the design named the PDF state but no way into it.
+  - At most 5 extra mints per session (`LINK_MINTS_PER_SESSION`), all for the approved file. An approved screen that never got its `open` frame (reload, dropped socket) asks for the protocol link again, which also counts.
+- **A PDF file** is its own view: its first link is a `pdf` link, the screen opens it in a window (an Open click if the popup blocker refuses), and it shows the PDF-fallback text. That text says PowerPoint can't open it, which is wrong for a file that was a PDF to begin with; the design needs a string for it.
+- **PDF CSP:** the PDF view's response has its own policy, `default-src 'none'; object-src 'self'; frame-ancestors 'none'`, with `Content-Disposition: inline`. The page cannot frame it (the screen's CSP has no `frame-src`), so it is a top-level window, which the screen's CSP does not restrict. `sandbox` is left out because Chromium does not render a PDF in a sandboxed document. `object-src 'self'` is the one allowance, because Chromium's viewer is an embedded plugin and the `default-src 'none'` fallback may block it. Both points are unverified until field check F-PDF; if the plain `default-src 'none'` renders, drop the allowance.
+- **"Open" is measured server-side:** the first accepted fetch of any link moves the session to `open` and records `scan_to_open_ms`.
+- **Residue on the page:** at `ended` and `closed` the screen drops its links and timers, closes the PDF window it opened, empties `sessionStorage` of `bloop.*` keys and rewrites the address bar. The screen's own End response also carries `Clear-Site-Data: "storage"`, which works even if the page script was tampered with. The page re-stores its credential when the screen waits again, so a reload resumes the screen.
 
 ## Consequences
 - In redirect mode, the Graph URL reaches PowerPoint and may outlive the session for up to an hour (threat model OPEN-03). `/it` says so.
 - Stream mode closes that gap. Its costs: bloop carries the bytes (no egress fee; streaming uses little CPU), and the "bloop keeps no copy" wording must change to "passes through, not stored".
 - If T3 shows PowerPoint does not follow the redirect, flip `OPEN_PATH_MODE` to `stream`. No other module changes.
+- Cloudflare's own request log (`wrangler tail`, Workers Logs if enabled) records the `/f/` URL, so a token sits in the platform's logs. It is dead once the session ends, which is what makes that tolerable; the Worker's own log lines (`open.fetch`: method, client class, query, Range, status) carry no token, IP or raw User-Agent.
+- The mock source has no URL, so on a local run both modes stream; the redirect branch is covered by unit tests with a fake source and is first exercised end to end against Graph.
 
 ## Revisit when
 - T3 or T20 report a result.
+- F-PDF reports whether the PDF view renders, and under which CSP.
 - Microsoft documents a supported open-from-URL path with revocation.

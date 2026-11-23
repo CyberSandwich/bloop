@@ -16,6 +16,10 @@ export interface AuditEvent {
     reason?: string;
     bytes?: number;
     ipMatch?: boolean;
+    /** A /f/ request: its HTTP method, the class of client (never the raw User-Agent) and the fetch count. */
+    method?: string;
+    client?: "office" | "browser" | "other";
+    count?: number;
   };
 }
 export interface AuditRow extends AuditEvent {
