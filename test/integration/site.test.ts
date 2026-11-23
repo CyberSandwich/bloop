@@ -11,8 +11,6 @@ afterAll(() => wrangler?.stop());
 // Written out in full, not derived from headers.ts, so a drifting policy fails here.
 const LANDING_CSP =
   "default-src 'none'; script-src 'self'; style-src 'self'; img-src 'self'; font-src 'self'; connect-src 'self'; manifest-src 'self'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'; require-trusted-types-for 'script'; trusted-types 'none'; upgrade-insecure-requests";
-const MINIMAL_CSP =
-  "default-src 'none'; script-src 'self'; style-src 'self'; img-src 'self'; font-src 'self'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'; require-trusted-types-for 'script'; trusted-types 'none'; upgrade-insecure-requests";
 
 function expectBase(res: Response) {
   for (const [name, value] of Object.entries(BASE_HEADERS)) expect(res.headers.get(name), name).toBe(value);
@@ -20,11 +18,11 @@ function expectBase(res: Response) {
 
 describe.each([
   ["/", 200, LANDING_CSP, "<title>bloop: your slides on any screen</title>", /text\/html/],
-  ["/it", 200, MINIMAL_CSP, "<title>bloop for IT and AV</title>", /text\/html/],
-  ["/privacy", 200, MINIMAL_CSP, "<title>bloop privacy notice</title>", /text\/html/],
-  ["/.well-known/security.txt", 200, MINIMAL_CSP, "Contact: mailto:", /text\/plain/],
-  ["/no-such-page", 404, MINIMAL_CSP, "This page isn't here.", /text\/html/],
-  ["/it/deeper/still", 404, MINIMAL_CSP, "Go to the Home Page", /text\/html/],
+  ["/it", 200, LANDING_CSP, "<title>bloop for IT and AV</title>", /text\/html/],
+  ["/privacy", 200, LANDING_CSP, "<title>bloop privacy notice</title>", /text\/html/],
+  ["/.well-known/security.txt", 200, LANDING_CSP, "Contact: mailto:", /text\/plain/],
+  ["/no-such-page", 404, LANDING_CSP, "This page isn't here.", /text\/html/],
+  ["/it/deeper/still", 404, LANDING_CSP, "Go to the Home Page", /text\/html/],
 ] as const)("%s", (path, status, csp, marker, type) => {
   it(`is ${status} with its policy and the base headers`, async () => {
     const res = await fetch(`${wrangler.url}${path}`);

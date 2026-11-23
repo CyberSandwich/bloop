@@ -37,10 +37,10 @@ const pages: [string, Policy, boolean][] = [
   ["/code", "app", false],
   ["/g", "app", false],
   ["/me", "app", false],
-  ["/it", "minimal", false],
-  ["/privacy", "minimal", false],
-  ["/.well-known/security.txt", "minimal", false],
-  ["/anything-else", "minimal", false],
+  ["/it", "landing", false],
+  ["/privacy", "landing", false],
+  ["/.well-known/security.txt", "landing", false],
+  ["/anything-else", "landing", false],
 ];
 
 describe("public/_headers matches headers.ts", () => {
@@ -54,7 +54,7 @@ describe("public/_headers matches headers.ts", () => {
 
 describe("headers.ts", () => {
   it("every policy carries the base headers", () => {
-    for (const policy of ["landing", "app", "minimal", "api", "file-pptx", "file-pdf"] as const) {
+    for (const policy of ["landing", "app", "api", "file-pptx", "file-pdf"] as const) {
       expect(headersFor(policy)).toMatchObject(BASE_HEADERS);
     }
   });

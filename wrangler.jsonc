@@ -5,6 +5,9 @@
   // The demo account's sample decks are bundled as raw bytes (src/worker/seams/file-source/demo.ts).
   "rules": [{ "type": "Data", "globs": ["**/*.pptx", "**/*.pdf"], "fallthrough": true }],
   "compatibility_date": "2026-11-22",
+  // The one public address is PUBLIC_ORIGIN; per-version preview URLs would be more, outside it.
+  "workers_dev": true,
+  "preview_urls": false,
   "assets": {
     "directory": "./public",
     "binding": "ASSETS",
