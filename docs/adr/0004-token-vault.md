@@ -1,6 +1,6 @@
 # ADR 0004: token vault and key rotation
 
-Status: proposed. It implements ADR 0001's token-protection row.
+Status: proposed, implemented (`src/worker/auth/`). It implements ADR 0001's token-protection row.
 
 ## Context
 With `offline_access`, bloop holds a Microsoft refresh token per user that can read the whole OneDrive (`Files.Read`). This is the first DPIA item: one breach exposes every connected drive. Microsoft rotates refresh tokens on every use, keeps them 90 days by default, and binds a confidential client's tokens to that client's credential.
@@ -30,3 +30,13 @@ With `offline_access`, bloop holds a Microsoft refresh token per user that can r
 - A leak of D1 alone yields ciphertext. A leak of D1 plus the KEK still needs the client secret to redeem tokens. A compromise of the whole Cloudflare account, or a malicious deploy, defeats all three: an external KMS or HSM is the only upgrade that defends that, at a cost ADR 0001 rejects for the MVP.
 - In `session` mode the DPIA item mostly disappears. The cost is a redirect at each start and the "sign in once" promise.
 - The claim "a stolen refresh token is useless without the client secret" must be verified on the demo tenant (F-ENTRA).
+
+## Implementation notes
+- **Issuer check:** `ENTRA_AUTHORITY` is `organizations` (or `common`, `consumers`), so there is no single issuer to compare with. The token's own `tid` (read without trusting it, and required to be a GUID) selects the expected issuer `https://login.microsoftonline.com/{tid}/v2.0`, and oauth4webapi then checks `iss`, `aud`, `exp` and the nonce against it; `iss` must equal that value again after parsing. A fixed-tenant authority accepts only its own tenant. oauth4webapi does not verify the ID token signature (the token came straight from the token endpoint over TLS, as OIDC allows). The RFC 9207 `iss` response parameter is dropped before `validateAuthResponse`, because a multi-tenant authority has no fixed issuer to compare it with.
+- **Client authentication:** `client_secret_post` through `oauth.ClientSecretPost`; Entra accepts it for a confidential client.
+- **Cached access token:** sealed with the refresh token under the same data key; stored for `min(expires_in, 1 h)`; one within 60 s of expiry is refreshed. Every write (sign-in, refresh) bumps `version` and re-seals both fields, because the AAD names the version.
+- **Compare-and-swap:** the loser re-reads the row and serves the winner's cached token; both callers may have called the token endpoint. A transient failure keeps the grant; `invalid_grant` deletes it and the user signs in again.
+- **Idle clock:** `token_grant.updated_at` is the last use. A cache hit rewrites it at most once a day, a refresh rewrites it always, and `deleteIdle(GRANT_IDLE_DAYS)` compares against it.
+- **KEK rotation:** a use re-wraps the data key under `TOKEN_KEK_CURRENT` (guarded by the old `kid`, so races are harmless), and `authMaintenance()` in `auth/services.ts` re-wraps up to 200 more and reports how many are still stale. The daily cron (module g) calls it; it also deletes idle grants and expired phone sessions, and works without Graph configured (it can delete, not open).
+- **`TOKEN_MODE=session`:** `offline_access` is dropped from the authorize request, `rt_ct` and `rt_iv` are NULL, and an expired access token means `auth_required` (the phone goes through Entra again).
+- **Sessions:** a random 256-bit cookie value, only its SHA-256 stored in `phone_session` (30 days idle, 90 absolute), a new value on every sign-in with the presented one deleted. Disconnect deletes the grant and every session of the user. Entra's consent stays (AUTH-07).

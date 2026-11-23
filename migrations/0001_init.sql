@@ -23,11 +23,11 @@ CREATE TABLE token_grant (                 -- deleted on disconnect, erase, or G
   user_id TEXT PRIMARY KEY REFERENCES app_user(id) ON DELETE CASCADE,
   kid TEXT NOT NULL,                     -- KEK that wraps dek
   dek_wrapped BLOB NOT NULL,             -- AES-KW of the per-user data key
-  rt_ct BLOB NOT NULL, rt_iv BLOB NOT NULL,        -- refresh token, AES-256-GCM, AAD = user_id|version
+  rt_ct BLOB, rt_iv BLOB,                          -- refresh token (NULL in TOKEN_MODE=session), AES-256-GCM, AAD = user_id|version|rt
   at_ct BLOB, at_iv BLOB, at_exp INTEGER,          -- cached access token, at most 1 h
-  scope TEXT NOT NULL, folder_id TEXT,
+  scope TEXT NOT NULL, folder_id TEXT,   -- folder_id: the only folder listed (NULL: the drive root)
   version INTEGER NOT NULL,              -- compare-and-swap on refresh
-  updated_at INTEGER NOT NULL);
+  updated_at INTEGER NOT NULL);          -- last use, the GRANT_IDLE_DAYS clock
 
 CREATE TABLE phone_session (             -- 30 days idle, 90 days absolute
   id_hash TEXT PRIMARY KEY, user_id TEXT NOT NULL REFERENCES app_user(id) ON DELETE CASCADE,

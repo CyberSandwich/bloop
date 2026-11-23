@@ -1,0 +1,60 @@
+// A D1-shaped wrapper over node:sqlite that applies the real migrations. Every call yields once, so
+// concurrent async code interleaves the way requests do against D1.
+import { readdirSync, readFileSync } from "node:fs";
+import { join } from "node:path";
+import { DatabaseSync, type SQLInputValue } from "node:sqlite";
+import { fileURLToPath } from "node:url";
+import type { Db, Statement } from "../../src/worker/auth/db.ts";
+
+const migrations = fileURLToPath(new URL("../../migrations", import.meta.url));
+
+const toSql = (v: unknown): SQLInputValue => (v instanceof ArrayBuffer ? new Uint8Array(v) : (v as SQLInputValue));
+
+class Prepared implements Statement {
+  private values: SQLInputValue[] = [];
+  constructor(
+    private readonly db: DatabaseSync,
+    private readonly sql: string,
+  ) {}
+
+  bind(...values: unknown[]): Statement {
+    this.values = values.map(toSql);
+    return this;
+  }
+  async first<T>(): Promise<T | null> {
+    await Promise.resolve();
+    return (this.db.prepare(this.sql).get(...this.values) as T | undefined) ?? null;
+  }
+  async run() {
+    await Promise.resolve();
+    const info = this.db.prepare(this.sql).run(...this.values);
+    return { meta: { changes: Number(info.changes) } };
+  }
+  async all<T>() {
+    await Promise.resolve();
+    return { results: this.db.prepare(this.sql).all(...this.values) as T[] };
+  }
+}
+
+export interface TestDb extends Db {
+  /** Direct access for assertions and for tampering with stored rows. */
+  raw: DatabaseSync;
+}
+
+export function testDb(): TestDb {
+  const raw = new DatabaseSync(":memory:");
+  raw.exec("PRAGMA foreign_keys = ON");
+  for (const file of readdirSync(migrations)
+    .filter((f) => f.endsWith(".sql"))
+    .sort()) {
+    raw.exec(readFileSync(join(migrations, file), "utf8"));
+  }
+  return { raw, prepare: (sql) => new Prepared(raw, sql) };
+}
+
+/** An app_user row, which token_grant and phone_session reference. */
+export function addUser(db: TestDb, id: string, tid = "tenant-a", oid = id): void {
+  db.raw
+    .prepare("INSERT INTO app_user (id, tid, oid, email, created_at, last_seen_at) VALUES (?, ?, ?, NULL, 0, 0)")
+    .run(id, tid, oid);
+}

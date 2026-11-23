@@ -1,6 +1,7 @@
 // Zod-parsed Worker configuration. Fails closed: a bad value returns an error instead of a default.
 // Covers the pairing variables so far; later modules add theirs to the schema.
 import { z } from "zod";
+import type { Keks } from "./auth/vault.ts";
 import type { MachineConfig } from "./machine.ts";
 
 const int = (min: number, max: number) => z.coerce.number().int().min(min).max(max);
@@ -9,10 +10,35 @@ const LOCAL_HOSTS = new Set(["localhost", "127.0.0.1", "[::1]"]);
 /** True for an origin on this machine. Test timing and the missing local jurisdiction hang off it. */
 export const isLocalOrigin = (origin: string): boolean => LOCAL_HOSTS.has(new URL(origin).hostname);
 
+/** 32 random bytes as standard base64. */
+const key32 = z.string().refine((s) => /^[A-Za-z0-9+/]{43}=$/.test(s), "base64 of 32 bytes");
+/** TOKEN_KEKS: a JSON object of kid to key. */
+const keks = z.string().transform((text, ctx) => {
+  try {
+    return z.record(z.string().min(1), key32).parse(JSON.parse(text));
+  } catch {
+    ctx.addIssue({ code: "custom", message: 'JSON like {"k1":"<base64 of 32 bytes>"}' });
+    return z.NEVER;
+  }
+});
+/** An unset and an empty value both mean "absent": wrangler.jsonc ships empty strings for the owner to fill. */
+const optional = <T extends z.ZodType>(type: T) => z.preprocess((v) => (v === "" ? undefined : v), type.optional());
+
 const schema = z
   .object({
     PUBLIC_ORIGIN: z.url(),
     HASH_PEPPER: z.string().min(32),
+    FILE_SOURCE: z.enum(["mock", "graph"]).default("mock"),
+    TOKEN_MODE: z.enum(["refresh", "session"]).default("refresh"),
+    GRANT_IDLE_DAYS: int(1, 90).default(30),
+    GRAPH_DOWNLOAD_HOSTS: z.string().default("*.sharepoint.com,*.files.1drv.com,my.microsoftpersonalcontent.com"),
+    ENTRA_AUTHORITY: z.url().default("https://login.microsoftonline.com/organizations/v2.0"),
+    ENTRA_CLIENT_ID: optional(z.string().min(1)),
+    ENTRA_CLIENT_SECRET: optional(z.string().min(1)),
+    ENTRA_SCOPES: z.string().default("openid offline_access Files.Read"),
+    TOKEN_KEK_CURRENT: z.string().default("k1"),
+    TOKEN_KEKS: optional(keks),
+    COOKIE_KEY: optional(key32),
     CODE_LENGTH: int(6, 7),
     CODE_TTL_SECONDS: z.coerce.number().min(1),
     CODE_GRACE_SECONDS: z.coerce.number().min(0),
@@ -28,6 +54,18 @@ const schema = z
   .superRefine((v, ctx) => {
     const issue = (path: string, message: string) => ctx.addIssue({ code: "custom", path: [path], message });
     const test = v.TEST_TIMING === "1";
+    if (v.FILE_SOURCE === "graph") {
+      // Fails closed: the Graph source never runs on a partial configuration.
+      if (!v.ENTRA_CLIENT_ID) issue("ENTRA_CLIENT_ID", "required when FILE_SOURCE=graph");
+      if (!v.ENTRA_CLIENT_SECRET) issue("ENTRA_CLIENT_SECRET", "required when FILE_SOURCE=graph");
+      if (!v.COOKIE_KEY) issue("COOKIE_KEY", "required when FILE_SOURCE=graph");
+      if (!v.TOKEN_KEKS?.[v.TOKEN_KEK_CURRENT])
+        issue("TOKEN_KEKS", "must hold TOKEN_KEK_CURRENT when FILE_SOURCE=graph");
+      if (!v.ENTRA_AUTHORITY.startsWith("https://") && !isLocalOrigin(v.PUBLIC_ORIGIN)) {
+        issue("ENTRA_AUTHORITY", "must be https");
+      }
+      if (!v.ENTRA_SCOPES.split(/\s+/).includes("openid")) issue("ENTRA_SCOPES", "must include openid");
+    }
     if (test && !isLocalOrigin(v.PUBLIC_ORIGIN)) {
       return issue("TEST_TIMING", "refused: PUBLIC_ORIGIN is not a local address");
     }
@@ -41,9 +79,25 @@ const schema = z
     }
   });
 
+/** Present only when FILE_SOURCE=graph: the Entra app, the vault keys and the cookie key. */
+export interface GraphConfig {
+  authority: string;
+  clientId: string;
+  clientSecret: string;
+  /** ENTRA_SCOPES as configured; `offline_access` is dropped at sign-in in session mode. */
+  scopes: string[];
+  keks: Keks;
+  cookieKey: string;
+}
+
 export interface Config {
   origin: string;
   hashPepper: string;
+  fileSource: "mock" | "graph";
+  tokenMode: "refresh" | "session";
+  grantIdleDays: number;
+  downloadHosts: string[];
+  graph: GraphConfig | null;
   codeLength: number;
   uploadTimeoutSeconds: number;
   sessionMaxMinutes: number;
@@ -73,6 +127,23 @@ export function parseConfig(env: Record<string, unknown>): ConfigResult {
     config: {
       origin: new URL(v.PUBLIC_ORIGIN).origin,
       hashPepper: v.HASH_PEPPER,
+      fileSource: v.FILE_SOURCE,
+      tokenMode: v.TOKEN_MODE,
+      grantIdleDays: v.GRANT_IDLE_DAYS,
+      downloadHosts: v.GRAPH_DOWNLOAD_HOSTS.split(",")
+        .map((h) => h.trim())
+        .filter(Boolean),
+      graph:
+        v.FILE_SOURCE === "graph" && v.ENTRA_CLIENT_ID && v.ENTRA_CLIENT_SECRET && v.TOKEN_KEKS && v.COOKIE_KEY
+          ? {
+              authority: v.ENTRA_AUTHORITY,
+              clientId: v.ENTRA_CLIENT_ID,
+              clientSecret: v.ENTRA_CLIENT_SECRET,
+              scopes: v.ENTRA_SCOPES.split(/\s+/).filter(Boolean),
+              keks: { keys: v.TOKEN_KEKS, current: v.TOKEN_KEK_CURRENT },
+              cookieKey: v.COOKIE_KEY,
+            }
+          : null,
       codeLength: v.CODE_LENGTH,
       uploadTimeoutSeconds: v.UPLOAD_TIMEOUT_SECONDS,
       sessionMaxMinutes: v.SESSION_MAX_MINUTES,

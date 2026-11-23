@@ -13,7 +13,7 @@ export function base64url(bytes: Uint8Array): string {
     .replaceAll("=", "");
 }
 
-export const randomBytes = (n: number): Uint8Array => crypto.getRandomValues(new Uint8Array(n));
+export const randomBytes = (n: number): Uint8Array<ArrayBuffer> => crypto.getRandomValues(new Uint8Array(n));
 
 /** Uniform integer in [0, max) for max <= 256, by rejection sampling: `byte % max` alone is biased. */
 export function randomInt(max: number): number {
