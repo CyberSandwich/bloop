@@ -259,6 +259,7 @@ public/                    wrangler's assets directory, served as it is. Everyth
 src/robin.glb src/fonts/InterVariable.woff2   sources of the robin mesh and the font subset, never served
 tools/
   make-fixtures.mjs        writes the sample decks the mock file source serves
+  change-tier.mjs          classifies the staged diff (T0 to T2) and enforces the commit-msg blocks
   pack.py render-stills.py robin-poses.json   GLB to robin.bin; the stills, drawn by a plain-Python rasterizer with the live camera and poses
   render-og.py og.svg      the social image and its SVG source
   subset-font.py           Inter to the Latin subset, wght 400 to 600, opsz kept
@@ -460,7 +461,7 @@ The Worker's variables are listed once, in `src/worker/config.ts`: the Zod schem
 
 `TEST_TIMING=1` is test-only and never set in a deployment (`config.ts` refuses it unless `PUBLIC_ORIGIN` is a local address). The integration tests set it through `startPairing()` in `test/integration/pairing-client.ts`, with short timings such as `CODE_TTL_SECONDS=2` and `SESSION_MAX_MINUTES=0.05`.
 
-Deploy-only values (`CLOUDFLARE_ACCOUNT_ID`, `CLOUDFLARE_API_TOKEN`, `BLOOP_PREVIEW_URL`) are GitHub environment secrets read by `.github/workflows/deploy.yml`, never by the Worker; there is no `.env` file. Token scopes: `docs/setup.md`.
+Deploy-only values (`CLOUDFLARE_ACCOUNT_ID`, `CLOUDFLARE_API_TOKEN`) are GitHub environment secrets read by `.github/workflows/deploy.yml`, never by the Worker; there is no `.env` file. `BLOOP_PREVIEW_URL`, for the post-deploy header grade, is not wired yet: `deploy.yml` does not read it. Token scopes: `docs/setup.md`.
 Bindings in `wrangler.jsonc` (not env vars): `ASSETS`, `SCREEN` and `DIRECTORY` (Durable Objects, SQLite classes), `DB` (D1, `eu`), `GUEST_FILES` (R2, `jurisdiction: "eu"`), `RL_CREATE`, `RL_CLAIM`, `RL_FETCH`, `RL_UPLOAD`, `RL_AUTH`, `RL_EXPORT`, `RL_FILES` (rate limits), and two crons (`0 * * * *` hourly backstop, `30 3 * * *` daily retention). The D1 database id in `wrangler.jsonc` is not a secret.
 
 ## 10. Security headers
@@ -514,7 +515,7 @@ Logging: Worker logs record the route pattern, status, `ErrorCode` and duration.
 
 ## 12. Deploy (gated on secrets)
 
-CI (`.github/workflows/ci.yml`) runs on every push and pull request, and weekly (Mondays 06:00 UTC, on the default branch) to catch drift in dependencies and the platform, with two jobs. `check` runs `npm ci` and `npm run check`. `browser` installs Chromium, runs `npm run test:e2e` (Playwright and axe against `npm run dev`), then `lhci autorun` with the budgets in `lighthouserc.json` (accessibility 1.0, LCP 2500 ms, CLS 0.1).
+CI (`.github/workflows/ci.yml`) runs on every push and pull request, and weekly (Mondays 06:00 UTC, on the default branch) to catch drift in the runner image, the platform and upstream services such as the Cloudflare and Microsoft endpoints; the lockfile pins dependencies, and `npm outdated` belongs to the monthly review. It has two jobs. `check` runs `npm ci` and `npm run check`. `browser` installs Chromium, runs `npm run test:e2e` (Playwright and axe against `npm run dev`), then `lhci autorun` with the budgets in `lighthouserc.json` (accessibility 1.0, LCP 2500 ms, CLS 0.1).
 
 `.github/workflows/deploy.yml` runs on `main`, in the GitHub environment `production` (which requires a reviewer). Secrets cannot be tested in a job-level `if`, so the token is copied into the job `env` and every step gates on `env.CLOUDFLARE_API_TOKEN != ''`; without the secret the job succeeds and only prints a skip notice. With it: `npm ci`, `npm run check`, `wrangler d1 migrations apply DB --remote`, `wrangler deploy`. The post-deploy header grade (`@mdn/mdn-http-observatory "$BLOOP_PREVIEW_URL"`) is not wired yet.
 One-time owner steps (they need the owner's accounts): create the account, the D1 database with `--jurisdiction=eu`, and the R2 bucket with jurisdiction `eu` plus a 1-day lifecycle rule; set the secrets with `wrangler secret put`; register the Entra app (redirect URI `https://<host>/auth/callback`, confidential client, delegated `Files.Read`, `offline_access`, `openid`); set DNS. Until then everything runs locally, with `FILE_SOURCE=mock`.
