@@ -1,4 +1,6 @@
 // Bindings and vars as wrangler.jsonc declares them. Parsing and validation of vars is config.ts's job.
+// The Durable Object namespaces stay untyped here so Node-side tests can import types from modules
+// that depend on Env; stubs.ts types them.
 export interface Env {
   ASSETS: Fetcher;
   SCREEN: DurableObjectNamespace;

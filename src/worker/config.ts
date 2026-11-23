@@ -6,6 +6,9 @@ import type { MachineConfig } from "./machine.ts";
 const int = (min: number, max: number) => z.coerce.number().int().min(min).max(max);
 const LOCAL_HOSTS = new Set(["localhost", "127.0.0.1", "[::1]"]);
 
+/** True for an origin on this machine. Test timing and the missing local jurisdiction hang off it. */
+export const isLocalOrigin = (origin: string): boolean => LOCAL_HOSTS.has(new URL(origin).hostname);
+
 const schema = z
   .object({
     PUBLIC_ORIGIN: z.url(),
@@ -25,7 +28,7 @@ const schema = z
   .superRefine((v, ctx) => {
     const issue = (path: string, message: string) => ctx.addIssue({ code: "custom", path: [path], message });
     const test = v.TEST_TIMING === "1";
-    if (test && !LOCAL_HOSTS.has(new URL(v.PUBLIC_ORIGIN).hostname)) {
+    if (test && !isLocalOrigin(v.PUBLIC_ORIGIN)) {
       return issue("TEST_TIMING", "refused: PUBLIC_ORIGIN is not a local address");
     }
     if (test) return;
