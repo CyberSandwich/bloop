@@ -34,7 +34,8 @@
     { "name": "RL_AUTH", "namespace_id": "1005", "simple": { "limit": 10, "period": 60 } },
     { "name": "RL_EXPORT", "namespace_id": "1006", "simple": { "limit": 10, "period": 60 } },
     { "name": "RL_DEMO_CREATE", "namespace_id": "1007", "simple": { "limit": 4, "period": 60 } },
-    { "name": "RL_DEMO_CLAIM", "namespace_id": "1008", "simple": { "limit": 8, "period": 60 } }
+    { "name": "RL_DEMO_CLAIM", "namespace_id": "1008", "simple": { "limit": 8, "period": 60 } },
+    { "name": "RL_FILES", "namespace_id": "1009", "simple": { "limit": 20, "period": 60 } }
   ],
   "triggers": { "crons": ["0 * * * *", "30 3 * * *"] },
   "vars": {

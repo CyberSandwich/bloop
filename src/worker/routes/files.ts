@@ -6,7 +6,7 @@ import type { Env } from "../env.ts";
 import { fail, json } from "../http.ts";
 import { type Route, route } from "../router.ts";
 import { type Access, accessFor, LIST_LIMIT, resolveListed } from "../source-access.ts";
-import { respond, screenFor, withConfig, write } from "./common.ts";
+import { limited, respond, screenFor, withConfig, write } from "./common.ts";
 
 const approveBody = z.object({ fileId: z.string().min(1).max(256) }).strict();
 
@@ -40,6 +40,9 @@ export const fileRoutes: readonly Route[] = [
     withConfig(async (request, env, config) => {
       const phone = await phoneAccess(request, env, config);
       if (!phone.ok) return phone.response;
+      // Each listing is a Graph call: limited per session, after the credential check so a stranger cannot spend it.
+      const tooMany = await limited(env.RL_FILES, request, config, phone.screen.ref);
+      if (tooMany) return tooMany;
       const listed = await phone.access.source.listRecent(phone.access.ctx, LIST_LIMIT);
       if (!listed.ok) return fail(listed.error);
       // The Screen object keeps the ids it was shown: approve in a live session accepts only those.

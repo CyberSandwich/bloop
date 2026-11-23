@@ -91,6 +91,33 @@ describe("PAIR-09 flood: the platform rate limit binding", () => {
   });
 });
 
+describe("PAIR-09 flood: the file listing is limited per session", () => {
+  /** A paired demo phone, built from its own IPs so the create and claim bindings are not shared. */
+  async function phone(n: number): Promise<string> {
+    const created = await api.post<{ sid: string }>(
+      "/api/screens",
+      { mode: "demo" },
+      { headers: { "CF-Connecting-IP": `203.0.113.${n}` } },
+    );
+    const code = (await api.get<{ code: { code: string } }>("/api/screen/state", created.body.sid)).body.code.code;
+    const claimed = await api.post<{ pid: string }>(
+      "/api/claim",
+      { code },
+      { headers: { "CF-Connecting-IP": `203.0.113.${n + 1}` } },
+    );
+    return claimed.body.pid;
+  }
+
+  it("PAIR-09 flood: /api/files answers 429 past the per-session limit, and another session is unaffected", async () => {
+    const pid = await phone(100);
+    const statuses: number[] = [];
+    for (let i = 0; i < 25; i++) statuses.push((await api.get("/api/files", pid)).status);
+    expect(statuses.filter((s) => s === 200).length).toBeLessThanOrEqual(20);
+    expect(statuses).toContain(429);
+    expect((await api.get("/api/files", await phone(110))).status).toBe(200);
+  });
+});
+
 describe("config fails closed", () => {
   it("answers 500 internal on every pairing route when a timing is below the production floor", async () => {
     const bad = await startWrangler({ HASH_PEPPER: PEPPER, CODE_TTL_SECONDS: "2" });

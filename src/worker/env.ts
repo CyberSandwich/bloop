@@ -15,5 +15,6 @@ export interface Env {
   RL_EXPORT: RateLimit;
   RL_DEMO_CREATE: RateLimit;
   RL_DEMO_CLAIM: RateLimit;
+  RL_FILES: RateLimit;
   PUBLIC_ORIGIN: string;
 }

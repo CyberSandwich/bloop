@@ -30,15 +30,18 @@ export const respond = <T>(result: Result<T>, status = 200): Response =>
 export const ipHash = (request: Request, config: Config): Promise<string> =>
   hmacHex(config.hashPepper, request.headers.get("CF-Connecting-IP") ?? "local");
 
-/** Coarse platform limit per pseudonymous IP. Skipped when the binding is absent or under TEST_TIMING. */
+/**
+ * Coarse platform limit, per pseudonymous IP unless the caller names another key (a session ref).
+ * Skipped when the binding is absent or under TEST_TIMING.
+ */
 export async function limited(
   binding: RateLimit | undefined,
   request: Request,
   config: Config,
+  key?: string,
 ): Promise<Response | null> {
   if (config.testTiming || typeof binding?.limit !== "function") return null;
-  const key = await ipHash(request, config);
-  return (await binding.limit({ key })).success ? null : fail("rate_limited");
+  return (await binding.limit({ key: key ?? (await ipHash(request, config)) })).success ? null : fail("rate_limited");
 }
 
 /** A write route: checks, then the JSON body. */
@@ -51,11 +54,11 @@ export async function write<T>(
   return refused ? { ok: false, response: refused } : readJson(request, schema);
 }
 
-/** The Screen object a Bearer credential names, with the credential; null when it is not well formed. */
+/** The Screen object a Bearer credential names, with the credential and its ref; null when it is not well formed. */
 export function screenFor(request: Request, env: Env) {
   const value = bearer(request);
   const cred = value ? parseCredential(value) : null;
-  return value && cred ? { stub: screenStub(env, cred.ref), credential: value } : null;
+  return value && cred ? { stub: screenStub(env, cred.ref), credential: value, ref: cred.ref } : null;
 }
 
 /** Runs `call` against the Screen object a credential names, or answers 401. */

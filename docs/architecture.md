@@ -320,6 +320,7 @@ Every state-changing route checks four things: `Origin` equals `PUBLIC_ORIGIN`; 
 | `/f/`                   | 60 per 60 s per IP; per link: 10 fetches                                             | binding; exact      |
 | `PUT /api/drop`         | 5 per 60 s per IP (every attempt past the Origin and credential checks counts); one accepted file per session; live bytes under `GUEST_STORAGE_BUDGET_BYTES` | binding; exact; D1  |
 | `/auth/start`           | 10 per 60 s per IP                                                                   | binding             |
+| `GET /api/files`        | 20 per 60 s per session (`RL_FILES`, keyed by the screen ref), after the credential check: each call is a Graph call | binding |
 | `/api/it/export`        | 10 per 60 s per IP, checked before the token (a per-token key would not slow guessing) | binding             |
 | demo screen creation    | 4 per 60 s per IP (`RL_DEMO_CREATE`), instead of the live limit                      | binding             |
 | demo claims             | 8 per 60 s per IP (`RL_DEMO_CLAIM`), after the lookup says the code is a demo one; the live claim limit applies first | binding |
@@ -510,7 +511,7 @@ CLOUDFLARE_ACCOUNT_ID=
 CLOUDFLARE_API_TOKEN=            # scoped: Workers Scripts edit, D1 edit, R2 edit on this account
 BLOOP_PREVIEW_URL=               # for the post-deploy header scan
 ```
-Bindings in `wrangler.jsonc` (not env vars): `ASSETS`, `SCREEN` and `DIRECTORY` (Durable Objects, SQLite classes), `DB` (D1, `eu`), `GUEST_FILES` (R2, `jurisdiction: "eu"`), `RL_CREATE`, `RL_CLAIM`, `RL_FETCH`, `RL_UPLOAD`, `RL_AUTH`, `RL_EXPORT` (rate limits), and two crons (`0 * * * *` hourly backstop, `30 3 * * *` daily retention). The D1 database id in `wrangler.jsonc` is not a secret.
+Bindings in `wrangler.jsonc` (not env vars): `ASSETS`, `SCREEN` and `DIRECTORY` (Durable Objects, SQLite classes), `DB` (D1, `eu`), `GUEST_FILES` (R2, `jurisdiction: "eu"`), `RL_CREATE`, `RL_CLAIM`, `RL_FETCH`, `RL_UPLOAD`, `RL_AUTH`, `RL_EXPORT`, `RL_FILES` (rate limits), and two crons (`0 * * * *` hourly backstop, `30 3 * * *` daily retention). The D1 database id in `wrangler.jsonc` is not a secret.
 
 ## 10. Security headers
 
