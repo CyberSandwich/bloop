@@ -59,6 +59,12 @@ export function splitName(name) {
   return name.length > keep + 6 ? [name.slice(0, -keep), name.slice(-keep)] : [name, ""];
 }
 
+/** A file size as "79 KB" or "2.5 MB" (1024 steps, as the drop cap counts). @param {number} bytes */
+export function sizeLabel(bytes) {
+  const kb = bytes / 1024;
+  return kb < 1024 ? `${Math.max(1, Math.round(kb))} KB` : `${(kb / 1024).toFixed(1)} MB`;
+}
+
 /** Spoken form for the QR label: "K 7 M, Q 9 X". @param {string} code */
 export function spelled(code) {
   const chars = [...code];

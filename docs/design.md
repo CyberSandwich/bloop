@@ -348,16 +348,19 @@ Send Me the Link calls `navigator.share({title, text, url})`; without it, it cop
 - No nav pill (a kiosk page); wordmark top left at 32 inset; status chip top right.
 - Left: the QR panel (card treatment, quiet zone inside) at 50 percent of the viewport height, with the robin's 160 px poster perched on its top edge (poster only, CSS hop on scan). Right, 64 px away, vertically centered: heading 48, line 28/34 400, the refresh capsule (a 48 x 8 pill whose `--acc-ink` fill grows linearly over the code's 60 s, `aria-hidden`, no seconds counter), then "Can't scan? On your phone, go to {host}/code and enter" with the typed code at 34 px 600.
 - Footer line in every state: "Phone not with you? Sign in to this PC as usual." 17 px `--t2`.
-- 834: stacked, QR first. Under 600: no QR; "Open this on the room's screen." (32) / "Then scan its code with your phone." (lead 19) / Enter a Code; no status chip and no footer.
+- 834: stacked, QR first. Under 600: no QR; "Open this on the room's screen." (32) / "Then scan its code with your phone." (lead 19) / Enter a Code; no status chip and no footer. A demo screen (`/s?mode=demo`) runs under 600 too, with no QR: the visitor approves on the same device.
 
 | State | Heading | Line | Controls |
 |---|---|---|---|
 | waiting | Room 2.14 (or "Unregistered screen") `[V-7]` | Scan with your phone camera to present your slides. | none |
+| waiting, demo | Demo room | Scan with your phone camera, or approve on this device. | Approve on This Device (secondary, a same-tab link to `/a?c=` the code) |
 | scanned | Check your phone. | It should show 42. (QR at .12, match code 120 px over it, chip Scanned) | none |
 | choosing | Check your phone. | Choose a file, then tap Approve. | none |
-| approved | Approved. | Opening Lecture 4.pptx. (64 px check for 400 ms) | none |
-| opening | Opening Lecture 4.pptx | in PowerPoint on this PC. | Download It Instead (text, after 5 s); Open (primary) only when the launch had no user gesture or a popup was blocked |
-| open | Lecture 4.pptx is open in PowerPoint. | Ends by itself at 11:35. `[V-2]` | End (secondary), Download It Instead |
+| approved | Approved. | Opening Lecture 4.pptx. (64 px check for 400 ms) | End (secondary) |
+| opening | Opening Lecture 4.pptx | in PowerPoint on this PC. | End (secondary); Download It Instead (text, after 5 s); Open (primary) only when the launch had no user gesture or a popup was blocked |
+| open | Lecture 4.pptx is open in PowerPoint. (only after a PowerPoint launch; otherwise "Lecture 4.pptx is open.") | Ends by itself at 11:35. `[V-2]` | End (secondary), Download It Instead |
+| demo result, sample deck (approved to open) | Sample deck.pptx | On a room PC this opens in PowerPoint. | the slides in the page (click or arrow keys, Full Screen), End |
+| demo result, guest file | Your file reached the screen. | On a room PC it opens in PowerPoint. (a PDF: "On a room PC it opens as a PDF.") | a card with the file's name and size, Download, End |
 | open fallback | PowerPoint didn't open. | Download the file, then open it from Downloads. | Download, Show as PDF Instead (text), End |
 | PDF fallback | Showing Lecture 4.pptx as a PDF. | PowerPoint can't open it on this PC. Animations and videos won't play. | End |
 | PDF file | Lecture 4.pdf | Opened as a PDF. (the file is a PDF, so nothing failed) | End |
@@ -380,7 +383,7 @@ Top to bottom: wordmark 17 px centered; title 28/34 600; room row (Lucide `monit
 | match | Open slides on this screen? | Room 2.14, Lectern PC. Code on the screen: 42. Check it matches the screen. | continues to choose |
 | choose file | Choose your slides. | Your recent slides (file rows) | a tick selects one |
 | approve | Open Lecture 4.pptx on Room 2.14? | Only this file goes to the screen. The screen never gets your account. `[V-4]` | Approve, Cancel |
-| approve, demo | Open the sample deck here? | This is a demo. You don't need an account. | Approve, Cancel |
+| approve, demo | Open Sample deck.pptx here? | This is a demo. You don't need an account. | Approve, Cancel |
 | unregistered screen | as approve, plus one card (Lucide `triangle-alert` 20, sentence in `--t1` 600; no tint, no stripe) | This screen isn't registered. Only approve if you can see it in front of you. `[V-7]` | Approve, Cancel |
 | (any of choose file, approve, unregistered screen, signed in to OneDrive) | as that state | as that state | plus Disconnect OneDrive (text): deletes bloop's stored access and signs this phone out, then shows first use |
 | (any of choose file, approve, approve demo, unregistered screen, first use, empty) | as that state | as that state | plus Send a File Instead (text, before Disconnect OneDrive): the guest path, for a phone with no OneDrive to choose from `[V-10]` |
@@ -391,8 +394,9 @@ Top to bottom: wordmark 17 px centered; title 28/34 600; room row (Lucide `monit
 | needs admin (`/auth/callback` page) | as needs admin | as needs admin | none |
 | empty | No slides found. | Save a .pptx file to OneDrive, then scan again. | Done |
 | approving | | | Approving... (button loading) |
-| opening | Opening on Room 2.14. | Lecture 4.pptx | none |
+| opening | Opening on Room 2.14. | Lecture 4.pptx | End |
 | open | Open on Room 2.14. | Lecture 4.pptx. Ends by itself at 11:35. `[V-2]` | End |
+| (opening, open and guest sent, when this tab is also the demo screen) | as that state | as that state | See It on the Screen (primary, back to `/s?mode=demo`) first; End becomes secondary |
 | open fallback | PowerPoint didn't open on the screen. | Tap Download on the screen to open it there. | End |
 | PDF fallback | Showing as a PDF on Room 2.14. | PowerPoint can't open it there. Animations and videos won't play. | End |
 | PDF file | Opened as a PDF on Room 2.14. | Lecture 4.pdf | End |

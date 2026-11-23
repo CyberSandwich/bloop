@@ -43,12 +43,9 @@ describe("DEMO-01 isolation: the full demo flow, with no account", () => {
     expect(claimed.body.match).toMatch(/^[0-9]{2}$/);
     await socket.stateWhere((v) => v.state === "claimed" && v.match === claimed.body.match);
 
+    // The demo account holds the sample deck alone: the screen has slide images for it and nothing else.
     const files = await api.get<{ files: { id: string; name: string }[] }>("/api/files", claimed.body.pid);
-    expect(files.body.files.map((f) => f.name)).toEqual([
-      "Sample deck.pptx",
-      "Quarterly review.pptx",
-      "Sample handout.pdf",
-    ]);
+    expect(files.body.files.map((f) => f.name)).toEqual(["Sample deck.pptx"]);
 
     const approved = await api.post("/api/approve", { fileId: "demo-deck" }, { auth: claimed.body.pid });
     expect(approved.status).toBe(200);
@@ -74,14 +71,57 @@ describe("DEMO-01 isolation: the full demo flow, with no account", () => {
     socket.close();
   });
 
-  it("DEMO-01 flow: the phone ends a demo too, and an unapproved file id is refused", async () => {
-    const { socket, pid } = await approveDemo(api, "demo-pdf");
-    expect(
-      (await api.post("/api/approve", { fileId: "not-in-the-account" }, { auth: pid })).status,
-    ).toBeGreaterThanOrEqual(400);
+  it("DEMO-01 flow: the phone ends a demo too, and an unlisted file id is refused, the deck's PDF rendition included", async () => {
+    const { socket, pid } = await approveDemo(api);
+    for (const fileId of ["not-in-the-account", "demo-pdf", "demo-review"]) {
+      expect((await api.post("/api/approve", { fileId }, { auth: pid })).status, fileId).toBeGreaterThanOrEqual(400);
+    }
     expect((await api.post("/api/end", {}, { auth: pid })).status).toBe(200);
     await socket.stateWhere((v) => v.state === "ended");
     socket.close();
+  });
+
+  it("DEMO-01 reload: a screen that comes back after Approve reads its result from state, re-asks for the link once, and its own fetch opens it", async () => {
+    const { screen, socket } = await approveDemo(api);
+    socket.close();
+
+    // What /s does on a reload: the stored sid reads the state; no `open` frame is needed to show the result.
+    const back = await api.get<Record<string, unknown>>("/api/screen/state", screen.sid);
+    expect(back.status).toBe(200);
+    expect(back.body).toMatchObject({
+      state: "approved",
+      mode: "demo",
+      kind: "owner",
+      fileName: "Sample deck.pptx",
+      fileType: "pptx",
+    });
+    expect(back.body.fileSize).toBeGreaterThan(0);
+
+    // The page asks for the link it missed and fetches it as PowerPoint would (a HEAD), which marks the file open.
+    const relinked = await api.post<{ links: { protocol: string } }>(
+      "/api/screen/link",
+      { purpose: "protocol" },
+      { auth: screen.sid },
+    );
+    expect(relinked.status).toBe(200);
+    const url = relinked.body.links.protocol.replace("ms-powerpoint:ofv|u|", "");
+    expect((await fetchLink(url, { method: "HEAD" })).status).toBe(200);
+    const open = await api.get<{ state: string; openMode: string | null }>("/api/screen/state", screen.sid);
+    expect(open.body).toMatchObject({ state: "open", openMode: null });
+
+    // A second reload still finds it open, and End from the screen works with no socket at all.
+    expect((await api.get<{ state: string }>("/api/screen/state", screen.sid)).body.state).toBe("open");
+    expect((await api.post<{ state: string }>("/api/screen/end", {}, { auth: screen.sid })).body.state).toBe("ended");
+  });
+
+  it("DEMO-01 isolation: a demo screen's sid resumes only that screen, and a pid cannot read the screen's state", async () => {
+    const mine = await approveDemo(api);
+    const other = await openScreen(api, "demo");
+    const forged = `${other.screen.ref}.${mine.screen.sid.split(".")[1]}`;
+    expect((await api.get("/api/screen/state", forged)).status).toBe(401);
+    expect((await api.get("/api/screen/state", mine.pid)).status).toBe(401);
+    mine.socket.close();
+    other.socket.close();
   });
 
   it("DEMO-04 records: a demo session is stored as mode demo with no user, and its audit rows say so", async () => {

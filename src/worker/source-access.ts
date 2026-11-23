@@ -60,5 +60,14 @@ export async function resolveListed(
   if (!listed.ok) return listed;
   const entry: FileEntry | undefined = listed.files.find((f) => f.id === fileId);
   if (!entry) return { ok: false, error: "file_not_found" };
-  return { ok: true, file: { source: access.source.kind, ref: entry.id, name: entry.name, type: entry.type } };
+  return {
+    ok: true,
+    file: {
+      source: access.source.kind,
+      ref: entry.id,
+      name: entry.name,
+      type: entry.type,
+      ...(entry.size === null ? {} : { size: entry.size }),
+    },
+  };
 }

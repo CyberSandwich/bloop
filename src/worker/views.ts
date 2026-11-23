@@ -1,5 +1,5 @@
 // The two views of a session (docs/interfaces.md section 1), built from the machine. Pure.
-// The screen view carries the chosen file name and nothing else about files (SRC-01).
+// The screen view carries the chosen file's name, type and size and nothing else about files (SRC-01).
 import type { Mode, PhoneView, RoomView, ScreenView, SessionState } from "../shared/protocol.ts";
 import type { Machine, MachineConfig } from "./machine.ts";
 
@@ -53,6 +53,7 @@ export function screenView(meta: Meta, m: Machine, cfg: ViewConfig, now: number)
     match: m.pairing && MATCH_STATES.includes(m.state) ? m.pairing.match : null,
     fileName: m.session?.file.name ?? null,
     fileType: m.session?.file.type ?? null,
+    fileSize: m.session?.file.size ?? null,
     openMode: m.session?.openMode ?? null,
     endsAt: m.session?.endsAt ?? null,
     endReason: m.state === "ended" || m.state === "waiting" ? m.endReason : null,

@@ -42,6 +42,7 @@ export interface ScreenView {
   match: string | null; // 2 digits, from "claimed" to "open"
   fileName: string | null; // display name, from "offered" (guest) or "approved"
   fileType: FileType | null; // with fileName: an original PDF shown as a PDF is not a fallback
+  fileSize: number | null; // bytes, with fileName when the source gave a size (the demo file card)
   openMode: OpenMode | null;
   endsAt: number | null;
   endReason: EndReason | null;
@@ -222,4 +223,5 @@ export type ScreenStateKey =
   | "service_down"
   | "error"
   | "phone_width"
-  | "rate_limited";
+  | "rate_limited"
+  | "demo_open"; // a demo screen shows the approved file in the page (DEMO-01)

@@ -14,6 +14,8 @@ export interface FileRef {
   ref: string;
   name: string;
   type: FileType;
+  /** Bytes, when the source said; the demo screen shows it on the file card. */
+  size?: number;
 }
 
 export interface Machine {

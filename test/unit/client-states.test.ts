@@ -12,6 +12,7 @@ const screenView = (state: SessionState, over: Partial<ScreenView> = {}): Screen
   match: null,
   fileName: null,
   fileType: null,
+  fileSize: null,
   openMode: null,
   endsAt: null,
   endReason: null,
@@ -64,6 +65,17 @@ describe("screen state to view mapping", () => {
     expect(screenKey(ctx("open", { openMode: "download" }))).toBe("open_fallback");
     expect(screenKey(ctx("opening", { openMode: "pdf" }))).toBe("pdf_fallback");
     expect(screenKey(ctx("open", { openMode: "protocol" }))).toBe("open");
+  });
+
+  it("DEMO-01 a demo screen shows its in-page result from approved to open, whatever the open mode", () => {
+    for (const state of ["approved", "opening", "open"] as const) {
+      for (const openMode of [null, "protocol", "download", "pdf"] as const) {
+        expect(screenKey(ctx(state, { mode: "demo", openMode }))).toBe("demo_open");
+      }
+    }
+    expect(screenKey(ctx("offered", { mode: "demo" }))).toBe("guest_open");
+    expect(screenKey(ctx("ended", { mode: "demo" }))).toBe("ended");
+    expect(screenKey(ctx("open", { mode: "demo" }, { link: "offline" }))).toBe("offline");
   });
 
   it("F10 an original PDF shown as a PDF is not the PowerPoint fallback", () => {
@@ -146,6 +158,12 @@ describe("phone state to view mapping", () => {
   it("a refused drop on a screen with guest drop off reads as guest_off, not a generic error", () => {
     expect(ERRORS.drop_disabled.phone).toBe("guest_off");
     expect(phoneKey(ctx({ error: "guest_off" }))).toBe("guest_off");
+  });
+
+  it("DEMO-01 a demo phone reads open after the screen's Download or PDF link, never a fallback", () => {
+    for (const openMode of [null, "protocol", "download", "pdf"] as const) {
+      expect(phoneKey(ctx({ view: phoneView("open", { mode: "demo", openMode }) }))).toBe("open");
+    }
   });
 
   it("F10 an original PDF on the phone shows pdf_file", () => {

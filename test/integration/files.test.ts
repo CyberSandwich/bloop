@@ -28,13 +28,13 @@ describe("GET /api/files with the mock source", () => {
     const { socket, pid } = await paired("demo");
     const res = await api.get<Files>("/api/files", pid);
     expect(res.status).toBe(200);
-    expect(res.body.files.map((f) => f.id)).toEqual(["demo-deck", "demo-review", "demo-pdf"]);
+    expect(res.body.files.map((f) => f.id)).toEqual(["demo-deck"]);
     for (const f of res.body.files) {
       expect(Object.keys(f).sort()).toEqual(["id", "modifiedAt", "name", "size", "type"]);
       expect(f.modifiedAt).toBeLessThanOrEqual(Date.now());
       expect(f.size).toBeGreaterThan(0);
     }
-    expect(res.body.files.map((f) => f.type)).toEqual(["pptx", "pptx", "pdf"]);
+    expect(res.body.files.map((f) => f.type)).toEqual(["pptx"]);
     expect(res.headers.get("Cache-Control")).toBe("no-store");
     socket.close();
   });
@@ -43,7 +43,7 @@ describe("GET /api/files with the mock source", () => {
     const { socket, pid } = await paired("live");
     const res = await api.get<Files>("/api/files", pid);
     expect(res.status).toBe(200);
-    expect(res.body.files).toHaveLength(3);
+    expect(res.body.files).toHaveLength(1);
     socket.close();
   });
 
@@ -69,13 +69,13 @@ describe("POST /api/approve resolves the file on the server", () => {
     await api.get("/api/files", pid);
     const approved = await api.post<{ state: string; fileName: string }>(
       "/api/approve",
-      { fileId: "demo-review" },
+      { fileId: "demo-deck" },
       { auth: pid },
     );
     expect(approved.status).toBe(200);
-    expect(approved.body).toMatchObject({ state: "approved", fileName: "Quarterly review.pptx" });
+    expect(approved.body).toMatchObject({ state: "approved", fileName: "Sample deck.pptx" });
     const onScreen = await socket.stateWhere((v) => v.state === "approved");
-    expect((onScreen.view as { fileName: string }).fileName).toBe("Quarterly review.pptx");
+    expect((onScreen.view as { fileName: string }).fileName).toBe("Sample deck.pptx");
     expect(screen.sid).toBeTruthy();
     socket.close();
   });
@@ -127,7 +127,8 @@ describe("POST /api/approve resolves the file on the server", () => {
     await api.get("/api/files", pid);
     expect((await api.post("/api/approve", { fileId: "demo-deck" }, { auth: pid })).status).toBe(200);
     expect((await api.post("/api/approve", { fileId: "demo-deck" }, { auth: pid })).status).toBe(200);
-    expect((await api.post("/api/approve", { fileId: "demo-pdf" }, { auth: pid })).status).toBe(409);
+    // Another file after approval is wrong_state in the machine (machine.test.ts); the demo account has no other to list.
+    expect((await api.post("/api/approve", { fileId: "demo-pdf" }, { auth: pid })).status).toBe(404);
     socket.close();
   });
 });

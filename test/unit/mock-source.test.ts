@@ -1,6 +1,7 @@
 import { readFileSync, statSync } from "node:fs";
 import { inflateRawSync } from "node:zlib";
 import { describe, expect, it } from "vitest";
+import { SLIDES } from "../../public/js/core/demo.js";
 import { type SourceContext, typeOfName } from "../../src/worker/seams/file-source/index.ts";
 import { MockFileSource, type MockFixture } from "../../src/worker/seams/file-source/mock.ts";
 
@@ -59,6 +60,18 @@ describe("MockFileSource", () => {
     const viaPdf = await source.resolvePdf(ctx, "pdf");
     expect(viaPdf.ok && viaPdf.file.name).toBe("C.pdf");
     expect(await source.resolvePdf(ctx, "old")).toEqual({ ok: false, error: "pdf_unavailable" });
+  });
+
+  it("a rendition-only fixture is never listed or resolved, and still serves as its deck's PDF", async () => {
+    const hidden = new MockFileSource(
+      [fixtures[0] as MockFixture, { ...(fixtures[2] as MockFixture), renditionOnly: true }],
+      () => NOW,
+    );
+    expect(await hidden.listRecent(ctx, 5)).toMatchObject({ ok: true, files: [{ id: "deck" }] });
+    expect(await hidden.resolve(ctx, "pdf")).toEqual({ ok: false, error: "file_not_found" });
+    expect(await hidden.resolvePdf(ctx, "pdf")).toEqual({ ok: false, error: "file_not_found" });
+    const viaDeck = await hidden.resolvePdf(ctx, "deck");
+    expect(viaDeck.ok && viaDeck.file.name).toBe("C.pdf");
   });
 
   it("each body() call gives a fresh stream", async () => {
@@ -192,7 +205,7 @@ describe("demo files (src/worker/seams/file-source/demo-files)", () => {
   it("demo-deck.pptx is a consistent 2-slide package with blank author fields", () => {
     const parts = unzip(readDemo("demo-deck.pptx"));
     expect([...parts.keys()][0]).toBe("[Content_Types].xml");
-    expectConsistentDeck(parts, 2);
+    expect(expectConsistentDeck(parts, 2)).toHaveLength(SLIDES.length);
     const core = parts.get("docProps/core.xml") as string;
     expect(core).not.toMatch(/<dc:creator>[^<]/);
     expect(core).not.toMatch(/<cp:lastModifiedBy>[^<]/);

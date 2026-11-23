@@ -194,14 +194,16 @@ Per-room policy (ADR 0005): `open` (default) is the flow above. `pass` is option
 
 ### 4.5 Demo
 
-The landing page embeds a demo screen (`POST /api/screens {mode: "demo"}`). Differences from the live flow:
+`/s?mode=demo`, entered from the landing, opens a demo screen (`POST /api/screens {mode: "demo"}`). Differences from the live flow:
 
-- the file source is always `MockFileSource`, fixed at screen creation on the server. A client cannot switch it;
+- the file source is always `MockFileSource`, fixed at screen creation on the server. A client cannot switch it. The demo account lists one file, the sample deck; its PDF export is only the deck's rendition;
+- the screen launches nothing: no `ms-powerpoint:` and no `window.open`. On the link it fetches the link itself (a HEAD, as PowerPoint would; `public/js/screen-demo.js`), which moves the session to `open`, and from `approved` to `open` it shows the result in the page, built from the screen's state (`demo_open`), so a reload or a dropped socket shows it again. The sample deck shows as pre-rendered slide images (`public/img/demo-slide-*`, `tools/render-slides.py`; click or arrow keys, Full Screen), with "On a room PC this opens in PowerPoint." and End. A guest's own file shows as a card (name, size, "Your file reached the screen.") with Download, which mints a fresh download link on the click;
+- one device can play both parts: in the waiting state the demo screen offers "Approve on This Device", a same-tab link to `/a?c=<code>`; `/a` then offers "See It on the Screen" back to `/s?mode=demo`, which resumes the screen from the sid in that tab's `sessionStorage`. Only the tab that created a screen holds its sid, and a stored sid resumes only a screen of the page's mode. A demo screen runs at phone width; a live one asks for the room's screen;
 - the phone gets no OAuth step, and demo routes never read the phone session cookie;
 - the session lasts 10 min (`DEMO_SESSION_MINUTES`), and guest drops are capped at 10 MB (`DEMO_GUEST_MAX_BYTES`), and the Open click applies as in 4.4;
 - the demo has its own rate limits (section 6): stricter per-IP bindings for creating and claiming, and a global cap on concurrent demo screens held in the Directory (`DEMO_MAX_CONCURRENT`, default 50) and a per-IP-hash cap (`DEMO_MAX_PER_IP`, default 2) so one address cannot fill it. A demo screen takes a slot at creation, for one claim window plus one session, and gives it back when its session ends or the screen closes; a screen that outlives its hold stops counting. `DEMO_ENABLED=false` makes `POST /api/screens {mode: "demo"}` and any claim of a demo code answer `not_found`;
 - its session and audit rows are `mode = demo` with no user, and are kept 7 days;
-- the landing stage (desktop, fine pointer) runs the demo as its own lazy module (`public/js/demo/`): it creates a demo screen, draws its code and states into the stage's screen mock, echoes the phone sheet in the phone mock, and fires `bloop:demo` events that the landing turns into robin poses and a hop on the scan. A phone visitor never loads it. The stage cannot launch PowerPoint for the visitor, so on the `open` frame it reports `launched` and fetches the link itself (a HEAD, as PowerPoint would) to reach the open state; `/s?mode=demo` is the full-screen demo that really launches.
+- the landing stage (desktop, fine pointer) runs the demo as its own lazy module (`public/js/demo/`): it creates a demo screen, draws its code and states into the stage's screen mock, echoes the phone sheet in the phone mock, and fires `bloop:demo` events that the landing turns into robin poses and a hop on the scan. A phone visitor never loads it. The stage cannot launch PowerPoint for the visitor, so on the `open` frame it reports `launched` and fetches the link itself (a HEAD, as PowerPoint would) to reach the open state.
 
 ADR 0007 covers this.
 
@@ -244,6 +246,8 @@ public/                    wrangler's assets directory, served as it is. Everyth
   _headers                 static security headers (section 10)
   css/app.css              the one stylesheet (task pages and site pages)
   js/{screen,phone,code,launcher,residue}.js   task pages; js/vendor/uqr.js (+ LICENSE)
+  js/screen-demo.js js/core/demo.js   the demo screen's in-page result (slides, file card, its own link fetch); its pure parts
+  img/demo-slide-{n}.{avif,webp}   the sample deck's slides (tools/render-slides.py)
   js/{landing,site,page}.js   landing glue; nav CTA, Send Me the Link and toast; entry for /it and /privacy
   js/robin.js js/core/robin-math.js   the WebGL renderer and its pure math (loaded on idle after load, desktop only)
   js/demo/{index,stage}.js   the live demo in the landing stage (lazy, desktop only; its own size-limit entry); stage strings and state mapping (pure)
@@ -258,7 +262,8 @@ public/                    wrangler's assets directory, served as it is. Everyth
   .well-known/security.txt
 src/robin.glb src/fonts/InterVariable.woff2   sources of the robin mesh and the font subset, never served
 tools/
-  make-fixtures.mjs        writes the sample decks the mock file source serves
+  make-fixtures.mjs        writes the synthetic sample decks the tests use
+  render-slides.py         the demo deck's PDF export to the demo screen's slide images
   change-tier.mjs          classifies the staged diff (T0 to T2) and enforces the commit-msg blocks
   pack.py render-stills.py robin-poses.json   GLB to robin.bin; the stills, drawn by a plain-Python rasterizer with the live camera and poses
   render-og.py og.svg      the social image and its SVG source
@@ -267,7 +272,7 @@ test/
   unit/                    vitest + fast-check: machine, codes, names, zip, vault, csv, headers
   integration/             against a real wrangler dev (wrangler.ts starts one on a free port): every route, sockets, timers, threat tests
   e2e/                     Playwright, two contexts (screen, phone), axe, CI only
-  fixtures/decks/          synthetic sample decks (written by tools/make-fixtures.mjs; the demo serves one), later polyglots, zip bombs, macro decks
+  fixtures/decks/          synthetic sample decks (written by tools/make-fixtures.mjs), later polyglots, zip bombs, macro decks
   fixtures/graph/          synthetic Graph JSON for the contract tests (README says so)
   fixtures/jsdoc/          a good and a bad browser module, proving JSDoc @import of protocol.ts is type-checked
 ```
@@ -509,7 +514,7 @@ Logging: Worker logs record the route pattern, status, `ErrorCode` and duration.
 - `npm run typecheck`: `tsc` for the Worker, for tests and tools (`tsconfig.node.json`), and for the browser JS (`tsconfig.public.json`). `npm run lint`: Biome (markdown is excluded). `npm test`: Vitest unit tests. `npm run check` runs typecheck, lint, test, test:int, html-validate and size-limit. Size budgets are the `size-limit` entries in `package.json`, the only owner.
 - `npm run test:int`: each test file starts `wrangler dev` on a free port through `test/integration/wrangler.ts` (`{migrate: true}` applies `migrations/` to its throwaway D1 first; `auth.test.ts` uses that, with a local fake Entra on a free port and `ENTRA_AUTHORITY` set to it) (throwaway state directory, `PUBLIC_ORIGIN` set to that port, torn down after), drives the screen and phone with Node's native `WebSocket` (with an `Origin` header) and `fetch`, and moves time by running the Worker with short timings under `TEST_TIMING=1` (section 9) instead of a clock header: Durable Object alarms use real time. `open.test.ts` and `open-timing.test.ts` cover the open path (mint, fetch, methods, the 11th fetch, short windows, stream mode, fallback links, end). Three files cover pairing: `pairing.test.ts` (flows, validation, CSRF, sockets), `pairing-timing.test.ts` (short timings: expiry, rotation, claim timeout, auto-end, hello timeout) and `pairing-limits.test.ts` (production timing, so the rate-limit bindings and the exact guess limit are live, and a config that fails closed). `wrangler dev` does not implement Durable Object jurisdictions, so `stubs.ts` skips `eu` when `PUBLIC_ORIGIN` is local.
 - Task pages (`public/s.html`, `a.html`, `code.html`, `css/app.css`, `js/screen.js`, `phone.js`, `code.js`): pure client logic lives in `public/js/core/` (state mapping `states.js`, every string `copy.js`, `channel.js` for the WebSocket with reconnect 1, 2, 5, 10, 30 s and the 3 s polling fallback, `api.js`, `qr.js`). `/s?mode=demo` opens a demo screen (default `live`). The QR link is `/a?c=<code>`; the phone strips `?c=` with `history.replaceState` when its modules load. `GET /api/files` answers `{files: FileEntry[]}` (`core/files.js` has no fallback: an error is an error). The phone's ended state shows the 96 px away still (`robin-away-192`, lazy, hidden otherwise; `copy.still`). A signed-in live phone shows a Disconnect OneDrive text action (it asks `GET /api/me` once after listing). `public/js/launcher.js` is the screen's launch ladder (the `open` frame, the Download control after 5 s, the PDF view, the Open click when the launch had no user gesture) and `public/js/residue.js` clears the page's state at `ended` and `closed`. Claims marked `[V-n]` in design.md ship only while their flag in `core/verified.js` is true.
-- `npm run test:e2e` (CI): Playwright with two browser contexts (screen at 1440, phone at 390), started with `TEST_TIMING=1` and `.dev.vars` from the example. It runs the full demo flow, the open path (launch, the Download fallback after the 5 s timeout, the PDF view, End clearing the screen's storage), the guest flow with fixtures (upload, then the Open click on the screen), every state string, axe, and the header assertions.
+- `npm run test:e2e` (CI): Playwright with two browser contexts (screen at 1440, phone at 390), started with `TEST_TIMING=1` and `.dev.vars` from the example. It runs the full demo flow (the slides in the page with no launch, a reload after Approve, the one-device round trip at phone width), the open path on a live screen (launch, the Download fallback after the 5 s timeout, the PDF view, End clearing the screen's storage), the guest flow with fixtures (upload, then the Open click on the screen and the demo file card), every state string, axe, and the header assertions.
 - Unit coverage targets: the state machine (fast-check: no transition leaves `ended` except `code.next`, a code is consumed at most once, every timer state has a deadline), the code alphabet and normalizer, the name sanitizer, the zip central-directory reader (fuzzed), the vault (round trip, AAD swap fails, rotation), CSV escaping, and header generation.
 - Every threat in threat-model.md names its test. CI fails if a threat id marked "mitigated" has no test with that id in its title.
 

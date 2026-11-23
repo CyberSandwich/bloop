@@ -10,7 +10,7 @@ import { sendable, sendFile, wholeMB } from "./core/drop.js";
 import { loadFiles } from "./core/files.js";
 import { ago, clock, fileIcon, splitName } from "./core/format.js";
 import { phoneKey } from "./core/states.js";
-import { PID_KEY, sessionStore } from "./core/store.js";
+import { PID_KEY, SID_KEY, sessionStore } from "./core/store.js";
 import { ariaFlag, byId, el, focusTitle, ICON_CHECK, icon, isFramed, setText, show, wsUrl } from "./core/ui.js";
 import { VERIFIED } from "./core/verified.js";
 import { ERRORS } from "./shared/errors.js";
@@ -147,6 +147,8 @@ function render() {
     endsAt: v?.endsAt ? clock(v.endsAt) : null,
     account: c.account,
     maxMB: wholeMB(c.maxBytes),
+    // This tab also holds a demo screen's sid: it came from /s by "Approve on This Device" and can go back.
+    back: c.info?.mode === "demo" && store.get(SID_KEY) !== null,
   });
 
   show(skelTitle, key === "checking");

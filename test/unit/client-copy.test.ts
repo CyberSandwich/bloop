@@ -19,6 +19,7 @@ const SCREEN_KEYS: ScreenStateKey[] = [
   "error",
   "phone_width",
   "rate_limited",
+  "demo_open",
 ];
 const PHONE_KEYS: PhoneStateKey[] = [
   "checking",
@@ -118,6 +119,47 @@ describe("screen copy", () => {
   it("the PDF view is offered only where Download already failed to open PowerPoint", () => {
     expect(SCREEN_KEYS.filter((k) => screenCopy(k, sf).controls.includes("pdf"))).toEqual(["open_fallback"]);
     expect(screenCopy("open_fallback", sf).controls).toEqual(["download", "pdf", "end"]);
+  });
+
+  it("End is on the screen from approval to open, and opening keeps Download for the ladder", () => {
+    for (const key of ["approved", "opening", "open", "demo_open"] as const) {
+      expect(screenCopy(key, sf).controls, key).toContain("end");
+    }
+    expect(screenCopy("opening", sf).controls).toEqual(["end", "download"]);
+  });
+
+  it("open claims PowerPoint only when the screen launched it", () => {
+    expect(screenCopy("open", { ...sf, openMode: "protocol" }).heading).toBe("Lecture 4.pptx is open in PowerPoint.");
+    expect(screenCopy("open", { ...sf, openMode: null }).heading).toBe("Lecture 4.pptx is open.");
+    expect(screenCopy("open", sf).heading).toBe("Lecture 4.pptx is open.");
+  });
+
+  it("DEMO-01 a demo screen offers this device as the phone, and only while it shows a code", () => {
+    expect(screenCopy("waiting", { ...sf, demo: true })).toMatchObject({
+      line: "Scan with your phone camera, or approve on this device.",
+      controls: ["here"],
+    });
+    expect(screenCopy("waiting", sf).controls).toEqual([]);
+    expect(SCREEN_KEYS.filter((k) => screenCopy(k, { ...sf, demo: true }).controls.includes("here"))).toEqual([
+      "waiting",
+    ]);
+  });
+
+  it("DEMO-01 the demo result names the sample deck, or says a guest's own file arrived, and never claims a launch", () => {
+    const deck = screenCopy("demo_open", { ...sf, file: "Sample deck.pptx", demo: true });
+    expect(deck).toMatchObject({
+      heading: "Sample deck.pptx",
+      line: "On a room PC this opens in PowerPoint.",
+      controls: ["end"],
+    });
+    const guest = { ...sf, file: "Talk.pptx", demo: true, guest: true };
+    expect(screenCopy("demo_open", { ...guest, fileType: "pptx" })).toMatchObject({
+      heading: "Your file reached the screen.",
+      line: "On a room PC it opens in PowerPoint.",
+      controls: ["end", "download"],
+    });
+    expect(screenCopy("demo_open", { ...guest, fileType: "pdf" }).line).toBe("On a room PC it opens as a PDF.");
+    expect(deck.heading).not.toMatch(/is open/);
   });
 
   it("open says when it ends by itself, and a guest open drops the unverified deletion claim", () => {
@@ -240,6 +282,31 @@ describe("phone copy", () => {
     expect(phoneCopy("approve_demo", pf).scope).toBe("This is a demo. You don't need an account.");
   });
 
+  it("the demo approve title names the chosen file", () => {
+    expect(phoneCopy("approve_demo", { ...pf, file: "Sample deck.pptx" }).title).toBe("Open Sample deck.pptx here?");
+    expect(phoneCopy("approve_demo", pf).title).toBe("Open Lecture 4.pptx here?");
+  });
+
+  it("End is on the phone while the file is opening and once it is open", () => {
+    for (const key of ["opening", "open"] as const) {
+      expect(phoneCopy(key, pf).actions, key).toEqual([{ id: "end", label: "End", kind: "primary" }]);
+    }
+  });
+
+  it("DEMO-01 a phone that is also the demo screen offers the way back to it, with End beside it", () => {
+    const back = { id: "back", label: "See It on the Screen", kind: "primary", href: "/s?mode=demo" };
+    for (const key of ["opening", "open"] as const) {
+      expect(phoneCopy(key, { ...pf, back: true }).actions, key).toEqual([
+        back,
+        { id: "end", label: "End", kind: "secondary" },
+      ]);
+    }
+    expect(phoneCopy("guest_sent", { ...pf, back: true }).actions[0]).toEqual(back);
+    const withBack = PHONE_KEYS.filter((k) => phoneCopy(k, { ...pf, back: true }).actions.some((a) => a.id === "back"));
+    expect(withBack).toEqual(["opening", "open", "guest_sent"]);
+    expect(PHONE_KEYS.filter((k) => phoneCopy(k, pf).actions.some((a) => a.id === "back"))).toEqual([]);
+  });
+
   it("expired and taken offer Enter a Code as a link to /code", () => {
     for (const key of ["expired", "taken"] as const) {
       expect(phoneCopy(key, pf).actions).toEqual([{ id: "code", label: "Enter a Code", kind: "text", href: "/code" }]);
@@ -263,8 +330,10 @@ describe("phone copy", () => {
 
   it("every state with actions has a primary or text action, never two primaries", () => {
     for (const key of PHONE_KEYS) {
-      const primaries = phoneCopy(key, pf).actions.filter((a) => a.kind === "primary");
-      expect(primaries.length, key).toBeLessThanOrEqual(1);
+      for (const back of [false, true]) {
+        const primaries = phoneCopy(key, { ...pf, back }).actions.filter((a) => a.kind === "primary");
+        expect(primaries.length, key).toBeLessThanOrEqual(1);
+      }
     }
   });
 

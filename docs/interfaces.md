@@ -30,6 +30,7 @@ export interface ScreenView {
   match: string | null;        // 2 digits, from "claimed" to "open"
   fileName: string | null;     // display name, from "offered" (guest) or "approved"
   fileType: FileType | null;   // an original PDF shown as a PDF is the `pdf_file` state, not `pdf_fallback`
+  fileSize: number | null;     // bytes, when the source gave a size (FileRef.size); the demo file card shows it
   openMode: OpenMode | null;
   endsAt: number | null;
   endReason: EndReason | null;
@@ -122,7 +123,8 @@ export type PhoneStateKey =
 export type ScreenStateKey =
   | "waiting" | "scanned" | "choosing" | "approved" | "opening" | "open" | "open_fallback"
   | "pdf_fallback" | "pdf_file" | "guest_open" | "ended" | "offline" | "service_down" | "error" | "phone_width"
-  | "rate_limited";  // a refused screen create (DEMO-02): its own design.md row, retried with backoff
+  | "rate_limited"   // a refused screen create (DEMO-02): its own design.md row, retried with backoff
+  | "demo_open";     // a demo screen from approved to open: the file in the page, whatever the open mode (DEMO-01)
 ```
 
 ## 2. Pairing and the session state machine
@@ -175,7 +177,7 @@ An event the table does not list for a state returns `wrong_state` and changes n
 import type { EndReason, ErrorCode, FileType, Kind, Mode, OpenMode, SessionState } from "../shared/protocol.ts";
 
 export interface Code { value: string; issuedAt: number; expiresAt: number; consumed: boolean; }
-export interface FileRef { source: "mock" | "graph" | "guest"; ref: string; name: string; type: FileType; }
+export interface FileRef { source: "mock" | "graph" | "guest"; ref: string; name: string; type: FileType; size?: number; }
 
 export interface Machine {
   state: SessionState;
@@ -375,12 +377,13 @@ export interface FileSource {
 }
 
 /** The demo account and local runs. Default. `demo.ts` builds it from a real deck and its PDF export in
- *  src/worker/seams/file-source/demo-files/ plus one synthetic deck from test/fixtures/decks, all imported as raw
- *  bytes through the `rules` entry in wrangler.jsonc. */
+ *  src/worker/seams/file-source/demo-files/, imported as raw bytes through the `rules` entry in wrangler.jsonc.
+ *  Only the deck is listed; the PDF is its rendition alone. */
 export interface MockFixture {
   id: string; name: string; type: FileType; bytes: Uint8Array;
   editedMinutesAgo: number;     // listed relative to now, so the list always looks recent
   pdfId: string | null;         // the fixture served as this file's PDF; a PDF is its own rendition
+  renditionOnly?: true;         // never listed and never resolved by its own id; reached through a deck's pdfId
 }
 export declare class MockFileSource implements FileSource {
   readonly kind: "mock";
@@ -528,7 +531,7 @@ export interface PurgeReport {
   accessTokenDropped: boolean; // in-memory access token for this session
 }
 
-/** Screen side. `clear` runs on "ended" and "closed" (the page re-stores its own credential when the screen waits again, so a reload resumes the screen); pagehide only closes the PDF window. */
+/** Screen side. `clear` runs on "ended" and "closed" (the page re-stores its own credential when the screen waits again, so a reload resumes the screen); pagehide only closes the PDF window. A stored sid resumes only a screen of the page's own mode; the demo's one-device round trip (`/s?mode=demo` to `/a` and back in one tab) is that resume, and `clear` also drops the pid the tab took on `/a`. */
 export interface ScreenResidue {
   clear(): void;               // launcher.reset (links, timers, the PDF window this page opened), sessionStorage bloop.*,
                                // history.replaceState to the same path and query (the demo mode stays)

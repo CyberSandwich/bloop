@@ -33,9 +33,11 @@ export function screenKey(c) {
     case "offered":
       return "guest_open";
     case "approved":
-      return "approved";
     case "opening":
     case "open":
+      // A demo launches nothing: the page shows the file itself, so a reload or a lost frame lands here too.
+      if (v.mode === "demo") return "demo_open";
+      if (v.state === "approved") return "approved";
       if (v.openMode === "download") return "open_fallback";
       if (v.openMode === "pdf") return pdfKey(v);
       return v.state === "opening" ? "opening" : "open";
@@ -82,6 +84,8 @@ export function phoneKey(c) {
     if (v.state === "waiting" || v.state === "closed") return "expired";
     if (v.state === "approved" || v.state === "opening") return "opening";
     if (v.state === "open") {
+      // A demo screen shows the file itself; its Download is an extra, never a fallback.
+      if (v.mode === "demo") return "open";
       if (v.openMode === "download") return "open_fallback";
       if (v.openMode === "pdf") return pdfKey(v);
       return "open";

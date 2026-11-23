@@ -20,11 +20,13 @@ import {
 import { byId, el, focusTitle, frameThrottle, isFramed, lostFocus, setText, show, wsUrl } from "./core/ui.js";
 import { createLauncher } from "./launcher.js";
 import { createResidue } from "./residue.js";
+import { createDemoResult, fetchOpen } from "./screen-demo.js";
 import { format } from "./shared/codes.js";
 import { ERRORS } from "./shared/errors.js";
 
 const api = createApi();
 const store = sessionStore();
+const DEMO = new URLSearchParams(location.search).get("mode") === "demo";
 
 const main = byId("main");
 const stage = byId("stage");
@@ -47,7 +49,9 @@ const buttons = {
   open: byId("b-open"),
   download: byId("b-download"),
   pdf: byId("b-pdf"),
+  here: byId("b-here"),
 };
+const demoResult = DEMO ? createDemoResult(byId("result")) : null;
 
 /**
  * @type {{
@@ -70,19 +74,20 @@ const s = {
   timers: {},
 };
 
+// A demo launches nothing (no PowerPoint, no popup): it fetches the link itself and shows the file in the page.
 const launcher = createLauncher({
   api,
   sid: () => s.sid,
-  assign: (url) => location.assign(url),
-  openWindow: (url) => window.open(url, "bloop-pdf"),
+  assign: (url) => (DEMO ? fetchOpen(url) : location.assign(url)),
+  openWindow: (url) => (DEMO ? fetchOpen(url) : window.open(url, "bloop-pdf")),
   startDownload(url) {
     const a = el("a", { href: url, download: "" });
     document.body.append(a);
     a.click();
     a.remove();
   },
-  hasGesture: () => navigator.userActivation?.isActive ?? true,
-  report: (mode) => s.channel?.send({ t: "launched", mode }) ?? false,
+  hasGesture: () => DEMO || (navigator.userActivation?.isActive ?? true),
+  report: (mode) => DEMO || (s.channel?.send({ t: "launched", mode }) ?? false),
   onChange: () => render(),
 });
 
@@ -99,7 +104,6 @@ const residue = createResidue({
   cleanUrl: () => history.replaceState(null, "", location.pathname + location.search),
 });
 
-const DEMO = new URLSearchParams(location.search).get("mode") === "demo";
 const reduceMotion = matchMedia("(prefers-reduced-motion: reduce)").matches;
 const serverNow = () => Date.now() + s.skew;
 
@@ -162,6 +166,7 @@ const MODE = {
   scanned: "scanned",
   choosing: "scanned",
   guest_open: "scanned",
+  demo_open: "result",
 };
 
 function render() {
@@ -175,6 +180,8 @@ function render() {
     guest: v?.kind === "guest",
     offlineLong: s.offlineSince !== null && Date.now() - s.offlineSince >= OFFLINE_HINT_MS,
     demo: DEMO,
+    openMode: v?.openMode ?? null,
+    fileType: v?.fileType ?? null,
   });
 
   const changed = heading.textContent !== copy.heading;
@@ -204,7 +211,11 @@ function render() {
   show(buttons.open, copy.controls.includes("open") || launcher.needsClick());
   show(buttons.download, copy.controls.includes("download") && (key !== "opening" || launcher.downloadReady()));
   show(buttons.pdf, copy.controls.includes("pdf"));
-  setText(buttons.download, key === "open_fallback" ? "Download" : "Download It Instead");
+  setText(buttons.download, key === "open_fallback" || key === "demo_open" ? "Download" : "Download It Instead");
+  // This device as the phone: same tab to /a, which claims the code; /a links back here, and the stored sid resumes.
+  show(buttons.here, copy.controls.includes("here") && !!code);
+  if (code) buttons.here.setAttribute("href", `/a?c=${code.code}`);
+  demoResult?.render(key === "demo_open" ? v : null);
 
   if (changed && lostFocus()) focusTitle(heading);
   if (mode === "waiting") updateCapsule();
@@ -318,14 +329,19 @@ function connect(/** @type {string} */ sid) {
 
 /** @typedef {{ok: true, sid: string, view: ScreenView} | {ok: false, error: string}} Booted */
 
-/** The stored screen, when it still exists; null when there is none or it is gone. */
+/**
+ * The stored screen, when it still exists and is of this page's mode; null otherwise. Only the tab that created a
+ * screen holds its sid (sessionStorage), so only that tab resumes it, the one-device demo round trip included.
+ */
 async function resume() {
   const sid = store.get(SID_KEY);
   if (!sid) return null;
   const res = await api.get("/api/screen/state", sid);
-  if (res.ok) return /** @type {Booted} */ ({ ok: true, sid, view: res.value });
-  if (res.error === "offline" || res.error === "service_down")
+  if (!res.ok && (res.error === "offline" || res.error === "service_down")) {
     return /** @type {Booted} */ ({ ok: false, error: res.error });
+  }
+  if (res.ok && res.value.mode === (DEMO ? "demo" : "live"))
+    return /** @type {Booted} */ ({ ok: true, sid, view: res.value });
   store.remove(SID_KEY);
   return null;
 }
@@ -357,7 +373,9 @@ async function boot(attempt = 0) {
 
 function start() {
   if (isFramed()) return;
-  if (matchMedia("(max-width: 599.98px)").matches) return;
+  // A phone may run the demo (it approves on itself); a live screen needs a room-sized window.
+  if (DEMO) document.body.classList.add("is-demo");
+  else if (matchMedia("(max-width: 599.98px)").matches) return;
   main.dataset.mode = "idle";
   typedHost.textContent = location.host;
   fitQr();

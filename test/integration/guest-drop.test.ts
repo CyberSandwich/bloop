@@ -27,7 +27,13 @@ describe("DROP-06 open-click: a guest drop waits for the click on the screen", (
     expect(await res.json()).toMatchObject({ state: "offered", kind: "guest", fileName: "Talk.pptx" });
 
     const offered = await socket.stateWhere((v) => v.state === "offered");
-    expect(offered.view).toMatchObject({ kind: "guest", fileName: "Talk.pptx", openMode: null, endsAt: null });
+    expect(offered.view).toMatchObject({
+      kind: "guest",
+      fileName: "Talk.pptx",
+      fileSize: deck.length,
+      openMode: null,
+      endsAt: null,
+    });
     expect(socket.frames.some((f) => f.t === "open")).toBe(false);
 
     const row = guestRow(wrangler.d1);
@@ -71,8 +77,10 @@ describe("DROP-06 open-click: a guest drop waits for the click on the screen", (
     const open = await socket.waitFor((f) => f.t === "open");
     const links = open.links as { protocol: string | null; pdf: string | null };
     expect(links.protocol).toBeNull();
+    expect(links.pdf).toMatch(/\/Notes\.pdf$/);
     const res = await fetchLink(links.pdf ?? "");
     expect(res.headers.get("Content-Type")).toBe("application/pdf");
+    expect(res.headers.get("Content-Disposition")).toBe("inline");
     expect(new Uint8Array(await res.arrayBuffer())).toEqual(pdf);
     socket.close();
   });

@@ -11,6 +11,8 @@ export interface MockFixture {
   editedMinutesAgo: number;
   /** The fixture served as this file's PDF rendition; null means none. A PDF fixture is its own rendition. */
   pdfId: string | null;
+  /** Served only as another fixture's PDF rendition: never listed, and its own id resolves to nothing. */
+  renditionOnly?: true;
 }
 
 const streamOf = (bytes: Uint8Array): ReadableStream<Uint8Array> =>
@@ -23,13 +25,16 @@ const streamOf = (bytes: Uint8Array): ReadableStream<Uint8Array> =>
 
 export class MockFileSource implements FileSource {
   readonly kind = "mock";
+  /** `byId` holds the listed fixtures only; a rendition is reached through `all` by its deck's `pdfId`. */
   private readonly byId: Map<string, MockFixture>;
+  private readonly all: Map<string, MockFixture>;
 
   constructor(
     fixtures: readonly MockFixture[],
     private readonly now: () => number = Date.now,
   ) {
-    this.byId = new Map(fixtures.map((f) => [f.id, f]));
+    this.byId = new Map(fixtures.filter((f) => !f.renditionOnly).map((f) => [f.id, f]));
+    this.all = new Map(fixtures.map((f) => [f.id, f]));
   }
 
   async listRecent(_ctx: SourceContext, limit: number) {
@@ -57,7 +62,7 @@ export class MockFileSource implements FileSource {
   async resolvePdf(_ctx: SourceContext, fileId: string) {
     const fixture = this.byId.get(fileId);
     if (!fixture) return { ok: false, error: "file_not_found" } as const;
-    const pdf = fixture.type === "pdf" ? fixture : this.byId.get(fixture.pdfId ?? "");
+    const pdf = fixture.type === "pdf" ? fixture : this.all.get(fixture.pdfId ?? "");
     return pdf ? ({ ok: true, file: toResolved(pdf) } as const) : ({ ok: false, error: "pdf_unavailable" } as const);
   }
 }

@@ -47,7 +47,7 @@ describe("the stage's demo states (design.md section 6)", () => {
   it("DEMO-01 flow: echoes the real phone sheets, and shows none after an error or a refusal", () => {
     expect(STATES.map(phoneMockKey)).toEqual(["checking", "approve_demo", "opening", "open", "ended", null, null]);
     expect(phoneCopy("approve_demo", { room: "Demo room", file: null, endsAt: null }).title).toBe(
-      "Open the sample deck here?",
+      "Open your slides here?",
     );
   });
 

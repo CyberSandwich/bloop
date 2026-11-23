@@ -394,7 +394,7 @@ describe("sign-in, sessions and revocation", () => {
       auth: claimed.body.pid,
       headers: sid(session as string),
     });
-    expect(files.body.files.map((f) => f.id)).toEqual(["demo-deck", "demo-review", "demo-pdf"]);
+    expect(files.body.files.map((f) => f.id)).toEqual(["demo-deck"]);
     demo.socket.close();
   });
 

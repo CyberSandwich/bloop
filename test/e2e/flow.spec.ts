@@ -31,41 +31,60 @@ async function open(browser: Browser, kind: "screen" | "phone", path: string): P
 
 const heading = (page: Page) => page.getByRole("heading", { level: 1 });
 const demoScreen = (browser: Browser) => open(browser, "screen", "/s?mode=demo");
+/** A live screen on the mock source: the lectern path, which launches PowerPoint (ADR 0003). */
+const liveScreen = (browser: Browser) => open(browser, "screen", "/s");
+const DEMO_TITLE = "Open Sample deck.pptx here?";
+const LIVE = { room: "Unregistered screen", title: "Open Sample deck.pptx on Unregistered screen?" };
 
 async function typedCodeOf(page: Page): Promise<string> {
   await expect(page.locator("#typed-code")).toHaveText(/^[A-Z0-9]{3} [A-Z0-9]{3}$/);
   return ((await page.locator("#typed-code").textContent()) ?? "").replace(/\s/g, "");
 }
 
-async function scan(browser: Browser, screen: Page): Promise<{ phone: Opened; code: string; match: string }> {
-  await expect(heading(screen)).toHaveText("Demo room");
+async function scan(
+  browser: Browser,
+  screen: Page,
+  expected = { room: "Demo room", title: DEMO_TITLE },
+): Promise<{ phone: Opened; code: string; match: string }> {
+  await expect(heading(screen)).toHaveText(expected.room);
   const code = await typedCodeOf(screen);
   const phone = await open(browser, "phone", `/a?c=${code}`);
-  await expect(heading(phone.page)).toHaveText("Open the sample deck here?");
+  await expect(heading(phone.page)).toHaveText(expected.title);
   const match = ((await phone.page.locator("#match-digits").textContent()) ?? "").trim();
   return { phone, code, match };
 }
 
-/** The screen launches PowerPoint as soon as it is approved, so it may already say Opening. */
-async function expectApprovedOrOpening(page: Page) {
-  await expect(heading(page)).toHaveText(/^(Approved\.|Opening Sample deck\.pptx)$/);
+/** A demo screen shows the sample deck in the page from the moment it is approved (DEMO-01). */
+async function expectDemoSlides(page: Page) {
+  await expect(heading(page)).toHaveText("Sample deck.pptx");
+  await expect(page.locator("#line")).toHaveText("On a room PC this opens in PowerPoint.");
+  await expect(page.getByRole("img", { name: "Slide 1 of 2" })).toBeVisible();
+}
+
+/** Records every window.open and every navigation away, so a test can assert the demo launches nothing. */
+async function watchLaunches(page: Page): Promise<() => Promise<{ opened: number; left: string[] }>> {
+  const left: string[] = [];
+  page.on("framenavigated", (f) => {
+    if (f === page.mainFrame() && !f.url().includes("/s?mode=demo")) left.push(f.url());
+  });
+  type Watched = { __opened: number; open: () => null };
+  await page.evaluate(() => {
+    const w = globalThis as unknown as Watched;
+    w.__opened = 0;
+    w.open = () => {
+      w.__opened++;
+      return null;
+    };
+  });
+  return async () => ({
+    opened: await page.evaluate(() => (globalThis as unknown as Watched).__opened),
+    left,
+  });
 }
 
 async function expectNoAxeViolations(page: Page) {
   const results = await new AxeBuilder({ page }).withTags(["wcag2a", "wcag2aa", "wcag21aa", "wcag22aa"]).analyze();
   expect(results.violations).toEqual([]);
-}
-
-/** The phone's own End control only appears once the open path exists, so a session ends through the API. */
-async function endFromPhone(page: Page) {
-  await page.evaluate(async () => {
-    const pid = sessionStorage.getItem("bloop.pid");
-    await fetch("/api/end", {
-      method: "POST",
-      headers: { "Content-Type": "application/json", Authorization: `Bearer ${pid}` },
-      body: "{}",
-    });
-  });
 }
 
 test.describe("pairing flow", () => {
@@ -93,8 +112,9 @@ test.describe("pairing flow", () => {
     await expectNoAxeViolations(screen.page);
 
     await phone.page.getByRole("button", { name: "Approve" }).click();
-    await expect(heading(phone.page)).toHaveText("Opening on Demo room.");
-    await expectApprovedOrOpening(screen.page);
+    // The demo screen fetches its own link, so the phone may already read Open.
+    await expect(heading(phone.page)).toHaveText(/^(Opening on|Open on) Demo room\.$/);
+    await expectDemoSlides(screen.page);
     await expect(screen.page.getByRole("button", { name: "Start Over" })).toBeHidden();
 
     expect([...screen.csp, ...phone.csp]).toEqual([]);
@@ -118,7 +138,7 @@ test.describe("pairing flow", () => {
     await go.click();
 
     await expect(phone.page).toHaveURL(/\/a$/);
-    await expect(heading(phone.page)).toHaveText("Open the sample deck here?");
+    await expect(heading(phone.page)).toHaveText(DEMO_TITLE);
     await expect(heading(screen.page)).toHaveText("Check your phone.");
     await screen.context.close();
     await phone.context.close();
@@ -138,7 +158,7 @@ test.describe("pairing flow", () => {
     const screen = await demoScreen(browser);
     const before = await typedCodeOf(screen.page);
     const phone = await open(browser, "phone", `/a?c=${before}`);
-    await expect(heading(phone.page)).toHaveText("Open the sample deck here?");
+    await expect(heading(phone.page)).toHaveText(DEMO_TITLE);
 
     await screen.page.getByRole("button", { name: "Start Over" }).click();
     await expect(heading(screen.page)).toHaveText("Demo room");
@@ -168,7 +188,7 @@ test.describe("pairing flow", () => {
     await expect(heading(replay.page)).toHaveText("This code was already used.");
     await expect(replay.page.getByRole("link", { name: "Enter a Code" })).toBeVisible();
     // the first phone is unaffected
-    await expect(heading(phone.page)).toHaveText("Open the sample deck here?");
+    await expect(heading(phone.page)).toHaveText(DEMO_TITLE);
     await expectNoAxeViolations(replay.page);
     await screen.context.close();
     await phone.context.close();
@@ -192,9 +212,9 @@ test.describe("pairing flow", () => {
     const screen = await demoScreen(browser);
     const { phone } = await scan(browser, screen.page);
     await phone.page.getByRole("button", { name: "Approve" }).click();
-    await expectApprovedOrOpening(screen.page);
+    await expectDemoSlides(screen.page);
 
-    await endFromPhone(phone.page);
+    await phone.page.getByRole("button", { name: "End" }).click();
     await expect(heading(phone.page)).toHaveText("Ended.");
     await expect(heading(screen.page)).toHaveText("Ended.");
     await expect(screen.page.locator("#line")).toHaveText("Scan the new code to present.");
@@ -216,7 +236,7 @@ test.describe("pairing flow", () => {
     await screen.page.reload();
     await expect(heading(screen.page)).toHaveText("Check your phone.");
     await phone.page.reload();
-    await expect(heading(phone.page)).toHaveText("Open the sample deck here?");
+    await expect(heading(phone.page)).toHaveText(DEMO_TITLE);
     await screen.context.close();
     await phone.context.close();
   });
@@ -232,7 +252,9 @@ test.describe("guest drop", () => {
     await (await chooser).setFiles(file);
   }
 
-  test("a guest sends a file, the screen offers it, and only the Open click opens it", async ({ browser }) => {
+  test("DEMO-01 flow: a guest sends a file, the screen offers it, and the Open click shows its card, with Download on click", async ({
+    browser,
+  }) => {
     const screen = await demoScreen(browser);
     const { phone } = await scan(browser, screen.page);
     await expectNoAxeViolations(phone.page);
@@ -264,11 +286,22 @@ test.describe("guest drop", () => {
     await expect(heading(screen.page)).toHaveText("sample-deck.pptx");
     await expectNoAxeViolations(screen.page);
 
+    const launches = await watchLaunches(screen.page);
     await screen.page.getByRole("button", { name: "Open" }).click();
-    await expect(heading(screen.page)).toHaveText(/^(Approved\.|Opening sample-deck\.pptx)$/);
+    await expect(heading(screen.page)).toHaveText("Your file reached the screen.");
+    await expect(screen.page.locator(".file-card")).toContainText("sample-deck.pptx");
+    await expect(screen.page.locator(".file-card")).toContainText(/\d+ KB/);
     await expect(heading(phone.page)).toHaveText(/^(Opening on|Open on) Demo room\.$/);
+    expect(await launches()).toEqual({ opened: 0, left: [] });
+    await expectNoAxeViolations(screen.page);
 
-    await endFromPhone(phone.page);
+    // Download mints a fresh link on the click, so it never meets the 2 minute life of the one the screen fetched.
+    const saved = screen.page.waitForEvent("download");
+    await screen.page.getByRole("button", { name: "Download" }).click();
+    expect((await saved).suggestedFilename()).toBe("sample-deck.pptx");
+    await expect(heading(screen.page)).toHaveText("Your file reached the screen.");
+
+    await phone.page.getByRole("button", { name: "End" }).click();
     await expect(heading(screen.page)).toHaveText("Ended.");
     await screen.context.close();
     await phone.context.close();
@@ -290,12 +323,14 @@ test.describe("open path", () => {
   test("launch, the Download fallback after 5 s, the PDF view, and End clearing the screen's storage", async ({
     browser,
   }) => {
-    const screen = await demoScreen(browser);
-    const { phone } = await scan(browser, screen.page);
+    const screen = await liveScreen(browser);
+    const { phone } = await scan(browser, screen.page, LIVE);
     await phone.page.getByRole("button", { name: "Approve" }).click();
 
     // PowerPoint is not installed here: no fetch arrives, so after the launch timeout Download appears.
     await expect(heading(screen.page)).toHaveText("Opening Sample deck.pptx");
+    await expect(screen.page.getByRole("button", { name: "End" })).toBeVisible();
+    await expect(phone.page.getByRole("button", { name: "End" })).toBeVisible();
     const download = screen.page.getByRole("button", { name: "Download It Instead" });
     await expect(download).toBeHidden();
     await expect(download).toBeVisible({ timeout: 10_000 });
@@ -325,6 +360,75 @@ test.describe("open path", () => {
     await expect(heading(phone.page)).toHaveText("Ended.");
     await screen.context.close();
     await phone.context.close();
+  });
+});
+
+test.describe("demo result", () => {
+  test("DEMO-01 flow: the demo screen shows the sample deck in the page, launches nothing, and a reload still shows it", async ({
+    browser,
+  }) => {
+    const screen = await demoScreen(browser);
+    const { phone } = await scan(browser, screen.page);
+    const launches = await watchLaunches(screen.page);
+    await phone.page.getByRole("button", { name: "Approve" }).click();
+    await expectDemoSlides(screen.page);
+    // The page's own fetch of the link stands in for PowerPoint's, so the session reaches open.
+    await expect(heading(phone.page)).toHaveText("Open on Demo room.");
+    expect(await launches()).toEqual({ opened: 0, left: [] });
+    await expectNoAxeViolations(screen.page);
+
+    // Click and the arrow keys step through the slides; Full Screen is there.
+    await screen.page.getByRole("button", { name: "Next slide" }).click();
+    await expect(screen.page.getByRole("img", { name: "Slide 2 of 2" })).toBeVisible();
+    await screen.page.keyboard.press("ArrowLeft");
+    await expect(screen.page.getByRole("img", { name: "Slide 1 of 2" })).toBeVisible();
+    await expect(screen.page.getByRole("button", { name: "Full Screen" })).toBeVisible();
+
+    await screen.page.reload();
+    await expectDemoSlides(screen.page);
+
+    await screen.page.getByRole("button", { name: "End" }).click();
+    await expect(heading(screen.page)).toHaveText("Ended.");
+    await expect(heading(phone.page)).toHaveText("Ended.");
+    expect([...screen.csp, ...phone.csp]).toEqual([]);
+    await screen.context.close();
+    await phone.context.close();
+  });
+
+  test("DEMO-01 round trip: one phone-width tab approves on itself and comes back to the slides", async ({
+    browser,
+  }) => {
+    const phone = await open(browser, "phone", "/s?mode=demo");
+    await expect(heading(phone.page)).toHaveText("Demo room");
+    await expect(phone.page.locator("#qr")).toBeHidden();
+    await expectNoAxeViolations(phone.page);
+
+    await phone.page.getByRole("link", { name: "Approve on This Device" }).click();
+    await expect(phone.page).toHaveURL(/\/a$/);
+    await expect(heading(phone.page)).toHaveText(DEMO_TITLE);
+    await phone.page.getByRole("button", { name: "Approve" }).click();
+    await expect(heading(phone.page)).toHaveText(/^(Opening on|Open on) Demo room\.$/);
+
+    await phone.page.getByRole("link", { name: "See It on the Screen" }).click();
+    await expect(phone.page).toHaveURL(/\/s\?mode=demo$/);
+    await expectDemoSlides(phone.page);
+    await expectNoAxeViolations(phone.page);
+
+    await phone.page.getByRole("button", { name: "End" }).click();
+    await expect(heading(phone.page)).toHaveText("Ended.");
+    expect(phone.csp).toEqual([]);
+    await phone.context.close();
+  });
+
+  test("DEMO-01 isolation: a second tab of the same browser starts its own demo screen, never the first one's", async ({
+    browser,
+  }) => {
+    const screen = await demoScreen(browser);
+    const first = await typedCodeOf(screen.page);
+    const second = await screen.context.newPage();
+    await second.goto("/s?mode=demo");
+    expect(await typedCodeOf(second)).not.toBe(first);
+    await screen.context.close();
   });
 });
 

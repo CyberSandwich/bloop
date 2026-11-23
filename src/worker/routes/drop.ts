@@ -96,6 +96,7 @@ async function putDrop(request: Request, env: Env, config: Config): Promise<Resp
     ref: accepted.file.r2Key,
     name: accepted.file.name,
     type: accepted.file.type,
+    size: accepted.file.bytes,
   });
   // The session ended or was canceled while the bytes were arriving: nothing may keep them.
   if (!offered.ok) return abandon(offered.error, r2Key);

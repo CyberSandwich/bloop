@@ -246,17 +246,6 @@ describe("fallback links", () => {
     ).toBe(403);
     socket.close();
   });
-
-  it("a PDF file opens as its own inline view from the first link", async () => {
-    const { socket, links, url } = await approveDemo(api, "demo-pdf");
-    expect(links.protocol).toBeNull();
-    expect(links.pdf).toBe(url);
-    expect(url).toMatch(/\/Sample-handout\.pdf$/);
-    const res = await fetchLink(url);
-    expect(res.headers.get("Content-Type")).toBe("application/pdf");
-    expect(res.headers.get("Content-Disposition")).toBe("inline");
-    socket.close();
-  });
 });
 
 describe("end", () => {

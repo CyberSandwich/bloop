@@ -44,8 +44,10 @@ describe.each(PAGES)("%s under the strict CSP", (page) => {
 describe("client code under the strict CSP", () => {
   const files = [
     "screen.js",
+    "screen-demo.js",
     "phone.js",
     "code.js",
+    "core/demo.js",
     "core/ui.js",
     "core/channel.js",
     "core/api.js",
@@ -70,7 +72,7 @@ describe("client code under the strict CSP", () => {
   });
 
   it("never puts a credential in a URL", () => {
-    for (const file of ["screen.js", "phone.js", "core/channel.js"]) {
+    for (const file of ["screen.js", "screen-demo.js", "phone.js", "core/channel.js"]) {
       const code = read(`js/${file}`);
       expect(code, file).not.toMatch(/[?&](sid|pid)=/);
     }

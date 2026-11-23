@@ -22,7 +22,7 @@ export const T0 = 1_000_000;
 export const sec = (n: number) => n * 1000;
 
 export const DECK: FileRef = { source: "mock", ref: "deck-1", name: "Deck.pptx", type: "pptx" };
-export const GUEST_FILE: FileRef = { source: "guest", ref: "g/abc", name: "Guest.pptx", type: "pptx" };
+export const GUEST_FILE: FileRef = { source: "guest", ref: "g/abc", name: "Guest.pptx", type: "pptx", size: 2048 };
 
 /** Applies one event and demands success. */
 export function must(m: Machine, ev: Event): { next: Machine; effects: Effect[] } {

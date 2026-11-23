@@ -3,7 +3,7 @@
 Status: proposed
 
 ## Context
-The landing page runs the full flow for anyone, with no account: a live QR, the phone approval, the open, and a guest drop. The demo must never reach a real user's data, the token vault or Graph, and must not become a free file host or a way to exhaust the free tier.
+`/s?mode=demo`, entered from the landing, runs the full flow for anyone, with no account: a live QR (or this device as the phone), the phone approval, the open shown in the page, and a guest drop. The demo must never reach a real user's data, the token vault or Graph, and must not become a free file host or a way to exhaust the free tier.
 
 ## Decision
 - **Mode is fixed at creation, server-side:** `POST /api/screens {mode: "demo"}` stores `mode` in the Screen object's `meta`. Every later decision reads it from there, never from the client.
@@ -15,7 +15,7 @@ The landing page runs the full flow for anyone, with no account: a live QR, the 
   - stricter per-IP rate limits than live (`RL_DEMO_CREATE`, `RL_DEMO_CLAIM`) a global cap on concurrent demo screens (`DEMO_MAX_CONCURRENT`, held in the Directory) and a per-IP-hash cap (`DEMO_MAX_PER_IP`, 2, same table; why: 4 creates a minute held for 15 minutes would otherwise fill the cap from one address; remove: delete the variable and the `ip_hash` check);
   - `DEMO_ENABLED=false` turns it off.
 - **Records:** demo sessions and audit rows have no user. They are kept 7 days, and metrics are tagged `mode = demo` so they never mix into product numbers.
-- **Visible:** the phone shows "Open the sample deck here?" with "This is a demo. You don't need an account."; the screen shows its demo room line.
+- **Visible:** the phone shows "Open Sample deck.pptx here?" with "This is a demo. You don't need an account."; the screen shows its demo room line, and after approval the file in the page with "On a room PC this opens in PowerPoint." (architecture.md 4.5).
 - **Code space:** demo and live codes share the Directory. Scanning a demo code from a signed-in phone runs the demo, and the cookie is ignored.
 
 ## Consequences

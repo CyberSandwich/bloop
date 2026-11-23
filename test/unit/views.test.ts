@@ -25,7 +25,7 @@ describe("views", () => {
     expect(screenView(META, waiting(), CONFIG, T0 + sec(69)).code).not.toBeNull();
   });
 
-  it("SRC-01 screen-view carries the chosen file name and nothing else about files", () => {
+  it("SRC-01 screen-view carries the chosen file's name, type and size and nothing else about files", () => {
     const view = screenView(META, approved(), CONFIG, T0 + sec(11));
     expect(Object.keys(view).sort()).toEqual(
       [
@@ -33,6 +33,7 @@ describe("views", () => {
         "endReason",
         "endsAt",
         "fileName",
+        "fileSize",
         "fileType",
         "kind",
         "match",
@@ -57,6 +58,12 @@ describe("views", () => {
   it("names a guest offer's file before approval, with no end time yet", () => {
     const view = screenView(META, offered(), CONFIG, T0 + sec(12));
     expect(view).toMatchObject({ state: "offered", fileName: "Guest.pptx", endsAt: null, kind: "guest" });
+  });
+
+  it("DEMO-01 carries the chosen file's size for the demo file card, and null when the source gave none", () => {
+    expect(screenView(META, offered(), CONFIG, T0 + sec(12)).fileSize).toBe(2048);
+    expect(screenView(META, approved(), CONFIG, T0 + sec(11)).fileSize).toBeNull();
+    expect(screenView(META, waiting(), CONFIG, T0).fileSize).toBeNull();
   });
 
   it("keeps the end reason in waiting and ended", () => {

@@ -4,6 +4,7 @@ import {
   clock,
   codeFromSearch,
   qrLabel,
+  sizeLabel,
   spelled,
   splitName,
   typedCode,
@@ -76,6 +77,17 @@ describe("time and size words", () => {
     const [head, tail] = splitName("Strategy and operations review 2026.pptx");
     expect(head + tail).toBe("Strategy and operations review 2026.pptx");
     expect(tail.endsWith(".pptx")).toBe(true);
+  });
+
+  it.each([
+    [0, "1 KB"],
+    [500, "1 KB"],
+    [81_196, "79 KB"],
+    [1024 * 1024, "1.0 MB"],
+    [2.45 * 1024 * 1024, "2.5 MB"],
+    [10 * 1024 * 1024, "10.0 MB"],
+  ])("%d bytes read %s", (bytes, text) => {
+    expect(sizeLabel(bytes)).toBe(text);
   });
 
   it("spells the code for the QR label", () => {

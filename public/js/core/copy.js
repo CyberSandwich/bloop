@@ -1,12 +1,12 @@
 // Every user-facing string of /s, /a and /code, from docs/design.md sections 3 and 7. A string marked
 // [V-n] there is gated by verified.js.
-/** @import {PhoneStateKey, ScreenStateKey} from "../../../src/shared/protocol.ts" */
+/** @import {FileType, OpenMode, PhoneStateKey, ScreenStateKey} from "../../../src/shared/protocol.ts" */
 import { VERIFIED } from "./verified.js";
 
 export const FOOTER_LINE = "Phone not with you? Sign in to this PC as usual.";
 export const SIGN_IN_HINT = "Sign in to this PC as usual to open your slides.";
 
-/** @typedef {"start_over" | "end" | "open" | "download" | "pdf"} ScreenControl */
+/** @typedef {"start_over" | "end" | "open" | "download" | "pdf" | "here"} ScreenControl `here` is the demo's "Approve on This Device" link */
 /**
  * @typedef {object} ScreenCopy
  * @property {string} heading
@@ -25,6 +25,8 @@ export const SIGN_IN_HINT = "Sign in to this PC as usual to open your slides.";
  * @property {boolean} guest
  * @property {boolean} offlineLong the screen has been offline for a while
  * @property {boolean} [demo] a demo screen (`/s?mode=demo`)
+ * @property {OpenMode | null} [openMode] how the screen opened the file; only `protocol` is a PowerPoint launch
+ * @property {FileType | null} [fileType]
  */
 
 /**
@@ -37,7 +39,14 @@ export function screenCopy(key, f) {
   const base = { controls: /** @type {ScreenControl[]} */ ([]), alert: false, chip: null };
   switch (key) {
     case "waiting":
-      return { ...base, heading: f.room, line: "Scan with your phone camera to present your slides." };
+      return f.demo
+        ? {
+            ...base,
+            heading: f.room,
+            line: "Scan with your phone camera, or approve on this device.",
+            controls: ["here"],
+          }
+        : { ...base, heading: f.room, line: "Scan with your phone camera to present your slides." };
     case "scanned":
       return {
         ...base,
@@ -55,13 +64,20 @@ export function screenCopy(key, f) {
         chip: "Scanned",
       };
     case "approved":
-      return { ...base, heading: "Approved.", line: `Opening ${file}.`, chip: "Approved", chipIcon: "check" };
+      return {
+        ...base,
+        heading: "Approved.",
+        line: `Opening ${file}.`,
+        controls: ["end"],
+        chip: "Approved",
+        chipIcon: "check",
+      };
     case "opening":
       return {
         ...base,
         heading: `Opening ${file}`,
         line: "in PowerPoint on this PC.",
-        controls: ["download"],
+        controls: ["end", "download"],
         chip: "Approved",
         chipIcon: "check",
       };
@@ -76,7 +92,8 @@ export function screenCopy(key, f) {
           : "";
       return {
         ...base,
-        heading: `${file} is open in PowerPoint.`,
+        // Only a protocol launch put it in PowerPoint; a fetch with no launch report says no more than it knows.
+        heading: f.openMode === "protocol" ? `${file} is open in PowerPoint.` : `${file} is open.`,
         line,
         controls: ["end", "download"],
         chip: "Approved",
@@ -149,6 +166,18 @@ export function screenCopy(key, f) {
         heading: "Open this on the room's screen.",
         line: "Then scan its code with your phone.",
       };
+    case "demo_open": {
+      const done = { ...base, chip: "Approved", chipIcon: "check" };
+      if (!f.guest) {
+        return { ...done, heading: file, line: "On a room PC this opens in PowerPoint.", controls: ["end"] };
+      }
+      return {
+        ...done,
+        heading: "Your file reached the screen.",
+        line: f.fileType === "pdf" ? "On a room PC it opens as a PDF." : "On a room PC it opens in PowerPoint.",
+        controls: ["end", "download"],
+      };
+    }
   }
 }
 
@@ -174,6 +203,7 @@ export function screenCopy(key, f) {
  * @property {string | null} endsAt
  * @property {boolean} [account] the phone is signed in to OneDrive, so it can disconnect
  * @property {number} [maxMB] the largest guest file, in whole megabytes
+ * @property {boolean} [back] this tab is also the demo screen (the one-device round trip), so it can go back to it
  */
 
 const ENTER_CODE = { id: "code", label: "Enter a Code", kind: /** @type {const} */ ("text"), href: "/code" };
@@ -185,6 +215,16 @@ const PICK = { id: "pick", label: "Choose File", kind: /** @type {const} */ ("pr
 const CANCEL = { id: "cancel", label: "Cancel", kind: /** @type {const} */ ("secondary") };
 const DONE = { id: "done", label: "Done", kind: /** @type {const} */ ("primary") };
 const TRY_AGAIN = { id: "retry", label: "Try Again", kind: /** @type {const} */ ("primary") };
+const END = { id: "end", label: "End", kind: /** @type {const} */ ("primary") };
+const BACK = {
+  id: "back",
+  label: "See It on the Screen",
+  kind: /** @type {const} */ ("primary"),
+  href: "/s?mode=demo",
+};
+/** End, or with the way back to the demo screen first, which then takes the primary. */
+const endActions = (/** @type {PhoneFacts} */ f) =>
+  /** @type {PhoneAction[]} */ (f.back ? [BACK, { ...END, kind: "secondary" }] : [END]);
 
 /**
  * @param {PhoneStateKey} key
@@ -244,7 +284,7 @@ export function phoneCopy(key, f) {
     case "approve_demo":
       return {
         ...base,
-        title: "Open the sample deck here?",
+        title: `Open ${file} here?`,
         room: true,
         match: true,
         files: "list",
@@ -333,7 +373,7 @@ export function phoneCopy(key, f) {
         ...base,
         title: `Sent to ${f.room}.`,
         body: "Open it on the screen when you're ready.",
-        actions: [CANCEL],
+        actions: f.back ? [BACK, CANCEL] : [CANCEL],
       };
     case "guest_pass_needed":
       return {
@@ -350,37 +390,27 @@ export function phoneCopy(key, f) {
         actions: [DONE],
       };
     case "opening":
-      return { ...base, title: `Opening on ${f.room}.`, body: file };
+      return { ...base, title: `Opening on ${f.room}.`, body: file, actions: endActions(f) };
     case "open": {
       const ends = VERIFIED.autoEnd && f.endsAt ? ` Ends by itself at ${f.endsAt}.` : "";
-      return {
-        ...base,
-        title: `Open on ${f.room}.`,
-        body: `${file}.${ends}`,
-        actions: [{ id: "end", label: "End", kind: "primary" }],
-      };
+      return { ...base, title: `Open on ${f.room}.`, body: `${file}.${ends}`, actions: endActions(f) };
     }
     case "open_fallback":
       return {
         ...base,
         title: "PowerPoint didn't open on the screen.",
         body: "Tap Download on the screen to open it there.",
-        actions: [{ id: "end", label: "End", kind: "primary" }],
+        actions: [END],
       };
     case "pdf_fallback":
       return {
         ...base,
         title: `Showing as a PDF on ${f.room}.`,
         body: "PowerPoint can't open it there. Animations and videos won't play.",
-        actions: [{ id: "end", label: "End", kind: "primary" }],
+        actions: [END],
       };
     case "pdf_file":
-      return {
-        ...base,
-        title: `Opened as a PDF on ${f.room}.`,
-        body: file,
-        actions: [{ id: "end", label: "End", kind: "primary" }],
-      };
+      return { ...base, title: `Opened as a PDF on ${f.room}.`, body: file, actions: [END] };
     case "ended":
       return {
         ...base,
