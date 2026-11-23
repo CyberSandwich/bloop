@@ -72,7 +72,12 @@ async function putDrop(request: Request, env: Env, config: Config): Promise<Resp
     return fail(error);
   };
 
-  const reserved = await drop.reserve(sessionId, length, file.name, file.type);
+  let reserved: Awaited<ReturnType<typeof drop.reserve>>;
+  try {
+    reserved = await drop.reserve(sessionId, length, file.name, file.type);
+  } catch {
+    return abandon("internal", null);
+  }
   if (!reserved.ok) return abandon(reserved.error, null);
   const { r2Key } = reserved;
   let accepted: Awaited<ReturnType<typeof drop.accept>>;

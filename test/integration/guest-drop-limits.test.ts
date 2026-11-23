@@ -9,12 +9,12 @@ import { startWrangler, type Wrangler } from "./wrangler.ts";
 
 const deck = validDeck();
 
-function withInstance(vars: Record<string, string>, timing = true) {
+function withInstance(vars: Record<string, string>, timing = true, migrate = true) {
   const ctx = {} as { w: Wrangler; api: Api };
   beforeAll(async () => {
     ctx.w = timing
-      ? await startPairing(vars, { migrate: true })
-      : await startWrangler({ HASH_PEPPER: PEPPER, ...vars }, { migrate: true });
+      ? await startPairing(vars, { migrate })
+      : await startWrangler({ HASH_PEPPER: PEPPER, ...vars }, { migrate });
     ctx.api = new Api(ctx.w.url);
   });
   afterAll(() => ctx.w?.stop());
@@ -129,4 +129,19 @@ describe("DROP-05 rate: the platform limit on uploads", () => {
     socket.close();
     await sleep(0);
   }, 30_000);
+});
+
+describe("a database that fails mid-drop", () => {
+  // No migrations: the guest_file insert throws, as a D1 outage would.
+  const ctx = withInstance({}, true, false);
+
+  it("answers internal as problem JSON and returns the session from uploading", async () => {
+    const { socket, code } = await openScreen(ctx.api, "demo");
+    const claimed = await claim(ctx.api, code, "guest");
+    const res = await putDrop(ctx.api, claimed.body.pid, deck);
+    expect(res.status).toBe(500);
+    expect(await problemCode(res)).toBe("internal");
+    await socket.stateWhere((v) => v.state === "claimed");
+    socket.close();
+  });
 });
