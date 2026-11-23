@@ -166,12 +166,15 @@ test.describe("desktop robin", () => {
   test.use({ viewport: { width: 1440, height: 723 } });
 
   test("the renderer loads only after the load event, then fades in over the poster", async ({ page }) => {
-    const requests: string[] = [];
-    page.on("request", (r) => requests.push(r.url()));
-    await page.goto("/", { waitUntil: "domcontentloaded" });
-    expect(requests.some((u) => u.endsWith("/js/robin.js"))).toBe(false);
-    await page.waitForLoadState("load");
+    await page.goto("/");
     await expect(page.locator("#hero-robin canvas")).toHaveClass(/is-live/, { timeout: 10_000 });
+    // Compared on the page's own clock: a fast page can reach load before Playwright sees domcontentloaded.
+    const timing = await page.evaluate(() => {
+      const nav = performance.getEntriesByType("navigation")[0] as PerformanceNavigationTiming;
+      const robin = performance.getEntriesByType("resource").find((e) => e.name.endsWith("/js/robin.js"));
+      return { loadStart: nav.loadEventStart, robinStart: robin?.startTime ?? -1 };
+    });
+    expect(timing.robinStart).toBeGreaterThanOrEqual(timing.loadStart);
   });
 
   test("the explorer's drag control turns with keys and the Turn buttons, and eases back", async ({ page }) => {
