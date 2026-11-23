@@ -2,8 +2,8 @@
 // Run: node tools/change-tier.mjs --staged [--msg-file PATH]. The tiers and gates are defined in CLAUDE.md "change loop".
 // The decisions are pure functions over data so test/unit/change-tier.test.ts needs no git.
 import { execFileSync } from "node:child_process";
-import { readFileSync } from "node:fs";
-import { pathToFileURL } from "node:url";
+import { readFileSync, realpathSync } from "node:fs";
+import { fileURLToPath } from "node:url";
 
 /** @typedef {{path: string, status: "A" | "M" | "D" | "T", added: number, deleted: number}} ChangedFile */
 /** @typedef {Record<string, string>} Deps */
@@ -12,6 +12,7 @@ import { pathToFileURL } from "node:url";
 const T0_MAX_LINES = 40;
 const T2_MIN_LINES = 400;
 const NO_DOCS_TRAILER = /^Docs: none needed$/m;
+const DEP_SECTIONS = ["dependencies", "devDependencies"];
 
 const GATES = {
   0: ["npm run check"],
@@ -44,7 +45,7 @@ const sorted = (deps) => Object.entries(deps).sort(([a], [b]) => a.localeCompare
 
 /**
  * @param {ChangedFile[]} files
- * @param {{before?: Deps, after?: Deps}} [deps] `dependencies` of package.json before and after the change.
+ * @param {{before?: Deps | undefined, after?: Deps | undefined}} [deps] both dependency sections of package.json (see `dependencySections`) before and after.
  * @returns {Tier}
  */
 export function classify(files, deps = {}) {
@@ -52,7 +53,7 @@ export function classify(files, deps = {}) {
   const t2 = [];
   const lines = files.reduce((sum, f) => sum + f.added + f.deleted, 0);
 
-  if (depsChanged(deps.before, deps.after)) t2.push("dependencies changed");
+  if (depsChanged(deps.before, deps.after)) t2.push("dependencies or devDependencies changed");
   for (const f of files) {
     if (f.status === "A" && f.path.startsWith("src/worker/seams/")) t2.push(`new seam file ${f.path}`);
     if (f.status === "A" && f.path.startsWith("migrations/")) t2.push(`new migration ${f.path}`);
@@ -71,7 +72,7 @@ export function classify(files, deps = {}) {
 /**
  * The two hard blocks, applied to a commit message.
  * @param {ChangedFile[]} files
- * @param {{before?: Deps, after?: Deps}} deps
+ * @param {{before?: Deps | undefined, after?: Deps | undefined}} deps
  * @param {string} message
  * @returns {string[]} one line per violated rule; empty when the commit may proceed
  */
@@ -80,7 +81,7 @@ export function blocks(files, deps, message) {
   const out = [];
   if (depsChanged(deps.before, deps.after) && !files.some((f) => f.path.startsWith("docs/adr/"))) {
     out.push(
-      "`dependencies` changed but no docs/adr/ file is staged: add the ADR line (why, what it replaces, how to remove it).",
+      "`dependencies` or `devDependencies` changed but no docs/adr/ file is staged: add the ADR line (why, what it replaces, how to remove it).",
     );
   }
   const touchesSrc = files.some((f) => f.path.startsWith("src/"));
@@ -93,9 +94,10 @@ export function blocks(files, deps, message) {
   return out;
 }
 
-/** @param {string} message git's commit-msg file holds `#` comment lines that are not part of the message. */
+/** @param {string} message git's commit-msg file holds `#` comment lines that are not part of the message; CRLF editors add `\r`. */
 const stripComments = (message) =>
   message
+    .replaceAll("\r", "")
     .split("\n")
     .filter((line) => !line.startsWith("#"))
     .join("\n");
@@ -103,33 +105,65 @@ const stripComments = (message) =>
 /** @param {string[]} args */
 const git = (args) => execFileSync("git", args, { encoding: "utf8", maxBuffer: 64 * 1024 * 1024 });
 
-/** @returns {ChangedFile[]} the staged diff, renames split into a delete and an add so each path has one status. */
-function stagedFiles() {
-  const numstat = git(["diff", "--cached", "--no-renames", "--numstat"]).split("\n").filter(Boolean);
+/**
+ * Joins `git diff -z --numstat` and `-z --name-status` output (both run with `--no-renames`, so a rename is a
+ * delete plus an add and every record has exactly one path). `-z` keeps non-ASCII paths unquoted.
+ * @param {string} numstat records `added TAB deleted TAB path NUL`
+ * @param {string} nameStatus alternating `status NUL path NUL`
+ * @returns {ChangedFile[]}
+ */
+export function parseDiff(numstat, nameStatus) {
   const counts = new Map(
-    numstat.map((line) => {
-      const [added = "0", deleted = "0", ...path] = line.split("\t");
-      // Binary files show "-": they count as no lines.
-      return [path.join("\t"), { added: Number(added) || 0, deleted: Number(deleted) || 0 }];
-    }),
+    numstat
+      .split("\0")
+      .filter(Boolean)
+      .map((record) => {
+        const [added = "0", deleted = "0", ...path] = record.split("\t");
+        // Binary files show "-": they count as no lines.
+        return [path.join("\t"), { added: Number(added) || 0, deleted: Number(deleted) || 0 }];
+      }),
   );
-  return git(["diff", "--cached", "--no-renames", "--name-status"])
-    .split("\n")
-    .filter(Boolean)
-    .map((line) => {
-      const [status = "M", ...path] = line.split("\t");
-      const file = path.join("\t");
-      const count = counts.get(file) ?? { added: 0, deleted: 0 };
-      return /** @type {ChangedFile} */ ({ path: file, status: status.charAt(0), ...count });
+  const tokens = nameStatus.split("\0");
+  /** @type {ChangedFile[]} */
+  const files = [];
+  for (let i = 0; i + 1 < tokens.length; i += 2) {
+    const path = tokens[i + 1] ?? "";
+    files.push({
+      path,
+      status: /** @type {ChangedFile["status"]} */ ((tokens[i] ?? "M").charAt(0)),
+      ...(counts.get(path) ?? { added: 0, deleted: 0 }),
     });
+  }
+  return files;
 }
 
-/** @returns {{before?: Deps, after?: Deps}} */
+const stagedFiles = () =>
+  parseDiff(
+    git(["diff", "--cached", "--no-renames", "-z", "--numstat"]),
+    git(["diff", "--cached", "--no-renames", "-z", "--name-status"]),
+  );
+
+/**
+ * Both dependency sections of a package.json, flattened to `section:name` so a move between them counts.
+ * @param {string} text
+ * @returns {Deps}
+ */
+export function dependencySections(text) {
+  const pkg = JSON.parse(text);
+  /** @type {Deps} */
+  const out = {};
+  for (const section of DEP_SECTIONS) {
+    for (const [name, version] of Object.entries(pkg[section] ?? {})) out[`${section}:${name}`] = String(version);
+  }
+  return out;
+}
+
+/** @returns {{before: Deps | undefined, after: Deps | undefined}} */
 function stagedDeps() {
   /** @param {string} spec */
   const read = (spec) => {
     try {
-      return JSON.parse(git(["show", spec])).dependencies;
+      return dependencySections(git(["show", spec]));
     } catch {
       return undefined;
     }
@@ -159,4 +193,5 @@ function main() {
   console.log(`gates: ${gates.join(" | ")}`);
 }
 
-if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) main();
+// realpath on both sides: a symlinked path to this file must still run the CLI, never silently pass.
+if (process.argv[1] && realpathSync(process.argv[1]) === realpathSync(fileURLToPath(import.meta.url))) main();

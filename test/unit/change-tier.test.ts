@@ -1,5 +1,10 @@
+import { execFileSync, spawnSync } from "node:child_process";
+import { mkdirSync, mkdtempSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
-import { blocks, classify, depsChanged } from "../../tools/change-tier.mjs";
+import { blocks, classify, dependencySections, depsChanged, parseDiff } from "../../tools/change-tier.mjs";
 
 type Status = "A" | "M" | "D" | "T";
 const file = (path: string, lines = 5, status: Status = "M") => ({ path, status, added: lines, deleted: 0 });
@@ -39,7 +44,7 @@ describe("classify", () => {
   it("T2: dependencies change", () => {
     const tier = classify([file("package.json", 2)], ADDED_DEP);
     expect(tier.tier).toBe(2);
-    expect(tier.reasons).toContain("dependencies changed");
+    expect(tier.reasons).toContain("dependencies or devDependencies changed");
     expect(classify([file("package.json", 2)], SAME).tier).toBe(1);
   });
 
@@ -76,6 +81,78 @@ describe("classify", () => {
     const t2 = classify([file("src/worker/headers.ts", 1)], SAME).gates.join(" ");
     expect(t2).toContain("/code-review high");
     expect(t2).toContain("/security-review");
+  });
+});
+
+describe("dev dependencies", () => {
+  const before = dependencySections('{"dependencies":{"zod":"1"},"devDependencies":{"vitest":"1"}}');
+
+  it("a new or bumped devDependency is T2 and needs an ADR like a dependency", () => {
+    const after = dependencySections('{"dependencies":{"zod":"1"},"devDependencies":{"vitest":"2"}}');
+    expect(classify([file("package.json", 2)], { before, after }).tier).toBe(2);
+    expect(blocks([file("package.json", 2)], { before, after }, "bump")).toHaveLength(1);
+    expect(blocks([file("package.json", 2), file("docs/adr/0009-x.md", 5, "A")], { before, after }, "bump")).toEqual(
+      [],
+    );
+  });
+
+  it("moving a package between the sections counts", () => {
+    const after = dependencySections('{"dependencies":{"zod":"1","vitest":"1"},"devDependencies":{}}');
+    expect(depsChanged(before, after)).toBe(true);
+  });
+
+  it("scripts-only edits to package.json change nothing", () => {
+    const after = dependencySections(
+      '{"scripts":{"x":"y"},"dependencies":{"zod":"1"},"devDependencies":{"vitest":"1"}}',
+    );
+    expect(depsChanged(before, after)).toBe(false);
+  });
+});
+
+describe("parseDiff", () => {
+  it("reads NUL-separated git output, non-ASCII paths included", () => {
+    const numstat = "3\t1\tsrc/worker/auth/véri.ts\0-\t-\tpublic/robin.bin\0";
+    const nameStatus = "M\0src/worker/auth/véri.ts\0A\0public/robin.bin\0";
+    expect(parseDiff(numstat, nameStatus)).toEqual([
+      { path: "src/worker/auth/véri.ts", status: "M", added: 3, deleted: 1 },
+      { path: "public/robin.bin", status: "A", added: 0, deleted: 0 },
+    ]);
+    expect(parseDiff("", "")).toEqual([]);
+  });
+});
+
+describe("the CLI against a real repository", () => {
+  const TOOL = fileURLToPath(new URL("../../tools/change-tier.mjs", import.meta.url));
+  const git = (cwd: string, ...args: string[]) =>
+    execFileSync("git", ["-c", "user.name=t", "-c", "user.email=t@t", ...args], { cwd, encoding: "utf8" });
+  const run = (cwd: string, entry: string, ...args: string[]) =>
+    spawnSync("node", [entry, "--staged", ...args], { cwd, encoding: "utf8" });
+
+  it("classifies a staged non-ASCII auth path as T2, through a symlinked entry point", () => {
+    const dir = mkdtempSync(join(tmpdir(), "tier-"));
+    try {
+      git(dir, "init", "-q");
+      mkdirSync(join(dir, "src/worker/auth"), { recursive: true });
+      writeFileSync(join(dir, "src/worker/auth/véri.ts"), "export {};\n");
+      git(dir, "add", "--", "src/worker/auth/véri.ts");
+      const link = join(dir, "link.mjs");
+      symlinkSync(TOOL, link);
+
+      const direct = run(dir, TOOL);
+      expect(direct.stdout).toMatch(/^T2: auth code: src\/worker\/auth\/véri\.ts/);
+      expect(run(dir, link).stdout).toBe(direct.stdout);
+
+      const msg = join(dir, "msg");
+      writeFileSync(msg, "change\n");
+      const blocked = run(dir, TOOL, "--msg-file", msg);
+      expect(blocked.status).toBe(1);
+      expect(blocked.stderr).toContain("Docs: none needed");
+
+      writeFileSync(msg, "change\r\n\r\nDocs: none needed\r\n");
+      expect(run(dir, TOOL, "--msg-file", msg).status).toBe(0);
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
   });
 });
 
