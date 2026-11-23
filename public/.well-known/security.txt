@@ -1,0 +1,4 @@
+# bloop security contact. Draft: the owner replaces the placeholder address before the first deploy (docs/setup.md).
+Contact: mailto:security@bloop.example
+Expires: 2027-11-23T00:00:00.000Z
+Preferred-Languages: en

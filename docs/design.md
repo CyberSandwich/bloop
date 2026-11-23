@@ -82,6 +82,8 @@ bloop puts your slides on a shared screen. You scan the code on the screen, choo
 | `<title>` landing | bloop: your slides on any screen |
 | meta description | Scan the code with your phone and choose your file. It opens in PowerPoint. The screen never gets your account. |
 | `<title>` `/it`, `/s`, `/a` | bloop for IT and AV; bloop screen; Approve on bloop |
+| `<title>` `/privacy`, 404 | bloop privacy notice; bloop: page not found |
+| OG image alt | bloop: Your slides. On any screen. |
 
 **Hero**
 | Slot | String |
@@ -112,6 +114,7 @@ bloop puts your slides on a shared screen. You scan the code on the screen, choo
 | Present | Choose your file and tap Approve. It opens in PowerPoint on the screen. `[V-8]` |
 | End | Tap End on your phone or on the screen, or it ends by itself after 90 minutes. `[V-2]` |
 | Control row | Drag to turn the robin. Buttons: Turn Left, Turn Right |
+| Drag control (the robin box, once live) | label Turn the Robin; `role="slider"`, value in degrees from -180 to 180 |
 
 **Facts (diagonal)**: heading "What the screen gets."
 | Numeral | Caption |
@@ -124,7 +127,7 @@ bloop puts your slides on a shared screen. You scan the code on the screen, choo
 | Headline | Sentence | Product UI inside |
 |---|---|---|
 | Between lectures | Walk in, scan the code and choose this week's slides on your phone. | `/a` choose file, Lecture 4.pptx ticked |
-| Guest speakers | No account needed. A guest sends one file from their phone, it opens on the screen, and bloop deletes its copy when the talk ends. `[V-10]` `[V-5]` | `/a` guest confirm with Send |
+| Guest speakers | No account needed. A guest sends one file from their phone, and it opens on the screen. bloop deletes its copy when the talk ends. `[V-10]` `[V-5]` | `/a` guest confirm with Send |
 | For IT | One file, never an account. See exactly what the screen receives on the IT page. | `/s` open state; the card links to `/it` |
 
 **Closing and footer**
@@ -132,8 +135,8 @@ bloop puts your slides on a shared screen. You scan the code on the screen, choo
 |---|---|
 | Closing | Try it in your lecture room. / Early access is free while bloop is being tested. `[V-20]` / button Ask for Early Access (mailto to the role address `[V-13]`) |
 | Footer line | Your slides on any screen with a web browser and PowerPoint. |
-| Footer links | How It Works, For IT, Read the Source, Report a Security Issue |
-| Credit, legal | Robin model: CC0 (credit in section 14). / © 2026 bloop. |
+| Footer links | How It Works, For IT, Privacy, Read the Source (the public repository), Report a Security Issue (`/.well-known/security.txt`) |
+| Credit, legal | Robin model: grab3d, CC0. / © 2026 bloop. |
 | 404 | This page isn't here. / Check the address, or go to the home page. / button Go to the Home Page |
 | No JavaScript | stage "The live demo needs JavaScript."; `/s` "This screen needs JavaScript to show a code."; `/a` "Approving needs JavaScript. Turn it on, then scan again." |
 
@@ -166,7 +169,7 @@ State strings for `/s` and `/a` are in section 7 with their screens.
 | QR module | none | `--qr-mod` 6 px, 5 px when the viewport is under 760 px tall | the code fits the fold |
 | Robin box | none | `--robin-hero:clamp(320px,60vh,560px)`; `min(80vw,320px)` under 600 | bar 7 |
 
-The accent is the house orange (`--acc:#FFB783`, `--on-acc:#4E2600`, `--acc-ink:#8D4F1B`). White on orange fails AA and never ships. Tokens live in `assets/site.css` after house `tokens.css`; this file is the source and the CSS restates it.
+The accent is the house orange (`--acc:#FFB783`, `--on-acc:#4E2600`, `--acc-ink:#8D4F1B`). White on orange fails AA and never ships. Tokens live in `public/css/app.css` (the one stylesheet, restating the house light values); this file is the source and the CSS restates it.
 
 ### Story-card tint rule
 - One tint family, drawn from the accent: `--tint` and `--tint-2` only. No second hue, no gradient, no tinted text, no tinted shadow, no deeper step (`--t2` fails AA on the next one).
@@ -190,7 +193,7 @@ The accent is the house orange (`--acc:#FFB783`, `--on-acc:#4E2600`, `--acc-ink:
 Measure 60 to 72 characters (`max-width:36em`). Nothing under 12 px. Headings `text-wrap:balance`.
 
 ### Font
-- `@font-face` "Inter" from `/assets/inter-latin.woff2?v=1`, `font-weight:400 600`, `font-display:swap`, the Latin `unicode-range` (U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+2000-206F, U+2074, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD).
+- `@font-face` "Inter" from `/fonts/inter-latin.woff2` (44,268 bytes, `opsz` kept; `tools/subset-font.py` from `src/fonts/InterVariable.woff2`), `font-weight:400 600`, `font-display:swap`, the Latin `unicode-range` (U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+2000-206F, U+2074, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD).
 - "Inter Fallback": `local("Arial")`, `size-adjust:107.1%`, `ascent-override:90.4%`, `descent-override:22.5%`, `line-gap-override:0%` (starting metrics; open item 11).
 
 ### Radii, elevation, layers
@@ -243,7 +246,7 @@ All components are house components restyled by tokens, except the stage and the
 | Size, shape | height 52 (48 under 600); width `min(100% - 24px, 1024px)` compact, `min(100% - 48px, 1024px)` above; `--rr`; padding 8 (6 under 600) |
 | Surface | `--nav-bg`, `backdrop-filter:blur(20px) saturate(180%)`, hairline, `--sh2`; solid under `prefers-reduced-transparency` |
 | Content | wordmark start; 2 links center (17 px 400 `--t1`, 44 px hit area, underline on hover only); CTA end |
-| CTA | primary pill 36 tall, padding 0 16; 44 hit area via a `::before` inset of -4 px. Hidden (`visibility:hidden;opacity:0`, space kept, `tabindex="-1"`) while the hero actions are in view, so the first view never shows two primary buttons; fades in over `--d1` after |
+| CTA | primary pill 36 tall, padding 0 16; 44 hit area via a `::before` inset of -4 px. Hidden (`visibility:hidden;opacity:0`, space kept, `tabindex="-1"`; `visibility:hidden` already removes it from the accessibility tree, so no `aria-hidden`, which the linter rejects on a link) while the hero actions are in view, so the first view never shows two primary buttons; fades in over `--d1` after |
 | Compact | wordmark plus CTA; links live in the footer; no hamburger |
 | Current page | `aria-current="page"` link in 600 weight |
 
@@ -267,8 +270,9 @@ The opsis stage and the ample orbit in one component: a big rounded `--tint` gro
 | Phone | the phone mock at the robin's left, overlapping the screen's lower right corner by 48 px, showing the real `/a` sheet in sync with the demo state |
 | File | one file row as a floating `--card` pill between phone and screen: "Sample deck.pptx" |
 | Orbit | the three objects sit on an ellipse around the robin; their places are fixed and change only with demo state (the file row moves from the phone to the screen on approved, over `--d3`); nothing circles or loops |
-| Live demo | desktop only (`(hover:hover) and (pointer:fine)`): scanning drives the demo states in section 3; the robin reacts per section 8; one change at a time |
+| Live demo | desktop only (`(hover:hover) and (pointer:fine)`): scanning drives the demo states in section 3; the robin reacts per section 8; one change at a time. Built by module i; until then the desktop stage shows the open state too and Try the Demo scrolls to the stage (`#demo`) |
 | Touch | no live code; the screen shows the open state; the robin centered, with the screen and phone side by side below it at 0.8 scale |
+| Layout switch | the orbit (robin at the side, objects placed around it) needs a fine pointer and 1200 px; every other case, including 834, uses the touch layout: robin centered (`min(52vh, 440px)` medium, `min(80vw, 320px)` compact), screen and phone side by side below it, the phone clipped by the stage floor |
 | Height lock | every state swaps in place inside fixed boxes (no CLS) |
 
 ### Phone mock
@@ -284,16 +288,16 @@ Window chrome (title bar, traffic-light dots, tabs) is allowed only on a faithfu
 | Open card | the card treatment, padding 24: label 28 px 600 ("Scan."), one sentence 17 px 400 `--t1`, then the control row: "Drag to turn the robin." 14 px `--t2` with two 44 px round `--bg2` buttons, Lucide `rotate-ccw` and `rotate-cw`, labeled Turn Left and Turn Right (30 degrees per press) |
 | Collapsed chips | pill 48 tall, `--bg2`, a 24 px plus icon in a 32 circle, then the label in 600; tapping opens it |
 | Active marker | the open card's 32 circle filled `--acc-ink` with a white minus |
-| Scroll link | scroll progress picks the step (4 equal bands) and drives the robin's pose blend through `setPose` (section 9); tapping a chip scrolls to its band, so scroll and chips never disagree |
+| Scroll link | scroll progress picks the step (4 equal bands) and drives the robin's pose blend through `setPose` (section 9): in each band the robin blends from the previous step's pose over the band's first half, then holds; tapping a chip scrolls to 75 percent of its band, so scroll and chips never disagree (`core/robin-pose.js` `scrollPose`, `stepProgress`) |
 | Change | card height and radius over `--d2`; within a band only the robin's blend moves; the card swaps when the band changes |
 | Drag | turns the robin's yaw only and eases back to the step's yaw over `--d4`; Turn Left and Turn Right do the same (WCAG 2.5.7) |
-| Compact | no pin; the robin centered on top (280 box), the chips as a scroll-snap row, the open card below |
-| Keyboard | chips are `role="tab"` in a `tablist`, the open card is the `tabpanel`; arrows, Home, End; Tab leaves the group |
+| Compact | no pin; the robin centered on top (280 box), the chips wrap above and below the open card in reading order |
+| Keyboard | each step is a heading holding a disclosure button (`aria-expanded`, `aria-controls` its `section`), because a `tablist` cannot interleave tabs with their panels, which the open-card-between-chips layout needs; roving `tabindex` (only the open step's button is a tab stop); arrows, Home, End open and focus a step; Tab leaves the group |
 | Fallback | without JS, without scroll timelines or under reduced motion: no pin; all four cards open as a list, each with its still |
 
 ### Fact devices (diagonal)
 - Three devices staggered on a diagonal: columns 1 to 4, 5 to 8, 9 to 12, each 96 px lower than the one before; compact is one column with no stagger.
-- Each device shows the real UI that proves its fact (1 file: `/a` choose file with one file ticked; 0 accounts: `/s` open state; 60 s: `/s` waiting with the code), then the numeral at the fact size, 600 `--t1`, then the caption 17/26 `--t2`, at most two lines, max 280 px.
+- Each device shows the real UI that proves its fact (1 file: `/a` choose file with one file ticked; 0 accounts: `/s` open state; 60 s: `/s` waiting with the code, drawn on desktop only and encoding the landing's own address, never a session), then the numeral at the fact size, 600 `--t1`, then the caption 17/26 `--t2`, at most two lines, max 280 px.
 - No card, icon or border around a numeral; it sits on `--bg` and never counts up.
 
 ### Story card
@@ -410,18 +414,35 @@ h1 "The PC gets one file. Never an account." `[V-4]`, then the data-flow panel, 
 1. The PC holds a link to one file, and the link expires.
 2. Each code works once for 60 seconds, and the phone shows the room before Approve. `[V-6]`
 3. Each open ends by itself after 90 minutes and is logged for IT to export. `[V-2]`
-4. A downloaded copy can stay on the PC. Every room is audited, and the results are published. `[V-1]`
+4. A downloaded copy can stay on the PC. Every room is audited, and the results are published. `[V-1]` (until V-1 passes: "A downloaded copy can stay on the PC; the table below lists what can stay.")
 
 Then the detail table (each row `[V-5]` until the build confirms it; compact stacks every row), with the phone mock beside the first two rows at large and no robin:
 | Row | Content |
 |---|---|
-| What the PC holds | A session ID and a link to one file, in the browser's session storage. The link expires. While the file is open, PowerPoint holds the copy it opened. |
+| What the PC holds | A session ID and a link to one file, in the browser's session storage. The link expires. While the file is open, PowerPoint holds the copy it opened. PowerPoint may also get a Microsoft download link for the file, which can work for up to 1 hour. (Last sentence: redirect mode only, threat model OPEN-03; delete it in stream mode.) |
 | What bloop keeps | Your email, a OneDrive token, the ID of one folder, and a log of who opened which file where and when. No slide content, except a guest's upload, deleted when its session ends. |
 | Permissions | bloop asks for read access to OneDrive. Microsoft grants that for the whole OneDrive; bloop reads one folder and logs every read. Where your tenant allows it, the app folder limits access at Microsoft's side, but then only files in that folder appear. |
-| What can stay on the PC | A downloaded copy in Downloads and the file name in recent lists, until the profile is wiped. Each room is audited; results are published per room. |
+| What can stay on the PC | A downloaded copy in Downloads and the file name in recent lists, until the profile is wiped. Each room is audited; results are published per room. `[V-1]` (the last sentence ships only once V-1 passes) |
 | Threat model | QR relay: the phone shows the room name and a match code before Approve. Shoulder surfing: the code works once and lasts 60 seconds. Forgotten session: it ends by itself after 90 minutes. Wrong screen: unregistered screens carry a warning. Lost phone: disconnect bloop from any device. |
 | Revoking access | The user disconnects bloop; an admin removes the app in Entra. |
 | Status | No external audit yet. The source is public. Report a security issue: security.txt. |
+
+The data-flow panel is an ordered list of the three nodes; the phone mock shows the `/a` approve state.
+
+### Privacy notice (`/privacy`, draft until the legal lane, OD-5)
+`noindex`; same nav and footer as `/it`; no robin. The retention rows restate `docs/threat-model.md` section 10; change both together.
+| Slot | String |
+|---|---|
+| h1 | Privacy notice |
+| Draft line | This notice is a draft until bloop's legal review. |
+| Who is responsible | bloop runs this service. Write to {privacy address} with any question about your data. |
+| What bloop keeps, and for how long (table) | Your email and account ID: While you stay connected, then 30 days. / Your OneDrive access, encrypted: Until you disconnect, or after 30 days unused. / A log of who opened which file, in which room, and when: 180 days. For the demo, 7 days. / A guest's file: Deleted when the talk ends, and after 1 day at most. / Your phone's sign-in: 30 days unused, 90 days at most. / Usage counts, with no names: 90 days, then daily totals for 2 years. |
+| After the table | bloop keeps no slide content from your OneDrive. A guest's file is the one exception, and it is deleted when the talk ends. `[V-5]` |
+| Why | To open the file you approve on the screen you choose, to keep the service safe, and to give your organization's IT team a record of what was opened where. |
+| Where | Your data is stored in the EU on Cloudflare. Cloudflare is a US company, and each request is handled at its nearest data center. (threat model DATA-03: never "UK only" or "never leaves") |
+| Your choices | Disconnect OneDrive on your phone at any time, and bloop deletes its stored access. To see or erase what bloop holds about you, write to the address above. Your organization's admin can remove bloop in Microsoft Entra. |
+
+`/.well-known/security.txt` (RFC 9116): `Contact` (a role address), `Expires` (at most a year ahead), `Preferred-Languages: en`. The placeholder addresses and their owner steps are in `docs/setup.md`.
 
 ## 8. Motion
 
@@ -442,12 +463,12 @@ One motion language: the house durations (`--d1` 150, `--d2` 250, `--d3` 400, `-
 | robin drag | drag | follows input | | yaw only; back to the rest yaw (-0.7 rad) over `--d4` |
 | robin tilt | pointer over the stage (fine pointer) | follows, returns over `--d4` | `--ease` | max 6 degrees yaw, 4 pitch; off while any other motion runs |
 | sheet | open, close | `--d3` in, 200 out | `--ease-enter` / `--ease-exit` | |
-| section reveal | 15 percent visible | `--d4` | `--ease-enter` | opacity and `translateY(var(--rise))`; facts and story cards only, at most 3 items, 80 ms stagger; never the hero or task pages |
+| section reveal | 15 percent visible | `--d4` | `--ease-enter` | opacity and `translateY(var(--rise))`; the devices in facts and story cards only, never their text (section 13 bans a reveal that hides text), at most 3 items, 80 ms stagger; never the hero or task pages |
 | nav CTA appear | hero actions leave view | `--d1` | `--ease` | space kept |
 | toast | show, hide | `--d2` in, 125 out | `--ease-enter` / `--ease-exit` | |
 
 ### Scroll-driven animation
-- DOM motion tied to scroll (the explorer's pin and card swap) uses CSS `animation-timeline: view()` or `scroll()` on `transform` and `opacity`, inside `@supports (animation-timeline: view())`. The final state is the default style, so without support the page shows it with no motion.
+- The explorer's pin is `position:sticky` inside a 280vh scene (`.how.is-pinned`, 600 px and up, motion allowed); the card swap is a class change from the same progress the robin reads, so no CSS scroll timeline is needed. Without JS or under reduced motion the scene is not pinned and every card is open.
 - The robin's blend reads the same progress (`ViewTimeline` in JS where supported) in a `requestAnimationFrame` loop that runs only while the explorer is in view; without it, an `IntersectionObserver` with 4 thresholds steps the pose with a `--d3` tween. Never a `scroll` event listener.
 - One pinned scene per page (the explorer). Nothing changes speed after a scroll ends.
 
@@ -465,17 +486,17 @@ One motion language: the house durations (`--d1` 150, `--d2` 250, `--d3` 400, `-
 ## 9. The robin and 3D
 
 ### Why custom here
-The robin is the one place bloop builds instead of reusing (the decision record lives in `docs/adr/`). The hand-written renderer is 3.1 KB gzip and the packed mesh 15.2 KB gzip, about 18 to 20 KB in total, against OGL at 33.4 KB gzip as a full package plus a 57 KB gzip GLB, or three.js at 181 KB gzip. The job is small and fixed (one static mesh, one light, a few poses), and the poster is a safe fallback.
+The robin is the one place bloop builds instead of reusing (the decision record lives in `docs/adr/`). The hand-written renderer is 6.0 KB gzip as served (unminified) and the packed mesh 15.2 KB gzip, about 21 KB in total, against OGL at 33.4 KB gzip as a full package plus a 57 KB gzip GLB, or three.js at 181 KB gzip. The job is small and fixed (one static mesh, one light, a few poses), and the poster is a safe fallback.
 
 ### Asset pipeline (repo paths)
 | Step | Tool | Output | Budget |
 |---|---|---|---|
 | 1. Source | the CC0 low-poly robin GLB: 5,968 non-indexed float32 vertices, 1,990 triangles, a 341-byte palette PNG, 204,948 bytes | `src/robin.glb` (not served) | |
-| 2. Pack | `tools/pack.py`: dedupes to 1,022 vertices quantized to int16, 1,990 triangles with uint16 indices, one palette index per face, the 8-color palette; normals from faces at draw time, so no decoder and no glTF loader | `assets/robin.bin` (format BLP1) | 20,122 bytes raw, 15,155 gzip; budget 16 KB gzip |
-| 3. Poses | Blender: rotate the wing face groups about a shoulder pivot and the head about the neck (no rig); vertex count and order identical to the base; pack positions only | `assets/robin-{look,turn,carry,away}.bin` | about 6 KB raw each (estimate); 20 KB gzip for all four |
-| 4. Prop | the slide card, a flat 16:9 card of at most 12 triangles, white with a #FFB783 title bar, carry pose only | part of `robin-carry.bin` | |
-| 5. Stills | each pose from the same renderer in headless Chrome, same camera and light, transparent, at 2x (`tools/render-stills`) | PNG masters | |
-| 6. Encode | AVIF (quality about 60) with a WebP fallback | `assets/img/robin-{pose}-{w}.avif/.webp` | see Stills |
+| 2. Pack | `tools/pack.py`: dedupes to 1,022 vertices quantized to int16, 1,990 triangles with uint16 indices, one palette index per face, the 8-color palette; normals from faces at draw time, so no decoder and no glTF loader | `public/robin.bin` (format BLP1; byte-identical on a re-run) | 20,122 bytes raw, 15,155 gzip; budget 16 KB gzip (size-limit) |
+| 3. Poses | built: whole-object transforms (yaw, pitch, roll, lift, shift) in `public/js/core/robin-pose.js` `POSES`, repeated in `tools/robin-poses.json`; no per-pose mesh, so no pose files to load (open item 23 fallback). Later: Blender wing and head edits with identical topology, packed as positions only, `public/robin-{look,turn,carry,away}.bin`, about 20 KB gzip for all four | | |
+| 4. Prop | not built (needs step 3's meshes): the slide card, a flat 16:9 card of at most 12 triangles, white with a #FFB783 title bar, carry pose only | | |
+| 5. Stills | `tools/render-stills.py`: a plain-Python rasterizer with the renderer's camera, light, shading formula and poses (headless Chrome cannot start in the build sandbox), transparent, at 2x, downscaled with ImageMagick | PNG masters (temporary) | |
+| 6. Encode | AVIF (`avifenc -q 60`) with a WebP fallback (`cwebp -q 82`) | `public/img/robin-{pose}-{w}.avif/.webp` | see Stills; all pass (perch 1120: AVIF 21.7 KB, WebP 26.9 KB) |
 
 ### Palette (the robin's own colors)
 light plumage #E4C399; mid plumage #B89572; back #895E34; wing #9E7457; dark details #704A2D; breast #FF7702; belly #F5E4C8; warm shade #BE7634. The breast is not recolored toward `#FFB783` (the pastel would wash the bird out against `--bg`); it stays under 10 percent of the robin box, the robin never sits beside the primary button at the same size, and `#FF7702` never appears in CSS.
@@ -487,21 +508,23 @@ light plumage #E4C399; mid plumage #B89572; back #895E34; wing #9E7457; dark det
 | look | head toward the code | explorer Scan | 560 (compact 280) | 560, 1120 | AVIF 30 KB |
 | turn | body toward the viewer | explorer Check | 560 | 560, 1120 | AVIF 30 KB |
 | carry | wings up, slide card in the beak | explorer Present | 560 | 560, 1120 | AVIF 30 KB |
-| away | wings spread, gliding up and right | explorer End; `/a` ended (96) | 560 | 560, 1120 | AVIF 30 KB |
+| away | wings spread, gliding up and right | explorer End; `/a` ended (96) | 560 | 560, 1120 (`/a` 192) | AVIF 30 KB |
+
+Until pose meshes exist the stills show the whole-object poses: look turns the bird in profile toward the code at its left, turn faces the viewer, carry lifts and leans back, away turns right, rises and banks. Wings and the slide card come with step 3.
 
 ### Loading
 - Poster: `<img width height fetchpriority="high" decoding="async">` in a fixed `aspect-ratio:1` box, preloaded, never lazy; it is the LCP element and the fallback for every failure.
-- Desktop (fine pointer): once the stage is in view, on `requestIdleCallback` (timeout 2000 ms, `setTimeout` fallback) and never before LCP, import the renderer and fetch `robin.bin`; pose files load when the explorer is within 400 px of view. Skip under reduced motion or `saveData`.
+- Desktop (fine pointer): once the stage is in view, after the `load` event, on `requestIdleCallback` (timeout 2000 ms, `setTimeout` fallback), import the renderer and fetch `robin.bin`; the explorer mounts its own canvas the same way when it is within 400 px of view. Skip under reduced motion or `saveData`. Touch gets stills in the explorer.
 - Touch: the poster carries a 44 px round `--bg2` button at its lower right (Lucide `rotate-3d`, label "Turn the Robin"); tapping it loads the renderer in place.
 - Any failure (no WebGL, context lost, fetch or parse error) leaves the poster or still in place.
 
-### Renderer (`assets/robin.js`)
+### Renderer (`public/js/robin.js`, pure math in `public/js/core/robin-math.js`)
 | Item | Spec |
 |---|---|
-| API | ES module: `mountRobin(canvas, src, {yaw})` returns `{setPose(pose, {t, yaw}), hop(), stop()}`. `pose` is `perch`, `look`, `turn`, `carry` or `away`; `t` in 0 to 1 blends from the current pose by lerping positions in the vertex shader (two position attributes, same topology); without `t` it tweens over `--d3`. The page calls `setPose` from scroll, chips, Turn buttons and session events, and `hop()` on `bloop:scanned` |
-| Size | 3.1 KB gzip measured before `setPose`; budget 4 KB gzip with it |
+| API | ES module: `mountRobin(canvas, src, {control, tiltArea, pose, onTurn})` returns `{setPose(pose, {t, yaw}), turn(dir), hop(), stop()}`. `pose` is `perch`, `look`, `turn`, `carry` or `away`, or a weight map of them (`{look: 0.3, turn: 0.7}`, normalized); `t` in 0 to 1 sits that far from the last settled pose to this one at once (scroll); without `t` it tweens over `--d3`. Poses blend the whole-object transform in the model matrix; with pose meshes the same API lerps positions in the vertex shader. `control` takes the drag (yaw only, eases back over `--d4`) and arrows and Home; `turn(-1 / 1)` is Turn Left and Turn Right (30 degrees, held 1.2 s, then eased back). The page calls `setPose` from scroll, chips and session events, and `hop()` on `bloop:scanned` (module i) |
+| Size | served unminified (no build step, ADR 0001): 6.0 KB gzip for `robin.js` plus `robin-math.js`, budget 6.5 KB (size-limit). The 3.1 KB research measure was before `setPose`, the input mapping, the tilt and JSDoc types |
 | Graphics | WebGL 1, one program, one draw call; flat shading from per-face normals; one key light plus ambient; transparent canvas |
-| Camera, canvas | fixed framing matching the poster pixel for pixel; rest yaw -0.7 rad; the poster's box at `min(devicePixelRatio, 2)` |
+| Camera, canvas | fixed framing shared with the stills (`CAMERA`: half field of view 0.32 rad, distance 1.7, feet near the box floor); rest yaw -0.7 rad; the poster's box at `min(devicePixelRatio, 2)`. The stills come from a separate rasterizer, so the poster-to-canvas fade can show antialiasing differences, never a jump |
 | Frames | capped at 30 fps; none at rest; stops off-screen (`IntersectionObserver`) and on a hidden tab (`visibilitychange`) |
 | Input | pointer events with `touch-action:pan-y`, so page scroll works over the robin |
 | Durations | read from the motion tokens, not hard-coded |
@@ -509,7 +532,7 @@ light plumage #E4C399; mid plumage #B89572; back #895E34; wing #9E7457; dark det
 | Swap | if the device matrix (open item 21) shows quirks: OGL with its glTF loader, then three.js tree-shaken |
 
 ### Placement
-At most one prop (the slide card, carry pose only); phones, screens and files are real bloop UI, never 3D props. Landing hero: the stage's center object, poster then live, event poses on desktop. Explorer: live with scroll-linked `setPose`, stills under reduced motion. `/s`: perch poster 160 with a CSS hop on scan, never WebGL. `/a`: only the 96 px away still on Ended. Facts, story cards, closing, footer, `/it` and 404: none. Favicon: the robin's head in profile, flat SVG, 3 palette colors. OG image: perch still at right, h1 at left.
+At most one prop (the slide card, carry pose only); phones, screens and files are real bloop UI, never 3D props. Landing hero: the stage's center object, poster then live, event poses on desktop. Explorer: live with scroll-linked `setPose`, stills under reduced motion. `/s`: perch poster 160 (`robin-perch-320`, in the poster slot) with a CSS hop on scan (the hop is not wired yet), never WebGL. `/a`: only the 96 px away still on Ended. Facts, story cards, closing, footer, `/it` and 404: none. Favicon: the robin's head in profile, flat SVG, 3 palette colors. OG image: perch still at right, h1 at left.
 
 ## 10. The QR
 
@@ -552,7 +575,7 @@ Every late element (poster, canvas, code, stage UI, stills) has a reserved box. 
 | CSS (gzip, shared file) | 12 KB | same | same |
 | Font | 1 file, 55 KB or less | same | same |
 | JS before interaction (gzip) | 30 KB: glue plus the QR library; excludes the robin | 30 KB | 20 KB |
-| Robin renderer (deferred, never before LCP) | 4 KB (3.1 measured) | not loaded | not loaded |
+| Robin renderer (deferred, never before LCP) | 6.5 KB unminified (6.0 measured) | not loaded | not loaded |
 | Robin mesh `robin.bin` (deferred) | 16 KB (15.2 measured) | none | none |
 | Robin poses (deferred, near the explorer) | 20 KB for four | none | none |
 | Poster | AVIF 36 KB | AVIF 14 KB | none |
@@ -684,7 +707,7 @@ Font: Inter (SIL OFL 1.1), subset from the official `InterVariable.woff2`, licen
 | 8 | Opening in installed PowerPoint (Protected View, download blocks, license prompts); the PDF fallback | Download It Instead visible from the start |
 | 9 | Phone account needs (connect once, admin consent, sign-in lifetime) | first-use body "bloop reads your slides from OneDrive." |
 | 10 | Guest flow and its file size limit `{N}` | story card 2 and the guest states removed |
-| 11 | Inter subset size with `opsz` kept; fallback metrics measured against it | pin `opsz=14`; keep the starting metrics |
+| 11 | Inter subset size with `opsz` kept (settled: 44,268 bytes, under 55 KB, `opsz` kept); fallback metrics measured against it (open: needs a browser) | keep the starting metrics |
 | 12 | Camera apps keep the `#id` fragment (iOS, Android, common in-app scanners) | move the id into a path on the API origin |
 | 13 | Final name, host and a public role address | keep `SITE_NAME` and `{host}` placeholders out of production |
 | 14 | API origin; WebSocket allowed on campus networks | long-polling every 2 s |
@@ -696,5 +719,5 @@ Font: Inter (SIL OFL 1.1), subset from the official `InterVariable.woff2`, licen
 | 20 | Free early access wording stays within the rules for offering it | remove the closing line, keep the button |
 | 21 | Robin device matrix: iOS Safari, Android Chrome, Windows Edge on a room PC, Firefox (first frame, drag with page scroll, pause on hidden tab, context loss, `setPose` blend) | OGL, then three.js; the poster meanwhile |
 | 22 | uqr minified gzip size; its version 4, level M codes read by two phone cameras | qrcode-generator |
-| 23 | Pose meshes: Blender wing edits keep the base topology so `setPose` can blend | the explorer with the perch still plus whole-object yaw turns |
+| 23 | Pose meshes: Blender wing edits keep the base topology so `setPose` can blend | in effect: whole-object poses (yaw, pitch, roll, lift, shift) for every step, with stills rendered from them; no wings, no slide card |
 | 25 | "Any screen" needs its condition visible; the footer line carries it | add "A screen with a web browser and PowerPoint." under the stage |

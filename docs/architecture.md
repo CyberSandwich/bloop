@@ -237,16 +237,27 @@ src/worker/
   routes/{pairing,files,open,drop,auth,export,common}.ts
   retention.ts             cron jobs: closeStaleSessions (hourly), runRetention (daily)
 public/                    wrangler's assets directory, served as it is. Everything here is public: no secrets, no server-only logic
-  index.html it.html s.html a.html code.html g.html me.html 404.html
+  index.html it.html privacy.html s.html a.html code.html g.html me.html 404.html
   _headers                 static security headers (section 10)
-  css/ js/{landing,screen,phone,code,launcher,residue}.js js/vendor/uqr.js (+ LICENSE)
+  css/app.css              the one stylesheet (task pages and site pages)
+  js/{screen,phone,code,launcher,residue}.js   task pages; js/vendor/uqr.js (+ LICENSE)
+  js/{landing,site,page}.js   landing glue; nav CTA, Send Me the Link and toast; entry for /it and /privacy
+  js/robin.js js/core/robin-math.js   the WebGL renderer and its pure math (loaded on idle after load, desktop only)
+  js/core/{robin-pose,share}.js   poses, explorer scroll and drag mapping; the share ladder (pure)
+  robin.bin                the packed robin mesh (BLP1, tools/pack.py)
+  img/robin-{pose}-{w}.{avif,webp}   robin stills (tools/render-stills.py); og.png (tools/render-og.py); favicon.svg
+  fonts/inter-latin.woff2  the one font file (tools/subset-font.py) + Inter.LICENSE.txt
   js/shared/               runtime code shared by browser and Worker: plain JSDoc-typed ES modules
     codes.js               code alphabet, normalize, format "K7M Q9X" (pure)
     names.js               the /f/ link's name segment: an ASCII slug (pure)
     errors.js              error code to HTTP status and user-facing state (pure)
   .well-known/security.txt
+src/robin.glb src/fonts/InterVariable.woff2   sources of the robin mesh and the font subset, never served
 tools/
   dev-secrets.mjs          writes .dev.vars with fresh random keys
+  pack.py render-stills.py robin-poses.json   GLB to robin.bin; the stills, drawn by a plain-Python rasterizer with the live camera and poses
+  render-og.py og.svg      the social image and its SVG source
+  subset-font.py           Inter to the Latin subset, wght 400 to 600, opsz kept
 test/
   unit/                    vitest + fast-check: machine, codes, names, zip, vault, csv, headers
   integration/             against a real wrangler dev (wrangler.ts starts one on a free port): every route, sockets, timers, threat tests
@@ -263,7 +274,7 @@ test/
 
 | method                   | path                                         | auth                                  | purpose                                                        |
 | ------------------------ | -------------------------------------------- | ------------------------------------- | -------------------------------------------------------------- |
-| GET                      | `/`, `/it`, `/s`, `/a`, `/code`, `/g`, `/me` | none (static)                         | pages                                                          |
+| GET                      | `/`, `/it`, `/privacy`, `/s`, `/a`, `/code`, `/g`, `/me`, `/.well-known/security.txt` | none (static) | pages; any other path is `404.html` with status 404 |
 | POST                     | `/api/screens`                               | none, or room cookie (registered)     | create a screen: `{mode}` to `{sid, room}`                     |
 | GET                      | `/api/screen/ws?ref=<screenRef>`             | `hello{sid}` as first message, Origin | screen socket (the ref only routes to the object; it is no secret) |
 | GET                      | `/api/screen/state`                          | Bearer sid                            | polling fallback; also the rotation clock when there is no socket |
@@ -518,7 +529,7 @@ CSP per page type. Every page uses no inline script or style and no HTML string 
 | landing `/` (demo screen, robin) | `default-src 'none'; script-src 'self'; style-src 'self'; img-src 'self'; font-src 'self'; connect-src 'self'; manifest-src 'self'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'; require-trusted-types-for 'script'; trusted-types 'none'; upgrade-insecure-requests` |
 | screen `/s`                      | `default-src 'none'; script-src 'self'; style-src 'self'; img-src 'self'; font-src 'self'; connect-src 'self'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'; require-trusted-types-for 'script'; trusted-types 'none'; upgrade-insecure-requests`                      |
 | phone `/a`, `/code`, `/g`, `/me` | same as `/s`                                                                                                                                                                                                                                                                          |
-| IT `/it`, `404`                  | `default-src 'none'; script-src 'self'; style-src 'self'; img-src 'self'; font-src 'self'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'; require-trusted-types-for 'script'; trusted-types 'none'; upgrade-insecure-requests` (no `connect-src`)                       |
+| IT `/it`, `/privacy`, `404`, `security.txt` | `default-src 'none'; script-src 'self'; style-src 'self'; img-src 'self'; font-src 'self'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'; require-trusted-types-for 'script'; trusted-types 'none'; upgrade-insecure-requests` (no `connect-src`)                       |
 | `/api/*`, `/auth/*`              | `default-src 'none'; frame-ancestors 'none'`, plus `Cache-Control: no-store`                                                                                                                                                                                                          |
 | `/f/*` `.pptx`                   | `default-src 'none'; sandbox; frame-ancestors 'none'`, `Content-Disposition: attachment`, `Cache-Control: no-store`                                                                                                                                                                   |
 | `/f/*` PDF view (purpose `pdf`)  | `default-src 'none'; object-src 'self'; frame-ancestors 'none'`, `Content-Disposition: inline`, `Cache-Control: no-store`. `sandbox` is left out because Chromium does not render a PDF in a sandboxed document, and `object-src 'self'` is the one hole because its viewer is an embedded plugin that the `default-src` fallback would block (both unverified, field check F-PDF, ADR 0003) |
@@ -535,7 +546,7 @@ Logging: Worker logs record the route pattern, status, `ErrorCode` and duration.
 
 - `npm run dev`: `wrangler dev --ip 127.0.0.1 --port 8787 --persist-to .wrangler/state`. This needs no Cloudflare login. DO, D1, R2 and the rate-limit bindings run locally, and `FILE_SOURCE=mock`. It serves plain HTTP: browsers treat `localhost` as a secure context, so `__Host-` cookies work. Trying it from a phone on the LAN needs HTTPS (`--local-protocol https`, accepting the self-signed certificate once) and `PUBLIC_ORIGIN` set to that origin.
 - `npm run setup`: `tools/dev-secrets.mjs` writes `.dev.vars`, and `wrangler d1 migrations apply DB --local` applies the schema.
-- `npm run typecheck`: `tsc` for the Worker, for tests and tools (`tsconfig.node.json`), and for the browser JS (`tsconfig.public.json`). `npm run lint`: Biome (markdown is excluded). `npm test`: Vitest unit tests. `npm run check` runs typecheck, lint, test, test:int, html-validate and size-limit (browser JS budget 40 kB brotli).
+- `npm run typecheck`: `tsc` for the Worker, for tests and tools (`tsconfig.node.json`), and for the browser JS (`tsconfig.public.json`). `npm run lint`: Biome (markdown is excluded). `npm test`: Vitest unit tests. `npm run check` runs typecheck, lint, test, test:int, html-validate and size-limit: browser JS 40 kB brotli for every file under `public/js` except the deferred renderer (`robin.js`, `core/robin-math.js`), which has its own 6.5 kB gzip entry; the robin mesh 16 kB gzip, the font 55 kB, the stylesheet 12 kB gzip. Binaries never count toward the JS budget.
 - `npm run test:int`: each test file starts `wrangler dev` on a free port through `test/integration/wrangler.ts` (`{migrate: true}` applies `migrations/` to its throwaway D1 first; `auth.test.ts` uses that, with a local fake Entra on a free port and `ENTRA_AUTHORITY` set to it) (throwaway state directory, `PUBLIC_ORIGIN` set to that port, torn down after), drives the screen and phone with Node's native `WebSocket` (with an `Origin` header) and `fetch`, and moves time by running the Worker with short timings under `TEST_TIMING=1` (section 9) instead of a clock header: Durable Object alarms use real time. `open.test.ts` and `open-timing.test.ts` cover the open path (mint, fetch, methods, the 11th fetch, short windows, stream mode, fallback links, end). Three files cover pairing: `pairing.test.ts` (flows, validation, CSRF, sockets), `pairing-timing.test.ts` (short timings: expiry, rotation, claim timeout, auto-end, hello timeout) and `pairing-limits.test.ts` (production timing, so the rate-limit bindings and the exact guess limit are live, and a config that fails closed). `wrangler dev` does not implement Durable Object jurisdictions, so `stubs.ts` skips `eu` when `PUBLIC_ORIGIN` is local.
 - Task pages (`public/s.html`, `a.html`, `code.html`, `css/app.css`, `js/screen.js`, `phone.js`, `code.js`): pure client logic lives in `public/js/core/` (state mapping `states.js`, every string `copy.js`, `channel.js` for the WebSocket with reconnect 1, 2, 5, 10, 30 s and the 3 s polling fallback, `api.js`, `qr.js`). `/s?mode=demo` opens a demo screen (default `live`). The QR link is `/a?c=<code>`; the phone strips `?c=` with `history.replaceState` when its modules load. `GET /api/files` answers `{files: FileEntry[]}` (`core/files.js` has no fallback: an error is an error). A signed-in live phone shows a Disconnect OneDrive text action (it asks `GET /api/me` once after listing). `public/js/launcher.js` is the screen's launch ladder (the `open` frame, the Download control after 5 s, the PDF view, the Open click when the launch had no user gesture) and `public/js/residue.js` clears the page's state at `ended` and `closed`. Claims marked `[V-n]` in design.md ship only while their flag in `core/verified.js` is true.
 - `npm run test:e2e` (CI): Playwright with two browser contexts (screen at 1440, phone at 390), started with `TEST_TIMING=1` and `.dev.vars` from the example. It runs the full demo flow, the open path (launch, the Download fallback after the 5 s timeout, the PDF view, End clearing the screen's storage), the guest flow with fixtures (upload, then the Open click on the screen), every state string, axe, and the header assertions.

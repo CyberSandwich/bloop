@@ -23,8 +23,39 @@
   "size-limit": [
     {
       "name": "browser JS",
-      "path": "public/js/**/*.js",
+      "path": [
+        "public/js/**/*.js",
+        "!public/js/robin.js",
+        "!public/js/core/robin-math.js"
+      ],
       "limit": "40 kB"
+    },
+    {
+      "name": "robin renderer",
+      "path": [
+        "public/js/robin.js",
+        "public/js/core/robin-math.js"
+      ],
+      "gzip": true,
+      "limit": "6.5 kB"
+    },
+    {
+      "name": "robin mesh",
+      "path": "public/robin.bin",
+      "gzip": true,
+      "limit": "16 kB"
+    },
+    {
+      "name": "font",
+      "path": "public/fonts/inter-latin.woff2",
+      "brotli": false,
+      "limit": "55 kB"
+    },
+    {
+      "name": "site CSS",
+      "path": "public/css/app.css",
+      "gzip": true,
+      "limit": "12 kB"
     }
   ],
   "dependencies": {

@@ -1,0 +1,119 @@
+<!DOCTYPE html>
+<html lang="en-US">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+    <meta name="color-scheme" content="light">
+    <title>bloop for IT and AV</title>
+    <meta name="description" content="The PC gets one file. Never an account.">
+    <link rel="icon" href="/favicon.svg" type="image/svg+xml">
+    <link rel="preload" href="/fonts/inter-latin.woff2" as="font" type="font/woff2" crossorigin>
+    <link rel="stylesheet" href="/css/app.css">
+    <script type="module" src="/js/page.js"></script>
+  </head>
+  <body class="page-site">
+    <a class="skip" href="#main">Skip to Content</a>
+    <header class="nav-wrap">
+      <nav class="nav" aria-label="Main">
+        <a class="wordmark" href="/">bloop</a>
+        <div class="nav-links">
+          <a href="/#how">How It Works</a>
+          <a href="/it" aria-current="page">For IT</a>
+        </div>
+        <div class="nav-cta is-hidden" id="nav-cta">
+          <a class="btn primary small-btn desk" href="/#demo" tabindex="-1">Try the Demo</a>
+          <button class="btn primary small-btn touch" type="button" data-share tabindex="-1">Send Me the Link</button>
+        </div>
+      </nav>
+    </header>
+
+    <main id="main" class="doc">
+      <h1>The PC gets one file. Never an account.</h1>
+
+      <div class="flow-panel">
+        <h2 class="sr">What goes where</h2>
+        <ol class="flow-nodes">
+          <li>Phone: you choose and approve</li>
+          <li>bloop: keeps your Microsoft sign-in, encrypted</li>
+          <li>Screen: gets one file link</li>
+        </ol>
+      </div>
+
+      <ul class="points">
+        <li>The PC holds a link to one file, and the link expires.</li>
+        <li>Each code works once for 60 seconds, and the phone shows the room before Approve.</li>
+        <li>Each open ends by itself after 90 minutes and is logged for IT to export.</li>
+        <li>A downloaded copy can stay on the PC; the table below lists what can stay.</li>
+      </ul>
+
+      <div class="detail">
+        <table>
+          <caption class="sr">What bloop holds and where</caption>
+          <tbody>
+            <tr>
+              <th scope="row">What the PC holds</th>
+              <td>A session ID and a link to one file, in the browser's session storage. The link expires. While the file is open, PowerPoint holds the copy it opened. PowerPoint may also get a Microsoft download link for the file, which can work for up to 1 hour.</td>
+            </tr>
+            <tr>
+              <th scope="row">What bloop keeps</th>
+              <td>Your email, a OneDrive token, the ID of one folder, and a log of who opened which file where and when. No slide content, except a guest's upload, deleted when its session ends.</td>
+            </tr>
+            <tr>
+              <th scope="row">Permissions</th>
+              <td>bloop asks for read access to OneDrive. Microsoft grants that for the whole OneDrive; bloop reads one folder and logs every read. Where your tenant allows it, the app folder limits access at Microsoft's side, but then only files in that folder appear.</td>
+            </tr>
+            <tr>
+              <th scope="row">What can stay on the PC</th>
+              <td>A downloaded copy in Downloads and the file name in recent lists, until the profile is wiped.</td>
+            </tr>
+            <tr>
+              <th scope="row">Threat model</th>
+              <td>QR relay: the phone shows the room name and a match code before Approve. Shoulder surfing: the code works once and lasts 60 seconds. Forgotten session: it ends by itself after 90 minutes. Wrong screen: unregistered screens carry a warning. Lost phone: disconnect bloop from any device.</td>
+            </tr>
+            <tr>
+              <th scope="row">Revoking access</th>
+              <td>The user disconnects bloop; an admin removes the app in Entra.</td>
+            </tr>
+            <tr>
+              <th scope="row">Status</th>
+              <td>No external audit yet. The source is public. Report a security issue: <a href="/.well-known/security.txt">security.txt</a>.</td>
+            </tr>
+          </tbody>
+        </table>
+        <div class="phone it-phone" aria-hidden="true" inert>
+          <div class="phone-screen">
+            <div class="mock-scale">
+              <div class="column mock-a">
+                <p class="wordmark">bloop</p>
+                <div class="flow">
+                  <p class="title">Open Lecture 4.pptx on Room 2.14?</p>
+                  <p class="scope">Only this file goes to the screen. The screen never gets your account.</p>
+                </div>
+                <div class="actions"><span class="btn primary">Approve</span><span class="btn secondary">Cancel</span></div>
+              </div>
+            </div>
+          </div>
+        </div>
+        <p class="sr">Your phone shows the room name, a code and an Approve button.</p>
+      </div>
+    </main>
+
+    <footer class="footer">
+      <div class="footer-brand">
+        <a class="wordmark" href="/">bloop</a>
+        <p>Your slides on any screen with a web browser and PowerPoint.</p>
+      </div>
+      <ul class="footer-links">
+        <li><a href="/#how">How It Works</a></li>
+        <li><a href="/it">For IT</a></li>
+        <li><a href="/privacy">Privacy</a></li>
+        <li><a href="https://github.com/CyberSandwich/bloop">Read the Source</a></li>
+        <li><a href="/.well-known/security.txt">Report a Security Issue</a></li>
+      </ul>
+      <div class="footer-legal">
+        <p>Robin model: grab3d, CC0.</p>
+        <p>© 2026 bloop.</p>
+      </div>
+    </footer>
+  </body>
+</html>

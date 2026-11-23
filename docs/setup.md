@@ -21,6 +21,32 @@ Guest uploads (ADR 0005) live in one private R2 bucket in the `eu` jurisdiction.
 
 The two cron triggers (`0 * * * *` hourly, `30 3 * * *` daily) are declared in `wrangler.jsonc` and created by `wrangler deploy`; there is no dashboard step. After the first deploy, check once that both fired: Workers dashboard, the Worker, Logs, filter `retention` and `hourly`. The daily line reports the rows it deleted per table. Apply the migrations first: `wrangler d1 migrations apply bloop --remote`.
 
+## Site pages: placeholders to replace before the first deploy
+
+The public pages ship with placeholder addresses on the reserved `bloop.example` domain, so no personal address is ever committed. Replace each with a role address you own (design.md open item 13), in the same commit:
+
+| File | Placeholder | What it is |
+|---|---|---|
+| `public/.well-known/security.txt` | `security@bloop.example` | security contact (RFC 9116). Also renew `Expires` (at most a year ahead; `test/integration/site.test.ts` fails once it is past or more than about 13 months out) |
+| `public/privacy.html` | `privacy@bloop.example` | privacy contact |
+| `public/index.html` | `early-access@bloop.example` | the Ask for Early Access mail link |
+
+- **Privacy notice:** `/privacy` is a draft (it says so on the page and is `noindex`). The legal lane (OD-5) confirms roles, lawful bases and the retention periods it lists before launch; it repeats `threat-model.md` section 10, so change both together.
+- **Social image:** `og:image` is the relative `/og.png`. Some scrapers need an absolute URL: once the host is final, make it `https://<host>/og.png` in `public/index.html`.
+- **Stream mode:** if you set `OPEN_PATH_MODE=stream` (field test T3 below), delete the sentence about the Microsoft download link from the "What the PC holds" row of `public/it.html` and design.md.
+
+### Regenerating the site assets
+All outputs are committed; run these only when a source changes. Make one throwaway venv with `fonttools` and `brotli` (`python3 -m venv` in a temp directory, then its `pip install fonttools brotli`; inside the Claude Code sandbox set `PIP_USE_DEPRECATED=legacy-certs`). ImageMagick, `avifenc` and `cwebp` come from Homebrew (`imagemagick`, `libavif`, `webp`).
+
+| Change | Command | Writes |
+|---|---|---|
+| the robin model | `python3 -I tools/pack.py src/robin.glb public/robin.bin` | the mesh |
+| a pose, the camera or the mesh | `python3 -I tools/render-stills.py [pose ...]` | `public/img/robin-*` |
+| the name or the headline | edit `SITE_NAME` or `LINES` in `tools/render-og.py`, then run it with the venv's python | `public/og.png`, `tools/og.svg` |
+| page text with a new character | the venv's python: `-I tools/subset-font.py` | `public/fonts/inter-latin.woff2` |
+
+A pose lives in two places on purpose, `public/js/core/robin-pose.js` and `tools/robin-poses.json`; a unit test fails until they match, and likewise for the camera constants in `render-stills.py` and `core/robin-math.js`.
+
 ## Microsoft Entra app registration
 
 Do this once per deployment. It turns on real OneDrive sign-in. Until then bloop runs on the demo account and every `/auth/*` and `/api/me*` route answers `source_unavailable`.

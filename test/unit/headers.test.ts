@@ -38,6 +38,8 @@ const pages: [string, Policy, boolean][] = [
   ["/g", "app", false],
   ["/me", "app", false],
   ["/it", "minimal", false],
+  ["/privacy", "minimal", false],
+  ["/.well-known/security.txt", "minimal", false],
   ["/anything-else", "minimal", false],
 ];
 

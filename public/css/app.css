@@ -5,7 +5,7 @@
 /* biome-ignore-all lint/style/noDescendingSpecificity: the file is ordered by page, not by selector weight */
 @font-face {
   font-family: "Inter";
-  src: url("/fonts/InterVariable.woff2") format("woff2");
+  src: url("/fonts/inter-latin.woff2") format("woff2");
   font-weight: 400 600;
   font-style: normal;
   font-display: swap;
@@ -41,13 +41,29 @@
   --sh1: 0 1px 3px rgba(0, 0, 0, 0.04), 0 4px 12px rgba(0, 0, 0, 0.04);
   --sh2: 0 2px 6px rgba(0, 0, 0, 0.04), 0 8px 20px rgba(0, 0, 0, 0.06);
 
+  --sh-float: 0 0 0 1px rgba(29, 29, 31, 0.06), 0 30px 60px -30px rgba(29, 29, 31, 0.35);
+
   --r-sm: 10px;
   --r-card: 20px;
+  --r-stage: 32px;
+  --r-device: 48px;
   --rr: 999px;
 
+  --tint: #fff5ee;
+  --tint-2: #ffefe4;
+  --glass-solid: rgba(255, 255, 255, 0.82);
+  --w-wide: 1200px;
+  --robin-hero: clamp(320px, 60vh, 560px);
+  --sec: 128px;
+  --rise: 12px;
+
   --ease: cubic-bezier(0.2, 0, 0, 1);
+  --ease-enter: cubic-bezier(0, 0, 0, 1);
+  --ease-exit: cubic-bezier(0.3, 0, 1, 1);
   --d1: 150ms;
   --d2: 250ms;
+  --d3: 400ms;
+  --d4: 500ms;
   --m: 24px;
 }
 
@@ -272,6 +288,11 @@ h1[tabindex="-1"]:focus {
   width: 160px;
   height: 160px;
 }
+.poster-slot img {
+  display: block;
+  width: 100%;
+  height: 100%;
+}
 .qr-panel {
   position: relative;
   display: block;
@@ -309,7 +330,9 @@ h1[tabindex="-1"]:focus {
   letter-spacing: 0.06em;
   font-variant-numeric: tabular-nums;
 }
-.stage h1 {
+.stage h1,
+.stage .heading {
+  font-weight: 600;
   font-size: 48px;
   line-height: 1.1;
   letter-spacing: -0.028em;
@@ -527,24 +550,27 @@ main:not([data-mode]) .typed {
 .bar-wrap {
   margin: 0;
 }
-.bar {
+/* Scoped to the element: the /s header is also .bar, so a bare .bar here would flatten it to 8 px. */
+progress.bar {
   display: block;
   width: 100%;
   height: 8px;
+  min-height: 0;
+  padding: 0;
   appearance: none;
   border: 0;
   border-radius: var(--rr);
   background: var(--bg2);
   overflow: hidden;
 }
-.bar::-webkit-progress-bar {
+progress.bar::-webkit-progress-bar {
   background: var(--bg2);
 }
-.bar::-webkit-progress-value {
+progress.bar::-webkit-progress-value {
   background: var(--acc-ink);
   transition: width var(--d2) var(--ease);
 }
-.bar::-moz-progress-bar {
+progress.bar::-moz-progress-bar {
   background: var(--acc-ink);
 }
 .files {
@@ -629,11 +655,13 @@ main:not([data-mode]) .typed {
 .tick svg {
   opacity: 0;
 }
-.row input:checked ~ .tick {
+.row input:checked ~ .tick,
+.tick.on {
   background: var(--acc-ink);
   box-shadow: none;
 }
-.row input:checked ~ .tick svg {
+.row input:checked ~ .tick svg,
+.tick.on svg {
   opacity: 1;
 }
 .row:has(input:focus-visible) {
@@ -701,9 +729,1059 @@ main:not([data-mode]) .typed {
   font-weight: 600;
 }
 
+/* ---- Site pages: landing, /it, /privacy, 404 (design.md sections 5 to 7) ---- */
+.page-site {
+  min-height: 0;
+}
+.page-site h2,
+.page-site h3 {
+  margin: 0;
+  font-weight: 600;
+  text-wrap: balance;
+}
+.page-site h2 {
+  font-size: 48px;
+  line-height: 1.1;
+  letter-spacing: -0.028em;
+}
+.page-site h3 {
+  font-size: 28px;
+  line-height: 1.22;
+  letter-spacing: -0.021em;
+}
+.page-site :where(a:not(.btn, .story-link, .wordmark)) {
+  color: var(--t1);
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+@media (hover: hover) {
+  .page-site :where(a:not(.btn, .story-link, .wordmark)):hover {
+    text-decoration-thickness: 2px;
+  }
+}
+.wordmark {
+  color: var(--t1);
+  text-decoration: none;
+}
+.wrap {
+  width: min(100% - 48px, var(--w-wide));
+  margin-inline: auto;
+}
+.round-btn {
+  display: inline-grid;
+  place-items: center;
+  width: 44px;
+  height: 44px;
+  padding: 0;
+  border: 0;
+  border-radius: 50%;
+  background: var(--bg2);
+  color: var(--t1);
+  cursor: pointer;
+  transition: transform var(--d1) var(--ease);
+}
+.round-btn:active {
+  transform: scale(0.97);
+}
+html .touch {
+  display: none;
+}
+@media not ((hover: hover) and (pointer: fine)) {
+  html .desk {
+    display: none;
+  }
+  html .touch:not([hidden]) {
+    display: inline-flex;
+  }
+}
+
+/* Nav pill: centered by margin-inline and a 1fr auto 1fr grid, so the links sit on the viewport center. */
+.nav-wrap {
+  position: sticky;
+  top: 12px;
+  z-index: 50;
+  padding: 0 24px;
+}
+.nav {
+  display: grid;
+  grid-template-columns: 1fr auto 1fr;
+  align-items: center;
+  width: min(100%, 1024px);
+  height: 52px;
+  margin-inline: auto;
+  padding: 8px 8px 8px 20px;
+  border-radius: var(--rr);
+  background: rgba(255, 255, 255, 0.96);
+  box-shadow:
+    0 0 0 1px var(--bdr),
+    var(--sh2);
+}
+@supports (backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px)) {
+  .nav {
+    background: var(--glass-solid);
+    -webkit-backdrop-filter: blur(20px) saturate(180%);
+    backdrop-filter: blur(20px) saturate(180%);
+  }
+}
+.nav-links {
+  display: flex;
+  gap: 8px;
+}
+.page-site .nav-links a {
+  display: inline-flex;
+  align-items: center;
+  min-height: 44px;
+  padding: 0 12px;
+  text-decoration: none;
+}
+.page-site .nav-links a[aria-current="page"] {
+  font-weight: 600;
+}
+@media (hover: hover) {
+  .page-site .nav-links a:hover {
+    text-decoration: underline;
+  }
+}
+.nav-cta {
+  justify-self: end;
+  transition: opacity var(--d1) var(--ease);
+}
+.nav-cta.is-hidden {
+  visibility: hidden;
+  opacity: 0;
+}
+.small-btn {
+  min-height: 36px;
+  padding: 0 16px;
+}
+.small-btn::before {
+  content: "";
+  position: absolute;
+  inset: -4px;
+}
+
+/* Hero: two beats and one sub, centered; no entrance animation, no full-height box. */
+.hero {
+  padding: 40px 24px 0;
+  text-align: center;
+}
+.hero h1 {
+  font-size: 64px;
+  line-height: 1.06;
+  letter-spacing: -0.032em;
+}
+.beat {
+  display: block;
+}
+.lead {
+  max-width: 600px;
+  margin: 16px auto 0;
+  font-size: 21px;
+  line-height: 1.43;
+  letter-spacing: -0.017em;
+  color: var(--t2);
+}
+.hero-actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 12px;
+  margin-top: 28px;
+}
+
+/* Device mocks: the real /s and /a components at their native size, scaled. Decorative: aria-hidden, inert. */
+.mock-scale {
+  transform: scale(var(--s));
+  transform-origin: 0 0;
+}
+.mock-screen {
+  --s: 0.4;
+  display: block;
+  flex: none;
+  width: calc(1280px * var(--s) + 16px);
+  height: calc(720px * var(--s) + 16px);
+  padding: 8px;
+  border-radius: 20px;
+  background: var(--t1);
+  box-shadow: var(--sh-float);
+  overflow: hidden;
+}
+.mock-s {
+  display: flex;
+  flex-direction: column;
+  width: 1280px;
+  height: 720px;
+  border-radius: calc(12px / var(--s));
+  overflow: hidden;
+  background: var(--bg);
+  text-align: left;
+}
+.mock-main {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  gap: 64px;
+  padding: 24px 96px;
+}
+.mock-s .foot {
+  padding-bottom: 32px;
+}
+.mock-qr svg {
+  width: 369px;
+  height: 369px;
+}
+.capsule .capsule-third {
+  transform: scaleX(0.33);
+}
+.phone {
+  --pw: 240px;
+  --ph: 492px;
+  --s: 0.5744;
+  position: relative;
+  display: block;
+  flex: none;
+  width: var(--pw);
+  height: var(--ph);
+  padding: 8px;
+  border-radius: var(--r-device);
+  background: #1d1d1f;
+  box-shadow: var(--sh-float);
+}
+.phone::after {
+  content: "";
+  position: absolute;
+  top: 18px;
+  left: 50%;
+  width: 72px;
+  height: 20px;
+  margin-left: -36px;
+  border-radius: var(--rr);
+  background: #1d1d1f;
+}
+.phone-screen {
+  height: 100%;
+  border-radius: 40px;
+  overflow: hidden;
+  background: var(--bg);
+  text-align: left;
+}
+.phone .mock-scale {
+  width: 390px;
+  height: calc((var(--ph) - 16px) / var(--s));
+}
+.mock-a .title {
+  font-weight: 600;
+}
+.mock-a {
+  min-height: 100%;
+  padding-top: 64px;
+}
+
+/* The robin: poster first, the canvas fades in over it after its first frame. */
+.robin-box {
+  position: relative;
+  z-index: 2;
+  aspect-ratio: 1;
+}
+.robin-box picture,
+.robin-box .poster {
+  position: absolute;
+  inset: 0;
+  display: block;
+  width: 100%;
+  height: 100%;
+  transition: opacity var(--d3) linear;
+}
+.robin-canvas {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  opacity: 0;
+  transition: opacity var(--d3) linear;
+}
+.robin-canvas.is-live {
+  opacity: 1;
+}
+.robin-box:has(.robin-canvas.is-live) .poster {
+  opacity: 0;
+}
+.robin-box[role="slider"] {
+  cursor: grab;
+  touch-action: pan-y;
+  border-radius: var(--r-card);
+}
+.turn3d {
+  position: absolute;
+  right: 8px;
+  bottom: 8px;
+}
+
+/* Hero stage (the orbit). Default: stacked, robin centered over the screen and phone. */
+.orbit-wrap {
+  padding: 40px 24px 0;
+}
+.orbit {
+  position: relative;
+  width: min(100%, var(--w-wide));
+  margin-inline: auto;
+  padding: 24px 24px 0;
+  border-radius: var(--r-stage);
+  background: var(--tint);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+}
+.orbit:focus-visible {
+  outline-offset: 4px;
+}
+.orbit .robin-hero {
+  width: min(52vh, 440px);
+}
+.orbit-objects {
+  display: flex;
+  justify-content: center;
+  align-items: flex-start;
+  width: 100%;
+  height: 340px;
+  overflow: hidden;
+  border-radius: 0 0 var(--r-stage) var(--r-stage);
+}
+.orbit-screen {
+  --s: 0.34;
+  margin-top: 24px;
+}
+.orbit-phone {
+  margin-left: -48px;
+  margin-top: 64px;
+  z-index: 1;
+}
+.file-pill {
+  display: none;
+}
+.nojs-stage {
+  position: absolute;
+  left: 24px;
+  bottom: 24px;
+  margin: 0;
+  padding: 12px 20px;
+  border-radius: var(--rr);
+  background: var(--card);
+  box-shadow:
+    0 0 0 1px var(--bdr),
+    var(--sh1);
+}
+@media (min-width: 1200px) and (hover: hover) and (pointer: fine) {
+  .orbit {
+    display: block;
+    height: max(560px, 76vh);
+    padding: 0;
+  }
+  .orbit .robin-hero {
+    position: absolute;
+    right: 40px;
+    top: calc(var(--robin-hero) * -0.25);
+    width: var(--robin-hero);
+  }
+  .orbit-objects {
+    position: absolute;
+    inset: 0;
+    display: block;
+    height: auto;
+    border-radius: var(--r-stage);
+  }
+  .orbit-screen {
+    --s: 0.4;
+    position: absolute;
+    left: 48px;
+    top: 64px;
+    margin: 0;
+  }
+  .orbit-phone {
+    --pw: 280px;
+    --ph: 574px;
+    --s: 0.6769;
+    position: absolute;
+    left: 528px;
+    top: 320px;
+    margin: 0;
+  }
+  .file-pill {
+    position: absolute;
+    left: 640px;
+    top: 168px;
+    z-index: 1;
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    margin: 0;
+    padding: 12px 20px 12px 16px;
+    border-radius: var(--rr);
+    background: var(--card);
+    box-shadow:
+      0 0 0 1px var(--bdr),
+      var(--sh1);
+    font-weight: 600;
+  }
+  .file-pill .icon {
+    color: var(--t2);
+  }
+}
+
+/* Sections after the hero: left aligned on the one grid, one rhythm. */
+.how,
+.facts,
+.stories,
+.closing {
+  width: min(100% - 48px, var(--w-wide));
+  margin-inline: auto;
+  padding-top: var(--sec);
+}
+
+/* Pose explorer. Default (no JS, reduced motion): every step open as a list, each with its still. */
+.how-pin {
+  display: grid;
+  gap: 24px;
+}
+.how h2 {
+  max-width: 720px;
+}
+.steps {
+  display: grid;
+  gap: 16px;
+  margin-top: 32px;
+}
+.step {
+  padding: 24px;
+  border-radius: var(--r-card);
+  background: var(--card);
+  box-shadow:
+    0 0 0 1px var(--bdr),
+    var(--sh1);
+}
+.step-h {
+  margin: 0;
+}
+.step-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 12px;
+  min-height: 44px;
+  padding: 0;
+  border: 0;
+  background: none;
+  font-size: 28px;
+  font-weight: 600;
+  letter-spacing: -0.021em;
+  cursor: pointer;
+}
+.mark {
+  display: none;
+}
+.step-panel p {
+  margin-top: 8px;
+  max-width: 36em;
+}
+.step-still {
+  display: block;
+  width: 280px;
+  height: 280px;
+  margin-top: 16px;
+}
+.step-still img {
+  display: block;
+  width: 100%;
+  height: 100%;
+}
+.how-robin {
+  display: none;
+}
+.turn-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 16px;
+}
+.turn-row .small {
+  margin-right: 8px;
+}
+.turn-row[hidden] {
+  display: none;
+}
+
+.how.is-live .steps {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+.how.is-live .step {
+  transition:
+    border-radius var(--d2) var(--ease),
+    opacity var(--d2) var(--ease);
+}
+.how.is-live .step:not(.is-open) {
+  padding: 0;
+  border-radius: var(--rr);
+  background: var(--bg2);
+  box-shadow: none;
+}
+.how.is-live .step:not(.is-open) .step-panel {
+  display: none;
+}
+.how.is-live .step:not(.is-open) .step-btn {
+  min-height: 48px;
+  padding: 0 20px 0 8px;
+  font-size: 17px;
+  letter-spacing: -0.013em;
+}
+.how.is-live .step.is-open {
+  flex-basis: 100%;
+}
+.how.is-live .step.is-open .step-label::after {
+  content: ".";
+}
+.how.is-live .mark {
+  display: grid;
+  place-items: center;
+  width: 32px;
+  height: 32px;
+  border-radius: 50%;
+  background: var(--card);
+}
+.how.is-live .mark .minus,
+.how.is-live .is-open .mark .plus {
+  display: none;
+}
+.how.is-live .is-open .mark {
+  background: var(--acc-ink);
+  color: #fff;
+}
+.how.is-live .is-open .mark .minus {
+  display: block;
+}
+.how.is-live .step-still {
+  display: none;
+}
+.how.is-live .how-robin {
+  display: block;
+  order: -1;
+  width: min(80vw, 280px);
+  justify-self: center;
+}
+.how.is-pinned .how-scene {
+  position: relative;
+  height: 280vh;
+}
+.how.is-pinned .how-pin {
+  position: sticky;
+  top: 0;
+  height: 100vh;
+  grid-template-columns: repeat(12, minmax(0, 1fr));
+  align-items: center;
+}
+.how.is-pinned .how-text {
+  grid-column: 1 / 6;
+}
+.how.is-pinned .how-robin {
+  order: 0;
+  grid-column: 6 / 13;
+  width: min(560px, 70vh, 100%);
+}
+.band {
+  position: absolute;
+  left: 0;
+  width: 1px;
+  height: 1px;
+  pointer-events: none;
+}
+.band:nth-of-type(1) {
+  top: 0;
+}
+.band:nth-of-type(2) {
+  top: calc((100% - 100vh) * 0.25);
+}
+.band:nth-of-type(3) {
+  top: calc((100% - 100vh) * 0.5);
+}
+.band:nth-of-type(4) {
+  top: calc((100% - 100vh) * 0.75);
+}
+
+/* Facts: three devices on a diagonal, each 96 px lower; a static numeral and a two-line caption. */
+.fact-grid {
+  display: grid;
+  gap: 48px;
+  margin-top: 48px;
+}
+.fact .phone,
+.fact .mock-screen {
+  margin-bottom: 24px;
+}
+.fact-phone {
+  --pw: 200px;
+  --ph: 410px;
+  --s: 0.4718;
+}
+.fact-screen {
+  --s: 0.28;
+}
+.numeral {
+  font-size: 48px;
+  line-height: 1;
+  font-weight: 600;
+  letter-spacing: -0.032em;
+}
+.caption {
+  max-width: 280px;
+  margin-top: 8px;
+  font-size: 17px;
+  line-height: 26px;
+  color: var(--t2);
+}
+@media (min-width: 600px) {
+  .fact-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+  .fact:nth-child(2) {
+    margin-top: 96px;
+  }
+}
+@media (min-width: 1200px) {
+  .fact-grid {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 24px;
+  }
+  .fact:nth-child(3) {
+    margin-top: 192px;
+  }
+  .numeral {
+    font-size: 80px;
+  }
+}
+
+/* Story cards: one tint family, real product UI bleeding off the bottom edge. */
+.story-row {
+  display: grid;
+  grid-auto-flow: column;
+  grid-auto-columns: calc(100% - 56px);
+  gap: 24px;
+  overflow-x: auto;
+  scroll-snap-type: x mandatory;
+  scrollbar-width: none;
+}
+.story {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  height: 560px;
+  padding: 24px;
+  border-radius: var(--r-stage);
+  overflow: hidden;
+  scroll-snap-align: start;
+  color: var(--t1);
+  text-decoration: none;
+}
+.story.tint {
+  background: var(--tint);
+}
+.story.tint-2 {
+  background: var(--tint-2);
+}
+.story p {
+  margin-top: 8px;
+  color: var(--t2);
+}
+.story .phone,
+.story .mock-screen {
+  margin-top: auto;
+  margin-bottom: -96px;
+  align-self: center;
+}
+.story-screen {
+  --s: 0.24;
+}
+.story-link {
+  transition: transform var(--d1) var(--ease);
+}
+.story-link:active {
+  transform: scale(0.985);
+}
+@media (min-width: 600px) {
+  .story-row {
+    grid-auto-columns: calc((100% - 24px) / 2 - 16px);
+  }
+}
+@media (min-width: 1200px) {
+  .story-row {
+    grid-auto-flow: row;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    overflow: visible;
+  }
+}
+
+/* Reveals: devices only, never text; only while motion is allowed. */
+@media (prefers-reduced-motion: no-preference) {
+  .reveals .reveal > .phone,
+  .reveals .reveal > .mock-screen {
+    opacity: 0;
+    transform: translateY(var(--rise));
+    transition:
+      opacity var(--d4) var(--ease-enter),
+      transform var(--d4) var(--ease-enter);
+  }
+  .reveals .reveal.is-in > .phone,
+  .reveals .reveal.is-in > .mock-screen {
+    opacity: 1;
+    transform: none;
+  }
+  .reveals .reveal:nth-child(2) > * {
+    transition-delay: 80ms;
+  }
+  .reveals .reveal:nth-child(3) > * {
+    transition-delay: 160ms;
+  }
+}
+
+.closing {
+  padding-bottom: var(--sec);
+}
+.closing p {
+  margin-top: 12px;
+  color: var(--t2);
+}
+.closing .btn {
+  margin-top: 28px;
+}
+
+.footer {
+  display: grid;
+  gap: 24px;
+  width: min(100% - 48px, var(--w-wide));
+  margin-inline: auto;
+  padding: 48px 0 calc(48px + env(safe-area-inset-bottom));
+  box-shadow: 0 -1px 0 var(--bdr);
+  font-size: 14px;
+  line-height: 20px;
+  color: var(--t2);
+}
+.footer .wordmark {
+  font-size: 17px;
+}
+.footer p {
+  margin-top: 8px;
+}
+.footer-links {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.page-site .footer-links a {
+  display: inline-flex;
+  align-items: center;
+  min-height: 44px;
+  color: var(--t2);
+  text-decoration: none;
+}
+@media (hover: hover) {
+  .page-site .footer-links a:hover {
+    text-decoration: underline;
+  }
+}
+@media (min-width: 1200px) {
+  .footer {
+    grid-template-columns: repeat(12, minmax(0, 1fr));
+  }
+  .footer-brand {
+    grid-column: 1 / 5;
+  }
+  .footer-links {
+    grid-column: 6 / 10;
+  }
+  .footer-legal {
+    grid-column: 10 / 13;
+  }
+  .page-site .footer-links a {
+    min-height: 28px;
+  }
+}
+
+.toast {
+  position: fixed;
+  left: 50%;
+  bottom: calc(24px + env(safe-area-inset-bottom));
+  z-index: 60;
+  max-width: min(360px, 100% - 48px);
+  padding: 12px 20px;
+  border-radius: var(--rr);
+  background: var(--card);
+  box-shadow:
+    0 0 0 1px var(--bdr),
+    var(--sh2);
+  font-size: 15px;
+  opacity: 0;
+  transform: translate(-50%, 8px);
+  pointer-events: none;
+  transition:
+    opacity 125ms var(--ease-exit),
+    transform 125ms var(--ease-exit);
+}
+.toast.is-shown {
+  opacity: 1;
+  transform: translate(-50%, 0);
+  pointer-events: auto;
+  transition:
+    opacity var(--d2) var(--ease-enter),
+    transform var(--d2) var(--ease-enter);
+}
+
+/* /it, /privacy and 404: text pages on the same grid. */
+.doc {
+  width: min(100% - 48px, var(--w-wide));
+  margin-inline: auto;
+  padding: 64px 0 var(--sec);
+}
+.doc h1 {
+  max-width: 720px;
+  font-size: 48px;
+  line-height: 1.1;
+  letter-spacing: -0.028em;
+}
+.doc h2 {
+  max-width: 720px;
+  margin-top: 64px;
+  font-size: 28px;
+  line-height: 1.22;
+  letter-spacing: -0.021em;
+}
+.doc p,
+.doc li {
+  max-width: 36em;
+}
+.doc > p,
+.doc section > p {
+  margin-top: 12px;
+}
+.doc .points {
+  margin: 48px 0 0;
+  padding-left: 1.2em;
+}
+.doc .points li + li {
+  margin-top: 12px;
+}
+.flow-panel {
+  margin-top: 48px;
+  padding: 24px;
+  border-radius: var(--r-card);
+  background: var(--card);
+  box-shadow:
+    0 0 0 1px var(--bdr),
+    var(--sh1);
+}
+.flow-nodes {
+  display: grid;
+  gap: 40px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.flow-nodes li {
+  position: relative;
+  max-width: none;
+}
+.flow-nodes li + li::before {
+  content: "";
+  position: absolute;
+  left: 12px;
+  top: -32px;
+  width: 1px;
+  height: 24px;
+  background: var(--bdr-ui);
+}
+.flow-nodes li + li::after {
+  content: "";
+  position: absolute;
+  left: 8px;
+  top: -12px;
+  border: 4.5px solid transparent;
+  border-top: 6px solid var(--bdr-ui);
+}
+.flow-nodes strong {
+  font-weight: 600;
+}
+@media (min-width: 834px) {
+  .flow-nodes {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+  .flow-nodes li + li::before {
+    left: -32px;
+    top: 12px;
+    width: 24px;
+    height: 1px;
+  }
+  .flow-nodes li + li::after {
+    left: -10px;
+    top: 8px;
+    border: 4.5px solid transparent;
+    border-left: 6px solid var(--bdr-ui);
+  }
+}
+.detail {
+  display: grid;
+  gap: 48px;
+  margin-top: 64px;
+}
+.detail table {
+  width: 100%;
+  border-collapse: collapse;
+}
+.detail th,
+.detail td {
+  padding: 16px 0;
+  vertical-align: top;
+  text-align: left;
+  box-shadow: 0 1px 0 var(--bdr);
+}
+.detail th {
+  width: 30%;
+  padding-right: 24px;
+  font-weight: 600;
+}
+.detail .phone {
+  --pw: 240px;
+}
+@media (max-width: 599.98px) {
+  .detail th,
+  .detail td {
+    display: block;
+    width: auto;
+  }
+  .detail th {
+    padding-bottom: 0;
+    box-shadow: none;
+  }
+}
+@media (min-width: 1200px) {
+  .detail {
+    grid-template-columns: minmax(0, 1fr) 240px;
+  }
+}
+.notfound {
+  max-width: 600px;
+  padding-top: 96px;
+}
+.notfound .btn {
+  margin-top: 28px;
+}
+
+/* Type and rhythm by tier (design.md section 4). */
+@media (min-width: 600px) and (max-width: 1199.98px) {
+  :root {
+    --sec: 96px;
+  }
+  .hero h1 {
+    font-size: clamp(46px, 2.9vw + 22px, 58px);
+    letter-spacing: -0.03em;
+  }
+  .page-site h2,
+  .doc h1 {
+    font-size: 40px;
+    letter-spacing: -0.026em;
+  }
+  .page-site h3,
+  .step-btn,
+  .doc h2 {
+    font-size: 24px;
+    letter-spacing: -0.019em;
+  }
+  .lead {
+    font-size: 19px;
+    letter-spacing: -0.015em;
+  }
+  .numeral {
+    font-size: 64px;
+  }
+}
+@media (max-width: 599.98px) {
+  :root {
+    --sec: 80px;
+  }
+  .nav-wrap {
+    padding: 0 12px;
+  }
+  .nav {
+    height: 48px;
+    padding: 6px 6px 6px 16px;
+  }
+  .nav-links {
+    display: none;
+  }
+  .hero h1 {
+    font-size: 40px;
+    letter-spacing: -0.026em;
+  }
+  .page-site h2,
+  .doc h1 {
+    font-size: 32px;
+    letter-spacing: -0.022em;
+  }
+  .page-site h3,
+  .step-btn,
+  .doc h2 {
+    font-size: 22px;
+    letter-spacing: -0.018em;
+  }
+  .lead {
+    font-size: 19px;
+    letter-spacing: -0.015em;
+  }
+  .hero-actions .btn.primary {
+    width: 100%;
+  }
+  .orbit-wrap {
+    padding: 32px 12px 0;
+  }
+  .orbit {
+    padding: 16px 12px 0;
+  }
+  .orbit .robin-hero {
+    width: min(80vw, 320px);
+  }
+  .orbit-objects {
+    height: 220px;
+  }
+  .orbit-screen {
+    --s: 0.16;
+  }
+  .orbit-phone {
+    --pw: 146px;
+    --ph: 300px;
+    --s: 0.3333;
+    margin-left: -24px;
+    margin-top: 48px;
+  }
+  .orbit-phone::after {
+    top: 12px;
+    width: 44px;
+    height: 12px;
+    margin-left: -22px;
+  }
+  .orbit-phone .phone-screen {
+    border-radius: 28px;
+  }
+  .mock-screen {
+    border-radius: 12px;
+    padding: 4px;
+    width: calc(1280px * var(--s) + 8px);
+    height: calc(720px * var(--s) + 8px);
+  }
+}
+
 @media (prefers-reduced-transparency: reduce) {
-  .skip {
+  .skip,
+  .nav {
     background: #fff;
+    -webkit-backdrop-filter: none;
+    backdrop-filter: none;
   }
 }
 @media (prefers-reduced-motion: reduce) {

@@ -1,0 +1,91 @@
+<!DOCTYPE html>
+<html lang="en-US">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+    <meta name="color-scheme" content="light">
+    <meta name="robots" content="noindex">
+    <title>bloop privacy notice</title>
+    <link rel="icon" href="/favicon.svg" type="image/svg+xml">
+    <link rel="preload" href="/fonts/inter-latin.woff2" as="font" type="font/woff2" crossorigin>
+    <link rel="stylesheet" href="/css/app.css">
+    <script type="module" src="/js/page.js"></script>
+  </head>
+  <body class="page-site">
+    <a class="skip" href="#main">Skip to Content</a>
+    <header class="nav-wrap">
+      <nav class="nav" aria-label="Main">
+        <a class="wordmark" href="/">bloop</a>
+        <div class="nav-links">
+          <a href="/#how">How It Works</a>
+          <a href="/it">For IT</a>
+        </div>
+        <div class="nav-cta is-hidden" id="nav-cta">
+          <a class="btn primary small-btn desk" href="/#demo" tabindex="-1">Try the Demo</a>
+          <button class="btn primary small-btn touch" type="button" data-share tabindex="-1">Send Me the Link</button>
+        </div>
+      </nav>
+    </header>
+
+    <main id="main" class="doc">
+      <h1>Privacy notice</h1>
+      <p>This notice is a draft until bloop's legal review.</p>
+
+      <section aria-labelledby="who">
+        <h2 id="who">Who is responsible</h2>
+        <p>bloop runs this service. Write to <a href="mailto:privacy@bloop.example">privacy@bloop.example</a> with any question about your data.</p>
+      </section>
+
+      <section aria-labelledby="keeps">
+        <h2 id="keeps">What bloop keeps, and for how long</h2>
+        <div class="detail">
+          <table>
+            <caption class="sr">What bloop keeps, and for how long</caption>
+            <tbody>
+              <tr><th scope="row">Your email and account ID</th><td>While you stay connected, then 30 days.</td></tr>
+              <tr><th scope="row">Your OneDrive access, encrypted</th><td>Until you disconnect, or after 30 days unused.</td></tr>
+              <tr><th scope="row">A log of who opened which file, in which room, and when</th><td>180 days. For the demo, 7 days.</td></tr>
+              <tr><th scope="row">A guest's file</th><td>Deleted when the talk ends, and after 1 day at most.</td></tr>
+              <tr><th scope="row">Your phone's sign-in</th><td>30 days unused, 90 days at most.</td></tr>
+              <tr><th scope="row">Usage counts, with no names</th><td>90 days, then daily totals for 2 years.</td></tr>
+            </tbody>
+          </table>
+        </div>
+        <p>bloop keeps no slide content from your OneDrive. A guest's file is the one exception, and it is deleted when the talk ends.</p>
+      </section>
+
+      <section aria-labelledby="why">
+        <h2 id="why">Why</h2>
+        <p>To open the file you approve on the screen you choose, to keep the service safe, and to give your organization's IT team a record of what was opened where.</p>
+      </section>
+
+      <section aria-labelledby="where">
+        <h2 id="where">Where</h2>
+        <p>Your data is stored in the EU on Cloudflare. Cloudflare is a US company, and each request is handled at its nearest data center.</p>
+      </section>
+
+      <section aria-labelledby="choices">
+        <h2 id="choices">Your choices</h2>
+        <p>Disconnect OneDrive on your phone at any time, and bloop deletes its stored access. To see or erase what bloop holds about you, write to the address above. Your organization's admin can remove bloop in Microsoft Entra.</p>
+      </section>
+    </main>
+
+    <footer class="footer">
+      <div class="footer-brand">
+        <a class="wordmark" href="/">bloop</a>
+        <p>Your slides on any screen with a web browser and PowerPoint.</p>
+      </div>
+      <ul class="footer-links">
+        <li><a href="/#how">How It Works</a></li>
+        <li><a href="/it">For IT</a></li>
+        <li><a href="/privacy" aria-current="page">Privacy</a></li>
+        <li><a href="https://github.com/CyberSandwich/bloop">Read the Source</a></li>
+        <li><a href="/.well-known/security.txt">Report a Security Issue</a></li>
+      </ul>
+      <div class="footer-legal">
+        <p>Robin model: grab3d, CC0.</p>
+        <p>© 2026 bloop.</p>
+      </div>
+    </footer>
+  </body>
+</html>

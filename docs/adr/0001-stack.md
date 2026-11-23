@@ -45,6 +45,8 @@ Runtime dependencies: `zod`, `oauth4webapi`, vendored `uqr`. Everything else is 
 
 Dev dependencies beyond the table: `wrangler` (run and deploy), `@cloudflare/workers-types` (Worker types), `@types/node` (types for tests and tools only; `tsconfig.node.json` keeps it apart from the Worker types, which clash), `vitest` and `fast-check`, `html-validate` (HTML lint), `size-limit` with `@size-limit/file` (browser JS budget, plain files, no bundler), `@playwright/test`, `@axe-core/playwright` and `@lhci/cli` (CI only). Each is a dev-only tool: remove it together with the script that calls it.
 
+Asset tools outside npm: `tools/pack.py`, `render-stills.py`, `render-og.py` and `subset-font.py` regenerate committed files (the robin mesh, stills, social image, font subset); nothing in the build or CI runs them. They need Python 3 with `fonttools` and `brotli` (a throwaway venv; `docs/setup.md`) and ImageMagick, `avifenc` and `cwebp`. Why: a stills renderer in plain Python replaces headless Chrome, which cannot start locally, and `fonttools` is the reference subsetter. Remove: delete a tool and keep its last output.
+
 ## Rejected
 
 - **Node container plus SQLite** (Hetzner or Fly): best exit path and no US provider, but it costs money from day one and is a single machine to patch. It remains the exit: the code is plain `fetch` and SQL, so only the Durable Object module would need rewriting.

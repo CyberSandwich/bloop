@@ -1,14 +1,330 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="en-US">
   <head>
     <meta charset="utf-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1">
-    <title>bloop</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+    <meta name="color-scheme" content="light">
+    <title>bloop: your slides on any screen</title>
+    <meta name="description" content="Scan the code with your phone and choose your file. It opens in PowerPoint. The screen never gets your account.">
+    <meta property="og:type" content="website">
+    <meta property="og:title" content="bloop: your slides on any screen">
+    <meta property="og:description" content="Scan the code with your phone and choose your file. It opens in PowerPoint. The screen never gets your account.">
+    <meta property="og:image" content="/og.png">
+    <meta property="og:image:width" content="1200">
+    <meta property="og:image:height" content="630">
+    <meta property="og:image:alt" content="bloop: Your slides. On any screen.">
+    <meta name="twitter:card" content="summary_large_image">
+    <link rel="icon" href="/favicon.svg" type="image/svg+xml">
+    <link rel="preload" href="/fonts/inter-latin.woff2" as="font" type="font/woff2" crossorigin>
+    <link rel="preload" as="image" type="image/avif" imagesrcset="/img/robin-perch-640.avif 640w, /img/robin-perch-960.avif 960w, /img/robin-perch-1120.avif 1120w" imagesizes="(max-width: 599px) 320px, 560px" fetchpriority="high">
+    <link rel="stylesheet" href="/css/app.css">
+    <script type="module" src="/js/landing.js"></script>
   </head>
-  <body>
-    <main>
-      <h1>bloop</h1>
-      <p>Open your own file on a shared screen, approved from your phone.</p>
+  <body class="page-site">
+    <a class="skip" href="#main">Skip to Content</a>
+    <header class="nav-wrap">
+      <nav class="nav" aria-label="Main">
+        <a class="wordmark" href="/">bloop</a>
+        <div class="nav-links">
+          <a href="#how">How It Works</a>
+          <a href="/it">For IT</a>
+        </div>
+        <div class="nav-cta is-hidden" id="nav-cta">
+          <a class="btn primary small-btn desk" href="#demo" tabindex="-1">Try the Demo</a>
+          <button class="btn primary small-btn touch" type="button" data-share tabindex="-1">Send Me the Link</button>
+        </div>
+      </nav>
+    </header>
+
+    <main id="main">
+      <section class="hero" aria-labelledby="hero-h">
+        <h1 id="hero-h"><span class="beat">Your slides.</span> <span class="beat">On any screen.</span></h1>
+        <p class="lead">Scan the code with your phone and choose your file. It opens in PowerPoint. The screen never gets your account.</p>
+        <div class="hero-actions" id="hero-actions">
+          <a class="btn primary desk" href="#demo">Try the Demo</a>
+          <a class="btn secondary desk" href="#how">How It Works</a>
+          <button class="btn primary touch" type="button" data-share>Send Me the Link</button>
+          <a class="btn text touch" href="/code">Enter a Code</a>
+        </div>
+      </section>
+
+      <section class="orbit-wrap" aria-label="Demo">
+        <div class="orbit" id="demo" tabindex="-1">
+          <div class="robin-box robin-hero" id="hero-robin">
+            <picture>
+              <source type="image/avif" srcset="/img/robin-perch-640.avif 640w, /img/robin-perch-960.avif 960w, /img/robin-perch-1120.avif 1120w" sizes="(max-width: 599px) 320px, 560px">
+              <img class="poster" src="/img/robin-perch-640.webp" srcset="/img/robin-perch-640.webp 640w, /img/robin-perch-960.webp 960w, /img/robin-perch-1120.webp 1120w" sizes="(max-width: 599px) 320px, 560px" width="560" height="560" alt="" fetchpriority="high" decoding="async">
+            </picture>
+            <canvas class="robin-canvas" aria-hidden="true"></canvas>
+            <button class="round-btn turn3d" type="button" id="turn3d" aria-label="Turn the Robin" hidden>
+              <svg class="icon" viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M16.466 7.5C15.643 4.237 13.952 2 12 2 9.239 2 7 6.477 7 12s2.239 10 5 10c.342 0 .677-.069 1-.2"/><path d="m15.194 13.707 3.814 1.86-1.86 3.814"/><path d="M19 15.57c-1.804.885-4.274 1.43-7 1.43-5.523 0-10-2.239-10-5s4.477-10 10-10c4.838 0 8.873 1.718 9.8 4"/></svg>
+            </button>
+          </div>
+
+          <div class="orbit-objects">
+          <div class="mock-screen orbit-screen" aria-hidden="true" inert>
+            <div class="mock-scale">
+              <div class="page-screen mock-s">
+                <div class="bar"><span class="wordmark">bloop</span></div>
+                <div class="mock-main">
+                  <div class="copy">
+                    <div class="stage">
+                      <p class="heading">The sample deck is open.</p>
+                      <p class="line">This page has no account. It was shown one file.</p>
+                    </div>
+                    <div class="actions-row"><span class="btn text">Run It Again</span></div>
+                  </div>
+                </div>
+                <p class="foot">Phone not with you? Sign in to this PC as usual.</p>
+              </div>
+            </div>
+          </div>
+
+          <p class="file-pill" aria-hidden="true">
+            <svg class="icon" viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M2 3h20"/><path d="M21 3v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V3"/><path d="m7 21 5-5 5 5"/></svg>
+            <span>Sample deck.pptx</span>
+          </p>
+
+          <div class="phone orbit-phone" aria-hidden="true" inert>
+            <div class="phone-screen">
+              <div class="mock-scale">
+                <div class="column mock-a">
+                  <p class="wordmark">bloop</p>
+                  <div class="flow">
+                    <p class="title">Open on Demo room.</p>
+                    <p class="body">Sample deck.pptx. Ends by itself at 11:35.</p>
+                  </div>
+                  <div class="actions"><span class="btn primary">End</span></div>
+                </div>
+              </div>
+            </div>
+          </div>
+          </div>
+
+          <p class="sr">Your phone shows the room name, a code and an Approve button.</p>
+          <noscript><p class="nojs-stage">The live demo needs JavaScript.</p></noscript>
+        </div>
+      </section>
+
+      <section class="how" id="how" aria-labelledby="how-h">
+        <div class="how-scene" id="how-scene">
+          <div class="how-pin">
+            <div class="how-text">
+              <h2 id="how-h">Choose on your phone. Present on the screen.</h2>
+              <div class="steps" id="steps">
+                <div class="step is-open" data-step="0">
+                  <h3 class="step-h"><button class="step-btn" type="button" id="step-0" aria-expanded="true" aria-controls="step-0-panel"><span class="mark" aria-hidden="true"><svg class="icon plus" viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true" focusable="false"><path d="M5 12h14"/><path d="M12 5v14"/></svg><svg class="icon minus" viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true" focusable="false"><path d="M5 12h14"/></svg></span><span class="step-label">Scan</span></button></h3>
+                  <section class="step-panel" id="step-0-panel" aria-labelledby="step-0">
+                    <p>Point your phone camera at the code on the screen.</p>
+                    <picture class="step-still">
+                      <source type="image/avif" srcset="/img/robin-look-560.avif 560w, /img/robin-look-1120.avif 1120w" sizes="280px">
+                      <img src="/img/robin-look-560.webp" srcset="/img/robin-look-560.webp 560w, /img/robin-look-1120.webp 1120w" sizes="280px" width="280" height="280" alt="" loading="lazy" decoding="async">
+                    </picture>
+                  </section>
+                </div>
+                <div class="step" data-step="1">
+                  <h3 class="step-h"><button class="step-btn" type="button" id="step-1" aria-expanded="false" aria-controls="step-1-panel"><span class="mark" aria-hidden="true"><svg class="icon plus" viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true" focusable="false"><path d="M5 12h14"/><path d="M12 5v14"/></svg><svg class="icon minus" viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true" focusable="false"><path d="M5 12h14"/></svg></span><span class="step-label">Check</span></button></h3>
+                  <section class="step-panel" id="step-1-panel" aria-labelledby="step-1">
+                    <p>Your phone shows the room name and a 2-digit number, so you know it's the right screen.</p>
+                    <picture class="step-still">
+                      <source type="image/avif" srcset="/img/robin-turn-560.avif 560w, /img/robin-turn-1120.avif 1120w" sizes="280px">
+                      <img src="/img/robin-turn-560.webp" srcset="/img/robin-turn-560.webp 560w, /img/robin-turn-1120.webp 1120w" sizes="280px" width="280" height="280" alt="" loading="lazy" decoding="async">
+                    </picture>
+                  </section>
+                </div>
+                <div class="step" data-step="2">
+                  <h3 class="step-h"><button class="step-btn" type="button" id="step-2" aria-expanded="false" aria-controls="step-2-panel"><span class="mark" aria-hidden="true"><svg class="icon plus" viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true" focusable="false"><path d="M5 12h14"/><path d="M12 5v14"/></svg><svg class="icon minus" viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true" focusable="false"><path d="M5 12h14"/></svg></span><span class="step-label">Present</span></button></h3>
+                  <section class="step-panel" id="step-2-panel" aria-labelledby="step-2">
+                    <p>Choose your file and tap Approve. It opens in PowerPoint on the screen.</p>
+                    <picture class="step-still">
+                      <source type="image/avif" srcset="/img/robin-carry-560.avif 560w, /img/robin-carry-1120.avif 1120w" sizes="280px">
+                      <img src="/img/robin-carry-560.webp" srcset="/img/robin-carry-560.webp 560w, /img/robin-carry-1120.webp 1120w" sizes="280px" width="280" height="280" alt="" loading="lazy" decoding="async">
+                    </picture>
+                  </section>
+                </div>
+                <div class="step" data-step="3">
+                  <h3 class="step-h"><button class="step-btn" type="button" id="step-3" aria-expanded="false" aria-controls="step-3-panel"><span class="mark" aria-hidden="true"><svg class="icon plus" viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true" focusable="false"><path d="M5 12h14"/><path d="M12 5v14"/></svg><svg class="icon minus" viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true" focusable="false"><path d="M5 12h14"/></svg></span><span class="step-label">End</span></button></h3>
+                  <section class="step-panel" id="step-3-panel" aria-labelledby="step-3">
+                    <p>Tap End on your phone or on the screen, or it ends by itself after 90 minutes.</p>
+                    <picture class="step-still">
+                      <source type="image/avif" srcset="/img/robin-away-560.avif 560w, /img/robin-away-1120.avif 1120w" sizes="280px">
+                      <img src="/img/robin-away-560.webp" srcset="/img/robin-away-560.webp 560w, /img/robin-away-1120.webp 1120w" sizes="280px" width="280" height="280" alt="" loading="lazy" decoding="async">
+                    </picture>
+                  </section>
+                </div>
+              </div>
+              <div class="turn-row" id="turn-row" hidden>
+                <p class="small">Drag to turn the robin.</p>
+                <button class="round-btn" type="button" id="turn-left" aria-label="Turn Left">
+                  <svg class="icon" viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"/><path d="M3 3v5h5"/></svg>
+                </button>
+                <button class="round-btn" type="button" id="turn-right" aria-label="Turn Right">
+                  <svg class="icon" viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M21 12a9 9 0 1 1-9-9c2.52 0 4.93 1 6.74 2.74L21 8"/><path d="M21 3v5h-5"/></svg>
+                </button>
+              </div>
+            </div>
+            <div class="robin-box robin-how" id="how-robin">
+              <img class="poster" id="how-still" src="/img/robin-look-560.webp" width="560" height="560" alt="" loading="lazy" decoding="async">
+              <canvas class="robin-canvas" aria-hidden="true"></canvas>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <section class="facts" aria-labelledby="facts-h">
+        <h2 id="facts-h">What the screen gets.</h2>
+        <div class="fact-grid">
+          <div class="fact reveal">
+            <div class="phone fact-phone" aria-hidden="true" inert>
+              <div class="phone-screen">
+                <div class="mock-scale">
+                  <div class="column mock-a">
+                    <p class="wordmark">bloop</p>
+                    <div class="flow">
+                      <p class="title">Choose your slides.</p>
+                      <ul class="list">
+                        <li><span class="row"><span class="row-text"><span class="row-name"><span class="head">Lecture 4.pptx</span></span><span class="small">Edited 10 min ago</span></span><span class="tick on"><svg class="icon" viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M20 6 9 17l-5-5"/></svg></span></span></li>
+                        <li><span class="row"><span class="row-text"><span class="row-name"><span class="head">Lecture 3.pptx</span></span><span class="small">Edited 7 days ago</span></span><span class="tick"></span></span></li>
+                      </ul>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+            <p class="numeral">1 file</p>
+            <p class="caption">Only the file you choose.</p>
+          </div>
+          <div class="fact reveal">
+            <div class="mock-screen fact-screen" aria-hidden="true" inert>
+              <div class="mock-scale">
+                <div class="page-screen mock-s">
+                  <div class="bar"><span class="wordmark">bloop</span></div>
+                  <div class="mock-main">
+                    <div class="copy">
+                      <div class="stage">
+                        <p class="heading">Lecture 4.pptx is open in PowerPoint.</p>
+                        <p class="line">Ends by itself at 11:35.</p>
+                      </div>
+                      <div class="actions-row"><span class="btn secondary">End</span></div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+            <p class="numeral">0 accounts</p>
+            <p class="caption">The screen never gets your account.</p>
+          </div>
+          <div class="fact reveal">
+            <div class="mock-screen fact-screen" aria-hidden="true" inert>
+              <div class="mock-scale">
+                <div class="page-screen mock-s">
+                  <div class="bar"><span class="wordmark">bloop</span></div>
+                  <div class="mock-main mock-wait">
+                    <div class="qr-panel mock-qr"><svg viewBox="0 0 41 41" width="246" height="246" shape-rendering="crispEdges" aria-hidden="true" focusable="false"><rect width="41" height="41" fill="#FFFFFF"/><path id="fact-qr" fill="#1D1D1F" d=""/></svg></div>
+                    <div class="copy">
+                      <div class="stage">
+                        <p class="heading">Room 2.14</p>
+                        <p class="line">Scan with your phone camera to present your slides.</p>
+                      </div>
+                      <div class="capsule"><span class="capsule-third"></span></div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+            <p class="numeral">60 s</p>
+            <p class="caption">Each code works once, then a new one appears.</p>
+          </div>
+        </div>
+      </section>
+
+      <section class="stories" aria-label="Who it is for">
+        <div class="story-row">
+          <article class="story tint reveal">
+            <h3>Between lectures</h3>
+            <p>Walk in, scan the code and choose this week's slides on your phone.</p>
+            <div class="phone story-phone" aria-hidden="true" inert>
+              <div class="phone-screen">
+                <div class="mock-scale">
+                  <div class="column mock-a">
+                    <p class="wordmark">bloop</p>
+                    <div class="flow">
+                      <p class="title">Choose your slides.</p>
+                      <ul class="list">
+                        <li><span class="row"><svg class="icon" viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M2 3h20"/><path d="M21 3v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V3"/><path d="m7 21 5-5 5 5"/></svg><span class="row-text"><span class="row-name"><span class="head">Lecture 4.pptx</span></span><span class="small">Edited 10 min ago</span></span><span class="tick on"><svg class="icon" viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M20 6 9 17l-5-5"/></svg></span></span></li>
+                        <li><span class="row"><svg class="icon" viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M2 3h20"/><path d="M21 3v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V3"/><path d="m7 21 5-5 5 5"/></svg><span class="row-text"><span class="row-name"><span class="head">Lecture 3.pptx</span></span><span class="small">Edited 7 days ago</span></span><span class="tick"></span></span></li>
+                        <li><span class="row"><svg class="icon" viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M2 3h20"/><path d="M21 3v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V3"/><path d="m7 21 5-5 5 5"/></svg><span class="row-text"><span class="row-name"><span class="head">Seminar notes.pptx</span></span><span class="small">Edited 9 days ago</span></span><span class="tick"></span></span></li>
+                      </ul>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </article>
+          <article class="story tint-2 reveal">
+            <h3>Guest speakers</h3>
+            <p>No account needed. A guest sends one file from their phone, and it opens on the screen. bloop deletes its copy when the talk ends.</p>
+            <div class="phone story-phone" aria-hidden="true" inert>
+              <div class="phone-screen">
+                <div class="mock-scale">
+                  <div class="column mock-a">
+                    <p class="wordmark">bloop</p>
+                    <div class="flow">
+                      <p class="title">Send Talk.pptx to Room 2.14?</p>
+                      <p class="body">bloop deletes its copy when this ends.</p>
+                    </div>
+                    <div class="actions"><span class="btn primary">Send</span><span class="btn secondary">Cancel</span></div>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </article>
+          <a class="story tint story-link reveal" href="/it">
+            <h3>For IT</h3>
+            <p>One file, never an account. See exactly what the screen receives on the IT page.</p>
+            <div class="mock-screen story-screen" aria-hidden="true" inert>
+              <div class="mock-scale">
+                <div class="page-screen mock-s">
+                  <div class="bar"><span class="wordmark">bloop</span></div>
+                  <div class="mock-main">
+                    <div class="copy">
+                      <div class="stage">
+                        <p class="heading">Lecture 4.pptx is open in PowerPoint.</p>
+                        <p class="line">Ends by itself at 11:35.</p>
+                      </div>
+                      <div class="actions-row"><span class="btn secondary">End</span><span class="btn text">Download It Instead</span></div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </a>
+        </div>
+      </section>
+
+      <section class="closing" aria-labelledby="closing-h">
+        <h2 id="closing-h">Try it in your lecture room.</h2>
+        <p>Early access is free while bloop is being tested.</p>
+        <a class="btn primary" href="mailto:early-access@bloop.example?subject=bloop%20early%20access">Ask for Early Access</a>
+      </section>
     </main>
+
+    <footer class="footer">
+      <div class="footer-brand">
+        <a class="wordmark" href="/">bloop</a>
+        <p>Your slides on any screen with a web browser and PowerPoint.</p>
+      </div>
+      <ul class="footer-links">
+        <li><a href="/#how">How It Works</a></li>
+        <li><a href="/it">For IT</a></li>
+        <li><a href="/privacy">Privacy</a></li>
+        <li><a href="https://github.com/CyberSandwich/bloop">Read the Source</a></li>
+        <li><a href="/.well-known/security.txt">Report a Security Issue</a></li>
+      </ul>
+      <div class="footer-legal">
+        <p>Robin model: grab3d, CC0.</p>
+        <p>© 2026 bloop.</p>
+      </div>
+    </footer>
   </body>
 </html>

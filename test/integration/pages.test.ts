@@ -57,7 +57,7 @@ describe("shared assets", () => {
   it("serves the stylesheet, the font and the vendored QR library", async () => {
     for (const [path, type] of [
       ["/css/app.css", /text\/css/],
-      ["/fonts/InterVariable.woff2", /font\/woff2|application\/octet-stream/],
+      ["/fonts/inter-latin.woff2", /font\/woff2|application\/octet-stream/],
       ["/js/vendor/uqr.js", /javascript/],
     ] as const) {
       const res = await fetch(`${wrangler.url}${path}`);
