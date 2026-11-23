@@ -21,7 +21,7 @@ npm run check                    # typecheck, lint, unit and integration tests, 
 | `npm run typecheck` | `tsc` for the Worker, for tests and tools, and for the browser JS (JSDoc, `checkJs`) |
 | `npm run lint` / `npm run format` | Biome check / check and fix |
 | `npm test` | Vitest unit tests |
-| `npm run test:int` | integration tests; each file starts its own `wrangler dev` on a free port |
+| `npm run test:int` | integration tests; each file starts its own `wrangler dev` on a free port. Timer tests set `TEST_TIMING=1` for short timings (tests only, refused off localhost; see architecture section 9) |
 | `npm run test:e2e` | Playwright with axe (needs a browser; CI runs it, plus Lighthouse CI) |
 
 ## Docs

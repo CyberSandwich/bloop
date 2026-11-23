@@ -50,7 +50,9 @@ export interface PhoneView {
 
 export interface LinkSet { protocol: string; download: string; pdf: string | null; }
 
-// WebSocket frames, all {v: 1, t: ...}, at most 4 KB.
+// WebSocket frames, all {v: 1, t: ...}, at most 4 KB. The upgrade URL carries the non-secret screenRef
+// (`/api/screen/ws?ref=<screenRef>`, `/api/pair/ws?ref=<screenRef>`): the first frame is the credential.
+// The exact text {"v":1,"t":"ping"} is answered with {"v":1,"t":"pong"} by the runtime without waking the object.
 export type ScreenMsgIn =
   | { v: 1; t: "hello"; sid: string }
   | { v: 1; t: "code.next" }
@@ -68,7 +70,7 @@ export type PhoneMsgOut =
   | { v: 1; t: "error"; code: ErrorCode; now: number }
   | { v: 1; t: "pong" };
 
-export interface ClaimRequest { code: string; pass?: string; }
+export interface ClaimRequest { code: string; pass?: string; kind?: Kind; }   // kind defaults to "owner"; "guest" asks for the drop path
 export interface ClaimResponse {
   pid: string; room: RoomView; match: string; mode: Mode; kind: Kind; needsAuth: boolean;
 }
@@ -125,36 +127,38 @@ export type ScreenStateKey =
 | waiting | `closeAt` = last socket close + 10 min (only when no socket is open) | `closed` |
 | claimed, choosing | `claimAt` = claimedAt + `CLAIM_TIMEOUT_SECONDS` | `waiting` (end reason `claim_timeout`) |
 | uploading | `uploadAt` = upload start + `UPLOAD_TIMEOUT_SECONDS` | `waiting` (`claim_timeout`), object deleted |
-| offered | `offerAt` = offeredAt + `CLAIM_TIMEOUT_SECONDS` | `waiting` (`claim_timeout`), object deleted |
+| offered | `offerAt` = offeredAt + `CLAIM_TIMEOUT_SECONDS` | `waiting` (`claim_timeout`), object deleted (the object has no file ref while still uploading, so `purge` carries `file: null` and the guest-drop module deletes by session key) |
 | approved, opening, open | `endsAt` = approvedAt + `SESSION_MAX_MINUTES` (demo: `DEMO_SESSION_MINUTES`) | `ended` (`auto`) |
 | ended | `closeAt` as in waiting | `closed` |
 
-- Code expiry is not a timer. A code is valid while `now < expiresAt`, which is `issuedAt + CODE_TTL_SECONDS + CODE_GRACE_SECONDS`. The screen asks for the next code every `CODE_TTL_SECONDS`, and the previous code stays claimable through its grace.
+- Code expiry is not a timer. A code is valid while `now < expiresAt`, which is `issuedAt + CODE_TTL_SECONDS + CODE_GRACE_SECONDS`. The screen asks for the next code every `CODE_TTL_SECONDS`. The previous code stays claimable until the earlier of its own `expiresAt` and `CODE_GRACE_SECONDS` after its successor was issued. The code a screen shows (`CodeView.expiresAt`) is `issuedAt + CODE_TTL_SECONDS`.
+- A drop back to `waiting` (cancel, Start Over, any timeout) wipes both codes, and the Screen object issues a fresh one at once. The reason (`endReason`) stays on the view through rotation until a claim, so the screen can say why. After `ended`, the phone can still read its final state: the pairing keeps `secretHash`, `kind`, `match` and `sessionId` (listed ids, pass hash and user id are dropped) until the next `code.next`.
+- `socket` events carry the open WebSocket count. `closeAt` is armed whenever the count is 0 in `waiting` or `ended`, and every authenticated screen poll re-arms it, so a polling screen stays open.
 
 ### 2.2 Transition table
 | from | event | guard | to | effects |
 |---|---|---|---|---|
-| waiting, ended | `code.next` | at most 6 per min; ended for at least 3 s | waiting | issue code, Directory put, push screen `state` |
-| waiting | `claim(code)` | code is current or previous, unconsumed, unexpired | claimed | consume code; pairing secret, match code; push both; audit `claimed` |
+| waiting, ended | `code.next` | at most 6 per min (`rate_limited`); ended for at least 3 s | waiting | issue code, Directory put (the previous-but-one code is removed), push screen `state` |
+| waiting | `claim(code)` | code is current or previous, unconsumed, unexpired. In any other state the answer is `code_taken` for a code the screen still holds and `code_expired` otherwise | claimed | consume code (the Directory keeps it, so a replay answers `code_taken`); session id, pairing secret, match code; push both; audit `claimed` |
 | waiting | `claim(code, pass)` | as above, plus a pass valid for this room | claimed (kind guest) | as above; mark the pass used |
 | claimed | `listed(ids)` | owner kind | choosing | store ids; push both |
-| claimed, choosing | `approve(fileId)` | fileId in stored ids (live) or fixture id (demo) | approved | session id, `endsAt`, mint link; push screen `open`; audit `approved` |
+| claimed, choosing | `approve(file)` | owner kind; `file.ref` in stored ids (live) or a fixture the Worker resolved (demo), else `file_not_found` | approved | `endsAt`, mint link; push screen `open`; audit `approved` |
 | claimed | `upload.start` | guest kind, policy allows it, no file yet | uploading | set `uploadAt` |
 | uploading | `upload.done(file)` | validated | offered | store the R2 ref and `offerAt`; push screen `guest_open` (file name, Open); audit `guest.uploaded` |
-| offered | `open.click` | from the screen | approved | as approve: session id, `endsAt`, mint link; push screen `open`; audit `approved` |
-| uploading | `upload.failed(e)` | | claimed | delete object; push phone `error(e)`; audit `guest.refused` |
+| offered | `open.click` | from the screen socket (a repeat in approved, opening or open returns the current view) | approved | as approve: `endsAt`, mint link; push screen `open`; audit `approved` (actor screen) |
+| uploading | `upload.failed(e)` | | claimed | delete object; push both `state`; audit `guest.refused` with cause `e` (the drop route answers the phone with `e`) |
 | approved | `launched(mode)` | from the screen | opening | record mode; metric |
 | approved, opening | `fetched(link)` | first fetch of any link | open | `first_open_at`; metric `scan_to_open_ms`; push both |
 | opening, open | `fallback(mode)` | mints left | (same) | mint a link for `mode`; push screen `open` |
-| claimed, choosing, uploading, offered | `cancel` | from the phone | waiting | end reason `canceled`; audit; delete any object |
-| claimed, choosing, uploading, offered | `restart` | from the screen ("Start Over") | waiting | end reason `canceled`, actor screen; audit; delete any object |
+| claimed, choosing, uploading, offered | `cancel` | from the phone | waiting | end reason `canceled`; audit; delete any object; both codes wiped, a fresh one issued; phone sockets get `error pairing_invalid` and close |
+| claimed, choosing, uploading, offered | `restart` | from the screen ("Start Over") | waiting | end reason `canceled`, actor screen; audit; delete any object; as cancel |
 | approved, opening, open | `end(by)` | | ended | revoke links; residue purge; audit `ended`; metric; push both |
 | claimed to offered | `end(by)` | | ended | as above, no session row change beyond `ended_at` |
 | any timer state | `timer(now)` | deadline passed | per 2.1 | per 2.1 |
 | ended, waiting | `timer(now)` | `closeAt` passed, no socket | closed | `deleteAll()` |
 | closed | any | | closed | every call returns `screen_gone` |
 
-An event the table does not list for a state returns `wrong_state` and changes nothing. Approve, cancel and end are idempotent: a repeat in the target state returns the current view.
+An event the table does not list for a state returns `wrong_state` and changes nothing; approve in `ended` returns `session_ended`. Approve (same file), open.click, fetched and end are idempotent: a repeat in the target state returns the current view. Cancel is not: it drops the pairing, so a repeat fails with `pairing_invalid` before it reaches the machine.
 
 ### 2.3 The pure machine (`src/worker/machine.ts`)
 ```ts
@@ -169,28 +173,32 @@ export interface Machine {
   codes: { current: Code | null; previous: Code | null };
   codeRequests: number[];            // issue times in the last minute
   pairing: {
+    sessionId: string;               // the D1 session id and the audit key; one per claim
     kind: Kind; match: string; claimedAt: number; secretHash: string;
     listed: string[]; userId: string | null; passHash: string | null;
   } | null;
-  session: {
-    id: string; approvedAt: number; endsAt: number; file: FileRef;
+  session: {                         // the chosen file; approvedAt and endsAt are null while "offered"
+    file: FileRef; approvedAt: number | null; endsAt: number | null;
     openMode: OpenMode | null; firstOpenAt: number | null; mints: number;
   } | null;
   uploadAt: number | null;
+  offerAt: number | null;
   endedAt: number | null;
   endReason: EndReason | null;
-  closeAt: number | null;
+  closeAt: number | null;            // only in waiting and ended, only while no socket is open
+  sockets: number;                   // open WebSocket count, set by the `socket` event
 }
 
 export type Event =
   | { e: "code.next"; now: number; value: string }                      // value drawn by the caller
-  | { e: "claim"; now: number; code: string; secretHash: string; match: string;
+  | { e: "claim"; now: number; code: string; sessionId: string; secretHash: string; match: string;
       kind: Kind; userId: string | null; passHash: string | null }
   | { e: "listed"; now: number; ids: string[] }
-  | { e: "approve"; now: number; sessionId: string; file: FileRef; maxMinutes: number }
+  | { e: "approve"; now: number; file: FileRef; maxMinutes: number }
   | { e: "upload.start"; now: number; timeoutSeconds: number }
-  | { e: "upload.done"; now: number; sessionId: string; file: FileRef; maxMinutes: number }
+  | { e: "upload.done"; now: number; file: FileRef }
   | { e: "upload.failed"; now: number; error: ErrorCode }
+  | { e: "open.click"; now: number; maxMinutes: number }                 // the Open button on a guest offer
   | { e: "launched"; now: number; mode: OpenMode }
   | { e: "fetched"; now: number }
   | { e: "fallback"; now: number; mode: OpenMode; maxMints: number }
@@ -202,11 +210,12 @@ export type Event =
 
 export type Effect =
   | { fx: "directory.put"; code: string; expiresAt: number }
+  | { fx: "directory.remove"; code: string }                           // a code retired without a claim
   | { fx: "push"; to: "screen" | "phone" | "both" }
-  | { fx: "mint"; purpose: OpenMode }
+  | { fx: "mint"; purpose: OpenMode }                                  // the initial link set is minted for "protocol"
   | { fx: "revokeLinks" }
   | { fx: "purge"; file: FileRef | null }                              // Residue.server
-  | { fx: "audit"; type: AuditType; actor: "screen" | "phone" | "system" }
+  | { fx: "audit"; type: AuditType; actor: "screen" | "phone" | "system"; cause?: ErrorCode }
   | { fx: "metric"; name: MetricName; ms?: number; cause?: ErrorCode }
   | { fx: "deleteAll" };
 
@@ -222,7 +231,7 @@ export type Step = { ok: true; next: Machine; effects: Effect[] } | { ok: false;
 export type Transition = (m: Machine, ev: Event, cfg: MachineConfig) => Step;
 
 /** Earliest deadline for the single alarm, or null for none. */
-export type NextDeadline = (m: Machine) => number | null;
+export type NextDeadline = (m: Machine, cfg: MachineConfig) => number | null;
 
 export interface MachineConfig {
   codeTtlSeconds: number; codeGraceSeconds: number; claimTimeoutSeconds: number;
@@ -233,34 +242,44 @@ export interface MachineConfig {
 ### 2.4 `PairingStore` (`src/worker/seams/pairing.ts`), implemented by the Screen object
 ```ts
 import type {
-  ClaimResponse, CodeView, ErrorCode, LinkSet, Mode, OpenMode, PairError, PhoneView, RoomView, ScreenView,
+  ClaimResponse, CodeView, ErrorCode, Kind, Mode, PhoneView, RoomView, ScreenView,
 } from "../../shared/protocol.ts";
 import type { FileRef } from "../machine.ts";
 
+/** Errors are PairError codes, plus file_not_found (approve), unauthorized (a bad sid) and internal. */
+export type Result<T> = { ok: true; value: T } | { ok: false; error: ErrorCode };
+
 export interface ScreenCreated { sid: string; room: RoomView; view: ScreenView; }
-export interface PhoneInfo { ipHash: string; userId: string | null; passHash: string | null; }
+export interface PhoneInfo { kind: Kind; ipHash: string; userId: string | null; passHash: string | null; }
 
-/** One per screen. sid = screenRef + "." + screenSecret; pid = screenRef + "." + pairingSecret. */
+/**
+ * One per screen. sid = screenRef + "." + screenSecret; pid = screenRef + "." + pairingSecret.
+ * Methods take the full credential; the object compares the secret half's hash in constant time.
+ * Over Workers RPC a function cannot be passed in, so approve takes the file the Worker already resolved
+ * and the object checks its id against the listed ids (live).
+ */
 export interface PairingStore {
-  create(input: { mode: Mode; roomId: string | null; roomName: string | null }): Promise<ScreenCreated>;
-  nextCode(sid: string): Promise<Result<CodeView, PairError>>;
-  claim(code: string, phone: PhoneInfo): Promise<Result<ClaimResponse, PairError>>;
-  listed(pid: string, ids: string[]): Promise<Result<PhoneView, PairError>>;
-  approve(pid: string, fileId: string, resolveRef: (id: string) => FileRef | null):
-    Promise<Result<PhoneView, PairError | "file_not_found">>;
-  cancel(pid: string): Promise<Result<PhoneView, PairError>>;
-  restart(sid: string): Promise<Result<ScreenView, PairError>>;
-  end(credential: { sid: string } | { pid: string }): Promise<Result<ScreenView, PairError>>;
-  mintFallback(sid: string, mode: Exclude<OpenMode, "protocol">): Promise<Result<LinkSet, PairError | "mint_limit">>;
-  useLink(tokenHash: string, ipHash: string): Promise<Result<FileRef, OpenErrorForLink>>;
-  screenView(sid: string): Promise<Result<ScreenView, PairError>>;
-  phoneView(pid: string): Promise<Result<PhoneView, PairError>>;
+  create(input: { screenRef: string; mode: Mode; roomId: string | null; roomName: string | null }): Promise<Result<ScreenCreated>>;
+  nextCode(sid: string): Promise<Result<CodeView>>;
+  claim(code: string, phone: PhoneInfo): Promise<Result<ClaimResponse>>;
+  listed(pid: string, ids: string[]): Promise<Result<PhoneView>>;
+  approve(pid: string, fileId: string, file: FileRef): Promise<Result<PhoneView>>;
+  cancel(pid: string): Promise<Result<PhoneView>>;
+  restart(sid: string): Promise<Result<ScreenView>>;
+  endFromScreen(sid: string): Promise<Result<ScreenView>>;
+  endFromPhone(pid: string): Promise<Result<PhoneView>>;
+  /** Polling fallback. A screen poll also rotates the code when it is due and re-arms closeAt. */
+  screenView(sid: string): Promise<Result<ScreenView>>;
+  phoneView(pid: string): Promise<Result<PhoneView>>;
+  // Added with the open path: mintFallback(sid, mode) and useLink(tokenHash, ipHash).
 }
-type OpenErrorForLink = "link_unknown" | "link_expired" | "link_exhausted" | "link_revoked" | "link_binding_failed";
-type Result<T, E extends ErrorCode | "mint_limit" | "file_not_found"> =
-  { ok: true; value: T } | { ok: false; error: E };
 
-/** One instance. Routes typed codes; counts misses exactly (ADR 0002). */
+/**
+ * One instance. Routes typed codes; counts misses exactly (ADR 0002). An expired code keeps routing to its
+ * screen for 5 min, so a late phone gets `code_expired` from the Screen, not a counted `code_unknown`.
+ * A claimed code stays too, so a replay gets `code_taken`. `remove` runs when a screen retires a code
+ * without a claim (cancel, Start Over, end).
+ */
 export interface CodeDirectory {
   put(code: string, screenRef: string, expiresAt: number): Promise<"ok" | "collision">;
   lookup(code: string, ipHash: string, now: number):

@@ -29,6 +29,13 @@ A screen with no account must be paired with one phone in seconds, by scan or by
 - **Match code:** 2 digits, fresh per claim, shown on both sides. It is a human check for the right screen, not a secret (threat model PAIR-04).
 - **Claim timeout:** 5 min unapproved (15 min while uploading), then back to `waiting`. The screen gets "Start Over" to drop a claim at once (decided, OD-6).
 
+## Implementation notes
+- Both objects have SQLite storage. A drop back to `waiting` (cancel, Start Over, timeout) wipes the codes, and the Screen object issues a fresh one at once, so the screen needs no extra round trip. This issue counts toward the 6 per minute.
+- A screen with no socket polls `GET /api/screen/state`, which doubles as the rotation clock and keeps the screen from closing. A socket's upgrade URL carries the non-secret `screenRef` (`?ref=`), since the credential is the first frame and the Worker must know which object to route to.
+- Concurrency: the Screen object does async work (hashing, drawing) before a synchronous check-and-commit of one machine step, because awaiting a subrequest lets other events in. The first-phone lock rests on that.
+- The Directory keeps claimed and expired codes for 5 min, so a replay answers `code_taken` and a late phone `code_expired`, and neither counts as a guess.
+- Local runs have no `eu` jurisdiction (workerd does not implement it), so the stubs skip it for a local `PUBLIC_ORIGIN`.
+
 ## Consequences
 - The QR holds about 37 characters (version 3), the shortest possible, which helps scanning at distance.
 - One extra hop per claim (Worker, then Directory, then Screen). Typed and scanned codes share one path, so they behave the same.

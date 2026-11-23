@@ -256,14 +256,14 @@ test/
 | ------------------------ | -------------------------------------------- | ------------------------------------- | -------------------------------------------------------------- |
 | GET                      | `/`, `/it`, `/s`, `/a`, `/code`, `/g`, `/me` | none (static)                         | pages                                                          |
 | POST                     | `/api/screens`                               | none, or room cookie (registered)     | create a screen: `{mode}` to `{sid, room}`                     |
-| GET                      | `/api/screen/ws`                             | `hello{sid}` as first message, Origin | screen socket                                                  |
-| GET                      | `/api/screen/state`                          | Bearer sid                            | polling fallback                                               |
+| GET                      | `/api/screen/ws?ref=<screenRef>`             | `hello{sid}` as first message, Origin | screen socket (the ref only routes to the object; it is no secret) |
+| GET                      | `/api/screen/state`                          | Bearer sid                            | polling fallback; also the rotation clock when there is no socket |
 | POST                     | `/api/screen/restart`                        | Bearer sid                            | "Start Over" on the screen: drop an unapproved claim, new code |
 | POST                     | `/api/screen/link`                           | Bearer sid                            | new link for the approved file `{purpose: download or pdf}`    |
 | POST                     | `/api/screen/event`                          | Bearer sid                            | `launched`, `fallback` (metrics only)                          |
 | POST                     | `/api/screen/end`                            | Bearer sid                            | end; response carries `Clear-Site-Data: "storage"`             |
 | POST                     | `/api/claim`                                 | none; rate-limited                    | `{code, pass?}` to `{pid, room, match, mode, kind, needsAuth}` |
-| GET                      | `/api/pair/ws`                               | `hello{pid}`, Origin                  | phone socket                                                   |
+| GET                      | `/api/pair/ws?ref=<screenRef>`               | `hello{pid}`, Origin                  | phone socket                                                   |
 | GET                      | `/api/pair/state`                            | Bearer pid                            | polling fallback                                               |
 | GET                      | `/api/files`                                 | Bearer pid + session cookie (live)    | up to 5 recent decks                                           |
 | POST                     | `/api/approve`                               | Bearer pid + cookie (live), Origin    | `{fileId}`                                                     |
@@ -283,7 +283,7 @@ test/
 | GET, HEAD                | `/f/:token/:name`                            | the token                             | open path; query string ignored                                |
 | OPTIONS, PROPFIND, other | `/f/*`                                       | none                                  | 405 `Allow: GET, HEAD`                                         |
 
-Every state-changing route checks four things: `Origin` equals `PUBLIC_ORIGIN`; `Sec-Fetch-Site` is `same-origin` when present; `Content-Type: application/json` (or the declared upload type); and a Zod-parsed body. Bearer credentials come from `sessionStorage` and travel in `Authorization`, never in a URL. Errors are `application/problem+json` with an `ErrorCode` (interfaces.md).
+Every state-changing route checks four things: `Origin` equals `PUBLIC_ORIGIN`; `Sec-Fetch-Site` is `same-origin` when present; `Content-Type: application/json` (or the declared upload type); and a Zod-parsed body. Bearer credentials come from `sessionStorage` and travel in `Authorization`, never in a URL. Errors are `application/problem+json` with an `ErrorCode` (interfaces.md). A POST with no fields still sends `Content-Type: application/json` and a body of `{}` (or no body): that header is what turns a cross-site form post into a 415. Bodies are at most 4 KB, and Zod schemas refuse unknown keys. `POST /api/claim` takes `{code, pass?, kind?}`: `kind` defaults to `owner`, and a phone that wants the guest drop path sends `guest`. A `pass` is refused with `pass_invalid` until guest passes exist.
 
 ### Rate limits
 
@@ -291,7 +291,7 @@ Every state-changing route checks four things: `Origin` equals `PUBLIC_ORIGIN`; 
 | ----------------------- | ------------------------------------------------------------------------------------ | ------------------- |
 | `POST /api/screens`     | 10 per 60 s per IP                                                                   | binding             |
 | `POST /api/claim`       | 20 per 60 s per IP                                                                   | binding             |
-| failed code lookups     | 10 per 10 min per hashed IP, then 429 for 10 min; a global alarm at 1,000 per 10 min | exact, Directory DO |
+| failed code lookups     | 10 per 10 min per hashed IP, then 429 until the window (10 min from the first miss) ends; a global alarm at 1,000 per 10 min (not built yet) | exact, Directory DO |
 | next code on one screen | 6 per min                                                                            | exact, Screen DO    |
 | `/f/`                   | 60 per 60 s per IP; per link: 10 fetches                                             | binding; exact      |
 | `PUT /api/drop`         | 5 per 60 s per IP; one accepted file per session                                     | binding; exact      |
@@ -299,11 +299,11 @@ Every state-changing route checks four things: `Origin` equals `PUBLIC_ORIGIN`; 
 | `/api/it/export`        | 10 per 60 s per token                                                                | binding             |
 | demo screens            | binding as above, plus a 10-min session and a 10 MB drop cap                         | config              |
 
-IPs are never stored. Limits use `HMAC(HASH_PEPPER, ip)`, kept only in DO memory or storage until the window ends.
+IPs are never stored. Limits use `HMAC(HASH_PEPPER, ip)` of `CF-Connecting-IP` (Cloudflare sets it; a local run has none and shares one key), kept only in DO storage until the window ends. The rate-limit bindings run in `wrangler dev` too. `TEST_TIMING=1` skips them so one integration run can create more screens than the per-IP limit allows; the exact limits in the objects stay on.
 
 ## 7. WebSocket protocol
 
-Both sockets are JSON text frames of at most 4 KB, `{"v":1,"t":<type>,...}`. A socket that fails to send a valid `hello` within 5 s, sends an unknown type, or sends an oversized frame is closed with 1008. The upgrade is refused unless `Origin` equals `PUBLIC_ORIGIN`. Heartbeats use the DO auto-response (`ping` to `pong`), so they never wake the object. Clients reconnect after 1, 2, 5, 10 and then 30 s, and fall back to polling the `state` route every 3 s after 3 failed reconnects. Every server message carries `now` (server epoch ms), so countdowns survive clock skew. Exact types are in interfaces.md (`ScreenMsgIn`, `ScreenMsgOut`, `PhoneMsgIn`, `PhoneMsgOut`).
+Both sockets are JSON text frames of at most 4 KB, `{"v":1,"t":<type>,...}`. A socket that fails to send a valid `hello` within 5 s (the object's alarm closes it, after an `error` frame), sends an unknown type, or sends an oversized frame is closed with 1008. A phone socket is closed with 1000 when its pairing is dropped (after `error pairing_invalid` for a cancel, Start Over or timeout). The upgrade is refused (403) unless `Origin` equals `PUBLIC_ORIGIN`, and (400) unless it carries a well-formed `?ref=`. Locally, workerd does not deliver a server close to a client that has sent no frame at all (unverified in production), so the 5 s test sends one. Heartbeats use the DO auto-response (`ping` to `pong`), so they never wake the object. Clients reconnect after 1, 2, 5, 10 and then 30 s, and fall back to polling the `state` route every 3 s after 3 failed reconnects. Every server message carries `now` (server epoch ms), so countdowns survive clock skew. Exact types are in interfaces.md (`ScreenMsgIn`, `ScreenMsgOut`, `PhoneMsgIn`, `PhoneMsgOut`).
 
 | direction        | type        | body                                                                                |
 | ---------------- | ----------- | ----------------------------------------------------------------------------------- |
@@ -399,20 +399,19 @@ CREATE TABLE guest_file (                -- row: 30 days after deleted_at; objec
 | key                | holds                                                                                                                            | lifetime                                                       |
 | ------------------ | -------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------- |
 | `meta`             | `screenRef`, mode, room id and name, `screenSecretHash`, created                                                                 | until the screen closes (10 min with no socket and no session) |
-| `codes`            | current and previous code: value, issuedAt, expiresAt, consumed                                                                  | 70 s each                                                      |
-| `pairing`          | `pairingSecretHash`, kind, match code, claimedAt, listed file ids, guest pass hash, phone user id                                | until approve, cancel, timeout or end                          |
-| `session`          | session id, offeredAt (guest drops), approvedAt, endsAt, file ref (`source`, opaque id or R2 key, display name, type), open mode | until end                                                      |
-| `links`            | per link: `tokenHash`, purpose, mintedAt, firstFetchAt, fetches, screen `ipHash`                                                 | until end                                                      |
-| `limits`           | code requests per minute, link mints per session                                                                                 | rolling                                                        |
+| `machine`          | the whole pure-machine record (`src/worker/machine.ts`): state, current and previous code (value, issuedAt, expiresAt, consumed), code request times, pairing (session id, secret hash, kind, match, claimedAt, listed ids, pass hash, user id), session (file ref, approvedAt, endsAt, open mode, mints), deadlines, end reason, open socket count | rewritten on every transition; pairing and session fields are dropped at end |
+| `links`            | per link: `tokenHash`, purpose, mintedAt, firstFetchAt, fetches, screen `ipHash` (added with the open path)                      | until end                                                      |
 | socket attachments | `{role, authed}`                                                                                                                 | the socket's life                                              |
 
 ### 8.3 Directory Durable Object storage
 
 | key             | holds                        | lifetime                           |
 | --------------- | ---------------------------- | ---------------------------------- |
-| `code:<code>`   | `screenRef`, expiresAt       | 70 s; an alarm sweeps expired rows |
+| `code:<code>`   | `screenRef`, expiresAt       | 70 s, then kept 5 min so a late phone gets `code_expired`; an alarm sweeps older rows |
 | `miss:<ipHash>` | failed lookups, window start | 10 min                             |
-| `global`        | failed lookups this window   | 10 min                             |
+| `global`        | failed lookups this window   | 10 min (not built yet)             |
+
+Both objects use SQLite storage: the Screen object through its synchronous key-value API (`ctx.storage.kv`), the Directory through SQL tables `code` and `miss`.
 
 ### 8.4 Screen browser
 
@@ -468,6 +467,8 @@ HASH_PEPPER=<base64 32 bytes>
 IT_EXPORT_TOKEN=<base64url 32 bytes>
 ROOM_ENROLL_KEY=<base64url 32 bytes>
 ```
+Test-only variable: `TEST_TIMING=1`, never set in a deployment. It lowers the floors `config.ts` enforces (production: `CODE_TTL_SECONDS` at least 30, `CODE_GRACE_SECONDS` at least 5, `CLAIM_TIMEOUT_SECONDS` at least 60, `SESSION_MAX_MINUTES` 1 to 240, `DEMO_SESSION_MINUTES` at most `SESSION_MAX_MINUTES`), allows fractional minutes, and skips the platform rate-limit bindings. `config.ts` refuses it unless `PUBLIC_ORIGIN` is a local address. The integration tests set it through `startPairing()` in `test/integration/pairing-client.ts`, with short timings such as `CODE_TTL_SECONDS=2` and `SESSION_MAX_MINUTES=0.05`.
+
 `.env.example` (tools and CI only, never read by the Worker):
 
 ```ini
@@ -518,7 +519,7 @@ Logging: Worker logs record the route pattern, status, `ErrorCode` and duration.
 - `npm run dev`: `wrangler dev --ip 127.0.0.1 --port 8787 --persist-to .wrangler/state`. This needs no Cloudflare login. DO, D1, R2 and the rate-limit bindings run locally, and `FILE_SOURCE=mock`. It serves plain HTTP: browsers treat `localhost` as a secure context, so `__Host-` cookies work. Trying it from a phone on the LAN needs HTTPS (`--local-protocol https`, accepting the self-signed certificate once) and `PUBLIC_ORIGIN` set to that origin.
 - `npm run setup`: `tools/dev-secrets.mjs` writes `.dev.vars`, and `wrangler d1 migrations apply DB --local` applies the schema.
 - `npm run typecheck`: `tsc` for the Worker, for tests and tools (`tsconfig.node.json`), and for the browser JS (`tsconfig.public.json`). `npm run lint`: Biome (markdown is excluded). `npm test`: Vitest unit tests. `npm run check` runs typecheck, lint, test, test:int, html-validate and size-limit (browser JS budget 40 kB brotli).
-- `npm run test:int`: each test file starts `wrangler dev` on a free port through `test/integration/wrangler.ts` (throwaway state directory, `PUBLIC_ORIGIN` set to that port, torn down after), drives the screen and phone with Node's native `WebSocket` and `fetch`, and uses a test-only `X-Bloop-Test-Clock` header to move time. That header is honored only when `TEST_CLOCK=1`, and `config.ts` refuses `TEST_CLOCK` when `PUBLIC_ORIGIN` is not localhost.
+- `npm run test:int`: each test file starts `wrangler dev` on a free port through `test/integration/wrangler.ts` (throwaway state directory, `PUBLIC_ORIGIN` set to that port, torn down after), drives the screen and phone with Node's native `WebSocket` (with an `Origin` header) and `fetch`, and moves time by running the Worker with short timings under `TEST_TIMING=1` (section 9) instead of a clock header: Durable Object alarms use real time. Three files cover pairing: `pairing.test.ts` (flows, validation, CSRF, sockets), `pairing-timing.test.ts` (short timings: expiry, rotation, claim timeout, auto-end, hello timeout) and `pairing-limits.test.ts` (production timing, so the rate-limit bindings and the exact guess limit are live, and a config that fails closed). `wrangler dev` does not implement Durable Object jurisdictions, so `stubs.ts` skips `eu` when `PUBLIC_ORIGIN` is local.
 - `npm run test:e2e` (CI): Playwright with two browser contexts (screen at 1440, phone at 390). It runs the full demo flow, the guest flow with fixtures (upload, then the Open click on the screen), every state string, axe, and the header assertions.
 - Unit coverage targets: the state machine (fast-check: no transition leaves `ended` except `code.next`, a code is consumed at most once, every timer state has a deadline), the code alphabet and normalizer, the name sanitizer, the zip central-directory reader (fuzzed), the vault (round trip, AAD swap fails, rotation), CSV escaping, and header generation.
 - Every threat in threat-model.md names its test. CI fails if a threat id marked "mitigated" has no test with that id in its title.

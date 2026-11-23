@@ -66,7 +66,9 @@ export interface LinkSet {
   pdf: string | null;
 }
 
-// WebSocket frames, all {v: 1, t: ...}, at most 4 KB.
+// WebSocket frames, all {v: 1, t: ...}, at most 4 KB. The upgrade URL carries the non-secret screenRef
+// (`/api/screen/ws?ref=<screenRef>`, `/api/pair/ws?ref=<screenRef>`): the first frame is the credential.
+// The exact text {"v":1,"t":"ping"} is answered with {"v":1,"t":"pong"} by the runtime without waking the object.
 export type ScreenMsgIn =
   | { v: 1; t: "hello"; sid: string }
   | { v: 1; t: "code.next" }
@@ -87,6 +89,7 @@ export type PhoneMsgOut =
 export interface ClaimRequest {
   code: string;
   pass?: string;
+  kind?: Kind; // defaults to "owner"; "guest" asks for the drop path
 }
 export interface ClaimResponse {
   pid: string;
