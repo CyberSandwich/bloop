@@ -99,6 +99,8 @@ describe("DEMO-01 isolation: the full demo flow, with no account", () => {
     expect(image.headers.get("Content-Type")).toBe("image/jpeg");
     expect(image.headers.get("X-Content-Type-Options")).toBe("nosniff");
     expect(image.headers.get("Content-Disposition")).toBe("inline");
+    expect(image.headers.get("Content-Security-Policy")).toBe("default-src 'none'; sandbox; frame-ancestors 'none'");
+    expect(image.headers.get("Cache-Control")).toBe("no-store");
     expect([...new Uint8Array(await image.arrayBuffer()).slice(0, 3)]).toEqual([0xff, 0xd8, 0xff]);
 
     const mint = (body: Record<string, unknown>) =>
