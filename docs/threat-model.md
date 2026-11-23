@@ -149,6 +149,7 @@ Trust boundaries:
 | user row | D1 | while a grant or session exists, then 30 days |
 | Worker logs | Cloudflare | 3 days, no personal data |
 | failed-lookup counters | Directory DO | 10 min |
+| waitlist: the email and answers a person sends, to invite them to early access | the waitlist inbox or form, outside bloop's stores | until they ask for deletion or the waitlist closes |
 
 ## 11. Owner decisions and field tests
 | id | decision or test | recommendation |
