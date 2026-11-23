@@ -54,7 +54,7 @@ const bar = /** @type {HTMLProgressElement} */ (byId("bar"));
 /**
  * @type {{
  *   error: PhoneStateKey | null, info: import("./core/states.js").PhoneInfo | null, view: PhoneView | null,
- *   files: FileEntry[] | null, selected: string | null, approving: boolean, canceled: boolean,
+ *   files: FileEntry[] | null, selected: string | null, approving: boolean, canceling: boolean, canceled: boolean,
  *   pid: string | null, channel: ReturnType<typeof openChannel> | null, retry: (() => void) | null,
  *   key: PhoneStateKey | null, rows: FileEntry[] | null, actionIds: string, account: boolean,
  *   drop: import("./core/states.js").PhoneCtx["drop"], file: File | null, maxBytes: number,
@@ -68,6 +68,7 @@ const c = {
   files: null,
   selected: null,
   approving: false,
+  canceling: false,
   canceled: false,
   pid: null,
   channel: null,
@@ -294,9 +295,12 @@ async function send() {
   } else fail(res.error, send);
 }
 
+/** The server drops the pairing before it answers, so its `pairing_invalid` push arrives first: `canceling` keeps it from showing as expired. */
 async function cancelPairing() {
   c.upload?.abort();
+  c.canceling = true;
   const res = await api.post("/api/cancel", {}, c.pid);
+  c.canceling = false;
   if (!res.ok) return fail(res.error);
   c.canceled = true;
   c.channel?.stop();
@@ -353,7 +357,7 @@ function attach(/** @type {string} */ pid) {
       render();
     },
     onError: (code) => {
-      if (!c.canceled) fail(code);
+      if (!c.canceling && !c.canceled) fail(code);
     },
     onLink: () => {},
   });

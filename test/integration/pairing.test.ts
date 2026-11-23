@@ -164,6 +164,17 @@ describe("pairing: the whole flow over WebSockets", () => {
     socket.close();
   });
 
+  it("PAIR cancel: the canceling phone's own socket is told pairing_invalid too, often before the cancel answers", async () => {
+    // public/js/phone.js holds this push back while its cancel is in flight, or it would show expired.
+    const { socket, code } = await openScreen(api);
+    const { body } = await claim(api, code);
+    const phone = await phoneSocket(api, body.pid);
+    const cancel = await api.post("/api/cancel", {}, { auth: body.pid });
+    expect(cancel.body).toMatchObject({ state: "ended", endReason: "canceled" });
+    await phone.waitFor((f) => f.t === "error" && f.code === "pairing_invalid");
+    socket.close();
+  });
+
   it("PAIR polling fallback: the whole flow with no WebSocket at all", async () => {
     const created = await api.post<{ sid: string }>("/api/screens", { mode: "demo" });
     const sid = created.body.sid;
