@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import type { AuditEvent, SessionContext } from "../../src/worker/audit.ts";
+import { type AuditEvent, type SessionContext, userScope } from "../../src/worker/audit.ts";
 import { D1AuditLog } from "../../src/worker/audit-d1.ts";
 import { addUser, testDb } from "./d1-shim.ts";
 
@@ -129,6 +129,29 @@ describe("DATA-05 dsar: a user reads their own rows", () => {
     expect(rows[0]).toMatchObject({ userEmail: "ada@example.test", mode: "live", kind: "owner" });
     const older = await log.forUser("u1", 10, rows[2]?.at);
     expect(older.map((r) => r.type)).toEqual(["claimed"]);
+  });
+});
+
+describe("F12 DATA-05 dsar: account events belong to the user, not to a session", () => {
+  it("DATA-05 dsar: a user reads their grant rows with their session rows, and never another user's", async () => {
+    const { db, log } = setup();
+    addUser(db, "u2");
+    await fullSession(log, "s1", T0, { userId: "u1" });
+    await log.record(ev("grant.created", T0 - 1000, { sessionId: userScope("u1") }));
+    await log.record(ev("grant.created", T0 - 500, { sessionId: userScope("u2") }));
+    const types = (await log.forUser("u1", 10)).map((r) => r.type);
+    expect(types).toEqual(["ended", "link.fetched", "approved", "claimed", "grant.created"]);
+    expect((await log.forUser("u2", 10)).map((r) => r.type)).toEqual(["grant.created"]);
+  });
+
+  it("DATA-04 erase: erasure detaches the grant rows from the user id, so nothing links them back", async () => {
+    const { db, log } = setup();
+    await log.record(ev("grant.created", T0, { sessionId: userScope("u1") }));
+    await log.record(ev("grant.deleted", T0 + 1, { sessionId: userScope("u1") }));
+    await log.anonymizeUser("u1");
+    expect(await log.forUser("u1", 10)).toEqual([]);
+    const ids = db.raw.prepare("SELECT DISTINCT session_id FROM audit_event").all();
+    expect(ids).toEqual([{ session_id: "erased" }]);
   });
 });
 

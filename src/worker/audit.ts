@@ -12,6 +12,13 @@ export interface SessionContext {
   userId: string | null;
 }
 
+/**
+ * The `sessionId` of a row about an account, not a session (grant created or deleted). It lets `forUser` find
+ * the row; erasure rewrites it to ERASED_SCOPE so nothing links back to the user.
+ */
+export const userScope = (userId: string): string => `user:${userId}`;
+export const ERASED_SCOPE = "erased";
+
 export interface AuditEvent {
   sessionId: string;
   at: number;
@@ -34,6 +41,16 @@ export interface AuditEvent {
   /** Present on the machine's events; later events find the row by `sessionId`. */
   session?: SessionContext;
 }
+/** An account event: a grant created or deleted, or an erasure (which keeps no link to the user). */
+export function accountEvent(
+  type: "grant.created" | "grant.deleted" | "user.erased",
+  userId: string,
+  at: number,
+  actor: AuditEvent["actor"] = "phone",
+): AuditEvent {
+  return { sessionId: type === "user.erased" ? ERASED_SCOPE : userScope(userId), at, actor, type, detail: {} };
+}
+
 export interface AuditRow extends Omit<AuditEvent, "session"> {
   id: number;
   roomName: string | null;

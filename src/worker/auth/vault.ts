@@ -201,9 +201,15 @@ export class Vault {
     await this.db.prepare("DELETE FROM token_grant WHERE user_id = ?").bind(userId).run();
   }
 
-  /** Daily cron: deletes grants unused for `idleDays`. Returns the count. */
-  async deleteIdle(idleDays: number): Promise<number> {
-    return this.run("DELETE FROM token_grant WHERE updated_at < ?", [this.now() - idleDays * DAY_MS]);
+  /** Deletes grants unused for `idleDays`; returns the users they belonged to. */
+  async deleteIdle(idleDays: number): Promise<string[]> {
+    const cutoff = this.now() - idleDays * DAY_MS;
+    const { results } = await this.db
+      .prepare("SELECT user_id FROM token_grant WHERE updated_at < ?")
+      .bind(cutoff)
+      .all<{ user_id: string }>();
+    await this.run("DELETE FROM token_grant WHERE updated_at < ?", [cutoff]);
+    return results.map((row) => row.user_id);
   }
 
   /** Daily cron: re-wraps up to `limit` data keys still under an old KEK. Returns how many remain stale. */

@@ -81,6 +81,11 @@ export class Sessions {
     await this.db.prepare("DELETE FROM phone_session WHERE user_id = ?").bind(userId).run();
   }
 
+  /** Erasure: the user row goes, and with it the grant, every phone session and any guest pass (ON DELETE CASCADE). */
+  async deleteUser(userId: string): Promise<void> {
+    await this.db.prepare("DELETE FROM app_user WHERE id = ?").bind(userId).run();
+  }
+
   /** Daily cron. Returns how many rows were deleted. */
   async deleteExpired(): Promise<number> {
     const now = this.now();

@@ -1,4 +1,6 @@
 // The auth objects a request needs, built from the environment, and the daily maintenance job.
+import { accountEvent } from "../audit.ts";
+import { D1AuditLog } from "../audit-d1.ts";
 import type { Config } from "../config.ts";
 import { readCookie, SESSION_COOKIE } from "./cookies.ts";
 import { dbOf } from "./db.ts";
@@ -44,7 +46,15 @@ export async function authMaintenance(
   now: () => number = Date.now,
 ): Promise<MaintenanceReport> {
   const { sessions, vault } = servicesFor(env, config, now);
-  const idleGrants = await vault.deleteIdle(config.grantIdleDays);
+  const idle = await vault.deleteIdle(config.grantIdleDays);
+  const audit = new D1AuditLog(dbOf(env.DB));
+  for (const userId of idle) {
+    // Best effort: the grant is already gone, and one failed row must not stop the rest of the job.
+    await audit
+      .record(accountEvent("grant.deleted", userId, now(), "system"))
+      .catch(() => console.error("record_failed"));
+  }
+  const idleGrants = idle.length;
   const expiredSessions = await sessions.deleteExpired();
   const staleKeys = config.graph ? await vault.rewrapStale(REWRAP_BATCH) : 0;
   return { idleGrants, expiredSessions, staleKeys };

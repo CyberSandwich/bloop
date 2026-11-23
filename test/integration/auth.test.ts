@@ -215,6 +215,114 @@ describe("AUTH-03 state: /auth/callback", () => {
   });
 });
 
+/** Audit rows are written best effort by the callback, so a test waits for the row to show. */
+async function auditTypes(session: string): Promise<string[]> {
+  let types: string[] = [];
+  for (let i = 0; i < 40; i++) {
+    const res = await api.call<{ rows: { type: string }[] }>("GET", "/api/me/audit", undefined, {
+      headers: sid(session),
+    });
+    types = res.body.rows?.map((r) => r.type) ?? [];
+    if (types.length > 0) break;
+    await new Promise((resolve) => setTimeout(resolve, 100));
+  }
+  return types;
+}
+
+describe("F12 DATA-05 dsar: /api/me/audit and DELETE /api/me", () => {
+  it("DATA-05 dsar: a signed-in user reads their own rows newest first, with the grant row, and a stranger gets 401", async () => {
+    idp.oid = "oid-audit";
+    const { session } = await signIn();
+    expect(await auditTypes(session as string)).toContain("grant.created");
+    const res = await api.call<{ rows: Record<string, unknown>[]; next: number | null }>(
+      "GET",
+      "/api/me/audit?limit=1",
+      undefined,
+      { headers: sid(session as string) },
+    );
+    expect(res.status).toBe(200);
+    expect(res.body.rows).toHaveLength(1);
+    expect(res.body.rows[0]).toMatchObject({ type: "grant.created", actor: "phone", user: null });
+    expect(JSON.stringify(res.body)).not.toMatch(/at-1|rt-1/);
+    expect((await api.call("GET", "/api/me/audit")).body).toEqual(problem("auth_required"));
+    expect(
+      (await api.call("GET", "/api/me/audit?limit=0", undefined, { headers: sid(session as string) })).status,
+    ).toBe(400);
+  });
+
+  it("DATA-05 dsar: another user's session sees none of those rows", async () => {
+    idp.oid = "oid-first";
+    const first = (await signIn()).session as string;
+    await auditTypes(first);
+    idp.oid = "oid-second";
+    const second = (await signIn()).session as string;
+    const mine = await api.call<{ rows: { session: string }[] }>("GET", "/api/me/audit", undefined, {
+      headers: sid(second),
+    });
+    const firstRows = await api.call<{ rows: { session: string }[] }>("GET", "/api/me/audit", undefined, {
+      headers: sid(first),
+    });
+    const theirs = new Set(firstRows.body.rows.map((r) => r.session));
+    expect(mine.body.rows.some((r) => theirs.has(r.session))).toBe(false);
+  });
+
+  it("AUTH-07 disconnect: disconnect writes a grant.deleted row", async () => {
+    idp.oid = "oid-disconnect";
+    const { session } = await signIn();
+    await auditTypes(session as string);
+    const before = (
+      await api.call<{ rows: { type: string }[] }>("GET", "/api/me/audit", undefined, {
+        headers: sid(session as string),
+      })
+    ).body;
+    expect(before.rows.map((r) => r.type)).not.toContain("grant.deleted");
+    expect((await api.post("/api/me/disconnect", {}, { headers: sid(session as string) })).status).toBe(200);
+    let rows: Record<string, unknown>[] = [];
+    for (let i = 0; i < 40 && rows.length === 0; i++) {
+      rows = wrangler.d1("SELECT session_id FROM audit_event WHERE type = 'grant.deleted'");
+      await new Promise((resolve) => setTimeout(resolve, 100));
+    }
+    expect(rows.length).toBeGreaterThan(0);
+  });
+
+  it("DATA-05 dsar: DELETE /api/me erases the user, records user.erased with no link back, and ends every session", async () => {
+    idp.oid = "oid-erase";
+    const a = (await signIn()).session as string;
+    const b = (await signIn()).session as string;
+    await auditTypes(a);
+    const users = () => Number(wrangler.d1("SELECT count(*) AS n FROM app_user WHERE oid = 'oid-erase'")[0]?.n);
+    expect(users()).toBe(1);
+    const userId = wrangler.d1("SELECT id FROM app_user WHERE oid = 'oid-erase'")[0]?.id as string;
+    expect(wrangler.d1(`SELECT count(*) AS n FROM audit_event WHERE session_id = 'user:${userId}'`)[0]?.n).toBe(1);
+
+    const res = await api.call("DELETE", "/api/me", {}, { headers: sid(a) });
+    expect(res.status).toBe(200);
+    expect(res.headers.get("Set-Cookie")).toContain("__Host-bloop_sid=; Max-Age=0");
+    expect(users()).toBe(0);
+    expect((await me(a)).signedIn).toBe(false);
+    expect((await me(b)).signedIn).toBe(false);
+    expect(wrangler.d1(`SELECT count(*) AS n FROM token_grant WHERE user_id = '${userId}'`)[0]?.n).toBe(0);
+
+    const erased = wrangler.d1("SELECT session_id, actor FROM audit_event WHERE type = 'user.erased'");
+    expect(erased).toEqual([{ session_id: "erased", actor: "phone" }]);
+    expect(wrangler.d1(`SELECT count(*) AS n FROM audit_event WHERE session_id = 'user:${userId}'`)[0]?.n).toBe(0);
+  });
+
+  it("PAIR-06 write checks: DELETE /api/me needs the Origin, a JSON body and a session", async () => {
+    idp.oid = "oid-checks";
+    const { session } = await signIn();
+    const cookie = sid(session as string);
+    expect((await api.call("DELETE", "/api/me", {}, { headers: cookie, origin: "https://evil.example" })).body).toEqual(
+      problem("forbidden_origin"),
+    );
+    expect((await api.call("DELETE", "/api/me", {}, { headers: cookie, origin: null })).body).toEqual(
+      problem("forbidden_origin"),
+    );
+    expect((await api.call("DELETE", "/api/me", {})).body).toEqual(problem("auth_required"));
+    expect((await me(session)).signedIn).toBe(true);
+  });
+});
+
 describe("sign-in, sessions and revocation", () => {
   it("AUTH-05 cookie: a good callback sets one session cookie with the documented attributes and clears the oauth cookie", async () => {
     idp.tokenRequests.length = 0;

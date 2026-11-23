@@ -1,6 +1,14 @@
 // AuditLog over D1: one `audit_event` row per event, and a `session` row the events update. File contents,
 // tokens, codes and IPs have no column; `detail` keeps only the allowed keys (sanitizeDetail).
-import { type AuditEvent, type AuditLog, type AuditQuery, type AuditRow, sanitizeDetail } from "./audit.ts";
+import {
+  type AuditEvent,
+  type AuditLog,
+  type AuditQuery,
+  type AuditRow,
+  ERASED_SCOPE,
+  sanitizeDetail,
+  userScope,
+} from "./audit.ts";
 import type { Db } from "./auth/db.ts";
 import { auditCsvHeader, auditCsvLine, auditRecord } from "./export-format.ts";
 
@@ -99,8 +107,10 @@ export class D1AuditLog implements AuditLog {
 
   async forUser(userId: string, limit: number, before?: number): Promise<AuditRow[]> {
     const { results } = await this.db
-      .prepare(`${SELECT} WHERE s.user_id = ?1 AND a.at < ?2 ORDER BY a.at DESC, a.id DESC LIMIT ?3`)
-      .bind(userId, before ?? Number.MAX_SAFE_INTEGER, limit)
+      .prepare(
+        `${SELECT} WHERE (s.user_id = ?1 OR a.session_id = ?4) AND a.at < ?2 ORDER BY a.at DESC, a.id DESC LIMIT ?3`,
+      )
+      .bind(userId, before ?? Number.MAX_SAFE_INTEGER, limit, userScope(userId))
       .all<RawRow>();
     return results.map(toRow);
   }
@@ -162,6 +172,10 @@ export class D1AuditLog implements AuditLog {
          WHERE session_id IN (SELECT id FROM session WHERE user_id = ?)`,
       )
       .bind(userId)
+      .run();
+    await this.db
+      .prepare("UPDATE audit_event SET session_id = ? WHERE session_id = ?")
+      .bind(ERASED_SCOPE, userScope(userId))
       .run();
     const sessions = await this.db
       .prepare("UPDATE session SET user_id = NULL, file_name = NULL WHERE user_id = ?")

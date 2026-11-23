@@ -39,17 +39,24 @@ async function dispatch(request: Request, env: Env): Promise<{ response: Respons
 }
 
 async function matchRoute(request: Request, env: Env, url: URL): Promise<{ response: Response; policy: Policy }> {
+  let refused: { allow: Set<string>; policy: Policy } | null = null;
   for (const r of routes) {
     const match = r.pattern.exec(url);
     if (!match) continue;
     if (!r.methods.includes(request.method)) {
-      return {
-        response: problem(405, "method_not_allowed", { Allow: r.methods.join(", ") }),
-        policy: r.policy,
-      };
+      // A path can have a route per method: keep looking, and answer 405 only if none takes this one.
+      refused ??= { allow: new Set(), policy: r.policy };
+      for (const method of r.methods) refused.allow.add(method);
+      continue;
     }
     const response = await r.handler(request, env, match);
     return { response, policy: policyOf(response, r.policy) };
+  }
+  if (refused) {
+    return {
+      response: problem(405, "method_not_allowed", { Allow: [...refused.allow].join(", ") }),
+      policy: refused.policy,
+    };
   }
   return { response: problem(404, "not_found"), policy: "api" };
 }

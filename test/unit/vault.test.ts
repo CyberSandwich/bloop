@@ -257,7 +257,7 @@ describe("AUTH-01 vault: TOKEN_MODE=session and retention", () => {
     });
     await vault.accessToken("u1", refresh); // a use at day 20
     clock.t += 15 * DAY; // u2 idle 35 days, u1 idle 15
-    expect(await vault.deleteIdle(30)).toBe(1);
+    expect(await vault.deleteIdle(30)).toEqual(["u2"]);
     expect(await vault.has("u1")).toBe(true);
     expect(await vault.has("u2")).toBe(false);
   });
