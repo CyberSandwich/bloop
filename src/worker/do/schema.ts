@@ -6,9 +6,10 @@ import type { Kv } from "./ledger.ts";
 
 export const SCHEMA_KEY = "schemaVersion";
 /** Version 1 had no key: a session held one `file`, and a link record had no `item`. */
-export const SCHEMA_VERSION = 2;
+export const SCHEMA_VERSION = 3;
 
-type V1Session = Omit<NonNullable<Machine["session"]>, "items"> & { file: FileRef };
+type Session = NonNullable<Machine["session"]>;
+type V1Session = Omit<Session, "items" | "mints"> & { file: FileRef; mints: number };
 
 const STEPS: Record<number, (kv: Kv) => void> = {
   // 1 to 2: the session holds a list; the one file becomes a one-item list, and every link served item 0.
@@ -24,6 +25,17 @@ const STEPS: Record<number, (kv: Kv) => void> = {
         "links",
         links.map((r) => ({ item: 0, ...r })),
       );
+  },
+  // 2 to 3: the mint count is per item. The session-wide count stands for every item, so none gains a mint.
+  3: (kv) => {
+    const m = kv.get<
+      Omit<Machine, "session"> & { session: (Omit<Session, "mints"> & { mints: number | number[] }) | null }
+    >("machine");
+    const s = m?.session;
+    if (s && typeof s.mints === "number") {
+      const count = s.mints;
+      kv.put("machine", { ...m, session: { ...s, mints: s.items.map(() => count) } });
+    }
   },
 };
 

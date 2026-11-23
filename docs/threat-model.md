@@ -49,7 +49,7 @@ Trust boundaries:
 | PAIR-08 | I | Guessing sid, pid or session ids | low | high | 128-bit refs plus 256-bit secrets from `crypto.getRandomValues`; only hashes are stored; comparisons are constant-time | `PAIR-08 ids` (format, length, hash at rest) | mitigated |
 | PAIR-09 | D | Flooding screen creation or code requests until the free tier fails | med | med | Bindings on `/api/screens` and `/api/claim`, and per session on `/api/files` (a Graph call each); 6 codes per min per screen; hidden tabs stop asking for codes; over the cap the status line shows "bloop isn't responding. Sign in to this PC as usual." | `PAIR-09 flood` | residual (free-tier caps; OD-7) |
 | PAIR-10 | S | Cross-site WebSocket hijacking | low | med | Upgrade refused unless `Origin` matches; auth is the first message, not a cookie | `PAIR-10 ws-origin` | mitigated |
-| PAIR-11 | T | A tampered screen sends false events (`launched`, `fallback`) | med | low | Events change metrics and UI only; a screen cannot list files or choose items; it names an item by its index in the approved list, and a mint for a link item or an index outside the list is `file_not_found`; fallback mints are capped at 5 | `PAIR-11 screen-events` | mitigated |
+| PAIR-11 | T | A tampered screen sends false events (`launched`, `fallback`) | med | low | Events change metrics and UI only; a screen cannot list files or choose items; it names an item by its index in the approved list, and a mint for a link item or an index outside the list is `file_not_found`; fallback mints are capped at 5 per item (`LINK_MINTS_PER_ITEM`, so at most 60 for a full list) | `PAIR-11 screen-events` | mitigated |
 
 ## 3. File source
 | id | STRIDE | threat | L | I | mitigation | test | status |
@@ -129,7 +129,7 @@ Trust boundaries:
 | id | STRIDE | threat | L | I | mitigation | test | status |
 |---|---|---|---|---|---|---|---|
 | PC-01 | I | Malware on the PC copies the deck | med | med | Inherent to presenting on any PC, USB stick included; it gets one file, never the account or another file; nothing is typed at the PC | none (by design) | residual (accepted) |
-| PC-02 | I, E | Malware takes the sid or a live link | med | med | A sid cannot list files, choose files or mint links beyond the approved file (5 mints, audited); links die at end; the phone's End revokes everything server-side; the 90-min end does not depend on the screen | `PC-02 sid-powers` | mitigated |
+| PC-02 | I, E | Malware takes the sid or a live link | med | med | A sid cannot list files, choose files or mint links beyond the approved files (5 mints per item, at most 60 for 12 items, audited); links die at end; the phone's End revokes everything server-side; the 90-min end does not depend on the screen | `PC-02 sid-powers` | mitigated |
 | PC-03 | S | A rogue page on the PC socially engineers extra approvals ("PowerPoint failed, approve again") | low | med | Each approval names one file and the room; every approval is audited; there is no "approve again" in the flow, because fallbacks reuse the approval | `PC-03 single-approval` | residual |
 | PC-04 | T | The PC keeps the session alive | low | med | The alarm ends the session server-side at 90 min; the hourly cron is the backstop | `PC-04 auto-end` | mitigated |
 

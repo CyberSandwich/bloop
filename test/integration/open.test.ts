@@ -1,5 +1,5 @@
 // The open path end to end against `wrangler dev` with the default config (redirect mode, mock source,
-// limits of 10 fetches and 5 extra mints). Short link lifetimes live in open-timing.test.ts.
+// limits of 10 fetches and 5 extra mints per item). Short link lifetimes live in open-timing.test.ts.
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { approveDemo, fetchLink, PROTOCOL_PREFIX, problemOf } from "./open-client.ts";
 import { Api, startPairing } from "./pairing-client.ts";
@@ -178,10 +178,10 @@ describe("unknown and malformed tokens", () => {
 });
 
 describe("fallback links", () => {
-  const link = (auth: string, purpose: string) =>
+  const link = (auth: string, purpose: string, item?: number) =>
     api.post<{ links: { protocol: string | null; download: string | null; pdf: string | null } }>(
       "/api/screen/link",
-      { purpose },
+      { purpose, ...(item === undefined ? {} : { item }) },
       { auth },
     );
 
@@ -214,14 +214,17 @@ describe("fallback links", () => {
     socket.close();
   });
 
-  it("limits a session to five extra links, then answers mint_limit", async () => {
-    const { socket, screen } = await approveDemo(api);
+  it("PC-02 sid-powers: each item gets five extra links, then mint_limit; a spent item leaves the others theirs", async () => {
+    // Ordered items: 0 Sample deck.pdf, 1 Sample deck.pptx.
+    const { socket, screen } = await approveDemo(api, ["demo-deck", "demo-pdf"]);
     socket.send({ t: "launched", mode: "protocol" });
     await socket.stateWhere((v) => v.state === "opening");
     for (let i = 0; i < 5; i++) expect((await link(screen.sid, "download")).status).toBe(200);
     const sixth = await link(screen.sid, "download");
     expect(sixth.status).toBe(429);
     expect(sixth.body).toMatchObject({ code: "mint_limit" });
+    for (let i = 0; i < 5; i++) expect((await link(screen.sid, "download", 1)).status).toBe(200);
+    expect((await link(screen.sid, "download", 1)).body).toMatchObject({ code: "mint_limit" });
     socket.close();
   });
 

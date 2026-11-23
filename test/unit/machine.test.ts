@@ -367,7 +367,7 @@ describe("machine: open, fetch, fallback", () => {
     const step = must(approved(), { e: "fallback", now: T0 + sec(12), mode: "protocol", item: null, maxMints: 5 });
     expect(step.next.state).toBe("approved");
     expect(step.next.session?.openMode).toBeNull();
-    expect(step.next.session?.mints).toBe(1);
+    expect(step.next.session?.mints).toEqual([1]);
     expect(step.effects).toContainEqual({ fx: "mint", purpose: "protocol", item: 0 });
     expect(fx(step.effects, "metric")).toEqual([]);
   });

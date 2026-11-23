@@ -18,4 +18,4 @@ A session used to carry one file. A presenter wants a deck, its PDF, a photo and
 ## Consequences
 - The open path, the ledger and the audit row are per item: a link record carries its item index; the audit `fileName` lists every item's name or title in one field.
 - An old screen page that posts `{purpose}` without `item` still works: the default is the launched file.
-- A deck and its own PDF in one session are two items with two sets of links, each under the same mint cap (`LINK_MINTS_PER_SESSION`), which a session of many items may now reach sooner.
+- **The mint budget is per item:** `LINK_MINTS_PER_ITEM` (5) extra links for each item, counted per index in `session.mints` (schema step 3), so one file is exposed exactly as before and a full list allows at most 60. Why: a session-wide cap ran out while a viewer moved between items. Replaces: `LINK_MINTS_PER_SESSION`. Remove: one counter again.

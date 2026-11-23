@@ -56,9 +56,9 @@ const schema = z
       .default(120)
       .describe("After its first fetch a link lives this long."),
     LINK_MAX_FETCHES: int(1, 100).default(10).describe("Fetches one link allows; GET and HEAD both count."),
-    LINK_MINTS_PER_SESSION: int(0, 50)
+    LINK_MINTS_PER_ITEM: int(0, 50)
       .default(5)
-      .describe("Extra links per session beyond the first (download, PDF, a relaunch)."),
+      .describe("Extra links per approved item beyond the first (download, PDF or image view, a relaunch)."),
     LINK_BINDING_DEFAULT: z
       .enum(["off", "log", "enforce"])
       .default("log")
@@ -218,7 +218,7 @@ export interface LinkConfig {
   /** After the first fetch a link lives this long. */
   fetchWindowSeconds: number;
   maxFetches: number;
-  /** Extra links per session beyond the first (download, PDF, a relaunch). */
+  /** Extra links per approved item beyond the first (download, PDF or image view, a relaunch). */
   maxMints: number;
   /** Compare the fetching IP with the screen's: `log` records a mismatch, `enforce` refuses it. */
   binding: "off" | "log" | "enforce";
@@ -282,7 +282,7 @@ export function parseConfig(env: Record<string, unknown>): ConfigResult {
         firstFetchSeconds: v.LINK_FIRST_FETCH_SECONDS,
         fetchWindowSeconds: v.LINK_FETCH_WINDOW_SECONDS,
         maxFetches: v.LINK_MAX_FETCHES,
-        maxMints: v.LINK_MINTS_PER_SESSION,
+        maxMints: v.LINK_MINTS_PER_ITEM,
         binding: v.LINK_BINDING_DEFAULT,
       },
       tokenMode: v.TOKEN_MODE,

@@ -19,13 +19,13 @@ export interface Approved {
 
 export const PROTOCOL_PREFIX = "ms-powerpoint:ofv|u|";
 
-/** Pairs a demo screen and phone, approves `fileId`, and waits for the `open` frame. */
-export async function approveDemo(api: Api, fileId = "demo-deck"): Promise<Approved> {
+/** Pairs a demo screen and phone, approves `ids`, and waits for the first `open` frame. */
+export async function approveDemo(api: Api, ids: string[] = ["demo-deck"]): Promise<Approved> {
   const { screen, socket, code } = await openScreen(api, "demo");
   const claimed = await claim(api, code);
   const pid = claimed.body.pid;
   await api.get("/api/files", pid);
-  const approved = await api.post("/api/approve", { ids: [fileId] }, { auth: pid });
+  const approved = await api.post("/api/approve", { ids }, { auth: pid });
   if (approved.status !== 200) throw new Error(`approve failed: ${approved.status}`);
   const frame = await socket.waitFor((f) => f.t === "open");
   const links = frame.links as Links;

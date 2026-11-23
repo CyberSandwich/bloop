@@ -55,7 +55,7 @@
     "LINK_FIRST_FETCH_SECONDS": "600",
     "LINK_FETCH_WINDOW_SECONDS": "120",
     "LINK_MAX_FETCHES": "10",
-    "LINK_MINTS_PER_SESSION": "5",
+    "LINK_MINTS_PER_ITEM": "5",
     "LINK_BINDING_DEFAULT": "log",
     "GRAPH_DOWNLOAD_HOSTS": "*.sharepoint.com,*.files.1drv.com,my.microsoftpersonalcontent.com",
     "GUEST_DROP": "open",
