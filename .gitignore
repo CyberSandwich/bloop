@@ -249,7 +249,6 @@ rabbitmq/
 rabbitmq-data/
 activemq-data/
 *.sage.py
-.envrc
 .venv
 env/
 venv/
@@ -275,11 +274,36 @@ marimo/_lsp/
 __marimo__/
 .streamlit/secrets.toml
 
+# Rust
+debug
+target
+**/*.rs.bk
+*.pdb
+**/mutants.out*/
+rustc-ice-*.txt
+
+# Swift
+xcuserdata/
+*.hmap
+*.ipa
+*.dSYM.zip
+*.dSYM
+timeline.xctimeline
+playground.xcworkspace
+.build/
+Carthage/Build/
+fastlane/report.xml
+fastlane/Preview.html
+fastlane/screenshots/**/*.png
+fastlane/test_output
+
 # Secrets
 .env
 .env.*
 !.env.example
 !.env.sample
+.dev.vars*
+!.dev.vars.example
 *.pem
 *.key
 *.p12
@@ -287,8 +311,13 @@ __marimo__/
 *.keystore
 *.jks
 *.mobileprovision
+*.p8
+*.ppk
 id_rsa*
 id_ed25519*
+id_ecdsa*
+.envrc
+.git-credentials
 .netrc
 .npmrc
 .pypirc
@@ -308,17 +337,12 @@ tasks/
 scratch/
 investigation/
 
-# Wrangler and local secrets
-.dev.vars*
-!.dev.vars.example
-.wrangler/
-
 # Test output
-.lighthouseci/
 coverage/
 test-results/
 playwright-report/
 blob-report/
+.lighthouseci/
 .nyc_output/
 *.lcov
 junit*.xml
@@ -330,10 +354,15 @@ junit*.xml
 *.db
 tmp/
 .tmp/
+.wrangler/
 
 # Local notes
 CLAUDE.md
 WORKFLOWS.md
 context/
-# docs/ stays tracked: technical docs are public
+docs/
 archive/
+
+# Repo
+# docs/ stays tracked: technical docs are public
+!docs/
