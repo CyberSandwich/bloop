@@ -36,7 +36,7 @@ const ctx = (over: Partial<SourceContext> = {}): SourceContext => ({
 });
 
 describe("GraphFileSource.listRecent", () => {
-  it("lists decks and PDFs newest first, never .pptm, other types or folders", async () => {
+  it("SRC-05 filter: lists decks and PDFs newest first, never .pptm, other types or folders", async () => {
     const { source, calls } = graph(() => ({ body: fixture("children.json") }));
     const res = await source.listRecent(ctx(), 5);
     expect(res).toEqual({
@@ -180,7 +180,7 @@ describe("GraphFileSource.resolve", () => {
     expect(res.ok && res.file.url).toBeNull();
   });
 
-  it("refuses .pptm and folders as file_type_refused, and a malformed id as file_not_found", async () => {
+  it("SRC-05 filter: refuses .pptm and folders as file_type_refused, and a malformed id as file_not_found", async () => {
     expect(await graph(() => ({ body: fixture("item-pptm.json") })).source.resolve(ctx(), "01SYNTHETICMACRO")).toEqual({
       ok: false,
       error: "file_type_refused",

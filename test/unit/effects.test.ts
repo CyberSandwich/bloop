@@ -157,7 +157,7 @@ describe("effects: order and the other seams", () => {
     expect(f.log).toEqual(["remove AAAAAA", "revoke", "purge deck-1", "push both"]);
   });
 
-  it("calls the mint seam on approve and the purge seam with the session id", async () => {
+  it("RES-03 purge: calls the mint seam on approve and the purge seam with the session id", async () => {
     const prev = claimedOwner();
     const step = must(prev, { e: "restart", now: T0 + sec(5) });
     const f = fakes();

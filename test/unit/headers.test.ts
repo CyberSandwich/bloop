@@ -1,6 +1,13 @@
 import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
-import { BASE_HEADERS, headersFor, type Policy, permissionsPolicy, withHeaders } from "../../src/worker/headers.ts";
+import {
+  BASE_HEADERS,
+  CSP,
+  headersFor,
+  type Policy,
+  permissionsPolicy,
+  withHeaders,
+} from "../../src/worker/headers.ts";
 
 /** Resolves public/_headers for one path the way Cloudflare does: matching blocks in order, `! Name` detaches. */
 function staticHeaders(path: string): Record<string, string> {
@@ -56,6 +63,28 @@ describe("headers.ts", () => {
   it("every policy carries the base headers", () => {
     for (const policy of ["landing", "app", "api", "file-pptx", "file-pdf"] as const) {
       expect(headersFor(policy)).toMatchObject(BASE_HEADERS);
+    }
+  });
+
+  it("SITE-08 headers: HSTS for two years on every policy, subdomains included", () => {
+    for (const policy of ["landing", "app", "api", "file-pptx", "file-pdf"] as const) {
+      expect(headersFor(policy)["Strict-Transport-Security"]).toBe("max-age=63072000; includeSubDomains");
+    }
+    expect(CSP.app).toContain("upgrade-insecure-requests");
+  });
+
+  it("OPEN-05 headers: no Referer on any response", () => {
+    for (const policy of ["landing", "app", "api", "file-pptx", "file-pdf"] as const) {
+      expect(headersFor(policy)["Referrer-Policy"]).toBe("no-referrer");
+    }
+  });
+
+  it("SITE-02 csp: pages allow no inline or eval script and no Trusted Types policy", () => {
+    for (const policy of ["landing", "app"] as const) {
+      expect(CSP[policy]).toContain("script-src 'self';");
+      expect(CSP[policy]).not.toMatch(/unsafe-(inline|eval)/);
+      expect(CSP[policy]).toContain("require-trusted-types-for 'script'");
+      expect(CSP[policy]).toContain("trusted-types 'none'");
     }
   });
 

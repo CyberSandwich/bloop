@@ -342,7 +342,7 @@ describe("machine: open, fetch, fallback", () => {
     expect(refused(claimedOwner(), { e: "launched", now: T0 + sec(5), mode: "protocol" })).toBe("wrong_state");
   });
 
-  it("mints a fallback link up to the cap, then mint_limit", () => {
+  it("PC-02 mints a fallback link up to the cap, then mint_limit", () => {
     let m = must(approved(), { e: "launched", now: T0 + sec(11), mode: "protocol" }).next;
     for (let i = 0; i < 5; i++) {
       const step = must(m, { e: "fallback", now: T0 + sec(12 + i), mode: "download", maxMints: 5 });
@@ -535,7 +535,7 @@ describe("machine: timers", () => {
     expect(effects).toContainEqual({ fx: "revokeLinks" });
   });
 
-  it("closes a waiting or ended screen 10 minutes after the last socket and deletes everything", () => {
+  it("RES-03 closes a waiting or ended screen 10 minutes after the last socket and deletes everything", () => {
     const m = waiting();
     expect(m.closeAt).toBe(T0 + sec(600));
     const { next, effects } = must(m, { e: "timer", now: T0 + sec(600) });

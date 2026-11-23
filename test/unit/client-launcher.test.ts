@@ -134,7 +134,7 @@ describe("download and showPdf", () => {
     expect(calls.windows).toEqual([]);
   });
 
-  it("the PDF view opens in a window this page can close, and the residue step closes it", async () => {
+  it("RES-04 pdf-window: the PDF view opens in a window this page can close, and the residue step closes it", async () => {
     const pdf = "https://bloop.test/f/t3/Deck.pdf";
     const { launcher, calls } = harness({ minted: links({ pdf }) });
     expect(await launcher.showPdf()).toBe(true);

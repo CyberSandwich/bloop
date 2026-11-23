@@ -60,7 +60,7 @@ function setup(caps = { classA: 2, classB: 2 }, start = JAN) {
   return { bucket, db, drop, setNow: (t: number) => (now = t) };
 }
 
-describe("R2 cap: the meter", () => {
+describe("DROP-10 R2 cap: the meter", () => {
   it("counts up to the cap, then refuses without counting further", async () => {
     const db = testDb();
     const meter = new R2Meter(db, { classA: 2, classB: 5 }, () => JAN);

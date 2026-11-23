@@ -381,7 +381,7 @@ test.describe("screen page", () => {
     await screen.context.close();
   });
 
-  test("the page is not frameable", async ({ browser, baseURL }) => {
+  test("SITE-01 frame: the page is not frameable", async ({ browser, baseURL }) => {
     const context = await browser.newContext();
     const page = await context.newPage();
     // The framing document is about:blank: setContent on one of our pages writes HTML, which their
