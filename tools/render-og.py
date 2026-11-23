@@ -1,63 +1,87 @@
 #!/usr/bin/env python3
-"""render-og: the social preview image (docs/design.md section 9): perch still at right, h1 at left.
+"""render-og: the social preview image and the touch icon (docs/design.md section 9), both from public/favicon.svg.
 
-Use: python3 -I tools/render-og.py   (after tools/render-stills.py; needs fonttools and ImageMagick)
-Writes tools/og.svg (the editable source, Inter by family name) and public/og.png (1200 x 630), both
-from the constants below, so a name change (SITE_NAME) is one edit and one run.
+Use: python3 -I tools/render-og.py [--font PATH]   (needs ImageMagick; without --font, fonttools)
+Writes tools/og.svg (the editable source, Inter by family name), public/og.png (1200 x 630) and
+public/apple-touch-icon.png (180 x 180). --font takes a static Inter SemiBold file; without it the 600
+instance is cut from src/fonts/InterVariable.woff2.
 """
+import argparse
 import subprocess
 import tempfile
 from pathlib import Path
 
-from fontTools.ttLib import TTFont
-from fontTools.varLib import instancer
-
 ROOT = Path(__file__).resolve().parent.parent
+LOGO = ROOT / 'public' / 'favicon.svg'
 SITE_NAME = 'bloop'
-LINES = ('Your slides.', 'On any screen.')
+H1 = 'Your slides on any screen.'
+SUB = 'Scan the code on the screen with your phone and choose a file.'
 W, H = 1200, 630
-BG, INK = '#FAFAFA', '#1D1D1F'
-ROBIN = ROOT / 'public' / 'img' / 'robin-perch-1120.webp'
-ROBIN_BOX = (600, 15, 600)  # x, y, size
-MARK = (80, 120, 40)  # x, baseline, size
-HEAD = (80, 330, 76, 84)  # x, first baseline, size, line step
+PAPER, INK, MUTED = '#F3F3F0', '#1E1E1C', '#6C6C66'
+MARK = (80, 72, 72)  # x, y, size of the logo
+NAME = (168, 126, 44)  # x, baseline, size of the wordmark
+HEAD = (80, 372, 90)  # x, baseline, size: one line, as on the page
+LEAD = (80, 440, 32)
+ICON, ICON_MARK = 180, 132
 
 
 def svg():
-    x, base, size, step = HEAD
-    text = ''.join(
-        f'<text x="{x}" y="{base + i * step}" font-size="{size}" letter-spacing="{-0.032 * size:.2f}">{line}</text>'
-        for i, line in enumerate(LINES))
-    rx, ry, rs = ROBIN_BOX
-    mx, mb, ms = MARK
+    mx, my, ms = MARK
+    nx, nb, ns = NAME
+    hx, hb, hs = HEAD
+    lx, lb, ls = LEAD
     return (f'<svg xmlns="http://www.w3.org/2000/svg" width="{W}" height="{H}" viewBox="0 0 {W} {H}">'
-            f'<title>{SITE_NAME}: {" ".join(LINES)}</title><rect width="{W}" height="{H}" fill="{BG}"/>'
-            f'<image href="../public/img/robin-perch-1120.webp" x="{rx}" y="{ry}" width="{rs}" height="{rs}"/>'
-            f'<g fill="{INK}" font-family="Inter" font-weight="600">'
-            f'<text x="{mx}" y="{mb}" font-size="{ms}" letter-spacing="{-0.02 * ms:.2f}">{SITE_NAME}</text>{text}</g></svg>\n')
+            f'<title>{SITE_NAME}: {H1}</title><rect width="{W}" height="{H}" fill="{PAPER}"/>'
+            f'<image href="../public/favicon.svg" x="{mx}" y="{my}" width="{ms}" height="{ms}"/>'
+            f'<g font-family="Inter" font-weight="600" fill="{INK}">'
+            f'<text x="{nx}" y="{nb}" font-size="{ns}" letter-spacing="{-0.03 * ns:.2f}">{SITE_NAME}</text>'
+            f'<text x="{hx}" y="{hb}" font-size="{hs}" letter-spacing="{-0.05 * hs:.2f}">{H1}</text></g>'
+            f'<text x="{lx}" y="{lb}" font-family="Inter" font-size="{ls}" fill="{MUTED}">{SUB}</text></svg>\n')
+
+
+def semibold(tmp, font):
+    if font:
+        return font
+    from fontTools.ttLib import TTFont
+    from fontTools.varLib import instancer
+    ttf = Path(tmp) / 'inter-600.ttf'
+    inst = instancer.instantiateVariableFont(TTFont(str(ROOT / 'src' / 'fonts' / 'InterVariable.woff2')),
+                                             {'wght': 600, 'opsz': 32})
+    inst.flavor = None
+    inst.save(str(ttf))
+    return str(ttf)
+
+
+def logo(tmp, size):
+    out = Path(tmp) / f'logo-{size}.png'
+    subprocess.run(['magick', '-background', 'none', '-density', '600', f'MSVG:{LOGO}',
+                    '-resize', f'{size}x{size}', str(out)], check=True)
+    return str(out)
 
 
 def main():
+    parser = argparse.ArgumentParser()
+    parser.add_argument('--font', help='a static Inter SemiBold file')
+    args = parser.parse_args()
     (ROOT / 'tools' / 'og.svg').write_text(svg())
     with tempfile.TemporaryDirectory() as tmp:
-        ttf = Path(tmp) / 'inter-600.ttf'
-        font = instancer.instantiateVariableFont(TTFont(str(ROOT / 'src' / 'fonts' / 'InterVariable.woff2')),
-                                                 {'wght': 600, 'opsz': 32})
-        font.flavor = None
-        font.save(str(ttf))
-        rx, ry, rs = ROBIN_BOX
-        mx, mb, ms = MARK
-        x, base, size, step = HEAD
-        args = ['magick', '-size', f'{W}x{H}', f'xc:{BG}',
-                '(', str(ROBIN), '-resize', f'{rs}x{rs}', ')', '-geometry', f'+{rx}+{ry}', '-composite',
-                '-font', str(ttf), '-fill', INK,
-                '-pointsize', str(ms), '-kerning', f'{-0.02 * ms:.2f}', '-annotate', f'+{mx}+{mb}', SITE_NAME,
-                '-pointsize', str(size), '-kerning', f'{-0.032 * size:.2f}']
-        for i, line in enumerate(LINES):
-            args += ['-annotate', f'+{x}+{base + i * step}', line]
-        # Flat shading has few colors: a 256-color palette is a tenth of the size with no visible change.
-        args += ['-strip', '-colors', '256', f"PNG8:{ROOT / 'public' / 'og.png'}"]
-        subprocess.run(args, check=True)
+        font = semibold(tmp, args.font)
+        mx, my, ms = MARK
+        nx, nb, ns = NAME
+        hx, hb, hs = HEAD
+        lx, lb, ls = LEAD
+        subprocess.run([
+            'magick', '-size', f'{W}x{H}', f'xc:{PAPER}',
+            logo(tmp, ms), '-geometry', f'+{mx}+{my}', '-composite',
+            '-font', font, '-fill', INK,
+            '-pointsize', str(ns), '-kerning', f'{-0.03 * ns:.2f}', '-annotate', f'+{nx}+{nb}', SITE_NAME,
+            '-pointsize', str(hs), '-kerning', f'{-0.05 * hs:.2f}', '-annotate', f'+{hx}+{hb}', H1,
+            '-fill', MUTED, '-pointsize', str(ls), '-kerning', '0', '-annotate', f'+{lx}+{lb}', SUB,
+            '-strip', '-colors', '256', f"PNG8:{ROOT / 'public' / 'og.png'}"], check=True)
+        # iOS fills transparency with black: the mark sits on the page's paper.
+        subprocess.run([
+            'magick', '-size', f'{ICON}x{ICON}', f'xc:{PAPER}', logo(tmp, ICON_MARK), '-gravity', 'center',
+            '-composite', '-strip', str(ROOT / 'public' / 'apple-touch-icon.png')], check=True)
 
 
 if __name__ == '__main__':
