@@ -311,9 +311,11 @@ test.describe("open path", () => {
     await expectNoAxeViolations(screen.page);
 
     // The labeled PDF view opens in a second window under the PDF route's own CSP.
-    const popup = screen.context.waitForEvent("page");
+    // Asserted on the request, not the popup's URL: headless Chromium has no PDF viewer, so the popup
+    // downloads the file and never commits a navigation that would give it that URL.
+    const pdf = screen.context.waitForEvent("request", (r) => r.url().includes("/f/"));
     await screen.page.getByRole("button", { name: "Show as PDF Instead" }).click();
-    expect((await popup).url()).toMatch(/\/f\/[A-Za-z0-9_-]{54}\/Sample-deck\.pdf$/);
+    expect((await pdf).url()).toMatch(/\/f\/[A-Za-z0-9_-]{54}\/Sample-deck\.pdf$/);
     await expect(heading(screen.page)).toHaveText("Showing Sample deck.pptx as a PDF.");
 
     // End: the screen forgets its credential, and every link is dead.
@@ -358,11 +360,12 @@ test.describe("screen page", () => {
     await screen.context.close();
   });
 
-  test("the page is not frameable", async ({ browser }) => {
+  test("the page is not frameable", async ({ browser, baseURL }) => {
     const context = await browser.newContext();
     const page = await context.newPage();
-    await page.goto("/code");
-    await page.setContent(`<iframe id="f" src="${new URL("/a", page.url())}"></iframe>`);
+    // The framing document is about:blank: setContent on one of our pages writes HTML, which their
+    // Trusted Types policy refuses, and their own CSP would block the frame before the target's headers could.
+    await page.setContent(`<iframe id="f" src="${new URL("/a", baseURL)}"></iframe>`);
     // a refused frame stays at about:blank, or an error document, and never shows the page
     await page.waitForTimeout(1000);
     const frame = page.frames().find((f) => f !== page.mainFrame());
