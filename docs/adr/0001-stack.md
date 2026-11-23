@@ -45,7 +45,7 @@ Runtime dependencies, the only npm packages `package.json` `dependencies` may ho
 
 Dev dependencies beyond the table: `wrangler` (run and deploy), `@cloudflare/workers-types` (Worker types), `@types/node` (types for tests and tools only; `tsconfig.node.json` keeps it apart from the Worker types, which clash), `vitest` and `fast-check`, `@vitest/coverage-v8` (`npm run test:cov`; unit coverage only, since Worker code under `wrangler dev` runs in workerd where V8 coverage cannot reach), `html-validate` (HTML lint), `size-limit` with `@size-limit/file` (browser JS budget, plain files, no bundler), `@playwright/test`, `@axe-core/playwright` and `@lhci/cli` (CI only). Each is a dev-only tool: remove it together with the script that calls it.
 
-Asset tools outside npm: `tools/pack.py`, `render-stills.py`, `render-og.py` and `subset-font.py` regenerate committed files (the robin mesh, stills, social image, font subset); nothing in the build or CI runs them. They need Python 3 with `fonttools` and `brotli` (a throwaway venv; `docs/setup.md`) and ImageMagick, `avifenc` and `cwebp`. Why: a stills renderer in plain Python replaces headless Chrome, which cannot start locally, and `fonttools` is the reference subsetter. Remove: delete a tool and keep its last output.
+Asset tools outside npm: `tools/render-og.py`, `render-slides.py` and `subset-font.py` regenerate committed files (social image and touch icon, demo slide images, font subset); nothing in the build or CI runs them. They need Python 3 with `fonttools` and `brotli` (a throwaway venv; `docs/setup.md`), ImageMagick, poppler, `avifenc` and `cwebp`. Why: headless Chrome cannot start locally, and `fonttools` is the reference subsetter. Remove: delete a tool and keep its last output.
 
 ## Rejected
 

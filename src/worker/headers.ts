@@ -2,7 +2,8 @@
 // values for static pages; test/unit/headers.test.ts enforces it.
 
 // `landing` is also the static default (`/*` in _headers): Cloudflare does not detach `/*`'s CSP on the root path,
-// so the root receives the default too, and anything stricter would block the landing demo's connection.
+// so the root receives the default too. No page under it connects anywhere; dropping `connect-src` means changing
+// `/*` in _headers and this policy together (test/unit/headers.test.ts).
 export type Policy = "landing" | "app" | "api" | "file-pptx" | "file-pdf";
 
 const PERMISSION_FEATURES = [

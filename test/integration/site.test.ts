@@ -22,7 +22,7 @@ describe.each([
   ["/privacy", 200, LANDING_CSP, "<title>bloop privacy notice</title>", /text\/html/],
   ["/.well-known/security.txt", 200, LANDING_CSP, "Contact: mailto:", /text\/plain/],
   ["/no-such-page", 404, LANDING_CSP, "This page isn't here.", /text\/html/],
-  ["/it/deeper/still", 404, LANDING_CSP, "Go to the Home Page", /text\/html/],
+  ["/it/deeper/still", 404, LANDING_CSP, "Go to the home page", /text\/html/],
 ] as const)("%s", (path, status, csp, marker, type) => {
   it(`is ${status} with its policy and the base headers`, async () => {
     const res = await fetch(`${wrangler.url}${path}`);
@@ -48,18 +48,10 @@ describe("security.txt (RFC 9116)", () => {
 
 describe("site assets", () => {
   it.each([
-    ["/js/landing.js", /javascript/],
     ["/js/site.js", /javascript/],
-    ["/js/page.js", /javascript/],
-    ["/js/robin.js", /javascript/],
-    ["/js/core/robin-pose.js", /javascript/],
-    ["/js/core/robin-math.js", /javascript/],
-    ["/robin.bin", /octet-stream/],
-    ["/img/robin-perch-640.avif", /image\/avif/],
-    ["/img/robin-perch-640.webp", /image\/webp/],
-    ["/img/robin-away-192.webp", /image\/webp/],
     ["/og.png", /image\/png/],
     ["/favicon.svg", /image\/svg\+xml/],
+    ["/apple-touch-icon.png", /image\/png/],
     ["/fonts/inter-latin.woff2", /font\/woff2|octet-stream/],
   ])("serves %s", async (path, type) => {
     const res = await fetch(`${wrangler.url}${path}`);
@@ -68,8 +60,8 @@ describe("site assets", () => {
     await res.arrayBuffer();
   });
 
-  it("serves no source asset: the full font, the GLB and the OG source stay in the repo", async () => {
-    for (const path of ["/fonts/InterVariable.woff2", "/src/robin.glb", "/robin.glb", "/tools/og.svg"]) {
+  it("serves no source asset and no removed file", async () => {
+    for (const path of ["/fonts/InterVariable.woff2", "/tools/og.svg", "/js/landing.js", "/robin.bin"]) {
       const res = await fetch(`${wrangler.url}${path}`);
       expect(res.status, path).toBe(404);
       await res.arrayBuffer();

@@ -26,7 +26,7 @@ npm run check                    # typecheck, lint, unit and integration tests, 
 
 ## Try the demo locally
 
-The demo needs no account and runs on the sample decks. With `npm run dev` running, open `http://127.0.0.1:8787` in a desktop browser: the stage on the landing shows a live code. Scan it with a phone on the same network, or open the code URL (`/a?c=<code>`) in a second browser window, check the two digits, tap Approve, and the stage shows the sample deck open. For the full-screen version that really launches PowerPoint, open `/s?mode=demo` instead. `DEMO_ENABLED=false` in `wrangler.jsonc` (or `--var DEMO_ENABLED:false`) turns every demo route off, and the stage then says it cannot start.
+The demo needs no account and runs on the sample deck. With `npm run dev` running, open `http://127.0.0.1:8787` and click Try the demo, which opens `/s?mode=demo`: a demo screen with a live code. Scan it with a phone on the same network, or click Approve on This Device, check the two digits, tap Approve, and the screen shows the sample deck's slides in the page. `DEMO_ENABLED=false` in `wrangler.jsonc` (or `--var DEMO_ENABLED:false`) turns every demo route off, and the demo screen then says it cannot start.
 
 ## Docs
 

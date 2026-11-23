@@ -7,24 +7,15 @@
     <title>bloop for IT and AV</title>
     <meta name="description" content="The PC gets one file. Never an account.">
     <link rel="icon" href="/favicon.svg" type="image/svg+xml">
+    <link rel="apple-touch-icon" href="/apple-touch-icon.png">
     <link rel="preload" href="/fonts/inter-latin.woff2" as="font" type="font/woff2" crossorigin>
     <link rel="stylesheet" href="/css/app.css">
-    <script type="module" src="/js/page.js"></script>
   </head>
   <body class="page-site">
     <a class="skip" href="#main">Skip to Content</a>
-    <header class="nav-wrap">
-      <nav class="nav" aria-label="Main">
-        <a class="wordmark" href="/">bloop</a>
-        <div class="nav-links">
-          <a href="/#how">How It Works</a>
-          <a href="/it" aria-current="page">For IT</a>
-        </div>
-        <div class="nav-cta is-hidden" id="nav-cta">
-          <a class="btn primary small-btn desk" href="/#demo" tabindex="-1">Try the Demo</a>
-          <button class="btn primary small-btn touch" type="button" data-share tabindex="-1">Send Me the Link</button>
-        </div>
-      </nav>
+    <header class="top">
+      <a class="brand" href="/"><img src="/favicon.svg" width="28" height="28" alt="">bloop</a>
+      <a class="btn primary" href="/s?mode=demo">Try the demo</a>
     </header>
 
     <main id="main" class="doc">
@@ -80,40 +71,17 @@
             </tr>
           </tbody>
         </table>
-        <div class="phone it-phone" aria-hidden="true" inert>
-          <div class="phone-screen">
-            <div class="mock-scale">
-              <div class="column mock-a">
-                <p class="wordmark">bloop</p>
-                <div class="flow">
-                  <p class="title">Open Lecture 4.pptx on Room 2.14?</p>
-                  <p class="scope">Only this file goes to the screen. The screen never gets your account.</p>
-                </div>
-                <div class="actions"><span class="btn primary">Approve</span><span class="btn secondary">Cancel</span></div>
-              </div>
-            </div>
-          </div>
-        </div>
-        <p class="sr">Your phone shows the room name, a code and an Approve button.</p>
       </div>
     </main>
 
     <footer class="footer">
-      <div class="footer-brand">
-        <a class="wordmark" href="/">bloop</a>
-        <p>Your slides on any screen with a web browser and PowerPoint.</p>
-      </div>
+      <a class="brand" href="/"><img src="/favicon.svg" width="28" height="28" alt="">bloop</a>
       <ul class="footer-links">
-        <li><a href="/#how">How It Works</a></li>
-        <li><a href="/it">For IT</a></li>
         <li><a href="/privacy">Privacy</a></li>
-        <li><a href="https://github.com/CyberSandwich/bloop">Read the Source</a></li>
-        <li><a href="/.well-known/security.txt">Report a Security Issue</a></li>
+        <li><a href="/it" aria-current="page">For IT</a></li>
+        <li><a href="https://github.com/CyberSandwich/bloop">Source</a></li>
+        <li><a href="mailto:ventures@saputra.co.uk">ventures@saputra.co.uk</a></li>
       </ul>
-      <div class="footer-legal">
-        <p>Robin model: grab3d, CC0.</p>
-        <p>© 2026 bloop.</p>
-      </div>
     </footer>
   </body>
 </html>

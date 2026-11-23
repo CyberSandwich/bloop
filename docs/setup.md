@@ -56,10 +56,9 @@ The public pages ship with placeholder addresses on the reserved `bloop.example`
 |---|---|---|
 | `public/.well-known/security.txt` | `security@bloop.example` | security contact (RFC 9116). Also renew `Expires` (at most a year ahead; `test/integration/site.test.ts` fails once it is past or more than about 13 months out) |
 | `public/privacy.html` | `privacy@bloop.example` | privacy contact |
-| `public/index.html` | `early-access@bloop.example` | the Ask for Early Access mail link |
 
 - **Privacy notice:** `/privacy` is a draft (it says so on the page and is `noindex`). The legal lane (OD-5) confirms roles, lawful bases and the retention periods it lists before launch; it repeats `threat-model.md` section 10, so change both together.
-- **Social image:** `og:image` is the relative `/og.png`. Some scrapers need an absolute URL: once the host is final, make it `https://<host>/og.png` in `public/index.html`.
+- **Social image:** `og:image` and `og:url` in `public/index.html` name the host absolutely, as link previews need; change them with the host.
 - **Stream mode:** if you set `OPEN_PATH_MODE=stream` (field test T3 below), delete the sentence about the Microsoft download link from the "What the PC holds" row of `public/it.html` and design.md.
 
 ### Regenerating the site assets
@@ -67,12 +66,9 @@ All outputs are committed; run these only when a source changes. Make one throwa
 
 | Change | Command | Writes |
 |---|---|---|
-| the robin model | `python3 -I tools/pack.py src/robin.glb public/robin.bin` | the mesh |
-| a pose, the camera or the mesh | `python3 -I tools/render-stills.py [pose ...]` | `public/img/robin-*` |
-| the name or the headline | edit `SITE_NAME` or `LINES` in `tools/render-og.py`, then run it with the venv's python | `public/og.png`, `tools/og.svg` |
+| the name, the headline or the logo | edit `SITE_NAME`, `H1` or `SUB` in `tools/render-og.py` (the logo is `public/favicon.svg`), then run it with the venv's python, or with `--font` and a static Inter SemiBold file | `public/og.png`, `public/apple-touch-icon.png`, `tools/og.svg` |
 | page text with a new character | the venv's python: `-I tools/subset-font.py` | `public/fonts/inter-latin.woff2` |
 
-A pose lives in two places on purpose, `public/js/core/robin-pose.js` and `tools/robin-poses.json`; a unit test fails until they match, and likewise for the camera constants in `render-stills.py` and `core/robin-math.js`.
 
 ## Microsoft Entra app registration
 

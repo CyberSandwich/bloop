@@ -110,7 +110,6 @@ describe("every page's text", () => {
     ...ALL.map((p) => [p, read(`public/${p}`)] as const),
     ["core/copy.js", read("public/js/core/copy.js")] as const,
     ["site.js", read("public/js/site.js")] as const,
-    ["core/share.js", read("public/js/core/share.js")] as const,
   ];
 
   it.each(sources)("%s has no never-say phrase", (_name, text) => {
@@ -172,79 +171,86 @@ describe("every page's text", () => {
 
 describe("landing word caps (design.md section 13)", () => {
   const html = read("public/index.html");
+  const main = between(html, /<main id="main">/, "</main>");
 
-  it("hero viewport, nav included: at most 40 words on desktop and on touch", () => {
-    for (const touch of [false, true]) {
-      // The nav CTA is visibility:hidden while the hero actions are in view (e2e checks that), so it is
-      // not part of the hero viewport; the links count, as on the widest touch tier.
-      const header = between(html, /<header class="nav-wrap">/, "</header>");
-      expect(header).toContain('<div class="nav-cta is-hidden" id="nav-cta">');
-      const nav = visibleText(header.replace(/<div class="nav-cta[\s\S]*?<\/div>/, ""), { touch });
-      const hero = visibleText(between(html, /<section class="hero"/, "</section>"), { touch });
-      const count = words(`${nav} ${hero}`).length;
-      expect(count, `${touch ? "touch" : "desktop"}: ${nav} | ${hero}`).toBeLessThanOrEqual(40);
-    }
+  it("the hero is at most 40 words: h1, sub and the two buttons", () => {
+    const hero = visibleText(between(html, /<section class="hero"/, "</section>"));
+    expect(words(hero).length, hero).toBeLessThanOrEqual(40);
   });
 
-  it("h1 is two beats of at most 6 words, each ending with a period", () => {
+  it("h1 is one sentence of at most 6 words, one line, no second clause", () => {
     const h1 = visibleText(between(html, /<h1\b/, "</h1>"));
     expect(words(h1).length).toBeLessThanOrEqual(6);
-    expect(html).toMatch(/<span class="beat">[^<]+\.<\/span> <span class="beat">[^<]+\.<\/span>/);
+    expect(h1).toMatch(/^[^.]+\.$/);
+    expect(between(html, /<h1\b/, "</h1>")).not.toMatch(/<span/);
   });
 
   it("the sub names phone, screen and file in at most 2 sentences and 30 words", () => {
     const sub = visibleText(between(html, /<p class="lead">/, "</p>"));
     expect(words(sub).length).toBeLessThanOrEqual(30);
     for (const noun of ["phone", "screen", "file"]) expect(sub).toContain(noun);
-    expect(sub.match(/[.]/g)?.length ?? 0).toBeLessThanOrEqual(3);
+    expect(sub.match(/[.]/g)?.length ?? 0).toBeLessThanOrEqual(2);
   });
 
-  it("the whole landing is 150 to 250 words outside product UI", () => {
+  it("the whole landing is 80 to 180 words outside product UI, open answers included", () => {
     const count = words(visibleText(html)).length;
-    expect(count).toBeGreaterThanOrEqual(150);
-    expect(count).toBeLessThanOrEqual(250);
+    expect(count).toBeGreaterThanOrEqual(80);
+    expect(count).toBeLessThanOrEqual(180);
   });
 
-  it("each section sentence outside product UI is at most 20 words", () => {
-    const text = visibleText(between(html, /<main id="main">/, "</main>"));
-    for (const sentence of text.split(/(?<=[.?])\s+/)) {
+  it("each sentence outside product UI is at most 20 words", () => {
+    for (const sentence of visibleText(main).split(/(?<=[.?])\s+/)) {
       expect(words(sentence).length, sentence).toBeLessThanOrEqual(20);
     }
   });
 
-  it("the product UI mocks are hidden from assistive tech and inert", () => {
-    const mocks = [...html.matchAll(/<div class="(?:phone|mock-screen)(?: [^"]*)?"([^>]*)>/g)];
-    expect(mocks.length).toBeGreaterThanOrEqual(6);
-    for (const m of mocks) {
-      expect(m[1]).toContain('aria-hidden="true"');
-      expect(m[1]).toContain("inert");
-    }
+  it("Try the demo opens the demo screen; early access is a mail to the role address", () => {
+    const actions = between(html, /<div class="hero-actions"/, "</div>");
+    expect(actions).toMatch(/<a class="btn primary" href="\/s\?mode=demo">Try the demo<\/a>/);
+    expect(actions).toMatch(
+      /<a class="btn secondary" href="mailto:ventures@saputra\.co\.uk\?subject=[^"]+">Get early access<\/a>/,
+    );
   });
 
-  it("the robin's orange never appears in CSS", () => {
-    expect(read("public/css/app.css").toLowerCase()).not.toContain("ff7702");
+  it("the FAQ is at most 4 native details, and the residue answer links to /it without a nothing-stays claim", () => {
+    const faq = between(html, /<section class="faq"/, "</section>");
+    const items = [...faq.matchAll(/<details>\s*<summary>([^<]+)<\/summary>([\s\S]*?)<\/details>/g)];
+    expect(items.length).toBeGreaterThanOrEqual(1);
+    expect(items.length).toBeLessThanOrEqual(4);
+    const residue = items.find((m) => /room PC keep/.test(m[1] ?? ""))?.[2] ?? "";
+    expect(residue).toContain('href="/it"');
+    expect(residue).toMatch(/can stay/);
+    expect(residue.toLowerCase()).not.toMatch(/nothing (is )?left|leaves nothing/);
   });
 
-  it("the poster is the LCP image: preloaded, high priority, never lazy, sized", () => {
-    expect(html).toMatch(/<link rel="preload" as="image" type="image\/avif" imagesrcset="\/img\/robin-perch-640\.avif/);
-    const poster = /<img class="poster" src="\/img\/robin-perch[^>]+>/.exec(html)?.[0] ?? "";
-    expect(poster).toContain('fetchpriority="high"');
-    expect(poster).toContain('width="560" height="560"');
-    expect(poster).toContain('alt=""');
-    expect(poster).not.toContain("loading=");
+  it("the reel is one labeled image; its frames are hidden from assistive tech and inert", () => {
+    expect(html).toMatch(/<div class="reel-stage" role="img" aria-label="[^"]{40,}">/);
+    expect(html).toMatch(/<ol class="frames" aria-hidden="true" inert>/);
+    expect(html).toMatch(/<button class="reel-toggle"[^>]*aria-pressed="false"[^>]*hidden>/);
+  });
+
+  it("the bottom pill is a plain div, inert until the script shows it, and there is no nav landmark", () => {
+    expect(html).toMatch(/<div class="pill" id="pill" inert>/);
+    expect(html).not.toMatch(/<nav\b/);
+  });
+
+  it("og:image and og:url are absolute, for link previews", () => {
+    expect(html).toContain('<meta property="og:image" content="https://bloop.dsap.workers.dev/og.png">');
+    expect(html).toContain('<meta property="og:url" content="https://bloop.dsap.workers.dev/">');
+  });
+
+  it("the logo's colors stay in the logo: never in CSS", () => {
+    const css = read("public/css/app.css").toLowerCase();
+    for (const hex of ["f4ba8b", "646464", "ff7702"]) expect(css).not.toContain(hex);
+  });
+
+  it.each(ALL)("%s has no robin", (page) => {
+    expect(read(`public/${page}`).toLowerCase()).not.toContain("robin");
   });
 });
 
 describe("site scripts under the strict CSP", () => {
-  it.each([
-    "landing.js",
-    "site.js",
-    "page.js",
-    "robin.js",
-    "core/robin-pose.js",
-    "core/robin-math.js",
-    "core/share.js",
-  ])("%s never uses eval, HTML sinks, inline styles or script URLs", (file) => {
+  it.each(["site.js"])("%s never uses eval, HTML sinks, inline styles or script URLs", (file) => {
     const code = read(`public/js/${file}`);
     expect(code).not.toMatch(/\beval\s*\(/);
     expect(code).not.toMatch(/new Function\s*\(/);
@@ -253,10 +259,16 @@ describe("site scripts under the strict CSP", () => {
     expect(code).not.toMatch(/\.style\.|setAttribute\(\s*["']style/);
   });
 
-  it("the landing never fetches the renderer before the load event", () => {
-    const code = read("public/js/landing.js");
-    expect(code).not.toMatch(/^import .*robin\.js/m);
-    expect(code).toMatch(/addEventListener\("load"/);
+  it("the landing script imports nothing and listens to no scroll event", () => {
+    const code = read("public/js/site.js");
+    expect(code).not.toMatch(/^import /m);
     expect(code).not.toMatch(/addEventListener\("scroll"/);
+  });
+
+  it("every site page loads only the landing script, or none", () => {
+    for (const page of SITE) {
+      const scripts = [...read(`public/${page}`).matchAll(/<script[^>]*src="([^"]+)"/g)].map((m) => m[1]);
+      expect(scripts, page).toEqual(page === "index.html" ? ["/js/site.js"] : []);
+    }
   });
 });

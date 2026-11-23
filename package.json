@@ -25,34 +25,13 @@
   "size-limit": [
     {
       "name": "browser JS",
-      "path": [
-        "public/js/**/*.js",
-        "!public/js/robin.js",
-        "!public/js/core/robin-math.js",
-        "!public/js/demo/**"
-      ],
-      "limit": "43 kB"
+      "path": "public/js/**/*.js",
+      "limit": "40 kB"
     },
     {
-      "name": "live demo (lazy)",
-      "path": "public/js/demo/**/*.js",
-      "limit": "4 kB"
-    },
-    {
-      "name": "robin renderer",
-      "path": [
-        "public/js/robin.js",
-        "public/js/core/robin-math.js"
-      ],
-      "gzip": true,
-      "limit": "6.5 kB"
-    },
-    {
-      "name": "robin mesh",
-      "path": "public/robin.bin",
-      "gzip": false,
-      "brotli": false,
-      "limit": "21 kB"
+      "name": "landing JS",
+      "path": "public/js/site.js",
+      "limit": "1.2 kB"
     },
     {
       "name": "font",
@@ -78,7 +57,7 @@
       "name": "site CSS",
       "path": "public/css/app.css",
       "gzip": true,
-      "limit": "12 kB"
+      "limit": "7.5 kB"
     }
   ],
   "dependencies": {
