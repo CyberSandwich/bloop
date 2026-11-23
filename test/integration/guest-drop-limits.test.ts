@@ -82,13 +82,13 @@ describe("DROP-05 R2 cap: operations counted against the free tier", () => {
   }, 30_000);
 
   it("refuses a new drop with storage_full once class A is at its cap", async () => {
-    ctx.w.d1("UPDATE r2_ops SET n = 800000 WHERE class = 'A'");
+    ctx.w.d1("UPDATE r2_ops SET n = 500000 WHERE class = 'A'");
     const { socket, pid } = await pairPhone(ctx.api);
     const res = await putDrop(ctx.api, pid, deck);
     expect(res.status).toBe(507);
     expect(await problemCode(res)).toBe("storage_full");
     expect((await ctx.api.get<{ state: string }>("/api/pair/state", pid)).body.state).toBe("claimed");
-    expect(ops(ctx.w, "A")).toBe(800000);
+    expect(ops(ctx.w, "A")).toBe(500000);
     socket.close();
   }, 30_000);
 
@@ -99,10 +99,10 @@ describe("DROP-05 R2 cap: operations counted against the free tier", () => {
     socket.send({ t: "open.click" });
     const open = await socket.waitFor((f) => f.t === "open");
     const url = ((open.links as { protocol: string }).protocol ?? "").replace("ms-powerpoint:ofv|u|", "");
-    ctx.w.d1("UPDATE r2_ops SET n = 8000000 WHERE class = 'B'");
+    ctx.w.d1("UPDATE r2_ops SET n = 5000000 WHERE class = 'B'");
     const fetched = await fetchLink(url);
     expect(fetched.status).toBe(502);
-    expect(ops(ctx.w, "B")).toBe(8000000);
+    expect(ops(ctx.w, "B")).toBe(5000000);
     const other = await pairPhone(ctx.api);
     const refused = await putDrop(ctx.api, other.pid, deck);
     expect(refused.status).toBe(507);

@@ -163,8 +163,8 @@ describe("R2 cap: retention of the operation counters", () => {
     ]);
   });
 
-  it("defaults the caps to 80% of the free tier and reads them from the variables", () => {
-    expect(config()).toMatchObject({ r2ClassAMonthlyCap: 800_000, r2ClassBMonthlyCap: 8_000_000 });
+  it("defaults the caps to 50% of the free tier and reads them from the variables", () => {
+    expect(config()).toMatchObject({ r2ClassAMonthlyCap: 500_000, r2ClassBMonthlyCap: 5_000_000 });
     expect(config({ R2_CLASS_A_MONTHLY_CAP: "7", R2_CLASS_B_MONTHLY_CAP: "9" })).toMatchObject({
       r2ClassAMonthlyCap: 7,
       r2ClassBMonthlyCap: 9,

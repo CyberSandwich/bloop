@@ -21,13 +21,25 @@ class CountingBucket implements Bucket {
     this.calls.head++;
     return this.objects.has(key) ? { size: 1 } : null;
   }
+  deleted: (string | string[])[] = [];
   async delete(keys: string | string[]) {
     this.calls.delete++;
+    this.deleted.push(keys);
     for (const k of [keys].flat()) this.objects.delete(k);
   }
-  async list() {
+  /** Keys `list` reports (all uploaded at the epoch), `perPage` at a time. */
+  listing: string[] = [];
+  perPage = 1000;
+  async list(options?: { cursor?: string }) {
     this.calls.list++;
-    return { objects: [], truncated: false };
+    const from = Number(options?.cursor ?? 0);
+    const page = this.listing.slice(from, from + this.perPage);
+    const next = from + this.perPage;
+    return {
+      objects: page.map((key) => ({ key, uploaded: new Date(0) })),
+      truncated: next < this.listing.length,
+      cursor: String(next),
+    };
   }
 }
 
@@ -135,6 +147,48 @@ describe("R2 cap: the guest drop", () => {
     expect(await drop.sweep(0)).toBe(0);
     expect(bucket.calls.list).toBe(1);
     expect(db.raw.prepare("SELECT deleted_at FROM guest_file").get()).toEqual({ deleted_at: null });
+  });
+
+  it("purge deletes its keys one at a time, never in a bulk call", async () => {
+    const { drop, bucket } = setup({ classA: 5, classB: 9 });
+    const r = await drop.reserve("s1", 10, "a.pdf", "pdf");
+    if (!r.ok) throw new Error("reserve");
+    await drop.purge("s1", "g/other");
+    expect(bucket.calls.delete).toBe(2);
+    expect(bucket.deleted.every((k) => typeof k === "string")).toBe(true);
+  });
+
+  it("the sweep counts its bulk delete as a class A operation and stops when it is refused", async () => {
+    const { drop, bucket, db } = setup({ classA: 1, classB: 5 });
+    const r = await drop.reserve("old", 10, "a.pdf", "pdf");
+    if (!r.ok) throw new Error("reserve");
+    bucket.listing = [r.r2Key];
+    expect(await drop.sweep(0)).toBe(0);
+    expect(bucket.calls.list).toBe(1);
+    expect(bucket.calls.delete).toBe(0);
+    expect(db.raw.prepare("SELECT deleted_at FROM guest_file").get()).toEqual({ deleted_at: null });
+  });
+
+  it("the sweep closes only the rows whose objects it deleted when the page limit cuts it off", async () => {
+    const { drop, bucket, db } = setup({ classA: 1000, classB: 5 });
+    const keys: string[] = [];
+    for (let i = 0; i < 21; i++) {
+      const r = await drop.reserve(`s${i}`, 1, "a.pdf", "pdf");
+      if (r.ok) keys.push(r.r2Key);
+    }
+    bucket.listing = keys;
+    bucket.perPage = 1;
+    expect(await drop.sweep(0)).toBe(20);
+    const open = db.raw.prepare("SELECT r2_key FROM guest_file WHERE deleted_at IS NULL").all();
+    expect(open).toEqual([{ r2_key: keys[20] }]);
+  });
+
+  it("a reservation never overwrites a live row, and a closed row can be replaced", async () => {
+    const { drop } = setup({ classA: 5, classB: 5 });
+    expect((await drop.reserve("s1", 10, "a.pdf", "pdf")).ok).toBe(true);
+    expect(await drop.reserve("s1", 10, "a.pdf", "pdf")).toEqual({ ok: false, error: "already_uploaded" });
+    await drop.purge("s1", null);
+    expect((await drop.reserve("s1", 10, "a.pdf", "pdf")).ok).toBe(true);
   });
 
   it("fails closed: with no counter table a read is refused and the bucket is never called", async () => {

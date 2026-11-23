@@ -67,16 +67,25 @@ export class R2GuestDrop implements GuestDrop {
   async reserve(sessionId: string, bytes: number, name: string, type: "pptx" | "pdf"): Promise<Reservation> {
     if (!(await this.meter.hasRoom())) return { ok: false, error: "storage_full" };
     const r2Key = `${PREFIX}${newRef()}`;
-    // One statement, so concurrent drops cannot both pass the budget check.
+    // One statement, so concurrent drops cannot both pass the budget check. Only a closed row is replaced: a live
+    // row may own an object, and overwriting it would leave that object untracked by the budget.
     const res = await this.db
       .prepare(
-        `INSERT OR REPLACE INTO guest_file (session_id, r2_key, bytes, type, sha256, name, created_at, deleted_at)
+        `INSERT INTO guest_file (session_id, r2_key, bytes, type, sha256, name, created_at, deleted_at)
          SELECT ?1, ?2, ?3, ?4, '', ?5, ?6, NULL
-         WHERE (SELECT COALESCE(SUM(bytes), 0) FROM guest_file WHERE deleted_at IS NULL AND session_id != ?1) + ?3 <= ?7`,
+         WHERE (SELECT COALESCE(SUM(bytes), 0) FROM guest_file WHERE deleted_at IS NULL) + ?3 <= ?7
+         ON CONFLICT (session_id) DO UPDATE SET r2_key = excluded.r2_key, bytes = excluded.bytes, type = excluded.type,
+           sha256 = excluded.sha256, name = excluded.name, created_at = excluded.created_at, deleted_at = NULL
+           WHERE guest_file.deleted_at IS NOT NULL`,
       )
       .bind(sessionId, r2Key, bytes, type, name, this.now(), this.budgetBytes)
       .run();
-    return res.meta.changes === 0 ? { ok: false, error: "storage_full" } : { ok: true, r2Key };
+    if (res.meta.changes > 0) return { ok: true, r2Key };
+    const live = await this.db
+      .prepare("SELECT 1 AS one FROM guest_file WHERE session_id = ? AND deleted_at IS NULL")
+      .bind(sessionId)
+      .first();
+    return { ok: false, error: live ? "already_uploaded" : "storage_full" };
   }
 
   async accept(u: Upload, maxBytes: number): Promise<Accepted> {
@@ -166,7 +175,8 @@ export class R2GuestDrop implements GuestDrop {
       keys.map(async (k) => (await this.meter.charge("B").catch(() => false)) && (await this.bucket.head(k)) !== null),
     );
     const found = heads.some(Boolean);
-    if (keys.length > 0) await this.bucket.delete(keys);
+    // One DeleteObject each: only that call is documented as free, the bulk DeleteObjects is not.
+    for (const k of keys) await this.bucket.delete(k);
     // Marked only after the delete returned: a failed delete leaves the row for the sweep (DROP-07).
     if (sessionId) {
       await this.db
@@ -181,23 +191,38 @@ export class R2GuestDrop implements GuestDrop {
     const cutoff = this.now() - olderThanMs;
     let cursor: string | undefined;
     let deleted = 0;
+    let listedAll = false;
     for (let page = 0; page < MAX_SWEEP_PAGES; page++) {
-      // Past the cap the sweep stops and leaves its rows open: the 1-day lifecycle rule still deletes the objects.
+      // Past the cap the sweep stops and leaves the remaining rows open: the 1-day lifecycle rule still deletes the objects.
       if (!(await this.meter.charge("A"))) return deleted;
       const listed = await this.bucket.list({ prefix: PREFIX, ...(cursor ? { cursor } : {}) });
       const old = listed.objects.filter((o) => o.uploaded.getTime() < cutoff).map((o) => o.key);
       if (old.length > 0) {
+        // The bulk delete is not documented as free, so it is counted as one class A operation.
+        if (!(await this.meter.charge("A"))) return deleted;
         await this.bucket.delete(old);
         deleted += old.length;
+        await this.db
+          .prepare(
+            "UPDATE guest_file SET deleted_at = ? WHERE deleted_at IS NULL AND r2_key IN (SELECT value FROM json_each(?))",
+          )
+          .bind(this.now(), JSON.stringify(old))
+          .run();
       }
-      if (!listed.truncated) break;
+      if (!listed.truncated) {
+        listedAll = true;
+        break;
+      }
       cursor = listed.cursor;
     }
-    // Rows of the same age are done too, including a reservation whose upload never landed.
-    await this.db
-      .prepare("UPDATE guest_file SET deleted_at = ? WHERE deleted_at IS NULL AND created_at < ?")
-      .bind(this.now(), cutoff)
-      .run();
+    // Only a complete listing proves the rest are gone: rows of the same age are then done too, including a
+    // reservation whose upload never landed. A cut-off listing leaves them for the next run.
+    if (listedAll) {
+      await this.db
+        .prepare("UPDATE guest_file SET deleted_at = ? WHERE deleted_at IS NULL AND created_at < ?")
+        .bind(this.now(), cutoff)
+        .run();
+    }
     return deleted;
   }
 }

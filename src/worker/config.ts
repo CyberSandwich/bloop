@@ -70,9 +70,9 @@ const schema = z
     /** Demo screens one IP hash may hold at once, so one address cannot fill the cap. */
     DEMO_MAX_PER_IP: int(1, 10_000).default(2),
     GUEST_STORAGE_BUDGET_BYTES: int(1, Number.MAX_SAFE_INTEGER).default(5_368_709_120),
-    /** R2 operations bloop may perform per UTC month: 80% of the free tier's 1M class A and 10M class B. */
-    R2_CLASS_A_MONTHLY_CAP: int(1, Number.MAX_SAFE_INTEGER).default(800_000),
-    R2_CLASS_B_MONTHLY_CAP: int(1, Number.MAX_SAFE_INTEGER).default(8_000_000),
+    /** R2 operations bloop may perform per UTC calendar month: 50% of the free tier's 1M class A and 10M class B, because the billing period may not align with calendar months and any 30 days span two. */
+    R2_CLASS_A_MONTHLY_CAP: int(1, Number.MAX_SAFE_INTEGER).default(500_000),
+    R2_CLASS_B_MONTHLY_CAP: int(1, Number.MAX_SAFE_INTEGER).default(5_000_000),
     /** Test only. "1" lowers the floors below and is refused unless PUBLIC_ORIGIN is a local address. */
     TEST_TIMING: z.enum(["0", "1"]).default("0"),
   })

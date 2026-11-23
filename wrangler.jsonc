@@ -58,9 +58,9 @@
     "GUEST_DROP": "open",
     "GUEST_MAX_BYTES": "52428800",
     "GUEST_STORAGE_BUDGET_BYTES": "5368709120",
-    // R2 has no platform spending cap: these stop bloop at 80% of the free tier (1M class A, 10M class B a month).
-    "R2_CLASS_A_MONTHLY_CAP": "800000",
-    "R2_CLASS_B_MONTHLY_CAP": "8000000",
+    // R2 has no platform spending cap: these stop bloop at 50% of the free tier per UTC calendar month (1M class A, 10M class B), since the billing period may not align with calendar months.
+    "R2_CLASS_A_MONTHLY_CAP": "500000",
+    "R2_CLASS_B_MONTHLY_CAP": "5000000",
     "DEMO_ENABLED": "true",
     "DEMO_SESSION_MINUTES": "10",
     "DEMO_GUEST_MAX_BYTES": "10485760",

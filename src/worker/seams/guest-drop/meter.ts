@@ -9,8 +9,8 @@ export interface OpCaps {
   classB: number;
 }
 
-/** 80% of the free tier (1,000,000 class A and 10,000,000 class B a month). */
-export const DEFAULT_OP_CAPS: OpCaps = { classA: 800_000, classB: 8_000_000 };
+/** 50% of the free tier (1,000,000 class A and 10,000,000 class B): the billing period may not be the calendar month, and any 30 days span two. */
+export const DEFAULT_OP_CAPS: OpCaps = { classA: 500_000, classB: 5_000_000 };
 
 export class R2Meter {
   constructor(

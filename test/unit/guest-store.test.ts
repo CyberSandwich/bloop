@@ -62,9 +62,10 @@ describe("DROP-05 budget", () => {
     expect((await drop.reserve("s2", 900, "b.pptx", "pptx")).ok).toBe(true);
   });
 
-  it("lets a session reserve again after a refusal without counting its old row twice", async () => {
+  it("lets a session reserve again once its earlier row is purged, without counting it twice", async () => {
     const { drop } = setup(1000);
     expect((await drop.reserve("s1", 800, "a.pptx", "pptx")).ok).toBe(true);
+    await drop.purge("s1", null);
     expect((await drop.reserve("s1", 800, "a.pptx", "pptx")).ok).toBe(true);
   });
 
