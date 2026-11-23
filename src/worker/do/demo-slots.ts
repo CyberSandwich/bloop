@@ -1,5 +1,6 @@
-// The global cap on concurrent demo sessions (threat model DEMO-02), kept in the Directory beside the codes.
-// A slot is held until its screen closes or its hold runs out, so a screen that never closes cannot pin one.
+// The limits on concurrent demo sessions (threat model DEMO-02), kept in the Directory beside the codes: a global
+// cap, and a per-IP-hash cap so one address cannot fill it. A slot is held until its session ends, its screen
+// closes or its hold runs out, so a screen that never closes cannot pin one.
 
 /** The slice of `ctx.storage.sql` used here, so unit tests can run it over node:sqlite. */
 export interface SqlLike {
@@ -8,14 +9,24 @@ export interface SqlLike {
 
 export class DemoSlots {
   constructor(private readonly sql: SqlLike) {
-    sql.exec("CREATE TABLE IF NOT EXISTS demo (screen_ref TEXT PRIMARY KEY, expires_at INTEGER NOT NULL)");
+    sql.exec(
+      "CREATE TABLE IF NOT EXISTS demo (screen_ref TEXT PRIMARY KEY, ip_hash TEXT NOT NULL, expires_at INTEGER NOT NULL)",
+    );
   }
 
-  /** Holds a slot for `holdMs`, or refuses with false when `cap` live slots are taken. A held ref only renews. */
-  reserve(screenRef: string, now: number, holdMs: number, cap: number): boolean {
+  /**
+   * Holds a slot for `holdMs`, or refuses with false when `cap` live slots are taken or this IP hash already
+   * holds `perIp`. A held ref only renews.
+   */
+  reserve(screenRef: string, ipHash: string, now: number, holdMs: number, cap: number, perIp: number): boolean {
     this.prune(now);
-    if (!this.held(screenRef) && this.count() >= cap) return false;
-    this.sql.exec("INSERT OR REPLACE INTO demo (screen_ref, expires_at) VALUES (?, ?)", screenRef, now + holdMs);
+    if (!this.held(screenRef) && (this.count() >= cap || this.countFor(ipHash) >= perIp)) return false;
+    this.sql.exec(
+      "INSERT OR REPLACE INTO demo (screen_ref, ip_hash, expires_at) VALUES (?, ?, ?)",
+      screenRef,
+      ipHash,
+      now + holdMs,
+    );
     return true;
   }
 
@@ -29,6 +40,10 @@ export class DemoSlots {
 
   count(): number {
     return Number(this.sql.exec("SELECT count(*) AS n FROM demo").toArray()[0]?.n ?? 0);
+  }
+
+  private countFor(ipHash: string): number {
+    return Number(this.sql.exec("SELECT count(*) AS n FROM demo WHERE ip_hash = ?", ipHash).toArray()[0]?.n ?? 0);
   }
 
   private held(screenRef: string): boolean {

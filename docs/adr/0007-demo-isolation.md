@@ -12,7 +12,7 @@ The landing page runs the full flow for anyone, with no account: a live QR, the 
   - 10-minute sessions;
   - guest policy `open` with a 10 MB cap, and the same screen-side Open click;
   - the same validation and deletion as live;
-  - stricter per-IP rate limits than live (`RL_DEMO_CREATE`, `RL_DEMO_CLAIM`) and a global cap on concurrent demo screens (`DEMO_MAX_CONCURRENT`, held in the Directory);
+  - stricter per-IP rate limits than live (`RL_DEMO_CREATE`, `RL_DEMO_CLAIM`) a global cap on concurrent demo screens (`DEMO_MAX_CONCURRENT`, held in the Directory) and a per-IP-hash cap (`DEMO_MAX_PER_IP`, 2, same table; why: 4 creates a minute held for 15 minutes would otherwise fill the cap from one address; remove: delete the variable and the `ip_hash` check);
   - `DEMO_ENABLED=false` turns it off.
 - **Records:** demo sessions and audit rows have no user. They are kept 7 days, and metrics are tagged `mode = demo` so they never mix into product numbers.
 - **Visible:** the phone shows "Open the sample deck here?" with "This is a demo. You don't need an account."; the screen shows its demo room line.

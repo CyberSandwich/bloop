@@ -91,9 +91,12 @@ export interface CodeDirectory {
   remove(code: string): Promise<void>;
 }
 
-/** The global cap on concurrent demo sessions, held in the same object as the codes. */
+/** The limits on concurrent demo sessions, held in the same object as the codes. */
 export interface DemoCap {
-  /** False when `cap` demo screens already hold a slot. A slot lapses after `holdMs` or on release. */
-  demoReserve(screenRef: string, holdMs: number, cap: number): Promise<boolean>;
+  /**
+   * False when `cap` demo screens already hold a slot, or this IP hash already holds `perIp`. A slot lapses
+   * after `holdMs`, when its session ends, or on release.
+   */
+  demoReserve(screenRef: string, ipHash: string, holdMs: number, cap: number, perIp: number): Promise<boolean>;
   demoRelease(screenRef: string): Promise<void>;
 }

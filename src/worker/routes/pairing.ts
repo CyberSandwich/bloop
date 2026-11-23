@@ -48,8 +48,16 @@ export const pairingRoutes: readonly Route[] = [
       if (tooMany) return tooMany;
       const screenRef = newRef();
       // The cap is the last check, so a refused create leaves nothing behind.
-      if (demo && !(await directoryStub(env).demoReserve(screenRef, config.demoHoldMs, config.demoMaxConcurrent))) {
-        return fail("rate_limited");
+      if (demo) {
+        const { demoHoldMs, demoMaxConcurrent, demoMaxPerIp } = config;
+        const held = await directoryStub(env).demoReserve(
+          screenRef,
+          await ipHash(request, config),
+          demoHoldMs,
+          demoMaxConcurrent,
+          demoMaxPerIp,
+        );
+        if (!held) return fail("rate_limited");
       }
       const created = await screenStub(env, screenRef).create({
         screenRef,

@@ -67,6 +67,8 @@ const schema = z
     DEMO_GUEST_MAX_BYTES: int(1, PLATFORM_BODY_CAP).default(10_485_760),
     /** Demo screens alive at once, across all visitors. */
     DEMO_MAX_CONCURRENT: int(1, 10_000).default(50),
+    /** Demo screens one IP hash may hold at once, so one address cannot fill the cap. */
+    DEMO_MAX_PER_IP: int(1, 10_000).default(2),
     GUEST_STORAGE_BUDGET_BYTES: int(1, Number.MAX_SAFE_INTEGER).default(5_368_709_120),
     /** Test only. "1" lowers the floors below and is refused unless PUBLIC_ORIGIN is a local address. */
     TEST_TIMING: z.enum(["0", "1"]).default("0"),
@@ -146,6 +148,7 @@ export interface Config {
   guestMaxBytes: number;
   demoGuestMaxBytes: number;
   demoMaxConcurrent: number;
+  demoMaxPerIp: number;
   /** How long a demo screen holds one of the concurrent slots: a claim window plus one session. */
   demoHoldMs: number;
   guestStorageBudgetBytes: number;
@@ -210,6 +213,7 @@ export function parseConfig(env: Record<string, unknown>): ConfigResult {
       guestMaxBytes: v.GUEST_MAX_BYTES,
       demoGuestMaxBytes: v.DEMO_GUEST_MAX_BYTES,
       demoMaxConcurrent: v.DEMO_MAX_CONCURRENT,
+      demoMaxPerIp: v.DEMO_MAX_PER_IP,
       demoHoldMs: (v.CLAIM_TIMEOUT_SECONDS + v.DEMO_SESSION_MINUTES * 60) * 1000,
       guestStorageBudgetBytes: v.GUEST_STORAGE_BUDGET_BYTES,
       testTiming: v.TEST_TIMING === "1",

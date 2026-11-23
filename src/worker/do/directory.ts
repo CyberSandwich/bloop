@@ -68,8 +68,8 @@ export class Directory extends DurableObject<Env> implements CodeDirectory, Demo
     return { ok: false, error: "code_unknown" };
   }
 
-  async demoReserve(screenRef: string, holdMs: number, cap: number): Promise<boolean> {
-    return this.slots.reserve(screenRef, Date.now(), holdMs, cap);
+  async demoReserve(screenRef: string, ipHash: string, holdMs: number, cap: number, perIp: number): Promise<boolean> {
+    return this.slots.reserve(screenRef, ipHash, Date.now(), holdMs, cap, perIp);
   }
 
   async demoRelease(screenRef: string): Promise<void> {

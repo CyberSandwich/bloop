@@ -86,6 +86,14 @@ describe("config", () => {
     expect(problems({ ...PROD, DEMO_MAX_CONCURRENT: "many" }).join()).toContain("DEMO_MAX_CONCURRENT");
   });
 
+  it("F14 DEMO-02 flood: one IP may hold 2 demo screens at once by default, configurable", () => {
+    const d = parseConfig(PROD);
+    expect(d.ok && d.config.demoMaxPerIp).toBe(2);
+    const c = parseConfig({ ...PROD, DEMO_MAX_PER_IP: "5" });
+    expect(c.ok && c.config.demoMaxPerIp).toBe(5);
+    expect(problems({ ...PROD, DEMO_MAX_PER_IP: "0" }).join()).toContain("DEMO_MAX_PER_IP");
+  });
+
   it("DEMO-03 off: DEMO_ENABLED is a strict true or false and defaults to nothing", () => {
     const off = parseConfig({ ...PROD, DEMO_ENABLED: "false" });
     expect(off.ok && off.config.demoEnabled).toBe(false);

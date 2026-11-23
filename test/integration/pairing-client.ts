@@ -5,9 +5,12 @@ import { startWrangler, type Wrangler } from "./wrangler.ts";
 /** Fake pepper for HMAC of IPs; the Worker refuses to serve pairing routes without one. */
 export const PEPPER = "fake-test-pepper-fake-test-pepper-0000";
 
-/** `vars` override wrangler.jsonc vars. TEST_TIMING lowers the config floors and skips the platform bindings. */
+/**
+ * `vars` override wrangler.jsonc vars. TEST_TIMING lowers the config floors and skips the platform bindings; the
+ * per-IP demo concurrency is lifted because every test client shares one IP hash (the demo tests set it back).
+ */
 export const startPairing = (vars: Record<string, string> = {}, options?: { migrate?: boolean }): Promise<Wrangler> =>
-  startWrangler({ HASH_PEPPER: PEPPER, TEST_TIMING: "1", ...vars }, options);
+  startWrangler({ HASH_PEPPER: PEPPER, TEST_TIMING: "1", DEMO_MAX_PER_IP: "1000", ...vars }, options);
 
 export interface Reply<T = Record<string, unknown>> {
   status: number;

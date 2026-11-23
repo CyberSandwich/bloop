@@ -316,11 +316,11 @@ export interface CodeDirectory {
   remove(code: string): Promise<void>;
 }
 
-/** The global cap on concurrent demo screens, in the same object (`do/demo-slots.ts`). */
+/** The limits on concurrent demo screens, in the same object (`do/demo-slots.ts`). */
 export interface DemoCap {
-  /** False when `cap` screens already hold a slot. A slot lapses after `holdMs` (a claim window plus one session) or on release. */
-  demoReserve(screenRef: string, holdMs: number, cap: number): Promise<boolean>;
-  /** Called when a demo screen closes. */
+  /** False when `cap` screens already hold a slot, or this IP hash already holds `perIp`. A slot lapses after `holdMs` (a claim window plus one session), or on release. */
+  demoReserve(screenRef: string, ipHash: string, holdMs: number, cap: number, perIp: number): Promise<boolean>;
+  /** Called when a demo session ends and when a demo screen closes. */
   demoRelease(screenRef: string): Promise<void>;
 }
 ```

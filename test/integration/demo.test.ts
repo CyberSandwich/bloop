@@ -133,7 +133,7 @@ describe("DEMO-02 flood: strict per-IP limits", () => {
   let wrangler: Wrangler;
   let api: Api;
   beforeAll(async () => {
-    wrangler = await startWrangler({ HASH_PEPPER: PEPPER });
+    wrangler = await startWrangler({ HASH_PEPPER: PEPPER, DEMO_MAX_PER_IP: "1000" });
     api = new Api(wrangler.url);
   });
   afterAll(() => wrangler?.stop());
@@ -189,14 +189,44 @@ describe("DEMO-02 flood: the global cap on concurrent demo sessions", () => {
   afterAll(() => wrangler?.stop());
 
   it("DEMO-02 cap: the third concurrent demo screen is refused, live screens are not, and a lapsed hold frees a slot", async () => {
-    expect((await api.post("/api/screens", { mode: "demo" })).status).toBe(201);
-    expect((await api.post("/api/screens", { mode: "demo" })).status).toBe(201);
-    const full = await api.post("/api/screens", { mode: "demo" });
+    const from = (n: number) => ip(`203.0.113.${n}`);
+    expect((await api.post("/api/screens", { mode: "demo" }, from(1))).status).toBe(201);
+    expect((await api.post("/api/screens", { mode: "demo" }, from(2))).status).toBe(201);
+    const full = await api.post("/api/screens", { mode: "demo" }, from(3));
     expect(full.status).toBe(429);
     expect(full.body).toEqual(problem(429, "rate_limited"));
-    expect((await api.post("/api/screens", { mode: "live" })).status).toBe(201);
+    expect((await api.post("/api/screens", { mode: "live" }, from(3))).status).toBe(201);
 
     await sleep(2500);
-    expect((await api.post("/api/screens", { mode: "demo" })).status).toBe(201);
+    expect((await api.post("/api/screens", { mode: "demo" }, from(3))).status).toBe(201);
+  });
+});
+
+describe("F14 DEMO-02 flood: one IP cannot fill the cap", () => {
+  let wrangler: Wrangler;
+  let api: Api;
+  beforeAll(async () => {
+    wrangler = await startPairing({ DEMO_MAX_PER_IP: "2" });
+    api = new Api(wrangler.url);
+  });
+  afterAll(() => wrangler?.stop());
+
+  it("DEMO-02 per-ip: a third concurrent demo screen from one IP is refused, another IP is served, and an ended session frees the slot", async () => {
+    const mine = ip("198.51.100.7");
+    const first = await api.post<{ sid: string }>("/api/screens", { mode: "demo" }, mine);
+    expect(first.status).toBe(201);
+    expect((await api.post("/api/screens", { mode: "demo" }, mine)).status).toBe(201);
+    const refused = await api.post("/api/screens", { mode: "demo" }, mine);
+    expect(refused.status).toBe(429);
+    expect(refused.body).toEqual(problem(429, "rate_limited"));
+    expect((await api.post("/api/screens", { mode: "demo" }, ip("198.51.100.8"))).status).toBe(201);
+
+    // End the first screen's session: claim, approve, end. Its slot is released with the session.
+    const state = await api.get<{ code: { code: string } }>("/api/screen/state", first.body.sid);
+    const claimed = await claim(api, state.body.code.code);
+    await api.get("/api/files", claimed.body.pid);
+    expect((await api.post("/api/approve", { fileId: "demo-deck" }, { auth: claimed.body.pid })).status).toBe(200);
+    expect((await api.post("/api/end", {}, { auth: claimed.body.pid })).status).toBe(200);
+    expect((await api.post("/api/screens", { mode: "demo" }, mine)).status).toBe(201);
   });
 });

@@ -199,7 +199,7 @@ The landing page embeds a demo screen (`POST /api/screens {mode: "demo"}`). Diff
 - the file source is always `MockFileSource`, fixed at screen creation on the server. A client cannot switch it;
 - the phone gets no OAuth step, and demo routes never read the phone session cookie;
 - the session lasts 10 min (`DEMO_SESSION_MINUTES`), and guest drops are capped at 10 MB (`DEMO_GUEST_MAX_BYTES`), and the Open click applies as in 4.4;
-- the demo has its own rate limits (section 6): stricter per-IP bindings for creating and claiming, and a global cap on concurrent demo screens held in the Directory (`DEMO_MAX_CONCURRENT`, default 50). A demo screen takes a slot at creation, for one claim window plus one session, and gives it back when it closes; a screen that outlives its hold stops counting. `DEMO_ENABLED=false` makes `POST /api/screens {mode: "demo"}` and any claim of a demo code answer `not_found`;
+- the demo has its own rate limits (section 6): stricter per-IP bindings for creating and claiming, and a global cap on concurrent demo screens held in the Directory (`DEMO_MAX_CONCURRENT`, default 50) and a per-IP-hash cap (`DEMO_MAX_PER_IP`, default 2) so one address cannot fill it. A demo screen takes a slot at creation, for one claim window plus one session, and gives it back when its session ends or the screen closes; a screen that outlives its hold stops counting. `DEMO_ENABLED=false` makes `POST /api/screens {mode: "demo"}` and any claim of a demo code answer `not_found`;
 - its session and audit rows are `mode = demo` with no user, and are kept 7 days;
 - the landing stage (desktop, fine pointer) runs the demo as its own lazy module (`public/js/demo/`): it creates a demo screen, draws its code and states into the stage's screen mock, echoes the phone sheet in the phone mock, and fires `bloop:demo` events that the landing turns into robin poses and a hop on the scan. A phone visitor never loads it. The stage cannot launch PowerPoint for the visitor, so on the `open` frame it reports `launched` and fetches the link itself (a HEAD, as PowerPoint would) to reach the open state; `/s?mode=demo` is the full-screen demo that really launches.
 
@@ -324,7 +324,7 @@ Every state-changing route checks four things: `Origin` equals `PUBLIC_ORIGIN`; 
 | `/api/it/export`        | 10 per 60 s per IP, checked before the token (a per-token key would not slow guessing) | binding             |
 | demo screen creation    | 4 per 60 s per IP (`RL_DEMO_CREATE`), instead of the live limit                      | binding             |
 | demo claims             | 8 per 60 s per IP (`RL_DEMO_CLAIM`), after the lookup says the code is a demo one; the live claim limit applies first | binding |
-| concurrent demo screens | `DEMO_MAX_CONCURRENT` (50) across all visitors; the next create answers 429 `rate_limited` | exact, Directory DO |
+| concurrent demo screens | `DEMO_MAX_CONCURRENT` (50) across all visitors, and `DEMO_MAX_PER_IP` (2) per IP hash; the next create answers 429 `rate_limited` | exact, Directory DO |
 | demo screens            | plus a 10-min session and a 10 MB drop cap                                           | config              |
 
 IPs are never stored. Limits use `HMAC(HASH_PEPPER, ip)` of `CF-Connecting-IP` (Cloudflare sets it; a local run has none and shares one key), kept only in DO storage until the window ends. The rate-limit bindings run in `wrangler dev` too. `TEST_TIMING=1` skips them so one integration run can create more screens than the per-IP limit allows; the exact limits in the objects stay on.
@@ -486,6 +486,7 @@ DEMO_ENABLED=true
 DEMO_SESSION_MINUTES=10
 DEMO_GUEST_MAX_BYTES=10485760
 DEMO_MAX_CONCURRENT=50
+DEMO_MAX_PER_IP=2
 AUDIT_RETENTION_DAYS=180
 METRICS_RETENTION_DAYS=90
 DEMO_RETENTION_DAYS=7

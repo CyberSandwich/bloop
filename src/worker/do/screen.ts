@@ -440,6 +440,10 @@ export class Screen extends DurableObject<Env> implements PairingStore {
     const after = this.m;
     if (!after) return { ok: true, collided }; // closed: storage is gone
     if (!after.pairing) this.closePhoneSockets();
+    // A demo session that ends gives its slot back at once; the screen may go on and show a new code.
+    if (meta.mode === "demo" && after.state === "ended" && m.state !== "ended") {
+      await directoryStub(this.env).demoRelease(meta.screenRef);
+    }
     await this.rearm();
     // A drop back to waiting leaves no code; the screen gets a fresh one at once.
     if (!collided && after.state === "waiting" && !after.codes.current && m.state !== "waiting") {
