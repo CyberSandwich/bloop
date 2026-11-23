@@ -1,4 +1,4 @@
-/* bloop's one stylesheet: the site pages (/, /it, /privacy, 404) and the task pages (/s, /a, /code).
+/* bloop's one stylesheet: the site pages (/, /security, /privacy, 404) and the task pages (/s, /a, /code).
    Tokens are docs/design.md section 4; the drift test holds the two equal. */
 /* biome-ignore-all lint/complexity/noImportantStyles: [hidden] must beat component display rules; the reduced-motion block is the house safety net */
 /* biome-ignore-all lint/suspicious/noDuplicateProperties: 100vh is the fallback for browsers without 100dvh */
@@ -29,10 +29,15 @@
   --paper: #f3f3f0;
   --surface: #ffffff;
   --ink: #1e1e1c;
+  --ink-2: #3a3a36;
   --muted: #6c6c66;
   --g2: #a3a39c;
   --g1: #dcdcd7;
   --hairline: rgba(0, 0, 0, 0.08);
+  --sky: #cfe0e8;
+  --butter: #f6e7b2;
+  --lav: #d8d1ef;
+  --sage: #dde3d6;
 
   --r-chip: 8px;
   --r-field: 14px;
@@ -41,14 +46,11 @@
   --r-pill: 9999px;
 
   --sh-frame: 0 0 0 1px rgba(0, 0, 0, 0.06), 0 30px 60px -30px rgba(0, 0, 0, 0.35);
-  --sh-stage:
-    0 0 0 0.5px rgba(0, 0, 0, 0.1), 0 50px 120px -30px rgba(30, 50, 70, 0.45), 0 20px 40px -20px rgba(0, 0, 0, 0.2);
+  --sh-nav: 0 0 0 0.5px rgba(0, 0, 0, 0.08), 0 4px 18px rgba(0, 0, 0, 0.05);
   --sh-pill: 0 0 0 0.5px rgba(0, 0, 0, 0.08), 0 10px 30px rgba(0, 0, 0, 0.12);
 
   --ease-out: cubic-bezier(0.22, 1, 0.36, 1);
-  --ease-spring: cubic-bezier(0.34, 1.56, 0.64, 1);
   --ease-ui: cubic-bezier(0.4, 0, 0.2, 1);
-  --ease-cam: cubic-bezier(0.65, 0, 0.35, 1);
 
   --pad: 24px;
   --section: 80px;
@@ -769,74 +771,165 @@ progress.bar::-moz-progress-bar {
   font-weight: 600;
 }
 
-/* ---- Site pages: the landing, /it, /privacy and 404 ---- */
+/* ---- Site pages: the landing, /security, /privacy and 404 ---- */
+html:has(.page-site) {
+  scroll-padding-top: 96px;
+}
 .page-site :where(.doc, .faq) a:not(.btn) {
   text-decoration: underline;
   text-underline-offset: 3px;
 }
-.top,
-.footer {
+.sentinel {
+  position: absolute;
+  top: 0;
+  width: 1px;
+  height: 12px;
+}
+
+/* The top nav: a fixed glass pill; the links collapse into a popover sheet under 640. */
+.nav {
+  position: fixed;
+  inset: 14px 16px auto;
+  z-index: 40;
   display: flex;
-  flex-wrap: wrap;
+  justify-content: center;
+  pointer-events: none;
+}
+.nav-pill {
+  display: flex;
   align-items: center;
-  justify-content: space-between;
-  gap: 8px 32px;
-  width: min(100% - 2 * var(--pad), 1136px);
-  margin-inline: auto;
+  gap: 6px;
+  height: 60px;
+  padding: 0 8px 0 16px;
+  border-radius: var(--r-pill);
+  box-shadow: var(--sh-nav);
+  pointer-events: auto;
+  transition:
+    background-color 240ms var(--ease-out),
+    box-shadow 240ms var(--ease-out);
 }
-.top {
-  padding: 16px 0;
+.nav-pill,
+.nav-links:popover-open {
+  background: rgba(255, 255, 255, 0.92);
 }
-.top .btn,
-.pill .btn {
-  min-height: 44px;
-  padding: 0 20px;
-  font-size: 15px;
+@supports (backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px)) {
+  .nav-pill,
+  .nav-links:popover-open {
+    background: rgba(255, 255, 255, 0.72);
+    -webkit-backdrop-filter: blur(20px) saturate(1.8);
+    backdrop-filter: blur(20px) saturate(1.8);
+  }
+  .nav.is-scrolled .nav-pill {
+    background: rgba(255, 255, 255, 0.84);
+  }
 }
-.footer {
-  padding: 32px 0 calc(40px + env(safe-area-inset-bottom));
-  box-shadow: 0 -1px 0 var(--hairline);
-  font-size: 15px;
+.nav.is-scrolled .nav-pill {
+  box-shadow: var(--sh-pill);
 }
-.footer .brand {
+.nav-pill .brand {
+  margin-right: 12px;
   font-size: 19px;
 }
-.footer-links {
+/* The list carries `popover` for the phone sheet; the UA's popover box (fixed, centered, bordered) is undone here. */
+.nav-links {
+  position: static;
   display: flex;
-  flex-wrap: wrap;
-  gap: 0 24px;
+  gap: 2px;
+  width: auto;
+  height: auto;
   margin: 0;
   padding: 0;
+  overflow: visible;
+  border: 0;
+  background: none;
+  color: inherit;
   list-style: none;
 }
-.footer-links a {
-  display: inline-flex;
+.nav-links a {
+  display: flex;
   align-items: center;
   min-height: 44px;
-  color: var(--muted);
+  padding: 0 14px;
+  border-radius: var(--r-pill);
+  color: var(--ink-2);
+  font-size: 15px;
   text-decoration: none;
 }
-.footer-links a[aria-current="page"] {
+.nav-links a[aria-current="page"] {
   color: var(--ink);
+  font-weight: 600;
 }
 @media (hover: hover) {
-  .footer-links a:hover {
-    color: var(--ink);
+  .nav-links a:hover {
+    background: rgba(120, 120, 128, 0.1);
+  }
+}
+.btn.waitlist {
+  min-height: 44px;
+  margin-left: 8px;
+  padding: 0 20px;
+  background: var(--ink-2);
+  color: var(--paper);
+  font-size: 15px;
+}
+.nav-menu {
+  display: none;
+  place-items: center;
+  width: 44px;
+  height: 44px;
+  padding: 0;
+  border: 0;
+  border-radius: 50%;
+  background: none;
+  cursor: pointer;
+}
+@media (max-width: 639.98px) {
+  .nav {
+    inset: 10px 10px auto;
+  }
+  .nav-pill {
+    width: 100%;
+    padding-left: 12px;
+  }
+  .nav-pill .brand {
+    margin-right: auto;
+  }
+  .nav-links:not(:popover-open) {
+    display: none;
+  }
+  .nav-links:popover-open {
+    position: fixed;
+    inset: 80px 10px auto;
+    display: grid;
+    width: auto;
+    margin: 0;
+    padding: 8px;
+    border: 0;
+    border-radius: 22px;
+    box-shadow: var(--sh-pill);
+  }
+  .nav-links:popover-open a {
+    padding: 0 14px;
+    border-radius: var(--r-field);
+    font-size: 17px;
+  }
+  .nav-menu {
+    display: grid;
   }
 }
 
 .hero {
-  padding: 88px var(--pad) 0;
+  padding: 152px var(--pad) 0;
   text-align: center;
 }
 .hero h1 {
-  /* One line at every width: the line is about 11.4em wide at this tracking, so the size follows the column. */
-  font-size: min(96px, (100vw - 2 * var(--pad)) / 12);
+  /* One line at every width: the line is about 9.6em wide at this tracking, so the size follows the column. */
+  font-size: min(112px, (100vw - 2 * var(--pad)) / 10);
   line-height: 1;
   letter-spacing: -0.05em;
 }
 .lead {
-  max-width: 680px;
+  max-width: 640px;
   margin: 24px auto 0;
   font-size: 20px;
   line-height: 1.35;
@@ -846,348 +939,190 @@ progress.bar::-moz-progress-bar {
 }
 .hero-actions {
   display: flex;
-  flex-wrap: wrap;
   justify-content: center;
-  gap: 12px;
   margin-top: 32px;
 }
 @media (min-width: 768px) {
   .hero {
-    padding-top: 120px;
+    padding-top: 184px;
   }
   .lead {
     font-size: 24px;
   }
 }
 
-/* The reel: three SVG frames of real bloop UI, stacked in one grid cell and cross-faded by keyframes on one 12 s
-   clock. Frame 1 never fades, so a bezel never shows through a bezel; 2 and 3 fade in over it. */
-.reel {
-  position: relative;
+/* The stage: a plain panel tilted flat by the scroll where the browser can link animations to it. */
+.tilt {
   width: min(100% - 2 * var(--pad), 1136px);
   margin: 64px auto 0;
+  perspective: 2200px;
+  perspective-origin: 50% 0;
 }
-.reel-stage {
-  border-radius: var(--r-stage);
-  overflow: hidden;
-  box-shadow: var(--sh-stage);
-  transform-origin: 50% 0;
-}
-.defs {
-  position: absolute;
-  width: 0;
-  height: 0;
-}
-.frames {
-  display: grid;
-  margin: 0;
-  padding: 0;
-  list-style: none;
-}
-.frame {
-  position: relative;
-  grid-area: 1 / 1;
-}
-.frame svg {
-  display: block;
-  width: 100%;
-  height: auto;
-  fill: var(--ink);
-  font-family: var(--font);
-  transform-origin: 80% 60%;
-}
-.aim,
-.link,
-.fill,
-.press,
-.bars rect {
-  transform-box: fill-box;
-  transform-origin: center;
-}
-.cap {
-  position: absolute;
-  left: 2.4%;
-  bottom: 3.6%;
-  min-width: 8em;
-  padding: 0.5em 1em;
-  border-radius: var(--r-pill);
-  background: var(--surface);
-  font-size: clamp(12px, 1.3vw, 15px);
-  font-weight: 600;
-  text-align: center;
-}
-.reel-toggle {
-  position: absolute;
-  right: 12px;
-  bottom: 12px;
+.stage {
   display: grid;
   place-items: center;
-  width: 44px;
-  height: 44px;
-  border: 0;
-  border-radius: 50%;
-  background: var(--surface);
-  cursor: pointer;
-}
-.reel-toggle .play,
-.reel-toggle[aria-pressed="true"] .pause {
-  display: none;
-}
-.reel-toggle[aria-pressed="true"] .play {
-  display: block;
+  aspect-ratio: 16 / 9;
+  border-radius: var(--r-stage);
+  background: var(--g1);
+  color: var(--ink-2);
+  font-size: 20px;
+  font-weight: 600;
+  transform-origin: 50% 0;
 }
 @media (max-width: 639.98px) {
-  .reel-stage {
+  .stage {
+    aspect-ratio: 4 / 3;
     border-radius: 16px;
-  }
-}
-@media (prefers-reduced-motion: no-preference) {
-  .reel {
-    animation: rise 0.9s var(--ease-out) 0.2s both;
-  }
-  .frame svg {
-    animation: cam 12s var(--ease-cam) infinite;
-  }
-  .f2 {
-    animation: f2 12s var(--ease-out) infinite both;
-  }
-  .f3 {
-    animation: f3 12s var(--ease-out) infinite both;
-  }
-  .f1 :is(text, .cap) {
-    animation: w1 12s var(--ease-out) infinite both;
-  }
-  .f2 :is(text, .cap) {
-    animation: w2 12s var(--ease-out) infinite both;
-  }
-  .f3 :is(text, .cap) {
-    animation: w3 12s var(--ease-out) infinite both;
-  }
-  .aim {
-    animation: aim 12s var(--ease-out) infinite both;
-  }
-  .link {
-    animation: link 12s var(--ease-out) infinite both;
-  }
-  .fill {
-    transform-origin: left;
-    animation: fill 12s linear infinite both;
-  }
-  .approve {
-    animation: press 12s var(--ease-ui) -3.6s infinite both;
-  }
-  .end {
-    animation: press 12s var(--ease-ui) infinite both;
-  }
-  .bars rect {
-    transform-origin: bottom;
-    animation: bars 12s var(--ease-out) infinite both;
-  }
-  .reel:is(.is-paused, .is-away) :is(.frames, .frames *) {
-    animation-play-state: paused;
   }
 }
 @supports (animation-timeline: view()) {
   @media (prefers-reduced-motion: no-preference) and (min-width: 900px) {
-    .reel-stage {
+    .stage {
       animation: tilt linear both;
       animation-timeline: view();
-      animation-range: entry 0% cover 20%;
+      animation-range: entry 0% cover 30%;
     }
-  }
-}
-@media (prefers-reduced-motion: reduce) {
-  .reel-stage {
-    border-radius: 0;
-    overflow: visible;
-    box-shadow: none;
-  }
-  .frames {
-    grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
-    gap: 24px;
-  }
-  .frame {
-    grid-area: auto;
-  }
-  .frame svg {
-    border-radius: var(--r-card);
-  }
-  .cap {
-    position: static;
-    min-width: 0;
-    margin-top: 12px;
-    padding: 0;
-    background: none;
-    text-align: left;
-  }
-  .reel-toggle {
-    display: none;
-  }
-}
-@keyframes rise {
-  from {
-    opacity: 0;
-    transform: translateY(16px);
   }
 }
 @keyframes tilt {
   from {
-    transform: perspective(2400px) rotateX(18deg) scale(0.94);
-  }
-}
-@keyframes cam {
-  0%,
-  30%,
-  66%,
-  100% {
-    transform: none;
-  }
-  42%,
-  56% {
-    transform: scale(1.045);
-  }
-}
-/* Words go out, the frames cross-fade, words come in: a frame fades only while no frame shows text (w1 to w3),
-   so two captions or two screens of copy are never legible at once. */
-@keyframes f2 {
-  0%,
-  27%,
-  62.5%,
-  100% {
-    opacity: 0;
-  }
-  30%,
-  62% {
-    opacity: 1;
-  }
-}
-@keyframes f3 {
-  0%,
-  58%,
-  95%,
-  100% {
-    opacity: 0;
-  }
-  61%,
-  92% {
-    opacity: 1;
-  }
-}
-@keyframes w1 {
-  0%,
-  25.5%,
-  97.5%,
-  100% {
-    opacity: 1;
-  }
-  27%,
-  95.5% {
-    opacity: 0;
-  }
-}
-@keyframes w2 {
-  0%,
-  30%,
-  58%,
-  100% {
-    opacity: 0;
-  }
-  32%,
-  56.5% {
-    opacity: 1;
-  }
-}
-@keyframes w3 {
-  0%,
-  61%,
-  92%,
-  100% {
-    opacity: 0;
-  }
-  63%,
-  90.5% {
-    opacity: 1;
-  }
-}
-@keyframes aim {
-  0%,
-  7%,
-  90%,
-  100% {
-    opacity: 0;
-    transform: scale(1.3);
-  }
-  14%,
-  88% {
-    opacity: 1;
-    transform: none;
-  }
-}
-@keyframes link {
-  0%,
-  17%,
-  90%,
-  100% {
-    opacity: 0;
-    transform: translateY(8px);
-  }
-  21%,
-  24%,
-  28%,
-  88% {
-    opacity: 1;
-    transform: none;
-  }
-  26% {
-    transform: scale(0.94);
-  }
-}
-@keyframes fill {
-  0% {
-    transform: scaleX(0.1);
-  }
-  30%,
-  100% {
-    transform: scaleX(0.6);
-  }
-}
-/* The End press at 86%; Approve runs the same keyframes 3.6 s earlier, at 56%. */
-@keyframes press {
-  0%,
-  83%,
-  89%,
-  100% {
-    transform: none;
-  }
-  86% {
-    transform: scale(0.94);
-  }
-}
-@keyframes bars {
-  0%,
-  60% {
-    transform: scaleY(0.2);
-  }
-  72%,
-  100% {
-    transform: none;
+    transform: rotateX(24deg) scale(0.9);
   }
 }
 
-.faq {
-  width: min(100% - 2 * var(--pad), 760px);
-  margin: 0 auto;
-  padding: var(--section) 0;
-}
-.faq h2,
+/* Section heads share one size; text columns are 760, the bento and stage the full 1136. */
+:is(.features, .connect, .faq) > h2,
 .doc h1 {
   font-size: 38px;
   line-height: 1.04;
   letter-spacing: -0.035em;
 }
+:is(.features, .connect, .faq) > h2 {
+  text-align: center;
+}
+@media (min-width: 768px) {
+  :is(.features, .connect, .faq) > h2,
+  .doc h1 {
+    font-size: 54px;
+  }
+}
+.features,
+.connect,
+.faq {
+  width: min(100% - 2 * var(--pad), 1136px);
+  margin: 0 auto;
+  padding-top: var(--section);
+}
+.connect,
+.faq {
+  max-width: 760px;
+}
+.faq {
+  padding-bottom: var(--section);
+}
+
+.bento {
+  display: grid;
+  gap: 16px;
+  margin: 40px 0 0;
+  padding: 0;
+  list-style: none;
+}
+@media (min-width: 768px) {
+  .bento {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+.card {
+  display: flex;
+  flex-direction: column;
+  min-height: 280px;
+  padding: 28px;
+  border-radius: var(--r-stage);
+  background: linear-gradient(180deg, var(--surface) 35%, var(--tint));
+}
+.card.sky {
+  --tint: var(--sky);
+}
+.card.butter {
+  --tint: var(--butter);
+}
+.card.lav {
+  --tint: var(--lav);
+}
+.card.sage {
+  --tint: var(--sage);
+}
+.card h3 {
+  margin: 0;
+  font-size: 22px;
+  line-height: 1.2;
+  letter-spacing: -0.025em;
+}
+.card p {
+  margin-top: 8px;
+  color: var(--ink-2);
+}
+.mock {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: auto;
+  padding-top: 32px;
+}
+.mock-btn {
+  display: inline-flex;
+  align-items: center;
+  height: 40px;
+  padding: 0 18px;
+  border-radius: var(--r-pill);
+  background: var(--surface);
+  box-shadow: 0 0 0 1px var(--hairline);
+  font-size: 15px;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+.mock-btn.ink {
+  background: var(--ink);
+  color: var(--paper);
+  box-shadow: none;
+}
+
+.connect .sub {
+  margin-top: 16px;
+  color: var(--muted);
+  text-align: center;
+}
+.providers {
+  margin: 40px 0 0;
+  padding: 8px;
+  list-style: none;
+  border-radius: 26px;
+  background: var(--surface);
+}
+.providers li {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  min-height: 64px;
+  padding: 0 12px 0 16px;
+  font-weight: 600;
+}
+.providers li + li {
+  box-shadow: inset 0 1px 0 var(--hairline);
+}
+.status {
+  flex: none;
+  padding: 6px 12px;
+  border-radius: var(--r-pill);
+  background: var(--paper);
+  color: var(--muted);
+  font-size: 14px;
+}
+
 .faq h2 {
   margin-bottom: 40px;
-  text-align: center;
 }
 .faq details {
   margin-top: 12px;
@@ -1250,68 +1185,68 @@ progress.bar::-moz-progress-bar {
     opacity: 1;
   }
 }
-@media (min-width: 768px) {
-  .faq h2,
-  .doc h1 {
-    font-size: 54px;
-  }
-}
 
-/* The bottom pill: away while the hero's buttons show; the page keeps room for it above the footer. */
-.pill {
-  position: fixed;
-  left: 50%;
-  bottom: calc(16px + env(safe-area-inset-bottom));
-  z-index: 40;
+.footer {
+  width: min(100% - 2 * var(--pad), 1136px);
+  margin-inline: auto;
+  padding: 56px 0 calc(40px + env(safe-area-inset-bottom));
+  box-shadow: 0 -1px 0 var(--hairline);
+  font-size: 15px;
+}
+.footer-top {
   display: flex;
-  align-items: center;
-  gap: 10px;
-  max-width: calc(100vw - 32px);
-  padding: 6px 6px 6px 8px;
-  border-radius: var(--r-pill);
-  background: rgba(255, 255, 255, 0.92);
-  box-shadow: var(--sh-pill);
-  visibility: hidden;
-  opacity: 0;
-  transform: translate(-50%, calc(100% + 40px));
-  transition:
-    transform 300ms ease-in,
-    opacity 300ms ease-in,
-    visibility 0s 300ms;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  gap: 24px 48px;
 }
-@supports (backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px)) {
-  .pill {
-    background: rgba(255, 255, 255, 0.72);
-    -webkit-backdrop-filter: blur(20px) saturate(1.8);
-    backdrop-filter: blur(20px) saturate(1.8);
+.footer .brand {
+  font-size: 19px;
+}
+.footer-about p {
+  max-width: 420px;
+  margin-top: 12px;
+  color: var(--muted);
+}
+.footer-about strong {
+  color: var(--ink);
+  font-weight: 600;
+}
+.footer-links {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0 24px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.footer-links a {
+  display: inline-flex;
+  align-items: center;
+  min-height: 44px;
+  color: var(--muted);
+  text-decoration: none;
+}
+.footer-links a[aria-current="page"] {
+  color: var(--ink);
+}
+@media (hover: hover) {
+  .footer-links a:hover {
+    color: var(--ink);
   }
 }
-.pill.is-shown {
-  visibility: visible;
-  opacity: 1;
-  transform: translate(-50%, 0);
-  transition:
-    transform 550ms var(--ease-spring),
-    opacity 200ms ease-out;
-}
-.pill-name {
-  padding-right: 6px;
-  font-size: 19px;
-  font-weight: 600;
-  letter-spacing: -0.03em;
-}
-html:has(.pill) {
-  scroll-padding-bottom: calc(96px + env(safe-area-inset-bottom));
-}
-body:has(.pill) {
-  padding-bottom: calc(96px + env(safe-area-inset-bottom));
+.footer-legal {
+  margin-top: 40px;
+  padding-top: 20px;
+  box-shadow: inset 0 1px 0 var(--hairline);
+  color: var(--muted);
+  font-size: 14px;
 }
 
-/* /it, /privacy and 404: one text column. */
+/* /security, /privacy and 404: one text column, with one full-bleed panel. */
 .doc {
   width: min(100% - 2 * var(--pad), 760px);
   margin: 0 auto;
-  padding: 64px 0 var(--section);
+  padding: 152px 0 var(--section);
 }
 .doc h2 {
   margin-top: 56px;
@@ -1323,30 +1258,74 @@ body:has(.pill) {
 .doc section > p {
   margin-top: 16px;
 }
+.panel {
+  display: grid;
+  gap: 16px;
+  width: min(100vw - 2 * var(--pad), 1136px);
+  margin: 40px 0 0 50%;
+  padding: 24px;
+  border-radius: var(--r-stage);
+  background: linear-gradient(180deg, var(--sky), var(--paper));
+  transform: translateX(-50%);
+}
+@media (min-width: 768px) {
+  .panel {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    padding: 56px;
+  }
+}
+.panel .split h2 {
+  margin: 0 0 12px 4px;
+  font-size: 17px;
+  letter-spacing: -0.011em;
+}
+.rows {
+  margin: 0;
+  padding: 0 20px;
+  list-style: none;
+  border-radius: var(--r-card);
+  background: var(--surface);
+}
+.rows li {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  min-height: 56px;
+  font-weight: 600;
+}
+.rows li + li {
+  box-shadow: 0 -1px 0 var(--hairline);
+}
+.toggle {
+  flex: none;
+  width: 40px;
+  height: 24px;
+  padding: 2px;
+  border-radius: var(--r-pill);
+  background: var(--g1);
+}
+.toggle::after {
+  content: "";
+  display: block;
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+  background: var(--surface);
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.2);
+}
+.toggle.on {
+  background: var(--ink);
+}
+.toggle.on::after {
+  margin-left: auto;
+}
 .doc .points {
   margin: 40px 0 0;
   padding-left: 1.2em;
 }
 .doc .points li + li {
   margin-top: 12px;
-}
-.flow-nodes {
-  display: grid;
-  gap: 12px;
-  margin: 40px 0 0;
-  padding: 0;
-  list-style: none;
-}
-.flow-nodes li {
-  padding: 20px 24px;
-  border-radius: var(--r-card);
-  background: var(--surface);
-  font-weight: 600;
-}
-@media (min-width: 768px) {
-  .flow-nodes {
-    grid-template-columns: repeat(3, minmax(0, 1fr));
-  }
 }
 .detail {
   margin-top: 32px;
@@ -1378,15 +1357,13 @@ body:has(.pill) {
     box-shadow: none;
   }
 }
-.notfound {
-  padding-top: 96px;
-}
 .notfound .btn {
   margin-top: 32px;
 }
 
 @media (prefers-reduced-transparency: reduce) {
-  .pill {
+  .nav-pill,
+  .nav-links:popover-open {
     background: var(--surface);
     -webkit-backdrop-filter: none;
     backdrop-filter: none;

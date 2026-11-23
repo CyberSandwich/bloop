@@ -30,7 +30,7 @@ flowchart LR
   bloop -- "OAuth code flow with PKCE" --> entra
   bloop -- "list recent decks, resolve download URL" --> graph
   pc -. "redirect mode: PowerPoint downloads from Graph" .-> graph
-  admin -- "reads /it, exports audit" --> bloop
+  admin -- "reads /security, exports audit" --> bloop
 ```
 
 ## 3. Containers (C4 level 2)
@@ -40,7 +40,7 @@ flowchart TB
   subgraph browser[Browsers]
     s["/s screen page"]
     a["/a, /code, /g phone pages"]
-    l["/ landing, /it, /privacy"]
+    l["/ landing, /security, /privacy"]
   end
   subgraph cf[Cloudflare account, one Worker, one origin]
     assets[Static assets: public/ served directly, headers from public/_headers]
@@ -203,7 +203,7 @@ Per-room policy (ADR 0005): `open` (default) is the flow above. `pass` is option
 - the session lasts 10 min (`DEMO_SESSION_MINUTES`), and guest drops are capped at 10 MB (`DEMO_GUEST_MAX_BYTES`), and the Open click applies as in 4.4;
 - the demo has its own rate limits (section 6): stricter per-IP bindings for creating and claiming, and a global cap on concurrent demo screens held in the Directory (`DEMO_MAX_CONCURRENT`) and a per-IP-hash cap (`DEMO_MAX_PER_IP`) so one address cannot fill it. A demo screen takes a slot at creation, for one claim window plus one session, and gives it back when its session ends or the screen closes; a screen that outlives its hold stops counting. `DEMO_ENABLED=false` makes `POST /api/screens {mode: "demo"}` and any claim of a demo code answer `not_found`;
 - its session and audit rows are `mode = demo` with no user, and are kept 7 days;
-- the landing embeds no demo: its Try the demo button opens `/s?mode=demo`, and the reel on the landing is static markup animated by CSS, with no connection.
+- the landing embeds no demo: its Try the demo button opens `/s?mode=demo`, and the landing's hero stage is a static panel, with no connection.
 
 ADR 0007 covers this.
 
@@ -242,13 +242,14 @@ src/worker/
   routes/{pairing,files,open,drop,auth,export,common}.ts
   retention.ts             cron jobs: closeStaleSessions (hourly), runRetention (daily)
 public/                    wrangler's assets directory, served as it is. Everything here is public: no secrets, no server-only logic
-  index.html it.html privacy.html s.html a.html code.html 404.html   (the /g and /me pages are not built yet)
+  index.html security.html privacy.html s.html a.html code.html 404.html   (the /g and /me pages are not built yet)
   _headers                 static security headers (section 10)
+  _redirects               /it answers 301 to /security
   css/app.css              the one stylesheet (task pages and site pages)
   js/{screen,phone,code,launcher,residue}.js   task pages; js/vendor/uqr.js (+ LICENSE)
   js/screen-demo.js js/core/demo.js   the demo screen's in-page result (slides, file card, its own link fetch); its pure parts
   img/demo-slide-{n}.{avif,webp}   the sample deck's slides (tools/render-slides.py)
-  js/site.js               the landing: the bottom pill, the reel's pause control, the FAQ's height tween where CSS cannot (no other site page runs a script)
+  js/site.js               the landing: the nav's scrolled look, closing the menu on a same-page link, the FAQ's height tween where CSS cannot (no other site page runs a script)
   og.png apple-touch-icon.png (tools/render-og.py); favicon.svg, the logo, drawn as paths
   fonts/inter-latin.woff2  the one font file (tools/subset-font.py) + Inter.LICENSE.txt
   js/shared/               runtime code shared by browser and Worker: plain JSDoc-typed ES modules
@@ -279,7 +280,7 @@ test/
 
 | method                   | path                                         | auth                                  | purpose                                                        |
 | ------------------------ | -------------------------------------------- | ------------------------------------- | -------------------------------------------------------------- |
-| GET                      | `/`, `/it`, `/privacy`, `/s`, `/a`, `/code`, `/g`, `/me`, `/.well-known/security.txt` | none (static) | pages; any other path is `404.html` with status 404 |
+| GET                      | `/`, `/security`, `/privacy`, `/s`, `/a`, `/code`, `/g`, `/me`, `/.well-known/security.txt` | none (static) | pages; `/it` answers 301 to `/security`; any other path is `404.html` with status 404 |
 | POST                     | `/api/screens`                               | none, or room cookie (registered)     | create a screen: `{mode}` to `{sid, room}`                     |
 | GET                      | `/api/screen/ws?ref=<screenRef>`             | `hello{sid}` as first message, Origin | screen socket (the ref only routes to the object; it is no secret) |
 | GET                      | `/api/screen/state`                          | Bearer sid                            | polling fallback; also the rotation clock when there is no socket. A poll writes nothing unless a code is due or the close deadline is a tenth of its window stale |
@@ -486,7 +487,7 @@ CSP per page type. Every page uses no inline script or style and no HTML string 
 
 | page                             | Content-Security-Policy                                                                                                                                                                                                                                                               |
 | -------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| landing `/`, `/it`, `/privacy`, `404`, `security.txt` (the `/*` default) | `default-src 'none'; script-src 'self'; style-src 'self'; img-src 'self'; font-src 'self'; connect-src 'self'; manifest-src 'self'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'; require-trusted-types-for 'script'; trusted-types 'none'; upgrade-insecure-requests` |
+| landing `/`, `/security`, `/privacy`, `404`, `security.txt` (the `/*` default) | `default-src 'none'; script-src 'self'; style-src 'self'; img-src 'self'; font-src 'self'; connect-src 'self'; manifest-src 'self'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'; require-trusted-types-for 'script'; trusted-types 'none'; upgrade-insecure-requests` |
 | screen `/s`                      | `default-src 'none'; script-src 'self'; style-src 'self'; img-src 'self'; font-src 'self'; connect-src 'self'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'; require-trusted-types-for 'script'; trusted-types 'none'; upgrade-insecure-requests`                      |
 | phone `/a`, `/code`, `/g`, `/me` | same as `/s`                                                                                                                                                                                                                                                                          |
 | `/api/*`, `/auth/*`              | `default-src 'none'; frame-ancestors 'none'`, plus `Cache-Control: no-store`                                                                                                                                                                                                          |

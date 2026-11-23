@@ -4,8 +4,8 @@
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
     <meta name="color-scheme" content="light">
-    <title>bloop for IT and AV</title>
-    <meta name="description" content="The PC gets one file. Never an account.">
+    <title>bloop security</title>
+    <meta name="description" content="The screen never gets your account.">
     <link rel="icon" href="/favicon.svg" type="image/svg+xml">
     <link rel="apple-touch-icon" href="/apple-touch-icon.png">
     <link rel="preload" href="/fonts/inter-latin.woff2" as="font" type="font/woff2" crossorigin>
@@ -13,25 +13,43 @@
   </head>
   <body class="page-site">
     <a class="skip" href="#main">Skip to Content</a>
-    <header class="top">
-      <a class="brand" href="/"><img src="/favicon.svg" width="28" height="28" alt="">bloop</a>
-      <a class="btn primary" href="/s?mode=demo">Try the demo</a>
+    <header class="nav">
+      <nav class="nav-pill" aria-label="Primary">
+        <a class="brand" href="/"><img src="/favicon.svg" width="28" height="28" alt="">bloop</a>
+        <ul class="nav-links" id="nav-links" popover>
+          <li><a href="/#features">Features</a></li>
+          <li><a href="/privacy">Privacy</a></li>
+          <li><a href="/security" aria-current="page">Security</a></li>
+        </ul>
+        <a class="btn waitlist" href="mailto:ventures@saputra.co.uk?subject=bloop%20waitlist" data-waitlist>Waitlist</a>
+        <button class="nav-menu" type="button" popovertarget="nav-links" aria-label="Menu">
+          <svg class="icon" viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true" focusable="false"><path d="M4 7h16M4 12h16M4 17h16"/></svg>
+        </button>
+      </nav>
     </header>
 
     <main id="main" class="doc">
-      <h1>The PC gets one file. Never an account.</h1>
+      <h1>The screen never gets your account.</h1>
 
-      <div class="flow-panel">
-        <h2 class="sr">What goes where</h2>
-        <ol class="flow-nodes">
-          <li>Phone: you choose and approve</li>
-          <li>bloop: keeps your Microsoft sign-in, encrypted</li>
-          <li>Screen: gets one file link</li>
-        </ol>
+      <div class="panel">
+        <section class="split" aria-labelledby="gets">
+          <h2 id="gets">What the screen gets</h2>
+          <ul class="rows">
+            <li>The items you approve<span class="toggle on" aria-hidden="true"></span></li>
+            <li>A link to each, which expires<span class="toggle on" aria-hidden="true"></span></li>
+          </ul>
+        </section>
+        <section class="split" aria-labelledby="stays">
+          <h2 id="stays">What stays on your phone</h2>
+          <ul class="rows">
+            <li>Your account<span class="toggle" aria-hidden="true"></span></li>
+            <li>Your other files<span class="toggle" aria-hidden="true"></span></li>
+          </ul>
+        </section>
       </div>
 
       <ul class="points">
-        <li>The PC holds a link to one file, and the link expires.</li>
+        <li>The PC holds a link to each item you approve, and each link expires.</li>
         <li>Each code works once for 60 seconds, and the phone shows the room before Approve.</li>
         <li>Each open ends by itself after 90 minutes and is logged for IT to export.</li>
         <li>A downloaded copy can stay on the PC; the table below lists what can stay.</li>
@@ -43,7 +61,7 @@
           <tbody>
             <tr>
               <th scope="row">What the PC holds</th>
-              <td>A session ID and a link to one file, in the browser's session storage. The link expires. While the file is open, PowerPoint holds the copy it opened. PowerPoint may also get a Microsoft download link for the file, which can work for up to 1 hour.</td>
+              <td>A session ID and a link to each approved item, in the browser's session storage. Each link expires. While a file is open, PowerPoint holds the copy it opened. PowerPoint may also get a Microsoft download link for the file, which can work for up to 1 hour.</td>
             </tr>
             <tr>
               <th scope="row">What bloop keeps</th>
@@ -75,13 +93,18 @@
     </main>
 
     <footer class="footer">
-      <a class="brand" href="/"><img src="/favicon.svg" width="28" height="28" alt="">bloop</a>
-      <ul class="footer-links">
-        <li><a href="/privacy">Privacy</a></li>
-        <li><a href="/it" aria-current="page">For IT</a></li>
-        <li><a href="https://github.com/CyberSandwich/bloop">Source</a></li>
-        <li><a href="mailto:ventures@saputra.co.uk">ventures@saputra.co.uk</a></li>
-      </ul>
+      <div class="footer-top">
+        <div class="footer-about">
+          <a class="brand" href="/"><img src="/favicon.svg" width="28" height="28" alt="">bloop</a>
+          <p><strong>Present anywhere.</strong> bloop puts your files on a shared screen from your phone. The screen gets only the items you approve, never your account.</p>
+        </div>
+        <ul class="footer-links">
+          <li><a href="/privacy">Privacy</a></li>
+          <li><a href="/security" aria-current="page">Security</a></li>
+          <li><a href="mailto:ventures@saputra.co.uk?subject=bloop%20waitlist" data-waitlist>Waitlist</a></li>
+        </ul>
+      </div>
+      <p class="footer-legal">© 2026 bloop</p>
     </footer>
   </body>
 </html>

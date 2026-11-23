@@ -16,7 +16,7 @@ declare const document: {
   fonts?: { ready: Promise<unknown> };
 };
 declare const innerWidth: number;
-declare const getComputedStyle: (el: El) => { visibility: string; lineHeight: string };
+declare const getComputedStyle: (el: El) => { visibility: string; lineHeight: string; transform: string };
 
 const VIEWPORTS = [
   { name: "1440", width: 1440, height: 900, touch: false },
@@ -65,30 +65,37 @@ for (const vp of VIEWPORTS) {
       expect(small).toEqual([]);
     });
 
-    test("Try the demo is in the first view and opens the demo screen", async ({ page }) => {
+    test("Try the demo is the hero's one button, in the first view, and opens the demo screen", async ({ page }) => {
       await page.goto("/");
-      const demo = page.locator(".hero-actions").getByRole("link", { name: "Try the demo" });
-      await expect(demo).toBeInViewport();
-      await expect(demo).toHaveAttribute("href", "/s?mode=demo");
-      await expect(page.locator(".hero-actions").getByRole("link", { name: "Get early access" })).toHaveAttribute(
-        "href",
-        /^mailto:ventures@saputra\.co\.uk/,
-      );
+      const actions = page.locator(".hero-actions").getByRole("link");
+      await expect(actions).toHaveCount(1);
+      await expect(actions).toHaveText("Try the demo");
+      await expect(actions).toBeInViewport();
+      await expect(actions).toHaveAttribute("href", "/s?mode=demo");
     });
 
-    test("the pill stays away over the hero, shows past it, and never covers the footer", async ({ page }) => {
+    test("the nav stays on top, firms up once scrolled, and its Waitlist is a mail", async ({ page }) => {
       await page.goto("/");
-      const pill = page.locator("#pill");
-      await expect(pill).not.toHaveClass(/is-shown/);
-      await expect(pill.getByRole("link", { name: "Try the demo" })).toBeHidden();
+      const nav = page.locator(".nav");
+      await expect(nav).not.toHaveClass(/is-scrolled/);
+      await expect(nav.getByRole("link", { name: "Waitlist" })).toHaveAttribute("href", /^mailto:/);
       await page.mouse.wheel(0, vp.height);
-      await expect(pill).toHaveClass(/is-shown/);
-      await expect(pill.getByRole("link", { name: "Try the demo" })).toBeVisible();
-      await page.locator(".footer").scrollIntoViewIfNeeded();
-      await page.mouse.wheel(0, 10_000);
-      const pillTop = (await pill.boundingBox())?.y ?? 0;
-      const footerLinks = await page.locator(".footer-links").boundingBox();
-      expect((footerLinks?.y ?? 0) + (footerLinks?.height ?? 0)).toBeLessThanOrEqual(pillTop);
+      await expect(nav).toHaveClass(/is-scrolled/);
+      await expect(nav.getByRole("link", { name: "bloop" })).toBeInViewport();
+    });
+
+    test("the nav reaches Features, Privacy and Security", async ({ page }) => {
+      await page.goto("/");
+      const nav = page.getByRole("navigation", { name: "Primary" });
+      if (vp.width < 640) {
+        await expect(nav.getByRole("link", { name: "Privacy" })).toBeHidden();
+        await nav.getByRole("button", { name: "Menu" }).click();
+      }
+      for (const name of ["Features", "Privacy", "Security"])
+        await expect(nav.getByRole("link", { name })).toBeVisible();
+      await nav.getByRole("link", { name: "Features" }).click();
+      await expect(page.locator("#features h2")).toBeInViewport();
+      await expect(nav.getByRole("link", { name: "Security" })).toBeVisible({ visible: vp.width >= 640 });
     });
 
     test("a question opens and closes", async ({ page }) => {
@@ -103,39 +110,30 @@ for (const vp of VIEWPORTS) {
   });
 }
 
-test.describe("reel", () => {
-  test.use({ viewport: { width: 1440, height: 900 } });
-
-  test("the pause control pauses the animation and says so", async ({ page }) => {
-    await page.goto("/");
-    const toggle = page.getByRole("button", { name: "Pause the animation" });
-    await expect(toggle).toHaveAttribute("aria-pressed", "false");
-    await toggle.click();
-    await expect(toggle).toHaveAttribute("aria-pressed", "true");
-    await expect(page.locator("#reel")).toHaveClass(/is-paused/);
-  });
-});
-
 test.describe("reduced motion", () => {
   test.use({ viewport: { width: 1440, height: 900 }, reducedMotion: "reduce" });
 
-  test("the reel shows its three frames side by side, captioned, with no pause control", async ({ page }) => {
+  test("the stage rests flat", async ({ page }) => {
     await page.goto("/");
-    await expect(page.locator(".frame")).toHaveCount(3);
-    const tops = await page
-      .locator(".frame")
-      .evaluateAll((els) => els.map((el) => Math.round((el as unknown as El).getBoundingClientRect().top)));
-    expect(new Set(tops).size).toBe(1);
-    await expect(page.locator(".cap")).toHaveText(["Scan", "Approve", "Slides up"]);
-    await expect(page.locator("#reel-toggle")).toBeHidden();
+    const stage = page.locator(".stage");
+    await expect(stage).toHaveText("Demo video coming soon");
+    expect(await stage.evaluate((el) => getComputedStyle(el as unknown as El).transform)).toBe("none");
   });
 });
 
 test.describe("site pages", () => {
-  for (const path of ["/it", "/privacy", "/no-such-page"]) {
-    test(`${path} has no axe violations`, async ({ page }) => {
+  for (const path of ["/security", "/privacy", "/no-such-page"]) {
+    test(`${path} has no axe violations, and its logo goes home`, async ({ page }) => {
       await page.goto(path);
       expect((await new AxeBuilder({ page }).analyze()).violations).toEqual([]);
+      await page.locator(".nav .brand").click();
+      await expect(page).toHaveURL(/\/$/);
     });
   }
+
+  test("/it moves to /security", async ({ page }) => {
+    const res = await page.goto("/it");
+    expect(new URL(res?.url() ?? "").pathname).toBe("/security");
+    await expect(page.locator("h1")).toHaveText("The screen never gets your account.");
+  });
 });

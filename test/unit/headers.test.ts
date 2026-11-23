@@ -44,7 +44,7 @@ const pages: [string, Policy, boolean][] = [
   ["/code", "app", false],
   ["/g", "app", false],
   ["/me", "app", false],
-  ["/it", "landing", false],
+  ["/security", "landing", false],
   ["/privacy", "landing", false],
   ["/.well-known/security.txt", "landing", false],
   ["/anything-else", "landing", false],

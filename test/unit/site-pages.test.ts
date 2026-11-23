@@ -3,7 +3,7 @@ import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
 
 const read = (rel: string) => readFileSync(fileURLToPath(new URL(`../../${rel}`, import.meta.url)), "utf8");
-const SITE = ["index.html", "it.html", "privacy.html", "404.html"] as const;
+const SITE = ["index.html", "security.html", "privacy.html", "404.html"] as const;
 const ALL = [...SITE, "s.html", "a.html", "code.html"] as const;
 const VOID = new Set(["meta", "link", "img", "source", "input", "br", "hr", "wbr"]);
 const SKIP_TAGS = new Set(["head", "script", "style", "svg", "noscript", "template"]);
@@ -123,8 +123,8 @@ describe("every page's text", () => {
     if (_name.endsWith(".html")) expect(plain).not.toMatch(/!/);
   });
 
-  it.each(SITE)("%s keeps session, token and tenant off the page unless it is /it", (page) => {
-    if (page === "it.html") return;
+  it.each(SITE)("%s keeps session, token and tenant off the page unless it is /security", (page) => {
+    if (page === "security.html") return;
     const text = visibleText(read(`public/${page}`)).toLowerCase();
     expect(text).not.toMatch(/\b(session|token|tenant)s?\b/);
   });
@@ -173,15 +173,14 @@ describe("landing word caps (design.md section 13)", () => {
   const html = read("public/index.html");
   const main = between(html, /<main id="main">/, "</main>");
 
-  it("the hero is at most 40 words: h1, sub and the two buttons", () => {
+  it("the hero is at most 40 words: h1, sub and its one button", () => {
     const hero = visibleText(between(html, /<section class="hero"/, "</section>"));
     expect(words(hero).length, hero).toBeLessThanOrEqual(40);
   });
 
-  it("h1 is one sentence of at most 6 words, one line, no second clause", () => {
+  it("h1 is Present anywhere., one line, no second clause", () => {
     const h1 = visibleText(between(html, /<h1\b/, "</h1>"));
-    expect(words(h1).length).toBeLessThanOrEqual(6);
-    expect(h1).toMatch(/^[^.]+\.$/);
+    expect(h1).toBe("Present anywhere.");
     expect(between(html, /<h1\b/, "</h1>")).not.toMatch(/<span/);
   });
 
@@ -192,10 +191,10 @@ describe("landing word caps (design.md section 13)", () => {
     expect(sub.match(/[.]/g)?.length ?? 0).toBeLessThanOrEqual(2);
   });
 
-  it("the whole landing is 80 to 180 words outside product UI, open answers included", () => {
+  it("the whole landing is 80 to 260 words outside product UI, open answers included", () => {
     const count = words(visibleText(html)).length;
     expect(count).toBeGreaterThanOrEqual(80);
-    expect(count).toBeLessThanOrEqual(180);
+    expect(count).toBeLessThanOrEqual(260);
   });
 
   it("each sentence outside product UI is at most 20 words", () => {
@@ -204,34 +203,37 @@ describe("landing word caps (design.md section 13)", () => {
     }
   });
 
-  it("Try the demo opens the demo screen; early access is a mail to the role address", () => {
+  it("the hero has one button, Try the demo, which opens the demo screen", () => {
     const actions = between(html, /<div class="hero-actions"/, "</div>");
-    expect(actions).toMatch(/<a class="btn primary" href="\/s\?mode=demo">Try the demo<\/a>/);
-    expect(actions).toMatch(
-      /<a class="btn secondary" href="mailto:ventures@saputra\.co\.uk\?subject=[^"]+">Get early access<\/a>/,
-    );
+    expect([...actions.matchAll(/<a\b[^>]*>([^<]*)<\/a>/g)].map((m) => m[0])).toEqual([
+      '<a class="btn primary" href="/s?mode=demo">Try the demo</a>',
+    ]);
   });
 
-  it("the FAQ is at most 4 native details, and the residue answer links to /it without a nothing-stays claim", () => {
+  it("the stage is a plain panel: no script, video or image, and no reel", () => {
+    const stage = between(html, /<div class="tilt">/, "</div>\n      </div>");
+    expect(visibleText(stage)).toBe("Demo video coming soon");
+    expect(stage).not.toMatch(/<(video|img|svg|iframe)\b/);
+    expect(html).not.toMatch(/reel|class="pill"/);
+  });
+
+  it("the FAQ is at most 4 native details, and the residue answer links to /security without a nothing-stays claim", () => {
     const faq = between(html, /<section class="faq"/, "</section>");
     const items = [...faq.matchAll(/<details>\s*<summary>([^<]+)<\/summary>([\s\S]*?)<\/details>/g)];
     expect(items.length).toBeGreaterThanOrEqual(1);
     expect(items.length).toBeLessThanOrEqual(4);
     const residue = items.find((m) => /room PC keep/.test(m[1] ?? ""))?.[2] ?? "";
-    expect(residue).toContain('href="/it"');
+    expect(residue).toContain('href="/security"');
     expect(residue).toMatch(/can stay/);
     expect(residue.toLowerCase()).not.toMatch(/nothing (is )?left|leaves nothing/);
   });
 
-  it("the reel is one labeled image; its frames are hidden from assistive tech and inert", () => {
-    expect(html).toMatch(/<div class="reel-stage" role="img" aria-label="[^"]{40,}">/);
-    expect(html).toMatch(/<ol class="frames" aria-hidden="true" inert>/);
-    expect(html).toMatch(/<button class="reel-toggle"[^>]*aria-pressed="false"[^>]*hidden>/);
-  });
-
-  it("the bottom pill is a plain div, inert until the script shows it, and there is no nav landmark", () => {
-    expect(html).toMatch(/<div class="pill" id="pill" inert>/);
-    expect(html).not.toMatch(/<nav\b/);
+  it("the provider list promises nothing live: every provider is Coming soon, and iCloud is not listed", () => {
+    const list = between(html, /<ul class="providers">/, "</ul>");
+    const rows = [...list.matchAll(/<li>([\s\S]*?)<\/li>/g)].map((m) => visibleText(m[1] ?? ""));
+    expect(rows.length).toBeGreaterThanOrEqual(4);
+    for (const row of rows) expect(row).toMatch(/ Coming soon$/);
+    expect(list.toLowerCase()).not.toContain("icloud");
   });
 
   it("og:image and og:url are absolute, for link previews", () => {
@@ -273,40 +275,55 @@ describe("site scripts under the strict CSP", () => {
   });
 });
 
-describe("the reel clock", () => {
-  const css = read("public/css/app.css");
-  /** Opacity stops of one @keyframes block, as [percent, opacity] sorted by percent. */
-  function stops(name: string): [number, number][] {
-    const body = between(css, new RegExp(`@keyframes ${name} \\{`), "\n}\n");
-    const out: [number, number][] = [];
-    for (const m of body.matchAll(/((?:[\d.]+%,?\s*)+)\{\s*opacity: ([\d.]+);/g)) {
-      for (const at of (m[1] ?? "").match(/[\d.]+/g) ?? []) out.push([Number(at), Number(m[2])]);
-    }
-    return out.sort((a, b) => a[0] - b[0]);
-  }
-  /** Linear between stops: whether a value is zero survives any monotonic easing. */
-  function at(curve: [number, number][], t: number): number {
-    const i = curve.findIndex(([p]) => p >= t);
-    const [p1, v1] = curve[i] ?? [100, 0];
-    const [p0, v0] = curve[i - 1] ?? [p1, v1];
-    return p1 === p0 ? v1 : v0 + ((v1 - v0) * (t - p0)) / (p1 - p0);
-  }
+describe("site chrome: one nav and one footer on every site page", () => {
+  const chrome = (html: string) =>
+    [between(html, /<header class="nav">/, "</header>"), between(html, /<footer class="footer">/, "</footer>")].map(
+      (part) => part.replace(/ aria-current="page"/g, ""),
+    );
+  const [nav, footer] = chrome(read("public/index.html"));
 
-  it("binds each frame's text and caption to its words clock", () => {
-    for (const n of [1, 2, 3]) expect(css).toContain(`.f${n} :is(text, .cap) {\n    animation: w${n} 12s`);
+  it.each(SITE)("%s carries the landing's nav and footer, and marks at most its own link current", (page) => {
+    const html = read(`public/${page}`);
+    expect(chrome(html)).toEqual([nav, footer]);
+    expect(html.match(/<nav\b/g)).toHaveLength(1);
+    expect(html).toContain('<nav class="nav-pill" aria-label="Primary">');
+    const current = [...html.matchAll(/href="([^"]+)" aria-current="page"/g)].map((m) => m[1]);
+    expect(new Set(current).size).toBeLessThanOrEqual(1);
+    if (current[0]) expect(current[0]).toBe(`/${page.replace(".html", "")}`);
   });
 
-  it("never shows two frames' text at once: a frame fades only while no text is showing", () => {
-    const frame = [() => 1, (t: number) => at(stops("f2"), t), (t: number) => at(stops("f3"), t)];
-    const words = [stops("w1"), stops("w2"), stops("w3")];
-    expect(words.every((w) => w.length >= 4)).toBe(true);
-    for (let t = 0; t <= 100; t += 0.05) {
-      // What shows of frame i is its own opacity times what the frames above it let through.
-      const seen = frame.map((f, i) => {
-        const through = frame.slice(i + 1).reduce((left, above) => left * (1 - above(t)), 1);
-        return f(t) * through * at(words[i] ?? [], t);
-      });
-      expect(seen.filter((v) => v > 0.001).length, `t=${t.toFixed(2)}%`).toBeLessThanOrEqual(1);
+  it.each(SITE)("%s links no Source repository and no /it", (page) => {
+    const html = read(`public/${page}`);
+    expect(html).not.toMatch(/github\.com|>Source</);
+    expect(html).not.toMatch(/href="\/it[/"#?]/);
+  });
+
+  it.each(SITE)("%s: every Waitlist link is the waitlist mail and carries data-waitlist", (page) => {
+    const html = read(`public/${page}`);
+    const links = [...html.matchAll(/<a\b([^>]*)>Waitlist<\/a>/g)].map((m) => m[1] ?? "");
+    expect(links.length).toBeGreaterThanOrEqual(2);
+    for (const attrs of links) {
+      expect(attrs).toMatch(/\sdata-waitlist(\s|$)/);
+      expect(attrs).toMatch(/href="mailto:ventures@saputra\.co\.uk\?subject=[^"]+"/);
     }
+    expect(html.match(/data-waitlist/g)).toHaveLength(links.length);
+  });
+
+  it("the menu button opens the links as a popover, with no script", () => {
+    expect(nav).toMatch(/<ul class="nav-links" id="nav-links" popover>/);
+    expect(nav).toMatch(/<button class="nav-menu" type="button" popovertarget="nav-links" aria-label="Menu">/);
+  });
+
+  it("the footer ends with the year line", () => {
+    expect(footer).toMatch(/<p class="footer-legal">© 2026 bloop<\/p>\s*<\/footer>$/);
+  });
+});
+
+describe("privacy notice", () => {
+  it("states what the waitlist keeps, why and for how long", () => {
+    const row = between(read("public/privacy.html"), /<tr><th scope="row">Waitlist/, "</tr>");
+    expect(row).toMatch(/email and answers/);
+    expect(row).toMatch(/to invite you/);
+    expect(row).toMatch(/until you ask/);
   });
 });

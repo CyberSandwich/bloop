@@ -59,7 +59,7 @@ The public pages ship with placeholder addresses on the reserved `bloop.example`
 
 - **Privacy notice:** `/privacy` is a draft (it says so on the page and is `noindex`). The legal lane (OD-5) confirms roles, lawful bases and the retention periods it lists before launch; it repeats `threat-model.md` section 10, so change both together.
 - **Social image:** `og:image` and `og:url` in `public/index.html` name the host absolutely, as link previews need; change them with the host.
-- **Stream mode:** if you set `OPEN_PATH_MODE=stream` (field test T3 below), delete the sentence about the Microsoft download link from the "What the PC holds" row of `public/it.html` and design.md.
+- **Stream mode:** if you set `OPEN_PATH_MODE=stream` (field test T3 below), delete the sentence about the Microsoft download link from the "What the PC holds" row of `public/security.html` and design.md.
 
 ### Regenerating the site assets
 All outputs are committed; run these only when a source changes. Make one throwaway venv with `fonttools` and `brotli` (`python3 -m venv` in a temp directory, then its `pip install fonttools brotli`; inside the Claude Code sandbox set `PIP_USE_DEPRECATED=legacy-certs`). ImageMagick, `avifenc` and `cwebp` come from Homebrew (`imagemagick`, `libavif`, `webp`).
