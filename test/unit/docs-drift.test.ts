@@ -163,6 +163,16 @@ describe("design tokens", () => {
   });
 });
 
+describe("dependency budget", () => {
+  it("package.json dependencies are a subset of the list in ADR 0001", () => {
+    const marked = read("docs/adr/0001-stack.md").match(/<!-- runtime-deps -->(.*?)<!-- \/runtime-deps -->/s)?.[1];
+    const allowed = [...(marked ?? "").matchAll(/`([^`]+)`/g)].map((m) => m[1]);
+    expect(allowed.length).toBeGreaterThan(0);
+    const extra = Object.keys(JSON.parse(read("package.json")).dependencies).filter((name) => !allowed.includes(name));
+    expect(extra, "add an ADR 0001 line (why, what it replaces, how to remove it) before a new dependency").toEqual([]);
+  });
+});
+
 describe("error table", () => {
   it("interfaces.md section 8 points at errors.js and restates no code", () => {
     const section = read("docs/interfaces.md").split("## 8. ")[1]?.split("\n## ")[0] ?? "";

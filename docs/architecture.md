@@ -207,7 +207,7 @@ ADR 0007 covers this.
 
 ## 5. Repo layout
 
-One npm package. Runtime dependencies: `zod`, `oauth4webapi`, and `uqr` vendored as one file.
+One npm package. Runtime dependencies: the list in ADR 0001.
 
 ```
 package.json  package-lock.json  wrangler.jsonc  biome.json
