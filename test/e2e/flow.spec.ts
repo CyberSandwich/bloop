@@ -295,7 +295,7 @@ test.describe("guest drop", () => {
     expect(await launches()).toEqual({ opened: 0, left: [] });
     await expectNoAxeViolations(screen.page);
 
-    // Download mints a fresh link on the click, so it never meets the 2 minute life of the one the screen fetched.
+    // Download mints its own link on the first click, so it never meets the 2 minute life of the one the screen fetched.
     const saved = screen.page.waitForEvent("download");
     await screen.page.getByRole("button", { name: "Download" }).click();
     expect((await saved).suggestedFilename()).toBe("sample-deck.pptx");

@@ -196,8 +196,13 @@ function render() {
   show(buttons.end, copy.controls.includes("end"));
   // Open: the guest's offer, or a launch that needs a click (no user gesture, or a blocked popup).
   show(buttons.open, copy.controls.includes("open") || launcher.needsClick());
-  show(buttons.download, copy.controls.includes("download") && (key !== "opening" || launcher.downloadReady()));
-  show(buttons.pdf, copy.controls.includes("pdf"));
+  // A spent mint budget hides the fallbacks: another click could only be refused.
+  const mintable = !launcher.spent();
+  show(
+    buttons.download,
+    mintable && copy.controls.includes("download") && (key !== "opening" || launcher.downloadReady()),
+  );
+  show(buttons.pdf, mintable && copy.controls.includes("pdf"));
   setText(buttons.download, key === "open_fallback" || key === "demo_open" ? "Download" : "Download It Instead");
   // This device as the phone: same tab to /a, which claims the code; /a links back here, and the stored sid resumes.
   show(buttons.here, copy.controls.includes("here") && !!code);
@@ -289,9 +294,9 @@ buttons.open.addEventListener("click", () => {
   if (s.view?.state !== "offered") return launcher.click();
   if (!s.channel?.send({ t: "open.click" })) flagError();
 });
-/** A fallback that could not be minted shows the error state, which recovers by itself. */
-const fallback = (/** @type {() => Promise<boolean>} */ run) => async () => {
-  if (!(await run())) flagError();
+/** A fallback that failed shows the error state, which recovers by itself; a spent budget only hides the controls. */
+const fallback = (/** @type {() => Promise<import("./launcher.js").Minted>} */ run) => async () => {
+  if ((await run()) === "failed") flagError();
 };
 buttons.download.addEventListener("click", fallback(launcher.download));
 buttons.pdf.addEventListener("click", fallback(launcher.showPdf));

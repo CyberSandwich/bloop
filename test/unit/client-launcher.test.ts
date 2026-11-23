@@ -1,6 +1,11 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { createStore } from "../../public/js/core/store.js";
-import { LAUNCH_TIMEOUT_MS, RELINK_WAIT_MS } from "../../public/js/core/timing.js";
+import {
+  DOWNLOAD_REUSE_MS,
+  DOWNLOAD_STARTS_PER_LINK,
+  LAUNCH_TIMEOUT_MS,
+  RELINK_WAIT_MS,
+} from "../../public/js/core/timing.js";
 import { createLauncher } from "../../public/js/launcher.js";
 import { createResidue } from "../../public/js/residue.js";
 import type { LinkSet, ScreenView } from "../../src/shared/protocol.ts";
@@ -23,7 +28,7 @@ const view = (state: ScreenView["state"]): ScreenView => ({
   now: 0,
 });
 
-function harness(opts: { gesture?: boolean; popups?: boolean; minted?: LinkSet | "fail" } = {}) {
+function harness(opts: { gesture?: boolean; popups?: boolean; minted?: LinkSet | "fail" | "pdf_unavailable" } = {}) {
   const calls = {
     assign: [] as string[],
     windows: [] as string[],
@@ -38,6 +43,7 @@ function harness(opts: { gesture?: boolean; popups?: boolean; minted?: LinkSet |
     api: {
       post: async (path: string, body: unknown, auth: unknown) => {
         calls.posts.push({ path, body, auth });
+        if (opts.minted === "pdf_unavailable") return { ok: false, error: "pdf_unavailable" };
         return opts.minted === "fail" || !opts.minted
           ? { ok: false, error: "mint_limit" }
           : { ok: true, value: { links: opts.minted }, headers: { get: () => null } };
@@ -121,16 +127,57 @@ describe("download and showPdf", () => {
   it("download posts the purpose with the screen credential and starts the download once, frame or not", async () => {
     const minted = links({ download: "https://bloop.test/f/t2/Deck.pptx" });
     const { launcher, calls } = harness({ minted });
-    expect(await launcher.download()).toBe(true);
+    expect(await launcher.download()).toBe("ok");
     launcher.launch(minted); // the same link also arrives as an `open` frame
     expect(calls.posts).toEqual([{ path: "/api/screen/link", body: { purpose: "download" }, auth: "sid.secret" }]);
     expect(calls.downloads).toEqual(["https://bloop.test/f/t2/Deck.pptx"]);
   });
 
-  it("a refused mint (the limit, a missing PDF) returns false and starts nothing", async () => {
+  it("a second Download soon after reuses the started link instead of minting, up to its share of fetches", async () => {
+    const url = "https://bloop.test/f/t2/Deck.pptx";
+    const { launcher, calls } = harness({ minted: links({ download: url }) });
+    for (let i = 0; i < DOWNLOAD_STARTS_PER_LINK; i++) expect(await launcher.download()).toBe("ok");
+    expect(calls.posts).toHaveLength(1);
+    expect(calls.downloads).toEqual(Array(DOWNLOAD_STARTS_PER_LINK).fill(url));
+    await launcher.download();
+    expect(calls.posts).toHaveLength(2);
+  });
+
+  it("a started link is not reused once its reuse window has passed", async () => {
+    const { launcher, calls } = harness({ minted: links({ download: "https://bloop.test/f/t2/Deck.pptx" }) });
+    await launcher.download();
+    vi.advanceTimersByTime(DOWNLOAD_REUSE_MS);
+    await launcher.download();
+    expect(calls.posts).toHaveLength(2);
+  });
+
+  it("a download link pushed as a frame is reused by the Download control too", async () => {
+    const url = "https://bloop.test/f/t5/Deck.pptx";
+    const { launcher, calls } = harness();
+    launcher.launch(links({ download: url }));
+    expect(await launcher.download()).toBe("ok");
+    expect(calls.posts).toEqual([]);
+    expect(calls.downloads).toEqual([url, url]);
+  });
+
+  it("the mint limit is no failure to flag: it marks the budget spent, which reset clears", async () => {
     const { launcher, calls } = harness({ minted: "fail" });
-    expect(await launcher.download()).toBe(false);
-    expect(await launcher.showPdf()).toBe(false);
+    expect(launcher.spent()).toBe(false);
+    expect(await launcher.download()).toBe("spent");
+    expect(launcher.spent()).toBe(true);
+    expect(calls.changes).toBe(1);
+    expect(await launcher.showPdf()).toBe("spent");
+    expect(calls.downloads).toEqual([]);
+    expect(calls.windows).toEqual([]);
+    launcher.reset();
+    expect(launcher.spent()).toBe(false);
+  });
+
+  it("any other refused mint (a missing PDF, the network) fails and starts nothing", async () => {
+    const { launcher, calls } = harness({ minted: "pdf_unavailable" });
+    expect(await launcher.download()).toBe("failed");
+    expect(await launcher.showPdf()).toBe("failed");
+    expect(launcher.spent()).toBe(false);
     expect(calls.downloads).toEqual([]);
     expect(calls.windows).toEqual([]);
   });
@@ -138,7 +185,7 @@ describe("download and showPdf", () => {
   it("RES-04 pdf-window: the PDF view opens in a window this page can close, and the residue step closes it", async () => {
     const pdf = "https://bloop.test/f/t3/Deck.pdf";
     const { launcher, calls } = harness({ minted: links({ pdf }) });
-    expect(await launcher.showPdf()).toBe(true);
+    expect(await launcher.showPdf()).toBe("ok");
     expect(calls.windows).toEqual([pdf]);
     launcher.reset();
     expect(calls.closed).toBe(1);

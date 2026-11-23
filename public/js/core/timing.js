@@ -8,6 +8,13 @@ export const ENDED_QR_RETURN_MS = 3000;
 export const ERROR_RECOVER_MS = 5000;
 /** No /f/ fetch this long after the launch: Download It Instead appears (design.md, opening). */
 export const LAUNCH_TIMEOUT_MS = 5000;
+/**
+ * Download starts a link it already started again for this long, and this many times in all, instead of minting one
+ * against LINK_MINTS_PER_SESSION. Both stay well inside the server's LINK_FETCH_WINDOW_SECONDS and LINK_MAX_FETCHES,
+ * which a browser may spend more than once per start.
+ */
+export const DOWNLOAD_REUSE_MS = 60_000;
+export const DOWNLOAD_STARTS_PER_LINK = 3;
 /** An approved screen that has received no link by now asks for one. */
 export const RELINK_WAIT_MS = 1500;
 export const OFFLINE_HINT_MS = 5000;

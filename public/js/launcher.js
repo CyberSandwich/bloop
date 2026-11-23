@@ -4,7 +4,7 @@
 // each URL once. Every browser effect is injected, so the logic runs under test without a browser.
 /** @import {LinkSet, OpenMode, ScreenView} from "../../src/shared/protocol.ts" */
 /** @import {Api} from "./core/api.js" */
-import { LAUNCH_TIMEOUT_MS, RELINK_WAIT_MS } from "./core/timing.js";
+import { DOWNLOAD_REUSE_MS, DOWNLOAD_STARTS_PER_LINK, LAUNCH_TIMEOUT_MS, RELINK_WAIT_MS } from "./core/timing.js";
 
 /**
  * @typedef {object} LauncherDeps
@@ -22,8 +22,9 @@ import { LAUNCH_TIMEOUT_MS, RELINK_WAIT_MS } from "./core/timing.js";
  * @typedef {object} ScreenLauncher
  * @property {(links: LinkSet) => void} launch act on a pushed or fetched link set
  * @property {() => void} click the Open control: relaunch, or open a blocked PDF, under a user gesture
- * @property {() => Promise<boolean>} download mint a download link and start it; false on failure
- * @property {() => Promise<boolean>} showPdf mint the PDF link and open it; false on failure
+ * @property {() => Promise<Minted>} download start the recent download link again, or mint one and start it
+ * @property {() => Promise<Minted>} showPdf mint the PDF link and open it
+ * @property {() => boolean} spent the session's mint budget ran out (`mint_limit`), so no fallback can be minted
  * @property {(view: ScreenView) => void} onView follow the session: recover a lost link, time the launch, reset at the end
  * @property {() => boolean} needsClick a click is needed to open (no gesture at launch, or a blocked popup)
  * @property {() => boolean} downloadReady the launch has waited long enough that Download may show
@@ -31,13 +32,16 @@ import { LAUNCH_TIMEOUT_MS, RELINK_WAIT_MS } from "./core/timing.js";
  * @property {() => void} reset drop every link and timer (the residue step)
  */
 
+/** @typedef {"ok" | "spent" | "failed"} Minted `spent`: the mint limit, which the page shows by hiding the controls */
+
 /** @param {LauncherDeps} deps @returns {ScreenLauncher} */
 export function createLauncher(deps) {
   /** @type {Set<string>} */
   const used = new Set();
   /** @type {{
    *   protocol: string | null, pendingPdf: string | null, pdfWindow: {close?: () => void} | null,
-   *   reported: boolean, needsClick: boolean, waitedOut: boolean, haveLink: boolean,
+   *   reported: boolean, needsClick: boolean, waitedOut: boolean, haveLink: boolean, spent: boolean,
+   *   download: {url: string, at: number, starts: number} | null,
    *   waiting: ReturnType<typeof setTimeout> | undefined, recovering: ReturnType<typeof setTimeout> | undefined
    * }} */
   const s = {
@@ -48,6 +52,8 @@ export function createLauncher(deps) {
     needsClick: false,
     waitedOut: false,
     haveLink: false,
+    spent: false,
+    download: null,
     waiting: undefined,
     recovering: undefined,
   };
@@ -89,17 +95,34 @@ export function createLauncher(deps) {
     if (links.pdf && !used.has(links.pdf)) openPdf(links.pdf);
     if (links.download && !used.has(links.download)) {
       used.add(links.download);
+      s.download = { url: links.download, at: Date.now(), starts: 1 };
       deps.startDownload(links.download);
     }
     deps.onChange();
   }
 
-  /** @param {OpenMode} purpose */
+  /** @param {OpenMode} purpose @returns {Promise<Minted>} */
   async function request(purpose) {
     const res = await deps.api.post("/api/screen/link", { purpose }, deps.sid());
-    if (!res.ok) return false;
+    if (!res.ok) {
+      if (res.error !== "mint_limit") return "failed";
+      s.spent = true;
+      deps.onChange();
+      return "spent";
+    }
     launch(res.value.links);
-    return true;
+    return "ok";
+  }
+
+  /** @returns {Promise<Minted>} */
+  async function download() {
+    const last = s.download;
+    if (last && last.starts < DOWNLOAD_STARTS_PER_LINK && Date.now() - last.at < DOWNLOAD_REUSE_MS) {
+      last.starts += 1;
+      deps.startDownload(last.url);
+      return "ok";
+    }
+    return request("download");
   }
 
   function reset() {
@@ -115,6 +138,8 @@ export function createLauncher(deps) {
       needsClick: false,
       waitedOut: false,
       haveLink: false,
+      spent: false,
+      download: null,
     });
     deps.onChange();
   }
@@ -140,8 +165,9 @@ export function createLauncher(deps) {
       deps.onChange();
     },
 
-    download: () => request("download"),
+    download,
     showPdf: () => request("pdf"),
+    spent: () => s.spent,
 
     onView(view) {
       if (view.state === "approved" && !s.haveLink && s.recovering === undefined) {

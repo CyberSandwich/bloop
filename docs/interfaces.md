@@ -449,11 +449,13 @@ The status of each `/f/` refusal is the one in `public/js/shared/errors.js` (`li
 Screen side (`public/js/launcher.js`, JSDoc; `createLauncher(deps)` takes every browser effect as a dependency, so it is unit tested without a browser):
 ```ts
 /** Launch ladder: protocol, then Download after 5 s with no fetch, then the PDF view. Each link is acted on once, whether it arrived as an `open` frame or as a /api/screen/link answer. */
+type Minted = "ok" | "spent" | "failed";
 export interface ScreenLauncher {
   launch(links: LinkSet): void;            // protocol: location.assign + one "launched" report; pdf: window.open("bloop-pdf"); download: <a download>
   click(): void;                           // the Open control: launch again, or open a PDF the popup blocker refused, under a user gesture
-  download(): Promise<boolean>;            // POST /api/screen/link {purpose:"download"}, then launch the answer
-  showPdf(): Promise<boolean>;             // POST /api/screen/link {purpose:"pdf"}
+  download(): Promise<Minted>;             // the link it started under a minute ago again (3 starts at most), else POST /api/screen/link {purpose:"download"} and launch the answer
+  showPdf(): Promise<Minted>;              // POST /api/screen/link {purpose:"pdf"}
+  spent(): boolean;                        // a mint met `mint_limit`: the page hides Download and Show as PDF Instead, flags no error
   onView(view: ScreenView): void;          // recovers a lost link (approved, no link after 1.5 s), times the 5 s, resets at the end
   needsClick(): boolean;                   // the launch had no user activation, or a popup was blocked
   downloadReady(): boolean;
