@@ -270,7 +270,7 @@ The opsis stage and the ample orbit in one component: a big rounded `--tint` gro
 | Phone | the phone mock at the robin's left, overlapping the screen's lower right corner by 48 px, showing the real `/a` sheet in sync with the demo state |
 | File | one file row as a floating `--card` pill between phone and screen: "Sample deck.pptx" |
 | Orbit | the three objects sit on an ellipse around the robin; their places are fixed and change only with demo state (the file row moves from the phone to the screen on approved, over `--d3`); nothing circles or loops |
-| Live demo | desktop only (`(hover:hover) and (pointer:fine)`): scanning drives the demo states in section 3; the robin reacts per section 8; one change at a time. Built by module i; until then the desktop stage shows the open state too and Try the Demo scrolls to the stage (`#demo`) |
+| Live demo | desktop only (`(hover:hover) and (pointer:fine)`): scanning drives the demo states in section 3; the robin reacts per section 8; one change at a time. Built: a lazy module (`public/js/demo/`) starts when the stage nears the viewport; the stage shows the open state until its first live state, and again if the module fails to load. Try the Demo scrolls to the stage (`#demo`) |
 | Touch | no live code; the screen shows the open state; the robin centered, with the screen and phone side by side below it at 0.8 scale |
 | Layout switch | the orbit (robin at the side, objects placed around it) needs a fine pointer and 1200 px; every other case, including 834, uses the touch layout: robin centered (`min(52vh, 440px)` medium, `min(80vw, 320px)` compact), screen and phone side by side below it, the phone clipped by the stage floor |
 | Height lock | every state swaps in place inside fixed boxes (no CLS) |
@@ -521,7 +521,7 @@ Until pose meshes exist the stills show the whole-object poses: look turns the b
 ### Renderer (`public/js/robin.js`, pure math in `public/js/core/robin-math.js`)
 | Item | Spec |
 |---|---|
-| API | ES module: `mountRobin(canvas, src, {control, tiltArea, pose, onTurn})` returns `{setPose(pose, {t, yaw}), turn(dir), hop(), stop()}`. `pose` is `perch`, `look`, `turn`, `carry` or `away`, or a weight map of them (`{look: 0.3, turn: 0.7}`, normalized); `t` in 0 to 1 sits that far from the last settled pose to this one at once (scroll); without `t` it tweens over `--d3`. Poses blend the whole-object transform in the model matrix; with pose meshes the same API lerps positions in the vertex shader. `control` takes the drag (yaw only, eases back over `--d4`) and arrows and Home; `turn(-1 / 1)` is Turn Left and Turn Right (30 degrees, held 1.2 s, then eased back). The page calls `setPose` from scroll, chips and session events, and `hop()` on `bloop:scanned` (module i) |
+| API | ES module: `mountRobin(canvas, src, {control, tiltArea, pose, onTurn})` returns `{setPose(pose, {t, yaw}), turn(dir), hop(), stop()}`. `pose` is `perch`, `look`, `turn`, `carry` or `away`, or a weight map of them (`{look: 0.3, turn: 0.7}`, normalized); `t` in 0 to 1 sits that far from the last settled pose to this one at once (scroll); without `t` it tweens over `--d3`. Poses blend the whole-object transform in the model matrix; with pose meshes the same API lerps positions in the vertex shader. `control` takes the drag (yaw only, eases back over `--d4`) and arrows and Home; `turn(-1 / 1)` is Turn Left and Turn Right (30 degrees, held 1.2 s, then eased back). The page calls `setPose` from scroll, chips and session events, and `hop()` when the stage fires `bloop:demo` with state `scanned` (the demo module's one event, `detail.state`; the landing maps states to poses with `demoPose`) |
 | Size | served unminified (no build step, ADR 0001): 6.0 KB gzip for `robin.js` plus `robin-math.js`, budget 6.5 KB (size-limit). The 3.1 KB research measure was before `setPose`, the input mapping, the tilt and JSDoc types |
 | Graphics | WebGL 1, one program, one draw call; flat shading from per-face normals; one key light plus ambient; transparent canvas |
 | Camera, canvas | fixed framing shared with the stills (`CAMERA`: half field of view 0.32 rad, distance 1.7, feet near the box floor); rest yaw -0.7 rad; the poster's box at `min(devicePixelRatio, 2)`. The stills come from a separate rasterizer, so the poster-to-canvas fade can show antialiasing differences, never a jump |
@@ -532,7 +532,7 @@ Until pose meshes exist the stills show the whole-object poses: look turns the b
 | Swap | if the device matrix (open item 21) shows quirks: OGL with its glTF loader, then three.js tree-shaken |
 
 ### Placement
-At most one prop (the slide card, carry pose only); phones, screens and files are real bloop UI, never 3D props. Landing hero: the stage's center object, poster then live, event poses on desktop. Explorer: live with scroll-linked `setPose`, stills under reduced motion. `/s`: perch poster 160 (`robin-perch-320`, in the poster slot) with a CSS hop on scan (the hop is not wired yet), never WebGL. `/a`: only the 96 px away still on Ended. Facts, story cards, closing, footer, `/it` and 404: none. Favicon: the robin's head in profile, flat SVG, 3 palette colors. OG image: perch still at right, h1 at left.
+At most one prop (the slide card, carry pose only); phones, screens and files are real bloop UI, never 3D props. Landing hero: the stage's center object, poster then live, event poses on desktop. Explorer: live with scroll-linked `setPose`, stills under reduced motion. `/s`: perch poster 160 (`robin-perch-320`, in the poster slot) with a CSS hop on scan (`is-hop`, once per scan), never WebGL. `/a`: only the 96 px away still on Ended. Facts, story cards, closing, footer, `/it` and 404: none. Favicon: the robin's head in profile, flat SVG, 3 palette colors. OG image: perch still at right, h1 at left.
 
 ## 10. The QR
 
@@ -574,7 +574,8 @@ Every late element (poster, canvas, code, stage UI, stills) has a reserved box. 
 | HTML (gzip) | 14 KB | 6 KB | 6 KB |
 | CSS (gzip, shared file) | 12 KB | same | same |
 | Font | 1 file, 55 KB or less | same | same |
-| JS before interaction (gzip) | 30 KB: glue plus the QR library; excludes the robin | 30 KB | 20 KB |
+| JS before interaction (gzip) | 30 KB: glue plus the QR library; excludes the robin and the live demo module | 30 KB | 20 KB |
+| Live demo module (deferred, desktop only, loaded when the stage nears the viewport) | 4 KB brotli (3.6 measured; its own size-limit entry for `public/js/demo/`) | not loaded | not loaded |
 | Robin renderer (deferred, never before LCP) | 6.5 KB unminified (6.0 measured) | not loaded | not loaded |
 | Robin mesh `robin.bin` (deferred) | 16 KB (15.2 measured) | none | none |
 | Robin poses (deferred, near the explorer) | 20 KB for four | none | none |

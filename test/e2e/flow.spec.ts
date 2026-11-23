@@ -76,6 +76,8 @@ test.describe("pairing flow", () => {
 
     const { phone, match } = await scan(browser, screen.page);
     expect(match).toMatch(/^[1-9][0-9]$/);
+    // the poster robin hops once on the scan (design.md section 8)
+    await expect(screen.page.locator(".poster-slot img")).toHaveClass(/is-hop/);
     // the code left the address bar and the history entry
     expect(new URL(phone.page.url()).search).toBe("");
     await expect(phone.page.locator("#room-name")).toHaveText("Demo room");

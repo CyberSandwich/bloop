@@ -1,8 +1,9 @@
 // Landing glue (docs/design.md sections 6 to 9): nav CTA, Send Me the Link, the explorer, reveals, the fact
 // QR and the robin. The renderer loads only after the load event, on idle, with a fine pointer and motion
-// allowed; until then, and after any failure, the poster or still shows. The live demo is module i.
+// allowed; until then, and after any failure, the poster or still shows. The live demo is its own lazy module
+// (demo/index.js); this page only starts it and lets the robin answer its state events.
 import { qrMatrix, qrPath } from "./core/qr.js";
-import { bandFromTops, containProgress, STEPS, scrollPose, stepProgress } from "./core/robin-pose.js";
+import { bandFromTops, containProgress, demoPose, STEPS, scrollPose, stepProgress } from "./core/robin-pose.js";
 import { initNav, initShare } from "./site.js";
 
 /** @typedef {Awaited<ReturnType<typeof import("./robin.js").mountRobin>>} Robin */
@@ -66,8 +67,17 @@ async function mount(box, opts) {
 // ---- Hero robin ----
 const heroBox = byId("hero-robin");
 const orbit = byId("demo");
+/** @type {Robin | null} */
+let heroRobin = null;
+/** The last demo state, so a robin that mounts after the demo started still takes its pose. */
+let demoState = "";
 if (mayAnimate && fine) {
-  whenNear(orbit, "0px", () => afterLoadIdle(() => void mount(heroBox, { tiltArea: orbit })));
+  whenNear(orbit, "0px", () =>
+    afterLoadIdle(async () => {
+      heroRobin = await mount(heroBox, { tiltArea: orbit });
+      if (demoState) heroRobin?.setPose(demoPose(demoState));
+    }),
+  );
 } else if (mayAnimate) {
   // Touch: the 3D robin loads only on intent, from its Turn the Robin button.
   const button = byId("turn3d");
@@ -80,6 +90,19 @@ if (mayAnimate && fine) {
       robin = await mount(heroBox, { control: heroBox });
     }
     robin?.turn(1);
+  });
+}
+
+// ---- Live demo: desktop only. The stage module is lazy; the robin answers its state events ----
+orbit.addEventListener("bloop:demo", (e) => {
+  const { state } = /** @type {CustomEvent<{state: string}>} */ (e).detail;
+  if (state === "scanned" && demoState !== "scanned") heroRobin?.hop();
+  demoState = state;
+  heroRobin?.setPose(demoPose(state));
+});
+if (fine) {
+  whenNear(orbit, "0px", () => {
+    import("./demo/index.js").then((m) => m.startDemo(orbit)).catch(() => {});
   });
 }
 

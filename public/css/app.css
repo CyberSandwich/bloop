@@ -293,6 +293,22 @@ h1[tabindex="-1"]:focus {
   width: 100%;
   height: 100%;
 }
+.poster-slot img.is-hop {
+  animation: hop var(--d4) linear;
+}
+@keyframes hop {
+  0% {
+    transform: none;
+    animation-timing-function: var(--ease-enter);
+  }
+  50% {
+    transform: translateY(-14px);
+    animation-timing-function: var(--ease-exit);
+  }
+  100% {
+    transform: none;
+  }
+}
 .qr-panel {
   position: relative;
   display: block;
@@ -1126,6 +1142,24 @@ html .touch {
   .file-pill .icon {
     color: var(--t2);
   }
+  /* Live demo: the file row waits at the phone once scanned and moves to the screen on approval. */
+  .orbit.is-live .file-pill {
+    opacity: 0;
+    transform: translate(-96px, 168px);
+    transition:
+      opacity var(--d3) var(--ease),
+      transform var(--d3) var(--ease);
+  }
+  .orbit.is-live:is([data-demo="scanned"], [data-demo="approved"], [data-demo="open"]) .file-pill {
+    opacity: 1;
+  }
+  .orbit.is-live:is([data-demo="approved"], [data-demo="open"]) .file-pill {
+    transform: none;
+  }
+}
+/* The phone mock has nothing to show until a phone has scanned, and none after an error. */
+.orbit.is-live:is([data-demo="waiting"], [data-demo="error"]) .orbit-phone .mock-scale {
+  visibility: hidden;
 }
 
 /* Sections after the hero: left aligned on the one grid, one rhythm. */

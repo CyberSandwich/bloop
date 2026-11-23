@@ -204,6 +204,77 @@ test.describe("reduced motion", () => {
   });
 });
 
+// The live demo in the stage (design.md section 6): a real demo screen on the landing, claimed by a phone.
+test.describe("live demo", () => {
+  test.use({ viewport: { width: 1440, height: 900 } });
+
+  const stageHeading = (page: Page) => page.locator("#demo-heading");
+
+  test("DEMO-01 flow: the stage shows a live code, a phone scans it, approves, and the stage opens the sample deck", async ({
+    page,
+    browser,
+  }) => {
+    await page.goto("/");
+    await expect(stageHeading(page)).toHaveText("Demo screen");
+    const code = await page.locator("#demo-qr-svg").getAttribute("data-code");
+    expect(code).toMatch(/^[A-Z0-9]{6,7}$/);
+    await expect(page.locator("#demo-qr-path")).toHaveAttribute("d", /^M/);
+    expect((await new AxeBuilder({ page }).analyze()).violations).toEqual([]);
+
+    const phoneContext = await browser.newContext({
+      viewport: { width: 390, height: 844 },
+      hasTouch: true,
+      isMobile: true,
+    });
+    const phone = await phoneContext.newPage();
+    await phone.goto(`/a?c=${code}`);
+    await expect(phone.getByRole("heading", { level: 1 })).toHaveText("Open the sample deck here?");
+    const match = ((await phone.locator("#match-digits").textContent()) ?? "").trim();
+    await expect(stageHeading(page)).toHaveText("Check your phone.");
+    await expect(page.locator("#demo-line")).toHaveText(`It should show ${match}.`);
+    await expect(page.locator("#demo")).toHaveAttribute("data-demo", "scanned");
+
+    await phone.getByRole("button", { name: "Approve" }).click();
+    await expect(stageHeading(page)).toHaveText("The sample deck is open.");
+    await expect(page.locator("#demo")).toHaveAttribute("data-demo", "open");
+
+    await page.getByRole("button", { name: "Run It Again" }).click();
+    await expect(stageHeading(page)).toHaveText("Ended.");
+    await expect(stageHeading(page)).toHaveText("Demo screen", { timeout: 10_000 });
+    await phoneContext.close();
+  });
+
+  test("DEMO-02 flood: a refused demo screen shows the error state, and Try Again starts a new one", async ({
+    page,
+  }) => {
+    await page.route("**/api/screens", (route) =>
+      route.fulfill({
+        status: 429,
+        contentType: "application/problem+json",
+        body: JSON.stringify({ type: "about:blank", status: 429, code: "rate_limited" }),
+      }),
+    );
+    await page.goto("/");
+    await expect(stageHeading(page)).toHaveText("Unable to start the demo.");
+    await page.unroute("**/api/screens");
+    await page.getByRole("button", { name: "Try Again" }).click();
+    await expect(stageHeading(page)).toHaveText("Demo screen");
+  });
+
+  test("DEMO-03 off: the stage says it could not start when the server has the demo off", async ({ page }) => {
+    await page.route("**/api/screens", (route) =>
+      route.fulfill({
+        status: 404,
+        contentType: "application/problem+json",
+        body: JSON.stringify({ type: "about:blank", status: 404, code: "not_found" }),
+      }),
+    );
+    await page.goto("/");
+    await expect(stageHeading(page)).toHaveText("Unable to start the demo.");
+    await expect(page.locator("#demo")).toHaveAttribute("data-demo", "error");
+  });
+});
+
 test.describe("site pages", () => {
   for (const path of ["/it", "/privacy", "/no-such-page"]) {
     test(`${path} has no axe violations`, async ({ page }) => {

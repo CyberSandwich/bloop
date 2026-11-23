@@ -26,9 +26,15 @@
       "path": [
         "public/js/**/*.js",
         "!public/js/robin.js",
-        "!public/js/core/robin-math.js"
+        "!public/js/core/robin-math.js",
+        "!public/js/demo/**"
       ],
       "limit": "40 kB"
+    },
+    {
+      "name": "live demo (lazy)",
+      "path": "public/js/demo/**/*.js",
+      "limit": "4 kB"
     },
     {
       "name": "robin renderer",

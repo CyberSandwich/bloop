@@ -67,12 +67,14 @@
               <div class="page-screen mock-s">
                 <div class="bar"><span class="wordmark">bloop</span></div>
                 <div class="mock-main">
+                  <div class="qr-panel mock-qr" id="demo-qr" hidden><svg id="demo-qr-svg" viewBox="0 0 41 41" width="246" height="246" shape-rendering="crispEdges" aria-hidden="true" focusable="false"><rect width="41" height="41" fill="#FFFFFF"/><path id="demo-qr-path" fill="#1D1D1F" d=""/></svg><p class="match" id="demo-match" hidden></p></div>
                   <div class="copy">
-                    <div class="stage">
-                      <p class="heading">The sample deck is open.</p>
-                      <p class="line">This page has no account. It was shown one file.</p>
+                    <div class="stage" role="status" aria-live="polite">
+                      <p class="heading" id="demo-heading">The sample deck is open.</p>
+                      <p class="line" id="demo-line">This page has no account. It was shown one file.</p>
                     </div>
-                    <div class="actions-row"><span class="btn text">Run It Again</span></div>
+                    <div class="capsule" id="demo-capsule" aria-hidden="true" hidden><span id="demo-capsule-fill"></span></div>
+                    <div class="actions-row"><button class="btn text" id="demo-action" type="button">Run It Again</button></div>
                   </div>
                 </div>
                 <p class="foot">Phone not with you? Sign in to this PC as usual.</p>
@@ -91,10 +93,10 @@
                 <div class="column mock-a">
                   <p class="wordmark">bloop</p>
                   <div class="flow">
-                    <p class="title">Open on Demo room.</p>
-                    <p class="body">Sample deck.pptx. Ends by itself at 11:35.</p>
+                    <p class="title" id="demo-phone-title">Open on Demo room.</p>
+                    <p class="body" id="demo-phone-body">Sample deck.pptx. Ends by itself at 11:35.</p>
                   </div>
-                  <div class="actions"><span class="btn primary">End</span></div>
+                  <div class="actions" id="demo-phone-actions"><span class="btn primary">End</span></div>
                 </div>
               </div>
             </div>

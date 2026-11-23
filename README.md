@@ -24,6 +24,10 @@ npm run check                    # typecheck, lint, unit and integration tests, 
 | `npm run test:int` | integration tests; each file starts its own `wrangler dev` on a free port. Timer tests set `TEST_TIMING=1` for short timings (tests only, refused off localhost; see architecture section 9) |
 | `npm run test:e2e` | Playwright with axe (needs a browser; CI runs it, plus Lighthouse CI) |
 
+## Try the demo locally
+
+The demo needs no account and runs on the sample decks. With `npm run dev` running, open `http://127.0.0.1:8787` in a desktop browser: the stage on the landing shows a live code. Scan it with a phone on the same network, or open the code URL (`/a?c=<code>`) in a second browser window, check the two digits, tap Approve, and the stage shows the sample deck open. For the full-screen version that really launches PowerPoint, open `/s?mode=demo` instead. `DEMO_ENABLED=false` in `wrangler.jsonc` (or `--var DEMO_ENABLED:false`) turns every demo route off, and the stage then says it cannot start.
+
 ## Docs
 
 - Design system: [docs/design.md](docs/design.md)

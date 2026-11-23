@@ -120,3 +120,23 @@ export function turnKey(key) {
 
 /** @param {number} offset @param {-1 | 0 | 1} dir */
 export const turnOffset = (offset, dir) => (dir === 0 ? 0 : clamp(offset + dir * TURN_STEP, -MAX_OFFSET, MAX_OFFSET));
+
+/**
+ * The robin's reaction to a demo state (design.md section 8): look toward the code, turn to the phone once it is
+ * scanned, carry the slide while it opens, rest otherwise. A hop on the scan is the page's call, not a pose.
+ * @param {string} state
+ * @returns {PoseName}
+ */
+export function demoPose(state) {
+  switch (state) {
+    case "waiting":
+      return "look";
+    case "scanned":
+      return "turn";
+    case "approved":
+    case "open":
+      return "carry";
+    default:
+      return "perch";
+  }
+}
