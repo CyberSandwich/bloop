@@ -194,7 +194,6 @@ export function screenCopy(key, f) {
  * @property {PhoneAction[]} actions
  * @property {boolean} loading the primary action shows its progress label
  * @property {boolean} progress the upload progress bar
- * @property {boolean} still the 96 px away robin (design.md section 8)
  */
 /**
  * @typedef {object} PhoneFacts
@@ -243,7 +242,6 @@ export function phoneCopy(key, f) {
     actions: /** @type {PhoneAction[]} */ ([]),
     loading: false,
     progress: false,
-    still: false,
   };
   const file = f.file ?? "your slides";
   const disconnect = f.account ? [DISCONNECT] : [];
@@ -417,7 +415,6 @@ export function phoneCopy(key, f) {
         title: "Ended.",
         body: VERIFIED.endedLink ? "The screen's link to your file has stopped working." : "",
         actions: [DONE],
-        still: true,
       };
     case "canceled":
       return { ...base, title: "Canceled.", body: "Nothing was opened on the screen.", actions: [DONE] };

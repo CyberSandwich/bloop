@@ -93,15 +93,3 @@ describe("the font", () => {
     expect(read("fonts/Inter.LICENSE.txt")).toContain("SIL OPEN FONT LICENSE");
   });
 });
-
-describe("F13 the phone page's ended still", () => {
-  const a = readFileSync(new URL("../../public/a.html", import.meta.url), "utf8");
-
-  it("carries the 96 px away still, hidden and lazy, from the 192 px files", () => {
-    expect(a).toMatch(/<picture[^>]*id="away"[^>]*hidden/);
-    expect(a).toContain('srcset="/img/robin-away-192.avif"');
-    expect(a).toMatch(
-      /<img[^>]*src="\/img\/robin-away-192\.webp"[^>]*width="96"[^>]*height="96"[^>]*alt=""[^>]*loading="lazy"/,
-    );
-  });
-});

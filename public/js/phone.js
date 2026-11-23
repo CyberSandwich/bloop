@@ -21,7 +21,6 @@ const store = sessionStore();
 const title = byId("title");
 const skelTitle = byId("skel-title");
 const body = byId("body");
-const awayStill = byId("away");
 const roomRow = byId("room");
 const roomName = byId("room-name");
 const roomSub = byId("room-sub");
@@ -155,7 +154,6 @@ function render() {
   show(title, key !== "checking");
   setText(title, copy.title);
   setText(body, copy.body);
-  show(awayStill, copy.still);
 
   show(roomRow, copy.room);
   setText(roomName, c.info?.roomName ?? "");

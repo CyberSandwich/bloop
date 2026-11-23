@@ -148,19 +148,6 @@ function updateCapsule() {
   capsuleFill.style.transform = `scaleX(${Math.min(1, Math.max(0, p))})`;
 }
 
-const poster = /** @type {HTMLElement | null} */ (document.querySelector(".poster-slot img"));
-let scannedBefore = false;
-
-/** The poster robin hops once per scan (design.md section 8); CSS holds it still under reduced motion. */
-function hopOnScan(/** @type {boolean} */ scanned) {
-  if (scanned && !scannedBefore && poster) {
-    poster.classList.remove("is-hop");
-    void poster.offsetWidth;
-    poster.classList.add("is-hop");
-  }
-  scannedBefore = scanned;
-}
-
 const MODE = {
   waiting: "waiting",
   scanned: "scanned",
@@ -193,7 +180,6 @@ function render() {
   const mode = MODE[/** @type {keyof typeof MODE} */ (key)] ?? "busy";
   main.dataset.mode = mode;
   qrPanel.classList.toggle("is-scanned", mode === "scanned");
-  hopOnScan(mode === "scanned");
   const code = v?.code && mode === "waiting" ? v.code : null;
   if (code) drawCode(code);
   qrPanel.classList.toggle("is-empty", s.shown === null);
