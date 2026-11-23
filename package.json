@@ -72,7 +72,7 @@
       "path": "src/worker/seams/file-source/demo-files/demo-handout.pdf",
       "gzip": false,
       "brotli": false,
-      "limit": "145 kB"
+      "limit": "85 kB"
     },
     {
       "name": "site CSS",

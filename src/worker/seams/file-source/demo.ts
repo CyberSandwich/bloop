@@ -1,5 +1,5 @@
-// The demo account's files, bundled as data: a real deck and its PDF export in demo-files/ (slimmed losslessly,
-// author fields blank; size budgets in package.json), plus one synthetic deck from test/fixtures/decks.
+// The demo account's files, bundled as data: a real deck and its PDF export in demo-files/ (both slimmed, author
+// fields blank; size budgets in package.json), plus one synthetic deck from test/fixtures/decks.
 // Kept apart from mock.ts so unit tests can build a MockFileSource without the bundler.
 
 import quarterly from "../../../../test/fixtures/decks/quarterly-review.pptx";
