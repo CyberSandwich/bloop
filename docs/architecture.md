@@ -251,7 +251,7 @@ public/                    wrangler's assets directory, served as it is. Everyth
   js/{screen,phone,code,launcher,residue}.js   task pages; js/vendor/uqr.js (+ LICENSE)
   js/viewer.js js/core/demo.js   the demo screen's viewer (sidebar, stage, pager, link card, its own link fetch); its pure parts
   img/demo-slide-{n}.{avif,webp}   the sample deck's pages, shown for the deck and its PDF (tools/render-slides.py)
-  js/site.js               the landing: the nav's scrolled look, closing the menu on a same-page link, the FAQ's height tween where CSS cannot (no other site page runs a script)
+  js/site.js               the landing: the nav's scrolled look, closing the menu on a same-page link, the stage tilt's spring, the FAQ's height tween where CSS cannot (no other site page runs a script)
   og.png apple-touch-icon.png (tools/render-og.py); favicon.svg, the logo, drawn as paths
   fonts/inter-latin.woff2  the one font file (tools/subset-font.py) + Inter.LICENSE.txt
   js/shared/               runtime code shared by browser and Worker: plain JSDoc-typed ES modules

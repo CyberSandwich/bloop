@@ -10,17 +10,17 @@ bloop puts your slides on a shared screen. You scan the code on the screen, choo
 ### Name and logo
 | Rule | Value |
 |---|---|
-| Logo | a dark grey lowercase "b" (#646464) over a pastel orange circle (#F4BA8B), drawn as two paths in `public/favicon.svg` (no text, no embedded image); the same file is the favicon, the nav and footer mark, and the source of the touch icon and OG image (section 9) |
+| Logo | a dark grey lowercase "b" (#646464) over a pastel orange circle (#F4BA8B), drawn as two paths in `public/favicon.svg` (no text, no embedded image); the same file is the favicon, the nav and footer mark, and the source of the touch icon and OG image (section 9). The gray is the owner's artwork's own value (checked against it), not a rendering bug |
 | Wordmark | the word `bloop` beside the logo, lowercase, Inter 600, tracking -0.03em, `--ink` |
 | Name-swappable | one build constant (`SITE_NAME`) in every page, title, meta tag and string; baked only into the OG image, which a script regenerates |
 | In sentences | lowercase `bloop`, even at the start of a sentence |
-| Never | the logo's colors in CSS, a gradient, a period after the wordmark, the name inside the QR |
+| Never | the logo's gray in CSS (its orange only as `--robin`, named once), a gradient on the logo, a period after the wordmark, the name inside the QR |
 
 ## 2. Principles
 
 | # | Principle | Test |
 |---|---|---|
-| 1 | Calming first. Light only, paper and ink, no accent color in the UI. | Squint: only the ink pills and the logo stand out. |
+| 1 | Calming first. Light only, paper and ink; one accent, robin orange (the logo's disc), only in the site's top wash, the hero glow and the name in body copy. | Squint: only the ink pills, the logo and the warm top of the page stand out. |
 | 2 | Far less text. One-line headlines, one plain sub, a short FAQ. | Section 13 word caps pass. |
 | 3 | Relevant. Every element is about the handover (code, phone, approval, file, screen). | Delete any element that would make sense on another product's page. |
 | 4 | Looks finished. Real copy, real states, real product UI as HTML chips. | No lorem and no unstyled state; "Coming soon" only on the hero stage and the provider list, where it is the truth. |
@@ -32,17 +32,18 @@ bloop puts your slides on a shared screen. You scan the code on the screen, choo
 ### Rules
 | Rule | Example |
 |---|---|
-| One plain sentence per headline, with a period; no second clause in grey. | "Present anywhere." |
+| Headings, page titles and labels in Title Case with no period; no second clause in grey. Title Case keeps a, an, the, and, but, or, nor, for, as, at, by, in, of, on, to and with lowercase after the first word, and `bloop` always lowercase. | "Present Anywhere", "You Stay in Charge" |
 | Headlines at most 8 words; one sentence of at most 20 words (section 13). | |
 | Lead with slides for lecturers; security leads only for IT. | |
 | Security as concrete never-statements: actor, verb, specific thing. "X, never Y" is allowed; "not X, but Y" is not. | "One file, never an account." |
-| Conditions go in a footnote or on `/security`, never into the marketing sentence. "Present anywhere." is the one claim of reach; the FAQ names its condition (a web browser on the screen, open item 25). | |
+| Conditions go in a footnote or on `/security`, never into the marketing sentence. "Present Anywhere" is the one claim of reach; the FAQ names its condition (a web browser on the screen, open item 25). | |
 | Plain beats clever: no puns, no analogy on the landing, no unexplained noun. | |
 | "session", "token" and "tenant" stay off every user-facing screen; only `/security` may use them. One exception by the owner's ruling: the room screen's "Session Ended" (`SESSION_ENDED` in `copy.js`). | "End", "Ended." |
 | Contractions yes. Never "we", "our team", "oops", "uh-oh". | |
 | Errors: what happened, no blame, what to do, one verb button. | "Unable to open your slides." |
 | Digits for all numbers, units tight: 60 s, 90 minutes, 1 file. | |
-| Sentences in sentence case with a period. Site labels (landing, `/security`, `/privacy`, 404) are sentence case; app labels (`/s`, `/a`, `/code`) stay Title Case until open item 26 settles one casing. | "Try the demo"; "Approve on This Device" |
+| Sentences in sentence case with a period. Labels (buttons, status pills, the stage line) are Title Case on every page, site and app alike (open item 26, settled). Questions in the FAQ are sentences. | "Try the Demo"; "Approve on This Device" |
+| In body copy, the name is `<b class="name">bloop</b>`: 600 in `--robin-ink`. Not in headings, the wordmark, the legal line or an address. | "**bloop** can share these today." |
 | US English; no em or en dashes, exclamation marks, emoji or adjective triads. | "Canceled", "organization" |
 | Never claim sign-in is gone: the PC's own login still exists. Say what the screen does not get. | |
 | Never promise freshness (that the newest edit opens), that it runs on every screen, or that the PC keeps nothing. | |
@@ -59,37 +60,38 @@ bloop puts your slides on a shared screen. You scan the code on the screen, choo
 **Page meta**
 | Slot | String |
 |---|---|
-| `<title>` landing | bloop: present anywhere |
+| `<title>` landing | bloop: Present Anywhere |
 | meta and OG description | Scan the code on the screen to present or download your files. Your account stays on your phone. |
-| `<title>` `/security`, `/s`, `/a` | bloop security; bloop screen; Approve on bloop |
-| `<title>` `/privacy`, 404 | bloop privacy notice; bloop: page not found |
-| OG image alt | bloop: Present anywhere. (`public/og.png` must show the same h1; `tools/render-og.py` renders it) |
+| `<title>` `/security`, `/s`, `/a` | bloop Security; bloop screen; Approve on bloop |
+| `<title>` `/privacy`, 404 | bloop Privacy Notice; bloop: Page Not Found |
+| OG image alt | bloop: Present Anywhere (`public/og.png` must show the same h1; `tools/render-og.py` renders it) |
 
 **Site chrome (every site page, the same markup; a unit test holds them equal)**
 | Slot | String |
 |---|---|
-| Nav | the logo and bloop (home); Features (`/#features`), Privacy, Security; Waitlist; the menu button, labeled Menu, under 640 |
+| Nav | the logo pill, the logo and bloop (home); the links pill: Features (`/#features`), Privacy, Security, Waitlist, and the menu button, labeled Menu, under 640 |
 | Waitlist | every Waitlist link is `mailto:` the early access address with `data-waitlist`, so one grep swaps in the form URL |
-| Footer | the logo and bloop; "**Present anywhere.** bloop puts your files on a shared screen from your phone. The screen gets only the items you approve, never your account."; Privacy, Security, Waitlist; a rule; © 2026 bloop. No Source link. |
-| 404 | This page isn't here. / Check the address, or go to the home page. / button Go to the home page |
+| Footer | the logo and bloop; "**Present anywhere.** **bloop** puts your files on a shared screen from your phone. The screen gets only the items you approve, never your account." (the tagline stays a sentence: it is body copy); Privacy, Security, Waitlist; a rule; © 2026 bloop. No Source link. |
+| 404 | This Page Isn't Here / Check the address, or go to the home page. / button Go to the Home Page |
 
 **Landing**
 | Slot | String |
 |---|---|
-| h1 | Present anywhere. |
+| h1 | Present Anywhere ("Anywhere" carries the glow, section 8) |
 | Sub | Scan the code on the screen to present or download your files. Your account stays on your phone. `[V-4]` |
-| Action | Try the demo (ink pill, `/s?mode=demo`), the hero's only button |
-| Stage | Demo video coming soon |
-| Features h2 | Your phone stays in charge. |
-| Bento cards (title / line / chips) | Works with your storage / Choose from the files you already keep. / OneDrive, Dropbox, Google Drive, Box. Approve with one tap / The screen gets only the items you approve. / Approve, Cancel. End or revoke any time / One tap on your phone takes it off the screen. / Revoke, Ends in 59:12. Present or download / Show it full screen, or save a copy. / Present, Download |
-| Connect h2, line | Connect your files. / Point bloop at one folder in the storage you use. |
-| Provider rows | Microsoft OneDrive, Dropbox, Google Drive, Box, each "Coming soon" until its path is live in a real account; no iCloud |
+| Action | Try the Demo with a trailing Iconic `arrow-right` (ink pill, `/s?mode=demo`), the hero's only button |
+| Stage | Demo Video Coming Soon |
+| Features h2 | You Stay in Charge |
+| Bento cards (title / line / chips) | Works with Your Storage / Choose from the files you already keep. / OneDrive, Dropbox, Google Drive, Box (tags). Approve with One Tap / The screen gets only the items you approve. / Cancel, Approve. End or Revoke Any Time / One tap on your phone takes your files off the screen. / "Ends in 59:12" (text), Revoke. Present or Download / Show your file full screen, or save a copy. / Present (white), Download (ink) |
+| Connect h2, line | Connect Your Files / **bloop** can share these today. |
+| What You Can Share (status Available) | PowerPoint, PDF, Images, Links, each with its Iconic glyph (`projector`, `file-text`, `photo`, `link`) |
+| Where Your Files Live (status Coming Soon) | Microsoft OneDrive, Dropbox, Google Drive, Box, by name only (section 6, Icons); a provider moves to its own "Available" only once its path is live in a real account; no iCloud |
 | FAQ heading | Questions |
-| What is bloop? | A way to present your files on a shared screen, such as a lecture room PC, from your phone. The screen gets only the items you approve. `[V-4]` |
-| Do I need to install anything? | No. The screen runs bloop in its web browser, and your phone uses its camera. The room PC opens slides in PowerPoint. `[V-8]` |
+| What is bloop? | A way to present your files from your phone on a shared screen, such as a lecture room PC. The screen gets only the items you approve. `[V-4]` |
+| Do I need to install anything? | No. The screen runs **bloop** in its web browser, and your phone uses its camera. Slides open in PowerPoint on the room PC. `[V-8]` |
 | What does the room PC keep? | A link to each item you open, never your account. A downloaded copy or a file name in recent lists can stay until the PC's profile is wiped. See what can stay. (links to `/security`; threat model RES-02: never a nothing-stays claim) |
-| Is it free? | Yes. Early access is free while bloop is being tested. `[V-20]` |
-| No JavaScript | `/s` "This screen needs JavaScript to show a code."; `/a` "Approving needs JavaScript. Turn it on, then scan again." The site needs none: the menu is a popover, the tilt is CSS, the FAQ is native. |
+| Is it free? | Yes. Early access is free while **bloop** is being tested. `[V-20]` |
+| No JavaScript | `/s` "This screen needs JavaScript to show a code."; `/a` "Approving needs JavaScript. Turn it on, then scan again." The site needs none: the menu is a popover, the tilt falls back to CSS, the FAQ is native. |
 
 State strings for `/s` and `/a` are in section 7 with their screens.
 
@@ -108,7 +110,10 @@ Tokens live in `public/css/app.css` `:root`; this list restates them, and the dr
 | `--g2:#a3a39c` | the outline pill's ring, the empty tick ring, field rings; never text |
 | `--g1:#dcdcd7` | skeletons, the progress track, page dots, the selected sidebar row, the sheet grab bar, the hero stage, an off toggle |
 | `--hairline:rgba(0,0,0,.08)` | rules and card rings, drawn as `box-shadow`, never a border; row hover and press |
-| `--sky:#cfe0e8` `--butter:#f6e7b2` `--lav:#d8d1ef` `--sage:#dde3d6` | tints, site pages only: each bento card fades from white to one; the panel on `/privacy` and `/security` fades from sky to paper. Text on a tint is `--ink` or `--ink-2` |
+| `--sky:#cfe0e8` `--butter:#f6e7b2` `--lav:#d8d1ef` `--sage:#dde3d6` | solid tints, site pages only, never a gradient: one per bento card (sky, butter, lavender, sage in reading order); sky for the Connect panel and the panel on `/privacy` and `/security`. Text on a tint is `--ink` or `--ink-2` |
+| `--robin:#f4ba8b` | the logo's disc, the one accent: the site's top wash and the hero glow, always at partial alpha through `color-mix`; never text, never a fill |
+| `--robin-ink:#a64f15` | the robin at text strength: the name in body copy (5.0:1 on paper, 5.6:1 on white) |
+| `--lead:#62625c` | the hero and page leads, which sit on the robin wash: 4.86:1 where the wash is strongest under text (`--muted` falls to 4.2:1 there) |
 
 Status colors (`--ok`, `--warn`, `--err`) are not used: a state is a sentence plus the object changing.
 
@@ -121,13 +126,13 @@ Status colors (`--ok`, `--warn`, `--err`) are not used: a state is a sentence pl
 | hero h1 | `min(112px, (100vw - 2 * var(--pad)) / 10)`: one line at every width | 1 | -0.05em | 600 |
 | section h2 (landing), `/security` and `/privacy` h1 | 38, 54 from 768 | 1.04 | -0.035em | 600 |
 | card title | 22 | 1.2 | -0.025em | 600 |
-| hero sub | 20, 24 from 768, `--muted`, max 640 | 1.35 | -0.015em | 400 |
+| hero sub, page lead | 20, 24 from 768, `--lead`, max 640 | 1.35 | -0.015em | 400 |
 | `/s` heading (the room, a state; 22 and one line over the stage), line | 28; 19 `--muted` | 1.2; 1.5 | -0.025em | 600; 400 |
 | phone title, centered | 28 | 1.2 | -0.025em | 600 |
 | item name; group label | 17; 14 `--muted` | 1.3; 1.45 | | 600 |
 | FAQ question, answer | 17 600; 16 `--muted` | 1.5; 1.6 | | |
 | button | 16 (15 in the nav and on chips) | 1 | -0.01em | 600 |
-| nav link | 15 `--ink-2`, 400 (the current page's link 600 `--ink`) | 1.5 | | 400 |
+| nav link | 15 `--ink-2`, 400 (the current page's link `--ink` on its selected pill; same weight, so no link shifts) | 1.5 | | 400 |
 | small | 14 `--muted` | 1.45 | | 400 |
 | codes (typed code, match digits) | context size, `tabular-nums` | 1 | +0.04 to 0.06em | 600 |
 
@@ -143,8 +148,9 @@ Headings `text-wrap:balance`; no mono, no eyebrow, no uppercase label, no grey s
 | `--r-sheet:24px` | the top corners of the viewer's bottom sheet |
 | `--r-pill:9999px` | buttons, chips, the nav pill, toggles |
 | `--sh-frame:0 0 0 1px rgba(0,0,0,.06),0 30px 60px -30px rgba(0,0,0,.35)` | the viewer's page or picture, the QR card |
-| `--sh-nav:0 0 0 0.5px rgba(0,0,0,.08),0 4px 18px rgba(0,0,0,.05)` | the nav pill at the top of the page |
-| `--sh-pill:0 0 0 0.5px rgba(0,0,0,.08),0 10px 30px rgba(0,0,0,.12)` | glass at rest in the app (sidebar, sheet, handle, prev and next, the page count), the nav pill once scrolled, the menu sheet, the skip link |
+| `--sh-nav:0 0 0 0.5px rgba(0,0,0,.08),0 4px 18px rgba(0,0,0,.05)` | the nav pills at the top of the page |
+| `--sh-pill:0 0 0 0.5px rgba(0,0,0,.08),0 10px 30px rgba(0,0,0,.12)` | glass at rest in the app (sidebar, sheet, handle, prev and next, the page count), the nav pills once scrolled, the menu sheet, the skip link |
+| `--nav-h:56px` | the height of both nav pills; every inset inside them is (56 - inner height) / 2 |
 | `--side:280px` | the viewer sidebar's width |
 | `--row:60px` | one item row, the viewer sidebar and the phone list alike |
 | `--inset:24px` | the app's corner inset, top and side alike, so both corner controls mirror |
@@ -155,13 +161,14 @@ Headings `text-wrap:balance`; no mono, no eyebrow, no uppercase label, no grey s
 | `--section:80px` | section rhythm; 112 from 768 |
 
 ### Glass
-One recipe, named once (`.glass` in `app.css`, the nav rules use the same tokens), for every floating surface: the nav pill and its menu sheet, the viewer sidebar, its bottom sheet and handle, the prev and next buttons. No refraction, shine or animated sheen; the border is the shadow's 0.5 px ring, never a CSS border.
+One recipe, named once (`.glass` in `app.css`, the nav rules use the same tokens), for every floating surface: the nav pills and their menu sheet, the viewer sidebar, its bottom sheet and handle, the prev and next buttons. Liquid, not frosted: a thin fill, a strong blur and saturation, so what passes under (the robin wash at the top of the site) tints it, as opsis's green tints its nav. No refraction, shine or animated sheen; the border is the shadow's 0.5 px ring, never a CSS border.
 | Token | Use |
 |---|---|
-| `--glass:rgba(255,255,255,.72)` | the fill where `backdrop-filter` is supported |
-| `--glass-filter:blur(20px) saturate(1.8)` | with `-webkit-backdrop-filter` beside it |
+| `--glass:rgba(255,255,255,.62)` | the fill where `backdrop-filter` is supported |
+| `--glass-filter:blur(24px) saturate(2)` | with `-webkit-backdrop-filter` beside it |
 | `--glass-solid:rgba(255,255,255,.92)` | the fill with no `backdrop-filter` |
-| `--glass-firm:rgba(255,255,255,.84)` | the nav once scrolled, nav only |
+| `--glass-firm:rgba(255,255,255,.8)` | the nav pills once scrolled and the menu sheet (it holds text over the hero's type) |
+| `--glass-edge:inset 0 1px 0 rgba(255,255,255,.7)` | the hairline highlight on the top edge, composed first in a glass surface's `box-shadow` |
 | `--wash:rgba(120,120,128,.1)` | hover on nav links and icon buttons |
 
 Reduced transparency: `--surface`, no filter. The nav eases background and shadow over 240 ms `--ease-out`; app glass enters with the shared motion only.
@@ -170,8 +177,8 @@ White cards are flat on paper with no shadow (the viewer's page, the QR card and
 
 ## 5. Layout
 
-- One column, centered, generous space. The landing is: the nav; hero (h1, sub, one pill); the stage; Features (`#features`, the bento); Connect your files (the provider list); the FAQ; the footer. `/security`, `/privacy` and 404 get the same nav and footer around one text column.
-- The hero has no entrance animation and no `min-height:100vh`; the h1 paints in the first frame (it is the LCP element). The hero and the text column start 152 px down, clear of the fixed nav; `html` keeps 96 px of `scroll-padding-top`, so a jump to `#features` lands below it.
+- One column, centered, generous space, on the robin wash: a radial of `--robin` at 50 percent alpha from the top center (70 percent of the width by 640 px, its midpoint hint at 30 percent, so it eases out with no ring) on every site page, painted on the page ground. The landing is: the nav; hero (h1, sub, one pill); the stage; Features (`#features`, the bento); Connect Your Files (the Connect panel); the FAQ; the footer. `/security`, `/privacy` and 404 get the same nav and footer around a centered page hero and white topic cards (section 6).
+- The hero block (h1 to button) is centered in the first view: `min-height:100svh`, padded `--nav-h` + 40 above and below, so its middle is the viewport's and the stage starts at the fold. No entrance animation; the h1 paints in the first frame (it is the LCP element). The doc pages' hero starts 152 px down; `html` keeps 96 px of `scroll-padding-top`, so a jump to `#features` lands below the nav.
 - `/s`, `/a` and `/code` are task pages with no site nav or footer.
 
 ## 6. Components
@@ -194,21 +201,26 @@ The typed code card's look, kept exactly, for every small framed thing: white, `
 No gradient, no gloss, no destructive variant.
 
 ### Icons
-Only where an icon carries meaning at a glance: the menu button, item type tiles (`projector`, `file-text`, `photo`, `link`), the add tile (`plus`), Back (`arrow-left`), prev and next (`chevron-left`, `chevron-right`), the sheet handle (`chevron-up`), the tick (`check`), copy (`copy`), New Code (`refresh`), the warning (`warning-triangle`). Never decoration. One style: the Iconic free set (Make-Lemonade/iconicicons; free licence, any use, no attribution; Pro icons are never used), inline SVG, 24 viewBox, stroke 1.5, round caps and joins, `currentColor`, `aria-hidden` beside a visible or `aria-label` name; the original path data, never redrawn. Provider marks ship as small SVGs only where the brand's guidelines allow it; until then the list shows the name only.
+Only where an icon carries meaning at a glance: the menu button, item type tiles (`projector`, `file-text`, `photo`, `link`), the add tile (`plus`), Back (`arrow-left`), prev and next (`chevron-left`, `chevron-right`), the sheet handle (`chevron-up`), the tick (`check`), copy (`copy`), New Code (`refresh`), the warning (`warning-triangle`). Never decoration. One style: the Iconic free set (Make-Lemonade/iconicicons; free licence, any use, no attribution; Pro icons are never used), inline SVG, 24 viewBox, stroke 1.5, round caps and joins, `currentColor`, `aria-hidden` beside a visible or `aria-label` name; the original path data, never redrawn. The site uses `menu`, `arrow-right` (Try the Demo) and the kind glyphs `projector` (PowerPoint), `file-text` (PDF), `photo` (images), `link`. Provider marks: none, names only. Microsoft (OneDrive) and Box allow their marks only under a license or written permission, even for a real integration; Dropbox allows its logo only to show compatibility with a working app; Google allows the Drive logo without pre-approval only to highlight an app's integration through the Drive API. None covers a "Coming Soon" mention. When a path goes live: Dropbox and Google Drive marks may follow their kits (Google wants "Google Drive™" at first mention and our mark larger than theirs); OneDrive and Box stay names until a license exists. Names follow the brands: "Microsoft OneDrive" at first mention.
 
 ### Top nav (every site page)
-`<header class="nav">` holding `<nav class="nav-pill" aria-label="Primary">`: fixed 14 px from the top (10 under 640), centered, `pointer-events` only on the pill. The pill: 60 tall, padding 0 8 0 16, gap 6, glass (section 4), `--sh-nav`. Contents: the logo and bloop (home, 19 px); the links Features, Privacy, Security (44 tall, padding 0 14, a pill hover of `--wash`; `aria-current="page"` on the page's own link); the Waitlist pill. Scrolled: once a 12 px sentinel at the top of the landing leaves the view (an `IntersectionObserver` in `site.js`, never a scroll listener), `is-scrolled` raises the glass to `--glass-firm` and the shadow to `--sh-pill` over 240 ms `--ease-out`; no hide on scroll, no size change. Other site pages keep the resting look (they run no script).
+`<header class="nav">`: a fixed grid row 14 px from the top (10 under 640), `min(100% - 32px, 1136px)` wide, `pointer-events` only on the pills, holding two glass pills of `--nav-h`, `--glass-edge` over `--sh-nav`:
+- **Logo pill** (start of the row, outside the landmark): the logo 32 and bloop 19 px, home. Padding 0 20 0 12: 12 = (56 - 32) / 2, so the mark's disc is concentric with the pill's end.
+- **Links pill**, `<nav class="nav-pill" aria-label="Primary">`, centered: padding 0 6 = (56 - 44) / 2, one gap of 4 between every item, Waitlist included. The links Features, Privacy, Security (44 tall, padding 0 16, `--ink-2`, a `--wash` pill on hover); the page's own link has `aria-current="page"` and keeps that pill with `--ink`, as the selected pill; then the Waitlist pill.
+- **Scrolled:** once a 12 px sentinel at the top of the landing leaves the view (an `IntersectionObserver` in `site.js`, never a scroll listener), `is-scrolled` raises both pills to `--glass-firm` and `--sh-pill` over 240 ms `--ease-out`; no hide on scroll, no size change. Other site pages keep the resting look (they run no script).
 
-Under 640 the pill spans the width (10 px each side): logo at the start, then Waitlist and a 44 px menu button. The links list is the same element as a `popover` (`popovertarget` on the button, no script): a glass sheet 80 px from the top, 10 px from each side, radius 22, padding 8, `--sh-pill`, rows 44 tall at 17 px. Light dismiss and Escape close it; on the landing a link click closes it too, so a jump to Features is not covered.
+Under 640 the row is the width less 10 px each side: the logo pill at the start, the links pill at the end holding Waitlist and a 44 px menu button (Iconic `menu`). The links list is the same element as a `popover` (`popovertarget` on the button, no script): a `--glass-firm` sheet `--nav-h` + 20 from the top, 10 px from each side, radius 22, padding 8, `--sh-pill`, rows 44 tall at 17 px, the current page's row on its pill. Light dismiss and Escape close it; on the landing a link click closes it too, so a jump to Features is not covered.
 
 ### Hero stage
-A plain `--g1` panel, 16:9 (4:3 under 640), `--r-stage`, no shadow, with one centered line "Demo video coming soon" in `--ink-2` 20/600. Its wrapper has `perspective:2200px` from the top center. Tilt: under `@supports (animation-timeline:view())`, no reduced motion and 900 px up, `rotateX(24deg) scale(.9)` to flat over `entry 0%` to `cover 30%` of the stage's own view timeline, so it rests flat once scrolled in. No script. Elsewhere it is flat and still.
+A plain `--g1` panel, 16:9 (4:3 under 640), `--r-stage`, no shadow, with one centered line "Demo Video Coming Soon" in `--ink-2` 20/600, starting at the fold. Its wrapper has `perspective:2200px` from the top center. Tilt, with no reduced motion and 900 px up: `rotateX(24deg) scale(.9)` to flat as the stage moves from entering the view to 30 percent through it (`entry 0%` to `cover 30%`), so it rests flat once scrolled in.
+- **Spring (`site.js`):** the progress goes through a spring (stiffness 120, damping 30, mass .4, as opsis smooths its tilt; overdamped, no overshoot, a time constant of about a quarter second) into the `currentTime` of a paused `el.animate` of the same keyframes. The damping step is implicit, so a long frame cannot make it ring. A `requestAnimationFrame` loop runs only while an `IntersectionObserver` sees the stage; no scroll listener and no inline style write. The script animation outranks the CSS one.
+- **Fallback:** without the script, under `@supports (animation-timeline:view())`, the same keyframes on the stage's view timeline, locked to the scroll. Elsewhere it is flat and still.
 
 ### Bento (Features)
-A grid of 4 cards, one column, two from 768, gap 16. Card: `--r-stage`, padding 28, min 280 tall, a top-to-bottom fade from white (to 35 percent) into its tint (sky, butter, lavender, sage in reading order). Title 22/600, then one line in `--ink-2`, then real HTML chips pinned to the bottom: 40 tall pills, white with a hairline ring or ink, 15/600, `aria-hidden` (they show the product, they are not controls). No stock images.
+A grid of 4 cards, one column, two from 768, gap 16. Card: `--r-stage`, padding 28, min 300 tall, its solid tint (sky, butter, lavender, sage in reading order). Title 22/600, then one line in `--ink-2`, then the mock: a white screen fragment pinned to the bottom, inset 12 from the card's sides and bottom, radius 16 (28 - 12), padding 24 16, min 112 tall, `aria-hidden`, default cursor, no hover, no selection. It holds a still of the app in HTML, so the chips read as a picture, not as buttons: 40 tall pills, 15/600, white with the outline pill's ring or ink; storage names as 36 tall `--paper` tags; "Ends in 59:12" as plain `--muted` tabular text. Order as in the app (item 36): Cancel then Approve; "Ends in" then Revoke; Present (white) then Download (ink). No stock images.
 
-### Provider list (Connect your files)
-One white card, radius 26, padding 8, max 760: rows 64 tall, padding 0 12 0 16, the provider's name 600 at the start and a status pill at the end (`--paper` fill, 14 px `--muted`, padding 6 12). Rows split by an inset hairline.
+### Connect panel (Connect Your Files)
+Max 760. A solid sky panel, `--r-stage`, padding 12, holding two white group cards (radius 16 = 28 - 12, padding 20 20 4), side by side from 768. Each group: a head row (17/600 title, its status pill at the end), then rows 56 tall split by a hairline, 600 text. What You Can Share: Available (`--ink` on `--paper`), each row a 24 px Iconic glyph and the kind. Where Your Files Live: Coming Soon (`--muted` on `--paper`), the provider's name only. The status sits on the group, not on each row: one truth per group, and four repeated pills were noise. Status pill: padding 6 12, 14 px, `--r-pill`.
 
 ### FAQ
 Native `<details>` as white `--r-card` cards, 12 apart, max 760, centered. Summary 17/600 with a `--muted` "+" that turns 45 degrees. Open and close animate the height: `::details-content` with `interpolate-size:allow-keywords` where supported (block-size 380 ms and opacity 250 ms, `--ease-out`); elsewhere a WAAPI height tween in `public/js/site.js` (find in page still opens an item). Reduced motion: instant.
@@ -216,8 +228,10 @@ Native `<details>` as white `--r-card` cards, 12 apart, max 760, centered. Summa
 ### Footer (every site page)
 Width 1136, a top hairline, padding 56 above. A row that wraps: at the start the logo and bloop, then the tagline in 600 `--ink` and two plain sentences in `--muted` (max 420); at the end the links in `--muted` 15 px, 44 px rows. Then a hairline rule and "© 2026 bloop" in 14 px `--muted`, 40 below the row.
 
-### Privacy and security panel
-One soft full-bleed panel under the h1 of `/privacy` and `/security`: 1136 wide (the viewport less the padding below that), centered on the text column, `--r-stage`, a fade from sky to paper, padding 24 (56 from 768). It holds two groups side by side from 768: "What the screen gets" (rows with an on toggle) and "What stays on your phone" (rows with an off toggle). A group is a 17/600 label over a white `--r-card` list of 56 px rows, 600 text at the start, a 40 x 24 toggle at the end (`aria-hidden`; on is ink with the knob right, off `--g1` with the knob left). It is a picture of the split, not a control.
+### Privacy and security pages (opsis `/compare`, restated)
+Content 1136 wide. A centered page hero (the h1 at the section size, an optional `.lead`), then:
+- **The panel:** the Connect panel's frame (solid sky, padding 12, two white group cards at radius 16): "What the Screen Gets" (rows with an on toggle) and "What Stays on Your Phone" (rows with an off toggle), 48 under the hero. Each row 56 tall, 600 text, a 40 x 24 toggle at the end (`aria-hidden`; on is ink with the knob right, off `--g1` with the knob left). It is a picture of the split, not a control.
+- **Topic cards,** 16 apart: white, `--r-stage`, padding 24 (40 from 768); from 900 two columns, `.8fr 1.2fr`, gap 48: the 24/600 h2 at the start, the prose in `--ink-2` beside it. `.topic.wide` is one column, for the retention table and for the points list on `/security`.
 
 ### Item row (the viewer sidebar and the phone list, one face: `core/rows.js`)
 `--row` tall, padding 10, gap 12, inside a `--r-card` container with padding 6, so the row is `--r-card` - 6 (14) and its leading 40 px square, 10 in, `--r-card` - 16 (4), with a `--hairline` ring: a picture where one exists without a mint (page 1 of the demo deck and PDF, the demo photo's own 120 px thumbnail), else a `--paper` type tile with a 24 px ink glyph. The handle stands alone at `--r-card`, so its thumbnail is `--r-card` - 10. Separators between phone rows run from the text edge (62) to 10 from the end. Line 1 the name 17/600, one line, ellipsis in the middle so the extension stays. Line 2 14 `--muted`: the kind (PowerPoint, PDF, JPEG image, PNG image, WebP image; a link reads "Link"), then " · " and the size when the item has bytes (a link: its host), then a date only when the source gives one (a live phone: "Edited 10 min ago"; demo items show none rather than a made-up one). Files A to Z, then links.
@@ -332,14 +346,14 @@ The page moves focus to the new title on each state change. "its copy" is delibe
 Typed code page (`/code`, the same frame, one column): title "Enter the Code on the Screen"; one field 56 tall, `--r-field`, of 16 px or more, 6 characters, label "Code", `autocapitalize="characters"`, `autocomplete="one-time-code"`, `inputmode="text"`, shown in two groups of 3; Continue (primary) enabled at 6 characters; a failed claim shows one sentence beside the field (`typedError` in `copy.js`: "Check the code on the screen and try again.", or the expired, used, offline and too-many-tries sentences); success goes to the match state.
 
 ### Security page (`/security`; `/it` answers 301 to it from `public/_redirects`)
-h1 "The screen never gets your account." `[V-4]`, then the panel (section 6): What the screen gets: "The items you approve", "A link to each, which expires"; What stays on your phone: "Your account", "Your other files". Then four points:
+h1 "The Screen Never Gets Your Account" `[V-4]`, then the panel (section 6): What the Screen Gets: "The items you approve", "A link to each, which expires"; What Stays on Your Phone: "Your account", "Your other files". Then four points in one wide topic card:
 1. The PC holds a link to each item you approve, and each link expires.
 2. Each code works once for 60 seconds, and the phone shows the room before Approve. `[V-6]`
 3. Each open ends by itself after 90 minutes and is logged for IT to export. `[V-2]`
-4. A downloaded copy can stay on the PC. Every room is audited, and the results are published. `[V-1]` (until V-1 passes: "A downloaded copy can stay on the PC; the table below lists what can stay.")
+4. A downloaded copy can stay on the PC. Every room is audited, and the results are published. `[V-1]` (until V-1 passes: "A downloaded copy can stay on the PC. See what can stay." linking `#stay`)
 
-Then the detail table (each row `[V-5]` until the build confirms it; compact stacks every row):
-| Row | Content |
+Then one topic card per row below (each `[V-5]` until the build confirms it), the row name as its h2 in Title Case ("What the PC Holds", "What bloop Keeps", "Permissions", "What Can Stay on the PC", "Threat Model", "Revoking Access", "Status"):
+| Topic | Content |
 |---|---|
 | What the PC holds | A session ID and a link to each approved item, in the browser's session storage. Each link expires. While a file is open, PowerPoint holds the copy it opened. PowerPoint may also get a Microsoft download link for the file, which can work for up to 1 hour. (Last sentence: redirect mode only, threat model OPEN-03; delete it in stream mode.) |
 | What bloop keeps | Your email, a OneDrive token, the ID of one folder, and a log of who opened which file where and when. No slide content, except a guest's upload, deleted when its session ends. |
@@ -350,18 +364,18 @@ Then the detail table (each row `[V-5]` until the build confirms it; compact sta
 | Status | No external audit yet. The source is public. Report a security issue: security.txt. |
 
 ### Privacy notice (`/privacy`, draft until the legal lane, OD-5)
-`noindex`; the same nav, panel and footer as `/security`. The retention rows restate `docs/threat-model.md` section 10; change both together.
+`noindex`; the same nav, panel, topic cards and footer as `/security`; the retention table sits in a wide topic card. The retention rows restate `docs/threat-model.md` section 10; change both together.
 | Slot | String |
 |---|---|
-| h1 | Privacy notice |
-| Draft line | This notice is a draft until bloop's legal review. |
+| h1 | Privacy Notice |
+| Draft line (the hero's lead) | This notice is a draft until **bloop**'s legal review. |
 | Panel | as on `/security` |
-| Who is responsible | bloop runs this service. Write to {privacy address} with any question about your data. |
-| What bloop keeps, and for how long (table) | Your email and account ID: While you stay connected, then 30 days. / Your OneDrive access, encrypted: Until you disconnect, or after 30 days unused. / A log of who opened which file, in which room, and when: 180 days. For the demo, 7 days. / A guest's file: Deleted when the talk ends, and after 1 day at most. / Your phone's sign-in: 30 days unused, 90 days at most. / Usage counts, with no names: 90 days, then daily totals for 2 years. / Waitlist: the email and answers you send: Kept to invite you to early access, until you ask for them to be deleted or the waitlist closes. |
+| Who Is Responsible | **bloop** runs this service. Write to {privacy address} with any question about your data. |
+| What bloop Keeps and for How Long (table) | Your email and account ID: While you stay connected, then 30 days. / Your OneDrive access, encrypted: Until you disconnect, or after 30 days unused. / A log of who opened which file, in which room, and when: 180 days. For the demo, 7 days. / A guest's file: Deleted when the talk ends, and after 1 day at most. / Your phone's sign-in: 30 days unused, 90 days at most. / Usage counts, with no names: 90 days, then daily totals for 2 years. / Waitlist: the email and answers you send: Kept to invite you to early access, until you ask for them to be deleted or the waitlist closes. |
 | After the table | bloop keeps no slide content from your OneDrive. A guest's file is the one exception, and it is deleted when the talk ends. `[V-5]` |
 | Why | To open the file you approve on the screen you choose, to keep the service safe, and to give your organization's IT team a record of what was opened where. |
 | Where | Your data is stored in the EU on Cloudflare. Cloudflare is a US company, and each request is handled at its nearest data center. (threat model DATA-03: never "UK only" or "never leaves") |
-| Your choices | Disconnect OneDrive on your phone at any time, and bloop deletes its stored access. To see or erase what bloop holds about you, write to the address above. Your organization's admin can remove bloop in Microsoft Entra. |
+| Your Choices | Disconnect OneDrive on your phone at any time, and **bloop** deletes its stored access. To see or erase what **bloop** holds about you, write to the address above. Your organization's admin can remove **bloop** in Microsoft Entra. |
 
 `/.well-known/security.txt` (RFC 9116): `Contact` (a role address), `Expires` (at most a year ahead), `Preferred-Languages: en`. The placeholder addresses and their owner steps are in `docs/setup.md`.
 
@@ -372,7 +386,8 @@ One language: `--ease-out` for anything that appears or moves, `--ease-ui` for p
 | What | When | Duration | Easing |
 |---|---|---|---|
 | press | input | 150 ms | `--ease-ui` |
-| stage tilt | scroll | scroll-linked | linear |
+| stage tilt | scroll | sprung: stiffness 120, damping 30, mass .4 (CSS fallback: scroll-linked) | the spring |
+| Try the Demo arrow | hover | 200 ms, 2 px to the right | `--ease-out` |
 | FAQ open, close | toggle | 380 ms height, 250 ms fade, 300 ms "+" turn | `--ease-out` |
 | nav scrolled | the top sentinel leaves or enters view | 240 ms glass and shadow | `--ease-out` |
 | QR refresh | every 60 s | 150 ms out, 150 ms in | linear opacity |
@@ -382,7 +397,9 @@ One language: `--ease-out` for anything that appears or moves, `--ease-ui` for p
 | viewer bottom sheet | open | 300 ms from below | `--ease-out` |
 | page step, row selection, hover | input | instant | |
 
-Reduced motion (`prefers-reduced-motion:reduce`): the stage rests flat; the FAQ switches instantly; the `/s` QR ring steps once a second with no glide; scene changes swap at once; the blanket rule at the end of `app.css` is the safety net. Nothing autoplays; the QR refresh is essential (a code must expire), so it has no pause.
+The "Anywhere" glow is a static warm glow (one `text-shadow` of `--robin`, blurred .4em), not a one-time sheen. Why: a white glow vanishes on light paper; a sheen is motion on the LCP word, needs `background-clip:text` (the word turns into a painted fill that forced colors and some text renderers drop), plays once while the visitor may still be reading the sub, and reads as the glossy tell section 13 bans; the static glow costs no frame, is the same under reduced motion, and simply disappears in forced colors, leaving plain ink.
+
+Reduced motion (`prefers-reduced-motion:reduce`): the stage rests flat (the spring never starts); the glow is static anyway; the FAQ switches instantly; the `/s` QR ring steps once a second with no glide; scene changes swap at once; the blanket rule at the end of `app.css` is the safety net. Nothing autoplays; the QR refresh is essential (a code must expire), so it has no pause.
 
 ## 9. Logo and social image
 
@@ -434,6 +451,8 @@ Stack and system architecture: `docs/architecture.md` and `docs/adr/`.
 | `--ink` on `--paper` / white | 15.6 / 17.0:1 | text, pill labels inverted |
 | `--paper` on `--ink` | 15.6:1 | primary pill label |
 | `--muted` on `--paper` / white | 4.75 / 5.2:1 | secondary text |
+| `--lead` on the robin wash at its strongest under text / on `--paper` | 4.86 / 5.5:1 | the hero and page leads |
+| `--robin-ink` on `--paper` / white | 5.0 / 5.6:1 | the name in body copy, 600 |
 | `--g2` on `--paper` | 2.3:1 | rings only (the outline pill's label is ink), never text |
 | QR #1E1E1C on white | 17.0:1 | modules |
 
@@ -462,10 +481,10 @@ A screen is done when every box passes; `test/unit/site-pages.test.ts` and `test
 - [ ] **Mobile (390):** no horizontal scroll, targets at least 44 px.
 - [ ] **Contrast:** WCAG AA on every text and control; axe and Lighthouse accessibility 1.0 in CI.
 - [ ] **Budgets:** section 11.
-- [ ] **No tells:** no gradient, glow or glossy button; no eyebrow or mono kicker; no two-tone headline; no status dots or tinted icons; glass only on the surfaces section 4 lists, in its one recipe; no fake logos, testimonials or counts; no em or en dashes, exclamation marks or emoji.
+- [ ] **No tells:** no gradient, glow or glossy button, except the two robin accents (the top wash and the "Anywhere" glow, sections 5 and 8); no eyebrow or mono kicker; no two-tone headline; no status dots or tinted icons; glass only on the surfaces section 4 lists, in its one recipe; no fake logos, testimonials or counts; no em or en dashes, exclamation marks or emoji.
 
 ### Coherence
-One of each: type scale (600 and 400), card (flat white on paper), button shape (the pill in three roles), radius logic, shadow recipe (the stage frame, the QR card, glass), motion language, icon style (Lucide, stroke 2, only where it carries meaning), product pictures as real HTML chips. One voice (section 3); the same sentence for the same claim on every page.
+One of each: type scale (600 and 400), card (flat white on paper), button shape (the pill in three roles), radius logic, shadow recipe (the stage frame, the QR card, glass), motion language, icon style (Iconic, stroke 1.5, only where it carries meaning), product pictures as real HTML chips inside a mock frame. One voice (section 3); the same sentence for the same claim on every page.
 
 ## 14. Inspiration and credits
 
@@ -473,7 +492,7 @@ Nothing is copied (no copy, assets, fonts or code); each lesson is restated in b
 | Site | Taken | Avoided |
 |---|---|---|
 | ample.computer | the paper and ink palette, the type scale, ink and outline pills, white FAQ cards, the footer (tagline, plain lines, a rule, the year) | its long scroll stories |
-| opsis.app | the top glass nav pill and its menu sheet, a plain two-word h1, the scroll tilt of the hero stage, the bento of real UI chips, the list card with status pills, the privacy panel of toggles | its density, its glossy gradient buttons, a FAQ that jumps |
+| opsis.app | the top glass nav pill and its menu sheet, a plain two-word h1, the scroll tilt of the hero stage and the spring that smooths it, the brand-color glow at the top of the page that tints the glass, the bento of real UI chips, the list card with status pills, the privacy panel of toggles; from `/compare`: the centered page hero, white topic cards with the heading beside the prose, and a tint panel framing white cards | its density, its glossy gradient buttons, a FAQ that jumps, the `/compare` table and its paintings |
 
 Font: Inter (SIL OFL 1.1), subset from the official `InterVariable.woff2`, license shipped with it.
 
@@ -502,4 +521,4 @@ Font: Inter (SIL OFL 1.1), subset from the official `InterVariable.woff2`, licen
 | 20 | Free early access wording makes no commercial offer | the FAQ answer becomes "Early access is open." |
 | 22 | uqr minified gzip size; its version 4, level M codes read by two phone cameras | qrcode-generator |
 | 25 | "Any screen" needs its condition visible | the FAQ install answer names the browser and PowerPoint |
-| 26 | One casing for labels: the site uses sentence case ("Try the demo"), the app pages Title Case (`copy.js`) | both, as now |
+| 26 | One casing for labels (settled: Title Case for headings, titles and labels everywhere, section 3) | |

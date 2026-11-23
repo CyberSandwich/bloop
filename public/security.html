@@ -4,7 +4,7 @@
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
     <meta name="color-scheme" content="light">
-    <title>bloop security</title>
+    <title>bloop Security</title>
     <meta name="description" content="The screen never gets your account.">
     <link rel="icon" href="/favicon.svg" type="image/svg+xml">
     <link rel="apple-touch-icon" href="/apple-touch-icon.png">
@@ -14,8 +14,8 @@
   <body class="page-site">
     <a class="skip" href="#main">Skip to Content</a>
     <header class="nav">
+      <a class="brand nav-logo" href="/"><img src="/favicon.svg" width="32" height="32" alt="">bloop</a>
       <nav class="nav-pill" aria-label="Primary">
-        <a class="brand" href="/"><img src="/favicon.svg" width="28" height="28" alt="">bloop</a>
         <ul class="nav-links" id="nav-links" popover>
           <li><a href="/#features">Features</a></li>
           <li><a href="/privacy">Privacy</a></li>
@@ -23,24 +23,26 @@
         </ul>
         <a class="btn waitlist" href="mailto:ventures@saputra.co.uk?subject=bloop%20waitlist" data-waitlist>Waitlist</a>
         <button class="nav-menu" type="button" popovertarget="nav-links" aria-label="Menu">
-          <svg class="icon" viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true" focusable="false"><path d="M4 7h16M4 12h16M4 17h16"/></svg>
+          <svg class="icon" viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M4.75 5.75h14.5M4.75 12h14.5M4.75 18.25h14.5"/></svg>
         </button>
       </nav>
     </header>
 
     <main id="main" class="doc">
-      <h1>The screen never gets your account.</h1>
+      <div class="doc-hero">
+        <h1>The Screen Never Gets Your Account</h1>
+      </div>
 
       <div class="panel">
-        <section class="split" aria-labelledby="gets">
-          <h2 id="gets">What the screen gets</h2>
+        <section class="group" aria-labelledby="gets">
+          <h2 id="gets">What the Screen Gets</h2>
           <ul class="rows">
             <li>The items you approve<span class="toggle on" aria-hidden="true"></span></li>
             <li>A link to each, which expires<span class="toggle on" aria-hidden="true"></span></li>
           </ul>
         </section>
-        <section class="split" aria-labelledby="stays">
-          <h2 id="stays">What stays on your phone</h2>
+        <section class="group" aria-labelledby="stays">
+          <h2 id="stays">What Stays on Your Phone</h2>
           <ul class="rows">
             <li>Your account<span class="toggle" aria-hidden="true"></span></li>
             <li>Your other files<span class="toggle" aria-hidden="true"></span></li>
@@ -48,55 +50,56 @@
         </section>
       </div>
 
-      <ul class="points">
-        <li>The PC holds a link to each item you approve, and each link expires.</li>
-        <li>Each code works once for 60 seconds, and the phone shows the room before Approve.</li>
-        <li>Each open ends by itself after 90 minutes and is logged for IT to export.</li>
-        <li>A downloaded copy can stay on the PC; the table below lists what can stay.</li>
-      </ul>
-
-      <div class="detail">
-        <table>
-          <caption class="sr">What bloop holds and where</caption>
-          <tbody>
-            <tr>
-              <th scope="row">What the PC holds</th>
-              <td>A session ID and a link to each approved item, in the browser's session storage. Each link expires. While a file is open, PowerPoint holds the copy it opened. PowerPoint may also get a Microsoft download link for the file, which can work for up to 1 hour.</td>
-            </tr>
-            <tr>
-              <th scope="row">What bloop keeps</th>
-              <td>Your email, a OneDrive token, the ID of one folder, and a log of who opened which file where and when. No slide content, except a guest's upload, deleted when its session ends.</td>
-            </tr>
-            <tr>
-              <th scope="row">Permissions</th>
-              <td>bloop asks for read access to OneDrive. Microsoft grants that for the whole OneDrive; bloop reads one folder and logs every read. Where your tenant allows it, the app folder limits access at Microsoft's side, but then only files in that folder appear.</td>
-            </tr>
-            <tr>
-              <th scope="row">What can stay on the PC</th>
-              <td>A downloaded copy in Downloads and the file name in recent lists, until the profile is wiped.</td>
-            </tr>
-            <tr>
-              <th scope="row">Threat model</th>
-              <td>QR relay: the phone shows the room name and a match code before Approve. Shoulder surfing: the code works once and lasts 60 seconds. Forgotten session: it ends by itself after 90 minutes. Wrong screen: unregistered screens carry a warning. Lost phone: disconnect bloop from any device.</td>
-            </tr>
-            <tr>
-              <th scope="row">Revoking access</th>
-              <td>The user disconnects bloop; an admin removes the app in Entra.</td>
-            </tr>
-            <tr>
-              <th scope="row">Status</th>
-              <td>No external audit yet. The source is public. Report a security issue: <a href="/.well-known/security.txt">security.txt</a>.</td>
-            </tr>
-          </tbody>
-        </table>
+      <div class="topic wide">
+        <ul class="points">
+          <li>The PC holds a link to each item you approve, and each link expires.</li>
+          <li>Each code works once for 60 seconds, and the phone shows the room before Approve.</li>
+          <li>Each open ends by itself after 90 minutes and is logged for IT to export.</li>
+          <li>A downloaded copy can stay on the PC. See <a href="#stay">what can stay</a>.</li>
+        </ul>
       </div>
+
+      <section class="topic" aria-labelledby="holds">
+        <h2 id="holds">What the PC Holds</h2>
+        <p>A session ID and a link to each approved item, in the browser's session storage. Each link expires. While a file is open, PowerPoint holds the copy it opened. PowerPoint may also get a Microsoft download link for the file, which can work for up to 1 hour.</p>
+      </section>
+
+      <section class="topic" aria-labelledby="keeps">
+        <h2 id="keeps">What bloop Keeps</h2>
+        <p>Your email, a OneDrive token, the ID of one folder, and a log of who opened which file where and when. No slide content, except a guest's upload, deleted when its session ends.</p>
+      </section>
+
+      <section class="topic" aria-labelledby="permissions">
+        <h2 id="permissions">Permissions</h2>
+        <p><b class="name">bloop</b> asks for read access to OneDrive. Microsoft grants that for the whole OneDrive; <b class="name">bloop</b> reads one folder and logs every read. Where your tenant allows it, the app folder limits access at Microsoft's side, but then only files in that folder appear.</p>
+      </section>
+
+      <section class="topic" aria-labelledby="stay">
+        <h2 id="stay">What Can Stay on the PC</h2>
+        <p>A downloaded copy in Downloads and the file name in recent lists, until the profile is wiped.</p>
+      </section>
+
+      <section class="topic" aria-labelledby="threats">
+        <h2 id="threats">Threat Model</h2>
+        <p>QR relay: the phone shows the room name and a match code before Approve. Shoulder surfing: the code works once and lasts 60 seconds. Forgotten session: it ends by itself after 90 minutes. Wrong screen: unregistered screens carry a warning. Lost phone: disconnect <b class="name">bloop</b> from any device.</p>
+      </section>
+
+      <section class="topic" aria-labelledby="revoke">
+        <h2 id="revoke">Revoking Access</h2>
+        <p>The user disconnects <b class="name">bloop</b>; an admin removes the app in Entra.</p>
+      </section>
+
+      <section class="topic" aria-labelledby="status">
+        <h2 id="status">Status</h2>
+        <p>No external audit yet. The source is public. Report a security issue: <a href="/.well-known/security.txt">security.txt</a>.</p>
+      </section>
     </main>
 
     <footer class="footer">
       <div class="footer-top">
         <div class="footer-about">
           <a class="brand" href="/"><img src="/favicon.svg" width="28" height="28" alt="">bloop</a>
-          <p><strong>Present anywhere.</strong> bloop puts your files on a shared screen from your phone. The screen gets only the items you approve, never your account.</p>
+          <p><strong>Present anywhere.</strong> <b class="name">bloop</b> puts your files on a shared screen from your phone. The screen gets only the items you approve, never your account.</p>
         </div>
         <ul class="footer-links">
           <li><a href="/privacy">Privacy</a></li>

@@ -4,16 +4,16 @@
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
     <meta name="color-scheme" content="light">
-    <title>bloop: present anywhere</title>
+    <title>bloop: Present Anywhere</title>
     <meta name="description" content="Scan the code on the screen to present or download your files. Your account stays on your phone.">
     <meta property="og:type" content="website">
     <meta property="og:url" content="https://bloop.dsap.workers.dev/">
-    <meta property="og:title" content="bloop: present anywhere">
+    <meta property="og:title" content="bloop: Present Anywhere">
     <meta property="og:description" content="Scan the code on the screen to present or download your files. Your account stays on your phone.">
     <meta property="og:image" content="https://bloop.dsap.workers.dev/og.png">
     <meta property="og:image:width" content="1200">
     <meta property="og:image:height" content="630">
-    <meta property="og:image:alt" content="bloop: Present anywhere.">
+    <meta property="og:image:alt" content="bloop: Present Anywhere">
     <meta name="twitter:card" content="summary_large_image">
     <link rel="icon" href="/favicon.svg" type="image/svg+xml">
     <link rel="apple-touch-icon" href="/apple-touch-icon.png">
@@ -25,8 +25,8 @@
     <a class="skip" href="#main">Skip to Content</a>
     <div class="sentinel" id="sentinel"></div>
     <header class="nav">
+      <a class="brand nav-logo" href="/"><img src="/favicon.svg" width="32" height="32" alt="">bloop</a>
       <nav class="nav-pill" aria-label="Primary">
-        <a class="brand" href="/"><img src="/favicon.svg" width="28" height="28" alt="">bloop</a>
         <ul class="nav-links" id="nav-links" popover>
           <li><a href="/#features">Features</a></li>
           <li><a href="/privacy">Privacy</a></li>
@@ -34,70 +34,84 @@
         </ul>
         <a class="btn waitlist" href="mailto:ventures@saputra.co.uk?subject=bloop%20waitlist" data-waitlist>Waitlist</a>
         <button class="nav-menu" type="button" popovertarget="nav-links" aria-label="Menu">
-          <svg class="icon" viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true" focusable="false"><path d="M4 7h16M4 12h16M4 17h16"/></svg>
+          <svg class="icon" viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M4.75 5.75h14.5M4.75 12h14.5M4.75 18.25h14.5"/></svg>
         </button>
       </nav>
     </header>
 
     <main id="main">
       <section class="hero" aria-labelledby="hero-h">
-        <h1 id="hero-h">Present anywhere.</h1>
+        <h1 id="hero-h">Present <span class="glow">Anywhere</span></h1>
         <p class="lead">Scan the code on the screen to present or download your files. Your account stays on your phone.</p>
         <div class="hero-actions">
-          <a class="btn primary" href="/s?mode=demo">Try the demo</a>
+          <a class="btn primary" href="/s?mode=demo">Try the Demo<svg class="icon arrow" viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M13.75 6.75 19.25 12l-5.5 5.25M19 12H4.75"/></svg></a>
         </div>
       </section>
 
       <div class="tilt">
-        <div class="stage"><p>Demo video coming soon</p></div>
+        <div class="stage"><p>Demo Video Coming Soon</p></div>
       </div>
 
       <section class="features" id="features" aria-labelledby="features-h">
-        <h2 id="features-h">Your phone stays in charge.</h2>
+        <h2 id="features-h">You Stay in Charge</h2>
         <ul class="bento">
           <li class="card sky">
-            <h3>Works with your storage</h3>
+            <h3>Works with Your Storage</h3>
             <p>Choose from the files you already keep.</p>
-            <div class="mock" aria-hidden="true"><span class="mock-btn">OneDrive</span><span class="mock-btn">Dropbox</span><span class="mock-btn">Google Drive</span><span class="mock-btn">Box</span></div>
+            <div class="mock" aria-hidden="true"><span class="mock-tag">OneDrive</span><span class="mock-tag">Dropbox</span><span class="mock-tag">Google Drive</span><span class="mock-tag">Box</span></div>
           </li>
           <li class="card butter">
-            <h3>Approve with one tap</h3>
+            <h3>Approve with One Tap</h3>
             <p>The screen gets only the items you approve.</p>
-            <div class="mock" aria-hidden="true"><span class="mock-btn ink">Approve</span><span class="mock-btn">Cancel</span></div>
+            <div class="mock" aria-hidden="true"><span class="mock-btn">Cancel</span><span class="mock-btn ink">Approve</span></div>
           </li>
           <li class="card lav">
-            <h3>End or revoke any time</h3>
-            <p>One tap on your phone takes it off the screen.</p>
-            <div class="mock" aria-hidden="true"><span class="mock-btn ink">Revoke</span><span class="mock-btn">Ends in 59:12</span></div>
+            <h3>End or Revoke Any Time</h3>
+            <p>One tap on your phone takes your files off the screen.</p>
+            <div class="mock" aria-hidden="true"><span class="mock-text">Ends in 59:12</span><span class="mock-btn ink">Revoke</span></div>
           </li>
           <li class="card sage">
-            <h3>Present or download</h3>
-            <p>Show it full screen, or save a copy.</p>
-            <div class="mock" aria-hidden="true"><span class="mock-btn ink">Present</span><span class="mock-btn">Download</span></div>
+            <h3>Present or Download</h3>
+            <p>Show your file full screen, or save a copy.</p>
+            <div class="mock" aria-hidden="true"><span class="mock-btn">Present</span><span class="mock-btn ink">Download</span></div>
           </li>
         </ul>
       </section>
 
       <section class="connect" aria-labelledby="connect-h">
-        <h2 id="connect-h">Connect your files.</h2>
-        <p class="sub">Point bloop at one folder in the storage you use.</p>
-        <ul class="providers">
-          <li><span class="name">Microsoft OneDrive</span><span class="status">Coming soon</span></li>
-          <li><span class="name">Dropbox</span><span class="status">Coming soon</span></li>
-          <li><span class="name">Google Drive</span><span class="status">Coming soon</span></li>
-          <li><span class="name">Box</span><span class="status">Coming soon</span></li>
-        </ul>
+        <h2 id="connect-h">Connect Your Files</h2>
+        <p class="sub"><b class="name">bloop</b> can share these today.</p>
+        <div class="panel">
+          <section class="group" aria-labelledby="share-h">
+            <div class="group-head"><h3 id="share-h">What You Can Share</h3><span class="status on">Available</span></div>
+            <ul class="rows kinds">
+              <li><svg class="icon" viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M18.25 7.75H5.75V15.25C5.75 16.3546 6.64543 17.25 7.75 17.25H16.25C17.3546 17.25 18.25 16.3546 18.25 15.25V7.75ZM18.25 4.75H5.75C5.19772 4.75 4.75 5.19772 4.75 5.75V6.75C4.75 7.30228 5.19772 7.75 5.75 7.75H18.25C18.8023 7.75 19.25 7.30228 19.25 6.75V5.75C19.25 5.19772 18.8023 4.75 18.25 4.75ZM12 17.5V19.25"/></svg>PowerPoint</li>
+              <li><svg class="icon" viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M7.75 19.25H16.25C17.3546 19.25 18.25 18.3546 18.25 17.25V9L14 4.75H7.75C6.64543 4.75 5.75 5.64543 5.75 6.75V17.25C5.75 18.3546 6.64543 19.25 7.75 19.25ZM18 9.25H13.75V5M9.75 15.25H14.25M9.75 12.25H14.25"/></svg>PDF</li>
+              <li><svg class="icon" viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M4.75 16L7.49619 12.5067C8.2749 11.5161 9.76453 11.4837 10.5856 12.4395L13 15.25M10.915 12.823C11.9522 11.5037 13.3973 9.63455 13.4914 9.51294C13.4947 9.50859 13.4979 9.50448 13.5013 9.50017C14.2815 8.51598 15.7663 8.48581 16.5856 9.43947L19 12.25M6.75 19.25H17.25C18.3546 19.25 19.25 18.3546 19.25 17.25V6.75C19.25 5.64543 18.3546 4.75 17.25 4.75H6.75C5.64543 4.75 4.75 5.64543 4.75 6.75V17.25C4.75 18.3546 5.64543 19.25 6.75 19.25Z"/></svg>Images</li>
+              <li><svg class="icon" viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M16.75 13.25L18 12C19.6569 10.3431 19.6569 7.65685 18 6C16.3431 4.34315 13.6569 4.34315 12 6L10.75 7.25M7.25 10.75L6 12C4.34315 13.6569 4.34315 16.3431 6 18C7.65685 19.6569 10.3431 19.6569 12 18L13.25 16.75M14.25 9.75L9.75 14.25"/></svg>Links</li>
+            </ul>
+          </section>
+          <section class="group" aria-labelledby="from-h">
+            <div class="group-head"><h3 id="from-h">Where Your Files Live</h3><span class="status">Coming Soon</span></div>
+            <ul class="rows providers">
+              <li>Microsoft OneDrive</li>
+              <li>Dropbox</li>
+              <li>Google Drive</li>
+              <li>Box</li>
+            </ul>
+          </section>
+        </div>
       </section>
 
       <section class="faq" aria-labelledby="faq-h">
         <h2 id="faq-h">Questions</h2>
         <details>
           <summary>What is bloop?</summary>
-          <p>A way to present your files on a shared screen, such as a lecture room PC, from your phone. The screen gets only the items you approve.</p>
+          <p>A way to present your files from your phone on a shared screen, such as a lecture room PC. The screen gets only the items you approve.</p>
         </details>
         <details>
           <summary>Do I need to install anything?</summary>
-          <p>No. The screen runs bloop in its web browser, and your phone uses its camera. The room PC opens slides in PowerPoint.</p>
+          <p>No. The screen runs <b class="name">bloop</b> in its web browser, and your phone uses its camera. Slides open in PowerPoint on the room PC.</p>
         </details>
         <details>
           <summary>What does the room PC keep?</summary>
@@ -105,7 +119,7 @@
         </details>
         <details>
           <summary>Is it free?</summary>
-          <p>Yes. Early access is free while bloop is being tested.</p>
+          <p>Yes. Early access is free while <b class="name">bloop</b> is being tested.</p>
         </details>
       </section>
     </main>
@@ -114,7 +128,7 @@
       <div class="footer-top">
         <div class="footer-about">
           <a class="brand" href="/"><img src="/favicon.svg" width="28" height="28" alt="">bloop</a>
-          <p><strong>Present anywhere.</strong> bloop puts your files on a shared screen from your phone. The screen gets only the items you approve, never your account.</p>
+          <p><strong>Present anywhere.</strong> <b class="name">bloop</b> puts your files on a shared screen from your phone. The screen gets only the items you approve, never your account.</p>
         </div>
         <ul class="footer-links">
           <li><a href="/privacy">Privacy</a></li>

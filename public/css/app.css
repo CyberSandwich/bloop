@@ -38,6 +38,9 @@
   --butter: #f6e7b2;
   --lav: #d8d1ef;
   --sage: #dde3d6;
+  --robin: #f4ba8b;
+  --robin-ink: #a64f15;
+  --lead: #62625c;
 
   --r-chip: 8px;
   --r-field: 14px;
@@ -49,10 +52,12 @@
   --sh-nav: 0 0 0 0.5px rgba(0, 0, 0, 0.08), 0 4px 18px rgba(0, 0, 0, 0.05);
   --sh-pill: 0 0 0 0.5px rgba(0, 0, 0, 0.08), 0 10px 30px rgba(0, 0, 0, 0.12);
 
-  --glass: rgba(255, 255, 255, 0.72);
+  --glass: rgba(255, 255, 255, 0.62);
   --glass-solid: rgba(255, 255, 255, 0.92);
-  --glass-firm: rgba(255, 255, 255, 0.84);
-  --glass-filter: blur(20px) saturate(1.8);
+  --glass-firm: rgba(255, 255, 255, 0.8);
+  --glass-filter: blur(24px) saturate(2);
+  --glass-edge: inset 0 1px 0 rgba(255, 255, 255, 0.7);
+  --nav-h: 56px;
   --wash: rgba(120, 120, 128, 0.1);
   --r-sheet: 24px;
   --side: 280px;
@@ -993,9 +998,20 @@ progress.bar::-moz-progress-bar {
 html:has(.page-site) {
   scroll-padding-top: 96px;
 }
+/* The robin wash: one stop pair and a midpoint hint; extra linear stops showed as rings. */
+.page-site {
+  background:
+    radial-gradient(ellipse 70% 640px at 50% 0, color-mix(in srgb, var(--robin) 50%, transparent), 30%, transparent)
+    no-repeat,
+    var(--paper);
+}
 .page-site :where(.doc, .faq) a:not(.btn) {
   text-decoration: underline;
   text-underline-offset: 3px;
+}
+.name {
+  color: var(--robin-ink);
+  font-weight: 600;
 }
 .sentinel {
   position: absolute;
@@ -1004,58 +1020,71 @@ html:has(.page-site) {
   height: 12px;
 }
 
-/* The top nav: a fixed glass pill; the links collapse into a popover sheet under 640. */
+/* Insets are (pill height - inner height) / 2: concentric ends. */
 .nav {
   position: fixed;
-  inset: 14px 16px auto;
+  top: 14px;
+  left: 50%;
   z-index: 40;
-  display: flex;
-  justify-content: center;
-  pointer-events: none;
-}
-.nav-pill {
-  display: flex;
+  display: grid;
+  grid-template-columns: 1fr auto 1fr;
   align-items: center;
-  gap: 6px;
-  height: 60px;
-  padding: 0 8px 0 16px;
+  width: min(100% - 32px, 1136px);
+  pointer-events: none;
+  translate: -50% 0;
+}
+.nav-logo,
+.nav-pill {
+  height: var(--nav-h);
   border-radius: var(--r-pill);
-  box-shadow: var(--sh-nav);
+  box-shadow: var(--glass-edge), var(--sh-nav);
   pointer-events: auto;
   transition:
     background-color 240ms var(--ease-out),
     box-shadow 240ms var(--ease-out);
 }
-/* The one glass recipe (design.md section 4): the nav, its sheet, and the app's .glass surfaces. */
+.nav-logo {
+  justify-self: start;
+  padding: 0 20px 0 12px;
+  font-size: 19px;
+}
+.nav-pill {
+  grid-column: 2;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 0 6px;
+}
+/* The one glass recipe (design.md section 4). */
 .glass,
+.nav-logo,
 .nav-pill,
 .nav-links:popover-open {
   background: var(--glass-solid);
 }
 @supports (backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px)) {
   .glass,
+  .nav-logo,
   .nav-pill,
   .nav-links:popover-open {
     background: var(--glass);
     -webkit-backdrop-filter: var(--glass-filter);
     backdrop-filter: var(--glass-filter);
   }
-  .nav.is-scrolled .nav-pill {
+  /* The sheet holds text over the hero's type, so it stays firm. */
+  .nav.is-scrolled :is(.nav-logo, .nav-pill),
+  .nav-links:popover-open {
     background: var(--glass-firm);
   }
 }
-.nav.is-scrolled .nav-pill {
-  box-shadow: var(--sh-pill);
-}
-.nav-pill .brand {
-  margin-right: 12px;
-  font-size: 19px;
+.nav.is-scrolled :is(.nav-logo, .nav-pill) {
+  box-shadow: var(--glass-edge), var(--sh-pill);
 }
 /* The list carries `popover` for the phone sheet; the UA's popover box (fixed, centered, bordered) is undone here. */
 .nav-links {
   position: static;
   display: flex;
-  gap: 2px;
+  gap: 4px;
   width: auto;
   height: auto;
   margin: 0;
@@ -1070,15 +1099,15 @@ html:has(.page-site) {
   display: flex;
   align-items: center;
   min-height: 44px;
-  padding: 0 14px;
+  padding: 0 16px;
   border-radius: var(--r-pill);
   color: var(--ink-2);
   font-size: 15px;
   text-decoration: none;
 }
 .nav-links a[aria-current="page"] {
+  background: var(--wash);
   color: var(--ink);
-  font-weight: 600;
 }
 @media (hover: hover) {
   .nav-links a:hover {
@@ -1087,7 +1116,6 @@ html:has(.page-site) {
 }
 .btn.waitlist {
   min-height: 44px;
-  margin-left: 8px;
   padding: 0 20px;
   background: var(--ink-2);
   color: var(--paper);
@@ -1106,28 +1134,24 @@ html:has(.page-site) {
 }
 @media (max-width: 639.98px) {
   .nav {
-    inset: 10px 10px auto;
-  }
-  .nav-pill {
-    width: 100%;
-    padding-left: 12px;
-  }
-  .nav-pill .brand {
-    margin-right: auto;
+    top: 10px;
+    grid-template-columns: 1fr auto;
+    width: calc(100% - 20px);
   }
   .nav-links:not(:popover-open) {
     display: none;
   }
   .nav-links:popover-open {
     position: fixed;
-    inset: 80px 10px auto;
+    inset: calc(var(--nav-h) + 20px) 10px auto;
     display: grid;
+    gap: 0;
     width: auto;
     margin: 0;
     padding: 8px;
     border: 0;
     border-radius: 22px;
-    box-shadow: var(--sh-pill);
+    box-shadow: var(--glass-edge), var(--sh-pill);
   }
   .nav-links:popover-open a {
     padding: 0 14px;
@@ -1139,8 +1163,14 @@ html:has(.page-site) {
   }
 }
 
+/* Equal padding above and below centers the block on the viewport, clear of the nav. */
 .hero {
-  padding: 152px var(--pad) 0;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  min-height: 100vh;
+  min-height: 100svh;
+  padding: calc(var(--nav-h) + 40px) var(--pad);
   text-align: center;
 }
 .hero h1 {
@@ -1149,13 +1179,17 @@ html:has(.page-site) {
   line-height: 1;
   letter-spacing: -0.05em;
 }
+/* Static, not a sheen: design.md section 8. */
+.glow {
+  text-shadow: 0 0 0.4em var(--robin);
+}
 .lead {
   max-width: 640px;
   margin: 24px auto 0;
   font-size: 20px;
   line-height: 1.35;
   letter-spacing: -0.015em;
-  color: var(--muted);
+  color: var(--lead);
   text-wrap: balance;
 }
 .hero-actions {
@@ -1163,19 +1197,25 @@ html:has(.page-site) {
   justify-content: center;
   margin-top: 32px;
 }
-@media (min-width: 768px) {
-  .hero {
-    padding-top: 184px;
+.btn .arrow {
+  margin-right: -4px;
+  transition: transform 200ms var(--ease-out);
+}
+@media (hover: hover) {
+  .btn:hover .arrow {
+    transform: translateX(2px);
   }
+}
+@media (min-width: 768px) {
   .lead {
     font-size: 24px;
   }
 }
 
-/* The stage: a plain panel tilted flat by the scroll where the browser can link animations to it. */
+/* The fallback; site.js's spring outranks it. */
 .tilt {
   width: min(100% - 2 * var(--pad), 1136px);
-  margin: 64px auto 0;
+  margin: 0 auto;
   perspective: 2200px;
   perspective-origin: 50% 0;
 }
@@ -1211,7 +1251,7 @@ html:has(.page-site) {
   }
 }
 
-/* Section heads share one size; text columns are 760, the bento and stage the full 1136. */
+/* Section heads share one size; text columns are 760, the bento, stage and doc cards the full 1136. */
 :is(.features, .connect, .faq) > h2,
 .doc h1 {
   font-size: 38px;
@@ -1257,10 +1297,10 @@ html:has(.page-site) {
 .card {
   display: flex;
   flex-direction: column;
-  min-height: 280px;
+  min-height: 300px;
   padding: 28px;
   border-radius: var(--r-stage);
-  background: linear-gradient(180deg, var(--surface) 35%, var(--tint));
+  background: var(--tint);
 }
 .card.sky {
   --tint: var(--sky);
@@ -1281,32 +1321,51 @@ html:has(.page-site) {
   letter-spacing: -0.025em;
 }
 .card p {
-  margin-top: 8px;
+  margin: 8px 0 28px;
   color: var(--ink-2);
 }
+/* A still of the app, never controls. */
 .mock {
   display: flex;
   flex-wrap: wrap;
+  align-items: center;
+  justify-content: center;
   gap: 8px;
-  margin-top: auto;
-  padding-top: 32px;
+  min-height: 112px;
+  margin: auto -16px -16px;
+  padding: 24px 16px;
+  border-radius: 16px;
+  background: var(--surface);
+  user-select: none;
 }
-.mock-btn {
+.mock-btn,
+.mock-tag {
   display: inline-flex;
   align-items: center;
   height: 40px;
   padding: 0 18px;
   border-radius: var(--r-pill);
-  background: var(--surface);
-  box-shadow: 0 0 0 1px var(--hairline);
   font-size: 15px;
   font-weight: 600;
-  font-variant-numeric: tabular-nums;
+}
+.mock-btn {
+  box-shadow: inset 0 0 0 1.5px var(--g2);
 }
 .mock-btn.ink {
   background: var(--ink);
   color: var(--paper);
   box-shadow: none;
+}
+.mock-tag {
+  height: 36px;
+  padding: 0 14px;
+  background: var(--paper);
+  color: var(--ink-2);
+}
+.mock-text {
+  color: var(--muted);
+  font-size: 15px;
+  font-variant-numeric: tabular-nums;
 }
 
 .connect .sub {
@@ -1314,32 +1373,86 @@ html:has(.page-site) {
   color: var(--muted);
   text-align: center;
 }
-.providers {
-  margin: 40px 0 0;
-  padding: 8px;
-  list-style: none;
-  border-radius: 26px;
+
+.panel {
+  display: grid;
+  gap: 12px;
+  margin-top: 40px;
+  padding: 12px;
+  border-radius: var(--r-stage);
+  background: var(--sky);
+}
+@media (min-width: 768px) {
+  .panel {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+.group {
+  padding: 20px 20px 4px;
+  border-radius: 16px;
   background: var(--surface);
 }
-.providers li {
+.group-head {
   display: flex;
   align-items: center;
-  justify-content: space-between;
   gap: 12px;
-  min-height: 64px;
-  padding: 0 12px 0 16px;
+}
+.group :is(h2, h3) {
+  margin: 0;
+  font-size: 17px;
+  line-height: 1.3;
+  letter-spacing: -0.011em;
+}
+.rows {
+  margin: 8px 0 0;
+  padding: 0;
+  list-style: none;
+}
+.rows li {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-height: 56px;
   font-weight: 600;
 }
-.providers li + li {
-  box-shadow: inset 0 1px 0 var(--hairline);
+.rows li + li {
+  box-shadow: 0 -1px 0 var(--hairline);
 }
 .status {
   flex: none;
+  margin-left: auto;
   padding: 6px 12px;
   border-radius: var(--r-pill);
   background: var(--paper);
   color: var(--muted);
   font-size: 14px;
+}
+.status.on {
+  color: var(--ink);
+}
+.toggle {
+  flex: none;
+  width: 40px;
+  height: 24px;
+  margin-left: auto;
+  padding: 2px;
+  border-radius: var(--r-pill);
+  background: var(--g1);
+}
+.toggle::after {
+  content: "";
+  display: block;
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+  background: var(--surface);
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.2);
+}
+.toggle.on {
+  background: var(--ink);
+}
+.toggle.on::after {
+  margin-left: auto;
 }
 
 .faq h2 {
@@ -1463,93 +1576,54 @@ html:has(.page-site) {
   font-size: 14px;
 }
 
-/* /security, /privacy and 404: one text column, with one full-bleed panel. */
 .doc {
-  width: min(100% - 2 * var(--pad), 760px);
+  width: min(100% - 2 * var(--pad), 1136px);
   margin: 0 auto;
-  padding: 152px 0 var(--section);
+  padding: 0 0 var(--section);
 }
-.doc h2 {
-  margin-top: 56px;
+.doc-hero {
+  padding-top: 152px;
+  text-align: center;
+}
+.doc-hero .btn {
+  margin-top: 32px;
+}
+.doc .panel {
+  margin-top: 48px;
+}
+.topic {
+  display: grid;
+  gap: 12px 48px;
+  margin-top: 16px;
+  padding: 24px;
+  border-radius: var(--r-stage);
+  background: var(--surface);
+}
+@media (min-width: 768px) {
+  .topic {
+    padding: 40px;
+  }
+}
+@media (min-width: 900px) {
+  .topic:not(.wide) {
+    grid-template-columns: minmax(0, 0.8fr) minmax(0, 1.2fr);
+  }
+}
+.topic h2 {
   font-size: 24px;
   line-height: 1.2;
   letter-spacing: -0.025em;
 }
-.doc > p,
-.doc section > p {
-  margin-top: 16px;
+.topic p,
+.topic li {
+  color: var(--ink-2);
 }
-.panel {
-  display: grid;
-  gap: 16px;
-  width: min(100vw - 2 * var(--pad), 1136px);
-  margin: 40px 0 0 50%;
-  padding: 24px;
-  border-radius: var(--r-stage);
-  background: linear-gradient(180deg, var(--sky), var(--paper));
-  transform: translateX(-50%);
-}
-@media (min-width: 768px) {
-  .panel {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-    padding: 56px;
-  }
-}
-.panel .split h2 {
-  margin: 0 0 12px 4px;
-  font-size: 17px;
-  letter-spacing: -0.011em;
-}
-.rows {
+.points {
   margin: 0;
-  padding: 0 20px;
-  list-style: none;
-  border-radius: var(--r-card);
-  background: var(--surface);
-}
-.rows li {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 12px;
-  min-height: 56px;
-  font-weight: 600;
-}
-.rows li + li {
-  box-shadow: 0 -1px 0 var(--hairline);
-}
-.toggle {
-  flex: none;
-  width: 40px;
-  height: 24px;
-  padding: 2px;
-  border-radius: var(--r-pill);
-  background: var(--g1);
-}
-.toggle::after {
-  content: "";
-  display: block;
-  width: 20px;
-  height: 20px;
-  border-radius: 50%;
-  background: var(--surface);
-  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.2);
-}
-.toggle.on {
-  background: var(--ink);
-}
-.toggle.on::after {
-  margin-left: auto;
-}
-.doc .points {
-  margin: 40px 0 0;
   padding-left: 1.2em;
 }
-.doc .points li + li {
+.points li + li {
   margin-top: 12px;
-}
-.detail {
-  margin-top: 32px;
 }
 .detail table {
   width: 100%;
@@ -1563,9 +1637,12 @@ html:has(.page-site) {
   box-shadow: inset 0 -1px 0 var(--hairline);
 }
 .detail th {
-  width: 32%;
+  width: 40%;
   padding-right: 24px;
   font-weight: 600;
+}
+.detail tr:last-child :is(th, td) {
+  box-shadow: none;
 }
 @media (max-width: 599.98px) {
   .detail th,
@@ -1578,12 +1655,10 @@ html:has(.page-site) {
     box-shadow: none;
   }
 }
-.notfound .btn {
-  margin-top: 32px;
-}
 
 @media (prefers-reduced-transparency: reduce) {
   .glass,
+  .nav-logo,
   .nav-pill,
   .nav-links:popover-open {
     background: var(--surface);

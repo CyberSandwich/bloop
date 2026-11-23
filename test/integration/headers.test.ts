@@ -31,7 +31,7 @@ describe("security headers on a running Worker", () => {
     const res = await fetch(`${wrangler.url}/no-such-page`);
     expect(res.status).toBe(404);
     expect(res.headers.get("Content-Type")).toContain("text/html");
-    expect(await res.text()).toContain("This page isn't here.");
+    expect(await res.text()).toContain("This Page Isn't Here");
     expectBase(res);
     expect(res.headers.get("Content-Security-Policy")).toBe(LANDING_CSP);
   });

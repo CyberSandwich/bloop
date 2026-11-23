@@ -17,12 +17,12 @@ function expectBase(res: Response) {
 }
 
 describe.each([
-  ["/", 200, LANDING_CSP, "<title>bloop: present anywhere</title>", /text\/html/],
-  ["/security", 200, LANDING_CSP, "<title>bloop security</title>", /text\/html/],
-  ["/privacy", 200, LANDING_CSP, "<title>bloop privacy notice</title>", /text\/html/],
+  ["/", 200, LANDING_CSP, "<title>bloop: Present Anywhere</title>", /text\/html/],
+  ["/security", 200, LANDING_CSP, "<title>bloop Security</title>", /text\/html/],
+  ["/privacy", 200, LANDING_CSP, "<title>bloop Privacy Notice</title>", /text\/html/],
   ["/.well-known/security.txt", 200, LANDING_CSP, "Contact: mailto:", /text\/plain/],
-  ["/no-such-page", 404, LANDING_CSP, "This page isn't here.", /text\/html/],
-  ["/security/deeper/still", 404, LANDING_CSP, "Go to the home page", /text\/html/],
+  ["/no-such-page", 404, LANDING_CSP, "This Page Isn't Here", /text\/html/],
+  ["/security/deeper/still", 404, LANDING_CSP, "Go to the Home Page", /text\/html/],
 ] as const)("%s", (path, status, csp, marker, type) => {
   it(`is ${status} with its policy and the base headers`, async () => {
     const res = await fetch(`${wrangler.url}${path}`);

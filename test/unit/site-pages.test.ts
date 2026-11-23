@@ -7,6 +7,25 @@ const SITE = ["index.html", "security.html", "privacy.html", "404.html"] as cons
 const ALL = [...SITE, "s.html", "a.html", "code.html"] as const;
 const VOID = new Set(["meta", "link", "img", "source", "input", "br", "hr", "wbr"]);
 const SKIP_TAGS = new Set(["head", "script", "style", "svg", "noscript", "template"]);
+// Title Case (design.md section 3) keeps these lowercase after the first word.
+const MINOR = new Set([
+  "a",
+  "an",
+  "the",
+  "and",
+  "but",
+  "or",
+  "nor",
+  "for",
+  "as",
+  "at",
+  "by",
+  "in",
+  "of",
+  "on",
+  "to",
+  "with",
+]);
 
 /**
  * Visible words as a desktop visitor sees them: drops aria-hidden subtrees (the product UI mocks),
@@ -99,6 +118,37 @@ describe.each(SITE)("%s under the strict CSP", (page) => {
       expect(words(text).length, text).toBeLessThanOrEqual(8);
     }
   });
+
+  it("every heading and the title are Title Case with no period (design.md section 3)", () => {
+    const titles = [...html.matchAll(/<h([1-3])\b[^>]*>([\s\S]*?)<\/h\1>/g)].map((m) => visibleText(m[2] as string));
+    titles.push((/<title>([^<]+)<\/title>/.exec(html)?.[1] ?? "").replace(/^bloop:? /, ""));
+    for (const title of titles) {
+      expect(title, title).not.toMatch(/[.]$/);
+      words(title).forEach((word, i) => {
+        if (word === "bloop" || (i > 0 && MINOR.has(word.replace(/,$/, "")))) return;
+        expect(word[0], `${word} in "${title}"`).toBe(word[0]?.toUpperCase());
+      });
+    }
+  });
+
+  it("draws icons in the Iconic style: inline, 1.5 stroke, round caps, hidden from screen readers", () => {
+    for (const m of html.matchAll(/<svg\b[^>]*>/g)) {
+      expect(m[0]).toContain('stroke-width="1.5"');
+      expect(m[0]).toContain('stroke-linecap="round"');
+      expect(m[0]).toContain('aria-hidden="true"');
+    }
+  });
+
+  it('sets "bloop" in body copy as the robin name', () => {
+    // The legal line is a name in a notice, not copy; a mail domain is an address.
+    for (const m of html.matchAll(/<p(?! class="footer-legal")\b[^>]*>([\s\S]*?)<\/p>/g)) {
+      const bare = (m[1] as string)
+        .replace(/<b class="name">bloop<\/b>/g, "")
+        .replace(/<[^>]+>/g, " ")
+        .replace(/\S+@bloop\.\S+/g, "");
+      expect(bare, m[1]).not.toMatch(/\bbloop\b/);
+    }
+  });
 });
 
 describe("every page's text", () => {
@@ -178,10 +228,11 @@ describe("landing word caps (design.md section 13)", () => {
     expect(words(hero).length, hero).toBeLessThanOrEqual(40);
   });
 
-  it("h1 is Present anywhere., one line, no second clause", () => {
-    const h1 = visibleText(between(html, /<h1\b/, "</h1>"));
-    expect(h1).toBe("Present anywhere.");
-    expect(between(html, /<h1\b/, "</h1>")).not.toMatch(/<span/);
+  it("h1 is Present Anywhere, one line, no second clause; only Anywhere carries the glow", () => {
+    const h1 = between(html, /<h1\b/, "</h1>");
+    expect(visibleText(h1)).toBe("Present Anywhere");
+    expect(h1).toContain('<span class="glow">Anywhere</span>');
+    expect(h1.match(/<span/g)).toHaveLength(1);
   });
 
   it("the sub names phone, screen and file in at most 2 sentences and 30 words", () => {
@@ -198,21 +249,26 @@ describe("landing word caps (design.md section 13)", () => {
   });
 
   it("each sentence outside product UI is at most 20 words", () => {
-    for (const sentence of visibleText(main).split(/(?<=[.?])\s+/)) {
-      expect(words(sentence).length, sentence).toBeLessThanOrEqual(20);
+    // Per block: Title Case headings end with no period, so one flat text would run them into the next line.
+    for (const block of main.matchAll(/<(h[1-3]|p|summary)\b[^>]*>([\s\S]*?)<\/\1>/g)) {
+      for (const sentence of visibleText(block[2] ?? "").split(/(?<=[.?])\s+/)) {
+        expect(words(sentence).length, sentence).toBeLessThanOrEqual(20);
+      }
     }
   });
 
-  it("the hero has one button, Try the demo, which opens the demo screen", () => {
+  it("the hero has one button, Try the Demo with a trailing arrow, which opens the demo screen", () => {
     const actions = between(html, /<div class="hero-actions"/, "</div>");
-    expect([...actions.matchAll(/<a\b[^>]*>([^<]*)<\/a>/g)].map((m) => m[0])).toEqual([
-      '<a class="btn primary" href="/s?mode=demo">Try the demo</a>',
-    ]);
+    const links = [...actions.matchAll(/<a\b([^>]*)>([\s\S]*?)<\/a>/g)];
+    expect(links).toHaveLength(1);
+    expect(links[0]?.[1]).toBe(' class="btn primary" href="/s?mode=demo"');
+    expect(visibleText(links[0]?.[2] ?? "")).toBe("Try the Demo");
+    expect(links[0]?.[2]).toMatch(/Try the Demo<svg class="icon arrow"[^>]*><path d="[^"]+"\/><\/svg>$/);
   });
 
   it("the stage is a plain panel: no script, video or image, and no reel", () => {
     const stage = between(html, /<div class="tilt">/, "</div>\n      </div>");
-    expect(visibleText(stage)).toBe("Demo video coming soon");
+    expect(visibleText(stage)).toBe("Demo Video Coming Soon");
     expect(stage).not.toMatch(/<(video|img|svg|iframe)\b/);
     expect(html).not.toMatch(/reel|class="pill"/);
   });
@@ -228,22 +284,52 @@ describe("landing word caps (design.md section 13)", () => {
     expect(residue.toLowerCase()).not.toMatch(/nothing (is )?left|leaves nothing/);
   });
 
-  it("the provider list promises nothing live: every provider is Coming soon, and iCloud is not listed", () => {
-    const list = between(html, /<ul class="providers">/, "</ul>");
-    const rows = [...list.matchAll(/<li>([\s\S]*?)<\/li>/g)].map((m) => visibleText(m[1] ?? ""));
-    expect(rows.length).toBeGreaterThanOrEqual(4);
-    for (const row of rows) expect(row).toMatch(/ Coming soon$/);
-    expect(list.toLowerCase()).not.toContain("icloud");
+  const group = (id: string) => {
+    const section = between(html, new RegExp(`<section class="group" aria-labelledby="${id}">`), "</section>");
+    const head = visibleText(between(section, /<div class="group-head">/, "</div>"));
+    const rows = [...section.matchAll(/<li>([\s\S]*?)<\/li>/g)].map((m) => visibleText(m[1] ?? ""));
+    return { section, head, rows };
+  };
+
+  it("the provider list promises nothing live: Coming Soon, by name only, and iCloud is not listed", () => {
+    const { section, head, rows } = group("from-h");
+    expect(head).toBe("Where Your Files Live Coming Soon");
+    expect(rows).toEqual(["Microsoft OneDrive", "Dropbox", "Google Drive", "Box"]);
+    expect(section).not.toMatch(/<(svg|img)\b/);
+    expect(section.toLowerCase()).not.toContain("icloud");
+  });
+
+  it("Connect lists what can be shared today as Available, and drops the folder line", () => {
+    const { head, rows } = group("share-h");
+    expect(head).toBe("What You Can Share Available");
+    expect(rows).toEqual(["PowerPoint", "PDF", "Images", "Links"]);
+    expect(html).not.toMatch(/one folder in the storage/);
+  });
+
+  it("the bento orders its chips as the app does: Cancel then Approve, Ends in then Revoke, Present then Download", () => {
+    const chips = (title: string) => {
+      const card = between(html, new RegExp(`<h3>${title}</h3>`), "</li>");
+      return [...card.matchAll(/<span class="mock-(btn|text)( ink)?">([^<]+)<\/span>/g)].map(
+        (m) => `${m[3]}${m[2] ? " (ink)" : ""}`,
+      );
+    };
+    expect(chips("Approve with One Tap")).toEqual(["Cancel", "Approve (ink)"]);
+    expect(chips("End or Revoke Any Time")).toEqual(["Ends in 59:12", "Revoke (ink)"]);
+    expect(chips("Present or Download")).toEqual(["Present", "Download (ink)"]);
   });
 
   it("og:image and og:url are absolute, for link previews", () => {
     expect(html).toContain('<meta property="og:image" content="https://bloop.dsap.workers.dev/og.png">');
     expect(html).toContain('<meta property="og:url" content="https://bloop.dsap.workers.dev/">');
+    expect(html).toContain('<meta property="og:image:alt" content="bloop: Present Anywhere">');
+    expect(read("tools/render-og.py")).toContain("H1 = 'Present Anywhere'");
   });
 
-  it("the logo's colors stay in the logo: never in CSS", () => {
+  it("the logo's orange is named once, as --robin in :root; its gray never leaves the logo", () => {
     const css = read("public/css/app.css").toLowerCase();
-    for (const hex of ["f4ba8b", "646464", "ff7702"]) expect(css).not.toContain(hex);
+    expect(css.match(/f4ba8b/g)).toHaveLength(1);
+    expect(css).toMatch(/^\s*--robin: #f4ba8b;$/m);
+    for (const hex of ["646464", "ff7702"]) expect(css).not.toContain(hex);
   });
 
   it.each(ALL)("%s has no robin", (page) => {
@@ -264,7 +350,16 @@ describe("site scripts under the strict CSP", () => {
   it("the landing script imports nothing and listens to no scroll event", () => {
     const code = read("public/js/site.js");
     expect(code).not.toMatch(/^import /m);
-    expect(code).not.toMatch(/addEventListener\("scroll"/);
+    expect(code).not.toMatch(/addEventListener\("scroll"|onscroll/);
+  });
+
+  it("the stage tilt springs a paused animation, only while an observer sees the stage and motion is allowed", () => {
+    const code = read("public/js/site.js");
+    expect(code).toContain('matchMedia("(prefers-reduced-motion: no-preference) and (min-width: 900px)")');
+    expect(code).toMatch(/stage\.animate\(/);
+    expect(code).toMatch(/tilt\.pause\(\)/);
+    expect(code).toMatch(/tilt\.currentTime = /);
+    expect(code).toMatch(/new IntersectionObserver\([\s\S]*?cancelAnimationFrame[\s\S]*?\.observe\(stage\)/);
   });
 
   it("every site page loads only the landing script, or none", () => {
@@ -307,6 +402,21 @@ describe("site chrome: one nav and one footer on every site page", () => {
       expect(attrs).toMatch(/href="mailto:ventures@saputra\.co\.uk\?subject=[^"]+"/);
     }
     expect(html.match(/data-waitlist/g)).toHaveLength(links.length);
+  });
+
+  it("the logo is its own pill before the nav landmark, and the links pill holds the links, Waitlist and the menu", () => {
+    expect(nav).toMatch(
+      /^<header class="nav">\s*<a class="brand nav-logo" href="\/"><img src="\/favicon\.svg" width="32" height="32" alt="">bloop<\/a>\s*<nav class="nav-pill"/,
+    );
+    const pill = between(nav ?? "", /<nav class="nav-pill"/, "</nav>");
+    expect(pill).not.toContain("brand");
+    expect(pill).toMatch(/<\/ul>\s*<a class="btn waitlist"[^>]*>Waitlist<\/a>\s*<button class="nav-menu"/);
+  });
+
+  it.each(["privacy.html", "security.html"])("%s marks its own nav link as the current page", (page) => {
+    const html = read(`public/${page}`);
+    const own = `/${page.replace(".html", "")}`;
+    expect(between(html, /<nav class="nav-pill"/, "</nav>")).toContain(`<a href="${own}" aria-current="page">`);
   });
 
   it("the menu button opens the links as a popover, with no script", () => {
