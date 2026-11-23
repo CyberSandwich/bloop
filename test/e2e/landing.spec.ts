@@ -244,7 +244,7 @@ test.describe("live demo", () => {
     await phoneContext.close();
   });
 
-  test("DEMO-02 flood: a refused demo screen shows the error state, and Try Again starts a new one", async ({
+  test("F16 DEMO-02 flood: a demo screen refused by the caps says so, and starts by itself once there is room", async ({
     page,
   }) => {
     await page.route("**/api/screens", (route) =>
@@ -255,10 +255,13 @@ test.describe("live demo", () => {
       }),
     );
     await page.goto("/");
-    await expect(stageHeading(page)).toHaveText("Unable to start the demo.");
+    await expect(stageHeading(page)).toHaveText("Too many demos open right now.");
+    await expect(page.locator("#demo-line")).toHaveText("Try again in a few minutes.");
+    await expect(page.locator("#demo")).toHaveAttribute("data-demo", "busy");
+    await expect(page.getByRole("button", { name: "Try Again" })).toBeHidden();
     await page.unroute("**/api/screens");
-    await page.getByRole("button", { name: "Try Again" }).click();
-    await expect(stageHeading(page)).toHaveText("Demo screen");
+    // The first retry waits 5 s.
+    await expect(stageHeading(page)).toHaveText("Demo screen", { timeout: 10_000 });
   });
 
   test("DEMO-03 off: the stage says it could not start when the server has the demo off", async ({ page }) => {

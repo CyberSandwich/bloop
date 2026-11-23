@@ -221,4 +221,5 @@ export type ScreenStateKey =
   | "offline"
   | "service_down"
   | "error"
-  | "phone_width";
+  | "phone_width"
+  | "rate_limited";

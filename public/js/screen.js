@@ -51,7 +51,7 @@ const buttons = {
 
 /**
  * @type {{
- *   view: ScreenView | null, skew: number, link: "ok" | "offline" | "down", errored: boolean,
+ *   view: ScreenView | null, skew: number, link: "ok" | "offline" | "down", errored: boolean, limited: boolean,
  *   sid: string | null, channel: ReturnType<typeof openChannel> | null, shown: string | null,
  *   expiresAt: number, offlineSince: number | null, timers: Record<string, ReturnType<typeof setTimeout> | undefined>
  * }}
@@ -61,6 +61,7 @@ const s = {
   skew: 0,
   link: "ok",
   errored: false,
+  limited: false,
   sid: null,
   channel: null,
   shown: null,
@@ -98,6 +99,7 @@ const residue = createResidue({
   cleanUrl: () => history.replaceState(null, "", location.pathname + location.search),
 });
 
+const DEMO = new URLSearchParams(location.search).get("mode") === "demo";
 const reduceMotion = matchMedia("(prefers-reduced-motion: reduce)").matches;
 const serverNow = () => Date.now() + s.skew;
 
@@ -163,7 +165,7 @@ const MODE = {
 };
 
 function render() {
-  const key = screenKey({ view: s.view, link: s.link, errored: s.errored });
+  const key = screenKey({ view: s.view, link: s.link, errored: s.errored, limited: s.limited });
   const v = s.view;
   const copy = screenCopy(key, {
     room: v?.room.name ?? "",
@@ -172,6 +174,7 @@ function render() {
     endsAt: v?.endsAt ? clock(v.endsAt) : null,
     guest: v?.kind === "guest",
     offlineLong: s.offlineSince !== null && Date.now() - s.offlineSince >= OFFLINE_HINT_MS,
+    demo: DEMO,
   });
 
   const changed = heading.textContent !== copy.heading;
@@ -329,16 +332,16 @@ async function resume() {
 
 /** @returns {Promise<Booted>} */
 async function create() {
-  const mode = new URLSearchParams(location.search).get("mode") === "demo" ? "demo" : "live";
-  const res = await api.post("/api/screens", { mode });
+  const res = await api.post("/api/screens", { mode: DEMO ? "demo" : "live" });
   if (!res.ok) return { ok: false, error: res.error };
   store.set(SID_KEY, res.value.sid);
   return { ok: true, sid: res.value.sid, view: res.value.view };
 }
 
-/** Resumes the stored screen, or creates one. Retries with backoff while the network is down. */
+/** Resumes the stored screen, or creates one. Retries with backoff while the network is down or the demo caps refuse. */
 async function boot(attempt = 0) {
   const booted = (await resume()) ?? (await create());
+  s.limited = !booted.ok && booted.error === "rate_limited";
   if (!booted.ok) {
     s.link = booted.error === "offline" ? "offline" : "down";
     s.offlineSince = s.link === "offline" ? (s.offlineSince ?? Date.now()) : null;

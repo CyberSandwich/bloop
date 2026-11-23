@@ -4,7 +4,7 @@ import { phoneCopy } from "../../public/js/core/copy.js";
 import { demoPose, isPoseName } from "../../public/js/core/robin-pose.js";
 import { phoneMockKey, stageCopy, stageState } from "../../public/js/demo/stage.js";
 
-const STATES = ["waiting", "scanned", "approved", "open", "ended", "error"] as const;
+const STATES = ["waiting", "scanned", "approved", "open", "ended", "busy", "error"] as const;
 
 describe("the stage's demo states (design.md section 6)", () => {
   it("DEMO-01 flow: maps every screen state key to a stage state, and a dropped socket to none", () => {
@@ -14,6 +14,7 @@ describe("the stage's demo states (design.md section 6)", () => {
     expect(["open", "open_fallback", "pdf_fallback"].map((k) => stageState(k as never))).toEqual(Array(3).fill("open"));
     expect(stageState("ended")).toBe("ended");
     expect(stageState("offline")).toBeNull();
+    expect(stageState("rate_limited")).toBe("busy");
     expect(["error", "service_down", "phone_width"].map((k) => stageState(k as never))).toEqual(Array(3).fill("error"));
   });
 
@@ -32,6 +33,11 @@ describe("the stage's demo states (design.md section 6)", () => {
     });
     expect(stageCopy("ended", null)).toMatchObject({ heading: "Ended.", line: "Scan the new code to try again." });
     expect(stageCopy("error", null)).toEqual({ heading: "Unable to start the demo.", line: "", action: "Try Again" });
+    expect(stageCopy("busy", null)).toEqual({
+      heading: "Too many demos open right now.",
+      line: "Try again in a few minutes.",
+      action: null,
+    });
   });
 
   it("DEMO-01 flow: offers an action only where the design has one", () => {
@@ -39,7 +45,7 @@ describe("the stage's demo states (design.md section 6)", () => {
   });
 
   it("DEMO-01 flow: echoes the real phone sheets, and shows none before a scan or after an error", () => {
-    expect(STATES.map(phoneMockKey)).toEqual([null, "approve_demo", "opening", "open", "ended", null]);
+    expect(STATES.map(phoneMockKey)).toEqual([null, "approve_demo", "opening", "open", "ended", null, null]);
     expect(phoneCopy("approve_demo", { room: "Demo room", file: null, endsAt: null }).title).toBe(
       "Open the sample deck here?",
     );

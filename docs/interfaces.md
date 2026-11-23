@@ -121,7 +121,8 @@ export type PhoneStateKey =
   | "rate_limited" | "guest_pass_needed" | "guest_off" | "busy";          // last five: strings added to design.md section 7 (section 9)
 export type ScreenStateKey =
   | "waiting" | "scanned" | "choosing" | "approved" | "opening" | "open" | "open_fallback"
-  | "pdf_fallback" | "pdf_file" | "guest_open" | "ended" | "offline" | "service_down" | "error" | "phone_width";
+  | "pdf_fallback" | "pdf_file" | "guest_open" | "ended" | "offline" | "service_down" | "error" | "phone_width"
+  | "rate_limited";  // a refused screen create (DEMO-02): its own design.md row, retried with backoff
 ```
 
 ## 2. Pairing and the session state machine

@@ -345,6 +345,27 @@ test.describe("screen page", () => {
     await context.close();
   });
 
+  test("F16 DEMO-02 a demo screen refused by the caps says so, and starts by itself once there is room", async ({
+    browser,
+  }) => {
+    const context = await browser.newContext({ viewport: SCREEN });
+    const page = await context.newPage();
+    await page.route("**/api/screens", (route) =>
+      route.fulfill({
+        status: 429,
+        contentType: "application/problem+json",
+        body: JSON.stringify({ type: "about:blank", status: 429, code: "rate_limited" }),
+      }),
+    );
+    await page.goto("/s?mode=demo");
+    await expect(heading(page)).toHaveText("Too many demos open right now.");
+    await expect(page.locator("#line")).toHaveText("Try again in a few minutes.");
+    await page.unroute("**/api/screens");
+    // The first retry waits 5 s.
+    await expect(heading(page)).toHaveText("Demo room", { timeout: 10_000 });
+    await context.close();
+  });
+
   test("the QR is one path in a 41 module square with the required label", async ({ browser }) => {
     const screen = await demoScreen(browser);
     const code = await typedCodeOf(screen.page);

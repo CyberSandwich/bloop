@@ -10,6 +10,7 @@ const pdfKey = (/** @type {ScreenView | PhoneView} */ v) => (v.fileType === "pdf
  * @property {ScreenView | null} view
  * @property {"ok" | "offline" | "down"} link
  * @property {boolean} errored an action or a pushed error failed; clears after a pause
+ * @property {boolean} [limited] creating the screen was refused with `rate_limited` (the demo caps, DEMO-02); the page retries
  */
 
 /**
@@ -17,6 +18,7 @@ const pdfKey = (/** @type {ScreenView | PhoneView} */ v) => (v.fileType === "pdf
  * @returns {ScreenStateKey}
  */
 export function screenKey(c) {
+  if (c.limited) return "rate_limited";
   if (c.link === "offline") return "offline";
   if (c.link === "down") return "service_down";
   if (c.errored) return "error";

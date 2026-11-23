@@ -1173,8 +1173,8 @@ html .touch {
     transform: none;
   }
 }
-/* The phone mock has nothing to show until a phone has scanned, and none after an error. */
-.orbit.is-live:is([data-demo="waiting"], [data-demo="error"]) .orbit-phone .mock-scale {
+/* The phone mock has nothing to show until a phone has scanned, and none after an error or a refusal. */
+.orbit.is-live:is([data-demo="waiting"], [data-demo="busy"], [data-demo="error"]) .orbit-phone .mock-scale {
   visibility: hidden;
 }
 

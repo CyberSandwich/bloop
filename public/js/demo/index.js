@@ -39,13 +39,14 @@ export function startDemo(orbit) {
   const phoneActions = byId("demo-phone-actions");
   const reduced = matchMedia("(prefers-reduced-motion: reduce)").matches;
 
-  /** @type {{sid: string | null, channel: ReturnType<typeof openChannel> | null, view: ScreenView | null, link: "ok" | "offline" | "down", errored: boolean, shown: string | null, state: string | null, skew: number, timers: Record<string, ReturnType<typeof setTimeout> | undefined>}} */
+  /** @type {{sid: string | null, channel: ReturnType<typeof openChannel> | null, view: ScreenView | null, link: "ok" | "offline" | "down", errored: boolean, limited: boolean, shown: string | null, state: string | null, skew: number, timers: Record<string, ReturnType<typeof setTimeout> | undefined>}} */
   const s = {
     sid: null,
     channel: null,
     view: null,
     link: "ok",
     errored: false,
+    limited: false,
     shown: null,
     state: null,
     skew: 0,
@@ -102,7 +103,7 @@ export function startDemo(orbit) {
   }
 
   function render() {
-    const state = stageState(screenKey({ view: s.view, link: s.link, errored: s.errored }));
+    const state = stageState(screenKey({ view: s.view, link: s.link, errored: s.errored, limited: s.limited }));
     if (state === null) return;
     goLive();
     const v = s.view;
@@ -190,13 +191,23 @@ export function startDemo(orbit) {
     });
   }
 
-  /** Opens a new demo screen. Retries nothing: a refusal (limit, cap, demo off) shows the error state and Try Again. */
+  /**
+   * Opens a new demo screen. The demo caps (`rate_limited`) show their own state and retry with backoff; any other
+   * refusal (demo off, a bad answer) shows the error state and Try Again.
+   */
   async function begin(attempt = 0) {
     s.channel?.stop();
     s.channel = null;
     s.errored = false;
     s.shown = null;
     const res = await api.post("/api/screens", { mode: "demo" });
+    s.limited = !res.ok && res.error === "rate_limited";
+    if (s.limited) {
+      s.view = null;
+      render();
+      setTimeout(() => begin(attempt + 1), pollDelay(attempt + 1));
+      return;
+    }
     if (!res.ok) {
       // The network, not the server, said no: try again quietly a few times before showing the error.
       if ((res.error === "offline" || res.error === "service_down") && attempt < 2) {

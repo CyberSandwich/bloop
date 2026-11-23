@@ -82,6 +82,12 @@ describe("screen state to view mapping", () => {
   it("no view yet reads as offline, so the screen never shows a blank state as a fact", () => {
     expect(screenKey({ view: null, link: "ok", errored: false })).toBe("offline");
   });
+
+  it("F16 DEMO-02 a create refused with rate_limited is its own state, never service down", () => {
+    // boot() leaves the link down after any refused create; the refusal says why.
+    expect(screenKey({ view: null, link: "down", errored: false, limited: true })).toBe("rate_limited");
+    expect(screenKey({ view: null, link: "down", errored: false, limited: false })).toBe("service_down");
+  });
 });
 
 describe("phone state to view mapping", () => {

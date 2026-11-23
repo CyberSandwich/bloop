@@ -24,6 +24,7 @@ export const SIGN_IN_HINT = "Sign in to this PC as usual to open your slides.";
  * @property {string | null} endsAt local time, "11:35"
  * @property {boolean} guest
  * @property {boolean} offlineLong the screen has been offline for a while
+ * @property {boolean} [demo] a demo screen (`/s?mode=demo`)
  */
 
 /**
@@ -129,6 +130,12 @@ export function screenCopy(key, f) {
       };
     case "service_down":
       return { ...base, heading: "bloop isn't responding.", line: "Sign in to this PC as usual." };
+    case "rate_limited":
+      return {
+        ...base,
+        heading: f.demo ? "Too many demos open right now." : "Too many screens started here.",
+        line: "Try again in a few minutes.",
+      };
     case "error":
       return {
         ...base,

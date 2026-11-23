@@ -103,6 +103,7 @@ bloop puts your slides on a shared screen. You scan the code on the screen, choo
 | approved | Approved. | Opening the sample deck. |
 | open | The sample deck is open. | This page has no account. It was shown one file. Action: Run It Again (text) |
 | ended | Ended. | Scan the new code to try again. |
+| busy (the demo caps refused a new screen, `rate_limited`) | Too many demos open right now. | Try again in a few minutes. (retries by itself: 5 s, 10 s, then every 30 s) |
 | error | Unable to start the demo. | Action: Try Again |
 
 **How it works (pose explorer)**
@@ -365,6 +366,7 @@ Send Me the Link calls `navigator.share({title, text, url})`; without it, it cop
 | expired | no change: the code already refreshed; the phone explains | | |
 | offline | This screen is offline. | Reconnecting. After 5 s add: Sign in to this PC as usual to open your slides. | none (retry 5 s, backing off to 30 s) |
 | service down | bloop isn't responding. | Sign in to this PC as usual. | none |
+| rate limited (creating the screen was refused, `rate_limited`) | Too many demos open right now. (`/s?mode=demo`); Too many screens started here. (live) | Try again in a few minutes. | none (retries by itself: 5 s, 10 s, then every 30 s) |
 | error | Unable to open Lecture 4.pptx. | Try again on your phone, or sign in to this PC as usual. | none (new QR after 5 s) |
 
 Each heading change is announced in a `role="status"` region; error uses `role="alert"`.

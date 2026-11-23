@@ -2,7 +2,7 @@
 // screen"). Pure: demo/index.js draws it. The phone mock reuses the real /a strings from core/copy.js.
 /** @import {PhoneStateKey, ScreenStateKey} from "../../../src/shared/protocol.ts" */
 
-/** @typedef {"waiting" | "scanned" | "approved" | "open" | "ended" | "error"} StageState */
+/** @typedef {"waiting" | "scanned" | "approved" | "open" | "ended" | "busy" | "error"} StageState */
 
 /**
  * The stage state for a screen state key. Null for `offline`: a dropped socket keeps what is shown until it
@@ -28,6 +28,8 @@ export function stageState(key) {
       return "open";
     case "ended":
       return "ended";
+    case "rate_limited":
+      return "busy";
     case "offline":
       return null;
     default:
@@ -56,6 +58,8 @@ export function stageCopy(state, match) {
       };
     case "ended":
       return { heading: "Ended.", line: "Scan the new code to try again.", action: null };
+    case "busy":
+      return { heading: "Too many demos open right now.", line: "Try again in a few minutes.", action: null };
     case "error":
       return { heading: "Unable to start the demo.", line: "", action: "Try Again" };
   }

@@ -18,6 +18,7 @@ const SCREEN_KEYS: ScreenStateKey[] = [
   "service_down",
   "error",
   "phone_width",
+  "rate_limited",
 ];
 const PHONE_KEYS: PhoneStateKey[] = [
   "checking",
@@ -132,6 +133,16 @@ describe("screen copy", () => {
   it("only an error alerts", () => {
     expect(SCREEN_KEYS.filter((k) => screenCopy(k, sf).alert)).toEqual(["error"]);
     expect(screenCopy("error", { ...sf, file: null }).heading).toBe("Unable to open your slides.");
+  });
+
+  it("F16 a refused create says the caps are full, demo or live, and points at no other way in", () => {
+    expect(screenCopy("rate_limited", { ...sf, demo: true })).toMatchObject({
+      heading: "Too many demos open right now.",
+      line: "Try again in a few minutes.",
+      controls: [],
+      alert: false,
+    });
+    expect(screenCopy("rate_limited", sf).heading).toBe("Too many screens started here.");
   });
 
   it("the footer line is the one design.md gives", () => {
