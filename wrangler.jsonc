@@ -16,12 +16,12 @@
     "bindings": [{ "name": "SCREEN", "class_name": "Screen" }, { "name": "DIRECTORY", "class_name": "Directory" }]
   },
   "migrations": [{ "tag": "v1", "new_sqlite_classes": ["Screen", "Directory"] }],
-  // The id is a placeholder: `wrangler d1 create bloop --jurisdiction=eu` prints the real one.
+  // Created with `wrangler d1 create bloop --jurisdiction eu`; a new account prints a new id.
   "d1_databases": [
     {
       "binding": "DB",
       "database_name": "bloop",
-      "database_id": "00000000-0000-0000-0000-000000000000",
+      "database_id": "ea89d5c2-d40a-424b-a910-c102d98be3cf",
       "migrations_dir": "migrations"
     }
   ],
@@ -58,6 +58,9 @@
     "GUEST_DROP": "open",
     "GUEST_MAX_BYTES": "52428800",
     "GUEST_STORAGE_BUDGET_BYTES": "5368709120",
+    // R2 has no platform spending cap: these stop bloop at 80% of the free tier (1M class A, 10M class B a month).
+    "R2_CLASS_A_MONTHLY_CAP": "800000",
+    "R2_CLASS_B_MONTHLY_CAP": "8000000",
     "DEMO_ENABLED": "true",
     "DEMO_SESSION_MINUTES": "10",
     "DEMO_GUEST_MAX_BYTES": "10485760",
