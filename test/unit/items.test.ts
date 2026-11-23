@@ -6,7 +6,7 @@ import {
   type ItemRef,
   itemView,
   LINK_HOSTS,
-  linkAllowed,
+  allowedLink,
   MAX_ITEMS,
   orderItems,
 } from "../../src/worker/items.ts";
@@ -42,9 +42,13 @@ const kv = (entries: Record<string, unknown> = {}) => {
 const USERINFO = ["user", "pw"].join(":");
 
 describe("LINK-01 link items: https only, on an allowed host", () => {
-  it("allows the allowlisted hosts over https", () => {
-    for (const host of LINK_HOSTS) expect(linkAllowed(`https://${host}/`)).toBe(true);
-    expect(linkAllowed("https://www.vevox.com/join/123?x=1#y")).toBe(true);
+  it("allows the allowlisted hosts over https and answers the normalized URL, which is all an item stores", () => {
+    for (const host of LINK_HOSTS) expect(allowedLink(`https://${host}/`)).toBe(`https://${host}/`);
+    expect(allowedLink("https://www.vevox.com/join/123?x=1#y")).toBe("https://www.vevox.com/join/123?x=1#y");
+    expect(allowedLink("HTTPS://WWW.VEVOX.COM")).toBe("https://www.vevox.com/");
+    // The default port normalizes away; a backslash after the host is only a path.
+    expect(allowedLink("https://www.vevox.com:443/x")).toBe("https://www.vevox.com/x");
+    expect(allowedLink("https://www.vevox.com\\evil")).toBe("https://www.vevox.com/evil");
   });
 
   it("refuses other schemes, hosts, look-alikes, credentials, ports and junk", () => {
@@ -58,12 +62,17 @@ describe("LINK-01 link items: https only, on an allowed host", () => {
       "https://www.vevox.com@evil.example/",
       `https://${USERINFO}@www.vevox.com/`,
       "https://www.vevox.com:8443/",
+      "https://www.vevox.com./",
+      "https://www.vev\u043ex.com/",
+      "https://xn--www-vevox-o5a.com/",
+      "https:\\\\evil.example\\www.vevox.com",
+      "https:evil.example/www.vevox.com",
       "//www.vevox.com/",
       "www.vevox.com",
       "",
       `https://www.vevox.com/${"a".repeat(2100)}`,
     ]) {
-      expect(linkAllowed(url), url).toBe(false);
+      expect(allowedLink(url), url).toBeNull();
     }
   });
 

@@ -190,7 +190,7 @@ export type FileItemRef = FileRef & { kind: "file" };
 export type ItemRef = FileItemRef | LinkRef;
 export const MAX_ITEMS = 12;
 export const LINK_HOSTS: readonly string[];          // ["www.vevox.com"]
-export declare function linkAllowed(url: string): boolean;   // URL-parsed: https, an allowed host, no credentials, no port, at most 2048 characters
+export declare function allowedLink(url: string): string | null;   // URL-parsed: https, an allowed host, no credentials, no explicit non-default port, at most 2048 characters; answers url.href, the only form an item stores
 export declare function orderItems(items: readonly ItemRef[]): ItemRef[];   // files by name, then links by title
 export declare function launchIndex(items: readonly ItemRef[]): number;    // the first file, -1 for links only
 export declare function fileAt(items: readonly ItemRef[], index: number): FileItemRef | null;
@@ -428,7 +428,7 @@ export declare class GraphFileSource implements FileSource {
 - **Errors:** 401 `auth_required`; 403 with `consent` in the body `admin_consent_required`, other 403 `source_unavailable`; 404 `file_not_found`; 429 and 503 `source_throttled`; anything else, and a network failure, `source_unavailable`.
 - **Open items (need the Entra app, F-ENTRA):** whether this listing works for both work and personal accounts, whether `/me/drive/recent` is a better call, and whether `Files.Read.Selected` can serve this flow (unverified).
 
-`source-access.ts` picks the source: `MockFileSource` for a demo screen and whenever `FILE_SOURCE=mock`; `GraphFileSource` only for a live screen under `FILE_SOURCE=graph`, for the user the session cookie names. `Access.links` holds the account's web links: `DEMO_LINKS` for the mock source, none for Graph. `listEntries` is the phone's list: `listRecent` (5 files), then every link that passes `linkAllowed`. `resolveListed` runs the same list at approve and builds an `ItemRef` from each entry whose id matches, so the client's ids are the only thing trusted and an id not in the list is `file_not_found`.
+`source-access.ts` picks the source: `MockFileSource` for a demo screen and whenever `FILE_SOURCE=mock`; `GraphFileSource` only for a live screen under `FILE_SOURCE=graph`, for the user the session cookie names. `Access.links` holds the account's web links: `DEMO_LINKS` for the mock source, none for Graph. `listEntries` is the phone's list: `listRecent` (5 files), then every link `allowedLink` accepts, carrying the URL it normalized. `resolveListed` runs the same list at approve and builds an `ItemRef` from each entry whose id matches, so the client's ids are the only thing trusted and an id not in the list is `file_not_found`.
 
 ## 4. `OpenPath` (`src/worker/seams/open-path/`)
 Minting and the link rules do not depend on the mode, so they are plain functions in `links.ts`; the seam (`index.ts`) is only how an accepted request is answered. `select.ts` picks the class from `OPEN_PATH_MODE`.

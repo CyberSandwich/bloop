@@ -37,7 +37,7 @@ export const demoSource = (): MockFileSource =>
     },
   ]);
 
-/** The demo account's links. One that fails `linkAllowed` is never listed (test/integration/demo.test.ts). */
+/** The demo account's links. One that `allowedLink` refuses is never listed (test/integration/demo.test.ts). */
 export const DEMO_LINKS: readonly LinkEntry[] = [
   { kind: "link", id: "demo-vevox", url: "https://www.vevox.com/", title: "Vevox" },
 ];

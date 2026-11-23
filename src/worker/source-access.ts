@@ -6,7 +6,7 @@ import { phoneUser, servicesFor } from "./auth/services.ts";
 import type { Config } from "./config.ts";
 import type { Env } from "./env.ts";
 import { fail } from "./http.ts";
-import { type ItemRef, linkAllowed } from "./items.ts";
+import { allowedLink, type ItemRef } from "./items.ts";
 import { DEMO_LINKS, demoSource } from "./seams/file-source/demo.ts";
 import { GraphFileSource } from "./seams/file-source/graph.ts";
 import type { FileSource, SourceContext } from "./seams/file-source/index.ts";
@@ -60,13 +60,16 @@ export async function accessForUser(env: Env, config: Config, mode: Mode, userId
 
 const noToken: SourceContext["accessToken"] = async () => ({ ok: false, error: "auth_required" });
 
-/** The phone's list: the recent files, then every link that passes `linkAllowed` (LINK-01). */
+/** The phone's list: the recent files, then every link `allowedLink` accepts, as the URL it normalized (LINK-01). */
 export async function listEntries(
   access: Extract<Access, { ok: true }>,
 ): Promise<{ ok: true; entries: Entry[] } | { ok: false; error: SourceError }> {
   const listed = await access.source.listRecent(access.ctx, LIST_LIMIT);
   if (!listed.ok) return listed;
-  return { ok: true, entries: [...listed.files, ...access.links.filter((l) => linkAllowed(l.url))] };
+  return { ok: true, entries: [...listed.files, ...access.links.flatMap((l) => {
+        const url = allowedLink(l.url);
+        return url ? [{ ...l, url }] : [];
+      })] };
 }
 
 /** The server's own record of the entries the phone named by id: each must be in the current list (SRC-02). */

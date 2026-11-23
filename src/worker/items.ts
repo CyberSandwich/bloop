@@ -3,7 +3,7 @@
 import type { Item } from "../shared/protocol.ts";
 import type { FileRef } from "./machine.ts";
 
-/** A web link the source offered. Only `linkAllowed` URLs get this far (LINK-01). */
+/** A web link the source offered. `url` is what `allowedLink` answered, never the raw input (LINK-01). */
 export interface LinkRef {
   kind: "link";
   ref: string;
@@ -20,22 +20,25 @@ export const MAX_ITEMS = 12;
 export const LINK_HOSTS: readonly string[] = ["www.vevox.com"];
 const MAX_URL_CHARS = 2048;
 
-/** True for an https URL on an allowed host, with no credentials and no port. Parsed, never pattern-matched. */
-export function linkAllowed(raw: string): boolean {
-  if (raw.length > MAX_URL_CHARS) return false;
+/**
+ * The normalized URL (`url.href`) for an https URL on an allowed host, with no credentials and no explicit non-default
+ * port; else null. Parsed, never pattern-matched, and the caller keeps only the answer: what was checked is what is shown.
+ */
+export function allowedLink(raw: string): string | null {
+  if (raw.length > MAX_URL_CHARS) return null;
   let url: URL;
   try {
     url = new URL(raw);
   } catch {
-    return false;
+    return null;
   }
-  return (
+  const allowed =
     url.protocol === "https:" &&
     url.username === "" &&
     url.password === "" &&
     url.port === "" &&
-    LINK_HOSTS.includes(url.hostname)
-  );
+    LINK_HOSTS.includes(url.hostname);
+  return allowed && url.href.length <= MAX_URL_CHARS ? url.href : null;
 }
 
 /** Files by name, then links by title: the order every page shows and every item index names. */
