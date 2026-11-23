@@ -145,9 +145,9 @@ const schema = z
     DEMO_GUEST_MAX_BYTES: int(1, PLATFORM_BODY_CAP)
       .default(10_485_760)
       .describe("Largest guest upload in a demo room, in bytes."),
-    DEMO_MAX_CONCURRENT: int(1, 10_000).default(50).describe("Demo screens alive at once, across all visitors."),
+    DEMO_MAX_CONCURRENT: int(1, 10_000).default(100).describe("Demo screens alive at once, across all visitors."),
     DEMO_MAX_PER_IP: int(1, 10_000)
-      .default(2)
+      .default(12)
       .describe("Demo screens one IP hash may hold at once, so one address cannot fill the cap."),
     GUEST_STORAGE_BUDGET_BYTES: int(1, Number.MAX_SAFE_INTEGER)
       .default(5_368_709_120)

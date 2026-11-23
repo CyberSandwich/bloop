@@ -76,9 +76,9 @@ describe("config", () => {
     expect(problems({ ...PROD, AUDIT_RETENTION_DAYS: "0" }).join()).toContain("AUDIT_RETENTION_DAYS");
   });
 
-  it("DEMO-02 flood: the demo cap defaults to 50, is configurable and the hold covers a claim window plus a session", () => {
+  it("DEMO-02 flood: the demo cap defaults to 100, is configurable and the hold covers a claim window plus a session", () => {
     const d = parseConfig(PROD);
-    expect(d.ok && d.config.demoMaxConcurrent).toBe(50);
+    expect(d.ok && d.config.demoMaxConcurrent).toBe(100);
     expect(d.ok && d.config.demoHoldMs).toBe((300 + 10 * 60) * 1000);
     const c = parseConfig({ ...PROD, DEMO_MAX_CONCURRENT: "5" });
     expect(c.ok && c.config.demoMaxConcurrent).toBe(5);
@@ -86,9 +86,9 @@ describe("config", () => {
     expect(problems({ ...PROD, DEMO_MAX_CONCURRENT: "many" }).join()).toContain("DEMO_MAX_CONCURRENT");
   });
 
-  it("F14 DEMO-02 flood: one IP may hold 2 demo screens at once by default, configurable", () => {
+  it("F14 DEMO-02 flood: one IP may hold 12 demo screens at once by default, configurable", () => {
     const d = parseConfig(PROD);
-    expect(d.ok && d.config.demoMaxPerIp).toBe(2);
+    expect(d.ok && d.config.demoMaxPerIp).toBe(12);
     const c = parseConfig({ ...PROD, DEMO_MAX_PER_IP: "5" });
     expect(c.ok && c.config.demoMaxPerIp).toBe(5);
     expect(problems({ ...PROD, DEMO_MAX_PER_IP: "0" }).join()).toContain("DEMO_MAX_PER_IP");

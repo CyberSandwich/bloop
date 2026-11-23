@@ -178,39 +178,27 @@ describe("DEMO-02 flood: strict per-IP limits", () => {
   });
   afterAll(() => wrangler?.stop());
 
-  it("DEMO-02 flood: demo screen creation is limited to 4 a minute per IP, tighter than live, and another IP is unaffected", async () => {
+  it("DEMO-02 flood: demo screen creation is limited to 12 a minute per IP, and another IP is unaffected", async () => {
     const statuses: number[] = [];
-    for (let i = 0; i < 6; i++)
+    for (let i = 0; i < 14; i++)
       statuses.push((await api.post("/api/screens", { mode: "demo" }, ip("203.0.113.10"))).status);
-    expect(statuses.filter((s) => s === 201)).toHaveLength(4);
-    expect(statuses.slice(4)).toEqual([429, 429]);
+    expect(statuses.filter((s) => s === 201)).toHaveLength(12);
+    expect(statuses.slice(12)).toEqual([429, 429]);
     expect((await api.post("/api/screens", { mode: "demo" }, ip("203.0.113.11"))).status).toBe(201);
     // The live limit is its own binding: this IP can still create a live screen.
     expect((await api.post("/api/screens", { mode: "live" }, ip("203.0.113.10"))).status).toBe(201);
   });
 
-  it("DEMO-02 flood: demo claims are limited to 8 a minute per IP and the 9th is 429", async () => {
+  it("DEMO-02 flood: demo claims from one IP stop at the live claim limit, which binds before the demo one", async () => {
     const codes: string[] = [];
-    for (let i = 0; i < 9; i++) codes.push((await demoCode(api, `203.0.113.${20 + i}`)).code);
+    for (let i = 0; i < 21; i++) codes.push((await demoCode(api, `203.0.113.${20 + i}`)).code);
     const statuses: number[] = [];
-    for (const code of codes) statuses.push((await api.post("/api/claim", { code }, ip("203.0.113.40"))).status);
-    expect(statuses.slice(0, 8)).toEqual(Array(8).fill(200));
-    expect(statuses[8]).toBe(429);
+    for (const code of codes) statuses.push((await api.post("/api/claim", { code }, ip("203.0.113.60"))).status);
+    expect(statuses.slice(0, 20)).toEqual(Array(20).fill(200));
+    expect(statuses[20]).toBe(429);
     // Another phone is counted on its own.
-    const fresh = await demoCode(api, "203.0.113.50");
-    expect((await api.post("/api/claim", { code: fresh.code }, ip("203.0.113.41"))).status).toBe(200);
-  });
-
-  it("DEMO-02 flood: live claims are not held to the demo limit", async () => {
-    const codes: string[] = [];
-    for (let i = 0; i < 9; i++) {
-      const created = await api.post<{ sid: string }>("/api/screens", { mode: "live" }, ip(`203.0.114.${i + 1}`));
-      const state = await api.get<{ code: { code: string } }>("/api/screen/state", created.body.sid);
-      codes.push(state.body.code.code);
-    }
-    const statuses: number[] = [];
-    for (const code of codes) statuses.push((await api.post("/api/claim", { code }, ip("203.0.114.100"))).status);
-    expect(statuses).toEqual(Array(9).fill(200));
+    const fresh = await demoCode(api, "203.0.113.70");
+    expect((await api.post("/api/claim", { code: fresh.code }, ip("203.0.113.61"))).status).toBe(200);
   });
 });
 
