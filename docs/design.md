@@ -167,7 +167,7 @@ State strings for `/s` and `/a` are in section 7 with their screens.
 | Shadow | `--sh1..3` | add `--sh-float:0 0 0 1px rgba(29,29,31,.06),0 30px 60px -30px rgba(29,29,31,.35)` | one deep shadow under a device |
 | Section rhythm | none | `--sec` 128 / 96 / 80 px by tier | the reference rhythm |
 | Motion | 150, 250, 400, 500 | kept; add `--rise:12px` | entrance rise |
-| QR module | none | `--qr-mod` 6 px, 5 px when the viewport is under 760 px tall | the code fits the fold |
+| QR module | none | 6 px, 5 px when the viewport is under 760 px tall (sized on the SVG, no token) | the code fits the fold |
 | Robin box | none | `--robin-hero:clamp(320px,60vh,560px)`; `min(80vw,320px)` under 600 | bar 7 |
 
 The accent is the house orange (`--acc:#FFB783`, `--on-acc:#4E2600`, `--acc-ink:#8D4F1B`). White on orange fails AA and never ships. Tokens live in `public/css/app.css` (the one stylesheet, restating the house light values); this file is the source and the CSS restates it.
@@ -200,10 +200,10 @@ Measure 60 to 72 characters (`max-width:36em`). Nothing under 12 px. Headings `t
 ### Radii, elevation, layers
 | Group | Values |
 |---|---|
-| Radii | `--r-sm` 10 (skeletons), `--r-card` 20 (every card), `--r-sheet` 24 (true sheets), `--r-stage` 32, `--r-device` 48, `--rr` pill (buttons, chips, nav) |
+| Radii | `--r-sm` 10 (skeletons), `--r-card` 20 (every card), 24 for a true sheet (no token until one ships), `--r-stage` 32, `--r-device` 48, `--rr` pill (buttons, chips, nav) |
 | Concentric rule | `r_inner = r_outer - inset`, inset equal on every side, floored at 4 px; a bar holding a pill is a pill. Nav 52 with 8 inset holds a 36 pill; phone mock 48 with 8 bezel gives a 40 screen; a sheet inset 8 in that screen takes 32; a panel filling a story card at 24 inset takes 8. Devices placed freely on a stage are objects, not nested panels, and keep their device radii |
 | Hairline | `box-shadow:0 0 0 1px var(--bdr)` (never a border, so no layout shift) |
-| Shadows | `--sh1` cards; `--sh2` nav and toasts; `--sh3` sheets; `--sh-float` devices |
+| Shadows | `--sh1` cards; `--sh2` nav and toasts; `--sh-float` devices |
 | Blur | nav 20 px; scrim 3 px; nothing else; never animated |
 | Z-layers | stage objects 1, robin 2, nav 50, toast 60, scrim 70, sheet 80, skip link 90 |
 | Breakpoints | compact under 600, medium 600 to 1199, large 1200+; check at 390, 834, 1440 |
@@ -551,7 +551,7 @@ At most one prop (the slide card, carry pose only); phones, screens and files ar
 | Mode, version | byte mode, level M, pinned to version 4 (33 x 33 modules) so the size never jumps |
 | Quiet zone | 4 modules each side, inside the white panel: 41 modules across |
 | Rendering | integer device pixels per module, `shape-rendering:crispEdges`, no CSS scaling after layout, square modules, #1D1D1F on #FFFFFF, never inverted, no logo, no rounded or colored modules, never animated while shown |
-| Landing size | 41 x `--qr-mod`: 205 or 246 px |
+| Landing size | 41 x the module size: 205 or 246 px |
 | Screen size | module = `floor(0.5 * viewport height * DPR / 41)` device px; 1080p: 13 px, 533 px wide; 1366 x 768: 9 px, 369 px |
 | Refresh | every 60 s; next code fetched at 50 s; the old code fades to white over `--d1`, then the new one in; the old code stays valid 10 s; a scanned code locks to that phone, which then has 2 minutes to approve |
 | Match code | 2 digits, 10 to 99, on the screen after a scan (120 px on `/s`, 96 px on the stage) and on the phone (48 px); compared, not typed |

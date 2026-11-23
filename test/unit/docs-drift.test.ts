@@ -137,6 +137,32 @@ describe("worker vars", () => {
   });
 });
 
+describe("design tokens", () => {
+  const norm = (value: string) =>
+    value
+      .toLowerCase()
+      .replace(/\s+/g, "")
+      .replace(/(?<!\d)0\./g, ".");
+
+  it("every `--token:value` in design.md section 4 is in app.css :root with the same value", () => {
+    const section = read("docs/design.md").split("\n## 4. ")[1]?.split("\n## ")[0] ?? "";
+    const documented = [...section.matchAll(/`(--[\w-]+):([^`]+)`/g)].map((m) => [m[1] ?? "", m[2] ?? ""] as const);
+    expect(documented.length).toBeGreaterThan(8);
+
+    const rootBlock = read("public/css/app.css").match(/^:root\s*\{([^}]*)\}/m)?.[1] ?? "";
+    const css = new Map([...rootBlock.matchAll(/(--[\w-]+)\s*:\s*([^;]+);/g)].map((m) => [m[1] ?? "", m[2] ?? ""]));
+    const drift = documented
+      .filter(([name, value]) => norm(css.get(name) ?? "<missing>") !== norm(value))
+      .map(([name, value]) => `${name}: design.md ${value}, app.css ${css.get(name) ?? "missing"}`);
+    expect(drift).toEqual([]);
+
+    const named = new Set([...section.matchAll(/`(--[\w-]+)(?::[^`]*)?`/g)].map((m) => m[1] ?? ""));
+    // Named only to say bloop does not use them (the "Status colors" row).
+    const unused = new Set(["--ok", "--warn", "--err"]);
+    expect([...named].filter((name) => !css.has(name) && !unused.has(name))).toEqual([]);
+  });
+});
+
 describe("error table", () => {
   it("interfaces.md section 8 points at errors.js and restates no code", () => {
     const section = read("docs/interfaces.md").split("## 8. ")[1]?.split("\n## ")[0] ?? "";
