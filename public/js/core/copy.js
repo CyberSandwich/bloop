@@ -101,7 +101,14 @@ export function screenCopy(key, f) {
         chipIcon: "check",
       };
     case "pdf_file":
-      return { ...base, heading: file, line: "Opened as a PDF.", controls: ["end"], chip: "Approved", chipIcon: "check" };
+      return {
+        ...base,
+        heading: file,
+        line: "Opened as a PDF.",
+        controls: ["end"],
+        chip: "Approved",
+        chipIcon: "check",
+      };
     case "guest_open":
       return {
         ...base,
