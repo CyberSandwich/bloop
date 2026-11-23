@@ -9,6 +9,7 @@
     {
       "id": "abort-stale-uploads-1-day",
       "enabled": true,
+      "conditions": { "prefix": "" },
       "abortMultipartUploadsTransition": { "condition": { "type": "Age", "maxAge": 86400 } }
     }
   ]
