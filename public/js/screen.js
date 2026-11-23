@@ -334,7 +334,9 @@ async function resume() {
   }
   if (res.ok && res.value.mode === (DEMO ? "demo" : "live"))
     return /** @type {Booted} */ ({ ok: true, sid, view: res.value });
-  store.remove(SID_KEY);
+  // A screen of the other mode would otherwise keep its session (and a demo slot) until it timed out.
+  if (res.ok) await api.post("/api/screen/end", {}, sid);
+  residue.forget();
   return null;
 }
 

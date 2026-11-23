@@ -533,10 +533,11 @@ export interface PurgeReport {
   accessTokenDropped: boolean; // in-memory access token for this session
 }
 
-/** Screen side. `clear` runs on "ended" and "closed" (the page re-stores its own credential when the screen waits again, so a reload resumes the screen); pagehide only closes the PDF window. A stored sid resumes only a screen of the page's own mode; the demo's one-device round trip (`/s?mode=demo` to `/a` and back in one tab) is that resume, and `clear` also drops the pid the tab took on `/a`. */
+/** Screen side. `clear` runs on "ended" and "closed" (the page re-stores its own credential when the screen waits again, so a reload resumes the screen); pagehide only closes the PDF window. A stored sid resumes only a screen of the page's own mode; a screen of the other mode that still exists is ended (`POST /api/screen/end`) and then `forget` runs; the demo's one-device round trip (`/s?mode=demo` to `/a` and back in one tab) is that resume, and `clear` also drops the pid the tab took on `/a`. */
 export interface ScreenResidue {
   clear(): void;               // launcher.reset (links, timers, the PDF window this page opened), sessionStorage bloop.*,
                                // history.replaceState to the same path and query (the demo mode stays)
+  forget(): void;              // the stored sid and sessionStorage bloop.* only, for a credential the page drops at boot
   /** What a web page cannot clean. Shown on /it, measured per room by the T20 audit. */
   readonly beyondReach: readonly ("downloads_folder" | "office_recent_list" | "office_cache"
     | "jump_lists" | "browser_download_history" | "temp_internet_files")[];

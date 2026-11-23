@@ -20,19 +20,25 @@ export const BEYOND_REACH = [
  * @param {() => void} deps.cleanUrl drop anything but the path and the mode from the address bar
  */
 export function createResidue({ store, launcher, storage, cleanUrl }) {
+  /** The stored credential and every `bloop.*` key. Idempotent. */
+  function forget() {
+    store.remove(SID_KEY);
+    try {
+      const keys = Array.from({ length: storage?.length ?? 0 }, (_, i) => storage?.key(i) ?? "");
+      for (const key of keys) if (key.startsWith("bloop.")) storage?.removeItem(key);
+    } catch {
+      // storage blocked: nothing was stored
+    }
+  }
+
   return {
     beyondReach: BEYOND_REACH,
+    forget,
 
     /** Runs on `ended` and `closed`. Idempotent. */
     clear() {
       launcher.reset();
-      store.remove(SID_KEY);
-      try {
-        const keys = Array.from({ length: storage?.length ?? 0 }, (_, i) => storage?.key(i) ?? "");
-        for (const key of keys) if (key.startsWith("bloop.")) storage?.removeItem(key);
-      } catch {
-        // storage blocked: nothing was stored
-      }
+      forget();
       cleanUrl();
     },
   };

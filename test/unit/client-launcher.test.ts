@@ -273,6 +273,18 @@ describe("RES-01 residue on the screen page", () => {
     expect(raw.keys()).toEqual(["theme"]);
   });
 
+  it("forget drops the credential and every bloop key but leaves the launcher and the address bar alone", () => {
+    const raw = area({ "bloop.sid": "s", "bloop.pid": "p", theme: "light" });
+    const store = createStore(raw as unknown as Storage);
+    const reset = vi.fn();
+    const cleanUrl = vi.fn();
+    createResidue({ store, launcher: { reset }, storage: raw, cleanUrl }).forget();
+    expect(raw.keys()).toEqual(["theme"]);
+    expect(store.get("bloop.sid")).toBeNull();
+    expect(reset).not.toHaveBeenCalled();
+    expect(cleanUrl).not.toHaveBeenCalled();
+  });
+
   it("survives storage that throws, and names what a page cannot reach", () => {
     const broken = {
       length: 1,
