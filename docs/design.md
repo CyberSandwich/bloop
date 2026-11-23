@@ -384,6 +384,9 @@ Top to bottom: wordmark 17 px centered; title 28/34 600; room row (Lucide `monit
 | (any of choose file, approve, approve demo, unregistered screen, first use, empty) | as that state | as that state | plus Send a File Instead (text, before Disconnect OneDrive): the guest path, for a phone with no OneDrive to choose from `[V-10]` |
 | first use | Connect your OneDrive. | bloop reads your slides from OneDrive. You do this once, on this phone. `[V-9]` | Connect OneDrive, Cancel |
 | needs admin | Your organization needs to approve bloop. | Ask your IT team, or sign in to the PC as usual. | Done |
+| sign-in declined (`/auth/callback` page) | bloop wasn't given access. | bloop can't read your slides without it. Scan the code on the screen to try again. | Enter a Code |
+| sign-in failed (`/auth/callback` page: state, issuer, exchange) | Couldn't sign you in. | Scan the code on the screen to try again, or sign in to the PC as usual. | Enter a Code |
+| needs admin (`/auth/callback` page) | as needs admin | as needs admin | none |
 | empty | No slides found. | Save a .pptx file to OneDrive, then scan again. | Done |
 | approving | | | Approving... (button loading) |
 | opening | Opening on Room 2.14. | Lecture 4.pptx | none |

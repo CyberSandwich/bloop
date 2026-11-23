@@ -10,7 +10,8 @@ import {
   sealCookie,
   setCookie,
 } from "../auth/cookies.ts";
-import { beginSignIn, finishSignIn, PENDING_SECONDS, type Pending, type SignInError } from "../auth/oauth.ts";
+import { callbackErrorPage } from "../auth/error-page.ts";
+import { beginSignIn, finishSignIn, PENDING_SECONDS, type Pending } from "../auth/oauth.ts";
 import { phoneUser, servicesFor } from "../auth/services.ts";
 import { SESSION_MAX_AGE_SECONDS } from "../auth/sessions.ts";
 import type { Config, GraphConfig } from "../config.ts";
@@ -43,15 +44,6 @@ const withGraph = (
     config.graph ? handler(request, env, config, config.graph) : fail("source_unavailable"),
   );
 
-/** Each failed check maps to the error the phone page already knows how to show. */
-const FAILURES: Record<SignInError, () => Response> = {
-  state: () => fail("bad_request"),
-  consent_declined: () => fail("consent_declined"),
-  admin_consent_required: () => fail("admin_consent_required"),
-  issuer: () => fail("unauthorized"),
-  exchange: () => fail("source_unavailable"),
-};
-
 const start = withGraph(async (request, env, config, graph) => {
   const tooMany = await limited(env.RL_AUTH, request, config);
   if (tooMany) return tooMany;
@@ -65,11 +57,11 @@ const callback = withGraph(async (request, env, config, graph) => {
   if (tooMany) return tooMany;
   const sealed = readCookie(request, OAUTH_COOKIE);
   const parsed = sealed ? pendingShape.safeParse(await openCookie(graph.cookieKey, OAUTH_COOKIE, sealed)) : null;
-  if (!parsed?.success) return fail("bad_request");
+  if (!parsed?.success) return callbackErrorPage("state");
   const pending: Pending = parsed.data;
 
   const result = await finishSignIn(graph, new URL(request.url), pending, redirectUri(config));
-  if (!result.ok) return FAILURES[result.error]();
+  if (!result.ok) return callbackErrorPage(result.error);
 
   const services = servicesFor(env, config);
   const userId = await services.sessions.upsertUser(result.identity);

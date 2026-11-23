@@ -150,11 +150,20 @@ describe("AUTH-06 scope and AUTH-05 cookie: /auth/start", () => {
   });
 });
 
+/** A callback failure is a page for a person, never raw problem+json. */
+async function expectPage(res: Response, heading: string) {
+  expect(res.headers.get("Content-Type")).toContain("text/html");
+  const html = await res.text();
+  expect(html).toContain(`<h1>${heading}</h1>`);
+  expect(html).not.toContain("about:blank");
+}
+
 describe("AUTH-03 state: /auth/callback", () => {
   it("AUTH-03 state: no oauth cookie gives 400 and sets no cookie", async () => {
     const res = await hit("/auth/callback?code=x&state=y");
     expect(res.status).toBe(400);
     expect(res.headers.getSetCookie()).toEqual([]);
+    await expectPage(res, "Couldn't sign you in.");
   });
 
   it("AUTH-03 state: a wrong state gives 400, sets no cookie and never reaches the token endpoint", async () => {
@@ -183,12 +192,13 @@ describe("AUTH-03 state: /auth/callback", () => {
       cookie,
     );
     expect(declined.status).toBe(403);
-    expect(await declined.json()).toEqual(problem("consent_declined"));
+    await expectPage(declined, "bloop wasn't given access.");
     const admin = await hit(
       `/auth/callback?state=${s.state}&error=access_denied&error_description=AADSTS90094`,
       cookie,
     );
-    expect(await admin.json()).toEqual(problem("admin_consent_required"));
+    expect(admin.status).toBe(403);
+    await expectPage(admin, "Your organization needs to approve bloop.");
     expect(declined.headers.getSetCookie()).toEqual([]);
   });
 
