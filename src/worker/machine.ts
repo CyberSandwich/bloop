@@ -43,8 +43,8 @@ export interface Machine {
     endsAt: number | null;
     openMode: OpenMode | null;
     firstOpenAt: number | null;
-    /** Extra links minted so far, per item index (PC-02: each item has its own LINK_MINTS_PER_ITEM). */
-    mints: number[];
+    /** Links minted so far per item index, the first included (PC-02: each item gets 1 + LINK_MINTS_PER_ITEM). */
+    minted: number[];
   } | null;
   uploadAt: number | null;
   offerAt: number | null;
@@ -77,7 +77,7 @@ export type Event =
   | { e: "open.click"; now: number; maxMinutes: number } // the Open button on a guest offer
   | { e: "launched"; now: number; mode: OpenMode }
   | { e: "fetched"; now: number }
-  | { e: "fallback"; now: number; mode: OpenMode; item: number | null; maxMints: number } // null: the launched item; maxMints per item
+  | { e: "fallback"; now: number; mode: OpenMode; item: number | null; maxMints: number } // null: the launched item; maxMints: per item, after its first link
   | { e: "cancel"; now: number }
   | { e: "restart"; now: number }
   | { e: "end"; now: number; by: "phone" | "screen" | "system" }
@@ -239,6 +239,7 @@ function approveItems(
   userId: string | null = null,
 ): Step {
   const ordered = orderItems(items);
+  const launch = launchIndex(ordered);
   const next: Machine = {
     ...m,
     state: "approved",
@@ -249,12 +250,11 @@ function approveItems(
       endsAt: now + maxMinutes * 60 * SECOND,
       openMode: null,
       firstOpenAt: null,
-      mints: ordered.map(() => 0),
+      minted: ordered.map((_, i) => (i === launch ? 1 : 0)),
     },
     uploadAt: null,
     offerAt: null,
   };
-  const launch = launchIndex(ordered);
   return ok(next, [
     ...(launch < 0 ? [] : [{ fx: "mint" as const, purpose: "protocol" as const, item: launch }]),
     { fx: "audit", type: "approved", actor },
@@ -367,7 +367,7 @@ export function transition(m: Machine, ev: Event, cfg: MachineConfig): Step {
     case "upload.done": {
       if (m.state !== "uploading") return fail("wrong_state");
       const items: ItemRef[] = [{ kind: "file", ...ev.file }];
-      const session = { items, approvedAt: null, endsAt: null, openMode: null, firstOpenAt: null, mints: [0] };
+      const session = { items, approvedAt: null, endsAt: null, openMode: null, firstOpenAt: null, minted: [0] };
       return ok({ ...m, state: "offered", session, uploadAt: null, offerAt: now + cfg.claimTimeoutSeconds * SECOND }, [
         { fx: "audit", type: "guest.uploaded", actor: "phone" },
         { fx: "push", to: "both" },
@@ -415,9 +415,10 @@ export function transition(m: Machine, ev: Event, cfg: MachineConfig): Step {
       // A screen can mint only for a file it was approved to show (PAIR-11): never a link, never out of range.
       const item = ev.item ?? launchIndex(m.session.items);
       if (!fileAt(m.session.items, item)) return fail("file_not_found");
-      if ((m.session.mints[item] ?? 0) >= ev.maxMints) return fail("mint_limit");
-      const mints = m.session.mints.map((n, i) => (i === item ? n + 1 : n));
-      const session = { ...m.session, mints, openMode: relaunch ? m.session.openMode : ev.mode };
+      // Every item's first link is free; `maxMints` counts the links after it.
+      if ((m.session.minted[item] ?? 0) >= 1 + ev.maxMints) return fail("mint_limit");
+      const minted = m.session.minted.map((n, i) => (i === item ? n + 1 : n));
+      const session = { ...m.session, minted, openMode: relaunch ? m.session.openMode : ev.mode };
       return ok({ ...m, session }, [
         { fx: "mint", purpose: ev.mode, item },
         ...(relaunch ? [] : [{ fx: "metric" as const, name: "fallback" as const }]),

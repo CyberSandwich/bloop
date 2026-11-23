@@ -1,16 +1,19 @@
 // The Screen object's storage schema: numbered steps (CLAUDE.md "Durable Object schema"). Each step checks the data's
 // shape and writes only what is still old, and every step runs on every wake whatever the stored version: a rollback
 // that wrote old-shape data under a newer version is repaired by the next deploy.
+import { launchIndex } from "../items.ts";
 import type { FileRef, Machine } from "../machine.ts";
 import type { LinkRecord } from "../seams/open-path/links.ts";
 import type { Kv } from "./ledger.ts";
 
 export const SCHEMA_KEY = "schemaVersion";
 /** Version 1 had no key: a session held one `file`, and a link record had no `item`. */
-export const SCHEMA_VERSION = 3;
+export const SCHEMA_VERSION = 4;
 
 type Session = NonNullable<Machine["session"]>;
-type V1Session = Omit<Session, "items" | "mints"> & { file: FileRef; mints: number };
+type V1Session = Omit<Session, "items" | "minted"> & { file: FileRef; mints: number };
+/** Versions 2 and 3: `mints` counted extra links, session-wide (2) or per item (3); the launch item's first was free. */
+type OldMints = Omit<Session, "minted"> & { mints: number | number[] };
 
 const STEPS: Record<number, (kv: Kv) => void> = {
   // 1 to 2: the session holds a list; the one file becomes a one-item list, and every link served item 0.
@@ -30,13 +33,22 @@ const STEPS: Record<number, (kv: Kv) => void> = {
   },
   // 2 to 3: the mint count is per item. The session-wide count stands for every item, so none gains a mint.
   3: (kv) => {
-    const m = kv.get<
-      Omit<Machine, "session"> & { session: (Omit<Session, "mints"> & { mints: number | number[] }) | null }
-    >("machine");
+    const m = kv.get<Omit<Machine, "session"> & { session: OldMints | null }>("machine");
     const s = m?.session;
     if (s && typeof s.mints === "number") {
       const count = s.mints;
       kv.put("machine", { ...m, session: { ...s, mints: s.items.map(() => count) } });
+    }
+  },
+  // 3 to 4: `minted` counts every link per item, the first included, so each item's first is free alike. The launch
+  // item's free first was not in \`mints\`: add it.
+  4: (kv) => {
+    const m = kv.get<Omit<Machine, "session"> & { session: OldMints | Session | null }>("machine");
+    const s = m?.session;
+    if (s && "mints" in s && Array.isArray(s.mints)) {
+      const { mints, ...rest } = s;
+      const launch = launchIndex(s.items);
+      kv.put("machine", { ...m, session: { ...rest, minted: mints.map((n, i) => (i === launch ? n + 1 : n)) } });
     }
   },
 };

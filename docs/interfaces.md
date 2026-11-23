@@ -208,7 +208,7 @@ export interface Machine {
   } | null;
   session: {                         // the approved items, ordered; approvedAt and endsAt are null while "offered" (one guest file)
     items: ItemRef[]; approvedAt: number | null; endsAt: number | null;
-    openMode: OpenMode | null; firstOpenAt: number | null; mints: number[];   // extra links per item index, each capped by LINK_MINTS_PER_ITEM
+    openMode: OpenMode | null; firstOpenAt: number | null; minted: number[];   // links minted per item index, the first included; capped at 1 + LINK_MINTS_PER_ITEM
   } | null;
   uploadAt: number | null;
   offerAt: number | null;

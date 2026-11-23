@@ -53,6 +53,11 @@ describe("config", () => {
     expect(problems({ ...PROD, DEMO_SESSION_MINUTES: "120" }).join()).toContain("DEMO_SESSION_MINUTES");
   });
 
+  it("PC-02 sid-powers: LINK_MINTS_PER_ITEM is at least 1, so no item is ever left with only its first link", () => {
+    expect(problems({ ...PROD, LINK_MINTS_PER_ITEM: "0" }).join()).toContain("LINK_MINTS_PER_ITEM");
+    expect(problems({ ...PROD, LINK_MINTS_PER_ITEM: "1" })).toEqual([]);
+  });
+
   it("TEST_TIMING lowers the floors on a local origin", () => {
     const env = {
       ...PROD,

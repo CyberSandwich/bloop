@@ -166,12 +166,14 @@ describe("orderItems", () => {
 describe("Screen object schema steps", () => {
   const { file: _, ...rest } = { file: DECK, approvedAt: 1, endsAt: 2, openMode: null, firstOpenAt: null, mints: 0 };
   const v1Session = { file: DECK, ...rest };
+  /** The same session in the current shape: links minted per item, the first included. */
+  const { mints: _mints, ...current } = rest;
   const link = { tokenHash: "h", purpose: "protocol", mintedAt: 0, firstFetchAt: null, fetches: 0, revoked: false };
 
   it("turns a stored single file into a one-item list and gives each link record item 0", () => {
     const store = kv({ meta: { mode: "demo" }, machine: { state: "approved", session: v1Session }, links: [link] });
     migrate(store);
-    expect((store.map.get("machine") as Machine).session).toEqual({ ...rest, items: [asItem(DECK)], mints: [0] });
+    expect((store.map.get("machine") as Machine).session).toEqual({ ...current, items: [asItem(DECK)], minted: [1] });
     expect(store.map.get("links")).toEqual([{ ...link, item: 0 }]);
     expect(store.map.get(SCHEMA_KEY)).toBe(SCHEMA_VERSION);
   });
@@ -186,12 +188,28 @@ describe("Screen object schema steps", () => {
     expect(store.map.get("machine")).toBe(current);
   });
 
-  it("version 2 to 3: a session-wide mint count stands for every item, so no item gains mints it did not have", () => {
+  it("versions 2 to 4: a session-wide extra count stands for every item, then the launch item's free first link is added", () => {
     const v2 = { items: [asItem(DECK), VEVOX], approvedAt: 1, endsAt: 2, openMode: null, firstOpenAt: null, mints: 3 };
     const store = kv({ meta: {}, schemaVersion: 2, machine: { state: "open", session: v2 } });
     migrate(store);
-    expect((store.map.get("machine") as Machine).session?.mints).toEqual([3, 3]);
-    expect(store.map.get(SCHEMA_KEY)).toBe(3);
+    const session = (store.map.get("machine") as Machine).session;
+    expect(session?.minted).toEqual([4, 3]);
+    expect(session && "mints" in session).toBe(false);
+    expect(store.map.get(SCHEMA_KEY)).toBe(SCHEMA_VERSION);
+  });
+
+  it("version 3 to 4: extras per item become links per item, the launch item's first included", () => {
+    const v3 = {
+      items: [asItem(DECK), VEVOX],
+      approvedAt: 1,
+      endsAt: 2,
+      openMode: null,
+      firstOpenAt: null,
+      mints: [2, 0],
+    };
+    const store = kv({ meta: {}, schemaVersion: 3, machine: { state: "open", session: v3 } });
+    migrate(store);
+    expect((store.map.get("machine") as Machine).session?.minted).toEqual([3, 0]);
   });
 
   it("repairs old-shape data whatever the stored version says (a rollback wrote v1 data under version 3)", () => {
@@ -202,7 +220,7 @@ describe("Screen object schema steps", () => {
       links: [link],
     });
     migrate(store);
-    expect((store.map.get("machine") as Machine).session).toEqual({ ...rest, items: [asItem(DECK)], mints: [0] });
+    expect((store.map.get("machine") as Machine).session).toEqual({ ...current, items: [asItem(DECK)], minted: [1] });
     expect(store.map.get("links")).toEqual([{ ...link, item: 0 }]);
   });
 
@@ -210,7 +228,7 @@ describe("Screen object schema steps", () => {
     const store = kv({
       meta: {},
       schemaVersion: SCHEMA_VERSION,
-      machine: { state: "open", session: { ...rest, items: [asItem(DECK)], mints: [0] } },
+      machine: { state: "open", session: { ...current, items: [asItem(DECK)], minted: [1] } },
       links: [{ ...link, item: 0 }],
     });
     const writes: string[] = [];
@@ -289,22 +307,37 @@ describe("machine: a session holds a list of items", () => {
     expect(launched.ok && fx(launched.effects, "mint")).toEqual([{ fx: "mint", purpose: "download", item: 0 }]);
   });
 
-  it("PC-02 sid-powers: the mint budget is per item; spending one item's leaves every other item its own", () => {
+  it("PC-02 sid-powers: every item's first link is free, then maxMints more; one item spent leaves the others theirs", () => {
     const step = approve(claimedOwner(), [asItem(DECK), PDF]);
     if (!step.ok) throw new Error(step.error);
-    expect(step.next.session?.mints).toEqual([0, 0]);
+    // The approval's protocol link is item 0's first.
+    expect(step.next.session?.minted).toEqual([1, 0]);
     let m = must(step.next, { e: "launched", now: T0 + sec(6), mode: "protocol" }).next;
     const mint = (item: number) =>
       transition(m, { e: "fallback", now: T0 + sec(7), mode: "download", item, maxMints: 2 }, CFG);
-    for (const item of [0, 0]) {
+    const take = (item: number) => {
       const ok = mint(item);
       if (!ok.ok) throw new Error(ok.error);
       m = ok.next;
-    }
+    };
+    take(0);
+    take(0);
     expect(mint(0)).toEqual({ ok: false, error: "mint_limit" });
-    expect(m.session?.mints).toEqual([2, 0]);
-    const other = mint(1);
-    expect(other.ok && other.next.session?.mints).toEqual([2, 1]);
+    expect(m.session?.minted).toEqual([3, 0]);
+    // A non-launch item: its first link plus maxMints more, so 3 here, then the limit.
+    take(1);
+    take(1);
+    take(1);
+    expect(m.session?.minted).toEqual([3, 3]);
+    expect(mint(1)).toEqual({ ok: false, error: "mint_limit" });
+  });
+
+  it("PC-02 sid-powers: a non-launch item's first link is free even at the smallest budget", () => {
+    const step = approve(claimedOwner(), [asItem(DECK), PDF]);
+    if (!step.ok) throw new Error(step.error);
+    const opening = must(step.next, { e: "launched", now: T0 + sec(6), mode: "protocol" }).next;
+    const first = transition(opening, { e: "fallback", now: T0 + sec(7), mode: "pdf", item: 1, maxMints: 1 }, CFG);
+    expect(first.ok && first.next.session?.minted).toEqual([1, 1]);
   });
 
   it("a guest offer is a one-item list", () => {
