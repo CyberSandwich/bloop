@@ -4,7 +4,7 @@ import { DurableObject } from "cloudflare:workers";
 import type { Env } from "../env.ts";
 import type { CodeDirectory, DemoCap } from "../seams/pairing.ts";
 import { DemoSlots } from "./demo-slots.ts";
-import { isBlocked, MISS_WINDOW_MS, type MissRow, recordMiss } from "./directory-rules.ts";
+import { isBlocked, MISS_WINDOW_MS, type MissRow, recordGlobalMiss, recordMiss } from "./directory-rules.ts";
 
 /**
  * An expired code keeps routing to its screen for this long, so the Screen answers `code_expired`
@@ -12,6 +12,8 @@ import { isBlocked, MISS_WINDOW_MS, type MissRow, recordMiss } from "./directory
  */
 const GRAVE_MS = 5 * 60 * 1000;
 const SWEEP_MS = 80_000;
+/** The global miss counter shares the `miss` table; an IP hash is hex, so this key cannot collide with one. */
+const GLOBAL_KEY = "global";
 
 export class Directory extends DurableObject<Env> implements CodeDirectory, DemoCap {
   private readonly slots: DemoSlots;
@@ -50,10 +52,7 @@ export class Directory extends DurableObject<Env> implements CodeDirectory, Demo
     now: number,
   ): Promise<{ ok: true; screenRef: string; demo: boolean } | { ok: false; error: "code_unknown" | "rate_limited" }> {
     const sql = this.ctx.storage.sql;
-    const row = sql
-      .exec<{ count: number; window_start: number }>("SELECT count, window_start FROM miss WHERE ip_hash = ?", ipHash)
-      .toArray()[0];
-    const misses: MissRow | null = row ? { count: row.count, windowStart: row.window_start } : null;
+    const misses = this.missRow(ipHash);
     if (isBlocked(misses, now)) return { ok: false, error: "rate_limited" };
 
     const hit = sql
@@ -61,13 +60,10 @@ export class Directory extends DurableObject<Env> implements CodeDirectory, Demo
       .toArray()[0];
     if (hit) return { ok: true, screenRef: hit.screen_ref, demo: hit.demo === 1 };
 
-    const next = recordMiss(misses, now);
-    sql.exec(
-      "INSERT OR REPLACE INTO miss (ip_hash, count, window_start) VALUES (?, ?, ?)",
-      ipHash,
-      next.count,
-      next.windowStart,
-    );
+    this.saveMiss(ipHash, recordMiss(misses, now));
+    const global = recordGlobalMiss(this.missRow(GLOBAL_KEY), now);
+    this.saveMiss(GLOBAL_KEY, global.row);
+    if (global.alarm) console.warn(JSON.stringify({ evt: "pair.miss_alarm", misses: global.row.count }));
     await this.armSweep();
     return { ok: false, error: "code_unknown" };
   }
@@ -96,6 +92,22 @@ export class Directory extends DurableObject<Env> implements CodeDirectory, Demo
       )
       .one();
     if (left.n > 0) await this.ctx.storage.setAlarm(now + SWEEP_MS);
+  }
+
+  private missRow(key: string): MissRow | null {
+    const row = this.ctx.storage.sql
+      .exec<{ count: number; window_start: number }>("SELECT count, window_start FROM miss WHERE ip_hash = ?", key)
+      .toArray()[0];
+    return row ? { count: row.count, windowStart: row.window_start } : null;
+  }
+
+  private saveMiss(key: string, row: MissRow): void {
+    this.ctx.storage.sql.exec(
+      "INSERT OR REPLACE INTO miss (ip_hash, count, window_start) VALUES (?, ?, ?)",
+      key,
+      row.count,
+      row.windowStart,
+    );
   }
 
   private async armSweep(): Promise<void> {

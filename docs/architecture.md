@@ -315,7 +315,7 @@ Every state-changing route checks four things: `Origin` equals `PUBLIC_ORIGIN`; 
 | ----------------------- | ------------------------------------------------------------------------------------ | ------------------- |
 | `POST /api/screens`     | 10 per 60 s per IP                                                                   | binding             |
 | `POST /api/claim`       | 20 per 60 s per IP                                                                   | binding             |
-| failed code lookups     | 10 per 10 min per hashed IP, then 429 until the window (10 min from the first miss) ends; a global alarm at 1,000 per 10 min (not built yet) | exact, Directory DO |
+| failed code lookups     | 10 per 10 min per hashed IP, then 429 until the window (10 min from the first miss) ends; a global alarm at 1,000 per 10 min across all hashes (one `pair.miss_alarm` log line; it blocks nobody) | exact, Directory DO |
 | next code on one screen | 6 per min                                                                            | exact, Screen DO    |
 | `/f/`                   | 60 per 60 s per IP; per link: 10 fetches                                             | binding; exact      |
 | `PUT /api/drop`         | 5 per 60 s per IP (every attempt past the Origin and credential checks counts); one accepted file per session; live bytes under `GUEST_STORAGE_BUDGET_BYTES` | binding; exact; D1  |
@@ -438,7 +438,7 @@ CREATE TABLE guest_file (                -- row: 30 days after deleted_at; objec
 | --------------- | ---------------------------- | ---------------------------------- |
 | `code:<code>`   | `screenRef`, expiresAt       | 70 s, then kept 5 min so a late phone gets `code_expired`; an alarm sweeps older rows |
 | `miss:<ipHash>` | failed lookups, window start | 10 min                             |
-| `global`        | failed lookups this window   | 10 min (not built yet)             |
+| `miss:global`   | failed lookups this window, all IP hashes (same table, key `global`) | 10 min                             |
 
 Both objects use SQLite storage: the Screen object through its synchronous key-value API (`ctx.storage.kv`), the Directory through SQL tables `code` and `miss`.
 

@@ -61,6 +61,42 @@ describe("PAIR-07 limits: typed code guesses are counted exactly per IP hash", (
   });
 });
 
+describe("PAIR-07 limits: the global miss alarm", () => {
+  it("PAIR-07 limits: 1,000 misses across IP hashes in a window log one alarm line and block nobody else", async () => {
+    const alarm = await startWrangler({ HASH_PEPPER: PEPPER });
+    try {
+      const alarmApi = new Api(alarm.url);
+      const alphabet = "23456789ABCDEFGHJKMNPQRSTVWXYZ";
+      // 100 IPs of 10 distinct misses each: every IP stays at its own limit, the sum reaches 1,000.
+      const misses = Array.from({ length: 1000 }, (_, i) => ({
+        ip: `198.51.100.${Math.floor(i / 10) + 1}`,
+        code: `${alphabet[Math.floor(i / 900)]}${alphabet[Math.floor(i / 30) % 30]}${alphabet[i % 30]}AAA`,
+      }));
+      for (let i = 0; i < misses.length; i += 20) {
+        const batch = misses.slice(i, i + 20);
+        const answers = await Promise.all(
+          batch.map(({ ip, code }) => alarmApi.post("/api/claim", { code }, { headers: { "CF-Connecting-IP": ip } })),
+        );
+        for (const a of answers) expect(a.status).toBe(404);
+      }
+      const lines = alarm
+        .output()
+        .split("\n")
+        .filter((l) => l.includes("pair.miss_alarm"));
+      expect(lines).toHaveLength(1);
+      expect(lines[0]).toContain('"misses":1000');
+      const fresh = await alarmApi.post(
+        "/api/claim",
+        { code: "ZZZZZZ" },
+        { headers: { "CF-Connecting-IP": "203.0.113.200" } },
+      );
+      expect(fresh.status).toBe(404); // still an ordinary miss, not a block
+    } finally {
+      await alarm.stop();
+    }
+  }, 120_000);
+});
+
 describe("PAIR-09 flood: the platform rate limit binding", () => {
   it("PAIR-09 flood: screen creation is limited per IP and recovers for another address", async () => {
     const ip = { headers: { "CF-Connecting-IP": "203.0.113.50" } };

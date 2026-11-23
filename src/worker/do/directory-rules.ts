@@ -16,6 +16,15 @@ export function isBlocked(row: MissRow | null, now: number): boolean {
   return (live(row, now)?.count ?? 0) >= MISS_LIMIT;
 }
 
+/** Misses across all IP hashes in one window that raise the alarm (a botnet, not a person). It never blocks anyone. */
+export const GLOBAL_ALARM_MISSES = 1000;
+
+/** The global row after one more miss, and whether this miss is the one that crosses the alarm level. */
+export function recordGlobalMiss(row: MissRow | null, now: number): { row: MissRow; alarm: boolean } {
+  const next = recordMiss(row, now);
+  return { row: next, alarm: next.count === GLOBAL_ALARM_MISSES };
+}
+
 /** The row after one more miss; a lapsed window starts over. */
 export function recordMiss(row: MissRow | null, now: number): MissRow {
   const current = live(row, now);
