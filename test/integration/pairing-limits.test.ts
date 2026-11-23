@@ -102,7 +102,8 @@ describe("PAIR-09 flood: the platform rate limit binding", () => {
     const ip = { headers: { "CF-Connecting-IP": "203.0.113.50" } };
     const statuses: number[] = [];
     for (let i = 0; i < 14; i++) statuses.push((await api.post("/api/screens", { mode: "demo" }, ip)).status);
-    expect(statuses.filter((s) => s === 201).length).toBeLessThanOrEqual(10);
+    // The demo binding (RL_DEMO_CREATE in wrangler.jsonc) allows 12 a minute.
+    expect(statuses.filter((s) => s === 201).length).toBeLessThanOrEqual(12);
     expect(statuses).toContain(429);
     const other = await api.post("/api/screens", { mode: "demo" }, { headers: { "CF-Connecting-IP": "203.0.113.51" } });
     expect(other.status).toBe(201);
