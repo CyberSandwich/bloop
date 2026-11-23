@@ -375,9 +375,9 @@ describe("sign-in, sessions and revocation", () => {
     const demo = await openScreen(api, "demo");
     const demoClaim = await claim(api, demo.code);
     expect(demoClaim.body.needsAuth).toBe(false);
-    const files = await api.get<{ files: { id: string }[] }>("/api/files", demoClaim.body.pid);
+    const files = await api.get<{ items: { id: string }[] }>("/api/files", demoClaim.body.pid);
     expect(files.status).toBe(200);
-    expect(files.body.files.map((f) => f.id)).toContain("demo-deck");
+    expect(files.body.items.map((f) => f.id)).toContain("demo-deck");
     demo.socket.close();
   });
 
@@ -390,11 +390,11 @@ describe("sign-in, sessions and revocation", () => {
       { headers: sid(session as string) },
     );
     expect(claimed.body.needsAuth).toBe(false);
-    const files = await api.call<{ files: { id: string }[] }>("GET", "/api/files", undefined, {
+    const files = await api.call<{ items: { id: string }[] }>("GET", "/api/files", undefined, {
       auth: claimed.body.pid,
       headers: sid(session as string),
     });
-    expect(files.body.files.map((f) => f.id)).toEqual(["demo-deck"]);
+    expect(files.body.items.map((f) => f.id)).toEqual(["demo-deck", "demo-pdf", "demo-dog", "demo-vevox"]);
     demo.socket.close();
   });
 

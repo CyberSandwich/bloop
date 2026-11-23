@@ -7,6 +7,7 @@ import type {
   ClaimResponse,
   CodeView,
   ErrorCode,
+  LinkResponse,
   LinkSet,
   OpenMode,
   PhoneView,
@@ -17,6 +18,7 @@ import { type Config, configFor } from "../config.ts";
 import type { Env } from "../env.ts";
 import { MAX_FRAME_BYTES, phoneFrame, screenFrame } from "../frames.ts";
 import { drawCode, drawMatch, newRef, newSecret, parseCredential, safeEqual, sha256Hex } from "../ids.ts";
+import { fileAt, type ItemRef } from "../items.ts";
 import { createMachine, type Event, type FileRef, type Machine, nextDeadline, transition } from "../machine.ts";
 import { ipHash } from "../routes/common.ts";
 import { effectivePolicy } from "../seams/guest-drop/index.ts";
@@ -29,6 +31,7 @@ import { directoryStub } from "../stubs.ts";
 import { type Meta, phoneView, roomView, screenView } from "../views.ts";
 import { bestEffort, type EffectDeps, noopSeams, runEffects, type SessionSeams } from "./effects.ts";
 import { LinkLedger } from "./ledger.ts";
+import { migrate, SCHEMA_KEY, SCHEMA_VERSION } from "./schema.ts";
 
 const HELLO_MS = 5000;
 const MAX_CODE_DRAWS = 3;
@@ -54,11 +57,12 @@ export class Screen extends DurableObject<Env> implements PairingStore {
   private m: Machine | null;
   private readonly links: LinkLedger;
   /** The link set the last mint produced, for the call that asked for it. */
-  private lastLinks: LinkSet | null = null;
+  private lastLinks: LinkResponse | null = null;
 
   constructor(ctx: DurableObjectState, env: Env) {
     super(ctx, env);
     this.links = new LinkLedger(ctx.storage.kv);
+    migrate(ctx.storage.kv);
     this.meta = ctx.storage.kv.get<Meta>("meta") ?? null;
     this.m = ctx.storage.kv.get<Machine>("machine") ?? null;
     ctx.setWebSocketAutoResponse(new WebSocketRequestResponsePair(PING, PONG));
@@ -83,6 +87,7 @@ export class Screen extends DurableObject<Env> implements PairingStore {
     this.m = m;
     this.ctx.storage.kv.put("meta", meta);
     this.ctx.storage.kv.put("machine", m);
+    this.ctx.storage.kv.put(SCHEMA_KEY, SCHEMA_VERSION);
     await this.rearm();
     return {
       ok: true,
@@ -143,12 +148,11 @@ export class Screen extends DurableObject<Env> implements PairingStore {
     return this.phoneEvent(pid, () => ({ e: "listed", now: Date.now(), ids }));
   }
 
-  async approve(pid: string, fileId: string, file: FileRef, userId: string | null): Promise<Result<PhoneView>> {
-    if (file.ref !== fileId) return fail("bad_request");
+  async approve(pid: string, items: ItemRef[], userId: string | null): Promise<Result<PhoneView>> {
     return this.phoneEvent(pid, () => ({
       e: "approve",
       now: Date.now(),
-      file,
+      items,
       maxMinutes: this.sessionMinutes(),
       userId: this.meta?.mode === "demo" ? null : userId,
     }));
@@ -216,11 +220,12 @@ export class Screen extends DurableObject<Env> implements PairingStore {
     return this.phoneEvent(pid, () => ({ e: "upload.failed", now: Date.now(), error }));
   }
 
-  async mintFallback(sid: string, mode: OpenMode): Promise<Result<LinkSet>> {
+  async mintFallback(sid: string, mode: OpenMode, item: number | null): Promise<Result<LinkResponse>> {
     const auth = await this.screenAuth(sid);
     if (!auth.ok) return auth;
     this.lastLinks = null;
-    const applied = await this.apply({ e: "fallback", now: Date.now(), mode, maxMints: this.config().links.maxMints });
+    const maxMints = this.config().links.maxMints;
+    const applied = await this.apply({ e: "fallback", now: Date.now(), mode, item, maxMints });
     if (!applied.ok) return applied;
     return this.lastLinks ? { ok: true, value: this.lastLinks } : fail("internal");
   }
@@ -256,7 +261,8 @@ export class Screen extends DurableObject<Env> implements PairingStore {
       }
       return fail(used.error);
     }
-    if (!session) return fail("link_revoked"); // ended: the file reference is gone with the session
+    const file = session && fileAt(session.items, used.record.item);
+    if (!file) return fail("link_revoked"); // ended: the file reference is gone with the session
     await this.auditLink(sessionId, now, "link.fetched", {
       purpose: used.record.purpose,
       count: used.record.fetches,
@@ -266,7 +272,7 @@ export class Screen extends DurableObject<Env> implements PairingStore {
     await this.apply({ e: "fetched", now });
     return {
       ok: true,
-      value: { file: session.file, purpose: used.record.purpose, mode: meta.mode, userId: m.pairing.userId },
+      value: { file, purpose: used.record.purpose, mode: meta.mode, userId: m.pairing.userId },
     };
   }
 
@@ -529,15 +535,16 @@ export class Screen extends DurableObject<Env> implements PairingStore {
   /** The link seams (docs/interfaces.md section 4): mint pushes the link to the screen, revoke kills them all. */
   private linkSeams(): Pick<SessionSeams, "mint" | "revokeLinks"> {
     return {
-      mint: async (purpose) => {
+      mint: async (purpose, item) => {
         const { m, meta } = this;
-        const file = m?.session?.file;
+        const file = m?.session && fileAt(m.session.items, item);
         if (!m?.pairing || !meta || !file) return;
         const now = Date.now();
         const link = await mintLink(meta.screenRef, file, purpose, this.config().origin);
         this.links.add({
           tokenHash: link.tokenHash,
           purpose: link.purpose,
+          item,
           mintedAt: now,
           firstFetchAt: null,
           fetches: 0,
@@ -547,9 +554,10 @@ export class Screen extends DurableObject<Env> implements PairingStore {
           protocol: link.purpose === "protocol" ? protocolUri(link.url) : null,
           download: link.purpose === "download" ? link.url : null,
           pdf: link.purpose === "pdf" ? link.url : null,
+          view: link.purpose === "view" ? link.url : null,
         };
-        this.lastLinks = links;
-        this.sendOpen(links);
+        this.lastLinks = { item, links };
+        this.sendOpen(item, links);
         await this.auditLink(m.pairing.sessionId, now, "link.minted", { purpose: link.purpose });
       },
       revokeLinks: async () => void this.links.revokeAll(),
@@ -565,8 +573,8 @@ export class Screen extends DurableObject<Env> implements PairingStore {
   }
 
   /** The `open` frame: sent once per mint to the screen sockets, never repeated in `state`. */
-  private sendOpen(links: LinkSet): void {
-    const frame = JSON.stringify({ v: 1, t: "open", links, now: Date.now() });
+  private sendOpen(item: number, links: LinkSet): void {
+    const frame = JSON.stringify({ v: 1, t: "open", item, links, now: Date.now() });
     for (const ws of this.ctx.getWebSockets("screen")) {
       const att = ws.deserializeAttachment() as SocketAttachment | null;
       if (!att?.authed) continue;

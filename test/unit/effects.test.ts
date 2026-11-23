@@ -35,7 +35,7 @@ function fakes(over: Partial<EffectDeps> = {}) {
       activeWeek: async (userId) => void log.push(`active ${userId}`),
     },
     seams: {
-      mint: async (p) => void log.push(`mint ${p}`),
+      mint: async (p, item) => void log.push(`mint ${p} ${item}`),
       revokeLinks: async () => void log.push("revoke"),
       purge: async (i) => void log.push(`purge ${i.file?.ref ?? "none"}`),
     },
@@ -150,11 +150,11 @@ describe("effects: audit and metrics hooks at each transition", () => {
 
 describe("effects: order and the other seams", () => {
   it("runs effects in the order the machine lists them", async () => {
-    const prev = approved();
+    const prev = must(offered(), { e: "open.click", now: T0 + sec(40), maxMinutes: 90 }).next;
     const step = must(prev, { e: "end", now: T0 + sec(70), by: "phone" });
     const f = fakes();
     await runEffects(step.effects, { meta: META, prev, next: step.next, now: T0 + sec(70) }, f.deps);
-    expect(f.log).toEqual(["remove AAAAAA", "revoke", "purge deck-1", "push both"]);
+    expect(f.log).toEqual(["remove AAAAAA", "revoke", "purge g/abc", "push both"]);
   });
 
   it("RES-03 purge: calls the mint seam on approve and the purge seam with the session id", async () => {
@@ -165,13 +165,13 @@ describe("effects: order and the other seams", () => {
     f.deps.seams.purge = async (i) => void purges.push(i);
     await runEffects(
       [
-        { fx: "mint", purpose: "protocol" },
+        { fx: "mint", purpose: "protocol", item: 2 },
         { fx: "purge", file: null },
       ],
       { meta: META, prev, next: step.next, now: 1 },
       f.deps,
     );
-    expect(f.log).toContain("mint protocol");
+    expect(f.log).toContain("mint protocol 2");
     expect(purges).toEqual([{ sessionId: "s1", file: null }]);
   });
 

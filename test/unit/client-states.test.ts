@@ -10,9 +10,7 @@ const screenView = (state: SessionState, over: Partial<ScreenView> = {}): Screen
   room: { name: "Room 2.14", registered: true },
   code: null,
   match: null,
-  fileName: null,
-  fileType: null,
-  fileSize: null,
+  items: [],
   openMode: null,
   endsAt: null,
   endReason: null,
@@ -26,8 +24,7 @@ const phoneView = (state: SessionState, over: Partial<PhoneView> = {}): PhoneVie
   kind: "owner",
   room: { name: "Room 2.14", registered: true },
   match: "42",
-  fileName: null,
-  fileType: null,
+  items: [],
   openMode: null,
   endsAt: null,
   endReason: null,
@@ -36,7 +33,14 @@ const phoneView = (state: SessionState, over: Partial<PhoneView> = {}): PhoneVie
   ...over,
 });
 
-const file = (id: string): FileEntry => ({ id, name: `${id}.pptx`, type: "pptx", modifiedAt: 0, size: null });
+const file = (id: string): FileEntry => ({
+  kind: "file",
+  id,
+  name: `${id}.pptx`,
+  type: "pptx",
+  modifiedAt: 0,
+  size: null,
+});
 
 describe("screen state to view mapping", () => {
   const ctx = (state: SessionState, over: Partial<ScreenView> = {}, c: Partial<ScreenCtx> = {}): ScreenCtx => ({
@@ -79,9 +83,15 @@ describe("screen state to view mapping", () => {
   });
 
   it("F10 an original PDF shown as a PDF is not the PowerPoint fallback", () => {
-    expect(screenKey(ctx("open", { openMode: "pdf", fileType: "pdf" }))).toBe("pdf_file");
-    expect(screenKey(ctx("opening", { openMode: "pdf", fileType: "pdf" }))).toBe("pdf_file");
-    expect(screenKey(ctx("open", { openMode: "pdf", fileType: "pptx" }))).toBe("pdf_fallback");
+    expect(
+      screenKey(ctx("open", { openMode: "pdf", items: [{ kind: "file", name: "F.pdf", type: "pdf", size: null }] })),
+    ).toBe("pdf_file");
+    expect(
+      screenKey(ctx("opening", { openMode: "pdf", items: [{ kind: "file", name: "F.pdf", type: "pdf", size: null }] })),
+    ).toBe("pdf_file");
+    expect(
+      screenKey(ctx("open", { openMode: "pdf", items: [{ kind: "file", name: "F.pptx", type: "pptx", size: null }] })),
+    ).toBe("pdf_fallback");
   });
 
   it("the link state wins over the session, and an error over a good link", () => {
@@ -167,8 +177,26 @@ describe("phone state to view mapping", () => {
   });
 
   it("F10 an original PDF on the phone shows pdf_file", () => {
-    expect(phoneKey(ctx({ view: phoneView("open", { openMode: "pdf", fileType: "pdf" }) }))).toBe("pdf_file");
-    expect(phoneKey(ctx({ view: phoneView("open", { openMode: "pdf", fileType: "pptx" }) }))).toBe("pdf_fallback");
+    expect(
+      phoneKey(
+        ctx({
+          view: phoneView("open", {
+            openMode: "pdf",
+            items: [{ kind: "file", name: "F.pdf", type: "pdf", size: null }],
+          }),
+        }),
+      ),
+    ).toBe("pdf_file");
+    expect(
+      phoneKey(
+        ctx({
+          view: phoneView("open", {
+            openMode: "pdf",
+            items: [{ kind: "file", name: "F.pptx", type: "pptx", size: null }],
+          }),
+        }),
+      ),
+    ).toBe("pdf_fallback");
   });
 
   it("an ended session is ended, or canceled when it was canceled", () => {

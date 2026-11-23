@@ -7,6 +7,7 @@ import type { Config } from "../config.ts";
 import type { Env } from "../env.ts";
 import { fail, json } from "../http.ts";
 import { sha256Hex } from "../ids.ts";
+import { MAX_ITEMS } from "../items.ts";
 import { type Route, route } from "../router.ts";
 import type { Resolved } from "../seams/file-source/index.ts";
 import type { GuestDrop } from "../seams/guest-drop/index.ts";
@@ -37,7 +38,17 @@ export function logFetch(request: Request, response: Response): void {
   );
 }
 
-const linkBody = z.object({ purpose: z.enum(["protocol", "download", "pdf"]) }).strict();
+const linkBody = z
+  .object({
+    purpose: z.enum(["protocol", "download", "pdf", "view"]),
+    item: z
+      .number()
+      .int()
+      .min(0)
+      .max(MAX_ITEMS - 1)
+      .optional(),
+  })
+  .strict();
 
 /** A guest upload as a Resolved, read from the bucket. The reference is the object key. */
 function guestResolved(used: UsedLink, drop: GuestDrop): Resolved {
@@ -108,8 +119,8 @@ export const openRoutes: readonly Route[] = [
       return withScreen(
         request,
         env,
-        (stub, sid) => stub.mintFallback(sid, body.value.purpose),
-        (links) => json({ links }),
+        (stub, sid) => stub.mintFallback(sid, body.value.purpose, body.value.item ?? null),
+        (minted) => json(minted),
       );
     }),
   ),

@@ -9,7 +9,7 @@ import { phoneCopy } from "./core/copy.js";
 import { sendable, sendFile, wholeMB } from "./core/drop.js";
 import { loadFiles } from "./core/files.js";
 import { ago, clock, fileIcon, splitName } from "./core/format.js";
-import { phoneKey } from "./core/states.js";
+import { firstFile, phoneKey } from "./core/states.js";
 import { PID_KEY, refOf, SID_KEY, sameScreen, sessionStore } from "./core/store.js";
 import { ariaFlag, byId, el, focusTitle, ICON_CHECK, icon, isFramed, setText, show, wsUrl } from "./core/ui.js";
 import { VERIFIED } from "./core/verified.js";
@@ -142,7 +142,7 @@ function render() {
   const picked = c.files?.find((f) => f.id === c.selected);
   const copy = phoneCopy(key, {
     room: c.info?.roomName ?? v?.room.name ?? "",
-    file: c.drop ? (c.file?.name ?? null) : (v?.fileName ?? picked?.name ?? null),
+    file: c.drop ? (c.file?.name ?? null) : (firstFile(v?.items ?? [])?.name ?? picked?.name ?? null),
     endsAt: v?.endsAt ? clock(v.endsAt) : null,
     account: c.account,
     maxMB: wholeMB(c.maxBytes),
@@ -228,7 +228,7 @@ async function approve() {
   if (!c.selected || c.approving) return;
   c.approving = true;
   render();
-  const res = await api.post("/api/approve", { fileId: c.selected }, c.pid);
+  const res = await api.post("/api/approve", { ids: [c.selected] }, c.pid);
   c.approving = false;
   if (res.ok) {
     c.view = res.value;

@@ -1,9 +1,17 @@
 // State to view mapping: the server's view plus what only the client knows become one state key.
 // Pure; the pages render the key through copy.js.
-/** @import {FileEntry, PhoneStateKey, PhoneView, ScreenStateKey, ScreenView} from "../../../src/shared/protocol.ts" */
+/** @import {FileEntry, FileItem, Item, PhoneStateKey, PhoneView, ScreenStateKey, ScreenView} from "../../../src/shared/protocol.ts" */
+
+/**
+ * The first file of a view's items, or null: the one an approval launches.
+ * @param {Item[]} items
+ * @returns {FileItem | null}
+ */
+export const firstFile = (items) => /** @type {FileItem | undefined} */ (items.find((i) => i.kind === "file")) ?? null;
 
 /** A deck shown as a PDF is the fallback; a file that is a PDF is just opened as one. */
-const pdfKey = (/** @type {ScreenView | PhoneView} */ v) => (v.fileType === "pdf" ? "pdf_file" : "pdf_fallback");
+const pdfKey = (/** @type {ScreenView | PhoneView} */ v) =>
+  firstFile(v.items)?.type === "pdf" ? "pdf_file" : "pdf_fallback";
 
 /**
  * @typedef {object} ScreenCtx

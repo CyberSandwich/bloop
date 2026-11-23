@@ -1,6 +1,7 @@
 // The two views of a session (docs/interfaces.md section 1), built from the machine. Pure.
-// The screen view carries the chosen file's name, type and size and nothing else about files (SRC-01).
+// The views carry the approved items as `itemView` shapes them and nothing else about the source (SRC-01).
 import type { Mode, PhoneView, RoomView, ScreenView, SessionState } from "../shared/protocol.ts";
+import { itemView } from "./items.ts";
 import type { Machine, MachineConfig } from "./machine.ts";
 
 export interface Meta {
@@ -51,9 +52,7 @@ export function screenView(meta: Meta, m: Machine, cfg: ViewConfig, now: number)
     room: roomView(meta),
     code: codeView(m, cfg, now),
     match: m.pairing && MATCH_STATES.includes(m.state) ? m.pairing.match : null,
-    fileName: m.session?.file.name ?? null,
-    fileType: m.session?.file.type ?? null,
-    fileSize: m.session?.file.size ?? null,
+    items: m.session?.items.map(itemView) ?? [],
     openMode: m.session?.openMode ?? null,
     endsAt: m.session?.endsAt ?? null,
     endReason: m.state === "ended" || m.state === "waiting" ? m.endReason : null,
@@ -70,8 +69,7 @@ export function phoneView(meta: Meta, m: Machine, now: number, dropMaxBytes: num
     kind: m.pairing.kind,
     room: roomView(meta),
     match: m.pairing.match,
-    fileName: m.session?.file.name ?? null,
-    fileType: m.session?.file.type ?? null,
+    items: m.session?.items.map(itemView) ?? [],
     openMode: m.session?.openMode ?? null,
     endsAt: m.session?.endsAt ?? null,
     endReason: m.state === "ended" ? m.endReason : null,

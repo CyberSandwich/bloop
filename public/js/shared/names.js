@@ -2,17 +2,18 @@
 // and the browser show and write into shortcuts, and it sits inside the 256-character Office URI.
 // ASCII letters, digits and single hyphens only: no character the URI rules ban, no percent-encoding
 // to inflate the length, no ".." possible.
+/** @import {FileType} from "../../../src/shared/protocol.ts" */
 
 /** Longest base name, before the extension. */
 export const MAX_BASE = 60;
 
 /**
- * @param {string} name a display name, with or without a .pptx or .pdf extension
+ * @param {string} name a display name, with or without its file type's extension
  * @param {number} [max] longest base name
  * @returns {string} 1 to `max` characters of [A-Za-z0-9-], never starting or ending with a hyphen
  */
 export function slugBase(name, max = MAX_BASE) {
-  const stem = name.replace(/\.(pptx|pdf)$/i, "");
+  const stem = name.replace(/\.(pptx|pdf|jpg|png|webp)$/i, "");
   const ascii = stem
     .normalize("NFKD")
     .replace(/\p{M}/gu, "")
@@ -48,7 +49,7 @@ export function cleanName(raw, max = MAX_DISPLAY) {
 
 /**
  * @param {string} name display name
- * @param {"pptx" | "pdf"} ext
+ * @param {FileType} ext
  * @param {number} [max] longest base name
  * @returns {string} `<slug>.<ext>`
  */

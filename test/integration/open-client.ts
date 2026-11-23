@@ -5,6 +5,7 @@ export interface Links {
   protocol: string | null;
   download: string | null;
   pdf: string | null;
+  view: string | null;
 }
 
 export interface Approved {
@@ -24,7 +25,7 @@ export async function approveDemo(api: Api, fileId = "demo-deck"): Promise<Appro
   const claimed = await claim(api, code);
   const pid = claimed.body.pid;
   await api.get("/api/files", pid);
-  const approved = await api.post("/api/approve", { fileId }, { auth: pid });
+  const approved = await api.post("/api/approve", { ids: [fileId] }, { auth: pid });
   if (approved.status !== 200) throw new Error(`approve failed: ${approved.status}`);
   const frame = await socket.waitFor((f) => f.t === "open");
   const links = frame.links as Links;

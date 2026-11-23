@@ -67,7 +67,7 @@ export class GraphFileSource implements FileSource {
         const type = item.file && !item.folder && item.name ? typeOfName(item.name) : null;
         const modifiedAt = Date.parse(item.lastModifiedDateTime ?? "");
         if (!type || !item.id || !item.name || Number.isNaN(modifiedAt)) return [];
-        return [{ id: item.id, name: item.name, type, modifiedAt, size: item.size ?? null }];
+        return [{ kind: "file", id: item.id, name: item.name, type, modifiedAt, size: item.size ?? null }];
       })
       .sort((a, b) => b.modifiedAt - a.modifiedAt)
       .slice(0, limit);

@@ -11,7 +11,13 @@ import { createResidue } from "../../public/js/residue.js";
 import type { LinkSet, ScreenView } from "../../src/shared/protocol.ts";
 
 const PROTOCOL = "ms-powerpoint:ofv|u|https://bloop.test/f/tok/Deck.pptx";
-const links = (over: Partial<LinkSet> = {}): LinkSet => ({ protocol: null, download: null, pdf: null, ...over });
+const links = (over: Partial<LinkSet> = {}): LinkSet => ({
+  protocol: null,
+  download: null,
+  pdf: null,
+  view: null,
+  ...over,
+});
 const view = (state: ScreenView["state"]): ScreenView => ({
   state,
   mode: "demo",
@@ -19,9 +25,7 @@ const view = (state: ScreenView["state"]): ScreenView => ({
   room: { name: "Demo room", registered: false },
   code: null,
   match: "42",
-  fileName: "Deck.pptx",
-  fileType: "pptx",
-  fileSize: null,
+  items: [{ kind: "file", name: "Deck.pptx", type: "pptx", size: null }],
   openMode: null,
   endsAt: null,
   endReason: null,

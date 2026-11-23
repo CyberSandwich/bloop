@@ -1,4 +1,5 @@
 import type { Kind, Mode } from "../../src/shared/protocol.ts";
+import type { FileItemRef, LinkRef } from "../../src/worker/items.ts";
 import {
   createMachine,
   type Effect,
@@ -23,6 +24,8 @@ export const sec = (n: number) => n * 1000;
 
 export const DECK: FileRef = { source: "mock", ref: "deck-1", name: "Deck.pptx", type: "pptx" };
 export const GUEST_FILE: FileRef = { source: "guest", ref: "g/abc", name: "Guest.pptx", type: "pptx", size: 2048 };
+export const asItem = (file: FileRef): FileItemRef => ({ kind: "file", ...file });
+export const VEVOX: LinkRef = { kind: "link", ref: "demo-vevox", url: "https://www.vevox.com/", title: "Vevox" };
 
 /** Applies one event and demands success. */
 export function must(m: Machine, ev: Event): { next: Machine; effects: Effect[] } {
@@ -57,7 +60,7 @@ export const claimedOwner = (mode: Mode = "demo") => claim(waiting(mode));
 export const claimedGuest = () => claim(waiting("demo"), "guest");
 
 export function approved(now = T0 + sec(10)): Machine {
-  return must(claimedOwner(), { e: "approve", now, file: DECK, maxMinutes: MAX_MINUTES }).next;
+  return must(claimedOwner(), { e: "approve", now, items: [asItem(DECK)], maxMinutes: MAX_MINUTES }).next;
 }
 
 export function offered(now = T0 + sec(10)): Machine {

@@ -9,8 +9,8 @@ import type { Meta } from "../views.ts";
 
 /** Seams owned by later modules: the open path (links), file sources and guest drop (purge). */
 export interface SessionSeams {
-  /** Mints the link set for the approved file and sends `open` to the screen. */
-  mint(purpose: OpenMode): Promise<void>;
+  /** Mints a link for the session's item at `item` and sends `open` to the screen. */
+  mint(purpose: OpenMode, item: number): Promise<void>;
   revokeLinks(): Promise<void>;
   /** Deletes a guest object and drops any in-memory access token. `file` is null when none was stored yet. */
   purge(input: { sessionId: string | null; file: FileRef | null }): Promise<void>;
@@ -43,8 +43,12 @@ function auditDetail(fx: Extract<Effect, { fx: "audit" }>, { prev, next }: Effec
   const session = next.session ?? prev.session;
   const withFile = fx.type === "approved" || fx.type === "ended" || fx.type === "guest.uploaded";
   const withReason = fx.type === "canceled" || fx.type === "ended";
+  // One row per session: the item names in one field, and the source of its files (a session has one source).
+  const names = session?.items.map((i) => (i.kind === "file" ? i.name : i.title)).join(", ");
+  const file = session?.items.find((i) => i.kind === "file");
   return {
-    ...(withFile && session ? { fileName: session.file.name, source: session.file.source } : {}),
+    ...(withFile && names ? { fileName: names } : {}),
+    ...(withFile && file?.kind === "file" ? { source: file.source } : {}),
     ...(withReason && next.endReason ? { reason: next.endReason } : {}),
     ...(fx.cause ? { cause: fx.cause } : {}),
   };
@@ -83,7 +87,7 @@ export async function runEffects(
         deps.push(fx.to);
         break;
       case "mint":
-        await deps.seams.mint(fx.purpose);
+        await deps.seams.mint(fx.purpose, fx.item);
         break;
       case "revokeLinks":
         await deps.seams.revokeLinks();

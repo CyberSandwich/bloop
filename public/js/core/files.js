@@ -1,5 +1,5 @@
 // The phone's file list: GET /api/files (docs/architecture.md section 6).
-/** @import {FileEntry} from "../../../src/shared/protocol.ts" */
+/** @import {Entry, FileEntry} from "../../../src/shared/protocol.ts" */
 
 /**
  * @param {import("./api.js").Api} api
@@ -9,5 +9,8 @@
 export async function loadFiles(api, pid) {
   const res = await api.get("/api/files", pid);
   if (!res.ok) return res;
-  return { ok: true, files: Array.isArray(res.value?.files) ? res.value.files : [] };
+  /** @type {Entry[]} */
+  const items = Array.isArray(res.value?.items) ? res.value.items : [];
+  // The page still lists files only; links reach the list with the items UI.
+  return { ok: true, files: items.filter((e) => e.kind === "file") };
 }

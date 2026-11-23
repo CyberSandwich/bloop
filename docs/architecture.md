@@ -111,13 +111,13 @@ sequenceDiagram
   end
   P->>W: GET /api/files (Bearer pid, cookie)
   W->>G: list recent decks (access token from vault)
-  W->>R: listed(fileIds)
+  W->>R: listed(ids)
   R-->>S: state choosing
-  W-->>P: up to 5 files
-  P->>W: POST /api/approve {fileId} (Bearer pid, Origin checked)
-  W->>R: approve(fileId)
+  W-->>P: up to 5 files, then the account's links
+  P->>W: POST /api/approve {ids} (Bearer pid, Origin checked)
+  W->>R: approve(items resolved from the list)
   R->>R: mint link token, schedule auto-end at +90 min, audit approved
-  R-->>S: open {protocolUrl, downloadUrl}
+  R-->>S: open {item 0, links.protocol}
   R-->>P: state opening
   S->>S: location.assign(ms-powerpoint:ofv|u|https://host/f/token/Lecture-4.pptx)
 ```
@@ -149,7 +149,7 @@ sequenceDiagram
 ```
 The Worker answers a `/f/` request in this order: the platform rate limit, the token's shape, the Screen object's link rules (`useLink`), the source (`resolve`, or `resolvePdf` for a PDF link), then the OpenPath answer. A token that is malformed, unknown, or from a screen that no longer exists is the same 404. A source with no download URL (the mock, guest files) streams in either mode, with `Content-Length` when the size is known. HEAD answers from the metadata and counts as a fetch, as GET does. Range requests are not supported (T3 records whether Office sends them).
 
-The screen reports `launched` once. If no fetch arrives within 5 s of the launch, the screen shows Download It Instead; Download mints a fresh link for the same approved file (`POST /api/screen/link`, at most 5 per session), and the fetch of it moves the session to `open` with `openMode: download`, which both pages show as "PowerPoint didn't open.". There the screen also offers Show as PDF Instead, which mints the `pdf` link and opens it in a second window. A launch made without user activation also shows an Open button, whose click launches again: the browser may refuse an external-protocol launch that no gesture caused (field check T3). After a reload, an approved screen that gets no `open` frame asks for the protocol link itself. A fetch of any link, whatever its purpose, is the first accepted fetch. ADR 0003 covers the details.
+The screen reports `launched` once. If no fetch arrives within 5 s of the launch, the screen shows Download It Instead; Download mints a fresh link for the same approved file, or for the item the request names (`POST /api/screen/link`, at most 5 per session), and the fetch of it moves the session to `open` with `openMode: download`, which both pages show as "PowerPoint didn't open.". There the screen also offers Show as PDF Instead, which mints the `pdf` link and opens it in a second window. A launch made without user activation also shows an Open button, whose click launches again: the browser may refuse an external-protocol launch that no gesture caused (field check T3). After a reload, an approved screen that gets no `open` frame asks for the protocol link itself. A fetch of any link, whatever its purpose, is the first accepted fetch. ADR 0003 covers the details.
 
 ### 4.3 End and auto-end
 
@@ -196,11 +196,11 @@ Per-room policy (ADR 0005): `open` (default) is the flow above. `pass` is option
 
 `/s?mode=demo`, entered from the landing, opens a demo screen (`POST /api/screens {mode: "demo"}`). Differences from the live flow:
 
-- the file source is always `MockFileSource`, fixed at screen creation on the server. A client cannot switch it. The demo account lists one file, the sample deck; its PDF export is only the deck's rendition;
+- the file source is always `MockFileSource`, fixed at screen creation on the server. A client cannot switch it. The demo account lists Sample deck.pptx, Sample deck.pdf (the deck's export, and its rendition), Dog.jpg and one link, Vevox (interfaces.md section 3); the phone approves any of them as one list;
 - the screen launches nothing: no `ms-powerpoint:` and no `window.open`. On the link it fetches the link itself (a HEAD, as PowerPoint would; `public/js/screen-demo.js`), which moves the session to `open`, and from `approved` to `open` it shows the result in the page, built from the screen's state (`demo_open`), so a reload or a dropped socket shows it again. The sample deck shows as pre-rendered slide images (`public/img/demo-slide-*`, `tools/render-slides.py`; click or arrow keys, Full Screen), with "On a room PC this opens in PowerPoint." and End. A guest's own file shows as a card (name, size, "Your file reached the screen.") with Download, which mints a fresh download link on the click;
 - one device can play both parts: in the waiting state the demo screen offers "Approve on This Device", a same-tab link to `/a?c=<code>`; `/a` then offers "See It on the Screen" back to `/s?mode=demo`, which resumes the screen from the sid in that tab's `sessionStorage`. Only the tab that created a screen holds its sid, and a stored sid resumes only a screen of the page's mode. A demo screen runs at phone width; a live one asks for the room's screen;
 - the phone gets no OAuth step, and demo routes never read the phone session cookie;
-- the session lasts 10 min (`DEMO_SESSION_MINUTES`), and guest drops are capped at 10 MB (`DEMO_GUEST_MAX_BYTES`), and the Open click applies as in 4.4;
+- the session lasts 60 min (`DEMO_SESSION_MINUTES`), and guest drops are capped at 10 MB (`DEMO_GUEST_MAX_BYTES`), and the Open click applies as in 4.4;
 - the demo has its own rate limits (section 6): stricter per-IP bindings for creating and claiming, and a global cap on concurrent demo screens held in the Directory (`DEMO_MAX_CONCURRENT`) and a per-IP-hash cap (`DEMO_MAX_PER_IP`) so one address cannot fill it. A demo screen takes a slot at creation, for one claim window plus one session, and gives it back when its session ends or the screen closes; a screen that outlives its hold stops counting. `DEMO_ENABLED=false` makes `POST /api/screens {mode: "demo"}` and any claim of a demo code answer `not_found`;
 - its session and audit rows are `mode = demo` with no user, and are kept 7 days;
 - the landing embeds no demo: its Try the demo button opens `/s?mode=demo`, and the landing's hero stage is a static panel, with no connection.
@@ -228,6 +228,8 @@ src/worker/
   config.ts                Zod schema for env, fails closed at startup
   do/demo-slots.ts         the global cap on concurrent demo screens (SQL in the Directory object)
   machine.ts               pure session state machine (interfaces.md)
+  items.ts                 the session's items: types, MAX_ITEMS, order, the link allowlist (ADR 0009)
+  do/schema.ts             the Screen object's numbered storage steps (schemaVersion)
   do/screen.ts  do/directory.ts
   seams/file-source/{index,mock,demo,graph}.ts   interface; MockFileSource; the bundled demo account; GraphFileSource
   source-access.ts         which source serves a screen (mode and FILE_SOURCE), and the server-side resolve of an approved id
@@ -248,7 +250,7 @@ public/                    wrangler's assets directory, served as it is. Everyth
   css/app.css              the one stylesheet (task pages and site pages)
   js/{screen,phone,code,launcher,residue}.js   task pages; js/vendor/uqr.js (+ LICENSE)
   js/screen-demo.js js/core/demo.js   the demo screen's in-page result (slides, file card, its own link fetch); its pure parts
-  img/demo-slide-{n}.{avif,webp}   the sample deck's slides (tools/render-slides.py)
+  img/demo-slide-{n}.{avif,webp}   the sample deck's pages, shown for the deck and its PDF (tools/render-slides.py)
   js/site.js               the landing: the nav's scrolled look, closing the menu on a same-page link, the FAQ's height tween where CSS cannot (no other site page runs a script)
   og.png apple-touch-icon.png (tools/render-og.py); favicon.svg, the logo, drawn as paths
   fonts/inter-latin.woff2  the one font file (tools/subset-font.py) + Inter.LICENSE.txt
@@ -285,13 +287,13 @@ test/
 | GET                      | `/api/screen/ws?ref=<screenRef>`             | `hello{sid}` as first message, Origin | screen socket (the ref only routes to the object; it is no secret) |
 | GET                      | `/api/screen/state`                          | Bearer sid                            | polling fallback; also the rotation clock when there is no socket. A poll writes nothing unless a code is due or the close deadline is a tenth of its window stale |
 | POST                     | `/api/screen/restart`                        | Bearer sid                            | "Start Over" on the screen: drop an unapproved claim, new code |
-| POST                     | `/api/screen/link`                           | Bearer sid                            | one more link for the approved file `{purpose: protocol, download or pdf}` to `{links}`; counts against `LINK_MINTS_PER_SESSION`; `protocol` only from `approved` (the screen lost its link) |
+| POST                     | `/api/screen/link`                           | Bearer sid                            | one more link for an approved file `{purpose: protocol, download, pdf or view, item?}` to `{item, links}` (`item` defaults to the first file; a link item is `file_not_found`); counts against `LINK_MINTS_PER_SESSION`; `protocol` only from `approved` (the screen lost its link) |
 | POST                     | `/api/screen/end`                            | Bearer sid                            | end; response carries `Clear-Site-Data: "storage"`             |
 | POST                     | `/api/claim`                                 | none; rate-limited                    | `{code, pass?, kind?}` to `{pid, room, match, mode, kind, needsAuth, dropMaxBytes}` |
 | GET                      | `/api/pair/ws?ref=<screenRef>`               | `hello{pid}`, Origin                  | phone socket                                                   |
 | GET                      | `/api/pair/state`                            | Bearer pid                            | polling fallback                                               |
-| GET                      | `/api/files`                                 | Bearer pid, plus session cookie when `FILE_SOURCE=graph` and the screen is live | up to 5 recent decks as `{files: FileEntry[]}`; tells the Screen object the ids shown |
-| POST                     | `/api/approve`                               | Bearer pid, plus cookie as above, Origin | `{fileId}`; the Worker resolves the file from the source's list, so an id not in it is `file_not_found` |
+| GET                      | `/api/files`                                 | Bearer pid, plus session cookie when `FILE_SOURCE=graph` and the screen is live | up to 5 recent files, then the account's links, as `{items: Entry[]}`; tells the Screen object the ids shown |
+| POST                     | `/api/approve`                               | Bearer pid, plus cookie as above, Origin | `{ids}`, 1 to 12 distinct entry ids; the Worker resolves each item from the source's list, so an id not in it is `file_not_found` |
 | PUT                      | `/api/drop`                                  | Bearer pid, Origin                    | guest upload, raw body, `X-Bloop-Name` (percent-encoded), `Content-Length` required, octet-stream, PDF or PPTX content type; answers the phone's view (`offered`) |
 | POST                     | `/api/cancel`                                | Bearer pid, Origin                    | cancel before approve                                          |
 | POST                     | `/api/end`                                   | Bearer pid, Origin                    | end from the phone                                             |
@@ -327,7 +329,7 @@ Every state-changing route checks four things: `Origin` equals `PUBLIC_ORIGIN`; 
 | demo screen creation    | per IP (`RL_DEMO_CREATE` in `wrangler.jsonc`), instead of the live limit             | binding             |
 | demo claims             | per IP (`RL_DEMO_CLAIM`), after the lookup says the code is a demo one; the live claim limit applies first, so the lower of the two binds | binding |
 | concurrent demo screens | `DEMO_MAX_CONCURRENT` across all visitors, and `DEMO_MAX_PER_IP` per IP hash (values in `wrangler.jsonc`); the next create answers 429 `rate_limited` | exact, Directory DO |
-| demo screens            | plus a 10-min session and a 10 MB drop cap                                           | config              |
+| demo screens            | plus a 60-min session and a 10 MB drop cap                                           | config              |
 
 IPs are never stored. Limits use `HMAC(HASH_PEPPER, ip)` of `CF-Connecting-IP` (Cloudflare sets it; a local run has none and shares one key), kept only in DO storage until the window ends. The rate-limit bindings run in `wrangler dev` too. `TEST_TIMING=1` skips them so one integration run can create more screens than the per-IP limit allows; the exact limits in the objects stay on.
 
@@ -341,11 +343,11 @@ Both sockets are JSON text frames of at most 4 KB, `{"v":1,"t":<type>,...}`. A s
 |                  | `code.next` | none (also sent when the tab becomes visible)                                       |
 |                  | `launched`  | `mode: protocol or pdf`, sent once, at the first launch (any other state ignores it) |
 |                  | `ping`      | none                                                                                |
-| server to screen | `state`     | `ScreenView` (state, room, code, match, file name, endsAt)                          |
-|                  | `open`      | `links: {protocol, download, pdf}`, one field set per mint (sent once per mint; never repeated in `state`) |
+| server to screen | `state`     | `ScreenView` (state, room, code, match, items, endsAt)                              |
+|                  | `open`      | `item` and `links: {protocol, download, pdf, view}`, one field set per mint (sent once per mint; never repeated in `state`) |
 |                  | `error`     | `code: ErrorCode`                                                                   |
 | phone to server  | `hello`     | `pid`                                                                               |
-| server to phone  | `state`     | `PhoneView` (state, room, match, file name, endsAt, mode, kind)                     |
+| server to phone  | `state`     | `PhoneView` (state, room, match, items, endsAt for the countdown, mode, kind)       |
 |                  | `error`     | `code`                                                                              |
 
 Phone actions (approve, cancel, end, upload) and screen actions that change a session (end, link, restart) use HTTP, so they get the Origin check, idempotency and a clear status. The sockets only push state.
@@ -433,8 +435,9 @@ CREATE TABLE r2_ops (                    -- R2 operations bloop performed; 13 mo
 | key                | holds                                                                                                                            | lifetime                                                       |
 | ------------------ | -------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------- |
 | `meta`             | `screenRef`, mode, room id and name, `screenSecretHash`, created                                                                 | until the screen closes (10 min with no socket and no session) |
-| `machine`          | the whole pure-machine record (`src/worker/machine.ts`): state, current and previous code (value, issuedAt, expiresAt, consumed), code request times, pairing (session id, secret hash, kind, match, claimedAt, listed ids, pass hash, user id), session (file ref, approvedAt, endsAt, open mode, mints), deadlines, end reason, open socket count | rewritten on every transition; pairing and session fields are dropped at end |
-| `links`            | per link: `tokenHash`, purpose, mintedAt, firstFetchAt, fetches, revoked. At end every record is marked revoked and kept, so a holder of a real token gets 410 while a guess gets 404 | until the screen closes |
+| `machine`          | the whole pure-machine record (`src/worker/machine.ts`): state, current and previous code (value, issuedAt, expiresAt, consumed), code request times, pairing (session id, secret hash, kind, match, claimedAt, listed ids, pass hash, user id), session (the approved items in order, approvedAt, endsAt, open mode, mints), deadlines, end reason, open socket count | rewritten on every transition; pairing and session fields are dropped at end |
+| `schemaVersion`    | the storage version (`do/schema.ts`); an object on an older one is stepped forward when it wakes | until the screen closes |
+| `links`            | per link: `tokenHash`, purpose, item index, mintedAt, firstFetchAt, fetches, revoked. At end every record is marked revoked and kept, so a holder of a real token gets 410 while a guess gets 404 | until the screen closes |
 | `screenIp`         | HMAC of the IP the screen's socket connected from, for the link binding check (ADR 0003)                                         | until the screen closes                                        |
 | socket attachments | `{role, authed}`                                                                                                                 | the socket's life                                              |
 

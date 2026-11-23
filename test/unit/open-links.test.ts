@@ -171,6 +171,7 @@ describe("OPEN-01 link-life rules", () => {
   const rec = (over: Partial<LinkRecord> = {}): LinkRecord => ({
     tokenHash: "h",
     purpose: "protocol",
+    item: 0,
     mintedAt: 1000,
     firstFetchAt: null,
     fetches: 0,

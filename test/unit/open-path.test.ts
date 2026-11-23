@@ -175,6 +175,7 @@ describe("LinkLedger", () => {
   const rec = (tokenHash: string): LinkRecord => ({
     tokenHash,
     purpose: "protocol",
+    item: 0,
     mintedAt: 0,
     firstFetchAt: null,
     fetches: 0,

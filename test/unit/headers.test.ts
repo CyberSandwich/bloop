@@ -60,21 +60,23 @@ describe("public/_headers matches headers.ts", () => {
 });
 
 describe("headers.ts", () => {
+  const POLICIES = Object.keys(CSP) as Policy[];
+
   it("every policy carries the base headers", () => {
-    for (const policy of ["landing", "app", "api", "file-pptx", "file-pdf"] as const) {
+    for (const policy of POLICIES) {
       expect(headersFor(policy)).toMatchObject(BASE_HEADERS);
     }
   });
 
   it("SITE-08 headers: HSTS for two years on every policy, subdomains included", () => {
-    for (const policy of ["landing", "app", "api", "file-pptx", "file-pdf"] as const) {
+    for (const policy of POLICIES) {
       expect(headersFor(policy)["Strict-Transport-Security"]).toBe("max-age=63072000; includeSubDomains");
     }
     expect(CSP.app).toContain("upgrade-insecure-requests");
   });
 
   it("OPEN-05 headers: no Referer on any response", () => {
-    for (const policy of ["landing", "app", "api", "file-pptx", "file-pdf"] as const) {
+    for (const policy of POLICIES) {
       expect(headersFor(policy)["Referrer-Policy"]).toBe("no-referrer");
     }
   });
@@ -89,7 +91,7 @@ describe("headers.ts", () => {
   });
 
   it("api and file responses are never cached", () => {
-    for (const policy of ["api", "file-pptx", "file-pdf"] as const) {
+    for (const policy of ["api", "file-pptx", "file-pdf", "file-image"] as const) {
       expect(headersFor(policy)["Cache-Control"]).toBe("no-store");
     }
   });

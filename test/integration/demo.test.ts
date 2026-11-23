@@ -43,20 +43,20 @@ describe("DEMO-01 isolation: the full demo flow, with no account", () => {
     expect(claimed.body.match).toMatch(/^[0-9]{2}$/);
     await socket.stateWhere((v) => v.state === "claimed" && v.match === claimed.body.match);
 
-    // The demo account holds the sample deck alone: the screen has slide images for it and nothing else.
-    const files = await api.get<{ files: { id: string; name: string }[] }>("/api/files", claimed.body.pid);
-    expect(files.body.files.map((f) => f.name)).toEqual(["Sample deck.pptx"]);
+    // The demo catalog: the deck, its PDF, a photo and one link (LINK-01: it passed the allowlist to be listed).
+    const files = await api.get<{ items: { id: string }[] }>("/api/files", claimed.body.pid);
+    expect(files.body.items.map((f) => f.id)).toEqual(["demo-deck", "demo-pdf", "demo-dog", "demo-vevox"]);
 
-    const approved = await api.post("/api/approve", { fileId: "demo-deck" }, { auth: claimed.body.pid });
+    const approved = await api.post("/api/approve", { ids: ["demo-deck"] }, { auth: claimed.body.pid });
     expect(approved.status).toBe(200);
     const open = await socket.waitFor((f) => f.t === "open");
     const links = open.links as { protocol: string };
     const url = links.protocol.replace("ms-powerpoint:ofv|u|", "");
 
-    // A session lasts DEMO_SESSION_MINUTES (10), not the live 90.
+    // A session lasts DEMO_SESSION_MINUTES (60), not the live 90.
     const view = (await socket.stateWhere((v) => v.state === "approved")).view as { endsAt: number; now: number };
-    expect(view.endsAt - view.now).toBeLessThanOrEqual(10 * 60_000);
-    expect(view.endsAt - view.now).toBeGreaterThan(9 * 60_000);
+    expect(view.endsAt - view.now).toBeLessThanOrEqual(60 * 60_000);
+    expect(view.endsAt - view.now).toBeGreaterThan(59 * 60_000);
 
     socket.send({ t: "launched", mode: "protocol" });
     const fetched = await fetchLink(url);
@@ -71,13 +71,54 @@ describe("DEMO-01 isolation: the full demo flow, with no account", () => {
     socket.close();
   });
 
-  it("DEMO-01 flow: the phone ends a demo too, and an unlisted file id is refused, the deck's PDF rendition included", async () => {
+  it("DEMO-01 flow: the phone ends a demo too, and an unlisted or second set of ids is refused", async () => {
     const { socket, pid } = await approveDemo(api);
     for (const fileId of ["not-in-the-account", "demo-pdf", "demo-review"]) {
-      expect((await api.post("/api/approve", { fileId }, { auth: pid })).status, fileId).toBeGreaterThanOrEqual(400);
+      expect((await api.post("/api/approve", { ids: [fileId] }, { auth: pid })).status, fileId).toBeGreaterThanOrEqual(
+        400,
+      );
     }
     expect((await api.post("/api/end", {}, { auth: pid })).status).toBe(200);
     await socket.stateWhere((v) => v.state === "ended");
+    socket.close();
+  });
+
+  it("IMG-01 image items and LINK-01 link items: a whole-catalog session serves each file its own way, and no link is minted", async () => {
+    const { screen, socket, code } = await openScreen(api, "demo");
+    const pid = (await claim(api, code)).body.pid;
+    await api.get("/api/files", pid);
+    const ids = ["demo-vevox", "demo-dog", "demo-pdf", "demo-deck"];
+    expect((await api.post("/api/approve", { ids }, { auth: pid })).status).toBe(200);
+    // Items are files by name, then links: 0 Dog.jpg, 1 Sample deck.pdf, 2 Sample deck.pptx, 3 Vevox. The first file launches.
+    const first = await socket.waitFor((f) => f.t === "open");
+    expect(first.item).toBe(0);
+    const firstLinks = first.links as { protocol: string | null; view: string | null };
+    expect(firstLinks.protocol).toBeNull();
+    const image = await fetchLink(firstLinks.view as string);
+    expect(image.status).toBe(200);
+    expect(image.headers.get("Content-Type")).toBe("image/jpeg");
+    expect(image.headers.get("X-Content-Type-Options")).toBe("nosniff");
+    expect(image.headers.get("Content-Disposition")).toBe("inline");
+    expect([...new Uint8Array(await image.arrayBuffer()).slice(0, 3)]).toEqual([0xff, 0xd8, 0xff]);
+
+    const mint = (body: Record<string, unknown>) =>
+      api.post<{ item: number; links: Record<string, string | null> }>("/api/screen/link", body, { auth: screen.sid });
+    const pdf = await mint({ purpose: "protocol", item: 1 });
+    expect(pdf.body.item).toBe(1);
+    const pdfView = await fetchLink(pdf.body.links.pdf as string);
+    expect(pdfView.headers.get("Content-Type")).toBe("application/pdf");
+    expect(pdfView.headers.get("Content-Disposition")).toBe("inline");
+    const deck = await mint({ purpose: "protocol", item: 2 });
+    expect(deck.body.links.protocol).toMatch(/^ms-powerpoint:ofv\|u\|.*\.pptx$/);
+
+    // A link item never becomes a /f/ link, and an index past the list names nothing (PAIR-11).
+    expect((await mint({ purpose: "protocol", item: 3 })).body).toMatchObject({ code: "file_not_found" });
+    expect((await mint({ purpose: "protocol", item: 11 })).body).toMatchObject({ code: "file_not_found" });
+    expect((await mint({ purpose: "download", item: 12 })).status).toBe(400);
+
+    const state = await api.get<{ items: { kind: string }[] }>("/api/screen/state", screen.sid);
+    expect(state.body.items.map((i) => i.kind)).toEqual(["file", "file", "file", "link"]);
+    expect(state.body.items[3]).toEqual({ kind: "link", url: "https://www.vevox.com/", title: "Vevox" });
     socket.close();
   });
 
@@ -92,10 +133,8 @@ describe("DEMO-01 isolation: the full demo flow, with no account", () => {
       state: "approved",
       mode: "demo",
       kind: "owner",
-      fileName: "Sample deck.pptx",
-      fileType: "pptx",
+      items: [{ kind: "file", name: "Sample deck.pptx", type: "pptx", size: expect.any(Number) }],
     });
-    expect(back.body.fileSize).toBeGreaterThan(0);
 
     // The page asks for the link it missed and fetches it as PowerPoint would (a HEAD), which marks the file open.
     const relinked = await api.post<{ links: { protocol: string } }>(
@@ -253,7 +292,7 @@ describe("F14 DEMO-02 flood: one IP cannot fill the cap", () => {
     const state = await api.get<{ code: { code: string } }>("/api/screen/state", first.body.sid);
     const claimed = await claim(api, state.body.code.code);
     await api.get("/api/files", claimed.body.pid);
-    expect((await api.post("/api/approve", { fileId: "demo-deck" }, { auth: claimed.body.pid })).status).toBe(200);
+    expect((await api.post("/api/approve", { ids: ["demo-deck"] }, { auth: claimed.body.pid })).status).toBe(200);
     expect((await api.post("/api/end", {}, { auth: claimed.body.pid })).status).toBe(200);
     expect((await api.post("/api/screens", { mode: "demo" }, mine)).status).toBe(201);
   });

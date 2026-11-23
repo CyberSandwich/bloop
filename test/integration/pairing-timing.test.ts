@@ -86,7 +86,7 @@ describe("session timers", () => {
     const { screen, socket, code } = await openScreen(api);
     const { body } = await claim(api, code);
     const phone = await phoneSocket(api, body.pid);
-    const approved = await api.post<{ endsAt: number }>("/api/approve", { fileId: "demo-deck" }, { auth: body.pid });
+    const approved = await api.post<{ endsAt: number }>("/api/approve", { ids: ["demo-deck"] }, { auth: body.pid });
     expect(approved.body.endsAt).toBeLessThan(Date.now() + 4000);
     for (const s of [socket, phone]) {
       const frame = await s.stateWhere((v) => v.state === "ended", 8000);
@@ -94,7 +94,7 @@ describe("session timers", () => {
     }
     const polled = await api.get<{ state: string; endReason: string }>("/api/pair/state", body.pid);
     expect(polled.body).toMatchObject({ state: "ended", endReason: "auto" });
-    expect((await api.post("/api/approve", { fileId: "demo-deck" }, { auth: body.pid })).status).toBe(410);
+    expect((await api.post("/api/approve", { ids: ["demo-deck"] }, { auth: body.pid })).status).toBe(410);
     expect((await api.get<{ state: string }>("/api/screen/state", screen.sid)).body.state).toBe("ended");
     socket.close();
     phone.close();

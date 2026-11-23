@@ -1,6 +1,7 @@
 // The pure session state machine of one screen (docs/interfaces.md section 2). No I/O, no clock, no
 // randomness: the Screen object draws values, reads the clock and applies the effects, in order.
 import type { EndReason, ErrorCode, FileType, Kind, Mode, OpenMode, SessionState } from "../shared/protocol.ts";
+import { type FileItemRef, fileAt, type ItemRef, launchIndex, MAX_ITEMS, orderItems } from "./items.ts";
 
 export interface Code {
   value: string;
@@ -35,9 +36,9 @@ export interface Machine {
     userId: string | null;
     passHash: string | null;
   } | null;
-  /** The chosen file. Exists from `offered` (guest) or from approval; approvedAt and endsAt are null while offered. */
+  /** The approved items, in `orderItems` order. Exists from `offered` (guest) or from approval; approvedAt and endsAt are null while offered. */
   session: {
-    file: FileRef;
+    items: ItemRef[];
     approvedAt: number | null;
     endsAt: number | null;
     openMode: OpenMode | null;
@@ -68,14 +69,14 @@ export type Event =
       passHash: string | null;
     }
   | { e: "listed"; now: number; ids: string[] }
-  | { e: "approve"; now: number; file: FileRef; maxMinutes: number; userId?: string | null }
+  | { e: "approve"; now: number; items: ItemRef[]; maxMinutes: number; userId?: string | null }
   | { e: "upload.start"; now: number; timeoutSeconds: number }
   | { e: "upload.done"; now: number; file: FileRef }
   | { e: "upload.failed"; now: number; error: ErrorCode }
   | { e: "open.click"; now: number; maxMinutes: number } // the Open button on a guest offer
   | { e: "launched"; now: number; mode: OpenMode }
   | { e: "fetched"; now: number }
-  | { e: "fallback"; now: number; mode: OpenMode; maxMints: number }
+  | { e: "fallback"; now: number; mode: OpenMode; item: number | null; maxMints: number } // null: the launched item
   | { e: "cancel"; now: number }
   | { e: "restart"; now: number }
   | { e: "end"; now: number; by: "phone" | "screen" | "system" }
@@ -99,7 +100,7 @@ export type Effect =
   | { fx: "directory.put"; code: string; expiresAt: number }
   | { fx: "directory.remove"; code: string }
   | { fx: "push"; to: "screen" | "phone" | "both" }
-  | { fx: "mint"; purpose: OpenMode }
+  | { fx: "mint"; purpose: OpenMode; item: number }
   | { fx: "revokeLinks" }
   | { fx: "purge"; file: FileRef | null } // Residue.server
   | { fx: "audit"; type: AuditType; actor: "screen" | "phone" | "system"; cause?: ErrorCode }
@@ -162,6 +163,21 @@ function findCode(m: Machine, value: string, now: number, cfg: MachineConfig): "
   return null;
 }
 
+/**
+ * Residue.server for a guest object: by key once the session holds the file, by session id while an upload is
+ * in flight (no ref yet). An owner session never stored anything, so it purges nothing.
+ */
+function purgeEffects(m: Machine): Effect[] {
+  if (m.state === "uploading") return [{ fx: "purge", file: null }];
+  const guest = m.session?.items.find((i): i is FileItemRef => i.kind === "file" && i.source === "guest");
+  if (!guest) return [];
+  const { kind: _, ...file } = guest;
+  return [{ fx: "purge", file }];
+}
+
+const sameRefs = (a: readonly ItemRef[], b: readonly ItemRef[]): boolean =>
+  a.length === b.length && a.every((item, i) => item.ref === b[i]?.ref);
+
 /** Back to waiting with no code, no pairing and no file: cancel, restart and every claim timeout. */
 function dropToWaiting(m: Machine, now: number, cfg: MachineConfig, reason: EndReason, actor: Actor): Step {
   const next: Machine = {
@@ -176,8 +192,7 @@ function dropToWaiting(m: Machine, now: number, cfg: MachineConfig, reason: EndR
     endReason: reason,
     closeAt: closeAtFor(m.sockets, now, cfg),
   };
-  const effects: Effect[] = [...codeRemovals(m.codes)];
-  if (m.state === "uploading" || m.session) effects.push({ fx: "purge", file: m.session?.file ?? null });
+  const effects: Effect[] = [...codeRemovals(m.codes), ...purgeEffects(m)];
   effects.push({ fx: "audit", type: "canceled", actor }, { fx: "push", to: "both" });
   return ok(next, effects);
 }
@@ -198,8 +213,7 @@ function endSession(m: Machine, now: number, cfg: MachineConfig, reason: EndReas
   };
   const effects: Effect[] = [...codeRemovals(m.codes)];
   if (m.session?.approvedAt != null) effects.push({ fx: "revokeLinks" });
-  if (m.state === "uploading" || m.session) effects.push({ fx: "purge", file: m.session?.file ?? null });
-  effects.push({ fx: "audit", type: "ended", actor });
+  effects.push(...purgeEffects(m), { fx: "audit", type: "ended", actor });
   if (m.session?.approvedAt != null) {
     effects.push({ fx: "metric", name: "session_minutes", ms: now - m.session.approvedAt });
   }
@@ -208,20 +222,21 @@ function endSession(m: Machine, now: number, cfg: MachineConfig, reason: EndReas
 }
 
 /** `userId` is the account the approving phone is signed in as now, which may be newer than the claim's. */
-function approveFile(
+function approveItems(
   m: Machine,
   now: number,
-  file: FileRef,
+  items: ItemRef[],
   maxMinutes: number,
   actor: Actor,
   userId: string | null = null,
 ): Step {
+  const ordered = orderItems(items);
   const next: Machine = {
     ...m,
     state: "approved",
     pairing: m.pairing && { ...m.pairing, userId: userId ?? m.pairing.userId },
     session: {
-      file,
+      items: ordered,
       approvedAt: now,
       endsAt: now + maxMinutes * 60 * SECOND,
       openMode: null,
@@ -231,12 +246,17 @@ function approveFile(
     uploadAt: null,
     offerAt: null,
   };
+  const launch = launchIndex(ordered);
   return ok(next, [
-    { fx: "mint", purpose: "protocol" },
+    ...(launch < 0 ? [] : [{ fx: "mint" as const, purpose: "protocol" as const, item: launch }]),
     { fx: "audit", type: "approved", actor },
     { fx: "push", to: "both" },
   ]);
 }
+
+/** One to MAX_ITEMS items with distinct refs. */
+const validItems = (items: readonly ItemRef[]): boolean =>
+  items.length >= 1 && items.length <= MAX_ITEMS && new Set(items.map((i) => i.ref)).size === items.length;
 
 export function transition(m: Machine, ev: Event, cfg: MachineConfig): Step {
   if (m.state === "closed") return fail("screen_gone");
@@ -313,13 +333,15 @@ export function transition(m: Machine, ev: Event, cfg: MachineConfig): Step {
     }
 
     case "approve": {
+      if (!validItems(ev.items)) return fail("bad_request");
       if (IN_SESSION.includes(m.state)) {
-        return m.session?.file.ref === ev.file.ref ? ok(m) : fail("wrong_state");
+        return m.session && sameRefs(m.session.items, orderItems(ev.items)) ? ok(m) : fail("wrong_state");
       }
       if (m.state === "ended") return fail("session_ended");
       if ((m.state !== "claimed" && m.state !== "choosing") || m.pairing?.kind !== "owner") return fail("wrong_state");
-      if (m.mode === "live" && !m.pairing.listed.includes(ev.file.ref)) return fail("file_not_found");
-      return approveFile(m, now, ev.file, ev.maxMinutes, "phone", ev.userId);
+      const { listed } = m.pairing;
+      if (m.mode === "live" && !ev.items.every((i) => listed.includes(i.ref))) return fail("file_not_found");
+      return approveItems(m, now, ev.items, ev.maxMinutes, "phone", ev.userId);
     }
 
     case "upload.start": {
@@ -336,7 +358,8 @@ export function transition(m: Machine, ev: Event, cfg: MachineConfig): Step {
 
     case "upload.done": {
       if (m.state !== "uploading") return fail("wrong_state");
-      const session = { file: ev.file, approvedAt: null, endsAt: null, openMode: null, firstOpenAt: null, mints: 0 };
+      const items: ItemRef[] = [{ kind: "file", ...ev.file }];
+      const session = { items, approvedAt: null, endsAt: null, openMode: null, firstOpenAt: null, mints: 0 };
       return ok({ ...m, state: "offered", session, uploadAt: null, offerAt: now + cfg.claimTimeoutSeconds * SECOND }, [
         { fx: "audit", type: "guest.uploaded", actor: "phone" },
         { fx: "push", to: "both" },
@@ -357,7 +380,7 @@ export function transition(m: Machine, ev: Event, cfg: MachineConfig): Step {
         if (IN_SESSION.includes(m.state)) return ok(m);
         return fail(m.state === "ended" ? "session_ended" : "wrong_state");
       }
-      return approveFile(m, now, m.session.file, ev.maxMinutes, "screen");
+      return approveItems(m, now, m.session.items, ev.maxMinutes, "screen");
     }
 
     case "launched": {
@@ -381,10 +404,13 @@ export function transition(m: Machine, ev: Event, cfg: MachineConfig): Step {
       if (!IN_SESSION.includes(m.state) || !m.session || (m.state === "approved" && !relaunch)) {
         return fail("wrong_state");
       }
+      // A screen can mint only for a file it was approved to show (PAIR-11): never a link, never out of range.
+      const item = ev.item ?? launchIndex(m.session.items);
+      if (!fileAt(m.session.items, item)) return fail("file_not_found");
       if (m.session.mints >= ev.maxMints) return fail("mint_limit");
       const session = { ...m.session, mints: m.session.mints + 1, openMode: relaunch ? m.session.openMode : ev.mode };
       return ok({ ...m, session }, [
-        { fx: "mint", purpose: ev.mode },
+        { fx: "mint", purpose: ev.mode, item },
         ...(relaunch ? [] : [{ fx: "metric" as const, name: "fallback" as const }]),
         { fx: "push", to: "both" },
       ]);

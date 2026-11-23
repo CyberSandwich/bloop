@@ -4,13 +4,14 @@ import type {
   CodeView,
   ErrorCode,
   Kind,
-  LinkSet,
+  LinkResponse,
   Mode,
   OpenMode,
   PhoneView,
   RoomView,
   ScreenView,
 } from "../../shared/protocol.ts";
+import type { ItemRef } from "../items.ts";
 import type { FileRef } from "../machine.ts";
 import type { ClientClass } from "./open-path/links.ts";
 
@@ -53,8 +54,11 @@ export interface PairingStore {
   nextCode(sid: string): Promise<Result<CodeView>>;
   claim(code: string, phone: PhoneInfo): Promise<Result<ClaimResponse>>;
   listed(pid: string, ids: string[]): Promise<Result<PhoneView>>;
-  /** The Worker resolves `file` from the FileSource; the object checks `fileId` against the listed ids (live). */
-  approve(pid: string, fileId: string, file: FileRef, userId: string | null): Promise<Result<PhoneView>>;
+  /**
+   * The Worker resolves `items` from the source's list; the object checks every ref against the listed ids (live)
+   * and refuses an empty list, a repeat or more than MAX_ITEMS (`bad_request`).
+   */
+  approve(pid: string, items: ItemRef[], userId: string | null): Promise<Result<PhoneView>>;
   cancel(pid: string): Promise<Result<PhoneView>>;
   restart(sid: string): Promise<Result<ScreenView>>;
   endFromScreen(sid: string): Promise<Result<ScreenView>>;
@@ -71,8 +75,11 @@ export interface PairingStore {
   dropDone(pid: string, file: FileRef): Promise<Result<PhoneView>>;
   /** The upload failed or was refused: back to `claimed`, and the object is purged. */
   dropFailed(pid: string, error: ErrorCode): Promise<Result<PhoneView>>;
-  /** Mints one more link for the approved file (a download, the PDF view, or a relaunch) and pushes it to the screen. */
-  mintFallback(sid: string, mode: OpenMode): Promise<Result<LinkSet>>;
+  /**
+   * Mints one more link for an approved file (a download, the PDF or image view, or a relaunch) and pushes it to the
+   * screen. `item` null is the launched item; a link item or an index out of range is `file_not_found`.
+   */
+  mintFallback(sid: string, mode: OpenMode, item: number | null): Promise<Result<LinkResponse>>;
   /**
    * An /f/ request arrived. Applies the link rules, counts the fetch, audits it, and moves the session to
    * open on the first accepted one. Unknown hashes answer link_unknown whatever the reason (OPEN-01).

@@ -4,7 +4,7 @@
 // `landing` is also the static default (`/*` in _headers): Cloudflare does not detach `/*`'s CSP on the root path,
 // so the root receives the default too. No page under it connects anywhere; dropping `connect-src` means changing
 // `/*` in _headers and this policy together (test/unit/headers.test.ts).
-export type Policy = "landing" | "app" | "api" | "file-pptx" | "file-pdf";
+export type Policy = "landing" | "app" | "api" | "file-pptx" | "file-pdf" | "file-image";
 
 const PERMISSION_FEATURES = [
   "accelerometer",
@@ -59,6 +59,8 @@ export const CSP: Readonly<Record<Policy, string>> = {
   // `object-src 'self'` is the one hole: Chromium's PDF viewer is an embedded plugin, which the
   // `default-src 'none'` fallback would block (ADR 0003, field check F-PDF). `sandbox` stays out: it stops the viewer.
   "file-pdf": "default-src 'none'; object-src 'self'; frame-ancestors 'none'",
+  // Shown by the screen page's <img>; opened on its own, the document is sandboxed and can load nothing.
+  "file-image": "default-src 'none'; sandbox; frame-ancestors 'none'",
 };
 
 const EXTRA: Readonly<Record<Policy, Record<string, string>>> = {
@@ -67,6 +69,7 @@ const EXTRA: Readonly<Record<Policy, Record<string, string>>> = {
   api: { "Cache-Control": "no-store" },
   "file-pptx": { "Content-Disposition": "attachment", "Cache-Control": "no-store" },
   "file-pdf": { "Content-Disposition": "inline", "Cache-Control": "no-store" },
+  "file-image": { "Content-Disposition": "inline", "Cache-Control": "no-store" },
 };
 
 export function headersFor(policy: Policy): Record<string, string> {

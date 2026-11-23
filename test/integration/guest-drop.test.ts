@@ -24,13 +24,12 @@ describe("DROP-06 open-click: a guest drop waits for the click on the screen", (
     const { screen, socket, pid } = await pairPhone(api);
     const res = await putDrop(api, pid, deck, { name: "Talk.pptx" });
     expect(res.status).toBe(200);
-    expect(await res.json()).toMatchObject({ state: "offered", kind: "guest", fileName: "Talk.pptx" });
+    expect(await res.json()).toMatchObject({ state: "offered", kind: "guest", items: [{ name: "Talk.pptx" }] });
 
     const offered = await socket.stateWhere((v) => v.state === "offered");
     expect(offered.view).toMatchObject({
       kind: "guest",
-      fileName: "Talk.pptx",
-      fileSize: deck.length,
+      items: [{ kind: "file", name: "Talk.pptx", type: "pptx", size: deck.length }],
       openMode: null,
       endsAt: null,
     });
@@ -65,7 +64,7 @@ describe("DROP-06 open-click: a guest drop waits for the click on the screen", (
     const { socket, pid } = await pairPhone(api, "owner");
     const res = await putDrop(api, pid, validPdf(), { name: "Notes.pdf" });
     expect(res.status).toBe(200);
-    expect(await res.json()).toMatchObject({ state: "offered", kind: "guest", fileName: "Notes.pdf" });
+    expect(await res.json()).toMatchObject({ state: "offered", kind: "guest", items: [{ name: "Notes.pdf" }] });
     socket.close();
   });
 
@@ -218,8 +217,8 @@ describe("DROP-02 wrong type and polyglot are refused and nothing is kept", () =
     const name = "<img src=x onerror=alert(1)>‮.pptx";
     const res = await putDrop(api, pid, deck, { name });
     expect(res.status).toBe(200);
-    const view = (await res.json()) as { fileName: string };
-    expect(view.fileName).not.toContain("‮");
+    const view = (await res.json()) as { items: { name: string }[] };
+    expect(view.items[0]?.name).not.toContain("‮");
     socket.send({ t: "open.click" });
     const open = await socket.waitFor((f) => f.t === "open");
     expect((open.links as { protocol: string }).protocol).toMatch(/\/f\/[A-Za-z0-9_-]{54}\/[A-Za-z0-9.-]+$/);
@@ -234,8 +233,8 @@ describe("DROP-05 one file per session", () => {
     const second = await putDrop(api, pid, deck, { name: "Two.pptx" });
     expect(second.status).toBe(409);
     expect(await problemCode(second)).toBe("already_uploaded");
-    const phone = await api.get<{ state: string; fileName: string }>("/api/pair/state", pid);
-    expect(phone.body).toMatchObject({ state: "offered", fileName: "One.pptx" });
+    const phone = await api.get<{ state: string }>("/api/pair/state", pid);
+    expect(phone.body).toMatchObject({ state: "offered", items: [{ name: "One.pptx" }] });
     socket.close();
   });
 

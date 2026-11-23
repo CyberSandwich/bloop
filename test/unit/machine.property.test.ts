@@ -1,7 +1,7 @@
 import fc from "fast-check";
 import { describe, expect, it } from "vitest";
 import { createMachine, type Event, type Machine, nextDeadline, transition } from "../../src/worker/machine.ts";
-import { CFG, DECK, GUEST_FILE, MAX_MINUTES, T0, violations } from "./machine-helpers.ts";
+import { asItem, CFG, DECK, GUEST_FILE, MAX_MINUTES, T0, violations } from "./machine-helpers.ts";
 
 type Action =
   | { k: "next" }
@@ -107,7 +107,12 @@ function run(steps: { dt: number; a: Action }[], observe: (t: Trace) => void): M
       case "listed":
         return { e: "listed", now, ids: [DECK.ref] };
       case "approve":
-        return { e: "approve", now, file: a.listed ? DECK : { ...DECK, ref: "unlisted" }, maxMinutes: MAX_MINUTES };
+        return {
+          e: "approve",
+          now,
+          items: [asItem(a.listed ? DECK : { ...DECK, ref: "unlisted" })],
+          maxMinutes: MAX_MINUTES,
+        };
       case "uploadStart":
         return { e: "upload.start", now, timeoutSeconds: 900 };
       case "uploadDone":
@@ -121,7 +126,7 @@ function run(steps: { dt: number; a: Action }[], observe: (t: Trace) => void): M
       case "fetched":
         return { e: "fetched", now };
       case "fallback":
-        return { e: "fallback", now, mode: "download", maxMints: 5 };
+        return { e: "fallback", now, mode: "download", item: null, maxMints: 5 };
       case "cancel":
         return { e: "cancel", now };
       case "restart":

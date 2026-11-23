@@ -30,12 +30,12 @@ describe("pairing: the whole flow over WebSockets", () => {
     const onPhone = await phone.stateWhere((v) => v.state === "claimed");
     expect((onPhone.view as { match: string }).match).toBe(claimed.body.match);
 
-    const approved = await api.post("/api/approve", { fileId: "demo-deck" }, { auth: claimed.body.pid });
+    const approved = await api.post("/api/approve", { ids: ["demo-deck"] }, { auth: claimed.body.pid });
     expect(approved.status).toBe(200);
-    expect(approved.body).toMatchObject({ state: "approved", fileName: "Sample deck.pptx" });
+    expect(approved.body).toMatchObject({ state: "approved", items: [{ name: "Sample deck.pptx" }] });
     for (const s of [socket, phone]) {
       const frame = await s.stateWhere((v) => v.state === "approved");
-      expect((frame.view as { fileName: string }).fileName).toBe("Sample deck.pptx");
+      expect((frame.view as { items: { name: string }[] }).items[0]?.name).toBe("Sample deck.pptx");
     }
     const view = (await onScreen).view as Record<string, unknown>;
     expect(Object.keys(view)).not.toContain("fileId");
@@ -61,7 +61,7 @@ describe("pairing: the whole flow over WebSockets", () => {
 
     const other = await api.post(
       "/api/approve",
-      { fileId: "demo-deck" },
+      { ids: ["demo-deck"] },
       { auth: `${first.body.pid.split(".")[0]}.${"A".repeat(43)}` },
     );
     expect(other.status).toBe(401);
@@ -105,7 +105,7 @@ describe("pairing: the whole flow over WebSockets", () => {
 
     const stale = await api.get("/api/pair/state", claimed.body.pid);
     expect(stale.status).toBe(401);
-    expect((await api.post("/api/approve", { fileId: "demo-deck" }, { auth: claimed.body.pid })).status).toBe(401);
+    expect((await api.post("/api/approve", { ids: ["demo-deck"] }, { auth: claimed.body.pid })).status).toBe(401);
 
     const old = await claim(api, code);
     expect(old.status).toBe(404);
@@ -118,7 +118,7 @@ describe("pairing: the whole flow over WebSockets", () => {
     const { socket, code } = await openScreen(api);
     const { body } = await claim(api, code);
     const phone = await phoneSocket(api, body.pid);
-    await api.post("/api/approve", { fileId: "demo-deck" }, { auth: body.pid });
+    await api.post("/api/approve", { ids: ["demo-deck"] }, { auth: body.pid });
 
     const ended = await api.post<{ state: string; endReason: string }>("/api/end", {}, { auth: body.pid });
     expect(ended.status).toBe(200);
@@ -128,7 +128,7 @@ describe("pairing: the whole flow over WebSockets", () => {
       expect((frame.view as { endReason: string }).endReason).toBe("phone");
     }
     expect((await api.post("/api/end", {}, { auth: body.pid })).status).toBe(200);
-    const late = await api.post("/api/approve", { fileId: "demo-deck" }, { auth: body.pid });
+    const late = await api.post("/api/approve", { ids: ["demo-deck"] }, { auth: body.pid });
     expect(late.status).toBe(410);
     expect(late.body).toEqual(problem("session_ended"));
     socket.close();
@@ -139,7 +139,7 @@ describe("pairing: the whole flow over WebSockets", () => {
     const { screen, socket, code } = await openScreen(api);
     const { body } = await claim(api, code);
     const phone = await phoneSocket(api, body.pid);
-    await api.post("/api/approve", { fileId: "demo-deck" }, { auth: body.pid });
+    await api.post("/api/approve", { ids: ["demo-deck"] }, { auth: body.pid });
 
     const ended = await api.post<{ state: string; endReason: string }>("/api/screen/end", {}, { auth: screen.sid });
     expect(ended.status).toBe(200);
@@ -192,7 +192,7 @@ describe("pairing: the whole flow over WebSockets", () => {
     const phoneView = await api.get<{ state: string; match: string }>("/api/pair/state", claimed.body.pid);
     expect(phoneView.body).toMatchObject({ state: "claimed", match: claimed.body.match });
 
-    await api.post("/api/approve", { fileId: "demo-deck" }, { auth: claimed.body.pid });
+    await api.post("/api/approve", { ids: ["demo-deck"] }, { auth: claimed.body.pid });
     expect((await api.get<{ state: string }>("/api/screen/state", sid)).body.state).toBe("approved");
     await api.post("/api/screen/end", {}, { auth: sid });
     expect((await api.get<{ state: string }>("/api/pair/state", claimed.body.pid)).body.state).toBe("ended");
@@ -253,7 +253,7 @@ describe("pairing: validation at every boundary", () => {
     const claimed = await claim(api, live.code);
     // FILE_SOURCE=mock: the demo account is the user, so there is nothing to sign in to.
     expect(claimed.body.needsAuth).toBe(false);
-    const approve = await api.post("/api/approve", { fileId: "demo-deck" }, { auth: claimed.body.pid });
+    const approve = await api.post("/api/approve", { ids: ["demo-deck"] }, { auth: claimed.body.pid });
     expect(approve.status).toBe(404);
     expect(approve.body).toEqual(problem("file_not_found"));
     live.socket.close();
@@ -263,7 +263,7 @@ describe("pairing: validation at every boundary", () => {
     const { socket, code } = await openScreen(api);
     const guest = await claim(api, code, "guest");
     expect(guest.body).toMatchObject({ kind: "guest", needsAuth: false });
-    const approve = await api.post("/api/approve", { fileId: "demo-deck" }, { auth: guest.body.pid });
+    const approve = await api.post("/api/approve", { ids: ["demo-deck"] }, { auth: guest.body.pid });
     expect(approve.status).toBe(409);
     expect(approve.body).toEqual(problem("wrong_state"));
     expect((await api.get("/api/files", guest.body.pid)).body).toEqual(problem("wrong_state"));
@@ -282,13 +282,13 @@ describe("PAIR-06 csrf: cross-origin and non-JSON writes are refused and change 
     const { socket, code } = await openScreen(api);
     const { body } = await claim(api, code);
     for (const origin of ["https://evil.example", "null", null]) {
-      const res = await api.post("/api/approve", { fileId: "demo-deck" }, { auth: body.pid, origin });
+      const res = await api.post("/api/approve", { ids: ["demo-deck"] }, { auth: body.pid, origin });
       expect(res.status, String(origin)).toBe(403);
       expect(res.body).toEqual(problem("forbidden_origin"));
     }
     const sameSite = await api.post(
       "/api/approve",
-      { fileId: "demo-deck" },
+      { ids: ["demo-deck"] },
       {
         auth: body.pid,
         headers: { "Sec-Fetch-Site": "cross-site" },
@@ -326,7 +326,7 @@ describe("PAIR-06 csrf: cross-origin and non-JSON writes are refused and change 
     expect(form.status).toBe(415);
     const text = await api.post("/api/end", undefined, { auth: body.pid, contentType: "text/plain", raw: "{}" });
     expect(text.status).toBe(415);
-    const none = await api.post("/api/approve", { fileId: "demo-deck" });
+    const none = await api.post("/api/approve", { ids: ["demo-deck"] });
     expect(none.status).toBe(401);
     expect((await api.get<{ state: string }>("/api/pair/state", body.pid)).body.state).toBe("claimed");
     socket.close();
@@ -419,7 +419,7 @@ describe("SITE-03 logs: the captured output holds no credential, code or pairing
   it("SITE-03 logs: nothing sensitive reached the Worker log during the run above", async () => {
     const { screen, socket, code } = await openScreen(api);
     const { body } = await claim(api, code);
-    await api.post("/api/approve", { fileId: "demo-deck" }, { auth: body.pid });
+    await api.post("/api/approve", { ids: ["demo-deck"] }, { auth: body.pid });
     const secrets = [screen.sid, body.pid, screen.sid.split(".")[1], body.pid.split(".")[1], code];
     const out = wrangler.output();
     for (const secret of secrets) expect(out).not.toContain(secret as string);

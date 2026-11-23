@@ -3,13 +3,18 @@ import { type Policy, withPolicy } from "../../headers.ts";
 import type { Resolved } from "../file-source/index.ts";
 import { type OpenPath, sourceFailure } from "./index.ts";
 
-const CONTENT_TYPES: Record<FileType, string> = {
+/** Fixed per type, never from the bytes or the name: with `nosniff`, an image cannot run as anything else (IMG-01). */
+export const CONTENT_TYPES: Record<FileType, string> = {
   pptx: "application/vnd.openxmlformats-officedocument.presentationml.presentation",
   pdf: "application/pdf",
+  jpg: "image/jpeg",
+  png: "image/png",
+  webp: "image/webp",
 };
 
-/** Only the PDF view is shown inline; every other purpose is an attachment, whatever the type. */
-export const policyFor = (purpose: OpenMode): Policy => (purpose === "pdf" ? "file-pdf" : "file-pptx");
+/** Only the PDF view and the image view are inline; every other purpose is an attachment, whatever the type. */
+export const policyFor = (purpose: OpenMode): Policy =>
+  purpose === "pdf" ? "file-pdf" : purpose === "view" ? "file-image" : "file-pptx";
 
 // Declared here because the Node tsconfig (tests) has no Workers types; undefined outside the Workers runtime.
 declare const FixedLengthStream: (new (length: number) => TransformStream<Uint8Array, Uint8Array>) | undefined;

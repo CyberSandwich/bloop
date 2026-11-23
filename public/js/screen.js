@@ -6,7 +6,7 @@ import { openChannel } from "./core/channel.js";
 import { screenCopy } from "./core/copy.js";
 import { clock, qrLabel } from "./core/format.js";
 import { qrMatrix, qrPath, qrSize } from "./core/qr.js";
-import { screenKey } from "./core/states.js";
+import { firstFile, screenKey } from "./core/states.js";
 import { refOf, SID_KEY, sessionStore } from "./core/store.js";
 import {
   CODE_GRACE_MS,
@@ -162,13 +162,13 @@ function render() {
   const copy = screenCopy(key, {
     room: v?.room.name ?? "",
     match: v?.match ?? null,
-    file: v?.fileName ?? null,
+    file: firstFile(v?.items ?? [])?.name ?? null,
     endsAt: v?.endsAt ? clock(v.endsAt) : null,
     guest: v?.kind === "guest",
     offlineLong: s.offlineSince !== null && Date.now() - s.offlineSince >= OFFLINE_HINT_MS,
     demo: DEMO,
     openMode: v?.openMode ?? null,
-    fileType: v?.fileType ?? null,
+    fileType: firstFile(v?.items ?? [])?.type ?? null,
     fetched: !!v && v.state !== "approved",
   });
 

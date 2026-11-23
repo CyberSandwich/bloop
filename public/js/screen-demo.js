@@ -4,6 +4,7 @@
 /** @import {ScreenView} from "../../src/shared/protocol.ts" */
 import { nextSlide, openTarget, SLIDES } from "./core/demo.js";
 import { fileIcon, sizeLabel } from "./core/format.js";
+import { firstFile } from "./core/states.js";
 import { el, icon, setText, show } from "./core/ui.js";
 
 /**
@@ -64,12 +65,13 @@ export function createDemoResult(root) {
   });
 
   function card(/** @type {ScreenView} */ view) {
-    const name = view.fileName ?? "";
+    const file = firstFile(view.items);
+    const name = file?.name ?? "";
     return el("div", { class: "file-card" }, [
       icon(fileIcon(name), 32),
       el("div", {}, [
         el("p", { class: "file-name" }, [name]),
-        el("p", { class: "small" }, [view.fileSize === null ? "" : sizeLabel(view.fileSize)]),
+        el("p", { class: "small" }, [file?.size == null ? "" : sizeLabel(file.size)]),
       ]),
     ]);
   }
@@ -77,7 +79,7 @@ export function createDemoResult(root) {
   return {
     /** The result for a demo view from approved to open; null hides it and lets go of the deck. */
     render(/** @type {ScreenView | null} */ view) {
-      const want = !view ? null : view.kind === "guest" ? `guest:${view.fileName}` : "deck";
+      const want = !view ? null : view.kind === "guest" ? `guest:${firstFile(view.items)?.name}` : "deck";
       if (want !== built) {
         built = want;
         if (want === "deck") {

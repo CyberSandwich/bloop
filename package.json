@@ -54,6 +54,13 @@
       "limit": "85 kB"
     },
     {
+      "name": "demo photo",
+      "path": "src/worker/seams/file-source/demo-files/demo-dog.jpg",
+      "gzip": false,
+      "brotli": false,
+      "limit": "75 kB"
+    },
+    {
       "name": "site CSS",
       "path": "public/css/app.css",
       "gzip": true,

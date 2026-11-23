@@ -1,7 +1,7 @@
 // The /f/ link: its shape, its life rules and the request classification. Pure apart from the random
 // draw and the hash, so unit tests cover every rule without a Worker (ADR 0003, threat model OPEN-01).
 import { linkFileName, MAX_BASE } from "../../../../public/js/shared/names.js";
-import type { OpenError, OpenMode } from "../../../shared/protocol.ts";
+import type { FileType, OpenError, OpenMode } from "../../../shared/protocol.ts";
 import type { LinkConfig } from "../../config.ts";
 import { base64url, randomBytes, safeEqual, sha256Hex } from "../../ids.ts";
 import type { FileRef } from "../../machine.ts";
@@ -25,6 +25,8 @@ export interface MintedLink {
 export interface LinkRecord {
   tokenHash: string;
   purpose: OpenMode;
+  /** Index into the session's items: the file this link serves. */
+  item: number;
   mintedAt: number;
   firstFetchAt: number | null;
   fetches: number;
@@ -38,16 +40,24 @@ export function nameBudget(origin: string, extLength: number): number {
 }
 
 /**
- * Mints a link for `file`. A PDF file's link is always the inline view (`pdf`); a deck's PDF purpose
- * serves the rendition, so its name ends in .pdf too.
+ * The purpose a link for this type really serves. Download is a download for every type. A PDF file is its own
+ * inline view, an image is only ever shown (`view`), and a deck's view is its PDF rendition.
  */
+export function effectivePurpose(type: FileType, purpose: OpenMode): OpenMode {
+  if (purpose === "download") return purpose;
+  if (type === "pdf") return "pdf";
+  if (type === "pptx") return purpose === "view" ? "pdf" : purpose;
+  return "view";
+}
+
+/** Mints a link for `file` (see `effectivePurpose`). A deck's PDF link serves the rendition, so its name ends in .pdf too. */
 export async function mintLink(
   screenRef: string,
   file: FileRef,
   purpose: OpenMode,
   origin: string,
 ): Promise<MintedLink> {
-  const effective: OpenMode = file.type === "pdf" && purpose === "protocol" ? "pdf" : purpose;
+  const effective = effectivePurpose(file.type, purpose);
   const ext = effective === "pdf" ? "pdf" : file.type;
   const token = `${screenRef}${base64url(randomBytes((SECRET_CHARS * 3) / 4))}`;
   const url = `${origin}/f/${token}/${linkFileName(file.name, ext, nameBudget(origin, ext.length))}`;

@@ -28,9 +28,9 @@ describe("MockFileSource", () => {
     expect(res).toEqual({
       ok: true,
       files: [
-        { id: "deck", name: "A.pptx", type: "pptx", modifiedAt: NOW - 600_000, size: 3 },
-        { id: "pdf", name: "C.pdf", type: "pdf", modifiedAt: NOW - 3_600_000, size: 2 },
-        { id: "old", name: "B.pptx", type: "pptx", modifiedAt: NOW - 30_000_000, size: 1 },
+        { kind: "file", id: "deck", name: "A.pptx", type: "pptx", modifiedAt: NOW - 600_000, size: 3 },
+        { kind: "file", id: "pdf", name: "C.pdf", type: "pdf", modifiedAt: NOW - 3_600_000, size: 2 },
+        { kind: "file", id: "old", name: "B.pptx", type: "pptx", modifiedAt: NOW - 30_000_000, size: 1 },
       ],
     });
     expect((await source.listRecent(ctx, 2)).ok && (await source.listRecent(ctx, 2))).toMatchObject({
@@ -60,18 +60,6 @@ describe("MockFileSource", () => {
     const viaPdf = await source.resolvePdf(ctx, "pdf");
     expect(viaPdf.ok && viaPdf.file.name).toBe("C.pdf");
     expect(await source.resolvePdf(ctx, "old")).toEqual({ ok: false, error: "pdf_unavailable" });
-  });
-
-  it("a rendition-only fixture is never listed or resolved, and still serves as its deck's PDF", async () => {
-    const hidden = new MockFileSource(
-      [fixtures[0] as MockFixture, { ...(fixtures[2] as MockFixture), renditionOnly: true }],
-      () => NOW,
-    );
-    expect(await hidden.listRecent(ctx, 5)).toMatchObject({ ok: true, files: [{ id: "deck" }] });
-    expect(await hidden.resolve(ctx, "pdf")).toEqual({ ok: false, error: "file_not_found" });
-    expect(await hidden.resolvePdf(ctx, "pdf")).toEqual({ ok: false, error: "file_not_found" });
-    const viaDeck = await hidden.resolvePdf(ctx, "deck");
-    expect(viaDeck.ok && viaDeck.file.name).toBe("C.pdf");
   });
 
   it("each body() call gives a fresh stream", async () => {

@@ -3,8 +3,9 @@
 
 export type Mode = "live" | "demo";
 export type Kind = "owner" | "guest";
-export type FileType = "pptx" | "pdf";
-export type OpenMode = "protocol" | "download" | "pdf";
+export type FileType = "pptx" | "pdf" | "jpg" | "png" | "webp";
+/** `view` is an image shown in the screen page; `pdf` a PDF file's own view or a deck's rendition. */
+export type OpenMode = "protocol" | "download" | "pdf" | "view";
 export type EndReason = "phone" | "screen" | "auto" | "canceled" | "claim_timeout" | "error";
 export type Actor = "screen" | "phone" | "system" | "host" | "it";
 
@@ -33,6 +34,21 @@ export interface CodeView {
   qrUrl: string;
 }
 
+/** One approved file: what a page may show of it. No source id or URL (SRC-01). */
+export interface FileItem {
+  kind: "file";
+  name: string; // display name
+  type: FileType; // an original PDF shown as a PDF is not a fallback
+  size: number | null; // bytes, when the source gave a size
+}
+/** One approved web link: https on an allowed host only (LINK-01). The screen shows a card, never a frame. */
+export interface LinkItem {
+  kind: "link";
+  url: string;
+  title: string;
+}
+export type Item = FileItem | LinkItem;
+
 export interface ScreenView {
   state: SessionState;
   mode: Mode;
@@ -40,9 +56,8 @@ export interface ScreenView {
   room: RoomView;
   code: CodeView | null; // only in "waiting" and "ended"
   match: string | null; // 2 digits, from "claimed" to "open"
-  fileName: string | null; // display name, from "offered" (guest) or "approved"
-  fileType: FileType | null; // with fileName: an original PDF shown as a PDF is not a fallback
-  fileSize: number | null; // bytes, with fileName when the source gave a size (the demo file card)
+  /** From "offered" (guest) or "approved"; files by name, then links by title. A link or mint names an item by its index here. */
+  items: Item[];
   openMode: OpenMode | null;
   endsAt: number | null;
   endReason: EndReason | null;
@@ -55,9 +70,9 @@ export interface PhoneView {
   kind: Kind;
   room: RoomView;
   match: string;
-  fileName: string | null;
-  fileType: FileType | null;
+  items: Item[]; // as in ScreenView
   openMode: OpenMode | null;
+  /** Epoch ms the session ends by itself; with `now`, the phone's countdown. */
   endsAt: number | null;
   endReason: EndReason | null;
   /** The largest guest file this screen takes (GUEST_MAX_BYTES, or the demo cap). */
@@ -70,6 +85,7 @@ export interface LinkSet {
   protocol: string | null; // ms-powerpoint:ofv|u|<url>, pptx only
   download: string | null;
   pdf: string | null; // a PDF file's own view, or a deck's PDF rendition
+  view: string | null; // an image, inline
 }
 
 // WebSocket frames, all {v: 1, t: ...}, at most 4 KB. The upgrade URL carries the non-secret screenRef
@@ -83,7 +99,7 @@ export type ScreenMsgIn =
   | { v: 1; t: "ping" };
 export type ScreenMsgOut =
   | { v: 1; t: "state"; view: ScreenView }
-  | { v: 1; t: "open"; links: LinkSet; now: number }
+  | { v: 1; t: "open"; item: number; links: LinkSet; now: number } // item: index into ScreenView.items
   | { v: 1; t: "error"; code: ErrorCode; now: number }
   | { v: 1; t: "pong" };
 export type PhoneMsgIn = { v: 1; t: "hello"; pid: string } | { v: 1; t: "ping" };
@@ -106,12 +122,27 @@ export interface ClaimResponse {
   needsAuth: boolean;
   dropMaxBytes: number;
 }
-export interface FileEntry {
+/** A row of the phone's list (`GET /api/files` answers `{items: Entry[]}`); approve names entries by id. */
+export interface FileEntry extends FileItem {
   id: string; // opaque to the phone; never a Graph URL
-  name: string; // display name
-  type: FileType;
   modifiedAt: number;
-  size: number | null;
+}
+export interface LinkEntry extends LinkItem {
+  id: string;
+}
+export type Entry = FileEntry | LinkEntry;
+/** `POST /api/approve`: one to MAX_ITEMS distinct entry ids. */
+export interface ApproveRequest {
+  ids: string[];
+}
+/** `POST /api/screen/link`: item defaults to the one the approval launched (the first file). */
+export interface LinkRequest {
+  purpose: OpenMode;
+  item?: number;
+}
+export interface LinkResponse {
+  item: number;
+  links: LinkSet;
 }
 
 export type PairError =

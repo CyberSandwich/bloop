@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import { createMachine, type Event, type Machine, nextDeadline, transition } from "../../src/worker/machine.ts";
 import {
   approved,
+  asItem,
   CFG,
   claim,
   claimedGuest,
@@ -207,15 +208,15 @@ describe("machine: listed and approve", () => {
 
   it("approves a listed file in live mode and a fixture in demo mode", () => {
     const live = must(claimedOwner("live"), { e: "listed", now: T0 + sec(2), ids: ["deck-1"] }).next;
-    const a = must(live, { e: "approve", now: T0 + sec(3), file: DECK, maxMinutes: MAX_MINUTES });
+    const a = must(live, { e: "approve", now: T0 + sec(3), items: [asItem(DECK)], maxMinutes: MAX_MINUTES });
     expect(a.next.state).toBe("approved");
     expect(a.next.session).toMatchObject({
-      file: DECK,
+      items: [asItem(DECK)],
       approvedAt: T0 + sec(3),
       endsAt: T0 + sec(3) + MAX_MINUTES * 60_000,
     });
     expect(a.effects).toEqual([
-      { fx: "mint", purpose: "protocol" },
+      { fx: "mint", purpose: "protocol", item: 0 },
       { fx: "audit", type: "approved", actor: "phone" },
       { fx: "push", to: "both" },
     ]);
@@ -223,25 +224,27 @@ describe("machine: listed and approve", () => {
   });
 
   it("refuses a live approve of an id that was not listed (SRC-02)", () => {
-    expect(refused(claimedOwner("live"), { e: "approve", now: T0 + sec(3), file: DECK, maxMinutes: 90 })).toBe(
+    expect(
+      refused(claimedOwner("live"), { e: "approve", now: T0 + sec(3), items: [asItem(DECK)], maxMinutes: 90 }),
+    ).toBe("file_not_found");
+    const listed = must(claimedOwner("live"), { e: "listed", now: T0 + sec(2), ids: ["other"] }).next;
+    expect(refused(listed, { e: "approve", now: T0 + sec(3), items: [asItem(DECK)], maxMinutes: 90 })).toBe(
       "file_not_found",
     );
-    const listed = must(claimedOwner("live"), { e: "listed", now: T0 + sec(2), ids: ["other"] }).next;
-    expect(refused(listed, { e: "approve", now: T0 + sec(3), file: DECK, maxMinutes: 90 })).toBe("file_not_found");
   });
 
   it("is idempotent for the same file and refuses another", () => {
     const m = approved();
-    const again = must(m, { e: "approve", now: T0 + sec(20), file: DECK, maxMinutes: 90 });
+    const again = must(m, { e: "approve", now: T0 + sec(20), items: [asItem(DECK)], maxMinutes: 90 });
     expect(again.next).toBe(m);
     expect(again.effects).toEqual([]);
-    expect(refused(m, { e: "approve", now: T0 + sec(20), file: { ...DECK, ref: "other" }, maxMinutes: 90 })).toBe(
-      "wrong_state",
-    );
+    expect(
+      refused(m, { e: "approve", now: T0 + sec(20), items: [asItem({ ...DECK, ref: "other" })], maxMinutes: 90 }),
+    ).toBe("wrong_state");
   });
 
   it("answers session_ended after the end, wrong_state for a guest, wrong_state while waiting", () => {
-    const ev: Event = { e: "approve", now: T0 + sec(30), file: DECK, maxMinutes: 90 };
+    const ev: Event = { e: "approve", now: T0 + sec(30), items: [asItem(DECK)], maxMinutes: 90 };
     expect(refused(ended(), ev)).toBe("session_ended");
     expect(refused(claimedGuest(), ev)).toBe("wrong_state");
     expect(refused(waiting(), ev)).toBe("wrong_state");
@@ -277,7 +280,7 @@ describe("machine: guest upload and the Open click", () => {
     const up = must(claimedGuest(), { e: "upload.start", now: T0 + sec(5), timeoutSeconds: 900 }).next;
     const done = must(up, { e: "upload.done", now: T0 + sec(8), file: GUEST_FILE });
     expect(done.next.state).toBe("offered");
-    expect(done.next.session).toMatchObject({ file: GUEST_FILE, approvedAt: null, endsAt: null });
+    expect(done.next.session).toMatchObject({ items: [asItem(GUEST_FILE)], approvedAt: null, endsAt: null });
     expect(done.next.offerAt).toBe(T0 + sec(8) + sec(300));
     expect(done.effects).toContainEqual({ fx: "audit", type: "guest.uploaded", actor: "phone" });
     expect(fx(done.effects, "mint")).toEqual([]);
@@ -302,11 +305,11 @@ describe("machine: guest upload and the Open click", () => {
     const { next, effects } = must(m, { e: "open.click", now: T0 + sec(40), maxMinutes: MAX_MINUTES });
     expect(next.state).toBe("approved");
     expect(next.session).toMatchObject({
-      file: GUEST_FILE,
+      items: [asItem(GUEST_FILE)],
       approvedAt: T0 + sec(40),
       endsAt: T0 + sec(40) + 90 * 60_000,
     });
-    expect(effects).toContainEqual({ fx: "mint", purpose: "protocol" });
+    expect(effects).toContainEqual({ fx: "mint", purpose: "protocol", item: 0 });
     expect(effects).toContainEqual({ fx: "audit", type: "approved", actor: "screen" });
   });
 
@@ -345,31 +348,33 @@ describe("machine: open, fetch, fallback", () => {
   it("PC-02 mints a fallback link up to the cap, then mint_limit", () => {
     let m = must(approved(), { e: "launched", now: T0 + sec(11), mode: "protocol" }).next;
     for (let i = 0; i < 5; i++) {
-      const step = must(m, { e: "fallback", now: T0 + sec(12 + i), mode: "download", maxMints: 5 });
-      expect(step.effects).toContainEqual({ fx: "mint", purpose: "download" });
+      const step = must(m, { e: "fallback", now: T0 + sec(12 + i), mode: "download", item: null, maxMints: 5 });
+      expect(step.effects).toContainEqual({ fx: "mint", purpose: "download", item: 0 });
       m = step.next;
     }
-    expect(refused(m, { e: "fallback", now: T0 + sec(30), mode: "pdf", maxMints: 5 })).toBe("mint_limit");
+    expect(refused(m, { e: "fallback", now: T0 + sec(30), mode: "pdf", item: null, maxMints: 5 })).toBe("mint_limit");
   });
 
   it("refuses a download or PDF fallback before the launch", () => {
     for (const mode of ["download", "pdf"] as const) {
-      expect(refused(approved(), { e: "fallback", now: T0 + sec(12), mode, maxMints: 5 })).toBe("wrong_state");
+      expect(refused(approved(), { e: "fallback", now: T0 + sec(12), mode, item: null, maxMints: 5 })).toBe(
+        "wrong_state",
+      );
     }
   });
 
   it("lets an approved screen ask again for the protocol link, without a fallback metric or a mode change", () => {
-    const step = must(approved(), { e: "fallback", now: T0 + sec(12), mode: "protocol", maxMints: 5 });
+    const step = must(approved(), { e: "fallback", now: T0 + sec(12), mode: "protocol", item: null, maxMints: 5 });
     expect(step.next.state).toBe("approved");
     expect(step.next.session?.openMode).toBeNull();
     expect(step.next.session?.mints).toBe(1);
-    expect(step.effects).toContainEqual({ fx: "mint", purpose: "protocol" });
+    expect(step.effects).toContainEqual({ fx: "mint", purpose: "protocol", item: 0 });
     expect(fx(step.effects, "metric")).toEqual([]);
   });
 
   it("a download fallback sets the open mode both sides see, and counts as a fallback", () => {
     const opening = must(approved(), { e: "launched", now: T0 + sec(11), mode: "protocol" }).next;
-    const step = must(opening, { e: "fallback", now: T0 + sec(17), mode: "download", maxMints: 5 });
+    const step = must(opening, { e: "fallback", now: T0 + sec(17), mode: "download", item: null, maxMints: 5 });
     expect(step.next.session?.openMode).toBe("download");
     expect(step.effects).toContainEqual({ fx: "metric", name: "fallback" });
     expect(step.effects).toContainEqual({ fx: "push", to: "both" });
@@ -377,9 +382,15 @@ describe("machine: open, fetch, fallback", () => {
 
   it("an approve names the account the phone has now, keeping the claim's when it has none", () => {
     const claimed = claimedOwner();
-    const signedIn = must(claimed, { e: "approve", now: T0 + sec(10), file: DECK, maxMinutes: 90, userId: "u1" }).next;
+    const signedIn = must(claimed, {
+      e: "approve",
+      now: T0 + sec(10),
+      items: [asItem(DECK)],
+      maxMinutes: 90,
+      userId: "u1",
+    }).next;
     expect(signedIn.pairing?.userId).toBe("u1");
-    const noChange = must(claimed, { e: "approve", now: T0 + sec(10), file: DECK, maxMinutes: 90 }).next;
+    const noChange = must(claimed, { e: "approve", now: T0 + sec(10), items: [asItem(DECK)], maxMinutes: 90 }).next;
     expect(noChange.pairing?.userId).toBeNull();
   });
 });
@@ -462,7 +473,7 @@ describe("machine: end", () => {
     expect(next.session).toBeNull();
     expect(next.pairing).toMatchObject({ secretHash: "hash", listed: [], userId: null, passHash: null });
     expect(effects).toContainEqual({ fx: "revokeLinks" });
-    expect(effects).toContainEqual({ fx: "purge", file: DECK });
+    expect(fx(effects, "purge")).toEqual([]); // an owner session stored nothing to delete
     expect(effects).toContainEqual({ fx: "audit", type: "ended", actor: "phone" });
     expect(effects).toContainEqual({ fx: "metric", name: "session_minutes", ms: sec(60) });
     expect(effects).toContainEqual({ fx: "push", to: "both" });

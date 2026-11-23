@@ -1,14 +1,15 @@
-// The phone's file list and the approve that names one of its entries. The Worker resolves the file
-// from the source itself: the client sends an id and nothing else about the file (SRC-01).
+// The phone's list and the approve that names some of its entries. The Worker resolves the items from the source
+// itself: the client sends ids and nothing else about them (SRC-01, SRC-02).
 import { z } from "zod";
 import type { Config } from "../config.ts";
 import type { Env } from "../env.ts";
 import { fail, json } from "../http.ts";
+import { MAX_ITEMS } from "../items.ts";
 import { type Route, route } from "../router.ts";
-import { type Access, accessFor, LIST_LIMIT, resolveListed } from "../source-access.ts";
+import { type Access, accessFor, listEntries, resolveListed } from "../source-access.ts";
 import { limited, respond, screenFor, withConfig, write } from "./common.ts";
 
-const approveBody = z.object({ fileId: z.string().min(1).max(256) }).strict();
+const approveBody = z.object({ ids: z.array(z.string().min(1).max(256)).min(1).max(MAX_ITEMS) }).strict();
 
 type Phone = {
   ok: true;
@@ -43,14 +44,14 @@ export const fileRoutes: readonly Route[] = [
       // Each listing is a Graph call: limited per session, after the credential check so a stranger cannot spend it.
       const tooMany = await limited(env.RL_FILES, request, config, phone.screen.ref);
       if (tooMany) return tooMany;
-      const listed = await phone.access.source.listRecent(phone.access.ctx, LIST_LIMIT);
+      const listed = await listEntries(phone.access);
       if (!listed.ok) return fail(listed.error);
       // The Screen object keeps the ids it was shown: approve in a live session accepts only those.
       const told = await phone.screen.stub.listed(
         phone.screen.credential,
-        listed.files.map((f) => f.id),
+        listed.entries.map((e) => e.id),
       );
-      return told.ok ? json({ files: listed.files }) : fail(told.error);
+      return told.ok ? json({ items: listed.entries }) : fail(told.error);
     }),
   ),
 
@@ -63,11 +64,9 @@ export const fileRoutes: readonly Route[] = [
       if (!body.ok) return body.response;
       const phone = await phoneAccess(request, env, config);
       if (!phone.ok) return phone.response;
-      const file = await resolveListed(phone.access, body.value.fileId);
-      if (!file.ok) return fail(file.error);
-      return respond(
-        await phone.screen.stub.approve(phone.screen.credential, body.value.fileId, file.file, phone.access.ctx.userId),
-      );
+      const resolved = await resolveListed(phone.access, body.value.ids);
+      if (!resolved.ok) return fail(resolved.error);
+      return respond(await phone.screen.stub.approve(phone.screen.credential, resolved.items, phone.access.ctx.userId));
     }),
   ),
 ];

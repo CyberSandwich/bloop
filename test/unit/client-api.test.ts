@@ -92,9 +92,10 @@ describe("api client", () => {
 });
 
 describe("file list", () => {
-  it("returns the files the route sends", async () => {
-    const files = [{ id: "a", name: "A.pptx", type: "pptx", modifiedAt: 1, size: null }];
-    const f = fakeFetch(() => ok({ files }));
+  it("returns the files among the items the route sends", async () => {
+    const files = [{ kind: "file", id: "a", name: "A.pptx", type: "pptx", modifiedAt: 1, size: null }];
+    const link = { kind: "link", id: "l", url: "https://www.vevox.com/", title: "Vevox" };
+    const f = fakeFetch(() => ok({ items: [...files, link] }));
     expect(await loadFiles(createApi({ fetch: f.fetch }), "p.q")).toEqual({ ok: true, files });
   });
 

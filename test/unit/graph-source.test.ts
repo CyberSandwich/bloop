@@ -43,6 +43,7 @@ describe("GraphFileSource.listRecent", () => {
       ok: true,
       files: [
         {
+          kind: "file",
           id: "01SYNTHETICPDF",
           name: "Handout.PDF",
           type: "pdf",
@@ -50,6 +51,7 @@ describe("GraphFileSource.listRecent", () => {
           size: 88200,
         },
         {
+          kind: "file",
           id: "01SYNTHETICNEWDECK",
           name: "Lecture 4.pptx",
           type: "pptx",
@@ -57,6 +59,7 @@ describe("GraphFileSource.listRecent", () => {
           size: 2481920,
         },
         {
+          kind: "file",
           id: "01SYNTHETICMIDDECK",
           name: "Seminar.pptx",
           type: "pptx",
@@ -64,6 +67,7 @@ describe("GraphFileSource.listRecent", () => {
           size: 640000,
         },
         {
+          kind: "file",
           id: "01SYNTHETICOLDDECK",
           name: "Old lecture.pptx",
           type: "pptx",

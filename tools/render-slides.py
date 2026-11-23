@@ -1,5 +1,7 @@
 #!/usr/bin/env python3
-"""render-slides: the demo screen's slide images, from the demo deck's PDF export.
+"""render-slides: the demo screen's page images, from the demo deck's PDF export.
+
+The PDF is the deck exported, so one set of images shows both catalog items, Sample deck.pptx and Sample deck.pdf.
 
 Use: python3 -I tools/render-slides.py   (needs poppler's pdftoppm, cwebp and avifenc on PATH)
 Writes public/img/demo-slide-<n>.webp and .avif, 1920 px wide, one pair per PDF page. The page count must equal
