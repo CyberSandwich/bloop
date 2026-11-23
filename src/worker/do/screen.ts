@@ -49,7 +49,9 @@ interface SocketAttachment {
 }
 
 /** `next`: the machine the event committed, which outlives `this.m` when the event closed the object. */
-type Applied = { ok: true; collided: boolean; next: Machine } | { ok: false; error: ErrorCode };
+type Applied =
+  | { ok: true; collided: boolean; next: Machine; minted: LinkResponse | null }
+  | { ok: false; error: ErrorCode };
 
 const fail = (error: ErrorCode): { ok: false; error: ErrorCode } => ({ ok: false, error });
 
@@ -57,8 +59,6 @@ export class Screen extends DurableObject<Env> implements PairingStore {
   private meta: Meta | null;
   private m: Machine | null;
   private readonly links: LinkLedger;
-  /** The link set the last mint produced, for the call that asked for it. */
-  private lastLinks: LinkResponse | null = null;
 
   constructor(ctx: DurableObjectState, env: Env) {
     super(ctx, env);
@@ -224,11 +224,10 @@ export class Screen extends DurableObject<Env> implements PairingStore {
   async mintFallback(sid: string, mode: OpenMode, item: number | null): Promise<Result<LinkResponse>> {
     const auth = await this.screenAuth(sid);
     if (!auth.ok) return auth;
-    this.lastLinks = null;
     const maxMints = this.config().links.maxMints;
     const applied = await this.apply({ e: "fallback", now: Date.now(), mode, item, maxMints });
     if (!applied.ok) return applied;
-    return this.lastLinks ? { ok: true, value: this.lastLinks } : fail("internal");
+    return applied.minted ? { ok: true, value: applied.minted } : fail("internal");
   }
 
   async useLink(
@@ -446,9 +445,9 @@ export class Screen extends DurableObject<Env> implements PairingStore {
       this.m = step.next;
       this.ctx.storage.kv.put("machine", step.next);
     }
-    const { collided } = await runEffects(step.effects, { meta, prev: m, next: step.next, now: ev.now }, this.deps());
+    const { collided, minted } = await runEffects(step.effects, { meta, prev: m, next: step.next, now: ev.now }, this.deps());
     const after = this.m;
-    if (!after) return { ok: true, collided, next: step.next }; // closed: storage is gone
+    if (!after) return { ok: true, collided, next: step.next, minted }; // closed: storage is gone
     if (!after.pairing) this.closePhoneSockets();
     // A demo session that ends gives its slot back at once; the screen may go on and show a new code.
     if (meta.mode === "demo" && after.state === "ended" && m.state !== "ended") {
@@ -459,7 +458,7 @@ export class Screen extends DurableObject<Env> implements PairingStore {
     if (!collided && after.state === "waiting" && !after.codes.current && m.state !== "waiting") {
       await this.issueCode();
     }
-    return { ok: true, collided, next: step.next };
+    return { ok: true, collided, next: step.next, minted };
   }
 
   /** Issues a code; on a Directory collision (about 1 in 1e6) draws again. */
@@ -542,7 +541,7 @@ export class Screen extends DurableObject<Env> implements PairingStore {
       mint: async (purpose, item) => {
         const { m, meta } = this;
         const file = m?.session && fileAt(m.session.items, item);
-        if (!m?.pairing || !meta || !file) return;
+        if (!m?.pairing || !meta || !file) return null;
         const now = Date.now();
         const link = await mintLink(meta.screenRef, file, purpose, this.config().origin);
         this.links.add({
@@ -560,9 +559,9 @@ export class Screen extends DurableObject<Env> implements PairingStore {
           pdf: link.purpose === "pdf" ? link.url : null,
           view: link.purpose === "view" ? link.url : null,
         };
-        this.lastLinks = { item, links };
         this.sendOpen(item, links);
         await this.auditLink(m.pairing.sessionId, now, "link.minted", { purpose: link.purpose });
+        return { item, links };
       },
       revokeLinks: async () => void this.links.revokeAll(),
     };

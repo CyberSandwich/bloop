@@ -1,6 +1,6 @@
 // Applies the machine's effects, in order, for the Screen object. No Cloudflare types, so unit tests
 // drive it with fakes. Each effect maps to one seam; the stubs are replaced by their modules.
-import type { OpenMode } from "../../shared/protocol.ts";
+import type { LinkResponse, OpenMode } from "../../shared/protocol.ts";
 import type { AuditEvent, AuditLog } from "../audit.ts";
 import type { Effect, FileRef, Machine } from "../machine.ts";
 import type { Metrics } from "../metrics.ts";
@@ -9,15 +9,17 @@ import type { Meta } from "../views.ts";
 
 /** Seams owned by later modules: the open path (links), file sources and guest drop (purge). */
 export interface SessionSeams {
-  /** Mints a link for the session's item at `item` and sends `open` to the screen. */
-  mint(purpose: OpenMode, item: number): Promise<void>;
+  /** Mints a link for the session's item at `item`, sends `open` to the screen, and answers it (null: nothing minted). */
+  mint(purpose: OpenMode, item: number): Promise<LinkResponse | null>;
   revokeLinks(): Promise<void>;
   /** Deletes a guest object and drops any in-memory access token. `file` is null when none was stored yet. */
   purge(input: { sessionId: string | null; file: FileRef | null }): Promise<void>;
 }
 
 export const noopSeams: SessionSeams = {
-  async mint() {},
+  async mint() {
+    return null;
+  },
   async revokeLinks() {},
   async purge() {},
 };
@@ -65,20 +67,22 @@ export async function bestEffort(write: Promise<void>): Promise<void> {
 
 /**
  * Runs the effects in order. Returns `collided: true` when the Directory already maps the new code
- * to another screen: the caller draws again, and nothing after the put (the push) has run.
+ * to another screen: the caller draws again, and nothing after the put (the push) has run. `minted` is the link set
+ * this run's mint produced, returned per call: two calls interleaving across an await never see each other's.
  */
 export async function runEffects(
   effects: Effect[],
   ctx: EffectContext,
   deps: EffectDeps,
-): Promise<{ collided: boolean }> {
+): Promise<{ collided: boolean; minted: LinkResponse | null }> {
   const { meta, prev, next, now } = ctx;
   const pairing = next.pairing ?? prev.pairing;
+  let minted: LinkResponse | null = null;
   for (const fx of effects) {
     switch (fx.fx) {
       case "directory.put":
         if ((await deps.directory.put(fx.code, meta.screenRef, fx.expiresAt, meta.mode === "demo")) === "collision")
-          return { collided: true };
+          return { collided: true, minted: null };
         break;
       case "directory.remove":
         await deps.directory.remove(fx.code);
@@ -87,7 +91,7 @@ export async function runEffects(
         deps.push(fx.to);
         break;
       case "mint":
-        await deps.seams.mint(fx.purpose, fx.item);
+        minted = (await deps.seams.mint(fx.purpose, fx.item)) ?? minted;
         break;
       case "revokeLinks":
         await deps.seams.revokeLinks();
@@ -139,5 +143,5 @@ export async function runEffects(
         break;
     }
   }
-  return { collided: false };
+  return { collided: false, minted };
 }

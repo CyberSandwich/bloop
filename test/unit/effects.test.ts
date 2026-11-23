@@ -35,7 +35,10 @@ function fakes(over: Partial<EffectDeps> = {}) {
       activeWeek: async (userId) => void log.push(`active ${userId}`),
     },
     seams: {
-      mint: async (p, item) => void log.push(`mint ${p} ${item}`),
+      mint: async (p, item) => {
+        log.push(`mint ${p} ${item}`);
+        return null;
+      },
       revokeLinks: async () => void log.push("revoke"),
       purge: async (i) => void log.push(`purge ${i.file?.ref ?? "none"}`),
     },
@@ -175,6 +178,29 @@ describe("effects: order and the other seams", () => {
     expect(purges).toEqual([{ sessionId: "s1", file: null }]);
   });
 
+  it("each run answers the link set its own mint produced, even when two runs interleave", async () => {
+    const prev = approved();
+    const slow = fakes();
+    const fast = fakes();
+    let release: () => void = () => {};
+    const gate = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    const links = (url: string) => ({ protocol: null, download: url, pdf: null, view: null });
+    slow.deps.seams.mint = async (_p, item) => {
+      await gate;
+      return { item, links: links("https://bloop.test/f/slow") };
+    };
+    fast.deps.seams.mint = async (_p, item) => ({ item, links: links("https://bloop.test/f/fast") });
+    const ctx = { meta: META, prev, next: prev, now: 1 };
+    const first = runEffects([{ fx: "mint", purpose: "download", item: 0 }], ctx, slow.deps);
+    const second = await runEffects([{ fx: "mint", purpose: "download", item: 1 }], ctx, fast.deps);
+    release();
+    expect(second.minted).toEqual({ item: 1, links: links("https://bloop.test/f/fast") });
+    expect((await first).minted).toEqual({ item: 0, links: links("https://bloop.test/f/slow") });
+    expect((await runEffects([{ fx: "push", to: "screen" }], ctx, fast.deps)).minted).toBeNull();
+  });
+
   it("DEMO-02 flood: a demo screen's code is put in the Directory with the demo flag", async () => {
     const f = fakes();
     const flags: boolean[] = [];
@@ -198,7 +224,7 @@ describe("effects: order and the other seams", () => {
     ];
     const m = claimedOwner();
     const result = await runEffects(effects, { meta: META, prev: m, next: m, now: 1 }, f.deps);
-    expect(result).toEqual({ collided: true });
+    expect(result).toEqual({ collided: true, minted: null });
     expect(f.log).not.toContain("push screen");
   });
 
