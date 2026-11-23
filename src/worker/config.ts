@@ -166,7 +166,7 @@ const schema = z
       .enum(["0", "1"])
       .default("0")
       .describe(
-        "Test only, never set in a deployment. 1 lowers the production floors on the timing vars, allows fractional minutes, skips the platform rate-limit bindings, and is refused unless PUBLIC_ORIGIN is a local address.",
+        "Test only, never set in a deployment. 1 lowers the production floors on the timing vars (so sub-minute values work), skips the platform rate-limit bindings, and is refused unless PUBLIC_ORIGIN is a local address.",
       ),
   })
   .superRefine((v, ctx) => {

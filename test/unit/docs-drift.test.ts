@@ -1,3 +1,4 @@
+import { execFileSync } from "node:child_process";
 import { existsSync, readdirSync, readFileSync, statSync } from "node:fs";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -34,7 +35,36 @@ const DOCS = [
   ...walk("docs", (path) => path.endsWith(".md")),
   ...(existsSync(join(ROOT, "CLAUDE.md")) ? ["CLAUDE.md"] : []),
 ];
-const REPO_FILES = [...walk(".", () => true)];
+// Tracked plus untracked-not-ignored: a gitignored local file (tasks/, CLAUDE.md) must not make a path pass here and fail in CI.
+const REPO_FILES = execFileSync("git", ["ls-files", "-z", "--cached", "--others", "--exclude-standard"], {
+  cwd: ROOT,
+  encoding: "utf8",
+})
+  .split("\0")
+  .filter(Boolean);
+
+/** Removes `//` and block comments from JSONC, leaving string contents (URLs hold `//`) alone. */
+function stripJsonComments(text: string): string {
+  let out = "";
+  let i = 0;
+  while (i < text.length) {
+    const c = text[i];
+    if (c === '"') {
+      let j = i + 1;
+      while (text[j] !== '"') j += text[j] === "\\" ? 2 : 1;
+      out += text.slice(i, j + 1);
+      i = j + 1;
+    } else if (text.startsWith("//", i)) {
+      while (i < text.length && text[i] !== "\n") i++;
+    } else if (text.startsWith("/*", i)) {
+      i = text.indexOf("*/", i) + 2;
+    } else {
+      out += c;
+      i++;
+    }
+  }
+  return out;
+}
 
 const CODE_EXT = "md|ts|js|mjs|json|jsonc|html|css|sql|py|yml|yaml|txt|example|bin|woff2|glb|svg";
 
@@ -44,6 +74,7 @@ describe("doc paths", () => {
   const NOT_IN_REPO = new Set([
     ".dev.vars",
     ".wrangler/state",
+    "tasks/todo.md",
     "product.md",
     "decisions.md",
     "tokens.css",
@@ -99,11 +130,7 @@ describe("architecture layout", () => {
 describe("worker vars", () => {
   const schemaKeys = Object.keys(CONFIG_VARS);
   const varKeys = (() => {
-    const jsonc = read("wrangler.jsonc")
-      .split("\n")
-      .filter((line) => !line.trim().startsWith("//"))
-      .join("\n");
-    return Object.keys(JSON.parse(jsonc).vars);
+    return Object.keys(JSON.parse(stripJsonComments(read("wrangler.jsonc"))).vars);
   })();
   const devVarKeys = read(".dev.vars.example")
     .split("\n")
@@ -164,12 +191,13 @@ describe("design tokens", () => {
 });
 
 describe("dependency budget", () => {
-  it("package.json dependencies are a subset of the list in ADR 0001", () => {
+  it("SITE-05 deps: package.json dependencies equal the list in ADR 0001", () => {
     const marked = read("docs/adr/0001-stack.md").match(/<!-- runtime-deps -->(.*?)<!-- \/runtime-deps -->/s)?.[1];
-    const allowed = [...(marked ?? "").matchAll(/`([^`]+)`/g)].map((m) => m[1]);
-    expect(allowed.length).toBeGreaterThan(0);
-    const extra = Object.keys(JSON.parse(read("package.json")).dependencies).filter((name) => !allowed.includes(name));
-    expect(extra, "add an ADR 0001 line (why, what it replaces, how to remove it) before a new dependency").toEqual([]);
+    const listed = [...(marked ?? "").matchAll(/`([^`]+)`/g)].map((m) => m[1] ?? "").sort();
+    expect(listed.length).toBeGreaterThan(0);
+    const actual = Object.keys(JSON.parse(read("package.json")).dependencies).sort();
+    // A new dependency needs an ADR 0001 line (why, what it replaces, how to remove it); a removed one, its deletion.
+    expect(actual).toEqual(listed);
   });
 });
 
@@ -199,16 +227,24 @@ describe("error table", () => {
 
 describe("size budgets", () => {
   it("only package.json size-limit states a budget: docs name no entry next to a size", () => {
-    const entries: { name: string }[] = JSON.parse(read("package.json"))["size-limit"];
+    const entries: { name: string; path: string | string[] }[] = JSON.parse(read("package.json"))["size-limit"];
     expect(entries.length).toBeGreaterThan(5);
+    // An entry is named by its title or by the file it measures (globs and exclusions name no single file).
+    const terms = entries.flatMap((e) => [
+      e.name,
+      ...[e.path].flat().flatMap((p) => (/[*!]/.test(p) ? [] : [p.slice(p.lastIndexOf("/") + 1)])),
+    ]);
+    const escapeRegExp = (s: string) => s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+    const named = terms.map(
+      (t) => new RegExp(`${/^\w/.test(t) ? "\\b" : ""}${escapeRegExp(t)}${/\w$/.test(t) ? "\\b" : ""}`, "i"),
+    );
     const restated: string[] = [];
     for (const doc of DOCS) {
       read(doc)
         .split("\n")
         .forEach((line, i) => {
           const sized = /\b\d+(\.\d+)?\s?(kB|KB|kb)\b/.test(line);
-          const named = entries.some((e) => new RegExp(`\\b${e.name.replace(/[()]/g, "\\$&")}\\b`, "i").test(line));
-          if (sized && named) restated.push(`${doc}:${i + 1}`);
+          if (sized && named.some((re) => re.test(line))) restated.push(`${doc}:${i + 1}`);
         });
     }
     expect(restated).toEqual([]);
@@ -221,7 +257,9 @@ describe("threat model", () => {
       .split("\n")
       .filter((line) => /^\| [A-Z]+-\d+ \|/.test(line))
       .map((line) => line.split("|").map((cell) => cell.trim()));
-    const mitigated = rows.filter((cells) => cells[cells.length - 2] === "mitigated").map((cells) => cells[1] ?? "");
+    const mitigated = rows
+      .filter((cells) => /^mitigated\b/.test(cells[cells.length - 2] ?? ""))
+      .map((cells) => cells[1] ?? "");
     expect(mitigated.length).toBeGreaterThan(20);
 
     const titles = walk("test", (path) => /\.(test|spec)\.ts$/.test(path))
