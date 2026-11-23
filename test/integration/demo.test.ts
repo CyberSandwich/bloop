@@ -296,4 +296,20 @@ describe("F14 DEMO-02 flood: one IP cannot fill the cap", () => {
     expect((await api.post("/api/end", {}, { auth: claimed.body.pid })).status).toBe(200);
     expect((await api.post("/api/screens", { mode: "demo" }, mine)).status).toBe(201);
   });
+
+  it("DEMO-02 per-ip: a waiting screen ended by the screen closes at once and frees its slot", async () => {
+    const mine = ip("198.51.100.9");
+    const first = await api.post<{ sid: string }>("/api/screens", { mode: "demo" }, mine);
+    expect((await api.post("/api/screens", { mode: "demo" }, mine)).status).toBe(201);
+    expect((await api.post("/api/screens", { mode: "demo" }, mine)).status).toBe(429);
+
+    // New Code on the screen: it ends the waiting screen before it creates the next one.
+    const ended = await api.post<{ state: string; code: unknown }>("/api/screen/end", {}, { auth: first.body.sid });
+    expect(ended.status).toBe(200);
+    expect(ended.body).toMatchObject({ state: "closed", code: null });
+    expect(ended.headers.get("Clear-Site-Data")).toBe('"storage"');
+    expect((await api.post("/api/screens", { mode: "demo" }, mine)).status).toBe(201);
+    // The object is gone: its sid now answers screen_gone.
+    expect((await api.get("/api/screen/state", first.body.sid)).body).toMatchObject({ code: "screen_gone" });
+  });
 });

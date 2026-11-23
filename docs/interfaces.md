@@ -172,6 +172,7 @@ export type ScreenStateKey =
 | claimed to offered | `end(by)` | | ended | as above, no session row change beyond `ended_at` |
 | any timer state | `timer(now)` | deadline passed | per 2.1 | per 2.1 |
 | ended, waiting | `timer(now)` | `closeAt` passed, no socket | closed | `deleteAll()` |
+| waiting | `end(screen)` | from the screen only (a phone or system end here is `wrong_state`) | closed | both codes removed, `deleteAll()` (which releases a demo slot); no audit, as there was no session. The answer is the closed view, and the sid then answers `screen_gone`. A `claimed` screen still goes to `ended`, so its phone reads why |
 | closed | any | | closed | every call returns `screen_gone` |
 
 An event the table does not list for a state returns `wrong_state` and changes nothing; approve in `ended` returns `session_ended`. Approve (the same set of items, in any order), open.click, fetched and end are idempotent: a repeat in the target state returns the current view. Cancel is not: it drops the pairing, so a repeat fails with `pairing_invalid` before it reaches the machine.
@@ -296,7 +297,7 @@ export interface PairingStore {
   approve(pid: string, items: ItemRef[], userId: string | null): Promise<Result<PhoneView>>;
   cancel(pid: string): Promise<Result<PhoneView>>;
   restart(sid: string): Promise<Result<ScreenView>>;
-  endFromScreen(sid: string): Promise<Result<ScreenView>>;
+  endFromScreen(sid: string): Promise<Result<ScreenView>>;   // from waiting: closes the object (state "closed")
   endFromPhone(pid: string): Promise<Result<PhoneView>>;
   /** Polling fallback. A screen poll also rotates the code when it is due and re-arms closeAt. */
   screenView(sid: string): Promise<Result<ScreenView>>;

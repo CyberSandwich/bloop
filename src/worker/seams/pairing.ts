@@ -61,6 +61,7 @@ export interface PairingStore {
   approve(pid: string, items: ItemRef[], userId: string | null): Promise<Result<PhoneView>>;
   cancel(pid: string): Promise<Result<PhoneView>>;
   restart(sid: string): Promise<Result<ScreenView>>;
+  /** From waiting, there is no session: the object closes (codes removed, storage deleted, demo slot released). */
   endFromScreen(sid: string): Promise<Result<ScreenView>>;
   endFromPhone(pid: string): Promise<Result<PhoneView>>;
   /** Polling fallback. A screen poll also rotates the code when it is due. */

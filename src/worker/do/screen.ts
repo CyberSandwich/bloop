@@ -48,7 +48,8 @@ interface SocketAttachment {
   helloBy: number;
 }
 
-type Applied = { ok: true; collided: boolean } | { ok: false; error: ErrorCode };
+/** `next`: the machine the event committed, which outlives `this.m` when the event closed the object. */
+type Applied = { ok: true; collided: boolean; next: Machine } | { ok: false; error: ErrorCode };
 
 const fail = (error: ErrorCode): { ok: false; error: ErrorCode } => ({ ok: false, error });
 
@@ -427,9 +428,12 @@ export class Screen extends DurableObject<Env> implements PairingStore {
   private async screenEvent(sid: string, ev: Event): Promise<Result<ScreenView>> {
     const auth = await this.screenAuth(sid);
     if (!auth.ok) return auth;
+    const meta = this.meta as Meta;
     const applied = await this.apply(ev);
     if (!applied.ok) return applied;
-    return { ok: true, value: this.currentScreenView() };
+    if (this.m) return { ok: true, value: this.currentScreenView() };
+    // An end from waiting closed the object and its storage is gone: answer with the closed machine it committed.
+    return { ok: true, value: screenView(meta, applied.next, this.config(), Date.now()) };
   }
 
   /** Commits one event, runs its effects, re-arms the alarm. See the concurrency rule at the top. */
@@ -444,7 +448,7 @@ export class Screen extends DurableObject<Env> implements PairingStore {
     }
     const { collided } = await runEffects(step.effects, { meta, prev: m, next: step.next, now: ev.now }, this.deps());
     const after = this.m;
-    if (!after) return { ok: true, collided }; // closed: storage is gone
+    if (!after) return { ok: true, collided, next: step.next }; // closed: storage is gone
     if (!after.pairing) this.closePhoneSockets();
     // A demo session that ends gives its slot back at once; the screen may go on and show a new code.
     if (meta.mode === "demo" && after.state === "ended" && m.state !== "ended") {
@@ -455,7 +459,7 @@ export class Screen extends DurableObject<Env> implements PairingStore {
     if (!collided && after.state === "waiting" && !after.codes.current && m.state !== "waiting") {
       await this.issueCode();
     }
-    return { ok: true, collided };
+    return { ok: true, collided, next: step.next };
   }
 
   /** Issues a code; on a Directory collision (about 1 in 1e6) draws again. */

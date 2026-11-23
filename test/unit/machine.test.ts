@@ -492,10 +492,28 @@ describe("machine: end", () => {
     expect(fx(effects, "metric")).toEqual([]);
   });
 
-  it("is idempotent when already ended, and wrong_state while waiting", () => {
+  it("is idempotent when already ended", () => {
     const m = ended();
     expect(must(m, { e: "end", now: T0 + sec(30), by: "screen" }).next).toBe(m);
-    expect(refused(waiting(), { e: "end", now: T0 + sec(30), by: "screen" })).toBe("wrong_state");
+  });
+
+  it("DEMO-02 per-ip: the screen's end from waiting closes it at once: codes removed, storage deleted, no audit", () => {
+    const m = must(waiting(), { e: "code.next", now: T0 + sec(60), value: "BBBBBB" }).next;
+    const { next, effects } = must(m, { e: "end", now: T0 + sec(61), by: "screen" });
+    expect(next.state).toBe("closed");
+    expect(next.codes).toEqual({ current: null, previous: null });
+    expect(effects).toEqual([
+      { fx: "directory.remove", code: "BBBBBB" },
+      { fx: "directory.remove", code: "AAAAAA" },
+      { fx: "deleteAll" },
+    ]);
+    expect(violations(next)).toEqual([]);
+  });
+
+  it("refuses an end from waiting by the phone or the system", () => {
+    for (const by of ["phone", "system"] as const) {
+      expect(refused(waiting(), { e: "end", now: T0 + sec(30), by })).toBe("wrong_state");
+    }
   });
 
   it("maps a system end to reason auto", () => {

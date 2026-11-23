@@ -179,6 +179,13 @@ function purgeEffects(m: Machine): Effect[] {
 const sameRefs = (a: readonly ItemRef[], b: readonly ItemRef[]): boolean =>
   a.length === b.length && a.every((item, i) => item.ref === b[i]?.ref);
 
+/** Terminal: both codes retired and storage deleted (`deleteAll` also releases a demo slot). No session, so no audit. */
+const close = (m: Machine): Step =>
+  ok({ ...m, state: "closed", codes: { current: null, previous: null }, closeAt: null }, [
+    ...codeRemovals(m.codes),
+    { fx: "deleteAll" },
+  ]);
+
 /** Back to waiting with no code, no pairing and no file: cancel, restart and every claim timeout. */
 function dropToWaiting(m: Machine, now: number, cfg: MachineConfig, reason: EndReason, actor: Actor): Step {
   const next: Machine = {
@@ -426,6 +433,8 @@ export function transition(m: Machine, ev: Event, cfg: MachineConfig): Step {
 
     case "end": {
       if (m.state === "ended") return ok(m);
+      // A waiting screen has no session to end: its own End closes it, so a demo slot is free at once.
+      if (m.state === "waiting" && ev.by === "screen") return close(m);
       if (!PRE_APPROVAL.includes(m.state) && !IN_SESSION.includes(m.state)) return fail("wrong_state");
       const reason: EndReason = ev.by === "system" ? "auto" : ev.by;
       return endSession(m, now, cfg, reason, ev.by);
@@ -448,10 +457,7 @@ export function transition(m: Machine, ev: Event, cfg: MachineConfig): Step {
       switch (m.state) {
         case "waiting":
         case "ended":
-          return ok({ ...m, state: "closed", codes: { current: null, previous: null }, closeAt: null }, [
-            ...codeRemovals(m.codes),
-            { fx: "deleteAll" },
-          ]);
+          return close(m);
         case "approved":
         case "opening":
         case "open":
