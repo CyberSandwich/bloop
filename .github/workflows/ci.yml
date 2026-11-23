@@ -28,7 +28,8 @@ jobs:
       - run: npm test
       - run: npm run test:int
       - run: npm run html-validate
-      - run: npm run size
+      # On failure, each result becomes an annotation (readable without the job log).
+      - run: npm run size || { npx size-limit --json | node -e 'let s="";process.stdin.on("data",d=>s+=d).on("end",()=>{for(const l of s.slice(0,4000).split("\n"))console.log("::error title=size::"+l)})'; exit 1; }
 
   browser:
     runs-on: ubuntu-latest
