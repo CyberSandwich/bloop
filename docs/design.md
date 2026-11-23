@@ -176,7 +176,7 @@ Native `<details>` as white `--r-card` cards, 12 apart, max 760, centered. Summa
 A plain `div`, not a nav: the logo, bloop and a Try the demo ink pill, fixed at the bottom center (`16px + safe area`), glass (`rgba(255,255,255,.72)`, `blur(20px) saturate(1.8)`; white .92 without `backdrop-filter`, solid under reduced transparency), `--sh-pill`. Hidden and `inert` while the hero's buttons are on screen (one `IntersectionObserver`); shows over 550 ms `--ease-spring`, hides over 300 ms ease-in.
 
 ### Status chip, file row, footer
-- **Status chip** (`/s` only): white pill with a hairline, 32 tall, 14/600, text only: Scanned; Lucide `check` then Approved; Lucide `wifi-off` then Offline.
+- **Status chip** (`/s` only): white pill with a hairline, 32 tall, 14/600, text only: Scanned; Lucide `check` then Approved (On Screen on the demo result); Lucide `wifi-off` then Offline.
 - **File row** (phone): in a white card list with inset hairlines. Row 60 tall: Lucide `presentation` in `--muted`; the name 17/600, one line, middle ellipsis; "Edited 10 min ago" 14 `--muted`; a 24 px tick, ink with a paper check when selected, a `--g2` ring when not.
 - **Footer**: a top hairline, the logo and bloop at the start, the links at the end in `--muted` 15 px, 44 px rows; wraps on a phone.
 
@@ -185,7 +185,7 @@ A plain `div`, not a nav: the logo, bloop and a Try the demo ink pill, fixed at 
 ### Screen page (`/s`, the room PC), 1440 and up
 - No site header (a kiosk page); the logo and wordmark top left at 32 inset; status chip top right.
 - Left: the QR panel (a white card, quiet zone inside) at 50 percent of the viewport height. Right, 72 px away, vertically centered: heading 54, line 26 `--muted`, the refresh capsule (a 48 x 6 pill whose ink fill grows linearly over the code's 60 s, `aria-hidden`, no seconds counter), then "Can't scan? On your phone, go to {host}/code and enter" with the typed code at 34 px 600.
-- Footer line in every state: "Phone not with you? Sign in to this PC as usual." 17 px `--muted`.
+- Footer line in every state: "Phone not with you? Sign in to this PC as usual." 17 px `--muted`. None on a demo screen, which has no PC to sign in to.
 - Demo result: the slides centered, as wide as the window allows while the heading and End stay on screen; the heading, line and End below them, left-aligned to the slides' edge.
 - 834: stacked, QR first. Under 600: no QR; "Open this on the room's screen." (32) / "Then scan its code with your phone." (lead 19) / Enter a Code; no status chip and no footer. A demo screen (`/s?mode=demo`) runs under 600 too, with no QR: the visitor approves on the same device.
 
@@ -199,7 +199,7 @@ A plain `div`, not a nav: the logo, bloop and a Try the demo ink pill, fixed at 
 | opening | Opening Lecture 4.pptx | in PowerPoint on this PC. | End (secondary); Download It Instead (text, after 5 s); Open (primary) only when the launch had no user gesture or a popup was blocked |
 | open | Lecture 4.pptx is open in PowerPoint. (only after a PowerPoint launch; otherwise "Lecture 4.pptx is open.") | Ends by itself at 11:35. `[V-2]` | End (secondary), Download It Instead |
 | demo result, sample deck (approved to open) | Sample deck.pptx | On a room PC this opens in PowerPoint. | the slides in the page (click or arrow keys, Full Screen), End |
-| demo result, guest file | Your file reached the screen. | On a room PC it opens in PowerPoint. (a PDF: "On a room PC it opens as a PDF.") | a card with the file's name and size, Download, End |
+| demo result, guest file | Your file reached the screen. | On a room PC it opens in PowerPoint. (a PDF: "On a room PC it opens as a PDF.") | a card with the file's name and size, Download (once the file was fetched), End |
 | open fallback | PowerPoint didn't open. | Download the file, then open it from Downloads. | Download, Show as PDF Instead (text), End |
 | PDF fallback | Showing Lecture 4.pptx as a PDF. | PowerPoint can't open it on this PC. Animations and videos won't play. | End |
 | PDF file | Lecture 4.pdf | Opened as a PDF. (the file is a PDF, so nothing failed) | End |

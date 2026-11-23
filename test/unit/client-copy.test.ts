@@ -152,7 +152,7 @@ describe("screen copy", () => {
       line: "On a room PC this opens in PowerPoint.",
       controls: ["end"],
     });
-    const guest = { ...sf, file: "Talk.pptx", demo: true, guest: true };
+    const guest = { ...sf, file: "Talk.pptx", demo: true, guest: true, fetched: true };
     expect(screenCopy("demo_open", { ...guest, fileType: "pptx" })).toMatchObject({
       heading: "Your file reached the screen.",
       line: "On a room PC it opens in PowerPoint.",
@@ -160,6 +160,22 @@ describe("screen copy", () => {
     });
     expect(screenCopy("demo_open", { ...guest, fileType: "pdf" }).line).toBe("On a room PC it opens as a PDF.");
     expect(deck.heading).not.toMatch(/is open/);
+  });
+
+  it("the demo result offers Download only once the file was fetched, since approved refuses a mint", () => {
+    const guest = { ...sf, file: "Talk.pptx", demo: true, guest: true };
+    expect(screenCopy("demo_open", { ...guest, fetched: false }).controls).toEqual(["end"]);
+    expect(screenCopy("demo_open", guest).controls).toEqual(["end"]);
+    expect(screenCopy("demo_open", { ...guest, fetched: true }).controls).toEqual(["end", "download"]);
+  });
+
+  it("the demo result's chip says the file is on the screen, not just approved", () => {
+    for (const guest of [false, true]) {
+      expect(screenCopy("demo_open", { ...sf, demo: true, guest })).toMatchObject({
+        chip: "On Screen",
+        chipIcon: "check",
+      });
+    }
   });
 
   it("open says when it ends by itself, and a guest open drops the unverified deletion claim", () => {

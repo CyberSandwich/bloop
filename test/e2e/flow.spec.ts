@@ -289,6 +289,8 @@ test.describe("guest drop", () => {
     await expect(heading(screen.page)).toHaveText("Your file reached the screen.");
     await expect(screen.page.locator(".file-card")).toContainText("sample-deck.pptx");
     await expect(screen.page.locator(".file-card")).toContainText(/\d+ KB/);
+    await expect(screen.page.locator("#chip-text")).toHaveText("On Screen");
+    await expect(screen.page.locator(".foot")).toBeHidden();
     await expect(heading(phone.page)).toHaveText(/^(Opening on|Open on) Demo room\.$/);
     expect(await launches()).toEqual({ opened: 0, left: [] });
     await expectNoAxeViolations(screen.page);

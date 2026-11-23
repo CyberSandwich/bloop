@@ -27,6 +27,7 @@ export const SIGN_IN_HINT = "Sign in to this PC as usual to open your slides.";
  * @property {boolean} [demo] a demo screen (`/s?mode=demo`)
  * @property {OpenMode | null} [openMode] how the screen opened the file; only `protocol` is a PowerPoint launch
  * @property {FileType | null} [fileType]
+ * @property {boolean} [fetched] the file was fetched, so the session left `approved`, which refuses a download mint
  */
 
 /**
@@ -167,7 +168,7 @@ export function screenCopy(key, f) {
         line: "Then scan its code with your phone.",
       };
     case "demo_open": {
-      const done = { ...base, chip: "Approved", chipIcon: "check" };
+      const done = { ...base, chip: "On Screen", chipIcon: "check" };
       if (!f.guest) {
         return { ...done, heading: file, line: "On a room PC this opens in PowerPoint.", controls: ["end"] };
       }
@@ -175,7 +176,7 @@ export function screenCopy(key, f) {
         ...done,
         heading: "Your file reached the screen.",
         line: f.fileType === "pdf" ? "On a room PC it opens as a PDF." : "On a room PC it opens in PowerPoint.",
-        controls: ["end", "download"],
+        controls: f.fetched ? ["end", "download"] : ["end"],
       };
     }
   }

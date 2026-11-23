@@ -364,6 +364,10 @@ h1[tabindex="-1"]:focus {
   padding: 0 32px calc(28px + env(safe-area-inset-bottom));
   color: var(--muted);
 }
+/* The footer line is the live room's way out; a demo visitor has no PC to sign in to. */
+.is-demo > .foot {
+  display: none;
+}
 [data-mode="waiting"] .match,
 [data-mode="idle"] .match,
 .page-screen main:not([data-mode]) .match {

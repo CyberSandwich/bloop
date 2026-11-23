@@ -169,6 +169,7 @@ function render() {
     demo: DEMO,
     openMode: v?.openMode ?? null,
     fileType: v?.fileType ?? null,
+    fetched: !!v && v.state !== "approved",
   });
 
   const changed = heading.textContent !== copy.heading;
