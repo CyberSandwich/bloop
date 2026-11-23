@@ -309,7 +309,8 @@ scratch/
 investigation/
 
 # Wrangler and local secrets
-.dev.vars
+.dev.vars*
+!.dev.vars.example
 .wrangler/
 
 # Test output
