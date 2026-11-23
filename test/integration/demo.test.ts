@@ -189,7 +189,7 @@ describe("DEMO-02 flood: strict per-IP limits", () => {
     expect((await api.post("/api/screens", { mode: "live" }, ip("203.0.113.10"))).status).toBe(201);
   });
 
-  it("DEMO-02 flood: demo claims from one IP stop at the live claim limit, which binds before the demo one", async () => {
+  it("DEMO-02 flood: demo claims from one IP stop at 20 a minute, the live claim limit, which the demo one equals", async () => {
     const codes: string[] = [];
     for (let i = 0; i < 21; i++) codes.push((await demoCode(api, `203.0.113.${20 + i}`)).code);
     const statuses: number[] = [];

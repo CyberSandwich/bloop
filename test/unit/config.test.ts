@@ -1,3 +1,5 @@
+import { readFileSync } from "node:fs";
+import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
 import { parseConfig } from "../../src/worker/config.ts";
 
@@ -92,6 +94,14 @@ describe("config", () => {
     const c = parseConfig({ ...PROD, DEMO_MAX_PER_IP: "5" });
     expect(c.ok && c.config.demoMaxPerIp).toBe(5);
     expect(problems({ ...PROD, DEMO_MAX_PER_IP: "0" }).join()).toContain("DEMO_MAX_PER_IP");
+  });
+
+  it("DEMO-02 flood: the demo claim binding is no looser than the live one, which runs first and would hide it", () => {
+    const jsonc = readFileSync(fileURLToPath(new URL("../../wrangler.jsonc", import.meta.url)), "utf8");
+    const limit = (name: string) =>
+      Number(jsonc.match(new RegExp(`"name": "${name}",[^}]*"limit": (\\d+)`))?.[1] ?? Number.NaN);
+    expect(limit("RL_CLAIM")).toBe(20);
+    expect(limit("RL_DEMO_CLAIM")).toBeLessThanOrEqual(limit("RL_CLAIM"));
   });
 
   it("DEMO-03 off: DEMO_ENABLED is a strict true or false and defaults to nothing", () => {
