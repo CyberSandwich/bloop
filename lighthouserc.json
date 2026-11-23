@@ -1,0 +1,19 @@
+{
+  "ci": {
+    "collect": {
+      "url": ["http://127.0.0.1:8787/"],
+      "startServerCommand": "npm run dev",
+      "startServerReadyPattern": "Ready on",
+      "numberOfRuns": 3,
+      "settings": { "preset": "desktop", "chromeFlags": "--no-sandbox --headless=new" }
+    },
+    "assert": {
+      "assertions": {
+        "categories:accessibility": ["error", { "minScore": 1 }],
+        "largest-contentful-paint": ["error", { "maxNumericValue": 2500 }],
+        "cumulative-layout-shift": ["error", { "maxNumericValue": 0.1 }]
+      }
+    },
+    "upload": { "target": "filesystem", "outputDir": ".lighthouseci" }
+  }
+}
