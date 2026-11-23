@@ -29,7 +29,7 @@ jobs:
       - run: npm run test:int
       - run: npm run html-validate
       # On failure, each result becomes an annotation (readable without the job log).
-      - run: npm run size || { npx size-limit --json | node -e 'let s="";process.stdin.on("data",d=>s+=d).on("end",()=>{for(const l of s.slice(0,4000).split("\n"))console.log("::error title=size::"+l)})'; exit 1; }
+      - run: npm run size || { npx size-limit --json | node -e 'let s="";process.stdin.on("data",d=>s+=d).on("end",()=>{let r;try{r=JSON.parse(s)}catch{r=[{name:s.slice(0,500)}]}for(const e of [].concat(r))console.log("::error title=size::"+[e.name,e.size,e.sizeLimit,e.passed].join(" "))})'; exit 1; }
 
   browser:
     runs-on: ubuntu-latest
