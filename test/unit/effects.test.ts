@@ -175,6 +175,20 @@ describe("effects: order and the other seams", () => {
     expect(purges).toEqual([{ sessionId: "s1", file: null }]);
   });
 
+  it("DEMO-02 flood: a demo screen's code is put in the Directory with the demo flag", async () => {
+    const f = fakes();
+    const flags: boolean[] = [];
+    f.deps.directory.put = async (_code, _ref, _expires, demo) => {
+      flags.push(demo);
+      return "ok";
+    };
+    const m = claimedOwner();
+    const effects: Effect[] = [{ fx: "directory.put", code: "AAAAAA", expiresAt: 1 }];
+    await runEffects(effects, { meta: { ...META, mode: "demo" }, prev: m, next: m, now: 1 }, f.deps);
+    await runEffects(effects, { meta: META, prev: m, next: m, now: 1 }, f.deps);
+    expect(flags).toEqual([true, false]);
+  });
+
   it("stops at a Directory collision, before the push", async () => {
     const f = fakes();
     f.deps.directory.put = async () => "collision";

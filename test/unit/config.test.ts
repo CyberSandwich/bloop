@@ -76,6 +76,30 @@ describe("config", () => {
     expect(problems({ ...PROD, AUDIT_RETENTION_DAYS: "0" }).join()).toContain("AUDIT_RETENTION_DAYS");
   });
 
+  it("DEMO-02 flood: the demo cap defaults to 50, is configurable and the hold covers a claim window plus a session", () => {
+    const d = parseConfig(PROD);
+    expect(d.ok && d.config.demoMaxConcurrent).toBe(50);
+    expect(d.ok && d.config.demoHoldMs).toBe((300 + 10 * 60) * 1000);
+    const c = parseConfig({ ...PROD, DEMO_MAX_CONCURRENT: "5" });
+    expect(c.ok && c.config.demoMaxConcurrent).toBe(5);
+    expect(problems({ ...PROD, DEMO_MAX_CONCURRENT: "0" }).join()).toContain("DEMO_MAX_CONCURRENT");
+    expect(problems({ ...PROD, DEMO_MAX_CONCURRENT: "many" }).join()).toContain("DEMO_MAX_CONCURRENT");
+  });
+
+  it("DEMO-03 off: DEMO_ENABLED is a strict true or false and defaults to nothing", () => {
+    const off = parseConfig({ ...PROD, DEMO_ENABLED: "false" });
+    expect(off.ok && off.config.demoEnabled).toBe(false);
+    expect(problems({ ...PROD, DEMO_ENABLED: "yes" }).join()).toContain("DEMO_ENABLED");
+    expect(problems({ ...PROD, DEMO_ENABLED: undefined }).join()).toContain("DEMO_ENABLED");
+  });
+
+  it("DROP-05 demo cap: the demo drop cap defaults to 10 MB and the session length is bounded by the live one", () => {
+    const d = parseConfig(PROD);
+    expect(d.ok && d.config.demoGuestMaxBytes).toBe(10_485_760);
+    expect(d.ok && d.config.demoSessionMinutes).toBe(10);
+    expect(problems({ ...PROD, DEMO_GUEST_MAX_BYTES: "0" }).join()).toContain("DEMO_GUEST_MAX_BYTES");
+  });
+
   it("SITE-07 export-auth: the export token is absent when unset or empty and must be 32 characters otherwise", () => {
     const unset = parseConfig(PROD);
     expect(unset.ok && unset.config.itExportToken).toBeNull();

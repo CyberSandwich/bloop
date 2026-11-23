@@ -582,6 +582,7 @@ export class Screen extends DurableObject<Env> implements PairingStore {
       seams: { ...noopSeams, ...this.linkSeams(), ...this.guestSeams() },
       push: (to) => this.push(to),
       deleteAll: async () => {
+        if (this.meta?.mode === "demo") await directoryStub(this.env).demoRelease(this.meta.screenRef);
         for (const ws of this.ctx.getWebSockets()) {
           try {
             ws.close(1000, "closed");

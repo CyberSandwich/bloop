@@ -32,7 +32,9 @@
     { "name": "RL_FETCH", "namespace_id": "1003", "simple": { "limit": 60, "period": 60 } },
     { "name": "RL_UPLOAD", "namespace_id": "1004", "simple": { "limit": 5, "period": 60 } },
     { "name": "RL_AUTH", "namespace_id": "1005", "simple": { "limit": 10, "period": 60 } },
-    { "name": "RL_EXPORT", "namespace_id": "1006", "simple": { "limit": 10, "period": 60 } }
+    { "name": "RL_EXPORT", "namespace_id": "1006", "simple": { "limit": 10, "period": 60 } },
+    { "name": "RL_DEMO_CREATE", "namespace_id": "1007", "simple": { "limit": 4, "period": 60 } },
+    { "name": "RL_DEMO_CLAIM", "namespace_id": "1008", "simple": { "limit": 8, "period": 60 } }
   ],
   "triggers": { "crons": ["0 * * * *", "30 3 * * *"] },
   "vars": {
@@ -58,6 +60,7 @@
     "DEMO_ENABLED": "true",
     "DEMO_SESSION_MINUTES": "10",
     "DEMO_GUEST_MAX_BYTES": "10485760",
+    "DEMO_MAX_CONCURRENT": "50",
     "AUDIT_RETENTION_DAYS": "180",
     "METRICS_RETENTION_DAYS": "90",
     "DEMO_RETENTION_DAYS": "7",

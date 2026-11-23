@@ -42,10 +42,15 @@ export const pairingRoutes: readonly Route[] = [
     withConfig(async (request, env, config) => {
       const body = await write(request, config, createBody);
       if (!body.ok) return body.response;
-      const tooMany = await limited(env.RL_CREATE, request, config);
+      const demo = body.value.mode === "demo";
+      if (demo && !config.demoEnabled) return fail("not_found");
+      const tooMany = await limited(demo ? env.RL_DEMO_CREATE : env.RL_CREATE, request, config);
       if (tooMany) return tooMany;
-      if (body.value.mode === "demo" && !config.demoEnabled) return fail("not_found");
       const screenRef = newRef();
+      // The cap is the last check, so a refused create leaves nothing behind.
+      if (demo && !(await directoryStub(env).demoReserve(screenRef, config.demoHoldMs, config.demoMaxConcurrent))) {
+        return fail("rate_limited");
+      }
       const created = await screenStub(env, screenRef).create({
         screenRef,
         mode: body.value.mode,
@@ -121,6 +126,11 @@ export const pairingRoutes: readonly Route[] = [
       const hashed = await ipHash(request, config);
       const found = await directoryStub(env).lookup(code, hashed, Date.now());
       if (!found.ok) return fail(found.error);
+      if (found.demo) {
+        if (!config.demoEnabled) return fail("not_found");
+        const slow = await limited(env.RL_DEMO_CLAIM, request, config);
+        if (slow) return slow;
+      }
       // Only the Graph source has accounts. The Screen object drops the user for a demo screen.
       const userId = config.graph ? await phoneUser(request, servicesFor(env, config)) : null;
       const claimed = await screenStub(env, found.screenRef).claim(code, {

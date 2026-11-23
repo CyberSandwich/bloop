@@ -105,6 +105,14 @@ Trust boundaries:
 | SITE-07 | E | IT export misuse: one shared bearer token | low | high | A 256-bit token compared as a hash in constant time, closed (401) while `IT_EXPORT_TOKEN` is unset, rate-limited per pseudonymous IP before the token check (a limit keyed by the token would not slow guessing), every run audited as `export.run` before any data is sent; later Entra app roles per org | `SITE-07 export-auth` (401 for none, wrong and short tokens, and for any token when unset; 429 past `RL_EXPORT`; the run row; strict headers and `no-store`; bad range 400) | residual (single token until org roles) |
 | SITE-08 | S | Downgrade or cookie theft on the wire | low | high | HSTS 2 years; `__Host-` cookies; `upgrade-insecure-requests` | `SITE-08 headers` | mitigated |
 
+### Demo (ADR 0007)
+| id | STRIDE | threat | L | I | mitigation | test | status |
+|---|---|---|---|---|---|---|---|
+| DEMO-01 | E | The public demo reaches a real account, the vault or Graph | low | high | Mode is fixed at creation; the demo claim, listing and approval never read the session cookie and use the bundled demo account; the session and audit rows carry no user | `DEMO-01 flow` (a full demo run with a forged account cookie ignored; unit: stage states) | mitigated |
+| DEMO-02 | D | Flooding demo creation or claims, or filling the demo cap, to starve visitors or the free tier | med | low | Per-IP bindings stricter than live (4 creations and 8 claims a minute); a global cap on concurrent demo screens in the Directory, each slot lapsing after a claim window plus one session; demo drops capped at 10 MB and deleted at session end (DROP-05) | `DEMO-02 flood`, `DEMO-02 cap` (integration, unit) | residual (one address can hold the cap for about a quarter hour; the live product is unaffected) |
+| DEMO-03 | T | The demo cannot be turned off in an incident | low | med | `DEMO_ENABLED=false` refuses every demo create and every claim of a demo code with `not_found`; the stage shows its error state | `DEMO-03 off` | mitigated |
+| DEMO-04 | R, I | Demo records mix into product numbers or outlive their purpose | low | low | Sessions, audit rows and metrics are `mode = demo`; retention is `DEMO_RETENTION_DAYS` (7) | `DEMO-04 records`, `DATA-02 retention` | mitigated |
+
 ## 8. Data and UK GDPR
 | id | STRIDE | threat | L | I | mitigation | test | status |
 |---|---|---|---|---|---|---|---|

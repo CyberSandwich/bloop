@@ -73,7 +73,7 @@ export async function runEffects(
   for (const fx of effects) {
     switch (fx.fx) {
       case "directory.put":
-        if ((await deps.directory.put(fx.code, meta.screenRef, fx.expiresAt)) === "collision")
+        if ((await deps.directory.put(fx.code, meta.screenRef, fx.expiresAt, meta.mode === "demo")) === "collision")
           return { collided: true };
         break;
       case "directory.remove":

@@ -1,0 +1,202 @@
+// Demo mode against `wrangler dev` (docs/architecture.md 4.5, ADR 0007): the whole flow on the demo account,
+// the off switch, the per-IP limits and the global cap. The flow runs with TEST_TIMING and a migrated D1; the
+// limits run on instances with the platform bindings live (no TEST_TIMING) or with a tiny cap.
+import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { approveDemo, fetchLink, sleep } from "./open-client.ts";
+import { Api, claim, openScreen, PEPPER, startPairing } from "./pairing-client.ts";
+import { startWrangler, type Wrangler } from "./wrangler.ts";
+
+const ip = (address: string) => ({ headers: { "CF-Connecting-IP": address } });
+const problem = (status: number, code: string) => ({ type: "about:blank", status, code });
+
+/** A demo screen's current code, read by polling (which issues one when none is fresh). */
+async function demoCode(api: Api, from: string): Promise<{ sid: string; code: string }> {
+  const created = await api.post<{ sid: string }>("/api/screens", { mode: "demo" }, ip(from));
+  expect(created.status).toBe(201);
+  const state = await api.get<{ code: { code: string } }>("/api/screen/state", created.body.sid);
+  return { sid: created.body.sid, code: state.body.code.code };
+}
+
+describe("DEMO-01 isolation: the full demo flow, with no account", () => {
+  let wrangler: Wrangler;
+  let api: Api;
+  beforeAll(async () => {
+    wrangler = await startPairing({}, { migrate: true });
+    api = new Api(wrangler.url);
+  });
+  afterAll(() => wrangler?.stop());
+
+  it("DEMO-01 flow: create, claim, match, list, approve, fetch the open link, end", async () => {
+    const { screen, socket, code } = await openScreen(api, "demo");
+    expect(screen.view).toMatchObject({ state: "waiting", mode: "demo", room: { name: "Demo room" } });
+
+    // A phone holding a stale or forged account cookie is ignored: the demo never reads it.
+    const claimed = await api.post<{
+      pid: string;
+      match: string;
+      mode: string;
+      needsAuth: boolean;
+      dropMaxBytes: number;
+    }>("/api/claim", { code }, { headers: { Cookie: "__Host-bloop_sid=forged" } });
+    expect(claimed.status).toBe(200);
+    expect(claimed.body).toMatchObject({ mode: "demo", needsAuth: false, dropMaxBytes: 10_485_760 });
+    expect(claimed.body.match).toMatch(/^[1-9][0-9]$/);
+    await socket.stateWhere((v) => v.state === "claimed" && v.match === claimed.body.match);
+
+    const files = await api.get<{ files: { id: string; name: string }[] }>("/api/files", claimed.body.pid);
+    expect(files.body.files.map((f) => f.name)).toEqual([
+      "Sample deck.pptx",
+      "Quarterly review.pptx",
+      "Sample handout.pdf",
+    ]);
+
+    const approved = await api.post("/api/approve", { fileId: "demo-deck" }, { auth: claimed.body.pid });
+    expect(approved.status).toBe(200);
+    const open = await socket.waitFor((f) => f.t === "open");
+    const links = open.links as { protocol: string };
+    const url = links.protocol.replace("ms-powerpoint:ofv|u|", "");
+
+    // A session lasts DEMO_SESSION_MINUTES (10), not the live 90.
+    const view = (await socket.stateWhere((v) => v.state === "approved")).view as { endsAt: number; now: number };
+    expect(view.endsAt - view.now).toBeLessThanOrEqual(10 * 60_000);
+    expect(view.endsAt - view.now).toBeGreaterThan(9 * 60_000);
+
+    socket.send({ t: "launched", mode: "protocol" });
+    const fetched = await fetchLink(url);
+    expect(fetched.status).toBe(200);
+    expect([...new Uint8Array(await fetched.arrayBuffer()).slice(0, 2)]).toEqual([0x50, 0x4b]);
+    await socket.stateWhere((v) => v.state === "open");
+
+    const ended = await api.post("/api/screen/end", {}, { auth: screen.sid });
+    expect(ended.status).toBe(200);
+    await socket.stateWhere((v) => v.state === "ended");
+    expect((await fetchLink(url)).status).toBe(410);
+    socket.close();
+  });
+
+  it("DEMO-01 flow: the phone ends a demo too, and an unapproved file id is refused", async () => {
+    const { socket, pid } = await approveDemo(api, "demo-pdf");
+    expect(
+      (await api.post("/api/approve", { fileId: "not-in-the-account" }, { auth: pid })).status,
+    ).toBeGreaterThanOrEqual(400);
+    expect((await api.post("/api/end", {}, { auth: pid })).status).toBe(200);
+    await socket.stateWhere((v) => v.state === "ended");
+    socket.close();
+  });
+
+  it("DEMO-04 records: a demo session is stored as mode demo with no user, and its audit rows say so", async () => {
+    const { socket, pid } = await approveDemo(api);
+    await api.post("/api/end", {}, { auth: pid });
+    await socket.stateWhere((v) => v.state === "ended");
+    let rows: Record<string, unknown>[] = [];
+    for (let i = 0; i < 40 && !rows.some((r) => r.end_reason !== null); i++) {
+      rows = wrangler.d1("SELECT mode, user_id, end_reason, source FROM session");
+      await sleep(100);
+    }
+    expect(rows.length).toBeGreaterThan(0);
+    for (const row of rows) expect(row).toMatchObject({ mode: "demo", user_id: null });
+    expect(rows.some((r) => r.end_reason === "phone" && r.source === "mock")).toBe(true);
+    expect(wrangler.d1("SELECT count(*) AS n FROM app_user")[0]).toEqual({ n: 0 });
+    socket.close();
+  });
+});
+
+describe("DEMO-03 off: DEMO_ENABLED=false turns every demo route off", () => {
+  let wrangler: Wrangler;
+  let api: Api;
+  beforeAll(async () => {
+    wrangler = await startPairing({ DEMO_ENABLED: "false" });
+    api = new Api(wrangler.url);
+  });
+  afterAll(() => wrangler?.stop());
+
+  it("DEMO-03 off: creating a demo screen answers 404 not_found", async () => {
+    const res = await api.post("/api/screens", { mode: "demo" });
+    expect(res.status).toBe(404);
+    expect(res.body).toEqual(problem(404, "not_found"));
+  });
+
+  it("DEMO-03 off: the live path is untouched", async () => {
+    const res = await api.post("/api/screens", { mode: "live" });
+    expect(res.status).toBe(201);
+    const state = await api.get<{ code: { code: string } }>("/api/screen/state", (res.body as { sid: string }).sid);
+    expect((await claim(api, state.body.code.code)).status).toBe(200);
+  });
+
+  it("DEMO-03 off: the demo screen page and the landing still serve, so the stage can say it could not start", async () => {
+    expect((await fetch(`${wrangler.url}/s?mode=demo`)).status).toBe(200);
+    expect((await fetch(`${wrangler.url}/`)).status).toBe(200);
+  });
+});
+
+describe("DEMO-02 flood: strict per-IP limits", () => {
+  let wrangler: Wrangler;
+  let api: Api;
+  beforeAll(async () => {
+    wrangler = await startWrangler({ HASH_PEPPER: PEPPER });
+    api = new Api(wrangler.url);
+  });
+  afterAll(() => wrangler?.stop());
+
+  it("DEMO-02 flood: demo screen creation is limited to 4 a minute per IP, tighter than live, and another IP is unaffected", async () => {
+    const statuses: number[] = [];
+    for (let i = 0; i < 6; i++)
+      statuses.push((await api.post("/api/screens", { mode: "demo" }, ip("203.0.113.10"))).status);
+    expect(statuses.filter((s) => s === 201)).toHaveLength(4);
+    expect(statuses.slice(4)).toEqual([429, 429]);
+    expect((await api.post("/api/screens", { mode: "demo" }, ip("203.0.113.11"))).status).toBe(201);
+    // The live limit is its own binding: this IP can still create a live screen.
+    expect((await api.post("/api/screens", { mode: "live" }, ip("203.0.113.10"))).status).toBe(201);
+  });
+
+  it("DEMO-02 flood: demo claims are limited to 8 a minute per IP and the 9th is 429", async () => {
+    const codes: string[] = [];
+    for (let i = 0; i < 9; i++) codes.push((await demoCode(api, `203.0.113.${20 + i}`)).code);
+    const statuses: number[] = [];
+    for (const code of codes) statuses.push((await api.post("/api/claim", { code }, ip("203.0.113.40"))).status);
+    expect(statuses.slice(0, 8)).toEqual(Array(8).fill(200));
+    expect(statuses[8]).toBe(429);
+    // Another phone is counted on its own.
+    const fresh = await demoCode(api, "203.0.113.50");
+    expect((await api.post("/api/claim", { code: fresh.code }, ip("203.0.113.41"))).status).toBe(200);
+  });
+
+  it("DEMO-02 flood: live claims are not held to the demo limit", async () => {
+    const codes: string[] = [];
+    for (let i = 0; i < 9; i++) {
+      const created = await api.post<{ sid: string }>("/api/screens", { mode: "live" }, ip(`203.0.114.${i + 1}`));
+      const state = await api.get<{ code: { code: string } }>("/api/screen/state", created.body.sid);
+      codes.push(state.body.code.code);
+    }
+    const statuses: number[] = [];
+    for (const code of codes) statuses.push((await api.post("/api/claim", { code }, ip("203.0.114.100"))).status);
+    expect(statuses).toEqual(Array(9).fill(200));
+  });
+});
+
+describe("DEMO-02 flood: the global cap on concurrent demo sessions", () => {
+  let wrangler: Wrangler;
+  let api: Api;
+  beforeAll(async () => {
+    // A 1 s claim window and a 1.2 s session make a hold lapse in about 2 s.
+    wrangler = await startPairing({
+      DEMO_MAX_CONCURRENT: "2",
+      CLAIM_TIMEOUT_SECONDS: "1",
+      DEMO_SESSION_MINUTES: "0.02",
+    });
+    api = new Api(wrangler.url);
+  });
+  afterAll(() => wrangler?.stop());
+
+  it("DEMO-02 cap: the third concurrent demo screen is refused, live screens are not, and a lapsed hold frees a slot", async () => {
+    expect((await api.post("/api/screens", { mode: "demo" })).status).toBe(201);
+    expect((await api.post("/api/screens", { mode: "demo" })).status).toBe(201);
+    const full = await api.post("/api/screens", { mode: "demo" });
+    expect(full.status).toBe(429);
+    expect(full.body).toEqual(problem(429, "rate_limited"));
+    expect((await api.post("/api/screens", { mode: "live" })).status).toBe(201);
+
+    await sleep(2500);
+    expect((await api.post("/api/screens", { mode: "demo" })).status).toBe(201);
+  });
+});

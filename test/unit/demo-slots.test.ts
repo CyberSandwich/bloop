@@ -1,0 +1,61 @@
+import { DatabaseSync, type SQLInputValue } from "node:sqlite";
+import { describe, expect, it } from "vitest";
+import { DemoSlots, type SqlLike } from "../../src/worker/do/demo-slots.ts";
+
+function slots(): DemoSlots {
+  const db = new DatabaseSync(":memory:");
+  const sql: SqlLike = {
+    exec(query, ...bindings) {
+      const statement = db.prepare(query);
+      const values = bindings as SQLInputValue[];
+      // Like the platform's cursor, a statement runs when exec is called, not when its rows are read.
+      const rows = /^\s*select/i.test(query) ? (statement.all(...values) as Record<string, unknown>[]) : [];
+      if (!rows.length && !/^\s*select/i.test(query)) statement.run(...values);
+      return { toArray: () => rows };
+    },
+  };
+  return new DemoSlots(sql);
+}
+
+const T = 1_000_000;
+const HOLD = 60_000;
+
+describe("DEMO-02 flood: the global cap on concurrent demo sessions", () => {
+  it("DEMO-02 cap: takes slots up to the cap and refuses the next one", () => {
+    const s = slots();
+    expect(s.reserve("a", T, HOLD, 2)).toBe(true);
+    expect(s.reserve("b", T, HOLD, 2)).toBe(true);
+    expect(s.reserve("c", T, HOLD, 2)).toBe(false);
+    expect(s.count()).toBe(2);
+  });
+
+  it("DEMO-02 cap: a released slot is free again at once", () => {
+    const s = slots();
+    s.reserve("a", T, HOLD, 1);
+    expect(s.reserve("b", T, HOLD, 1)).toBe(false);
+    s.release("a");
+    expect(s.reserve("b", T, HOLD, 1)).toBe(true);
+  });
+
+  it("DEMO-02 cap: a lapsed hold frees its slot without a release", () => {
+    const s = slots();
+    s.reserve("a", T, HOLD, 1);
+    expect(s.reserve("b", T + HOLD - 1, HOLD, 1)).toBe(false);
+    expect(s.reserve("b", T + HOLD, HOLD, 1)).toBe(true);
+    expect(s.count()).toBe(1);
+  });
+
+  it("DEMO-02 cap: reserving a held screen again renews it instead of taking a second slot", () => {
+    const s = slots();
+    s.reserve("a", T, HOLD, 1);
+    expect(s.reserve("a", T + 30_000, HOLD, 1)).toBe(true);
+    expect(s.count()).toBe(1);
+    expect(s.reserve("b", T + HOLD, HOLD, 1)).toBe(false);
+  });
+
+  it("DEMO-02 cap: releasing an unknown screen is harmless", () => {
+    const s = slots();
+    s.release("nope");
+    expect(s.count()).toBe(0);
+  });
+});

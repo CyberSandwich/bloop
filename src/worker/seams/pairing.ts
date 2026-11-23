@@ -82,11 +82,18 @@ export interface PairingStore {
 
 /** One instance. Routes typed codes; counts misses exactly (ADR 0002). */
 export interface CodeDirectory {
-  put(code: string, screenRef: string, expiresAt: number): Promise<"ok" | "collision">;
+  put(code: string, screenRef: string, expiresAt: number, demo: boolean): Promise<"ok" | "collision">;
   lookup(
     code: string,
     ipHash: string,
     now: number,
-  ): Promise<{ ok: true; screenRef: string } | { ok: false; error: "code_unknown" | "rate_limited" }>;
+  ): Promise<{ ok: true; screenRef: string; demo: boolean } | { ok: false; error: "code_unknown" | "rate_limited" }>;
   remove(code: string): Promise<void>;
+}
+
+/** The global cap on concurrent demo sessions, held in the same object as the codes. */
+export interface DemoCap {
+  /** False when `cap` demo screens already hold a slot. A slot lapses after `holdMs` or on release. */
+  demoReserve(screenRef: string, holdMs: number, cap: number): Promise<boolean>;
+  demoRelease(screenRef: string): Promise<void>;
 }
