@@ -321,8 +321,15 @@ export function transition(m: Machine, ev: Event, cfg: MachineConfig): Step {
     }
 
     case "upload.start": {
-      if (m.state !== "claimed" || m.pairing?.kind !== "guest") return fail("wrong_state");
-      return ok({ ...m, state: "uploading", uploadAt: now + ev.timeoutSeconds * SECOND }, [{ fx: "push", to: "both" }]);
+      // A scan does not say what the phone will do. A phone that claimed as an owner and now sends a file
+      // becomes a guest here, and gives up its list and account.
+      const { pairing } = m;
+      if (!pairing || (m.state !== "claimed" && m.state !== "choosing")) return fail("wrong_state");
+      if (m.state === "choosing" && pairing.kind !== "owner") return fail("wrong_state");
+      const guest = { ...pairing, kind: "guest" as const, listed: [], userId: null };
+      return ok({ ...m, pairing: guest, state: "uploading", uploadAt: now + ev.timeoutSeconds * SECOND }, [
+        { fx: "push", to: "both" },
+      ]);
     }
 
     case "upload.done": {

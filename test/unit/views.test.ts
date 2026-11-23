@@ -53,15 +53,16 @@ describe("views", () => {
   });
 
   it("builds the phone view from the pairing, and none without one", () => {
-    expect(phoneView(META, waiting(), T0)).toBeNull();
-    expect(phoneView(META, approved(), T0 + sec(11))).toMatchObject({
+    expect(phoneView(META, waiting(), T0, 50)).toBeNull();
+    expect(phoneView(META, approved(), T0 + sec(11), 50)).toMatchObject({
       state: "approved",
       kind: "owner",
       match: "42",
       fileName: "Deck.pptx",
       endReason: null,
+      dropMaxBytes: 50,
     });
-    expect(phoneView(META, ended(), T0 + sec(25))).toMatchObject({
+    expect(phoneView(META, ended(), T0 + sec(25), 50)).toMatchObject({
       state: "ended",
       endReason: "phone",
       fileName: null,

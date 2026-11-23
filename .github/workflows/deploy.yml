@@ -37,5 +37,8 @@ jobs:
         run: npm run check
       - if: env.CLOUDFLARE_API_TOKEN != ''
         run: npx wrangler d1 migrations apply DB --remote
+      # The 1-day backstop for guest files (ADR 0005); wrangler.jsonc cannot express it.
+      - if: env.CLOUDFLARE_API_TOKEN != ''
+        run: npx wrangler r2 bucket lifecycle set bloop-guest-files --file tools/r2-lifecycle.json --jurisdiction eu --force
       - if: env.CLOUDFLARE_API_TOKEN != ''
         run: npx wrangler deploy

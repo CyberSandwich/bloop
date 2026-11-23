@@ -11,6 +11,6 @@ export const VERIFIED = {
   endedLink: false,
   /** V-9: phone account needs (connect once, consent, sign-in lifetime). */
   oneDriveOnce: false,
-  /** V-5: bloop deletes a guest upload when the session ends (guest drop is not built yet). */
-  guestDelete: false,
+  /** V-5: bloop deletes a guest upload when the session ends (seams/guest-drop/purge.ts; DROP-07 tests). */
+  guestDelete: true,
 };

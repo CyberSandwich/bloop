@@ -178,17 +178,17 @@ sequenceDiagram
   Note over W,S: the screen end response carries Clear-Site-Data storage
   Note over W,R: every /f/ token now answers 410 (revoked), until the screen object closes
 ```
-Backstops: an hourly cron ends any D1 `session` row still open 95 minutes after approval, and deletes any guest object older than 2 hours. The R2 lifecycle rule deletes anything older than 1 day.
+Backstops: an hourly cron ends any D1 `session` row still open 95 minutes after approval (module g), and (built) lists `g/` in the bucket and deletes any guest object older than 2 hours, closing the matching `guest_file` rows. The R2 lifecycle rule (`tools/r2-lifecycle.json`, applied by `deploy.yml`) deletes anything under `g/` older than 1 day.
 
 ### 4.4 Guest drop (host absent)
 
 The default needs no host and no sign-in. The Open click on the screen is the proof that someone is at the lectern.
 
-1. The guest scans the screen's code (or types it). `POST /api/claim {code}` locks the pairing to the guest phone and marks the session `guest`.
-2. The guest chooses one `.pptx` or `.pdf` and sends it with `PUT /api/drop` (Bearer pid, `Content-Length` required). The Worker streams it to R2 while counting bytes. It then validates by range reads (head, zip central directory or PDF tail), with no decompression.
-3. Valid: the Screen DO moves to `offered`. Nothing opens yet. The screen shows the file name with an "Open" button (string `guest_open`: heading "{file name}", line "Sent by a guest. Open it here when you're ready.", control "Open"). Invalid: the object is deleted, and the phone shows "This file can't be sent."
+1. The guest scans the screen's code (or types it). `POST /api/claim {code}` locks the pairing to that phone, as for anyone. The scan does not say who is scanning, so the phone shows its usual choice, with "Send a File Instead" as a text action where there is nothing to choose from (and beside Approve). A claim made with `kind: "guest"` goes straight to the guest's choose state.
+2. The phone shows the guest states (choose, confirm, sending, refused: design.md section 7), checks the extension and size itself, and sends the file with `PUT /api/drop` (Bearer pid, `Origin`, `Content-Length` required, `X-Bloop-Name`). The Worker checks the declared length and name, and asks the Screen DO to begin: the DO applies the room's policy, refuses a second file with `already_uploaded`, checks the cap (`too_large`) and moves the session to `uploading`; an owner claim becomes a guest here. The Worker then reserves budget in D1 (`storage_full`), streams the body to R2 through a fixed-length stream and a digest, and validates by range reads (head, zip central directory or PDF tail). The only inflate is the small `[Content_Types].xml` part.
+3. Valid: the Worker tells the Screen DO (`dropDone`), which moves to `offered`. Nothing opens yet. The screen shows the file name with an "Open" button (string `guest_open`: heading "{file name}", line "Sent by a guest. Open it here when you're ready.", control "Open"); the phone shows "Sent to {room}." Invalid or failed: the object is deleted, the DO returns to `claimed` (`dropFailed`), and the phone shows "This file can't be sent." (or the cause's state: `busy` for `storage_full`, an error for an aborted upload).
 4. A click on the screen's Open button sends `open.click` on the screen socket. The Screen DO moves to `approved`, and the open path runs as in 4.2, served from R2. The file opens in PowerPoint (`.pptx`) or the browser PDF viewer (`.pdf`). The click also supplies the user gesture that launching `ms-powerpoint:` likely needs (T3). An offer nobody clicks expires after `CLAIM_TIMEOUT_SECONDS`, and the object is deleted.
-5. At end, the object is deleted (4.3).
+5. At end, the object is deleted (4.3): by the Screen DO's `purge` seam, which deletes by the file's key when the session holds the file and by session id when an upload had no ref yet (a cancel, Start Over or timeout mid-upload), marks `guest_file.deleted_at`, and audits `guest.deleted`. A route that finds its session gone when the bytes land deletes the object itself.
 
 Per-room policy (ADR 0005): `open` (default) is the flow above. `pass` is optional and IT turns it on per room: the host signs in on their phone and creates a guest link (`POST /api/guest-passes`, `https://<host>/g#p=<pass>`, 24 h, one session; the pass sits in the fragment, so it never reaches a server log). The guest opens `/g`, which keeps the pass in `localStorage`, and sends it with the claim (`POST /api/claim {code, pass}`). The screen-side Open click still applies. `off` refuses drops.
 
@@ -228,10 +228,10 @@ src/worker/
   source-access.ts         which source serves a screen (mode and FILE_SOURCE), and the server-side resolve of an approved id
   seams/open-path/{index,redirect,stream,select,links}.ts   OpenPath interface; the 302 and the streaming answer; the mode switch; link minting, life rules, client class
   do/ledger.ts             the per-screen link record (hashes and counters, revoked tombstones)
-  seams/guest-drop/{r2,validate,zip}.ts
+  seams/guest-drop/{index,select,r2,purge,validate,zip}.ts   GuestDrop interface and limits; the one place that picks R2; the R2 and D1 ledger adapter; deletion at session end; type and structure checks; zip directory reader
   seams/residue.ts  audit.ts  metrics.ts
   auth/{oauth,vault,sessions,cookies,services,db}.ts   oauth4webapi flow; token vault; phone sessions; cookie format and AEAD seal; per-request objects and the daily job; the D1 slice
-  routes/{pairing,files,open,auth,common}.ts
+  routes/{pairing,files,open,drop,auth,common}.ts
   db/queries.ts            every SQL statement, typed
   retention.ts             cron jobs
 public/                    wrangler's assets directory, served as it is. Everything here is public: no secrets, no server-only logic
@@ -268,12 +268,12 @@ test/
 | POST                     | `/api/screen/restart`                        | Bearer sid                            | "Start Over" on the screen: drop an unapproved claim, new code |
 | POST                     | `/api/screen/link`                           | Bearer sid                            | one more link for the approved file `{purpose: protocol, download or pdf}` to `{links}`; counts against `LINK_MINTS_PER_SESSION`; `protocol` only from `approved` (the screen lost its link) |
 | POST                     | `/api/screen/end`                            | Bearer sid                            | end; response carries `Clear-Site-Data: "storage"`             |
-| POST                     | `/api/claim`                                 | none; rate-limited                    | `{code, pass?}` to `{pid, room, match, mode, kind, needsAuth}` |
+| POST                     | `/api/claim`                                 | none; rate-limited                    | `{code, pass?, kind?}` to `{pid, room, match, mode, kind, needsAuth, dropMaxBytes}` |
 | GET                      | `/api/pair/ws?ref=<screenRef>`               | `hello{pid}`, Origin                  | phone socket                                                   |
 | GET                      | `/api/pair/state`                            | Bearer pid                            | polling fallback                                               |
 | GET                      | `/api/files`                                 | Bearer pid, plus session cookie when `FILE_SOURCE=graph` and the screen is live | up to 5 recent decks as `{files: FileEntry[]}`; tells the Screen object the ids shown |
 | POST                     | `/api/approve`                               | Bearer pid, plus cookie as above, Origin | `{fileId}`; the Worker resolves the file from the source's list, so an id not in it is `file_not_found` |
-| PUT                      | `/api/drop`                                  | Bearer pid, Origin                    | guest upload, raw body, `X-Bloop-Name` header                  |
+| PUT                      | `/api/drop`                                  | Bearer pid, Origin                    | guest upload, raw body, `X-Bloop-Name` (percent-encoded), `Content-Length` required, octet-stream, PDF or PPTX content type; answers the phone's view (`offered`) |
 | POST                     | `/api/cancel`                                | Bearer pid, Origin                    | cancel before approve                                          |
 | POST                     | `/api/end`                                   | Bearer pid, Origin                    | end from the phone                                             |
 | POST                     | `/api/guest-passes`                          | session cookie, Origin                | host creates a guest link                                      |
@@ -301,7 +301,7 @@ Every state-changing route checks four things: `Origin` equals `PUBLIC_ORIGIN`; 
 | failed code lookups     | 10 per 10 min per hashed IP, then 429 until the window (10 min from the first miss) ends; a global alarm at 1,000 per 10 min (not built yet) | exact, Directory DO |
 | next code on one screen | 6 per min                                                                            | exact, Screen DO    |
 | `/f/`                   | 60 per 60 s per IP; per link: 10 fetches                                             | binding; exact      |
-| `PUT /api/drop`         | 5 per 60 s per IP; one accepted file per session                                     | binding; exact      |
+| `PUT /api/drop`         | 5 per 60 s per IP (every attempt past the Origin and credential checks counts); one accepted file per session; live bytes under `GUEST_STORAGE_BUDGET_BYTES` | binding; exact; D1  |
 | `/auth/start`           | 10 per 60 s per IP                                                                   | binding             |
 | `/api/it/export`        | 10 per 60 s per token                                                                | binding             |
 | demo screens            | binding as above, plus a 10-min session and a 10 MB drop cap                         | config              |

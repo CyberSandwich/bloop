@@ -27,6 +27,7 @@ const phoneView = (state: SessionState, over: Partial<PhoneView> = {}): PhoneVie
   openMode: null,
   endsAt: null,
   endReason: null,
+  dropMaxBytes: 50 * 1024 * 1024,
   now: 0,
   ...over,
 });
@@ -83,6 +84,7 @@ describe("phone state to view mapping", () => {
     selected: null,
     approving: false,
     canceled: false,
+    drop: null,
   };
   const ctx = (over: Partial<PhoneCtx>): PhoneCtx => ({ ...base, ...over });
 
@@ -135,6 +137,25 @@ describe("phone state to view mapping", () => {
 
   it("a pairing that fell back to waiting is expired", () => {
     expect(phoneKey(ctx({ view: phoneView("waiting") }))).toBe("expired");
+  });
+
+  it("a phone that chose to send a file walks choose, confirm, sending in its own order", () => {
+    for (const drop of ["choose", "confirm", "sending"] as const) {
+      expect(phoneKey(ctx({ drop, files: [file("a")], selected: "a" }))).toBe(`guest_${drop}`);
+    }
+  });
+
+  it("the server's word wins: an offer is sent, an upload is sending, a claimed guest chooses", () => {
+    expect(phoneKey(ctx({ drop: "sending", view: phoneView("offered", { kind: "guest" }) }))).toBe("guest_sent");
+    expect(phoneKey(ctx({ drop: null, view: phoneView("uploading", { kind: "guest" }) }))).toBe("guest_sending");
+    expect(phoneKey(ctx({ drop: null, view: phoneView("claimed", { kind: "guest" }) }))).toBe("guest_choose");
+    expect(phoneKey(ctx({ drop: "confirm", view: phoneView("claimed", { kind: "guest" }) }))).toBe("guest_confirm");
+  });
+
+  it("a refusal shows over the guest flow, and an opened drop shows as open", () => {
+    expect(phoneKey(ctx({ drop: "choose", error: "guest_refused" }))).toBe("guest_refused");
+    expect(phoneKey(ctx({ view: phoneView("open", { kind: "guest", openMode: "protocol" }) }))).toBe("open");
+    expect(phoneKey(ctx({ view: phoneView("approved", { kind: "guest" }) }))).toBe("opening");
   });
 
   it("an error replaces the flow", () => {

@@ -7,6 +7,7 @@ import type { MachineConfig } from "./machine.ts";
 const int = (min: number, max: number) => z.coerce.number().int().min(min).max(max);
 const LOCAL_HOSTS = new Set(["localhost", "127.0.0.1", "[::1]"]);
 const MAX_ORIGIN_CHARS = 120;
+const PLATFORM_BODY_CAP = 100 * 1024 * 1024;
 
 /** True for an origin on this machine. Test timing and the missing local jurisdiction hang off it. */
 export const isLocalOrigin = (origin: string): boolean => LOCAL_HOSTS.has(new URL(origin).hostname);
@@ -56,6 +57,10 @@ const schema = z
     DEMO_SESSION_MINUTES: z.coerce.number().positive(),
     DEMO_ENABLED: z.enum(["true", "false"]),
     GUEST_DROP: z.enum(["off", "open", "pass"]),
+    /** At most the platform's 100 MB request body cap. */
+    GUEST_MAX_BYTES: int(1, PLATFORM_BODY_CAP).default(52_428_800),
+    DEMO_GUEST_MAX_BYTES: int(1, PLATFORM_BODY_CAP).default(10_485_760),
+    GUEST_STORAGE_BUDGET_BYTES: int(1, Number.MAX_SAFE_INTEGER).default(5_368_709_120),
     /** Test only. "1" lowers the floors below and is refused unless PUBLIC_ORIGIN is a local address. */
     TEST_TIMING: z.enum(["0", "1"]).default("0"),
   })
@@ -127,6 +132,9 @@ export interface Config {
   demoSessionMinutes: number;
   demoEnabled: boolean;
   guestDrop: "off" | "open" | "pass";
+  guestMaxBytes: number;
+  demoGuestMaxBytes: number;
+  guestStorageBudgetBytes: number;
   /** Test only: the platform rate-limit bindings are skipped; the exact limits in the objects stay on. */
   testTiming: boolean;
   machine: MachineConfig;
@@ -181,6 +189,9 @@ export function parseConfig(env: Record<string, unknown>): ConfigResult {
       demoSessionMinutes: v.DEMO_SESSION_MINUTES,
       demoEnabled: v.DEMO_ENABLED === "true",
       guestDrop: v.GUEST_DROP,
+      guestMaxBytes: v.GUEST_MAX_BYTES,
+      demoGuestMaxBytes: v.DEMO_GUEST_MAX_BYTES,
+      guestStorageBudgetBytes: v.GUEST_STORAGE_BUDGET_BYTES,
       testTiming: v.TEST_TIMING === "1",
       machine: {
         codeTtlSeconds: v.CODE_TTL_SECONDS,

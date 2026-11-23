@@ -376,6 +376,7 @@ Top to bottom: wordmark 17 px centered; title 28/34 600; room row (Lucide `monit
 | approve, demo | Open the sample deck here? | This is a demo. You don't need an account. | Approve, Cancel |
 | unregistered screen | as approve, plus one card (Lucide `triangle-alert` 20, sentence in `--t1` 600; no tint, no stripe) | This screen isn't registered. Only approve if you can see it in front of you. `[V-7]` | Approve, Cancel |
 | (any of choose file, approve, unregistered screen, signed in to OneDrive) | as that state | as that state | plus Disconnect OneDrive (text): deletes bloop's stored access and signs this phone out, then shows first use |
+| (any of choose file, approve, approve demo, unregistered screen, first use, empty) | as that state | as that state | plus Send a File Instead (text, before Disconnect OneDrive): the guest path, for a phone with no OneDrive to choose from `[V-10]` |
 | first use | Connect your OneDrive. | bloop reads your slides from OneDrive. You do this once, on this phone. `[V-9]` | Connect OneDrive, Cancel |
 | needs admin | Your organization needs to approve bloop. | Ask your IT team, or sign in to the PC as usual. | Done |
 | empty | No slides found. | Save a .pptx file to OneDrive, then scan again. | Done |
@@ -394,6 +395,10 @@ Top to bottom: wordmark 17 px centered; title 28/34 600; room row (Lucide `monit
 | guest: confirm | Send Talk.pptx to Room 2.14? | bloop deletes its copy when this ends. `[V-5]` | Send, Cancel |
 | guest: sending | Sending Talk.pptx | (progress bar) | Cancel |
 | guest: file refused | This file can't be sent. | Choose a .pptx or .pdf file under {N} MB. `[V-10]` | Choose File |
+| guest: sent | Sent to Room 2.14. | Open it on the screen when you're ready. | Cancel |
+| guest: pass needed | Ask your host for a guest link. | Open it on this phone, then scan the code again. | Done |
+| rate limited | Too many tries. | Wait a minute, then scan the code again. | Done |
+| busy (storage full) | bloop can't take files right now. | Try again in a few minutes, or sign in to the PC as usual. | Done |
 | framed | Open this page directly to approve. | | none |
 
 The page moves focus to the new title on each state change. "its copy" is deliberate: bloop's stored upload is deleted, but a downloaded copy on the PC is open item 1.

@@ -11,6 +11,10 @@ export interface Wrangler {
   /** Everything wrangler and the Worker wrote to stdout and stderr so far. */
   output(): string;
   stop(): Promise<void>;
+  /** A read-only query against the throwaway local D1 (migrated only with `migrate: true`). */
+  d1(sql: string): Record<string, unknown>[];
+  /** Whether the local R2 bucket holds an object under `key`. */
+  r2Has(key: string): boolean;
 }
 
 const root = fileURLToPath(new URL("../..", import.meta.url));
@@ -95,11 +99,31 @@ export async function startWrangler(
     rmSync(state, { recursive: true, force: true });
   };
 
+  // Reads the throwaway state the running Worker writes, through wrangler's own local commands.
+  const d1 = (sql: string): Record<string, unknown>[] => {
+    const done = spawnSync(
+      bin,
+      ["d1", "execute", "bloop", "--local", "--persist-to", state, "--json", "--command", sql],
+      { cwd: root, env, encoding: "utf8" },
+    );
+    if (done.status !== 0) throw new Error(`d1 execute failed:\n${done.stdout}${done.stderr}`);
+    return (JSON.parse(done.stdout) as { results: Record<string, unknown>[] }[])[0]?.results ?? [];
+  };
+  const r2Has = (key: string): boolean => {
+    const out = join(state, "r2-probe");
+    const done = spawnSync(
+      bin,
+      ["r2", "object", "get", `bloop-guest-files/${key}`, "--local", "--persist-to", state, "--file", out],
+      { cwd: root, env, encoding: "utf8" },
+    );
+    return done.status === 0;
+  };
+
   const deadline = Date.now() + 90_000;
   while (Date.now() < deadline) {
     if (child.exitCode !== null) throw new Error(`wrangler dev exited early:\n${chunks.join("")}`);
     try {
-      if ((await fetch(`${url}/api/health`)).ok) return { url, output: () => chunks.join(""), stop };
+      if ((await fetch(`${url}/api/health`)).ok) return { url, output: () => chunks.join(""), stop, d1, r2Has };
     } catch {
       // not listening yet
     }

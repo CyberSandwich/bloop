@@ -45,6 +45,7 @@ export interface PhoneView {
   openMode: OpenMode | null;
   endsAt: number | null;
   endReason: EndReason | null;
+  dropMaxBytes: number;        // the largest guest file this screen takes (GUEST_MAX_BYTES, or the demo cap)
   now: number;
 }
 
@@ -77,7 +78,7 @@ export type PhoneMsgOut =
 
 export interface ClaimRequest { code: string; pass?: string; kind?: Kind; }   // kind defaults to "owner"; "guest" asks for the drop path
 export interface ClaimResponse {
-  pid: string; room: RoomView; match: string; mode: Mode; kind: Kind; needsAuth: boolean;
+  pid: string; room: RoomView; match: string; mode: Mode; kind: Kind; needsAuth: boolean; dropMaxBytes: number;
 }
 export interface FileEntry {
   id: string;                  // opaque to the phone; never a Graph URL
@@ -114,8 +115,8 @@ export type PhoneStateKey =
   | "checking" | "match" | "choose" | "approve" | "approve_demo" | "unregistered" | "first_use"
   | "needs_admin" | "empty" | "approving" | "opening" | "open" | "open_fallback" | "pdf_fallback"
   | "ended" | "canceled" | "expired" | "taken" | "offline" | "error" | "guest_choose"
-  | "guest_confirm" | "guest_sending" | "guest_refused" | "typed_wrong" | "framed"
-  | "rate_limited" | "guest_pass_needed" | "busy";          // last three: new strings, section 9
+  | "guest_confirm" | "guest_sending" | "guest_refused" | "guest_sent" | "typed_wrong" | "framed"
+  | "rate_limited" | "guest_pass_needed" | "busy";          // last four: strings added to design.md section 7 (section 9)
 export type ScreenStateKey =
   | "waiting" | "scanned" | "choosing" | "approved" | "opening" | "open" | "open_fallback"
   | "pdf_fallback" | "guest_open" | "ended" | "offline" | "service_down" | "error" | "phone_width";
@@ -148,7 +149,7 @@ export type ScreenStateKey =
 | waiting | `claim(code, pass)` | as above, plus a pass valid for this room | claimed (kind guest) | as above; mark the pass used |
 | claimed | `listed(ids)` | owner kind | choosing | store ids; push both |
 | claimed, choosing | `approve(file)` | owner kind; `file.ref` in stored ids (live) or a fixture the Worker resolved (demo), else `file_not_found` | approved | `endsAt`, mint link; push screen `open`; audit `approved` |
-| claimed | `upload.start` | guest kind, policy allows it, no file yet | uploading | set `uploadAt` |
+| claimed, choosing | `upload.start` | policy allows it (checked by `beginDrop`), no file yet; a `choosing` pairing must be an owner's | uploading | set `uploadAt`; an owner pairing becomes a guest (list and account dropped), so a phone can claim first and choose to send a file later |
 | uploading | `upload.done(file)` | validated | offered | store the R2 ref and `offerAt`; push screen `guest_open` (file name, Open); audit `guest.uploaded` |
 | offered | `open.click` | from the screen socket (a repeat in approved, opening or open returns the current view) | approved | as approve: `endsAt`, mint link; push screen `open`; audit `approved` (actor screen) |
 | uploading | `upload.failed(e)` | | claimed | delete object; push both `state`; audit `guest.refused` with cause `e` (the drop route answers the phone with `e`) |
@@ -278,6 +279,16 @@ export interface PairingStore {
   /** Polling fallback. A screen poll also rotates the code when it is due and re-arms closeAt. */
   screenView(sid: string): Promise<Result<ScreenView>>;
   phoneView(pid: string): Promise<Result<PhoneView>>;
+  /**
+   * A phone is about to upload (the guest drop). Applies the room's policy (`drop_disabled`, `pass_required`),
+   * refuses a second file (`already_uploaded`) and a length over this screen's cap (`too_large`), then moves the
+   * session to `uploading`; an owner claim becomes a guest. Answers the session id the object belongs to.
+   */
+  beginDrop(pid: string, length: number): Promise<Result<{ sessionId: string }>>;
+  /** The object is stored and validated: `uploading` to `offered`. */
+  dropDone(pid: string, file: FileRef): Promise<Result<PhoneView>>;
+  /** The upload failed or was refused: `uploading` to `claimed`, the object purged, `guest.refused` audited with the cause. */
+  dropFailed(pid: string, error: ErrorCode): Promise<Result<PhoneView>>;
   /** Mints one more link for the approved file (a download, the PDF view, or a relaunch) and pushes it to the screen. */
   mintFallback(sid: string, mode: OpenMode): Promise<Result<LinkSet>>;
   /**
@@ -437,26 +448,34 @@ export interface ScreenLauncher {
 
 ## 5. `GuestDrop` (`src/worker/seams/guest-drop/index.ts`)
 ```ts
-import type { DropError, FileType } from "../../../shared/protocol.ts";
+import type { DropError, FileType, Mode } from "../../../shared/protocol.ts";
 
 export type GuestPolicy = "off" | "pass" | "open";
+/** A demo screen always takes drops; a live room uses its own policy, else the configured GUEST_DROP. */
+export const effectivePolicy: (room: GuestPolicy | null, mode: Mode, configured: GuestPolicy) => GuestPolicy;
+
+export type Reservation = { ok: true; r2Key: string } | { ok: false; error: DropError };
 
 export interface Upload {
-  sessionKey: string;          // screenRef + pairing, used to build the R2 key
-  declaredName: string;        // from X-Bloop-Name, percent-decoded, then sanitized
-  declaredType: string;        // Content-Type
-  length: number;              // Content-Length, required
+  sessionKey: string;          // the session id: ties the object to its session for deletion by session
+  r2Key: string;               // from reserve()
+  name: string;                // the sanitized display name (X-Bloop-Name, percent-decoded, cleanName); its extension is the declared type
+  declaredType: FileType;
+  length: number;              // Content-Length, required; the stream is fixed to it
   body: ReadableStream<Uint8Array>;
 }
 export interface GuestFile { r2Key: string; name: string; type: FileType; bytes: number; sha256: string; }
 
 export interface GuestDrop {
-  policy(roomPolicy: GuestPolicy | null, mode: "live" | "demo"): GuestPolicy;
-  /** Streams to storage with a byte counter, then validates by range reads. Deletes on any failure. */
+  /** Picks the key (`g/<128-bit random>`) and reserves budget in one statement: `storage_full` when live bytes would pass the budget. */
+  reserve(sessionId: string, bytes: number, name: string, type: FileType): Promise<Reservation>;
+  /** Streams to storage through a fixed-length stream and a digest, then validates by range reads. Deletes on any failure. */
   accept(u: Upload, maxBytes: number): Promise<{ ok: true; file: GuestFile } | { ok: false; error: DropError }>;
-  read(r2Key: string): Promise<ReadableStream<Uint8Array> | null>;
+  read(r2Key: string): Promise<{ body: ReadableStream<Uint8Array>; size: number } | null>;
   delete(r2Key: string): Promise<void>;          // idempotent
-  /** Hourly backstop: deletes objects older than the given age. Returns the count. */
+  /** Deletes the session's object and closes its ledger row, by key and by session id. True when something existed. Idempotent. */
+  purge(sessionId: string | null, r2Key: string | null): Promise<boolean>;
+  /** Hourly backstop: deletes objects older than the given age and closes rows that old. Returns the object count. */
   sweep(olderThanMs: number): Promise<number>;
 }
 
@@ -469,13 +488,16 @@ export const ZIP_LIMITS = {
   maxCentralDirectoryBytes: 2 * 1024 * 1024,
   maxTotalUncompressed: 1024 * 1024 * 1024,
   maxEntryRatio: 200,
+  ratioFloorBytes: 64 * 1024,           // the ratio rule applies to entries at least this large
+  maxContentTypesBytes: 256 * 1024,     // the one part inflated, to read its content types
   requiredParts: ["[Content_Types].xml", "ppt/presentation.xml"],
   refusedParts: [/^ppt\/vbaProject\.bin$/i, /^ppt\/activeX\//i, /\.bin$/i],
   refusedContentTypes: [/macroEnabled/i, /vbaProject/i],
-  zip64: "refuse",
-} as const;
+} as const;                              // Zip64, multi-disk and encrypted entries are always refused
 ```
-Validation rules: a `.pptx` starts with `PK\x03\x04`, has no `%PDF` in its first 1 KB, has an EOCD record whose central directory is inside the file and within the limits, and passes the part rules. A `.pdf` starts with `%PDF-`, has `%%EOF` in its last 1 KB, and has no ZIP EOCD signature in its last 64 KB. The extension must match the detected type. `Content-Type` on the way out comes from the detected type, never from the upload.
+Validation rules: a `.pptx` starts with `PK\x03\x04`, has no `%PDF` in its first 1 KB, has an EOCD record (its comment length reaching the end of the file) whose central directory is inside the file and within the limits, uses only stored or deflate entries, and passes the part and content-type rules. A `.pdf` starts with `%PDF-`, has `%%EOF` in its last 1 KB, and has no plausible ZIP EOCD in its last 64 KB. The extension must match the detected type (`bad_type` otherwise; a structure failure is `bad_structure`, a macro part or content type `macro_content`). `Content-Type` on the way out comes from the detected type, never from the upload.
+
+`purgeGuest` (`seams/guest-drop/purge.ts`) is what the Screen object's `purge` seam runs: it skips a file from another source, deletes through `GuestDrop.purge`, audits `guest.deleted` when something existed, and never throws (a failed delete is logged and left to the sweep).
 
 ## 6. `Residue` (`public/js/residue.js`; the server half is `revokeLinks` and `purge` in `do/effects.ts`)
 ```ts
@@ -608,4 +630,5 @@ The shared state strings have no slot for these. Wording is a design.md decision
 - `busy` (phone): "bloop can't take files right now." / "Try again in a few minutes, or sign in to the PC as usual."
 - Screen `guest_open` (offered state): heading "{file name}", line "Sent by a guest. Open it here when you're ready.", control "Open". The click is the proof of presence at the lectern, and no guest file opens without it.
 - Screen "Start Over" (decided, OD-6; text button in the scanned, choosing and offered states): ends a claim nobody at the lectern recognizes (PAIR-02).
-- `guest_refused` fills `{N}` from `GUEST_MAX_BYTES` (default 50 MB; demo 10 MB).
+- `guest_refused` fills `{N}` from `PhoneView.dropMaxBytes` (`GUEST_MAX_BYTES`, default 50 MB; demo 10 MB), in whole megabytes.
+- Added with the guest drop (module f), now in design.md section 7: `guest_sent` (phone, after the upload: "Sent to {room}." / "Open it on the screen when you're ready.", Cancel) and the text action "Send a File Instead", which is how a phone that scanned as an owner chooses to send its own file.

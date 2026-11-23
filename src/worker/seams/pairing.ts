@@ -62,6 +62,15 @@ export interface PairingStore {
   /** Polling fallback. A screen poll also rotates the code when it is due. */
   screenView(sid: string): Promise<Result<ScreenView>>;
   phoneView(pid: string): Promise<Result<PhoneView>>;
+  /**
+   * A phone is about to upload a file (the guest drop). Checks the room's policy and the size, moves the session to
+   * `uploading` (an owner who claimed becomes a guest), and answers the session id the object belongs to.
+   */
+  beginDrop(pid: string, length: number): Promise<Result<{ sessionId: string }>>;
+  /** The object was stored and validated: the session is `offered`. */
+  dropDone(pid: string, file: FileRef): Promise<Result<PhoneView>>;
+  /** The upload failed or was refused: back to `claimed`, and the object is purged. */
+  dropFailed(pid: string, error: ErrorCode): Promise<Result<PhoneView>>;
   /** Mints one more link for the approved file (a download, the PDF view, or a relaunch) and pushes it to the screen. */
   mintFallback(sid: string, mode: OpenMode): Promise<Result<LinkSet>>;
   /**

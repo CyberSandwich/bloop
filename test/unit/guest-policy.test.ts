@@ -1,0 +1,72 @@
+import { describe, expect, it } from "vitest";
+import { cleanName, MAX_DISPLAY } from "../../public/js/shared/names.js";
+import { configFor } from "../../src/worker/config.ts";
+import { effectivePolicy } from "../../src/worker/seams/guest-drop/index.ts";
+
+describe("DROP-06 policy: which rooms take a drop", () => {
+  it("a demo screen always takes one, whatever the configured policy", () => {
+    expect(effectivePolicy(null, "demo", "off")).toBe("open");
+    expect(effectivePolicy("pass", "demo", "off")).toBe("open");
+  });
+
+  it("a live room uses its own policy, else the configured one", () => {
+    expect(effectivePolicy("pass", "live", "open")).toBe("pass");
+    expect(effectivePolicy("off", "live", "open")).toBe("off");
+    expect(effectivePolicy(null, "live", "open")).toBe("open");
+    expect(effectivePolicy(null, "live", "pass")).toBe("pass");
+  });
+});
+
+describe("DROP-08 xss: display names", () => {
+  it("removes control, format and bidi characters and turns path separators into hyphens", () => {
+    expect(cleanName("a\u0000b‮c.pptx")).toBe("abc.pptx");
+    expect(cleanName("..\\..\\evil/x.pptx")).toBe("..-..-evil-x.pptx");
+    expect(cleanName("  a   b \n c.pdf ")).toBe("a b c.pdf");
+  });
+
+  it("keeps markup as plain text for textContent to show, and keeps the extension when it cuts", () => {
+    expect(cleanName("<img src=x onerror=alert(1)>.pptx")).toBe("<img src=x onerror=alert(1)>.pptx");
+    const long = `${"a".repeat(300)}.pptx`;
+    const cut = cleanName(long);
+    expect(Array.from(cut)).toHaveLength(MAX_DISPLAY);
+    expect(cut.endsWith(".pptx")).toBe(true);
+  });
+
+  it("is empty when nothing printable is left", () => {
+    expect(cleanName("​\u0007 ")).toBe("");
+  });
+});
+
+describe("DROP-01 size: configuration", () => {
+  const env = {
+    PUBLIC_ORIGIN: "https://bloop.example",
+    HASH_PEPPER: "x".repeat(40),
+    FILE_SOURCE: "mock",
+    OPEN_PATH_MODE: "redirect",
+    CODE_LENGTH: "6",
+    CODE_TTL_SECONDS: "60",
+    CODE_GRACE_SECONDS: "10",
+    CLAIM_TIMEOUT_SECONDS: "300",
+    UPLOAD_TIMEOUT_SECONDS: "900",
+    SESSION_MAX_MINUTES: "90",
+    DEMO_SESSION_MINUTES: "10",
+    DEMO_ENABLED: "true",
+    GUEST_DROP: "open",
+  };
+  const parse = (extra: Record<string, string>) => configFor({ ...env, ...extra });
+
+  it("defaults to 50 MB live, 10 MB demo and a 5 GiB budget", () => {
+    const parsed = parse({});
+    if (!parsed.ok) throw new Error(parsed.problems.join());
+    expect(parsed.config).toMatchObject({
+      guestMaxBytes: 52_428_800,
+      demoGuestMaxBytes: 10_485_760,
+      guestStorageBudgetBytes: 5_368_709_120,
+    });
+  });
+
+  it("refuses a cap over the platform's 100 MB body limit", () => {
+    expect(parse({ GUEST_MAX_BYTES: String(101 * 1024 * 1024) }).ok).toBe(false);
+    expect(parse({ DEMO_GUEST_MAX_BYTES: "0" }).ok).toBe(false);
+  });
+});

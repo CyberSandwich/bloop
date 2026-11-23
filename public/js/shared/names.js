@@ -21,6 +21,31 @@ export function slugBase(name, max = MAX_BASE) {
   return ascii.slice(0, Math.max(1, max)).replace(/-+$/, "") || "file";
 }
 
+/** Longest display name, in characters, extension included. */
+export const MAX_DISPLAY = 120;
+
+/**
+ * A file name safe to show and store: control and format characters (including bidi overrides) removed,
+ * path separators turned into hyphens, spaces collapsed, cut to `max` characters with the extension kept.
+ * It is still untrusted text: pages set it with textContent only.
+ * @param {string} raw
+ * @param {number} [max]
+ * @returns {string} empty when nothing printable is left
+ */
+export function cleanName(raw, max = MAX_DISPLAY) {
+  const name = raw
+    .normalize("NFC")
+    .replace(/\p{C}/gu, "")
+    .replace(/[\\/]+/g, "-")
+    .replace(/\s+/g, " ")
+    .trim();
+  const chars = Array.from(name);
+  if (chars.length <= max) return name;
+  const dot = name.lastIndexOf(".");
+  const ext = dot > 0 && name.length - dot <= 6 ? name.slice(dot) : "";
+  return `${chars.slice(0, max - Array.from(ext).length).join("")}${ext}`;
+}
+
 /**
  * @param {string} name display name
  * @param {"pptx" | "pdf"} ext

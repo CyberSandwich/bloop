@@ -255,8 +255,20 @@ describe("machine: guest upload and the Open click", () => {
     expect(m.uploadAt).toBe(T0 + sec(905));
   });
 
-  it("refuses an upload for an owner or a second upload", () => {
-    expect(refused(claimedOwner(), { e: "upload.start", now: T0 + sec(5), timeoutSeconds: 900 })).toBe("wrong_state");
+  it("turns a claimed or choosing owner into a guest when it starts an upload, dropping its list and account", () => {
+    const start = { e: "upload.start", now: T0 + sec(5), timeoutSeconds: 900 } as const;
+    const listed = must(claimedOwner("live"), { e: "listed", now: T0 + sec(2), ids: ["a"] }).next;
+    expect(listed.state).toBe("choosing");
+    for (const from of [claimedOwner("live"), listed]) {
+      const m = must(from, start).next;
+      expect(m.state).toBe("uploading");
+      expect(m.pairing).toMatchObject({ kind: "guest", listed: [], userId: null });
+    }
+  });
+
+  it("refuses an upload once a file was approved, and a second upload", () => {
+    expect(refused(approved(), { e: "upload.start", now: T0 + sec(15), timeoutSeconds: 900 })).toBe("wrong_state");
+    expect(refused(offered(), { e: "upload.start", now: T0 + sec(15), timeoutSeconds: 900 })).toBe("wrong_state");
     const m = must(claimedGuest(), { e: "upload.start", now: T0 + sec(5), timeoutSeconds: 900 }).next;
     expect(refused(m, { e: "upload.start", now: T0 + sec(6), timeoutSeconds: 900 })).toBe("wrong_state");
   });

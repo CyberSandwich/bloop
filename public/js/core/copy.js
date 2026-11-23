@@ -148,6 +148,7 @@ export function screenCopy(key, f) {
  * @property {string} warn the unregistered-screen card
  * @property {PhoneAction[]} actions
  * @property {boolean} loading the primary action shows its progress label
+ * @property {boolean} progress the upload progress bar
  */
 /**
  * @typedef {object} PhoneFacts
@@ -155,11 +156,16 @@ export function screenCopy(key, f) {
  * @property {string | null} file
  * @property {string | null} endsAt
  * @property {boolean} [account] the phone is signed in to OneDrive, so it can disconnect
+ * @property {number} [maxMB] the largest guest file, in whole megabytes
  */
 
 const ENTER_CODE = { id: "code", label: "Enter a Code", kind: /** @type {const} */ ("text"), href: "/code" };
 /** Revokes the stored OneDrive access (docs/architecture.md section 6, /api/me/disconnect). */
 const DISCONNECT = { id: "disconnect", label: "Disconnect OneDrive", kind: /** @type {const} */ ("text") };
+/** The guest entry: a phone that scanned with no OneDrive to choose from sends its own file instead. */
+const SEND_FILE = { id: "send-file", label: "Send a File Instead", kind: /** @type {const} */ ("text") };
+const PICK = { id: "pick", label: "Choose File", kind: /** @type {const} */ ("primary") };
+const CANCEL = { id: "cancel", label: "Cancel", kind: /** @type {const} */ ("secondary") };
 const DONE = { id: "done", label: "Done", kind: /** @type {const} */ ("primary") };
 const TRY_AGAIN = { id: "retry", label: "Try Again", kind: /** @type {const} */ ("primary") };
 
@@ -179,12 +185,14 @@ export function phoneCopy(key, f) {
     warn: "",
     actions: /** @type {PhoneAction[]} */ ([]),
     loading: false,
+    progress: false,
   };
   const file = f.file ?? "your slides";
   const disconnect = f.account ? [DISCONNECT] : [];
   const approveActions = /** @type {PhoneAction[]} */ ([
     { id: "approve", label: "Approve", kind: "primary" },
-    { id: "cancel", label: "Cancel", kind: "secondary" },
+    CANCEL,
+    SEND_FILE,
     ...disconnect,
   ]);
   const accountLine = VERIFIED.accountNeverReaches
@@ -203,7 +211,7 @@ export function phoneCopy(key, f) {
         room: true,
         match: true,
         files: "list",
-        actions: disconnect,
+        actions: [SEND_FILE, ...disconnect],
       };
     case "approve":
       return {
@@ -259,10 +267,7 @@ export function phoneCopy(key, f) {
           : "bloop reads your slides from OneDrive.",
         room: true,
         match: true,
-        actions: [
-          { id: "connect", label: "Connect OneDrive", kind: "primary" },
-          { id: "cancel", label: "Cancel", kind: "secondary" },
-        ],
+        actions: [{ id: "connect", label: "Connect OneDrive", kind: "primary" }, CANCEL, SEND_FILE],
       };
     case "needs_admin":
       return {
@@ -276,6 +281,47 @@ export function phoneCopy(key, f) {
         ...base,
         title: "No slides found.",
         body: "Save a .pptx file to OneDrive, then scan again.",
+        actions: [DONE, SEND_FILE],
+      };
+    case "guest_choose":
+      return {
+        ...base,
+        title: `Send a file to ${f.room}?`,
+        body: "Choose one file from this phone. Only this file goes to the screen.",
+        room: true,
+        match: true,
+        actions: [PICK, CANCEL],
+      };
+    case "guest_confirm":
+      return {
+        ...base,
+        title: `Send ${file} to ${f.room}?`,
+        body: VERIFIED.guestDelete ? "bloop deletes its copy when this ends." : "",
+        room: true,
+        match: true,
+        actions: [{ id: "send", label: "Send", kind: "primary" }, CANCEL],
+      };
+    case "guest_sending":
+      return { ...base, title: `Sending ${file}`, progress: true, actions: [CANCEL] };
+    case "guest_refused":
+      return {
+        ...base,
+        title: "This file can't be sent.",
+        body: `Choose a .pptx or .pdf file under ${f.maxMB ?? 50} MB.`,
+        actions: [PICK],
+      };
+    case "guest_sent":
+      return {
+        ...base,
+        title: `Sent to ${f.room}.`,
+        body: "Open it on the screen when you're ready.",
+        actions: [CANCEL],
+      };
+    case "guest_pass_needed":
+      return {
+        ...base,
+        title: "Ask your host for a guest link.",
+        body: "Open it on this phone, then scan the code again.",
         actions: [DONE],
       };
     case "opening":

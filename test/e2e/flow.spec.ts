@@ -218,6 +218,70 @@ test.describe("pairing flow", () => {
   });
 });
 
+test.describe("guest drop", () => {
+  const DECK = "test/fixtures/decks/sample-deck.pptx";
+
+  /** Taps Choose File and answers the browser's file chooser. */
+  async function chooseFile(page: Page, file: string | { name: string; mimeType: string; buffer: Buffer }) {
+    const chooser = page.waitForEvent("filechooser");
+    await page.getByRole("button", { name: "Choose File" }).click();
+    await (await chooser).setFiles(file);
+  }
+
+  test("a guest sends a file, the screen offers it, and only the Open click opens it", async ({ browser }) => {
+    const screen = await demoScreen(browser);
+    const { phone } = await scan(browser, screen.page);
+    await expectNoAxeViolations(phone.page);
+
+    await phone.page.getByRole("button", { name: "Send a File Instead" }).click();
+    await expect(heading(phone.page)).toHaveText("Send a file to Demo room?");
+    await expectNoAxeViolations(phone.page);
+
+    // a wrong type is refused on the phone before a byte leaves it
+    await chooseFile(phone.page, {
+      name: "notes.exe",
+      mimeType: "application/octet-stream",
+      buffer: Buffer.from("MZ"),
+    });
+    await expect(heading(phone.page)).toHaveText("This file can't be sent.");
+    await expect(phone.page.locator("#body")).toHaveText("Choose a .pptx or .pdf file under 10 MB.");
+    await expectNoAxeViolations(phone.page);
+
+    await chooseFile(phone.page, DECK);
+    await expect(heading(phone.page)).toHaveText("Send sample-deck.pptx to Demo room?");
+    await expect(phone.page.locator("#body")).toHaveText("bloop deletes its copy when this ends.");
+    await phone.page.getByRole("button", { name: "Send" }).click();
+
+    await expect(heading(phone.page)).toHaveText("Sent to Demo room.");
+    await expect(heading(screen.page)).toHaveText("sample-deck.pptx");
+    await expect(screen.page.locator("#line")).toHaveText("Sent by a guest. Open it here when you're ready.");
+    // nothing opens by itself
+    await screen.page.waitForTimeout(1500);
+    await expect(heading(screen.page)).toHaveText("sample-deck.pptx");
+    await expectNoAxeViolations(screen.page);
+
+    await screen.page.getByRole("button", { name: "Open" }).click();
+    await expect(heading(screen.page)).toHaveText(/^(Approved\.|Opening sample-deck\.pptx)$/);
+    await expect(heading(phone.page)).toHaveText(/^(Opening on|Open on) Demo room\.$/);
+
+    await endFromPhone(phone.page);
+    await expect(heading(screen.page)).toHaveText("Ended.");
+    await screen.context.close();
+    await phone.context.close();
+  });
+
+  test("Cancel while the file is chosen returns the screen to its code", async ({ browser }) => {
+    const screen = await demoScreen(browser);
+    const { phone } = await scan(browser, screen.page);
+    await phone.page.getByRole("button", { name: "Send a File Instead" }).click();
+    await phone.page.getByRole("button", { name: "Cancel" }).click();
+    await expect(heading(phone.page)).toHaveText("Canceled.");
+    await expect(heading(screen.page)).toHaveText("Demo room");
+    await screen.context.close();
+    await phone.context.close();
+  });
+});
+
 test.describe("open path", () => {
   test("launch, the Download fallback after 5 s, the PDF view, and End clearing the screen's storage", async ({
     browser,

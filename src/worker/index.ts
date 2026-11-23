@@ -1,3 +1,4 @@
+import { configFor } from "./config.ts";
 import { Directory } from "./do/directory.ts";
 import { Screen } from "./do/screen.ts";
 import type { Env } from "./env.ts";
@@ -5,15 +6,21 @@ import { type Policy, policyOf, withHeaders } from "./headers.ts";
 import { json, problem } from "./http.ts";
 import { type Route, route } from "./router.ts";
 import { authRoutes } from "./routes/auth.ts";
+import { dropRoutes } from "./routes/drop.ts";
 import { fileRoutes } from "./routes/files.ts";
 import { logFetch, openRoutes } from "./routes/open.ts";
 import { pairingRoutes } from "./routes/pairing.ts";
+import { sweepGuestFiles } from "./seams/guest-drop/select.ts";
+
+/** The `triggers.crons` entry in wrangler.jsonc that runs the hourly backstop. */
+const HOURLY = "0 * * * *";
 
 /** First match wins. Later modules add their routes here, one line each. */
 const routes: readonly Route[] = [
   route(["GET"], "/api/health", "api", () => json({ status: "ok" })),
   ...pairingRoutes,
   ...fileRoutes,
+  ...dropRoutes,
   ...authRoutes,
   ...openRoutes,
 ];
@@ -49,8 +56,14 @@ export default {
     return response.status === 101 ? response : withHeaders(response, policy);
   },
 
-  // Hourly backstop and daily retention jobs land in retention.ts.
-  async scheduled() {},
+  // The hourly cron sweeps leftover guest objects (DROP-07). Daily retention jobs land in retention.ts.
+  async scheduled(controller, env) {
+    const config = configFor(env);
+    if (controller.cron === HOURLY && config.ok) {
+      const swept = await sweepGuestFiles(env, config.config);
+      if (swept > 0) console.log(JSON.stringify({ evt: "guest.sweep", swept }));
+    }
+  },
 } satisfies ExportedHandler<Env>;
 
 export { Directory, Screen };

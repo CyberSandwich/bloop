@@ -43,6 +43,12 @@ const PHONE_KEYS: PhoneStateKey[] = [
   "framed",
   "rate_limited",
   "busy",
+  "guest_choose",
+  "guest_confirm",
+  "guest_sending",
+  "guest_refused",
+  "guest_sent",
+  "guest_pass_needed",
 ];
 
 const sf = {
@@ -103,7 +109,7 @@ describe("screen copy", () => {
 
   it("open says when it ends by itself, and a guest open drops the unverified deletion claim", () => {
     expect(screenCopy("open", sf).line).toBe("Ends by itself at 11:35.");
-    expect(screenCopy("open", { ...sf, guest: true }).line).toBe("");
+    expect(screenCopy("open", { ...sf, guest: true }).line).toBe("bloop deletes its copy when this ends at 11:35.");
   });
 
   it("offline adds the sign-in hint after a while", () => {
@@ -129,7 +135,7 @@ describe("phone copy", () => {
   it("approve names the file and the room, with Approve then Cancel", () => {
     const c = phoneCopy("approve", pf);
     expect(c.title).toBe("Open Lecture 4.pptx on Room 2.14?");
-    expect(c.actions.map((a) => a.label)).toEqual(["Approve", "Cancel"]);
+    expect(c.actions.map((a) => a.label)).toEqual(["Approve", "Cancel", "Send a File Instead"]);
     expect(c.files).toBe("list");
   });
 
@@ -142,10 +148,48 @@ describe("phone copy", () => {
     expect(phoneCopy("approve", { ...pf, account: true }).actions.map((a) => a.label)).toEqual([
       "Approve",
       "Cancel",
+      "Send a File Instead",
       "Disconnect OneDrive",
     ]);
     expect(phoneCopy("approve_demo", { ...pf, account: true }).actions.map((a) => a.id)).not.toContain("disconnect");
     expect(phoneCopy("first_use", { ...pf, account: true }).actions.map((a) => a.id)).not.toContain("disconnect");
+  });
+
+  it("F5 guest states carry the design.md strings, with the room, the file and the size cap filled in", () => {
+    const f = { room: "Room 2.14", file: "Talk.pptx", endsAt: null, maxMB: 50 };
+    expect(phoneCopy("guest_choose", f)).toMatchObject({
+      title: "Send a file to Room 2.14?",
+      body: "Choose one file from this phone. Only this file goes to the screen.",
+    });
+    expect(phoneCopy("guest_choose", f).actions.map((a) => a.label)).toEqual(["Choose File", "Cancel"]);
+    expect(phoneCopy("guest_confirm", f)).toMatchObject({
+      title: "Send Talk.pptx to Room 2.14?",
+      body: "bloop deletes its copy when this ends.",
+    });
+    expect(phoneCopy("guest_confirm", f).actions.map((a) => a.label)).toEqual(["Send", "Cancel"]);
+    expect(phoneCopy("guest_sending", f)).toMatchObject({ title: "Sending Talk.pptx", progress: true });
+    expect(phoneCopy("guest_sending", f).actions.map((a) => a.label)).toEqual(["Cancel"]);
+    expect(phoneCopy("guest_refused", f)).toMatchObject({
+      title: "This file can't be sent.",
+      body: "Choose a .pptx or .pdf file under 50 MB.",
+    });
+    expect(phoneCopy("guest_refused", { ...f, maxMB: 10 }).body).toContain("under 10 MB");
+    expect(phoneCopy("guest_refused", f).actions.map((a) => a.label)).toEqual(["Choose File"]);
+    expect(phoneCopy("guest_sent", f)).toMatchObject({
+      title: "Sent to Room 2.14.",
+      body: "Open it on the screen when you're ready.",
+    });
+    expect(phoneCopy("guest_pass_needed", f).title).toBe("Ask your host for a guest link.");
+  });
+
+  it("only the sending state shows a progress bar", () => {
+    expect(PHONE_KEYS.filter((k) => phoneCopy(k, pf).progress)).toEqual(["guest_sending"]);
+  });
+
+  it("Send a File Instead is offered where a phone has nothing to choose, as a text action", () => {
+    const withSend = PHONE_KEYS.filter((k) => phoneCopy(k, pf).actions.some((a) => a.id === "send-file"));
+    expect(withSend).toEqual(["choose", "approve", "approve_demo", "unregistered", "first_use", "empty"]);
+    expect(phoneCopy("approve", pf).actions.find((a) => a.id === "send-file")).toMatchObject({ kind: "text" });
   });
 
   it("approving keeps the buttons and marks the primary as loading", () => {

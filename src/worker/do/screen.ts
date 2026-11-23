@@ -19,6 +19,9 @@ import { MAX_FRAME_BYTES, phoneFrame, screenFrame } from "../frames.ts";
 import { drawCode, drawMatch, newRef, newSecret, parseCredential, safeEqual, sha256Hex } from "../ids.ts";
 import { createMachine, type Event, type FileRef, type Machine, nextDeadline, transition } from "../machine.ts";
 import { ipHash } from "../routes/common.ts";
+import { effectivePolicy } from "../seams/guest-drop/index.ts";
+import { purgeGuest } from "../seams/guest-drop/purge.ts";
+import { guestDropFor } from "../seams/guest-drop/select.ts";
 import { type ClientClass, mintLink, protocolUri } from "../seams/open-path/links.ts";
 import type { PairingStore, PhoneInfo, Result, ScreenCreated, UsedLink } from "../seams/pairing.ts";
 import { auditFor, metricsFor } from "../stores.ts";
@@ -131,6 +134,7 @@ export class Screen extends DurableObject<Env> implements PairingStore {
         kind: phone.kind,
         // Only the Graph source has accounts, and a phone already signed in needs nothing more.
         needsAuth: meta.mode === "live" && phone.kind === "owner" && this.config().graph !== null && userId === null,
+        dropMaxBytes: this.dropMaxBytes(),
       },
     };
   }
@@ -181,6 +185,35 @@ export class Screen extends DurableObject<Env> implements PairingStore {
     const auth = await this.phoneAuth(pid);
     if (!auth.ok) return auth;
     return this.phoneResult(auth.hash);
+  }
+
+  async beginDrop(pid: string, length: number): Promise<Result<{ sessionId: string }>> {
+    const auth = await this.phoneAuth(pid);
+    if (!auth.ok) return auth;
+    const { m, meta } = this;
+    if (!m || !meta) return fail("screen_gone");
+    if (!this.phoneMatches(auth.hash) || !m.pairing) return fail("pairing_invalid");
+    const policy = effectivePolicy(null, meta.mode, this.config().guestDrop);
+    if (policy === "off") return fail("drop_disabled");
+    if (policy === "pass" && !m.pairing.passHash) return fail("pass_required");
+    // One file per session: only the states before a file exists may start an upload.
+    if (m.state === "uploading" || m.state === "offered" || m.session) return fail("already_uploaded");
+    if (length > this.dropMaxBytes()) return fail("too_large");
+    const sessionId = m.pairing.sessionId;
+    const applied = await this.apply({
+      e: "upload.start",
+      now: Date.now(),
+      timeoutSeconds: this.config().uploadTimeoutSeconds,
+    });
+    return applied.ok ? { ok: true, value: { sessionId } } : applied;
+  }
+
+  async dropDone(pid: string, file: FileRef): Promise<Result<PhoneView>> {
+    return this.phoneEvent(pid, () => ({ e: "upload.done", now: Date.now(), file }));
+  }
+
+  async dropFailed(pid: string, error: ErrorCode): Promise<Result<PhoneView>> {
+    return this.phoneEvent(pid, () => ({ e: "upload.failed", now: Date.now(), error }));
   }
 
   async mintFallback(sid: string, mode: OpenMode): Promise<Result<LinkSet>> {
@@ -313,6 +346,11 @@ export class Screen extends DurableObject<Env> implements PairingStore {
     return this.meta?.mode === "demo" ? cfg.demoSessionMinutes : cfg.sessionMaxMinutes;
   }
 
+  private dropMaxBytes(): number {
+    const cfg = this.config();
+    return this.meta?.mode === "demo" ? cfg.demoGuestMaxBytes : cfg.guestMaxBytes;
+  }
+
   private openSockets(excluding?: WebSocket): number {
     return this.ctx.getWebSockets().filter((w) => w !== excluding && w.readyState === OPEN).length;
   }
@@ -346,7 +384,7 @@ export class Screen extends DurableObject<Env> implements PairingStore {
 
   private phoneResult(hash: string): Result<PhoneView> {
     if (!this.m || !this.meta) return fail("screen_gone");
-    const view = this.phoneMatches(hash) ? phoneView(this.meta, this.m, Date.now()) : null;
+    const view = this.phoneMatches(hash) ? phoneView(this.meta, this.m, Date.now(), this.dropMaxBytes()) : null;
     return view ? { ok: true, value: view } : fail("pairing_invalid");
   }
 
@@ -360,7 +398,12 @@ export class Screen extends DurableObject<Env> implements PairingStore {
     if (!applied.ok) return applied;
     if (this.phoneMatches(auth.hash)) return this.phoneResult(auth.hash);
     // A cancel dropped the pairing. The phone that asked sees its session as ended by cancel.
-    const view = phoneView(meta, { ...before, state: "ended", session: null, endReason: "canceled" }, Date.now());
+    const view = phoneView(
+      meta,
+      { ...before, state: "ended", session: null, endReason: "canceled" },
+      Date.now(),
+      this.dropMaxBytes(),
+    );
     return view ? { ok: true, value: view } : fail("pairing_invalid");
   }
 
@@ -426,7 +469,8 @@ export class Screen extends DurableObject<Env> implements PairingStore {
     const { meta, m } = this;
     if (!meta || !m) return;
     const now = Date.now();
-    const view = role === "screen" ? screenView(meta, m, this.config(), now) : phoneView(meta, m, now);
+    const view =
+      role === "screen" ? screenView(meta, m, this.config(), now) : phoneView(meta, m, now, this.dropMaxBytes());
     const frame = view
       ? { v: 1, t: "state", view }
       : { v: 1, t: "error", code: "pairing_invalid" satisfies ErrorCode, now };
@@ -497,6 +541,14 @@ export class Screen extends DurableObject<Env> implements PairingStore {
     };
   }
 
+  /** Deletes the guest object at every end of the session (seams/guest-drop/purge.ts). */
+  private guestSeams(): Pick<SessionSeams, "purge"> {
+    return {
+      purge: (input) =>
+        purgeGuest({ drop: guestDropFor(this.env, this.config()), audit: auditFor(this.env), now: Date.now }, input),
+    };
+  }
+
   /** The `open` frame: sent once per mint to the screen sockets, never repeated in `state`. */
   private sendOpen(links: LinkSet): void {
     const frame = JSON.stringify({ v: 1, t: "open", links, now: Date.now() });
@@ -516,7 +568,7 @@ export class Screen extends DurableObject<Env> implements PairingStore {
       directory: directoryStub(this.env),
       audit: auditFor(this.env),
       metrics: metricsFor(this.env),
-      seams: { ...noopSeams, ...this.linkSeams() },
+      seams: { ...noopSeams, ...this.linkSeams(), ...this.guestSeams() },
       push: (to) => this.push(to),
       deleteAll: async () => {
         for (const ws of this.ctx.getWebSockets()) {

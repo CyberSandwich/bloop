@@ -9,6 +9,8 @@ import { fail, json } from "../http.ts";
 import { sha256Hex } from "../ids.ts";
 import { type Route, route } from "../router.ts";
 import type { Resolved } from "../seams/file-source/index.ts";
+import type { GuestDrop } from "../seams/guest-drop/index.ts";
+import { guestDropFor } from "../seams/guest-drop/select.ts";
 import { sourceFailure } from "../seams/open-path/index.ts";
 import { clientClass, parseToken } from "../seams/open-path/links.ts";
 import { openPathFor } from "../seams/open-path/select.ts";
@@ -37,7 +39,7 @@ export function logFetch(request: Request, response: Response): void {
 const linkBody = z.object({ purpose: z.enum(["protocol", "download", "pdf"]) }).strict();
 
 /** A guest upload as a Resolved, read from the bucket. The reference is the object key. */
-function guestResolved(used: UsedLink, bucket: R2Bucket): Resolved {
+function guestResolved(used: UsedLink, drop: GuestDrop): Resolved {
   const { file } = used;
   return {
     name: file.name,
@@ -45,7 +47,7 @@ function guestResolved(used: UsedLink, bucket: R2Bucket): Resolved {
     size: null,
     url: null,
     body: async () => {
-      const object = await bucket.get(file.ref);
+      const object = await drop.read(file.ref);
       return object ? { ok: true, stream: object.body, length: object.size } : { ok: false, error: "file_not_found" };
     },
   };
@@ -56,7 +58,7 @@ async function resolveFor(env: Env, config: Config, used: UsedLink): Promise<Res
   if (used.file.source === "guest") {
     return used.purpose === "pdf" && used.file.type !== "pdf"
       ? fail("pdf_unavailable")
-      : guestResolved(used, env.GUEST_FILES);
+      : guestResolved(used, guestDropFor(env, config));
   }
   const access = await accessForUser(env, config, used.mode, used.userId);
   if (!access.ok) return fail("upstream_failed");

@@ -60,6 +60,7 @@ export function screenKey(c) {
  * @property {string | null} selected a file id
  * @property {boolean} approving the approve call is in flight
  * @property {boolean} canceled this phone canceled the pairing
+ * @property {"choose" | "confirm" | "sending" | null} drop where the guest flow is, which only this phone knows
  */
 
 /**
@@ -80,7 +81,12 @@ export function phoneKey(c) {
       if (v.openMode === "pdf") return "pdf_fallback";
       return "open";
     }
+    // The server's word wins over this phone's: a reload or a second push can arrive in any of these.
+    if (v.state === "offered") return "guest_sent";
+    if (v.state === "uploading") return "guest_sending";
+    if (v.kind === "guest" && !c.drop) return "guest_choose";
   }
+  if (c.drop) return `guest_${c.drop}`;
   if (!c.files) return "match";
   if (c.files.length === 0) return "empty";
   if (c.approving) return "approving";

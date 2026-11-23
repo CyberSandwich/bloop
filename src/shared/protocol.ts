@@ -57,6 +57,8 @@ export interface PhoneView {
   openMode: OpenMode | null;
   endsAt: number | null;
   endReason: EndReason | null;
+  /** The largest guest file this screen takes (GUEST_MAX_BYTES, or the demo cap). */
+  dropMaxBytes: number;
   now: number;
 }
 
@@ -99,6 +101,7 @@ export interface ClaimResponse {
   mode: Mode;
   kind: Kind;
   needsAuth: boolean;
+  dropMaxBytes: number;
 }
 export interface FileEntry {
   id: string; // opaque to the phone; never a Graph URL
@@ -193,6 +196,7 @@ export type PhoneStateKey =
   | "guest_confirm"
   | "guest_sending"
   | "guest_refused"
+  | "guest_sent"
   | "typed_wrong"
   | "framed"
   | "rate_limited"

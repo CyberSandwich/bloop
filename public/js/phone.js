@@ -6,6 +6,7 @@ import { createApi } from "./core/api.js";
 import { bootCode } from "./core/boot-code.js";
 import { openChannel } from "./core/channel.js";
 import { phoneCopy } from "./core/copy.js";
+import { sendable, sendFile, wholeMB } from "./core/drop.js";
 import { loadFiles } from "./core/files.js";
 import { ago, clock, splitName } from "./core/format.js";
 import { phoneKey } from "./core/states.js";
@@ -44,13 +45,18 @@ const scope = byId("scope");
 const scopeText = byId("scope-text");
 const actionsEl = byId("actions");
 const polite = byId("polite");
+const filePick = /** @type {HTMLInputElement} */ (byId("file-pick"));
+const barWrap = byId("bar-wrap");
+const bar = /** @type {HTMLProgressElement} */ (byId("bar"));
 
 /**
  * @type {{
  *   error: PhoneStateKey | null, info: import("./core/states.js").PhoneInfo | null, view: PhoneView | null,
  *   files: FileEntry[] | null, selected: string | null, approving: boolean, canceled: boolean,
  *   pid: string | null, channel: ReturnType<typeof openChannel> | null, retry: (() => void) | null,
- *   key: PhoneStateKey | null, rows: FileEntry[] | null, actionIds: string, account: boolean
+ *   key: PhoneStateKey | null, rows: FileEntry[] | null, actionIds: string, account: boolean,
+ *   drop: import("./core/states.js").PhoneCtx["drop"], file: File | null, maxBytes: number,
+ *   upload: { abort: () => void } | null, progress: number
  * }}
  */
 const c = {
@@ -68,6 +74,11 @@ const c = {
   rows: null,
   actionIds: "",
   account: false,
+  drop: null,
+  file: null,
+  maxBytes: 0,
+  upload: null,
+  progress: 0,
 };
 
 /** Failed calls become the state key the shared error table names; offline and generic errors can retry. */
@@ -141,9 +152,10 @@ function render() {
   const picked = c.files?.find((f) => f.id === c.selected);
   const copy = phoneCopy(key, {
     room: c.info?.roomName ?? v?.room.name ?? "",
-    file: v?.fileName ?? picked?.name ?? null,
+    file: c.drop ? (c.file?.name ?? null) : (v?.fileName ?? picked?.name ?? null),
     endsAt: v?.endsAt ? clock(v.endsAt) : null,
     account: c.account,
+    maxMB: wholeMB(c.maxBytes),
   });
 
   show(skelTitle, key === "checking");
@@ -171,6 +183,8 @@ function render() {
 
   show(scope, copy.scope !== "");
   setText(scopeText, copy.scope);
+  show(barWrap, copy.progress);
+  bar.value = Math.round(c.progress * 100);
   renderActions(copy.actions, copy.loading);
 
   setText(polite, key === "approving" ? "Approving" : "");
@@ -190,6 +204,19 @@ actionsEl.addEventListener("click", (e) => {
   else if (id === "retry") retry();
   else if (id === "connect") location.assign("/auth/start");
   else if (id === "disconnect") disconnect();
+  else if (id === "send-file") chooseFile();
+  else if (id === "pick") pickFile();
+  else if (id === "send") send();
+});
+
+filePick.addEventListener("change", () => {
+  const file = filePick.files?.[0];
+  if (!file) return;
+  c.file = file;
+  if (sendable(file, c.maxBytes)) {
+    c.drop = "confirm";
+    render();
+  } else fail("bad_type");
 });
 
 function retry() {
@@ -217,7 +244,55 @@ async function approve() {
   } else fail(res.error, approve);
 }
 
+/** A phone that scanned with nothing to choose from sends its own file: the server turns the claim into a guest at the first byte. */
+function chooseFile() {
+  c.drop = "choose";
+  render();
+}
+
+/** The file picker needs this click as its user gesture. */
+function pickFile() {
+  c.error = null;
+  c.retry = null;
+  c.drop = "choose";
+  filePick.value = "";
+  render();
+  filePick.click();
+}
+
+async function send() {
+  const file = c.file;
+  if (!file || c.drop === "sending") return;
+  let stopped = false;
+  c.drop = "sending";
+  c.progress = 0;
+  render();
+  const up = sendFile({
+    file,
+    pid: /** @type {string} */ (c.pid),
+    onProgress: (fraction) => {
+      c.progress = fraction;
+      render();
+    },
+  });
+  c.upload = {
+    abort: () => {
+      stopped = true;
+      up.abort();
+    },
+  };
+  const res = await up.done;
+  c.upload = null;
+  if (stopped) return;
+  c.drop = null;
+  if (res.ok) {
+    c.view = res.view;
+    render();
+  } else fail(res.error, send);
+}
+
 async function cancelPairing() {
+  c.upload?.abort();
   const res = await api.post("/api/cancel", {}, c.pid);
   if (!res.ok) return fail(res.error);
   c.canceled = true;
@@ -289,7 +364,12 @@ function attach(/** @type {string} */ pid) {
 function paired(claim) {
   store.set(PID_KEY, claim.pid);
   c.info = { roomName: claim.room.name, registered: claim.room.registered, match: claim.match, mode: claim.mode };
+  c.maxBytes = claim.dropMaxBytes;
   attach(claim.pid);
+  if (claim.kind === "guest") {
+    c.drop = "choose";
+    return render();
+  }
   render();
   listFiles();
 }
@@ -310,9 +390,10 @@ async function resume(/** @type {string} */ pid) {
   const view = /** @type {PhoneView} */ (res.value);
   c.info = { roomName: view.room.name, registered: view.room.registered, match: view.match, mode: view.mode };
   c.view = view;
+  c.maxBytes = view.dropMaxBytes;
   attach(pid);
   render();
-  if (view.state === "claimed" || view.state === "choosing") listFiles();
+  if (view.kind === "owner" && (view.state === "claimed" || view.state === "choosing")) listFiles();
 }
 
 function start() {

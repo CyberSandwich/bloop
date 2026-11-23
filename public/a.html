@@ -40,6 +40,10 @@
           <legend class="sr">Your recent slides</legend>
           <ul class="list" id="file-list"></ul>
         </fieldset>
+        <div class="bar-wrap" id="bar-wrap" hidden>
+          <progress class="bar" id="bar" max="100" value="0" aria-label="Sending"></progress>
+        </div>
+        <input class="sr" id="file-pick" type="file" tabindex="-1" aria-label="Choose a file" accept=".pptx,.pdf,application/pdf,application/vnd.openxmlformats-officedocument.presentationml.presentation">
         <p class="scope" id="scope" hidden>
           <svg class="icon" viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><rect width="18" height="11" x="3" y="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>
           <span id="scope-text"></span>
