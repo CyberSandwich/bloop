@@ -954,6 +954,15 @@ progress.bar::-moz-progress-bar {
   .f3 {
     animation: f3 12s var(--ease-out) infinite both;
   }
+  .f1 :is(text, .cap) {
+    animation: w1 12s var(--ease-out) infinite both;
+  }
+  .f2 :is(text, .cap) {
+    animation: w2 12s var(--ease-out) infinite both;
+  }
+  .f3 :is(text, .cap) {
+    animation: w3 12s var(--ease-out) infinite both;
+  }
   .aim {
     animation: aim 12s var(--ease-out) infinite both;
   }
@@ -1038,14 +1047,16 @@ progress.bar::-moz-progress-bar {
     transform: scale(1.045);
   }
 }
+/* Words go out, the frames cross-fade, words come in: a frame fades only while no frame shows text (w1 to w3),
+   so two captions or two screens of copy are never legible at once. */
 @keyframes f2 {
   0%,
-  28%,
+  27%,
   62.5%,
   100% {
     opacity: 0;
   }
-  32%,
+  30%,
   62% {
     opacity: 1;
   }
@@ -1053,12 +1064,48 @@ progress.bar::-moz-progress-bar {
 @keyframes f3 {
   0%,
   58%,
-  96%,
+  95%,
   100% {
     opacity: 0;
   }
-  62%,
+  61%,
   92% {
+    opacity: 1;
+  }
+}
+@keyframes w1 {
+  0%,
+  25.5%,
+  97.5%,
+  100% {
+    opacity: 1;
+  }
+  27%,
+  95.5% {
+    opacity: 0;
+  }
+}
+@keyframes w2 {
+  0%,
+  30%,
+  58%,
+  100% {
+    opacity: 0;
+  }
+  32%,
+  56.5% {
+    opacity: 1;
+  }
+}
+@keyframes w3 {
+  0%,
+  61%,
+  92%,
+  100% {
+    opacity: 0;
+  }
+  63%,
+  90.5% {
     opacity: 1;
   }
 }

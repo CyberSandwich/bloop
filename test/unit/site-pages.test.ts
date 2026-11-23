@@ -272,3 +272,41 @@ describe("site scripts under the strict CSP", () => {
     }
   });
 });
+
+describe("the reel clock", () => {
+  const css = read("public/css/app.css");
+  /** Opacity stops of one @keyframes block, as [percent, opacity] sorted by percent. */
+  function stops(name: string): [number, number][] {
+    const body = between(css, new RegExp(`@keyframes ${name} \\{`), "\n}\n");
+    const out: [number, number][] = [];
+    for (const m of body.matchAll(/((?:[\d.]+%,?\s*)+)\{\s*opacity: ([\d.]+);/g)) {
+      for (const at of (m[1] ?? "").match(/[\d.]+/g) ?? []) out.push([Number(at), Number(m[2])]);
+    }
+    return out.sort((a, b) => a[0] - b[0]);
+  }
+  /** Linear between stops: whether a value is zero survives any monotonic easing. */
+  function at(curve: [number, number][], t: number): number {
+    const i = curve.findIndex(([p]) => p >= t);
+    const [p1, v1] = curve[i] ?? [100, 0];
+    const [p0, v0] = curve[i - 1] ?? [p1, v1];
+    return p1 === p0 ? v1 : v0 + ((v1 - v0) * (t - p0)) / (p1 - p0);
+  }
+
+  it("binds each frame's text and caption to its words clock", () => {
+    for (const n of [1, 2, 3]) expect(css).toContain(`.f${n} :is(text, .cap) {\n    animation: w${n} 12s`);
+  });
+
+  it("never shows two frames' text at once: a frame fades only while no text is showing", () => {
+    const frame = [() => 1, (t: number) => at(stops("f2"), t), (t: number) => at(stops("f3"), t)];
+    const words = [stops("w1"), stops("w2"), stops("w3")];
+    expect(words.every((w) => w.length >= 4)).toBe(true);
+    for (let t = 0; t <= 100; t += 0.05) {
+      // What shows of frame i is its own opacity times what the frames above it let through.
+      const seen = frame.map((f, i) => {
+        const through = frame.slice(i + 1).reduce((left, above) => left * (1 - above(t)), 1);
+        return f(t) * through * at(words[i] ?? [], t);
+      });
+      expect(seen.filter((v) => v > 0.001).length, `t=${t.toFixed(2)}%`).toBeLessThanOrEqual(1);
+    }
+  });
+});
