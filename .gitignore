@@ -308,7 +308,12 @@ tasks/
 scratch/
 investigation/
 
+# Wrangler and local secrets
+.dev.vars
+.wrangler/
+
 # Test output
+.lighthouseci/
 coverage/
 test-results/
 playwright-report/

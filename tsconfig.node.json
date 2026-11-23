@@ -1,0 +1,8 @@
+{
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "types": ["node"]
+  },
+  "include": ["test", "tools", "*.ts", "src/shared", "src/worker/headers.ts", "public/js/shared"],
+  "exclude": ["test/fixtures"]
+}
