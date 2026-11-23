@@ -339,10 +339,35 @@ describe("machine: open, fetch, fallback", () => {
     expect(refused(m, { e: "fallback", now: T0 + sec(30), mode: "pdf", maxMints: 5 })).toBe("mint_limit");
   });
 
-  it("refuses a fallback before the launch", () => {
-    expect(refused(approved(), { e: "fallback", now: T0 + sec(12), mode: "download", maxMints: 5 })).toBe(
-      "wrong_state",
-    );
+  it("refuses a download or PDF fallback before the launch", () => {
+    for (const mode of ["download", "pdf"] as const) {
+      expect(refused(approved(), { e: "fallback", now: T0 + sec(12), mode, maxMints: 5 })).toBe("wrong_state");
+    }
+  });
+
+  it("lets an approved screen ask again for the protocol link, without a fallback metric or a mode change", () => {
+    const step = must(approved(), { e: "fallback", now: T0 + sec(12), mode: "protocol", maxMints: 5 });
+    expect(step.next.state).toBe("approved");
+    expect(step.next.session?.openMode).toBeNull();
+    expect(step.next.session?.mints).toBe(1);
+    expect(step.effects).toContainEqual({ fx: "mint", purpose: "protocol" });
+    expect(fx(step.effects, "metric")).toEqual([]);
+  });
+
+  it("a download fallback sets the open mode both sides see, and counts as a fallback", () => {
+    const opening = must(approved(), { e: "launched", now: T0 + sec(11), mode: "protocol" }).next;
+    const step = must(opening, { e: "fallback", now: T0 + sec(17), mode: "download", maxMints: 5 });
+    expect(step.next.session?.openMode).toBe("download");
+    expect(step.effects).toContainEqual({ fx: "metric", name: "fallback" });
+    expect(step.effects).toContainEqual({ fx: "push", to: "both" });
+  });
+
+  it("an approve names the account the phone has now, keeping the claim's when it has none", () => {
+    const claimed = claimedOwner();
+    const signedIn = must(claimed, { e: "approve", now: T0 + sec(10), file: DECK, maxMinutes: 90, userId: "u1" }).next;
+    expect(signedIn.pairing?.userId).toBe("u1");
+    const noChange = must(claimed, { e: "approve", now: T0 + sec(10), file: DECK, maxMinutes: 90 }).next;
+    expect(noChange.pairing?.userId).toBeNull();
   });
 });
 

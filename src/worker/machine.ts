@@ -66,7 +66,7 @@ export type Event =
       passHash: string | null;
     }
   | { e: "listed"; now: number; ids: string[] }
-  | { e: "approve"; now: number; file: FileRef; maxMinutes: number }
+  | { e: "approve"; now: number; file: FileRef; maxMinutes: number; userId?: string | null }
   | { e: "upload.start"; now: number; timeoutSeconds: number }
   | { e: "upload.done"; now: number; file: FileRef }
   | { e: "upload.failed"; now: number; error: ErrorCode }
@@ -205,10 +205,19 @@ function endSession(m: Machine, now: number, cfg: MachineConfig, reason: EndReas
   return ok(next, effects);
 }
 
-function approveFile(m: Machine, now: number, file: FileRef, maxMinutes: number, actor: Actor): Step {
+/** `userId` is the account the approving phone is signed in as now, which may be newer than the claim's. */
+function approveFile(
+  m: Machine,
+  now: number,
+  file: FileRef,
+  maxMinutes: number,
+  actor: Actor,
+  userId: string | null = null,
+): Step {
   const next: Machine = {
     ...m,
     state: "approved",
+    pairing: m.pairing && { ...m.pairing, userId: userId ?? m.pairing.userId },
     session: {
       file,
       approvedAt: now,
@@ -308,7 +317,7 @@ export function transition(m: Machine, ev: Event, cfg: MachineConfig): Step {
       if (m.state === "ended") return fail("session_ended");
       if ((m.state !== "claimed" && m.state !== "choosing") || m.pairing?.kind !== "owner") return fail("wrong_state");
       if (m.mode === "live" && !m.pairing.listed.includes(ev.file.ref)) return fail("file_not_found");
-      return approveFile(m, now, ev.file, ev.maxMinutes, "phone");
+      return approveFile(m, now, ev.file, ev.maxMinutes, "phone", ev.userId);
     }
 
     case "upload.start": {
@@ -357,12 +366,17 @@ export function transition(m: Machine, ev: Event, cfg: MachineConfig): Step {
     }
 
     case "fallback": {
-      if ((m.state !== "opening" && m.state !== "open") || !m.session) return fail("wrong_state");
+      // From `approved` the screen asks again for the protocol link it never received (a reload).
+      const relaunch = ev.mode === "protocol";
+      if (!IN_SESSION.includes(m.state) || !m.session || (m.state === "approved" && !relaunch)) {
+        return fail("wrong_state");
+      }
       if (m.session.mints >= ev.maxMints) return fail("mint_limit");
-      return ok({ ...m, session: { ...m.session, mints: m.session.mints + 1 } }, [
+      const session = { ...m.session, mints: m.session.mints + 1, openMode: relaunch ? m.session.openMode : ev.mode };
+      return ok({ ...m, session }, [
         { fx: "mint", purpose: ev.mode },
-        { fx: "metric", name: "fallback" },
-        { fx: "push", to: "screen" },
+        ...(relaunch ? [] : [{ fx: "metric" as const, name: "fallback" as const }]),
+        { fx: "push", to: "both" },
       ]);
     }
 

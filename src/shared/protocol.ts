@@ -60,10 +60,11 @@ export interface PhoneView {
   now: number;
 }
 
+/** One mint fills one field: the link for the purpose asked, the others stay null. */
 export interface LinkSet {
-  protocol: string;
-  download: string;
-  pdf: string | null;
+  protocol: string | null; // ms-powerpoint:ofv|u|<url>, pptx only
+  download: string | null;
+  pdf: string | null; // a PDF file's own view, or a deck's PDF rendition
 }
 
 // WebSocket frames, all {v: 1, t: ...}, at most 4 KB. The upgrade URL carries the non-secret screenRef
