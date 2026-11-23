@@ -2,6 +2,9 @@
 // Pure; the pages render the key through copy.js.
 /** @import {FileEntry, PhoneStateKey, PhoneView, ScreenStateKey, ScreenView} from "../../../src/shared/protocol.ts" */
 
+/** A deck shown as a PDF is the fallback; a file that is a PDF is just opened as one. */
+const pdfKey = (/** @type {ScreenView | PhoneView} */ v) => (v.fileType === "pdf" ? "pdf_file" : "pdf_fallback");
+
 /**
  * @typedef {object} ScreenCtx
  * @property {ScreenView | null} view
@@ -32,7 +35,7 @@ export function screenKey(c) {
     case "opening":
     case "open":
       if (v.openMode === "download") return "open_fallback";
-      if (v.openMode === "pdf") return "pdf_fallback";
+      if (v.openMode === "pdf") return pdfKey(v);
       return v.state === "opening" ? "opening" : "open";
     case "ended":
       return "ended";
@@ -78,7 +81,7 @@ export function phoneKey(c) {
     if (v.state === "approved" || v.state === "opening") return "opening";
     if (v.state === "open") {
       if (v.openMode === "download") return "open_fallback";
-      if (v.openMode === "pdf") return "pdf_fallback";
+      if (v.openMode === "pdf") return pdfKey(v);
       return "open";
     }
     // The server's word wins over this phone's: a reload or a second push can arrive in any of these.

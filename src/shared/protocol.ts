@@ -41,6 +41,7 @@ export interface ScreenView {
   code: CodeView | null; // only in "waiting" and "ended"
   match: string | null; // 2 digits, from "claimed" to "open"
   fileName: string | null; // display name, from "offered" (guest) or "approved"
+  fileType: FileType | null; // with fileName: an original PDF shown as a PDF is not a fallback
   openMode: OpenMode | null;
   endsAt: number | null;
   endReason: EndReason | null;
@@ -54,6 +55,7 @@ export interface PhoneView {
   room: RoomView;
   match: string;
   fileName: string | null;
+  fileType: FileType | null;
   openMode: OpenMode | null;
   endsAt: number | null;
   endReason: EndReason | null;
@@ -186,6 +188,7 @@ export type PhoneStateKey =
   | "open"
   | "open_fallback"
   | "pdf_fallback"
+  | "pdf_file"
   | "ended"
   | "canceled"
   | "expired"
@@ -211,6 +214,7 @@ export type ScreenStateKey =
   | "open"
   | "open_fallback"
   | "pdf_fallback"
+  | "pdf_file"
   | "guest_open"
   | "ended"
   | "offline"

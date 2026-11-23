@@ -15,6 +15,7 @@ const view = (state: ScreenView["state"]): ScreenView => ({
   code: null,
   match: "42",
   fileName: "Deck.pptx",
+  fileType: "pptx",
   openMode: null,
   endsAt: null,
   endReason: null,

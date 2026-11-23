@@ -100,6 +100,8 @@ export function screenCopy(key, f) {
         chip: "Approved",
         chipIcon: "check",
       };
+    case "pdf_file":
+      return { ...base, heading: file, line: "Opened as a PDF.", controls: ["end"], chip: "Approved", chipIcon: "check" };
     case "guest_open":
       return {
         ...base,
@@ -347,6 +349,13 @@ export function phoneCopy(key, f) {
         ...base,
         title: `Showing as a PDF on ${f.room}.`,
         body: "PowerPoint can't open it there. Animations and videos won't play.",
+        actions: [{ id: "end", label: "End", kind: "primary" }],
+      };
+    case "pdf_file":
+      return {
+        ...base,
+        title: `Opened as a PDF on ${f.room}.`,
+        body: file,
         actions: [{ id: "end", label: "End", kind: "primary" }],
       };
     case "ended":

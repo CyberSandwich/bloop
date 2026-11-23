@@ -11,6 +11,7 @@ const SCREEN_KEYS: ScreenStateKey[] = [
   "open",
   "open_fallback",
   "pdf_fallback",
+  "pdf_file",
   "guest_open",
   "ended",
   "offline",
@@ -33,6 +34,7 @@ const PHONE_KEYS: PhoneStateKey[] = [
   "open",
   "open_fallback",
   "pdf_fallback",
+  "pdf_file",
   "ended",
   "canceled",
   "expired",
@@ -87,6 +89,15 @@ describe("screen copy", () => {
       controls: ["start_over"],
       chip: "Scanned",
     });
+  });
+
+  it("F10 an original PDF is not told that PowerPoint cannot open it", () => {
+    expect(screenCopy("pdf_file", sf)).toMatchObject({
+      heading: "Lecture 4.pptx",
+      line: "Opened as a PDF.",
+      controls: ["end"],
+    });
+    expect(phoneCopy("pdf_file", pf)).toMatchObject({ title: "Opened as a PDF on Room 2.14.", body: "Lecture 4.pptx" });
   });
 
   it("Start Over is on scanned, choosing and the guest offer, and nowhere else", () => {

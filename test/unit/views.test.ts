@@ -28,9 +28,23 @@ describe("views", () => {
   it("SRC-01 screen-view carries the chosen file name and nothing else about files", () => {
     const view = screenView(META, approved(), CONFIG, T0 + sec(11));
     expect(Object.keys(view).sort()).toEqual(
-      ["code", "endReason", "endsAt", "fileName", "kind", "match", "mode", "now", "openMode", "room", "state"].sort(),
+      [
+        "code",
+        "endReason",
+        "endsAt",
+        "fileName",
+        "fileType",
+        "kind",
+        "match",
+        "mode",
+        "now",
+        "openMode",
+        "room",
+        "state",
+      ].sort(),
     );
     expect(view.fileName).toBe("Deck.pptx");
+    expect(view.fileType).toBe("pptx");
     expect(JSON.stringify(view)).not.toContain("deck-1");
   });
 

@@ -29,6 +29,7 @@ export interface ScreenView {
   code: CodeView | null;       // only in "waiting" and "ended"
   match: string | null;        // 2 digits, from "claimed" to "open"
   fileName: string | null;     // display name, from "offered" (guest) or "approved"
+  fileType: FileType | null;   // an original PDF shown as a PDF is the `pdf_file` state, not `pdf_fallback`
   openMode: OpenMode | null;
   endsAt: number | null;
   endReason: EndReason | null;
@@ -42,6 +43,7 @@ export interface PhoneView {
   room: RoomView;
   match: string;
   fileName: string | null;
+  fileType: FileType | null;
   openMode: OpenMode | null;
   endsAt: number | null;
   endReason: EndReason | null;
@@ -114,12 +116,12 @@ export interface Problem { type: "about:blank"; status: number; code: ErrorCode;
 export type PhoneStateKey =
   | "checking" | "match" | "choose" | "approve" | "approve_demo" | "unregistered" | "first_use"
   | "needs_admin" | "empty" | "approving" | "opening" | "open" | "open_fallback" | "pdf_fallback"
-  | "ended" | "canceled" | "expired" | "taken" | "offline" | "error" | "guest_choose"
+  | "pdf_file" | "ended" | "canceled" | "expired" | "taken" | "offline" | "error" | "guest_choose"
   | "guest_confirm" | "guest_sending" | "guest_refused" | "guest_sent" | "typed_wrong" | "framed"
   | "rate_limited" | "guest_pass_needed" | "busy";          // last four: strings added to design.md section 7 (section 9)
 export type ScreenStateKey =
   | "waiting" | "scanned" | "choosing" | "approved" | "opening" | "open" | "open_fallback"
-  | "pdf_fallback" | "guest_open" | "ended" | "offline" | "service_down" | "error" | "phone_width";
+  | "pdf_fallback" | "pdf_file" | "guest_open" | "ended" | "offline" | "service_down" | "error" | "phone_width";
 ```
 
 ## 2. Pairing and the session state machine

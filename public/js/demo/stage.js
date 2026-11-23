@@ -24,6 +24,7 @@ export function stageState(key) {
     case "open":
     case "open_fallback":
     case "pdf_fallback":
+    case "pdf_file":
       return "open";
     case "ended":
       return "ended";

@@ -359,6 +359,7 @@ Send Me the Link calls `navigator.share({title, text, url})`; without it, it cop
 | open | Lecture 4.pptx is open in PowerPoint. | Ends by itself at 11:35. `[V-2]` | End (secondary), Download It Instead |
 | open fallback | PowerPoint didn't open. | Download the file, then open it from Downloads. | Download, Show as PDF Instead (text), End |
 | PDF fallback | Showing Lecture 4.pptx as a PDF. | PowerPoint can't open it on this PC. Animations and videos won't play. | End |
+| PDF file | Lecture 4.pdf | Opened as a PDF. (the file is a PDF, so nothing failed) | End |
 | guest file open | Talk.pptx is open in PowerPoint. | bloop deletes its copy when this ends at 11:35. `[V-5]` | End |
 | ended | Ended. | Scan the new code to present. (QR returns after 3 s) | none |
 | expired | no change: the code already refreshed; the phone explains | | |
@@ -389,6 +390,7 @@ Top to bottom: wordmark 17 px centered; title 28/34 600; room row (Lucide `monit
 | open | Open on Room 2.14. | Lecture 4.pptx. Ends by itself at 11:35. `[V-2]` | End |
 | open fallback | PowerPoint didn't open on the screen. | Tap Download on the screen to open it there. | End |
 | PDF fallback | Showing as a PDF on Room 2.14. | PowerPoint can't open it there. Animations and videos won't play. | End |
+| PDF file | Opened as a PDF on Room 2.14. | Lecture 4.pdf | End |
 | ended | Ended. | The screen's link to your file has stopped working. `[V-1]` (96 px "away" still) | Done |
 | canceled | Canceled. | Nothing was opened on the screen. | Done |
 | expired | This code has expired. | Scan the new code on the screen. | Enter a Code (text) |
