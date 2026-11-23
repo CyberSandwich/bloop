@@ -81,7 +81,6 @@ export function icon(/** @type {string[]} */ paths, size = 24) {
   return svg;
 }
 
-export const ICON_PRESENTATION = ["M2 3h20", "M21 3v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V3", "m7 21 5-5 5 5"];
 export const ICON_CHECK = ["M20 6 9 17l-5-5"];
 
 /** Runs `fn` at most once per animation frame. */

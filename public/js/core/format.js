@@ -72,3 +72,18 @@ export function spelled(code) {
  */
 export const qrLabel = (code, host) =>
   `QR code. Scan it with your phone camera to open bloop. Or enter the code ${spelled(code)} at ${host} slash code.`;
+
+/** Lucide icon paths for a file row. */
+const ICON_PRESENTATION = ["M2 3h20", "M21 3v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V3", "m7 21 5-5 5 5"];
+const ICON_DOCUMENT = [
+  "M15 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7Z",
+  "M14 2v4a2 2 0 0 0 2 2h4",
+  "M10 9H8",
+  "M16 13H8",
+  "M16 17H8",
+];
+
+/** A document icon for PDFs, slides otherwise. */
+export function fileIcon(/** @type {string} */ name) {
+  return /\.pdf$/i.test(name) ? ICON_DOCUMENT : ICON_PRESENTATION;
+}

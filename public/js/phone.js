@@ -8,22 +8,10 @@ import { openChannel } from "./core/channel.js";
 import { phoneCopy } from "./core/copy.js";
 import { sendable, sendFile, wholeMB } from "./core/drop.js";
 import { loadFiles } from "./core/files.js";
-import { ago, clock, splitName } from "./core/format.js";
+import { ago, clock, fileIcon, splitName } from "./core/format.js";
 import { phoneKey } from "./core/states.js";
 import { PID_KEY, sessionStore } from "./core/store.js";
-import {
-  ariaFlag,
-  byId,
-  el,
-  focusTitle,
-  ICON_CHECK,
-  ICON_PRESENTATION,
-  icon,
-  isFramed,
-  setText,
-  show,
-  wsUrl,
-} from "./core/ui.js";
+import { ariaFlag, byId, el, focusTitle, ICON_CHECK, icon, isFramed, setText, show, wsUrl } from "./core/ui.js";
 import { VERIFIED } from "./core/verified.js";
 import { ERRORS } from "./shared/errors.js";
 
@@ -106,7 +94,7 @@ function buildRows(/** @type {FileEntry[]} */ files) {
       return el("li", {}, [
         el("label", { class: "row" }, [
           input,
-          icon(ICON_PRESENTATION),
+          icon(fileIcon(f.name)),
           el("span", { class: "row-text" }, [
             el("span", { class: "row-name" }, [
               el("span", { class: "head" }, [head]),
