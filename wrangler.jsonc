@@ -2,6 +2,8 @@
   "$schema": "node_modules/wrangler/config-schema.json",
   "name": "bloop",
   "main": "src/worker/index.ts",
+  // The demo account's sample decks are bundled as raw bytes (src/worker/seams/file-source/demo.ts).
+  "rules": [{ "type": "Data", "globs": ["**/*.pptx", "**/*.pdf"], "fallthrough": true }],
   "compatibility_date": "2026-11-22",
   "assets": {
     "directory": "./public",

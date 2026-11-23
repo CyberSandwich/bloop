@@ -1,0 +1,8 @@
+{
+  "@microsoft.graph.downloadUrl": "https://synthetic.files.1drv.com/synthetic/handout.pdf?download=1",
+  "id": "01SYNTHETICPDF",
+  "name": "Handout.PDF",
+  "size": 88200,
+  "lastModifiedDateTime": "2026-11-21T08:15:00Z",
+  "file": { "mimeType": "application/pdf" }
+}

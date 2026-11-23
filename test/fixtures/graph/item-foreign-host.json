@@ -1,0 +1,7 @@
+{
+  "@microsoft.graph.downloadUrl": "https://download.synthetic-elsewhere.example/lecture.pptx?tempauth=synthetic",
+  "id": "01SYNTHETICNEWDECK",
+  "name": "Lecture 4.pptx",
+  "size": 2481920,
+  "file": { "mimeType": "application/vnd.openxmlformats-officedocument.presentationml.presentation" }
+}

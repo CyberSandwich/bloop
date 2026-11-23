@@ -1,0 +1,53 @@
+{
+  "@odata.context": "https://graph.microsoft.com/v1.0/$metadata#users('synthetic')/drive/root/children",
+  "value": [
+    {
+      "id": "01SYNTHETICOLDDECK",
+      "name": "Old lecture.pptx",
+      "size": 120400,
+      "lastModifiedDateTime": "2026-09-01T09:00:00Z",
+      "file": { "mimeType": "application/vnd.openxmlformats-officedocument.presentationml.presentation" }
+    },
+    {
+      "id": "01SYNTHETICNEWDECK",
+      "name": "Lecture 4.pptx",
+      "size": 2481920,
+      "lastModifiedDateTime": "2026-11-20T16:30:00Z",
+      "file": { "mimeType": "application/vnd.openxmlformats-officedocument.presentationml.presentation" }
+    },
+    {
+      "id": "01SYNTHETICMACRO",
+      "name": "Macro deck.pptm",
+      "size": 90000,
+      "lastModifiedDateTime": "2026-11-22T10:00:00Z",
+      "file": { "mimeType": "application/vnd.ms-powerpoint.presentation.macroEnabled.12" }
+    },
+    {
+      "id": "01SYNTHETICDOC",
+      "name": "Notes.docx",
+      "size": 31000,
+      "lastModifiedDateTime": "2026-11-22T11:00:00Z",
+      "file": { "mimeType": "application/vnd.openxmlformats-officedocument.wordprocessingml.document" }
+    },
+    {
+      "id": "01SYNTHETICFOLDER",
+      "name": "Archive.pptx",
+      "lastModifiedDateTime": "2026-11-22T12:00:00Z",
+      "folder": { "childCount": 3 }
+    },
+    {
+      "id": "01SYNTHETICPDF",
+      "name": "Handout.PDF",
+      "size": 88200,
+      "lastModifiedDateTime": "2026-11-21T08:15:00Z",
+      "file": { "mimeType": "application/pdf" }
+    },
+    {
+      "id": "01SYNTHETICMIDDECK",
+      "name": "Seminar.pptx",
+      "size": 640000,
+      "lastModifiedDateTime": "2026-11-10T12:00:00Z",
+      "file": { "mimeType": "application/vnd.openxmlformats-officedocument.presentationml.presentation" }
+    }
+  ]
+}

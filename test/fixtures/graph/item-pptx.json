@@ -1,0 +1,9 @@
+{
+  "@odata.context": "https://graph.microsoft.com/v1.0/$metadata#users('synthetic')/drive/items(id,name,size,file,folder,@microsoft.graph.downloadUrl)/$entity",
+  "@microsoft.graph.downloadUrl": "https://synthetic-my.sharepoint.com/personal/synthetic/_layouts/15/download.aspx?UniqueId=synthetic&tempauth=synthetic",
+  "id": "01SYNTHETICNEWDECK",
+  "name": "Lecture 4.pptx",
+  "size": 2481920,
+  "lastModifiedDateTime": "2026-11-20T16:30:00Z",
+  "file": { "mimeType": "application/vnd.openxmlformats-officedocument.presentationml.presentation" }
+}

@@ -310,6 +310,8 @@ import type { FileEntry, FileType, Mode, SourceError } from "../../../shared/pro
 export interface SourceContext {
   mode: Mode;
   userId: string | null;
+  /** Graph only: the one folder listing is limited to (token_grant.folder_id). Null lists the drive root. */
+  folderId: string | null;
   /** Graph only: returns a fresh access token from the vault, refreshing with compare-and-swap. */
   accessToken(): Promise<{ ok: true; token: string } | { ok: false; error: SourceError }>;
 }
@@ -334,10 +336,16 @@ export interface FileSource {
   resolvePdf(ctx: SourceContext, fileId: string): Promise<{ ok: true; file: Resolved } | { ok: false; error: SourceError | "pdf_unavailable" }>;
 }
 
-/** Demo and local runs: fixtures from test/fixtures/decks, imported into the Worker bundle as data modules. Default. */
+/** The demo account and local runs. Default. `demo.ts` builds it from the sample decks in test/fixtures/decks,
+ *  imported as raw bytes through the `rules` entry in wrangler.jsonc (tools/make-fixtures.mjs writes them). */
+export interface MockFixture {
+  id: string; name: string; type: FileType; bytes: Uint8Array;
+  editedMinutesAgo: number;     // listed relative to now, so the list always looks recent
+  pdfId: string | null;         // the fixture served as this file's PDF; a PDF is its own rendition
+}
 export declare class MockFileSource implements FileSource {
   readonly kind: "mock";
-  constructor(fixtures: { id: string; name: string; type: FileType; path: string; pdfPath: string | null }[]);
+  constructor(fixtures: readonly MockFixture[], now?: () => number);
   listRecent(ctx: SourceContext, limit: number): Promise<{ ok: true; files: FileEntry[] } | { ok: false; error: SourceError }>;
   resolve(ctx: SourceContext, fileId: string): Promise<{ ok: true; file: Resolved } | { ok: false; error: SourceError }>;
   resolvePdf(ctx: SourceContext, fileId: string): Promise<{ ok: true; file: Resolved } | { ok: false; error: SourceError | "pdf_unavailable" }>;
@@ -347,13 +355,20 @@ export declare class MockFileSource implements FileSource {
  *  consent errors to admin_consent_required, 404 to file_not_found, 429 and 503 to source_throttled. */
 export declare class GraphFileSource implements FileSource {
   readonly kind: "graph";
-  constructor(opts: { fetch: typeof fetch; downloadHosts: string[]; now: () => number });
+  constructor(opts: { fetch: typeof fetch; downloadHosts: readonly string[] });
   listRecent(ctx: SourceContext, limit: number): Promise<{ ok: true; files: FileEntry[] } | { ok: false; error: SourceError }>;
   resolve(ctx: SourceContext, fileId: string): Promise<{ ok: true; file: Resolved } | { ok: false; error: SourceError }>;
   resolvePdf(ctx: SourceContext, fileId: string): Promise<{ ok: true; file: Resolved } | { ok: false; error: SourceError | "pdf_unavailable" }>;
 }
 ```
-Open items for `GraphFileSource`: which Graph call lists recent decks for both work and personal accounts (folder children sorted by edit time, or search), and whether `Files.Read.Selected` can serve this flow (unverified). Both need the Entra app.
+`GraphFileSource` (implemented, contract-tested against synthetic fixtures in `test/fixtures/graph/`):
+- **Listing:** `GET /me/drive/{root|items/{folderId}}/children?$select=...&$orderby=lastModifiedDateTime desc&$top=100`, then filtered here to `.pptx` and `.pdf` files (children cannot be filtered by type server-side; a `.pptm`, a folder or any other type never appears) and cut to `limit`. Nothing is followed past the first 100 items.
+- **Resolve:** `GET /me/drive/items/{id}?$select=...,@microsoft.graph.downloadUrl`. `url` is that annotation when its host matches `GRAPH_DOWNLOAD_HOSTS` over https (`*.x` matches subdomains), else `null`. `body()` streams `/me/drive/items/{id}/content`. A `.pptm` or folder is `file_type_refused`. An id outside `[A-Za-z0-9!_.~-]{1,256}` is `file_not_found` before any request.
+- **PDF:** a PDF item is its own rendition; a deck uses `GET .../content?format=pdf` with `redirect: "manual"` and takes the `Location` as `url` when its host is allowed; a failed conversion is `pdf_unavailable`.
+- **Errors:** 401 `auth_required`; 403 with `consent` in the body `admin_consent_required`, other 403 `source_unavailable`; 404 `file_not_found`; 429 and 503 `source_throttled`; anything else, and a network failure, `source_unavailable`.
+- **Open items (need the Entra app, F-ENTRA):** whether this listing works for both work and personal accounts, whether `/me/drive/recent` is a better call, and whether `Files.Read.Selected` can serve this flow (unverified).
+
+`source-access.ts` picks the source: `MockFileSource` for a demo screen and whenever `FILE_SOURCE=mock`; `GraphFileSource` only for a live screen under `FILE_SOURCE=graph`, for the user the session cookie names. `approve` calls `listRecent` (the same 5 the phone was shown) and builds the `FileRef` from the entry whose id matches, so the client's id is the only thing trusted and an id not in the list is `file_not_found`.
 
 ## 4. `OpenPath` (`src/worker/seams/open-path/index.ts`)
 ```ts
