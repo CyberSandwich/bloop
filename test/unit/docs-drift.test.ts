@@ -173,6 +173,22 @@ describe("dependency budget", () => {
   });
 });
 
+describe("doc size", () => {
+  const WARN_LINES = 400;
+  const FAIL_LINES = 800;
+
+  it(`warns above ${WARN_LINES} lines per doc and fails above ${FAIL_LINES}`, () => {
+    const oversized: string[] = [];
+    for (const doc of DOCS) {
+      const lines = read(doc).split("\n").length;
+      if (lines > FAIL_LINES) oversized.push(`${doc}: ${lines} lines`);
+      else if (lines > WARN_LINES)
+        console.warn(`${doc} has ${lines} lines (over ${WARN_LINES}): consider splitting it`);
+    }
+    expect(oversized, `split these docs (limit ${FAIL_LINES} lines)`).toEqual([]);
+  });
+});
+
 describe("error table", () => {
   it("interfaces.md section 8 points at errors.js and restates no code", () => {
     const section = read("docs/interfaces.md").split("## 8. ")[1]?.split("\n## ")[0] ?? "";
