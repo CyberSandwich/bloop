@@ -2,6 +2,7 @@ import { existsSync, readdirSync, readFileSync, statSync } from "node:fs";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
+import { CONFIG_VARS } from "../../src/worker/config.ts";
 
 const ROOT = fileURLToPath(new URL("../../", import.meta.url));
 const read = (path: string) => readFileSync(join(ROOT, path), "utf8");
@@ -91,6 +92,47 @@ describe("architecture layout", () => {
     expect(names.length).toBeGreaterThan(40);
     const missing = names.filter((name) => !REPO_FILES.some((file) => file === name || file.endsWith(`/${name}`)));
     expect(missing).toEqual([]);
+  });
+});
+
+describe("worker vars", () => {
+  const schemaKeys = Object.keys(CONFIG_VARS);
+  const varKeys = (() => {
+    const jsonc = read("wrangler.jsonc")
+      .split("\n")
+      .filter((line) => !line.trim().startsWith("//"))
+      .join("\n");
+    return Object.keys(JSON.parse(jsonc).vars);
+  })();
+  const devVarKeys = read(".dev.vars.example")
+    .split("\n")
+    .flatMap((line) => line.match(/^([A-Z0-9_]+)=/)?.[1] ?? []);
+  // Read by a module that is not built yet (ADR 0008), so config.ts does not parse it.
+  const UNPARSED = new Set(["ROOM_ENROLL_KEY"]);
+
+  it("wrangler.jsonc vars are all parsed by config.ts", () => {
+    expect(varKeys.filter((key) => !schemaKeys.includes(key))).toEqual([]);
+  });
+
+  it("every other config.ts variable is a secret in .dev.vars.example, or TEST_TIMING", () => {
+    const rest = schemaKeys.filter((key) => !varKeys.includes(key) && !devVarKeys.includes(key));
+    expect(rest).toEqual(["TEST_TIMING"]);
+  });
+
+  it(".dev.vars.example sets only variables config.ts parses", () => {
+    expect(devVarKeys.filter((key) => !schemaKeys.includes(key) && !UNPARSED.has(key))).toEqual([]);
+  });
+
+  it("every variable carries its meaning in a describe()", () => {
+    const bare = Object.entries(CONFIG_VARS).flatMap(([key, type]) => (type.description ? [] : [key]));
+    expect(bare).toEqual([]);
+  });
+
+  it("docs do not list the variables: architecture.md names no key=value line", () => {
+    const listed = read("docs/architecture.md")
+      .split("\n")
+      .filter((line) => /^[A-Z][A-Z0-9_]+=/.test(line));
+    expect(listed).toEqual([]);
   });
 });
 

@@ -456,60 +456,9 @@ Both objects use SQLite storage: the Screen object through its synchronous key-v
 
 ## 9. Configuration and secrets
 
-Plain vars live in `wrangler.jsonc` `vars`; the list below is their reference, with production defaults. The checked-in `.dev.vars.example` holds only the secrets (fake values) and the local overrides `PUBLIC_ORIGIN` and `FILE_SOURCE`; copy it to `.dev.vars`. Secrets are set with `wrangler secret put`. `config.ts` parses all of them with Zod at startup and refuses to serve when they are invalid. For example, `FILE_SOURCE=graph` without Entra secrets fails closed.
+The Worker's variables are listed once, in `src/worker/config.ts`: the Zod schema parses them, fails closed on a bad value, and gives each one its meaning in a `.describe()`. Defaults are in the schema; the values a deployment sets are in `wrangler.jsonc` `vars`. Secrets are set with `wrangler secret put` (`docs/setup.md`), and `.dev.vars.example` holds fake local values for them. `test/unit/docs-drift.test.ts` fails if those three drift apart. `ROOM_ENROLL_KEY` (registered screens, ADR 0008) is in `.dev.vars.example` but not parsed yet.
 
-Worker runtime variables:
-
-```ini
-# vars (wrangler.jsonc)
-PUBLIC_ORIGIN=https://bloop.dsap.workers.dev   # .dev.vars: http://127.0.0.1:8787
-FILE_SOURCE=mock                 # mock | graph
-OPEN_PATH_MODE=redirect          # redirect | stream (ADR 0003, decided by T3)
-LINK_FIRST_FETCH_SECONDS=600     # an unused link dies this long after minting
-LINK_FETCH_WINDOW_SECONDS=120    # after its first fetch a link lives this long
-LINK_MAX_FETCHES=10              # GET and HEAD both count
-LINK_MINTS_PER_SESSION=5         # extra links per session (download, PDF, protocol again)
-LINK_BINDING_DEFAULT=log         # off | log | enforce: compare the fetching IP with the screen's
-TOKEN_MODE=refresh               # refresh | session (ADR 0004)
-CODE_LENGTH=6
-CODE_TTL_SECONDS=60
-CODE_GRACE_SECONDS=10
-CLAIM_TIMEOUT_SECONDS=300
-UPLOAD_TIMEOUT_SECONDS=900
-SESSION_MAX_MINUTES=90
-LINK_FIRST_FETCH_SECONDS=600     # a link unused this long dies
-LINK_FETCH_WINDOW_SECONDS=120    # after the first fetch
-LINK_MAX_FETCHES=10
-LINK_MINTS_PER_SESSION=5
-LINK_BINDING_DEFAULT=log         # off | log | enforce
-GRAPH_DOWNLOAD_HOSTS=*.sharepoint.com,*.files.1drv.com,my.microsoftpersonalcontent.com
-GUEST_DROP=open                  # off | open | pass; every guest drop waits for the Open click on the screen
-GUEST_MAX_BYTES=52428800
-GUEST_STORAGE_BUDGET_BYTES=5368709120
-R2_CLASS_A_MONTHLY_CAP=500000    # R2 puts and lists a month (UTC); at the cap drops get storage_full
-R2_CLASS_B_MONTHLY_CAP=5000000   # R2 gets and heads a month; at the cap /f/ reads of guest files get upstream_failed (502)
-DEMO_ENABLED=true
-DEMO_SESSION_MINUTES=10
-DEMO_GUEST_MAX_BYTES=10485760
-DEMO_MAX_CONCURRENT=50
-DEMO_MAX_PER_IP=2
-AUDIT_RETENTION_DAYS=180
-METRICS_RETENTION_DAYS=90
-DEMO_RETENTION_DAYS=7
-GRANT_IDLE_DAYS=30
-ENTRA_AUTHORITY=https://login.microsoftonline.com/organizations/v2.0
-ENTRA_CLIENT_ID=
-ENTRA_SCOPES=openid offline_access Files.Read
-TOKEN_KEK_CURRENT=k1
-# secrets (local fake values in .dev.vars.example)
-ENTRA_CLIENT_SECRET=
-TOKEN_KEKS={"k1":"<base64 32 bytes>"}
-COOKIE_KEY=<base64 32 bytes>
-HASH_PEPPER=<base64 32 bytes>
-IT_EXPORT_TOKEN=<base64url 32 bytes>
-ROOM_ENROLL_KEY=<base64url 32 bytes>
-```
-Test-only variable: `TEST_TIMING=1`, never set in a deployment. It lowers the floors `config.ts` enforces (production: `CODE_TTL_SECONDS` at least 30, `CODE_GRACE_SECONDS` at least 5, `CLAIM_TIMEOUT_SECONDS` at least 60, `SESSION_MAX_MINUTES` 1 to 240, `DEMO_SESSION_MINUTES` at most `SESSION_MAX_MINUTES`), allows fractional minutes, and skips the platform rate-limit bindings. `config.ts` refuses it unless `PUBLIC_ORIGIN` is a local address. The integration tests set it through `startPairing()` in `test/integration/pairing-client.ts`, with short timings such as `CODE_TTL_SECONDS=2` and `SESSION_MAX_MINUTES=0.05`.
+`TEST_TIMING=1` is test-only and never set in a deployment (`config.ts` refuses it unless `PUBLIC_ORIGIN` is a local address). The integration tests set it through `startPairing()` in `test/integration/pairing-client.ts`, with short timings such as `CODE_TTL_SECONDS=2` and `SESSION_MAX_MINUTES=0.05`.
 
 Deploy-only values (`CLOUDFLARE_ACCOUNT_ID`, `CLOUDFLARE_API_TOKEN`, `BLOOP_PREVIEW_URL`) are GitHub environment secrets read by `.github/workflows/deploy.yml`, never by the Worker; there is no `.env` file. Token scopes: `docs/setup.md`.
 Bindings in `wrangler.jsonc` (not env vars): `ASSETS`, `SCREEN` and `DIRECTORY` (Durable Objects, SQLite classes), `DB` (D1, `eu`), `GUEST_FILES` (R2, `jurisdiction: "eu"`), `RL_CREATE`, `RL_CLAIM`, `RL_FETCH`, `RL_UPLOAD`, `RL_AUTH`, `RL_EXPORT`, `RL_FILES` (rate limits), and two crons (`0 * * * *` hourly backstop, `30 3 * * *` daily retention). The D1 database id in `wrangler.jsonc` is not a secret.
