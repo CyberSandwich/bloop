@@ -14,7 +14,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parent.parent
 LOGO = ROOT / 'public' / 'favicon.svg'
 SITE_NAME = 'bloop'
-H1 = 'Present anywhere.'
+H1 = 'Present Anywhere'
 SUB = 'Scan the code on the screen to present or download your files.'
 W, H = 1200, 630
 PAPER, INK, MUTED = '#F3F3F0', '#1E1E1C', '#6C6C66'
