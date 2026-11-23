@@ -1,0 +1,52 @@
+<!DOCTYPE html>
+<html lang="en-US">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+    <meta name="robots" content="noindex">
+    <meta name="referrer" content="no-referrer">
+    <meta name="color-scheme" content="light">
+    <title>Approve on bloop</title>
+    <link rel="stylesheet" href="/css/app.css">
+    <script type="module" src="/js/phone.js"></script>
+  </head>
+  <body class="page-phone">
+    <a class="skip" href="#title">Skip to Content</a>
+    <main id="main" class="column">
+      <p class="wordmark">bloop</p>
+      <noscript><p class="nojs">Approving needs JavaScript. Turn it on, then scan again.</p></noscript>
+      <p class="desk-note">This page is meant for your phone. You can approve here too.</p>
+      <div class="flow" id="flow">
+        <h1 class="title" id="title" tabindex="-1" hidden>Approve on bloop</h1>
+        <div class="skel skel-title" id="skel-title" hidden></div>
+        <p class="body" id="body"></p>
+        <div class="room" id="room">
+          <svg class="icon" viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><rect width="20" height="14" x="2" y="3" rx="2"/><line x1="8" x2="16" y1="21" y2="21"/><line x1="12" x2="12" y1="17" y2="21"/></svg>
+          <div>
+            <p class="room-name" id="room-name"></p>
+            <p class="small" id="room-sub" hidden>Registered screen</p>
+          </div>
+        </div>
+        <div class="match-block" id="match-block">
+          <p class="small">Code on the screen</p>
+          <p class="digits" id="match-digits"></p>
+          <p class="small">Check it matches the screen.</p>
+        </div>
+        <p class="warn" id="warn" hidden>
+          <svg class="icon" viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="m21.73 18-8-14a2 2 0 0 0-3.48 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3"/><path d="M12 9v4"/><path d="M12 17h.01"/></svg>
+          <span id="warn-text"></span>
+        </p>
+        <fieldset class="files" id="files" hidden>
+          <legend class="sr">Your recent slides</legend>
+          <ul class="list" id="file-list"></ul>
+        </fieldset>
+        <p class="scope" id="scope" hidden>
+          <svg class="icon" viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><rect width="18" height="11" x="3" y="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>
+          <span id="scope-text"></span>
+        </p>
+      </div>
+      <div class="actions" id="actions"></div>
+      <p class="sr" id="polite" role="status"></p>
+    </main>
+  </body>
+</html>

@@ -1,0 +1,55 @@
+<!DOCTYPE html>
+<html lang="en-US">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <meta name="robots" content="noindex">
+    <meta name="color-scheme" content="light">
+    <title>bloop screen</title>
+    <link rel="stylesheet" href="/css/app.css">
+    <script type="module" src="/js/screen.js"></script>
+  </head>
+  <body class="page-screen">
+    <a class="skip" href="#main">Skip to Content</a>
+    <header class="bar">
+      <span class="wordmark">bloop</span>
+      <p class="chip" id="chip" hidden>
+        <svg class="icon" id="chip-check" viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false" hidden><path d="M20 6 9 17l-5-5"/></svg>
+        <svg class="icon" id="chip-wifi" viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false" hidden><path d="M12 20h.01"/><path d="M8.5 16.429a5 5 0 0 1 7 0"/><path d="M5 12.859a10 10 0 0 1 5.17-2.69"/><path d="M19 12.859a10 10 0 0 0-2.007-1.523"/><path d="M2 8.82a15 15 0 0 1 4.177-2.643"/><path d="M22 8.82a15 15 0 0 0-11.288-3.764"/><path d="m2 2 20 20"/></svg>
+        <span id="chip-text"></span>
+      </p>
+    </header>
+    <main id="main">
+      <noscript><p class="nojs">This screen needs JavaScript to show a code.</p></noscript>
+      <div class="narrow">
+        <p class="narrow-title">This page is for the room's screen.</p>
+        <p class="line">Scan the code on the screen with your phone.</p>
+        <a class="btn secondary" href="/code">Enter a Code</a>
+      </div>
+      <div class="wide" id="wide">
+        <div class="qr-col" id="qr-col">
+          <div class="poster-slot" aria-hidden="true"></div>
+          <div class="qr-panel" id="qr-panel">
+            <svg id="qr" role="img" aria-label="QR code. Scan it with your phone camera to open bloop." viewBox="0 0 41 41" width="205" height="205" shape-rendering="crispEdges" focusable="false"><rect width="41" height="41" fill="#FFFFFF"/><path id="qr-path" fill="#1D1D1F" d=""/></svg>
+            <p class="match" id="match" hidden></p>
+          </div>
+        </div>
+        <div class="copy">
+          <div id="stage" class="stage" role="status" aria-live="polite">
+            <h1 id="heading" tabindex="-1">bloop screen</h1>
+            <p class="line" id="line"></p>
+          </div>
+          <div class="capsule" id="capsule" aria-hidden="true"><span id="capsule-fill"></span></div>
+          <p class="typed" id="typed">Can't scan? On your phone, go to <span id="typed-host"></span>/code and enter<br><span class="code" id="typed-code"></span></p>
+          <div class="actions-row" id="controls">
+            <button type="button" class="btn primary" id="b-open" hidden>Open</button>
+            <button type="button" class="btn secondary" id="b-end" hidden>End</button>
+            <button type="button" class="btn secondary" id="b-start-over" hidden>Start Over</button>
+            <button type="button" class="btn text" id="b-download" hidden>Download It Instead</button>
+          </div>
+        </div>
+      </div>
+    </main>
+    <p class="foot">Phone not with you? Sign in to this PC as usual.</p>
+  </body>
+</html>

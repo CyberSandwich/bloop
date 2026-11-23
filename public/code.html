@@ -1,0 +1,32 @@
+<!DOCTYPE html>
+<html lang="en-US">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+    <meta name="robots" content="noindex">
+    <meta name="referrer" content="no-referrer">
+    <meta name="color-scheme" content="light">
+    <title>Enter the code on bloop</title>
+    <link rel="stylesheet" href="/css/app.css">
+    <script type="module" src="/js/code.js"></script>
+  </head>
+  <body class="page-phone">
+    <a class="skip" href="#title">Skip to Content</a>
+    <main id="main" class="column">
+      <p class="wordmark">bloop</p>
+      <noscript><p class="nojs">Entering a code needs JavaScript. Turn it on, then try again.</p></noscript>
+      <h1 class="title" id="title" tabindex="-1">Enter the code on the screen.</h1>
+      <form class="code-form" id="code-form" novalidate>
+        <label class="field-label" for="code">Code</label>
+        <input class="field" id="code" name="code" type="text" inputmode="text" autocapitalize="characters" autocomplete="one-time-code" autocorrect="off" spellcheck="false" maxlength="8" aria-describedby="code-error">
+        <p class="field-error" id="code-error" hidden>
+          <svg class="icon" viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="m21.73 18-8-14a2 2 0 0 0-3.48 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3"/><path d="M12 9v4"/><path d="M12 17h.01"/></svg>
+          <span id="code-error-text"></span>
+        </p>
+        <div class="actions">
+          <button type="submit" class="btn primary" id="go" disabled>Continue</button>
+        </div>
+      </form>
+    </main>
+  </body>
+</html>
