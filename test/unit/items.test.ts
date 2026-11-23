@@ -194,6 +194,36 @@ describe("Screen object schema steps", () => {
     expect(store.map.get(SCHEMA_KEY)).toBe(3);
   });
 
+  it("repairs old-shape data whatever the stored version says (a rollback wrote v1 data under version 3)", () => {
+    const store = kv({
+      meta: {},
+      schemaVersion: SCHEMA_VERSION,
+      machine: { state: "approved", session: v1Session },
+      links: [link],
+    });
+    migrate(store);
+    expect((store.map.get("machine") as Machine).session).toEqual({ ...rest, items: [asItem(DECK)], mints: [0] });
+    expect(store.map.get("links")).toEqual([{ ...link, item: 0 }]);
+  });
+
+  it("a current-shape object writes nothing on wake", () => {
+    const store = kv({
+      meta: {},
+      schemaVersion: SCHEMA_VERSION,
+      machine: { state: "open", session: { ...rest, items: [asItem(DECK)], mints: [0] } },
+      links: [{ ...link, item: 0 }],
+    });
+    const writes: string[] = [];
+    migrate({
+      get: store.get,
+      put: (k, v) => {
+        writes.push(k);
+        store.put(k, v);
+      },
+    });
+    expect(writes).toEqual([]);
+  });
+
   it("does nothing to a fresh object (create writes the current version)", () => {
     const store = kv();
     migrate(store);
