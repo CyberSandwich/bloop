@@ -97,7 +97,7 @@ describe("frames", () => {
   });
 
   it("the launched frame takes every open mode, from the one list the link route also builds from", () => {
-    // A view launch (an image on a live screen) must not close the socket; the two lists drifted once.
+    // A view launch (an image on a live screen) must not close the socket.
     for (const mode of OPEN_MODES) {
       expect(screenFrame.safeParse({ v: 1, t: "launched", mode }).success, mode).toBe(true);
     }

@@ -22,6 +22,7 @@ import { createLauncher } from "./launcher.js";
 import { createResidue } from "./residue.js";
 import { format } from "./shared/codes.js";
 import { ERRORS } from "./shared/errors.js";
+import { IN_SESSION } from "./shared/session.js";
 import { createViewer, fetchOpen } from "./viewer.js";
 
 const api = createApi();
@@ -44,6 +45,7 @@ const typedHost = byId("typed-host");
 const typedCode = byId("typed-code");
 const polite = byId("polite");
 const dlNote = byId("dl-note");
+const controls = byId("controls");
 const buttons = {
   back: byId("b-back"),
   start_over: byId("b-start-over"),
@@ -109,8 +111,6 @@ const residue = createResidue({
 });
 
 const serverNow = () => Date.now() + s.skew;
-/** In these states a transient key (offline, an error) parks the viewer rather than clearing it. */
-const IN_SESSION = ["approved", "opening", "open"];
 /** Bumped by every renew: a boot or a channel of an older screen stops acting. */
 let gen = 0;
 /** The line under Session Ended, fixed when the session ends (the launcher forgets at once). */
@@ -175,7 +175,6 @@ const MODE = {
 
 const keyNow = () => screenKey({ view: s.view, link: s.link, errored: s.errored, limited: s.limited });
 
-/** A change of scene (a state, or the item on the stage) replays the enter keyframes. */
 function render() {
   const key = keyNow();
   const scene = `${MODE[/** @type {keyof typeof MODE} */ (key)] ?? key}:${key === "demo_open" ? viewer?.at() : ""}`;
@@ -218,6 +217,7 @@ function paint() {
 
   const mode = MODE[/** @type {keyof typeof MODE} */ (key)] ?? "busy";
   main.dataset.mode = mode;
+  controls.classList.toggle("glass", mode === "viewer");
   qrPanel.classList.toggle("is-scanned", mode === "scanned");
   const code = v?.code && mode === "waiting" ? v.code : null;
   if (code) drawCode(code);
@@ -230,13 +230,11 @@ function paint() {
   show(buttons.start_over, has("start_over"));
   show(buttons.home, has("end"));
   show(buttons.end, has("end"));
-  // This device as the phone: same tab to /a, which claims the code; /a links back here, and the stored sid resumes.
   show(buttons.here, has("here") && !!code);
   show(buttons.phone, has("here") && !!code);
   if (code) for (const b of [buttons.here, buttons.phone]) b.setAttribute("href", `/a?c=${code.code}`);
   show(buttons.continue, has("continue"));
   show(buttons.waitlist, has("waitlist"));
-  // Open: the guest's offer, or a launch that needs a click (no user gesture, or a blocked popup).
   show(buttons.open, has("open") || launcher.needsClick());
   // A spent mint budget hides the item's fallbacks: another click could only be refused.
   const mintable = !launcher.spent(target());
@@ -258,7 +256,6 @@ function paint() {
   schedule(key);
 }
 
-/** Timers that follow from the state: code rotation, the way back from ended and from an error. */
 function schedule(/** @type {import("../../src/shared/protocol.ts").ScreenStateKey} */ key) {
   const v = s.view;
   if (key === "waiting" && v) {
@@ -318,11 +315,16 @@ function flagError() {
   render();
 }
 
-/** The credential is dead: forget it and open a new screen. */
-function renew() {
+/** Stops the socket; a pending boot of an older gen drops out. */
+function letGo() {
   gen += 1;
   s.channel?.stop();
   s.channel = null;
+}
+
+/** The credential is dead: forget it and open a new screen. */
+function renew() {
+  letGo();
   store.remove(SID_KEY);
   s.sid = null;
   s.view = null;
@@ -342,14 +344,18 @@ async function act(/** @type {string} */ path) {
 buttons.start_over.addEventListener("click", () => act("/api/screen/restart"));
 buttons.end.addEventListener("click", () => act("/api/screen/end"));
 // The logo opens an in-page question (s.html #leave, a popover); only its End and Go Home ends.
-// Home even if the end fails: the screen times out; act() would renew it.
+// Home even if the end fails (it times out); the sid goes, so the browser's Back cannot resume it.
 byId("b-leave").addEventListener("click", async () => {
+  letGo();
   await api.post("/api/screen/end", {}, s.sid);
+  store.remove(SID_KEY);
   location.assign("/");
 });
-// Back ends a waiting screen first, so its code and demo slot go at once.
+// Back ends a waiting screen (code and demo slot gone at once), the socket stopped first so nothing renews.
 buttons.back.addEventListener("click", () => {
-  if (s.sid && s.view?.state === "waiting") void api.leave("/api/screen/end", s.sid);
+  const waiting = s.view?.state === "waiting";
+  letGo();
+  if (s.sid && waiting) void api.leave("/api/screen/end", s.sid);
 });
 buttons.present.addEventListener("click", () => viewer?.present());
 buttons.copy.addEventListener("click", () => {
@@ -366,14 +372,11 @@ buttons.copy.addEventListener("click", () => {
     () => {},
   );
 });
-// New Code: end closes the waiting screen, then boot creates one (a refusal shows the rate-limited state and retries).
-// The socket stops first, so the old screen's closing push cannot start a second renew.
 buttons.renew.addEventListener("click", async () => {
   // aria-disabled, not disabled: the button keeps focus while the new screen loads.
   if (buttons.renew.getAttribute("aria-disabled")) return;
   ariaFlag(buttons.renew, "aria-disabled", true);
-  s.channel?.stop();
-  s.channel = null;
+  letGo();
   await api.post("/api/screen/end", {}, s.sid);
   renew();
 });
@@ -381,10 +384,8 @@ buttons.open.addEventListener("click", () => {
   if (s.view?.state !== "offered") return launcher.click();
   if (!s.channel?.send({ t: "open.click" })) flagError();
 });
-/** The fallbacks' item: the viewer's, else the first file. */
 const target = () => (viewer?.item() ? viewer.at() : undefined);
 
-/** A fallback that failed shows the error state, which recovers by itself; a spent budget only hides the controls. */
 const fallback = (/** @type {() => Promise<import("./types.js").Minted>} */ run) => async () => {
   if ((await run()) === "failed") flagError();
 };
@@ -414,10 +415,7 @@ function connect(/** @type {string} */ sid) {
   s.channel = ch;
 }
 
-/**
- * The stored screen, when it still exists and is of this page's mode; null otherwise. Only the tab that created a
- * screen holds its sid (sessionStorage), so only that tab resumes it, the one-device demo round trip included.
- */
+/** The stored screen of this page's mode, or null; only the tab that created it holds its sid. */
 async function resume() {
   const sid = store.get(SID_KEY);
   if (!sid) return null;
@@ -441,7 +439,7 @@ async function create() {
   return { ok: true, sid: res.value.sid, view: res.value.view };
 }
 
-/** Resumes the stored screen, or creates one. Retries with backoff while the network is down or the demo caps refuse. */
+/** Resumes or creates the screen, with backoff while offline or refused. */
 async function boot(attempt = 0) {
   const g = gen;
   const booted = (await resume()) ?? (await create());

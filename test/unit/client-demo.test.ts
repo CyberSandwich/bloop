@@ -1,7 +1,16 @@
 import { existsSync } from "node:fs";
 import { describe, expect, it } from "vitest";
-import { openTarget, PHOTO_THUMB, pageMode, pagesOf, SLIDES, stepPage, thumbOf } from "../../public/js/core/demo.js";
-import { inItemOrder } from "../../public/js/core/states.js";
+import {
+  halves,
+  openTarget,
+  PHOTO_THUMB,
+  pageMode,
+  pagesOf,
+  SLIDES,
+  stepPage,
+  thumbOf,
+} from "../../public/js/core/demo.js";
+import { orderItems } from "../../public/js/shared/session.js";
 import type { Item } from "../../src/shared/protocol.ts";
 
 const ORIGIN = "https://bloop.example";
@@ -19,7 +28,7 @@ describe("one list order", () => {
       { kind: "file", name: "Dog.jpg", type: "jpg", size: 1 },
       { kind: "file", name: "Sample deck.pdf", type: "pdf", size: 1 },
     ];
-    expect(inItemOrder(items).map((i) => (i.kind === "file" ? i.name : i.title))).toEqual([
+    expect(orderItems(items).map((i) => (i.kind === "file" ? i.name : i.title))).toEqual([
       "Dog.jpg",
       "Sample deck.pdf",
       "Sample deck.pptx",
@@ -36,6 +45,13 @@ describe("DEMO-01 the demo screen's own open", () => {
     expect(openTarget("ms-powerpoint:ofv|u|https://evil.example/f/abc/x.pptx", ORIGIN)).toBeNull();
     expect(openTarget("https://evil.example/f/abc/x.pdf", ORIGIN)).toBeNull();
     expect(openTarget("not a url", ORIGIN)).toBeNull();
+  });
+
+  it("the tap zones are the slide box's two halves, never the paper beside it", () => {
+    expect(halves({ left: 65, top: 0, width: 926, height: 579 })).toEqual([
+      { left: 65, top: 0, width: 463, height: 579 },
+      { left: 528, top: 0, width: 463, height: 579 },
+    ]);
   });
 
   it("steps through the pages without running past either end", () => {

@@ -10,6 +10,10 @@ export const FATAL = /** @type {ReadonlySet<ErrorCode>} */ (
   new Set(["unauthorized", "pairing_invalid", "screen_gone"])
 );
 
+/** A refused read: dead drops the credential; the rest retry. @param {ErrorCode} code */
+export const refusal = (code) =>
+  code === "offline" || code === "service_down" ? "offline" : FATAL.has(code) ? "dead" : "retry";
+
 /** @param {ChannelOptions} o */
 export function openChannel(o) {
   let closed = false;

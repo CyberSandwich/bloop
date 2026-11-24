@@ -149,6 +149,13 @@ describe("POST /api/approve resolves the file on the server", () => {
       const res = await api.post("/api/approve", { ids }, { auth: pid });
       expect(res.body, JSON.stringify(ids)).toEqual(problem("bad_request"));
     }
+    // Two ids the source never listed: refused for the count, before a listing could refuse them as unknown.
+    expect((await api.post("/api/approve", { ids: ["nope-1", "nope-2"] }, { auth: pid })).body).toEqual(
+      problem("bad_request"),
+    );
+    expect((await api.post("/api/approve", { ids: ["nope-1"] }, { auth: pid })).body).not.toEqual(
+      problem("bad_request"),
+    );
     expect((await api.post("/api/approve", { ids: ["demo-deck"] }, { auth: pid })).status).toBe(200);
     socket.close();
   });

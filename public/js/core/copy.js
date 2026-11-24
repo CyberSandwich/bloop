@@ -16,9 +16,10 @@ export const SESSION_ENDED = "Session Ended";
  */
 export function screenCopy(key, f) {
   const file = f.file ?? "your file";
-  const base = { line: "", controls: /** @type {ScreenControl[]} */ ([]), alert: false };
   /** @type {ScreenControl[]} */
   const END = ["end"];
+  // In a session every state keeps End (and hides Back): a transient one (offline, an error) is no way out.
+  const base = { line: "", controls: f.inSession ? END : [], alert: false };
   switch (key) {
     case "waiting":
       return { ...base, heading: f.room, controls: f.demo ? ["here"] : [] };
@@ -39,7 +40,9 @@ export function screenCopy(key, f) {
       return {
         ...base,
         heading: !f.openMode || f.openMode === "protocol" ? "Opening in PowerPoint" : "Opening",
-        line: f.click ? `${file}. Click Open to start PowerPoint.` : file,
+        line: f.click
+          ? `${file}. Click Open to ${!f.openMode || f.openMode === "protocol" ? "start PowerPoint" : "show it"}.`
+          : file,
         controls: ["end", "download"],
       };
     case "open": {

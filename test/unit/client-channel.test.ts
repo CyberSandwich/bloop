@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { Api } from "../../public/js/core/api.js";
-import { openChannel } from "../../public/js/core/channel.js";
+import { openChannel, refusal } from "../../public/js/core/channel.js";
 import type { SocketLike } from "../../public/js/types.js";
 import type { ErrorCode } from "../../src/shared/protocol.ts";
 
@@ -64,6 +64,14 @@ function setup(polls: PollReply[] = []) {
 
 beforeEach(() => vi.useFakeTimers());
 afterEach(() => vi.useRealTimers());
+
+describe("PAIR-12 a refused credential read", () => {
+  it("drops the pid only for a dead credential; the network and anything else retry and keep it", () => {
+    for (const code of ["unauthorized", "pairing_invalid", "screen_gone"] as const) expect(refusal(code)).toBe("dead");
+    for (const code of ["offline", "service_down"] as const) expect(refusal(code)).toBe("offline");
+    for (const code of ["rate_limited", "bad_request", "internal"] as const) expect(refusal(code)).toBe("retry");
+  });
+});
 
 describe("live channel", () => {
   it("sends the credential in the first frame, not in the URL", () => {

@@ -115,8 +115,9 @@ test.describe("pairing flow", () => {
     // the code left the address bar and the history entry
     expect(new URL(phone.page.url()).search).toBe("");
     await expect(phone.page.getByRole("list", { name: "Items" })).toBeVisible();
-    await expect(phone.page.locator("#file-list input:checked")).toHaveCount(CATALOG.length);
-    await expect(phone.page.getByRole("button", { name: "Add a file" })).toBeVisible();
+    await expect(phone.page.locator("#file-list input[type=checkbox]:checked")).toHaveCount(CATALOG.length);
+    await expect(phone.page.locator("#file-list li:has(input) .row-name")).toHaveText(CATALOG);
+    await expect(phone.page.getByRole("button", { name: "Add a File" })).toBeVisible();
     await expectNoAxeViolations(phone.page);
 
     await expect(heading(screen.page)).toHaveText("Check Your Phone");
@@ -266,12 +267,14 @@ test.describe("pairing flow", () => {
     await expectViewer(screen.page);
 
     await phone.page.getByRole("button", { name: "Revoke" }).click();
-    await expect(heading(phone.page)).toHaveText("Ended");
+    await expect(heading(phone.page)).toHaveText("Session Ended");
+    // PAIR-12: the ended view itself drops the pid; Done has not run yet.
+    expect(await phone.page.evaluate(() => localStorage.getItem("bloop.pid"))).toBeNull();
     await expect(heading(screen.page)).toHaveText("Session Ended");
     await expect(screen.page.locator("#line")).toBeHidden();
     await expect(screen.page.locator("#items")).toBeHidden();
     await expect(screen.page.getByRole("button", { name: "End", exact: true })).toBeHidden();
-    // The demo's one way on: the waitlist, quietly.
+    // The demo's one way on: the waitlist.
     await expect(screen.page.getByRole("link", { name: "Join the Waitlist" })).toBeVisible();
     // Session Ended sits at the true center of the viewport.
     const box = await heading(screen.page).boundingBox();
@@ -287,8 +290,7 @@ test.describe("pairing flow", () => {
 
     await phone.page.getByRole("button", { name: "Done" }).click();
     await expect(phone.page).toHaveURL("/");
-    // The ended pairing's pid is gone: /a with no code asks for a scan.
-    expect(await phone.page.evaluate(() => localStorage.getItem("bloop.pid"))).toBeNull();
+    // With no pid, /a with no code asks for a scan.
     await phone.page.goto("/a");
     await expect(heading(phone.page)).toHaveText("Scan the Code");
     await screen.context.close();
@@ -324,7 +326,7 @@ test.describe("guest drop", () => {
     const { phone } = await scan(browser, screen.page);
     await expectNoAxeViolations(phone.page);
 
-    await phone.page.getByRole("button", { name: "Add a file" }).click();
+    await phone.page.getByRole("button", { name: "Add a File" }).click();
     await expect(heading(phone.page)).toHaveText("Send a File to Demo Room?");
     await expectNoAxeViolations(phone.page);
 
@@ -376,7 +378,7 @@ test.describe("guest drop", () => {
   test("Cancel while the file is chosen returns the screen to its code", async ({ browser }) => {
     const screen = await demoScreen(browser);
     const { phone } = await scan(browser, screen.page);
-    await phone.page.getByRole("button", { name: "Add a file" }).click();
+    await phone.page.getByRole("button", { name: "Add a File" }).click();
     await phone.page.getByRole("button", { name: "Cancel" }).click();
     await expect(heading(phone.page)).toHaveText("Session Ended");
     await expect(heading(screen.page)).toHaveText("Demo Room");
@@ -386,11 +388,16 @@ test.describe("guest drop", () => {
 });
 
 test.describe("open path", () => {
-  test("launch, the Download fallback after 5 s, the PDF view, and End clearing the screen's storage", async ({
+  test("RES-01 storage: launch, the Download fallback after 5 s, the PDF view, and End leaving no sid", async ({
     browser,
   }) => {
     const screen = await liveScreen(browser);
     const { phone } = await scan(browser, screen.page, LIVE);
+    // A live screen shows one file: the phone selects one, from files only.
+    await expect(phone.page.locator("#file-list input[type=radio]").first()).toBeVisible();
+    await expect(phone.page.locator("#file-list input[type=checkbox]")).toHaveCount(0);
+    await expect(phone.page.locator("#file-list input:checked")).toHaveCount(1);
+    await expect(phone.page.locator("#file-list").getByText("Vevox")).toHaveCount(0);
     await phone.page.getByRole("button", { name: "Approve" }).click();
 
     // PowerPoint is not installed here: no fetch arrives, so after the launch timeout Download appears.
@@ -497,6 +504,32 @@ test.describe("demo viewer", () => {
     await expect(heading(screen.page)).toHaveText("Session Ended");
     await expect(heading(phone.page)).toHaveText("Session Ended");
     expect([...screen.csp, ...phone.csp]).toEqual([]);
+    await screen.context.close();
+    await phone.context.close();
+  });
+
+  test("a failed Download parks the viewer under the error: End stays, Back stays hidden, a key cannot bring it back", async ({
+    browser,
+  }) => {
+    const screen = await demoScreen(browser);
+    const { phone } = await scan(browser, screen.page);
+    await phone.page.getByRole("button", { name: "Approve" }).click();
+    await expectViewer(screen.page);
+    await sidebarItem(screen.page, "Sample deck.pdf").click();
+    await expect(screen.page.getByRole("img", { name: "Page 1 of 2" })).toBeVisible();
+    await screen.page.route("**/api/screen/link", (route) => route.fulfill({ status: 500, body: "" }));
+    await screen.page.getByRole("button", { name: "Download" }).click();
+    await expect(heading(screen.page)).toHaveText("Unable to Open Your File");
+    await expect(screen.page.locator("#view")).toBeHidden();
+    await expect(screen.page.locator("#items")).toBeHidden();
+    await screen.page.keyboard.press("PageDown");
+    await expect(screen.page.locator("#view")).toBeHidden();
+    await expect(screen.page.getByRole("button", { name: "End", exact: true })).toBeVisible();
+    await expect(screen.page.getByRole("link", { name: "Back", exact: true })).toBeHidden();
+    await screen.page.unroute("**/api/screen/link");
+    // The error clears by itself, and the viewer comes back where it was: the key moved nothing.
+    await expect(heading(screen.page)).toHaveText("Sample deck.pdf", { timeout: 15_000 });
+    await expect(screen.page.getByRole("img", { name: "Page 1 of 2" })).toBeVisible();
     await screen.context.close();
     await phone.context.close();
   });

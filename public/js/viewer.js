@@ -2,7 +2,7 @@
 // An image's <img> is kept for the session: the CSP has no blob:, and a second mint spends the budget.
 /** @import {Item, OpenMode, ScreenView} from "../../src/shared/protocol.ts" */
 /** @import {Minted} from "./types.js" */
-import { openTarget, pageMode, pagesOf, stepPage, thumbOf } from "./core/demo.js";
+import { halves, openTarget, pageMode, pagesOf, stepPage, thumbOf } from "./core/demo.js";
 import { hostOf, itemIcon, itemLine, itemName } from "./core/format.js";
 import { rowFace, tile } from "./core/rows.js";
 import { byId, el, icon, setText, show } from "./core/ui.js";
@@ -54,12 +54,13 @@ export function createViewer(deps) {
   const fit = () => {
     const img = frame.querySelector("img");
     if (!img) return;
-    const half = img.offsetWidth / 2;
-    for (const zone of [prev, next]) {
-      zone.style.left = `${img.offsetLeft + (zone === next ? half : 0)}px`;
-      zone.style.top = `${img.offsetTop}px`;
-      zone.style.width = `${half}px`;
-      zone.style.height = `${img.offsetHeight}px`;
+    const box = { left: img.offsetLeft, top: img.offsetTop, width: img.offsetWidth, height: img.offsetHeight };
+    for (const [i, part] of halves(box).entries()) {
+      const zone = i ? next : prev;
+      zone.style.left = `${part.left}px`;
+      zone.style.top = `${part.top}px`;
+      zone.style.width = `${part.width}px`;
+      zone.style.height = `${part.height}px`;
     }
   };
   const sized = new ResizeObserver(fit);
@@ -69,6 +70,8 @@ export function createViewer(deps) {
   /** @type {string | null} */
   let built = null;
   let at = 0;
+  /** Hidden for a transient state: nothing repaints it until render. */
+  let parked = false;
   let page = 0;
   /** @type {string | null} */
   let framed = null;
@@ -78,9 +81,7 @@ export function createViewer(deps) {
   const asked = new Set();
   /** @type {Set<number>} minting failed: the card instead, and no retry loop */
   const refused = new Set();
-  /** Items whose pages are portrait: one scrolling column instead of one page at a time. */
   const tall = new Set();
-  // The page indicator follows the scroll: the page most in view.
   const seen = new IntersectionObserver(
     (entries) => {
       for (const e of entries) if (e.isIntersecting) page = Number(e.target.getAttribute("data-page"));
@@ -95,7 +96,6 @@ export function createViewer(deps) {
     return item && shown ? pagesOf(item, shown) : null;
   };
 
-  /** One page as a picture: AVIF where the browser has it, else WebP. */
   function picture(/** @type {string} */ base, /** @type {number} */ n, /** @type {number} */ of) {
     const it = items()[at];
     const pdf = it?.kind === "file" && it.type === "pdf";
@@ -127,7 +127,7 @@ export function createViewer(deps) {
 
   function go(/** @type {number} */ by) {
     const p = pages();
-    if (!p) return;
+    if (!p || parked) return;
     page = stepPage(page, by, p.length);
     if (tall.has(at)) frame.querySelector(`[data-page="${page}"]`)?.scrollIntoView({ block: "start" });
     else paint();
@@ -140,16 +140,13 @@ export function createViewer(deps) {
     list.replaceChildren(
       ...v.items.map((item, i) => {
         const face = rowFace(item, thumbOf(item, v));
-        // A link opens in a new tab and never takes the stage; a file row selects.
         const row =
           item.kind === "link"
             ? linkTo(item.url, { class: "item" }, [...face, icon(NEW_TAB), el("span", { class: "sr" }, ["New Tab"])])
             : el("button", { type: "button", class: "item" }, face);
         if (item.kind === "file") row.addEventListener("click", () => select(i));
-        // Files A to Z, then the links under one inset rule.
         const split = item.kind === "link" && files > 0 && files === i;
         if (item.kind === "file") files += 1;
-        // Page 1 of every deck ahead of time, so switching never waits on it.
         const p = pagesOf(item, v);
         if (p) new Image().src = `${p[0]}.avif`;
         return el("li", split ? { class: "split" } : {}, [row]);
@@ -186,6 +183,7 @@ export function createViewer(deps) {
 
   function paintDots() {
     const p = pages();
+    if (parked) return;
     show(dots, !!p && p.length > 1);
     if (!p) return;
     prev.disabled = page === 0;
@@ -198,7 +196,7 @@ export function createViewer(deps) {
   function paint() {
     const v = shown;
     const item = items()[at];
-    if (!v || !item) return;
+    if (!v || !item || parked) return;
     const many = v.items.length > 1;
     show(side, many);
     show(handle, many);
@@ -244,7 +242,6 @@ export function createViewer(deps) {
       if (p && !scroll && shownImg) for (const box of [shownImg, view]) sized.observe(box);
     }
     show(view, true);
-    // The tap zones page slides; a scrolling document pages by scroll.
     show(prev, !!p && !scroll && p.length > 1);
     show(next, !!p && !scroll && p.length > 1);
     paintDots();
@@ -253,6 +250,8 @@ export function createViewer(deps) {
   function hide() {
     for (const part of [side, handle, view, dots]) show(part, false);
     if (side.matches(":popover-open")) side.hidePopover();
+    // Hidden in fullscreen is a black room screen.
+    if (document.fullscreenElement === view) document.exitFullscreen().catch(() => {});
   }
 
   function clear() {
@@ -265,17 +264,16 @@ export function createViewer(deps) {
     frame.replaceChildren();
     built = framed = null;
     at = page = 0;
+    parked = false;
     hide();
-    if (document.fullscreenElement === view) document.exitFullscreen().catch(() => {});
   }
 
   prev.addEventListener("click", () => go(-1));
   next.addEventListener("click", () => go(1));
-  // Keys page the stage, never while focus is in the item list or a field.
   document.addEventListener("keydown", (e) => {
     const step = KEYS[e.key];
     const t = e.target;
-    if (!shown || !step || e.altKey || e.ctrlKey || e.metaKey || !pages()) return;
+    if (!shown || parked || !step || e.altKey || e.ctrlKey || e.metaKey || !pages()) return;
     if (t instanceof Element && (side.contains(t) || t.matches("input, textarea"))) return;
     e.preventDefault();
     go(step);
@@ -290,6 +288,7 @@ export function createViewer(deps) {
         return;
       }
       shown = nextView;
+      parked = false;
       const key = JSON.stringify(nextView.items);
       if (key !== built) {
         built = key;
@@ -300,8 +299,10 @@ export function createViewer(deps) {
       paint();
     },
 
-    /** Hidden for a transient state; the place, pictures and mints are kept. */
-    park: hide,
+    park() {
+      parked = true;
+      hide();
+    },
 
     /** A link the launcher would open in a window. @param {string} url @param {number} item @param {OpenMode} mode */
     take(url, item, mode) {
@@ -318,7 +319,6 @@ export function createViewer(deps) {
       return true;
     },
 
-    /** The item on the stage, or null. */
     item: () => (shown ? (items()[at] ?? null) : null),
     at: () => at,
 

@@ -1,5 +1,7 @@
 // The pure session state machine of one screen (docs/interfaces.md section 2). No I/O, no clock, no
 // randomness: the Screen object draws values, reads the clock and applies the effects, in order.
+
+import { IN_SESSION } from "../../public/js/shared/session.js";
 import type { EndReason, ErrorCode, FileType, Kind, Mode, OpenMode, SessionState } from "../shared/protocol.ts";
 import {
   effectivePurpose,
@@ -130,7 +132,6 @@ export interface MachineConfig {
 type Actor = "screen" | "phone" | "system";
 
 const PRE_APPROVAL: readonly SessionState[] = ["claimed", "choosing", "uploading", "offered"];
-const IN_SESSION: readonly SessionState[] = ["approved", "opening", "open"];
 const SECOND = 1000;
 
 const ok = (next: Machine, effects: Effect[] = []): Step => ({ ok: true, next, effects });

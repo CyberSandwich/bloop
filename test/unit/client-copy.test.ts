@@ -196,8 +196,12 @@ describe("screen copy", () => {
   it("opening names PowerPoint only for a protocol launch; an image or a PDF view is just Opening", () => {
     expect(screenCopy("opening", { ...sf, openMode: "protocol" }).heading).toBe("Opening in PowerPoint");
     expect(screenCopy("opening", { ...sf, openMode: null }).heading).toBe("Opening in PowerPoint");
-    for (const openMode of ["view", "pdf"] as const)
+    for (const openMode of ["view", "pdf"] as const) {
       expect(screenCopy("opening", { ...sf, openMode }).heading).toBe("Opening");
+      expect(screenCopy("opening", { ...sf, openMode, click: true }).line).toBe(
+        "Lecture 4.pptx. Click Open to show it.",
+      );
+    }
   });
 
   it("open claims PowerPoint only when the screen launched it", () => {
@@ -261,6 +265,13 @@ describe("screen copy", () => {
     expect(screenCopy("offline", { ...sf, inSession: true }).line).toBe(
       "Reconnecting. You can still end from your phone.",
     );
+  });
+
+  it("in a session every transient state keeps End, so Back never leaves a session running", () => {
+    for (const key of ["offline", "error", "service_down", "rate_limited"] as const) {
+      expect(screenCopy(key, { ...sf, inSession: true }).controls, key).toEqual(["end"]);
+      expect(screenCopy(key, sf).controls, key).toEqual([]);
+    }
   });
 
   it("only an error alerts", () => {
@@ -328,7 +339,7 @@ describe("phone copy", () => {
     }
   });
 
-  it("Disconnect OneDrive appears only for a signed-in phone, first and as a text action", () => {
+  it("AUTH-07 copy: Disconnect OneDrive appears only for a signed-in phone, first and as a text action", () => {
     for (const key of ["choose", "approve", "unregistered"] as const) {
       expect(phoneCopy(key, pf).actions.map((a) => a.id)).not.toContain("disconnect");
       const withAccount = phoneCopy(key, { ...pf, account: true }).actions;

@@ -28,6 +28,17 @@ const problem = (status: number, code: string) =>
 const ok = (body: unknown) => new Response(JSON.stringify(body), { status: 200 });
 
 describe("api client", () => {
+  it("leave is a POST that outlives the page (keepalive); post is not", async () => {
+    const f = fakeFetch(() => ok({}));
+    const api = createApi({ fetch: f.fetch });
+    await api.leave("/api/screen/end", "REF.SECRET");
+    await api.post("/api/screen/end", {}, "REF.SECRET");
+    expect(f.calls.map((c) => [c.init.method, c.init.keepalive])).toEqual([
+      ["POST", true],
+      ["POST", false],
+    ]);
+  });
+
   it("sends the credential as a Bearer header and never in the URL", async () => {
     const f = fakeFetch(() => ok({ state: "waiting" }));
     const api = createApi({ fetch: f.fetch });

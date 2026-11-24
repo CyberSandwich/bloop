@@ -21,10 +21,10 @@ const code = lines.filter((l) => !comment(l));
 
 // The license block: everything after the first line of the vendored header, up to its end.
 const license = current.slice(current.indexOf("\n"), current.indexOf("*/") + 2);
-const head = `/*! uqr ${version} (https://github.com/unjs/uqr), vendored from dist/index.mjs with only its comments removed by tools/trim-uqr.mjs (the browser JS budget); the code is unmodified.`;
+const head = `/*! uqr ${version} (https://github.com/unjs/uqr), vendored from dist/index.mjs with its whole-line comments removed by tools/trim-uqr.mjs (the browser JS budget); the code is unmodified.`;
 writeFileSync(target, `${head}${license}\n${code.join("\n")}`);
 
-// Read back: after the header, the file is exactly the source's non-comment lines, and it parses.
+// Read back: the header slicing kept the body whole, and the file parses (node --check is the guard that matters).
 const written = readFileSync(target, "utf8");
 const body = written.slice(written.indexOf("*/") + 3);
 const parses = spawnSync(process.execPath, ["--check", target]).status === 0;

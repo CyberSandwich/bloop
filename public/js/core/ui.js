@@ -27,9 +27,20 @@ export function ariaFlag(el, name, on) {
   else el.removeAttribute(name);
 }
 
-/** Moves focus to a heading (tabindex="-1" in the HTML) or a row; a move the page makes never draws the ring. */
+// The ring follows a key only: a room screen often has no input of its own (WCAG 2.4.7).
+let keyed = false;
+for (const t of ["keydown", "pointerdown"])
+  addEventListener(
+    t,
+    (e) => {
+      keyed = e.type === "keydown";
+    },
+    true,
+  );
+
+/** Focus to a heading (tabindex="-1") or a row. */
 export function focusTitle(/** @type {HTMLElement} */ title) {
-  title.focus({ preventScroll: true, focusVisible: false });
+  title.focus({ preventScroll: true, focusVisible: keyed });
 }
 
 /** True when a state change took the focused control away, so focus must land somewhere sensible. */

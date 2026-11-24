@@ -41,12 +41,7 @@ export function allowedLink(raw: string): string | null {
   return allowed && url.href.length <= MAX_URL_CHARS ? url.href : null;
 }
 
-/** Files by name, then links by title: the order every page shows and every item index names. */
-export function orderItems(items: readonly ItemRef[]): ItemRef[] {
-  const label = (i: ItemRef) => (i.kind === "file" ? i.name : i.title);
-  const rank = (i: ItemRef) => (i.kind === "file" ? 0 : 1);
-  return [...items].sort((a, b) => rank(a) - rank(b) || label(a).localeCompare(label(b), "en"));
-}
+export { orderItems } from "../../public/js/shared/session.js";
 
 /** The index of the item an approval launches: the first file. -1 when the session holds links only. */
 export const launchIndex = (items: readonly ItemRef[]): number => items.findIndex((i) => i.kind === "file");

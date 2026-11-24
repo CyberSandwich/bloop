@@ -438,13 +438,11 @@ main:has(> .side:not([hidden])) #stage {
   justify-items: end;
   cursor: e-resize;
 }
+/* The disc's fill is the one glass recipe (.glass in the markup), so reduced transparency reaches it. */
 .zone .icon {
   box-sizing: content-box;
   padding: 8px;
   border-radius: 50%;
-  background: var(--glass);
-  -webkit-backdrop-filter: var(--glass-filter);
-  backdrop-filter: var(--glass-filter);
   box-shadow: var(--glass-edge), var(--sh-pill);
   opacity: 0;
   transition: opacity 150ms var(--ease-ui);
@@ -531,9 +529,6 @@ main:has(> .side:not([hidden])) #stage {
   height: var(--pill);
   padding: 8px;
   border-radius: var(--r-pill);
-  background: var(--glass);
-  -webkit-backdrop-filter: var(--glass-filter);
-  backdrop-filter: var(--glass-filter);
   box-shadow: var(--glass-edge), var(--sh-pill);
   transform: translateX(-50%);
 }
@@ -878,9 +873,14 @@ progress.bar::-moz-progress-bar {
     bottom: 0;
     margin: auto calc(-1 * var(--pad)) calc(-1 * var(--inset));
     padding: 16px var(--pad) calc(var(--inset) + env(safe-area-inset-bottom));
-    background: var(--glass);
-    -webkit-backdrop-filter: var(--glass-filter);
-    backdrop-filter: var(--glass-filter);
+  }
+}
+/* The band's fill is .glass (a.html); from 640 the buttons sit on the page, so the band has none. */
+@media (min-width: 640px) {
+  .column > .actions.glass {
+    background: none;
+    -webkit-backdrop-filter: none;
+    backdrop-filter: none;
   }
 }
 .actions .btn {

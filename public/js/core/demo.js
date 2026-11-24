@@ -26,6 +26,12 @@ export const pageMode = (/** @type {number} */ width, /** @type {number} */ heig
 export const stepPage = (/** @type {number} */ at, /** @type {number} */ by, /** @type {number} */ count) =>
   Math.min(count - 1, Math.max(0, at + by));
 
+/** The tap zones: the slide box's halves. @param {{left: number, top: number, width: number, height: number}} box */
+export const halves = (box) => [
+  { ...box, width: box.width / 2 },
+  { ...box, left: box.left + box.width / 2, width: box.width / 2 },
+];
+
 /**
  * The pre-rendered pages of a demo account's deck or PDF; null for anything else (a guest's own file has none).
  * @param {Item} item

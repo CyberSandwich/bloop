@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { phoneKey, screenKey } from "../../public/js/core/states.js";
 import { ERRORS } from "../../public/js/shared/errors.js";
+import { IN_SESSION, PAIRING_OVER } from "../../public/js/shared/session.js";
 import type { PhoneCtx, ScreenCtx } from "../../public/js/types.js";
 import type { FileEntry, PhoneView, ScreenView, SessionState } from "../../src/shared/protocol.ts";
 
@@ -41,6 +42,14 @@ const file = (id: string): FileEntry => ({
   type: "pptx",
   modifiedAt: 0,
   size: null,
+});
+
+describe("shared session rules", () => {
+  it("IN_SESSION and PAIRING_OVER split the session states with no overlap", () => {
+    expect(IN_SESSION).toEqual(["approved", "opening", "open"]);
+    expect(PAIRING_OVER).toEqual(["ended", "waiting", "closed"]);
+    expect(IN_SESSION.filter((s) => PAIRING_OVER.includes(s))).toEqual([]);
+  });
 });
 
 describe("screen state to view mapping", () => {

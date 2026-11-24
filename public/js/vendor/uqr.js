@@ -1,4 +1,4 @@
-/*! uqr 0.1.3 (https://github.com/unjs/uqr), vendored from dist/index.mjs with only its comments removed by tools/trim-uqr.mjs (the browser JS budget); the code is unmodified.
+/*! uqr 0.1.3 (https://github.com/unjs/uqr), vendored from dist/index.mjs with its whole-line comments removed by tools/trim-uqr.mjs (the browser JS budget); the code is unmodified.
 
  * MIT License
  *

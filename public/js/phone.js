@@ -4,18 +4,19 @@
 /** @import {ClaimResponse, Entry, ErrorCode, Item, PhoneStateKey, PhoneView} from "../../src/shared/protocol.ts" */
 import { createApi } from "./core/api.js";
 import { bootCode } from "./core/boot-code.js";
-import { FATAL, openChannel } from "./core/channel.js";
+import { openChannel, refusal } from "./core/channel.js";
 import { phoneCopy } from "./core/copy.js";
 import { thumbOf } from "./core/demo.js";
 import { sendable, sendFile, wholeMB } from "./core/drop.js";
 import { loadFiles } from "./core/files.js";
 import { ago, countdown, ICON_ADD } from "./core/format.js";
 import { rowFace, tile } from "./core/rows.js";
-import { firstFile, inItemOrder, phoneKey } from "./core/states.js";
+import { firstFile, phoneKey } from "./core/states.js";
 import { dropPid, PID_KEY, pidStore, refOf, SID_KEY, sameScreen, sessionStore } from "./core/store.js";
 import { ariaFlag, byId, el, focusTitle, ICON_CHECK, icon, isFramed, setText, show, wsUrl } from "./core/ui.js";
 import { VERIFIED } from "./core/verified.js";
 import { ERRORS } from "./shared/errors.js";
+import { orderItems, PAIRING_OVER } from "./shared/session.js";
 
 const api = createApi();
 const store = sessionStore();
@@ -80,7 +81,7 @@ const tickMark = () => el("span", { class: "tick" }, [icon(ICON_CHECK)]);
 /** The rows in item order, then "Add a File". Demo: any items; live: one file (radios), as a live screen shows one. */
 function buildRows(/** @type {Entry[]} */ all, /** @type {boolean} */ add) {
   const demo = c.info?.mode === "demo";
-  const entries = /** @type {Entry[]} */ (inItemOrder(demo ? all : all.filter((e) => e.kind === "file")));
+  const entries = /** @type {Entry[]} */ (orderItems(demo ? all : all.filter((e) => e.kind === "file")));
   fileList.replaceChildren(
     ...entries.map((entry) => {
       const input = el("input", { type: demo ? "checkbox" : "radio", name: "item", value: entry.id });
@@ -121,7 +122,7 @@ function buildItems(/** @type {Item[]} */ items) {
 function setView(/** @type {PhoneView} */ view) {
   c.view = view;
   c.skew = view.now - Date.now();
-  if (view.state === "ended" || view.state === "waiting" || view.state === "closed") dropPid(pids, c.pid);
+  if (PAIRING_OVER.includes(view.state)) dropPid(pids, c.pid);
 }
 
 function buildSkeleton() {
@@ -207,7 +208,6 @@ function render() {
 /** This tab is also the demo screen it claimed (the one-device round trip): its way back is that screen. */
 const home = () => c.info?.mode === "demo" && sameScreen(store.get(SID_KEY), c.pid);
 
-/** Five minutes or less is worth a glance. */
 const SOON_MS = 300_000;
 let offline = false;
 
@@ -280,7 +280,6 @@ async function approve() {
   const res = await api.post("/api/approve", { ids: c.selected }, c.pid);
   c.approving = false;
   if (!res.ok) return fail(res.error, approve);
-  // The one-device demo goes back to its screen, which now shows what was approved.
   if (home()) return location.assign("/s?mode=demo");
   setView(res.value);
   render();
@@ -361,7 +360,6 @@ async function listFiles() {
   const res = await loadFiles(api, /** @type {string} */ (c.pid));
   if (!res.ok) return fail(res.error, listFiles);
   c.files = res.files;
-  // A demo room approves its whole catalog as one list; a live phone starts from its newest file alone.
   c.selected = (c.info?.mode === "demo" ? res.files : res.files.slice(0, 1)).map((e) => e.id);
   render();
   c.account = c.info?.mode === "live" && (await signedInToOneDrive());
@@ -396,7 +394,7 @@ function attach(/** @type {string} */ pid) {
       render();
     },
     onError: (code) => {
-      if (FATAL.has(code)) dropPid(pids, pid);
+      if (refusal(code) === "dead") dropPid(pids, pid);
       if (!c.canceling && !c.canceled) fail(code);
     },
     onLink: (link) => {
@@ -433,14 +431,17 @@ async function claim(/** @type {string} */ code) {
 async function resume(/** @type {string} */ pid) {
   const res = await api.get("/api/pair/state", pid);
   if (!res.ok) {
-    if (res.error === "offline" || res.error === "service_down") return fail("offline", () => resume(pid));
+    const kind = refusal(res.error);
+    if (kind !== "dead") return fail(kind === "offline" ? "offline" : res.error, () => resume(pid));
     dropPid(pids, pid);
-    // A stale pid reads as no pairing ("Scan the Code").
+    // A dead pid reads as no pairing ("Scan the Code").
     nocode = true;
     return fail("pairing_invalid");
   }
   const view = /** @type {PhoneView} */ (res.value);
   c.info = { roomName: view.room.name, registered: view.room.registered, match: view.match, mode: view.mode };
+  // Before setView, so a resumed view that is already over drops this pid.
+  c.pid = pid;
   setView(view);
   c.maxBytes = view.dropMaxBytes;
   attach(pid);

@@ -6,6 +6,7 @@
 /** @import {LauncherDeps, Minted, ScreenLauncher} from "./types.js" */
 import { firstFile } from "./core/states.js";
 import { DOWNLOAD_REUSE_MS, DOWNLOAD_STARTS_PER_LINK, LAUNCH_TIMEOUT_MS, RELINK_WAIT_MS } from "./core/timing.js";
+import { PAIRING_OVER } from "./shared/session.js";
 
 /** @param {LauncherDeps} deps @returns {ScreenLauncher} */
 export function createLauncher(deps) {
@@ -175,7 +176,7 @@ export function createLauncher(deps) {
         s.needsClick = false;
         clearTimeout(s.waiting);
       }
-      if (view.state === "ended" || view.state === "waiting" || view.state === "closed") {
+      if (PAIRING_OVER.includes(view.state)) {
         if (s.haveLink || s.pdfWindow || s.needsClick) reset();
       }
     },
