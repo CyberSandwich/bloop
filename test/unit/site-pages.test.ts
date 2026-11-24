@@ -1,7 +1,6 @@
 import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
-import { ALPHABET } from "../../public/js/shared/codes.js";
 
 const read = (rel: string) => readFileSync(fileURLToPath(new URL(`../../${rel}`, import.meta.url)), "utf8");
 const SITE = ["index.html", "security.html", "privacy.html", "404.html"] as const;
@@ -116,9 +115,7 @@ describe.each(SITE)("%s under the strict CSP", (page) => {
 
   it("every heading and label is at most 5 words", () => {
     const headings = [...html.matchAll(/<h([1-3])\b[^>]*>([\s\S]*?)<\/h\1>/g)].map((m) => m[2] as string);
-    const labels = [...html.matchAll(/<span class="(?:status|frag-label)[^"]*">([^<]*)<\/span>/g)].map(
-      (m) => m[1] as string,
-    );
+    const labels = [...html.matchAll(/<span class="status[^"]*">([^<]*)<\/span>/g)].map((m) => m[1] as string);
     for (const text of [...headings, ...labels].map((t) => visibleText(t))) {
       expect(words(text).length, text).toBeLessThanOrEqual(5);
     }
@@ -328,8 +325,9 @@ describe("landing word caps (design.md section 13)", () => {
       "Present immediately or download your file.",
     ]);
     for (const step of steps) expect(step).toMatch(/<div class="frag" aria-hidden="true">/);
-    const code = /<span class="frag-code">([^<]+)<\/span>/.exec(steps[0] ?? "")?.[1] ?? "";
-    expect(code).toMatch(new RegExp(`^[${ALPHABET}]{3} [${ALPHABET}]{3}$`));
+    // The Scan still is the QR glyph alone: ink, 64 px, no text.
+    expect(steps[0]).toMatch(/<svg class="icon frag-qr"[^>]*width="64" height="64"[^>]*aria-hidden="true"/);
+    expect(visibleText(between(steps[0] ?? "", /<div class="frag"/, "</div>"))).toBe("");
     // The app's own .tick is hidden outside a checked row, so the stills keep their own class.
     expect(steps[1]?.match(/class="icon frag-tick"/g)).toHaveLength(2);
     expect(html).not.toMatch(/class="(?:[^"]*\s)?tick[\s"]/);

@@ -457,22 +457,11 @@ h3 {
   background: var(--ink);
   color: var(--paper);
 }
-.frag-meta,
 .frag-tick {
   margin-left: auto;
 }
-.frag-meta,
-.frag-label {
-  color: var(--muted);
-  font-size: 14px;
-  font-weight: 400;
-  font-variant-numeric: tabular-nums;
-}
-.frag-code {
-  font-size: 26px;
-  font-weight: 600;
-  letter-spacing: 0.06em;
-  font-variant-numeric: tabular-nums;
+.frag-qr {
+  justify-self: center;
 }
 
 /* The grid sits on a white band, so the cells' paper reads as the one neutral fill. */
