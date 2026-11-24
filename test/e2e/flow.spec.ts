@@ -121,6 +121,11 @@ async function watchLaunches(page: Page): Promise<() => Promise<{ opened: number
 }
 
 async function expectNoAxeViolations(page: Page) {
+  // axe blends text with its ancestors' opacity: a pane still fading in (380 ms) reads as low contrast. Wait for every
+  // finite animation; the spinner runs forever.
+  await page.waitForFunction(
+    "document.getAnimations().every((a) => a.playState !== 'running' || a.effect?.getTiming().iterations === Infinity)",
+  );
   const results = await new AxeBuilder({ page }).withTags(["wcag2a", "wcag2aa", "wcag21aa", "wcag22aa"]).analyze();
   expect(results.violations).toEqual([]);
 }
@@ -339,11 +344,14 @@ test.describe("pairing flow", () => {
     await expect(screen.page.getByRole("button", { name: "End", exact: true })).toBeHidden();
     // The demo's one way on: the waitlist.
     await expect(screen.page.getByRole("link", { name: "Join the Waitlist" })).toBeVisible();
-    // Session Ended sits at the true center of the viewport.
+    // Session Ended, its line and the waitlist link sit at the true center of the viewport, as one group.
     const box = await heading(screen.page).boundingBox();
+    const last = await screen.page.getByRole("link", { name: "Join the Waitlist" }).boundingBox();
     const view = screen.page.viewportSize();
     expect(Math.abs((box?.x ?? 0) + (box?.width ?? 0) / 2 - (view?.width ?? 0) / 2)).toBeLessThan(2);
-    expect(Math.abs((box?.y ?? 0) + (box?.height ?? 0) / 2 - (view?.height ?? 0) / 2)).toBeLessThan(40);
+    expect(Math.abs(((box?.y ?? 0) + (last?.y ?? 0) + (last?.height ?? 0)) / 2 - (view?.height ?? 0) / 2)).toBeLessThan(
+      4,
+    );
     await expectNoAxeViolations(screen.page);
     await expectNoAxeViolations(phone.page);
 

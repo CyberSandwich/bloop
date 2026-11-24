@@ -107,7 +107,7 @@ Tokens live in `public/css/base.css` `:root`; this list restates them, and the d
 | `--surface:#ffffff` | cards: the How It Works steps, the features band, FAQ items, the QR card and the house frame (section 6), the stage frame, item lists, the warn card, the provider list, the panel rows, chips |
 | `--ink:#1e1e1c` | text, primary pills, the tick, the active page dot, the progress fill, the focus ring |
 | `--ink-2:#3a3a36` | the nav's Waitlist pill (solid, never a gradient), nav links, text on a tinted card, the stage's line |
-| `--muted:#6c6c66` | secondary text (4.75:1 on paper); never on a pastel |
+| `--muted:#5a5a55` | secondary text, 4.5:1 or more on every neutral it sits on: 6.2 on paper, 5.0 on a selected row (`--g1`), 5.8 on a hover wash, 6.6 on glass, and still 5.0 at 90% opacity mid-fade; never on a pastel |
 | `--g2:#a3a39c` | the outline pill's ring, the empty tick ring, field rings; never text |
 | `--g1:#dcdcd7` | skeletons, the progress track, page dots, the selected row, the sheet grab bar, the hero stage's ground while its picture loads |
 | `--hairline:rgba(0,0,0,.08)` | rules and card rings, drawn as `box-shadow`, never a border; row hover and press |
@@ -265,7 +265,7 @@ Checked at 1440, 834 and the narrowest window. Model for the viewer: the iCloud 
   - **Woken:** a background tab's timers sleep, so when the page becomes visible again it reads the state at once (and reconnects if the socket is down); an overdue code then rotates at once, so a woken room screen never shows an expired code. A read answered after a newer push is dropped (the channel counts state frames), so an old view never lies over a new one. The phone does the same.
 - **Claimed:** the waiting layout in place, nothing moved at any width (measured at 834 and 1440): the title stays the room's name, so it never wraps or moves, and the status is the line: "Your phone shows 42." in the hint's place, one line at 40/600 ink (read across the room, as the 120 px digits were; centered under the card when stacked, even where it is wider than the lines it replaces), in the lines' own box; from 600 the line under the heading carries the same words for screen readers only (under 600 it is the visible line). The QR card stays where it was, blank, with an Iconic `smartphone` in it (a reloaded claim no longer knows its code, so a live one hides its QR too: one look either way); no ring; the code row's place says "Waiting for approval." (the hint's size, `--muted`), so the block stays centered on the card. When this browser holds the claim too (it went to `/a` and came back), the line is "Finish on this device.", the same size and place, with Back and Continue (primary, to `/a`, which resumes the pairing) in the code row's place.
 - **Busy states** (live launch states, offline, service down, rate limited, error): the heading and line centered, no QR. In a session, offline and an error park the viewer: it is hidden and keeps its item, page, pictures and minted links. In full screen it stays full screen: the slide and the tap zones hide and the heading shows centered on the ink (22/600, `--surface`), so the slide resumes in place when the session state returns; leaving full screen while parked hides the stage. Only a real end leaves full screen (a hidden full-screen stage is a black room screen). Nothing repaints a parked viewer (a key, a relink, an image load) until the session state shows again.
-- **Ended:** "Session Ended" at `--display`, at the true center of the viewport (the page column is fixed over it, so the bar and footer never shift it), no bar controls. Under it, 16 down, the end line, when there is one: why it ended ("Revoked from the phone.", "Time's up."; the demo too, the moment that proves Revoke) and what a live PC may still hold ("Close PowerPoint to take your slides off this PC.", "Delete {file} from Downloads before you leave.", the download's name in Downloads, from the link). A line, or the demo's "Join the Waitlist" (secondary, in the flow 24 under the heading; the landing's own link), holds the screen `ENDED_HOLD_MS` (10 s); with neither, a fresh code comes after `ENDED_QR_RETURN_MS` (3 s).
+- **Ended:** "Session Ended" at `--display`, centered with its end line and the demo's waitlist link as one group at the true center of the viewport (the page column is fixed over it, so the bar and footer never shift it), no bar controls. Under it, 16 down, the end line, when there is one: why it ended ("Revoked from the phone.", "Time's up."; the demo too, the moment that proves Revoke) and what a live PC may still hold ("Close PowerPoint to take your slides off this PC.", "Delete {file} from Downloads before you leave.", the download's name in Downloads, from the link). A line, or the demo's "Join the Waitlist" (secondary, in the flow 24 under the heading; the landing's own link), holds the screen `ENDED_HOLD_MS` (10 s); with neither, a fresh code comes after `ENDED_QR_RETURN_MS` (3 s).
 - **Footer line** on a live screen in every state: "Phone not with you? Sign in to this PC as usual." None on a demo screen, which has no PC to sign in to.
 - **Under 600:** a live screen shows "Use the Room's Screen" (the title's 44, balanced) / 16 under it "Open this page there, then scan its code with your phone." / Enter the Code, centered as one group like every dead end, and starts nothing. A demo screen runs with no QR, hint, code row or corner pill: centered under the room name, 24 apart, "Approve on This Phone" (primary) and "Or open {host}/demo on a laptop and scan its code with this phone." Approving there brings the tab straight back to the viewer.
 
@@ -473,14 +473,14 @@ Stack and system architecture: `docs/architecture.md` and `docs/adr/`.
 |---|---|---|
 | `--ink` on `--paper` / white | 15.6 / 17.0:1 | text, pill labels inverted |
 | `--paper` on `--ink` | 15.6:1 | primary pill label |
-| `--muted` on `--paper` / white | 4.75 / 5.2:1 | secondary text |
+| `--muted` on `--paper` / white / `--g1` / the wash | 6.2 / 6.9 / 5.0 / 5.8:1 | secondary text, a selected row's meta line, a hovered row |
 | `--lead` on the robin wash at its strongest under text / on `--paper` | 4.86 / 5.5:1 | the hero and page leads |
 | `--robin-ink` on `--paper` / white | 5.0 / 5.6:1 | the name in body copy, 600 |
 | `--g2` on `--paper` | 2.3:1 | rings only (the outline pill's label is ink), never text |
 | QR #1E1E1C on white | 17.0:1 | modules |
 | `--robin-deep` on white | 4.0:1 | the QR ring (a graphic: 3:1 needed) |
 | `--rose-ink` on `--rose` | 5.6:1 | End and Revoke |
-| `--ink` / `--muted` on glass over paper (#fafaf9) | 16.0 / 5.1:1 | the control pill, the phone's sticky actions |
+| `--ink` / `--muted` on glass over paper (#fafaf9) | 16.0 / 6.6:1 | the control pill, the phone's sticky actions |
 | `--ink` on glass over an ink slide (#aaaaa9, the worst case) | 7.2:1 | the page count in the control pill |
 
 ### Rules
