@@ -337,6 +337,11 @@ html:has(.page-site) {
   padding-bottom: var(--section);
 }
 
+/* base.css balances h1 and h2; site cards title in h3, so these balance too. */
+h3 {
+  text-wrap: balance;
+}
+
 /* How It Works: white step cards, each naming its device, over a still of that step. */
 .steps,
 .grid {

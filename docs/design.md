@@ -142,7 +142,7 @@ Status colors (`--ok`, `--warn`, `--err`) are not used: a state is a sentence pl
 | small | 14 `--muted` | 1.45 | | 400 |
 | codes (typed code, match digits) | context size, `tabular-nums` | 1 | +0.04 to 0.06em | 600 |
 
-Headings `text-wrap:balance`; no mono, no eyebrow, no uppercase label, no grey second clause in a headline.
+Headings `text-wrap:balance` (h1 and h2 in base.css, the site's h3 in site.css, so a card title never ends on one word); no mono, no eyebrow, no uppercase label, no grey second clause in a headline.
 
 ### Radii, shadows, motion, layout
 | Token | Use |
@@ -247,7 +247,7 @@ Width 1136, a top hairline, padding 56 above. A row that wraps: at the start the
 
 ### Privacy and security pages (opsis `/compare`, restated)
 Content 1136 wide. A centered page hero (the h1 at the section size, an optional `.lead`), then:
-- **The panel:** the Connect panel's frame (solid sky, padding 12, two white group cards at radius 16): "What the Screen Gets" (each row ends in a 20 px Iconic `check`) and "What Stays on Your Phone" (each row ends in "Never", 15/400 `--muted`), 48 under the hero. Each row 56 tall, 600 text; both marks `aria-hidden`, since the group heads carry the meaning. No switches: nothing that is not a control looks pressable.
+- **The panel:** the Connect panel's frame (solid sky, padding 12, two white group cards at radius 16): "What the Screen Gets" (each row ends in a 20 px Iconic `check`) and "What the Screen Never Gets" (each row ends in "Never"; titled for the screen, since "What Stays on Your Phone: Your account, Never" read backward, 15/400 `--muted`), 48 under the hero. Each row 56 tall, 600 text; both marks `aria-hidden`, since the group heads carry the meaning. No switches: nothing that is not a control looks pressable.
 - **Topic cards,** 16 apart: white, `--r-content`, padding 24 (40 from 768); from 900 two columns, `.8fr 1.2fr`, gap 48: the 24/600 h2 at the start, the prose in `--ink-2` beside it. `.topic.wide` is one column, for the retention table and for the points list on `/security`. From 900 each table row is that same `.8fr 1.2fr` grid with gap 48, so a value starts where a topic's prose does: one grid template on the page.
 
 ### Item row (the viewer sidebar and the phone list, one face: `core/rows.js`)
@@ -368,7 +368,7 @@ The page moves focus to the new title on each state change. "its copy" is delibe
 Typed code page (`/code`, the same frame, one column): title "Enter the Code"; one field 56 tall, `--r-field`, its `--g2` ring turning 2 px ink on focus (the one ring, no outline), the code 22/600 tracked +0.06em as the screen shows it (16 px or more keeps iOS from zooming), 6 characters, label "Code", `autocapitalize="characters"`, `autocomplete="one-time-code"`, `inputmode="text"`, shown in two groups of 3; Continue (primary) enabled at 6 characters; a failed claim shows one sentence beside the field (`typedError` in `copy.js`: "Check the code on the screen and try again.", or the expired ("That code changed. Enter the new code on the screen."), used, offline and too-many-tries sentences); a look-alike the alphabet leaves out says so as it is typed ("Codes don't use 0, 1, I, L, O or U."); success goes to the match state.
 
 ### Security page (`/security`; `/it` answers 301 to it from `public/_redirects`)
-h1 "Security", lead "What the room PC can and cannot reach." (its own line, not the landing's; also the description), then the panel (section 6): What the Screen Gets: "The items you approve", "A link to each, which expires"; What Stays on Your Phone: "Your account", "Your other files". Then three points in one wide topic card (the panel already says each link expires):
+h1 "Security", lead "What the room PC can and cannot reach." (its own line, not the landing's; also the description), then the panel (section 6): What the Screen Gets: "The items you approve", "A link to each, which expires"; What the Screen Never Gets: "Your account", "Your other files". Then three points in one wide topic card (the panel already says each link expires):
 1. Each code works once for 60 seconds, and the phone shows the room before Approve. `[V-6]`
 2. Each open ends by itself after 90 minutes, or 60 in the demo, and is logged for IT to export. `[V-2]`
 3. A downloaded copy can stay on the PC. Every room is audited, and the results are published. `[V-1]` (until V-1 passes: "A downloaded copy can stay on the PC. See what can stay." linking `#stay`)
@@ -381,7 +381,7 @@ Then one topic card per row below (each `[V-5]` until the build confirms it), th
 | Permissions | bloop asks for read access to OneDrive. Microsoft grants that for the whole OneDrive; bloop reads one folder and logs every read. Where your tenant allows it, the app folder limits access at Microsoft's side, but then only files in that folder appear. |
 | What can stay behind | A downloaded copy, recent file names and opened tabs with their history can stay until the profile is wiped. Each room is audited; results are published per room. `[V-1]` (the last sentence ships only once V-1 passes) |
 | Threat model | QR relay: the phone also shows the screen's match code before Approve. Shoulder surfing: a seen code is spent or soon expires. Forgotten session: it ends by itself. Wrong screen: unregistered screens carry a warning. Lost phone: see Removing Access (a link to `#remove`). |
-| Removing access | Tap Disconnect OneDrive on your phone while you approve, and bloop deletes its stored access and signs you out everywhere at once. You may also be able to remove bloop in My Apps (myapplications.microsoft.com); your IT team can remove it for everyone in Microsoft Entra. Lost phone: next time you approve on any phone, tap Disconnect OneDrive: every bloop sign-in ends at once, including the lost phone's. (the same first two sentences as Your Choices on `/privacy`. Disconnect is `POST /api/me/disconnect`: the grant and every phone session go at once. My Apps and Entra end only the refresh token, so they are not said to sign anyone out) |
+| Removing access | Once OneDrive is connected, tap Disconnect OneDrive on any phone while you approve: bloop deletes its stored access and every sign-in ends at once, a lost phone's included. You may also be able to remove bloop in My Apps (myapplications.microsoft.com); your IT team can remove it for everyone in Microsoft Entra. (the same sentences as Your Choices; the first covers a lost phone too; "Once OneDrive is connected" keeps them true while the file source is mock and no phone shows the button on `/privacy`. Disconnect is `POST /api/me/disconnect`: the grant and every phone session go at once. My Apps and Entra end only the refresh token, so they are not said to sign anyone out) |
 | Status | No external audit yet. The source is public. Report a security issue: security.txt. |
 
 ### Privacy notice (`/privacy`, draft until the legal lane, OD-5)
@@ -396,7 +396,7 @@ Then one topic card per row below (each `[V-5]` until the build confirms it), th
 | After the table | bloop keeps no slide content from your OneDrive. A guest's file is the one exception, and it is deleted when the talk ends. `[V-5]` |
 | Why | To open the file you approve on the screen you choose, to keep the service safe, and to give your organization's IT team a record of what was opened where. |
 | Where | Your data is stored in the EU on Cloudflare. Cloudflare is a US company, and each request is handled at its nearest data center. (threat model DATA-03: never "UK only" or "never leaves") |
-| Your Choices | Tap Disconnect OneDrive on your phone while you approve, and **bloop** deletes its stored access and signs you out everywhere at once. You may also be able to remove **bloop** in My Apps (myapplications.microsoft.com); your IT team can remove it for everyone in Microsoft Entra. To see or erase what **bloop** holds about you, write to the address above. |
+| Your Choices | Once OneDrive is connected, tap Disconnect OneDrive on any phone while you approve: **bloop** deletes its stored access and every sign-in ends at once, a lost phone's included. You may also be able to remove **bloop** in My Apps (myapplications.microsoft.com); your IT team can remove it for everyone in Microsoft Entra. To see or erase what **bloop** holds about you, write to the address above. |
 
 `/.well-known/security.txt` (RFC 9116): `Contact` (ventures@saputra.co.uk), `Expires` (at most a year ahead), `Preferred-Languages: en`. Renewing it is in `docs/setup.md`.
 

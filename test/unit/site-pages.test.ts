@@ -628,6 +628,11 @@ describe("the stylesheets: base.css, then the page's own (design.md section 11)"
     expect(reduce).toContain("background: var(--surface);");
   });
 
+  it("every site heading balances its lines, so a card title never ends on one word", () => {
+    expect(css["base.css"]).toMatch(/h1,\s*h2 \{[^}]*text-wrap: balance;/);
+    expect(css["site.css"]).toMatch(/^h3 \{\s*text-wrap: balance;\s*\}/m);
+  });
+
   it("the steps stretch to one row height, and under 640 a cell's icon sits inline before its title", () => {
     expect(block(".step")).not.toContain("align-self");
     // From 1024 the cards share the list's rows, so every still is one height and ends 12 above its card's bottom.
@@ -673,7 +678,7 @@ describe("stage 1 wording and pictures", () => {
     expect(html).toContain('<meta name="description" content="What the room PC can and cannot reach.">');
     for (const fact of [/60 seconds/g, /90 minutes/g, /Disconnect OneDrive/g, /My Apps/g, /Microsoft Entra/g]) {
       const n = (text.match(fact) ?? []).length;
-      expect(n, String(fact)).toBe(fact.source === "Disconnect OneDrive" ? 2 : 1);
+      expect(n, String(fact)).toBe(1);
     }
     const notFound = read("public/404.html");
     expect(visibleText(between(notFound, /<p class="lead">/, "</p>"))).toBe("Check the address.");
@@ -692,8 +697,11 @@ describe("stage 1 wording and pictures", () => {
         (m) => m[1] ?? "",
       );
     for (const row of rows("gets")) expect(row).toMatch(/<svg class="icon yes"[^>]*aria-hidden="true"/);
-    for (const row of rows("stays")) expect(row).toMatch(/<span class="never" aria-hidden="true">Never<\/span>$/);
+    for (const row of rows("never")) expect(row).toMatch(/<span class="never" aria-hidden="true">Never<\/span>$/);
     expect(html).not.toContain("toggle");
+    // Read with "Never", the column names what the screen lacks; "What Stays on Your Phone: Your account, Never" read backward.
+    expect(html).toContain('<h2 id="never">What the Screen Never Gets</h2>');
+    expect(html).not.toContain("What Stays on Your Phone");
   });
 
   it("the Connect lists carry no glyph on either side", () => {
@@ -717,15 +725,15 @@ describe("stage 1 wording and pictures", () => {
     expect(route).toMatch(/sessions\.destroyAll\(userId\)/);
     // One pair of sentences for the same claim on both pages.
     const access =
-      /Tap Disconnect OneDrive on your phone while you approve, and bloop ?deletes its stored access and signs you out everywhere at once\. You may also be able to remove bloop ?in My Apps \(myapplications\.microsoft\.com\); your IT team can remove it for everyone in Microsoft Entra\./;
+      /Once OneDrive is connected, tap Disconnect OneDrive on any phone while you approve: bloop ?deletes its stored access and every sign-in ends at once, a lost phone's included\. You may also be able to remove bloop ?in My Apps \(myapplications\.microsoft\.com\); your IT team can remove it for everyone in Microsoft Entra\./;
     expect(text).toMatch(access);
     expect(visibleText(read("public/privacy.html"))).toMatch(access);
     // Removing Access holds every removal step, the lost phone's included; the Threat Model only points to it.
     const remove = visibleText(between(read("public/security.html"), /<h2 id="remove">/, "</section>"));
     expect(remove).toMatch(/^Removing Access /);
-    expect(remove).toMatch(
-      /Lost phone: next time you approve on any phone, tap Disconnect OneDrive: every bloop ?sign-in ends at once, including the lost phone's\.$/,
-    );
+    // One sentence covers a lost phone, so the card says it once.
+    expect(remove).toMatch(/a lost phone's included\./);
+    expect(remove).not.toMatch(/Lost phone:/);
     const threats = visibleText(between(read("public/security.html"), /<h2 id="threats">/, "</section>"));
     expect(threats).toMatch(/Lost phone: see Removing Access ?\.$/);
     expect(threats).not.toMatch(/Disconnect|My Apps|Entra/);
@@ -746,7 +754,7 @@ describe("privacy notice", () => {
   it("keeps the OneDrive grant only as the code does: until disconnect, a failed refresh after removal, or 30 days unused", () => {
     const row = between(read("public/privacy.html"), /<tr><th scope="row">Your OneDrive access/, "</tr>");
     expect(row).toContain(
-      "Until you disconnect (deleted at once) or remove bloop in My Apps or Entra (deleted the next time it fails), or 30 days unused.",
+      'Until you disconnect (deleted at once) or remove <b class="name">bloop</b> in My Apps or Entra (deleted the next time it fails), or 30 days unused.',
     );
     expect(read("docs/threat-model.md")).toMatch(
       /\| refresh token \(grant\) \| D1 \| until disconnect \(at once, with every phone session\)/,
