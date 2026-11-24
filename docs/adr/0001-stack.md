@@ -47,6 +47,8 @@ Dev dependencies beyond the table: `wrangler` (run and deploy), `@cloudflare/wor
 
 Asset tools outside npm: `tools/render-og.py`, `render-slides.py` and `subset-font.py` regenerate committed files (social image and touch icon, demo slide images, font subset); nothing in the build or CI runs them. They need Python 3 with `fonttools` and `brotli` (a throwaway venv; `docs/setup.md`), ImageMagick, poppler, `avifenc` and `cwebp`. Why: headless Chrome cannot start locally, and `fonttools` is the reference subsetter. Remove: delete a tool and keep its last output.
 
+Client parts beyond the table: `public/js/core/loader.js`, the one loading part (design.md section 6, Loader), with `readAll`, which counts a `fetch` body against its `Content-Length`. The viewer draws a photo it read that way on a `<canvas>`: the CSP has no `blob:` (and stays without it), so script-held bytes can never become an `<img>`. Why: real progress on a slow photo, which an `<img>` cannot report, with no second download and no wider CSP. Replaces: the blurred thumbnail stand-in. Remove: set the view link as an `<img>` `src` again, and show the part indeterminate.
+
 ## Rejected
 
 - **Node container plus SQLite** (Hetzner or Fly): best exit path and no US provider, but it costs money from day one and is a single machine to patch. It remains the exit: the code is plain `fetch` and SQL, so only the Durable Object module would need rewriting.

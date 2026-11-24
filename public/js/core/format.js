@@ -79,7 +79,7 @@ export function spelled(code) {
  * @param {string} host
  */
 export const qrLabel = (code, host) =>
-  `QR code. Scan it with your phone camera to open bloop. Or enter the code ${spelled(code)} at ${host} slash code.`;
+  `QR code, scan with your phone, or enter the code ${spelled(code)} at ${host} slash code`;
 
 /** "1:05" or "59:12": minutes and seconds left, never negative. @param {number} ms */
 export function countdown(ms) {

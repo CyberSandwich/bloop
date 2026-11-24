@@ -38,7 +38,15 @@ class Node {
   offsetHeight = 0;
   naturalWidth = 0;
   naturalHeight = 0;
+  width = 0;
+  height = 0;
+  parent: Node | null = null;
+  /** What a canvas last drew: the URL its fake bitmap came from. */
+  drawn = "";
   constructor(readonly tag: string) {}
+  get localName() {
+    return this.tag;
+  }
   get firstElementChild(): Node | null {
     return this.children[0] ?? null;
   }
@@ -50,6 +58,29 @@ class Node {
   }
   setAttribute(k: string, v: string) {
     this.attrs.set(k, v);
+    if (k === "class") for (const c of v.split(" ")) this.classes.add(c);
+  }
+  getContext() {
+    return { drawImage: (b: { src: string }) => (this.drawn = b.src) };
+  }
+  animate() {
+    return { finished: Promise.resolve() };
+  }
+  remove() {
+    if (this.parent) this.parent.children = this.parent.children.filter((c) => c !== this);
+  }
+  /** One compound selector: a tag or a .class, after any ancestor tags ("picture img"). */
+  is(sel: string): boolean {
+    const parts = sel.trim().split(/\s+/);
+    const own = parts.pop() ?? "";
+    if (!(own.startsWith(".") ? this.classes.has(own.slice(1)) : this.tag === own)) return false;
+    let up = this.parent;
+    for (const want of parts.reverse()) {
+      while (up && up.tag !== want) up = up.parent;
+      if (!up) return false;
+      up = up.parent;
+    }
+    return true;
   }
   getAttribute(k: string) {
     return this.attrs.get(k) ?? null;
@@ -61,7 +92,11 @@ class Node {
     this.listeners.set(t, [...(this.listeners.get(t) ?? []), f]);
   }
   append(...kids: (Node | string)[]) {
-    for (const k of kids) if (typeof k !== "string") this.children.push(k);
+    for (const k of kids)
+      if (typeof k !== "string") {
+        k.parent = this;
+        this.children.push(k);
+      }
   }
   replaceChildren(...kids: (Node | string)[]) {
     this.children = [];
@@ -85,15 +120,12 @@ class Node {
     return n === this || this.children.some((c) => c.contains(n));
   }
   querySelector(sel: string): Node | null {
-    for (const c of this.children) {
-      if (c.tag === sel) return c;
-      const deep = c.querySelector(sel);
-      if (deep) return deep;
-    }
-    return null;
+    return this.querySelectorAll(sel)[0] ?? null;
   }
+  /** Document order; a selector list matches any of its parts. */
   querySelectorAll(sel: string): Node[] {
-    return this.children.flatMap((c) => [...(c.tag === sel ? [c] : []), ...c.querySelectorAll(sel)]);
+    const any = sel.split(",");
+    return this.children.flatMap((c) => [...(any.some((s) => c.is(s)) ? [c] : []), ...c.querySelectorAll(sel)]);
   }
 }
 
@@ -156,6 +188,16 @@ const view = {
   now: 0,
 } as unknown as ScreenView;
 
+/** A view link answers its own URL as the body, so a canvas's drawing names the link it came from. */
+const echo = (url: string) =>
+  Promise.resolve(new Response(url, { headers: { "Content-Type": "image/jpeg", "Content-Length": `${url.length}` } }));
+/** The size every fake photo decodes to. */
+let bitmap = { width: 1500, height: 1000 };
+/** Lets the fake fetch, read and decode settle. */
+const settle = () => new Promise((done) => setTimeout(done, 0));
+/** The link the stage's photo was drawn from, or "" while it is not drawn. */
+const shownFrom = (frame: Node) => frame.querySelector("canvas")?.drawn ?? "";
+
 // Specifiers in variables: the node tsconfig has no DOM lib, so it must not follow these imports into page code.
 const VIEWER = "../../public/js/viewer.js";
 const UI = "../../public/js/core/ui.js";
@@ -182,6 +224,8 @@ beforeAll(async () => {
   vi.stubGlobal("matchMedia", () => ({ matches: true }));
   vi.stubGlobal("Element", Node);
   vi.stubGlobal("HTMLElement", Node);
+  vi.stubGlobal("fetch", echo);
+  vi.stubGlobal("createImageBitmap", async (blob: Blob) => ({ src: await blob.text(), ...bitmap, close() {} }));
   ({ createViewer } = await import(VIEWER));
 });
 
@@ -207,6 +251,95 @@ beforeEach(() => {
   doc.fullscreenEnabled = true;
   doc.body.classes.clear();
   exitFullscreen.mockClear();
+  bitmap = { width: 1500, height: 1000 };
+});
+
+describe("the photo's loader (design.md section 6, Loader)", () => {
+  /** A view link whose bytes arrive when the test says, out of `total`. */
+  const slow = (total: number | null, status = 200) => {
+    let push: (n: number) => void = () => {};
+    let end: () => void = () => {};
+    const aborted: string[] = [];
+    vi.stubGlobal("fetch", (url: string, init: { signal: AbortSignal }) => {
+      init.signal.addEventListener("abort", () => aborted.push(url));
+      if (status !== 200) return Promise.resolve(new Response(null, { status }));
+      return new Promise<Response>((answer, fail) => {
+        init.signal.addEventListener("abort", () => fail(new Error("aborted")));
+        const body = new ReadableStream<Uint8Array>({
+          start(c) {
+            push = (n) => c.enqueue(new TextEncoder().encode("x".repeat(n)));
+            end = () => c.close();
+          },
+        });
+        const headers: Record<string, string> = { "Content-Type": "image/jpeg" };
+        if (total !== null) headers["Content-Length"] = String(total);
+        answer(new Response(body, { headers }));
+      });
+    });
+    return { push: (n: number) => push(n), end: () => end(), aborted };
+  };
+  afterEach(() => vi.stubGlobal("fetch", echo));
+
+  it("holds the stage while the photo loads, its progress rising with the bytes; the photo then fades in over it", async () => {
+    const net = slow(100);
+    const { v, el } = setup();
+    v.take(`${ORIGIN}/f/abc/Dog.jpg`, 0, "view");
+    v.render(view);
+    const part = el("frame").children[0];
+    expect(part?.classes.has("loader")).toBe(true);
+    expect(part?.classes.has("stand-in")).toBe(true);
+    expect(part?.attrs.get("role")).toBe("progressbar");
+    expect(part?.attrs.get("aria-label")).toBe("Loading Dog.jpg");
+    await settle();
+    expect(part?.attrs.get("aria-valuenow")).toBe("0");
+    net.push(40);
+    await settle();
+    expect(part?.attrs.get("aria-valuenow")).toBe("40");
+    expect(part?.style["--progress"]).toBe("0.4");
+    expect(v.presentable()).toBe(false);
+    net.push(60);
+    net.end();
+    await settle();
+    expect(part?.attrs.get("aria-valuenow")).toBe("100");
+    v.render(view);
+    // The photo lands over its own loader, which leaves once the fade is done.
+    expect(el("frame").children.map((c) => c.tag)).toEqual(["div", "canvas"]);
+    expect(el("frame").children[1]?.attrs.get("aria-label")).toBe("Dog.jpg");
+    await settle();
+    expect(el("frame").children.map((c) => c.tag)).toEqual(["canvas"]);
+    expect(v.presentable()).toBe(true);
+  });
+
+  it("stays indeterminate when the length is unknown: no value, the sheen alone", async () => {
+    const net = slow(null);
+    const { v, el } = setup();
+    v.take(`${ORIGIN}/f/abc/Dog.jpg`, 0, "view");
+    v.render(view);
+    net.push(40);
+    await settle();
+    const part = el("frame").children[0];
+    expect(part?.attrs.has("aria-valuenow")).toBe(false);
+    expect(part?.style["--progress"]).toBeUndefined();
+  });
+
+  it("a photo that fails to load shows the item's card, never a loader that never ends", async () => {
+    slow(100, 500);
+    const { v, el } = setup();
+    v.take(`${ORIGIN}/f/abc/Dog.jpg`, 0, "view");
+    await settle();
+    v.render(view);
+    expect(el("view").classes.has("is-card")).toBe(true);
+    expect(el("frame").querySelector(".loader")).toBeNull();
+  });
+
+  it("the session's end stops a photo still on its way", async () => {
+    const net = slow(100);
+    const { v } = setup();
+    v.take(`${ORIGIN}/f/abc/Dog.jpg`, 0, "view");
+    v.render(view);
+    v.render(null);
+    expect(net.aborted).toEqual([`${ORIGIN}/f/abc/Dog.jpg`]);
+  });
 });
 
 describe("DEMO-01 the viewer parks for a transient state", () => {
@@ -226,43 +359,47 @@ describe("DEMO-01 the viewer parks for a transient state", () => {
     expect(el("view").classes.has("is-card")).toBe(true);
   });
 
-  it("an image taken while parked is kept but not drawn until render", () => {
+  it("an image taken while parked is kept but not drawn until render", async () => {
     const { v, el } = setup();
     v.render(view);
     const before = el("frame").children[0];
     v.park("You're Offline");
     expect(v.take(`${ORIGIN}/f/abc/Dog.jpg`, 0, "view")).toBe(true);
+    await settle();
     expect(el("view").hidden).toBe(true);
     expect(el("frame").children[0]).toBe(before);
     v.render(view);
-    expect(el("frame").children[0]?.attrs.get("src")).toBe(`${ORIGIN}/f/abc/Dog.jpg`);
+    expect(shownFrom(el("frame"))).toBe(`${ORIGIN}/f/abc/Dog.jpg`);
   });
 
-  it("a file sorting in ahead of a loaded image leaves the selected item showing its own image", () => {
+  it("a file sorting in ahead of a loaded image leaves the selected item showing its own image", async () => {
     const { v, el } = setup();
     v.render(view);
     v.take(`${ORIGIN}/f/abc/Dog.jpg`, 0, "view");
+    await settle();
     const guest: Item = { kind: "file", name: "Aardvark.txt", type: "txt", size: 10 } as unknown as Item;
     v.render({ ...view, items: [guest, photo] } as ScreenView);
     expect(v.at()).toBe(1);
-    expect(el("frame").children[0]?.attrs.get("src")).toBe(`${ORIGIN}/f/abc/Dog.jpg`);
+    expect(shownFrom(el("frame"))).toBe(`${ORIGIN}/f/abc/Dog.jpg`);
   });
 
-  it("an image taken before the first render is shown by that render", () => {
+  it("an image taken before the first render is shown by that render", async () => {
     const { v, el } = setup();
     expect(v.take(`${ORIGIN}/f/abc/Dog.jpg`, 0, "view")).toBe(true);
+    await settle();
     v.render(view);
-    expect(el("frame").children[0]?.attrs.get("src")).toBe(`${ORIGIN}/f/abc/Dog.jpg`);
+    expect(shownFrom(el("frame"))).toBe(`${ORIGIN}/f/abc/Dog.jpg`);
   });
 
-  it("two files with one name keep their own state: identity includes the count of same-named items before it", () => {
+  it("two files with one name keep their own state: identity includes the count of same-named items before it", async () => {
     const { v, el } = setup();
     const twin = { ...photo } as Item;
     v.render({ ...view, items: [photo, twin] } as ScreenView);
     v.take(`${ORIGIN}/f/one/Dog.jpg`, 0, "view");
     v.take(`${ORIGIN}/f/two/Dog.jpg`, 1, "view");
+    await settle();
     v.render({ ...view, items: [photo, twin, deck] } as ScreenView);
-    expect(el("frame").children[0]?.attrs.get("src")).toBe(`${ORIGIN}/f/one/Dog.jpg`);
+    expect(shownFrom(el("frame"))).toBe(`${ORIGIN}/f/one/Dog.jpg`);
   });
 
   it("a key while parked pages nothing: the deck resumes on the page it was on", () => {
@@ -502,12 +639,15 @@ describe("the viewer pill", () => {
     expect(el("controls").style.top).toBe("904px");
   });
 
-  it("goes to the rail by the list's full height, and the list's cap then reserves the column", () => {
+  it("goes to the rail by the list's full height, and the list's cap then reserves the column", async () => {
     const { v, el } = setup();
+    // A wide photo that fills the stage: no room under or beside it.
+    bitmap = { width: 1000, height: 600 };
+    v.take(`${ORIGIN}/f/abc/Dog.jpg`, 0, "view");
+    await settle();
     v.render({ ...view, items: [photo, deck] } as ScreenView);
-    // A wide item that fills the stage: no room under or beside it.
+    expect(el("frame").querySelector("canvas")?.width).toBe(1000);
     Object.assign(el("view"), { offsetWidth: 1000, offsetHeight: 600 });
-    Object.assign(el("frame").querySelector("img") as Node, { naturalWidth: 1000, naturalHeight: 600 });
     el("controls").offsetHeight = 120;
     el("side").getBoundingClientRect = () => ({ left: 0, top: 80, bottom: 200 });
     el("b-end").getBoundingClientRect = () => ({ left: 0, top: 844, bottom: 900 });

@@ -93,7 +93,7 @@ describe("time and size words", () => {
   it("spells the code for the QR label", () => {
     expect(spelled("K7MQ9X")).toBe("K 7 M, Q 9 X");
     expect(qrLabel("K7MQ9X", "bloop.example")).toBe(
-      "QR code. Scan it with your phone camera to open bloop. Or enter the code K 7 M, Q 9 X at bloop.example slash code.",
+      "QR code, scan with your phone, or enter the code K 7 M, Q 9 X at bloop.example slash code",
     );
   });
 });
