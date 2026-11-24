@@ -55,7 +55,8 @@ it("0003 widens guest_file.type to images and keeps every earlier row", () => {
       deleted_at: 99,
     },
   ]);
-  for (const type of ["jpg", "png"]) insert.run(`i-${type}`, `g/${type}`, 1, type, "dd", `Photo.${type}`, 4, null);
+  for (const type of ["jpg", "png", "mp4", "mov"])
+    insert.run(`i-${type}`, `g/${type}`, 1, type, "dd", `F.${type}`, 4, null);
   expect(() => insert.run("s4", "g/d", 1, "webp", "ee", "x.webp", 5, null)).toThrow();
   expect(() => insert.run("s5", "g/e", 1, "heic", "ff", "x.heic", 5, null)).toThrow();
   expect(() => insert.run("s1", "g/f", 1, "pdf", "gg", "dup.pdf", 6, null)).toThrow(); // the primary key survived

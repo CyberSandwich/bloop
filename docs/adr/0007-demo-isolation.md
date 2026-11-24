@@ -10,7 +10,7 @@ Status: proposed
 - **No account path:** for a demo screen, `/api/files` and `/api/approve` never read the `__Host-bloop_sid` cookie, never construct `GraphFileSource`, and never import the vault. The demo uses `MockFileSource` with staged fixtures. A test asserts the demo route handlers have no reference to the vault module.
 - **Same code, other limits:**
   - 60-minute sessions (`DEMO_SESSION_MINUTES`), so a visitor can try every catalog item and Revoke at leisure;
-  - guest policy `open` with a 10 MB cap, and the same screen-side Open click;
+  - guest policy `open` with a 25 MB cap, and the same screen-side Open click;
   - the same validation and deletion as live;
   - per-IP rate limits of their own (`RL_DEMO_CREATE`, `RL_DEMO_CLAIM`), a global cap on concurrent demo screens (`DEMO_MAX_CONCURRENT`, held in the Directory) and a per-IP-hash cap (`DEMO_MAX_PER_IP`, same table; why: creates held for 15 minutes would otherwise fill the cap from one address; remove: delete the variable and the `ip_hash` check);
   - `DEMO_ENABLED=false` turns it off.

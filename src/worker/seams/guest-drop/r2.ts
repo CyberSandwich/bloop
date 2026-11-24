@@ -3,6 +3,7 @@
 import type { FileType } from "../../../shared/protocol.ts";
 import type { Db } from "../../auth/db.ts";
 import { newRef } from "../../ids.ts";
+import type { ByteRange } from "../open-path/range.ts";
 import {
   type Accepted,
   type GuestDrop,
@@ -154,8 +155,8 @@ export class R2GuestDrop implements GuestDrop {
     };
   }
 
-  async read(r2Key: string) {
-    const object = await this.metered("B", () => this.bucket.get(r2Key));
+  async read(r2Key: string, range?: ByteRange) {
+    const object = await this.metered("B", () => this.bucket.get(r2Key, range ? { range } : undefined));
     return object ? { body: object.body, size: object.size } : null;
   }
 

@@ -1,7 +1,7 @@
 import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 import { validate } from "../../src/worker/seams/guest-drop/validate.ts";
-import { buildZip, concat, reader, validDeck, validJpeg, validPdf, validPng } from "../zip-builder.ts";
+import { buildZip, concat, reader, validDeck, validJpeg, validPdf, validPng, validVideo } from "../zip-builder.ts";
 
 const enc = new TextEncoder();
 const deckCheck = (b: Uint8Array) => validate(reader(b), "pptx");
@@ -144,6 +144,59 @@ describe("DROP-11 image polyglot", () => {
       ok: true,
       type: "jpg",
     });
+  });
+});
+
+describe("VID-01 video type", () => {
+  const mp4Check = (b: Uint8Array) => validate(reader(b), "mp4");
+  const movCheck = (b: Uint8Array) => validate(reader(b), "mov");
+  const ftyp = (brand: string, rest: Uint8Array) =>
+    concat([new Uint8Array([0, 0, 0, 16]), enc.encode(`ftyp${brand}`), new Uint8Array(4), rest]);
+
+  it("VID-01 accepts every allowed brand under its own extension", async () => {
+    for (const brand of ["isom", "iso2", "mp41", "mp42", "avc1", "M4V "]) {
+      expect(await mp4Check(validVideo(brand))).toEqual({ ok: true, type: "mp4" });
+    }
+    expect(await movCheck(validVideo("qt  "))).toEqual({ ok: true, type: "mov" });
+  });
+
+  it("VID-01 refuses a brand and extension that disagree, and HEIC and unknown brands", async () => {
+    expect(await movCheck(validVideo("isom"))).toEqual({ ok: false, error: "bad_type" });
+    expect(await mp4Check(validVideo("qt  "))).toEqual({ ok: false, error: "bad_type" });
+    for (const brand of ["heic", "mif1", "avif", "3gp4", "XXXX"]) {
+      expect(await mp4Check(validVideo(brand))).toEqual({ ok: false, error: "bad_type" });
+      expect(await movCheck(validVideo(brand))).toEqual({ ok: false, error: "bad_type" });
+    }
+  });
+
+  it("VID-01 refuses a video sent under any other type and any other file sent as a video", async () => {
+    expect(await validate(reader(validVideo()), "pdf")).toEqual({ ok: false, error: "bad_type" });
+    expect(await validate(reader(validVideo()), "jpg")).toEqual({ ok: false, error: "bad_type" });
+    expect(await mp4Check(validPdf())).toEqual({ ok: false, error: "bad_type" });
+    expect(await mp4Check(validJpeg())).toEqual({ ok: false, error: "bad_type" });
+  });
+
+  it("VID-01 refuses HTML after the ftyp box", async () => {
+    const html = ftyp("isom", enc.encode("<html><script>alert(1)</script></html>"));
+    expect(await mp4Check(html)).toEqual({ ok: false, error: "bad_structure" });
+  });
+
+  it("VID-01 refuses an ftyp box that lies about its size, and a file that is only an ftyp box", async () => {
+    const lying = validVideo();
+    lying.set([0, 0, 0xff, 0xff], 0);
+    expect(await mp4Check(lying)).toEqual({ ok: false, error: "bad_structure" });
+    expect(await mp4Check(ftyp("isom", new Uint8Array()))).toEqual({ ok: false, error: "bad_structure" });
+    const tiny = validVideo();
+    tiny.set([0, 0, 0, 4], 0);
+    expect(await mp4Check(tiny)).toEqual({ ok: false, error: "bad_structure" });
+  });
+
+  it("VID-01 refuses a PDF marker in the head and a zip end record in the tail", async () => {
+    const withPdf = concat([validVideo().slice(0, 36), enc.encode("%PDF-1.4"), new Uint8Array(40)]);
+    const pdfAfter = concat([validVideo(), enc.encode("%PDF-1.4\n%%EOF\n")]);
+    expect(await mp4Check(withPdf)).toEqual({ ok: false, error: "bad_structure" });
+    expect(await mp4Check(pdfAfter)).toEqual({ ok: false, error: "bad_structure" });
+    expect(await mp4Check(concat([validVideo(), validDeck()]))).toEqual({ ok: false, error: "bad_structure" });
   });
 });
 

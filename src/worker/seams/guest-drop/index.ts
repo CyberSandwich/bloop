@@ -1,6 +1,7 @@
 // GuestDrop seam (docs/interfaces.md section 5). No R2 type crosses it: `r2.ts` adapts the bucket, so
 // a Node or Screen-object chunk store (ADR 0005 fallback) replaces one file.
 import type { DropError, FileType, Mode } from "../../../shared/protocol.ts";
+import type { ByteRange } from "../open-path/range.ts";
 
 export type GuestPolicy = "off" | "pass" | "open";
 
@@ -40,7 +41,7 @@ export interface GuestDrop {
   /** Streams to storage, then validates by range reads. Deletes the object on any failure. */
   accept(u: Upload, maxBytes: number): Promise<Accepted>;
   /** Throws `QuotaExhausted` when the month's class B cap is reached. */
-  read(r2Key: string): Promise<{ body: ReadableStream<Uint8Array>; size: number } | null>;
+  read(r2Key: string, range?: ByteRange): Promise<{ body: ReadableStream<Uint8Array>; size: number } | null>;
   /** Idempotent. */
   delete(r2Key: string): Promise<void>;
   /** Deletes the session's object and ledger row: by its key when known, else by session. Returns whether an object existed. */

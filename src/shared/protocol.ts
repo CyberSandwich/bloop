@@ -4,7 +4,7 @@
 
 export type Mode = "live" | "demo";
 export type Kind = "owner" | "guest";
-export type FileType = "pptx" | "pdf" | "jpg" | "png" | "webp";
+export type FileType = "pptx" | "pdf" | "jpg" | "png" | "webp" | "mp4" | "mov";
 /** `view` is an image shown in the screen page; `pdf` a PDF file's own view or a deck's rendition. */
 export const OPEN_MODES = ["protocol", "download", "pdf", "view"] as const;
 export type OpenMode = (typeof OPEN_MODES)[number];

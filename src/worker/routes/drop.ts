@@ -18,6 +18,8 @@ const UPLOAD_TYPES = new Set([
   "application/pdf",
   "image/jpeg",
   "image/png",
+  "video/mp4",
+  "video/quicktime",
   "application/vnd.openxmlformats-officedocument.presentationml.presentation",
 ]);
 const MAX_NAME_HEADER = 1024;
@@ -31,7 +33,10 @@ const EXTENSION_TYPES: Readonly<Record<string, FileType>> = {
   jpg: "jpg",
   jpeg: "jpg",
   png: "png",
+  mp4: "mp4",
+  mov: "mov",
 };
+const EXTENSION = new RegExp(`\\.(${Object.keys(EXTENSION_TYPES).join("|")})$`, "i");
 
 /** The display name from `X-Bloop-Name` (percent-encoded UTF-8) and the type its extension declares. */
 function declaredFile(request: Request): { name: string; type: FileType } | null {
@@ -44,7 +49,7 @@ function declaredFile(request: Request): { name: string; type: FileType } | null
     return null;
   }
   const name = cleanName(decoded);
-  const ext = /\.(pptx|pdf|jpe?g|png)$/i.exec(name)?.[1]?.toLowerCase();
+  const ext = EXTENSION.exec(name)?.[1]?.toLowerCase();
   const type = ext ? EXTENSION_TYPES[ext] : undefined;
   return type ? { name, type } : null;
 }

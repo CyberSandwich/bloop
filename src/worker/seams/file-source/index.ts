@@ -1,5 +1,6 @@
 // FileSource seam (docs/interfaces.md section 3). The route layer talks to this interface only.
 import type { FileEntry, FileType, Mode, SourceError } from "../../../shared/protocol.ts";
+import type { ByteRange } from "../open-path/range.ts";
 
 export interface SourceContext {
   mode: Mode;
@@ -16,8 +17,10 @@ export interface Resolved {
   size: number | null;
   /** Pre-authenticated URL, host already checked against GRAPH_DOWNLOAD_HOSTS. Null when only streaming is possible. */
   url: string | null;
-  /** Streams the bytes. Always available. */
-  body(): Promise<
+  /** Streams the bytes, or only `range` when given (the length is then the range's); a source with no ranges ignores it. Always available. */
+  body(
+    range?: ByteRange,
+  ): Promise<
     { ok: true; stream: ReadableStream<Uint8Array>; length: number | null } | { ok: false; error: SourceError }
   >;
 }

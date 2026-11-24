@@ -200,7 +200,7 @@ Per-room policy (ADR 0005): `open` (default) is the flow above. `pass` is option
 - the screen launches nothing: no `ms-powerpoint:` and no `window.open`. On the launch link it fetches the link itself (a HEAD, as PowerPoint would; an image's view link it shows as the image instead), which moves the session to `open`, and from `approved` to `open` it shows every approved item in a viewer in the page (`public/js/viewer.js`), built from the screen's state (`demo_open`), so a reload or a dropped socket shows it again: a sidebar of the items, and the chosen one on the stage. The sample deck and its PDF show as pre-rendered slide images (`public/img/demo-slide-*`, `tools/render-slides.py`; prev and next, arrow keys, Present), an image as itself (another item's view link is minted with `protocol` and that item), a link as a card that opens it in a new tab, and any other file, a guest's included, as a card. Download mints a fresh download link for the shown item on the click;
 - one device can play both parts: in the waiting state the demo screen offers "Approve on This Device", a same-tab link to `/a?c=<code>`; `/a` then offers "See It on the Screen" back to `/s?mode=demo`, which resumes the screen from the sid in that tab's `sessionStorage`. Only the tab that created a screen holds its sid, and a stored sid resumes only a screen of the page's mode. A demo screen runs at phone width; a live one asks for the room's screen;
 - the phone gets no OAuth step, and demo routes never read the phone session cookie;
-- the session lasts 60 min (`DEMO_SESSION_MINUTES`), and guest drops are capped at 10 MB (`DEMO_GUEST_MAX_BYTES`), and the Open click applies as in 4.4;
+- the session lasts 60 min (`DEMO_SESSION_MINUTES`), and guest drops are capped at 25 MB (`DEMO_GUEST_MAX_BYTES`), and the Open click applies as in 4.4;
 - the demo has its own rate limits (section 6): stricter per-IP bindings for creating and claiming, and a global cap on concurrent demo screens held in the Directory (`DEMO_MAX_CONCURRENT`) and a per-IP-hash cap (`DEMO_MAX_PER_IP`) so one address cannot fill it. A demo screen takes a slot at creation, for one claim window plus one session, and gives it back when its session ends or the screen closes; a screen that outlives its hold stops counting. `DEMO_ENABLED=false` makes `POST /api/screens {mode: "demo"}` and any claim of a demo code answer `not_found`;
 - its session and audit rows are `mode = demo` with no user, and are kept 7 days;
 - the landing embeds no demo: its Try the demo button opens `/s?mode=demo`, and the landing's hero stage is a static panel, with no connection.
@@ -333,7 +333,7 @@ Every state-changing route checks four things: `Origin` equals `PUBLIC_ORIGIN`; 
 | demo screen creation    | per IP (`RL_DEMO_CREATE` in `wrangler.jsonc`), instead of the live limit             | binding             |
 | demo claims             | per IP (`RL_DEMO_CLAIM`), after the lookup says the code is a demo one; the live claim limit applies first, so the lower of the two binds | binding |
 | concurrent demo screens | `DEMO_MAX_CONCURRENT` across all visitors, and `DEMO_MAX_PER_IP` per IP hash (values in `wrangler.jsonc`); the next create answers 429 `rate_limited` | exact, Directory DO |
-| demo screens            | plus a 60-min session and a 10 MB drop cap                                           | config              |
+| demo screens            | plus a 60-min session and a 25 MB drop cap                                           | config              |
 
 IPs are never stored. Limits use `HMAC(HASH_PEPPER, ip)` of `CF-Connecting-IP` (Cloudflare sets it; a local run has none and shares one key), kept only in DO storage until the window ends. The rate-limit bindings run in `wrangler dev` too. `TEST_TIMING=1` skips them so one integration run can create more screens than the per-IP limit allows; the exact limits in the objects stay on.
 
@@ -426,7 +426,7 @@ CREATE TABLE metric_user_week (          -- 120 days; pseudonym = HMAC(HASH_PEPP
 
 CREATE TABLE guest_file (                -- row: 30 days after deleted_at; object: session end
   session_id TEXT PRIMARY KEY, r2_key TEXT NOT NULL, bytes INTEGER NOT NULL,
-  type TEXT NOT NULL CHECK (type IN ('pptx','pdf','jpg','png')), sha256 TEXT NOT NULL,
+  type TEXT NOT NULL CHECK (type IN ('pptx','pdf','jpg','png','mp4','mov')), sha256 TEXT NOT NULL,
   name TEXT NOT NULL, created_at INTEGER NOT NULL, deleted_at INTEGER);
 
 CREATE TABLE r2_ops (                    -- R2 operations bloop performed; 13 months (migration 0002)

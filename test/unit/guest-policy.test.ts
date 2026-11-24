@@ -55,12 +55,12 @@ describe("DROP-01 size: configuration", () => {
   };
   const parse = (extra: Record<string, string>) => configFor({ ...env, ...extra });
 
-  it("defaults to 50 MB live, 10 MB demo and a 5 GiB budget", () => {
+  it("DROP-01 defaults to 90 MB live and 25 MB demo for every type, and a 5 GiB budget", () => {
     const parsed = parse({});
     if (!parsed.ok) throw new Error(parsed.problems.join());
     expect(parsed.config).toMatchObject({
-      guestMaxBytes: 52_428_800,
-      demoGuestMaxBytes: 10_485_760,
+      guestMaxBytes: 94_371_840,
+      demoGuestMaxBytes: 26_214_400,
       guestStorageBudgetBytes: 5_368_709_120,
     });
   });

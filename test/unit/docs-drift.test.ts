@@ -95,7 +95,7 @@ describe("doc paths", () => {
         // Skipped: URLs, routes, parent-folder (private) paths, elided URL tails (`.../runs`), assignments, npm
         // scopes, home paths, MIME types, globs.
         if (
-          /^(https?:|\/|\.\.\.?\/|[A-Z_]+=|@|~|(application|image)\/)|[*<>{}()\s:|+]/.test(ref) ||
+          /^(https?:|\/|\.\.\.?\/|[A-Z_]+=|@|~|(application|image|video)\/)|[*<>{}()\s:|+]/.test(ref) ||
           NOT_IN_REPO.has(ref)
         )
           continue;

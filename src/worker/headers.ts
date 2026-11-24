@@ -4,7 +4,7 @@
 // `landing` is also the static default (`/*` in _headers): Cloudflare does not detach `/*`'s CSP on the root path,
 // so the root receives the default too. No page under it connects anywhere; dropping `connect-src` means changing
 // `/*` in _headers and this policy together (test/unit/headers.test.ts).
-export type Policy = "landing" | "app" | "api" | "file-pptx" | "file-pdf" | "file-image";
+export type Policy = "landing" | "app" | "screen" | "api" | "file-pptx" | "file-pdf" | "file-image";
 
 const PERMISSION_FEATURES = [
   "accelerometer",
@@ -54,6 +54,8 @@ const SELF = "script-src 'self'; style-src 'self'; img-src 'self'; font-src 'sel
 export const CSP: Readonly<Record<Policy, string>> = {
   landing: `default-src 'none'; ${SELF}; connect-src 'self'; manifest-src 'self'; ${PAGE_TAIL}`,
   app: `default-src 'none'; ${SELF}; connect-src 'self'; ${PAGE_TAIL}`,
+  // The screen page plays a guest video from its own origin; no blob: and no other host.
+  screen: `default-src 'none'; ${SELF}; media-src 'self'; connect-src 'self'; ${PAGE_TAIL}`,
   api: "default-src 'none'; frame-ancestors 'none'",
   "file-pptx": "default-src 'none'; sandbox; frame-ancestors 'none'",
   // `object-src 'self'` is the one hole: Chromium's PDF viewer is an embedded plugin, which the
@@ -66,6 +68,7 @@ export const CSP: Readonly<Record<Policy, string>> = {
 const EXTRA: Readonly<Record<Policy, Record<string, string>>> = {
   landing: {},
   app: {},
+  screen: {},
   api: { "Cache-Control": "no-store" },
   "file-pptx": { "Content-Disposition": "attachment", "Cache-Control": "no-store" },
   "file-pdf": { "Content-Disposition": "inline", "Cache-Control": "no-store" },

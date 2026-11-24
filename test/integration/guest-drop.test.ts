@@ -1,7 +1,7 @@
 // The guest drop against `wrangler dev` with a local R2 bucket and D1: a full drop to the Open click, the refusals,
 // and the deletion paths. Short timers and the budget live in guest-drop-timing.test.ts.
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
-import { buildZip, concat, validDeck, validJpeg, validPdf, validPng } from "../zip-builder.ts";
+import { buildZip, concat, validDeck, validJpeg, validPdf, validPng, validVideo } from "../zip-builder.ts";
 import { guestRow, pairPhone, problemCode, putDrop } from "./drop-client.ts";
 import { fetchLink } from "./open-client.ts";
 import { Api, startPairing } from "./pairing-client.ts";
@@ -306,6 +306,118 @@ describe("DROP-02 images: a guest photo is stored, offered and served under a fi
     expect(fetched.headers.get("Content-Type")).toBe("image/jpeg");
     expect(fetched.headers.get("X-Content-Type-Options")).toBe("nosniff");
     expect(fetched.headers.get("Content-Security-Policy")).toContain("sandbox");
+    socket.close();
+  });
+});
+
+describe("VID-01 video: a guest recording is stored, offered and served as video/mp4", () => {
+  const classB = () => Number(wrangler.d1("SELECT n FROM r2_ops WHERE class = 'B'")[0]?.n ?? 0);
+  const clip = validVideo("isom", 3000);
+  const mov = validVideo("qt  ", 3000);
+
+  async function openVideo(bytes: Uint8Array, name: string, contentType: string) {
+    const { socket, pid } = await pairPhone(api);
+    const res = await putDrop(api, pid, bytes, { name, contentType });
+    expect(res.status).toBe(200);
+    socket.send({ t: "open.click" });
+    const open = await socket.waitFor((f) => f.t === "open");
+    return { socket, url: (open.links as { view: string }).view };
+  }
+
+  for (const [label, bytes, name, ext, contentType] of [
+    ["an mp4", clip, "Clip.mp4", "mp4", "video/mp4"],
+    ["a mov", mov, "Clip.MOV", "mov", "video/quicktime"],
+  ] as const) {
+    it(`VID-01 ${label}: round trip, served as video/mp4 with the fixed headers`, async () => {
+      const { socket, url } = await openVideo(bytes, name, contentType);
+      expect(guestRow(wrangler.d1)).toMatchObject({ type: ext, bytes: bytes.length, deleted_at: null });
+      const fetched = await fetchLink(url);
+      expect(fetched.status).toBe(200);
+      expect(fetched.headers.get("Content-Type")).toBe("video/mp4");
+      expect(fetched.headers.get("Accept-Ranges")).toBe("bytes");
+      expect(fetched.headers.get("X-Content-Type-Options")).toBe("nosniff");
+      expect(fetched.headers.get("Cache-Control")).toBe("no-store");
+      expect(fetched.headers.get("Cross-Origin-Resource-Policy")).toBe("same-origin");
+      expect(fetched.headers.get("Content-Security-Policy")).toContain("sandbox");
+      expect(fetched.headers.get("Content-Disposition")).toBe("inline");
+      expect(new Uint8Array(await fetched.arrayBuffer())).toEqual(bytes);
+      socket.close();
+    });
+  }
+
+  it("VID-01 refuses a brand and name that disagree, HEIC, HTML after ftyp, a PDF tail and a zip tail, keeping nothing", async () => {
+    const { socket, pid } = await pairPhone(api);
+    const html = concat([clip.slice(0, 20), new TextEncoder().encode("<html><script>1</script></html>")]);
+    const cases: [Uint8Array, string, string][] = [
+      [mov, "Clip.mp4", "bad_type"],
+      [clip, "Clip.mov", "bad_type"],
+      [validVideo("heic"), "IMG.mp4", "bad_type"],
+      [html, "Clip.mp4", "bad_structure"],
+      [concat([clip, validPdf()]), "Clip.mp4", "bad_structure"],
+      [concat([clip, deck]), "Clip.mp4", "bad_structure"],
+    ];
+    for (const [bytes, name, code] of cases) {
+      const res = await putDrop(api, pid, bytes, { name });
+      const body = await res.text();
+      expect([name, bytes.length, res.status, JSON.parse(body || "{}").code ?? body]).toEqual([
+        name,
+        bytes.length,
+        res.status,
+        code,
+      ]);
+      expect(wrangler.r2Has(String(guestRow(wrangler.d1)?.r2_key))).toBe(false);
+    }
+    expect((await putDrop(api, pid, clip, { name: "Clip.mp4" })).status).toBe(200);
+    socket.close();
+  });
+
+  it("VID-02 answers a range with 206, a suffix and an open end, and meters one read each", async () => {
+    const { socket, url } = await openVideo(clip, "Clip.mp4", "video/mp4");
+    const before = classB();
+    const part = await fetchLink(url, { headers: { Range: "bytes=100-199" } });
+    expect(part.status).toBe(206);
+    expect(part.headers.get("Content-Range")).toBe(`bytes 100-199/${clip.length}`);
+    expect(part.headers.get("Content-Length")).toBe("100");
+    expect(part.headers.get("Content-Type")).toBe("video/mp4");
+    expect(part.headers.get("X-Content-Type-Options")).toBe("nosniff");
+    expect(new Uint8Array(await part.arrayBuffer())).toEqual(clip.slice(100, 200));
+    expect(classB()).toBe(before + 1);
+
+    const tail = await fetchLink(url, { headers: { Range: "bytes=-50" } });
+    expect(tail.status).toBe(206);
+    expect(new Uint8Array(await tail.arrayBuffer())).toEqual(clip.slice(-50));
+    const rest = await fetchLink(url, { headers: { Range: `bytes=${clip.length - 10}-` } });
+    expect(new Uint8Array(await rest.arrayBuffer())).toEqual(clip.slice(-10));
+    expect(classB()).toBe(before + 3);
+    socket.close();
+  });
+
+  it("VID-02 answers 416 for an out-of-bounds, a malformed and a multi-range request, without reading R2", async () => {
+    const { socket, url } = await openVideo(clip, "Clip.mp4", "video/mp4");
+    const before = classB();
+    for (const range of [`bytes=${clip.length}-`, "bytes=0-9,20-29", "bytes=oops", "bytes=-0"]) {
+      const res = await fetchLink(url, { headers: { Range: range } });
+      expect([range, res.status]).toEqual([range, 416]);
+      expect(res.headers.get("Content-Range")).toBe(`bytes */${clip.length}`);
+    }
+    expect(classB()).toBe(before);
+    socket.close();
+  });
+
+  it("VID-02 answers HEAD with the size and no body, without reading R2", async () => {
+    const { socket, url } = await openVideo(clip, "Clip.mp4", "video/mp4");
+    const before = classB();
+    const head = await fetchLink(url, { method: "HEAD" });
+    expect(head.status).toBe(200);
+    expect(head.headers.get("Content-Length")).toBe(String(clip.length));
+    expect(head.headers.get("Accept-Ranges")).toBe("bytes");
+    expect(classB()).toBe(before);
+    socket.close();
+  });
+
+  it("VID-02 keeps answering a view link past ten reads: a player seeks", async () => {
+    const { socket, url } = await openVideo(clip, "Clip.mp4", "video/mp4");
+    for (let i = 0; i < 15; i++) expect((await fetchLink(url, { headers: { Range: "bytes=0-9" } })).status).toBe(206);
     socket.close();
   });
 });
