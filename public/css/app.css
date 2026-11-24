@@ -465,6 +465,8 @@ main:has(> .side:not([hidden])) #stage {
   display: grid;
   grid-template: minmax(0, 1fr) / minmax(0, 1fr);
   place-items: center;
+}
+.pane.is-under .frame {
   padding-bottom: calc(var(--pill) + var(--inset));
 }
 /* A portrait document scrolls as one column at a readable width. */
@@ -533,7 +535,6 @@ main:has(> .side:not([hidden])) #stage {
 }
 .frame img {
   grid-area: 1 / 1;
-  animation: swap 200ms var(--ease-out);
   max-width: 100%;
   max-height: 100%;
   width: auto;
@@ -541,17 +542,6 @@ main:has(> .side:not([hidden])) #stage {
   border-radius: var(--r-list);
   background: var(--surface);
   box-shadow: var(--sh-frame);
-}
-/* No fade from blank: the old item stays until the new one has decoded (viewer.js), then this settles it in. */
-@keyframes swap {
-  from {
-    transform: scale(0.985);
-  }
-}
-@media (prefers-reduced-motion: reduce) {
-  .frame img {
-    animation: none;
-  }
 }
 /* Presenting (viewer.js present): the item on black inside the safe area, the chrome gone. */
 .is-presenting :is(.bar, .side, .handle, #controls, .foot) {
@@ -584,7 +574,7 @@ main:has(> .side:not([hidden])) #stage {
   -webkit-backdrop-filter: none;
   backdrop-filter: none;
   box-shadow: var(--glass-edge), var(--sh-pill);
-  /* viewer.js sets --stop-o from the pointer's distance to the top; hidden until it nears. */
+  /* --stop-o: viewer.js sets it from the pointer's distance to the top. */
   opacity: var(--stop-o, 0);
   pointer-events: none;
   transition: opacity 300ms var(--ease-ui);
@@ -652,8 +642,7 @@ main:has(> .side:not([hidden])) #stage {
   /* `translate`, not `transform`: viewer.js glides the pill with the same property. */
   translate: -50% 0;
 }
-/* A --stack wide column (viewer.js fit): on the item's right, which then reserves its side, or under the list, which
-   reserves nothing. */
+/* A --stack wide column (viewer.js fit): at the stage's bottom right, or under the side list. */
 .pane.is-stacked #controls {
   bottom: auto;
   flex-direction: column;
@@ -662,12 +651,6 @@ main:has(> .side:not([hidden])) #stage {
   height: auto;
   border-radius: var(--r-stage);
   translate: none;
-}
-.pane.is-stacked .frame {
-  padding: 0;
-}
-.pane.is-stack-right .frame {
-  padding-right: calc(var(--stack) + var(--inset));
 }
 .dots {
   padding: 0 8px;
@@ -806,13 +789,22 @@ main:has(> .side:not([hidden])) #stage {
   order: 9;
   box-shadow: var(--sh-pill);
 }
+/* Wide, with the list a side panel: a left rail (logo, list, End at the foot) beside the stage. */
 @media (min-width: 760px) {
-  .page-screen main:has(> .side:not([hidden])) {
-    padding-left: calc(var(--side) + var(--inset) * 2);
-    padding-right: var(--inset);
+  .page-screen main[data-mode="viewer"]:has(> .side:not([hidden])) {
+    padding: var(--inset) var(--inset) var(--inset) calc(var(--side) + var(--inset) * 2);
   }
-  .page-screen main:has(> .side:not([hidden])) .frame {
-    align-items: start;
+  .page-screen main[data-mode="viewer"]:has(> .side:not([hidden])) .pane {
+    height: calc(100dvh - var(--inset) * 2);
+  }
+  .page-screen:has(main[data-mode="viewer"] > .side:not([hidden])) #b-end {
+    position: fixed;
+    bottom: var(--inset);
+    left: var(--inset);
+    margin: 0;
+  }
+  .side {
+    max-height: calc(100dvh - var(--top) - var(--inset) * 2 - var(--frame-h));
   }
 }
 @media (max-width: 759.98px) {

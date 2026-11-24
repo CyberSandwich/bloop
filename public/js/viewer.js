@@ -1,4 +1,4 @@
-// The demo viewer (DEMO-01, design.md section 7). Nothing launches: the page fetches the launched link itself.
+// The demo viewer (DEMO-01, design.md section 7): the page fetches the launched link itself.
 // An image's <img> is kept for the session: the CSP has no blob:, and a second mint spends the budget.
 /** @import {Item, OpenMode, ScreenView} from "../../src/shared/protocol.ts" */
 /** @import {Minted} from "./types.js" */
@@ -50,61 +50,79 @@ export function createViewer(deps) {
   const note = byId("parked");
   const pill = byId("controls");
   const pane = byId("pane");
+  const end = byId("b-end");
   const stop = byId("b-stop");
   const body = document.body;
   const presenting = () => body.classList.contains("is-presenting");
-  // The pill sits `--inset` under the item, or, where that would shrink the item, as a column beside it (bottom-aligned,
-  // on its left under a side list); a scrolling document gets it at the stage's foot. The tap zones cover the slide's
-  // own box. Offsets, not client rects: the swap animation scales the img.
+  // Placement is `placeControls` (core/demo.js), applied and glided here. Offsets, not client rects: the swap scales the img.
   let lastPlace = "";
   /** @type {DOMRect | null} where the controls were last drawn */
   let drawn = null;
-  const reducedMotion = matchMedia("(prefers-reduced-motion: reduce)");
   const fit = () => {
-    // The controls start from where they were drawn (mid-flight included) and glide to the new place.
-    // (Its content changed before this ran, so the last drawn box is the start, unless a glide is under way.)
+    // From where they were drawn (their content changed first), or mid-glide.
     const running = pill.getAnimations?.() ?? [];
     const from = running.length ? pill.getBoundingClientRect() : (drawn ?? pill.getBoundingClientRect());
     for (const a of running) a.cancel();
     const swap = swapped;
     swapped = false;
     const img = frame.querySelector("img");
-    const scrolls = frame.classList.contains("is-scroll");
-    const item = scrolls ? null : (img ?? frame.firstElementChild);
+    const item = frame.classList.contains("is-scroll") ? null : (img ?? frame.firstElementChild);
     const css = getComputedStyle(view);
     const inset = parseFloat(css.getPropertyValue("--inset"));
-    const gap = parseFloat(css.getPropertyValue("--pill")) + inset;
-    const reserve = parseFloat(css.getPropertyValue("--stack")) + inset;
-    // The file's own ratio (rounded box sizes could flip a near tie); the stand-in is the photo's 3 : 2.
-    const ratio =
-      item === img && img ? (img.classList.contains("stand-in") ? 1.5 : img.naturalWidth / img.naturalHeight) : 0;
-    // The column's height is read with the column on; the side list's box says whether it fits under it.
-    pane.classList.toggle("is-stacked", !!ratio && !presenting());
-    const stack = pill.offsetHeight;
+    const pillH = parseFloat(css.getPropertyValue("--pill"));
+    const stackW = parseFloat(css.getPropertyValue("--stack"));
+    // The stand-in is the photo's 3 : 2.
+    const ratio = img ? (img.classList.contains("stand-in") ? 1.5 : img.naturalWidth / img.naturalHeight) : 0;
+    const stage = { w: view.offsetWidth, h: view.offsetHeight };
+    const w = Math.min(stage.w, stage.h * ratio);
+    // The column's height is read with it on.
+    pane.classList.toggle("is-stacked", true);
+    const stackH = pill.offsetHeight;
     const listed = !side.hidden && matchMedia("(min-width: 760px)").matches;
-    const listFits =
-      listed && side.getBoundingClientRect().bottom + inset + stack <= view.getBoundingClientRect().bottom;
-    const place =
-      ratio && !presenting()
-        ? placeControls(ratio, view.offsetWidth, view.offsetHeight, { reserve, gap, stack, listFits })
-        : "below";
-    pane.classList.toggle("is-stacked", place !== "below");
-    pane.classList.toggle("is-stack-right", place === "right");
-    if (place === "right" && item instanceof HTMLElement) {
-      pill.style.top = `${view.offsetTop + item.offsetTop + item.offsetHeight - stack}px`;
-      pill.style.left = `${view.offsetLeft + item.offsetLeft + item.offsetWidth + inset}px`;
-    } else if (place === "list") {
-      pill.style.top = `${view.offsetTop + view.offsetHeight - stack}px`;
-      pill.style.left = `${side.getBoundingClientRect().left - pane.getBoundingClientRect().left}px`;
+    const railFits =
+      listed && side.getBoundingClientRect().bottom + inset * 2 + stackH <= end.getBoundingClientRect().top;
+    let place = /** @type {"under" | "right" | "rail" | "float"} */ (item ? "under" : "float");
+    if (ratio && listed)
+      place = placeControls({ w, h: w / ratio }, stage, { pill: pillH, stackW, stackH, inset, rail: railFits });
+    pane.classList.toggle("is-stacked", place === "right" || place === "rail");
+    pane.classList.toggle("is-under", place === "under");
+    if (place === "right") {
+      pill.style.top = `${view.offsetTop + stage.h - stackH}px`;
+      pill.style.left = `${view.offsetLeft + stage.w - stackW}px`;
+    } else if (place === "rail") {
+      const [s, o] = [side.getBoundingClientRect(), pane.getBoundingClientRect()];
+      pill.style.top = `${s.bottom + inset - o.top}px`;
+      pill.style.left = `${s.right - o.left - stackW}px`;
     } else {
-      const top =
-        item instanceof HTMLElement
-          ? item.offsetTop + item.offsetHeight + inset
-          : view.offsetHeight - pill.offsetHeight;
-      pill.style.top = `${view.offsetTop + top}px`;
+      pill.style.top = `${view.offsetTop + (place === "under" && item instanceof HTMLElement ? item.offsetTop + item.offsetHeight + inset : stage.h - inset - pill.offsetHeight)}px`;
       pill.style.left = "";
     }
-    glide(from, place, swap);
+    const now = pill.getBoundingClientRect();
+    drawn = now;
+    const was = lastPlace;
+    lastPlace = place;
+    // Only a change of place, shape or item glides (FLIP: from where they were drawn); a resize moves them at once.
+    const differs = (/** @type {"left" | "top" | "width" | "height"} */ k) => Math.abs(from[k] - now[k]) >= 1;
+    const reshaped = differs("width") || differs("height");
+    if (
+      (reshaped || ((swap || (was && was !== place)) && (differs("left") || differs("top")))) &&
+      from.width &&
+      !presenting() &&
+      !reduced.matches
+    ) {
+      const bx = place === "under" || place === "float" ? "-50%" : "0px";
+      pill.animate(
+        [
+          {
+            translate: `calc(${bx} + ${from.left - now.left}px) ${from.top - now.top}px`,
+            scale: `${from.width / now.width} ${from.height / now.height}`,
+            transformOrigin: "0 0",
+          },
+          { translate: `${bx} 0`, scale: "1 1", transformOrigin: "0 0" },
+        ],
+        { duration: 300, easing: "cubic-bezier(0.22, 1, 0.36, 1)" },
+      );
+    }
     if (!img) return;
     const box = { left: img.offsetLeft, top: img.offsetTop, width: img.offsetWidth, height: img.offsetHeight };
     for (const [i, part] of halves(box).entries()) {
@@ -115,40 +133,10 @@ export function createViewer(deps) {
       zone.style.height = `${part.height}px`;
     }
   };
-  /** FLIP: only a change of place, of shape (the page count appears, a pill becomes a column) or of the item moves
-   * the controls; a window resize or an unchanged switch leaves them still, with no animation at all.
-   * @param {DOMRect} from @param {string} place @param {boolean} swap */
-  function glide(from, place, swap) {
-    const to = pill.getBoundingClientRect();
-    drawn = to;
-    const was = lastPlace;
-    lastPlace = place;
-    if (reducedMotion.matches || presenting() || !from.width || !to.width || !pill.animate) return;
-    const dx = from.left - to.left;
-    const dy = from.top - to.top;
-    const dw = from.width - to.width;
-    const dh = from.height - to.height;
-    const still = Math.abs(dx) < 1 && Math.abs(dy) < 1 && Math.abs(dw) < 1 && Math.abs(dh) < 1;
-    if (still || !(swap || (was && was !== place) || Math.abs(dw) >= 1 || Math.abs(dh) >= 1)) return;
-    // Below, the pill is centered by its own `translate`, which the keyframes keep.
-    const bx = place === "below" ? "-50%" : "0px";
-    const base = `${bx} 0`;
-    pill.animate(
-      [
-        {
-          translate: `calc(${bx} + ${dx}px) ${dy}px`,
-          scale: `${from.width / to.width} ${from.height / to.height}`,
-          transformOrigin: "0 0",
-        },
-        { translate: base, scale: "1 1", transformOrigin: "0 0" },
-      ],
-      { duration: 300, easing: "cubic-bezier(0.22, 1, 0.36, 1)" },
-    );
-  }
   const sized = new ResizeObserver(fit);
-  // The pane's entry slides it 12 px, which the list's box does not share.
+  // The entry slides the pane 12 px, which the list does not share.
   pane.addEventListener("animationend", fit);
-  // The file's own ratio decides the placement, and it is known only once the image has loaded (load does not bubble).
+  // The ratio, so the place, is known once the image has loaded.
   frame.addEventListener("load", fit, true);
 
   /** @type {ScreenView | null} */
@@ -161,14 +149,14 @@ export function createViewer(deps) {
   let page = 0;
   /** @type {string | null} */
   let framed = null;
-  /** The nodes waiting on their image's decode, so a stale swap cannot land. @type {unknown} */
+  /** The nodes waiting on an image decode: a stale swap must not land. @type {unknown} */
   let building = null;
-  /** The stage's content just changed: the next fit may move the controls with it. */
+  /** The stage's content just changed. */
   let swapped = false;
-  // Per-item state is keyed by idOf, never by list position: a guest file sorting in ahead shifts every position.
+  // Per-item state is keyed by idOf: a file sorting in ahead shifts every position.
   /** @type {Map<string, HTMLImageElement>} */
   const images = new Map();
-  /** @type {Map<number, HTMLImageElement>} images taken before the first render, by list position */
+  /** @type {Map<number, HTMLImageElement>} taken before the first render */
   const early = new Map();
   /** @type {Set<string>} */
   const asked = new Set();
@@ -185,8 +173,7 @@ export function createViewer(deps) {
   );
 
   const items = () => shown?.items ?? [];
-  /** An item's identity in a list. The protocol carries no item id, so it is kind, name or title, and the count of
-   * same-named items before it: two guest files can share a name, and the list's order keeps them apart.
+  /** An item's identity: kind, name or title, and the count of same-named items before it (the protocol has no id).
    * @param {readonly {kind: string, name?: string, title?: string}[]} list @param {number} i */
   const idOf = (list, i) => {
     const it = list[i];
@@ -350,11 +337,11 @@ export function createViewer(deps) {
         sized.disconnect();
         const target = frame.querySelector("img") ?? frame.firstElementChild;
         // The pill (its buttons appear after the item) and the list (it grows with a guest's file) set the place too.
-        for (const box of target ? [target, view, pill, side] : [view, pill, side]) sized.observe(box);
+        for (const box of [target, view, pill, side, end]) if (box) sized.observe(box);
         swapped = true;
       };
       building = nodes;
-      // The old item stays until the new one has decoded, so a switch never shows a blank stage.
+      // The old item stays until the new one has decoded.
       const first = /** @type {HTMLImageElement | undefined} */ (
         nodes
           .map((n) => (typeof n === "string" ? null : (n.querySelector?.("img") ?? n)))
@@ -396,7 +383,7 @@ export function createViewer(deps) {
     at = page = 0;
     parked = false;
     hide();
-    // Hidden while presenting is a black room screen; only a real end leaves it.
+    // A hidden stage while presenting is a black screen: only a real end leaves it.
     present(false);
   }
 
@@ -405,14 +392,13 @@ export function createViewer(deps) {
   let sleep = 0;
   /** @type {HTMLElement | null} */
   let opener = null;
-  /** The one way in and out of the presenting layout (the item on black, the chrome gone): the page's own, which
-   * browser full screen then joins where it exists, so both look the same. */
+  /** The one way in and out of presenting: the page's layout, which browser full screen then joins. */
   function present(/** @type {boolean} */ on) {
     if (on === presenting()) return;
     if (on) opener = /** @type {HTMLElement | null} */ (document.activeElement);
     body.classList.toggle("is-presenting", on);
     show(stop, on);
-    // Focus follows the layout, so it never drops to the body when the button it was on is hidden.
+    // Focus follows the layout, never dropping to the body.
     if (on) stop.focus?.({ preventScroll: true });
     else opener?.focus?.({ preventScroll: true });
     if (on) {
@@ -435,9 +421,8 @@ export function createViewer(deps) {
       if (parked) hide();
     }
   }
-  // Stop Presenting is hidden until the pointer nears the window's top: its opacity follows the distance, from 0
-  // at BAND + RAMP down to 1 within the band, and it takes a click only from half. Touch has no pointer to follow, so
-  // a tap on the slide shows it for 3 s. Reduced motion has no ramp.
+  // Stop Presenting: opacity follows the pointer's distance from the top (0 beyond BAND + RAMP, 1 within BAND), a click
+  // from half; a touch tap shows it for 3 s.
   const BAND = 64;
   const RAMP = 96;
   const reduced = matchMedia("(prefers-reduced-motion: reduce)");
@@ -459,7 +444,6 @@ export function createViewer(deps) {
     view.classList.remove("is-idle");
     clearTimeout(still);
     clearTimeout(cursor);
-    // Resting outside the band, the pill goes; the cursor goes a second later.
     still = setTimeout(() => y > band && aim(Number.POSITIVE_INFINITY), 1000);
     cursor = setTimeout(() => view.classList.add("is-idle"), 2000);
   }
@@ -470,7 +454,7 @@ export function createViewer(deps) {
     sleep = setTimeout(() => view.classList.remove("is-awake"), 3000);
   }
 
-  // Leaving full screen ends presenting; held, the hold then goes on the page: the stage hides.
+  // Leaving full screen ends presenting; a held stage then hides.
   document.addEventListener("fullscreenchange", () => {
     if (document.fullscreenElement) return;
     present(false);
@@ -520,7 +504,7 @@ export function createViewer(deps) {
   });
 
   return {
-    /** The viewer for a demo view from approved to open; null takes it down and lets go of every image. */
+    /** null takes the viewer down and drops every image. */
     render(/** @type {ScreenView | null} */ nextView) {
       if (!nextView) {
         if (shown) clear();
@@ -545,8 +529,7 @@ export function createViewer(deps) {
       paint();
     },
 
-    /** A transient state holds the stage; presenting, it stays there with the status line, so render resumes in
-     * place. @param {string} line */
+    /** A transient state hides the stage; presenting, it stays with a status line. @param {string} line */
     park(line) {
       parked = true;
       if (!presenting()) return hide();
@@ -563,7 +546,7 @@ export function createViewer(deps) {
       const img = el("img", { decoding: "async", referrerpolicy: "no-referrer", alt: "" });
       img.addEventListener("load", () => deps.onChange());
       img.src = target;
-      // The launch can land before the first render: with no list there is no identity yet, so it waits by position.
+      // Before the first render there is no list: it waits by position.
       if (!shown) early.set(item, img);
       else {
         images.set(keyOf(item), img);
