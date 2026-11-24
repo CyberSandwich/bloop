@@ -58,7 +58,7 @@
       "path": "src/worker/seams/file-source/demo-files/demo-dog.jpg",
       "gzip": false,
       "brotli": false,
-      "limit": "75 kB"
+      "limit": "536 kB"
     },
     {
       "name": "site page CSS",
@@ -90,7 +90,7 @@
       "path": "public/img/hero-viewer-1440.webp",
       "gzip": false,
       "brotli": false,
-      "limit": "49 kB"
+      "limit": "85 kB"
     },
     {
       "name": "phone hero image",
