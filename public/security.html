@@ -112,7 +112,7 @@
             <ul class="bullets">
               <li>HTTPS only, with HSTS for 2 years; bloop.here is on browsers' HTTPS-only list.</li>
               <li>A strict Content Security Policy with Trusted Types on every page, no third-party scripts, and no framing.</li>
-              <li>A link to an Item works only during its Session, dies 10 minutes after it is made if unused and 2 minutes after its first use, and allows at most 10 fetches. <b class="name">bloop</b> stores only a hash of each link.</li>
+              <li>A link to an Item works only during its Session. A link that opens a file dies 10 minutes after it is made if unused and 2 minutes after its first use, and allows at most 10 fetches; a link that shows a picture in the page lasts the Session, under its own rate limit. <b class="name">bloop</b> stores only a hash of each link.</li>
               <li>Session IDs and pairing secrets are random (128 to 256 bits) and stored only as hashes.</li>
               <li>When OneDrive is live: your Microsoft access is encrypted per user with AES-256-GCM, under a key held outside the database, so a copy of the database alone reveals nothing usable. Access is read-only, and no Microsoft access token lasts more than 1 hour.</li>
               <li>Guest Files are checked by their bytes, not their names. Decks with macros, ActiveX or embedded programs are refused. A file is sent with a fixed type and a strict content policy.</li>
