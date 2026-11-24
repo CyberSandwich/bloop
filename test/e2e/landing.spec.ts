@@ -178,6 +178,26 @@ for (const vp of VIEWPORTS) {
       await expect(nav.getByRole("link", { name: "Security" })).toBeVisible({ visible: vp.width >= 640 });
     });
 
+    test("a nav jump leaves no hash behind, so a reload opens at the top", async ({ page }) => {
+      await page.goto("/");
+      const nav = page.getByRole("navigation", { name: "Primary" });
+      if (vp.width < 640) await nav.getByRole("button", { name: "Menu" }).click();
+      await nav.getByRole("link", { name: "Features" }).click();
+      await expect(page.locator("#features h2")).toBeInViewport();
+      await expect.poll(() => page.evaluate("location.hash")).toBe("");
+      expect(Number(await page.evaluate("scrollY"))).toBeGreaterThan(0);
+      await page.reload();
+      expect(Number(await page.evaluate("scrollY"))).toBe(0);
+    });
+
+    test("a page opened with a hash jumps there once and drops it", async ({ page }) => {
+      await page.goto("/#features");
+      await expect(page.locator("#features h2")).toBeInViewport();
+      await expect.poll(() => page.evaluate("location.hash")).toBe("");
+      await page.reload();
+      expect(Number(await page.evaluate("scrollY"))).toBe(0);
+    });
+
     test("a question opens and closes", async ({ page }) => {
       await page.goto("/");
       const item = page.locator(".faq details").filter({ hasText: "What does the room PC keep?" });

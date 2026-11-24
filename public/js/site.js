@@ -5,6 +5,13 @@ const sentinel = document.getElementById("sentinel");
 if (nav && sentinel)
   new IntersectionObserver(([entry]) => nav.classList.toggle("is-scrolled", !entry?.isIntersecting)).observe(sentinel);
 
+// A jump leaves no hash, so a reload opens at the top.
+history.scrollRestoration = "manual";
+const dropHash = () => history.replaceState(0, "", location.href.split("#")[0]);
+addEventListener("hashchange", dropHash);
+if (location.hash) addEventListener("load", () => setTimeout(dropHash));
+else scrollTo(0, 0);
+
 // A popover stays open over a same-page jump such as Features.
 const menu = document.getElementById("nav-links");
 menu?.addEventListener("click", (e) => {
