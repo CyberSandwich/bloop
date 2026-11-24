@@ -121,11 +121,22 @@ async function watchLaunches(page: Page): Promise<() => Promise<{ opened: number
 }
 
 async function expectNoAxeViolations(page: Page) {
-  // axe blends text with its ancestors' opacity: a pane still fading in (380 ms) reads as low contrast. Wait for every
-  // finite animation; the spinner runs forever.
-  await page.waitForFunction(
-    "document.getAnimations().every((a) => a.playState !== 'running' || a.effect?.getTiming().iterations === Infinity)",
-  );
+  // axe blends text with its ancestors' opacity: a pane still fading in (380 ms) reads as low contrast. Wait for the
+  // opacity fades only: the QR ring restarts a 1 s transition every second and the spinner never ends. page.evaluate,
+  // not waitForFunction: the latter evals a string in the page, which the CSP refuses.
+  type Animated = {
+    document: { getAnimations(): { playState: string; effect: { getKeyframes(): object[] } | null }[] };
+  };
+  await expect
+    .poll(() =>
+      page.evaluate(
+        () =>
+          (globalThis as unknown as Animated).document
+            .getAnimations()
+            .filter((a) => a.playState === "running" && a.effect?.getKeyframes().some((k) => "opacity" in k)).length,
+      ),
+    )
+    .toBe(0);
   const results = await new AxeBuilder({ page }).withTags(["wcag2a", "wcag2aa", "wcag21aa", "wcag22aa"]).analyze();
   expect(results.violations).toEqual([]);
 }

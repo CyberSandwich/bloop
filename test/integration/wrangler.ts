@@ -121,7 +121,9 @@ export async function startWrangler(
 
   const deadline = Date.now() + 90_000;
   while (Date.now() < deadline) {
-    if (child.exitCode !== null) throw new Error(`wrangler dev exited early:\n${chunks.join("")}`);
+    // The tail holds the cause; CI annotations cut a long message after the bindings table.
+    if (child.exitCode !== null)
+      throw new Error(`wrangler dev exited early (code ${child.exitCode}):\n${chunks.join("").slice(-1500)}`);
     try {
       if ((await fetch(`${url}/api/health`)).ok) return { url, output: () => chunks.join(""), stop, d1, r2Has };
     } catch {
