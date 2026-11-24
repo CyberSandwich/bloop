@@ -22,7 +22,7 @@ export function createApi(deps = {}) {
   /**
    * @param {"GET" | "POST"} method
    * @param {string} path
-   * @param {{auth?: string | null | undefined, body?: unknown, keepalive?: boolean}} [options]
+   * @param {{auth?: string | null | undefined, body?: unknown, keepalive?: boolean, timeout?: boolean}} [options]
    * @returns {Promise<Reply<any>>}
    */
   async function call(method, path, options = {}) {
@@ -36,8 +36,10 @@ export function createApi(deps = {}) {
       cache: "no-store",
       credentials: "same-origin",
       keepalive: !!options.keepalive,
-      signal: AbortSignal.timeout(FETCH_TIMEOUT_MS),
     };
+    // Reads and the boot only: a slow approve may still land (design.md, corner bar).
+    const signal = method === "GET" || options.timeout ? AbortSignal.timeout?.(FETCH_TIMEOUT_MS) : undefined;
+    if (signal) init.signal = signal;
     if (method !== "GET") {
       headers["Content-Type"] = "application/json";
       init.body = JSON.stringify(options.body ?? {});

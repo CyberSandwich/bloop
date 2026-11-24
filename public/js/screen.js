@@ -454,7 +454,7 @@ async function resume() {
 
 /** @returns {Promise<import("./types.js").Booted>} */
 async function create() {
-  const res = await api.post("/api/screens", { mode: DEMO ? "demo" : "live" });
+  const res = await api.call("POST", "/api/screens", { body: { mode: DEMO ? "demo" : "live" }, timeout: true });
   if (!res.ok) return { ok: false, error: res.error };
   return { ok: true, sid: res.value.sid, view: res.value.view };
 }

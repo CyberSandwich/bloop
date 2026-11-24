@@ -1,9 +1,9 @@
 import { describe, expect, it, vi } from "vitest";
-import { adopt, phoneKey, refused, screenKey } from "../../public/js/core/states.js";
+import { adopt, leave, liveClaim, onRefusal, phoneKey, screenKey } from "../../public/js/core/states.js";
 import { ERRORS } from "../../public/js/shared/errors.js";
 import { IN_SESSION, PAIRING_OVER } from "../../public/js/shared/session.js";
 import type { PhoneCtx, ScreenCtx } from "../../public/js/types.js";
-import type { FileEntry, PhoneView, ScreenView, SessionState } from "../../src/shared/protocol.ts";
+import type { ErrorCode, FileEntry, PhoneView, ScreenView, SessionState } from "../../src/shared/protocol.ts";
 
 const screenView = (state: SessionState, over: Partial<ScreenView> = {}): ScreenView => ({
   state,
@@ -279,11 +279,96 @@ describe("PAIR-12 the phone takes a view", () => {
     expect(drop).toHaveBeenCalledWith("PID-1");
   });
 
-  it("after a result a refusal only drops and stops; before one, it shows and keeps a live pid", () => {
-    for (const key of ["ended", "canceled"] as const) {
-      expect(refused(key, "rate_limited")).toEqual({ drop: true, stop: true });
+  /** The page's onError, as phone.js wires it, over a context at the given view. */
+  const refuse = (view: PhoneView | null, code: ErrorCode, over: Partial<PhoneCtx & { canceling: boolean }> = {}) => {
+    const act = { drop: vi.fn(), stop: vi.fn(), fail: vi.fn() };
+    const c = {
+      error: null,
+      info: { roomName: "Room", registered: true, match: "42", mode: "live" as const },
+      view,
+      files: null,
+      selected: [],
+      approving: false,
+      canceled: false,
+      drop: null,
+      canceling: false,
+      ...over,
+    };
+    onRefusal(c, code, act);
+    return act;
+  };
+
+  it("after a result a refusal only drops and stops: the result stays, nothing reconnects", () => {
+    for (const view of [phoneView("ended", { endReason: "phone" }), phoneView("ended", { endReason: "canceled" })]) {
+      const act = refuse(view, "rate_limited");
+      expect(act.drop).toHaveBeenCalledOnce();
+      expect(act.stop).toHaveBeenCalledOnce();
+      expect(act.fail).not.toHaveBeenCalled();
     }
-    expect(refused("open", "rate_limited")).toEqual({ drop: false, stop: false });
-    expect(refused("open", "pairing_invalid")).toEqual({ drop: true, stop: false });
+    expect(refuse(phoneView("claimed"), "pairing_invalid", { canceled: true }).fail).not.toHaveBeenCalled();
+  });
+
+  it("before a result a refusal shows; only a dead one drops the pid; this phone's own cancel shows nothing", () => {
+    const live = refuse(phoneView("open"), "rate_limited");
+    expect(live.fail).toHaveBeenCalledWith("rate_limited");
+    expect(live.drop).not.toHaveBeenCalled();
+    expect(live.stop).not.toHaveBeenCalled();
+    const dead = refuse(phoneView("open"), "pairing_invalid");
+    expect(dead.drop).toHaveBeenCalledOnce();
+    expect(dead.fail).toHaveBeenCalledWith("pairing_invalid");
+    expect(refuse(phoneView("claimed"), "pairing_invalid", { canceling: true }).fail).not.toHaveBeenCalled();
+  });
+});
+
+describe("PAIR-12 Back and Done", () => {
+  const io = () => ({ post: vi.fn(async () => ({ ok: true })), drop: vi.fn(), assign: vi.fn() });
+  const at = (view: PhoneView | null, over: { canceled?: boolean; pid?: string | null } = {}) => ({
+    pid: "PID-1" as string | null,
+    canceled: false,
+    view,
+    leaving: false,
+    ...over,
+  });
+
+  it("a claim not yet approved is live; a session, a result or a canceled claim is not", () => {
+    for (const state of ["claimed", "choosing"] as const) expect(liveClaim(at(phoneView(state))), state).toBe(true);
+    expect(liveClaim(at(null))).toBe(true);
+    for (const state of ["approved", "open", "offered", "ended", "waiting"] as const)
+      expect(liveClaim(at(phoneView(state))), state).toBe(false);
+    expect(liveClaim(at(phoneView("claimed"), { canceled: true }))).toBe(false);
+    expect(liveClaim(at(phoneView("claimed"), { pid: null }))).toBe(false);
+  });
+
+  it("Back or Done on a live claim cancels it first, then forgets the pid and leaves", async () => {
+    for (const forget of [false, true]) {
+      const deps = io();
+      await leave(at(phoneView("choosing")), deps, "/", forget);
+      expect(deps.post).toHaveBeenCalledWith("/api/cancel", {}, "PID-1");
+      expect(deps.drop).toHaveBeenCalledWith("PID-1");
+      expect(deps.assign).toHaveBeenCalledWith("/");
+      expect(deps.post.mock.invocationCallOrder[0]).toBeLessThan(deps.drop.mock.invocationCallOrder[0] ?? 0);
+    }
+  });
+
+  it("Back in a live session (offline, an error) keeps the pid, so Revoke can come back; Done forgets it", async () => {
+    const back = io();
+    await leave(at(phoneView("open")), back, "/");
+    expect(back.post).not.toHaveBeenCalled();
+    expect(back.drop).not.toHaveBeenCalled();
+    expect(back.assign).toHaveBeenCalledWith("/");
+    const done = io();
+    await leave(at(phoneView("ended", { endReason: "phone" })), done, "/", true);
+    expect(done.post).not.toHaveBeenCalled();
+    expect(done.drop).toHaveBeenCalledWith("PID-1");
+  });
+
+  it("a second tap while the first waits on its cancel does nothing", async () => {
+    const deps = io();
+    const c = at(phoneView("claimed"));
+    const first = leave(c, deps, "/");
+    await leave(c, deps, "/");
+    await first;
+    expect(deps.post).toHaveBeenCalledOnce();
+    expect(deps.assign).toHaveBeenCalledOnce();
   });
 });

@@ -123,10 +123,15 @@
 .leave::backdrop {
   background: rgba(0, 0, 0, 0.18);
 }
+/* Stacked (the .buttons default, the rose primary on top) until two columns hold "End and Go Home" with its 16 padding. */
 .leave .buttons {
-  display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
   margin-top: 24px;
+}
+@media (min-width: 480px) {
+  .leave .buttons {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
 }
 .leave .btn {
   padding: 0 16px;
@@ -213,7 +218,7 @@ main:has(> .side:not([hidden])) #stage {
 .is-swapping #qr {
   opacity: 0;
 }
-/* A reloaded claim no longer knows its code, so a live one hides its QR too: one look. */
+/* A reloaded claim cannot redraw its code, so a live one hides its QR too: one look. */
 :is(.is-empty, .is-scanned) :is(#qr, .ring) {
   visibility: hidden;
 }
@@ -368,7 +373,7 @@ main:has(> .side:not([hidden])) #stage {
   text-align: center;
 }
 @media (min-width: 640px) {
-  .column:has(> .list) {
+  .page-phone .column {
     justify-content: center;
     padding-bottom: calc(var(--inset) + var(--frame-h) + 24px);
   }
@@ -424,6 +429,10 @@ main:has(> .side:not([hidden])) #stage {
 }
 .narrow-title {
   font-weight: 600;
+  text-wrap: balance;
+}
+.narrow .line {
+  margin-top: 16px;
 }
 .narrow .btn {
   margin-top: 24px;
@@ -617,7 +626,7 @@ main:has(> .side:not([hidden])) #stage {
   transform: translateX(-50%);
 }
 .dots {
-  padding: 0 12px;
+  padding: 0 8px;
   white-space: nowrap;
   font-size: 15px;
   font-weight: 600;
@@ -920,8 +929,7 @@ progress.bar::-moz-progress-bar {
   display: grid;
   visibility: hidden;
 }
-.row:has(input:checked) .tick,
-.row.is-on .tick {
+.row:has(input:checked) .tick {
   visibility: visible;
 }
 /* Side by side the primary is last; stacked, first. The countdown is status, so it reads above them. */

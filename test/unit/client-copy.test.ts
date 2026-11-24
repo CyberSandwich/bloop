@@ -366,7 +366,7 @@ describe("phone copy", () => {
     const f = { room: "Room 2.14", file: "Talk.pptx", maxMB: 50 };
     expect(phoneCopy("guest_choose", f)).toMatchObject({
       title: "Send a File to Room 2.14?",
-      body: "Choose one file from this phone. Only this file goes to the screen.",
+      body: "Choose one .pptx or .pdf file from this phone. Only this file goes to the screen.",
     });
     expect(phoneCopy("guest_choose", f).actions.map((a) => a.label)).toEqual(["Cancel", "Choose File"]);
     expect(phoneCopy("guest_confirm", f)).toMatchObject({
@@ -382,6 +382,11 @@ describe("phone copy", () => {
     });
     expect(phoneCopy("guest_refused", { ...f, maxMB: 10 }).body).toContain("under 10 MB");
     expect(phoneCopy("guest_refused", f).actions.map((a) => a.label)).toEqual(["Choose File"]);
+    // Reached from the list, the refusal keeps the offer's Cancel back to it.
+    expect(phoneCopy("guest_refused", { ...f, list: true }).actions.map((a) => a.label)).toEqual([
+      "Cancel",
+      "Choose File",
+    ]);
     expect(phoneCopy("guest_sent", f)).toMatchObject({
       title: "Sent to Room 2.14",
       body: "Open it on the screen when you're ready.",
@@ -497,6 +502,14 @@ describe("phone copy", () => {
         const primaries = phoneCopy(key, { ...pf, back }).actions.filter((a) => a.kind === "primary");
         expect(primaries.length, key).toBeLessThanOrEqual(1);
       }
+    }
+  });
+
+  it("PAIR-12 a failure in an approved session keeps Revoke beside Try Again, so its way out is never a Back", () => {
+    for (const key of ["offline", "error"] as const) {
+      const labels = (live: boolean) => phoneCopy(key, { room: "Room", file: null, live }).actions.map((a) => a.id);
+      expect(labels(true), key).toEqual(["end", "retry"]);
+      expect(labels(false), key).toEqual(["retry"]);
     }
   });
 

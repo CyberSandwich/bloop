@@ -44,6 +44,8 @@ export interface PhonePage extends PhoneCtx {
   maxBytes: number;
   upload: { abort: () => void } | null;
   progress: number;
+  /** Back or Done is on its way out: a second tap does nothing. */
+  leaving: boolean;
 }
 
 /** The slice of WebSocket core/channel.js uses, so tests can fake it. */
@@ -228,9 +230,12 @@ export interface PhoneFacts {
   back?: boolean;
   /** The 2 match digits the screen shows, carried on the button that commits. */
   match?: string | null;
-  /** Why the session ended, from the view. */
   /** /a opened with no code and no pairing. */
   nocode?: boolean;
+  /** An approved session is up: a failure keeps Revoke. */
+  live?: boolean;
+  /** The guest offer came from the list (Add a File), so Cancel goes back to it. */
+  list?: boolean;
 }
 
 export interface ScreenCtx {

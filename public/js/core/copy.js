@@ -153,6 +153,9 @@ const BACK = {
   kind: /** @type {const} */ ("primary"),
   href: "/s?mode=demo",
 };
+/** In an approved session a failure keeps Revoke. */
+const retryActions = (/** @type {PhoneFacts} */ f) =>
+  /** @type {PhoneAction[]} */ (f.live ? [REVOKE, TRY_AGAIN] : [TRY_AGAIN]);
 /** Revoke, or with the way back to the demo screen after it, which then takes the primary. */
 const revokeActions = (/** @type {PhoneFacts} */ f) =>
   /** @type {PhoneAction[]} */ (f.back ? [REVOKE, BACK] : [REVOKE]);
@@ -251,7 +254,7 @@ export function phoneCopy(key, f) {
       return {
         ...base,
         title: `Send a File to ${f.room}?`,
-        body: "Choose one file from this phone. Only this file goes to the screen.",
+        body: `Choose one .pptx or .pdf file from this ${f.back ? "device" : "phone"}. Only this file goes to the screen.`,
         actions: [CANCEL, PICK],
       };
     case "guest_confirm":
@@ -268,7 +271,7 @@ export function phoneCopy(key, f) {
         ...base,
         title: "This File Can't Be Sent",
         body: `Choose a .pptx or .pdf file under ${f.maxMB ?? 50} MB.`,
-        actions: [PICK],
+        actions: f.list ? [CANCEL, PICK] : [PICK],
       };
     case "guest_sent":
       return {
@@ -350,7 +353,7 @@ export function phoneCopy(key, f) {
         ...base,
         title: "You're Offline",
         body: "Check your connection, then try again.",
-        actions: [TRY_AGAIN],
+        actions: retryActions(f),
       };
     case "rate_limited":
       return {
@@ -373,7 +376,7 @@ export function phoneCopy(key, f) {
         ...base,
         title: "Unable to Open Your File",
         body: "Check the file opens on your phone, then try again.",
-        actions: [TRY_AGAIN],
+        actions: retryActions(f),
       };
   }
 }

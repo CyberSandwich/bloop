@@ -114,6 +114,33 @@ describe("api client", () => {
     }
   });
 
+  it("only reads and the boot are timed: a slow write (an approve) may still land", async () => {
+    const f = fakeFetch(() => ok({}));
+    const api = createApi({ fetch: f.fetch });
+    await api.post("/api/approve", { ids: [] }, "p.q");
+    await api.leave("/api/screen/end", "s.t");
+    await api.call("POST", "/api/screens", { body: { mode: "demo" }, timeout: true });
+    await api.get("/api/files", "p.q");
+    expect(f.calls.map((c) => [c.path, c.init.signal instanceof AbortSignal])).toEqual([
+      ["/api/approve", false],
+      ["/api/screen/end", false],
+      ["/api/screens", true],
+      ["/api/files", true],
+    ]);
+  });
+
+  it("a browser without AbortSignal.timeout still makes every call, untimed", async () => {
+    const timeout = Object.getOwnPropertyDescriptor(AbortSignal, "timeout");
+    Reflect.deleteProperty(AbortSignal, "timeout");
+    try {
+      const f = fakeFetch(() => ok({ state: "waiting" }));
+      expect(await createApi({ fetch: f.fetch }).get("/api/screen/state", "s.t")).toMatchObject({ ok: true });
+      expect(f.calls[0]?.init.signal).toBeUndefined();
+    } finally {
+      if (timeout) Object.defineProperty(AbortSignal, "timeout", timeout);
+    }
+  });
+
   it("a 5xx without a problem body, or a 200 that is not JSON, is service_down", async () => {
     const down = fakeFetch(() => new Response("<html>bad gateway</html>", { status: 502 }));
     expect(await createApi({ fetch: down.fetch }).get("/x")).toEqual({ ok: false, error: "service_down" });

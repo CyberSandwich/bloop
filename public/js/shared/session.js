@@ -4,6 +4,9 @@
 /** @type {readonly SessionState[]} */
 export const IN_SESSION = ["approved", "opening", "open"];
 
+/** A claim not yet approved. @type {readonly SessionState[]} */
+export const LIVE_CLAIM = ["claimed", "choosing"];
+
 // The pairing is over: its pid opens nothing.
 export const PAIRING_OVER = /** @type {readonly SessionState[]} */ (["ended", "waiting", "closed"]);
 

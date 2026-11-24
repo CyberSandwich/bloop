@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { Api } from "../../public/js/core/api.js";
 import { openChannel, refusal } from "../../public/js/core/channel.js";
-import { refused } from "../../public/js/core/states.js";
+import { onRefusal } from "../../public/js/core/states.js";
 import type { SocketLike } from "../../public/js/types.js";
 import type { ErrorCode } from "../../src/shared/protocol.ts";
 
@@ -305,9 +305,18 @@ describe("live channel", () => {
   });
 
   it("PAIR-12 a phone at a result stops its channel on a later refusal: nothing reconnects or repaints", async () => {
-    const t = setup([], (code, ch) => {
-      if (refused("ended", code).stop) ch.stop();
-    });
+    const ended = {
+      error: null,
+      info: null,
+      view: { state: "ended", endReason: "phone" },
+      files: null,
+      selected: [],
+      approving: false,
+      canceled: false,
+      drop: null,
+      canceling: false,
+    } as unknown as Parameters<typeof onRefusal>[0];
+    const t = setup([], (code, ch) => onRefusal(ended, code, { drop() {}, stop: () => ch.stop(), fail() {} }));
     t.sockets[0]?.open();
     t.sockets[0]?.push({ v: 1, t: "state", view: { state: "ended" } });
     t.sockets[0]?.push({ v: 1, t: "error", code: "rate_limited" });

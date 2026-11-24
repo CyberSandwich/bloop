@@ -2,7 +2,7 @@
 // Pure; the pages render the key through copy.js.
 /** @import {ErrorCode, FileItem, Item, PhoneStateKey, PhoneView, ScreenStateKey, ScreenView} from "../../../src/shared/protocol.ts" */
 /** @import {PhoneCtx, ScreenCtx} from "../types.js" */
-import { PAIRING_OVER } from "../shared/session.js";
+import { LIVE_CLAIM, PAIRING_OVER } from "../shared/session.js";
 import { refusal } from "./channel.js";
 
 /** @type {PhoneStateKey[]} */
@@ -21,10 +21,36 @@ export function adopt(c, view, drop, pid = c.pid) {
   if (PAIRING_OVER.includes(view.state)) drop(pid);
 }
 
-/** After a result, a pushed refusal only ends the pairing. */
-export function refused(/** @type {PhoneStateKey} */ key, /** @type {ErrorCode} */ code) {
-  const over = RESULTS.includes(key);
-  return { drop: over || refusal(code) === "dead", stop: over };
+/**
+ * A pushed refusal: after a result it only ends the pairing; before one it shows, unless this phone canceled.
+ * @param {PhoneCtx & {canceling: boolean}} c
+ * @param {ErrorCode} code
+ * @param {{drop: () => void, stop: () => void, fail: (code: ErrorCode) => void}} act
+ */
+export function onRefusal(c, code, act) {
+  const over = RESULTS.includes(phoneKey(c));
+  if (over || refusal(code) === "dead") act.drop();
+  if (over) act.stop();
+  else if (!c.canceling) act.fail(code);
+}
+
+/** A claim this phone holds, not yet approved. */
+export const liveClaim = (/** @type {LeaveCtx} */ c) =>
+  !!c.pid && !c.canceled && (!c.view || LIVE_CLAIM.includes(c.view.state));
+
+/**
+ * Back and Done (design.md, frame): a live session keeps its pid, so Revoke can come back.
+ * @typedef {{pid: string | null, canceled: boolean, view: PhoneView | null, leaving: boolean}} LeaveCtx
+ * @param {LeaveCtx} c
+ * @param {{post: (path: string, body: unknown, auth: string | null) => Promise<unknown>, drop: (pid: string | null) => void, assign: (to: string) => void}} io
+ */
+export async function leave(c, io, /** @type {string} */ to, forget = false) {
+  if (c.leaving) return;
+  c.leaving = true;
+  const live = liveClaim(c);
+  if (live) await io.post("/api/cancel", {}, c.pid);
+  if (live || forget) io.drop(c.pid);
+  io.assign(to);
 }
 
 /**

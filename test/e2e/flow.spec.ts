@@ -144,7 +144,7 @@ test.describe("pairing flow", () => {
 
     await expect(heading(screen.page)).toHaveText(DEMO.room);
     await expect(screen.page.locator("#compare")).toHaveText(/^Your phone shows \d{2}\.$/);
-    // The claim changes the state in place: the QR card stays where it was, dimmed under a phone glyph.
+    // The claim changes the state in place: the QR card stays where it was, blank under the phone glyph.
     await expect(screen.page.locator("#match")).toBeVisible();
     await expect(screen.page.locator("#qr-panel")).toHaveCSS("visibility", "visible");
     await expect(screen.page.locator("#line")).toHaveText(`Your phone shows ${match}.`);
@@ -160,6 +160,9 @@ test.describe("pairing flow", () => {
     await phone.page.getByRole("button", { name: "Approve" }).click();
     await expect(heading(phone.page)).toHaveText("Approved for Demo Room");
     await expect(phone.page.locator("#ends")).toHaveText(/^Ends in \d+:\d{2}$/);
+    // The approved items are a record, not controls: no ticks.
+    await expect(phone.page.locator("#file-list .row")).toHaveCount(4);
+    await expect(phone.page.locator("#file-list .tick")).toHaveCount(0);
     await expect(phone.page.getByRole("button", { name: "Revoke" })).toBeVisible();
     // In a session Revoke is the phone's one way out.
     await expect(phone.page.getByRole("link", { name: "Back", exact: true })).toBeHidden();
@@ -342,18 +345,33 @@ test.describe("pairing flow", () => {
     // The demo holds Session Ended for 10 s (its waitlist link), then shows a code again.
     await expect(heading(screen.page)).toHaveText("Demo Room", { timeout: 20_000 });
     await typedCodeOf(screen.page);
-    // PAIR-12: the pairing is gone now, so a wake reads a refusal; the phone stops its channel and keeps the result.
-    const read = phone.page.waitForResponse((r) => r.url().endsWith("/api/pair/state"));
-    await phone.page.evaluate("document.dispatchEvent(new Event('visibilitychange'))");
-    expect((await read).ok()).toBe(false);
-    await phone.page.waitForTimeout(500);
-    await expect(heading(phone.page)).toHaveText("Session Ended");
 
     await phone.page.getByRole("button", { name: "Done" }).click();
     await expect(phone.page).toHaveURL("/");
     // With no pid, /a with no code asks for a scan.
     await phone.page.goto("/a");
     await expect(heading(phone.page)).toHaveText("Scan the Code");
+    await screen.context.close();
+    await phone.context.close();
+  });
+
+  test("PAIR-12 a Revoke that fails offline keeps Revoke and the pid, and shows no Back that would strand the session", async ({
+    browser,
+  }) => {
+    const screen = await demoScreen(browser);
+    const { phone } = await scan(browser, screen.page);
+    await phone.page.getByRole("button", { name: "Approve" }).click();
+    await expectViewer(screen.page);
+    await phone.page.route("**/api/end", (route) => route.abort());
+    await phone.page.getByRole("button", { name: "Revoke" }).click();
+    await expect(heading(phone.page)).toHaveText("You're Offline");
+    await expect(phone.page.getByRole("button", { name: "Revoke" })).toBeVisible();
+    await expect(phone.page.getByRole("button", { name: "Try Again" })).toBeVisible();
+    await expect(phone.page.getByRole("link", { name: "Back", exact: true })).toBeHidden();
+    expect(await phone.page.evaluate(() => localStorage.getItem("bloop.pid"))).not.toBeNull();
+    await phone.page.unroute("**/api/end");
+    await phone.page.getByRole("button", { name: "Revoke" }).click();
+    await expect(heading(screen.page)).toHaveText("Session Ended");
     await screen.context.close();
     await phone.context.close();
   });
@@ -534,6 +552,18 @@ test.describe("guest drop", () => {
     await page.getByRole("button", { name: "Cancel" }).click();
     await expect(heading(page)).toHaveText("Demo Room");
     await expect(page.locator("#file-list")).toBeVisible();
+    // A file refused on the phone keeps the same Cancel back to the list.
+    await page.getByRole("button", { name: "Add a File" }).click();
+    const chooser = page.waitForEvent("filechooser");
+    await page.getByRole("button", { name: "Choose File" }).click();
+    await (await chooser).setFiles({
+      name: "notes.exe",
+      mimeType: "application/octet-stream",
+      buffer: Buffer.from("MZ"),
+    });
+    await expect(heading(page)).toHaveText("This File Can't Be Sent");
+    await page.getByRole("button", { name: "Cancel" }).click();
+    await expect(heading(page)).toHaveText("Demo Room");
     await expect(screen.page.locator("#compare")).toHaveText(/^Your phone shows \d{2}\.$/);
     await context.close();
     await screen.context.close();
@@ -779,6 +809,36 @@ test.describe("demo viewer", () => {
     await expect(heading(phone.page)).toHaveText("Session Ended");
     expect(phone.csp).toEqual([]);
     await phone.context.close();
+  });
+
+  test("at 360 the logo's question stacks its buttons, the rose on top, each label inside its own padding", async ({
+    browser,
+  }) => {
+    const context = await browser.newContext({ viewport: { width: 360, height: 780 } });
+    const page = await context.newPage();
+    await page.goto("/s?mode=demo");
+    await page.getByRole("link", { name: "Approve on This Phone" }).click();
+    await page.getByRole("button", { name: "Approve" }).click();
+    await expect(heading(page)).toHaveText("Dog.jpg");
+    await page.getByRole("button", { name: /^bloop/ }).click();
+    const question = page.getByRole("dialog", { name: "End and Go Home?" });
+    await expect(question).toBeVisible();
+    const fit = await page.evaluate(`(() => {
+      const end = document.getElementById("b-leave");
+      const cancel = end.parentElement.querySelector("[popovertarget]");
+      const range = document.createRange();
+      range.selectNodeContents(end);
+      const text = range.getBoundingClientRect();
+      const box = end.getBoundingClientRect();
+      const pad = parseFloat(getComputedStyle(end).paddingLeft);
+      return {
+        inside: text.left >= box.left + pad - 0.5 && text.right <= box.right - pad + 0.5,
+        roseOnTop: box.bottom <= cancel.getBoundingClientRect().top,
+        fullWidth: Math.round(box.width) === Math.round(cancel.getBoundingClientRect().width),
+      };
+    })()`);
+    expect(fit).toEqual({ inside: true, roseOnTop: true, fullWidth: true });
+    await context.close();
   });
 
   test("DEMO-01 isolation: a second tab of the same browser starts its own demo screen, never the first one's", async ({

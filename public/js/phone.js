@@ -11,12 +11,12 @@ import { sendable, sendFile, wholeMB } from "./core/drop.js";
 import { loadFiles } from "./core/files.js";
 import { ago, countdown, ICON_ADD } from "./core/format.js";
 import { rowFace, tile } from "./core/rows.js";
-import { adopt, firstFile, phoneKey, refused } from "./core/states.js";
+import { adopt, firstFile, leave, liveClaim, onRefusal, phoneKey } from "./core/states.js";
 import { dropPid, PID_KEY, pidStore, refOf, SID_KEY, sameScreen, sessionStore } from "./core/store.js";
 import { ariaFlag, byId, el, focusTitle, ICON_CHECK, icon, isFramed, setText, show, wsUrl } from "./core/ui.js";
 import { VERIFIED } from "./core/verified.js";
 import { ERRORS } from "./shared/errors.js";
-import { orderItems } from "./shared/session.js";
+import { IN_SESSION, LIVE_CLAIM, orderItems } from "./shared/session.js";
 
 const api = createApi();
 const store = sessionStore();
@@ -25,6 +25,9 @@ const pids = pidStore();
 let nocode = false;
 const EXITS = ["done", "code", "end"];
 const drop = (/** @type {string | null} */ pid) => dropPid(pids, pid);
+const io = { post: api.post, drop, assign: (/** @type {string} */ to) => location.assign(to) };
+/** Add a File from the list opened this offer: its Cancel goes back to the list. */
+const fromList = () => !!c.files && (c.drop === "choose" || c.drop === "confirm");
 
 const back = byId("back");
 const title = byId("title");
@@ -66,6 +69,7 @@ const c = {
   maxBytes: 0,
   upload: null,
   progress: 0,
+  leaving: false,
 };
 
 /** Failed calls become the state key the shared error table names; offline and generic errors can retry. */
@@ -115,9 +119,7 @@ function buildRows(/** @type {Entry[]} */ all, /** @type {boolean} */ add) {
 
 function buildItems(/** @type {Item[]} */ items) {
   fileList.replaceChildren(
-    ...items.map((item) =>
-      el("li", {}, [el("div", { class: "row is-on" }, [...rowFace(item, thumbOf(item, look())), tickMark()])]),
-    ),
+    ...items.map((item) => el("li", {}, [el("div", { class: "row" }, rowFace(item, thumbOf(item, look())))])),
   );
 }
 
@@ -165,6 +167,8 @@ function render() {
     // This tab holds the sid of the demo screen it claimed: it came from /s by "Approve on This Device" and can go back.
     back: home(),
     nocode,
+    live: !!v && IN_SESSION.includes(v.state),
+    list: fromList(),
   });
 
   back.setAttribute("href", home() ? "/s?mode=demo" : "/");
@@ -227,17 +231,11 @@ function countDown() {
   ends.classList.toggle("soon", left <= SOON_MS);
 }
 
-/** Back and Done: a claim not yet approved is let go first, so the screen does not wait on this phone. */
-async function leaveClaim(/** @type {string} */ to) {
-  const state = c.view?.state;
-  if (c.pid && !c.canceled && (!state || state === "claimed" || state === "choosing"))
-    await api.post("/api/cancel", {}, c.pid);
-  drop(c.pid);
-  location.assign(to);
-}
+// Otherwise Back is a plain link (a modified click opens a tab) that keeps the pid.
 back.addEventListener("click", (e) => {
+  if (e.metaKey || e.ctrlKey || e.shiftKey || e.altKey || !liveClaim(c)) return;
   e.preventDefault();
-  void leaveClaim(back.getAttribute("href") ?? "/");
+  void leave(c, io, back.getAttribute("href") ?? "/");
 });
 
 fileList.addEventListener("click", (e) => {
@@ -250,7 +248,7 @@ actionsEl.addEventListener("click", (e) => {
   if (id === "approve") approve();
   else if (id === "cancel") cancel();
   else if (id === "end") endSession();
-  else if (id === "done") void leaveClaim("/");
+  else if (id === "done") void leave(c, io, "/", true);
   else if (id === "retry") retry();
   else if (id === "connect") location.assign("/auth/start");
   else if (id === "disconnect") disconnect();
@@ -336,11 +334,12 @@ async function send() {
   } else fail(res.error, send);
 }
 
-/** Cancel on an offer reached from the list goes back to the list: Back stays the one way out. */
+/** From the list's offer (or the file it refused), Cancel goes back to the list: Back stays the one way out. */
 function cancel() {
-  if (!c.files || (c.drop !== "choose" && c.drop !== "confirm")) return void cancelPairing();
+  if (!fromList()) return void cancelPairing();
   c.drop = null;
   c.file = null;
+  c.error = null;
   render();
 }
 
@@ -354,7 +353,7 @@ async function cancelPairing() {
   c.canceled = true;
   c.channel?.stop();
   c.channel = null;
-  dropPid(pids, c.pid);
+  drop(c.pid);
   render();
 }
 
@@ -405,13 +404,7 @@ function attach(/** @type {string} */ pid) {
       setView(view);
       render();
     },
-    onError: (code) => {
-      // After a result the pairing is over: what it pushes then (the screen dropping it) must not replace the result.
-      const then = refused(phoneKey(c), code);
-      if (then.drop) drop(pid);
-      if (then.stop) c.channel?.stop();
-      else if (!c.canceling) fail(code);
-    },
+    onError: (code) => onRefusal(c, code, { drop: () => drop(pid), stop: () => c.channel?.stop(), fail }),
     onLink: (link) => {
       offline = link !== "ok";
       countDown();
@@ -448,7 +441,7 @@ async function resume(/** @type {string} */ pid) {
   if (!res.ok) {
     const kind = refusal(res.error);
     if (kind !== "dead") return fail(kind === "offline" ? "offline" : res.error, () => resume(pid));
-    dropPid(pids, pid);
+    drop(pid);
     // A dead pid reads as no pairing ("Scan the Code").
     nocode = true;
     return fail("pairing_invalid");
@@ -459,7 +452,7 @@ async function resume(/** @type {string} */ pid) {
   c.maxBytes = view.dropMaxBytes;
   attach(pid);
   render();
-  if (view.kind === "owner" && (view.state === "claimed" || view.state === "choosing")) listFiles();
+  if (view.kind === "owner" && LIVE_CLAIM.includes(view.state)) listFiles();
 }
 
 function start() {
