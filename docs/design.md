@@ -98,7 +98,7 @@ State strings for `/s` and `/a` are in section 7 with their screens.
 
 ## 4. Tokens
 
-Tokens live in `public/css/app.css` `:root`; this list restates them, and the drift test holds the two equal. Light only (`color-scheme:light`).
+Tokens live in `public/css/base.css` `:root`; this list restates them, and the drift test holds the two equal. Light only (`color-scheme:light`).
 
 ### Color
 | Token | Use |
@@ -170,7 +170,7 @@ Headings `text-wrap:balance`; no mono, no eyebrow, no uppercase label, no grey s
 | `--section:80px` | section rhythm; 112 from 768 |
 
 ### Glass
-One recipe, named once (`.glass` in `app.css`, the nav rules use the same tokens), for every floating surface: the nav pills and their menu sheet, the viewer sidebar, its bottom sheet and handle, the viewer's control pill, the phone's sticky actions. Liquid, not frosted: a thin fill, a strong blur and saturation, so what passes under (the robin wash at the top of the site) tints it, as opsis's green tints its nav. No refraction, shine or animated sheen; the border is the shadow's 0.5 px ring, never a CSS border.
+One recipe, named once (`.glass` in `base.css`, with the nav pills in its selector list), for every floating surface: the nav pills and their menu sheet, the viewer sidebar, its bottom sheet and handle, the viewer's control pill, the phone's sticky actions. Liquid, not frosted: a thin fill, a strong blur and saturation, so what passes under (the robin wash at the top of the site) tints it, as opsis's green tints its nav. No refraction, shine or animated sheen; the border is the shadow's 0.5 px ring, never a CSS border.
 | Token | Use |
 |---|---|
 | `--glass:rgba(255,255,255,.62)` | the fill where `backdrop-filter` is supported |
@@ -312,7 +312,7 @@ Each heading change is announced in a `role="status"` region; error uses `role="
 | invisible left and right tap zones; the indicator in the control pill | (no stage) | buttons on or under the frame covered the slide or cost a row; halves of the stage are the largest targets and show nothing until hovered or focused |
 | QR at half the viewport height, match digits 120 | spec draft: QR 240, digits 64 | the distance table in section 10: 240 px reads to about 1.5 m on a 65 inch display |
 | the countdown is the QR card's own edge | spec draft: a 4 px bar under the QR | the owner's ruling: the frame is the timer, as a watch ring; the bar was one more thing under the code |
-| reduced motion swaps at once | spec draft: a 150 ms cross-fade | the house safety net at the end of `app.css` already turns every animation off; one rule, no exception |
+| reduced motion swaps at once | spec draft: a 150 ms cross-fade | the house safety net in `base.css` already turns every animation off; one rule, no exception |
 
 ### Phone page (`/a`, opened by the camera)
 - **Frame** (`/a` and `/code` alike): the corner bar with Back alone (home, or back to `/s?mode=demo` when this tab is also the demo screen; no logo), then a column on paper, max 480, at least one viewport tall, padding `--pad`. The page itself scrolls; the buttons stay at the foot, sticky in a glass band (section 4), so they stay in reach. Back before approval (claimed, choosing) lets go of the claim first (`POST /api/cancel`), so the screen shows its code again at once.
@@ -419,7 +419,7 @@ One language: `--ease-out` for anything that appears or moves, `--ease-ui` for p
 
 "Anywhere" is filled, not haloed: a `background-clip:text` gradient from `--ink` into `--robin-deep`, with one light band passing once on load, then still. Why: presence without a halo; the one accent. A blurred glow muddied the letter edges on paper; the fill keeps them sharp and puts the robin in the word itself. Under `@supports` only, so where clipping fails the word is plain ink; forced colors drop the fill and keep the text.
 
-Reduced motion (`prefers-reduced-motion:reduce`): the stage rests flat (the spring never starts); the sheen does not play and the word rests in its fill; the FAQ switches instantly; the `/s` QR ring steps once a second with no glide; scene changes swap at once; the blanket rule at the end of `app.css` is the safety net. Nothing autoplays; the QR refresh is essential (a code must expire), so it has no pause.
+Reduced motion (`prefers-reduced-motion:reduce`): the stage rests flat (the spring never starts); the sheen does not play and the word rests in its fill; the FAQ switches instantly; the `/s` QR ring steps once a second with no glide; scene changes swap at once; the blanket rule in `base.css` is the safety net. Nothing autoplays; the QR refresh is essential (a code must expire), so it has no pause.
 
 ## 9. Logo and social image
 
@@ -449,7 +449,7 @@ Size by distance (width = distance / 8, a floor to confirm on site, open item 6)
 Stack and system architecture: `docs/architecture.md` and `docs/adr/`.
 
 ### Loading order (every page)
-1. HTML with the one CSS `<link>` in the head; no inline styles or scripts (the CSP forbids them).
+1. HTML with two CSS `<link>`s in the head, render-blocking in order: `base.css` (tokens, reset, buttons, glass: what every page uses), then the page's own, `site.css` or `app.css`. A page never loads the other side's rules, so each side's budget moves on its own. No inline styles or scripts (the CSP forbids them).
 2. Font preload for the one subset; the metric-matched fallback means the swap shifts nothing.
 3. `<script type="module">`, deferred by default: `site.js` on the landing only; the task pages' own modules.
 4. The hero stage's picture has its width and height, so it shifts nothing; it is the one image request (section 6).
@@ -457,7 +457,7 @@ Stack and system architecture: `docs/architecture.md` and `docs/adr/`.
 ### Budgets (internal targets; Google's "good" lines in brackets)
 | Metric | Landing | `/s` | `/a` |
 |---|---|---|---|
-| First-view requests | 6 or fewer (HTML, CSS, font, site.js, favicon, the stage picture) | 6 or fewer | 5 or fewer |
+| First-view requests | 7 or fewer (HTML, 2 CSS, font, site.js, favicon, the stage picture) | 7 or fewer | 6 or fewer |
 | CSS, font, browser JS, landing JS | the `size-limit` entries in `package.json`, the only owner. The v3.1 app pass raised browser JS and the CSS entry, after cutting the swipe handler, the View Transitions path and long header comments: the house frame, the QR ring, Copy and New Code, the match digits on Approve, and the approver's desktop layout cost more than the cuts gave back | same | same |
 | LCP | 1.2 s desktop, 1.8 s on slow 4G [2.5 s] | 1.5 s | 1.5 s on 4G |
 | CLS | 0.02 [0.1] | 0 | 0.02 |

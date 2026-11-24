@@ -175,16 +175,16 @@ describe("design tokens", () => {
       .replace(/\s+/g, "")
       .replace(/(?<!\d)0\./g, ".");
 
-  it("every `--token:value` in design.md section 4 is in app.css :root with the same value", () => {
+  it("every `--token:value` in design.md section 4 is in base.css :root with the same value", () => {
     const section = read("docs/design.md").split("\n## 4. ")[1]?.split("\n## ")[0] ?? "";
     const documented = [...section.matchAll(/`(--[\w-]+):([^`]+)`/g)].map((m) => [m[1] ?? "", m[2] ?? ""] as const);
     expect(documented.length).toBeGreaterThan(8);
 
-    const rootBlock = read("public/css/app.css").match(/^:root\s*\{([^}]*)\}/m)?.[1] ?? "";
+    const rootBlock = read("public/css/base.css").match(/^:root\s*\{([^}]*)\}/m)?.[1] ?? "";
     const css = new Map([...rootBlock.matchAll(/(--[\w-]+)\s*:\s*([^;]+);/g)].map((m) => [m[1] ?? "", m[2] ?? ""]));
     const drift = documented
       .filter(([name, value]) => norm(css.get(name) ?? "<missing>") !== norm(value))
-      .map(([name, value]) => `${name}: design.md ${value}, app.css ${css.get(name) ?? "missing"}`);
+      .map(([name, value]) => `${name}: design.md ${value}, base.css ${css.get(name) ?? "missing"}`);
     expect(drift).toEqual([]);
 
     const named = new Set([...section.matchAll(/`(--[\w-]+)(?::[^`]*)?`/g)].map((m) => m[1] ?? ""));

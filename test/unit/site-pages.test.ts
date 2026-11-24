@@ -7,6 +7,7 @@ const read = (rel: string) => readFileSync(fileURLToPath(new URL(`../../${rel}`,
 const SITE = ["index.html", "security.html", "privacy.html", "404.html"] as const;
 const ALL = [...SITE, "s.html", "a.html", "code.html"] as const;
 const VOID = new Set(["meta", "link", "img", "source", "input", "br", "hr", "wbr"]);
+const CSS_FILES = ["base.css", "site.css", "app.css"] as const;
 const SKIP_TAGS = new Set(["head", "script", "style", "svg", "noscript", "template"]);
 // Title Case (design.md section 3) keeps these lowercase after the first word.
 const MINOR = new Set([
@@ -184,7 +185,7 @@ describe("every page's text", () => {
   });
 
   it.each(ALL)("%s uses only characters inside the font subset", (page) => {
-    // The @font-face unicode-range in app.css and tools/subset-font.py.
+    // The @font-face unicode-range in base.css and tools/subset-font.py.
     const ranges: [number, number][] = [
       [0x0000, 0x00ff],
       [0x0131, 0x0131],
@@ -214,7 +215,7 @@ describe("every page's text", () => {
   });
 
   it("the CSS @font-face range is the subset script's range", () => {
-    const css = read("public/css/app.css");
+    const css = read("public/css/base.css");
     const py = read("tools/subset-font.py");
     const range = /unicode-range:\s*([^;]+);/.exec(css)?.[1]?.replace(/\s+/g, " ").trim() ?? "";
     const list = range.split(",").map((r) => r.trim());
@@ -240,7 +241,7 @@ describe("landing word caps (design.md section 13)", () => {
   });
 
   it("the sheen is a clipped fill with plain ink outside @supports, plays once and never under reduced motion", () => {
-    const css = read("public/css/app.css");
+    const css = read("public/css/site.css");
     const block = between(css, /@supports \(background-clip: text\)/, "@keyframes sheen");
     expect(block).toMatch(/\.sheen \{[^}]*background-clip: text;[^}]*color: transparent;/);
     expect(block).toMatch(
@@ -404,15 +405,18 @@ describe("landing word caps (design.md section 13)", () => {
     expect(read("tools/render-og.py")).toContain("H1 = 'Present Anywhere'");
   });
 
-  it("the logo's orange is named once, as --robin in :root; its gray never leaves the logo", () => {
-    const css = read("public/css/app.css").toLowerCase();
+  it("the logo's orange is named once, as --robin in base.css :root; its gray never leaves the logo", () => {
+    const css = CSS_FILES.map((f) => read(`public/css/${f}`))
+      .join("\n")
+      .toLowerCase();
+    expect(read("public/css/base.css")).toMatch(/^\s*--robin: #f4ba8b;$/m);
     expect(css.match(/f4ba8b/g)).toHaveLength(1);
     expect(css).toMatch(/^\s*--robin: #f4ba8b;$/m);
     for (const hex of ["646464", "ff7702"]) expect(css).not.toContain(hex);
   });
 
   it("the status chips and the sheen's deep end clear their contrast lines (design.md section 12)", () => {
-    const css = read("public/css/app.css");
+    const css = read("public/css/base.css");
     const hex = (name: string) => new RegExp(`--${name}: (#[0-9a-f]{6});`).exec(css)?.[1] ?? "";
     const lum = (h: string) => {
       const [r = 0, g = 0, b = 0] = [1, 3, 5].map((i) => {
@@ -537,6 +541,59 @@ describe("site chrome: one nav and one footer on every site page", () => {
 
   it("the footer ends with the year line", () => {
     expect(footer).toMatch(/<p class="footer-legal">© 2026 bloop<\/p>\s*<\/footer>$/);
+  });
+});
+
+describe("the stylesheets: base.css, then the page's own (design.md section 11)", () => {
+  const css = Object.fromEntries(CSS_FILES.map((f) => [f, read(`public/css/${f}`)]));
+  const links = (html: string) => [...html.matchAll(/<link rel="stylesheet" href="([^"]+)">/g)].map((m) => m[1]);
+  // A class names a rule in a file when it appears as a selector token there.
+  const defines = (file: string, cls: string) => new RegExp(`\\.${cls}(?![\\w-])`).test(css[file] ?? "");
+
+  it.each(SITE)("%s links base.css then site.css, and nothing else", (page) => {
+    expect(links(read(`public/${page}`))).toEqual(["/css/base.css", "/css/site.css"]);
+  });
+
+  it.each(["s.html", "a.html", "code.html"])("%s links base.css then app.css, and nothing else", (page) => {
+    expect(links(read(`public/${page}`))).toEqual(["/css/base.css", "/css/app.css"]);
+  });
+
+  it("the Worker's error page, a site page, links base.css then site.css", () => {
+    expect(links(read("src/worker/auth/error-page.ts"))).toEqual(["/css/base.css", "/css/site.css"]);
+  });
+
+  it.each(SITE)("every class on %s is styled by base.css or site.css, never only by app.css", (page) => {
+    // Names for the markup's reader, with no rule of their own.
+    const unstyled = new Set(["kinds", "providers", "frag-name"]);
+    const classes = new Set(
+      [...read(`public/${page}`).matchAll(/class="([^"]+)"/g)].flatMap((m) => (m[1] ?? "").split(/\s+/)),
+    );
+    for (const cls of classes) {
+      const own = defines("base.css", cls) || defines("site.css", cls);
+      if (!own) expect(unstyled.has(cls) && !defines("app.css", cls), cls).toBe(true);
+    }
+  });
+
+  it("base.css names no page's own class, except the nav pills in the one glass recipe", () => {
+    const base = (css["base.css"] ?? "").replace(
+      /\.glass,\s*\.nav-logo,\s*\.nav-pill,\s*\.nav-links:popover-open/g,
+      ".glass",
+    );
+    for (const cls of [
+      "page-site",
+      "page-screen",
+      "nav",
+      "nav-logo",
+      "nav-pill",
+      "nav-links",
+      "doc",
+      "faq",
+      "framed",
+      "item",
+      "row",
+    ]) {
+      expect(new RegExp(`\\.${cls}(?![\\w-])`).test(base), cls).toBe(false);
+    }
   });
 });
 

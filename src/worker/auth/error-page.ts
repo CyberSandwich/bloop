@@ -53,7 +53,8 @@ export function callbackErrorPage(failure: SignInError): Response {
     <meta name="robots" content="noindex">
     <title>bloop: sign in</title>
     <link rel="icon" href="/favicon.svg" type="image/svg+xml">
-    <link rel="stylesheet" href="/css/app.css">
+    <link rel="stylesheet" href="/css/base.css">
+    <link rel="stylesheet" href="/css/site.css">
   </head>
   <body class="page-site">
     <main id="main" class="doc notfound">

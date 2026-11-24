@@ -7,7 +7,7 @@ writes public/fonts/inter-latin.woff2 (docs/design.md sections 4 and 11).
 
 Steps: pin the weight axis to 400..600 (the only weights in use), keep the optical-size axis
 unless the result passes the 55 KB budget, then keep only the Latin range that the @font-face
-unicode-range in public/css/app.css declares. test/unit/font.test.ts checks every page string
+unicode-range in public/css/base.css declares. test/unit/font.test.ts checks every page string
 falls inside that range, so a glyph a page needs can never be cut.
 """
 import sys
@@ -21,7 +21,7 @@ ROOT = Path(__file__).resolve().parent.parent
 SRC = ROOT / 'src' / 'fonts' / 'InterVariable.woff2'
 DST = ROOT / 'public' / 'fonts' / 'inter-latin.woff2'
 BUDGET = 55 * 1024
-# Same list as the unicode-range in public/css/app.css and design.md section 4.
+# Same list as the unicode-range in public/css/base.css and design.md section 4.
 UNICODES = ('U+0000-00FF U+0131 U+0152-0153 U+02BB-02BC U+02C6 U+02DA U+02DC U+2000-206F U+2074 '
             'U+20AC U+2122 U+2191 U+2193 U+2212 U+2215 U+FEFF U+FFFD')
 FEATURES = ['kern', 'liga', 'calt', 'ccmp', 'locl', 'mark', 'mkmk', 'tnum', 'case']
