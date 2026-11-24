@@ -263,12 +263,15 @@ export class Screen extends DurableObject<Env> implements PairingStore {
     }
     const file = session && fileAt(session.items, used.record.item);
     if (!file) return fail("link_revoked"); // ended: the file reference is gone with the session
-    await this.auditLink(sessionId, now, "link.fetched", {
-      purpose: used.record.purpose,
-      count: used.record.fetches,
-      ...(limits.binding !== "off" && ipMatch !== null ? { ipMatch } : {}),
-      ...via,
-    });
+    // A player reads a view link in many ranges: a row per range would let one video flood D1 (VID-02).
+    if (used.record.purpose !== "view" || used.record.fetches === 1) {
+      await this.auditLink(sessionId, now, "link.fetched", {
+        purpose: used.record.purpose,
+        count: used.record.fetches,
+        ...(limits.binding !== "off" && ipMatch !== null ? { ipMatch } : {}),
+        ...via,
+      });
+    }
     await this.apply({ e: "fetched", now });
     return {
       ok: true,

@@ -325,7 +325,7 @@ Every state-changing route checks four things: `Origin` equals `PUBLIC_ORIGIN`; 
 | `POST /api/claim`       | 20 per 60 s per IP                                                                   | binding             |
 | failed code lookups     | 10 per 10 min per hashed IP, then 429 until the window (10 min from the first miss) ends; a global alarm at 1,000 per 10 min across all hashes (one `pair.miss_alarm` log line; it blocks nobody) | exact, Directory DO |
 | next code on one screen | 6 per min                                                                            | exact, Screen DO    |
-| `/f/`                   | 60 per 60 s per IP; per link: 10 fetches                                             | binding; exact      |
+| `/f/`                   | 60 per 60 s per IP; then 60 per 60 s per screen (`RL_FETCH` keyed by the screen ref), after the Screen object accepts the link; per link: 10 fetches, none for a view link (VID-02) | binding; exact      |
 | `PUT /api/drop`         | 5 per 60 s per IP (every attempt past the Origin and credential checks counts); one accepted file per session; live bytes under `GUEST_STORAGE_BUDGET_BYTES` | binding; exact; D1  |
 | `/auth/start`           | 10 per 60 s per IP                                                                   | binding             |
 | `GET /api/files`        | 20 per 60 s per session (`RL_FILES`, keyed by the screen ref), after the credential check: each call is a Graph call | binding |

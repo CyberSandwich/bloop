@@ -5,8 +5,8 @@ import { type RangeReader, ZIP_LIMITS } from "./index.ts";
 import { checkSizes, entryBytes, hasEndRecord, readCentralDirectory, type ZipEntry } from "./zip.ts";
 
 const HEAD_BYTES = 1024;
-const PDF_EOF_WINDOW = 1024;
-const JPEG_EOI_WINDOW = 1024;
+/** Where a PDF's `%%EOF` and a JPEG's end-of-image must sit. */
+const TAIL_BYTES = 1024;
 const PNG_END_BYTES = 12; // the IEND chunk: length 0, "IEND", CRC
 const JPEG_MAGIC = [0xff, 0xd8, 0xff];
 const PNG_MAGIC = [0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a];
@@ -21,6 +21,17 @@ const startsWith = (b: Uint8Array, s: string) => s.length <= b.length && text.de
 
 type Verdict = { ok: true; type: FileType } | { ok: false; error: DropError };
 const refuse = (error: DropError): Verdict => ({ ok: false, error });
+
+const readTail = (r: RangeReader): Promise<Uint8Array> =>
+  r.read(Math.max(0, r.size - TAIL_BYTES), Math.min(r.size, TAIL_BYTES));
+
+/**
+ * A PDF or a ZIP riding on a media file: `%PDF` in the head (a PDF reader looks there), a zip end record, or `%%EOF`
+ * in the tail (DROP-11, VID-01).
+ */
+async function carriesAnother(r: RangeReader, head: Uint8Array, tail: Uint8Array): Promise<boolean> {
+  return text.decode(head).includes("%PDF") || text.decode(tail).includes("%%EOF") || (await hasEndRecord(r));
+}
 
 /** The major brand of an ISO base media file (`ftyp` at offset 4), or null. */
 const majorBrand = (head: Uint8Array): string | null =>
@@ -97,21 +108,23 @@ async function validateDeck(r: RangeReader, head: Uint8Array): Promise<Verdict> 
 
 async function validatePdf(r: RangeReader): Promise<Verdict> {
   if (await hasEndRecord(r)) return refuse("bad_structure");
-  const tail = await r.read(Math.max(0, r.size - PDF_EOF_WINDOW), Math.min(r.size, PDF_EOF_WINDOW));
+  const tail = await readTail(r);
   return text.decode(tail).includes("%%EOF") ? { ok: true, type: "pdf" } : refuse("bad_structure");
 }
 
 /**
  * An image is drawn by an <img> under a fixed type, so it needs no deeper parse: it must end where its format ends
- * (JPEG end-of-image in the last KB, PNG IEND as the last chunk) and carry no zip end record (DROP-11).
+ * (JPEG end-of-image in the last KB, PNG IEND as the last chunk) and carry no PDF or ZIP (DROP-11).
  */
-async function validateImage(r: RangeReader, type: FileType): Promise<Verdict> {
-  if (await hasEndRecord(r)) return refuse("bad_structure");
+async function validateImage(r: RangeReader, head: Uint8Array, type: FileType): Promise<Verdict> {
+  const tail = await readTail(r);
+  if (await carriesAnother(r, head, tail)) return refuse("bad_structure");
   if (type === "png") {
-    const end = await r.read(Math.max(0, r.size - PNG_END_BYTES), PNG_END_BYTES);
-    return text.decode(end.subarray(4, 8)) === "IEND" ? { ok: true, type } : refuse("bad_structure");
+    const end = tail.subarray(-PNG_END_BYTES);
+    return end.length === PNG_END_BYTES && text.decode(end.subarray(4, 8)) === "IEND"
+      ? { ok: true, type }
+      : refuse("bad_structure");
   }
-  const tail = await r.read(Math.max(0, r.size - JPEG_EOI_WINDOW), Math.min(r.size, JPEG_EOI_WINDOW));
   return tail.some((b, i) => b === 0xff && tail[i + 1] === 0xd9) ? { ok: true, type } : refuse("bad_structure");
 }
 
@@ -121,13 +134,10 @@ async function validateImage(r: RangeReader, type: FileType): Promise<Verdict> {
  * head, and no zip end record or PDF `%%EOF` in the tail (DROP-02, VID-01).
  */
 async function validateVideo(r: RangeReader, head: Uint8Array, type: FileType): Promise<Verdict> {
-  if (text.decode(head).includes("%PDF")) return refuse("bad_structure");
   const size = new DataView(head.buffer, head.byteOffset, head.byteLength).getUint32(0);
   if (size < MIN_FTYP_BYTES || size + 8 > head.length) return refuse("bad_structure");
   if (!BOX_AFTER_FTYP.has(text.decode(head.subarray(size + 4, size + 8)))) return refuse("bad_structure");
-  if (await hasEndRecord(r)) return refuse("bad_structure");
-  const tail = await r.read(Math.max(0, r.size - PDF_EOF_WINDOW), Math.min(r.size, PDF_EOF_WINDOW));
-  return text.decode(tail).includes("%%EOF") ? refuse("bad_structure") : { ok: true, type };
+  return (await carriesAnother(r, head, await readTail(r))) ? refuse("bad_structure") : { ok: true, type };
 }
 
 /** The detected type must equal the declared one (the extension); anything else is `bad_type`. */
@@ -138,5 +148,5 @@ export const validate = async (r: RangeReader, declared: FileType): Promise<Verd
   if (detected === "pptx") return validateDeck(r, head);
   if (detected === "pdf") return validatePdf(r);
   if (detected === "mp4" || detected === "mov") return validateVideo(r, head, detected);
-  return validateImage(r, detected);
+  return validateImage(r, head, detected);
 };

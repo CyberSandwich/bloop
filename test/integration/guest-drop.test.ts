@@ -415,9 +415,13 @@ describe("VID-01 video: a guest recording is stored, offered and served as video
     socket.close();
   });
 
-  it("VID-02 keeps answering a view link past ten reads: a player seeks", async () => {
+  it("VID-02 keeps answering a view link past ten reads, and audits only its first fetch: a player seeks", async () => {
+    const fetchedRows = () =>
+      Number(wrangler.d1("SELECT count(*) AS n FROM audit_event WHERE type = 'link.fetched'")[0]?.n ?? 0);
     const { socket, url } = await openVideo(clip, "Clip.mp4", "video/mp4");
+    const before = fetchedRows();
     for (let i = 0; i < 15; i++) expect((await fetchLink(url, { headers: { Range: "bytes=0-9" } })).status).toBe(206);
+    expect(fetchedRows()).toBe(before + 1);
     socket.close();
   });
 });

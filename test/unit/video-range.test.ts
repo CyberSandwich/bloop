@@ -1,9 +1,13 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { policyOf, withHeaders } from "../../src/worker/headers.ts";
 import type { Resolved } from "../../src/worker/seams/file-source/index.ts";
 import { type LinkRecord, refusal } from "../../src/worker/seams/open-path/links.ts";
 import { parseRange } from "../../src/worker/seams/open-path/range.ts";
 import { openPathFor } from "../../src/worker/seams/open-path/select.ts";
+import { PROD_VARS } from "../env-vars.ts";
+
+// The route's import graph reaches the bundled demo files, which only wrangler loads; the tests here never resolve one.
+vi.mock("../../src/worker/source-access.ts", () => ({ accessForUser: () => ({ ok: false }) }));
 
 const BYTES = Uint8Array.from({ length: 100 }, (_, i) => i);
 const open = openPathFor("stream", []);
@@ -118,10 +122,67 @@ describe("VID-02 serving a range", () => {
     expect(res.headers.get("Content-Length")).toBe("100");
   });
 
+  it("VID-02 answers 200 with the whole body when the source ignores the range", async () => {
+    const whole = video();
+    const ignoring: Resolved = { ...whole, body: () => whole.body() };
+    const res = finished(await open.serve(get("bytes=10-19"), ignoring, "view"));
+    expect(res.status).toBe(200);
+    expect(res.headers.get("Content-Range")).toBeNull();
+    expect(res.headers.get("Content-Length")).toBe("100");
+    expect(new Uint8Array(await res.arrayBuffer())).toEqual(BYTES);
+  });
+
   it("VID-02 serves no ranges when the size is unknown", async () => {
     const res = finished(await open.serve(get("bytes=0-9"), video("mp4", null), "view"));
     expect(res.status).toBe(200);
     expect(res.headers.get("Accept-Ranges")).toBeNull();
+  });
+});
+
+describe("VID-02 per-screen read limit", () => {
+  const SCREEN_REF = "S".repeat(22);
+  const url = `http://127.0.0.1:8787/f/${SCREEN_REF}${"x".repeat(32)}/clip.mp4`;
+  /** A Worker env whose rate limit and Screen object record the order they are called in. */
+  function env(linkOk: boolean, screenLimited: boolean) {
+    const calls: string[] = [];
+    const RL_FETCH = {
+      limit: async ({ key }: { key: string }) => {
+        calls.push(key === SCREEN_REF ? "limit:screen" : "limit:ip");
+        return { success: !(screenLimited && key === SCREEN_REF) };
+      },
+    };
+    const useLink = async () => {
+      calls.push("useLink");
+      return linkOk ? { ok: true, value: {} } : { ok: false, error: "link_unknown" };
+    };
+    const SCREEN = { idFromName: (n: string) => n, get: () => ({ useLink }) };
+    return {
+      calls,
+      env: { ...PROD_VARS, PUBLIC_ORIGIN: "http://127.0.0.1:8787", RL_FETCH, SCREEN },
+    };
+  }
+  type FetchRoute = {
+    pattern: URLPattern;
+    handler: (r: Request, env: object, m: URLPatternResult) => Promise<Response> | Response;
+  };
+  const serve = async (e: object) => {
+    // A non-literal specifier: the route's type graph needs the Workers types, which the test tsconfig leaves out.
+    const routes = "../../src/worker/routes/open.ts";
+    const r = ((await import(routes)) as { openRoutes: readonly FetchRoute[] }).openRoutes[0] as FetchRoute;
+    const request = new Request(url);
+    return r.handler(request, e, r.pattern.exec(request.url) as URLPatternResult);
+  };
+
+  it("VID-02 a guessed token under a known screen ref never spends that screen's read budget", async () => {
+    const { calls, env: e } = env(false, false);
+    expect((await serve(e)).status).toBe(404);
+    expect(calls).toEqual(["limit:ip", "useLink"]);
+  });
+
+  it("VID-02 a real link is charged to its screen after the Screen object accepts it, and refused over the limit", async () => {
+    const { calls, env: e } = env(true, true);
+    expect((await serve(e)).status).toBe(429);
+    expect(calls).toEqual(["limit:ip", "useLink", "limit:screen"]);
   });
 });
 

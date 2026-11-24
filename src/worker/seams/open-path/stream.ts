@@ -62,6 +62,11 @@ export class StreamOpenPath implements OpenPath {
     if (request.method !== "HEAD") {
       const opened = await file.body(range ?? undefined);
       if (!opened.ok) return sourceFailure(opened.error);
+      // A source that did not honor the range sent the whole body: say so with a 200, never a 206 that lies.
+      if (range && opened.length !== range.length) {
+        range = null;
+        length = file.size;
+      }
       length = opened.length ?? length;
       body = sized(opened.stream, length);
     }

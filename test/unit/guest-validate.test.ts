@@ -139,6 +139,17 @@ describe("DROP-11 image polyglot", () => {
     expect(await validate(reader(open), "jpg")).toEqual({ ok: false, error: "bad_structure" });
   });
 
+  it("DROP-11 refuses a JPEG or PNG carrying a PDF: %PDF in the head or %%EOF in the tail", async () => {
+    const refused = { ok: false, error: "bad_structure" };
+    expect(await validate(reader(validJpeg("%PDF-1.4")), "jpg")).toEqual(refused);
+    expect(await validate(reader(concat([validJpeg(), enc.encode("%%EOF\n")])), "jpg")).toEqual(refused);
+    const png = validPng();
+    const inPng = (s: string) => concat([png.slice(0, 8), enc.encode(s), png.slice(8)]);
+    expect(await validate(reader(inPng("%PDF-1.4")), "png")).toEqual(refused);
+    expect(await validate(reader(inPng("%%EOF\n")), "png")).toEqual(refused);
+    expect(await validate(reader(inPng("plain")), "png")).toEqual({ ok: true, type: "png" });
+  });
+
   it("DROP-11 keeps HTML inside a JPEG comment: it is accepted, and serving makes it inert (integration)", async () => {
     expect(await validate(reader(validJpeg("<html><script>alert(1)</script>")), "jpg")).toEqual({
       ok: true,

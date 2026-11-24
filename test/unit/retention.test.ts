@@ -1,26 +1,14 @@
 import { describe, expect, it } from "vitest";
 import { type Config, parseConfig } from "../../src/worker/config.ts";
 import { closeStaleSessions, runRetention } from "../../src/worker/retention.ts";
+import { PROD_VARS } from "../env-vars.ts";
 import { addUser, testDb } from "./d1-shim.ts";
 
 const DAY = 86_400_000;
 const NOW = Date.parse("2026-06-01T03:30:00Z");
 
 function config(over: Record<string, string> = {}): Config {
-  const r = parseConfig({
-    PUBLIC_ORIGIN: "https://bloop.example",
-    HASH_PEPPER: "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
-    CODE_LENGTH: "6",
-    CODE_TTL_SECONDS: "60",
-    CODE_GRACE_SECONDS: "10",
-    CLAIM_TIMEOUT_SECONDS: "300",
-    UPLOAD_TIMEOUT_SECONDS: "900",
-    SESSION_MAX_MINUTES: "90",
-    DEMO_SESSION_MINUTES: "10",
-    DEMO_ENABLED: "true",
-    GUEST_DROP: "open",
-    ...over,
-  });
+  const r = parseConfig({ ...PROD_VARS, ...over });
   if (!r.ok) throw new Error(r.problems.join());
   return r.config;
 }

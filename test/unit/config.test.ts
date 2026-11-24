@@ -2,20 +2,7 @@ import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
 import { parseConfig } from "../../src/worker/config.ts";
-
-const PROD = {
-  PUBLIC_ORIGIN: "https://bloop.example",
-  HASH_PEPPER: "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
-  CODE_LENGTH: "6",
-  CODE_TTL_SECONDS: "60",
-  CODE_GRACE_SECONDS: "10",
-  CLAIM_TIMEOUT_SECONDS: "300",
-  UPLOAD_TIMEOUT_SECONDS: "900",
-  SESSION_MAX_MINUTES: "90",
-  DEMO_SESSION_MINUTES: "10",
-  DEMO_ENABLED: "true",
-  GUEST_DROP: "open",
-};
+import { PROD_VARS as PROD } from "../env-vars.ts";
 
 const problems = (env: Record<string, unknown>) => {
   const r = parseConfig(env);
