@@ -487,7 +487,7 @@ function start() {
   addEventListener("pagehide", () => launcher.closePdf());
   addEventListener("pageshow", (e) => e.persisted && location.reload());
   document.addEventListener("visibilitychange", () => {
-    if (!document.hidden) s.channel?.nudge();
+    if (!document.hidden) s.channel?.wake();
   });
   setInterval(() => (main.dataset.mode === "waiting" ? updateRing() : undefined), 1000);
   boot();

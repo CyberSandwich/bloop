@@ -1,6 +1,5 @@
-// Live updates for one credential: a WebSocket with reconnect and backoff, and the state route
-// polled every 3 s once 3 reconnects have failed (docs/architecture.md section 7). The credential
-// travels in the first frame, never in the URL. Works for both the screen and the phone.
+// Live updates for one credential, screen or phone (docs/architecture.md section 7). The credential travels in the
+// first frame, never in the URL.
 /** @import {ErrorCode} from "../../../src/shared/protocol.ts" */
 /** @import {ChannelOptions, SocketLike} from "../types.js" */
 import { PING_MS, pollDelay, reconnectDelay, SILENCE_MS, shouldPoll } from "./timing.js";
@@ -144,19 +143,28 @@ export function openChannel(o) {
       return live;
     },
     isLive: () => live,
-    /** Retry now: the tab became visible again, or the network came back. */
-    nudge() {
-      if (closed || live) return;
-      if (retryTimer) clearTimeout(retryTimer);
-      retryTimer = null;
-      connect();
-    },
-    /** Fetch the state once, whatever the socket says. */
-    async refresh() {
-      const res = await o.api.get(o.statePath, o.credential);
-      if (res.ok) o.onView(res.value);
-      return res.ok;
+    nudge,
+    refresh,
+    /** The tab is visible again: its timers may have slept through pushes and deadlines, so read the state too. */
+    wake() {
+      nudge();
+      void refresh();
     },
     stop,
   };
+
+  /** Retry now: the tab became visible again, or the network came back. */
+  function nudge() {
+    if (closed || live) return;
+    if (retryTimer) clearTimeout(retryTimer);
+    retryTimer = null;
+    connect();
+  }
+
+  /** Fetch the state once, whatever the socket says. */
+  async function refresh() {
+    const res = await o.api.get(o.statePath, o.credential);
+    if (res.ok && !closed) o.onView(res.value);
+    return res.ok;
+  }
 }

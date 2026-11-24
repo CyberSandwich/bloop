@@ -25,15 +25,13 @@ export function screenCopy(key, f) {
       return { ...base, heading: f.room, controls: f.demo ? ["here"] : [] };
     case "scanned":
     case "choosing":
-      // This browser also holds the claim (it went to /a): it finishes there.
-      return f.mine
-        ? { ...base, heading: "Finish Approving", controls: ["start_over", "continue"] }
-        : {
-            ...base,
-            heading: "Check Your Phone",
-            line: `Your phone shows ${f.match ?? ""}.`,
-            controls: ["start_over"],
-          };
+      // The room's name stays, so nothing moves; the line is the status. A browser that holds the claim finishes there.
+      return {
+        ...base,
+        heading: f.room,
+        line: f.mine ? "Finish on this device." : `Your phone shows ${f.match ?? ""}.`,
+        controls: f.mine ? ["start_over", "continue"] : ["start_over"],
+      };
     case "approved":
       return { ...base, heading: "Approved", line: `Opening ${file}.`, controls: END };
     case "opening":

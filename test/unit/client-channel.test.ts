@@ -261,6 +261,34 @@ describe("live channel", () => {
     expect(t.sockets).toHaveLength(2);
   });
 
+  it("wake reads the state even on a live socket, so a tab whose timers slept catches up (a room screen's code)", async () => {
+    const t = setup([{ ok: true, value: { state: "waiting", code: { code: "NEW234" } } }]);
+    t.sockets[0]?.open();
+    t.sockets[0]?.push({ v: 1, t: "state", view: { state: "waiting", code: { code: "OLD234" } } });
+    t.channel.wake();
+    await vi.advanceTimersByTimeAsync(0);
+    expect(t.sockets).toHaveLength(1);
+    expect(t.pollCalls).toEqual(["/api/screen/state|REF.SECRET"]);
+    expect(t.views.at(-1)).toEqual({ state: "waiting", code: { code: "NEW234" } });
+  });
+
+  it("wake on a dropped socket reconnects at once and reads the state", async () => {
+    const t = setup();
+    t.sockets[0]?.drop();
+    t.channel.wake();
+    await vi.advanceTimersByTimeAsync(0);
+    expect(t.sockets).toHaveLength(2);
+    expect(t.pollCalls).toHaveLength(1);
+  });
+
+  it("a stopped channel delivers no late state", async () => {
+    const t = setup();
+    const read = t.channel.refresh();
+    t.channel.stop();
+    await read;
+    expect(t.views).toEqual([]);
+  });
+
   it("stop closes the socket and never reconnects", () => {
     const t = setup();
     t.sockets[0]?.open();

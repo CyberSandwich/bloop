@@ -183,8 +183,7 @@
 :is([data-mode="waiting"], [data-mode="scanned"]) .pane {
   gap: 24px;
 }
-main:has(> .side:not([hidden])) #stage,
-[data-mode="scanned"] #line {
+main:has(> .side:not([hidden])) #stage {
   position: absolute;
   width: 1px;
   height: 1px;
@@ -318,6 +317,11 @@ main:has(> .side:not([hidden])) #stage,
   :is([data-mode="waiting"], [data-mode="scanned"]) #stage {
     grid-area: stage;
   }
+  /* The hint place shows the status; the line keeps it for screen readers. Under 600 the line is the status. */
+  [data-mode="scanned"] #line {
+    position: absolute;
+    clip-path: inset(50%);
+  }
 }
 @media (min-width: 900px) and (min-aspect-ratio: 1 / 1) {
   :is([data-mode="waiting"], [data-mode="scanned"]) .pane {
@@ -328,10 +332,6 @@ main:has(> .side:not([hidden])) #stage,
     justify-content: center;
     justify-items: stretch;
     text-align: left;
-  }
-  /* The heading never sizes the column, and Check Your Phone (7.8em) always fits one line: a scan moves nothing. */
-  :is([data-mode="waiting"], [data-mode="scanned"]) #stage {
-    container-type: inline-size;
   }
   :is([data-mode="waiting"], [data-mode="scanned"]) .qr-card {
     align-self: center;
@@ -350,9 +350,6 @@ main:has(> .side:not([hidden])) #stage,
   }
   :is([data-mode="waiting"], [data-mode="scanned"], [data-mode="ended"]) h1 {
     font-size: var(--display);
-  }
-  :is([data-mode="waiting"], [data-mode="scanned"]) h1 {
-    font-size: min(var(--display), 100cqi / 7.8);
   }
 }
 /* Session Ended sits at the true center of the viewport, whatever the bar and footer take. */

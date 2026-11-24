@@ -423,7 +423,7 @@ function attach(/** @type {string} */ pid) {
   });
   addEventListener("online", () => c.channel?.nudge());
   document.addEventListener("visibilitychange", () => {
-    if (!document.hidden) c.channel?.nudge();
+    if (!document.hidden) c.channel?.wake();
   });
 }
 

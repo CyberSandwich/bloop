@@ -122,7 +122,8 @@ test.describe("pairing flow", () => {
     await expect(phone.page.getByRole("button", { name: "Add a File" })).toBeVisible();
     await expectNoAxeViolations(phone.page);
 
-    await expect(heading(screen.page)).toHaveText("Check Your Phone");
+    await expect(heading(screen.page)).toHaveText(DEMO.room);
+    await expect(screen.page.locator("#compare")).toHaveText(/^Your phone shows \d{2}\.$/);
     // The claim changes the state in place: the QR card stays where it was, dimmed under a phone glyph.
     await expect(screen.page.locator("#match")).toBeVisible();
     await expect(screen.page.locator("#qr-panel")).toHaveCSS("visibility", "visible");
@@ -131,7 +132,7 @@ test.describe("pairing flow", () => {
     const compare = screen.page.locator("#compare");
     await expect(compare).toHaveText(`Your phone shows ${match}.`);
     await expect(compare).toHaveCSS("font-size", "40px");
-    expect(await heading(screen.page).boundingBox()).toMatchObject({ y: titleBefore?.y });
+    expect(await heading(screen.page).boundingBox()).toEqual(titleBefore);
     expect(await screen.page.locator("#qr-panel").boundingBox()).toEqual(cardBefore);
     await expect(screen.page.getByRole("button", { name: "Back", exact: true })).toBeVisible();
     await expectNoAxeViolations(screen.page);
@@ -167,7 +168,7 @@ test.describe("pairing flow", () => {
 
     await expect(phone.page).toHaveURL(/\/a$/);
     await expect(heading(phone.page)).toHaveText(DEMO.title);
-    await expect(heading(screen.page)).toHaveText("Check Your Phone");
+    await expect(screen.page.locator("#compare")).toHaveText(/^Your phone shows \d{2}\.$/);
     await screen.context.close();
     await phone.context.close();
   });
@@ -190,7 +191,7 @@ test.describe("pairing flow", () => {
   }) => {
     const screen = await demoScreen(browser);
     const { phone } = await scan(browser, screen.page);
-    await expect(heading(screen.page)).toHaveText("Check Your Phone");
+    await expect(screen.page.locator("#compare")).toHaveText(/^Your phone shows \d{2}\.$/);
     await phone.page.getByRole("link", { name: "Back" }).click();
     await expect(phone.page).toHaveURL("/");
     await expect(heading(screen.page)).toHaveText("Demo Room");
@@ -368,7 +369,7 @@ test.describe("pairing flow", () => {
     const screen = await demoScreen(browser);
     const { phone } = await scan(browser, screen.page);
     await screen.page.reload();
-    await expect(heading(screen.page)).toHaveText("Check Your Phone");
+    await expect(screen.page.locator("#compare")).toHaveText(/^Your phone shows \d{2}\.$/);
     await phone.page.reload();
     await expect(heading(phone.page)).toHaveText(DEMO.title);
     await screen.context.close();

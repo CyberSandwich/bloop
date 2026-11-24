@@ -140,21 +140,21 @@ describe("screen copy", () => {
     }
   });
 
-  it("scanned and choosing say Check Your Phone with the digits the phone shows", () => {
+  it("scanned and choosing keep the room's name as the title, and the line says the digits the phone shows", () => {
     for (const key of ["scanned", "choosing"] as const) {
       expect(screenCopy(key, { ...sf, match: "42" })).toMatchObject({
-        heading: "Check Your Phone",
+        heading: "Room 2.14",
         line: "Your phone shows 42.",
         controls: ["start_over"],
       });
     }
   });
 
-  it("DEMO-01 a tab that holds the claim too finishes approving there, with Back and Continue", () => {
+  it("DEMO-01 a tab that holds the claim too finishes there: the room's name, the line, Back and Continue", () => {
     for (const key of ["scanned", "choosing"] as const) {
       expect(screenCopy(key, { ...sf, match: "42", mine: true })).toMatchObject({
-        heading: "Finish Approving",
-        line: "",
+        heading: "Room 2.14",
+        line: "Finish on this device.",
         controls: ["start_over", "continue"],
       });
     }
