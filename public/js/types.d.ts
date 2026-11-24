@@ -255,6 +255,7 @@ export interface PhoneInfo {
   registered: boolean;
   match: string;
   mode: "live" | "demo";
+  kind: "owner" | "guest";
 }
 
 export interface PhoneCtx {
@@ -273,7 +274,7 @@ export interface PhoneCtx {
   /** This phone canceled the pairing. */
   canceled: boolean;
   /** Where the guest flow is, which only this phone knows. */
-  drop: "choose" | "confirm" | "sending" | null;
+  drop: "confirm" | "sending" | null;
 }
 
 /** A child of a 24 px glyph: a bare path's `d`, or a tag with its attributes (core/icons.js). */

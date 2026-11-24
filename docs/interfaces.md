@@ -129,7 +129,7 @@ export interface Problem { type: "about:blank"; status: number; code: ErrorCode;
 export type PhoneStateKey =
   | "checking" | "match" | "choose" | "approve" | "approve_demo" | "unregistered" | "first_use"
   | "needs_admin" | "empty" | "approving" | "opening" | "open" | "open_fallback" | "pdf_fallback"
-  | "pdf_file" | "ended" | "canceled" | "expired" | "taken" | "offline" | "error" | "guest_choose"
+  | "pdf_file" | "ended" | "canceled" | "expired" | "taken" | "offline" | "error" | "guest_add"
   | "guest_confirm" | "guest_sending" | "guest_refused" | "guest_sent" | "typed_wrong" | "framed"
   | "rate_limited" | "guest_pass_needed" | "guest_off" | "busy";          // last five: strings added to design.md section 7 (section 9)
 export type ScreenStateKey =
@@ -656,5 +656,5 @@ The shared state strings have no slot for these. Wording is a design.md decision
 - `busy` (phone): "bloop can't take files right now." / "Try again in a few minutes, or sign in to the PC as usual."
 - Screen `guest_open` (offered state): heading "{file name}", line "Sent by a guest. Open it here when you're ready.", control "Open". The click is the proof of presence at the lectern, and no guest file opens without it.
 - Screen "Start Over" (decided, OD-6; the labeled Back pill in the scanned, choosing and offered states): ends a claim nobody at the lectern recognizes (PAIR-02).
-- `guest_refused` fills `{N}` from `PhoneView.dropMaxBytes` (`GUEST_MAX_BYTES`, default 90 MB; demo 25 MB), in whole megabytes.
+- `guest_refused` and the "File Too Large" toast fill `{N}` from `PhoneView.dropMaxBytes` (`GUEST_MAX_BYTES`, default 90 MB; demo 25 MB), in whole megabytes. The phone states no cap of its own.
 - Added with the guest drop (module f), now in design.md section 7: `guest_sent` (phone, after the upload: "Sent to {room}." / "Open it on the screen when you're ready.", Cancel) and the text action "Send a File Instead", which is how a phone that scanned as an owner chooses to send its own file.
