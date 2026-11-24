@@ -1,12 +1,17 @@
 // What a stored object really is (DROP-02 to DROP-04). Range reads only: the head, the zip end record and
-// central directory, or the PDF tail. The one inflate is the content-types part, capped at a few hundred KB.
+// central directory, or the PDF or image tail. The one inflate is the content-types part, capped at a few hundred KB.
 import type { DropError, FileType } from "../../../shared/protocol.ts";
 import { type RangeReader, ZIP_LIMITS } from "./index.ts";
 import { checkSizes, entryBytes, hasEndRecord, readCentralDirectory, type ZipEntry } from "./zip.ts";
 
 const HEAD_BYTES = 1024;
 const PDF_EOF_WINDOW = 1024;
+const JPEG_EOI_WINDOW = 1024;
+const PNG_END_BYTES = 12; // the IEND chunk: length 0, "IEND", CRC
+const JPEG_MAGIC = [0xff, 0xd8, 0xff];
+const PNG_MAGIC = [0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a];
 const text = new TextDecoder("latin1");
+const hasMagic = (b: Uint8Array, magic: number[]) => b.length >= magic.length && magic.every((m, i) => b[i] === m);
 const startsWith = (b: Uint8Array, s: string) => s.length <= b.length && text.decode(b.subarray(0, s.length)) === s;
 
 type Verdict = { ok: true; type: FileType } | { ok: false; error: DropError };
@@ -16,6 +21,8 @@ const refuse = (error: DropError): Verdict => ({ ok: false, error });
 function detect(head: Uint8Array): FileType | null {
   if (startsWith(head, "PK\x03\x04")) return "pptx";
   if (startsWith(head, "%PDF-")) return "pdf";
+  if (hasMagic(head, JPEG_MAGIC)) return "jpg";
+  if (hasMagic(head, PNG_MAGIC)) return "png";
   return null;
 }
 
@@ -83,10 +90,26 @@ async function validatePdf(r: RangeReader): Promise<Verdict> {
   return text.decode(tail).includes("%%EOF") ? { ok: true, type: "pdf" } : refuse("bad_structure");
 }
 
+/**
+ * An image is drawn by an <img> under a fixed type, so it needs no deeper parse: it must end where its format ends
+ * (JPEG end-of-image in the last KB, PNG IEND as the last chunk) and carry no zip end record (DROP-11).
+ */
+async function validateImage(r: RangeReader, type: FileType): Promise<Verdict> {
+  if (await hasEndRecord(r)) return refuse("bad_structure");
+  if (type === "png") {
+    const end = await r.read(Math.max(0, r.size - PNG_END_BYTES), PNG_END_BYTES);
+    return text.decode(end.subarray(4, 8)) === "IEND" ? { ok: true, type } : refuse("bad_structure");
+  }
+  const tail = await r.read(Math.max(0, r.size - JPEG_EOI_WINDOW), Math.min(r.size, JPEG_EOI_WINDOW));
+  return tail.some((b, i) => b === 0xff && tail[i + 1] === 0xd9) ? { ok: true, type } : refuse("bad_structure");
+}
+
 /** The detected type must equal the declared one (the extension); anything else is `bad_type`. */
 export const validate = async (r: RangeReader, declared: FileType): Promise<Verdict> => {
   const head = await r.read(0, Math.min(r.size, HEAD_BYTES));
   const detected = detect(head);
   if (detected === null || detected !== declared) return refuse("bad_type");
-  return detected === "pptx" ? validateDeck(r, head) : validatePdf(r);
+  if (detected === "pptx") return validateDeck(r, head);
+  if (detected === "pdf") return validatePdf(r);
+  return validateImage(r, detected);
 };

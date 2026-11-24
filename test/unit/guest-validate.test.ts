@@ -1,7 +1,7 @@
 import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 import { validate } from "../../src/worker/seams/guest-drop/validate.ts";
-import { buildZip, concat, reader, validDeck, validPdf } from "../zip-builder.ts";
+import { buildZip, concat, reader, validDeck, validJpeg, validPdf, validPng } from "../zip-builder.ts";
 
 const enc = new TextEncoder();
 const deckCheck = (b: Uint8Array) => validate(reader(b), "pptx");
@@ -80,6 +80,70 @@ describe("DROP-02 polyglot and wrong type", () => {
     const v = new DataView(zip.buffer, zip.byteOffset, zip.byteLength);
     v.setUint32(zip.length - 22 + 16, zip.length + 100, true);
     expect(await deckCheck(zip)).toEqual({ ok: false, error: "bad_structure" });
+  });
+});
+
+describe("DROP-02 type: images", () => {
+  const jpgCheck = (b: Uint8Array) => validate(reader(b), "jpg");
+  const pngCheck = (b: Uint8Array) => validate(reader(b), "png");
+
+  it("accepts a minimal JPEG and PNG", async () => {
+    expect(await jpgCheck(validJpeg())).toEqual({ ok: true, type: "jpg" });
+    expect(await pngCheck(validPng())).toEqual({ ok: true, type: "png" });
+  });
+
+  it("DROP-02 refuses HEIC bytes under any image name: the detected type is none", async () => {
+    const heic = concat([new Uint8Array([0, 0, 0, 0x18]), enc.encode("ftypheic"), new Uint8Array(64)]);
+    expect(await jpgCheck(heic)).toEqual({ ok: false, error: "bad_type" });
+    expect(await pngCheck(heic)).toEqual({ ok: false, error: "bad_type" });
+  });
+
+  it("DROP-02 refuses every pair of declared and detected types that differ", async () => {
+    const files = { pptx: validDeck(), pdf: validPdf(), jpg: validJpeg(), png: validPng() } as const;
+    for (const declared of Object.keys(files) as (keyof typeof files)[]) {
+      for (const sent of Object.keys(files) as (keyof typeof files)[]) {
+        if (declared === sent) continue;
+        expect(await validate(reader(files[sent]), declared)).toEqual({ ok: false, error: "bad_type" });
+      }
+    }
+  });
+
+  it("refuses a bare magic number, an empty file and a truncated JPEG or PNG", async () => {
+    expect(await jpgCheck(new Uint8Array([0xff, 0xd8, 0xff]))).toEqual({ ok: false, error: "bad_structure" });
+    expect(await jpgCheck(new Uint8Array([0xff, 0xd8]))).toEqual({ ok: false, error: "bad_type" });
+    expect(await jpgCheck(new Uint8Array())).toEqual({ ok: false, error: "bad_type" });
+    const png = validPng();
+    expect(await pngCheck(png.slice(0, png.length - 4))).toEqual({ ok: false, error: "bad_structure" });
+    expect(await pngCheck(png.slice(0, 8))).toEqual({ ok: false, error: "bad_structure" });
+  });
+});
+
+describe("DROP-11 image polyglot", () => {
+  it("DROP-11 refuses a JPEG or PNG that ends in a zip end record", async () => {
+    expect(await validate(reader(concat([validJpeg(), validDeck()])), "jpg")).toEqual({
+      ok: false,
+      error: "bad_structure",
+    });
+    expect(await validate(reader(concat([validPng(), validDeck()])), "png")).toEqual({
+      ok: false,
+      error: "bad_structure",
+    });
+  });
+
+  it("DROP-11 refuses a PNG with data after IEND and a JPEG with no end marker near its end", async () => {
+    expect(await validate(reader(concat([validPng(), enc.encode("<script>x</script>")])), "png")).toEqual({
+      ok: false,
+      error: "bad_structure",
+    });
+    const open = concat([validJpeg().slice(0, -2), enc.encode("<html>"), new Uint8Array(2000)]);
+    expect(await validate(reader(open), "jpg")).toEqual({ ok: false, error: "bad_structure" });
+  });
+
+  it("DROP-11 keeps HTML inside a JPEG comment: it is accepted, and serving makes it inert (integration)", async () => {
+    expect(await validate(reader(validJpeg("<html><script>alert(1)</script>")), "jpg")).toEqual({
+      ok: true,
+      type: "jpg",
+    });
   });
 });
 

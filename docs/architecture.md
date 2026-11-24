@@ -425,7 +425,7 @@ CREATE TABLE metric_user_week (          -- 120 days; pseudonym = HMAC(HASH_PEPP
 
 CREATE TABLE guest_file (                -- row: 30 days after deleted_at; object: session end
   session_id TEXT PRIMARY KEY, r2_key TEXT NOT NULL, bytes INTEGER NOT NULL,
-  type TEXT NOT NULL CHECK (type IN ('pptx','pdf')), sha256 TEXT NOT NULL,
+  type TEXT NOT NULL CHECK (type IN ('pptx','pdf','jpg','png')), sha256 TEXT NOT NULL,
   name TEXT NOT NULL, created_at INTEGER NOT NULL, deleted_at INTEGER);
 
 CREATE TABLE r2_ops (                    -- R2 operations bloop performed; 13 months (migration 0002)
