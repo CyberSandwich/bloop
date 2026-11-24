@@ -26,7 +26,7 @@
     {
       "name": "browser JS",
       "path": "public/js/**/*.js",
-      "limit": "45.5 kB"
+      "limit": "47.4 kB"
     },
     {
       "name": "landing JS",
@@ -58,7 +58,7 @@
       "path": "src/worker/seams/file-source/demo-files/demo-dog.jpg",
       "gzip": false,
       "brotli": false,
-      "limit": "536 kB"
+      "limit": "241 kB"
     },
     {
       "name": "site page CSS",
@@ -76,21 +76,21 @@
         "public/css/app.css"
       ],
       "gzip": true,
-      "limit": "8.5 kB"
+      "limit": "9.1 kB"
     },
     {
       "name": "hero image",
       "path": "public/img/hero-viewer-1440.avif",
       "gzip": false,
       "brotli": false,
-      "limit": "45 kB"
+      "limit": "157.5 kB"
     },
     {
       "name": "hero image fallback",
       "path": "public/img/hero-viewer-1440.webp",
       "gzip": false,
       "brotli": false,
-      "limit": "85 kB"
+      "limit": "197 kB"
     },
     {
       "name": "phone hero image",

@@ -151,6 +151,29 @@ for (const vp of VIEWPORTS) {
       expect(Number.parseFloat(padding)).toBeGreaterThan(0);
     });
 
+    test("Connect's share rows and provider rows start their names at one x, and each head is a title and a chip", async ({
+      page,
+    }) => {
+      await page.goto("/");
+      const xs =
+        (await page.evaluate(`(() => [...document.querySelectorAll(".rows li")].filter((li) => li.querySelector(".icon")).map((li) => {
+        const range = document.createRange();
+        range.selectNodeContents(li.lastChild);
+        return Math.round(range.getBoundingClientRect().left * 10) / 10;
+      }))()`)) as number[];
+      expect(xs).toHaveLength(8);
+      for (const x of xs) expect(Math.abs(x - (xs[0] ?? 0))).toBeLessThanOrEqual(1);
+      const heads = (await page.evaluate(`[...document.querySelectorAll(".group-head")].map((h) => {
+        const title = h.querySelector("h3").getBoundingClientRect();
+        const chip = h.querySelector(".status").getBoundingClientRect();
+        return [title.left < chip.left, Math.abs((title.top + title.bottom) / 2 - (chip.top + chip.bottom) / 2) < 8];
+      })`)) as boolean[][];
+      expect(heads).toEqual([
+        [true, true],
+        [true, true],
+      ]);
+    });
+
     test("the nav stays on top, firms up once scrolled, and its Waitlist opens the form", async ({ page }) => {
       await page.goto("/");
       const nav = page.locator(".nav");

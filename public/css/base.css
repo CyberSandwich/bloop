@@ -24,6 +24,7 @@
 :root {
   color-scheme: light;
   --font: "Inter", "Inter Fallback", Arial, sans-serif;
+  --mono: ui-monospace, "SF Mono", Menlo, monospace;
 
   --paper: #f3f3f0;
   --surface: #ffffff;

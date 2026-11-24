@@ -636,7 +636,7 @@ h3 {
 }
 .group-head {
   display: flex;
-  align-items: center;
+  align-items: baseline;
   gap: 12px;
 }
 .group :is(h2, h3) {

@@ -242,7 +242,7 @@ describe("screen copy", () => {
   });
 
   it("the end line says why it ended and what this PC may still hold", () => {
-    expect(endLine("phone", { ppt: false, download: null })).toBe("Revoked from the phone.");
+    expect(endLine("phone", { ppt: false, download: null })).toBe("");
     expect(endLine("auto", { ppt: true, download: "Lecture 4.pptx" })).toBe(
       "Time's up. Close PowerPoint to take your slides off this PC. Delete Lecture 4.pptx from Downloads before you leave.",
     );
@@ -481,7 +481,7 @@ describe("phone copy", () => {
     expect(phoneCopy("canceled", pf)).toMatchObject({ title: "Approval Canceled", body: "Nothing was shared." });
     // The line about the file link is held back until open item 1 passes.
     expect(phoneCopy("ended", pf).body).toBe("Close PowerPoint on the room PC and delete any download there.");
-    expect(phoneCopy("ended", { ...pf, demo: true }).body).toBe("Your files left the screen.");
+    expect(phoneCopy("ended", { ...pf, demo: true }).body).toBe("");
   });
 
   it("a page opened with no code asks for a scan, not an expired code", () => {

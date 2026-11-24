@@ -2,7 +2,7 @@
 // An image's <img> is kept for the session: the CSP has no blob:, and a second mint spends the budget.
 /** @import {Item, OpenMode, ScreenView} from "../../src/shared/protocol.ts" */
 /** @import {Minted} from "./types.js" */
-import { halves, openTarget, pageMode, pagesOf, stepPage, thumbOf } from "./core/demo.js";
+import { halves, openTarget, pageMode, pagesOf, placeControls, stepPage, thumbOf } from "./core/demo.js";
 import { hostOf, itemIcon, itemLine, itemName } from "./core/format.js";
 import { ICONS } from "./core/icons.js";
 import { rowFace, tile } from "./core/rows.js";
@@ -49,14 +49,46 @@ export function createViewer(deps) {
   const dots = byId("dots");
   const note = byId("parked");
   const pill = byId("controls");
-  // The pill sits 16 under the item (a scrolling document: the stage's foot); the tap zones cover the slide's own
-  // box. Offsets, not client rects: the swap animation scales the img.
+  const pane = byId("pane");
+  const stop = byId("b-stop");
+  const body = document.body;
+  const presenting = () => body.classList.contains("is-presenting");
+  // The pill sits 16 under the item, or, where that would shrink the item, as a column beside it (bottom-aligned,
+  // on its left under a side list); a scrolling document gets it at the stage's foot. The tap zones cover the slide's
+  // own box. Offsets, not client rects: the swap animation scales the img.
   const fit = () => {
     const img = frame.querySelector("img");
-    const item = frame.classList.contains("is-scroll") ? null : (img ?? frame.firstElementChild);
-    const top =
-      item instanceof HTMLElement ? item.offsetTop + item.offsetHeight + 16 : view.offsetHeight - pill.offsetHeight;
-    pill.style.top = `${view.offsetTop + top}px`;
+    const scrolls = frame.classList.contains("is-scroll");
+    const item = scrolls ? null : (img ?? frame.firstElementChild);
+    const css = getComputedStyle(view);
+    const gap = parseFloat(css.getPropertyValue("--pill")) + 16;
+    const reserve = parseFloat(css.getPropertyValue("--stack")) + 16;
+    // The file's own ratio (rounded box sizes could flip a near tie); the stand-in is the photo's 3 : 2.
+    const ratio =
+      item === img && img ? (img.classList.contains("stand-in") ? 1.5 : img.naturalWidth / img.naturalHeight) : 0;
+    // The column's height is read with the column on; the side list's box says whether it fits under it.
+    pane.classList.toggle("is-stacked", !!ratio && !presenting());
+    const stack = pill.offsetHeight;
+    const listed = !side.hidden && matchMedia("(min-width: 760px)").matches;
+    const listFits = listed && side.getBoundingClientRect().bottom + 16 + stack <= view.getBoundingClientRect().bottom;
+    const place =
+      ratio && !presenting()
+        ? placeControls(ratio, view.offsetWidth, view.offsetHeight, { reserve, gap, stack, listFits })
+        : "below";
+    pane.classList.toggle("is-stacked", place !== "below");
+    pane.classList.toggle("is-stack-right", place === "right");
+    if (place === "right" && item instanceof HTMLElement) {
+      pill.style.top = `${view.offsetTop + item.offsetTop + item.offsetHeight - stack}px`;
+      pill.style.left = `${view.offsetLeft + item.offsetLeft + item.offsetWidth + 16}px`;
+    } else if (place === "list") {
+      pill.style.top = `${view.offsetTop + view.offsetHeight - stack}px`;
+      pill.style.left = `${side.getBoundingClientRect().left - pane.getBoundingClientRect().left}px`;
+    } else {
+      const top =
+        item instanceof HTMLElement ? item.offsetTop + item.offsetHeight + 16 : view.offsetHeight - pill.offsetHeight;
+      pill.style.top = `${view.offsetTop + top}px`;
+      pill.style.left = "";
+    }
     if (!img) return;
     const box = { left: img.offsetLeft, top: img.offsetTop, width: img.offsetWidth, height: img.offsetHeight };
     for (const [i, part] of halves(box).entries()) {
@@ -68,6 +100,8 @@ export function createViewer(deps) {
     }
   };
   const sized = new ResizeObserver(fit);
+  // The pane's entry slides it 12 px, which the list's box does not share.
+  pane.addEventListener("animationend", fit);
 
   /** @type {ScreenView | null} */
   let shown = null;
@@ -245,7 +279,8 @@ export function createViewer(deps) {
       }
       sized.disconnect();
       const target = frame.querySelector("img") ?? frame.firstElementChild;
-      for (const box of target ? [target, view] : [view]) sized.observe(box);
+      // The pill (its buttons appear after the item) and the list (it grows with a guest's file) set the place too.
+      for (const box of target ? [target, view, pill, side] : [view, pill, side]) sized.observe(box);
     }
     show(view, true);
     show(frame, true);
@@ -272,15 +307,72 @@ export function createViewer(deps) {
     at = page = 0;
     parked = false;
     hide();
-    // Hidden in full screen is a black room screen; only a real end leaves it.
-    if (document.fullscreenElement === view) document.exitFullscreen().catch(() => {});
+    // Hidden while presenting is a black room screen; only a real end leaves it.
+    present(false);
   }
 
-  // Leaving full screen while held puts the hold on the page: the stage hides.
-  document.addEventListener("fullscreenchange", () => parked && !document.fullscreenElement && hide());
+  let sleep = 0;
+  /** The one way in and out of the presenting layout (the item on black, the chrome gone): the page's own, which
+   * browser full screen then joins where it exists, so both look the same. */
+  function present(/** @type {boolean} */ on) {
+    if (on === presenting()) return;
+    body.classList.toggle("is-presenting", on);
+    show(stop, on);
+    if (on) {
+      awake();
+      // A Stop that lands before the browser grants it must still leave full screen.
+      if (document.fullscreenEnabled)
+        view
+          .requestFullscreen()
+          .then(() => {
+            if (!presenting()) return document.exitFullscreen();
+          })
+          .catch(() => {});
+    } else {
+      view.classList.remove("is-awake");
+      if (document.fullscreenElement === view) document.exitFullscreen().catch(() => {});
+      if (parked) hide();
+    }
+  }
+  /** Stop Presenting shows for 3 s after a tap or a move. */
+  function awake() {
+    view.classList.add("is-awake");
+    clearTimeout(sleep);
+    sleep = setTimeout(() => view.classList.remove("is-awake"), 3000);
+  }
+
+  // Leaving full screen ends presenting; held, the hold then goes on the page: the stage hides.
+  document.addEventListener("fullscreenchange", () => {
+    if (document.fullscreenElement) return;
+    present(false);
+    if (parked) hide();
+  });
+  stop.addEventListener("click", () => present(false));
+  let swipe = 0;
+  let swiped = false;
+  view.addEventListener("pointerdown", (e) => {
+    swipe = e.clientX;
+    swiped = false;
+    if (presenting()) awake();
+  });
+  view.addEventListener("pointermove", () => presenting() && awake());
+  view.addEventListener("pointerup", (e) => {
+    swiped = presenting() && Math.abs(e.clientX - swipe) > 50;
+    if (swiped) go(e.clientX < swipe ? 1 : -1);
+  });
+  // A swipe that ends on the zone it began on would page twice.
+  view.addEventListener(
+    "click",
+    (e) => {
+      if (swiped) e.stopPropagation();
+      swiped = false;
+    },
+    true,
+  );
   prev.addEventListener("click", () => go(-1));
   next.addEventListener("click", () => go(1));
   document.addEventListener("keydown", (e) => {
+    if (e.key === "Escape") present(false);
     const step = KEYS[e.key];
     const t = e.target;
     if (!shown || parked || !step || e.altKey || e.ctrlKey || e.metaKey || !pages()) return;
@@ -309,11 +401,11 @@ export function createViewer(deps) {
       paint();
     },
 
-    /** A transient state holds the stage; in full screen it stays there with the status line, so render resumes in
+    /** A transient state holds the stage; presenting, it stays there with the status line, so render resumes in
      * place. @param {string} line */
     park(line) {
       parked = true;
-      if (document.fullscreenElement !== view) return hide();
+      if (!presenting()) return hide();
       for (const part of [frame, prev, next]) show(part, false);
       setText(note, line);
       show(note, true);
@@ -337,14 +429,8 @@ export function createViewer(deps) {
     item: () => (shown ? (items()[at] ?? null) : null),
     at: () => at,
 
-    /** Full screen for pages and a loaded image; a link or a file card has nothing to present. */
-    presentable() {
-      const img = images.get(at);
-      return document.fullscreenEnabled && (!!pages() || !!img?.naturalWidth);
-    },
-    present() {
-      if (document.fullscreenElement) document.exitFullscreen().catch(() => {});
-      else view.requestFullscreen().catch(() => {});
-    },
+    /** Pages and a loaded image; a link or a file card has nothing to present. */
+    presentable: () => !!pages() || !!images.get(at)?.naturalWidth,
+    present,
   };
 }

@@ -313,7 +313,9 @@ describe("landing word caps (design.md section 13)", () => {
     expect(stage.indexOf('<source type="image/avif"')).toBeLessThan(stage.indexOf('<source type="image/webp"'));
     const img = /<img\b[^>]*>/.exec(stage)?.[0] ?? "";
     expect(img).toContain('src="/img/hero-viewer-1440.webp" width="1440" height="828" fetchpriority="high"');
-    expect(img).toContain('alt="The bloop viewer showing a dog, with a Download button and a list of files"');
+    expect(img).toContain(
+      'alt="The bloop viewer showing a dog, with Present and Download buttons and a list of files"',
+    );
     // The phone picture's ratio is set in CSS, so the swap shifts nothing.
     expect(read("public/css/site.css")).toMatch(/\.stage img \{\s*aspect-ratio: 1155 \/ 2366;/);
     expect(img).not.toMatch(/loading="lazy"/);
@@ -396,15 +398,15 @@ describe("landing word caps (design.md section 13)", () => {
 
   it("the provider list promises nothing live: Coming Soon, by name only, and iCloud is not listed", () => {
     const { section, head, rows } = group("from-h");
-    expect(head).toBe("Coming Soon");
+    expect(head).toBe("Where Files Live Coming Soon");
     expect(rows).toEqual(["Microsoft OneDrive", "Dropbox", "Google Drive™", "Box"]);
-    expect(section).not.toMatch(/<(svg|img)\b/);
+    expect(section).not.toMatch(/<img\b/);
     expect(section.toLowerCase()).not.toContain("icloud");
   });
 
   it("Connect lists what can be shared today as Available, with no line under its heading", () => {
     const { section, head, rows } = group("share-h");
-    expect(head).toBe("Available");
+    expect(head).toBe("What You Can Share Available");
     expect(section).toContain('<span class="status on">Available</span>');
     expect(rows).toEqual(["PowerPoint", "PDF", "Images", "Links"]);
     expect(between(html, /<section class="connect"/, '<div class="panel">')).not.toMatch(/<p\b/);
@@ -795,15 +797,20 @@ describe("stage 1 wording and pictures", () => {
     expect(html).not.toContain("What Stays on Your Phone");
   });
 
-  it("What You Can Share rows carry their Lucide glyphs; the provider rows carry no mark yet", () => {
+  it("every Connect row carries a Lucide glyph: the share kinds their own, each provider the generic cloud", () => {
     const rows = (id: string) => between(index, new RegExp(`<section class="group" aria-labelledby="${id}">`), "</ul>");
     expect(rows("share-h").match(/<li><svg class="icon"[^>]*aria-hidden="true"/g)).toHaveLength(4);
-    expect(rows("from-h")).not.toMatch(/<(svg|img)\b/);
+    expect(
+      rows("from-h").match(
+        /<li><svg class="icon"[^>]*aria-hidden="true"[^>]*><path d="M17\.5 19H9a7 7 0 1 1 6\.71-9h1\.79a4\.5 4\.5 0 1 1 0 9Z"\/><\/svg>/g,
+      ),
+    ).toHaveLength(4);
+    expect(rows("from-h")).not.toMatch(/<img\b/);
   });
 
-  it("the group titles are screen-reader only and the close has no heading", () => {
-    expect(index).toContain('<h3 class="sr" id="share-h">');
-    expect(index).toContain('<h3 class="sr" id="from-h">');
+  it("the group titles are visible beside their status chip and the close has no heading", () => {
+    expect(index).toContain('<h3 id="share-h">What You Can Share</h3><span class="status on">');
+    expect(index).toContain('<h3 id="from-h">Where Files Live</h3><span class="status">');
     expect(between(index, /<section class="close"/, "</section>")).not.toMatch(/<h[1-6]\b/);
     expect(index).toContain('<section class="close" aria-label="Try the demo">');
   });

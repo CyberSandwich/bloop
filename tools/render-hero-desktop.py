@@ -2,8 +2,7 @@
 """render-hero-desktop: the desktop hero, public/img/hero-viewer-{1000,1440}.{avif,webp} (docs/design.md section 6, Hero stage).
 
 Use: python3 -I tools/render-hero-desktop.py SOURCE.png   (the viewer at 1440 x 828, Dog.jpg selected)
-Needs ImageMagick, avifenc and cwebp. Metadata stripped; AVIF quality 30 and WebP quality 30: the photo's grass is
-dense detail, so the old 62 and 80 cost four times the hero budget.
+Needs ImageMagick, avifenc and cwebp. Metadata stripped; AVIF quality 62, WebP quality 80 (at 30 the grass smears at 2x).
 """
 import subprocess
 import sys
@@ -20,9 +19,9 @@ def main():
         for width in WIDTHS:
             png = Path(tmp) / f'{width}.png'
             subprocess.run(['magick', source, '-resize', f'{width}x', '-strip', str(png)], check=True)
-            subprocess.run(['avifenc', '-q', '30', '-s', '4', '--ignore-exif', '--ignore-xmp', '--ignore-icc',
+            subprocess.run(['avifenc', '-q', '62', '-s', '4', '--ignore-exif', '--ignore-xmp', '--ignore-icc',
                             str(png), str(OUT / f'hero-viewer-{width}.avif')], check=True)
-            subprocess.run(['cwebp', '-q', '30', '-m', '6', '-metadata', 'none', str(png),
+            subprocess.run(['cwebp', '-q', '80', '-m', '6', '-metadata', 'none', str(png),
                             '-o', str(OUT / f'hero-viewer-{width}.webp')], check=True)
 
 

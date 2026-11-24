@@ -22,6 +22,30 @@ export function openTarget(/** @type {string} */ link, /** @type {string} */ ori
 export const pageMode = (/** @type {number} */ width, /** @type {number} */ height) =>
   height > width ? "scroll" : "paged";
 
+/**
+ * Where the control pill goes for an item (width over height `ratio`) contained in a `w` x `h` stage, the one that
+ * shows the item widest: "right" (a column `reserve` wide beside it, which must be no taller than the item, `stack`),
+ * "below" (a pill `gap` tall under it) or "list" (a column under the side list: only where `listFits`, and the item
+ * then takes the whole stage). Within 1 px the item's own controls win: right, then below, then list.
+ * @returns {"right" | "below" | "list"}
+ */
+export function placeControls(
+  /** @type {number} */ ratio,
+  /** @type {number} */ w,
+  /** @type {number} */ h,
+  /** @type {{reserve: number, gap: number, stack: number, listFits: boolean}} */ at,
+) {
+  const widest = (/** @type {number} */ boxW, /** @type {number} */ boxH) => Math.max(0, Math.min(boxW, boxH * ratio));
+  const right = widest(w - at.reserve, h);
+  const sizes = {
+    right: right / ratio >= at.stack ? right : Number.NEGATIVE_INFINITY,
+    below: widest(w, h - at.gap),
+    list: at.listFits ? widest(w, h) : Number.NEGATIVE_INFINITY,
+  };
+  const best = Math.max(sizes.right, sizes.below, sizes.list);
+  return /** @type {const} */ (["right", "below", "list"]).find((k) => sizes[k] >= best - 1) ?? "below";
+}
+
 /** The page after a step, held at either end. */
 export const stepPage = (/** @type {number} */ at, /** @type {number} */ by, /** @type {number} */ count) =>
   Math.min(count - 1, Math.max(0, at + by));

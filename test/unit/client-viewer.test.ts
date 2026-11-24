@@ -9,7 +9,7 @@ class Node {
   disabled = false;
   textContent = "";
   children: Node[] = [];
-  style: Record<string, string> = {};
+  style: Record<string, unknown> = { setProperty: () => {} };
   attrs = new Map<string, string>();
   listeners = new Map<string, Listener[]>();
   classes = new Set<string>();
@@ -58,6 +58,13 @@ class Node {
     return false;
   }
   hidePopover() {}
+  getBoundingClientRect() {
+    return { left: 0, top: 0, bottom: 0 };
+  }
+  requestFullscreen() {
+    doc.fullscreenElement = this;
+    return Promise.resolve();
+  }
   contains(n: unknown): boolean {
     return n === this || this.children.some((c) => c.contains(n));
   }
@@ -74,11 +81,25 @@ class Node {
   }
 }
 
-const ids = ["side", "items", "handle", "view", "frame", "prev", "next", "dots", "parked", "controls"];
+const ids = [
+  "side",
+  "items",
+  "handle",
+  "view",
+  "frame",
+  "prev",
+  "next",
+  "dots",
+  "parked",
+  "controls",
+  "pane",
+  "b-stop",
+];
 const byId = new Map<string, Node>();
 const docListeners = new Map<string, Listener[]>();
 const exitFullscreen = vi.fn(() => Promise.resolve());
 const doc = {
+  body: new Node("body"),
   fullscreenElement: null as Node | null,
   fullscreenEnabled: true,
   exitFullscreen,
@@ -124,6 +145,8 @@ interface Viewer {
   render(v: ScreenView | null): void;
   park(line: string): void;
   take(url: string, item: number, mode: "view"): boolean;
+  present(on: boolean): void;
+  presentable(): boolean;
 }
 let createViewer: (deps: { relink: (i: number) => Promise<boolean>; onChange: () => void }) => Viewer;
 beforeAll(async () => {
@@ -133,6 +156,8 @@ beforeAll(async () => {
   vi.stubGlobal("ResizeObserver", Sized);
   vi.stubGlobal("IntersectionObserver", Observer);
   vi.stubGlobal("Image", class extends Node {});
+  vi.stubGlobal("getComputedStyle", () => ({ getPropertyValue: () => "60px" }));
+  vi.stubGlobal("matchMedia", () => ({ matches: true }));
   vi.stubGlobal("Element", Node);
   vi.stubGlobal("HTMLElement", Node);
   ({ createViewer } = await import(VIEWER));
@@ -157,6 +182,8 @@ const setup = () => {
 
 beforeEach(() => {
   doc.fullscreenElement = null;
+  doc.fullscreenEnabled = true;
+  doc.body.classes.clear();
   exitFullscreen.mockClear();
 });
 
@@ -202,10 +229,10 @@ describe("DEMO-01 the viewer parks for a transient state", () => {
     expect(el("frame").querySelector("img")?.getAttribute("data-page")).toBe("0");
   });
 
-  it("in full screen it holds the stage with the status line, resumes in place, and only a real end leaves", () => {
+  it("presenting it holds the stage with the status line, resumes in place, and only a real end leaves", () => {
     const { v, el } = setup();
     v.render(view);
-    doc.fullscreenElement = el("view");
+    v.present(true);
     v.park("You're Offline");
     expect(el("view").hidden).toBe(false);
     expect(el("frame").hidden).toBe(true);
@@ -220,19 +247,53 @@ describe("DEMO-01 the viewer parks for a transient state", () => {
     expect(exitFullscreen).not.toHaveBeenCalled();
     v.render(null);
     expect(exitFullscreen).toHaveBeenCalledOnce();
+    expect(doc.body.classes.has("is-presenting")).toBe(false);
   });
 
-  it("leaving full screen while parked hides the stage; leaving it while shown does not", () => {
+  it("leaving full screen while parked hides the stage; leaving it while shown ends presenting only", () => {
     const { v, el } = setup();
     v.render(view);
-    doc.fullscreenElement = el("view");
+    v.present(true);
     v.park("You're Offline");
     doc.fullscreenElement = null;
     fire("fullscreenchange");
     expect(el("view").hidden).toBe(true);
+    expect(doc.body.classes.has("is-presenting")).toBe(false);
     v.render(view);
+    v.present(true);
+    doc.fullscreenElement = null;
     fire("fullscreenchange");
     expect(el("view").hidden).toBe(false);
+    expect(doc.body.classes.has("is-presenting")).toBe(false);
+  });
+});
+
+describe("presenting is one layout, with or without browser full screen", () => {
+  const deckView = { ...view, items: [deck] } as ScreenView;
+
+  it("a page or a loaded photo can be presented even where the browser has no full screen", () => {
+    doc.fullscreenEnabled = false;
+    const { v, el } = setup();
+    v.render(deckView);
+    expect(v.presentable()).toBe(true);
+    v.present(true);
+    expect(doc.body.classes.has("is-presenting")).toBe(true);
+    expect(el("b-stop").hidden).toBe(false);
+    expect(doc.fullscreenElement).toBeNull();
+  });
+
+  it("where full screen exists, Present joins it; Stop Presenting and Escape both leave", () => {
+    const { v, el } = setup();
+    v.render(deckView);
+    v.present(true);
+    expect(doc.fullscreenElement).toBe(el("view"));
+    for (const f of el("b-stop").listeners.get("click") ?? []) f({ type: "click" });
+    expect(doc.body.classes.has("is-presenting")).toBe(false);
+    expect(el("b-stop").hidden).toBe(true);
+    expect(exitFullscreen).toHaveBeenCalledOnce();
+    v.present(true);
+    for (const f of docListeners.get("keydown") ?? []) f({ type: "keydown", key: "Escape", preventDefault() {} });
+    expect(doc.body.classes.has("is-presenting")).toBe(false);
   });
 });
 
