@@ -972,10 +972,12 @@ test.describe("screen and phone layout", () => {
       await expect(actions).toHaveCSS("background-color", "rgba(0, 0, 0, 0)");
       const approve = page.getByRole("button", { name: /^Approve/ });
       await expect(approve).toBeInViewport({ ratio: 1 });
-      // In the title's column, 24 under the flow.
+      // In the title's column, 24 under the flow (the demo has no scope line between them).
       const title = await heading(page).boundingBox();
+      const flow = await page.locator(".column > .flow").boundingBox();
       const box = await actions.boundingBox();
       expect(Math.round(box?.x ?? 0)).toBe(Math.round(title?.x ?? -1));
+      expect(Math.round((box?.y ?? 0) - ((flow?.y ?? 0) + (flow?.height ?? 0)))).toBe(24);
       await context.close();
       await screen.context.close();
     });

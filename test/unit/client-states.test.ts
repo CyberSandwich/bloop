@@ -232,13 +232,15 @@ describe("phone state to view mapping", () => {
     expect(phoneKey(ctx({ error: "expired", view: phoneView("open") }))).toBe("expired");
   });
 
-  it("a re-posted approve that already landed reads as taken until the session's own view arrives, which wins", () => {
+  it("a repeat that lost the race (a guest's re-sent file, another set) reads as taken until this pairing's session view arrives", () => {
     expect(phoneKey(ctx({ error: "taken", view: phoneView("choosing") }))).toBe("taken");
     for (const state of IN_SESSION) {
       const view = phoneView(state);
       expect(phoneKey(ctx({ error: "taken", view })), state).toBe(phoneKey(ctx({ view })));
       expect(["opening", "open"], state).toContain(phoneKey(ctx({ view })));
     }
+    // A guest whose re-sent file got already_uploaded sees the session once the screen opens the file.
+    expect(phoneKey(ctx({ error: "taken", view: phoneView("approved", { kind: "guest" }) }))).toBe("opening");
     // Any other failure still shows over the session (offline keeps Revoke beside it).
     expect(phoneKey(ctx({ error: "offline", view: phoneView("open") }))).toBe("offline");
   });

@@ -375,23 +375,6 @@ main:has(> .side:not([hidden])) #stage {
 .is-ended .column {
   text-align: center;
 }
-/* A short single-column window keeps the band instead: centering padding would push the buttons past the fold. */
-@media (min-width: 640px) and (min-height: 600px), (min-width: 900px) {
-  .page-phone .column {
-    justify-content: center;
-    padding-bottom: calc(var(--inset) + var(--frame-h) + 24px);
-  }
-}
-/* The band's own query: wherever Done sits in the band, the result above it is centered. */
-@media (max-width: 639.98px), (max-height: 599.98px) and (max-width: 899.98px) {
-  .is-ended .flow {
-    position: fixed;
-    inset: 0;
-    display: grid;
-    place-content: center;
-    padding: var(--pad);
-  }
-}
 [data-mode="ended"] .pane {
   gap: 24px;
 }
@@ -831,7 +814,8 @@ main:has(> .side:not([hidden])) #stage {
   min-height: 100vh;
   min-height: 100dvh;
   margin: 0 auto;
-  padding: calc(var(--inset) + var(--frame-h) + 24px) var(--pad) calc(var(--inset) + env(safe-area-inset-bottom));
+  padding: calc(var(--inset) + var(--frame-h) + 24px) max(var(--pad), env(safe-area-inset-right))
+    calc(var(--inset) + env(safe-area-inset-bottom)) max(var(--pad), env(safe-area-inset-left));
 }
 .flow {
   display: flex;
@@ -952,8 +936,15 @@ progress.bar::-moz-progress-bar {
   flex-direction: column;
   margin-top: 24px;
 }
-/* Only the phone's list keeps its buttons in reach; /code's Continue stays under the field. */
+/* The band (pages.test.ts pins both queries): /a's buttons stay in reach, a result above Done is centered. */
 @media (max-width: 639.98px), (max-height: 599.98px) and (max-width: 899.98px) {
+  .is-ended .flow {
+    position: fixed;
+    inset: 0;
+    display: grid;
+    place-content: center;
+    padding: var(--pad);
+  }
   .column > .actions {
     position: sticky;
     bottom: 0;
@@ -962,8 +953,12 @@ progress.bar::-moz-progress-bar {
     border-radius: var(--r-sheet) var(--r-sheet) 0 0;
   }
 }
-/* The band's fill is .glass (a.html); where the buttons sit on the page, the band has none. */
+/* Its complement: buttons on the page, no fill, the column centered (in a short window that would push them past the fold). */
 @media (min-width: 640px) and (min-height: 600px), (min-width: 900px) {
+  .page-phone .column {
+    justify-content: center;
+    padding-bottom: calc(var(--inset) + var(--frame-h) + 24px);
+  }
   .column > .actions.glass {
     background: none;
     -webkit-backdrop-filter: none;

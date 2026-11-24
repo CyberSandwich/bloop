@@ -104,6 +104,18 @@ describe("the screen and phone pages restored from the back-forward cache", () =
   });
 });
 
+describe("the phone's band", () => {
+  it("each band query is written once, and the on-page query is its complement", () => {
+    const preludes = [...read("css/app.css").matchAll(/@media ([^{]*599\.98px[^{]*)\{/g)].map((m) => m[1]?.trim());
+    expect(preludes.filter((q) => q?.startsWith("(max-width: 639.98px)"))).toEqual([
+      "(max-width: 639.98px), (max-height: 599.98px) and (max-width: 899.98px)",
+    ]);
+    expect(
+      read("css/app.css").match(/@media \(min-width: 640px\) and \(min-height: 600px\), \(min-width: 900px\) \{/g),
+    ).toHaveLength(1);
+  });
+});
+
 describe("the screen before its first paint", () => {
   it("hides the bar and footer only once the script has run past the framed and narrow exits", () => {
     expect(read("css/app.css")).toMatch(/\n\.is-booting:not\(\.is-ready\) :is\(\.bar > \*, \.foot\) \{/);
