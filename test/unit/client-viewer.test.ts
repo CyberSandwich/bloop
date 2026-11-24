@@ -238,6 +238,13 @@ describe("DEMO-01 the viewer parks for a transient state", () => {
     expect(el("frame").children[0]?.attrs.get("src")).toBe(`${ORIGIN}/f/abc/Dog.jpg`);
   });
 
+  it("an image taken before the first render is shown by that render", () => {
+    const { v, el } = setup();
+    expect(v.take(`${ORIGIN}/f/abc/Dog.jpg`, 0, "view")).toBe(true);
+    v.render(view);
+    expect(el("frame").children[0]?.attrs.get("src")).toBe(`${ORIGIN}/f/abc/Dog.jpg`);
+  });
+
   it("two files with one name keep their own state: identity includes the count of same-named items before it", () => {
     const { v, el } = setup();
     const twin = { ...photo } as Item;

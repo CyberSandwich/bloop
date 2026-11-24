@@ -119,6 +119,16 @@ describe("DEMO-01 what the viewer shows per item", () => {
       expect(where(1.5, 1000, 400, true)).toBe("right");
     });
 
+    it("under the list when the item is width-bound and the list leaves room: 3:2 in 632 x 455 (a 1000 x 575 window)", () => {
+      // right 476 wide, below 568, list 632: only the list's column leaves the item the whole stage.
+      expect(where(1.5, 632, 455, true)).toBe("list");
+      expect(where(1.5, 632, 455, false)).toBe("below");
+    });
+
+    it("a portrait item ties right and list at their shared height bound, and right wins with fractional sizes", () => {
+      expect(where(2 / 3, 1072.4, 779.6, true)).toBe("right");
+    });
+
     it("under the item for a wide one on a tall or roomy stage", () => {
       expect(where(1.6, 466, 880, false)).toBe("below");
       expect(where(1.6, 912, 600, false)).toBe("below");
