@@ -242,7 +242,9 @@ describe("landing word caps (design.md section 13)", () => {
 
   it("Anywhere rests in solid deep robin; its one sheen plays once, and never under reduced motion", () => {
     const css = read("public/css/site.css");
-    expect(css).toMatch(/^\.sheen \{\s*color: var\(--robin-deep\);\s*\}/m);
+    expect(css).toMatch(
+      /^\.sheen \{(?:\s*\/\*.*\*\/)?\s*margin-inline: -0\.05em;\s*padding-inline: 0\.05em;\s*color: var\(--robin-deep\);\s*\}/m,
+    );
     const block = between(css, /@supports \(background-clip: text\)/, "@keyframes sheen");
     const moving = between(block, /prefers-reduced-motion: no-preference\) \{/, "}");
     expect(moving).toMatch(
@@ -255,10 +257,10 @@ describe("landing word caps (design.md section 13)", () => {
     expect(css).not.toMatch(/text-shadow/);
   });
 
-  it("the sub names phone, screen and file in at most 2 sentences and 30 words", () => {
+  it("the sub names the QR code, the phone and presenting in at most 2 sentences and 30 words", () => {
     const sub = visibleText(between(html, /<p class="lead">/, "</p>"));
     expect(words(sub).length).toBeLessThanOrEqual(30);
-    for (const noun of ["phone", "screen", "file"]) expect(sub).toContain(noun);
+    for (const noun of ["QR code", "phone", "present"]) expect(sub).toContain(noun);
     expect(sub.match(/[.]/g)?.length ?? 0).toBeLessThanOrEqual(2);
   });
 
@@ -319,10 +321,11 @@ describe("landing word caps (design.md section 13)", () => {
     );
     expect(steps.map((s) => visibleText(between(s, /<h3>/, "</h3>")))).toEqual(["Scan", "Approve", "Present"]);
     for (const step of steps) expect(step).toMatch(/<span class="step-n" aria-hidden="true">\d<\/span>/);
-    expect(steps.map((s) => /<p class="step-device">[\s\S]*?<\/svg>([^<]+)<\/p>/.exec(s)?.[1])).toEqual([
-      "Room Screen",
-      "Your Phone",
-      "Room Screen",
+    expect(html).not.toContain("step-device");
+    expect(steps.map((s) => visibleText(between(s, /<\/h3>\s*<p>/, "</p>")))).toEqual([
+      "Scan the screen's QR code with your phone camera.",
+      "Select your files, then tap Approve.",
+      "Present immediately or download your file.",
     ]);
     for (const step of steps) expect(step).toMatch(/<div class="frag" aria-hidden="true">/);
     const code = /<span class="frag-code">([^<]+)<\/span>/.exec(steps[0] ?? "")?.[1] ?? "";
@@ -359,7 +362,7 @@ describe("landing word caps (design.md section 13)", () => {
 
   it("the provider list promises nothing live: Coming Soon, by name only, and iCloud is not listed", () => {
     const { section, head, rows } = group("from-h");
-    expect(head).toBe("Where Files Live Coming Soon");
+    expect(head).toBe("Coming Soon");
     expect(rows).toEqual(["Microsoft OneDrive", "Dropbox", "Google Drive™", "Box"]);
     expect(section).not.toMatch(/<(svg|img)\b/);
     expect(section.toLowerCase()).not.toContain("icloud");
@@ -367,7 +370,7 @@ describe("landing word caps (design.md section 13)", () => {
 
   it("Connect lists what can be shared today as Available, with no line under its heading", () => {
     const { section, head, rows } = group("share-h");
-    expect(head).toBe("What You Can Share Available");
+    expect(head).toBe("Available");
     expect(section).toContain('<span class="status on">Available</span>');
     expect(rows).toEqual(["PowerPoint", "PDF", "Images", "Links"]);
     expect(between(html, /<section class="connect"/, '<div class="panel">')).not.toMatch(/<p\b/);
@@ -652,12 +655,12 @@ describe("the stylesheets: base.css, then the page's own (design.md section 11)"
     // From 1024 the cards share the list's rows, so every still is one height and ends 12 above its card's bottom.
     expect(block(".step")).toContain("padding: 24px 24px 12px;");
     const wide = between(css["site.css"] ?? "", /@media \(min-width: 1024px\) \{\s*\.steps,/, "\n}\n");
-    expect(wide).toMatch(/\.step \{\s*display: grid;\s*grid-row: span 4;\s*grid-template-rows: subgrid;/);
-    // span 4 holds only while each card has exactly four children.
+    expect(wide).toMatch(/\.step \{\s*display: grid;\s*grid-row: span 3;\s*grid-template-rows: subgrid;/);
+    // span 3 holds only while each card has exactly three children.
     const cards = [...read("public/index.html").matchAll(/<li class="step">([\s\S]*?)<\/li>/g)].map((m) => m[1] ?? "");
     expect(cards).toHaveLength(3);
     for (const card of cards) {
-      expect(card.match(/^\s*<(p|h3|div)\b/gm)).toHaveLength(4);
+      expect(card.match(/^\s*<(p|h3|div)\b/gm)).toHaveLength(3);
     }
     expect(block(".frag")).toContain("align-content: center;");
     const narrow = between(css["site.css"] ?? "", /@media \(max-width: 639\.98px\) \{\s*\.cell \{/, "\n}\n");
@@ -680,7 +683,6 @@ describe("stage 1 wording and pictures", () => {
     const text = visibleText(index);
     expect(text).not.toMatch(/\b[Tt]ick\b/);
     expect(text).toContain("Select your files, then tap Approve.");
-    expect(text).toContain("Your files open. Revoke from your phone.");
     expect(text).toContain("Revoke from your phone, and each link expires.");
     expect(text).not.toMatch(/End from your phone|One Tap/);
   });
@@ -701,7 +703,21 @@ describe("stage 1 wording and pictures", () => {
 
   it("the sub and the descriptions never say the account stays on the phone (the server holds a refresh token)", () => {
     for (const page of SITE) expect(read(`public/${page}`).toLowerCase()).not.toContain("stays on your phone.");
-    expect(visibleText(between(index, /<p class="lead">/, "</p>"))).toContain("the screen never gets your account");
+  });
+
+  it("the sub, the meta description and og:description are one line", () => {
+    const sub = "Scan the QR code, approve on your phone, and present.";
+    expect(visibleText(between(index, /<p class="lead">/, "</p>"))).toBe(sub);
+    expect(index).toContain(`<meta name="description" content="${sub}">`);
+    expect(index).toContain(`<meta property="og:description" content="${sub}">`);
+    expect(read("tools/render-og.py")).toContain(`SUB = '${sub}'`);
+  });
+
+  it("the hero centers its block in the whole first view, and Security to Waitlist is the links' gap", () => {
+    const site = read("public/css/site.css");
+    expect(site).toMatch(/^\.hero \{[^}]*min-height: 100vh;\s*min-height: 100svh;/m);
+    expect(site).toMatch(/^\.btn\.waitlist \{[^}]*padding: 0 16px;/m);
+    expect(site).not.toMatch(/\.btn\.waitlist \{[^}]*margin-left/);
   });
 
   it.each(["security.html", "privacy.html"])("%s draws the split with a check and a muted Never, no switch", (page) => {
@@ -718,8 +734,17 @@ describe("stage 1 wording and pictures", () => {
     expect(html).not.toContain("What Stays on Your Phone");
   });
 
-  it("the Connect lists carry no glyph on either side", () => {
-    expect(between(index, /<div class="panel">/, "</section>\n        </div>")).not.toMatch(/<svg\b/);
+  it("What You Can Share rows carry their Iconic glyphs; the provider rows carry no mark yet", () => {
+    const rows = (id: string) => between(index, new RegExp(`<section class="group" aria-labelledby="${id}">`), "</ul>");
+    expect(rows("share-h").match(/<li><svg class="icon"[^>]*aria-hidden="true"/g)).toHaveLength(4);
+    expect(rows("from-h")).not.toMatch(/<(svg|img)\b/);
+  });
+
+  it("the group titles are screen-reader only and the close has no heading", () => {
+    expect(index).toContain('<h3 class="sr" id="share-h">');
+    expect(index).toContain('<h3 class="sr" id="from-h">');
+    expect(between(index, /<section class="close"/, "</section>")).not.toMatch(/<h[1-6]\b/);
+    expect(index).toContain('<section class="close" aria-label="Try the demo">');
   });
 
   it("the menu button holds menu and close; CSS swaps them on :popover-open, with no script", () => {

@@ -125,11 +125,10 @@ html:has(.page-site) {
     background: var(--wash);
   }
 }
-/* The links' own 16 px padding sits between their text; the same space before the dark pill keeps one rhythm. */
+/* The same 16 px padding as the links, so Security's text to Waitlist's text is the links' own 36 px. */
 .btn.waitlist {
   min-height: 44px;
-  margin-left: 16px;
-  padding: 0 20px;
+  padding: 0 16px;
   background: var(--ink-2);
   color: var(--paper);
   font-size: 15px;
@@ -182,18 +181,15 @@ html:has(.page-site) {
   .nav-menu {
     display: grid;
   }
-  .btn.waitlist {
-    margin-left: 0;
-  }
 }
 
-/* Equal padding centers the block in the first view less 120 px, so the stage's top edge shows and invites the scroll. */
+/* Equal padding centers the block in the whole first view; the stage starts below the fold. */
 .hero {
   display: flex;
   flex-direction: column;
   justify-content: center;
-  min-height: calc(100vh - 120px);
-  min-height: calc(100svh - 120px);
+  min-height: 100vh;
+  min-height: 100svh;
   padding: calc(var(--nav-h) + 40px) var(--pad);
   text-align: center;
 }
@@ -210,6 +206,9 @@ html:has(.page-site) {
 }
 /* Solid deep robin at rest; one light band passes once on load (design.md section 8). */
 .sheen {
+  /* background-clip paints only inside the box, and the tracking pulls it inside the last glyph's ink: net width 0. */
+  margin-inline: -0.05em;
+  padding-inline: 0.05em;
   color: var(--robin-deep);
 }
 @supports (background-clip: text) or (-webkit-background-clip: text) {
@@ -300,23 +299,23 @@ html:has(.page-site) {
 }
 
 /* Section heads share one size; text columns are 760, the grids, stage and doc cards the full 1136. */
-:is(.how, .features, .connect, .faq, .close) > h2,
+:is(.how, .features, .connect, .faq) > h2,
 .doc h1 {
   font-size: 30px;
   line-height: 1.04;
   letter-spacing: -0.035em;
 }
-:is(.how, .features, .connect, .faq, .close) > h2 {
+:is(.how, .features, .connect, .faq) > h2 {
   text-align: center;
 }
 @media (min-width: 640px) {
-  :is(.how, .features, .connect, .faq, .close) > h2,
+  :is(.how, .features, .connect, .faq) > h2,
   .doc h1 {
     font-size: 38px;
   }
 }
 @media (min-width: 768px) {
-  :is(.how, .features, .connect, .faq, .close) > h2,
+  :is(.how, .features, .connect, .faq) > h2,
   .doc h1 {
     font-size: 54px;
   }
@@ -342,7 +341,7 @@ h3 {
   text-wrap: balance;
 }
 
-/* How It Works: white step cards, each naming its device, over a still of that step. */
+/* How It Works: white step cards, each a verb and a line over a still of that step. */
 .steps,
 .grid {
   display: grid;
@@ -356,18 +355,11 @@ h3 {
   border-radius: var(--r-content);
   background: var(--surface);
 }
-.step-device {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  color: var(--muted);
-  font-size: 14px;
-}
 .step h3 {
   display: flex;
   align-items: center;
   gap: 10px;
-  margin: 16px 0 0;
+  margin: 0;
   font-size: 22px;
   letter-spacing: -0.025em;
 }
@@ -421,8 +413,49 @@ h3 {
   place-items: center;
   width: 32px;
   height: 32px;
+  overflow: hidden;
   border-radius: var(--r-chip);
   background: var(--surface);
+}
+.frag-tile img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+/* A copy of the viewer's pill (count, Present, Download). */
+.frag-pill {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  max-width: 100%;
+  padding: 6px;
+  border-radius: var(--r-pill);
+  background: var(--surface);
+  box-shadow: var(--sh-pill);
+  justify-self: center;
+  font-size: 15px;
+  font-weight: 600;
+  white-space: nowrap;
+}
+.frag-count {
+  padding: 0 10px;
+  color: var(--muted);
+  font-size: 14px;
+  font-weight: 400;
+  font-variant-numeric: tabular-nums;
+}
+.frag-btn {
+  display: inline-flex;
+  align-items: center;
+  height: 44px;
+  padding: 0 16px;
+  border-radius: var(--r-pill);
+  background: var(--wash);
+}
+.frag-btn.ink {
+  background: var(--ink);
+  color: var(--paper);
 }
 .frag-meta,
 .frag-tick {
@@ -460,11 +493,11 @@ h3 {
   .grid {
     grid-template-columns: repeat(3, minmax(0, 1fr));
   }
-  /* The cards share the list's rows (device, title, line, still), so a two-line line in one card moves every still
+  /* The cards share the list's rows (title, line, still), so a two-line line in one card moves every still
      down together, and every still is the tallest one's height, 12 above its card's bottom. */
   .step {
     display: grid;
-    grid-row: span 4;
+    grid-row: span 3;
     grid-template-rows: subgrid;
     row-gap: 0;
   }
@@ -503,9 +536,27 @@ h3 {
   }
 }
 
+/* The page ends on the action it opened with: the mark over one Try the Demo, on the sky of the Connect panel. */
 .close {
-  padding: 0 var(--pad) var(--section);
-  text-align: center;
+  width: min(100% - 2 * var(--pad), 1136px);
+  margin: 0 auto;
+  padding-bottom: var(--section);
+}
+.close-panel {
+  display: grid;
+  justify-items: center;
+  gap: 32px;
+  padding: 64px var(--pad);
+  border-radius: var(--r-stage);
+  background: var(--sky);
+}
+.close-panel .hero-actions {
+  margin-top: 0;
+}
+@media (max-width: 639.98px) {
+  .close-panel {
+    border-radius: 16px;
+  }
 }
 
 .panel {

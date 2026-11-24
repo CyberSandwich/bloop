@@ -87,9 +87,7 @@ for (const vp of VIEWPORTS) {
       await expect(page).toHaveURL(/\/s\?mode=demo$/);
     });
 
-    test("the hero block sits in the middle of the first view less 120 px, and the stage peeks 120 px above the fold", async ({
-      page,
-    }) => {
+    test("the hero block sits in the middle of the first view, and the stage starts at the fold", async ({ page }) => {
       await page.goto("/");
       await page.evaluate(() => document.fonts?.ready);
       const box = await page.evaluate(() => {
@@ -101,8 +99,8 @@ for (const vp of VIEWPORTS) {
         };
       });
       // The nav's clearance is padded on both sides, so the block's middle is the hero's within a few px.
-      expect(Math.abs(box.middle - (vp.height - 120) / 2)).toBeLessThan(24);
-      expect(Math.abs(box.stage - (vp.height - 120))).toBeLessThanOrEqual(1);
+      expect(Math.abs(box.middle - vp.height / 2)).toBeLessThan(24);
+      expect(Math.abs(box.stage - vp.height)).toBeLessThanOrEqual(1);
     });
 
     test("the logo pill and the links pill are separate and share one height", async ({ page }) => {
@@ -119,17 +117,38 @@ for (const vp of VIEWPORTS) {
       expect(logo.top).toBe(pill.top);
     });
 
-    test("the space from Privacy to Security equals the space from Security to the Waitlist pill", async ({ page }) => {
+    test("the text gap from Privacy to Security equals the text gap from Security to Waitlist, within 1 px", async ({
+      page,
+    }) => {
       test.skip(vp.width < 640, "the links fold into the menu");
       await page.goto("/");
       await page.evaluate(() => document.fonts?.ready);
       // A string, since Range is a DOM type this tsconfig lacks; text edges, not link boxes, are what the eye sees.
       const [privacyToSecurity = 0, securityToWaitlist = 99] = (await page.evaluate(`(() => {
         const text = (s) => { const r = document.createRange(); r.selectNodeContents(document.querySelector(s)); return r.getBoundingClientRect(); };
-        const p = text('.nav-links a[href="/privacy"]'), s = text('.nav-links a[href="/security"]');
-        return [s.left - p.right, document.querySelector(".nav .waitlist").getBoundingClientRect().left - s.right];
+        const p = text('.nav-links a[href="/privacy"]'), s = text('.nav-links a[href="/security"]'), w = text(".nav .waitlist");
+        return [s.left - p.right, w.left - s.right];
       })()`)) as number[];
       expect(Math.abs(privacyToSecurity - securityToWaitlist)).toBeLessThanOrEqual(1);
+    });
+
+    test("the nav's Waitlist is visible and inside the viewport, on a phone too", async ({ page }) => {
+      await page.goto("/");
+      const waitlist = page.locator(".nav .waitlist");
+      await expect(waitlist).toBeVisible();
+      await expect(waitlist).toBeInViewport({ ratio: 1 });
+    });
+
+    test("the last letter of Anywhere is inside the painted box", async ({ page }) => {
+      await page.goto("/");
+      await page.evaluate(() => document.fonts?.ready);
+      // The box grows by its padding and the margin takes it back: the title's width is unchanged.
+      const [padding = "", margin = ""] = (await page.evaluate(`(() => {
+        const c = getComputedStyle(document.querySelector(".sheen"));
+        return [c.paddingRight, c.marginRight];
+      })()`)) as string[];
+      expect(Number.parseFloat(padding) + Number.parseFloat(margin)).toBeCloseTo(0, 1);
+      expect(Number.parseFloat(padding)).toBeGreaterThan(0);
     });
 
     test("the nav stays on top, firms up once scrolled, and its Waitlist is a mail", async ({ page }) => {
