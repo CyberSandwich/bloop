@@ -5,22 +5,20 @@ const sentinel = document.getElementById("sentinel");
 if (nav && sentinel)
   new IntersectionObserver(([entry]) => nav.classList.toggle("is-scrolled", !entry?.isIntersecting)).observe(sentinel);
 
-// A same-page jump leaves no hash, so a reload opens at the top; Back and forward keep their place.
+// A same-page jump leaves no hash, so a reload opens at the top; Back and forward keep their place, restored here:
+// the browser's own restores a reload too, and Chrome restores after load, so it cannot be switched off for one.
+history.scrollRestoration = "manual";
 const dropHash = () => history.replaceState(0, "", location.href.split("#")[0]);
 addEventListener("click", (e) => {
   if (e.target instanceof Element && e.target.closest('a[href^="/#"], a[href^="#"]')) setTimeout(dropHash);
 });
+addEventListener("pagehide", () => history.replaceState({ y: scrollY }, ""));
+const kept =
+  /** @type {PerformanceNavigationTiming} */ (performance.getEntriesByType("navigation")[0])?.type === "back_forward" &&
+  history.state?.y;
 if (location.hash) addEventListener("load", () => setTimeout(dropHash));
-else if (
-  /** @type {PerformanceNavigationTiming | undefined} */ (performance.getEntriesByType("navigation")[0])?.type ===
-  "reload"
-) {
-  history.scrollRestoration = "manual";
-  scrollTo(0, 0);
-  addEventListener("load", () => {
-    history.scrollRestoration = "auto";
-  });
-}
+else if (kept) addEventListener("load", () => scrollTo(0, kept));
+else scrollTo(0, 0);
 
 // The sheen pulses only while it is on screen and the tab is visible.
 const sheen = document.querySelector(".sheen");
