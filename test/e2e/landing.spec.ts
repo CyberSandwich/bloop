@@ -221,6 +221,22 @@ for (const vp of VIEWPORTS) {
       expect(Number(await page.evaluate("scrollY"))).toBe(0);
     });
 
+    test("Back to the landing keeps its place", async ({ page }) => {
+      await page.goto("/");
+      await page.evaluate("scrollTo(0, 1500)");
+      await page.getByRole("contentinfo").getByRole("link", { name: "Privacy" }).click();
+      await page.goBack();
+      await expect.poll(() => page.evaluate("scrollY")).toBeGreaterThan(0);
+    });
+
+    test("the sheen pauses while the hero is off screen", async ({ page }) => {
+      await page.goto("/");
+      const sheen = page.locator(".sheen");
+      await expect(sheen).not.toHaveClass(/is-paused/);
+      await page.evaluate("scrollTo(0, 2500)");
+      await expect(sheen).toHaveClass(/is-paused/);
+    });
+
     test("a question opens and closes", async ({ page }) => {
       await page.goto("/");
       const item = page.locator(".faq details").filter({ hasText: "What does the room PC keep?" });

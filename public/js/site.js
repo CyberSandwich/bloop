@@ -5,12 +5,34 @@ const sentinel = document.getElementById("sentinel");
 if (nav && sentinel)
   new IntersectionObserver(([entry]) => nav.classList.toggle("is-scrolled", !entry?.isIntersecting)).observe(sentinel);
 
-// A jump leaves no hash, so a reload opens at the top.
-history.scrollRestoration = "manual";
+// A same-page jump leaves no hash, so a reload opens at the top; Back and forward keep their place.
 const dropHash = () => history.replaceState(0, "", location.href.split("#")[0]);
-addEventListener("hashchange", dropHash);
+addEventListener("click", (e) => {
+  if (e.target instanceof Element && e.target.closest('a[href^="/#"], a[href^="#"]')) setTimeout(dropHash);
+});
 if (location.hash) addEventListener("load", () => setTimeout(dropHash));
-else scrollTo(0, 0);
+else if (
+  /** @type {PerformanceNavigationTiming | undefined} */ (performance.getEntriesByType("navigation")[0])?.type ===
+  "reload"
+) {
+  history.scrollRestoration = "manual";
+  scrollTo(0, 0);
+  addEventListener("load", () => {
+    history.scrollRestoration = "auto";
+  });
+}
+
+// The sheen pulses only while it is on screen and the tab is visible.
+const sheen = document.querySelector(".sheen");
+let onScreen = true;
+const pulse = () => sheen?.classList.toggle("is-paused", !onScreen || document.hidden);
+if (sheen) {
+  new IntersectionObserver(([e]) => {
+    onScreen = !!e?.isIntersecting;
+    pulse();
+  }).observe(sheen);
+  addEventListener("visibilitychange", pulse);
+}
 
 // A popover stays open over a same-page jump such as Features.
 const menu = document.getElementById("nav-links");

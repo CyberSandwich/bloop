@@ -227,6 +227,9 @@ html:has(.page-site) {
       color: transparent;
       animation: sheen 3.6s linear 0.3s infinite backwards;
     }
+    .sheen.is-paused {
+      animation-play-state: paused;
+    }
   }
 }
 /* The sweep takes the first 28 percent (1 s); the rest is the pause. */
@@ -410,7 +413,6 @@ h3 {
   gap: 10px;
   margin: 0;
   font-size: 22px;
-  font-weight: 700;
   letter-spacing: -0.025em;
 }
 .step-n {
