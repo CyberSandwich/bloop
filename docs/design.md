@@ -179,7 +179,7 @@ Headings `text-wrap:balance` (h1 and h2 in base.css, the site's h3 in site.css, 
 | `--section:80px` | section rhythm; 112 from 768 |
 
 ### Glass
-One recipe, named once (`.glass` in `base.css`; the nav pills carry the class in their markup, so `base.css` names no site selector), for every floating surface: the nav pills and their menu sheet, the viewer sidebar, its bottom sheet and handle, the viewer's control pill, the phone's sticky actions, and the components of the How It Works stills, the panels' group cards and the close card, over the warm backdrop (below), in its clearer liquid variant. Liquid, not frosted: a thin fill, a strong blur and saturation, so what passes under (the warm backdrop, the page as it scrolls) tints it, as opsis's green tints its nav. No refraction, shine or animated sheen; the border is the shadow's 0.5 px ring, never a CSS border.
+One recipe, named once (`.glass` in `base.css`; the nav pills carry the class in their markup, so `base.css` names no site selector), for every floating surface: the nav pills and their menu sheet, the viewer sidebar, its bottom sheet and handle, the viewer's control pill, the phone's sticky actions, and the components of the How It Works stills, the panels' group cards and the close card, over the warm backdrop (below), in its clearer liquid variant. Liquid, not frosted: a thin fill, a strong blur and saturation, so what passes under (the warm backdrop, the page as it scrolls) tints it, as opsis's green tints its nav. No refraction, shine or animated sheen (the loader, section 6, is the one exception); the border is the shadow's 0.5 px ring, never a CSS border.
 | Token | Use |
 |---|---|
 | `--glass:rgba(255,255,255,.62)` | the fill where `backdrop-filter` is supported |
