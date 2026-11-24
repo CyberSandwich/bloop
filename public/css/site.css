@@ -204,7 +204,7 @@ html:has(.page-site) {
     font-size: min(112px, (100vw - 2 * var(--pad)) / 10);
   }
 }
-/* Solid deep robin at rest; one light band passes once on load (design.md section 8). */
+/* Solid deep robin at rest; a bright band sweeps through, rests, and sweeps again (design.md section 8). */
 .sheen {
   /* background-clip paints only inside the box, and the tracking pulls it inside the last glyph's ink: net width 0. */
   margin-inline: -0.05em;
@@ -215,18 +215,24 @@ html:has(.page-site) {
   @media (prefers-reduced-motion: no-preference) {
     .sheen {
       background:
-        linear-gradient(100deg, transparent 40%, rgba(255, 255, 255, 0.6) 50%, transparent 60%) 0 0 / 300% 100%
+        linear-gradient(100deg, transparent 38%, rgba(255, 236, 214, 0.95) 50%, transparent 62%) 100% 0 / 300% 100%
         no-repeat var(--robin-deep);
       -webkit-background-clip: text;
       background-clip: text;
       color: transparent;
-      animation: sheen 1.4s var(--ease-out) 0.3s backwards;
+      animation: sheen 3.6s linear 0.3s infinite backwards;
     }
   }
 }
+/* The sweep takes the first 28 percent (1 s); the rest is the pause. */
 @keyframes sheen {
-  from {
+  0% {
     background-position: 100% 0;
+    animation-timing-function: var(--ease-out);
+  }
+  28%,
+  100% {
+    background-position: 0 0;
   }
 }
 .lead {

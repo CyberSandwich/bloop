@@ -411,7 +411,7 @@ One language: `--ease-out` for anything that appears or moves, `--ease-ui` for p
 |---|---|---|---|
 | press | input | 150 ms | `--ease-ui` |
 | stage tilt | scroll, at every width, not under reduced motion | sprung: stiffness 120, damping 30, mass .4 (CSS fallback: scroll-linked) | the spring |
-| "Anywhere" sheen | once on load, after 0.3 s | 1.4 s, a light band left to right through `background-position`, then it rests | `--ease-out` |
+| "Anywhere" sheen | from 0.3 s after load, repeating | 3.6 s a cycle: a bright warm band sweeps left to right through `background-position` in the first 1 s, then the word rests solid for 2.6 s, and again, without end | `--ease-out` on the sweep |
 | Try the Demo arrow | hover | 200 ms, 2 px to the right | `--ease-out` |
 | FAQ open, close | toggle | 380 ms height, 250 ms fade, 300 ms "+" turn | `--ease-out` |
 | nav scrolled | the top sentinel leaves or enters view | 240 ms glass and shadow | `--ease-out` |
@@ -425,7 +425,7 @@ One language: `--ease-out` for anything that appears or moves, `--ease-ui` for p
 
 "Anywhere" rests in solid `--robin-deep`, and one light band passes over it once on load (`background-clip:text` over the same solid, then still). Why: presence without a halo; the one accent. A blurred glow muddied the letter edges, and an ink-to-robin gradient at rest read as the gradient tell section 13 bans; a solid word keeps the edges sharp and the robin in the word itself. The band runs only under `@supports` and with motion allowed; elsewhere the word is simply `--robin-deep`.
 
-Reduced motion (`prefers-reduced-motion:reduce`): the stage rests flat (the spring never starts); the sheen does not play and the word is solid `--robin-deep`; the FAQ switches instantly; the `/s` QR ring steps once a second with no glide; scene changes swap at once; the blanket rule in `base.css` is the safety net. Nothing autoplays; the QR refresh is essential (a code must expire), so it has no pause.
+Reduced motion (`prefers-reduced-motion:reduce`): the stage rests flat (the spring never starts); the sheen never plays and the word is solid `--robin-deep`; the FAQ switches instantly; the `/s` QR ring steps once a second with no glide; scene changes swap at once; the blanket rule in `base.css` is the safety net. Nothing autoplays except the sheen's pulse, which is decoration and stops under reduced motion; the QR refresh is essential (a code must expire), so it has no pause.
 
 ## 9. Logo and social image
 

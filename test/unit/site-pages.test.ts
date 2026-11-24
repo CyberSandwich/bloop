@@ -237,7 +237,7 @@ describe("landing word caps (design.md section 13)", () => {
     expect(h1.match(/<span/g)).toHaveLength(1);
   });
 
-  it("Anywhere rests in solid deep robin; its one sheen plays once, and never under reduced motion", () => {
+  it("Anywhere rests in solid deep robin; its sheen sweeps, rests and repeats, and never plays under reduced motion", () => {
     const css = read("public/css/site.css");
     expect(css).toMatch(
       /^\.sheen \{(?:\s*\/\*.*\*\/)?\s*margin-inline: -0\.05em;\s*padding-inline: 0\.05em;\s*color: var\(--robin-deep\);\s*\}/m,
@@ -245,12 +245,11 @@ describe("landing word caps (design.md section 13)", () => {
     const block = between(css, /@supports \(background-clip: text\)/, "@keyframes sheen");
     const moving = between(block, /prefers-reduced-motion: no-preference\) \{/, "}");
     expect(moving).toMatch(
-      /background-clip: text;[^}]*color: transparent;[^}]*animation: sheen [\d.]+s var\(--ease-out\) [\d.]+s backwards;/,
+      /background-clip: text;[^}]*color: transparent;[^}]*animation: sheen [\d.]+s linear [\d.]+s infinite backwards;/,
     );
     // The band is the only gradient; under it the fill is the rest color, so the word never rests as a gradient.
     expect(moving.match(/linear-gradient/g)).toHaveLength(1);
     expect(moving).toMatch(/no-repeat var\(--robin-deep\);/);
-    expect(css).not.toMatch(/\.sheen[^{]*\{[^}]*infinite/);
     expect(css).not.toMatch(/text-shadow/);
   });
 
