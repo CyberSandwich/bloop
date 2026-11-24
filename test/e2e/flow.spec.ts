@@ -546,12 +546,13 @@ test.describe("pairing flow", () => {
 test.describe("guest drop", () => {
   const DECK = "test/fixtures/decks/sample-deck.pptx";
 
-  /** Taps Choose File and answers the browser's file chooser. */
-  async function chooseFile(page: Page, file: string | { name: string; mimeType: string; buffer: Buffer }) {
+  /** Taps Add a File, which opens the native picker at once, and answers the browser's file chooser. */
+  async function addFile(page: Page, file: string | { name: string; mimeType: string; buffer: Buffer }) {
     const chooser = page.waitForEvent("filechooser");
-    await page.getByRole("button", { name: "Choose File" }).click();
+    await page.getByRole("button", { name: "Add a File" }).click();
     await (await chooser).setFiles(file);
   }
+  const EXE = { name: "notes.exe", mimeType: "application/octet-stream", buffer: Buffer.from("MZ") };
 
   test("DEMO-01 flow: a guest adds a file, the screen offers it, and the Open click shows its card, with Download on click", async ({
     browser,
@@ -560,21 +561,20 @@ test.describe("guest drop", () => {
     const { phone } = await scan(browser, screen.page);
     await expectNoAxeViolations(phone.page);
 
-    await phone.page.getByRole("button", { name: "Add a File" }).click();
-    await expect(heading(phone.page)).toHaveText("Send a File to Demo Room?");
+    // a wrong type is refused on the phone before a byte leaves it, as a toast over the same page
+    await addFile(phone.page, EXE);
+    await expect(phone.page.getByRole("alert")).toContainText("This File Type Isn't Supported");
+    await expect(heading(phone.page)).toHaveText("Demo Room");
     await expectNoAxeViolations(phone.page);
+    // over this server's demo cap (10 MB here), which the toast reads from the claim
+    await addFile(phone.page, { name: "big.pdf", mimeType: "application/pdf", buffer: Buffer.alloc(11 * 1024 * 1024) });
+    await expect(phone.page.getByRole("alert")).toContainText("The demo takes files up to 10 MB.");
+    await expect(heading(phone.page)).toHaveText("Demo Room");
+    // a raw HEIC is named, not sent
+    await addFile(phone.page, { name: "IMG_1.HEIC", mimeType: "image/heic", buffer: Buffer.from("x") });
+    await expect(phone.page.getByRole("alert")).toContainText("HEIC Photos Aren't Supported");
 
-    // a wrong type is refused on the phone before a byte leaves it
-    await chooseFile(phone.page, {
-      name: "notes.exe",
-      mimeType: "application/octet-stream",
-      buffer: Buffer.from("MZ"),
-    });
-    await expect(heading(phone.page)).toHaveText("This File Can't Be Sent");
-    await expect(phone.page.locator("#body")).toHaveText("Choose a .pptx or .pdf file under 25 MB.");
-    await expectNoAxeViolations(phone.page);
-
-    await chooseFile(phone.page, DECK);
+    await addFile(phone.page, DECK);
     await expect(heading(phone.page)).toHaveText("Send sample-deck.pptx to Demo Room?");
     await expect(phone.page.locator("#body")).toHaveText("bloop deletes its copy when this ends.");
     await phone.page.getByRole("button", { name: "Send" }).click();
@@ -628,8 +628,7 @@ test.describe("guest drop", () => {
         body: JSON.stringify({ type: "about:blank", status: 507, code: "storage_full" }),
       }),
     );
-    await phone.page.getByRole("button", { name: "Add a File" }).click();
-    await chooseFile(phone.page, DECK);
+    await addFile(phone.page, DECK);
     await phone.page.getByRole("button", { name: "Send" }).click();
     await expect(heading(phone.page)).toHaveText("bloop Can't Take Files Now");
     await expect(screen.page.locator("#match")).toBeVisible();
@@ -660,23 +659,22 @@ test.describe("guest drop", () => {
       const last = await page.locator(".actions").boundingBox();
       return ((title?.y ?? 0) + (last?.y ?? 0) + (last?.height ?? 0)) / 2;
     };
-    await page.getByRole("button", { name: "Add a File" }).click();
-    await expect(heading(page)).toHaveText("Send a File to Demo Room?");
+    await addFile(page, DECK);
+    await expect(heading(page)).toHaveText("Send sample-deck.pptx to Demo Room?");
     expect(Math.abs((await center()) - 828 / 2)).toBeLessThan(24);
     await page.getByRole("button", { name: "Cancel" }).click();
     await expect(heading(page)).toHaveText("Demo Room");
     await expect(page.locator("#file-list")).toBeVisible();
-    // A file refused on the phone keeps the same Cancel back to the list.
-    await page.getByRole("button", { name: "Add a File" }).click();
-    const chooser = page.waitForEvent("filechooser");
-    await page.getByRole("button", { name: "Choose File" }).click();
-    await (await chooser).setFiles({
-      name: "notes.exe",
-      mimeType: "application/octet-stream",
-      buffer: Buffer.from("MZ"),
-    });
-    await expect(heading(page)).toHaveText("This File Can't Be Sent");
-    await page.getByRole("button", { name: "Cancel" }).click();
+    // The browser's Back and the corner Back do what Cancel does.
+    await addFile(page, DECK);
+    await page.goBack();
+    await expect(heading(page)).toHaveText("Demo Room");
+    await addFile(page, DECK);
+    await page.getByRole("link", { name: "Back" }).click();
+    await expect(heading(page)).toHaveText("Demo Room");
+    // A file refused on the phone is a toast; the list stays.
+    await addFile(page, EXE);
+    await expect(page.getByRole("alert")).toContainText("This File Type Isn't Supported");
     await expect(heading(page)).toHaveText("Demo Room");
     await expect(screen.page.locator("#line")).toHaveText(/^Waiting for Approval\. Your phone shows \d{2}\.$/);
     await context.close();
@@ -688,7 +686,7 @@ test.describe("guest drop", () => {
   }) => {
     const screen = await demoScreen(browser);
     const { phone } = await scan(browser, screen.page);
-    await phone.page.getByRole("button", { name: "Add a File" }).click();
+    await addFile(phone.page, DECK);
     await phone.page.getByRole("button", { name: "Cancel" }).click();
     await expect(heading(phone.page)).toHaveText("Demo Room");
     await expect(screen.page.locator("#line")).toHaveText(/^Waiting for Approval\. Your phone shows \d{2}\.$/);

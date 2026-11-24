@@ -3,21 +3,47 @@
 /** @import {ErrorCode} from "../../../src/shared/protocol.ts" */
 /** @import {SendResult, Xhr} from "../types.js" */
 import { ERRORS } from "../shared/errors.js";
+import { preparePhoto } from "./photo.js";
+import { stripLocation } from "./video.js";
 
 const MB = 1024 * 1024;
-const EXTENSION = /\.(pptx|pdf)$/i;
+const EXTENSION = /\.(pptx|pdf|jpe?g|png|mp4|mov)$/i;
+const PHOTO = /\.(jpe?g|png)$/i;
+const VIDEO = /\.(mp4|mov)$/i;
+const HEIC = /\.(heic|heif)$/i;
 
 /** @param {number} bytes @returns {number} whole megabytes, rounded down, at least 1 */
 export const wholeMB = (bytes) => Math.max(1, Math.floor(bytes / MB));
 
 /**
- * What the phone can tell before sending a byte: the extension and the size. The server checks both again,
- * and the bytes themselves (DROP-02).
+ * What the phone can tell before sending a byte: the extension, and the size (a photo's is checked once it is
+ * compressed). The server checks both again, and the bytes themselves (DROP-02).
  * @param {{name: string, size: number}} file
  * @param {number} maxBytes
- * @returns {boolean}
+ * @returns {"heic" | "type" | "empty" | "large" | null} why not, or null
  */
-export const sendable = (file, maxBytes) => EXTENSION.test(file.name) && file.size > 0 && file.size <= maxBytes;
+export function fileProblem(file, maxBytes) {
+  if (HEIC.test(file.name)) return "heic";
+  if (!EXTENSION.test(file.name)) return "type";
+  if (file.size === 0) return "empty";
+  return file.size > maxBytes && !PHOTO.test(file.name) ? "large" : null;
+}
+
+/**
+ * The file to send: a photo compressed without its metadata, a video with its location blanked.
+ * @param {File} file
+ * @param {number} maxBytes
+ * @returns {Promise<{ok: true, file: File} | {ok: false, problem: "photo" | "video"}>}
+ */
+export async function prepareFile(file, maxBytes) {
+  if (PHOTO.test(file.name)) {
+    const out = await preparePhoto(file, maxBytes);
+    return out ? { ok: true, file: out } : { ok: false, problem: "photo" };
+  }
+  if (!VIDEO.test(file.name)) return { ok: true, file };
+  const out = await stripLocation(file);
+  return out.ok ? out : { ok: false, problem: "video" };
+}
 
 /** @param {unknown} code @returns {code is ErrorCode} */
 const isErrorCode = (code) => typeof code === "string" && Object.hasOwn(ERRORS, code);

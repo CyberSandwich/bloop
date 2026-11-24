@@ -251,7 +251,7 @@ export type PhoneStateKey =
   | "taken"
   | "offline"
   | "error"
-  | "guest_choose"
+  | "guest_add"
   | "guest_confirm"
   | "guest_sending"
   | "guest_refused"

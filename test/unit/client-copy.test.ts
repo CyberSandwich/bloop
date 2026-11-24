@@ -4,6 +4,7 @@ import {
   endLine,
   FOOTER_LINE,
   phoneCopy,
+  refusalToast,
   SESSION_ENDED,
   SIGN_IN_HINT,
   screenCopy,
@@ -57,7 +58,7 @@ const PHONE_KEYS: PhoneStateKey[] = [
   "framed",
   "rate_limited",
   "busy",
-  "guest_choose",
+  "guest_add",
   "guest_confirm",
   "guest_sending",
   "guest_refused",
@@ -362,13 +363,43 @@ describe("phone copy", () => {
     expect(phoneCopy("first_use", { ...pf, account: true }).actions.map((a) => a.id)).not.toContain("disconnect");
   });
 
+  it("the size toast names the cap it is given: demo 25 MB, live 90 MB, restated nowhere", () => {
+    expect(refusalToast("large", { demo: true, maxMB: 25 })).toEqual({
+      title: "File Too Large",
+      body: "The demo takes files up to 25 MB.",
+      error: true,
+    });
+    expect(refusalToast("large", { demo: false, maxMB: 90 }).body).toBe("bloop takes files up to 90 MB.");
+    for (const file of ["js/core/copy.js", "js/core/drop.js", "js/phone.js"]) {
+      expect(readFileSync(new URL(`../../public/${file}`, import.meta.url), "utf8"), file).not.toMatch(/\b(25|90) ?MB/);
+    }
+  });
+
+  it("every refusal the phone can name has a title and a line, in title case with no dashes", () => {
+    for (const p of ["heic", "type", "empty", "large", "several", "photo", "video"] as const) {
+      const t = refusalToast(p, { demo: false, maxMB: 90 });
+      expect(t.title, p).toMatch(/^[A-Z]/);
+      expect(`${t.title} ${t.body}`, p).not.toMatch(/[–—]/);
+      expect(t.body.length, p).toBeGreaterThan(0);
+    }
+    expect(refusalToast("heic", { demo: false, maxMB: 90 })).toEqual({
+      title: "HEIC Photos Aren't Supported",
+      body: "Export it as JPEG and try again.",
+      error: true,
+    });
+  });
+
   it("F5 guest states carry the design.md strings, with the room, the file and the size cap filled in", () => {
     const f = { room: "Room 2.14", file: "Talk.pptx", maxMB: 50 };
-    expect(phoneCopy("guest_choose", f)).toMatchObject({
-      title: "Send a File to Room 2.14?",
-      body: "Choose one .pptx or .pdf file from this phone. Only\u00a0this file goes to the screen.",
+    // No choose step: the landing is the list with its Add a File row, and the picker opens from that row.
+    expect(phoneCopy("guest_add", f)).toMatchObject({
+      title: "Room 2.14",
+      body: "Add one file from this phone. Only\u00a0this file goes to the screen.",
+      files: "list",
+      add: true,
+      actions: [],
     });
-    expect(phoneCopy("guest_choose", f).actions.map((a) => a.label)).toEqual(["Cancel", "Choose File"]);
+    expect(phoneCopy("guest_add", { ...f, back: true }).body).toContain("this device");
     expect(phoneCopy("guest_confirm", f)).toMatchObject({
       title: "Send Talk.pptx to Room 2.14?",
       body: "bloop deletes its copy when this ends.",
@@ -378,7 +409,7 @@ describe("phone copy", () => {
     expect(phoneCopy("guest_sending", f).actions.map((a) => a.label)).toEqual(["Cancel"]);
     expect(phoneCopy("guest_refused", f)).toMatchObject({
       title: "This File Can't Be Sent",
-      body: "Choose a .pptx or .pdf file under 50 MB.",
+      body: "Choose a .pptx, .pdf, .jpg, .png, .mp4 or .mov file under 50 MB.",
     });
     expect(phoneCopy("guest_refused", { ...f, maxMB: 10 }).body).toContain("under 10 MB");
     expect(phoneCopy("guest_refused", f).actions.map((a) => a.label)).toEqual(["Choose File"]);
@@ -412,6 +443,7 @@ describe("phone copy", () => {
       "approve",
       "approve_demo",
       "unregistered",
+      "guest_add",
     ]);
     const withSend = PHONE_KEYS.filter((k) => phoneCopy(k, pf).actions.some((a) => a.id === "send-file"));
     expect(withSend).toEqual(["first_use", "empty"]);

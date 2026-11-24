@@ -139,6 +139,31 @@ export function endLine(
 const ENTER_CODE = { id: "code", label: "Enter the Code", kind: /** @type {const} */ ("primary"), href: "/code" };
 /** Revokes the stored OneDrive access (docs/architecture.md section 6, /api/me/disconnect). */
 const DISCONNECT = { id: "disconnect", label: "Disconnect OneDrive", kind: /** @type {const} */ ("text") };
+const FILE_TYPES = ".pptx, .pdf, .jpg, .png, .mp4 or .mov";
+
+/**
+ * What a refusal the phone can name before sending says, as a toast. The cap is the server's (`dropMaxBytes`).
+ * @param {"heic" | "type" | "empty" | "large" | "several" | "photo" | "video"} problem
+ * @param {{demo: boolean, maxMB: number}} f
+ * @returns {{title: string, body: string, error: true}}
+ */
+export function refusalToast(problem, f) {
+  /** @type {Record<Exclude<typeof problem, "large">, [string, string]>} */
+  const fixed = {
+    heic: ["HEIC Photos Aren't Supported", "Export it as JPEG and try again."],
+    type: ["This File Type Isn't Supported", `Choose a ${FILE_TYPES} file.`],
+    empty: ["This File Is Empty", "Choose another file."],
+    several: ["One File at a Time", "Drop a single file."],
+    photo: ["This Photo Can't Be Sent", "Export it as a JPEG under the size limit and try again."],
+    video: ["This Video Can't Be Sent", "bloop couldn't remove its location. Try another video."],
+  };
+  const [title, body] =
+    problem === "large"
+      ? ["File Too Large", `${f.demo ? "The demo takes" : "bloop takes"} files up to ${f.maxMB} MB.`]
+      : fixed[problem];
+  return { title, body, error: true };
+}
+
 /** The guest entry where there is no list to end with the "Add a file" row. */
 const SEND_FILE = { id: "send-file", label: "Add a File", kind: /** @type {const} */ ("text") };
 const PICK = { id: "pick", label: "Choose File", kind: /** @type {const} */ ("primary") };
@@ -250,12 +275,10 @@ export function phoneCopy(key, f) {
         body: "Save a file to OneDrive, then scan again.",
         actions: [SEND_FILE, DONE],
       };
-    case "guest_choose":
+    case "guest_add":
       return {
-        ...base,
-        title: `Send a File to ${f.room}?`,
-        body: `Choose one .pptx or .pdf file from this ${f.back ? "device" : "phone"}. Only\u00a0this file goes to the screen.`,
-        actions: [CANCEL, PICK],
+        ...room,
+        body: `Add one file from this ${f.back ? "device" : "phone"}. Only\u00a0this file goes to the screen.`,
       };
     case "guest_confirm":
       return {
@@ -270,7 +293,7 @@ export function phoneCopy(key, f) {
       return {
         ...base,
         title: "This File Can't Be Sent",
-        body: `Choose a .pptx or .pdf file under ${f.maxMB ?? 50} MB.`,
+        body: `Choose a ${FILE_TYPES} file under ${f.maxMB ?? 50} MB.`,
         actions: f.list ? [CANCEL, PICK] : [PICK],
       };
     case "guest_sent":
