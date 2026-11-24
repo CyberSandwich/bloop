@@ -237,9 +237,35 @@ for (const vp of VIEWPORTS) {
       await expect(sheen).toHaveClass(/is-paused/);
     });
 
+    test("the Approve still's rows toggle their tick, and Present and Download press without leaving", async ({
+      page,
+    }) => {
+      await page.goto("/");
+      const still = page.locator(".step").nth(1).getByRole("group", { name: "Example" });
+      const vevox = still.getByRole("button", { name: "Vevox" });
+      await expect(vevox).toHaveAttribute("aria-pressed", "false");
+      await expect(vevox.locator(".frag-tick")).toBeHidden();
+      await vevox.click();
+      await expect(vevox).toHaveAttribute("aria-pressed", "true");
+      await expect(vevox.locator(".frag-tick")).toBeVisible();
+      const dog = still.getByRole("button", { name: "Dog.jpg" });
+      await dog.click();
+      await expect(dog).toHaveAttribute("aria-pressed", "false");
+      const pill = page.locator(".step").nth(2).getByRole("group", { name: "Example" });
+      await pill.getByRole("button", { name: "Present" }).click();
+      await pill.getByRole("button", { name: "Download" }).click();
+      await expect(page).toHaveURL(/\/$/);
+      // The deck's tile is its first page, loaded once scrolled near.
+      const deck = still.getByRole("button", { name: "Sample deck.pptx" }).locator("img");
+      await deck.scrollIntoViewIfNeeded();
+      await expect
+        .poll(() => deck.evaluate((el) => (el as unknown as { naturalWidth: number }).naturalWidth))
+        .toBeGreaterThan(0);
+    });
+
     test("a question opens and closes", async ({ page }) => {
       await page.goto("/");
-      const item = page.locator(".faq details").filter({ hasText: "What does the room PC keep?" });
+      const item = page.locator(".faq details").filter({ hasText: "What stays on the room PC?" });
       await item.locator("summary").click();
       await expect(item).toHaveAttribute("open", "");
       await expect(item.getByRole("link", { name: "See what can stay." })).toBeVisible();

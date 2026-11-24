@@ -35,7 +35,6 @@
   --g1: #dcdcd7;
   --g-select: #e6e6e2;
   --hairline: rgba(0, 0, 0, 0.08);
-  --sky: #cfe0e8;
   --mint: #cce8df;
   --mint-ink: #1e3d35;
   --amber: #f6e7b2;
@@ -63,6 +62,8 @@
   --glass-firm: rgba(255, 255, 255, 0.8);
   --glass-filter: blur(24px) saturate(2);
   --glass-edge: inset 0 1px 0 rgba(255, 255, 255, 0.7);
+  --glass-clear: rgba(255, 255, 255, 0.42);
+  --glass-clear-filter: blur(20px) saturate(1.8) brightness(1.05);
   --nav-h: 56px;
   --wordmark: 22px;
   --mark: 32px;

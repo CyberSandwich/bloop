@@ -26,12 +26,12 @@
     {
       "name": "browser JS",
       "path": "public/js/**/*.js",
-      "limit": "48.8 kB"
+      "limit": "48.9 kB"
     },
     {
       "name": "landing JS",
       "path": "public/js/site.js",
-      "limit": "1.6 kB"
+      "limit": "1.7 kB"
     },
     {
       "name": "font",

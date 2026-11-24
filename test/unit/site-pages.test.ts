@@ -324,21 +324,38 @@ describe("landing word caps (design.md section 13)", () => {
     expect(html).not.toMatch(/Coming Soon<\/div>|reel|class="pill"/);
   });
 
-  it("the stills and the close panel share one warm backdrop rule, and their components are glass", () => {
+  it("the stills, the Connect panel and the close panel share one warm backdrop rule, and their components are glass", () => {
     const css = read("public/css/site.css");
     expect(css.match(/radial-gradient\(ellipse at 25% 25%/g)).toHaveLength(1);
-    expect(css).toMatch(/^\.frag,\n\.close-panel \{/m);
-    for (const token of ["--robin-deep", "--robin", "--amber", "--rose"]) {
-      expect(between(css, /^\.frag,\n\.close-panel \{/m, "}")).toContain(`var(${token}`);
-    }
+    const layer = between(css, /^\.frag::before,\n\.panel::before,\n\.close-panel::before \{/m, "}");
+    for (const token of ["--robin-deep", "--robin", "--amber", "--rose"]) expect(layer).toContain(`var(${token}`);
+    // The shapes drift slowly by translate alone (a compositor property), and never under reduced motion.
+    const moving = between(css, /@media \(prefers-reduced-motion: no-preference\) \{\s*\.frag::before/, "\n}");
+    expect(moving).toContain("animation: drift 40s ease-in-out infinite alternate;");
+    expect(between(css, /@keyframes drift \{/, "\n}\n")).not.toMatch(/background|transform:/);
+    // Liquid glass: the clear fill and its filter are their own tokens, so the nav's firm glass keeps its value.
+    const clear = between(
+      css,
+      /@supports \(backdrop-filter: blur\(1px\)\) or \(-webkit-backdrop-filter: blur\(1px\)\) \{\s*\.frag \.glass,/,
+      "\n}",
+    );
+    expect(clear).toContain("background: var(--glass-clear);");
+    expect(clear).toContain("backdrop-filter: var(--glass-clear-filter);");
+    expect(read("public/css/base.css")).toMatch(
+      /--glass-clear-filter: blur\(20px\) saturate\(1\.8\) brightness\(1\.05\);/,
+    );
+    expect(css).toMatch(/\.close-card::after \{[^}]*linear-gradient\(135deg/);
     expect(html).toContain('<span class="frag-qr-tile glass">');
     expect(html).toContain('<span class="frag-list glass">');
     expect(html).toContain('<span class="frag-pill glass">');
     expect(html).toContain('<div class="close-card glass">');
     // Download stays solid; the firm fill is restated for reduced transparency, since it outranks .glass there.
-    expect(html).toContain('<span class="frag-btn ink">Download</span>');
-    expect(between(css, /@media \(prefers-reduced-transparency: reduce\) \{/, "\n}")).toContain(".close-card");
-    expect(css).not.toMatch(/\.close-panel \{[^}]*var\(--sky\)/);
+    expect(html).toContain('<button class="frag-btn ink" type="button">Download</button>');
+    const solid = between(css, /@media \(prefers-reduced-transparency: reduce\) \{/, "\n}");
+    for (const sel of [".close-card", ".group", ".frag .glass"]) expect(solid).toContain(sel);
+    expect(solid).toContain("backdrop-filter: none;");
+    // The sky tint is retired: the panels sit on the warm backdrop.
+    for (const f of CSS_FILES) expect(read(`public/css/${f}`)).not.toContain("--sky");
   });
 
   it("How It Works has no visible heading: the section is a named landmark, the cards start its list and the step titles are h2", () => {
@@ -362,31 +379,54 @@ describe("landing word caps (design.md section 13)", () => {
       "Select your files, then tap Approve.",
       "Present immediately or download your file.",
     ]);
-    for (const step of steps) expect(step).toMatch(/<div class="frag" aria-hidden="true">/);
+    for (const step of steps) expect(step).toMatch(/<div class="frag" role="group" aria-label="Example">/);
     // The Scan still is the QR glyph alone: ink, 64 px, no text.
     expect(steps[0]).toMatch(/<svg class="icon frag-qr"[^>]*width="64" height="64"[^>]*aria-hidden="true"/);
     expect(visibleText(between(steps[0] ?? "", /<div class="frag"/, "</div>"))).toBe("");
     // The app's own .tick is hidden outside a checked row, so the stills keep their own class.
-    expect(steps[1]?.match(/class="icon frag-tick"/g)).toHaveLength(2);
+    expect(steps[1]?.match(/class="icon frag-tick"/g)).toHaveLength(3);
+    // Each row is a toggle: the deck and the dog start on, the Vevox link off.
+    const rows = [
+      ...(steps[1] ?? "").matchAll(
+        /<button class="frag-row" type="button" aria-pressed="(true|false)">([\s\S]*?)<\/button>/g,
+      ),
+    ];
+    expect(rows.map((m) => [visibleText(m[2] ?? ""), m[1]])).toEqual([
+      ["Sample deck.pptx", "true"],
+      ["Dog.jpg", "true"],
+      ["Vevox", "false"],
+    ]);
+    // The deck's tile is its first page, shown whole, as rows.js draws it.
+    expect(rows[0]?.[2]).toMatch(
+      /<img class="fit" src="\/img\/demo-slide-1\.webp" width="32" height="32" alt="" loading="lazy"/,
+    );
+    expect(read("public/css/site.css")).toMatch(/\.frag-tile \.fit \{\s*object-fit: contain;/);
+    expect(steps[2]).toMatch(
+      /<button class="frag-btn" type="button">Present<\/button><button class="frag-btn ink" type="button">Download<\/button>/,
+    );
+    expect(read("public/js/site.js")).toMatch(/\.frag-list"\)\?\.addEventListener\("click"[\s\S]*?aria-pressed/);
     expect(html).not.toMatch(/class="(?:[^"]*\s)?tick[\s"]/);
   });
 
-  it("the FAQ is at most 4 native details, and the residue answer links to /security without a nothing-stays claim", () => {
+  it("the FAQ is 4 native details in order, the residue answer links to /security#stay with no nothing-stays claim, then an email line", () => {
     const faq = between(html, /<section class="faq"/, "</section>");
     const items = [...faq.matchAll(/<details>\s*<summary>([^<]+)<\/summary>([\s\S]*?)<\/details>/g)];
-    expect(items.length).toBeGreaterThanOrEqual(1);
-    expect(items.length).toBeLessThanOrEqual(4);
-    const residue = items.find((m) => /room PC keep/.test(m[1] ?? ""))?.[2] ?? "";
-    expect(residue).toContain('href="/security"');
-    expect(residue).toMatch(/can stay/);
+    expect(items.map((m) => [m[1], visibleText(m[2] ?? "")])).toEqual([
+      ["Is it free?", "Yes, while bloop is in early access."],
+      ["Do I need to install anything?", "No. The screen opens bloop in its browser, and your phone uses its camera."],
+      [
+        "What stays on the room PC?",
+        "Only a link to each item you open, and never your account. A downloaded copy or the browser's history can stay until the PC is wiped. See what can stay.",
+      ],
+      ["Which files work?", "PowerPoint, PDF, photos, videos and links."],
+    ]);
+    const residue = items[2]?.[2] ?? "";
+    expect(residue).toContain('<a href="/security#stay">See what can stay.</a>');
     expect(residue.toLowerCase()).not.toMatch(/nothing (is )?left|leaves nothing/);
-    // One claim, one sentence (design.md section 13): the answer repeats /security#stay word for word.
-    const stay = visibleText(between(read("public/security.html"), /<h2 id="stay">[^<]*<\/h2>\s*<p>/, "</p>")).replace(
-      /^What Can Stay Behind /,
-      "",
+    expect(read("public/security.html")).toContain('id="stay"');
+    expect(faq).toMatch(
+      /<\/details>\s*<p class="faq-more">Another question\? Email <a href="mailto:hi@bloop\.here">hi@bloop\.here<\/a><\/p>\s*<\/section>$/,
     );
-    expect(visibleText(residue)).toContain(stay);
-    expect(stay).toMatch(/tabs with their history/);
   });
 
   const group = (id: string) => {
@@ -398,7 +438,7 @@ describe("landing word caps (design.md section 13)", () => {
 
   it("the provider list promises nothing live: Coming Soon, by name only, and iCloud is not listed", () => {
     const { section, head, rows } = group("from-h");
-    expect(head).toBe("Where Files Live Coming Soon");
+    expect(head).toBe("Integrations Coming Soon");
     expect(rows).toEqual(["Microsoft OneDrive", "Dropbox", "Google Drive™", "Box"]);
     expect(section).not.toMatch(/<img\b/);
     expect(section.toLowerCase()).not.toContain("icloud");
@@ -709,7 +749,8 @@ describe("the stylesheets: base.css, then the page's own (design.md section 11)"
       .replace(/@supports \(interpolate-size: allow-keywords\) \{[\s\S]*?\n\}\n/, "")
       .replace(/@starting-style \{\s*\.nav-links:popover-open \{[^}]*\}\s*\}/, "");
     expect(rest).not.toMatch(/opacity:/);
-    expect(block(".frag-row.off")).toContain("color: var(--muted);");
+    // On the clear glass a left-out row keeps the row's ink; only weight, an empty tile and no tick say it is off.
+    expect(block('.frag-row[aria-pressed="false"]')).toMatch(/^[^{]+\{\s*font-weight: 400;\s*$/);
   });
 
   it("every site heading balances its lines, so a card title never ends on one word", () => {
@@ -814,7 +855,7 @@ describe("stage 1 wording and pictures", () => {
 
   it("the group titles are visible beside their status chip and the close has no heading", () => {
     expect(index).toContain('<h3 id="share-h">What You Can Share</h3><span class="status on">');
-    expect(index).toContain('<h3 id="from-h">Where Files Live</h3><span class="status">');
+    expect(index).toContain('<h3 id="from-h">Integrations</h3><span class="status">');
     expect(between(index, /<section class="close"/, "</section>")).not.toMatch(/<h[1-6]\b/);
     expect(index).toContain('<section class="close" aria-label="Try the demo">');
   });

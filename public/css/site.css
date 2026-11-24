@@ -75,11 +75,9 @@ html:has(.page-site) {
   padding: 0 6px;
 }
 @supports (backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px)) {
-  /* The sheet holds text over the hero's type, and the cards over the warm backdrop, so they stay firm. */
+  /* The sheet holds text over the hero's type, so it stays firm. */
   .nav.is-scrolled :is(.nav-logo, .nav-pill),
-  .nav-links:popover-open,
-  .frag .glass,
-  .close-card {
+  .nav-links:popover-open {
     background: var(--glass-firm);
   }
 }
@@ -383,32 +381,85 @@ h3 {
   text-wrap: balance;
 }
 
-/* The warm backdrop under the stills and the close panel: four soft shapes on an oversized image, so each element's
-   background-position crops a different arrangement. Paper where color-mix is missing; static. */
+/* The warm backdrop (design.md section 4): a drifting layer, mirrored per box; paper without color-mix. */
 .frag,
+.panel,
 .close-panel {
+  position: relative;
+  z-index: 0;
+  overflow: hidden;
   background: var(--paper);
+}
+.frag::before,
+.panel::before,
+.close-panel::before {
+  content: "";
+  position: absolute;
+  z-index: -1;
+  inset: -25%;
   background:
-    radial-gradient(ellipse at 25% 25%, color-mix(in srgb, var(--robin-deep) 50%, transparent), transparent 62%),
-    radial-gradient(ellipse at 80% 20%, var(--robin), transparent 66%),
-    radial-gradient(ellipse at 70% 85%, var(--amber), transparent 64%),
-    radial-gradient(ellipse at 15% 80%, var(--rose), transparent 62%),
-    color-mix(in srgb, var(--robin) 12%, var(--surface));
-  background-size: 150% 150%;
+    radial-gradient(ellipse at 25% 25%, color-mix(in srgb, var(--robin-deep) 70%, transparent), transparent 58%),
+    radial-gradient(ellipse at 80% 20%, var(--robin), transparent 62%),
+    radial-gradient(ellipse at 70% 85%, color-mix(in srgb, var(--amber) 70%, var(--robin)), transparent 60%),
+    radial-gradient(ellipse at 15% 80%, color-mix(in srgb, var(--rose) 70%, var(--robin-deep)), transparent 58%),
+    color-mix(in srgb, var(--robin) 16%, var(--surface));
 }
-.step:nth-child(2) .frag {
-  background-position: 100% 0;
+.step:nth-child(2) .frag::before {
+  scale: -1 1;
 }
-.step:nth-child(3) .frag {
-  background-position: 0 100%;
+.step:nth-child(3) .frag::before {
+  scale: 1 -1;
 }
-.close-panel {
-  background-position: 50% 50%;
+.panel::before {
+  scale: -1 -1;
 }
-/* The shared glass on a backdrop: the base recipe, firmer, with the nav's edge and lift. */
+@media (prefers-reduced-motion: no-preference) {
+  .frag::before,
+  .panel::before,
+  .close-panel::before {
+    animation: drift 40s ease-in-out infinite alternate;
+  }
+}
+@keyframes drift {
+  from {
+    translate: -10% -6%;
+  }
+  to {
+    translate: 10% 6%;
+  }
+}
+/* Liquid glass: a clear fill, a rim lit from the top left, a shade below. Ink only: --muted fails 4.5:1 here. */
 .frag .glass,
+.group,
 .close-card {
-  box-shadow: var(--glass-edge), var(--sh-pill);
+  position: relative;
+  box-shadow:
+    inset 0 -1px 3px rgba(0, 0, 0, 0.06),
+    var(--sh-pill);
+}
+/* The close card keeps .glass's fill: on the clear one the logo's disc sank into the peach. */
+@supports (backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px)) {
+  .frag .glass,
+  .group {
+    background: var(--glass-clear);
+    -webkit-backdrop-filter: var(--glass-clear-filter);
+    backdrop-filter: var(--glass-clear-filter);
+  }
+}
+.frag .glass::after,
+.group::after,
+.close-card::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  padding: 1px;
+  border-radius: inherit;
+  background: linear-gradient(135deg, rgba(255, 255, 255, 0.95), rgba(255, 255, 255, 0.2) 40%, transparent 70%);
+  mask:
+    linear-gradient(#000 0 0) content-box,
+    linear-gradient(#000 0 0);
+  mask-composite: exclude;
+  pointer-events: none;
 }
 
 /* How It Works: white step cards, each a verb and a line over a still of that step. */
@@ -463,22 +514,40 @@ h3 {
 .step h2 + p {
   margin-bottom: 24px;
 }
+/* A row toggles its tick (site.js); its inset is the list's 8 plus its own 4. */
 .frag-row {
   display: flex;
   align-items: center;
   gap: 10px;
-  min-height: 40px;
+  width: 100%;
+  min-height: 44px;
+  padding: 0 4px;
+  border: 0;
+  border-radius: calc(var(--r-field) - 8px);
+  background: none;
   font-size: 15px;
   font-weight: 600;
+  text-align: left;
+  cursor: pointer;
 }
-/* Left out by color, weight and an empty tile, never by opacity, since axe checks contrast even under aria-hidden. */
-.frag-row.off {
-  color: var(--muted);
+/* Off by weight, an empty tile and no tick; never by opacity or a lighter ink. */
+.frag-row[aria-pressed="false"] {
   font-weight: 400;
 }
-.frag-row.off .frag-tile {
+.frag-row[aria-pressed="false"] .frag-tile {
   background: none;
   box-shadow: inset 0 0 0 1px var(--hairline);
+}
+.frag-row[aria-pressed="false"] .frag-tick {
+  visibility: hidden;
+}
+.frag-row:active {
+  background: var(--wash);
+}
+@media (hover: hover) {
+  .frag-row:hover {
+    background: var(--wash);
+  }
 }
 .frag-tile {
   display: grid;
@@ -493,6 +562,10 @@ h3 {
   width: 100%;
   height: 100%;
   object-fit: cover;
+}
+/* A page shows whole on its tile, as rows.js draws it. */
+.frag-tile .fit {
+  object-fit: contain;
 }
 /* A copy of the viewer's pill (count, Present, Download). */
 .frag-pill {
@@ -510,18 +583,25 @@ h3 {
 }
 .frag-count {
   padding: 0 10px;
-  color: var(--muted);
+  color: var(--ink-2);
   font-size: 14px;
   font-weight: 400;
   font-variant-numeric: tabular-nums;
 }
+/* Present and Download press like the viewer's and do nothing more. */
 .frag-btn {
   display: inline-flex;
   align-items: center;
   height: 44px;
   padding: 0 16px;
+  border: 0;
   border-radius: var(--r-pill);
   background: var(--wash);
+  cursor: pointer;
+  transition: transform 150ms var(--ease-ui);
+}
+.frag-btn:active {
+  transform: scale(0.97);
 }
 .frag-btn.ink {
   background: var(--ink);
@@ -543,11 +623,8 @@ h3 {
 .frag-list {
   display: grid;
   gap: 4px;
-  padding: 8px 12px;
+  padding: 8px;
   border-radius: var(--r-field);
-}
-.frag-list .frag-row {
-  min-height: 44px;
 }
 
 /* The grid sits on a white band, so the cells' paper reads as the one neutral fill. */
@@ -645,7 +722,6 @@ h3 {
   margin-top: 40px;
   padding: 12px;
   border-radius: var(--r-stage);
-  background: var(--sky);
 }
 @media (min-width: 768px) {
   .panel {
@@ -655,7 +731,7 @@ h3 {
 .group {
   padding: 20px 20px 4px;
   border-radius: 16px;
-  background: var(--surface);
+  background: var(--glass-solid);
 }
 .group-head {
   display: flex;
@@ -702,7 +778,7 @@ h3 {
   margin-left: auto;
 }
 .never {
-  color: var(--muted);
+  color: var(--ink-2);
   font-size: 15px;
   font-weight: 400;
 }
@@ -752,6 +828,12 @@ h3 {
   font-size: 16px;
   line-height: 1.6;
   color: var(--muted);
+}
+.faq-more {
+  margin-top: 32px;
+  color: var(--muted);
+  font-size: 16px;
+  text-align: center;
 }
 @supports (interpolate-size: allow-keywords) {
   .faq details {
@@ -926,12 +1008,15 @@ h3 {
     transition: none;
   }
 }
-/* Every --glass-firm rule outranks base's reduced-transparency .glass, so each is restated here. */
+/* Every --glass-firm and --glass-clear rule outranks base's reduced-transparency .glass, so each is restated here. */
 @media (prefers-reduced-transparency: reduce) {
   .nav.is-scrolled :is(.nav-logo, .nav-pill),
   .nav-links:popover-open,
   .frag .glass,
+  .group,
   .close-card {
     background: var(--surface);
+    -webkit-backdrop-filter: none;
+    backdrop-filter: none;
   }
 }

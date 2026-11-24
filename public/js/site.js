@@ -32,6 +32,12 @@ if (sheen) {
   addEventListener("visibilitychange", pulse);
 }
 
+// The Approve still's rows toggle their tick, as the phone's list does.
+document.querySelector(".frag-list")?.addEventListener("click", (e) => {
+  const row = e.target instanceof Element && e.target.closest("[aria-pressed]");
+  if (row) row.setAttribute("aria-pressed", `${row.getAttribute("aria-pressed") === "false"}`);
+});
+
 // A popover stays open over a same-page jump such as Features.
 const menu = document.getElementById("nav-links");
 menu?.addEventListener("click", (e) => {
