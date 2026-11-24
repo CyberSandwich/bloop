@@ -421,7 +421,10 @@ One language: `--ease-out` for anything that appears or moves, `--ease-ui` for p
 | New Code arrow | while the new screen loads | 0.8 s a turn | linear |
 | `/s` scene change (a state, or the item on the stage) | enter | 380 ms opacity 0 and 12 px rise to rest | `--ease-out` |
 | viewer bottom sheet | open | 350 ms from below | `cubic-bezier(0,0,0,1)` |
+| toast | in, out | 250 ms in, 200 ms out: 8 px rise and opacity | `--ease-out` |
 | page step, row selection, hover | input | instant | |
+
+**Toast** (`core/toast.js`, `/a`): one at a time, a `.glass` card bottom center at `--inset` (raised over the band where the band shows), 360 wide at most, `--r-sheet`; a title (600) and one line (`--muted`, 15). It leaves after 5 s or on a tap, and a new one replaces the old. `role="status"`, or `role="alert"` for an error; reduced motion swaps at once through the house net. A refusal the phone can name before sending (wrong type, too large, several files, HEIC) is a toast and the person stays where they were; a refusal the server makes is the full "This File Can't Be Sent" page.
 
 "Anywhere" rests in solid `--robin-deep`, and one light band passes over it once on load (`background-clip:text` over the same solid, then still). Why: presence without a halo; the one accent. A blurred glow muddied the letter edges, and an ink-to-robin gradient at rest read as the gradient tell section 13 bans; a solid word keeps the edges sharp and the robin in the word itself. The band runs only under `@supports` and with motion allowed; elsewhere the word is simply `--robin-deep`.
 
