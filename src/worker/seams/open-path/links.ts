@@ -1,9 +1,10 @@
 // The /f/ link: its shape, its life rules and the request classification. Pure apart from the random
 // draw and the hash, so unit tests cover every rule without a Worker (ADR 0003, threat model OPEN-01).
 import { linkFileName, MAX_BASE } from "../../../../public/js/shared/names.js";
-import type { FileType, OpenError, OpenMode } from "../../../shared/protocol.ts";
+import type { OpenError, OpenMode } from "../../../shared/protocol.ts";
 import type { LinkConfig } from "../../config.ts";
 import { base64url, randomBytes, safeEqual, sha256Hex } from "../../ids.ts";
+import { effectivePurpose } from "../../items.ts";
 import type { FileRef } from "../../machine.ts";
 
 /** screenRef (22) plus this many base64url characters of secret: 192 bits. */
@@ -37,17 +38,6 @@ export interface LinkRecord {
 export function nameBudget(origin: string, extLength: number): number {
   const fixed = `${origin}/f//`.length + SECRET_CHARS + 22 + 1 + extLength;
   return Math.max(1, Math.min(MAX_BASE, MAX_LINK_CHARS - fixed));
-}
-
-/**
- * The purpose a link for this type really serves. Download is a download for every type. A PDF file is its own
- * inline view, an image is only ever shown (`view`), and a deck's view is its PDF rendition.
- */
-export function effectivePurpose(type: FileType, purpose: OpenMode): OpenMode {
-  if (purpose === "download") return purpose;
-  if (type === "pdf") return "pdf";
-  if (type === "pptx") return purpose === "view" ? "pdf" : purpose;
-  return "view";
 }
 
 /** Mints a link for `file` (see `effectivePurpose`). A deck's PDF link serves the rendition, so its name ends in .pdf too. */

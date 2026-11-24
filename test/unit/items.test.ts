@@ -3,6 +3,7 @@ import { migrate, SCHEMA_KEY, SCHEMA_VERSION } from "../../src/worker/do/schema.
 import { policyOf, withHeaders } from "../../src/worker/headers.ts";
 import {
   allowedLink,
+  effectivePurpose,
   fileAt,
   type ItemRef,
   itemView,
@@ -11,7 +12,6 @@ import {
   orderItems,
 } from "../../src/worker/items.ts";
 import { type Machine, transition } from "../../src/worker/machine.ts";
-import { effectivePurpose } from "../../src/worker/seams/open-path/links.ts";
 import { openPathFor } from "../../src/worker/seams/open-path/select.ts";
 import { CONTENT_TYPES } from "../../src/worker/seams/open-path/stream.ts";
 import { screenView } from "../../src/worker/views.ts";
@@ -286,11 +286,24 @@ describe("machine: a session holds a list of items", () => {
     expect(approve(claimedOwner(), many.slice(0, MAX_ITEMS)).ok).toBe(true);
   });
 
-  it("SRC-02 idor: a live approve needs every item, links too, in the listed ids", () => {
+  it("SRC-02 idor: a live approve needs its item in the listed ids", () => {
     const listed = must(claimedOwner("live"), { e: "listed", now: T0 + sec(2), ids: ["deck-1"] }).next;
-    expect(approve(listed, [asItem(DECK), VEVOX])).toEqual({ ok: false, error: "file_not_found" });
-    const both = must(claimedOwner("live"), { e: "listed", now: T0 + sec(2), ids: ["deck-1", "demo-vevox"] }).next;
-    expect(approve(both, [asItem(DECK), VEVOX]).ok).toBe(true);
+    expect(approve(listed, [PDF])).toEqual({ ok: false, error: "file_not_found" });
+    expect(approve(listed, [asItem(DECK)]).ok).toBe(true);
+  });
+
+  it("a live session takes exactly one file: a live screen has no viewer to reach a second item or a link", () => {
+    const listed = must(claimedOwner("live"), {
+      e: "listed",
+      now: T0 + sec(2),
+      ids: ["deck-1", "pdf-1", "demo-vevox"],
+    }).next;
+    expect(approve(listed, [asItem(DECK), PDF])).toEqual({ ok: false, error: "bad_request" });
+    expect(approve(listed, [VEVOX])).toEqual({ ok: false, error: "bad_request" });
+    expect(approve(listed, [asItem(DECK), VEVOX])).toEqual({ ok: false, error: "bad_request" });
+    expect(approve(listed, [PDF]).ok).toBe(true);
+    // The demo has the viewer, so it keeps the whole list.
+    expect(approve(claimedOwner("demo"), [asItem(DECK), PDF, VEVOX]).ok).toBe(true);
   });
 
   it("is idempotent for the same set in any order", () => {
@@ -312,8 +325,14 @@ describe("machine: a session holds a list of items", () => {
     expect(fallback(-1)).toEqual({ ok: false, error: "file_not_found" });
     const dog = fallback(1);
     expect(dog.ok && fx(dog.effects, "mint")).toEqual([{ fx: "mint", purpose: "download", item: 1 }]);
+    // Another item's fallback leaves the launched item's served mode alone.
+    expect(dog.ok && dog.next.session?.openMode).toBe("protocol");
     const launched = fallback(null);
     expect(launched.ok && fx(launched.effects, "mint")).toEqual([{ fx: "mint", purpose: "download", item: 0 }]);
+    expect(launched.ok && launched.next.session?.openMode).toBe("download");
+    // The served mode, not the asked one: a deck's view is its PDF rendition.
+    const view = transition(opening, { e: "fallback", now: T0 + sec(7), mode: "view", item: null, maxMints: 5 }, CFG);
+    expect(view.ok && view.next.session?.openMode).toBe("pdf");
   });
 
   it("PC-02 sid-powers: every item's first link is free, then maxMints more; one item spent leaves the others theirs", () => {

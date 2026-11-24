@@ -1,7 +1,15 @@
 // The pure session state machine of one screen (docs/interfaces.md section 2). No I/O, no clock, no
 // randomness: the Screen object draws values, reads the clock and applies the effects, in order.
 import type { EndReason, ErrorCode, FileType, Kind, Mode, OpenMode, SessionState } from "../shared/protocol.ts";
-import { type FileItemRef, fileAt, type ItemRef, launchIndex, MAX_ITEMS, orderItems } from "./items.ts";
+import {
+  effectivePurpose,
+  type FileItemRef,
+  fileAt,
+  type ItemRef,
+  launchIndex,
+  MAX_ITEMS,
+  orderItems,
+} from "./items.ts";
 
 export interface Code {
   value: string;
@@ -348,6 +356,8 @@ export function transition(m: Machine, ev: Event, cfg: MachineConfig): Step {
       if (m.state === "ended") return fail("session_ended");
       if ((m.state !== "claimed" && m.state !== "choosing") || m.pairing?.kind !== "owner") return fail("wrong_state");
       const { listed } = m.pairing;
+      // A live screen has no viewer: it can show only the one file it launches, so a live session takes exactly one.
+      if (m.mode === "live" && (ev.items.length !== 1 || ev.items[0]?.kind !== "file")) return fail("bad_request");
       if (m.mode === "live" && !ev.items.every((i) => listed.includes(i.ref))) return fail("file_not_found");
       return approveItems(m, now, ev.items, ev.maxMinutes, "phone", ev.userId);
     }
@@ -413,12 +423,17 @@ export function transition(m: Machine, ev: Event, cfg: MachineConfig): Step {
         return fail("wrong_state");
       }
       // A screen can mint only for a file it was approved to show (PAIR-11): never a link, never out of range.
-      const item = ev.item ?? launchIndex(m.session.items);
-      if (!fileAt(m.session.items, item)) return fail("file_not_found");
+      const launch = launchIndex(m.session.items);
+      const item = ev.item ?? launch;
+      const file = fileAt(m.session.items, item);
+      if (!file) return fail("file_not_found");
       // Every item's first link is free; `maxMints` counts the links after it.
       if ((m.session.minted[item] ?? 0) >= 1 + ev.maxMints) return fail("mint_limit");
       const minted = m.session.minted.map((n, i) => (i === item ? n + 1 : n));
-      const session = { ...m.session, minted, openMode: relaunch ? m.session.openMode : ev.mode };
+      // openMode is how the launched item is served: another item's fallback leaves it, and it records what the
+      // link serves for the type (a deck's view is its PDF), not what was asked.
+      const served = relaunch || item !== launch ? m.session.openMode : effectivePurpose(file.type, ev.mode);
+      const session = { ...m.session, minted, openMode: served };
       return ok({ ...m, session }, [
         { fx: "mint", purpose: ev.mode, item },
         ...(relaunch ? [] : [{ fx: "metric" as const, name: "fallback" as const }]),

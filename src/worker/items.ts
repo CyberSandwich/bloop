@@ -1,6 +1,6 @@
 // The items a session holds (docs/interfaces.md section 2.3): files and web links, their order, and the link rule.
 // Pure, so the machine, the routes and the unit tests share one definition.
-import type { Item } from "../shared/protocol.ts";
+import type { FileType, Item, OpenMode } from "../shared/protocol.ts";
 import type { FileRef } from "./machine.ts";
 
 /** A web link the source offered. `url` is what `allowedLink` answered, never the raw input (LINK-01). */
@@ -50,6 +50,17 @@ export function orderItems(items: readonly ItemRef[]): ItemRef[] {
 
 /** The index of the item an approval launches: the first file. -1 when the session holds links only. */
 export const launchIndex = (items: readonly ItemRef[]): number => items.findIndex((i) => i.kind === "file");
+
+/**
+ * The purpose a link for this type really serves. Download is a download for every type. A PDF file is its own
+ * inline view, an image is only ever shown (`view`), and a deck's view is its PDF rendition.
+ */
+export function effectivePurpose(type: FileType, purpose: OpenMode): OpenMode {
+  if (purpose === "download") return purpose;
+  if (type === "pdf") return "pdf";
+  if (type === "pptx") return purpose === "view" ? "pdf" : purpose;
+  return "view";
+}
 
 /** The file at `index`, or null for a link or an index out of range. */
 export function fileAt(items: readonly ItemRef[], index: number): FileItemRef | null {

@@ -2,12 +2,13 @@
 
 The contracts for the five seams (pairing, file source, open path, guest drop, residue), plus audit and metrics. Each block names the file it belongs in. Types are TypeScript. Browser code imports the `src/shared/protocol.ts` types through JSDoc (`/** @import {ScreenView} from "../../src/shared/protocol.ts" */`, from `public/js/`). Runtime code shared by the browser and the Worker lives in `public/js/shared/` as plain JSDoc-typed ES modules, and the Worker imports it by relative path. No type from Cloudflare, Graph or R2 crosses a seam: adapters translate at the edge, so the Node exit path (ADR 0001) rewrites adapters only.
 
-## 1. Shared protocol (`src/shared/protocol.ts`, type-only contracts, never served)
+## 1. Shared protocol (`src/shared/protocol.ts`, contracts, never served; type-only except `OPEN_MODES`, the one list the Worker's schemas build from)
 ```ts
 export type Mode = "live" | "demo";
 export type Kind = "owner" | "guest";
 export type FileType = "pptx" | "pdf" | "jpg" | "png" | "webp";
-export type OpenMode = "protocol" | "download" | "pdf" | "view";   // view: an image shown in the screen page
+export const OPEN_MODES = ["protocol", "download", "pdf", "view"] as const;   // the launched frame and POST /api/screen/link both use it
+export type OpenMode = (typeof OPEN_MODES)[number];   // view: an image shown in the screen page
 export type EndReason = "phone" | "screen" | "auto" | "canceled" | "claim_timeout" | "error";
 export type Actor = "screen" | "phone" | "system" | "host" | "it";
 
@@ -157,14 +158,14 @@ export type ScreenStateKey =
 | waiting | `claim(code)` | code is current or previous, unconsumed, unexpired. In any other state the answer is `code_taken` for a code the screen still holds and `code_expired` otherwise | claimed | consume code (the Directory keeps it, so a replay answers `code_taken`); session id, pairing secret, match code; push both; audit `claimed` |
 | waiting | `claim(code, pass)` | as above, plus a pass valid for this room | claimed (kind guest) | as above; mark the pass used |
 | claimed | `listed(ids)` | owner kind | choosing | store ids; push both |
-| claimed, choosing | `approve(items)` | 1 to `MAX_ITEMS` items with distinct refs, else `bad_request`; owner kind; every ref in stored ids (live) or entries the Worker resolved (demo), else `file_not_found` | approved | items in `orderItems` order, `endsAt`, mint the protocol link for the first file (none for links only); push screen `open`; audit `approved` |
+| claimed, choosing | `approve(items)` | 1 to `MAX_ITEMS` items with distinct refs, else `bad_request`; live: exactly one file, else `bad_request` (a live screen has no viewer to reach a second item or a link); owner kind; every ref in stored ids (live) or entries the Worker resolved (demo), else `file_not_found` | approved | items in `orderItems` order, `endsAt`, mint the protocol link for the first file (none for links only); push screen `open`; audit `approved` |
 | claimed, choosing | `upload.start` | policy allows it (checked by `beginDrop`), no file yet; a `choosing` pairing must be an owner's | uploading | set `uploadAt`; an owner pairing becomes a guest (list and account dropped), so a phone can claim first and choose to send a file later |
 | uploading | `upload.done(file)` | validated | offered | store the R2 ref and `offerAt`; push screen `guest_open` (file name, Open); audit `guest.uploaded` |
 | offered | `open.click` | from the screen socket (a repeat in approved, opening or open returns the current view) | approved | as approve: `endsAt`, mint link; push screen `open`; audit `approved` (actor screen) |
 | uploading | `upload.failed(e)` | | claimed | delete object; push both `state`; audit `guest.refused` with cause `e` (the drop route answers the phone with `e`) |
 | approved | `launched(mode)` | from the screen | opening | record mode; metric |
 | approved, opening | `fetched(link)` | first fetch of any link | open | `first_open_at`; metric `scan_to_open_ms`; push both |
-| opening, open | `fallback(mode, item)` | `item` (default: the first file) names a file, else `file_not_found` (PAIR-11); mints left | (same) | mint a link for `mode` and that item; set the open mode; metric `fallback`; push `open` to the screen and `state` to both |
+| opening, open | `fallback(mode, item)` | `item` (default: the first file) names a file, else `file_not_found` (PAIR-11); mints left | (same) | mint a link for `mode` and that item; when it is the launched item, set the open mode to what the link serves for the type (`effectivePurpose`: a deck's view is its PDF); metric `fallback`; push `open` to the screen and `state` to both |
 | approved | `fallback(protocol, item)` | as above | (same) | the screen lost its link, or shows another item: mint its protocol (or view) link, no mode change, no metric |
 | claimed, choosing, uploading, offered | `cancel` | from the phone | waiting | end reason `canceled`; audit; delete any object; both codes wiped, a fresh one issued; phone sockets get `error pairing_invalid` and close |
 | claimed, choosing, uploading, offered | `restart` | from the screen ("Start Over") | waiting | end reason `canceled`, actor screen; audit; delete any object; as cancel |

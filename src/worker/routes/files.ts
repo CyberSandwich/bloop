@@ -9,7 +9,16 @@ import { type Route, route } from "../router.ts";
 import { type Access, accessFor, listEntries, resolveListed } from "../source-access.ts";
 import { limited, respond, screenFor, withConfig, write } from "./common.ts";
 
-const approveBody = z.object({ ids: z.array(z.string().min(1).max(256)).min(1).max(MAX_ITEMS) }).strict();
+// Distinct ids, checked here so a repeat costs no source listing before the machine would refuse it.
+const approveBody = z
+  .object({
+    ids: z
+      .array(z.string().min(1).max(256))
+      .min(1)
+      .max(MAX_ITEMS)
+      .refine((ids) => new Set(ids).size === ids.length),
+  })
+  .strict();
 
 type Phone = {
   ok: true;

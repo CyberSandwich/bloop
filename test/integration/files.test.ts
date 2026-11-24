@@ -142,8 +142,19 @@ describe("POST /api/approve resolves the file on the server", () => {
     socket.close();
   });
 
-  it("approves the whole catalog as one list: files by name, then the link, on both views", async () => {
+  it("a live session takes exactly one file: a list or a link is refused, one file approves", async () => {
     const { socket, pid } = await paired("live");
+    await api.get("/api/files", pid);
+    for (const ids of [DEMO_IDS, ["demo-vevox"]]) {
+      const res = await api.post("/api/approve", { ids }, { auth: pid });
+      expect(res.body, JSON.stringify(ids)).toEqual(problem("bad_request"));
+    }
+    expect((await api.post("/api/approve", { ids: ["demo-deck"] }, { auth: pid })).status).toBe(200);
+    socket.close();
+  });
+
+  it("approves the whole demo catalog as one list: files by name, then the link, on both views", async () => {
+    const { socket, pid } = await paired("demo");
     await api.get("/api/files", pid);
     const approved = await api.post<{ items: unknown[] }>("/api/approve", { ids: DEMO_IDS }, { auth: pid });
     expect(approved.status).toBe(200);

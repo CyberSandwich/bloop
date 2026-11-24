@@ -3,6 +3,7 @@
 // Order for /f/: config, platform rate limit, token shape, the Screen object's link rules, the source, the answer.
 // Every refusal before the Screen object is the same 404 as an unknown token (OPEN-01).
 import { z } from "zod";
+import { OPEN_MODES } from "../../shared/protocol.ts";
 import type { Config } from "../config.ts";
 import type { Env } from "../env.ts";
 import { fail, json } from "../http.ts";
@@ -40,7 +41,7 @@ export function logFetch(request: Request, response: Response): void {
 
 const linkBody = z
   .object({
-    purpose: z.enum(["protocol", "download", "pdf", "view"]),
+    purpose: z.enum(OPEN_MODES),
     item: z
       .number()
       .int()

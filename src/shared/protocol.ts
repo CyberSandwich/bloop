@@ -1,11 +1,13 @@
-// Type-only contracts shared by the Worker and the browser modules (JSDoc @import). Never served.
+// Contracts shared by the Worker and the browser modules (JSDoc @import). Never served. Type-only, except the value
+// lists the Worker's schemas build from (OPEN_MODES), so a list is written once.
 // Source of truth for the wire format: docs/interfaces.md section 1.
 
 export type Mode = "live" | "demo";
 export type Kind = "owner" | "guest";
 export type FileType = "pptx" | "pdf" | "jpg" | "png" | "webp";
 /** `view` is an image shown in the screen page; `pdf` a PDF file's own view or a deck's rendition. */
-export type OpenMode = "protocol" | "download" | "pdf" | "view";
+export const OPEN_MODES = ["protocol", "download", "pdf", "view"] as const;
+export type OpenMode = (typeof OPEN_MODES)[number];
 export type EndReason = "phone" | "screen" | "auto" | "canceled" | "claim_timeout" | "error";
 export type Actor = "screen" | "phone" | "system" | "host" | "it";
 

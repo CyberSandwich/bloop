@@ -102,6 +102,9 @@ describe("DEMO-01 isolation: the full demo flow, with no account", () => {
     expect(image.headers.get("Content-Security-Policy")).toBe("default-src 'none'; sandbox; frame-ancestors 'none'");
     expect(image.headers.get("Cache-Control")).toBe("no-store");
     expect([...new Uint8Array(await image.arrayBuffer()).slice(0, 3)]).toEqual([0xff, 0xd8, 0xff]);
+    // The screen reports an image launch as view; the socket stays up and the session moves on.
+    socket.send({ t: "launched", mode: "view" });
+    await socket.stateWhere((v) => v.state === "opening" || v.state === "open");
 
     const mint = (body: Record<string, unknown>) =>
       api.post<{ item: number; links: Record<string, string | null> }>("/api/screen/link", body, { auth: screen.sid });
@@ -110,6 +113,7 @@ describe("DEMO-01 isolation: the full demo flow, with no account", () => {
     const pdfView = await fetchLink(pdf.body.links.pdf as string);
     expect(pdfView.headers.get("Content-Type")).toBe("application/pdf");
     expect(pdfView.headers.get("Content-Disposition")).toBe("inline");
+    expect((await mint({ purpose: "view", item: 0 })).status).toBe(200);
     const deck = await mint({ purpose: "protocol", item: 2 });
     expect(deck.body.links.protocol).toMatch(/^ms-powerpoint:ofv\|u\|.*\.pptx$/);
 

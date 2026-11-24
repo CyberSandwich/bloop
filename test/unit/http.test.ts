@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { z } from "zod";
+import { OPEN_MODES } from "../../src/shared/protocol.ts";
 import { MAX_FRAME_BYTES, phoneFrame, screenFrame } from "../../src/worker/frames.ts";
 import { bearer, checkWrite, fail, readJson } from "../../src/worker/http.ts";
 
@@ -93,6 +94,14 @@ describe("frames", () => {
     ]) {
       expect(screenFrame.safeParse(f).success, f.t).toBe(true);
     }
+  });
+
+  it("the launched frame takes every open mode, from the one list the link route also builds from", () => {
+    // A view launch (an image on a live screen) must not close the socket; the two lists drifted once.
+    for (const mode of OPEN_MODES) {
+      expect(screenFrame.safeParse({ v: 1, t: "launched", mode }).success, mode).toBe(true);
+    }
+    expect(OPEN_MODES).toContain("view");
   });
 
   it("refuses unknown types, extra keys, wrong versions and bad modes", () => {
