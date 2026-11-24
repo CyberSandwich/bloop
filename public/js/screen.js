@@ -2,7 +2,7 @@
 /** @import {ScreenView} from "../../src/shared/protocol.ts" */
 import { createApi } from "./core/api.js";
 import { openChannel } from "./core/channel.js";
-import { endLine, screenCopy, WAITING_LINE } from "./core/copy.js";
+import { endLine, screenCopy } from "./core/copy.js";
 import { clock, itemName, qrLabel } from "./core/format.js";
 import { qrMatrix, qrPath, qrSize } from "./core/qr.js";
 import { firstFile, screenKey } from "./core/states.js";
@@ -128,6 +128,10 @@ const serverNow = () => Date.now() + s.skew;
 let gen = 0;
 /** The line under Session Ended, fixed when the session ends (the launcher forgets at once). */
 let ended = "";
+/** When this page saw the session end: later than the server's own end, so a wait measured from it is never short. */
+let endedSince = 0;
+/** How long Session Ended stays, from endedSince; a repaint keeps the countdown where it was. */
+let endedHold = 0;
 
 /** One named timer: setting it again replaces the old one. */
 function after(/** @type {string} */ name, /** @type {number} */ ms, /** @type {() => void} */ fn) {
@@ -257,6 +261,8 @@ function paint() {
   main.classList.toggle("is-claimed", claimed);
 
   const has = (/** @type {import("./types.js").ScreenControl} */ c) => copy.controls.includes(c);
+  // Another phone's claim shows the title and the number alone; this browser's own shows its line and Continue.
+  main.classList.toggle("is-pending", claimed && !has("continue"));
   show(buttons.back, !has("start_over") && !has("end") && key !== "ended");
   show(buttons.start_over, has("start_over"));
   show(buttons.home, has("end"));
@@ -266,9 +272,8 @@ function paint() {
   if (code) for (const b of [buttons.here, buttons.phone]) b.setAttribute("href", `/a?c=${code.code}`);
   show(buttons.continue, has("continue"));
   show(buttons.waitlist, has("waitlist"));
-  // This browser holding the claim says so; any other phone's claim is waiting on its approval.
-  setText(awaiting, has("continue") ? copy.line : WAITING_LINE);
-  show(awaiting, claimed);
+  setText(awaiting, copy.line);
+  show(awaiting, claimed && has("continue"));
   document.body.classList.add("is-ready");
   show(buttons.open, has("open") || launcher.needsClick());
   // A spent mint budget hides the item's fallbacks: another click could only be refused.
@@ -298,7 +303,7 @@ function schedule(/** @type {import("../../src/shared/protocol.ts").ScreenStateK
     else after("rotate", Math.max(0, v.code.expiresAt - ROTATE_AHEAD_MS - serverNow()), requestCode);
   } else cancel("rotate");
 
-  if (key === "ended") after("ended", ended || DEMO ? ENDED_HOLD_MS : ENDED_QR_RETURN_MS, requestCode);
+  if (key === "ended") after("ended", Math.max(0, endedHold - (Date.now() - endedSince)), requestCode);
   else cancel("ended");
 
   if (key === "error") after("error", ERROR_RECOVER_MS, recover);
@@ -322,6 +327,8 @@ function recover() {
 function onView(/** @type {ScreenView} */ view) {
   if (view.state === "ended" && s.view?.state !== "ended") {
     ended = endLine(view.endReason, DEMO ? { ppt: false, download: null } : launcher.left());
+    endedSince = Date.now();
+    endedHold = ended || DEMO ? ENDED_HOLD_MS : ENDED_QR_RETURN_MS;
   }
   if (view.state === "ended" || view.state === "closed") dropMine(s.sid);
   s.view = view;
@@ -398,6 +405,20 @@ byId("b-leave").addEventListener("click", () => {
 // Back ends a waiting screen, so its code and demo slot go at once.
 buttons.back.addEventListener("click", () => leave(s.view?.state === "waiting"));
 buttons.present.addEventListener("click", () => viewer?.present(true));
+// Session Ended: a tap anywhere but a link (Join the Waitlist), or Enter, cuts the countdown to its shortest, the
+// floor the server keeps Session Ended for (ENDED_QR_RETURN_MS, its endedMinSeconds), then takes the same way to a
+// fresh code. The second click of a double click on End lands here too, so only a first click counts.
+function skipEnded() {
+  if (keyNow() !== "ended") return;
+  endedHold = ENDED_QR_RETURN_MS;
+  schedule("ended");
+}
+document.addEventListener("click", (e) => {
+  if (e.detail <= 1 && !(e.target instanceof Element && e.target.closest("a"))) skipEnded();
+});
+document.addEventListener("keydown", (e) => {
+  if (e.key === "Enter" && !e.repeat && !(e.target instanceof HTMLAnchorElement)) skipEnded();
+});
 buttons.copy.addEventListener("click", () => {
   if (!s.shown) return;
   navigator.clipboard?.writeText(format(s.shown)).then(

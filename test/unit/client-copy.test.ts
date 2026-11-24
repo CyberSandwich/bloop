@@ -140,11 +140,11 @@ describe("screen copy", () => {
     }
   });
 
-  it("scanned and choosing keep the room's name as the title, and the line says the digits the phone shows", () => {
+  it("scanned and choosing keep the room's name as the title, and the line (screen readers only) says the claim waits and the digits the phone shows", () => {
     for (const key of ["scanned", "choosing"] as const) {
       expect(screenCopy(key, { ...sf, match: "42" })).toMatchObject({
         heading: "Room 2.14",
-        line: "Your phone shows 42.",
+        line: "Waiting for Approval. Your phone shows 42.",
         controls: ["start_over"],
       });
     }

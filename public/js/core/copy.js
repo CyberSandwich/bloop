@@ -6,8 +6,8 @@ import { VERIFIED } from "./verified.js";
 
 export const FOOTER_LINE = "Phone not with you? Sign in to this PC as usual.";
 export const SIGN_IN_HINT = "Sign in to this PC as usual to open your file.";
-/** The status in the room screen's hint place while a phone's claim waits on its approval. */
-export const WAITING_LINE = "Waiting for Approval";
+/** A claim's status, for screen readers only: the room screen shows the title and the match number alone. */
+const WAITING_LINE = "Waiting for Approval";
 /** The one string that names the session (design.md section 3). */
 export const SESSION_ENDED = "Session Ended";
 
@@ -30,7 +30,7 @@ export function screenCopy(key, f) {
       return {
         ...base,
         heading: f.room,
-        line: f.mine ? "Finish on this device." : `Your phone shows ${f.match ?? ""}.`,
+        line: f.mine ? "Finish on this device." : `${WAITING_LINE}. Your phone shows ${f.match ?? ""}.`,
         controls: f.mine ? ["start_over", "continue"] : ["start_over"],
       };
     case "approved":

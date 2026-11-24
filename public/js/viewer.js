@@ -1,12 +1,62 @@
 // The demo viewer (DEMO-01, design.md section 7): the page fetches the launched link itself.
-// An image's <img> is kept for the session: the CSP has no blob:, and a second mint spends the budget.
+// A photo is kept for the session: a second mint spends the budget.
 /** @import {Item, OpenMode, ScreenView} from "../../src/shared/protocol.ts" */
 /** @import {Minted} from "./types.js" */
 import { halves, openTarget, pageMode, pagesOf, placeControls, stepPage, thumbOf } from "./core/demo.js";
 import { hostOf, itemIcon, itemLine, itemName } from "./core/format.js";
 import { ICONS } from "./core/icons.js";
+import { loader, readAll, setProgress } from "./core/loader.js";
 import { rowFace, tile } from "./core/rows.js";
 import { byId, el, icon, setText, show } from "./core/ui.js";
+
+/** @typedef {{canvas: HTMLCanvasElement, ready: boolean, failed: boolean, fraction: number | null, stop: () => void}} Shot */
+
+/**
+ * A photo's view link, read by script so its bytes can be counted, and drawn on a canvas: the CSP has no blob:, so
+ * bytes a script holds can never become an <img>, and a canvas is the one sink that takes them.
+ * @param {string} url
+ * @param {(shot: Shot) => void} onProgress
+ * @param {(shot: Shot) => void} onDone loaded or failed; never after stop
+ * @returns {Shot}
+ */
+function shoot(url, onProgress, onDone) {
+  const abort = new AbortController();
+  /** @type {Shot} */
+  const shot = {
+    canvas: /** @type {HTMLCanvasElement} */ (el("canvas", { role: "img", "aria-label": "" })),
+    ready: false,
+    failed: false,
+    fraction: null,
+    stop: () => abort.abort(),
+  };
+  fetch(url, { signal: abort.signal, cache: "no-store", credentials: "omit", referrerPolicy: "no-referrer" })
+    .then((res) => {
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      return readAll(res, (f) => {
+        shot.fraction = f;
+        onProgress(shot);
+      });
+    })
+    .then((blob) => createImageBitmap(blob))
+    .then((bitmap) => {
+      shot.canvas.width = bitmap.width;
+      shot.canvas.height = bitmap.height;
+      shot.canvas.getContext("2d")?.drawImage(bitmap, 0, 0);
+      bitmap.close();
+      shot.ready = true;
+    })
+    .catch(() => {
+      shot.failed = true;
+    })
+    .then(() => abort.signal.aborted || onDone(shot));
+  return shot;
+}
+
+/** A picture's own size: a slide's natural size, a photo's canvas. @param {HTMLImageElement | HTMLCanvasElement} pic */
+const sizeOf = (pic) =>
+  pic.localName === "canvas"
+    ? { w: /** @type {HTMLCanvasElement} */ (pic).width, h: pic.height }
+    : { w: /** @type {HTMLImageElement} */ (pic).naturalWidth, h: /** @type {HTMLImageElement} */ (pic).naturalHeight };
 
 /** The fetch PowerPoint would make: a HEAD, on this origin only. @returns {boolean} */
 export function fetchOpen(/** @type {string} */ link) {
@@ -65,14 +115,18 @@ export function createViewer(deps) {
     for (const a of running) a.cancel();
     const swap = swapped;
     swapped = false;
-    const img = frame.querySelector("img");
+    /** @type {HTMLImageElement | HTMLCanvasElement | null} */
+    const pic = frame.querySelector("picture img, canvas");
+    const standIn = /** @type {HTMLElement | null} */ (frame.querySelector(".stand-in"));
+    const img = pic ?? standIn;
     const item = frame.classList.contains("is-scroll") ? null : (img ?? frame.firstElementChild);
     const css = getComputedStyle(view);
     const inset = parseFloat(css.getPropertyValue("--inset"));
     const pillH = parseFloat(css.getPropertyValue("--pill"));
     const stackW = parseFloat(css.getPropertyValue("--stack"));
     // The stand-in is the photo's 3 : 2.
-    const ratio = img ? (img.classList.contains("stand-in") ? 1.5 : img.naturalWidth / img.naturalHeight) : 0;
+    const size = pic ? sizeOf(pic) : null;
+    const ratio = size ? size.w / size.h : standIn ? 1.5 : 0;
     const stage = { w: view.offsetWidth, h: view.offsetHeight };
     const w = Math.min(stage.w, stage.h * ratio);
     // The column's height is read with it on.
@@ -159,10 +213,12 @@ export function createViewer(deps) {
   /** The stage's content just changed. */
   let swapped = false;
   // Per-item state is keyed by idOf: a file sorting in ahead shifts every position.
-  /** @type {Map<string, HTMLImageElement>} */
+  /** @type {Map<string, Shot>} */
   const images = new Map();
-  /** @type {Map<number, HTMLImageElement>} taken before the first render */
+  /** @type {Map<number, Shot>} taken before the first render */
   const early = new Map();
+  /** The loader on the stage and the item it stands in for: progress lands on it, and the photo fades in over it. */
+  let waiting = /** @type {{key: string, part: HTMLElement} | null} */ (null);
   /** @type {Set<string>} */
   const asked = new Set();
   /** @type {Set<string>} minting failed: the card instead, and no retry loop */
@@ -269,8 +325,8 @@ export function createViewer(deps) {
 
   function image(/** @type {number} */ i) {
     const key = keyOf(i);
-    const img = images.get(key);
-    if (img || asked.has(key) || refused.has(key)) return img ?? null;
+    const shot = images.get(key);
+    if (shot || asked.has(key) || refused.has(key)) return shot ?? null;
     // While approved, the launch item's link is the launcher's to recover; a second ask would spend a mint.
     if (shown?.state === "approved" && shown.items.findIndex((x) => x.kind === "file") === i) return null;
     asked.add(key);
@@ -314,33 +370,50 @@ export function createViewer(deps) {
     const scroll = !!p && tall.has(keyOf(at));
     // A demo account's file with no pages is the photo; a guest's own file has only a card.
     const photo = item.kind === "file" && !p && v.kind === "owner";
-    const img = photo ? image(at) : null;
-    const loading = photo && !img && !refused.has(keyOf(at));
+    const key = keyOf(at);
+    const shot = photo ? image(at) : null;
+    const img = shot?.ready ? shot.canvas : null;
+    const loading = photo && !img && !shot?.failed && !refused.has(key);
     const want = p ? `p${at}:${scroll ? "all" : page}` : img ? `i${at}` : loading ? `w${at}` : `c${at}`;
     if (want !== framed) {
       framed = want;
-      /** @type {(HTMLElement | string)[]} */
+      /** @type {HTMLElement[]} */
       let nodes;
       if (scroll && p) nodes = p.map((base, n) => picture(base, n, p.length));
       else if (p) nodes = [picture(p[page] ?? "", page, p.length)];
       else if (img) {
-        img.alt = itemName(item);
+        img.setAttribute("aria-label", itemName(item));
         nodes = [img];
-      } else {
-        // While the photo loads, its row thumbnail holds the stage.
-        const thumb = thumbOf(item, v);
-        nodes = [loading ? (thumb ? el("img", { class: "stand-in", src: thumb, alt: "" }) : "") : card(item)];
-      }
+      } else if (loading) {
+        // While the photo loads, the loader holds the stage in its box, over the row's thumbnail.
+        if (waiting?.key !== key) {
+          const part = loader(itemName(item), thumbOf(item, v));
+          part.classList.add("stand-in");
+          waiting = { key, part };
+        }
+        nodes = [waiting.part];
+      } else nodes = [card(item)];
       const commit = () => {
         if (building !== nodes) return;
         building = null;
         seen.disconnect();
         view.classList.toggle("is-card", !p && !img && !loading);
         frame.classList.toggle("is-scroll", scroll);
-        frame.replaceChildren(...nodes);
+        // A photo replacing its own loader fades in over it; anything else swaps at once.
+        const over = img && waiting?.key === key && frame.firstElementChild === waiting.part ? waiting.part : null;
+        frame.replaceChildren(...(over ? [over] : []), ...nodes);
+        if (!loading) waiting = null;
+        if (img && over)
+          img
+            .animate(
+              { opacity: [0, 1] },
+              { duration: reduced.matches ? 0 : 200, easing: "cubic-bezier(0.22, 1, 0.36, 1)" },
+            )
+            .finished.catch(() => {})
+            .then(() => over.remove());
         if (scroll && p) for (const one of frame.querySelectorAll("img")) seen.observe(one);
         sized.disconnect();
-        const target = frame.querySelector("img") ?? frame.firstElementChild;
+        const target = frame.querySelector("picture img, canvas, .stand-in") ?? frame.firstElementChild;
         // The pill (its buttons appear after the item) and the list (it grows with a guest's file) set the place too.
         for (const box of [target, view, pill, side, end]) if (box) sized.observe(box);
         swapped = true;
@@ -348,9 +421,7 @@ export function createViewer(deps) {
       building = nodes;
       // The old item stays until the new one has decoded.
       const first = /** @type {HTMLImageElement | undefined} */ (
-        nodes
-          .map((n) => (typeof n === "string" ? null : (n.querySelector?.("img") ?? n)))
-          .find((n) => n && "decode" in n)
+        nodes.map((n) => n.querySelector?.("img") ?? n).find((n) => "decode" in n)
       );
       if (frame.firstElementChild && first && !first.complete)
         first
@@ -359,6 +430,7 @@ export function createViewer(deps) {
           .then(commit);
       else commit();
     }
+    if (loading && waiting) setProgress(waiting.part, shot?.fraction ?? null);
     show(view, true);
     show(frame, true);
     show(note, false);
@@ -373,9 +445,14 @@ export function createViewer(deps) {
   }
 
   function clear() {
-    for (const img of images.values()) img.removeAttribute("src");
+    // A zero-size canvas frees its pixels; a photo still on its way stops.
+    for (const shot of [...images.values(), ...early.values()]) {
+      shot.stop();
+      shot.canvas.width = 0;
+    }
     images.clear();
     early.clear();
+    waiting = null;
     building = null;
     drawn = null;
     lastPlace = "";
@@ -393,7 +470,7 @@ export function createViewer(deps) {
   }
 
   /** Pages and a loaded image; a link or a file card has nothing to present. */
-  const presentable = () => !!pages() || !!images.get(keyOf(at))?.naturalWidth;
+  const presentable = () => !!pages() || !!images.get(keyOf(at))?.ready;
   let sleep = 0;
   /** @type {HTMLElement | null} */
   let opener = null;
@@ -548,13 +625,16 @@ export function createViewer(deps) {
       const target = openTarget(url, location.origin);
       if (!target) return false;
       if (mode !== "view") return fetchOpen(target);
-      const img = el("img", { decoding: "async", referrerpolicy: "no-referrer", alt: "" });
-      img.addEventListener("load", () => deps.onChange());
-      img.src = target;
+      const shot = shoot(
+        target,
+        (s) => waiting && images.get(waiting.key) === s && setProgress(waiting.part, s.fraction),
+        () => deps.onChange(),
+      );
       // Before the first render there is no list: it waits by position.
-      if (!shown) early.set(item, img);
+      (shown ? images.get(keyOf(item)) : early.get(item))?.stop();
+      if (!shown) early.set(item, shot);
       else {
-        images.set(keyOf(item), img);
+        images.set(keyOf(item), shot);
         asked.delete(keyOf(item));
       }
       framed = null;
