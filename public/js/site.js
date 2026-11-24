@@ -14,7 +14,7 @@ menu?.addEventListener("click", (e) => {
 // The spring (k 120, c 30, m .4, implicit step) drives a paused animation that outranks the CSS tilt. Over the entry
 // the visible share tracks the goal, so 1% thresholds wake the loop that stops once settled.
 const stage = document.querySelector(".stage");
-const tiltable = matchMedia("(prefers-reduced-motion: no-preference) and (min-width: 900px)");
+const tiltable = matchMedia("(prefers-reduced-motion: no-preference)");
 if (stage && tiltable.matches) {
   const tilt = stage.animate({ transform: ["rotateX(24deg) scale(.9)", "none"] }, { duration: 1000, fill: "both" });
   tilt.pause();

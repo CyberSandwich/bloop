@@ -278,13 +278,20 @@ html:has(.page-site) {
   width: 100%;
   height: auto;
 }
+/* The phone picture is its own device frame on a transparent ground: no frame, fill or shadow of the stage's. */
 @media (max-width: 639.98px) {
   .stage {
-    border-radius: 16px;
+    overflow: visible;
+    border-radius: 0;
+    background: none;
+    box-shadow: none;
+  }
+  .stage img {
+    aspect-ratio: 1155 / 2366;
   }
 }
 @supports (animation-timeline: view()) {
-  @media (prefers-reduced-motion: no-preference) and (min-width: 900px) {
+  @media (prefers-reduced-motion: no-preference) {
     .stage {
       animation: tilt linear both;
       animation-timeline: view();
@@ -462,6 +469,7 @@ h3 {
 }
 .frag-qr {
   justify-self: center;
+  scale: 1;
 }
 
 /* The grid sits on a white band, so the cells' paper reads as the one neutral fill. */

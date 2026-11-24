@@ -253,6 +253,7 @@ public/                    wrangler's assets directory, served as it is. Everyth
   js/viewer.js js/core/demo.js   the demo screen's viewer (sidebar, stage, pager, link card, its own link fetch); its pure parts
   img/demo-slide-{n}.{avif,webp}   the sample deck's pages, shown for the deck and its PDF (tools/render-slides.py)
   img/hero-viewer-{1000,1440}.{avif,webp}   the landing stage's screenshot of the Demo Room
+  img/hero-phone-{600,900}.{avif,webp}      the landing stage's phone mockup, under 640 wide
   js/site.js               the landing: the nav's scrolled look, closing the menu on a same-page link, the stage tilt's spring, the FAQ's height tween where CSS cannot (no other site page runs a script)
   og.png apple-touch-icon.png (tools/render-og.py); favicon.svg, the logo, drawn as paths
   fonts/inter-latin.woff2  the one font file (tools/subset-font.py) + Inter.LICENSE.txt

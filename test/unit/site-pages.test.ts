@@ -289,7 +289,7 @@ describe("landing word caps (design.md section 13)", () => {
     expect(links).toHaveLength(1);
     expect(links[0]?.[1]).toBe(' class="btn primary" href="/demo"');
     expect(visibleText(links[0]?.[2] ?? "")).toBe("Try the Demo");
-    expect(links[0]?.[2]).toMatch(/Try the Demo<svg class="icon arrow"[^>]*>(?:<path d="[^"]+"\/>)+<\/svg>$/);
+    expect(links[0]?.[2]).toMatch(/Try the Demo<svg class="icon arrow dir"[^>]*>(?:<path d="[^"]+"\/>)+<\/svg>$/);
     expect(button("close").map((m) => m[0])).toEqual(links.map((m) => m[0]));
     expect(read("public/_redirects")).toMatch(/^\/demo \/s\?mode=demo 302$/m);
   });
@@ -300,12 +300,22 @@ describe("landing word caps (design.md section 13)", () => {
       new RegExp(
         `<source type="image/${type}" srcset="/img/hero-viewer-1000\\.${type} 1000w, /img/hero-viewer-1440\\.${type} 1440w" sizes="[^"]+">`,
       );
+    // Under 640 the phone mockup replaces the screenshot: its own sources come first, AVIF then WebP.
+    const phone = (type: string) =>
+      new RegExp(
+        `<source media="\\(max-width: 639\\.98px\\)" type="image/${type}" srcset="/img/hero-phone-600\\.${type} 600w, /img/hero-phone-900\\.${type} 900w" sizes="calc\\(100vw - 48px\\)">`,
+      );
+    expect(stage).toMatch(phone("avif"));
+    expect(stage).toMatch(phone("webp"));
+    expect(stage.indexOf("hero-phone-900.webp")).toBeLessThan(stage.indexOf('<source type="image/avif"'));
     expect(stage).toMatch(srcset("avif"));
     expect(stage).toMatch(srcset("webp"));
-    expect(stage.indexOf("image/avif")).toBeLessThan(stage.indexOf("image/webp"));
+    expect(stage.indexOf('<source type="image/avif"')).toBeLessThan(stage.indexOf('<source type="image/webp"'));
     const img = /<img\b[^>]*>/.exec(stage)?.[0] ?? "";
     expect(img).toContain('src="/img/hero-viewer-1440.webp" width="1440" height="828" fetchpriority="high"');
-    expect(img).toContain('alt="The Demo Room screen showing a list of files and a dog on the stage"');
+    expect(img).toContain('alt="The bloop viewer showing a dog, with a Download button and a list of files"');
+    // The phone picture's ratio is set in CSS, so the swap shifts nothing.
+    expect(read("public/css/site.css")).toMatch(/\.stage img \{\s*aspect-ratio: 1155 \/ 2366;/);
     expect(img).not.toMatch(/loading="lazy"/);
     expect(visibleText(stage)).toBe("");
     expect(stage).not.toMatch(/<(video|svg|iframe)\b/);
@@ -465,7 +475,11 @@ describe("site scripts under the strict CSP", () => {
 
   it("the stage tilt springs a paused animation, only while an observer sees the stage and motion is allowed", () => {
     const code = read("public/js/site.js");
-    expect(code).toContain('matchMedia("(prefers-reduced-motion: no-preference) and (min-width: 900px)")');
+    expect(code).toContain('matchMedia("(prefers-reduced-motion: no-preference)")');
+    expect(code).not.toContain("min-width");
+    expect(read("public/css/site.css")).toMatch(
+      /@supports \(animation-timeline: view\(\)\) \{\s*@media \(prefers-reduced-motion: no-preference\) \{\s*\.stage \{/,
+    );
     expect(code).toMatch(/stage\.animate\(/);
     expect(code).toMatch(/tilt\.pause\(\)/);
     expect(code).toMatch(/tilt\.currentTime = /);
