@@ -123,7 +123,7 @@
 .leave::backdrop {
   background: rgba(0, 0, 0, 0.18);
 }
-/* Stacked (the .buttons default, the rose primary on top) until two columns hold "End and Go Home" with its 16 padding. */
+/* Stacked (the .buttons default, the rose primary on top) until two columns hold "End Session" with its 16 padding. */
 .leave .buttons {
   margin-top: 24px;
 }
@@ -437,6 +437,8 @@ main:has(> .side:not([hidden])) #stage {
 .page-screen main[data-mode="viewer"] {
   --pill: 60px;
   --stack: 140px;
+  /* One inset all round: the bar's corner, the list's edge, the stage's edges, and the gaps between them. */
+  --top: calc(var(--inset) * 2 + var(--frame-h));
   padding-bottom: var(--inset);
 }
 [data-mode="viewer"] .pane {
@@ -463,7 +465,7 @@ main:has(> .side:not([hidden])) #stage {
   display: grid;
   grid-template: minmax(0, 1fr) / minmax(0, 1fr);
   place-items: center;
-  padding-bottom: calc(var(--pill) + 16px);
+  padding-bottom: calc(var(--pill) + var(--inset));
 }
 /* A portrait document scrolls as one column at a readable width. */
 .frame.is-scroll {
@@ -540,10 +542,15 @@ main:has(> .side:not([hidden])) #stage {
   background: var(--surface);
   box-shadow: var(--sh-frame);
 }
+/* No fade from blank: the old item stays until the new one has decoded (viewer.js), then this settles it in. */
 @keyframes swap {
   from {
-    opacity: 0;
     transform: scale(0.985);
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .frame img {
+    animation: none;
   }
 }
 /* Presenting (viewer.js present): the item on black inside the safe area, the chrome gone. */
@@ -629,7 +636,7 @@ main:has(> .side:not([hidden])) #stage {
 .item-card .btn {
   margin-top: 20px;
 }
-/* Present and Download in one glass pill, 16 under the item (viewer.js sets its top). */
+/* Present and Download in one glass pill, `--inset` under the item (viewer.js sets its top). */
 [data-mode="viewer"] #controls {
   position: absolute;
   width: max-content;
@@ -642,7 +649,8 @@ main:has(> .side:not([hidden])) #stage {
   padding: 8px;
   border-radius: var(--r-pill);
   box-shadow: var(--glass-edge), var(--sh-pill);
-  transform: translateX(-50%);
+  /* `translate`, not `transform`: viewer.js glides the pill with the same property. */
+  translate: -50% 0;
 }
 /* A --stack wide column (viewer.js fit): on the item's right, which then reserves its side, or under the list, which
    reserves nothing. */
@@ -653,13 +661,13 @@ main:has(> .side:not([hidden])) #stage {
   width: var(--stack);
   height: auto;
   border-radius: var(--r-stage);
-  transform: none;
+  translate: none;
 }
 .pane.is-stacked .frame {
   padding: 0;
 }
 .pane.is-stack-right .frame {
-  padding-right: calc(var(--stack) + 16px);
+  padding-right: calc(var(--stack) + var(--inset));
 }
 .dots {
   padding: 0 8px;
@@ -800,7 +808,7 @@ main:has(> .side:not([hidden])) #stage {
 }
 @media (min-width: 760px) {
   .page-screen main:has(> .side:not([hidden])) {
-    padding-left: calc(var(--side) + var(--inset) + var(--pad));
+    padding-left: calc(var(--side) + var(--inset) * 2);
     padding-right: var(--inset);
   }
   .page-screen main:has(> .side:not([hidden])) .frame {
