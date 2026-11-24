@@ -15,7 +15,7 @@ Steps only the owner can do, because they need the owner's accounts. Everything 
    3. Secrets, in Terminal since it prompts with hidden input: asks for `CLOUDFLARE_API_TOKEN` (an account API token, Manage account, Account API tokens, so it is not tied to a person: Workers Editor, D1 Edit and Workers R2 Storage Edit, no IP filter since runner IPs change, 1-year expiry) and `CLOUDFLARE_ACCOUNT_ID` and stores them as `production` environment secrets. Until they exist, the deploy workflow passes and only prints a skip notice.
    4. Check: exits 1 on any drift; rerun it after changing settings by hand.
 6. **Placeholders:** replace the addresses and the absolute `og:image` per "Site pages" below.
-7. **Address:** the Worker serves at `https://bloop.<account subdomain>.workers.dev` (`PUBLIC_ORIGIN` in `wrangler.jsonc`); a custom domain needs the domain's DNS on Cloudflare (a Workers custom domain), then `PUBLIC_ORIGIN` changes to it in the same commit.
+7. **Address:** the Worker serves at `https://bloop.here` (`PUBLIC_ORIGIN` and the `routes` custom domain in `wrangler.jsonc`; ADR 0010). The zone is in the same Cloudflare account and the first deploy creates the apex DNS record and certificate, so there is nothing else to click: never add an apex A, AAAA or CNAME by hand, and never touch the zone's iCloud mail records (MX, SPF, DKIM, DMARC, apple-domain TXT). DNSSEC is done at the registrar (Porkbun): the DS record from the zone's DNS settings. The deploy token must be allowed to attach a custom domain: if the first deploy refuses it, add Zone Read and DNS Edit on the `bloop.here` zone to the token. The old workers.dev address stays enabled and answers 301 to the same path on `bloop.here`, so old links and QR codes keep working; `www.bloop.here` has no record and no route. With Entra on, add `https://bloop.here/auth/callback` as a Web redirect URI before switching `FILE_SOURCE` to `graph`.
 8. **Deploy:** merge or push to `main`; the `production` run deploys after the check passes.
 
 ## Checks only a person can do
@@ -50,10 +50,10 @@ The two cron triggers (`0 * * * *` hourly, `30 3 * * *` daily) are declared in `
 
 ## Site pages: the contact address and what to renew
 
-Every contact on the public pages is one role address, ventures@saputra.co.uk: the Waitlist mail, the footer, the privacy notice and `public/.well-known/security.txt` (RFC 9116). Change them together; `test/unit/site-pages.test.ts` fails on any other address. Renew `Expires` in `security.txt` at most a year ahead (`test/integration/site.test.ts` fails once it is past or more than about 13 months out).
+Every contact on the public pages is one role address, hi@bloop.here: the footer, the privacy notice and `public/.well-known/security.txt` (RFC 9116); the Waitlist links open the Tally form `https://tally.so/r/Yj4KAN?source=<page>`. Change them together; `test/unit/site-pages.test.ts` fails on any other address. Renew `Expires` in `security.txt` at most a year ahead (`test/integration/site.test.ts` fails once it is past or more than about 13 months out).
 
 - **Privacy notice:** `/privacy` is a draft (it says so on the page and is `noindex`). The legal lane (OD-5) confirms roles, lawful bases and the retention periods it lists before launch; it repeats `threat-model.md` section 10, so change both together.
-- **Social image:** `og:image` and `og:url` in `public/index.html` name the host absolutely, as link previews need; change them with the host.
+- **Social image:** `og:image` and `og:url` in `public/index.html` name `https://bloop.here` absolutely, as link previews need; change them with the host.
 - **Stream mode:** if you set `OPEN_PATH_MODE=stream` (field test T3 below), delete the sentence about the Microsoft download link from the "What the PC holds" row of `public/security.html` and design.md.
 
 ### Regenerating the site assets

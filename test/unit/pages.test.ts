@@ -20,6 +20,7 @@ describe.each(PAGES)("%s under the strict CSP", (page) => {
   it("loads only same-origin scripts and styles", () => {
     for (const m of html.matchAll(/(?:src|href)="([^"]+)"/g)) {
       const url = m[1] as string;
+      if (url.startsWith("https://tally.so/r/")) continue; // the Waitlist link: a navigation, not a load
       expect(url.startsWith("http"), url).toBe(false);
     }
   });
@@ -157,10 +158,10 @@ describe("the demo screen", () => {
     expect(read("css/app.css")).toMatch(/\.is-demo > \.foot \{\s*display: none;\s*\}/);
   });
 
-  it("the waitlist link is the landing's, byte for byte, and carries data-waitlist", () => {
-    const href = (html: string) => html.match(/href="(mailto:[^"]*)"[^>]*data-waitlist/)?.[1];
-    expect(href(read("s.html"))).toBeDefined();
-    expect(href(read("s.html"))).toBe(href(read("index.html")));
+  it("the waitlist link opens the form with source=viewer, in the same tab, and carries data-waitlist", () => {
+    const link = read("s.html").match(/<a\b[^>]*\bdata-waitlist\b[^>]*>/)?.[0] ?? "";
+    expect(link).toContain('href="https://tally.so/r/Yj4KAN?source=viewer"');
+    expect(link).not.toContain("target=");
   });
 
   it("LINK-01 a link item opens in a new tab with no opener or referrer, and is never framed", () => {

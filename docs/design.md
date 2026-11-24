@@ -70,8 +70,8 @@ bloop puts your slides on a shared screen. You scan the code on the screen, choo
 | Slot | String |
 |---|---|
 | Nav | the logo pill, the logo and bloop (home); the links pill: Features (`/#features`), Privacy, Security, Waitlist, and the menu button, labeled Menu, under 640 |
-| Waitlist | every Waitlist link is `mailto:` ventures@saputra.co.uk with the subject "bloop waitlist" and a body that asks for Name, University or company, and Role, one per line (CRLF, as RFC 6068 asks), so a reply carries what an invite needs; each keeps `data-waitlist`, so one grep swaps in the form URL |
-| Footer | the logo and bloop; "**Present anywhere.** **bloop** puts your files on a shared screen from your phone. The screen gets only the items you approve, never your account." (the tagline stays a sentence: it is body copy); "Write to ventures@saputra.co.uk." as plain text, so the address is visible without a mail app; Privacy, Security, Waitlist; a rule; © 2026 bloop. No Source link. |
+| Waitlist | every Waitlist link opens `https://tally.so/r/Yj4KAN?source=<page>` in the same tab, where `<page>` is landing, privacy, security, viewer (the Session Ended link on `/s`) or 404; each keeps `data-waitlist`, so one grep finds every link; the form is Tally's, so the CSP needs nothing (a link navigation is not covered by it, and `form-action` governs forms only) |
+| Footer | the logo and bloop; "**Present anywhere.** **bloop** puts your files on a shared screen from your phone. The screen gets only the items you approve, never your account." (the tagline stays a sentence: it is body copy); "Write to hi@bloop.here." as plain text, so the address is visible without a mail app; Privacy, Security, Waitlist; a rule; © 2026 bloop. No Source link. |
 | 404 | This Page Isn't Here / Check the address. / button Go to the Home Page (the button says where, so the line does not) |
 
 **Landing**
@@ -394,14 +394,14 @@ Then one topic card per row below (each `[V-5]` until the build confirms it), th
 | h1 | Privacy Notice |
 | Draft line (the hero's lead) | This notice is a draft until **bloop**'s legal review. |
 | Panel | as on `/security` |
-| Who Is Responsible | **bloop** runs this service. Write to ventures@saputra.co.uk with any question about your data. |
-| What bloop Keeps (table) | Your email and account ID: While you stay connected, then 30 days. / Your OneDrive access, encrypted: Until you disconnect (deleted at once) or remove bloop in My Apps or Entra (deleted the next time it fails), or 30 days unused. / A log of who opened which file, in which room, and when: 180 days. For the demo, 7 days. / A guest's file: Deleted when the talk ends, and after 1 day at most. / Your phone's sign-in: 30 days unused, 90 days at most. / Usage counts, with no names: 90 days, then daily totals for 2 years. / Waitlist: the email and answers you send: Kept to invite you to early access, until you ask for them to be deleted or the waitlist closes. |
+| Who Is Responsible | **bloop** runs this service. Write to hi@bloop.here with any question about your data. |
+| What bloop Keeps (table) | Your email and account ID: While you stay connected, then 30 days. / Your OneDrive access, encrypted: Until you disconnect (deleted at once) or remove bloop in My Apps or Entra (deleted the next time it fails), or 30 days unused. / A log of who opened which file, in which room, and when: 180 days. For the demo, 7 days. / A guest's file: Deleted when the talk ends, and after 1 day at most. / Your phone's sign-in: 30 days unused, 90 days at most. / Usage counts, with no names: 90 days, then daily totals for 2 years. / Waitlist: the email and answers you send: Kept to invite you to early access, until you ask for them to be deleted or the waitlist closes. / Waitlist: who handles the form: Tally (tally.so) runs the form for **bloop**. It collects your role, where you would use **bloop**, your organization, your next step, your timing and your email, and keeps them until you ask for deletion or the waitlist closes. |
 | After the table | bloop keeps no slide content from your OneDrive. A guest's file is the one exception, and it is deleted when the talk ends. `[V-5]` |
 | Why | To open the file you approve on the screen you choose, to keep the service safe, and to give your organization's IT team a record of what was opened where. |
-| Where | Your data is stored in the EU on Cloudflare. Cloudflare is a US company, and each request is handled at its nearest data center. (threat model DATA-03: never "UK only" or "never leaves") |
+| Where | Your data is stored in the EU on Cloudflare, except waitlist answers, which Tally holds. Cloudflare is a US company, and each request is handled at its nearest data center. (threat model DATA-03: never "UK only" or "never leaves") |
 | Your Choices | Once OneDrive is connected, tap Disconnect OneDrive on any phone while you approve: **bloop** deletes its stored access and every sign-in ends at once, a lost phone's included. You may also be able to remove **bloop** in My Apps (myapplications.microsoft.com); your IT team can remove it for everyone in Microsoft Entra. To see or erase what **bloop** holds about you, write to the address above. |
 
-`/.well-known/security.txt` (RFC 9116): `Contact` (ventures@saputra.co.uk), `Expires` (at most a year ahead), `Preferred-Languages: en`. Renewing it is in `docs/setup.md`.
+`/.well-known/security.txt` (RFC 9116): `Contact` (hi@bloop.here), `Expires` (at most a year ahead), `Preferred-Languages: en`. Renewing it is in `docs/setup.md`.
 
 ## 8. Motion
 
@@ -504,7 +504,7 @@ A screen is done when every box passes; `test/unit/site-pages.test.ts` and `test
 
 - [ ] **Hero:** at most 40 words; the h1 one sentence of at most 6 words, on one line from 640 (at most two under it); the sub names the QR code, the phone and presenting in at most 2 sentences and 30 words.
 - [ ] **Whole landing:** 80 to 300 words (How It Works and the close add about 30), FAQ answers included; every sentence at most 20 words; at most 4 FAQ items; every heading and label at most 5 words.
-- [ ] **Try the demo** is the hero's one button, in the first view, and opens `/demo`, the close repeats it; every Waitlist link is a `mailto:` with `data-waitlist`.
+- [ ] **Try the demo** is the hero's one button, in the first view, and opens `/demo`, the close repeats it; every Waitlist link opens the Tally form and carries `data-waitlist`.
 - [ ] **Nav:** one `nav` landmark, the same on every site page; the menu works with no script; the scrolled look comes from an observer, never a scroll listener.
 - [ ] **Stage:** flat at rest and under reduced motion; a framed screenshot with alt text; no Source link anywhere.
 - [ ] **Never-say grep:** no hit from `tools/never-say.txt` in any page or string; no nothing-stays, no sign-in-is-gone, no runs-everywhere, no freshness claim.

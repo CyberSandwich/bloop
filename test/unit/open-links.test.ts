@@ -15,7 +15,7 @@ import {
 } from "../../src/worker/seams/open-path/links.ts";
 
 const REF = "AAAAAAAAAAAAAAAAAAAAAA";
-const PRODUCTION = "https://bloop.dsap.workers.dev";
+const PRODUCTION = "https://bloop.here";
 /** The longest origin config.ts accepts. */
 const LONGEST_ORIGIN = `https://${"a".repeat(120 - "https://".length)}`;
 const OFFICE_URI_LIMIT = 256;

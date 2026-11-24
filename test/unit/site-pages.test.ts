@@ -414,8 +414,8 @@ describe("landing word caps (design.md section 13)", () => {
   });
 
   it("og:image and og:url are absolute, for link previews", () => {
-    expect(html).toContain('<meta property="og:image" content="https://bloop.dsap.workers.dev/og.png">');
-    expect(html).toContain('<meta property="og:url" content="https://bloop.dsap.workers.dev/">');
+    expect(html).toContain('<meta property="og:image" content="https://bloop.here/og.png">');
+    expect(html).toContain('<meta property="og:url" content="https://bloop.here/">');
     expect(html).toContain('<meta property="og:image:alt" content="bloop: Present Anywhere">');
     expect(read("tools/render-og.py")).toContain("H1 = 'Present Anywhere'");
   });
@@ -497,7 +497,7 @@ describe("site scripts under the strict CSP", () => {
 describe("site chrome: one nav and one footer on every site page", () => {
   const chrome = (html: string) =>
     [between(html, /<header class="nav">/, "</header>"), between(html, /<footer class="footer">/, "</footer>")].map(
-      (part) => part.replace(/ aria-current="page"/g, ""),
+      (part) => part.replace(/ aria-current="page"/g, "").replace(/\?source=\w+/g, "?source=page"),
     );
   const [nav, footer] = chrome(read("public/index.html"));
 
@@ -517,28 +517,50 @@ describe("site chrome: one nav and one footer on every site page", () => {
     expect(html).not.toMatch(/href="\/it[/"#?]/);
   });
 
-  it.each(SITE)("%s: every Waitlist link is the waitlist mail and carries data-waitlist", (page) => {
-    const html = read(`public/${page}`);
-    const links = [...html.matchAll(/<a\b([^>]*)>Waitlist<\/a>/g)].map((m) => m[1] ?? "");
-    expect(links.length).toBeGreaterThanOrEqual(2);
-    for (const attrs of links) {
-      expect(attrs).toMatch(/\sdata-waitlist(\s|$)/);
-      const href = /href="mailto:ventures@saputra\.co\.uk\?subject=[^"&]+&amp;body=([^"&]+)"/.exec(attrs)?.[1] ?? "";
-      for (const field of ["Name:", "University or company:", "Role:"]) {
-        expect(decodeURIComponent(href)).toContain(`\n${field}`);
+  it.each([
+    ["index.html", "landing"],
+    ["security.html", "security"],
+    ["privacy.html", "privacy"],
+    ["404.html", "404"],
+  ])(
+    "%s: every Waitlist link opens the form with source=%s, in the same tab, and carries data-waitlist",
+    (page, source) => {
+      const html = read(`public/${page}`);
+      const links = [...html.matchAll(/<a\b([^>]*)>Waitlist<\/a>/g)].map((m) => m[1] ?? "");
+      expect(links.length).toBeGreaterThanOrEqual(2);
+      for (const attrs of links) {
+        expect(attrs).toMatch(/\sdata-waitlist(\s|$)/);
+        expect(attrs).toContain(`href="https://tally.so/r/Yj4KAN?source=${source}"`);
+        expect(attrs).not.toContain("target=");
       }
-    }
-    expect(html.match(/data-waitlist/g)).toHaveLength(links.length);
-  });
+      expect(html.match(/data-waitlist/g)).toHaveLength(links.length);
+      expect(html).not.toContain("mailto:ventures");
+    },
+  );
 
-  it.each(SITE)("%s names one contact address, ventures@saputra.co.uk, and no placeholder", (page) => {
+  it.each(SITE)("%s names one contact address, hi@bloop.here, and no placeholder", (page) => {
     const html = read(`public/${page}`);
     expect(html).not.toMatch(/bloop\.example/);
-    for (const m of html.matchAll(/[\w.+-]+@[\w-]+(\.[\w-]+)+/g)) expect(m[0]).toBe("ventures@saputra.co.uk");
+    for (const m of html.matchAll(/[\w.+-]+@[\w-]+(\.[\w-]+)+/g)) expect(m[0]).toBe("hi@bloop.here");
   });
 
   it("the footer shows the address as plain text", () => {
-    expect(footer).toContain("<p>Write to ventures@saputra.co.uk.</p>");
+    expect(footer).toContain("<p>Write to hi@bloop.here.</p>");
+  });
+
+  it("security.txt names the same contact", () => {
+    expect(read("public/.well-known/security.txt")).toMatch(/^Contact: mailto:hi@bloop\.here$/m);
+  });
+
+  it("privacy names Tally as the waitlist processor and what the form collects", () => {
+    const html = read("public/privacy.html");
+    const row =
+      /<tr><th scope="row">Waitlist: who handles the form<\/th><td>([\s\S]*?)<\/td><\/tr>/.exec(html)?.[1] ?? "";
+    expect(row).toContain("Tally (tally.so)");
+    for (const field of ["role", "where you would use", "organization", "next step", "timing", "email"]) {
+      expect(row, field).toContain(field);
+    }
+    expect(row).toContain("until you ask for deletion or the waitlist closes");
   });
 
   it("the logo is its own pill before the nav landmark, and the links pill holds the links, Waitlist and the menu", () => {

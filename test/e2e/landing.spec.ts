@@ -151,11 +151,14 @@ for (const vp of VIEWPORTS) {
       expect(Number.parseFloat(padding)).toBeGreaterThan(0);
     });
 
-    test("the nav stays on top, firms up once scrolled, and its Waitlist is a mail", async ({ page }) => {
+    test("the nav stays on top, firms up once scrolled, and its Waitlist opens the form", async ({ page }) => {
       await page.goto("/");
       const nav = page.locator(".nav");
       await expect(nav).not.toHaveClass(/is-scrolled/);
-      await expect(nav.getByRole("link", { name: "Waitlist" })).toHaveAttribute("href", /^mailto:/);
+      await expect(nav.getByRole("link", { name: "Waitlist" })).toHaveAttribute(
+        "href",
+        "https://tally.so/r/Yj4KAN?source=landing",
+      );
       await page.mouse.wheel(0, vp.height);
       await expect(nav).toHaveClass(/is-scrolled/);
       await expect(nav.getByRole("link", { name: "bloop" })).toBeInViewport();
