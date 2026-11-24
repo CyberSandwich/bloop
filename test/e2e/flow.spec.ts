@@ -742,7 +742,7 @@ test.describe("stage 4 layout", () => {
     const { phone } = await scan(browser, screen.page);
     await screen.page.reload();
     await expect(screen.page.locator("#compare")).toHaveText(/^Your phone shows \d{2}\.$/);
-    await expect(screen.page.locator("#awaiting")).toHaveText("Waiting for Approve.");
+    await expect(screen.page.locator("#awaiting")).toHaveText("Waiting for approval.");
     expect(await screen.page.locator("#qr-panel").boundingBox()).toEqual(waiting);
     await phone.page.getByRole("button", { name: "Approve" }).click();
     await expectViewer(screen.page);
