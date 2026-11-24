@@ -699,7 +699,7 @@ describe("stage 1 wording and pictures", () => {
     for (const row of rows("gets")) expect(row).toMatch(/<svg class="icon yes"[^>]*aria-hidden="true"/);
     for (const row of rows("never")) expect(row).toMatch(/<span class="never" aria-hidden="true">Never<\/span>$/);
     expect(html).not.toContain("toggle");
-    // Read with "Never", the column names what the screen lacks; "What Stays on Your Phone: Your account, Never" read backward.
+    // Read with "Never", the column names what the screen lacks.
     expect(html).toContain('<h2 id="never">What the Screen Never Gets</h2>');
     expect(html).not.toContain("What Stays on Your Phone");
   });
