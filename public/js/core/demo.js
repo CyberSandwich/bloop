@@ -23,27 +23,18 @@ export const pageMode = (/** @type {number} */ width, /** @type {number} */ heig
   height > width ? "scroll" : "paged";
 
 /**
- * Where the control pill goes for an item (width over height `ratio`) contained in a `w` x `h` stage, the one that
- * shows the item widest: "right" (a column `reserve` wide beside it, which must be no taller than the item, `stack`),
- * "below" (a pill `gap` tall under it) or "list" (a column under the side list: only where `listFits`, and the item
- * then takes the whole stage). Within 1 px the item's own controls win: right, then below, then list.
- * @returns {"right" | "below" | "list"}
+ * Where the controls go: the item fills the stage and they never shrink it, so they take the first free spot.
+ * "under": the pill under the item, the slack holding it and an inset (item and pill centered as one block). "right":
+ * the column at the stage's bottom right, the slack beside the centered item holding it. "rail": the column under the
+ * side list, where it has room. Else "float": the pill over the item's foot.
+ * @param {{w: number, h: number}} item @param {{w: number, h: number}} stage
+ * @param {{pill: number, stackW: number, stackH: number, inset: number, rail: boolean}} need
+ * @returns {"under" | "right" | "rail" | "float"}
  */
-export function placeControls(
-  /** @type {number} */ ratio,
-  /** @type {number} */ w,
-  /** @type {number} */ h,
-  /** @type {{reserve: number, gap: number, stack: number, listFits: boolean}} */ at,
-) {
-  const widest = (/** @type {number} */ boxW, /** @type {number} */ boxH) => Math.max(0, Math.min(boxW, boxH * ratio));
-  const right = widest(w - at.reserve, h);
-  const sizes = {
-    right: right / ratio >= at.stack ? right : Number.NEGATIVE_INFINITY,
-    below: widest(w, h - at.gap),
-    list: at.listFits ? widest(w, h) : Number.NEGATIVE_INFINITY,
-  };
-  const best = Math.max(sizes.right, sizes.below, sizes.list);
-  return /** @type {const} */ (["right", "below", "list"]).find((k) => sizes[k] >= best - 1) ?? "below";
+export function placeControls(item, stage, need) {
+  if (stage.h - item.h >= need.pill + need.inset) return "under";
+  if ((stage.w - item.w) / 2 >= need.stackW + need.inset && need.stackH <= stage.h) return "right";
+  return need.rail ? "rail" : "float";
 }
 
 /** The page after a step, held at either end. */

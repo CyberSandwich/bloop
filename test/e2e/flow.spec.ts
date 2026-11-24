@@ -90,7 +90,7 @@ async function expectPillUnder(page: Page, item: Locator) {
   await expect(async () => {
     const box = await item.boundingBox();
     const pill = await page.locator("#controls").boundingBox();
-    expect(Math.round((pill?.y ?? 0) - ((box?.y ?? 0) + (box?.height ?? 0)))).toBe(inset);
+    expect(Math.abs((pill?.y ?? 0) - ((box?.y ?? 0) + (box?.height ?? 0)) - inset)).toBeLessThanOrEqual(1);
   }).toPass();
 }
 
@@ -911,19 +911,7 @@ test.describe("screen and phone layout", () => {
       await phone.page.getByRole("button", { name: "Approve" }).click();
       for (const name of ["Sample deck.pptx", "Sample deck.pdf", "Dog.jpg"]) {
         await sidebarItem(page, name).click();
-        if (name === "Dog.jpg" && viewport.width > 1000) {
-          // A tall stage gives the photo a stack beside it or under the list (placement is pinned elsewhere).
-          const img = page.locator("#frame img").first();
-          await expect(img).toBeVisible();
-          await expect(async () => {
-            const [item, pill] = await Promise.all([img.boundingBox(), page.locator("#controls").boundingBox()]);
-            const apart =
-              (pill?.y ?? 0) >= (item?.y ?? 0) + (item?.height ?? 0) ||
-              (pill?.x ?? 0) >= (item?.x ?? 0) + (item?.width ?? 0) ||
-              (pill?.x ?? 0) + (pill?.width ?? 0) <= (item?.x ?? 0);
-            expect(apart).toBe(true);
-          }).toPass();
-        } else await expectPillUnder(page, page.locator("#frame img").first());
+        await expectPillUnder(page, page.locator("#frame img").first());
       }
       await sidebarItem(page, "Sample deck.pptx").click();
       await expectOneLinePill(page);
@@ -1012,55 +1000,122 @@ test.describe("screen and phone layout", () => {
     return b;
   };
 
-  test("placement: the wide photo with the list showing takes the column under the list", async ({ browser }) => {
+  /** Square and portrait pictures standing in for the photo. */
+  const SQUARE =
+    '<svg xmlns="http://www.w3.org/2000/svg" width="900" height="900"><rect width="900" height="900"/></svg>';
+
+  /** Where the controls went, and the boxes that say so. */
+  async function slotOf(page: Page) {
+    const [pill, img, view, side] = await Promise.all([
+      box(page, "#controls"),
+      box(page, "#frame img"),
+      box(page, "#view"),
+      box(page, "#side"),
+    ]);
+    const inset = await insetOf(page);
+    return { pill, img, view, side, inset };
+  }
+
+  test("slot 1: a wide image on a tall stage keeps the pill under it, the two centered as one block", async ({
+    browser,
+  }) => {
     const { screen, phone, pane } = await viewerWith(browser);
-    await expect(pane).toHaveClass(/is-stacked/);
-    await expect(pane).not.toHaveClass(/is-stack-right/);
-    const inset = await insetOf(screen.page);
+    await expect(pane).toHaveClass(/is-under/);
     await expect(async () => {
-      const p = screen.page;
-      const [pill, side, img, view] = await Promise.all([
-        box(p, "#controls"),
-        box(p, "#side"),
-        box(p, "#frame img"),
-        box(p, "#view"),
-      ]);
-      // Left-aligned with the list card, at least 16 under it, its foot level with the stage's, the item whole stage wide.
-      expect(Math.abs(pill.x - side.x)).toBeLessThanOrEqual(1);
-      expect(pill.y).toBeGreaterThanOrEqual(side.y + side.height + inset - 1);
-      expect(Math.abs(pill.y + pill.height - (view.y + view.height))).toBeLessThanOrEqual(1);
-      expect(Math.round(img.width)).toBeGreaterThan(Math.round(view.width) - 2);
+      const { pill, img, view, inset } = await slotOf(screen.page);
+      // The item fills the stage's width: the controls never shrink it.
+      expect(Math.round(img.width)).toBeGreaterThanOrEqual(Math.round(view.width) - 1);
+      expect(Math.abs(pill.y - (img.y + img.height) - inset)).toBeLessThanOrEqual(1);
+      // Item and pill are centered together between the stage's top and bottom.
+      const above = img.y - view.y;
+      const below = view.y + view.height - (pill.y + pill.height);
+      expect(Math.abs(above - below)).toBeLessThanOrEqual(2);
+      expect(Math.abs(pill.x + pill.width / 2 - (view.x + view.width / 2))).toBeLessThanOrEqual(1);
     }).toPass();
     await screen.context.close();
     await phone.context.close();
   });
 
-  test("placement: a portrait image takes the column on its right, 16 off it and level with its foot", async ({
+  test("slot 2: a portrait image takes the column at the stage's bottom right, beside it", async ({ browser }) => {
+    const { screen, phone, pane } = await viewerWith(browser, PORTRAIT);
+    await expect(pane).toHaveClass(/is-stacked/);
+    await expect(async () => {
+      const { pill, img, view, side } = await slotOf(screen.page);
+      expect(Math.abs(pill.x + pill.width - (view.x + view.width))).toBeLessThanOrEqual(1);
+      expect(Math.abs(pill.y + pill.height - (view.y + view.height))).toBeLessThanOrEqual(1);
+      expect(pill.x).toBeGreaterThanOrEqual(img.x + img.width);
+      // The item still fills the stage's height, centered; the column sits right of the list's column.
+      expect(Math.round(img.height)).toBeGreaterThanOrEqual(Math.round(view.height) - 1);
+      expect(pill.x).toBeGreaterThan(side.x + side.width);
+    }).toPass();
+    await screen.context.close();
+    await phone.context.close();
+  });
+
+  test("slot 3: with no room beside or under the item, the column goes under the list, right-aligned to it", async ({
     browser,
   }) => {
-    const { screen, phone, pane } = await viewerWith(browser, PORTRAIT);
-    try {
-      await expect(pane).toHaveClass(/is-stack-right/);
-    } catch (e) {
-      // The numbers placeControls was given, so a failure says which candidate won and why.
-      const seen = await screen.page.evaluate(`(() => {
-        const img = document.querySelector("#frame img");
-        const r = (s) => { const b = document.querySelector(s).getBoundingClientRect(); return [b.x, b.y, b.width, b.height].map(Math.round); };
-        return JSON.stringify({ natural: [img.naturalWidth, img.naturalHeight], cls: img.className, src: img.currentSrc.slice(-40),
-          view: [document.getElementById("view").offsetWidth, document.getElementById("view").offsetHeight], side: r("#side"),
-          pill: r("#controls"), img: r("#frame img"), pane: document.getElementById("pane").className });
-      })()`);
-      throw new Error(`${String(e).slice(0, 200)} ${seen}`);
-    }
-    const inset = await insetOf(screen.page);
+    const { screen, phone, pane } = await viewerWith(browser, SQUARE);
+    await expect(pane).toHaveClass(/is-stacked/);
     await expect(async () => {
-      const p = screen.page;
-      const [pill, img, view] = await Promise.all([box(p, "#controls"), box(p, "#frame img"), box(p, "#view")]);
-      expect(Math.round(pill.x - (img.x + img.width))).toBe(inset);
-      expect(Math.round(pill.y + pill.height - (img.y + img.height))).toBe(0);
-      // Whole inside the stage, the item and column centered as one group.
-      expect(pill.x + pill.width).toBeLessThanOrEqual(view.x + view.width + 1);
-      expect(Math.abs(img.x - view.x - (view.x + view.width - (pill.x + pill.width)))).toBeLessThanOrEqual(1);
+      const { pill, img, view, side, inset } = await slotOf(screen.page);
+      expect(Math.abs(pill.x + pill.width - (side.x + side.width))).toBeLessThanOrEqual(1);
+      expect(pill.y).toBeGreaterThanOrEqual(side.y + side.height + inset - 1);
+      expect(pill.x + pill.width).toBeLessThanOrEqual(img.x);
+      expect(Math.round(img.height)).toBeGreaterThanOrEqual(Math.round(view.height) - 1);
+    }).toPass();
+    await screen.context.close();
+    await phone.context.close();
+  });
+
+  test("slot 4: with the list too full for it, the pill floats over the item at bottom center", async ({ browser }) => {
+    const context = await browser.newContext({ viewport: { width: 1000, height: 480 } });
+    const page = await context.newPage();
+    await page.route("**/f/**", (route) => route.fulfill({ contentType: "image/svg+xml", body: SQUARE }));
+    await page.goto("/s?mode=demo");
+    const code = await typedCodeOf(page);
+    const phone = await open(browser, "phone", `/a?c=${code}`);
+    await phone.page.getByRole("button", { name: "Approve" }).click();
+    await expect(heading(page)).toHaveText("Dog.jpg");
+    await expect(page.locator("#frame img")).toBeVisible();
+    await expect(page.locator("#pane")).not.toHaveClass(/is-stacked|is-under/);
+    await expect(async () => {
+      const { pill, img, view, inset } = await slotOf(page);
+      expect(Math.abs(pill.x + pill.width / 2 - (view.x + view.width / 2))).toBeLessThanOrEqual(1);
+      expect(Math.abs(view.y + view.height - inset - (pill.y + pill.height))).toBeLessThanOrEqual(1);
+      expect(pill.y).toBeLessThan(img.y + img.height);
+    }).toPass();
+    await context.close();
+    await phone.context.close();
+  });
+
+  test("the rail: the logo at the top left, the list under it, End alone at the bottom left; the stage is full height", async ({
+    browser,
+  }) => {
+    const { screen, phone } = await viewerWith(browser);
+    const page = screen.page;
+    await expect(async () => {
+      const [side, end, home, view] = await Promise.all([
+        box(page, "#side"),
+        box(page, "#b-end"),
+        box(page, "#b-home"),
+        box(page, "#view"),
+      ]);
+      const inset = await insetOf(page);
+      const height = page.viewportSize()?.height ?? 0;
+      // The logo where it is on every screen, the list one inset under it, both left-justified.
+      expect(Math.abs(home.x - inset)).toBeLessThanOrEqual(1);
+      expect(Math.abs(home.y - inset)).toBeLessThanOrEqual(1);
+      expect(Math.abs(side.x - inset)).toBeLessThanOrEqual(1);
+      expect(Math.abs(side.y - (home.y + home.height + inset))).toBeLessThanOrEqual(1);
+      // End alone at the foot, at its normal size.
+      expect(Math.abs(end.x - inset)).toBeLessThanOrEqual(1);
+      expect(Math.abs(end.y + end.height + inset - height)).toBeLessThanOrEqual(1);
+      expect(end.y).toBeGreaterThan(side.y + side.height);
+      expect(end.height).toBeGreaterThanOrEqual(home.height - 1);
+      // The stage runs the full height between the insets, whatever the logo holds.
+      expect(Math.abs(view.y - inset)).toBeLessThanOrEqual(1);
+      expect(Math.abs(view.y + view.height + inset - height)).toBeLessThanOrEqual(1);
     }).toPass();
     await screen.context.close();
     await phone.context.close();
@@ -1074,30 +1129,25 @@ test.describe("screen and phone layout", () => {
     await sidebarItem(page, "Sample deck.pptx").click();
     await expect(heading(page)).toHaveText("Sample deck.pptx");
     await expect(page.locator("#dots")).toBeVisible();
+    const dots = async () => page.locator("#dots").textContent();
+    const was = await dots();
     await page.evaluate("window.__controls = document.getElementById('controls')");
     await sidebarItem(page, "Sample deck.pdf").click();
     await expect(heading(page)).toHaveText("Sample deck.pdf");
     await expect(page.locator("#frame img")).toBeVisible();
     // Nothing starts later either: poll over the swap's settle, then read once more.
     for (let i = 0; i < 5; i++) {
+      expect(await page.evaluate("window.__controls === document.getElementById('controls')")).toBe(true);
       expect(
-        await page.evaluate(
-          "window.__controls === document.getElementById('controls') && document.getAnimations().filter((a) => ['controls', 'pane'].includes(a.effect?.target?.id)).length",
-        ),
+        await page.evaluate("document.getAnimations().filter((a) => a.effect?.target?.id === 'pane').length"),
       ).toBe(0);
+      // The pill is the same size, so nothing moves it: a different page count is a shape change, which may glide.
+      if ((await dots()) === was)
+        expect(
+          await page.evaluate("document.getAnimations().filter((a) => a.effect?.target?.id === 'controls').length"),
+        ).toBe(0);
       await page.waitForTimeout(100);
     }
-    await screen.context.close();
-    await phone.context.close();
-  });
-
-  test("placement: a wide deck on a tall stage keeps the pill under it", async ({ browser }) => {
-    const { screen, phone, pane } = await viewerWith(browser);
-    await screen.page.setViewportSize({ width: 834, height: 1000 });
-    await sidebarItem(screen.page, "Sample deck.pptx").click();
-    await expect(screen.page.locator("#frame img")).toBeVisible();
-    await expect(pane).not.toHaveClass(/is-stacked/);
-    await expectPillUnder(screen.page, screen.page.locator("#frame img").first());
     await screen.context.close();
     await phone.context.close();
   });
@@ -1157,6 +1207,7 @@ test.describe("screen and phone layout", () => {
     await page.mouse.move(SCREEN.width / 2, 600, { steps: 4 });
     await expect.poll(opacity).toBe(0);
     // A keyboard reaches the pill by Tab and it stays shown while focused.
+    await page.keyboard.press("Tab");
     for (let i = 0; i < 6 && !(await page.evaluate(`document.activeElement?.id === "b-stop"`)); i++)
       await page.keyboard.press("Tab");
     expect(await page.evaluate(`document.activeElement?.id`)).toBe("b-stop");

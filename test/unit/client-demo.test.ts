@@ -101,47 +101,46 @@ describe("DEMO-01 what the viewer shows per item", () => {
     expect(pageMode(1000, 1000)).toBe("paged");
   });
 
-  describe("the control pill goes where the item shows widest", () => {
-    // A column 140 wide (156 with its gap) and 112 tall, a 60 pill (76 with its gap) under.
-    const at = { reserve: 156, gap: 76, stack: 112 };
-    const where = (ratio: number, w: number, h: number, listFits: boolean) =>
-      placeControls(ratio, w, h, { ...at, listFits });
+  describe("the controls take the first free spot: under the item, at the stage's bottom right, under the list, floating", () => {
+    // A 60 pill, a column 140 wide and 112 tall, an inset of 12.
+    const need = { pill: 60, stackW: 140, stackH: 112, inset: 12 };
+    /** The item as it fills a stage: by its ratio. */
+    const where = (ratio: number, w: number, h: number, rail: boolean) => {
+      const iw = Math.min(w, h * ratio);
+      return placeControls({ w: iw, h: iw / ratio }, { w, h }, { ...need, rail });
+    };
 
-    it("under the list when that gives the item the whole stage", () => {
-      expect(where(1.5, 1072, 780, true)).toBe("list");
-      expect(where(1.6, 1072, 603, true)).toBe("list");
+    it("1 under the item, when the slack above and below it holds the pill and its inset", () => {
+      // 1440 x 900: the stage is 1072 x 876, the wide photo 1072 x 715; 161 spare >= 72.
+      expect(where(1.5, 1072, 876, false)).toBe("under");
+      expect(where(1.6, 912, 700, false)).toBe("under");
+      // The slack is exactly the pill plus the inset.
+      expect(placeControls({ w: 100, h: 528 }, { w: 100, h: 600 }, { ...need, rail: false })).toBe("under");
     });
 
-    it("on the item's right when the list is not there, or the item is height-bound enough to tie", () => {
-      expect(where(2 / 3, 1072, 603, false)).toBe("right");
-      expect(where(2 / 3, 1072, 780, true)).toBe("right");
-      // Height-bound, a stack on its right costs it nothing: it ties the list's, and the attached one wins.
-      expect(where(1.5, 1000, 400, true)).toBe("right");
+    it("2 at the bottom right, for a tall item whose side slack holds the column", () => {
+      // 600 x 900 in 1072 x 876: 584 wide, 244 each side >= 152.
+      expect(where(2 / 3, 1072, 876, false)).toBe("right");
+      expect(where(2 / 3, 1072, 876, true)).toBe("right");
     });
 
-    it("under the list when the item is width-bound and the list leaves room: 3:2 in 632 x 455 (a 1000 x 575 window)", () => {
-      // right 476 wide, below 568, list 632: only the list's column leaves the item the whole stage.
-      expect(where(1.5, 632, 455, true)).toBe("list");
-      expect(where(1.5, 632, 455, false)).toBe("below");
+    it("3 under the list, when neither slack holds it and the rail has room", () => {
+      // 1000 x 575: the stage is 632 x 455, the 3:2 photo 632 x 421: 34 spare, and no side slack.
+      expect(where(1.5, 632, 455, true)).toBe("rail");
     });
 
-    it("a portrait item ties right and list at their shared height bound, and right wins with fractional sizes", () => {
-      expect(where(2 / 3, 1072.4, 779.6, true)).toBe("right");
+    it("4 floating over the item, when the list is full", () => {
+      expect(where(1.5, 632, 455, false)).toBe("float");
     });
 
-    it("under the item for a wide one on a tall or roomy stage", () => {
-      expect(where(1.6, 466, 880, false)).toBe("below");
-      expect(where(1.6, 912, 600, false)).toBe("below");
-      expect(where(1.6, 834, 1194, true)).toBe("below");
+    it("a slack one pixel short falls to the next spot", () => {
+      expect(placeControls({ w: 100, h: 529 }, { w: 100, h: 600 }, { ...need, rail: false })).toBe("float");
+      expect(placeControls({ w: 100, h: 529 }, { w: 100, h: 600 }, { ...need, rail: true })).toBe("rail");
+      expect(placeControls({ w: 100, h: 600 }, { w: 100 + 2 * 151.9, h: 600 }, { ...need, rail: true })).toBe("rail");
     });
 
-    it("a phone keeps it under for a portrait image too: a column would cost more width than the pill costs height", () => {
-      expect(where(2 / 3, 342, 600, false)).toBe("below");
-    });
-
-    it("a column taller than the item never goes on its right; nothing fitting keeps it under", () => {
-      expect(where(4, 1000, 90, false)).toBe("below");
-      expect(where(1, 40, 40, false)).toBe("below");
+    it("a column taller than the stage never goes on the right", () => {
+      expect(placeControls({ w: 40, h: 90 }, { w: 1000, h: 90 }, { ...need, rail: false })).toBe("float");
     });
   });
 });

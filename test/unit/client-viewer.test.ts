@@ -106,6 +106,7 @@ const ids = [
   "parked",
   "controls",
   "pane",
+  "b-end",
   "b-stop",
 ];
 const byId = new Map<string, Node>();
@@ -495,6 +496,6 @@ describe("the viewer pill", () => {
     Object.assign(el("frame").querySelector("img") as Node, { offsetTop: 100, offsetHeight: 4000 });
     el("frame").classList.add("is-scroll");
     resized();
-    expect(el("controls").style.top).toBe("920px");
+    expect(el("controls").style.top).toBe("904px");
   });
 });
