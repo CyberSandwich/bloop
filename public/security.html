@@ -5,7 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
     <meta name="color-scheme" content="light">
     <title>bloop: Security</title>
-    <meta name="description" content="The screen never gets your account.">
+    <meta name="description" content="What the room PC can and cannot reach.">
     <link rel="icon" href="/favicon.svg" type="image/svg+xml">
     <link rel="apple-touch-icon" href="/apple-touch-icon.png">
     <link rel="preload" href="/fonts/inter-latin.woff2" as="font" type="font/woff2" crossorigin>
@@ -32,7 +32,7 @@
     <main id="main" class="doc">
       <div class="doc-hero">
         <h1>Security</h1>
-        <p class="lead">The screen never gets your account.</p>
+        <p class="lead">What the room PC can and cannot reach.</p>
       </div>
 
       <div class="panel">
@@ -82,12 +82,12 @@
 
       <section class="topic" aria-labelledby="threats">
         <h2 id="threats">Threat Model</h2>
-        <p>QR relay: the phone shows the room name and a match code before Approve. Shoulder surfing: the code works once and lasts 60 seconds. Forgotten session: it ends by itself after 90 minutes. Wrong screen: unregistered screens carry a warning. Lost phone: sign in on another phone and tap Disconnect OneDrive: every <b class="name">bloop</b> sign-in ends at once, including the lost phone's. You can also remove <b class="name">bloop</b> in My Apps, or ask your IT team to remove it in Microsoft Entra.</p>
+        <p>QR relay: the phone also shows the screen's match code before Approve. Shoulder surfing: a seen code is spent or soon expires. Forgotten session: it ends by itself. Wrong screen: unregistered screens carry a warning. Lost phone: see <a href="#remove">Removing Access</a>.</p>
       </section>
 
-      <section class="topic" aria-labelledby="revoke">
-        <h2 id="revoke">Revoking Access</h2>
-        <p>Tap Disconnect OneDrive on your phone while you approve, and <b class="name">bloop</b> deletes its stored access and signs you out everywhere at once. You can also remove <b class="name">bloop</b> in My Apps (myapplications.microsoft.com), and your IT team can remove it for everyone in Microsoft Entra.</p>
+      <section class="topic" aria-labelledby="remove">
+        <h2 id="remove">Removing Access</h2>
+        <p>Tap Disconnect OneDrive on your phone while you approve, and <b class="name">bloop</b> deletes its stored access and signs you out everywhere at once. You may also be able to remove <b class="name">bloop</b> in My Apps (myapplications.microsoft.com); your IT team can remove it for everyone in Microsoft Entra. Lost phone: next time you approve on any phone, tap Disconnect OneDrive: every <b class="name">bloop</b> sign-in ends at once, including the lost phone's.</p>
       </section>
 
       <section class="topic" aria-labelledby="status">

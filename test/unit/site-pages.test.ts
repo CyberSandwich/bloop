@@ -614,8 +614,33 @@ describe("the stylesheets: base.css, then the page's own (design.md section 11)"
     expect(css["site.css"]).not.toMatch(/var\(--r-(card|sheet)\)/);
   });
 
+  // A selector list is one selector per line (Biome), so a comma inside :is() never splits it.
+  it("Reduce Transparency reaches every --glass-firm surface, the scrolled pills included", () => {
+    const site = css["site.css"] ?? "";
+    const firm = [...site.matchAll(/([^{}]+)\{\s*background: var\(--glass-firm\);/g)].flatMap((m) =>
+      (m[1] ?? "").split(/,\s*\n/).map((sel) => sel.replace(/\/\*[\s\S]*?\*\//g, "").trim()),
+    );
+    expect(firm).toContain(".nav.is-scrolled :is(.nav-logo, .nav-pill)");
+    const reduce = between(site, /@media \(prefers-reduced-transparency: reduce\) \{/, "\n}\n");
+    const head = reduce.slice(reduce.indexOf("{") + 1, reduce.indexOf("{", reduce.indexOf("{") + 1));
+    const solid = head.split(/,\s*\n/).map((sel) => sel.trim());
+    for (const sel of firm) expect(solid, sel).toContain(sel);
+    expect(reduce).toContain("background: var(--surface);");
+  });
+
   it("the steps stretch to one row height, and under 640 a cell's icon sits inline before its title", () => {
     expect(block(".step")).not.toContain("align-self");
+    // From 1024 the cards share the list's rows, so every still is one height and ends 12 above its card's bottom.
+    expect(block(".step")).toContain("padding: 24px 24px 12px;");
+    const wide = between(css["site.css"] ?? "", /@media \(min-width: 1024px\) \{\s*\.steps,/, "\n}\n");
+    expect(wide).toMatch(/\.step \{\s*display: grid;\s*grid-row: span 4;\s*grid-template-rows: subgrid;/);
+    // span 4 holds only while each card has exactly four children.
+    const cards = [...read("public/index.html").matchAll(/<li class="step">([\s\S]*?)<\/li>/g)].map((m) => m[1] ?? "");
+    expect(cards).toHaveLength(3);
+    for (const card of cards) {
+      expect(card.match(/^\s*<(p|h3|div)\b/gm)).toHaveLength(4);
+    }
+    expect(block(".frag")).toContain("align-content: center;");
     const narrow = between(css["site.css"] ?? "", /@media \(max-width: 639\.98px\) \{\s*\.cell \{/, "\n}\n");
     expect(narrow).toContain("grid-template-columns: auto minmax(0, 1fr);");
     expect(narrow).toMatch(/\.cell p \{\s*grid-column: 1 \/ -1;/);
@@ -639,6 +664,20 @@ describe("stage 1 wording and pictures", () => {
     expect(text).toContain("Your files open. Revoke from your phone.");
     expect(text).toContain("Revoke from your phone, and each link expires.");
     expect(text).not.toMatch(/End from your phone|One Tap/);
+  });
+
+  it("/security says each fact once, under its own sub, and the 404 line does not repeat its button", () => {
+    const html = read("public/security.html");
+    const text = visibleText(html);
+    expect(visibleText(between(html, /<p class="lead">/, "</p>"))).toBe("What the room PC can and cannot reach.");
+    expect(html).toContain('<meta name="description" content="What the room PC can and cannot reach.">');
+    for (const fact of [/60 seconds/g, /90 minutes/g, /Disconnect OneDrive/g, /My Apps/g, /Microsoft Entra/g]) {
+      const n = (text.match(fact) ?? []).length;
+      expect(n, String(fact)).toBe(fact.source === "Disconnect OneDrive" ? 2 : 1);
+    }
+    const notFound = read("public/404.html");
+    expect(visibleText(between(notFound, /<p class="lead">/, "</p>"))).toBe("Check the address.");
+    expect(notFound).toContain('<a class="btn primary" href="/">Go to the Home Page</a>');
   });
 
   it("the sub and the descriptions never say the account stays on the phone (the server holds a refresh token)", () => {
@@ -678,12 +717,23 @@ describe("stage 1 wording and pictures", () => {
     expect(route).toMatch(/sessions\.destroyAll\(userId\)/);
     // One pair of sentences for the same claim on both pages.
     const access =
-      /Tap Disconnect OneDrive on your phone while you approve, and bloop ?deletes its stored access and signs you out everywhere at once\. You can also remove bloop ?in My Apps \(myapplications\.microsoft\.com\), and your IT team can remove it for everyone in Microsoft Entra\./;
+      /Tap Disconnect OneDrive on your phone while you approve, and bloop ?deletes its stored access and signs you out everywhere at once\. You may also be able to remove bloop ?in My Apps \(myapplications\.microsoft\.com\); your IT team can remove it for everyone in Microsoft Entra\./;
     expect(text).toMatch(access);
     expect(visibleText(read("public/privacy.html"))).toMatch(access);
-    expect(text).toMatch(
-      /Lost phone: sign in on another phone and tap Disconnect OneDrive: every bloop ?sign-in ends at once, including the lost phone's\. You can also remove bloop ?in My Apps, or ask your IT team to remove it in Microsoft Entra\./,
+    // Removing Access holds every removal step, the lost phone's included; the Threat Model only points to it.
+    const remove = visibleText(between(read("public/security.html"), /<h2 id="remove">/, "</section>"));
+    expect(remove).toMatch(/^Removing Access /);
+    expect(remove).toMatch(
+      /Lost phone: next time you approve on any phone, tap Disconnect OneDrive: every bloop ?sign-in ends at once, including the lost phone's\.$/,
     );
+    const threats = visibleText(between(read("public/security.html"), /<h2 id="threats">/, "</section>"));
+    expect(threats).toMatch(/Lost phone: see Removing Access ?\.$/);
+    expect(threats).not.toMatch(/Disconnect|My Apps|Entra/);
+    expect(read("public/security.html")).toContain('<a href="#remove">Removing Access</a>');
+    // Admin consent can keep a user from removing the app, so My Apps is never promised.
+    for (const page of ["security.html", "privacy.html"]) {
+      expect(visibleText(read(`public/${page}`)), page).not.toMatch(/You can (also )?remove bloop ?in My Apps/);
+    }
     // My Apps and Entra end only the refresh token; bloop's own sessions stay, so neither is said to sign anyone out.
     for (const page of ["security.html", "privacy.html"]) {
       expect(visibleText(read(`public/${page}`)), page).not.toMatch(/(My Apps|Entra)[^.]*sign(s|ed)? (you )?out/);
