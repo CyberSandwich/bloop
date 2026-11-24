@@ -1009,6 +1009,42 @@ progress.bar::-webkit-progress-value {
   background: var(--ink);
   transition: width 250ms var(--ease-out);
 }
+/* core/toast.js, one .glass card bottom center; --toast-lift raises it over the band. */
+.toast {
+  position: fixed;
+  z-index: 60;
+  right: 0;
+  bottom: calc(var(--inset) + env(safe-area-inset-bottom) + var(--toast-lift, 0px));
+  left: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  width: min(calc(100% - 2 * var(--pad)), 360px);
+  margin: 0 auto;
+  padding: 16px 20px;
+  border-radius: var(--r-sheet);
+  box-shadow: var(--glass-edge), var(--sh-pill);
+  animation: toast-in 250ms var(--ease-out) both;
+}
+.toast span {
+  color: var(--muted);
+  font-size: 15px;
+}
+.toast.out {
+  animation: toast-out 200ms var(--ease-out) both;
+}
+@keyframes toast-in {
+  from {
+    opacity: 0;
+    transform: translateY(8px);
+  }
+}
+@keyframes toast-out {
+  to {
+    opacity: 0;
+    transform: translateY(8px);
+  }
+}
 progress.bar::-moz-progress-bar {
   background: var(--ink);
 }
