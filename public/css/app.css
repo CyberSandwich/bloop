@@ -76,8 +76,12 @@
   cursor: pointer;
   transition: transform 150ms var(--ease-ui);
 }
-.framed > .icon:first-child:not(:only-child) {
-  margin-left: -6px;
+/* A leading glyph sits concentric with the frame's rounded end: start padding (frame - glyph) / 2. */
+.framed:has(> .icon:first-child) {
+  padding-left: calc((var(--frame-h) - 24px) / 2);
+}
+#b-home {
+  padding-left: calc((var(--frame-h) - var(--mark)) / 2);
 }
 .framed.square {
   padding: 0;
@@ -106,13 +110,25 @@
   background: var(--surface);
   box-shadow: var(--sh-pill);
   color: inherit;
-  font-weight: 600;
+  text-align: center;
+}
+.leave h2 {
+  font-size: 22px;
+  line-height: 1.2;
+}
+.leave p {
+  margin-top: 8px;
+  color: var(--muted);
 }
 .leave::backdrop {
   background: rgba(0, 0, 0, 0.18);
 }
 .leave .buttons {
-  margin-top: 20px;
+  flex-direction: row;
+  margin-top: 24px;
+}
+.leave .btn {
+  flex: 1;
 }
 #b-home {
   font-size: var(--wordmark);
@@ -164,7 +180,10 @@
 .line:empty {
   display: none;
 }
-main:has(> .side:not([hidden])) .pane h1 {
+[data-mode="waiting"] .pane {
+  gap: 24px;
+}
+main:has(> .side:not([hidden])) #stage {
   position: absolute;
   width: 1px;
   height: 1px;
@@ -233,6 +252,10 @@ main:has(> .side:not([hidden])) .pane h1 {
   gap: 12px;
 }
 .code {
+  display: inline-block;
+  /* Inter has no tabular letters: 8.8ch holds 999 codes in 1000 (measured at 22 px), so New Code stays put. */
+  min-width: 8.8ch;
+  text-align: center;
   font-size: 22px;
   letter-spacing: 0.06em;
   font-variant-numeric: tabular-nums;
@@ -259,7 +282,7 @@ main:has(> .side:not([hidden])) .pane h1 {
 @media (min-width: 900px) and (min-aspect-ratio: 1 / 1) {
   [data-mode="waiting"] .pane {
     display: grid;
-    grid-template: 1fr auto auto auto 1fr / auto minmax(0, 600px);
+    grid-template: 1fr auto auto auto 1fr / auto fit-content(600px);
     grid-template-areas: "qr ." "qr stage" "qr hint" "qr code" "qr .";
     column-gap: clamp(48px, 6vw, 112px);
     row-gap: 24px;
@@ -297,10 +320,8 @@ main:has(> .side:not([hidden])) .pane h1 {
   padding: var(--pad);
   text-align: center;
 }
-/* The waitlist link hangs below the centered heading instead of pushing it up. */
-[data-mode="ended"] #controls {
-  position: absolute;
-  inset: calc(50% + 80px) 0 auto;
+[data-mode="ended"] .pane {
+  gap: 24px;
 }
 .actions-row {
   display: flex;
@@ -337,10 +358,10 @@ main:has(> .side:not([hidden])) .pane h1 {
   margin-top: 24px;
 }
 @media (max-width: 599.98px) {
-  body:not(.is-demo) :is(.pane, .bar > *, .foot) {
+  .page-screen:not(.is-demo) :is(.pane, .bar > *, .foot) {
     display: none;
   }
-  body:not(.is-demo) .narrow {
+  .page-screen:not(.is-demo) .narrow {
     display: block;
   }
   .is-demo :is(.qr-card, .hint, .code-row, #b-here) {
@@ -349,12 +370,16 @@ main:has(> .side:not([hidden])) .pane h1 {
   .is-demo [data-mode="waiting"] .phone-way {
     display: grid;
     justify-items: center;
-    gap: 16px;
+    gap: 24px;
+  }
+  .phone-way .line {
+    margin: 0;
   }
 }
 
 /* /s?mode=demo, the viewer */
-[data-mode="viewer"] {
+/* Outranks `.page-screen main`'s padding, so the stage ends --inset above the bottom with no page scroll. */
+.page-screen main[data-mode="viewer"] {
   --pill: 64px;
   padding-bottom: var(--inset);
 }
@@ -397,32 +422,52 @@ main:has(> .side:not([hidden])) .pane h1 {
   width: min(100%, 860px);
   max-height: none;
 }
-/* Invisible halves that page the slides; a fine pointer sees which way. */
+/* Invisible halves of the slide's box (viewer.js places them) that page the slides; a fine pointer sees which way. */
 .zone {
   position: absolute;
-  inset: 0 50% 0 0;
+  display: grid;
+  align-items: center;
+  justify-items: start;
+  padding: 0 16px;
   border: 0;
-  border-radius: var(--r-field);
   background: none;
+  color: var(--ink);
   cursor: w-resize;
 }
 #next {
-  inset: 0 0 0 50%;
+  justify-items: end;
   cursor: e-resize;
+}
+.zone .icon {
+  box-sizing: content-box;
+  padding: 8px;
+  border-radius: 50%;
+  background: var(--glass);
+  -webkit-backdrop-filter: var(--glass-filter);
+  backdrop-filter: var(--glass-filter);
+  box-shadow: var(--glass-edge), var(--sh-pill);
+  opacity: 0;
+  transition: opacity 150ms var(--ease-ui);
 }
 .zone:disabled {
   visibility: hidden;
 }
 @media (hover: hover) and (pointer: fine) {
-  .zone:hover {
-    background: linear-gradient(to right, var(--wash), transparent 40%);
-  }
-  #next:hover {
-    background: linear-gradient(to left, var(--wash), transparent 40%);
+  .zone:hover .icon {
+    opacity: 1;
   }
 }
 .frame picture {
   display: contents;
+}
+.frame .stand-in {
+  grid-area: 1 / 1;
+  max-width: 100%;
+  max-height: 100%;
+  border-radius: var(--r-field);
+  background: var(--g1);
+  object-fit: cover;
+  filter: blur(12px);
 }
 .frame img {
   grid-area: 1 / 1;
@@ -584,9 +629,10 @@ main:has(> .side:not([hidden])) .pane h1 {
 }
 .side {
   z-index: 10;
-  inset: var(--top) auto var(--inset) var(--inset);
+  inset: var(--top) auto auto var(--inset);
   width: var(--side);
   height: auto;
+  max-height: calc(100dvh - var(--top) - var(--inset));
   margin: 0;
   padding: var(--list-pad);
   border: 0;
@@ -600,15 +646,24 @@ main:has(> .side:not([hidden])) .pane h1 {
   overflow: auto;
 }
 .side-head {
-  padding: 8px 10px 6px;
+  padding: 8px 8px 6px;
   font-size: 14px;
   font-weight: 600;
   color: var(--muted);
+}
+.items,
+.list {
+  display: grid;
+  gap: 2px;
 }
 .items {
   margin: 0;
   padding: 0;
   list-style: none;
+}
+/* The links under one inset rule. */
+.split {
+  box-shadow: inset 0 1px var(--hairline);
 }
 /* Selected and hover are a light fill, never ink: a link row is never selected, only hovered. */
 .item[aria-current] {
@@ -668,6 +723,14 @@ main:has(> .side:not([hidden])) .pane h1 {
   .handle:not([hidden]) {
     display: flex;
   }
+  [data-mode="viewer"] #controls {
+    position: static;
+    flex: none;
+    transform: none;
+  }
+  .frame {
+    padding-bottom: 0;
+  }
 }
 .pane.enter {
   animation: in 380ms var(--ease-out) both;
@@ -721,7 +784,7 @@ main:has(> .side:not([hidden])) .pane h1 {
 .warn {
   display: flex;
   gap: 12px;
-  padding: 16px 20px;
+  padding: 20px;
   border-radius: var(--r-card);
   background: var(--surface);
   font-weight: 600;
@@ -796,7 +859,7 @@ progress.bar::-moz-progress-bar {
 .row.is-on .tick {
   visibility: visible;
 }
-/* Side by side the primary is last; stacked, first. */
+/* Side by side the primary is last; stacked, first. The countdown is status, so it reads above them. */
 .actions,
 .buttons {
   display: flex;
@@ -804,14 +867,21 @@ progress.bar::-moz-progress-bar {
   gap: 8px;
 }
 .actions {
-  position: sticky;
-  bottom: 0;
   flex: none;
-  margin: auto calc(-1 * var(--pad)) calc(-1 * var(--inset));
-  padding: 16px var(--pad) calc(var(--inset) + env(safe-area-inset-bottom));
-  background: var(--glass);
-  -webkit-backdrop-filter: var(--glass-filter);
-  backdrop-filter: var(--glass-filter);
+  flex-direction: column;
+  margin-top: 24px;
+}
+/* Only the phone's list keeps its buttons in reach; /code's Continue stays under the field. */
+@media (max-width: 639.98px) {
+  .column > .actions {
+    position: sticky;
+    bottom: 0;
+    margin: auto calc(-1 * var(--pad)) calc(-1 * var(--inset));
+    padding: 16px var(--pad) calc(var(--inset) + env(safe-area-inset-bottom));
+    background: var(--glass);
+    -webkit-backdrop-filter: var(--glass-filter);
+    backdrop-filter: var(--glass-filter);
+  }
 }
 .actions .btn {
   flex: 1;
@@ -821,16 +891,15 @@ progress.bar::-moz-progress-bar {
   min-height: 44px;
 }
 @media (min-width: 640px) {
-  .actions,
   .buttons {
     flex-direction: row;
     align-items: center;
   }
-  .buttons {
-    flex: 1;
-  }
   .actions .btn.text {
     flex: none;
+  }
+  .buttons > .btn.text:first-child {
+    margin-left: -12px;
   }
 }
 @media (min-width: 900px) {
@@ -839,8 +908,8 @@ progress.bar::-moz-progress-bar {
     height: 100vh;
     height: 100dvh;
     max-width: 1040px;
-    grid-template: auto auto auto 1fr / minmax(0, 400px) minmax(0, 1fr);
-    grid-template-areas: "flow list" "scope list" "actions list" ". list";
+    grid-template: 1fr auto auto auto 1fr / minmax(0, 400px) minmax(0, 1fr);
+    grid-template-areas: ". list" "flow list" "scope list" "actions list" ". list";
     column-gap: 64px;
   }
   .column:has(> .list:not([hidden])) .title {
@@ -851,25 +920,17 @@ progress.bar::-moz-progress-bar {
   }
   .column > .list {
     grid-area: list;
-    align-self: start;
+    align-self: center;
     max-height: 100%;
     margin: 0;
     overflow: auto;
     overscroll-behavior: contain;
-  }
-  .column > .actions {
-    position: static;
-    padding: 0;
-    background: none;
-    -webkit-backdrop-filter: none;
-    backdrop-filter: none;
   }
   .column > .scope {
     grid-area: scope;
   }
   .column > .actions {
     grid-area: actions;
-    margin: 24px 0 0;
   }
   .code-form {
     flex: none;
@@ -898,6 +959,10 @@ progress.bar::-moz-progress-bar {
   letter-spacing: 0.06em;
   font-variant-numeric: tabular-nums;
   text-transform: uppercase;
+}
+.field:focus {
+  outline: none;
+  box-shadow: inset 0 0 0 2px var(--ink);
 }
 .field-error {
   display: flex;

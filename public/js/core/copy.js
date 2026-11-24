@@ -127,7 +127,7 @@ export function endLine(
   /** @type {{ppt: boolean, download: string | null}} */ left,
 ) {
   return [
-    reason === "phone" ? "Ended from the phone." : reason === "auto" ? "Time's up." : "",
+    reason === "phone" ? "Revoked from the phone." : reason === "auto" ? "Time's up." : "",
     left.ppt ? "Close PowerPoint to take your slides off this PC." : "",
     left.download ? `Delete ${left.download} from Downloads before you leave.` : "",
   ]
@@ -196,7 +196,7 @@ export function phoneCopy(key, f) {
   const room = { ...base, title: f.room, room: true, files: /** @type {const} */ ("list"), add: true };
   switch (key) {
     case "checking":
-      return { ...base, body: "Checking the code" };
+      return { ...base, body: "Checking the code." };
     case "match":
       return { ...room, files: "skeleton", add: false };
     case "choose":
@@ -316,16 +316,16 @@ export function phoneCopy(key, f) {
     case "ended":
       return {
         ...base,
-        title: f.reason === "screen" ? "Ended on the Screen" : f.reason === "auto" ? "Time's Up" : "Ended",
+        title: SESSION_ENDED,
         body: VERIFIED.endedLink
           ? "The screen's link to your file has stopped working."
           : f.demo
-            ? ""
+            ? "Your files left the screen."
             : "Close PowerPoint on the room PC and delete any download there.",
         actions: [DONE],
       };
     case "canceled":
-      return { ...base, title: "Canceled", body: "Nothing was opened on the screen.", actions: [DONE] };
+      return { ...base, title: SESSION_ENDED, body: "Nothing was opened on the screen.", actions: [DONE] };
     case "expired":
       return {
         ...base,
@@ -346,7 +346,7 @@ export function phoneCopy(key, f) {
       return {
         ...base,
         title: "You're Offline",
-        body: "Connect to Wi-Fi or mobile data, then try again.",
+        body: "Check your connection, then try again.",
         actions: [TRY_AGAIN],
       };
     case "rate_limited":
@@ -382,7 +382,7 @@ const TYPED = /** @type {Partial<Record<PhoneStateKey, string>>} */ ({
   typed_wrong: TYPED_WRONG,
   expired: "That code changed. Enter the new code on the screen.",
   taken: "This code was already used. Enter the new code on the screen.",
-  offline: "You're offline. Connect to Wi-Fi or mobile data, then try again.",
+  offline: "You're offline. Check your connection, then try again.",
   rate_limited: "Too many tries. Wait a minute, then enter the code again.",
   framed: "Open this page directly to enter a code.",
 });

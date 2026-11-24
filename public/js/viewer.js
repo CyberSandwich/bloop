@@ -49,6 +49,20 @@ export function createViewer(deps) {
   const prev = /** @type {HTMLButtonElement} */ (byId("prev"));
   const next = /** @type {HTMLButtonElement} */ (byId("next"));
   const dots = byId("dots");
+  // The tap zones cover the slide's own box, so empty paper beside it never pages. Offsets, not client rects: the
+  // swap animation scales the img, and .view is its offset parent.
+  const fit = () => {
+    const img = frame.querySelector("img");
+    if (!img) return;
+    const half = img.offsetWidth / 2;
+    for (const zone of [prev, next]) {
+      zone.style.left = `${img.offsetLeft + (zone === next ? half : 0)}px`;
+      zone.style.top = `${img.offsetTop}px`;
+      zone.style.width = `${half}px`;
+      zone.style.height = `${img.offsetHeight}px`;
+    }
+  };
+  const sized = new ResizeObserver(fit);
 
   /** @type {ScreenView | null} */
   let shown = null;
@@ -218,7 +232,16 @@ export function createViewer(deps) {
       else if (img) {
         img.alt = itemName(item);
         frame.replaceChildren(img);
-      } else frame.replaceChildren(...(loading ? [] : [card(item)]));
+      } else {
+        // While the photo loads, its row thumbnail holds the stage.
+        const thumb = thumbOf(item, v);
+        frame.replaceChildren(
+          loading ? (thumb ? el("img", { class: "stand-in", src: thumb, alt: "" }) : "") : card(item),
+        );
+      }
+      sized.disconnect();
+      const shownImg = frame.querySelector("img");
+      if (p && !scroll && shownImg) for (const box of [shownImg, view]) sized.observe(box);
     }
     show(view, true);
     // The tap zones page slides; a scrolling document pages by scroll.

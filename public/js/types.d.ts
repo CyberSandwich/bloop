@@ -229,7 +229,6 @@ export interface PhoneFacts {
   /** The 2 match digits the screen shows, carried on the button that commits. */
   match?: string | null;
   /** Why the session ended, from the view. */
-  reason?: import("../../src/shared/protocol.ts").EndReason | null;
   /** /a opened with no code and no pairing. */
   nocode?: boolean;
 }
@@ -260,7 +259,7 @@ export interface PhoneCtx {
   view: PhoneView | null;
   /** The list to choose from, files then links; null while loading. */
   files: Entry[] | null;
-  /** The ids ticked, in list order. */
+  /** The ids selected, in list order. */
   selected: string[];
   /** The approve call is in flight. */
   approving: boolean;

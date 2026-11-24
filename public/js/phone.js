@@ -1,5 +1,5 @@
 // The phone page (/a): claims the QR's code (it leaves the address bar first, core/boot-code.js), lists the items to
-// tick and approves them with the match digits on the button; then the items, the time left and Revoke.
+// select and approves them with the match digits on the button; then the items, the time left and Revoke.
 
 /** @import {ClaimResponse, Entry, ErrorCode, Item, PhoneStateKey, PhoneView} from "../../src/shared/protocol.ts" */
 import { createApi } from "./core/api.js";
@@ -163,7 +163,6 @@ function render() {
     match: c.info?.match ?? null,
     // This tab holds the sid of the demo screen it claimed: it came from /s by "Approve on This Device" and can go back.
     back: home(),
-    reason: v?.endReason ?? null,
     nocode,
   });
 
@@ -198,7 +197,7 @@ function render() {
   renderActions(copy.actions, copy.loading);
 
   setText(polite, key === "approving" ? "Approving" : "");
-  document.body.classList.toggle("is-ended", key === "ended");
+  document.body.classList.toggle("is-ended", key === "ended" || key === "canceled");
   if (key !== c.key) {
     c.key = key;
     if (key !== "checking" && key !== "approving") focusTitle(title);

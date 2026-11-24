@@ -96,6 +96,12 @@ describe("the demo screen", () => {
     expect(read("css/app.css")).toMatch(/\.is-demo > \.foot \{\s*display: none;\s*\}/);
   });
 
+  it("the waitlist link is the landing's, byte for byte, and carries data-waitlist", () => {
+    const href = (html: string) => html.match(/href="(mailto:[^"]*)"[^>]*data-waitlist/)?.[1];
+    expect(href(read("s.html"))).toBeDefined();
+    expect(href(read("s.html"))).toBe(href(read("index.html")));
+  });
+
   it("LINK-01 a link item opens in a new tab with no opener or referrer, and is never framed", () => {
     const viewer = read("js/viewer.js");
     expect(viewer).toMatch(/target: "_blank", rel: "noopener noreferrer"/);

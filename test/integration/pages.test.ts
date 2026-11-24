@@ -13,9 +13,9 @@ const APP_CSP =
   "default-src 'none'; script-src 'self'; style-src 'self'; img-src 'self'; font-src 'self'; connect-src 'self'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'; require-trusted-types-for 'script'; trusted-types 'none'; upgrade-insecure-requests";
 
 describe.each([
-  ["/s", "bloop screen", "/js/screen.js"],
-  ["/a", "Approve on bloop", "/js/phone.js"],
-  ["/code", "Enter the code on bloop", "/js/code.js"],
+  ["/s", "bloop: Screen", "/js/screen.js"],
+  ["/a", "bloop: Approve", "/js/phone.js"],
+  ["/code", "bloop: Enter the Code", "/js/code.js"],
 ])("task page %s", (path, title, script) => {
   it("is 200 HTML with the app policy, never frameable", async () => {
     const res = await fetch(`${wrangler.url}${path}`);

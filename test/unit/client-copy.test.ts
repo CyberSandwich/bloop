@@ -238,7 +238,7 @@ describe("screen copy", () => {
   });
 
   it("the end line says why it ended and what this PC may still hold", () => {
-    expect(endLine("phone", { ppt: false, download: null })).toBe("Ended from the phone.");
+    expect(endLine("phone", { ppt: false, download: null })).toBe("Revoked from the phone.");
     expect(endLine("auto", { ppt: true, download: "Lecture 4.pptx" })).toBe(
       "Time's up. Close PowerPoint to take your slides off this PC. Delete Lecture 4.pptx from Downloads before you leave.",
     );
@@ -450,13 +450,12 @@ describe("phone copy", () => {
     }
   });
 
-  it("ended says who ended it; a live phone is told what the room PC may still hold", () => {
-    expect(phoneCopy("ended", { ...pf, reason: "screen" }).title).toBe("Ended on the Screen");
-    expect(phoneCopy("ended", { ...pf, reason: "auto" }).title).toBe("Time's Up");
-    expect(phoneCopy("ended", { ...pf, reason: "phone" }).title).toBe("Ended");
+  it("ended and canceled share the screen's title, with one line; a live phone is told what the room PC may still hold", () => {
+    for (const key of ["ended", "canceled"] as const) expect(phoneCopy(key, pf).title).toBe(SESSION_ENDED);
     // The line about the file link is held back until open item 1 passes.
     expect(phoneCopy("ended", pf).body).toBe("Close PowerPoint on the room PC and delete any download there.");
-    expect(phoneCopy("ended", { ...pf, demo: true }).body).toBe("");
+    expect(phoneCopy("ended", { ...pf, demo: true }).body).toBe("Your files left the screen.");
+    expect(phoneCopy("canceled", pf).body).toBe("Nothing was opened on the screen.");
   });
 
   it("a page opened with no code asks for a scan, not an expired code", () => {
@@ -482,7 +481,7 @@ describe("phone copy", () => {
 
   it("the typed-code page gets one line per failure", () => {
     expect(typedError("typed_wrong")).toBe("Check the code on the screen and try again.");
-    expect(typedError("offline")).toBe("You're offline. Connect to Wi-Fi or mobile data, then try again.");
+    expect(typedError("offline")).toBe("You're offline. Check your connection, then try again.");
     expect(typedError("expired")).toBe("That code changed. Enter the new code on the screen.");
     expect(typedError("busy")).toBe("Unable to check the code. Try again.");
     expect(TYPED_LETTERS).toBe("Codes don't use 0, 1, I, L, O or U.");
