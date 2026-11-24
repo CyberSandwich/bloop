@@ -80,17 +80,17 @@
     },
     {
       "name": "hero image",
-      "path": "public/img/hero-viewer-2000.avif",
+      "path": "public/img/hero-viewer-1440.avif",
       "gzip": false,
       "brotli": false,
-      "limit": "58 kB"
+      "limit": "45 kB"
     },
     {
       "name": "hero image fallback",
-      "path": "public/img/hero-viewer-2000.webp",
+      "path": "public/img/hero-viewer-1440.webp",
       "gzip": false,
       "brotli": false,
-      "limit": "69 kB"
+      "limit": "49 kB"
     }
   ],
   "dependencies": {

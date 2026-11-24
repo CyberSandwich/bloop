@@ -295,17 +295,17 @@ describe("landing word caps (design.md section 13)", () => {
     expect(read("public/_redirects")).toMatch(/^\/demo \/s\?mode=demo 302$/m);
   });
 
-  it("the stage is one screenshot: AVIF then WebP at 1000 and 2000 wide, sized, eager, with alt text and no text of its own", () => {
+  it("the stage is one screenshot: AVIF then WebP at 1000 and 1440 wide, sized, eager, with alt text and no text of its own", () => {
     const stage = between(html, /<div class="tilt">/, "</picture>");
     const srcset = (type: string) =>
       new RegExp(
-        `<source type="image/${type}" srcset="/img/hero-viewer-1000\\.${type} 1000w, /img/hero-viewer-2000\\.${type} 2000w" sizes="[^"]+">`,
+        `<source type="image/${type}" srcset="/img/hero-viewer-1000\\.${type} 1000w, /img/hero-viewer-1440\\.${type} 1440w" sizes="[^"]+">`,
       );
     expect(stage).toMatch(srcset("avif"));
     expect(stage).toMatch(srcset("webp"));
     expect(stage.indexOf("image/avif")).toBeLessThan(stage.indexOf("image/webp"));
     const img = /<img\b[^>]*>/.exec(stage)?.[0] ?? "";
-    expect(img).toContain('src="/img/hero-viewer-2000.webp" width="2000" height="1165" fetchpriority="high"');
+    expect(img).toContain('src="/img/hero-viewer-1440.webp" width="1440" height="828" fetchpriority="high"');
     expect(img).toContain('alt="The Demo Room screen showing a list of files and a dog on the stage"');
     expect(img).not.toMatch(/loading="lazy"/);
     expect(visibleText(stage)).toBe("");
