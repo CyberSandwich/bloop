@@ -6,7 +6,7 @@ import { phoneUser, servicesFor } from "./auth/services.ts";
 import type { Config } from "./config.ts";
 import type { Env } from "./env.ts";
 import { fail } from "./http.ts";
-import { allowedLink, type ItemRef } from "./items.ts";
+import { allowedLink, type ItemDraft } from "./items.ts";
 import { DEMO_LINKS, demoSource } from "./seams/file-source/demo.ts";
 import { GraphFileSource } from "./seams/file-source/graph.ts";
 import type { FileSource, SourceContext } from "./seams/file-source/index.ts";
@@ -82,10 +82,10 @@ export async function listEntries(
 export async function resolveListed(
   access: Extract<Access, { ok: true }>,
   ids: readonly string[],
-): Promise<{ ok: true; items: ItemRef[] } | { ok: false; error: SourceError }> {
+): Promise<{ ok: true; items: ItemDraft[] } | { ok: false; error: SourceError }> {
   const listed = await listEntries(access);
   if (!listed.ok) return listed;
-  const items: ItemRef[] = [];
+  const items: ItemDraft[] = [];
   for (const id of ids) {
     const entry = listed.entries.find((e) => e.id === id);
     if (!entry) return { ok: false, error: "file_not_found" };

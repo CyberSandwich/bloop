@@ -15,19 +15,19 @@ import { orderItems } from "../../public/js/shared/session.js";
 import type { Item } from "../../src/shared/protocol.ts";
 
 const ORIGIN = "https://bloop.example";
-const deck: Item = { kind: "file", name: "Sample deck.pptx", type: "pptx", size: 82_000 };
-const pdf: Item = { kind: "file", name: "Sample deck.pdf", type: "pdf", size: 83_000 };
-const photo: Item = { kind: "file", name: "Dog.jpg", type: "jpg", size: 70_000 };
-const link: Item = { kind: "link", url: "https://www.vevox.com/", title: "Vevox" };
+const deck: Item = { kind: "file", id: "t1", name: "Sample deck.pptx", type: "pptx", size: 82_000 };
+const pdf: Item = { kind: "file", id: "t2", name: "Sample deck.pdf", type: "pdf", size: 83_000 };
+const photo: Item = { kind: "file", id: "t3", name: "Dog.jpg", type: "jpg", size: 70_000 };
+const link: Item = { kind: "link", id: "t4", url: "https://www.vevox.com/", title: "Vevox" };
 const demo = { mode: "demo", kind: "owner" } as const;
 
 describe("one list order", () => {
   it("files by name, then links by title, as the machine orders the approved items", () => {
     const items: Item[] = [
-      { kind: "link", url: "https://www.vevox.com/", title: "Vevox" },
-      { kind: "file", name: "Sample deck.pptx", type: "pptx", size: 1 },
-      { kind: "file", name: "Dog.jpg", type: "jpg", size: 1 },
-      { kind: "file", name: "Sample deck.pdf", type: "pdf", size: 1 },
+      { kind: "link", id: "t5", url: "https://www.vevox.com/", title: "Vevox" },
+      { kind: "file", id: "t6", name: "Sample deck.pptx", type: "pptx", size: 1 },
+      { kind: "file", id: "t7", name: "Dog.jpg", type: "jpg", size: 1 },
+      { kind: "file", id: "t8", name: "Sample deck.pdf", type: "pdf", size: 1 },
     ];
     expect(orderItems(items).map((i) => (i.kind === "file" ? i.name : i.title))).toEqual([
       "Dog.jpg",

@@ -4,11 +4,12 @@ import type { Item } from "../../src/shared/protocol.ts";
 
 const file = (name: string, type: "pptx" | "pdf" | "jpg" | "png" | "webp", size: number | null = null): Item => ({
   kind: "file",
+  id: name,
   name,
   type,
   size,
 });
-const link: Item = { kind: "link", url: "https://www.vevox.com/join", title: "Vevox" };
+const link: Item = { kind: "link", id: "t1", url: "https://www.vevox.com/join", title: "Vevox" };
 
 describe("item row tile", () => {
   it("uses slides for decks, a document for PDFs, a picture for every image type and a link glyph for links", () => {

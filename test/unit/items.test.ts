@@ -5,7 +5,7 @@ import {
   allowedLink,
   effectivePurpose,
   fileAt,
-  type ItemRef,
+  type ItemDraft,
   itemView,
   LINK_HOSTS,
   MAX_ITEMS,
@@ -17,6 +17,7 @@ import { CONTENT_TYPES } from "../../src/worker/seams/open-path/stream.ts";
 import { screenView } from "../../src/worker/views.ts";
 import {
   asItem,
+  asStored,
   CFG,
   claimedOwner,
   DECK,
@@ -76,9 +77,10 @@ describe("LINK-01 link items: https only, on an allowed host", () => {
     }
   });
 
-  it("a link reaches a view as url and title only, and is never a file to mint for", () => {
-    expect(itemView(VEVOX)).toEqual({ kind: "link", url: "https://www.vevox.com/", title: "Vevox" });
-    expect(fileAt([VEVOX], 0)).toBeNull();
+  it("a link reaches a view as id, url and title only, and is never a file to mint for", () => {
+    const stored = { ...VEVOX, id: "i1" };
+    expect(itemView(stored)).toEqual({ kind: "link", id: "i1", url: "https://www.vevox.com/", title: "Vevox" });
+    expect(fileAt([stored], 0)).toBeNull();
   });
 });
 
@@ -154,8 +156,8 @@ describe("SRC-01 screen-view: the view carries items, never a source ref", () =>
     };
     const view = screenView(meta, step.next, { origin: "https://bloop.test", machine: CFG }, T0 + sec(6));
     expect(view.items).toEqual([
-      { kind: "file", name: "Deck.pptx", type: "pptx", size: 10 },
-      { kind: "link", url: "https://www.vevox.com/", title: "Vevox" },
+      { kind: "file", id: "i1", name: "Deck.pptx", type: "pptx", size: 10 },
+      { kind: "link", id: "i2", url: "https://www.vevox.com/", title: "Vevox" },
     ]);
     expect(JSON.stringify(view)).not.toContain("deck-1");
     expect(JSON.stringify(view)).not.toContain("demo-vevox");
@@ -166,7 +168,7 @@ describe("orderItems", () => {
   it("files by name, then links by title, without changing the input", () => {
     const b = asItem({ ...DECK, ref: "b", name: "b.pptx" });
     const a = asItem({ ...DECK, ref: "a", name: "A.pdf", type: "pdf" });
-    const input: ItemRef[] = [VEVOX, b, a];
+    const input: ItemDraft[] = [VEVOX, b, a];
     expect(orderItems(input).map((i) => i.ref)).toEqual(["a", "b", "demo-vevox"]);
     expect(input.map((i) => i.ref)).toEqual(["demo-vevox", "b", "a"]);
   });
@@ -182,7 +184,12 @@ describe("Screen object schema steps", () => {
   it("turns a stored single file into a one-item list and gives each link record item 0", () => {
     const store = kv({ meta: { mode: "demo" }, machine: { state: "approved", session: v1Session }, links: [link] });
     migrate(store);
-    expect((store.map.get("machine") as Machine).session).toEqual({ ...current, items: [asItem(DECK)], minted: [1] });
+    expect((store.map.get("machine") as Machine).session).toEqual({
+      ...current,
+      items: [asStored(DECK)],
+      minted: [1],
+      shown: null,
+    });
     expect(store.map.get("links")).toEqual([{ ...link, item: 0, ips: [], refused: false }]);
     expect(store.map.get(SCHEMA_KEY)).toBe(SCHEMA_VERSION);
   });
@@ -191,7 +198,7 @@ describe("Screen object schema steps", () => {
     const store = kv({ meta: {}, machine: { state: "waiting", session: null } });
     migrate(store);
     expect(store.map.get("machine")).toEqual({ state: "waiting", session: null });
-    const current = { state: "approved", session: { items: [VEVOX] } };
+    const current = { state: "approved", session: { items: [{ ...VEVOX, id: "i1" }], shown: null } };
     store.put("machine", current);
     migrate(store);
     expect(store.map.get("machine")).toBe(current);
@@ -221,6 +228,29 @@ describe("Screen object schema steps", () => {
     expect((store.map.get("machine") as Machine).session?.minted).toEqual([3, 0]);
   });
 
+  it("version 5 to 6: items gain ids in stored order, the session gains a null `shown`", () => {
+    const v5 = { ...current, items: [asItem(DECK), VEVOX], minted: [1, 0] };
+    const store = kv({ meta: {}, schemaVersion: 5, machine: { state: "open", session: v5 } });
+    migrate(store);
+    const session = (store.map.get("machine") as Machine).session;
+    expect(session?.items.map((i) => i.id)).toEqual(["i1", "i2"]);
+    expect(session?.shown).toBeNull();
+  });
+
+  it("version 6 repairs a malformed `shown` to null and keeps a well-formed one", () => {
+    const items = [asStored(DECK)];
+    const bad = kv({
+      meta: {},
+      machine: { state: "open", session: { ...current, items, minted: [1], shown: { x: 1 } } },
+    });
+    migrate(bad);
+    expect((bad.map.get("machine") as Machine).session?.shown).toBeNull();
+    const shown = { item: "i1", page: 2, present: true };
+    const good = kv({ meta: {}, machine: { state: "open", session: { ...current, items, minted: [1], shown } } });
+    migrate(good);
+    expect((good.map.get("machine") as Machine).session?.shown).toEqual(shown);
+  });
+
   it("repairs old-shape data whatever the stored version says (a rollback wrote v1 data under version 3)", () => {
     const store = kv({
       meta: {},
@@ -229,7 +259,12 @@ describe("Screen object schema steps", () => {
       links: [link],
     });
     migrate(store);
-    expect((store.map.get("machine") as Machine).session).toEqual({ ...current, items: [asItem(DECK)], minted: [1] });
+    expect((store.map.get("machine") as Machine).session).toEqual({
+      ...current,
+      items: [asStored(DECK)],
+      minted: [1],
+      shown: null,
+    });
     expect(store.map.get("links")).toEqual([{ ...link, item: 0, ips: [], refused: false }]);
   });
 
@@ -238,14 +273,14 @@ describe("Screen object schema steps", () => {
     const store = kv({ meta: {}, schemaVersion: 4, links: [{ ...link, item: 0 }, kept] });
     migrate(store);
     expect(store.map.get("links")).toEqual([{ ...link, item: 0, ips: [], refused: false }, kept]);
-    expect(store.map.get(SCHEMA_KEY)).toBe(5);
+    expect(store.map.get(SCHEMA_KEY)).toBe(SCHEMA_VERSION);
   });
 
   it("a current-shape object writes nothing on wake", () => {
     const store = kv({
       meta: {},
       schemaVersion: SCHEMA_VERSION,
-      machine: { state: "open", session: { ...current, items: [asItem(DECK)], minted: [1] } },
+      machine: { state: "open", session: { ...current, items: [asStored(DECK)], minted: [1], shown: null } },
       links: [{ ...link, item: 0, ips: [], refused: false }],
     });
     const writes: string[] = [];
@@ -269,7 +304,7 @@ describe("Screen object schema steps", () => {
 describe("machine: a session holds a list of items", () => {
   const PDF = asItem({ source: "mock", ref: "pdf-1", name: "Atlas.pdf", type: "pdf" });
   const DOG = asItem({ source: "mock", ref: "dog-1", name: "Dog.jpg", type: "jpg" });
-  const approve = (m: Machine, items: ItemRef[]) =>
+  const approve = (m: Machine, items: ItemDraft[]) =>
     transition(m, { e: "approve", now: T0 + sec(5), items, maxMinutes: MAX_MINUTES }, CFG);
 
   it("orders files by name, then links, and launches the first file", () => {
@@ -377,6 +412,6 @@ describe("machine: a session holds a list of items", () => {
   });
 
   it("a guest offer is a one-item list", () => {
-    expect(offered().session?.items).toEqual([asItem(GUEST_FILE)]);
+    expect(offered().session?.items).toEqual([asStored(GUEST_FILE)]);
   });
 });

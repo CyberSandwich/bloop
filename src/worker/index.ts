@@ -8,6 +8,7 @@ import { offOrigin } from "./origin.ts";
 import { closeStaleSessions, runRetention } from "./retention.ts";
 import { type Route, route } from "./router.ts";
 import { authRoutes } from "./routes/auth.ts";
+import { controlRoutes } from "./routes/control.ts";
 import { dropRoutes } from "./routes/drop.ts";
 import { exportRoutes } from "./routes/export.ts";
 import { fileRoutes } from "./routes/files.ts";
@@ -28,6 +29,7 @@ const routes: readonly Route[] = [
   route(["GET"], "/api/health", "api", () => json({ status: "ok" })),
   ...pairingRoutes,
   ...fileRoutes,
+  ...controlRoutes,
   ...dropRoutes,
   ...authRoutes,
   ...openRoutes,
