@@ -3,8 +3,35 @@
 // flow is drivable; `npm run dev` runs with TEST_TIMING=1 here (playwright.config.ts), which skips the
 // platform rate limits that ten fresh screens a minute would trip. Selectors are roles and names first, ids where
 // the page names a slot (docs/design.md section 7).
+
+import { crc32, deflateSync } from "node:zlib";
 import AxeBuilder from "@axe-core/playwright";
 import { type Browser, type BrowserContext, expect, type Locator, type Page, test } from "@playwright/test";
+
+/** The item on the stage: a page's picture, or the photo's canvas (never the loader's thumbnail). */
+const STAGED = "#frame :is(picture img, canvas)";
+
+/** A black PNG of the given size: the photo's stand-in for a test (the viewer decodes raster bytes, not SVG). */
+function png(width: number, height: number): Buffer {
+  const chunk = (type: string, data: Buffer) => {
+    const body = Buffer.concat([Buffer.from(type, "latin1"), data]);
+    const len = Buffer.alloc(4);
+    len.writeUInt32BE(data.length);
+    const crc = Buffer.alloc(4);
+    crc.writeUInt32BE(crc32(body));
+    return Buffer.concat([len, body, crc]);
+  };
+  const head = Buffer.alloc(13);
+  head.writeUInt32BE(width, 0);
+  head.writeUInt32BE(height, 4);
+  head[8] = 8; // bit depth; color type 0 (gray) and the rest stay 0
+  return Buffer.concat([
+    Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]),
+    chunk("IHDR", head),
+    chunk("IDAT", deflateSync(Buffer.alloc((width + 1) * height))),
+    chunk("IEND", Buffer.alloc(0)),
+  ]);
+}
 
 const SCREEN = { width: 1440, height: 900 };
 const PHONE = { width: 390, height: 844 };
@@ -153,8 +180,15 @@ test.describe("pairing flow", () => {
   test("pair by QR link, match, approve", async ({ browser }) => {
     const screen = await demoScreen(browser);
     await expect(screen.page.locator("#qr-path")).toHaveAttribute("d", /^M/);
-    await expect(screen.page.getByText("Scan with your phone.")).toBeVisible();
-    await expect(screen.page.getByText("Or enter the code at")).toBeVisible();
+    // The hint's two lines carry no periods.
+    await expect(screen.page.locator("#hint p")).toHaveText([
+      "Scan with your phone",
+      /^Or enter the code at \S+\/code$/,
+    ]);
+    await expect(screen.page.locator("#qr")).toHaveAttribute(
+      "aria-label",
+      /^QR code, scan with your phone, or enter the code \w \w \w, \w \w \w at \S+ slash code$/,
+    );
     await expectNoAxeViolations(screen.page);
     const titleBefore = await heading(screen.page).boundingBox();
     const cardBefore = await screen.page.locator("#qr-panel").boundingBox();
@@ -170,17 +204,24 @@ test.describe("pairing flow", () => {
     await expectNoAxeViolations(phone.page);
 
     await expect(heading(screen.page)).toHaveText(DEMO.room);
-    await expect(screen.page.locator("#line")).toHaveText(/^Your phone shows \d{2}\.$/);
-    // The claim changes the state in place: the QR card stays where it was, blank under the phone glyph.
+    // The claim changes the state in place: the QR card stays where it was, blank of its QR.
     await expect(screen.page.locator("#match")).toBeVisible();
     await expect(screen.page.locator("#qr-panel")).toHaveCSS("visibility", "visible");
-    await expect(screen.page.locator("#line")).toHaveText(`Your phone shows ${match}.`);
-    // The digits sit in the card, in monospace; the status line is the hint's place; nothing else moves.
+    // The status is the screen reader's alone: the title and the number stand by themselves.
+    await expect(screen.page.locator("#line")).toHaveText(`Waiting for Approval. Your phone shows ${match}.`);
+    await expect(screen.page.locator("#line")).toHaveCSS("clip-path", "inset(50%)");
+    await expect(screen.page.locator("#awaiting")).toBeHidden();
+    await expect(screen.page.locator("#hint")).toHaveCSS("visibility", "hidden");
+    // The digits sit in the card, in monospace; the card does not move; the title moves to the card's middle.
     await expect(screen.page.locator("#match")).toHaveText(match);
     await expect(screen.page.locator("#match")).toHaveCSS("font-family", /monospace/);
-    await expect(screen.page.locator("#awaiting")).toHaveText("Waiting for Approval");
-    expect(await heading(screen.page).boundingBox()).toEqual(titleBefore);
     expect(await screen.page.locator("#qr-panel").boundingBox()).toEqual(cardBefore);
+    await expect(async () => {
+      const title = await heading(screen.page).boundingBox();
+      const card = cardBefore ?? { x: 0, y: 0, width: 0, height: 0 };
+      expect(Math.round(title?.x ?? 0)).toBe(Math.round(titleBefore?.x ?? -1));
+      expect(Math.abs((title?.y ?? 0) + (title?.height ?? 0) / 2 - (card.y + card.height / 2))).toBeLessThanOrEqual(1);
+    }).toPass();
     await expect(screen.page.getByRole("button", { name: "Back", exact: true })).toBeVisible();
     await expectNoAxeViolations(screen.page);
 
@@ -388,6 +429,46 @@ test.describe("pairing flow", () => {
     await phone.context.close();
   });
 
+  test("a tap anywhere on Session Ended, or Enter, brings a fresh code at the server's floor; Join the Waitlist still leaves", async ({
+    browser,
+  }) => {
+    const screen = await demoScreen(browser);
+    const page = screen.page;
+    /** Ends a fresh session from the screen's End and returns when Session Ended shows. */
+    const endOne = async () => {
+      const { phone } = await scan(browser, page);
+      await phone.page.getByRole("button", { name: "Approve" }).click();
+      await expectViewer(page);
+      await page.getByRole("button", { name: "End", exact: true }).click();
+      await expect(heading(page)).toHaveText("Session Ended");
+      return phone;
+    };
+    // The demo holds Session Ended 10 s on its own; a tap cuts it to the 3 s the server keeps it at least.
+    let phone = await endOne();
+    let since = Date.now();
+    await page.mouse.click(SCREEN.width / 2, 80);
+    await expect(heading(page)).toHaveText(DEMO.room, { timeout: 6000 });
+    expect(Date.now() - since).toBeLessThan(6000);
+    await typedCodeOf(page);
+    await phone.context.close();
+
+    phone = await endOne();
+    since = Date.now();
+    await page.keyboard.press("Enter");
+    await expect(heading(page)).toHaveText(DEMO.room, { timeout: 6000 });
+    expect(Date.now() - since).toBeLessThan(6000);
+    await phone.context.close();
+
+    phone = await endOne();
+    await page.route("https://tally.so/**", (route) =>
+      route.fulfill({ contentType: "text/html", body: "<title>Waitlist</title>" }),
+    );
+    await page.getByRole("link", { name: "Join the Waitlist" }).click();
+    await expect(page).toHaveURL(/^https:\/\/tally\.so\//);
+    await phone.context.close();
+    await screen.context.close();
+  });
+
   test("PAIR-12 a Revoke that fails offline keeps Revoke alone and the pid, and shows no Back that would strand the session", async ({
     browser,
   }) => {
@@ -551,14 +632,13 @@ test.describe("guest drop", () => {
     await chooseFile(phone.page, DECK);
     await phone.page.getByRole("button", { name: "Send" }).click();
     await expect(heading(phone.page)).toHaveText("bloop Can't Take Files Now");
-    await expect(screen.page.locator("#awaiting")).toBeVisible();
+    await expect(screen.page.locator("#match")).toBeVisible();
     const cancel = phone.page.waitForRequest((r) => r.url().endsWith("/api/cancel"));
     await phone.page.getByRole("button", { name: "Done" }).click();
     await cancel;
     await expect(phone.page).toHaveURL("/");
     // Well inside the claim's own timeout, which would otherwise hold the screen.
-    await expect(screen.page.locator("#awaiting")).toBeHidden({ timeout: 5000 });
-    await expect(screen.page.locator("#awaiting")).toBeHidden();
+    await expect(screen.page.locator("#match")).toBeHidden({ timeout: 5000 });
     await typedCodeOf(screen.page);
     expect(await phone.page.evaluate(() => localStorage.getItem("bloop.pid"))).toBeNull();
     await screen.context.close();
@@ -838,7 +918,7 @@ test.describe("demo viewer", () => {
     await expect(phone.page).toHaveURL(/\/s\?mode=demo$/);
     // Under 760 the sidebar is a bottom sheet behind a handle.
     await expect(heading(phone.page)).toHaveText("Dog.jpg");
-    await expectPillUnder(phone.page, phone.page.locator("#frame img").first());
+    await expectPillUnder(phone.page, phone.page.locator(STAGED).first());
     await expect(phone.page.locator("#items")).toBeHidden();
     await phone.page.locator("#handle").click();
     await sidebarItem(phone.page, "Sample deck.pptx").click();
@@ -911,7 +991,7 @@ test.describe("screen and phone layout", () => {
       await phone.page.getByRole("button", { name: "Approve" }).click();
       for (const name of ["Sample deck.pptx", "Sample deck.pdf", "Dog.jpg"]) {
         await sidebarItem(page, name).click();
-        await expectPillUnder(page, page.locator("#frame img").first());
+        await expectPillUnder(page, page.locator(STAGED).first());
       }
       await sidebarItem(page, "Sample deck.pptx").click();
       await expectOneLinePill(page);
@@ -980,18 +1060,17 @@ test.describe("screen and phone layout", () => {
   });
 
   /** The demo photo's answer, swapped for a portrait picture before the viewer asks for it. */
-  const PORTRAIT =
-    '<svg xmlns="http://www.w3.org/2000/svg" width="600" height="900"><rect width="600" height="900"/></svg>';
+  const PORTRAIT = png(600, 900);
 
   /** A demo screen with its viewer open on the 4-item list, the photo swapped for `body` when given. */
-  async function viewerWith(browser: Browser, body?: string) {
+  async function viewerWith(browser: Browser, body?: Buffer) {
     const screen = await demoScreen(browser);
-    if (body) await screen.page.route("**/f/**", (route) => route.fulfill({ contentType: "image/svg+xml", body }));
+    if (body) await screen.page.route("**/f/**", (route) => route.fulfill({ contentType: "image/png", body }));
     const code = await typedCodeOf(screen.page);
     const phone = await open(browser, "phone", `/a?c=${code}`);
     await phone.page.getByRole("button", { name: "Approve" }).click();
     await expect(heading(screen.page)).toHaveText("Dog.jpg");
-    await expect(screen.page.locator("#frame img")).toBeVisible();
+    await expect(screen.page.locator(STAGED)).toBeVisible();
     return { screen, phone, pane: screen.page.locator("#pane") };
   }
   const box = async (page: Page, sel: string) => {
@@ -1001,16 +1080,14 @@ test.describe("screen and phone layout", () => {
   };
 
   /** Square and portrait pictures standing in for the photo. */
-  const SQUARE =
-    '<svg xmlns="http://www.w3.org/2000/svg" width="900" height="900"><rect width="900" height="900"/></svg>';
-  const WIDE =
-    '<svg xmlns="http://www.w3.org/2000/svg" width="1500" height="1000"><rect width="1500" height="1000"/></svg>';
+  const SQUARE = png(900, 900);
+  const WIDE = png(1500, 1000);
 
   /** Where the controls went, and the boxes that say so. */
   async function slotOf(page: Page) {
     const [pill, img, view, side] = await Promise.all([
       box(page, "#controls"),
-      box(page, "#frame img"),
+      box(page, STAGED),
       box(page, "#view"),
       box(page, "#side"),
     ]);
@@ -1082,13 +1159,13 @@ test.describe("screen and phone layout", () => {
     // Short enough that the demo list scrolls; a 3 : 2 item leaves no room beside it.
     const context = await browser.newContext({ viewport: { width: 1000, height: 360 } });
     const page = await context.newPage();
-    await page.route("**/f/**", (route) => route.fulfill({ contentType: "image/svg+xml", body: WIDE }));
+    await page.route("**/f/**", (route) => route.fulfill({ contentType: "image/png", body: WIDE }));
     await page.goto("/s?mode=demo");
     const code = await typedCodeOf(page);
     const phone = await open(browser, "phone", `/a?c=${code}`);
     await phone.page.getByRole("button", { name: "Approve" }).click();
     await expect(heading(page)).toHaveText("Dog.jpg");
-    await expect(page.locator("#frame img")).toBeVisible();
+    await expect(page.locator(STAGED)).toBeVisible();
     await expect(page.locator("#pane")).not.toHaveClass(/is-stacked|is-under/);
     expect(await page.locator("#side").evaluate((n) => n.scrollHeight > n.clientHeight)).toBe(true);
     await expect(async () => {
@@ -1158,7 +1235,7 @@ test.describe("screen and phone layout", () => {
     await page.evaluate("window.__controls = document.getElementById('controls')");
     await sidebarItem(page, "Sample deck.pdf").click();
     await expect(heading(page)).toHaveText("Sample deck.pdf");
-    await expect(page.locator("#frame img")).toBeVisible();
+    await expect(page.locator(STAGED)).toBeVisible();
     // Nothing starts later either: poll over the swap's settle, then read once more.
     for (let i = 0; i < 5; i++) {
       expect(await page.evaluate("window.__controls === document.getElementById('controls')")).toBe(true);
@@ -1214,6 +1291,81 @@ test.describe("screen and phone layout", () => {
     await phone.context.close();
   });
 
+  test("a slow photo holds its loader, unblurred, its progress rising with the bytes, then fades in over it", async ({
+    browser,
+  }) => {
+    const screen = await demoScreen(browser);
+    const page = screen.page;
+    const code = await typedCodeOf(page);
+    // About 4 s for the demo photo's 232 KB, so the in-between states can be read.
+    const cdp = await page.context().newCDPSession(page);
+    await cdp.send("Network.enable");
+    await cdp.send("Network.emulateNetworkConditions", {
+      offline: false,
+      latency: 40,
+      downloadThroughput: 60 * 1024,
+      uploadThroughput: -1,
+    });
+    const phone = await open(browser, "phone", `/a?c=${code}`);
+    await phone.page.getByRole("button", { name: "Approve" }).click();
+    const loader = page.locator("#frame .loader.stand-in");
+    await expect(loader).toBeVisible();
+    await expect(loader).toHaveAttribute("role", "progressbar");
+    await expect(loader).toHaveAttribute("aria-label", "Loading Dog.jpg");
+    await expect(loader).toHaveCSS("filter", "none");
+    const values: number[] = [];
+    await expect
+      .poll(async () => {
+        const v = Number((await loader.getAttribute("aria-valuenow").catch(() => null)) ?? -1);
+        if (v >= 0) values.push(v);
+        return v > 0 && v < 100;
+      })
+      .toBe(true);
+    await expect(page.locator(STAGED)).toBeVisible({ timeout: 15_000 });
+    await expect(page.getByRole("img", { name: "Dog.jpg" })).toBeVisible();
+    // It rose, never fell, and the loader left once the photo had faded in.
+    expect(values.some((v) => v > 0 && v < 100)).toBe(true);
+    expect(values).toEqual([...values].sort((a, b) => a - b));
+    await expect(page.locator("#frame .loader")).toHaveCount(0);
+    await screen.context.close();
+    await phone.context.close();
+  });
+
+  test("presenting draws on pure black, and the photo grows until it meets two opposite window edges", async ({
+    browser,
+  }) => {
+    // The demo photo (1280 x 853) is smaller than the window: contained, it still meets the top and bottom at 1440 x 900.
+    const { screen, phone } = await viewerWith(browser);
+    const page = screen.page;
+    await page.getByRole("button", { name: "Present", exact: true }).click();
+    await expect(page.locator("body")).toHaveClass(/is-presenting/);
+    await expect(page.locator("body")).toHaveCSS("background-color", "rgb(0, 0, 0)");
+    await expect(page.locator("#view")).toHaveCSS("background-color", "rgb(0, 0, 0)");
+    await expect(page.locator(STAGED)).toHaveCSS("border-radius", "0px");
+    await expect(async () => {
+      // The drawn picture inside the contained box: its own ratio, centered.
+      const drawn = await page.locator(STAGED).evaluate((el) => {
+        // The node tsconfig has no DOM lib: the canvas's own size, typed by hand.
+        const c = el as unknown as {
+          width: number;
+          height: number;
+          getBoundingClientRect(): { left: number; top: number; width: number; height: number };
+        };
+        const r = c.getBoundingClientRect();
+        const k = Math.min(r.width / c.width, r.height / c.height);
+        const w = c.width * k;
+        const h = c.height * k;
+        return { left: r.left + (r.width - w) / 2, top: r.top + (r.height - h) / 2, w, h };
+      });
+      const meets = (a: number, b: number) => Math.round(a) === Math.round(b);
+      const tall = meets(drawn.top, 0) && meets(drawn.top + drawn.h, SCREEN.height);
+      const wide = meets(drawn.left, 0) && meets(drawn.left + drawn.w, SCREEN.width);
+      expect(tall || wide).toBe(true);
+    }).toPass();
+    await screen.context.close();
+    await phone.context.close();
+  });
+
   test("the stop pill is hidden when presenting starts and follows the pointer to the top; Tab shows it, Escape exits", async ({
     browser,
   }) => {
@@ -1255,7 +1407,7 @@ test.describe("screen and phone layout", () => {
     await phone.page.getByRole("button", { name: "Present", exact: true }).click();
     const chrome = ["#controls", "#handle", ".bar"].map((sel) => phone.page.locator(sel));
     for (const part of chrome) await expect(part).toBeHidden();
-    await expect(phone.page.locator("#frame img")).toBeVisible();
+    await expect(phone.page.locator(STAGED)).toBeVisible();
     // The stop pill answers only near the window's top: move there first, then press.
     await phone.page.mouse.move(PHONE.width / 2, 10);
     await phone.page.getByRole("button", { name: "Stop Presenting" }).click();
@@ -1277,8 +1429,8 @@ test.describe("screen and phone layout", () => {
     await screen.page.reload();
     await expect(screen.page.locator("#qr")).toBeHidden();
     await expect(screen.page.locator("#match")).toBeVisible();
-    await expect(screen.page.locator("#line")).toHaveText(/^Your phone shows \d{2}\.$/);
-    await expect(screen.page.locator("#awaiting")).toHaveText("Waiting for Approval");
+    await expect(screen.page.locator("#line")).toHaveText(/^Waiting for Approval\. Your phone shows \d{2}\.$/);
+    await expect(screen.page.locator("#awaiting")).toBeHidden();
     expect(await screen.page.locator("#qr-panel").boundingBox()).toEqual(waiting);
     await phone.page.getByRole("button", { name: "Approve" }).click();
     await expectViewer(screen.page);
@@ -1288,9 +1440,7 @@ test.describe("screen and phone layout", () => {
     await phone.context.close();
   });
 
-  test("at 390 a claim leaves the QR card where it was and shows Waiting for Approval in the hint's place", async ({
-    browser,
-  }) => {
+  test("at 390 a claim leaves the QR card where it was, its status for screen readers only", async ({ browser }) => {
     const screen = await open(browser, "phone", "/s?mode=demo");
     await typedCodeOf(screen.page);
     // The pane's entry animation is a transform: a box read during it is mid-flight, so wait for it to settle.
@@ -1306,14 +1456,14 @@ test.describe("screen and phone layout", () => {
     // A web font arriving late reflows the hint, so wait for it before taking the card's place.
     await screen.page.evaluate("document.fonts.ready.then(() => true)");
     const card = await settled("#qr-panel");
-    const hint = await settled("#hint");
+    const title = await settled("#heading");
     const { phone } = await scan(browser, screen.page);
-    await expect(screen.page.locator("#awaiting")).toHaveText("Waiting for Approval");
+    await expect(screen.page.locator("#match")).toBeVisible();
+    await expect(screen.page.locator("#awaiting")).toBeHidden();
+    await expect(screen.page.locator("#line")).toHaveText(/^Waiting for Approval\. Your phone shows \d{2}\.$/);
+    // One column: the title stays above the card, and the hidden hint keeps its height, so nothing moves.
     expect(await settled("#qr-panel")).toEqual(card);
-    // The status is centered inside the hint's box, which keeps its height.
-    const awaiting = await screen.page.locator("#awaiting").boundingBox();
-    expect(awaiting?.y ?? -1).toBeGreaterThanOrEqual((hint?.y ?? 0) - 1);
-    expect((awaiting?.y ?? 0) + (awaiting?.height ?? 0)).toBeLessThanOrEqual((hint?.y ?? 0) + (hint?.height ?? 0) + 1);
+    expect(await settled("#heading")).toEqual(title);
     expect(await screen.page.evaluate("document.scrollingElement.scrollHeight <= innerHeight")).toBe(true);
     await screen.context.close();
     await phone.context.close();
