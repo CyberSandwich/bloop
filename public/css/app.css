@@ -577,14 +577,27 @@ main:has(> .side:not([hidden])) #stage {
   -webkit-backdrop-filter: none;
   backdrop-filter: none;
   box-shadow: var(--glass-edge), var(--sh-pill);
-  opacity: 0;
+  /* viewer.js sets --stop-o from the pointer's distance to the top; hidden until it nears. */
+  opacity: var(--stop-o, 0);
   pointer-events: none;
-  transition: opacity 200ms var(--ease-ui);
+  transition: opacity 300ms var(--ease-ui);
+}
+.is-reach #b-stop {
+  pointer-events: auto;
+  transition-duration: 200ms;
 }
 .is-awake #b-stop,
 #b-stop:focus-visible {
   opacity: 1;
   pointer-events: auto;
+}
+.is-presenting .view.is-idle {
+  cursor: none;
+}
+@media (prefers-reduced-motion: reduce) {
+  #b-stop {
+    transition: none;
+  }
 }
 .parked {
   place-self: center;

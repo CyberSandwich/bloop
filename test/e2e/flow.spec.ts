@@ -1106,6 +1106,35 @@ test.describe("screen and phone layout", () => {
     await phone.context.close();
   });
 
+  test("the stop pill is hidden when presenting starts and follows the pointer to the top; Tab shows it, Escape exits", async ({
+    browser,
+  }) => {
+    const { screen, phone } = await viewerWith(browser);
+    const page = screen.page;
+    const pill = page.getByRole("button", { name: "Stop Presenting" });
+    const opacity = async () => Number(await pill.evaluate("(e) => getComputedStyle(e).opacity"));
+    await page.getByRole("button", { name: "Present", exact: true }).click();
+    await expect(page.locator("body")).toHaveClass(/is-presenting/);
+    await page.mouse.move(SCREEN.width / 2, 600);
+    await expect.poll(opacity).toBe(0);
+    await page.mouse.move(SCREEN.width / 2, 120, { steps: 4 });
+    await expect.poll(opacity).toBeGreaterThan(0);
+    expect(await opacity()).toBeLessThan(1);
+    await page.mouse.move(SCREEN.width / 2, 20, { steps: 4 });
+    await expect.poll(opacity).toBe(1);
+    await page.mouse.move(SCREEN.width / 2, 600, { steps: 4 });
+    await expect.poll(opacity).toBe(0);
+    // A keyboard reaches the pill by Tab and it stays shown while focused.
+    for (let i = 0; i < 6 && !(await page.evaluate(`document.activeElement?.id === "b-stop"`)); i++)
+      await page.keyboard.press("Tab");
+    expect(await page.evaluate(`document.activeElement?.id`)).toBe("b-stop");
+    await expect.poll(opacity).toBe(1);
+    await page.keyboard.press("Escape");
+    await expect(page.locator("body")).not.toHaveClass(/is-presenting/);
+    await page.context().close();
+    await phone.context.close();
+  });
+
   test("at 390 Present shows for the photo; presenting hides the chrome and Stop Presenting restores it", async ({
     browser,
   }) => {
@@ -1118,8 +1147,8 @@ test.describe("screen and phone layout", () => {
     const chrome = ["#controls", "#handle", ".bar"].map((sel) => phone.page.locator(sel));
     for (const part of chrome) await expect(part).toBeHidden();
     await expect(phone.page.locator("#frame img")).toBeVisible();
-    // The stop pill answers only for 3 s after a move: move first, then press.
-    await phone.page.mouse.move(PHONE.width / 2, PHONE.height / 2);
+    // The stop pill answers only near the window's top: move there first, then press.
+    await phone.page.mouse.move(PHONE.width / 2, 10);
     await phone.page.getByRole("button", { name: "Stop Presenting" }).click();
     for (const part of chrome) await expect(part).toBeVisible();
     await expect(phone.page.getByRole("button", { name: "Stop Presenting" })).toBeHidden();

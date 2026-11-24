@@ -345,7 +345,7 @@ export function createViewer(deps) {
     if (on) stop.focus?.({ preventScroll: true });
     else opener?.focus?.({ preventScroll: true });
     if (on) {
-      awake();
+      band = Math.max(BAND, stop.offsetHeight + 32);
       // A Stop that lands before the browser grants it must still leave full screen.
       if (document.fullscreenEnabled)
         view
@@ -355,12 +355,44 @@ export function createViewer(deps) {
           })
           .catch(() => {});
     } else {
-      view.classList.remove("is-awake");
+      clearTimeout(sleep);
+      clearTimeout(still);
+      clearTimeout(cursor);
+      view.classList.remove("is-awake", "is-idle");
+      aim(Number.POSITIVE_INFINITY);
       if (document.fullscreenElement === view) document.exitFullscreen().catch(() => {});
       if (parked) hide();
     }
   }
-  /** Stop Presenting shows for 3 s after a tap or a move. */
+  // Stop Presenting is hidden until the pointer nears the window's top: its opacity follows the distance, from 0
+  // at BAND + RAMP down to 1 within the band, and it takes a click only from half. Touch has no pointer to follow, so
+  // a tap on the slide shows it for 3 s. Reduced motion has no ramp.
+  const BAND = 64;
+  const RAMP = 96;
+  const reduced = matchMedia("(prefers-reduced-motion: reduce)");
+  let band = BAND;
+  let frameAsked = 0;
+  let still = 0;
+  let cursor = 0;
+  /** @param {number} y the pointer's distance from the window's top; Infinity when it is away */
+  function aim(y) {
+    const o = reduced.matches ? Number(y <= band) : Math.min(1, Math.max(0, (band + RAMP - y) / RAMP));
+    view.style.setProperty("--stop-o", String(o));
+    view.classList.toggle("is-reach", o >= 0.5);
+  }
+  function follow(/** @type {PointerEvent} */ e) {
+    if (!presenting() || e.pointerType === "touch") return;
+    const y = e.clientY;
+    cancelAnimationFrame(frameAsked);
+    frameAsked = requestAnimationFrame(() => aim(y));
+    view.classList.remove("is-idle");
+    clearTimeout(still);
+    clearTimeout(cursor);
+    // Resting outside the band, the pill goes; the cursor goes a second later.
+    still = setTimeout(() => y > band && aim(Number.POSITIVE_INFINITY), 1000);
+    cursor = setTimeout(() => view.classList.add("is-idle"), 2000);
+  }
+  /** Stop Presenting shows for 3 s after a tap. */
   function awake() {
     view.classList.add("is-awake");
     clearTimeout(sleep);
@@ -379,12 +411,18 @@ export function createViewer(deps) {
   view.addEventListener("pointerdown", (e) => {
     swipe = e.clientX;
     swiped = false;
-    if (presenting()) awake();
   });
-  view.addEventListener("pointermove", () => presenting() && awake());
+  view.addEventListener("pointermove", follow);
+  view.addEventListener("pointerleave", () => presenting() && aim(Number.POSITIVE_INFINITY));
   view.addEventListener("pointerup", (e) => {
     swiped = presenting() && Math.abs(e.clientX - swipe) > 50;
     if (swiped) go(e.clientX < swipe ? 1 : -1);
+    else if (
+      presenting() &&
+      e.pointerType === "touch" &&
+      !(/** @type {Element} */ (e.target).closest?.("#prev, #next, #b-stop"))
+    )
+      awake();
   });
   // A swipe that ends on the zone it began on would page twice.
   view.addEventListener(
