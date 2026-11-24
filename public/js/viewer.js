@@ -80,7 +80,7 @@ export function createViewer(deps) {
     const stackH = pill.offsetHeight;
     const listed = !side.hidden && matchMedia("(min-width: 760px)").matches;
     const railFits =
-      listed && side.getBoundingClientRect().bottom + inset * 2 + stackH <= end.getBoundingClientRect().top;
+      listed && side.getBoundingClientRect().bottom + inset + stackH <= end.getBoundingClientRect().bottom;
     let place = /** @type {"under" | "right" | "rail" | "float"} */ (item ? "under" : "float");
     if (ratio && listed)
       place = placeControls({ w, h: w / ratio }, stage, { pill: pillH, stackW, stackH, inset, rail: railFits });
@@ -91,7 +91,7 @@ export function createViewer(deps) {
       pill.style.left = `${view.offsetLeft + stage.w - stackW}px`;
     } else if (place === "rail") {
       const [s, o] = [side.getBoundingClientRect(), pane.getBoundingClientRect()];
-      pill.style.top = `${s.bottom + inset - o.top}px`;
+      pill.style.top = `${end.getBoundingClientRect().bottom - stackH - o.top}px`;
       pill.style.left = `${s.right - o.left - stackW}px`;
     } else {
       pill.style.top = `${view.offsetTop + (place === "under" && item instanceof HTMLElement ? item.offsetTop + item.offsetHeight + inset : stage.h - inset - pill.offsetHeight)}px`;
