@@ -1,5 +1,5 @@
 // The viewer's park over a fake DOM: just enough of the element API that viewer.js and ui.js touch.
-import { beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import type { Item, ScreenView } from "../../src/shared/protocol.ts";
 
 type Listener = (e: {
@@ -15,7 +15,11 @@ class Node {
   disabled = false;
   textContent = "";
   children: Node[] = [];
-  style: Record<string, unknown> = { setProperty: () => {} };
+  style: Record<string, unknown> = {
+    setProperty: (k: string, v: string) => {
+      this.style[k] = v;
+    },
+  };
   attrs = new Map<string, string>();
   listeners = new Map<string, Listener[]>();
   classes = new Set<string>();
@@ -320,6 +324,68 @@ describe("presenting is one layout, with or without browser full screen", () => 
     expect(doc.body.classes.has("is-presenting")).toBe(true);
     expect(el("b-stop").hidden).toBe(false);
     expect(doc.fullscreenElement).toBeNull();
+  });
+
+  describe("Stop Presenting follows the pointer to the top of the window", () => {
+    const move = (el: (id: string) => Node, y: number, pointerType = "mouse") => {
+      for (const f of el("view").listeners.get("pointermove") ?? [])
+        f({ type: "pointermove", clientY: y, pointerType } as never);
+    };
+    const start = (reducedMotion = false) => {
+      vi.stubGlobal("matchMedia", () => ({ matches: reducedMotion }));
+      vi.stubGlobal("requestAnimationFrame", (f: () => void) => {
+        f();
+        return 1;
+      });
+      vi.stubGlobal("cancelAnimationFrame", () => {});
+      const s = setup();
+      s.v.render(deckView);
+      s.v.present(true);
+      return s;
+    };
+    afterEach(() => vi.stubGlobal("matchMedia", () => ({ matches: true })));
+
+    it("is hidden when presenting starts, and a move across the slide does not show it", () => {
+      const { el } = start();
+      expect(el("view").style["--stop-o"]).toBeUndefined();
+      move(el, 400);
+      expect(el("view").style["--stop-o"]).toBe("0");
+      expect(el("view").classes.has("is-reach")).toBe(false);
+    });
+
+    it("ramps from 0 at 160 px to 1 in the top 64 px, and takes a click only from half", () => {
+      const { el } = start();
+      move(el, 120);
+      const o = Number(el("view").style["--stop-o"]);
+      expect(o).toBeGreaterThan(0);
+      expect(o).toBeLessThan(1);
+      expect(el("view").classes.has("is-reach")).toBe(o >= 0.5);
+      move(el, 20);
+      expect(el("view").style["--stop-o"]).toBe("1");
+      expect(el("view").classes.has("is-reach")).toBe(true);
+    });
+
+    it("has no ramp under reduced motion: shown in the band, hidden outside it", () => {
+      const { el } = start(true);
+      move(el, 120);
+      expect(el("view").style["--stop-o"]).toBe("0");
+      move(el, 20);
+      expect(el("view").style["--stop-o"]).toBe("1");
+    });
+
+    it("a touch move never shows it, a tap on the slide does, and leaving the window hides it", () => {
+      const { el } = start();
+      move(el, 20, "touch");
+      expect(el("view").style["--stop-o"]).toBeUndefined();
+      for (const f of el("view").listeners.get("pointerdown") ?? [])
+        f({ type: "pointerdown", clientX: 100, pointerType: "touch" } as never);
+      for (const f of el("view").listeners.get("pointerup") ?? [])
+        f({ type: "pointerup", clientX: 100, pointerType: "touch", target: new Node("div") } as never);
+      expect(el("view").classes.has("is-awake")).toBe(true);
+      move(el, 20);
+      for (const f of el("view").listeners.get("pointerleave") ?? []) f({ type: "pointerleave" } as never);
+      expect(el("view").style["--stop-o"]).toBe("0");
+    });
   });
 
   it("focus moves to Stop Presenting and returns to the button that started it", () => {
