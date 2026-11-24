@@ -1,3 +1,6 @@
-Contact: mailto:hi@bloop.here
+Contact: mailto:security@bloop.here
+Contact: https://github.com/CyberSandwich/bloop/security/advisories/new
 Expires: 2027-11-23T00:00:00.000Z
+Policy: https://bloop.here/security#report
+Canonical: https://bloop.here/.well-known/security.txt
 Preferred-Languages: en

@@ -1,0 +1,415 @@
+/* The doc pages (/privacy, /terms, /security), after base.css and site.css: design.md section 6, Legal pages. */
+/* One width for the page's column: the contents and the 68ch text side by side from 1024, the text alone below. */
+.legal {
+  --measure: 68ch;
+  --toc-w: 240px;
+  --toc-gap: 64px;
+  --col: var(--measure);
+}
+@media (min-width: 1024px) {
+  .legal {
+    --col: calc(var(--toc-w) + var(--toc-gap) + var(--measure));
+  }
+}
+.legal :is(.panel, .summary, .legal-body) {
+  max-width: var(--col);
+  margin-inline: auto;
+}
+.meta {
+  margin-top: 16px;
+  color: var(--muted);
+  font-size: 15px;
+}
+.summary {
+  margin-top: 48px;
+  padding: 24px;
+  border-radius: var(--r-content);
+  background: var(--surface);
+  color: var(--ink-2);
+}
+.summary .small {
+  margin-top: 12px;
+  color: var(--muted);
+  font-size: 14px;
+}
+.legal-body {
+  margin-top: 48px;
+}
+@media (min-width: 768px) {
+  .summary {
+    padding: 32px 40px;
+  }
+}
+@media (min-width: 1024px) {
+  .legal-body {
+    display: grid;
+    grid-template-columns: var(--toc-w) minmax(0, var(--measure));
+    gap: var(--toc-gap);
+    align-items: start;
+  }
+}
+
+/* The contents: a card of rows; 8 in, so a row's pill is the card's radius less 8. */
+.toc {
+  padding: 8px;
+  border-radius: var(--r-content);
+  background: var(--surface);
+}
+.toc h2 {
+  padding: 12px 12px 4px;
+  font-size: 15px;
+  line-height: 1.3;
+  color: var(--muted);
+}
+.toc ol {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.toc a {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 40px;
+  padding: 8px 12px;
+  border-radius: calc(var(--r-content) - 8px);
+  color: var(--ink-2);
+  font-size: 15px;
+  line-height: 1.3;
+}
+.page-site .toc a {
+  text-decoration: none;
+}
+.toc a[aria-current] {
+  background: var(--g-select);
+  color: var(--ink);
+}
+.toc .num {
+  min-width: 2ch;
+  color: var(--muted);
+  font-variant-numeric: tabular-nums;
+}
+@media (hover: hover) {
+  .toc a:hover {
+    background: var(--wash);
+    color: var(--ink);
+  }
+}
+@media (min-width: 640px) and (max-width: 1023.98px) {
+  .toc ol {
+    columns: 2;
+    column-gap: 8px;
+  }
+  .toc li {
+    break-inside: avoid;
+  }
+}
+@media (min-width: 1024px) {
+  .toc {
+    position: sticky;
+    top: calc(14px + var(--nav-h) + 24px);
+    max-height: calc(100vh - 14px - var(--nav-h) - 48px);
+    overflow-y: auto;
+  }
+}
+@media (max-width: 1023.98px) {
+  .legal-text {
+    margin-top: 48px;
+  }
+}
+
+/* The text: 68 characters a line; numbers hang in a gutter so every clause starts on one x. */
+.legal-text {
+  max-width: var(--measure);
+  color: var(--ink-2);
+}
+.legal-text strong {
+  color: var(--ink);
+  font-weight: 600;
+}
+.legal-text > section + section {
+  margin-top: 56px;
+}
+.legal-text h2 {
+  position: relative;
+  color: var(--ink);
+  font-size: 24px;
+  line-height: 1.2;
+  letter-spacing: -0.025em;
+}
+.legal-text h3 {
+  margin: 24px 0 0;
+  color: var(--ink);
+  font-size: 17px;
+}
+.legal-text > section > p,
+.legal-text > section > :is(ul, ol) {
+  margin-top: 16px;
+}
+.note {
+  margin-bottom: 40px;
+  color: var(--muted);
+  font-size: 15px;
+}
+.short {
+  padding: 12px 16px;
+  border-radius: var(--r-field);
+  background: var(--surface);
+  font-size: 15px;
+}
+.clause,
+.items li {
+  position: relative;
+  padding-left: 3.25em;
+}
+.items {
+  margin: 8px 0 0;
+  padding: 0 0 0 3.25em;
+  list-style: none;
+}
+.items li {
+  padding-left: 2.25em;
+}
+.items li + li {
+  margin-top: 4px;
+}
+.clause > .num,
+.items .num {
+  position: absolute;
+  left: 0;
+}
+.legal .num {
+  color: var(--muted);
+  font-variant-numeric: tabular-nums;
+}
+.page-site .legal-text .num {
+  text-decoration: none;
+}
+/* The link glyph sits in the gutter before the number, shown on hover or focus; the number is the link. */
+.legal-text .num {
+  position: relative;
+}
+.legal-text h2 .num {
+  margin-right: 8px;
+}
+.num .icon {
+  position: absolute;
+  top: 50%;
+  right: 100%;
+  width: 18px;
+  height: 18px;
+  margin-right: 4px;
+  translate: 0 -50%;
+  visibility: hidden;
+}
+.num:focus-visible .icon {
+  visibility: visible;
+}
+@media (hover: hover) {
+  :is(.clause, .items li, .legal-text h2):hover > .num .icon {
+    visibility: visible;
+  }
+  .num:hover {
+    color: var(--ink);
+  }
+}
+.legal-text :target:not(section) {
+  border-radius: 4px;
+  background: var(--wash);
+  box-shadow: 0 0 0 6px var(--wash);
+}
+.bullets {
+  padding-left: 1.2em;
+}
+.bullets li + li {
+  margin-top: 8px;
+}
+.legal code {
+  font: inherit;
+  font-weight: 600;
+  color: var(--ink);
+  overflow-wrap: anywhere;
+}
+.related {
+  margin-top: 56px;
+  padding-top: 24px;
+  box-shadow: inset 0 1px 0 var(--hairline);
+  color: var(--muted);
+  font-size: 15px;
+}
+
+/* How It Works on /security: four numbered cards, two a row from 640. */
+.flow {
+  display: grid;
+  gap: 12px;
+  padding: 0;
+  list-style: none;
+  counter-reset: step;
+}
+@media (min-width: 640px) {
+  .flow {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+.flow li {
+  padding: 20px;
+  border-radius: var(--r-content);
+  background: var(--surface);
+  counter-increment: step;
+}
+.flow li::before {
+  content: counter(step);
+  display: grid;
+  place-items: center;
+  width: 28px;
+  height: 28px;
+  margin-bottom: 12px;
+  border-radius: 50%;
+  background: var(--ink);
+  color: var(--surface);
+  font-size: 15px;
+  font-weight: 600;
+}
+.flow strong {
+  display: block;
+}
+
+/* Tables: one white card; under 640 each row stacks, every value under its column's name. */
+.legal table {
+  width: 100%;
+  margin-top: 16px;
+  border-collapse: separate;
+  border-spacing: 0;
+  border-radius: var(--r-content);
+  overflow: hidden;
+  background: var(--surface);
+  font-size: 15px;
+  line-height: 1.45;
+}
+.legal :is(th, td) {
+  padding: 12px 16px;
+  vertical-align: top;
+  text-align: left;
+  box-shadow: inset 0 -1px 0 var(--hairline);
+}
+.legal tr:last-child :is(th, td) {
+  box-shadow: none;
+}
+.legal thead th {
+  color: var(--muted);
+  font-size: 13px;
+  font-weight: 600;
+  box-shadow: inset 0 -1px 0 var(--hairline);
+}
+.legal tbody th {
+  color: var(--ink);
+  font-weight: 600;
+}
+.legal td .status {
+  display: inline-block;
+  margin: 0;
+  padding: 2px 10px;
+  font-size: 13px;
+}
+@media (max-width: 639.98px) {
+  .legal thead {
+    display: none;
+  }
+  .legal :is(tr, th, td) {
+    display: block;
+  }
+  .legal tr {
+    padding: 12px 16px;
+    box-shadow: inset 0 -1px 0 var(--hairline);
+  }
+  .legal tr:last-child {
+    box-shadow: none;
+  }
+  .legal :is(th, td) {
+    padding: 0;
+    box-shadow: none;
+  }
+  .legal td {
+    margin-top: 8px;
+  }
+  .legal td::before {
+    content: attr(data-label);
+    display: block;
+    color: var(--muted);
+    font-size: 13px;
+    font-weight: 600;
+  }
+}
+
+/* "Link Copied": a glass pill at the foot of the view, below it while empty so the live region stays read. */
+.copied {
+  position: fixed;
+  bottom: 24px;
+  left: 50%;
+  z-index: 30;
+  padding: 10px 18px;
+  border-radius: var(--r-pill);
+  box-shadow: var(--glass-edge), var(--sh-pill);
+  color: var(--ink);
+  font-size: 15px;
+  font-weight: 600;
+  translate: -50% 0;
+  transition: translate 240ms var(--ease-out);
+}
+.copied:empty {
+  translate: -50% calc(100% + 48px);
+}
+
+@media print {
+  @page {
+    margin: 16mm;
+  }
+  .page-site {
+    background: none;
+  }
+  .nav,
+  .footer,
+  .skip,
+  .toc,
+  .copied,
+  .legal .panel,
+  .num .icon {
+    display: none;
+  }
+  body {
+    font-size: 11pt;
+  }
+  .doc-hero {
+    padding-top: 0;
+  }
+  .legal :is(.summary, .legal-body, .legal-text) {
+    max-width: none;
+  }
+  .legal-body {
+    display: block;
+  }
+  .summary,
+  .short,
+  .legal table {
+    background: none;
+    box-shadow: inset 0 0 0 1px var(--g2);
+  }
+  .legal-text {
+    margin-top: 24px;
+  }
+  .legal-text h2,
+  .legal-text h3 {
+    break-after: avoid;
+  }
+  .clause,
+  .legal tr,
+  .flow li {
+    break-inside: avoid;
+  }
+  .legal-text a[href^="http"]::after {
+    content: " (" attr(href) ")";
+  }
+  .legal-text a[href^="/"]::after {
+    content: " (bloop.here" attr(href) ")";
+  }
+}
