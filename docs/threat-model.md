@@ -153,7 +153,7 @@ Trust boundaries:
 | phone session | D1 | 30 days idle, 90 absolute |
 | guest pass | D1 | 24 h |
 | user row | D1 | while a grant or session exists, then 30 days |
-| Worker logs | Cloudflare | 3 days, no personal data |
+| Worker logs | Cloudflare | off on the live Worker (a live tail only); if turned on, at most 7 days, no personal data |
 | failed-lookup counters | Directory DO | 10 min |
 | waitlist: the email and answers a person sends, to invite them to early access | Tally (tally.so), the waitlist form's processor, outside bloop's stores | until they ask for deletion or the waitlist closes |
 
