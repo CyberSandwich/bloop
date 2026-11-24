@@ -1158,8 +1158,10 @@ test.describe("screen and phone layout", () => {
     const { phone } = await scan(browser, screen.page);
     await expect(screen.page.locator("#awaiting")).toHaveText("Waiting for Approval");
     expect(await settled("#qr-panel")).toEqual(card);
+    // The status is centered inside the hint's box, which keeps its height.
     const awaiting = await screen.page.locator("#awaiting").boundingBox();
-    expect(Math.round(awaiting?.y ?? -1)).toBe(Math.round(hint?.y ?? -2));
+    expect(awaiting?.y ?? -1).toBeGreaterThanOrEqual((hint?.y ?? 0) - 1);
+    expect((awaiting?.y ?? 0) + (awaiting?.height ?? 0)).toBeLessThanOrEqual((hint?.y ?? 0) + (hint?.height ?? 0) + 1);
     expect(await screen.page.evaluate("document.scrollingElement.scrollHeight <= innerHeight")).toBe(true);
     await screen.context.close();
     await phone.context.close();
