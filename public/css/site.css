@@ -206,19 +206,26 @@ html:has(.page-site) {
     font-size: min(112px, (100vw - 2 * var(--pad)) / 10);
   }
 }
-/* Solid deep robin at rest; a bright band sweeps through, rests, and sweeps again (design.md section 8). */
+/* Ink at rest, like the rest of the h1; an orange band sweeps through, rests, and sweeps again (design.md section 8). */
 .sheen {
   /* background-clip paints only inside the box, and the tracking pulls it inside the last glyph's ink: net width 0. */
   margin-inline: -0.05em;
   padding-inline: 0.05em;
-  color: var(--robin-deep);
+  color: var(--ink);
 }
 @supports (background-clip: text) or (-webkit-background-clip: text) {
   @media (prefers-reduced-motion: no-preference) {
     .sheen {
       background:
-        linear-gradient(100deg, transparent 38%, rgba(255, 236, 214, 0.95) 50%, transparent 62%) 100% 0 / 300% 100%
-        no-repeat var(--robin-deep);
+        linear-gradient(
+          100deg,
+          transparent 32%,
+          var(--robin-deep) 42%,
+          var(--robin) 50%,
+          var(--robin-deep) 58%,
+          transparent 68%
+        )
+        100% 0 / 300% 100% no-repeat var(--ink);
       -webkit-background-clip: text;
       background-clip: text;
       color: transparent;

@@ -116,7 +116,7 @@ Tokens live in `public/css/base.css` `:root`; this list restates them, and the d
 | `--mint:#cce8df` `--mint-ink:#1e3d35` | the Available status chip and its text (9.1:1): green reads as ready at a glance, and pastel keeps it from shouting |
 | `--amber:#f6e7b2` `--amber-ink:#57420f` | the Coming Soon status chip and its text (7.8:1): amber reads as not yet, never as an error; text on a pastel is its own dark ink, never `--muted` |
 | `--robin:#f4ba8b` | the logo's disc, the one accent: the site's top wash, always at partial alpha through `color-mix`, and a soft shape of the warm backdrop (section 6); never text, never a flat fill |
-| `--robin-deep:#c8632a` | "Anywhere" at rest, solid, in the h1 only (3.6:1 on paper, 3.2:1 at the wash's peak: large text, 32 px or more); the QR ring's countdown stroke (4.0:1 on white, over the 3:1 a graphic needs); never body text |
+| `--robin-deep:#c8632a` | the edges of the orange band that sweeps through "Anywhere" (the word rests in ink; the band's core is `--robin`); the QR ring's countdown stroke (4.0:1 on white, over the 3:1 a graphic needs); never body text |
 | `--rose:#f8d7d3` `--rose-ink:#9b2c22` | the pair for the controls that end: End on the screen and Revoke on the phone, a pastel fill with its own deep red text (5.6:1). Red says stop without alarm; the same house frame or pill, so nothing else changes |
 | `--robin-ink:#a64f15` | the robin at text strength: the name in body copy (5.0:1 on paper, 5.6:1 on white) |
 | `--lead:#50504b` | the hero and page leads, which sit on the robin wash: 6.4:1 where the wash is strongest under text, 7.3 on paper; never lighter than `--muted`, so a lead outranks secondary text |
@@ -413,7 +413,7 @@ One language: `--ease-out` for anything that appears or moves, `--ease-ui` for p
 |---|---|---|---|
 | press | input | 150 ms | `--ease-ui` |
 | stage tilt | scroll, at every width, not under reduced motion | sprung: stiffness 120, damping 30, mass .4 (CSS fallback: scroll-linked) | the spring |
-| "Anywhere" sheen | from 0.3 s after load, repeating | 3.6 s a cycle: a bright warm band sweeps left to right through `background-position` in the first 1 s, then the word rests solid for 2.6 s, and again, without end | `--ease-out` on the sweep |
+| "Anywhere" sheen | from 0.3 s after load, repeating | 3.6 s a cycle: an orange band (`--robin-deep` edges, `--robin` core) sweeps left to right across the ink word through `background-position` in the first 1 s, then the word rests in ink for 2.6 s, and again, without end | `--ease-out` on the sweep |
 | Try the Demo arrow | hover | 200 ms, 2 px to the right | `--ease-out` |
 | FAQ open, close | toggle | 380 ms height, 250 ms fade, 300 ms "+" turn | `--ease-out` |
 | nav scrolled | the top sentinel leaves or enters view | 240 ms glass and shadow | `--ease-out` |
@@ -427,7 +427,7 @@ One language: `--ease-out` for anything that appears or moves, `--ease-ui` for p
 
 "Anywhere" rests in solid `--robin-deep`, and one light band passes over it once on load (`background-clip:text` over the same solid, then still). Why: presence without a halo; the one accent. A blurred glow muddied the letter edges, and an ink-to-robin gradient at rest read as the gradient tell section 13 bans; a solid word keeps the edges sharp and the robin in the word itself. The band runs only under `@supports` and with motion allowed; elsewhere the word is simply `--robin-deep`.
 
-Reduced motion (`prefers-reduced-motion:reduce`): the stage rests flat (the spring never starts); the sheen never plays and the word is solid `--robin-deep`; the FAQ switches instantly; the `/s` QR ring steps once a second with no glide; scene changes swap at once; the blanket rule in `base.css` is the safety net. Nothing autoplays except the sheen's pulse, which is decoration and stops under reduced motion; the QR refresh is essential (a code must expire), so it has no pause.
+Reduced motion (`prefers-reduced-motion:reduce`): the stage rests flat (the spring never starts); the sheen never plays and the word is ink like the rest of the h1; the FAQ switches instantly; the `/s` QR ring steps once a second with no glide; scene changes swap at once; the blanket rule in `base.css` is the safety net. Nothing autoplays except the sheen's pulse, which is decoration and stops under reduced motion; the QR refresh is essential (a code must expire), so it has no pause.
 
 ## 9. Logo and social image
 

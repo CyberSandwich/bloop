@@ -237,10 +237,10 @@ describe("landing word caps (design.md section 13)", () => {
     expect(h1.match(/<span/g)).toHaveLength(1);
   });
 
-  it("Anywhere rests in solid deep robin; its sheen sweeps, rests and repeats, and never plays under reduced motion", () => {
+  it("Anywhere rests in ink; its orange sheen sweeps, rests and repeats, and never plays under reduced motion", () => {
     const css = read("public/css/site.css");
     expect(css).toMatch(
-      /^\.sheen \{(?:\s*\/\*.*\*\/)?\s*margin-inline: -0\.05em;\s*padding-inline: 0\.05em;\s*color: var\(--robin-deep\);\s*\}/m,
+      /^\.sheen \{(?:\s*\/\*.*\*\/)?\s*margin-inline: -0\.05em;\s*padding-inline: 0\.05em;\s*color: var\(--ink\);\s*\}/m,
     );
     const block = between(css, /@supports \(background-clip: text\)/, "@keyframes sheen");
     const moving = between(block, /prefers-reduced-motion: no-preference\) \{/, "}");
@@ -249,7 +249,8 @@ describe("landing word caps (design.md section 13)", () => {
     );
     // The band is the only gradient; under it the fill is the rest color, so the word never rests as a gradient.
     expect(moving.match(/linear-gradient/g)).toHaveLength(1);
-    expect(moving).toMatch(/no-repeat var\(--robin-deep\);/);
+    expect(moving).toMatch(/no-repeat var\(--ink\);/);
+    expect(moving).toMatch(/var\(--robin\) 50%/);
     expect(css).not.toMatch(/text-shadow/);
   });
 
