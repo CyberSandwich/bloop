@@ -209,7 +209,9 @@ test.describe("phone hero", () => {
   test("the phone mockup replaces the screenshot, bare of the stage's frame, and still tilts", async ({ page }) => {
     await page.goto("/");
     const img = page.locator(".stage img");
-    await expect(img).toHaveJSProperty("currentSrc", /\/img\/hero-phone-(600|900)\.(avif|webp)$/);
+    await expect
+      .poll(() => img.evaluate((el) => (el as unknown as { currentSrc: string }).currentSrc))
+      .toMatch(/\/img\/hero-phone-(600|900)\.(avif|webp)$/);
     const style = await page.locator(".stage").evaluate((el) => {
       const c = getComputedStyle(el as unknown as El) as unknown as Record<string, string>;
       return [c.borderRadius, c.boxShadow, c.backgroundColor];
