@@ -217,8 +217,12 @@ test.describe("phone hero", () => {
       return [c.borderRadius, c.boxShadow, c.backgroundColor];
     });
     expect(style).toEqual(["0px", "none", "rgba(0, 0, 0, 0)"]);
-    const box = await img.boundingBox();
-    expect(Math.abs((box?.width ?? 0) / (box?.height ?? 1) - 1155 / 2366)).toBeLessThan(0.01);
+    // The layout box, not the bounding box: the stage is tilted and scaled while it enters.
+    const [w = 0, h = 1] = await img.evaluate((el) => [
+      (el as unknown as { offsetWidth: number }).offsetWidth,
+      (el as unknown as { offsetHeight: number }).offsetHeight,
+    ]);
+    expect(Math.abs(w / h - 1155 / 2366)).toBeLessThan(0.01);
     await page.locator(".stage").scrollIntoViewIfNeeded();
     expect(
       await page
