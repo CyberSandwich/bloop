@@ -71,7 +71,7 @@ bloop puts your slides on a shared screen. You scan the code on the screen, choo
 |---|---|
 | Nav | the logo pill, the logo and bloop (home); the links pill: Features (`/#features`), Privacy, Security, Waitlist, and the menu button, labeled Menu, under 640 |
 | Waitlist | every Waitlist link opens `https://tally.so/r/Yj4KAN?source=<page>` in the same tab, where `<page>` is landing, privacy, security, viewer (the Session Ended link on `/s`) or 404; each keeps `data-waitlist`, so one grep finds every link; the form is Tally's, so the CSP needs nothing (a link navigation is not covered by it, and `form-action` governs forms only) |
-| Footer | the logo and bloop; "**Present anywhere.** **bloop** puts your files on a shared screen from your phone. The screen gets only the items you approve, never your account." (the tagline stays a sentence: it is body copy); "Write to hi@bloop.here." as plain text, so the address is visible without a mail app; Privacy, Security, Waitlist; a rule; © 2026 bloop. No Source link. |
+| Footer | the logo and bloop; "**Present anywhere.** **bloop** puts your files on a shared screen from your phone. The screen gets only the items you approve, never your account." (the tagline stays a sentence: it is body copy); Privacy, Security, Waitlist and the address `hi@bloop.here` as a `mailto:` link in the same list, so its text is visible without a mail app; a rule; © 2026 bloop. No Source link. |
 | 404 | This Page Isn't Here / Check the address. / button Go to the Home Page (the button says where, so the line does not) |
 
 **Landing**
@@ -246,7 +246,7 @@ Max 760. A solid sky panel, `--r-stage`, padding 12, holding two white group car
 Native `<details>` as white `--r-content` cards, 12 apart, max 760, centered. Summary 17/600 with a `--muted` "+" that turns 45 degrees. Open and close animate the height: `::details-content` with `interpolate-size:allow-keywords` where supported (block-size 380 ms and opacity 250 ms, `--ease-out`); elsewhere a WAAPI height tween in `public/js/site.js` (find in page still opens an item). Reduced motion: instant.
 
 ### Footer (every site page)
-Width 1136, a top hairline, padding 56 above. A row that wraps: at the start the logo at `--mark` and bloop at `--wordmark`, then the tagline in 600 `--ink` and two plain sentences in `--muted` (max 420), then the address line; at the end the links in `--muted` 15 px, 44 px rows. Then a hairline rule and "© 2026 bloop" in 14 px `--muted`, 40 below the row.
+Width 1136, a top hairline, padding 56 above. A row that wraps: at the start the logo at `--mark` and bloop at `--wordmark`, then the tagline in 600 `--ink` and two plain sentences in `--muted` (max 420); at the end the links, the address last, in `--muted` 15 px, 44 px rows. Then a hairline rule and "© 2026 bloop" in 14 px `--muted`, 40 below the row.
 
 ### Privacy and security pages (opsis `/compare`, restated)
 Content 1136 wide. A centered page hero (the h1 at the section size, an optional `.lead`), then:

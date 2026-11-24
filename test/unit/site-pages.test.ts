@@ -550,8 +550,9 @@ describe("site chrome: one nav and one footer on every site page", () => {
     for (const m of html.matchAll(/[\w.+-]+@[\w-]+(\.[\w-]+)+/g)) expect(m[0]).toBe("hi@bloop.here");
   });
 
-  it("the footer shows the address as plain text", () => {
-    expect(footer).toContain("<p>Write to hi@bloop.here.</p>");
+  it("the footer lists the address as a mailto link beside the other footer links, with its text visible", () => {
+    expect(footer).toContain('<li><a href="mailto:hi@bloop.here">hi@bloop.here</a></li>');
+    expect(footer).not.toContain("Write to");
   });
 
   it("security.txt names the same contact", () => {
