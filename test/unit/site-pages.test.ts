@@ -133,9 +133,9 @@ describe.each(SITE)("%s under the strict CSP", (page) => {
     }
   });
 
-  it("draws icons in the Iconic style: inline, 1.5 stroke, round caps, hidden from screen readers", () => {
+  it("draws icons as Lucide: inline, 2 stroke, round caps, hidden from screen readers", () => {
     for (const m of html.matchAll(/<svg\b[^>]*>/g)) {
-      expect(m[0]).toContain('stroke-width="1.5"');
+      expect(m[0]).toContain('stroke-width="2"');
       expect(m[0]).toContain('stroke-linecap="round"');
       expect(m[0]).toContain('aria-hidden="true"');
     }
@@ -289,7 +289,7 @@ describe("landing word caps (design.md section 13)", () => {
     expect(links).toHaveLength(1);
     expect(links[0]?.[1]).toBe(' class="btn primary" href="/demo"');
     expect(visibleText(links[0]?.[2] ?? "")).toBe("Try the Demo");
-    expect(links[0]?.[2]).toMatch(/Try the Demo<svg class="icon arrow"[^>]*><path d="[^"]+"\/><\/svg>$/);
+    expect(links[0]?.[2]).toMatch(/Try the Demo<svg class="icon arrow"[^>]*>(?:<path d="[^"]+"\/>)+<\/svg>$/);
     expect(button("close").map((m) => m[0])).toEqual(links.map((m) => m[0]));
     expect(read("public/_redirects")).toMatch(/^\/demo \/s\?mode=demo 302$/m);
   });
@@ -732,7 +732,7 @@ describe("stage 1 wording and pictures", () => {
     expect(html).not.toContain("What Stays on Your Phone");
   });
 
-  it("What You Can Share rows carry their Iconic glyphs; the provider rows carry no mark yet", () => {
+  it("What You Can Share rows carry their Lucide glyphs; the provider rows carry no mark yet", () => {
     const rows = (id: string) => between(index, new RegExp(`<section class="group" aria-labelledby="${id}">`), "</ul>");
     expect(rows("share-h").match(/<li><svg class="icon"[^>]*aria-hidden="true"/g)).toHaveLength(4);
     expect(rows("from-h")).not.toMatch(/<(svg|img)\b/);

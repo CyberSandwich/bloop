@@ -275,3 +275,6 @@ export interface PhoneCtx {
   /** Where the guest flow is, which only this phone knows. */
   drop: "choose" | "confirm" | "sending" | null;
 }
+
+/** A child of a 24 px glyph: a bare path's `d`, or a tag with its attributes (core/icons.js). */
+export type IconPart = string | [string, Record<string, string>];

@@ -1,6 +1,7 @@
 // Pure formatting shared by the pages.
 /** @import {Item} from "../../../src/shared/protocol.ts" */
 import { normalize } from "../shared/codes.js";
+import { ICONS } from "./icons.js";
 
 /**
  * Local wall-clock time as "11:35".
@@ -114,32 +115,16 @@ export function itemLine(item, date = null) {
 /** A row's name: a link's title, a file's name. @param {Item} item */
 export const itemName = (item) => (item.kind === "link" ? item.title : item.name);
 
-/** Iconic icon paths (free set, 24 viewBox, stroke 1.5): projector, file-text, photo, link, plus. */
-const ICONS = {
-  pptx: [
-    "M18.25 7.75H5.75v7.5c0 1.1.9 2 2 2h8.5a2 2 0 0 0 2-2v-7.5Z",
-    "M18.25 4.75H5.75a1 1 0 0 0-1 1v1a1 1 0 0 0 1 1h12.5a1 1 0 0 0 1-1v-1a1 1 0 0 0-1-1Z",
-    "M12 17.5v1.75",
-  ],
-  pdf: [
-    "M7.75 19.25h8.5a2 2 0 0 0 2-2V9L14 4.75H7.75a2 2 0 0 0-2 2v10.5c0 1.1.9 2 2 2Z",
-    "M18 9.25h-4.25V5",
-    "M9.75 15.25h4.5",
-    "M9.75 12.25h4.5",
-  ],
-  image: [
-    "m4.75 16 2.75-3.49a2 2 0 0 1 3.09-.07L13 15.25m-2.09-2.43 2.59-3.32a2 2 0 0 1 3.09-.06L19 12.25M6.75 19.25h10.5a2 2 0 0 0 2-2V6.75a2 2 0 0 0-2-2H6.75a2 2 0 0 0-2 2v10.5c0 1.1.9 2 2 2Z",
-  ],
-  link: [
-    "M16.75 13.25 18 12a4.24 4.24 0 0 0-6-6l-1.25 1.25",
-    "M7.25 10.75 6 12a4.24 4.24 0 0 0 6 6l1.25-1.25",
-    "m14.25 9.75-4.5 4.5",
-  ],
+/** The type tile's glyph by kind: slides, a document, a picture, a link. */
+const TYPE_ICONS = {
+  pptx: ICONS.projector,
+  pdf: ICONS["file-text"],
+  image: ICONS.image,
+  link: ICONS.link,
 };
-export const ICON_ADD = ["M12 5.75v12.5", "M18.25 12H5.75"];
 
 /** The type tile's glyph: slides, a document for a PDF, a picture for an image, a link. @param {Item} item */
 export function itemIcon(item) {
-  if (item.kind === "link") return ICONS.link;
-  return item.type === "pptx" || item.type === "pdf" ? ICONS[item.type] : ICONS.image;
+  if (item.kind === "link") return TYPE_ICONS.link;
+  return item.type === "pptx" || item.type === "pdf" ? TYPE_ICONS[item.type] : TYPE_ICONS.image;
 }

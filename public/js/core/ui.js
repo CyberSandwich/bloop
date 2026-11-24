@@ -65,8 +65,8 @@ export function el(tag, attrs = {}, children = []) {
 
 const SVG = "http://www.w3.org/2000/svg";
 
-/** An Iconic icon (free set: 24 viewBox, stroke 1.5) from path data, as the pages inline it. */
-export function icon(/** @type {string[]} */ paths) {
+/** A Lucide glyph (24 viewBox, stroke 2) from its child elements in icons.js, as the pages inline it. @param {import("../types.js").IconPart[]} parts */
+export function icon(parts) {
   const svg = document.createElementNS(SVG, "svg");
   for (const [k, v] of Object.entries({
     viewBox: "0 0 24 24",
@@ -74,7 +74,7 @@ export function icon(/** @type {string[]} */ paths) {
     height: "24",
     fill: "none",
     stroke: "currentColor",
-    "stroke-width": "1.5",
+    "stroke-width": "2",
     "stroke-linecap": "round",
     "stroke-linejoin": "round",
     "aria-hidden": "true",
@@ -83,15 +83,14 @@ export function icon(/** @type {string[]} */ paths) {
   })) {
     svg.setAttribute(k, v);
   }
-  for (const d of paths) {
-    const path = document.createElementNS(SVG, "path");
-    path.setAttribute("d", d);
-    svg.append(path);
+  for (const part of parts) {
+    const [tag, attrs] = typeof part === "string" ? ["path", { d: part }] : part;
+    const child = document.createElementNS(SVG, tag);
+    for (const [k, v] of Object.entries(attrs)) child.setAttribute(k, v);
+    svg.append(child);
   }
   return svg;
 }
-
-export const ICON_CHECK = ["m5.75 12.87 2.59 3.54c.81 1.12 2.48 1.1 3.26-.04l6.65-9.62"];
 
 /** Runs `fn` at most once per animation frame. */
 export function frameThrottle(/** @type {() => void} */ fn) {

@@ -26,7 +26,7 @@
     {
       "name": "browser JS",
       "path": "public/js/**/*.js",
-      "limit": "45 kB"
+      "limit": "45.5 kB"
     },
     {
       "name": "landing JS",

@@ -4,6 +4,7 @@
 /** @import {Minted} from "./types.js" */
 import { halves, openTarget, pageMode, pagesOf, stepPage, thumbOf } from "./core/demo.js";
 import { hostOf, itemIcon, itemLine, itemName } from "./core/format.js";
+import { ICONS } from "./core/icons.js";
 import { rowFace, tile } from "./core/rows.js";
 import { byId, el, icon, setText, show } from "./core/ui.js";
 
@@ -23,7 +24,6 @@ const KEYS = /** @type {Record<string, number>} */ ({
   ArrowUp: -1,
   PageUp: -1,
 });
-const NEW_TAB = ["M17.25 15.25v-8.5h-8.5", "M17 7 6.75 17.25"];
 
 /** https only (LINK-01): the server allows nothing else, and the page checks again before it makes a link. */
 const linkTo = (
@@ -146,7 +146,11 @@ export function createViewer(deps) {
         const face = rowFace(item, thumbOf(item, v));
         const row =
           item.kind === "link"
-            ? linkTo(item.url, { class: "item" }, [...face, icon(NEW_TAB), el("span", { class: "sr" }, ["New Tab"])])
+            ? linkTo(item.url, { class: "item" }, [
+                ...face,
+                icon(ICONS["arrow-up-right"]),
+                el("span", { class: "sr" }, ["New Tab"]),
+              ])
             : el("button", { type: "button", class: "item" }, face);
         if (item.kind === "file") row.addEventListener("click", () => select(i));
         const split = item.kind === "link" && files > 0 && files === i;
@@ -210,7 +214,7 @@ export function createViewer(deps) {
     handle.replaceChildren(
       ...rowFace(item, thumbOf(item, v)),
       el("span", { class: "small" }, [`${v.items.length} items`]),
-      icon(["M15.25 14.25 12 10.75l-3.25 3.5"]),
+      icon(ICONS["chevron-up"]),
     );
 
     const p = pages();

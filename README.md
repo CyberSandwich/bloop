@@ -39,4 +39,4 @@ The demo needs no account and runs on the sample deck. With `npm run dev` runnin
 
 ## License
 
-[MIT](LICENSE)
+[MIT](LICENSE). Third-party: Inter (OFL, [public/fonts/Inter.LICENSE.txt](public/fonts/Inter.LICENSE.txt)) and the Lucide icons (ISC, [public/js/core/Lucide.LICENSE.txt](public/js/core/Lucide.LICENSE.txt)).

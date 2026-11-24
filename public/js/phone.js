@@ -9,23 +9,12 @@ import { phoneCopy } from "./core/copy.js";
 import { thumbOf } from "./core/demo.js";
 import { sendable, sendFile, wholeMB } from "./core/drop.js";
 import { loadFiles } from "./core/files.js";
-import { ago, countdown, ICON_ADD } from "./core/format.js";
+import { ago, countdown } from "./core/format.js";
+import { ICONS } from "./core/icons.js";
 import { rowFace, tile } from "./core/rows.js";
 import { adopt, firstFile, leave, liveClaim, onRefusal, phoneKey, retryStep } from "./core/states.js";
 import { dropPid, PID_KEY, pidStore, refOf, SID_KEY, sameScreen, sessionStore } from "./core/store.js";
-import {
-  ariaFlag,
-  byId,
-  el,
-  focusTitle,
-  ICON_CHECK,
-  icon,
-  isFramed,
-  reloadOnRestore,
-  setText,
-  show,
-  wsUrl,
-} from "./core/ui.js";
+import { ariaFlag, byId, el, focusTitle, icon, isFramed, reloadOnRestore, setText, show, wsUrl } from "./core/ui.js";
 import { VERIFIED } from "./core/verified.js";
 import { ERRORS } from "./shared/errors.js";
 import { IN_SESSION, LIVE_CLAIM, orderItems } from "./shared/session.js";
@@ -94,7 +83,7 @@ function fail(/** @type {ErrorCode} */ code, /** @type {(() => void) | null} */ 
 
 const look = () => ({ mode: c.info?.mode ?? "live", kind: "owner" });
 
-const tickMark = () => el("span", { class: "tick" }, [icon(ICON_CHECK)]);
+const tickMark = () => el("span", { class: "tick" }, [icon(ICONS.check)]);
 
 /** Demo: any items; live: one file (radios), as a live screen shows one. */
 function buildRows(/** @type {Entry[]} */ all, /** @type {boolean} */ add) {
@@ -120,7 +109,7 @@ function buildRows(/** @type {Entry[]} */ all, /** @type {boolean} */ add) {
       ? [
           el("li", {}, [
             el("button", { type: "button", class: "row", "data-action": "send-file" }, [
-              tile(ICON_ADD),
+              tile(ICONS.plus),
               el("span", { class: "row-text row-name" }, ["Add a File"]),
             ]),
           ]),

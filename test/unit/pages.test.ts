@@ -181,13 +181,18 @@ describe("the demo screen", () => {
       expect(read(page), page).not.toMatch(/class="brand"|favicon\.svg" width/);
   });
 
-  it("icons are the Iconic free set as inlined: one 1.5 px stroke, never Lucide's 2", () => {
+  it("icons are Lucide as inlined: one 2 px stroke, round caps and joins, in the pages and in ui.js", () => {
     for (const page of ["s.html", "a.html", "code.html"]) {
       const icons = read(page).match(/<svg class="icon"[^>]*>/g) ?? [];
       expect(icons.length, page).toBeGreaterThan(0);
-      for (const svg of icons) expect(svg, page).toContain('stroke-width="1.5"');
+      for (const svg of icons) {
+        expect(svg, page).toContain('stroke-width="2"');
+        expect(svg, page).toContain('stroke-linecap="round" stroke-linejoin="round"');
+      }
+      expect(read(page), page).not.toContain('stroke-width="1.5"');
     }
-    expect(read("js/core/ui.js")).toContain('"stroke-width": "1.5"');
+    expect(read("js/core/ui.js")).toContain('"stroke-width": "2"');
+    expect(read("js/core/icons.js")).toContain("Lucide");
   });
 });
 
