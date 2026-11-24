@@ -41,6 +41,8 @@ const qrPanel = byId("qr-panel");
 const qrSvg = byId("qr");
 const qrPathEl = byId("qr-path");
 const matchEl = byId("match");
+const compare = byId("compare");
+const foot = byId("foot");
 const typedHost = byId("typed-host");
 const typedCode = byId("typed-code");
 const polite = byId("polite");
@@ -80,7 +82,6 @@ const s = {
 
 const viewer = DEMO ? createViewer({ relink: (item) => launcher.relink(item), onChange: () => render() }) : null;
 
-// A demo launches nothing (no PowerPoint, no popup): it fetches the link itself and shows the item in the page.
 const launcher = createLauncher({
   api,
   sid: () => s.sid,
@@ -125,12 +126,19 @@ const cancel = (/** @type {string} */ name) => clearTimeout(s.timers[name]);
 
 /** The ring is the card's edge (radius 28, as app.css): its dash starts at the top center and runs clockwise. */
 function fitQr() {
-  const size = qrSize(innerHeight, devicePixelRatio || 1);
+  // Half the height at most, and stacked no more than the title, hint and code row leave: the page never scrolls.
+  const rest = pane.offsetHeight - qrPanel.offsetHeight + 2 * parseFloat(getComputedStyle(main).paddingTop);
+  const size = qrSize(Math.min(innerHeight / 2, innerHeight - rest - foot.offsetHeight), devicePixelRatio || 1);
   qrSvg.setAttribute("width", String(size));
   qrSvg.setAttribute("height", String(size));
   const r = 28;
   const perimeter = 4 * (size - 2 * r) + 2 * Math.PI * r;
   ringRect.setAttribute("stroke-dashoffset", String((-100 * (size / 2 - r)) / perimeter));
+}
+
+function uncopied() {
+  buttons.copy.classList.remove("is-copied");
+  setText(polite, "");
 }
 
 function drawCode(/** @type {import("../../src/shared/protocol.ts").CodeView} */ code) {
@@ -139,7 +147,7 @@ function drawCode(/** @type {import("../../src/shared/protocol.ts").CodeView} */
   s.shown = code.code;
   // A check beside a code it never copied would lie.
   cancel("copied");
-  buttons.copy.classList.remove("is-copied");
+  uncopied();
   const paint = () => {
     qrPathEl.setAttribute("d", qrPath(qrMatrix(code.qrUrl)));
     qrSvg.setAttribute("aria-label", qrLabel(code.code, location.host));
@@ -193,9 +201,9 @@ function render() {
 function paint() {
   const key = keyNow();
   const v = s.view;
+  const parks = key !== "demo_open" && !!v && IN_SESSION.includes(v.state);
   if (key === "demo_open") viewer?.render(v);
-  else if (v && IN_SESSION.includes(v.state)) viewer?.park();
-  else viewer?.render(null);
+  else if (!parks) viewer?.render(null);
   const item = viewer?.item() ?? firstFile(v?.items ?? []);
   const copy = screenCopy(key, {
     room: v?.room.name ?? "",
@@ -212,6 +220,7 @@ function paint() {
     inSession: !!v?.endsAt && v.state !== "ended",
   });
 
+  if (parks) viewer?.park(copy.heading);
   const changed = heading.textContent !== copy.heading;
   setText(heading, copy.heading);
   setText(line, copy.line);
@@ -226,6 +235,8 @@ function paint() {
   if (code) drawCode(code);
   qrPanel.classList.toggle("is-empty", s.shown === null);
   show(matchEl, mode === "scanned");
+  // The digits to compare, large in the hint's place; the status line still says them to a screen reader.
+  setText(compare, mode === "scanned" ? copy.line : "");
 
   const has = (/** @type {import("./types.js").ScreenControl} */ c) => copy.controls.includes(c);
   show(buttons.back, !has("start_over") && !has("end") && key !== "ended");
@@ -254,7 +265,10 @@ function paint() {
   // With the sidebar showing, the h1 is visually hidden: focus lands on the selected row instead.
   const row = document.querySelector("#items [aria-current]");
   if (changed && lostFocus()) focusTitle(row instanceof HTMLElement && row.offsetParent ? row : heading);
-  if (mode === "waiting") updateRing();
+  if (mode === "waiting") {
+    fitQr();
+    updateRing();
+  }
   schedule(key);
 }
 
@@ -288,7 +302,7 @@ function recover() {
 
 function onView(/** @type {ScreenView} */ view) {
   if (view.state === "ended" && s.view?.state !== "ended") {
-    ended = DEMO ? "" : endLine(view.endReason, launcher.left());
+    ended = endLine(view.endReason, DEMO ? { ppt: false, download: null } : launcher.left());
   }
   if ((view.state === "ended" || view.state === "closed") && sameScreen(s.sid, pids.get(PID_KEY))) pids.remove(PID_KEY);
   s.view = view;
@@ -345,20 +359,19 @@ async function act(/** @type {string} */ path) {
 
 buttons.start_over.addEventListener("click", () => act("/api/screen/restart"));
 buttons.end.addEventListener("click", () => act("/api/screen/end"));
-// The logo opens an in-page question (s.html #leave, a popover); only its End and Go Home ends.
-// Home even if the end fails (it times out); the sid goes, so the browser's Back cannot resume it.
-byId("b-leave").addEventListener("click", async () => {
+/** Leaving: the end outlives the navigation (keepalive, home even if it fails), and the page forgets the screen. */
+function leave(/** @type {boolean} */ end) {
+  const sid = s.sid;
   letGo();
-  await api.post("/api/screen/end", {}, s.sid);
-  store.remove(SID_KEY);
+  if (sid && end) void api.leave("/api/screen/end", sid);
+  residue.clear();
+}
+byId("b-leave").addEventListener("click", () => {
+  leave(true);
   location.assign("/");
 });
-// Back ends a waiting screen (code and demo slot gone at once), the socket stopped first so nothing renews.
-buttons.back.addEventListener("click", () => {
-  const waiting = s.view?.state === "waiting";
-  letGo();
-  if (s.sid && waiting) void api.leave("/api/screen/end", s.sid);
-});
+// Back ends a waiting screen, so its code and demo slot go at once.
+buttons.back.addEventListener("click", () => leave(s.view?.state === "waiting"));
 buttons.present.addEventListener("click", () => viewer?.present());
 buttons.copy.addEventListener("click", () => {
   if (!s.shown) return;
@@ -366,10 +379,7 @@ buttons.copy.addEventListener("click", () => {
     () => {
       buttons.copy.classList.add("is-copied");
       setText(polite, "Copied");
-      after("copied", 1500, () => {
-        buttons.copy.classList.remove("is-copied");
-        setText(polite, "");
-      });
+      after("copied", 1500, uncopied);
     },
     () => {},
   );
@@ -437,7 +447,6 @@ async function resume() {
 async function create() {
   const res = await api.post("/api/screens", { mode: DEMO ? "demo" : "live" });
   if (!res.ok) return { ok: false, error: res.error };
-  store.set(SID_KEY, res.value.sid);
   return { ok: true, sid: res.value.sid, view: res.value.view };
 }
 
@@ -457,8 +466,10 @@ async function boot(attempt = 0) {
   ariaFlag(buttons.renew, "aria-disabled", false);
   s.link = "ok";
   s.offlineSince = null;
-  // The sid first: the first view can already ask for a link.
+  // The sid first: the first view can already ask for a link. Stored only now, so a boot that a later gen dropped
+  // leaves nothing to resume.
   s.sid = booted.sid;
+  store.set(SID_KEY, booted.sid);
   onView(booted.view);
   connect(booted.sid);
 }
@@ -471,10 +482,10 @@ function start() {
   main.dataset.mode = "idle";
   typedHost.textContent = location.host;
   setText(byId("phone-host"), location.host);
-  fitQr();
   addEventListener("resize", frameThrottle(fitQr));
   addEventListener("online", () => s.channel?.nudge());
   addEventListener("pagehide", () => launcher.closePdf());
+  addEventListener("pageshow", (e) => e.persisted && location.reload());
   document.addEventListener("visibilitychange", () => {
     if (!document.hidden) s.channel?.nudge();
   });

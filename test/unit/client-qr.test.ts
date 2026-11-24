@@ -36,16 +36,19 @@ describe("QR drawing", () => {
     expect(covered).toBe(dark);
   });
 
-  it("sizes whole device pixels per module to half the viewport height", () => {
+  it("sizes whole device pixels per module within the room it is given (wide: half the viewport height)", () => {
     // 1080p: 13 device px per module, 533 px (design.md section 10)
-    expect(qrSize(1080, 1)).toBe(533);
+    expect(qrSize(1080 / 2, 1)).toBe(533);
     // 1366 x 768: 9 px, 369 px
-    expect(qrSize(768, 1)).toBe(369);
+    expect(qrSize(768 / 2, 1)).toBe(369);
     // a 2x display: whole device pixels, so a half-pixel CSS size is fine
-    expect(qrSize(900, 2)).toBe((Math.floor((0.5 * 900 * 2) / 41) * 41) / 2);
+    expect(qrSize(450, 2)).toBe((Math.floor((450 * 2) / 41) * 41) / 2);
+    // never more than the room: 400 px holds 9 px modules, 369 px
+    expect(qrSize(400, 1)).toBeLessThanOrEqual(400);
   });
 
   it("never goes below 2 device pixels per module", () => {
-    expect(qrSize(100, 1)).toBe(82);
+    expect(qrSize(50, 1)).toBe(82);
+    expect(qrSize(-100, 1)).toBe(82);
   });
 });

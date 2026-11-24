@@ -91,7 +91,7 @@ describe("client code under the strict CSP", () => {
 
 describe("the demo screen", () => {
   it("hides the live footer line, which sends the visitor to a PC sign-in they do not have", () => {
-    expect(read("s.html")).toMatch(/<p class="foot">Phone not with you\?/);
+    expect(read("s.html")).toMatch(/<p class="foot" id="foot">Phone not with you\?/);
     expect(read("js/screen.js")).toContain('document.body.classList.add("is-demo")');
     expect(read("css/app.css")).toMatch(/\.is-demo > \.foot \{\s*display: none;\s*\}/);
   });

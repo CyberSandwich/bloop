@@ -56,12 +56,13 @@ export function screenKey(c) {
  * @returns {PhoneStateKey}
  */
 export function phoneKey(c) {
+  const v = c.view;
+  // A result is final: a refusal pushed after it (the pairing is gone by then) never replaces it.
+  if (c.canceled || (v?.state === "ended" && v.endReason === "canceled")) return "canceled";
+  if (v?.state === "ended") return "ended";
   if (c.error) return c.error;
   if (!c.info) return "checking";
-  if (c.canceled) return "canceled";
-  const v = c.view;
   if (v) {
-    if (v.state === "ended") return v.endReason === "canceled" ? "canceled" : "ended";
     if (v.state === "waiting" || v.state === "closed") return "expired";
     if (v.state === "approved" || v.state === "opening") return "opening";
     if (v.state === "open") {

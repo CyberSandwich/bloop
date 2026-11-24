@@ -222,6 +222,16 @@ describe("phone state to view mapping", () => {
     expect(phoneKey(ctx({ canceled: true, view: null }))).toBe("canceled");
   });
 
+  it("a result outranks any error pushed after it: the screen dropping the pairing never reads as expired", () => {
+    for (const error of ["expired", "taken", "offline", "error"] as const) {
+      expect(phoneKey(ctx({ error, view: phoneView("ended", { endReason: "phone" }) })), error).toBe("ended");
+      expect(phoneKey(ctx({ error, view: phoneView("ended", { endReason: "canceled" }) })), error).toBe("canceled");
+      expect(phoneKey(ctx({ error, canceled: true })), error).toBe("canceled");
+    }
+    // Before a result, the error still wins over the live state.
+    expect(phoneKey(ctx({ error: "expired", view: phoneView("open") }))).toBe("expired");
+  });
+
   it("a pairing that fell back to waiting is expired", () => {
     expect(phoneKey(ctx({ view: phoneView("waiting") }))).toBe("expired");
   });

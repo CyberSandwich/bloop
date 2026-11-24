@@ -47,6 +47,7 @@ export function createViewer(deps) {
   const prev = /** @type {HTMLButtonElement} */ (byId("prev"));
   const next = /** @type {HTMLButtonElement} */ (byId("next"));
   const dots = byId("dots");
+  const note = byId("parked");
   // The tap zones cover the slide's own box, so empty paper beside it never pages. Offsets, not client rects: the
   // swap animation scales the img, and .view is its offset parent.
   const fit = () => {
@@ -68,7 +69,7 @@ export function createViewer(deps) {
   /** @type {string | null} */
   let built = null;
   let at = 0;
-  /** Hidden for a transient state: nothing repaints it until render. */
+  /** Held for a transient state: nothing repaints it until render. */
   let parked = false;
   let page = 0;
   /** @type {string | null} */
@@ -238,6 +239,8 @@ export function createViewer(deps) {
       if (p && !scroll && shownImg) for (const box of [shownImg, view]) sized.observe(box);
     }
     show(view, true);
+    show(frame, true);
+    show(note, false);
     show(prev, !!p && !scroll && p.length > 1);
     show(next, !!p && !scroll && p.length > 1);
     paintDots();
@@ -246,8 +249,6 @@ export function createViewer(deps) {
   function hide() {
     for (const part of [side, handle, view, dots]) show(part, false);
     if (side.matches(":popover-open")) side.hidePopover();
-    // Hidden in fullscreen is a black room screen.
-    if (document.fullscreenElement === view) document.exitFullscreen().catch(() => {});
   }
 
   function clear() {
@@ -262,8 +263,12 @@ export function createViewer(deps) {
     at = page = 0;
     parked = false;
     hide();
+    // Hidden in full screen is a black room screen; only a real end leaves it.
+    if (document.fullscreenElement === view) document.exitFullscreen().catch(() => {});
   }
 
+  // Leaving full screen while held puts the hold on the page: the stage hides.
+  document.addEventListener("fullscreenchange", () => parked && !document.fullscreenElement && hide());
   prev.addEventListener("click", () => go(-1));
   next.addEventListener("click", () => go(1));
   document.addEventListener("keydown", (e) => {
@@ -295,9 +300,14 @@ export function createViewer(deps) {
       paint();
     },
 
-    park() {
+    /** A transient state holds the stage; in full screen it stays there with the status line, so render resumes in
+     * place. @param {string} line */
+    park(line) {
       parked = true;
-      hide();
+      if (document.fullscreenElement !== view) return hide();
+      for (const part of [frame, prev, next]) show(part, false);
+      setText(note, line);
+      show(note, true);
     },
 
     /** A link the launcher would open in a window. @param {string} url @param {number} item @param {OpenMode} mode */

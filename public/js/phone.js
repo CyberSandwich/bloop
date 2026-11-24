@@ -23,6 +23,20 @@ const store = sessionStore();
 const pids = pidStore();
 /** The page opened with no code and no pairing: someone typed /a. */
 let nocode = false;
+/** @type {PhoneStateKey[]} */
+const RESULTS = ["ended", "canceled"];
+/** @type {PhoneStateKey[]} */
+const ONE_EXIT = [
+  ...RESULTS,
+  "expired",
+  "taken",
+  "typed_wrong",
+  "opening",
+  "open",
+  "open_fallback",
+  "pdf_fallback",
+  "pdf_file",
+];
 
 const back = byId("back");
 const title = byId("title");
@@ -168,8 +182,8 @@ function render() {
   });
 
   back.setAttribute("href", home() ? "/s?mode=demo" : "/");
-  // A terminal state has one way out: Done.
-  show(back, key !== "ended" && key !== "canceled");
+  // One way out: a result has Done, a dead code Enter a Code, a session Revoke. A typed /a was never a code.
+  show(back, nocode || !ONE_EXIT.includes(key));
   show(skelTitle, key === "checking");
   show(title, key !== "checking");
   setText(title, copy.title);
@@ -200,7 +214,7 @@ function render() {
   renderActions(copy.actions, copy.loading);
 
   setText(polite, key === "approving" ? "Approving" : "");
-  document.body.classList.toggle("is-ended", key === "ended" || key === "canceled");
+  document.body.classList.toggle("is-ended", RESULTS.includes(key));
   if (key !== c.key) {
     c.key = key;
     if (key !== "checking" && key !== "approving") focusTitle(title);
@@ -396,8 +410,11 @@ function attach(/** @type {string} */ pid) {
       render();
     },
     onError: (code) => {
-      if (refusal(code) === "dead") dropPid(pids, pid);
-      if (!c.canceling && !c.canceled) fail(code);
+      // After a result the pairing is over: what it pushes then (the screen dropping it) must not replace the result.
+      const over = RESULTS.includes(phoneKey(c));
+      if (over || refusal(code) === "dead") dropPid(pids, pid);
+      if (over) c.channel?.stop();
+      else if (!c.canceling) fail(code);
     },
     onLink: (link) => {
       offline = link !== "ok";

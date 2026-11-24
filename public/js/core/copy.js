@@ -138,7 +138,7 @@ export function endLine(
     .join(" ");
 }
 
-const ENTER_CODE = { id: "code", label: "Enter a Code", kind: /** @type {const} */ ("text"), href: "/code" };
+const ENTER_CODE = { id: "code", label: "Enter a Code", kind: /** @type {const} */ ("primary"), href: "/code" };
 /** Revokes the stored OneDrive access (docs/architecture.md section 6, /api/me/disconnect). */
 const DISCONNECT = { id: "disconnect", label: "Disconnect OneDrive", kind: /** @type {const} */ ("text") };
 /** The guest entry where there is no list to end with the "Add a file" row. */
@@ -182,9 +182,11 @@ export function phoneCopy(key, f) {
   };
   const file = f.file ?? "your file";
   const disconnect = f.account ? [DISCONNECT] : [];
-  // The match digits ride on the button that commits: the person compares them with the screen.
-  const code = f.match ? ` (${f.match})` : "";
-  const aria = (/** @type {string} */ verb) => (f.match ? { aria: `${verb}, code ${f.match} on the screen` } : {});
+  // The match digits ride on the button that commits: the person compares them with the screen. One device has
+  // nothing to compare.
+  const match = f.back ? null : f.match;
+  const code = match ? ` (${match})` : "";
+  const aria = (/** @type {string} */ verb) => (match ? { aria: `${verb}, code ${match} on the screen` } : {});
   const APPROVE = {
     id: "approve",
     label: `Approve${code}`,

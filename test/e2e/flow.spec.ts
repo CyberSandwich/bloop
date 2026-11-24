@@ -109,6 +109,8 @@ test.describe("pairing flow", () => {
     await expect(screen.page.getByText("Scan with your phone.")).toBeVisible();
     await expect(screen.page.getByText("Or enter the code at")).toBeVisible();
     await expectNoAxeViolations(screen.page);
+    const titleBefore = await heading(screen.page).boundingBox();
+    const cardBefore = await screen.page.locator("#qr-panel").boundingBox();
 
     const { phone, match } = await scan(browser, screen.page);
     expect(match).toMatch(/^[0-9]{2}$/);
@@ -125,6 +127,12 @@ test.describe("pairing flow", () => {
     await expect(screen.page.locator("#match")).toBeVisible();
     await expect(screen.page.locator("#qr-panel")).toHaveCSS("visibility", "visible");
     await expect(screen.page.locator("#line")).toHaveText(`Your phone shows ${match}.`);
+    // The digits read across the room, in the hint's place; nothing else moves.
+    const compare = screen.page.locator("#compare");
+    await expect(compare).toHaveText(`Your phone shows ${match}.`);
+    await expect(compare).toHaveCSS("font-size", "40px");
+    expect(await heading(screen.page).boundingBox()).toMatchObject({ y: titleBefore?.y });
+    expect(await screen.page.locator("#qr-panel").boundingBox()).toEqual(cardBefore);
     await expect(screen.page.getByRole("button", { name: "Back", exact: true })).toBeVisible();
     await expectNoAxeViolations(screen.page);
 
@@ -132,6 +140,8 @@ test.describe("pairing flow", () => {
     await expect(heading(phone.page)).toHaveText("Approved for Demo Room");
     await expect(phone.page.locator("#ends")).toHaveText(/^Ends in \d+:\d{2}$/);
     await expect(phone.page.getByRole("button", { name: "Revoke" })).toBeVisible();
+    // In a session Revoke is the phone's one way out.
+    await expect(phone.page.getByRole("link", { name: "Back", exact: true })).toBeHidden();
     await expectViewer(screen.page);
     await expect(screen.page.getByRole("button", { name: "Back", exact: true })).toBeHidden();
 
@@ -189,11 +199,19 @@ test.describe("pairing flow", () => {
     await phone.context.close();
   });
 
-  test("Back on a waiting screen ends it first, so its code is dead at once", async ({ browser }) => {
+  test("Back on a waiting screen ends it first, so its code is dead at once, and opens no screen on its way out", async ({
+    browser,
+  }) => {
     const screen = await demoScreen(browser);
     const code = await typedCodeOf(screen.page);
+    let created = 0;
+    screen.page.on("request", (r) => {
+      if (r.method() === "POST" && new URL(r.url()).pathname === "/api/screens") created += 1;
+    });
     await screen.page.getByRole("link", { name: "Back", exact: true }).click();
     await expect(screen.page).toHaveURL("/");
+    await screen.page.waitForLoadState("networkidle");
+    expect(created).toBe(0);
     const phone = await open(browser, "phone", `/a?c=${code}`);
     await expect(heading(phone.page)).toHaveText("This Code Has Expired");
     await screen.context.close();
@@ -210,7 +228,10 @@ test.describe("pairing flow", () => {
     await expect(heading(screen.page)).toHaveText("Demo Room");
     expect(await typedCodeOf(screen.page)).not.toBe(before);
     await expect(heading(phone.page)).toHaveText("This Code Has Expired");
+    // One exit, a full button: no Back beside it.
     await expect(phone.page.getByRole("link", { name: "Enter a Code" })).toHaveAttribute("href", "/code");
+    await expect(phone.page.getByRole("link", { name: "Enter a Code" })).toHaveClass(/\bprimary\b/);
+    await expect(phone.page.getByRole("link", { name: "Back", exact: true })).toBeHidden();
     await expectNoAxeViolations(phone.page);
     await screen.context.close();
     await phone.context.close();
@@ -276,7 +297,8 @@ test.describe("pairing flow", () => {
     // PAIR-12: the ended view itself drops the pid; Done has not run yet.
     expect(await phone.page.evaluate(() => localStorage.getItem("bloop.pid"))).toBeNull();
     await expect(heading(screen.page)).toHaveText("Session Ended");
-    await expect(screen.page.locator("#line")).toBeHidden();
+    // The demo says why it ended, the moment that proves Revoke.
+    await expect(screen.page.locator("#line")).toHaveText("Revoked from the phone.");
     await expect(screen.page.locator("#items")).toBeHidden();
     await expect(screen.page.getByRole("button", { name: "End", exact: true })).toBeHidden();
     // The demo's one way on: the waitlist.
@@ -301,6 +323,46 @@ test.describe("pairing flow", () => {
     await screen.context.close();
     await phone.context.close();
   });
+
+  test("PAIR-12 a phone that comes back to a session ended while it was away drops its pid", async ({ browser }) => {
+    const screen = await demoScreen(browser);
+    const { phone } = await scan(browser, screen.page);
+    await phone.page.getByRole("button", { name: "Approve" }).click();
+    await expectViewer(screen.page);
+    await phone.page.goto("about:blank");
+    await screen.page.getByRole("button", { name: "End", exact: true }).click();
+    await expect(heading(screen.page)).toHaveText("Session Ended");
+    await phone.page.goto("/a");
+    await expect(heading(phone.page)).toHaveText("Session Ended");
+    expect(await phone.page.evaluate(() => localStorage.getItem("bloop.pid"))).toBeNull();
+    await screen.context.close();
+    await phone.context.close();
+  });
+
+  for (const viewport of [
+    { width: 834, height: 1112 },
+    { width: 1440, height: 900 },
+  ]) {
+    test(`a result at ${viewport.width} centers title, line and Done as one group, Done under the line`, async ({
+      browser,
+    }) => {
+      const screen = await demoScreen(browser);
+      const code = await typedCodeOf(screen.page);
+      const context = await browser.newContext({ viewport });
+      const page = await context.newPage();
+      await page.goto(`/a?c=${code}`);
+      await page.getByRole("button", { name: "Cancel" }).click();
+      await expect(heading(page)).toHaveText("Approval Canceled");
+      const title = await heading(page).boundingBox();
+      const done = await page.getByRole("button", { name: "Done" }).boundingBox();
+      expect(done?.y ?? 0).toBeGreaterThan((title?.y ?? 0) + (title?.height ?? 0));
+      // The group's center is the viewport's.
+      const center = ((title?.y ?? 0) + (done?.y ?? 0) + (done?.height ?? 0)) / 2;
+      expect(Math.abs(center - viewport.height / 2)).toBeLessThan(24);
+      await context.close();
+      await screen.context.close();
+    });
+  }
 
   test("a reloaded screen and a reloaded phone resume their session", async ({ browser }) => {
     const screen = await demoScreen(browser);
@@ -571,9 +633,19 @@ test.describe("demo viewer", () => {
     await expect(question).toBeHidden();
     await expectViewer(screen.page);
     await screen.page.getByRole("button", { name: /^bloop/ }).click();
+    const sid = () => screen.page.evaluate(() => sessionStorage.getItem("bloop.sid"));
+    const before = await sid();
+    expect(before).not.toBeNull();
     await question.getByRole("button", { name: "End and Go Home" }).click();
     await expect(screen.page).toHaveURL("/");
     await expect(heading(phone.page)).toHaveText("Session Ended");
+    // The page forgot the screen: the browser's Back opens a fresh one, never the ended session.
+    await screen.page.goBack();
+    await expect(heading(screen.page)).toHaveText("Demo Room");
+    await typedCodeOf(screen.page);
+    const after = await sid();
+    expect(after).not.toBeNull();
+    expect(after).not.toBe(before);
     await screen.context.close();
     await phone.context.close();
   });
@@ -591,7 +663,8 @@ test.describe("demo viewer", () => {
     await phone.page.getByRole("link", { name: "Approve on This Phone" }).click();
     await expect(phone.page).toHaveURL(/\/a$/);
     await expect(heading(phone.page)).toHaveText(DEMO.title);
-    // Approving sends the tab straight back to its screen.
+    // One device has nothing to compare: the button is plain Approve. Approving sends the tab back to its screen.
+    await expect(phone.page.getByRole("button", { name: "Approve" })).toHaveText("Approve");
     await phone.page.getByRole("button", { name: "Approve" }).click();
     await expect(phone.page).toHaveURL(/\/s\?mode=demo$/);
     // Under 760 the sidebar is a bottom sheet behind a handle.

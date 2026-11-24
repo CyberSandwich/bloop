@@ -1,7 +1,4 @@
-// The screen's launch ladder (docs/interfaces.md section 4, ADR 0003): the protocol link opens PowerPoint;
-// if no fetch is seen within LAUNCH_TIMEOUT_MS the Download control appears; the labeled PDF view is the
-// last resort. It acts on links as the server pushes them (`open` frames) or answers them (`/api/screen/link`),
-// each URL once. Every browser effect is injected, so the logic runs under test without a browser.
+// The screen's launch ladder (docs/interfaces.md section 4, ADR 0003). Every browser effect is injected.
 /** @import {LinkSet, OpenMode, ScreenView} from "../../src/shared/protocol.ts" */
 /** @import {LauncherDeps, Minted, ScreenLauncher} from "./types.js" */
 import { firstFile } from "./core/states.js";
@@ -33,13 +30,11 @@ export function createLauncher(deps) {
     recovering: undefined,
   };
 
-  /** The first launch of a session says so to the server, which moves approved to opening (any other state ignores it). */
   function reportOnce(/** @type {OpenMode} */ mode) {
     if (s.reported) return;
     s.reported = deps.report(mode);
   }
 
-  /** The PDF view, or an image's view: both open in a window of their own (the demo shows them in the page). */
   function openPdf(/** @type {{url: string, item: number, mode: OpenMode}} */ view) {
     const win = deps.openWindow(view.url, view.item, view.mode);
     if (win) {
@@ -152,8 +147,7 @@ export function createLauncher(deps) {
 
     download,
     showPdf: () => request("pdf"),
-    // `protocol` with an item: in every session state the server mints that item's launch link (an image's view
-    // link) with no mode change and no fallback metric (docs/interfaces.md section 2.2).
+    // No mode change and no fallback metric (docs/interfaces.md section 2.2).
     relink: (item) => request("protocol", item),
     spent: (item) => s.spent.has(item ?? -1),
 
@@ -182,8 +176,7 @@ export function createLauncher(deps) {
     },
 
     needsClick: () => s.needsClick,
-    // Read before the end resets the ladder: what this PC may still hold (the line under Session Ended).
-    // The download's name is its link's last segment: the name the file has in Downloads.
+    // Read before the end resets the ladder. The link's last segment is the file's name in Downloads.
     left: () => ({
       ppt: !!s.protocol,
       download: s.download ? decodeURIComponent(s.download.url.slice(s.download.url.lastIndexOf("/") + 1)) : null,

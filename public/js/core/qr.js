@@ -27,11 +27,8 @@ export function qrPath(/** @type {boolean[][]} */ matrix) {
   return parts.join("");
 }
 
-/**
- * CSS pixels for the whole code: whole device pixels per module, half the viewport height at most,
- * never below 2 device pixels per module.
- */
-export function qrSize(/** @type {number} */ viewportHeight, /** @type {number} */ dpr) {
-  const perModule = Math.max(2, Math.floor((0.5 * viewportHeight * dpr) / QR_MODULES));
+/** CSS pixels for the whole code: whole device pixels per module, `room` at most, never below 2 per module. */
+export function qrSize(/** @type {number} */ room, /** @type {number} */ dpr) {
+  const perModule = Math.max(2, Math.floor((room * dpr) / QR_MODULES));
   return (perModule * QR_MODULES) / dpr;
 }

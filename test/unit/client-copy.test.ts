@@ -329,6 +329,14 @@ describe("phone copy", () => {
     expect(phoneCopy("approve", pf).actions.at(-1)).toEqual({ id: "approve", label: "Approve", kind: "primary" });
   });
 
+  it("one device has nothing to compare: plain Approve when this tab is also the screen", () => {
+    expect(phoneCopy("approve_demo", { ...pf, match: "42", back: true }).actions.at(-1)).toEqual({
+      id: "approve",
+      label: "Approve",
+      kind: "primary",
+    });
+  });
+
   it("side by side the primary comes last; app.css stacks it on top on a phone", () => {
     for (const key of PHONE_KEYS) {
       for (const back of [false, true]) {
@@ -455,9 +463,11 @@ describe("phone copy", () => {
     expect(PHONE_KEYS.filter((k) => phoneCopy(k, pf).actions.some((a) => a.id === "back"))).toEqual([]);
   });
 
-  it("expired and taken offer Enter a Code as a link to /code", () => {
-    for (const key of ["expired", "taken"] as const) {
-      expect(phoneCopy(key, pf).actions).toEqual([{ id: "code", label: "Enter a Code", kind: "text", href: "/code" }]);
+  it("expired, taken and a wrong code offer Enter a Code as the one primary link to /code", () => {
+    for (const key of ["expired", "taken", "typed_wrong"] as const) {
+      expect(phoneCopy(key, pf).actions).toEqual([
+        { id: "code", label: "Enter a Code", kind: "primary", href: "/code" },
+      ]);
     }
   });
 
