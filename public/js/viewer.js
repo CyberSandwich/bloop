@@ -113,12 +113,14 @@ export function createViewer(deps) {
   let page = 0;
   /** @type {string | null} */
   let framed = null;
-  /** @type {Map<number, HTMLImageElement>} */
+  // Per-item state is keyed by idOf, never by list position: a guest file sorting in ahead shifts every position.
+  /** @type {Map<string, HTMLImageElement>} */
   const images = new Map();
-  /** @type {Set<number>} */
+  /** @type {Set<string>} */
   const asked = new Set();
-  /** @type {Set<number>} minting failed: the card instead, and no retry loop */
+  /** @type {Set<string>} minting failed: the card instead, and no retry loop */
   const refused = new Set();
+  /** @type {Set<string>} */
   const tall = new Set();
   const seen = new IntersectionObserver(
     (entries) => {
@@ -129,6 +131,16 @@ export function createViewer(deps) {
   );
 
   const items = () => shown?.items ?? [];
+  /** An item's identity in a list. The protocol carries no item id, so it is kind, name or title, and the count of
+   * same-named items before it: two guest files can share a name, and the list's order keeps them apart.
+   * @param {readonly {kind: string, name?: string, title?: string}[]} list @param {number} i */
+  const idOf = (list, i) => {
+    const it = list[i];
+    if (!it) return null;
+    const label = (/** @type {typeof it} */ x) => `${x.kind}:${x.name ?? x.title}`;
+    return `${label(it)}#${list.slice(0, i).filter((x) => label(x) === label(it)).length}`;
+  };
+  const keyOf = (/** @type {number} */ i) => idOf(items(), i) ?? "";
   const pages = () => {
     const item = items()[at];
     return item && shown ? pagesOf(item, shown) : null;
@@ -145,10 +157,10 @@ export function createViewer(deps) {
       alt: `${pdf ? "Page" : "Slide"} ${n + 1} of ${of}`,
       "data-page": String(n),
     });
-    const i = at;
+    const key = keyOf(at);
     img.addEventListener("load", () => {
-      if (n === 0 && !tall.has(i) && pageMode(img.naturalWidth, img.naturalHeight) === "scroll") {
-        tall.add(i);
+      if (n === 0 && !tall.has(key) && pageMode(img.naturalWidth, img.naturalHeight) === "scroll") {
+        tall.add(key);
         framed = null;
         paint();
       }
@@ -167,7 +179,7 @@ export function createViewer(deps) {
     const p = pages();
     if (!p || parked) return;
     page = stepPage(page, by, p.length);
-    if (tall.has(at)) frame.querySelector(`[data-page="${page}"]`)?.scrollIntoView({ block: "start" });
+    if (tall.has(keyOf(at))) frame.querySelector(`[data-page="${page}"]`)?.scrollIntoView({ block: "start" });
     else paint();
   }
 
@@ -210,14 +222,15 @@ export function createViewer(deps) {
   }
 
   function image(/** @type {number} */ i) {
-    const img = images.get(i);
-    if (img || asked.has(i) || refused.has(i)) return img ?? null;
+    const key = keyOf(i);
+    const img = images.get(key);
+    if (img || asked.has(key) || refused.has(key)) return img ?? null;
     // While approved, the launch item's link is the launcher's to recover; a second ask would spend a mint.
     if (shown?.state === "approved" && shown.items.findIndex((x) => x.kind === "file") === i) return null;
-    asked.add(i);
+    asked.add(key);
     deps.relink(i).then(() => {
-      asked.delete(i);
-      if (shown && !images.has(i)) refused.add(i);
+      asked.delete(key);
+      if (shown && !images.has(key)) refused.add(key);
       paint();
     });
     return null;
@@ -252,11 +265,11 @@ export function createViewer(deps) {
     );
 
     const p = pages();
-    const scroll = !!p && tall.has(at);
+    const scroll = !!p && tall.has(keyOf(at));
     // A demo account's file with no pages is the photo; a guest's own file has only a card.
     const photo = item.kind === "file" && !p && v.kind === "owner";
     const img = photo ? image(at) : null;
-    const loading = photo && !img && !refused.has(at);
+    const loading = photo && !img && !refused.has(keyOf(at));
     const want = p ? `p${at}:${scroll ? "all" : page}` : img ? `i${at}` : loading ? `w${at}` : `c${at}`;
     if (want !== framed) {
       framed = want;
@@ -312,9 +325,7 @@ export function createViewer(deps) {
   }
 
   /** Pages and a loaded image; a link or a file card has nothing to present. */
-  const presentable = () => !!pages() || !!images.get(at)?.naturalWidth;
-  /** @param {{kind: string, name?: string, title?: string} | undefined} item */
-  const itemId = (item) => (item ? `${item.kind}:${item.name ?? item.title}` : null);
+  const presentable = () => !!pages() || !!images.get(keyOf(at))?.naturalWidth;
   let sleep = 0;
   /** @type {HTMLElement | null} */
   let opener = null;
@@ -402,7 +413,7 @@ export function createViewer(deps) {
         shown = null;
         return;
       }
-      const id = shown ? itemId(items()[at]) : null;
+      const id = shown ? idOf(items(), at) : null;
       shown = nextView;
       parked = false;
       const key = JSON.stringify(nextView.items);
@@ -410,7 +421,7 @@ export function createViewer(deps) {
         built = key;
         framed = null;
         // A file joining the list ahead of the selection must not change what is on screen.
-        const moved = nextView.items.findIndex((x) => itemId(x) === id);
+        const moved = nextView.items.findIndex((_, i) => idOf(nextView.items, i) === id);
         at = moved >= 0 ? moved : Math.max(0, Math.min(at, nextView.items.length - 1));
         buildList();
       }
@@ -436,8 +447,8 @@ export function createViewer(deps) {
       const img = el("img", { decoding: "async", referrerpolicy: "no-referrer", alt: "" });
       img.addEventListener("load", () => deps.onChange());
       img.src = target;
-      images.set(item, img);
-      asked.delete(item);
+      images.set(keyOf(item), img);
+      asked.delete(keyOf(item));
       framed = null;
       if (shown) paint();
       return true;

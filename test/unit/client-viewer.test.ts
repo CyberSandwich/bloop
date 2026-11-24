@@ -228,6 +228,26 @@ describe("DEMO-01 the viewer parks for a transient state", () => {
     expect(el("frame").children[0]?.attrs.get("src")).toBe(`${ORIGIN}/f/abc/Dog.jpg`);
   });
 
+  it("a file sorting in ahead of a loaded image leaves the selected item showing its own image", () => {
+    const { v, el } = setup();
+    v.render(view);
+    v.take(`${ORIGIN}/f/abc/Dog.jpg`, 0, "view");
+    const guest: Item = { kind: "file", name: "Aardvark.txt", type: "txt", size: 10 } as unknown as Item;
+    v.render({ ...view, items: [guest, photo] } as ScreenView);
+    expect(v.at()).toBe(1);
+    expect(el("frame").children[0]?.attrs.get("src")).toBe(`${ORIGIN}/f/abc/Dog.jpg`);
+  });
+
+  it("two files with one name keep their own state: identity includes the count of same-named items before it", () => {
+    const { v, el } = setup();
+    const twin = { ...photo } as Item;
+    v.render({ ...view, items: [photo, twin] } as ScreenView);
+    v.take(`${ORIGIN}/f/one/Dog.jpg`, 0, "view");
+    v.take(`${ORIGIN}/f/two/Dog.jpg`, 1, "view");
+    v.render({ ...view, items: [photo, twin, deck] } as ScreenView);
+    expect(el("frame").children[0]?.attrs.get("src")).toBe(`${ORIGIN}/f/one/Dog.jpg`);
+  });
+
   it("a key while parked pages nothing: the deck resumes on the page it was on", () => {
     const { v, el } = setup();
     const deckView = { ...view, items: [deck] } as ScreenView;
