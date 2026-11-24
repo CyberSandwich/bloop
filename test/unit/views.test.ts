@@ -28,10 +28,35 @@ describe("views", () => {
   it("SRC-01 screen-view carries the approved items' names, types and sizes and nothing else about files", () => {
     const view = screenView(META, approved(), CONFIG, T0 + sec(11));
     expect(Object.keys(view).sort()).toEqual(
-      ["code", "endReason", "endsAt", "items", "kind", "match", "mode", "now", "openMode", "room", "state"].sort(),
+      [
+        "code",
+        "endReason",
+        "endsAt",
+        "items",
+        "kind",
+        "match",
+        "mode",
+        "now",
+        "openMode",
+        "room",
+        "shown",
+        "state",
+      ].sort(),
     );
-    expect(view.items).toEqual([{ kind: "file", name: "Deck.pptx", type: "pptx", size: null }]);
+    expect(view.items).toEqual([{ kind: "file", id: "i1", name: "Deck.pptx", type: "pptx", size: null }]);
     expect(JSON.stringify(view)).not.toContain("deck-1");
+  });
+
+  it("PAIR-13 shown is in both views, null until a command and outside a session", () => {
+    expect(screenView(META, approved(), CONFIG, T0 + sec(11)).shown).toBeNull();
+    expect(phoneView(META, approved(), T0 + sec(11), 50)?.shown).toBeNull();
+    const shown = { item: "i1", page: 2, present: true };
+    const m = must(approved(), { e: "control", now: T0 + sec(12), shown }).next;
+    expect(screenView(META, m, CONFIG, T0 + sec(13)).shown).toEqual(shown);
+    expect(phoneView(META, m, T0 + sec(13), 50)?.shown).toEqual(shown);
+    const over = must(m, { e: "end", now: T0 + sec(14), by: "phone" }).next;
+    expect(screenView(META, over, CONFIG, T0 + sec(15)).shown).toBeNull();
+    expect(phoneView(META, over, T0 + sec(15), 50)?.shown).toBeNull();
   });
 
   it("shows the match code from claimed to open and not before or after", () => {

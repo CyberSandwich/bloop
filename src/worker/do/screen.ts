@@ -12,13 +12,14 @@ import type {
   OpenMode,
   PhoneView,
   ScreenView,
+  Shown,
 } from "../../shared/protocol.ts";
 import type { AuditEvent } from "../audit.ts";
 import { type Config, configFor } from "../config.ts";
 import type { Env } from "../env.ts";
 import { MAX_FRAME_BYTES, phoneFrame, screenFrame } from "../frames.ts";
 import { drawCode, drawMatch, newRef, newSecret, parseCredential, safeEqual, sha256Hex } from "../ids.ts";
-import { fileAt, type ItemRef } from "../items.ts";
+import { fileAt, type ItemDraft } from "../items.ts";
 import { createMachine, type Event, type FileRef, type Machine, nextDeadline, transition } from "../machine.ts";
 import { ipHash } from "../routes/common.ts";
 import { effectivePolicy } from "../seams/guest-drop/index.ts";
@@ -151,7 +152,15 @@ export class Screen extends DurableObject<Env> implements PairingStore {
     return this.phoneEvent(pid, () => ({ e: "listed", now: Date.now(), ids }));
   }
 
-  async approve(pid: string, items: ItemRef[], userId: string | null): Promise<Result<PhoneView>> {
+  async control(pid: string, shown: Shown): Promise<Result<PhoneView>> {
+    return this.phoneEvent(pid, () => ({ e: "control", now: Date.now(), shown }));
+  }
+
+  async reportShown(sid: string, shown: Shown): Promise<Result<ScreenView>> {
+    return this.screenEvent(sid, { e: "control", now: Date.now(), shown });
+  }
+
+  async approve(pid: string, items: ItemDraft[], userId: string | null): Promise<Result<PhoneView>> {
     return this.phoneEvent(pid, () => ({
       e: "approve",
       now: Date.now(),

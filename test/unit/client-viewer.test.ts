@@ -143,8 +143,8 @@ class Sized extends Observer {
 }
 
 const ORIGIN = "https://bloop.example";
-const photo: Item = { kind: "file", name: "Dog.jpg", type: "jpg", size: 70_000 };
-const deck: Item = { kind: "file", name: "Sample deck.pptx", type: "pptx", size: 82_000 };
+const photo: Item = { kind: "file", id: "t1", name: "Dog.jpg", type: "jpg", size: 70_000 };
+const deck: Item = { kind: "file", id: "t2", name: "Sample deck.pptx", type: "pptx", size: 82_000 };
 const view = {
   state: "open",
   mode: "demo",

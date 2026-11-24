@@ -24,8 +24,16 @@ export const sec = (n: number) => n * 1000;
 
 export const DECK: FileRef = { source: "mock", ref: "deck-1", name: "Deck.pptx", type: "pptx" };
 export const GUEST_FILE: FileRef = { source: "guest", ref: "g/abc", name: "Guest.pptx", type: "pptx", size: 2048 };
-export const asItem = (file: FileRef): FileItemRef => ({ kind: "file", ...file });
-export const VEVOX: LinkRef = { kind: "link", ref: "demo-vevox", url: "https://www.vevox.com/", title: "Vevox" };
+/** An item as the approve event carries it, before approval gives it an id. */
+export const asItem = (file: FileRef): Omit<FileItemRef, "id"> => ({ kind: "file", ...file });
+/** The same item as a session stores it. */
+export const asStored = (file: FileRef, id = "i1"): FileItemRef => ({ kind: "file", id, ...file });
+export const VEVOX: Omit<LinkRef, "id"> = {
+  kind: "link",
+  ref: "demo-vevox",
+  url: "https://www.vevox.com/",
+  title: "Vevox",
+};
 
 /** Applies one event and demands success. */
 export function must(m: Machine, ev: Event): { next: Machine; effects: Effect[] } {

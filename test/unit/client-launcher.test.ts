@@ -25,7 +25,8 @@ const view = (state: ScreenView["state"]): ScreenView => ({
   room: { name: "Demo Room", registered: false },
   code: null,
   match: "42",
-  items: [{ kind: "file", name: "Deck.pptx", type: "pptx", size: null }],
+  items: [{ kind: "file", id: "t1", name: "Deck.pptx", type: "pptx", size: null }],
+  shown: null,
   openMode: null,
   endsAt: null,
   endReason: null,
@@ -265,7 +266,10 @@ describe("items other than the first file", () => {
 
   it("a links-only session mints nothing at approval, so the screen asks for no link", async () => {
     const { launcher, calls } = harness({ minted: links({ protocol: PROTOCOL }) });
-    launcher.onView({ ...view("approved"), items: [{ kind: "link", url: "https://www.vevox.com/", title: "Vevox" }] });
+    launcher.onView({
+      ...view("approved"),
+      items: [{ kind: "link", id: "t2", url: "https://www.vevox.com/", title: "Vevox" }],
+    });
     await vi.advanceTimersByTimeAsync(RELINK_WAIT_MS * 2);
     expect(calls.posts).toEqual([]);
   });

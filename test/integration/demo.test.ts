@@ -124,7 +124,12 @@ describe("DEMO-01 isolation: the full demo flow, with no account", () => {
 
     const state = await api.get<{ items: { kind: string }[] }>("/api/screen/state", screen.sid);
     expect(state.body.items.map((i) => i.kind)).toEqual(["file", "file", "file", "link"]);
-    expect(state.body.items[3]).toEqual({ kind: "link", url: "https://www.vevox.com/", title: "Vevox" });
+    expect(state.body.items[3]).toEqual({
+      kind: "link",
+      id: "i4",
+      url: "https://www.vevox.com/",
+      title: "Vevox",
+    });
     socket.close();
   });
 
