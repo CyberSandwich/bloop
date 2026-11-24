@@ -217,7 +217,7 @@ test.describe("pairing flow", () => {
     const screen = await demoScreen(browser);
     const { phone } = await scan(browser, screen.page);
     await phone.page.getByRole("button", { name: "Cancel" }).click();
-    await expect(heading(phone.page)).toHaveText("Canceled");
+    await expect(heading(phone.page)).toHaveText("Session Ended");
     await expect(phone.page.locator("#body")).toHaveText("Nothing was opened on the screen.");
     await expect(heading(screen.page)).toHaveText("Demo Room");
     await screen.context.close();
@@ -249,6 +249,14 @@ test.describe("pairing flow", () => {
     const phone = await open(browser, "phone", "/a");
     await expect(heading(phone.page)).toHaveText("Scan the Code");
     await phone.context.close();
+  });
+
+  test("Back shows at 390 on /a and /code: the narrow-screen swap is the room screen's only", async ({ browser }) => {
+    for (const path of ["/a", "/code"]) {
+      const phone = await open(browser, "phone", path);
+      await expect(phone.page.getByRole("link", { name: "Back", exact: true }), path).toBeVisible();
+      await phone.context.close();
+    }
   });
 
   test("Revoke on the phone shows Session Ended on the screen alone, then its code returns", async ({ browser }) => {
@@ -370,7 +378,7 @@ test.describe("guest drop", () => {
     const { phone } = await scan(browser, screen.page);
     await phone.page.getByRole("button", { name: "Add a file" }).click();
     await phone.page.getByRole("button", { name: "Cancel" }).click();
-    await expect(heading(phone.page)).toHaveText("Canceled");
+    await expect(heading(phone.page)).toHaveText("Session Ended");
     await expect(heading(screen.page)).toHaveText("Demo Room");
     await screen.context.close();
     await phone.context.close();
@@ -421,7 +429,7 @@ test.describe("open path", () => {
       "Close PowerPoint to take your slides off this PC. Delete Sample-deck.pptx from Downloads before you leave.",
     );
     expect(await screen.page.evaluate(() => sessionStorage.getItem("bloop.sid"))).toBeNull();
-    await expect(heading(phone.page)).toHaveText("Ended on the Screen");
+    await expect(heading(phone.page)).toHaveText("Session Ended");
     await screen.context.close();
     await phone.context.close();
   });
@@ -487,7 +495,7 @@ test.describe("demo viewer", () => {
 
     await screen.page.getByRole("button", { name: "End", exact: true }).click();
     await expect(heading(screen.page)).toHaveText("Session Ended");
-    await expect(heading(phone.page)).toHaveText("Ended on the Screen");
+    await expect(heading(phone.page)).toHaveText("Session Ended");
     expect([...screen.csp, ...phone.csp]).toEqual([]);
     await screen.context.close();
     await phone.context.close();
@@ -515,7 +523,7 @@ test.describe("demo viewer", () => {
     const { phone } = await scan(browser, screen.page);
     await phone.page.getByRole("button", { name: "Approve" }).click();
     await expectViewer(screen.page);
-    const question = screen.page.getByRole("dialog", { name: "End, and go to the bloop home page?" });
+    const question = screen.page.getByRole("dialog", { name: "End and Go Home?" });
     await screen.page.getByRole("button", { name: /^bloop/ }).click();
     await expect(question).toBeVisible();
     await expectNoAxeViolations(screen.page);
@@ -525,7 +533,7 @@ test.describe("demo viewer", () => {
     await screen.page.getByRole("button", { name: /^bloop/ }).click();
     await question.getByRole("button", { name: "End and Go Home" }).click();
     await expect(screen.page).toHaveURL("/");
-    await expect(heading(phone.page)).toHaveText("Ended on the Screen");
+    await expect(heading(phone.page)).toHaveText("Session Ended");
     await screen.context.close();
     await phone.context.close();
   });
