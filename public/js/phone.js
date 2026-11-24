@@ -11,32 +11,20 @@ import { sendable, sendFile, wholeMB } from "./core/drop.js";
 import { loadFiles } from "./core/files.js";
 import { ago, countdown, ICON_ADD } from "./core/format.js";
 import { rowFace, tile } from "./core/rows.js";
-import { firstFile, phoneKey } from "./core/states.js";
+import { adopt, firstFile, phoneKey, refused } from "./core/states.js";
 import { dropPid, PID_KEY, pidStore, refOf, SID_KEY, sameScreen, sessionStore } from "./core/store.js";
 import { ariaFlag, byId, el, focusTitle, ICON_CHECK, icon, isFramed, setText, show, wsUrl } from "./core/ui.js";
 import { VERIFIED } from "./core/verified.js";
 import { ERRORS } from "./shared/errors.js";
-import { orderItems, PAIRING_OVER } from "./shared/session.js";
+import { orderItems } from "./shared/session.js";
 
 const api = createApi();
 const store = sessionStore();
 const pids = pidStore();
 /** The page opened with no code and no pairing: someone typed /a. */
 let nocode = false;
-/** @type {PhoneStateKey[]} */
-const RESULTS = ["ended", "canceled"];
-/** @type {PhoneStateKey[]} */
-const ONE_EXIT = [
-  ...RESULTS,
-  "expired",
-  "taken",
-  "typed_wrong",
-  "opening",
-  "open",
-  "open_fallback",
-  "pdf_fallback",
-  "pdf_file",
-];
+const EXITS = ["done", "code", "end"];
+const drop = (/** @type {string | null} */ pid) => dropPid(pids, pid);
 
 const back = byId("back");
 const title = byId("title");
@@ -133,10 +121,8 @@ function buildItems(/** @type {Item[]} */ items) {
   );
 }
 
-function setView(/** @type {PhoneView} */ view) {
-  c.view = view;
-  c.skew = view.now - Date.now();
-  if (PAIRING_OVER.includes(view.state)) dropPid(pids, c.pid);
+function setView(/** @type {PhoneView} */ view, pid = c.pid) {
+  adopt(c, view, drop, pid);
 }
 
 function buildSkeleton() {
@@ -182,8 +168,9 @@ function render() {
   });
 
   back.setAttribute("href", home() ? "/s?mode=demo" : "/");
-  // One way out: a result has Done, a dead code Enter a Code, a session Revoke. A typed /a was never a code.
-  show(back, nocode || !ONE_EXIT.includes(key));
+  // One way out: a result has Done, a dead code Enter the Code, a session Revoke. A typed /a was never a code.
+  const exit = copy.actions.some((a) => EXITS.includes(a.id));
+  show(back, nocode || !exit);
   show(skelTitle, key === "checking");
   show(title, key !== "checking");
   setText(title, copy.title);
@@ -214,7 +201,8 @@ function render() {
   renderActions(copy.actions, copy.loading);
 
   setText(polite, key === "approving" ? "Approving" : "");
-  document.body.classList.toggle("is-ended", RESULTS.includes(key));
+  // A dead end centers as one group.
+  document.body.classList.toggle("is-ended", exit && copy.files === "none");
   if (key !== c.key) {
     c.key = key;
     if (key !== "checking" && key !== "approving") focusTitle(title);
@@ -411,9 +399,9 @@ function attach(/** @type {string} */ pid) {
     },
     onError: (code) => {
       // After a result the pairing is over: what it pushes then (the screen dropping it) must not replace the result.
-      const over = RESULTS.includes(phoneKey(c));
-      if (over || refusal(code) === "dead") dropPid(pids, pid);
-      if (over) c.channel?.stop();
+      const then = refused(phoneKey(c), code);
+      if (then.drop) drop(pid);
+      if (then.stop) c.channel?.stop();
       else if (!c.canceling) fail(code);
     },
     onLink: (link) => {
@@ -459,9 +447,7 @@ async function resume(/** @type {string} */ pid) {
   }
   const view = /** @type {PhoneView} */ (res.value);
   c.info = { roomName: view.room.name, registered: view.room.registered, match: view.match, mode: view.mode };
-  // Before setView, so a resumed view that is already over drops this pid.
-  c.pid = pid;
-  setView(view);
+  setView(view, pid);
   c.maxBytes = view.dropMaxBytes;
   attach(pid);
   render();

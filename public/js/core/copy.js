@@ -136,7 +136,7 @@ export function endLine(
     .join(" ");
 }
 
-const ENTER_CODE = { id: "code", label: "Enter a Code", kind: /** @type {const} */ ("primary"), href: "/code" };
+const ENTER_CODE = { id: "code", label: "Enter the Code", kind: /** @type {const} */ ("primary"), href: "/code" };
 /** Revokes the stored OneDrive access (docs/architecture.md section 6, /api/me/disconnect). */
 const DISCONNECT = { id: "disconnect", label: "Disconnect OneDrive", kind: /** @type {const} */ ("text") };
 /** The guest entry where there is no list to end with the "Add a file" row. */

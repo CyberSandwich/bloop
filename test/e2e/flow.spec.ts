@@ -175,6 +175,11 @@ test.describe("pairing flow", () => {
 
   test("a wrong typed code shows the error beside the field", async ({ browser }) => {
     const phone = await open(browser, "phone", "/code");
+    // The error line keeps its row: the first bad letter never moves Continue.
+    const before = await phone.page.getByRole("button", { name: "Continue" }).boundingBox();
+    await phone.page.getByLabel("Code").fill("K7O");
+    await expect(phone.page.locator("#code-error")).toBeVisible();
+    expect(await phone.page.getByRole("button", { name: "Continue" }).boundingBox()).toEqual(before);
     await phone.page.getByLabel("Code").fill("222 222");
     await phone.page.getByRole("button", { name: "Continue" }).click();
     await expect(phone.page.locator("#code-error")).toContainText("Check the code on the screen and try again.");
@@ -230,8 +235,8 @@ test.describe("pairing flow", () => {
     expect(await typedCodeOf(screen.page)).not.toBe(before);
     await expect(heading(phone.page)).toHaveText("This Code Has Expired");
     // One exit, a full button: no Back beside it.
-    await expect(phone.page.getByRole("link", { name: "Enter a Code" })).toHaveAttribute("href", "/code");
-    await expect(phone.page.getByRole("link", { name: "Enter a Code" })).toHaveClass(/\bprimary\b/);
+    await expect(phone.page.getByRole("link", { name: "Enter the Code" })).toHaveAttribute("href", "/code");
+    await expect(phone.page.getByRole("link", { name: "Enter the Code" })).toHaveClass(/\bprimary\b/);
     await expect(phone.page.getByRole("link", { name: "Back", exact: true })).toBeHidden();
     await expectNoAxeViolations(phone.page);
     await screen.context.close();
@@ -257,7 +262,7 @@ test.describe("pairing flow", () => {
     const { phone, code } = await scan(browser, screen.page);
     const replay = await open(browser, "phone", `/a?c=${code}`);
     await expect(heading(replay.page)).toHaveText("This Code Was Already Used");
-    await expect(replay.page.getByRole("link", { name: "Enter a Code" })).toBeVisible();
+    await expect(replay.page.getByRole("link", { name: "Enter the Code" })).toBeVisible();
     // the first phone is unaffected
     await expect(heading(phone.page)).toHaveText(DEMO.title);
     await expectNoAxeViolations(replay.page);
@@ -416,6 +421,12 @@ test.describe("guest drop", () => {
     await expect(heading(phone.page)).toHaveText("Sent to Demo Room");
     await expect(heading(screen.page)).toHaveText("Sent by a Guest");
     await expect(screen.page.locator("#line")).toHaveText("sample-deck.pptx. Open it here when you're ready.");
+    // An offer keeps its line, visible and inside the window; only a claim's status moves to the hint's place.
+    await expect(screen.page.locator("#line")).toBeVisible();
+    await expect(screen.page.locator("#line")).toHaveCSS("clip-path", "none");
+    await expect(screen.page.locator("#compare")).toBeEmpty();
+    const lineBox = await screen.page.locator("#line").boundingBox();
+    expect((lineBox?.x ?? -1) >= 0 && (lineBox?.x ?? 0) + (lineBox?.width ?? 0) <= SCREEN.width).toBe(true);
     // nothing opens by itself
     await screen.page.waitForTimeout(1500);
     await expect(heading(screen.page)).toHaveText("Sent by a Guest");
@@ -695,6 +706,78 @@ test.describe("demo viewer", () => {
   });
 });
 
+test.describe("stage 4 layout", () => {
+  for (const viewport of [
+    { width: 834, height: 1000 },
+    { width: 1440, height: 900 },
+  ]) {
+    test(`the viewer's pill sits 16 under the item at ${viewport.width} x ${viewport.height}`, async ({ browser }) => {
+      const context = await browser.newContext({ viewport });
+      const page = await context.newPage();
+      await page.goto("/s?mode=demo");
+      const code = await typedCodeOf(page);
+      const phone = await open(browser, "phone", `/a?c=${code}`);
+      await phone.page.getByRole("button", { name: "Approve" }).click();
+      for (const name of ["Sample deck.pptx", "Dog.jpg"]) {
+        await sidebarItem(page, name).click();
+        const item = page.locator("#frame img").first();
+        await expect(item).toBeVisible();
+        await expect(async () => {
+          const box = await item.boundingBox();
+          const pill = await page.locator("#controls").boundingBox();
+          expect(Math.round((pill?.y ?? 0) - ((box?.y ?? 0) + (box?.height ?? 0)))).toBe(16);
+        }).toPass();
+      }
+      await context.close();
+      await phone.context.close();
+    });
+  }
+
+  test("a reload into a claim keeps the card at its waiting size; the page's own actions are 52", async ({
+    browser,
+  }) => {
+    const screen = await demoScreen(browser);
+    await typedCodeOf(screen.page);
+    const waiting = await screen.page.locator("#qr-panel").boundingBox();
+    const { phone } = await scan(browser, screen.page);
+    await screen.page.reload();
+    await expect(screen.page.locator("#compare")).toHaveText(/^Your phone shows \d{2}\.$/);
+    await expect(screen.page.locator("#awaiting")).toHaveText("Waiting for Approve.");
+    expect(await screen.page.locator("#qr-panel").boundingBox()).toEqual(waiting);
+    await phone.page.getByRole("button", { name: "Approve" }).click();
+    await expectViewer(screen.page);
+    await screen.page.getByRole("button", { name: "End", exact: true }).click();
+    await expect(screen.page.getByRole("link", { name: "Join the Waitlist" })).toHaveCSS("min-height", "52px");
+    await screen.context.close();
+    await phone.context.close();
+  });
+
+  test("the demo never shows the live footer or a Back before its first paint", async ({ browser }) => {
+    const context = await browser.newContext({ viewport: { width: 834, height: 1000 } });
+    const page = await context.newPage();
+    await page.route("**/api/screens", async (route) => {
+      await new Promise((done) => setTimeout(done, 1500));
+      await route.continue();
+    });
+    await page.goto("/s?mode=demo");
+    await expect(page.locator(".foot")).toBeHidden();
+    await expect(page.locator("#b-back")).toHaveCSS("visibility", "hidden");
+    await context.close();
+  });
+
+  test("a dead code centers title, line and Enter the Code as one group", async ({ browser }) => {
+    const context = await browser.newContext({ viewport: { width: 834, height: 1112 } });
+    const page = await context.newPage();
+    await page.goto("/a?c=222222");
+    await expect(heading(page)).toHaveText("This Code Has Expired");
+    const title = await heading(page).boundingBox();
+    const go = await page.getByRole("link", { name: "Enter the Code" }).boundingBox();
+    const center = ((title?.y ?? 0) + (go?.y ?? 0) + (go?.height ?? 0)) / 2;
+    expect(Math.abs(center - 1112 / 2)).toBeLessThan(24);
+    await context.close();
+  });
+});
+
 test.describe("screen page", () => {
   test("a phone-width window gets the redirect message and starts no session", async ({ browser }) => {
     const context = await browser.newContext({ viewport: PHONE });
@@ -705,7 +788,7 @@ test.describe("screen page", () => {
     });
     await page.goto("/s");
     await expect(page.getByText("Use the Room's Screen")).toBeVisible();
-    await expect(page.getByRole("link", { name: "Enter a Code" })).toHaveAttribute("href", "/code");
+    await expect(page.getByRole("link", { name: "Enter the Code" })).toHaveAttribute("href", "/code");
     await expect(page.locator("#qr")).toBeHidden();
     await expectNoAxeViolations(page);
     expect(created).toEqual([]);

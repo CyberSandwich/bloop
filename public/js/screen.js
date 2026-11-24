@@ -42,6 +42,7 @@ const qrSvg = byId("qr");
 const qrPathEl = byId("qr-path");
 const matchEl = byId("match");
 const compare = byId("compare");
+const awaiting = byId("awaiting");
 const foot = byId("foot");
 const typedHost = byId("typed-host");
 const typedCode = byId("typed-code");
@@ -235,8 +236,10 @@ function paint() {
   if (code) drawCode(code);
   qrPanel.classList.toggle("is-empty", s.shown === null);
   show(matchEl, mode === "scanned");
-  // The digits to compare, large in the hint's place; the status line still says them to a screen reader.
-  setText(compare, mode === "scanned" ? copy.line : "");
+  // A claim's status only: a guest's line names a file.
+  const claimed = key === "scanned" || key === "choosing";
+  main.classList.toggle("is-claimed", claimed);
+  setText(compare, claimed ? copy.line : "");
 
   const has = (/** @type {import("./types.js").ScreenControl} */ c) => copy.controls.includes(c);
   show(buttons.back, !has("start_over") && !has("end") && key !== "ended");
@@ -248,6 +251,8 @@ function paint() {
   if (code) for (const b of [buttons.here, buttons.phone]) b.setAttribute("href", `/a?c=${code.code}`);
   show(buttons.continue, has("continue"));
   show(buttons.waitlist, has("waitlist"));
+  show(awaiting, claimed && !has("continue"));
+  document.body.classList.add("is-ready");
   show(buttons.open, has("open") || launcher.needsClick());
   // A spent mint budget hides the item's fallbacks: another click could only be refused.
   const mintable = !launcher.spent(target());
@@ -265,10 +270,8 @@ function paint() {
   // With the sidebar showing, the h1 is visually hidden: focus lands on the selected row instead.
   const row = document.querySelector("#items [aria-current]");
   if (changed && lostFocus()) focusTitle(row instanceof HTMLElement && row.offsetParent ? row : heading);
-  if (mode === "waiting") {
-    fitQr();
-    updateRing();
-  }
+  if (mode === "waiting" || mode === "scanned") fitQr();
+  if (mode === "waiting") updateRing();
   schedule(key);
 }
 
@@ -304,7 +307,7 @@ function onView(/** @type {ScreenView} */ view) {
   if (view.state === "ended" && s.view?.state !== "ended") {
     ended = endLine(view.endReason, DEMO ? { ppt: false, download: null } : launcher.left());
   }
-  if ((view.state === "ended" || view.state === "closed") && sameScreen(s.sid, pids.get(PID_KEY))) pids.remove(PID_KEY);
+  if (view.state === "ended" || view.state === "closed") dropMine(s.sid);
   s.view = view;
   s.skew = view.now - Date.now();
   if (view.state === "ended" || view.state === "closed") residue.clear();
@@ -365,6 +368,12 @@ function leave(/** @type {boolean} */ end) {
   letGo();
   if (sid && end) void api.leave("/api/screen/end", sid);
   residue.clear();
+  dropMine(sid);
+}
+
+/** The one-device pid is in localStorage, beyond residue's sweep. */
+function dropMine(/** @type {string | null} */ sid) {
+  if (sameScreen(sid, pids.get(PID_KEY))) pids.remove(PID_KEY);
 }
 byId("b-leave").addEventListener("click", () => {
   leave(true);
@@ -482,6 +491,7 @@ function start() {
   main.dataset.mode = "idle";
   typedHost.textContent = location.host;
   setText(byId("phone-host"), location.host);
+  fitQr();
   addEventListener("resize", frameThrottle(fitQr));
   addEventListener("online", () => s.channel?.nudge());
   addEventListener("pagehide", () => launcher.closePdf());

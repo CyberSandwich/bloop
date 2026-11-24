@@ -28,7 +28,7 @@ describe("the /auth/callback error page", () => {
     ]);
   });
 
-  it("offers Enter a Code except where only IT can help", async () => {
+  it("offers Enter the Code except where only IT can help", async () => {
     expect(await callbackErrorPage("consent_declined").text()).toContain('href="/code"');
     expect(await callbackErrorPage("admin_consent_required").text()).not.toContain("<a ");
   });

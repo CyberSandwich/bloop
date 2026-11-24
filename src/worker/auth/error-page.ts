@@ -43,7 +43,7 @@ const STATUS: Readonly<Record<SignInError, number>> = {
 
 export function callbackErrorPage(failure: SignInError): Response {
   const { title, body, retry } = WORDS[failure];
-  const action = retry ? '<a class="btn primary" href="/code">Enter a Code</a>' : "";
+  const action = retry ? '<a class="btn primary" href="/code">Enter the Code</a>' : "";
   const html = `<!DOCTYPE html>
 <html lang="en-US">
   <head>

@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { Api } from "../../public/js/core/api.js";
 import { openChannel, refusal } from "../../public/js/core/channel.js";
+import { refused } from "../../public/js/core/states.js";
 import type { SocketLike } from "../../public/js/types.js";
 import type { ErrorCode } from "../../src/shared/protocol.ts";
 
@@ -30,7 +31,11 @@ class FakeSocket implements SocketLike {
 
 type PollReply = { ok: true; value: unknown } | { ok: false; error: ErrorCode };
 
-function setup(polls: PollReply[] = []) {
+/** A reply may be a promise the test settles later; `react` is the page's own onError, handed the channel. */
+function setup(
+  polls: (PollReply | Promise<PollReply>)[] = [],
+  react?: (code: ErrorCode, ch: ReturnType<typeof openChannel>) => void,
+) {
   const sockets: FakeSocket[] = [];
   const views: unknown[] = [];
   const errors: ErrorCode[] = [];
@@ -40,7 +45,7 @@ function setup(polls: PollReply[] = []) {
   const api = {
     get: async (path: string, auth?: string | null) => {
       pollCalls.push(`${path}|${auth}`);
-      return polls.shift() ?? { ok: true, value: { state: "waiting" } };
+      return (await polls.shift()) ?? { ok: true, value: { state: "waiting" } };
     },
   } as unknown as Api;
   const channel = openChannel({
@@ -55,7 +60,10 @@ function setup(polls: PollReply[] = []) {
       return s;
     },
     onView: (v) => views.push(v),
-    onError: (c) => errors.push(c),
+    onError: (c) => {
+      errors.push(c);
+      react?.(c, channel);
+    },
     onFrame: (f) => frames.push(f),
     onLink: (l) => links.push(l),
   });
@@ -279,6 +287,35 @@ describe("live channel", () => {
     await vi.advanceTimersByTimeAsync(0);
     expect(t.sockets).toHaveLength(2);
     expect(t.pollCalls).toHaveLength(1);
+  });
+
+  it("a wake read answered after a newer push is dropped: an old view never lies over a new one", async () => {
+    let answer: (r: PollReply) => void = () => {};
+    const late = new Promise<PollReply>((done) => {
+      answer = done;
+    });
+    const t = setup([late]);
+    t.sockets[0]?.open();
+    // The wake's read goes out, the claim is pushed, then the read comes back with the older waiting view.
+    t.channel.wake();
+    t.sockets[0]?.push({ v: 1, t: "state", view: { state: "claimed" } });
+    answer({ ok: true, value: { state: "waiting" } });
+    await vi.advanceTimersByTimeAsync(0);
+    expect(t.views).toEqual([{ state: "claimed" }]);
+  });
+
+  it("PAIR-12 a phone at a result stops its channel on a later refusal: nothing reconnects or repaints", async () => {
+    const t = setup([], (code, ch) => {
+      if (refused("ended", code).stop) ch.stop();
+    });
+    t.sockets[0]?.open();
+    t.sockets[0]?.push({ v: 1, t: "state", view: { state: "ended" } });
+    t.sockets[0]?.push({ v: 1, t: "error", code: "rate_limited" });
+    expect(t.sockets[0]?.closed).toBe(true);
+    t.channel.wake();
+    await vi.advanceTimersByTimeAsync(120_000);
+    expect(t.sockets).toHaveLength(1);
+    expect(t.views).toEqual([{ state: "ended" }]);
   });
 
   it("a stopped channel delivers no late state", async () => {

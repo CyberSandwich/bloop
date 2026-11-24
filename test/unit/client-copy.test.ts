@@ -463,10 +463,10 @@ describe("phone copy", () => {
     expect(PHONE_KEYS.filter((k) => phoneCopy(k, pf).actions.some((a) => a.id === "back"))).toEqual([]);
   });
 
-  it("expired, taken and a wrong code offer Enter a Code as the one primary link to /code", () => {
+  it("expired, taken and a wrong code offer Enter the Code as the one primary link to /code", () => {
     for (const key of ["expired", "taken", "typed_wrong"] as const) {
       expect(phoneCopy(key, pf).actions).toEqual([
-        { id: "code", label: "Enter a Code", kind: "primary", href: "/code" },
+        { id: "code", label: "Enter the Code", kind: "primary", href: "/code" },
       ]);
     }
   });

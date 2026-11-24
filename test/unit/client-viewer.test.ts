@@ -74,7 +74,7 @@ class Node {
   }
 }
 
-const ids = ["side", "items", "handle", "view", "frame", "prev", "next", "dots", "parked"];
+const ids = ["side", "items", "handle", "view", "frame", "prev", "next", "dots", "parked", "controls"];
 const byId = new Map<string, Node>();
 const docListeners = new Map<string, Listener[]>();
 const exitFullscreen = vi.fn(() => Promise.resolve());
@@ -97,6 +97,7 @@ class Observer {
 
 const ORIGIN = "https://bloop.example";
 const photo: Item = { kind: "file", name: "Dog.jpg", type: "jpg", size: 70_000 };
+const deck: Item = { kind: "file", name: "Sample deck.pptx", type: "pptx", size: 82_000 };
 const view = {
   state: "open",
   mode: "demo",
@@ -124,6 +125,8 @@ beforeAll(async () => {
   vi.stubGlobal("ResizeObserver", Observer);
   vi.stubGlobal("IntersectionObserver", Observer);
   vi.stubGlobal("Image", class extends Node {});
+  vi.stubGlobal("Element", Node);
+  vi.stubGlobal("HTMLElement", Node);
   ({ createViewer } = await import(VIEWER));
 });
 
@@ -178,12 +181,17 @@ describe("DEMO-01 the viewer parks for a transient state", () => {
     expect(el("frame").children[0]?.attrs.get("src")).toBe(`${ORIGIN}/f/abc/Dog.jpg`);
   });
 
-  it("a key while parked pages nothing", () => {
+  it("a key while parked pages nothing: the deck resumes on the page it was on", () => {
     const { v, el } = setup();
-    v.render(view);
+    const deckView = { ...view, items: [deck] } as ScreenView;
+    v.render(deckView);
+    expect(el("dots").textContent).toBe("1 / 2");
     v.park("You're Offline");
     for (const f of docListeners.get("keydown") ?? []) f({ type: "keydown", key: "PageDown", preventDefault() {} });
     expect(el("view").hidden).toBe(true);
+    v.render(deckView);
+    expect(el("dots").textContent).toBe("1 / 2");
+    expect(el("frame").querySelector("img")?.getAttribute("data-page")).toBe("0");
   });
 
   it("in full screen it holds the stage with the status line, resumes in place, and only a real end leaves", () => {

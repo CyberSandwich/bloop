@@ -28,6 +28,8 @@ export function openChannel(o) {
   /** @type {ReturnType<typeof setInterval> | null} */
   let pingTimer = null;
   let lastHeard = 0;
+  /** State frames seen: a read older than a push is stale. */
+  let pushed = 0;
 
   const clear = () => {
     if (retryTimer) clearTimeout(retryTimer);
@@ -108,8 +110,10 @@ export function openChannel(o) {
         stopPolling();
         o.onLink("ok");
       }
-      if (frame.t === "state") o.onView(frame.view);
-      else if (frame.t === "error") {
+      if (frame.t === "state") {
+        pushed += 1;
+        o.onView(frame.view);
+      } else if (frame.t === "error") {
         if (FATAL.has(frame.code)) stop();
         o.onError(frame.code);
       } else o.onFrame?.(frame);
@@ -163,8 +167,9 @@ export function openChannel(o) {
 
   /** Fetch the state once, whatever the socket says. */
   async function refresh() {
+    const at = pushed;
     const res = await o.api.get(o.statePath, o.credential);
-    if (res.ok && !closed) o.onView(res.value);
+    if (res.ok && !closed && at === pushed) o.onView(res.value);
     return res.ok;
   }
 }

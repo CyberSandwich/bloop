@@ -1,6 +1,6 @@
 import { readdirSync, readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 
 const read = (rel: string) => readFileSync(fileURLToPath(new URL(`../../public/${rel}`, import.meta.url)), "utf8");
 const PAGES = ["s.html", "a.html", "code.html"] as const;
@@ -86,6 +86,20 @@ describe("client code under the strict CSP", () => {
     // Modules only define things; the one top-level call that starts a request is `start()` at the end.
     expect(phone.trimEnd().endsWith("start();")).toBe(true);
     expect(phone.match(/^(?:await )?(?:api|fetch)\b/gm)).toBeNull();
+  });
+});
+
+describe("the screen restored from the back-forward cache", () => {
+  it("reloads, so a page whose socket is gone never shows an ended session; a plain load never loops", () => {
+    // The handler as start() registers it, run against a fake location.
+    const src = read("js/screen.js").match(/addEventListener\("pageshow", (\(e\) => [^\n]+)\);/)?.[1];
+    expect(src).toBeDefined();
+    const reload = vi.fn();
+    const handler = new Function("location", `return ${src}`)({ reload }) as (e: { persisted: boolean }) => void;
+    handler({ persisted: false });
+    expect(reload).not.toHaveBeenCalled();
+    handler({ persisted: true });
+    expect(reload).toHaveBeenCalledOnce();
   });
 });
 

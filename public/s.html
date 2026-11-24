@@ -33,7 +33,7 @@
       <div class="narrow">
         <p class="narrow-title">Use the Room's Screen</p>
         <p class="line">Open this page there, then scan its code with your phone.</p>
-        <a class="btn secondary" href="/code">Enter a Code</a>
+        <a class="btn secondary" href="/code">Enter the Code</a>
       </div>
       <div class="side glass" id="side" popover hidden>
         <h2 class="side-head" id="side-head">Items</h2>
@@ -59,6 +59,7 @@
           <button type="button" class="framed code-card" id="b-copy"><svg class="icon" viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M6.5 15.25c-.97 0-1.75-.78-1.75-1.75V6.75c0-1.1.9-2 2-2h6.75c.97 0 1.75.78 1.75 1.75"/><path d="M10.75 8.75h6.5a2 2 0 0 1 2 2v6.5a2 2 0 0 1-2 2h-6.5a2 2 0 0 1-2-2v-6.5a2 2 0 0 1 2-2Z"/></svg><svg class="icon done" viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="m5.75 12.87 2.59 3.54c.81 1.12 2.48 1.1 3.26-.04l6.65-9.62"/></svg><span class="sr">Copy</span> <span class="code" id="typed-code"></span></button>
           <button type="button" class="framed square" id="b-new" aria-label="New Code"><svg class="icon" viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><g transform="matrix(-1 0 0 1 24 0)"><path d="M11.25 4.75 8.75 7l2.5 2.25"/><path d="M12.75 19.25 15.25 17l-2.5-2.25"/><path d="M9.75 7h3.5a6 6 0 0 1 6 6v.25"/><path d="M14.25 17h-3.5a6 6 0 0 1-6-6v-.25"/></g></svg></button>
         </div>
+        <p class="awaiting" id="awaiting" hidden>Waiting for Approve.</p>
         <div class="phone-way">
           <a class="btn primary" id="b-phone" href="/a" hidden>Approve on This Phone</a>
           <p class="line">Or open <span id="phone-host"></span>/demo on a laptop and scan its code with this phone.</p>

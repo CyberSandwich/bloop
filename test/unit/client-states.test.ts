@@ -1,5 +1,5 @@
-import { describe, expect, it } from "vitest";
-import { phoneKey, screenKey } from "../../public/js/core/states.js";
+import { describe, expect, it, vi } from "vitest";
+import { adopt, phoneKey, refused, screenKey } from "../../public/js/core/states.js";
 import { ERRORS } from "../../public/js/shared/errors.js";
 import { IN_SESSION, PAIRING_OVER } from "../../public/js/shared/session.js";
 import type { PhoneCtx, ScreenCtx } from "../../public/js/types.js";
@@ -258,5 +258,32 @@ describe("phone state to view mapping", () => {
   it("an error replaces the flow", () => {
     expect(phoneKey(ctx({ error: "taken", files: [file("a")], selected: ["a"] }))).toBe("taken");
     expect(phoneKey(ctx({ error: "taken", info: null, view: null }))).toBe("taken");
+  });
+});
+
+describe("PAIR-12 the phone takes a view", () => {
+  it("a resumed pid is set before its view, so a pairing already over drops that pid", () => {
+    const c = { pid: null as string | null, view: null as PhoneView | null, skew: 0 };
+    const drop = vi.fn();
+    adopt(c, phoneView("ended", { endReason: "phone" }), drop, "PID-1");
+    expect(c.pid).toBe("PID-1");
+    expect(drop).toHaveBeenCalledWith("PID-1");
+  });
+
+  it("a live view keeps the pid; a pairing that fell back to waiting drops it", () => {
+    const c = { pid: "PID-1" as string | null, view: null as PhoneView | null, skew: 0 };
+    const drop = vi.fn();
+    adopt(c, phoneView("open"), drop);
+    expect(drop).not.toHaveBeenCalled();
+    adopt(c, phoneView("waiting"), drop);
+    expect(drop).toHaveBeenCalledWith("PID-1");
+  });
+
+  it("after a result a refusal only drops and stops; before one, it shows and keeps a live pid", () => {
+    for (const key of ["ended", "canceled"] as const) {
+      expect(refused(key, "rate_limited")).toEqual({ drop: true, stop: true });
+    }
+    expect(refused("open", "rate_limited")).toEqual({ drop: false, stop: false });
+    expect(refused("open", "pairing_invalid")).toEqual({ drop: true, stop: false });
   });
 });

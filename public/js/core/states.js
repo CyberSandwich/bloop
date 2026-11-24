@@ -1,7 +1,31 @@
 // State to view mapping: the server's view plus what only the client knows become one state key.
 // Pure; the pages render the key through copy.js.
-/** @import {FileItem, Item, PhoneStateKey, PhoneView, ScreenStateKey, ScreenView} from "../../../src/shared/protocol.ts" */
+/** @import {ErrorCode, FileItem, Item, PhoneStateKey, PhoneView, ScreenStateKey, ScreenView} from "../../../src/shared/protocol.ts" */
 /** @import {PhoneCtx, ScreenCtx} from "../types.js" */
+import { PAIRING_OVER } from "../shared/session.js";
+import { refusal } from "./channel.js";
+
+/** @type {PhoneStateKey[]} */
+export const RESULTS = ["ended", "canceled"];
+
+/**
+ * The pid first: a view that is over drops the pid it was read with.
+ * @param {{pid: string | null, view: PhoneView | null, skew: number}} c
+ * @param {PhoneView} view
+ * @param {(pid: string | null) => void} drop
+ */
+export function adopt(c, view, drop, pid = c.pid) {
+  c.pid = pid;
+  c.view = view;
+  c.skew = view.now - Date.now();
+  if (PAIRING_OVER.includes(view.state)) drop(pid);
+}
+
+/** After a result, a pushed refusal only ends the pairing. */
+export function refused(/** @type {PhoneStateKey} */ key, /** @type {ErrorCode} */ code) {
+  const over = RESULTS.includes(key);
+  return { drop: over || refusal(code) === "dead", stop: over };
+}
 
 /**
  * The first file of a view's items, or null: the one an approval launches.

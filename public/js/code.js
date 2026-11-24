@@ -3,7 +3,7 @@ import { createApi } from "./core/api.js";
 import { TYPED_LETTERS, typedError } from "./core/copy.js";
 import { typedCode, typedValid } from "./core/format.js";
 import { PID_KEY, pidStore } from "./core/store.js";
-import { ariaFlag, byId, focusTitle, isFramed, setText, show } from "./core/ui.js";
+import { ariaFlag, byId, focusTitle, isFramed, setText } from "./core/ui.js";
 import { ERRORS } from "./shared/errors.js";
 
 const api = createApi();
@@ -18,7 +18,7 @@ let busy = false;
 
 function showError(/** @type {string} */ text) {
   setText(errorText, text);
-  show(errorLine, text !== "");
+  errorLine.classList.toggle("is-on", text !== "");
   ariaFlag(input, "aria-invalid", text !== "");
 }
 

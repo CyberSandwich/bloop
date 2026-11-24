@@ -48,10 +48,15 @@ export function createViewer(deps) {
   const next = /** @type {HTMLButtonElement} */ (byId("next"));
   const dots = byId("dots");
   const note = byId("parked");
-  // The tap zones cover the slide's own box, so empty paper beside it never pages. Offsets, not client rects: the
-  // swap animation scales the img, and .view is its offset parent.
+  const pill = byId("controls");
+  // The pill sits 16 under the item (a scrolling document: the stage's foot); the tap zones cover the slide's own
+  // box. Offsets, not client rects: the swap animation scales the img.
   const fit = () => {
     const img = frame.querySelector("img");
+    const item = frame.classList.contains("is-scroll") ? null : (img ?? frame.firstElementChild);
+    const top =
+      item instanceof HTMLElement ? item.offsetTop + item.offsetHeight + 16 : view.offsetHeight - pill.offsetHeight;
+    pill.style.top = `${view.offsetTop + top}px`;
     if (!img) return;
     const box = { left: img.offsetLeft, top: img.offsetTop, width: img.offsetWidth, height: img.offsetHeight };
     for (const [i, part] of halves(box).entries()) {
@@ -235,8 +240,8 @@ export function createViewer(deps) {
         );
       }
       sized.disconnect();
-      const shownImg = frame.querySelector("img");
-      if (p && !scroll && shownImg) for (const box of [shownImg, view]) sized.observe(box);
+      const shown = frame.querySelector("img") ?? frame.firstElementChild;
+      for (const box of shown ? [shown, view] : [view]) sized.observe(box);
     }
     show(view, true);
     show(frame, true);
