@@ -112,6 +112,22 @@ export const validDeck = (extra: BuiltEntry[] = [], contentTypes = CONTENT_TYPES
 
 export const validPdf = (): Uint8Array => enc.encode("%PDF-1.4\n1 0 obj<<>>endobj\ntrailer<<>>\n%%EOF\n");
 
+/** A minimal JPEG: SOI, one comment segment, EOI. */
+export const validJpeg = (comment = "x"): Uint8Array =>
+  concat([
+    new Uint8Array([0xff, 0xd8, 0xff, 0xfe, 0, comment.length + 2]),
+    enc.encode(comment),
+    new Uint8Array([0xff, 0xd9]),
+  ]);
+
+/** A minimal PNG: signature and an IEND chunk (the CRC is not checked). */
+export const validPng = (): Uint8Array =>
+  concat([
+    new Uint8Array([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0, 0, 0, 0]),
+    enc.encode("IEND"),
+    new Uint8Array([0xae, 0x42, 0x60, 0x82]),
+  ]);
+
 export { concat };
 
 /** A RangeReader over a byte array, for the pure validators. */

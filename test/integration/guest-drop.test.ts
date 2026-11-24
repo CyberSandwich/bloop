@@ -1,7 +1,7 @@
 // The guest drop against `wrangler dev` with a local R2 bucket and D1: a full drop to the Open click, the refusals,
 // and the deletion paths. Short timers and the budget live in guest-drop-timing.test.ts.
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
-import { buildZip, concat, validDeck, validPdf } from "../zip-builder.ts";
+import { buildZip, concat, validDeck, validJpeg, validPdf, validPng } from "../zip-builder.ts";
 import { guestRow, pairPhone, problemCode, putDrop } from "./drop-client.ts";
 import { fetchLink } from "./open-client.ts";
 import { Api, startPairing } from "./pairing-client.ts";
@@ -130,6 +130,14 @@ describe("DROP-01 size", () => {
     socket.close();
   });
 
+  it("DROP-01 refuses an image over the cap by its declared length, the same as a deck", async () => {
+    const { socket, pid } = await pairPhone(api);
+    const big = concat([validJpeg(), new Uint8Array(MAX)]);
+    const res = await putDrop(api, pid, big, { name: "Big.jpg", contentType: "image/jpeg" });
+    expect([res.status, await problemCode(res)]).toEqual([413, "too_large"]);
+    socket.close();
+  });
+
   it("refuses a body with no Content-Length (chunked)", async () => {
     const { socket, pid } = await pairPhone(api);
     const stream = new ReadableStream<Uint8Array>({
@@ -222,6 +230,82 @@ describe("DROP-02 wrong type and polyglot are refused and nothing is kept", () =
     socket.send({ t: "open.click" });
     const open = await socket.waitFor((f) => f.t === "open");
     expect((open.links as { protocol: string }).protocol).toMatch(/\/f\/[A-Za-z0-9_-]{54}\/[A-Za-z0-9.-]+$/);
+    socket.close();
+  });
+});
+
+describe("DROP-02 images: a guest photo is stored, offered and served under a fixed type", () => {
+  const cases: [string, Uint8Array, string, string, string][] = [
+    ["JPEG", validJpeg(), "Photo.jpg", "image/jpeg", "jpg"],
+    ["a .jpeg name", validJpeg(), "Photo.JPEG", "image/jpeg", "jpg"],
+    ["PNG", validPng(), "Slide.png", "image/png", "png"],
+  ];
+  for (const [label, bytes, name, type, ext] of cases) {
+    it(`DROP-02 ${label}: round trip from the drop to the screen's fetch`, async () => {
+      const { socket, pid } = await pairPhone(api);
+      const res = await putDrop(api, pid, bytes, { name, contentType: type });
+      expect(res.status).toBe(200);
+      expect(await res.json()).toMatchObject({ state: "offered", kind: "guest", items: [{ name, type: ext }] });
+      expect(guestRow(wrangler.d1)).toMatchObject({ type: ext, bytes: bytes.length, deleted_at: null });
+
+      socket.send({ t: "open.click" });
+      const open = await socket.waitFor((f) => f.t === "open");
+      const links = open.links as { protocol: string | null; pdf: string | null; view: string | null };
+      expect([links.protocol, links.pdf]).toEqual([null, null]);
+      const fetched = await fetchLink(links.view ?? "");
+      expect(fetched.status).toBe(200);
+      expect(fetched.headers.get("Content-Type")).toBe(type);
+      expect(fetched.headers.get("X-Content-Type-Options")).toBe("nosniff");
+      expect(fetched.headers.get("Content-Security-Policy")).toBe(
+        "default-src 'none'; sandbox; frame-ancestors 'none'",
+      );
+      expect(fetched.headers.get("Content-Disposition")).toBe("inline");
+      expect(new Uint8Array(await fetched.arrayBuffer())).toEqual(bytes);
+      socket.close();
+    });
+  }
+
+  it("DROP-02 refuses a HEIC file: by name, and by bytes under a JPEG name", async () => {
+    const heic = concat([new Uint8Array([0, 0, 0, 0x18]), new TextEncoder().encode("ftypheic"), new Uint8Array(64)]);
+    const { socket, pid } = await pairPhone(api);
+    const byName = await putDrop(api, pid, heic, { name: "IMG_1.heic" });
+    expect([byName.status, await problemCode(byName)]).toEqual([415, "bad_type"]);
+    const byBytes = await putDrop(api, pid, heic, { name: "IMG_1.jpg", contentType: "image/jpeg" });
+    expect([byBytes.status, await problemCode(byBytes)]).toEqual([415, "bad_type"]);
+    expect(guestRow(wrangler.d1)?.deleted_at).not.toBeNull();
+    expect((await putDrop(api, pid, validJpeg(), { name: "IMG_1.jpg" })).status).toBe(200);
+    socket.close();
+  });
+
+  it("DROP-02 refuses a PNG sent as a JPEG and a deck sent as a PNG", async () => {
+    const { socket, pid } = await pairPhone(api);
+    expect(await problemCode(await putDrop(api, pid, validPng(), { name: "a.jpg" }))).toBe("bad_type");
+    expect(await problemCode(await putDrop(api, pid, deck, { name: "a.png", contentType: "image/png" }))).toBe(
+      "bad_type",
+    );
+    socket.close();
+  });
+
+  it("DROP-11 image polyglot: a JPEG that ends in a zip is refused and nothing is kept", async () => {
+    const { socket, pid } = await pairPhone(api);
+    const res = await putDrop(api, pid, concat([validJpeg(), deck]), { name: "Photo.jpg" });
+    expect([res.status, await problemCode(res)]).toEqual([422, "bad_structure"]);
+    const row = guestRow(wrangler.d1);
+    expect(row?.deleted_at).not.toBeNull();
+    expect(wrangler.r2Has(String(row?.r2_key))).toBe(false);
+    socket.close();
+  });
+
+  it("DROP-11 image polyglot: a JPEG that is also HTML is served as a JPEG, nosniff and sandboxed", async () => {
+    const html = validJpeg("<html><script>alert(document.domain)</script></html>");
+    const { socket, pid } = await pairPhone(api);
+    expect((await putDrop(api, pid, html, { name: "Photo.jpg" })).status).toBe(200);
+    socket.send({ t: "open.click" });
+    const open = await socket.waitFor((f) => f.t === "open");
+    const fetched = await fetchLink((open.links as { view: string }).view);
+    expect(fetched.headers.get("Content-Type")).toBe("image/jpeg");
+    expect(fetched.headers.get("X-Content-Type-Options")).toBe("nosniff");
+    expect(fetched.headers.get("Content-Security-Policy")).toContain("sandbox");
     socket.close();
   });
 });

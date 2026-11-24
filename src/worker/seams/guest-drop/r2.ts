@@ -1,5 +1,6 @@
 // GuestDrop over an R2 bucket (private, `eu`) and the D1 `guest_file` ledger (ADR 0005). Objects live at
 // `g/<128-bit random>`: the key is the capability, and it is only ever handed to /f/ through the session.
+import type { FileType } from "../../../shared/protocol.ts";
 import type { Db } from "../../auth/db.ts";
 import { newRef } from "../../ids.ts";
 import {
@@ -64,7 +65,7 @@ export class R2GuestDrop implements GuestDrop {
     return op();
   }
 
-  async reserve(sessionId: string, bytes: number, name: string, type: "pptx" | "pdf"): Promise<Reservation> {
+  async reserve(sessionId: string, bytes: number, name: string, type: FileType): Promise<Reservation> {
     if (!(await this.meter.hasRoom())) return { ok: false, error: "storage_full" };
     const r2Key = `${PREFIX}${newRef()}`;
     // One statement, so concurrent drops cannot both pass the budget check. Only a closed row is replaced: a live
