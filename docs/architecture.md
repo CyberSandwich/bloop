@@ -220,7 +220,7 @@ vitest.config.ts  vitest.int.config.ts  playwright.config.ts  lighthouserc.json 
 .dev.vars.example
 migrations/                0001_init.sql, numbered, raw SQL (wrangler d1 migrations)
 src/shared/
-  protocol.ts              type-only contracts: messages, views, error codes (never served; browser JS imports them through JSDoc @import)
+  protocol.ts              contracts: messages, views, error codes, and OPEN_MODES, the one runtime list (never served; browser JS imports the types through JSDoc @import)
 src/worker/
   index.ts                 fetch + scheduled entry, route table
   http.ts                  json(), problem(), origin and fetch-metadata checks, body limits
