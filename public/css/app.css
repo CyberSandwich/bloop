@@ -736,7 +736,7 @@ main:has(> .side:not([hidden])) #stage {
 }
 /* Selected and hover are a light fill, never ink: a link row is never selected, only hovered. */
 .item[aria-current] {
-  background: var(--g1);
+  background: var(--g-select);
 }
 @media (hover: hover) and (pointer: fine) {
   .item:not([aria-current]):hover,

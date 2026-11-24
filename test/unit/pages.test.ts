@@ -1,6 +1,7 @@
 import { readdirSync, readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it, vi } from "vitest";
+import { contrast, luminance, type Rgb, token } from "./contrast.ts";
 
 const read = (rel: string) => readFileSync(fileURLToPath(new URL(`../../public/${rel}`, import.meta.url)), "utf8");
 const PAGES = ["s.html", "a.html", "code.html"] as const;
@@ -113,6 +114,26 @@ describe("the phone's band", () => {
     expect(
       read("css/app.css").match(/@media \(min-width: 640px\) and \(min-height: 600px\), \(min-width: 900px\) \{/g),
     ).toHaveLength(1);
+  });
+});
+
+describe("secondary text on every neutral it sits on (design.md section 12)", () => {
+  const glass = token("glass", "paper");
+  const grounds: [string, Rgb][] = [
+    ["paper", token("paper")],
+    ["the hover wash on paper", token("wash", "paper")],
+    ["glass over paper", glass],
+    ["the hover wash on glass", token("wash", glass)],
+    ["a selected row", token("g-select")],
+  ];
+
+  it.each(grounds)("--muted clears 4.6:1 on %s", (_, ground) => {
+    expect(contrast(token("muted"), ground)).toBeGreaterThanOrEqual(4.6);
+  });
+
+  it("a selected row is filled with --g-select, and a lead is never lighter than --muted", () => {
+    expect(read("css/app.css")).toMatch(/\.item\[aria-current\] \{\n {2}background: var\(--g-select\);/);
+    expect(luminance(token("lead"))).toBeLessThanOrEqual(luminance(token("muted")));
   });
 });
 

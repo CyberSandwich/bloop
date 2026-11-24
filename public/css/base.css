@@ -29,9 +29,10 @@
   --surface: #ffffff;
   --ink: #1e1e1c;
   --ink-2: #3a3a36;
-  --muted: #5a5a55;
+  --muted: #66665f;
   --g2: #a3a39c;
   --g1: #dcdcd7;
+  --g-select: #e6e6e2;
   --hairline: rgba(0, 0, 0, 0.08);
   --sky: #cfe0e8;
   --mint: #cce8df;
