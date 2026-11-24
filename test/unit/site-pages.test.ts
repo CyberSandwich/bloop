@@ -632,6 +632,13 @@ describe("the stylesheets: base.css, then the page's own (design.md section 11)"
     expect(block(".rows li")).toMatch(/min-height: 56px;\s*padding-block: 12px;/);
   });
 
+  it("no site text is dimmed by opacity, which axe counts against contrast even under aria-hidden", () => {
+    // The FAQ answer fades in only while it opens, so its opacity is the one allowed.
+    const rest = (css["site.css"] ?? "").replace(/@supports \(interpolate-size: allow-keywords\) \{[\s\S]*?\n\}\n/, "");
+    expect(rest).not.toMatch(/opacity:/);
+    expect(block(".frag-row.off")).toContain("color: var(--muted);");
+  });
+
   it("every site heading balances its lines, so a card title never ends on one word", () => {
     expect(css["base.css"]).toMatch(/h1,\s*h2 \{[^}]*text-wrap: balance;/);
     expect(css["site.css"]).toMatch(/^h3 \{\s*text-wrap: balance;\s*\}/m);

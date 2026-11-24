@@ -407,8 +407,14 @@ h3 {
   font-size: 15px;
   font-weight: 600;
 }
+/* Left out by color, weight and an empty tile, never by opacity, since axe checks contrast even under aria-hidden. */
 .frag-row.off {
-  opacity: 0.4;
+  color: var(--muted);
+  font-weight: 400;
+}
+.frag-row.off .frag-tile {
+  background: none;
+  box-shadow: inset 0 0 0 1px var(--hairline);
 }
 .frag-tile {
   display: grid;
