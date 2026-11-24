@@ -584,7 +584,8 @@ describe("site chrome: one nav and one footer on every site page", () => {
   it("privacy names Tally as the waitlist processor and what the form collects", () => {
     const html = read("public/privacy.html");
     const row =
-      /<tr><th scope="row">Waitlist: who handles the form<\/th><td>([\s\S]*?)<\/td><\/tr>/.exec(html)?.[1] ?? "";
+      /<tr><th scope="row">Waitlist: the email and answers you send<\/th><td>([\s\S]*?)<\/td><\/tr>/.exec(html)?.[1] ??
+      "";
     expect(row).toContain("Tally (tally.so)");
     for (const field of ["role", "where you would use", "organization", "next step", "timing", "email"]) {
       expect(row, field).toContain(field);
