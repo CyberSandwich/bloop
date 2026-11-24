@@ -64,13 +64,16 @@ async function scan(
 
 /** A row's accessible name starts with the item's name, then its kind line. */
 const startsWith = (name: string) => new RegExp(`^${name.replace(".", "\\.")}`);
+/** A file row is a button; a link row is a link that opens a new tab and leaves the stage as it is. */
 const sidebarItem = (page: Page, name: string) =>
   page.locator("#items").getByRole("button", { name: startsWith(name) });
+const sidebarLink = (page: Page, name: string) => page.locator("#items").getByRole("link", { name: startsWith(name) });
 
 /** The demo viewer from approval: the sidebar with the whole catalog, and the first item (the photo) on the stage. */
 async function expectViewer(page: Page) {
-  await expect(page.locator("#items button")).toHaveCount(CATALOG.length);
-  for (const name of CATALOG) await expect(sidebarItem(page, name)).toBeVisible();
+  await expect(page.locator("#items > li .item")).toHaveCount(CATALOG.length);
+  await expect(sidebarLink(page, "Vevox")).toBeVisible();
+  for (const name of CATALOG.slice(0, 3)) await expect(sidebarItem(page, name)).toBeVisible();
   await expect(heading(page)).toHaveText("Dog.jpg");
   await expect(page.getByRole("img", { name: "Dog.jpg" })).toBeVisible();
   await expect(page.getByRole("button", { name: "End", exact: true })).toBeVisible();
@@ -572,10 +575,15 @@ test.describe("guest drop", () => {
     await screen.context.close();
   });
 
-  test("Cancel while the file is chosen returns the screen to its code", async ({ browser }) => {
+  test("Cancel on the offer goes back to the list; the list's Cancel then returns the screen to its code", async ({
+    browser,
+  }) => {
     const screen = await demoScreen(browser);
     const { phone } = await scan(browser, screen.page);
     await phone.page.getByRole("button", { name: "Add a File" }).click();
+    await phone.page.getByRole("button", { name: "Cancel" }).click();
+    await expect(heading(phone.page)).toHaveText("Demo Room");
+    await expect(screen.page.locator("#compare")).toHaveText(/^Your phone shows \d{2}\.$/);
     await phone.page.getByRole("button", { name: "Cancel" }).click();
     await expect(heading(phone.page)).toHaveText("Approval Canceled");
     await expect(heading(screen.page)).toHaveText("Demo Room");
@@ -685,15 +693,13 @@ test.describe("demo viewer", () => {
     await sidebarItem(screen.page, "Dog.jpg").click();
     await expect(screen.page.getByRole("img", { name: "Dog.jpg" })).toBeVisible();
 
-    // The link: a card with the host and Open, a new tab with no opener, never a frame.
-    await sidebarItem(screen.page, "Vevox").click();
-    await expect(heading(screen.page)).toHaveText("Vevox");
-    const openLink = screen.page.getByRole("link", { name: "Open vevox.com" });
-    await expect(openLink).toHaveAttribute("href", "https://www.vevox.com/");
-    await expect(openLink).toHaveAttribute("target", "_blank");
-    await expect(openLink).toHaveAttribute("rel", "noopener noreferrer");
+    // The link row: a new tab with no opener or referrer, never a frame; the stage keeps the photo.
+    const vevox = sidebarLink(screen.page, "Vevox");
+    await expect(vevox).toHaveAttribute("href", "https://www.vevox.com/");
+    await expect(vevox).toHaveAttribute("target", "_blank");
+    await expect(vevox).toHaveAttribute("rel", "noopener noreferrer");
     await expect(screen.page.locator("iframe")).toHaveCount(0);
-    await expect(screen.page.getByRole("button", { name: "Download" })).toBeHidden();
+    await expect(heading(screen.page)).toHaveText("Dog.jpg");
     await expectNoAxeViolations(screen.page);
 
     await screen.page.reload();
