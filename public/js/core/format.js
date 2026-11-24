@@ -117,7 +117,7 @@ export const itemName = (item) => (item.kind === "link" ? item.title : item.name
 
 /** The type tile's glyph by kind: slides, a document, a picture, a link. */
 const TYPE_ICONS = {
-  pptx: ICONS.projector,
+  pptx: ICONS.presentation,
   pdf: ICONS["file-text"],
   image: ICONS.image,
   link: ICONS.link,

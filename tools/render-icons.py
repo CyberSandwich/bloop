@@ -15,7 +15,7 @@ ROOT = Path(__file__).resolve().parent.parent
 OUT = ROOT / 'public' / 'js' / 'core' / 'icons.js'
 # Glyph name used in the code -> Lucide file.
 USED = {
-    'projector': 'projector',
+    'presentation': 'presentation',
     'file-text': 'file-text',
     'image': 'image',
     'link': 'link',
