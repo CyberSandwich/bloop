@@ -441,7 +441,7 @@ Reduced motion (`prefers-reduced-motion:reduce`): the stage rests flat (the spri
 | Rendering | integer device pixels per module, `shape-rendering:crispEdges`, no CSS scaling after layout, square modules, #1D1D1F on #FFFFFF, never inverted, no logo, no rounded or colored modules, never animated while shown |
 | Screen size | module = `floor(room * DPR / 41)` device px, room = half the viewport height, or less when stacked: the height the title, lines and code row leave (`qrSize`, `fitQr`); 1080p: 13 px, 533 px wide; 1366 x 768: 9 px, 369 px |
 | Refresh | every 60 s; next code fetched at 50 s; the old code fades to white over `--d1`, then the new one in; the old code stays valid 10 s; a scanned code locks to that phone, which then has 2 minutes to approve |
-| Match code | 2 digits, 10 to 99, on the screen after a scan, in the line "Your phone shows 42." (40/600 ink on `/s`, in the hint's place) and on the phone's Approve button; compared, not typed |
+| Match code | 2 digits, 00 to 99 (leading zero kept), on the screen after a scan, in the line "Your phone shows 42." (40/600 ink on `/s`, in the hint's place) and on the phone's Approve button; compared, not typed |
 | Typed fallback | 6 characters of uppercase Crockford base32 in two groups of 3 ("K7M Q9X"), rotating with the QR, entered at `{host}/code`; on `/s` only, never on the landing |
 | Accessibility | `role="img"`, `aria-label="QR code. Scan it with your phone camera to open bloop. Or enter the code K 7 M, Q 9 X at {host} slash code."`; the label updates silently |
 
