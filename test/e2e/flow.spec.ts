@@ -54,8 +54,10 @@ async function scan(
   const phone = await open(browser, "phone", `/a?c=${code}`);
   await expect(heading(phone.page)).toHaveText(expected.title);
   await expect(phone.page.getByRole("button", { name: "Approve" })).toBeEnabled();
-  // The match digits ride on the Approve button: "Approve (Code 42)".
-  const label = (await phone.page.getByRole("button", { name: /^Approve \(Code \d{2}\)$/ }).textContent()) ?? "";
+  // The match digits ride on the Approve button: "Approve (42)", named "Approve, code 42 on the screen".
+  const approve = phone.page.getByRole("button", { name: /^Approve, code \d{2} on the screen$/ });
+  await expect(approve).toHaveText(/^Approve \(\d{2}\)$/);
+  const label = (await approve.textContent()) ?? "";
   const match = label.match(/\d{2}/)?.[0] ?? "";
   return { phone, code, match };
 }
@@ -119,12 +121,12 @@ test.describe("pairing flow", () => {
 
     await expect(heading(screen.page)).toHaveText("Check Your Phone");
     await expect(screen.page.locator("#match")).toHaveText(match);
-    await expect(screen.page.locator("#line")).toHaveText(`It should show ${match}.`);
+    await expect(screen.page.locator("#line")).toHaveText(`Your phone shows ${match}.`);
     await expect(screen.page.getByRole("button", { name: "Back", exact: true })).toBeVisible();
     await expectNoAxeViolations(screen.page);
 
     await phone.page.getByRole("button", { name: "Approve" }).click();
-    await expect(heading(phone.page)).toHaveText("Authorized on Demo Room");
+    await expect(heading(phone.page)).toHaveText("Approved for Demo Room");
     await expect(phone.page.locator("#ends")).toHaveText(/^Ends in \d+:\d{2}$/);
     await expect(phone.page.getByRole("button", { name: "Revoke" })).toBeVisible();
     await expectViewer(screen.page);
@@ -164,6 +166,23 @@ test.describe("pairing flow", () => {
     await expect(phone.page.locator("#code-error")).toContainText("Check the code on the screen and try again.");
     await expect(phone.page.getByLabel("Code")).toHaveAttribute("aria-invalid", "true");
     await expectNoAxeViolations(phone.page);
+    // A look-alike the alphabet leaves out is named as soon as it is typed.
+    await phone.page.getByLabel("Code").fill("K7O");
+    await expect(phone.page.locator("#code-error")).toContainText("Codes don't use 0, 1, I, L, O or U.");
+    await phone.context.close();
+  });
+
+  test("Back on the phone before approving lets go of the claim, and the screen shows its code again", async ({
+    browser,
+  }) => {
+    const screen = await demoScreen(browser);
+    const { phone } = await scan(browser, screen.page);
+    await expect(heading(screen.page)).toHaveText("Check Your Phone");
+    await phone.page.getByRole("link", { name: "Back" }).click();
+    await expect(phone.page).toHaveURL("/");
+    await expect(heading(screen.page)).toHaveText("Demo Room");
+    expect(await phone.page.evaluate(() => localStorage.getItem("bloop.pid"))).toBeNull();
+    await screen.context.close();
     await phone.context.close();
   });
 
@@ -215,9 +234,9 @@ test.describe("pairing flow", () => {
     await phone.context.close();
   });
 
-  test("a phone page with no pairing says so", async ({ browser }) => {
+  test("a phone page with no pairing asks for a scan", async ({ browser }) => {
     const phone = await open(browser, "phone", "/a");
-    await expect(heading(phone.page)).toHaveText("This Code Has Expired");
+    await expect(heading(phone.page)).toHaveText("Scan the Code");
     await phone.context.close();
   });
 
@@ -233,10 +252,18 @@ test.describe("pairing flow", () => {
     await expect(screen.page.locator("#line")).toBeHidden();
     await expect(screen.page.locator("#items")).toBeHidden();
     await expect(screen.page.getByRole("button", { name: "End", exact: true })).toBeHidden();
+    // The demo's one way on: the waitlist, quietly.
+    await expect(screen.page.getByRole("link", { name: "Join the Waitlist" })).toBeVisible();
+    // Session Ended sits at the true center of the viewport.
+    const box = await heading(screen.page).boundingBox();
+    const view = screen.page.viewportSize();
+    expect(Math.abs((box?.x ?? 0) + (box?.width ?? 0) / 2 - (view?.width ?? 0) / 2)).toBeLessThan(2);
+    expect(Math.abs((box?.y ?? 0) + (box?.height ?? 0) / 2 - (view?.height ?? 0) / 2)).toBeLessThan(40);
     await expectNoAxeViolations(screen.page);
     await expectNoAxeViolations(phone.page);
 
-    await expect(heading(screen.page)).toHaveText("Demo Room", { timeout: 15_000 });
+    // The demo holds Session Ended for 10 s (its waitlist link), then shows a code again.
+    await expect(heading(screen.page)).toHaveText("Demo Room", { timeout: 20_000 });
     await typedCodeOf(screen.page);
 
     await phone.page.getByRole("button", { name: "Done" }).click();
@@ -294,11 +321,11 @@ test.describe("guest drop", () => {
     await phone.page.getByRole("button", { name: "Send" }).click();
 
     await expect(heading(phone.page)).toHaveText("Sent to Demo Room");
-    await expect(heading(screen.page)).toHaveText("sample-deck.pptx");
-    await expect(screen.page.locator("#line")).toHaveText("Sent by a guest. Open it here when you're ready.");
+    await expect(heading(screen.page)).toHaveText("Sent by a Guest");
+    await expect(screen.page.locator("#line")).toHaveText("sample-deck.pptx. Open it here when you're ready.");
     // nothing opens by itself
     await screen.page.waitForTimeout(1500);
-    await expect(heading(screen.page)).toHaveText("sample-deck.pptx");
+    await expect(heading(screen.page)).toHaveText("Sent by a Guest");
     await expectNoAxeViolations(screen.page);
 
     const launches = await watchLaunches(screen.page);
@@ -308,7 +335,7 @@ test.describe("guest drop", () => {
     await expect(heading(screen.page)).toHaveText("sample-deck.pptx");
     await expect(screen.page.locator("#items")).toBeHidden();
     await expect(screen.page.locator(".foot")).toBeHidden();
-    await expect(heading(phone.page)).toHaveText("Authorized on Demo Room");
+    await expect(heading(phone.page)).toHaveText("Approved for Demo Room");
     expect(await launches()).toEqual({ opened: 0, left: [] });
     await expectNoAxeViolations(screen.page);
 
@@ -344,7 +371,8 @@ test.describe("open path", () => {
     await phone.page.getByRole("button", { name: "Approve" }).click();
 
     // PowerPoint is not installed here: no fetch arrives, so after the launch timeout Download appears.
-    await expect(heading(screen.page)).toHaveText("Opening Sample deck.pptx");
+    await expect(heading(screen.page)).toHaveText("Opening in PowerPoint");
+    await expect(screen.page.locator("#line")).toContainText("Sample deck.pptx");
     await expect(screen.page.getByRole("button", { name: "End", exact: true })).toBeVisible();
     await expect(phone.page.getByRole("button", { name: "Revoke" })).toBeVisible();
     const download = screen.page.getByRole("button", { name: "Download It Instead" });
@@ -357,8 +385,9 @@ test.describe("open path", () => {
     await download.click();
     expect((await saved).suggestedFilename()).toBe("Sample-deck.pptx");
     await expect(heading(screen.page)).toHaveText("PowerPoint Didn't Open");
+    await expect(screen.page.getByText("The copy stays in this PC's Downloads.")).toBeVisible();
     await expect(screen.page.getByRole("button", { name: "Show as PDF Instead" })).toBeVisible();
-    await expect(heading(phone.page)).toHaveText("PowerPoint Didn't Open on the Screen");
+    await expect(heading(phone.page)).toHaveText("PowerPoint Didn't Open");
     await expectNoAxeViolations(screen.page);
 
     // The labeled PDF view opens in a second window under the PDF route's own CSP.
@@ -367,13 +396,17 @@ test.describe("open path", () => {
     const pdf = screen.context.waitForEvent("request", (r) => r.url().includes("/f/"));
     await screen.page.getByRole("button", { name: "Show as PDF Instead" }).click();
     expect((await pdf).url()).toMatch(/\/f\/[A-Za-z0-9_-]{54}\/Sample-deck\.pdf$/);
-    await expect(heading(screen.page)).toHaveText("Showing Sample deck.pptx as a PDF");
+    await expect(heading(screen.page)).toHaveText("Showing as a PDF");
 
     // End: the screen forgets its credential, and every link is dead.
     await screen.page.getByRole("button", { name: "End", exact: true }).click();
     await expect(heading(screen.page)).toHaveText("Session Ended");
+    // What this PC may still hold: the PowerPoint it launched and the download it started, by its name in Downloads.
+    await expect(screen.page.locator("#line")).toHaveText(
+      "Close PowerPoint to take your slides off this PC. Delete Sample-deck.pptx from Downloads before you leave.",
+    );
     expect(await screen.page.evaluate(() => sessionStorage.getItem("bloop.sid"))).toBeNull();
-    await expect(heading(phone.page)).toHaveText("Ended");
+    await expect(heading(phone.page)).toHaveText("Ended on the Screen");
     await screen.context.close();
     await phone.context.close();
   });
@@ -389,7 +422,7 @@ test.describe("demo viewer", () => {
     await phone.page.getByRole("button", { name: "Approve" }).click();
     await expectViewer(screen.page);
     // The page's own fetch of the launched link (the photo's view) stands in for PowerPoint's, so the session opens.
-    await expect(heading(phone.page)).toHaveText("Authorized on Demo Room");
+    await expect(heading(phone.page)).toHaveText("Approved for Demo Room");
     await expect(phone.page.locator("#file-list .row")).toHaveCount(CATALOG.length);
     expect(await launches()).toEqual({ opened: 0, left: [] });
     await expectNoAxeViolations(screen.page);
@@ -399,11 +432,11 @@ test.describe("demo viewer", () => {
     await expect(heading(screen.page)).toHaveText("Sample deck.pptx");
     await expect(sidebarItem(screen.page, "Sample deck.pptx")).toHaveAttribute("aria-current", "true");
     await expect(screen.page.getByRole("img", { name: "Slide 1 of 2" })).toBeVisible();
-    await expect(screen.page.getByRole("button", { name: "Previous Page" })).toBeHidden();
-    await screen.page.getByRole("button", { name: "Next Page" }).click();
+    await expect(screen.page.getByRole("button", { name: "Previous Slide" })).toBeHidden();
+    await screen.page.getByRole("button", { name: "Next Slide" }).click();
     await expect(screen.page.getByRole("img", { name: "Slide 2 of 2" })).toBeVisible();
-    await expect(screen.page.getByRole("button", { name: "Next Page" })).toBeHidden();
-    await screen.page.getByRole("button", { name: "Previous Page" }).click();
+    await expect(screen.page.getByRole("button", { name: "Next Slide" })).toBeHidden();
+    await screen.page.getByRole("button", { name: "Previous Slide" }).click();
     await expect(screen.page.getByRole("img", { name: "Slide 1 of 2" })).toBeVisible();
     await screen.page.keyboard.press("ArrowRight");
     await expect(screen.page.getByRole("img", { name: "Slide 2 of 2" })).toBeVisible();
@@ -439,7 +472,7 @@ test.describe("demo viewer", () => {
 
     await screen.page.getByRole("button", { name: "End", exact: true }).click();
     await expect(heading(screen.page)).toHaveText("Session Ended");
-    await expect(heading(phone.page)).toHaveText("Ended");
+    await expect(heading(phone.page)).toHaveText("Ended on the Screen");
     expect([...screen.csp, ...phone.csp]).toEqual([]);
     await screen.context.close();
     await phone.context.close();
@@ -452,7 +485,7 @@ test.describe("demo viewer", () => {
       await phone.page.getByRole("checkbox", { name: startsWith(name) }).uncheck();
     }
     await phone.page.getByRole("button", { name: "Approve" }).click();
-    await expect(heading(phone.page)).toHaveText("Authorized on Demo Room");
+    await expect(heading(phone.page)).toHaveText("Approved for Demo Room");
     await expect(heading(screen.page)).toHaveText("Vevox");
     await expect(screen.page.getByRole("link", { name: "Open vevox.com" })).toBeVisible();
     await expect(screen.page.locator("#items")).toBeHidden();
@@ -460,14 +493,24 @@ test.describe("demo viewer", () => {
     await phone.context.close();
   });
 
-  test("the bloop mark in the viewer ends the session, then goes home", async ({ browser }) => {
+  test("the bloop mark in the viewer asks in the page first, then ends the session and goes home", async ({
+    browser,
+  }) => {
     const screen = await demoScreen(browser);
     const { phone } = await scan(browser, screen.page);
     await phone.page.getByRole("button", { name: "Approve" }).click();
     await expectViewer(screen.page);
+    const question = screen.page.getByRole("dialog", { name: "End, and go to the bloop home page?" });
     await screen.page.getByRole("button", { name: /^bloop/ }).click();
+    await expect(question).toBeVisible();
+    await expectNoAxeViolations(screen.page);
+    await question.getByRole("button", { name: "Cancel" }).click();
+    await expect(question).toBeHidden();
+    await expectViewer(screen.page);
+    await screen.page.getByRole("button", { name: /^bloop/ }).click();
+    await question.getByRole("button", { name: "End and Go Home" }).click();
     await expect(screen.page).toHaveURL("/");
-    await expect(heading(phone.page)).toHaveText("Ended");
+    await expect(heading(phone.page)).toHaveText("Ended on the Screen");
     await screen.context.close();
     await phone.context.close();
   });
@@ -480,15 +523,15 @@ test.describe("demo viewer", () => {
     await expect(phone.page.locator("#qr")).toBeHidden();
     await expectNoAxeViolations(phone.page);
 
-    await phone.page.getByRole("link", { name: "Approve on This Device" }).click();
+    // Under 600 the phone is the approver: the code card and its hint step aside.
+    await expect(phone.page.locator("#b-copy")).toBeHidden();
+    await phone.page.getByRole("link", { name: "Approve on This Phone" }).click();
     await expect(phone.page).toHaveURL(/\/a$/);
     await expect(heading(phone.page)).toHaveText(DEMO.title);
+    // Approving sends the tab straight back to its screen.
     await phone.page.getByRole("button", { name: "Approve" }).click();
-    await expect(heading(phone.page)).toHaveText("Authorized on Demo Room");
-
-    await phone.page.getByRole("link", { name: "See It on the Screen" }).click();
     await expect(phone.page).toHaveURL(/\/s\?mode=demo$/);
-    // Under 768 the sidebar is a bottom sheet behind a handle.
+    // Under 760 the sidebar is a bottom sheet behind a handle.
     await expect(heading(phone.page)).toHaveText("Dog.jpg");
     await expect(phone.page.locator("#items")).toBeHidden();
     await phone.page.locator("#handle").click();
@@ -524,7 +567,7 @@ test.describe("screen page", () => {
       if (r.url().includes("/api/screens")) created.push(r.url());
     });
     await page.goto("/s");
-    await expect(page.getByText("Open This on the Room's Screen")).toBeVisible();
+    await expect(page.getByText("Use the Room's Screen")).toBeVisible();
     await expect(page.getByRole("link", { name: "Enter a Code" })).toHaveAttribute("href", "/code");
     await expect(page.locator("#qr")).toBeHidden();
     await expectNoAxeViolations(page);
@@ -545,8 +588,8 @@ test.describe("screen page", () => {
       }),
     );
     await page.goto("/s?mode=demo");
-    await expect(heading(page)).toHaveText("Too Many Demos Open Right Now");
-    await expect(page.locator("#line")).toHaveText("Try again in a few minutes.");
+    await expect(heading(page)).toHaveText("Too Many Demos Right Now");
+    await expect(page.locator("#line")).toHaveText("Trying again by itself.");
     await page.unroute("**/api/screens");
     // The first retry waits 5 s.
     await expect(heading(page)).toHaveText("Demo Room", { timeout: 10_000 });
@@ -591,6 +634,7 @@ test.describe("screen page", () => {
     const code = await screen.page.locator("#typed-code").textContent();
     await screen.page.getByRole("button", { name: /^Copy / }).click();
     expect(await screen.page.evaluate("navigator.clipboard.readText()")).toBe(code);
+    await expect(screen.page.locator("#polite")).toHaveText("Copied");
     await screen.context.close();
     await stale.context.close();
   });
