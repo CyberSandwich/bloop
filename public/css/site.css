@@ -78,9 +78,11 @@ html:has(.page-site) {
   padding: 0 6px;
 }
 @supports (backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px)) {
-  /* The sheet holds text over the hero's type, so it stays firm. */
+  /* The sheet holds text over the hero's type, and the cards over the warm backdrop, so they stay firm. */
   .nav.is-scrolled :is(.nav-logo, .nav-pill),
-  .nav-links:popover-open {
+  .nav-links:popover-open,
+  .frag .glass,
+  .close-card {
     background: var(--glass-firm);
   }
 }
@@ -354,6 +356,34 @@ h3 {
   text-wrap: balance;
 }
 
+/* The warm backdrop under the stills and the close panel: four soft shapes on an oversized image, so each element's
+   background-position crops a different arrangement. Paper where color-mix is missing; static. */
+.frag,
+.close-panel {
+  background: var(--paper);
+  background:
+    radial-gradient(ellipse at 25% 25%, color-mix(in srgb, var(--robin-deep) 50%, transparent), transparent 62%),
+    radial-gradient(ellipse at 80% 20%, var(--robin), transparent 66%),
+    radial-gradient(ellipse at 70% 85%, var(--amber), transparent 64%),
+    radial-gradient(ellipse at 15% 80%, var(--rose), transparent 62%),
+    color-mix(in srgb, var(--robin) 12%, var(--surface));
+  background-size: 150% 150%;
+}
+.step:nth-child(2) .frag {
+  background-position: 100% 0;
+}
+.step:nth-child(3) .frag {
+  background-position: 0 100%;
+}
+.close-panel {
+  background-position: 50% 50%;
+}
+/* The shared glass on a backdrop: the base recipe, firmer, with the nav's edge and lift. */
+.frag .glass,
+.close-card {
+  box-shadow: var(--glass-edge), var(--sh-pill);
+}
+
 /* How It Works: white step cards, each a verb and a line over a still of that step. */
 .steps,
 .grid {
@@ -399,9 +429,8 @@ h3 {
   align-content: center;
   gap: 4px;
   margin: 0 -12px;
-  padding: 12px;
+  padding: 20px 12px;
   border-radius: calc(var(--r-content) - 12px);
-  background: var(--paper);
   user-select: none;
 }
 .step h3 + p {
@@ -447,8 +476,6 @@ h3 {
   max-width: 100%;
   padding: 6px;
   border-radius: var(--r-pill);
-  background: var(--surface);
-  box-shadow: var(--sh-pill);
   justify-self: center;
   font-size: 15px;
   font-weight: 600;
@@ -477,8 +504,23 @@ h3 {
   margin-left: auto;
 }
 .frag-qr {
-  justify-self: center;
   scale: 1;
+}
+.frag-qr-tile {
+  display: grid;
+  place-items: center;
+  justify-self: center;
+  padding: 20px;
+  border-radius: var(--r-field);
+}
+.frag-list {
+  display: grid;
+  gap: 4px;
+  padding: 8px 12px;
+  border-radius: var(--r-field);
+}
+.frag-list .frag-row {
+  min-height: 44px;
 }
 
 /* The grid sits on a white band, so the cells' paper reads as the one neutral fill. */
@@ -542,7 +584,7 @@ h3 {
   }
 }
 
-/* The page ends on the action it opened with: the mark over one Try the Demo, on the sky of the Connect panel. */
+/* The page ends on the action it opened with: the mark over one Try the Demo, on a glass card over the warm backdrop. */
 .close {
   width: min(100% - 2 * var(--pad), 1136px);
   margin: 0 auto;
@@ -551,12 +593,17 @@ h3 {
 .close-panel {
   display: grid;
   justify-items: center;
-  gap: 32px;
-  padding: 64px var(--pad);
+  padding: 56px var(--pad);
   border-radius: var(--r-stage);
-  background: var(--sky);
 }
-.close-panel .hero-actions {
+.close-card {
+  display: grid;
+  justify-items: center;
+  gap: 32px;
+  padding: 40px 48px;
+  border-radius: var(--r-content);
+}
+.close-card .hero-actions {
   margin-top: 0;
 }
 @media (max-width: 639.98px) {
@@ -855,7 +902,9 @@ h3 {
 /* Every --glass-firm rule outranks base's reduced-transparency .glass, so each is restated here. */
 @media (prefers-reduced-transparency: reduce) {
   .nav.is-scrolled :is(.nav-logo, .nav-pill),
-  .nav-links:popover-open {
+  .nav-links:popover-open,
+  .frag .glass,
+  .close-card {
     background: var(--surface);
   }
 }

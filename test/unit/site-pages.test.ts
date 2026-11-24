@@ -321,6 +321,23 @@ describe("landing word caps (design.md section 13)", () => {
     expect(html).not.toMatch(/Coming Soon<\/div>|reel|class="pill"/);
   });
 
+  it("the stills and the close panel share one warm backdrop rule, and their components are glass", () => {
+    const css = read("public/css/site.css");
+    expect(css.match(/radial-gradient\(ellipse at 25% 25%/g)).toHaveLength(1);
+    expect(css).toMatch(/^\.frag,\n\.close-panel \{/m);
+    for (const token of ["--robin-deep", "--robin", "--amber", "--rose"]) {
+      expect(between(css, /^\.frag,\n\.close-panel \{/m, "}")).toContain(`var(${token}`);
+    }
+    expect(html).toContain('<span class="frag-qr-tile glass">');
+    expect(html).toContain('<span class="frag-list glass">');
+    expect(html).toContain('<span class="frag-pill glass">');
+    expect(html).toContain('<div class="close-card glass">');
+    // Download stays solid; the firm fill is restated for reduced transparency, since it outranks .glass there.
+    expect(html).toContain('<span class="frag-btn ink">Download</span>');
+    expect(between(css, /@media \(prefers-reduced-transparency: reduce\) \{/, "\n}")).toContain(".close-card");
+    expect(css).not.toMatch(/\.close-panel \{[^}]*var\(--sky\)/);
+  });
+
   it("How It Works has no visible heading: the section is a named landmark and the cards start its list", () => {
     const section = between(html, /<section class="how"/, "</section>");
     expect(section).toMatch(/^<section class="how" aria-label="How It Works">\s*<ol class="steps">/);
