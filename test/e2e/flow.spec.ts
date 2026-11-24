@@ -1003,6 +1003,8 @@ test.describe("screen and phone layout", () => {
   /** Square and portrait pictures standing in for the photo. */
   const SQUARE =
     '<svg xmlns="http://www.w3.org/2000/svg" width="900" height="900"><rect width="900" height="900"/></svg>';
+  const WIDE =
+    '<svg xmlns="http://www.w3.org/2000/svg" width="1500" height="1000"><rect width="1500" height="1000"/></svg>';
 
   /** Where the controls went, and the boxes that say so. */
   async function slotOf(page: Page) {
@@ -1064,6 +1066,11 @@ test.describe("screen and phone layout", () => {
       const endBox = await box(screen.page, "#b-end");
       expect(Math.abs(pill.y + pill.height - (endBox.y + endBox.height))).toBeLessThanOrEqual(1);
       expect(pill.y).toBeGreaterThanOrEqual(side.y + side.height + inset - 1);
+      // The list's cap reserves the stack, so a list that grows scrolls above it and never runs under it.
+      const cap = Number.parseFloat(
+        await screen.page.evaluate("getComputedStyle(document.getElementById('side')).maxHeight"),
+      );
+      expect(side.y + cap + inset).toBeLessThanOrEqual(pill.y + 1);
       expect(pill.x + pill.width).toBeLessThanOrEqual(img.x);
       expect(Math.round(img.height)).toBeGreaterThanOrEqual(Math.round(view.height) - 1);
     }).toPass();
@@ -1072,9 +1079,10 @@ test.describe("screen and phone layout", () => {
   });
 
   test("slot 4: with the list too full for it, the pill floats over the item at bottom center", async ({ browser }) => {
-    const context = await browser.newContext({ viewport: { width: 1000, height: 480 } });
+    // Short enough that the demo list scrolls; a 3 : 2 item leaves no room beside it.
+    const context = await browser.newContext({ viewport: { width: 1000, height: 360 } });
     const page = await context.newPage();
-    await page.route("**/f/**", (route) => route.fulfill({ contentType: "image/svg+xml", body: SQUARE }));
+    await page.route("**/f/**", (route) => route.fulfill({ contentType: "image/svg+xml", body: WIDE }));
     await page.goto("/s?mode=demo");
     const code = await typedCodeOf(page);
     const phone = await open(browser, "phone", `/a?c=${code}`);
@@ -1082,6 +1090,7 @@ test.describe("screen and phone layout", () => {
     await expect(heading(page)).toHaveText("Dog.jpg");
     await expect(page.locator("#frame img")).toBeVisible();
     await expect(page.locator("#pane")).not.toHaveClass(/is-stacked|is-under/);
+    expect(await page.locator("#side").evaluate((n) => n.scrollHeight > n.clientHeight)).toBe(true);
     await expect(async () => {
       const { pill, img, view, inset } = await slotOf(page);
       expect(Math.abs(pill.x + pill.width / 2 - (view.x + view.width / 2))).toBeLessThanOrEqual(1);
@@ -1129,6 +1138,11 @@ test.describe("screen and phone layout", () => {
   }) => {
     const { screen, phone } = await viewerWith(browser);
     const page = screen.page;
+    // The viewer's own entry (scanned to viewer) can still be running: let it end, then count any that start.
+    await page.evaluate("Promise.all(document.getElementById('pane').getAnimations().map((a) => a.finished))");
+    await page.evaluate(
+      "window.__paneStarts = 0; document.getElementById('pane').addEventListener('animationstart', () => window.__paneStarts++)",
+    );
     await sidebarItem(page, "Sample deck.pptx").click();
     await expect(heading(page)).toHaveText("Sample deck.pptx");
     await expect(page.locator("#dots")).toBeVisible();
@@ -1151,6 +1165,8 @@ test.describe("screen and phone layout", () => {
         ).toBe(0);
       await page.waitForTimeout(100);
     }
+    // A replay as short as a frame is missed by polling; the event is not.
+    expect(await page.evaluate("window.__paneStarts")).toBe(0);
     await screen.context.close();
     await phone.context.close();
   });

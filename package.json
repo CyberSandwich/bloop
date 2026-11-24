@@ -76,7 +76,7 @@
         "public/css/app.css"
       ],
       "gzip": true,
-      "limit": "9.25 kB"
+      "limit": "9.3 kB"
     },
     {
       "name": "hero image",

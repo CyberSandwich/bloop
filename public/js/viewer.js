@@ -79,13 +79,18 @@ export function createViewer(deps) {
     pane.classList.toggle("is-stacked", true);
     const stackH = pill.offsetHeight;
     const listed = !side.hidden && matchMedia("(min-width: 760px)").matches;
+    // The list's full height, not its box: on the rail its cap reserves the stack, so the box would always fit.
     const railFits =
-      listed && side.getBoundingClientRect().bottom + inset + stackH <= end.getBoundingClientRect().bottom;
+      listed &&
+      side.getBoundingClientRect().top + side.scrollHeight + inset + stackH <= end.getBoundingClientRect().bottom;
     let place = /** @type {"under" | "right" | "rail" | "float"} */ (item ? "under" : "float");
     if (ratio && listed)
       place = placeControls({ w, h: w / ratio }, stage, { pill: pillH, stackW, stackH, inset, rail: railFits });
     pane.classList.toggle("is-stacked", place === "right" || place === "rail");
     pane.classList.toggle("is-under", place === "under");
+    // A list that grows while the stack is on the rail scrolls above it (app.css, the rail's .side cap).
+    if (place === "rail") side.style.setProperty("--reserve", `${stackH}px`);
+    else side.style.removeProperty("--reserve");
     if (place === "right") {
       pill.style.top = `${view.offsetTop + stage.h - stackH}px`;
       pill.style.left = `${view.offsetLeft + stage.w - stackW}px`;

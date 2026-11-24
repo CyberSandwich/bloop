@@ -19,6 +19,9 @@ class Node {
     setProperty: (k: string, v: string) => {
       this.style[k] = v;
     },
+    removeProperty: (k: string) => {
+      delete this.style[k];
+    },
   };
   attrs = new Map<string, string>();
   listeners = new Map<string, Listener[]>();
@@ -497,5 +500,26 @@ describe("the viewer pill", () => {
     el("frame").classList.add("is-scroll");
     resized();
     expect(el("controls").style.top).toBe("904px");
+  });
+
+  it("goes to the rail by the list's full height, and the list's cap then reserves the column", () => {
+    const { v, el } = setup();
+    v.render({ ...view, items: [photo, deck] } as ScreenView);
+    // A wide item that fills the stage: no room under or beside it.
+    Object.assign(el("view"), { offsetWidth: 1000, offsetHeight: 600 });
+    Object.assign(el("frame").querySelector("img") as Node, { naturalWidth: 1000, naturalHeight: 600 });
+    el("controls").offsetHeight = 120;
+    el("side").getBoundingClientRect = () => ({ left: 0, top: 80, bottom: 200 });
+    el("b-end").getBoundingClientRect = () => ({ left: 0, top: 844, bottom: 900 });
+    // 80 + 600 + 16 + 120 = 816 fits above End's bottom.
+    Object.assign(el("side"), { scrollHeight: 600 });
+    resized();
+    expect(el("pane").classes.has("is-stacked")).toBe(true);
+    expect(el("side").style["--reserve"]).toBe("120px");
+    // Scrolled, the box is short, yet 80 + 800 + 16 + 120 overflows the foot: the pill floats, the cap is End's again.
+    Object.assign(el("side"), { scrollHeight: 800 });
+    resized();
+    expect(el("pane").classes.has("is-stacked")).toBe(false);
+    expect(el("side").style["--reserve"]).toBeUndefined();
   });
 });

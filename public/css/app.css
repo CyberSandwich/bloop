@@ -803,8 +803,9 @@ main:has(> .side:not([hidden])) #stage {
     left: var(--inset);
     margin: 0;
   }
+  /* --reserve: the rail's stack (viewer.js fit). */
   .side {
-    max-height: calc(100dvh - var(--top) - var(--inset) * 2 - var(--frame-h));
+    max-height: calc(100dvh - var(--top) - var(--inset) * 2 - max(var(--frame-h), var(--reserve, 0px)));
   }
 }
 @media (max-width: 759.98px) {
