@@ -66,7 +66,7 @@
   --wash: rgba(120, 120, 128, 0.1);
   --r-sheet: 24px;
   --side: 280px;
-  --row: 60px;
+  --row: 56px;
   --r-list: 24px;
   --list-pad: 8px;
   --display: clamp(44px, 5.5vw, 96px);

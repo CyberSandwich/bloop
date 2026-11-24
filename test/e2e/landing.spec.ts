@@ -85,7 +85,7 @@ for (const vp of VIEWPORTS) {
       await expect(page).toHaveURL(/\/s\?mode=demo$/);
     });
 
-    test("the hero block sits in the middle of the first view, and the stage starts below the fold", async ({
+    test("the hero block sits in the middle of the first view less 120 px, and the stage peeks 120 px above the fold", async ({
       page,
     }) => {
       await page.goto("/");
@@ -98,9 +98,9 @@ for (const vp of VIEWPORTS) {
           stage: document.querySelector(".stage")?.getBoundingClientRect().top ?? 0,
         };
       });
-      // The nav's clearance is padded on both sides, so the block's middle is the viewport's within a few px.
-      expect(Math.abs(box.middle - vp.height / 2)).toBeLessThan(24);
-      expect(box.stage).toBeGreaterThanOrEqual(vp.height - 1);
+      // The nav's clearance is padded on both sides, so the block's middle is the hero's within a few px.
+      expect(Math.abs(box.middle - (vp.height - 120) / 2)).toBeLessThan(24);
+      expect(Math.abs(box.stage - (vp.height - 120))).toBeLessThanOrEqual(1);
     });
 
     test("the logo pill and the links pill are separate and share one height", async ({ page }) => {

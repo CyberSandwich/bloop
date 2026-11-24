@@ -180,13 +180,13 @@ html:has(.page-site) {
   }
 }
 
-/* Equal padding above and below centers the block on the viewport, clear of the nav. */
+/* Equal padding centers the block in the first view less 120 px, so the stage's top edge shows and invites the scroll. */
 .hero {
   display: flex;
   flex-direction: column;
   justify-content: center;
-  min-height: 100vh;
-  min-height: 100svh;
+  min-height: calc(100vh - 120px);
+  min-height: calc(100svh - 120px);
   padding: calc(var(--nav-h) + 40px) var(--pad);
   text-align: center;
 }

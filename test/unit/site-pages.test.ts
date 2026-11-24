@@ -645,10 +645,19 @@ describe("stage 1 wording and pictures", () => {
     );
   });
 
-  it("/security names who acts on a lost phone, and the demo's 60 minutes beside the live 90", () => {
+  it("/security names who can remove access, and the demo's 60 minutes beside the live 90", () => {
     const text = visibleText(read("public/security.html"));
     expect(text).not.toMatch(/disconnect bloop from any device/i);
-    expect(text).toMatch(/Lost phone: your IT team removes bloop ?'s access in Microsoft Entra\./);
+    expect(text).toMatch(
+      /Lost phone: remove bloop ?'s access in My Apps, or ask your IT team to remove it in Microsoft Entra\./,
+    );
+    // One sentence for the same claim on /security and /privacy, naming controls that exist today.
+    const access =
+      /You can remove bloop ?'s access at any time in My Apps \(myapplications\.microsoft\.com\); your IT team can remove it for everyone in Microsoft Entra\./;
+    expect(text).toMatch(access);
+    expect(visibleText(read("public/privacy.html"))).toMatch(access);
+    for (const page of SITE)
+      expect(visibleText(read(`public/${page}`)), page).not.toMatch(/\b[Dd]isconnect (bloop|OneDrive on your phone)/);
     expect(text).toContain("after 90 minutes, or 60 in the demo");
   });
 });
