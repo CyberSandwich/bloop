@@ -645,28 +645,38 @@ describe("stage 1 wording and pictures", () => {
     );
   });
 
-  it("/security names who can remove access, and the demo's 60 minutes beside the live 90", () => {
+  it("/security and /privacy name bloop's own Disconnect first, as the code does it, then My Apps and Entra", () => {
     const text = visibleText(read("public/security.html"));
-    expect(text).not.toMatch(/disconnect bloop from any device/i);
-    expect(text).toMatch(
-      /Lost phone: remove bloop ?'s access in My Apps, or ask your IT team to remove it in Microsoft Entra\./,
-    );
-    // One sentence for the same claim on /security and /privacy, naming controls that exist today.
+    // The claim's ground: the phone's button, and a route that deletes the grant and every session at once.
+    expect(read("public/js/core/copy.js")).toMatch(/id: "disconnect", label: "Disconnect OneDrive"/);
+    const route = between(read("src/worker/routes/auth.ts"), /"\/api\/me\/disconnect"/, "),\n  ),");
+    expect(route).toMatch(/vault\.delete\(userId\)/);
+    expect(route).toMatch(/sessions\.destroyAll\(userId\)/);
+    // One pair of sentences for the same claim on both pages.
     const access =
-      /You can remove bloop ?'s access at any time in My Apps \(myapplications\.microsoft\.com\); your IT team can remove it for everyone in Microsoft Entra\./;
+      /Tap Disconnect OneDrive on your phone while you approve, and bloop ?deletes its stored access and signs you out everywhere at once\. You can also remove bloop ?in My Apps \(myapplications\.microsoft\.com\), and your IT team can remove it for everyone in Microsoft Entra\./;
     expect(text).toMatch(access);
     expect(visibleText(read("public/privacy.html"))).toMatch(access);
-    for (const page of SITE)
-      expect(visibleText(read(`public/${page}`)), page).not.toMatch(/\b[Dd]isconnect (bloop|OneDrive on your phone)/);
+    expect(text).toMatch(
+      /Lost phone: Disconnect OneDrive from any phone you sign in on ends every bloop ?sign-in at once; or remove bloop ?in My Apps, or ask your IT team to remove it in Microsoft Entra\./,
+    );
+    // My Apps and Entra end only the refresh token; bloop's own sessions stay, so neither is said to sign anyone out.
+    for (const page of ["security.html", "privacy.html"]) {
+      expect(visibleText(read(`public/${page}`)), page).not.toMatch(/(My Apps|Entra)[^.]*sign(s|ed)? (you )?out/);
+    }
     expect(text).toContain("after 90 minutes, or 60 in the demo");
   });
 });
 
 describe("privacy notice", () => {
-  it("keeps the OneDrive grant only as the code does: until a failed refresh after removal, or 30 days unused", () => {
+  it("keeps the OneDrive grant only as the code does: until disconnect, a failed refresh after removal, or 30 days unused", () => {
     const row = between(read("public/privacy.html"), /<tr><th scope="row">Your OneDrive access/, "</tr>");
-    expect(row).toContain("Until your access is removed (deleted the next time it fails), or 30 days unused.");
-    expect(read("docs/threat-model.md")).toMatch(/\| refresh token \(grant\) \| D1 \| until access is removed/);
+    expect(row).toContain(
+      "Until you disconnect (deleted at once) or remove bloop in My Apps or Entra (deleted the next time it fails), or 30 days unused.",
+    );
+    expect(read("docs/threat-model.md")).toMatch(
+      /\| refresh token \(grant\) \| D1 \| until disconnect \(at once, with every phone session\)/,
+    );
   });
 
   it("states what the waitlist keeps, why and for how long", () => {

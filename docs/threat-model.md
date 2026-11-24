@@ -144,7 +144,7 @@ Trust boundaries:
 | session and audit rows | D1 | 180 days (`AUDIT_RETENTION_DAYS`); demo 7 days |
 | metric events | D1 | 90 days, then daily counts for 2 years |
 | weekly-active pseudonyms | D1 | 120 days |
-| refresh token (grant) | D1 | until access is removed (deleted at the next refresh that fails with `invalid_grant`), erasure, or 30 days unused (the daily job) |
+| refresh token (grant) | D1 | until disconnect (at once, with every phone session), removal in My Apps or Entra (deleted at the next refresh that fails with `invalid_grant`), erasure, or 30 days unused (the daily job) |
 | phone session | D1 | 30 days idle, 90 absolute |
 | guest pass | D1 | 24 h |
 | user row | D1 | while a grant or session exists, then 30 days |
