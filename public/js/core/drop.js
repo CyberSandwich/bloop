@@ -3,8 +3,6 @@
 /** @import {ErrorCode} from "../../../src/shared/protocol.ts" */
 /** @import {SendResult, Xhr} from "../types.js" */
 import { ERRORS } from "../shared/errors.js";
-import { preparePhoto } from "./photo.js";
-import { stripLocation } from "./video.js";
 
 const MB = 1024 * 1024;
 const EXTENSION = /\.(pptx|pdf|jpe?g|png|mp4|mov)$/i;
@@ -30,18 +28,19 @@ export function fileProblem(file, maxBytes) {
 }
 
 /**
- * The file to send: a photo compressed without its metadata, a video with its location blanked.
+ * The file to send: a photo compressed without its metadata, a video with its location blanked. The media modules
+ * load only now, so a page that sends a deck never fetches them.
  * @param {File} file
  * @param {number} maxBytes
  * @returns {Promise<{ok: true, file: File} | {ok: false, problem: "photo" | "video"}>}
  */
 export async function prepareFile(file, maxBytes) {
   if (PHOTO.test(file.name)) {
-    const out = await preparePhoto(file, maxBytes);
+    const out = await (await import("./photo.js")).preparePhoto(file, maxBytes);
     return out ? { ok: true, file: out } : { ok: false, problem: "photo" };
   }
   if (!VIDEO.test(file.name)) return { ok: true, file };
-  const out = await stripLocation(file);
+  const out = await (await import("./video.js")).stripLocation(file);
   return out.ok ? out : { ok: false, problem: "video" };
 }
 
