@@ -541,6 +541,7 @@ h3 {
   align-items: center;
   gap: 12px;
   min-height: 56px;
+  padding-block: 12px;
   font-weight: 600;
 }
 .rows li + li {

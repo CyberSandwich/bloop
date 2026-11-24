@@ -628,6 +628,10 @@ describe("the stylesheets: base.css, then the page's own (design.md section 11)"
     expect(reduce).toContain("background: var(--surface);");
   });
 
+  it("a panel row is at least 56 tall and padded 12 above and below, so a wrapped row keeps its inset", () => {
+    expect(block(".rows li")).toMatch(/min-height: 56px;\s*padding-block: 12px;/);
+  });
+
   it("every site heading balances its lines, so a card title never ends on one word", () => {
     expect(css["base.css"]).toMatch(/h1,\s*h2 \{[^}]*text-wrap: balance;/);
     expect(css["site.css"]).toMatch(/^h3 \{\s*text-wrap: balance;\s*\}/m);
