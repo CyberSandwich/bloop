@@ -6,14 +6,17 @@
   "rules": [{ "type": "Data", "globs": ["**/*.pptx", "**/*.pdf", "**/*.jpg"], "fallthrough": true }],
   "compatibility_date": "2026-11-22",
   // The one public address is PUBLIC_ORIGIN; per-version preview URLs would be more, outside it.
+  // workers.dev stays on so old links and QR codes reach the Worker, which answers 301 to PUBLIC_ORIGIN (src/worker/origin.ts).
   "workers_dev": true,
   "preview_urls": false,
+  // Cloudflare creates the DNS record and certificate on deploy; no apex record is added by hand.
+  "routes": [{ "pattern": "bloop.here", "custom_domain": true }],
   "assets": {
     "directory": "./public",
     "binding": "ASSETS",
     "html_handling": "drop-trailing-slash",
     "not_found_handling": "404-page",
-    "run_worker_first": ["/api/*", "/f/*", "/auth/*"]
+    "run_worker_first": true
   },
   "durable_objects": {
     "bindings": [{ "name": "SCREEN", "class_name": "Screen" }, { "name": "DIRECTORY", "class_name": "Directory" }]
@@ -42,7 +45,7 @@
   ],
   "triggers": { "crons": ["0 * * * *", "30 3 * * *"] },
   "vars": {
-    "PUBLIC_ORIGIN": "https://bloop.dsap.workers.dev",
+    "PUBLIC_ORIGIN": "https://bloop.here",
     "FILE_SOURCE": "mock",
     "OPEN_PATH_MODE": "redirect",
     "TOKEN_MODE": "refresh",

@@ -71,6 +71,8 @@ export async function startWrangler(
     bin,
     [
       "dev",
+      // Without it the Worker sees the custom domain as its host, not the local address.
+      "--infer-origin-from-routes=false",
       "--ip",
       "127.0.0.1",
       "--port",

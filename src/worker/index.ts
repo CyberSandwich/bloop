@@ -4,6 +4,7 @@ import { Screen } from "./do/screen.ts";
 import type { Env } from "./env.ts";
 import { type Policy, policyOf, withHeaders } from "./headers.ts";
 import { json, problem } from "./http.ts";
+import { offOrigin } from "./origin.ts";
 import { closeStaleSessions, runRetention } from "./retention.ts";
 import { type Route, route } from "./router.ts";
 import { authRoutes } from "./routes/auth.ts";
@@ -18,6 +19,9 @@ import { sweepGuestFiles } from "./seams/guest-drop/select.ts";
 const HOURLY = "0 * * * *";
 /** The daily retention entry. */
 const DAILY = "30 3 * * *";
+
+/** Paths the routes own; everything else is a static asset. wrangler.jsonc sends every request to the Worker so the host check sees it. */
+const DYNAMIC = /^\/(api|f|auth)\//;
 
 /** First match wins. Later modules add their routes here, one line each. */
 const routes: readonly Route[] = [
@@ -63,6 +67,10 @@ async function matchRoute(request: Request, env: Env, url: URL): Promise<{ respo
 
 export default {
   async fetch(request, env): Promise<Response> {
+    const config = configFor(env);
+    const away = config.ok ? offOrigin(request, config.config.origin) : null;
+    if (away) return away;
+    if (!DYNAMIC.test(new URL(request.url).pathname)) return env.ASSETS.fetch(request);
     const { response, policy } = await dispatch(request, env);
     // A WebSocket upgrade response must reach the runtime untouched.
     return response.status === 101 ? response : withHeaders(response, policy);
