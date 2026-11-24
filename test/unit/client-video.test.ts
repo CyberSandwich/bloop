@@ -1,0 +1,144 @@
+import { describe, expect, it } from "vitest";
+import { blankLocation, stripLocation } from "../../public/js/core/video.js";
+
+const enc = (s: string) => Uint8Array.from(s, (c) => c.charCodeAt(0));
+const u32 = (n: number) => [(n >>> 24) & 255, (n >>> 16) & 255, (n >>> 8) & 255, n & 255];
+const cat = (...parts: (Uint8Array | number[])[]) => Uint8Array.from(parts.flatMap((p) => [...p]));
+/** A box: size, a four-character type, the body. */
+const box = (type: string, ...body: (Uint8Array | number[])[]) => {
+  const inner = cat(...body);
+  return cat(u32(8 + inner.length), enc(type), inner);
+};
+/** A 64-bit-size box, as an iPhone writes a large mdat. */
+const bigBox = (type: string, inner: Uint8Array) => cat(u32(1), enc(type), u32(0), u32(16 + inner.length), inner);
+
+const ISO6709 = "+51.5074-000.1278+012.345/";
+const MAKE = "Apple-make-value";
+const key = (name: string) => cat(u32(8 + name.length), enc("mdta"), enc(name));
+const item = (index: number, value: string) =>
+  box(String.fromCharCode(...u32(index)), box("data", u32(1), u32(0), enc(value)));
+const xyz = (text: string) => box("©xyz", [0, text.length, 0x15, 0xc7], enc(text));
+
+/** An iPhone moov: meta with keys and ilst (QuickTime form, or with ISO version bytes), then udta/©xyz. */
+function iphoneMoov(opts: { isoMeta?: boolean; keysAfter?: boolean } = {}) {
+  const hdlr = box("hdlr", u32(0), u32(0), enc("mdta"), new Array(13).fill(0));
+  const keys = box(
+    "keys",
+    u32(0),
+    u32(3),
+    key("com.apple.quicktime.make"),
+    key("com.apple.quicktime.location.ISO6709"),
+    key("com.apple.quicktime.software"),
+  );
+  const ilst = box("ilst", item(1, MAKE), item(2, ISO6709), item(3, "17.1"));
+  const inner = opts.keysAfter ? [hdlr, ilst, keys] : [hdlr, keys, ilst];
+  const meta = box("meta", opts.isoMeta ? u32(0) : [], ...inner);
+  return box("moov", box("mvhd", new Array(20).fill(5)), meta, box("udta", xyz(ISO6709)));
+}
+const androidMoov = () => box("moov", box("mvhd", new Array(20).fill(5)), box("udta", xyz("+37.3861-122.0839/")));
+const mdat = () => bigBox("mdat", enc("frame-bytes-and-the-string-+51.5074 are-media-not-metadata"));
+
+const mov = (moov: Uint8Array) => cat(box("ftyp", enc("qt  "), u32(0), enc("qt  ")), box("wide"), mdat(), moov);
+const mp4 = (moov: Uint8Array) => cat(box("ftyp", enc("isom"), u32(512), enc("isom")), moov, mdat());
+
+const fileOf = (bytes: Uint8Array<ArrayBuffer>, name: string) => new File([bytes], name, { type: "video/quicktime" });
+const read = async (f: Blob) => new Uint8Array(await f.arrayBuffer());
+const find = (hay: Uint8Array, needle: string) => String.fromCharCode(...hay).includes(needle);
+const diffAt = (a: Uint8Array, b: Uint8Array) => [...a.keys()].filter((i) => a[i] !== b[i]);
+
+describe("VID-04 location strip", () => {
+  it.each([
+    ["an iPhone .mov (QuickTime meta)", () => mov(iphoneMoov()), ["+51.5074-000.1278"]],
+    [
+      "an iPhone .mov (ISO meta, keys after ilst)",
+      () => mov(iphoneMoov({ isoMeta: true, keysAfter: true })),
+      ["+51.5074-000.1278"],
+    ],
+    ["an Android .mp4 (moov first)", () => mp4(androidMoov()), ["+37.3861-122.0839"]],
+  ])("blanks the location in %s and changes no other byte", async (_, build, secrets) => {
+    const before = build() as Uint8Array<ArrayBuffer>;
+    for (const s of secrets) expect(find(before, s)).toBe(true);
+    const out = await stripLocation(fileOf(before, "clip.mov"));
+    expect(out.ok).toBe(true);
+    if (!out.ok) return;
+    const after = await read(out.file);
+    expect(after.length).toBe(before.length);
+    for (const s of secrets) expect(find(after, s)).toBe(false);
+    // Only the location values moved: every other byte, offsets included, is as it was.
+    const changed = diffAt(before, after);
+    expect(changed.length).toBeGreaterThan(0);
+    for (const i of changed) expect(after[i]).toBe(0);
+    expect(out.file.name).toBe("clip.mov");
+    expect(find(after, MAKE)).toBe(find(before, MAKE));
+    expect(find(after, "frame-bytes-and-the-string-+51.5074")).toBe(true);
+  });
+
+  it("keeps the other metadata values of an iPhone file", async () => {
+    const before = mov(iphoneMoov()) as Uint8Array<ArrayBuffer>;
+    const out = await stripLocation(fileOf(before, "a.mov"));
+    expect(out.ok && find(await read(out.file), MAKE)).toBe(true);
+  });
+
+  it("blankLocation counts the iPhone's two places and the Android one", () => {
+    expect(blankLocation(iphoneMoov())).toBe(2);
+    expect(blankLocation(androidMoov())).toBe(1);
+  });
+
+  it("sends a file with no location as it is", async () => {
+    const plain = mp4(box("moov", box("mvhd", new Array(20).fill(5)))) as Uint8Array<ArrayBuffer>;
+    const f = fileOf(plain, "a.mp4");
+    const out = await stripLocation(f);
+    expect(out).toEqual({ ok: true, file: f });
+  });
+
+  it("blanks every location key, not only ISO6709", () => {
+    const hdlr = box("hdlr", u32(0), u32(0), enc("mdta"), new Array(13).fill(0));
+    const keys = box(
+      "keys",
+      u32(0),
+      u32(2),
+      key("com.apple.quicktime.location.ISO6709"),
+      key("com.apple.quicktime.location.name"),
+    );
+    const moov = box("moov", box("meta", hdlr, keys, box("ilst", item(1, ISO6709), item(2, "Home Street"))));
+    expect(blankLocation(moov)).toBe(2);
+    expect(find(moov, "Home Street")).toBe(false);
+  });
+
+  const refused: [string, () => Uint8Array][] = [
+    ["no moov", () => cat(box("ftyp", enc("isom"), u32(0), enc("isom")), mdat())],
+    ["a box larger than its parent", () => mp4(box("moov", cat(u32(9999), enc("meta"), [0, 0, 0, 0])))],
+    ["a box smaller than its header", () => mp4(box("moov", cat(u32(4), enc("udta"), [0, 0, 0, 0])))],
+    ["a meta with no hdlr to find its children by", () => mp4(box("moov", box("meta", new Array(20).fill(9))))],
+    [
+      "a keys table that runs past its box",
+      () => {
+        const hdlr = box("hdlr", u32(0), u32(0), enc("mdta"), new Array(13).fill(0));
+        return mp4(box("moov", box("meta", hdlr, box("keys", u32(0), u32(5), key("a.b")), box("ilst"))));
+      },
+    ],
+    [
+      "a location data box too short to hold a value",
+      () => {
+        const hdlr = box("hdlr", u32(0), u32(0), enc("mdta"), new Array(13).fill(0));
+        const keys = box("keys", u32(0), u32(1), key("com.apple.quicktime.location.ISO6709"));
+        const bad = box(String.fromCharCode(...u32(1)), box("data", [1, 2]));
+        return mp4(box("moov", box("meta", hdlr, keys, box("ilst", bad))));
+      },
+    ],
+    ["a file that is not a video", () => enc("%PDF-1.7 not a video at all, nothing to walk")],
+    ["an empty file", () => new Uint8Array(0)],
+    ["a 64-bit box too large to read", () => cat(u32(1), enc("moov"), u32(1), u32(0))],
+    ["a truncated header", () => cat(box("ftyp", enc("isom"), u32(0), enc("isom")), [0, 0, 0])],
+  ];
+  it.each(refused)("refuses %s", async (_, build) => {
+    expect(await stripLocation(fileOf(build() as Uint8Array<ArrayBuffer>, "a.mp4"))).toEqual({ ok: false });
+  });
+
+  it("refuses a moov over 32 MB without reading it", async () => {
+    const head = cat(box("ftyp", enc("isom"), u32(0), enc("isom")), u32(40 * 1024 * 1024), enc("moov"));
+    const f = new File([head], "a.mp4");
+    Object.defineProperty(f, "size", { value: 40 * 1024 * 1024 + head.length });
+    expect(await stripLocation(f)).toEqual({ ok: false });
+  });
+});
