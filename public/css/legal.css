@@ -1,4 +1,5 @@
 /* The doc pages (/privacy, /terms, /security), after base.css and site.css: design.md section 6, Legal pages. */
+/* biome-ignore-all lint/style/noDescendingSpecificity: the file is ordered by part, not by selector weight */
 /* One width for the page's column: the contents and the 68ch text side by side from 1024, the text alone below. */
 .legal {
   --measure: 68ch;
@@ -157,26 +158,38 @@
   background: var(--surface);
   font-size: 15px;
 }
-.clause,
-.items li {
+/* A numbered section indents by the gutter, and every number (section, clause, item) hangs in it, out of flow:
+   the text starts on one x, and a number is never an inline link in a run of text (axe link-in-text-block). */
+.legal-text {
+  --gutter: 48px;
+}
+@media (min-width: 640px) {
+  .legal-text {
+    --gutter: 56px;
+  }
+}
+.legal-text > section:has(> h2 > .num) {
+  padding-left: var(--gutter);
+}
+:is(.legal-text h2, .clause, .items li) {
   position: relative;
-  padding-left: 3.25em;
+}
+.legal-text h2 > .num,
+.clause > .num {
+  position: absolute;
+  left: calc(-1 * var(--gutter));
 }
 .items {
   margin: 8px 0 0;
-  padding: 0 0 0 3.25em;
+  padding: 0 0 0 2.25em;
   list-style: none;
 }
-.items li {
-  padding-left: 2.25em;
+.items .num {
+  position: absolute;
+  left: -2.25em;
 }
 .items li + li {
   margin-top: 4px;
-}
-.clause > .num,
-.items .num {
-  position: absolute;
-  left: 0;
 }
 .legal .num {
   color: var(--muted);
@@ -186,12 +199,6 @@
   text-decoration: none;
 }
 /* The link glyph sits in the gutter before the number, shown on hover or focus; the number is the link. */
-.legal-text .num {
-  position: relative;
-}
-.legal-text h2 .num {
-  margin-right: 8px;
-}
 .num .icon {
   position: absolute;
   top: 50%;
