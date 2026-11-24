@@ -1033,7 +1033,19 @@ test.describe("screen and phone layout", () => {
     browser,
   }) => {
     const { screen, phone, pane } = await viewerWith(browser, PORTRAIT);
-    await expect(pane).toHaveClass(/is-stack-right/);
+    try {
+      await expect(pane).toHaveClass(/is-stack-right/);
+    } catch (e) {
+      // The numbers placeControls was given, so a failure says which candidate won and why.
+      const seen = await screen.page.evaluate(`(() => {
+        const img = document.querySelector("#frame img");
+        const r = (s) => { const b = document.querySelector(s).getBoundingClientRect(); return [b.x, b.y, b.width, b.height].map(Math.round); };
+        return JSON.stringify({ natural: [img.naturalWidth, img.naturalHeight], cls: img.className, src: img.currentSrc.slice(-40),
+          view: [document.getElementById("view").offsetWidth, document.getElementById("view").offsetHeight], side: r("#side"),
+          pill: r("#controls"), img: r("#frame img"), pane: document.getElementById("pane").className });
+      })()`);
+      throw new Error(`${String(e).slice(0, 200)} ${seen}`);
+    }
     await expect(async () => {
       const p = screen.page;
       const [pill, img, view] = await Promise.all([box(p, "#controls"), box(p, "#frame img"), box(p, "#view")]);
