@@ -488,10 +488,11 @@ function start() {
   // A phone may run the demo (it approves on itself); a live screen needs a room-sized window.
   if (DEMO) document.body.classList.add("is-demo");
   else if (matchMedia("(max-width: 599.98px)").matches) return;
+  // The bar and footer wait for the first paint only once the script runs (app.css is-booting).
+  document.body.classList.add("is-booting");
   main.dataset.mode = "idle";
   typedHost.textContent = location.host;
   setText(byId("phone-host"), location.host);
-  fitQr();
   addEventListener("resize", frameThrottle(fitQr));
   addEventListener("online", () => s.channel?.nudge());
   addEventListener("pagehide", () => launcher.closePdf());

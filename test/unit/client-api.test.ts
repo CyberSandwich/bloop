@@ -1,7 +1,8 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { createApi } from "../../public/js/core/api.js";
 import { loadFiles } from "../../public/js/core/files.js";
 import { createStore, dropPid, PID_KEY, pidStore, refOf, sameScreen } from "../../public/js/core/store.js";
+import { FETCH_TIMEOUT_MS } from "../../public/js/core/timing.js";
 
 interface Seen {
   path: string;
@@ -92,6 +93,25 @@ describe("api client", () => {
   it("a network failure is offline", async () => {
     const f = fakeFetch(() => new TypeError("Failed to fetch"));
     expect(await createApi({ fetch: f.fetch }).get("/x")).toEqual({ ok: false, error: "offline" });
+  });
+
+  it("a request with no answer in FETCH_TIMEOUT_MS is aborted and ends as offline", async () => {
+    // AbortSignal.timeout runs on Node's own timers, out of reach of fake ones: the test fires it by hand.
+    const timer = new AbortController();
+    const timeout = vi.spyOn(AbortSignal, "timeout").mockReturnValue(timer.signal);
+    try {
+      const f = fakeFetch(
+        ({ init }) =>
+          new Promise<Response>((_, fail) => init.signal?.addEventListener("abort", () => fail(init.signal?.reason))),
+      );
+      const pending = createApi({ fetch: f.fetch }).get("/api/screens");
+      expect(timeout).toHaveBeenCalledWith(FETCH_TIMEOUT_MS);
+      expect(f.calls[0]?.init.signal).toBe(timer.signal);
+      timer.abort(new DOMException("timed out", "TimeoutError"));
+      expect(await pending).toEqual({ ok: false, error: "offline" });
+    } finally {
+      timeout.mockRestore();
+    }
   });
 
   it("a 5xx without a problem body, or a 200 that is not JSON, is service_down", async () => {

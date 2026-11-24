@@ -501,11 +501,17 @@ describe("phone copy", () => {
   });
 
   it("the typed-code page gets one line per failure", () => {
-    expect(typedError("typed_wrong")).toBe("Check the code on the screen and try again.");
-    expect(typedError("offline")).toBe("You're offline. Check your connection, then try again.");
-    expect(typedError("expired")).toBe("That code changed. Enter the new code on the screen.");
+    expect(typedError("typed_wrong")).toBe("Check the code on the screen.");
+    expect(typedError("offline")).toBe("You're offline. Check your connection.");
+    expect(typedError("expired")).toBe("That code changed. Enter the new one.");
     expect(typedError("busy")).toBe("Unable to check the code. Try again.");
     expect(TYPED_LETTERS).toBe("Codes don't use 0, 1, I, L, O or U.");
     expectVoice(TYPED_LETTERS);
+  });
+
+  it("every typed-code sentence fits one line at 390 (38 characters measured 342 wide), so Continue never moves", () => {
+    const keys = ["typed_wrong", "expired", "taken", "offline", "rate_limited", "framed", "busy"] as const;
+    for (const key of keys) expect(typedError(key).length, key).toBeLessThanOrEqual(38);
+    expect(TYPED_LETTERS.length).toBeLessThanOrEqual(38);
   });
 });

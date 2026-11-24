@@ -20,6 +20,8 @@ export const DOWNLOAD_STARTS_PER_LINK = 3;
 /** An approved screen that has received no link by now asks for one. */
 export const RELINK_WAIT_MS = 1500;
 export const OFFLINE_HINT_MS = 5000;
+/** A request with no answer by now counts as offline. */
+export const FETCH_TIMEOUT_MS = 10_000;
 
 /** Reconnect delays after the 1st, 2nd, ... failure; the last repeats. */
 export const RECONNECT_DELAYS = [1000, 2000, 5000, 10_000, 30_000];

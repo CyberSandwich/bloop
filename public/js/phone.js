@@ -201,8 +201,11 @@ function render() {
   renderActions(copy.actions, copy.loading);
 
   setText(polite, key === "approving" ? "Approving" : "");
-  // A dead end centers as one group.
-  document.body.classList.toggle("is-ended", exit && copy.files === "none");
+  // A dead end (Done or Enter the Code, no list) centers as one group; a session with Revoke alone does not.
+  document.body.classList.toggle(
+    "is-ended",
+    copy.files === "none" && copy.actions.some((a) => a.id === "done" || a.id === "code"),
+  );
   if (key !== c.key) {
     c.key = key;
     if (key !== "checking" && key !== "approving") focusTitle(title);
@@ -224,15 +227,17 @@ function countDown() {
   ends.classList.toggle("soon", left <= SOON_MS);
 }
 
-/** Back before approval lets go of the claim first, so the screen does not wait on this phone. */
-back.addEventListener("click", async (e) => {
+/** Back and Done: a claim not yet approved is let go first, so the screen does not wait on this phone. */
+async function leaveClaim(/** @type {string} */ to) {
   const state = c.view?.state;
-  if (!c.pid || c.canceled || (state && state !== "claimed" && state !== "choosing")) return;
-  e.preventDefault();
-  const to = back.getAttribute("href") ?? "/";
-  await api.post("/api/cancel", {}, c.pid);
-  dropPid(pids, c.pid);
+  if (c.pid && !c.canceled && (!state || state === "claimed" || state === "choosing"))
+    await api.post("/api/cancel", {}, c.pid);
+  drop(c.pid);
   location.assign(to);
+}
+back.addEventListener("click", (e) => {
+  e.preventDefault();
+  void leaveClaim(back.getAttribute("href") ?? "/");
 });
 
 fileList.addEventListener("click", (e) => {
@@ -243,9 +248,9 @@ actionsEl.addEventListener("click", (e) => {
   const target = e.target instanceof Element ? e.target.closest("[data-action]") : null;
   const id = target?.getAttribute("data-action");
   if (id === "approve") approve();
-  else if (id === "cancel") cancelPairing();
+  else if (id === "cancel") cancel();
   else if (id === "end") endSession();
-  else if (id === "done") done();
+  else if (id === "done") void leaveClaim("/");
   else if (id === "retry") retry();
   else if (id === "connect") location.assign("/auth/start");
   else if (id === "disconnect") disconnect();
@@ -270,11 +275,6 @@ function retry() {
   c.retry = null;
   render();
   run?.();
-}
-
-function done() {
-  dropPid(pids, c.pid);
-  location.assign("/");
 }
 
 async function approve() {
@@ -334,6 +334,14 @@ async function send() {
     setView(res.view);
     render();
   } else fail(res.error, send);
+}
+
+/** Cancel on an offer reached from the list goes back to the list: Back stays the one way out. */
+function cancel() {
+  if (!c.files || (c.drop !== "choose" && c.drop !== "confirm")) return void cancelPairing();
+  c.drop = null;
+  c.file = null;
+  render();
 }
 
 /** The server drops the pairing before it answers, so its `pairing_invalid` push arrives first: `canceling` keeps it from showing as expired. */

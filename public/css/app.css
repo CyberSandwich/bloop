@@ -149,6 +149,10 @@
   place-items: center;
   padding: var(--top) var(--pad);
 }
+/* The fitted card leaves no slack, so the title would sit 16 under the corner pills; fitQr reads this padding. */
+.page-screen main:is([data-mode="waiting"], [data-mode="scanned"]) {
+  padding-block: calc(var(--top) + 8px);
+}
 .pane {
   position: relative;
   display: flex;
@@ -167,6 +171,7 @@
 }
 :is([data-mode="waiting"], [data-mode="scanned"], [data-mode="ended"]) h1,
 .is-ended .title,
+.narrow-title,
 .title {
   font-size: 44px;
   line-height: 1.05;
@@ -208,12 +213,8 @@ main:has(> .side:not([hidden])) #stage {
 .is-swapping #qr {
   opacity: 0;
 }
-.is-scanned #qr {
-  opacity: 0.12;
-}
-.is-empty #qr,
-.is-empty .ring,
-.is-scanned .ring {
+/* A reloaded claim no longer knows its code, so a live one hides its QR too: one look. */
+:is(.is-empty, .is-scanned) :is(#qr, .ring) {
   visibility: hidden;
 }
 .ring {
@@ -367,7 +368,7 @@ main:has(> .side:not([hidden])) #stage {
   text-align: center;
 }
 @media (min-width: 640px) {
-  .is-ended .column {
+  .column:has(> .list) {
     justify-content: center;
     padding-bottom: calc(var(--inset) + var(--frame-h) + 24px);
   }
@@ -397,7 +398,7 @@ main:has(> .side:not([hidden])) #stage {
   min-height: 44px;
 }
 /* Unseen until the first paint: no live footer in the demo, no Back in a session. */
-.page-screen:not(.is-ready) :is(.bar > *, .foot) {
+.is-booting:not(.is-ready) :is(.bar > *, .foot) {
   visibility: hidden;
 }
 .awaiting {
@@ -418,11 +419,11 @@ main:has(> .side:not([hidden])) #stage {
 .phone-way {
   display: none;
 }
+.narrow {
+  text-align: center;
+}
 .narrow-title {
-  font-size: 32px;
-  line-height: 1.1;
   font-weight: 600;
-  letter-spacing: -0.03em;
 }
 .narrow .btn {
   margin-top: 24px;
@@ -603,6 +604,7 @@ main:has(> .side:not([hidden])) #stage {
 /* Present and Download in one glass pill, 16 under the item (viewer.js sets its top). */
 [data-mode="viewer"] #controls {
   position: absolute;
+  width: max-content;
   bottom: 0;
   left: 50%;
   z-index: 5;
@@ -616,6 +618,7 @@ main:has(> .side:not([hidden])) #stage {
 }
 .dots {
   padding: 0 12px;
+  white-space: nowrap;
   font-size: 15px;
   font-weight: 600;
   font-variant-numeric: tabular-nums;

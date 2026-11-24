@@ -94,6 +94,14 @@ class Observer {
   observe() {}
   disconnect() {}
 }
+/** The latest viewer's fit, as its ResizeObserver would run it. */
+let resized = () => {};
+class Sized extends Observer {
+  constructor(fit: () => void) {
+    super();
+    resized = fit;
+  }
+}
 
 const ORIGIN = "https://bloop.example";
 const photo: Item = { kind: "file", name: "Dog.jpg", type: "jpg", size: 70_000 };
@@ -122,7 +130,7 @@ beforeAll(async () => {
   vi.stubGlobal("document", doc);
   vi.stubGlobal("location", { origin: ORIGIN });
   vi.stubGlobal("addEventListener", () => {});
-  vi.stubGlobal("ResizeObserver", Observer);
+  vi.stubGlobal("ResizeObserver", Sized);
   vi.stubGlobal("IntersectionObserver", Observer);
   vi.stubGlobal("Image", class extends Node {});
   vi.stubGlobal("Element", Node);
@@ -241,5 +249,34 @@ describe("the focus ring follows a key", () => {
     listeners.get("pointerdown")?.({ type: "pointerdown" });
     focusTitle(title);
     expect(title.focus).toHaveBeenLastCalledWith({ preventScroll: true, focusVisible: false });
+  });
+});
+
+describe("the viewer pill", () => {
+  const place = (el: (id: string) => Node) => {
+    Object.assign(el("view"), { offsetTop: 80, offsetHeight: 900 });
+    el("controls").offsetHeight = 60;
+  };
+
+  it("sits 16 under the slide, or under a card when there is no image", () => {
+    const { v, el } = setup();
+    v.render({ ...view, items: [deck] } as ScreenView);
+    place(el);
+    Object.assign(el("frame").querySelector("img") as Node, { offsetTop: 100, offsetHeight: 400 });
+    resized();
+    expect(el("controls").style.top).toBe("596px");
+    el("frame").replaceChildren(Object.assign(new Node("div"), { offsetTop: 300, offsetHeight: 200 }));
+    resized();
+    expect(el("controls").style.top).toBe("596px");
+  });
+
+  it("sits at the stage foot under a scrolling document, whatever its pages measure", () => {
+    const { v, el } = setup();
+    v.render({ ...view, items: [deck] } as ScreenView);
+    place(el);
+    Object.assign(el("frame").querySelector("img") as Node, { offsetTop: 100, offsetHeight: 4000 });
+    el("frame").classList.add("is-scroll");
+    resized();
+    expect(el("controls").style.top).toBe("920px");
   });
 });

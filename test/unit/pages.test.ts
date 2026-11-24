@@ -103,6 +103,19 @@ describe("the screen restored from the back-forward cache", () => {
   });
 });
 
+describe("the screen before its first paint", () => {
+  it("hides the bar and footer only once the script has run past the framed and narrow exits", () => {
+    expect(read("css/app.css")).toMatch(/\n\.is-booting:not\(\.is-ready\) :is\(\.bar > \*, \.foot\) \{/);
+    expect(read("css/app.css")).not.toMatch(/\.page-screen:not\(\.is-ready\)/);
+    const start = read("js/screen.js").match(/function start\(\) \{([\s\S]*?)\n\}/)?.[1] ?? "";
+    const at = (s: string) => start.indexOf(s);
+    expect(at('classList.add("is-booting")')).toBeGreaterThan(at("if (isFramed()) return;"));
+    expect(at('classList.add("is-booting")')).toBeGreaterThan(at("matches) return;"));
+    expect(at("if (isFramed()) return;")).toBeGreaterThanOrEqual(0);
+    expect(at("matches) return;")).toBeGreaterThanOrEqual(0);
+  });
+});
+
 describe("the demo screen", () => {
   it("hides the live footer line, which sends the visitor to a PC sign-in they do not have", () => {
     expect(read("s.html")).toMatch(/<p class="foot" id="foot">Phone not with you\?/);

@@ -4,7 +4,7 @@
 // platform rate limits that ten fresh screens a minute would trip. Selectors are roles and names first, ids where
 // the page names a slot (docs/design.md section 7).
 import AxeBuilder from "@axe-core/playwright";
-import { type Browser, type BrowserContext, expect, type Page, test } from "@playwright/test";
+import { type Browser, type BrowserContext, expect, type Locator, type Page, test } from "@playwright/test";
 
 const SCREEN = { width: 1440, height: 900 };
 const PHONE = { width: 390, height: 844 };
@@ -74,6 +74,26 @@ async function expectViewer(page: Page) {
   await expect(heading(page)).toHaveText("Dog.jpg");
   await expect(page.getByRole("img", { name: "Dog.jpg" })).toBeVisible();
   await expect(page.getByRole("button", { name: "End", exact: true })).toBeVisible();
+}
+
+/** The viewer's pill rides 16 under the item on the stage. */
+async function expectPillUnder(page: Page, item: Locator) {
+  await expect(item).toBeVisible();
+  await expect(async () => {
+    const box = await item.boundingBox();
+    const pill = await page.locator("#controls").boundingBox();
+    expect(Math.round((pill?.y ?? 0) - ((box?.y ?? 0) + (box?.height ?? 0)))).toBe(16);
+  }).toPass();
+}
+
+/** The pill is as wide as its contents: "1 / 2" stays one line and the pill keeps its 60. */
+async function expectOneLinePill(page: Page) {
+  await expect(page.locator("#dots")).toHaveText("1 / 2");
+  const dots = await page.locator("#dots").boundingBox();
+  const pill = await page.locator("#controls").boundingBox();
+  expect(dots?.height ?? 99).toBeLessThanOrEqual(24);
+  expect(pill?.height).toBe(60);
+  expect((dots?.y ?? 0) >= (pill?.y ?? 0) && (dots?.y ?? 0) + (dots?.height ?? 0) <= (pill?.y ?? 0) + 60).toBe(true);
 }
 
 /** Records every window.open and every navigation away, so a test can assert the demo launches nothing. */
@@ -182,7 +202,9 @@ test.describe("pairing flow", () => {
     expect(await phone.page.getByRole("button", { name: "Continue" }).boundingBox()).toEqual(before);
     await phone.page.getByLabel("Code").fill("222 222");
     await phone.page.getByRole("button", { name: "Continue" }).click();
-    await expect(phone.page.locator("#code-error")).toContainText("Check the code on the screen and try again.");
+    await expect(phone.page.locator("#code-error")).toContainText("Check the code on the screen.");
+    // One line at 390: the refusal does not move Continue either.
+    expect(await phone.page.getByRole("button", { name: "Continue" }).boundingBox()).toEqual(before);
     await expect(phone.page.getByLabel("Code")).toHaveAttribute("aria-invalid", "true");
     await expectNoAxeViolations(phone.page);
     // A look-alike the alphabet leaves out is named as soon as it is typed.
@@ -320,6 +342,12 @@ test.describe("pairing flow", () => {
     // The demo holds Session Ended for 10 s (its waitlist link), then shows a code again.
     await expect(heading(screen.page)).toHaveText("Demo Room", { timeout: 20_000 });
     await typedCodeOf(screen.page);
+    // PAIR-12: the pairing is gone now, so a wake reads a refusal; the phone stops its channel and keeps the result.
+    const read = phone.page.waitForResponse((r) => r.url().endsWith("/api/pair/state"));
+    await phone.page.evaluate("document.dispatchEvent(new Event('visibilitychange'))");
+    expect((await read).ok()).toBe(false);
+    await phone.page.waitForTimeout(500);
+    await expect(heading(phone.page)).toHaveText("Session Ended");
 
     await phone.page.getByRole("button", { name: "Done" }).click();
     await expect(phone.page).toHaveURL("/");
@@ -436,6 +464,7 @@ test.describe("guest drop", () => {
     await screen.page.getByRole("button", { name: "Open" }).click();
     // One item: no sidebar, the file's card on the stage.
     await expect(screen.page.locator(".item-card")).toContainText("PowerPoint");
+    await expectPillUnder(screen.page, screen.page.locator(".item-card"));
     await expect(heading(screen.page)).toHaveText("sample-deck.pptx");
     await expect(screen.page.locator("#items")).toBeHidden();
     await expect(screen.page.locator(".foot")).toBeHidden();
@@ -452,6 +481,62 @@ test.describe("guest drop", () => {
     await expect(heading(screen.page)).toHaveText("Session Ended");
     await screen.context.close();
     await phone.context.close();
+  });
+
+  test("Done on a refused upload lets go of the claim, so the screen shows its code again at once", async ({
+    browser,
+  }) => {
+    const screen = await demoScreen(browser);
+    const { phone } = await scan(browser, screen.page);
+    await phone.page.route("**/api/drop", (route) =>
+      route.fulfill({
+        status: 507,
+        contentType: "application/problem+json",
+        body: JSON.stringify({ type: "about:blank", status: 507, code: "storage_full" }),
+      }),
+    );
+    await phone.page.getByRole("button", { name: "Add a File" }).click();
+    await chooseFile(phone.page, DECK);
+    await phone.page.getByRole("button", { name: "Send" }).click();
+    await expect(heading(phone.page)).toHaveText("bloop Can't Take Files Now");
+    await expect(screen.page.locator("#awaiting")).toBeVisible();
+    const cancel = phone.page.waitForRequest((r) => r.url().endsWith("/api/cancel"));
+    await phone.page.getByRole("button", { name: "Done" }).click();
+    await cancel;
+    await expect(phone.page).toHaveURL("/");
+    // Well inside the claim's own timeout, which would otherwise hold the screen.
+    await expect(screen.page.locator("#compare")).toBeEmpty({ timeout: 5000 });
+    await expect(screen.page.locator("#awaiting")).toBeHidden();
+    await typedCodeOf(screen.page);
+    expect(await phone.page.evaluate(() => localStorage.getItem("bloop.pid"))).toBeNull();
+    await screen.context.close();
+    await phone.context.close();
+  });
+
+  test("Cancel on the offer reached from the list goes back to the list; the column is centered at 834", async ({
+    browser,
+  }) => {
+    const screen = await demoScreen(browser);
+    const code = await typedCodeOf(screen.page);
+    const context = await browser.newContext({ viewport: { width: 834, height: 828 } });
+    const page = await context.newPage();
+    await page.goto(`/a?c=${code}`);
+    await expect(page.locator("#file-list")).toBeVisible();
+    /** The column's visible block, centered in the viewport from 640. */
+    const center = async () => {
+      const title = await heading(page).boundingBox();
+      const last = await page.locator(".actions").boundingBox();
+      return ((title?.y ?? 0) + (last?.y ?? 0) + (last?.height ?? 0)) / 2;
+    };
+    await page.getByRole("button", { name: "Add a File" }).click();
+    await expect(heading(page)).toHaveText("Send a File to Demo Room?");
+    expect(Math.abs((await center()) - 828 / 2)).toBeLessThan(24);
+    await page.getByRole("button", { name: "Cancel" }).click();
+    await expect(heading(page)).toHaveText("Demo Room");
+    await expect(page.locator("#file-list")).toBeVisible();
+    await expect(screen.page.locator("#compare")).toHaveText(/^Your phone shows \d{2}\.$/);
+    await context.close();
+    await screen.context.close();
   });
 
   test("Cancel while the file is chosen returns the screen to its code", async ({ browser }) => {
@@ -681,11 +766,13 @@ test.describe("demo viewer", () => {
     await expect(phone.page).toHaveURL(/\/s\?mode=demo$/);
     // Under 760 the sidebar is a bottom sheet behind a handle.
     await expect(heading(phone.page)).toHaveText("Dog.jpg");
+    await expectPillUnder(phone.page, phone.page.locator("#frame img").first());
     await expect(phone.page.locator("#items")).toBeHidden();
     await phone.page.locator("#handle").click();
-    await sidebarItem(phone.page, "Vevox").click();
-    await expect(heading(phone.page)).toHaveText("Vevox");
+    await sidebarItem(phone.page, "Sample deck.pptx").click();
+    await expect(heading(phone.page)).toHaveText("Sample deck.pptx");
     await expect(phone.page.locator("#items")).toBeHidden();
+    await expectOneLinePill(phone.page);
     await expectNoAxeViolations(phone.page);
 
     await phone.page.getByRole("button", { name: "End", exact: true }).click();
@@ -706,28 +793,26 @@ test.describe("demo viewer", () => {
   });
 });
 
-test.describe("stage 4 layout", () => {
+test.describe("screen and phone layout", () => {
   for (const viewport of [
     { width: 834, height: 1000 },
     { width: 1440, height: 900 },
   ]) {
-    test(`the viewer's pill sits 16 under the item at ${viewport.width} x ${viewport.height}`, async ({ browser }) => {
+    test(`the viewer's pill sits 16 under each page and the photo, its count on one line, at ${viewport.width} x ${viewport.height}`, async ({
+      browser,
+    }) => {
       const context = await browser.newContext({ viewport });
       const page = await context.newPage();
       await page.goto("/s?mode=demo");
       const code = await typedCodeOf(page);
       const phone = await open(browser, "phone", `/a?c=${code}`);
       await phone.page.getByRole("button", { name: "Approve" }).click();
-      for (const name of ["Sample deck.pptx", "Dog.jpg"]) {
+      for (const name of ["Sample deck.pptx", "Sample deck.pdf", "Dog.jpg"]) {
         await sidebarItem(page, name).click();
-        const item = page.locator("#frame img").first();
-        await expect(item).toBeVisible();
-        await expect(async () => {
-          const box = await item.boundingBox();
-          const pill = await page.locator("#controls").boundingBox();
-          expect(Math.round((pill?.y ?? 0) - ((box?.y ?? 0) + (box?.height ?? 0)))).toBe(16);
-        }).toPass();
+        await expectPillUnder(page, page.locator("#frame img").first());
       }
+      await sidebarItem(page, "Sample deck.pptx").click();
+      await expectOneLinePill(page);
       await context.close();
       await phone.context.close();
     });
@@ -740,7 +825,12 @@ test.describe("stage 4 layout", () => {
     await typedCodeOf(screen.page);
     const waiting = await screen.page.locator("#qr-panel").boundingBox();
     const { phone } = await scan(browser, screen.page);
+    // A reloaded claim cannot draw its code, so a live one shows the same blank card with the phone glyph.
+    await expect(screen.page.locator("#qr")).toBeHidden();
+    await expect(screen.page.locator("#match")).toBeVisible();
     await screen.page.reload();
+    await expect(screen.page.locator("#qr")).toBeHidden();
+    await expect(screen.page.locator("#match")).toBeVisible();
     await expect(screen.page.locator("#compare")).toHaveText(/^Your phone shows \d{2}\.$/);
     await expect(screen.page.locator("#awaiting")).toHaveText("Waiting for approval.");
     expect(await screen.page.locator("#qr-panel").boundingBox()).toEqual(waiting);
@@ -752,16 +842,34 @@ test.describe("stage 4 layout", () => {
     await phone.context.close();
   });
 
-  test("the demo never shows the live footer or a Back before its first paint", async ({ browser }) => {
+  test("a screen shows no footer or Back before its first paint, then both", async ({ browser }) => {
     const context = await browser.newContext({ viewport: { width: 834, height: 1000 } });
     const page = await context.newPage();
+    let release = () => {};
+    const held = new Promise<void>((done) => {
+      release = done;
+    });
     await page.route("**/api/screens", async (route) => {
-      await new Promise((done) => setTimeout(done, 1500));
+      await held;
       await route.continue();
     });
-    await page.goto("/s?mode=demo");
-    await expect(page.locator(".foot")).toBeHidden();
+    await page.goto("/s");
+    await expect(page.locator("body")).toHaveClass(/is-booting/);
+    await expect(page.locator(".foot")).toHaveCSS("visibility", "hidden");
     await expect(page.locator("#b-back")).toHaveCSS("visibility", "hidden");
+    release();
+    await typedCodeOf(page);
+    await expect(page.locator(".foot")).toBeVisible();
+    await expect(page.locator("#b-back")).toBeVisible();
+    await context.close();
+  });
+
+  test("with no script the screen keeps its static Back and footer", async ({ browser }) => {
+    const context = await browser.newContext({ viewport: { width: 834, height: 1000 }, javaScriptEnabled: false });
+    const page = await context.newPage();
+    await page.goto("/s");
+    await expect(page.locator("#b-back")).toBeVisible();
+    await expect(page.locator(".foot")).toBeVisible();
     await context.close();
   });
 
@@ -790,6 +898,10 @@ test.describe("screen page", () => {
     await expect(page.getByText("Use the Room's Screen")).toBeVisible();
     await expect(page.getByRole("link", { name: "Enter the Code" })).toHaveAttribute("href", "/code");
     await expect(page.locator("#qr")).toBeHidden();
+    // Centered as one group, like every dead end.
+    await expect(page.locator(".narrow")).toHaveCSS("text-align", "center");
+    const group = await page.locator(".narrow").boundingBox();
+    expect(Math.abs((group?.y ?? 0) + (group?.height ?? 0) / 2 - PHONE.height / 2)).toBeLessThan(24);
     await expectNoAxeViolations(page);
     expect(created).toEqual([]);
     await context.close();

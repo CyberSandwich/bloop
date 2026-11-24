@@ -3,6 +3,7 @@
 // the Worker's CSRF check (PAIR-06) looks for.
 /** @import {ErrorCode} from "../../../src/shared/protocol.ts" */
 import { ERRORS } from "../shared/errors.js";
+import { FETCH_TIMEOUT_MS } from "./timing.js";
 
 /**
  * @template T
@@ -29,7 +30,14 @@ export function createApi(deps = {}) {
     const headers = { Accept: "application/json" };
     if (options.auth) headers.Authorization = `Bearer ${options.auth}`;
     /** @type {RequestInit} */
-    const init = { method, headers, cache: "no-store", credentials: "same-origin", keepalive: !!options.keepalive };
+    const init = {
+      method,
+      headers,
+      cache: "no-store",
+      credentials: "same-origin",
+      keepalive: !!options.keepalive,
+      signal: AbortSignal.timeout(FETCH_TIMEOUT_MS),
+    };
     if (method !== "GET") {
       headers["Content-Type"] = "application/json";
       init.body = JSON.stringify(options.body ?? {});

@@ -240,8 +240,8 @@ export function createViewer(deps) {
         );
       }
       sized.disconnect();
-      const shown = frame.querySelector("img") ?? frame.firstElementChild;
-      for (const box of shown ? [shown, view] : [view]) sized.observe(box);
+      const target = frame.querySelector("img") ?? frame.firstElementChild;
+      for (const box of target ? [target, view] : [view]) sized.observe(box);
     }
     show(view, true);
     show(frame, true);
