@@ -1,6 +1,7 @@
 import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
+import { ALPHABET } from "../../public/js/shared/codes.js";
 
 const read = (rel: string) => readFileSync(fileURLToPath(new URL(`../../${rel}`, import.meta.url)), "utf8");
 const SITE = ["index.html", "security.html", "privacy.html", "404.html"] as const;
@@ -311,14 +312,19 @@ describe("landing word caps (design.md section 13)", () => {
     const steps = [...between(html, /<ol class="steps">/, "</ol>").matchAll(/<li class="step">([\s\S]*?)<\/li>/g)].map(
       (m) => m[1] ?? "",
     );
-    expect(steps.map((s) => visibleText(between(s, /<h3>/, "</h3>")))).toEqual(["1 Scan", "2 Approve", "3 Present"]);
+    expect(steps.map((s) => visibleText(between(s, /<h3>/, "</h3>")))).toEqual(["Scan", "Approve", "Present"]);
+    for (const step of steps) expect(step).toMatch(/<span class="step-n" aria-hidden="true">\d<\/span>/);
     expect(steps.map((s) => /<p class="step-device">[\s\S]*?<\/svg>([^<]+)<\/p>/.exec(s)?.[1])).toEqual([
       "Room Screen",
       "Your Phone",
       "Room Screen",
     ]);
     for (const step of steps) expect(step).toMatch(/<div class="frag" aria-hidden="true">/);
-    expect(steps[0]).toMatch(/<span class="frag-code">[A-Z0-9]{3} [A-Z0-9]{3}<\/span>/);
+    const code = /<span class="frag-code">([^<]+)<\/span>/.exec(steps[0] ?? "")?.[1] ?? "";
+    expect(code).toMatch(new RegExp(`^[${ALPHABET}]{3} [${ALPHABET}]{3}$`));
+    // The app's own .tick is hidden outside a checked row, so the stills keep their own class.
+    expect(steps[1]?.match(/class="icon frag-tick"/g)).toHaveLength(2);
+    expect(html).not.toMatch(/class="(?:[^"]*\s)?tick[\s"]/);
   });
 
   it("the FAQ is at most 4 native details, and the residue answer links to /security without a nothing-stays claim", () => {
@@ -330,6 +336,13 @@ describe("landing word caps (design.md section 13)", () => {
     expect(residue).toContain('href="/security"');
     expect(residue).toMatch(/can stay/);
     expect(residue.toLowerCase()).not.toMatch(/nothing (is )?left|leaves nothing/);
+    // One claim, one sentence (design.md section 13): the answer repeats /security#stay word for word.
+    const stay = visibleText(between(read("public/security.html"), /<h2 id="stay">[^<]*<\/h2>\s*<p>/, "</p>")).replace(
+      /^What Can Stay Behind /,
+      "",
+    );
+    expect(visibleText(residue)).toContain(stay);
+    expect(stay).toMatch(/tabs with their history/);
   });
 
   const group = (id: string) => {
@@ -342,7 +355,7 @@ describe("landing word caps (design.md section 13)", () => {
   it("the provider list promises nothing live: Coming Soon, by name only, and iCloud is not listed", () => {
     const { section, head, rows } = group("from-h");
     expect(head).toBe("Where Your Files Live Coming Soon");
-    expect(rows).toEqual(["Microsoft OneDrive", "Dropbox", "Google Drive", "Box"]);
+    expect(rows).toEqual(["Microsoft OneDrive", "Dropbox", "Google Drive™", "Box"]);
     expect(section).not.toMatch(/<(svg|img)\b/);
     expect(section.toLowerCase()).not.toContain("icloud");
   });
@@ -358,6 +371,7 @@ describe("landing word caps (design.md section 13)", () => {
 
   it("Google Drive carries its ™ at its first mention on the page", () => {
     const text = visibleText(main);
+    expect(text.indexOf("Google Drive")).toBeGreaterThanOrEqual(0);
     expect(text.indexOf("Google Drive™")).toBe(text.indexOf("Google Drive"));
   });
 

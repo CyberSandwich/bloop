@@ -72,6 +72,13 @@
       "gzip": false,
       "brotli": false,
       "limit": "58 kB"
+    },
+    {
+      "name": "hero image fallback",
+      "path": "public/img/hero-viewer-2000.webp",
+      "gzip": false,
+      "brotli": false,
+      "limit": "69 kB"
     }
   ],
   "dependencies": {

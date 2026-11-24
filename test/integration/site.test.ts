@@ -45,7 +45,7 @@ describe("/it", () => {
 });
 
 describe("/demo", () => {
-  it("goes, for now, to the demo screen, keeping its query", async () => {
+  it("goes, for now, to the demo screen", async () => {
     const res = await fetch(`${wrangler.url}/demo`, { redirect: "manual" });
     expect(res.status).toBe(302);
     const to = new URL(res.headers.get("Location") ?? "", wrangler.url);

@@ -1359,7 +1359,7 @@ html:has(.page-site) {
   perspective: 2200px;
   perspective-origin: 50% 0;
 }
-/* The screenshot's ground is the page's own paper, so only the frame says it is a picture. */
+/* The screenshot is painted on paper like the page, so only the frame says it is a picture; --g1 shows while it loads. */
 .stage {
   overflow: hidden;
   border-radius: var(--r-stage);
@@ -1502,7 +1502,7 @@ html:has(.page-site) {
   background: var(--surface);
 }
 .frag-meta,
-.frag-row .tick {
+.frag-tick {
   margin-left: auto;
 }
 .frag-meta,
