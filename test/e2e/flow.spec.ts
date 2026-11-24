@@ -490,7 +490,7 @@ test.describe("guest drop", () => {
       buffer: Buffer.from("MZ"),
     });
     await expect(heading(phone.page)).toHaveText("This File Can't Be Sent");
-    await expect(phone.page.locator("#body")).toHaveText("Choose a .pptx or .pdf file under 10 MB.");
+    await expect(phone.page.locator("#body")).toHaveText("Choose a .pptx or .pdf file under 25 MB.");
     await expectNoAxeViolations(phone.page);
 
     await chooseFile(phone.page, DECK);
