@@ -85,7 +85,7 @@ describe("POST /api/approve resolves the file on the server", () => {
     expect(approved.body).toMatchObject({ state: "approved", items: [{ name: "Sample deck.pptx" }] });
     const onScreen = await socket.stateWhere((v) => v.state === "approved");
     expect((onScreen.view as { items: { name: string }[] }).items).toEqual([
-      { kind: "file", name: "Sample deck.pptx", type: "pptx", size: expect.any(Number) },
+      { kind: "file", id: "i1", name: "Sample deck.pptx", type: "pptx", size: expect.any(Number) },
     ]);
     expect(screen.sid).toBeTruthy();
     socket.close();
@@ -166,10 +166,10 @@ describe("POST /api/approve resolves the file on the server", () => {
     const approved = await api.post<{ items: unknown[] }>("/api/approve", { ids: DEMO_IDS }, { auth: pid });
     expect(approved.status).toBe(200);
     const want = [
-      { kind: "file", name: "Dog.jpg", type: "jpg", size: expect.any(Number) },
-      { kind: "file", name: "Sample deck.pdf", type: "pdf", size: expect.any(Number) },
-      { kind: "file", name: "Sample deck.pptx", type: "pptx", size: expect.any(Number) },
-      { kind: "link", url: "https://www.vevox.com/", title: "Vevox" },
+      { kind: "file", id: "i1", name: "Dog.jpg", type: "jpg", size: expect.any(Number) },
+      { kind: "file", id: "i2", name: "Sample deck.pdf", type: "pdf", size: expect.any(Number) },
+      { kind: "file", id: "i3", name: "Sample deck.pptx", type: "pptx", size: expect.any(Number) },
+      { kind: "link", id: "i4", url: "https://www.vevox.com/", title: "Vevox" },
     ];
     expect(approved.body.items).toEqual(want);
     const onScreen = await socket.stateWhere((v) => v.state === "approved");

@@ -1,17 +1,21 @@
 // The items a session holds (docs/interfaces.md section 2.3): files and web links, their order, and the link rule.
 // Pure, so the machine, the routes and the unit tests share one definition.
-import type { FileType, Item, OpenMode } from "../shared/protocol.ts";
+import { pagesOf } from "../../public/js/core/demo.js";
+import type { FileType, Item, Kind, Mode, OpenMode } from "../shared/protocol.ts";
 import type { FileRef } from "./machine.ts";
 
 /** A web link the source offered. `url` is what `allowedLink` answered, never the raw input (LINK-01). */
 export interface LinkRef {
   kind: "link";
+  id: string;
   ref: string;
   url: string;
   title: string;
 }
-export type FileItemRef = FileRef & { kind: "file" };
+export type FileItemRef = FileRef & { kind: "file"; id: string };
 export type ItemRef = FileItemRef | LinkRef;
+/** An item before approval gives it an id. */
+export type ItemDraft = Omit<FileItemRef, "id"> | Omit<LinkRef, "id">;
 
 /** The most items one session holds. */
 export const MAX_ITEMS = 12;
@@ -43,6 +47,22 @@ export function allowedLink(raw: string): string | null {
 
 export { orderItems } from "../../public/js/shared/session.js";
 
+/** The id an item holds from approval on: its place in the approved list, written once and never recomputed. */
+export const itemId = (index: number): string => `i${index + 1}`;
+
+/** Ids for a list already in `orderItems` order. An item's id never changes after this, whatever later reorders the list. */
+export const withIds = (items: readonly ItemDraft[]): ItemRef[] => items.map((item, i) => ({ ...item, id: itemId(i) }));
+
+/** The file item with this id, or null for a link or an unknown id (PAIR-11, LINK-01). */
+export const fileById = (items: readonly ItemRef[], id: string): FileItemRef | null => {
+  const item = items.find((i) => i.id === id);
+  return item?.kind === "file" ? item : null;
+};
+
+/** How many pages a file shows: the demo account's pre-rendered pages for a deck or PDF, else one. */
+export const pageCount = (file: FileItemRef, view: { mode: Mode; kind: Kind | null }): number =>
+  pagesOf(itemView(file), view)?.length ?? 1;
+
 /** The index of the item an approval launches: the first file. -1 when the session holds links only. */
 export const launchIndex = (items: readonly ItemRef[]): number => items.findIndex((i) => i.kind === "file");
 
@@ -66,5 +86,5 @@ export function fileAt(items: readonly ItemRef[], index: number): FileItemRef | 
 /** What a page may see of an item: no source id, no ref (SRC-01). */
 export const itemView = (i: ItemRef): Item =>
   i.kind === "file"
-    ? { kind: "file", name: i.name, type: i.type, size: i.size ?? null }
-    : { kind: "link", url: i.url, title: i.title };
+    ? { kind: "file", id: i.id, name: i.name, type: i.type, size: i.size ?? null }
+    : { kind: "link", id: i.id, url: i.url, title: i.title };
