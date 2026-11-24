@@ -170,6 +170,14 @@ describe("config fails closed", () => {
     }
   });
 
-  // TEST_TIMING on a non-local origin is refused by the config alone (test/unit/config.test.ts): a local request to a
-  // Worker whose PUBLIC_ORIGIN is elsewhere is redirected before it reaches the config.
+  it("refuses TEST_TIMING on a non-local origin", async () => {
+    const bad = await startWrangler({ HASH_PEPPER: PEPPER, TEST_TIMING: "1", PUBLIC_ORIGIN: "https://bloop.example" });
+    try {
+      const res = await new Api(bad.url).post("/api/screens", { mode: "demo" }, { origin: "https://bloop.example" });
+      expect(res.status).toBe(500);
+      expect(bad.output()).toContain("TEST_TIMING");
+    } finally {
+      await bad.stop();
+    }
+  });
 });

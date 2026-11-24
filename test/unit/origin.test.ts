@@ -19,15 +19,31 @@ describe("offOrigin", () => {
   });
 
   it.each([
+    "http://127.0.0.1:8787/api/health",
+    "http://localhost:8787/",
+    "https://www.bloop.here/security",
+    "https://random.example/privacy",
+    "https://notworkers.dev/",
+  ])("leaves %s to the Origin and config checks", (from) => {
+    expect(offOrigin(new Request(from), ORIGIN)).toBeNull();
+    expect(offOrigin(new Request(from, { method: "POST", body: "{}" }), ORIGIN)).toBeNull();
+  });
+
+  it("leaves a local origin's own host alone", () => {
+    expect(offOrigin(new Request("http://127.0.0.1:8787/s"), "http://127.0.0.1:8787")).toBeNull();
+  });
+
+  it.each([
     [`${OLD}/`, `${ORIGIN}/`],
     [`${OLD}/a?c=ABC123`, `${ORIGIN}/a?c=ABC123`],
     [`${OLD}/f/token/name.pdf?x=1&y=2`, `${ORIGIN}/f/token/name.pdf?x=1&y=2`],
-    [`http://bloop.here/privacy`, `${ORIGIN}/privacy`],
-    [`https://www.bloop.here/security`, `${ORIGIN}/security`],
-  ])("moves GET %s for good to %s", async (from, to) => {
+    ["https://anything.workers.dev/privacy", `${ORIGIN}/privacy`],
+    ["http://bloop.here/privacy?x=1", `${ORIGIN}/privacy?x=1`],
+  ])("moves GET %s to %s, for an hour", async (from, to) => {
     const res = offOrigin(new Request(from), ORIGIN);
     expect(res?.status).toBe(301);
     expect(res?.headers.get("Location")).toBe(to);
+    expect(res?.headers.get("Cache-Control")).toBe("max-age=3600");
     expect(res?.headers.get("Content-Security-Policy")).toContain("default-src 'none'");
     expect(await res?.text()).toBe("");
   });

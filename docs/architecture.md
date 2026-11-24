@@ -225,7 +225,7 @@ src/worker/
   index.ts                 fetch + scheduled entry, route table
   http.ts                  json(), problem(), origin and fetch-metadata checks, body limits
   headers.ts               the header policy; applied to every Worker response
-  origin.ts                the 301 for any request off PUBLIC_ORIGIN (or the 403 for a write)
+  origin.ts                the 301 from a workers.dev host or plain http to PUBLIC_ORIGIN (or the 403 for a write)
   config.ts                Zod schema for env, fails closed at startup
   do/demo-slots.ts         the global cap on concurrent demo screens (SQL in the Directory object)
   machine.ts               pure session state machine (interfaces.md)
@@ -282,7 +282,7 @@ test/
 
 ## 6. Routes
 
-`run_worker_first: true`: every request reaches the Worker, which first redirects any request not on `PUBLIC_ORIGIN` (the old workers.dev host, plain http, any other host) with a 301 to the same path and query there (`origin.ts`); a write or WebSocket upgrade on such a host is refused with 403 `forbidden_origin`, not redirected. Then `/api/*`, `/f/*` and `/auth/*` go to the routes, and everything else is served from the asset binding (`html_handling: "drop-trailing-slash"`, so `/s` serves `s.html`; `_headers` and `_redirects` still apply). `wrangler dev` needs `--infer-origin-from-routes=false`, or the Worker sees `bloop.here` as its host.
+`run_worker_first: true`: every request reaches the Worker, which first redirects a GET or HEAD for a `*.workers.dev` host, or for the origin's own hostname over plain http, with a 301 (cacheable for an hour) to the same path and query on `PUBLIC_ORIGIN` (`origin.ts`); a write or WebSocket upgrade on those hosts is refused with 403 `forbidden_origin`, not redirected, and any other host is left to the Origin and config checks. Then `/api/*`, `/f/*` and `/auth/*` go to the routes, and everything else is served from the asset binding (`html_handling: "drop-trailing-slash"`, so `/s` serves `s.html`; `_headers` and `_redirects` still apply). `wrangler dev` needs `--infer-origin-from-routes=false`, or the Worker sees `bloop.here` as its host.
 
 | method                   | path                                         | auth                                  | purpose                                                        |
 | ------------------------ | -------------------------------------------- | ------------------------------------- | -------------------------------------------------------------- |
