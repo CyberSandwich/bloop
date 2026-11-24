@@ -49,7 +49,18 @@ export async function startWrangler(
   vars: Record<string, string> = {},
   options: { migrate?: boolean } = {},
 ): Promise<Wrangler> {
-  const [port, inspectorPort] = [await freePort(), await freePort()];
+  try {
+    return await startOnce(vars, options);
+  } catch (e) {
+    // The serving port is picked before wrangler binds it (PUBLIC_ORIGIN must name it), so another socket can take
+    // it in between; a fresh port and state once is enough.
+    if (!String(e).includes("Address already in use")) throw e;
+    return startOnce(vars, options);
+  }
+}
+
+async function startOnce(vars: Record<string, string>, options: { migrate?: boolean }): Promise<Wrangler> {
+  const port = await freePort();
   const url = `http://127.0.0.1:${port}`;
   const state = mkdtempSync(join(tmpdir(), "bloop-wrangler-"));
   const varArgs = Object.entries({ PUBLIC_ORIGIN: url, ...vars }).flatMap(([k, v]) => ["--var", `${k}:${v}`]);
@@ -77,8 +88,10 @@ export async function startWrangler(
       "127.0.0.1",
       "--port",
       String(port),
+      // 0: the OS assigns it at bind. A port picked here first could be taken by one of wrangler's own sockets
+      // before its inspector proxy binds it ("Address already in use (socket direct:1:default)").
       "--inspector-port",
-      String(inspectorPort),
+      "0",
       "--persist-to",
       state,
       ...varArgs,
@@ -124,8 +137,10 @@ export async function startWrangler(
   const deadline = Date.now() + 90_000;
   while (Date.now() < deadline) {
     // The tail holds the cause; CI annotations cut a long message after the bindings table.
-    if (child.exitCode !== null)
+    if (child.exitCode !== null) {
+      await stop();
       throw new Error(`wrangler dev exited early (code ${child.exitCode}):\n${chunks.join("").slice(-1500)}`);
+    }
     try {
       if ((await fetch(`${url}/api/health`)).ok) return { url, output: () => chunks.join(""), stop, d1, r2Has };
     } catch {
