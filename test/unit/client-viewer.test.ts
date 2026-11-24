@@ -408,6 +408,11 @@ describe("the viewer pill", () => {
     expect(el("controls").style.top).toBe("596px");
   });
 
+  it("is placed again when an image in the frame loads, since its ratio is known only then", () => {
+    const { el } = setup();
+    expect(el("frame").listeners.get("load")?.length).toBeGreaterThan(0);
+  });
+
   it("sits at the stage foot under a scrolling document, whatever its pages measure", () => {
     const { v, el } = setup();
     v.render({ ...view, items: [deck] } as ScreenView);

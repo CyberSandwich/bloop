@@ -423,9 +423,11 @@ main:has(> .side:not([hidden])) #stage {
   .is-demo #b-here {
     display: none;
   }
-  /* Claimed, the button's 52 stays empty, so the card never moves. */
+  /* Claimed, the button's 52 stays empty, so the card never moves. A flex row has no line box, so the inline
+     button adds no strut below its 52. */
   .is-demo :is([data-mode="waiting"], [data-mode="scanned"]) .phone-way {
-    display: block;
+    display: flex;
+    justify-content: center;
     min-height: 52px;
   }
 }

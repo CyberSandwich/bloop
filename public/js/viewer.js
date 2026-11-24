@@ -102,6 +102,8 @@ export function createViewer(deps) {
   const sized = new ResizeObserver(fit);
   // The pane's entry slides it 12 px, which the list's box does not share.
   pane.addEventListener("animationend", fit);
+  // The file's own ratio decides the placement, and it is known only once the image has loaded (load does not bubble).
+  frame.addEventListener("load", fit, true);
 
   /** @type {ScreenView | null} */
   let shown = null;
