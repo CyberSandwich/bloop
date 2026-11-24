@@ -2,7 +2,7 @@
 // Pure; the pages render the key through copy.js.
 /** @import {ErrorCode, FileItem, Item, PhoneStateKey, PhoneView, ScreenStateKey, ScreenView} from "../../../src/shared/protocol.ts" */
 /** @import {PhoneCtx, ScreenCtx} from "../types.js" */
-import { LIVE_CLAIM, PAIRING_OVER } from "../shared/session.js";
+import { IN_SESSION, LIVE_CLAIM, PAIRING_OVER } from "../shared/session.js";
 import { refusal } from "./channel.js";
 
 /** @type {PhoneStateKey[]} */
@@ -42,15 +42,26 @@ export const liveClaim = (/** @type {LeaveCtx} */ c) =>
  * Back and Done (design.md, frame): a live session keeps its pid, so Revoke can come back.
  * @typedef {{pid: string | null, canceled: boolean, view: PhoneView | null, leaving: boolean}} LeaveCtx
  * @param {LeaveCtx} c
- * @param {{post: (path: string, body: unknown, auth: string | null) => Promise<unknown>, drop: (pid: string | null) => void, assign: (to: string) => void}} io
+ * @param {{post: (path: string, body: unknown, auth: string | null) => Promise<{ok: boolean}>, drop: (pid: string | null) => void, assign: (to: string) => void}} io
  */
 export async function leave(c, io, /** @type {string} */ to, forget = false) {
   if (c.leaving) return;
   c.leaving = true;
-  const live = liveClaim(c);
-  if (live) await io.post("/api/cancel", {}, c.pid);
-  if (live || forget) io.drop(c.pid);
+  // A refused cancel (the approve landed first) leaves a session that still needs this pid.
+  const canceled = liveClaim(c) && (await io.post("/api/cancel", {}, c.pid)).ok;
+  if (canceled || forget) io.drop(c.pid);
   io.assign(to);
+}
+
+/**
+ * Try Again: what to rerun. Once the session is up, nothing: the call may have landed.
+ * @param {{error: unknown, retry: (() => void) | null, view: PhoneView | null}} c
+ */
+export function retryStep(c) {
+  const run = c.retry;
+  c.error = null;
+  c.retry = null;
+  return c.view && IN_SESSION.includes(c.view.state) ? null : run;
 }
 
 /**

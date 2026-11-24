@@ -89,10 +89,11 @@ describe("client code under the strict CSP", () => {
   });
 });
 
-describe("the screen restored from the back-forward cache", () => {
-  it("reloads, so a page whose socket is gone never shows an ended session; a plain load never loops", () => {
-    // The handler as start() registers it, run against a fake location.
-    const src = read("js/screen.js").match(/addEventListener\("pageshow", (\(e\) => [^\n]+)\);/)?.[1];
+describe("the screen and phone pages restored from the back-forward cache", () => {
+  it("reloads, so a page whose socket or leave is gone never shows a stale state; a plain load never loops", () => {
+    // The handler as both pages register it, run against a fake location.
+    for (const page of ["js/screen.js", "js/phone.js"]) expect(read(page), page).toContain("reloadOnRestore();");
+    const src = read("js/core/ui.js").match(/addEventListener\("pageshow", (\(e\) => [^\n]+)\);/)?.[1];
     expect(src).toBeDefined();
     const reload = vi.fn();
     const handler = new Function("location", `return ${src}`)({ reload }) as (e: { persisted: boolean }) => void;

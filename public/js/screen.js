@@ -17,7 +17,19 @@ import {
   pollDelay,
   ROTATE_AHEAD_MS,
 } from "./core/timing.js";
-import { ariaFlag, byId, el, focusTitle, frameThrottle, isFramed, lostFocus, setText, show, wsUrl } from "./core/ui.js";
+import {
+  ariaFlag,
+  byId,
+  el,
+  focusTitle,
+  frameThrottle,
+  isFramed,
+  lostFocus,
+  reloadOnRestore,
+  setText,
+  show,
+  wsUrl,
+} from "./core/ui.js";
 import { createLauncher } from "./launcher.js";
 import { createResidue } from "./residue.js";
 import { format } from "./shared/codes.js";
@@ -496,7 +508,7 @@ function start() {
   addEventListener("resize", frameThrottle(fitQr));
   addEventListener("online", () => s.channel?.nudge());
   addEventListener("pagehide", () => launcher.closePdf());
-  addEventListener("pageshow", (e) => e.persisted && location.reload());
+  reloadOnRestore();
   document.addEventListener("visibilitychange", () => {
     if (!document.hidden) s.channel?.wake();
   });

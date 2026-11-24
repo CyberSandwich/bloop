@@ -234,6 +234,8 @@ export interface PhoneFacts {
   nocode?: boolean;
   /** An approved session is up: a failure keeps Revoke. */
   live?: boolean;
+  /** The failure was Revoke's own, so Revoke alone retries it. */
+  revoking?: boolean;
   /** The guest offer came from the list (Add a File), so Cancel goes back to it. */
   list?: boolean;
 }

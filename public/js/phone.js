@@ -11,9 +11,21 @@ import { sendable, sendFile, wholeMB } from "./core/drop.js";
 import { loadFiles } from "./core/files.js";
 import { ago, countdown, ICON_ADD } from "./core/format.js";
 import { rowFace, tile } from "./core/rows.js";
-import { adopt, firstFile, leave, liveClaim, onRefusal, phoneKey } from "./core/states.js";
+import { adopt, firstFile, leave, liveClaim, onRefusal, phoneKey, retryStep } from "./core/states.js";
 import { dropPid, PID_KEY, pidStore, refOf, SID_KEY, sameScreen, sessionStore } from "./core/store.js";
-import { ariaFlag, byId, el, focusTitle, ICON_CHECK, icon, isFramed, setText, show, wsUrl } from "./core/ui.js";
+import {
+  ariaFlag,
+  byId,
+  el,
+  focusTitle,
+  ICON_CHECK,
+  icon,
+  isFramed,
+  reloadOnRestore,
+  setText,
+  show,
+  wsUrl,
+} from "./core/ui.js";
 import { VERIFIED } from "./core/verified.js";
 import { ERRORS } from "./shared/errors.js";
 import { IN_SESSION, LIVE_CLAIM, orderItems } from "./shared/session.js";
@@ -84,7 +96,7 @@ const look = () => ({ mode: c.info?.mode ?? "live", kind: "owner" });
 
 const tickMark = () => el("span", { class: "tick" }, [icon(ICON_CHECK)]);
 
-/** The rows in item order, then "Add a File". Demo: any items; live: one file (radios), as a live screen shows one. */
+/** Demo: any items; live: one file (radios), as a live screen shows one. */
 function buildRows(/** @type {Entry[]} */ all, /** @type {boolean} */ add) {
   const demo = c.info?.mode === "demo";
   const entries = /** @type {Entry[]} */ (orderItems(demo ? all : all.filter((e) => e.kind === "file")));
@@ -164,17 +176,17 @@ function render() {
     demo,
     maxMB: wholeMB(c.maxBytes),
     match: c.info?.match ?? null,
-    // This tab holds the sid of the demo screen it claimed: it came from /s by "Approve on This Device" and can go back.
     back: home(),
     nocode,
     live: !!v && IN_SESSION.includes(v.state),
+    revoking: c.retry === endSession,
     list: fromList(),
   });
 
   back.setAttribute("href", home() ? "/s?mode=demo" : "/");
   // One way out: a result has Done, a dead code Enter the Code, a session Revoke. A typed /a was never a code.
   const exit = copy.actions.some((a) => EXITS.includes(a.id));
-  show(back, nocode || !exit);
+  show(back, (nocode || !exit) && !c.approving);
   show(skelTitle, key === "checking");
   show(title, key !== "checking");
   setText(title, copy.title);
@@ -268,9 +280,7 @@ filePick.addEventListener("change", () => {
 });
 
 function retry() {
-  const run = c.retry;
-  c.error = null;
-  c.retry = null;
+  const run = retryStep(c);
   render();
   run?.();
 }
@@ -287,7 +297,7 @@ async function approve() {
   render();
 }
 
-/** A phone that scanned with nothing to choose from sends its own file: the server turns the claim into a guest at the first byte. */
+/** The server turns the claim into a guest at the first byte. */
 function chooseFile() {
   c.drop = "choose";
   render();
@@ -343,7 +353,7 @@ function cancel() {
   render();
 }
 
-/** The server drops the pairing before it answers, so its `pairing_invalid` push arrives first: `canceling` keeps it from showing as expired. */
+/** `canceling` keeps the server's own `pairing_invalid` push, which arrives first, from showing as expired. */
 async function cancelPairing() {
   c.upload?.abort();
   c.canceling = true;
@@ -462,6 +472,7 @@ function start() {
     return;
   }
   render();
+  reloadOnRestore();
   setInterval(countDown, 1000);
   const pid = pids.get(PID_KEY);
   if (bootCode) claim(bootCode);

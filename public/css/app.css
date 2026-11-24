@@ -187,6 +187,9 @@
   font-size: 19px;
   color: var(--muted);
 }
+[data-mode="ended"] .line {
+  margin-top: 16px;
+}
 .line:empty {
   display: none;
 }
@@ -372,7 +375,8 @@ main:has(> .side:not([hidden])) #stage {
 .is-ended .column {
   text-align: center;
 }
-@media (min-width: 640px) {
+/* A short landscape window keeps the band instead: centering padding would push the buttons past the fold. */
+@media (min-width: 640px) and (min-height: 600px) {
   .page-phone .column {
     justify-content: center;
     padding-bottom: calc(var(--inset) + var(--frame-h) + 24px);
@@ -853,6 +857,9 @@ main:has(> .side:not([hidden])) #stage {
 .scope {
   color: var(--muted);
 }
+.body {
+  text-wrap: pretty;
+}
 .body:empty {
   display: none;
 }
@@ -945,7 +952,7 @@ progress.bar::-moz-progress-bar {
   margin-top: 24px;
 }
 /* Only the phone's list keeps its buttons in reach; /code's Continue stays under the field. */
-@media (max-width: 639.98px) {
+@media (max-width: 639.98px), (max-height: 599.98px) {
   .column > .actions {
     position: sticky;
     bottom: 0;
@@ -955,7 +962,7 @@ progress.bar::-moz-progress-bar {
   }
 }
 /* The band's fill is .glass (a.html); from 640 the buttons sit on the page, so the band has none. */
-@media (min-width: 640px) {
+@media (min-width: 640px) and (min-height: 600px) {
   .column > .actions.glass {
     background: none;
     -webkit-backdrop-filter: none;

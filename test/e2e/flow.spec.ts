@@ -330,6 +330,8 @@ test.describe("pairing flow", () => {
     await expect(heading(screen.page)).toHaveText("Session Ended");
     // The demo says why it ended, the moment that proves Revoke.
     await expect(screen.page.locator("#line")).toHaveText("Revoked from the phone.");
+    // 16 under the title, as the phone's own Session Ended.
+    await expect(screen.page.locator("#line")).toHaveCSS("margin-top", "16px");
     await expect(screen.page.locator("#items")).toBeHidden();
     await expect(screen.page.getByRole("button", { name: "End", exact: true })).toBeHidden();
     // The demo's one way on: the waitlist.
@@ -355,7 +357,7 @@ test.describe("pairing flow", () => {
     await phone.context.close();
   });
 
-  test("PAIR-12 a Revoke that fails offline keeps Revoke and the pid, and shows no Back that would strand the session", async ({
+  test("PAIR-12 a Revoke that fails offline keeps Revoke alone and the pid, and shows no Back that would strand the session", async ({
     browser,
   }) => {
     const screen = await demoScreen(browser);
@@ -366,7 +368,8 @@ test.describe("pairing flow", () => {
     await phone.page.getByRole("button", { name: "Revoke" }).click();
     await expect(heading(phone.page)).toHaveText("You're Offline");
     await expect(phone.page.getByRole("button", { name: "Revoke" })).toBeVisible();
-    await expect(phone.page.getByRole("button", { name: "Try Again" })).toBeVisible();
+    // Revoke alone retries its own failure.
+    await expect(phone.page.getByRole("button", { name: "Try Again" })).toHaveCount(0);
     await expect(phone.page.getByRole("link", { name: "Back", exact: true })).toBeHidden();
     expect(await phone.page.evaluate(() => localStorage.getItem("bloop.pid"))).not.toBeNull();
     await phone.page.unroute("**/api/end");
@@ -931,6 +934,25 @@ test.describe("screen and phone layout", () => {
     await expect(page.locator("#b-back")).toBeVisible();
     await expect(page.locator(".foot")).toBeVisible();
     await context.close();
+  });
+
+  test("a phone held landscape keeps Approve (NN) in view, and a short approved record never scrolls into padding", async ({
+    browser,
+  }) => {
+    const screen = await demoScreen(browser);
+    const code = await typedCodeOf(screen.page);
+    const context = await browser.newContext({ viewport: { width: 844, height: 390 } });
+    const page = await context.newPage();
+    await page.goto(`/a?c=${code}`);
+    const approve = page.getByRole("button", { name: /^Approve/ });
+    await expect(approve).toBeInViewport({ ratio: 1 });
+    await approve.click();
+    await expect(heading(page)).toHaveText("Approved for Demo Room");
+    await page.setViewportSize({ width: 834, height: 560 });
+    await expect(page.getByRole("button", { name: "Revoke" })).toBeInViewport({ ratio: 1 });
+    expect(await page.evaluate("document.documentElement.scrollHeight")).toBeLessThanOrEqual(560);
+    await context.close();
+    await screen.context.close();
   });
 
   test("a dead code centers title, line and Enter the Code as one group", async ({ browser }) => {

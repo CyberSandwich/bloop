@@ -366,7 +366,7 @@ describe("phone copy", () => {
     const f = { room: "Room 2.14", file: "Talk.pptx", maxMB: 50 };
     expect(phoneCopy("guest_choose", f)).toMatchObject({
       title: "Send a File to Room 2.14?",
-      body: "Choose one .pptx or .pdf file from this phone. Only this file goes to the screen.",
+      body: "Choose one .pptx or .pdf file from this phone. Only\u00a0this file goes to the screen.",
     });
     expect(phoneCopy("guest_choose", f).actions.map((a) => a.label)).toEqual(["Cancel", "Choose File"]);
     expect(phoneCopy("guest_confirm", f)).toMatchObject({
@@ -510,6 +510,12 @@ describe("phone copy", () => {
       const labels = (live: boolean) => phoneCopy(key, { room: "Room", file: null, live }).actions.map((a) => a.id);
       expect(labels(true), key).toEqual(["end", "retry"]);
       expect(labels(false), key).toEqual(["retry"]);
+      // Revoke's own failure: Revoke alone retries it, never two buttons for one action.
+      const revoking = phoneCopy(key, { room: "Room", file: null, live: true, revoking: true });
+      expect(
+        revoking.actions.map((a) => a.id),
+        key,
+      ).toEqual(["end"]);
     }
   });
 

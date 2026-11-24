@@ -25,7 +25,6 @@ export function screenCopy(key, f) {
       return { ...base, heading: f.room, controls: f.demo ? ["here"] : [] };
     case "scanned":
     case "choosing":
-      // The room's name stays, so nothing moves; the line is the status. A browser that holds the claim finishes there.
       return {
         ...base,
         heading: f.room,
@@ -117,7 +116,6 @@ export function screenCopy(key, f) {
         line: "Open this page there, then scan its code with your phone.",
       };
     case "demo_open":
-      // The viewer: the item's name heads the stage; Present and Download belong to the item, not the state.
       return { ...base, heading: file, controls: END };
   }
 }
@@ -155,7 +153,7 @@ const BACK = {
 };
 /** In an approved session a failure keeps Revoke. */
 const retryActions = (/** @type {PhoneFacts} */ f) =>
-  /** @type {PhoneAction[]} */ (f.live ? [REVOKE, TRY_AGAIN] : [TRY_AGAIN]);
+  /** @type {PhoneAction[]} */ (f.revoking ? [REVOKE] : f.live ? [REVOKE, TRY_AGAIN] : [TRY_AGAIN]);
 /** Revoke, or with the way back to the demo screen after it, which then takes the primary. */
 const revokeActions = (/** @type {PhoneFacts} */ f) =>
   /** @type {PhoneAction[]} */ (f.back ? [REVOKE, BACK] : [REVOKE]);
@@ -254,7 +252,7 @@ export function phoneCopy(key, f) {
       return {
         ...base,
         title: `Send a File to ${f.room}?`,
-        body: `Choose one .pptx or .pdf file from this ${f.back ? "device" : "phone"}. Only this file goes to the screen.`,
+        body: `Choose one .pptx or .pdf file from this ${f.back ? "device" : "phone"}. Only\u00a0this file goes to the screen.`,
         actions: [CANCEL, PICK],
       };
     case "guest_confirm":

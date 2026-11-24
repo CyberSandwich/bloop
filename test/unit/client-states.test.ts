@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
-import { adopt, leave, liveClaim, onRefusal, phoneKey, screenKey } from "../../public/js/core/states.js";
+import { adopt, leave, liveClaim, onRefusal, phoneKey, retryStep, screenKey } from "../../public/js/core/states.js";
 import { ERRORS } from "../../public/js/shared/errors.js";
 import { IN_SESSION, PAIRING_OVER } from "../../public/js/shared/session.js";
 import type { PhoneCtx, ScreenCtx } from "../../public/js/types.js";
@@ -370,5 +370,36 @@ describe("PAIR-12 Back and Done", () => {
     await first;
     expect(deps.post).toHaveBeenCalledOnce();
     expect(deps.assign).toHaveBeenCalledOnce();
+  });
+
+  it("Back whose cancel is refused (the approve landed first) or fails offline keeps the pid; Done still forgets", async () => {
+    for (const forget of [false, true]) {
+      const deps = { ...io(), post: vi.fn(async () => ({ ok: false })) };
+      await leave(at(phoneView("claimed")), deps, "/", forget);
+      expect(deps.post).toHaveBeenCalledOnce();
+      expect(deps.drop).toHaveBeenCalledTimes(forget ? 1 : 0);
+      expect(deps.assign).toHaveBeenCalledWith("/");
+    }
+  });
+});
+
+describe("Try Again", () => {
+  const failed = (view: PhoneView | null) => {
+    const run = vi.fn();
+    return { run, c: { error: "offline" as unknown, retry: run as (() => void) | null, view } };
+  };
+
+  it("before the session, clears the failure and returns the call to rerun", () => {
+    const { run, c } = failed(phoneView("choosing"));
+    expect(retryStep(c)).toBe(run);
+    expect(c).toMatchObject({ error: null, retry: null });
+  });
+
+  it("once the session is up, only clears the failure: a landed approve is never posted again", () => {
+    for (const state of IN_SESSION) {
+      const { c } = failed(phoneView(state));
+      expect(retryStep(c), state).toBeNull();
+      expect(c).toMatchObject({ error: null, retry: null });
+    }
   });
 });

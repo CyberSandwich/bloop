@@ -107,6 +107,9 @@ export function frameThrottle(/** @type {() => void} */ fn) {
 }
 
 /** True when a page is framed. The headers forbid it; this is the fallback for a browser that ignores them. */
+/** A page restored from the back-forward cache reloads: its socket and any leave under way are gone. */
+export const reloadOnRestore = () => addEventListener("pageshow", (e) => e.persisted && location.reload());
+
 export const isFramed = () => {
   try {
     return window.top !== window.self;
