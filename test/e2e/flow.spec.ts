@@ -1143,11 +1143,21 @@ test.describe("screen and phone layout", () => {
   }) => {
     const screen = await open(browser, "phone", "/s?mode=demo");
     await typedCodeOf(screen.page);
-    const card = await screen.page.locator("#qr-panel").boundingBox();
-    const hint = await screen.page.locator("#hint").boundingBox();
+    // The pane's entry animation is a transform: a box read during it is mid-flight, so wait for it to settle.
+    const settled = async (selector: string) => {
+      let last = await screen.page.locator(selector).boundingBox();
+      await expect(async () => {
+        const before = last;
+        last = await screen.page.locator(selector).boundingBox();
+        expect(last).toEqual(before);
+      }).toPass();
+      return last;
+    };
+    const card = await settled("#qr-panel");
+    const hint = await settled("#hint");
     const { phone } = await scan(browser, screen.page);
     await expect(screen.page.locator("#awaiting")).toHaveText("Waiting for Approval");
-    expect(await screen.page.locator("#qr-panel").boundingBox()).toEqual(card);
+    expect(await settled("#qr-panel")).toEqual(card);
     const awaiting = await screen.page.locator("#awaiting").boundingBox();
     expect(Math.round(awaiting?.y ?? -1)).toBe(Math.round(hint?.y ?? -2));
     expect(await screen.page.evaluate("document.scrollingElement.scrollHeight <= innerHeight")).toBe(true);
