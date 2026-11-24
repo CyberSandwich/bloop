@@ -1138,8 +1138,13 @@ test.describe("screen and phone layout", () => {
   }) => {
     const { screen, phone } = await viewerWith(browser);
     const page = screen.page;
+    // A part's running animations, ended or canceled (a canceled one's `finished` rejects).
+    const settle = (id: string) =>
+      page.evaluate(
+        `Promise.all(document.getElementById('${id}').getAnimations().map((a) => a.finished.catch(() => {})))`,
+      );
     // The viewer's own entry (scanned to viewer) can still be running: let it end, then count any that start.
-    await page.evaluate("Promise.all(document.getElementById('pane').getAnimations().map((a) => a.finished))");
+    await settle("pane");
     await page.evaluate(
       "window.__paneStarts = 0; document.getElementById('pane').addEventListener('animationstart', () => window.__paneStarts++)",
     );
@@ -1148,6 +1153,8 @@ test.describe("screen and phone layout", () => {
     await expect(page.locator("#dots")).toBeVisible();
     const dots = async () => page.locator("#dots").textContent();
     const was = await dots();
+    // The page count appearing is a shape change: that glide may still run when the next switch comes.
+    await settle("controls");
     await page.evaluate("window.__controls = document.getElementById('controls')");
     await sidebarItem(page, "Sample deck.pdf").click();
     await expect(heading(page)).toHaveText("Sample deck.pdf");
