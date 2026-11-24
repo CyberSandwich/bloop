@@ -311,6 +311,10 @@ export function createViewer(deps) {
     present(false);
   }
 
+  /** Pages and a loaded image; a link or a file card has nothing to present. */
+  const presentable = () => !!pages() || !!images.get(at)?.naturalWidth;
+  /** @param {{kind: string, name?: string, title?: string} | undefined} item */
+  const itemId = (item) => (item ? `${item.kind}:${item.name ?? item.title}` : null);
   let sleep = 0;
   /** @type {HTMLElement | null} */
   let opener = null;
@@ -370,7 +374,10 @@ export function createViewer(deps) {
   view.addEventListener(
     "click",
     (e) => {
-      if (swiped) e.stopPropagation();
+      if (swiped) {
+        e.stopPropagation();
+        e.preventDefault();
+      }
       swiped = false;
     },
     true,
@@ -395,15 +402,19 @@ export function createViewer(deps) {
         shown = null;
         return;
       }
+      const id = shown ? itemId(items()[at]) : null;
       shown = nextView;
       parked = false;
       const key = JSON.stringify(nextView.items);
       if (key !== built) {
         built = key;
         framed = null;
-        at = Math.min(at, nextView.items.length - 1);
+        // A file joining the list ahead of the selection must not change what is on screen.
+        const moved = nextView.items.findIndex((x) => itemId(x) === id);
+        at = moved >= 0 ? moved : Math.max(0, Math.min(at, nextView.items.length - 1));
         buildList();
       }
+      if (presenting() && !presentable()) present(false);
       paint();
     },
 
@@ -435,8 +446,7 @@ export function createViewer(deps) {
     item: () => (shown ? (items()[at] ?? null) : null),
     at: () => at,
 
-    /** Pages and a loaded image; a link or a file card has nothing to present. */
-    presentable: () => !!pages() || !!images.get(at)?.naturalWidth,
+    presentable,
     present,
   };
 }
