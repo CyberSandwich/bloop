@@ -95,8 +95,11 @@ async function expectOneLinePill(page: Page) {
   const dots = await page.locator("#dots").boundingBox();
   const pill = await page.locator("#controls").boundingBox();
   expect(dots?.height ?? 99).toBeLessThanOrEqual(24);
-  expect(pill?.height).toBe(60);
-  expect((dots?.y ?? 0) >= (pill?.y ?? 0) && (dots?.y ?? 0) + (dots?.height ?? 0) <= (pill?.y ?? 0) + 60).toBe(true);
+  // Boxes are sub-pixel (59.99997 on CI runners): compare to the nearest pixel, never exactly.
+  expect(Math.round(pill?.height ?? 0)).toBe(60);
+  expect(
+    (dots?.y ?? 0) >= (pill?.y ?? 0) - 0.5 && (dots?.y ?? 0) + (dots?.height ?? 0) <= (pill?.y ?? 0) + 60 + 0.5,
+  ).toBe(true);
 }
 
 /** Records every window.open and every navigation away, so a test can assert the demo launches nothing. */
