@@ -21,12 +21,8 @@
 html:has(.page-site) {
   scroll-padding-top: 96px;
 }
-/* The robin wash: one stop pair and a midpoint hint; extra linear stops showed as rings. */
 .page-site {
-  background:
-    radial-gradient(ellipse 70% 640px at 50% 0, color-mix(in srgb, var(--robin) 32%, transparent), 30%, transparent)
-    no-repeat,
-    var(--paper);
+  background: var(--paper);
 }
 .page-site :where(.doc, .faq) a:not(.btn) {
   text-decoration: underline;
