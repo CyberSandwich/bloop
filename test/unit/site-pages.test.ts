@@ -669,7 +669,7 @@ describe("stage 1 wording and pictures", () => {
     );
   });
 
-  it("/security and /privacy name bloop's own Disconnect first, as the code does it, then My Apps and Entra", () => {
+  it("AUTH-07 copy: /security and /privacy name bloop's own Disconnect first, as the code does it, then My Apps and Entra", () => {
     const text = visibleText(read("public/security.html"));
     // The claim's ground: the phone's button, and a route that deletes the grant and every session at once.
     expect(read("public/js/core/copy.js")).toMatch(/id: "disconnect", label: "Disconnect OneDrive"/);
