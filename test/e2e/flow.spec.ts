@@ -259,7 +259,7 @@ test.describe("pairing flow", () => {
 
     await expect(phone.page).toHaveURL(/\/a$/);
     await expect(heading(phone.page)).toHaveText(DEMO.title);
-    await expect(screen.page.locator("#line")).toHaveText(/^Your phone shows \d{2}\.$/);
+    await expect(screen.page.locator("#line")).toHaveText(/^Waiting for Approval\. Your phone shows \d{2}\.$/);
     await screen.context.close();
     await phone.context.close();
   });
@@ -289,7 +289,7 @@ test.describe("pairing flow", () => {
   }) => {
     const screen = await demoScreen(browser);
     const { phone } = await scan(browser, screen.page);
-    await expect(screen.page.locator("#line")).toHaveText(/^Your phone shows \d{2}\.$/);
+    await expect(screen.page.locator("#line")).toHaveText(/^Waiting for Approval\. Your phone shows \d{2}\.$/);
     await phone.page.getByRole("link", { name: "Back" }).click();
     await expect(phone.page).toHaveURL("/");
     await expect(heading(screen.page)).toHaveText("Demo Room");
@@ -535,7 +535,7 @@ test.describe("pairing flow", () => {
     const screen = await demoScreen(browser);
     const { phone } = await scan(browser, screen.page);
     await screen.page.reload();
-    await expect(screen.page.locator("#line")).toHaveText(/^Your phone shows \d{2}\.$/);
+    await expect(screen.page.locator("#line")).toHaveText(/^Waiting for Approval\. Your phone shows \d{2}\.$/);
     await phone.page.reload();
     await expect(heading(phone.page)).toHaveText(DEMO.title);
     await screen.context.close();
@@ -678,7 +678,7 @@ test.describe("guest drop", () => {
     await expect(heading(page)).toHaveText("This File Can't Be Sent");
     await page.getByRole("button", { name: "Cancel" }).click();
     await expect(heading(page)).toHaveText("Demo Room");
-    await expect(screen.page.locator("#line")).toHaveText(/^Your phone shows \d{2}\.$/);
+    await expect(screen.page.locator("#line")).toHaveText(/^Waiting for Approval\. Your phone shows \d{2}\.$/);
     await context.close();
     await screen.context.close();
   });
@@ -691,7 +691,7 @@ test.describe("guest drop", () => {
     await phone.page.getByRole("button", { name: "Add a File" }).click();
     await phone.page.getByRole("button", { name: "Cancel" }).click();
     await expect(heading(phone.page)).toHaveText("Demo Room");
-    await expect(screen.page.locator("#line")).toHaveText(/^Your phone shows \d{2}\.$/);
+    await expect(screen.page.locator("#line")).toHaveText(/^Waiting for Approval\. Your phone shows \d{2}\.$/);
     await phone.page.getByRole("button", { name: "Cancel" }).click();
     await expect(heading(phone.page)).toHaveText("Approval Canceled");
     await expect(heading(screen.page)).toHaveText("Demo Room");
@@ -1222,12 +1222,21 @@ test.describe("screen and phone layout", () => {
       );
     // The viewer's own entry (scanned to viewer) can still be running: let it end, then count any that start.
     await settle("pane");
+    // Each item's image arrives after its click and reshapes the frame (a legitimate glide): load both first,
+    // so the measured switch is between two ready items.
+    const loaded = page.locator("#frame .loader");
+    await sidebarItem(page, "Sample deck.pdf").click();
+    await expect(page.locator(STAGED)).toBeVisible();
+    await expect(loaded).toHaveCount(0);
+    await settle("pane");
     await page.evaluate(
       "window.__paneStarts = 0; document.getElementById('pane').addEventListener('animationstart', () => window.__paneStarts++)",
     );
     await sidebarItem(page, "Sample deck.pptx").click();
     await expect(heading(page)).toHaveText("Sample deck.pptx");
     await expect(page.locator("#dots")).toBeVisible();
+    await expect(page.locator(STAGED)).toBeVisible();
+    await expect(loaded).toHaveCount(0);
     const dots = async () => page.locator("#dots").textContent();
     const was = await dots();
     // The page count appearing is a shape change: that glide may still run when the next switch comes.
@@ -1630,7 +1639,7 @@ test.describe("screen page", () => {
     const svg = screen.page.locator("#qr");
     await expect(svg).toHaveAttribute("viewBox", "0 0 41 41");
     const label = (await svg.getAttribute("aria-label")) ?? "";
-    expect(label).toContain("QR code. Scan it with your phone camera to open bloop.");
+    expect(label).toContain("QR code, scan with your phone, or enter the code");
     expect(label).toContain([...code.slice(0, 3)].join(" "));
     expect(await screen.page.locator("#qr path").count()).toBe(1);
     const box = await svg.boundingBox();
