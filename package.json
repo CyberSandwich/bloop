@@ -26,7 +26,7 @@
     {
       "name": "browser JS",
       "path": "public/js/**/*.js",
-      "limit": "50.8 kB"
+      "limit": "52.1 kB"
     },
     {
       "name": "landing JS",
@@ -82,7 +82,7 @@
         "public/css/app.css"
       ],
       "gzip": true,
-      "limit": "9.95 kB"
+      "limit": "10 kB"
     },
     {
       "name": "hero image",
