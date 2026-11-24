@@ -12,6 +12,9 @@ afterAll(() => wrangler?.stop());
 const APP_CSP =
   "default-src 'none'; script-src 'self'; style-src 'self'; img-src 'self'; font-src 'self'; connect-src 'self'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'; require-trusted-types-for 'script'; trusted-types 'none'; upgrade-insecure-requests";
 
+// The screen page alone may play a guest video, from its own origin (VID-01).
+const SCREEN_CSP = APP_CSP.replace("font-src 'self';", "font-src 'self'; media-src 'self';");
+
 describe.each([
   ["/s", "bloop: Screen", "/js/screen.js"],
   ["/a", "bloop: Approve", "/js/phone.js"],
@@ -22,7 +25,7 @@ describe.each([
     expect(res.status).toBe(200);
     expect(res.headers.get("Content-Type")).toContain("text/html");
     const csp = res.headers.get("Content-Security-Policy");
-    expect(csp).toBe(APP_CSP);
+    expect(csp).toBe(path === "/s" ? SCREEN_CSP : APP_CSP);
     expect(csp).toContain("frame-ancestors 'none'");
     expect(res.headers.get("X-Frame-Options")).toBe("DENY");
     expect(res.headers.get("Referrer-Policy")).toBe("no-referrer");

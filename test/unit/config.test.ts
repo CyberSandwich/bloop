@@ -116,9 +116,9 @@ describe("config", () => {
     expect(problems({ ...PROD, DEMO_ENABLED: undefined }).join()).toContain("DEMO_ENABLED");
   });
 
-  it("DROP-05 demo cap: the demo drop cap defaults to 10 MB and the session length is bounded by the live one", () => {
+  it("DROP-05 demo cap: the demo drop cap defaults to 25 MB and the session length is bounded by the live one", () => {
     const d = parseConfig(PROD);
-    expect(d.ok && d.config.demoGuestMaxBytes).toBe(10_485_760);
+    expect(d.ok && d.config.demoGuestMaxBytes).toBe(26_214_400);
     expect(d.ok && d.config.demoSessionMinutes).toBe(10);
     expect(problems({ ...PROD, DEMO_GUEST_MAX_BYTES: "0" }).join()).toContain("DEMO_GUEST_MAX_BYTES");
   });

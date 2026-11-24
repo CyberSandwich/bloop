@@ -140,10 +140,10 @@ const schema = z
         "Guest policy for live rooms: off, open (no host, no pass) or pass (a pass is required). Every drop waits for the Open click on the screen.",
       ),
     GUEST_MAX_BYTES: int(1, PLATFORM_BODY_CAP)
-      .default(52_428_800)
+      .default(94_371_840)
       .describe("Largest guest upload in bytes; at most the platform's 100 MB request body cap."),
     DEMO_GUEST_MAX_BYTES: int(1, PLATFORM_BODY_CAP)
-      .default(10_485_760)
+      .default(26_214_400)
       .describe("Largest guest upload in a demo room, in bytes."),
     DEMO_MAX_CONCURRENT: int(1, 10_000).default(100).describe("Demo screens alive at once, across all visitors."),
     DEMO_MAX_PER_IP: int(1, 10_000)

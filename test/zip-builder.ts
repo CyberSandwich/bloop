@@ -128,6 +128,20 @@ export const validPng = (): Uint8Array =>
     new Uint8Array([0xae, 0x42, 0x60, 0x82]),
   ]);
 
+const u32be = (n: number) => new Uint8Array([(n >>> 24) & 255, (n >>> 16) & 255, (n >>> 8) & 255, n & 255]);
+const box = (type: string, payload: Uint8Array) => concat([u32be(8 + payload.length), enc.encode(type), payload]);
+
+/** A minimal ISO base media file: an `ftyp` box with the given major brand, then `moov` and `mdat` boxes. */
+export const validVideo = (brand = "isom", payloadBytes = 64): Uint8Array =>
+  concat([
+    box("ftyp", concat([enc.encode(brand), u32be(0), enc.encode(brand)])),
+    box("moov", new Uint8Array(16)),
+    box(
+      "mdat",
+      Uint8Array.from({ length: payloadBytes }, (_, i) => i % 251),
+    ),
+  ]);
+
 export { concat };
 
 /** A RangeReader over a byte array, for the pure validators. */

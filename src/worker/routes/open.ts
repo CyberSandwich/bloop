@@ -57,12 +57,14 @@ function guestResolved(used: UsedLink, drop: GuestDrop): Resolved {
   return {
     name: file.name,
     type: file.type,
-    size: null,
+    size: file.size ?? null,
     url: null,
-    body: async () => {
+    body: async (range) => {
       try {
-        const object = await drop.read(file.ref);
-        return object ? { ok: true, stream: object.body, length: object.size } : { ok: false, error: "file_not_found" };
+        const object = await drop.read(file.ref, range);
+        return object
+          ? { ok: true, stream: object.body, length: range ? range.length : object.size }
+          : { ok: false, error: "file_not_found" };
       } catch (e) {
         // The month's R2 read cap: the open path answers it as `upstream_failed` (502), the existing "the file's store cannot serve it now" state.
         if (e instanceof QuotaExhausted) return { ok: false, error: "source_throttled" };
@@ -94,6 +96,9 @@ async function serveLink(request: Request, env: Env, config: Config, match: URLP
   const token = match.pathname.groups.token ?? "";
   const parsed = parseToken(token);
   if (!parsed) return fail("link_unknown");
+  // A player reads a video in many ranges: the per-IP limit above does not bound one screen's reads (VID-02).
+  const sessionLimited = await limited(env.RL_FETCH, request, config, parsed.screenRef);
+  if (sessionLimited) return sessionLimited;
   const used = await screenStub(env, parsed.screenRef).useLink(await sha256Hex(token), await ipHash(request, config), {
     method: request.method,
     client: clientClass(request.headers.get("User-Agent")),

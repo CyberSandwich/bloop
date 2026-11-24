@@ -96,7 +96,15 @@ export function hostOf(url) {
   }
 }
 
-const KINDS = { pptx: "PowerPoint", pdf: "PDF", jpg: "JPEG image", png: "PNG image", webp: "WebP image" };
+const KINDS = {
+  pptx: "PowerPoint",
+  pdf: "PDF",
+  jpg: "JPEG image",
+  png: "PNG image",
+  webp: "WebP image",
+  mp4: "MP4 video",
+  mov: "QuickTime video",
+};
 
 /**
  * A row's second line: the kind, then the size when the item has bytes, then the date only when the source gave one.

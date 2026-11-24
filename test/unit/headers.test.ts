@@ -39,7 +39,7 @@ const lower = (headers: Record<string, string>) =>
 
 const pages: [string, Policy, boolean][] = [
   ["/", "landing", false],
-  ["/s", "app", true],
+  ["/s", "screen", true],
   ["/a", "app", false],
   ["/code", "app", false],
   ["/g", "app", false],
