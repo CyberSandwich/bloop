@@ -67,8 +67,7 @@ async function matchRoute(request: Request, env: Env, url: URL): Promise<{ respo
 
 export default {
   async fetch(request, env): Promise<Response> {
-    const config = configFor(env);
-    const away = config.ok ? offOrigin(request, config.config.origin) : null;
+    const away = offOrigin(request, env.PUBLIC_ORIGIN);
     if (away) return away;
     if (!DYNAMIC.test(new URL(request.url).pathname)) return env.ASSETS.fetch(request);
     const { response, policy } = await dispatch(request, env);

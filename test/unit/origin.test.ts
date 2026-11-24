@@ -10,6 +10,14 @@ describe("offOrigin", () => {
     expect(offOrigin(new Request(`${ORIGIN}/api/screens`, { method: "POST" }), ORIGIN)).toBeNull();
   });
 
+  it("steps aside when PUBLIC_ORIGIN is not a URL, which the config check reports", () => {
+    expect(offOrigin(new Request(`${OLD}/`), "not a url")).toBeNull();
+  });
+
+  it("compares origins, so a trailing slash in the variable does not matter", () => {
+    expect(offOrigin(new Request(`${ORIGIN}/x`), `${ORIGIN}/`)).toBeNull();
+  });
+
   it.each([
     [`${OLD}/`, `${ORIGIN}/`],
     [`${OLD}/a?c=ABC123`, `${ORIGIN}/a?c=ABC123`],
