@@ -57,6 +57,9 @@ class Node {
   matches() {
     return false;
   }
+  focus() {
+    doc.activeElement = this;
+  }
   hidePopover() {}
   getBoundingClientRect() {
     return { left: 0, top: 0, bottom: 0 };
@@ -101,6 +104,7 @@ const exitFullscreen = vi.fn(() => Promise.resolve());
 const doc = {
   body: new Node("body"),
   fullscreenElement: null as Node | null,
+  activeElement: null as Node | null,
   fullscreenEnabled: true,
   exitFullscreen,
   getElementById: (id: string) => byId.get(id) ?? null,
@@ -280,6 +284,17 @@ describe("presenting is one layout, with or without browser full screen", () => 
     expect(doc.body.classes.has("is-presenting")).toBe(true);
     expect(el("b-stop").hidden).toBe(false);
     expect(doc.fullscreenElement).toBeNull();
+  });
+
+  it("focus moves to Stop Presenting and returns to the button that started it", () => {
+    const { v, el } = setup();
+    v.render(deckView);
+    const opener = el("next");
+    opener.focus();
+    v.present(true);
+    expect(doc.activeElement).toBe(el("b-stop"));
+    v.present(false);
+    expect(doc.activeElement).toBe(opener);
   });
 
   it("where full screen exists, Present joins it; Stop Presenting and Escape both leave", () => {

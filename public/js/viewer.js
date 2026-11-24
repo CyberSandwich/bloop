@@ -312,12 +312,18 @@ export function createViewer(deps) {
   }
 
   let sleep = 0;
+  /** @type {HTMLElement | null} */
+  let opener = null;
   /** The one way in and out of the presenting layout (the item on black, the chrome gone): the page's own, which
    * browser full screen then joins where it exists, so both look the same. */
   function present(/** @type {boolean} */ on) {
     if (on === presenting()) return;
+    if (on) opener = /** @type {HTMLElement | null} */ (document.activeElement);
     body.classList.toggle("is-presenting", on);
     show(stop, on);
+    // Focus follows the layout, so it never drops to the body when the button it was on is hidden.
+    if (on) stop.focus?.({ preventScroll: true });
+    else opener?.focus?.({ preventScroll: true });
     if (on) {
       awake();
       // A Stop that lands before the browser grants it must still leave full screen.

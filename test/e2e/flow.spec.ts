@@ -357,13 +357,16 @@ test.describe("pairing flow", () => {
     // The demo's one way on: the waitlist.
     await expect(screen.page.getByRole("link", { name: "Join the Waitlist" })).toBeVisible();
     // Session Ended, its line and the waitlist link sit at the true center of the viewport, as one group.
-    const box = await heading(screen.page).boundingBox();
-    const last = await screen.page.getByRole("link", { name: "Join the Waitlist" }).boundingBox();
-    const view = screen.page.viewportSize();
-    expect(Math.abs((box?.x ?? 0) + (box?.width ?? 0) / 2 - (view?.width ?? 0) / 2)).toBeLessThan(2);
-    expect(Math.abs(((box?.y ?? 0) + (last?.y ?? 0) + (last?.height ?? 0)) / 2 - (view?.height ?? 0) / 2)).toBeLessThan(
-      4,
-    );
+    // The group settles with the stage's fade, so it is polled.
+    await expect(async () => {
+      const box = await heading(screen.page).boundingBox();
+      const last = await screen.page.getByRole("link", { name: "Join the Waitlist" }).boundingBox();
+      const view = screen.page.viewportSize();
+      expect(Math.abs((box?.x ?? 0) + (box?.width ?? 0) / 2 - (view?.width ?? 0) / 2)).toBeLessThan(2);
+      expect(
+        Math.abs(((box?.y ?? 0) + (last?.y ?? 0) + (last?.height ?? 0)) / 2 - (view?.height ?? 0) / 2),
+      ).toBeLessThan(4);
+    }).toPass();
     await expectNoAxeViolations(screen.page);
     await expectNoAxeViolations(phone.page);
 
@@ -903,7 +906,19 @@ test.describe("screen and phone layout", () => {
       await phone.page.getByRole("button", { name: "Approve" }).click();
       for (const name of ["Sample deck.pptx", "Sample deck.pdf", "Dog.jpg"]) {
         await sidebarItem(page, name).click();
-        await expectPillUnder(page, page.locator("#frame img").first());
+        if (name === "Dog.jpg" && viewport.width > 1000) {
+          // A tall stage gives the photo a stack beside it or under the list (placement is pinned elsewhere).
+          const img = page.locator("#frame img").first();
+          await expect(img).toBeVisible();
+          await expect(async () => {
+            const [item, pill] = await Promise.all([img.boundingBox(), page.locator("#controls").boundingBox()]);
+            const apart =
+              (pill?.y ?? 0) >= (item?.y ?? 0) + (item?.height ?? 0) ||
+              (pill?.x ?? 0) >= (item?.x ?? 0) + (item?.width ?? 0) ||
+              (pill?.x ?? 0) + (pill?.width ?? 0) <= (item?.x ?? 0);
+            expect(apart).toBe(true);
+          }).toPass();
+        } else await expectPillUnder(page, page.locator("#frame img").first());
       }
       await sidebarItem(page, "Sample deck.pptx").click();
       await expectOneLinePill(page);
@@ -1123,6 +1138,23 @@ test.describe("screen and phone layout", () => {
     await phone.context.close();
   });
 
+  test("at 390 a claim leaves the QR card where it was and shows Waiting for Approval in the hint's place", async ({
+    browser,
+  }) => {
+    const screen = await open(browser, "phone", "/s?mode=demo");
+    await typedCodeOf(screen.page);
+    const card = await screen.page.locator("#qr-panel").boundingBox();
+    const hint = await screen.page.locator("#hint").boundingBox();
+    const { phone } = await scan(browser, screen.page);
+    await expect(screen.page.locator("#awaiting")).toHaveText("Waiting for Approval");
+    expect(await screen.page.locator("#qr-panel").boundingBox()).toEqual(card);
+    const awaiting = await screen.page.locator("#awaiting").boundingBox();
+    expect(Math.round(awaiting?.y ?? -1)).toBe(Math.round(hint?.y ?? -2));
+    expect(await screen.page.evaluate("document.scrollingElement.scrollHeight <= innerHeight")).toBe(true);
+    await screen.context.close();
+    await phone.context.close();
+  });
+
   test("a screen shows no footer or Back before its first paint, then both", async ({ browser }) => {
     const context = await browser.newContext({ viewport: { width: 834, height: 1000 } });
     const page = await context.newPage();
@@ -1212,7 +1244,9 @@ test.describe("screen and phone layout", () => {
     await expect(heading(page)).toHaveText("Session Ended");
     const title = await heading(page).boundingBox();
     const body = await page.locator("#body").boundingBox();
-    const center = ((title?.y ?? 0) + (body?.y ?? 0) + (body?.height ?? 0)) / 2;
+    // The group ends at the line, or at the title when the ended view has none.
+    const end = body && body.height > 0 ? body.y + body.height : (title?.y ?? 0) + (title?.height ?? 0);
+    const center = ((title?.y ?? 0) + end) / 2;
     expect(Math.abs(center - 560 / 2)).toBeLessThan(24);
     await expect(page.getByRole("button", { name: "Done" })).toBeInViewport({ ratio: 1 });
     await context.close();
