@@ -90,17 +90,21 @@ const DAY_MS = 86_400_000;
 export const MAX_RANGE_DAYS = 366;
 export const DEFAULT_RANGE_DAYS = 30;
 
-/** `from` and `to` are inclusive days; the result is the half-open `[from, to)` in ms. Null when invalid. */
+/**
+ * `from` and `to` are inclusive days; the result is the half-open `[from, to)` in ms. Null when invalid.
+ * `fileLabel` is built from the parsed days, never from input, so it is safe in a Content-Disposition filename.
+ */
 export function exportRange(
   from: string | null,
   to: string | null,
   now: number,
-): { from: number; to: number; label: string } | null {
+): { from: number; to: number; label: string; fileLabel: string } | null {
   const end = to === null ? Math.floor(now / DAY_MS) * DAY_MS + DAY_MS : parseDay(to);
   if (end === null) return null;
   const endExclusive = to === null ? end : end + DAY_MS;
   const start = from === null ? endExclusive - DEFAULT_RANGE_DAYS * DAY_MS : parseDay(from);
   if (start === null || start >= endExclusive || endExclusive - start > MAX_RANGE_DAYS * DAY_MS) return null;
-  const label = `${new Date(start).toISOString().slice(0, 10)}..${new Date(endExclusive - DAY_MS).toISOString().slice(0, 10)}`;
-  return { from: start, to: endExclusive, label };
+  const first = new Date(start).toISOString().slice(0, 10);
+  const last = new Date(endExclusive - DAY_MS).toISOString().slice(0, 10);
+  return { from: start, to: endExclusive, label: `${first}..${last}`, fileLabel: `${first}_${last}` };
 }

@@ -49,7 +49,7 @@ async function exportData(request: Request, env: Env, config: Config): Promise<R
 
   const headers = {
     "Content-Type": FORMATS[kind],
-    "Content-Disposition": `attachment; filename="bloop-${data}-${range.label.replace("..", "_")}.${format}"`,
+    "Content-Disposition": `attachment; filename="bloop-${data}-${range.fileLabel}.${format}"`,
   };
   if (data === "metrics") {
     const rows = await metricsFor(env).summary(range.from, range.to);

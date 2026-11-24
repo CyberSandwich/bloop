@@ -66,6 +66,7 @@ describe("export range", () => {
     const r = exportRange("2026-03-01", "2026-03-03", now);
     expect(r).toMatchObject({ from: Date.parse("2026-03-01T00:00:00Z"), to: Date.parse("2026-03-04T00:00:00Z") });
     expect(r?.label).toBe("2026-03-01..2026-03-03");
+    expect(r?.fileLabel).toBe("2026-03-01_2026-03-03");
     const d = exportRange(null, null, now);
     expect(d?.to).toBe(Date.parse("2026-03-11T00:00:00Z"));
     expect(d && d.to - d.from).toBe(30 * DAY);
