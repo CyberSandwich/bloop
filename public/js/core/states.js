@@ -121,7 +121,8 @@ export function phoneKey(c) {
   // A result is final: a refusal pushed after it (the pairing is gone by then) never replaces it.
   if (c.canceled || (v?.state === "ended" && v.endReason === "canceled")) return "canceled";
   if (v?.state === "ended") return "ended";
-  if (c.error) return c.error;
+  // A re-posted approve that already landed reads as taken; the session's own view, once pushed, wins over it.
+  if (c.error && !(c.error === "taken" && v && IN_SESSION.includes(v.state))) return c.error;
   if (!c.info) return "checking";
   if (v) {
     if (v.state === "waiting" || v.state === "closed") return "expired";

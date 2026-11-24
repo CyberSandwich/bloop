@@ -232,6 +232,17 @@ describe("phone state to view mapping", () => {
     expect(phoneKey(ctx({ error: "expired", view: phoneView("open") }))).toBe("expired");
   });
 
+  it("a re-posted approve that already landed reads as taken until the session's own view arrives, which wins", () => {
+    expect(phoneKey(ctx({ error: "taken", view: phoneView("choosing") }))).toBe("taken");
+    for (const state of IN_SESSION) {
+      const view = phoneView(state);
+      expect(phoneKey(ctx({ error: "taken", view })), state).toBe(phoneKey(ctx({ view })));
+      expect(["opening", "open"], state).toContain(phoneKey(ctx({ view })));
+    }
+    // Any other failure still shows over the session (offline keeps Revoke beside it).
+    expect(phoneKey(ctx({ error: "offline", view: phoneView("open") }))).toBe("offline");
+  });
+
   it("a pairing that fell back to waiting is expired", () => {
     expect(phoneKey(ctx({ view: phoneView("waiting") }))).toBe("expired");
   });

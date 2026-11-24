@@ -186,7 +186,7 @@ function render() {
   back.setAttribute("href", home() ? "/s?mode=demo" : "/");
   // One way out: a result has Done, a dead code Enter the Code, a session Revoke. A typed /a was never a code.
   const exit = copy.actions.some((a) => EXITS.includes(a.id));
-  show(back, (nocode || !exit) && !c.approving);
+  show(back, nocode || !exit);
   show(skelTitle, key === "checking");
   show(title, key !== "checking");
   setText(title, copy.title);

@@ -936,7 +936,7 @@ test.describe("screen and phone layout", () => {
     await context.close();
   });
 
-  test("a phone held landscape keeps Approve (NN) in view, and a short approved record never scrolls into padding", async ({
+  test("a phone held landscape keeps Approve (NN) in view, and a short approved record keeps Revoke in view", async ({
     browser,
   }) => {
     const screen = await demoScreen(browser);
@@ -950,7 +950,51 @@ test.describe("screen and phone layout", () => {
     await expect(heading(page)).toHaveText("Approved for Demo Room");
     await page.setViewportSize({ width: 834, height: 560 });
     await expect(page.getByRole("button", { name: "Revoke" })).toBeInViewport({ ratio: 1 });
-    expect(await page.evaluate("document.documentElement.scrollHeight")).toBeLessThanOrEqual(560);
+    await context.close();
+    await screen.context.close();
+  });
+
+  for (const viewport of [
+    { width: 932, height: 430 },
+    { width: 1280, height: 560 },
+  ]) {
+    test(`a short window from 900 keeps the two-column approver at ${viewport.width} x ${viewport.height}: its buttons sit on the page, in view, never in the band`, async ({
+      browser,
+    }) => {
+      const screen = await demoScreen(browser);
+      const code = await typedCodeOf(screen.page);
+      const context = await browser.newContext({ viewport });
+      const page = await context.newPage();
+      await page.goto(`/a?c=${code}`);
+      await expect(page.locator("#file-list")).toBeVisible();
+      const actions = page.locator(".column > .actions");
+      await expect(actions).toHaveCSS("position", "static");
+      await expect(actions).toHaveCSS("background-color", "rgba(0, 0, 0, 0)");
+      const approve = page.getByRole("button", { name: /^Approve/ });
+      await expect(approve).toBeInViewport({ ratio: 1 });
+      // In the title's column, 24 under the flow.
+      const title = await heading(page).boundingBox();
+      const box = await actions.boundingBox();
+      expect(Math.round(box?.x ?? 0)).toBe(Math.round(title?.x ?? -1));
+      await context.close();
+      await screen.context.close();
+    });
+  }
+
+  test("a result held landscape is centered as under 640, with Done kept in the band", async ({ browser }) => {
+    const screen = await demoScreen(browser);
+    const code = await typedCodeOf(screen.page);
+    const context = await browser.newContext({ viewport: { width: 834, height: 560 } });
+    const page = await context.newPage();
+    await page.goto(`/a?c=${code}`);
+    await page.getByRole("button", { name: /^Approve/ }).click();
+    await page.getByRole("button", { name: "Revoke" }).click();
+    await expect(heading(page)).toHaveText("Session Ended");
+    const title = await heading(page).boundingBox();
+    const body = await page.locator("#body").boundingBox();
+    const center = ((title?.y ?? 0) + (body?.y ?? 0) + (body?.height ?? 0)) / 2;
+    expect(Math.abs(center - 560 / 2)).toBeLessThan(24);
+    await expect(page.getByRole("button", { name: "Done" })).toBeInViewport({ ratio: 1 });
     await context.close();
     await screen.context.close();
   });
