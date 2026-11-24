@@ -159,7 +159,7 @@ for (const vp of VIEWPORTS) {
         (await page.evaluate(`(() => [...document.querySelectorAll(".rows li")].filter((li) => li.querySelector(".icon")).map((li) => {
         const range = document.createRange();
         range.selectNodeContents(li.lastChild);
-        return Math.round(range.getBoundingClientRect().left * 10) / 10;
+        return Math.round((range.getBoundingClientRect().left - li.getBoundingClientRect().left) * 10) / 10;
       }))()`)) as number[];
       expect(xs).toHaveLength(8);
       for (const x of xs) expect(Math.abs(x - (xs[0] ?? 0))).toBeLessThanOrEqual(1);
