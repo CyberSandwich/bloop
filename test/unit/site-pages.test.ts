@@ -338,10 +338,12 @@ describe("landing word caps (design.md section 13)", () => {
     expect(css).not.toMatch(/\.close-panel \{[^}]*var\(--sky\)/);
   });
 
-  it("How It Works has no visible heading: the section is a named landmark and the cards start its list", () => {
+  it("How It Works has no visible heading: the section is a named landmark, the cards start its list and the step titles are h2", () => {
     const section = between(html, /<section class="how"/, "</section>");
     expect(section).toMatch(/^<section class="how" aria-label="How It Works">\s*<ol class="steps">/);
-    expect(section).not.toMatch(/<h2/);
+    // The step titles are the section's h2s, so heading levels step by one under the h1.
+    expect(section.match(/<h2>/g)).toHaveLength(3);
+    expect(section).not.toMatch(/<h[13]/);
     expect(html).not.toContain("how-h");
   });
 
@@ -349,10 +351,10 @@ describe("landing word caps (design.md section 13)", () => {
     const steps = [...between(html, /<ol class="steps">/, "</ol>").matchAll(/<li class="step">([\s\S]*?)<\/li>/g)].map(
       (m) => m[1] ?? "",
     );
-    expect(steps.map((s) => visibleText(between(s, /<h3>/, "</h3>")))).toEqual(["Scan", "Approve", "Present"]);
+    expect(steps.map((s) => visibleText(between(s, /<h2>/, "</h2>")))).toEqual(["Scan", "Approve", "Present"]);
     for (const step of steps) expect(step).toMatch(/<span class="step-n" aria-hidden="true">\d<\/span>/);
     expect(html).not.toContain("step-device");
-    expect(steps.map((s) => visibleText(between(s, /<\/h3>\s*<p>/, "</p>")))).toEqual([
+    expect(steps.map((s) => visibleText(between(s, /<\/h2>\s*<p>/, "</p>")))).toEqual([
       "Scan the screen's QR code with your phone camera.",
       "Select your files, then tap Approve.",
       "Present immediately or download your file.",
@@ -718,7 +720,7 @@ describe("the stylesheets: base.css, then the page's own (design.md section 11)"
     const cards = [...read("public/index.html").matchAll(/<li class="step">([\s\S]*?)<\/li>/g)].map((m) => m[1] ?? "");
     expect(cards).toHaveLength(3);
     for (const card of cards) {
-      expect(card.match(/^\s*<(p|h3|div)\b/gm)).toHaveLength(3);
+      expect(card.match(/^\s*<(p|h2|div)\b/gm)).toHaveLength(3);
     }
     expect(block(".frag")).toContain("align-content: center;");
     const narrow = between(css["site.css"] ?? "", /@media \(max-width: 639\.98px\) \{\s*\.cell \{/, "\n}\n");

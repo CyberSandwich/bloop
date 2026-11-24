@@ -401,12 +401,13 @@ h3 {
   border-radius: var(--r-content);
   background: var(--surface);
 }
-.step h3 {
+.step h2 {
   display: flex;
   align-items: center;
   gap: 10px;
   margin: 0;
   font-size: 22px;
+  font-weight: 700;
   letter-spacing: -0.025em;
 }
 .step-n {
@@ -419,7 +420,7 @@ h3 {
   color: var(--paper);
   font-size: 15px;
 }
-.step h3 + p,
+.step h2 + p,
 .cell p {
   margin-top: 6px;
   color: var(--ink-2);
@@ -433,7 +434,7 @@ h3 {
   border-radius: calc(var(--r-content) - 12px);
   user-select: none;
 }
-.step h3 + p {
+.step h2 + p {
   margin-bottom: 24px;
 }
 .frag-row {
