@@ -13,7 +13,7 @@ export const MAX_BASE = 60;
  * @returns {string} 1 to `max` characters of [A-Za-z0-9-], never starting or ending with a hyphen
  */
 export function slugBase(name, max = MAX_BASE) {
-  const stem = name.replace(/\.(pptx|pdf|jpg|png|webp|mp4|mov)$/i, "");
+  const stem = name.replace(/\.(pptx|pdf|jpe?g|png|webp|mp4|mov)$/i, "");
   const ascii = stem
     .normalize("NFKD")
     .replace(/\p{M}/gu, "")

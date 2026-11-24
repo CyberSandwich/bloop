@@ -135,6 +135,9 @@ sequenceDiagram
   O->>W: OPTIONS or PROPFIND /f/token/name.pptx
   W-->>O: 405, Allow GET, HEAD
   O->>W: GET /f/token/name.pptx?OR=ProtocolHandler (query ignored)
+  W->>R: checkLink(tokenHash, ipHash)
+  R-->>W: ok(purpose) or refused(cause), nothing counted
+  W->>W: RL_FETCH per screen (per link for a view link)
   W->>R: useLink(tokenHash, ipHash)
   R-->>W: ok(fileRef) or refused(cause), fetch counted
   R-->>R: first fetch: state open, metric scan_to_open_ms
@@ -147,7 +150,7 @@ sequenceDiagram
     W-->>O: 200 streamed body, attachment, no-store
   end
 ```
-The Worker answers a `/f/` request in this order: the platform rate limit, the token's shape, the Screen object's link rules (`useLink`), the source (`resolve`, or `resolvePdf` for a PDF link), then the OpenPath answer. A token that is malformed, unknown, or from a screen that no longer exists is the same 404. A source with no download URL (the mock, guest files) streams in either mode, with `Content-Length` when the size is known. HEAD answers from the metadata and counts as a fetch, as GET does. Range requests are not supported (T3 records whether Office sends them).
+The Worker answers a `/f/` request in this order: the per-IP rate limit, the token's shape, the Screen object's link rules (`checkLink`, which counts nothing), the per-screen rate limit (per link for a view link, VID-02), the counted fetch (`useLink`), the source (`resolve`, or `resolvePdf` for a PDF link), then the OpenPath answer. A token that is malformed, unknown, or from a screen that no longer exists is the same 404. A source with no download URL (the mock, guest files) streams in either mode, with `Content-Length` when the size is known. HEAD answers from the metadata and counts as a fetch, as GET does. A video's single `Range` is answered 206 (VID-02); every other type is answered whole (T3 records whether Office sends Range).
 
 The screen reports `launched` once. If no fetch arrives within 5 s of the launch, the screen shows Download It Instead; Download mints a fresh link for the same approved file, or for the item the request names (`POST /api/screen/link`, the item's first link free, then at most 5 more), and the fetch of it moves the session to `open` with `openMode: download`, which both pages show as "PowerPoint didn't open.". There the screen also offers Show as PDF Instead, which mints the `pdf` link and opens it in a second window. A launch made without user activation also shows an Open button, whose click launches again: the browser may refuse an external-protocol launch that no gesture caused (field check T3). After a reload, an approved screen that gets no `open` frame asks for the protocol link itself. A fetch of any link, whatever its purpose, is the first accepted fetch. ADR 0003 covers the details.
 
@@ -325,7 +328,7 @@ Every state-changing route checks four things: `Origin` equals `PUBLIC_ORIGIN`; 
 | `POST /api/claim`       | 20 per 60 s per IP                                                                   | binding             |
 | failed code lookups     | 10 per 10 min per hashed IP, then 429 until the window (10 min from the first miss) ends; a global alarm at 1,000 per 10 min across all hashes (one `pair.miss_alarm` log line; it blocks nobody) | exact, Directory DO |
 | next code on one screen | 6 per min                                                                            | exact, Screen DO    |
-| `/f/`                   | 60 per 60 s per IP; then 60 per 60 s per screen (`RL_FETCH` keyed by the screen ref), after the Screen object accepts the link; per link: 10 fetches, none for a view link (VID-02) | binding; exact      |
+| `/f/`                   | 60 per 60 s per IP; then 60 per 60 s per screen (`RL_FETCH` keyed by the screen ref), or per view link (keyed by its hash), between the Screen object's check and the counted fetch; per link: 10 fetches, none for a view link (VID-02) | binding; exact      |
 | `PUT /api/drop`         | 5 per 60 s per IP (every attempt past the Origin and credential checks counts); one accepted file per session; live bytes under `GUEST_STORAGE_BUDGET_BYTES` | binding; exact; D1  |
 | `/auth/start`           | 10 per 60 s per IP                                                                   | binding             |
 | `GET /api/files`        | 20 per 60 s per session (`RL_FILES`, keyed by the screen ref), after the credential check: each call is a Graph call | binding |

@@ -165,7 +165,23 @@ describe("VID-01 video type", () => {
     concat([new Uint8Array([0, 0, 0, 16]), enc.encode(`ftyp${brand}`), new Uint8Array(4), rest]);
 
   it("VID-01 accepts every allowed brand under its own extension", async () => {
-    for (const brand of ["isom", "iso2", "mp41", "mp42", "avc1", "M4V "]) {
+    for (const brand of [
+      "isom",
+      "iso2",
+      "iso4",
+      "iso5",
+      "iso6",
+      "mp41",
+      "mp42",
+      "mp71",
+      "avc1",
+      "dash",
+      "M4V ",
+      "M4VP",
+      "3gp4",
+      "3gp5",
+      "XAVC",
+    ]) {
       expect(await mp4Check(validVideo(brand))).toEqual({ ok: true, type: "mp4" });
     }
     expect(await movCheck(validVideo("qt  "))).toEqual({ ok: true, type: "mov" });
@@ -174,7 +190,7 @@ describe("VID-01 video type", () => {
   it("VID-01 refuses a brand and extension that disagree, and HEIC and unknown brands", async () => {
     expect(await movCheck(validVideo("isom"))).toEqual({ ok: false, error: "bad_type" });
     expect(await mp4Check(validVideo("qt  "))).toEqual({ ok: false, error: "bad_type" });
-    for (const brand of ["heic", "mif1", "avif", "3gp4", "XXXX"]) {
+    for (const brand of ["heic", "mif1", "avif", "3g2a", "XXXX"]) {
       expect(await mp4Check(validVideo(brand))).toEqual({ ok: false, error: "bad_type" });
       expect(await movCheck(validVideo(brand))).toEqual({ ok: false, error: "bad_type" });
     }
@@ -185,6 +201,13 @@ describe("VID-01 video type", () => {
     expect(await validate(reader(validVideo()), "jpg")).toEqual({ ok: false, error: "bad_type" });
     expect(await mp4Check(validPdf())).toEqual({ ok: false, error: "bad_type" });
     expect(await mp4Check(validJpeg())).toEqual({ ok: false, error: "bad_type" });
+  });
+
+  it("VID-01 accepts an index, fragment or metadata box right after the ftyp box", async () => {
+    for (const next of ["moof", "meta", "pdin", "sidx"]) {
+      const file = ftyp("iso5", concat([new Uint8Array([0, 0, 0, 16]), enc.encode(next), new Uint8Array(8)]));
+      expect(await mp4Check(file), next).toEqual({ ok: true, type: "mp4" });
+    }
   });
 
   it("VID-01 refuses HTML after the ftyp box", async () => {

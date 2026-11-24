@@ -13,8 +13,6 @@ const TOKEN = /^([A-Za-z0-9_-]{22})([A-Za-z0-9_-]{32})$/;
 /** A link is at most this long; the Office URI adds 20 and stays far under its 256 cap. */
 export const MAX_LINK_CHARS = 200;
 const PROTOCOL_PREFIX = "ms-powerpoint:ofv|u|";
-/** How long after its first fetch a view link keeps answering: a video is watched, paused and seeked. */
-const VIEW_WINDOW_SECONDS = 30 * 60;
 
 export interface MintedLink {
   /** screenRef plus secret. Only its SHA-256 is stored. */
@@ -34,7 +32,14 @@ export interface LinkRecord {
   firstFetchAt: number | null;
   fetches: number;
   revoked: boolean;
+  /** A view link's audit trail (VID-02): the IP hashes not matching the screen's that already wrote a row, at most MAX_AUDITED_IPS. */
+  ips: string[];
+  /** A view link's refusal already wrote its one row. */
+  refused: boolean;
 }
+
+/** Distinct foreign IP hashes audited per view link: enough to show a leak, and the record stays small. */
+export const MAX_AUDITED_IPS = 16;
 
 /** The longest name segment that keeps the whole link inside MAX_LINK_CHARS for this origin. */
 export function nameBudget(origin: string, extLength: number): number {
@@ -74,13 +79,12 @@ export function findLink(records: readonly LinkRecord[], tokenHash: string): Lin
 /** Why a link cannot be used at `now`, or null. The caller has already checked the session is live. */
 export function refusal(rec: LinkRecord, now: number, limits: LinkConfig): OpenError | null {
   if (rec.revoked) return "link_revoked";
-  // A view link feeds an <img> or a <video>, which reads in ranges and seeks: the per-session read limit bounds it.
-  const viewing = rec.purpose === "view";
-  if (!viewing && rec.fetches >= limits.maxFetches) return "link_exhausted";
-  const window = viewing ? Math.max(limits.fetchWindowSeconds, VIEW_WINDOW_SECONDS) : limits.fetchWindowSeconds;
-  const dies =
-    rec.firstFetchAt === null ? rec.mintedAt + limits.firstFetchSeconds * 1000 : rec.firstFetchAt + window * 1000;
-  return now >= dies ? "link_expired" : null;
+  if (rec.firstFetchAt === null) return now >= rec.mintedAt + limits.firstFetchSeconds * 1000 ? "link_expired" : null;
+  // A view link feeds an <img> or a <video>, which reads in ranges and seeks back at any point of the talk: once
+  // fetched it has no count and no window, and dies with the session (revoked at end); its own rate limit bounds it.
+  if (rec.purpose === "view") return null;
+  if (rec.fetches >= limits.maxFetches) return "link_exhausted";
+  return now >= rec.firstFetchAt + limits.fetchWindowSeconds * 1000 ? "link_expired" : null;
 }
 
 export type ClientClass = "office" | "browser" | "other";

@@ -180,6 +180,8 @@ describe("LinkLedger", () => {
     firstFetchAt: null,
     fetches: 0,
     revoked: false,
+    ips: [],
+    refused: false,
   });
 
   it("counts a fetch and fixes the window at the first one", () => {
@@ -194,16 +196,43 @@ describe("LinkLedger", () => {
     const ledger = new LinkLedger(kv());
     ledger.add(rec("a"));
     for (let i = 0; i < 3; i++) expect(ledger.use("a", 1000, limits, null).ok).toBe(true);
-    expect(ledger.use("a", 1000, limits, null)).toEqual({ ok: false, error: "link_exhausted" });
-    expect(ledger.use("a", 1000, limits, null)).toEqual({ ok: false, error: "link_exhausted" });
+    expect(ledger.use("a", 1000, limits, null)).toMatchObject({ ok: false, error: "link_exhausted" });
+    expect(ledger.use("a", 1000, limits, null)).toMatchObject({
+      ok: false,
+      error: "link_exhausted",
+      record: { fetches: 3 },
+    });
   });
 
   it("an unknown hash is link_unknown, and a refused binding does not count the fetch", () => {
     const ledger = new LinkLedger(kv());
     ledger.add(rec("a"));
-    expect(ledger.use("zzz", 1, limits, null)).toEqual({ ok: false, error: "link_unknown" });
-    expect(ledger.use("a", 1, limits, "link_binding_failed")).toEqual({ ok: false, error: "link_binding_failed" });
+    expect(ledger.use("zzz", 1, limits, null)).toEqual({ ok: false, error: "link_unknown", record: null });
+    expect(ledger.use("a", 1, limits, "link_binding_failed")).toMatchObject({
+      ok: false,
+      error: "link_binding_failed",
+    });
     expect(ledger.use("a", 1, limits, null)).toMatchObject({ ok: true, record: { fetches: 1 } });
+  });
+
+  it("VID-02 check applies the rules and counts nothing, so a rate-limited request spends no fetch", () => {
+    const ledger = new LinkLedger(kv());
+    ledger.add(rec("a"));
+    for (let i = 0; i < 5; i++)
+      expect(ledger.check("a", 1000, limits, null)).toMatchObject({ ok: true, record: { fetches: 0 } });
+    expect(ledger.check("zzz", 1000, limits, null)).toEqual({ ok: false, error: "link_unknown", record: null });
+    expect(ledger.use("a", 1000, limits, null)).toMatchObject({ ok: true, record: { fetches: 1, firstFetchAt: 1000 } });
+  });
+
+  it("update writes one record by hash and leaves the others", () => {
+    const ledger = new LinkLedger(kv());
+    ledger.add(rec("a"));
+    ledger.add(rec("b"));
+    const a = ledger.check("a", 1, limits, null);
+    if (!a.ok) throw new Error("expected a");
+    expect(ledger.update(a.record, { ips: ["x"] })).toMatchObject({ tokenHash: "a", ips: ["x"] });
+    expect(ledger.check("a", 1, limits, null)).toMatchObject({ record: { ips: ["x"] } });
+    expect(ledger.check("b", 1, limits, null)).toMatchObject({ record: { ips: [] } });
   });
 
   it("revokeAll keeps tombstones: a real hash is revoked, a guess stays unknown", () => {
@@ -211,8 +240,8 @@ describe("LinkLedger", () => {
     ledger.add(rec("a"));
     ledger.add(rec("b"));
     expect(ledger.revokeAll()).toBe(2);
-    expect(ledger.use("a", 1, limits, null)).toEqual({ ok: false, error: "link_revoked" });
-    expect(ledger.use("c", 1, limits, null)).toEqual({ ok: false, error: "link_unknown" });
+    expect(ledger.use("a", 1, limits, null)).toMatchObject({ ok: false, error: "link_revoked" });
+    expect(ledger.use("c", 1, limits, null)).toEqual({ ok: false, error: "link_unknown", record: null });
     expect(ledger.revokeAll()).toBe(0);
   });
 });

@@ -24,13 +24,13 @@ import { ipHash } from "../routes/common.ts";
 import { effectivePolicy } from "../seams/guest-drop/index.ts";
 import { purgeGuest } from "../seams/guest-drop/purge.ts";
 import { guestDropFor } from "../seams/guest-drop/select.ts";
-import { type ClientClass, mintLink, protocolUri } from "../seams/open-path/links.ts";
+import { type ClientClass, type LinkRecord, MAX_AUDITED_IPS, mintLink, protocolUri } from "../seams/open-path/links.ts";
 import type { PairingStore, PhoneInfo, Result, ScreenCreated, UsedLink } from "../seams/pairing.ts";
 import { auditFor, metricsFor } from "../stores.ts";
 import { directoryStub } from "../stubs.ts";
 import { type Meta, phoneView, roomView, screenView } from "../views.ts";
 import { bestEffort, type EffectDeps, noopSeams, runEffects, type SessionSeams } from "./effects.ts";
-import { LinkLedger } from "./ledger.ts";
+import { LinkLedger, type Use } from "./ledger.ts";
 import { migrate, SCHEMA_KEY, SCHEMA_VERSION } from "./schema.ts";
 
 const HELLO_MS = 5000;
@@ -52,6 +52,8 @@ interface SocketAttachment {
 type Applied =
   | { ok: true; collided: boolean; next: Machine; minted: LinkResponse | null }
   | { ok: false; error: ErrorCode };
+
+type LinkVia = { method: string; client: ClientClass };
 
 const fail = (error: ErrorCode): { ok: false; error: ErrorCode } => ({ ok: false, error });
 
@@ -230,45 +232,33 @@ export class Screen extends DurableObject<Env> implements PairingStore {
     return applied.minted ? { ok: true, value: applied.minted } : fail("internal");
   }
 
-  async useLink(
-    tokenHash: string,
-    ipHashed: string,
-    via: { method: string; client: ClientClass },
-  ): Promise<Result<UsedLink>> {
+  async checkLink(tokenHash: string, ipHashed: string, via: LinkVia): Promise<Result<{ purpose: OpenMode }>> {
+    const { m } = this;
+    if (!m?.pairing) return fail("link_unknown");
+    const now = Date.now();
+    const { links: limits } = this.config();
+    const checked = this.links.check(tokenHash, now, limits, this.linkIp(ipHashed).binding);
+    if (!checked.ok) return this.linkRefused(checked, now, via);
+    return { ok: true, value: { purpose: checked.record.purpose } };
+  }
+
+  async useLink(tokenHash: string, ipHashed: string, via: LinkVia): Promise<Result<UsedLink>> {
     const { m, meta } = this;
     const session = m?.session;
     if (!m || !meta || !m.pairing) return fail("link_unknown");
     const now = Date.now();
     const { links: limits } = this.config();
-    const screenIp = this.ctx.storage.kv.get<string>("screenIp");
-    const ipMatch = screenIp === undefined ? null : screenIp === ipHashed;
-    const binding = limits.binding === "enforce" && ipMatch === false ? "link_binding_failed" : null;
+    const { ipMatch, binding } = this.linkIp(ipHashed);
     const used = this.links.use(tokenHash, now, limits, binding);
-    const sessionId = m.pairing.sessionId;
-    if (!used.ok) {
-      if (used.error !== "link_unknown") {
-        await this.auditLink(sessionId, now, "link.refused", { cause: used.error, ...via });
-        await bestEffort(
-          metricsFor(this.env).record({
-            at: now,
-            mode: meta.mode,
-            kind: m.pairing.kind,
-            roomId: meta.roomId,
-            name: "failure",
-            cause: used.error,
-          }),
-        );
-      }
-      return fail(used.error);
-    }
+    if (!used.ok) return this.linkRefused(used, now, via);
     const file = session && fileAt(session.items, used.record.item);
     if (!file) return fail("link_revoked"); // ended: the file reference is gone with the session
-    // A player reads a view link in many ranges: a row per range would let one video flood D1 (VID-02).
-    if (used.record.purpose !== "view" || used.record.fetches === 1) {
-      await this.auditLink(sessionId, now, "link.fetched", {
+    const shown = limits.binding !== "off" && ipMatch !== null;
+    if (this.auditsFetch(used.record, shown && ipMatch === false ? ipHashed : null)) {
+      await this.auditLink(m.pairing.sessionId, now, "link.fetched", {
         purpose: used.record.purpose,
         count: used.record.fetches,
-        ...(limits.binding !== "off" && ipMatch !== null ? { ipMatch } : {}),
+        ...(shown ? { ipMatch } : {}),
         ...via,
       });
     }
@@ -542,6 +532,53 @@ export class Screen extends DurableObject<Env> implements PairingStore {
     await bestEffort(auditFor(this.env).record({ sessionId, at, actor: "system", type, detail }));
   }
 
+  /** Whether the fetch came from the screen's address, and the refusal that mismatch earns under `enforce` (OPEN-02). */
+  private linkIp(ipHashed: string): { ipMatch: boolean | null; binding: "link_binding_failed" | null } {
+    const screenIp = this.ctx.storage.kv.get<string>("screenIp");
+    const ipMatch = screenIp === undefined ? null : screenIp === ipHashed;
+    const enforce = this.config().links.binding === "enforce";
+    return { ipMatch, binding: enforce && ipMatch === false ? "link_binding_failed" : null };
+  }
+
+  /**
+   * A player reads a view link in many ranges, so a row per range would let one video flood D1 (VID-02): a view link
+   * writes its first fetch, and one more per foreign IP hash (`foreign`), up to MAX_AUDITED_IPS. Every other link
+   * writes every fetch.
+   */
+  private auditsFetch(record: LinkRecord, foreign: string | null): boolean {
+    if (record.purpose !== "view" || record.fetches === 1) return true;
+    if (foreign === null || record.ips.includes(foreign) || record.ips.length >= MAX_AUDITED_IPS) return false;
+    this.links.update(record, { ips: [...record.ips, foreign] });
+    return true;
+  }
+
+  /** Audits a refusal and records a failure metric; a view link does so once, since its player retries every range. */
+  private async linkRefused(
+    refused: Use & { ok: false },
+    now: number,
+    via: LinkVia,
+  ): Promise<{ ok: false; error: ErrorCode }> {
+    const { m, meta } = this;
+    const { error, record } = refused;
+    if (error === "link_unknown" || !record || !m?.pairing || !meta) return fail(error);
+    if (record.purpose === "view") {
+      if (record.refused) return fail(error);
+      this.links.update(record, { refused: true });
+    }
+    await this.auditLink(m.pairing.sessionId, now, "link.refused", { cause: error, ...via });
+    await bestEffort(
+      metricsFor(this.env).record({
+        at: now,
+        mode: meta.mode,
+        kind: m.pairing.kind,
+        roomId: meta.roomId,
+        name: "failure",
+        cause: error,
+      }),
+    );
+    return fail(error);
+  }
+
   /** The link seams (docs/interfaces.md section 4): mint pushes the link to the screen, revoke kills them all. */
   private linkSeams(): Pick<SessionSeams, "mint" | "revokeLinks"> {
     return {
@@ -559,6 +596,8 @@ export class Screen extends DurableObject<Env> implements PairingStore {
           firstFetchAt: null,
           fetches: 0,
           revoked: false,
+          ips: [],
+          refused: false,
         });
         const links: LinkSet = {
           protocol: link.purpose === "protocol" ? protocolUri(link.url) : null,

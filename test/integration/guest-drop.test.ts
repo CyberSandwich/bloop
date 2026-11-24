@@ -2,7 +2,7 @@
 // and the deletion paths. Short timers and the budget live in guest-drop-timing.test.ts.
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { buildZip, concat, validDeck, validJpeg, validPdf, validPng, validVideo } from "../zip-builder.ts";
-import { guestRow, pairPhone, problemCode, putDrop } from "./drop-client.ts";
+import { guestRow, openGuestView, pairPhone, problemCode, putDrop } from "./drop-client.ts";
 import { fetchLink } from "./open-client.ts";
 import { Api, startPairing } from "./pairing-client.ts";
 import type { Wrangler } from "./wrangler.ts";
@@ -315,14 +315,8 @@ describe("VID-01 video: a guest recording is stored, offered and served as video
   const clip = validVideo("isom", 3000);
   const mov = validVideo("qt  ", 3000);
 
-  async function openVideo(bytes: Uint8Array, name: string, contentType: string) {
-    const { socket, pid } = await pairPhone(api);
-    const res = await putDrop(api, pid, bytes, { name, contentType });
-    expect(res.status).toBe(200);
-    socket.send({ t: "open.click" });
-    const open = await socket.waitFor((f) => f.t === "open");
-    return { socket, url: (open.links as { view: string }).view };
-  }
+  const openVideo = (bytes: Uint8Array, name: string, contentType: string) =>
+    openGuestView(api, bytes, name, contentType);
 
   for (const [label, bytes, name, ext, contentType] of [
     ["an mp4", clip, "Clip.mp4", "mp4", "video/mp4"],
@@ -392,15 +386,20 @@ describe("VID-01 video: a guest recording is stored, offered and served as video
     socket.close();
   });
 
-  it("VID-02 answers 416 for an out-of-bounds, a malformed and a multi-range request, without reading R2", async () => {
+  it("VID-02 answers 416 for an out-of-bounds range without reading R2, and a malformed or multi-range one whole", async () => {
     const { socket, url } = await openVideo(clip, "Clip.mp4", "video/mp4");
     const before = classB();
-    for (const range of [`bytes=${clip.length}-`, "bytes=0-9,20-29", "bytes=oops", "bytes=-0"]) {
+    for (const range of [`bytes=${clip.length}-`, "bytes=-0"]) {
       const res = await fetchLink(url, { headers: { Range: range } });
       expect([range, res.status]).toEqual([range, 416]);
       expect(res.headers.get("Content-Range")).toBe(`bytes */${clip.length}`);
     }
     expect(classB()).toBe(before);
+    for (const range of ["bytes=0-9,20-29", "bytes=oops"]) {
+      const res = await fetchLink(url, { headers: { Range: range } });
+      expect([range, res.status]).toEqual([range, 200]);
+      expect(new Uint8Array(await res.arrayBuffer())).toEqual(clip);
+    }
     socket.close();
   });
 
@@ -415,13 +414,18 @@ describe("VID-01 video: a guest recording is stored, offered and served as video
     socket.close();
   });
 
-  it("VID-02 keeps answering a view link past ten reads, and audits only its first fetch: a player seeks", async () => {
+  it("VID-02 keeps answering a view link past ten reads; audits its first fetch and each foreign address once", async () => {
     const fetchedRows = () =>
       Number(wrangler.d1("SELECT count(*) AS n FROM audit_event WHERE type = 'link.fetched'")[0]?.n ?? 0);
     const { socket, url } = await openVideo(clip, "Clip.mp4", "video/mp4");
     const before = fetchedRows();
-    for (let i = 0; i < 15; i++) expect((await fetchLink(url, { headers: { Range: "bytes=0-9" } })).status).toBe(206);
+    const range = { Range: "bytes=0-9" };
+    for (let i = 0; i < 15; i++) expect((await fetchLink(url, { headers: range })).status).toBe(206);
     expect(fetchedRows()).toBe(before + 1);
+    for (const ip of ["203.0.113.7", "203.0.113.7", "203.0.113.8"]) {
+      expect((await fetchLink(url, { headers: { ...range, "CF-Connecting-IP": ip } })).status).toBe(206);
+    }
+    expect(fetchedRows()).toBe(before + 3);
     socket.close();
   });
 });

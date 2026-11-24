@@ -82,8 +82,17 @@ export interface PairingStore {
    */
   mintFallback(sid: string, mode: OpenMode, item: number | null): Promise<Result<LinkResponse>>;
   /**
-   * An /f/ request arrived. Applies the link rules, counts the fetch, audits it, and moves the session to
-   * open on the first accepted one. Unknown hashes answer link_unknown whatever the reason (OPEN-01).
+   * An /f/ request arrived. Applies the link rules without counting a fetch and answers the link's purpose, so the
+   * route can rate-limit before `useLink`: a refused request never spends a fetch (VID-02). Audits a refusal.
+   */
+  checkLink(
+    tokenHash: string,
+    ipHash: string,
+    via: { method: string; client: ClientClass },
+  ): Promise<Result<{ purpose: OpenMode }>>;
+  /**
+   * Applies the link rules again, counts the fetch, audits it, and moves the session to open on the first accepted
+   * one. Unknown hashes answer link_unknown whatever the reason (OPEN-01).
    */
   useLink(tokenHash: string, ipHash: string, via: { method: string; client: ClientClass }): Promise<Result<UsedLink>>;
 }

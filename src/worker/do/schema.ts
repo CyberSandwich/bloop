@@ -8,7 +8,7 @@ import type { Kv } from "./ledger.ts";
 
 export const SCHEMA_KEY = "schemaVersion";
 /** Version 1 had no key: a session held one `file`, and a link record had no `item`. */
-export const SCHEMA_VERSION = 4;
+export const SCHEMA_VERSION = 5;
 
 type Session = NonNullable<Machine["session"]>;
 type V1Session = Omit<Session, "items" | "minted"> & { file: FileRef; mints: number };
@@ -49,6 +49,17 @@ const STEPS: Record<number, (kv: Kv) => void> = {
       const { mints, ...rest } = s;
       const launch = launchIndex(s.items);
       kv.put("machine", { ...m, session: { ...rest, minted: mints.map((n, i) => (i === launch ? n + 1 : n)) } });
+    }
+  },
+  // 4 to 5: a link record keeps the view-link audit state: the foreign IP hashes already audited, and whether a
+  // refusal was. An old record has audited neither.
+  5: (kv) => {
+    const links = kv.get<(Omit<LinkRecord, "ips" | "refused"> & Partial<LinkRecord>)[]>("links");
+    if (links?.some((r) => r.ips === undefined || r.refused === undefined)) {
+      kv.put(
+        "links",
+        links.map((r) => ({ ips: [], refused: false, ...r })),
+      );
     }
   },
 };

@@ -50,7 +50,10 @@ export class StreamOpenPath implements OpenPath {
       const parsed = parseRange(asked, file.size);
       if (parsed === "unsatisfiable") {
         return withPolicy(
-          new Response(null, { status: 416, headers: { "Content-Range": `bytes */${file.size}` } }),
+          new Response(null, {
+            status: 416,
+            headers: { "Accept-Ranges": "bytes", "Content-Range": `bytes */${file.size}` },
+          }),
           policy,
         );
       }

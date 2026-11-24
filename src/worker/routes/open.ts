@@ -1,7 +1,7 @@
 // The open path's two routes: `/f/:token/:name`, which PowerPoint or the browser fetches, and
 // `POST /api/screen/link`, where the screen asks for one more link (download, PDF, relaunch).
-// Order for /f/: config, per-IP rate limit, token shape, the Screen object's link rules, per-screen rate limit,
-// the source, the answer.
+// Order for /f/: config, per-IP rate limit, token shape, the Screen object's link rules (checkLink), the per-screen or
+// per-view-link rate limit, the counted fetch (useLink), the source, the answer.
 // Every refusal before the Screen object is the same 404 as an unknown token (OPEN-01).
 import { z } from "zod";
 import { OPEN_MODES } from "../../shared/protocol.ts";
@@ -97,15 +97,23 @@ async function serveLink(request: Request, env: Env, config: Config, match: URLP
   const token = match.pathname.groups.token ?? "";
   const parsed = parseToken(token);
   if (!parsed) return fail("link_unknown");
-  const used = await screenStub(env, parsed.screenRef).useLink(await sha256Hex(token), await ipHash(request, config), {
-    method: request.method,
-    client: clientClass(request.headers.get("User-Agent")),
-  });
+  const [tokenHash, ip] = [await sha256Hex(token), await ipHash(request, config)];
+  const via = { method: request.method, client: clientClass(request.headers.get("User-Agent")) };
+  const screen = screenStub(env, parsed.screenRef);
+  const checked = await screen.checkLink(tokenHash, ip, via);
+  if (!checked.ok) return fail(checked.error);
+  // The per-IP limit above does not bound one screen's reads (VID-02). Charged between the check and the count, so a
+  // guessed token never spends it and a 429 never spends a fetch. A view link, which a player reads in many ranges,
+  // has its own budget, so one leaked link cannot lock the screen's other links out.
+  const keyed = await limited(
+    env.RL_FETCH,
+    request,
+    config,
+    checked.value.purpose === "view" ? tokenHash : parsed.screenRef,
+  );
+  if (keyed) return keyed;
+  const used = await screen.useLink(tokenHash, ip, via);
   if (!used.ok) return fail(used.error);
-  // A player reads a video in many ranges: the per-IP limit above does not bound one screen's reads (VID-02).
-  // Charged only for a real link, so guessed tokens under a known screen ref cannot spend the screen's budget.
-  const sessionLimited = await limited(env.RL_FETCH, request, config, parsed.screenRef);
-  if (sessionLimited) return sessionLimited;
   const file = await resolveFor(env, config, used.value);
   if (file instanceof Response) return file;
   return openPathFor(config.openPathMode, config.downloadHosts).serve(request, file, used.value.purpose);

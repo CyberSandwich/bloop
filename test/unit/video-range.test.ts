@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import { describe, expect, it, vi } from "vitest";
 import { policyOf, withHeaders } from "../../src/worker/headers.ts";
 import type { Resolved } from "../../src/worker/seams/file-source/index.ts";
@@ -52,23 +53,22 @@ describe("VID-02 range parsing", () => {
     expect(parseRange("bytes=99-99", 100)).toEqual({ offset: 99, length: 1 });
   });
 
-  it("VID-02 refuses what is out of bounds, malformed or more than one range", () => {
-    for (const bad of [
-      "bytes=100-",
-      "bytes=100-120",
-      "bytes=9-3",
-      "bytes=-0",
-      "bytes=-",
-      "bytes=0-9,20-29",
-      "bytes=0-9, 20-",
-      "items=0-9",
-      "bytes=a-b",
-      "bytes=99999999999999999999-",
-      "",
-    ]) {
+  it("VID-02 reads the unit in any case and allows whitespace around the range (RFC 9110)", () => {
+    expect(parseRange("Bytes=0-9", 100)).toEqual({ offset: 0, length: 10 });
+    expect(parseRange("BYTES = 10 - 19 ", 100)).toEqual({ offset: 10, length: 10 });
+  });
+
+  it("VID-02 refuses only a well-formed range out of bounds", () => {
+    for (const bad of ["bytes=100-", "bytes=100-120", "bytes=-0", "bytes=99999999999999999999-"]) {
       expect(parseRange(bad, 100), bad).toBe("unsatisfiable");
     }
     expect(parseRange("bytes=0-", 0)).toBe("unsatisfiable");
+  });
+
+  it("VID-02 ignores a header that does not parse, names another unit or asks for several ranges", () => {
+    for (const ignored of ["bytes=9-3", "bytes=-", "bytes=0-9,20-29", "bytes=0-9, 20-", "items=0-9", "bytes=a-b", ""]) {
+      expect(parseRange(ignored, 100), ignored).toBeNull();
+    }
   });
 });
 
@@ -93,14 +93,25 @@ describe("VID-02 serving a range", () => {
     expect(res.headers.get("Content-Range")).toBeNull();
   });
 
-  it("VID-02 answers 416 with the size, and reads nothing, for an out-of-bounds, malformed or multiple range", async () => {
-    for (const range of ["bytes=100-", "bytes=0-4,10-14", "bytes=zzz", "bytes=-0"]) {
+  it("VID-02 answers 416 with the size and Accept-Ranges, and reads nothing, for an out-of-bounds range", async () => {
+    for (const range of ["bytes=100-", "bytes=-0"]) {
       const file = video();
       const res = finished(await open.serve(get(range), file, "view"));
       expect(res.status, range).toBe(416);
       expect(res.headers.get("Content-Range")).toBe("bytes */100");
+      expect(res.headers.get("Accept-Ranges")).toBe("bytes");
       expect(file.asked).toEqual([]);
       expect(res.headers.get("X-Content-Type-Options")).toBe("nosniff");
+    }
+  });
+
+  it("VID-02 answers a multiple or malformed range 200 whole, reading one whole body", async () => {
+    for (const range of ["bytes=0-4,10-14", "bytes=zzz"]) {
+      const file = video();
+      const res = finished(await open.serve(get(range), file, "view"));
+      expect(res.status, range).toBe(200);
+      expect(res.headers.get("Content-Length")).toBe("100");
+      expect(file.asked).toEqual([undefined]);
     }
   });
 
@@ -139,23 +150,30 @@ describe("VID-02 serving a range", () => {
   });
 });
 
-describe("VID-02 per-screen read limit", () => {
+describe("VID-02 per-screen and per-view-link read limits", () => {
   const SCREEN_REF = "S".repeat(22);
-  const url = `http://127.0.0.1:8787/f/${SCREEN_REF}${"x".repeat(32)}/clip.mp4`;
+  const TOKEN = `${SCREEN_REF}${"x".repeat(32)}`;
+  const url = `http://127.0.0.1:8787/f/${TOKEN}/clip.mp4`;
+  const TOKEN_HASH = createHash("sha256").update(TOKEN).digest("hex");
   /** A Worker env whose rate limit and Screen object record the order they are called in. */
-  function env(linkOk: boolean, screenLimited: boolean) {
+  function env(link: "unknown" | "protocol" | "view", limited: boolean) {
     const calls: string[] = [];
     const RL_FETCH = {
       limit: async ({ key }: { key: string }) => {
-        calls.push(key === SCREEN_REF ? "limit:screen" : "limit:ip");
-        return { success: !(screenLimited && key === SCREEN_REF) };
+        const kind = key === SCREEN_REF ? "screen" : key === TOKEN_HASH ? "link" : "ip";
+        calls.push(`limit:${kind}`);
+        return { success: !(limited && kind !== "ip") };
       },
+    };
+    const checkLink = async () => {
+      calls.push("checkLink");
+      return link === "unknown" ? { ok: false, error: "link_unknown" } : { ok: true, value: { purpose: link } };
     };
     const useLink = async () => {
       calls.push("useLink");
-      return linkOk ? { ok: true, value: {} } : { ok: false, error: "link_unknown" };
+      return { ok: false, error: "link_revoked" };
     };
-    const SCREEN = { idFromName: (n: string) => n, get: () => ({ useLink }) };
+    const SCREEN = { idFromName: (n: string) => n, get: () => ({ checkLink, useLink }) };
     return {
       calls,
       env: { ...PROD_VARS, PUBLIC_ORIGIN: "http://127.0.0.1:8787", RL_FETCH, SCREEN },
@@ -174,15 +192,24 @@ describe("VID-02 per-screen read limit", () => {
   };
 
   it("VID-02 a guessed token under a known screen ref never spends that screen's read budget", async () => {
-    const { calls, env: e } = env(false, false);
+    const { calls, env: e } = env("unknown", false);
     expect((await serve(e)).status).toBe(404);
-    expect(calls).toEqual(["limit:ip", "useLink"]);
+    expect(calls).toEqual(["limit:ip", "checkLink"]);
   });
 
-  it("VID-02 a real link is charged to its screen after the Screen object accepts it, and refused over the limit", async () => {
-    const { calls, env: e } = env(true, true);
+  it("VID-02 a real link is charged to its screen between the check and the count; a 429 spends no fetch", async () => {
+    const limitedRun = env("protocol", true);
+    expect((await serve(limitedRun.env)).status).toBe(429);
+    expect(limitedRun.calls).toEqual(["limit:ip", "checkLink", "limit:screen"]);
+    const passing = env("protocol", false);
+    await serve(passing.env);
+    expect(passing.calls).toEqual(["limit:ip", "checkLink", "limit:screen", "useLink"]);
+  });
+
+  it("VID-02 a view link spends its own budget, never the screen's", async () => {
+    const { calls, env: e } = env("view", true);
     expect((await serve(e)).status).toBe(429);
-    expect(calls).toEqual(["limit:ip", "useLink", "limit:screen"]);
+    expect(calls).toEqual(["limit:ip", "checkLink", "limit:link"]);
   });
 });
 
@@ -219,6 +246,8 @@ describe("VID-02 view links", () => {
     firstFetchAt: 1000,
     fetches: 50,
     revoked: false,
+    ips: [],
+    refused: false,
     ...over,
   });
 
@@ -229,9 +258,12 @@ describe("VID-02 view links", () => {
     expect(refusal(record("protocol", { fetches: 1 }), 1000 + 130 * 1000, limits)).toBe("link_expired");
   });
 
-  it("VID-02 a view link still ends: revoked, past its window, or never fetched in time", () => {
+  it("VID-02 a fetched view link lives until the session ends, however long: a talk seeks back at any point", () => {
+    expect(refusal(record("view"), 1000 + 12 * 60 * 60 * 1000, limits)).toBeNull();
+  });
+
+  it("VID-02 a view link still ends: revoked (at session end), or never fetched in time", () => {
     expect(refusal(record("view", { revoked: true }), 2000, limits)).toBe("link_revoked");
-    expect(refusal(record("view"), 1000 + 31 * 60 * 1000, limits)).toBe("link_expired");
     expect(refusal(record("view", { firstFetchAt: null }), 601 * 1000, limits)).toBe("link_expired");
   });
 });

@@ -183,7 +183,7 @@ describe("Screen object schema steps", () => {
     const store = kv({ meta: { mode: "demo" }, machine: { state: "approved", session: v1Session }, links: [link] });
     migrate(store);
     expect((store.map.get("machine") as Machine).session).toEqual({ ...current, items: [asItem(DECK)], minted: [1] });
-    expect(store.map.get("links")).toEqual([{ ...link, item: 0 }]);
+    expect(store.map.get("links")).toEqual([{ ...link, item: 0, ips: [], refused: false }]);
     expect(store.map.get(SCHEMA_KEY)).toBe(SCHEMA_VERSION);
   });
 
@@ -230,7 +230,15 @@ describe("Screen object schema steps", () => {
     });
     migrate(store);
     expect((store.map.get("machine") as Machine).session).toEqual({ ...current, items: [asItem(DECK)], minted: [1] });
-    expect(store.map.get("links")).toEqual([{ ...link, item: 0 }]);
+    expect(store.map.get("links")).toEqual([{ ...link, item: 0, ips: [], refused: false }]);
+  });
+
+  it("version 4 to 5: a link record gains an empty view-link audit state, and one that has it keeps it", () => {
+    const kept = { ...link, item: 1, ips: ["x"], refused: true };
+    const store = kv({ meta: {}, schemaVersion: 4, links: [{ ...link, item: 0 }, kept] });
+    migrate(store);
+    expect(store.map.get("links")).toEqual([{ ...link, item: 0, ips: [], refused: false }, kept]);
+    expect(store.map.get(SCHEMA_KEY)).toBe(5);
   });
 
   it("a current-shape object writes nothing on wake", () => {
@@ -238,7 +246,7 @@ describe("Screen object schema steps", () => {
       meta: {},
       schemaVersion: SCHEMA_VERSION,
       machine: { state: "open", session: { ...current, items: [asItem(DECK)], minted: [1] } },
-      links: [{ ...link, item: 0 }],
+      links: [{ ...link, item: 0, ips: [], refused: false }],
     });
     const writes: string[] = [];
     migrate({

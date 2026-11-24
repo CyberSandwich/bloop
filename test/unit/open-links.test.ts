@@ -25,6 +25,7 @@ const deck = (name: string, type: "pptx" | "pdf" = "pptx"): FileRef => ({ source
 describe("OPEN-06 names: the name segment is a safe slug (F7)", () => {
   it("keeps letters and digits, joins words with one hyphen and drops the extension it replaces", () => {
     expect(slugBase("Lecture 4 - Intro.pptx")).toBe("Lecture-4-Intro");
+    expect(slugBase("Holiday.jpeg")).toBe("Holiday");
     expect(linkFileName("Lecture 4.PPTX", "pptx")).toBe("Lecture-4.pptx");
     expect(linkFileName("Handout.pdf", "pdf")).toBe("Handout.pdf");
   });
@@ -176,6 +177,8 @@ describe("OPEN-01 link-life rules", () => {
     firstFetchAt: null,
     fetches: 0,
     revoked: false,
+    ips: [],
+    refused: false,
     ...over,
   });
 

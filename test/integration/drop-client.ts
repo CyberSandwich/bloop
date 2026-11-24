@@ -32,6 +32,16 @@ export const putDrop = (api: Api, pid: string | null, body: string | Uint8Array,
   return fetch(`${api.base}/api/drop`, { method: "PUT", headers, body });
 };
 
+/** A guest drop accepted and opened on the screen: the socket and the view link the screen received. */
+export async function openGuestView(api: Api, bytes: Uint8Array, name: string, contentType: string) {
+  const { socket, pid } = await pairPhone(api);
+  const res = await putDrop(api, pid, bytes, { name, contentType });
+  if (res.status !== 200) throw new Error(`drop failed: ${res.status}`);
+  socket.send({ t: "open.click" });
+  const open = await socket.waitFor((f) => f.t === "open");
+  return { socket, url: (open.links as { view: string }).view };
+}
+
 export const problemCode = async (res: Response) => ((await res.json()) as { code: string }).code;
 
 /** The one row `guest_file` holds for a session id, or the newest when the id is not given. */

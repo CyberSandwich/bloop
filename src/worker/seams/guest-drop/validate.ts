@@ -11,9 +11,15 @@ const PNG_END_BYTES = 12; // the IEND chunk: length 0, "IEND", CRC
 const JPEG_MAGIC = [0xff, 0xd8, 0xff];
 const PNG_MAGIC = [0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a];
 const MOV_BRAND = "qt  ";
-const MP4_BRANDS: ReadonlySet<string> = new Set(["isom", "iso2", "mp41", "mp42", "avc1", "M4V "]);
-/** What may follow the `ftyp` box: a real file goes straight into its movie, data or padding boxes. */
-const BOX_AFTER_FTYP: ReadonlySet<string> = new Set(["moov", "mdat", "free", "skip", "wide", "pnot", "uuid", "junk"]);
+const MP4_BRANDS: ReadonlySet<string> = new Set([
+  ...["isom", "iso2", "iso4", "iso5", "iso6", "mp41", "mp42", "mp71", "avc1", "dash"],
+  ...["M4V ", "M4VP", "3gp4", "3gp5", "XAVC"],
+]);
+/** What may follow the `ftyp` box: a real file goes straight into its movie, data, fragment, index, metadata or padding boxes. */
+const BOX_AFTER_FTYP: ReadonlySet<string> = new Set([
+  ...["moov", "mdat", "moof", "meta", "pdin", "sidx"],
+  ...["free", "skip", "wide", "pnot", "uuid", "junk"],
+]);
 const MIN_FTYP_BYTES = 16;
 const text = new TextDecoder("latin1");
 const hasMagic = (b: Uint8Array, magic: number[]) => b.length >= magic.length && magic.every((m, i) => b[i] === m);
