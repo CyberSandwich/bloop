@@ -704,7 +704,10 @@ describe("the stylesheets: base.css, then the page's own (design.md section 11)"
 
   it("no site text is dimmed by opacity, which axe counts against contrast even under aria-hidden", () => {
     // The FAQ answer fades in only while it opens, so its opacity is the one allowed.
-    const rest = (css["site.css"] ?? "").replace(/@supports \(interpolate-size: allow-keywords\) \{[\s\S]*?\n\}\n/, "");
+    // The menu sheet fades in only while it opens too, from its @starting-style.
+    const rest = (css["site.css"] ?? "")
+      .replace(/@supports \(interpolate-size: allow-keywords\) \{[\s\S]*?\n\}\n/, "")
+      .replace(/@starting-style \{\s*\.nav-links:popover-open \{[^}]*\}\s*\}/, "");
     expect(rest).not.toMatch(/opacity:/);
     expect(block(".frag-row.off")).toContain("color: var(--muted);");
   });
@@ -874,5 +877,32 @@ describe("privacy notice", () => {
     expect(row).toMatch(/email and answers/);
     expect(row).toMatch(/to invite you/);
     expect(row).toMatch(/until you ask/);
+  });
+});
+
+describe("landing motion and spacing (design.md sections 6 and 8)", () => {
+  const css = read("public/css/site.css");
+
+  it("the sheen cycles every 2.2 s, its 1 s sweep the first 45 percent", () => {
+    expect(css).toMatch(/animation: sheen 2\.2s linear 0\.3s infinite backwards;/);
+    expect(between(css, /@keyframes sheen \{/, "\n}\n")).toMatch(/\n {2}45%,\n {2}100% \{/);
+  });
+
+  it("the steps sit 40 under the stage, 56 from 768", () => {
+    expect(css).toMatch(/^\.how \{\s*padding-top: 40px;\s*\}/m);
+    expect(css).toMatch(/@media \(min-width: 768px\) \{\s*\.how \{\s*padding-top: 56px;/);
+  });
+
+  it("from 760 the two nav pills center as one pair, 20 apart; under 760 they part to the edges", () => {
+    expect(css).toMatch(/^\.nav \{[^}]*display: flex;\s*justify-content: center;\s*align-items: center;\s*gap: 20px;/m);
+    expect(css).toMatch(/@media \(max-width: 759\.98px\) \{\s*\.nav \{[^}]*justify-content: space-between;/);
+    expect(css).not.toMatch(/grid-template-columns: 1fr auto/);
+  });
+
+  it("a tap acts at once on the site pages, and the menu sheet enters by transform and opacity in 180 ms", () => {
+    expect(css).toMatch(/^html:has\(\.page-site\) \{[^}]*touch-action: manipulation;/m);
+    const sheet = between(css, /@media \(max-width: 759\.98px\) \{/, "\n}\n");
+    expect(sheet).toMatch(/transition:\s*opacity 180ms var\(--ease-out\),\s*transform 180ms var\(--ease-out\);/);
+    expect(sheet).toMatch(/@starting-style \{\s*\.nav-links:popover-open \{\s*opacity: 0;\s*transform: [^;]+;\s*\}/);
   });
 });

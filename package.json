@@ -67,7 +67,7 @@
         "public/css/site.css"
       ],
       "gzip": true,
-      "limit": "7.65 kB"
+      "limit": "8.4 kB"
     },
     {
       "name": "app page CSS",

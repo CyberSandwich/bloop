@@ -294,6 +294,57 @@ test.describe("phone hero", () => {
   });
 });
 
+test.describe("desktop nav", () => {
+  test.use({ viewport: { width: 1440, height: 900 } });
+
+  test("the logo pill and the links pill center as one pair, 16 to 24 apart", async ({ page }) => {
+    await page.goto("/");
+    await page.evaluate(() => document.fonts?.ready);
+    const box = (selector: string) =>
+      page.locator(selector).evaluate((el) => {
+        const r = (el as unknown as El).getBoundingClientRect();
+        return { left: r.left, right: r.right };
+      });
+    const logo = await box(".nav-logo");
+    const pill = await box(".nav-pill");
+    expect(Math.abs(logo.left - (1440 - pill.right))).toBeLessThanOrEqual(1);
+    const gap = pill.left - logo.right;
+    expect(gap).toBeGreaterThanOrEqual(16);
+    expect(gap).toBeLessThanOrEqual(24);
+  });
+});
+
+test.describe("phone menu", () => {
+  test.use({ viewport: { width: 390, height: 844 }, hasTouch: true, isMobile: true });
+
+  test("the sheet shows within 250 ms of a tap, and its entry animates only transform and opacity, 200 ms or less", async ({
+    page,
+  }) => {
+    await page.goto("/");
+    await page.evaluate(`(() => {
+      window.__menu = {};
+      addEventListener("pointerdown", () => { window.__menu.down = performance.now(); }, { capture: true });
+      const sheet = document.getElementById("nav-links");
+      const seen = () => {
+        if (sheet.matches(":popover-open") && sheet.getBoundingClientRect().height > 0) window.__menu.shown = performance.now();
+        else requestAnimationFrame(seen);
+      };
+      requestAnimationFrame(seen);
+    })()`);
+    await page.getByRole("button", { name: "Menu" }).tap();
+    await expect.poll(() => page.evaluate("window.__menu.shown - window.__menu.down")).toBeLessThan(250);
+    await expect(
+      page.getByRole("navigation", { name: "Primary" }).getByRole("link", { name: "Privacy" }),
+    ).toBeVisible();
+    const props = (await page.evaluate(`document.getElementById("nav-links").getAnimations().map((a) => [
+      a.transitionProperty ?? "", Number(a.effect.getTiming().duration)])`)) as [string, number][];
+    for (const [prop, ms] of props) {
+      expect(["opacity", "transform", "display", "overlay"], prop).toContain(prop);
+      expect(ms).toBeLessThanOrEqual(200);
+    }
+  });
+});
+
 test.describe("narrow nav up to 760", () => {
   test.use({ viewport: { width: 700, height: 900 } });
 
