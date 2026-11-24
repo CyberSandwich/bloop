@@ -479,6 +479,7 @@ export interface ScreenLauncher {
   spent(item?: number): boolean;           // a mint for that item (none: the first file) met `mint_limit`, which is per item: the page hides that item's Download and Show as PDF Instead, flags no error
   onView(view: ScreenView): void;          // recovers a lost link (approved with a file, no link after 1.5 s; a links-only session mints none), times the 5 s, resets at the end
   needsClick(): boolean;                   // the launch had no user activation, or a popup was blocked
+  left(): { ppt: boolean; download: string | null }; // read when the view turns ended, before reset: PowerPoint was launched; the started download's name (its link's last segment), for the line under Session Ended
   downloadReady(): boolean;
   closePdf(): void;
   reset(): void;
@@ -554,7 +555,7 @@ export interface PurgeReport {
   accessTokenDropped: boolean; // in-memory access token for this session
 }
 
-/** Screen side. `clear` runs on "ended" and "closed" (the page re-stores its own credential when the screen waits again, so a reload resumes the screen); pagehide only closes the PDF window. A stored sid resumes only a screen of the page's own mode; a screen of the other mode that still exists is ended (`POST /api/screen/end`) and then `forget` runs; the demo's one-device round trip (`/s?mode=demo` to `/a` and back in one tab) is that resume, and `clear` also drops the pid the tab took on `/a`. New Code on a waiting screen is the same pair of calls: `POST /api/screen/end` (which closes a waiting screen), then the boot path creates a new one; no route of its own. */
+/** Screen side. `clear` runs on "ended" and "closed" (the page re-stores its own credential when the screen waits again, so a reload resumes the screen); pagehide only closes the PDF window. A stored sid resumes only a screen of the page's own mode; a screen of the other mode that still exists is ended (`POST /api/screen/end`) and then `forget` runs; the demo's one-device round trip (`/s?mode=demo` to `/a` and back in one tab) is that resume. The pid is in `localStorage` (`pidStore`), so the screen page drops it itself on "ended" and "closed". New Code on a waiting screen is the same pair of calls: `POST /api/screen/end` (which closes a waiting screen), then the boot path creates a new one; no route of its own. A renew bumps a generation: a boot or channel of an older screen stops acting. */
 export interface ScreenResidue {
   clear(): void;               // launcher.reset (links, timers, the PDF window this page opened), sessionStorage bloop.*,
                                // history.replaceState to the same path and query (the demo mode stays)

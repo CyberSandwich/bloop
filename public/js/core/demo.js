@@ -18,6 +18,10 @@ export function openTarget(/** @type {string} */ link, /** @type {string} */ ori
   }
 }
 
+/** How a document shows: portrait pages (taller than wide) scroll as one column; slides page one at a time. */
+export const pageMode = (/** @type {number} */ width, /** @type {number} */ height) =>
+  height > width ? "scroll" : "paged";
+
 /** The page after a step, held at either end. */
 export const stepPage = (/** @type {number} */ at, /** @type {number} */ by, /** @type {number} */ count) =>
   Math.min(count - 1, Math.max(0, at + by));

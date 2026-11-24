@@ -303,6 +303,15 @@ describe("end of session", () => {
     expect(calls.assign).toEqual([PROTOCOL, PROTOCOL]);
     expect(calls.reports).toEqual(["protocol", "protocol"]);
   });
+
+  it("says what this PC may still hold until the end resets it: PowerPoint, and the download by its file name", () => {
+    const { launcher } = harness();
+    expect(launcher.left()).toEqual({ ppt: false, download: null });
+    launcher.launch(links({ protocol: PROTOCOL, download: "https://bloop.test/f/tok/Lecture%204.pptx" }));
+    expect(launcher.left()).toEqual({ ppt: true, download: "Lecture 4.pptx" });
+    launcher.onView(view("ended"));
+    expect(launcher.left()).toEqual({ ppt: false, download: null });
+  });
 });
 
 describe("RES-01 residue on the screen page", () => {

@@ -181,6 +181,12 @@ export function createLauncher(deps) {
     },
 
     needsClick: () => s.needsClick,
+    // Read before the end resets the ladder: what this PC may still hold (the line under Session Ended).
+    // The download's name is its link's last segment: the name the file has in Downloads.
+    left: () => ({
+      ppt: !!s.protocol,
+      download: s.download ? decodeURIComponent(s.download.url.slice(s.download.url.lastIndexOf("/") + 1)) : null,
+    }),
     downloadReady: () => s.waitedOut,
     closePdf,
     reset,

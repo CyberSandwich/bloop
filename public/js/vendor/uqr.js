@@ -1,4 +1,4 @@
-/*! uqr 0.1.3 (https://github.com/unjs/uqr), vendored unmodified from dist/index.mjs.
+/*! uqr 0.1.3 (https://github.com/unjs/uqr), vendored from dist/index.mjs with only its comments removed (the browser JS budget); the code is unmodified.
 
  * MIT License
  *
@@ -53,35 +53,18 @@ const PENALTY_N2 = 3;
 const PENALTY_N3 = 40;
 const PENALTY_N4 = 10;
 const ECC_CODEWORDS_PER_BLOCK = [
-  // Version: (note that index 0 is for padding, and is set to an illegal value)
-  // 0,  1,  2,  3,  4,  5,  6,  7,  8,  9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31, 32, 33, 34, 35, 36, 37, 38, 39, 40    Error correction level
   [-1, 7, 10, 15, 20, 26, 18, 20, 24, 30, 18, 20, 24, 26, 30, 22, 24, 28, 30, 28, 28, 28, 28, 30, 30, 26, 28, 30, 30, 30, 30, 30, 30, 30, 30, 30, 30, 30, 30, 30, 30],
-  // Low
   [-1, 10, 16, 26, 18, 24, 16, 18, 22, 22, 26, 30, 22, 22, 24, 24, 28, 28, 26, 26, 26, 26, 28, 28, 28, 28, 28, 28, 28, 28, 28, 28, 28, 28, 28, 28, 28, 28, 28, 28, 28],
-  // Medium
   [-1, 13, 22, 18, 26, 18, 24, 18, 22, 20, 24, 28, 26, 24, 20, 30, 24, 28, 28, 26, 30, 28, 30, 30, 30, 30, 28, 30, 30, 30, 30, 30, 30, 30, 30, 30, 30, 30, 30, 30, 30],
-  // Quartile
   [-1, 17, 28, 22, 16, 22, 28, 26, 26, 24, 28, 24, 28, 22, 24, 24, 30, 28, 28, 26, 28, 30, 24, 30, 30, 30, 30, 30, 30, 30, 30, 30, 30, 30, 30, 30, 30, 30, 30, 30, 30]
-  // High
 ];
 const NUM_ERROR_CORRECTION_BLOCKS = [
-  // Version: (note that index 0 is for padding, and is set to an illegal value)
-  // 0, 1, 2, 3, 4, 5, 6, 7, 8, 9,10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31, 32, 33, 34, 35, 36, 37, 38, 39, 40    Error correction level
   [-1, 1, 1, 1, 1, 1, 2, 2, 2, 2, 4, 4, 4, 4, 4, 6, 6, 6, 6, 7, 8, 8, 9, 9, 10, 12, 12, 12, 13, 14, 15, 16, 17, 18, 19, 19, 20, 21, 22, 24, 25],
-  // Low
   [-1, 1, 1, 1, 2, 2, 4, 4, 4, 5, 5, 5, 8, 9, 9, 10, 10, 11, 13, 14, 16, 17, 17, 18, 20, 21, 23, 25, 26, 28, 29, 31, 33, 35, 37, 38, 40, 43, 45, 47, 49],
-  // Medium
   [-1, 1, 1, 2, 2, 4, 4, 6, 6, 8, 8, 8, 10, 12, 16, 12, 17, 16, 18, 21, 20, 23, 23, 25, 27, 29, 34, 34, 35, 38, 40, 43, 45, 48, 51, 53, 56, 59, 62, 65, 68],
-  // Quartile
   [-1, 1, 1, 2, 4, 4, 4, 5, 6, 8, 8, 11, 11, 16, 16, 18, 16, 19, 21, 25, 25, 25, 34, 30, 32, 35, 37, 40, 42, 45, 48, 51, 54, 57, 60, 63, 66, 70, 74, 77, 81]
-  // High
 ];
 class QrCode {
-  /* -- Constructor (low level) and fields -- */
-  // Creates a new QR Code with the given version number,
-  // error correction level, data codeword bytes, and mask number.
-  // This is a low-level API that most users should not use directly.
-  // A mid-level API is the encodeSegments() function.
   constructor(version, ecc, dataCodewords, msk) {
     this.version = version;
     this.ecc = ecc;
@@ -115,27 +98,13 @@ class QrCode {
     this.applyMask(msk);
     this.drawFormatBits(msk);
   }
-  /* -- Fields -- */
-  // The width and height of this QR Code, measured in modules, between
-  // 21 and 177 (inclusive). This is equal to version * 4 + 17.
   size;
-  // The index of the mask pattern used in this QR Code, which is between 0 and 7 (inclusive).
-  // Even if a QR Code is created with automatic masking requested (mask = -1),
-  // the resulting object still has a mask value between 0 and 7.
   mask;
-  // The modules of this QR Code (false = light, true = dark).
-  // Immutable after constructor finishes. Accessed through getModule().
   modules = [];
   types = [];
-  /* -- Accessor methods -- */
-  // Returns the color of the module (pixel) at the given coordinates, which is false
-  // for light or true for dark. The top left corner has the coordinates (x=0, y=0).
-  // If the given coordinates are out of bounds, then false (light) is returned.
   getModule(x, y) {
     return x >= 0 && x < this.size && y >= 0 && y < this.size && this.modules[y][x];
   }
-  /* -- Private helper methods for constructor: Drawing function modules -- */
-  // Reads this object's version field, and draws and marks all function modules.
   drawFunctionPatterns() {
     for (let i = 0; i < this.size; i++) {
       this.setFunctionModule(6, i, i % 2 === 0, QrCodeDataType.Timing);
@@ -155,8 +124,6 @@ class QrCode {
     this.drawFormatBits(0);
     this.drawVersion();
   }
-  // Draws two copies of the format bits (with its own error correction code)
-  // based on the given mask and this object's error correction level field.
   drawFormatBits(mask) {
     const data = this.ecc[1] << 3 | mask;
     let rem = data;
@@ -176,8 +143,6 @@ class QrCode {
       this.setFunctionModule(8, this.size - 15 + i, getBit(bits, i));
     this.setFunctionModule(8, this.size - 8, true);
   }
-  // Draws two copies of the version bits (with its own error correction code),
-  // based on this object's version field, iff 7 <= version <= 40.
   drawVersion() {
     if (this.version < 7)
       return;
@@ -193,8 +158,6 @@ class QrCode {
       this.setFunctionModule(b, a, color);
     }
   }
-  // Draws a 9*9 finder pattern including the border separator,
-  // with the center module at (x, y). Modules can be out of bounds.
   drawFinderPattern(x, y) {
     for (let dy = -4; dy <= 4; dy++) {
       for (let dx = -4; dx <= 4; dx++) {
@@ -206,8 +169,6 @@ class QrCode {
       }
     }
   }
-  // Draws a 5*5 alignment pattern, with the center module
-  // at (x, y). All modules must be in bounds.
   drawAlignmentPattern(x, y) {
     for (let dy = -2; dy <= 2; dy++) {
       for (let dx = -2; dx <= 2; dx++) {
@@ -220,15 +181,10 @@ class QrCode {
       }
     }
   }
-  // Sets the color of a module and marks it as a function module.
-  // Only used by the constructor. Coordinates must be in bounds.
   setFunctionModule(x, y, isDark, type = QrCodeDataType.Function) {
     this.modules[y][x] = isDark;
     this.types[y][x] = type;
   }
-  /* -- Private helper methods for constructor: Codewords and masking -- */
-  // Returns a new byte string representing the given data with the appropriate error correction
-  // codewords appended to it, based on this object's version and error correction level.
   addEccAndInterleave(data) {
     const ver = this.version;
     const ecl = this.ecc;
@@ -258,8 +214,6 @@ class QrCode {
     }
     return result;
   }
-  // Draws the given sequence of 8-bit codewords (data and error correction) onto the entire
-  // data area of this QR Code. Function modules need to be marked off before this is called.
   drawCodewords(data) {
     if (data.length !== Math.floor(getNumRawDataModules(this.version) / 8))
       throw new RangeError("Invalid argument");
@@ -280,11 +234,6 @@ class QrCode {
       }
     }
   }
-  // XORs the codeword modules in this QR Code with the given mask pattern.
-  // The function modules must be marked and the codeword bits must be drawn
-  // before masking. Due to the arithmetic of XOR, calling applyMask() with
-  // the same mask value a second time will undo the mask. A final well-formed
-  // QR Code needs exactly one (not zero, two, etc.) mask applied.
   applyMask(mask) {
     if (mask < 0 || mask > 7)
       throw new RangeError("Mask value out of range");
@@ -324,8 +273,6 @@ class QrCode {
       }
     }
   }
-  // Calculates and returns the penalty score based on state of this QR Code's current modules.
-  // This is used by the automatic mask choice algorithm to find the mask pattern that yields the lowest score.
   getPenaltyScore() {
     let result = 0;
     for (let y = 0; y < this.size; y++) {
@@ -386,10 +333,6 @@ class QrCode {
     result += k * PENALTY_N4;
     return result;
   }
-  /* -- Private helper functions -- */
-  // Returns an ascending list of positions of alignment patterns for this version number.
-  // Each position is in the range [0,177), and are used on both the x and y axes.
-  // This could be implemented as lookup table of 40 variable-length lists of integers.
   getAlignmentPatternPositions() {
     if (this.version === 1) {
       return [];
@@ -402,14 +345,11 @@ class QrCode {
       return result;
     }
   }
-  // Can only be called immediately after a light run is added, and
-  // returns either 0, 1, or 2. A helper function for getPenaltyScore().
   finderPenaltyCountPatterns(runHistory) {
     const n = runHistory[1];
     const core = n > 0 && runHistory[2] === n && runHistory[3] === n * 3 && runHistory[4] === n && runHistory[5] === n;
     return (core && runHistory[0] >= n * 4 && runHistory[6] >= n ? 1 : 0) + (core && runHistory[6] >= n * 4 && runHistory[0] >= n ? 1 : 0);
   }
-  // Must be called at the end of a line (row or column) of modules. A helper function for getPenaltyScore().
   finderPenaltyTerminateAndCount(currentRunColor, currentRunLength, runHistory) {
     if (currentRunColor) {
       this.finderPenaltyAddHistory(currentRunLength, runHistory);
@@ -419,7 +359,6 @@ class QrCode {
     this.finderPenaltyAddHistory(currentRunLength, runHistory);
     return this.finderPenaltyCountPatterns(runHistory);
   }
-  // Pushes the given value to the front and drops the last value. A helper function for getPenaltyScore().
   finderPenaltyAddHistory(currentRunLength, runHistory) {
     if (runHistory[0] === 0)
       currentRunLength += this.size;
@@ -437,9 +376,6 @@ function getBit(x, i) {
   return (x >>> i & 1) !== 0;
 }
 class QrSegment {
-  // Creates a new QR Code segment with the given attributes and data.
-  // The character count (numChars) must agree with the mode and the bit buffer length,
-  // but the constraint isn't checked. The given bit buffer is cloned and stored.
   constructor(mode, numChars, bitData) {
     this.mode = mode;
     this.numChars = numChars;
@@ -448,8 +384,6 @@ class QrSegment {
       throw new RangeError("Invalid argument");
     this.bitData = bitData.slice();
   }
-  /* -- Methods -- */
-  // Returns a new copy of the data bits of this segment.
   getData() {
     return this.bitData.slice();
   }

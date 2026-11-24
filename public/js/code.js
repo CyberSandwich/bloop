@@ -1,13 +1,13 @@
 // Typed code entry (/code): for a phone whose camera did not open the link.
 import { createApi } from "./core/api.js";
-import { typedError } from "./core/copy.js";
+import { TYPED_LETTERS, typedError } from "./core/copy.js";
 import { typedCode, typedValid } from "./core/format.js";
-import { PID_KEY, sessionStore } from "./core/store.js";
+import { PID_KEY, pidStore } from "./core/store.js";
 import { ariaFlag, byId, focusTitle, isFramed, setText, show } from "./core/ui.js";
 import { ERRORS } from "./shared/errors.js";
 
 const api = createApi();
-const store = sessionStore();
+const store = pidStore();
 
 const form = byId("code-form");
 const input = /** @type {HTMLInputElement} */ (byId("code"));
@@ -26,7 +26,8 @@ input.addEventListener("input", () => {
   const formatted = typedCode(input.value);
   if (formatted !== input.value) input.value = formatted;
   go.disabled = typedValid(input.value) === null || busy;
-  showError("");
+  // The alphabet leaves out the look-alikes: say so as soon as one is typed.
+  showError(/[01ILOU]/.test(input.value) ? TYPED_LETTERS : "");
 });
 
 form.addEventListener("submit", async (e) => {

@@ -5,6 +5,8 @@ export const CODE_GRACE_MS = 10_000;
 /** The screen asks for the next code this long before the shown one hard-expires. */
 export const ROTATE_AHEAD_MS = CODE_GRACE_MS;
 export const ENDED_QR_RETURN_MS = 3000;
+/** Session Ended stays this long when it says what to clean up, or on the demo (its waitlist link). */
+export const ENDED_HOLD_MS = 10_000;
 export const ERROR_RECOVER_MS = 5000;
 /** No /f/ fetch this long after the launch: Download It Instead appears (design.md, opening). */
 export const LAUNCH_TIMEOUT_MS = 5000;

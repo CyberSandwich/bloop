@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { createApi } from "../../public/js/core/api.js";
 import { loadFiles } from "../../public/js/core/files.js";
-import { createStore, refOf, sameScreen } from "../../public/js/core/store.js";
+import { createStore, PID_KEY, pidStore, refOf, sameScreen } from "../../public/js/core/store.js";
 
 interface Seen {
   path: string;
@@ -160,5 +160,27 @@ describe("session store", () => {
     const store = createStore(null);
     store.set("k", "v");
     expect(store.get("k")).toBe("v");
+  });
+
+  it("PAIR-12 pid-store: the pid lives in localStorage, so a later page reads it, until it is removed by name", () => {
+    const area = new Map<string, string>();
+    const local = {
+      getItem: (k: string) => area.get(k) ?? null,
+      setItem: (k: string, v: string) => void area.set(k, v),
+      removeItem: (k: string) => void area.delete(k),
+    };
+    const previous = Object.getOwnPropertyDescriptor(globalThis, "localStorage");
+    Object.defineProperty(globalThis, "localStorage", { value: local, configurable: true });
+    try {
+      pidStore().set(PID_KEY, "ref.secret");
+      // A new page (a fresh store over the same area) still holds it: a closed tab can come back to Revoke.
+      expect(pidStore().get(PID_KEY)).toBe("ref.secret");
+      pidStore().remove(PID_KEY);
+      expect(area.has(PID_KEY)).toBe(false);
+      expect(pidStore().get(PID_KEY)).toBeNull();
+    } finally {
+      if (previous) Object.defineProperty(globalThis, "localStorage", previous);
+      else Reflect.deleteProperty(globalThis, "localStorage");
+    }
   });
 });

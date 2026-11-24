@@ -1,6 +1,6 @@
 import { existsSync } from "node:fs";
 import { describe, expect, it } from "vitest";
-import { openTarget, PHOTO_THUMB, pagesOf, SLIDES, stepPage, thumbOf } from "../../public/js/core/demo.js";
+import { openTarget, PHOTO_THUMB, pageMode, pagesOf, SLIDES, stepPage, thumbOf } from "../../public/js/core/demo.js";
 import type { Item } from "../../src/shared/protocol.ts";
 
 const ORIGIN = "https://bloop.example";
@@ -58,5 +58,11 @@ describe("DEMO-01 what the viewer shows per item", () => {
     expect(thumbOf(link, demo)).toBeNull();
     expect(thumbOf(deck, { mode: "demo", kind: "guest" })).toBeNull();
     expect(thumbOf(photo, { mode: "live", kind: "owner" })).toBeNull();
+  });
+
+  it("a portrait document (an A4 page) scrolls as one column; landscape slides page one at a time", () => {
+    expect(pageMode(1240, 1754)).toBe("scroll");
+    expect(pageMode(1920, 1200)).toBe("paged");
+    expect(pageMode(1000, 1000)).toBe("paged");
   });
 });

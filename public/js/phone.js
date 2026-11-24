@@ -12,13 +12,16 @@ import { loadFiles } from "./core/files.js";
 import { ago, countdown, ICON_ADD } from "./core/format.js";
 import { rowFace, tile } from "./core/rows.js";
 import { firstFile, phoneKey } from "./core/states.js";
-import { PID_KEY, refOf, SID_KEY, sameScreen, sessionStore } from "./core/store.js";
+import { PID_KEY, pidStore, refOf, SID_KEY, sameScreen, sessionStore } from "./core/store.js";
 import { ariaFlag, byId, el, focusTitle, ICON_CHECK, icon, isFramed, setText, show, wsUrl } from "./core/ui.js";
 import { VERIFIED } from "./core/verified.js";
 import { ERRORS } from "./shared/errors.js";
 
 const api = createApi();
 const store = sessionStore();
+const pids = pidStore();
+/** The page opened with no code and no pairing: someone typed /a. */
+let nocode = false;
 
 const back = byId("back");
 const title = byId("title");
@@ -130,10 +133,8 @@ function renderActions(/** @type {import("./types.js").PhoneAction[]} */ actions
     c.actionIds = ids;
     actionsEl.replaceChildren(
       ...actions.map((a) => {
-        const node = a.href
-          ? el("a", { class: `btn ${a.kind}`, href: a.href, "data-action": a.id })
-          : el("button", { class: `btn ${a.kind}`, type: "button", "data-action": a.id });
-        return node;
+        const attrs = { class: `btn ${a.kind}`, "data-action": a.id, ...(a.aria ? { "aria-label": a.aria } : {}) };
+        return a.href ? el("a", { ...attrs, href: a.href }) : el("button", { ...attrs, type: "button" });
       }),
     );
   }
@@ -159,10 +160,12 @@ function render() {
     maxMB: wholeMB(c.maxBytes),
     match: c.info?.match ?? null,
     // This tab holds the sid of the demo screen it claimed: it came from /s by "Approve on This Device" and can go back.
-    back: demo && sameScreen(store.get(SID_KEY), c.pid),
+    back: home(),
+    reason: v?.endReason ?? null,
+    nocode,
   });
 
-  back.setAttribute("href", demo && sameScreen(store.get(SID_KEY), c.pid) ? "/s?mode=demo" : "/");
+  back.setAttribute("href", home() ? "/s?mode=demo" : "/");
   show(skelTitle, key === "checking");
   show(title, key !== "checking");
   setText(title, copy.title);
@@ -193,17 +196,39 @@ function render() {
   renderActions(copy.actions, copy.loading);
 
   setText(polite, key === "approving" ? "Approving" : "");
+  document.body.classList.toggle("is-ended", key === "ended");
   if (key !== c.key) {
     c.key = key;
     if (key !== "checking" && key !== "approving") focusTitle(title);
   }
 }
 
+/** This tab is also the demo screen it claimed (the one-device round trip): its way back is that screen. */
+const home = () => c.info?.mode === "demo" && sameScreen(store.get(SID_KEY), c.pid);
+
+/** Five minutes or less is worth a glance. */
+const SOON_MS = 300_000;
+let offline = false;
+
 /** "Ends in 59:12": the server's end time on the server's clock, counted down here. */
 function countDown() {
   const at = c.view?.endsAt;
-  if (!ends.hidden && at) setText(ends, `Ends in ${countdown(at - (Date.now() + c.skew))}`);
+  if (ends.hidden || !at) return;
+  const left = at - (Date.now() + c.skew);
+  setText(ends, `Ends in ${countdown(left)}${offline ? " · Reconnecting" : ""}`);
+  ends.classList.toggle("soon", left <= SOON_MS);
 }
+
+/** Back before approval lets go of the claim first, so the screen does not wait on this phone. */
+back.addEventListener("click", async (e) => {
+  const state = c.view?.state;
+  if (!c.pid || c.canceled || (state && state !== "claimed" && state !== "choosing")) return;
+  e.preventDefault();
+  const to = back.getAttribute("href") ?? "/";
+  await api.post("/api/cancel", {}, c.pid);
+  pids.remove(PID_KEY);
+  location.assign(to);
+});
 
 fileList.addEventListener("click", (e) => {
   if (e.target instanceof Element && e.target.closest("[data-action='send-file']")) chooseFile();
@@ -243,7 +268,7 @@ function retry() {
 }
 
 function done() {
-  store.remove(PID_KEY);
+  pids.remove(PID_KEY);
   location.assign("/");
 }
 
@@ -253,10 +278,11 @@ async function approve() {
   render();
   const res = await api.post("/api/approve", { ids: c.selected }, c.pid);
   c.approving = false;
-  if (res.ok) {
-    setView(res.value);
-    render();
-  } else fail(res.error, approve);
+  if (!res.ok) return fail(res.error, approve);
+  // The one-device demo goes back to its screen, which now shows what was approved.
+  if (home()) return location.assign("/s?mode=demo");
+  setView(res.value);
+  render();
 }
 
 /** A phone that scanned with nothing to choose from sends its own file: the server turns the claim into a guest at the first byte. */
@@ -316,7 +342,7 @@ async function cancelPairing() {
   c.canceled = true;
   c.channel?.stop();
   c.channel = null;
-  store.remove(PID_KEY);
+  pids.remove(PID_KEY);
   render();
 }
 
@@ -371,7 +397,10 @@ function attach(/** @type {string} */ pid) {
     onError: (code) => {
       if (!c.canceling && !c.canceled) fail(code);
     },
-    onLink: () => {},
+    onLink: (link) => {
+      offline = link !== "ok";
+      countDown();
+    },
   });
   addEventListener("online", () => c.channel?.nudge());
   document.addEventListener("visibilitychange", () => {
@@ -381,7 +410,7 @@ function attach(/** @type {string} */ pid) {
 
 /** @param {ClaimResponse} claim */
 function paired(claim) {
-  store.set(PID_KEY, claim.pid);
+  pids.set(PID_KEY, claim.pid);
   c.info = { roomName: claim.room.name, registered: claim.room.registered, match: claim.match, mode: claim.mode };
   c.maxBytes = claim.dropMaxBytes;
   attach(claim.pid);
@@ -403,7 +432,7 @@ async function resume(/** @type {string} */ pid) {
   const res = await api.get("/api/pair/state", pid);
   if (!res.ok) {
     if (res.error === "offline" || res.error === "service_down") return fail("offline", () => resume(pid));
-    store.remove(PID_KEY);
+    pids.remove(PID_KEY);
     return fail("pairing_invalid");
   }
   const view = /** @type {PhoneView} */ (res.value);
@@ -423,10 +452,13 @@ function start() {
   }
   render();
   setInterval(countDown, 1000);
-  const pid = store.get(PID_KEY);
+  const pid = pids.get(PID_KEY);
   if (bootCode) claim(bootCode);
   else if (pid) resume(pid);
-  else fail("pairing_invalid");
+  else {
+    nocode = true;
+    fail("pairing_invalid");
+  }
 }
 
 start();

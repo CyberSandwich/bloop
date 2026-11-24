@@ -53,3 +53,15 @@ export function sessionStore() {
     return createStore(null);
   }
 }
+
+/**
+ * The phone's pairing store, over localStorage: a closed tab can come back to Revoke. The pid is a bearer secret for
+ * one pairing; it is dropped on end, Revoke, cancel and every refusal, and dies with the session on the server.
+ */
+export function pidStore() {
+  try {
+    return createStore(globalThis.localStorage);
+  } catch {
+    return createStore(null);
+  }
+}

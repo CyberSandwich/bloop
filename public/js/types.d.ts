@@ -135,6 +135,8 @@ export interface ScreenLauncher {
   onView: (view: ScreenView) => void;
   /** A click is needed to open (no gesture at launch, or a blocked popup). */
   needsClick: () => boolean;
+  /** What this PC may still hold: PowerPoint was launched, the name of a download it started. Read before an end resets it. */
+  left: () => { ppt: boolean; download: string | null };
   /** The launch has waited long enough that Download may show. */
   downloadReady: () => boolean;
   /** Close the PDF window this page opened. */
@@ -147,7 +149,7 @@ export interface ScreenLauncher {
  * `start_over` is the back arrow, `end` the End pill and the bloop mark (end, then home), `here` the demo's
  * "Approve on This Device" pill.
  */
-export type ScreenControl = "start_over" | "end" | "open" | "download" | "pdf" | "here";
+export type ScreenControl = "start_over" | "end" | "open" | "download" | "pdf" | "here" | "continue" | "waitlist";
 
 export interface ScreenCopy {
   heading: string;
@@ -172,13 +174,23 @@ export interface ScreenFacts {
   demo?: boolean;
   /** How the screen opened the file; only `protocol` is a PowerPoint launch. */
   openMode?: OpenMode | null;
+  /** This browser holds the claim too (the pid in localStorage names this screen). */
+  mine?: boolean;
+  /** The launch needs a click (no user gesture). */
+  click?: boolean;
+  /** The line under Session Ended (endLine in copy.js). */
+  endLine?: string;
+  /** A session is running (approved to open). */
+  inSession?: boolean;
 }
 
 export interface PhoneAction {
   id: string;
   label: string;
-  kind: "primary" | "secondary" | "text";
+  kind: "primary" | "secondary" | "text" | "rose";
   href?: string;
+  /** The accessible name, when the label alone is not enough (the match digits). */
+  aria?: string;
 }
 
 export interface PhoneCopy {
@@ -216,6 +228,10 @@ export interface PhoneFacts {
   back?: boolean;
   /** The 2 match digits the screen shows, carried on the button that commits. */
   match?: string | null;
+  /** Why the session ended, from the view. */
+  reason?: import("../../src/shared/protocol.ts").EndReason | null;
+  /** /a opened with no code and no pairing. */
+  nocode?: boolean;
 }
 
 export interface ScreenCtx {

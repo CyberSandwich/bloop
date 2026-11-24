@@ -2,21 +2,22 @@
 /** @import {ScreenView} from "../../src/shared/protocol.ts" */
 import { createApi } from "./core/api.js";
 import { openChannel } from "./core/channel.js";
-import { screenCopy } from "./core/copy.js";
+import { endLine, screenCopy } from "./core/copy.js";
 import { clock, itemName, qrLabel } from "./core/format.js";
 import { qrMatrix, qrPath, qrSize } from "./core/qr.js";
 import { firstFile, screenKey } from "./core/states.js";
-import { refOf, SID_KEY, sessionStore } from "./core/store.js";
+import { PID_KEY, pidStore, refOf, SID_KEY, sameScreen, sessionStore } from "./core/store.js";
 import {
   CODE_GRACE_MS,
   CODE_TTL_MS,
+  ENDED_HOLD_MS,
   ENDED_QR_RETURN_MS,
   ERROR_RECOVER_MS,
   OFFLINE_HINT_MS,
   pollDelay,
   ROTATE_AHEAD_MS,
 } from "./core/timing.js";
-import { byId, el, focusTitle, frameThrottle, isFramed, lostFocus, setText, show, wsUrl } from "./core/ui.js";
+import { ariaFlag, byId, el, focusTitle, frameThrottle, isFramed, lostFocus, setText, show, wsUrl } from "./core/ui.js";
 import { createLauncher } from "./launcher.js";
 import { createResidue } from "./residue.js";
 import { format } from "./shared/codes.js";
@@ -25,6 +26,7 @@ import { createViewer, fetchOpen } from "./viewer.js";
 
 const api = createApi();
 const store = sessionStore();
+const pids = pidStore();
 const DEMO = new URLSearchParams(location.search).get("mode") === "demo";
 
 const main = byId("main");
@@ -40,13 +42,18 @@ const qrPathEl = byId("qr-path");
 const matchEl = byId("match");
 const typedHost = byId("typed-host");
 const typedCode = byId("typed-code");
+const polite = byId("polite");
+const dlNote = byId("dl-note");
 const buttons = {
   back: byId("b-back"),
   start_over: byId("b-start-over"),
   home: byId("b-home"),
   here: byId("b-here"),
+  phone: byId("b-phone"),
+  continue: byId("b-continue"),
+  waitlist: byId("b-waitlist"),
   copy: byId("b-copy"),
-  renew: /** @type {HTMLButtonElement} */ (byId("b-new")),
+  renew: byId("b-new"),
   end: byId("b-end"),
   present: byId("b-present"),
   open: byId("b-open"),
@@ -102,6 +109,10 @@ const residue = createResidue({
 });
 
 const serverNow = () => Date.now() + s.skew;
+/** Bumped by every renew: a boot or a channel of an older screen stops acting. */
+let gen = 0;
+/** The line under Session Ended, fixed when the session ends (the launcher forgets at once). */
+let ended = "";
 
 /** One named timer: setting it again replaces the old one. */
 function after(/** @type {string} */ name, /** @type {number} */ ms, /** @type {() => void} */ fn) {
@@ -147,6 +158,8 @@ function updateRing() {
   const from = s.view.code.expiresAt - CODE_TTL_MS;
   const left = 100 - 100 * Math.min(1, Math.max(0, (serverNow() - from) / (CODE_TTL_MS - CODE_GRACE_MS)));
   ringRect.setAttribute("stroke-dasharray", `${left} ${100 - left}`);
+  // A round cap would leave a dot on an empty ring.
+  ring.classList.toggle("is-out", left <= 0);
 }
 
 const MODE = {
@@ -155,6 +168,7 @@ const MODE = {
   choosing: "scanned",
   guest_open: "scanned",
   demo_open: "viewer",
+  ended: "ended",
 };
 
 const keyNow = () => screenKey({ view: s.view, link: s.link, errored: s.errored, limited: s.limited });
@@ -186,6 +200,10 @@ function paint() {
     offlineLong: s.offlineSince !== null && Date.now() - s.offlineSince >= OFFLINE_HINT_MS,
     demo: DEMO,
     openMode: v?.openMode ?? null,
+    mine: sameScreen(s.sid, pids.get(PID_KEY)),
+    click: launcher.needsClick(),
+    endLine: ended,
+    inSession: !!v?.endsAt && v.state !== "ended",
   });
 
   const changed = heading.textContent !== copy.heading;
@@ -204,14 +222,16 @@ function paint() {
   setText(matchEl, mode === "scanned" ? (v?.match ?? "") : "");
 
   const has = (/** @type {import("./types.js").ScreenControl} */ c) => copy.controls.includes(c);
-  // Top left: Back home, Back as Start Over, or in a session the mark that ends it, then goes home.
   show(buttons.back, !has("start_over") && !has("end") && key !== "ended");
   show(buttons.start_over, has("start_over"));
   show(buttons.home, has("end"));
   show(buttons.end, has("end"));
   // This device as the phone: same tab to /a, which claims the code; /a links back here, and the stored sid resumes.
   show(buttons.here, has("here") && !!code);
-  if (code) buttons.here.setAttribute("href", `/a?c=${code.code}`);
+  show(buttons.phone, has("here") && !!code);
+  if (code) for (const b of [buttons.here, buttons.phone]) b.setAttribute("href", `/a?c=${code.code}`);
+  show(buttons.continue, has("continue"));
+  show(buttons.waitlist, has("waitlist"));
   // Open: the guest's offer, or a launch that needs a click (no user gesture, or a blocked popup).
   show(buttons.open, has("open") || launcher.needsClick());
   // A spent mint budget hides the item's fallbacks: another click could only be refused.
@@ -222,11 +242,14 @@ function paint() {
     ? item?.kind === "file" && v?.state !== "approved"
     : has("download") && (key !== "opening" || launcher.downloadReady());
   show(buttons.download, mintable && download);
+  show(dlNote, !DEMO && mintable && download);
   setText(buttons.download, viewing || key === "open_fallback" ? "Download" : "Download It Instead");
   show(buttons.pdf, mintable && has("pdf"));
   show(buttons.present, viewing && !!viewer?.presentable());
 
-  if (changed && lostFocus()) focusTitle(heading);
+  // With the sidebar showing, the h1 is visually hidden: focus lands on the selected row instead.
+  const row = document.querySelector("#items [aria-current]");
+  if (changed && lostFocus()) focusTitle(row instanceof HTMLElement && row.offsetParent ? row : heading);
   if (mode === "waiting") updateRing();
   schedule(key);
 }
@@ -239,7 +262,7 @@ function schedule(/** @type {import("../../src/shared/protocol.ts").ScreenStateK
     else after("rotate", Math.max(0, v.code.expiresAt - ROTATE_AHEAD_MS - serverNow()), requestCode);
   } else cancel("rotate");
 
-  if (key === "ended") after("ended", ENDED_QR_RETURN_MS, requestCode);
+  if (key === "ended") after("ended", ended || DEMO ? ENDED_HOLD_MS : ENDED_QR_RETURN_MS, requestCode);
   else cancel("ended");
 
   if (key === "error") after("error", ERROR_RECOVER_MS, recover);
@@ -261,8 +284,11 @@ function recover() {
 }
 
 function onView(/** @type {ScreenView} */ view) {
+  if (view.state === "ended" && s.view?.state !== "ended") {
+    ended = DEMO ? "" : endLine(view.endReason, launcher.left());
+  }
+  if (view.state === "ended" || view.state === "closed") pids.remove(PID_KEY);
   s.view = view;
-  buttons.renew.disabled = false;
   s.skew = view.now - Date.now();
   if (view.state === "ended" || view.state === "closed") residue.clear();
   // The credential is the screen's own, not the session's: it comes back so a reload resumes the waiting screen.
@@ -290,12 +316,15 @@ function flagError() {
 
 /** The credential is dead: forget it and open a new screen. */
 function renew() {
+  gen += 1;
   s.channel?.stop();
   s.channel = null;
   store.remove(SID_KEY);
   s.sid = null;
   s.view = null;
   s.shown = null;
+  setText(typedCode, "");
+  qrPanel.classList.add("is-empty");
   boot();
 }
 
@@ -308,25 +337,34 @@ async function act(/** @type {string} */ path) {
 
 buttons.start_over.addEventListener("click", () => act("/api/screen/restart"));
 buttons.end.addEventListener("click", () => act("/api/screen/end"));
-buttons.home.addEventListener("click", async () => {
+// The logo opens an in-page question (s.html #leave, a popover); only its End and Go Home ends.
+byId("b-leave").addEventListener("click", async () => {
   await act("/api/screen/end");
   location.assign("/");
 });
 buttons.present.addEventListener("click", () => viewer?.present());
 buttons.copy.addEventListener("click", () => {
-  const code = s.shown;
-  navigator.clipboard?.writeText(code ? format(code) : "").then(
+  if (!s.shown) return;
+  navigator.clipboard?.writeText(format(s.shown)).then(
     () => {
       buttons.copy.classList.add("is-copied");
-      after("copied", 1500, () => buttons.copy.classList.remove("is-copied"));
+      setText(polite, "Copied");
+      after("copied", 1500, () => {
+        buttons.copy.classList.remove("is-copied");
+        setText(polite, "");
+      });
     },
     () => {},
   );
 });
-// New Code: a fresh screen by the end and create path. A waiting screen may refuse the end; dropping its sid and
-// socket lets it close by itself. A refused create shows the rate-limited state and retries, as at boot.
+// New Code: end closes the waiting screen, then boot creates one (a refusal shows the rate-limited state and retries).
+// The socket stops first, so the old screen's closing push cannot start a second renew.
 buttons.renew.addEventListener("click", async () => {
-  buttons.renew.disabled = true;
+  // aria-disabled, not disabled: the button keeps focus while the new screen loads.
+  if (buttons.renew.getAttribute("aria-disabled")) return;
+  ariaFlag(buttons.renew, "aria-disabled", true);
+  s.channel?.stop();
+  s.channel = null;
   await api.post("/api/screen/end", {}, s.sid);
   renew();
 });
@@ -349,20 +387,22 @@ buttons.pdf.addEventListener("click", fallback(launcher.showPdf));
 
 function connect(/** @type {string} */ sid) {
   s.sid = sid;
-  s.channel = openChannel({
+  // A channel that is no longer current (a renew replaced it) is ignored, whatever it still delivers.
+  const ch = openChannel({
     url: `${wsUrl("/api/screen/ws")}?ref=${refOf(sid)}`,
     statePath: "/api/screen/state",
     credential: sid,
     helloKey: "sid",
     api,
     connect: (url) => new WebSocket(url),
-    onView,
-    onError,
+    onView: (view) => ch === s.channel && onView(view),
+    onError: (code) => ch === s.channel && onError(code),
     onFrame: (frame) => {
-      if (frame.t === "open") launcher.launch(frame.links, frame.item);
+      if (ch === s.channel && frame.t === "open") launcher.launch(frame.links, frame.item);
     },
-    onLink,
+    onLink: (link) => ch === s.channel && onLink(link),
   });
+  s.channel = ch;
 }
 
 /**
@@ -394,15 +434,18 @@ async function create() {
 
 /** Resumes the stored screen, or creates one. Retries with backoff while the network is down or the demo caps refuse. */
 async function boot(attempt = 0) {
+  const g = gen;
   const booted = (await resume()) ?? (await create());
+  if (g !== gen) return;
   s.limited = !booted.ok && booted.error === "rate_limited";
   if (!booted.ok) {
     s.link = booted.error === "offline" ? "offline" : "down";
     s.offlineSince = s.link === "offline" ? (s.offlineSince ?? Date.now()) : null;
     render();
-    setTimeout(() => boot(attempt + 1), pollDelay(attempt + 1));
+    setTimeout(() => g === gen && boot(attempt + 1), pollDelay(attempt + 1));
     return;
   }
+  ariaFlag(buttons.renew, "aria-disabled", false);
   s.link = "ok";
   s.offlineSince = null;
   // The sid first: the first view can already ask for a link.
@@ -418,6 +461,7 @@ function start() {
   else if (matchMedia("(max-width: 599.98px)").matches) return;
   main.dataset.mode = "idle";
   typedHost.textContent = location.host;
+  setText(byId("phone-host"), location.host);
   fitQr();
   addEventListener("resize", frameThrottle(fitQr));
   addEventListener("online", () => s.channel?.nudge());
