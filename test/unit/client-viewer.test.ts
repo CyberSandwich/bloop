@@ -2,7 +2,13 @@
 import { beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import type { Item, ScreenView } from "../../src/shared/protocol.ts";
 
-type Listener = (e: { type: string; key?: string; target?: unknown; preventDefault?: () => void }) => void;
+type Listener = (e: {
+  type: string;
+  key?: string;
+  clientX?: number;
+  target?: unknown;
+  preventDefault?: () => void;
+}) => void;
 
 class Node {
   hidden = false;
@@ -151,6 +157,8 @@ interface Viewer {
   take(url: string, item: number, mode: "view"): boolean;
   present(on: boolean): void;
   presentable(): boolean;
+  item(): Item | null;
+  at(): number;
 }
 let createViewer: (deps: { relink: (i: number) => Promise<boolean>; onChange: () => void }) => Viewer;
 beforeAll(async () => {
