@@ -5,15 +5,16 @@
 import { createApi } from "./core/api.js";
 import { bootCode } from "./core/boot-code.js";
 import { openChannel, refusal } from "./core/channel.js";
-import { phoneCopy } from "./core/copy.js";
+import { phoneCopy, refusalToast } from "./core/copy.js";
 import { thumbOf } from "./core/demo.js";
-import { sendable, sendFile, wholeMB } from "./core/drop.js";
+import { fileProblem, prepareFile, sendFile, wholeMB } from "./core/drop.js";
 import { loadFiles } from "./core/files.js";
 import { ago, countdown } from "./core/format.js";
 import { ICONS } from "./core/icons.js";
 import { rowFace, tile } from "./core/rows.js";
 import { adopt, firstFile, leave, liveClaim, onRefusal, phoneKey, retryStep } from "./core/states.js";
 import { dropPid, PID_KEY, pidStore, refOf, SID_KEY, sameScreen, sessionStore } from "./core/store.js";
+import { toast } from "./core/toast.js";
 import { ariaFlag, byId, el, focusTitle, icon, isFramed, reloadOnRestore, setText, show, wsUrl } from "./core/ui.js";
 import { VERIFIED } from "./core/verified.js";
 import { ERRORS } from "./shared/errors.js";
@@ -27,8 +28,12 @@ let nocode = false;
 const EXITS = ["done", "code", "end"];
 const drop = (/** @type {string | null} */ pid) => dropPid(pids, pid);
 const io = { post: api.post, drop, assign: (/** @type {string} */ to) => location.assign(to) };
-/** Add a File from the list opened this offer: its Cancel goes back to the list. */
-const fromList = () => !!c.files && (c.drop === "choose" || c.drop === "confirm");
+/** A file offered or refused on top of a list (the guest's own landing counts as one): Cancel and Back return to it. */
+const fromList = () => !!c.files && (c.drop === "confirm" || c.error === "guest_refused");
+/** The offer pushed a history entry, so the browser's Back returns to the list as Cancel does. */
+let pushed = false;
+/** The state offers a file picker (so a dropped file is welcome too). */
+let canAdd = false;
 
 const back = byId("back");
 const title = byId("title");
@@ -172,6 +177,7 @@ function render() {
     list: fromList(),
   });
 
+  canAdd = copy.add || key === "guest_confirm" || copy.actions.some((a) => a.id === "send-file" || a.id === "pick");
   back.setAttribute("href", home() ? "/s?mode=demo" : "/");
   // One way out: a result has Done, a dead code Enter the Code, a session Revoke. A typed /a was never a code.
   const exit = copy.actions.some((a) => EXITS.includes(a.id));
@@ -234,13 +240,18 @@ function countDown() {
 
 // Otherwise Back is a plain link (a modified click opens a tab) that keeps the pid.
 back.addEventListener("click", (e) => {
-  if (e.metaKey || e.ctrlKey || e.shiftKey || e.altKey || !liveClaim(c)) return;
+  if (e.metaKey || e.ctrlKey || e.shiftKey || e.altKey) return;
+  if (fromList()) {
+    e.preventDefault();
+    return toList();
+  }
+  if (!liveClaim(c)) return;
   e.preventDefault();
   void leave(c, io, back.getAttribute("href") ?? "/");
 });
 
 fileList.addEventListener("click", (e) => {
-  if (e.target instanceof Element && e.target.closest("[data-action='send-file']")) chooseFile();
+  if (e.target instanceof Element && e.target.closest("[data-action='send-file']")) pickFile();
 });
 
 actionsEl.addEventListener("click", (e) => {
@@ -253,19 +264,75 @@ actionsEl.addEventListener("click", (e) => {
   else if (id === "retry") retry();
   else if (id === "connect") location.assign("/auth/start");
   else if (id === "disconnect") disconnect();
-  else if (id === "send-file") chooseFile();
-  else if (id === "pick") pickFile();
+  else if (id === "send-file" || id === "pick") pickFile();
   else if (id === "send") send();
 });
 
 filePick.addEventListener("change", () => {
-  const file = filePick.files?.[0];
+  if (filePick.files?.length) choose([...filePick.files]);
+});
+
+// A dropped file takes the picker's road. The hint shows while a file is dragged over a page that can take one.
+const dropHint = byId("drop-hint");
+let dragDepth = 0;
+const dragsFile = (/** @type {DragEvent} */ e) => !!e.dataTransfer?.types.includes("Files");
+addEventListener("dragenter", (e) => {
+  if (!dragsFile(e)) return;
+  e.preventDefault();
+  dragDepth++;
+  show(dropHint, canAdd);
+});
+addEventListener("dragover", (e) => {
+  if (dragsFile(e)) e.preventDefault();
+});
+addEventListener("dragleave", (e) => {
+  if (!dragsFile(e)) return;
+  dragDepth = Math.max(0, dragDepth - 1);
+  if (dragDepth === 0) show(dropHint, false);
+});
+addEventListener("drop", (e) => {
+  if (!dragsFile(e)) return;
+  e.preventDefault();
+  dragDepth = 0;
+  show(dropHint, false);
+  if (canAdd) choose([...(e.dataTransfer?.files ?? [])]);
+});
+
+const refuse = (/** @type {Parameters<typeof refusalToast>[0]} */ problem) =>
+  toast(refusalToast(problem, { demo: c.info?.mode === "demo", maxMB: wholeMB(c.maxBytes) }));
+
+/** A picked or dropped file: what the phone can refuse is a toast and the page stays; otherwise the offer. */
+function choose(/** @type {File[]} */ files) {
+  const file = files[0];
   if (!file) return;
+  const problem = files.length > 1 ? "several" : fileProblem(file, c.maxBytes);
+  if (problem) return refuse(problem);
   c.file = file;
-  if (sendable(file, c.maxBytes)) {
-    c.drop = "confirm";
-    render();
-  } else fail("bad_type");
+  c.drop = "confirm";
+  c.error = null;
+  c.retry = null;
+  if (!pushed) history.pushState(null, "");
+  pushed = true;
+  render();
+}
+
+/** Back to the list: through the history entry the offer pushed, so the browser's Back and this agree. */
+function toList() {
+  if (pushed) history.back();
+  else showList();
+}
+
+function showList() {
+  c.drop = null;
+  c.file = null;
+  c.error = null;
+  c.retry = null;
+  render();
+}
+
+addEventListener("popstate", () => {
+  pushed = false;
+  if (fromList()) showList();
 });
 
 function retry() {
@@ -286,17 +353,10 @@ async function approve() {
   render();
 }
 
-/** The server turns the claim into a guest at the first byte. */
-function chooseFile() {
-  c.drop = "choose";
-  render();
-}
-
-/** The file picker needs this click as its user gesture. */
+/** Opens the native picker; it needs this click as its user gesture. The server turns the claim into a guest at the first byte. */
 function pickFile() {
   c.error = null;
   c.retry = null;
-  c.drop = "choose";
   filePick.value = "";
   render();
   filePick.click();
@@ -306,24 +366,35 @@ async function send() {
   const file = c.file;
   if (!file || c.drop === "sending") return;
   let stopped = false;
+  /** @type {{abort: () => void} | null} */
+  let up = null;
   c.drop = "sending";
   c.progress = 0;
+  c.upload = {
+    abort: () => {
+      stopped = true;
+      up?.abort();
+    },
+  };
   render();
-  const up = sendFile({
-    file,
+  const ready = await prepareFile(file, c.maxBytes);
+  if (stopped) return;
+  if (!ready.ok) {
+    c.upload = null;
+    c.drop = "confirm";
+    render();
+    return refuse(ready.problem);
+  }
+  const sending = sendFile({
+    file: ready.file,
     pid: /** @type {string} */ (c.pid),
     onProgress: (fraction) => {
       c.progress = fraction;
       render();
     },
   });
-  c.upload = {
-    abort: () => {
-      stopped = true;
-      up.abort();
-    },
-  };
-  const res = await up.done;
+  up = sending;
+  const res = await sending.done;
   c.upload = null;
   if (stopped) return;
   c.drop = null;
@@ -333,13 +404,10 @@ async function send() {
   } else fail(res.error, send);
 }
 
-/** From the list's offer (or the file it refused), Cancel goes back to the list: Back stays the one way out. */
+/** On an offer or a refusal over a list, Cancel goes back to the list; Back is the one way out of that. */
 function cancel() {
-  if (!fromList()) return void cancelPairing();
-  c.drop = null;
-  c.file = null;
-  c.error = null;
-  render();
+  if (fromList()) toList();
+  else void cancelPairing();
 }
 
 /** `canceling` keeps the server's own `pairing_invalid` push, which arrives first, from showing as expired. */
@@ -418,15 +486,18 @@ function attach(/** @type {string} */ pid) {
 /** @param {ClaimResponse} claim */
 function paired(claim) {
   pids.set(PID_KEY, claim.pid);
-  c.info = { roomName: claim.room.name, registered: claim.room.registered, match: claim.match, mode: claim.mode };
+  c.info = {
+    roomName: claim.room.name,
+    registered: claim.room.registered,
+    match: claim.match,
+    mode: claim.mode,
+    kind: claim.kind,
+  };
   c.maxBytes = claim.dropMaxBytes;
   attach(claim.pid);
-  if (claim.kind === "guest") {
-    c.drop = "choose";
-    return render();
-  }
+  if (claim.kind === "guest") c.files = [];
   render();
-  listFiles();
+  if (claim.kind !== "guest") listFiles();
 }
 
 async function claim(/** @type {string} */ code) {
@@ -446,7 +517,14 @@ async function resume(/** @type {string} */ pid) {
     return fail("pairing_invalid");
   }
   const view = /** @type {PhoneView} */ (res.value);
-  c.info = { roomName: view.room.name, registered: view.room.registered, match: view.match, mode: view.mode };
+  c.info = {
+    roomName: view.room.name,
+    registered: view.room.registered,
+    match: view.match,
+    mode: view.mode,
+    kind: view.kind,
+  };
+  if (view.kind === "guest") c.files = [];
   setView(view, pid);
   c.maxBytes = view.dropMaxBytes;
   attach(pid);

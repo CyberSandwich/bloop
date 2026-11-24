@@ -32,7 +32,7 @@
         <div class="bar-wrap" id="bar-wrap" hidden>
           <progress class="bar" id="bar" max="100" value="0" aria-label="Sending"></progress>
         </div>
-        <input class="sr" id="file-pick" type="file" tabindex="-1" aria-label="Choose a File" accept=".pptx,.pdf,application/pdf,application/vnd.openxmlformats-officedocument.presentationml.presentation">
+        <input class="sr" id="file-pick" type="file" tabindex="-1" aria-label="Choose a File" accept="image/jpeg,image/png,video/mp4,video/quicktime,.jpg,.jpeg,.png,.mp4,.mov,.pdf,.pptx,application/pdf,application/vnd.openxmlformats-officedocument.presentationml.presentation">
       </div>
       <ul class="list" id="file-list" aria-label="Items" hidden></ul>
       <p class="scope" id="scope" hidden></p>
@@ -41,5 +41,6 @@
       </div>
       <p class="sr" id="polite" role="status"></p>
     </main>
+    <div class="drop-hint" id="drop-hint" aria-hidden="true" hidden>Drop a File to Send It</div>
   </body>
 </html>

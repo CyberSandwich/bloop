@@ -138,9 +138,9 @@ export function phoneKey(c) {
     // The server's word wins over this phone's: a reload or a second push can arrive in any of these.
     if (v.state === "offered") return "guest_sent";
     if (v.state === "uploading") return "guest_sending";
-    if (v.kind === "guest" && !c.drop) return "guest_choose";
   }
   if (c.drop) return `guest_${c.drop}`;
+  if ((v?.kind ?? c.info.kind) === "guest") return "guest_add";
   if (!c.files) return "match";
   if (c.files.length === 0) return "empty";
   if (c.approving) return "approving";
