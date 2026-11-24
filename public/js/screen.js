@@ -204,7 +204,7 @@ const keyNow = () => screenKey({ view: s.view, link: s.link, errored: s.errored,
 
 function render() {
   const key = keyNow();
-  const scene = `${MODE[/** @type {keyof typeof MODE} */ (key)] ?? key}:${key === "demo_open" ? viewer?.at() : ""}`;
+  const scene = MODE[/** @type {keyof typeof MODE} */ (key)] ?? key;
   const changed = s.scene !== null && scene !== s.scene;
   s.scene = scene;
   paint();

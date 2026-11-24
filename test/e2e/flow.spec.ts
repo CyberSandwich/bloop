@@ -79,13 +79,18 @@ async function expectViewer(page: Page) {
   await expect(page.getByRole("button", { name: "End", exact: true })).toBeVisible();
 }
 
-/** The viewer's pill rides 16 under the item on the stage. */
+/** The page's one inset (10 under 640, 12 from it): the edge distance and the gap between floating parts. */
+const insetOf = async (page: Page) =>
+  (await page.evaluate("parseFloat(getComputedStyle(document.documentElement).getPropertyValue('--inset'))")) as number;
+
+/** The viewer's pill rides one inset under the item on the stage. */
 async function expectPillUnder(page: Page, item: Locator) {
   await expect(item).toBeVisible();
+  const inset = await insetOf(page);
   await expect(async () => {
     const box = await item.boundingBox();
     const pill = await page.locator("#controls").boundingBox();
-    expect(Math.round((pill?.y ?? 0) - ((box?.y ?? 0) + (box?.height ?? 0)))).toBe(16);
+    expect(Math.round((pill?.y ?? 0) - ((box?.y ?? 0) + (box?.height ?? 0)))).toBe(inset);
   }).toPass();
 }
 
@@ -784,7 +789,7 @@ test.describe("demo viewer", () => {
     const { phone } = await scan(browser, screen.page);
     await phone.page.getByRole("button", { name: "Approve" }).click();
     await expectViewer(screen.page);
-    const question = screen.page.getByRole("dialog", { name: "End and Go Home?" });
+    const question = screen.page.getByRole("dialog", { name: "End This Session?" });
     await screen.page.getByRole("button", { name: /^bloop/ }).click();
     await expect(question).toBeVisible();
     await expectNoAxeViolations(screen.page);
@@ -795,7 +800,7 @@ test.describe("demo viewer", () => {
     const sid = () => screen.page.evaluate(() => sessionStorage.getItem("bloop.sid"));
     const before = await sid();
     expect(before).not.toBeNull();
-    await question.getByRole("button", { name: "End and Go Home" }).click();
+    await question.getByRole("button", { name: "End Session" }).click();
     await expect(screen.page).toHaveURL("/");
     await expect(heading(phone.page)).toHaveText("Session Ended");
     // The page forgot the screen: the browser's Back opens a fresh one, never the ended session.
@@ -858,7 +863,7 @@ test.describe("demo viewer", () => {
     await page.getByRole("button", { name: "Approve" }).click();
     await expect(heading(page)).toHaveText("Dog.jpg");
     await page.getByRole("button", { name: /^bloop/ }).click();
-    const question = page.getByRole("dialog", { name: "End and Go Home?" });
+    const question = page.getByRole("dialog", { name: "End This Session?" });
     await expect(question).toBeVisible();
     const fit = await page.evaluate(`(() => {
       const end = document.getElementById("b-leave");
@@ -1011,6 +1016,7 @@ test.describe("screen and phone layout", () => {
     const { screen, phone, pane } = await viewerWith(browser);
     await expect(pane).toHaveClass(/is-stacked/);
     await expect(pane).not.toHaveClass(/is-stack-right/);
+    const inset = await insetOf(screen.page);
     await expect(async () => {
       const p = screen.page;
       const [pill, side, img, view] = await Promise.all([
@@ -1021,7 +1027,7 @@ test.describe("screen and phone layout", () => {
       ]);
       // Left-aligned with the list card, at least 16 under it, its foot level with the stage's, the item whole stage wide.
       expect(Math.abs(pill.x - side.x)).toBeLessThanOrEqual(1);
-      expect(pill.y).toBeGreaterThanOrEqual(side.y + side.height + 16 - 1);
+      expect(pill.y).toBeGreaterThanOrEqual(side.y + side.height + inset - 1);
       expect(Math.abs(pill.y + pill.height - (view.y + view.height))).toBeLessThanOrEqual(1);
       expect(Math.round(img.width)).toBeGreaterThan(Math.round(view.width) - 2);
     }).toPass();
@@ -1046,15 +1052,41 @@ test.describe("screen and phone layout", () => {
       })()`);
       throw new Error(`${String(e).slice(0, 200)} ${seen}`);
     }
+    const inset = await insetOf(screen.page);
     await expect(async () => {
       const p = screen.page;
       const [pill, img, view] = await Promise.all([box(p, "#controls"), box(p, "#frame img"), box(p, "#view")]);
-      expect(Math.round(pill.x - (img.x + img.width))).toBe(16);
+      expect(Math.round(pill.x - (img.x + img.width))).toBe(inset);
       expect(Math.round(pill.y + pill.height - (img.y + img.height))).toBe(0);
       // Whole inside the stage, the item and column centered as one group.
       expect(pill.x + pill.width).toBeLessThanOrEqual(view.x + view.width + 1);
       expect(Math.abs(img.x - view.x - (view.x + view.width - (pill.x + pill.width)))).toBeLessThanOrEqual(1);
     }).toPass();
+    await screen.context.close();
+    await phone.context.close();
+  });
+
+  test("switching between two items with one placement keeps the controls' node and animates nothing", async ({
+    browser,
+  }) => {
+    const { screen, phone } = await viewerWith(browser);
+    const page = screen.page;
+    await sidebarItem(page, "Sample deck.pptx").click();
+    await expect(heading(page)).toHaveText("Sample deck.pptx");
+    await expect(page.locator("#dots")).toBeVisible();
+    await page.evaluate("window.__controls = document.getElementById('controls')");
+    await sidebarItem(page, "Sample deck.pdf").click();
+    await expect(heading(page)).toHaveText("Sample deck.pdf");
+    await expect(page.locator("#frame img")).toBeVisible();
+    // Nothing starts later either: poll over the swap's settle, then read once more.
+    for (let i = 0; i < 5; i++) {
+      expect(
+        await page.evaluate(
+          "window.__controls === document.getElementById('controls') && document.getAnimations().filter((a) => ['controls', 'pane'].includes(a.effect?.target?.id)).length",
+        ),
+      ).toBe(0);
+      await page.waitForTimeout(100);
+    }
     await screen.context.close();
     await phone.context.close();
   });
@@ -1111,8 +1143,8 @@ test.describe("screen and phone layout", () => {
   }) => {
     const { screen, phone } = await viewerWith(browser);
     const page = screen.page;
-    const pill = page.getByRole("button", { name: "Stop Presenting" });
-    const opacity = async () => Number(await pill.evaluate("(e) => getComputedStyle(e).opacity"));
+    const opacity = async () =>
+      Number(await page.evaluate("getComputedStyle(document.getElementById('b-stop')).opacity"));
     await page.getByRole("button", { name: "Present", exact: true }).click();
     await expect(page.locator("body")).toHaveClass(/is-presenting/);
     await page.mouse.move(SCREEN.width / 2, 600);
@@ -1194,6 +1226,8 @@ test.describe("screen and phone layout", () => {
       }).toPass();
       return last;
     };
+    // A web font arriving late reflows the hint, so wait for it before taking the card's place.
+    await screen.page.evaluate("document.fonts.ready.then(() => true)");
     const card = await settled("#qr-panel");
     const hint = await settled("#hint");
     const { phone } = await scan(browser, screen.page);

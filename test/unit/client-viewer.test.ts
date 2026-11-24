@@ -172,7 +172,9 @@ beforeAll(async () => {
   vi.stubGlobal("ResizeObserver", Sized);
   vi.stubGlobal("IntersectionObserver", Observer);
   vi.stubGlobal("Image", class extends Node {});
-  vi.stubGlobal("getComputedStyle", () => ({ getPropertyValue: () => "60px" }));
+  vi.stubGlobal("getComputedStyle", () => ({
+    getPropertyValue: (name: string) => (name === "--inset" ? "16px" : "60px"),
+  }));
   vi.stubGlobal("matchMedia", () => ({ matches: true }));
   vi.stubGlobal("Element", Node);
   vi.stubGlobal("HTMLElement", Node);

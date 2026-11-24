@@ -53,16 +53,28 @@ export function createViewer(deps) {
   const stop = byId("b-stop");
   const body = document.body;
   const presenting = () => body.classList.contains("is-presenting");
-  // The pill sits 16 under the item, or, where that would shrink the item, as a column beside it (bottom-aligned,
+  // The pill sits `--inset` under the item, or, where that would shrink the item, as a column beside it (bottom-aligned,
   // on its left under a side list); a scrolling document gets it at the stage's foot. The tap zones cover the slide's
   // own box. Offsets, not client rects: the swap animation scales the img.
+  let lastPlace = "";
+  /** @type {DOMRect | null} where the controls were last drawn */
+  let drawn = null;
+  const reducedMotion = matchMedia("(prefers-reduced-motion: reduce)");
   const fit = () => {
+    // The controls start from where they were drawn (mid-flight included) and glide to the new place.
+    // (Its content changed before this ran, so the last drawn box is the start, unless a glide is under way.)
+    const running = pill.getAnimations?.() ?? [];
+    const from = running.length ? pill.getBoundingClientRect() : (drawn ?? pill.getBoundingClientRect());
+    for (const a of running) a.cancel();
+    const swap = swapped;
+    swapped = false;
     const img = frame.querySelector("img");
     const scrolls = frame.classList.contains("is-scroll");
     const item = scrolls ? null : (img ?? frame.firstElementChild);
     const css = getComputedStyle(view);
-    const gap = parseFloat(css.getPropertyValue("--pill")) + 16;
-    const reserve = parseFloat(css.getPropertyValue("--stack")) + 16;
+    const inset = parseFloat(css.getPropertyValue("--inset"));
+    const gap = parseFloat(css.getPropertyValue("--pill")) + inset;
+    const reserve = parseFloat(css.getPropertyValue("--stack")) + inset;
     // The file's own ratio (rounded box sizes could flip a near tie); the stand-in is the photo's 3 : 2.
     const ratio =
       item === img && img ? (img.classList.contains("stand-in") ? 1.5 : img.naturalWidth / img.naturalHeight) : 0;
@@ -70,7 +82,8 @@ export function createViewer(deps) {
     pane.classList.toggle("is-stacked", !!ratio && !presenting());
     const stack = pill.offsetHeight;
     const listed = !side.hidden && matchMedia("(min-width: 760px)").matches;
-    const listFits = listed && side.getBoundingClientRect().bottom + 16 + stack <= view.getBoundingClientRect().bottom;
+    const listFits =
+      listed && side.getBoundingClientRect().bottom + inset + stack <= view.getBoundingClientRect().bottom;
     const place =
       ratio && !presenting()
         ? placeControls(ratio, view.offsetWidth, view.offsetHeight, { reserve, gap, stack, listFits })
@@ -79,16 +92,19 @@ export function createViewer(deps) {
     pane.classList.toggle("is-stack-right", place === "right");
     if (place === "right" && item instanceof HTMLElement) {
       pill.style.top = `${view.offsetTop + item.offsetTop + item.offsetHeight - stack}px`;
-      pill.style.left = `${view.offsetLeft + item.offsetLeft + item.offsetWidth + 16}px`;
+      pill.style.left = `${view.offsetLeft + item.offsetLeft + item.offsetWidth + inset}px`;
     } else if (place === "list") {
       pill.style.top = `${view.offsetTop + view.offsetHeight - stack}px`;
       pill.style.left = `${side.getBoundingClientRect().left - pane.getBoundingClientRect().left}px`;
     } else {
       const top =
-        item instanceof HTMLElement ? item.offsetTop + item.offsetHeight + 16 : view.offsetHeight - pill.offsetHeight;
+        item instanceof HTMLElement
+          ? item.offsetTop + item.offsetHeight + inset
+          : view.offsetHeight - pill.offsetHeight;
       pill.style.top = `${view.offsetTop + top}px`;
       pill.style.left = "";
     }
+    glide(from, place, swap);
     if (!img) return;
     const box = { left: img.offsetLeft, top: img.offsetTop, width: img.offsetWidth, height: img.offsetHeight };
     for (const [i, part] of halves(box).entries()) {
@@ -99,6 +115,36 @@ export function createViewer(deps) {
       zone.style.height = `${part.height}px`;
     }
   };
+  /** FLIP: only a change of place, of shape (the page count appears, a pill becomes a column) or of the item moves
+   * the controls; a window resize or an unchanged switch leaves them still, with no animation at all.
+   * @param {DOMRect} from @param {string} place @param {boolean} swap */
+  function glide(from, place, swap) {
+    const to = pill.getBoundingClientRect();
+    drawn = to;
+    const was = lastPlace;
+    lastPlace = place;
+    if (reducedMotion.matches || presenting() || !from.width || !to.width || !pill.animate) return;
+    const dx = from.left - to.left;
+    const dy = from.top - to.top;
+    const dw = from.width - to.width;
+    const dh = from.height - to.height;
+    const still = Math.abs(dx) < 1 && Math.abs(dy) < 1 && Math.abs(dw) < 1 && Math.abs(dh) < 1;
+    if (still || !(swap || (was && was !== place) || Math.abs(dw) >= 1 || Math.abs(dh) >= 1)) return;
+    // Below, the pill is centered by its own `translate`, which the keyframes keep.
+    const bx = place === "below" ? "-50%" : "0px";
+    const base = `${bx} 0`;
+    pill.animate(
+      [
+        {
+          translate: `calc(${bx} + ${dx}px) ${dy}px`,
+          scale: `${from.width / to.width} ${from.height / to.height}`,
+          transformOrigin: "0 0",
+        },
+        { translate: base, scale: "1 1", transformOrigin: "0 0" },
+      ],
+      { duration: 300, easing: "cubic-bezier(0.22, 1, 0.36, 1)" },
+    );
+  }
   const sized = new ResizeObserver(fit);
   // The pane's entry slides it 12 px, which the list's box does not share.
   pane.addEventListener("animationend", fit);
@@ -115,6 +161,10 @@ export function createViewer(deps) {
   let page = 0;
   /** @type {string | null} */
   let framed = null;
+  /** The nodes waiting on their image's decode, so a stale swap cannot land. @type {unknown} */
+  let building = null;
+  /** The stage's content just changed: the next fit may move the controls with it. */
+  let swapped = false;
   // Per-item state is keyed by idOf, never by list position: a guest file sorting in ahead shifts every position.
   /** @type {Map<string, HTMLImageElement>} */
   const images = new Map();
@@ -277,27 +327,45 @@ export function createViewer(deps) {
     const want = p ? `p${at}:${scroll ? "all" : page}` : img ? `i${at}` : loading ? `w${at}` : `c${at}`;
     if (want !== framed) {
       framed = want;
-      seen.disconnect();
-      view.classList.toggle("is-card", !p && !img && !loading);
-      frame.classList.toggle("is-scroll", scroll);
-      if (scroll && p) {
-        frame.replaceChildren(...p.map((base, n) => picture(base, n, p.length)));
-        for (const one of frame.querySelectorAll("img")) seen.observe(one);
-      } else if (p) frame.replaceChildren(picture(p[page] ?? "", page, p.length));
+      /** @type {(HTMLElement | string)[]} */
+      let nodes;
+      if (scroll && p) nodes = p.map((base, n) => picture(base, n, p.length));
+      else if (p) nodes = [picture(p[page] ?? "", page, p.length)];
       else if (img) {
         img.alt = itemName(item);
-        frame.replaceChildren(img);
+        nodes = [img];
       } else {
         // While the photo loads, its row thumbnail holds the stage.
         const thumb = thumbOf(item, v);
-        frame.replaceChildren(
-          loading ? (thumb ? el("img", { class: "stand-in", src: thumb, alt: "" }) : "") : card(item),
-        );
+        nodes = [loading ? (thumb ? el("img", { class: "stand-in", src: thumb, alt: "" }) : "") : card(item)];
       }
-      sized.disconnect();
-      const target = frame.querySelector("img") ?? frame.firstElementChild;
-      // The pill (its buttons appear after the item) and the list (it grows with a guest's file) set the place too.
-      for (const box of target ? [target, view, pill, side] : [view, pill, side]) sized.observe(box);
+      const commit = () => {
+        if (building !== nodes) return;
+        building = null;
+        seen.disconnect();
+        view.classList.toggle("is-card", !p && !img && !loading);
+        frame.classList.toggle("is-scroll", scroll);
+        frame.replaceChildren(...nodes);
+        if (scroll && p) for (const one of frame.querySelectorAll("img")) seen.observe(one);
+        sized.disconnect();
+        const target = frame.querySelector("img") ?? frame.firstElementChild;
+        // The pill (its buttons appear after the item) and the list (it grows with a guest's file) set the place too.
+        for (const box of target ? [target, view, pill, side] : [view, pill, side]) sized.observe(box);
+        swapped = true;
+      };
+      building = nodes;
+      // The old item stays until the new one has decoded, so a switch never shows a blank stage.
+      const first = /** @type {HTMLImageElement | undefined} */ (
+        nodes
+          .map((n) => (typeof n === "string" ? null : (n.querySelector?.("img") ?? n)))
+          .find((n) => n && "decode" in n)
+      );
+      if (frame.firstElementChild && first && !first.complete)
+        first
+          .decode()
+          .catch(() => {})
+          .then(commit);
+      else commit();
     }
     show(view, true);
     show(frame, true);
@@ -316,6 +384,9 @@ export function createViewer(deps) {
     for (const img of images.values()) img.removeAttribute("src");
     images.clear();
     early.clear();
+    building = null;
+    drawn = null;
+    lastPlace = "";
     asked.clear();
     refused.clear();
     seen.disconnect();
