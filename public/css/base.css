@@ -65,6 +65,8 @@
   --nav-h: 56px;
   --wordmark: 22px;
   --mark: 32px;
+  --glyph: 0.8;
+  --glyph-dir: 0.88;
   --wash: rgba(120, 120, 128, 0.1);
   --r-sheet: 24px;
   --side: 280px;
@@ -144,8 +146,13 @@ h1[tabindex="-1"]:focus {
 [hidden] {
   display: none !important;
 }
+/* Lucide fills more of its 24 box than the glyphs it replaced; scale shrinks the drawing, never the layout box. */
 .icon {
   flex: none;
+  scale: var(--glyph);
+}
+.icon.dir {
+  scale: var(--glyph-dir);
 }
 .sr {
   position: absolute;

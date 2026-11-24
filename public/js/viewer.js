@@ -148,7 +148,7 @@ export function createViewer(deps) {
           item.kind === "link"
             ? linkTo(item.url, { class: "item" }, [
                 ...face,
-                icon(ICONS["arrow-up-right"]),
+                icon(ICONS["arrow-up-right"], true),
                 el("span", { class: "sr" }, ["New Tab"]),
               ])
             : el("button", { type: "button", class: "item" }, face);
@@ -214,7 +214,7 @@ export function createViewer(deps) {
     handle.replaceChildren(
       ...rowFace(item, thumbOf(item, v)),
       el("span", { class: "small" }, [`${v.items.length} items`]),
-      icon(ICONS["chevron-up"]),
+      icon(ICONS["chevron-up"], true),
     );
 
     const p = pages();

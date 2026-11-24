@@ -65,8 +65,8 @@ export function el(tag, attrs = {}, children = []) {
 
 const SVG = "http://www.w3.org/2000/svg";
 
-/** A Lucide glyph (24 viewBox, stroke 2) from its child elements in icons.js, as the pages inline it. @param {import("../types.js").IconPart[]} parts */
-export function icon(parts) {
+/** A Lucide glyph (24 viewBox, stroke 2) from its child elements in icons.js, as the pages inline it. @param {import("../types.js").IconPart[]} parts @param {boolean} [dir] an arrow or chevron: drawn a step larger */
+export function icon(parts, dir = false) {
   const svg = document.createElementNS(SVG, "svg");
   for (const [k, v] of Object.entries({
     viewBox: "0 0 24 24",
@@ -79,7 +79,7 @@ export function icon(parts) {
     "stroke-linejoin": "round",
     "aria-hidden": "true",
     focusable: "false",
-    class: "icon",
+    class: dir ? "icon dir" : "icon",
   })) {
     svg.setAttribute(k, v);
   }
