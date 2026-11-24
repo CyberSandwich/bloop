@@ -118,6 +118,8 @@ export function createViewer(deps) {
   // Per-item state is keyed by idOf, never by list position: a guest file sorting in ahead shifts every position.
   /** @type {Map<string, HTMLImageElement>} */
   const images = new Map();
+  /** @type {Map<number, HTMLImageElement>} images taken before the first render, by list position */
+  const early = new Map();
   /** @type {Set<string>} */
   const asked = new Set();
   /** @type {Set<string>} minting failed: the card instead, and no retry loop */
@@ -313,6 +315,7 @@ export function createViewer(deps) {
   function clear() {
     for (const img of images.values()) img.removeAttribute("src");
     images.clear();
+    early.clear();
     asked.clear();
     refused.clear();
     seen.disconnect();
@@ -418,6 +421,8 @@ export function createViewer(deps) {
       const id = shown ? idOf(items(), at) : null;
       shown = nextView;
       parked = false;
+      for (const [i, img] of early) images.set(keyOf(i), img);
+      early.clear();
       const key = JSON.stringify(nextView.items);
       if (key !== built) {
         built = key;
@@ -449,8 +454,12 @@ export function createViewer(deps) {
       const img = el("img", { decoding: "async", referrerpolicy: "no-referrer", alt: "" });
       img.addEventListener("load", () => deps.onChange());
       img.src = target;
-      images.set(keyOf(item), img);
-      asked.delete(keyOf(item));
+      // The launch can land before the first render: with no list there is no identity yet, so it waits by position.
+      if (!shown) early.set(item, img);
+      else {
+        images.set(keyOf(item), img);
+        asked.delete(keyOf(item));
+      }
       framed = null;
       if (shown) paint();
       return true;
