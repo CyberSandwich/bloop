@@ -312,23 +312,23 @@ html:has(.page-site) {
 }
 
 /* Section heads share one size; text columns are 760, the grids, stage and doc cards the full 1136. */
-:is(.how, .features, .connect, .faq) > h2,
+:is(.features, .connect, .faq) > h2,
 .doc h1 {
   font-size: 30px;
   line-height: 1.04;
   letter-spacing: -0.035em;
 }
-:is(.how, .features, .connect, .faq) > h2 {
+:is(.features, .connect, .faq) > h2 {
   text-align: center;
 }
 @media (min-width: 640px) {
-  :is(.how, .features, .connect, .faq) > h2,
+  :is(.features, .connect, .faq) > h2,
   .doc h1 {
     font-size: 38px;
   }
 }
 @media (min-width: 768px) {
-  :is(.how, .features, .connect, .faq) > h2,
+  :is(.features, .connect, .faq) > h2,
   .doc h1 {
     font-size: 54px;
   }
@@ -359,9 +359,12 @@ h3 {
 .grid {
   display: grid;
   gap: 16px;
-  margin: 40px 0 0;
+  margin: 0;
   padding: 0;
   list-style: none;
+}
+.grid {
+  margin-top: 40px;
 }
 .step {
   padding: 24px 24px 12px;

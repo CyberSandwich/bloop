@@ -321,6 +321,13 @@ describe("landing word caps (design.md section 13)", () => {
     expect(html).not.toMatch(/Coming Soon<\/div>|reel|class="pill"/);
   });
 
+  it("How It Works has no visible heading: the section is a named landmark and the cards start its list", () => {
+    const section = between(html, /<section class="how"/, "</section>");
+    expect(section).toMatch(/^<section class="how" aria-label="How It Works">\s*<ol class="steps">/);
+    expect(section).not.toMatch(/<h2/);
+    expect(html).not.toContain("how-h");
+  });
+
   it("How It Works is three verb steps, each naming its device over a still with the code in groups of 3", () => {
     const steps = [...between(html, /<ol class="steps">/, "</ol>").matchAll(/<li class="step">([\s\S]*?)<\/li>/g)].map(
       (m) => m[1] ?? "",
