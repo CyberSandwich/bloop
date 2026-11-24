@@ -1060,6 +1060,9 @@ test.describe("screen and phone layout", () => {
     await expect(async () => {
       const { pill, img, view, side, inset } = await slotOf(screen.page);
       expect(Math.abs(pill.x + pill.width - (side.x + side.width))).toBeLessThanOrEqual(1);
+      // Anchored to the rail's foot: its bottom edge on End's, clear of the list above.
+      const endBox = await box(screen.page, "#b-end");
+      expect(Math.abs(pill.y + pill.height - (endBox.y + endBox.height))).toBeLessThanOrEqual(1);
       expect(pill.y).toBeGreaterThanOrEqual(side.y + side.height + inset - 1);
       expect(pill.x + pill.width).toBeLessThanOrEqual(img.x);
       expect(Math.round(img.height)).toBeGreaterThanOrEqual(Math.round(view.height) - 1);
