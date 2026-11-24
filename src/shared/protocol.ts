@@ -39,6 +39,8 @@ export interface CodeView {
 /** One approved file: what a page may show of it. No source id or URL (SRC-01). */
 export interface FileItem {
   kind: "file";
+  /** Server-assigned and opaque, unique in the session, fixed at approval; never derived from the source or an index. */
+  id: string;
   name: string; // display name
   type: FileType; // an original PDF shown as a PDF is not a fallback
   size: number | null; // bytes, when the source gave a size
@@ -46,10 +48,21 @@ export interface FileItem {
 /** One approved web link: https on an allowed host only (LINK-01). The screen shows a card, never a frame. */
 export interface LinkItem {
   kind: "link";
+  id: string; // as on FileItem
   url: string;
   title: string;
 }
 export type Item = FileItem | LinkItem;
+
+/**
+ * What the screen shows: the body of `POST /api/control` (phone, pid) and `POST /api/screen/shown` (screen, sid), and
+ * `shown` in both views. Absolute, so a replay changes nothing.
+ */
+export interface Shown {
+  item: string; // a file item's id
+  page: number; // 1-based, within the item's pages
+  present: boolean;
+}
 
 export interface ScreenView {
   state: SessionState;
@@ -60,6 +73,8 @@ export interface ScreenView {
   match: string | null; // 2 digits, from "claimed" to "open"
   /** From "offered" (guest) or "approved"; files by name, then links by title. A link or mint names an item by its index here. */
   items: Item[];
+  /** Null until the remote or the screen's own tap sets it; null outside an approved session. */
+  shown: Shown | null;
   openMode: OpenMode | null;
   endsAt: number | null;
   endReason: EndReason | null;
@@ -73,6 +88,7 @@ export interface PhoneView {
   room: RoomView;
   match: string;
   items: Item[]; // as in ScreenView
+  shown: Shown | null; // as in ScreenView
   openMode: OpenMode | null;
   /** Epoch ms the session ends by itself; with `now`, the phone's countdown. */
   endsAt: number | null;
@@ -125,11 +141,11 @@ export interface ClaimResponse {
   dropMaxBytes: number;
 }
 /** A row of the phone's list (`GET /api/files` answers `{items: Entry[]}`); approve names entries by id. */
-export interface FileEntry extends FileItem {
-  id: string; // opaque to the phone; never a Graph URL
+export interface FileEntry extends Omit<FileItem, "id"> {
+  id: string; // the source's id (an entry id, not an item id); opaque to the phone; never a Graph URL
   modifiedAt: number;
 }
-export interface LinkEntry extends LinkItem {
+export interface LinkEntry extends Omit<LinkItem, "id"> {
   id: string;
 }
 export type Entry = FileEntry | LinkEntry;

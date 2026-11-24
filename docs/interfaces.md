@@ -23,10 +23,13 @@ export interface RoomView { name: string; registered: boolean; }
 export interface CodeView { code: string; expiresAt: number; qrUrl: string; }
 
 /** What a page may show of an approved item: no source id or URL (SRC-01). */
-export interface FileItem { kind: "file"; name: string; type: FileType; size: number | null; }   // size: bytes, when the source gave one
+export interface FileItem { kind: "file"; id: string; name: string; type: FileType; size: number | null; }   // id: server-assigned at approval ("i1", "i2", ... in list order), opaque, unique in the session, never an index or derived from the source; size: bytes, when the source gave one
 /** https on an allowed host only (LINK-01); the screen shows a card with the host, opened by a click, never a frame. */
-export interface LinkItem { kind: "link"; url: string; title: string; }
+export interface LinkItem { kind: "link"; id: string; url: string; title: string; }   // id: as on FileItem
 export type Item = FileItem | LinkItem;
+
+/** What the screen shows: the body of POST /api/control and POST /api/screen/shown, and `shown` in both views. Absolute, so a replay changes nothing. */
+export interface Shown { item: string; page: number; present: boolean; }   // item: a FILE item's id; page: 1-based, within the item's pages
 
 export interface ScreenView {
   state: SessionState;
@@ -35,7 +38,8 @@ export interface ScreenView {
   room: RoomView;
   code: CodeView | null;       // only in "waiting" and "ended"
   match: string | null;        // 2 digits, from "claimed" to "open"
-  items: Item[];               // from "offered" (guest) or "approved", else []; files by name, then links by title; an index names an item
+  items: Item[];               // from "offered" (guest) or "approved", else []; files by name, then links by title; a link or mint names an item by its index here, the remote by its `id`
+  shown: Shown | null;         // set by the phone's remote or the screen's own tap (demo only); null until then and outside a session
   openMode: OpenMode | null;   // an original PDF shown as a PDF is the `pdf_file` state, not `pdf_fallback`
   endsAt: number | null;
   endReason: EndReason | null;
@@ -49,6 +53,7 @@ export interface PhoneView {
   room: RoomView;
   match: string;
   items: Item[];               // as in ScreenView
+  shown: Shown | null;         // as in ScreenView
   openMode: OpenMode | null;
   endsAt: number | null;       // with `now`, the phone's countdown to the session's own end
   endReason: EndReason | null;
@@ -89,8 +94,8 @@ export interface ClaimResponse {
   pid: string; room: RoomView; match: string; mode: Mode; kind: Kind; needsAuth: boolean; dropMaxBytes: number;
 }
 /** A row of the phone's list: `GET /api/files` answers `{items: Entry[]}`, files first, then links. */
-export interface FileEntry extends FileItem { id: string; modifiedAt: number; }   // id: opaque to the phone; never a Graph URL
-export interface LinkEntry extends LinkItem { id: string; }
+export interface FileEntry extends Omit<FileItem, "id"> { id: string; modifiedAt: number; }   // id: the source's entry id, not an item id; opaque to the phone; never a Graph URL
+export interface LinkEntry extends Omit<LinkItem, "id"> { id: string; }
 export type Entry = FileEntry | LinkEntry;
 export interface ApproveRequest { ids: string[]; }                     // POST /api/approve: 1 to MAX_ITEMS (12) distinct entry ids
 export interface LinkRequest { purpose: OpenMode; item?: number; }    // POST /api/screen/link: item defaults to the launched one
@@ -163,6 +168,7 @@ export type ScreenStateKey =
 | uploading | `upload.done(file)` | validated | offered | store the R2 ref and `offerAt`; push screen `guest_open` (file name, Open); audit `guest.uploaded` |
 | offered | `open.click` | from the screen socket (a repeat in approved, opening or open returns the current view) | approved | as approve: `endsAt`, mint link; push screen `open`; audit `approved` (actor screen) |
 | uploading | `upload.failed(e)` | | claimed | delete object; push both `state`; audit `guest.refused` with cause `e` (the drop route answers the phone with `e`) |
+| approved, opening, open | `control(shown)` | from the phone (`POST /api/control`, pid) or the screen (`POST /api/screen/shown`, sid); demo only (a live session is `wrong_state`); `shown.item` names a FILE item by id, else `file_not_found` (PAIR-11, LINK-01); `shown.page` is within the item's pages (a demo owner's deck or PDF has 2, anything else 1), else `bad_request`; any other state is `wrong_state` | (same) | store `session.shown`; push both. Absolute: the same `shown` again changes nothing and pushes nothing (PAIR-13) |
 | approved | `launched(mode)` | from the screen | opening | record mode; metric |
 | approved, opening | `fetched(link)` | first fetch of any link | open | `first_open_at`; metric `scan_to_open_ms`; push both |
 | opening, open | `fallback(mode, item)` | `item` (default: the first file) names a file, else `file_not_found` (PAIR-11); mints left | (same) | mint a link for `mode` and that item; when it is the launched item, set the open mode to what the link serves for the type (`effectivePurpose`: a deck's view is its PDF); metric `fallback`; push `open` to the screen and `state` to both |
@@ -176,7 +182,7 @@ export type ScreenStateKey =
 | waiting | `end(screen)` | from the screen only (a phone or system end here is `wrong_state`) | closed | both codes removed, `deleteAll()` (which releases a demo slot); no audit, as there was no session. The answer is the closed view, and the sid then answers `screen_gone`. A `claimed` screen still goes to `ended`, so its phone reads why |
 | closed | any | | closed | every call returns `screen_gone` |
 
-An event the table does not list for a state returns `wrong_state` and changes nothing; approve in `ended` returns `session_ended`. Approve (the same set of items, in any order), open.click, fetched and end are idempotent: a repeat in the target state returns the current view. Cancel is not: it drops the pairing, so a repeat fails with `pairing_invalid` before it reaches the machine.
+An event the table does not list for a state returns `wrong_state` and changes nothing; approve in `ended` returns `session_ended`. Approve (the same set of items, in any order), open.click, fetched, control and end are idempotent: a repeat in the target state returns the current view. Cancel is not: it drops the pairing, so a repeat fails with `pairing_invalid` before it reaches the machine.
 
 ### 2.3 The pure machine (`src/worker/machine.ts`)
 ```ts
@@ -186,13 +192,17 @@ export interface Code { value: string; issuedAt: number; expiresAt: number; cons
 export interface FileRef { source: "mock" | "graph" | "guest"; ref: string; name: string; type: FileType; size?: number; }
 
 // src/worker/items.ts: the item types, the order and the link rule, shared by the machine, the routes and the tests.
-export interface LinkRef { kind: "link"; ref: string; url: string; title: string; }
-export type FileItemRef = FileRef & { kind: "file" };
+export interface LinkRef { kind: "link"; id: string; ref: string; url: string; title: string; }
+export type FileItemRef = FileRef & { kind: "file"; id: string };
 export type ItemRef = FileItemRef | LinkRef;
+export type ItemDraft = Omit<FileItemRef, "id"> | Omit<LinkRef, "id">;   // an item before approval gives it an id
 export const MAX_ITEMS = 12;
 export const LINK_HOSTS: readonly string[];          // ["www.vevox.com"]
 export declare function allowedLink(url: string): string | null;   // URL-parsed: https, an allowed host, no credentials, no explicit non-default port, at most 2048 characters; answers url.href, the only form an item stores
-export declare function orderItems(items: readonly ItemRef[]): ItemRef[];   // files by name, then links by title
+export declare function orderItems<T extends ItemDraft>(items: readonly T[]): T[];   // files by name, then links by title
+export declare function withIds(items: readonly ItemDraft[]): ItemRef[];   // "i1", "i2", ... by place in the ordered list; written once at approval (or upload.done), never recomputed
+export declare function fileById(items: readonly ItemRef[], id: string): FileItemRef | null;   // null for a link or an unknown id
+export declare function pageCount(file: FileItemRef, view: { mode: Mode; kind: Kind | null }): number;   // the demo owner's deck or PDF: the pre-rendered pages; else 1
 export declare function launchIndex(items: readonly ItemRef[]): number;    // the first file, -1 for links only
 export declare function fileAt(items: readonly ItemRef[], index: number): FileItemRef | null;
 export declare function itemView(item: ItemRef): Item;
@@ -210,6 +220,7 @@ export interface Machine {
   session: {                         // the approved items, ordered; approvedAt and endsAt are null while "offered" (one guest file)
     items: ItemRef[]; approvedAt: number | null; endsAt: number | null;
     openMode: OpenMode | null; firstOpenAt: number | null; minted: number[];   // links minted per item index, the first included; capped at 1 + LINK_MINTS_PER_ITEM
+    shown: Shown | null;   // set by `control`
   } | null;
   uploadAt: number | null;
   offerAt: number | null;
@@ -224,13 +235,14 @@ export type Event =
   | { e: "claim"; now: number; code: string; sessionId: string; secretHash: string; match: string;
       kind: Kind; userId: string | null; passHash: string | null }
   | { e: "listed"; now: number; ids: string[] }
-  | { e: "approve"; now: number; items: ItemRef[]; maxMinutes: number; userId?: string | null }
+  | { e: "approve"; now: number; items: ItemDraft[]; maxMinutes: number; userId?: string | null }
   | { e: "upload.start"; now: number; timeoutSeconds: number }
   | { e: "upload.done"; now: number; file: FileRef }
   | { e: "upload.failed"; now: number; error: ErrorCode }
   | { e: "open.click"; now: number; maxMinutes: number }                 // the Open button on a guest offer
   | { e: "launched"; now: number; mode: OpenMode }
   | { e: "fetched"; now: number }
+  | { e: "control"; now: number; shown: Shown }                         // the phone's remote, or the screen reporting its own tap
   | { e: "fallback"; now: number; mode: OpenMode; item: number | null; maxMints: number }   // null: the first file
   | { e: "cancel"; now: number }
   | { e: "restart"; now: number }
@@ -272,9 +284,9 @@ export interface MachineConfig {
 ### 2.4 `PairingStore` (`src/worker/seams/pairing.ts`), implemented by the Screen object
 ```ts
 import type {
-  ClaimResponse, CodeView, ErrorCode, Kind, Mode, PhoneView, RoomView, ScreenView,
+  ClaimResponse, CodeView, ErrorCode, Kind, Mode, PhoneView, RoomView, ScreenView, Shown,
 } from "../../shared/protocol.ts";
-import type { ItemRef } from "../items.ts";
+import type { ItemDraft } from "../items.ts";
 import type { FileRef } from "../machine.ts";
 
 /** Errors are PairError codes, plus file_not_found (approve), unauthorized (a bad sid) and internal. */
@@ -295,7 +307,11 @@ export interface PairingStore {
   claim(code: string, phone: PhoneInfo): Promise<Result<ClaimResponse>>;
   listed(pid: string, ids: string[]): Promise<Result<PhoneView>>;
   /** `userId`: the account the approving phone is signed in as now; the object keeps it for /f/ (null for demo and guest). */
-  approve(pid: string, items: ItemRef[], userId: string | null): Promise<Result<PhoneView>>;
+  approve(pid: string, items: ItemDraft[], userId: string | null): Promise<Result<PhoneView>>;
+  /** The phone's remote (POST /api/control): what the screen shows. Absolute, so a repeat is a no-op. Demo only: a live session is `wrong_state`. */
+  control(pid: string, shown: Shown): Promise<Result<PhoneView>>;
+  /** The screen reports its own tap (POST /api/screen/shown), so the phone's highlight stays true. Same rules as `control`. */
+  reportShown(sid: string, shown: Shown): Promise<Result<ScreenView>>;
   cancel(pid: string): Promise<Result<PhoneView>>;
   restart(sid: string): Promise<Result<ScreenView>>;
   endFromScreen(sid: string): Promise<Result<ScreenView>>;   // from waiting: closes the object (state "closed")

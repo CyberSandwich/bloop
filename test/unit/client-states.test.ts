@@ -13,6 +13,7 @@ const screenView = (state: SessionState, over: Partial<ScreenView> = {}): Screen
   code: null,
   match: null,
   items: [],
+  shown: null,
   openMode: null,
   endsAt: null,
   endReason: null,
@@ -27,6 +28,7 @@ const phoneView = (state: SessionState, over: Partial<PhoneView> = {}): PhoneVie
   room: { name: "Room 2.14", registered: true },
   match: "42",
   items: [],
+  shown: null,
   openMode: null,
   endsAt: null,
   endReason: null,
@@ -94,13 +96,22 @@ describe("screen state to view mapping", () => {
 
   it("F10 an original PDF shown as a PDF is not the PowerPoint fallback", () => {
     expect(
-      screenKey(ctx("open", { openMode: "pdf", items: [{ kind: "file", name: "F.pdf", type: "pdf", size: null }] })),
+      screenKey(
+        ctx("open", { openMode: "pdf", items: [{ kind: "file", id: "t1", name: "F.pdf", type: "pdf", size: null }] }),
+      ),
     ).toBe("pdf_file");
     expect(
-      screenKey(ctx("opening", { openMode: "pdf", items: [{ kind: "file", name: "F.pdf", type: "pdf", size: null }] })),
+      screenKey(
+        ctx("opening", {
+          openMode: "pdf",
+          items: [{ kind: "file", id: "t2", name: "F.pdf", type: "pdf", size: null }],
+        }),
+      ),
     ).toBe("pdf_file");
     expect(
-      screenKey(ctx("open", { openMode: "pdf", items: [{ kind: "file", name: "F.pptx", type: "pptx", size: null }] })),
+      screenKey(
+        ctx("open", { openMode: "pdf", items: [{ kind: "file", id: "t3", name: "F.pptx", type: "pptx", size: null }] }),
+      ),
     ).toBe("pdf_fallback");
   });
 
@@ -198,7 +209,7 @@ describe("phone state to view mapping", () => {
         ctx({
           view: phoneView("open", {
             openMode: "pdf",
-            items: [{ kind: "file", name: "F.pdf", type: "pdf", size: null }],
+            items: [{ kind: "file", id: "t4", name: "F.pdf", type: "pdf", size: null }],
           }),
         }),
       ),
@@ -208,7 +219,7 @@ describe("phone state to view mapping", () => {
         ctx({
           view: phoneView("open", {
             openMode: "pdf",
-            items: [{ kind: "file", name: "F.pptx", type: "pptx", size: null }],
+            items: [{ kind: "file", id: "t5", name: "F.pptx", type: "pptx", size: null }],
           }),
         }),
       ),

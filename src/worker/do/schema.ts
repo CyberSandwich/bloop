@@ -1,19 +1,25 @@
 // The Screen object's storage schema: numbered steps (CLAUDE.md "Durable Object schema"). Each step checks the data's
 // shape and writes only what is still old, and every step runs on every wake whatever the stored version: a rollback
 // that wrote old-shape data under a newer version is repaired by the next deploy.
-import { launchIndex } from "../items.ts";
+import type { Shown } from "../../shared/protocol.ts";
+import { type ItemDraft, itemId, launchIndex } from "../items.ts";
 import type { FileRef, Machine } from "../machine.ts";
 import type { LinkRecord } from "../seams/open-path/links.ts";
 import type { Kv } from "./ledger.ts";
 
 export const SCHEMA_KEY = "schemaVersion";
 /** Version 1 had no key: a session held one `file`, and a link record had no `item`. */
-export const SCHEMA_VERSION = 4;
+export const SCHEMA_VERSION = 5;
 
 type Session = NonNullable<Machine["session"]>;
 type V1Session = Omit<Session, "items" | "minted"> & { file: FileRef; mints: number };
 /** Versions 2 and 3: `mints` counted extra links, session-wide (2) or per item (3); the launch item's first was free. */
 type OldMints = Omit<Session, "minted"> & { mints: number | number[] };
+/** Versions 1 to 4: no item ids, no `shown`. */
+type PreRemote = Omit<Session, "items" | "shown"> & {
+  items: (ItemDraft & { id?: string })[];
+  shown?: unknown;
+};
 
 const STEPS: Record<number, (kv: Kv) => void> = {
   // 1 to 2: the session holds a list; the one file becomes a one-item list, and every link served item 0.
@@ -51,6 +57,28 @@ const STEPS: Record<number, (kv: Kv) => void> = {
       kv.put("machine", { ...m, session: { ...rest, minted: mints.map((n, i) => (i === launch ? n + 1 : n)) } });
     }
   },
+  // 4 to 5: every item holds an `id` and the session a `shown`. Ids follow the stored order, the order approval froze.
+  5: (kv) => {
+    const m = kv.get<Omit<Machine, "session"> & { session: PreRemote | null }>("machine");
+    const s = m?.session;
+    if (!m || !s) return;
+    const hasIds = s.items.every((i) => typeof i.id === "string");
+    const shownOk = s.shown === null || (s.shown !== undefined && isShown(s.shown));
+    if (hasIds && shownOk) return;
+    const items = hasIds ? s.items : s.items.map((item, i) => ({ ...item, id: itemId(i) }));
+    kv.put("machine", { ...m, session: { ...s, items, shown: shownOk ? s.shown : null } });
+  },
+};
+
+const isShown = (v: unknown): v is Shown => {
+  const s = v as Shown;
+  return (
+    typeof v === "object" &&
+    v !== null &&
+    typeof s.item === "string" &&
+    Number.isInteger(s.page) &&
+    typeof s.present === "boolean"
+  );
 };
 
 /** Brings stored state to SCHEMA_VERSION's shape. A fresh object (no `meta`) is written at the current version by `create`. */

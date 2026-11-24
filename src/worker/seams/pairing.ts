@@ -10,8 +10,9 @@ import type {
   PhoneView,
   RoomView,
   ScreenView,
+  Shown,
 } from "../../shared/protocol.ts";
-import type { ItemRef } from "../items.ts";
+import type { ItemDraft } from "../items.ts";
 import type { FileRef } from "../machine.ts";
 import type { ClientClass } from "./open-path/links.ts";
 
@@ -58,7 +59,14 @@ export interface PairingStore {
    * The Worker resolves `items` from the source's list; the object checks every ref against the listed ids (live)
    * and refuses an empty list, a repeat or more than MAX_ITEMS (`bad_request`).
    */
-  approve(pid: string, items: ItemRef[], userId: string | null): Promise<Result<PhoneView>>;
+  approve(pid: string, items: ItemDraft[], userId: string | null): Promise<Result<PhoneView>>;
+  /**
+   * The phone's remote: what the screen should show. Absolute, so a repeat is a no-op. Demo sessions only; the item
+   * must be a file in the approved list and the page within its pages.
+   */
+  control(pid: string, shown: Shown): Promise<Result<PhoneView>>;
+  /** The screen reports its own tap, so the phone's highlight stays true. Same rules as `control`. */
+  reportShown(sid: string, shown: Shown): Promise<Result<ScreenView>>;
   cancel(pid: string): Promise<Result<PhoneView>>;
   restart(sid: string): Promise<Result<ScreenView>>;
   /** From waiting, there is no session: the object closes (codes removed, storage deleted, demo slot released). */
