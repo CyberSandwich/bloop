@@ -118,7 +118,7 @@ Tokens live in `public/css/base.css` `:root`; this list restates them, and the d
 | `--robin-deep:#c8632a` | "Anywhere" at rest, solid, in the h1 only (3.6:1 on paper, 3.2:1 at the wash's peak: large text, 32 px or more); the QR ring's countdown stroke (4.0:1 on white, over the 3:1 a graphic needs); never body text |
 | `--rose:#f8d7d3` `--rose-ink:#9b2c22` | the pair for the controls that end: End on the screen and Revoke on the phone, a pastel fill with its own deep red text (5.6:1). Red says stop without alarm; the same house frame or pill, so nothing else changes |
 | `--robin-ink:#a64f15` | the robin at text strength: the name in body copy (5.0:1 on paper, 5.6:1 on white) |
-| `--lead:#62625c` | the hero and page leads, which sit on the robin wash: 4.86:1 where the wash is strongest under text (`--muted` falls to 4.2:1 there) |
+| `--lead:#50504b` | the hero and page leads, which sit on the robin wash: 6.4:1 where the wash is strongest under text, 7.3 on paper; never lighter than `--muted`, so a lead outranks secondary text |
 
 Status colors (`--ok`, `--warn`, `--err`) are not used: a state is a sentence plus the object changing.
 
@@ -474,7 +474,7 @@ Stack and system architecture: `docs/architecture.md` and `docs/adr/`.
 | `--ink` on `--paper` / white | 15.6 / 17.0:1 | text, pill labels inverted |
 | `--paper` on `--ink` | 15.6:1 | primary pill label |
 | `--muted` on `--paper` / white / `--g1` / the wash | 6.2 / 6.9 / 5.0 / 5.8:1 | secondary text, a selected row's meta line, a hovered row |
-| `--lead` on the robin wash at its strongest under text / on `--paper` | 4.86 / 5.5:1 | the hero and page leads |
+| `--lead` on the robin wash at its strongest under text / on `--paper` | 6.4 / 7.3:1 | the hero and page leads |
 | `--robin-ink` on `--paper` / white | 5.0 / 5.6:1 | the name in body copy, 600 |
 | `--g2` on `--paper` | 2.3:1 | rings only (the outline pill's label is ink), never text |
 | QR #1E1E1C on white | 17.0:1 | modules |

@@ -436,6 +436,9 @@ describe("landing word caps (design.md section 13)", () => {
     expect(ratio("mint-ink", "mint")).toBeGreaterThanOrEqual(4.5);
     expect(ratio("amber-ink", "amber")).toBeGreaterThanOrEqual(4.5);
     expect(ratio("robin-deep", "paper")).toBeGreaterThanOrEqual(3);
+    // A lead outranks secondary text: never lighter than --muted, and 4.5:1 or more on paper.
+    expect(lum(hex("lead"))).toBeLessThanOrEqual(lum(hex("muted")));
+    expect(ratio("lead", "paper")).toBeGreaterThanOrEqual(4.5);
   });
 
   it.each(ALL)("%s has no robin", (page) => {
