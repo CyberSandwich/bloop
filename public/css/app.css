@@ -576,6 +576,10 @@ main:has(> .side:not([hidden])) #stage {
   color: inherit;
   text-align: left;
   text-decoration: none;
+}
+.item,
+.handle,
+:is(label, button).row {
   cursor: pointer;
 }
 .item,
@@ -672,7 +676,7 @@ main:has(> .side:not([hidden])) #stage {
 }
 @media (hover: hover) and (pointer: fine) {
   .item:not([aria-current]):hover,
-  .row:hover {
+  :is(label, button).row:hover {
     background: var(--wash);
   }
 }
@@ -795,9 +799,8 @@ main:has(> .side:not([hidden])) #stage {
   font-size: 14px;
 }
 .ends {
-  font-size: 15px;
+  font-size: 17px;
   font-variant-numeric: tabular-nums;
-  text-align: center;
 }
 .ends.soon {
   color: var(--robin-ink);
@@ -835,7 +838,7 @@ progress.bar::-moz-progress-bar {
   height: var(--row);
   border-radius: calc(var(--r-list) - var(--list-pad));
 }
-.row:active {
+:is(label, button).row:active {
   background: var(--wash);
 }
 .row input {
@@ -960,7 +963,7 @@ progress.bar::-moz-progress-bar {
   border-radius: var(--r-field);
   background: var(--surface);
   box-shadow: inset 0 0 0 1.5px var(--g2);
-  font-size: max(16px, 1rem);
+  font-size: 22px;
   font-weight: 600;
   letter-spacing: 0.06em;
   font-variant-numeric: tabular-nums;

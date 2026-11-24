@@ -461,12 +461,12 @@ describe("phone copy", () => {
     }
   });
 
-  it("ended and canceled share the screen's title, with one line; a live phone is told what the room PC may still hold", () => {
-    for (const key of ["ended", "canceled"] as const) expect(phoneCopy(key, pf).title).toBe(SESSION_ENDED);
+  it("ended takes the screen's title; a cancel says no session began; a live phone is told what the room PC may hold", () => {
+    expect(phoneCopy("ended", pf).title).toBe(SESSION_ENDED);
+    expect(phoneCopy("canceled", pf)).toMatchObject({ title: "Approval Canceled", body: "Nothing was shared." });
     // The line about the file link is held back until open item 1 passes.
     expect(phoneCopy("ended", pf).body).toBe("Close PowerPoint on the room PC and delete any download there.");
     expect(phoneCopy("ended", { ...pf, demo: true }).body).toBe("Your files left the screen.");
-    expect(phoneCopy("canceled", pf).body).toBe("Nothing was opened on the screen.");
   });
 
   it("a page opened with no code asks for a scan, not an expired code", () => {

@@ -168,6 +168,8 @@ function render() {
   });
 
   back.setAttribute("href", home() ? "/s?mode=demo" : "/");
+  // A terminal state has one way out: Done.
+  show(back, key !== "ended" && key !== "canceled");
   show(skelTitle, key === "checking");
   show(title, key !== "checking");
   setText(title, copy.title);

@@ -220,8 +220,11 @@ test.describe("pairing flow", () => {
     const screen = await demoScreen(browser);
     const { phone } = await scan(browser, screen.page);
     await phone.page.getByRole("button", { name: "Cancel" }).click();
-    await expect(heading(phone.page)).toHaveText("Session Ended");
-    await expect(phone.page.locator("#body")).toHaveText("Nothing was opened on the screen.");
+    await expect(heading(phone.page)).toHaveText("Approval Canceled");
+    await expect(phone.page.locator("#body")).toHaveText("Nothing was shared.");
+    // A terminal state has one way out: Done, no Back.
+    await expect(phone.page.getByRole("link", { name: "Back", exact: true })).toBeHidden();
+    await expect(phone.page.getByRole("button", { name: "Done" })).toBeVisible();
     await expect(heading(screen.page)).toHaveText("Demo Room");
     await screen.context.close();
     await phone.context.close();
@@ -382,7 +385,7 @@ test.describe("guest drop", () => {
     const { phone } = await scan(browser, screen.page);
     await phone.page.getByRole("button", { name: "Add a File" }).click();
     await phone.page.getByRole("button", { name: "Cancel" }).click();
-    await expect(heading(phone.page)).toHaveText("Session Ended");
+    await expect(heading(phone.page)).toHaveText("Approval Canceled");
     await expect(heading(screen.page)).toHaveText("Demo Room");
     await screen.context.close();
     await phone.context.close();

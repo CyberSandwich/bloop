@@ -328,7 +328,7 @@ export function phoneCopy(key, f) {
         actions: [DONE],
       };
     case "canceled":
-      return { ...base, title: SESSION_ENDED, body: "Nothing was opened on the screen.", actions: [DONE] };
+      return { ...base, title: "Approval Canceled", body: "Nothing was shared.", actions: [DONE] };
     case "expired":
       return {
         ...base,
