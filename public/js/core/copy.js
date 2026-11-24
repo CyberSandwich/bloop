@@ -6,6 +6,8 @@ import { VERIFIED } from "./verified.js";
 
 export const FOOTER_LINE = "Phone not with you? Sign in to this PC as usual.";
 export const SIGN_IN_HINT = "Sign in to this PC as usual to open your file.";
+/** The status in the room screen's hint place while a phone's claim waits on its approval. */
+export const WAITING_LINE = "Waiting for Approval";
 /** The one string that names the session (design.md section 3). */
 export const SESSION_ENDED = "Session Ended";
 
@@ -126,7 +128,7 @@ export function endLine(
   /** @type {{ppt: boolean, download: string | null}} */ left,
 ) {
   return [
-    reason === "phone" ? "Revoked from the phone." : reason === "auto" ? "Time's up." : "",
+    reason === "auto" ? "Time's up." : "",
     left.ppt ? "Close PowerPoint to take your slides off this PC." : "",
     left.download ? `Delete ${left.download} from Downloads before you leave.` : "",
   ]
@@ -324,7 +326,7 @@ export function phoneCopy(key, f) {
         body: VERIFIED.endedLink
           ? "The screen's link to your file has stopped working."
           : f.demo
-            ? "Your files left the screen."
+            ? ""
             : "Close PowerPoint on the room PC and delete any download there.",
         actions: [DONE],
       };

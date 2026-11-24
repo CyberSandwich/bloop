@@ -2,7 +2,7 @@
 /** @import {ScreenView} from "../../src/shared/protocol.ts" */
 import { createApi } from "./core/api.js";
 import { openChannel } from "./core/channel.js";
-import { endLine, screenCopy } from "./core/copy.js";
+import { endLine, screenCopy, WAITING_LINE } from "./core/copy.js";
 import { clock, itemName, qrLabel } from "./core/format.js";
 import { qrMatrix, qrPath, qrSize } from "./core/qr.js";
 import { firstFile, screenKey } from "./core/states.js";
@@ -53,7 +53,6 @@ const qrPanel = byId("qr-panel");
 const qrSvg = byId("qr");
 const qrPathEl = byId("qr-path");
 const matchEl = byId("match");
-const compare = byId("compare");
 const awaiting = byId("awaiting");
 const foot = byId("foot");
 const typedHost = byId("typed-host");
@@ -141,9 +140,13 @@ const cancel = (/** @type {string} */ name) => clearTimeout(s.timers[name]);
 function fitQr() {
   // Half the height at most, and stacked no more than the title, hint and code row leave: the page never scrolls.
   const rest = pane.offsetHeight - qrPanel.offsetHeight + 2 * parseFloat(getComputedStyle(main).paddingTop);
-  const size = qrSize(Math.min(innerHeight / 2, innerHeight - rest - foot.offsetHeight), devicePixelRatio || 1);
+  // At most the column; at least 205 (5 px a module, about 5.4 cm: a camera reads it from arm's length), even where
+  // that leaves the page short of room.
+  const room = Math.min(innerHeight / 2, innerHeight - rest - foot.offsetHeight, pane.clientWidth);
+  const size = qrSize(Math.max(205, room), devicePixelRatio || 1);
   qrSvg.setAttribute("width", String(size));
   qrSvg.setAttribute("height", String(size));
+  pane.style.setProperty("--qr", `${size}px`);
   const r = 28;
   const perimeter = 4 * (size - 2 * r) + 2 * Math.PI * r;
   ringRect.setAttribute("stroke-dashoffset", String((-100 * (size / 2 - r)) / perimeter));
@@ -247,11 +250,11 @@ function paint() {
   const code = v?.code && mode === "waiting" ? v.code : null;
   if (code) drawCode(code);
   qrPanel.classList.toggle("is-empty", s.shown === null);
+  setText(matchEl, v?.match ?? "");
   show(matchEl, mode === "scanned");
   // A claim's status only: a guest's line names a file.
   const claimed = key === "scanned" || key === "choosing";
   main.classList.toggle("is-claimed", claimed);
-  setText(compare, claimed ? copy.line : "");
 
   const has = (/** @type {import("./types.js").ScreenControl} */ c) => copy.controls.includes(c);
   show(buttons.back, !has("start_over") && !has("end") && key !== "ended");
@@ -263,7 +266,9 @@ function paint() {
   if (code) for (const b of [buttons.here, buttons.phone]) b.setAttribute("href", `/a?c=${code.code}`);
   show(buttons.continue, has("continue"));
   show(buttons.waitlist, has("waitlist"));
-  show(awaiting, claimed && !has("continue"));
+  // This browser holding the claim says so; any other phone's claim is waiting on its approval.
+  setText(awaiting, has("continue") ? copy.line : WAITING_LINE);
+  show(awaiting, claimed);
   document.body.classList.add("is-ready");
   show(buttons.open, has("open") || launcher.needsClick());
   // A spent mint budget hides the item's fallbacks: another click could only be refused.
@@ -278,7 +283,6 @@ function paint() {
   setText(buttons.download, viewing || key === "open_fallback" ? "Download" : "Download It Instead");
   show(buttons.pdf, mintable && has("pdf"));
   show(buttons.present, viewing && !!viewer?.presentable());
-
   // With the sidebar showing, the h1 is visually hidden: focus lands on the selected row instead.
   const row = document.querySelector("#items [aria-current]");
   if (changed && lostFocus()) focusTitle(row instanceof HTMLElement && row.offsetParent ? row : heading);
@@ -393,7 +397,7 @@ byId("b-leave").addEventListener("click", () => {
 });
 // Back ends a waiting screen, so its code and demo slot go at once.
 buttons.back.addEventListener("click", () => leave(s.view?.state === "waiting"));
-buttons.present.addEventListener("click", () => viewer?.present());
+buttons.present.addEventListener("click", () => viewer?.present(true));
 buttons.copy.addEventListener("click", () => {
   if (!s.shown) return;
   navigator.clipboard?.writeText(format(s.shown)).then(
@@ -504,7 +508,6 @@ function start() {
   document.body.classList.add("is-booting");
   main.dataset.mode = "idle";
   typedHost.textContent = location.host;
-  setText(byId("phone-host"), location.host);
   addEventListener("resize", frameThrottle(fitQr));
   addEventListener("online", () => s.channel?.nudge());
   addEventListener("pagehide", () => launcher.closePdf());

@@ -142,13 +142,21 @@
 }
 
 /* ---- /s, the room screen ---- */
+/* The page never scrolls: the bar is fixed, and only the side list scrolls inside its own box. */
 .page-screen {
   display: flex;
   flex-direction: column;
+  height: 100vh;
+  height: 100dvh;
+  overflow: hidden;
+}
+.page-screen .bar {
+  position: fixed;
 }
 .page-screen main {
   --top: calc(var(--inset) + var(--frame-h) + 16px);
   flex: 1;
+  min-height: 0;
   display: grid;
   grid-template-columns: minmax(0, 1fr);
   place-items: center;
@@ -246,16 +254,17 @@ main:has(> .side:not([hidden])) #stage {
 .ring.snap rect {
   transition: none;
 }
-/* Claimed: the dimmed QR carries a phone, and the line says the digits to compare. */
+/* Claimed: the card, blank of its QR, shows the digits to compare, sized by the card (fitQr sets --qr). */
 .match {
   position: absolute;
   inset: 0;
   display: grid;
   place-items: center;
-}
-.match .icon {
-  width: 33%;
-  height: 33%;
+  font-family: var(--mono);
+  font-size: calc(var(--qr) * 0.4);
+  font-weight: 600;
+  line-height: 1;
+  color: var(--ink);
 }
 .code-row,
 [data-mode="scanned"] #controls {
@@ -265,10 +274,8 @@ main:has(> .side:not([hidden])) #stage {
   display: flex;
   gap: 12px;
 }
-/* Inter has no tabular letters: 8.8ch of the code holds 999 codes in 1000, so New Code stays put; icon and code
-   center as one group. */
+/* New Code comes first, so the card's own width never moves it. */
 #b-copy {
-  min-width: calc(56px + 10px + 8.8ch);
   padding: 0 16px;
   font-size: 22px;
   font-variant-numeric: tabular-nums;
@@ -285,26 +292,11 @@ main:has(> .side:not([hidden])) #stage {
 }
 .hint {
   grid-area: hint;
-  position: relative;
-  font-size: 17px;
+}
+/* The longest line (about 23 em) holds one line within the QR card (fitQr sets --qr). */
+:is(.hint, .awaiting) {
+  font-size: clamp(13px, calc(var(--qr, 360px) / 24), 15px);
   color: var(--muted);
-}
-/* Claimed: the digits to compare, read across the room, in the hint's box; centered even when wider. */
-.compare {
-  position: absolute;
-  inset: 0 auto 0 50%;
-  translate: -50%;
-  display: grid;
-  align-items: center;
-  font-size: 40px;
-  line-height: 1.1;
-  font-weight: 600;
-  letter-spacing: -0.02em;
-  color: var(--ink);
-  white-space: nowrap;
-}
-.compare:empty {
-  display: none;
 }
 [data-mode="idle"] .pane,
 .page-screen main:not([data-mode]) .pane {
@@ -314,23 +306,21 @@ main:has(> .side:not([hidden])) #stage {
   display: none;
 }
 /* A scan moves nothing: the code row keeps its height, under Continue or empty. */
-[data-mode="scanned"] :is(.code-row, .hint > :not(.compare)) {
+[data-mode="scanned"] :is(.code-row, .hint) {
   visibility: hidden;
 }
-@media (min-width: 600px) {
-  :is([data-mode="waiting"], [data-mode="scanned"]) .pane {
-    display: grid;
-    grid-template-areas: "stage" "qr" "hint" "code";
-    justify-items: center;
-  }
-  :is([data-mode="waiting"], [data-mode="scanned"]) #stage {
-    grid-area: stage;
-  }
-  /* The hint place shows the status; the line keeps it for screen readers. Under 600 the line is the status. */
-  .is-claimed #line {
-    position: absolute;
-    clip-path: inset(50%);
-  }
+:is([data-mode="waiting"], [data-mode="scanned"]) .pane {
+  display: grid;
+  grid-template-areas: "stage" "qr" "hint" "code";
+  justify-items: center;
+}
+:is([data-mode="waiting"], [data-mode="scanned"]) #stage {
+  grid-area: stage;
+}
+/* The hint place shows the status; the line keeps it for screen readers. */
+.is-claimed #line {
+  position: absolute;
+  clip-path: inset(50%);
 }
 @media (min-width: 900px) and (min-aspect-ratio: 1 / 1) {
   :is([data-mode="waiting"], [data-mode="scanned"]) .pane {
@@ -346,13 +336,9 @@ main:has(> .side:not([hidden])) #stage {
     align-self: center;
   }
   :is([data-mode="waiting"], [data-mode="scanned"]) :is(.hint, .awaiting) {
-    font-size: 28px;
-    line-height: 1.3;
+    font-size: 22px;
+    line-height: 1.35;
     color: var(--ink-2);
-  }
-  .compare {
-    left: 0;
-    translate: none;
   }
   [data-mode="scanned"] #controls {
     justify-content: start;
@@ -394,10 +380,10 @@ main:has(> .side:not([hidden])) #stage {
 .is-booting:not(.is-ready) :is(.bar > *, .foot) {
   visibility: hidden;
 }
+/* Over the blank hint, so the card keeps its place and the status sits under it. */
 .awaiting {
-  grid-area: code;
+  grid-area: hint;
   align-self: center;
-  color: var(--muted);
 }
 .foot {
   padding: 0 var(--pad) calc(24px + env(safe-area-inset-bottom));
@@ -432,16 +418,15 @@ main:has(> .side:not([hidden])) #stage {
   .page-screen:not(.is-demo) .narrow {
     display: block;
   }
-  .is-demo :is(.qr-card, .hint, .code-row, #b-here) {
+  /* A phone can be the share screen: the QR, lines and code row stay, and Approve on This Phone sits under them (the
+     corner has no room for it beside Back at 360). */
+  .is-demo #b-here {
     display: none;
   }
-  .is-demo [data-mode="waiting"] .phone-way {
-    display: grid;
-    justify-items: center;
-    gap: 24px;
-  }
-  .phone-way .line {
-    margin: 0;
+  /* Claimed, the button's 52 stays empty, so the card never moves. */
+  .is-demo :is([data-mode="waiting"], [data-mode="scanned"]) .phone-way {
+    display: block;
+    min-height: 52px;
   }
 }
 
@@ -449,6 +434,7 @@ main:has(> .side:not([hidden])) #stage {
 /* Outranks `.page-screen main`'s padding, so the stage ends --inset above the bottom with no page scroll. */
 .page-screen main[data-mode="viewer"] {
   --pill: 60px;
+  --stack: 140px;
   padding-bottom: var(--inset);
 }
 [data-mode="viewer"] .pane {
@@ -532,10 +518,10 @@ main:has(> .side:not([hidden])) #stage {
 }
 .frame .stand-in {
   grid-area: 1 / 1;
-  width: min(100cqw, 100cqh * 750 / 1085);
+  width: min(100cqw, 100cqh * 3 / 2);
   height: auto;
-  aspect-ratio: 750 / 1085;
-  border-radius: var(--r-field);
+  aspect-ratio: 3 / 2;
+  border-radius: var(--r-list);
   background: var(--g1);
   object-fit: cover;
   filter: blur(12px);
@@ -548,7 +534,7 @@ main:has(> .side:not([hidden])) #stage {
   max-height: 100%;
   width: auto;
   height: auto;
-  border-radius: var(--r-field);
+  border-radius: var(--r-list);
   background: var(--surface);
   box-shadow: var(--sh-frame);
 }
@@ -558,15 +544,45 @@ main:has(> .side:not([hidden])) #stage {
     transform: scale(0.985);
   }
 }
-.view:fullscreen {
-  background: var(--ink);
+/* Presenting (viewer.js present): the item on black inside the safe area, the chrome gone. */
+.is-presenting :is(.bar, .side, .handle, #controls, .foot) {
+  display: none;
 }
-.view:fullscreen .frame {
+.is-presenting .view {
+  position: fixed;
+  inset: 0;
+  z-index: 50;
+  padding: env(safe-area-inset-top) env(safe-area-inset-right) env(safe-area-inset-bottom) env(safe-area-inset-left);
+  background: var(--ink);
+  touch-action: pan-y;
+}
+.is-presenting .view .frame {
   padding: 0;
 }
-.view:fullscreen img {
+.is-presenting .view img {
   border-radius: 0;
   box-shadow: none;
+}
+#b-stop {
+  position: absolute;
+  top: calc(16px + env(safe-area-inset-top));
+  left: 50%;
+  z-index: 6;
+  min-height: 44px;
+  translate: -50%;
+  /* Neutral over any slide: the saturating blur would tint it with the picture. */
+  background: var(--glass-solid);
+  -webkit-backdrop-filter: none;
+  backdrop-filter: none;
+  box-shadow: var(--glass-edge), var(--sh-pill);
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 200ms var(--ease-ui);
+}
+.is-awake #b-stop,
+#b-stop:focus-visible {
+  opacity: 1;
+  pointer-events: auto;
 }
 .parked {
   place-self: center;
@@ -613,8 +629,26 @@ main:has(> .side:not([hidden])) #stage {
   box-shadow: var(--glass-edge), var(--sh-pill);
   transform: translateX(-50%);
 }
+/* A --stack wide column (viewer.js fit): on the item's right, which then reserves its side, or under the list, which
+   reserves nothing. */
+.pane.is-stacked #controls {
+  bottom: auto;
+  flex-direction: column;
+  align-items: stretch;
+  width: var(--stack);
+  height: auto;
+  border-radius: var(--r-stage);
+  transform: none;
+}
+.pane.is-stacked .frame {
+  padding: 0;
+}
+.pane.is-stack-right .frame {
+  padding-right: calc(var(--stack) + 16px);
+}
 .dots {
   padding: 0 8px;
+  text-align: center;
   white-space: nowrap;
   font-size: 15px;
   font-weight: 600;
@@ -714,12 +748,6 @@ main:has(> .side:not([hidden])) #stage {
   display: block;
   overflow: auto;
 }
-.side-head {
-  padding: 8px 8px 6px;
-  font-size: 14px;
-  font-weight: 600;
-  color: var(--muted);
-}
 .items,
 .list {
   display: grid;
@@ -730,8 +758,11 @@ main:has(> .side:not([hidden])) #stage {
   padding: 0;
   list-style: none;
 }
-/* The links under one inset rule. */
+/* The links under one inset rule, 8 clear of the rows on both sides (the grid gap 2 + 6 above; 1 for the rule + 9
+   below). */
 .split {
+  margin-top: 6px;
+  padding-top: 9px;
   box-shadow: inset 0 1px var(--hairline);
 }
 /* Selected and hover are a light fill, never ink: a link row is never selected, only hovered. */
@@ -795,8 +826,12 @@ main:has(> .side:not([hidden])) #stage {
     display: flex;
   }
 }
+/* No forwards fill: it would keep containing the presenting view's fixed box. */
 .pane.enter {
-  animation: in 380ms var(--ease-out) both;
+  animation: in 380ms var(--ease-out) backwards;
+}
+.is-presenting .pane.enter {
+  animation: none;
 }
 @keyframes in {
   from {

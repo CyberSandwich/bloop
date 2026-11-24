@@ -220,7 +220,7 @@ html:has(.page-site) {
       -webkit-background-clip: text;
       background-clip: text;
       color: transparent;
-      animation: sheen 1.8s var(--ease-out) 0.3s backwards;
+      animation: sheen 0.85s var(--ease-out) 0.3s backwards;
     }
   }
 }
@@ -576,7 +576,7 @@ h3 {
 }
 .group-head {
   display: flex;
-  align-items: center;
+  align-items: baseline;
   gap: 12px;
 }
 .group :is(h2, h3) {
