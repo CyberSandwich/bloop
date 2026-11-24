@@ -12,6 +12,10 @@
   line-height: 1;
   text-decoration: none;
 }
+.brand img {
+  width: var(--mark);
+  height: var(--mark);
+}
 
 /* ---- Site pages: the landing, /security, /privacy and 404 ---- */
 html:has(.page-site) {
@@ -137,7 +141,15 @@ html:has(.page-site) {
   background: none;
   cursor: pointer;
 }
-@media (max-width: 639.98px) {
+.nav-menu .menu-close,
+.nav-links:popover-open ~ .nav-menu .menu-open {
+  display: none;
+}
+.nav-links:popover-open ~ .nav-menu .menu-close {
+  display: block;
+}
+/* Narrow nav up to 760: between 640 and 760 the two pills met. */
+@media (max-width: 759.98px) {
   .nav {
     top: 10px;
     grid-template-columns: 1fr auto;
@@ -184,27 +196,26 @@ html:has(.page-site) {
   line-height: 1;
   letter-spacing: -0.05em;
 }
-/* Ink into deep robin, with one light band passing once (design.md section 8); plain ink where clipping fails. */
+/* Solid deep robin at rest; one light band passes once on load (design.md section 8). */
+.sheen {
+  color: var(--robin-deep);
+}
 @supports (background-clip: text) or (-webkit-background-clip: text) {
-  .sheen {
-    background:
-      linear-gradient(100deg, transparent 40%, rgba(255, 255, 255, 0.6) 50%, transparent 60%) 0 0 / 300% 100% no-repeat,
-      linear-gradient(100deg, var(--ink) 15%, var(--robin-deep));
-    -webkit-background-clip: text;
-    background-clip: text;
-    color: transparent;
-  }
   @media (prefers-reduced-motion: no-preference) {
     .sheen {
+      background:
+        linear-gradient(100deg, transparent 40%, rgba(255, 255, 255, 0.6) 50%, transparent 60%) 0 0 / 300% 100%
+        no-repeat var(--robin-deep);
+      -webkit-background-clip: text;
+      background-clip: text;
+      color: transparent;
       animation: sheen 1.4s var(--ease-out) 0.3s backwards;
     }
   }
 }
 @keyframes sheen {
   from {
-    background-position:
-      100% 0,
-      0 0;
+    background-position: 100% 0;
   }
 }
 .lead {
@@ -279,12 +290,18 @@ html:has(.page-site) {
 /* Section heads share one size; text columns are 760, the grids, stage and doc cards the full 1136. */
 :is(.how, .features, .connect, .faq, .close) > h2,
 .doc h1 {
-  font-size: 38px;
+  font-size: 30px;
   line-height: 1.04;
   letter-spacing: -0.035em;
 }
 :is(.how, .features, .connect, .faq, .close) > h2 {
   text-align: center;
+}
+@media (min-width: 640px) {
+  :is(.how, .features, .connect, .faq, .close) > h2,
+  .doc h1 {
+    font-size: 38px;
+  }
 }
 @media (min-width: 768px) {
   :is(.how, .features, .connect, .faq, .close) > h2,
@@ -318,8 +335,7 @@ html:has(.page-site) {
   list-style: none;
 }
 .step {
-  display: flex;
-  flex-direction: column;
+  align-self: start;
   padding: 24px;
   border-radius: var(--r-sheet);
   background: var(--surface);
@@ -357,9 +373,9 @@ html:has(.page-site) {
 .frag {
   display: grid;
   gap: 4px;
-  margin-top: auto;
+  margin: 0 -12px -12px;
   padding: 12px;
-  border-radius: var(--r-field);
+  border-radius: calc(var(--r-sheet) - 12px);
   background: var(--paper);
   user-select: none;
 }
@@ -503,29 +519,14 @@ html:has(.page-site) {
   background: var(--mint);
   color: var(--mint-ink);
 }
-.toggle {
-  flex: none;
-  width: 40px;
-  height: 24px;
+.rows .yes,
+.never {
   margin-left: auto;
-  padding: 2px;
-  border-radius: var(--r-pill);
-  background: var(--g1);
 }
-.toggle::after {
-  content: "";
-  display: block;
-  width: 20px;
-  height: 20px;
-  border-radius: 50%;
-  background: var(--surface);
-  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.2);
-}
-.toggle.on {
-  background: var(--ink);
-}
-.toggle.on::after {
-  margin-left: auto;
+.never {
+  color: var(--muted);
+  font-size: 15px;
+  font-weight: 400;
 }
 
 .faq h2 {

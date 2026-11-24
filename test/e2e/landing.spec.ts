@@ -182,6 +182,22 @@ test.describe("reduced motion", () => {
   });
 });
 
+test.describe("narrow nav up to 760", () => {
+  test.use({ viewport: { width: 700, height: 900 } });
+
+  test("at 700 the links fold into the menu, and its button reads close while the sheet is open", async ({ page }) => {
+    await page.goto("/");
+    const nav = page.getByRole("navigation", { name: "Primary" });
+    await expect(nav.getByRole("link", { name: "Privacy" })).toBeHidden();
+    const button = nav.getByRole("button", { name: "Menu" });
+    await expect(button.locator(".menu-open")).toBeVisible();
+    await button.click();
+    await expect(nav.getByRole("link", { name: "Privacy" })).toBeVisible();
+    await expect(button.locator(".menu-close")).toBeVisible();
+    await expect(button.locator(".menu-open")).toBeHidden();
+  });
+});
+
 test.describe("site nav", () => {
   test.use({ viewport: { width: 1440, height: 900 } });
 

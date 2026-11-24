@@ -18,8 +18,8 @@ function expectBase(res: Response) {
 
 describe.each([
   ["/", 200, LANDING_CSP, "<title>bloop: Present Anywhere</title>", /text\/html/],
-  ["/security", 200, LANDING_CSP, "<title>bloop Security</title>", /text\/html/],
-  ["/privacy", 200, LANDING_CSP, "<title>bloop Privacy Notice</title>", /text\/html/],
+  ["/security", 200, LANDING_CSP, "<title>bloop: Security</title>", /text\/html/],
+  ["/privacy", 200, LANDING_CSP, "<title>bloop: Privacy Notice</title>", /text\/html/],
   ["/.well-known/security.txt", 200, LANDING_CSP, "Contact: mailto:", /text\/plain/],
   ["/no-such-page", 404, LANDING_CSP, "This Page Isn't Here", /text\/html/],
   ["/security/deeper/still", 404, LANDING_CSP, "Go to the Home Page", /text\/html/],

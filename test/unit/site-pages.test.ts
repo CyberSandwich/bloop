@@ -240,13 +240,17 @@ describe("landing word caps (design.md section 13)", () => {
     expect(h1.match(/<span/g)).toHaveLength(1);
   });
 
-  it("the sheen is a clipped fill with plain ink outside @supports, plays once and never under reduced motion", () => {
+  it("Anywhere rests in solid deep robin; its one sheen plays once, and never under reduced motion", () => {
     const css = read("public/css/site.css");
+    expect(css).toMatch(/^\.sheen \{\s*color: var\(--robin-deep\);\s*\}/m);
     const block = between(css, /@supports \(background-clip: text\)/, "@keyframes sheen");
-    expect(block).toMatch(/\.sheen \{[^}]*background-clip: text;[^}]*color: transparent;/);
-    expect(block).toMatch(
-      /prefers-reduced-motion: no-preference\) \{\s*\.sheen \{\s*animation: sheen [\d.]+s var\(--ease-out\) [\d.]+s backwards;/,
+    const moving = between(block, /prefers-reduced-motion: no-preference\) \{/, "}");
+    expect(moving).toMatch(
+      /background-clip: text;[^}]*color: transparent;[^}]*animation: sheen [\d.]+s var\(--ease-out\) [\d.]+s backwards;/,
     );
+    // The band is the only gradient; under it the fill is the rest color, so the word never rests as a gradient.
+    expect(moving.match(/linear-gradient/g)).toHaveLength(1);
+    expect(moving).toMatch(/no-repeat var\(--robin-deep\);/);
     expect(css).not.toMatch(/\.sheen[^{]*\{[^}]*infinite/);
     expect(css).not.toMatch(/text-shadow/);
   });
@@ -564,7 +568,7 @@ describe("the stylesheets: base.css, then the page's own (design.md section 11)"
 
   it.each(SITE)("every class on %s is styled by base.css or site.css, never only by app.css", (page) => {
     // Names for the markup's reader, with no rule of their own.
-    const unstyled = new Set(["kinds", "providers", "frag-name"]);
+    const unstyled = new Set(["frag-name"]);
     const classes = new Set(
       [...read(`public/${page}`).matchAll(/class="([^"]+)"/g)].flatMap((m) => (m[1] ?? "").split(/\s+/)),
     );
@@ -594,6 +598,58 @@ describe("the stylesheets: base.css, then the page's own (design.md section 11)"
     ]) {
       expect(new RegExp(`\\.${cls}(?![\\w-])`).test(base), cls).toBe(false);
     }
+  });
+});
+
+describe("stage 1 wording and pictures", () => {
+  const index = read("public/index.html");
+
+  it.each(SITE)("%s titles itself bloop: X", (page) => {
+    expect(read(`public/${page}`)).toMatch(/<title>bloop: [A-Z][^<]*<\/title>/);
+  });
+
+  it("the landing speaks US English and the phone's own verb: Select, then Revoke", () => {
+    const text = visibleText(index);
+    expect(text).not.toMatch(/\b[Tt]ick\b/);
+    expect(text).toContain("Select your files, then tap Approve.");
+    expect(text).toContain("Your files open. Revoke from your phone.");
+    expect(text).toContain("Revoke from your phone, and each link expires.");
+    expect(text).not.toMatch(/End from your phone|One Tap/);
+  });
+
+  it("the sub and the descriptions never say the account stays on the phone (the server holds a refresh token)", () => {
+    for (const page of SITE) expect(read(`public/${page}`).toLowerCase()).not.toContain("stays on your phone.");
+    expect(visibleText(between(index, /<p class="lead">/, "</p>"))).toContain("the screen never gets your account");
+  });
+
+  it.each(["security.html", "privacy.html"])("%s draws the split with a check and a muted Never, no switch", (page) => {
+    const html = read(`public/${page}`);
+    const rows = (id: string) =>
+      [...between(html, new RegExp(`<h2 id="${id}">`), "</ul>").matchAll(/<li>([\s\S]*?)<\/li>/g)].map(
+        (m) => m[1] ?? "",
+      );
+    for (const row of rows("gets")) expect(row).toMatch(/<svg class="icon yes"[^>]*aria-hidden="true"/);
+    for (const row of rows("stays")) expect(row).toMatch(/<span class="never" aria-hidden="true">Never<\/span>$/);
+    expect(html).not.toContain("toggle");
+  });
+
+  it("the Connect lists carry no glyph on either side", () => {
+    expect(between(index, /<div class="panel">/, "</section>\n        </div>")).not.toMatch(/<svg\b/);
+  });
+
+  it("the menu button holds menu and close; CSS swaps them on :popover-open, with no script", () => {
+    const button = between(index, /<button class="nav-menu"/, "</button>");
+    expect(button).toMatch(/class="icon menu-open"[\s\S]*class="icon menu-close"/);
+    expect(read("public/css/site.css")).toMatch(
+      /\.nav-links:popover-open ~ \.nav-menu \.menu-close \{\s*display: block;/,
+    );
+  });
+
+  it("/security names who acts on a lost phone, and the demo's 60 minutes beside the live 90", () => {
+    const text = visibleText(read("public/security.html"));
+    expect(text).not.toMatch(/disconnect bloop from any device/i);
+    expect(text).toMatch(/Lost phone: your IT team removes bloop ?'s access in Microsoft Entra\./);
+    expect(text).toContain("after 90 minutes, or 60 in the demo");
   });
 });
 
