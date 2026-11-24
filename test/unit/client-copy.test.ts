@@ -193,6 +193,13 @@ describe("screen copy", () => {
     expect(screenCopy("opening", sf).controls).toEqual(["end", "download"]);
   });
 
+  it("opening names PowerPoint only for a protocol launch; an image or a PDF view is just Opening", () => {
+    expect(screenCopy("opening", { ...sf, openMode: "protocol" }).heading).toBe("Opening in PowerPoint");
+    expect(screenCopy("opening", { ...sf, openMode: null }).heading).toBe("Opening in PowerPoint");
+    for (const openMode of ["view", "pdf"] as const)
+      expect(screenCopy("opening", { ...sf, openMode }).heading).toBe("Opening");
+  });
+
   it("open claims PowerPoint only when the screen launched it", () => {
     expect(screenCopy("open", { ...sf, openMode: "protocol" }).heading).toBe("Open in PowerPoint");
     expect(screenCopy("open", { ...sf, openMode: null }).heading).toBe("Opened");
@@ -285,7 +292,7 @@ describe("phone copy", () => {
     const c = phoneCopy("approve", pf);
     expect(c).toMatchObject({ title: "Room 2.14", room: true, files: "list", add: true });
     expect(c.actions.map((a) => a.label)).toEqual(["Cancel", "Approve"]);
-    expect(c.scope).toBe("Only the items you tick go to the screen. The screen never gets your account.");
+    expect(c.scope).toBe("Only the file you select goes to the screen. The screen never gets your account.");
   });
 
   it("the demo room is the title too, with no demo line and no account line", () => {

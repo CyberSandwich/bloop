@@ -4,15 +4,15 @@
 /** @import {ClaimResponse, Entry, ErrorCode, Item, PhoneStateKey, PhoneView} from "../../src/shared/protocol.ts" */
 import { createApi } from "./core/api.js";
 import { bootCode } from "./core/boot-code.js";
-import { openChannel } from "./core/channel.js";
+import { FATAL, openChannel } from "./core/channel.js";
 import { phoneCopy } from "./core/copy.js";
 import { thumbOf } from "./core/demo.js";
 import { sendable, sendFile, wholeMB } from "./core/drop.js";
 import { loadFiles } from "./core/files.js";
 import { ago, countdown, ICON_ADD } from "./core/format.js";
 import { rowFace, tile } from "./core/rows.js";
-import { firstFile, phoneKey } from "./core/states.js";
-import { PID_KEY, pidStore, refOf, SID_KEY, sameScreen, sessionStore } from "./core/store.js";
+import { firstFile, inItemOrder, phoneKey } from "./core/states.js";
+import { dropPid, PID_KEY, pidStore, refOf, SID_KEY, sameScreen, sessionStore } from "./core/store.js";
 import { ariaFlag, byId, el, focusTitle, ICON_CHECK, icon, isFramed, setText, show, wsUrl } from "./core/ui.js";
 import { VERIFIED } from "./core/verified.js";
 import { ERRORS } from "./shared/errors.js";
@@ -77,14 +77,15 @@ const look = () => ({ mode: c.info?.mode ?? "live", kind: "owner" });
 
 const tickMark = () => el("span", { class: "tick" }, [icon(ICON_CHECK)]);
 
-/** The list to tick: one checkbox row per entry, then "Add a file", the guest path for a file not in it. */
-function buildRows(/** @type {Entry[]} */ entries, /** @type {boolean} */ add) {
+/** The rows in item order, then "Add a File". Demo: any items; live: one file (radios), as a live screen shows one. */
+function buildRows(/** @type {Entry[]} */ all, /** @type {boolean} */ add) {
   const demo = c.info?.mode === "demo";
+  const entries = /** @type {Entry[]} */ (inItemOrder(demo ? all : all.filter((e) => e.kind === "file")));
   fileList.replaceChildren(
     ...entries.map((entry) => {
-      const input = el("input", { type: "checkbox", value: entry.id });
+      const input = el("input", { type: demo ? "checkbox" : "radio", name: "item", value: entry.id });
       input.addEventListener("change", () => {
-        const on = new Set(c.selected);
+        const on = new Set(demo ? c.selected : []);
         if (input.checked) on.add(entry.id);
         else on.delete(entry.id);
         c.selected = entries.filter((e) => on.has(e.id)).map((e) => e.id);
@@ -101,7 +102,7 @@ function buildRows(/** @type {Entry[]} */ entries, /** @type {boolean} */ add) {
           el("li", {}, [
             el("button", { type: "button", class: "row", "data-action": "send-file" }, [
               tile(ICON_ADD),
-              el("span", { class: "row-text row-name" }, ["Add a file"]),
+              el("span", { class: "row-text row-name" }, ["Add a File"]),
             ]),
           ]),
         ]
@@ -120,6 +121,7 @@ function buildItems(/** @type {Item[]} */ items) {
 function setView(/** @type {PhoneView} */ view) {
   c.view = view;
   c.skew = view.now - Date.now();
+  if (view.state === "ended" || view.state === "waiting" || view.state === "closed") dropPid(pids, c.pid);
 }
 
 function buildSkeleton() {
@@ -226,7 +228,7 @@ back.addEventListener("click", async (e) => {
   e.preventDefault();
   const to = back.getAttribute("href") ?? "/";
   await api.post("/api/cancel", {}, c.pid);
-  pids.remove(PID_KEY);
+  dropPid(pids, c.pid);
   location.assign(to);
 });
 
@@ -268,7 +270,7 @@ function retry() {
 }
 
 function done() {
-  pids.remove(PID_KEY);
+  dropPid(pids, c.pid);
   location.assign("/");
 }
 
@@ -342,7 +344,7 @@ async function cancelPairing() {
   c.canceled = true;
   c.channel?.stop();
   c.channel = null;
-  pids.remove(PID_KEY);
+  dropPid(pids, c.pid);
   render();
 }
 
@@ -395,6 +397,7 @@ function attach(/** @type {string} */ pid) {
       render();
     },
     onError: (code) => {
+      if (FATAL.has(code)) dropPid(pids, pid);
       if (!c.canceling && !c.canceled) fail(code);
     },
     onLink: (link) => {
@@ -432,7 +435,9 @@ async function resume(/** @type {string} */ pid) {
   const res = await api.get("/api/pair/state", pid);
   if (!res.ok) {
     if (res.error === "offline" || res.error === "service_down") return fail("offline", () => resume(pid));
-    pids.remove(PID_KEY);
+    dropPid(pids, pid);
+    // A stale pid reads as no pairing ("Scan the Code").
+    nocode = true;
     return fail("pairing_invalid");
   }
   const view = /** @type {PhoneView} */ (res.value);

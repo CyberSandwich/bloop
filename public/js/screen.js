@@ -109,6 +109,8 @@ const residue = createResidue({
 });
 
 const serverNow = () => Date.now() + s.skew;
+/** In these states a transient key (offline, an error) parks the viewer rather than clearing it. */
+const IN_SESSION = ["approved", "opening", "open"];
 /** Bumped by every renew: a boot or a channel of an older screen stops acting. */
 let gen = 0;
 /** The line under Session Ended, fixed when the session ends (the launcher forgets at once). */
@@ -189,7 +191,9 @@ function render() {
 function paint() {
   const key = keyNow();
   const v = s.view;
-  viewer?.render(key === "demo_open" ? v : null);
+  if (key === "demo_open") viewer?.render(v);
+  else if (v && IN_SESSION.includes(v.state)) viewer?.park();
+  else viewer?.render(null);
   const item = viewer?.item() ?? firstFile(v?.items ?? []);
   const copy = screenCopy(key, {
     room: v?.room.name ?? "",
@@ -287,7 +291,7 @@ function onView(/** @type {ScreenView} */ view) {
   if (view.state === "ended" && s.view?.state !== "ended") {
     ended = DEMO ? "" : endLine(view.endReason, launcher.left());
   }
-  if (view.state === "ended" || view.state === "closed") pids.remove(PID_KEY);
+  if ((view.state === "ended" || view.state === "closed") && sameScreen(s.sid, pids.get(PID_KEY))) pids.remove(PID_KEY);
   s.view = view;
   s.skew = view.now - Date.now();
   if (view.state === "ended" || view.state === "closed") residue.clear();
@@ -338,9 +342,14 @@ async function act(/** @type {string} */ path) {
 buttons.start_over.addEventListener("click", () => act("/api/screen/restart"));
 buttons.end.addEventListener("click", () => act("/api/screen/end"));
 // The logo opens an in-page question (s.html #leave, a popover); only its End and Go Home ends.
+// Home even if the end fails: the screen times out; act() would renew it.
 byId("b-leave").addEventListener("click", async () => {
-  await act("/api/screen/end");
+  await api.post("/api/screen/end", {}, s.sid);
   location.assign("/");
+});
+// Back ends a waiting screen first, so its code and demo slot go at once.
+buttons.back.addEventListener("click", () => {
+  if (s.sid && s.view?.state === "waiting") void api.leave("/api/screen/end", s.sid);
 });
 buttons.present.addEventListener("click", () => viewer?.present());
 buttons.copy.addEventListener("click", () => {

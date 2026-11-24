@@ -21,7 +21,7 @@ export function createApi(deps = {}) {
   /**
    * @param {"GET" | "POST"} method
    * @param {string} path
-   * @param {{auth?: string | null | undefined, body?: unknown}} [options]
+   * @param {{auth?: string | null | undefined, body?: unknown, keepalive?: boolean}} [options]
    * @returns {Promise<Reply<any>>}
    */
   async function call(method, path, options = {}) {
@@ -29,7 +29,7 @@ export function createApi(deps = {}) {
     const headers = { Accept: "application/json" };
     if (options.auth) headers.Authorization = `Bearer ${options.auth}`;
     /** @type {RequestInit} */
-    const init = { method, headers, cache: "no-store", credentials: "same-origin" };
+    const init = { method, headers, cache: "no-store", credentials: "same-origin", keepalive: !!options.keepalive };
     if (method !== "GET") {
       headers["Content-Type"] = "application/json";
       init.body = JSON.stringify(options.body ?? {});
@@ -60,6 +60,8 @@ export function createApi(deps = {}) {
     get: (path, auth) => call("GET", path, { auth }),
     /** @param {string} path @param {unknown} [body] @param {string | null} [auth] */
     post: (path, body, auth) => call("POST", path, { body, auth }),
+    /** A POST that outlives the page. @param {string} path @param {string | null} [auth] */
+    leave: (path, auth) => call("POST", path, { auth, keepalive: true }),
   };
 }
 

@@ -1,6 +1,7 @@
 import { existsSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 import { openTarget, PHOTO_THUMB, pageMode, pagesOf, SLIDES, stepPage, thumbOf } from "../../public/js/core/demo.js";
+import { inItemOrder } from "../../public/js/core/states.js";
 import type { Item } from "../../src/shared/protocol.ts";
 
 const ORIGIN = "https://bloop.example";
@@ -9,6 +10,23 @@ const pdf: Item = { kind: "file", name: "Sample deck.pdf", type: "pdf", size: 83
 const photo: Item = { kind: "file", name: "Dog.jpg", type: "jpg", size: 70_000 };
 const link: Item = { kind: "link", url: "https://www.vevox.com/", title: "Vevox" };
 const demo = { mode: "demo", kind: "owner" } as const;
+
+describe("one list order", () => {
+  it("files by name, then links by title, as the machine orders the approved items", () => {
+    const items: Item[] = [
+      { kind: "link", url: "https://www.vevox.com/", title: "Vevox" },
+      { kind: "file", name: "Sample deck.pptx", type: "pptx", size: 1 },
+      { kind: "file", name: "Dog.jpg", type: "jpg", size: 1 },
+      { kind: "file", name: "Sample deck.pdf", type: "pdf", size: 1 },
+    ];
+    expect(inItemOrder(items).map((i) => (i.kind === "file" ? i.name : i.title))).toEqual([
+      "Dog.jpg",
+      "Sample deck.pdf",
+      "Sample deck.pptx",
+      "Vevox",
+    ]);
+  });
+});
 
 describe("DEMO-01 the demo screen's own open", () => {
   it("fetches the link PowerPoint would have fetched, on this origin only", () => {

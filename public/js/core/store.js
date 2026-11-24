@@ -45,6 +45,11 @@ export function createStore(area = null) {
   };
 }
 
+/** Drops the pid only when it is `expected`, so another tab's newer pairing stays. */
+export function dropPid(/** @type {ReturnType<typeof createStore>} */ store, /** @type {string | null} */ expected) {
+  if (expected !== null && store.get(PID_KEY) === expected) store.remove(PID_KEY);
+}
+
 /** The page's store, over sessionStorage when the browser allows touching it. */
 export function sessionStore() {
   try {
@@ -56,7 +61,7 @@ export function sessionStore() {
 
 /**
  * The phone's pairing store, over localStorage: a closed tab can come back to Revoke. The pid is a bearer secret for
- * one pairing; it is dropped on end, Revoke, cancel and every refusal, and dies with the session on the server.
+ * one pairing; a tab drops it (dropPid) on every end it sees, cancel and every refusal; it dies with the session.
  */
 export function pidStore() {
   try {

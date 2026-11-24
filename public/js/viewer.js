@@ -195,7 +195,7 @@ export function createViewer(deps) {
     }
     handle.replaceChildren(
       ...rowFace(item, thumbOf(item, v)),
-      el("span", { class: "small" }, [`${v.items.length} Items`]),
+      el("span", { class: "small" }, [`${v.items.length} items`]),
       icon(["M15.25 14.25 12 10.75l-3.25 3.5"]),
     );
 
@@ -227,6 +227,11 @@ export function createViewer(deps) {
     paintDots();
   }
 
+  function hide() {
+    for (const part of [side, handle, view, dots]) show(part, false);
+    if (side.matches(":popover-open")) side.hidePopover();
+  }
+
   function clear() {
     for (const img of images.values()) img.removeAttribute("src");
     images.clear();
@@ -237,10 +242,7 @@ export function createViewer(deps) {
     frame.replaceChildren();
     built = framed = null;
     at = page = 0;
-    show(side, false);
-    show(handle, false);
-    show(view, false);
-    show(dots, false);
+    hide();
     if (document.fullscreenElement === view) document.exitFullscreen().catch(() => {});
   }
 
@@ -274,6 +276,9 @@ export function createViewer(deps) {
       }
       paint();
     },
+
+    /** Hidden for a transient state; the place, pictures and mints are kept. */
+    park: hide,
 
     /** A link the launcher would open in a window. @param {string} url @param {number} item @param {OpenMode} mode */
     take(url, item, mode) {

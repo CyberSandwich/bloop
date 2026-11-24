@@ -84,3 +84,10 @@ export function phoneKey(c) {
   if (c.info.mode === "demo") return "approve_demo";
   return c.info.registered ? "approve" : "unregistered";
 }
+
+/** Files by name, then links by title: the order the machine gives the approved items (orderItems), on every list. */
+export function inItemOrder(/** @type {readonly Item[]} */ items) {
+  const label = (/** @type {Item} */ i) => (i.kind === "file" ? i.name : i.title);
+  const rank = (/** @type {Item} */ i) => (i.kind === "file" ? 0 : 1);
+  return [...items].sort((a, b) => rank(a) - rank(b) || label(a).localeCompare(label(b), "en"));
+}

@@ -6,7 +6,7 @@ import { VERIFIED } from "./verified.js";
 
 export const FOOTER_LINE = "Phone not with you? Sign in to this PC as usual.";
 export const SIGN_IN_HINT = "Sign in to this PC as usual to open your file.";
-/** The one string that names the session, by the owner's ruling (design.md section 3). */
+/** The one string that names the session (design.md section 3). */
 export const SESSION_ENDED = "Session Ended";
 
 /**
@@ -38,7 +38,7 @@ export function screenCopy(key, f) {
     case "opening":
       return {
         ...base,
-        heading: "Opening in PowerPoint",
+        heading: !f.openMode || f.openMode === "protocol" ? "Opening in PowerPoint" : "Opening",
         line: f.click ? `${file}. Click Open to start PowerPoint.` : file,
         controls: ["end", "download"],
       };
@@ -188,9 +188,10 @@ export function phoneCopy(key, f) {
     kind: /** @type {const} */ ("primary"),
     ...aria("Approve"),
   };
+  // A live phone's line: it approves one file.
   const accountLine = VERIFIED.accountNeverReaches
-    ? "Only the items you tick go to the screen. The screen never gets your account."
-    : "Only the items you tick go to the screen.";
+    ? "Only the file you select goes to the screen. The screen never gets your account."
+    : "Only the file you select goes to the screen.";
   /** The room as the title over the list (match to approving). */
   const room = { ...base, title: f.room, room: true, files: /** @type {const} */ ("list"), add: true };
   switch (key) {

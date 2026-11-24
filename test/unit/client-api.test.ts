@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { createApi } from "../../public/js/core/api.js";
 import { loadFiles } from "../../public/js/core/files.js";
-import { createStore, PID_KEY, pidStore, refOf, sameScreen } from "../../public/js/core/store.js";
+import { createStore, dropPid, PID_KEY, pidStore, refOf, sameScreen } from "../../public/js/core/store.js";
 
 interface Seen {
   path: string;
@@ -160,6 +160,17 @@ describe("session store", () => {
     const store = createStore(null);
     store.set("k", "v");
     expect(store.get("k")).toBe("v");
+  });
+
+  it("PAIR-12 pid-store: a tab drops the pid only when it is its own, so another tab's newer pairing stays", () => {
+    const store = createStore(null);
+    store.set(PID_KEY, "ref-b.secret");
+    dropPid(store, "ref-a.secret");
+    expect(store.get(PID_KEY)).toBe("ref-b.secret");
+    dropPid(store, null);
+    expect(store.get(PID_KEY)).toBe("ref-b.secret");
+    dropPid(store, "ref-b.secret");
+    expect(store.get(PID_KEY)).toBeNull();
   });
 
   it("PAIR-12 pid-store: the pid lives in localStorage, so a later page reads it, until it is removed by name", () => {

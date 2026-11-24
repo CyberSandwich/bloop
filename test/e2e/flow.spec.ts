@@ -186,6 +186,17 @@ test.describe("pairing flow", () => {
     await phone.context.close();
   });
 
+  test("Back on a waiting screen ends it first, so its code is dead at once", async ({ browser }) => {
+    const screen = await demoScreen(browser);
+    const code = await typedCodeOf(screen.page);
+    await screen.page.getByRole("link", { name: "Back", exact: true }).click();
+    await expect(screen.page).toHaveURL("/");
+    const phone = await open(browser, "phone", `/a?c=${code}`);
+    await expect(heading(phone.page)).toHaveText("This Code Has Expired");
+    await screen.context.close();
+    await phone.context.close();
+  });
+
   test("Back on a claimed screen drops the claim and issues a new code", async ({ browser }) => {
     const screen = await demoScreen(browser);
     const before = await typedCodeOf(screen.page);
@@ -268,6 +279,10 @@ test.describe("pairing flow", () => {
 
     await phone.page.getByRole("button", { name: "Done" }).click();
     await expect(phone.page).toHaveURL("/");
+    // The ended pairing's pid is gone: /a with no code asks for a scan.
+    expect(await phone.page.evaluate(() => localStorage.getItem("bloop.pid"))).toBeNull();
+    await phone.page.goto("/a");
+    await expect(heading(phone.page)).toHaveText("Scan the Code");
     await screen.context.close();
     await phone.context.close();
   });
