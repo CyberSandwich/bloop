@@ -20,7 +20,7 @@ bloop puts your slides on a shared screen. You scan the code on the screen, choo
 
 | # | Principle | Test |
 |---|---|---|
-| 1 | Calming first. Light only, paper and ink; one accent, robin orange (the logo's disc), only in the site's top wash, the sheen on "Anywhere" and the name in body copy. | Squint: only the ink pills, the logo and the warm top of the page stand out. |
+| 1 | Calming first. Light only, paper and ink; one accent, robin orange (the logo's disc), only in the sheen that crosses "Anywhere" once and the name in body copy. | Squint: only the ink pills and the logo stand out. |
 | 2 | Far less text. One-line headlines, one plain sub, a short FAQ. | Section 13 word caps pass. |
 | 3 | Relevant. Every element is about the handover (code, phone, approval, file, screen). | Delete any element that would make sense on another product's page. |
 | 4 | Looks finished. Real copy, real states, real product UI as HTML chips. | No lorem and no unstyled state; "Coming soon" only on the hero stage and the provider list, where it is the truth. |
@@ -115,11 +115,11 @@ Tokens live in `public/css/base.css` `:root`; this list restates them, and the d
 | `--sky:#cfe0e8` | a solid tint, site pages only, never a gradient: the Connect panel and the panel on `/privacy` and `/security`. Text on it is `--ink` or `--ink-2` |
 | `--mint:#cce8df` `--mint-ink:#1e3d35` | the Available status chip and its text (9.1:1): green reads as ready at a glance, and pastel keeps it from shouting |
 | `--amber:#f6e7b2` `--amber-ink:#57420f` | the Coming Soon status chip and its text (7.8:1): amber reads as not yet, never as an error; text on a pastel is its own dark ink, never `--muted` |
-| `--robin:#f4ba8b` | the logo's disc, the one accent: the site's top wash, always at partial alpha through `color-mix`; never text, never a fill |
-| `--robin-deep:#c8632a` | "Anywhere" at rest, solid, in the h1 only (3.6:1 on paper, 3.2:1 at the wash's peak: large text, 32 px or more); the QR ring's countdown stroke (4.0:1 on white, over the 3:1 a graphic needs); never body text |
+| `--robin:#f4ba8b` | the logo's disc, the one accent: the band's bright core in the "Anywhere" sheen; never text, never a fill |
+| `--robin-deep:#c8632a` | the sheen's band edges over "Anywhere"; the QR ring's countdown stroke (4.0:1 on white, over the 3:1 a graphic needs); never body text |
 | `--rose:#f8d7d3` `--rose-ink:#9b2c22` | the pair for the controls that end: End on the screen and Revoke on the phone, a pastel fill with its own deep red text (5.6:1). Red says stop without alarm; the same house frame or pill, so nothing else changes |
 | `--robin-ink:#a64f15` | the robin at text strength: the name in body copy (5.0:1 on paper, 5.6:1 on white) |
-| `--lead:#50504b` | the hero and page leads, which sit on the robin wash: 6.4:1 where the wash is strongest under text, 7.3 on paper; never lighter than `--muted`, so a lead outranks secondary text |
+| `--lead:#50504b` | the hero and page leads, on paper: 7.3:1; never lighter than `--muted`, so a lead outranks secondary text |
 
 Status colors (`--ok`, `--warn`, `--err`) are not used: a state is a sentence plus the object changing.
 
@@ -175,7 +175,7 @@ Headings `text-wrap:balance` (h1 and h2 in base.css, the site's h3 in site.css, 
 | `--section:80px` | section rhythm; 112 from 768 |
 
 ### Glass
-One recipe, named once (`.glass` in `base.css`; the nav pills carry the class in their markup, so `base.css` names no site selector), for every floating surface: the nav pills and their menu sheet, the viewer sidebar, its bottom sheet and handle, the viewer's control pill, the phone's sticky actions. Liquid, not frosted: a thin fill, a strong blur and saturation, so what passes under (the robin wash at the top of the site) tints it, as opsis's green tints its nav. No refraction, shine or animated sheen; the border is the shadow's 0.5 px ring, never a CSS border.
+One recipe, named once (`.glass` in `base.css`; the nav pills carry the class in their markup, so `base.css` names no site selector), for every floating surface: the nav pills and their menu sheet, the viewer sidebar, its bottom sheet and handle, the viewer's control pill, the phone's sticky actions. Liquid, not frosted: a thin fill, a strong blur and saturation, so what passes under (the page, a slide or a picture) tints it. No refraction, shine or animated sheen; the border is the shadow's 0.5 px ring, never a CSS border.
 | Token | Use |
 |---|---|
 | `--glass:rgba(255,255,255,.62)` | the fill where `backdrop-filter` is supported |
@@ -191,7 +191,7 @@ White cards are flat on paper with no shadow (the viewer's page, the QR card, th
 
 ## 5. Layout
 
-- One column, centered, generous space, on the robin wash: a radial of `--robin` at 32 percent alpha from the top center, subtle (70 percent of the width by 640 px, its midpoint hint at 30 percent, so it eases out with no ring) on every site page, painted on the page ground. The landing is: the nav; hero (h1, sub, one pill); the stage; How It Works (three steps); Features (`#features`, the grid on a white band); Connect Your Files (the Connect panel); the FAQ; the close (the mark over Try the Demo); the footer. `/security`, `/privacy` and 404 get the same nav and footer around a centered page hero and white topic cards (section 6).
+- One column, centered, generous space, on plain paper (no wash or gradient behind it). The landing is: the nav; hero (h1, sub, one pill); the stage; How It Works (three steps); Features (`#features`, the grid on a white band); Connect Your Files (the Connect panel); the FAQ; the close (the mark over Try the Demo); the footer. `/security`, `/privacy` and 404 get the same nav and footer around a centered page hero and white topic cards (section 6).
 - The hero block (h1 to button) is centered in the whole first view: `min-height:100svh`, padded `--nav-h` + 40 above and below, so the stage starts at the fold and the block sits at true center (a view less 120 px put it 60 px high). No entrance animation; the h1 paints in the first frame (the LCP element is the h1 or the stage picture, whichever paints larger). The doc pages' hero starts 152 px down; `html` keeps 96 px of `scroll-padding-top`, so a jump to `#features` lands below the nav.
 - `/s`, `/a` and `/code` are task pages with no site nav or footer.
 
@@ -411,7 +411,7 @@ One language: `--ease-out` for anything that appears or moves, `--ease-ui` for p
 |---|---|---|---|
 | press | input | 150 ms | `--ease-ui` |
 | stage tilt | scroll, at every width, not under reduced motion | sprung: stiffness 120, damping 30, mass .4 (CSS fallback: scroll-linked) | the spring |
-| "Anywhere" sheen | once on load, after 0.3 s | 1.4 s, a light band left to right through `background-position`, then it rests | `--ease-out` |
+| "Anywhere" sheen | once on load, after 0.3 s | 1.8 s, a wide orange band (saturated `--robin-deep` edges, a lighter `--robin` core) left to right through `background-position`, then the word rests in ink | `--ease-out` |
 | Try the Demo arrow | hover | 200 ms, 2 px to the right | `--ease-out` |
 | FAQ open, close | toggle | 380 ms height, 250 ms fade, 300 ms "+" turn | `--ease-out` |
 | nav scrolled | the top sentinel leaves or enters view | 240 ms glass and shadow | `--ease-out` |
@@ -423,9 +423,9 @@ One language: `--ease-out` for anything that appears or moves, `--ease-ui` for p
 | viewer bottom sheet | open | 350 ms from below | `cubic-bezier(0,0,0,1)` |
 | page step, row selection, hover | input | instant | |
 
-"Anywhere" rests in solid `--robin-deep`, and one light band passes over it once on load (`background-clip:text` over the same solid, then still). Why: presence without a halo; the one accent. A blurred glow muddied the letter edges, and an ink-to-robin gradient at rest read as the gradient tell section 13 bans; a solid word keeps the edges sharp and the robin in the word itself. The band runs only under `@supports` and with motion allowed; elsewhere the word is simply `--robin-deep`.
+"Anywhere" rests in `--ink`, the color of the h1 and of Present, and one orange band passes over it once on load (`background-clip:text` over the same ink, then still): a wide, saturated `--robin-deep` band with a lighter `--robin` core, 1.8 s, so it reads as one orange sweep across a black word. Why: presence without a halo; the one accent, spent on a moment and not left on the page (the old resting orange and the wash behind it read as decoration). A blurred glow muddied the letter edges, and a gradient at rest read as the gradient tell section 13 bans; the word at rest is ink, so contrast is the h1's own. The band runs only under `@supports` and with motion allowed; elsewhere the word is simply ink. Mid-sweep frames are not held to contrast: the word is a moving highlight for under two seconds.
 
-Reduced motion (`prefers-reduced-motion:reduce`): the stage rests flat (the spring never starts); the sheen does not play and the word is solid `--robin-deep`; the FAQ switches instantly; the `/s` QR ring steps once a second with no glide; scene changes swap at once; the blanket rule in `base.css` is the safety net. Nothing autoplays; the QR refresh is essential (a code must expire), so it has no pause.
+Reduced motion (`prefers-reduced-motion:reduce`): the stage rests flat (the spring never starts); the sheen does not play and the word is solid ink; the FAQ switches instantly; the `/s` QR ring steps once a second with no glide; scene changes swap at once; the blanket rule in `base.css` is the safety net. Nothing autoplays; the QR refresh is essential (a code must expire), so it has no pause.
 
 ## 9. Logo and social image
 
@@ -477,7 +477,7 @@ Stack and system architecture: `docs/architecture.md` and `docs/adr/`.
 | `--ink` on `--paper` / white | 15.6 / 17.0:1 | text, pill labels inverted |
 | `--paper` on `--ink` | 15.6:1 | primary pill label |
 | `--muted` on `--paper` / white / `--g-select` / the wash | 5.2 / 5.8 / 4.62 / 4.67:1 | secondary text, a selected row's meta line, a hovered row (`test/unit/pages.test.ts` holds 4.6 on each) |
-| `--lead` on the robin wash at its strongest under text / on `--paper` | 6.4 / 7.3:1 | the hero and page leads |
+| `--lead` on `--paper` | 7.3:1 | the hero and page leads |
 | `--robin-ink` on `--paper` / white | 5.0 / 5.6:1 | the name in body copy, 600 |
 | `--g2` on `--paper` | 2.3:1 | rings only (the outline pill's label is ink), never text |
 | QR #1E1E1C on white | 17.0:1 | modules |
@@ -511,7 +511,7 @@ A screen is done when every box passes; `test/unit/site-pages.test.ts` and `test
 - [ ] **Mobile (390):** no horizontal scroll, targets at least 44 px.
 - [ ] **Contrast:** WCAG AA on every text and control; axe and Lighthouse accessibility 1.0 in CI.
 - [ ] **Budgets:** section 11.
-- [ ] **No tells:** no gradient, glow or glossy button, except the two robin accents (the top wash and the "Anywhere" sheen, sections 5 and 8); no eyebrow or mono kicker; no two-tone headline; no status dots or tinted icons; glass only on the surfaces section 4 lists, in its one recipe; no fake logos, testimonials or counts; no em or en dashes, exclamation marks or emoji.
+- [ ] **No tells:** no gradient, glow or glossy button, except the one robin accent (the "Anywhere" sheen, section 8); no eyebrow or mono kicker; no two-tone headline; no status dots or tinted icons; glass only on the surfaces section 4 lists, in its one recipe; no fake logos, testimonials or counts; no em or en dashes, exclamation marks or emoji.
 
 ### Coherence
 One of each: type scale (600 and 400), card (flat white on paper), button shape (the pill in three roles), radius logic, shadow recipe (the stage frame, the QR card, glass), motion language, icon style (Lucide, stroke 2, only where it carries meaning), product pictures as real HTML fragments of the app in a `--paper` still. One voice (section 3); the same sentence for the same claim on every page.
@@ -522,7 +522,7 @@ Nothing is copied (no copy, assets, fonts or code); each lesson is restated in b
 | Site | Taken | Avoided |
 |---|---|---|
 | ample.computer | the paper and ink palette, the type scale, ink and outline pills, the neutral grid of icon, title and line, white FAQ cards, the footer (tagline, plain lines, a rule, the year) | its long scroll stories |
-| opsis.app | the top glass nav pill and its menu sheet, a plain two-word h1, the scroll tilt of the hero stage and the spring that smooths it, the brand-color glow at the top of the page that tints the glass, the list card with status pills, the privacy panel; from `/compare`: the centered page hero, white topic cards with the heading beside the prose, and a tint panel framing white cards | its density, its glossy gradient buttons, a FAQ that jumps, the `/compare` table and its paintings |
+| opsis.app | the top glass nav pill and its menu sheet, a plain two-word h1, the scroll tilt of the hero stage and the spring that smooths it, the list card with status pills, the privacy panel; from `/compare`: the centered page hero, white topic cards with the heading beside the prose, and a tint panel framing white cards | its density, its glossy gradient buttons, a FAQ that jumps, the `/compare` table and its paintings |
 
 Font: Inter (SIL OFL 1.1), subset from the official `InterVariable.woff2`, license shipped with it.
 

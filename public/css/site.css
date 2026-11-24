@@ -21,13 +21,6 @@
 html:has(.page-site) {
   scroll-padding-top: 96px;
 }
-/* The robin wash: one stop pair and a midpoint hint; extra linear stops showed as rings. */
-.page-site {
-  background:
-    radial-gradient(ellipse 70% 640px at 50% 0, color-mix(in srgb, var(--robin) 32%, transparent), 30%, transparent)
-    no-repeat,
-    var(--paper);
-}
 .page-site :where(.doc, .faq) a:not(.btn) {
   text-decoration: underline;
   text-underline-offset: 3px;
@@ -204,23 +197,30 @@ html:has(.page-site) {
     font-size: min(112px, (100vw - 2 * var(--pad)) / 10);
   }
 }
-/* Solid deep robin at rest; one light band passes once on load (design.md section 8). */
+/* Ink at rest; one orange band passes over it once on load (design.md section 8). */
 .sheen {
   /* background-clip paints only inside the box, and the tracking pulls it inside the last glyph's ink: net width 0. */
   margin-inline: -0.05em;
   padding-inline: 0.05em;
-  color: var(--robin-deep);
+  color: var(--ink);
 }
 @supports (background-clip: text) or (-webkit-background-clip: text) {
   @media (prefers-reduced-motion: no-preference) {
     .sheen {
       background:
-        linear-gradient(100deg, transparent 40%, rgba(255, 255, 255, 0.6) 50%, transparent 60%) 0 0 / 300% 100%
-        no-repeat var(--robin-deep);
+        linear-gradient(
+          100deg,
+          transparent 32%,
+          var(--robin-deep) 37%,
+          var(--robin) 50%,
+          var(--robin-deep) 63%,
+          transparent 68%
+        )
+        0 0 / 300% 100% no-repeat var(--ink);
       -webkit-background-clip: text;
       background-clip: text;
       color: transparent;
-      animation: sheen 1.4s var(--ease-out) 0.3s backwards;
+      animation: sheen 1.8s var(--ease-out) 0.3s backwards;
     }
   }
 }
