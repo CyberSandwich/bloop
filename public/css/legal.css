@@ -86,7 +86,8 @@
   color: var(--ink);
 }
 .toc .num {
-  min-width: 2ch;
+  flex: none;
+  width: 1.4em;
   color: var(--muted);
   font-variant-numeric: tabular-nums;
 }
@@ -161,7 +162,7 @@
 /* A numbered section indents by the gutter, and every number (section, clause, item) hangs in it, out of flow:
    the text starts on one x, and a number is never an inline link in a run of text (axe link-in-text-block). */
 .legal-text {
-  --gutter: 48px;
+  --gutter: 40px;
 }
 @media (min-width: 640px) {
   .legal-text {

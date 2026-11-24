@@ -64,7 +64,7 @@
       "name": "legal page CSS",
       "path": "public/css/legal.css",
       "gzip": true,
-      "limit": "2.6 kB"
+      "limit": "2.65 kB"
     },
     {
       "name": "site page CSS",
