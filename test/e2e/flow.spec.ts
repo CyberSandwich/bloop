@@ -121,7 +121,9 @@ test.describe("pairing flow", () => {
     await expectNoAxeViolations(phone.page);
 
     await expect(heading(screen.page)).toHaveText("Check Your Phone");
-    await expect(screen.page.locator("#match")).toHaveText(match);
+    // The claim changes the state in place: the QR card stays where it was, dimmed under a phone glyph.
+    await expect(screen.page.locator("#match")).toBeVisible();
+    await expect(screen.page.locator("#qr-panel")).toHaveCSS("visibility", "visible");
     await expect(screen.page.locator("#line")).toHaveText(`Your phone shows ${match}.`);
     await expect(screen.page.getByRole("button", { name: "Back", exact: true })).toBeVisible();
     await expectNoAxeViolations(screen.page);
@@ -463,8 +465,10 @@ test.describe("demo viewer", () => {
     await expect(sidebarItem(screen.page, "Sample deck.pptx")).toHaveAttribute("aria-current", "true");
     await expect(screen.page.getByRole("img", { name: "Slide 1 of 2" })).toBeVisible();
     await expect(screen.page.getByRole("button", { name: "Previous Slide" })).toBeHidden();
+    await expect(screen.page.locator("#dots")).toHaveText("1 / 2");
     await screen.page.getByRole("button", { name: "Next Slide" }).click();
     await expect(screen.page.getByRole("img", { name: "Slide 2 of 2" })).toBeVisible();
+    await expect(screen.page.locator("#dots")).toHaveText("2 / 2");
     await expect(screen.page.getByRole("button", { name: "Next Slide" })).toBeHidden();
     await screen.page.getByRole("button", { name: "Previous Slide" }).click();
     await expect(screen.page.getByRole("img", { name: "Slide 1 of 2" })).toBeVisible();
@@ -680,6 +684,12 @@ test.describe("screen page", () => {
     const screen = await demoScreen(browser);
     await screen.context.grantPermissions(["clipboard-read", "clipboard-write"]);
     const before = await typedCodeOf(screen.page);
+    // The square's glyph is centered: the house frame's start inset is for a frame with a label.
+    const square = await screen.page.getByRole("button", { name: "New Code" }).boundingBox();
+    const glyph = await screen.page.locator("#b-new .icon").boundingBox();
+    if (!square || !glyph) throw new Error("New Code is not on the page");
+    expect(Math.abs(glyph.x + glyph.width / 2 - (square.x + square.width / 2))).toBeLessThan(1);
+    expect(Math.abs(glyph.y + glyph.height / 2 - (square.y + square.height / 2))).toBeLessThan(1);
     await screen.page.getByRole("button", { name: "New Code" }).click();
     await expect.poll(() => typedCodeOf(screen.page)).not.toBe(before);
     await expect(screen.page.getByRole("button", { name: "New Code" })).toBeEnabled();

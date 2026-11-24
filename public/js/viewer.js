@@ -23,8 +23,6 @@ const KEYS = /** @type {Record<string, number>} */ ({
   ArrowUp: -1,
   PageUp: -1,
 });
-/** Up to this many pages show as dots; more show "3 of 9". */
-const MAX_DOTS = 6;
 const NEW_TAB = ["M17.25 15.25v-8.5h-8.5", "M17 7 6.75 17.25"];
 
 /** https only (LINK-01): the server allows nothing else, and the page checks again before it makes a link. */
@@ -188,9 +186,7 @@ export function createViewer(deps) {
     if (!p) return;
     prev.disabled = page === 0;
     next.disabled = page === p.length - 1;
-    dots.classList.toggle("count", p.length > MAX_DOTS);
-    if (p.length > MAX_DOTS) setText(dots, `${page + 1} of ${p.length}`);
-    else dots.replaceChildren(...p.map((_, i) => el("i", i === page ? { class: "on" } : {})));
+    setText(dots, `${page + 1} / ${p.length}`);
   }
 
   function paint() {

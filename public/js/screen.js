@@ -137,6 +137,9 @@ function drawCode(/** @type {import("../../src/shared/protocol.ts").CodeView} */
   if (code.code === s.shown) return;
   const first = s.shown === null;
   s.shown = code.code;
+  // A check beside a code it never copied would lie.
+  cancel("copied");
+  buttons.copy.classList.remove("is-copied");
   const paint = () => {
     qrPathEl.setAttribute("d", qrPath(qrMatrix(code.qrUrl)));
     qrSvg.setAttribute("aria-label", qrLabel(code.code, location.host));
@@ -222,8 +225,7 @@ function paint() {
   const code = v?.code && mode === "waiting" ? v.code : null;
   if (code) drawCode(code);
   qrPanel.classList.toggle("is-empty", s.shown === null);
-  show(matchEl, mode === "scanned" && !!v?.match);
-  setText(matchEl, mode === "scanned" ? (v?.match ?? "") : "");
+  show(matchEl, mode === "scanned");
 
   const has = (/** @type {import("./types.js").ScreenControl} */ c) => copy.controls.includes(c);
   show(buttons.back, !has("start_over") && !has("end") && key !== "ended");
