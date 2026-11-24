@@ -125,7 +125,7 @@ describe("screen state to view mapping", () => {
 describe("phone state to view mapping", () => {
   const base: PhoneCtx = {
     error: null,
-    info: { roomName: "Room 2.14", registered: true, match: "42", mode: "live" },
+    info: { roomName: "Room 2.14", registered: true, match: "42", mode: "live", kind: "owner" },
     view: phoneView("claimed"),
     files: null,
     selected: [],
@@ -160,7 +160,7 @@ describe("phone state to view mapping", () => {
 
   it("demo and unregistered rooms change the approve state", () => {
     const files = [file("a")];
-    const info = { roomName: "Room 2.14", registered: true, match: "42", mode: "live" } as const;
+    const info = { roomName: "Room 2.14", registered: true, match: "42", mode: "live", kind: "owner" } as const;
     expect(phoneKey(ctx({ files, selected: ["a"], info: { ...info, mode: "demo", registered: false } }))).toBe(
       "approve_demo",
     );
@@ -249,21 +249,26 @@ describe("phone state to view mapping", () => {
     expect(phoneKey(ctx({ view: phoneView("waiting") }))).toBe("expired");
   });
 
-  it("a phone that chose to send a file walks choose, confirm, sending in its own order", () => {
-    for (const drop of ["choose", "confirm", "sending"] as const) {
+  it("a phone that picked a file walks confirm, sending in its own order", () => {
+    for (const drop of ["confirm", "sending"] as const) {
       expect(phoneKey(ctx({ drop, files: [file("a")], selected: ["a"] }))).toBe(`guest_${drop}`);
     }
   });
 
-  it("the server's word wins: an offer is sent, an upload is sending, a claimed guest chooses", () => {
+  it("a guest with no list lands on Add a File, before the first view arrives too", () => {
+    const info = { ...base.info, kind: "guest" } as PhoneCtx["info"];
+    expect(phoneKey(ctx({ drop: null, files: [], view: null, info }))).toBe("guest_add");
+  });
+
+  it("the server's word wins: an offer is sent, an upload is sending, a claimed guest adds", () => {
     expect(phoneKey(ctx({ drop: "sending", view: phoneView("offered", { kind: "guest" }) }))).toBe("guest_sent");
     expect(phoneKey(ctx({ drop: null, view: phoneView("uploading", { kind: "guest" }) }))).toBe("guest_sending");
-    expect(phoneKey(ctx({ drop: null, view: phoneView("claimed", { kind: "guest" }) }))).toBe("guest_choose");
+    expect(phoneKey(ctx({ drop: null, view: phoneView("claimed", { kind: "guest" }) }))).toBe("guest_add");
     expect(phoneKey(ctx({ drop: "confirm", view: phoneView("claimed", { kind: "guest" }) }))).toBe("guest_confirm");
   });
 
   it("a refusal shows over the guest flow, and an opened drop shows as open", () => {
-    expect(phoneKey(ctx({ drop: "choose", error: "guest_refused" }))).toBe("guest_refused");
+    expect(phoneKey(ctx({ drop: null, error: "guest_refused" }))).toBe("guest_refused");
     expect(phoneKey(ctx({ view: phoneView("open", { kind: "guest", openMode: "protocol" }) }))).toBe("open");
     expect(phoneKey(ctx({ view: phoneView("approved", { kind: "guest" }) }))).toBe("opening");
   });
@@ -297,7 +302,7 @@ describe("PAIR-12 the phone takes a view", () => {
     const act = { drop: vi.fn(), stop: vi.fn(), fail: vi.fn() };
     const c = {
       error: null,
-      info: { roomName: "Room", registered: true, match: "42", mode: "live" as const },
+      info: { roomName: "Room", registered: true, match: "42", mode: "live" as const, kind: "owner" as const },
       view,
       files: null,
       selected: [],

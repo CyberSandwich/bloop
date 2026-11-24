@@ -1,19 +1,31 @@
 import { describe, expect, it } from "vitest";
-import { sendable, sendFile, wholeMB } from "../../public/js/core/drop.js";
+import { fileProblem, prepareFile, sendFile, wholeMB } from "../../public/js/core/drop.js";
 
 const MB = 1024 * 1024;
 
 describe("what a phone can check before sending", () => {
-  it("accepts a .pptx or .pdf within the cap, in any case", () => {
-    expect(sendable({ name: "Talk.pptx", size: 1000 }, 50 * MB)).toBe(true);
-    expect(sendable({ name: "NOTES.PDF", size: 50 * MB }, 50 * MB)).toBe(true);
+  it("accepts a deck, PDF, photo or video within the cap, in any case", () => {
+    for (const name of ["Talk.pptx", "NOTES.PDF", "a.jpg", "a.JPEG", "a.png", "clip.MP4", "clip.mov"]) {
+      expect(fileProblem({ name, size: 1000 }, 50 * MB), name).toBeNull();
+    }
+    expect(fileProblem({ name: "Talk.pdf", size: 50 * MB }, 50 * MB)).toBeNull();
   });
 
   it("refuses another extension, an empty file and one over the cap", () => {
-    expect(sendable({ name: "Talk.ppt", size: 1000 }, 50 * MB)).toBe(false);
-    expect(sendable({ name: "Talk.pptx.exe", size: 1000 }, 50 * MB)).toBe(false);
-    expect(sendable({ name: "Talk.pdf", size: 0 }, 50 * MB)).toBe(false);
-    expect(sendable({ name: "Talk.pdf", size: 50 * MB + 1 }, 50 * MB)).toBe(false);
+    expect(fileProblem({ name: "Talk.ppt", size: 1000 }, 50 * MB)).toBe("type");
+    expect(fileProblem({ name: "Talk.pptx.exe", size: 1000 }, 50 * MB)).toBe("type");
+    expect(fileProblem({ name: "Talk.pdf", size: 0 }, 50 * MB)).toBe("empty");
+    expect(fileProblem({ name: "Talk.pdf", size: 50 * MB + 1 }, 50 * MB)).toBe("large");
+    expect(fileProblem({ name: "clip.mov", size: 90 * MB + 1 }, 90 * MB)).toBe("large");
+  });
+
+  it("names a HEIC photo, in any case, apart from other types", () => {
+    expect(fileProblem({ name: "IMG_0001.HEIC", size: 1000 }, 50 * MB)).toBe("heic");
+    expect(fileProblem({ name: "a.heif", size: 1000 }, 50 * MB)).toBe("heic");
+  });
+
+  it("leaves a photo's size to its compression", () => {
+    expect(fileProblem({ name: "a.jpg", size: 60 * MB }, 25 * MB)).toBeNull();
   });
 
   it("states the cap in whole megabytes", () => {
@@ -119,5 +131,22 @@ describe("sending a file", () => {
     const b = start(stopped);
     b.abort();
     expect(await b.done).toEqual({ ok: false, error: "upload_aborted" });
+  });
+});
+
+describe("preparing a file", () => {
+  const file = (bytes: number[], name: string) => new File([new Uint8Array(bytes)], name);
+
+  it("sends a deck or PDF as it is", async () => {
+    const deck = file([1, 2, 3], "a.pptx");
+    expect(await prepareFile(deck, MB)).toEqual({ ok: true, file: deck });
+  });
+
+  it("refuses a video whose structure it cannot walk, with the video's problem", async () => {
+    expect(await prepareFile(file([0, 0, 0, 12, 1, 2, 3], "a.mov"), MB)).toEqual({ ok: false, problem: "video" });
+  });
+
+  it("refuses a photo that cannot be decoded and is over the cap", async () => {
+    expect(await prepareFile(file(new Array(200).fill(1), "a.png"), 100)).toEqual({ ok: false, problem: "photo" });
   });
 });

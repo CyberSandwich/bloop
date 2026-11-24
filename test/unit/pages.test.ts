@@ -105,6 +105,37 @@ describe("the screen and phone pages restored from the back-forward cache", () =
   });
 });
 
+describe("the phone's file picker", () => {
+  const accept = (/accept="([^"]+)"/.exec(read("a.html"))?.[1] ?? "").split(",");
+
+  it("offers photos, videos, decks and PDFs, so iOS lists Photo Library, Take Photo and Choose File", () => {
+    for (const entry of [
+      "image/jpeg",
+      "image/png",
+      "video/mp4",
+      "video/quicktime",
+      ".jpg",
+      ".jpeg",
+      ".png",
+      ".mp4",
+      ".mov",
+      ".pdf",
+      ".pptx",
+    ]) {
+      expect(accept, entry).toContain(entry);
+    }
+  });
+
+  it("never lists HEIC (iOS then hands over a JPEG) and has no capture attribute (it would skip the library)", () => {
+    expect(accept.join()).not.toMatch(/hei[cf]/i);
+    expect(read("a.html")).not.toMatch(/\scapture[=\s>]/);
+  });
+
+  it("has the drop hint, hidden until a file is dragged over, and not announced", () => {
+    expect(read("a.html")).toMatch(/<div class="drop-hint" id="drop-hint" aria-hidden="true" hidden>/);
+  });
+});
+
 describe("the phone's band", () => {
   it("each band query is written once, and the on-page query is its complement", () => {
     const preludes = [...read("css/app.css").matchAll(/@media ([^{]*599\.98px[^{]*)\{/g)].map((m) => m[1]?.trim());
