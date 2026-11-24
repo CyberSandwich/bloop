@@ -981,12 +981,60 @@ progress.bar::-moz-progress-bar {
     place-content: center;
     padding: var(--pad);
   }
+  /* A floating glass panel like the viewer's controls: inset from the sides and the bottom, its radius a button's (26)
+     plus its padding (8). The spacer keeps it 24 under the content once the page is scrolled to the end. */
   .column > .actions {
     position: sticky;
-    bottom: 0;
-    margin: auto calc(-1 * var(--pad)) calc(-1 * var(--inset));
-    padding: 16px var(--pad) calc(var(--inset) + env(safe-area-inset-bottom));
-    border-radius: var(--r-sheet) var(--r-sheet) 0 0;
+    z-index: 5;
+    order: 2;
+    bottom: calc(var(--inset) + env(safe-area-inset-bottom));
+    margin: auto 0 0;
+    padding: 8px;
+    border-radius: 34px;
+    box-shadow: var(--glass-edge), var(--sh-pill);
+  }
+  .column > .actions:has(> .buttons:empty) {
+    display: none;
+  }
+  .page-phone .column::after {
+    content: "";
+    order: 1;
+    flex: none;
+    height: 24px;
+  }
+  .page-phone:has(.actions .btn) {
+    --toast-lift: 80px;
+  }
+}
+@media (max-width: 639.98px) {
+  .page-phone:has(.actions .btn + .btn) {
+    --toast-lift: 140px;
+  }
+}
+/* A file dragged over /a, from 640 wide (phone.js shows it); it never takes the pointer. */
+.drop-hint {
+  display: none;
+}
+@media (min-width: 640px) {
+  .drop-hint:not([hidden]) {
+    position: fixed;
+    z-index: 55;
+    inset: var(--inset);
+    display: grid;
+    place-content: center;
+    border: 2px dashed var(--ink);
+    border-radius: var(--r-sheet);
+    background: var(--glass-firm);
+    font-size: 22px;
+    font-weight: 600;
+    pointer-events: none;
+  }
+}
+/* Without Back (Approved) the column starts under --inset, not under the corner bar, and is not centered. */
+@media (max-width: 899.98px) {
+  .page-phone:not(.is-ended):has(#back[hidden]) .column {
+    justify-content: flex-start;
+    padding-top: calc(var(--inset) + 24px);
   }
 }
 /* Its complement: buttons on the page, no fill, the column centered (in a short window that would push them past the fold). */
