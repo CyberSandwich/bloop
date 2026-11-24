@@ -26,7 +26,7 @@
     {
       "name": "browser JS",
       "path": "public/js/**/*.js",
-      "limit": "48.8 kB"
+      "limit": "49.5 kB"
     },
     {
       "name": "landing JS",
@@ -59,6 +59,12 @@
       "gzip": false,
       "brotli": false,
       "limit": "241 kB"
+    },
+    {
+      "name": "legal page CSS",
+      "path": "public/css/legal.css",
+      "gzip": true,
+      "limit": "2.45 kB"
     },
     {
       "name": "site page CSS",

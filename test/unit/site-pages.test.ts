@@ -3,10 +3,13 @@ import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
 
 const read = (rel: string) => readFileSync(fileURLToPath(new URL(`../../${rel}`, import.meta.url)), "utf8");
-const SITE = ["index.html", "security.html", "privacy.html", "404.html"] as const;
+const SITE = ["index.html", "security.html", "privacy.html", "terms.html", "404.html"] as const;
+// The doc pages (design.md section 6, Legal pages): they also load legal.css and legal.js.
+const LEGAL = ["privacy.html", "terms.html", "security.html"] as const;
+const isLegal = (page: string) => (LEGAL as readonly string[]).includes(page);
 const ALL = [...SITE, "s.html", "a.html", "code.html"] as const;
 const VOID = new Set(["meta", "link", "img", "source", "input", "br", "hr", "wbr"]);
-const CSS_FILES = ["base.css", "site.css", "app.css"] as const;
+const CSS_FILES = ["base.css", "site.css", "legal.css", "app.css"] as const;
 const SKIP_TAGS = new Set(["head", "script", "style", "svg", "noscript", "template"]);
 // Title Case (design.md section 3) keeps these lowercase after the first word.
 const MINOR = new Set([
@@ -66,6 +69,7 @@ function visibleText(html: string, { touch = false } = {}): string {
     .trim();
 }
 
+const unnumbered = (heading: string) => heading.replace(/<a class="num"[^>]*>[^<]*<\/a>/g, "");
 const words = (text: string) => text.split(/\s+/).filter((w) => /[\p{L}\p{N}]/u.test(w));
 const between = (html: string, start: RegExp, end: string) => {
   const from = html.search(start);
@@ -114,7 +118,7 @@ describe.each(SITE)("%s under the strict CSP", (page) => {
   });
 
   it("every heading and label is at most 5 words", () => {
-    const headings = [...html.matchAll(/<h([1-3])\b[^>]*>([\s\S]*?)<\/h\1>/g)].map((m) => m[2] as string);
+    const headings = [...html.matchAll(/<h([1-3])\b[^>]*>([\s\S]*?)<\/h\1>/g)].map((m) => unnumbered(m[2] as string));
     const labels = [...html.matchAll(/<span class="status[^"]*">([^<]*)<\/span>/g)].map((m) => m[1] as string);
     for (const text of [...headings, ...labels].map((t) => visibleText(t))) {
       expect(words(text).length, text).toBeLessThanOrEqual(5);
@@ -122,7 +126,9 @@ describe.each(SITE)("%s under the strict CSP", (page) => {
   });
 
   it("every heading and the title are Title Case with no period (design.md section 3)", () => {
-    const titles = [...html.matchAll(/<h([1-3])\b[^>]*>([\s\S]*?)<\/h\1>/g)].map((m) => visibleText(m[2] as string));
+    const titles = [...html.matchAll(/<h([1-3])\b[^>]*>([\s\S]*?)<\/h\1>/g)].map((m) =>
+      visibleText(unnumbered(m[2] as string)),
+    );
     titles.push((/<title>([^<]+)<\/title>/.exec(html)?.[1] ?? "").replace(/^bloop:? /, ""));
     for (const title of titles) {
       expect(title, title).not.toMatch(/[.]$/);
@@ -142,12 +148,13 @@ describe.each(SITE)("%s under the strict CSP", (page) => {
   });
 
   it('sets "bloop" in body copy as the robin name', () => {
-    // The legal line is a name in a notice, not copy; a mail domain is an address.
+    // The legal line is a name in a notice, not copy; a mail domain or the site's host is an address.
     for (const m of html.matchAll(/<p(?! class="footer-legal")\b[^>]*>([\s\S]*?)<\/p>/g)) {
       const bare = (m[1] as string)
         .replace(/<b class="name">bloop<\/b>/g, "")
         .replace(/<[^>]+>/g, " ")
-        .replace(/\S+@bloop\.\S+/g, "");
+        .replace(/\S+@bloop\.\S+/g, "")
+        .replace(/\bbloop\.here\b/g, "");
       expect(bare, m[1]).not.toMatch(/\bbloop\b/);
     }
   });
@@ -175,8 +182,8 @@ describe("every page's text", () => {
     if (_name.endsWith(".html")) expect(plain).not.toMatch(/!/);
   });
 
-  it.each(SITE)("%s keeps session, token and tenant off the page unless it is /security", (page) => {
-    if (page === "security.html") return;
+  // The doc pages define Session and name tokens and tenants where the law or IT needs them (design.md section 3).
+  it.each(["index.html", "404.html"])("%s keeps session, token and tenant off the page", (page) => {
     const text = visibleText(read(`public/${page}`)).toLowerCase();
     expect(text).not.toMatch(/\b(session|token|tenant)s?\b/);
   });
@@ -380,13 +387,16 @@ describe("landing word caps (design.md section 13)", () => {
     expect(residue).toContain('href="/security"');
     expect(residue).toMatch(/can stay/);
     expect(residue.toLowerCase()).not.toMatch(/nothing (is )?left|leaves nothing/);
-    // One claim, one sentence (design.md section 13): the answer repeats /security#stay word for word.
-    const stay = visibleText(between(read("public/security.html"), /<h2 id="stay">[^<]*<\/h2>\s*<p>/, "</p>")).replace(
-      /^What Can Stay Behind /,
-      "",
-    );
-    expect(visibleText(residue)).toContain(stay);
-    expect(stay).toMatch(/tabs with their history/);
+    // One claim (design.md section 13): the answer names what /security#stay names, a downloaded copy and the history.
+    const stay = visibleText(between(read("public/security.html"), /<h2 id="stay-h">/, "</p>"));
+    for (const fact of [
+      /downloaded copy/,
+      /history/,
+      /can stay until the (PC's )?profile is wiped|can stay until the PC is wiped/,
+    ]) {
+      expect(visibleText(residue), String(fact)).toMatch(fact);
+      expect(stay, String(fact)).toMatch(fact);
+    }
   });
 
   const group = (id: string) => {
@@ -486,7 +496,7 @@ describe("landing word caps (design.md section 13)", () => {
 });
 
 describe("site scripts under the strict CSP", () => {
-  it.each(["site.js"])("%s never uses eval, HTML sinks, inline styles or script URLs", (file) => {
+  it.each(["site.js", "legal.js"])("%s never uses eval, HTML sinks, inline styles or script URLs", (file) => {
     const code = read(`public/js/${file}`);
     expect(code).not.toMatch(/\beval\s*\(/);
     expect(code).not.toMatch(/new Function\s*\(/);
@@ -514,10 +524,10 @@ describe("site scripts under the strict CSP", () => {
     expect(code).toMatch(/new IntersectionObserver\([\s\S]*?cancelAnimationFrame[\s\S]*?\.observe\(stage\)/);
   });
 
-  it("every site page loads only the landing script, or none", () => {
+  it("every site page loads only its own script: the landing site.js, the doc pages legal.js, the 404 none", () => {
     for (const page of SITE) {
       const scripts = [...read(`public/${page}`).matchAll(/<script[^>]*src="([^"]+)"/g)].map((m) => m[1]);
-      expect(scripts, page).toEqual(page === "index.html" ? ["/js/site.js"] : []);
+      expect(scripts, page).toEqual(page === "index.html" ? ["/js/site.js"] : isLegal(page) ? ["/js/legal.js"] : []);
     }
   });
 });
@@ -549,6 +559,7 @@ describe("site chrome: one nav and one footer on every site page", () => {
     ["index.html", "landing"],
     ["security.html", "security"],
     ["privacy.html", "privacy"],
+    ["terms.html", "terms"],
     ["404.html", "404"],
   ])(
     "%s: every Waitlist link opens the form with source=%s, in the same tab, and carries data-waitlist",
@@ -566,10 +577,11 @@ describe("site chrome: one nav and one footer on every site page", () => {
     },
   );
 
-  it.each(SITE)("%s names one contact address, hi@bloop.here, and no placeholder", (page) => {
+  it.each(SITE)("%s names hi@bloop.here, security@ only on /security, and no placeholder", (page) => {
     const html = read(`public/${page}`);
     expect(html).not.toMatch(/bloop\.example/);
-    for (const m of html.matchAll(/[\w.+-]+@[\w-]+(\.[\w-]+)+/g)) expect(m[0]).toBe("hi@bloop.here");
+    const allowed = page === "security.html" ? ["hi@bloop.here", "security@bloop.here"] : ["hi@bloop.here"];
+    for (const m of html.matchAll(/[\w.+-]+@[\w-]+(\.[\w-]+)+/g)) expect(allowed).toContain(m[0]);
   });
 
   it("the footer lists the address as a mailto link beside the other footer links, with its text visible", () => {
@@ -577,20 +589,35 @@ describe("site chrome: one nav and one footer on every site page", () => {
     expect(footer).not.toContain("Write to");
   });
 
-  it("security.txt names the same contact", () => {
-    expect(read("public/.well-known/security.txt")).toMatch(/^Contact: mailto:hi@bloop\.here$/m);
+  it("security.txt and SECURITY.md name the /security channels and point to its policy (RFC 9116)", () => {
+    const txt = read("public/.well-known/security.txt");
+    expect(txt).toMatch(/^Contact: mailto:security@bloop\.here$/m);
+    expect(txt).toMatch(/^Contact: https:\/\/github\.com\/\S+\/bloop\/security\/advisories\/new$/m);
+    expect(txt).toMatch(/^Policy: https:\/\/bloop\.here\/security#report$/m);
+    expect(txt).toMatch(/^Canonical: https:\/\/bloop\.here\/\.well-known\/security\.txt$/m);
+    expect(read("SECURITY.md")).toContain("https://bloop.here/security#report");
+    const report = visibleText(between(read("public/security.html"), /<section id="report"/, "</section>"));
+    expect(report).toContain("security@bloop.here");
+    expect(report).toContain("within 5 working days");
+    expect(read("SECURITY.md")).not.toMatch(/\d+ (working )?days/);
   });
 
   it("privacy names Tally as the waitlist processor and what the form collects", () => {
     const html = read("public/privacy.html");
-    const row =
-      /<tr><th scope="row">Waitlist: the email and answers you send<\/th><td>([\s\S]*?)<\/td><\/tr>/.exec(html)?.[1] ??
-      "";
-    expect(row).toContain("Tally (tally.so)");
-    for (const field of ["role", "where you would use", "organization", "next step", "timing", "email"]) {
-      expect(row, field).toContain(field);
+    const collected = visibleText(between(html, /<tr><th scope="row" data-label="Data">Waitlist answers:/, "</tr>"));
+    for (const field of [
+      "role",
+      "where you would use",
+      "organization",
+      "what you would like next",
+      "timing",
+      "email",
+    ]) {
+      expect(collected, field).toContain(field);
     }
-    expect(row).toContain("until you ask for deletion or the waitlist closes");
+    expect(visibleText(between(html, /<tr><th scope="row" data-label="Processor">Tally BV/, "</tr>"))).toContain(
+      "Waitlist answers",
+    );
   });
 
   it("the logo is its own pill before the nav landmark, and the links pill holds the links, Waitlist and the menu", () => {
@@ -626,8 +653,9 @@ describe("the stylesheets: base.css, then the page's own (design.md section 11)"
   // A class names a rule in a file when it appears as a selector token there.
   const defines = (file: string, cls: string) => new RegExp(`\\.${cls}(?![\\w-])`).test(css[file] ?? "");
 
-  it.each(SITE)("%s links base.css then site.css, and nothing else", (page) => {
-    expect(links(read(`public/${page}`))).toEqual(["/css/base.css", "/css/site.css"]);
+  it.each(SITE)("%s links base.css then site.css (then legal.css on a doc page), and nothing else", (page) => {
+    const own = isLegal(page) ? ["/css/legal.css"] : [];
+    expect(links(read(`public/${page}`))).toEqual(["/css/base.css", "/css/site.css", ...own]);
   });
 
   it.each(["s.html", "a.html", "code.html"])("%s links base.css then app.css, and nothing else", (page) => {
@@ -638,14 +666,14 @@ describe("the stylesheets: base.css, then the page's own (design.md section 11)"
     expect(links(read("src/worker/auth/error-page.ts"))).toEqual(["/css/base.css", "/css/site.css"]);
   });
 
-  it.each(SITE)("every class on %s is styled by base.css or site.css, never only by app.css", (page) => {
+  it.each(SITE)("every class on %s is styled by base.css, site.css or legal.css, never only by app.css", (page) => {
     // Names for the markup's reader, with no rule of their own.
     const unstyled = new Set(["frag-name"]);
     const classes = new Set(
       [...read(`public/${page}`).matchAll(/class="([^"]+)"/g)].flatMap((m) => (m[1] ?? "").split(/\s+/)),
     );
     for (const cls of classes) {
-      const own = defines("base.css", cls) || defines("site.css", cls);
+      const own = defines("base.css", cls) || defines("site.css", cls) || (isLegal(page) && defines("legal.css", cls));
       if (!own) expect(unstyled.has(cls) && !defines("app.css", cls), cls).toBe(true);
     }
   });
@@ -754,8 +782,7 @@ describe("stage 1 wording and pictures", () => {
   it("/security says each fact once, under its own sub, and the 404 line does not repeat its button", () => {
     const html = read("public/security.html");
     const text = visibleText(html);
-    expect(visibleText(between(html, /<p class="lead">/, "</p>"))).toBe("What the room PC can and cannot reach.");
-    expect(html).toContain('<meta name="description" content="What the room PC can and cannot reach.">');
+    expect(html).not.toContain("What the room PC can and cannot reach");
     for (const fact of [/60 seconds/g, /90 minutes/g, /Disconnect OneDrive/g, /My Apps/g, /Microsoft Entra/g]) {
       const n = (text.match(fact) ?? []).length;
       expect(n, String(fact)).toBe(1);
@@ -833,19 +860,19 @@ describe("stage 1 wording and pictures", () => {
     expect(route).toMatch(/sessions\.destroyAll\(userId\)/);
     // One pair of sentences for the same claim on both pages.
     const access =
-      /Once OneDrive is connected, tap Disconnect OneDrive on any phone while you approve: bloop ?deletes its stored access and every sign-in ends at once, a lost phone's included\. You may also be able to remove bloop ?in My Apps \(myapplications\.microsoft\.com\); your IT team can remove it for everyone in Microsoft Entra\./;
+      /[Oo]nce OneDrive is connected, tap Disconnect OneDrive on any phone while you approve: bloop ?deletes its stored access and every sign-in ends at once, a lost phone's included\. You may also be able to remove bloop ?in My Apps \(myapplications\.microsoft\.com\); your IT team can remove it for everyone in Microsoft Entra\./;
     expect(text).toMatch(access);
     expect(visibleText(read("public/privacy.html"))).toMatch(access);
-    // Removing Access holds every removal step, the lost phone's included; the Threat Model only points to it.
-    const remove = visibleText(between(read("public/security.html"), /<h2 id="remove">/, "</section>"));
-    expect(remove).toMatch(/^Removing Access /);
+    // Sign-In and Permissions holds every removal step, the lost phone's included; the threats only point to it.
+    const remove = visibleText(between(read("public/security.html"), /<h2 id="permissions-h">/, "</section>"));
+    expect(remove).toMatch(/^Sign-In and Permissions /);
     // One sentence covers a lost phone, so the card says it once.
     expect(remove).toMatch(/a lost phone's included\./);
     expect(remove).not.toMatch(/Lost phone:/);
-    const threats = visibleText(between(read("public/security.html"), /<h2 id="threats">/, "</section>"));
-    expect(threats).toMatch(/Lost phone: see Removing Access ?\.$/);
+    const threats = visibleText(between(read("public/security.html"), /<h2 id="threats-h">/, "</section>"));
+    expect(threats).toMatch(/Lost phone: see Sign-In and Permissions ?\./);
     expect(threats).not.toMatch(/Disconnect|My Apps|Entra/);
-    expect(read("public/security.html")).toContain('<a href="#remove">Removing Access</a>');
+    expect(read("public/security.html")).toContain('<a href="#permissions">Sign-In and Permissions</a>');
     // Admin consent can keep a user from removing the app, so My Apps is never promised.
     for (const page of ["security.html", "privacy.html"]) {
       expect(visibleText(read(`public/${page}`)), page).not.toMatch(/You can (also )?remove bloop ?in My Apps/);
@@ -854,25 +881,178 @@ describe("stage 1 wording and pictures", () => {
     for (const page of ["security.html", "privacy.html"]) {
       expect(visibleText(read(`public/${page}`)), page).not.toMatch(/(My Apps|Entra)[^.]*sign(s|ed)? (you )?out/);
     }
-    expect(text).toContain("after 90 minutes, or 60 in the demo");
+    // The length the Worker enforces today (wrangler.jsonc), until the phone sets it.
+    expect(text).toContain("after 90 minutes (60 in the Demo)");
+    expect(read("wrangler.jsonc")).toMatch(/"SESSION_MAX_MINUTES": "90"[\s\S]*"DEMO_SESSION_MINUTES": "60"/);
   });
 });
 
 describe("privacy notice", () => {
-  it("keeps the OneDrive grant only as the code does: until disconnect, a failed refresh after removal, or 30 days unused", () => {
-    const row = between(read("public/privacy.html"), /<tr><th scope="row">Your OneDrive access/, "</tr>");
-    expect(row).toContain(
-      'Until you disconnect (deleted at once) or remove <b class="name">bloop</b> in My Apps or Entra (deleted the next time it fails), or 30 days unused.',
+  const html = read("public/privacy.html");
+  const row = (start: string) =>
+    visibleText(between(html, new RegExp(`<tr><th scope="row" data-label="Data">${start}`), "</tr>"));
+
+  it("keeps the OneDrive grant only as the code does: until disconnect, a failed refresh after removal, erasure, or 30 days unused", () => {
+    expect(row("Your OneDrive access \\(Planned\\)")).toContain(
+      "Until you tap Disconnect OneDrive (deleted at once), remove bloop in My Apps or Microsoft Entra (deleted the next time it fails), ask for erasure, or 30 days unused",
     );
     expect(read("docs/threat-model.md")).toMatch(
       /\| refresh token \(grant\) \| D1 \| until disconnect \(at once, with every phone session\)/,
     );
   });
 
-  it("states what the waitlist keeps, why and for how long", () => {
-    const row = between(read("public/privacy.html"), /<tr><th scope="row">Waitlist/, "</tr>");
-    expect(row).toMatch(/email and answers/);
-    expect(row).toMatch(/to invite you/);
-    expect(row).toMatch(/until you ask/);
+  it("states the audit retention the Worker runs, and the request logs as the threat model does", () => {
+    expect(row("Session and access records")).toContain("180 days. In the Demo, 7 days");
+    expect(read("wrangler.jsonc")).toMatch(/"AUDIT_RETENTION_DAYS": "180"[\s\S]*"DEMO_RETENTION_DAYS": "7"/);
+    // Workers Logs on Free keep 7 days from 2026-12-01; the live Worker logs nothing, so "at most" holds either way.
+    expect(row("Cloudflare's request logs")).toContain("At most 7 days, with no personal data");
+    expect(read("docs/threat-model.md")).toMatch(
+      /\| Worker logs \| Cloudflare \| [^|]*at most 7 days, no personal data \|/,
+    );
+  });
+
+  it("names the ICO without a postal address or helpline it cannot keep current", () => {
+    expect(html).toContain('<a href="https://ico.org.uk/make-a-complaint/">ico.org.uk/make-a-complaint</a>');
+    expect(html).not.toMatch(/ICO_POSTAL_ADDRESS|0303/);
+  });
+
+  it("drops the draft line and the noindex", () => {
+    expect(html).not.toContain("draft");
+    expect(html).not.toContain('name="robots"');
+  });
+});
+
+describe("the doc pages: one .legal layout (design.md section 6, Legal pages)", () => {
+  const pages = Object.fromEntries(LEGAL.map((p) => [p, read(`public/${p}`)]));
+  const ids = (html: string) => new Set([...html.matchAll(/\sid="([^"]+)"/g)].map((m) => m[1]));
+  const sections = (html: string) =>
+    [
+      ...html.matchAll(
+        /<section id="([^"]+)" aria-labelledby="\1-h">\s*<h2 id="\1-h">([\s\S]*?)<\/h2>([\s\S]*?)<\/section>/g,
+      ),
+    ].map((m) => ({ id: m[1] ?? "", heading: m[2] ?? "", body: m[3] ?? "" }));
+
+  it.each(LEGAL)(
+    "%s carries the header block: one effective date shared by the three, Version 1.0, previous versions",
+    (page) => {
+      const html = pages[page] ?? "";
+      const meta = between(html, /<p class="meta">/, "</p>");
+      const [, iso, us] = /<time datetime="(\d{4}-\d{2}-\d{2})">([A-Z][a-z]+ \d{1,2}, \d{4})<\/time>/.exec(meta) ?? [];
+      expect(new Date(`${us} UTC`).toISOString().slice(0, 10)).toBe(iso);
+      expect(meta).toContain(`<time datetime="${iso}">`);
+      for (const other of LEGAL) expect(pages[other]).toContain(`<p class="meta">Effective <time datetime="${iso}">`);
+      expect(visibleText(meta)).toMatch(/Version 1\.0 · No previous versions$/);
+      // Privacy and Terms list their versions under #changes; /security has no change list.
+      if (page !== "security.html") {
+        expect(meta).toContain('<a href="#changes">No previous versions</a>');
+        expect(visibleText(between(html, /<section id="changes"/, "</section>"))).toContain(
+          `Version 1.0, ${us} : first published version.`,
+        );
+      }
+    },
+  );
+
+  it.each(LEGAL)("%s leaves no placeholder or flag from the copy", (page) => {
+    expect(pages[page]).not.toMatch(/EFFECTIVE_DATE|ICO_POSTAL_ADDRESS|\[FLAG|TODO/);
+  });
+
+  it.each(["privacy.html", "terms.html"])(
+    "%s numbers its sections and clauses in order, each number its own anchor",
+    (page) => {
+      const html = pages[page] ?? "";
+      const list = sections(html);
+      expect(list.length).toBeGreaterThanOrEqual(12);
+      list.forEach(({ id, heading, body }, i) => {
+        const n = i + 1;
+        expect(heading, id).toMatch(new RegExp(`^<a class="num" href="#${id}">${n}</a> `));
+        const clauses = [
+          ...body.matchAll(/<p class="clause" id="([\d.]+)"><a class="num" href="#([\d.]+)">([\d.]+)<\/a> /g),
+        ];
+        expect(clauses.length, id).toBeGreaterThan(0);
+        clauses.forEach((m, j) => {
+          expect([m[1], m[2], m[3]], id).toEqual(Array(3).fill(`${n}.${j + 1}`));
+        });
+        for (const item of body.matchAll(/<li id="([^"]+)"><a class="num" href="#([^"]+)">\(([a-z])\)<\/a> /g)) {
+          expect(item[1]).toBe(item[2]);
+          expect(item[1]).toMatch(new RegExp(`^${n}\\.\\d+${item[3]}$`));
+        }
+      });
+    },
+  );
+
+  it.each(["privacy.html", "terms.html"])("%s marks every In short line as not binding, for every reader", (page) => {
+    const html = pages[page] ?? "";
+    expect(visibleText(html)).toContain(
+      "The 'In short' lines help you read. They are not part of the terms; the full text is what applies.",
+    );
+    const shorts = [...html.matchAll(/<p class="short">([\s\S]*?)<\/p>/g)].map((m) => m[1] ?? "");
+    expect(shorts.length).toBeGreaterThanOrEqual(11);
+    for (const s of shorts)
+      expect(s).toMatch(/^<span class="sr">Summary, not binding: <\/span><strong>In short:<\/strong> /);
+    expect(visibleText(between(html, /<div class="summary">/, "</div>"))).toMatch(
+      /This summary helps you read; the full text applies\.$/,
+    );
+  });
+
+  it("/security is not a contract: no numbers and no In short lines", () => {
+    const html = pages["security.html"] ?? "";
+    expect(html).not.toContain('class="short"');
+    expect(html).not.toContain('class="num"');
+    expect(html).not.toContain("In short");
+  });
+
+  it.each(LEGAL)("%s lists every section in its contents, in order, with no second nav landmark", (page) => {
+    const html = pages[page] ?? "";
+    const toc = [...between(html, /<section class="toc"/, "</section>").matchAll(/<a href="#([^"]+)">/g)].map(
+      (m) => m[1],
+    );
+    expect(toc).toEqual(sections(html).map((s) => s.id));
+    expect(between(html, /<section class="toc"/, "</section>")).toContain('<h2 id="toc-h">On This Page</h2>');
+  });
+
+  it.each(LEGAL)("%s links only to anchors that exist, on its own page or another doc page", (page) => {
+    const html = pages[page] ?? "";
+    for (const m of html.matchAll(/href="(\/(privacy|terms|security))?#([^"]+)"/g)) {
+      const target = m[2] ? (pages[`${m[2]}.html`] ?? "") : html;
+      expect(ids(target).has(m[3]), m[0]).toBe(true);
+    }
+  });
+
+  it.each(LEGAL)("%s keeps the landing's anchors: /security#stay and /security#report", (page) => {
+    if (page !== "security.html") return;
+    for (const id of ["stay", "report", "status", "how"]) expect(ids(pages[page] ?? "").has(id), id).toBe(true);
+    expect(read("public/index.html")).toContain('href="/security#stay"');
+  });
+
+  it("each defined term is bold where it is defined", () => {
+    const defs = visibleText(between(pages["privacy.html"] ?? "", /<p class="clause" id="1\.4">/, "</p>"));
+    expect(defs).toMatch(/^1\.4 Words used here:/);
+    const html = between(pages["privacy.html"] ?? "", /<p class="clause" id="1\.4">/, "</p>");
+    for (const term of ["Screen", "Session", "Item", "Guest File", "Demo"]) {
+      expect(html).toContain(`<strong>${term}</strong> means`);
+    }
+  });
+
+  it("/security claims nothing the main branch has not shipped", () => {
+    const text = visibleText(pages["security.html"] ?? "");
+    const guestTypes = /const EXTENSION = (\/.*\/i);/.exec(read("public/js/core/drop.js"))?.[1] ?? "";
+    // Photos and videos ship with the phone's cleaning step; the status table names them only once drop.js takes them.
+    if (!/jpg|mp4/.test(guestTypes)) expect(text).not.toMatch(/\b(MP4|MOV|JPEG|photos)\b/i);
+    expect(text).not.toMatch(/12 hours|Session length|next, previous, present/i);
+    const statuses = [...(pages["security.html"] ?? "").matchAll(/<span class="status( on)?">(\w+)<\/span>/g)].map(
+      (m) => [m[2], !!m[1]],
+    );
+    for (const [label, on] of statuses) expect(on, label as string).toBe(label === "Live");
+  });
+
+  it("legal.css owns the .legal rules: the doc layout is in no other stylesheet, and print hides the chrome", () => {
+    const legal = read("public/css/legal.css");
+    for (const file of ["site.css", "base.css", "app.css"]) {
+      expect(read(`public/css/${file}`), file).not.toMatch(/\.(legal|toc|clause|short)(?![\w-])/);
+    }
+    expect(legal).toContain("--measure: 68ch;");
+    const print = between(legal, /@media print \{/, "\n}\n");
+    for (const sel of [".nav", ".footer", ".toc", ".copied"]) expect(print, sel).toContain(sel);
+    expect(legal).not.toMatch(/var\(--sky\)/);
   });
 });

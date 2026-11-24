@@ -26,7 +26,7 @@ Steps only the owner can do, because they need the owner's accounts. Everything 
 - **Field test T3** on a lectern PC (below), including the PDF view and residue check.
 - **Five-person test** (design open item 19): five people who have never seen bloop read the landing for five seconds, then say what it does and what they would do next.
 - **Publisher verification** in Entra needs a company (Microsoft Partner Network id); until then, consent screens show "unverified".
-- **Privacy roles:** decide controller or processor per buyer type (threat model DATA-01) and have the `/privacy` draft reviewed before the first real user.
+- **Privacy roles:** decide controller or processor per buyer type (threat model DATA-01) and update `/privacy` and `/terms` when a buyer agreement changes them.
 
 ## Cloudflare R2 bucket for guest files
 
@@ -50,9 +50,9 @@ The two cron triggers (`0 * * * *` hourly, `30 3 * * *` daily) are declared in `
 
 ## Site pages: the contact address and what to renew
 
-Every contact on the public pages is one role address, hi@bloop.here: the footer, the privacy notice and `public/.well-known/security.txt` (RFC 9116); the Waitlist links open the Tally form `https://tally.so/r/Yj4KAN?source=<page>`. Change them together; `test/unit/site-pages.test.ts` fails on any other address. Renew `Expires` in `security.txt` at most a year ahead (`test/integration/site.test.ts` fails once it is past or more than about 13 months out).
+Every contact on the public pages is one role address, hi@bloop.here (the footer and the legal pages), except security reports, which go to security@bloop.here on `/security` and in `public/.well-known/security.txt` (RFC 9116); both reach the same mailbox through the domain's catch-all; the Waitlist links open the Tally form `https://tally.so/r/Yj4KAN?source=<page>`. Change them together; `test/unit/site-pages.test.ts` fails on any other address. Renew `Expires` in `security.txt` at most a year ahead (`test/integration/site.test.ts` fails once it is past or more than about 13 months out).
 
-- **Privacy notice:** `/privacy` is a draft (it says so on the page and is `noindex`). The legal lane (OD-5) confirms roles, lawful bases and the retention periods it lists before launch; it repeats `threat-model.md` section 10, so change both together.
+- **Legal pages:** `/privacy`, `/terms` and `/security` are version 1.0. A change gets a new version and effective date in the header block of all three and a line under `#changes`; a material change is emailed to the waitlist first. Privacy's retention table repeats `threat-model.md` section 10, so change both together.
 - **Social image:** `og:image` and `og:url` in `public/index.html` name `https://bloop.here` absolutely, as link previews need; change them with the host.
 - **Stream mode:** if you set `OPEN_PATH_MODE=stream` (field test T3 below), delete the sentence about the Microsoft download link from the "What the PC holds" row of `public/security.html` and design.md.
 

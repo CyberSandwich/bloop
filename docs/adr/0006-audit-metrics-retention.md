@@ -43,4 +43,4 @@ IT must be able to check every claim, so each session is audited, and the audit 
 ## Consequences
 - IT gets a verifiable trail without bloop keeping identities in analytics.
 - One shared export token is a known limit (threat model SITE-07).
-- Workers Logs carry no personal data, so they need no retention rule beyond the platform's 3 days.
+- Workers Logs carry no personal data, so they need no retention rule beyond the platform's own (threat-model section 10).

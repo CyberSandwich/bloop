@@ -20,6 +20,7 @@ describe.each([
   ["/", 200, LANDING_CSP, "<title>bloop: Present Anywhere</title>", /text\/html/],
   ["/security", 200, LANDING_CSP, "<title>bloop: Security</title>", /text\/html/],
   ["/privacy", 200, LANDING_CSP, "<title>bloop: Privacy Notice</title>", /text\/html/],
+  ["/terms", 200, LANDING_CSP, "<title>bloop: Terms of Use</title>", /text\/html/],
   ["/.well-known/security.txt", 200, LANDING_CSP, "Contact: mailto:", /text\/plain/],
   ["/no-such-page", 404, LANDING_CSP, "This Page Isn't Here", /text\/html/],
   ["/security/deeper/still", 404, LANDING_CSP, "Go to the Home Page", /text\/html/],
@@ -58,6 +59,8 @@ describe("security.txt (RFC 9116)", () => {
   it("has a Contact and an Expires in the future, within a year and a bit", async () => {
     const text = await (await fetch(`${wrangler.url}/.well-known/security.txt`)).text();
     expect(text).toMatch(/^Contact: mailto:\S+@\S+$/m);
+    expect(text).toMatch(/^Policy: https:\/\/bloop\.here\/security#report$/m);
+    expect(text).toMatch(/^Canonical: \S+\/\.well-known\/security\.txt$/m);
     const expires = /^Expires: (\S+)$/m.exec(text)?.[1] ?? "";
     const at = Date.parse(expires);
     expect(at).toBeGreaterThan(Date.now());
@@ -68,6 +71,8 @@ describe("security.txt (RFC 9116)", () => {
 describe("site assets", () => {
   it.each([
     ["/js/site.js", /javascript/],
+    ["/js/legal.js", /javascript/],
+    ["/css/legal.css", /text\/css/],
     ["/og.png", /image\/png/],
     ["/favicon.svg", /image\/svg\+xml/],
     ["/apple-touch-icon.png", /image\/png/],
