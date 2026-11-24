@@ -98,9 +98,13 @@ html:has(.page-site) {
   padding: 0;
   overflow: visible;
   border: 0;
-  background: none;
   color: inherit;
   list-style: none;
+}
+.nav-links:not(:popover-open) {
+  background: none;
+  -webkit-backdrop-filter: none;
+  backdrop-filter: none;
 }
 .nav-links a {
   display: flex;
@@ -178,6 +182,9 @@ html:has(.page-site) {
   .nav-menu {
     display: grid;
   }
+  .btn.waitlist {
+    margin-left: 0;
+  }
 }
 
 /* Equal padding centers the block in the first view less 120 px, so the stage's top edge shows and invites the scroll. */
@@ -192,9 +199,14 @@ html:has(.page-site) {
 }
 .hero h1 {
   /* One line at every width: the line is about 9.6em wide at this tracking, so the size follows the column. */
-  font-size: min(112px, (100vw - 2 * var(--pad)) / 10);
+  font-size: min(56px, (100vw - 2 * var(--pad)) / 5);
   line-height: 1;
   letter-spacing: -0.05em;
+}
+@media (min-width: 640px) {
+  .hero h1 {
+    font-size: min(112px, (100vw - 2 * var(--pad)) / 10);
+  }
 }
 /* Solid deep robin at rest; one light band passes once on load (design.md section 8). */
 .sheen {
@@ -335,9 +347,8 @@ html:has(.page-site) {
   list-style: none;
 }
 .step {
-  align-self: start;
-  padding: 24px;
-  border-radius: var(--r-sheet);
+  padding: 24px 24px 12px;
+  border-radius: var(--r-content);
   background: var(--surface);
 }
 .step-device {
@@ -373,9 +384,9 @@ html:has(.page-site) {
 .frag {
   display: grid;
   gap: 4px;
-  margin: 0 -12px -12px;
+  margin: 0 -12px;
   padding: 12px;
-  border-radius: calc(var(--r-sheet) - 12px);
+  border-radius: calc(var(--r-content) - 12px);
   background: var(--paper);
   user-select: none;
 }
@@ -440,7 +451,7 @@ html:has(.page-site) {
 }
 .cell {
   padding: 24px;
-  border-radius: var(--r-card);
+  border-radius: var(--r-content);
   background: var(--paper);
 }
 .cell h3 {
@@ -455,6 +466,21 @@ html:has(.page-site) {
 .cell a {
   text-decoration: underline;
   text-underline-offset: 3px;
+}
+/* After the cell rules: the same selectors, so order decides. */
+@media (max-width: 639.98px) {
+  .cell {
+    display: grid;
+    grid-template-columns: auto minmax(0, 1fr);
+    align-items: start;
+    column-gap: 12px;
+  }
+  .cell h3 {
+    margin: 0;
+  }
+  .cell p {
+    grid-column: 1 / -1;
+  }
 }
 
 .close {
@@ -535,7 +561,7 @@ html:has(.page-site) {
 .faq details {
   margin-top: 12px;
   padding: 0 24px;
-  border-radius: var(--r-card);
+  border-radius: var(--r-content);
   overflow: hidden;
   background: var(--surface);
 }
@@ -667,7 +693,7 @@ html:has(.page-site) {
   gap: 12px 48px;
   margin-top: 16px;
   padding: 24px;
-  border-radius: var(--r-stage);
+  border-radius: var(--r-content);
   background: var(--surface);
 }
 @media (min-width: 768px) {
@@ -715,6 +741,23 @@ html:has(.page-site) {
 .detail tr:last-child :is(th, td) {
   box-shadow: none;
 }
+@media (min-width: 900px) {
+  .detail tr {
+    display: grid;
+    grid-template-columns: minmax(0, 0.8fr) minmax(0, 1.2fr);
+    column-gap: 48px;
+    box-shadow: inset 0 -1px 0 var(--hairline);
+  }
+  .detail tr:last-child {
+    box-shadow: none;
+  }
+  .detail th,
+  .detail td {
+    width: auto;
+    padding-right: 0;
+    box-shadow: none;
+  }
+}
 @media (max-width: 599.98px) {
   .detail th,
   .detail td {
@@ -732,11 +775,7 @@ html:has(.page-site) {
   }
 }
 @media (prefers-reduced-transparency: reduce) {
-  .nav-logo,
-  .nav-pill,
   .nav-links:popover-open {
     background: var(--surface);
-    -webkit-backdrop-filter: none;
-    backdrop-filter: none;
   }
 }

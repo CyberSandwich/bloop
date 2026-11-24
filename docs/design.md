@@ -86,7 +86,7 @@ bloop puts your slides on a shared screen. You scan the code on the screen, choo
 | Feature cells (title / line), checked against `docs/threat-model.md` and `tools/never-say.txt` | Approve on Your Phone / Check the code matches, then tap Approve. Screen Never Gets Your Account / It gets a link to each item you approve. Revoke Any Time / Revoke from your phone, and each link expires. Present or Download / Show a file full screen, or save a copy. Know What Can Stay / A downloaded copy can stay on the PC. See what can stay. (links to `/security#stay`; RES-02: the residue is named, never denied) Share Files and Links / Slides, PDFs, photos and links, from your phone. (no provider path is live, so no cell sells storage; Connect says Coming Soon; "Your Account Stays on Your Phone" would overstate it, since the server holds a refresh token, AUTH-01) |
 | Connect h2 | Connect Your Files, with no line under it (the two group heads and their statuses say it) |
 | What You Can Share (status Available) | PowerPoint, PDF, Images, Links, by name, as the providers are: no glyph on either side, so both lists start on one line |
-| Where Your Files Live (status Coming Soon) | Microsoft OneDrive, Dropbox, Google Drive, Box, by name only (Google Drive™, its first mention on the page) (section 6, Icons); a provider moves to its own "Available" only once its path is live in a real account; no iCloud |
+| Where Files Live (status Coming Soon) | Microsoft OneDrive, Dropbox, Google Drive, Box, by name only (Google Drive™, its first mention on the page) (section 6, Icons); a provider moves to its own "Available" only once its path is live in a real account; no iCloud |
 | FAQ heading | Questions |
 | Do I need to install anything? | No. The screen runs **bloop** in its web browser, and your phone uses its camera. Slides open in PowerPoint on the room PC. `[V-8]` |
 | What does the room PC keep? | A link to each item you open, never your account. A downloaded copy, recent file names and opened tabs with their history can stay until the profile is wiped. See what can stay. (the same sentence as `/security#stay`) (links to `/security`; threat model RES-02: never a nothing-stays claim) |
@@ -128,7 +128,7 @@ Status colors (`--ok`, `--warn`, `--err`) are not used: a state is a sentence pl
 
 | Role | Size | Line height | Tracking | Weight |
 |---|---|---|---|---|
-| hero h1 | `min(112px, (100vw - 2 * var(--pad)) / 10)`: one line at every width | 1 | -0.05em | 600 |
+| hero h1 | `min(112px, (100vw - 2 * var(--pad)) / 10)` from 640: one line; under 640 `min(56px, (100vw - 2 * var(--pad)) / 5)`: a phone's h1 stays large and takes two lines where one does not fit, as at 390 (the two meet at 640) | 1 | -0.05em | 600 |
 | section h2 (landing), `/security` and `/privacy` h1 | 30, 38 from 640, 54 from 768 (under 640 the heads stay below the one-line hero h1, 34 px at 390) | 1.04 | -0.035em | 600 |
 | card title (a feature cell 19) | 22 | 1.2 | -0.025em | 600 |
 | hero sub, page lead | 20, 24 from 768, `--lead`, max 640 | 1.35 | -0.015em | 400 |
@@ -149,10 +149,11 @@ Headings `text-wrap:balance`; no mono, no eyebrow, no uppercase label, no grey s
 |---|---|
 | `--r-chip:8px` | skeletons, the summary focus ring, a file tile in a How It Works still |
 | `--r-field:14px` | the code field, the stage frame, the menu sheet's rows, the How It Works stills |
-| `--r-card:20px` | the feature cells, every white card, the house frame |
+| `--r-card:20px` | the house frame, the viewer's link card and the app's white cards |
 | `--r-list:24px` `--list-pad:8px` | a box of rows (the viewer sidebar, the phone's list, the sheet, the handle): the box is `--r-list` padded `--list-pad` on every side, so a row's fill is `--r-list` - `--list-pad` (16) and its thumbnail, 8 in, that - 8 (8): one chain of `calc()` from the box down (section 6) |
-| `--r-stage:28px` | the hero stage (16 under 640), the privacy and security panel, the QR card and its ring |
-| `--r-sheet:24px` | the top corners of the viewer's bottom sheet, the How It Works step cards |
+| `--r-stage:28px` | frames that hold inner cards or a picture: the hero stage (16 under 640), the privacy and security panel, the QR card and its ring |
+| `--r-content:24px` | every flat content card on the site: the How It Works steps, the feature cells, the FAQ items, the topic cards |
+| `--r-sheet:24px` | the top corners of the viewer's bottom sheet |
 | `--r-pill:9999px` | buttons, chips, the nav pill |
 | `--sh-frame:0 0 0 1px rgba(0,0,0,.06),0 30px 60px -30px rgba(0,0,0,.35)` | the viewer's page or picture, the QR card, the hero stage (its screenshot's ground is the page's own paper, so only the frame says it is a picture) |
 | `--sh-nav:0 0 0 0.5px rgba(0,0,0,.08),0 4px 18px rgba(0,0,0,.05)` | the nav pills at the top of the page |
@@ -171,7 +172,7 @@ Headings `text-wrap:balance`; no mono, no eyebrow, no uppercase label, no grey s
 | `--section:80px` | section rhythm; 112 from 768 |
 
 ### Glass
-One recipe, named once (`.glass` in `base.css`, with the nav pills in its selector list), for every floating surface: the nav pills and their menu sheet, the viewer sidebar, its bottom sheet and handle, the viewer's control pill, the phone's sticky actions. Liquid, not frosted: a thin fill, a strong blur and saturation, so what passes under (the robin wash at the top of the site) tints it, as opsis's green tints its nav. No refraction, shine or animated sheen; the border is the shadow's 0.5 px ring, never a CSS border.
+One recipe, named once (`.glass` in `base.css`; the nav pills carry the class in their markup, so `base.css` names no site selector), for every floating surface: the nav pills and their menu sheet, the viewer sidebar, its bottom sheet and handle, the viewer's control pill, the phone's sticky actions. Liquid, not frosted: a thin fill, a strong blur and saturation, so what passes under (the robin wash at the top of the site) tints it, as opsis's green tints its nav. No refraction, shine or animated sheen; the border is the shadow's 0.5 px ring, never a CSS border.
 | Token | Use |
 |---|---|
 | `--glass:rgba(255,255,255,.62)` | the fill where `backdrop-filter` is supported |
@@ -198,7 +199,7 @@ Shared states: focus is `outline:2px solid var(--ink)` on `:focus-visible`, neve
 ### Buttons
 | Type | Look | Use |
 |---|---|---|
-| primary | ink pill, paper label, 48 tall, padding 0 24 (44 under the stage) | the one action per view: Try the demo, Approve, Continue, Download, Approve on This Phone, Open vevox.com |
+| primary | ink pill, paper label, 52 tall, padding 0 24 (44 under the stage) | the one action per view: Try the demo, Approve, Continue, Download, Approve on This Phone, Open vevox.com |
 | rose | `--rose` fill, `--rose-ink` label, the primary's size (the house frame on `/s`) | End (screen), Revoke (phone): the controls that end a session |
 | waitlist | `--ink-2` pill, paper label, 44 tall, padding 0 20, 15 px | Waitlist, in the nav only |
 | secondary | white pill (`--surface`), a `--hairline` ring that darkens to `--g2` on hover, ink label | Cancel, Present, Enter a Code on a narrow screen |
@@ -227,19 +228,19 @@ A screenshot of the Demo Room, edge to edge in a `--r-stage` frame (16 under 640
 - **Fallback:** without the script, under `@supports (animation-timeline:view())`, the same keyframes on the stage's view timeline, locked to the scroll. Elsewhere it is flat and still.
 
 ### How It Works
-Two devices, three verbs. A list of 3 white `--r-sheet` cards, one column, three from 1024 (at 834 a third of the width wraps the file names), gap 16, 40 under the h2. Each card: the device (a 20 px Iconic glyph and Room Screen or Your Phone, 14 `--muted`), the step as an h3 (a 28 px ink circle with its number, `aria-hidden` since the list numbers it, then the verb, 22/600), one line in `--ink-2`, 24, then a still of that step: `--paper`, 12 in from the card's sides and bottom at `--r-sheet` - 12, padding 12, `aria-hidden`, no selection. One rhythm: each card hugs its content, so heights differ only by the still, never by blank space. The stills are small real fragments of the app in HTML, not pictures of buttons: the code in two groups of 3 (26/600, tabular); file rows 40 tall with a 32 px white tile and a tick (`frag-tick`: the app's `.tick` hides outside a checked row), the left-out file at .4; the open file with "Ends in 59:12" in `--muted`. Privacy is shown here, as the phone's own selection, rather than claimed.
+Two devices, three verbs. A list of 3 white `--r-content` cards, one column, three from 1024 (at 834 a third of the width wraps the file names), gap 16, 40 under the h2. Each card: the device (a 20 px Iconic glyph and Room Screen or Your Phone, 14 `--muted`), the step as an h3 (a 28 px ink circle with its number, `aria-hidden` since the list numbers it, then the verb, 22/600), one line in `--ink-2`, 24, then a still of that step: `--paper`, 12 in from the card's sides and bottom at `--r-content` - 12, padding 12, `aria-hidden`, no selection. Side by side the cards share one height (the row's); the still follows the line, so a shorter card's slack sits under its still as bottom padding, never between line and still. The stills are small real fragments of the app in HTML, not pictures of buttons: the code in two groups of 3 (26/600, tabular); file rows 40 tall with a 32 px white tile and a tick (`frag-tick`: the app's `.tick` hides outside a checked row), the left-out file at .4; the open file with "Ends in 59:12" in `--muted`. Privacy is shown here, as the phone's own selection, rather than claimed.
 
 ### Features grid
-The ample pattern: six neutral cells on a white full-bleed band, one column, two from 640, three from 1024, gap 16. Cell: `--paper`, `--r-card`, padding 24; a 24 px Iconic glyph in ink, the title 19/600 16 below it, then one or two sentences in `--ink-2`. One fill for every cell: no pastels, gradients or button mocks, so the words carry it. Every claim is checked against the threat model and the never-say list; the residue cell names what can stay and links to it, and the storage cell says Coming Soon.
+The ample pattern: six neutral cells on a white full-bleed band, one column, two from 640, three from 1024, gap 16. Cell: `--paper`, `--r-content`, padding 24; a 24 px Iconic glyph in ink, the title 19/600 16 below it, then one or two sentences in `--ink-2`; under 640 the glyph sits inline before the title, 12 apart, on its first line, so a one-column list is not a column of lone icons. One fill for every cell: no pastels, gradients or button mocks, so the words carry it. Every claim is checked against the threat model and the never-say list; the residue cell names what can stay and links to it, and the storage cell says Coming Soon.
 
 ### Close
 "Try It with Your Phone" as an h2 and the hero's Try the Demo, centered, a section above the footer: the page ends on the one action it opened with.
 
 ### Connect panel (Connect Your Files)
-Max 760. A solid sky panel, `--r-stage`, padding 12, holding two white group cards (radius 16 = 28 - 12, padding 20 20 4), side by side from 768. Each group: a head row (17/600 title, its status chip at the end), then rows 56 tall split by a hairline, 600 text. What You Can Share: Available (`--mint-ink` on `--mint`), each row a 24 px Iconic glyph and the kind. Where Your Files Live: Coming Soon (`--amber-ink` on `--amber`), the provider's name only. The status sits on the group, not on each row: one truth per group, and four repeated pills were noise. Status chip: padding 6 12, 14 px, `--r-pill`; the two pastels tell ready from not yet before the words are read, and each carries its own dark ink at 4.5:1 or more.
+Max 760. A solid sky panel, `--r-stage`, padding 12, holding two white group cards (radius 16 = 28 - 12, padding 20 20 4), side by side from 768. Each group: a head row (17/600 title, its status chip at the end), then rows 56 tall split by a hairline, 600 text. What You Can Share: Available (`--mint-ink` on `--mint`), each row a 24 px Iconic glyph and the kind. Where Files Live (short, so the head holds one line beside its chip at 390): Coming Soon (`--amber-ink` on `--amber`), the provider's name only. The status sits on the group, not on each row: one truth per group, and four repeated pills were noise. Status chip: padding 6 12, 14 px, `--r-pill`; the two pastels tell ready from not yet before the words are read, and each carries its own dark ink at 4.5:1 or more.
 
 ### FAQ
-Native `<details>` as white `--r-card` cards, 12 apart, max 760, centered. Summary 17/600 with a `--muted` "+" that turns 45 degrees. Open and close animate the height: `::details-content` with `interpolate-size:allow-keywords` where supported (block-size 380 ms and opacity 250 ms, `--ease-out`); elsewhere a WAAPI height tween in `public/js/site.js` (find in page still opens an item). Reduced motion: instant.
+Native `<details>` as white `--r-content` cards, 12 apart, max 760, centered. Summary 17/600 with a `--muted` "+" that turns 45 degrees. Open and close animate the height: `::details-content` with `interpolate-size:allow-keywords` where supported (block-size 380 ms and opacity 250 ms, `--ease-out`); elsewhere a WAAPI height tween in `public/js/site.js` (find in page still opens an item). Reduced motion: instant.
 
 ### Footer (every site page)
 Width 1136, a top hairline, padding 56 above. A row that wraps: at the start the logo at `--mark` and bloop at `--wordmark`, then the tagline in 600 `--ink` and two plain sentences in `--muted` (max 420), then the address line; at the end the links in `--muted` 15 px, 44 px rows. Then a hairline rule and "© 2026 bloop" in 14 px `--muted`, 40 below the row.
@@ -247,7 +248,7 @@ Width 1136, a top hairline, padding 56 above. A row that wraps: at the start the
 ### Privacy and security pages (opsis `/compare`, restated)
 Content 1136 wide. A centered page hero (the h1 at the section size, an optional `.lead`), then:
 - **The panel:** the Connect panel's frame (solid sky, padding 12, two white group cards at radius 16): "What the Screen Gets" (each row ends in a 20 px Iconic `check`) and "What Stays on Your Phone" (each row ends in "Never", 15/400 `--muted`), 48 under the hero. Each row 56 tall, 600 text; both marks `aria-hidden`, since the group heads carry the meaning. No switches: nothing that is not a control looks pressable.
-- **Topic cards,** 16 apart: white, `--r-stage`, padding 24 (40 from 768); from 900 two columns, `.8fr 1.2fr`, gap 48: the 24/600 h2 at the start, the prose in `--ink-2` beside it. `.topic.wide` is one column, for the retention table and for the points list on `/security`.
+- **Topic cards,** 16 apart: white, `--r-content`, padding 24 (40 from 768); from 900 two columns, `.8fr 1.2fr`, gap 48: the 24/600 h2 at the start, the prose in `--ink-2` beside it. `.topic.wide` is one column, for the retention table and for the points list on `/security`. From 900 each table row is that same `.8fr 1.2fr` grid with gap 48, so a value starts where a topic's prose does: one grid template on the page.
 
 ### Item row (the viewer sidebar and the phone list, one face: `core/rows.js`)
 One pattern in every list (the sidebar, the sheet, the phone's list): `--row` tall, gap 12, padding 6 inside a 2 px border that stays transparent until `:focus-visible` turns it ink, so focus never moves the layout. Radii chain from the box (section 4): the row's fill `--r-list` - `--list-pad`, its leading 40 px square, 8 in, the row's radius - 8, with a `--hairline` ring: a picture where one exists without a mint (page 1 of the demo deck and PDF, contained whole on the tile as Finder shows a document; the demo photo's own 120 px thumbnail, cover), else a `--paper` type tile with a 24 px ink glyph, always visible. The handle is its own box: its radius is `--r-list` and its thumbnail one step in. Rows sit 2 px apart, so a selected row and a hovered one never merge. No separators between rows; in the viewer sidebar one inset `--hairline` rule (`.split`) sets the links off from the files. Selected (`aria-current`) is `--g1`; hover is `--wash`, on a fine pointer only; never an ink fill, so the glyph never vanishes. A link row is never selected: it is an `<a target="_blank" rel="noopener noreferrer">` with a trailing `arrow-up-right` in `--muted` and "New Tab" for screen readers; it opens the link and leaves the stage as it is. Line 1 the name 15/600 ink, one line, ellipsis in the middle so the extension stays. Line 2 13 `--muted` tabular, 2 below: the kind (PowerPoint, PDF, JPEG image, PNG image, WebP image; a link reads "Link"), then " · " and the size when the item has bytes (a link: its host), then a date only when the source gives one (a live phone: "Edited 10 min ago"; demo items show none rather than a made-up one). Files A to Z, then links.
@@ -365,20 +366,19 @@ The page moves focus to the new title on each state change. "its copy" is delibe
 Typed code page (`/code`, the same frame, one column): title "Enter the Code"; one field 56 tall, `--r-field`, its `--g2` ring turning 2 px ink on focus (the one ring, no outline), of 16 px or more, 6 characters, label "Code", `autocapitalize="characters"`, `autocomplete="one-time-code"`, `inputmode="text"`, shown in two groups of 3; Continue (primary) enabled at 6 characters; a failed claim shows one sentence beside the field (`typedError` in `copy.js`: "Check the code on the screen and try again.", or the expired ("That code changed. Enter the new code on the screen."), used, offline and too-many-tries sentences); a look-alike the alphabet leaves out says so as it is typed ("Codes don't use 0, 1, I, L, O or U."); success goes to the match state.
 
 ### Security page (`/security`; `/it` answers 301 to it from `public/_redirects`)
-h1 "Security", lead "The screen never gets your account." `[V-4]`, then the panel (section 6): What the Screen Gets: "The items you approve", "A link to each, which expires"; What Stays on Your Phone: "Your account", "Your other files". Then four points in one wide topic card:
-1. The PC holds a link to each item you approve, and each link expires.
-2. Each code works once for 60 seconds, and the phone shows the room before Approve. `[V-6]`
-3. Each open ends by itself after 90 minutes, or 60 in the demo, and is logged for IT to export. `[V-2]`
-4. A downloaded copy can stay on the PC. Every room is audited, and the results are published. `[V-1]` (until V-1 passes: "A downloaded copy can stay on the PC. See what can stay." linking `#stay`)
+h1 "Security", lead "The screen never gets your account." `[V-4]`, then the panel (section 6): What the Screen Gets: "The items you approve", "A link to each, which expires"; What Stays on Your Phone: "Your account", "Your other files". Then three points in one wide topic card (the panel already says each link expires):
+1. Each code works once for 60 seconds, and the phone shows the room before Approve. `[V-6]`
+2. Each open ends by itself after 90 minutes, or 60 in the demo, and is logged for IT to export. `[V-2]`
+3. A downloaded copy can stay on the PC. Every room is audited, and the results are published. `[V-1]` (until V-1 passes: "A downloaded copy can stay on the PC. See what can stay." linking `#stay`)
 
 Then one topic card per row below (each `[V-5]` until the build confirms it), the row name as its h2 in Title Case ("What the PC Holds", "What bloop Keeps", "Permissions", "What Can Stay Behind", "Threat Model", "Revoking Access", "Status"):
 | Topic | Content |
 |---|---|
-| What the PC holds | A session ID and a link to each approved item, in the browser's session storage. Each link expires. While a file is open, PowerPoint holds the copy it opened. PowerPoint may also get a Microsoft download link for the file, which can work for up to 1 hour. (Last sentence: redirect mode only, threat model OPEN-03; delete it in stream mode.) |
+| What the PC holds | A session ID and a link to each approved item, in the browser's session storage. While a file is open, PowerPoint holds the copy it opened. PowerPoint may also get a Microsoft download link for the file, which can work for up to 1 hour. (Last sentence: redirect mode only, threat model OPEN-03; delete it in stream mode.) |
 | What bloop keeps | Your email, a OneDrive token, the ID of one folder, and a log of who opened which file where and when. No slide content, except a guest's upload, deleted when its session ends. |
 | Permissions | bloop asks for read access to OneDrive. Microsoft grants that for the whole OneDrive; bloop reads one folder and logs every read. Where your tenant allows it, the app folder limits access at Microsoft's side, but then only files in that folder appear. |
 | What can stay behind | A downloaded copy, recent file names and opened tabs with their history can stay until the profile is wiped. Each room is audited; results are published per room. `[V-1]` (the last sentence ships only once V-1 passes) |
-| Threat model | QR relay: the phone shows the room name and a match code before Approve. Shoulder surfing: the code works once and lasts 60 seconds. Forgotten session: it ends by itself after 90 minutes. Wrong screen: unregistered screens carry a warning. Lost phone: Disconnect OneDrive from any phone you sign in on ends every bloop sign-in at once; or remove bloop in My Apps, or ask your IT team to remove it in Microsoft Entra. |
+| Threat model | QR relay: the phone shows the room name and a match code before Approve. Shoulder surfing: the code works once and lasts 60 seconds. Forgotten session: it ends by itself after 90 minutes. Wrong screen: unregistered screens carry a warning. Lost phone: sign in on another phone and tap Disconnect OneDrive: every bloop sign-in ends at once, including the lost phone's. You can also remove bloop in My Apps, or ask your IT team to remove it in Microsoft Entra. |
 | Revoking access | Tap Disconnect OneDrive on your phone while you approve, and bloop deletes its stored access and signs you out everywhere at once. You can also remove bloop in My Apps (myapplications.microsoft.com), and your IT team can remove it for everyone in Microsoft Entra. (the same sentences as Your Choices on `/privacy`. Disconnect is `POST /api/me/disconnect`: the grant and every phone session go at once. My Apps and Entra end only the refresh token, so they are not said to sign anyone out) |
 | Status | No external audit yet. The source is public. Report a security issue: security.txt. |
 
@@ -484,7 +484,7 @@ Stack and system architecture: `docs/architecture.md` and `docs/adr/`.
 ### Rules
 | Topic | Rule |
 |---|---|
-| Targets | 48 px buttons; 44 minimum for any hit area (nav links, the Waitlist pill and the menu button, footer links, FAQ summaries) |
+| Targets | two button heights: 52 for a page's actions, 44 in a pill and the nav; 44 minimum for any hit area (nav links, the Waitlist pill and the menu button, footer links, FAQ summaries) |
 | Focus | the ink ring on every interactive element; never on hidden UI (the closed menu sheet is `display:none`) |
 | Keyboard | "Skip to Content" first; Tab follows reading order; summaries toggle with Enter and Space; Enter on `/a` activates Approve only when it is focused |
 | Live regions | the `/s` heading in `role="status" aria-live="polite"`; failures `role="alert"`; `/a` moves focus to the new title |
@@ -497,7 +497,7 @@ Stack and system architecture: `docs/architecture.md` and `docs/adr/`.
 
 A screen is done when every box passes; `test/unit/site-pages.test.ts` and `test/e2e/landing.spec.ts` check the measurable ones.
 
-- [ ] **Hero:** at most 40 words; the h1 one sentence of at most 6 words on one line at every width; the sub names the phone, the screen and the file in at most 2 sentences and 30 words.
+- [ ] **Hero:** at most 40 words; the h1 one sentence of at most 6 words, on one line from 640 (at most two under it); the sub names the phone, the screen and the file in at most 2 sentences and 30 words.
 - [ ] **Whole landing:** 80 to 300 words (How It Works and the close add about 30), FAQ answers included; every sentence at most 20 words; at most 4 FAQ items; every heading and label at most 5 words.
 - [ ] **Try the demo** is the hero's one button, in the first view, and opens `/demo`, the close repeats it; every Waitlist link is a `mailto:` with `data-waitlist`.
 - [ ] **Nav:** one `nav` landmark, the same on every site page; the menu works with no script; the scrolled look comes from an observer, never a scroll listener.

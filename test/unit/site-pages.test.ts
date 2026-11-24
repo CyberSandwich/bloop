@@ -359,7 +359,7 @@ describe("landing word caps (design.md section 13)", () => {
 
   it("the provider list promises nothing live: Coming Soon, by name only, and iCloud is not listed", () => {
     const { section, head, rows } = group("from-h");
-    expect(head).toBe("Where Your Files Live Coming Soon");
+    expect(head).toBe("Where Files Live Coming Soon");
     expect(rows).toEqual(["Microsoft OneDrive", "Dropbox", "Google Drive™", "Box"]);
     expect(section).not.toMatch(/<(svg|img)\b/);
     expect(section.toLowerCase()).not.toContain("icloud");
@@ -487,7 +487,7 @@ describe("site chrome: one nav and one footer on every site page", () => {
     const html = read(`public/${page}`);
     expect(chrome(html)).toEqual([nav, footer]);
     expect(html.match(/<nav\b/g)).toHaveLength(1);
-    expect(html).toContain('<nav class="nav-pill" aria-label="Primary">');
+    expect(html).toContain('<nav class="nav-pill glass" aria-label="Primary">');
     const current = [...html.matchAll(/href="([^"]+)" aria-current="page"/g)].map((m) => m[1]);
     expect(new Set(current).size).toBeLessThanOrEqual(1);
     if (current[0]) expect(current[0]).toBe(`/${page.replace(".html", "")}`);
@@ -525,9 +525,11 @@ describe("site chrome: one nav and one footer on every site page", () => {
 
   it("the logo is its own pill before the nav landmark, and the links pill holds the links, Waitlist and the menu", () => {
     expect(nav).toMatch(
-      /^<header class="nav">\s*<a class="brand nav-logo" href="\/"><img src="\/favicon\.svg" width="32" height="32" alt="">bloop<\/a>\s*<nav class="nav-pill"/,
+      /^<header class="nav">\s*<a class="brand nav-logo glass" href="\/"><img src="\/favicon\.svg" width="32" height="32" alt="">bloop<\/a>\s*<nav class="nav-pill glass"/,
     );
-    const pill = between(nav ?? "", /<nav class="nav-pill"/, "</nav>");
+    // The pills take the one .glass recipe by class; base.css names no nav selector.
+    expect(nav).toContain('<ul class="nav-links glass" id="nav-links" popover>');
+    const pill = between(nav ?? "", /<nav class="nav-pill glass"/, "</nav>");
     expect(pill).not.toContain("brand");
     expect(pill).toMatch(/<\/ul>\s*<a class="btn waitlist"[^>]*>Waitlist<\/a>\s*<button class="nav-menu"/);
   });
@@ -535,11 +537,11 @@ describe("site chrome: one nav and one footer on every site page", () => {
   it.each(["privacy.html", "security.html"])("%s marks its own nav link as the current page", (page) => {
     const html = read(`public/${page}`);
     const own = `/${page.replace(".html", "")}`;
-    expect(between(html, /<nav class="nav-pill"/, "</nav>")).toContain(`<a href="${own}" aria-current="page">`);
+    expect(between(html, /<nav class="nav-pill glass"/, "</nav>")).toContain(`<a href="${own}" aria-current="page">`);
   });
 
   it("the menu button opens the links as a popover, with no script", () => {
-    expect(nav).toMatch(/<ul class="nav-links" id="nav-links" popover>/);
+    expect(nav).toMatch(/<ul class="nav-links glass" id="nav-links" popover>/);
     expect(nav).toMatch(/<button class="nav-menu" type="button" popovertarget="nav-links" aria-label="Menu">/);
   });
 
@@ -578,11 +580,8 @@ describe("the stylesheets: base.css, then the page's own (design.md section 11)"
     }
   });
 
-  it("base.css names no page's own class, except the nav pills in the one glass recipe", () => {
-    const base = (css["base.css"] ?? "").replace(
-      /\.glass,\s*\.nav-logo,\s*\.nav-pill,\s*\.nav-links:popover-open/g,
-      ".glass",
-    );
+  it("base.css names no page's own class", () => {
+    const base = css["base.css"] ?? "";
     for (const cls of [
       "page-site",
       "page-screen",
@@ -598,6 +597,31 @@ describe("the stylesheets: base.css, then the page's own (design.md section 11)"
     ]) {
       expect(new RegExp(`\\.${cls}(?![\\w-])`).test(base), cls).toBe(false);
     }
+  });
+
+  // The first rule for a selector: its own block, before any width query restates it.
+  const block = (sel: string) => {
+    const site = css["site.css"] ?? "";
+    const at = site.search(new RegExp(`^${sel.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")} \\{`, "m"));
+    return at < 0 ? "" : site.slice(at, site.indexOf("}", at));
+  };
+
+  it("the site's flat content cards share --r-content; the frames that hold cards keep --r-stage", () => {
+    for (const sel of [".step", ".cell", ".faq details", ".topic"]) {
+      expect(block(sel), sel).toContain("border-radius: var(--r-content);");
+    }
+    for (const sel of [".stage", ".panel"]) expect(block(sel), sel).toContain("border-radius: var(--r-stage);");
+    expect(css["site.css"]).not.toMatch(/var\(--r-(card|sheet)\)/);
+  });
+
+  it("the steps stretch to one row height, and under 640 a cell's icon sits inline before its title", () => {
+    expect(block(".step")).not.toContain("align-self");
+    const narrow = between(css["site.css"] ?? "", /@media \(max-width: 639\.98px\) \{\s*\.cell \{/, "\n}\n");
+    expect(narrow).toContain("grid-template-columns: auto minmax(0, 1fr);");
+    expect(narrow).toMatch(/\.cell p \{\s*grid-column: 1 \/ -1;/);
+    // Same selectors as the base cell rules, so the query must come after them or the title keeps its top margin.
+    const site = css["site.css"] ?? "";
+    expect(site.indexOf(narrow)).toBeGreaterThan(site.search(/^\.cell h3 \{/m));
   });
 });
 
@@ -658,7 +682,7 @@ describe("stage 1 wording and pictures", () => {
     expect(text).toMatch(access);
     expect(visibleText(read("public/privacy.html"))).toMatch(access);
     expect(text).toMatch(
-      /Lost phone: Disconnect OneDrive from any phone you sign in on ends every bloop ?sign-in at once; or remove bloop ?in My Apps, or ask your IT team to remove it in Microsoft Entra\./,
+      /Lost phone: sign in on another phone and tap Disconnect OneDrive: every bloop ?sign-in ends at once, including the lost phone's\. You can also remove bloop ?in My Apps, or ask your IT team to remove it in Microsoft Entra\./,
     );
     // My Apps and Entra end only the refresh token; bloop's own sessions stay, so neither is said to sign anyone out.
     for (const page of ["security.html", "privacy.html"]) {

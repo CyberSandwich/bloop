@@ -49,6 +49,7 @@
   --r-field: 14px;
   --r-card: 20px;
   --r-stage: 28px;
+  --r-content: 24px;
   --r-pill: 9999px;
 
   --sh-frame: 0 0 0 1px rgba(0, 0, 0, 0.06), 0 30px 60px -30px rgba(0, 0, 0, 0.35);
@@ -179,7 +180,7 @@ h1[tabindex="-1"]:focus {
   align-items: center;
   justify-content: center;
   gap: 8px;
-  min-height: 48px;
+  min-height: 52px;
   padding: 0 24px;
   border: 0;
   border-radius: var(--r-pill);
@@ -208,17 +209,11 @@ h1[tabindex="-1"]:focus {
   transform: none;
 }
 /* The one glass recipe (design.md section 4). */
-.glass,
-.nav-logo,
-.nav-pill,
-.nav-links:popover-open {
+.glass {
   background: var(--glass-solid);
 }
 @supports (backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px)) {
-  .glass,
-  .nav-logo,
-  .nav-pill,
-  .nav-links:popover-open {
+  .glass {
     background: var(--glass);
     -webkit-backdrop-filter: var(--glass-filter);
     backdrop-filter: var(--glass-filter);

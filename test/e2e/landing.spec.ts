@@ -48,7 +48,9 @@ for (const vp of VIEWPORTS) {
       expect((await page.content()).toLowerCase()).not.toContain("robin");
     });
 
-    test("the h1 is one line, with no horizontal scroll and every target at least 44 px", async ({ page }) => {
+    test("the h1 is one line from 640 (two below), with no horizontal scroll and every target at least 44 px", async ({
+      page,
+    }) => {
       await page.goto("/");
       await page.evaluate(() => document.fonts?.ready);
       const lines = await page.evaluate(() => {
@@ -56,7 +58,7 @@ for (const vp of VIEWPORTS) {
         if (!h1) return 99;
         return Math.round(h1.getBoundingClientRect().height / Number.parseFloat(getComputedStyle(h1).lineHeight));
       });
-      expect(lines).toBe(1);
+      expect(lines).toBe(vp.width < 640 ? 2 : 1);
       expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
       const small = await page.evaluate(() =>
         [...document.querySelectorAll("a, button, summary")]

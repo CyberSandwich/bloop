@@ -15,9 +15,9 @@
   <body class="page-site">
     <a class="skip" href="#main">Skip to Content</a>
     <header class="nav">
-      <a class="brand nav-logo" href="/"><img src="/favicon.svg" width="32" height="32" alt="">bloop</a>
-      <nav class="nav-pill" aria-label="Primary">
-        <ul class="nav-links" id="nav-links" popover>
+      <a class="brand nav-logo glass" href="/"><img src="/favicon.svg" width="32" height="32" alt="">bloop</a>
+      <nav class="nav-pill glass" aria-label="Primary">
+        <ul class="nav-links glass" id="nav-links" popover>
           <li><a href="/#features">Features</a></li>
           <li><a href="/privacy">Privacy</a></li>
           <li><a href="/security" aria-current="page">Security</a></li>
@@ -54,7 +54,6 @@
 
       <div class="topic wide">
         <ul class="points">
-          <li>The PC holds a link to each item you approve, and each link expires.</li>
           <li>Each code works once for 60 seconds, and the phone shows the room before Approve.</li>
           <li>Each open ends by itself after 90 minutes, or 60 in the demo, and is logged for IT to export.</li>
           <li>A downloaded copy can stay on the PC. See <a href="#stay">what can stay</a>.</li>
@@ -63,7 +62,7 @@
 
       <section class="topic" aria-labelledby="holds">
         <h2 id="holds">What the PC Holds</h2>
-        <p>A session ID and a link to each approved item, in the browser's session storage. Each link expires. While a file is open, PowerPoint holds the copy it opened. PowerPoint may also get a Microsoft download link for the file, which can work for up to 1 hour.</p>
+        <p>A session ID and a link to each approved item, in the browser's session storage. While a file is open, PowerPoint holds the copy it opened. PowerPoint may also get a Microsoft download link for the file, which can work for up to 1 hour.</p>
       </section>
 
       <section class="topic" aria-labelledby="keeps">
@@ -83,7 +82,7 @@
 
       <section class="topic" aria-labelledby="threats">
         <h2 id="threats">Threat Model</h2>
-        <p>QR relay: the phone shows the room name and a match code before Approve. Shoulder surfing: the code works once and lasts 60 seconds. Forgotten session: it ends by itself after 90 minutes. Wrong screen: unregistered screens carry a warning. Lost phone: Disconnect OneDrive from any phone you sign in on ends every <b class="name">bloop</b> sign-in at once; or remove <b class="name">bloop</b> in My Apps, or ask your IT team to remove it in Microsoft Entra.</p>
+        <p>QR relay: the phone shows the room name and a match code before Approve. Shoulder surfing: the code works once and lasts 60 seconds. Forgotten session: it ends by itself after 90 minutes. Wrong screen: unregistered screens carry a warning. Lost phone: sign in on another phone and tap Disconnect OneDrive: every <b class="name">bloop</b> sign-in ends at once, including the lost phone's. You can also remove <b class="name">bloop</b> in My Apps, or ask your IT team to remove it in Microsoft Entra.</p>
       </section>
 
       <section class="topic" aria-labelledby="revoke">
