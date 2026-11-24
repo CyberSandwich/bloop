@@ -235,7 +235,8 @@ describe("DEMO-01 the viewer parks for a transient state", () => {
 
   it("presenting it holds the stage with the status line, resumes in place, and only a real end leaves", () => {
     const { v, el } = setup();
-    v.render(view);
+    const page = { ...view, items: [deck] } as ScreenView;
+    v.render(page);
     v.present(true);
     v.park("You're Offline");
     expect(el("view").hidden).toBe(false);
@@ -245,7 +246,7 @@ describe("DEMO-01 the viewer parks for a transient state", () => {
     expect(el("parked").hidden).toBe(false);
     expect(el("parked").textContent).toBe("You're Offline");
     expect(exitFullscreen).not.toHaveBeenCalled();
-    v.render(view);
+    v.render(page);
     expect(el("frame").hidden).toBe(false);
     expect(el("parked").hidden).toBe(true);
     expect(exitFullscreen).not.toHaveBeenCalled();
@@ -295,6 +296,39 @@ describe("presenting is one layout, with or without browser full screen", () => 
     expect(doc.activeElement).toBe(el("b-stop"));
     v.present(false);
     expect(doc.activeElement).toBe(opener);
+  });
+
+  it("a file joining the list ahead of the selection leaves the same item shown, presenting on", () => {
+    const { v } = setup();
+    v.render(deckView);
+    v.present(true);
+    v.render({ ...view, items: [photo, deck] } as ScreenView);
+    expect(v.item()).toEqual(deck);
+    expect(v.at()).toBe(1);
+    expect(doc.body.classes.has("is-presenting")).toBe(true);
+  });
+
+  it("a selection that is gone falls back to the same index, clamped, and ends presenting when nothing can be shown", () => {
+    const { v } = setup();
+    const link = { kind: "link", title: "Vevox", url: "https://vevox.example/x" } as unknown as Item;
+    v.render({ ...view, items: [photo, deck] } as ScreenView);
+    v.present(true);
+    v.render({ ...view, items: [link] } as ScreenView);
+    expect(v.at()).toBe(0);
+    expect(doc.body.classes.has("is-presenting")).toBe(false);
+  });
+
+  it("a swipe's click is stopped and its default prevented, so it never opens a link", () => {
+    const { v, el } = setup();
+    v.render(deckView);
+    v.present(true);
+    const press = { type: "pointerdown", clientX: 300 };
+    for (const f of el("view").listeners.get("pointerdown") ?? []) f(press);
+    for (const f of el("view").listeners.get("pointerup") ?? []) f({ type: "pointerup", clientX: 100 });
+    const click = { type: "click", stopPropagation: vi.fn(), preventDefault: vi.fn() };
+    for (const f of el("view").listeners.get("click") ?? []) f(click);
+    expect(click.stopPropagation).toHaveBeenCalled();
+    expect(click.preventDefault).toHaveBeenCalled();
   });
 
   it("where full screen exists, Present joins it; Stop Presenting and Escape both leave", () => {
