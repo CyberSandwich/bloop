@@ -663,6 +663,12 @@ describe("stage 1 wording and pictures", () => {
 });
 
 describe("privacy notice", () => {
+  it("keeps the OneDrive grant only as the code does: until a failed refresh after removal, or 30 days unused", () => {
+    const row = between(read("public/privacy.html"), /<tr><th scope="row">Your OneDrive access/, "</tr>");
+    expect(row).toContain("Until your access is removed (deleted the next time it fails), or 30 days unused.");
+    expect(read("docs/threat-model.md")).toMatch(/\| refresh token \(grant\) \| D1 \| until access is removed/);
+  });
+
   it("states what the waitlist keeps, why and for how long", () => {
     const row = between(read("public/privacy.html"), /<tr><th scope="row">Waitlist/, "</tr>");
     expect(row).toMatch(/email and answers/);
