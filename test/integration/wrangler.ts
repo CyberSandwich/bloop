@@ -54,8 +54,19 @@ export async function startWrangler(
   } catch (e) {
     // The serving port is picked before wrangler binds it (PUBLIC_ORIGIN must name it), so another socket can take
     // it in between; a fresh port and state once is enough.
-    if (!String(e).includes("Address already in use")) throw e;
+    if (!(e instanceof PortTaken)) throw e;
     return startOnce(vars, options);
+  }
+}
+
+class PortTaken extends Error {}
+
+/** Signals the whole process group; ESRCH (already gone) is fine. */
+function killGroup(pid: number, signal: NodeJS.Signals): void {
+  try {
+    process.kill(-pid, signal);
+  } catch {
+    // the group has exited
   }
 }
 
@@ -106,10 +117,11 @@ async function startOnce(vars: Record<string, string>, options: { migrate?: bool
   child.stderr.on("data", (d) => chunks.push(String(d)));
 
   const stop = async () => {
-    if (child.pid !== undefined && child.exitCode === null) {
-      process.kill(-child.pid, "SIGTERM");
+    // The group, even when wrangler itself has exited: its workerd children may still hold ports.
+    if (child.pid !== undefined) {
+      killGroup(child.pid, "SIGTERM");
       await Promise.race([exited(child), sleep(5000)]);
-      if (child.exitCode === null && child.signalCode === null) process.kill(-child.pid, "SIGKILL");
+      killGroup(child.pid, "SIGKILL");
     }
     rmSync(state, { recursive: true, force: true });
   };
@@ -139,7 +151,9 @@ async function startOnce(vars: Record<string, string>, options: { migrate?: bool
     // The tail holds the cause; CI annotations cut a long message after the bindings table.
     if (child.exitCode !== null) {
       await stop();
-      throw new Error(`wrangler dev exited early (code ${child.exitCode}):\n${chunks.join("").slice(-1500)}`);
+      const all = chunks.join("");
+      const Failure = all.includes("Address already in use") ? PortTaken : Error;
+      throw new Failure(`wrangler dev exited early (code ${child.exitCode}):\n${all.slice(-1500)}`);
     }
     try {
       if ((await fetch(`${url}/api/health`)).ok) return { url, output: () => chunks.join(""), stop, d1, r2Has };
