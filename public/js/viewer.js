@@ -315,11 +315,19 @@ export function createViewer(deps) {
   /** Presentable now or when its photo lands: a re-present has no gesture for full screen. */
   const alive = () => can() && !images.get(keyOf(at))?.failed && !refused.has(keyOf(at));
 
+  /** The page each item was left on, by server id; a session's end empties it (clear). @type {Map<string, number>} */
+  const lastPage = new Map();
+  /** Remembers the page of the item on stage before another takes its place. */
+  const leave = () => lastPage.set(keyOf(at), page);
+
   function select(/** @type {number} */ i) {
     // A new item starts as a phone's command starts it: playing, sound tried again; the same one keeps its state.
     if (i !== at) tune = { ...TUNE };
+    // A deck left on page 3 comes back on page 3; the row of the item already on stage starts it over.
+    const back = i !== at ? (lastPage.get(items()[i]?.id ?? "") ?? 0) : 0;
+    leave();
     at = i;
-    page = 0;
+    page = Math.min(back, Math.max(0, (pages()?.length ?? 1) - 1));
     want &&= can();
     if (side.matches(":popover-open")) side.hidePopover();
     deps.onChange();
@@ -583,6 +591,7 @@ export function createViewer(deps) {
     lastPlace = "";
     asked.clear();
     refused.clear();
+    lastPage.clear();
     seen.disconnect();
     list.replaceChildren();
     frame.replaceChildren();
@@ -751,7 +760,10 @@ export function createViewer(deps) {
         followed = sig;
         const i = nextView.items.findIndex((x) => x.id === told.item);
         if (i >= 0) {
-          if (i !== at) page = 0;
+          if (i !== at) {
+            leave();
+            page = 0;
+          }
           at = i;
           want = told.present && can();
           tune = tuneOf(told);
