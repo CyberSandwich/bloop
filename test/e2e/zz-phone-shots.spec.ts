@@ -33,7 +33,7 @@ for (const size of SIZES) {
       await page.getByRole("button", { name: "Add a File" }).click();
       await (await chooser).setFiles(file);
     };
-    await pick({ name: "clip.mov", mimeType: "video/quicktime", buffer: Buffer.alloc(11 * 1024 * 1024) });
+    await pick({ name: "clip.mov", mimeType: "video/quicktime", buffer: Buffer.alloc(26 * 1024 * 1024) });
     await expect(page.getByRole("alert")).toBeVisible();
     await page.waitForTimeout(400);
     await shot("2-toast");
