@@ -1,5 +1,5 @@
 // Zip structure reading from byte ranges: the end record and the central directory only. Nothing here
-// inflates an entry; `entryBytes` hands the raw stored bytes of one entry to the caller.
+// inflates an entry; `dataStart` locates an entry's stored bytes for the read plan (read-plan.ts).
 import type { DropError } from "../../../shared/protocol.ts";
 import { type RangeReader, ZIP_LIMITS } from "./index.ts";
 
@@ -118,12 +118,12 @@ export function checkSizes(entries: readonly ZipEntry[]): DropError | null {
   return total > ZIP_LIMITS.maxTotalUncompressed ? "bad_structure" : null;
 }
 
-/** The stored bytes of one entry (still compressed when its method is deflate), or null when its header does not match. */
-export async function entryBytes(r: RangeReader, e: ZipEntry): Promise<Uint8Array | null> {
-  const header = await r.read(e.localOffset, 30);
-  if (header.length !== 30 || u32(view(header), 0) !== LOCAL_SIG) return null;
-  const hv = view(header);
-  const start = e.localOffset + 30 + u16(hv, 26) + u16(hv, 28);
-  if (start + e.compressed > r.size) return null;
-  return r.read(start, e.compressed);
+export const LOCAL_HEADER_BYTES = 30;
+
+/** Where an entry's stored data starts, as an index into `bytes` holding its local header at `at`; null when none is there. */
+export function dataStart(bytes: Uint8Array, at: number): number | null {
+  if (at < 0 || at + LOCAL_HEADER_BYTES > bytes.length) return null;
+  const v = view(bytes);
+  if (u32(v, at) !== LOCAL_SIG) return null;
+  return at + LOCAL_HEADER_BYTES + u16(v, at + 26) + u16(v, at + 28);
 }

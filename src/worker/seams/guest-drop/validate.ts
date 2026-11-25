@@ -4,7 +4,8 @@ import type { DropError, FileType } from "../../../shared/protocol.ts";
 import { inflate, latin1, majorBrand, startsWith } from "./bytes.ts";
 import { checkOoxml, decodeXml, isRefusedPart, isRelsPart } from "./formats.ts";
 import { type RangeReader, ZIP_LIMITS } from "./index.ts";
-import { checkSizes, entryBytes, hasEndRecord, readCentralDirectory, type ZipEntry } from "./zip.ts";
+import { planReads, ReadBudgetExceeded, readParts } from "./read-plan.ts";
+import { checkSizes, hasEndRecord, readCentralDirectory, type ZipEntry } from "./zip.ts";
 
 const HEAD_BYTES = 1024;
 /** Where a PDF's `%%EOF` and a JPEG's end-of-image must sit. */
@@ -53,37 +54,52 @@ function detect(head: Uint8Array): FileType | null {
 /** The relationships parts of a deck: how many, and how many inflated bytes in all. A real deck has one per slide. */
 const MAX_RELS_PARTS = 1024;
 const MAX_RELS_BYTES = 4 * 1024 * 1024;
+/** The most stored bytes one XML part, and all of them together, may ask the read plan for. */
+const PART_LIMITS = { maxEach: ZIP_LIMITS.maxContentTypesBytes, maxTotal: 8 * 1024 * 1024 } as const;
 
-/**
- * The bytes of one part, stored or inflated to at most `cap`; null when they cannot be read so. Only the size of
- * what was read is measured: the sizes a zip declares are claims (zip.ts).
- */
-async function partBytes(r: RangeReader, entry: ZipEntry, cap: number): Promise<Uint8Array | null> {
-  if (entry.compressed > cap) return null;
-  const stored = await entryBytes(r, entry);
-  if (!stored) return null;
-  if (entry.method === 0) return stored;
-  return entry.method === 8 ? inflate(stored, cap, "deflate-raw") : null;
+/** The bytes of one stored part, inflated to at most `cap` when it is deflated; null when they cannot be read so. */
+async function unpack(stored: Uint8Array | null, method: number, cap: number): Promise<Uint8Array | null> {
+  if (stored === null) return null;
+  if (method === 0) return stored.length <= cap ? stored : null;
+  return method === 8 ? inflate(stored, cap, "deflate-raw") : null;
 }
 
-/** The text of every relationships part, or null when one cannot be read or they pass the shared caps. */
-async function relsParts(r: RangeReader, entries: readonly ZipEntry[]): Promise<Map<string, string> | null> {
-  const parts = entries.filter((e) => isRelsPart(e.name));
-  if (parts.length > MAX_RELS_PARTS) return null;
-  const out = new Map<string, string>();
+/** The text of the content types and of every relationships part, read in one plan; null when any cannot be read. */
+async function deckXml(
+  r: RangeReader,
+  entries: readonly ZipEntry[],
+  contentTypes: ZipEntry,
+): Promise<{ types: string; rels: Map<string, string> } | null> {
+  const relsEntries = entries.filter((e) => isRelsPart(e.name));
+  if (relsEntries.length > MAX_RELS_PARTS) return null;
+  const wanted = [contentTypes, ...relsEntries];
+  const stored = await readParts(r, wanted, PART_LIMITS);
+  if (stored === null) return null;
+  const typesBytes = await unpack(stored[0] ?? null, contentTypes.method, ZIP_LIMITS.maxContentTypesBytes);
+  const types = typesBytes === null ? null : decodeXml(typesBytes);
+  const rels = new Map<string, string>();
   let budget = MAX_RELS_BYTES;
-  for (const entry of parts) {
-    const bytes = await partBytes(r, entry, Math.min(ZIP_LIMITS.maxContentTypesBytes, budget));
+  for (const [i, entry] of relsEntries.entries()) {
+    const bytes = await unpack(stored[i + 1] ?? null, entry.method, Math.min(ZIP_LIMITS.maxContentTypesBytes, budget));
     const text = bytes === null ? null : decodeXml(bytes);
     if (bytes === null || text === null) return null;
     budget -= bytes.length;
-    out.set(entry.name, text);
+    rels.set(entry.name, text);
   }
-  return out;
+  return types === null ? null : { types, rels };
 }
 
-async function validateDeck(r: RangeReader, head: Uint8Array): Promise<Verdict> {
+async function validateDeck(whole: RangeReader, head: Uint8Array): Promise<Verdict> {
   if (latin1.decode(head).includes("%PDF")) return refuse("bad_structure");
+  try {
+    return await checkDeck(planReads(whole));
+  } catch (error) {
+    if (error instanceof ReadBudgetExceeded) return refuse("bad_structure");
+    throw error;
+  }
+}
+
+async function checkDeck(r: RangeReader): Promise<Verdict> {
   const dir = await readCentralDirectory(r);
   if (!dir.ok) return refuse(dir.error);
   const sizes = checkSizes(dir.entries);
@@ -91,16 +107,13 @@ async function validateDeck(r: RangeReader, head: Uint8Array): Promise<Verdict> 
   const names = new Map(dir.entries.map((e) => [e.name, e]));
   if (dir.entries.some((e) => e.method !== 0 && e.method !== 8)) return refuse("bad_structure");
   if (dir.entries.some((e) => isRefusedPart(e.name))) return refuse("macro_content");
-  if (new Set(dir.entries.map((e) => e.name.toLowerCase())).size !== dir.entries.length) return refuse("bad_structure");
   if (!ZIP_LIMITS.requiredParts.every((p) => names.has(p))) return refuse("bad_structure");
-  const typesBytes = await partBytes(r, names.get("[Content_Types].xml") as ZipEntry, ZIP_LIMITS.maxContentTypesBytes);
-  const types = typesBytes === null ? null : decodeXml(typesBytes);
-  const rels = await relsParts(r, dir.entries);
-  if (types === null || rels === null) return refuse("bad_structure");
+  const xml = await deckXml(r, dir.entries, names.get("[Content_Types].xml") as ZipEntry);
+  if (xml === null) return refuse("bad_structure");
   const verdict = checkOoxml(
     dir.entries.map((e) => e.name),
-    types,
-    rels,
+    xml.types,
+    xml.rels,
   );
   return verdict.ok ? { ok: true, type: "pptx" } : refuse(verdict.error);
 }

@@ -155,6 +155,8 @@ export function checkOoxml(
 ): Check {
   // A `\` or `%` can spell a separator an extractor honors but `isRelsPart` does not see (`word\_rels\x.rels`).
   if (names.some((n) => /[\\%]/.test(n))) return fail("bad_structure", "entry name");
+  // Two parts of one name: the reader may pick either, and only one was checked.
+  if (new Set(names.map((n) => n.toLowerCase())).size !== names.length) return fail("bad_structure", "duplicate name");
   const types = checkContentTypes(contentTypesXml);
   if (!types.ok) return types;
   if (names.some(isRefusedPart)) return fail("macro_content", "macro part");
