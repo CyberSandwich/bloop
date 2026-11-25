@@ -80,6 +80,8 @@ describe("classify", () => {
     }
     expect(classify([file("src/worker/do/future-schema.ts", 3, "A")], SAME).tier).toBe(2);
     expect(classify([file("src/worker/do/rooms/rooms-schema.ts", 3, "A")], SAME).tier).toBe(2);
+    expect(classify([file("src/worker/spend/schema.ts", 3)], SAME).tier).toBe(2);
+    expect(classify([file("src/worker/spend/meters.ts", 3)], SAME).tier).toBe(1);
     expect(classify([file("src/worker/do/directory.ts", 3)], SAME).tier).toBe(1);
     expect(classify([file("test/unit/directory-schema.test.ts", 3)], SAME).tier).toBe(0);
   });
