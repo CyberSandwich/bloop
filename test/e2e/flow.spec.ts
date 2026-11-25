@@ -450,8 +450,17 @@ test.describe("pairing flow", () => {
     await phone.context.close();
   });
 
-  test("SESS-01 a choice past the cap is cut to it, and a toast names the end it set", async ({ browser }) => {
+  test("SESS-01 a choice past the cap is cut to it with no toast: the countdown shows the end it set", async ({
+    browser,
+  }) => {
     const { screen, phone, lengthButton, sheet } = await approvedDemo(browser);
+    const countdown = phone.page.locator("#ends-text");
+    // The 2h preset, the demo's cap: cut to approval plus the cap.
+    await lengthButton.click();
+    await sheet.getByRole("button", { name: "2 hours" }).click();
+    await expect(sheet).toBeHidden();
+    await expect(countdown).toHaveText(/^Ends in 1:59:\d{2}$/);
+    // A typed time past the cap, cut the same way.
     await lengthButton.click();
     const later = await phone.page.evaluate(() => {
       const t = new Date(Date.now() + 3 * 3600_000);
@@ -459,10 +468,9 @@ test.describe("pairing flow", () => {
     });
     await sheet.getByLabel("Expires At").fill(later);
     await sheet.getByRole("button", { name: "Set" }).click();
-    await expect(phone.page.getByRole("status").filter({ hasText: /^Ends at \d{2}:\d{2}/ })).toContainText(
-      "That's the longest this session can run.",
-    );
-    await expect(phone.page.locator("#ends-text")).toHaveText(/^Ends in 1:59:\d{2}$/);
+    await expect(countdown).toHaveText(/^Ends in 1:59:\d{2}$/);
+    await phone.page.waitForTimeout(500);
+    await expect(phone.page.locator(".toast")).toHaveCount(0);
     await screen.context.close();
     await phone.context.close();
   });

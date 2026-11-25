@@ -4,15 +4,13 @@
 import { clampLength, fitPresets, minutesUntil } from "../shared/length.js";
 import { createApi } from "./api.js";
 import { refused, styled } from "./lazy.js";
-import { toast } from "./toast.js";
 
-const MINUTE = 60_000;
 const api = createApi();
 const sheet = /** @type {HTMLDialogElement} */ (document.getElementById("length"));
 const at = /** @type {HTMLInputElement} */ (document.getElementById("length-at"));
 const ends = /** @type {HTMLElement} */ (document.getElementById("ends"));
 let max = 0;
-/** @type {(minutes: number, wanted: number) => void} */
+/** @type {(minutes: number) => void} */
 let set = () => {};
 
 const pad = (/** @type {number} */ n) => String(n).padStart(2, "0");
@@ -21,7 +19,7 @@ const failed = refused("The Session Expiry Didn't Change");
 
 function choose(/** @type {number} */ minutes) {
   sheet.close();
-  set(clampLength(minutes, max), minutes);
+  set(clampLength(minutes, max));
 }
 
 sheet.addEventListener("click", (e) => {
@@ -49,20 +47,13 @@ export async function openLength(c, onView) {
   const view = c.view;
   if (!view?.endsAt || ends.hidden) return;
   max = view.maxMinutes;
-  set = async (minutes, wanted) => {
-    const asked = Date.now() + wanted * MINUTE;
+  // Cut to the cap with no toast: the countdown and the screen's "Ends by itself at" line show the end it set.
+  set = async (minutes) => {
     const res = await api.post("/api/session/length", { minutes }, c.pid);
     if (!res.ok) return failed(res.error);
     const next = res.value;
     // The socket's push is the truth: an older answer (an End meanwhile) is dropped.
     if (next.v > (c.view?.v ?? -1)) onView(next);
-    // The cap cut the choice short: say the end it set.
-    if (next.state !== "ended" && next.endsAt && next.endsAt - c.skew < asked - MINUTE) {
-      toast({
-        title: `Ends at ${clock(new Date(next.endsAt - c.skew))}`,
-        body: "That's the longest this session can run.",
-      });
-    }
   };
   fitPresets(sheet.querySelector(".chips"), max);
   at.value = clock(new Date(view.endsAt - c.skew));
