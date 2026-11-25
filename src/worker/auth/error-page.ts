@@ -1,7 +1,9 @@
 // The page a phone sees when /auth/callback fails. The callback is a top-level navigation, so a problem+json
 // body would show as raw JSON; this is the design voice instead (design.md section 7, "sign-in failed").
-// Strings are fixed: nothing from the request reaches the markup.
-import { ERRORS } from "../../../public/js/shared/errors.js";
+// Strings are fixed: nothing from the request reaches the markup, the support mail included.
+import { ERRORS, orEmail, SUPPORT } from "../../../public/js/shared/errors.js";
+import { supportMail } from "../../../public/js/shared/support.js";
+import type { ErrorCode } from "../../shared/protocol.ts";
 import { withPolicy } from "../headers.ts";
 import type { SignInError } from "./oauth.ts";
 
@@ -13,7 +15,7 @@ interface Words {
 
 const DEFAULT: Words = {
   title: "Couldn't sign you in.",
-  body: "Scan the code on the screen to try again, or sign in to the PC as usual.",
+  body: orEmail("Scan the code on the screen to try again"),
   retry: true,
 };
 
@@ -28,22 +30,30 @@ export const WORDS: Readonly<Record<SignInError, Words>> = {
   },
   admin_consent_required: {
     title: "Your organization needs to approve bloop.",
-    body: "Ask your IT team, or sign in to the PC as usual.",
+    body: "Ask your IT team to approve it, then scan again.",
     retry: false,
   },
 };
 
-const STATUS: Readonly<Record<SignInError, number>> = {
-  state: ERRORS.bad_request.status,
-  issuer: ERRORS.unauthorized.status,
-  exchange: ERRORS.source_unavailable.status,
-  consent_declined: ERRORS.consent_declined.status,
-  admin_consent_required: ERRORS.admin_consent_required.status,
+const CODE: Readonly<Record<SignInError, ErrorCode>> = {
+  state: "bad_request",
+  issuer: "unauthorized",
+  exchange: "source_unavailable",
+  consent_declined: "consent_declined",
+  admin_consent_required: "admin_consent_required",
 };
 
-export function callbackErrorPage(failure: SignInError): Response {
+export function callbackErrorPage(failure: SignInError, now = new Date()): Response {
   const { title, body, retry } = WORDS[failure];
   const action = retry ? '<a class="btn primary" href="/code">Enter the Code</a>' : "";
+  const mail = supportMail(title, {
+    Page: "/auth/callback",
+    State: failure,
+    Error: CODE[failure],
+    Time: now.toISOString(),
+    Browser: "",
+  });
+  const line = body.replace(SUPPORT, `<a href="${mail.replaceAll("&", "&amp;")}">${SUPPORT}</a>`);
   const html = `<!DOCTYPE html>
 <html lang="en-US">
   <head>
@@ -59,7 +69,7 @@ export function callbackErrorPage(failure: SignInError): Response {
   <body class="page-site">
     <main id="main" class="doc notfound">
       <h1>${title}</h1>
-      <p>${body}</p>
+      <p>${line}</p>
       ${action}
     </main>
   </body>
@@ -67,7 +77,7 @@ export function callbackErrorPage(failure: SignInError): Response {
 `;
   return withPolicy(
     new Response(html, {
-      status: STATUS[failure],
+      status: ERRORS[CODE[failure]].status,
       headers: { "Content-Type": "text/html; charset=utf-8", "Cache-Control": "no-store" },
     }),
     "app",

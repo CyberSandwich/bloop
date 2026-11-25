@@ -386,23 +386,14 @@ main:has(> .side:not([hidden])) #stage {
 [data-mode="viewer"] #controls .btn {
   min-height: 44px;
 }
-/* Unseen until the first paint: no live footer in the demo, no Back in a session. */
-.is-booting:not(.is-ready) :is(.bar > *, .foot) {
+/* Unseen until the first paint: no Back in a session. */
+.is-booting:not(.is-ready) .bar > * {
   visibility: hidden;
 }
 /* Over the blank hint, so the card keeps its place and the status sits under it. */
 .awaiting {
   grid-area: hint;
   align-self: center;
-}
-.foot {
-  padding: 0 var(--pad) calc(24px + env(safe-area-inset-bottom));
-  color: var(--muted);
-  text-align: center;
-}
-/* The footer line is the live room's way out; a demo visitor has no PC to sign in to. */
-.is-demo > .foot {
-  display: none;
 }
 .narrow,
 .phone-way {
@@ -422,7 +413,7 @@ main:has(> .side:not([hidden])) #stage {
   margin-top: 24px;
 }
 @media (max-width: 599.98px) {
-  .page-screen:not(.is-demo) :is(.pane, .bar > *, .foot) {
+  .page-screen:not(.is-demo) :is(.pane, .bar > *) {
     display: none;
   }
   .page-screen:not(.is-demo) .narrow {
@@ -553,7 +544,7 @@ main:has(> .side:not([hidden])) #stage {
   background: var(--surface);
 }
 /* Presenting (viewer.js present): the item on pure black (the body too, for the strip a phone tints) in the safe area. */
-.is-presenting :is(.bar, .side, .handle, #controls, .foot) {
+.is-presenting :is(.bar, .side, .handle, #controls) {
   display: none;
 }
 .is-presenting,
@@ -606,6 +597,13 @@ main:has(> .side:not([hidden])) #stage {
 #b-stop:focus-visible {
   opacity: 1;
   pointer-events: auto;
+}
+/* Over a video the browser muted (viewer.js play): the tap is the gesture sound needs. */
+#b-sound {
+  grid-area: 1 / 1;
+  place-self: center;
+  z-index: 6;
+  min-height: 44px;
 }
 .is-presenting .view.is-idle {
   cursor: none;
@@ -988,6 +986,7 @@ main:has(> .side:not([hidden])) #stage {
   display: flex;
   align-items: center;
   align-self: flex-start;
+  min-height: 44px;
   padding: 0;
   border: 0;
   background: none;
@@ -998,7 +997,7 @@ main:has(> .side:not([hidden])) #stage {
 .ends.soon {
   color: var(--robin-ink);
 }
-/* core/toast.js: a .glass card, bottom center; --toast-lift clears the band. */
+/* core/toast.js: a .glass card, bottom center; --toast-lift clears the panel. */
 .toast {
   position: fixed;
   z-index: 60;
@@ -1116,13 +1115,9 @@ main:has(> .side:not([hidden])) #stage {
     flex: none;
     height: 24px;
   }
+  /* Just above the panel, whatever it holds: phone.js measures it. */
   .page-phone:has(.actions .btn) {
-    --toast-lift: 80px;
-  }
-}
-@media (max-width: 639.98px) {
-  .page-phone:has(.actions .btn + .btn) {
-    --toast-lift: 140px;
+    --toast-lift: calc(var(--panel, 68px) + 8px);
   }
 }
 /* A file dragged over /a, from 640 wide (core/drag.js); it never takes the pointer. */

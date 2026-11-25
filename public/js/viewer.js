@@ -1,6 +1,6 @@
 // The demo viewer (DEMO-01, design.md section 7): the page fetches the launched link itself.
 // A photo or a video is kept for the session: a second mint spends the budget.
-/** @import {Item, OpenMode, ScreenView} from "../../src/shared/protocol.ts" */
+/** @import {Item, OpenMode, ScreenView, Sound} from "../../src/shared/protocol.ts" */
 /** @import {Minted} from "./types.js" */
 import { CANT_PLAY } from "./core/copy-screen.js";
 import { halves, isVideoLink, openTarget, pageMode, pagesOf, placeControls, stepPage, thumbOf } from "./core/demo.js";
@@ -133,6 +133,7 @@ export function createViewer(deps) {
   const pane = byId("pane");
   const end = byId("b-end");
   const stop = byId("b-stop");
+  const tapSound = byId("b-sound");
   const body = document.body;
   const presenting = () => body.classList.contains("is-presenting");
   // Placement is `placeControls` (core/demo.js), applied and glided here. Offsets, not client rects: the swap scales the img.
@@ -284,6 +285,9 @@ export function createViewer(deps) {
   /** Presenting as asked, held until the item can present. */
   let want = false;
   let followed = "";
+  /** A video's play state (design.md section 7, Video), and what the one on stage was last set to. */
+  let tune = { play: true, sound: /** @type {Sound} */ ("on") };
+  let tuned = "";
   const pages = () => {
     const item = items()[at];
     return item && shown ? pagesOf(item, shown) : null;
@@ -320,6 +324,8 @@ export function createViewer(deps) {
     at = i;
     page = 0;
     want &&= can();
+    // A new item starts playing, as a phone's command starts it.
+    tune.play = true;
     if (side.matches(":popover-open")) side.hidePopover();
     deps.onChange();
     deps.tapped?.();
@@ -459,6 +465,7 @@ export function createViewer(deps) {
         frame.classList.toggle("is-scroll", scroll);
         // A photo replacing its own loader fades in over it; anything else swaps at once.
         const over = img && waiting?.key === key && frame.firstElementChild === waiting.part ? waiting.part : null;
+        frame.querySelector("video")?.pause();
         frame.replaceChildren(...(over ? [over] : []), ...nodes);
         if (!loading) waiting = null;
         if (img && over)
@@ -499,6 +506,38 @@ export function createViewer(deps) {
     show(prev, !!p && !scroll && p.length > 1);
     show(next, !!p && !scroll && p.length > 1);
     paintDots();
+    play();
+  }
+
+  /**
+   * Sets the video on stage to `tune`, once per change: sound first, and where the browser holds it (no tap here yet)
+   * muted, with Tap for Sound. Only this screen's own hand moves `tune` here: a command's play() has no activation.
+   */
+  function play() {
+    /** @type {HTMLVideoElement | null} */
+    const video = frame.querySelector("video");
+    show(tapSound, !!video && tune.sound === "blocked");
+    const key = video ? keyOf(at) + tune.play + tune.sound : "";
+    if (key === tuned) return;
+    tuned = key;
+    if (!video) return;
+    const retune = (/** @type {typeof tune} */ next) => {
+      if (next.play === tune.play && next.sound === tune.sound) return;
+      tune = next;
+      tuned = "";
+      play();
+      deps.tapped?.();
+    };
+    video.onplay =
+      video.onpause =
+      video.onvolumechange =
+        () =>
+          (video.ended || navigator.userActivation?.isActive) &&
+          retune({ play: !video.paused, sound: !video.muted ? "on" : tune.sound === "on" ? "off" : tune.sound });
+    if (!tune.play) return video.pause();
+    video.muted = tune.sound !== "on";
+    // An interrupted play() (a pause, the end) is no refusal of sound.
+    video.play().catch((e) => !video.muted && e.name === "NotAllowedError" && retune({ ...tune, sound: "blocked" }));
   }
 
   function hide() {
@@ -522,7 +561,8 @@ export function createViewer(deps) {
     built = framed = null;
     at = page = 0;
     parked = want = false;
-    followed = "";
+    followed = tuned = "";
+    tune = { play: true, sound: "on" };
     hide();
     // A hidden stage while presenting is a black screen: only a real end leaves it.
     present(false);
@@ -635,6 +675,11 @@ export function createViewer(deps) {
     },
     true,
   );
+  // The gesture sound needs; the video's volumechange then reports it.
+  tapSound.addEventListener("click", () => {
+    const video = frame.querySelector("video");
+    if (video) video.muted = false;
+  });
   prev.addEventListener("click", () => go(-1));
   next.addEventListener("click", () => go(1));
   document.addEventListener("keydown", (e) => {
@@ -679,6 +724,7 @@ export function createViewer(deps) {
           if (i !== at) page = 0;
           at = i;
           want = told.present && can();
+          tune = { play: told.play ?? true, sound: told.sound ?? "on" };
           go(0, told.page - 1);
         }
       }
@@ -690,14 +736,15 @@ export function createViewer(deps) {
     /** As `POST /api/screen/shown` takes it; a link's card is page 1. */
     shown() {
       const item = items()[at];
-      return item ? { item: item.id, page: page + 1, present: want } : null;
+      return item ? { item: item.id, page: page + 1, present: want, ...tune } : null;
     },
 
     /** A transient state hides the stage; presenting, it stays with a status line. @param {string} line */
     park(line) {
       parked = true;
-      // A hidden video would play on unseen.
+      // A hidden video would play on unseen; unparked, it is set again (as off the stage, paint).
       frame.querySelector("video")?.pause();
+      tuned = "";
       if (!presenting()) return hide();
       for (const part of [frame, prev, next]) show(part, false);
       setText(note, line);

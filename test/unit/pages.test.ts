@@ -159,6 +159,27 @@ describe("the phone's band", () => {
   });
 });
 
+describe("the lazy stylesheets", () => {
+  /** Each selector's first compound when it is one bare class: `.x`, not `.x[attr]`, `button.x` or `.x .y`. */
+  const bare = (css: string) =>
+    new Set(
+      [...css.replace(/\/\*[\s\S]*?\*\//g, "").matchAll(/(?:^|[,}])\s*\.([a-z][\w-]*)\s*(?=[,{])/gi)].map((m) => m[1]),
+    );
+  const classes = (css: string) => new Set([...css.matchAll(/\.([a-z][\w-]*)/gi)].map((m) => m[1]));
+  const page = classes(read("css/app.css") + read("css/base.css"));
+
+  it.each(["css/length.css", "css/remote.css"])(
+    "%s names its own parts: no bare class of it is one the page's sheet already styles",
+    (sheet) => {
+      expect([...bare(read(sheet))].filter((c) => page.has(c))).toEqual([]);
+    },
+  );
+
+  it("the check catches a collision", () => {
+    expect([...bare(".pane,\n.sheet-head {}\n.row[open] {}\n.actions .x {}")]).toEqual(["pane", "sheet-head"]);
+  });
+});
+
 describe("secondary text on every neutral it sits on (design.md section 12)", () => {
   const glass = token("glass", "paper");
   const grounds: [string, Rgb][] = [
@@ -180,8 +201,8 @@ describe("secondary text on every neutral it sits on (design.md section 12)", ()
 });
 
 describe("the screen before its first paint", () => {
-  it("hides the bar and footer only once the script has run past the framed and narrow exits", () => {
-    expect(read("css/app.css")).toMatch(/\n\.is-booting:not\(\.is-ready\) :is\(\.bar > \*, \.foot\) \{/);
+  it("hides the bar only once the script has run past the framed and narrow exits", () => {
+    expect(read("css/app.css")).toContain("\n.is-booting:not(.is-ready) .bar > * {");
     expect(read("css/app.css")).not.toMatch(/\.page-screen:not\(\.is-ready\)/);
     const start = read("js/screen.js").match(/function start\(\) \{([\s\S]*?)\n\}/)?.[1] ?? "";
     const at = (s: string) => start.indexOf(s);
@@ -193,10 +214,9 @@ describe("the screen before its first paint", () => {
 });
 
 describe("the demo screen", () => {
-  it("hides the live footer line, which sends the visitor to a PC sign-in they do not have", () => {
-    expect(read("s.html")).toMatch(/<p class="foot" id="foot">Phone not with you\?/);
+  it("marks itself, so a phone-width window may run it", () => {
     expect(read("js/screen.js")).toContain('document.body.classList.add("is-demo")');
-    expect(read("css/app.css")).toMatch(/\.is-demo > \.foot \{\s*display: none;\s*\}/);
+    expect(read("css/app.css")).toContain(".page-screen:not(.is-demo) :is(.pane, .bar > *) {");
   });
 
   it("the waitlist link opens the form with source=viewer, in the same tab, and carries data-waitlist", () => {

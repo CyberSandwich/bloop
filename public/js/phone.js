@@ -21,6 +21,7 @@ import { VERIFIED } from "./core/verified.js";
 import { ERRORS } from "./shared/errors.js";
 import { typeOfName } from "./shared/names.js";
 import { IN_SESSION, LIVE_CLAIM, orderItems } from "./shared/session.js";
+import { supportMail } from "./shared/support.js";
 
 const api = createApi();
 const store = sessionStore();
@@ -56,6 +57,14 @@ const revokeAsk = /** @type {HTMLDialogElement} */ (byId("revoke"));
 /** @type {((on: boolean) => void) | null} */
 let remote = null;
 let remoteAsked = false;
+let remoteLost = false;
+// One object, so a view while it shows changes nothing (core/toast.js); another toast in its place gives way to it.
+const RELOAD = {
+  title: "Remote Didn't Load",
+  body: "Reload to try again.",
+  error: true,
+  action: { label: "Reload", run: () => location.reload() },
+};
 
 /** @type {import("./types.js").PhonePage} */
 const c = {
@@ -82,13 +91,15 @@ const c = {
   upload: null,
   progress: null,
   leaving: false,
+  fault: null,
 };
 
 /** Failed calls become the state key the shared error table names; offline and generic errors can retry. */
 function fail(/** @type {ErrorCode} */ code, /** @type {(() => void) | null} */ retry = null) {
   const key = ERRORS[code].phone ?? "error";
   c.error = key === "typed_wrong" ? "expired" : key;
-  c.retry = key === "offline" || key === "error" ? retry : null;
+  c.fault = code;
+  c.retry = ["offline", "error", "service_down"].includes(key) ? retry : null;
   render();
 }
 
@@ -146,6 +157,7 @@ function buildItems(/** @type {Item[]} */ items) {
 function setView(/** @type {PhoneView} */ view, pid = c.pid) {
   adopt(c, view, drop, pid);
   render();
+  if (remoteLost) toast(RELOAD);
 }
 
 function buildSkeleton() {
@@ -218,6 +230,13 @@ function render() {
     live: !!v && IN_SESSION.includes(v.state),
     revoking: c.retry === endSession,
     list: fromList(),
+    mail: supportMail("bloop isn't responding", {
+      Page: "/a",
+      State: key,
+      Error: c.fault,
+      Time: new Date().toISOString(),
+      Browser: navigator.userAgent,
+    }),
   });
 
   canAdd = copy.add || key === "guest_confirm" || copy.actions.some((a) => a.id === "send-file" || a.id === "pick");
@@ -269,13 +288,10 @@ function render() {
         remote = m.mount(c, setView);
         render();
       },
-      () =>
-        toast({
-          title: "Remote Didn't Load",
-          body: "Reload to try again.",
-          error: true,
-          action: { label: "Reload", run: () => location.reload() },
-        }),
+      () => {
+        remoteLost = true;
+        toast(RELOAD);
+      },
     );
   }
   remote?.(on);
@@ -612,6 +628,9 @@ async function resume(/** @type {string} */ pid) {
 }
 
 function start() {
+  // The floating panel's height, so the toast sits just above it (app.css --toast-lift).
+  const panel = /** @type {HTMLElement} */ (actionsEl.parentElement);
+  new ResizeObserver(() => document.body.style.setProperty("--panel", `${panel.offsetHeight}px`)).observe(panel);
   if (isFramed()) {
     c.error = "framed";
     render();

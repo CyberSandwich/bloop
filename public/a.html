@@ -22,7 +22,7 @@
       <div class="flow" id="flow">
         <h1 class="title" id="title" tabindex="-1" hidden>Approve on bloop</h1>
         <div class="skel skel-title" id="skel-title" hidden></div>
-        <p class="sub" id="room-sub" hidden>Registered screen</p>
+        <p class="sub" id="room-sub" hidden>Registered room</p>
         <p class="body" id="body"></p>
         <button class="ends" id="ends" type="button" aria-haspopup="dialog" hidden><span id="ends-text"></span><span class="sr">. Change the Session Expiry</span><svg class="icon" viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="m9 18 6-6-6-6"/></svg></button>
         <p class="warn" id="warn" hidden>
@@ -52,12 +52,14 @@
       <fieldset class="bubbles">
         <legend class="sr">The Screen</legend>
         <button type="button" class="btn secondary bubble" data-step="-1" aria-label="Previous"><svg class="icon dir" viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="m15 18-6-6 6-6"/></svg></button>
+        <button type="button" class="btn secondary bubble" data-play aria-label="Play" aria-pressed="true" hidden><svg class="icon" viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><rect x="14" y="3" width="5" height="18" rx="1"/><rect x="5" y="3" width="5" height="18" rx="1"/></svg><svg class="icon" viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M5 5a2 2 0 0 1 3.008-1.728l11.997 6.998a2 2 0 0 1 .003 3.458l-12 7A2 2 0 0 1 5 19z"/></svg></button>
         <button type="button" class="btn secondary" data-present>Present</button>
+        <button type="button" class="btn secondary bubble" data-sound aria-label="Sound" aria-pressed="true" hidden><svg class="icon" viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M11 4.702a.705.705 0 0 0-1.203-.498L6.413 7.587A1.4 1.4 0 0 1 5.416 8H3a1 1 0 0 0-1 1v6a1 1 0 0 0 1 1h2.416a1.4 1.4 0 0 1 .997.413l3.383 3.384A.705.705 0 0 0 11 19.298z"/><path d="M16 9a5 5 0 0 1 0 6"/><path d="M19.364 18.364a9 9 0 0 0 0-12.728"/></svg><svg class="icon" viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M11 4.702a.705.705 0 0 0-1.203-.498L6.413 7.587A1.4 1.4 0 0 1 5.416 8H3a1 1 0 0 0-1 1v6a1 1 0 0 0 1 1h2.416a1.4 1.4 0 0 1 .997.413l3.383 3.384A.705.705 0 0 0 11 19.298z"/><line x1="22" x2="16" y1="9" y2="15"/><line x1="16" x2="22" y1="9" y2="15"/></svg></button>
         <button type="button" class="btn secondary bubble" data-step="1" aria-label="Next"><svg class="icon dir" viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="m9 18 6-6-6-6"/></svg></button>
       </fieldset>
     </template>
     <dialog class="sheet" id="length" aria-labelledby="length-h">
-      <div class="pane sheet-in glass">
+      <div class="sheet-pane sheet-in glass">
         <div class="sheet-head">
           <h2 id="length-h" tabindex="-1">Session Expiry</h2>
           <form method="dialog"><button class="sheet-x" type="submit" aria-label="Close"><svg class="icon" viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg></button></form>
@@ -68,7 +70,7 @@
           <button class="btn primary" type="submit">Set</button>
         </form>
       </div>
-      <fieldset class="pane chips glass">
+      <fieldset class="sheet-pane chips glass">
         <legend class="sr">End the Session In</legend>
         <button class="btn secondary" type="button" data-minutes="30" aria-label="30 minutes">30m</button>
         <button class="btn secondary" type="button" data-minutes="60" aria-label="1 hour">1h</button>

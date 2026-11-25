@@ -21,7 +21,6 @@ export const DOWNLOAD_REUSE_MS = 60_000;
 export const DOWNLOAD_STARTS_PER_LINK = 3;
 /** An approved screen that has received no link by now asks for one. */
 export const RELINK_WAIT_MS = 1500;
-export const OFFLINE_HINT_MS = 5000;
 /** A request with no answer by now counts as offline. */
 export const FETCH_TIMEOUT_MS = 10_000;
 

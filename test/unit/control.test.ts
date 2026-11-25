@@ -222,6 +222,49 @@ describe("PAIR-13 control: only the pairing's phone commands the screen, absolut
   });
 });
 
+describe("VID-05 sound: a video's play state rides on `shown`, and only the screen says its browser holds sound", () => {
+  /** A guest's demo video (i1), open, so it can be commanded. */
+  const video = (): Machine => {
+    const clip = { ...DOG, ref: "clip-1", name: "Talk.mp4", type: "mp4" } as const;
+    return must(claimedOwner(), { e: "approve", now: T0 + sec(10), items: [asItem(clip)], minutes: MAX_MINUTES }).next;
+  };
+  const clip = (extra: Partial<Shown>): Shown => ({ item: "i1", page: 1, present: false, ...extra });
+
+  it("VID-05 sound: the phone pauses, plays and mutes; each is stored and pushed", () => {
+    let m = video();
+    for (const extra of [{ play: false }, { play: true }, { play: true, sound: "off" as const }]) {
+      const step = must(m, command(clip(extra)));
+      expect(step.next.session?.shown).toEqual(clip(extra));
+      expect(fx(step.effects, "push")).toEqual([{ fx: "push", to: "both" }]);
+      m = step.next;
+    }
+  });
+
+  it("VID-05 sound: the screen reports blocked, a phone command built on it carries it, and asking for sound wins", () => {
+    const step = must(video(), command(clip({ sound: "blocked" }), 1, "screen"));
+    expect(step.next.session?.shown?.sound).toBe("blocked");
+    const paused = must(step.next, command(clip({ play: false, sound: "blocked" }))).next;
+    expect(paused.session?.shown).toEqual(clip({ play: false, sound: "blocked" }));
+    // The phone's tap for sound asks for it again, and the last applied wins.
+    expect(must(paused, command(clip({ sound: "on" }))).next.session?.shown?.sound).toBe("on");
+  });
+
+  it("VID-05 sound: absent fields are their defaults, so an old sender's same command pushes nothing", () => {
+    const m = must(video(), command(clip({ play: true, sound: "on" }))).next;
+    const again = must(m, command(clip({})));
+    expect(again.effects).toEqual([]);
+    expect(fx(must(m, command(clip({ play: false }))).effects, "push")).toHaveLength(1);
+  });
+
+  it("VID-05 sound: the remote's body takes play and sound, and refuses any other value", async () => {
+    const { shownSchema } = await import("../../src/worker/items.ts");
+    expect(shownSchema.safeParse(clip({ play: false, sound: "blocked" })).success).toBe(true);
+    expect(shownSchema.safeParse(clip({})).success).toBe(true);
+    for (const bad of [{ play: "no" }, { sound: "loud" }, { volume: 1 }])
+      expect(shownSchema.safeParse({ ...clip({}), ...bad }).success, JSON.stringify(bad)).toBe(false);
+  });
+});
+
 describe("PAIR-13 rate limits: RL_CONTROL per IP, then per credential", () => {
   const ORIGIN = "http://127.0.0.1:8787";
   const REF = "S".repeat(22);

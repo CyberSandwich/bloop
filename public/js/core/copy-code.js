@@ -1,5 +1,6 @@
 // The typed-code page's strings (the rules: copy.js).
 /** @import {PhoneStateKey} from "../../../src/shared/protocol.ts" */
+import { DOWN, orEmail } from "../shared/errors.js";
 import { TYPED_WRONG } from "./copy.js";
 
 export const TYPED_LETTERS = "Codes don't use 0, 1, I, L, O or U.";
@@ -11,5 +12,6 @@ const TYPED = /** @type {Partial<Record<PhoneStateKey, string>>} */ ({
   offline: "You're offline. Check your connection.",
   rate_limited: "Too many tries. Wait a minute.",
   framed: "Open this page directly.",
+  service_down: `${DOWN} ${orEmail("Try again")}`,
 });
 export const typedError = (/** @type {PhoneStateKey} */ key) => TYPED[key] ?? "Unable to check the code. Try again.";

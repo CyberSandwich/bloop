@@ -51,8 +51,13 @@ export const ERRORS = {
   unauthorized: { status: 401, phone: "expired", screen: "error" },
   not_found: { status: 404, phone: "error", screen: "error" },
   method_not_allowed: { status: 405, phone: "error", screen: "error" },
-  internal: { status: 500, phone: "error", screen: "error" },
+  internal: { status: 500, phone: "service_down", screen: "error" },
   // client only, never sent by the server
   offline: { status: 0, phone: "offline", screen: "offline" },
-  service_down: { status: 0, phone: "error", screen: "service_down" },
+  service_down: { status: 0, phone: "service_down", screen: "service_down" },
 };
+
+export const SUPPORT = "hi@bloop.here";
+// The support line (design.md section 3).
+export const orEmail = (/** @type {string} */ retry) => `${retry}, or email ${SUPPORT}.`;
+export const DOWN = "Something's wrong on bloop's side.";

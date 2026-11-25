@@ -80,6 +80,8 @@ export const shownSchema = z
     item: z.string().min(1).max(32),
     page: z.number().int().min(1).max(MAX_PAGE),
     present: z.boolean(),
+    play: z.boolean().optional(),
+    sound: z.enum(["on", "off", "blocked"]).optional(),
   })
   .strict();
 
@@ -102,8 +104,14 @@ export function shownFault(
     : "bad_request";
 }
 
+/** Absent play state fields read as their defaults, so an old sender's command equals a new one's. */
 export const sameShown = (a: Shown | null, b: Shown): boolean =>
-  a !== null && a.item === b.item && a.page === b.page && a.present === b.present;
+  a !== null &&
+  a.item === b.item &&
+  a.page === b.page &&
+  a.present === b.present &&
+  (a.play ?? true) === (b.play ?? true) &&
+  (a.sound ?? "on") === (b.sound ?? "on");
 
 /** The index of the item an approval launches: the first file. -1 when the session holds links only. */
 export const launchIndex = (items: readonly ItemRef[]): number => items.findIndex((i) => i.kind === "file");

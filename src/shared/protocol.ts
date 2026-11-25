@@ -27,7 +27,7 @@ export type SessionState =
   | "closed";
 
 export interface RoomView {
-  name: string;
+  name: string | null; // null: an unregistered live room, which has no name
   registered: boolean;
 }
 export interface CodeView {
@@ -59,7 +59,13 @@ export interface Shown {
   item: string; // a file item's id; a link's only when the screen reports it
   page: number; // 1-based, within the item's pages
   present: boolean;
+  // A video's play state; any other item ignores it. Absent (a sender from before them, or stored data): it plays, with
+  // sound on. "blocked": the screen's browser refused sound until someone taps the screen; the screen reports it, and a
+  // phone's command built on that view carries it on.
+  play?: boolean | undefined;
+  sound?: Sound | undefined;
 }
+export type Sound = "on" | "off" | "blocked";
 
 /**
  * The body of `POST /api/control` (phone, pid) and `POST /api/screen/shown` (screen, sid). Absolute, so a replay
@@ -275,7 +281,8 @@ export type PhoneStateKey =
   | "rate_limited"
   | "guest_pass_needed"
   | "guest_off"
-  | "busy"; // last three: new strings, section 9
+  | "busy" // the three above: new strings, section 9
+  | "service_down";
 export type ScreenStateKey =
   | "waiting"
   | "scanned"

@@ -93,7 +93,8 @@
         "public/js/shared/codes.js",
         "public/js/shared/errors.js",
         "public/js/shared/names.js",
-        "public/js/shared/session.js"
+        "public/js/shared/session.js",
+        "public/js/shared/support.js"
       ],
       "limit": "29.4 kB"
     },

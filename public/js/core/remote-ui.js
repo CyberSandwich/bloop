@@ -1,5 +1,4 @@
-// The phone's remote (design.md section 7, Phone page), its stylesheet first: file rows that put an item on the screen,
-// a preview that steps by its halves or a swipe, and bubbles that step and present. Markup: a.html's #remote-parts.
+// The phone's remote (design.md section 7, Phone page), its stylesheet first. Markup: a.html's #remote-parts.
 /** @import {PhoneView} from "../../../src/shared/protocol.ts" */
 /** @import {PhonePage} from "../types.js" */
 import { createApi } from "./api.js";
@@ -17,8 +16,8 @@ const SWIPE = 50;
 
 /**
  * @param {PhonePage} c
- * @param {(view: PhoneView) => void} onView the phone's view as `POST /api/control` answers it
- * @returns {(on: boolean) => void} shows the remote (a demo session in approved, opening or open) or takes it away
+ * @param {(view: PhoneView) => void} onView
+ * @returns {(on: boolean) => void} shows or takes away the remote
  */
 export function mount(c, onView) {
   const parts = /** @type {HTMLTemplateElement} */ (document.getElementById("remote-parts")).content;
@@ -28,6 +27,8 @@ export function mount(c, onView) {
   const present = /** @type {HTMLButtonElement} */ (bubbles.querySelector("[data-present]"));
   const back = /** @type {HTMLButtonElement} */ (bubbles.querySelector("[data-step='-1']"));
   const ahead = /** @type {HTMLButtonElement} */ (bubbles.querySelector("[data-step='1']"));
+  const play = /** @type {HTMLButtonElement} */ (bubbles.querySelector("[data-play]"));
+  const sound = /** @type {HTMLButtonElement} */ (bubbles.querySelector("[data-sound]"));
   const list = /** @type {HTMLElement} */ (document.getElementById("file-list"));
   const ends = /** @type {HTMLElement} */ (document.getElementById("ends"));
   const panel = /** @type {HTMLElement} */ (document.querySelector(".column > .actions"));
@@ -58,7 +59,8 @@ export function mount(c, onView) {
       else row.removeAttribute("aria-current");
     }
     const pages = pagesOf(item, v);
-    const key = `${at.item}:${at.page}`;
+    const video = isVideo(item);
+    const key = `${at.item}:${at.page}:${at.sound}`;
     if (key !== drawn) {
       drawn = key;
       const name = itemName(item);
@@ -66,7 +68,7 @@ export function mount(c, onView) {
         ? `${item.kind === "file" && item.type === "pdf" ? "Page" : "Slide"} ${at.page} of ${pages.length}`
         : "";
       preview.setAttribute("aria-label", label ? `${name}, ${label}` : name);
-      // Built ahead as the pictures shown, so the browser fetches the format it will choose.
+      // Pictures, so the browser fetches the format it picks.
       const faces = pages?.map((p) =>
         el("picture", {}, [
           el("source", { type: "image/avif", srcset: `${p}.avif` }),
@@ -77,13 +79,25 @@ export function mount(c, onView) {
         faces?.[at.page - 1] ??
         el("div", { class: "card" }, [
           ...rowFace(item, thumbOf(item, v)),
-          // The screen plays a video under its own controls (design.md section 7, Phone page).
-          ...(isVideo(item) ? [el("span", { class: "small" }, ["Play and pause it on the screen."])] : []),
+          ...(video && at.sound === "blocked"
+            ? [el("span", { class: "small" }, ["Tap the screen once for sound."])]
+            : []),
         ]);
       preview.replaceChildren(face, count);
     }
     setText(count, pages ? `${at.page} / ${pages.length}` : "");
     count.hidden = !pages;
+    // A video's bubbles play and sound, not step.
+    for (const [b, on] of /** @type {const} */ ([
+      [play, at.play !== false],
+      [sound, (at.sound ?? "on") === "on"],
+    ])) {
+      b.hidden = !video;
+      b.setAttribute("aria-pressed", String(on));
+      b.children[0]?.toggleAttribute("hidden", !on);
+      b.children[1]?.toggleAttribute("hidden", on);
+    }
+    back.hidden = ahead.hidden = video;
     back.disabled = !pages || at.page === 1;
     ahead.disabled = !pages || at.page === pages.length;
     present.disabled = !canPresent(item, v);
@@ -100,9 +114,11 @@ export function mount(c, onView) {
     const b = e.target instanceof Element && e.target.closest("button");
     if (!b || b.disabled) return;
     if (b === present) remote.tap({ present: true });
+    else if (b === play) remote.tap({ play: true });
+    else if (b === sound) remote.tap({ sound: true });
     else remote.tap({ step: Number(b.getAttribute("data-step")) });
   });
-  // A tap on the preview's left or right half steps back or on; a swipe over SWIPE px steps; a drag is no tap.
+  // A tap on a half steps that way, as does a swipe; a drag is no tap.
   let x = 0;
   let y = 0;
   preview.addEventListener("pointerdown", (e) => {

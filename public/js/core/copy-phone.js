@@ -1,6 +1,8 @@
 // The phone's strings (the rules: copy.js).
 /** @import {PhoneStateKey} from "../../../src/shared/protocol.ts" */
 /** @import {PhoneAction, PhoneCopy, PhoneFacts} from "../types.js" */
+
+import { DOWN, orEmail } from "../shared/errors.js";
 import { EXTENSION_TYPES } from "../shared/names.js";
 import { SESSION_ENDED, TYPED_WRONG } from "./copy.js";
 import { VERIFIED } from "./verified.js";
@@ -103,6 +105,8 @@ export function phoneCopy(key, f) {
     loading: false,
   };
   const file = f.file ?? "your file";
+  // A room with no name (unregistered) has none here either: the match digits say which screen.
+  const to = (/** @type {string} */ word) => (f.room ? ` ${word} ${f.room}` : "");
   const disconnect = f.account ? [DISCONNECT] : [];
   // The match digits ride on the button that commits: the person compares them with the screen. One device has
   // nothing to compare.
@@ -120,7 +124,13 @@ export function phoneCopy(key, f) {
     ? "Only the file you select goes to the screen. The screen never gets your account."
     : "Only the file you select goes to the screen.";
   /** The room as the title over the list (match to approving). */
-  const room = { ...base, title: f.room, room: true, files: /** @type {const} */ ("list"), add: true };
+  const room = {
+    ...base,
+    title: f.room || (f.match ?? ""),
+    room: true,
+    files: /** @type {const} */ ("list"),
+    add: true,
+  };
   switch (key) {
     case "checking":
       return { ...base, body: "Checking the code." };
@@ -135,7 +145,7 @@ export function phoneCopy(key, f) {
     case "unregistered":
       return {
         ...room,
-        warn: "This screen isn't registered. Only approve if you can see it in front of you.",
+        warn: "This room isn't registered. Only approve if you can see the screen in front of you.",
         scope: accountLine,
         actions: [...disconnect, CANCEL, APPROVE],
       };
@@ -161,7 +171,7 @@ export function phoneCopy(key, f) {
       return {
         ...base,
         title: "Your IT Must Approve bloop",
-        body: "Ask your IT team, or sign in to the PC as usual.",
+        body: "Ask your IT team to approve it, then scan again.",
         actions: [DONE],
       };
     case "empty":
@@ -176,13 +186,16 @@ export function phoneCopy(key, f) {
         ...room,
         body: `Add one file from this ${f.back ? "device" : "phone"}. Only\u00a0this file goes to the screen.`,
       };
-    case "guest_confirm":
+    case "guest_confirm": {
+      // A long name keeps its start and its extension; the body then holds it whole.
+      const long = file.length > 28;
       return {
         ...base,
-        title: `Send ${file} to ${f.room}?`,
-        body: VERIFIED.guestDelete ? "bloop deletes its copy when this ends." : "",
+        title: `Send ${long ? `${file.slice(0, 19)}…${file.slice(-8)}` : file}${to("to")}?`,
+        body: `${long ? `${file}. ` : ""}${VERIFIED.guestDelete ? "bloop deletes its copy when this ends." : ""}`.trim(),
         actions: [CANCEL, { id: "send", label: `Send${code}`, kind: "primary", ...aria("Send") }],
       };
+    }
     case "guest_sending":
       return { ...base, title: `Sending ${file}`, files: "upload", actions: [CANCEL] };
     case "guest_refused":
@@ -195,7 +208,7 @@ export function phoneCopy(key, f) {
     case "guest_sent":
       return {
         ...base,
-        title: `Sent to ${f.room}`,
+        title: `Sent${to("to")}`,
         body: "Open it on the screen when you're ready.",
         actions: f.back ? [CANCEL, BACK] : [CANCEL],
       };
@@ -209,15 +222,15 @@ export function phoneCopy(key, f) {
     case "guest_off":
       return {
         ...base,
-        title: "This Screen Can't Take Files",
-        body: "Sign in to the PC as usual to open your file.",
+        title: "This Room Can't Take Files",
+        body: "Files from phones are off here. Ask your IT team to turn them on.",
         actions: [DONE],
       };
     case "opening":
     case "open":
       return {
         ...base,
-        title: `Approved for ${f.room}`,
+        title: `Approved${to("for")}`,
         files: "items",
         ends: VERIFIED.autoEnd,
         actions: revokeActions(f),
@@ -232,12 +245,12 @@ export function phoneCopy(key, f) {
     case "pdf_fallback":
       return {
         ...base,
-        title: `Showing a PDF on ${f.room}`,
+        title: `Showing a PDF${to("on")}`,
         body: "PowerPoint can't open it there. Animations and videos won't play.",
         actions: [REVOKE],
       };
     case "pdf_file":
-      return { ...base, title: `PDF Opened on ${f.room}`, body: file, actions: [REVOKE] };
+      return { ...base, title: `PDF Opened${to("on")}`, body: file, actions: [REVOKE] };
     case "ended":
       return {
         ...base,
@@ -285,8 +298,15 @@ export function phoneCopy(key, f) {
       return {
         ...base,
         title: "bloop Can't Take Files Now",
-        body: "Try again in a few minutes, or sign in to the PC as usual.",
+        body: "Try again in a few minutes.",
         actions: [DONE],
+      };
+    case "service_down":
+      return {
+        ...base,
+        title: "bloop Isn't Responding",
+        body: `${DOWN} ${orEmail("Try again")}`,
+        actions: [{ id: "mail", label: "Email bloop", kind: "text", href: f.mail }, ...retryActions(f)],
       };
     case "framed":
       return { ...base, title: "Open This Page Directly" };

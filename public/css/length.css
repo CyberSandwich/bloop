@@ -10,7 +10,7 @@
   color: var(--ink);
 }
 .sheet[open],
-.pane,
+.sheet-pane,
 .sheet-head,
 .until {
   display: flex;
@@ -26,7 +26,7 @@
 .sheet::backdrop {
   background: rgba(30, 30, 28, 0.24);
 }
-.pane {
+.sheet-pane {
   min-width: 0;
   margin: 0;
   padding: 8px;
@@ -35,7 +35,7 @@
   box-shadow: var(--glass-edge), var(--sh-pill);
   animation: toast-in 250ms var(--ease-out) backwards;
 }
-.pane + .pane {
+.sheet-pane + .sheet-pane {
   animation-delay: 40ms;
 }
 .sheet-head,

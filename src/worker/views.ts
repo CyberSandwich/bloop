@@ -29,8 +29,8 @@ const MATCH_STATES: readonly SessionState[] = [
 ];
 
 export function roomView(meta: Meta): RoomView {
-  const fallback = meta.mode === "demo" ? "Demo Room" : "Unregistered screen";
-  return { name: meta.roomName ?? fallback, registered: meta.roomId !== null };
+  // An unregistered room has no name: the phone shows the match digits instead.
+  return { name: meta.roomName ?? (meta.mode === "demo" ? "Demo Room" : null), registered: meta.roomId !== null };
 }
 
 /** The code the screen shows: only while waiting, and only until its hard expiry. */
