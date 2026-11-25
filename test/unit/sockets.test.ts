@@ -8,6 +8,7 @@ import {
   isLive,
   MAX_PENDING_PER_NET,
   MAX_PENDING_SOCKETS,
+  screensOf,
 } from "../../src/worker/do/sockets.ts";
 import { must, sec, T0, waiting } from "./machine-helpers.ts";
 
@@ -120,6 +121,35 @@ describe("OPEN-02 link binding", () => {
     // B closes after taking over: no live socket, and the fallback is B, not the address it replaced.
     expect(holdBinding([{ ip: "A", helloAt: T, heardAt: T }], later + 1, store)).toBe("B");
     expect(holdBinding([], later + 1, store)).toBe("B");
+  });
+
+  it("OPEN-02 binding fails closed: an authed socket with no address never clears the binding", () => {
+    // Hibernated from before addresses were kept: authed, live, no ip. The stored "lectern" holds, so under enforce
+    // a fetch from "other" mismatches and is refused (403 link_binding_failed), never let through as unbound.
+    const now = T + 10_000;
+    const entries = [{ att: { authed: true, role: "screen" }, pong: now }];
+    expect(screensOf(entries, now)).toEqual([]);
+    let stored: string | undefined = "lectern";
+    const store = {
+      get: () => stored,
+      set: (ip: string) => {
+        stored = ip;
+      },
+    };
+    const binding = holdBinding(screensOf(entries, now), now, store);
+    expect(binding).toBe("lectern");
+    expect(binding === "other").toBe(false);
+  });
+
+  it("OPEN-02 binding: a verified socket with no helloAt counts from now, and phones and bare sockets never count", () => {
+    const now = T + 10_000;
+    const entries = [
+      { att: { authed: true, role: "screen", ip: "old" }, pong: 0 },
+      { att: { authed: true, role: "phone", ip: "phone" }, pong: now },
+      { att: { authed: false, role: "screen", ip: "bare" }, pong: now },
+      { att: null, pong: now },
+    ];
+    expect(screensOf(entries, now)).toEqual([{ ip: "old", helloAt: now, heardAt: now }]);
   });
 
   it("OPEN-02 binding: with no live socket, the last verified proof (a hello or a poll) holds", () => {

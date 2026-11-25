@@ -37,10 +37,10 @@ import type { PairingStore, PhoneInfo, Result, ScreenCreated, UsedLink } from ".
 import { auditFor, metricsFor } from "../stores.ts";
 import { directoryStub } from "../stubs.ts";
 import { type Meta, phoneView, roomView, screenView } from "../views.ts";
-import { bestEffort, type EffectDeps, noopSeams, runEffects, type SessionSeams } from "./effects.ts";
+import { bestEffort, closeObject, type EffectDeps, noopSeams, runEffects, type SessionSeams } from "./effects.ts";
 import { LinkLedger, type Use } from "./ledger.ts";
 import { migrate, SCHEMA_KEY, SCHEMA_VERSION } from "./schema.ts";
-import { admit, countAuthed, holdBinding, isLive } from "./sockets.ts";
+import { admit, countAuthed, holdBinding, isLive, screensOf } from "./sockets.ts";
 
 const HELLO_MS = 5000;
 const MAX_CODE_DRAWS = 3;
@@ -451,12 +451,11 @@ export class Screen extends DurableObject<Env> implements PairingStore {
 
   /** The open screen sockets whose `hello` verified, with when each was last heard (its hello or an answered ping). */
   private authedScreens(except?: WebSocket): { ip: string; helloAt: number; heardAt: number }[] {
-    return this.openEntries(except).flatMap(({ ws, att }) => {
-      if (!att?.authed || att.role !== "screen") return [];
-      const helloAt = att.helloAt ?? 0;
-      const pong = this.ctx.getWebSocketAutoResponseTimestamp(ws)?.getTime() ?? 0;
-      return [{ ip: att.ip, helloAt, heardAt: Math.max(helloAt, pong) }];
-    });
+    const entries = this.openEntries(except).map(({ ws, att }) => ({
+      att,
+      pong: this.ctx.getWebSocketAutoResponseTimestamp(ws)?.getTime() ?? 0,
+    }));
+    return screensOf(entries, Date.now());
   }
 
   private openSockets(excluding?: WebSocket): number {
@@ -750,16 +749,11 @@ export class Screen extends DurableObject<Env> implements PairingStore {
         const meta = this.meta;
         this.m = null;
         this.meta = null;
-        if (meta?.mode === "demo") await directoryStub(this.env).demoRelease(meta.screenRef);
-        for (const ws of this.ctx.getWebSockets()) {
-          try {
-            ws.close(1000, "closed");
-          } catch {
-            // already closed
-          }
-        }
-        await this.ctx.storage.deleteAlarm();
-        await this.ctx.storage.deleteAll();
+        const release = meta?.mode === "demo" ? () => directoryStub(this.env).demoRelease(meta.screenRef) : null;
+        await closeObject(release, this.ctx.getWebSockets(), async () => {
+          await this.ctx.storage.deleteAlarm();
+          await this.ctx.storage.deleteAll();
+        });
       },
     };
   }

@@ -8,6 +8,9 @@ import { approveDemo, fetchLink, problemOf, sleep } from "./open-client.ts";
 import { Api, claim, Socket, startPairing } from "./pairing-client.ts";
 import type { Wrangler } from "./wrangler.ts";
 
+/** The frame the runtime answers itself, which keeps a socket live (screen.ts setWebSocketAutoResponse). */
+const PING = '{"v":1,"t":"ping"}';
+
 let wrangler: Wrangler;
 let api: Api;
 beforeAll(async () => {
@@ -60,6 +63,8 @@ describe("OPEN-02 binding", () => {
 
   it("OPEN-02 binding: a poll from another address cannot rebind past a live authed screen socket", async () => {
     const { screen, socket, url } = await approveDemo(api);
+    // Live by its answered ping, not by finishing inside TEST_SILENCE_MS.
+    socket.send(PING);
     const polled = await api.call("GET", "/api/screen/state", undefined, {
       auth: screen.sid,
       headers: { "CF-Connecting-IP": "203.0.113.9" },
@@ -72,6 +77,7 @@ describe("OPEN-02 binding", () => {
 
   it("OPEN-02 binding: a hello from another address cannot rebind past a live lectern", async () => {
     const { screen, socket, url } = await approveDemo(api);
+    socket.send(PING);
     const other = { "CF-Connecting-IP": "203.0.113.9" };
     const intruder = await Socket.open(api.base, `/api/screen/ws?ref=${screen.ref}`, api.base, other);
     intruder.send({ t: "hello", sid: screen.sid });
@@ -92,7 +98,7 @@ describe("OPEN-02 binding", () => {
     // The lectern says nothing past the silence window (TEST_TIMING shortens it); B answers the runtime's ping.
     const until = Date.now() + TEST_SILENCE_MS + 500;
     while (Date.now() < until) {
-      b.send('{"v":1,"t":"ping"}');
+      b.send(PING);
       await sleep(500);
     }
     expect((await fetchLink(url, { headers: moved })).status).toBe(200);

@@ -52,6 +52,26 @@ interface Screen {
   heardAt: number;
 }
 
+interface Authed {
+  authed: boolean;
+  role: string;
+  ip?: unknown;
+  helloAt?: number;
+}
+
+/**
+ * The verified screen sockets as bindingIp reads them, each heard at its hello or its last answered ping (`pong`). One
+ * with no address (a socket hibernated from before addresses were kept) is left out, so the stored binding holds and
+ * the link check fails closed under enforce; that screen re-hellos. No `helloAt` (the same age) counts from now.
+ */
+export function screensOf(entries: readonly { att: Authed | null; pong: number }[], now: number): Screen[] {
+  return entries.flatMap(({ att, pong }) => {
+    if (!att?.authed || att.role !== "screen" || typeof att.ip !== "string") return [];
+    const helloAt = att.helloAt ?? now;
+    return [{ ip: att.ip, helloAt, heardAt: Math.max(helloAt, pong) }];
+  });
+}
+
 /**
  * The address a link must come from (OPEN-02), read when the link is checked, so it never goes stale: the live
  * authed screen socket that verified first holds it (a leaked sid's later socket cannot take it from a screen that

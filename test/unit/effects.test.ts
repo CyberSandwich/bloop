@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { AuditEvent } from "../../src/worker/audit.ts";
-import { type EffectDeps, runEffects } from "../../src/worker/do/effects.ts";
+import { closeObject, type EffectDeps, runEffects } from "../../src/worker/do/effects.ts";
 import type { Effect } from "../../src/worker/machine.ts";
 import type { MetricEvent } from "../../src/worker/metrics.ts";
 import type { Meta } from "../../src/worker/views.ts";
@@ -48,6 +48,31 @@ function fakes(over: Partial<EffectDeps> = {}) {
   };
   return { deps, log, audits, metrics };
 }
+
+describe("closing an object", () => {
+  it("PAIR-10 closing: a demo slot release that throws still closes every socket and clears storage", async () => {
+    const closed: number[] = [];
+    const sockets = [
+      { close: (code: number) => void closed.push(code) },
+      {
+        close: () => {
+          throw new Error("already closed");
+        },
+      },
+      { close: (code: number) => void closed.push(code) },
+    ];
+    let cleared = false;
+    await closeObject(
+      () => Promise.reject(new Error("directory down")),
+      sockets,
+      async () => {
+        cleared = true;
+      },
+    );
+    expect(closed).toEqual([1000, 1000]);
+    expect(cleared).toBe(true);
+  });
+});
 
 describe("effects: audit and metrics hooks at each transition", () => {
   it("records claimed with the session id, the actor and no file detail", async () => {

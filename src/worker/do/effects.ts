@@ -67,6 +67,26 @@ export async function bestEffort(write: Promise<void>): Promise<void> {
 }
 
 /**
+ * Closes an object: the demo slot goes back best effort, so a Directory failure never skips closing the sockets or
+ * clearing the alarm and storage.
+ */
+export async function closeObject(
+  release: (() => Promise<void>) | null,
+  sockets: Iterable<{ close(code: number, reason: string): void }>,
+  clear: () => Promise<void>,
+): Promise<void> {
+  if (release) await bestEffort(release());
+  for (const ws of sockets) {
+    try {
+      ws.close(1000, "closed");
+    } catch {
+      // already closed
+    }
+  }
+  await clear();
+}
+
+/**
  * Runs the effects in order. Returns `collided: true` when the Directory already maps the new code
  * to another screen: the caller draws again, and nothing after the put (the push) has run. `minted` is the link set
  * this run's mint produced, returned per call: two calls interleaving across an await never see each other's.
