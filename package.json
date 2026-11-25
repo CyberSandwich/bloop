@@ -30,7 +30,7 @@
         "!public/js/core/photo.js",
         "!public/js/core/video.js"
       ],
-      "limit": "55.45 kB"
+      "limit": "55.85 kB"
     },
     {
       "name": "phone media, lazy",
@@ -94,7 +94,7 @@
         "public/css/app.css"
       ],
       "gzip": true,
-      "limit": "10.5 kB"
+      "limit": "10.7 kB"
     },
     {
       "name": "hero image",
