@@ -1082,12 +1082,35 @@ describe("PAIR-13 the screen follows the phone, and reports its own taps (design
     expect(doc.activeElement).toBe(el("b-stop"));
   });
 
-  it("an id not in the list is ignored, and a link is never reported as shown", () => {
+  it("an id not in the list is ignored, and a link card is reported at page 1 and never presented, so the phone's mark leaves the file", () => {
     const { v } = setup();
     v.render(both({ item: "zz", page: 1, present: false }));
     expect(v.at()).toBe(0);
     const link: Item = { kind: "link", id: "t7", url: "https://vevox.app/", title: "Vevox" };
     v.render({ ...view, items: [link], shown: null } as ScreenView);
-    expect(v.shown()).toBeNull();
+    expect(v.shown()).toEqual({ item: "t7", page: 1, present: false });
+  });
+
+  describe("Present is held only for an item that can present", () => {
+    // A guest's deck has no pages and is no photo or video: it is a card, with nothing to present.
+    const guest = (shown: ScreenView["shown"], now = 1) =>
+      ({ ...view, kind: "guest", items: [photo, deck], shown, now }) as unknown as ScreenView;
+
+    it("selecting a card here drops a Present still waiting on the photo, so it never starts later", () => {
+      const { v, el } = setup();
+      v.render(guest({ item: "t1", page: 1, present: true }));
+      expect(v.shown()?.present).toBe(true);
+      click(el("items").children[1]?.children[0] as Node);
+      expect(v.item()?.id).toBe("t2");
+      expect(v.shown()?.present).toBe(false);
+    });
+
+    it("a command that presents a card is followed to the card, without Present", () => {
+      const { v } = setup();
+      v.render(guest({ item: "t2", page: 1, present: true }));
+      expect(v.item()?.id).toBe("t2");
+      expect(v.shown()?.present).toBe(false);
+      expect(doc.body.classes.has("is-presenting")).toBe(false);
+    });
   });
 });

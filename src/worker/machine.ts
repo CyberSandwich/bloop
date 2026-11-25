@@ -447,7 +447,7 @@ export function transition(m: Machine, ev: Event, cfg: MachineConfig): Step {
     case "control": {
       // A live screen has no viewer to follow a command.
       if (!IN_SESSION.includes(m.state) || !m.session || !m.pairing || m.mode === "live") return fail("wrong_state");
-      const fault = shownFault(m.session.items, ev.shown, { mode: m.mode, kind: m.pairing.kind });
+      const fault = shownFault(m.session.items, ev.shown, { mode: m.mode, kind: m.pairing.kind }, ev.from === "screen");
       if (fault) return fail(fault);
       // Per sender, only a newer command applies: a replay, or an older one that arrives late, changes nothing.
       // Between the phone and the screen, the last one applied wins.

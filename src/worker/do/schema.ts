@@ -88,7 +88,7 @@ const STEPS: Record<number, (kv: Kv) => void> = {
 
 const validShown = (v: unknown, items: readonly ItemRef[], view: Parameters<typeof shownFault>[2]): boolean => {
   const parsed = shownSchema.safeParse(v);
-  return parsed.success && shownFault(items, parsed.data, view) === null;
+  return parsed.success && shownFault(items, parsed.data, view, true) === null;
 };
 
 const isSeq = (v: unknown): v is Session["seq"] => {

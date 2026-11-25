@@ -26,6 +26,7 @@ const screenView = (state: SessionState, over: Partial<ScreenView> = {}): Screen
   openMode: null,
   endsAt: null,
   endReason: null,
+  seq: 0,
   now: 0,
   ...over,
 });
@@ -43,6 +44,7 @@ const phoneView = (state: SessionState, over: Partial<PhoneView> = {}): PhoneVie
   endReason: null,
   dropMaxBytes: 50 * 1024 * 1024,
   maxMinutes: 720,
+  seq: 0,
   now: 0,
   ...over,
 });

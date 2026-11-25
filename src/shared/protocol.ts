@@ -56,15 +56,16 @@ export type Item = FileItem | LinkItem;
 
 /** What the screen shows: `shown` in both views, and the body of the remote's two routes (`ShownCommand`). */
 export interface Shown {
-  item: string; // a file item's id
+  item: string; // a file item's id; a link's only when the screen reports it
   page: number; // 1-based, within the item's pages
   present: boolean;
 }
 
 /**
  * The body of `POST /api/control` (phone, pid) and `POST /api/screen/shown` (screen, sid). Absolute, so a replay
- * changes nothing. `seq` grows with each command from one sender, across reloads too (the sender's clock in ms does),
- * and a command whose `seq` is not above the last one applied from that sender changes nothing (PAIR-13).
+ * changes nothing. `seq` grows with each command from one sender (its clock in ms, at least one above its last), and a
+ * command whose `seq` is not above the last one applied from that sender changes nothing. Every view carries that last
+ * one as its own `seq`, so a sender whose clock fell behind (a reload) starts above it (PAIR-13).
  */
 export interface ShownCommand extends Shown {
   seq: number;
@@ -84,6 +85,8 @@ export interface ScreenView {
   openMode: OpenMode | null;
   endsAt: number | null;
   endReason: EndReason | null;
+  /** The last `control` seq applied from this screen (0 before any). */
+  seq: number;
   now: number;
 }
 
@@ -103,6 +106,8 @@ export interface PhoneView {
   dropMaxBytes: number;
   /** The mode's cap (SESSION_MAX_MINUTES or DEMO_MAX_MINUTES): the longest length the phone offers. */
   maxMinutes: number;
+  /** The last `control` seq applied from this phone (0 before any). */
+  seq: number;
   now: number;
 }
 /** `POST /api/session/length`: the session ends `minutes` from now, never past approval plus the mode's cap. */

@@ -337,7 +337,7 @@ describe("size budgets", () => {
         .split("\n")
         .filter((l) => /remote(-ui)?\.js\b/.test(l) && /\b(import|from)\b/.test(l))) {
         if (file.endsWith("core/remote-ui.js")) expect(line, file).toMatch(/from "\.\/remote\.js"/);
-        else expect(line, file).toMatch(/import\("\.\/core\/remote-ui\.js"\)/);
+        else expect(line, file).toMatch(/import\(`?"?\.\/core\/remote-ui\.js(\?r=\$\{[\w.()]+\}|")/);
       }
     }
     expect(read("public/a.html")).not.toContain("remote.css");

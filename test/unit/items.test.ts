@@ -262,12 +262,15 @@ describe("Screen object schema steps", () => {
       { x: 1 },
       { ...good, page: 0 },
       { ...good, page: 3 },
-      { ...good, item: "i2" },
+      { item: "i2", page: 2, present: false },
       { ...good, item: "i9" },
       { ...good, extra: true },
     ]) {
       expect(migrated(stored(bad))?.shown, JSON.stringify(bad)).toBeNull();
     }
+    // The screen's report of a link card (page 1) is a `shown` this session could have set.
+    const card = { item: "i2", page: 1, present: false };
+    expect(migrated(stored(card))?.shown).toEqual(card);
     // A list renumbered because an item lacked an id: the old `shown` may name another item now.
     expect(migrated(stored(good, [asItem(DECK), VEVOX]))?.shown).toBeNull();
     expect(migrated(stored(null, [asStored(DECK)], { phone: "x" }))?.seq).toEqual(seq);
