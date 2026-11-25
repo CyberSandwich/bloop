@@ -188,6 +188,7 @@ export function createViewer(deps) {
       pill.style.left = "";
     }
     const now = pill.getBoundingClientRect();
+    (window.__log ??= []).push(["fit", Math.round(performance.now()), place, running.length, [from.left, from.top, from.width, from.height].map(Math.round).join(","), [now.left, now.top, now.width, now.height].map(Math.round).join(",")]);
     drawn = now;
     const was = lastPlace;
     lastPlace = place;
@@ -223,11 +224,11 @@ export function createViewer(deps) {
       zone.style.height = `${part.height}px`;
     }
   };
-  const sized = new ResizeObserver(fit);
+  const sized = new ResizeObserver((es) => { (window.__log ??= []).push(["ro", Math.round(performance.now()), es.map((e) => `${e.target.id || e.target.tagName}:${Math.round(e.contentRect.width)}x${Math.round(e.contentRect.height)}`).join(" ")]); fit(); });
   // The entry slides the pane 12 px, which the list does not share.
-  pane.addEventListener("animationend", fit);
+  pane.addEventListener("animationend", () => { (window.__log ??= []).push(["ae", Math.round(performance.now())]); fit(); });
   // The ratio, so the place, is known once the image has loaded.
-  frame.addEventListener("load", fit, true);
+  frame.addEventListener("load", (e) => { (window.__log ??= []).push(["load", Math.round(performance.now()), e.target.tagName]); fit(); }, true);
 
   /** @type {ScreenView | null} */
   let shown = null;

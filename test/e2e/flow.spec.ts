@@ -1600,10 +1600,12 @@ test.describe("screen and phone layout", () => {
     // The page count appearing is a shape change: that glide may still run when the next switch comes.
     await settle("controls");
     await page.evaluate("window.__controls = document.getElementById('controls')");
+    await page.evaluate("(window.__log ??= []).push(['click', Math.round(performance.now())])");
     await sidebarItem(page, "Sample deck.pdf").click();
     await expect(heading(page)).toHaveText("Sample deck.pdf");
     await expect(page.locator(STAGED)).toBeVisible();
     // Nothing starts later either: poll over the swap's settle, then read once more.
+    console.log("PROBE", JSON.stringify(await page.evaluate("[window.__log, document.getElementById('b-end').getBoundingClientRect().toJSON(), document.fonts.status]")));
     for (let i = 0; i < 5; i++) {
       expect(await page.evaluate("window.__controls === document.getElementById('controls')")).toBe(true);
       expect(
