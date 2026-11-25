@@ -120,6 +120,9 @@ test.describe("legal layout at 390", () => {
     const cell = page.locator("#retention td").first();
     expect(await cell.evaluate((el) => getComputedStyle(el as unknown as El).display)).toBe("block");
     expect(await page.locator(".toc").evaluate((el) => getComputedStyle(el as unknown as El).position)).toBe("static");
+    const label = page.locator('#processors td:nth-child(2) > .label[aria-hidden="true"]').first();
+    await expect(label).toBeVisible();
+    expect(await label.evaluate("(el) => el.innerText")).toBe("What it does");
   });
 
   test("the phone menu lists Terms and Articles, and Terms opens the Terms of Use", async ({ page }) => {

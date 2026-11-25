@@ -719,7 +719,7 @@ describe("site chrome: one nav and one footer on every site page", () => {
 
   it("privacy names Tally as the waitlist processor and what the form collects", () => {
     const html = read("public/privacy.html");
-    const collected = visibleText(between(html, /<tr><th scope="row" data-label="Data">Waitlist answers:/, "</tr>"));
+    const collected = visibleText(between(html, /<tr><th scope="row">Waitlist answers:/, "</tr>"));
     for (const field of [
       "role",
       "where you would use",
@@ -730,9 +730,7 @@ describe("site chrome: one nav and one footer on every site page", () => {
     ]) {
       expect(collected, field).toContain(field);
     }
-    expect(visibleText(between(html, /<tr><th scope="row" data-label="Processor">Tally BV/, "</tr>"))).toContain(
-      "Waitlist answers",
-    );
+    expect(visibleText(between(html, /<tr><th scope="row">Tally BV/, "</tr>"))).toContain("Waitlist answers");
   });
 
   it("the logo is its own pill before the nav landmark, and the links pill holds the links, Waitlist and the menu", () => {
@@ -1014,8 +1012,7 @@ describe("stage 1 wording and pictures", () => {
 
 describe("privacy notice", () => {
   const html = read("public/privacy.html");
-  const row = (start: string) =>
-    visibleText(between(html, new RegExp(`<tr><th scope="row" data-label="Data">${start}`), "</tr>"));
+  const row = (start: string) => visibleText(between(html, new RegExp(`<tr><th scope="row">${start}`), "</tr>"));
 
   it("keeps the OneDrive grant only as the code does: until disconnect, a failed refresh after removal, erasure, or 30 days unused", () => {
     expect(row("Your OneDrive access \\(Planned\\)")).toContain(
@@ -1046,7 +1043,7 @@ describe("privacy notice", () => {
 
   it("covers mail to the one address, hi@, wherever it names mail", () => {
     for (const start of ["Emails you send", "Emails to"]) expect(row(start)).toContain("hi@bloop.here");
-    expect(visibleText(between(html, /<tr><th scope="row" data-label="Processor">Apple/, "</tr>"))).toContain(
+    expect(visibleText(between(html, /<tr><th scope="row">Apple/, "</tr>"))).toContain(
       "The mailbox behind hi@bloop.here Emails you send",
     );
   });
