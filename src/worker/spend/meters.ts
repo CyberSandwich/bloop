@@ -14,6 +14,8 @@ import {
   type Period,
   POOLS,
   type PoolName,
+  PRICED_METERS,
+  type PricedMeter,
   periodKey,
 } from "./caps.ts";
 import { isStricter, type SwitchName } from "./switches.ts";
@@ -24,8 +26,19 @@ const SCHEMA_STEPS = [
    CREATE TABLE trip (switch TEXT PRIMARY KEY, value TEXT NOT NULL, tripped_at INTEGER NOT NULL, reason TEXT NOT NULL, reading TEXT NOT NULL, alerted INTEGER NOT NULL DEFAULT 0);
    CREATE TABLE alert (key TEXT PRIMARY KEY, day TEXT NOT NULL);
    CREATE TABLE override (name TEXT PRIMARY KEY, value REAL NOT NULL);
-   CREATE TABLE kv (key TEXT PRIMARY KEY, value INTEGER NOT NULL);`,
+   CREATE TABLE kv (key TEXT PRIMARY KEY, value INTEGER NOT NULL);
+   CREATE TABLE blob (key TEXT PRIMARY KEY, value TEXT NOT NULL);`,
 ];
+
+const DAY_MS = 86_400_000;
+const dayStart = (at: number) => at - (at % DAY_MS);
+
+export interface History {
+  /** Completed UTC days since the guard first woke: how much of `series` means anything. */
+  ageDays: number;
+  /** Daily all-scopes totals per priced meter; index 0 is today (in progress), 1 is yesterday. */
+  series: Record<PricedMeter, number[]>;
+}
 
 /** The all-scopes counter row's scope. A real scope is an id or a hash and never empty. */
 const ALL = "";
@@ -83,8 +96,12 @@ const positiveInt = (n: number, what: string): number => {
 const retrySeconds = (ms: number) => Math.max(1, Math.ceil(ms / 1000));
 
 export class Ledger {
-  constructor(private readonly sql: SqlLike) {
+  constructor(
+    private readonly sql: SqlLike,
+    clock: () => number = Date.now,
+  ) {
     this.migrate();
+    this.sql.exec("INSERT OR IGNORE INTO kv (key, value) VALUES ('born', ?)", dayStart(clock()));
   }
 
   // One numbered step per schema change, checked on every wake (CLAUDE.md, Durable Object schema).
@@ -351,6 +368,42 @@ export class Ledger {
         .toArray()
         .map((r) => [String(r.name), Number(r.value)]),
     );
+  }
+
+  /** Daily totals for the learning and the report. Days with no row count as 0: nothing happened. */
+  history(now: number, days: number): History {
+    const born = Number(this.sql.exec("SELECT value FROM kv WHERE key = 'born'").toArray()[0]?.value ?? dayStart(now));
+    const series = {} as Record<PricedMeter, number[]>;
+    const oldest = periodKey("day", now - days * DAY_MS);
+    for (const meter of PRICED_METERS) {
+      const byDay = new Map(
+        this.sql
+          .exec(
+            "SELECT period, n FROM counter WHERE meter = ? AND scope = ? AND period >= ? AND period < 'e'",
+            meter,
+            ALL,
+            oldest,
+          )
+          .toArray()
+          .map((r) => [String(r.period), Number(r.n)]),
+      );
+      series[meter] = Array.from({ length: days + 1 }, (_, i) => byDay.get(periodKey("day", now - i * DAY_MS)) ?? 0);
+    }
+    return { ageDays: Math.max(0, Math.floor((dayStart(now) - born) / DAY_MS)), series };
+  }
+
+  /** Forgets a key's once-a-day claim, so a send that failed is tried again on the next run. */
+  unalert(key: string): void {
+    this.sql.exec("DELETE FROM alert WHERE key = ?", key);
+  }
+
+  setBlob(key: string, value: string): void {
+    this.sql.exec("INSERT OR REPLACE INTO blob (key, value) VALUES (?, ?)", key, value);
+  }
+
+  blob(key: string): string | undefined {
+    const row = this.sql.exec("SELECT value FROM blob WHERE key = ?", key).toArray()[0];
+    return row === undefined ? undefined : String(row.value);
   }
 
   /** Consecutive runs with a failed analytics read; 0 after a clean one. */

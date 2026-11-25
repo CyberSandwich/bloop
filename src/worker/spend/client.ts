@@ -2,7 +2,7 @@
 // refuses costly work (never lets it through) and says so; presenting an already-converted file never calls it.
 // No import of guard.ts here: the Durable Object module needs Workers types, and this one runs under Node in tests.
 import type { MeterName, PoolName } from "./caps.ts";
-import type { AcquireResult, Snapshot, TakeResult } from "./meters.ts";
+import type { AcquireResult, History, Snapshot, TakeResult } from "./meters.ts";
 import type { SwitchName } from "./switches.ts";
 
 /** The Durable Object's methods, all synchronous inside it: a check and its write never straddle an await. */
@@ -18,6 +18,11 @@ export interface SpendOps {
   markAlerted(name: SwitchName, value: string): void;
   resetTrip(name: SwitchName): boolean;
   alertOnce(key: string): boolean;
+  unalert(key: string): void;
+  history(days: number): History;
+  /** The breaker stores its latest report (JSON) here; the admin panel and route read it back. */
+  setReport(json: string): void;
+  report(): string | undefined;
   setOverrides(values: Record<string, number>): void;
   analyticsRun(failed: boolean): number;
 }

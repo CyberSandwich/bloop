@@ -8,7 +8,8 @@ import { readAnalytics } from "./analytics.ts";
 import { type BreakerReport, d1SwitchStore, logNotify, type Notify, runBreaker } from "./breaker.ts";
 import { CAPS, type CapName, type Caps, type MeterName, type PoolName, resolveCaps } from "./caps.ts";
 import { SpendClient, type SpendOps, type SpendRpc } from "./client.ts";
-import { type AcquireResult, Ledger, type Snapshot, type TakeResult } from "./meters.ts";
+import { type AcquireResult, type History, Ledger, type Snapshot, type TakeResult } from "./meters.ts";
+import type { SpendReport } from "./report.ts";
 import type { SwitchName } from "./switches.ts";
 
 type Vars = Record<string, unknown>;
@@ -78,6 +79,22 @@ export class SpendGuard extends DurableObject<Vars> implements SpendOps {
     this.overrides = known;
   }
 
+  unalert(key: string): void {
+    this.ledger.unalert(key);
+  }
+
+  history(days: number): History {
+    return this.ledger.history(Date.now(), days);
+  }
+
+  setReport(json: string): void {
+    this.ledger.setBlob("report", json);
+  }
+
+  report(): string | undefined {
+    return this.ledger.blob("report");
+  }
+
   analyticsRun(failed: boolean): number {
     return this.ledger.analyticsRun(failed);
   }
@@ -97,6 +114,19 @@ export function spendStub(env: SpendEnv): SpendRpc {
 /** Callers' entry point: `spendFor(env).take("email", 1)`; it fails closed (client.ts). */
 export const spendFor = (env: SpendEnv): SpendClient => new SpendClient(() => spendStub(env));
 
+/**
+ * The latest spend report the breaker stored (at most 5 minutes old), for the /admin panel and the admin-only JSON
+ * route; null before the first run or when the guard cannot be reached.
+ */
+export async function spendReportFor(env: SpendEnv): Promise<SpendReport | null> {
+  try {
+    const json = await spendStub(env).report();
+    return json ? (JSON.parse(json) as SpendReport) : null;
+  } catch {
+    return null;
+  }
+}
+
 type BreakerEnv = SpendEnv & { DB: unknown; CF_ANALYTICS_TOKEN?: string; CF_ACCOUNT_ID?: string };
 
 /** The cron's one call. `notify` defaults to a log line until A wires email. */
@@ -110,6 +140,7 @@ export function runSpendBreaker(env: BreakerEnv, notify: Notify = logNotify): Pr
     // The switch and threshold vars are read by name; an Env interface has no index signature, hence the cast.
     vars: env as unknown as Vars,
     now: Date.now,
+    adminUrl: `${env.PUBLIC_ORIGIN}/admin`,
     ...(token && accountId
       ? { analytics: () => readAnalytics({ token, accountId, now: Date.now(), fetch: (...a) => fetch(...a) }) }
       : {}),

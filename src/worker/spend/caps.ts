@@ -2,6 +2,8 @@
 // it at deploy time, and the reason for the number. docs/spend.md lists them; test/unit/spend-caps.test.ts pins each.
 // None of these vars is in config.ts or wrangler.jsonc: the default below is the value until a deploy sets the var.
 
+import type { SwitchName } from "./switches.ts";
+
 export type Period = "hour" | "day" | "month";
 
 export interface NumberSpec {
@@ -130,20 +132,43 @@ export const TRIPS = {
     default: 3000,
     reason: "guest drops in a day, all IPs: guest files stopped",
   },
-  r2_class_a_day_warn: { var: "BREAKER_R2_A_DAY_WARN", default: 50_000, reason: "class A operations in a day: warn" },
-  r2_class_a_day_trip: {
-    var: "BREAKER_R2_A_DAY_TRIP",
-    default: 250_000,
+  budget_month_usd: {
+    var: "BREAKER_BUDGET_MONTH_USD",
+    default: 10,
     reason:
-      "class A operations in a day, counted or from analytics (presigned PUTs are not counted in the Worker): uploads read-only",
+      "estimated month-to-date cost of everything without a platform cap: at this the breaker flips every costly switch",
   },
-  r2_class_b_day_warn: { var: "BREAKER_R2_B_DAY_WARN", default: 500_000, reason: "class B operations in a day: warn" },
-  r2_storage_bytes_warn: {
-    var: "BREAKER_R2_STORAGE_BYTES_WARN",
-    default: 100_000_000_000,
-    reason: "R2 bytes stored: warn; raise with users",
+  k: {
+    var: "BREAKER_K",
+    default: 3,
+    reason: "a daily trip line follows this multiple of the trailing p95 of that meter's daily usage",
   },
-  d1_rows_day_warn: { var: "BREAKER_D1_ROWS_DAY_WARN", default: 1_500_000, reason: "D1 rows written in a day: warn" },
+  history_days: { var: "BREAKER_HISTORY_DAYS", default: 14, reason: "completed days the p95 is taken over" },
+  history_min_days: {
+    var: "BREAKER_HISTORY_MIN_DAYS",
+    default: 7,
+    reason: "completed days of history needed before the p95 counts; fewer and the floor is the line",
+  },
+  ceiling_multiple: {
+    var: "BREAKER_CEILING_MULTIPLE",
+    default: 5,
+    reason: "default ceiling of a trip line as a multiple of its floor; only the owner raises it",
+  },
+  ceiling_watch_pct: {
+    var: "BREAKER_CEILING_WATCH_PCT",
+    default: 70,
+    reason: "a meter whose p95 reaches this percent of its ceiling is flagged in the weekly digest",
+  },
+  gauge_share_storage_pct: {
+    var: "BREAKER_SHARE_R2_STORAGE",
+    default: 5,
+    reason: "share of the monthly budget for R2 storage (a gauge, not a daily meter): warn only",
+  },
+  share_logs_pct: {
+    var: "BREAKER_SHARE_LOGS",
+    default: 10,
+    reason: "share of the monthly budget set aside for log ingest, which has no meter yet",
+  },
   workers_requests_day_warn: {
     var: "BREAKER_WORKERS_REQ_DAY_WARN",
     default: 1_000_000,
@@ -246,6 +271,7 @@ export const METERS = {
   export_user: { perScope: [day("export_user_day")] },
   demo_session: { global: [day("demo_session_day")] },
   d1_writes: {},
+  workflow_steps: {},
 } as const satisfies Record<string, MeterDef>;
 
 export type MeterName = keyof typeof METERS;
@@ -282,4 +308,135 @@ export function msToPeriodEnd(period: Period, at: number): number {
         ? Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate() + 1)
         : Date.UTC(d.getUTCFullYear(), d.getUTCMonth() + 1, 1);
   return next - at;
+}
+
+// The money side: a monthly budget split across the meters that have no platform spend limit, each priced per unit.
+// Prices are the overage rates in tasks/cost-plan.md section 1, with free allowances NOT subtracted, so the estimate
+// and the lines err toward tripping early. docs/spend.md shows the arithmetic.
+
+export interface Priced {
+  readonly label: string;
+  readonly unit: string;
+  /** Overage price of one unit, USD. container_seconds is standard-2 at full CPU, the upper bound. */
+  readonly unitUsd: number;
+  /** Percent of the monthly budget; the shares of all rows plus storage and logs add to 100. */
+  readonly share: { readonly var: string; readonly default: number };
+  /** Optional absolute replacements for the derived floor and the default ceiling (units per day). */
+  readonly floorVar: string;
+  readonly ceilingVar: string;
+  /** Tripped when the day's usage reaches the line. */
+  readonly flip: { readonly switch: SwitchName; readonly value: string };
+}
+
+export const PRICED = {
+  container_seconds: {
+    label: "Containers",
+    unit: "instance-seconds",
+    unitUsd: 0.0000358,
+    share: { var: "BREAKER_SHARE_CONTAINERS", default: 40 },
+    floorVar: "BREAKER_FLOOR_CONTAINERS",
+    ceilingVar: "BREAKER_CEILING_CONTAINERS",
+    flip: { switch: "convert", value: "account_only" },
+  },
+  r2_class_a: {
+    label: "R2 class A",
+    unit: "operations",
+    unitUsd: 0.0000045,
+    share: { var: "BREAKER_SHARE_R2_CLASS_A", default: 15 },
+    floorVar: "BREAKER_FLOOR_R2_CLASS_A",
+    ceilingVar: "BREAKER_CEILING_R2_CLASS_A",
+    flip: { switch: "uploads", value: "readonly" },
+  },
+  r2_class_b: {
+    label: "R2 class B",
+    unit: "operations",
+    unitUsd: 0.00000036,
+    share: { var: "BREAKER_SHARE_R2_CLASS_B", default: 5 },
+    floorVar: "BREAKER_FLOOR_R2_CLASS_B",
+    ceilingVar: "BREAKER_CEILING_R2_CLASS_B",
+    flip: { switch: "previews", value: "off" },
+  },
+  d1_writes: {
+    label: "D1 writes",
+    unit: "rows",
+    unitUsd: 0.000001,
+    share: { var: "BREAKER_SHARE_D1", default: 10 },
+    floorVar: "BREAKER_FLOOR_D1",
+    ceilingVar: "BREAKER_CEILING_D1",
+    flip: { switch: "demo", value: "off" },
+  },
+  workflow_steps: {
+    label: "Workflow steps",
+    unit: "steps",
+    unitUsd: 0.000008,
+    share: { var: "BREAKER_SHARE_WORKFLOWS", default: 5 },
+    floorVar: "BREAKER_FLOOR_WORKFLOWS",
+    ceilingVar: "BREAKER_CEILING_WORKFLOWS",
+    flip: { switch: "convert", value: "account_only" },
+  },
+  email: {
+    label: "Email",
+    unit: "sends",
+    unitUsd: 0.00035,
+    share: { var: "BREAKER_SHARE_EMAIL", default: 10 },
+    floorVar: "BREAKER_FLOOR_EMAIL",
+    ceilingVar: "BREAKER_CEILING_EMAIL",
+    flip: { switch: "email", value: "admin_only" },
+  },
+} as const satisfies Record<string, Priced>;
+
+export type PricedMeter = keyof typeof PRICED;
+export const PRICED_METERS = Object.keys(PRICED) as PricedMeter[];
+
+/** R2 storage is billed per GB-month; it is a gauge with a warning line, not a daily meter. */
+export const R2_STORAGE_USD_PER_GB = 0.015;
+/** Workers and Durable Objects have platform spend limits; their usage is priced only to suggest those limits. */
+export const PLATFORM_USD = { workersPerMillion: 0.3, doRequestsPerMillion: 0.15, doGbSecondsPerMillion: 12.5 };
+
+/** What the month-to-date total stop flips: every switch whose feature costs money. */
+export const COSTLY_FLIPS: readonly { readonly switch: SwitchName; readonly value: string }[] = [
+  { switch: "convert", value: "off" },
+  { switch: "uploads", value: "readonly" },
+  { switch: "demo_drop", value: "off" },
+  { switch: "guest_drop", value: "off" },
+  { switch: "email", value: "admin_only" },
+  { switch: "export", value: "off" },
+  { switch: "previews", value: "off" },
+];
+
+export interface Line {
+  readonly floor: number;
+  readonly ceiling: number;
+}
+
+/**
+ * Per-day floor and ceiling of each priced meter. The floor is the meter's share of budget / 30 days, in units
+ * (or its var); the ceiling is its var, or `ceiling_multiple` times the floor, and never below the floor.
+ */
+export function resolveLines(vars: Vars, trips: Trips): Record<PricedMeter, Line> {
+  const out = {} as Record<PricedMeter, Line>;
+  for (const m of PRICED_METERS) {
+    const p: Priced = PRICED[m];
+    const share = numberVar(vars, p.share.var) ?? p.share.default;
+    const floor = numberVar(vars, p.floorVar) ?? Math.round(((share / 100) * trips.budget_month_usd) / 30 / p.unitUsd);
+    const ceiling = numberVar(vars, p.ceilingVar) ?? floor * trips.ceiling_multiple;
+    out[m] = { floor, ceiling: Math.max(floor, ceiling) };
+  }
+  return out;
+}
+
+/** Nearest-rank 95th percentile; 0 for no values. */
+export function p95(values: readonly number[]): number {
+  if (values.length === 0) return 0;
+  const sorted = [...values].sort((a, b) => a - b);
+  return sorted[Math.max(0, Math.ceil(0.95 * sorted.length) - 1)] as number;
+}
+
+/**
+ * The daily trip line: k times the trailing p95 of completed days, clamped to [floor, ceiling]. With fewer than
+ * `minDays` completed days of history the p95 is not trusted and the line is the floor.
+ */
+export function tripLine(line: Line, history: readonly number[], t: Pick<Trips, "k" | "history_min_days">): number {
+  if (history.length < t.history_min_days) return line.floor;
+  return Math.min(line.ceiling, Math.max(line.floor, t.k * p95(history)));
 }
