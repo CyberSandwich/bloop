@@ -46,6 +46,7 @@ const phoneView = (state: SessionState, over: Partial<PhoneView> = {}): PhoneVie
   endReason: null,
   dropMaxBytes: 50 * 1024 * 1024,
   maxMinutes: 720,
+  latestEnd: null,
   seq: 0,
   v: 0,
   now: 0,

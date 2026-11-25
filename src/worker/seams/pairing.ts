@@ -69,7 +69,7 @@ export interface PairingStore {
   /** The screen reports its own tap, so the phone's highlight stays true. Same rules as `control`, with its own `seq`. */
   reportShown(sid: string, command: ShownCommand): Promise<Result<ScreenView>>;
   /**
-   * The session ends `minutes` from now, but never past its approval plus the mode's cap. Absolute, so a repeat sets
+   * The session ends `seconds` from now, but never past its approval plus the mode's cap. Absolute, so a repeat sets
    * about the same end again. Approved, opening and open only (`wrong_state` otherwise), in both modes; one that
    * arrives at or after the end ends the session and answers `session_ended`.
    */

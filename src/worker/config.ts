@@ -2,7 +2,6 @@
 // The variables live in config/<area>.ts; this file composes them, adds the cross-variable rules and builds Config.
 import { z } from "zod";
 import { SILENCE_MS } from "../../public/js/core/timing.js";
-import { MIN_LENGTH_SECONDS } from "../../public/js/shared/length.js";
 import { emailSet } from "./auth/email-norm.ts";
 import type { Keks } from "./auth/vault.ts";
 import { type AccountConfig, accountVars } from "./config/account.ts";
@@ -50,8 +49,8 @@ const schema = z.object({ ...coreVars, ...libraryVars, ...accountVars, ...spendV
   if (v.CODE_TTL_SECONDS < 30) issue("CODE_TTL_SECONDS", "at least 30");
   if (v.CODE_GRACE_SECONDS < 5) issue("CODE_GRACE_SECONDS", "at least 5");
   if (v.CLAIM_TIMEOUT_SECONDS < 60) issue("CLAIM_TIMEOUT_SECONDS", "at least 60");
-  // Every cap holds the shortest length the phone may set, or the length route refuses every request.
-  const min = MIN_LENGTH_SECONDS / 60;
+  // Under 2 minutes the typed time is usable about 1 s in 60 and every preset is hidden.
+  const min = 2;
   if (v.SESSION_MAX_MINUTES < min || v.SESSION_MAX_MINUTES > 720) issue("SESSION_MAX_MINUTES", `${min} to 720`);
   if (v.DEMO_MAX_MINUTES < min || v.DEMO_MAX_MINUTES > v.SESSION_MAX_MINUTES) {
     issue("DEMO_MAX_MINUTES", `${min} to SESSION_MAX_MINUTES`);
