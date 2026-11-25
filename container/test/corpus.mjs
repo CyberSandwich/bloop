@@ -7,7 +7,17 @@
 // Usage: IMAGE=bloop-converter:ci node container/test/corpus.mjs
 import { spawn, spawnSync } from "node:child_process";
 import { createHash } from "node:crypto";
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
+import {
+  closeSync,
+  existsSync,
+  mkdirSync,
+  mkdtempSync,
+  openSync,
+  readFileSync,
+  readSync,
+  statSync,
+  writeFileSync,
+} from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -97,49 +107,74 @@ async function healthy(c) {
   return false;
 }
 
-function post(c, id, ext, file) {
-  const r = curl(c, [
-    "-o",
-    "/dev/null",
-    "-w",
-    "%{http_code}",
-    "-X",
-    "POST",
-    "-T",
-    file,
-    "-H",
-    `X-Job-Id: ${id}`,
-    "-H",
-    `X-Job-Ext: ${ext}`,
-    "-H",
-    "Expect:",
-    "http://127.0.0.1:8080/job",
-  ]);
-  return Number(r.out);
+const URL_BASE = "http://127.0.0.1:8080";
+const DEFAULT_CHUNK = 64 << 20;
+
+/** Sends one request and returns its status code and body text. */
+function request(c, method, path, extra = []) {
+  const r = curl(c, ["-X", method, "-H", "Expect:", "-w", "\n%{http_code}", ...extra, `${URL_BASE}${path}`]);
+  const i = r.out.lastIndexOf("\n");
+  return { code: Number(r.out.slice(i + 1)), text: r.out.slice(0, i) };
+}
+
+/** Splits the file into chunks, hashing the whole as it goes. */
+function chunkFile(file, chunk) {
+  const size = statSync(file).size;
+  const dir = mkdtempSync(join(work, "chunks-"));
+  const hash = createHash("sha256");
+  const fd = openSync(file, "r");
+  const paths = [];
+  const buf = Buffer.alloc(Math.min(chunk, size));
+  for (let off = 0; off < size; off += chunk) {
+    const n = readSync(fd, buf, 0, Math.min(chunk, size - off), off);
+    hash.update(buf.subarray(0, n));
+    const p = join(dir, `c${paths.length}`);
+    writeFileSync(p, buf.subarray(0, n));
+    paths.push(p);
+  }
+  closeSync(fd);
+  return { size, sha256: hash.digest("hex"), paths };
+}
+
+/** The upload contract: PUT each chunk, then POST /job/start. Returns the first non-200 chunk status, else the start status. */
+function post(c, id, ext, file, { chunk } = {}) {
+  chunk ??= DEFAULT_CHUNK;
+  const { size, sha256, paths } = chunkFile(file, chunk);
+  for (const [i, p] of paths.entries()) {
+    const r = request(c, "PUT", `/job/input/${i}`, ["-T", p]);
+    if (r.code !== 200) return r.code;
+  }
+  const body = JSON.stringify({ jobId: id, ext, size, sha256, chunks: paths.length });
+  return request(c, "POST", "/job/start", ["-H", "Content-Type: application/json", "--data-binary", body]).code;
 }
 
 function getJSON(c, path) {
-  const r = curl(c, ["-w", "\n%{http_code}", `http://127.0.0.1:8080${path}`]);
-  const i = r.out.lastIndexOf("\n");
+  const r = request(c, "GET", path);
   let body = null;
   try {
-    body = JSON.parse(r.out.slice(0, i));
+    body = JSON.parse(r.text);
   } catch {}
-  return { code: Number(r.out.slice(i + 1)), body };
+  return { code: r.code, body };
 }
 
+/** Polls to a terminal state. The first time the status lists ready files, those are fetched mid-job and recorded. */
 async function finish(c, limitMs = 20 * 60 * 1000) {
   const t0 = Date.now();
+  let early = null;
   for (;;) {
     const { body } = getJSON(c, "/job/status");
-    if (body && (body.state === "done" || body.state === "failed")) return { status: body, ms: Date.now() - t0 };
+    if (body?.ready?.length && !early) {
+      early = { status: body, hashes: {} };
+      for (const p of body.ready) early.hashes[p] = sha(download(c, p, join(work, `early-${seq++}`)));
+    }
+    if (body && (body.state === "done" || body.state === "failed")) return { status: body, ms: Date.now() - t0, early };
     if (Date.now() - t0 > limitMs) throw new Error("job did not finish in time");
     await sleep(500);
   }
 }
 
 function download(c, path, dest) {
-  const r = curl(c, ["-f", "-o", dest, `http://127.0.0.1:8080/out/${path}`]);
+  const r = curl(c, ["-f", "-o", dest, `${URL_BASE}/out/${path}`]);
   if (r.code !== 0) throw new Error(`download ${path}: ${r.err}`);
   return readFileSync(dest);
 }
@@ -156,12 +191,11 @@ function webpWidth(b) {
 }
 
 /** Runs one fixture to a terminal state and, when it finished, pulls every output into a directory. */
-async function runJob(c, fixture, ext, id = "corpus-job") {
-  const file = fixture;
-  const code = post(c, id, ext, file);
-  if (code !== 202) throw new Error(`POST /job answered ${code}`);
-  const { status, ms } = await finish(c);
-  const out = { status, ms, files: {}, manifest: null };
+async function runJob(c, file, ext, { id = "corpus-job", chunk } = {}) {
+  const code = post(c, id, ext, file, { chunk });
+  if (code !== 202) throw new Error(`upload answered ${code}`);
+  const { status, ms, early } = await finish(c);
+  const out = { status, ms, early, files: {}, manifest: null };
   if (status.state === "done") {
     const dir = join(work, `out-${seq++}`);
     mkdirSync(dir, { recursive: true });
@@ -177,27 +211,40 @@ async function runJob(c, fixture, ext, id = "corpus-job") {
   return out;
 }
 
-function expectDeckOutputs(r, pages, label) {
+function expectDeckOutputs(r, pages, label, { widths = [3840, 1920, 480], total = pages } = {}) {
   const m = r.manifest;
   if (!check(m && r.status.state === "done", `${label}: job is done (status ${JSON.stringify(r.status)})`)) return null;
   check(m.kind === "deck" || m.kind === "doc" || m.kind === "pdf" || m.kind === "sheet", `${label}: kind`);
+  check(
+    m.pages?.total === total && m.pages?.rendered === pages,
+    `${label}: manifest.pages ${JSON.stringify(m.pages)}, want ${total} total and ${pages} rendered`,
+  );
+  check(
+    ["slides", "pdf", "notes"].every((g) => m.groups?.[g]?.ok === true),
+    `${label}: every output group passed (${JSON.stringify(m.groups)})`,
+  );
+  check(
+    r.status.pages?.done === pages && r.status.pages?.total === pages,
+    `${label}: final status.pages ${JSON.stringify(r.status.pages)}`,
+  );
   check(r.files["doc.pdf"]?.toString("latin1", 0, 5) === "%PDF-", `${label}: doc.pdf is a pdf`);
   for (let n = 1; n <= pages; n++) {
-    for (const w of [3840, 1920, 480]) {
+    for (const w of widths) {
       const b = r.files[`s/${n}/${w}.webp`];
       check(b && webpWidth(b) === w, `${label}: s/${n}/${w}.webp is a ${w} px webp`);
     }
   }
-  check(!r.files[`s/${pages + 1}/480.webp`], `${label}: no page beyond ${pages}`);
+  check(!r.files[`s/${pages + 1}/${widths.at(-1)}.webp`], `${label}: no page beyond ${pages}`);
   check(r.files["t.webp"] && webpWidth(r.files["t.webp"]) === 480, `${label}: t.webp is 480 px`);
   const slides = JSON.parse(r.files["slides.json"]);
   const notes = JSON.parse(r.files["notes.json"]);
   const meta = JSON.parse(r.files["meta.json"]);
   check(
     slides.v === 1 &&
+      JSON.stringify(slides.widths) === JSON.stringify(widths) &&
       slides.pages.length === pages &&
-      slides.pages.every((p, i) => p.n === i + 1 && p.w === 3840 && p.h > 0),
-    `${label}: slides.json pages`,
+      slides.pages.every((p, i) => p.n === i + 1 && p.w === widths[0] && p.h > 0),
+    `${label}: slides.json widths and pages`,
   );
   check(!("notes" in slides) && !JSON.stringify(slides).includes("text"), `${label}: slides.json carries no notes`);
   check(notes.v === 1 && Array.isArray(notes.notes), `${label}: notes.json shape`);
@@ -224,17 +271,40 @@ async function expectRefusal(fixtureName, ext, code, { env } = {}) {
   }
 }
 
-async function caseDeck(fixtureName, ext, pages, assert, { timing = false } = {}) {
+/** Page 1 must be fetchable while the job runs, and be the very bytes the manifest lists. */
+function checkEarly(r, pages, label, { strict, widths = [3840] }) {
+  if (!r.early) return check(!strict, `${label}: status.ready listed page 1 before the job was done`);
+  for (const [p, h] of Object.entries(r.early.hashes))
+    check(r.manifest?.files.find((f) => f.path === p)?.sha256 === h, `${label}: early ${p} matches the manifest`);
+  check(
+    r.early.status.ready.includes(`s/1/${widths[0]}.webp`) && r.early.status.pages?.total === pages,
+    `${label}: early status ${JSON.stringify(r.early.status)}`,
+  );
+  if (strict)
+    check(
+      r.early.status.state === "running" && r.early.status.pages.done < pages,
+      `${label}: page 1 was fetched mid-job (${JSON.stringify(r.early.status.pages)})`,
+    );
+}
+
+async function caseDeck(
+  fixtureName,
+  ext,
+  pages,
+  assert,
+  { timing = false, env, widths, total, strictEarly = false } = {},
+) {
   console.log(`corpus ${fixtureName}`);
-  const c = start();
+  const c = start({ env });
   try {
     check(await healthy(c), `${fixtureName}: container is healthy`);
     const file = join(GEN, fixtureName);
     const r = await runJob(c, file, ext);
     if (timing) timings.push(`${fixtureName}: ${(r.ms / 1000).toFixed(1)} s for ${pages} pages`);
-    const got = expectDeckOutputs(r, pages, fixtureName);
+    const got = expectDeckOutputs(r, pages, fixtureName, { widths, total });
     if (got) {
       check(got.meta.sha256 === sha(readFileSync(file)), `${fixtureName}: meta.sha256 is the SHA-256 of the upload`);
+      checkEarly(r, pages, fixtureName, { strict: strictEarly, widths });
       assert?.(got, r);
     }
     // CONV-07: the container is spent after one job.
@@ -284,8 +354,8 @@ function macroRun(file, mode, profile) {
   // document-open events run; it is polled for the sentinel and then abandoned.
   const run =
     mode === "convert"
-      ? `HOME="$P" soffice ${flags} --convert-to pdf --outdir "$P/out" /fx/${name} 2>&1 | tail -3`
-      : `(HOME="$P" soffice ${flags} /fx/${name} >"$P/open.log" 2>&1 &) ; for i in $(seq 1 40); do [ -e ${SENTINEL} ] && break; sleep 0.5; done; tail -3 "$P/open.log"`;
+      ? `HOME="$P" soffice ${flags} --convert-to pdf --outdir "$P/out" /fx/${name} >/dev/null 2>&1`
+      : `(HOME="$P" soffice ${flags} /fx/${name} >/dev/null 2>&1 &) ; for i in $(seq 1 40); do [ -e ${SENTINEL} ] && break; sleep 0.5; done`;
   const script = [
     "set -u",
     "P=$(mktemp -d)",
@@ -318,7 +388,7 @@ function macroRun(file, mode, profile) {
     script,
   );
   const result = r.out.split("\n").pop();
-  console.log(`  ${name} ${mode} with the ${profile} profile: ${result}\n${r.out.split("\n").slice(0, -1).join("\n")}`);
+  console.log(`  ${name} ${mode} with the ${profile} profile: ${result}`);
   return result === "FIRED";
 }
 
@@ -376,11 +446,11 @@ function makeLegacyMacros() {
   ];
   for (const [src, ext, filter] of LEGACY) {
     lines.push(
-      `HOME="$P" soffice --headless --norestore --nolockcheck --nodefault --nologo -env:UserInstallation=file://$P --convert-to '${ext}:${filter}' --outdir /out /fx/${src} 2>&1 | tail -2`,
+      `HOME="$P" soffice --headless --norestore --nolockcheck --nodefault --nologo -env:UserInstallation=file://$P --convert-to '${ext}:${filter}' --outdir /out /fx/${src} >/dev/null 2>&1`,
     );
   }
   const uid = `${process.getuid()}:${process.getgid()}`;
-  const r = docker(
+  docker(
     "run",
     "--rm",
     "--network",
@@ -404,7 +474,6 @@ function makeLegacyMacros() {
     "-c",
     lines.join("\n"),
   );
-  console.log(r.out, r.err);
   const good = [];
   for (const [, ext] of LEGACY) {
     const f = join(outDir, `macro.${ext}`);
@@ -540,6 +609,71 @@ async function caseTimeoutAndCaps() {
   }
 }
 
+/** The chunked upload and the response rules, against a real container with no network. */
+async function caseUploadContract() {
+  console.log("upload contract");
+  let c = start({ env: { BLOOP_MAX_CHUNK: "1000" } });
+  try {
+    check(await healthy(c), "chunks: container is healthy");
+    const file = join(GEN, "plain.pptx");
+    const over = request(c, "PUT", "/job/input/0", ["-T", file]);
+    check(
+      over.code === 413 && over.text.includes("chunk_too_large"),
+      `chunks: a chunk over BLOOP_MAX_CHUNK gets 413 (${over.code} ${over.text})`,
+    );
+    check(getJSON(c, "/job/status").body?.state === "idle", "chunks: an oversized chunk does not spend the container");
+    const wrong = JSON.stringify({ jobId: "j", ext: "pptx", size: 1, sha256: "0".repeat(64), chunks: 1 });
+    const mismatch = request(c, "POST", "/job/start", ["-H", "Content-Type: application/json", "--data-binary", wrong]);
+    check(mismatch.code === 422, `chunks: a start that does not match the chunks gets 422 (${mismatch.code})`);
+    const r = await runJob(c, file, "pptx", { chunk: 1000 });
+    const got = expectDeckOutputs(r, 2, "plain.pptx in 1000 B chunks");
+    check(
+      got?.meta.sha256 === sha(readFileSync(file)),
+      "chunks: the input assembled from 1000 B chunks hashes as the file",
+    );
+  } finally {
+    stop(c);
+  }
+
+  c = start();
+  try {
+    check(await healthy(c), "bodies: container is healthy");
+    for (const [method, path] of [
+      ["GET", "/nowhere"],
+      ["POST", "/healthz"],
+      ["GET", "/job/start"],
+      ["PUT", "/job/input/x"],
+      ["POST", "/job/start"],
+      ["GET", "/out/manifest.json"],
+      ["GET", "/out/s/1/3840.webp"],
+    ]) {
+      const r = request(c, method, path);
+      check(
+        r.code >= 400 && r.text.length > 0,
+        `every response has a body: ${method} ${path} -> ${r.code} ${r.text.length} B`,
+      );
+    }
+  } finally {
+    stop(c);
+  }
+
+  console.log("big.pdf");
+  c = start();
+  try {
+    check(await healthy(c), "big.pdf: container is healthy");
+    const file = join(GEN, "big.pdf");
+    check(statSync(file).size > 100 << 20, "big.pdf: the fixture is over 100 MiB");
+    const r = await runJob(c, file, "pdf");
+    const got = expectDeckOutputs(r, 1, "big.pdf");
+    check(
+      got?.meta.sha256 === sha(readFileSync(file)),
+      "big.pdf: a file over 100 MiB arrives intact in chunks, with no network",
+    );
+  } finally {
+    stop(c);
+  }
+}
+
 async function caseIsolation() {
   console.log("isolation");
   const c = start();
@@ -627,7 +761,9 @@ async function main() {
     ),
   );
   await caseDeck("deck-20.pptx", "pptx", 20, null, { timing: true });
-  await caseDeck("deck-100.pptx", "pptx", 100, null, { timing: true });
+  await caseDeck("deck-100.pptx", "pptx", 100, null, { timing: true, strictEarly: true });
+  await caseDeck("plain.pptx", "pptx", 2, null, { env: { BLOOP_WIDTHS: "1280,640,320" }, widths: [1280, 640, 320] });
+  await caseDeck("pages-301.pdf", "pdf", 40, null, { env: { BLOOP_MAX_PAGES: "40" }, total: 301 });
   await casePdfActive();
   await caseMedia();
   for (const f of ["macro.odp", "macro.odt", "macro.ods"]) {
@@ -647,7 +783,7 @@ async function main() {
   await caseExternal("external.docx", "docx");
   await expectRefusal("bomb.pptx", "pptx", "bomb");
   await expectRefusal("bad-magic.pptx", "pptx", "bad_magic");
-  await expectRefusal("pages-301.pdf", "pdf", "too_many_pages");
+  await caseUploadContract();
   await caseTimeoutAndCaps();
   await caseIsolation();
 
