@@ -276,7 +276,7 @@ describe("size budgets", () => {
     expect(read("public/js/core/length.js")).toContain('href: "/css/length.css"');
   });
 
-  it("drag and drop loads only by import(); phone.js claims a file drag and reads its files inside the event", () => {
+  it("the drop hint loads only by import(); phone.js claims a file drag and takes a drop inside the event", () => {
     for (const file of walk("public/js", (path) => path.endsWith(".js"))) {
       for (const line of read(file)
         .split("\n")
@@ -284,7 +284,9 @@ describe("size budgets", () => {
         expect(line, file).toMatch(/import\("\.\/core\/drag\.js"\)/);
       }
     }
-    expect(read("public/js/phone.js")).toContain("e.preventDefault();\n  const files = [...e.dataTransfer.files];");
+    expect(read("public/js/phone.js")).toContain(
+      'e.preventDefault();\n  if (e.type === "drop" && canAdd) choose(e.dataTransfer.files);\n  import("./core/drag.js")',
+    );
   });
 
   it("only package.json size-limit states a budget: docs name no entry next to a size", () => {

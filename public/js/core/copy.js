@@ -5,7 +5,6 @@
 import { EXTENSION_TYPES } from "../shared/names.js";
 import { VERIFIED } from "./verified.js";
 
-export const FOOTER_LINE = "Phone not with you? Sign in to this PC as usual.";
 export const SIGN_IN_HINT = "Sign in to this PC as usual to open your file.";
 /** A claim's status, for screen readers only: the room screen shows the title and the match number alone. */
 const WAITING_LINE = "Waiting for Approval";

@@ -39,7 +39,7 @@
     {
       "name": "drag and drop, lazy",
       "path": "public/js/core/drag.js",
-      "limit": "0.5 kB"
+      "limit": "0.45 kB"
     },
     {
       "name": "phone media, lazy",

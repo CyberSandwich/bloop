@@ -2,7 +2,6 @@ import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 import {
   endLine,
-  FOOTER_LINE,
   phoneCopy,
   refusalToast,
   SESSION_ENDED,
@@ -292,8 +291,11 @@ describe("screen copy", () => {
     expect(screenCopy("rate_limited", sf).heading).toBe("Too Many Screens Right Now");
   });
 
-  it("the footer line is the one design.md gives", () => {
-    expect(FOOTER_LINE).toBe("Phone not with you? Sign in to this PC as usual.");
+  it("the footer line is the one design.md gives, in the static markup of /s (no script draws it)", () => {
+    const foot = /<p class="foot" id="foot">([^<]*)<\/p>/.exec(
+      readFileSync(new URL("../../public/s.html", import.meta.url), "utf8"),
+    )?.[1];
+    expect(foot).toBe("Phone not with you? Sign in to this PC as usual.");
   });
 });
 

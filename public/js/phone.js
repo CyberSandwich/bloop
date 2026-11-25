@@ -286,7 +286,7 @@ back.addEventListener("click", (e) => {
 ends.addEventListener("click", () =>
   import("./core/length.js").then(
     (m) => m.openLength(c, setView),
-    () => toast({ title: "The Session Length Can't Open", body: "Check the connection, then try again.", error: true }),
+    () => toast({ title: "You're Offline", body: "Check your connection.", error: true }),
   ),
 );
 
@@ -309,17 +309,17 @@ actionsEl.addEventListener("click", (e) => {
 });
 
 filePick.addEventListener("change", () => {
-  if (filePick.files?.length) choose([...filePick.files]);
+  if (filePick.files?.length) choose(filePick.files);
 });
 
-// The rest is lazy, in core/drag.js, which says why.
+// Its hint: core/drag.js, lazy.
 const onDrag = (/** @type {DragEvent} */ e) => {
   if (!e.dataTransfer?.types.includes("Files")) return;
   e.preventDefault();
-  const files = [...e.dataTransfer.files];
+  if (e.type === "drop" && canAdd) choose(e.dataTransfer.files);
   import("./core/drag.js").then(
-    (m) => m.drag(e.type, files, canAdd, choose),
-    () => e.type === "drop" && canAdd && choose(files),
+    (m) => m.hint(e.type, canAdd),
+    () => {},
   );
 };
 addEventListener("dragenter", onDrag);
@@ -337,7 +337,7 @@ const refuse = (/** @type {Parameters<typeof refusalToast>[0]} */ problem, /** @
   );
 
 /** A picked or dropped file: what the phone can refuse is a toast and the page stays; otherwise the offer. */
-function choose(/** @type {File[]} */ files) {
+function choose(/** @type {ArrayLike<File>} */ files) {
   const file = files[0];
   if (!file) return;
   const problem = files.length > 1 ? "several" : fileProblem(file, c.maxBytes);

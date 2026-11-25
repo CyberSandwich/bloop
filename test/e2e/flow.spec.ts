@@ -753,7 +753,7 @@ test.describe("guest drop", () => {
   }
   const EXE = { name: "notes.exe", mimeType: "application/octet-stream", buffer: Buffer.from("MZ") };
 
-  test("the first file drag loads the drop handlers: the hint shows at once, leaves with the drag, and a drop takes the picker's road", async ({
+  test("the first file drag loads the drop hint: it shows at once, leaves with the drag, and a drop takes the picker's road", async ({
     browser,
   }) => {
     const screen = await demoScreen(browser);
@@ -788,7 +788,9 @@ test.describe("guest drop", () => {
     await phone.context.close();
   });
 
-  test("a drop whose handlers fail to load still takes the picker's road", async ({ browser }) => {
+  test("a drop never waits on the hint's module: with it unloadable, the drop still takes the picker's road", async ({
+    browser,
+  }) => {
     const screen = await demoScreen(browser);
     const { phone } = await scan(browser, screen.page);
     const page = phone.page;
