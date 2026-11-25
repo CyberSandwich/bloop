@@ -1,0 +1,9 @@
+{
+  // Test-only: binds the SpendGuard alone, so the integration test needs nothing F wires.
+  "name": "bloop-spend-test",
+  "main": "worker.ts",
+  "compatibility_date": "2026-11-22",
+  "durable_objects": { "bindings": [{ "name": "SPEND_GUARD", "class_name": "SpendGuard" }] },
+  "migrations": [{ "tag": "v1", "new_sqlite_classes": ["SpendGuard"] }],
+  "vars": { "PUBLIC_ORIGIN": "http://127.0.0.1:1" }
+}
