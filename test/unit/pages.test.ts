@@ -1,6 +1,7 @@
 import { readdirSync, readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it, vi } from "vitest";
+import { EXTENSION_TYPES } from "../../public/js/shared/names.js";
 import { contrast, luminance, type Rgb, token } from "./contrast.ts";
 
 const read = (rel: string) => readFileSync(fileURLToPath(new URL(`../../public/${rel}`, import.meta.url)), "utf8");
@@ -125,6 +126,15 @@ describe("the phone's file picker", () => {
     ]) {
       expect(accept, entry).toContain(entry);
     }
+  });
+
+  it("lists exactly the extensions a guest may send (shared/names.js), so desktop's file explorer offers no other", () => {
+    const extensions = accept.filter((a) => a.startsWith(".")).sort();
+    expect(extensions).toEqual(
+      Object.keys(EXTENSION_TYPES)
+        .map((e) => `.${e}`)
+        .sort(),
+    );
   });
 
   it("never lists HEIC (iOS then hands over a JPEG) and has no capture attribute (it would skip the library)", () => {

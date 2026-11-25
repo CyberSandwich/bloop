@@ -230,6 +230,22 @@ describe("error table", () => {
 });
 
 describe("size budgets", () => {
+  it("the lazy phone media have their own entry, browser JS leaves them out, and only import() reaches them", () => {
+    const entries: { name: string; path: string | string[] }[] = JSON.parse(read("package.json"))["size-limit"];
+    const media = entries.find((e) => e.name === "phone media, lazy")?.path;
+    expect(media).toEqual(["public/js/core/photo.js", "public/js/core/video.js"]);
+    const browser = [entries.find((e) => e.name === "browser JS")?.path ?? []].flat();
+    expect(browser).toEqual(["public/js/**/*.js", ...[media ?? []].flat().map((path) => `!${path}`)]);
+    const lazy = /\b(photo|video)\.js\b/;
+    for (const file of walk("public/js", (path) => path.endsWith(".js"))) {
+      for (const line of read(file)
+        .split("\n")
+        .filter((l) => lazy.test(l) && /\b(import|from)\b/.test(l))) {
+        expect(line, file).toMatch(/import\("\.\/(photo|video)\.js"\)/);
+      }
+    }
+  });
+
   it("only package.json size-limit states a budget: docs name no entry next to a size", () => {
     const entries: { name: string; path: string | string[] }[] = JSON.parse(read("package.json"))["size-limit"];
     expect(entries.length).toBeGreaterThan(5);

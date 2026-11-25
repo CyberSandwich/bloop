@@ -101,7 +101,6 @@ const KINDS = {
   pdf: "PDF",
   jpg: "JPEG image",
   png: "PNG image",
-  webp: "WebP image",
   mp4: "MP4 video",
   mov: "QuickTime video",
 };

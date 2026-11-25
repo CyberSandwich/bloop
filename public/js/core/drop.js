@@ -3,28 +3,40 @@
 /** @import {ErrorCode} from "../../../src/shared/protocol.ts" */
 /** @import {SendResult, Xhr} from "../types.js" */
 import { ERRORS } from "../shared/errors.js";
+import { typeOfName } from "../shared/names.js";
 
 const MB = 1024 * 1024;
-const EXTENSION = /\.(pptx|pdf|jpe?g|png|mp4|mov)$/i;
-const PHOTO = /\.(jpe?g|png)$/i;
-const VIDEO = /\.(mp4|mov)$/i;
-const HEIC = /\.(heic|heif)$/i;
+/** Not a type bloop stores: a HEIC is sent only as the JPEG this browser can make of it (design.md, Upload). */
+export const HEIC = /\.(heic|heif)$/i;
 
 /** @param {number} bytes @returns {number} whole megabytes, rounded down, at least 1 */
 export const wholeMB = (bytes) => Math.max(1, Math.floor(bytes / MB));
+
+/**
+ * What the phone does with a file before sending it, by its name; null for a type bloop refuses.
+ * @param {string} name
+ * @returns {"photo" | "video" | "file" | null}
+ */
+export function kindOf(name) {
+  if (HEIC.test(name)) return "photo";
+  const type = typeOfName(name);
+  if (type === "jpg" || type === "png") return "photo";
+  if (type === "mp4" || type === "mov") return "video";
+  return type && "file";
+}
 
 /**
  * What the phone can tell before sending a byte: the extension, and the size (a photo's is checked once it is
  * compressed). The server checks both again, and the bytes themselves (DROP-02).
  * @param {{name: string, size: number}} file
  * @param {number} maxBytes
- * @returns {"heic" | "type" | "empty" | "large" | null} why not, or null
+ * @returns {"type" | "empty" | "large" | null} why not, or null
  */
 export function fileProblem(file, maxBytes) {
-  if (HEIC.test(file.name)) return "heic";
-  if (!EXTENSION.test(file.name)) return "type";
+  const kind = kindOf(file.name);
+  if (!kind) return "type";
   if (file.size === 0) return "empty";
-  return file.size > maxBytes && !PHOTO.test(file.name) ? "large" : null;
+  return file.size > maxBytes && kind !== "photo" ? "large" : null;
 }
 
 /**
@@ -32,14 +44,15 @@ export function fileProblem(file, maxBytes) {
  * load only now, so a page that sends a deck never fetches them.
  * @param {File} file
  * @param {number} maxBytes
- * @returns {Promise<{ok: true, file: File} | {ok: false, problem: "photo" | "video"}>}
+ * @returns {Promise<{ok: true, file: File} | {ok: false, problem: "photo" | "heic" | "video"}>}
  */
 export async function prepareFile(file, maxBytes) {
-  if (PHOTO.test(file.name)) {
+  const kind = kindOf(file.name);
+  if (kind === "photo") {
     const out = await (await import("./photo.js")).preparePhoto(file, maxBytes);
-    return out ? { ok: true, file: out } : { ok: false, problem: "photo" };
+    return out ? { ok: true, file: out } : { ok: false, problem: HEIC.test(file.name) ? "heic" : "photo" };
   }
-  if (!VIDEO.test(file.name)) return { ok: true, file };
+  if (kind !== "video") return { ok: true, file };
   const out = await (await import("./video.js")).stripLocation(file);
   return out.ok ? out : { ok: false, problem: "video" };
 }

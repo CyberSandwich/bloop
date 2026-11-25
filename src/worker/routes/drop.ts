@@ -3,7 +3,7 @@
 // budget, the streamed store with validation (DROP-02 to DROP-04), then the session moves to `offered`.
 // Every failure after the session began ends in `dropFailed` and a deleted object.
 
-import { cleanName } from "../../../public/js/shared/names.js";
+import { cleanName, typeOfName } from "../../../public/js/shared/names.js";
 import type { ErrorCode, FileType } from "../../shared/protocol.ts";
 import type { Config } from "../config.ts";
 import type { Env } from "../env.ts";
@@ -27,17 +27,6 @@ const MAX_NAME_HEADER = 1024;
 const mediaType = (request: Request) =>
   (request.headers.get("Content-Type") ?? "").split(";")[0]?.trim().toLowerCase() ?? "";
 
-const EXTENSION_TYPES: Readonly<Record<string, FileType>> = {
-  pptx: "pptx",
-  pdf: "pdf",
-  jpg: "jpg",
-  jpeg: "jpg",
-  png: "png",
-  mp4: "mp4",
-  mov: "mov",
-};
-const EXTENSION = new RegExp(`\\.(${Object.keys(EXTENSION_TYPES).join("|")})$`, "i");
-
 /** The display name from `X-Bloop-Name` (percent-encoded UTF-8) and the type its extension declares. */
 function declaredFile(request: Request): { name: string; type: FileType } | null {
   const header = request.headers.get("X-Bloop-Name") ?? "";
@@ -49,8 +38,7 @@ function declaredFile(request: Request): { name: string; type: FileType } | null
     return null;
   }
   const name = cleanName(decoded);
-  const ext = EXTENSION.exec(name)?.[1]?.toLowerCase();
-  const type = ext ? EXTENSION_TYPES[ext] : undefined;
+  const type = typeOfName(name);
   return type ? { name, type } : null;
 }
 

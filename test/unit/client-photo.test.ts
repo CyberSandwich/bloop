@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { fitSize, hasExif, LONG_SIDE, preparePhoto } from "../../public/js/core/photo.js";
+import { fitSize, hasMetadata, LONG_SIDE, preparePhoto } from "../../public/js/core/photo.js";
 
 const MB = 1024 * 1024;
 const text = (s: string) => [...s].map((c) => c.charCodeAt(0));
@@ -40,9 +40,9 @@ function fakeEnv(opts: {
       return {
         draw: () => {},
         hasAlpha: () => !!opts.alpha,
-        encode: async () => {
+        encode: async (type: string) => {
           calls.encoded++;
-          return new Blob([opts.out ?? plainJpeg()], { type: "image/jpeg" });
+          return new Blob([opts.out ?? plainJpeg()], { type });
         },
       };
     },
@@ -64,10 +64,29 @@ describe("fitSize", () => {
   });
 });
 
-describe("hasExif", () => {
+describe("hasMetadata", () => {
+  const segment = (marker: number, body: number[]) => [0xff, marker, 0, body.length + 2, ...body];
+  const jpeg = (...segments: number[][]) =>
+    file(new Uint8Array([0xff, 0xd8, ...segments.flat(), 0xff, 0xda, 0, 2, 1]), "a.jpg", "image/jpeg");
+
   it("finds an Exif APP1 before the scan, and not a JFIF one", async () => {
-    expect(await hasExif(file(exifJpeg(), "a.jpg", "image/jpeg"))).toBe(true);
-    expect(await hasExif(file(plainJpeg(), "a.jpg", "image/jpeg"))).toBe(false);
+    expect(await hasMetadata(file(exifJpeg(), "a.jpg", "image/jpeg"))).toBe(true);
+    expect(await hasMetadata(file(plainJpeg(), "a.jpg", "image/jpeg"))).toBe(false);
+  });
+
+  it("finds an XMP APP1 (where a location can live without Exif) and an IPTC APP13, past an ICC APP2", async () => {
+    expect(
+      await hasMetadata(jpeg(segment(0xe2, text("ICC_PROFILE")), segment(0xe1, text("http://ns.adobe.com/xap/1.0/")))),
+    ).toBe(true);
+    expect(await hasMetadata(jpeg(segment(0xed, text("Photoshop 3.0"))))).toBe(true);
+    expect(await hasMetadata(jpeg(segment(0xe0, text("JFIF")), segment(0xe2, text("ICC_PROFILE"))))).toBe(false);
+  });
+
+  it("counts a structure it cannot walk to the scan as metadata", async () => {
+    expect(await hasMetadata(file(new Uint8Array([0xff, 0xd8, 0x00, 0x01]), "a.jpg", "image/jpeg"))).toBe(true);
+    expect(await hasMetadata(file(new Uint8Array([0xff, 0xd8, 0xff, 0xe0, 0x40, 0]), "a.jpg", "image/jpeg"))).toBe(
+      true,
+    );
   });
 });
 
@@ -96,7 +115,7 @@ describe("preparePhoto", () => {
     const sent = latin1(await bytesOf(out as File));
     expect(sent).not.toContain("Exif");
     expect(sent).not.toContain("GPS");
-    expect(await hasExif(out as File)).toBe(false);
+    expect(await hasMetadata(out as File)).toBe(false);
   });
 
   it("does not resize a small image", async () => {
@@ -123,16 +142,17 @@ describe("preparePhoto", () => {
   it("sends the re-encode, not the original, when the original has Exif and the re-encode is larger", async () => {
     const { env } = fakeEnv({ width: 100, height: 100, out: plainJpeg(5000) });
     const out = await preparePhoto(file(exifJpeg(), "a.jpg", "image/jpeg"), 90 * MB, env);
-    expect(await hasExif(out as File)).toBe(false);
+    expect(await hasMetadata(out as File)).toBe(false);
   });
 
-  it("keeps a PNG with transparency as it is, and encodes nothing", async () => {
-    const png = new Uint8Array([0x89, 0x50, 0x4e, 0x47, 1, 2, 3]);
-    const { env, calls } = fakeEnv({ width: 400, height: 400, alpha: true });
+  it("re-encodes a PNG with transparency as a PNG, never the original's bytes (a PNG can carry Exif too)", async () => {
+    const png = new Uint8Array([0x89, 0x50, 0x4e, 0x47, 1, 2, 3, ...text("eXIfGPS")]);
+    const { env, calls } = fakeEnv({ width: 400, height: 400, alpha: true, out: new Uint8Array([9, 9]) });
     const out = await preparePhoto(file(png, "sticker.png", "image/png"), 90 * MB, env);
     expect(out?.name).toBe("sticker.png");
-    expect(await bytesOf(out as File)).toEqual(png);
-    expect(calls.encoded).toBe(0);
+    expect(out?.type).toBe("image/png");
+    expect(await bytesOf(out as File)).toEqual(new Uint8Array([9, 9]));
+    expect(calls.encoded).toBe(1);
   });
 
   it("sends an opaque PNG as a JPEG named .jpg", async () => {
@@ -143,11 +163,11 @@ describe("preparePhoto", () => {
     expect(out?.type).toBe("image/jpeg");
   });
 
-  it("keeps an opaque PNG when the JPEG comes out larger", async () => {
+  it("sends an opaque PNG as its JPEG even when that comes out larger: the original's bytes never go", async () => {
     const png = new Uint8Array(20);
     const { env } = fakeEnv({ width: 40, height: 40, out: plainJpeg(500) });
     const out = await preparePhoto(file(png, "flat.png", "image/png"), 90 * MB, env);
-    expect(out?.name).toBe("flat.png");
+    expect(out?.name).toBe("flat.jpg");
   });
 
   it("falls back to the original when decoding fails and it is under the cap and has no Exif", async () => {
@@ -173,6 +193,21 @@ describe("preparePhoto", () => {
     };
     const out = await preparePhoto(file(plainJpeg(), "a.jpg", "image/jpeg"), MB, png);
     expect(out?.name).toBe("a.jpg");
+  });
+
+  it("converts a HEIC the browser decodes to a JPEG named .jpg", async () => {
+    const { env, calls } = fakeEnv({ width: 4032, height: 3024 });
+    const out = await preparePhoto(file(new Uint8Array(3000), "IMG_1.HEIC", "image/heic"), 90 * MB, env);
+    expect(out?.name).toBe("IMG_1.jpg");
+    expect(out?.type).toBe("image/jpeg");
+    expect(calls.surfaces).toEqual([[2560, 1920]]);
+  });
+
+  it("never sends a HEIC as it is: not when decoding fails, nor when the JPEG comes out larger", async () => {
+    const heic = file(new Uint8Array(20), "a.heic", "image/heic");
+    expect(await preparePhoto(heic, MB, fakeEnv({ width: 1, height: 1, decodeFails: true }).env)).toBeNull();
+    const larger = await preparePhoto(heic, MB, fakeEnv({ width: 40, height: 40, out: plainJpeg(500) }).env);
+    expect(larger?.name).toBe("a.jpg");
   });
 
   it("refuses an output over the cap", async () => {

@@ -6,7 +6,7 @@ The contracts for the five seams (pairing, file source, open path, guest drop, r
 ```ts
 export type Mode = "live" | "demo";
 export type Kind = "owner" | "guest";
-export type FileType = "pptx" | "pdf" | "jpg" | "png" | "webp";
+export type FileType = "pptx" | "pdf" | "jpg" | "png" | "mp4" | "mov";
 export const OPEN_MODES = ["protocol", "download", "pdf", "view"] as const;   // the launched frame and POST /api/screen/link both use it
 export type OpenMode = (typeof OPEN_MODES)[number];   // view: an image shown in the screen page
 export type EndReason = "phone" | "screen" | "auto" | "canceled" | "claim_timeout" | "error";
@@ -471,7 +471,7 @@ export declare function sourceFailure(error: SourceError | "pdf_unavailable"): R
 
 /** 302 to the source's own URL, after checking its host against GRAPH_DOWNLOAD_HOSTS again (502 otherwise). A source with no URL (mock, guest) streams. */
 export declare class RedirectOpenPath implements OpenPath { /* ... */ }
-/** The bytes through the Worker: Content-Type fixed per FileType (`CONTENT_TYPES`; images `image/jpeg`, `image/png`, `image/webp`), Content-Length when known, attachment (inline for purposes "pdf" and "view"), no-store; HEAD answers from the metadata. */
+/** The bytes through the Worker: Content-Type fixed per FileType (`CONTENT_TYPES`; images `image/jpeg`, `image/png`), Content-Length when known, attachment (inline for purposes "pdf" and "view"), no-store; HEAD answers from the metadata. */
 export declare class StreamOpenPath implements OpenPath { /* ... */ }
 ```
 `links.ts` (`src/worker/seams/open-path/links.ts`):
