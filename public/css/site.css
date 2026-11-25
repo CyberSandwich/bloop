@@ -512,9 +512,11 @@ h3 {
   pointer-events: none;
 }
 
+/* minmax(0, 1fr): an auto column grows to its widest unbreakable line (the stills' pill) and widens the page. */
 .steps,
 .grid {
   display: grid;
+  grid-template-columns: minmax(0, 1fr);
   gap: 16px;
   margin: 0;
   padding: 0;
@@ -633,6 +635,12 @@ h3 {
   font-size: 14px;
   font-weight: 400;
   font-variant-numeric: tabular-nums;
+}
+/* Under 360 the pill fits only its two buttons. */
+@media (max-width: 359.98px) {
+  .frag-count {
+    display: none;
+  }
 }
 .frag-btn {
   display: inline-flex;
