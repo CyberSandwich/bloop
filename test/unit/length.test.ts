@@ -1,12 +1,6 @@
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
-import {
-  canSet,
-  clampLength,
-  cutShort,
-  fitPresets,
-  MIN_LENGTH_SECONDS,
-  secondsUntil,
-} from "../../public/js/shared/length.js";
+import { cutShort } from "../../public/js/core/length-extra.js";
+import { canSet, clampLength, fitPresets, MIN_LENGTH_SECONDS, secondsUntil } from "../../public/js/shared/length.js";
 import { type Event, type Machine, nextDeadline, transition } from "../../src/worker/machine.ts";
 import {
   approved,
