@@ -385,6 +385,14 @@ describe("phone copy", () => {
     });
   });
 
+  it("Approve shows disabled while nothing is ticked, and enabled in every state that follows", () => {
+    const approve = (key: (typeof PHONE_KEYS)[number]) => phoneCopy(key, pf).actions.find((a) => a.id === "approve");
+    expect(approve("choose")).toMatchObject({ kind: "primary", disabled: true });
+    expect(phoneCopy("choose", pf).actions.map((a) => a.id)).toEqual(["cancel", "approve"]);
+    for (const key of ["approve", "approve_demo", "unregistered", "approving"] as const)
+      expect(approve(key)?.disabled, key).toBeUndefined();
+  });
+
   it("side by side the primary comes last; app.css stacks it on top on a phone", () => {
     for (const key of PHONE_KEYS) {
       for (const back of [false, true]) {
