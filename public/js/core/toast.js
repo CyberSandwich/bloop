@@ -4,7 +4,7 @@
 const SHOW_MS = 5000;
 const OUT_MS = 200;
 
-/** @typedef {{title: string, body: string, error?: boolean, action?: {label: string, run: () => void}}} Toast */
+/** `tappedAway` runs when a tap dismisses it, never when it times out or another takes its place. @typedef {{title: string, body: string, error?: boolean, action?: {label: string, run: () => void}, tappedAway?: () => void}} Toast */
 
 /** The slice of Document it uses, so the unit tests (no DOM) can fake it. @typedef {{createElement: (tag: string) => any, body: {append: (node: any) => void}}} Host */
 
@@ -61,7 +61,10 @@ export function createToaster(
       button.addEventListener("click", action.run);
       made.append(button);
     }
-    made.addEventListener("click", dismiss);
+    made.addEventListener("click", () => {
+      dismiss();
+      t.tappedAway?.();
+    });
     doc.body.append(made);
     node = made;
     if (!action) timer = later(dismiss, SHOW_MS);

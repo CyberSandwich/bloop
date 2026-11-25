@@ -50,8 +50,10 @@ export function roll(shot, url, onChange) {
   on("error", fail);
   shot.node = video;
   /**
-   * Sound first; where the browser holds it (no tap on the page yet) muted, so it reports blocked. Only the screen's
-   * own hand (user activation, the end) reports a change: a command's play() and pause() have no activation.
+   * Sound first; where the browser holds it (no tap on the page yet) muted, so it reports blocked, and refused even
+   * muted (a policy that blocks all autoplay) paused, so it reports blocked and not playing. Only the screen's own
+   * hand (user activation, the end) reports a change: a command's play() and pause() have no activation. With no
+   * UserActivation API every event counts, as in screen.js; a command's own events repeat its state, reporting nothing.
    * @param {Tune} want @param {(next: Tune) => void} retune
    */
   shot.tune = (want, retune) => {
@@ -59,12 +61,18 @@ export function roll(shot, url, onChange) {
       video.onpause =
       video.onvolumechange =
         () =>
-          (video.ended || navigator.userActivation?.isActive) &&
+          (video.ended || (navigator.userActivation?.isActive ?? true)) &&
           retune({ play: !video.paused, sound: !video.muted ? "on" : want.sound === "on" ? "off" : want.sound });
     video.muted = want.sound !== "on";
     if (!want.play) return video.pause();
-    // An interrupted play() (a pause, the end) is no refusal of sound.
-    video.play().catch((e) => !video.muted && e.name === "NotAllowedError" && retune({ ...want, sound: "blocked" }));
+    // An interrupted play() (a pause, the end) is no refusal.
+    video
+      .play()
+      .catch(
+        (e) =>
+          e.name === "NotAllowedError" &&
+          retune(video.muted ? { play: false, sound: "blocked" } : { ...want, sound: "blocked" }),
+      );
   };
   // Emptied, it stops reading and frees the decoder.
   shot.stop = () => {

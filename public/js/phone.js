@@ -57,13 +57,17 @@ const revokeAsk = /** @type {HTMLDialogElement} */ (byId("revoke"));
 let remote = null;
 let remoteAsked = false;
 let remoteLost = false;
+let reloadTapped = false;
 // One object, so a view while it shows changes nothing (core/toast.js); another toast in its place gives way to it.
 const RELOAD = {
   title: "Remote Didn't Load",
   body: "Reload to try again.",
   error: true,
   action: { label: "Reload", run: () => location.reload() },
+  tappedAway: () => (reloadTapped = true),
 };
+/** Where the remote would show, until a tap dismisses it; the next view brings it back after another toast. */
+const remoteFailed = () => remoteLost && !reloadTapped && remoteOn() && toast(RELOAD);
 
 /** @type {import("./types.js").PhonePage} */
 const c = {
@@ -159,7 +163,7 @@ function buildItems(/** @type {Item[]} */ items) {
 function setView(/** @type {PhoneView} */ view, pid = c.pid) {
   adopt(c, view, drop, pid);
   render();
-  if (remoteLost && remoteOn()) toast(RELOAD);
+  remoteFailed();
 }
 
 function buildSkeleton() {
@@ -294,7 +298,7 @@ function render() {
       },
       () => {
         remoteLost = true;
-        if (remoteOn()) toast(RELOAD);
+        remoteFailed();
       },
     );
   }

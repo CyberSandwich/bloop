@@ -3195,7 +3195,7 @@ test.describe("the phone page at phone widths (design.md section 7, Phone page)"
     await screen.context.close();
   });
 
-  test("a Remote Didn't Load toast that another toast took the place of comes back with the next view", async ({
+  test("a Remote Didn't Load toast that another toast took the place of comes back with the next view; tapped away, it stays away", async ({
     browser,
   }) => {
     const screen = await demoScreen(browser);
@@ -3219,6 +3219,12 @@ test.describe("the phone page at phone widths (design.md section 7, Phone page)"
     await sidebarItem(screen.page, "Sample deck.pdf").click();
     await expect(toast(phone.page)).toContainText("Remote Didn't Load");
     await expect(toast(phone.page).getByRole("button", { name: "Reload" })).toBeVisible();
+    // Tapped away, the views after it leave it away.
+    await toast(phone.page).locator("strong").click();
+    await expect(toast(phone.page)).toBeHidden();
+    await sidebarItem(screen.page, "Dog.jpg").click();
+    await phone.page.waitForTimeout(1500);
+    await expect(toast(phone.page)).toBeHidden();
     await screen.context.close();
     await phone.context.close();
   });

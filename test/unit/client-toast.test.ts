@@ -83,6 +83,20 @@ describe("toast", () => {
     expect(timers.size).toBe(1);
   });
 
+  it("a toast tapped away tells its owner; one that times out or gives way does not", () => {
+    const { show, live, fire } = setup();
+    let tapped = 0;
+    const one = { title: "One", body: "a", tappedAway: () => (tapped += 1) };
+    show(one);
+    fire();
+    show(one);
+    show({ title: "Two", body: "b" });
+    expect(tapped).toBe(0);
+    show(one);
+    live()[0]?.listeners.click?.();
+    expect(tapped).toBe(1);
+  });
+
   it("shows one at a time: a new toast replaces the old one and its timer", () => {
     const { show, live, timers } = setup();
     show({ title: "One", body: "a" });

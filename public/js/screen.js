@@ -317,9 +317,11 @@ function paint() {
   const presentable = viewer.presentable();
   show(buttons.present, viewing && (presentable || viewer.arriving()));
   buttons.present.toggleAttribute("disabled", !presentable);
-  // With the sidebar showing, the h1 is visually hidden: focus lands on the selected row instead.
+  // With the sidebar showing, the h1 is visually hidden: focus lands on the selected row instead. With no heading
+  // (an unregistered room) there is no title to land on; the stage's live region announces the line.
   const row = document.querySelector("#items [aria-current]");
-  if (changed && lostFocus()) focusTitle(row instanceof HTMLElement && row.offsetParent ? row : heading);
+  const title = row instanceof HTMLElement && row.offsetParent ? row : copy.heading ? heading : null;
+  if (changed && title && lostFocus()) focusTitle(title);
   if (mode === "waiting" || mode === "scanned") fitQr();
   if (mode === "waiting") updateRing();
   schedule(key);

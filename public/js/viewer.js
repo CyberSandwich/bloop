@@ -316,11 +316,11 @@ export function createViewer(deps) {
   const alive = () => can() && !images.get(keyOf(at))?.failed && !refused.has(keyOf(at));
 
   function select(/** @type {number} */ i) {
+    // A new item starts as a phone's command starts it: playing, sound tried again; the same one keeps its state.
+    if (i !== at) tune = { ...TUNE };
     at = i;
     page = 0;
     want &&= can();
-    // A new item starts as a phone's command starts it: playing, sound tried again.
-    tune = { ...TUNE };
     if (side.matches(":popover-open")) side.hidePopover();
     deps.onChange();
     deps.tapped?.();
@@ -543,9 +543,15 @@ export function createViewer(deps) {
     v.pause();
   };
 
+  /** The current item's video when it is the one in the frame: never another video still showing in its place. */
+  const staged = () => {
+    const shot = parked ? undefined : images.get(keyOf(at));
+    return shot?.tune && shot.node && frame.contains(shot.node) ? shot : undefined;
+  };
+
   /** Sets the video on stage to `tune`, once per change (viewer-video.js); what it reports back is reported on. */
   function play() {
-    const set = parked || !frame.querySelector("video") ? undefined : images.get(keyOf(at))?.tune;
+    const set = staged()?.tune;
     show(tapSound, !!set && tune.sound === "blocked");
     const key = set ? keyOf(at) + tune.play + tune.sound : "";
     if (key === tuned) return;
@@ -697,10 +703,12 @@ export function createViewer(deps) {
     },
     true,
   );
-  // The gesture sound needs; the video's volumechange then reports it.
+  // The gesture sound, and a play refused even muted, need; the video's own events then report it.
   tapSound.addEventListener("click", () => {
-    const video = frame.querySelector("video");
-    if (video && !parked) video.muted = false;
+    const video = /** @type {HTMLVideoElement | undefined} */ (staged()?.node);
+    if (!video) return;
+    video.muted = false;
+    if (video.paused) video.play().catch(() => {});
   });
   prev.addEventListener("click", () => go(-1));
   next.addEventListener("click", () => go(1));

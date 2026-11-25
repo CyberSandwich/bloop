@@ -62,6 +62,8 @@ class Node {
   ended = false;
   /** What play() answers: a browser that holds sound refuses an unmuted play with NotAllowedError. */
   refuseSound = false;
+  /** A policy that blocks all autoplay refuses a muted play too. */
+  refuseAll = false;
   plays: boolean[] = [];
   pause() {
     this.pauses += 1;
@@ -69,7 +71,8 @@ class Node {
   }
   play() {
     this.plays.push(this.muted);
-    if (this.refuseSound && !this.muted) return Promise.reject(new DOMException("held", "NotAllowedError"));
+    if (this.refuseAll || (this.refuseSound && !this.muted))
+      return Promise.reject(new DOMException("held", "NotAllowedError"));
     this.paused = false;
     return Promise.resolve();
   }
@@ -784,6 +787,81 @@ describe("a guest's photo and video on the stage (design.md section 7, Video)", 
       expect(video.paused).toBe(true);
       expect(video.muted).toBe(true);
     });
+
+    it("VID-05 sound: a play refused even muted reports blocked and paused, and the tap starts it with sound", async () => {
+      const tapped = vi.fn();
+      const { v, el, video } = await staged(false, { tapped });
+      video.refuseAll = true;
+      v.render(told({ sound: "off" }));
+      await settle();
+      expect(video.paused).toBe(true);
+      expect(el("b-sound").hidden).toBe(false);
+      expect(v.shown()).toMatchObject({ play: false, sound: "blocked" });
+      expect(tapped).toHaveBeenCalledTimes(1);
+      // The tap is the gesture the policy waits for.
+      video.refuseAll = false;
+      active = true;
+      for (const f of el("b-sound").listeners.get("click") ?? []) f({ type: "click" });
+      expect(video.muted).toBe(false);
+      expect(video.paused).toBe(false);
+      (video as unknown as { onplay: () => void }).onplay();
+      expect(v.shown()).toMatchObject({ play: true, sound: "on" });
+      expect(el("b-sound").hidden).toBe(true);
+    });
+
+    it("VID-05 sound: with no UserActivation API the screen's own controls and the tap still report", async () => {
+      vi.stubGlobal("navigator", {});
+      const tapped = vi.fn();
+      const { v, el, video } = await staged(true, { tapped });
+      await settle();
+      expect(v.shown()).toMatchObject({ play: true, sound: "blocked" });
+      // After a tap on the page, its sound is allowed.
+      video.refuseSound = false;
+      for (const f of el("b-sound").listeners.get("click") ?? []) f({ type: "click" });
+      (video as unknown as { onvolumechange: () => void }).onvolumechange();
+      expect(v.shown()).toMatchObject({ play: true, sound: "on" });
+      expect(el("b-sound").hidden).toBe(true);
+      video.paused = true;
+      (video as unknown as { onpause: () => void }).onpause();
+      expect(v.shown()).toMatchObject({ play: false });
+      // A command's own events repeat its state: nothing more is reported.
+      const reports = tapped.mock.calls.length;
+      v.render(told({ play: true, sound: "on" }, 3));
+      (video as unknown as { onplay: () => void }).onplay();
+      expect(tapped).toHaveBeenCalledTimes(reports);
+    });
+
+    it("VID-05 sound: only the current item's own video is set, never another still in the frame", async () => {
+      const two: Item = { ...clip, id: "i2", name: "Demo.mov" };
+      const list = (shown: object, now: number) =>
+        ({
+          ...view,
+          kind: "guest",
+          items: [clip, two],
+          shown: { page: 1, present: false, ...shown },
+          now,
+        }) as unknown as ScreenView;
+      const { v, el } = setup();
+      v.take(`${ORIGIN}/f/abc/talk.mov`, 0, "view");
+      v.render(list({ item: "i1" }, 1));
+      await loaded();
+      const a = videoOf(el("frame"), made) as Node;
+      meta(a);
+      v.render(list({ item: "i1" }, 1));
+      await settle();
+      v.take(`${ORIGIN}/f/abc/demo.mov`, 1, "view");
+      v.render(list({ item: "i2" }, 2));
+      await loaded();
+      const b = made.at(-1) as Node;
+      expect(b).not.toBe(a);
+      // The old video still in the frame, as a loader waiting on its picture's decode leaves it.
+      el("frame").replaceChildren(a);
+      v.render(list({ item: "i2", sound: "off" }, 3));
+      expect(b.plays).toEqual([]);
+      expect(el("b-sound").hidden).toBe(true);
+      for (const f of el("b-sound").listeners.get("click") ?? []) f({ type: "click" });
+      expect(b.plays).toEqual([]);
+    });
   });
 
   const cantPlay = (frame: Node) => frame.querySelector(".item-card")?.children[1]?.textContent ?? null;
@@ -1375,6 +1453,13 @@ describe("PAIR-13 the screen follows the phone, and reports its own taps (design
       expect(v.shown()).toMatchObject({ play: false, sound: "blocked" });
       click(el("items").children[1]?.children[0] as Node);
       expect(v.shown()).toMatchObject({ item: "t2", play: true, sound: "on" });
+    });
+
+    it("VID-05 sound: the row of the item already on stage keeps its play state", () => {
+      const { v, el } = setup();
+      v.render(guest({ item: "t1", page: 1, present: false, play: false, sound: "off" }));
+      click(el("items").children[0]?.children[0] as Node);
+      expect(v.shown()).toMatchObject({ item: "t1", play: false, sound: "off" });
     });
 
     it("a command that presents a card is followed to the card, without Present", () => {
