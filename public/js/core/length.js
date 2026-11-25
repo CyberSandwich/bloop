@@ -54,7 +54,7 @@ export async function openLength(c, onView) {
     if (!res.ok) return failed(res.error);
     const next = res.value;
     // The socket's push is the truth: an answer older than the view it already brought (an End meanwhile) is dropped.
-    if (next.now >= (c.view?.now ?? 0)) onView(next);
+    if (next.v > (c.view?.v ?? -1)) onView(next);
     // The cap (here, or approval plus it on the server) cut the choice short: say the end it set.
     if (next.state !== "ended" && next.endsAt && next.endsAt - c.skew < asked - MINUTE) {
       toast({

@@ -17,6 +17,7 @@ const viewOf = (over: Partial<PhoneView> = {}): PhoneView =>
     items: [dog, pdf, deck, vevox],
     shown: null,
     seq: 0,
+    v: 0,
     now: 100,
     ...over,
   }) as PhoneView;
@@ -49,13 +50,22 @@ describe("the remote's commands", () => {
     expect(current(viewOf({ items: [vevox] }))).toBeNull();
   });
 
-  it("a row puts a file on its first page; a link, or the file already shown, sends nothing", () => {
+  it("a row puts a file on its first page; a link, or the file already on its first page, sends nothing", () => {
     const v = viewOf();
     const at: Shown = { item: "i3", page: 2, present: false };
     expect(command(v, at, { item: "i2" })).toEqual({ item: "i2", page: 1, present: false });
     expect(command(v, at, { item: "i4" })).toBeNull();
-    expect(command(v, at, { item: "i3" })).toBeNull();
+    expect(command(v, at, { item: "i3" })).toEqual({ item: "i3", page: 1, present: false });
+    expect(command(v, { ...at, page: 1 }, { item: "i3" })).toBeNull();
     expect(command(v, at, { item: "nope" })).toBeNull();
+  });
+
+  it("the row of the item on screen at a later page goes back to page 1, keeping presenting", () => {
+    expect(command(viewOf(), { item: "i3", page: 2, present: true }, { item: "i3" })).toEqual({
+      item: "i3",
+      page: 1,
+      present: true,
+    });
   });
 
   it("a new item keeps presenting when it can be presented, and stops on one that cannot", () => {
@@ -167,12 +177,12 @@ describe("the remote's state: a tap shows at once, and the server's shown is the
     const h = harness();
     void h.remote.tap({ item: "i3" });
     void h.remote.tap({ item: "i2" });
-    h.answers[0]?.({ ok: true, value: viewOf({ shown: { item: "i3", page: 1, present: false }, now: 200 }) });
+    h.answers[0]?.({ ok: true, value: viewOf({ shown: { item: "i3", page: 1, present: false }, v: 1 }) });
     await h.tick();
     expect(h.remote.at()).toEqual({ item: "i2", page: 1, present: false });
-    h.answers[1]?.({ ok: true, value: viewOf({ shown: { item: "i2", page: 1, present: false }, now: 300 }) });
+    h.answers[1]?.({ ok: true, value: viewOf({ shown: { item: "i2", page: 1, present: false }, v: 2 }) });
     await h.tick();
-    expect(h.page.view?.now).toBe(300);
+    expect(h.page.view?.v).toBe(2);
     expect(h.remote.at()).toEqual({ item: "i2", page: 1, present: false });
   });
 
@@ -181,7 +191,7 @@ describe("the remote's state: a tap shows at once, and the server's shown is the
     void h.remote.tap({ item: "i3" });
     // The server kept a newer command (the screen's own tap): its answer carries that shown.
     const truth: Shown = { item: "i1", page: 1, present: true };
-    h.answers[0]?.({ ok: true, value: viewOf({ shown: truth, now: 500 }) });
+    h.answers[0]?.({ ok: true, value: viewOf({ shown: truth, v: 1 }) });
     await h.tick();
     expect(h.refusals).toEqual([]);
     expect(h.remote.at()).toEqual(truth);
@@ -195,7 +205,7 @@ describe("the remote's state: a tap shows at once, and the server's shown is the
     // An answer carries the last seq again, and the next tap goes on from it.
     h.answers[0]?.({
       ok: true,
-      value: viewOf({ shown: { item: "i3", page: 1, present: false }, seq: 5_001, now: 300 }),
+      value: viewOf({ shown: { item: "i3", page: 1, present: false }, seq: 5_001, v: 1 }),
     });
     await h.tick();
     void h.remote.tap({ step: 1 });
@@ -213,10 +223,22 @@ describe("the remote's state: a tap shows at once, and the server's shown is the
   it("an answer older than the view a push already brought is dropped: the push is the truth", async () => {
     const h = harness();
     void h.remote.tap({ item: "i3" });
-    h.page.view = viewOf({ shown: { item: "i2", page: 2, present: false }, now: 900 });
-    h.answers[0]?.({ ok: true, value: viewOf({ shown: { item: "i3", page: 1, present: false }, now: 800 }) });
+    h.page.view = viewOf({ shown: { item: "i2", page: 2, present: false }, v: 9 });
+    h.answers[0]?.({ ok: true, value: viewOf({ shown: { item: "i3", page: 1, present: false }, v: 8 }) });
     await h.tick();
-    expect(h.page.view.now).toBe(900);
+    expect(h.page.view.v).toBe(9);
+    expect(h.remote.at()).toEqual({ item: "i2", page: 2, present: false });
+  });
+
+  it("PAIR-13 v: an answer with the same v as the push already held is the same state, so the push is kept", async () => {
+    const h = harness();
+    void h.remote.tap({ item: "i3" });
+    // Same v, a later `now`: only a larger v is newer.
+    const held = viewOf({ shown: { item: "i2", page: 2, present: false }, v: 4, now: 900 });
+    h.page.view = held;
+    h.answers[0]?.({ ok: true, value: viewOf({ shown: { item: "i3", page: 1, present: false }, v: 4, now: 950 }) });
+    await h.tick();
+    expect(h.page.view).toBe(held);
     expect(h.remote.at()).toEqual({ item: "i2", page: 2, present: false });
   });
 
@@ -246,9 +268,11 @@ describe("the remote's state: a tap shows at once, and the server's shown is the
   it("a tap that changes nothing sends nothing", async () => {
     const h = harness(viewOf({ shown: { item: "i3", page: 2, present: false } }));
     void h.remote.tap({ step: 1 });
-    void h.remote.tap({ item: "i3" });
     void h.remote.tap({ item: "i4" });
     expect(h.sent).toEqual([]);
     expect(h.paints()).toBe(0);
+    const first = harness(viewOf({ shown: { item: "i3", page: 1, present: false } }));
+    void first.remote.tap({ item: "i3" });
+    expect(first.sent).toEqual([]);
   });
 });

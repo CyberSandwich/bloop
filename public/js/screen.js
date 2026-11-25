@@ -104,8 +104,7 @@ async function report() {
   seq = nextSeq(Math.max(seq, s.view?.seq ?? 0));
   const res = await api.post("/api/screen/shown", { ...shown, seq }, s.sid, true);
   reporting -= 1;
-  // A refusal leaves the screen as tapped.
-  if (res.ok && res.value.now >= (s.view?.now ?? 0)) onView(res.value);
+  if (res.ok && res.value.v > (s.view?.v ?? -1)) onView(res.value);
   else render();
 }
 

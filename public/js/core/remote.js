@@ -26,8 +26,9 @@ export const canPresent = (/** @type {Item} */ item, /** @type {PhoneView} */ vi
 export function command(view, at, tap) {
   if ("item" in tap) {
     const item = view.items.find((x) => x.id === tap.item);
-    if (item?.kind !== "file" || item.id === at.item) return null;
-    return { item: item.id, page: 1, present: at.present && canPresent(item, view) };
+    if (item?.kind !== "file") return null;
+    const next = { item: item.id, page: 1, present: at.present && canPresent(item, view) };
+    return item.id === at.item && at.page === 1 && next.present === at.present ? null : next;
   }
   const item = view.items.find((x) => x.id === at.item);
   if (!item) return null;
@@ -71,8 +72,8 @@ export function createRemote(io) {
       last = nextSeq(Math.max(last, view.seq), io.now?.());
       const res = await io.post({ ...next, seq: last });
       pending -= 1;
-      // A stale seq answers with the current view: it is adopted like any other, never an error.
-      if (res.ok && res.value.now >= (io.view()?.now ?? 0)) return io.adopt(res.value);
+      // A stale seq answers with the current view, adopted like any push. Equal `v`: the state already held.
+      if (res.ok && res.value.v > (io.view()?.v ?? -1)) return io.adopt(res.value);
       if (!res.ok) io.refused(res.error);
       io.paint();
     },
