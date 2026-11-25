@@ -421,7 +421,7 @@ One language: `--ease-out` for anything that appears or moves, `--ease-ui` for p
 | loader fill | each chunk of bytes | 250 ms | `--ease-out` |
 | photo over its loader | decoded | 200 ms opacity 0 to 1 | `--ease-out` |
 | New Code arrow | while the new screen loads | 0.8 s a turn | linear |
-| `/s` scene change (a state, or the item on the stage) | enter | 380 ms opacity 0 and 12 px rise to rest | `--ease-out` |
+| `/s` scene change (a state, or the item on the stage; a claim is none, since it keeps the waiting layout) | enter | 380 ms opacity 0 and 12 px rise to rest | `--ease-out` |
 | viewer bottom sheet | open | 350 ms from below | `cubic-bezier(0,0,0,1)` |
 | page step, row selection, hover | input | instant | |
 

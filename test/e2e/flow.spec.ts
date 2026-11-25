@@ -1467,15 +1467,20 @@ test.describe("screen and phone layout", () => {
   test("at 390 a claim leaves the QR card where it was, its status for screen readers only", async ({ browser }) => {
     const screen = await open(browser, "phone", "/s?mode=demo");
     await typedCodeOf(screen.page);
-    // The pane's entry animation is a transform: a box read during it is mid-flight, so wait for it to settle.
+    // A claim replays no entry; any transition still running ends before the read, and boxes compare in whole pixels.
     const settled = async (selector: string) => {
-      let last = await screen.page.locator(selector).boundingBox();
-      await expect(async () => {
-        const before = last;
-        last = await screen.page.locator(selector).boundingBox();
-        expect(last).toEqual(before);
-      }).toPass();
-      return last;
+      await screen.page.evaluate(
+        "Promise.all(document.getAnimations().filter((a) => a.effect?.getComputedTiming().endTime !== Infinity).map((a) => a.finished.catch(() => {})))",
+      );
+      const box = await screen.page.locator(selector).boundingBox();
+      return (
+        box && {
+          x: Math.round(box.x),
+          y: Math.round(box.y),
+          width: Math.round(box.width),
+          height: Math.round(box.height),
+        }
+      );
     };
     // A web font arriving late reflows the hint, so wait for it before taking the card's place.
     await screen.page.evaluate("document.fonts.ready.then(() => true)");
@@ -1486,6 +1491,8 @@ test.describe("screen and phone layout", () => {
     await expect(screen.page.locator("#awaiting")).toBeHidden();
     await expect(screen.page.locator("#line")).toHaveText(/^Waiting for Approval\. Your phone shows \d{2}\.$/);
     // One column: the title stays above the card, and the hidden hint keeps its height, so nothing moves.
+    // No entry replays on a claim: the card never left its place, even for a frame.
+    expect(await screen.page.evaluate("document.getElementById('pane').getAnimations().length")).toBe(0);
     expect(await settled("#qr-panel")).toEqual(card);
     expect(await settled("#heading")).toEqual(title);
     expect(await screen.page.evaluate("document.scrollingElement.scrollHeight <= innerHeight")).toBe(true);
