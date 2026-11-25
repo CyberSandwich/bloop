@@ -221,23 +221,21 @@ Open mode only. The claim answers `auth_required` before spending the code, so t
 
   <Back
                                                        Early Access Only
-  Early Access Only                                    Presenting your own files needs an
-  Presenting your own files needs an                   invite. You can still send one file
-  invite. You can still send one file to               to this screen.
-  this screen.
-                                                       [ Send a File Without an Account ]
-  ( Try the Demo )   ( Join the Waitlist )             [[ Sign In ]]
-                                                       ( Try the Demo )  ( Join the Waitlist )
+  Early Access Only                                    Sign in to present your own files.
+  Sign in to present your own files.                   No invite yet? You can still send
+  No invite yet? You can still send one                one file to this screen.
+  file to this screen.
+                                                       [ Send One File ]  [[ Sign In ]]
+  ( Try the Demo )   ( Join the Waitlist )             ( Try the Demo )  ( Join the Waitlist )
 .--------------------------------------.
 | [[             Sign In            ]] |
-| [ Send a File Without an Account ]   |
+| [          Send One File         ]   |
 '--------------------------------------'
 ```
 
-- Title "Early Access Only"; line "Presenting your own files needs an invite. You can still send one file to this screen."
-- Actions: Sign In (primary), Send a File Without an Account (secondary; the guest path, today's guest add state, with the same code), then two text buttons in one row: Try the Demo (`/demo`) and Join the Waitlist (the Tally link, `source=phone`, `data-waitlist`).
-- The secondary's label is the longest on any phone page (about 250 px at 16/600); the panel's buttons are full width under 640, so at 320 it fits the 272 px button on one line. The 320 shot checks it; if a system font size pushes it over, it wraps inside the pill, which grows (never truncates).
-- Focus: the title, then Try the Demo, Join the Waitlist, Sign In, Send a File Without an Account (reading order; the panel follows the content).
+- Title "Early Access Only"; line "Sign in to present your own files. No invite yet? You can still send one file to this screen." (owner's choice: it leads with what a signed-out member does, and the second sentence tells a guest the way on.)
+- Actions: Sign In (primary), Send One File (secondary; the guest path, today's guest add state, with the same code), then two text buttons in one row: Try the Demo (`/demo`) and Join the Waitlist (the Tally link, `source=phone`, `data-waitlist`).
+- Focus: the title, then Try the Demo, Join the Waitlist, Sign In, Send One File (reading order; the panel follows the content).
 - Lazy: the state's module loads on `auth_required`; its fallback is a plain link to `/signin?next=/a`.
 - Preview mode: there is no early-access state; a signed-out live claim works as today (guest send, or the existing first use).
 
@@ -270,5 +268,5 @@ Sign In stores the code and the time in `sessionStorage` and goes to `/signin?ne
 | approve refused | toast A File Couldn't Be Added / {name} is no longer in your library. |
 | match module failed | Match Didn't Load / Reload |
 | approved | Approved for Room 2.14; On the Screen; Notes; Slide 3; No notes on this slide.; Open in PowerPoint; Show Slides Here; Preparing Slides; fallback line: Choose on the screen how to open it. |
-| early access | Early Access Only / Presenting your own files needs an invite. You can still send one file to this screen. / Sign In, Send a File Without an Account, Try the Demo, Join the Waitlist |
+| early access | Early Access Only / Sign in to present your own files. No invite yet? You can still send one file to this screen. / Sign In, Send One File, Try the Demo, Join the Waitlist |
 | resume, expired | Scan the Screen Again / The code changed while you signed in. You're signed in now, so one scan is all it takes. / Enter the Code |

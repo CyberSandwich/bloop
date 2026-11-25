@@ -72,8 +72,10 @@ Changes for builders: L stores Up Next (`selected_at`, already in migration 0005
 - **Focus** moves to the new title on every state change (as `/a`); errors are `role="alert"`, status lines `role="status"`.
 - **One loader.** Anything on its way uses the loader (design.md section 6); a skeleton (`--g1` bars) only for text whose length is unknown.
 - **Signed-in hint.** `__Host-bloop_in` is a non-secret cookie A sets at sign-in and clears at sign-out; it only chooses a label (Sign In or Library). Every page that needs to know for sure asks `GET /api/me`.
-- **Mode.** In preview, the account surfaces exist only for `ADMIN_EMAILS` and `TEST_EMAILS` (MODE-01), and nothing advertises them:
-  - `/signin` is served but linked from nowhere and `noindex`; every address gets the same "if" answer, and codes go only to allowed emails (signin.md section 9).
+- **Mode.** Two settings, both covered by MODE-01: `launch_mode` (preview or open) and, in preview only, `preview_lockout` (off by default; set and cleared from `/admin`, logged in `admin_action`).
+  - **Preview, members keep access** (the default, and what switching back from open leaves): the public surfaces are today's and new invites go to `TEST_EMAILS` only; every existing account keeps full access to sign-in, the library, Present Live and the account page.
+  - **Preview, members locked out** (`preview_lockout` on, an opt-in checkbox when switching back, account-admin.md section 2.5): only `ADMIN_EMAILS` and `TEST_EMAILS` can sign in, as MODE-01 had it before. The inactivity sweep skips members while they are locked out (ADR 0026). Before the first Open the two cases are the same, since every account is an admin or a test email.
+  - In both, nothing advertises accounts. `/signin` is served but linked from nowhere and `noindex`; every address gets the same "if" answer, and codes go only to the accounts the case allows (signin.md section 9).
   - Signed out, `/library`, `/account` and `/admin` answer the 404 page, never a sign-in prompt. Only in open do they redirect to `/signin?next=`.
   - `/open/*` (the open variant's build path) is never a public path in either mode: it answers 404 (landing.md section 1).
   - `/report` is public in both modes (account-admin.md section 3); a Report link shows in preview only where reporting works (viewers.md section 7).
@@ -105,6 +107,12 @@ Each lazy module keeps a working fallback when its import fails (design.md secti
 9. **The Sign In or Library label is set by the Worker, not `site.js`.** A module script runs after the first paint, so the label would flash; the Worker already picks the page per request by mode.
 10. **The live phone's page controls** (Previous, Next under the preview) show only while bloop's viewer shows a deck, and only if P1 extends PAIR-13 to live library sessions; until then the live phone shows notes and the page read only. P1 decides; the fallback is fully specified.
 
+Decided by the owner after review:
+
+11. **The early-access line leads with sign-in** (R5, option A). The state and its title "Early Access Only" stay; the line is "Sign in to present your own files. No invite yet? You can still send one file to this screen." and the guest button is "Send One File" (present-live.md section 5). It speaks to the member first, who is the likely scanner, and the shorter button fits any phone.
+12. **Switching back to preview keeps members in by default** (R6). Preview hides the public surfaces and stops new invites only; locking members out is an opt-in checkbox on the switch-back question with a live count, stored as its own setting, `preview_lockout`, logged in `admin_action`, and covered by MODE-01 in both cases; the inactivity sweep skips locked-out members (README.md Mode; account-admin.md section 2.5). Members who built a library should not lose it to a public-site rollback.
+13. **The landing hint is "Invite only for now. Join the waitlist ↓"**, and the room screen's "Use the Room's Screen" state gains Try the Demo as a second exit (landing.md section 2.2). A plain statement beats a question, and a phone that tapped Present Live by mistake still reaches the product.
+
 ## design.md additions (proposed; S and the builders apply them to design.md, not here)
 
 **Tokens (base.css `:root`, then design.md section 4):**
@@ -123,5 +131,7 @@ Each lazy module keeps a working fallback when its import fails (design.md secti
 **Section 3, strings:** add the v4 rows from these files' string tables under a new "Accounts and library" heading, and add `beta` to `tools/never-say.txt` (S owns it), so "early access" is enforced, not only written.
 
 **Section 7, Phone page:** the guest sending row loses its loader to the upload pill (decision 4); the live approve state gains the match pick and the combined tap (present-live.md); `Approve (42)` stays for the demo and the guest send.
+
+**Section 7, Screen page:** "Use the Room's Screen" (a live screen under 600) gains Try the Demo (secondary, `/demo`) beside Enter the Code (decision 13).
 
 **Section 12, Targets:** add the 64 px match choice to the target list.
