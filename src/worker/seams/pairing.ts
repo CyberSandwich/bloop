@@ -68,6 +68,11 @@ export interface PairingStore {
   control(pid: string, command: ShownCommand): Promise<Result<PhoneView>>;
   /** The screen reports its own tap, so the phone's highlight stays true. Same rules as `control`, with its own `seq`. */
   reportShown(sid: string, command: ShownCommand): Promise<Result<ScreenView>>;
+  /**
+   * The session ends `minutes` from now, but never past its approval plus the mode's cap. Absolute, so a repeat sets
+   * about the same end again. Approved, opening and open only (`wrong_state` otherwise), in both modes.
+   */
+  setLength(pid: string, minutes: number): Promise<Result<PhoneView>>;
   cancel(pid: string): Promise<Result<PhoneView>>;
   restart(sid: string): Promise<Result<ScreenView>>;
   /** From waiting, there is no session: the object closes (codes removed, storage deleted, demo slot released). */

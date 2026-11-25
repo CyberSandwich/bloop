@@ -231,3 +231,103 @@ describe("PAIR-13 screen/shown: the screen reports its own taps", () => {
     socket.close();
   });
 });
+
+describe("SESS-01 length: the phone sets when the session ends", () => {
+  const MIN = 60_000;
+  type Ends = { endsAt: number; now: number; maxMinutes: number };
+  const left = (v: Ends) => v.endsAt - v.now;
+  const setLength = (pid: string, minutes: unknown, auth = pid) =>
+    api.post<Ends>("/api/session/length", { minutes }, { auth });
+
+  /** A live session on the mock source: the phone lists first, then approves one file. */
+  async function live() {
+    const opened = await openScreen(api, "live");
+    const { body } = await claim(api, opened.code);
+    await api.get("/api/files", body.pid);
+    const approved = await api.post<Ends>("/api/approve", { ids: ["demo-deck"] }, { auth: body.pid });
+    expect(approved.status).toBe(200);
+    return { ...opened, pid: body.pid, approved: approved.body };
+  }
+
+  it("SESS-01 default: a session starts at 1 hour in both modes, and the phone view carries the mode's cap", async () => {
+    const demo = await session();
+    const view = (await api.get<Ends>("/api/pair/state", demo.pid)).body;
+    expect(left(view)).toBeLessThanOrEqual(60 * MIN);
+    expect(left(view)).toBeGreaterThan(59 * MIN);
+    expect(view.maxMinutes).toBe(120);
+    const room = await live();
+    expect(left(room.approved)).toBeGreaterThan(59 * MIN);
+    expect(room.approved.maxMinutes).toBe(720);
+    demo.socket.close();
+    room.socket.close();
+  });
+
+  it("SESS-01 length: a change answers the new end and reaches the screen's and the phone's sockets", async () => {
+    const { socket, pid } = await session();
+    const phone = await phoneSocket(api, pid);
+    const res = await setLength(pid, 30);
+    expect(res.status).toBe(200);
+    expect(left(res.body)).toBeLessThanOrEqual(30 * MIN);
+    expect(left(res.body)).toBeGreaterThan(29 * MIN);
+    await socket.stateWhere((v) => v.endsAt === res.body.endsAt);
+    await phone.stateWhere((v) => v.endsAt === res.body.endsAt);
+    socket.close();
+    phone.close();
+  });
+
+  it("SESS-01 cap: past the live cap is bad_request, and a demo session stops at its own 2 hours", async () => {
+    const room = await live();
+    expect((await setLength(room.pid, 721)).body).toEqual(problem("bad_request"));
+    const twelve = await setLength(room.pid, 720);
+    expect(left(twelve.body)).toBeGreaterThan(719 * MIN);
+    room.socket.close();
+
+    const { socket, pid } = await session();
+    const before = (await api.get<Ends & { items: unknown }>("/api/pair/state", pid)).body;
+    const clamped = await setLength(pid, 720);
+    expect(clamped.status).toBe(200);
+    // Approval plus 120 minutes, at most: never 12 hours from now.
+    expect(left(clamped.body)).toBeLessThanOrEqual(120 * MIN);
+    expect(left(clamped.body)).toBeGreaterThan(119 * MIN);
+    expect(clamped.body.endsAt).toBeLessThanOrEqual(before.endsAt + 60 * MIN);
+    socket.close();
+  });
+
+  it("SESS-01 pid: a wrong pid, a screen's sid, another session's pid and no credential change nothing", async () => {
+    const { screen, socket, pid } = await session();
+    const [ref] = pid.split(".");
+    const before = (await api.get<Ends>("/api/pair/state", pid)).body.endsAt;
+    expect((await setLength(pid, 30, `${ref}.${"A".repeat(43)}`)).body).toEqual(problem("pairing_invalid"));
+    expect((await setLength(pid, 30, screen.sid)).body).toEqual(problem("pairing_invalid"));
+    expect((await api.post("/api/session/length", { minutes: 30 })).body).toEqual(problem("unauthorized"));
+    const other = await session();
+    expect((await setLength(other.pid, 30)).status).toBe(200);
+    expect((await api.get<Ends>("/api/pair/state", pid)).body.endsAt).toBe(before);
+    socket.close();
+    other.socket.close();
+  });
+
+  it("SESS-01 csrf: a cross-origin or form-encoded change is refused (PAIR-06)", async () => {
+    const { socket, pid } = await session();
+    const cross = await api.post("/api/session/length", { minutes: 30 }, { auth: pid, origin: "https://evil.example" });
+    expect(cross.body).toEqual(problem("forbidden_origin"));
+    const form = await api.post("/api/session/length", undefined, {
+      auth: pid,
+      contentType: "application/x-www-form-urlencoded",
+      raw: "minutes=30",
+    });
+    expect(form.body).toEqual(problem("unsupported_media_type"));
+    socket.close();
+  });
+
+  it("SESS-01 state: before approval and after the end it is wrong_state", async () => {
+    const claimedOnly = await openScreen(api, "demo");
+    const { body } = await claim(api, claimedOnly.code);
+    expect((await setLength(body.pid, 30)).body).toEqual(problem("wrong_state"));
+    claimedOnly.socket.close();
+    const { socket, pid } = await session();
+    await api.post("/api/end", {}, { auth: pid });
+    expect((await setLength(pid, 30)).body).toEqual(problem("wrong_state"));
+    socket.close();
+  });
+});

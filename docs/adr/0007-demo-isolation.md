@@ -9,7 +9,7 @@ Status: proposed
 - **Mode is fixed at creation, server-side:** `POST /api/screens {mode: "demo"}` stores `mode` in the Screen object's `meta`. Every later decision reads it from there, never from the client.
 - **No account path:** for a demo screen, `/api/files` and `/api/approve` never read the `__Host-bloop_sid` cookie, never construct `GraphFileSource`, and never import the vault. The demo uses `MockFileSource` with staged fixtures. A test asserts the demo route handlers have no reference to the vault module.
 - **Same code, other limits:**
-  - 60-minute sessions (`DEMO_SESSION_MINUTES`), so a visitor can try every catalog item and Revoke at leisure;
+  - sessions that start at 1 hour, as live ones do, and that the phone can set up to 2 hours from approval (`DEMO_MAX_MINUTES`), so a visitor can try every catalog item and Revoke at leisure without one visitor holding a slot all day;
   - guest policy `open` with a 25 MB cap, and the same screen-side Open click;
   - the same validation and deletion as live;
   - per-IP rate limits of their own (`RL_DEMO_CREATE`, `RL_DEMO_CLAIM`), a global cap on concurrent demo screens (`DEMO_MAX_CONCURRENT`, held in the Directory) and a per-IP-hash cap (`DEMO_MAX_PER_IP`, same table; why: creates held for 15 minutes would otherwise fill the cap from one address; remove: delete the variable and the `ip_hash` check);

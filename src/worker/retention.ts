@@ -9,8 +9,8 @@ import { D1Metrics } from "./metrics-d1.ts";
 
 const MINUTE_MS = 60_000;
 const DAY_MS = 86_400_000;
-/** A session row still open this long after approval (or claim) lost its end event; the object's own limit is 90 min. */
-const STALE_SESSION_MS = 95 * MINUTE_MS;
+/** Past the longest a session can last, the hourly job's own lag. */
+const STALE_SLACK_MS = 5 * MINUTE_MS;
 const GUEST_ROW_DAYS = 30;
 const USER_ROW_DAYS = 30;
 const R2_OPS_MONTHS = 13;
@@ -39,14 +39,21 @@ const changes = async (db: Db, sql: string, ...values: unknown[]): Promise<numbe
       .run()
   ).meta.changes;
 
-/** Hourly: ends session rows whose end event never arrived (a crashed Screen object). */
-export const closeStaleSessions = (env: { DB: unknown }, now: number): Promise<number> =>
+/**
+ * Hourly: ends session rows whose end event never arrived (a crashed Screen object). A row is stale only once it is
+ * older than the longest session (`longestSessionMs`), so a session the phone made longer is never marked ended.
+ */
+export const closeStaleSessions = (
+  env: { DB: unknown },
+  config: Pick<Config, "longestSessionMs">,
+  now: number,
+): Promise<number> =>
   changes(
     dbOf(env.DB),
     `UPDATE session SET ended_at = ?1, end_reason = 'auto'
      WHERE ended_at IS NULL AND COALESCE(approved_at, claimed_at) < ?2`,
     now,
-    now - STALE_SESSION_MS,
+    now - config.longestSessionMs - STALE_SLACK_MS,
   );
 
 /** Daily: every period in section 10, then the auth maintenance (idle grants, expired phone sessions, KEK re-wrap). */

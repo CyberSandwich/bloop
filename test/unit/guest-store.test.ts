@@ -2,8 +2,11 @@
 // `accept` streams through Workers-only classes and is covered by the integration tests.
 import { describe, expect, it, vi } from "vitest";
 import type { AuditEvent } from "../../src/worker/audit.ts";
+import { parseConfig } from "../../src/worker/config.ts";
+import { sweepAgeMs } from "../../src/worker/seams/guest-drop/index.ts";
 import { purgeGuest } from "../../src/worker/seams/guest-drop/purge.ts";
 import { type Bucket, R2GuestDrop } from "../../src/worker/seams/guest-drop/r2.ts";
+import { PROD_VARS } from "../env-vars.ts";
 import { testDb } from "./d1-shim.ts";
 
 class MemoryBucket implements Bucket {
@@ -96,6 +99,29 @@ describe("DROP-07 sweep", () => {
     expect(bucket.objects.has(fresh.r2Key)).toBe(true);
     expect(live(db, "old")?.deleted_at).not.toBeNull();
     expect(live(db, "fresh")?.deleted_at).toBeNull();
+  });
+
+  it("waits out the longest session, so a session the phone made 10 h long keeps its file", async () => {
+    const parsed = parseConfig({ ...PROD_VARS, SESSION_MAX_MINUTES: "720" });
+    if (!parsed.ok) throw new Error(parsed.problems.join());
+    const age = sweepAgeMs(parsed.config);
+    // Two 5 min claim windows, a 15 min upload, the 12 h cap, then 10 min of slack.
+    expect(age).toBe((10 + 15 + 720 + 10) * 60_000);
+    const { drop, bucket, now } = setup(1000, 100 * HOUR);
+    const keep = await drop.reserve("long", 10, "a.pdf", "pdf");
+    const lost = await drop.reserve("lost", 10, "b.pdf", "pdf");
+    if (!keep.ok || !lost.ok) throw new Error("reserve");
+    await bucket.put(keep.r2Key);
+    await bucket.put(lost.r2Key);
+    const aged = (key: string, ms: number) => {
+      const entry = bucket.objects.get(key);
+      if (entry) entry.uploaded = new Date(now() - ms);
+    };
+    aged(keep.r2Key, 10 * HOUR);
+    aged(lost.r2Key, age + HOUR);
+    expect(await drop.sweep(age)).toBe(1);
+    expect(bucket.objects.has(keep.r2Key)).toBe(true);
+    expect(bucket.objects.has(lost.r2Key)).toBe(false);
   });
 
   it("closes a reservation whose upload never landed", async () => {

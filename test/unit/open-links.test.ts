@@ -101,7 +101,7 @@ describe("OPEN-06 names: the whole Office URI stays under 256 characters", () =>
       CLAIM_TIMEOUT_SECONDS: "300",
       UPLOAD_TIMEOUT_SECONDS: "900",
       SESSION_MAX_MINUTES: "90",
-      DEMO_SESSION_MINUTES: "10",
+      DEMO_MAX_MINUTES: "10",
       DEMO_ENABLED: "true",
       GUEST_DROP: "open",
     };

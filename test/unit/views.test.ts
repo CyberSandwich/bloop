@@ -10,6 +10,7 @@ const META: Meta = {
   screenSecretHash: "x",
   createdAt: T0,
 };
+const LIMITS = { dropMaxBytes: 50, maxMinutes: 120 };
 const CONFIG = { origin: "https://bloop.example", machine: CFG };
 
 describe("views", () => {
@@ -49,17 +50,17 @@ describe("views", () => {
 
   it("PAIR-13 shown is in both views, null until a command and outside a session", () => {
     expect(screenView(META, approved(), CONFIG, T0 + sec(11)).shown).toBeNull();
-    expect(phoneView(META, approved(), T0 + sec(11), 50)?.shown).toBeNull();
+    expect(phoneView(META, approved(), T0 + sec(11), LIMITS)?.shown).toBeNull();
     const shown = { item: "i1", page: 2, present: true };
     const m = must(approved(), { e: "control", now: T0 + sec(12), from: "phone", seq: 1, shown }).next;
     expect(screenView(META, m, CONFIG, T0 + sec(13)).shown).toEqual(shown);
-    expect(phoneView(META, m, T0 + sec(13), 50)?.shown).toEqual(shown);
+    expect(phoneView(META, m, T0 + sec(13), LIMITS)?.shown).toEqual(shown);
     // The seq is the server's own bookkeeping: neither view carries it.
     expect(JSON.stringify(screenView(META, m, CONFIG, T0 + sec(13)))).not.toContain("seq");
-    expect(JSON.stringify(phoneView(META, m, T0 + sec(13), 50))).not.toContain("seq");
+    expect(JSON.stringify(phoneView(META, m, T0 + sec(13), LIMITS))).not.toContain("seq");
     const over = must(m, { e: "end", now: T0 + sec(14), by: "phone" }).next;
     expect(screenView(META, over, CONFIG, T0 + sec(15)).shown).toBeNull();
-    expect(phoneView(META, over, T0 + sec(15), 50)?.shown).toBeNull();
+    expect(phoneView(META, over, T0 + sec(15), LIMITS)?.shown).toBeNull();
   });
 
   it("shows the match code from claimed to open and not before or after", () => {
@@ -87,8 +88,8 @@ describe("views", () => {
   });
 
   it("builds the phone view from the pairing, and none without one", () => {
-    expect(phoneView(META, waiting(), T0, 50)).toBeNull();
-    expect(phoneView(META, approved(), T0 + sec(11), 50)).toMatchObject({
+    expect(phoneView(META, waiting(), T0, LIMITS)).toBeNull();
+    expect(phoneView(META, approved(), T0 + sec(11), LIMITS)).toMatchObject({
       state: "approved",
       kind: "owner",
       match: "42",
@@ -96,8 +97,9 @@ describe("views", () => {
       endsAt: T0 + sec(10) + 90 * 60_000,
       endReason: null,
       dropMaxBytes: 50,
+      maxMinutes: 120,
     });
-    expect(phoneView(META, ended(), T0 + sec(25), 50)).toMatchObject({
+    expect(phoneView(META, ended(), T0 + sec(25), LIMITS)).toMatchObject({
       state: "ended",
       endReason: "phone",
       items: [],

@@ -49,7 +49,7 @@ describe("DROP-01 size: configuration", () => {
     CLAIM_TIMEOUT_SECONDS: "300",
     UPLOAD_TIMEOUT_SECONDS: "900",
     SESSION_MAX_MINUTES: "90",
-    DEMO_SESSION_MINUTES: "10",
+    DEMO_MAX_MINUTES: "10",
     DEMO_ENABLED: "true",
     GUEST_DROP: "open",
   };

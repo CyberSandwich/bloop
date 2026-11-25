@@ -160,12 +160,16 @@ export class Screen extends DurableObject<Env> implements PairingStore {
     return this.screenEvent(sid, { e: "control", now: Date.now(), from: "screen", seq, shown });
   }
 
+  async setLength(pid: string, minutes: number): Promise<Result<PhoneView>> {
+    return this.phoneEvent(pid, () => ({ e: "length", now: Date.now(), minutes, maxMinutes: this.maxMinutes() }));
+  }
+
   async approve(pid: string, items: ItemDraft[], userId: string | null): Promise<Result<PhoneView>> {
     return this.phoneEvent(pid, () => ({
       e: "approve",
       now: Date.now(),
       items,
-      maxMinutes: this.sessionMinutes(),
+      minutes: this.sessionMinutes(),
       userId: this.meta?.mode === "demo" ? null : userId,
     }));
   }
@@ -323,7 +327,7 @@ export class Screen extends DurableObject<Env> implements PairingStore {
       msg.t === "code.next"
         ? await this.issueCode()
         : msg.t === "open.click"
-          ? await this.apply({ e: "open.click", now, maxMinutes: this.sessionMinutes() })
+          ? await this.apply({ e: "open.click", now, minutes: this.sessionMinutes() })
           : await this.apply({ e: "launched", now, mode: msg.mode });
     if (!result.ok) ws.send(JSON.stringify({ v: 1, t: "error", code: result.error, now: Date.now() }));
   }
@@ -360,14 +364,25 @@ export class Screen extends DurableObject<Env> implements PairingStore {
     return result.config;
   }
 
-  private sessionMinutes(): number {
+  /** The mode's cap: no session ends later than its approval plus this. */
+  private maxMinutes(): number {
     const cfg = this.config();
-    return this.meta?.mode === "demo" ? cfg.demoSessionMinutes : cfg.sessionMaxMinutes;
+    return this.meta?.mode === "demo" ? cfg.demoMaxMinutes : cfg.sessionMaxMinutes;
+  }
+
+  /** The length a session starts with: the default, within the mode's cap. */
+  private sessionMinutes(): number {
+    return Math.min(this.config().sessionDefaultMinutes, this.maxMinutes());
   }
 
   private dropMaxBytes(): number {
     const cfg = this.config();
     return this.meta?.mode === "demo" ? cfg.demoGuestMaxBytes : cfg.guestMaxBytes;
+  }
+
+  private phoneViewOf(m: Machine): PhoneView | null {
+    const limits = { dropMaxBytes: this.dropMaxBytes(), maxMinutes: this.maxMinutes() };
+    return phoneView(this.meta as Meta, m, Date.now(), limits);
   }
 
   private openSockets(excluding?: WebSocket): number {
@@ -403,7 +418,7 @@ export class Screen extends DurableObject<Env> implements PairingStore {
 
   private phoneResult(hash: string): Result<PhoneView> {
     if (!this.m || !this.meta) return fail("screen_gone");
-    const view = this.phoneMatches(hash) ? phoneView(this.meta, this.m, Date.now(), this.dropMaxBytes()) : null;
+    const view = this.phoneMatches(hash) ? this.phoneViewOf(this.m) : null;
     return view ? { ok: true, value: view } : fail("pairing_invalid");
   }
 
@@ -417,12 +432,7 @@ export class Screen extends DurableObject<Env> implements PairingStore {
     if (!applied.ok) return applied;
     if (this.phoneMatches(auth.hash)) return this.phoneResult(auth.hash);
     // A cancel dropped the pairing. The phone that asked sees its session as ended by cancel.
-    const view = phoneView(
-      meta,
-      { ...before, state: "ended", session: null, endReason: "canceled" },
-      Date.now(),
-      this.dropMaxBytes(),
-    );
+    const view = this.phoneViewOf({ ...before, state: "ended", session: null, endReason: "canceled" });
     return view ? { ok: true, value: view } : fail("pairing_invalid");
   }
 
@@ -499,8 +509,7 @@ export class Screen extends DurableObject<Env> implements PairingStore {
     const { meta, m } = this;
     if (!meta || !m) return;
     const now = Date.now();
-    const view =
-      role === "screen" ? screenView(meta, m, this.config(), now) : phoneView(meta, m, now, this.dropMaxBytes());
+    const view = role === "screen" ? screenView(meta, m, this.config(), now) : this.phoneViewOf(m);
     const frame = view
       ? { v: 1, t: "state", view }
       : { v: 1, t: "error", code: "pairing_invalid" satisfies ErrorCode, now };

@@ -36,8 +36,19 @@ describe("config", () => {
     expect(problems({ ...PROD, CODE_GRACE_SECONDS: "1" }).join()).toContain("CODE_GRACE_SECONDS");
     expect(problems({ ...PROD, CLAIM_TIMEOUT_SECONDS: "5" }).join()).toContain("CLAIM_TIMEOUT_SECONDS");
     expect(problems({ ...PROD, SESSION_MAX_MINUTES: "0.05" }).join()).toContain("SESSION_MAX_MINUTES");
-    expect(problems({ ...PROD, SESSION_MAX_MINUTES: "300" }).join()).toContain("SESSION_MAX_MINUTES");
-    expect(problems({ ...PROD, DEMO_SESSION_MINUTES: "120" }).join()).toContain("DEMO_SESSION_MINUTES");
+    expect(problems({ ...PROD, SESSION_MAX_MINUTES: "721" }).join()).toContain("SESSION_MAX_MINUTES");
+    expect(problems({ ...PROD, SESSION_MAX_MINUTES: "720", DEMO_MAX_MINUTES: "120" })).toEqual([]);
+    expect(problems({ ...PROD, DEMO_MAX_MINUTES: "120" }).join()).toContain("DEMO_MAX_MINUTES");
+    expect(problems({ ...PROD, SESSION_DEFAULT_MINUTES: "0.5" }).join()).toContain("SESSION_DEFAULT_MINUTES");
+  });
+
+  it("SESS-01 length: every session starts at 60 minutes by default, and the backstops wait out the longest session", () => {
+    const d = parseConfig(PROD);
+    expect(d.ok && d.config.sessionDefaultMinutes).toBe(60);
+    // Two 300 s claim windows, a 900 s upload, the 90 minute cap.
+    expect(d.ok && d.config.longestSessionMs).toBe((600 + 900 + 90 * 60) * 1000);
+    const c = parseConfig({ ...PROD, SESSION_DEFAULT_MINUTES: "30" });
+    expect(c.ok && c.config.sessionDefaultMinutes).toBe(30);
   });
 
   it("PC-02 sid-powers: LINK_MINTS_PER_ITEM is at least 1, so no item is ever left with only its first link", () => {
@@ -106,7 +117,7 @@ describe("config", () => {
   it("DROP-05 demo cap: the demo drop cap defaults to 25 MB and the session length is bounded by the live one", () => {
     const d = parseConfig(PROD);
     expect(d.ok && d.config.demoGuestMaxBytes).toBe(26_214_400);
-    expect(d.ok && d.config.demoSessionMinutes).toBe(10);
+    expect(d.ok && d.config.demoMaxMinutes).toBe(10);
     expect(problems({ ...PROD, DEMO_GUEST_MAX_BYTES: "0" }).join()).toContain("DEMO_GUEST_MAX_BYTES");
   });
 

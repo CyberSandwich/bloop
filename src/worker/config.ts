@@ -126,11 +126,20 @@ const schema = z
     SESSION_MAX_MINUTES: z.coerce
       .number()
       .positive()
-      .describe("An approved session ends by itself after this long; production range 1 to 240."),
-    DEMO_SESSION_MINUTES: z.coerce
+      .describe(
+        "The latest a live session may end, counted from approval, whatever length the phone sets; production range 1 to 720.",
+      ),
+    DEMO_MAX_MINUTES: z.coerce
       .number()
       .positive()
-      .describe("A demo session ends by itself after this long; production range 1 to SESSION_MAX_MINUTES."),
+      .describe("SESSION_MAX_MINUTES for a demo session; production range 1 to SESSION_MAX_MINUTES."),
+    SESSION_DEFAULT_MINUTES: z.coerce
+      .number()
+      .positive()
+      .default(60)
+      .describe(
+        "The length every session starts with until the phone changes it (POST /api/session/length), never past the mode's cap.",
+      ),
     DEMO_ENABLED: z
       .enum(["true", "false"])
       .describe("false refuses every demo create and every claim of a demo code (ADR 0007)."),
@@ -191,10 +200,11 @@ const schema = z
     if (v.CODE_TTL_SECONDS < 30) issue("CODE_TTL_SECONDS", "at least 30");
     if (v.CODE_GRACE_SECONDS < 5) issue("CODE_GRACE_SECONDS", "at least 5");
     if (v.CLAIM_TIMEOUT_SECONDS < 60) issue("CLAIM_TIMEOUT_SECONDS", "at least 60");
-    if (v.SESSION_MAX_MINUTES < 1 || v.SESSION_MAX_MINUTES > 240) issue("SESSION_MAX_MINUTES", "1 to 240");
-    if (v.DEMO_SESSION_MINUTES < 1 || v.DEMO_SESSION_MINUTES > v.SESSION_MAX_MINUTES) {
-      issue("DEMO_SESSION_MINUTES", "1 to SESSION_MAX_MINUTES");
+    if (v.SESSION_MAX_MINUTES < 1 || v.SESSION_MAX_MINUTES > 720) issue("SESSION_MAX_MINUTES", "1 to 720");
+    if (v.DEMO_MAX_MINUTES < 1 || v.DEMO_MAX_MINUTES > v.SESSION_MAX_MINUTES) {
+      issue("DEMO_MAX_MINUTES", "1 to SESSION_MAX_MINUTES");
     }
+    if (v.SESSION_DEFAULT_MINUTES < 1) issue("SESSION_DEFAULT_MINUTES", "at least 1");
   });
 
 /** Every variable the Worker parses, each with its `.describe()` meaning; docs point here instead of listing them. */
@@ -240,15 +250,24 @@ export interface Config {
   graph: GraphConfig | null;
   codeLength: number;
   uploadTimeoutSeconds: number;
+  /** The live cap: the latest a session may end, from approval. */
   sessionMaxMinutes: number;
-  demoSessionMinutes: number;
+  /** The demo cap. */
+  demoMaxMinutes: number;
+  /** The length a session starts with, before the mode's cap. */
+  sessionDefaultMinutes: number;
+  /**
+   * The longest a session can last from its claim (two claim windows, an upload, the live cap): the backstops that
+   * close a lost session row or delete a leftover guest object wait at least this long (architecture 4.3).
+   */
+  longestSessionMs: number;
   demoEnabled: boolean;
   guestDrop: "off" | "open" | "pass";
   guestMaxBytes: number;
   demoGuestMaxBytes: number;
   demoMaxConcurrent: number;
   demoMaxPerIp: number;
-  /** How long a demo screen holds one of the concurrent slots: a claim window plus one session. */
+  /** How long a demo screen holds one of the concurrent slots: a claim window plus the longest demo session. */
   demoHoldMs: number;
   guestStorageBudgetBytes: number;
   r2ClassAMonthlyCap: number;
@@ -308,14 +327,16 @@ export function parseConfig(env: Record<string, unknown>): ConfigResult {
       codeLength: v.CODE_LENGTH,
       uploadTimeoutSeconds: v.UPLOAD_TIMEOUT_SECONDS,
       sessionMaxMinutes: v.SESSION_MAX_MINUTES,
-      demoSessionMinutes: v.DEMO_SESSION_MINUTES,
+      demoMaxMinutes: v.DEMO_MAX_MINUTES,
+      sessionDefaultMinutes: v.SESSION_DEFAULT_MINUTES,
+      longestSessionMs: (2 * v.CLAIM_TIMEOUT_SECONDS + v.UPLOAD_TIMEOUT_SECONDS + v.SESSION_MAX_MINUTES * 60) * 1000,
       demoEnabled: v.DEMO_ENABLED === "true",
       guestDrop: v.GUEST_DROP,
       guestMaxBytes: v.GUEST_MAX_BYTES,
       demoGuestMaxBytes: v.DEMO_GUEST_MAX_BYTES,
       demoMaxConcurrent: v.DEMO_MAX_CONCURRENT,
       demoMaxPerIp: v.DEMO_MAX_PER_IP,
-      demoHoldMs: (v.CLAIM_TIMEOUT_SECONDS + v.DEMO_SESSION_MINUTES * 60) * 1000,
+      demoHoldMs: (v.CLAIM_TIMEOUT_SECONDS + v.DEMO_MAX_MINUTES * 60) * 1000,
       guestStorageBudgetBytes: v.GUEST_STORAGE_BUDGET_BYTES,
       r2ClassAMonthlyCap: v.R2_CLASS_A_MONTHLY_CAP,
       r2ClassBMonthlyCap: v.R2_CLASS_B_MONTHLY_CAP,

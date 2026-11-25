@@ -1,9 +1,20 @@
 // GuestDrop seam (docs/interfaces.md section 5). No R2 type crosses it: `r2.ts` adapts the bucket, so
 // a Node or Screen-object chunk store (ADR 0005 fallback) replaces one file.
 import type { DropError, FileType, Mode } from "../../../shared/protocol.ts";
+import type { Config } from "../../config.ts";
 import type { ByteRange } from "../open-path/range.ts";
 
 export type GuestPolicy = "off" | "pass" | "open";
+
+/** Clock skew and the hourly schedule's own lag. */
+const SWEEP_SLACK_MS = 10 * 60 * 1000;
+
+/**
+ * An object is deleted at its session's end; one older than the longest session (an upload, the offer, the cap) is a
+ * leftover for the hourly sweep (architecture 4.3). A fixed age would delete the file of a session the phone made longer.
+ */
+export const sweepAgeMs = (config: Pick<Config, "longestSessionMs">): number =>
+  config.longestSessionMs + SWEEP_SLACK_MS;
 
 /** Demo screens always take drops (capped smaller); a live room uses its own policy, else the configured one. */
 export const effectivePolicy = (room: GuestPolicy | null, mode: Mode, configured: GuestPolicy): GuestPolicy =>

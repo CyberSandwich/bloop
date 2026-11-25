@@ -208,7 +208,7 @@ describe("machine: listed and approve", () => {
 
   it("approves a listed file in live mode and a fixture in demo mode", () => {
     const live = must(claimedOwner("live"), { e: "listed", now: T0 + sec(2), ids: ["deck-1"] }).next;
-    const a = must(live, { e: "approve", now: T0 + sec(3), items: [asItem(DECK)], maxMinutes: MAX_MINUTES });
+    const a = must(live, { e: "approve", now: T0 + sec(3), items: [asItem(DECK)], minutes: MAX_MINUTES });
     expect(a.next.state).toBe("approved");
     expect(a.next.session).toMatchObject({
       items: [asItem(DECK)],
@@ -224,27 +224,27 @@ describe("machine: listed and approve", () => {
   });
 
   it("refuses a live approve of an id that was not listed (SRC-02)", () => {
-    expect(
-      refused(claimedOwner("live"), { e: "approve", now: T0 + sec(3), items: [asItem(DECK)], maxMinutes: 90 }),
-    ).toBe("file_not_found");
+    expect(refused(claimedOwner("live"), { e: "approve", now: T0 + sec(3), items: [asItem(DECK)], minutes: 90 })).toBe(
+      "file_not_found",
+    );
     const listed = must(claimedOwner("live"), { e: "listed", now: T0 + sec(2), ids: ["other"] }).next;
-    expect(refused(listed, { e: "approve", now: T0 + sec(3), items: [asItem(DECK)], maxMinutes: 90 })).toBe(
+    expect(refused(listed, { e: "approve", now: T0 + sec(3), items: [asItem(DECK)], minutes: 90 })).toBe(
       "file_not_found",
     );
   });
 
   it("is idempotent for the same file and refuses another", () => {
     const m = approved();
-    const again = must(m, { e: "approve", now: T0 + sec(20), items: [asItem(DECK)], maxMinutes: 90 });
+    const again = must(m, { e: "approve", now: T0 + sec(20), items: [asItem(DECK)], minutes: 90 });
     expect(again.next).toBe(m);
     expect(again.effects).toEqual([]);
     expect(
-      refused(m, { e: "approve", now: T0 + sec(20), items: [asItem({ ...DECK, ref: "other" })], maxMinutes: 90 }),
+      refused(m, { e: "approve", now: T0 + sec(20), items: [asItem({ ...DECK, ref: "other" })], minutes: 90 }),
     ).toBe("wrong_state");
   });
 
   it("answers session_ended after the end, wrong_state for a guest, wrong_state while waiting", () => {
-    const ev: Event = { e: "approve", now: T0 + sec(30), items: [asItem(DECK)], maxMinutes: 90 };
+    const ev: Event = { e: "approve", now: T0 + sec(30), items: [asItem(DECK)], minutes: 90 };
     expect(refused(ended(), ev)).toBe("session_ended");
     expect(refused(claimedGuest(), ev)).toBe("wrong_state");
     expect(refused(waiting(), ev)).toBe("wrong_state");
@@ -302,7 +302,7 @@ describe("machine: guest upload and the Open click", () => {
 
   it("opens an offer only on open.click, as the screen, and sets the session end (DROP-06)", () => {
     const m = offered();
-    const { next, effects } = must(m, { e: "open.click", now: T0 + sec(40), maxMinutes: MAX_MINUTES });
+    const { next, effects } = must(m, { e: "open.click", now: T0 + sec(40), minutes: MAX_MINUTES });
     expect(next.state).toBe("approved");
     expect(next.session).toMatchObject({
       items: [asItem(GUEST_FILE)],
@@ -314,7 +314,7 @@ describe("machine: guest upload and the Open click", () => {
   });
 
   it("refuses open.click before an offer exists and repeats it as a no-op", () => {
-    const ev: Event = { e: "open.click", now: T0 + sec(40), maxMinutes: 90 };
+    const ev: Event = { e: "open.click", now: T0 + sec(40), minutes: 90 };
     expect(refused(claimedGuest(), ev)).toBe("wrong_state");
     const open = must(offered(), ev).next;
     expect(must(open, ev).next).toBe(open);
@@ -386,11 +386,11 @@ describe("machine: open, fetch, fallback", () => {
       e: "approve",
       now: T0 + sec(10),
       items: [asItem(DECK)],
-      maxMinutes: 90,
+      minutes: 90,
       userId: "u1",
     }).next;
     expect(signedIn.pairing?.userId).toBe("u1");
-    const noChange = must(claimed, { e: "approve", now: T0 + sec(10), items: [asItem(DECK)], maxMinutes: 90 }).next;
+    const noChange = must(claimed, { e: "approve", now: T0 + sec(10), items: [asItem(DECK)], minutes: 90 }).next;
     expect(noChange.pairing?.userId).toBeNull();
   });
 });

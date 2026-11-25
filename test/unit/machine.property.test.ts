@@ -111,7 +111,7 @@ function run(steps: { dt: number; a: Action }[], observe: (t: Trace) => void): M
           e: "approve",
           now,
           items: [asItem(a.listed ? DECK : { ...DECK, ref: "unlisted" })],
-          maxMinutes: MAX_MINUTES,
+          minutes: MAX_MINUTES,
         };
       case "uploadStart":
         return { e: "upload.start", now, timeoutSeconds: 900 };
@@ -120,7 +120,7 @@ function run(steps: { dt: number; a: Action }[], observe: (t: Trace) => void): M
       case "uploadFailed":
         return { e: "upload.failed", now, error: "bad_structure" };
       case "openClick":
-        return { e: "open.click", now, maxMinutes: MAX_MINUTES };
+        return { e: "open.click", now, minutes: MAX_MINUTES };
       case "launched":
         return { e: "launched", now, mode: "protocol" };
       case "fetched":

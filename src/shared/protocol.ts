@@ -101,7 +101,13 @@ export interface PhoneView {
   endReason: EndReason | null;
   /** The largest guest file this screen takes (GUEST_MAX_BYTES, or the demo cap). */
   dropMaxBytes: number;
+  /** The mode's cap (SESSION_MAX_MINUTES or DEMO_MAX_MINUTES): the longest length the phone offers. */
+  maxMinutes: number;
   now: number;
+}
+/** `POST /api/session/length`: the session ends `minutes` from now, never past approval plus the mode's cap. */
+export interface LengthRequest {
+  minutes: number;
 }
 
 /** One mint fills one field: the link for the purpose asked, the others stay null. */
