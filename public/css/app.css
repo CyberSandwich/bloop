@@ -498,18 +498,27 @@ main:has(> .side:not([hidden])) #stage {
 /* Invisible halves of the slide's box (viewer.js places them) that page the slides; a fine pointer sees which way. */
 .zone {
   position: absolute;
-  display: grid;
-  align-items: center;
-  justify-items: start;
-  padding: 0 16px;
   border: 0;
   background: none;
   color: var(--ink);
   cursor: w-resize;
 }
 #next {
-  justify-items: end;
   cursor: e-resize;
+}
+/* The outer 20% of the slide's width (40% of a half): the only part that shows the arrow. The rest of the half still pages. */
+.zone .edge {
+  position: absolute;
+  inset: 0 auto 0 0;
+  width: 40%;
+  display: grid;
+  align-items: center;
+  justify-items: start;
+  padding: 0 16px;
+}
+#next .edge {
+  inset: 0 0 0 auto;
+  justify-items: end;
 }
 /* The disc's fill is the one glass recipe (.glass in the markup), so reduced transparency reaches it. */
 .zone .icon {
@@ -525,7 +534,7 @@ main:has(> .side:not([hidden])) #stage {
   cursor: default;
 }
 @media (hover: hover) and (pointer: fine) {
-  .zone:hover .icon {
+  .zone .edge:hover .icon {
     opacity: 1;
   }
 }
