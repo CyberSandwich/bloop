@@ -779,15 +779,36 @@ test.describe("guest drop", () => {
       await route.continue();
     });
 
-    await addFile(phone.page, { name: "shot.png", mimeType: "image/png", buffer: png(3000, 2000) });
-    await expect(heading(phone.page)).toHaveText("Send shot.png to Demo Room?");
+    await addFile(phone.page, {
+      name: "A long holiday photo from the beach at sunset.png",
+      mimeType: "image/png",
+      buffer: png(3000, 2000),
+    });
+    await expect(heading(phone.page)).toHaveText(
+      "Send A long holiday photo from the beach at sunset.png to Demo Room?",
+    );
     expect(await modules(phone.page)).not.toContain("/js/core/photo.js");
     await phone.page.getByRole("button", { name: "Send" }).click();
-    await expect(heading(phone.page)).toHaveText("Sending shot.png");
+    await expect(heading(phone.page)).toHaveText("Sending A long holiday photo from the beach at sunset.png");
     const row = phone.page.locator("#file-list .row.upload");
-    await expect(row.getByRole("progressbar", { name: "Sending shot.png" })).toBeVisible();
+    await expect(
+      row.getByRole("progressbar", { name: "Sending A long holiday photo from the beach at sunset.png" }),
+    ).toBeVisible();
     await expect(row.locator(".small")).toHaveText(/^(Compressing|\d+% sent|Finishing)$/);
     await expect(phone.page.locator("progress")).toHaveCount(0);
+    // A long name ellipsizes inside the card: the row never widens the list (or the page).
+    const list = await phone.page.locator("#file-list").boundingBox();
+    const rowBox = await row.boundingBox();
+    expect(Math.round((rowBox?.x ?? 0) + (rowBox?.width ?? 0))).toBeLessThanOrEqual(
+      Math.round((list?.x ?? 0) + (list?.width ?? 0)),
+    );
+    expect(
+      await phone.page.evaluate(
+        () =>
+          (globalThis as unknown as { document: { documentElement: { scrollWidth: number } } }).document.documentElement
+            .scrollWidth,
+      ),
+    ).toBe(390);
     release();
 
     await expect(heading(phone.page)).toHaveText("Sent to Demo Room");
@@ -796,7 +817,7 @@ test.describe("guest drop", () => {
     expect(modulesNow).not.toContain("/js/core/video.js");
     // Re-encoded on the phone: a JPEG (SOI, then a JFIF APP0 from the canvas), named .jpg, its long side at 2560.
     const out = await sent(phone.page);
-    expect(out.name).toBe("shot.jpg");
+    expect(out.name).toBe("A long holiday photo from the beach at sunset.jpg");
     expect(out.bytes.slice(0, 3)).toEqual([0xff, 0xd8, 0xff]);
     await expect(heading(screen.page)).toHaveText("Sent by a Guest");
     await screen.context.close();
