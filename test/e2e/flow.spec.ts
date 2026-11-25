@@ -1693,15 +1693,16 @@ test.describe("screen and phone layout", () => {
     await expect(page.locator(STAGED)).toBeVisible();
     await controlsSettled(page);
     await page.setViewportSize({ width: 1000, height: 604 });
-    // On the next frame: nothing animates, and the pill is inside the window.
-    const next = await page.evaluate(`new Promise((done) => requestAnimationFrame(() => {
+    // Once the resize has been fitted (the observer runs after the first frame): nothing animates, and the pill is
+    // inside the window.
+    const next = await page.evaluate(`new Promise((done) => requestAnimationFrame(() => requestAnimationFrame(() => {
       const bar = document.getElementById("controls");
       const r = bar.getBoundingClientRect();
       done({
         animations: bar.getAnimations().length,
         inside: r.left >= 0 && r.top >= 0 && r.right <= innerWidth && r.bottom <= innerHeight,
       });
-    }))`);
+    })))`);
     expect(next).toEqual({ animations: 0, inside: true });
     await controlsSettled(page);
     await screen.context.close();
