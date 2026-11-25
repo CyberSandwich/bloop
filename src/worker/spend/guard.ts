@@ -128,7 +128,7 @@ export function spendStub(env: SpendEnv, instance: "global" | "public" = "global
  * rows of the settings snapshot (`capOverridesOf`), so the client's own caps (the R2 block, the isolate allowances)
  * honor a lowered row like the guard's do.
  */
-export const spendFor = (env: SpendEnv, overrides: () => Partial<Record<CapName, number>> = () => ({})): Spend =>
+export const spendFor = (env: SpendEnv, overrides: () => Partial<Record<CapName, number>>): Spend =>
   new SpendClient({ global: () => spendStub(env), public: () => spendStub(env, "public") }, () =>
     resolveCaps(env as unknown as Vars, overrides()),
   );

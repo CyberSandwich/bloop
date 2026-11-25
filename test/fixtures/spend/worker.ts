@@ -27,7 +27,7 @@ export default {
     if (url.pathname === "/client/take") {
       const { meter, n, scope } = await request.json();
       // `?down=1`: a namespace that cannot be reached, as when the binding is gone.
-      const spend = spendFor(url.searchParams.has("down") ? { ...env, SPEND_GUARD: undefined } : env);
+      const spend = spendFor(url.searchParams.has("down") ? { ...env, SPEND_GUARD: undefined } : env, () => ({}));
       return Response.json(await spend.take(meter, n, scope));
     }
     if (url.pathname === "/breaker") {
