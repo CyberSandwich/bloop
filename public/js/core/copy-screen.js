@@ -1,8 +1,7 @@
 // The room screen's strings (the rules: copy.js).
 /** @import {ScreenStateKey} from "../../../src/shared/protocol.ts" */
 /** @import {ScreenControl, ScreenCopy, ScreenFacts} from "../types.js" */
-import { down } from "../shared/errors.js";
-import { BLOCKED, SESSION_ENDED } from "./copy.js";
+import { SESSION_ENDED } from "./copy.js";
 import { VERIFIED } from "./verified.js";
 
 /** A claim's status, for screen readers only: the room screen shows the title and the match number alone. */
@@ -116,10 +115,10 @@ export function screenCopy(key, f) {
         heading: "Offline",
         line: f.inSession ? "Reconnecting. You can still end from your phone." : "Reconnecting.",
       };
+    // Until core/net-states.js is in, a plain line.
     case "service_down":
-      return { ...base, heading: "bloop Isn't Responding", line: down("Refresh this page") };
     case "network_blocked":
-      return { ...base, heading: BLOCKED, line: `Ask IT to allow ${f.host ?? "bloop"}, or try another network.` };
+      return { ...base, heading: "Can't Reach bloop", line: "Trying again by itself." };
     case "rate_limited":
       return {
         ...base,

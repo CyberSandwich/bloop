@@ -50,7 +50,6 @@
       "name": "room screen JS",
       "path": [
         "dist/js/core/api.js",
-        "dist/js/core/channel-timing.js",
         "dist/js/core/channel.js",
         "dist/js/core/copy-screen.js",
         "dist/js/core/copy.js",
@@ -81,7 +80,6 @@
       "path": [
         "dist/js/core/api.js",
         "dist/js/core/boot-code.js",
-        "dist/js/core/channel-timing.js",
         "dist/js/core/channel.js",
         "dist/js/core/copy-phone.js",
         "dist/js/core/copy.js",
@@ -122,14 +120,24 @@
       "limit": "4.05 kB"
     },
     {
+      "name": "clicker keys, lazy",
+      "path": "dist/js/core/clicker.js",
+      "limit": "0.35 kB"
+    },
+    {
+      "name": "room network states, lazy",
+      "path": "dist/js/core/net-states.js",
+      "limit": "0.21 kB"
+    },
+    {
       "name": "channel polling, lazy",
       "path": "dist/js/core/poll.js",
-      "limit": "0.61 kB"
+      "limit": "0.65 kB"
     },
     {
       "name": "channel health, lazy",
       "path": "dist/js/core/health.js",
-      "limit": "0.32 kB"
+      "limit": "0.35 kB"
     },
     {
       "name": "phone photo, lazy",
@@ -157,8 +165,11 @@
     },
     {
       "name": "session length words, lazy",
-      "path": "dist/js/core/length-extra.js",
-      "limit": "0.45 kB"
+      "path": [
+        "dist/js/core/length-extra.js",
+        "dist/js/shared/length.js"
+      ],
+      "limit": "0.7 kB"
     },
     {
       "name": "session length sheet CSS, lazy",

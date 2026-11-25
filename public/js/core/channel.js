@@ -2,14 +2,6 @@
 // first frame, never in the URL.
 /** @import {ErrorCode} from "../../../src/shared/protocol.ts" */
 /** @import {ChannelOptions, SocketLike} from "../types.js" */
-import {
-  BLOCKED_PROBE_MS,
-  COALESCE_MS,
-  CONNECT_TIMEOUT_MS,
-  jitter,
-  reconnectDelay,
-  shouldPoll,
-} from "./channel-timing.js";
 
 /** Errors after which the credential is dead and retrying is pointless. */
 export const FATAL = /** @type {ReadonlySet<ErrorCode>} */ (
@@ -19,6 +11,26 @@ export const FATAL = /** @type {ReadonlySet<ErrorCode>} */ (
 /** A refused read: dead drops the credential; the rest retry. @param {ErrorCode} code */
 export const refusal = (code) =>
   code === "offline" || code === "service_down" ? "offline" : FATAL.has(code) ? "dead" : "retry";
+
+/** Reconnect delays after the 1st, 2nd, ... failure; the last repeats. */
+export const RECONNECT_DELAYS = [1000, 2000, 5000, 10_000, 30_000];
+/** A socket with no first frame by now is abandoned and polling starts at once (a proxy that holds the upgrade). */
+export const CONNECT_TIMEOUT_MS = 4000;
+/** Once the socket is found blocked, it is tried again this often while polling carries the page. */
+export const BLOCKED_PROBE_MS = 60_000;
+
+/**
+ * Half to all of a step, so screens that lost their sockets together (a deploy) do not return in the same second.
+ * @param {number} ms @param {() => number} [random] in [0, 1)
+ */
+const jitter = (ms, random = Math.random) => (0.5 + random() / 2) * ms;
+
+/**
+ * @param {number} failures consecutive failures, 1 for the first
+ * @param {() => number} [random] in [0, 1)
+ */
+export const reconnectDelay = (failures, random = Math.random) =>
+  jitter(RECONNECT_DELAYS[Math.min(Math.max(failures, 1), RECONNECT_DELAYS.length) - 1] ?? 30_000, random);
 
 /** The tab's memory that its network swallows the socket; not a `bloop.` key, so a session's end keeps it. */
 const BLOCKED_KEY = "ws";
@@ -43,12 +55,6 @@ export function openChannel(o) {
   let lastHeard = 0;
   /** State frames seen: a read older than a push is stale. */
   let pushed = 0;
-  /** The last view's state: how often a poll is worth making. */
-  let lastState = "";
-  /** @type {ReturnType<typeof setTimeout> | null} */
-  let sendTimer = null;
-  /** Frames sent inside the window, the latest of each type. @type {Map<string, Frame>} */
-  const pending = new Map();
   const hidden = () => /** @type {any} */ (globalThis).document.hidden;
   /** The tab's blocked flag: read with no argument, set or cleared with one. @param {boolean} [set] */
   const flag = (set) => {
@@ -63,10 +69,9 @@ export function openChannel(o) {
   };
 
   const clear = () => {
-    for (const t of [retryTimer, connectTimer, sendTimer]) if (t) clearTimeout(t);
+    for (const t of [retryTimer, connectTimer]) if (t) clearTimeout(t);
     health?.stop();
-    retryTimer = connectTimer = sendTimer = health = null;
-    pending.clear();
+    retryTimer = connectTimer = health = null;
   };
 
   /** The polling fallback loads the first time it is needed. @type {Promise<ReturnType<typeof import("./poll.js").createPoller>> | null} */
@@ -78,7 +83,6 @@ export function openChannel(o) {
         path: o.statePath,
         auth: o.credential,
         hidden,
-        state: () => lastState,
         active: () => !closed && !live,
         fatal: (code) => {
           if (!FATAL.has(code)) return false;
@@ -86,10 +90,7 @@ export function openChannel(o) {
           o.onError(code);
           return true;
         },
-        onView: (view) => {
-          lastState = view?.state ?? lastState;
-          o.onView(view);
-        },
+        onView: o.onView,
         onLink: o.onLink,
       }),
     ));
@@ -102,12 +103,11 @@ export function openChannel(o) {
   function lost() {
     if (closed) return;
     live = false;
-    if (connectTimer) clearTimeout(connectTimer);
-    health?.stop();
-    connectTimer = health = socket = null;
-    pending.clear();
+    clear();
+    socket = null;
     failures += 1;
-    if (shouldPoll(failures)) startPolling();
+    // Three failed reconnects in a row start the polling fallback.
+    if (failures >= 3) startPolling();
     retryTimer = setTimeout(connect, flag() ? jitter(BLOCKED_PROBE_MS) : reconnectDelay(failures));
   }
 
@@ -158,7 +158,6 @@ export function openChannel(o) {
       }
       if (frame.t === "state") {
         pushed += 1;
-        lastState = frame.view?.state ?? lastState;
         o.onView(frame.view);
       } else if (frame.t === "error") {
         if (FATAL.has(frame.code)) stop();
@@ -181,20 +180,21 @@ export function openChannel(o) {
   /** The one way a socket is given up: no handler of it fires again, and the channel retries or polls. @param {SocketLike} ws */
   function drop(ws) {
     if (socket !== ws) return;
+    shut(ws);
+    lost();
+  }
+
+  /** @param {SocketLike} ws */
+  function shut(ws) {
     ws.onclose = ws.onerror = ws.onmessage = ws.onopen = null;
     ws.close();
-    lost();
   }
 
   function stop() {
     closed = true;
     clear();
-    const ws = socket;
+    if (socket) shut(socket);
     socket = null;
-    if (ws) {
-      ws.onclose = ws.onerror = ws.onmessage = ws.onopen = null;
-      ws.close();
-    }
   }
 
   // A tab that already found its socket blocked polls from the first second and tries the socket once a minute.
@@ -204,19 +204,10 @@ export function openChannel(o) {
   } else connect();
 
   return {
-    /**
-     * The first frame goes at once; the rest inside COALESCE_MS go together after it, the latest of each type, so a
-     * burst of taps sends absolute values (a page), never deltas.
-     * @param {Frame} frame
-     */
+    /** @param {Frame} frame */
     send(frame) {
-      if (!live || !socket) return false;
-      if (sendTimer) pending.set(frame.t, frame);
-      else {
-        socket.send(JSON.stringify({ v: 1, ...frame }));
-        sendTimer = setTimeout(flush, COALESCE_MS);
-      }
-      return true;
+      if (live && socket) socket.send(JSON.stringify({ v: 1, ...frame }));
+      return live;
     },
     nudge,
     refresh,
@@ -231,15 +222,6 @@ export function openChannel(o) {
     },
     stop,
   };
-
-  function flush() {
-    sendTimer = null;
-    const frames = [...pending.values()];
-    pending.clear();
-    if (!live || !socket || !frames.length) return;
-    for (const f of frames) socket.send(JSON.stringify({ v: 1, ...f }));
-    sendTimer = setTimeout(flush, COALESCE_MS);
-  }
 
   /** Retry now: the tab became visible again, or the network came back. */
   function nudge() {

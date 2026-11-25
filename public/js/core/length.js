@@ -1,7 +1,7 @@
 // The Session Expiry sheet, loaded on the first tap on "Ends in"; markup in a.html.
 /** @import {PhoneView} from "../../../src/shared/protocol.ts" */
 /** @import {PhonePage} from "../types.js" */
-import { canSet, clampLength, fitPresets, MIN_LENGTH_SECONDS, secondsUntil } from "../shared/length.js";
+import { clampLength, fitPresets } from "../shared/length.js";
 import { createApi } from "./api.js";
 import { refused, styled } from "./lazy.js";
 
@@ -15,6 +15,8 @@ const hint = /** @type {HTMLElement} */ (document.getElementById("length-hint"))
 let page;
 /** @type {(view: PhoneView) => void} */
 let adopt = () => {};
+/** The time rules, loaded with the sheet. @type {typeof import("./length-extra.js")} */
+let rules;
 /** @type {ReturnType<typeof setInterval> | undefined} */
 let tick;
 
@@ -26,23 +28,13 @@ const clockOf = (at) => (at == null ? "" : clock(new Date(at - page.skew)));
 /** Seconds the server still allows an end to move: it stops at approval plus the cap. */
 const room = () => ((page.view?.latestEnd ?? Infinity) - page.skew - Date.now()) / 1000;
 
-/** Set is usable only for a time at least a minute ahead and within what the server allows; the minute arriving disables it. */
 const refresh = () => {
-  const ok = canSet(at.value, room());
-  setButton.disabled = !ok;
-  if (ok) hint.hidden = true;
-  else {
-    void import("./length-extra.js").then((m) => {
-      hint.textContent = m.hintText(
-        at.value,
-        secondsUntil(at.value) < MIN_LENGTH_SECONDS,
-        clockOf(page.view?.latestEnd),
-      );
-      hint.hidden = !setButton.disabled;
-    });
-    // A disabled control cannot hold focus.
-    if (document.activeElement === setButton) at.focus();
-  }
+  // A disabled control cannot hold focus.
+  if (
+    !rules.refresh({ set: setButton, hint, at }, room(), clockOf(page.view?.latestEnd)) &&
+    document.activeElement === setButton
+  )
+    at.focus();
 };
 
 async function choose(/** @type {number} */ seconds) {
@@ -53,7 +45,7 @@ async function choose(/** @type {number} */ seconds) {
   // The socket's push is the truth: an older answer (an End meanwhile) is dropped.
   if (next.v > (page.view?.v ?? -1)) adopt(next);
   // The server stops at approval plus the cap: a silent cut would let "6 hours" look accepted.
-  void import("./length-extra.js").then((m) => m.capped(next, seconds, clockOf(next.endsAt)));
+  rules.capped(next, seconds, clockOf(next.endsAt));
 }
 
 sheet.addEventListener("click", (e) => {
@@ -67,9 +59,9 @@ sheet.querySelector("form")?.addEventListener("submit", (e) => {
   e.preventDefault();
   // The Until path never clamps: out of range posts nothing, and the disabled Set says why. The minute the end already
   // falls in is no change, so the seconds it has left are not cut.
-  if (!canSet(at.value, room())) return;
+  if (!rules.canSet(at.value, room())) return;
   if (at.value === clockOf(page.view?.endsAt)) sheet.close();
-  else choose(secondsUntil(at.value));
+  else choose(rules.secondsUntil(at.value));
 });
 at.addEventListener("input", refresh);
 at.addEventListener("change", refresh);
@@ -91,9 +83,9 @@ export async function openLength(c, onView) {
   adopt = onView;
   fitPresets(sheet.querySelector(".chips"), view.maxMinutes);
   at.value = clockOf(view.endsAt);
-  refresh();
-  await styled("/css/length.css");
+  [rules] = await Promise.all([import("./length-extra.js"), styled("/css/length.css")]);
   if (ends.hidden) return;
+  refresh();
   sheet.showModal();
   clearInterval(tick);
   tick = setInterval(refresh, 1000);
