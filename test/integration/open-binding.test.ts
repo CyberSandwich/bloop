@@ -4,7 +4,7 @@ import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { validVideo } from "../zip-builder.ts";
 import { openGuestView } from "./drop-client.ts";
 import { approveDemo, fetchLink, problemOf } from "./open-client.ts";
-import { Api, startPairing } from "./pairing-client.ts";
+import { Api, Socket, startPairing } from "./pairing-client.ts";
 import type { Wrangler } from "./wrangler.ts";
 
 let wrangler: Wrangler;
@@ -22,6 +22,19 @@ describe("OPEN-02 binding", () => {
     expect(other.status).toBe(403);
     expect((await problemOf(other)).code).toBe("link_binding_failed");
     expect((await fetchLink(url)).status).toBe(200);
+    socket.close();
+  });
+
+  it("OPEN-02 binding: unauthenticated socket leaves binding as it was", async () => {
+    const { screen, socket, url } = await approveDemo(api);
+    // The ref is the first 22 characters of any leaked token: anyone can open a socket on it, from anywhere.
+    const bare = await Socket.open(api.base, `/api/screen/ws?ref=${screen.ref}`, api.base, {
+      "CF-Connecting-IP": "203.0.113.9",
+    });
+    const other = await fetchLink(url, { headers: { "CF-Connecting-IP": "203.0.113.9" } });
+    expect(other.status).toBe(403);
+    expect((await fetchLink(url)).status).toBe(200);
+    bare.close();
     socket.close();
   });
 

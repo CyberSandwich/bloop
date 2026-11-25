@@ -63,7 +63,8 @@
     "LINK_MINTS_PER_ITEM": "5",
     "LINK_BINDING_DEFAULT": "log",
     "GRAPH_DOWNLOAD_HOSTS": "*.sharepoint.com,*.files.1drv.com,my.microsoftpersonalcontent.com",
-    "GUEST_DROP": "open",
+    // Live rooms take no drops until setup.md's Graph step turns this on; a demo screen always takes one.
+    "GUEST_DROP": "off",
     "GUEST_MAX_BYTES": "94371840",
     "GUEST_STORAGE_BUDGET_BYTES": "5368709120",
     // R2 has no platform spending cap: these stop bloop at 50% of the free tier per UTC calendar month (1M class A, 10M class B), since the billing period may not align with calendar months.

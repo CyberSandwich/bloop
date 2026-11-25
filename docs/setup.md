@@ -7,16 +7,26 @@ Steps only the owner can do, because they need the owner's accounts. Everything 
 1. **Cloudflare account** (free plan), then `npx wrangler login` on your own machine.
 2. **D1:** `npx wrangler d1 create bloop --jurisdiction eu`; put the printed id into `wrangler.jsonc` `database_id` (it is all zeros now) and commit it. Then `npx wrangler d1 migrations apply bloop --remote`.
 3. **R2:** the bucket and its lifecycle rule, in the next section.
-4. **Worker secrets**, each with `npx wrangler secret put <NAME>`: `COOKIE_KEY`, `HASH_PEPPER`, `TOKEN_KEKS` (JSON of key id to base64 key, as in `.dev.vars.example`; `TOKEN_KEK_CURRENT` in `vars` names the current key), `ROOM_ENROLL_KEY`, `IT_EXPORT_TOKEN` (optional; the export stays closed without it), `ENTRA_CLIENT_SECRET` (only with the Entra step). Generate each with `openssl rand -base64 32`; never reuse the `.dev.vars` values.
+4. **Worker secrets**, each with `npx wrangler secret put <NAME>`: `COOKIE_KEY`, `HASH_PEPPER`, `TOKEN_KEKS` (JSON of key id to base64 key, as in `.dev.vars.example`; `TOKEN_KEK_CURRENT` in `vars` names the current key), `IT_EXPORT_TOKEN` (optional; the export stays closed without it), `ENTRA_CLIENT_SECRET` (only with the Entra step). Generate each with `openssl rand -base64 32`; never reuse the `.dev.vars` values. If an earlier deploy set `ROOM_ENROLL_KEY`, delete it: `npx wrangler secret delete ROOM_ENROLL_KEY` (nothing reads it).
 5. **GitHub:** the owner's settings script holds the repo's settings: features, merge options, a default-branch ruleset (no deletion, no force push, linear history; direct pushes to `main` still work), a tag ruleset, Actions locked to GitHub-owned actions with a read-only token, Dependabot, secret scanning with push protection, private vulnerability reporting, CodeQL, and the `production` environment (`main` only, no required reviewer: a push to `main` deploys once `npm run check` passes in the job). It needs `gh` logged in, so it runs outside the Claude Code sandbox. In order:
    0. Once, in Terminal (interactive): `gh auth refresh -h github.com -s read:user`, so the script can read the account plan.
    1. Plan: shows every difference and writes nothing.
    2. Apply: changes only what differs and prints each change. Lines starting `!` are left for you (visibility, unknown collaborators, keys or hooks, a missing `SECURITY.md`).
-   3. Secrets, in Terminal since it prompts with hidden input: asks for `CLOUDFLARE_API_TOKEN` (an account API token, Manage account, Account API tokens, so it is not tied to a person: Workers Editor, D1 Edit and Workers R2 Storage Edit, no IP filter since runner IPs change, 1-year expiry) and `CLOUDFLARE_ACCOUNT_ID` and stores them as `production` environment secrets. Until they exist, the deploy workflow passes and only prints a skip notice.
+   3. Secrets, in Terminal since it prompts with hidden input: asks for `CLOUDFLARE_API_TOKEN` (an account API token, Manage account, Account API tokens, so it is not tied to a person: Workers Editor, D1 Edit and Workers R2 Storage Edit, this account only, no IP filter since runner IPs change, 1-year expiry; check the scope in the dashboard and widen nothing) and `CLOUDFLARE_ACCOUNT_ID` and stores them as `production` environment secrets. `deploy.yml` hands the token to the wrangler steps alone. Until they exist, the deploy workflow passes and only prints a skip notice.
    4. Check: exits 1 on any drift; rerun it after changing settings by hand.
 6. **Placeholders:** replace the addresses and the absolute `og:image` per "Site pages" below.
 7. **Address:** the Worker serves at `https://bloop.here` (`PUBLIC_ORIGIN` and the `routes` custom domain in `wrangler.jsonc`; ADR 0010). The zone is in the same Cloudflare account and the first deploy creates the apex DNS record and certificate, so there is nothing else to click: never add an apex A, AAAA or CNAME by hand, and never touch the zone's iCloud mail records (MX, SPF, DKIM, DMARC, apple-domain TXT). DNSSEC is done at the registrar (Porkbun): the DS record from the zone's DNS settings. The deploy token must be allowed to attach a custom domain: if the first deploy refuses it, add Zone Read and DNS Edit on the `bloop.here` zone to the token. The old workers.dev address stays enabled and answers 301 to the same path on `bloop.here`, so old links and QR codes keep working; `www.bloop.here` has no record and no route. With Entra on, add `https://bloop.here/auth/callback` as a Web redirect URI before switching `FILE_SOURCE` to `graph`.
 8. **Deploy:** merge or push to `main`; the `production` run deploys after the check passes.
+9. **Edge** (threat model SITE-09; all in the Cloudflare dashboard, on the `bloop.here` zone):
+   1. Security, Security rules (or Security, WAF): confirm the Cloudflare managed ruleset shows **Enabled**.
+   2. Security, Security rules, Create rule, **Rate limiting rule**: expression `starts_with(http.request.uri.path, "/api/")`; characteristics IP; 300 requests per 10 seconds; action Block for 10 seconds. `/f/` is outside the expression, so a video's range reads are never counted.
+   3. Security, Security rules, Create rule, **Custom rule**: expression `starts_with(http.request.uri.path,"/f/") or http.request.uri.path in {"/api/screen/ws" "/api/pair/ws"}`; action **Skip**, ticking Security Level and Browser Integrity Check. The skip covers only those two features, so rule order does not matter.
+   4. Security, Settings: **Bot Fight Mode** off (on Free it cannot be scoped, and it challenges the phone API and the sockets).
+   5. Scrape Shield (or Content Protection): **Email Address Obfuscation** off and **Server-side Excludes** off.
+   6. SSL/TLS, Edge Certificates: **Automatic HTTPS Rewrites** off.
+   7. Speed, Optimization, Protocol Optimization: **0-RTT Connection Resumption** off (a POST in early data can be replayed).
+   8. Turnstile stays unset; revisit on abuse. Leave `workers.dev` enabled: `saputra.co.uk` still redirects there, and turning it off is a later step.
+   9. Check: `curl -s -o /dev/null -w "%{http_code}\n" https://bloop.here/api/health` answers 200, a phone pairs and a video plays on a real lectern, and the dashboard's Security Events shows no challenge on `/f/` or the sockets.
 
 ## Checks only a person can do
 
@@ -121,7 +131,7 @@ Apply the schema to the production database before the first sign-in: `wrangler 
 
 ### 5. Switch `FILE_SOURCE` from mock to graph
 
-1. Set `FILE_SOURCE` to `graph` in `wrangler.jsonc` `vars` (locally, in `.dev.vars`) and deploy (or restart `npm run dev`).
+1. Set `FILE_SOURCE` to `graph` in `wrangler.jsonc` `vars` (locally, in `.dev.vars`) and deploy (or restart `npm run dev`). In the same change set `GUEST_DROP` to `open`: it ships as `off`, so a live room takes no guest drop until real users exist (a demo screen always does).
 2. If anything in step 4 is missing or malformed, the Worker answers 500 `internal` on every route and logs `config invalid: ...` naming the variable. That is deliberate: it never runs half configured.
 3. Check: `GET /api/me` returns `{"source":"graph","signedIn":false,"email":null}`, and `GET /auth/start` redirects (302) to `login.microsoftonline.com`, whose address bar shows `scope=openid offline_access Files.Read`.
 4. Sign in on a phone: scan a live screen's code, tap Connect OneDrive, consent, and the file list shows recent `.pptx` and `.pdf` files from the root of the user's OneDrive.

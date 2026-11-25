@@ -140,7 +140,6 @@ export type PhoneMsgOut =
 
 export interface ClaimRequest {
   code: string;
-  pass?: string;
   kind?: Kind; // defaults to "owner"; "guest" asks for the drop path
 }
 export interface ClaimResponse {

@@ -94,7 +94,7 @@ export type PhoneMsgOut =
   | { v: 1; t: "error"; code: ErrorCode; now: number }
   | { v: 1; t: "pong" };
 
-export interface ClaimRequest { code: string; pass?: string; kind?: Kind; }   // kind defaults to "owner"; "guest" asks for the drop path
+export interface ClaimRequest { code: string; kind?: Kind; }   // kind defaults to "owner"; "guest" asks for the drop path
 export interface ClaimResponse {
   pid: string; room: RoomView; match: string; mode: Mode; kind: Kind; needsAuth: boolean; dropMaxBytes: number;
 }

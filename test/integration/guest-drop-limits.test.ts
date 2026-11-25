@@ -144,11 +144,10 @@ describe("DROP-06 policy: a pass room", () => {
     socket.close();
   });
 
-  it("refuses a pass that no host issued", async () => {
+  it("refuses a claim that carries a pass: no pass is issued yet", async () => {
     const { socket, code } = await openScreen(ctx.api, "live");
     const res = await ctx.api.post("/api/claim", { code, kind: "guest", pass: "made-up" });
-    expect(res.status).toBe(403);
-    expect(res.body).toMatchObject({ code: "pass_invalid" });
+    expect(res.status).toBe(400);
     socket.close();
   });
 
@@ -157,6 +156,26 @@ describe("DROP-06 policy: a pass room", () => {
     const claimed = await claim(ctx.api, code, "guest");
     expect((await putDrop(ctx.api, claimed.body.pid, deck)).status).toBe(200);
     socket.close();
+  });
+});
+
+describe("DROP-06 policy: off", () => {
+  const ctx = withInstance({ GUEST_DROP: "off" });
+
+  it("DROP-06 policy off refuses a live drop with drop_disabled, and a demo screen still takes one", async () => {
+    const live = await openScreen(ctx.api, "live");
+    const guest = await claim(ctx.api, live.code, "guest");
+    expect(guest.status).not.toBe(200);
+    expect(guest.body).toMatchObject({ code: "drop_disabled" });
+    const owner = await claim(ctx.api, live.code, "owner");
+    const res = await putDrop(ctx.api, owner.body.pid, deck);
+    expect(res.status).not.toBe(200);
+    expect(await problemCode(res)).toBe("drop_disabled");
+    const demo = await openScreen(ctx.api, "demo");
+    const claimed = await claim(ctx.api, demo.code, "guest");
+    expect((await putDrop(ctx.api, claimed.body.pid, deck)).status).toBe(200);
+    live.socket.close();
+    demo.socket.close();
   });
 });
 

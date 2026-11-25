@@ -16,7 +16,6 @@ const createBody = z.object({ mode }).strict();
 const claimBody = z
   .object({
     code: z.string().max(32),
-    pass: z.string().max(256).optional(),
     kind: z.enum(["owner", "guest"]).optional(),
   })
   .strict();
@@ -129,8 +128,6 @@ export const pairingRoutes: readonly Route[] = [
       if (tooMany) return tooMany;
       const code = normalize(body.value.code);
       if (!code) return fail("code_malformed");
-      // Guest passes are issued by a later module; until then a pass can only be invalid.
-      if (body.value.pass !== undefined) return fail("pass_invalid");
       const hashed = await ipHash(request, config);
       const found = await directoryStub(env).lookup(code, hashed, Date.now());
       if (!found.ok) return fail(found.error);

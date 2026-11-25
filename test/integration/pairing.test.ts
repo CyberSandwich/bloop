@@ -246,10 +246,10 @@ describe("pairing: validation at every boundary", () => {
     socket.close();
   });
 
-  it("refuses a guest pass until passes exist, and a live approve of a file nobody listed (SRC-02)", async () => {
+  it("refuses a claim body with a pass field, and a live approve of a file nobody listed (SRC-02)", async () => {
     const live = await openScreen(api, "live");
     const pass = await api.post("/api/claim", { code: live.code, pass: "whatever", kind: "guest" });
-    expect(pass.body).toEqual(problem("pass_invalid"));
+    expect(pass.status).toBe(400);
     const claimed = await claim(api, live.code);
     // FILE_SOURCE=mock: the demo account is the user, so there is nothing to sign in to.
     expect(claimed.body.needsAuth).toBe(false);

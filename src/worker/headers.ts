@@ -52,7 +52,8 @@ const PAGE_TAIL =
 const SELF = "script-src 'self'; style-src 'self'; img-src 'self'; font-src 'self'";
 
 export const CSP: Readonly<Record<Policy, string>> = {
-  landing: `default-src 'none'; ${SELF}; connect-src 'self'; manifest-src 'self'; ${PAGE_TAIL}`,
+  // The landing and legal pages fetch nothing and have no manifest, so default-src 'none' covers both.
+  landing: `default-src 'none'; ${SELF}; ${PAGE_TAIL}`,
   app: `default-src 'none'; ${SELF}; connect-src 'self'; ${PAGE_TAIL}`,
   // The screen page plays a guest video from its own origin; no blob: and no other host.
   screen: `default-src 'none'; ${SELF}; media-src 'self'; connect-src 'self'; ${PAGE_TAIL}`,

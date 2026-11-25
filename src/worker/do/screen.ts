@@ -33,6 +33,7 @@ import { type Meta, phoneView, roomView, screenView } from "../views.ts";
 import { bestEffort, type EffectDeps, noopSeams, runEffects, type SessionSeams } from "./effects.ts";
 import { LinkLedger, type Use } from "./ledger.ts";
 import { migrate, SCHEMA_KEY, SCHEMA_VERSION } from "./schema.ts";
+import { countAuthed } from "./sockets.ts";
 
 const HELLO_MS = 5000;
 const MAX_CODE_DRAWS = 3;
@@ -47,6 +48,8 @@ interface SocketAttachment {
   authed: boolean;
   /** Epoch ms by which `hello` must arrive. */
   helloBy: number;
+  /** A screen socket's address hash, kept as the link binding only once `hello` verifies the sid (OPEN-02). */
+  ip?: string;
 }
 
 /** `next`: the machine the event committed, which outlives `this.m` when the event closed the object. */
@@ -296,9 +299,14 @@ export class Screen extends DurableObject<Env> implements PairingStore {
     if (request.headers.get("Upgrade") !== "websocket") return new Response(null, { status: 426 });
     const role: Role = new URL(request.url).pathname.endsWith("/screen/ws") ? "screen" : "phone";
     const [client, server] = Object.values(new WebSocketPair()) as [WebSocket, WebSocket];
-    if (role === "screen") this.ctx.storage.kv.put("screenIp", await ipHash(request, this.config()));
+    const ip = role === "screen" ? { ip: await ipHash(request, this.config()) } : {};
     this.ctx.acceptWebSocket(server, [role]);
-    server.serializeAttachment({ role, authed: false, helloBy: Date.now() + HELLO_MS } satisfies SocketAttachment);
+    server.serializeAttachment({
+      role,
+      authed: false,
+      helloBy: Date.now() + HELLO_MS,
+      ...ip,
+    } satisfies SocketAttachment);
     await this.apply({ e: "socket", now: Date.now(), open: this.openSockets() });
     return new Response(null, { status: 101, webSocket: client });
   }
@@ -393,7 +401,12 @@ export class Screen extends DurableObject<Env> implements PairingStore {
   }
 
   private openSockets(excluding?: WebSocket): number {
-    return this.ctx.getWebSockets().filter((w) => w !== excluding && w.readyState === OPEN).length;
+    return countAuthed(
+      this.ctx
+        .getWebSockets()
+        .filter((w) => w !== excluding && w.readyState === OPEN)
+        .map((w) => w.deserializeAttachment() as SocketAttachment | null),
+    );
   }
 
   private currentScreenView(): ScreenView {
@@ -507,6 +520,8 @@ export class Screen extends DurableObject<Env> implements PairingStore {
       return ws.close(1008, "auth");
     }
     ws.serializeAttachment({ ...att, authed: true } satisfies SocketAttachment);
+    if (att.ip) this.ctx.storage.kv.put("screenIp", att.ip);
+    await this.apply({ e: "socket", now: Date.now(), open: this.openSockets() });
     this.sendState(ws, att.role);
     if (att.role === "screen" && this.m?.state === "waiting" && !this.m.codes.current) await this.issueCode();
     await this.rearm();

@@ -42,8 +42,6 @@ const pages: [string, Policy, boolean][] = [
   ["/s", "screen", true],
   ["/a", "app", false],
   ["/code", "app", false],
-  ["/g", "app", false],
-  ["/me", "app", false],
   ["/security", "landing", false],
   ["/privacy", "landing", false],
   ["/terms", "landing", false],
@@ -89,6 +87,11 @@ describe("headers.ts", () => {
       expect(CSP[policy]).toContain("require-trusted-types-for 'script'");
       expect(CSP[policy]).toContain("trusted-types 'none'");
     }
+  });
+
+  it("SITE-02 csp: the landing policy allows no connection and no manifest, the app pages only their own origin", () => {
+    expect(CSP.landing).not.toMatch(/connect-src|manifest-src/);
+    expect(CSP.app).toContain("connect-src 'self'");
   });
 
   it("api and file responses are never cached", () => {

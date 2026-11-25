@@ -10,7 +10,7 @@ afterAll(() => wrangler?.stop());
 
 // Written out in full, not derived from headers.ts, so a drifting policy fails here.
 const LANDING_CSP =
-  "default-src 'none'; script-src 'self'; style-src 'self'; img-src 'self'; font-src 'self'; connect-src 'self'; manifest-src 'self'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'; require-trusted-types-for 'script'; trusted-types 'none'; upgrade-insecure-requests";
+  "default-src 'none'; script-src 'self'; style-src 'self'; img-src 'self'; font-src 'self'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'; require-trusted-types-for 'script'; trusted-types 'none'; upgrade-insecure-requests";
 
 function expectBase(res: Response) {
   for (const [name, value] of Object.entries(BASE_HEADERS)) expect(res.headers.get(name), name).toBe(value);

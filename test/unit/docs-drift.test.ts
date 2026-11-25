@@ -139,9 +139,6 @@ describe("worker vars", () => {
   const devVarKeys = read(".dev.vars.example")
     .split("\n")
     .flatMap((line) => line.match(/^([A-Z0-9_]+)=/)?.[1] ?? []);
-  // Read by a module that is not built yet (ADR 0008), so config.ts does not parse it.
-  const UNPARSED = new Set(["ROOM_ENROLL_KEY"]);
-
   it("wrangler.jsonc vars are all parsed by config.ts", () => {
     expect(varKeys.filter((key) => !schemaKeys.includes(key))).toEqual([]);
   });
@@ -152,7 +149,7 @@ describe("worker vars", () => {
   });
 
   it(".dev.vars.example sets only variables config.ts parses", () => {
-    expect(devVarKeys.filter((key) => !schemaKeys.includes(key) && !UNPARSED.has(key))).toEqual([]);
+    expect(devVarKeys.filter((key) => !schemaKeys.includes(key))).toEqual([]);
   });
 
   it("every variable carries its meaning in a describe()", () => {
