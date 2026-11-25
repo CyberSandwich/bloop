@@ -81,10 +81,12 @@ export function spelled(code) {
 export const qrLabel = (code, host) =>
   `QR code, scan with your phone, or enter the code ${spelled(code)} at ${host} slash code`;
 
-/** "1:05" or "59:12": minutes and seconds left, never negative. @param {number} ms */
+/** "1:05", "11:59:57": the time left, never negative. @param {number} ms */
 export function countdown(ms) {
   const s = Math.max(0, Math.ceil(ms / 1000));
-  return `${Math.floor(s / 60)}:${String(s % 60).padStart(2, "0")}`;
+  const h = Math.floor(s / 3600);
+  const m = String(Math.floor(s / 60) % 60);
+  return `${h ? `${h}:${m.padStart(2, "0")}` : m}:${String(s % 60).padStart(2, "0")}`;
 }
 
 /** The host a link card and a row name ("vevox.com"); "" for a URL that does not parse. @param {string} url */

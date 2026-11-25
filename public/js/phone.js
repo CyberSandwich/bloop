@@ -48,6 +48,7 @@ const warnText = byId("warn-text");
 const fileList = byId("file-list");
 const scope = byId("scope");
 const ends = byId("ends");
+const endsText = byId("ends-text");
 const actionsEl = byId("actions");
 const polite = byId("polite");
 const filePick = /** @type {HTMLInputElement} */ (byId("file-pick"));
@@ -132,6 +133,7 @@ function buildItems(/** @type {Item[]} */ items) {
 
 function setView(/** @type {PhoneView} */ view, pid = c.pid) {
   adopt(c, view, drop, pid);
+  render();
 }
 
 function buildSkeleton() {
@@ -265,7 +267,7 @@ function countDown() {
   const at = c.view?.endsAt;
   if (ends.hidden || !at) return;
   const left = at - (Date.now() + c.skew);
-  setText(ends, `Ends in ${countdown(left)}${offline ? " · Reconnecting" : ""}`);
+  setText(endsText, `Ends in ${countdown(left)}${offline ? " · Reconnecting" : ""}`);
   ends.classList.toggle("soon", left <= SOON_MS);
 }
 
@@ -280,6 +282,13 @@ back.addEventListener("click", (e) => {
   e.preventDefault();
   void leave(c, io, back.getAttribute("href") ?? "/");
 });
+
+ends.addEventListener("click", () =>
+  import("./core/length.js").then(
+    (m) => m.openLength(c, setView, fail),
+    () => fail("offline"),
+  ),
+);
 
 fileList.addEventListener("click", (e) => {
   if (e.target instanceof Element && e.target.closest("[data-action='send-file']")) pickFile();
@@ -303,31 +312,20 @@ filePick.addEventListener("change", () => {
   if (filePick.files?.length) choose([...filePick.files]);
 });
 
-// A dropped file takes the picker's road. The hint shows while a file is dragged over a page that can take one.
-const dropHint = byId("drop-hint");
-let dragDepth = 0;
-const dragsFile = (/** @type {DragEvent} */ e) => !!e.dataTransfer?.types.includes("Files");
-addEventListener("dragenter", (e) => {
-  if (!dragsFile(e)) return;
+// The rest is lazy, in core/drag.js, which says why.
+const onDrag = (/** @type {DragEvent} */ e) => {
+  if (!e.dataTransfer?.types.includes("Files")) return;
   e.preventDefault();
-  dragDepth++;
-  show(dropHint, canAdd);
-});
-addEventListener("dragover", (e) => {
-  if (dragsFile(e)) e.preventDefault();
-});
-addEventListener("dragleave", (e) => {
-  if (!dragsFile(e)) return;
-  dragDepth = Math.max(0, dragDepth - 1);
-  if (dragDepth === 0) show(dropHint, false);
-});
-addEventListener("drop", (e) => {
-  if (!dragsFile(e)) return;
-  e.preventDefault();
-  dragDepth = 0;
-  show(dropHint, false);
-  if (canAdd) choose([...(e.dataTransfer?.files ?? [])]);
-});
+  const files = [...e.dataTransfer.files];
+  import("./core/drag.js").then(
+    (m) => m.drag(e.type, files, canAdd, choose),
+    () => {},
+  );
+};
+addEventListener("dragenter", onDrag);
+addEventListener("dragover", onDrag);
+addEventListener("dragleave", onDrag);
+addEventListener("drop", onDrag);
 
 const refuse = (/** @type {Parameters<typeof refusalToast>[0]} */ problem, /** @type {File} */ file) =>
   toast(
@@ -403,7 +401,6 @@ async function approve() {
   if (!res.ok) return fail(res.error, approve);
   if (home()) return location.assign("/s?mode=demo");
   setView(res.value);
-  render();
 }
 
 /** Opens the native picker; it needs this click as its user gesture. The server turns the claim into a guest at the first byte. */
@@ -455,10 +452,8 @@ async function send() {
   c.upload = null;
   if (stopped) return;
   c.drop = null;
-  if (res.ok) {
-    setView(res.view);
-    render();
-  } else fail(res.error, send);
+  if (res.ok) setView(res.view);
+  else fail(res.error, send);
   // A refusal over the list keeps the entry: Back returns to the list, as Cancel does.
   if (!fromList()) forgetEntry();
 }
@@ -488,7 +483,6 @@ async function endSession() {
   const res = await api.post("/api/end", {}, c.pid);
   if (!res.ok) return fail(res.error, endSession);
   setView(res.value);
-  render();
 }
 
 async function listFiles() {
@@ -527,10 +521,7 @@ function attach(/** @type {string} */ pid) {
     helloKey: "pid",
     api,
     connect: (url) => new WebSocket(url),
-    onView: (view) => {
-      setView(view);
-      render();
-    },
+    onView: (view) => setView(view),
     onError: (code) => onRefusal(c, code, { drop: () => drop(pid), stop: () => c.channel?.stop(), fail }),
     onLink: (link) => {
       offline = link !== "ok";
@@ -579,7 +570,6 @@ async function resume(/** @type {string} */ pid) {
   learn(view);
   setView(view, pid);
   attach(pid);
-  render();
   if (view.kind === "owner" && LIVE_CLAIM.includes(view.state)) listFiles();
 }
 

@@ -232,25 +232,59 @@ describe("error table", () => {
 describe("size budgets", () => {
   it("each lazy module has its own entry, browser JS leaves it out, and only import() reaches it", () => {
     const entries: { name: string; path: string | string[] }[] = JSON.parse(read("package.json"))["size-limit"];
-    const lazyEntries = entries.filter((e) => e.name.endsWith(", lazy"));
+    // JS entries only: a lazy stylesheet has its own entry and is loaded by its module (the SESS-01 sheet test).
+    const lazyEntries = entries.filter(
+      (e) => e.name.endsWith(", lazy") && [e.path].flat().every((path) => path.endsWith(".js")),
+    );
     expect(Object.fromEntries(lazyEntries.map((e) => [e.name, e.path]))).toEqual({
       "phone media, lazy": ["public/js/core/photo.js", "public/js/core/video.js"],
       "screen video, lazy": "public/js/viewer-video.js",
+      "session length sheet, lazy": ["public/js/core/length.js", "public/js/shared/length.js"],
+      "drag and drop, lazy": "public/js/core/drag.js",
     });
     const lazyPaths = lazyEntries.flatMap((e) => [e.path].flat());
     const browser = [entries.find((e) => e.name === "browser JS")?.path ?? []].flat();
     expect(browser).toEqual(["public/js/**/*.js", ...lazyPaths.map((path) => `!${path}`)]);
-    for (const name of lazyPaths.map((path) => path.slice(path.lastIndexOf("/") + 1))) {
-      // A specifier ending in /<name>, not a longer name that ends the same (video.js, viewer-video.js).
-      const named = new RegExp(`["'][^"']*/${name.replace(".", "\\.")}["']`);
-      for (const file of walk("public/js", (path) => path.endsWith(".js"))) {
-        for (const line of read(file)
-          .split("\n")
-          .filter((l) => named.test(l) && /\b(import|from)\b/.test(l))) {
-          expect(line, file).toMatch(new RegExp(`import\\(["'][^"']*/${name.replace(".", "\\.")}["']\\)`));
+    for (const entry of lazyEntries) {
+      const own = [entry.path].flat();
+      for (const name of own.map((path) => path.slice(path.lastIndexOf("/") + 1))) {
+        // A specifier ending in /<name>, not a longer name that ends the same (video.js, viewer-video.js).
+        const named = new RegExp(`["'][^"']*/${name.replace(".", "\\.")}["']`);
+        // A module of the same entry may import it statically: they load together.
+        for (const file of walk("public/js", (path) => path.endsWith(".js") && !own.includes(path))) {
+          for (const line of read(file)
+            .split("\n")
+            .filter((l) => named.test(l) && /\b(import|from)\b/.test(l))) {
+            expect(line, file).toMatch(new RegExp(`import\\(["'][^"']*/${name.replace(".", "\\.")}["']\\)`));
+          }
         }
       }
     }
+  });
+
+  it("SESS-01 sheet: the Session Length sheet loads only by import(), and its length rules only with it", () => {
+    for (const file of walk("public/js", (path) => path.endsWith(".js"))) {
+      for (const line of read(file)
+        .split("\n")
+        .filter((l) => /length\.js\b/.test(l) && /\b(import|from)\b/.test(l))) {
+        if (file.endsWith("core/length.js")) expect(line, file).toMatch(/from "\.\.\/shared\/length\.js"/);
+        else expect(line, file).toMatch(/import\("\.\/core\/length\.js"\)/);
+      }
+    }
+    // Its stylesheet comes with it, never with the page.
+    expect(read("public/a.html")).not.toContain("length.css");
+    expect(read("public/js/core/length.js")).toContain('href: "/css/length.css"');
+  });
+
+  it("drag and drop loads only by import(); phone.js claims a file drag and reads its files inside the event", () => {
+    for (const file of walk("public/js", (path) => path.endsWith(".js"))) {
+      for (const line of read(file)
+        .split("\n")
+        .filter((l) => /\bdrag\.js\b/.test(l) && /\b(import|from)\b/.test(l))) {
+        expect(line, file).toMatch(/import\("\.\/core\/drag\.js"\)/);
+      }
+    }
+    expect(read("public/js/phone.js")).toContain("e.preventDefault();\n  const files = [...e.dataTransfer.files];");
   });
 
   it("only package.json size-limit states a budget: docs name no entry next to a size", () => {
