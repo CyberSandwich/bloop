@@ -1,4 +1,4 @@
-// Every site page at phone widths, as a touch phone lays it out (CLAUDE.md, mobile is not optional). CI only.
+// Every site page at phone widths, as a touch phone lays it out (docs/design.md section 5, Phones, by eye). CI only.
 import { readdirSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { expect, test } from "@playwright/test";
