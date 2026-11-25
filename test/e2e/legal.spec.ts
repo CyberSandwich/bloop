@@ -161,7 +161,7 @@ test.describe("legal layout at 390", () => {
     await expect(table.locator("thead")).not.toHaveCSS("display", "none");
   });
 
-  test("a clause number takes a tap 8 px above and below and 4 to its left, never on the text", async ({ page }) => {
+  test("a clause number takes a tap 7 px above, 3 below and 4 to its left, never on the text", async ({ page }) => {
     await page.goto("/terms");
     const hit = await page.evaluate(`(() => {
       const num = document.querySelector('a.num[href="#8.3"]');
@@ -169,8 +169,8 @@ test.describe("legal layout at 390", () => {
       const r = num.getBoundingClientRect();
       const text = num.parentElement.getBoundingClientRect().left + 2;
       return [
-        document.elementFromPoint(r.left - 4, r.top - 8) === num,
-        document.elementFromPoint(r.left + 1, r.bottom + 8) === num,
+        document.elementFromPoint(r.left - 4, r.top - 7) === num,
+        document.elementFromPoint(r.left + 1, r.bottom + 3) === num,
         document.elementFromPoint(text, r.top + r.height / 2) !== num,
       ];
     })()`);
@@ -200,6 +200,29 @@ test.describe("legal numbers at 320", () => {
     });
   }
 });
+
+for (const width of [390, 1440]) {
+  test.describe(`legal tap areas at ${width}`, () => {
+    test.use({ viewport: { width, height: 844 } });
+
+    for (const path of ["/privacy", "/terms"]) {
+      test(`${path}: the top and bottom edge of every number's tap area is that number`, async ({ page }) => {
+        await page.goto(path);
+        // Each number's tap area, probed 1 px inside its top and bottom edge; a neighbor's area over it answers instead.
+        const wrong = (await page.evaluate(`[...document.querySelectorAll(".legal-text a.num")].flatMap((num) => {
+          num.scrollIntoView({ block: "center" });
+          const r = num.getBoundingClientRect();
+          const after = getComputedStyle(num, "::after");
+          const x = r.left + 1;
+          const ys = [r.top + parseFloat(after.top) + 1, r.bottom - parseFloat(after.bottom) - 1];
+          return ys.filter((y) => document.elementFromPoint(x, y) !== num).map((y) => num.textContent + " at " + Math.round(y - r.top));
+        })`)) as string[];
+        expect(wrong).toEqual([]);
+        expect(await page.locator(".legal-text a.num").count()).toBeGreaterThan(20);
+      });
+    }
+  });
+}
 
 test.describe("structured data and previews", () => {
   for (const path of ["/", "/privacy", "/articles/how-bloop-works"]) {

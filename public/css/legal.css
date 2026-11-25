@@ -176,11 +176,18 @@
   position: absolute;
   left: calc(-1 * var(--gutter));
 }
-/* Every number is positioned: a 44 tall tap area that moves no text, grown away from it, never over it. */
+/* Every number is positioned: a tap area that moves no text, grown away from it, and at most half way to the next
+   number (clauses 16 apart, a clause's first item 8 below, items 4 apart), so two never overlap. */
 a.num::after {
   content: "";
   position: absolute;
-  inset: -9px 0 -9px -6px;
+  inset: -8px 0 -4px -6px;
+}
+h2 > a.num::after {
+  top: -12px;
+}
+.items a.num::after {
+  inset-block: -2px;
 }
 .items {
   margin: 8px 0 0;
