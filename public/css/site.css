@@ -263,6 +263,11 @@ html:has(.page-site) {
       color: transparent;
       animation: sweep 2s linear 0.3s infinite backwards;
     }
+    /* sheen-follow.js sets --sheen-x, a fraction of the 5em tile, while the pointer is over the h1. */
+    .sheen.is-following {
+      animation: none;
+      background-position: calc(var(--sheen-x) * 5em) 0;
+    }
   }
 }
 @keyframes sweep {
@@ -496,7 +501,8 @@ h3 {
 .hero:focus-within .sheen {
   animation-play-state: paused;
 }
-/* A tap would leave :hover on, so only a pointer that hovers pauses it. */
+/* A tap would leave :hover on, so only a pointer that hovers pauses it. Until sheen-follow.js loads, or if it
+   fails, this is the whole hover behavior; once it follows, the band has no animation to pause. */
 @media (hover: hover) {
   .hero h1:hover .sheen {
     animation-play-state: paused;

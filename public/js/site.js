@@ -49,9 +49,23 @@ menu?.addEventListener("click", (e) => {
   if (e.target instanceof Element && e.target.closest("a") && menu.hasAttribute("popover")) menu.hidePopover?.();
 });
 
+const tiltable = matchMedia("(prefers-reduced-motion: no-preference)");
+
+// A hovering pointer takes the sheen's band (design.md section 8); a failed load leaves the hover pause.
+document.querySelector(".hero h1")?.addEventListener(
+  "pointerenter",
+  () => {
+    if (tiltable.matches && matchMedia("(hover: hover)").matches)
+      import("./sheen-follow.js").then(
+        (m) => m.follow(),
+        () => {},
+      );
+  },
+  { once: true },
+);
+
 // A spring (design.md section 6) drives a paused tilt animation; 1% thresholds wake it.
 const stage = document.querySelector(".stage");
-const tiltable = matchMedia("(prefers-reduced-motion: no-preference)");
 if (stage && tiltable.matches) {
   const tilt = stage.animate({ transform: ["rotateX(24deg) scale(.9)", "none"] }, { duration: 1000, fill: "both" });
   tilt.pause();

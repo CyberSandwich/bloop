@@ -1332,6 +1332,13 @@ describe("landing motion and spacing (design.md sections 6 and 8)", () => {
     // Hover pauses only where a pointer hovers: a tap would leave :hover stuck on, and the sheen paused.
     expect(css).toMatch(/@media \(hover: hover\) \{\s*\.hero h1:hover \.sheen \{\s*animation-play-state: paused;/);
     expect(css.replace(/@media \(hover: hover\) \{[^@]*?\n\}\n/g, "")).not.toContain("h1:hover .sheen");
+    // A hover that stops motion needs a user-driven replacement: the follower, fetched on the first pointerenter
+    // of the h1, only where a pointer hovers and motion is allowed, with no import before it (design.md section 8).
+    expect(js).toMatch(/querySelector\("\.hero h1"\)\?\.addEventListener\(\s*"pointerenter"/);
+    expect(js).toMatch(
+      /if \(tiltable\.matches && matchMedia\("\(hover: hover\)"\)\.matches\)\s*import\("\.\/sheen-follow\.js"\)/,
+    );
+    expect(js).not.toMatch(/^import /m);
     expect(rule).toBeGreaterThan(0);
     for (const m of css.matchAll(/^\s*animation: /gm)) expect(m.index ?? 0).toBeLessThan(rule);
     // The doc pages' one panel pauses its drift the same way.

@@ -323,18 +323,78 @@ for (const vp of VIEWPORTS) {
       await expect(sheen).not.toHaveClass(/is-paused/);
       const state = () => page.evaluate(`document.querySelector(".sheen").getAnimations()[0]?.playState`);
       await expect.poll(state).toBe("running");
-      // WCAG 2.2.2: the endless sweep stops while the heading is hovered or the hero holds focus.
-      if (!vp.touch) {
-        await page.locator(".hero h1").hover();
-        await expect.poll(state).toBe("paused");
-        await page.mouse.move(0, vp.height - 1);
-        await expect.poll(state).toBe("running");
-      }
+      // WCAG 2.2.2: the endless sweep stops while the hero holds focus.
       await page.locator(".hero").getByRole("link", { name: "Try the Demo" }).focus();
       await expect.poll(state).toBe("paused");
       await page.evaluate("document.activeElement.blur()");
       await page.evaluate("scrollTo(0, 2500)");
       await expect(sheen).toHaveClass(/is-paused/);
+    });
+
+    test("the hover pause stays when the follower fails to load", async ({ page }) => {
+      test.skip(vp.touch, "no hovering pointer");
+      await page.route("**/js/sheen-follow.js", (route) => route.abort());
+      await page.goto("/");
+      const state = () => page.evaluate(`document.querySelector(".sheen").getAnimations()[0]?.playState`);
+      await page.locator(".hero h1").hover();
+      await expect.poll(state).toBe("paused");
+      await page.mouse.move(0, vp.height - 1);
+      await expect.poll(state).toBe("running");
+    });
+
+    test("the band follows the pointer over the h1 and resumes where it was left, with no jump", async ({ page }) => {
+      test.skip(vp.touch, "no hovering pointer");
+      await page.goto("/");
+      const word = (await page.evaluate(`(() => {
+        const r = document.querySelector(".sheen").getBoundingClientRect();
+        return [r.left, r.width, r.top + r.height / 2, parseFloat(getComputedStyle(document.querySelector(".sheen")).fontSize)];
+      })()`)) as [number, number, number, number];
+      const [left, width, y, em] = word;
+      const tile = 5 * em;
+      const sheen = page.locator(".sheen");
+      // The first move over the h1 fetches the follower; the next one starts it.
+      await expect(async () => {
+        await page.mouse.move(left + width * 0.1, y);
+        await page.mouse.move(left + width * 0.12, y);
+        await expect(sheen).toHaveClass(/is-following/, { timeout: 250 });
+      }).toPass();
+      const at = async () =>
+        (await page.evaluate(
+          `new Promise((done) => requestAnimationFrame(() => requestAnimationFrame(() => done(parseFloat(getComputedStyle(document.querySelector(".sheen")).backgroundPosition)))))`,
+        )) as number;
+      // The band moves with the pointer, one to one, wrapping at the tile.
+      const wrap = (d: number) => ((((d + tile / 2) % tile) + tile) % tile) - tile / 2;
+      let x = left + width * 0.12;
+      let pos = await at();
+      for (const f of [0.25, 0.4, 0.55, 0.7, 0.85]) {
+        const nx = left + width * f;
+        await page.mouse.move(nx, y);
+        const next = await at();
+        expect(Math.abs(wrap(next - pos - (nx - x)))).toBeLessThan(2);
+        expect(Math.abs(next - pos)).toBeGreaterThan(1);
+        [x, pos] = [nx, next];
+      }
+      // On leave, every frame for 400 ms: no step beyond the sweep's own speed (2.5em a second).
+      await page.evaluate(`(() => {
+        const out = (window.sheenFrames = []);
+        const t0 = performance.now();
+        const tick = (now) => {
+          out.push([now, parseFloat(getComputedStyle(document.querySelector(".sheen")).backgroundPosition)]);
+          if (now - t0 < 700) requestAnimationFrame(tick);
+        };
+        requestAnimationFrame(tick);
+      })()`);
+      await page.waitForTimeout(100);
+      await page.mouse.move(0, vp.height - 1);
+      await page.waitForTimeout(800);
+      const frames = (await page.evaluate("window.sheenFrames")) as [number, number][];
+      expect(frames.length).toBeGreaterThan(10);
+      for (const [i, [t, p]] of frames.entries()) {
+        const [t0, p0] = frames[i - 1] ?? [t, p];
+        const limit = 2.5 * em * ((t - t0) / 1000) * 1.1 + 2;
+        expect(Math.abs(wrap(p - p0)), `frame ${i}`).toBeLessThanOrEqual(limit);
+      }
+      await expect(sheen).not.toHaveClass(/is-following/);
     });
 
     test("no image drawn under 64 px loads a source over 240 px wide", async ({ page }) => {

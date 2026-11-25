@@ -170,6 +170,11 @@
       "limit": "0.2 kB"
     },
     {
+      "name": "sheen follow, lazy",
+      "path": "dist/js/sheen-follow.js",
+      "limit": "0.62 kB"
+    },
+    {
       "name": "font",
       "path": "public/fonts/inter-latin.woff2",
       "brotli": false,
