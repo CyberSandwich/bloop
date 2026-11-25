@@ -1,6 +1,7 @@
 // The remote's state, no DOM (core/remote-ui.js draws it). While a command is on its way it shows the last tap, then
 // the server's `shown` (PAIR-13).
 /** @import {ErrorCode, Item, PhoneView, Shown, ShownCommand} from "../../../src/shared/protocol.ts" */
+import { TUNE, tuneOf } from "../shared/session.js";
 import { nextSeq, pagesOf, stepPage } from "./demo.js";
 import { firstFile, onStage } from "./states.js";
 
@@ -15,8 +16,8 @@ export const canPresent = (/** @type {Item} */ item, /** @type {PhoneView} */ vi
   !!pagesOf(item, view) || onStage(item);
 
 /**
- * The command a tap makes, or null if it changes nothing. A new item starts at page 1, playing, presenting on if it
- * can. Sound from the screen's blocked asks for sound.
+ * The command a tap makes, or null if it changes nothing. A new item starts at page 1, playing with sound (TUNE: a
+ * screen that holds sound reports blocked again), presenting on if it can. Sound from blocked asks for sound.
  * @param {PhoneView} view
  * @param {Shown} at
  * @param {{item: string} | {step: number} | {present: true} | {play: true} | {sound: true}} tap
@@ -26,13 +27,13 @@ export function command(view, at, tap) {
   if ("item" in tap) {
     const item = view.items.find((x) => x.id === tap.item);
     if (item?.kind !== "file") return null;
-    const next = { ...at, item: item.id, page: 1, present: at.present && canPresent(item, view), play: true };
+    const next = { ...at, item: item.id, page: 1, present: at.present && canPresent(item, view), ...TUNE };
     return item.id === at.item && at.page === 1 && next.present === at.present ? null : next;
   }
   const item = view.items.find((x) => x.id === at.item);
   if (!item) return null;
-  if ("play" in tap) return { ...at, play: at.play === false };
-  if ("sound" in tap) return { ...at, sound: (at.sound ?? "on") === "on" ? "off" : "on" };
+  if ("play" in tap) return { ...at, play: !tuneOf(at).play };
+  if ("sound" in tap) return { ...at, sound: tuneOf(at).sound === "on" ? "off" : "on" };
   if ("present" in tap) return canPresent(item, view) ? { ...at, present: !at.present } : null;
   const pages = pagesOf(item, view);
   const page = pages ? stepPage(at.page - 1, tap.step, pages.length) + 1 : at.page;

@@ -48,6 +48,12 @@ describe("the support mail", () => {
     expect(mail.body.endsWith("Browser: x&body=y")).toBe(true);
   });
 
+  it("leaves out a fact with no value, so no line ends in a bare colon", () => {
+    const body = parse(supportMail("x", { ...FACTS, Error: null, Browser: "" })).body;
+    expect(body.endsWith("Time: 2026-11-25T10:00:00.000Z")).toBe(true);
+    expect(body).not.toMatch(/Error|Browser|: *$/m);
+  });
+
   it("carries no credential: no sid, pid, pairing code or token, whatever the page's state", () => {
     for (const state of ["service_down", "error", "offline"]) {
       const body = parse(supportMail("x", { ...FACTS, State: state })).body;
@@ -68,7 +74,8 @@ describe("the support mail", () => {
     const mail = parse(href);
     expect(mail.subject).toBe("Couldn't sign you in.");
     expect(mail.body).toContain("Page: /auth/callback\nState: exchange\nError: source_unavailable");
-    expect(mail.body).toContain("Time: 2026-11-25T10:00:00.000Z\nBrowser: ");
+    expect(mail.body.endsWith("Time: 2026-11-25T10:00:00.000Z")).toBe(true);
+    expect(mail.body).not.toContain("Browser");
     for (const pattern of CREDENTIALS) expect(mail.body, String(pattern)).not.toMatch(pattern);
     expect(html).toContain("Scan the code on the screen to try again, or email");
     expect(html).not.toMatch(/sign in to/i);

@@ -48,6 +48,8 @@ export function allowedLink(raw: string): string | null {
 
 export { orderItems } from "../../public/js/shared/session.js";
 
+import { tuneOf } from "../../public/js/shared/session.js";
+
 /** The id an item holds from approval on: its place in the approved list, written once and never recomputed. */
 export const itemId = (index: number): string => `i${index + 1}`;
 
@@ -110,8 +112,8 @@ export const sameShown = (a: Shown | null, b: Shown): boolean =>
   a.item === b.item &&
   a.page === b.page &&
   a.present === b.present &&
-  (a.play ?? true) === (b.play ?? true) &&
-  (a.sound ?? "on") === (b.sound ?? "on");
+  tuneOf(a).play === tuneOf(b).play &&
+  tuneOf(a).sound === tuneOf(b).sound;
 
 /** The index of the item an approval launches: the first file. -1 when the session holds links only. */
 export const launchIndex = (items: readonly ItemRef[]): number => items.findIndex((i) => i.kind === "file");

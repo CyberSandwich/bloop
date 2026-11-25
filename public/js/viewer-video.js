@@ -61,8 +61,8 @@ export function roll(shot, url, onChange) {
         () =>
           (video.ended || navigator.userActivation?.isActive) &&
           retune({ play: !video.paused, sound: !video.muted ? "on" : want.sound === "on" ? "off" : want.sound });
-    if (!want.play) return video.pause();
     video.muted = want.sound !== "on";
+    if (!want.play) return video.pause();
     // An interrupted play() (a pause, the end) is no refusal of sound.
     video.play().catch((e) => !video.muted && e.name === "NotAllowedError" && retune({ ...want, sound: "blocked" }));
   };

@@ -51,7 +51,6 @@ export function callbackErrorPage(failure: SignInError, now = new Date()): Respo
     State: failure,
     Error: CODE[failure],
     Time: now.toISOString(),
-    Browser: "",
   });
   const line = body.replace(SUPPORT, `<a href="${mail.replaceAll("&", "&amp;")}">${SUPPORT}</a>`);
   const html = `<!DOCTYPE html>

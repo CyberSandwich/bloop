@@ -705,6 +705,82 @@ describe("a guest's photo and video on the stage (design.md section 7, Video)", 
       v.render(deckView({ item: "i1", page: 1, present: false }, 4));
       expect(video.paused).toBe(false);
     });
+
+    it("VID-05 sound: a file joining the list leaves the video on stage playing", async () => {
+      const { v, el, video } = await staged();
+      const pauses = video.pauses;
+      const grown = { ...view, kind: "guest", items: [{ ...shot, id: "i0" }, clip], now: 3 };
+      v.render({ ...grown, shown: { item: "i1", page: 1, present: false } } as unknown as ScreenView);
+      await settle();
+      expect(el("frame").querySelector("video")).toBe(video);
+      expect(video.pauses).toBe(pauses);
+      expect(video.paused).toBe(false);
+      expect(v.shown()).toMatchObject({ item: "i1", play: true });
+    });
+
+    it("VID-05 sound: a switch to another video lets go of the first: its handlers, and a refusal it answers late", async () => {
+      const two: Item = { ...clip, id: "i2", name: "Demo.mov" };
+      const list = (item: string, now: number) =>
+        ({
+          ...view,
+          kind: "guest",
+          items: [clip, two],
+          shown: { item, page: 1, present: false },
+          now,
+        }) as unknown as ScreenView;
+      const tapped = vi.fn();
+      const { v, el } = setup({ tapped });
+      v.take(`${ORIGIN}/f/abc/talk.mov`, 0, "view");
+      v.render(list("i1", 1));
+      await loaded();
+      const a = videoOf(el("frame"), made) as Node;
+      // A's play answers only later, with the refusal a browser holding sound gives.
+      let refuse = () => {};
+      a.play = () => {
+        a.paused = false;
+        return new Promise((_, no) => {
+          refuse = () => no(new DOMException("held", "NotAllowedError"));
+        });
+      };
+      meta(a);
+      v.render(list("i1", 1));
+      await settle();
+      v.take(`${ORIGIN}/f/abc/demo.mov`, 1, "view");
+      v.render(list("i2", 2));
+      await loaded();
+      const b = videoOf(el("frame"), made) as Node;
+      expect(b).not.toBe(a);
+      meta(b);
+      v.render(list("i2", 2));
+      await settle();
+      expect(a.paused).toBe(true);
+      expect((a as unknown as { onplay: unknown }).onplay).toBeNull();
+      expect(b.paused).toBe(false);
+      refuse();
+      await settle();
+      expect(b.muted).toBe(false);
+      expect(el("b-sound").hidden).toBe(true);
+      expect(v.shown()).toMatchObject({ item: "i2", play: true, sound: "on" });
+      expect(tapped).not.toHaveBeenCalled();
+    });
+
+    it("VID-05 sound: parked, Tap for Sound is hidden and a tap on it does nothing", async () => {
+      const { v, el, video } = await staged(true);
+      expect(el("b-sound").hidden).toBe(false);
+      v.park("Offline");
+      expect(el("b-sound").hidden).toBe(true);
+      active = true;
+      for (const f of el("b-sound").listeners.get("click") ?? []) f({ type: "click" });
+      expect(video.muted).toBe(true);
+      expect(video.paused).toBe(true);
+    });
+
+    it("VID-05 sound: a command that pauses and mutes at once does both", async () => {
+      const { v, video } = await staged();
+      v.render(told({ play: false, sound: "off" }));
+      expect(video.paused).toBe(true);
+      expect(video.muted).toBe(true);
+    });
   });
 
   const cantPlay = (frame: Node) => frame.querySelector(".item-card")?.children[1]?.textContent ?? null;
@@ -1241,12 +1317,12 @@ describe("PAIR-13 the screen follows the phone, and reports its own taps (design
       expect(v.shown()?.present).toBe(false);
     });
 
-    it("VID-05 sound: a row picked here starts its item playing, as a phone's command does, and keeps the sound", () => {
+    it("VID-05 sound: a row picked here starts its item as a phone's command does: playing, sound tried again", () => {
       const { v, el } = setup();
-      v.render(guest({ item: "t1", page: 1, present: false, play: false, sound: "off" }));
-      expect(v.shown()).toMatchObject({ play: false, sound: "off" });
+      v.render(guest({ item: "t1", page: 1, present: false, play: false, sound: "blocked" }));
+      expect(v.shown()).toMatchObject({ play: false, sound: "blocked" });
       click(el("items").children[1]?.children[0] as Node);
-      expect(v.shown()).toMatchObject({ item: "t2", play: true, sound: "off" });
+      expect(v.shown()).toMatchObject({ item: "t2", play: true, sound: "on" });
     });
 
     it("a command that presents a card is followed to the card, without Present", () => {

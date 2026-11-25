@@ -10,6 +10,7 @@ import { loader, readAll, setProgress } from "./core/loader.js";
 import { rowFace, tile } from "./core/rows.js";
 import { onStage } from "./core/states.js";
 import { byId, el, icon, setText, show } from "./core/ui.js";
+import { TUNE, tuneOf } from "./shared/session.js";
 
 /** @typedef {{play: boolean, sound: Sound}} Tune */
 /** @typedef {{node?: HTMLCanvasElement | HTMLVideoElement, ratio?: number | null, ready: boolean, failed: boolean, fraction: number | null, stop: () => void, tune?: (want: Tune, retune: (next: Tune) => void) => void}} Shot */
@@ -288,7 +289,7 @@ export function createViewer(deps) {
   let followed = "";
   /** A video's play state (design.md section 7, Video), and what the one on stage was last set to. */
   /** @type {Tune} */
-  let tune = { play: true, sound: "on" };
+  let tune = { ...TUNE };
   let tuned = "";
   const pages = () => {
     const item = items()[at];
@@ -326,8 +327,8 @@ export function createViewer(deps) {
     at = i;
     page = 0;
     want &&= can();
-    // A new item starts playing, as a phone's command starts it.
-    tune.play = true;
+    // A new item starts as a phone's command starts it: playing, sound tried again.
+    tune = { ...TUNE };
     if (side.matches(":popover-open")) side.hidePopover();
     deps.onChange();
     deps.tapped?.();
@@ -467,7 +468,8 @@ export function createViewer(deps) {
         frame.classList.toggle("is-scroll", scroll);
         // A photo replacing its own loader fades in over it; anything else swaps at once.
         const over = img && waiting?.key === key && frame.firstElementChild === waiting.part ? waiting.part : null;
-        frame.querySelector("video")?.pause();
+        const leaving = frame.querySelector("video");
+        if (!nodes.some((n) => n === leaving || n.contains?.(leaving))) hush(leaving);
         frame.replaceChildren(...(over ? [over] : []), ...nodes);
         if (!loading) waiting = null;
         if (img && over)
@@ -485,6 +487,9 @@ export function createViewer(deps) {
         // The pill (its buttons appear after the item) and the list (it grows with a guest's file) set the place too.
         for (const box of [target, view, pill, side, end]) if (box) sized.observe(box);
         swapped = true;
+        // A swap moves or replaces the video: it is set again.
+        tuned = "";
+        play();
       };
       building = nodes;
       // The old item stays until the new one has decoded.
@@ -511,15 +516,24 @@ export function createViewer(deps) {
     play();
   }
 
+  /** Off the stage or parked, a video stops and reports nothing: its events would retune the item after it. */
+  const hush = (/** @type {HTMLVideoElement | null} */ v) => {
+    if (!v) return;
+    v.onplay = v.onpause = v.onvolumechange = null;
+    v.pause();
+  };
+
   /** Sets the video on stage to `tune`, once per change (viewer-video.js); what it reports back is reported on. */
   function play() {
-    const set = frame.querySelector("video") && images.get(keyOf(at))?.tune;
+    const set = parked || !frame.querySelector("video") ? undefined : images.get(keyOf(at))?.tune;
     show(tapSound, !!set && tune.sound === "blocked");
     const key = set ? keyOf(at) + tune.play + tune.sound : "";
     if (key === tuned) return;
     tuned = key;
-    set?.(tune, (next) => {
-      if (next.play === tune.play && next.sound === tune.sound) return;
+    const mine = keyOf(at);
+    set?.(tune, (/** @type {Tune} */ next) => {
+      // A late answer for an item no longer on stage, or while parked, is not this one's.
+      if (parked || keyOf(at) !== mine || (next.play === tune.play && next.sound === tune.sound)) return;
       tune = next;
       tuned = "";
       play();
@@ -549,7 +563,7 @@ export function createViewer(deps) {
     at = page = 0;
     parked = want = false;
     followed = tuned = "";
-    tune = { play: true, sound: "on" };
+    tune = { ...TUNE };
     hide();
     // A hidden stage while presenting is a black screen: only a real end leaves it.
     present(false);
@@ -665,7 +679,7 @@ export function createViewer(deps) {
   // The gesture sound needs; the video's volumechange then reports it.
   tapSound.addEventListener("click", () => {
     const video = frame.querySelector("video");
-    if (video) video.muted = false;
+    if (video && !parked) video.muted = false;
   });
   prev.addEventListener("click", () => go(-1));
   next.addEventListener("click", () => go(1));
@@ -711,7 +725,7 @@ export function createViewer(deps) {
           if (i !== at) page = 0;
           at = i;
           want = told.present && can();
-          tune = { play: told.play ?? true, sound: told.sound ?? "on" };
+          tune = tuneOf(told);
           go(0, told.page - 1);
         }
       }
@@ -730,7 +744,8 @@ export function createViewer(deps) {
     park(line) {
       parked = true;
       // A hidden video would play on unseen; unparked, it is set again (as off the stage, paint).
-      frame.querySelector("video")?.pause();
+      hush(frame.querySelector("video"));
+      show(tapSound, false);
       tuned = "";
       if (!presenting()) return hide();
       for (const part of [frame, prev, next]) show(part, false);

@@ -542,6 +542,18 @@ describe("phone copy", () => {
     expect(short.body).not.toContain("Board.png");
   });
 
+  it("S7 the offer's cut counts code points, so an emoji at either cut stays whole", () => {
+    // 29 code points: an emoji is the 19th, the last eight start with one; String.slice would halve both.
+    const file = `${"a".repeat(18)}\u{1F3AC}bb\u{1F600}clp.mp4`;
+    expect(Array.from(file)).toHaveLength(29);
+    const title = phoneCopy("guest_confirm", { ...pf, file }).title;
+    expect(title).toBe(`Send ${"a".repeat(18)}\u{1F3AC}\u2026\u{1F600}clp.mp4 to Room 2.14?`);
+    expect(title).not.toMatch(/[\uD800-\uDBFF](?![\uDC00-\uDFFF])|(?<![\uD800-\uDBFF])[\uDC00-\uDFFF]/);
+    // 28 code points stay whole, though their UTF-16 length is over 28.
+    const fits = `${"a".repeat(26)}\u{1F3AC}\u{1F600}`;
+    expect(phoneCopy("guest_confirm", { ...pf, file: fits }).title).toBe(`Send ${fits} to Room 2.14?`);
+  });
+
   it("S7 service down on the phone: what is wrong, Try Again, and the prefilled support mail", () => {
     const mail = "mailto:hi@bloop.here?subject=bloop%20isn't%20responding";
     const c = phoneCopy("service_down", pf);

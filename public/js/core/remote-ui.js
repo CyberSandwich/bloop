@@ -1,6 +1,8 @@
 // The phone's remote (design.md section 7, Phone page), its stylesheet first. Markup: a.html's #remote-parts.
 /** @import {PhoneView} from "../../../src/shared/protocol.ts" */
 /** @import {PhonePage} from "../types.js" */
+
+import { tuneOf } from "../shared/session.js";
 import { createApi } from "./api.js";
 import { pagesOf, thumbOf } from "./demo.js";
 import { isVideo, itemName } from "./format.js";
@@ -89,8 +91,8 @@ export function mount(c, onView) {
     count.hidden = !pages;
     // A video's bubbles play and sound, not step.
     for (const [b, on] of /** @type {const} */ ([
-      [play, at.play !== false],
-      [sound, (at.sound ?? "on") === "on"],
+      [play, tuneOf(at).play],
+      [sound, tuneOf(at).sound === "on"],
     ])) {
       b.hidden = !video;
       b.setAttribute("aria-pressed", String(on));

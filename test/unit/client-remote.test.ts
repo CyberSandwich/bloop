@@ -53,9 +53,9 @@ describe("the remote's commands", () => {
   it("a row puts a file on its first page; a link, or the file already on its first page, sends nothing", () => {
     const v = viewOf();
     const at: Shown = { item: "i3", page: 2, present: false };
-    expect(command(v, at, { item: "i2" })).toEqual({ item: "i2", page: 1, present: false, play: true });
+    expect(command(v, at, { item: "i2" })).toEqual({ item: "i2", page: 1, present: false, play: true, sound: "on" });
     expect(command(v, at, { item: "i4" })).toBeNull();
-    expect(command(v, at, { item: "i3" })).toEqual({ item: "i3", page: 1, present: false, play: true });
+    expect(command(v, at, { item: "i3" })).toEqual({ item: "i3", page: 1, present: false, play: true, sound: "on" });
     expect(command(v, { ...at, page: 1 }, { item: "i3" })).toBeNull();
     expect(command(v, at, { item: "nope" })).toBeNull();
   });
@@ -66,12 +66,19 @@ describe("the remote's commands", () => {
       page: 1,
       present: true,
       play: true,
+      sound: "on",
     });
   });
 
   it("a new item keeps presenting when it can be presented, and stops on one that cannot", () => {
     const at: Shown = { item: "i3", page: 2, present: true };
-    expect(command(viewOf(), at, { item: "i1" })).toEqual({ item: "i1", page: 1, present: true, play: true });
+    expect(command(viewOf(), at, { item: "i1" })).toEqual({
+      item: "i1",
+      page: 1,
+      present: true,
+      play: true,
+      sound: "on",
+    });
     // A guest's deck is a card on the screen: nothing to present.
     const guestDeck: Item = { ...deck, id: "i1" };
     const guest = viewOf({ kind: "guest", items: [guestDeck, { ...dog, id: "i2" }] });
@@ -80,6 +87,7 @@ describe("the remote's commands", () => {
       page: 1,
       present: false,
       play: true,
+      sound: "on",
     });
     expect(canPresent(guestDeck, guest)).toBe(false);
     expect(canPresent(deck, viewOf())).toBe(true);
@@ -132,14 +140,14 @@ describe("VID-05 sound: the remote's play and sound", () => {
     expect(command(v, { ...at, sound: "blocked" }, { sound: true })).toEqual({ ...at, sound: "on" });
   });
 
-  it("VID-05 sound: another item starts playing and keeps the sound as it was", () => {
-    const paused = { ...at, play: false, sound: "off" as const };
+  it("VID-05 sound: another item starts playing with sound, so a screen holding sound reports blocked anew", () => {
+    const paused = { ...at, play: false, sound: "blocked" as const };
     expect(command(v, paused, { item: "i6" })).toEqual({
       item: "i6",
       page: 1,
       present: false,
       play: true,
-      sound: "off",
+      sound: "on",
     });
   });
 });
@@ -188,9 +196,9 @@ describe("the remote's state: a tap shows at once, and the server's shown is the
   it("a tap shows at once and sends an absolute command with the next seq", async () => {
     const h = harness();
     void h.remote.tap({ item: "i3" });
-    expect(h.remote.at()).toEqual({ item: "i3", page: 1, present: false, play: true });
+    expect(h.remote.at()).toEqual({ item: "i3", page: 1, present: false, play: true, sound: "on" });
     expect(h.paints()).toBe(1);
-    expect(h.sent).toEqual([{ item: "i3", page: 1, present: false, play: true, seq: 1_000 }]);
+    expect(h.sent).toEqual([{ item: "i3", page: 1, present: false, play: true, sound: "on", seq: 1_000 }]);
   });
 
   it("quick taps build on the last tap, never the stale view, and each seq is above the last within one millisecond", async () => {
@@ -199,8 +207,8 @@ describe("the remote's state: a tap shows at once, and the server's shown is the
     void h.remote.tap({ step: 1 });
     void h.remote.tap({ present: true });
     expect(h.sent.map((c) => c.seq)).toEqual([1_000, 1_001, 1_002]);
-    expect(h.sent.at(-1)).toEqual({ item: "i3", page: 2, present: true, play: true, seq: 1_002 });
-    expect(h.remote.at()).toEqual({ item: "i3", page: 2, present: true, play: true });
+    expect(h.sent.at(-1)).toEqual({ item: "i3", page: 2, present: true, play: true, sound: "on", seq: 1_002 });
+    expect(h.remote.at()).toEqual({ item: "i3", page: 2, present: true, play: true, sound: "on" });
   });
 
   it("an earlier answer arriving while a later tap is on its way never moves the mark back", async () => {
@@ -209,7 +217,7 @@ describe("the remote's state: a tap shows at once, and the server's shown is the
     void h.remote.tap({ item: "i2" });
     h.answers[0]?.({ ok: true, value: viewOf({ shown: { item: "i3", page: 1, present: false }, v: 1 }) });
     await h.tick();
-    expect(h.remote.at()).toEqual({ item: "i2", page: 1, present: false, play: true });
+    expect(h.remote.at()).toEqual({ item: "i2", page: 1, present: false, play: true, sound: "on" });
     h.answers[1]?.({ ok: true, value: viewOf({ shown: { item: "i2", page: 1, present: false }, v: 2 }) });
     await h.tick();
     expect(h.page.view?.v).toBe(2);
@@ -231,7 +239,7 @@ describe("the remote's state: a tap shows at once, and the server's shown is the
     // The view says the server applied 5_000 from this phone; the clock reads 1_000.
     const h = harness(viewOf({ seq: 5_000 }));
     void h.remote.tap({ item: "i3" });
-    expect(h.sent).toEqual([{ item: "i3", page: 1, present: false, play: true, seq: 5_001 }]);
+    expect(h.sent).toEqual([{ item: "i3", page: 1, present: false, play: true, sound: "on", seq: 5_001 }]);
     // An answer carries the last seq again, and the next tap goes on from it.
     h.answers[0]?.({
       ok: true,

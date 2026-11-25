@@ -2712,12 +2712,16 @@ test.describe("PAIR-13 remote: the phone commands the demo screen (design.md sec
     await phone.context.route("**/core/remote-ui.js*", (route) => (asked++ === 0 ? route.abort() : route.continue()));
     await phone.page.reload();
     const alert = phone.page.getByRole("alert");
+    // Before the approval there is no remote to miss.
+    await expect.poll(() => asked).toBe(1);
+    await phone.page.waitForTimeout(300);
+    await expect(alert).toHaveCount(0);
+    await phone.page.getByRole("button", { name: "Approve" }).click();
     await expect(alert).toContainText("Remote Didn't Load");
     // Not fetched again by itself, and the toast waits for a tap.
     await phone.page.waitForTimeout(500);
     expect(asked).toBe(1);
     await alert.getByRole("button", { name: "Reload" }).click();
-    await phone.page.getByRole("button", { name: "Approve" }).click();
     await expect(phone.page.locator(".preview")).toBeVisible();
     expect(asked).toBe(2);
     await expect(phone.page.getByRole("alert")).toHaveCount(0);
@@ -2910,9 +2914,8 @@ test.describe("the phone page at phone widths (design.md section 7, Phone page)"
     await page.goto(`/a?c=${code}`);
     await expect(heading(page)).toHaveText("bloop Isn't Responding");
     const mail = page.getByRole("link", { name: "Email bloop" });
-    // Before the facts load: the plain mail, which works with bloop down.
-    await expect(mail).toHaveAttribute("href", "mailto:hi@bloop.here?subject=bloop%20isn't%20responding");
-    await mail.focus();
+    // Unloadable, the facts are asked for again on the way to the link.
+    if (!supportLoads) await mail.focus();
     return { context, page, mail };
   }
 
@@ -2936,7 +2939,7 @@ test.describe("the phone page at phone widths (design.md section 7, Phone page)"
     const code = await typedCodeOf(screen.page);
     const { context, page, mail } = await downPhone(browser, code);
     await expect(page.locator("#body")).toHaveText("Something's wrong on bloop's side.");
-    // On the way to the link the facts load and fill it.
+    // The facts fill the link as it shows, with no tap or focus on it.
     await expect(mail).toHaveAttribute("href", /^mailto:hi@bloop\.here\?subject=bloop%20isn't%20responding&body=/);
     const href = (await mail.getAttribute("href")) ?? "";
     const body = new URL(href).searchParams.get("body") ?? "";
@@ -2966,9 +2969,9 @@ test.describe("the phone page at phone widths (design.md section 7, Phone page)"
     const phone = await open(browser, "phone", `/a?c=${code}`, (c) =>
       c.route("**/js/core/remote-ui.js", (route) => route.abort()),
     );
-    await expect(toast(phone.page)).toContainText("Remote Didn't Load");
     await phone.page.getByRole("button", { name: /^Approve/ }).click();
     await expectViewer(screen.page);
+    await expect(toast(phone.page)).toContainText("Remote Didn't Load");
     // Views while it shows leave it as it is.
     await expect(toast(phone.page)).toContainText("Remote Didn't Load");
     await phone.page.route("**/api/session/length", (route) => route.abort());
@@ -2982,6 +2985,26 @@ test.describe("the phone page at phone widths (design.md section 7, Phone page)"
     await sidebarItem(screen.page, "Sample deck.pdf").click();
     await expect(toast(phone.page)).toContainText("Remote Didn't Load");
     await expect(toast(phone.page).getByRole("button", { name: "Reload" })).toBeVisible();
+    await screen.context.close();
+    await phone.context.close();
+  });
+
+  test("a Remote Didn't Load toast shows only where the remote would: not on the ended page that follows", async ({
+    browser,
+  }) => {
+    const screen = await demoScreen(browser);
+    const code = await typedCodeOf(screen.page);
+    const phone = await open(browser, "phone", `/a?c=${code}`, (c) =>
+      c.route("**/js/core/remote-ui.js", (route) => route.abort()),
+    );
+    await phone.page.getByRole("button", { name: /^Approve/ }).click();
+    await expect(toast(phone.page)).toContainText("Remote Didn't Load");
+    await toast(phone.page).locator("strong").click();
+    await expect(toast(phone.page)).toHaveCount(0);
+    await revoke(phone.page);
+    await expect(heading(phone.page)).toHaveText("Session Ended");
+    await phone.page.waitForTimeout(500);
+    await expect(toast(phone.page)).toHaveCount(0);
     await screen.context.close();
     await phone.context.close();
   });

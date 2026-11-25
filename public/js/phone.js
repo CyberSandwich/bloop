@@ -156,7 +156,7 @@ function buildItems(/** @type {Item[]} */ items) {
 function setView(/** @type {PhoneView} */ view, pid = c.pid) {
   adopt(c, view, drop, pid);
   render();
-  if (remoteLost) toast(RELOAD);
+  if (remoteLost && remoteOn()) toast(RELOAD);
 }
 
 function buildSkeleton() {
@@ -202,6 +202,7 @@ function renderActions(/** @type {import("./types.js").PhoneAction[]} */ actions
         return a.href ? el("a", { ...attrs, href: a.href }) : el("button", { ...attrs, type: "button" });
       }),
     );
+    fillMail();
   }
   for (const [i, a] of actions.entries()) {
     const node = actionsEl.children[i];
@@ -212,6 +213,9 @@ function renderActions(/** @type {import("./types.js").PhoneAction[]} */ actions
     ariaFlag(node, "aria-busy", busy);
   }
 }
+
+/** Where the remote shows (a demo, opening or open), and so its Reload toast. */
+const remoteOn = () => c.info?.mode === "demo" && ["opening", "open"].includes(phoneKey(c));
 
 function render() {
   const key = phoneKey(c);
@@ -272,7 +276,7 @@ function render() {
   // An end pushed meanwhile closes Revoke's question.
   if (!copy.actions.some((a) => a.id === "end")) revokeAsk.close();
   // The remote (core/remote-ui.js, lazy): fetched on a demo claim, so it is ready at the approval.
-  const on = demo && (key === "opening" || key === "open");
+  const on = remoteOn();
   if (demo && !remoteAsked) {
     remoteAsked = true;
     import("./core/remote-ui.js").then(
@@ -282,7 +286,7 @@ function render() {
       },
       () => {
         remoteLost = true;
-        toast(RELOAD);
+        if (remoteOn()) toast(RELOAD);
       },
     );
   }
@@ -352,26 +356,27 @@ actionsEl.addEventListener("click", (e) => {
   else if (id === "send") send();
 });
 
-// The support mail's facts (shared/support.js) load on the way to its link; if they cannot, the plain one stands.
-for (const type of ["pointerdown", "focusin"])
-  actionsEl.addEventListener(type, (e) => {
-    const a = e.target instanceof Element ? e.target.closest("[data-action='mail']") : null;
-    if (a)
-      import("./shared/support.js").then(
-        (m) =>
-          a.setAttribute(
-            "href",
-            m.supportMail(MAIL_SUBJECT, {
-              Page: "/a",
-              State: String(c.error),
-              Error: c.fault,
-              Time: new Date().toISOString(),
-              Browser: navigator.userAgent,
-            }),
-          ),
-        () => {},
-      );
-  });
+// Fills the support mail's facts (shared/support.js) as its link shows, and again on the way to it; if they cannot
+// load, the plain link stands.
+function fillMail() {
+  const a = actionsEl.querySelector("[data-action='mail']");
+  if (a)
+    import("./shared/support.js").then(
+      (m) =>
+        a.setAttribute(
+          "href",
+          m.supportMail(MAIL_SUBJECT, {
+            Page: "/a",
+            State: String(c.error),
+            Error: c.fault,
+            Time: new Date().toISOString(),
+            Browser: navigator.userAgent,
+          }),
+        ),
+      () => {},
+    );
+}
+for (const type of ["pointerdown", "focusin"]) actionsEl.addEventListener(type, fillMail);
 
 filePick.addEventListener("change", () => {
   if (filePick.files?.length) choose(filePick.files);

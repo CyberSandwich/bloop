@@ -190,10 +190,12 @@ export function phoneCopy(key, f) {
       };
     case "guest_confirm": {
       // A long name keeps its start and its extension; the body then holds it whole.
-      const long = file.length > 28;
+      // By code points, so the cut never splits an emoji's surrogate pair.
+      const chars = Array.from(file);
+      const long = chars.length > 28;
       return {
         ...base,
-        title: `Send ${long ? `${file.slice(0, 19)}…${file.slice(-8)}` : file}${to("to")}?`,
+        title: `Send ${long ? `${chars.slice(0, 19).join("")}…${chars.slice(-8).join("")}` : file}${to("to")}?`,
         body: `${long ? `${file}. ` : ""}${VERIFIED.guestDelete ? "bloop deletes its copy when this ends." : ""}`.trim(),
         actions: [CANCEL, { id: "send", label: `Send${code}`, kind: "primary", ...aria("Send") }],
       };
