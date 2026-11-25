@@ -288,6 +288,9 @@ const setup = (more: Partial<Deps> = {}) => {
   for (const id of ids) byId.set(id, new Node("div"));
   const parked = byId.get("parked");
   if (parked) parked.hidden = true;
+  // As s.html: the page count starts hidden.
+  const dots = byId.get("dots");
+  if (dots) dots.hidden = true;
   const v = createViewer({
     relink: () =>
       new Promise<boolean>((done) => {
@@ -923,6 +926,48 @@ describe("DEMO-01 the viewer parks for a transient state", () => {
     await settle();
     v.render({ ...view, items: [photo, twin, deck] } as ScreenView);
     expect(shownFrom(el("frame"))).toBe(`${ORIGIN}/f/one/Dog.jpg`);
+  });
+
+  it("the page count's segment grows once: a repeat paint leaves it running, a reversal runs it back from there", () => {
+    vi.stubGlobal("matchMedia", () => ({ matches: false }));
+    try {
+      const { v, el } = setup();
+      const dots = el("dots");
+      type Run = { cancel: () => void; reverse: () => void; reverses: number; onfinish: unknown };
+      const runs: Run[] = [];
+      let started = 0;
+      Object.assign(dots, {
+        animate: () => {
+          started += 1;
+          const a: Run = {
+            reverses: 0,
+            onfinish: null,
+            cancel: () => runs.splice(runs.indexOf(a), 1),
+            reverse: () => {
+              a.reverses += 1;
+            },
+          };
+          runs.push(a);
+          return a;
+        },
+        getAnimations: () => runs,
+      });
+      const deckView = { ...view, items: [deck] } as ScreenView;
+      v.render(deckView);
+      expect(started).toBe(1);
+      expect(dots.textContent).toBe("1 / 2");
+      // Every scroll and render repaints the count: mid-flight, the same target restarts nothing.
+      v.render(deckView);
+      expect(started).toBe(1);
+      expect(runs).toHaveLength(1);
+      // A switch away mid-flight runs the same animation back, then hides the count.
+      v.render({ ...view, items: [photo] } as ScreenView);
+      expect(started).toBe(1);
+      expect(runs[0]?.reverses).toBe(1);
+      expect(typeof runs[0]?.onfinish).toBe("function");
+    } finally {
+      vi.stubGlobal("matchMedia", () => ({ matches: true }));
+    }
   });
 
   it("a key while parked pages nothing: the deck resumes on the page it was on", () => {

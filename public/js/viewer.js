@@ -120,6 +120,8 @@ export function createViewer(deps) {
   const prev = /** @type {HTMLButtonElement} */ (byId("prev"));
   const next = /** @type {HTMLButtonElement} */ (byId("next"));
   const dots = byId("dots");
+  /** Where the page count's segment is going: shown, or collapsing and then hidden (setDots). */
+  let dotsOn = !dots.hidden;
   const note = byId("parked");
   const pill = byId("controls");
   const pane = byId("pane");
@@ -397,10 +399,18 @@ export function createViewer(deps) {
    */
   function setDots(on, now = false) {
     const running = dots.getAnimations?.() ?? [];
-    if (on === !dots.hidden && !running.length) return;
+    const instant = now || reduced.matches || presenting() || pane.classList.contains("is-stacked");
+    // Every scroll repaints: the same target leaves a running segment alone, or the width would restart from 0.
+    if (on === dotsOn && !(instant && running.length)) return;
+    dotsOn = on;
+    const [flight] = running;
+    if (flight && !instant && running.length === 1) {
+      flight.onfinish = on ? null : () => show(dots, false);
+      return flight.reverse();
+    }
     for (const a of running) a.cancel();
     show(dots, true);
-    if (now || reduced.matches || presenting() || pane.classList.contains("is-stacked")) return show(dots, on);
+    if (instant) return show(dots, on);
     const css = getComputedStyle(dots);
     const full = { width: `${dots.offsetWidth}px`, opacity: 1, paddingInline: css.paddingInline, marginRight: "0px" };
     const none = {
@@ -416,11 +426,13 @@ export function createViewer(deps) {
   function paintDots() {
     const p = pages();
     if (parked) return;
+    // The text first: a growing segment is measured with it.
+    if (p) {
+      prev.disabled = page === 0;
+      next.disabled = page === p.length - 1;
+      setText(dots, `${page + 1} / ${p.length}`);
+    }
     setDots(!!p && p.length > 1);
-    if (!p) return;
-    prev.disabled = page === 0;
-    next.disabled = page === p.length - 1;
-    setText(dots, `${page + 1} / ${p.length}`);
   }
 
   function paint() {

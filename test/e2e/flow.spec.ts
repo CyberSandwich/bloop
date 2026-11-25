@@ -310,7 +310,7 @@ test.describe("pairing flow", () => {
     await expect(time).toBeFocused();
     // Chromium's time input takes a Tab per field (hours, minutes) before focus leaves it; nothing sits between.
     const close = sheet.getByRole("button", { name: "Close" });
-    for (let i = 0; i < 3 && (await time.evaluate((n) => n === n.ownerDocument.activeElement)); i++)
+    for (let i = 0; i < 6 && (await time.evaluate((n) => n === n.ownerDocument.activeElement)); i++)
       await phone.page.keyboard.press("Tab");
     await expect(close).toBeFocused();
     // A tap above the pane is the backdrop's: it closes with no change.
@@ -358,6 +358,10 @@ test.describe("pairing flow", () => {
       await phone.page.setViewportSize({ width, height: 640 });
       await lengthButton.click();
       await expect(sheet).toBeVisible();
+      // Measured at rest: the pane's entry animation moves every box until it ends.
+      await sheet
+        .locator("form")
+        .evaluate((f) => Promise.all(f.getAnimations().map((a: { finished: Promise<unknown> }) => a.finished)));
       const field = sheet.getByLabel("Expires At");
       // The whole time shows, and the input spans its row of the card.
       expect(await field.evaluate((el) => el.scrollWidth <= el.clientWidth)).toBe(true);
@@ -1989,14 +1993,22 @@ test.describe("screen and phone layout", () => {
     const page = screen.page;
     await expect(heading(page)).toHaveText("Dog.jpg");
     await page.waitForTimeout(600);
-    /** Per frame for 1.2 s from now: [left, width, center] of the pill. */
+    /** Per frame for 1.2 s from now: [left, width, center, top] of the pill. */
     const sample = async (act: () => Promise<void>) => {
       await page.evaluate(
-        "(() => { const p = document.getElementById('controls'); const out = (window.frames_ = []); const t0 = performance.now(); const tick = () => { const r = p.getBoundingClientRect(); out.push([r.left, r.width, r.left + r.width / 2]); if (performance.now() - t0 < 1200) requestAnimationFrame(tick); }; requestAnimationFrame(tick); })()",
+        "(() => { const p = document.getElementById('controls'); const out = (window.frames_ = []); const t0 = performance.now(); const tick = () => { const r = p.getBoundingClientRect(); out.push([r.left, r.width, r.left + r.width / 2, r.top]); if (performance.now() - t0 < 1200) requestAnimationFrame(tick); }; requestAnimationFrame(tick); })()",
       );
       await act();
       await page.waitForTimeout(1300);
-      return (await page.evaluate("window.frames_")) as [number, number, number][];
+      return (await page.evaluate("window.frames_")) as [number, number, number, number][];
+    };
+    /** Every frame's step goes the way the whole move goes, or holds: nothing steps back. */
+    const oneWay = (values: number[], what: string) => {
+      const way = Math.sign((values.at(-1) ?? 0) - (values[0] ?? 0));
+      for (let i = 1; i < values.length; i++) {
+        const step = (values[i] ?? 0) - (values[i - 1] ?? 0);
+        expect(step * way >= -0.5, `${what}, frame ${i}: ${step}`).toBe(true);
+      }
     };
     for (const [to, grows] of [
       ["Sample deck.pptx", true],
@@ -2006,12 +2018,19 @@ test.describe("screen and phone layout", () => {
       const last = frames.at(-1) ?? [0, 0, 0];
       for (const [, , center] of frames)
         expect(Math.abs(Math.round(center) - Math.round(last[2]))).toBeLessThanOrEqual(1);
-      // The width only ever moves one way, so nothing steps back.
-      for (let i = 1; i < frames.length; i++) {
-        const step = (frames[i]?.[1] ?? 0) - (frames[i - 1]?.[1] ?? 0);
-        expect(grows ? step >= -0.5 : step <= 0.5, `${to}, frame ${i}: ${step}`).toBe(true);
-      }
+      // The width and the top only ever move one way, so nothing steps back.
+      const widths = frames.map((f) => f[1]);
+      oneWay(widths, `${to} width`);
+      oneWay(
+        frames.map((f) => f[3]),
+        `${to} top`,
+      );
       expect(grows ? last[1] > (frames[0]?.[1] ?? 0) : last[1] < (frames[0]?.[1] ?? 0)).toBe(true);
+      // Once the width starts to move it keeps moving until it is within a pixel of the end: no stall.
+      const from = widths.findIndex((w) => Math.abs(w - (widths[0] ?? 0)) > 0.5);
+      const settled = widths.findIndex((w) => Math.abs(w - last[1]) <= 1);
+      for (let i = Math.max(from, 1); i < settled; i++)
+        expect(Math.abs((widths[i] ?? 0) - (widths[i - 1] ?? 0)) > 0.01, `${to} width stalls at frame ${i}`).toBe(true);
     }
     // Under reduced motion it changes at once.
     await page.emulateMedia({ reducedMotion: "reduce" });
