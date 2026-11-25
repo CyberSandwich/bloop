@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import {
   checkMagic,
   checkOoxml,
@@ -9,6 +9,7 @@ import {
   MAX_TEXT_BYTES,
   relationships,
 } from "../../src/worker/seams/guest-drop/formats.ts";
+import { ReadBudgetExceeded } from "../../src/worker/seams/guest-drop/read-plan.ts";
 import { validate } from "../../src/worker/seams/guest-drop/validate.ts";
 import { type BuiltEntry, reader, validDeck } from "../zip-builder.ts";
 
@@ -348,6 +349,48 @@ describe("DROP-14 external: macro-enabled packages", () => {
         ok: false,
         error: "bad_structure",
       });
+    });
+
+    describe("a local header that disagrees with the central directory", () => {
+      const NAME = "x/_rels/a.rels";
+      const crafted = (edit: (zip: Uint8Array, local: number) => void) => {
+        const zip = validDeck([relsEntry(NAME, rels(internal))]);
+        const local = Buffer.from(zip).indexOf(NAME) - 30;
+        edit(zip, local);
+        return zip;
+      };
+
+      it("passes when they agree", async () => {
+        expect(await validate(reader(crafted(() => {})), "pptx")).toEqual({ ok: true, type: "pptx" });
+      });
+
+      it("refuses a different compression method", async () => {
+        const zip = crafted((z, at) => new DataView(z.buffer).setUint16(at + 8, 0, true));
+        expect(await validate(reader(zip), "pptx")).toEqual({ ok: false, error: "bad_structure" });
+      });
+
+      it("refuses a different name of the same length", async () => {
+        const zip = crafted((z, at) => z.set(enc.encode("b"), at + 30 + NAME.indexOf("a.")));
+        expect(await validate(reader(zip), "pptx")).toEqual({ ok: false, error: "bad_structure" });
+      });
+    });
+
+    it("logs a read budget refusal as drop.refused with reason read_budget, and answers bad_structure", async () => {
+      const deck = reader(validDeck([relsEntry("x/_rels/a.rels", rels(internal))]));
+      let reads = 0;
+      const spent = {
+        size: deck.size,
+        read: (at: number, n: number) => {
+          if (++reads > 1) throw new ReadBudgetExceeded();
+          return deck.read(at, n);
+        },
+      };
+      const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+      expect(await validate(spent, "pptx")).toEqual({ ok: false, error: "bad_structure" });
+      expect(warn.mock.calls.map(([line]) => JSON.parse(String(line)))).toEqual([
+        { evt: "drop.refused", reason: "read_budget", bytes: deck.size },
+      ]);
+      warn.mockRestore();
     });
 
     it("refuses a part name that hides a relationships part behind a backslash or a percent sign", async () => {

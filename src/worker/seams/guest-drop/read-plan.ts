@@ -88,7 +88,7 @@ export async function readParts(
   const take = async (group: Want[], from: number, to: number) => {
     const bytes = await r.read(from, to - from);
     for (const w of group) {
-      const at = dataStart(bytes, w.start - from);
+      const at = dataStart(bytes, w.start - from, w.entry);
       if (at === null) continue;
       const size = w.entry.compressed;
       if (at + size <= bytes.length) out[w.index] = bytes.slice(at, at + size);
