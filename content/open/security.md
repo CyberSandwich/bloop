@@ -42,7 +42,7 @@ Caption: What works today and what is planned
 
 ## Where It Runs {#where}
 
-bloop runs on Cloudflare Workers. Its database (D1), your Library and Guest Files (R2), and Session and Library state (Durable Objects) are held in Cloudflare's EU jurisdiction. Files are converted in Cloudflare's EU jurisdiction too. Each request is handled at the nearest Cloudflare data center, so bloop says "stored in the EU", never "UK only". The database can be restored to any minute in the last 30 days; files are never copied into that history, so a file deleted for good is gone. Who processes what, and for how long: [Privacy, Who Helps Run bloop](/privacy#processors) and [How Long bloop Keeps It](/privacy#retention).
+bloop runs on Cloudflare Workers. Its database (D1), your Library and Guest Files (R2), and Session and Library state (Durable Objects) are held in Cloudflare's EU jurisdiction. Files are converted in Cloudflare's EU jurisdiction too; only the converter's program image, which holds code and never user data, is stored outside the EU. Each request is handled at the nearest Cloudflare data center, so bloop says "stored in the EU", never "UK only". The database can be restored to any minute in the last 30 days; files are never copied into that history, so a file deleted for good is gone. Who processes what, and for how long: [Privacy, Who Helps Run bloop](/privacy#processors) and [How Long bloop Keeps It](/privacy#retention).
 
 ## Your Files {#files}
 

@@ -11,7 +11,7 @@ effective: 2026-11-25
 version: 2.0
 ---
 
-bloop is a new, free side project run by one person in the UK. If you have an account, bloop stores your files in the EU until you delete them, and deletes a guest's file when the session ends. It never sells data and runs no ads, analytics scripts or trackers. How your files are protected is on [the Security page](/security). Write to <{{email}}> about anything here.
+bloop is a new, free side project run by one person in the UK. If you have an account, bloop stores your files in the EU until you delete them, and deletes a guest's file when the session ends. It never sells data and runs no ads, analytics scripts or trackers. The person who runs bloop can technically open stored files; the admin tools open one only after a report, and record it ([who can see your data](#access)). How your files are protected is on [the Security page](/security). Write to <{{email}}> about anything here.
 
 ## Who Is Responsible {#controller}
 
@@ -117,6 +117,7 @@ Caption: How long bloop keeps each kind of data
 | Codes, pairing secrets and links for a Session | Until the Session ends, is canceled or times out |
 | IP hash for abuse limits | 10 minutes for failed code attempts; until the Session ends for the Screen's own check |
 | Your OneDrive access (Planned) | Until you tap Disconnect OneDrive (deleted at once), remove bloop in My Apps or Microsoft Entra (deleted the next time it fails), ask for erasure, or 30 days unused |
+| bloop's own logs (Workers Logs): errors and events, each line in a fixed shape with no IP address and no URL | On, with Cloudflare's per-request logs off. Cloudflare keeps each line 7 days, possibly outside the EU |
 | Cloudflare's request logs | Off on the live site. If they are turned on, they record each request's details, including your IP address, and keep them at most 7 days |
 | Cloudflare's record of each email bloop sends (to, from, subject, delivered or not) | 31 days |
 | Waitlist answers | Until you ask bloop to delete them, or the waitlist closes; once you are invited, 90 days after the invite |
@@ -140,7 +141,7 @@ In short: you, the Screens you choose, and the one person who runs bloop when th
 
 ## Who Helps Run bloop {#processors}
 
-In short: three companies process data for bloop, and none may use it for themselves, with one narrow exception.
+In short: four companies process data for bloop, and none may use it for themselves, with one narrow exception.
 
 7.1 These **processors** handle personal data only on bloop's instructions, under written terms:
 
@@ -151,6 +152,7 @@ Caption: The processors, what each does, the data it handles and where
 | Cloudflare, Inc. (US) | Hosting, database, file storage, file conversion, network, DNS, the emails bloop sends (Cloudflare Email Service) and the bot check on sign-in and reports (Turnstile) | Everything in section 3 except waitlist answers held by Tally and your emails to <{{email}}>, and its request logs if they are turned on | Files and the database are stored in Cloudflare's EU jurisdiction, and files are converted there; each request is handled at the nearest Cloudflare data center |
 | Tally BV (Belgium) | The waitlist form | Waitlist answers | EU; Tally uses its own subprocessors, some in the US |
 | Apple (iCloud Mail) | The mailbox behind <{{email}}> | Emails you send and bloop's replies | Apple's data centers, in the US and elsewhere |
+| Anthropic, PBC (US) | Claude, the AI assistant the person who runs bloop uses only for support and to handle incidents | What that work reads from bloop's database, such as email addresses, file names, Session records and reports | US |
 
 7.2 The one exception: Cloudflare also uses Turnstile's browser signals to improve its own bot detection, as a controller in its own right under its Turnstile privacy terms. Turnstile runs only when you ask for a sign-in code or send a report.
 
@@ -162,9 +164,9 @@ Caption: The processors, what each does, the data it handles and where
 
 In short: stored in the EU, run by a US company, with legal safeguards.
 
-8.1 bloop's database, your Library and Guest Files are stored in the EU, and files are converted in the EU. bloop never claims "UK only": Cloudflare is a US company, and a request is handled at the Cloudflare data center nearest the person making it.
+8.1 bloop's database, your Library and Guest Files are stored in the EU, and files are converted in the EU. Two parts of what Cloudflare runs for bloop sit outside the EU: the converter's program image, which holds code and never user data, and bloop's own logs ([5.1](#5.1)). bloop never claims "UK only": Cloudflare is a US company, and a request is handled at the Cloudflare data center nearest the person making it.
 
-8.2 Where data goes outside the UK, the safeguards are the UK's adequacy regulations for the EU, and for the US the UK-US data bridge: Cloudflare is certified to the UK Extension of the EU-US Data Privacy Framework. Cloudflare's data processing terms add the EU Standard Contractual Clauses with the UK Addendum in case that certification lapses. Tally's and Apple's transfers follow their own published terms.
+8.2 Where data goes outside the UK, the safeguards are the UK's adequacy regulations for the EU, and for the US the UK-US data bridge: Cloudflare is certified to the UK Extension of the EU-US Data Privacy Framework. Cloudflare's data processing terms add the EU Standard Contractual Clauses with the UK Addendum in case that certification lapses. Tally's, Apple's and Anthropic's transfers follow their own published terms.
 
 ## Cookies and Storage {#storage}
 
@@ -185,6 +187,8 @@ Caption: What bloop stores in your browser, why, for how long, and its status
 | `__Host-bloop_room` | Screen, cookie | Shows a registered room's name | Set by the room's IT team | Planned |
 
 9.2 Files reach a Screen from a separate bloop address that sets no cookies. The waitlist form is on tally.so and follows Tally's own cookie policy.
+
+9.3 That file address also asks your browser to report failed requests to Cloudflare (Network Error Logging) for 7 days after a visit. A report names the address that failed, which can be a Session link, and reaches Cloudflare from your connection. bloop never receives these reports.
 
 ## Your Rights {#rights}
 

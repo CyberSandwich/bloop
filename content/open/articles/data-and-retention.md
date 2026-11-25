@@ -26,7 +26,9 @@ An IT team can ask for an export of its organization's records. It is built and 
 
 ## Where It Is Stored {#where}
 
-bloop runs on Cloudflare. Its database, Library files and Guest Files are held in Cloudflare's EU jurisdiction, and files are converted there. Cloudflare is a US company, and each request is handled at the Cloudflare data center nearest the person making it. For that reason bloop says "stored in the EU" and never "UK only". [The Privacy Notice](/privacy#transfers) names the legal safeguards.
+bloop runs on Cloudflare. Its database, Library files and Guest Files are held in Cloudflare's EU jurisdiction, and files are converted there. Cloudflare is a US company, and each request is handled at the Cloudflare data center nearest the person making it. For that reason bloop says "stored in the EU" and never "UK only".
+
+bloop's own logs are the exception: Cloudflare may keep them outside the EU, so each line has a fixed shape with no IP address and no URL. Cloudflare's per-request logs, which would hold both, stay off. [The Privacy Notice](/privacy#transfers) names the legal safeguards.
 
 ## A File's Life in the Library {#library}
 
