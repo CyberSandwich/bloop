@@ -61,14 +61,14 @@ jobs:
 
       - name: Push to the Cloudflare registry
         id: push
-        continue-on-error: true
+        continue-on-error: ${{ github.ref != 'refs/heads/main' }}
         if: >-
           github.event_name != 'pull_request'
           && (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/ci/v1-container' || github.event_name == 'schedule' || github.event_name == 'workflow_dispatch')
           && env.CLOUDFLARE_API_TOKEN != '' && env.CLOUDFLARE_ACCOUNT_ID != ''
         run: |
           set -euo pipefail
-          tag="$(date -u +%Y%m%d)-${GITHUB_SHA::7}"
+          tag="sha-${GITHUB_SHA::12}"
           docker tag "$IMAGE" "bloop-converter:${tag}"
           npm install --prefix "$RUNNER_TEMP/wrangler" --no-audit --no-fund wrangler@4.166.0
           "$RUNNER_TEMP/wrangler/node_modules/.bin/wrangler" containers push "bloop-converter:${tag}"

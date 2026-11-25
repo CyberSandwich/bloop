@@ -11,6 +11,7 @@ import { existsSync, mkdirSync, mkdtempSync, readFileSync, writeFileSync } from 
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
+import { injectVba } from "../fixtures/inject-vba.mjs";
 
 const IMAGE = process.env.IMAGE ?? "bloop-converter:ci";
 const here = fileURLToPath(new URL(".", import.meta.url));
@@ -282,7 +283,8 @@ function macroControl(file) {
     "P=$(mktemp -d)",
     'mkdir -p "$P/user"',
     'cp /ctl/relaxed.xcu "$P/user/registrymodifications.xcu"',
-    `HOME="$P" soffice --headless --norestore --nolockcheck --nodefault --nologo -env:UserInstallation=file://$P --convert-to pdf --outdir "$P/out" /fx/${name} >/dev/null 2>&1`,
+    `HOME="$P" soffice --headless --norestore --nolockcheck --nodefault --nologo -env:UserInstallation=file://$P --convert-to pdf --outdir "$P/out" /fx/${name} 2>&1 | tail -5`,
+    'echo "profile:"; grep -c . "$P/user/registrymodifications.xcu"; grep -o \'MacroSecurityLevel[^/]*\' "$P/user/registrymodifications.xcu" | head -3',
     `if [ -e ${SENTINEL} ]; then echo FIRED; else echo SILENT; fi`,
   ].join("\n");
   const fxDir = file.slice(0, file.lastIndexOf("/"));
@@ -306,6 +308,7 @@ function macroControl(file) {
     "-c",
     script,
   );
+  console.log(`  control output for ${name}:\n${r.out}\n${r.err}`);
   return r.out.split("\n").pop();
 }
 
@@ -374,10 +377,18 @@ function makeLegacyMacros() {
       continue;
     }
     // CFB directory names are UTF-16LE.
-    const buf = readFileSync(f);
-    const marks = ["_VBA_PROJECT_CUR", "VBA", "Macros"].filter((m) => buf.includes(Buffer.from(m, "utf16le")));
-    console.log(`  legacy ${ext}: ${buf.length} B, storages seen: ${marks.join(",") || "none"}`);
-    if (marks.length) good.push(f);
+    const hasVba = (b) => ["_VBA_PROJECT_CUR", "Macros"].some((m) => b.includes(Buffer.from(m, "utf16le")));
+    let buf = readFileSync(f);
+    const fromLibreOffice = hasVba(buf);
+    if (!fromLibreOffice) {
+      // LibreOffice does not turn an ODF Basic library into a VBA project; add the storages ourselves.
+      buf = injectVba(buf);
+      writeFileSync(f, buf);
+    }
+    console.log(
+      `  legacy ${ext}: ${buf.length} B, VBA storage from ${fromLibreOffice ? "LibreOffice" : "the synthetic injector"}`,
+    );
+    if (hasVba(buf)) good.push(f);
   }
   return good;
 }
@@ -473,7 +484,7 @@ async function caseTimeoutAndCaps() {
   let c = start({ env: { BLOOP_TIMEOUT_CONVERT: "1" } });
   try {
     check(await healthy(c), "timeout: container is healthy");
-    const r = await runJob(c, join(GEN, "plain.pptx"), "pptx");
+    const r = await runJob(c, join(GEN, "deck-100.pptx"), "pptx");
     check(
       r.status.state === "failed" && r.status.error === "timeout",
       `CONV-02 caps: a 1 s convert limit fails the job (got ${JSON.stringify(r.status)})`,
@@ -505,6 +516,10 @@ async function caseIsolation() {
       "CONV-01 isolation: the root filesystem is read-only",
     );
     check(exec("sh", "-c", "touch /work/ok /tmp/ok").code === 0, "CONV-01 isolation: /work and /tmp are writable");
+    check(
+      exec("cat", "/opt/bloop/lo-registry.xcu").out.includes("MacroSecurityLevel"),
+      "CONV-03 macros: the job user can read the lockdown registry (a perms regression would fail every job as internal)",
+    );
     check(
       exec("sh", "-c", "ls /sys/class/net").out === "lo",
       `CONV-01 isolation: only a loopback interface (got ${exec("sh", "-c", "ls /sys/class/net").out})`,
