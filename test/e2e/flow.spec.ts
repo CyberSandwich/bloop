@@ -318,6 +318,31 @@ test.describe("pairing flow", () => {
     return { screen, phone, lengthButton, sheet };
   }
 
+  test("SHOTS the sheet at 390 and 1440", async ({ browser }) => {
+    const { screen, phone, lengthButton, sheet } = await approvedDemo(browser);
+    for (const [name, size] of [["390", PHONE], ["1440", SCREEN]] as const) {
+      await phone.page.setViewportSize(size);
+      await lengthButton.click();
+      await expect(sheet).toBeVisible();
+      await phone.page.waitForTimeout(600);
+      await phone.page.screenshot({ path: `test-results/shots/${name}-rest.png` });
+      await sheet.getByLabel("Expires At").focus();
+      await phone.page.screenshot({ path: `test-results/shots/${name}-time-focus.png` });
+      if (name === "1440") {
+        await sheet.getByRole("button", { name: "Close" }).hover();
+        await phone.page.screenshot({ path: `test-results/shots/${name}-x-hover.png` });
+      }
+      await phone.page.keyboard.press("Tab");
+      await phone.page.keyboard.press("Tab");
+      await phone.page.keyboard.press("Tab");
+      await phone.page.screenshot({ path: `test-results/shots/${name}-tab.png` });
+      await phone.page.keyboard.press("Escape");
+      await expect(sheet).toBeHidden();
+    }
+    await screen.context.close();
+    await phone.context.close();
+  });
+
   test("SESS-01 a refused length is a toast over the running session: the countdown, Revoke and the sheet stay", async ({
     browser,
   }) => {
