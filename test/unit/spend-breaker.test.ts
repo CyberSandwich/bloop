@@ -199,11 +199,13 @@ describe("rules that stay count-based", () => {
     expect(rules(s.find())).toContain("warn:r2_class_a_month");
   });
 
-  it("guest drops: 1,000 a day trip demo_drop=off, 3,000 trip guest_files=stopped", () => {
+  it("guest drops: 5% of the budget a day (833) trips demo_drop=off, 15% (2,500) trips guest_files=stopped", () => {
     const s = setup();
-    s.g.ledger.record("guest_drop", 1000, "ip", T0);
+    s.g.ledger.record("guest_drop", 832, "ip", T0);
+    expect(s.find()).toEqual([]);
+    s.g.ledger.record("guest_drop", 1, "ip", T0);
     expect(flipsOf(s.find())).toEqual(["demo_drop=off"]);
-    s.g.ledger.record("guest_drop", 2000, "ip", T0);
+    s.g.ledger.record("guest_drop", 1667, "ip", T0);
     expect(flipsOf(s.find())).toEqual(["demo_drop=off", "guest_files=stopped"]);
   });
 

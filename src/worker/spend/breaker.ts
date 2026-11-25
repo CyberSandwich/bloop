@@ -4,7 +4,7 @@
 // Workers module, so the unit tests run it as is.
 import type { Db } from "../auth/db.ts";
 import { type AnalyticsResult, type Readings, readingsOf } from "./analytics.ts";
-import { COSTLY_FLIPS, type MeterName, PRICED, resolveTrips, type Trips } from "./caps.ts";
+import { COSTLY_FLIPS, guestDropLines, type MeterName, PRICED, resolveTrips, type Trips } from "./caps.ts";
 import type { SpendRpc } from "./client.ts";
 import type { Snapshot } from "./meters.ts";
 import { buildReport, digestText, isMonday, REPORT_DAYS, type SpendReport, weekKey } from "./report.ts";
@@ -141,15 +141,16 @@ export function evaluate(snap: Snapshot, readings: Readings | undefined, t: Trip
   }
 
   const drops = day("guest_drop");
-  if (drops >= t.guest_drops_files_stopped_day)
+  const dropLines = guestDropLines(t);
+  if (drops >= dropLines.filesStopped)
     trip("guest_drops_files", [{ switch: "guest_files", value: "stopped" }], "guest drops in a day", {
       drops,
-      line: t.guest_drops_files_stopped_day,
+      line: dropLines.filesStopped,
     });
-  if (drops >= t.guest_drops_demo_off_day)
+  if (drops >= dropLines.demoOff)
     trip("guest_drops_demo", [{ switch: "demo_drop", value: "off" }], "guest drops in a day", {
       drops,
-      line: t.guest_drops_demo_off_day,
+      line: dropLines.demoOff,
     });
 
   const live = snap.pools.convert.live + snap.pools.convert_public.live;
