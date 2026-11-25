@@ -30,14 +30,26 @@ export const POLL_MS = 3000;
 /** Poll delays after the 1st, 2nd, ... failed poll; the last repeats. */
 export const POLL_BACKOFF = [5000, 10_000, 30_000];
 /** A socket with no first frame by now is abandoned and polling starts at once (a proxy that holds the upgrade). */
-export const CONNECT_TIMEOUT_MS = 8000;
+export const CONNECT_TIMEOUT_MS = 4000;
+/** Once the socket is found blocked, it is tried again this often while polling carries the page. */
+export const BLOCKED_PROBE_MS = 60_000;
 export const PING_MS = 25_000;
-/** A socket that has said nothing for this long is dropped and reconnected. */
+/** A socket quiet for longer than PING_MS when the tab shows again is asked; no frame back in this long replaces it. */
+export const PROBE_MS = 3000;
+/** This many pings in a row with no frame back close a socket; a hidden tab is not judged. */
+export const MISSED_PINGS = 2;
+/** The Worker's window for calling a socket quiet (the client counts missed pings instead). */
 export const SILENCE_MS = 70_000;
+/** A second `service_down` answer this soon after the first says "bloop Isn't Responding". */
+export const DOWN_CONFIRM_MS = 10_000;
 
-/** @param {number} failures consecutive failures, 1 for the first */
-export const reconnectDelay = (failures) =>
-  RECONNECT_DELAYS[Math.min(Math.max(failures, 1), RECONNECT_DELAYS.length) - 1] ?? 30_000;
+/**
+ * Half to all of the step, so screens that lost their sockets together (a deploy) do not return in the same second.
+ * @param {number} failures consecutive failures, 1 for the first
+ * @param {() => number} [random] in [0, 1)
+ */
+export const reconnectDelay = (failures, random = Math.random) =>
+  (0.5 + random() / 2) * (RECONNECT_DELAYS[Math.min(Math.max(failures, 1), RECONNECT_DELAYS.length) - 1] ?? 30_000);
 
 /** @param {number} failures */
 export const shouldPoll = (failures) => failures >= POLL_AFTER_FAILURES;
