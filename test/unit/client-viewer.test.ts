@@ -1051,6 +1051,90 @@ describe("DEMO-01 the viewer parks for a transient state", () => {
   const tap = (node: Node) => {
     for (const f of node.listeners.get("click") ?? []) f({ type: "click" });
   };
+  const press = (key: string, more: Record<string, unknown> = {}) => {
+    const e = { type: "keydown", key, preventDefault: vi.fn(), ...more };
+    for (const f of docListeners.get("keydown") ?? []) f(e);
+    return e;
+  };
+  const deckView = () => ({ ...view, items: [deck] }) as ScreenView;
+
+  it("KEY-01 F5 enters Present and never reloads: held down, shifted, or alternating with Escape", () => {
+    const { v } = setup();
+    v.render(deckView());
+    const presenting = () => doc.body.classes.has("is-presenting");
+    expect(presenting()).toBe(false);
+    expect(press("F5").preventDefault).toHaveBeenCalled();
+    expect(presenting()).toBe(true);
+    // Presenting: prevented, nothing else (never a reload, never a stop).
+    expect(press("F5").preventDefault).toHaveBeenCalled();
+    expect(presenting()).toBe(true);
+    press("Escape");
+    expect(presenting()).toBe(false);
+    expect(press("F5", { shiftKey: true }).preventDefault).toHaveBeenCalled();
+    expect(presenting()).toBe(true);
+    press("Escape");
+    // A key held down is no second press, but the reload is still stopped.
+    expect(press("F5", { repeat: true }).preventDefault).toHaveBeenCalled();
+    expect(presenting()).toBe(false);
+    expect(v.shown()?.present).toBe(false);
+  });
+
+  it("KEY-01 F5 on a link card (nothing to present) is still kept from reloading, and Ctrl+F5 is the browser's own", () => {
+    const { v } = setup();
+    const link: Item = { kind: "link", id: "t7", url: "https://vevox.app/", title: "Vevox" };
+    v.render({ ...view, items: [link] } as ScreenView);
+    expect(press("F5").preventDefault).toHaveBeenCalled();
+    expect(doc.body.classes.has("is-presenting")).toBe(false);
+    v.render(deckView());
+    expect(press("F5", { ctrlKey: true }).preventDefault).not.toHaveBeenCalled();
+  });
+
+  it("KEY-01 F5 with no viewer up (waiting, ended) is left to the browser", () => {
+    const { v } = setup();
+    v.render(null);
+    expect(press("F5").preventDefault).not.toHaveBeenCalled();
+  });
+
+  it("KEY-01 guard: every key a clicker sends is handled; the only inert one is named", () => {
+    // An R400: left and right page, play alternates F5 and Escape, blank sends ".".
+    const clicker: [string, "next" | "prev" | "present" | "stop" | "inert"][] = [
+      ["PageDown", "next"],
+      ["PageUp", "prev"],
+      ["F5", "present"],
+      ["Escape", "stop"],
+      [".", "inert"],
+    ];
+    const { v, el } = setup();
+    v.render(deckView());
+    for (const [key, what] of clicker) {
+      const at = el("dots").textContent;
+      const presenting = doc.body.classes.has("is-presenting");
+      const e = press(key);
+      const handled =
+        what === "next"
+          ? el("dots").textContent === "2 / 2"
+          : what === "present"
+            ? doc.body.classes.has("is-presenting")
+            : what === "stop"
+              ? presenting && !doc.body.classes.has("is-presenting")
+              : what === "prev"
+                ? el("dots").textContent === "1 / 2" && at === "2 / 2"
+                : false;
+      expect(handled, key).toBe(what !== "inert");
+      if (what !== "stop" && what !== "inert") expect(e.preventDefault, key).toHaveBeenCalled();
+    }
+  });
+
+  it("KEY-01 Home and End go to the first and last page, and report it", () => {
+    const { v, el } = setup();
+    v.render(deckView());
+    expect(press("End").preventDefault).toHaveBeenCalled();
+    expect(el("dots").textContent).toBe("2 / 2");
+    expect(v.shown()?.page).toBe(2);
+    press("Home");
+    expect(el("dots").textContent).toBe("1 / 2");
+    expect(v.shown()?.page).toBe(1);
+  });
 
   it("each item keeps its page: leaving a deck on its last page and coming back lands there; its own row starts over", () => {
     const { v, el } = setup();
