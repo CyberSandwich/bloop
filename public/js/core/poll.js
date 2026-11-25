@@ -1,9 +1,10 @@
 // The polling fallback, loaded when the socket cannot carry the page (a rare path, so it is not in every page's bundle),
 // and the "bloop isn't responding" rule a boot shares. Rules: docs/architecture.md section 7.
-import { POLL_BACKOFF } from "./channel-timing.js";
 
 /** @import {ErrorCode} from "../../../src/shared/protocol.ts" */
 
+/** Poll delays after the 1st, 2nd, ... failed poll; the last repeats. */
+const POLL_BACKOFF = [5000, 10_000, 30_000];
 /** A poll while the room is being set up. */
 export const POLL_MS = 3000;
 /** A poll in `open`, where little changes by itself, and in a hidden tab. */
@@ -46,13 +47,25 @@ export function downGate() {
 export const bootGate = downGate();
 
 /**
+ * What a refused boot leaves: the link state (a first server failure leaves it as it was), and when to try again.
+ * @param {string} error @param {"ok" | "offline" | "down" | "blocked"} link @param {number} attempt 1 for the first
+ */
+export const bootFailed = (error, link, attempt) => {
+  const down = isDown(error);
+  const sure = bootGate(down);
+  return {
+    link: error === "offline" ? "offline" : error === "network_blocked" ? "blocked" : down && !sure ? link : "down",
+    wait: pollDelay(attempt),
+  };
+};
+
+/**
  * One polling loop. `start` is idempotent; a poll answered after `stop` or a restart ends there.
  * @param {{
  *   api: {get: (path: string, auth?: string | null) => Promise<any>},
  *   path: string,
  *   auth: string,
  *   hidden: () => boolean,
- *   state: () => string,
  *   active: () => boolean,
  *   fatal: (code: ErrorCode) => boolean,
  *   onView: (view: any) => void,
@@ -65,6 +78,8 @@ export function createPoller(h) {
   let gen = 0;
   let running = false;
   let failures = 0;
+  /** The last view's state: how often a poll is worth making. */
+  let state = "";
   const gate = downGate();
 
   async function poll() {
@@ -77,6 +92,7 @@ export function createPoller(h) {
     if (res.ok) {
       failures = 0;
       gate(false);
+      state = res.value?.state ?? state;
       h.onLink("ok");
       h.onView(res.value);
     } else if (h.fatal(res.error)) return;
@@ -88,7 +104,7 @@ export function createPoller(h) {
       else if (res.error === "network_blocked") h.onLink("blocked");
       else if (sure) h.onLink("down");
     }
-    timer = setTimeout(poll, pollDelay(failures, h.state(), h.hidden(), retryAfter));
+    timer = setTimeout(poll, pollDelay(failures, state, h.hidden(), retryAfter));
   }
 
   return {

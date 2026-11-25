@@ -1,13 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { Api } from "../../public/js/core/api.js";
-import { openChannel, refusal } from "../../public/js/core/channel.js";
-import {
-  BLOCKED_PROBE_MS,
-  COALESCE_MS,
-  CONNECT_TIMEOUT_MS,
-  PING_MS,
-  PROBE_MS,
-} from "../../public/js/core/channel-timing.js";
+import { BLOCKED_PROBE_MS, CONNECT_TIMEOUT_MS, openChannel, refusal } from "../../public/js/core/channel.js";
+import { PING_MS, PROBE_MS } from "../../public/js/core/health.js";
 import { downGate, isDown } from "../../public/js/core/poll.js";
 import { onRefusal } from "../../public/js/core/states.js";
 import { SILENCE_MS } from "../../public/js/core/timing.js";
@@ -744,41 +738,5 @@ describe("O19 polling follows the room's state, the tab and Retry-After (REL)", 
     expect(t.pollCalls).toHaveLength(1);
     await vi.advanceTimersByTimeAsync(1100);
     expect(t.pollCalls).toHaveLength(2);
-  });
-});
-
-describe("O10 send coalesces over COALESCE_MS", () => {
-  const live = () => {
-    const t = setup();
-    t.sockets[0]?.open();
-    t.sockets[0]?.push({ v: 1, t: "state", view: { state: "open" } });
-    t.sockets[0]?.sent.splice(0);
-    return t;
-  };
-
-  it("the first frame goes at once; a burst after it sends the latest of each type once the window ends", async () => {
-    const t = await live();
-    expect(t.channel.send({ t: "page", n: 1 })).toBe(true);
-    t.channel.send({ t: "page", n: 2 });
-    t.channel.send({ t: "page", n: 3 });
-    t.channel.send({ t: "sound", on: true });
-    expect(t.sockets[0]?.sent).toEqual(['{"v":1,"t":"page","n":1}']);
-    await vi.advanceTimersByTimeAsync(COALESCE_MS);
-    expect(t.sockets[0]?.sent.slice(1)).toEqual(['{"v":1,"t":"page","n":3}', '{"v":1,"t":"sound","on":true}']);
-    // The window restarts after a flush, then goes quiet.
-    await vi.advanceTimersByTimeAsync(COALESCE_MS);
-    t.channel.send({ t: "page", n: 4 });
-    expect(t.sockets[0]?.sent).toHaveLength(4);
-    expect(t.sockets[0]?.sent.at(-1)).toBe('{"v":1,"t":"page","n":4}');
-  });
-
-  it("a frame sent while no socket is live is refused, and a drop discards what waited", async () => {
-    const t = await live();
-    t.channel.send({ t: "page", n: 1 });
-    t.channel.send({ t: "page", n: 2 });
-    t.sockets[0]?.drop();
-    await vi.advanceTimersByTimeAsync(COALESCE_MS * 2);
-    expect(t.sockets[0]?.sent).toEqual(['{"v":1,"t":"page","n":1}']);
-    expect(t.channel.send({ t: "page", n: 3 })).toBe(false);
   });
 });

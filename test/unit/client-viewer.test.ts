@@ -1058,9 +1058,10 @@ describe("DEMO-01 the viewer parks for a transient state", () => {
   };
   const deckView = () => ({ ...view, items: [deck] }) as ScreenView;
 
-  it("KEY-01 F5 enters Present and never reloads: held down, shifted, or alternating with Escape", () => {
+  it("KEY-01 F5 enters Present and never reloads: held down, shifted, or alternating with Escape", async () => {
     const { v } = setup();
     v.render(deckView());
+    await vi.dynamicImportSettled();
     const presenting = () => doc.body.classes.has("is-presenting");
     expect(presenting()).toBe(false);
     expect(press("F5").preventDefault).toHaveBeenCalled();
@@ -1079,10 +1080,11 @@ describe("DEMO-01 the viewer parks for a transient state", () => {
     expect(v.shown()?.present).toBe(false);
   });
 
-  it("KEY-01 F5 on a link card (nothing to present) is still kept from reloading, and Ctrl+F5 is the browser's own", () => {
+  it("KEY-01 F5 on a link card (nothing to present) is still kept from reloading, and Ctrl+F5 is the browser's own", async () => {
     const { v } = setup();
     const link: Item = { kind: "link", id: "t7", url: "https://vevox.app/", title: "Vevox" };
     v.render({ ...view, items: [link] } as ScreenView);
+    await vi.dynamicImportSettled();
     expect(press("F5").preventDefault).toHaveBeenCalled();
     expect(doc.body.classes.has("is-presenting")).toBe(false);
     v.render(deckView());
@@ -1095,7 +1097,7 @@ describe("DEMO-01 the viewer parks for a transient state", () => {
     expect(press("F5").preventDefault).not.toHaveBeenCalled();
   });
 
-  it("KEY-01 guard: every key a clicker sends is handled; the only inert one is named", () => {
+  it("KEY-01 guard: every key a clicker sends is handled; the only inert one is named", async () => {
     // An R400: left and right page, play alternates F5 and Escape, blank sends ".".
     const clicker: [string, "next" | "prev" | "present" | "stop" | "inert"][] = [
       ["PageDown", "next"],
@@ -1106,6 +1108,7 @@ describe("DEMO-01 the viewer parks for a transient state", () => {
     ];
     const { v, el } = setup();
     v.render(deckView());
+    await vi.dynamicImportSettled();
     for (const [key, what] of clicker) {
       const at = el("dots").textContent;
       const presenting = doc.body.classes.has("is-presenting");
@@ -1125,9 +1128,10 @@ describe("DEMO-01 the viewer parks for a transient state", () => {
     }
   });
 
-  it("KEY-01 Home and End go to the first and last page, and report it", () => {
+  it("KEY-01 Home and End go to the first and last page, and report it", async () => {
     const { v, el } = setup();
     v.render(deckView());
+    await vi.dynamicImportSettled();
     expect(press("End").preventDefault).toHaveBeenCalled();
     expect(el("dots").textContent).toBe("2 / 2");
     expect(v.shown()?.page).toBe(2);
