@@ -1,5 +1,15 @@
 // The served build (tools/build-assets.mjs, ADR 0011): public/ copied to dist/ with each JS module minified alone.
-import { mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
+import { spawnSync } from "node:child_process";
+import {
+  mkdirSync,
+  mkdtempSync,
+  readdirSync,
+  readFileSync,
+  rmSync,
+  statSync,
+  symlinkSync,
+  writeFileSync,
+} from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
@@ -90,8 +100,30 @@ describe("build", () => {
     build(root);
     expect(out("js/a.js").toString()).not.toContain("sourceMappingURL");
     const map = JSON.parse(out("js/a.js.map").toString());
-    expect(map.sources).toEqual(["public/js/a.js"]);
+    // Named by its file, so the browser's tools resolve it beside the map, at /js/a.js.
+    expect(map.sources).toEqual(["a.js"]);
     expect(map.sourcesContent).toEqual([JS]);
+  });
+
+  it("clears a path that changed between file and folder, either way", () => {
+    project({ "js/x": "a file", "js/y/inner.txt": "in a folder" });
+    build(root);
+    rmSync(join(root, "public/js/x"));
+    rmSync(join(root, "public/js/y"), { recursive: true });
+    writeFileSync(join(root, "public/js/y"), "now a file");
+    mkdirSync(join(root, "public/js/x"));
+    writeFileSync(join(root, "public/js/x/inner.txt"), "now in a folder");
+    expect(build(root).deleted).toEqual(["js/x", "js/y/inner.txt"]);
+    expect(out("js/y").toString()).toBe("now a file");
+    expect(out("js/x/inner.txt").toString()).toBe("now in a folder");
+  });
+
+  it("leaves another build's file in flight alone and leaves no temp file of its own", () => {
+    project({ "a.txt": "a" });
+    mkdirSync(join(root, "dist"));
+    writeFileSync(join(root, "dist/a.txt.99999.tmp"), "half");
+    expect(build(root).deleted).toEqual([]);
+    expect(readdirSync(join(root, "dist")).sort()).toEqual(["a.txt", "a.txt.99999.tmp"]);
   });
 
   it("rewrites only what changed, and deletes what public/ no longer has", () => {
@@ -111,6 +143,16 @@ describe("build", () => {
   it("refuses a module that does not parse, so no broken file is served", () => {
     project({ "js/a.js": "export const = ;\n" });
     expect(() => build(root)).toThrow();
+  });
+
+  it("the CLI builds even when reached through a symlinked path", () => {
+    project({ "js/a.js": "export const a = 1; // gone\n" });
+    const link = join(root, "tools-link");
+    symlinkSync(join(REPO, "tools"), link);
+    const run = spawnSync(process.execPath, [join(link, "build-assets-cli.mjs"), root], { encoding: "utf8" });
+    expect(run.status, run.stderr).toBe(0);
+    expect(run.stdout).toContain("dist: 2 written");
+    expect(out("js/a.js").toString()).not.toContain("gone");
   });
 });
 
@@ -132,8 +174,9 @@ describe("every browser module", () => {
     const { code } = minify(source, `js/${rel}`);
     expect(await shape(code)).toEqual(await shape(source));
     // Trusted Types and the CSP (no 'unsafe-eval') refuse string-to-code; the minifier must never introduce it.
-    for (const sink of ["eval(", "Function(", "innerHTML", 'setTimeout("']) {
-      if (code.includes(sink)) expect(source, sink).toContain(sink);
+    const count = (text: string, sink: string) => text.split(sink).length - 1;
+    for (const sink of ["eval(", "Function(", 'setTimeout("', "setTimeout('", "setTimeout(`"]) {
+      expect(count(code, sink), sink).toBeLessThanOrEqual(count(source, sink));
     }
   });
 });

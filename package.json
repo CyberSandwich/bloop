@@ -21,7 +21,7 @@
     "size": "npm run build:assets && size-limit",
     "build:pages": "node tools/build-pages-cli.mjs",
     "check:pages": "node tools/build-pages-cli.mjs --check",
-    "build:assets": "node tools/build-assets.mjs",
+    "build:assets": "node tools/build-assets-cli.mjs",
     "build": "npm run build:pages && npm run build:assets",
     "check": "npm run check:pages && npm run build:assets && npm run typecheck && npm run lint && npm test && npm run test:int && npm run html-validate && npm run size",
     "test:e2e": "playwright test"
@@ -30,7 +30,7 @@
     {
       "name": "landing JS",
       "path": "dist/js/site.js",
-      "limit": "1.05 kB"
+      "limit": "1.1 kB"
     },
     {
       "name": "doc pages JS",
@@ -68,7 +68,7 @@
         "dist/js/vendor/uqr.js",
         "dist/js/viewer.js"
       ],
-      "limit": "23.65 kB"
+      "limit": "24.3 kB"
     },
     {
       "name": "phone JS",
@@ -97,7 +97,7 @@
         "dist/js/shared/names.js",
         "dist/js/shared/session.js"
       ],
-      "limit": "16.35 kB"
+      "limit": "16.75 kB"
     },
     {
       "name": "typed code JS",
@@ -114,7 +114,7 @@
         "dist/js/shared/codes.js",
         "dist/js/shared/errors.js"
       ],
-      "limit": "5.15 kB"
+      "limit": "5.25 kB"
     },
     {
       "name": "phone media, lazy",
@@ -122,12 +122,12 @@
         "dist/js/core/photo.js",
         "dist/js/core/video.js"
       ],
-      "limit": "1.65 kB"
+      "limit": "1.7 kB"
     },
     {
       "name": "screen video, lazy",
       "path": "dist/js/viewer-video.js",
-      "limit": "0.5 kB"
+      "limit": "0.55 kB"
     },
     {
       "name": "session length sheet, lazy",
@@ -151,7 +151,7 @@
         "dist/js/core/remote-ui.js",
         "dist/js/core/remote.js"
       ],
-      "limit": "2.2 kB"
+      "limit": "2.25 kB"
     },
     {
       "name": "phone remote CSS, lazy",

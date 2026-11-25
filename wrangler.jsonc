@@ -13,7 +13,7 @@
   "routes": [{ "pattern": "bloop.here", "custom_domain": true }],
   // dist/ is public/ with each JS module minified (ADR 0011). Every `wrangler dev` and `wrangler deploy` rebuilds it
   // first, and dev rebuilds on any change under public/, so no server or upload reads a stale copy.
-  "build": { "command": "node tools/build-assets.mjs", "watch_dir": "public" },
+  "build": { "command": "node tools/build-assets-cli.mjs", "watch_dir": "public" },
   "assets": {
     "directory": "./dist",
     "binding": "ASSETS",

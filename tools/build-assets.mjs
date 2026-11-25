@@ -1,18 +1,26 @@
 // Builds dist/, the directory wrangler serves: public/ copied byte for byte, except each JS module minified on its
 // own (no bundle), so the module graph, lazy import() specifiers and export names stay as written. ADR 0011.
-// `node tools/build-assets.mjs`; wrangler.jsonc `build` runs it before `wrangler dev` and `wrangler deploy`.
-import { mkdirSync, readdirSync, readFileSync, renameSync, rmSync, writeFileSync } from "node:fs";
-import { dirname, join, relative, sep } from "node:path";
+// The CLI is tools/build-assets-cli.mjs; wrangler.jsonc `build` runs it before `wrangler dev` and `wrangler deploy`.
+import { lstatSync, mkdirSync, readdirSync, readFileSync, renameSync, rmSync, writeFileSync } from "node:fs";
+import { basename, dirname, join, relative, sep } from "node:path";
 import { fileURLToPath } from "node:url";
 import { transformSync } from "esbuild";
 
 const REPO = fileURLToPath(new URL("../", import.meta.url));
 // The browser floor (design.md): syntax past it is lowered, and syntax that cannot be lowered fails the build.
 export const TARGET = "safari15.4";
+// A build's file in flight (`<path>.<pid>.tmp`): another build's is never deleted from under it.
+const IN_FLIGHT = /\.\d+\.tmp$/;
 
-/** @param {string} dir @returns {string[]} paths relative to dir, `/`-separated */
+/** @param {string} dir @returns {string[]} files under dir, relative and `/`-separated; none when dir is missing */
 function walk(dir) {
-  return readdirSync(dir, { recursive: true, withFileTypes: true })
+  let entries;
+  try {
+    entries = readdirSync(dir, { recursive: true, withFileTypes: true });
+  } catch {
+    return [];
+  }
+  return entries
     .filter((d) => d.isFile())
     .map((d) => relative(dir, join(d.parentPath, d.name)).split(sep).join("/"))
     .sort();
@@ -20,7 +28,8 @@ function walk(dir) {
 
 /**
  * The minified module and its source map. The map is never linked (no sourceMappingURL), so no user downloads
- * even its name; a developer attaches `/js/<file>.map` in the browser's tools by hand.
+ * even its name; a developer attaches `/js/<file>.map` in the browser's tools by hand, and its source shows
+ * beside the module, at `/js/<file>`.
  * @param {string} source
  * @param {string} rel path under public/
  */
@@ -31,7 +40,7 @@ export function minify(source, rel) {
     minify: true,
     target: TARGET,
     sourcemap: "external",
-    sourcefile: `public/${rel}`,
+    sourcefile: basename(rel),
     // A license comment (the vendored QR file's) stays where it is.
     legalComments: "inline",
   });
@@ -46,9 +55,20 @@ function same(path, data) {
   }
 }
 
+/** @param {string} path @returns {"file" | "dir" | undefined} */
+function kind(path) {
+  try {
+    return lstatSync(path).isDirectory() ? "dir" : "file";
+  } catch {
+    return undefined;
+  }
+}
+
 /**
- * Brings `<root>/dist` to the build of `<root>/public`. A changed file is written beside its target and renamed
- * over it, so a server reading dist/ during a build never sees half a file; an unchanged file is left alone.
+ * Brings `<root>/dist` to the build of `<root>/public`. Stale files go first, then any path of the wrong kind (a
+ * file that became a folder, or the reverse). A changed file is written to a per-process temp name and renamed
+ * over its target, so a server reading dist/ never sees half a file and two builds never share a temp file; an
+ * unchanged file is left alone.
  * @param {string} root
  * @returns {{ written: string[], deleted: string[] }}
  */
@@ -67,23 +87,22 @@ export function build(root = REPO) {
     files.set(rel, code);
     files.set(`${rel}.map`, map);
   }
+
+  const deleted = walk(out).filter((rel) => !files.has(rel) && !IN_FLIGHT.test(rel));
+  for (const rel of deleted) rmSync(join(out, rel), { force: true });
+
   /** @type {string[]} */
   const written = [];
   for (const [rel, data] of files) {
     const path = join(out, rel);
     if (same(path, data)) continue;
+    // A file that became a folder was stale above; a folder that became a file is emptied, so clear it here.
+    if (kind(path) === "dir") rmSync(path, { recursive: true, force: true });
     mkdirSync(dirname(path), { recursive: true });
-    writeFileSync(`${path}.tmp`, data);
-    renameSync(`${path}.tmp`, path);
+    const tmp = `${path}.${process.pid}.tmp`;
+    writeFileSync(tmp, data);
+    renameSync(tmp, path);
     written.push(rel);
   }
-  // A file gone from public/ stops being served.
-  const deleted = walk(out).filter((rel) => !files.has(rel));
-  for (const rel of deleted) rmSync(join(out, rel));
   return { written, deleted };
-}
-
-if (process.argv[1] === fileURLToPath(import.meta.url)) {
-  const { written, deleted } = build();
-  console.log(`dist: ${written.length} written, ${deleted.length} deleted`);
 }
