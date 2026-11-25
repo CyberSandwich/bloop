@@ -44,6 +44,12 @@ export function placeControls(item, stage, need) {
 export const stepPage = (/** @type {number} */ at, /** @type {number} */ by, /** @type {number} */ count) =>
   Math.min(count - 1, Math.max(0, at + by));
 
+/**
+ * A remote command's seq (PAIR-13): the clock, so it grows across reloads, and never at or below the sender's last, so
+ * two taps in one millisecond, or a clock stepped back, still send in order.
+ */
+export const nextSeq = (/** @type {number} */ last, now = Date.now()) => Math.max(now, last + 1);
+
 /** The tap zones: the slide box's halves. @param {{left: number, top: number, width: number, height: number}} box */
 export const halves = (box) => [
   { ...box, width: box.width / 2 },

@@ -3,6 +3,7 @@
 import { createApi } from "./core/api.js";
 import { openChannel } from "./core/channel.js";
 import { endLine, FRESH_LINE, screenCopy } from "./core/copy-screen.js";
+import { nextSeq } from "./core/demo.js";
 import { clock, itemName, qrLabel } from "./core/format.js";
 import { qrMatrix, qrPath, qrSize } from "./core/qr.js";
 import { firstFile, guestOnStage, screenKey } from "./core/states.js";
@@ -93,7 +94,27 @@ const s = {
   timers: {},
 };
 
-const viewer = createViewer({ relink: (item) => launcher.relink(item), onChange: () => render() });
+let seq = 0;
+let reporting = 0;
+/** A tap here, so the phone's mark stays true (PAIR-13; a live session refuses it). */
+async function report() {
+  const shown = viewer.shown();
+  if (!DEMO || !shown) return;
+  reporting += 1;
+  seq = nextSeq(seq);
+  const res = await api.post("/api/screen/shown", { ...shown, seq }, s.sid);
+  reporting -= 1;
+  // A refusal leaves the screen as tapped.
+  if (res.ok && res.value.now >= (s.view?.now ?? 0)) onView(res.value);
+  else render();
+}
+
+const viewer = createViewer({
+  relink: (item) => launcher.relink(item),
+  onChange: () => render(),
+  tapped: report,
+  busy: () => reporting > 0,
+});
 
 const launcher = createLauncher({
   api,

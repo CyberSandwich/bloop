@@ -1146,9 +1146,10 @@ describe("the doc pages: one .legal layout (design.md section 6, Legal pages)", 
     const media = [...new Set(Object.values(EXTENSION_TYPES))].filter((t) => t !== "pptx" && t !== "pdf");
     expect(media).toEqual(["jpg", "png", "mp4", "mov"]);
     expect(text).toContain("Guest photos (JPEG, PNG) and videos (MP4, MOV), cleaned on the phone Live");
-    // The session length shipped (POST /api/session/length); the remote has not.
+    // The session length and the remote shipped: their routes, and the phone's remote that sends to one.
     expect(read("src/worker/routes/control.ts")).toContain('"/api/session/length"');
-    expect(text).not.toMatch(/next, previous, present/i);
+    expect(read("public/js/core/remote-ui.js")).toContain('"/api/control"');
+    expect(text).toContain("Controlling the Screen from your phone (next, previous, present) Live");
     const statuses = [...(pages["security.html"] ?? "").matchAll(/<span class="status( on)?">(\w+)<\/span>/g)].map(
       (m) => [m[2], !!m[1]],
     );

@@ -1,0 +1,230 @@
+// The phone's remote state (core/remote.js) and the seq every sender sends (core/demo.js nextSeq), PAIR-13.
+import { describe, expect, it } from "vitest";
+import { nextSeq } from "../../public/js/core/demo.js";
+import { canPresent, command, createRemote, current } from "../../public/js/core/remote.js";
+import type { ErrorCode, Item, PhoneView, Shown, ShownCommand } from "../../src/shared/protocol.ts";
+
+const dog: Item = { kind: "file", id: "i1", name: "Dog.jpg", type: "jpg", size: 70_000 };
+const pdf: Item = { kind: "file", id: "i2", name: "Sample deck.pdf", type: "pdf", size: 81_000 };
+const deck: Item = { kind: "file", id: "i3", name: "Sample deck.pptx", type: "pptx", size: 82_000 };
+const vevox: Item = { kind: "link", id: "i4", url: "https://vevox.app/", title: "Vevox" };
+
+const viewOf = (over: Partial<PhoneView> = {}): PhoneView =>
+  ({
+    state: "open",
+    mode: "demo",
+    kind: "owner",
+    items: [dog, pdf, deck, vevox],
+    shown: null,
+    now: 100,
+    ...over,
+  }) as PhoneView;
+
+describe("PAIR-13 seq: each sender sends max(Date.now(), last + 1)", () => {
+  it("is the clock when the clock is ahead, so it grows across reloads", () => {
+    expect(nextSeq(0, 1_700_000_000_000)).toBe(1_700_000_000_000);
+    expect(nextSeq(5, 1_700_000_000_000)).toBe(1_700_000_000_000);
+  });
+  it("is one above the last when two taps share a millisecond or the clock stepped back", () => {
+    expect(nextSeq(1_700_000_000_000, 1_700_000_000_000)).toBe(1_700_000_000_001);
+    expect(nextSeq(1_700_000_000_500, 1_700_000_000_000)).toBe(1_700_000_000_501);
+  });
+  it("reads Date.now by default and never goes below the last", () => {
+    const before = Date.now();
+    expect(nextSeq(0)).toBeGreaterThanOrEqual(before);
+    const ahead = Date.now() + 60_000;
+    expect(nextSeq(ahead)).toBe(ahead + 1);
+  });
+});
+
+describe("the remote's commands", () => {
+  it("before any command, the screen shows its first file's first page, as the viewer starts", () => {
+    expect(current(viewOf())).toEqual({ item: "i1", page: 1, present: false });
+    expect(current(viewOf({ shown: { item: "i3", page: 2, present: true } }))).toEqual({
+      item: "i3",
+      page: 2,
+      present: true,
+    });
+    expect(current(viewOf({ items: [vevox] }))).toBeNull();
+  });
+
+  it("a row puts a file on its first page; a link, or the file already shown, sends nothing", () => {
+    const v = viewOf();
+    const at: Shown = { item: "i3", page: 2, present: false };
+    expect(command(v, at, { item: "i2" })).toEqual({ item: "i2", page: 1, present: false });
+    expect(command(v, at, { item: "i4" })).toBeNull();
+    expect(command(v, at, { item: "i3" })).toBeNull();
+    expect(command(v, at, { item: "nope" })).toBeNull();
+  });
+
+  it("a new item keeps presenting when it can be presented, and stops on one that cannot", () => {
+    const at: Shown = { item: "i3", page: 2, present: true };
+    expect(command(viewOf(), at, { item: "i1" })).toEqual({ item: "i1", page: 1, present: true });
+    // A guest's deck is a card on the screen: nothing to present.
+    const guestDeck: Item = { ...deck, id: "i1" };
+    const guest = viewOf({ kind: "guest", items: [guestDeck, { ...dog, id: "i2" }] });
+    expect(command(guest, { item: "i2", page: 1, present: true }, { item: "i1" })).toEqual({
+      item: "i1",
+      page: 1,
+      present: false,
+    });
+    expect(canPresent(guestDeck, guest)).toBe(false);
+    expect(canPresent(deck, viewOf())).toBe(true);
+    expect(canPresent(dog, guest)).toBe(true);
+    expect(canPresent(vevox, viewOf())).toBe(false);
+  });
+
+  it("a step pages within the item and is held at either end; a photo has no pages to step", () => {
+    const v = viewOf();
+    expect(command(v, { item: "i3", page: 1, present: false }, { step: 1 })).toEqual({
+      item: "i3",
+      page: 2,
+      present: false,
+    });
+    expect(command(v, { item: "i3", page: 2, present: false }, { step: 1 })).toBeNull();
+    expect(command(v, { item: "i3", page: 1, present: false }, { step: -1 })).toBeNull();
+    expect(command(v, { item: "i1", page: 1, present: false }, { step: 1 })).toBeNull();
+  });
+
+  it("Present and Stop toggle on what can be presented only", () => {
+    const v = viewOf();
+    expect(command(v, { item: "i2", page: 2, present: false }, { present: true })).toEqual({
+      item: "i2",
+      page: 2,
+      present: true,
+    });
+    expect(command(v, { item: "i2", page: 2, present: true }, { present: true })).toEqual({
+      item: "i2",
+      page: 2,
+      present: false,
+    });
+    const guestDeck = viewOf({ kind: "guest", items: [{ ...deck, id: "i1" }] });
+    expect(command(guestDeck, { item: "i1", page: 1, present: false }, { present: true })).toBeNull();
+  });
+});
+
+type Answer = { ok: true; value: PhoneView } | { ok: false; error: ErrorCode };
+
+/** A remote over a fake page and server: each post waits until the test answers it. */
+function harness(start = viewOf()) {
+  const page = { view: start as PhoneView | null };
+  const sent: ShownCommand[] = [];
+  const answers: ((a: Answer) => void)[] = [];
+  const refusals: ErrorCode[] = [];
+  let paints = 0;
+  let clock = 1_000;
+  const remote = createRemote({
+    view: () => page.view,
+    post: (cmd) => {
+      sent.push(cmd);
+      return new Promise<Answer>((done) => answers.push(done));
+    },
+    adopt: (view) => {
+      page.view = view;
+    },
+    refused: (code) => refusals.push(code),
+    paint: () => {
+      paints += 1;
+    },
+    now: () => clock,
+  });
+  const tick = () => new Promise((r) => setTimeout(r, 0));
+  return {
+    page,
+    sent,
+    answers,
+    refusals,
+    remote,
+    tick,
+    paints: () => paints,
+    setClock: (t: number) => {
+      clock = t;
+    },
+  };
+}
+
+describe("the remote's state: a tap shows at once, and the server's shown is the truth once all are back", () => {
+  it("a tap shows at once and sends an absolute command with the next seq", async () => {
+    const h = harness();
+    void h.remote.tap({ item: "i3" });
+    expect(h.remote.at()).toEqual({ item: "i3", page: 1, present: false });
+    expect(h.paints()).toBe(1);
+    expect(h.sent).toEqual([{ item: "i3", page: 1, present: false, seq: 1_000 }]);
+  });
+
+  it("quick taps build on the last tap, never the stale view, and each seq is above the last within one millisecond", async () => {
+    const h = harness();
+    void h.remote.tap({ item: "i3" });
+    void h.remote.tap({ step: 1 });
+    void h.remote.tap({ present: true });
+    expect(h.sent.map((c) => c.seq)).toEqual([1_000, 1_001, 1_002]);
+    expect(h.sent.at(-1)).toEqual({ item: "i3", page: 2, present: true, seq: 1_002 });
+    expect(h.remote.at()).toEqual({ item: "i3", page: 2, present: true });
+  });
+
+  it("an earlier answer arriving while a later tap is on its way never moves the mark back", async () => {
+    const h = harness();
+    void h.remote.tap({ item: "i3" });
+    void h.remote.tap({ item: "i2" });
+    h.answers[0]?.({ ok: true, value: viewOf({ shown: { item: "i3", page: 1, present: false }, now: 200 }) });
+    await h.tick();
+    expect(h.remote.at()).toEqual({ item: "i2", page: 1, present: false });
+    h.answers[1]?.({ ok: true, value: viewOf({ shown: { item: "i2", page: 1, present: false }, now: 300 }) });
+    await h.tick();
+    expect(h.page.view?.now).toBe(300);
+    expect(h.remote.at()).toEqual({ item: "i2", page: 1, present: false });
+  });
+
+  it("PAIR-13 stale seq: the answer is the current view, adopted like any other, never an error", async () => {
+    const h = harness();
+    void h.remote.tap({ item: "i3" });
+    // The server kept a newer command (the screen's own tap): its answer carries that shown.
+    const truth: Shown = { item: "i1", page: 1, present: true };
+    h.answers[0]?.({ ok: true, value: viewOf({ shown: truth, now: 500 }) });
+    await h.tick();
+    expect(h.refusals).toEqual([]);
+    expect(h.remote.at()).toEqual(truth);
+  });
+
+  it("an answer older than the view a push already brought is dropped: the push is the truth", async () => {
+    const h = harness();
+    void h.remote.tap({ item: "i3" });
+    h.page.view = viewOf({ shown: { item: "i2", page: 2, present: false }, now: 900 });
+    h.answers[0]?.({ ok: true, value: viewOf({ shown: { item: "i3", page: 1, present: false }, now: 800 }) });
+    await h.tick();
+    expect(h.page.view.now).toBe(900);
+    expect(h.remote.at()).toEqual({ item: "i2", page: 2, present: false });
+  });
+
+  it("offline or rate limited: a refusal, and the mark goes back to what the screen shows", async () => {
+    for (const error of ["offline", "rate_limited"] as const) {
+      const h = harness(viewOf({ shown: { item: "i2", page: 1, present: false } }));
+      void h.remote.tap({ item: "i3" });
+      const paints = h.paints();
+      h.answers[0]?.({ ok: false, error });
+      await h.tick();
+      expect(h.refusals).toEqual([error]);
+      expect(h.paints()).toBe(paints + 1);
+      expect(h.remote.at()).toEqual({ item: "i2", page: 1, present: false });
+    }
+  });
+
+  it("a session that ends mid-command: the refusal is handed on (the page shows no toast for an end), and nothing stays marked", async () => {
+    const h = harness();
+    void h.remote.tap({ item: "i3" });
+    h.page.view = viewOf({ state: "ended", now: 400 });
+    h.answers[0]?.({ ok: false, error: "session_ended" });
+    await h.tick();
+    expect(h.refusals).toEqual(["session_ended"]);
+    expect(h.remote.at()).toEqual({ item: "i1", page: 1, present: false });
+  });
+
+  it("a tap that changes nothing sends nothing", async () => {
+    const h = harness(viewOf({ shown: { item: "i3", page: 2, present: false } }));
+    void h.remote.tap({ step: 1 });
+    void h.remote.tap({ item: "i3" });
+    void h.remote.tap({ item: "i4" });
+    expect(h.sent).toEqual([]);
+    expect(h.paints()).toBe(0);
+  });
+});
