@@ -143,7 +143,9 @@ Calls, by stream. A caller checks its switch first and calls the guard second. A
 4. sends one alert, at most once a UTC day, while analytics has failed 3 or more runs in a row; a dataset that fails keeps its last good figures (the report takes the larger of those and the counters) and the report's sources say so;
 5. on Mondays, sends the digest (section 7), once per ISO week.
 
-An alert holds numbers only: no file names, addresses or user data. Until email is wired the alert is a log line `{"evt":"breaker",...}`.
+An alert holds numbers only: no file names, addresses or user data. Until email is wired the alert is a log line `{"evt":"breaker",...}`. Once email is wired the breaker sends its own email: no alert depends on a log rule or an observability query, because head sampling would drop the lines.
+
+Email bounces come from the GraphQL dataset `emailSendingAdaptive` (`deliveryFailed`); the breaker does not read it yet. Messages on open WebSockets are not stopped by the Durable Object spend limit, so P1's socket caps are the bound, and the breaker's Durable Object request line (`BREAKER_DO_REQ_DAY_WARN`) warns on growth.
 
 | rule | line | acts |
 |---|---|---|
@@ -291,6 +293,7 @@ Rules for the Cloudflare side:
 - Guard unreachable or erroring: costly work is refused with 503 (section 4). A refusal never writes.
 - D1 unreachable: the settings lookup keeps its last cached value, or the var. The breaker logs the failed write and retries next run; the latch holds.
 - Analytics unreachable: counters still trip; one alert after 3 runs.
+- A Workers or Durable Object spend block stops crons account-wide (the breaker and the probe) and makes the guard unreachable. Cloudflare's $2 and $5 alert emails are then the only signal. The Converter reads `convert` from F's D1 settings before it starts, so a tripped `convert` holds without the guard.
 - Counters are exact for what the Worker does. Presigned R2 PUTs and floods that never reach a meter are seen only through analytics and the platform spend limits, which stay on.
 
 ## 11. The tables F adds
@@ -301,8 +304,7 @@ F adds nothing for the guard beyond the `setting` and `admin_action` tables, bot
 
 - The analytics dataset and field names in `src/worker/spend/analytics.ts` (Workers, Durable Objects, R2, D1) are written from memory of the schema and not yet read back with a live token. Each dataset is its own query, so a wrong name loses one series and shows in the alert's sources.
 - Log ingest and the Containers dataset are not read; container seconds are counted in the guard, and the share set aside for logs is not enforced. D1 rows written and R2 operations beyond the monthly charge are read from analytics only: without `CF_ANALYTICS_TOKEN` the D1 line cannot trip.
-- Email bounce spikes have no source yet.
-- Whether auto-responded WebSocket pings bill as messages decides if the Durable Object spend limit is the only stop for a ping storm.
+- Whether auto-responded WebSocket pings bill as messages decides how large a ping storm can grow before the Durable Object request warning (spike G-3).
 - The growth table's average days are derived from the cost plan's per-user model; replace them with the measured numbers after the first month.
 
 ## 13. Threat ids
