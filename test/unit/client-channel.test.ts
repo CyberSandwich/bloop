@@ -1,14 +1,14 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { Api } from "../../public/js/core/api.js";
-import { downGate, openChannel, refusal } from "../../public/js/core/channel.js";
+import { downGate, isDown, openChannel, refusal } from "../../public/js/core/channel.js";
 import { onRefusal } from "../../public/js/core/states.js";
 import {
   BLOCKED_PROBE_MS,
   COALESCE_MS,
   CONNECT_TIMEOUT_MS,
-  DOWN_CONFIRM_MS,
   PING_MS,
   PROBE_MS,
+  SILENCE_MS,
 } from "../../public/js/core/timing.js";
 import type { SocketLike } from "../../public/js/types.js";
 import type { ErrorCode } from "../../src/shared/protocol.ts";
@@ -61,6 +61,7 @@ function setup(
     storage?: Pick<Storage, "getItem" | "setItem" | "removeItem"> | null;
     hidden?: { now: boolean };
     state?: string;
+    delay?: number;
   } = {},
 ) {
   const sockets: FakeSocket[] = [];
@@ -72,6 +73,7 @@ function setup(
   const api = {
     get: async (path: string, auth?: string | null) => {
       pollCalls.push(`${path}|${auth}`);
+      if (opts.delay) await new Promise((r) => setTimeout(r, opts.delay));
       return (await polls.shift()) ?? { ok: true, value: { state: opts.state ?? "waiting" } };
     },
   } as unknown as Api;
@@ -511,26 +513,80 @@ describe("REL-15 the silence rule counts missed pings and skips a hidden tab", (
     expect(t.sockets[0]?.closed).toBe(false);
   });
 
-  it("REL-15 a hidden tab is never judged, and a slipped wake-up on showing again closes nothing", () => {
+  it("REL-15 a hidden tab is judged by the 70 s silence instead, and showing again starts the count afresh", () => {
     const hidden = { now: true };
     const t = open(hidden);
-    for (let i = 0; i < 6; i++) vi.advanceTimersByTime(PING_MS);
+    vi.advanceTimersByTime(PING_MS * 2);
+    expect(PING_MS * 2).toBeLessThan(SILENCE_MS);
     expect(t.sockets[0]?.closed).toBe(false);
     hidden.now = false;
     vi.advanceTimersByTime(PING_MS);
     expect(t.sockets[0]?.closed).toBe(false);
+    const dead = open({ now: true });
+    vi.advanceTimersByTime(PING_MS * 3);
+    expect(dead.sockets[0]?.closed).toBe(true);
+  });
+
+  it("REL-15 a missed-ping drop gives the socket up for good: not live, handlers off, a new one on the next try", async () => {
+    const t = open({ now: false });
+    for (let i = 0; i < 3; i++) vi.advanceTimersByTime(PING_MS);
+    const ws = t.sockets[0];
+    expect(t.channel.isLive()).toBe(false);
+    expect(t.channel.send({ t: "x" })).toBe(false);
+    expect([ws?.onclose, ws?.onerror, ws?.onmessage, ws?.onopen]).toEqual([null, null, null, null]);
+    await vi.advanceTimersByTimeAsync(1000);
+    expect(t.sockets).toHaveLength(2);
   });
 });
 
 describe("REL-04 a hung upgrade falls to polling, and the next screen polls first", () => {
-  it("REL-04 the upgrade has 4 s; polling starts at that moment and ws=blocked is kept for the tab", async () => {
+  it("REL-04 the upgrade has 4 s and polling starts then; only a second timeout in a row sets ws=blocked", async () => {
     const memory = new Memory();
     const t = setup([], undefined, { storage: memory });
     expect(CONNECT_TIMEOUT_MS).toBe(4000);
     await vi.advanceTimersByTimeAsync(CONNECT_TIMEOUT_MS);
     await vi.advanceTimersByTimeAsync(1);
     expect(t.pollCalls).toHaveLength(1);
+    expect(memory.getItem("ws")).toBeNull();
+    // The retry (1 s) hangs too.
+    await vi.advanceTimersByTimeAsync(1000 + CONNECT_TIMEOUT_MS);
     expect(memory.getItem("ws")).toBe("blocked");
+  });
+
+  it("REL-04 a socket that opened and then went quiet, or an ordinary outage, never sets ws=blocked", async () => {
+    const memory = new Memory();
+    const t = setup([], undefined, { storage: memory });
+    // It opened but sent no frame: slow, not swallowed, so the timeout does not count.
+    t.sockets[0]?.open();
+    await vi.advanceTimersByTimeAsync(CONNECT_TIMEOUT_MS + 1);
+    expect(t.pollCalls).toHaveLength(1);
+    expect(memory.getItem("ws")).toBeNull();
+    const down = new Memory();
+    const u = setup([], undefined, { storage: down });
+    for (const gap of [1000, 2000, 5000]) {
+      u.sockets.at(-1)?.drop();
+      await vi.advanceTimersByTimeAsync(gap);
+    }
+    expect(down.getItem("ws")).toBeNull();
+  });
+
+  it("REL-04 the blocked retry has the reconnect's jitter, so tabs flagged together do not return together", async () => {
+    vi.mocked(Math.random).mockReturnValue(0);
+    const memory = new Memory();
+    memory.setItem("ws", "blocked");
+    const t = setup([], undefined, { storage: memory });
+    await vi.advanceTimersByTimeAsync(BLOCKED_PROBE_MS / 2);
+    expect(t.sockets).toHaveLength(1);
+  });
+
+  it("REL-04 polling is one loop: a timeout or a drop during a poll in flight starts no second", async () => {
+    // The reviewer's run: a poll takes 2.5 s, the blocked tab tries the socket each minute for half an hour.
+    const memory = new Memory();
+    const t = setup([], undefined, { storage: memory, delay: 2500 });
+    await vi.advanceTimersByTimeAsync(30 * 60_000);
+    // One loop is about 1800 / 5.5 polls; two or more would double it.
+    expect(t.pollCalls.length).toBeLessThan(400);
+    expect(t.pollCalls.length).toBeGreaterThan(250);
   });
 
   it("REL-04 with ws=blocked the next channel polls from the first second and tries the socket once a minute", async () => {
@@ -595,30 +651,57 @@ describe("REL-03 and R11 what a failed poll says", () => {
     expect(t.links).toEqual(["blocked"]);
   });
 
-  it("R11 the second service_down within 10 s says bloop is down; one alone says nothing", async () => {
-    const t = setup([
-      { ok: false, error: "service_down" },
-      { ok: false, error: "service_down" },
-    ]);
+  const drops = async (t: ReturnType<typeof setup>) => {
     t.sockets[0]?.drop();
     vi.advanceTimersByTime(1000);
     t.sockets[1]?.drop();
     vi.advanceTimersByTime(2000);
     t.sockets[2]?.drop();
     await vi.advanceTimersByTimeAsync(1);
+  };
+
+  it("R11 the second server failure in a row says bloop is down, however slow; one alone says nothing", async () => {
+    const t = setup([
+      { ok: false, error: "service_down" },
+      { ok: false, error: "service_down" },
+    ]);
+    await drops(t);
     expect(t.links).toEqual([]);
-    // The poll backs off 5 s: the second answer lands inside the window.
     await vi.advanceTimersByTimeAsync(5000);
     expect(t.links).toEqual(["down"]);
   });
 
-  it("R11 downGate: two in a row inside the window confirm; a gap or any other answer resets", () => {
+  it("R11 an internal 500 counts the same as service_down, on a poll as on a boot", async () => {
+    const t = setup([
+      { ok: false, error: "internal" },
+      { ok: false, error: "internal" },
+    ]);
+    await drops(t);
+    expect(t.links).toEqual([]);
+    await vi.advanceTimersByTimeAsync(5000);
+    expect(t.links).toEqual(["down"]);
+  });
+
+  it("R11 any other answer between two failures starts the count again", async () => {
+    const t = setup([
+      { ok: false, error: "service_down" },
+      { ok: false, error: "offline" },
+      { ok: false, error: "service_down" },
+    ]);
+    await drops(t);
+    await vi.advanceTimersByTimeAsync(5000 + 10_000);
+    expect(t.links).toEqual(["offline"]);
+  });
+
+  it("R11 downGate counts consecutive failures; any other answer resets", () => {
     const gate = downGate();
-    expect(gate(true, 0)).toBe(false);
-    expect(gate(true, DOWN_CONFIRM_MS)).toBe(true);
-    expect(gate(true, DOWN_CONFIRM_MS * 3)).toBe(false);
-    expect(gate(false, DOWN_CONFIRM_MS * 3 + 1)).toBe(false);
-    expect(gate(true, DOWN_CONFIRM_MS * 3 + 2)).toBe(false);
+    expect(gate(true)).toBe(false);
+    expect(gate(true)).toBe(true);
+    expect(gate(true)).toBe(true);
+    expect(gate(false)).toBe(false);
+    expect(gate(true)).toBe(false);
+    expect(isDown("service_down") && isDown("internal")).toBe(true);
+    expect(isDown("offline") || isDown("rate_limited") || isDown("network_blocked")).toBe(false);
   });
 });
 
