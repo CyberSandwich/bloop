@@ -65,8 +65,8 @@ func (l *lineWriter) Write(p []byte) (int, error) {
 	return len(p), nil
 }
 
-// runCmd runs the tool in its own process group and kills the whole group when ctx ends,
-// so soffice's child (soffice.bin) never outlives its stage.
+// runCmd runs the tool in its own process group and kills the whole group when the tool ends or
+// ctx does, so soffice's child (soffice.bin) never outlives its stage.
 func runCmd(ctx context.Context, spec cmdSpec) ([]byte, error) {
 	cmd := exec.CommandContext(ctx, spec.name, spec.args...)
 	cmd.Env = spec.env
@@ -82,6 +82,12 @@ func runCmd(ctx context.Context, spec cmdSpec) ([]byte, error) {
 	cmd.Stdout = stdout
 	cmd.Stderr = errOut
 	err := cmd.Run()
+	if cmd.Process != nil {
+		syscall.Kill(-cmd.Process.Pid, syscall.SIGKILL) // a child the leader left behind dies with its group
+	}
+	if errors.Is(err, exec.ErrWaitDelay) && cmd.ProcessState.Success() {
+		err = nil // the leader succeeded; a leftover child only held the pipes open
+	}
 	if ctxErr := ctx.Err(); ctxErr != nil {
 		return out.buf.Bytes(), ctxErr
 	}
