@@ -1,6 +1,7 @@
-// The Screen object's storage schema: numbered steps (CLAUDE.md "Durable Object schema"). Each step checks the data's
-// shape and writes only what is still old, and every step runs on every wake whatever the stored version: a rollback
-// that wrote old-shape data under a newer version is repaired by the next deploy.
+// The Screen object's storage schema, and the shared `applySteps` every object's numbered steps run through
+// (docs/architecture.md 8.3, ADR 0002). Each step checks the data's shape and writes only what is still old, and every
+// step runs on every wake whatever the stored version: a rollback that wrote old-shape data under a newer version is
+// repaired by the next deploy.
 import { type ItemDraft, type ItemRef, launchIndex, shownFault, shownSchema, withIds } from "../items.ts";
 import type { FileRef, Machine } from "../machine.ts";
 import type { LinkRecord } from "../seams/open-path/links.ts";
@@ -102,10 +103,14 @@ const isSeq = (v: unknown): v is Session["seq"] => {
   return Number.isSafeInteger(seq?.phone) && Number.isSafeInteger(seq?.screen);
 };
 
-/** Runs every numbered step up to `version`, then records it. Shared by every object that keeps a `schemaVersion`. */
+/**
+ * Runs every numbered step up to `version`, then records it. Shared by every object that keeps a `schemaVersion`.
+ * The stored version only rises: an older deploy after a newer one never lowers it.
+ */
 export function applySteps(kv: Kv, steps: Record<number, (kv: Kv) => void>, version: number): void {
   for (let v = 2; v <= version; v++) steps[v]?.(kv);
-  if (kv.get<number>(SCHEMA_KEY) !== version) kv.put(SCHEMA_KEY, version);
+  const stored = kv.get<number>(SCHEMA_KEY);
+  if (typeof stored !== "number" || stored < version) kv.put(SCHEMA_KEY, version);
 }
 
 /** Brings stored state to SCHEMA_VERSION's shape. A fresh object (no `meta`) is written at the current version by `create`. */

@@ -34,6 +34,7 @@ A screen with no account must be paired with one phone in seconds, by scan or by
 - A screen with no socket polls `GET /api/screen/state`, which doubles as the rotation clock and keeps the screen from closing. A socket's upgrade URL carries the non-secret `screenRef` (`?ref=`), since the credential is the first frame and the Worker must know which object to route to.
 - Concurrency: the Screen object does async work (hashing, drawing) before a synchronous check-and-commit of one machine step, because awaiting a subrequest lets other events in. The first-phone lock rests on that.
 - The Directory keeps claimed and expired codes for 5 min, so a replay answers `code_taken` and a late phone `code_expired`, and neither counts as a guess.
+- **Shared storage migrations:** `applySteps` (`do/schema.ts`) runs an object's numbered steps on every wake and records `schemaVersion`, never lowering it; the Screen's steps (`do/schema.ts`) and the Directory's (`do/directory-schema.ts`, the sweep-column indexes) both use it. Why: the Directory's sweeps scanned whole tables as rows grew, and a second object needed the Screen's step loop. Replaces: a loop written once per object. Remove: inline the three-line loop in each object's migrate function.
 - Local runs have no `eu` jurisdiction (workerd does not implement it), so the stubs skip it for a local `PUBLIC_ORIGIN`.
 
 ## Consequences

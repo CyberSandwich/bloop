@@ -1,14 +1,20 @@
 import { DatabaseSync } from "node:sqlite";
 import { describe, expect, it } from "vitest";
 import { DemoSlots } from "../../src/worker/do/demo-slots.ts";
-import { DIRECTORY_SCHEMA_VERSION, migrateDirectory } from "../../src/worker/do/directory-schema.ts";
+import {
+  DIRECTORY_SCHEMA_VERSION,
+  initDirectoryStorage,
+  migrateDirectory,
+} from "../../src/worker/do/directory-schema.ts";
 import type { Kv } from "../../src/worker/do/ledger.ts";
-import { SCHEMA_KEY } from "../../src/worker/do/schema.ts";
+import { applySteps, SCHEMA_KEY } from "../../src/worker/do/schema.ts";
 import { sqlOver } from "./sqlite.ts";
 
 // The Directory constructor's shipped tables, version 1.
 const CODE_TABLE =
   "CREATE TABLE IF NOT EXISTS code (code TEXT PRIMARY KEY, screen_ref TEXT NOT NULL, expires_at INTEGER NOT NULL, demo INTEGER NOT NULL DEFAULT 0)";
+const MISS_TABLE =
+  "CREATE TABLE IF NOT EXISTS miss (ip_hash TEXT PRIMARY KEY, count INTEGER NOT NULL, window_start INTEGER NOT NULL)";
 
 function memKv(): Kv & { data: Map<string, unknown> } {
   const data = new Map<string, unknown>();
@@ -23,6 +29,7 @@ function oldShape() {
   const db = new DatabaseSync(":memory:");
   const sql = sqlOver(db);
   sql.exec(CODE_TABLE);
+  sql.exec(MISS_TABLE);
   new DemoSlots(sql);
   return { db, sql, kv: memKv() };
 }
@@ -33,22 +40,26 @@ const indexes = (db: DatabaseSync, table: string): string[] =>
 const plan = (db: DatabaseSync, query: string): string =>
   (db.prepare(`EXPLAIN QUERY PLAN ${query}`).all() as { detail: string }[]).map((r) => r.detail).join("\n");
 
-describe("Directory schema: expires_at indexes", () => {
-  it("a fresh object, with no stored version, ends with both indexes at the current version", () => {
+const SWEEPS = [
+  ["code", "code_expires", "DELETE FROM code WHERE expires_at <= 1"],
+  ["demo", "demo_expires", "DELETE FROM demo WHERE expires_at <= 1"],
+  ["miss", "miss_window", "DELETE FROM miss WHERE window_start <= 1"],
+] as const;
+
+describe("Directory schema: sweep-column indexes", () => {
+  it("a fresh object, with no stored version, ends with every index at the current version", () => {
     const { db, sql, kv } = oldShape();
     migrateDirectory(sql, kv);
-    expect(indexes(db, "code")).toContain("code_expires");
-    expect(indexes(db, "demo")).toContain("demo_expires");
+    for (const [table, index] of SWEEPS) expect(indexes(db, table)).toContain(index);
     expect(kv.get(SCHEMA_KEY)).toBe(DIRECTORY_SCHEMA_VERSION);
   });
 
-  it("an old-shape object, stored version 1, gains both indexes and the new version, rows intact", () => {
+  it("an old-shape object, stored version 1, gains every index and the new version, rows intact", () => {
     const { db, sql, kv } = oldShape();
     kv.put(SCHEMA_KEY, 1);
     sql.exec("INSERT INTO code (code, screen_ref, expires_at) VALUES (?, ?, ?)", "123456", "ref", 5);
     migrateDirectory(sql, kv);
-    expect(indexes(db, "code")).toContain("code_expires");
-    expect(indexes(db, "demo")).toContain("demo_expires");
+    for (const [table, index] of SWEEPS) expect(indexes(db, table)).toContain(index);
     expect(kv.get(SCHEMA_KEY)).toBe(DIRECTORY_SCHEMA_VERSION);
     expect(db.prepare("SELECT count(*) AS n FROM code").get()).toEqual({ n: 1 });
   });
@@ -57,8 +68,10 @@ describe("Directory schema: expires_at indexes", () => {
     const { db, sql, kv } = oldShape();
     migrateDirectory(sql, kv);
     db.exec("DROP INDEX code_expires");
+    db.exec("DROP INDEX miss_window");
     migrateDirectory(sql, kv);
     expect(indexes(db, "code")).toContain("code_expires");
+    expect(indexes(db, "miss")).toContain("miss_window");
   });
 
   it("re-running on wake changes nothing", () => {
@@ -74,12 +87,48 @@ describe("Directory schema: expires_at indexes", () => {
   it("the sweeps search by index instead of scanning every row, which keeps them flat as rows grow", () => {
     const { db, sql, kv } = oldShape();
     migrateDirectory(sql, kv);
-    expect(plan(db, "DELETE FROM code WHERE expires_at <= 1")).toMatch(/USING (COVERING )?INDEX code_expires/);
-    expect(plan(db, "DELETE FROM demo WHERE expires_at <= 1")).toMatch(/USING (COVERING )?INDEX demo_expires/);
+    for (const [, index, sweep] of SWEEPS)
+      expect(plan(db, sweep)).toMatch(new RegExp(`USING (COVERING )?INDEX ${index}`));
   });
 
   it("without the step the same sweeps scan the table", () => {
     const { db } = oldShape();
-    expect(plan(db, "DELETE FROM code WHERE expires_at <= 1")).toMatch(/SCAN/);
+    for (const [, , sweep] of SWEEPS) expect(plan(db, sweep)).toMatch(/SCAN/);
+  });
+
+  it("the real storage init creates every table before the step indexes it", () => {
+    const db = new DatabaseSync(":memory:");
+    const kv = memKv();
+    const slots = initDirectoryStorage(sqlOver(db), kv);
+    for (const [table, index] of SWEEPS) expect(indexes(db, table)).toContain(index);
+    expect(kv.get(SCHEMA_KEY)).toBe(DIRECTORY_SCHEMA_VERSION);
+    expect(slots.count()).toBe(0);
+  });
+});
+
+describe("applySteps: the stored version only rises", () => {
+  it("leaves a stored version above the code's untouched", () => {
+    const kv = memKv();
+    kv.put(SCHEMA_KEY, 3);
+    applySteps(kv, {}, 2);
+    expect(kv.get(SCHEMA_KEY)).toBe(3);
+  });
+
+  it("writes a missing, malformed or lower version", () => {
+    for (const stored of [undefined, "x", 1]) {
+      const kv = memKv();
+      if (stored !== undefined) kv.put(SCHEMA_KEY, stored);
+      applySteps(kv, {}, 2);
+      expect(kv.get(SCHEMA_KEY)).toBe(2);
+    }
+  });
+});
+
+describe("sqlOver", () => {
+  it("reads a WITH ... SELECT as rows and runs a write", () => {
+    const sql = sqlOver(new DatabaseSync(":memory:"));
+    sql.exec("CREATE TABLE t (n INTEGER)");
+    sql.exec("INSERT INTO t (n) VALUES (?)", 7);
+    expect(sql.exec("WITH x AS (SELECT n FROM t) SELECT n FROM x").toArray()).toEqual([{ n: 7 }]);
   });
 });
