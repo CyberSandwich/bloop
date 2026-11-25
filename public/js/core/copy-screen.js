@@ -2,7 +2,7 @@
 /** @import {ScreenStateKey} from "../../../src/shared/protocol.ts" */
 /** @import {ScreenControl, ScreenCopy, ScreenFacts} from "../types.js" */
 import { down } from "../shared/errors.js";
-import { SESSION_ENDED } from "./copy.js";
+import { BLOCKED, SESSION_ENDED } from "./copy.js";
 import { VERIFIED } from "./verified.js";
 
 /** A claim's status, for screen readers only: the room screen shows the title and the match number alone. */
@@ -94,6 +94,8 @@ export function screenCopy(key, f) {
       };
     case "service_down":
       return { ...base, heading: "bloop Isn't Responding", line: down("Refresh this page") };
+    case "network_blocked":
+      return { ...base, heading: BLOCKED, line: `Ask IT to allow ${f.host ?? "bloop"}, or try another network.` };
     case "rate_limited":
       return {
         ...base,

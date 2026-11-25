@@ -347,6 +347,7 @@ Checked at 1440, 834 and the narrowest window. Model for the viewer: the iCloud 
 | expired | no change: the code already refreshed; the phone explains | | |
 | offline | Offline | Reconnecting. In a session: Reconnecting. You can still end from your phone. | none (retry 5 s, backing off to 30 s) |
 | service down | bloop Isn't Responding | Something's wrong on bloop's side. Refresh this page, or email hi@bloop.here. (plain text: no mail app on a room PC) | none (it retries by itself as offline does: the socket's reconnect, then polling backing off to 30 s; a failed create retries as boot does) |
+| network blocked | This Network Blocks bloop | Ask IT to allow {host}, or try another network. | none (retries as offline does); a 200 answer without the `X-Bloop` marker, or one that is not JSON, is a filter's block page |
 | rate limited (creating the screen was refused, `rate_limited`) | Too Many Demos Right Now (`/s?mode=demo`); Busy Right Now (live) | Trying again by itself. | none (retries by itself: 5 s, 10 s, then every 30 s) |
 | error | Unable to Open Your File | Try again on your phone. | none (new QR after 5 s) |
 
@@ -423,6 +424,7 @@ Why a video's cap reads as time: a person knows how long their clip is, not its 
 | rate limited | Too Many Scans Right Now | Wait a minute, then scan the code again. | Done |
 | busy (storage full, or this month's R2 operation cap reached) | bloop Can't Take Files Now | Try again in a few minutes. | Done |
 | service down (`internal`, or the service unreachable) | bloop Isn't Responding | Something's wrong on bloop's side. (the buttons say the rest) | Email bloop (text, the prefilled mailto), Try Again |
+| network blocked (a 200 that is not bloop's) | This Network Blocks bloop | Switch to mobile data, then try again. | Try Again |
 | framed | Open This Page Directly | | none |
 
 The page moves focus to the new title on each state change. "its copy" is deliberate: bloop's stored upload is deleted, but a downloaded copy on the PC is open item 1.

@@ -104,6 +104,7 @@ export function hasPdf(v) {
 export function screenKey(c) {
   if (c.limited) return "rate_limited";
   if (c.link === "offline") return "offline";
+  if (c.link === "blocked") return "network_blocked";
   if (c.link === "down") return "service_down";
   if (c.errored) return "error";
   const v = c.view;

@@ -92,6 +92,12 @@ describe("screen state to view mapping", () => {
     expect(screenKey(ctx(state))).toBe(key);
   });
 
+  it("REL-03 a blocked link shows network_blocked, in a session too, and offline still wins over nothing", () => {
+    expect(screenKey(ctx("waiting", {}, { link: "blocked" }))).toBe("network_blocked");
+    expect(screenKey(ctx("open", {}, { link: "blocked" }))).toBe("network_blocked");
+    expect(screenKey(ctx("waiting", {}, { link: "offline" }))).toBe("offline");
+  });
+
   it("an open mode of download or pdf shows the fallback", () => {
     expect(screenKey(ctx("open", { openMode: "download" }))).toBe("open_fallback");
     expect(screenKey(ctx("opening", { openMode: "pdf" }))).toBe("pdf_fallback");
