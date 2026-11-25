@@ -85,7 +85,15 @@ test.describe("legal layout at 1440", () => {
   }) => {
     await context.grantPermissions(["clipboard-read", "clipboard-write"]);
     await page.goto("/terms");
-    await expect(page.locator("#copied")).toBeHidden();
+    // Empty, the pill is see-through and below the view, but the status region stays in the accessibility tree.
+    const pill = page.locator("#copied");
+    const away = async () => {
+      await expect(pill).toHaveCSS("opacity", "0");
+      await expect(pill).toHaveCSS("visibility", "visible");
+      await expect(pill).not.toHaveCSS("display", "none");
+      await expect(pill.and(page.getByRole("status"))).toHaveCount(1);
+    };
+    await away();
     const num = page.locator('a.num[href="#8.3"]');
     const glyph = num.locator("svg.icon");
     await expect(glyph).toBeHidden();
@@ -95,8 +103,9 @@ test.describe("legal layout at 1440", () => {
     await expect(page.locator("#copied")).toHaveText("Link Copied");
     expect(await page.evaluate("navigator.clipboard.readText()")).toMatch(/\/terms#8\.3$/);
     await expect(page).toHaveURL(/#8\.3$/);
+    await expect(pill).toHaveCSS("visibility", "visible");
     await expect(page.locator("#copied")).toHaveText("", { timeout: 4000 });
-    await expect(page.locator("#copied")).toBeHidden();
+    await away();
   });
 
   test("the panel's drift runs on screen and pauses off it and in a hidden tab", async ({ page }) => {

@@ -362,7 +362,7 @@ a.num::after {
   }
 }
 
-/* Hidden while empty, never display:none, so the live region stays read. */
+/* Empty, it fades below the view: never visibility or display, so the status region stays in the a11y tree. */
 .copied {
   position: fixed;
   bottom: 24px;
@@ -377,10 +377,11 @@ a.num::after {
   translate: -50% 0;
   transition:
     translate 240ms var(--ease-out),
-    visibility 240ms allow-discrete;
+    opacity 240ms var(--ease-out);
 }
 .copied:empty {
-  visibility: hidden;
+  opacity: 0;
+  pointer-events: none;
   translate: -50% calc(100% + 48px);
 }
 
