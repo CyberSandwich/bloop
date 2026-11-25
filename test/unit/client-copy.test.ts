@@ -547,7 +547,8 @@ describe("phone copy", () => {
     const c = phoneCopy("service_down", pf);
     expect(c).toMatchObject({
       title: "bloop Isn't Responding",
-      body: "Something's wrong on bloop's side. Try again, or email hi@bloop.here.",
+      // Its buttons say Try Again and Email bloop, so the line restates neither.
+      body: "Something's wrong on bloop's side.",
     });
     expect(c.actions).toEqual([
       { id: "mail", label: "Email bloop", kind: "text", href: mail },

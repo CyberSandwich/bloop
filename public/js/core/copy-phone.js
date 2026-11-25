@@ -2,7 +2,7 @@
 /** @import {PhoneStateKey} from "../../../src/shared/protocol.ts" */
 /** @import {PhoneAction, PhoneCopy, PhoneFacts} from "../types.js" */
 
-import { down, SUPPORT } from "../shared/errors.js";
+import { DOWN, SUPPORT } from "../shared/errors.js";
 import { EXTENSION_TYPES } from "../shared/names.js";
 import { SESSION_ENDED, TYPED_WRONG } from "./copy.js";
 import { VERIFIED } from "./verified.js";
@@ -307,7 +307,7 @@ export function phoneCopy(key, f) {
       return {
         ...base,
         title: "bloop Isn't Responding",
-        body: down("Try again"),
+        body: DOWN,
         // Plain, so it works with bloop down; phone.js adds the facts on the way to it.
         actions: [
           {
