@@ -1036,7 +1036,9 @@ main:has(> .side:not([hidden])) #stage {
     transform: translateY(8px);
   }
 }
+/* The card's width, so a long name ellipsizes. */
 .list {
+  grid-template-columns: minmax(0, 1fr);
   margin: 16px 0 0;
   padding: var(--list-pad);
   list-style: none;
