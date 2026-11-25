@@ -250,7 +250,7 @@ describe("landing word caps (design.md section 13)", () => {
     expect(css).toMatch(
       /^\.sheen \{(?:\s*\/\*.*\*\/)?\s*margin-inline: -0\.05em;\s*padding-inline: 0\.05em;\s*color: var\(--ink\);\s*\}/m,
     );
-    const block = between(css, /@supports \(background-clip: text\)/, "@keyframes sheen");
+    const block = between(css, /@supports \(background-clip: text\)/, "\n.lead {");
     const moving = between(block, /prefers-reduced-motion: no-preference\) \{/, "}");
     expect(moving).toMatch(
       /background-clip: text;[^}]*color: transparent;[^}]*animation: sheen [\d.]+s linear [\d.]+s infinite backwards;/,
@@ -1123,7 +1123,8 @@ describe("landing motion and spacing (design.md sections 6 and 8)", () => {
 
   it("the sheen cycles every 2.2 s, its 1 s sweep the first 45 percent", () => {
     expect(css).toMatch(/animation: sheen 2\.2s linear 0\.3s infinite backwards;/);
-    expect(between(css, /@keyframes sheen \{/, "\n}\n")).toMatch(/\n {2}45%,\n {2}100% \{/);
+    // One keyframe for the word and the app's loader: base.css, which every page loads.
+    expect(between(read("public/css/base.css"), /@keyframes sheen \{/, "\n}\n")).toMatch(/\n {2}45%,\n {2}100% \{/);
   });
 
   it("the steps sit 40 under the stage, 56 from 768", () => {

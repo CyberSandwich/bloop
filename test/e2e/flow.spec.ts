@@ -446,13 +446,26 @@ test.describe("pairing flow", () => {
     // The demo holds Session Ended 10 s on its own; a tap cuts it to the 3 s the server keeps it at least.
     let phone = await endOne();
     let since = Date.now();
-    await page.mouse.click(SCREEN.width / 2, 80);
+    await page.evaluate(
+      `window.__asks = 0; const send = WebSocket.prototype.send; WebSocket.prototype.send = function (d) { if (String(d).includes('"code.next"')) window.__asks++; return send.call(this, d); }`,
+    );
+    // Past the floor, a burst of taps (and the repaints between them) asks for one code, not one each.
+    await page.waitForTimeout(3300);
+    for (let i = 0; i < 3; i++) {
+      await page.mouse.click(SCREEN.width / 2, 80);
+      await page.waitForTimeout(100);
+    }
     await expect(heading(page)).toHaveText(DEMO.room, { timeout: 6000 });
     expect(Date.now() - since).toBeLessThan(6000);
+    expect(await page.evaluate("window.__asks")).toBe(1);
     await typedCodeOf(page);
     await phone.context.close();
 
     phone = await endOne();
+    // Inside the grace a press is the tail of the one that ended the session: the 10 s hold stands past the floor.
+    await page.keyboard.press("Enter");
+    await page.waitForTimeout(3500);
+    await expect(heading(page)).toHaveText("Session Ended");
     since = Date.now();
     await page.keyboard.press("Enter");
     await expect(heading(page)).toHaveText(DEMO.room, { timeout: 6000 });

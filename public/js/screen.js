@@ -12,6 +12,7 @@ import {
   CODE_TTL_MS,
   ENDED_HOLD_MS,
   ENDED_QR_RETURN_MS,
+  ENDED_SKIP_GRACE_MS,
   ERROR_RECOVER_MS,
   OFFLINE_HINT_MS,
   pollDelay,
@@ -132,6 +133,8 @@ let ended = "";
 let endedSince = 0;
 /** How long Session Ended stays, from endedSince; a repaint keeps the countdown where it was. */
 let endedHold = 0;
+/** When Session Ended last asked for a code: one request per floor, however many repaints and taps come. */
+let endedAsked = 0;
 
 /** One named timer: setting it again replaces the old one. */
 function after(/** @type {string} */ name, /** @type {number} */ ms, /** @type {() => void} */ fn) {
@@ -303,7 +306,7 @@ function schedule(/** @type {import("../../src/shared/protocol.ts").ScreenStateK
     else after("rotate", Math.max(0, v.code.expiresAt - ROTATE_AHEAD_MS - serverNow()), requestCode);
   } else cancel("rotate");
 
-  if (key === "ended") after("ended", Math.max(0, endedHold - (Date.now() - endedSince)), requestCode);
+  if (key === "ended") after("ended", Math.max(0, endedHold - (Date.now() - endedSince)), leaveEnded);
   else cancel("ended");
 
   if (key === "error") after("error", ERROR_RECOVER_MS, recover);
@@ -318,6 +321,15 @@ function requestCode() {
   s.channel?.send({ t: "code.next" });
 }
 
+// A refusal (rate_limited) changes no view, so the timer asks again after each floor until the screen leaves ended.
+function leaveEnded() {
+  const since = Date.now() - endedAsked;
+  if (since < ENDED_QR_RETURN_MS) return after("ended", ENDED_QR_RETURN_MS - since, leaveEnded);
+  endedAsked = Date.now();
+  requestCode();
+  after("ended", ENDED_QR_RETURN_MS, leaveEnded);
+}
+
 function recover() {
   s.errored = false;
   render();
@@ -328,6 +340,7 @@ function onView(/** @type {ScreenView} */ view) {
   if (view.state === "ended" && s.view?.state !== "ended") {
     ended = endLine(view.endReason, DEMO ? { ppt: false, download: null } : launcher.left());
     endedSince = Date.now();
+    endedAsked = 0;
     endedHold = ended || DEMO ? ENDED_HOLD_MS : ENDED_QR_RETURN_MS;
   }
   if (view.state === "ended" || view.state === "closed") dropMine(s.sid);
@@ -407,14 +420,14 @@ buttons.back.addEventListener("click", () => leave(s.view?.state === "waiting"))
 buttons.present.addEventListener("click", () => viewer?.present(true));
 // Session Ended: a tap anywhere but a link (Join the Waitlist), or Enter, cuts the countdown to its shortest, the
 // floor the server keeps Session Ended for (ENDED_QR_RETURN_MS, its endedMinSeconds), then takes the same way to a
-// fresh code. The second click of a double click on End lands here too, so only a first click counts.
+// fresh code.
 function skipEnded() {
-  if (keyNow() !== "ended") return;
+  if (keyNow() !== "ended" || Date.now() - endedSince < ENDED_SKIP_GRACE_MS) return;
   endedHold = ENDED_QR_RETURN_MS;
   schedule("ended");
 }
 document.addEventListener("click", (e) => {
-  if (e.detail <= 1 && !(e.target instanceof Element && e.target.closest("a"))) skipEnded();
+  if (!(e.target instanceof Element && e.target.closest("a"))) skipEnded();
 });
 document.addEventListener("keydown", (e) => {
   if (e.key === "Enter" && !e.repeat && !(e.target instanceof HTMLAnchorElement)) skipEnded();

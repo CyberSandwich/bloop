@@ -242,17 +242,6 @@ html:has(.page-site) {
     }
   }
 }
-/* The sweep takes the first 45 percent (1 s); the rest is the pause. */
-@keyframes sheen {
-  0% {
-    background-position: 100% 0;
-    animation-timing-function: var(--ease-out);
-  }
-  45%,
-  100% {
-    background-position: 0 0;
-  }
-}
 .lead {
   max-width: 640px;
   margin: 24px auto 0;
