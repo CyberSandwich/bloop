@@ -202,7 +202,8 @@ export interface BreakerReport {
 /** True while the owner has not set the breaker to alert_only (switch `breaker`). */
 async function automatic(d: BreakerDeps): Promise<boolean> {
   const v = d.vars[SWITCHES.breaker.var];
-  const row = await d.store.get("breaker");
+  // D1 down: the var alone decides, and the row writes below fail and retry; the latch and the alerts still work.
+  const row = await d.store.get("breaker").catch(() => undefined);
   return effectiveSwitch("breaker", typeof v === "string" ? v : undefined, row) === "auto";
 }
 
