@@ -58,15 +58,27 @@ export function minifyCss(source, rel) {
   return transformSync(source, { loader: "css", minifyWhitespace: true, sourcefile: basename(rel) }).code;
 }
 
-// A raw-text element's start tag (its content is data, never markup) and a `<pre>` start or end tag.
-const RAW_OPEN = /<(script|style|textarea|title)(?=[\s>/])[^>]*>/iy;
-const PRE_TAG = /<(\/?)pre(?=[\s>/])/iy;
+// A start or end tag's name; a raw-text element's content is data, never markup.
+const TAG = /<(\/?)([a-z][^\s/>]*)/iy;
+const RAW_TEXT = /^(script|style|textarea|title)$/i;
+
+/** Where the tag whose attributes start at `from` ends (after its `>`, quotes respected), or -1. */
+function tagEnd(/** @type {string} */ html, /** @type {number} */ from) {
+  let quote = "";
+  for (let k = from; k < html.length; k++) {
+    const c = html[k];
+    if (quote) quote = c === quote ? "" : quote;
+    else if (c === '"' || c === "'") quote = c;
+    else if (c === ">") return k + 1;
+  }
+  return -1;
+}
 
 /**
  * The page without its comments. `<script>`, `<style>`, `<textarea>` and `<title>` content is copied as written
  * (JSON-LD may hold `<!--`); a line a comment leaves empty goes with it. Anything this does not read the way a
  * browser does throws, so the strip never guesses: an unterminated, empty (`<!-->`), `--!>`-closed or nested
- * comment, or any comment inside `<pre>`. ADR 0011.
+ * comment, a comment inside `<pre>`, or `<!--` inside a tag (an attribute value). ADR 0011.
  * @param {string} html
  * @param {string} rel path under public/, for the error
  */
@@ -98,21 +110,25 @@ export function stripComments(html, rel) {
       }
       continue;
     }
-    RAW_OPEN.lastIndex = lt;
-    const open = RAW_OPEN.exec(html);
-    if (open) {
-      const hit = new RegExp(`</${open[1]}\\s*>`, "i").exec(html.slice(lt + open[0].length));
-      if (!hit) throw new Error(`${rel}: unterminated <${open[1]}>`);
-      const stop = lt + open[0].length + hit.index + hit[0].length;
-      out += html.slice(lt, stop);
-      i = stop;
+    TAG.lastIndex = lt;
+    const tag = TAG.exec(html);
+    if (!tag) {
+      out += "<";
+      i = lt + 1;
       continue;
     }
-    PRE_TAG.lastIndex = lt;
-    const tag = PRE_TAG.exec(html);
-    if (tag) pre = Math.max(0, pre + (tag[1] ? -1 : 1));
-    out += "<";
-    i = lt + 1;
+    const [, slash, name = ""] = tag;
+    const tagStop = tagEnd(html, lt + tag[0].length);
+    if (tagStop < 0) throw new Error(`${rel}: unterminated <${name}> tag`);
+    if (html.slice(lt, tagStop).includes("<!--")) throw new Error(`${rel}: comment inside a <${name}> tag`);
+    let stop = tagStop;
+    if (!slash && RAW_TEXT.test(name)) {
+      const hit = new RegExp(`</${name}\\s*>`, "i").exec(html.slice(tagStop));
+      if (!hit) throw new Error(`${rel}: unterminated <${name}>`);
+      stop = tagStop + hit.index + hit[0].length;
+    } else if (name.toLowerCase() === "pre") pre = Math.max(0, pre + (slash ? -1 : 1));
+    out += html.slice(lt, stop);
+    i = stop;
   }
   return out + html.slice(i);
 }
