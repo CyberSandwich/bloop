@@ -42,7 +42,7 @@ bloop pairs a shared screen with a phone, then hands the screen one short-lived 
 | rate limits            | exact counts inside the Durable Object; the platform rate-limit binding for coarse floods (`RL_*` in `wrangler.jsonc`; the demo has its own two, `RL_DEMO_CREATE` and `RL_DEMO_CLAIM`, because a binding's limit is fixed and the demo is stricter and public, the remote its own, `RL_CONTROL` (ADR 0009), and socket upgrades theirs, `RL_UPGRADE`, so a reconnect storm never spends a tap's budget; remove: delete the binding and the `limited()` call)                                                                                                                    | exact where it matters                                                     | a vendor                                                                                                                    | nothing to remove                                              |
 | malware scanning       | none at MVP: `.pptx`, `.pdf`, JPEG, PNG, `.mp4` and `.mov` only (images and videos carry no macros or zip and are served under a fixed type), size cap, structure check, Office Protected View                                                                                                                       | every scanner breaks £0 or simplicity                                      | a scanner service                                                                                                           | add one behind the guest-drop interface                        |
 
-Runtime dependencies, the only npm packages `package.json` `dependencies` may hold (plus vendored `uqr`, one file in `public/js/vendor/`): <!-- runtime-deps -->`@simplewebauthn/server`, `aws4fetch`, `oauth4webapi`, `zod`<!-- /runtime-deps -->. Everything else is a dev dependency. All versions are pinned exactly in `package.json`. The v4 additions are justified in "Dependencies added for v4" below.
+Runtime dependencies, the only npm packages `package.json` `dependencies` may hold (plus vendored `uqr`, one file in `public/js/vendor/`): <!-- runtime-deps -->`oauth4webapi`, `zod`<!-- /runtime-deps -->. Everything else is a dev dependency. All versions are pinned exactly in `package.json`. Each v4 dependency is added by the stream that first imports it, with its row below.
 
 Dev dependencies beyond the table: `wrangler` (run and deploy), `@cloudflare/workers-types` (Worker types), `@types/node` (types for tests and tools only; `tsconfig.node.json` keeps it apart from the Worker types, which clash), `vitest` and `fast-check`, `@vitest/coverage-v8` (`npm run test:cov`; unit coverage only, since Worker code under `wrangler dev` runs in workerd where V8 coverage cannot reach), `html-validate` (HTML lint), `size-limit` with `@size-limit/file` (the per-page JS budgets, plain files, no bundler), `esbuild` (minifies each served module, ADR 0011), `@playwright/test`, `@axe-core/playwright` and `@lhci/cli` (CI only). Each is a dev-only tool: remove it together with the script that calls it.
 
@@ -52,21 +52,21 @@ Client parts beyond the table: `public/js/core/loader.js`, the one loading part 
 
 A guest's video plays in a native `<video>` on its view link, in the screen page on a live screen too (`viewer-video.js`, a lazy `import()` with its own size entry, so a session with no video loads none of it). Why: a window on the view link is a top-level document under its `sandbox` CSP, an opaque origin that the link's `Cross-Origin-Resource-Policy: same-origin` refuses, so it never plays; in the page it stays under `media-src 'self'` with no CSP change. Native controls over custom ones: no bytes and the engines' own keyboard and screen reader paths. Remove: drop the module and route a guest's view link back to the window.
 
-## Dependencies added for v4
+## Dependencies planned for v4
 
-Runtime (Worker bundle, `package.json` `dependencies`):
+Runtime (Worker bundle, `package.json` `dependencies`; each stream also adds the package to the list above):
 
 | package | why | replaces | how to remove |
 |---|---|---|---|
-| `aws4fetch` | presigns R2 multipart upload-part URLs: S3 SigV4 over `fetch` and Web Crypto, no dependencies of its own (ADR 0017) | the AWS SDK, far larger and Node-shaped | hand-sign the same requests with Web Crypto; upload mode falls back to proxy meanwhile |
-| `@simplewebauthn/server` | verifies WebAuthn registration and assertions, version 14.0.2 or later (ADR 0014) | hand-written CBOR and COSE parsing, the riskiest code to own | delete the passkey routes; the email code stays the sign-in and recovery path |
+| `aws4fetch` | presigns R2 multipart upload-part URLs: S3 SigV4 over `fetch` and Web Crypto, no dependencies of its own (ADR 0017); added by the upload stream | the AWS SDK, far larger and Node-shaped | hand-sign the same requests with Web Crypto; upload mode falls back to proxy meanwhile |
+| `@simplewebauthn/server` | verifies WebAuthn registration and assertions, version 14.0.2 or later (ADR 0014); added by the account stream | hand-written CBOR and COSE parsing, the riskiest code to own | delete the passkey routes; the email code stays the sign-in and recovery path |
 
-Vendored viewer libraries are dev dependencies: each stream copies the built files into `public/js/vendor/<lib>-<version>/`, never bundles them into the Worker, and loads them lazily on intent (ADR 0020). Each is a folder, so removing one is deleting that folder, its dev dependency and its size entry.
+Vendored viewer libraries (added by the present-viewers stream) are dev dependencies: each stream copies the built files into `public/js/vendor/<lib>-<version>/`, never bundles them into the Worker, and loads them lazily on intent (ADR 0020). Each is a folder, so removing one is deleting that folder, its dev dependency and its size entry.
 
 | package | why | replaces | how to remove |
 |---|---|---|---|
 | `pdfjs-dist` | the PDF viewer, configured with no eval and no wasm and a self-hosted worker | the browser's built-in PDF plugin, which a sandboxed document cannot use (OPEN-08) | drop the viewer; a PDF falls back to Download |
-| `xlsx` | reads spreadsheets as values only, in a Worker. SheetJS 0.20.3, installed from the vendor's own tarball because the npm registry copy is stale; the viewer stream adds it, since the foundation install refuses remote tarballs | no viewer for `.xlsx` | drop the viewer; a sheet falls back to Download |
+| `xlsx` | reads spreadsheets as values only, in a Worker. SheetJS 0.20.3, installed from the vendor's own tarball because the npm registry copy is stale | no viewer for `.xlsx` | drop the viewer; a sheet falls back to Download |
 | `markdown-it` | parses markdown to tokens, which our own code renders to DOM nodes, so there is no HTML sink | a sanitizer such as DOMPurify (a bigger trust surface) | render markdown as plain text |
 | `papaparse` | parses CSV for the table view | a hand-written CSV parser, whose quoting edge cases are easy to get wrong | render CSV as plain text |
 

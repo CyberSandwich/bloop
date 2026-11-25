@@ -27,8 +27,6 @@
     "test:e2e": "playwright test"
   },
   "dependencies": {
-    "@simplewebauthn/server": "14.1.0",
-    "aws4fetch": "1.0.20",
     "oauth4webapi": "3.8.9",
     "zod": "4.6.7"
   },
@@ -44,10 +42,7 @@
     "esbuild": "0.28.2",
     "fast-check": "4.11.0",
     "html-validate": "11.21.1",
-    "markdown-it": "15.0.3",
     "marked": "18.3.0",
-    "papaparse": "5.7.1",
-    "pdfjs-dist": "6.5.438",
     "size-limit": "14.3.0",
     "typescript": "7.0.2",
     "vitest": "5.1.1",

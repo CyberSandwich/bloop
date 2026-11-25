@@ -1,9 +1,9 @@
 # ADR 0026: two launch modes, preview and open
 
-Status: proposed, revised after Fable's review (all required and optional changes applied). Data model: ADR 0013 (`setting`, `admin_action`). Sign-in: ADR 0014. Pairing: ADR 0015. Caching: ADR 0023.
+Status: proposed. Data model: ADR 0013 (`setting`, `admin_action`). Sign-in: ADR 0014. Pairing: ADR 0015. Caching: ADR 0023.
 
 ## Context
-- v4 ships accounts, the library and the new landing page live tonight, but the public must not see them until the owner has paid the ICO fee, signed the Online Safety Act assessments and reviewed the account-era legal pages.
+- v4 ships accounts, the library and the new landing page live together, but the public must not see them until the owner has paid the ICO fee, signed the Online Safety Act assessments and reviewed the account-era legal pages.
 - Until then the account-free product (demo, live screen, guest send) must run exactly as today, and the owner plus test accounts must be able to use every new surface on the real deployment.
 - Switching must need no deploy, and switching back must be allowed.
 - Static pages are served from the build output through the Worker (`run_worker_first`, ADR 0010), so the Worker can choose which file answers a path.

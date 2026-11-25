@@ -1,6 +1,6 @@
 # ADR 0015: live pairing with accounts
 
-Status: proposed, revised after Fable's review (all required and optional changes applied). Amends ADR 0002 (pairing protocol) and ADR 0003's "resolve at fetch". Sign-in: ADR 0014. Data model: ADR 0013. Mode gate: ADR 0026.
+Status: proposed. Amends ADR 0002 (pairing protocol) and ADR 0003's "resolve at fetch". Sign-in: ADR 0014. Data model: ADR 0013. Mode gate: ADR 0026.
 
 ## Context
 - A live screen today accepts any phone. The owner path lists files from the source `FILE_SOURCE` names (`src/worker/source-access.ts`), and in production that is the mock, so a live Approve shows the sample deck. With accounts, a live owner claim must list the signed-in user's library.

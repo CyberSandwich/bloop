@@ -1,6 +1,6 @@
 # ADR 0013: accounts and library data model
 
-Status: proposed, revised after Fable's review (all required and optional changes applied). Ships with `migrations/0005_accounts_library.sql`. It follows ADR 0012 (additive migrations, no enum CHECK) and is amended by ADRs 0014, 0015, 0016 and 0026 only where they name a column.
+Status: proposed. Ships with `migrations/0005_accounts_library.sql`. It follows ADR 0012 (additive migrations, no enum CHECK) and is amended by ADRs 0014, 0015, 0016 and 0026 only where they name a column.
 
 ## Context
 - bloop v4 adds invite-only email accounts, a per-user file library in EU R2, direct multipart uploads, converted outputs, moderation, and a launch switch. Every one of them needs D1 rows.

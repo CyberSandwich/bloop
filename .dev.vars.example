@@ -3,6 +3,8 @@
 # localhost, not 127.0.0.1: WebAuthn refuses an IP address as its relying party (ADR 0014).
 PUBLIC_ORIGIN=http://localhost:8787
 FILE_SOURCE=mock
+# No file origin locally: the production workers.dev host from wrangler.jsonc must not reach a local page's CSP.
+FILE_ORIGIN=
 ENTRA_CLIENT_SECRET=fake-entra-client-secret
 TOKEN_KEKS={"k1":"AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA="}
 COOKIE_KEY=AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=

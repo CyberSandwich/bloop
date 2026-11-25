@@ -14,7 +14,7 @@ export default defineConfig({
     // Every browser shares one IP hash, so the per-IP demo cap (DEMO-02) would refuse the third demo screen, and a
     // closed context leaves its demo screen alive, so the suite (and its retries) can pass the global cap too.
     // `predev` applies migrations/ to the local D1 first: without the tables every guest drop fails.
-    // DEV_MAILBOX keeps mail in memory (it comes from .dev.vars); UPLOAD_MODE and CONVERT_MODE keep the tests off R2's
+    // DEV_MAILBOX keeps mail in memory; UPLOAD_MODE and CONVERT_MODE keep the tests off R2's
     // network endpoint and off the container.
     command:
       "npm run dev -- --var TEST_TIMING:1 --var DEMO_MAX_PER_IP:1000 --var DEMO_MAX_CONCURRENT:1000 --var DEV_MAILBOX:1 --var UPLOAD_MODE:proxy --var CONVERT_MODE:stub",

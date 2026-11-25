@@ -1,6 +1,6 @@
 # ADR 0014: invite-only sign-in
 
-Status: proposed, revised after Fable's review (all required and optional changes applied). Data model: ADR 0013. Mode gate: ADR 0026. The Entra path (ADR 0004) is unchanged and shares the session code.
+Status: proposed. Data model: ADR 0013. Mode gate: ADR 0026. The Entra path (ADR 0004) is unchanged and shares the session code.
 
 ## Context
 - bloop v4 opens accounts by invite only. Product decision: invites are single-use, hashed, valid 7 days and bound to one email, and opening the link never uses one up. The user enters a 6-digit email code, then is offered a passkey; with no passkey support the offer is hidden, and the email code always works as fallback and recovery.
