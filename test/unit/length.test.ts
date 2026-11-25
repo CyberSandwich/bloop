@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { clampLength, fitPresets, MIN_LENGTH_MINUTES, minutesUntil } from "../../public/js/shared/length.js";
+import { canSet, clampLength, fitPresets, MIN_LENGTH_SECONDS, secondsUntil } from "../../public/js/shared/length.js";
 import { type Event, type Machine, nextDeadline, transition } from "../../src/worker/machine.ts";
 import {
   approved,
@@ -22,7 +22,7 @@ const APPROVED_AT = T0 + sec(10);
 const length = (now: number, minutes: number, maxMinutes = MAX_MINUTES): Event => ({
   e: "length",
   now,
-  minutes,
+  seconds: minutes * 60,
   maxMinutes,
 });
 const refused = (m: Machine, ev: Event) => {
@@ -49,6 +49,18 @@ describe("SESS-01 length: the phone sets when the session ends", () => {
       expect(fx(effects, "push")).toEqual([{ fx: "push", to: "both" }]);
       expect(effects).toHaveLength(2);
     }
+  });
+
+  it("SESS-01 length: seconds set endsAt to the millisecond, down to the 1 minute floor, and a 1 minute end is audited", () => {
+    const at = APPROVED_AT + 5 * MIN;
+    const a = approved();
+    expect(must(a, { e: "length", now: at, seconds: 60, maxMinutes: MAX_MINUTES }).next.session?.endsAt).toBe(at + MIN);
+    const odd = must(a, { e: "length", now: at, seconds: 90, maxMinutes: MAX_MINUTES });
+    expect(odd.next.session?.endsAt).toBe(at + 90_000);
+    expect(fx(odd.effects, "audit")).toHaveLength(1);
+    // The cap still wins over a longer ask, to the millisecond.
+    const cap = must(a, { e: "length", now: at, seconds: 3 * 3600, maxMinutes: 120 });
+    expect(cap.next.session?.endsAt).toBe(APPROVED_AT + 120 * MIN);
   });
 
   it("SESS-01 audit: a length change is audited by the phone, and a replay audits nothing", () => {
@@ -200,28 +212,40 @@ describe("SESS-01 sheet: presets above the cap", () => {
 describe("SESS-01 sheet: Until and the clamp on the phone", () => {
   const at = (h: number, m: number, s = 0) => new Date(2026, 10, 25, h, m, s);
 
-  it("counts whole minutes to a later time today", () => {
-    expect(minutesUntil("15:30", at(14, 0))).toBe(90);
-    expect(minutesUntil("14:05", at(14, 0, 40))).toBe(4);
+  it("counts whole seconds to the next HH:MM:00, unrounded", () => {
+    expect(secondsUntil("15:30", at(14, 0))).toBe(90 * 60);
+    expect(secondsUntil("14:05", at(14, 0, 40))).toBe(4 * 60 + 20);
+    expect(secondsUntil("14:02", at(14, 0, 30))).toBe(90);
   });
 
-  it("takes a time over an hour past as tomorrow's", () => {
-    expect(minutesUntil("12:59", at(14, 0))).toBe(23 * 60 - 1);
-    expect(minutesUntil("13:00", at(14, 0, 1))).toBe(23 * 60);
+  it("takes a time not ahead as tomorrow's: the current minute and one just past are about a day away, never shortened", () => {
+    expect(secondsUntil("14:00", at(14, 0))).toBe(24 * 3600);
+    expect(secondsUntil("14:00", at(14, 0, 20))).toBe(24 * 3600 - 20);
+    expect(secondsUntil("13:55", at(14, 0))).toBe(24 * 3600 - 5 * 60);
+    expect(secondsUntil("12:59", at(14, 0))).toBe(23 * 3600 - 60);
   });
 
-  it("takes a time within the last hour, the current minute included, as the shortest length, never the cap", () => {
-    expect(minutesUntil("14:30", at(14, 30, 20))).toBe(MIN_LENGTH_MINUTES);
-    expect(minutesUntil("14:25", at(14, 30))).toBe(MIN_LENGTH_MINUTES);
-    expect(minutesUntil("13:01", at(14, 0))).toBe(MIN_LENGTH_MINUTES);
-    expect(minutesUntil("14:00", at(14, 0))).toBe(MIN_LENGTH_MINUTES);
+  it("Set is enabled from exactly 60 s ahead to the cap, and disabled outside it", () => {
+    expect(canSet("14:01", 120, at(14, 0))).toBe(true);
+    expect(canSet("14:01", 120, at(14, 0, 1))).toBe(false);
+    expect(canSet("14:02", 120, at(14, 0, 1))).toBe(true);
+    expect(canSet("14:00", 120, at(14, 0, 30))).toBe(false);
+    expect(canSet("13:59", 120, at(14, 0))).toBe(false);
+    expect(canSet("16:00", 120, at(14, 0))).toBe(true);
+    expect(canSet("16:01", 120, at(14, 0))).toBe(false);
+    expect(canSet("", 120, at(14, 0))).toBe(false);
   });
 
-  it("keeps a length inside the minimum and the mode's cap, as the route takes it", () => {
-    expect(MIN_LENGTH_MINUTES).toBe(5);
-    expect(clampLength(1, 120)).toBe(5);
-    expect(clampLength(90, 120)).toBe(90);
-    expect(clampLength(23 * 60, 120)).toBe(120);
-    expect(clampLength(720, 720)).toBe(720);
+  it("23:30 to 00:30 crosses midnight: 3600 s", () => {
+    expect(secondsUntil("00:30", at(23, 30))).toBe(3600);
+    expect(canSet("00:30", 120, at(23, 30))).toBe(true);
+  });
+
+  it("keeps a preset inside the minimum and the mode's cap, as the route takes it", () => {
+    expect(MIN_LENGTH_SECONDS).toBe(60);
+    expect(clampLength(1, 7200)).toBe(60);
+    expect(clampLength(5400, 7200)).toBe(5400);
+    expect(clampLength(23 * 3600, 7200)).toBe(7200);
+    expect(clampLength(43_200, 43_200)).toBe(43_200);
   });
 });

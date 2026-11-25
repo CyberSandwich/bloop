@@ -497,7 +497,19 @@ test.describe("pairing flow", () => {
     await phone.context.close();
   });
 
-  test("SESS-01 a choice past the cap is cut to it with no toast: the countdown shows the end it set", async ({
+  /** The time input's value `minutes` whole minutes past the next minute boundary on the phone's clock (60 to 120 s ahead for 1), and its epoch ms. */
+  const clockAhead = (page: Page, minutes: number) =>
+    page.evaluate((m) => {
+      const t = new Date();
+      t.setSeconds(0, 0);
+      t.setMinutes(t.getMinutes() + m);
+      return {
+        value: `${String(t.getHours()).padStart(2, "0")}:${String(t.getMinutes()).padStart(2, "0")}`,
+        at: t.getTime(),
+      };
+    }, minutes);
+
+  test("SESS-01 a preset past the cap is cut to it with no toast; a typed time past it leaves Set disabled", async ({
     browser,
   }) => {
     const { screen, phone, lengthButton, sheet } = await approvedDemo(browser);
@@ -507,20 +519,39 @@ test.describe("pairing flow", () => {
     await sheet.getByRole("button", { name: "2 hours" }).click();
     await expect(sheet).toBeHidden();
     await expect(countdown).toHaveText(/^Ends in 1:59:\d{2}$/);
-    // A typed time past the cap, cut the same way.
-    await lengthButton.click();
-    const later = await phone.page.evaluate(() => {
-      const t = new Date(Date.now() + 3 * 3600_000);
-      return `${String(t.getHours()).padStart(2, "0")}:${String(t.getMinutes()).padStart(2, "0")}`;
-    });
-    await sheet.getByLabel("Expires At").fill(later);
-    // Past the answer: a toast would be up by then, in the same task as the view.
-    const answered = phone.page.waitForResponse("**/api/session/length");
-    await sheet.getByRole("button", { name: "Set" }).click();
-    expect((await answered).ok()).toBe(true);
-    await expect(countdown).toHaveText(/^Ends in 1:59:\d{2}$/);
     await phone.page.waitForTimeout(300);
     await expectNoToast(phone.page);
+    // A typed time past the cap is refused by the sheet, never clamped.
+    await lengthButton.click();
+    await sheet.getByLabel("Expires At").fill((await clockAhead(phone.page, 180)).value);
+    await expect(sheet.getByRole("button", { name: "Set" })).toBeDisabled();
+    await screen.context.close();
+    await phone.context.close();
+  });
+
+  test("SESS-01 an Until time two minutes ahead ends at HH:MM:00; a time not ahead disables Set", async ({
+    browser,
+  }) => {
+    const { screen, phone, lengthButton, sheet } = await approvedDemo(browser);
+    const countdown = phone.page.locator("#ends-text");
+    await lengthButton.click();
+    const set = sheet.getByRole("button", { name: "Set" });
+    const target = await clockAhead(phone.page, 2);
+    await sheet.getByLabel("Expires At").fill(target.value);
+    await expect(set).toBeEnabled();
+    const answered = phone.page.waitForResponse("**/api/session/length");
+    await set.click();
+    expect((await answered).ok()).toBe(true);
+    await expect(countdown).toHaveText(/^Ends in \d{1,2}:\d{2}$/);
+    // The countdown reads the target to the second, give or take the answer's latency.
+    const text = (await countdown.textContent()) ?? "";
+    const [m = 0, s = 0] = text.replace("Ends in ", "").split(":").map(Number);
+    const left = (target.at - (await phone.page.evaluate(() => Date.now()))) / 1000;
+    expect(Math.abs(m * 60 + s - left)).toBeLessThanOrEqual(2);
+    // The current minute is a day away, so it is over the cap and refused.
+    await lengthButton.click();
+    await sheet.getByLabel("Expires At").fill((await clockAhead(phone.page, 0)).value);
+    await expect(set).toBeDisabled();
     await screen.context.close();
     await phone.context.close();
   });

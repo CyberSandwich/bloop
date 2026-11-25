@@ -73,7 +73,7 @@ export interface PairingStore {
    * about the same end again. Approved, opening and open only (`wrong_state` otherwise), in both modes; one that
    * arrives at or after the end ends the session and answers `session_ended`.
    */
-  setLength(pid: string, minutes: number): Promise<Result<PhoneView>>;
+  setLength(pid: string, seconds: number): Promise<Result<PhoneView>>;
   cancel(pid: string): Promise<Result<PhoneView>>;
   restart(sid: string): Promise<Result<ScreenView>>;
   /** From waiting, there is no session: the object closes (codes removed, storage deleted, demo slot released). */

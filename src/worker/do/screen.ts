@@ -175,11 +175,11 @@ export class Screen extends DurableObject<Env> implements PairingStore {
   }
 
   /** A change that arrives after the end ends the session (the machine's `length`), and says so: `session_ended`. */
-  async setLength(pid: string, minutes: number): Promise<Result<PhoneView>> {
+  async setLength(pid: string, seconds: number): Promise<Result<PhoneView>> {
     const res = await this.phoneEvent(pid, () => ({
       e: "length",
       now: Date.now(),
-      minutes,
+      seconds,
       maxMinutes: this.maxMinutes(),
     }));
     return res.ok && res.value.state === "ended" ? fail("session_ended") : res;

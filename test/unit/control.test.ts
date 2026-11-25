@@ -311,14 +311,14 @@ describe("PAIR-13 rate limits: RL_CONTROL per IP, then per credential", () => {
     const route = routes.controlRoutes.find((r) => r.pattern.test(request.url)) as PostRoute;
     return route.handler(request, e, route.pattern.exec(request.url) as URLPatternResult);
   };
-  const setLength = (e: object, minutes: unknown) => post(e, "/api/session/length", { minutes });
+  const setLength = (e: object, seconds: unknown) => post(e, "/api/session/length", { seconds });
 
   it("SESS-01 rate limit: a length change spends RL_CONTROL per IP, then per credential, never RL_FETCH", async () => {
     const { calls, env: e } = env(false);
-    expect((await setLength(e, 30)).status).toBe(200);
+    expect((await setLength(e, 1800)).status).toBe(200);
     expect(calls).toEqual(["limit:ip", "limit:credential", "setLength"]);
     const spent = env(true);
-    expect((await setLength(spent.env, 30)).status).toBe(429);
+    expect((await setLength(spent.env, 1800)).status).toBe(429);
     expect(spent.calls).toEqual(["limit:ip", "limit:credential"]);
   });
 
@@ -330,7 +330,7 @@ describe("PAIR-13 rate limits: RL_CONTROL per IP, then per credential", () => {
     console.error = (...args: unknown[]) => void errors.push(args);
     try {
       for (let i = 0; i < 2; i++) {
-        const res = await setLength(without, 30);
+        const res = await setLength(without, 1800);
         expect(res.status).toBe(500);
       }
     } finally {
@@ -341,18 +341,21 @@ describe("PAIR-13 rate limits: RL_CONTROL per IP, then per credential", () => {
     expect(errors.length).toBeLessThanOrEqual(1);
   });
 
-  it("SESS-01 schema: minutes is a whole number from 5 to the live cap, alone; anything else reaches no Screen object", async () => {
+  it("SESS-01 schema: seconds is a whole number from 60 to the live cap times 60, alone; anything else reaches no Screen object", async () => {
     // PROD_VARS caps a live session at 90 minutes.
-    for (const minutes of [5, 90]) expect((await setLength(env(false).env, minutes)).status, String(minutes)).toBe(200);
-    for (const minutes of [4, 91, 30.5, "30", null, -1]) {
+    for (const seconds of [60, 90, 5400])
+      expect((await setLength(env(false).env, seconds)).status, String(seconds)).toBe(200);
+    for (const seconds of [59, 59.5, 5401, "60", null, -1]) {
       const { calls, env: e } = env(false);
-      const res = await setLength(e, minutes);
-      expect(res.status, String(minutes)).toBe(400);
-      expect(calls, String(minutes)).toEqual([]);
+      const res = await setLength(e, seconds);
+      expect(res.status, String(seconds)).toBe(400);
+      expect(calls, String(seconds)).toEqual([]);
     }
-    const extra = env(false);
-    expect((await post(extra.env, "/api/session/length", { minutes: 30, endsAt: 1 })).status).toBe(400);
-    expect(extra.calls).toEqual([]);
+    for (const body of [{ minutes: 30 }, { seconds: 60, minutes: 1 }, { seconds: 60, endsAt: 1 }]) {
+      const extra = env(false);
+      expect((await post(extra.env, "/api/session/length", body)).status, JSON.stringify(body)).toBe(400);
+      expect(extra.calls).toEqual([]);
+    }
   });
 
   it("PAIR-13 rate limit: a command spends the IP's budget, then its credential's (by hash, never the screen ref)", async () => {
