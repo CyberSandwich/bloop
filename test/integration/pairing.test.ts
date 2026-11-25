@@ -114,6 +114,19 @@ describe("pairing: the whole flow over WebSockets", () => {
     socket.close();
   });
 
+  it("PAIR-02 a phone that reconnects after Start Over is told pairing_invalid at once, never left on a silent socket", async () => {
+    const { screen, socket, code } = await openScreen(api);
+    const claimed = await claim(api, code);
+    const pid = claimed.body.pid as string;
+    expect((await api.post("/api/screen/restart", {}, { auth: screen.sid })).status).toBe(200);
+    // The phone's socket dropped before the push (a lost race, a network blip): its reconnect must still hear the end.
+    const again = await Socket.open(api.base, `/api/pair/ws?ref=${pid.split(".")[0]}`);
+    again.send({ t: "hello", pid });
+    expect((await again.waitFor((f) => f.t === "error", 2000)).code).toBe("pairing_invalid");
+    expect((await again.waitClosed(2000)).code).toBe(1008);
+    socket.close();
+  });
+
   it("PAIR end from the phone: both sides see ended, repeat is idempotent, approve then answers session_ended", async () => {
     const { socket, code } = await openScreen(api);
     const { body } = await claim(api, code);
