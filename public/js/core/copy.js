@@ -170,7 +170,7 @@ export function refusalToast(problem, f) {
       ? ["Video Too Long", `${takes} videos up to about ${videoTime(f.maxMB)} (${f.maxMB} MB). Trim it and try again.`]
       : ["File Too Large", `${takes} files up to ${f.maxMB} MB.`],
     several: ["One File at a Time", "Drop a single file."],
-    photo: ["This Photo Can't Be Sent", "Export it as a JPEG under the size limit and try again."],
+    photo: ["This Photo Can't Be Sent", "This browser can't read it. Try another photo."],
     video: ["This Video Can't Be Sent", "bloop couldn't remove its location. Try another video."],
   };
   const [title, body] = all[problem];

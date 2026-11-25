@@ -91,6 +91,22 @@ describe("VID-04 location strip", () => {
     expect(out).toEqual({ ok: true, file: f });
   });
 
+  it("walks a udta that ends with QuickTime's 4-byte zero terminator", async () => {
+    const moov = box("moov", box("mvhd", new Array(20).fill(5)), box("udta", xyz(ISO6709), u32(0)));
+    const before = mov(moov) as Uint8Array<ArrayBuffer>;
+    const out = await stripLocation(fileOf(before, "old.mov"));
+    expect(out.ok).toBe(true);
+    if (!out.ok) return;
+    const after = await read(out.file);
+    expect(after.length).toBe(before.length);
+    expect(find(after, "+51.5074-000.1278")).toBe(false);
+  });
+
+  it("still refuses a nonzero 4-byte tail in udta, and a zero tail outside udta", () => {
+    expect(() => blankLocation(box("moov", box("udta", xyz(ISO6709), [0, 0, 0, 1])))).toThrow();
+    expect(() => blankLocation(box("moov", box("mvhd", new Array(20).fill(5)), u32(0)))).toThrow();
+  });
+
   it("blanks every location key, not only ISO6709", () => {
     const hdlr = box("hdlr", u32(0), u32(0), enc("mdta"), new Array(13).fill(0));
     const keys = box(

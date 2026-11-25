@@ -39,22 +39,34 @@ export function fileProblem(file, maxBytes) {
   return file.size > maxBytes && kind !== "photo" ? "large" : null;
 }
 
+/** @typedef {{photo: () => Promise<typeof import("./photo.js")>, video: () => Promise<typeof import("./video.js")>}} MediaModules */
+/** @type {MediaModules} */
+const MEDIA = { photo: () => import("./photo.js"), video: () => import("./video.js") };
+
 /**
  * The file to send: a photo compressed without its metadata, a video with its location blanked. The media modules
- * load only now, so a page that sends a deck never fetches them.
+ * load only now, so a page that sends a deck never fetches them. Never rejects: a module that fails to load (the
+ * venue's Wi-Fi dropped) is a refusal like any other.
  * @param {File} file
  * @param {number} maxBytes
- * @returns {Promise<{ok: true, file: File} | {ok: false, problem: "photo" | "heic" | "video"}>}
+ * @param {MediaModules} [load] the unit tests pass failing ones
+ * @returns {Promise<{ok: true, file: File} | {ok: false, problem: "photo" | "heic" | "video" | "large"}>}
  */
-export async function prepareFile(file, maxBytes) {
+export async function prepareFile(file, maxBytes, load = MEDIA) {
   const kind = kindOf(file.name);
-  if (kind === "photo") {
-    const out = await (await import("./photo.js")).preparePhoto(file, maxBytes);
-    return out ? { ok: true, file: out } : { ok: false, problem: HEIC.test(file.name) ? "heic" : "photo" };
+  if (kind !== "photo" && kind !== "video") return { ok: true, file };
+  try {
+    if (kind === "video") {
+      const out = await (await load.video()).stripLocation(file);
+      return out.ok ? out : { ok: false, problem: "video" };
+    }
+    const out = await (await load.photo()).preparePhoto(file, maxBytes);
+    if (out.ok) return out;
+    if (out.reason === "large") return { ok: false, problem: "large" };
+    return { ok: false, problem: out.reason === "decode" && HEIC.test(file.name) ? "heic" : "photo" };
+  } catch {
+    return { ok: false, problem: kind };
   }
-  if (kind !== "video") return { ok: true, file };
-  const out = await (await import("./video.js")).stripLocation(file);
-  return out.ok ? out : { ok: false, problem: "video" };
 }
 
 /** @param {unknown} code @returns {code is ErrorCode} */
