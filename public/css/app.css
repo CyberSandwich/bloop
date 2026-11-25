@@ -985,15 +985,8 @@ main:has(> .side:not([hidden])) #stage {
   font-size: 14px;
 }
 .ends {
-  display: flex;
-  align-items: center;
-  align-self: flex-start;
-  padding: 0;
-  border: 0;
-  background: none;
   font-size: 17px;
   font-variant-numeric: tabular-nums;
-  cursor: pointer;
 }
 .ends.soon {
   color: var(--robin-ink);
@@ -1122,7 +1115,7 @@ main:has(> .side:not([hidden])) #stage {
     --toast-lift: 140px;
   }
 }
-/* A file dragged over /a, from 640 wide (core/drag.js); it never takes the pointer. */
+/* A file dragged over /a, from 640 wide (phone.js shows it); it never takes the pointer. */
 .drop-hint {
   display: none;
 }
@@ -1141,11 +1134,11 @@ main:has(> .side:not([hidden])) #stage {
     pointer-events: none;
   }
 }
-/* Approved hides Back: the title at --inset, mirroring the panel. */
+/* Without Back (Approved) the column starts under --inset, not under the corner bar, and is not centered. */
 @media (max-width: 899.98px) {
   .page-phone:not(.is-ended):has(#back[hidden]) .column {
     justify-content: flex-start;
-    padding-top: var(--inset);
+    padding-top: calc(var(--inset) + 24px);
   }
 }
 /* Its complement: buttons on the page, no fill, the column centered (in a short window that would push them past the fold). */
