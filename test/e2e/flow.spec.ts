@@ -180,6 +180,28 @@ async function watchLaunches(page: Page): Promise<() => Promise<{ opened: number
   });
 }
 
+type Moving = { getAnimations(o: { subtree: boolean }): { pause(): void; finish(): void; currentTime: number }[] };
+
+/**
+ * Ends every animation under `locator`, so a box read next is where it comes to rest: an entry animation moves boxes
+ * until it ends, and a box read mid-flight puts a click computed from it somewhere else (test/unit/e2e-motion-rules).
+ */
+async function atRest(locator: Locator) {
+  await locator.evaluate((el) => {
+    for (const a of (el as unknown as Moving).getAnimations({ subtree: true })) a.finish();
+  });
+}
+
+/** Holds every animation under `locator` at its first frame: the worst case a slow runner can measure in. */
+async function atStart(locator: Locator) {
+  await locator.evaluate((el) => {
+    for (const a of (el as unknown as Moving).getAnimations({ subtree: true })) {
+      a.pause();
+      a.currentTime = 0;
+    }
+  });
+}
+
 async function expectNoAxeViolations(page: Page) {
   // axe blends text with its ancestors' opacity: a pane still fading in (380 ms) reads as low contrast. Wait for the
   // opacity fades only: the QR ring restarts a 1 s transition every second and the spinner never ends. page.evaluate,
@@ -281,6 +303,9 @@ test.describe("pairing flow", () => {
     // Exactly three presets, in a second bubble stacked below the first (title, Close, the time and Set).
     await expect(sheet.locator("[data-minutes]")).toHaveText(["30m", "1h", "2h"]);
     expect(await sheet.locator(".pane").count()).toBe(2);
+    // Measured at rest, even from the entry animation's first frame (8 px low): the gap click below lands in the gap.
+    await atStart(sheet);
+    await atRest(sheet);
     const top = await sheet.locator(".sheet-in").boundingBox();
     const presets = await sheet.locator(".chips").boundingBox();
     expect(top && presets && Math.round(presets.y - (top.y + top.height))).toBe(8);
