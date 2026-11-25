@@ -33,7 +33,7 @@
   border: 0;
   border-radius: 34px;
   box-shadow: var(--glass-edge), var(--sh-pill);
-  animation: toast-in 250ms var(--ease-out) both;
+  animation: toast-in 250ms var(--ease-out) backwards;
 }
 .bubble + .bubble {
   animation-delay: 40ms;
