@@ -39,8 +39,6 @@ export function follow() {
   const el = h1?.querySelector(".sheen");
   if (!(h1 instanceof HTMLElement && el instanceof HTMLElement)) return;
   let on = false;
-  let left = 0;
-  let width = 0;
   let em = 1;
   let target = 0;
   let shown = 0;
@@ -51,13 +49,12 @@ export function follow() {
   let ramp = null;
 
   const measure = () => {
-    const r = el.getBoundingClientRect();
-    left = r.left;
-    width = r.width;
     em = parseFloat(getComputedStyle(el).fontSize);
   };
+  // The box is read here, once a frame and only while the band moves, so a scroll or a reflow never leaves it stale.
   const place = () => {
-    offset = offsetAt(shown - left, width, em);
+    const r = el.getBoundingClientRect();
+    offset = offsetAt(shown - r.left, r.width, em);
     el.style.setProperty("--sheen-x", `${offset}`);
   };
   /** @param {number} now */
