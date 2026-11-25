@@ -28,7 +28,8 @@ RUN apt-get update \
  && install -d -o conv -g conv -m 0700 /work
 
 COPY --from=build /out/bloopconv /usr/local/bin/bloopconv
-COPY --chmod=0444 lo-registry.xcu /opt/bloop/lo-registry.xcu
+COPY lo-registry.xcu /opt/bloop/lo-registry.xcu
+RUN chmod 0755 /opt/bloop && chmod 0444 /opt/bloop/lo-registry.xcu
 
 USER conv
 WORKDIR /work

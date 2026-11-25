@@ -61,9 +61,10 @@ jobs:
 
       - name: Push to the Cloudflare registry
         id: push
+        continue-on-error: true
         if: >-
           github.event_name != 'pull_request'
-          && (github.ref == 'refs/heads/main' || github.event_name == 'schedule' || github.event_name == 'workflow_dispatch')
+          && (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/ci/v1-container' || github.event_name == 'schedule' || github.event_name == 'workflow_dispatch')
           && env.CLOUDFLARE_API_TOKEN != '' && env.CLOUDFLARE_ACCOUNT_ID != ''
         run: |
           set -euo pipefail

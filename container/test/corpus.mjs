@@ -7,7 +7,7 @@
 // Usage: IMAGE=bloop-converter:ci node container/test/corpus.mjs
 import { spawn, spawnSync } from "node:child_process";
 import { createHash } from "node:crypto";
-import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -17,7 +17,6 @@ const here = fileURLToPath(new URL(".", import.meta.url));
 const FIX = join(here, "..", "fixtures");
 const GEN = join(FIX, "generated");
 const MEDIA = join(FIX, "media");
-const MACRO = join(FIX, "macro");
 const SENTINEL = "/tmp/bloop-macro-ran";
 const CANARY_PORT = 8099;
 const work = mkdtempSync(join(tmpdir(), "bloop-corpus-"));
@@ -310,6 +309,79 @@ function macroControl(file) {
   return r.out.split("\n").pop();
 }
 
+// A throwaway profile used only to make the legacy fixtures: VBA is loaded and saved, never executed.
+const LEGACY_PROFILE = `<?xml version="1.0" encoding="UTF-8"?>
+<oor:items xmlns:oor="http://openoffice.org/2001/registry" xmlns:xs="http://www.w3.org/2001/XMLSchema" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">
+<item oor:path="/org.openoffice.Office.Common/Security/Scripting"><prop oor:name="MacroSecurityLevel" oor:op="fuse"><value>3</value></prop></item>
+<item oor:path="/org.openoffice.Office.Common/Security/Scripting"><prop oor:name="DisableMacrosExecution" oor:op="fuse"><value>true</value></prop></item>
+${["Writer", "Calc", "Impress"].map((a) => `<item oor:path="/org.openoffice.Office.${a}/Filter/Import/VBA"><prop oor:name="Load" oor:op="fuse"><value>true</value></prop></item>\n<item oor:path="/org.openoffice.Office.${a}/Filter/Import/VBA"><prop oor:name="Save" oor:op="fuse"><value>true</value></prop></item>`).join("\n")}
+</oor:items>
+`;
+
+const LEGACY = [
+  ["macro.odt", "doc", "MS Word 97"],
+  ["macro.ods", "xls", "MS Excel 97"],
+  ["macro.odp", "ppt", "MS PowerPoint 97"],
+];
+
+/** Converts the ODF macro fixtures to the legacy binary formats; returns the files that carry a VBA storage. */
+function makeLegacyMacros() {
+  const outDir = join(GEN, "legacy");
+  mkdirSync(outDir, { recursive: true });
+  const ctl = join(work, "legacy-profile");
+  mkdirSync(ctl, { recursive: true });
+  writeFileSync(join(ctl, "legacy.xcu"), LEGACY_PROFILE);
+  const lines = [
+    "set -u",
+    "P=$(mktemp -d)",
+    'mkdir -p "$P/user"',
+    'cp /ctl/legacy.xcu "$P/user/registrymodifications.xcu"',
+  ];
+  for (const [src, ext, filter] of LEGACY) {
+    lines.push(
+      `HOME="$P" soffice --headless --norestore --nolockcheck --nodefault --nologo -env:UserInstallation=file://$P --convert-to '${ext}:${filter}' --outdir /out /fx/${src} 2>&1 | tail -2`,
+    );
+  }
+  const uid = `${process.getuid()}:${process.getgid()}`;
+  const r = docker(
+    "run",
+    "--rm",
+    "--network",
+    "none",
+    "--read-only",
+    "--user",
+    uid,
+    "--tmpfs",
+    "/tmp:rw,mode=1777,size=2g",
+    "-v",
+    `${GEN}:/fx:ro`,
+    "-v",
+    `${outDir}:/out`,
+    "-v",
+    `${ctl}:/ctl:ro`,
+    "--entrypoint",
+    "bash",
+    IMAGE,
+    "-c",
+    lines.join("\n"),
+  );
+  console.log(r.out, r.err);
+  const good = [];
+  for (const [, ext] of LEGACY) {
+    const f = join(outDir, `macro.${ext}`);
+    if (!existsSync(f)) {
+      console.log(`  legacy ${ext}: not produced`);
+      continue;
+    }
+    // CFB directory names are UTF-16LE.
+    const buf = readFileSync(f);
+    const marks = ["_VBA_PROJECT_CUR", "VBA", "Macros"].filter((m) => buf.includes(Buffer.from(m, "utf16le")));
+    console.log(`  legacy ${ext}: ${buf.length} B, storages seen: ${marks.join(",") || "none"}`);
+    if (marks.length) good.push(f);
+  }
+  return good;
+}
+
 async function caseExternal(fixtureName, ext) {
   console.log(`external ${fixtureName}`);
   const c = start();
@@ -514,11 +586,14 @@ async function main() {
       `CONV-03 macros: ${f} fires its macro when security is off (the control)`,
     );
   }
-  if (existsSync(MACRO)) {
-    for (const f of readdirSync(MACRO).filter((n) => /\.(ppt|doc|xls)$/.test(n))) {
-      await caseMacro(join(MACRO, f), f.split(".")[1]);
-      console.log(`  control ${f}: ${macroControl(join(MACRO, f))}`);
-    }
+  const legacy = makeLegacyMacros();
+  check(
+    legacy.length === LEGACY.length,
+    `legacy macro fixtures: ${legacy.length} of ${LEGACY.length} carry a VBA storage`,
+  );
+  for (const f of legacy) {
+    await caseMacro(f, f.split(".").pop());
+    console.log(`  control ${f}: ${macroControl(f)}`);
   }
   await caseExternal("external.pptx", "pptx");
   await caseExternal("external.docx", "docx");
