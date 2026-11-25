@@ -42,6 +42,18 @@ describe("config", () => {
     expect(problems({ ...PROD, SESSION_DEFAULT_MINUTES: "0.5" }).join()).toContain("SESSION_DEFAULT_MINUTES");
   });
 
+  it("SESS-01 config: both caps hold the shortest length the phone may set, and the default sits between it and the cap", () => {
+    expect(problems({ ...PROD, SESSION_MAX_MINUTES: "4", DEMO_MAX_MINUTES: "4" }).join()).toContain(
+      "SESSION_MAX_MINUTES",
+    );
+    expect(problems({ ...PROD, DEMO_MAX_MINUTES: "3" }).join()).toContain("DEMO_MAX_MINUTES");
+    expect(problems({ ...PROD, SESSION_DEFAULT_MINUTES: "4" }).join()).toContain("SESSION_DEFAULT_MINUTES");
+    expect(problems({ ...PROD, SESSION_DEFAULT_MINUTES: "91" }).join()).toContain("SESSION_DEFAULT_MINUTES");
+    expect(
+      problems({ ...PROD, SESSION_MAX_MINUTES: "5", DEMO_MAX_MINUTES: "5", SESSION_DEFAULT_MINUTES: "5" }),
+    ).toEqual([]);
+  });
+
   it("SESS-01 length: every session starts at 60 minutes by default, and the backstops wait out the longest session", () => {
     const d = parseConfig(PROD);
     expect(d.ok && d.config.sessionDefaultMinutes).toBe(60);

@@ -462,6 +462,8 @@ export function transition(m: Machine, ev: Event, cfg: MachineConfig): Step {
     case "length": {
       const session = m.session;
       if (!IN_SESSION.includes(m.state) || session?.approvedAt == null) return fail("wrong_state");
+      // A late alarm leaves a session open past its end: end it as the timer would, never bring it back.
+      if (session.endsAt != null && now >= session.endsAt) return endSession(m, now, cfg, "auto", "system");
       // Absolute, never a delta: a replay sets about the same end again instead of adding to it. Never past approval
       // plus the cap, so no run of changes keeps a session alive longer than the cap.
       const endsAt = Math.min(now + ev.minutes * MINUTE, session.approvedAt + ev.maxMinutes * MINUTE);

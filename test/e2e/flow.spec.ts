@@ -296,6 +296,101 @@ test.describe("pairing flow", () => {
     await phone.context.close();
   });
 
+  /** A demo session approved on a 390 phone, its countdown showing. */
+  async function approvedDemo(browser: Browser) {
+    const screen = await demoScreen(browser);
+    const { phone } = await scan(browser, screen.page);
+    await phone.page.getByRole("button", { name: "Approve" }).click();
+    await expect(phone.page.locator("#ends-text")).toHaveText(/^Ends in /);
+    const lengthButton = phone.page.getByRole("button", { name: /Change the Session Length$/ });
+    const sheet = phone.page.getByRole("dialog", { name: "Session Length" });
+    return { screen, phone, lengthButton, sheet };
+  }
+
+  test("SESS-01 a refused length is a toast over the running session: the countdown, Revoke and the sheet stay", async ({
+    browser,
+  }) => {
+    const { screen, phone, lengthButton, sheet } = await approvedDemo(browser);
+    await phone.page.route("**/api/session/length", (route) =>
+      route.fulfill({ status: 429, contentType: "application/json", body: JSON.stringify({ code: "rate_limited" }) }),
+    );
+    await lengthButton.click();
+    await sheet.getByRole("button", { name: "30 minutes" }).click();
+    await expect(phone.page.getByRole("alert")).toContainText("Wait a minute, then try again.");
+    await expect(heading(phone.page)).toHaveText("Approved for Demo Room");
+    await expect(phone.page.locator("#ends-text")).toHaveText(/^Ends in (59|1:00):\d{2}$/);
+    await expect(phone.page.getByRole("button", { name: "Revoke" })).toBeVisible();
+    // The sheet still works once the server takes changes again.
+    await phone.page.unroute("**/api/session/length");
+    await lengthButton.click();
+    await sheet.getByRole("button", { name: "30 minutes" }).click();
+    await expect(phone.page.locator("#ends-text")).toHaveText(/^Ends in (29|30):\d{2}$/);
+    await screen.context.close();
+    await phone.context.close();
+  });
+
+  test("SESS-01 a failed stylesheet still opens the sheet, and the next open loads it", async ({ browser }) => {
+    const { screen, phone, lengthButton, sheet } = await approvedDemo(browser);
+    await phone.page.route("**/css/length.css", (route) => route.abort());
+    await lengthButton.click();
+    await expect(sheet).toBeVisible();
+    await phone.page.keyboard.press("Escape");
+    await expect(sheet).toBeHidden();
+    await phone.page.unroute("**/css/length.css");
+    await lengthButton.click();
+    await expect(sheet).toBeVisible();
+    await expect(sheet).toHaveCSS("border-radius", "34px");
+    await sheet.getByRole("button", { name: "1 hour" }).click();
+    await expect(sheet).toBeHidden();
+    await screen.context.close();
+    await phone.context.close();
+  });
+
+  test("SESS-01 an answer older than the pushed view is dropped: an End meanwhile stays the end", async ({
+    browser,
+  }) => {
+    const { screen, phone, lengthButton, sheet } = await approvedDemo(browser);
+    // The server applies the length at once; its answer is held until the screen's End has been pushed.
+    let release = () => {};
+    const held = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    await phone.page.route("**/api/session/length", async (route) => {
+      const response = await route.fetch();
+      await held;
+      await route.fulfill({ response });
+    });
+    await lengthButton.click();
+    await sheet.getByRole("button", { name: "30 minutes" }).click();
+    await expect(phone.page.locator("#ends-text")).toHaveText(/^Ends in (29|30):\d{2}$/);
+    await screen.page.getByRole("button", { name: "End", exact: true }).click();
+    await expect(heading(phone.page)).toHaveText("Session Ended");
+    const answered = phone.page.waitForResponse("**/api/session/length");
+    release();
+    await answered;
+    await expect(heading(phone.page)).toHaveText("Session Ended");
+    await expect(phone.page.getByRole("button", { name: "Revoke" })).toBeHidden();
+    await screen.context.close();
+    await phone.context.close();
+  });
+
+  test("SESS-01 a choice past the cap is cut to it, and a toast names the end it set", async ({ browser }) => {
+    const { screen, phone, lengthButton, sheet } = await approvedDemo(browser);
+    await lengthButton.click();
+    const later = await phone.page.evaluate(() => {
+      const t = new Date(Date.now() + 3 * 3600_000);
+      return `${String(t.getHours()).padStart(2, "0")}:${String(t.getMinutes()).padStart(2, "0")}`;
+    });
+    await sheet.getByLabel("Until…").fill(later);
+    await sheet.getByRole("button", { name: "Set" }).click();
+    await expect(phone.page.getByRole("status").filter({ hasText: /^Ends at \d{2}:\d{2}/ })).toContainText(
+      "That's the longest this session can run.",
+    );
+    await expect(phone.page.locator("#ends-text")).toHaveText(/^Ends in 1:59:\d{2}$/);
+    await screen.context.close();
+    await phone.context.close();
+  });
+
   test("P1 Approved at 390 x 844: Revoke sits in the floating glass panel and the title is one inset from the top", async ({
     browser,
   }) => {
@@ -689,6 +784,25 @@ test.describe("guest drop", () => {
     await expect(page.locator("#drop-hint")).toBeHidden();
     await expect(heading(page)).toHaveText("Demo Room");
     expect(loads).toHaveLength(1);
+    await screen.context.close();
+    await phone.context.close();
+  });
+
+  test("a drop whose handlers fail to load still takes the picker's road", async ({ browser }) => {
+    const screen = await demoScreen(browser);
+    const { phone } = await scan(browser, screen.page);
+    const page = phone.page;
+    await page.route("**/js/core/drag.js", (route) => route.abort());
+    const files = await page.evaluateHandle(() => {
+      type Transfer = { items: { add(file: File): void } };
+      const d = new (globalThis as unknown as { DataTransfer: new () => Transfer }).DataTransfer();
+      d.items.add(new File(["MZ"], "notes.exe", { type: "application/octet-stream" }));
+      return d;
+    });
+    await page.dispatchEvent("body", "dragenter", { dataTransfer: files });
+    await page.dispatchEvent("body", "drop", { dataTransfer: files });
+    await expect(page.getByRole("alert")).toContainText("This File Type Isn't Supported");
+    await expect(heading(page)).toHaveText("Demo Room");
     await screen.context.close();
     await phone.context.close();
   });

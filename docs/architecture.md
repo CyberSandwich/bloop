@@ -4,7 +4,7 @@ Status: draft for review. The stack is fixed by [ADR 0001](adr/0001-stack.md). T
 
 ## 1. What the system does
 
-A room PC's browser shows `/s`, with a QR code and a typed code. A phone scans or types the code, which locks the pairing to that phone. The phone shows the room name and a 2-digit match code. The user picks one file, from OneDrive or as a guest upload, and taps Approve. The screen then gets one short-lived link, `https://<host>/f/<token>/<name>.pptx`, and opens it with `ms-powerpoint:ofv|u|<link>`. If that fails it falls back to a download, and after that to a labeled PDF view. The session ends from the phone, from the screen, or by itself after 90 minutes.
+A room PC's browser shows `/s`, with a QR code and a typed code. A phone scans or types the code, which locks the pairing to that phone. The phone shows the room name and a 2-digit match code. The user picks one file, from OneDrive or as a guest upload, and taps Approve. The screen then gets one short-lived link, `https://<host>/f/<token>/<name>.pptx`, and opens it with `ms-powerpoint:ofv|u|<link>`. If that fails it falls back to a download, and after that to a labeled PDF view. The session ends from the phone, from the screen, or by itself after 1 hour, a length the phone can change up to 12 hours (2 in the Demo).
 
 Invariants (each one is enforced in code and proven by a test in the threat model):
 
@@ -116,7 +116,7 @@ sequenceDiagram
   W-->>P: up to 5 files, then the account's links
   P->>W: POST /api/approve {ids} (Bearer pid, Origin checked)
   W->>R: approve(items resolved from the list)
-  R->>R: mint link token, schedule auto-end at +90 min, audit approved
+  R->>R: mint link token, schedule auto-end at endsAt (+60 min; the phone may change it, SESS-01), audit approved
   R-->>S: open {item 0, links.protocol}
   R-->>P: state opening
   S->>S: location.assign(ms-powerpoint:ofv|u|https://host/f/token/Lecture-4.pptx)
@@ -168,7 +168,7 @@ sequenceDiagram
     P->>W: POST /api/end (Bearer pid)
   else from the screen
     S->>W: POST /api/screen/end (Bearer sid)
-  else after 90 min
+  else at endsAt
     R->>R: alarm fires at endsAt
   end
   W->>R: end(reason)

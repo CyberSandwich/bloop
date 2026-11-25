@@ -285,8 +285,8 @@ back.addEventListener("click", (e) => {
 
 ends.addEventListener("click", () =>
   import("./core/length.js").then(
-    (m) => m.openLength(c, setView, fail),
-    () => fail("offline"),
+    (m) => m.openLength(c, setView),
+    () => toast({ title: "The Session Length Can't Open", body: "Check the connection, then try again.", error: true }),
   ),
 );
 
@@ -319,7 +319,7 @@ const onDrag = (/** @type {DragEvent} */ e) => {
   const files = [...e.dataTransfer.files];
   import("./core/drag.js").then(
     (m) => m.drag(e.type, files, canAdd, choose),
-    () => {},
+    () => e.type === "drop" && canAdd && choose(files),
   );
 };
 addEventListener("dragenter", onDrag);

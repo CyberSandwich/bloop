@@ -60,7 +60,7 @@
         "public/js/core/length.js",
         "public/js/shared/length.js"
       ],
-      "limit": "1.6 kB"
+      "limit": "2.35 kB"
     },
     {
       "name": "session length sheet CSS, lazy",

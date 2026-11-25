@@ -1,6 +1,7 @@
 // Zod-parsed Worker configuration. Fails closed: a bad value returns an error instead of a default.
 // Covers the pairing variables so far; later modules add theirs to the schema.
 import { z } from "zod";
+import { MIN_LENGTH_MINUTES } from "../../public/js/shared/length.js";
 import type { Keks } from "./auth/vault.ts";
 import type { MachineConfig } from "./machine.ts";
 
@@ -127,18 +128,18 @@ const schema = z
       .number()
       .positive()
       .describe(
-        "The latest a live session may end, counted from approval, whatever length the phone sets; production range 1 to 720.",
+        "The latest a live session may end, counted from approval, whatever length the phone sets; production range 5 to 720.",
       ),
     DEMO_MAX_MINUTES: z.coerce
       .number()
       .positive()
-      .describe("SESSION_MAX_MINUTES for a demo session; production range 1 to SESSION_MAX_MINUTES."),
+      .describe("SESSION_MAX_MINUTES for a demo session; production range 5 to SESSION_MAX_MINUTES."),
     SESSION_DEFAULT_MINUTES: z.coerce
       .number()
       .positive()
       .default(60)
       .describe(
-        "The length every session starts with until the phone changes it (POST /api/session/length), never past the mode's cap.",
+        "The length every session starts with until the phone changes it (POST /api/session/length), never past the mode's cap; production range 5 to SESSION_MAX_MINUTES.",
       ),
     DEMO_ENABLED: z
       .enum(["true", "false"])
@@ -200,11 +201,15 @@ const schema = z
     if (v.CODE_TTL_SECONDS < 30) issue("CODE_TTL_SECONDS", "at least 30");
     if (v.CODE_GRACE_SECONDS < 5) issue("CODE_GRACE_SECONDS", "at least 5");
     if (v.CLAIM_TIMEOUT_SECONDS < 60) issue("CLAIM_TIMEOUT_SECONDS", "at least 60");
-    if (v.SESSION_MAX_MINUTES < 1 || v.SESSION_MAX_MINUTES > 720) issue("SESSION_MAX_MINUTES", "1 to 720");
-    if (v.DEMO_MAX_MINUTES < 1 || v.DEMO_MAX_MINUTES > v.SESSION_MAX_MINUTES) {
-      issue("DEMO_MAX_MINUTES", "1 to SESSION_MAX_MINUTES");
+    // Every cap holds the shortest length the phone may set, or the length route refuses every request.
+    const min = MIN_LENGTH_MINUTES;
+    if (v.SESSION_MAX_MINUTES < min || v.SESSION_MAX_MINUTES > 720) issue("SESSION_MAX_MINUTES", `${min} to 720`);
+    if (v.DEMO_MAX_MINUTES < min || v.DEMO_MAX_MINUTES > v.SESSION_MAX_MINUTES) {
+      issue("DEMO_MAX_MINUTES", `${min} to SESSION_MAX_MINUTES`);
     }
-    if (v.SESSION_DEFAULT_MINUTES < 1) issue("SESSION_DEFAULT_MINUTES", "at least 1");
+    if (v.SESSION_DEFAULT_MINUTES < min || v.SESSION_DEFAULT_MINUTES > v.SESSION_MAX_MINUTES) {
+      issue("SESSION_DEFAULT_MINUTES", `${min} to SESSION_MAX_MINUTES`);
+    }
   });
 
 /** Every variable the Worker parses, each with its `.describe()` meaning; docs point here instead of listing them. */

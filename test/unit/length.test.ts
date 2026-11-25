@@ -98,6 +98,19 @@ describe("SESS-01 length: the phone sets when the session ends", () => {
     expect(next.endReason).toBe("auto");
   });
 
+  it("past endsAt (a late alarm) ends the session as the timer would, never brings it back", () => {
+    const late = must(approved(), length(APPROVED_AT, 5)).next;
+    const endsAt = late.session?.endsAt ?? 0;
+    for (const now of [endsAt, endsAt + sec(20)]) {
+      const { next, effects } = must(late, length(now, 60));
+      expect(next.state).toBe("ended");
+      expect(next.endReason).toBe("auto");
+      expect(fx(effects, "push")).not.toEqual([]);
+    }
+    // A moment before the end still sets it.
+    expect(must(late, length(endsAt - 1, 60)).next.session?.endsAt).toBe(endsAt - 1 + 60 * MIN);
+  });
+
   it("a guest session's Open click starts at the length given, like an approval", () => {
     const at = T0 + sec(40);
     const open = must(offered(), { e: "open.click", now: at, minutes: 60 }).next;
@@ -114,9 +127,16 @@ describe("SESS-01 sheet: Until and the clamp on the phone", () => {
     expect(minutesUntil("14:05", at(14, 0, 40))).toBe(4);
   });
 
-  it("takes a time already past as tomorrow's", () => {
-    expect(minutesUntil("13:00", at(14, 0))).toBe(23 * 60);
-    expect(minutesUntil("14:00", at(14, 0))).toBe(24 * 60);
+  it("takes a time over an hour past as tomorrow's", () => {
+    expect(minutesUntil("12:59", at(14, 0))).toBe(23 * 60 - 1);
+    expect(minutesUntil("13:00", at(14, 0, 1))).toBe(23 * 60);
+  });
+
+  it("takes a time within the last hour, the current minute included, as the shortest length, never the cap", () => {
+    expect(minutesUntil("14:30", at(14, 30, 20))).toBe(MIN_LENGTH_MINUTES);
+    expect(minutesUntil("14:25", at(14, 30))).toBe(MIN_LENGTH_MINUTES);
+    expect(minutesUntil("13:01", at(14, 0))).toBe(MIN_LENGTH_MINUTES);
+    expect(minutesUntil("14:00", at(14, 0))).toBe(MIN_LENGTH_MINUTES);
   });
 
   it("keeps a length inside the minimum and the mode's cap, as the route takes it", () => {
