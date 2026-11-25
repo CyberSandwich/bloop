@@ -1,9 +1,9 @@
 import { execFileSync } from "node:child_process";
-import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { basename, join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { attributed, conflictCopies, refusals } from "../../tools/land.mjs";
+import { attributed, conflictCopies, main, refusals } from "../../tools/land.mjs";
 import { SPAWN_TIMEOUT } from "./spawn.ts";
 
 /** A bare remote with one commit on main, and a clone of it to land from. */
@@ -73,14 +73,69 @@ describe("land: what a fast-forward to main refuses", { timeout: SPAWN_TIMEOUT }
     expect(problems[0]).toMatch(/^merge commits in origin\/main\.\./);
   });
 
-  it("land: an attribution trailer in any commit of the range is refused, naming that commit", () => {
-    commit("clean");
-    const sha = commit("work\n\nCo-Authored-By: Someone <noreply@anthropic.com>");
-    expect(refusals({ cwd: clone, sha })).toEqual([`${sha.slice(0, 7)} carries AI attribution in its message`]);
+  it("land: an attribution trailer below the tip is refused, naming that commit", () => {
+    const tagged = commit("work\n\nCo-Authored-By: Someone <someone@example.test>");
+    const sha = commit("clean on top", "b.txt");
+    expect(refusals({ cwd: clone, sha })).toEqual([`${tagged.slice(0, 7)} carries AI attribution in its message`]);
   });
 
-  it("land: a sha that does not exist is refused", () => {
+  it("land: a range of one with only a Claude-Session line, or only the noreply address, is refused", () => {
+    const session = commit("work\n\nClaude-Session: https://example.test/s");
+    expect(refusals({ cwd: clone, sha: session })).toHaveLength(1);
+    git(clone, "reset", "-q", "--hard", "origin/main");
+    const noreply = commit("work\n\nSigned-off-by: Bot <noreply@anthropic.com>");
+    expect(refusals({ cwd: clone, sha: noreply })).toHaveLength(1);
+  });
+
+  it("land: a sha that does not exist, or one that reads as an option, is refused", () => {
     expect(refusals({ cwd: clone, sha: "f".repeat(40) })).toEqual([`${"f".repeat(40)} is not a commit here`]);
+    expect(refusals({ cwd: clone, sha: "--all" })).toEqual(["--all is not a commit here"]);
+  });
+
+  it("land: the conflict-copy stop comes before any fetch: it holds with the remote unreachable", () => {
+    const sha = commit("second");
+    git(clone, "remote", "set-url", "origin", join(root, "gone.git"));
+    expect(refusals({ cwd: clone, sha })[0]).toMatch(/^fetch from origin failed/);
+    writeFileSync(join(clone, ".git", "packed-refs 2"), "");
+    expect(refusals({ cwd: clone, sha })[0]).toMatch(/^iCloud conflict copies in \.git/);
+  });
+
+  it("land: from a linked worktree it reads the shared git dir, and a user's worktree name never counts", () => {
+    git(clone, "worktree", "add", "-q", "-b", "wt", join(root, "feature 2"));
+    const wt = join(root, "feature 2");
+    const sha = commit("second");
+    // git names the worktree's own folder under .git/worktrees after the user's path (a space becomes "-").
+    const admin = git(wt, "rev-parse", "--path-format=absolute", "--git-dir");
+    expect(admin).toMatch(/[/\\]worktrees[/\\]feature.2$/);
+    expect(refusals({ cwd: wt, sha })).toEqual([]);
+    writeFileSync(join(admin, "index 2"), "");
+    expect(refusals({ cwd: wt, sha })[0]).toContain(join("worktrees", basename(admin), "index 2"));
+  });
+});
+
+describe("land: the CLI", { timeout: SPAWN_TIMEOUT }, () => {
+  const remoteTip = () => git(join(root, "remote.git"), "rev-parse", "main");
+
+  it("land: a dry run prints the range and pushes nothing; a real run pushes the checked commit", () => {
+    const before = remoteTip();
+    const sha = commit("second");
+    expect(main([sha.slice(0, 9), "--dry-run"], clone)).toBe(0);
+    expect(remoteTip()).toBe(before);
+    expect(main(["--dry-run", sha.slice(0, 9)], clone)).toBe(0);
+    expect(main([sha.slice(0, 9)], clone)).toBe(0);
+    expect(remoteTip()).toBe(sha);
+  });
+
+  it("land: a refusal exits 1 and pushes nothing; bad arguments exit 64; an empty range lands nothing", () => {
+    const before = remoteTip();
+    const sha = commit("work\n\nCo-Authored-By: A <a@example.test>");
+    expect(main([sha], clone)).toBe(1);
+    expect(remoteTip()).toBe(before);
+    expect(main([], clone)).toBe(64);
+    expect(main(["-x"], clone)).toBe(64);
+    expect(main([sha, sha], clone)).toBe(64);
+    expect(main([before], clone)).toBe(0);
+    expect(remoteTip()).toBe(before);
   });
 });
 
@@ -96,7 +151,14 @@ describe("land: the attribution and conflict-copy rules", { timeout: SPAWN_TIMEO
     const dir = mkdtempSync(join(tmpdir(), "copies-"));
     for (const f of ["index", "index 2", "packed-refs 3", "config", "FETCH_HEAD"]) writeFileSync(join(dir, f), "");
     writeFileSync(join(dir, "note 2.md"), "");
-    expect(conflictCopies(dir).map((p) => p.slice(dir.length + 1))).toEqual(["index 2", "note 2.md", "packed-refs 3"]);
+    mkdirSync(join(dir, "worktrees", "release 2"), { recursive: true });
+    mkdirSync(join(dir, "refs", "heads", "x 2"), { recursive: true });
+    expect(conflictCopies(dir).map((p) => p.slice(dir.length + 1))).toEqual([
+      "index 2",
+      "note 2.md",
+      "packed-refs 3",
+      join("refs", "heads", "x 2"),
+    ]);
     rmSync(dir, { recursive: true, force: true });
   });
 });
