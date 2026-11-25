@@ -16,7 +16,7 @@ bloop is a new, free side project, not a commercial service, and may change. Sho
 
 In short: bloop is run by one person in the UK.
 
-1.1 bloop is run by **Duke DJ Saputra**, an individual based in the United Kingdom (**"bloop"**, **"we"**), as a free side project in early access. Contact: <hi@bloop.here>; a postal address is available on request.
+1.1 bloop is run by **Duke DJ Saputra**, an individual based in the United Kingdom (**"bloop"**, **"we"**), as a free side project in early access. Contact: <{{email}}>; a postal address is available on request.
 
 1.2 These **Terms** apply to anyone who uses bloop at bloop.here, including the **Demo** (**"you"**). The words **Screen**, **Session**, **Item**, **Guest File** and **Demo** mean what they mean in [the Privacy Notice](/privacy#1.4), section 1.4.
 
@@ -69,7 +69,7 @@ In short: you are responsible for what you send; bloop shows it during the Sessi
 
 5.3 bloop may refuse or delete any file, without notice, to keep the service safe or lawful. Its checks refuse some files, such as decks with macros.
 
-5.4 To report unlawful content shown through bloop, email <hi@bloop.here> with "Report" in the subject, saying what, where and when. bloop will act on it without undue delay.
+5.4 To report unlawful content shown through bloop, email <{{email}}> with "Report" in the subject, saying what, where and when. bloop will act on it without undue delay.
 
 ## Your Content {#content}
 
@@ -127,4 +127,4 @@ In short: English law; your local UK courts still apply if you live elsewhere in
 
 ## Contact {#contact}
 
-12.1 Questions about these Terms: <hi@bloop.here>.
+12.1 Questions about these Terms: <{{email}}>.

@@ -692,13 +692,10 @@ describe("site chrome: one nav and one footer on every site page", () => {
     },
   );
 
-  it.each(SITE)("%s names hi@bloop.here, security@ only on /security, and no placeholder", (page) => {
+  it.each(SITE)("%s names only hi@bloop.here, and no placeholder", (page) => {
     const html = read(`public/${page}`);
     expect(html).not.toMatch(/bloop\.example/);
-    const allowed = ["security.html", "privacy.html", ...ARTICLES].includes(page)
-      ? ["hi@bloop.here", "security@bloop.here"]
-      : ["hi@bloop.here"];
-    for (const m of html.matchAll(/[\w.+-]+@[\w-]+(\.[\w-]+)+/g)) expect(allowed).toContain(m[0]);
+    for (const m of html.matchAll(/[\w.+-]+@[\w-]+(\.[\w-]+)+/g)) expect(m[0]).toBe("hi@bloop.here");
   });
 
   it("the footer lists the address as a mailto link beside the other footer links, with its text visible", () => {
@@ -708,14 +705,14 @@ describe("site chrome: one nav and one footer on every site page", () => {
 
   it("security.txt and SECURITY.md name the /security channels and point to its policy (RFC 9116)", () => {
     const txt = read("public/.well-known/security.txt");
-    expect(txt).toMatch(/^Contact: mailto:security@bloop\.here$/m);
+    expect(txt).toMatch(/^Contact: mailto:hi@bloop\.here$/m);
     expect(txt.match(/^Contact: /gm)).toHaveLength(1);
     expect(txt).not.toContain("github.com");
     expect(txt).toMatch(/^Policy: https:\/\/bloop\.here\/security#report$/m);
     expect(txt).toMatch(/^Canonical: https:\/\/bloop\.here\/\.well-known\/security\.txt$/m);
     expect(read("SECURITY.md")).toContain("https://bloop.here/security#report");
     const report = visibleText(between(read("public/security.html"), /<section id="report"/, "</section>"));
-    expect(report).toContain("security@bloop.here");
+    expect(report).toContain("hi@bloop.here");
     expect(report).toContain("within 5 working days");
     expect(read("SECURITY.md")).not.toMatch(/\d+ (working )?days/);
   });
@@ -1047,11 +1044,10 @@ describe("privacy notice", () => {
     );
   });
 
-  it("covers mail to both addresses, hi@ and security@, wherever it names mail", () => {
-    for (const start of ["Emails you send", "Emails to"])
-      expect(row(start)).toMatch(/hi@bloop\.here and security@bloop\.here/);
+  it("covers mail to the one address, hi@, wherever it names mail", () => {
+    for (const start of ["Emails you send", "Emails to"]) expect(row(start)).toContain("hi@bloop.here");
     expect(visibleText(between(html, /<tr><th scope="row" data-label="Processor">Apple/, "</tr>"))).toContain(
-      "hi@bloop.here and security@bloop.here",
+      "The mailbox behind hi@bloop.here Emails you send",
     );
   });
 

@@ -11,7 +11,7 @@ effective: 2026-11-25
 version: 1.1
 ---
 
-bloop is a new, free side project run by one person in the UK. It keeps only what it needs to put your file on the screen, and deletes a guest's file when the session ends. It never sells data and runs no ads, analytics scripts or trackers. Write to <hi@bloop.here> about anything here.
+bloop is a new, free side project run by one person in the UK. It keeps only what it needs to put your file on the screen, and deletes a guest's file when the session ends. It never sells data and runs no ads, analytics scripts or trackers. Write to <{{email}}> about anything here.
 
 ## Who Is Responsible {#controller}
 
@@ -19,9 +19,9 @@ In short: one named person runs bloop and answers for your data.
 
 1.1 bloop is run by **Duke DJ Saputra**, an individual based in the United Kingdom (**"bloop"**, **"we"**), as a free side project in early access; it is not a commercial service. bloop is the **controller** of the personal data described here: it decides why and how that data is used.
 
-1.2 Contact: <hi@bloop.here>. A postal address is available on request to that address.
+1.2 Contact: <{{email}}>. A postal address is available on request to that address.
 
-1.3 bloop has no data protection officer; none is required. Write to <hi@bloop.here>.
+1.3 bloop has no data protection officer; none is required. Write to <{{email}}>.
 
 1.4 Words used here: **Screen** means a browser showing bloop's page on a shared display, such as a room PC. **Session** means the time from Approve on your phone until it ends. **Item** means a file or link you approve for a Screen. **Guest File** means a file sent from a phone that is not signed in to a file service. **Demo** means the public sample at bloop.here, which uses a bundled sample account.
 
@@ -47,7 +47,7 @@ Caption: What bloop collects, where it comes from, and its status
 | A record of each Session: which Item, on which Screen, when, and how it ended | bloop's own records of what you do | Live |
 | A keyed hash of your IP address, used to stop abuse (bloop never stores the address itself) | your browser's connection | Live |
 | Usage counts with no names or file names | bloop's own records | Live |
-| Emails you send to <hi@bloop.here> and <security@bloop.here>, and bloop's replies | you | Live |
+| Emails you send to <{{email}}>, and bloop's replies | you | Live |
 | Waitlist answers: your role, where you would use bloop, your organization, what you would like next, your timing and your email, plus the page you came from | you, through the Tally form | Live |
 | Your work email and Microsoft account ID (tenant and object ID); never your name | Microsoft, when you sign in and allow access | Planned |
 | Your OneDrive access, encrypted, and the ID of the folder bloop reads | Microsoft, when you sign in and allow access | Planned |
@@ -78,7 +78,7 @@ Caption: Each purpose, the data it uses, and its lawful basis
 | Invite you to early access and arrange a call | waitlist answers | Consent, which you can withdraw at any time |
 | Answer your emails | your emails | Legitimate interests: replying to you |
 
-4.2 **You have the right to object** at any time to any use based on legitimate interests. Write to <hi@bloop.here> and bloop will stop unless it has compelling grounds that override your interests, or needs the data for a legal claim.
+4.2 **You have the right to object** at any time to any use based on legitimate interests. Write to <{{email}}> and bloop will stop unless it has compelling grounds that override your interests, or needs the data for a legal claim.
 
 ## How Long bloop Keeps It {#retention}
 
@@ -103,7 +103,7 @@ Caption: How long bloop keeps each kind of data
 | Guest passes (Planned) | 24 hours |
 | Cloudflare's request logs | At most 7 days, with no personal data |
 | Waitlist answers | Until you ask bloop to delete them, or the waitlist closes |
-| Emails to <hi@bloop.here> and <security@bloop.here> | 2 years after the last message in a thread |
+| Emails to <{{email}}> | 2 years after the last message in a thread |
 
 ## Who Helps Run bloop {#processors}
 
@@ -117,7 +117,7 @@ Caption: The processors, what each does, the data it handles and where
 | --- | --- | --- | --- |
 | Cloudflare, Inc. (US) | Hosting, database, file storage, network, DNS | Everything in section 3 except waitlist answers and email | Stored in Cloudflare's EU jurisdiction; each request is handled at the nearest Cloudflare data center |
 | Tally BV (Belgium) | The waitlist form | Waitlist answers | EU; Tally uses its own subprocessors, some in the US |
-| Apple (iCloud Mail) | The mailbox behind <hi@bloop.here> and <security@bloop.here> | Emails you send and bloop's replies | Apple's data centers, in the US and elsewhere |
+| Apple (iCloud Mail) | The mailbox behind <{{email}}> | Emails you send and bloop's replies | Apple's data centers, in the US and elsewhere |
 
 6.2 **Microsoft is not a processor for bloop.** When OneDrive is live, Microsoft is where your files and sign-in come from, and it controls your Microsoft account under its own terms and your organization's.
 
@@ -163,7 +163,7 @@ In short: ask to see, fix, move or delete your data; bloop answers within a mont
 6. object, as in [4.2](#4.2);
 7. withdraw consent to the waitlist at any time, without affecting what came before.
 
-9.2 Write to <hi@bloop.here>. bloop replies within one month, and may ask you to prove who you are first. In some cases the law allows a longer time or a refusal; bloop will say why.
+9.2 Write to <{{email}}>. bloop replies within one month, and may ask you to prove who you are first. In some cases the law allows a longer time or a refusal; bloop will say why.
 
 9.3 Once OneDrive is connected, tap Disconnect OneDrive on any phone while you approve: bloop deletes its stored access and every sign-in ends at once, a lost phone's included. You may also be able to remove bloop in My Apps (myapplications.microsoft.com); your IT team can remove it for everyone in Microsoft Entra.
 
@@ -171,7 +171,7 @@ In short: ask to see, fix, move or delete your data; bloop answers within a mont
 
 In short: tell bloop first; you can always go to the ICO.
 
-10.1 To complain about how bloop uses your data, write to <hi@bloop.here> with "Complaint" in the subject. bloop acknowledges a complaint within 30 days, looks into it without undue delay, and tells you the outcome.
+10.1 To complain about how bloop uses your data, write to <{{email}}> with "Complaint" in the subject. bloop acknowledges a complaint within 30 days, looks into it without undue delay, and tells you the outcome.
 
 10.2 You may also complain to the **Information Commissioner's Office (ICO)**, the UK regulator, at any time, at [ico.org.uk/make-a-complaint](https://ico.org.uk/make-a-complaint/), which lists its helpline and postal address. The ICO usually expects you to raise it with bloop first.
 
@@ -189,6 +189,6 @@ In short: changes are dated and listed here.
 
 ### What Changed
 
-- Version 1.1, 2026-11-25: clarifications only, with no change to how data is handled. The example in 1.4 says room PC, the word used on every page, and the summary of section 11 names the age of 13 its clause gives.
+- Version 1.1, 2026-11-25: clarifications only, with no change to how data is handled. The example in 1.4 says room PC, the word used on every page, and the summary of section 11 names the age of 13 its clause gives. Sections 3, 5 and 6 name the one address all mail now goes to; the mailbox behind it is the same.
 - Version 1.0, 2026-11-25: first published version.
 - Earlier versions were shown for review before this one; they are replaced and never took effect.

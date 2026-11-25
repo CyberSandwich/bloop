@@ -404,3 +404,27 @@ describe("the content rules", () => {
     }
   });
 });
+
+describe("one public address", () => {
+  const files = (dir: string): string[] =>
+    readdirSync(`${ROOT}${dir}`, { withFileTypes: true }).flatMap((e) =>
+      e.isDirectory() ? files(`${dir}/${e.name}`) : [`${dir}/${e.name}`],
+    );
+  const published = files("public").filter((f) => /\.(html|txt|xml|json)$/.test(f) || f.includes("/.well-known/"));
+
+  it("no page, generated file or .well-known file names any @bloop.here address but the site's one", () => {
+    expect(site.email).toBe("hi@bloop.here");
+    expect(published).toContain("public/.well-known/security.txt");
+    expect(published).toContain("public/llms.txt");
+    for (const f of published)
+      for (const m of read(f).matchAll(/[\w.+-]+@bloop\.here/g)) expect(m[0], f).toBe(site.email);
+  });
+
+  it("content files take the address from site.json through the {{email}} slot, never by hand", () => {
+    const sources = files("content").filter((f) => f.endsWith(".md"));
+    for (const f of sources) expect(read(f), f).not.toMatch(/@bloop\.here/);
+    expect(sources.some((f) => read(f).includes("<{{email}}>"))).toBe(true);
+    for (const d of docs) expect(d.body, d.file).not.toContain("{{");
+    expect(docs.find((d) => d.path === "/privacy")?.body).toContain(`<${site.email}>`);
+  });
+});
