@@ -1228,7 +1228,9 @@ describe("landing motion and spacing (design.md sections 6 and 8)", () => {
     expect(fallback).toMatch(/@media \(max-width: 759\.98px\) \{\s*\.nav-menu \{\s*display: none;/);
     expect(fallback).toMatch(/\.nav-links \{[^}]*position: fixed;[^}]*overflow-x: auto;/);
     // A filter would make the pill the fixed row's containing block and box the row inside it.
-    expect(fallback).toMatch(/\.nav-pill \{[^}]*backdrop-filter: none;/);
+    expect(fallback).toMatch(/\.nav-pill,\s*\.nav\.is-scrolled \.nav-pill \{[^}]*backdrop-filter: none;/);
+    // :not(:is(:popover-open)) matches everything where the pseudo-class is unknown; a lone rule stays bare.
+    expect(css).not.toMatch(/:not\(:is\([^()]*:popover-open\)\)/);
     // The rule that hides the list is a bare :not(:popover-open), so those engines drop it and the list shows.
     expect(between(css, /@media \(max-width: 759\.98px\) \{/, "\n}\n")).toMatch(
       /\.nav-links:not\(:popover-open\) \{\s*display: none;/,

@@ -532,8 +532,13 @@ test.describe("no popover (Safari 15, 16)", () => {
     expect(Math.round(rowLeft ?? 0)).toBe(10);
     expect(Math.round(rowRight ?? 0)).toBe(380);
     expect(scrollWidth).toBeLessThanOrEqual(390);
+    // Solid glass on the row and the links pill, with no backdrop filter, scrolled or not.
+    const fills = `["nav-links", "nav-pill"].map((c) => getComputedStyle(document.querySelector("." + c)).backgroundColor)`;
+    expect(await page.evaluate(fills)).toEqual(["rgba(255, 255, 255, 0.92)", "rgba(255, 255, 255, 0.92)"]);
     await nav.getByRole("link", { name: "Features" }).click();
     await expect(page.locator("#features h2")).toBeInViewport();
+    await expect(page.locator(".nav")).toHaveClass(/is-scrolled/);
+    expect(await page.evaluate(fills)).toEqual(["rgba(255, 255, 255, 0.92)", "rgba(255, 255, 255, 0.92)"]);
     expect(errors).toEqual([]);
   });
 });
