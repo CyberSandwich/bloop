@@ -93,8 +93,9 @@ Shown on the screen when the item to open is a deck over 30 MB, because PowerPoi
 - The `.leave` card (design.md section 7, Screen page: a popover card, centered, `--r-stage`), with three actions stacked in one column, 8 apart: Open in PowerPoint (primary; PowerPoint first stays the house rule), Show Slides Here (secondary), Download (text; a native attachment navigation, so the bytes are fetched once, by the browser).
 - Title "Lecture 5.pptx Is 88 MB" (the name middle-ellipsized to keep 5 words of weight; the size from the file). Line "PowerPoint downloads it to this PC first, which can take a while here."
 - Show Slides Here opens the slides viewer with the honesty toast. Open in PowerPoint runs the launch ladder. Escape or a click outside: nothing opens; the viewer shows the deck's card with the same three actions in its pill, so the choice is never lost.
+- **Slides not ready yet** (the converter still running): Show Slides Here is disabled and reads "Preparing Slides", with the loader's sheen across it; on `derivedReady` it enables in place and reads "Show Slides Here", with no move, no reflow and no focus change (the label's width is held at the wider of the two). The same rule holds wherever the button appears: the deck's pill and the phone.
 - Focus: Open in PowerPoint on open (a projector's keyboard user lands on the house default); Tab order is the stack.
-- The phone shows, under "Approved for Room 2.14": "The screen asks how to open Lecture 5.pptx." until the screen picks.
+- **The phone can choose too.** The approved state on the phone holds Open in PowerPoint and Show Slides Here for the deck on the screen (present-live.md 3.5), sent on the same channel as Revoke; a choice made on either side closes the sheet on the screen. While the sheet is open the phone's line reads "The screen asks how to open Lecture 5.pptx." above the two buttons. Fallback if P1 cannot carry the command: the phone shows only that line (and "Choose on the screen how to open it." once the sheet is dismissed), and the choice stays on the PC, as above.
 - Lazy: the sheet's module loads with the first item over 30 MB; fallback: the deck's card with the three actions in the pill.
 
 ## 5. The honesty toast
@@ -144,6 +145,7 @@ Upload paused on the phone (offline): "Waiting for the Phone" in the line, no sh
 - A text link "Report" (14 `--muted`, 44 hit area) at the bottom right of a live viewer, in the footer line's row, for any library or guest file on the stage. Hidden while presenting. Never on the demo.
 - It opens `/report` in a new tab on the PC, prefilled with the screen's channel only (the server maps it to file ids; the page never sees an id or a name). The screen stays as it was.
 - Why on the screen: the person most likely to report a file is someone in the room who is not its owner.
+- **Both modes.** `/report` is public in preview and open (README.md, Mode). The link shows only where a report can reach a file: on a live screen whose stage holds a guest's or a library file the server can map from the screen's channel. In preview that is a live screen with a guest's file (and a tester's library file); the demo never shows it, in either mode, since its files are bloop's own. A screen that cannot map its channel (no file on the stage, a parked or ended screen) shows no link rather than one that leads to a form that cannot name the file.
 
 ## 8. States and transitions
 
@@ -157,4 +159,4 @@ Upload paused on the phone (offline): "Waiting for the Phone" in the line, no sh
 
 ## 9. Strings (this file)
 
-Open in PowerPoint; Show Slides Here; Download; Report; {name} Is 88 MB / PowerPoint downloads it to this PC first, which can take a while here.; The screen asks how to open {name}. (phone); Loading {name}.; This is taking a while. The phone can end it any time.; Still reading {name}.; Rows 1 to 100 of 2,400; Download it to see every row.; Receiving {name}; Checking the File; Waiting for the Phone; This File Isn't Available Anymore / Its owner removed it, or it was disabled.; the toast rows in section 5.
+Open in PowerPoint; Show Slides Here; Preparing Slides (the disabled Show Slides Here); Choose on the screen how to open it. (phone, fallback); Download; Report; {name} Is 88 MB / PowerPoint downloads it to this PC first, which can take a while here.; The screen asks how to open {name}. (phone); Loading {name}.; This is taking a while. The phone can end it any time.; Still reading {name}.; Rows 1 to 100 of 2,400; Download it to see every row.; Receiving {name}; Checking the File; Waiting for the Phone; This File Isn't Available Anymore / Its owner removed it, or it was disabled.; the toast rows in section 5.

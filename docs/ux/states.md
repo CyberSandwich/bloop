@@ -45,7 +45,7 @@ One table per surface. The rules every row follows:
 | conversion failed | rose chip "Can't Show Slides" with the reason; PowerPoint still opens it |
 | quota full | the quota line's warning; Add Files explains on tap |
 | trash empty | "The Trash Is Empty" / "Files you delete stay here for 30 days." |
-| signed out | to `/signin?next=/library` |
+| signed out | open: to `/signin?next=/library`; preview: the 404 page (README.md, Mode) |
 | suspended, deleting | library.md section 9 |
 | a lazy module failed | toast "That Didn't Load" / "Reload the page, then try again." / Reload |
 
@@ -70,7 +70,9 @@ One table per surface. The rules every row follows:
 | signed out, preview | today's flow |
 | `/api/me` fails but the claim works | treated as signed out only if the claim says `auth_required`; otherwise the claim's answer wins |
 | match module slow | three skeleton pills of the same size |
-| wrong number | "That Wasn't the Screen's Number" (present-live.md 3.3) |
+| approving slow (4 s) | "Still approving. Keep this page open." under the choices; no 15 s stop, since the approve may have landed |
+| answer lost between match and approve | a retap of the same number is a no-op success (match is idempotent for the confirmed number); the client resumes at approve |
+| wrong number | "That Wasn't the Screen's Number" / "Scan the screen again, or type its code." (present-live.md 3.3) |
 | code expired before the tap | "This Code Has Expired" (as today) |
 | approve refused after the match | the chooser with a toast (present-live.md 3.3) |
 | library empty, nothing packed | the chooser shows "Your Library Is Empty" / "Add files in your library, or send one file now." / Add a File (text, the guest path for this screen) and Done |

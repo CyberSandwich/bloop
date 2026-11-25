@@ -48,6 +48,7 @@ The signed-in user's files: add, see what is ready, pack Up Next, rename, trash,
 
 - **Row** (the item row, design.md section 6): the 40 px tile (the slide 1 thumbnail once prepared, contained; else the kind glyph: `presentation`, `file-text`, `file-spreadsheet`, `image`, `film`), the name (15/600, middle ellipsis keeps the extension), line 2 (13 `--muted` tabular): kind · size · the date ("Edited today", "Edited 3 Nov", "Presented 10:02" when it was the last thing done). Then the tick (a checkbox, the row's trailing Lucide `check` inside a 44 px hit area: ink check on, an empty `--g2` ring off) and More (Lucide `ellipsis`, 44 square, "More for Lecture 5.pptx").
 - **Row tap** (anywhere but the tick or More) opens the preview (section 5). Rows are buttons; the tick and More are their own controls beside it, never nested.
+- **No tick until Saved.** A row whose upload is still running or checking has no tick (the slot stays empty, so the name never shifts when it appears), and More holds only Cancel Upload. The tick appears in place when the pill says Saved. So Up Next, the match state and the chooser never hold an unfinished upload (present-live.md section 1), and the Saved pill offers the one shortcut, Add to Up Next (upload.md section 2).
 - **Status in line 2** (README.md additions, status chip on a row):
   - "Preparing Slides" (amber chip): converting. The rest of the row works; it opens in PowerPoint meanwhile.
   - "Can't Show Slides" (rose chip) then the reason, one sentence: "This file has macros.", "This file is password protected.", "This file is damaged.", "This file type can't be shown in bloop." It can still open in PowerPoint if the type allows; a refused upload (failed validation) never reaches the list (upload.md).
@@ -119,6 +120,7 @@ More opens a menu sheet (the Session Expiry sheet's bubble, rows 52 tall, a quie
 '--------------------------------------'
 ```
 
+- **Move Up, Move Down** (Lucide `arrow-up`, `arrow-down`): on an Up Next row only, first in the menu, on the phone as on the desktop, so reordering never needs a drag. Hidden at either end (no Move Up on the first). The menu stays open after a move, so several steps are several taps, and the row moves in Up Next behind the sheet at once.
 - **Rename:** the menu becomes a field (52 tall, `--r-pill`, the name selected without its extension) with Save (primary). Enter saves, Escape cancels. The extension cannot be changed (it is the file's type); typing one is kept as part of the name. Empty name: Save disabled. Same name as another file: allowed (files are ids, not names). Saved: the row updates in place, no toast.
 - **Download:** the original, as a native attachment (`/p/` asset `original`): no page change, the browser's own download UI.
 - **Move to Trash:** at once, with the undo toast (README.md additions): "Moved to Trash" / "Undo". The row leaves the list instantly (no collapse animation: lists change instantly in bloop). If it was in Up Next, it leaves Up Next too, and Undo puts it back in its place.
@@ -206,10 +208,10 @@ Row tap opens a full-screen sheet (phone: the viewer's bottom sheet at full heig
 |---|---|
 | loading (first paint, no cache) | title and quota line as skeleton bars, 4 skeleton rows; the panel's buttons present but Present disabled until the list arrives |
 | loaded from cache | the last list from `sessionStorage`, then the fresh one replaces it in place (no flash), so Back from the preview never shows a skeleton |
-| uploading | the new row at the top of All Files with the loader over its tile, and the upload pill (upload.md) |
+| uploading | the new row at the top of All Files with the loader over its tile and no tick until Saved, and the upload pill (upload.md) |
 | preparing | the amber chip; the socket updates it; no socket (blocked): poll every 10 s while any row is preparing, stop when none is |
 | offline | toast "You're Offline" / "Your library will update when you're back."; the list stays usable read only; ticks and renames queue nowhere: they are refused with the same toast, so nothing changes silently later |
-| signed out (cookie expired) | `/signin?next=/library`, then back here |
+| signed out (cookie expired) | open: `/signin?next=/library`, then back here; preview: the 404 page (README.md, Mode) |
 | suspended account | the page shows "Your Account Is Suspended" / "You can still download your files. Email hi@bloop.here to appeal." with Download All (`/api/me/export.zip`) |
 | deletion scheduled | a card above the list: "Your account is deleted on 2 Dec." / "Cancel Deletion" (primary, `POST /api/me/restore`) |
 
@@ -235,7 +237,7 @@ Fallbacks: a failed menu import shows toast "That Didn't Load" / "Reload the pag
 | row line 2 | PowerPoint · 18 MB · Edited today; Presented 10:02 |
 | chips | Preparing Slides; Can't Show Slides; Unavailable; Missing 2 Fonts |
 | reasons | This file has macros.; This file is password protected.; This file is damaged.; This file type can't be shown in bloop.; This file was disabled after a report. |
-| controls | Add Files; Present; Sort; Newest First; Name; Size; More for {name}; Rename; Download; Move to Trash; Save; Move Up; Move Down |
+| controls | Add Files; Present; Sort; Newest First; Name; Size; More for {name}; Rename; Download; Move to Trash; Save; Move Up; Move Down; Cancel Upload |
 | toasts | Moved to Trash / Undo; It also left Room 2.14.; Restored; Folders Can't Be Added / Drop the files inside it instead.; This File Was Moved to Trash; That Didn't Load / Reload the page, then try again. / Reload |
 | drop hint | Drop Files to Add Them |
 | preview | 24 slides; 1 / 24; Add to Up Next; Remove from Up Next; Preparing slides. You can still present it in PowerPoint. |
