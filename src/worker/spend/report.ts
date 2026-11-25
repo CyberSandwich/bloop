@@ -126,9 +126,11 @@ export function buildReport(input: ReportInput): SpendReport {
       Math.max(history.series[meter][i] ?? 0, theirs ? (theirs[dateKey(now - i * DAY_MS)] ?? 0) : 0),
     );
     const completedAvailable = theirs ? ANALYTICS_DAYS - 1 : history.ageDays;
-    const completed = days.slice(1, 1 + Math.min(t.history_days, completedAvailable));
+    // Every completed day on hand, newest first: the line is built day by day so its growth is bounded.
+    const all = days.slice(1, 1 + Math.min(REPORT_DAYS - 1, completedAvailable));
+    const completed = all.slice(0, t.history_days);
     const line: Line = lines[meter];
-    const trip = tripLine(line, completed, t);
+    const trip = tripLine(line, all, t);
     const pct = completed.length >= t.history_min_days ? ((t.k * p95(completed)) / line.ceiling) * 100 : 0;
     const mtd = sum(days.slice(0, dayOfMonth));
     return {

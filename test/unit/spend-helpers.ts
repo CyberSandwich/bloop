@@ -6,6 +6,7 @@ import type { SwitchStore } from "../../src/worker/spend/breaker.ts";
 import { type Caps, resolveCaps } from "../../src/worker/spend/caps.ts";
 import type { SpendRpc } from "../../src/worker/spend/client.ts";
 import { Ledger } from "../../src/worker/spend/meters.ts";
+import type { Transaction } from "../../src/worker/spend/schema.ts";
 import type { SwitchName } from "../../src/worker/spend/switches.ts";
 
 export function sqlOver(db: DatabaseSync): SqlLike {
@@ -42,11 +43,26 @@ export function rig(vars: Record<string, unknown> = {}, bornAt = T0 - 20 * DAY):
   const clock = () => bornAt;
   return {
     db,
-    ledger: new Ledger(sqlOver(db), clock),
+    ledger: new Ledger(sqlOver(db), clock, transactionOver(db)),
     caps: resolveCaps(vars),
-    wake: () => new Ledger(sqlOver(db), clock),
+    wake: () => new Ledger(sqlOver(db), clock, transactionOver(db)),
   };
 }
+
+/** What `ctx.storage.transactionSync` is in the Durable Object. */
+export const transactionOver =
+  (db: DatabaseSync): Transaction =>
+  (fn) => {
+    db.exec("BEGIN");
+    try {
+      const out = fn();
+      db.exec("COMMIT");
+      return out;
+    } catch (e) {
+      db.exec("ROLLBACK");
+      throw e;
+    }
+  };
 
 /** A SpendRpc backed by one Ledger and a settable clock. */
 export function fakeGuard(vars: Record<string, unknown> = {}, start = T0, bornAt = T0 - 20 * DAY) {
@@ -57,12 +73,12 @@ export function fakeGuard(vars: Record<string, unknown> = {}, start = T0, bornAt
   const guard: SpendRpc = {
     take: async (m, n, s) => r.ledger.take(m, n, s, caps(), clock.now),
     record: async (m, n, s) => r.ledger.record(m, n, s, clock.now),
-    refund: async (m, n, s, at) => r.ledger.refund(m, n, s, at),
+    refund: async (m, n, s, at) => void r.ledger.refund(m, n, s, at, clock.now, caps()),
     acquire: async (p, ttl, s) => r.ledger.acquire(p, s, ttl, caps(), clock.now),
     release: async (id) => r.ledger.release(id),
     snapshot: async () => r.ledger.snapshot(clock.now, caps()),
     prune: async () => r.ledger.prune(clock.now),
-    latchTrip: async (n, v, reason, reading) => r.ledger.latchTrip(n, v, reason, reading, clock.now),
+    latchTrip: async (n, v, reason, reading, prior) => r.ledger.latchTrip(n, v, reason, reading, clock.now, prior),
     markAlerted: async (n, v) => r.ledger.markAlerted(n, v),
     resetTrip: async (n) => r.ledger.resetTrip(n),
     alertOnce: async (k) => r.ledger.alertOnce(k, clock.now),
@@ -75,6 +91,8 @@ export function fakeGuard(vars: Record<string, unknown> = {}, start = T0, bornAt
     history: async (days) => r.ledger.history(clock.now, days),
     setReport: async (json) => r.ledger.setBlob("report", json),
     report: async () => r.ledger.blob("report"),
+    setLastAnalytics: async (json) => r.ledger.setBlob("analytics", json),
+    lastAnalytics: async () => r.ledger.blob("analytics"),
   };
   return { guard, clock, ledger: r.ledger, rig: r };
 }

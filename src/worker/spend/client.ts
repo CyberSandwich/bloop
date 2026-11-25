@@ -14,7 +14,8 @@ export interface SpendOps {
   release(leaseId: string): boolean;
   snapshot(): Snapshot;
   prune(): void;
-  latchTrip(name: SwitchName, value: string, reason: string, reading: string): boolean;
+  /** `prior`: the switch's row value before this trip ('' for none), restored on reset. */
+  latchTrip(name: SwitchName, value: string, reason: string, reading: string, prior?: string): boolean;
   markAlerted(name: SwitchName, value: string): void;
   resetTrip(name: SwitchName): boolean;
   alertOnce(key: string): boolean;
@@ -23,6 +24,9 @@ export interface SpendOps {
   /** The breaker stores its latest report (JSON) here; the admin panel and route read it back. */
   setReport(json: string): void;
   report(): string | undefined;
+  /** The merged analytics series and gauges of the latest runs (JSON), so a failed dataset keeps its last good one. */
+  setLastAnalytics(json: string): void;
+  lastAnalytics(): string | undefined;
   setOverrides(values: Record<string, number>): void;
   analyticsRun(failed: boolean): number;
 }

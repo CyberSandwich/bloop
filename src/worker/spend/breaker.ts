@@ -108,10 +108,12 @@ export function evaluate(snap: Snapshot, readings: Readings | undefined, t: Trip
   const day = (m: MeterName) => snap.counters[m].day;
 
   for (const row of report.meters) {
-    const r = { today: Math.round(row.today), line: Math.round(row.tripLine) };
-    if (row.tripLine > 0 && row.today >= row.tripLine)
+    const r = { today: Math.round(row.today), line: Number.isFinite(row.tripLine) ? Math.round(row.tripLine) : -1 };
+    // A line that is zero or not a number is a broken configuration, not a free pass: it trips at once.
+    const broken = !Number.isFinite(row.tripLine) || row.tripLine <= 0;
+    if (broken || row.today >= row.tripLine)
       trip(`${row.meter}_day`, [PRICED[row.meter].flip], `${row.label} reached its daily trip line`, r);
-    else if (row.tripLine > 0 && row.today >= row.warnLine)
+    else if (row.today >= row.warnLine)
       warn(`${row.meter}_day_warn`, `${row.label} is past ${t.warn_pct} percent of its trip line`, r);
   }
 
@@ -171,7 +173,7 @@ export function evaluate(snap: Snapshot, readings: Readings | undefined, t: Trip
   const failed = day("conversion_failed");
   const total = failed + day("conversion_done");
   if (total >= t.convert_failed_min && pct(failed, total) > t.convert_failed_pct)
-    trip("convert_failed", [{ switch: "convert", value: "account_only" }], "failed conversions in a day", {
+    trip("convert_failed", [{ switch: "convert", value: "off" }], "failed conversions in a day", {
       failed,
       total,
     });
@@ -230,22 +232,57 @@ export async function runBreaker(d: BreakerDeps): Promise<BreakerReport> {
   const trips = resolveTrips(d.vars);
   const now = d.now();
   let alerts = 0;
-  const send = async (message: Alert | DigestMessage) => {
-    await d.notify(message);
-    alerts++;
+  /**
+   * Claims `key` (once a UTC day, and across overlapping runs), sends, and releases the claim if the send fails so
+   * the next run tries again. A failed send never stops the run: latched trips still apply.
+   */
+  const announce = async (key: string, message: Alert | DigestMessage): Promise<boolean> => {
+    if (!(await d.guard.alertOnce(key))) return false;
+    try {
+      await d.notify(message);
+      alerts++;
+      return true;
+    } catch (e) {
+      await d.guard.unalert(key).catch(() => undefined);
+      logError("notify", e, { key });
+      return false;
+    }
   };
 
   let sources = "counters only (no CF_ANALYTICS_TOKEN)";
   let analytics: AnalyticsResult | undefined;
   if (d.analytics) {
-    analytics = await d.analytics();
+    const fresh = await d.analytics().catch(
+      (e): AnalyticsResult => ({
+        daily: {},
+        failed: [{ dataset: "all", error: e instanceof Error ? e.message : "" }],
+      }),
+    );
+    // A dataset that failed keeps its last good series and the last storage reading, and the report takes the larger
+    // of that and the counters: a failed read never lowers the picture of spend.
+    const last = await readLastAnalytics(d.guard);
+    analytics = {
+      daily: { ...last?.daily, ...fresh.daily },
+      ...(fresh.r2StorageBytes !== undefined || last?.r2StorageBytes !== undefined
+        ? { r2StorageBytes: (fresh.r2StorageBytes ?? last?.r2StorageBytes) as number }
+        : {}),
+      failed: fresh.failed,
+    };
+    await d.guard
+      .setLastAnalytics(JSON.stringify({ daily: analytics.daily, r2StorageBytes: analytics.r2StorageBytes }))
+      .catch((e) => logError("store analytics", e));
     const failedNames = analytics.failed.map((f) => f.dataset);
     sources = failedNames.length
-      ? `counters plus analytics (failed: ${failedNames.join(", ")})`
+      ? `counters plus analytics (failed: ${failedNames.join(", ")}; last good figures held)`
       : "counters plus analytics";
     const streak = await d.guard.analyticsRun(failedNames.length > 0);
-    if (streak === trips.analytics_fail_runs)
-      await send({ kind: "analytics_down", rule: "analytics_down", readings: { runs: streak }, sources });
+    if (streak >= trips.analytics_fail_runs)
+      await announce("analytics_down", {
+        kind: "analytics_down",
+        rule: "analytics_down",
+        readings: { runs: streak },
+        sources,
+      });
   }
   const readings = analytics ? readingsOf(analytics, now) : undefined;
 
@@ -267,10 +304,16 @@ export async function runBreaker(d: BreakerDeps): Promise<BreakerReport> {
   for (const f of findings) {
     if (f.level === "trip" && f.flips && auto) {
       // The guard's latch is the source of truth; a trip already latched at this value or stricter is not new.
-      for (const flip of f.flips) await d.guard.latchTrip(flip.switch, flip.value, f.rule, JSON.stringify(f.readings));
-    } else if (await d.guard.alertOnce(`${f.level}:${f.rule}`)) {
+      for (const flip of f.flips) {
+        const held = snap.trips.find((t) => t.switch === flip.switch);
+        const latched = held && restrictiveness(flip.switch, held.value) >= restrictiveness(flip.switch, flip.value);
+        // The row as it is before the breaker first tightens it, so a reset can put it back.
+        const prior = latched ? "" : ((await d.store.get(flip.switch).catch(() => undefined)) ?? "");
+        await d.guard.latchTrip(flip.switch, flip.value, f.rule, JSON.stringify(f.readings), prior);
+      }
+    } else {
       const flip = f.flips?.[0];
-      await send({
+      await announce(`${f.level}:${f.rule}`, {
         kind: f.level === "trip" ? "would_trip" : "warn",
         rule: f.rule,
         ...(flip ? { switch: flip.switch, value: flip.value } : {}),
@@ -288,7 +331,13 @@ export async function runBreaker(d: BreakerDeps): Promise<BreakerReport> {
   for (const t of latched) {
     try {
       if (auto) {
-        const held = (await d.store.get(t.switch)) ?? SWITCHES[t.switch].default;
+        // The value in force is the stricter of the var and the row; an unknown row value counts as the strictest.
+        const varValue = d.vars[SWITCHES[t.switch].var];
+        const held = effectiveSwitch(
+          t.switch,
+          typeof varValue === "string" ? varValue : undefined,
+          await d.store.get(t.switch),
+        );
         if (restrictiveness(t.switch, held) < restrictiveness(t.switch, t.value))
           await d.store.set(t.switch, t.value, BREAKER_ACTOR, t.reason);
       }
@@ -301,7 +350,7 @@ export async function runBreaker(d: BreakerDeps): Promise<BreakerReport> {
     const first = group[0];
     if (!first) continue;
     try {
-      await send({
+      const sent = await announce(`trip:${first.switch}:${first.value}`, {
         kind: "trip",
         rule,
         switch: first.switch,
@@ -310,26 +359,16 @@ export async function runBreaker(d: BreakerDeps): Promise<BreakerReport> {
         readings: parseReading(first.reading),
         sources,
       });
-      for (const t of group) await d.guard.markAlerted(t.switch, t.value);
+      if (sent) for (const t of group) await d.guard.markAlerted(t.switch, t.value);
     } catch (e) {
-      logError("alert trip", e, { rule });
+      logError("mark trip alerted", e, { rule });
     }
   }
 
   let digestSent = false;
   if (isMonday(now)) {
-    const key = `digest:${weekKey(now)}`;
-    if (await d.guard.alertOnce(key)) {
-      try {
-        const { subject, text } = digestText(report);
-        await send({ kind: "digest", subject, text, report });
-        digestSent = true;
-      } catch (e) {
-        // Release the claim so the next run (5 minutes on) tries again.
-        await d.guard.unalert(key);
-        logError("digest", e);
-      }
-    }
+    const { subject, text } = digestText(report);
+    digestSent = await announce(`digest:${weekKey(now)}`, { kind: "digest", subject, text, report });
   }
   return {
     findings: findings.length,
@@ -340,6 +379,17 @@ export async function runBreaker(d: BreakerDeps): Promise<BreakerReport> {
   };
 }
 
+async function readLastAnalytics(
+  guard: SpendRpc,
+): Promise<Pick<AnalyticsResult, "daily" | "r2StorageBytes"> | undefined> {
+  try {
+    const json = await guard.lastAnalytics();
+    return json ? (JSON.parse(json) as Pick<AnalyticsResult, "daily" | "r2StorageBytes">) : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
 function parseReading(text: string): Record<string, number> {
   try {
     return JSON.parse(text) as Record<string, number>;
@@ -348,20 +398,31 @@ function parseReading(text: string): Record<string, number> {
   }
 }
 
-/** The owner's reset: clears the latch and returns the switch to its default, as one logged action. */
+/**
+ * The owner's reset: puts the row back to what it was before the trip, then clears the latch, as one logged action.
+ * Only a row the breaker wrote (still holding the trip's value) is restored: a row someone set since stands, so a
+ * reset never loosens past a decision the breaker did not make. The row goes first, so a failure leaves the latch.
+ */
 export async function resetBreaker(
   d: Pick<BreakerDeps, "guard" | "store" | "notify">,
   name: SwitchName,
   actor: string,
 ): Promise<boolean> {
+  const trip = (await d.guard.snapshot()).trips.find((t) => t.switch === name);
+  let restored: string | undefined;
+  if (trip && (await d.store.get(name)) === trip.value) {
+    restored = trip.prior || SWITCHES[name].default;
+    await d.store.set(name, restored, actor, "breaker reset");
+  }
   const was = await d.guard.resetTrip(name);
-  await d.store.set(name, SWITCHES[name].default, actor, "breaker reset");
+  // The same trip later the same day is a new event and gets its own alert.
+  if (trip) await d.guard.unalert(`trip:${name}:${trip.value}`);
   if (was)
     await d.notify({
       kind: "reset",
       rule: "reset",
       switch: name,
-      value: SWITCHES[name].default,
+      value: restored ?? "unchanged",
       readings: {},
       sources: actor,
     });

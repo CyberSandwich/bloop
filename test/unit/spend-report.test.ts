@@ -38,7 +38,24 @@ describe("the adaptive trip line: clamp(max(floor, k x p95), floor, ceiling)", (
   it("COST-14 with fewer than 7 days of history the line is the floor, however large the history", () => {
     expect(tripLine(email, days(0, 0), t)).toBe(95);
     expect(tripLine(email, days(6, 400), t)).toBe(95);
-    expect(tripLine(email, days(7, 400), t)).toBe(475);
+    expect(tripLine(email, days(7, 400), t)).toBe(190);
+  });
+
+  it("the line rises at most 2x a day: 14 days of 400 climb 95, 190, 380, 475 over the days that count", () => {
+    const climb = (n: number) => tripLine(email, days(n, 400), t);
+    expect([7, 8, 9, 10, 14].map(climb)).toEqual([190, 380, 475, 475, 475]);
+  });
+
+  it("an abuse day lifts the next day's line at most to twice the day before's, not to 3 x the spike", () => {
+    const spikeYesterday = [1_000_000, ...days(13, 20)];
+    expect(tripLine(email, spikeYesterday, t)).toBe(190);
+    // The day after, the spike is in the window and the line may double again.
+    expect(tripLine(email, [20, ...spikeYesterday], t)).toBe(380);
+  });
+
+  it("the growth step is a var and the floor is always allowed", () => {
+    expect(tripLine(email, days(7, 400), { ...t, line_growth_multiple: 1 })).toBe(95);
+    expect(tripLine(email, days(7, 400), { ...t, line_growth_multiple: 10 })).toBe(475);
   });
 
   it("quiet history never lowers the line under the floor", () => {
