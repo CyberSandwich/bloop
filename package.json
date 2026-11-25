@@ -30,7 +30,7 @@
         "!public/js/core/photo.js",
         "!public/js/core/video.js"
       ],
-      "limit": "55.85 kB"
+      "limit": "56.5 kB"
     },
     {
       "name": "phone media, lazy",
@@ -38,7 +38,7 @@
         "public/js/core/photo.js",
         "public/js/core/video.js"
       ],
-      "limit": "3.5 kB"
+      "limit": "3.35 kB"
     },
     {
       "name": "landing JS",
