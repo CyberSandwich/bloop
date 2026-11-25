@@ -585,7 +585,7 @@ Each new module exports an empty route list (every path stays 404) until its str
 | fileorigin, notes | P1 (present server) | stub |
 | the `Converter` object | V (conversion) | stub |
 
-The Durable Object bindings (`USER_LIBRARY`, `CONVERTER`), the library bucket, the email binding and the new rate-limit bindings are in `wrangler.jsonc`. The Converter `containers` entry is not: the conversion stream adds it with its image digest. Variables and secrets are listed in `src/worker/config.ts` only. `UPLOAD_MODE` ships as proxy and `CONVERT_MODE` as off until their streams land.
+The Durable Object bindings (`USER_LIBRARY`, `CONVERTER`), the library bucket and the new rate-limit bindings are in `wrangler.jsonc`. The `send_email` binding and the Converter `containers` entry are not: the account stream adds the first with its first email, and the conversion stream adds the second with its image digest. Variables and secrets are listed in `src/worker/config.ts` only. `UPLOAD_MODE` ships as proxy and `CONVERT_MODE` as off until their streams land.
 
 ### 13.4 Observability
 Workers Logs are on and invocation logs are off, because invocation logs keep full URLs, tokens included (SITE-03). Sampling is set in `wrangler.jsonc`. Code logs through the one `log()` shape. Turning on the Issues view is a dashboard step (`docs/setup.md`).
