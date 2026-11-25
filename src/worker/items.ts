@@ -1,7 +1,8 @@
 // The items a session holds (docs/interfaces.md section 2.3): files and web links, their order, and the link rule.
 // Pure, so the machine, the routes and the unit tests share one definition.
+import { z } from "zod";
 import { pagesOf } from "../../public/js/core/demo.js";
-import type { FileType, Item, Kind, Mode, OpenMode } from "../shared/protocol.ts";
+import type { FileType, Item, Kind, Mode, OpenMode, Shown } from "../shared/protocol.ts";
 import type { FileRef } from "./machine.ts";
 
 /** A web link the source offered. `url` is what `allowedLink` answered, never the raw input (LINK-01). */
@@ -69,6 +70,36 @@ export const fileById = (items: readonly ItemRef[], id: string): FileItemRef | n
 /** How many pages a file shows: the demo account's pre-rendered pages for a deck or PDF, else one. */
 export const pageCount = (file: FileItemRef, view: { mode: Mode; kind: Kind | null }): number =>
   pagesOf(itemView(file), view)?.length ?? 1;
+
+/** A bound, not a page count: `shownFault` checks the item's real pages. */
+const MAX_PAGE = 1000;
+
+/** `Shown`'s one shape check: the remote's body extends it, and the schema step repairs stored data with it. */
+export const shownSchema = z
+  .object({
+    item: z.string().min(1).max(32),
+    page: z.number().int().min(1).max(MAX_PAGE),
+    present: z.boolean(),
+  })
+  .strict();
+
+/**
+ * Why `shown` cannot stand in this session, or null when it can: the item must be a FILE in the list by id, so a link
+ * (LINK-01) or an unknown id (PAIR-11) is `file_not_found`, and the page must be one of the item's.
+ */
+export function shownFault(
+  items: readonly ItemRef[],
+  shown: Shown,
+  view: { mode: Mode; kind: Kind | null },
+): "file_not_found" | "bad_request" | null {
+  const file = fileById(items, shown.item);
+  if (!file) return "file_not_found";
+  const { page } = shown;
+  return Number.isInteger(page) && page >= 1 && page <= pageCount(file, view) ? null : "bad_request";
+}
+
+export const sameShown = (a: Shown | null, b: Shown): boolean =>
+  a !== null && a.item === b.item && a.page === b.page && a.present === b.present;
 
 /** The index of the item an approval launches: the first file. -1 when the session holds links only. */
 export const launchIndex = (items: readonly ItemRef[]): number => items.findIndex((i) => i.kind === "file");

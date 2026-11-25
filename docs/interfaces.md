@@ -28,8 +28,10 @@ export interface FileItem { kind: "file"; id: string; name: string; type: FileTy
 export interface LinkItem { kind: "link"; id: string; url: string; title: string; }   // id: as on FileItem
 export type Item = FileItem | LinkItem;
 
-/** What the screen shows: the body of POST /api/control and POST /api/screen/shown, and `shown` in both views. Absolute, so a replay changes nothing. */
+/** What the screen shows: `shown` in both views. */
 export interface Shown { item: string; page: number; present: boolean; }   // item: a FILE item's id; page: 1-based, within the item's pages
+/** The body of POST /api/control and POST /api/screen/shown. Absolute, so a replay changes nothing; a seq not above the sender's last applied one changes nothing. */
+export interface ShownCommand extends Shown { seq: number; }   // grows per sender, across reloads too (the sender's clock in ms)
 
 export interface ScreenView {
   state: SessionState;
@@ -168,7 +170,7 @@ export type ScreenStateKey =
 | uploading | `upload.done(file)` | validated | offered | store the R2 ref and `offerAt`; push screen `guest_open` (file name, Open); audit `guest.uploaded` |
 | offered | `open.click` | from the screen socket (a repeat in approved, opening or open returns the current view) | approved | as approve: `endsAt`, mint link; push screen `open`; audit `approved` (actor screen) |
 | uploading | `upload.failed(e)` | | claimed | delete object; push both `state`; audit `guest.refused` with cause `e` (the drop route answers the phone with `e`) |
-| approved, opening, open | `control(shown)` | from the phone (`POST /api/control`, pid) or the screen (`POST /api/screen/shown`, sid); demo only (a live session is `wrong_state`); `shown.item` names a FILE item by id, else `file_not_found` (PAIR-11, LINK-01); `shown.page` is within the item's pages (a demo owner's deck or PDF has 2, anything else 1), else `bad_request`; any other state is `wrong_state` | (same) | store `session.shown`; push both. Absolute: the same `shown` again changes nothing and pushes nothing (PAIR-13) |
+| approved, opening, open | `control(from, seq, shown)` | from the phone (`POST /api/control`, pid) or the screen (`POST /api/screen/shown`, sid); demo only (a live session is `wrong_state`); `shown.item` names a FILE item by id, else `file_not_found` (PAIR-11, LINK-01); `shown.page` is within the item's pages (a demo owner's deck or PDF has 2, anything else 1), else `bad_request`; any other state is `wrong_state` | (same) | a `seq` not above `session.seq[from]` changes nothing (a replay, or a late older command); else store the seq, and store `session.shown` and push both unless it is the same `shown`, which pushes nothing. Between senders the last applied wins (PAIR-13) |
 | approved | `launched(mode)` | from the screen | opening | record mode; metric |
 | approved, opening | `fetched(link)` | first fetch of any link | open | `first_open_at`; metric `scan_to_open_ms`; push both |
 | opening, open | `fallback(mode, item)` | `item` (default: the first file) names a file, else `file_not_found` (PAIR-11); mints left | (same) | mint a link for `mode` and that item; when it is the launched item, set the open mode to what the link serves for the type (`effectivePurpose`: a deck's view is its PDF); metric `fallback`; push `open` to the screen and `state` to both |
@@ -200,7 +202,9 @@ export const MAX_ITEMS = 12;
 export const LINK_HOSTS: readonly string[];          // ["www.vevox.com"]
 export declare function allowedLink(url: string): string | null;   // URL-parsed: https, an allowed host, no credentials, no explicit non-default port, at most 2048 characters; answers url.href, the only form an item stores
 export declare function orderItems<T extends ItemDraft>(items: readonly T[]): T[];   // files by name, then links by title
-export declare function withIds(items: readonly ItemDraft[]): ItemRef[];   // "i1", "i2", ... by place in the ordered list; written once at approval (or upload.done), never recomputed
+export declare function withIds(items: readonly (ItemDraft | ItemRef)[]): ItemRef[];   // "i1", "i2", ... by place in the ordered list, written at approval (or upload.done); a list whose items all hold ids keeps them (a guest's file at open.click), one missing any is numbered whole
+export declare const shownSchema: z.ZodType<Shown>;   // the one shape check for `shown`: the remote's body extends it with `seq`, and schema step 6 repairs stored data with it
+export declare function shownFault(items: readonly ItemRef[], shown: Shown, view: { mode: Mode; kind: Kind | null }): "file_not_found" | "bad_request" | null;   // not a FILE id in the list, or a page outside it
 export declare function fileById(items: readonly ItemRef[], id: string): FileItemRef | null;   // null for a link or an unknown id
 export declare function pageCount(file: FileItemRef, view: { mode: Mode; kind: Kind | null }): number;   // the demo owner's deck or PDF: the pre-rendered pages; else 1
 export declare function launchIndex(items: readonly ItemRef[]): number;    // the first file, -1 for links only
@@ -221,6 +225,7 @@ export interface Machine {
     items: ItemRef[]; approvedAt: number | null; endsAt: number | null;
     openMode: OpenMode | null; firstOpenAt: number | null; minted: number[];   // links minted per item index, the first included; capped at 1 + LINK_MINTS_PER_ITEM
     shown: Shown | null;   // set by `control`
+    seq: { phone: number; screen: number };   // the last `control` seq applied per sender; 0 in a new session
   } | null;
   uploadAt: number | null;
   offerAt: number | null;
@@ -242,7 +247,7 @@ export type Event =
   | { e: "open.click"; now: number; maxMinutes: number }                 // the Open button on a guest offer
   | { e: "launched"; now: number; mode: OpenMode }
   | { e: "fetched"; now: number }
-  | { e: "control"; now: number; shown: Shown }                         // the phone's remote, or the screen reporting its own tap
+  | { e: "control"; now: number; from: "phone" | "screen"; seq: number; shown: Shown }   // the phone's remote, or the screen reporting its own tap
   | { e: "fallback"; now: number; mode: OpenMode; item: number | null; maxMints: number }   // null: the first file
   | { e: "cancel"; now: number }
   | { e: "restart"; now: number }
@@ -284,7 +289,7 @@ export interface MachineConfig {
 ### 2.4 `PairingStore` (`src/worker/seams/pairing.ts`), implemented by the Screen object
 ```ts
 import type {
-  ClaimResponse, CodeView, ErrorCode, Kind, Mode, PhoneView, RoomView, ScreenView, Shown,
+  ClaimResponse, CodeView, ErrorCode, Kind, Mode, PhoneView, RoomView, ScreenView, ShownCommand,
 } from "../../shared/protocol.ts";
 import type { ItemDraft } from "../items.ts";
 import type { FileRef } from "../machine.ts";
@@ -308,10 +313,10 @@ export interface PairingStore {
   listed(pid: string, ids: string[]): Promise<Result<PhoneView>>;
   /** `userId`: the account the approving phone is signed in as now; the object keeps it for /f/ (null for demo and guest). */
   approve(pid: string, items: ItemDraft[], userId: string | null): Promise<Result<PhoneView>>;
-  /** The phone's remote (POST /api/control): what the screen shows. Absolute, so a repeat is a no-op. Demo only: a live session is `wrong_state`. */
-  control(pid: string, shown: Shown): Promise<Result<PhoneView>>;
-  /** The screen reports its own tap (POST /api/screen/shown), so the phone's highlight stays true. Same rules as `control`. */
-  reportShown(sid: string, shown: Shown): Promise<Result<ScreenView>>;
+  /** The phone's remote (POST /api/control): what the screen shows. Absolute, so a repeat is a no-op, and a seq not above the phone's last applied one changes nothing. Demo only: a live session is `wrong_state`. */
+  control(pid: string, command: ShownCommand): Promise<Result<PhoneView>>;
+  /** The screen reports its own tap (POST /api/screen/shown), so the phone's highlight stays true. Same rules as `control`, with its own seq. */
+  reportShown(sid: string, command: ShownCommand): Promise<Result<ScreenView>>;
   cancel(pid: string): Promise<Result<PhoneView>>;
   restart(sid: string): Promise<Result<ScreenView>>;
   endFromScreen(sid: string): Promise<Result<ScreenView>>;   // from waiting: closes the object (state "closed")

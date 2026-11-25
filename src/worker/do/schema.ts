@@ -1,8 +1,7 @@
 // The Screen object's storage schema: numbered steps (CLAUDE.md "Durable Object schema"). Each step checks the data's
 // shape and writes only what is still old, and every step runs on every wake whatever the stored version: a rollback
 // that wrote old-shape data under a newer version is repaired by the next deploy.
-import type { Shown } from "../../shared/protocol.ts";
-import { type ItemDraft, launchIndex, withIds } from "../items.ts";
+import { type ItemDraft, type ItemRef, launchIndex, shownFault, shownSchema, withIds } from "../items.ts";
 import type { FileRef, Machine } from "../machine.ts";
 import type { LinkRecord } from "../seams/open-path/links.ts";
 import type { Kv } from "./ledger.ts";
@@ -15,10 +14,11 @@ type Session = NonNullable<Machine["session"]>;
 type V1Session = Omit<Session, "items" | "minted"> & { file: FileRef; mints: number };
 /** Versions 2 and 3: `mints` counted extra links, session-wide (2) or per item (3); the launch item's first was free. */
 type OldMints = Omit<Session, "minted"> & { mints: number | number[] };
-/** Versions 1 to 5: no item ids, no `shown`. */
-type PreRemote = Omit<Session, "items" | "shown"> & {
+/** Versions 1 to 5: no item ids, no `shown`, no `seq`. */
+type PreRemote = Omit<Session, "items" | "shown" | "seq"> & {
   items: (ItemDraft & { id?: string })[];
   shown?: unknown;
+  seq?: unknown;
 };
 
 const STEPS: Record<number, (kv: Kv) => void> = {
@@ -68,27 +68,32 @@ const STEPS: Record<number, (kv: Kv) => void> = {
       );
     }
   },
-  // 5 to 6: every item holds an `id` and the session a `shown`. Ids follow the stored order, the order approval froze.
+  // 5 to 6: every item holds an `id`, and the session a `shown` and a `seq` per sender. Ids follow the stored order,
+  // the order approval froze. A `shown` that names no file of this list or a page outside it becomes null, and so does
+  // any `shown` once the list is renumbered, since its id may now name another item.
   6: (kv) => {
     const m = kv.get<Omit<Machine, "session"> & { session: PreRemote | null }>("machine");
     const s = m?.session;
     if (!m || !s) return;
     const hasIds = s.items.every((i) => typeof i.id === "string");
-    const shownOk = s.shown === null || (s.shown !== undefined && isShown(s.shown));
-    if (hasIds && shownOk) return;
-    kv.put("machine", { ...m, session: { ...s, items: withIds(s.items), shown: shownOk ? s.shown : null } });
+    const items = withIds(s.items);
+    const shownOk =
+      s.shown === null || (hasIds && validShown(s.shown, items, { mode: m.mode, kind: m.pairing?.kind ?? null }));
+    const seqOk = isSeq(s.seq);
+    if (hasIds && shownOk && seqOk) return;
+    const seq = seqOk ? s.seq : { phone: 0, screen: 0 };
+    kv.put("machine", { ...m, session: { ...s, items, shown: shownOk ? s.shown : null, seq } });
   },
 };
 
-const isShown = (v: unknown): v is Shown => {
-  const s = v as Shown;
-  return (
-    typeof v === "object" &&
-    v !== null &&
-    typeof s.item === "string" &&
-    Number.isInteger(s.page) &&
-    typeof s.present === "boolean"
-  );
+const validShown = (v: unknown, items: readonly ItemRef[], view: Parameters<typeof shownFault>[2]): boolean => {
+  const parsed = shownSchema.safeParse(v);
+  return parsed.success && shownFault(items, parsed.data, view) === null;
+};
+
+const isSeq = (v: unknown): v is Session["seq"] => {
+  const seq = v as Session["seq"] | null | undefined;
+  return Number.isSafeInteger(seq?.phone) && Number.isSafeInteger(seq?.screen);
 };
 
 /** Brings stored state to SCHEMA_VERSION's shape. A fresh object (no `meta`) is written at the current version by `create`. */

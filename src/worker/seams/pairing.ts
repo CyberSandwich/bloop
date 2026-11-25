@@ -10,7 +10,7 @@ import type {
   PhoneView,
   RoomView,
   ScreenView,
-  Shown,
+  ShownCommand,
 } from "../../shared/protocol.ts";
 import type { ItemDraft } from "../items.ts";
 import type { FileRef } from "../machine.ts";
@@ -61,12 +61,13 @@ export interface PairingStore {
    */
   approve(pid: string, items: ItemDraft[], userId: string | null): Promise<Result<PhoneView>>;
   /**
-   * The phone's remote: what the screen should show. Absolute, so a repeat is a no-op. Demo sessions only; the item
-   * must be a file in the approved list and the page within its pages.
+   * The phone's remote: what the screen should show. Absolute, so a repeat is a no-op, and a `seq` not above the
+   * phone's last applied one changes nothing. Demo sessions only; the item must be a file in the approved list and the
+   * page within its pages.
    */
-  control(pid: string, shown: Shown): Promise<Result<PhoneView>>;
-  /** The screen reports its own tap, so the phone's highlight stays true. Same rules as `control`. */
-  reportShown(sid: string, shown: Shown): Promise<Result<ScreenView>>;
+  control(pid: string, command: ShownCommand): Promise<Result<PhoneView>>;
+  /** The screen reports its own tap, so the phone's highlight stays true. Same rules as `control`, with its own `seq`. */
+  reportShown(sid: string, command: ShownCommand): Promise<Result<ScreenView>>;
   cancel(pid: string): Promise<Result<PhoneView>>;
   restart(sid: string): Promise<Result<ScreenView>>;
   /** From waiting, there is no session: the object closes (codes removed, storage deleted, demo slot released). */
