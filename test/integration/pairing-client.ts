@@ -230,6 +230,16 @@ export async function claim(api: Api, code: string, kind: "owner" | "guest" = "o
   return api.post<Claimed>("/api/claim", { code, kind });
 }
 
+/**
+ * Statuses from `send` up to and including the first 429. A binding's fixed window can roll over mid-loop
+ * and admit a second batch, so a flood needs up to 2 * limit + 1 requests to be sure of a refusal.
+ */
+export async function untilRefused(limit: number, send: () => Promise<number>): Promise<number[]> {
+  const statuses: number[] = [];
+  for (let i = 0; i < 2 * limit + 1 && statuses.at(-1) !== 429; i++) statuses.push(await send());
+  return statuses;
+}
+
 export async function phoneSocket(api: Api, pid: string): Promise<Socket> {
   const ref = pid.split(".")[0] as string;
   const socket = await Socket.open(api.base, `/api/pair/ws?ref=${ref}`);
