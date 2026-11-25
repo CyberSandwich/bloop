@@ -557,8 +557,7 @@ async function boot(attempt = 0) {
   if (!booted.ok) {
     failed ??= await import("./core/poll.js");
     if (g !== gen) return;
-    // One refused boot is no outage: the second server failure in a row says bloop is down.
-    const next = failed.bootFailed(booted.error, s.link, attempt + 1);
+    const next = failed.bootFailed(booted.error, s.link, attempt + 1, !!s.view);
     s.link = next.link;
     render();
     setTimeout(() => g === gen && boot(attempt + 1), next.wait);

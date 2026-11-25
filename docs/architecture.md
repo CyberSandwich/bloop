@@ -384,7 +384,7 @@ Both sockets are JSON text frames of at most 4 KB, `{"v":1,"t":<type>,...}`. A s
 | Poll cadence | 3 s while the room is set up, 15 s in `open`, 30 s in a hidden tab; a failed poll backs off 5, 10, then 30 s; a 429's `Retry-After` (whole seconds, at most 2 minutes) is a floor. |
 | Silence | A visible tab's socket closes after two pings in a row with no frame back (REL-15); a hidden tab's, whose timers are throttled, after 70 s of silence. |
 | Resume | A socket heard from within 25 s is left alone; a quieter one is pinged and replaced if nothing answers in 3 s (REL-02); one that is down reconnects, and its `hello` brings the state, so no read is made; a polling tab polls at once. |
-| Failed poll or boot | `offline` and `network_blocked` (a 200 without the `X-Bloop` marker) are their own link states. `service_down` and `internal` say "bloop Isn't Responding" only on the second in a row; any other answer resets the count (R11). Poll and boot share the rule. |
+| Failed poll or boot | `offline` and `network_blocked` (a 200 without the `X-Bloop` marker) are their own link states. `service_down` and `internal` say "bloop Isn't Responding" only on the second in a row; any other answer resets the count (R11). Poll and boot share the rule, except that a boot with no view yet has nothing to flap and says it on the first. |
 
 
 Phone actions (approve, cancel, end, upload, control) and screen actions that change a session (end, link, restart, shown) use HTTP, so they get the Origin check, idempotency and a clear status. The sockets only push state: a remote command arrives as `shown` inside the ordinary `state` frame, so a reloaded or polling screen catches up with no frame of its own.
