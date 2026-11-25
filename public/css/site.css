@@ -209,7 +209,7 @@ html:has(.page-site) {
     font-size: min(112px, (100vw - 2 * var(--pad)) / 10);
   }
 }
-/* Ink at rest, like the rest of the h1; an orange band sweeps through, rests, and sweeps again (design.md section 8). */
+/* design.md section 8. */
 .sheen {
   /* The clip paints only inside the box, which the tracking pulls inside the last glyph: net width 0. */
   margin-inline: -0.05em;
@@ -218,25 +218,28 @@ html:has(.page-site) {
 }
 @supports (background-clip: text) or (-webkit-background-clip: text) {
   @media (prefers-reduced-motion: no-preference) {
+    /* One band per 7.5em tile, a word of ink between; moving one tile is the first frame again: no seam. */
     .sheen {
       background:
         linear-gradient(
           100deg,
-          transparent 32%,
-          var(--robin-deep) 42%,
-          var(--robin) 50%,
-          var(--robin-deep) 58%,
-          transparent 68%
+          transparent 54%,
+          var(--robin-deep) 66%,
+          var(--robin) 75%,
+          var(--robin-deep) 84%,
+          transparent 96%
         )
-        100% 0 / 300% 100% no-repeat var(--ink);
+        0 0 / 7.5em 100% repeat-x var(--ink);
       -webkit-background-clip: text;
       background-clip: text;
       color: transparent;
-      animation: sheen 2.2s linear 0.3s infinite backwards;
+      animation: sweep 3s linear 0.3s infinite backwards;
     }
-    .sheen.is-paused {
-      animation-play-state: paused;
-    }
+  }
+}
+@keyframes sweep {
+  to {
+    background-position: 7.5em 0;
   }
 }
 .lead {
@@ -435,6 +438,11 @@ h3 {
   .close-panel::before {
     animation: drift 40s ease-in-out infinite alternate;
   }
+}
+/* Off screen or in a hidden tab (site.js): after every animated rule, so it outranks their shorthands. */
+.is-paused,
+.is-paused::before {
+  animation-play-state: paused;
 }
 @keyframes drift {
   from {

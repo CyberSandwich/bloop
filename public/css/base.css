@@ -238,8 +238,8 @@ h1[tabindex="-1"]:focus {
     backdrop-filter: none;
   }
 }
-/* The sheen (design.md section 8): the landing's word and the app's loader. The sweep takes the first 45 percent
-   of a 2.2 s cycle (1 s); the rest is the pause. */
+/* The loader's sheen (design.md section 8): a 1 s sweep, the first 45 percent of 2.2 s, then a rest. The
+   landing's word sweeps without one, on site.css's own keyframe. */
 @keyframes sheen {
   0% {
     background-position: 100% 0;

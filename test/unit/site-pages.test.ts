@@ -263,20 +263,29 @@ describe("landing word caps (design.md section 13)", () => {
     expect(h1.match(/<span/g)).toHaveLength(1);
   });
 
-  it("Anywhere rests in ink; its orange sheen sweeps, rests and repeats, and never plays under reduced motion", () => {
+  it("Anywhere is ink under a tiling orange band that sweeps without a seam, and never plays under reduced motion", () => {
     const css = read("public/css/site.css");
     expect(css).toMatch(
       /^\.sheen \{(?:\s*\/\*.*\*\/)?\s*margin-inline: -0\.05em;\s*padding-inline: 0\.05em;\s*color: var\(--ink\);\s*\}/m,
     );
     const block = between(css, /@supports \(background-clip: text\)/, "\n.lead {");
-    const moving = between(block, /prefers-reduced-motion: no-preference\) \{/, "}");
+    const moving = between(block, /prefers-reduced-motion: no-preference\) \{/, "\n    }");
     expect(moving).toMatch(
-      /background-clip: text;[^}]*color: transparent;[^}]*animation: sheen [\d.]+s linear [\d.]+s infinite backwards;/,
+      /background-clip: text;[^}]*color: transparent;[^}]*animation: sweep [\d.]+s linear [\d.]+s infinite backwards;/,
     );
-    // The band is the only gradient; under it the fill is the rest color, so the word never rests as a gradient.
+    // The band is the only gradient; under it the fill is ink, so the word never rests as a gradient.
     expect(moving.match(/linear-gradient/g)).toHaveLength(1);
-    expect(moving).toMatch(/no-repeat var\(--ink\);/);
-    expect(moving).toMatch(/var\(--robin\) 50%/);
+    expect(moving).toMatch(/var\(--robin\) \d+%/);
+    // Transparent at both ends of the tile, so tiles meet in ink, and the keyframe moves exactly one tile.
+    const stops = [...moving.matchAll(/(transparent|var\(--[a-z-]+\)) (\d+)%/g)];
+    expect(stops[0]?.[1]).toBe("transparent");
+    expect(stops.at(-1)?.[1]).toBe("transparent");
+    expect(Number(stops.at(-1)?.[2])).toBeLessThan(100);
+    const tile = /0 0 \/ ([\d.]+em) 100% repeat-x var\(--ink\);/.exec(moving)?.[1];
+    expect(tile).toBeTruthy();
+    expect(between(css, /@keyframes sweep \{/, "\n}\n")).toMatch(
+      new RegExp(`to \\{\\s*background-position: ${tile?.replace(".", "\\.")} 0;\\s*\\}`),
+    );
     expect(css).not.toMatch(/text-shadow/);
   });
 
@@ -1208,9 +1217,9 @@ describe("the doc pages: one .legal layout (design.md section 6, Legal pages)", 
 describe("landing motion and spacing (design.md sections 6 and 8)", () => {
   const css = read("public/css/site.css");
 
-  it("the sheen cycles every 2.2 s, its 1 s sweep the first 45 percent", () => {
-    expect(css).toMatch(/animation: sheen 2\.2s linear 0\.3s infinite backwards;/);
-    // One keyframe for the word and the app's loader: base.css, which every page loads.
+  it("the word's sheen sweeps every 3 s with no rest on its own keyframe; the loader keeps sheen's 2.2 s and rest", () => {
+    expect(css).toMatch(/animation: sweep 3s linear 0\.3s infinite backwards;/);
+    expect(css).not.toMatch(/animation: sheen/);
     expect(between(read("public/css/base.css"), /@keyframes sheen \{/, "\n}\n")).toMatch(/\n {2}45%,\n {2}100% \{/);
   });
 
