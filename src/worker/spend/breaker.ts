@@ -4,11 +4,19 @@
 // Workers module, so the unit tests run it as is.
 import type { Db } from "../auth/db.ts";
 import { type AnalyticsResult, type Readings, readingsOf } from "./analytics.ts";
-import { COSTLY_FLIPS, guestDropLines, type MeterName, PRICED, resolveTrips, type Trips } from "./caps.ts";
+import {
+  COSTLY_FLIPS,
+  capOverridesOf,
+  guestDropLines,
+  type MeterName,
+  PRICED,
+  resolveTrips,
+  type Trips,
+} from "./caps.ts";
 import type { SpendRpc } from "./client.ts";
 import type { Snapshot } from "./meters.ts";
 import { buildReport, digestText, isMonday, REPORT_DAYS, type SpendReport, weekKey } from "./report.ts";
-import { effectiveSwitch, restrictiveness, SWITCHES, type SwitchName } from "./switches.ts";
+import { effectiveSwitch, restrictiveness, type SettingsSnapshot, SWITCHES, type SwitchName } from "./switches.ts";
 
 export const BREAKER_ACTOR = "breaker";
 /** Stored as a trip's prior when the row could not be read at latch; no switch has this value. */
@@ -75,6 +83,14 @@ export function d1SwitchStore(db: Db, now: () => number): SwitchStore {
         .bind(at, actor, name, `${name}=${value}: ${reason}`)
         .run();
     },
+  };
+}
+
+/** One read of the whole `setting` table, until F's settings reader (one query, one cache) replaces this. */
+export function d1Settings(db: Db): () => Promise<SettingsSnapshot> {
+  return async () => {
+    const { results } = await db.prepare("SELECT key, value FROM setting").all<{ key: string; value: string }>();
+    return Object.fromEntries(results.map((r) => [r.key, r.value]));
   };
 }
 
@@ -201,6 +217,8 @@ export interface BreakerDeps {
   guard: SpendRpc;
   store: SwitchStore;
   notify: Notify;
+  /** The settings snapshot: its `cap.<name>` rows are pushed to the guard each run, where they can only lower a cap. */
+  settings?: () => Promise<SettingsSnapshot>;
   vars: Readonly<Record<string, unknown>>;
   now: () => number;
   /** Where the digest and the report point: `<origin>/admin`. */
@@ -287,6 +305,15 @@ export async function runBreaker(d: BreakerDeps): Promise<BreakerReport> {
       });
   }
   const readings = analytics ? readingsOf(analytics, now) : undefined;
+  // A failed read leaves the overrides the guard already holds: they only lower caps, so stale is safe.
+  if (d.settings) {
+    const rows = await d.settings().catch((e) => {
+      logError("read settings", e);
+      return undefined;
+    });
+    if (rows)
+      await d.guard.setOverrides(capOverridesOf(rows) as Record<string, number>).catch((e) => logError("push caps", e));
+  }
 
   const [snap, history] = await Promise.all([d.guard.snapshot(), d.guard.history(REPORT_DAYS), d.guard.prune()]);
   const report = buildReport({

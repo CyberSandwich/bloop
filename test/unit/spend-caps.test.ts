@@ -3,6 +3,7 @@ import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
 import {
   CAPS,
+  capOverridesOf,
   guestDropLines,
   isMeter,
   isPool,
@@ -44,10 +45,12 @@ describe("caps: every number pinned", () => {
       guest_drop_ip_day: 20,
       email_hour: 60,
       email_day: 180,
-      email_recipient_day: 10,
       email_code_ip_day: 20,
       export_user_day: 3,
       demo_session_day: 2000,
+      isolate_open_email_day: 20,
+      isolate_open_email_code_ip_day: 10,
+      isolate_open_demo_session_day: 200,
     });
   });
 
@@ -143,24 +146,22 @@ describe("the $10 month split: each meter's daily floor", () => {
   it("pins each floor: share times $10 over 30 days, divided by the unit price", () => {
     const lines = resolveLines({}, t);
     expect(Object.fromEntries(PRICED_METERS.map((m) => [m, lines[m].floor]))).toEqual({
-      container_seconds: 3724,
+      container_seconds: 4190,
       r2_class_a: 11_111,
       r2_class_b: 46_296,
       d1_writes: 33_333,
-      workflow_steps: 2083,
       email: 95,
     });
   });
 
-  it("each floor costs its share of a day: $0.133 containers, $0.05 R2 A, $0.017 R2 B, $0.033 D1, $0.017 steps, $0.033 email", () => {
+  it("each floor costs its share of a day: $0.15 containers, $0.05 R2 A, $0.017 R2 B, $0.033 D1, $0.033 email", () => {
     const lines = resolveLines({}, t);
     const usd = Object.fromEntries(PRICED_METERS.map((m) => [m, (lines[m].floor * PRICED[m].unitUsd).toFixed(3)]));
     expect(usd).toEqual({
-      container_seconds: "0.133",
+      container_seconds: "0.150",
       r2_class_a: "0.050",
       r2_class_b: "0.017",
       d1_writes: "0.033",
-      workflow_steps: "0.017",
       email: "0.033",
     });
   });
@@ -191,6 +192,28 @@ describe("the $10 month split: each meter's daily floor", () => {
 
   it("a ceiling below the floor is raised to the floor, so the line can never sit under it", () => {
     expect(resolveLines({ BREAKER_CEILING_EMAIL: "10" }, t).email).toEqual({ floor: 95, ceiling: 95 });
+  });
+});
+
+describe("cap rows of a settings snapshot", () => {
+  it("only known caps with finite values of at least 0 become overrides", () => {
+    expect(
+      capOverridesOf({
+        "cap.email_day": "50",
+        "cap.export_user_day": "0",
+        "cap.demo_session_day": "-1",
+        "cap.pool_convert": "abc",
+        "cap.nope": "1",
+        "cap.k": "2",
+        convert: "off",
+        email_day: "7",
+      }),
+    ).toEqual({ email_day: 50, export_user_day: 0 });
+  });
+
+  it("an override lowers a cap and never raises it", () => {
+    expect(resolveCaps({}, capOverridesOf({ "cap.email_day": "5000" })).email_day).toBe(180);
+    expect(resolveCaps({}, capOverridesOf({ "cap.email_day": "40" })).email_day).toBe(40);
   });
 });
 

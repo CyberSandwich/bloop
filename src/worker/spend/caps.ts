@@ -2,7 +2,7 @@
 // it at deploy time, and the reason for the number. docs/spend.md lists them; test/unit/spend-caps.test.ts pins each.
 // None of these vars is in config.ts or wrangler.jsonc: the default below is the value until a deploy sets the var.
 
-import type { SwitchName } from "./switches.ts";
+import type { SettingsSnapshot, SwitchName } from "./switches.ts";
 
 export type Period = "hour" | "day" | "month";
 
@@ -91,10 +91,25 @@ export const CAPS = {
     reason:
       "sends per day account-wide; platform quota 200/day until raised; raise this cap only after Cloudflare raises the quota",
   },
-  email_recipient_day: { var: "CAP_EMAIL_RECIPIENT_DAY", default: 10, reason: "sends per recipient per day" },
   email_code_ip_day: { var: "CAP_EMAIL_CODE_IP_DAY", default: 20, reason: "sign-in code requests per IP hash per day" },
   export_user_day: { var: "CAP_EXPORT_USER_DAY", default: 3, reason: "exports per account per day" },
   demo_session_day: { var: "CAP_DEMO_SESSION_DAY", default: 2000, reason: "demo sessions per day, all visitors" },
+  isolate_open_email_day: {
+    var: "CAP_ISOLATE_OPEN_EMAIL_DAY",
+    default: 20,
+    reason: "sends per day one Worker isolate allows while the guard is unreachable (email fails open, bounded here)",
+  },
+  isolate_open_email_code_ip_day: {
+    var: "CAP_ISOLATE_OPEN_EMAIL_CODE_IP_DAY",
+    default: 10,
+    reason: "code requests per IP hash per day one isolate allows while the guard is unreachable",
+  },
+  isolate_open_demo_session_day: {
+    var: "CAP_ISOLATE_OPEN_DEMO_SESSION_DAY",
+    default: 200,
+    reason:
+      "demo sessions per day one isolate allows while the guard is unreachable (the demo fails open, bounded here)",
+  },
 } as const satisfies Record<string, NumberSpec>;
 
 /** Breaker lines. Raising one needs a deploy; there is no row for them. */
@@ -270,6 +285,17 @@ export function resolveCaps(vars: Vars, overrides: Readonly<Partial<Record<CapNa
   return out;
 }
 
+/** The `cap.<name>` rows of a settings snapshot as numbers: only known caps, only finite values of at least 0. */
+export function capOverridesOf(settings: SettingsSnapshot): Partial<Record<CapName, number>> {
+  const out: Partial<Record<CapName, number>> = {};
+  for (const name of Object.keys(CAPS) as CapName[]) {
+    const raw = settings[`cap.${name}`];
+    const n = raw === undefined || raw === "" ? Number.NaN : Number(raw);
+    if (Number.isFinite(n) && n >= 0) out[name] = n;
+  }
+  return out;
+}
+
 export interface Limit {
   readonly period: Period;
   readonly cap: CapName;
@@ -300,12 +326,11 @@ export const METERS = {
   upload_user_bytes: { perScope: [day("upload_user_bytes_day")] },
   guest_drop: { perScope: [day("guest_drop_ip_day")] },
   email: { global: [{ period: "hour", cap: "email_hour" }, day("email_day")] },
-  email_recipient: { perScope: [day("email_recipient_day")] },
   email_code: { perScope: [day("email_code_ip_day")] },
   export_user: { perScope: [day("export_user_day")] },
   demo_session: { global: [day("demo_session_day")] },
+  // Read from analytics only: no caller records it, so without CF_ANALYTICS_TOKEN its line cannot trip.
   d1_writes: {},
-  workflow_steps: {},
 } as const satisfies Record<string, MeterDef>;
 
 export type MeterName = keyof typeof METERS;
@@ -369,7 +394,7 @@ export const PRICED = {
     label: "Containers",
     unit: "instance-seconds",
     unitUsd: 0.0000358,
-    share: { var: "BREAKER_SHARE_CONTAINERS", default: 40 },
+    share: { var: "BREAKER_SHARE_CONTAINERS", default: 45 },
     floorVar: "BREAKER_FLOOR_CONTAINERS",
     ceilingVar: "BREAKER_CEILING_CONTAINERS",
     flip: { switch: "convert", value: "off" },
@@ -400,15 +425,6 @@ export const PRICED = {
     floorVar: "BREAKER_FLOOR_D1",
     ceilingVar: "BREAKER_CEILING_D1",
     flip: { switch: "demo", value: "off" },
-  },
-  workflow_steps: {
-    label: "Workflow steps",
-    unit: "steps",
-    unitUsd: 0.000008,
-    share: { var: "BREAKER_SHARE_WORKFLOWS", default: 5 },
-    floorVar: "BREAKER_FLOOR_WORKFLOWS",
-    ceilingVar: "BREAKER_CEILING_WORKFLOWS",
-    flip: { switch: "convert", value: "off" },
   },
   email: {
     label: "Email",

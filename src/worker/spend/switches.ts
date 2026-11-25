@@ -19,7 +19,6 @@ const spec = <const V extends readonly string[]>(values: V, def: V[number], name
 });
 
 export const SWITCHES = {
-  launch_mode: spec(["open", "preview"], "preview", "launch_mode"),
   guest_files: spec(["on", "stopped"], "on", "guest_files"),
   guest_drop: spec(["open", "pass", "off"], "open", "guest_drop"),
   demo: spec(["on", "off"], "on", "demo"),
@@ -72,15 +71,22 @@ export const isStricter = (name: SwitchName, candidate: string, current: string)
 export const isAllowedValue = (name: string, value: string): boolean =>
   isSwitchName(name) && restrictiveness(name, value) >= 0;
 
-/** Reads every switch out of the Worker's vars and the loaded rows. */
+/**
+ * One read of the `setting` table, key to value: the shape F's settings reader hands every consumer (one query, one
+ * cache). Switch rows are keyed by switch name and cap overrides by `cap.<cap name>`; a key this module does not
+ * know is ignored. Everything below is a pure function of it.
+ */
+export type SettingsSnapshot = Readonly<Record<string, string>>;
+
+/** Every switch's value in force, from the Worker's vars and a settings snapshot. */
 export function effectiveAll(
   vars: Readonly<Record<string, unknown>>,
-  rows: Readonly<Record<string, string>>,
+  settings: SettingsSnapshot,
 ): Record<SwitchName, string> {
   const out = {} as Record<SwitchName, string>;
   for (const name of SWITCH_NAMES) {
     const v = vars[specOf(name).var];
-    out[name] = effectiveSwitch(name, typeof v === "string" ? v : undefined, rows[name]);
+    out[name] = effectiveSwitch(name, typeof v === "string" ? v : undefined, settings[name]);
   }
   return out;
 }

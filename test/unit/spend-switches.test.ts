@@ -12,20 +12,21 @@ import {
 } from "../../src/worker/spend/switches.ts";
 
 describe("switch registry", () => {
-  it("lists the fifteen switches, each default allowed, each var named SWITCH_<NAME> and unique", () => {
-    expect(SWITCH_NAMES).toHaveLength(15);
+  it("lists the fourteen spend switches (the launch mode is F's, not a spend switch), each var SWITCH_<NAME> and unique", () => {
+    expect(SWITCH_NAMES).toHaveLength(14);
+    expect(SWITCH_NAMES).not.toContain("launch_mode");
     const vars = SWITCH_NAMES.map((n) => SWITCHES[n].var);
-    expect(new Set(vars).size).toBe(15);
+    expect(new Set(vars).size).toBe(14);
+    expect(vars).not.toContain("SWITCH_LAUNCH_MODE");
     for (const n of SWITCH_NAMES) {
       expect(SWITCHES[n].var).toBe(`SWITCH_${n.toUpperCase()}`);
       expect(SWITCHES[n].values).toContain(SWITCHES[n].default);
     }
   });
 
-  it("pins every default: all least restrictive, except launch_mode (preview) and convert (account_only)", () => {
+  it("pins every default: all least restrictive, except convert (account_only)", () => {
     const defaults = Object.fromEntries(SWITCH_NAMES.map((n) => [n, SWITCHES[n].default]));
     expect(defaults).toEqual({
-      launch_mode: "preview",
       guest_files: "on",
       guest_drop: "open",
       demo: "on",
@@ -112,5 +113,19 @@ describe("effective switch: the more restrictive of the var and the row", () => 
     expect(all.convert).toBe("off");
     expect(all.demo).toBe("on");
     expect(Object.keys(all).sort()).toEqual([...SWITCH_NAMES].sort());
+  });
+
+  it("effectiveAll is a pure merge over one settings snapshot: cap rows and unknown keys such as launch_mode are ignored", () => {
+    const snapshot = { convert: "off", "cap.email_day": "5", launch_mode: "open", nope: "x" };
+    const before = JSON.stringify(snapshot);
+    const all = effectiveAll({ SWITCH_LAUNCH_MODE: "open" }, snapshot);
+    expect(all).not.toHaveProperty("launch_mode");
+    expect(all.convert).toBe("off");
+    expect(JSON.stringify(snapshot)).toBe(before);
+    expect(effectiveAll({}, snapshot)).toEqual(all);
+  });
+
+  it("a snapshot holding the most restrictive value for a key (F's stale rule) stops that feature", () => {
+    expect(effectiveAll({}, { email: mostRestrictiveValue("email") }).email).toBe("off");
   });
 });

@@ -71,20 +71,16 @@ describe("COST-14 COST-16 daily trip lines: the $10 month split", () => {
   });
 
   it("each priced meter trips its own switch at its floor", () => {
-    const at = (
-      meter: "container_seconds" | "r2_class_a" | "r2_class_b" | "d1_writes" | "workflow_steps",
-      n: number,
-    ) => {
+    const at = (meter: "container_seconds" | "r2_class_a" | "r2_class_b" | "d1_writes", n: number) => {
       const s = setup();
       s.g.ledger.record(meter, n, undefined, T0);
       return flipsOf(s.find());
     };
-    expect(at("container_seconds", 3724)).toEqual(["convert=off"]);
+    expect(at("container_seconds", 4190)).toEqual(["convert=off"]);
     expect(at("r2_class_a", 11_111)).toEqual(["uploads=readonly"]);
     expect(at("r2_class_b", 46_296)).toEqual(["previews=off"]);
     expect(at("d1_writes", 33_333)).toEqual(["demo=off"]);
-    expect(at("workflow_steps", 2083)).toEqual(["convert=off"]);
-    expect(at("container_seconds", 3723)).toEqual([]);
+    expect(at("container_seconds", 4189)).toEqual([]);
   });
 
   it("the line adapts to the history: 14 days at 50 sends put it at 150, so 100 only warns and 150 trips", () => {
@@ -279,8 +275,7 @@ describe("runBreaker: flip, latch, alert once", () => {
 
   it("COST-02 a trip changes what is in force: from the default rows, every convert trip writes convert=off", async () => {
     const cases: [string, (s: ReturnType<typeof setup>) => void][] = [
-      ["containers line", (s) => s.g.ledger.record("container_seconds", 3724, undefined, T0)],
-      ["workflow steps line", (s) => s.g.ledger.record("workflow_steps", 2083, undefined, T0)],
+      ["containers line", (s) => s.g.ledger.record("container_seconds", 4190, undefined, T0)],
       [
         "failed conversions",
         (s) => {
@@ -306,7 +301,7 @@ describe("runBreaker: flip, latch, alert once", () => {
 
   it("a second rule on the same switch and value is not a new trip or a new alert", async () => {
     const s = setup();
-    s.g.ledger.record("container_seconds", 3724, undefined, T0);
+    s.g.ledger.record("container_seconds", 4190, undefined, T0);
     await s.run();
     s.g.ledger.acquire("convert", "u", 60, s.g.rig.caps, T0);
     s.g.clock.now = T0 + 400_000;
@@ -318,7 +313,7 @@ describe("runBreaker: flip, latch, alert once", () => {
   it("a trip never loosens a row the owner or the var already made stricter", async () => {
     const s = setup();
     s.store.rows.set("convert", "off");
-    s.g.ledger.record("container_seconds", 3724, undefined, T0);
+    s.g.ledger.record("container_seconds", 4190, undefined, T0);
     await s.run();
     expect(s.store.rows.get("convert")).toBe("off");
     expect(s.store.writes).toHaveLength(0);
