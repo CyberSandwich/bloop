@@ -9,8 +9,9 @@ import { refusal } from "./channel.js";
 export const RESULTS = ["ended", "canceled"];
 
 /**
- * The pid first: a view that is over drops the pid it was read with.
- * @param {{pid: string | null, view: PhoneView | null, skew: number}} c
+ * The pid first: a view that is over drops the pid it was read with. An owner whose first byte made it a guest
+ * loses its OneDrive list: a guest's list is only its Add a File row.
+ * @param {{pid: string | null, view: PhoneView | null, skew: number, info: PhoneCtx["info"], files: PhoneCtx["files"], selected: string[]}} c
  * @param {PhoneView} view
  * @param {(pid: string | null) => void} drop
  */
@@ -18,6 +19,11 @@ export function adopt(c, view, drop, pid = c.pid) {
   c.pid = pid;
   c.view = view;
   c.skew = view.now - Date.now();
+  if (view.kind === "guest" && c.info && c.info.kind !== "guest") {
+    c.info = { ...c.info, kind: "guest" };
+    c.files = [];
+    c.selected = [];
+  }
   if (PAIRING_OVER.includes(view.state)) drop(pid);
 }
 

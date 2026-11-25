@@ -737,6 +737,38 @@ test.describe("guest drop", () => {
     await phone.context.close();
   });
 
+  test("after Sent, the browser's Back leaves the page at once: the offer's history entry went with it", async ({
+    browser,
+  }) => {
+    const screen = await demoScreen(browser);
+    const code = await typedCodeOf(screen.page);
+    const context = await browser.newContext({ viewport: PHONE });
+    const page = await context.newPage();
+    await page.goto("/");
+    await page.goto(`/a?c=${code}`);
+    await expect(page.locator("#file-list")).toBeVisible();
+    await addFile(page, DECK);
+    await page.getByRole("button", { name: "Send" }).click();
+    await expect(heading(page)).toHaveText("Sent to Demo Room");
+    await page.goBack();
+    await expect(page).toHaveURL("/");
+    await context.close();
+    await screen.context.close();
+  });
+
+  test("a photo module that fails to load is a refusal toast, and the list comes back", async ({ browser }) => {
+    const screen = await demoScreen(browser);
+    const { phone } = await scan(browser, screen.page);
+    await phone.page.route("**/js/core/photo.js", (route) => route.abort());
+    await addFile(phone.page, { name: "a.png", mimeType: "image/png", buffer: Buffer.from("x") });
+    await phone.page.getByRole("button", { name: "Send" }).click();
+    await expect(phone.page.getByRole("alert")).toContainText("This Photo Can't Be Sent");
+    await expect(heading(phone.page)).toHaveText("Demo Room");
+    await expect(phone.page.getByRole("button", { name: "Add a File" })).toBeVisible();
+    await screen.context.close();
+    await phone.context.close();
+  });
+
   /** The script modules this page has fetched so far, by path. */
   const modules = (page: Page) =>
     page.evaluate(() =>
