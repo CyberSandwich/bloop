@@ -9,7 +9,7 @@ import {
   resetBreaker,
   runBreaker,
 } from "../../src/worker/spend/breaker.ts";
-import { COSTLY_FLIPS, PRICED, PRICED_METERS, resolveTrips } from "../../src/worker/spend/caps.ts";
+import { COSTLY_FLIPS, PRICED, PRICED_METERS, resolveCaps, resolveTrips } from "../../src/worker/spend/caps.ts";
 import { buildReport, REPORT_DAYS, type SpendReport } from "../../src/worker/spend/report.ts";
 import { effectiveSwitch, isStricter, SWITCHES } from "../../src/worker/spend/switches.ts";
 import { DAY, fakeGuard, memoryStore, T0 } from "./spend-helpers.ts";
@@ -45,8 +45,8 @@ function setup(vars: Record<string, unknown> = {}, analytics?: BreakerDeps["anal
       sources: "test",
     });
   const find = (readings?: Readings, analyticsResult?: AnalyticsResult) =>
-    evaluate(snap(), readings, resolveTrips(vars), report(analyticsResult));
-  return { g, store, sent, alerts, digests, deps, find, run: () => runBreaker(deps) };
+    evaluate(snap(), readings, resolveTrips(vars), report(analyticsResult), { vars });
+  return { g, store, sent, alerts, digests, deps, find, snap, report, run: () => runBreaker(deps) };
 }
 
 type Found = ReturnType<ReturnType<typeof setup>["find"]>;
@@ -250,6 +250,20 @@ describe("rules that stay count-based", () => {
     s.g.clock.now += 10_000 + 300_000;
     await s.run();
     expect(s.g.ledger.trips()).toMatchObject([{ switch: "convert", reason: "leases_overdue" }]);
+  });
+
+  it("COST-02 lowering a pool with leases still running is no leak: the line is the pools as the vars set them", () => {
+    const s = setup();
+    for (let i = 0; i < 3; i++) s.g.ledger.acquire("convert", "u", 600, s.g.rig.caps, T0);
+    s.g.ledger.acquire("convert_public", undefined, 600, s.g.rig.caps, T0);
+    // A cap.pool_convert row of 1 reaches the snapshot's caps, with 2 more live than it now allows.
+    const lowered = { ...s.snap(), caps: resolveCaps({}, { pool_convert: 1 }) };
+    expect(evaluate(lowered, undefined, resolveTrips({}), s.report(), { vars: {} })).toEqual([]);
+    // Past the vars' own pools it still trips.
+    s.g.ledger.acquire("convert", "u", 600, resolveCaps({ CAP_POOL_CONVERT: "9" }), T0);
+    expect(rules(evaluate(s.snap(), undefined, resolveTrips({}), s.report(), { vars: {} }))).toEqual([
+      "trip:leases_live",
+    ]);
   });
 
   it("COST-02 the live-lease line follows the pool caps, so raising a pool does not trip it", () => {
@@ -476,6 +490,27 @@ describe("runBreaker: flip, latch, alert once", () => {
     s.deps.publicGuard = open.guard;
     s.g.ledger.record("container_seconds", 4190, undefined, T0);
     await expect(s.run()).resolves.toMatchObject({ tripped: ["convert"] });
+  });
+
+  it("COST-16 an unreadable public instance is said so, once, and its meters are skipped, not read as zero", async () => {
+    const s = setup();
+    const open = fakeGuard();
+    open.guard.snapshot = async () => {
+      throw new Error("public guard down");
+    };
+    s.deps.publicGuard = open.guard;
+    // Counted on the global instance by mistake, a number that would trip email at once if it were evaluated.
+    s.g.ledger.record("email", 95, undefined, T0);
+    s.g.ledger.record("demo_session", 2000, undefined, T0);
+    await s.run();
+    await s.run();
+    expect(s.g.ledger.trips()).toEqual([]);
+    const down = s.alerts().filter((a) => a.rule === "public_guard_unreadable");
+    expect(down).toHaveLength(1);
+    expect(down[0]).toMatchObject({ kind: "analytics_down" });
+    expect(down[0]?.sources).toContain("public guard unreadable");
+    const stored = JSON.parse((await s.deps.guard.report()) ?? "null") as SpendReport;
+    expect(stored.sources).toContain("public guard unreadable");
   });
 
   it("breaker=alert_only: no latch and no row write, a would_trip alert once a day", async () => {

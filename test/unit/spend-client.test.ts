@@ -349,6 +349,42 @@ describe("a cap row lowers the client's own caps like the guard's", () => {
 });
 
 describe("charge keeps the reserve honest", () => {
+  const block10 = resolveCaps({ CAP_R2_BLOCK_OPS: "10" });
+
+  it("COST-07 concurrent charges in one isolate never spend more than the guard counted", async () => {
+    const g = fakeGuard({ CAP_R2_CLASS_A_MONTH: "15", CAP_R2_BLOCK_OPS: "10" });
+    const c = client(
+      () => g.guard,
+      undefined,
+      undefined,
+      undefined,
+      () => block10,
+    );
+    expect((await c.charge("A", 5)).ok).toBe(true);
+    // 5 are left in the reserve. One charge needs them and more; another spends exactly them, at the same time.
+    const sizes = [10, 5];
+    const results = await Promise.all(sizes.map((n) => c.charge("A", n)));
+    const spent = 5 + sizes.reduce((sum, n, i) => sum + (results[i]?.ok ? n : 0), 0);
+    const counted = (await g.guard.snapshot()).counters.r2_class_a.month;
+    expect(spent).toBeLessThanOrEqual(counted);
+    expect(counted).toBeLessThanOrEqual(15);
+  });
+
+  it("COST-07 many concurrent charges: what was spent is covered by what the guard counted", async () => {
+    const g = fakeGuard({ CAP_R2_BLOCK_OPS: "10" });
+    const c = client(
+      () => g.guard,
+      undefined,
+      undefined,
+      undefined,
+      () => block10,
+    );
+    const sizes = Array.from({ length: 40 }, (_, i) => (i % 9) + 1);
+    const results = await Promise.all(sizes.map((n) => c.charge("A", n)));
+    const spent = sizes.reduce((sum, n, i) => sum + (results[i]?.ok ? n : 0), 0);
+    expect(spent).toBeLessThanOrEqual((await g.guard.snapshot()).counters.r2_class_a.month);
+  });
+
   it("a charge the guard refuses, or cannot answer, leaves the reserve for the next charge", async () => {
     const g = fakeGuard({ CAP_R2_CLASS_A_MONTH: "150" });
     let takes = 0;

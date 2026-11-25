@@ -10,6 +10,7 @@ import {
   guestDropLines,
   type MeterName,
   PRICED,
+  resolveCaps,
   resolveTrips,
   type Trips,
 } from "./caps.ts";
@@ -125,8 +126,21 @@ const CAPPED: Capped[] = [
 
 const pct = (used: number, of: number) => (of > 0 ? (used / of) * 100 : 0);
 
+export interface EvalContext {
+  vars: Readonly<Record<string, unknown>>;
+  /** Meters whose counters could not be read this run: their rules are skipped, never evaluated as zero. */
+  unread?: readonly MeterName[];
+}
+
 /** The pure decision: which warnings and trips this reading calls for. */
-export function evaluate(snap: Snapshot, readings: Readings | undefined, t: Trips, report: SpendReport): Finding[] {
+export function evaluate(
+  snap: Snapshot,
+  readings: Readings | undefined,
+  t: Trips,
+  report: SpendReport,
+  ctx: EvalContext,
+): Finding[] {
+  const unread = ctx.unread ?? [];
   const out: Finding[] = [];
   const warn = (rule: string, reason: string, r: Record<string, number>) =>
     out.push({ rule, level: "warn", reason, readings: r });
@@ -135,6 +149,7 @@ export function evaluate(snap: Snapshot, readings: Readings | undefined, t: Trip
   const day = (m: MeterName) => snap.counters[m].day;
 
   for (const row of report.meters) {
+    if (unread.includes(row.meter as MeterName)) continue;
     const r = { today: Math.round(row.today), line: Number.isFinite(row.tripLine) ? Math.round(row.tripLine) : -1 };
     // A line that is zero or not a number is a broken configuration, not a free pass: it trips at once.
     const broken = !Number.isFinite(row.tripLine) || row.tripLine <= 0;
@@ -154,6 +169,7 @@ export function evaluate(snap: Snapshot, readings: Readings | undefined, t: Trip
     if (g.value >= g.warnAt) warn(`${g.name}_warn`, "R2 bytes stored", { value: g.value, line: g.warnAt });
 
   for (const c of CAPPED) {
+    if (unread.includes(c.meter)) continue;
     const used = day(c.meter);
     const cap = snap.caps[c.cap];
     const p = pct(used, cap);
@@ -183,7 +199,9 @@ export function evaluate(snap: Snapshot, readings: Readings | undefined, t: Trip
     });
 
   const live = snap.pools.convert.live + snap.pools.convert_public.live;
-  const liveMax = snap.caps.pool_convert + snap.caps.pool_convert_public;
+  // The pools as the vars set them, not as a row lowered them: a lowered pool with leases still running is no leak.
+  const poolCaps = resolveCaps(ctx.vars);
+  const liveMax = poolCaps.pool_convert + poolCaps.pool_convert_public;
   if (live > liveMax)
     trip("leases_live", [{ switch: "convert", value: "off" }], "more live conversion leases than the pools allow", {
       live,
@@ -341,6 +359,17 @@ export async function runBreaker(d: BreakerDeps): Promise<BreakerReport> {
       : undefined,
   ]);
   const { snap, history } = mergePublic(global, open);
+  // An unreadable public instance leaves its meters unevaluated, and the report, the digest and one alert say so.
+  const unread = d.publicGuard && !open ? PUBLIC_METERS : [];
+  if (unread.length) {
+    sources += `; public guard unreadable (${unread.join(", ")} not evaluated)`;
+    await announce("public_guard_unreadable", {
+      kind: "analytics_down",
+      rule: "public_guard_unreadable",
+      readings: {},
+      sources,
+    });
+  }
   const report = buildReport({
     now,
     vars: d.vars,
@@ -353,7 +382,7 @@ export async function runBreaker(d: BreakerDeps): Promise<BreakerReport> {
   await d.guard.setReport(JSON.stringify(report)).catch((e) => logError("store report", e));
 
   const auto = await automatic(d);
-  const findings = evaluate(snap, readings, trips, report);
+  const findings = evaluate(snap, readings, trips, report, { vars: d.vars, unread });
 
   for (const f of findings) {
     if (f.level === "trip" && f.flips && auto) {

@@ -97,7 +97,7 @@ const ticketId = (): string =>
 
 /**
  * What routes and Durable Objects receive in their deps instead of a global: unit tests of U, V2 and A pass a fake
- * and never start the guard. `spendFor(env)` builds the real one at the composition root only.
+ * and never start the guard. `spendFor(env, overrides)` builds the real one at the composition root only.
  */
 export interface Spend {
   /** Adds to a capped meter, or refuses. A scoped meter needs a scope; `n` is a positive integer. */
@@ -239,7 +239,8 @@ export class SpendClient implements Spend {
    * Spends from this isolate's reserve; when it runs short, reserves whole blocks from the guard (`r2_block_ops`)
    * and keeps the leftover, never returning it, so the guard's count only errs high. Near the cap, where a whole
    * block no longer fits, it takes exactly what is short, so the cap still refuses at the exact operation. The
-   * reserve is touched only once the guard has answered: a refused or lost charge leaves it for the next one.
+   * reserve is held while the guard answers and given back if the charge is refused or lost, so the next one can
+   * still spend it.
    */
   async charge(cls: "A" | "B", n: number): Promise<TakeResult | Unavailable> {
     positiveInt(n, "n");
@@ -252,6 +253,9 @@ export class SpendClient implements Spend {
     const meter = cls === "A" ? "r2_class_a" : "r2_class_b";
     const block = Math.max(1, Math.floor(this.caps().r2_block_ops));
     const whole = Math.ceil(short / block) * block;
+    // The reserve on hand is held while the guard answers, so a concurrent charge cannot spend it a second time
+    // (the count would err low); a refused or lost charge gives it back.
+    this.reserves.drain(cls, have);
     try {
       const guard = this.stubs.global();
       let result = await guard.take(meter, whole);
@@ -260,12 +264,10 @@ export class SpendClient implements Spend {
         result = await guard.take(meter, short);
         got = short;
       }
-      if (result.ok) {
-        this.reserves.drain(cls, have);
-        this.reserves.add(cls, got - short);
-      }
+      this.reserves.add(cls, result.ok ? got - short : have);
       return result;
     } catch (e) {
+      this.reserves.add(cls, have);
       this.fail("charge", e);
       return unavailable;
     }

@@ -159,7 +159,7 @@ Email bounces come from the GraphQL dataset `emailSendingAdaptive` (`deliveryFai
 | demo conversions or demo sessions reach their daily cap | `BREAKER_TRIP_PCT` percent of the cap | `demo_drop=off`, `demo=off` |
 | R2 class A or B in a month | `BREAKER_MONTH_WARN_PCT` percent of the cap | warning |
 | guest drops in a day | two lines below | `demo_drop=off`, then `guest_files=stopped` |
-| live conversion leases | more than the two conversion pools allow together (`CAP_POOL_CONVERT` plus `CAP_POOL_CONVERT_PUBLIC`, as lowered by any row) | `convert=off` |
+| live conversion leases | more than the two conversion pools allow together (`CAP_POOL_CONVERT` plus `CAP_POOL_CONVERT_PUBLIC` as the vars set them: lowering a pool with a row never reads as a leak) | `convert=off` |
 | a lease dropped past its deadline plus grace | any | `convert=off` |
 | failed conversions | more than `BREAKER_CONVERT_FAILED_PCT` percent of at least `BREAKER_CONVERT_FAILED_MIN` | `convert=off` |
 | Workers and Durable Object usage (analytics) | lines below | warning only |
@@ -293,7 +293,7 @@ Rules for the Cloudflare side:
 
 - Guard unreachable or erroring: costly work is refused with 503 (section 4). A refusal never writes.
 - D1 unreachable: the settings lookup keeps its last cached value, or the var. The breaker logs the failed write, sends the trip alert marked not applied, and retries next run; the latch holds.
-- The `public` instance unreachable: the three public meters fail open per isolate, and the breaker runs on `global` alone, so those three read zero until it is back.
+- The `public` instance unreachable: the three public meters fail open per isolate, and the breaker skips the rules of those three meters rather than reading them as zero, marks the report and the digest "public guard unreadable", and sends one alert a day saying so.
 - Analytics unreachable: counters still trip; one alert after 3 runs.
 - A Workers or Durable Object spend block stops crons account-wide (the breaker and the probe) and makes the guard unreachable. Cloudflare's $2 and $5 alert emails are then the only signal. The Converter reads `convert` from F's D1 settings before it starts, so a tripped `convert` holds without the guard.
 - Counters are exact for what the Worker does. Presigned R2 PUTs and floods that never reach a meter are seen only through analytics and the platform spend limits, which stay on.
