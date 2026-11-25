@@ -597,15 +597,15 @@ test.describe("guest drop", () => {
     await expect(phone.page.getByRole("alert")).toContainText("This File Type Isn't Supported");
     await expect(heading(phone.page)).toHaveText("Demo Room");
     await expectNoAxeViolations(phone.page);
-    // over this server's demo cap (10 MB here), which the toast reads from the claim
-    await addFile(phone.page, { name: "big.pdf", mimeType: "application/pdf", buffer: Buffer.alloc(11 * 1024 * 1024) });
-    await expect(phone.page.getByRole("alert")).toContainText("The demo takes files up to 10 MB.");
+    // over this server's demo cap (wrangler.jsonc, 25 MB), which the toast reads from the claim
+    await addFile(phone.page, { name: "big.pdf", mimeType: "application/pdf", buffer: Buffer.alloc(26 * 1024 * 1024) });
+    await expect(phone.page.getByRole("alert")).toContainText("The demo takes files up to 25 MB.");
     await expect(heading(phone.page)).toHaveText("Demo Room");
     // a video over the cap is told as recording time (about 1 MB a second), with the cap itself
-    await addFile(phone.page, { name: "clip.mp4", mimeType: "video/mp4", buffer: Buffer.alloc(11 * 1024 * 1024) });
+    await addFile(phone.page, { name: "clip.mp4", mimeType: "video/mp4", buffer: Buffer.alloc(26 * 1024 * 1024) });
     await expect(phone.page.getByRole("alert")).toContainText("Video Too Long");
     await expect(phone.page.getByRole("alert")).toContainText(
-      "The demo takes videos up to about 10\u00a0seconds (10 MB).",
+      "The demo takes videos up to about 20\u00a0seconds (25 MB).",
     );
     // a HEIC this browser cannot decode is never sent: its offer goes, and the toast asks for a JPEG
     await addFile(phone.page, { name: "IMG_1.HEIC", mimeType: "image/heic", buffer: Buffer.from("x") });
