@@ -119,9 +119,9 @@ export interface PhoneView {
   v: number; // as in ScreenView
   now: number;
 }
-/** `POST /api/session/length`: the session ends `minutes` from now, never past approval plus the mode's cap. */
+/** `POST /api/session/length`: the session ends `seconds` from now, never past approval plus the mode's cap. */
 export interface LengthRequest {
-  minutes: number;
+  seconds: number;
 }
 
 /** One mint fills one field: the link for the purpose asked, the others stay null. */

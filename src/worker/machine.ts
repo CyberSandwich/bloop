@@ -103,7 +103,7 @@ export type Event =
   | { e: "launched"; now: number; mode: OpenMode }
   | { e: "fetched"; now: number }
   | { e: "control"; now: number; from: Sender; seq: number; shown: Shown } // the phone's remote, or the screen's own tap
-  | { e: "length"; now: number; minutes: number; maxMinutes: number } // the phone sets the end; maxMinutes: the mode's cap
+  | { e: "length"; now: number; seconds: number; maxMinutes: number } // the phone sets the end; maxMinutes: the mode's cap
   | { e: "fallback"; now: number; mode: OpenMode; item: number | null; maxMints: number } // null: the launched item; maxMints: per item, after its first link
   | { e: "cancel"; now: number }
   | { e: "restart"; now: number }
@@ -480,7 +480,7 @@ function apply(m: Machine, ev: Event, cfg: MachineConfig): Step {
       if (session.endsAt != null && now >= session.endsAt) return endSession(m, now, cfg, "auto", "system");
       // Absolute, never a delta: a replay sets about the same end again instead of adding to it. Never past approval
       // plus the cap, so no run of changes keeps a session alive longer than the cap.
-      const endsAt = Math.min(now + ev.minutes * MINUTE, session.approvedAt + ev.maxMinutes * MINUTE);
+      const endsAt = Math.min(now + ev.seconds * 1000, session.approvedAt + ev.maxMinutes * MINUTE);
       if (endsAt === session.endsAt) return ok(m);
       const effects: Effect[] = [{ fx: "push", to: "both" }];
       // Measured from the end last audited (the approved end until then), so a run of small moves cannot stay unlogged.

@@ -42,14 +42,14 @@ describe("config", () => {
   });
 
   it("SESS-01 config: both caps hold the shortest length the phone may set, and the default sits between it and the cap", () => {
-    expect(problems({ ...PROD, SESSION_MAX_MINUTES: "4", DEMO_MAX_MINUTES: "4" }).join()).toContain(
+    expect(problems({ ...PROD, SESSION_MAX_MINUTES: "0.5", DEMO_MAX_MINUTES: "0.5" }).join()).toContain(
       "SESSION_MAX_MINUTES",
     );
-    expect(problems({ ...PROD, DEMO_MAX_MINUTES: "3" }).join()).toContain("DEMO_MAX_MINUTES");
-    expect(problems({ ...PROD, SESSION_DEFAULT_MINUTES: "4" }).join()).toContain("SESSION_DEFAULT_MINUTES");
+    expect(problems({ ...PROD, DEMO_MAX_MINUTES: "0.5" }).join()).toContain("DEMO_MAX_MINUTES");
+    expect(problems({ ...PROD, SESSION_DEFAULT_MINUTES: "0.5" }).join()).toContain("SESSION_DEFAULT_MINUTES");
     expect(problems({ ...PROD, SESSION_DEFAULT_MINUTES: "91" }).join()).toContain("SESSION_DEFAULT_MINUTES");
     expect(
-      problems({ ...PROD, SESSION_MAX_MINUTES: "5", DEMO_MAX_MINUTES: "5", SESSION_DEFAULT_MINUTES: "5" }),
+      problems({ ...PROD, SESSION_MAX_MINUTES: "1", DEMO_MAX_MINUTES: "1", SESSION_DEFAULT_MINUTES: "1" }),
     ).toEqual([]);
   });
 

@@ -4,7 +4,7 @@
 // Order: config, CSRF checks and Zod (`write`, PAIR-06), the per-IP and then the per-credential rate limit, one Screen
 // object call.
 import { z } from "zod";
-import { MIN_LENGTH_MINUTES } from "../../../public/js/shared/length.js";
+import { MIN_LENGTH_SECONDS } from "../../../public/js/shared/length.js";
 import type { ShownCommand } from "../../shared/protocol.ts";
 import type { Config } from "../config.ts";
 import { json } from "../http.ts";
@@ -21,7 +21,15 @@ const commandBody = z
 
 /** Up to the live cap, the larger one: the Screen object clamps a demo session to its own. */
 const lengthBody = (config: Config) =>
-  z.object({ minutes: z.number().int().min(MIN_LENGTH_MINUTES).max(config.sessionMaxMinutes) }).strict();
+  z
+    .object({
+      seconds: z
+        .number()
+        .int()
+        .min(MIN_LENGTH_SECONDS)
+        .max(config.sessionMaxMinutes * 60),
+    })
+    .strict();
 
 type Call<B, T> = (stub: ReturnType<typeof screenStub>, credential: string, body: B) => Promise<Result<T>>;
 
@@ -58,5 +66,5 @@ const command = () => commandBody;
 export const controlRoutes: readonly Route[] = [
   control("/api/control", command, (stub, pid, c: ShownCommand) => stub.control(pid, c)),
   control("/api/screen/shown", command, (stub, sid, c: ShownCommand) => stub.reportShown(sid, c)),
-  control("/api/session/length", lengthBody, (stub, pid, { minutes }) => stub.setLength(pid, minutes)),
+  control("/api/session/length", lengthBody, (stub, pid, { seconds }) => stub.setLength(pid, seconds)),
 ];
