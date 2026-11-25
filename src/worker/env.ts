@@ -19,3 +19,16 @@ export interface Env {
   RL_CONTROL: RateLimit;
   PUBLIC_ORIGIN: string;
 }
+
+/** The platform rate-limit bindings of wrangler.jsonc (a test pins the list to it); `limited` refuses a route lacking one. */
+export const RATE_LIMIT_BINDINGS = [
+  ...["RL_CREATE", "RL_CLAIM", "RL_FETCH", "RL_UPLOAD", "RL_AUTH"],
+  ...["RL_EXPORT", "RL_DEMO_CREATE", "RL_DEMO_CLAIM", "RL_FILES", "RL_CONTROL"],
+] as const satisfies readonly (keyof Env)[];
+
+/** Every RateLimit binding of Env must be listed: an unlisted one makes this type non-empty and the line below fail. */
+type UnlistedRateLimit = Exclude<
+  { [K in keyof Env]: Env[K] extends RateLimit ? K : never }[keyof Env],
+  (typeof RATE_LIMIT_BINDINGS)[number]
+>;
+export const everyRateLimitListed: [UnlistedRateLimit] extends [never] ? true : UnlistedRateLimit = true;

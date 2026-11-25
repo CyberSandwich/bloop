@@ -1,14 +1,9 @@
-// A photo is re-encoded on the phone before it is sent: smaller on venue Wi-Fi, and a canvas writes no metadata, so
-// the GPS location and every other Exif, XMP or IPTC field are gone (VID-04's photo twin). The server checks all stay.
+// A photo is re-encoded before it is sent: a canvas writes no metadata, so Exif, XMP and IPTC are gone (VID-04).
 
 export const LONG_SIDE = 2560;
 const QUALITY = 0.82;
 
-/**
- * Whole pixels, the long side at most LONG_SIDE; a smaller image keeps its size.
- * @param {number} width
- * @param {number} height
- */
+/** Whole pixels, the long side at most LONG_SIDE. @param {number} width @param {number} height */
 export function fitSize(width, height) {
   const scale = Math.min(1, LONG_SIDE / Math.max(width, height));
   return { width: Math.max(1, Math.round(width * scale)), height: Math.max(1, Math.round(height * scale)) };
@@ -16,11 +11,11 @@ export function fitSize(width, height) {
 
 /**
  * @typedef {object} Surface
- * @property {(bitmap: unknown) => void} draw the bitmap, scaled to the surface
+ * @property {(bitmap: unknown) => void} draw
  * @property {() => boolean} hasAlpha
  * @property {(type: string, quality: number) => Promise<Blob | null>} encode
  */
-/** What the browser provides, so the unit tests (no canvas) can fake it.
+/** What the browser provides; tests fake it.
  * @typedef {object} PhotoEnv
  * @property {(src: unknown, options: object) => Promise<{width: number, height: number, close?: () => void}>} decode
  * @property {(width: number, height: number) => Surface} surface
@@ -55,10 +50,8 @@ function browserEnv() {
 }
 
 /**
- * The file to send for a JPEG, PNG or HEIC, as the canvas wrote it: a JPEG at q0.82 (a PNG with transparency stays a
- * PNG), its long side at most LONG_SIDE and no metadata. The original's bytes never go, even when smaller, so
- * Privacy 3.4 holds for every photo. `decode`: this browser cannot read it (a HEIC outside Safari among them);
- * `encode`: it read it but wrote no image of the type asked for; `large`: the re-encode is over the cap.
+ * The canvas re-encode of a JPEG, PNG or HEIC: JPEG q0.82 (a PNG with transparency stays PNG), no metadata. The
+ * original's bytes never go, even when smaller (Privacy 3.4). Refused: `decode` (unreadable here), `encode`, `large`.
  * @param {File} file
  * @param {number} maxBytes
  * @param {PhotoEnv} [env]
@@ -78,7 +71,7 @@ export async function preparePhoto(file, maxBytes, env = browserEnv()) {
       const small = await env.decode(bitmap, { resizeWidth: width, resizeHeight: height, resizeQuality: "high" });
       if (small.width === width && small.height === height) source = small;
     } catch {
-      // the drawImage below scales it
+      // drawImage scales
     }
   }
   const jpeg = /\.jpe?g$/i.test(file.name);
@@ -90,7 +83,7 @@ export async function preparePhoto(file, maxBytes, env = browserEnv()) {
     if (!jpeg && surface.hasAlpha()) type = "image/png";
     blob = await surface.encode(type, QUALITY);
   } catch {
-    // reported as encode below
+    // an encode refusal
   } finally {
     if (source !== bitmap) source.close?.();
     bitmap.close?.();

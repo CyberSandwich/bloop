@@ -58,6 +58,18 @@ describe("SESS-01 length: the phone sets when the session ends", () => {
     expect(fx(must(step.next, length(at, 30)).effects, "audit")).toEqual([]);
   });
 
+  it("SESS-01 audit: the same choice repeated within a minute moves the end and pushes, but writes no audit row", () => {
+    const at = APPROVED_AT + MIN;
+    const once = must(approved(), length(at, 30)).next;
+    const again = must(once, length(at + sec(20), 30));
+    expect(again.next.session?.endsAt).toBe(at + sec(20) + 30 * MIN);
+    expect(fx(again.effects, "push")).toEqual([{ fx: "push", to: "both" }]);
+    expect(fx(again.effects, "audit")).toEqual([]);
+    // A real change of five minutes is audited, and push comes first.
+    const moved = must(once, length(at + sec(20), 35));
+    expect(moved.effects.map((e) => e.fx)).toEqual(["push", "audit"]);
+  });
+
   it("shortens as well as lengthens", () => {
     const a = approved();
     const at = APPROVED_AT + MIN;

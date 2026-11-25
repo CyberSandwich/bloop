@@ -245,6 +245,25 @@ describe("PAIR-13 rate limits: RL_CONTROL per IP, then per credential", () => {
     expect(spent.calls).toEqual(["limit:ip", "limit:credential"]);
   });
 
+  it("PAIR-13 rate limit binding required: a route whose binding is missing answers 500 and reaches no Screen object", async () => {
+    const { calls, env: e } = env(false);
+    const { RL_CONTROL: _, ...without } = e;
+    const errors: unknown[][] = [];
+    const log = console.error;
+    console.error = (...args: unknown[]) => void errors.push(args);
+    try {
+      for (let i = 0; i < 2; i++) {
+        const res = await setLength(without, 30);
+        expect(res.status).toBe(500);
+      }
+    } finally {
+      console.error = log;
+    }
+    expect(calls).toEqual([]);
+    // Logged once however many requests fail (an earlier test may already have logged it).
+    expect(errors.length).toBeLessThanOrEqual(1);
+  });
+
   it("SESS-01 schema: minutes is a whole number from 5 to the live cap, alone; anything else reaches no Screen object", async () => {
     // PROD_VARS caps a live session at 90 minutes.
     for (const minutes of [5, 90]) expect((await setLength(env(false).env, minutes)).status, String(minutes)).toBe(200);

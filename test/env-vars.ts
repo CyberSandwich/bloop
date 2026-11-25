@@ -1,8 +1,10 @@
-import { RATE_LIMIT_BINDINGS } from "../src/worker/config.ts";
+import { readFileSync } from "node:fs";
 
-/** Every platform rate-limit binding, each allowing everything: a production config refuses a missing one (PAIR-13). */
+/** Every platform rate-limit binding wrangler.jsonc declares, each allowing everything: a route refuses a missing one (PAIR-13). */
 export const RATE_LIMIT_STUBS = Object.fromEntries(
-  RATE_LIMIT_BINDINGS.map((name) => [name, { limit: async () => ({ success: true }) }]),
+  [...readFileSync(new URL("../wrangler.jsonc", import.meta.url), "utf8").matchAll(/"name": "(RL_[A-Z_]+)"/g)].map(
+    (m) => [m[1], { limit: async () => ({ success: true }) }],
+  ),
 );
 
 /** The Worker variables a production config needs, with an obviously fake pepper. Spread and override per test. */

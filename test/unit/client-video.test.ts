@@ -221,4 +221,31 @@ describe("VID-04 location strip, every placement", () => {
     const f = fileOf(plain, "a.mp4");
     expect(await stripLocation(f)).toEqual({ ok: true, file: f });
   });
+
+  const timedTrack = (entry: Uint8Array) =>
+    trak(box("mdia", box("minf", box("stbl", box("stsd", u32(0), u32(1), entry)))));
+  /** A `mebx` sample entry: its reserved bytes and data reference, then a keys box naming one key. */
+  const mebx = (name: string) =>
+    box("mebx", new Array(6).fill(0), [0, 1], box("keys", box("keyd", enc("mdta"), enc(name))));
+  const refusedFile = async (moov: Uint8Array) =>
+    expect(await stripLocation(fileOf(mp4(moov) as Uint8Array<ArrayBuffer>, "a.mp4"))).toEqual({ ok: false });
+
+  it("VID-04 location strip refuses a GoPro gpmd track and a mebx track keyed for location", async () => {
+    await refusedFile(box("moov", mvhd(), timedTrack(box("gpmd", new Array(8).fill(0)))));
+    await refusedFile(box("moov", mvhd(), timedTrack(mebx("com.apple.quicktime.location.ISO6709"))));
+  });
+
+  it("VID-04 location strip accepts a mebx track with no location key, and an ordinary sample entry", async () => {
+    for (const entry of [mebx("com.apple.quicktime.detected-face"), box("avc1", new Array(8).fill(0))]) {
+      const f = fileOf(mp4(box("moov", mvhd(), timedTrack(entry))) as Uint8Array<ArrayBuffer>, "a.mp4");
+      expect(await stripLocation(f)).toEqual({ ok: true, file: f });
+    }
+  });
+
+  it("VID-04 location strip skips a nested meta it cannot locate, and still refuses one directly in moov", async () => {
+    const stray = box("meta", new Array(20).fill(9));
+    const f = fileOf(mp4(box("moov", mvhd(), trak(stray))) as Uint8Array<ArrayBuffer>, "a.mp4");
+    expect(await stripLocation(f)).toEqual({ ok: true, file: f });
+    await refusedFile(box("moov", mvhd(), stray));
+  });
 });

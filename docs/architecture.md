@@ -344,7 +344,7 @@ Every state-changing route checks four things: `Origin` equals `PUBLIC_ORIGIN`; 
 | demo screens            | plus a 60-min session and a 25 MB drop cap                                           | config              |
 | every `/api/` path      | edge rule: 300 per 10 s per IP, block for 10 s; `/f/` excluded (SITE-09, setup.md step 9) | Cloudflare dashboard |
 
-IPs are never stored. Limits use `HMAC(HASH_PEPPER, ip)` of `CF-Connecting-IP` (Cloudflare sets it; a local run has none and shares one key), kept only in DO storage until the window ends. The rate-limit bindings run in `wrangler dev` too. `TEST_TIMING=1` skips them so one integration run can create more screens than the per-IP limit allows; the exact limits in the objects stay on. Any other config refuses to load without every binding (`RATE_LIMIT_BINDINGS` in `config.ts`, checked against `wrangler.jsonc` by a test), so a missing binding is a 500, never an open limit.
+IPs are never stored. Limits use `HMAC(HASH_PEPPER, ip)` of `CF-Connecting-IP` (Cloudflare sets it; a local run has none and shares one key), kept only in DO storage until the window ends. The rate-limit bindings run in `wrangler dev` too. `TEST_TIMING=1` skips them so one integration run can create more screens than the per-IP limit allows; the exact limits in the objects stay on. Any other config answers the config-invalid 500 on a route whose binding is missing (`limited` in `routes/common.ts`; `RATE_LIMIT_BINDINGS` in `env.ts` is checked against `wrangler.jsonc` and `Env` by a test and the compiler), so a missing binding is never an open limit; the cron sweeps and the Screen alarms do not use the bindings and keep running.
 
 ## 7. WebSocket protocol
 

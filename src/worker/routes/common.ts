@@ -30,17 +30,25 @@ export const respond = <T>(result: Result<T>, status = 200): Response =>
 export const ipHash = (request: Request, config: Config): Promise<string> =>
   hmacHex(config.hashPepper, request.headers.get("CF-Connecting-IP") ?? "local");
 
+let reported = false;
+
 /**
  * Coarse platform limit, per pseudonymous IP unless the caller names another key (a session ref).
- * Skipped under TEST_TIMING; any other config holds every binding (`parseConfig` refuses one that lacks it).
+ * Skipped under TEST_TIMING. A missing binding fails closed for this route alone (the config-invalid 500): the
+ * sweep and the Screen alarms never call this and must keep running.
  */
 export async function limited(
-  binding: RateLimit,
+  binding: RateLimit | undefined,
   request: Request,
   config: Config,
   key?: string,
 ): Promise<Response | null> {
   if (config.testTiming) return null;
+  if (typeof binding?.limit !== "function") {
+    if (!reported) console.error("rate-limit binding missing");
+    reported = true;
+    return fail("internal");
+  }
   return (await binding.limit({ key: key ?? (await ipHash(request, config)) })).success ? null : fail("rate_limited");
 }
 

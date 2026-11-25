@@ -121,6 +121,8 @@ async function validatePdf(r: RangeReader): Promise<Verdict> {
 /**
  * An image is drawn by an <img> under a fixed type, so it needs no deeper parse: it must end where its format ends
  * (JPEG end-of-image as the last two bytes, PNG IEND as the last chunk) and carry no PDF or ZIP (DROP-11).
+ * Strict because only `core/photo.js`'s canvas re-encode reaches this route, and it ends every JPEG with the marker; a
+ * client that sends an original (a Motion Photo, a maker trailer) must relax this first.
  */
 async function validateImage(r: RangeReader, head: Uint8Array, type: FileType): Promise<Verdict> {
   const tail = await readTail(r);

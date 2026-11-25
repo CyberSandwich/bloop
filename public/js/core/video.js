@@ -1,5 +1,5 @@
-// VID-04: every location in moov is blanked on the phone before sending, at any depth: `©xyz`, 3GPP `loci`, mdta keys
-// com.apple.quicktime.location.* with their ilst values, a keyless ilst `©xyz`. Values only, so no offset moves.
+// VID-04: in moov, at any depth, values are blanked (no offset moves) for `©xyz`, `loci`, location mdta keys and a
+// keyless ilst `©xyz`; a `gpmd` or location-keyed `mebx` track is refused. Not covered: XMP in a `uuid` box.
 
 const KEY_PREFIX = "com.apple.quicktime.location.";
 const MAX_MOOV = 32 * 1024 * 1024;
@@ -10,6 +10,7 @@ const u32 = (/** @type {Uint8Array} */ b, /** @type {number} */ o) =>
 const fourcc = (/** @type {Uint8Array} */ b, /** @type {number} */ o) =>
   String.fromCharCode(b[o] ?? 0, b[o + 1] ?? 0, b[o + 2] ?? 0, b[o + 3] ?? 0);
 const unsupported = () => new Error("unsupported video structure");
+/** @typedef {{body: number, end: number}} Box */
 
 /** The box header at `o`, `left` bytes before its parent's end. Size 0 runs to that end; 64-bit sizes must fit 32. */
 function header(/** @type {Uint8Array} */ b, /** @type {number} */ o, /** @type {number} */ left) {
@@ -25,29 +26,19 @@ function header(/** @type {Uint8Array} */ b, /** @type {number} */ o, /** @type 
   return { type: fourcc(b, o + 4), head, size };
 }
 
-/**
- * QuickTime lets a `udta` end with a 32-bit zero instead of a box; `terminated` accepts exactly that.
- * @param {Uint8Array} b @param {number} from @param {number} to @param {boolean} [terminated]
- */
-function* children(b, from, to, terminated = false) {
+/** `term`: a `udta` may end with QuickTime's 32-bit zero instead of a box. @param {Uint8Array} b @param {number} from @param {number} to @param {boolean} [term] */
+function* children(b, from, to, term = false) {
   for (let at = from; at < to; ) {
-    if (terminated && to - at === 4 && u32(b, at) === 0) return;
+    if (term && to - at === 4 && u32(b, at) === 0) return;
     const h = header(b, at, to - at);
     yield { type: h.type, at, body: at + h.head, end: at + h.size };
     at += h.size;
   }
 }
 
-/**
- * The boxes of a `meta` start after its hdlr: directly (QuickTime) or after four version and flag bytes (ISO).
- * @param {Uint8Array} b
- * @param {{body: number}} meta
- */
-function metaStart(b, meta) {
-  if (fourcc(b, meta.body + 4) === "hdlr") return meta.body;
-  if (fourcc(b, meta.body + 8) === "hdlr") return meta.body + 4;
-  throw unsupported();
-}
+/** Where a `meta`'s boxes start: QuickTime has no version and flags before the hdlr, ISO has four bytes. -1: no hdlr. */
+const metaStart = (/** @type {Uint8Array} */ b, /** @type {Box} */ meta) =>
+  fourcc(b, meta.body + 4) === "hdlr" ? meta.body : fourcc(b, meta.body + 8) === "hdlr" ? meta.body + 4 : -1;
 
 /** The ilst indexes (1-based) of the keys that hold a location. */
 function locationKeys(/** @type {Uint8Array} */ b, /** @type {{body: number, end: number}} */ keys) {
@@ -65,8 +56,11 @@ function locationKeys(/** @type {Uint8Array} */ b, /** @type {{body: number, end
   return found;
 }
 
-function blankMeta(/** @type {Uint8Array} */ b, /** @type {{body: number, end: number}} */ meta) {
-  const kids = [...children(b, metaStart(b, meta), meta.end)];
+function blankMeta(/** @type {Uint8Array} */ b, /** @type {Box} */ meta, nested = true) {
+  const start = metaStart(b, meta);
+  if (start < 0 && !nested) throw unsupported();
+  if (start < 0) return 0;
+  const kids = [...children(b, start, meta.end)];
   const keys = kids.find((k) => k.type === "keys");
   const ilst = kids.find((k) => k.type === "ilst");
   if (!ilst) return 0;
@@ -75,7 +69,7 @@ function blankMeta(/** @type {Uint8Array} */ b, /** @type {{body: number, end: n
   for (const item of children(b, ilst.body, ilst.end)) {
     if (item.type !== "©xyz" && !wanted.has(u32(b, item.at + 4))) continue;
     for (const data of children(b, item.body, item.end)) {
-      // 8 bytes of type indicator and locale precede the value.
+      // type indicator and locale: 8 bytes
       if (data.type !== "data" || data.end - data.body < 8) throw unsupported();
       b.fill(0, data.body + 8, data.end);
       n++;
@@ -84,32 +78,43 @@ function blankMeta(/** @type {Uint8Array} */ b, /** @type {{body: number, end: n
   return n;
 }
 
-const CONTAINERS = new Set(["trak", "mdia", "minf", "udta"]);
+const CONTAINERS = new Set(["trak", "mdia", "minf", "stbl", "udta"]);
 
-function walk(/** @type {Uint8Array} */ b, /** @type {number} */ from, /** @type {number} */ to, terminated = false) {
+/** Timed metadata keeps its values in mdat, out of reach: refuse. */
+function refuseTimed(/** @type {Uint8Array} */ b, /** @type {Box} */ stsd) {
+  for (const e of children(b, stsd.body + 8, stsd.end)) {
+    const keyed = e.type === "mebx" && new TextDecoder("latin1").decode(b.subarray(e.body, e.end)).includes(KEY_PREFIX);
+    if (e.type === "gpmd" || keyed) throw unsupported();
+  }
+}
+
+function walk(
+  /** @type {Uint8Array} */ b,
+  /** @type {number} */ from,
+  /** @type {number} */ to,
+  term = false,
+  nested = false,
+) {
   let n = 0;
-  for (const box of children(b, from, to, terminated)) {
+  for (const box of children(b, from, to, term)) {
     if (box.type === "©xyz" || box.type === "loci") {
       b.fill(0, box.body, box.end);
       n++;
-    } else if (box.type === "meta") n += blankMeta(b, box);
-    else if (CONTAINERS.has(box.type)) n += walk(b, box.body, box.end, box.type === "udta");
+    } else if (box.type === "meta") n += blankMeta(b, box, nested);
+    else if (box.type === "stsd") refuseTimed(b, box);
+    else if (CONTAINERS.has(box.type)) n += walk(b, box.body, box.end, box.type === "udta", true);
   }
   return n;
 }
 
-/**
- * Blanks the locations inside a whole `moov` box, in place.
- * @param {Uint8Array} moov
- * @returns {number} how many were blanked; throws on a structure it cannot walk
- */
+/** Blanks a whole `moov` in place; returns how many, throws on a structure it cannot walk. @param {Uint8Array} moov */
 export function blankLocation(moov) {
   const h = header(moov, 0, moov.length);
   if (h.type !== "moov" || h.size !== moov.length) throw unsupported();
   return walk(moov, h.head, h.size);
 }
 
-/** The top-level `moov`, found by reading box headers only. @param {Blob} file */
+/** The top-level `moov`, by box headers only. @param {Blob} file */
 async function findMoov(file) {
   for (let at = 0, seen = 0; at < file.size && seen++ < MAX_TOP_BOXES; ) {
     const head = new Uint8Array(await file.slice(at, at + 16).arrayBuffer());
@@ -121,8 +126,7 @@ async function findMoov(file) {
 }
 
 /**
- * The file with its location blanked, or `{ok: false}` when its structure is not understood. A file with no location is
- * returned as it is.
+ * The file with its location blanked (as it is when it has none), or `{ok: false}` when it cannot be.
  * @param {File} file
  * @returns {Promise<{ok: true, file: File} | {ok: false}>}
  */

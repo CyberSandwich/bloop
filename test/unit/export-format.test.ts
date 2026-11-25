@@ -4,6 +4,7 @@ import {
   AUDIT_COLUMNS,
   auditCsvHeader,
   auditCsvLine,
+  auditRecord,
   csvCell,
   csvLine,
   exportRange,
@@ -45,6 +46,24 @@ describe("SITE-06 csv: formula injection", () => {
     expect(line).toContain(",'+Room,");
     expect(line).toContain(",'@a.example,");
     expect(auditCsvHeader()).toBe(csvLine(AUDIT_COLUMNS));
+  });
+
+  it("SESS-01 audit: ends_at is an ISO time, and null for a missing, non-numeric or out-of-range value", () => {
+    const row = (endsAt: unknown): AuditRow =>
+      ({
+        id: 1,
+        sessionId: "s",
+        at: 0,
+        actor: "phone",
+        type: "session.length",
+        detail: endsAt === undefined ? {} : { endsAt },
+        roomName: null,
+        userEmail: null,
+        mode: "live",
+        kind: "owner",
+      }) as AuditRow;
+    expect(auditRecord(row(Date.UTC(2026, 0, 1))).ends_at).toBe("2026-01-01T00:00:00.000Z");
+    for (const bad of [undefined, "soon", Number.NaN, 9e15, null]) expect(auditRecord(row(bad)).ends_at).toBeNull();
   });
 
   it("applies the same guard to the metrics file", () => {

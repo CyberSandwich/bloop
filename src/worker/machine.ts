@@ -469,10 +469,12 @@ export function transition(m: Machine, ev: Event, cfg: MachineConfig): Step {
       // plus the cap, so no run of changes keeps a session alive longer than the cap.
       const endsAt = Math.min(now + ev.minutes * MINUTE, session.approvedAt + ev.maxMinutes * MINUTE);
       if (endsAt === session.endsAt) return ok(m);
-      return ok({ ...m, session: { ...session, endsAt } }, [
-        { fx: "audit", type: "session.length", actor: "phone" },
-        { fx: "push", to: "both" },
-      ]);
+      const effects: Effect[] = [{ fx: "push", to: "both" }];
+      // A repeat of the same choice moves the end by seconds: only a real change is audited.
+      if (session.endsAt == null || Math.abs(endsAt - session.endsAt) >= MINUTE) {
+        effects.push({ fx: "audit", type: "session.length", actor: "phone" });
+      }
+      return ok({ ...m, session: { ...session, endsAt } }, effects);
     }
 
     case "fallback": {

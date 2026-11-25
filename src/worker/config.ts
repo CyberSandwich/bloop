@@ -289,23 +289,12 @@ const CLOSE_AFTER_SECONDS = 600;
 
 export type ConfigResult = { ok: true; config: Config } | { ok: false; problems: string[] };
 
-/** The platform rate-limit bindings of wrangler.jsonc; a config outside TEST_TIMING refuses to run without one. */
-export const RATE_LIMIT_BINDINGS = [
-  ...["RL_CREATE", "RL_CLAIM", "RL_FETCH", "RL_UPLOAD", "RL_AUTH"],
-  ...["RL_EXPORT", "RL_DEMO_CREATE", "RL_DEMO_CLAIM", "RL_FILES", "RL_CONTROL"],
-] as const;
-
 export function parseConfig(env: Record<string, unknown>): ConfigResult {
   const parsed = schema.safeParse(env);
   if (!parsed.success) {
     return { ok: false, problems: parsed.error.issues.map((i) => `${i.path.join(".")}: ${i.message}`) };
   }
   const v = parsed.data;
-  const missing =
-    v.TEST_TIMING === "1"
-      ? []
-      : RATE_LIMIT_BINDINGS.filter((n) => typeof (env[n] as { limit?: unknown } | undefined)?.limit !== "function");
-  if (missing.length) return { ok: false, problems: missing.map((n) => `${n}: rate-limit binding missing`) };
   return {
     ok: true,
     config: {
