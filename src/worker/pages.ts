@@ -63,13 +63,32 @@ const noindex = (response: Response): Response => {
   return out;
 };
 
-/** The signed-in user's email when the session exists and the lockout admits them; false when the page must hide. */
-async function memberVisible(request: Request, env: PageEnv, config: Config, state: LaunchState): Promise<boolean> {
+/** A page whose visibility depends on the cookie: no shared cache may keep or reuse it. */
+const privateCopy = (response: Response): Response => {
+  const out = new Response(response.body, response);
+  out.headers.set("Cache-Control", "private, no-store");
+  out.headers.append("Vary", "Cookie");
+  return out;
+};
+
+/**
+ * Whether the page shows in preview: a session of an email member the lockout admits, and for /admin an address in
+ * ADMIN_EMAILS. An Entra user is not a member of the invite-only product, so they see what a signed-out visitor sees.
+ */
+async function memberVisible(
+  request: Request,
+  env: PageEnv,
+  config: Config,
+  state: LaunchState,
+  path: string,
+): Promise<boolean> {
   const { sessions } = servicesFor(env, config);
   const cookie = readCookie(request, SESSION_COOKIE);
   const userId = cookie ? await sessions.resolve(cookie) : null;
   if (!userId) return false;
-  return admitted(state, config.account, await sessions.emailNorm(userId));
+  const email = await sessions.emailNorm(userId);
+  if (email === null || !admitted(state, config.account, email)) return false;
+  return path !== "/admin" || config.account.adminEmails.has(email);
 }
 
 /**
@@ -85,8 +104,10 @@ export async function servePage(
   const path = normalizePath(url.pathname);
   if (path === null) return notFound(env, request);
   const variant = variants.find((v) => v.path === path);
-  const shell = AUTH_SHELLS.has(path);
-  const member = MEMBER_PAGES.has(path);
+  // The file forms of a gated page (`/library.html`, `/library/index.html`) and its other letter cases are the page.
+  const key = path.replace(/(\/index)?\.html$/i, "").toLowerCase() || "/";
+  const shell = AUTH_SHELLS.has(key);
+  const member = MEMBER_PAGES.has(key);
   if (!variant && !shell && !member) return asset(env, request, path);
 
   const state = await launchState(env);
@@ -105,8 +126,8 @@ export async function servePage(
   if (state.mode === "open") return asset(env, request, path);
   if (shell) return noindex(await asset(env, request, path));
   const config = configFor(env);
-  return config.ok && (await memberVisible(request, env, config.config, state))
-    ? asset(env, request, path)
+  return config.ok && (await memberVisible(request, env, config.config, state, key))
+    ? privateCopy(await asset(env, request, path))
     : notFound(env, request);
 }
 

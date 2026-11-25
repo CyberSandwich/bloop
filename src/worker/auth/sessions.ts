@@ -100,8 +100,9 @@ export class Sessions {
   }
 
   /**
-   * Starts the deletion grace for an email member: the daily purge deletes them after `deleteAfter`. Zero changes
-   * means the account was not active (already deleting or purging), which is fine to repeat.
+   * Starts the deletion grace for an email member: the daily purge deletes them after `deleteAfter`, and every session
+   * ends now, so the member returns only through sign-in and restore. Zero changes on the row means the account was
+   * not active (already deleting or purging), which is fine to repeat.
    */
   async requestDeletion(userId: string, deleteAfter: number): Promise<void> {
     await this.db
@@ -110,6 +111,16 @@ export class Sessions {
       )
       .bind(deleteAfter, userId)
       .run();
+    await this.destroyAll(userId);
+  }
+
+  /** Whether this session proved itself (reauth_at) within `withinMs`. Fails closed: no row or no proof is false. */
+  async reauthedWithin(value: string, withinMs: number): Promise<boolean> {
+    const row = await this.db
+      .prepare("SELECT reauth_at FROM phone_session WHERE id_hash = ?")
+      .bind(await sha256Hex(value))
+      .first<{ reauth_at: number | null }>();
+    return row?.reauth_at != null && this.now() - row.reauth_at <= withinMs;
   }
 
   /** Daily cron. Returns how many rows were deleted. */

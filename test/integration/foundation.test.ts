@@ -74,6 +74,18 @@ describe("MODE-01 gate: the launch mode against a real D1", () => {
   });
 });
 
+describe("REL-03 marker: every API answer carries X-Bloop", () => {
+  it("REL-03 marker: a success, a 404 and a refused write all carry X-Bloop: 1", async () => {
+    expect((await hit("/api/health")).headers.get("X-Bloop")).toBe("1");
+    expect((await hit("/api/no-such-route")).headers.get("X-Bloop")).toBe("1");
+    const refused = await fetch(`${wrangler.url}/api/screens`, {
+      method: "POST",
+      headers: { Origin: "https://evil.example" },
+    });
+    expect(refused.headers.get("X-Bloop")).toBe("1");
+  });
+});
+
 describe("FO-01 host: /fo/ping", () => {
   it("FO-01 host: with no file origin configured the path answers 404 with no CORS header", async () => {
     const res = await hit("/fo/ping");
@@ -104,7 +116,7 @@ describe("LIB-09 sweep: the daily retention run", () => {
 describe("LIB-08 erase: DELETE /api/me for an email member", () => {
   const sha = (value: string) => createHash("sha256").update(value).digest("hex");
 
-  it("LIB-08 erase: marks the member deleting with a grace and keeps their rows", async () => {
+  it("LIB-08 erase: needs a fresh proof, then marks the member deleting, ends their sessions and keeps their rows", async () => {
     const day = 86_400_000;
     wrangler.d1(
       "INSERT INTO app_user (id, tid, oid, email, email_norm, created_at, last_seen_at) VALUES ('em1', 'email', 'em1', 'm@example.test', 'm@example.test', 0, 0)",
@@ -112,14 +124,21 @@ describe("LIB-08 erase: DELETE /api/me for an email member", () => {
     const cookie = "E".repeat(43);
     const now = Date.now();
     wrangler.d1(
-      `INSERT INTO phone_session (id_hash, user_id, created_at, last_seen_at, expires_at) VALUES ('${sha(cookie)}', 'em1', ${now}, ${now}, ${now + 30 * day})`,
+      `INSERT INTO phone_session (id_hash, user_id, created_at, last_seen_at, expires_at, reauth_at) VALUES ('${sha(cookie)}', 'em1', ${now}, ${now}, ${now + 30 * day}, NULL)`,
     );
     wrangler.d1(
       "INSERT INTO library_file (id, user_id, name, ext, bytes, r2_key, status, created_at, updated_at) VALUES ('lf1', 'em1', 'a.pdf', 'pdf', 1, 'u/em1/lf1/v1/orig', 'ready', 0, 0)",
     );
 
-    const res = await api.call("DELETE", "/api/me", {}, { headers: { Cookie: `__Host-bloop_sid=${cookie}` } });
+    const headers = { Cookie: `__Host-bloop_sid=${cookie}` };
+    // Without a fresh proof the request is refused and nothing changes.
+    expect((await api.call("DELETE", "/api/me", {}, { headers })).status).toBe(401);
+    expect(wrangler.d1("SELECT status FROM app_user WHERE id = 'em1'")[0]?.status).toBe("active");
+    wrangler.d1(`UPDATE phone_session SET reauth_at = ${Date.now()} WHERE user_id = 'em1'`);
+
+    const res = await api.call("DELETE", "/api/me", {}, { headers });
     expect(res.status).toBe(200);
+    expect(wrangler.d1("SELECT count(*) AS n FROM phone_session WHERE user_id = 'em1'")[0]?.n).toBe(0);
 
     const [user] = wrangler.d1("SELECT status, delete_after FROM app_user WHERE id = 'em1'");
     expect(user?.status).toBe("deleting");
