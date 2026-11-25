@@ -222,7 +222,7 @@ Redirect is the default (`OPEN_PATH_MODE=redirect`). Do the steps in order and w
 3. Watch the PC.
    - **PowerPoint opens by itself, no click:** a click is not needed. Record the browser's own prompt, if any ("Open Microsoft PowerPoint?", with or without "Always allow"). If there was a prompt, answer it, tick Always allow once, and repeat from step 1 to see whether the second run is silent.
    - **Nothing opens and an Open button shows on the screen:** click it. If PowerPoint opens now, a click is needed: the guest flow already supplies one, and the owner flow needs the button. Record that.
-   - **Nothing opens and no Open button shows:** the browser had activation but still refused. Wait 5 s for Download It Instead, and record the browser version and any message on the page or in its address bar.
+   - **Nothing opens and no Open button shows:** the browser had activation but still refused. Use Download It Instead, and record the browser version and any message on the page or in its address bar.
 
 ### 2. Does PowerPoint follow the 302
 1. In `wrangler tail`, find the `open.fetch` lines for the launch. In redirect mode a working run shows `"status":302` for the GET from the PC, then PowerPoint opens the deck.
@@ -239,7 +239,7 @@ From the same `wrangler tail`, for one launch, list every `open.fetch` line:
 - `"client"`: `office` means the User-Agent looked like Office. `other` for a GET from the PC means Office sends a User-Agent the Worker does not recognize; note it and keep going.
 
 ### 4. The Download fallback and the PDF view
-1. Approve again. Before PowerPoint opens, or after closing it without ending the session, wait for Download It Instead (5 s after the launch with no fetch, so close PowerPoint's window first and approve a new session if it already fetched).
+1. Approve again. Before PowerPoint opens, or after closing it without ending the session, use Download It Instead (close PowerPoint's window first, and approve a new session if it already fetched).
 2. Click it. The browser should save `<name>.pptx`. Record where it went and whether a download prompt appeared.
 3. The screen now says "PowerPoint didn't open." with Show as PDF Instead. Click it. A second window should open and show the PDF with the browser's built-in viewer. **If it is blank, grey, or offers a download instead of showing the PDF, record the browser and version: that is F-PDF failing.** Then check the console of that window for a Content Security Policy message, and try changing `file-pdf` in `src/worker/headers.ts` to plain `default-src 'none'; frame-ancestors 'none'` (or add `object-src 'self'` if it is missing) and redeploy.
 4. Click End on the screen. In the browser, open `chrome://version` or `edge://version`, then check the screen tab's Application storage: it should hold no `bloop.*` keys. Try the old PowerPoint link (the browser history keeps none; use a `.url` shortcut or Recent list if PowerPoint made one): it must answer 410.

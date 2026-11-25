@@ -88,6 +88,16 @@ const pdfKey = (/** @type {ScreenView | PhoneView} */ v) =>
   firstFile(v.items)?.type === "pdf" ? "pdf_file" : "pdf_fallback";
 
 /**
+ * Whether a PDF view can exist: a PDF is its own, and a source converts a deck. A guest's deck and any photo or video
+ * have none (the route answers `pdf_unavailable`).
+ * @param {ScreenView | null} v
+ */
+export function hasPdf(v) {
+  const type = firstFile(v?.items ?? [])?.type;
+  return type === "pdf" || (type === "pptx" && v?.kind !== "guest");
+}
+
+/**
  * @param {ScreenCtx} c
  * @returns {ScreenStateKey}
  */

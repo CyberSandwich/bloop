@@ -2,7 +2,7 @@
 /** @import {LinkSet, OpenMode, ScreenView} from "../../src/shared/protocol.ts" */
 /** @import {LauncherDeps, Minted, ScreenLauncher} from "./types.js" */
 import { firstFile } from "./core/states.js";
-import { DOWNLOAD_REUSE_MS, DOWNLOAD_STARTS_PER_LINK, LAUNCH_TIMEOUT_MS, RELINK_WAIT_MS } from "./core/timing.js";
+import { DOWNLOAD_REUSE_MS, DOWNLOAD_STARTS_PER_LINK, RELINK_WAIT_MS } from "./core/timing.js";
 import { PAIRING_OVER } from "./shared/session.js";
 
 /** @param {LauncherDeps} deps @returns {ScreenLauncher} */
@@ -12,9 +12,9 @@ export function createLauncher(deps) {
   /** @type {{
    *   protocol: string | null, pendingPdf: {url: string, item: number, mode: OpenMode} | null,
    *   pdfWindow: {close?: () => void} | null,
-   *   reported: boolean, needsClick: boolean, waitedOut: boolean, haveLink: boolean, spent: Set<number>,
+   *   reported: boolean, needsClick: boolean, haveLink: boolean, spent: Set<number>,
    *   download: {url: string, item: number, at: number, starts: number} | null,
-   *   waiting: ReturnType<typeof setTimeout> | undefined, recovering: ReturnType<typeof setTimeout> | undefined
+   *   recovering: ReturnType<typeof setTimeout> | undefined
    * }} */
   const s = {
     protocol: null,
@@ -22,11 +22,9 @@ export function createLauncher(deps) {
     pdfWindow: null,
     reported: false,
     needsClick: false,
-    waitedOut: false,
     haveLink: false,
     spent: new Set(),
     download: null,
-    waiting: undefined,
     recovering: undefined,
   };
 
@@ -106,9 +104,8 @@ export function createLauncher(deps) {
   }
 
   function reset() {
-    clearTimeout(s.waiting);
     clearTimeout(s.recovering);
-    s.waiting = s.recovering = undefined;
+    s.recovering = undefined;
     closePdf();
     used.clear();
     Object.assign(s, {
@@ -116,7 +113,6 @@ export function createLauncher(deps) {
       pendingPdf: null,
       reported: false,
       needsClick: false,
-      waitedOut: false,
       haveLink: false,
       spent: new Set(),
       download: null,
@@ -160,16 +156,7 @@ export function createLauncher(deps) {
           if (!s.haveLink) void request("protocol");
         }, RELINK_WAIT_MS);
       }
-      if (view.state === "opening" && !s.waitedOut && s.waiting === undefined) {
-        s.waiting = setTimeout(() => {
-          s.waitedOut = true;
-          deps.onChange();
-        }, LAUNCH_TIMEOUT_MS);
-      }
-      if (view.state === "open") {
-        s.needsClick = false;
-        clearTimeout(s.waiting);
-      }
+      if (view.state === "open") s.needsClick = false;
       if (PAIRING_OVER.includes(view.state)) {
         if (s.haveLink || s.pdfWindow || s.needsClick) reset();
       }
@@ -181,7 +168,6 @@ export function createLauncher(deps) {
       ppt: !!s.protocol,
       download: s.download ? decodeURIComponent(s.download.url.slice(s.download.url.lastIndexOf("/") + 1)) : null,
     }),
-    downloadReady: () => s.waitedOut,
     closePdf,
     reset,
   };

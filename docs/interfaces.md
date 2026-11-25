@@ -514,10 +514,9 @@ export interface ScreenLauncher {
   showPdf(): Promise<Minted>;              // POST /api/screen/link {purpose:"pdf"}
   relink(item: number): Promise<Minted>;   // POST /api/screen/link {purpose:"protocol", item}: another item's launch link (an image's view link), no mode change
   spent(item?: number): boolean;           // a mint for that item (none: the first file) met `mint_limit`, which is per item: the page hides that item's Download and Show as PDF Instead, flags no error
-  onView(view: ScreenView): void;          // recovers a lost link (approved with a file, no link after 1.5 s; a links-only session mints none), times the 5 s, resets at the end
+  onView(view: ScreenView): void;          // recovers a lost link (approved with a file, no link after 1.5 s; a links-only session mints none), resets at the end
   needsClick(): boolean;                   // the launch had no user activation, or a popup was blocked
   left(): { ppt: boolean; download: string | null }; // read when the view turns ended, before reset: PowerPoint was launched; the started download's name (its link's last segment), for the line under Session Ended
-  downloadReady(): boolean;
   closePdf(): void;
   reset(): void;
 }

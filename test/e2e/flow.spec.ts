@@ -1486,8 +1486,9 @@ test.describe("open path", () => {
     await expect(screen.page.getByRole("button", { name: "End", exact: true })).toBeVisible();
     await expect(phone.page.getByRole("button", { name: "Revoke" })).toBeVisible();
     const download = screen.page.getByRole("button", { name: "Download It Instead" });
-    await expect(download).toBeHidden();
-    await expect(download).toBeVisible({ timeout: 10_000 });
+    // At once, and secondary to the launch's own Open.
+    await expect(download).toBeVisible();
+    await expect(download).toHaveClass(/secondary/);
     await expectNoAxeViolations(screen.page);
 
     // The download is the first fetch of /f/: the session opens, as the fallback.

@@ -10,8 +10,6 @@ export const ENDED_HOLD_MS = 10_000;
 /** A tap or Enter this soon after Session Ended shows is the tail of the press that ended it, not a skip. */
 export const ENDED_SKIP_GRACE_MS = 500;
 export const ERROR_RECOVER_MS = 5000;
-/** No /f/ fetch this long after the launch: Download It Instead appears (design.md, opening). */
-export const LAUNCH_TIMEOUT_MS = 5000;
 /**
  * Download starts a link it already started again for this long, and this many times in all, instead of minting one
  * against that item's LINK_MINTS_PER_ITEM. Both stay well inside the server's LINK_FETCH_WINDOW_SECONDS and LINK_MAX_FETCHES,
