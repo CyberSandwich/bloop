@@ -3,30 +3,56 @@ import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 
 const ROOT = new URL("../../src/worker/", import.meta.url).pathname;
+const GUEST_DROP = "seams/guest-drop/";
 const sources = (dir: string): string[] =>
   readdirSync(dir, { withFileTypes: true }).flatMap((e) =>
     e.isDirectory() ? sources(join(dir, e.name)) : e.name.endsWith(".ts") ? [join(dir, e.name)] : [],
   );
-
-/** The one use outside zip.ts: it bounds a read that is itself bounded by the real file size (zip.ts entryBytes). */
-const ALLOWED = [{ file: "seams/guest-drop/validate.ts", line: "if (entry.compressed > cap) return null;" }];
+/** Lines of every source file outside `except` that match `pattern`, as `file: line`. */
+const lines = (pattern: RegExp, except: string[] = []): string[] =>
+  sources(ROOT)
+    .map((f) => f.slice(ROOT.length))
+    .filter((f) => !except.includes(f))
+    .flatMap((f) =>
+      readFileSync(join(ROOT, f), "utf8")
+        .split("\n")
+        .filter((l) => pattern.test(l))
+        .map((l) => `${f}: ${l.trim()}`),
+    );
 
 describe("a declared size in an untrusted container is a claim, never a measure", () => {
-  it("keeps the sizes a zip declares inside zip.ts, which refuses early and never budgets with them", () => {
-    const uses = sources(ROOT)
-      .filter((f) => !f.endsWith("seams/guest-drop/zip.ts"))
-      .flatMap((f) =>
-        readFileSync(f, "utf8")
-          .split("\n")
-          .filter((l) => /\.(un)?compressed\b/.test(l))
-          .map((l) => ({ file: f.slice(ROOT.length), line: l.trim() })),
-      );
-    expect(uses).toEqual(ALLOWED);
+  it("keeps the sizes a zip declares inside zip.ts and the read plan", () => {
+    expect(lines(/\.(un)?compressed\b/, [`${GUEST_DROP}zip.ts`, `${GUEST_DROP}read-plan.ts`])).toEqual([]);
   });
 
   it("budgets by the length of what was read, as the relationships reader does", () => {
-    const src = readFileSync(`${ROOT}seams/guest-drop/validate.ts`, "utf8");
+    const src = readFileSync(`${ROOT}${GUEST_DROP}validate.ts`, "utf8");
     expect(src).toMatch(/budget -= bytes\.length/);
-    expect(src).not.toMatch(/budget -= .*\.(un)?compressed/);
+  });
+});
+
+describe("a validator reads through the read plan, never entry by entry", () => {
+  it("calls the range reader only where a fixed number of reads is spent", () => {
+    expect(lines(/\br\.read\(/).sort()).toEqual(
+      [
+        `${GUEST_DROP}cfb.ts: const head = await r.read(0, HEADER_BYTES);`,
+        `${GUEST_DROP}cfb.ts: const bytes = await r.read(offset, sectorSize);`,
+        `${GUEST_DROP}read-plan.ts: whole ??= r.read(0, r.size);`,
+        `${GUEST_DROP}read-plan.ts: return r.read(offset, length);`,
+        `${GUEST_DROP}read-plan.ts: const bytes = await r.read(from, to - from);`,
+        `${GUEST_DROP}read-plan.ts: const rest = await r.read(from + at, size);`,
+        `${GUEST_DROP}validate.ts: r.read(Math.max(0, r.size - TAIL_BYTES), Math.min(r.size, TAIL_BYTES));`,
+        `${GUEST_DROP}validate.ts: const head = await r.read(0, Math.min(r.size, HEAD_BYTES));`,
+        `${GUEST_DROP}zip.ts: const tailOf = (r: RangeReader) => r.read(Math.max(0, r.size - TAIL_BYTES), Math.min(r.size, TAIL_BYTES));`,
+        `${GUEST_DROP}zip.ts: const cd = await r.read(cdOffset, cdSize);`,
+      ].sort(),
+    );
+  });
+
+  it("sends every deck part through readParts and caps the CFB reads", () => {
+    const validate = readFileSync(`${ROOT}${GUEST_DROP}validate.ts`, "utf8");
+    expect(validate).toMatch(/readParts\(r, wanted, PART_LIMITS\)/);
+    expect(validate).toMatch(/planReads\(whole\)/);
+    expect(readFileSync(`${ROOT}${GUEST_DROP}cfb.ts`, "utf8")).toMatch(/\+\+reads > CFB_LIMITS\.maxSectorReads/);
   });
 });

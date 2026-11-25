@@ -115,7 +115,7 @@ describe("DROP-05 R2 cap: operations counted against the free tier", () => {
 });
 
 describe("DROP-05 R2 cap: reads that pass the cap mid-upload", () => {
-  const ctx = withInstance({ R2_CLASS_B_MONTHLY_CAP: "2" });
+  const ctx = withInstance({ R2_CLASS_B_MONTHLY_CAP: "1" });
 
   it("answers storage_full, deletes the object and returns the session to claimed", async () => {
     const { socket, pid } = await pairPhone(ctx.api);
@@ -124,7 +124,7 @@ describe("DROP-05 R2 cap: reads that pass the cap mid-upload", () => {
     expect(await problemCode(res)).toBe("storage_full");
     const key = String(guestRow(ctx.w.d1)?.r2_key);
     expect(ctx.w.r2Has(key)).toBe(false);
-    expect(ops(ctx.w, "B")).toBe(2);
+    expect(ops(ctx.w, "B")).toBe(1);
     socket.close();
   }, 30_000);
 });

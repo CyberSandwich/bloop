@@ -159,6 +159,16 @@ describe("DROP-14 external: entry names", () => {
       expect(checkOoxml([...BASE, name], TYPES, new Map())).toMatchObject({ ok: false, reason: "entry name" });
     },
   );
+
+  it.each([
+    ["docx", "word/document.xml", "WORD/Document.xml"],
+    ["xlsx", "xl/workbook.xml", "xl/WORKBOOK.xml"],
+    ["pptx", "ppt/presentation.xml", "ppt/presentation.xml"],
+  ])("refuses two %s parts of one name, without regard to case", (_, one, two) => {
+    const names = ["[Content_Types].xml", one, two];
+    expect(checkOoxml(names, TYPES, new Map())).toMatchObject({ ok: false, reason: "duplicate name" });
+    expect(checkOoxml(names.slice(0, 2), TYPES, new Map())).toEqual({ ok: true });
+  });
 });
 
 describe("DROP-14 external: macro-enabled packages", () => {
@@ -261,6 +271,57 @@ describe("DROP-14 external: macro-enabled packages", () => {
       const padded = `<Relationships/>${" ".repeat(256 * 1024 - 16)}`;
       const lying = Array.from({ length: 100 }, (_, i) => relsEntry(`x/_rels/a${i}.rels`, padded, 0));
       expect(await validate(reader(validDeck(lying)), "pptx")).toEqual({ ok: false, error: "bad_structure" });
+    });
+
+    describe("the read plan: every metered read is one R2 operation and one D1 meter write", () => {
+      const counted = (data: Uint8Array) => {
+        const inner = reader(data);
+        const seen = { reads: 0 };
+        return {
+          seen,
+          size: inner.size,
+          read: (at: number, n: number) => {
+            seen.reads++;
+            return inner.read(at, n);
+          },
+        };
+      };
+      const parts = (count: number, bytes: number, declared?: number) =>
+        Array.from({ length: count }, (_, i) =>
+          relsEntry(`x/_rels/a${i}.rels`, `<Relationships/>${" ".repeat(bytes - 16)}`, declared),
+        );
+      const MIB = 1024 * 1024;
+
+      it("reads a small deck in two operations, the head and the whole object, however many parts it has", async () => {
+        for (const count of [1, 300, 1024]) {
+          const small = counted(validDeck(parts(count, 16)));
+          expect(await validate(small, "pptx")).toEqual({ ok: true, type: "pptx" });
+          expect(small.seen.reads).toBe(2);
+        }
+      });
+
+      it("refuses, in two operations, a small deck with over 1024 parts or whose parts inflate past the budget", async () => {
+        const many = counted(validDeck(parts(1500, 100 * 1024, 0)));
+        expect(await validate(many, "pptx")).toEqual({ ok: false, error: "bad_structure" });
+        expect(many.seen.reads).toBe(2);
+        const heavy = counted(validDeck(parts(300, 250 * 1024, 0)));
+        expect(await validate(heavy, "pptx")).toEqual({ ok: false, error: "bad_structure" });
+        expect(heavy.seen.reads).toBe(2);
+      });
+
+      const media = (mib: number): BuiltEntry => ({ name: "ppt/media/big.png", data: new Uint8Array(mib * MIB) });
+
+      it("reads a large deck's parts in one range per cluster", async () => {
+        const together = counted(validDeck([...parts(300, 16), media(17)]));
+        expect(await validate(together, "pptx")).toEqual({ ok: true, type: "pptx" });
+        // head, end record, directory, then the content types and every relationships part in one read
+        expect(together.seen.reads).toBe(4);
+        const apart = counted(
+          validDeck([...parts(150, 16), media(17), ...parts(150, 16).map((e) => ({ ...e, name: `y${e.name}` }))]),
+        );
+        expect(await validate(apart, "pptx")).toEqual({ ok: true, type: "pptx" });
+        expect(apart.seen.reads).toBe(5);
+      });
     });
 
     it("refuses a deck with more than 1024 relationships parts", async () => {
