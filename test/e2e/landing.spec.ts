@@ -60,13 +60,14 @@ for (const vp of VIEWPORTS) {
         const svg = tile && tile.querySelector("svg");
         if (!svg) return null;
         const c = cell.getBoundingClientRect(), b = band.getBoundingClientRect(), t = tile.getBoundingClientRect();
-        const h = cell.querySelector("h3").getBoundingClientRect(), s = svg.getBoundingClientRect();
+        const h = cell.querySelector("h3").getBoundingClientRect();
         const style = getComputedStyle(band), before = getComputedStyle(band, "::before");
         return {
           height: Math.round(b.height),
           flush: [b.top - c.top, b.left - c.left, c.right - b.right].map(Math.round),
           corners: [style.borderTopLeftRadius, style.borderBottomLeftRadius],
-          tile: [Math.round(t.width), Math.round(t.height), Math.round(s.width)],
+          // The glyph box, before the house optical scale (--glyph) draws it smaller, as every icon is sized.
+          tile: [Math.round(t.width), Math.round(t.height), getComputedStyle(svg).width],
           column: Math.round(t.left - h.left),
           centered: Math.round(t.top + t.height / 2 - (b.top + b.height / 2)),
           still: before.animationName,
@@ -80,7 +81,7 @@ for (const vp of VIEWPORTS) {
           height,
           flush: [0, 0, 0],
           corners: ["24px", "0px"],
-          tile: [56, 56, 28],
+          tile: [56, 56, "28px"],
           column: 0,
           centered: 0,
           still: "none",
