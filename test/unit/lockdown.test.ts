@@ -104,6 +104,8 @@ describe("rung table shape", () => {
     expect(floorsOf(planFor("L2", true))).toEqual([]);
   });
 
+  // Skipped until the spend guard lands. G's wiring (tasks/g-wiring.md) adds the check that L2's writes equal its
+  // costly-flips list, beside this one for names, values and defaults.
   const registry = `${ROOT}src/worker/spend/switches.ts`;
   it.skipIf(!existsSync(registry))(
     "the switch names, values and defaults match src/worker/spend/switches.ts",
@@ -286,6 +288,23 @@ describe("the lockdown token", () => {
     expect(d1.envs[0]).toEqual({ CLOUDFLARE_API_TOKEN: LOCK_TOKEN, CLOUDFLARE_ACCOUNT_ID: ACCOUNT });
   });
 
+  it("the dry run proves wrangler runs with a read-only SELECT 1, and says so when it cannot", async () => {
+    const good = deps();
+    const out = (await main(["--level", "L2"], good.deps)).out;
+    expect(out).toContain("wrangler: d1 execute reached the database (read-only SELECT 1)");
+    expect(good.d1.argvs).toHaveLength(1);
+    expect(good.d1.argvs[0]?.slice(0, 4)).toEqual(["npx", "wrangler", "d1", "execute"]);
+    expect(good.d1.argvs[0]).toContain("--remote");
+    const bad = deps();
+    bad.d1.failNext();
+    expect((await main(["--level", "L2"], bad.deps)).out).toMatch(
+      /L2 WILL FAIL: wrangler d1 execute failed \(D1 is down\)/,
+    );
+    const none = deps();
+    await main(["--level", "L4"], none.deps);
+    expect(none.d1.argvs).toHaveLength(0);
+  });
+
   it("the dry run verifies the token and says which rung will fail for what", async () => {
     const ok = deps();
     const good = (await main(["--level", "L4"], ok.deps)).out;
@@ -340,7 +359,10 @@ describe("dry run", () => {
         const { code, out } = await main(argv, d);
         expect(code, out).toBe(0);
         expect(api.mutating(), `${level} ${undo}`).toHaveLength(0);
-        expect(d1.argvs).toHaveLength(0);
+        // The one wrangler call a dry run makes is the read-only SELECT 1 that proves the toolchain.
+        for (const a of d1.argvs) expect(a.at(-1), `${level} ${undo}`).toBe("SELECT 1;");
+        expect(d1.argvs.length).toBe(planFor(level).writes.length ? 1 : 0);
+        expect(d1.rows()).toEqual({});
         expect(out).toContain("dry run");
       }
     }
@@ -402,7 +424,7 @@ describe("apply", () => {
     const argv = d1.argvs[0] ?? [];
     expect(argv.slice(0, 7)).toEqual(["npx", "wrangler", "d1", "execute", "bloop", "--remote", "--json"]);
     expect(argv[7]).toBe("--command");
-    expect((argv[8] ?? "").split("\n")).toHaveLength(16);
+    expect((argv[8] ?? "").split("\n")).toHaveLength(24);
   });
 
   it("L3 raises email to off and adds convert_video", async () => {
@@ -515,13 +537,34 @@ describe("freezing deploys", () => {
     expect((await main(["--level", "L2", "--apply"], d)).code).toBe(1);
   });
 
-  it("a frozen set is not a warning, and an undo without GitHub credentials is not either", async () => {
+  it("a frozen set is not a warning, and an undo that cannot enable deploys says they stay frozen", async () => {
     const ok = await execute(table, planFor("L2"), deps().deps);
     expect(ok.warned).toBe(false);
+    expect(ok.stillFrozen).toBe(false);
     const { deps: d } = deps(undefined, undefined, { GITHUB_TOKEN: undefined });
     const undo = await execute(table, planFor("L2", true), d);
     expect(undo.warned).toBe(false);
-    expect((await main(["--level", "L2", "--undo", "--apply"], d)).code).toBe(0);
+    expect(undo.stillFrozen).toBe(true);
+    expect(undo.lines[0]).toMatch(/^DEPLOYS STILL FROZEN/);
+    expect((await main(["--level", "L2", "--undo", "--apply"], d)).code).toBe(3);
+  });
+
+  it("an undo that cannot read the L4 state exits 3 with DEPLOYS STILL FROZEN", async () => {
+    const { deps: d, api } = deps();
+    await execute(table, planFor("L2"), d);
+    api.state.denied = ["/zones"];
+    const run = await main(["--level", "L2", "--undo", "--apply"], d);
+    expect(run.code).toBe(3);
+    expect(run.out.split("\n")[0]).toMatch(/^DEPLOYS STILL FROZEN/);
+    expect(api.state.deployState).toBe("disabled_manually");
+  });
+
+  it("an undo skipped because L4 is in force is intended, not a warning", async () => {
+    const { deps: d } = deps();
+    await execute(table, planFor("L4"), d);
+    const run = await main(["--level", "L2", "--undo", "--apply"], d);
+    expect(run.code).toBe(0);
+    expect(run.out).not.toContain("DEPLOYS STILL FROZEN");
   });
 
   it("an L1 to L3 undo does not unfreeze while L4 is in force, and says why", async () => {
@@ -609,6 +652,20 @@ describe("terminating Workflow instances", () => {
     expect(result.failed).toBe(true);
     expect(text(result)).toMatch(/terminate-workflows: FAILED 1 instance\(s\) still live/);
     expect(slept.length).toBeGreaterThan(0);
+  });
+
+  it("looks again up to five times with doubling waits, and no wait after the last look", async () => {
+    const lagging = deps();
+    lagging.api.state.lag = 3;
+    const ok = await execute(table, planFor("L3"), lagging.deps);
+    expect(ok.failed).toBe(false);
+    expect(lagging.slept).toEqual([1000, 2000]);
+
+    const never = deps();
+    never.api.state.lag = 99;
+    const bad = await execute(table, planFor("L3"), never.deps);
+    expect(bad.failed).toBe(true);
+    expect(never.slept).toEqual([1000, 2000, 4000, 8000]);
   });
 
   it("falls back to one PATCH per instance only when the batch call answers 404 or 405", async () => {
@@ -739,7 +796,8 @@ describe("undo scope and the recorded prior value", () => {
     await execute(table, planFor("L2"), d);
     await execute(table, planFor("L3"), d);
     expect(d1.rows().email).toMatchObject({ value: "off", updated_by: "lockdown:L3" });
-    expect(d1.rows().convert).toMatchObject({ value: "off", updated_by: "lockdown:L2" });
+    // An equal value is relabeled to the higher level, so it is no longer an L2 row.
+    expect(d1.rows().convert).toMatchObject({ value: "off", updated_by: "lockdown:L3" });
     // The prior stays the value from before the first lockdown, not the L2 value L3 replaced.
     expect(d1.log().find((l) => l.reason.startsWith("lockdown L3 set email=off"))?.reason).toMatch(/prior=on$/);
     await execute(table, planFor("L3", true), d);
@@ -749,13 +807,38 @@ describe("undo scope and the recorded prior value", () => {
     expect(d1.rows().convert?.value).toBe("account_only");
   });
 
-  it("L2 then L3, then undo L2: only the L2-labeled rows go back", async () => {
+  it("L2 then L3, then undo L2: every row L3 now holds stays, none is half undone", async () => {
     const { deps: d, d1 } = deps();
     await execute(table, planFor("L2"), d);
     await execute(table, planFor("L3"), d);
+    const before = JSON.stringify(d1.settings());
+    const logged = d1.log().length;
     await execute(table, planFor("L2", true), d);
+    expect(JSON.stringify(d1.settings())).toBe(before);
+    expect(d1.log()).toHaveLength(logged);
+    expect(d1.rows().uploads).toMatchObject({ value: "readonly", updated_by: "lockdown:L3" });
+  });
+
+  it("escalating over an equal value relabels it without a new log line or a new prior, and only once", async () => {
+    const { deps: d, d1 } = deps();
+    await execute(table, planFor("L2"), d);
+    const logged = d1.log().length;
+    const result = await execute(table, planFor("L3"), { ...d, now: () => NOW + 1 });
+    expect(d1.rows().uploads).toMatchObject({ value: "readonly", updated_by: "lockdown:L3" });
+    expect(text(result)).toContain("D1 uploads -> readonly: relabeled");
+    // Only email (admin_only to off) and convert_video are new sets; the rest only change label.
+    expect(d1.log()).toHaveLength(logged + 2);
+    const again = await execute(table, planFor("L3"), { ...d, now: () => NOW + 2 });
+    expect(text(again)).toContain("D1 uploads -> readonly: unchanged");
+    await execute(table, planFor("L3", true), d);
     expect(d1.rows().uploads?.value).toBe("on");
-    expect(d1.rows().email).toMatchObject({ value: "off", updated_by: "lockdown:L3" });
+  });
+
+  it("an L2 set never relabels an L3 row down", async () => {
+    const { deps: d, d1 } = deps();
+    await execute(table, planFor("L3"), d);
+    await execute(table, planFor("L2"), { ...d, now: () => NOW + 1 });
+    expect(d1.rows().uploads?.updated_by).toBe("lockdown:L3");
   });
 
   it("the owner set it looser, then a set, then an undo: the undo restores the owner's value", async () => {

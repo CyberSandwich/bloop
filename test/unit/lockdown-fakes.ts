@@ -95,6 +95,9 @@ export function fakeApi() {
     /** The batch endpoint answers 429 this many times first. */
     rateLimited: 0,
     patchFails: new Set<string>(),
+    /** A terminated instance still shows as running for this many full looks. */
+    lag: 0,
+    zombies: [] as { id: string; looksLeft: number }[],
     /** Instances that stay live however often they are terminated. */
     sticky: new Set<string>(),
     deployState: "active",
@@ -172,6 +175,8 @@ export function fakeApi() {
       if (state.batchStatus)
         return reply(state.batchStatus, { success: false, errors: [{ code: 1, message: "batch" }] });
       const ids = body as string[];
+      for (const id of ids)
+        if (state.lag > 0 && !state.sticky.has(id)) state.zombies.push({ id, looksLeft: state.lag });
       state.instances = state.instances.filter((i) => !ids.includes(i.id) || state.sticky.has(i.id));
       return ok({});
     }
@@ -184,7 +189,14 @@ export function fakeApi() {
     if (path.endsWith("/instances")) {
       const status = u.searchParams.get("status");
       const start = Number(u.searchParams.get("cursor") ?? 0);
-      const of = state.instances.filter((i) => i.status === status);
+      // The first status a look asks about is queued: that is when a zombie ages by one look.
+      if (status === "queued") for (const z of state.zombies) z.looksLeft -= 1;
+      const of = [
+        ...state.instances.filter((i) => i.status === status),
+        ...(status === "running"
+          ? state.zombies.filter((z) => z.looksLeft > 0).map((z) => ({ id: z.id, status }))
+          : []),
+      ];
       const page = of.slice(start, start + state.pageSize);
       const more = start + state.pageSize < of.length;
       return ok(page, { result_info: more ? { cursor: String(start + state.pageSize) } : {} });
