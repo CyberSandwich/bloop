@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
-import { centralRecord, crc32, endRecords, Zip64Writer } from "../../src/worker/library/zip64.ts";
+import { crc32 } from "../../src/worker/crc32.ts";
+import { centralRecord, endRecords, Zip64Writer } from "../../src/worker/library/zip64.ts";
 
 const enc = new TextEncoder();
 const u16 = (v: DataView, at: number) => v.getUint16(at, true);

@@ -1,6 +1,7 @@
 // Streaming zip64 STORE writer for the library export: entries come from streams of unknown length, so each carries a
 // data descriptor and zip64 sizes; the central directory and end records go to zip64 only when a count or an offset
 // needs it. Memory is one central record per entry, never the data.
+import { crc32 } from "../crc32.ts";
 
 const SIG_LOCAL = 0x04034b50;
 const SIG_DESCRIPTOR = 0x08074b50;
@@ -15,19 +16,6 @@ const FLAGS = 0x0808;
 const VERSION = 45;
 const EXTRA_ZIP64 = 0x0001;
 const STORE = 0;
-
-const CRC_TABLE = new Uint32Array(256).map((_, n) => {
-  let c = n;
-  for (let k = 0; k < 8; k++) c = c & 1 ? 0xedb88320 ^ (c >>> 1) : c >>> 1;
-  return c >>> 0;
-});
-
-/** CRC-32 of `data`, continuing from `previous` (0 to start): `crc32(b, crc32(a))` is the CRC of `a` then `b`. */
-export function crc32(data: Uint8Array, previous = 0): number {
-  let c = (previous ^ U32_MAX) >>> 0;
-  for (let i = 0; i < data.length; i++) c = (CRC_TABLE[(c ^ (data[i] as number)) & 0xff] as number) ^ (c >>> 8);
-  return (c ^ U32_MAX) >>> 0;
-}
 
 type Field = [width: 2 | 4 | 8, value: number];
 /** Little-endian fixed-width fields, then any raw tails. */

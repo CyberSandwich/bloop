@@ -25,7 +25,13 @@ const attr = (tag: string, name: string): string =>
     ?.slice(1)
     .find((v) => v !== undefined) ?? "";
 
-/** Every `TargetMode="External"` relationship in one `.rels` part, hyperlinks included: the caller filters by `type`. */
+/** The only relationship types that may leave the package: a link the reader clicks, never one a converter follows. */
+const HYPERLINK_TYPES: ReadonlySet<string> = new Set([
+  "http://schemas.openxmlformats.org/officeDocument/2006/relationships/hyperlink",
+  "http://purl.oclc.org/ooxml/officeDocument/relationships/hyperlink",
+]);
+
+/** Every `TargetMode="External"` relationship in one `.rels` part, whatever its type. */
 export function externalRelationships(relsXml: string): ExternalRelationship[] {
   const out: ExternalRelationship[] = [];
   for (const [tag] of relsXml.matchAll(/<Relationship\b[^>]*>/gi)) {
@@ -37,14 +43,15 @@ export function externalRelationships(relsXml: string): ExternalRelationship[] {
 
 /**
  * An OOXML package (docx, xlsx, pptx and their macro twins) is refused when its content types name a macro-enabled
- * main part or a VBA project, when a macro or ActiveX part is present, or when any relationship points outside the
- * package. Judged on content, never on the extension: a `.docx` that carries a docm content type is a docm.
+ * main part or a VBA project, when a macro or ActiveX part is present, or when a relationship other than a hyperlink
+ * points outside the package. Judged on content, never on the extension: a `.docx` that carries a docm content type is a docm.
  */
 export function checkOoxml(names: readonly string[], contentTypesXml: string, relsXml: readonly string[]): Check {
   if (ZIP_LIMITS.refusedContentTypes.some((p) => p.test(contentTypesXml)))
     return fail("macro_content", "macro content type");
   if (names.some((n) => MACRO_PARTS.some((p) => p.test(n)))) return fail("macro_content", "macro part");
-  if (relsXml.some((x) => externalRelationships(x).length > 0)) return fail("bad_structure", "external relationship");
+  if (relsXml.some((x) => externalRelationships(x).some((r) => !HYPERLINK_TYPES.has(r.type))))
+    return fail("bad_structure", "external relationship");
   return OK;
 }
 
