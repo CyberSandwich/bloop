@@ -160,6 +160,11 @@
 .legal-text {
   --gutter: 40px;
 }
+@media (max-width: 399.98px) {
+  .legal-text {
+    --gutter: 32px;
+  }
+}
 @media (min-width: 640px) {
   .legal-text {
     --gutter: 56px;
@@ -305,7 +310,7 @@ a.num::after {
 }
 .legal thead th {
   color: var(--muted);
-  font-size: 13px;
+  font-size: 14px;
   font-weight: 600;
   box-shadow: inset 0 -1px 0 var(--hairline);
 }
@@ -317,7 +322,7 @@ a.num::after {
   display: inline-block;
   margin: 0;
   padding: 2px 10px;
-  font-size: 13px;
+  font-size: 14px;
 }
 .legal td > .label {
   display: none;
@@ -346,7 +351,7 @@ a.num::after {
   .legal td > .label {
     display: block;
     color: var(--muted);
-    font-size: 13px;
+    font-size: 14px;
     font-weight: 600;
   }
 }
