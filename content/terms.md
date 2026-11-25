@@ -7,7 +7,7 @@ numbered: true
 binds: the terms
 summaryNote: This summary helps you read; the full text applies.
 effective: 2026-11-25
-version: 1.0
+version: 1.1
 ---
 
 bloop is a new, free side project, not a commercial service, and may change. Show only files you have the right to show. bloop keeps your files yours and may remove a file that breaks these terms. The law of England and Wales applies.
@@ -61,7 +61,7 @@ In short: nothing unlawful, harmful or abusive, and no attacks on the service.
 
 ## Guest Files {#guest-files}
 
-In short: you are responsible for what you send; bloop shows it once, then deletes it.
+In short: you are responsible for what you send; bloop shows it during the Session, then deletes it.
 
 5.1 If you send a Guest File, you confirm that you have the right to show it and that it follows [section 4](#acceptable-use).
 
@@ -115,6 +115,7 @@ In short: dated changes, with notice for big ones.
 
 ### What Changed
 
+- Version 1.1, 2026-11-25: a clarification only. The summary of section 5 says a Guest File is shown during the Session, as 5.2 says, not once.
 - Version 1.0, 2026-11-25: first published version.
 - Earlier versions were shown for review before this one; they are replaced and never took effect.
 

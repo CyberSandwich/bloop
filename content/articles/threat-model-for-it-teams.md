@@ -10,7 +10,7 @@ A threat model is a list of what could go wrong and what is done about it. bloop
 
 ## How to Read It {#method}
 
-The model goes seam by seam: signing in, pairing, the file source, opening a file, guest uploads, what stays on the PC, the website, personal data, and a hostile lectern PC. Each threat has a name such as PAIR-03, how likely it is, how bad, what stops it, and a test.
+The model goes seam by seam: signing in, pairing, the file source, opening a file, guest uploads, what stays on the PC, the website, personal data, and a hostile room PC. Each threat has a name such as PAIR-03, how likely it is, how bad, what stops it, and a test.
 
 Each row ends in one of three states:
 
@@ -52,7 +52,7 @@ This part describes OneDrive sign-in, which is planned. Each user's Microsoft ac
 
 Tapping Disconnect OneDrive on a phone deletes the stored access and every sign-in at once. Removing the app in Microsoft Entra leaves a cached Microsoft token that can work until it expires, about an hour; the pages say so rather than promise more.
 
-## The Lectern PC {#lectern}
+## The Room PC {#lectern}
 
 Malware on the PC could copy a file it is shown. That is true of any presenting method, a USB stick included, and bloop limits it to one file at a time. The Screen's own credential cannot list files, choose files, or make links beyond the approved ones: at most 6 links per file, and every one is recorded. Links die at the end, and the phone's End revokes everything on the server, so the end never depends on the PC.
 
@@ -60,7 +60,7 @@ Malware on the PC could copy a file it is shown. That is true of any presenting 
 
 - A stolen phone that is already unlocked is out of scope.
 - Whether PowerPoint, fetching a link, and the browser leave through the same network address is a field question, so link binding to an address is logged rather than enforced by default.
-- What remains on a real PC after sign-out and reboot has not been measured on real lecterns. [What Stays on the PC](/articles/what-stays-on-the-pc) says what is known.
+- What remains on a real PC after sign-out and reboot has not been measured on real room PCs. [What Stays on the PC](/articles/what-stays-on-the-pc) says what is known.
 - There is no external audit or penetration test yet, and no Cyber Essentials certificate yet. The [Security page](/security#audit) will carry the dates once they are booked.
 
 ## Checking It Yourself {#verify}

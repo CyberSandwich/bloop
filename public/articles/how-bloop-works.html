@@ -60,7 +60,7 @@
         <p class="meta">Published <time datetime="2026-11-25">November 25, 2026</time> · 4 min read</p>
       </div>
 
-      <p class="summary"><b class="name">bloop</b> lets a lecturer put a file on a shared PC without signing in to that PC. This article follows one session from the first scan to the last link, and says what the room PC holds at each step.</p>
+      <p class="summary"><b class="name">bloop</b> lets a lecturer put a file on a shared PC without signing in to their own account there. This article follows one session from the first scan to the last link, and says what the room PC holds at each step.</p>
 
       <div class="legal-body">
         <section class="toc" aria-labelledby="toc-h">
@@ -78,14 +78,14 @@
         <div class="legal-text">
           <section id="problem" aria-labelledby="problem-h">
             <h2 id="problem-h">The Problem It Solves</h2>
-            <p>A lectern PC is used by many people in a day. Signing in to your own account there leaves traces: a cached sign-in, recent file names, a downloaded copy. Plugging in a USB stick moves the risk to the stick. Either way the presenter makes a trade between convenience and leaving something behind.</p>
+            <p>A room PC is used by many people in a day. Signing in to your own account there leaves traces: a cached sign-in, recent file names, a downloaded copy. Plugging in a USB stick moves the risk to the stick. Either way the presenter makes a trade between convenience and leaving something behind.</p>
             <p><b class="name">bloop</b> moves the choosing to the presenter's phone. The PC shows a web page, and the phone decides what the page may show. The PC never holds the presenter's account.</p>
           </section>
           <section id="steps" aria-labelledby="steps-h">
             <h2 id="steps-h">Four Steps</h2>
             <ol class="flow">
-              <li><strong>Scan.</strong> The room PC opens <b class="name">bloop</b>'s Screen page, which shows a QR code and a short typed code. A code works once and lasts 60 seconds. The phone scans it, or the presenter types it, and the phone shows the room and a two-digit number to match against the Screen.</li>
-              <li><strong>Approve.</strong> The presenter picks the files to show and taps Approve. Nothing is typed on the PC.</li>
+              <li><strong>Scan.</strong> The room PC opens <b class="name">bloop</b>'s Screen page, which shows a QR code and a short typed code. A code works once and lasts 60 seconds. The phone scans it, or the presenter types it, and the phone shows a two-digit number to match against the Screen.</li>
+              <li><strong>Approve.</strong> The presenter chooses the files to show and taps Approve. Nothing is typed on the PC.</li>
               <li><strong>Show.</strong> <b class="name">bloop</b>'s server gives the Screen one short-lived link for each approved file. The Screen opens it; on a PC with PowerPoint installed, a deck opens in PowerPoint, read-only.</li>
               <li><strong>End.</strong> The presenter ends the session from the phone, or someone ends it at the Screen, or it ends by itself. Every link stops working at that moment.</li>
             </ol>
