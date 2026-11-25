@@ -8,7 +8,7 @@ import type { Kv } from "./ledger.ts";
 
 export const SCHEMA_KEY = "schemaVersion";
 /** Version 1 had no key: a session held one `file`, and a link record had no `item`. */
-export const SCHEMA_VERSION = 6;
+export const SCHEMA_VERSION = 7;
 
 type Session = NonNullable<Machine["session"]>;
 type V1Session = Omit<Session, "items" | "minted"> & { file: FileRef; mints: number };
@@ -83,6 +83,12 @@ const STEPS: Record<number, (kv: Kv) => void> = {
     if (hasIds && shownOk && seqOk) return;
     const seq = seqOk ? s.seq : { phone: 0, screen: 0 };
     kv.put("machine", { ...m, session: { ...s, items, shown: shownOk ? s.shown : null, seq } });
+  },
+  // 6 to 7: the machine counts its applied changes in `v`, which every view carries. Missing, or not a whole number,
+  // it starts again at 0.
+  7: (kv) => {
+    const m = kv.get<Omit<Machine, "v"> & { v?: unknown }>("machine");
+    if (m && !Number.isSafeInteger(m.v)) kv.put("machine", { ...m, v: 0 });
   },
 };
 

@@ -87,6 +87,8 @@ export interface ScreenView {
   endReason: EndReason | null;
   /** The last `control` seq applied from this screen (0 before any). */
   seq: number;
+  /** Applied changes so far: of two views, the one with the larger `v` is the newer; equal ones are one state. */
+  v: number;
   now: number;
 }
 
@@ -108,6 +110,7 @@ export interface PhoneView {
   maxMinutes: number;
   /** The last `control` seq applied from this phone (0 before any). */
   seq: number;
+  v: number; // as in ScreenView
   now: number;
 }
 /** `POST /api/session/length`: the session ends `minutes` from now, never past approval plus the mode's cap. */

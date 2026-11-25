@@ -30,7 +30,7 @@ export type Item = FileItem | LinkItem;
 
 /** What the screen shows: `shown` in both views. */
 export interface Shown { item: string; page: number; present: boolean; }   // item: a FILE item's id (the screen's own report may also name a link, at page 1); page: 1-based, within the item's pages
-/** The body of POST /api/control and POST /api/screen/shown. Absolute, so a replay changes nothing; a seq not above the sender's last applied one changes nothing. */
+/** The body of POST /api/control and POST /api/screen/shown. Absolute, so a replay changes nothing; a seq not above the sender's last applied one changes nothing, and one more than 24 h ahead of the server's clock is `bad_request`. */
 export interface ShownCommand extends Shown { seq: number; }   // the sender's clock in ms, at least one above its last, and above the `seq` of its latest view (the server's last for that sender), so a clock that fell behind across a reload still sends in order (PAIR-13)
 /** The body of POST /api/session/length: the session ends `minutes` from now, never past approval plus the mode's cap. */
 export interface LengthRequest { minutes: number; }   // whole minutes, MIN_LENGTH_MINUTES (public/js/shared/length.js) to SESSION_MAX_MINUTES
@@ -48,6 +48,7 @@ export interface ScreenView {
   endsAt: number | null;
   endReason: EndReason | null;
   seq: number;                 // the last `control` seq applied from this screen; 0 before any
+  v: number;                   // applied changes so far (`Machine.v`): of two views of one session the larger `v` is the newer, equal ones are one state; a client adopts only a larger one
   now: number;
 }
 
@@ -65,6 +66,7 @@ export interface PhoneView {
   dropMaxBytes: number;        // the largest guest file this screen takes (GUEST_MAX_BYTES, or the demo cap)
   maxMinutes: number;          // the mode's cap (SESSION_MAX_MINUTES, or DEMO_MAX_MINUTES): the longest length the phone offers
   seq: number;                 // the last `control` seq applied from this phone; 0 before any
+  v: number;                   // as in ScreenView
   now: number;
 }
 
@@ -175,7 +177,7 @@ export type ScreenStateKey =
 | uploading | `upload.done(file)` | validated | offered | store the R2 ref and `offerAt`; push screen `guest_open` (file name, Open); audit `guest.uploaded` |
 | offered | `open.click` | from the screen socket (a repeat in approved, opening or open returns the current view) | approved | as approve: `endsAt`, mint link; push screen `open`; audit `approved` (actor screen) |
 | uploading | `upload.failed(e)` | | claimed | delete object; push both `state`; audit `guest.refused` with cause `e` (the drop route answers the phone with `e`) |
-| approved, opening, open | `control(from, seq, shown)` | from the phone (`POST /api/control`, pid) or the screen (`POST /api/screen/shown`, sid); demo only (a live session is `wrong_state`); `shown.item` names a FILE item by id, else `file_not_found` (PAIR-11, LINK-01), except that the screen's report may name a link's id (the card it shows, so the phone's mark leaves the file; never a command); `shown.page` is within the item's pages (a demo owner's deck or PDF has 2, anything else and a link 1), else `bad_request`; any other state is `wrong_state` | (same) | a `seq` not above `session.seq[from]` changes nothing (a replay, or a late older command); else store the seq, and store `session.shown` and push both unless it is the same `shown`, which pushes nothing. Between senders the last applied wins (PAIR-13) |
+| approved, opening, open | `control(from, seq, shown)` | from the phone (`POST /api/control`, pid) or the screen (`POST /api/screen/shown`, sid); demo only (a live session is `wrong_state`); `shown.item` names a FILE item by id, else `file_not_found` (PAIR-11, LINK-01), except that the screen's report may name a link's id (the card it shows, so the phone's mark leaves the file; never a command); `shown.page` is within the item's pages (a demo owner's deck or PDF has 2, anything else and a link 1), else `bad_request`; any other state is `wrong_state` | (same) | a `seq` more than 24 h ahead of the event's clock is `bad_request` (one far ahead would refuse every later command from its sender); a `seq` not above `session.seq[from]` changes nothing (a replay, or a late older command); else store the seq, and store `session.shown` and push both unless it is the same `shown`, which pushes nothing. Between senders the last applied wins (PAIR-13) |
 | approved, opening, open | `length(minutes, maxMinutes)` | from the phone (`POST /api/session/length`, pid), both modes; the route takes whole `minutes` from 5 to `SESSION_MAX_MINUTES`, and the Screen object passes the mode's cap; any other state is `wrong_state` | (same) | `endsAt` = min(now + minutes, approvedAt + maxMinutes), so no run of changes outlives the cap; push both and the alarm moves to it; the same `endsAt` again pushes nothing. Absolute, never a delta: a replay sets about the same end. At or past `endsAt` (an alarm running late) it ends the session as `timer` would (`ended`, `auto`), and the Screen object answers `session_ended` (SESS-01) |
 | approved | `launched(mode)` | from the screen | opening | record mode; metric |
 | approved, opening | `fetched(link)` | first fetch of any link | open | `first_open_at`; metric `scan_to_open_ms`; push both |
@@ -209,7 +211,7 @@ export const LINK_HOSTS: readonly string[];          // ["www.vevox.com"]
 export declare function allowedLink(url: string): string | null;   // URL-parsed: https, an allowed host, no credentials, no explicit non-default port, at most 2048 characters; answers url.href, the only form an item stores
 export declare function orderItems<T extends ItemDraft>(items: readonly T[]): T[];   // files by name, then links by title
 export declare function withIds(items: readonly (ItemDraft | ItemRef)[]): ItemRef[];   // "i1", "i2", ... by place in the ordered list, written at approval (or upload.done); a list whose items all hold ids keeps them (a guest's file at open.click), one missing any is numbered whole
-export declare const shownSchema: z.ZodType<Shown>;   // the one shape check for `shown`: the remote's body extends it with `seq`, and schema step 6 repairs stored data with it
+export declare const shownSchema: z.ZodType<Shown>;   // the one shape check for `shown`: the remote's body extends it with `seq`, and schema step 6 repairs stored data with it (step 7 starts a missing or malformed `Machine.v` at 0)
 export declare function shownFault(items: readonly ItemRef[], shown: Shown, view: { mode: Mode; kind: Kind | null }): "file_not_found" | "bad_request" | null;   // not a FILE id in the list, or a page outside it
 export declare function fileById(items: readonly ItemRef[], id: string): FileItemRef | null;   // null for a link or an unknown id
 export declare function pageCount(file: FileItemRef, view: { mode: Mode; kind: Kind | null }): number;   // the demo owner's deck or PDF: the pre-rendered pages; else 1
@@ -219,6 +221,7 @@ export declare function itemView(item: ItemRef): Item;
 
 export interface Machine {
   state: SessionState;
+  v: number;                         // counts every applied change (a changed machine, never a no-op); every view carries it; schema step 7
   mode: Mode;
   codes: { current: Code | null; previous: Code | null };
   codeRequests: number[];            // issue times in the last minute
