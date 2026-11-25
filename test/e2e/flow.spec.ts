@@ -2907,9 +2907,7 @@ test.describe("the phone page at phone widths (design.md section 7, Phone page)"
     const screen = await demoScreen(browser);
     const code = await typedCodeOf(screen.page);
     const { context, page, mail } = await downPhone(browser, code);
-    await expect(page.locator("#body")).toHaveText(
-      "Something's wrong on bloop's side.",
-    );
+    await expect(page.locator("#body")).toHaveText("Something's wrong on bloop's side.");
     // On the way to the link the facts load and fill it.
     await expect(mail).toHaveAttribute("href", /^mailto:hi@bloop\.here\?subject=bloop%20isn't%20responding&body=/);
     const href = (await mail.getAttribute("href")) ?? "";
