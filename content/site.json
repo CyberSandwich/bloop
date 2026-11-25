@@ -3,7 +3,7 @@
   "origin": "https://bloop.here",
   "email": "hi@bloop.here",
   "waitlist": "https://tally.so/r/Yj4KAN",
-  "about": "bloop puts your files on a shared screen, such as a lecture room PC, from your phone. You scan the QR code the screen shows, choose your files on your phone and tap Approve; the screen gets a link to each item you approve, never your account, and you can revoke it from your phone. It shares slides, PDFs, photos, videos and links. bloop is in early access, and the demo is at https://bloop.here/demo.",
+  "about": "bloop puts your files on a shared screen, such as a room PC, from your phone. You scan the QR code the screen shows, choose your files on your phone and tap Approve; the screen gets a link to each item you approve, never your account, and you can revoke it from your phone. It shares slides, PDFs, photos, videos and links. bloop is in early access, and the demo is at https://bloop.here/demo.",
   "image": { "path": "/og.png", "width": 1200, "height": 630 },
   "links": [
     { "label": "Features", "href": "/#features", "in": ["nav"] },
