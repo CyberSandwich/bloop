@@ -23,6 +23,17 @@ export function offsetAt(x, width, em) {
 /** The sweep's time at a tile offset: a negative animation-delay of it starts the sweep there. */
 export const timeAt = (/** @type {number} */ offset) => offset * SWEEP_MS;
 
+// The band trails the pointer with this time constant: a slight lag reads as weight, not as a stuck highlight.
+const TAU_MS = 120;
+
+/**
+ * One step of an exponential follow; the same at any frame rate, since it depends on elapsed time only.
+ * @param {number} from the shown x
+ * @param {number} to the pointer's x
+ * @param {number} dt ms since the last step: a frame stamp can precede the event's own, and a stalled frame is capped
+ */
+export const easeTo = (from, to, dt) => from + (to - from) * (1 - Math.exp(-Math.min(Math.max(dt, 0), 64) / TAU_MS));
+
 export function follow() {
   const h1 = document.querySelector(".hero h1");
   const el = h1?.querySelector(".sheen");
@@ -31,7 +42,9 @@ export function follow() {
   let left = 0;
   let width = 0;
   let em = 1;
-  let x = 0;
+  let target = 0;
+  let shown = 0;
+  let last = 0;
   let offset = 0;
   let frame = 0;
   /** @type {Animation | null} */
@@ -44,16 +57,27 @@ export function follow() {
     em = parseFloat(getComputedStyle(el).fontSize);
   };
   const place = () => {
-    frame = 0;
-    offset = offsetAt(x - left, width, em);
+    offset = offsetAt(shown - left, width, em);
     el.style.setProperty("--sheen-x", `${offset}`);
+  };
+  /** @param {number} now */
+  const step = (now) => {
+    shown = easeTo(shown, target, now - last);
+    last = now;
+    // Under half a pixel it lands, and nothing runs until the pointer moves again.
+    if (Math.abs(target - shown) < 0.5) shown = target;
+    place();
+    frame = shown === target ? 0 : requestAnimationFrame(step);
   };
 
   h1.addEventListener("pointermove", (/** @type {PointerEvent} */ e) => {
     if (e.pointerType === "touch") return;
-    x = e.clientX;
+    target = e.clientX;
     if (on) {
-      frame ||= requestAnimationFrame(place);
+      if (!frame) {
+        last = performance.now();
+        frame = requestAnimationFrame(step);
+      }
       return;
     }
     // Focus in the hero keeps its pause (2.2.2).
@@ -61,6 +85,7 @@ export function follow() {
     ramp?.cancel();
     ramp = null;
     on = true;
+    shown = target;
     measure();
     el.classList.add("is-following");
     place();
@@ -69,10 +94,8 @@ export function follow() {
   h1.addEventListener("pointerleave", () => {
     if (!on) return;
     on = false;
-    if (frame) {
-      cancelAnimationFrame(frame);
-      place();
-    }
+    cancelAnimationFrame(frame);
+    frame = 0;
     const to = offset + EASE_TILES;
     const ease = el.animate(
       { backgroundPosition: [`${offset * TILE_EM}em 0`, `${to * TILE_EM}em 0`] },

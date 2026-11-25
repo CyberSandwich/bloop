@@ -6,7 +6,19 @@ const MODULE = "../../public/js/sheen-follow.js";
 const {
   offsetAt,
   timeAt,
-}: { offsetAt: (x: number, width: number, em: number) => number; timeAt: (o: number) => number } = await import(MODULE);
+  easeTo,
+}: {
+  offsetAt: (x: number, width: number, em: number) => number;
+  timeAt: (o: number) => number;
+  easeTo: (from: number, to: number, dt: number) => number;
+} = await import(MODULE);
+
+/** Steps a follow of `to` from `from` at a frame rate for some ms. */
+function run(from: number, to: number, fps: number, ms: number) {
+  let x = from;
+  for (let t = 0; t < ms - 1e-9; t += 1000 / fps) x = easeTo(x, to, 1000 / fps);
+  return x;
+}
 
 const css = readFileSync("public/css/site.css", "utf8");
 const source = readFileSync("public/js/sheen-follow.js", "utf8");
@@ -60,5 +72,42 @@ describe("the sheen follows the pointer (design.md section 8)", () => {
       const paused = offsetAt(x, WORD, EM);
       expect(sweepOffsetAt(timeAt(paused))).toBeCloseTo(paused, 12);
     }
+  });
+
+  describe("the eased follow", () => {
+    it("reaches the same x at the same time at 30, 60 and 120 fps", () => {
+      for (const ms of [100, 200, 500]) {
+        const at60 = run(0, 300, 60, ms);
+        expect(Math.abs(run(0, 300, 120, ms) - at60)).toBeLessThan(0.01);
+        expect(Math.abs(run(0, 300, 30, ms) - at60)).toBeLessThan(0.01);
+      }
+    });
+
+    it("lags the pointer instead of jumping to it, then converges under half a pixel", () => {
+      const first = easeTo(0, 300, 1000 / 60);
+      expect(first).toBeGreaterThan(0);
+      expect(first).toBeLessThan(60);
+      expect(run(0, 300, 60, 100)).toBeLessThan(300 - 100);
+      expect(300 - run(0, 300, 60, 1500)).toBeLessThan(0.5);
+    });
+
+    it("moves toward the pointer from either side and never overshoots", () => {
+      for (const [from, to] of [
+        [0, 300],
+        [300, 0],
+      ] as [number, number][]) {
+        let x = from;
+        for (let i = 0; i < 200; i++) {
+          const next = easeTo(x, to, 16);
+          expect(Math.abs(to - next)).toBeLessThanOrEqual(Math.abs(to - x));
+          x = next;
+        }
+      }
+    });
+
+    it("a negative or stalled frame gap neither reverses nor leaps", () => {
+      expect(easeTo(10, 100, -5)).toBe(10);
+      expect(easeTo(10, 100, 5000)).toBe(easeTo(10, 100, 64));
+    });
   });
 });

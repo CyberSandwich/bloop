@@ -358,20 +358,28 @@ for (const vp of VIEWPORTS) {
         await page.mouse.move(left + width * 0.12, y);
         await expect(sheen).toHaveClass(/is-following/, { timeout: 250 });
       }).toPass();
-      const at = async () =>
+      const frame = async () =>
         (await page.evaluate(
-          `new Promise((done) => requestAnimationFrame(() => requestAnimationFrame(() => done(parseFloat(getComputedStyle(document.querySelector(".sheen")).backgroundPosition)))))`,
+          `new Promise((done) => requestAnimationFrame(() => done(parseFloat(getComputedStyle(document.querySelector(".sheen")).backgroundPosition))))`,
         )) as number;
-      // The band moves with the pointer, one to one, wrapping at the tile.
+      // Settled: the eased follow (about 120 ms) has landed on the pointer.
+      const settled = async () => {
+        await page.waitForTimeout(900);
+        return frame();
+      };
+      // The band moves with the pointer, one to one, wrapping at the tile, and trails it: one frame after a
+      // step it has covered part of the distance, not all of it.
       const wrap = (d: number) => ((((d + tile / 2) % tile) + tile) % tile) - tile / 2;
       let x = left + width * 0.12;
-      let pos = await at();
+      let pos = await settled();
       for (const f of [0.25, 0.4, 0.55, 0.7, 0.85]) {
         const nx = left + width * f;
         await page.mouse.move(nx, y);
-        const next = await at();
+        const first = await frame();
+        expect(Math.abs(wrap(first - pos))).toBeGreaterThan(0);
+        expect(Math.abs(wrap(first - pos))).toBeLessThan(0.7 * (nx - x));
+        const next = await settled();
         expect(Math.abs(wrap(next - pos - (nx - x)))).toBeLessThan(2);
-        expect(Math.abs(next - pos)).toBeGreaterThan(1);
         [x, pos] = [nx, next];
       }
       // On leave, every frame for 400 ms: no step beyond the sweep's own speed (2.5em a second).
