@@ -10,6 +10,8 @@ export const SIGN_IN_HINT = "Sign in to this PC as usual to open your file.";
 const WAITING_LINE = "Waiting for Approval";
 /** The one string that names the session (design.md section 3). */
 export const SESSION_ENDED = "Session Ended";
+/** Under Session Ended once a tap or Enter has asked for a new code. */
+export const FRESH_LINE = "Starting a fresh screen.";
 
 /**
  * @param {ScreenStateKey} key

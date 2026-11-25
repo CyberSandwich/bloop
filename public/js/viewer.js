@@ -12,8 +12,7 @@ import { byId, el, icon, setText, show } from "./core/ui.js";
 /** @typedef {{canvas: HTMLCanvasElement, ready: boolean, failed: boolean, fraction: number | null, stop: () => void}} Shot */
 
 /**
- * A photo's view link, read by script so its bytes can be counted, and drawn on a canvas: the CSP has no blob:, so
- * bytes a script holds can never become an <img>, and a canvas is the one sink that takes them.
+ * A photo's view link, read by script to count its bytes, drawn on a canvas: the CSP has no blob: for an <img>.
  * @param {string} url
  * @param {(shot: Shot) => void} onProgress
  * @param {(shot: Shot) => void} onDone loaded or failed; never after stop
@@ -23,15 +22,19 @@ function shoot(url, onProgress, onDone) {
   const abort = new AbortController();
   /** @type {Shot} */
   const shot = {
-    canvas: /** @type {HTMLCanvasElement} */ (el("canvas", { role: "img", "aria-label": "" })),
+    canvas: /** @type {HTMLCanvasElement} */ (el("canvas", { role: "img" })),
     ready: false,
     failed: false,
     fraction: null,
-    stop: () => abort.abort(),
+    // A zero-size canvas frees its pixels.
+    stop: () => {
+      abort.abort();
+      shot.canvas.width = 0;
+    },
   };
   fetch(url, { signal: abort.signal, cache: "no-store", credentials: "omit", referrerPolicy: "no-referrer" })
     .then((res) => {
-      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      if (!res.ok) throw Error(res.statusText);
       return readAll(res, (f) => {
         shot.fraction = f;
         onProgress(shot);
@@ -53,14 +56,8 @@ function shoot(url, onProgress, onDone) {
   return shot;
 }
 
-/** The motion token (base.css), read when used: one curve for the pill's glide and the photo's fade. */
+/** The --ease-out token, for the pill's glide and the photo's fade. */
 const easeOut = () => getComputedStyle(document.documentElement).getPropertyValue("--ease-out").trim();
-
-/** A picture's own size: a slide's natural size, a photo's canvas. @param {HTMLImageElement | HTMLCanvasElement} pic */
-const sizeOf = (pic) =>
-  pic.localName === "canvas"
-    ? { w: /** @type {HTMLCanvasElement} */ (pic).width, h: pic.height }
-    : { w: /** @type {HTMLImageElement} */ (pic).naturalWidth, h: /** @type {HTMLImageElement} */ (pic).naturalHeight };
 
 /** The fetch PowerPoint would make: a HEAD, on this origin only. @returns {boolean} */
 export function fetchOpen(/** @type {string} */ link) {
@@ -119,18 +116,19 @@ export function createViewer(deps) {
     for (const a of running) a.cancel();
     const swap = swapped;
     swapped = false;
-    /** @type {HTMLImageElement | HTMLCanvasElement | null} */
-    const pic = frame.querySelector("picture img, canvas");
-    const standIn = /** @type {HTMLElement | null} */ (frame.querySelector(".stand-in"));
-    const img = pic ?? standIn;
+    /** @type {any} a slide, a photo's canvas (no natural size), or the photo's loader */
+    const img = frame.querySelector("picture img, canvas") ?? frame.querySelector(".stand-in");
     const item = frame.classList.contains("is-scroll") ? null : (img ?? frame.firstElementChild);
     const css = getComputedStyle(view);
     const inset = parseFloat(css.getPropertyValue("--inset"));
     const pillH = parseFloat(css.getPropertyValue("--pill"));
     const stackW = parseFloat(css.getPropertyValue("--stack"));
     // The stand-in is the photo's 3 : 2.
-    const size = pic ? sizeOf(pic) : null;
-    const ratio = size ? size.w / size.h : standIn ? 1.5 : 0;
+    const ratio = !img
+      ? 0
+      : img.matches(".stand-in")
+        ? 1.5
+        : (img.naturalWidth ?? img.width) / (img.naturalHeight ?? img.height);
     const stage = { w: view.offsetWidth, h: view.offsetHeight };
     const w = Math.min(stage.w, stage.h * ratio);
     // The column's height is read with it on.
@@ -378,6 +376,7 @@ export function createViewer(deps) {
     const shot = photo ? image(at) : null;
     const img = shot?.ready ? shot.canvas : null;
     const loading = photo && !img && !shot?.failed && !refused.has(key);
+    arriving = loading;
     const want = p ? `p${at}:${scroll ? "all" : page}` : img ? `i${at}` : loading ? `w${at}` : `c${at}`;
     if (want !== framed) {
       framed = want;
@@ -448,11 +447,7 @@ export function createViewer(deps) {
   }
 
   function clear() {
-    // A zero-size canvas frees its pixels; a photo still on its way stops.
-    for (const shot of [...images.values(), ...early.values()]) {
-      shot.stop();
-      shot.canvas.width = 0;
-    }
+    for (const shot of [...images.values(), ...early.values()]) shot.stop();
     images.clear();
     early.clear();
     waiting = null;
@@ -474,6 +469,7 @@ export function createViewer(deps) {
 
   /** Pages and a loaded image; a link or a file card has nothing to present. */
   const presentable = () => !!pages() || !!images.get(keyOf(at))?.ready;
+  let arriving = false;
   let sleep = 0;
   /** @type {HTMLElement | null} */
   let opener = null;
@@ -632,10 +628,7 @@ export function createViewer(deps) {
       const was = shown ? images.get(keyOf(item)) : early.get(item);
       // A photo already drawn stays on stage: a fresh link for it would only put its loader back.
       if (was?.ready) return true;
-      if (was) {
-        was.stop();
-        was.canvas.width = 0;
-      }
+      was?.stop();
       const shot = shoot(
         target,
         (s) => waiting && images.get(waiting.key) === s && setProgress(waiting.part, s.fraction),
@@ -655,6 +648,8 @@ export function createViewer(deps) {
     at: () => at,
 
     presentable,
+    /** The photo on stage is still on its way. */
+    arriving: () => arriving,
     present,
   };
 }

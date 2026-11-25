@@ -36,8 +36,13 @@ class Node {
   offsetTop = 0;
   offsetWidth = 0;
   offsetHeight = 0;
-  naturalWidth = 0;
-  naturalHeight = 0;
+  // A canvas, as in a browser, has no natural size.
+  get naturalWidth() {
+    return this.tag === "canvas" ? undefined : 0;
+  }
+  get naturalHeight() {
+    return this.tag === "canvas" ? undefined : 0;
+  }
   width = 0;
   height = 0;
   parent: Node | null = null;

@@ -451,12 +451,14 @@ test.describe("pairing flow", () => {
     await page.evaluate(
       `window.__asks = 0; const send = WebSocket.prototype.send; WebSocket.prototype.send = function (d) { if (String(d).includes('"code.next"')) window.__asks++; return send.call(this, d); }`,
     );
-    // Past the floor, a burst of taps (and the repaints between them) asks for one code, not one each.
-    await page.waitForTimeout(3300);
+    // Before the floor, a tap says at once that a fresh screen is on its way; a burst of taps (and the repaints between
+    // them) asks for one code, not one each.
+    await page.waitForTimeout(800);
     for (let i = 0; i < 3; i++) {
       await page.mouse.click(SCREEN.width / 2, 80);
       await page.waitForTimeout(100);
     }
+    await expect(page.locator("#line")).toHaveText("Starting a fresh screen.");
     await expect(heading(page)).toHaveText(DEMO.room, { timeout: 6000 });
     expect(Date.now() - since).toBeLessThan(6000);
     expect(await page.evaluate("window.__asks")).toBe(1);
@@ -1337,6 +1339,11 @@ test.describe("screen and phone layout", () => {
     await expect(loader).toHaveAttribute("role", "progressbar");
     await expect(loader).toHaveAttribute("aria-label", "Loading Dog.jpg");
     await expect(loader).toHaveCSS("filter", "none");
+    // Present holds its place in the pill, disabled, so the pill keeps one shape when the photo lands.
+    const present = page.getByRole("button", { name: "Present", exact: true });
+    await expect(present).toBeVisible();
+    await expect(present).toBeDisabled();
+    const pill = await page.locator("#controls").boundingBox();
     const values: number[] = [];
     await expect
       .poll(async () => {
@@ -1347,6 +1354,8 @@ test.describe("screen and phone layout", () => {
       .toBe(true);
     await expect(page.locator(STAGED)).toBeVisible({ timeout: 15_000 });
     await expect(page.getByRole("img", { name: "Dog.jpg" })).toBeVisible();
+    await expect(present).toBeEnabled();
+    expect(Math.round((await page.locator("#controls").boundingBox())?.width ?? 0)).toBe(Math.round(pill?.width ?? -1));
     // It rose, never fell, and the loader left once the photo had faded in.
     expect(values.some((v) => v > 0 && v < 100)).toBe(true);
     expect(values).toEqual([...values].sort((a, b) => a - b));

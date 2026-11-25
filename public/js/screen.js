@@ -2,7 +2,7 @@
 /** @import {ScreenView} from "../../src/shared/protocol.ts" */
 import { createApi } from "./core/api.js";
 import { openChannel } from "./core/channel.js";
-import { endLine, screenCopy } from "./core/copy.js";
+import { endLine, FRESH_LINE, screenCopy } from "./core/copy.js";
 import { clock, itemName, qrLabel } from "./core/format.js";
 import { qrMatrix, qrPath, qrSize } from "./core/qr.js";
 import { firstFile, screenKey } from "./core/states.js";
@@ -129,11 +129,9 @@ const serverNow = () => Date.now() + s.skew;
 let gen = 0;
 /** The line under Session Ended, fixed when the session ends (the launcher forgets at once). */
 let ended = "";
-/** When this page saw the session end: later than the server's own end, so a wait measured from it is never short. */
+// Session Ended's countdown, from when this page saw the end (never before the server's), and its one request per floor.
 let endedSince = 0;
-/** How long Session Ended stays, from endedSince; a repaint keeps the countdown where it was. */
 let endedHold = 0;
-/** When Session Ended last asked for a code: one request per floor, however many repaints and taps come. */
 let endedAsked = 0;
 
 /** One named timer: setting it again replaces the old one. */
@@ -292,7 +290,10 @@ function paint() {
   show(dlNote, !DEMO && mintable && download);
   setText(buttons.download, viewing || key === "open_fallback" ? "Download" : "Download It Instead");
   show(buttons.pdf, mintable && has("pdf"));
-  show(buttons.present, viewing && !!viewer?.presentable());
+  // A photo on its way holds Present's place, disabled, so the pill keeps one shape.
+  const presentable = !!viewer?.presentable();
+  show(buttons.present, viewing && (presentable || !!viewer?.arriving()));
+  buttons.present.toggleAttribute("disabled", !presentable);
   // With the sidebar showing, the h1 is visually hidden: focus lands on the selected row instead.
   const row = document.querySelector("#items [aria-current]");
   if (changed && lostFocus()) focusTitle(row instanceof HTMLElement && row.offsetParent ? row : heading);
@@ -420,13 +421,12 @@ byId("b-leave").addEventListener("click", () => {
 // Back ends a waiting screen, so its code and demo slot go at once.
 buttons.back.addEventListener("click", () => leave(s.view?.state === "waiting"));
 buttons.present.addEventListener("click", () => viewer?.present(true));
-// Session Ended: a tap anywhere but a link (Join the Waitlist), or Enter, cuts the countdown to its shortest, the
-// floor the server keeps Session Ended for (ENDED_QR_RETURN_MS, its endedMinSeconds), then takes the same way to a
-// fresh code.
+// A tap anywhere but a link, or Enter, cuts Session Ended to the server's floor (design.md section 7, Ended).
 function skipEnded() {
   if (keyNow() !== "ended" || Date.now() - endedSince < ENDED_SKIP_GRACE_MS) return;
   endedHold = ENDED_QR_RETURN_MS;
-  schedule("ended");
+  ended = FRESH_LINE;
+  render();
 }
 document.addEventListener("click", (e) => {
   if (!(e.target instanceof Element && e.target.closest("a"))) skipEnded();

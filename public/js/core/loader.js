@@ -1,38 +1,21 @@
 // The one loading part (docs/design.md section 6, Loader). The phone's upload rows move onto it with c-phone.
 import { el } from "./ui.js";
 
-/**
- * @param {string} label what is loading, for screen readers
- * @param {string | null} thumb a same-origin thumbnail, or none (the glass on `--g1`)
- */
+/** @param {string} label @param {string | null} thumb a same-origin thumbnail, or none */
 export function loader(label, thumb) {
-  return el(
-    "div",
-    {
-      class: "loader",
-      role: "progressbar",
-      "aria-label": `Loading ${label}`,
-      "aria-valuemin": "0",
-      "aria-valuemax": "100",
-    },
-    [
-      ...(thumb ? [el("img", { class: "loader-thumb", src: thumb, alt: "" })] : []),
-      el("span", { class: "glass" }),
-      el("span", { class: "loader-fill" }),
-    ],
-  );
+  // aria-valuemin and aria-valuemax default to 0 and 100 on a progressbar.
+  return el("div", { class: "loader", role: "progressbar", "aria-label": `Loading ${label}` }, [
+    ...(thumb ? [el("img", { class: "loader-thumb", src: thumb, alt: "" })] : []),
+    el("span", { class: "glass" }),
+    el("span", { class: "loader-fill" }),
+  ]);
 }
 
-/**
- * The share received, 0 to 1; null while the length is unknown (indeterminate).
- * @param {HTMLElement} part
- * @param {number | null} fraction
- */
+/** @param {HTMLElement} part @param {number | null} fraction 0 to 1, or null while the length is unknown */
 export function setProgress(part, fraction) {
   if (fraction === null) {
     part.removeAttribute("aria-valuenow");
-    part.style.removeProperty("--progress");
-    return;
+    return part.style.removeProperty("--progress");
   }
   const f = Math.min(1, Math.max(0, fraction));
   part.setAttribute("aria-valuenow", String(Math.round(f * 100)));
@@ -40,11 +23,9 @@ export function setProgress(part, fraction) {
 }
 
 /**
- * Reads a body to its end, reporting the share received; null when the length is unknown (an encoded body's length
- * counts other bytes than the reader sees).
- * @param {Response} res
- * @param {(fraction: number | null) => void} onProgress
- * @returns {Promise<Blob>}
+ * Reads a body to its end, reporting the share received: null when the length is unknown, as for an encoded body,
+ * whose length counts other bytes than the reader sees.
+ * @param {Response} res @param {(fraction: number | null) => void} onProgress @returns {Promise<Blob>}
  */
 export async function readAll(res, onProgress) {
   const total = res.headers.get("Content-Encoding") ? 0 : Number(res.headers.get("Content-Length")) || 0;
