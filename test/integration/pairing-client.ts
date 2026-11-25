@@ -231,15 +231,20 @@ export async function claim(api: Api, code: string, kind: "owner" | "guest" = "o
 }
 
 /**
- * Statuses from `send` up to and including the first 429, which must come within 2 * limit + 1 requests:
- * a fixed window that rolls over once mid-loop admits at most two windows' worth (2 * limit) before it
- * refuses, so a binding configured above `limit` fails here.
+ * Statuses from `send` up to and including the first 429, which must be the limit + 1th request (so at
+ * most `limit` were accepted). A flood takes well under a second against a 60 s fixed window, but the
+ * window can roll over mid-flood and admit a fresh batch, so one miss is retried once (the retry meets a
+ * partly used window, so its 429 comes no later). Two misses in a row mean the binding admits more than
+ * `limit`.
  */
 export async function untilRefused(limit: number, send: () => Promise<number>): Promise<number[]> {
   const statuses: number[] = [];
-  for (let i = 0; i < 2 * limit + 1 && statuses.at(-1) !== 429; i++) statuses.push(await send());
-  if (statuses.at(-1) !== 429) throw new Error(`no 429 within ${2 * limit + 1} requests: ${statuses.join(",")}`);
-  return statuses;
+  for (let attempt = 0; attempt < 2; attempt++) {
+    statuses.length = 0;
+    for (let i = 0; i <= limit && statuses.at(-1) !== 429; i++) statuses.push(await send());
+    if (statuses.at(-1) === 429) return statuses;
+  }
+  throw new Error(`no 429 within ${limit + 1} requests, twice: ${statuses.join(",")}`);
 }
 
 export async function phoneSocket(api: Api, pid: string): Promise<Socket> {
