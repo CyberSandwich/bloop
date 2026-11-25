@@ -34,6 +34,16 @@ const SCREEN_MIN = 600;
 const NAV_MIN = 640;
 const DECK = "test/fixtures/decks/sample-deck.pptx";
 
+/** A refused code answered by the page's own mock: a real miss counts against the one shared IP (10 in 10 minutes). */
+const refuseClaims = (page: Page) =>
+  page.route("**/api/claim", (route) =>
+    route.fulfill({
+      status: 404,
+      contentType: "application/problem+json",
+      body: JSON.stringify({ type: "about:blank", status: 404, code: "code_unknown" }),
+    }),
+  );
+
 test.skip(!process.env.TOUR, "the screenshot tour runs only with TOUR=1");
 
 for (const v of VIEWPORTS) {
@@ -89,6 +99,7 @@ for (const v of VIEWPORTS) {
       await field.fill("K7O");
       await expect(page.locator("#code-error")).toBeVisible();
       await shoot(page, "code-invalid");
+      await refuseClaims(page);
       await field.fill("222 222");
       await page.getByRole("button", { name: "Continue" }).click();
       await expect(page.locator("#code-error")).toContainText("Check the code on the screen.");
@@ -101,6 +112,7 @@ for (const v of VIEWPORTS) {
       await page.goto("/a");
       await expect(heading(page)).toHaveText("Scan the Code");
       await shoot(page, "a-scan");
+      await refuseClaims(page);
       await page.goto("/a?c=222222");
       await expect(heading(page)).toHaveText("This Code Has Expired");
       await shoot(page, "a-expired");
@@ -132,14 +144,14 @@ for (const v of VIEWPORTS) {
         await shoot(page, `s-${state}`);
         await context.close();
       }
-      // Offline after the screen has its code: the live view drops and says so.
+      // A live screen needs a room-sized window; the demo runs at any size.
       if (v.width < SCREEN_MIN) {
-        const narrow = await openAt(browser, v, "/s?mode=demo");
+        const narrow = await openAt(browser, v, "/s");
         await expect(narrow.page.getByText("Use the Room's Screen")).toBeVisible();
         await shoot(narrow.page, "s-narrow");
         await narrow.context.close();
-        return;
       }
+      // Offline after the screen has its code: the live view drops and says so.
       const screen = await demoScreenAt(browser, v);
       await screen.context.setOffline(true);
       await screen.page.waitForTimeout(6000);
@@ -148,7 +160,6 @@ for (const v of VIEWPORTS) {
     });
 
     test("screen page, owner session", async ({ browser }) => {
-      test.skip(v.width < SCREEN_MIN, "under 600 the screen page asks for the room's screen (s-narrow)");
       const screen = await demoScreenAt(browser, v);
       await shoot(screen.page, "s-code");
       const phone = await scanAt(browser, screen.page, PHONE);
@@ -157,10 +168,14 @@ for (const v of VIEWPORTS) {
       await phone.page.getByRole("button", { name: "Approve" }).click();
       await expect(screen.page.locator("#items > li .item")).toHaveCount(4);
       await shoot(screen.page, "s-viewer");
-      await screen.page.getByRole("button", { name: "Present", exact: true }).click();
-      await expect(screen.page.locator("body")).toHaveClass(/is-presenting/);
-      await shoot(screen.page, "s-presenting");
-      await screen.page.keyboard.press("Escape");
+      // A narrow screen may offer no Present of its own (the phone's remote does).
+      const present = screen.page.getByRole("button", { name: "Present", exact: true });
+      if (await present.isVisible()) {
+        await present.click();
+        await expect(screen.page.locator("body")).toHaveClass(/is-presenting/);
+        await shoot(screen.page, "s-presenting");
+        await screen.page.keyboard.press("Escape");
+      }
       await revoke(phone.page);
       await expect(heading(screen.page)).toHaveText("Session Ended");
       await shoot(screen.page, "s-ended");
@@ -169,7 +184,6 @@ for (const v of VIEWPORTS) {
     });
 
     test("screen page, guest offer", async ({ browser }) => {
-      test.skip(v.width < SCREEN_MIN, "under 600 the screen page asks for the room's screen (s-narrow)");
       const screen = await demoScreenAt(browser, v);
       const phone = await scanAt(browser, screen.page, PHONE);
       await addFile(phone.page, DECK);
