@@ -3,9 +3,9 @@
 import { DurableObject } from "cloudflare:workers";
 import type { Env } from "../env.ts";
 import type { CodeDirectory, DemoCap } from "../seams/pairing.ts";
-import { DemoSlots } from "./demo-slots.ts";
+import type { DemoSlots } from "./demo-slots.ts";
 import { isBlocked, MISS_WINDOW_MS, type MissRow, recordGlobalMiss, recordMiss } from "./directory-rules.ts";
-import { migrateDirectory } from "./directory-schema.ts";
+import { initDirectoryStorage } from "./directory-schema.ts";
 
 /**
  * An expired code keeps routing to its screen for this long, so the Screen answers `code_expired`
@@ -21,12 +21,7 @@ export class Directory extends DurableObject<Env> implements CodeDirectory, Demo
 
   constructor(ctx: DurableObjectState, env: Env) {
     super(ctx, env);
-    this.slots = new DemoSlots(ctx.storage.sql);
-    ctx.storage.sql.exec(
-      `CREATE TABLE IF NOT EXISTS code (code TEXT PRIMARY KEY, screen_ref TEXT NOT NULL, expires_at INTEGER NOT NULL, demo INTEGER NOT NULL DEFAULT 0);
-       CREATE TABLE IF NOT EXISTS miss (ip_hash TEXT PRIMARY KEY, count INTEGER NOT NULL, window_start INTEGER NOT NULL);`,
-    );
-    migrateDirectory(ctx.storage.sql, ctx.storage.kv);
+    this.slots = initDirectoryStorage(ctx.storage.sql, ctx.storage.kv);
   }
 
   async put(code: string, screenRef: string, expiresAt: number, demo: boolean): Promise<"ok" | "collision"> {

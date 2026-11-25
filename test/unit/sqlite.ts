@@ -8,9 +8,13 @@ export function sqlOver(db: DatabaseSync): SqlLike {
       const statement = db.prepare(query);
       const values = bindings as SQLInputValue[];
       // Like the platform's cursor, a statement runs when exec is called, not when its rows are read.
-      const rows = /^\s*select/i.test(query) ? (statement.all(...values) as Record<string, unknown>[]) : [];
-      if (!rows.length && !/^\s*select/i.test(query)) statement.run(...values);
-      return { toArray: () => rows };
+      // A statement that returns columns (SELECT, WITH ... SELECT) is read; any other is run.
+      if (statement.columns().length > 0) {
+        const rows = statement.all(...values) as Record<string, unknown>[];
+        return { toArray: () => rows };
+      }
+      statement.run(...values);
+      return { toArray: () => [] };
     },
   };
 }

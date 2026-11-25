@@ -465,8 +465,10 @@ CREATE TABLE r2_ops (                    -- R2 operations bloop performed; 13 mo
 | `code:<code>`   | `screenRef`, expiresAt       | 70 s, then kept 5 min so a late phone gets `code_expired`; an alarm sweeps older rows |
 | `miss:<ipHash>` | failed lookups, window start | 10 min                             |
 | `miss:global`   | failed lookups this window, all IP hashes (same table, key `global`) | 10 min                             |
+| `demo:<screenRef>` | the demo slot: IP hash, hold expiry (`do/demo-slots.ts`) | until its session ends, its screen closes or its hold runs out; the alarm sweeps older rows |
+| `schemaVersion` | the storage version, in the object's key-value storage (`do/directory-schema.ts`); every step runs on every wake | as long as the object |
 
-Both objects use SQLite storage: the Screen object through its synchronous key-value API (`ctx.storage.kv`), the Directory through SQL tables `code`, `miss` and `demo` (the demo slots, `do/demo-slots.ts`). Both keep a `schemaVersion` in `ctx.storage.kv`, stepped by the shared `applySteps` (`do/schema.ts`). The Directory's steps are in `do/directory-schema.ts`: step 2 indexes `expires_at` on `code` and `demo`, so the alarm's and `put`'s sweeps (`DELETE ... WHERE expires_at <= ?`) read only the expired rows however many live ones there are. Every step runs on every wake, and `CREATE INDEX IF NOT EXISTS` repairs a dropped index.
+Both objects use SQLite storage: the Screen object through its synchronous key-value API (`ctx.storage.kv`), the Directory through SQL tables `code`, `miss` and `demo` (the demo slots, `do/demo-slots.ts`). Both keep a `schemaVersion` in `ctx.storage.kv`, stepped by the shared `applySteps` (`do/schema.ts`). The Directory's steps are in `do/directory-schema.ts`: step 2 indexes `expires_at` on `code` and `demo` and `window_start` on `miss`, so the alarm's and `put`'s sweeps (`DELETE ... WHERE expires_at <= ?`) read only the expired rows however many live ones there are. `applySteps` only raises the stored version. Every step runs on every wake, and `CREATE INDEX IF NOT EXISTS` repairs a dropped index.
 
 ### 8.4 Screen browser
 
