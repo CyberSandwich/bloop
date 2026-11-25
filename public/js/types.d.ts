@@ -91,10 +91,6 @@ export interface ChannelOptions {
   // biome-ignore lint/suspicious/noExplicitAny: frames are checked by the page that takes them
   onFrame?: (frame: any) => void;
   onLink: (link: "ok" | "offline" | "down" | "blocked") => void;
-  /** The tab is hidden (a hidden tab's timers are throttled, so its pings are not judged); default `document.hidden`. */
-  hidden?: () => boolean;
-  /** Where `ws=blocked` is kept; default `sessionStorage`, `null` for none. */
-  storage?: Pick<Storage, "getItem" | "setItem" | "removeItem"> | null;
 }
 
 export type SendResult = { ok: true; view: PhoneView } | { ok: false; error: ErrorCode };

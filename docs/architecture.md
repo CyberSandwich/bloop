@@ -383,7 +383,7 @@ Both sockets are JSON text frames of at most 4 KB, `{"v":1,"t":<type>,...}`. A s
 | server to phone  | `state`     | `PhoneView` (state, room, match, items, endsAt for the countdown, maxMinutes, mode, kind) |
 |                  | `error`     | `code`                                                                              |
 
-**Channel state rules** (`core/channel.js`, constants in `core/timing.js`; the one owner, so a page restates none of it):
+**Channel state rules** (`core/channel.js`, constants in `core/channel-timing.js`; the polling loop is `core/poll.js` and the ping rule `core/health.js`, each loaded by `import()` on first need so a healthy page carries neither; the one owner, so a page restates none of it):
 
 | Rule | Behavior |
 |---|---|

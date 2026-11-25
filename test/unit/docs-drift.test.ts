@@ -308,6 +308,9 @@ describe("size budgets", () => {
         "public/js/core/length.js",
         "public/js/shared/length.js",
       ],
+      "session length words, lazy": "public/js/core/length-extra.js",
+      "channel polling, lazy": "public/js/core/poll.js",
+      "channel health, lazy": "public/js/core/health.js",
       "phone remote, lazy": ["public/js/core/lazy.js", "public/js/core/remote-ui.js", "public/js/core/remote.js"],
       "drag and drop, lazy": "public/js/core/drag.js",
       "support mail, lazy": "public/js/shared/support.js",
@@ -369,7 +372,7 @@ describe("size budgets", () => {
       for (const line of read(file)
         .split("\n")
         .filter((l) => /length\.js\b/.test(l) && /\b(import|from)\b/.test(l))) {
-        if (file.endsWith("core/length.js")) expect(line, file).toMatch(/from "\.\.\/shared\/length\.js"/);
+        if (/core\/length(-extra)?\.js$/.test(file)) expect(line, file).toMatch(/from "\.\.\/shared\/length\.js"/);
         else expect(line, file).toMatch(/import\("\.\/core\/length\.js"\)/);
       }
     }
