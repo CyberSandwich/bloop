@@ -8,6 +8,7 @@ import {
   chromeFor,
   faqOf,
   fill,
+  fillProse,
   headOfHand,
   injectChrome,
   loadDocs,
@@ -178,23 +179,19 @@ describe("the head of every page", () => {
     expect(web.publisher).toEqual({ "@id": org["@id"] });
   });
 
-  it("the FAQPage says what the visible FAQ says, question for question", () => {
+  it("the FAQPage says what the visible FAQ says, question for question, less its link sentences", () => {
     const html = built.get("public/index.html") ?? "";
     const faq = ld(html)[0]["@graph"].find((n: { "@type": string }) => n["@type"] === "FAQPage");
-    const section = /<section class="faq"[\s\S]*?<\/section>/.exec(html)?.[0] ?? "";
-    const text = (s: string) =>
-      s
-        .replace(/<[^>]+>/g, "")
-        .replace(/\s+/g, " ")
-        .trim();
-    const visible = [...section.matchAll(/<summary>([\s\S]*?)<\/summary>\s*<p>([\s\S]*?)<\/p>/g)].map((m) => ({
-      "@type": "Question",
-      name: text(m[1] ?? ""),
-      acceptedAnswer: { "@type": "Answer", text: text(m[2] ?? "") },
-    }));
-    expect(visible).toHaveLength(section.split("<details").length - 1);
+    const visible = faqOf(html, "index.html");
+    expect(visible).toHaveLength(html.split("<details").length - 1);
     expect(visible.length).toBeGreaterThanOrEqual(4);
-    expect(faq.mainEntity).toEqual(visible);
+    expect(faq.mainEntity).toEqual(
+      visible.map(({ q, a }) => ({ "@type": "Question", name: q, acceptedAnswer: { "@type": "Answer", text: a } })),
+    );
+    const residue = faq.mainEntity.find((e: { name: string }) => e.name === "What stays on the room PC?");
+    expect(residue.acceptedAnswer.text).toBe(
+      "Only a link to each item you open, and never your account. A downloaded copy or the browser's history can stay until the PC is wiped.",
+    );
     expect(faq.url).toBe(`${site.origin}/`);
   });
 
@@ -202,8 +199,9 @@ describe("the head of every page", () => {
     const item = (q: string, a: string) => `<details>\n  <summary>${q}</summary>\n  <p>${a}</p>\n</details>`;
     const page = (...items: string[]) => `<section class="faq">${items.join("")}</section>`;
     expect(faqOf(page(item("Q?", 'Yes, <b class="name">bloop</b>. <a href="/x">More.</a>')), "x")).toEqual([
-      { q: "Q?", a: "Yes, bloop. More." },
+      { q: "Q?", a: "Yes, bloop." },
     ]);
+    expect(() => faqOf(page(item("Q?", '<a href="/x">Only a link.</a>')), "x")).toThrow(/no text of its own/);
     expect(() => faqOf(page(item("Q?", "A"), "<details><summary>Q2</summary><div>A</div></details>"), "x")).toThrow(
       /x: the FAQ/,
     );
@@ -282,7 +280,11 @@ describe("sitemap.xml and robots.txt", () => {
     const llms = built.get("public/llms.txt") ?? "";
     expect(read("public/llms.txt")).toBe(llms);
     const landing = site.pages.find((p) => p.path === "/");
-    expect(llms.startsWith(`# ${site.name}\n\n> ${landing?.description}\n\n${site.about}\n\n## Articles\n`)).toBe(true);
+    const about = site.about.replace("{{demo}}", `${site.origin}/demo`);
+    expect(llms.startsWith(`# ${site.name}\n\n> ${landing?.description}\n\n${about}\n\n## Articles\n`)).toBe(true);
+    // The demo address comes from the origin, so `about` types no origin by hand.
+    expect(site.about).not.toMatch(/https?:|bloop\.here/);
+    expect(llms).toContain(`the demo is at ${site.origin}/demo.`);
     const links = [...llms.matchAll(/^- \[([^\]]+)\]\(([^)]+)\): (.+)$/gm)];
     expect(links.map((m) => m[2])).toEqual(
       [...docs.filter((d) => d.meta.kind !== "legal"), ...docs.filter((d) => d.meta.kind === "legal")].map(
@@ -389,8 +391,14 @@ describe("the content rules", () => {
     expect(fill("<a>\n  {{x}}\n</a>\n{{y}}\n", { x: "1\n2", y: "" })).toBe("<a>\n  1\n  2\n</a>\n");
     expect(fill("<i>{{x}}</i>", { x: "v" })).toBe("<i>v</i>");
     expect(() => fill("{{x}}", {})).toThrow(/no value for \{\{x\}\}/);
-    // `{{` is reserved; a page shows two braces by writing the first as an entity.
+    // `{{` is reserved; prose shows two braces by writing the first as an entity.
     expect(fill("&#123;{x}}", {})).toBe("&#123;{x}}");
+  });
+
+  it("fills markdown prose but never a code span or block, which shows its braces as written", () => {
+    const md = "Mail {{x}}, or write `{{x}}`:\n\n```\n{{x}} and {{y}}\n```\n\nThen {{x}}.\n";
+    expect(fillProse(md, { x: "v" })).toBe("Mail v, or write `{{x}}`:\n\n```\n{{x}} and {{y}}\n```\n\nThen v.\n");
+    expect(() => fillProse("{{y}} `{{x}}`", { x: "v" })).toThrow(/no value for \{\{y\}\}/);
   });
 
   it("numbers clauses and letters list items from the source, and refuses a wrong clause number", () => {

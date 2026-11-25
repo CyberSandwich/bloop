@@ -1,7 +1,8 @@
 // Builds the site's generated pages from content/ and keeps one nav, one footer and one head block on every page.
 // `node tools/build-pages-cli.mjs` writes; `--check` writes nothing and exits 1 on drift (npm run check:pages). The
-// design is in docs/design.md section 6, Site build. `{{name}}` is reserved in content and templates: a slot the build
-// has no value for is an error, never left in a page. To show two braces, write the first as `&#123;`.
+// design is in docs/design.md section 6, Site build. `{{name}}` is reserved in content prose and templates: a slot the
+// build has no value for is an error, never left in a page. To show two braces in prose, write the first as `&#123;`;
+// in a code span or block they are shown as written, never filled.
 import { existsSync, mkdirSync, readdirSync, readFileSync, unlinkSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -258,7 +259,9 @@ export const chromeFor = (page) => ({
   nav: navHtml(page),
   footer: footerHtml(page),
   ...(page.faq
-    ? { ask: `<p class="faq-more">Another question? Email <a href="mailto:${site.email}">${site.email}</a></p>` }
+    ? {
+        ask: `<p class="faq-more">Another question? Email <a href="mailto:${attr(site.email)}">${esc(site.email)}</a></p>`,
+      }
     : {}),
 });
 
@@ -271,12 +274,15 @@ export function faqOf(html, where) {
     throw new Error(`${where}: the FAQ must be <details><summary>question</summary><p>answer</p></details> items`);
   /** @param {string} s */
   const text = (s) => {
+    // A linked sentence points elsewhere on the page ("See what can stay."), which says nothing in a search answer.
     const t = s
+      .replace(/<a\b[^>]*>[\s\S]*?<\/a>/g, "")
       .replace(/<[^>]+>/g, "")
       .replace(/\s+/g, " ")
       .trim();
     // Decoding is not done here, so an entity would reach the structured data as its raw spelling.
     if (t.includes("&")) throw new Error(`${where}: an entity in the FAQ text: ${t}`);
+    if (!t) throw new Error(`${where}: an FAQ question or answer with no text of its own`);
     return t;
   };
   return items.map((m) => ({ q: text(m[1] ?? ""), a: text(m[2] ?? "") }));
@@ -304,6 +310,15 @@ export function injectChrome(html, blocks, where) {
  * @typedef {{ file: string, path: string, out: string, slug: string, dir: string, meta: Record<string, string | boolean>, body: string }} Doc
  */
 
+const CODE = /(^```[\s\S]*?^```$|`[^`\n]+`)/gm;
+/** `fill` for markdown: a code span or fenced block shows its text as written, so a slot inside it stays literal. */
+/** @param {string} md @param {Record<string, string>} vars */
+export const fillProse = (md, vars) =>
+  md
+    .split(CODE)
+    .map((part, i) => (i % 2 ? part : fill(part, vars)))
+    .join("");
+
 /** @param {string} src @returns {Source} */
 export function splitFrontmatter(src) {
   const m = /^---\n([\s\S]*?)\n---\n/.exec(src);
@@ -328,7 +343,7 @@ export function loadDocs() {
       const file = join("content", dir, name);
       const slug = name.slice(0, -3);
       // `{{email}}` keeps the one public address in site.json, not repeated by hand in every page.
-      const { meta, body } = splitFrontmatter(fill(read(file), { email: site.email }));
+      const { meta, body } = splitFrontmatter(fillProse(read(file), { email: site.email }));
       const path = dir ? (slug === "index" ? `/${dir}` : `/${dir}/${slug}`) : `/${slug}`;
       docs.push({ file, path, out: `public${path}.html`, slug, dir, meta, body });
     }
@@ -342,10 +357,13 @@ const need = (/** @type {Doc} */ doc, /** @type {string} */ key) => {
   if (typeof v !== "string" || !v) throw new Error(`${doc.file}: frontmatter ${key} is required`);
   return v;
 };
-// The words a reader reads: a stacked table's column-name labels are aria-hidden copies of the heads.
+// A stacked table's column name over each value (tableHtml); aria-hidden, as readers have the heads.
+const LABEL = '<span class="label" aria-hidden="true">';
+const label = (/** @type {string} */ head) => `${LABEL}${esc(head)}</span>`;
+// The words a reader reads, so not the labels.
 const textOf = (/** @type {string} */ html) =>
   html
-    .replace(/<span class="label" aria-hidden="true">[^<]*<\/span>/g, " ")
+    .replaceAll(new RegExp(`${LABEL}[^<]*</span>`, "g"), " ")
     .replace(/<[^>]+>/g, " ")
     .replace(/\s+/g, " ")
     .trim();
@@ -363,13 +381,13 @@ function tableHtml(t, caption, where) {
   const heads = t.header.map((c) => c.text);
   const cell = (/** @type {string} */ head, /** @type {string} */ raw) =>
     head === "Status" ? `<span class="status${raw === "Live" ? " on" : ""}">${esc(raw)}</span>` : inline(raw);
-  // A stacked row (legal.css, under 640) shows each value under this span, its column's name, as real text
-  // rather than `content: attr()`, which can drop the name's spaces; aria-hidden, as readers have the heads.
+  // A stacked row (legal.css, under 640) shows each value under its column's name as real text, the label span,
+  // rather than `content: attr()`, which can drop the name's spaces.
   const rows = t.rows.map((row) => {
     const cells = row.map((c, i) => {
       const head = heads[i] ?? "";
       if (i === 0) return `<th scope="row">${cell(head, c.text)}</th>`;
-      return `<td><span class="label" aria-hidden="true">${esc(head)}</span>${cell(head, c.text)}</td>`;
+      return `<td>${label(head)}${cell(head, c.text)}</td>`;
     });
     return `<tr>${cells.join("")}</tr>`;
   });
@@ -675,7 +693,7 @@ function llms(docs) {
     "",
     `> ${landing.description}`,
     "",
-    site.about,
+    fill(site.about, { demo: `${site.origin}/demo` }),
     "",
     ...group(
       "Articles",
