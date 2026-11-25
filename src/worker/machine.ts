@@ -7,13 +7,13 @@ import {
   effectivePurpose,
   type FileItemRef,
   fileAt,
-  fileById,
   type ItemDraft,
   type ItemRef,
   launchIndex,
   MAX_ITEMS,
   orderItems,
-  pageCount,
+  sameShown,
+  shownFault,
   withIds,
 } from "./items.ts";
 
@@ -32,6 +32,9 @@ export interface FileRef {
   /** Bytes, when the source said; the demo screen shows it on the file card. */
   size?: number;
 }
+
+/** Who sent a `control`: the phone's remote (pid) or the screen's own tap (sid). */
+export type Sender = "phone" | "screen";
 
 export interface Machine {
   state: SessionState;
@@ -61,6 +64,8 @@ export interface Machine {
     minted: number[];
     /** What the screen shows, set by `control`; null until then. */
     shown: Shown | null;
+    /** The last `control` seq applied from each sender (PAIR-13); 0 until then. */
+    seq: Record<Sender, number>;
   } | null;
   uploadAt: number | null;
   offerAt: number | null;
@@ -93,7 +98,7 @@ export type Event =
   | { e: "open.click"; now: number; maxMinutes: number } // the Open button on a guest offer
   | { e: "launched"; now: number; mode: OpenMode }
   | { e: "fetched"; now: number }
-  | { e: "control"; now: number; shown: Shown } // the phone's remote, or the screen reporting its own tap
+  | { e: "control"; now: number; from: Sender; seq: number; shown: Shown } // the phone's remote, or the screen's own tap
   | { e: "fallback"; now: number; mode: OpenMode; item: number | null; maxMints: number } // null: the launched item; maxMints: per item, after its first link
   | { e: "cancel"; now: number }
   | { e: "restart"; now: number }
@@ -192,6 +197,20 @@ function purgeEffects(m: Machine): Effect[] {
   return [{ fx: "purge", file }];
 }
 
+type Session = NonNullable<Machine["session"]>;
+
+/** A session nothing has happened in yet: not approved, nothing opened or shown. */
+const newSession = (items: ItemRef[], minted: number[]): Session => ({
+  items,
+  approvedAt: null,
+  endsAt: null,
+  openMode: null,
+  firstOpenAt: null,
+  minted,
+  shown: null,
+  seq: { phone: 0, screen: 0 },
+});
+
 const sameRefs = (a: readonly ItemRef[], b: readonly ItemDraft[]): boolean =>
   a.length === b.length && a.every((item, i) => item.ref === b[i]?.ref);
 
@@ -261,13 +280,12 @@ function approveItems(
     state: "approved",
     pairing: m.pairing && { ...m.pairing, userId: userId ?? m.pairing.userId },
     session: {
-      items: ordered,
+      ...newSession(
+        ordered,
+        ordered.map((_, i) => (i === launch ? 1 : 0)),
+      ),
       approvedAt: now,
       endsAt: now + maxMinutes * 60 * SECOND,
-      openMode: null,
-      firstOpenAt: null,
-      minted: ordered.map((_, i) => (i === launch ? 1 : 0)),
-      shown: null,
     },
     uploadAt: null,
     offerAt: null,
@@ -385,16 +403,7 @@ export function transition(m: Machine, ev: Event, cfg: MachineConfig): Step {
 
     case "upload.done": {
       if (m.state !== "uploading") return fail("wrong_state");
-      const items = withIds([{ kind: "file", ...ev.file }]);
-      const session = {
-        items,
-        approvedAt: null,
-        endsAt: null,
-        openMode: null,
-        firstOpenAt: null,
-        minted: [0],
-        shown: null,
-      };
+      const session = newSession(withIds([{ kind: "file", ...ev.file }]), [0]);
       return ok({ ...m, state: "offered", session, uploadAt: null, offerAt: now + cfg.claimTimeoutSeconds * SECOND }, [
         { fx: "audit", type: "guest.uploaded", actor: "phone" },
         { fx: "push", to: "both" },
@@ -436,16 +445,16 @@ export function transition(m: Machine, ev: Event, cfg: MachineConfig): Step {
     case "control": {
       // A live screen has no viewer to follow a command.
       if (!IN_SESSION.includes(m.state) || !m.session || !m.pairing || m.mode === "live") return fail("wrong_state");
-      // Files only, by id: a link is never remote-opened (LINK-01), and an id outside the list is not a file (PAIR-11).
-      const file = fileById(m.session.items, ev.shown.item);
-      if (!file) return fail("file_not_found");
-      const pages = pageCount(file, { mode: m.mode, kind: m.pairing.kind });
-      if (!Number.isInteger(ev.shown.page) || ev.shown.page < 1 || ev.shown.page > pages) return fail("bad_request");
-      const { shown } = ev;
-      const same = m.session.shown;
-      // Absolute: the same command again changes nothing and pushes nothing.
-      if (same && same.item === shown.item && same.page === shown.page && same.present === shown.present) return ok(m);
-      return ok({ ...m, session: { ...m.session, shown } }, [{ fx: "push", to: "both" }]);
+      const fault = shownFault(m.session.items, ev.shown, { mode: m.mode, kind: m.pairing.kind });
+      if (fault) return fail(fault);
+      // Per sender, only a newer command applies: a replay, or an older one that arrives late, changes nothing.
+      // Between the phone and the screen, the last one applied wins.
+      const { seq } = m.session;
+      if (ev.seq <= seq[ev.from]) return ok(m);
+      const session = { ...m.session, seq: { ...seq, [ev.from]: ev.seq } };
+      // Absolute: the same `shown` again is stored for its seq and pushes nothing.
+      if (sameShown(m.session.shown, ev.shown)) return ok({ ...m, session });
+      return ok({ ...m, session: { ...session, shown: ev.shown } }, [{ fx: "push", to: "both" }]);
     }
 
     case "fallback": {

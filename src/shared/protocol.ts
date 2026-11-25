@@ -54,14 +54,20 @@ export interface LinkItem {
 }
 export type Item = FileItem | LinkItem;
 
-/**
- * What the screen shows: the body of `POST /api/control` (phone, pid) and `POST /api/screen/shown` (screen, sid), and
- * `shown` in both views. Absolute, so a replay changes nothing.
- */
+/** What the screen shows: `shown` in both views, and the body of the remote's two routes (`ShownCommand`). */
 export interface Shown {
   item: string; // a file item's id
   page: number; // 1-based, within the item's pages
   present: boolean;
+}
+
+/**
+ * The body of `POST /api/control` (phone, pid) and `POST /api/screen/shown` (screen, sid). Absolute, so a replay
+ * changes nothing. `seq` grows with each command from one sender, across reloads too (the sender's clock in ms does),
+ * and a command whose `seq` is not above the last one applied from that sender changes nothing (PAIR-13).
+ */
+export interface ShownCommand extends Shown {
+  seq: number;
 }
 
 export interface ScreenView {

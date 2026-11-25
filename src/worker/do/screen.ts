@@ -12,7 +12,7 @@ import type {
   OpenMode,
   PhoneView,
   ScreenView,
-  Shown,
+  ShownCommand,
 } from "../../shared/protocol.ts";
 import type { AuditEvent } from "../audit.ts";
 import { type Config, configFor } from "../config.ts";
@@ -152,12 +152,12 @@ export class Screen extends DurableObject<Env> implements PairingStore {
     return this.phoneEvent(pid, () => ({ e: "listed", now: Date.now(), ids }));
   }
 
-  async control(pid: string, shown: Shown): Promise<Result<PhoneView>> {
-    return this.phoneEvent(pid, () => ({ e: "control", now: Date.now(), shown }));
+  async control(pid: string, { seq, ...shown }: ShownCommand): Promise<Result<PhoneView>> {
+    return this.phoneEvent(pid, () => ({ e: "control", now: Date.now(), from: "phone", seq, shown }));
   }
 
-  async reportShown(sid: string, shown: Shown): Promise<Result<ScreenView>> {
-    return this.screenEvent(sid, { e: "control", now: Date.now(), shown });
+  async reportShown(sid: string, { seq, ...shown }: ShownCommand): Promise<Result<ScreenView>> {
+    return this.screenEvent(sid, { e: "control", now: Date.now(), from: "screen", seq, shown });
   }
 
   async approve(pid: string, items: ItemDraft[], userId: string | null): Promise<Result<PhoneView>> {

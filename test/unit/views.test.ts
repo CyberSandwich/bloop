@@ -51,9 +51,12 @@ describe("views", () => {
     expect(screenView(META, approved(), CONFIG, T0 + sec(11)).shown).toBeNull();
     expect(phoneView(META, approved(), T0 + sec(11), 50)?.shown).toBeNull();
     const shown = { item: "i1", page: 2, present: true };
-    const m = must(approved(), { e: "control", now: T0 + sec(12), shown }).next;
+    const m = must(approved(), { e: "control", now: T0 + sec(12), from: "phone", seq: 1, shown }).next;
     expect(screenView(META, m, CONFIG, T0 + sec(13)).shown).toEqual(shown);
     expect(phoneView(META, m, T0 + sec(13), 50)?.shown).toEqual(shown);
+    // The seq is the server's own bookkeeping: neither view carries it.
+    expect(JSON.stringify(screenView(META, m, CONFIG, T0 + sec(13)))).not.toContain("seq");
+    expect(JSON.stringify(phoneView(META, m, T0 + sec(13), 50))).not.toContain("seq");
     const over = must(m, { e: "end", now: T0 + sec(14), by: "phone" }).next;
     expect(screenView(META, over, CONFIG, T0 + sec(15)).shown).toBeNull();
     expect(phoneView(META, over, T0 + sec(15), 50)?.shown).toBeNull();
