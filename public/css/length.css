@@ -1,67 +1,71 @@
-/* /a's Session Length sheet, loaded with core/length.js on the first tap on "Ends in", after base.css and app.css.
-   The floating panel's recipe: glass, 8 around 52 pills, radius 34. At the foot under 640, as the buttons' panel;
-   centered above. The dialog has no padding, so a click on it is the backdrop's. */
+/* Two bubbles in one fill-less dialog: a click on it, gap included, is the backdrop's. */
 .sheet {
   width: min(calc(100% - 2 * var(--pad)), 432px);
   max-width: none;
   margin: auto auto calc(var(--inset) + env(safe-area-inset-bottom));
   padding: 0;
   border: 0;
-  border-radius: 34px;
-  box-shadow: var(--glass-edge), var(--sh-pill);
+  background: none;
+  overflow: visible;
   color: var(--ink);
-  animation: toast-in 250ms var(--ease-out) both;
 }
-.sheet::backdrop {
-  background: rgba(30, 30, 28, 0.24);
-}
-.sheet-in,
+.sheet[open],
+.pane,
+.sheet-head,
 .until {
   display: flex;
   gap: 8px;
 }
+.sheet[open],
 .sheet-in {
   flex-direction: column;
+}
+.sheet h2:focus-visible {
+  outline: none;
+}
+.sheet::backdrop {
+  background: rgba(30, 30, 28, 0.24);
+}
+.pane {
+  min-width: 0;
+  margin: 0;
   padding: 8px;
+  border: 0;
+  border-radius: 34px;
+  box-shadow: var(--glass-edge), var(--sh-pill);
+  animation: toast-in 250ms var(--ease-out) backwards;
+}
+.pane + .pane {
+  animation-delay: 40ms;
 }
 .sheet-head,
 .until {
   align-items: center;
-  padding-left: 16px;
 }
 .sheet-head {
-  display: flex;
   justify-content: space-between;
+  padding-left: 16px;
 }
 .sheet h2 {
   font-size: 22px;
   letter-spacing: -0.025em;
 }
-.close {
+.sheet-x {
   display: grid;
   place-items: center;
-  width: 52px;
-  height: 52px;
+  width: 44px;
+  height: 44px;
+  padding: 0;
   border: 0;
   border-radius: var(--r-pill);
   background: none;
   cursor: pointer;
 }
-.chips {
-  display: flex;
-  gap: 8px;
-  min-width: 0;
-  margin: 0;
-  padding: 0;
-  border: 0;
+.sheet-x:focus-visible {
+  outline-offset: -4px;
 }
-.chips .btn {
-  flex: 1;
-  padding: 0;
-  font-size: 15px;
-}
-.until label {
-  font-weight: 600;
+.sheet-x:active {
+  background: var(--wash);
 }
 .until .field {
   flex: 1;
@@ -72,9 +76,20 @@
   letter-spacing: 0;
   text-transform: none;
 }
+.chips .btn {
+  flex: 1;
+  padding: 0;
+  font-size: 15px;
+}
 @media (hover: hover) {
-  .close:hover {
+  .sheet-x:hover {
     background: var(--wash);
+  }
+}
+@media (max-height: 360px) {
+  .sheet {
+    max-height: calc(100dvh - 2 * var(--inset));
+    overflow-y: auto;
   }
 }
 @media (min-width: 640px) {

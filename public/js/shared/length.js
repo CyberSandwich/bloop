@@ -1,4 +1,4 @@
-// One copy for the Worker's length route and the phone's Session Length sheet, which loads it only when opened.
+// One copy for the Worker's length route and the phone's Session Expiry sheet, which loads it only when opened.
 
 /** The shortest length the phone may set (`POST /api/session/length`). */
 export const MIN_LENGTH_MINUTES = 5;
@@ -20,6 +20,14 @@ export function minutesUntil(value, now = new Date()) {
   if (ago >= 0 && ago < JUST_PAST_MINUTES) return MIN_LENGTH_MINUTES;
   if (ago >= 0) target.setDate(target.getDate() + 1);
   return Math.round((target.getTime() - now.getTime()) / 60_000);
+}
+
+/** Hides presets above the cap, and the pane when none is left. @param {any} pane @param {number} max */
+export function fitPresets(pane, max) {
+  if (!pane) return;
+  const chips = [...pane.querySelectorAll("[data-minutes]")];
+  for (const c of chips) c.hidden = Number(c.dataset.minutes) > max;
+  pane.hidden = chips.every((c) => c.hidden);
 }
 
 /** A length the route takes: at least the minimum, at most the mode's cap. @param {number} minutes @param {number} max */

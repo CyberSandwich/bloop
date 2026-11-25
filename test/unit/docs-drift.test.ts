@@ -317,7 +317,7 @@ describe("size budgets", () => {
     }
   });
 
-  it("SESS-01 sheet: the Session Length sheet loads only by import(), and its length rules only with it", () => {
+  it("SESS-01 sheet: the Session Expiry sheet loads only by import(), and its length rules only with it", () => {
     for (const file of walk("public/js", (path) => path.endsWith(".js"))) {
       for (const line of read(file)
         .split("\n")
