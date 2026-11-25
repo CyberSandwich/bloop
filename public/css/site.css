@@ -188,15 +188,22 @@ html:has(.page-site) {
     display: grid;
   }
 }
-/* No popover: the hiding rule drops, so the list is a row under the pills and the dead button hides. */
+/* No popover: the hiding rule drops, so the list is a row under the pills and the dead button hides. The pill
+   drops its filter, which would make it the fixed row's containing block; .nav's translate stays one, so the
+   inset is from the nav's own edges. */
 @supports not selector(:popover-open) {
   @media (max-width: 759.98px) {
     .nav-menu {
       display: none;
     }
+    .nav-pill {
+      background: var(--glass-solid);
+      -webkit-backdrop-filter: none;
+      backdrop-filter: none;
+    }
     .nav-links {
       position: fixed;
-      inset: calc(var(--nav-h) + 20px) 10px auto;
+      inset: calc(var(--nav-h) + 10px) 0 auto;
       overflow-x: auto;
       padding: 6px;
       border-radius: var(--r-pill);
@@ -388,7 +395,9 @@ html:has(.page-site) {
 }
 @supports (animation-timeline: view()) {
   @media (prefers-reduced-motion: no-preference) and (forced-colors: none) {
+    /* A box per word, so each has its own view timeline. */
     .why-words > * {
+      display: inline-block;
       background:
         linear-gradient(90deg, currentColor 50%, color-mix(in srgb, var(--ink) 16%, var(--paper)) 0) 100% 0 / 200% 100%;
       -webkit-background-clip: text;
