@@ -124,7 +124,7 @@ test.describe("legal layout at 390", () => {
     expect(await page.locator(".toc").evaluate((el) => getComputedStyle(el as unknown as El).position)).toBe("static");
     const label = page.locator('#processors td:nth-child(2) > .label[aria-hidden="true"]').first();
     await expect(label).toBeVisible();
-    expect(await label.evaluate("(el) => el.innerText")).toBe("What it does");
+    await expect(label).toHaveText("What it does");
   });
 
   test("a clause number takes a tap 8 px above and beside its box", async ({ page }) => {
