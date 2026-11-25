@@ -181,7 +181,7 @@ sequenceDiagram
   Note over W,S: the screen end response carries Clear-Site-Data storage
   Note over W,R: every /f/ token now answers 410 (revoked), until the screen object closes
 ```
-Backstops: an hourly cron ends any D1 `session` row still open past the longest a session can last after its approval or claim (`longestSessionMs`: two claim windows, an upload and the 12 h cap, plus 5 min; `closeStaleSessions`, `end_reason` `auto`), and lists `g/` in the bucket and deletes any guest object older than that (plus 10 min), closing the matching `guest_file` rows. Both follow the cap, not a fixed age, so a session the phone made longer keeps its row open and its file. The R2 lifecycle rule (`tools/r2-lifecycle.json`, applied by `deploy.yml`) deletes anything under `g/` older than 1 day.
+Backstops: an hourly cron ends any D1 `session` row still open past the longest a session can last after its approval or claim (`longestSessionMs`: two claim windows, an upload and the 12 h cap, plus 5 min; `closeStaleSessions`, `end_reason` `auto`), and lists `g/` in the bucket and deletes any guest object older than that (plus 10 min), closing the matching `guest_file` rows. Both follow the cap, not a fixed age, so a session the phone made longer keeps its row open and its file. The R2 lifecycle rule (`tools/r2-lifecycle.json`, applied once by the owner, `docs/setup.md`) deletes anything under `g/` older than 1 day.
 
 ### 4.4 Guest drop (host absent)
 
@@ -292,7 +292,7 @@ test/
 
 ## 6. Routes
 
-`run_worker_first: true`: every request reaches the Worker, which first redirects a GET or HEAD for a `*.workers.dev` host, or for the origin's own hostname over plain http, with a 301 (cacheable for an hour) to the same path and query on `PUBLIC_ORIGIN` (`origin.ts`); a write or WebSocket upgrade on those hosts is refused with 403 `forbidden_origin`, not redirected, and any other host is left to the Origin and config checks. Then `/api/*`, `/f/*` and `/auth/*` go to the routes, and everything else is served from the asset binding (`html_handling: "drop-trailing-slash"`, so `/s` serves `s.html`; `_headers` and `_redirects` still apply). `wrangler dev` needs `--infer-origin-from-routes=false`, or the Worker sees `bloop.here` as its host.
+`run_worker_first: true`: every request reaches the Worker, which first redirects a GET or HEAD for a `*.workers.dev` host (except `/fo/ping`, which that host answers itself: section 13), or for the origin's own hostname over plain http, with a 301 (cacheable for an hour) to the same path and query on `PUBLIC_ORIGIN` (`origin.ts`); a write or WebSocket upgrade on those hosts is refused with 403 `forbidden_origin`, not redirected, and any other host is left to the Origin and config checks. Then `/api/*`, `/f/*` and `/auth/*` go to the routes, and everything else is served from the asset binding (`html_handling: "drop-trailing-slash"`, so `/s` serves `s.html`; `_headers` and `_redirects` still apply). `wrangler dev` needs `--infer-origin-from-routes=false`, or the Worker sees `bloop.here` as its host.
 
 | method                   | path                                         | auth                                  | purpose                                                        |
 | ------------------------ | -------------------------------------------- | ------------------------------------- | -------------------------------------------------------------- |
@@ -325,6 +325,18 @@ test/
 | GET                      | `/auth/callback`                             | AEAD state cookie                     | code exchange, then 302 to `/a` (fixed). 400 `bad_request` for a state, cookie or expiry failure (no cookie set), 403 `consent_declined` or `admin_consent_required` for an Entra refusal, 401 `unauthorized` when the ID token fails validation, 502 `source_unavailable` for a failed exchange. Every failure is a small HTML page in the design voice (`auth/error-page.ts`, app policy), never raw problem+json, because the callback is a top-level navigation |
 | GET, HEAD                | `/f/:token/:name`                            | the token                             | open path; query string and name ignored; 404 for any unknown or malformed token, 410 for a dead one |
 | OPTIONS, PROPFIND, other | `/f/*`                                       | none                                  | 405 `Allow: GET, HEAD`                                         |
+| GET | `/fo/ping` | none; file-origin host only | live now: 204 for the file-origin probe (section 13) |
+| GET | `/signin`, `/invite`, `/library`, `/account`, `/admin`, `/report` | pages | gated by launch mode (section 13); the forms and APIs behind them are planned |
+| POST, GET, PATCH, DELETE | `/api/invite/*`, `/api/auth/*`, `/api/me/*` additions | none, or session | planned (A): invites, email code, passkeys, sessions, email change, deletion and restore |
+| GET, POST | `/api/admin/*` | admin session | planned (A): invites, waitlist, reports, users, files, launch mode and gate |
+| POST | `/api/hooks/tally` | signature, no Origin check | planned (A): the waitlist webhook |
+| POST | `/api/reports` | Turnstile | planned (A): a public report |
+| GET | `/api/dev/mailbox` | none; only when `DEV_MAILBOX` is set | planned (A): local and test harness only |
+| POST, PUT, GET, DELETE | `/api/uploads/*` | session, or Bearer pid for a guest | planned (U): multipart create, part URLs, part done, complete, resume; `PUT /api/drop` is removed when it lands |
+| any | `/api/dev/r2/*` | none; local only | planned (U): the proxy-mode bucket stand-in |
+| GET, POST, PATCH, DELETE | `/api/library*`, `/api/me/screens*`, `/api/me/export.zip` | session | planned (L): list, rename, trash, restore, preview link, socket, export |
+| GET, POST | `/api/match`, `/api/notes`; `/api/claim`, `/api/files`, `/api/approve` extended | Bearer pid, session | planned (P1): the match pick, speaker notes, the library source |
+| GET | `/f/`, `/b/`, `/p/` on the file origin | the token | planned (P1): session links, bundles, owner previews |
 
 Every state-changing route checks four things: `Origin` equals `PUBLIC_ORIGIN`; `Sec-Fetch-Site` is `same-origin` when present; `Content-Type: application/json` (or the declared upload type); and a Zod-parsed body. Bearer credentials come from `sessionStorage` and travel in `Authorization`, never in a URL. Errors are `application/problem+json` with an `ErrorCode` (interfaces.md). A POST with no fields still sends `Content-Type: application/json` and a body of `{}` (or no body): that header is what turns a cross-site form post into a 415. Bodies are at most 4 KB, and Zod schemas refuse unknown keys. `POST /api/claim` takes `{code, kind?}`: `kind` defaults to `owner`, and a phone that wants the guest drop path sends `guest`. Any other field, a `pass` included, is `bad_request`.
 
@@ -448,6 +460,8 @@ CREATE TABLE r2_ops (                    -- R2 operations bloop performed; 13 mo
   PRIMARY KEY (month, class));          -- month 'YYYY-MM' UTC; A = put, list; B = get, head
 ```
 
+That is the schema as of `0001_init.sql` and migrations 0002 and 0003. Migration `0004_indexes.sql` adds indexes. `0005_accounts_library.sql` adds email users (`app_user` rows with `tid = 'email'`), invites, codes, passkeys, the library, uploads, `derived`, reports, `admin_action`, `hold`, `setting` and `waitlist`, and rebuilds `guest_file` without its type CHECK. ADR 0013 owns those columns and their retention; ADR 0012 owns how migrations ship.
+
 ### 8.2 Screen Durable Object storage (all deleted at session end, or with `deleteAll()` at close)
 
 | key                | holds                                                                                                                            | lifetime                                                       |
@@ -485,7 +499,7 @@ The Worker's variables are listed once, in `src/worker/config.ts`: the Zod schem
 `TEST_TIMING=1` is test-only and never set in a deployment (`config.ts` refuses it unless `PUBLIC_ORIGIN` is a local address). The integration tests set it through `startPairing()` in `test/integration/pairing-client.ts`, with short timings such as `CODE_TTL_SECONDS=2` and `SESSION_MAX_MINUTES=0.05`. It also skips the platform rate-limit bindings and shortens how long an authed screen socket stays live with nothing heard (`TEST_SILENCE_MS` in `config.ts`, `SILENCE_MS` otherwise), so a test can watch the link binding hand over (OPEN-02).
 
 Deploy-only values (`CLOUDFLARE_ACCOUNT_ID`, `CLOUDFLARE_API_TOKEN`) are GitHub environment secrets read by `.github/workflows/deploy.yml`, never by the Worker; there is no `.env` file. `BLOOP_PREVIEW_URL`, for the post-deploy header grade, is not wired yet: `deploy.yml` does not read it. Token scopes: `docs/setup.md`.
-Bindings in `wrangler.jsonc` (not env vars): `ASSETS`, `SCREEN` and `DIRECTORY` (Durable Objects, SQLite classes), `DB` (D1, `eu`), `GUEST_FILES` (R2, `jurisdiction: "eu"`), `RL_CREATE`, `RL_CLAIM`, `RL_FETCH`, `RL_UPLOAD`, `RL_AUTH`, `RL_EXPORT`, `RL_FILES`, `RL_DEMO_CREATE`, `RL_DEMO_CLAIM`, `RL_CONTROL`, `RL_UPGRADE` (rate limits), and two crons (`0 * * * *` hourly backstop, `30 3 * * *` daily retention). The D1 database id in `wrangler.jsonc` is not a secret.
+Bindings in `wrangler.jsonc` (not env vars): `ASSETS`, `SCREEN` and `DIRECTORY` (Durable Objects, SQLite classes), `DB` (D1, `eu`), `GUEST_FILES` (R2, `jurisdiction: "eu"`), `RL_CREATE`, `RL_CLAIM`, `RL_FETCH`, `RL_UPLOAD`, `RL_AUTH`, `RL_EXPORT`, `RL_FILES`, `RL_DEMO_CREATE`, `RL_DEMO_CLAIM`, `RL_CONTROL`, `RL_UPGRADE` (rate limits), the v4 bindings in section 13, and two crons (`0 * * * *` hourly backstop, `30 3 * * *` daily retention). The D1 database id in `wrangler.jsonc` is not a secret.
 
 ## 10. Security headers
 
@@ -542,4 +556,42 @@ CI (`.github/workflows/ci.yml`) runs on every push and pull request, and weekly 
 Land a commit on `main` with `node tools/land.mjs <sha>` once its `ci/` branch run is green (the tool does not read CI): it stops on iCloud conflict copies under `.git` (a `<name> 2` ref breaks fetch and holds a stale value) before it fetches, then refuses a sha that is not a fast-forward of the remote's main, a merge commit in the range (main's ruleset takes none) and an AI attribution trailer, and pushes the checked commit by its full id; `--dry-run` prints the range without pushing. It never forces.
 
 `.github/workflows/deploy.yml` runs on `main`, in the GitHub environment `production` (which requires a reviewer). Secrets cannot be tested in an `if`, so a first step reads the token and reports whether it exists, and every later step gates on that output; the token itself is set on the one wrangler step alone, so it is not in the environment during install or tests (code that `npm ci` installed still runs at deploy; SITE-05). Without the secret the job succeeds and only prints a skip notice. With it: `npm ci`, `npm run check`, `wrangler d1 migrations apply DB --remote`, `wrangler deploy` (which rebuilds `dist/` before it uploads). The post-deploy header grade (`@mdn/mdn-http-observatory "$BLOOP_PREVIEW_URL"`) is not wired yet.
-One-time owner steps (they need the owner's accounts): create the account, the D1 database with `--jurisdiction=eu`, and the R2 bucket with jurisdiction `eu` plus a 1-day lifecycle rule; set the secrets with `wrangler secret put`; register the Entra app (redirect URI `https://<host>/auth/callback`, confidential client, delegated `Files.Read`, `offline_access`, `openid`); set DNS. Until then everything runs locally, with `FILE_SOURCE=mock`.
+`deploy.yml` does not apply the R2 lifecycle rule: it is a one-off owner step in `docs/setup.md`, so the deploy token needs no R2 Storage Write. Every push to `main` applies migrations before it deploys (ADR 0012).
+One-time owner steps (they need the owner's accounts): create the account, the D1 database with `--jurisdiction=eu`, and the R2 bucket with jurisdiction `eu` plus a 1-day lifecycle rule (`docs/setup.md`); set the secrets with `wrangler secret put`; register the Entra app (redirect URI `https://<host>/auth/callback`, confidential client, delegated `Files.Read`, `offline_access`, `openid`); set DNS. Until then everything runs locally, with `FILE_SOURCE=mock`.
+
+## 13. v4 foundation
+
+The foundation change adds seams and stubs; the live site behaves as before, except that the file-origin host answers `/fo/ping`. Plan and owners per stream are in the ADRs named below.
+
+### 13.1 Host split
+- `bloop.here` serves the pages and the APIs. The `workers.dev` host is the file origin: it is meant to serve only `/f/`, `/b/`, `/p/` and `/fo/ping`.
+- Until the present-server stream lands, the file origin answers `/fo/ping` (204, CORS for `PUBLIC_ORIGIN` only, `no-store`, only on that host) and answers a 301 to `bloop.here` for everything else.
+- The file origin never reads or sets a cookie. `origin.ts` decides by host.
+
+### 13.2 Launch modes (ADR 0026)
+- Reader: `src/worker/mode.ts` reads `launch_mode` and `preview_lockout` from the `setting` table. The result is cached 30 s per isolate (0 under `TEST_TIMING`). Steps that create state (invite create and accept, code verify, passkey session creation, `/admin`) read uncached. A missing, unknown or failed read is preview, and an error is not cached.
+- Pages: `src/worker/pages.ts` normalizes the path before any lookup (decode once, collapse slashes, resolve dots), answers 404 for `/open` in any case or encoding in both modes, and picks a page variant only for paths in the variant list. That list is empty until the site stream emits open files; a request reads the mode only when its path is listed or is a gated page.
+- In preview: `/signin` and `/invite` are served `noindex`, signed-out `/library`, `/account` and `/admin` are 404, and `/report` is public.
+- Accounts: one email normalizer (`src/worker/auth/email-norm.ts`) is used for `ADMIN_EMAILS` and `TEST_EMAILS` (comma separated, each entry trimmed, lowercased, ASCII only, at most 254 characters; an invalid entry is skipped, never admitted).
+
+### 13.3 Route modules
+Each new module exports an empty route list (every path stays 404) until its stream fills it.
+
+| module | owner stream | state |
+|---|---|---|
+| account, admin, hooks, reports, dev-mail | A (accounts and admin) | stub |
+| uploads, dev-r2 | U (uploads) | stub |
+| library, and the `UserLibrary` object | L (library) | stub |
+| fileorigin, notes | P1 (present server) | stub |
+| the `Converter` object and the convert workflow | V (conversion) | stub |
+
+The Durable Object and Workflow bindings (`USER_LIBRARY`, `CONVERTER`, `CONVERT`), the library bucket, the email binding and the new rate-limit bindings are in `wrangler.jsonc`. The Converter `containers` entry is not: the conversion stream adds it with its image digest. Variables and secrets are listed in `src/worker/config.ts` only. `UPLOAD_MODE` ships as proxy and `CONVERT_MODE` as off until their streams land.
+
+### 13.4 Observability
+Workers Logs are on and invocation logs are off, because invocation logs keep full URLs, tokens included (SITE-03). Sampling is set in `wrangler.jsonc`. Code logs through the one `log()` shape. Turning on the Issues view is a dashboard step (`docs/setup.md`).
+
+### 13.5 Test and local runs
+Browser tests and `npm run dev` use a `localhost` base URL, because WebAuthn refuses IP addresses. Integration runs set `DEV_MAILBOX` (the dev mailbox route; refused on an https origin), `UPLOAD_MODE=proxy` and `CONVERT_MODE=stub`.
+
+### 13.6 Cron seams
+Two crons exist: hourly and daily (section 9). Each calls a list of jobs, and a stream adds its sweep to that list. The spend-guard stream adds its five-minute breaker trigger.
