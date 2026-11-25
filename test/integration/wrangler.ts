@@ -74,7 +74,10 @@ async function startOnce(vars: Record<string, string>, options: { migrate?: bool
   const port = await freePort();
   const url = `http://127.0.0.1:${port}`;
   const state = mkdtempSync(join(tmpdir(), "bloop-wrangler-"));
-  const varArgs = Object.entries({ PUBLIC_ORIGIN: url, ...vars }).flatMap(([k, v]) => ["--var", `${k}:${v}`]);
+  const varArgs = Object.entries({ PUBLIC_ORIGIN: url, GUEST_DROP: "open", ...vars }).flatMap(([k, v]) => [
+    "--var",
+    `${k}:${v}`,
+  ]);
   const chunks: string[] = [];
   const env = { ...process.env, XDG_CONFIG_HOME: join(state, "config"), WRANGLER_SEND_METRICS: "false", CI: "1" };
 

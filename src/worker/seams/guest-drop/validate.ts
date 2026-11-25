@@ -5,7 +5,7 @@ import { type RangeReader, ZIP_LIMITS } from "./index.ts";
 import { checkSizes, entryBytes, hasEndRecord, readCentralDirectory, type ZipEntry } from "./zip.ts";
 
 const HEAD_BYTES = 1024;
-/** Where a PDF's `%%EOF` and a JPEG's end-of-image must sit. */
+/** Where a PDF's `%%EOF` must sit, and the window searched for `%%EOF` in an image or video. */
 const TAIL_BYTES = 1024;
 const PNG_END_BYTES = 12; // the IEND chunk: length 0, "IEND", CRC
 const JPEG_MAGIC = [0xff, 0xd8, 0xff];
@@ -120,7 +120,9 @@ async function validatePdf(r: RangeReader): Promise<Verdict> {
 
 /**
  * An image is drawn by an <img> under a fixed type, so it needs no deeper parse: it must end where its format ends
- * (JPEG end-of-image in the last KB, PNG IEND as the last chunk) and carry no PDF or ZIP (DROP-11).
+ * (JPEG end-of-image as the last two bytes, PNG IEND as the last chunk) and carry no PDF or ZIP (DROP-11).
+ * Strict because only `core/photo.js`'s canvas re-encode reaches this route, and it ends every JPEG with the marker; a
+ * client that sends an original (a Motion Photo, a maker trailer) must relax this first.
  */
 async function validateImage(r: RangeReader, head: Uint8Array, type: FileType): Promise<Verdict> {
   const tail = await readTail(r);
@@ -131,7 +133,7 @@ async function validateImage(r: RangeReader, head: Uint8Array, type: FileType): 
       ? { ok: true, type }
       : refuse("bad_structure");
   }
-  return tail.some((b, i) => b === 0xff && tail[i + 1] === 0xd9) ? { ok: true, type } : refuse("bad_structure");
+  return tail.at(-2) === 0xff && tail.at(-1) === 0xd9 ? { ok: true, type } : refuse("bad_structure");
 }
 
 /**

@@ -92,7 +92,7 @@ async function resolveFor(env: Env, config: Config, used: UsedLink): Promise<Res
 }
 
 async function serveLink(request: Request, env: Env, config: Config, match: URLPatternResult): Promise<Response> {
-  const tooMany = await limited(env.RL_FETCH, request, config);
+  const tooMany = await limited(env, "RL_FETCH", request, config);
   if (tooMany) return tooMany;
   const token = match.pathname.groups.token ?? "";
   const parsed = parseToken(token);
@@ -106,7 +106,8 @@ async function serveLink(request: Request, env: Env, config: Config, match: URLP
   // guessed token never spends it and a 429 never spends a fetch. A view link, which a player reads in many ranges,
   // has its own budget, so one leaked link cannot lock the screen's other links out.
   const keyed = await limited(
-    env.RL_FETCH,
+    env,
+    "RL_FETCH",
     request,
     config,
     checked.value.purpose === "view" ? tokenHash : parsed.screenRef,

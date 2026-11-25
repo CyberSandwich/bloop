@@ -158,3 +158,141 @@ describe("VID-04 location strip", () => {
     expect(await stripLocation(f)).toEqual({ ok: false });
   });
 });
+
+describe("VID-04 location strip, every placement", () => {
+  const hdlr = () => box("hdlr", u32(0), u32(0), enc("mdta"), new Array(13).fill(0));
+  const mvhd = () => box("mvhd", new Array(20).fill(5));
+  const keysMeta = () =>
+    box(
+      "meta",
+      u32(0),
+      hdlr(),
+      box("keys", u32(0), u32(1), key("com.apple.quicktime.location.ISO6709")),
+      box("ilst", item(1, ISO6709)),
+    );
+  const loci = () => box("loci", u32(0), [0x15, 0xc7, 0], enc("Home Street 42"), enc("+51.5074-000.1278"));
+  const keylessMeta = (inner: Uint8Array) => box("meta", u32(0), hdlr(), box("ilst", inner));
+  const trak = (...kids: Uint8Array[]) => box("trak", box("tkhd", new Array(20).fill(1)), ...kids);
+
+  const placements: [string, () => Uint8Array, string][] = [
+    ["moov/udta/meta keys", () => box("moov", mvhd(), box("udta", keysMeta())), "+51.5074-000.1278"],
+    [
+      "an ilst ©xyz with no keys box",
+      () => box("moov", mvhd(), box("udta", keylessMeta(box("©xyz", box("data", u32(1), u32(0), enc(ISO6709)))))),
+      "+51.5074-000.1278",
+    ],
+    ["moov/udta/loci", () => box("moov", mvhd(), box("udta", loci())), "Home Street 42"],
+    ["trak/udta/©xyz", () => box("moov", mvhd(), trak(box("udta", xyz(ISO6709)))), "+51.5074-000.1278"],
+    ["trak/meta", () => box("moov", mvhd(), trak(keysMeta())), "+51.5074-000.1278"],
+    [
+      "trak/mdia/minf/udta/©xyz",
+      () => box("moov", mvhd(), trak(box("mdia", box("minf", box("udta", xyz(ISO6709)))))),
+      "+51.5074-000.1278",
+    ],
+  ];
+
+  it.each(placements)("VID-04 location strip blanks %s", async (_, build, secret) => {
+    const before = mp4(build()) as Uint8Array<ArrayBuffer>;
+    expect(find(before, secret)).toBe(true);
+    const out = await stripLocation(fileOf(before, "a.mp4"));
+    expect(out.ok).toBe(true);
+    if (!out.ok) return;
+    const after = await read(out.file);
+    expect(after.length).toBe(before.length);
+    expect(find(after, secret)).toBe(false);
+    const changed = diffAt(before, after);
+    expect(changed.length).toBeGreaterThan(0);
+    for (const i of changed) expect(after[i]).toBe(0);
+  });
+
+  it("VID-04 location strip keeps a non-location key and a keyless non-location item", () => {
+    const keys = box("keys", u32(0), u32(1), key("com.apple.quicktime.make"));
+    const moov = box(
+      "moov",
+      box("meta", hdlr(), keys, box("ilst", item(1, MAKE))),
+      box("udta", keylessMeta(item(1, MAKE))),
+    );
+    expect(blankLocation(moov)).toBe(0);
+    expect(find(moov, MAKE)).toBe(true);
+  });
+
+  it("VID-04 location strip returns a file with no location unchanged and OK", async () => {
+    const plain = mp4(box("moov", mvhd(), trak(box("udta", box("name", enc("clip")))))) as Uint8Array<ArrayBuffer>;
+    const f = fileOf(plain, "a.mp4");
+    expect(await stripLocation(f)).toEqual({ ok: true, file: f });
+  });
+
+  const timedTrack = (entry: Uint8Array) =>
+    trak(box("mdia", box("minf", box("stbl", box("stsd", u32(0), u32(1), entry)))));
+  /** A `mebx` sample entry: its reserved bytes and data reference, then a keys box naming one key. */
+  const mebx = (name: string) =>
+    box("mebx", new Array(6).fill(0), [0, 1], box("keys", box("keyd", enc("mdta"), enc(name))));
+  const refusedFile = async (moov: Uint8Array) =>
+    expect(await stripLocation(fileOf(mp4(moov) as Uint8Array<ArrayBuffer>, "a.mp4"))).toEqual({ ok: false });
+
+  it("VID-04 location strip refuses a GoPro gpmd track and a mebx track keyed for location", async () => {
+    await refusedFile(box("moov", mvhd(), timedTrack(box("gpmd", new Array(8).fill(0)))));
+    await refusedFile(box("moov", mvhd(), timedTrack(mebx("com.apple.quicktime.location.ISO6709"))));
+  });
+
+  it("VID-04 location strip accepts a mebx track with no location key, and an ordinary sample entry", async () => {
+    for (const entry of [mebx("com.apple.quicktime.detected-face"), box("avc1", new Array(8).fill(0))]) {
+      const f = fileOf(mp4(box("moov", mvhd(), timedTrack(entry))) as Uint8Array<ArrayBuffer>, "a.mp4");
+      expect(await stripLocation(f)).toEqual({ ok: true, file: f });
+    }
+  });
+
+  it("VID-04 location strip skips a nested meta with no ilst or keys, and still refuses one directly in moov", async () => {
+    const stray = box("meta", new Array(20).fill(9));
+    const f = fileOf(mp4(box("moov", mvhd(), trak(stray))) as Uint8Array<ArrayBuffer>, "a.mp4");
+    expect(await stripLocation(f)).toEqual({ ok: true, file: f });
+    await refusedFile(box("moov", mvhd(), stray));
+  });
+
+  it("VID-04 location strip refuses a nested meta with no hdlr that holds an ilst or keys, in either meta form", async () => {
+    const tags = [box("ilst", item(1, ISO6709)), box("keys", u32(0), u32(0))];
+    for (const inner of tags) {
+      await refusedFile(box("moov", mvhd(), trak(box("meta", u32(0), inner))));
+      await refusedFile(box("moov", mvhd(), trak(box("meta", inner))));
+    }
+  });
+
+  it.each(["mett", "metx", "camm", "rtmd"])("VID-04 location strip refuses a %s timed-metadata track", async (type) => {
+    await refusedFile(box("moov", mvhd(), timedTrack(box(type, new Array(8).fill(0)))));
+  });
+
+  it("VID-04 location strip refuses any entry in a track whose handler is meta, but accepts a clean mebx there", async () => {
+    const metaTrackOf = (entry: Uint8Array) =>
+      trak(
+        box(
+          "mdia",
+          box("hdlr", u32(0), u32(0), enc("meta"), new Array(13).fill(0)),
+          box("minf", box("stbl", box("stsd", u32(0), u32(1), entry))),
+        ),
+      );
+    await refusedFile(box("moov", mvhd(), metaTrackOf(box("zzzz", new Array(8).fill(0)))));
+    await refusedFile(box("moov", mvhd(), metaTrackOf(mebx("com.apple.quicktime.location.ISO6709"))));
+    const f = fileOf(
+      mp4(box("moov", mvhd(), metaTrackOf(mebx("com.apple.quicktime.detected-face")))) as Uint8Array<ArrayBuffer>,
+      "a.mp4",
+    );
+    expect(await stripLocation(f)).toEqual({ ok: true, file: f });
+  });
+
+  it.each(["sbtl", "text", "subt"])("VID-04 location strip refuses a track whose handler is %s", async (handler) => {
+    const track = trak(
+      box(
+        "mdia",
+        box("hdlr", u32(0), u32(0), enc(handler), new Array(13).fill(0)),
+        box("minf", box("stbl", box("stsd", u32(0), u32(1), box("tx3g", new Array(8).fill(0))))),
+      ),
+    );
+    await refusedFile(box("moov", mvhd(), track));
+  });
+
+  it("VID-04 location strip refuses a `gps ` box in moov and an `XMP_` box in udta", async () => {
+    await refusedFile(box("moov", mvhd(), box("gps ", new Array(16).fill(1))));
+    await refusedFile(box("moov", mvhd(), box("udta", box("XMP_", enc("<x:xmpmeta/>")))));
+    await refusedFile(box("moov", mvhd(), trak(box("udta", box("XMP_", enc("<x:xmpmeta/>"))))));
+  });
+});

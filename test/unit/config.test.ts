@@ -1,8 +1,6 @@
-import { readFileSync } from "node:fs";
-import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
 import { parseConfig } from "../../src/worker/config.ts";
-import { PROD_VARS as PROD } from "../env-vars.ts";
+import { declaredRateLimits, PROD_VARS as PROD } from "../env-vars.ts";
 
 const problems = (env: Record<string, unknown>) => {
   const r = parseConfig(env);
@@ -111,12 +109,22 @@ describe("config", () => {
     expect(problems({ ...PROD, DEMO_MAX_PER_IP: "0" }).join()).toContain("DEMO_MAX_PER_IP");
   });
 
+  it("PAIR-13 rate limit binding required: the list is exactly the bindings wrangler.jsonc declares", async () => {
+    // A non-literal specifier: env.ts needs the Workers types, which the test tsconfig leaves out.
+    const path = "../../src/worker/env.ts";
+    const { RATE_LIMIT_BINDINGS } = (await import(path)) as { RATE_LIMIT_BINDINGS: readonly string[] };
+    expect([...RATE_LIMIT_BINDINGS].sort()).toEqual(Object.keys(declaredRateLimits()).sort());
+  });
+
+  it("PAIR-13 rate limit binding required: a config with no binding still parses, so the sweep and the alarms run", () => {
+    const bare = Object.fromEntries(Object.entries(PROD).filter(([k]) => !k.startsWith("RL_")));
+    expect(problems(bare)).toEqual([]);
+  });
+
   it("DEMO-02 flood: the demo claim binding is no looser than the live one, which runs first and would hide it", () => {
-    const jsonc = readFileSync(fileURLToPath(new URL("../../wrangler.jsonc", import.meta.url)), "utf8");
-    const limit = (name: string) =>
-      Number(jsonc.match(new RegExp(`"name": "${name}",[^}]*"limit": (\\d+)`))?.[1] ?? Number.NaN);
-    expect(limit("RL_CLAIM")).toBe(20);
-    expect(limit("RL_DEMO_CLAIM")).toBeLessThanOrEqual(limit("RL_CLAIM"));
+    const limits = declaredRateLimits();
+    expect(limits.RL_CLAIM).toBe(20);
+    expect(limits.RL_DEMO_CLAIM).toBeLessThanOrEqual(limits.RL_CLAIM ?? 0);
   });
 
   it("DEMO-03 off: DEMO_ENABLED is a strict true or false and defaults to nothing", () => {

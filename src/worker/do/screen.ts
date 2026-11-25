@@ -18,10 +18,11 @@ import type { AuditEvent } from "../audit.ts";
 import { type Config, configFor } from "../config.ts";
 import type { Env } from "../env.ts";
 import { MAX_FRAME_BYTES, phoneFrame, screenFrame } from "../frames.ts";
+import { fail as httpFail } from "../http.ts";
 import { drawCode, drawMatch, newRef, newSecret, parseCredential, safeEqual, sha256Hex } from "../ids.ts";
 import { fileAt, type ItemDraft } from "../items.ts";
 import { createMachine, type Event, type FileRef, type Machine, nextDeadline, transition } from "../machine.ts";
-import { ipHash } from "../routes/common.ts";
+import { ipHash, netHash } from "../routes/common.ts";
 import { effectivePolicy } from "../seams/guest-drop/index.ts";
 import { purgeGuest } from "../seams/guest-drop/purge.ts";
 import { guestDropFor } from "../seams/guest-drop/select.ts";
@@ -33,6 +34,7 @@ import { type Meta, phoneView, roomView, screenView } from "../views.ts";
 import { bestEffort, type EffectDeps, noopSeams, runEffects, type SessionSeams } from "./effects.ts";
 import { LinkLedger, type Use } from "./ledger.ts";
 import { migrate, SCHEMA_KEY, SCHEMA_VERSION } from "./schema.ts";
+import { admit, countAuthed, isLive } from "./sockets.ts";
 
 const HELLO_MS = 5000;
 const MAX_CODE_DRAWS = 3;
@@ -47,6 +49,12 @@ interface SocketAttachment {
   authed: boolean;
   /** Epoch ms by which `hello` must arrive. */
   helloBy: number;
+  /** The upgrade's address hash: a screen's becomes the link binding only once `hello` verifies the sid (OPEN-02). */
+  ip: string;
+  /** The hash of its network (an IPv6 /64), which caps the sockets waiting for their `hello`. */
+  net: string;
+  /** When `hello` verified: a socket is live from then, or from its last answered ping. */
+  helloAt?: number;
 }
 
 /** `next`: the machine the event committed, which outlives `this.m` when the event closed the object. */
@@ -198,9 +206,10 @@ export class Screen extends DurableObject<Env> implements PairingStore {
   }
 
   /** Polling fallback. With no socket, a poll is also the rotation clock and keeps the screen open. */
-  async screenView(sid: string): Promise<Result<ScreenView>> {
+  async screenView(sid: string, ip: string): Promise<Result<ScreenView>> {
     const auth = await this.screenAuth(sid);
     if (!auth.ok) return auth;
+    this.bindLinksUnlessLive(ip);
     const code = this.m?.codes.current;
     const due = !code || Date.now() >= code.issuedAt + this.config().machine.codeTtlSeconds * 1000;
     if (this.m?.state === "waiting" && due) await this.issueCode(); // rate_limited: a code is already fresh
@@ -295,11 +304,20 @@ export class Screen extends DurableObject<Env> implements PairingStore {
     if (!this.m) return new Response(null, { status: 410 });
     if (request.headers.get("Upgrade") !== "websocket") return new Response(null, { status: 426 });
     const role: Role = new URL(request.url).pathname.endsWith("/screen/ws") ? "screen" : "phone";
+    // Hash first: the count and the accept below must run with no await between, or a burst all sees the same count.
+    const cfg = this.config();
+    const [ip, net] = [await ipHash(request, cfg), await netHash(request, cfg)];
+    const now = Date.now();
+    const admitted = admit(this.openEntries(), role, net, now);
+    if (!admitted.ok) return httpFail("rate_limited");
+    // A full role gives up its oldest waiting socket, so sockets held open by others cannot keep a real screen out:
+    // its hello window ends now, and the alarm below closes it as it does any socket that sent no hello.
+    if (admitted.evict) admitted.evict.ws.serializeAttachment({ ...admitted.evict.att, helloBy: now });
     const [client, server] = Object.values(new WebSocketPair()) as [WebSocket, WebSocket];
-    if (role === "screen") this.ctx.storage.kv.put("screenIp", await ipHash(request, this.config()));
     this.ctx.acceptWebSocket(server, [role]);
-    server.serializeAttachment({ role, authed: false, helloBy: Date.now() + HELLO_MS } satisfies SocketAttachment);
-    await this.apply({ e: "socket", now: Date.now(), open: this.openSockets() });
+    server.serializeAttachment({ role, authed: false, helloBy: now + HELLO_MS, ip, net } satisfies SocketAttachment);
+    // Only the hello timeout: a bare upgrade is no socket event and never moves the close deadline.
+    await this.rearm();
     return new Response(null, { status: 101, webSocket: client });
   }
 
@@ -340,10 +358,16 @@ export class Screen extends DurableObject<Env> implements PairingStore {
   }
 
   override async webSocketClose(ws: WebSocket): Promise<void> {
-    await this.apply({ e: "socket", now: Date.now(), open: this.openSockets(ws) });
+    await this.socketGone(ws);
   }
 
   override async webSocketError(ws: WebSocket): Promise<void> {
+    await this.socketGone(ws);
+  }
+
+  /** A socket that never authed was never counted, so its end changes nothing. */
+  private async socketGone(ws: WebSocket): Promise<void> {
+    if (!(ws.deserializeAttachment() as SocketAttachment | null)?.authed) return;
     await this.apply({ e: "socket", now: Date.now(), open: this.openSockets(ws) });
   }
 
@@ -392,8 +416,39 @@ export class Screen extends DurableObject<Env> implements PairingStore {
     return phoneView(this.meta as Meta, m, Date.now(), limits);
   }
 
+  /** The link binding (OPEN-02): the address of a screen that proved its sid, by socket `hello` or by poll. */
+  private bindLinksTo(ip: string): void {
+    if (this.ctx.storage.kv.get("screenIp") !== ip) this.ctx.storage.kv.put("screenIp", ip);
+  }
+
+  private openEntries(excluding?: WebSocket): { ws: WebSocket; att: SocketAttachment | null }[] {
+    return this.ctx
+      .getWebSockets()
+      .filter((w) => w !== excluding && w.readyState === OPEN)
+      .map((ws) => ({ ws, att: ws.deserializeAttachment() as SocketAttachment | null }));
+  }
+
+  private openAttachments(excluding?: WebSocket): (SocketAttachment | null)[] {
+    return this.openEntries(excluding).map((e) => e.att);
+  }
+
+  /**
+   * Proof of the sid, by `hello` or by poll, moves the link binding (OPEN-02) unless another authed screen socket is
+   * live, so a leaked sid cannot take the binding from a lectern that is still talking. Otherwise the newest proof wins.
+   */
+  private bindLinksUnlessLive(ip: string, except?: WebSocket): void {
+    const now = Date.now();
+    const live = this.openEntries(except).some(
+      ({ ws, att }) =>
+        att?.authed &&
+        att.role === "screen" &&
+        isLive(Math.max(att.helloAt ?? now, this.ctx.getWebSocketAutoResponseTimestamp(ws)?.getTime() ?? 0), now),
+    );
+    if (!live) this.bindLinksTo(ip);
+  }
+
   private openSockets(excluding?: WebSocket): number {
-    return this.ctx.getWebSockets().filter((w) => w !== excluding && w.readyState === OPEN).length;
+    return countAuthed(this.openAttachments(excluding));
   }
 
   private currentScreenView(): ScreenView {
@@ -512,7 +567,9 @@ export class Screen extends DurableObject<Env> implements PairingStore {
       ws.send(JSON.stringify({ v: 1, t: "error", code: auth.error, now: Date.now() }));
       return ws.close(1008, "auth");
     }
-    ws.serializeAttachment({ ...att, authed: true } satisfies SocketAttachment);
+    ws.serializeAttachment({ ...att, authed: true, helloAt: Date.now() } satisfies SocketAttachment);
+    if (att.role === "screen") this.bindLinksUnlessLive(att.ip, ws);
+    await this.apply({ e: "socket", now: Date.now(), open: this.openSockets() });
     this.sendState(ws, att.role);
     if (att.role === "screen" && this.m?.state === "waiting" && !this.m.codes.current) await this.issueCode();
     await this.rearm();
@@ -596,7 +653,8 @@ export class Screen extends DurableObject<Env> implements PairingStore {
       if (record.refused) return fail(error);
       this.links.update(record, { refused: true });
     }
-    await this.auditLink(m.pairing.sessionId, now, "link.refused", { cause: error, ...via });
+    // A record minted by an earlier session (the screen paired again) belongs to that one; without its id there is no row.
+    if (record.sessionId) await this.auditLink(record.sessionId, now, "link.refused", { cause: error, ...via });
     await bestEffort(
       metricsFor(this.env).record({
         at: now,
@@ -629,6 +687,7 @@ export class Screen extends DurableObject<Env> implements PairingStore {
           revoked: false,
           ips: [],
           refused: false,
+          sessionId: m.pairing.sessionId,
         });
         const links: LinkSet = {
           protocol: link.purpose === "protocol" ? protocolUri(link.url) : null,

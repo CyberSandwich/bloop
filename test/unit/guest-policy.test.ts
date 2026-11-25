@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import { cleanName, MAX_DISPLAY } from "../../public/js/shared/names.js";
 import { configFor } from "../../src/worker/config.ts";
 import { effectivePolicy } from "../../src/worker/seams/guest-drop/index.ts";
+import { RATE_LIMIT_STUBS } from "../env-vars.ts";
 
 describe("DROP-06 policy: which rooms take a drop", () => {
   it("a demo screen always takes one, whatever the configured policy", () => {
@@ -52,6 +53,7 @@ describe("DROP-01 size: configuration", () => {
     DEMO_MAX_MINUTES: "10",
     DEMO_ENABLED: "true",
     GUEST_DROP: "open",
+    ...RATE_LIMIT_STUBS,
   };
   const parse = (extra: Record<string, string>) => configFor({ ...env, ...extra });
 

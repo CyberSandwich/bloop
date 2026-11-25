@@ -16,7 +16,6 @@ const createBody = z.object({ mode }).strict();
 const claimBody = z
   .object({
     code: z.string().max(32),
-    pass: z.string().max(256).optional(),
     kind: z.enum(["owner", "guest"]).optional(),
   })
   .strict();
@@ -24,13 +23,19 @@ const emptyBody = z.object({}).strict();
 
 const REF = /^[A-Za-z0-9_-]{22}$/;
 
-/** WebSocket upgrade: the Origin must be ours; the credential is the first frame, so the URL carries only the ref. */
+/**
+ * WebSocket upgrade: the Origin must be ours; the credential is the first frame, so the URL carries only the ref.
+ * `RL_UPGRADE`, its own binding so reconnects never spend a tap's, is spent per screen and address before the Screen
+ * object is reached (PAIR-10).
+ */
 async function upgrade(request: Request, env: Env, config: Config): Promise<Response> {
   const refused = checkOrigin(request, config.origin);
   if (refused) return refused;
   if (request.headers.get("Upgrade")?.toLowerCase() !== "websocket") return fail("bad_request");
   const ref = new URL(request.url).searchParams.get("ref") ?? "";
   if (!REF.test(ref)) return fail("bad_request");
+  const tooMany = await limited(env, "RL_UPGRADE", request, config, `${ref}.${await ipHash(request, config)}`);
+  if (tooMany) return tooMany;
   return screenStub(env, ref).fetch(request);
 }
 
@@ -44,7 +49,7 @@ export const pairingRoutes: readonly Route[] = [
       if (!body.ok) return body.response;
       const demo = body.value.mode === "demo";
       if (demo && !config.demoEnabled) return fail("not_found");
-      const tooMany = await limited(demo ? env.RL_DEMO_CREATE : env.RL_CREATE, request, config);
+      const tooMany = await limited(env, demo ? "RL_DEMO_CREATE" : "RL_CREATE", request, config);
       if (tooMany) return tooMany;
       const screenRef = newRef();
       // The cap is the last check, so a refused create leaves nothing behind.
@@ -75,14 +80,15 @@ export const pairingRoutes: readonly Route[] = [
     ["GET"],
     "/api/screen/state",
     "api",
-    withConfig((request, env) =>
-      withScreen(
+    withConfig(async (request, env, config) => {
+      const ip = await ipHash(request, config);
+      return withScreen(
         request,
         env,
-        (stub, sid) => stub.screenView(sid),
+        (stub, sid) => stub.screenView(sid, ip),
         (view) => json(view),
-      ),
-    ),
+      );
+    }),
   ),
 
   route(
@@ -125,18 +131,16 @@ export const pairingRoutes: readonly Route[] = [
     withConfig(async (request, env, config) => {
       const body = await write(request, config, claimBody);
       if (!body.ok) return body.response;
-      const tooMany = await limited(env.RL_CLAIM, request, config);
+      const tooMany = await limited(env, "RL_CLAIM", request, config);
       if (tooMany) return tooMany;
       const code = normalize(body.value.code);
       if (!code) return fail("code_malformed");
-      // Guest passes are issued by a later module; until then a pass can only be invalid.
-      if (body.value.pass !== undefined) return fail("pass_invalid");
       const hashed = await ipHash(request, config);
       const found = await directoryStub(env).lookup(code, hashed, Date.now());
       if (!found.ok) return fail(found.error);
       if (found.demo) {
         if (!config.demoEnabled) return fail("not_found");
-        const slow = await limited(env.RL_DEMO_CLAIM, request, config);
+        const slow = await limited(env, "RL_DEMO_CLAIM", request, config);
         if (slow) return slow;
       }
       // Only the Graph source has accounts. The Screen object drops the user for a demo screen.

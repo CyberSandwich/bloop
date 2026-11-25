@@ -35,7 +35,6 @@ export const ERRORS = {
   // guest drop
   drop_disabled: { status: 403, phone: "guest_off", screen: null },
   pass_required: { status: 403, phone: "guest_pass_needed", screen: null },
-  pass_invalid: { status: 403, phone: "guest_pass_needed", screen: null },
   length_required: { status: 411, phone: "guest_refused", screen: null },
   too_large: { status: 413, phone: "guest_refused", screen: null },
   bad_type: { status: 415, phone: "guest_refused", screen: null },

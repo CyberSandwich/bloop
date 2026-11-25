@@ -45,7 +45,8 @@
     { "name": "RL_DEMO_CREATE", "namespace_id": "1007", "simple": { "limit": 12, "period": 60 } },
     { "name": "RL_DEMO_CLAIM", "namespace_id": "1008", "simple": { "limit": 20, "period": 60 } },
     { "name": "RL_FILES", "namespace_id": "1009", "simple": { "limit": 20, "period": 60 } },
-    { "name": "RL_CONTROL", "namespace_id": "1010", "simple": { "limit": 120, "period": 60 } }
+    { "name": "RL_CONTROL", "namespace_id": "1010", "simple": { "limit": 120, "period": 60 } },
+    { "name": "RL_UPGRADE", "namespace_id": "1011", "simple": { "limit": 30, "period": 60 } }
   ],
   "triggers": { "crons": ["0 * * * *", "30 3 * * *"] },
   "vars": {
@@ -66,7 +67,8 @@
     "LINK_MINTS_PER_ITEM": "5",
     "LINK_BINDING_DEFAULT": "log",
     "GRAPH_DOWNLOAD_HOSTS": "*.sharepoint.com,*.files.1drv.com,my.microsoftpersonalcontent.com",
-    "GUEST_DROP": "open",
+    // Live rooms take no drops until setup.md's Graph step turns this on; a demo screen always takes one.
+    "GUEST_DROP": "off",
     "GUEST_MAX_BYTES": "94371840",
     "GUEST_STORAGE_BUDGET_BYTES": "5368709120",
     // R2 has no platform spending cap: these stop bloop at 50% of the free tier per UTC calendar month (1M class A, 10M class B), since the billing period may not align with calendar months.

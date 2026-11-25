@@ -246,10 +246,10 @@ describe("pairing: validation at every boundary", () => {
     socket.close();
   });
 
-  it("refuses a guest pass until passes exist, and a live approve of a file nobody listed (SRC-02)", async () => {
+  it("refuses a claim body with a pass field, and a live approve of a file nobody listed (SRC-02)", async () => {
     const live = await openScreen(api, "live");
     const pass = await api.post("/api/claim", { code: live.code, pass: "whatever", kind: "guest" });
-    expect(pass.body).toEqual(problem("pass_invalid"));
+    expect(pass.status).toBe(400);
     const claimed = await claim(api, live.code);
     // FILE_SOURCE=mock: the demo account is the user, so there is nothing to sign in to.
     expect(claimed.body.needsAuth).toBe(false);
@@ -355,6 +355,66 @@ describe("PAIR-10 ws-origin and the socket protocol", () => {
     socket.send({ t: "hello", sid: `${ref}.${"A".repeat(43)}` });
     expect((await socket.waitFor((f) => f.t === "error")).code).toBe("unauthorized");
     expect((await socket.waitClosed()).code).toBe(1008);
+  });
+
+  it("PAIR-10 pending cap: ten parallel bare upgrades leave at most the per-address cap accepted", async () => {
+    const created = await api.post<{ sid: string }>("/api/screens", { mode: "demo" });
+    const path = `/api/screen/ws?ref=${created.body.sid.split(".")[0]}`;
+    const tries = await Promise.allSettled(Array.from({ length: 10 }, () => Socket.open(api.base, path)));
+    const accepted = tries.flatMap((t) => (t.status === "fulfilled" ? [t.value] : []));
+    expect(accepted.length).toBe(2);
+    for (const s of accepted) s.close();
+  });
+
+  it("PAIR-10 pending cap: sockets held open by others do not keep a real screen's hello out", async () => {
+    const created = await api.post<{ sid: string }>("/api/screens", { mode: "demo" });
+    const { sid } = created.body;
+    const path = `/api/screen/ws?ref=${sid.split(".")[0]}`;
+    // One after another, so "oldest" is unambiguous.
+    const held: Socket[] = [];
+    for (const i of [1, 2, 3, 4]) {
+      held.push(await Socket.open(api.base, path, api.base, { "CF-Connecting-IP": `198.51.100.${i}` }));
+      await new Promise((done) => setTimeout(done, 10));
+    }
+    const real = await Socket.open(api.base, path, api.base, { "CF-Connecting-IP": "203.0.113.50" });
+    real.send({ t: "hello", sid });
+    expect((await real.stateWhere((v) => v.code !== null)).t).toBe("state");
+    expect((await (held[0] as Socket).waitFor((f) => f.t === "error")).code).toBe("unauthorized");
+    for (const s of [...held, real]) s.close();
+  });
+
+  it("PAIR-10 pending cap: one address holding its two does not block another address or the other role", async () => {
+    const created = await api.post<{ sid: string }>("/api/screens", { mode: "demo" });
+    const { sid } = created.body;
+    const ref = sid.split(".")[0];
+    const path = `/api/screen/ws?ref=${ref}`;
+    const other = { "CF-Connecting-IP": "203.0.113.9" };
+    const mine: Socket[] = [];
+    for (const _ of [1, 2]) {
+      mine.push(await Socket.open(api.base, path));
+      await new Promise((done) => setTimeout(done, 10));
+    }
+    await expect(Socket.open(api.base, path)).rejects.toThrow();
+    const bare = [
+      ...mine,
+      await Socket.open(api.base, path, api.base, other),
+      await Socket.open(api.base, `/api/pair/ws?ref=${ref}`),
+    ];
+    // Four screen sockets pending fill the role, and the next real upgrade takes the oldest one's place.
+    bare.push(await Socket.open(api.base, path, api.base, { "CF-Connecting-IP": "203.0.113.10" }));
+    bare.push(await Socket.open(api.base, path, api.base, { "CF-Connecting-IP": "203.0.113.11" }));
+    expect((await (mine[0] as Socket).waitFor((f) => f.t === "error")).code).toBe("unauthorized");
+    for (const s of bare) s.close();
+    // Repeated bare opens and closes leave the screen as it was: a hello afterwards still binds and gets its state.
+    await new Promise((done) => setTimeout(done, 300));
+    for (let i = 0; i < 6; i++) {
+      (await Socket.open(api.base, path)).close();
+      await new Promise((done) => setTimeout(done, 100));
+    }
+    const real = await Socket.open(api.base, path);
+    real.send({ t: "hello", sid });
+    expect((await real.stateWhere((v) => v.code !== null)).t).toBe("state");
+    real.close();
   });
 
   it("closes 1008 on an unknown type, a frame before hello, bad JSON and an oversized frame", async () => {

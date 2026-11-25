@@ -36,6 +36,8 @@ export interface LinkRecord {
   ips: string[];
   /** A view link's refusal already wrote its one row. */
   refused: boolean;
+  /** The session that minted it, so a refusal after the screen paired again is audited against its own session. Absent: minted before this field. */
+  sessionId?: string;
 }
 
 /** Distinct foreign IP hashes audited per view link: enough to show a leak, and the record stays small. */

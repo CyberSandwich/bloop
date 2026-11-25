@@ -53,6 +53,7 @@ function auditDetail(fx: Extract<Effect, { fx: "audit" }>, { prev, next }: Effec
     ...(withFile && file?.kind === "file" ? { source: file.source } : {}),
     ...(withReason && next.endReason ? { reason: next.endReason } : {}),
     ...(fx.cause ? { cause: fx.cause } : {}),
+    ...(fx.type === "session.length" && next.session?.endsAt != null ? { endsAt: next.session.endsAt } : {}),
   };
 }
 

@@ -13,6 +13,7 @@ import {
   protocolUri,
   refusal,
 } from "../../src/worker/seams/open-path/links.ts";
+import { RATE_LIMIT_STUBS } from "../env-vars.ts";
 
 const REF = "AAAAAAAAAAAAAAAAAAAAAA";
 const PRODUCTION = "https://bloop.here";
@@ -104,6 +105,7 @@ describe("OPEN-06 names: the whole Office URI stays under 256 characters", () =>
       DEMO_MAX_MINUTES: "10",
       DEMO_ENABLED: "true",
       GUEST_DROP: "open",
+      ...RATE_LIMIT_STUBS,
     };
     const parsed = parseConfig(env);
     expect(parsed.ok).toBe(false);

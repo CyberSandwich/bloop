@@ -39,13 +39,13 @@ const control = <B, T>(path: string, body: (config: Config) => z.ZodType<B>, cal
     withConfig(async (request, env, config) => {
       const parsed = await write(request, config, body(config));
       if (!parsed.ok) return parsed.response;
-      const tooMany = await limited(env.RL_CONTROL, request, config);
+      const tooMany = await limited(env, "RL_CONTROL", request, config);
       if (tooMany) return tooMany;
       return withScreen(
         request,
         env,
         async (stub, credential): Promise<Result<T>> =>
-          (await limited(env.RL_CONTROL, request, config, await sha256Hex(credential)))
+          (await limited(env, "RL_CONTROL", request, config, await sha256Hex(credential)))
             ? { ok: false, error: "rate_limited" }
             : call(stub, credential, parsed.value),
         (view) => json(view),

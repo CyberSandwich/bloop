@@ -12,6 +12,7 @@ import { Sessions } from "../../src/worker/auth/sessions.ts";
 import { Vault } from "../../src/worker/auth/vault.ts";
 import { parseConfig } from "../../src/worker/config.ts";
 import { sha256Hex } from "../../src/worker/ids.ts";
+import { RATE_LIMIT_STUBS } from "../env-vars.ts";
 import { testDb } from "./d1-shim.ts";
 
 const DAY = 86_400_000;
@@ -172,6 +173,7 @@ describe("AUTH-01 vault: the daily maintenance job", () => {
     DEMO_MAX_MINUTES: "10",
     DEMO_ENABLED: "true",
     GUEST_DROP: "open",
+    ...RATE_LIMIT_STUBS,
   };
 
   it("deletes idle grants and expired sessions, and reports stale keys; it works without Graph configured", async () => {

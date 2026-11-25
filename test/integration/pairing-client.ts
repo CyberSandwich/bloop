@@ -129,9 +129,14 @@ export class Socket {
   }
 
   /** Resolves once open; rejects when the upgrade is refused. */
-  static open(base: string, path: string, origin: string | null = base): Promise<Socket> {
+  static open(
+    base: string,
+    path: string,
+    origin: string | null = base,
+    headers: Record<string, string> = {},
+  ): Promise<Socket> {
     const url = `${base.replace("http", "ws")}${path}`;
-    const ws = new WebSocket(url, origin === null ? {} : { headers: { Origin: origin } });
+    const ws = new WebSocket(url, { headers: { ...(origin === null ? {} : { Origin: origin }), ...headers } });
     return new Promise((resolve, reject) => {
       ws.addEventListener("open", () => resolve(new Socket(ws)), { once: true });
       ws.addEventListener("error", () => reject(new Error("upgrade refused")), { once: true });

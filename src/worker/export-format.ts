@@ -36,7 +36,14 @@ export const AUDIT_COLUMNS = [
   "method",
   "client",
   "count",
+  "ends_at",
 ] as const;
+
+/** An epoch ms as ISO time; null for anything that is not a date a row could hold (a stored value is JSON). */
+const isoOrNull = (ms: unknown): string | null => {
+  const t = typeof ms === "number" ? new Date(ms) : null;
+  return t && Number.isFinite(t.getTime()) ? t.toISOString() : null;
+};
 
 /** One flat record per audit row; the same keys head the CSV and name the JSON fields. */
 export function auditRecord(r: AuditRow): Record<(typeof AUDIT_COLUMNS)[number], string | number | boolean | null> {
@@ -61,6 +68,7 @@ export function auditRecord(r: AuditRow): Record<(typeof AUDIT_COLUMNS)[number],
     method: d.method ?? null,
     client: d.client ?? null,
     count: d.count ?? null,
+    ends_at: isoOrNull(d.endsAt),
   };
 }
 

@@ -48,7 +48,7 @@ async function putDrop(request: Request, env: Env, config: Config): Promise<Resp
   if (!UPLOAD_TYPES.has(mediaType(request))) return fail("unsupported_media_type");
   const screen = screenFor(request, env);
   if (!screen) return fail("unauthorized");
-  const tooMany = await limited(env.RL_UPLOAD, request, config);
+  const tooMany = await limited(env, "RL_UPLOAD", request, config);
   if (tooMany) return tooMany;
 
   const declared = request.headers.get("Content-Length") ?? "";

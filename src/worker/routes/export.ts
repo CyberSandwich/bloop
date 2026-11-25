@@ -21,7 +21,7 @@ async function tokenMatches(request: Request, config: Config): Promise<boolean> 
 
 async function exportData(request: Request, env: Env, config: Config): Promise<Response> {
   // The limit is per pseudonymous IP, ahead of the token check: a limit keyed by the token would not slow guessing.
-  const refused = await limited(env.RL_EXPORT, request, config);
+  const refused = await limited(env, "RL_EXPORT", request, config);
   if (refused) return refused;
   if (!(await tokenMatches(request, config))) return fail("unauthorized");
 

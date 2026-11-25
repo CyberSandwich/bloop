@@ -148,7 +148,6 @@ export type PhoneMsgOut =
 
 export interface ClaimRequest {
   code: string;
-  pass?: string;
   kind?: Kind; // defaults to "owner"; "guest" asks for the drop path
 }
 export interface ClaimResponse {
@@ -215,7 +214,6 @@ export type OpenError =
 export type DropError =
   | "drop_disabled"
   | "pass_required"
-  | "pass_invalid"
   | "length_required"
   | "too_large"
   | "bad_type"

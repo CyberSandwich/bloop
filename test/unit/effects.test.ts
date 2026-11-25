@@ -136,6 +136,17 @@ describe("effects: audit and metrics hooks at each transition", () => {
     for (const a of f.audits) for (const key of Object.keys(a.detail)) expect(allowed.has(key)).toBe(true);
   });
 
+  it("SESS-01 audit: session.length records the new end and nothing else", async () => {
+    const f = fakes();
+    const prev = approved();
+    const at = T0 + sec(70);
+    const step = must(prev, { e: "length", now: at, minutes: 30, maxMinutes: 720 });
+    await runEffects(step.effects, { meta: META, prev, next: step.next, now: at }, f.deps);
+    expect(f.audits).toHaveLength(1);
+    expect(f.audits[0]).toMatchObject({ type: "session.length", actor: "phone", detail: { endsAt: at + 30 * 60_000 } });
+    expect(Object.keys(f.audits[0]?.detail ?? {})).toEqual(["endsAt"]);
+  });
+
   it("keeps going when audit or metrics throw", async () => {
     const f = fakes({
       audit: { record: async () => Promise.reject(new Error("d1 down")) },

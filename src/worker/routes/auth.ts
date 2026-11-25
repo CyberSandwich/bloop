@@ -54,7 +54,7 @@ const withGraph = (
   );
 
 const start = withGraph(async (request, env, config, graph) => {
-  const tooMany = await limited(env.RL_AUTH, request, config);
+  const tooMany = await limited(env, "RL_AUTH", request, config);
   if (tooMany) return tooMany;
   const { url, pending } = await beginSignIn(graph, redirectUri(config), config.tokenMode, Date.now());
   const sealed = await sealCookie(graph.cookieKey, OAUTH_COOKIE, pending);
@@ -62,7 +62,7 @@ const start = withGraph(async (request, env, config, graph) => {
 });
 
 const callback = withGraph(async (request, env, config, graph) => {
-  const tooMany = await limited(env.RL_AUTH, request, config);
+  const tooMany = await limited(env, "RL_AUTH", request, config);
   if (tooMany) return tooMany;
   const sealed = readCookie(request, OAUTH_COOKIE);
   const parsed = sealed ? pendingShape.safeParse(await openCookie(graph.cookieKey, OAUTH_COOKIE, sealed)) : null;

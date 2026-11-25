@@ -13,7 +13,9 @@ export default defineConfig({
     // Every browser shares one IP hash, so the per-IP demo cap (DEMO-02) would refuse the third demo screen, and a
     // closed context leaves its demo screen alive, so the suite (and its retries) can pass the global cap too.
     // `predev` applies migrations/ to the local D1 first: without the tables every guest drop fails.
-    command: "npm run dev -- --var TEST_TIMING:1 --var DEMO_MAX_PER_IP:1000 --var DEMO_MAX_CONCURRENT:1000",
+    // GUEST_DROP:open, since the shipped config takes no live drops.
+    command:
+      "npm run dev -- --var TEST_TIMING:1 --var GUEST_DROP:open --var DEMO_MAX_PER_IP:1000 --var DEMO_MAX_CONCURRENT:1000",
     url: "http://127.0.0.1:8787/api/health",
     reuseExistingServer: !process.env.CI,
     timeout: 120_000,
