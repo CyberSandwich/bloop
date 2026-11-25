@@ -1,8 +1,14 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { Api } from "../../public/js/core/api.js";
-import { openChannel, refusal } from "../../public/js/core/channel.js";
+import { downGate, openChannel, refusal } from "../../public/js/core/channel.js";
 import { onRefusal } from "../../public/js/core/states.js";
-import { CONNECT_TIMEOUT_MS } from "../../public/js/core/timing.js";
+import {
+  BLOCKED_PROBE_MS,
+  CONNECT_TIMEOUT_MS,
+  DOWN_CONFIRM_MS,
+  PING_MS,
+  PROBE_MS,
+} from "../../public/js/core/timing.js";
 import type { SocketLike } from "../../public/js/types.js";
 import type { ErrorCode } from "../../src/shared/protocol.ts";
 
@@ -30,12 +36,27 @@ class FakeSocket implements SocketLike {
   }
 }
 
+/** A tab's sessionStorage, as far as the channel uses it. */
+class Memory {
+  items = new Map<string, string>();
+  getItem(k: string) {
+    return this.items.get(k) ?? null;
+  }
+  setItem(k: string, v: string) {
+    this.items.set(k, v);
+  }
+  removeItem(k: string) {
+    this.items.delete(k);
+  }
+}
+
 type PollReply = { ok: true; value: unknown } | { ok: false; error: ErrorCode };
 
 /** A reply may be a promise the test settles later; `react` is the page's own onError, handed the channel. */
 function setup(
   polls: (PollReply | Promise<PollReply>)[] = [],
   react?: (code: ErrorCode, ch: ReturnType<typeof openChannel>) => void,
+  opts: { storage?: Pick<Storage, "getItem" | "setItem" | "removeItem"> | null; hidden?: { now: boolean } } = {},
 ) {
   const sockets: FakeSocket[] = [];
   const views: unknown[] = [];
@@ -67,12 +88,21 @@ function setup(
     },
     onFrame: (f) => frames.push(f),
     onLink: (l) => links.push(l),
+    storage: opts.storage ?? null,
+    hidden: () => opts.hidden?.now ?? false,
   });
   return { channel, sockets, views, errors, links, frames, pollCalls };
 }
 
-beforeEach(() => vi.useFakeTimers());
-afterEach(() => vi.useRealTimers());
+// Full jitter: the delays below are the steps themselves (REL-01 has its own test).
+beforeEach(() => {
+  vi.useFakeTimers();
+  vi.spyOn(Math, "random").mockReturnValue(1);
+});
+afterEach(() => {
+  vi.restoreAllMocks();
+  vi.useRealTimers();
+});
 
 describe("PAIR-12 a refused credential read", () => {
   it("drops the pid only for a dead credential; the network and anything else retry and keep it", () => {
@@ -246,17 +276,6 @@ describe("live channel", () => {
     expect(t.links.at(-1)).toBe("ok");
   });
 
-  it("a server failure while polling is down, not offline", async () => {
-    const t = setup([{ ok: false, error: "service_down" }]);
-    for (const gap of [1000, 2000]) {
-      t.sockets[t.sockets.length - 1]?.drop();
-      vi.advanceTimersByTime(gap);
-    }
-    t.sockets[t.sockets.length - 1]?.drop();
-    await vi.advanceTimersByTimeAsync(0);
-    expect(t.links).toEqual(["down"]);
-  });
-
   it("a dead credential in a poll stops the channel and says why", async () => {
     const t = setup([{ ok: false, error: "unauthorized" }]);
     for (const gap of [1000, 2000]) {
@@ -392,5 +411,184 @@ describe("live channel", () => {
     expect(t.sockets[0]?.closed).toBe(true);
     vi.advanceTimersByTime(120_000);
     expect(t.sockets).toHaveLength(1);
+  });
+});
+
+describe("REL-02 a socket that says it is open after a long quiet is probed", () => {
+  const live = (opts?: Parameters<typeof setup>[2]) => {
+    const t = setup([], undefined, opts);
+    t.sockets[0]?.open();
+    t.sockets[0]?.push({ v: 1, t: "state", view: {} });
+    return t;
+  };
+
+  it("REL-02 after more than PING_MS quiet, wake pings; no frame back in 3 s replaces the socket at once", async () => {
+    const t = live();
+    t.sockets[0]?.sent.splice(0);
+    // The tab slept: nothing was heard (and no ping tick ran).
+    vi.setSystemTime(Date.now() + PING_MS + 1);
+    t.channel.wake();
+    expect(t.sockets[0]?.sent.at(-1)).toBe('{"v":1,"t":"ping"}');
+    await vi.advanceTimersByTimeAsync(PROBE_MS - 1);
+    expect(t.sockets).toHaveLength(1);
+    await vi.advanceTimersByTimeAsync(1);
+    expect(t.sockets[0]?.closed).toBe(true);
+    // No backoff wait: the replacement is already there.
+    expect(t.sockets).toHaveLength(2);
+  });
+
+  it("REL-02 an answer inside 3 s keeps the socket", async () => {
+    const t = live();
+    vi.setSystemTime(Date.now() + PING_MS + 1);
+    t.channel.wake();
+    await vi.advanceTimersByTimeAsync(1000);
+    t.sockets[0]?.push({ v: 1, t: "pong" });
+    await vi.advanceTimersByTimeAsync(PROBE_MS);
+    expect(t.sockets).toHaveLength(1);
+    expect(t.sockets[0]?.closed).toBe(false);
+  });
+
+  it("REL-02 a socket heard from within PING_MS is not probed", () => {
+    const t = live();
+    t.sockets[0]?.sent.splice(0);
+    t.channel.wake();
+    expect(t.sockets[0]?.sent).toEqual([]);
+  });
+});
+
+describe("REL-15 the silence rule counts missed pings and skips a hidden tab", () => {
+  const open = (hidden: { now: boolean }) => {
+    const t = setup([], undefined, { hidden });
+    t.sockets[0]?.open();
+    t.sockets[0]?.push({ v: 1, t: "state", view: {} });
+    return t;
+  };
+
+  it("REL-15 one missed ping is no loss; the second in a row closes", () => {
+    const t = open({ now: false });
+    vi.advanceTimersByTime(PING_MS);
+    vi.advanceTimersByTime(PING_MS);
+    expect(t.sockets[0]?.closed).toBe(false);
+    vi.advanceTimersByTime(PING_MS);
+    expect(t.sockets[0]?.closed).toBe(true);
+  });
+
+  it("REL-15 an answer between pings resets the count", () => {
+    const t = open({ now: false });
+    for (let i = 0; i < 6; i++) {
+      vi.advanceTimersByTime(PING_MS);
+      t.sockets[0]?.push({ v: 1, t: "pong" });
+    }
+    expect(t.sockets[0]?.closed).toBe(false);
+  });
+
+  it("REL-15 a hidden tab is never judged, and a slipped wake-up on showing again closes nothing", () => {
+    const hidden = { now: true };
+    const t = open(hidden);
+    for (let i = 0; i < 6; i++) vi.advanceTimersByTime(PING_MS);
+    expect(t.sockets[0]?.closed).toBe(false);
+    hidden.now = false;
+    vi.advanceTimersByTime(PING_MS);
+    expect(t.sockets[0]?.closed).toBe(false);
+  });
+});
+
+describe("REL-04 a hung upgrade falls to polling, and the next screen polls first", () => {
+  it("REL-04 the upgrade has 4 s; polling starts at that moment and ws=blocked is kept for the tab", async () => {
+    const memory = new Memory();
+    const t = setup([], undefined, { storage: memory });
+    expect(CONNECT_TIMEOUT_MS).toBe(4000);
+    await vi.advanceTimersByTimeAsync(CONNECT_TIMEOUT_MS);
+    await vi.advanceTimersByTimeAsync(1);
+    expect(t.pollCalls).toHaveLength(1);
+    expect(memory.getItem("ws")).toBe("blocked");
+  });
+
+  it("REL-04 with ws=blocked the next channel polls from the first second and tries the socket once a minute", async () => {
+    const memory = new Memory();
+    memory.setItem("ws", "blocked");
+    const t = setup([], undefined, { storage: memory });
+    expect(t.sockets).toHaveLength(0);
+    await vi.advanceTimersByTimeAsync(1);
+    expect(t.pollCalls).toHaveLength(1);
+    await vi.advanceTimersByTimeAsync(BLOCKED_PROBE_MS - 2);
+    expect(t.sockets).toHaveLength(0);
+    await vi.advanceTimersByTimeAsync(1);
+    expect(t.sockets).toHaveLength(1);
+    // The probe fails too: the next one is another minute away, and polling goes on.
+    await vi.advanceTimersByTimeAsync(CONNECT_TIMEOUT_MS + 1);
+    expect(t.sockets).toHaveLength(1);
+    await vi.advanceTimersByTimeAsync(BLOCKED_PROBE_MS);
+    expect(t.sockets).toHaveLength(2);
+    expect(memory.getItem("ws")).toBe("blocked");
+  });
+
+  it("REL-04 a probe that works clears the flag and ends polling", async () => {
+    const memory = new Memory();
+    memory.setItem("ws", "blocked");
+    const t = setup([], undefined, { storage: memory });
+    await vi.advanceTimersByTimeAsync(BLOCKED_PROBE_MS);
+    t.sockets[0]?.open();
+    t.sockets[0]?.push({ v: 1, t: "state", view: { state: "open" } });
+    expect(memory.getItem("ws")).toBeNull();
+    const polled = t.pollCalls.length;
+    await vi.advanceTimersByTimeAsync(60_000);
+    expect(t.pollCalls).toHaveLength(polled);
+  });
+
+  it("REL-04 a storage that throws leaves the channel working", async () => {
+    const broken = {
+      getItem: () => {
+        throw new Error("blocked");
+      },
+      setItem: () => {
+        throw new Error("blocked");
+      },
+      removeItem: () => {
+        throw new Error("blocked");
+      },
+    };
+    const t = setup([], undefined, { storage: broken });
+    await vi.advanceTimersByTimeAsync(CONNECT_TIMEOUT_MS + 1);
+    expect(t.pollCalls).toHaveLength(1);
+  });
+});
+
+describe("REL-03 and R11 what a failed poll says", () => {
+  it("a blocked network is its own link state", async () => {
+    const t = setup([{ ok: false, error: "network_blocked" }]);
+    t.sockets[0]?.drop();
+    vi.advanceTimersByTime(1000);
+    t.sockets[1]?.drop();
+    vi.advanceTimersByTime(2000);
+    t.sockets[2]?.drop();
+    await vi.advanceTimersByTimeAsync(1);
+    expect(t.links).toEqual(["blocked"]);
+  });
+
+  it("R11 the second service_down within 10 s says bloop is down; one alone says nothing", async () => {
+    const t = setup([
+      { ok: false, error: "service_down" },
+      { ok: false, error: "service_down" },
+    ]);
+    t.sockets[0]?.drop();
+    vi.advanceTimersByTime(1000);
+    t.sockets[1]?.drop();
+    vi.advanceTimersByTime(2000);
+    t.sockets[2]?.drop();
+    await vi.advanceTimersByTimeAsync(1);
+    expect(t.links).toEqual([]);
+    // The poll backs off 5 s: the second answer lands inside the window.
+    await vi.advanceTimersByTimeAsync(5000);
+    expect(t.links).toEqual(["down"]);
+  });
+
+  it("R11 downGate: two in a row inside the window confirm; a gap or any other answer resets", () => {
+    const gate = downGate();
+    expect(gate(true, 0)).toBe(false);
+    expect(gate(true, DOWN_CONFIRM_MS)).toBe(true);
+    expect(gate(true, DOWN_CONFIRM_MS * 3)).toBe(false);
+    expect(gate(false, DOWN_CONFIRM_MS * 3 + 1)).toBe(false);
+    expect(gate(true, DOWN_CONFIRM_MS * 3 + 2)).toBe(false);
   });
 });
