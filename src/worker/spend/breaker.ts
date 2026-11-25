@@ -11,6 +11,8 @@ import { buildReport, digestText, isMonday, REPORT_DAYS, type SpendReport, weekK
 import { effectiveSwitch, restrictiveness, SWITCHES, type SwitchName } from "./switches.ts";
 
 export const BREAKER_ACTOR = "breaker";
+/** Stored as a trip's prior when the row could not be read at latch; no switch has this value. */
+export const PRIOR_UNKNOWN = "?";
 
 export interface Flip {
   switch: SwitchName;
@@ -308,7 +310,12 @@ export async function runBreaker(d: BreakerDeps): Promise<BreakerReport> {
         const held = snap.trips.find((t) => t.switch === flip.switch);
         const latched = held && restrictiveness(flip.switch, held.value) >= restrictiveness(flip.switch, flip.value);
         // The row as it is before the breaker first tightens it, so a reset can put it back.
-        const prior = latched ? "" : ((await d.store.get(flip.switch).catch(() => undefined)) ?? "");
+        const prior = latched
+          ? ""
+          : await d.store.get(flip.switch).then(
+              (v) => v ?? "",
+              () => PRIOR_UNKNOWN,
+            );
         await d.guard.latchTrip(flip.switch, flip.value, f.rule, JSON.stringify(f.readings), prior);
       }
     } else {
@@ -411,8 +418,11 @@ export async function resetBreaker(
   const trip = (await d.guard.snapshot()).trips.find((t) => t.switch === name);
   let restored: string | undefined;
   if (trip && (await d.store.get(name)) === trip.value) {
-    restored = trip.prior || SWITCHES[name].default;
-    await d.store.set(name, restored, actor, "breaker reset");
+    // An unknown prior (the row could not be read at latch) restores nothing: the default could loosen the owner's row.
+    if (trip.prior !== PRIOR_UNKNOWN) {
+      restored = trip.prior || SWITCHES[name].default;
+      await d.store.set(name, restored, actor, "breaker reset");
+    }
   }
   const was = await d.guard.resetTrip(name);
   // The same trip later the same day is a new event and gets its own alert.

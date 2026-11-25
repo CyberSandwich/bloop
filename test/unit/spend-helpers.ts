@@ -101,6 +101,8 @@ export interface MemoryStore extends SwitchStore {
   rows: Map<string, string>;
   writes: { name: string; value: string; actor: string; reason: string }[];
   failNextSet: boolean;
+  /** Switches whose row cannot be read, as when D1 is down. */
+  unreadable: Set<string>;
 }
 
 export function memoryStore(): MemoryStore {
@@ -108,7 +110,9 @@ export function memoryStore(): MemoryStore {
     rows: new Map(),
     writes: [],
     failNextSet: false,
+    unreadable: new Set(),
     async get(name: SwitchName) {
+      if (store.unreadable.has(name)) throw new Error("d1 down");
       return store.rows.get(name);
     },
     async set(name, value, actor, reason) {
