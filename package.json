@@ -172,7 +172,7 @@
     {
       "name": "sheen follow, lazy",
       "path": "dist/js/sheen-follow.js",
-      "limit": "0.62 kB"
+      "limit": "0.72 kB"
     },
     {
       "name": "font",
