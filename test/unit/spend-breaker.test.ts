@@ -236,6 +236,22 @@ describe("rules that stay count-based", () => {
     expect(s.store.rows.has("convert")).toBe(false);
   });
 
+  it("COST-02 after a reset the day's old drops do not trip again; a new drop does", async () => {
+    const s = setup();
+    const caps = s.g.rig.caps;
+    s.g.ledger.acquire("convert_public", undefined, 10, caps, T0);
+    s.g.clock.now = T0 + 10_000 + 300_000;
+    await s.run();
+    expect(s.g.ledger.trips()).toMatchObject([{ switch: "convert", value: "off", reason: "leases_overdue" }]);
+    expect(await resetBreaker(s.deps, "convert", "admin")).toBe(true);
+    await s.run();
+    expect(s.g.ledger.trips()).toEqual([]);
+    s.g.ledger.acquire("convert_public", undefined, 10, caps, s.g.clock.now);
+    s.g.clock.now += 10_000 + 300_000;
+    await s.run();
+    expect(s.g.ledger.trips()).toMatchObject([{ switch: "convert", reason: "leases_overdue" }]);
+  });
+
   it("COST-02 the live-lease line follows the pool caps, so raising a pool does not trip it", () => {
     const s = setup({ CAP_POOL_CONVERT: "6" });
     for (let i = 0; i < 6; i++) s.g.ledger.acquire("convert", "u", 600, s.g.rig.caps, T0);
@@ -372,7 +388,7 @@ describe("runBreaker: flip, latch, alert once", () => {
       // Once the trip is latched, the owner resets it before the run writes the row.
       if (name === "demo" && !fired && s.g.ledger.trips().length > 0) {
         fired = true;
-        s.g.ledger.resetTrip("demo");
+        s.g.ledger.resetTrip("demo", s.g.clock.now, s.g.rig.caps);
       }
       return value;
     };

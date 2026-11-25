@@ -67,7 +67,7 @@ describe("COST-01 the client fails closed for anything that costs money", () => 
   it("record, refund and release lose a call quietly: they report what happened, they gate nothing", async () => {
     const c = client();
     await expect(c.record("conversion_failed", 1)).resolves.toBeUndefined();
-    const ticket = { meter: "container_seconds", n: 5, takenAt: T0 } as const;
+    const ticket = { id: "t", meter: "container_seconds", n: 5, takenAt: T0 } as const;
     await expect(c.refund(ticket)).resolves.toBeUndefined();
     await expect(c.release("x")).resolves.toBeUndefined();
   });
@@ -168,13 +168,32 @@ describe("refund takes the ticket a take returned", () => {
     const c = client(() => g.guard);
     const taken = await c.take("upload_user_bytes", 100, "u1");
     if (!taken.ok) throw new Error("expected a ticket");
-    expect(taken.ticket).toEqual({ meter: "upload_user_bytes", n: 100, scope: "u1", takenAt: T0 });
+    expect(taken.ticket).toEqual({
+      id: expect.stringMatching(/^[A-Za-z0-9_-]{16}$/),
+      meter: "upload_user_bytes",
+      n: 100,
+      scope: "u1",
+      takenAt: T0,
+    });
     await expect(c.refund(taken.ticket, 101)).rejects.toThrow(RangeError);
     await expect(c.refund(taken.ticket, 0)).rejects.toThrow(RangeError);
     await c.refund(taken.ticket, 40);
     expect((await g.guard.snapshot()).counters.upload_user_bytes.day).toBe(60);
-    await c.refund(taken.ticket, 60);
-    expect((await g.guard.snapshot()).counters.upload_user_bytes.day).toBe(0);
+  });
+
+  it("COST-14 refunding a ticket twice credits once, and each take has its own id", async () => {
+    const g = fakeGuard();
+    const c = client(() => g.guard);
+    const a = await c.take("container_seconds", 600);
+    const b = await c.take("container_seconds", 600);
+    if (!a.ok || !b.ok) throw new Error("expected tickets");
+    expect(a.ticket.id).not.toBe(b.ticket.id);
+    await c.refund(a.ticket, 100);
+    await c.refund(a.ticket, 100);
+    await c.refund(a.ticket);
+    expect((await g.guard.snapshot()).counters.container_seconds.day).toBe(1100);
+    await c.refund(b.ticket, 100);
+    expect((await g.guard.snapshot()).counters.container_seconds.day).toBe(1000);
   });
 
   it("an unscoped meter's ticket has no scope, and a take admitted while the guard was down refunds nothing", async () => {
@@ -182,7 +201,8 @@ describe("refund takes the ticket a take returned", () => {
     const c = client(() => g.guard);
     const unscoped = await c.take("container_seconds", 600);
     if (!unscoped.ok) throw new Error("expected a ticket");
-    expect(unscoped.ticket).toEqual({ meter: "container_seconds", n: 600, takenAt: T0 });
+    expect(unscoped.ticket).toMatchObject({ meter: "container_seconds", n: 600, takenAt: T0 });
+    expect(unscoped.ticket).not.toHaveProperty("scope");
     await c.refund(unscoped.ticket, 200);
     expect((await g.guard.snapshot()).counters.container_seconds.day).toBe(400);
 

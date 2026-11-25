@@ -36,8 +36,8 @@ export class SpendGuard extends DurableObject<Vars> implements SpendOps {
     this.ledger.record(meter, n, scope, Date.now());
   }
 
-  refund(meter: MeterName, n: number, scope: string | undefined, at: number): void {
-    this.ledger.refund(meter, n, scope, at, Date.now(), this.caps());
+  refund(meter: MeterName, n: number, scope: string | undefined, at: number, id: string): void {
+    this.ledger.refund(meter, n, scope, at, id, Date.now(), this.caps());
   }
 
   acquire(pool: PoolName, ttlSeconds: number, scope?: string): AcquireResult {
@@ -65,7 +65,7 @@ export class SpendGuard extends DurableObject<Vars> implements SpendOps {
   }
 
   resetTrip(name: SwitchName): boolean {
-    return this.ledger.resetTrip(name);
+    return this.ledger.resetTrip(name, Date.now(), this.caps());
   }
 
   alertOnce(key: string): boolean {
