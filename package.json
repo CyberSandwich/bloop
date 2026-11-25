@@ -30,7 +30,7 @@
     {
       "name": "landing JS",
       "path": "dist/js/site.js",
-      "limit": "1.15 kB"
+      "limit": "1.05 kB"
     },
     {
       "name": "doc pages JS",
@@ -39,7 +39,7 @@
         "dist/js/core/ui.js",
         "dist/js/legal.js"
       ],
-      "limit": "1.95 kB"
+      "limit": "1.85 kB"
     },
     {
       "name": "room screen JS",
@@ -68,7 +68,7 @@
         "dist/js/vendor/uqr.js",
         "dist/js/viewer.js"
       ],
-      "limit": "23.7 kB"
+      "limit": "23.65 kB"
     },
     {
       "name": "phone JS",
@@ -97,7 +97,7 @@
         "dist/js/shared/names.js",
         "dist/js/shared/session.js"
       ],
-      "limit": "15.95 kB"
+      "limit": "16.35 kB"
     },
     {
       "name": "typed code JS",
@@ -122,7 +122,7 @@
         "dist/js/core/photo.js",
         "dist/js/core/video.js"
       ],
-      "limit": "1.75 kB"
+      "limit": "1.65 kB"
     },
     {
       "name": "screen video, lazy",
@@ -136,7 +136,7 @@
         "dist/js/core/length.js",
         "dist/js/shared/length.js"
       ],
-      "limit": "1.45 kB"
+      "limit": "1.35 kB"
     },
     {
       "name": "session length sheet CSS, lazy",
@@ -151,7 +151,7 @@
         "dist/js/core/remote-ui.js",
         "dist/js/core/remote.js"
       ],
-      "limit": "2.1 kB"
+      "limit": "2.2 kB"
     },
     {
       "name": "phone remote CSS, lazy",
@@ -162,7 +162,7 @@
     {
       "name": "drag and drop, lazy",
       "path": "dist/js/core/drag.js",
-      "limit": "0.25 kB"
+      "limit": "0.15 kB"
     },
     {
       "name": "font",
