@@ -6,6 +6,7 @@ import {
   type Caps,
   isMeter,
   isPool,
+  isRefundable,
   isScoped,
   type Limit,
   METERS,
@@ -48,7 +49,18 @@ export type TakeRefusal = {
   scope: "all" | "own";
   retryAfterSeconds: number;
 };
-export type TakeResult = { ok: true } | TakeRefusal;
+/** `id` is set for a refundable meter: the only handle a refund accepts. */
+export type TakeResult = { ok: true; id?: string } | TakeRefusal;
+
+/** 12 random bytes as base64url (no padding at this length). */
+const mintId = (): string =>
+  btoa(String.fromCharCode(...crypto.getRandomValues(new Uint8Array(12))))
+    .replaceAll("+", "-")
+    .replaceAll("/", "_");
+
+/** How long after a take a refund is still honored: the longest lease plus its grace. */
+const refundWindowMs = (caps: Caps): number =>
+  (Math.max(caps.lease_max_convert_seconds, caps.lease_max_export_seconds) + caps.lease_grace_seconds) * 1000;
 export type AcquireResult =
   | { ok: true; leaseId: string; deadline: number }
   | { ok: false; reason: "busy"; retryAfterSeconds: number };
@@ -180,7 +192,17 @@ export class Ledger {
     check(def.perScope, "own");
     if (worst) return worst;
     for (const [s, p] of this.rows(meter, scope, now)) this.add(meter, s, p, n);
-    return { ok: true };
+    if (!isRefundable(meter)) return { ok: true };
+    const id = mintId();
+    this.sql.exec(
+      "INSERT INTO taken (id, meter, scope, n, at) VALUES (?, ?, ?, ?, ?)",
+      id,
+      meter,
+      scope ?? ALL,
+      n,
+      now,
+    );
+    return { ok: true, id };
   }
 
   /** Counts without checking any cap: events that already happened (a failure, a finished job). */
@@ -191,32 +213,23 @@ export class Ledger {
   }
 
   /**
-   * Gives back part of an earlier take; `at` is when it was taken, so a midnight crossing refunds the right day. A
-   * refund is for work that never started, so an `at` in the future or older than the longest lease plus its grace
-   * is a caller bug and does nothing (false); a counter never goes below zero. A scoped meter needs the scope, and
-   * each period gives back at most what that scope's own row holds, from its row and from the all-scopes row alike,
-   * so one caller cannot erase another's counts. `id` is the take ticket's: a second refund of it does nothing.
+   * Gives back part of a take the guard recorded (its `id`, from `take`): the meter, scope, amount and time come from
+   * that row, never from the caller, so a refund cannot name another scope, exceed the take or pick a day. A refund
+   * is for work that never started: one older than the refund window, an unknown id or a second refund of an id
+   * does nothing (false). A counter never goes below zero, and each period gives back at most what the scope's own
+   * row holds, so one caller cannot erase another's counts.
    */
-  refund(
-    meter: MeterName,
-    n: number,
-    scope: string | undefined,
-    at: number,
-    id: string,
-    now: number,
-    caps: Caps,
-  ): boolean {
-    checkCounted(meter, n, scope);
-    if (!id) throw new RangeError("a refund needs its ticket id");
-    const window =
-      (Math.max(caps.lease_max_convert_seconds, caps.lease_max_export_seconds) + caps.lease_grace_seconds) * 1000;
-    if (!Number.isFinite(at) || at > now || now - at > window) return false;
-    if (this.sql.exec("SELECT 1 AS one FROM refunded WHERE id = ?", id).toArray().length > 0) return false;
-    this.sql.exec("INSERT INTO refunded (id, day) VALUES (?, ?)", id, periodKey("day", now));
-    const own = isScoped(meter) ? scope : undefined;
+  refund(id: string, n: number, now: number, caps: Caps): boolean {
+    positiveInt(n, "n");
+    const row = this.sql.exec("SELECT meter, scope, n, at, used FROM taken WHERE id = ?", id).toArray()[0];
+    if (!row || Number(row.used) === 1 || now - Number(row.at) > refundWindowMs(caps)) return false;
+    this.sql.exec("UPDATE taken SET used = 1 WHERE id = ?", id);
+    const meter = String(row.meter) as MeterName;
+    const own = isScoped(meter) ? String(row.scope) : undefined;
     for (const p of this.periods(meter)) {
-      const key = periodKey(p, at);
-      const back = own ? Math.min(n, this.get(meter, own, key)) : n;
+      const key = periodKey(p, Number(row.at));
+      const wanted = Math.min(n, Number(row.n));
+      const back = own ? Math.min(wanted, this.get(meter, own, key)) : wanted;
       this.add(meter, ALL, key, -back);
       if (own) this.add(meter, own, key, -back);
     }
@@ -298,8 +311,11 @@ export class Ledger {
     };
   }
 
-  /** Drops counters nobody reads: hours after 2 days, days after 40, months after 14. */
-  prune(now: number): void {
+  /**
+   * Drops counters nobody reads: hours after 2 days, days after 40, months after 14; and take records once no refund
+   * can use them, the longest refund window (from the lease vars) plus a day.
+   */
+  prune(now: number, caps: Caps): void {
     const keep: [Period, number][] = [
       ["hour", 2 * 86_400_000],
       ["day", 40 * 86_400_000],
@@ -312,7 +328,7 @@ export class Ledger {
         periodKey(p, now - age),
       );
     this.sql.exec("DELETE FROM alert WHERE day < ?", periodKey("day", now - 2 * 86_400_000));
-    this.sql.exec("DELETE FROM refunded WHERE day < ?", periodKey("day", now - 2 * 86_400_000));
+    this.sql.exec("DELETE FROM taken WHERE at < ?", now - refundWindowMs(caps) - DAY_MS);
   }
 
   // Breaker state: latched until reset, one alert per trip.
@@ -320,9 +336,20 @@ export class Ledger {
   /**
    * Latches a switch value. False (nothing changes) when the switch is already latched at this value or a stricter
    * one. `prior` is the switch's row value before the breaker touched it ('' for no row); a stricter trip on the
-   * same switch keeps the first one's, so a reset restores what was there before any trip.
+   * same switch keeps the first one's, so a reset restores what was there before any trip. `evaluatedAt` is the
+   * snapshot time the decision came from: one taken before the switch's last reset is stale and latches nothing.
    */
-  latchTrip(name: SwitchName, value: string, reason: string, reading: string, now: number, prior = ""): boolean {
+  latchTrip(
+    name: SwitchName,
+    value: string,
+    reason: string,
+    reading: string,
+    now: number,
+    prior = "",
+    evaluatedAt = now,
+  ): boolean {
+    const reset = this.sql.exec("SELECT value FROM kv WHERE key = ?", `reset_at:${name}`).toArray()[0];
+    if (reset && evaluatedAt <= Number(reset.value)) return false;
     const held = this.sql.exec("SELECT value, prior FROM trip WHERE switch = ?", name).toArray()[0];
     if (held && !isStricter(name, value, String(held.value))) return false;
     this.sql.exec(
@@ -364,6 +391,7 @@ export class Ledger {
   resetTrip(name: SwitchName, now: number, caps: Caps): boolean {
     const held = this.sql.exec("SELECT 1 AS one FROM trip WHERE switch = ?", name).toArray().length > 0;
     if (held) this.sql.exec("DELETE FROM trip WHERE switch = ?", name);
+    this.sql.exec("INSERT OR REPLACE INTO kv (key, value) VALUES (?, ?)", `reset_at:${name}`, now);
     if (name === "convert") {
       this.dropLapsed(now, caps);
       const day = periodKey("day", now);

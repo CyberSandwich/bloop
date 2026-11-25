@@ -3,8 +3,8 @@
 import { DatabaseSync, type SQLInputValue } from "node:sqlite";
 import type { SqlLike } from "../../src/worker/do/demo-slots.ts";
 import type { SwitchStore } from "../../src/worker/spend/breaker.ts";
-import { type Caps, resolveCaps } from "../../src/worker/spend/caps.ts";
-import type { Spend, SpendRpc } from "../../src/worker/spend/client.ts";
+import { type Caps, isRefundable, resolveCaps } from "../../src/worker/spend/caps.ts";
+import type { CallerMeter, Spend, SpendRpc } from "../../src/worker/spend/client.ts";
 import { Ledger } from "../../src/worker/spend/meters.ts";
 import type { Transaction } from "../../src/worker/spend/schema.ts";
 import type { SwitchName } from "../../src/worker/spend/switches.ts";
@@ -73,12 +73,13 @@ export function fakeGuard(vars: Record<string, unknown> = {}, start = T0, bornAt
   const guard: SpendRpc = {
     take: async (m, n, s) => r.ledger.take(m, n, s, caps(), clock.now),
     record: async (m, n, s) => r.ledger.record(m, n, s, clock.now),
-    refund: async (m, n, s, at, id) => void r.ledger.refund(m, n, s, at, id, clock.now, caps()),
+    refund: async (id, n) => void r.ledger.refund(id, n, clock.now, caps()),
     acquire: async (p, ttl, s) => r.ledger.acquire(p, s, ttl, caps(), clock.now),
     release: async (id) => r.ledger.release(id),
     snapshot: async () => r.ledger.snapshot(clock.now, caps()),
-    prune: async () => r.ledger.prune(clock.now),
-    latchTrip: async (n, v, reason, reading, prior) => r.ledger.latchTrip(n, v, reason, reading, clock.now, prior),
+    prune: async () => r.ledger.prune(clock.now, caps()),
+    latchTrip: async (n, v, reason, reading, prior, at) =>
+      r.ledger.latchTrip(n, v, reason, reading, clock.now, prior, at),
     markAlerted: async (n, v) => r.ledger.markAlerted(n, v),
     resetTrip: async (n) => r.ledger.resetTrip(n, clock.now, caps()),
     alertOnce: async (k) => r.ledger.alertOnce(k, clock.now),
@@ -111,10 +112,10 @@ export function fakeSpend(overrides: Partial<Spend> = {}): Spend & { calls: { me
     };
   return {
     calls,
-    take: async (meter, n, scope) => {
+    take: (async (meter: CallerMeter, n: number, scope?: string) => {
       calls.push({ method: "take", args: [meter, n, scope] });
-      return { ok: true, ticket: { id: `fake-${calls.length}`, meter, n, ...(scope ? { scope } : {}), takenAt: 0 } };
-    },
+      return isRefundable(meter) ? { ok: true, ticket: { id: `fake-${calls.length}`, meter, n } } : { ok: true };
+    }) as Spend["take"],
     charge: spy("charge", { ok: true } as const),
     acquire: spy("acquire", { ok: true, leaseId: "lease-1", deadline: 0 } as const),
     release: spy("release", undefined),

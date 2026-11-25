@@ -67,7 +67,7 @@ describe("COST-01 the client fails closed for anything that costs money", () => 
   it("record, refund and release lose a call quietly: they report what happened, they gate nothing", async () => {
     const c = client();
     await expect(c.record("conversion_failed", 1)).resolves.toBeUndefined();
-    const ticket = { id: "t", meter: "container_seconds", n: 5, takenAt: T0 } as const;
+    const ticket = { id: "t", meter: "container_seconds", n: 5 } as const;
     await expect(c.refund(ticket)).resolves.toBeUndefined();
     await expect(c.release("x")).resolves.toBeUndefined();
   });
@@ -163,7 +163,7 @@ describe("a caller bug throws before any RPC; only a transport error is an outag
 });
 
 describe("refund takes the ticket a take returned", () => {
-  it("gives back what was taken, with the scope it was taken under, and never more", async () => {
+  it("gives back what was taken, never more, under the id the guard minted", async () => {
     const g = fakeGuard();
     const c = client(() => g.guard);
     const taken = await c.take("upload_user_bytes", 100, "u1");
@@ -172,8 +172,6 @@ describe("refund takes the ticket a take returned", () => {
       id: expect.stringMatching(/^[A-Za-z0-9_-]{16}$/),
       meter: "upload_user_bytes",
       n: 100,
-      scope: "u1",
-      takenAt: T0,
     });
     await expect(c.refund(taken.ticket, 101)).rejects.toThrow(RangeError);
     await expect(c.refund(taken.ticket, 0)).rejects.toThrow(RangeError);
@@ -196,26 +194,15 @@ describe("refund takes the ticket a take returned", () => {
     expect((await g.guard.snapshot()).counters.container_seconds.day).toBe(1000);
   });
 
-  it("an unscoped meter's ticket has no scope, and a take admitted while the guard was down refunds nothing", async () => {
+  it("COST-14 a meter nobody refunds hands back no ticket, even when admitted while the guard was down", async () => {
     const g = fakeGuard();
     const c = client(() => g.guard);
-    const unscoped = await c.take("container_seconds", 600);
-    if (!unscoped.ok) throw new Error("expected a ticket");
-    expect(unscoped.ticket).toMatchObject({ meter: "container_seconds", n: 600, takenAt: T0 });
-    expect(unscoped.ticket).not.toHaveProperty("scope");
-    await c.refund(unscoped.ticket, 200);
-    expect((await g.guard.snapshot()).counters.container_seconds.day).toBe(400);
-
-    // The public guard was down for the take (admitted by the isolate), so the guard never counted it.
-    await g.guard.record("demo_session", 5);
+    expect(await c.take("export_user", 1, "u1")).toEqual({ ok: true });
     const open = await client(() => g.guard, undefined, undefined, undefined, undefined, broken).take(
       "demo_session",
       1,
     );
-    if (!open.ok) throw new Error("expected an admission");
-    expect(open.ticket.takenAt).toBe(0);
-    await c.refund(open.ticket);
-    expect((await g.guard.snapshot()).counters.demo_session.day).toBe(5);
+    expect(open).toEqual({ ok: true });
   });
 });
 
@@ -422,6 +409,31 @@ describe("charge keeps the reserve honest", () => {
     await c.charge("A", 99);
     expect((await g.guard.snapshot()).counters.r2_class_a.month).toBe(100);
   });
+
+  it("COST-07 a block that returns after the month turned is dropped, not spent in the new month", async () => {
+    let now = Date.UTC(2026, 9, 31, 23, 59);
+    const g = fakeGuard({}, now);
+    const inner = g.guard.take;
+    g.guard.take = async (...a) => {
+      const out = await inner(...a);
+      now = Date.UTC(2026, 10, 1, 0, 1);
+      g.clock.now = now;
+      return out;
+    };
+    const reserves = new Reserves(() => now);
+    const c = client(
+      () => g.guard,
+      undefined,
+      () => now,
+      reserves,
+    );
+    await c.charge("A", 1);
+    expect(reserves.left("A")).toBe(0);
+    // The October block is gone: this November charge reaches the guard for a block of its own.
+    g.guard.take = inner;
+    await c.charge("A", 1);
+    expect((await g.guard.snapshot()).counters.r2_class_a.month).toBe(100);
+  });
 });
 
 describe("the compile-time refusal", () => {
@@ -435,6 +447,8 @@ describe("the compile-time refusal", () => {
     await spend.record("d1_writes", 1);
     // @ts-expect-error a refund takes a ticket, not the old four arguments
     await spend.refund("container_seconds", 5, undefined, 0);
+    // @ts-expect-error a take of a meter nobody refunds has no ticket to refund
+    await spend.refund((await spend.take("export_user", 1, "u")).ticket);
   });
 });
 

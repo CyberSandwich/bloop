@@ -5,6 +5,20 @@ import { METERS, type MeterDef, type MeterName, resolveCaps } from "../../src/wo
 import { Ledger } from "../../src/worker/spend/meters.ts";
 import { DAY, HOUR, rig, sqlOver, T0, transactionOver } from "./spend-helpers.ts";
 
+/** The id a refundable take hands back. */
+function takeId(
+  ledger: Ledger,
+  meter: MeterName,
+  n: number,
+  scope: string | undefined,
+  caps: ReturnType<typeof resolveCaps>,
+  now: number,
+): string {
+  const result = ledger.take(meter, n, scope, caps, now);
+  if (!result.ok || !result.id) throw new Error("take gave no id");
+  return result.id;
+}
+
 describe("counters: take is an exact check-and-add", () => {
   it("COST-14 email: 60 sends an hour, then refused with the wait until the hour ends, adding nothing", () => {
     const { ledger, caps } = rig();
@@ -128,32 +142,43 @@ describe("counters: take is an exact check-and-add", () => {
 
   it("record counts past a cap without refusing; refund gives back, floored at 0, on the day it was taken", () => {
     const { ledger, caps } = rig();
-    ledger.take("container_seconds", 21_600, undefined, caps, T0);
+    const first = takeId(ledger, "container_seconds", 21_600, undefined, caps, T0);
     ledger.record("container_seconds", 5, undefined, T0);
     expect(ledger.snapshot(T0, caps).counters.container_seconds.day).toBe(21_605);
-    ledger.refund("container_seconds", 30_000, undefined, T0, "a", T0, caps);
-    expect(ledger.snapshot(T0, caps).counters.container_seconds.day).toBe(0);
+    ledger.refund(first, 30_000, T0, caps);
+    expect(ledger.snapshot(T0, caps).counters.container_seconds.day).toBe(5);
     const late = Date.UTC(2026, 10, 25, 23, 59);
-    ledger.take("container_seconds", 100, undefined, caps, late);
-    ledger.refund("container_seconds", 40, undefined, late, "b", late, caps);
-    expect(ledger.snapshot(Date.UTC(2026, 10, 25, 23, 59), caps).counters.container_seconds.day).toBe(60);
+    const second = takeId(ledger, "container_seconds", 100, undefined, caps, late);
+    ledger.refund(second, 40, late, caps);
+    expect(ledger.snapshot(late, caps).counters.container_seconds.day).toBe(65);
     expect(ledger.snapshot(Date.UTC(2026, 10, 26, 0, 1), caps).counters.container_seconds.day).toBe(0);
   });
 
-  it("COST-11 a refund on a scoped meter needs its scope and never erases another caller's counts", () => {
+  it("COST-11 a refund is bounded by its own take and never erases another caller's counts", () => {
     const { ledger, caps } = rig();
-    ledger.take("upload_user_bytes", 100, "u1", caps, T0);
-    ledger.take("upload_user_bytes", 100, "u2", caps, T0);
-    expect(() => ledger.refund("upload_user_bytes", 10, undefined, T0, "c", T0, caps)).toThrow(RangeError);
-    expect(() => ledger.refund("upload_user_bytes", 10, "", T0, "c", T0, caps)).toThrow(RangeError);
-    expect(() => ledger.refund("upload_user_bytes", 10, "u1", T0, "", T0, caps)).toThrow(RangeError);
+    const u1 = takeId(ledger, "upload_user_bytes", 100, "u1", caps, T0);
+    takeId(ledger, "upload_user_bytes", 100, "u2", caps, T0);
+    expect(() => ledger.refund(u1, 0, T0, caps)).toThrow(RangeError);
     // u1 took 100 and asks for 150 back: u2's 100 stays in the all-scopes row.
-    ledger.refund("upload_user_bytes", 150, "u1", T0, "d", T0, caps);
+    ledger.refund(u1, 150, T0, caps);
     expect(ledger.snapshot(T0, caps).counters.upload_user_bytes.day).toBe(100);
     expect(ledger.take("upload_user_bytes", caps.upload_user_bytes_day - 100, "u1", caps, T0).ok).toBe(true);
-    // u2 still has its own 100 counted: a refund from a scope that took nothing changes nothing.
-    ledger.refund("upload_user_bytes", 50, "u3", T0, "e", T0, caps);
+    // an id nobody minted changes nothing
+    expect(ledger.refund("never-minted", 50, T0, caps)).toBe(false);
     expect(ledger.snapshot(T0, caps).counters.upload_user_bytes.day).toBe(caps.upload_user_bytes_day);
+  });
+
+  it("COST-14 only the refundable meters mint an id", () => {
+    const { ledger, caps } = rig();
+    expect(ledger.take("email", 1, undefined, caps, T0)).toEqual({ ok: true });
+    expect(ledger.take("export_user", 1, "u1", caps, T0)).toEqual({ ok: true });
+    for (const [meter, scope] of [
+      ["container_seconds", undefined],
+      ["upload_user", "u1"],
+      ["upload_user_bytes", "u1"],
+    ] as const) {
+      expect(ledger.take(meter, 1, scope, caps, T0)).toEqual({ ok: true, id: expect.stringMatching(/^[\w-]{16}$/) });
+    }
   });
 
   it("counters are exact across a Durable Object restart", () => {
@@ -170,7 +195,7 @@ describe("counters: take is an exact check-and-add", () => {
     ledger.take("r2_class_a", 1, undefined, caps, T0 - 60 * DAY);
     ledger.take("r2_class_a", 1, undefined, caps, T0 - 500 * DAY);
     ledger.take("r2_class_a", 1, undefined, caps, T0);
-    ledger.prune(T0);
+    ledger.prune(T0, caps);
     const keys = (meter: string) =>
       (
         db.prepare("SELECT period FROM counter WHERE meter = ? AND scope = '' ORDER BY period").all(meter) as {
@@ -409,28 +434,39 @@ describe("schema", () => {
     expect(db.prepare("SELECT version FROM schema_version").all()).toEqual([{ version: 1 }]);
   });
 
-  it("COST-14 a refund for a future or stale take, or more than was taken, does not go below zero or touch other days", () => {
+  it("COST-14 a refund past its window, or for more than was taken, does not go below zero or touch other days", () => {
     const { ledger, caps } = rig();
-    ledger.record("email", 10, undefined, T0 - DAY);
-    ledger.take("email", 5, undefined, caps, T0);
-    expect(ledger.refund("email", 3, undefined, T0 + 1000, "f", T0, caps)).toBe(false);
-    expect(ledger.refund("email", 3, undefined, T0 - DAY, "g", T0, caps)).toBe(false);
-    expect(ledger.snapshot(T0, caps).counters.email.day).toBe(5);
-    expect(ledger.history(T0, 3).series.email[1]).toBe(10);
-    expect(ledger.refund("email", 99, undefined, T0, "h", T0, caps)).toBe(true);
-    expect(ledger.snapshot(T0, caps).counters.email.day).toBe(0);
+    ledger.record("container_seconds", 10, undefined, T0 - DAY);
+    const id = takeId(ledger, "container_seconds", 5, undefined, caps, T0);
+    const window =
+      (Math.max(caps.lease_max_convert_seconds, caps.lease_max_export_seconds) + caps.lease_grace_seconds) * 1000;
+    expect(ledger.refund(id, 3, T0 + window + 1, caps)).toBe(false);
+    expect(ledger.snapshot(T0, caps).counters.container_seconds.day).toBe(5);
+    expect(ledger.history(T0, 3).series.container_seconds[1]).toBe(10);
+    expect(ledger.refund(id, 99, T0 + window, caps)).toBe(true);
+    expect(ledger.snapshot(T0, caps).counters.container_seconds.day).toBe(0);
   });
 
-  it("COST-14 a ticket id is honored once, and its row is pruned after two days", () => {
-    const { ledger, caps, db } = rig();
-    ledger.take("email", 5, undefined, caps, T0);
-    expect(ledger.refund("email", 2, undefined, T0, "once", T0, caps)).toBe(true);
-    expect(ledger.refund("email", 2, undefined, T0, "once", T0, caps)).toBe(false);
-    expect(ledger.snapshot(T0, caps).counters.email.day).toBe(3);
-    ledger.prune(T0 + DAY);
-    expect(db.prepare("SELECT count(*) AS n FROM refunded").get()).toEqual({ n: 1 });
-    ledger.prune(T0 + 3 * DAY);
-    expect(db.prepare("SELECT count(*) AS n FROM refunded").get()).toEqual({ n: 0 });
+  it("COST-14 a ticket id is honored once", () => {
+    const { ledger, caps } = rig();
+    const id = takeId(ledger, "container_seconds", 5, undefined, caps, T0);
+    expect(ledger.refund(id, 2, T0, caps)).toBe(true);
+    expect(ledger.refund(id, 2, T0, caps)).toBe(false);
+    expect(ledger.snapshot(T0, caps).counters.container_seconds.day).toBe(3);
+  });
+
+  it("COST-14 take records are pruned a day after the longest refund window, computed from the lease vars", () => {
+    const rows = (db: DatabaseSync) => db.prepare("SELECT count(*) AS n FROM taken").get();
+    for (const vars of [{}, { CAP_LEASE_EXPORT_SECONDS: 7200, CAP_LEASE_GRACE_SECONDS: 600 }]) {
+      const { ledger, caps, db } = rig(vars);
+      const window =
+        (Math.max(caps.lease_max_convert_seconds, caps.lease_max_export_seconds) + caps.lease_grace_seconds) * 1000;
+      takeId(ledger, "container_seconds", 5, undefined, caps, T0);
+      ledger.prune(T0 + window + DAY, caps);
+      expect(rows(db)).toEqual({ n: 1 });
+      ledger.prune(T0 + window + DAY + 1, caps);
+      expect(rows(db)).toEqual({ n: 0 });
+    }
   });
 
   it("COST-02 a reset takes the day's dropped leases as seen: only a drop after it trips again", () => {

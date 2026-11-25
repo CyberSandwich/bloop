@@ -338,6 +338,11 @@ export const METERS = {
 
 export type MeterName = keyof typeof METERS;
 export const isMeter = (name: string): name is MeterName => Object.hasOwn(METERS, name);
+/** The meters whose take hands back a refund ticket: the work a caller can start and then not do. */
+export const REFUNDABLE_METERS = ["container_seconds", "upload_user", "upload_user_bytes"] as const;
+export type RefundableMeter = (typeof REFUNDABLE_METERS)[number];
+export const isRefundable = (name: MeterName): name is RefundableMeter =>
+  (REFUNDABLE_METERS as readonly string[]).includes(name);
 /** A meter with a per-scope limit: its calls must name a scope. */
 export const isScoped = (name: MeterName): boolean => ((METERS[name] as MeterDef).perScope?.length ?? 0) > 0;
 
