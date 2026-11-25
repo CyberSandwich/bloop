@@ -71,7 +71,7 @@ describe("PAIR-13 control: only the pairing's phone commands the screen", () => 
     const forged = await api.post("/api/control", shown(DECK), { auth: `${ref}.${"A".repeat(43)}` });
     expect(forged.body).toEqual(problem("pairing_invalid"));
     const asScreen = await api.post("/api/control", shown(DECK), { auth: screen.sid });
-    expect(asScreen.status).toBeGreaterThanOrEqual(400);
+    expect(asScreen.body).toEqual(problem("pairing_invalid"));
     const bare = await api.post("/api/control", shown(DECK));
     expect(bare.body).toEqual(problem("unauthorized"));
     // Another session's phone has no say here.
@@ -192,7 +192,7 @@ describe("PAIR-13 screen/shown: the screen reports its own taps", () => {
   it("PAIR-13 sid: the phone's pid, a forged sid and no credential are refused", async () => {
     const { screen, socket, pid } = await session();
     const [ref] = screen.sid.split(".");
-    expect((await api.post("/api/screen/shown", shown(DECK), { auth: pid })).status).toBeGreaterThanOrEqual(400);
+    expect((await api.post("/api/screen/shown", shown(DECK), { auth: pid })).body).toEqual(problem("unauthorized"));
     const forged = await api.post("/api/screen/shown", shown(DECK), { auth: `${ref}.${"A".repeat(43)}` });
     expect(forged.body).toEqual(problem("unauthorized"));
     expect((await api.post("/api/screen/shown", shown(DECK))).body).toEqual(problem("unauthorized"));
