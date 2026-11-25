@@ -114,6 +114,19 @@ describe("api client", () => {
     }
   });
 
+  it("a call that has answered, or failed, leaves no timer behind", async () => {
+    vi.useFakeTimers();
+    try {
+      const answered = fakeFetch(() => ok({}));
+      await createApi({ fetch: answered.fetch }).get("/api/files", "p.q");
+      const failed = fakeFetch(() => new TypeError("Failed to fetch"));
+      await createApi({ fetch: failed.fetch }).get("/api/files", "p.q");
+      expect(vi.getTimerCount()).toBe(0);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   it("only reads and the boot are timed: a slow write (an approve) may still land", async () => {
     const f = fakeFetch(() => ok({}));
     const api = createApi({ fetch: f.fetch });

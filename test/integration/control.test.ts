@@ -163,6 +163,16 @@ describe("PAIR-13 control: only the pairing's phone commands the screen", () => 
     socket.close();
   });
 
+  it("PAIR-13 v: a cancel answers the ended view with the v the cancel produced, so a client adopts it", async () => {
+    const opened = await openScreen(api, "demo");
+    const { body } = await claim(api, opened.code);
+    const before = (await api.get<{ v: number }>("/api/pair/state", body.pid)).body.v;
+    const res = await api.post<{ v: number; state: string; endReason: string }>("/api/cancel", {}, { auth: body.pid });
+    expect(res.body).toMatchObject({ state: "ended", endReason: "canceled" });
+    expect(res.body.v).toBeGreaterThan(before);
+    opened.socket.close();
+  });
+
   it("PAIR-13 seq bound: a seq days ahead is bad_request, and the next normal tap applies", async () => {
     const { socket, pid } = await session();
     const far = await api.post("/api/control", cmd(DECK, 2, false, Date.now() + 3 * 24 * 3600 * 1000), { auth: pid });

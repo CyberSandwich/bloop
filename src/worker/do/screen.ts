@@ -439,7 +439,13 @@ export class Screen extends DurableObject<Env> implements PairingStore {
     if (!applied.ok) return applied;
     if (this.phoneMatches(auth.hash)) return this.phoneResult(auth.hash);
     // A cancel dropped the pairing. The phone that asked sees its session as ended by cancel.
-    const view = this.phoneViewOf({ ...before, state: "ended", session: null, endReason: "canceled" });
+    const view = this.phoneViewOf({
+      ...before,
+      state: "ended",
+      session: null,
+      endReason: "canceled",
+      v: applied.next.v,
+    });
     return view ? { ok: true, value: view } : fail("pairing_invalid");
   }
 

@@ -37,10 +37,11 @@ export function createApi(deps = {}) {
       credentials: "same-origin",
       keepalive: !!options.keepalive,
     };
-    // Reads, the boot and the remote only: a slow approve may still land. Not AbortSignal.timeout (Safari 15.4).
+    // Writes wait (a slow approve lands), bar the remote's. No AbortSignal.timeout (Safari 15.4).
     const stop = new AbortController();
+    let timer;
     if (method === "GET" || options.timeout) {
-      setTimeout(() => stop.abort(), FETCH_TIMEOUT_MS);
+      timer = setTimeout(() => stop.abort(), FETCH_TIMEOUT_MS);
       init.signal = stop.signal;
     }
     if (method !== "GET") {
@@ -51,6 +52,7 @@ export function createApi(deps = {}) {
     try {
       res = await doFetch(path, init);
     } catch {
+      clearTimeout(timer);
       return { ok: false, error: "offline" };
     }
     let body = null;
@@ -59,6 +61,8 @@ export function createApi(deps = {}) {
       body = text ? JSON.parse(text) : {};
     } catch {
       body = null;
+    } finally {
+      clearTimeout(timer);
     }
     if (res.ok)
       return body === null ? { ok: false, error: "service_down" } : { ok: true, value: body, headers: res.headers };
