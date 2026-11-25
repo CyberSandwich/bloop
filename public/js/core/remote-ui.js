@@ -4,11 +4,10 @@
 
 import { tuneOf } from "../shared/session.js";
 import { createApi } from "./api.js";
-import { pagesOf, thumbOf } from "./demo.js";
+import { pagesOf } from "./demo.js";
 import { isVideo, itemName } from "./format.js";
 import { refused, styled } from "./lazy.js";
 import { canPresent, createRemote } from "./remote.js";
-import { rowFace } from "./rows.js";
 import { el, setText } from "./ui.js";
 
 await styled("/css/remote.css");
@@ -24,6 +23,7 @@ const SWIPE = 50;
 export function mount(c, onView) {
   const parts = /** @type {HTMLTemplateElement} */ (document.getElementById("remote-parts")).content;
   const preview = /** @type {HTMLElement} */ (parts.querySelector(".preview"));
+  const note = /** @type {HTMLElement} */ (parts.querySelector("[data-note]"));
   const bubbles = /** @type {HTMLElement} */ (parts.querySelector(".bubbles"));
   const count = /** @type {HTMLElement} */ (preview.querySelector(".count"));
   const present = /** @type {HTMLButtonElement} */ (bubbles.querySelector("[data-present]"));
@@ -32,10 +32,20 @@ export function mount(c, onView) {
   const play = /** @type {HTMLButtonElement} */ (bubbles.querySelector("[data-play]"));
   const sound = /** @type {HTMLButtonElement} */ (bubbles.querySelector("[data-sound]"));
   const list = /** @type {HTMLElement} */ (document.getElementById("file-list"));
-  const ends = /** @type {HTMLElement} */ (document.getElementById("ends"));
   const panel = /** @type {HTMLElement} */ (document.querySelector(".column > .actions"));
+  const column = /** @type {HTMLElement} */ (list.parentElement);
   let on = false;
   let drawn = "";
+  /** A paged item: the one the preview shows. */
+  let paged = false;
+
+  // The preview sits over the panel only where the list above it keeps two rows (remote.css holds the list at two):
+  // where the column would then overflow, it gives way, and Previous and Next still step.
+  const place = () => {
+    if (paged && !preview.isConnected) panel.before(preview);
+    if (!paged || column.scrollHeight > column.clientHeight) preview.remove();
+  };
+  addEventListener("resize", place);
 
   const remote = createRemote({
     view: () => c.view,
@@ -50,11 +60,12 @@ export function mount(c, onView) {
     const at = remote.at();
     const item = at && v?.items.find((x) => x.id === at.item);
     if (!on || !v || !at || !item) {
-      preview.remove();
+      paged = false;
+      place();
+      note.remove();
       bubbles.remove();
       return;
     }
-    if (!preview.isConnected) ends.after(preview);
     if (!bubbles.isConnected) panel.prepend(bubbles);
     for (const row of list.querySelectorAll("[data-id]")) {
       if (row.getAttribute("data-id") === at.item) row.setAttribute("aria-current", "true");
@@ -62,33 +73,29 @@ export function mount(c, onView) {
     }
     const pages = pagesOf(item, v);
     const video = isVideo(item);
-    const key = `${at.item}:${at.page}:${at.sound}`;
-    if (key !== drawn) {
+    // Only a paged item has a preview: a photo, video or link row already shows what the screen does.
+    const key = `${at.item}:${at.page}`;
+    if (pages && key !== drawn) {
       drawn = key;
-      const name = itemName(item);
-      const label = pages
-        ? `${item.kind === "file" && item.type === "pdf" ? "Page" : "Slide"} ${at.page} of ${pages.length}`
-        : "";
-      preview.setAttribute("aria-label", label ? `${name}, ${label}` : name);
-      // Pictures, so the browser fetches the format it picks.
-      const faces = pages?.map((p) =>
+      const kind = item.kind === "file" && item.type === "pdf" ? "Page" : "Slide";
+      preview.setAttribute("aria-label", `${itemName(item)}, ${kind} ${at.page} of ${pages.length}`);
+      // A picture, so the browser fetches the format it picks.
+      const p = pages[at.page - 1];
+      preview.replaceChildren(
         el("picture", {}, [
           el("source", { type: "image/avif", srcset: `${p}.avif` }),
           el("img", { src: `${p}.webp`, alt: "" }),
         ]),
+        count,
       );
-      const face =
-        faces?.[at.page - 1] ??
-        el("div", { class: "card" }, [
-          ...rowFace(item, thumbOf(item, v)),
-          ...(video && at.sound === "blocked"
-            ? [el("span", { class: "small" }, ["Tap the screen once for sound."])]
-            : []),
-        ]);
-      preview.replaceChildren(face, count);
+      setText(count, `${at.page} / ${pages.length}`);
     }
-    setText(count, pages ? `${at.page} / ${pages.length}` : "");
-    count.hidden = !pages;
+    paged = !!pages;
+    place();
+    // The screen holds sound until a tap there: the phone says so under the list.
+    if (video && at.sound === "blocked") {
+      if (!note.isConnected) list.after(note);
+    } else note.remove();
     // A video's bubbles play and sound, not step.
     for (const [b, on] of /** @type {const} */ ([
       [play, tuneOf(at).play],
