@@ -144,6 +144,12 @@ test.describe("legal layout at 390", () => {
     const label = page.locator('#processors td:nth-child(2) > .label[aria-hidden="true"]').first();
     await expect(label).toBeVisible();
     await expect(label).toHaveText("What it does");
+    // Stacked, the table keeps its roles and its column heads (clipped, not removed) for a screen reader.
+    const table = page.locator("#processors table");
+    await expect(table.getByRole("columnheader")).toHaveText(["Processor", "What it does", "Data", "Where"]);
+    await expect(table.getByRole("rowheader").first()).toHaveText("Cloudflare, Inc. (US)");
+    await expect(table.getByRole("cell").first()).toContainText("Hosting");
+    await expect(table.locator("thead")).not.toHaveCSS("display", "none");
   });
 
   test("a clause number takes a tap 8 px above and beside its box", async ({ page }) => {

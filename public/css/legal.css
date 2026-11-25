@@ -328,8 +328,14 @@ a.num::after {
   display: none;
 }
 @media (max-width: 639.98px) {
+  /* Hidden by clip, never display:none, so readers still announce each cell's column head. */
   .legal thead {
-    display: none;
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip-path: inset(50%);
+    white-space: nowrap;
   }
   .legal :is(tr, th, td) {
     display: block;
