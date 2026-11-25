@@ -1,6 +1,6 @@
 import { deflateSync } from "node:zlib";
 import { describe, expect, it } from "vitest";
-import { MAX_PDF_BYTES, scanPdf } from "../../src/worker/seams/guest-drop/pdf-scan.ts";
+import { MAX_OBJECT_STREAMS, MAX_PDF_BYTES, scanPdf } from "../../src/worker/seams/guest-drop/pdf-scan.ts";
 
 const enc = new TextEncoder();
 const pdf = (body: string) => enc.encode(`%PDF-1.5\n${body}\n%%EOF\n`);
@@ -170,6 +170,20 @@ describe("DROP-13 pdf-active: hostile input", () => {
     expect(await scanPdf(hostile)).toMatchObject({ ok: false, found: ["unscannable"] });
     expect(performance.now() - t).toBeLessThan(500);
   });
+
+  it("caps the object streams it inflates, and stays fast on a hundred thousand", async () => {
+    const unit = stream("/Type/ObjStm/Filter/FlateDecode", deflateSync(enc.encode("<<>>")));
+    const repeat = (n: number) => {
+      const out = new Uint8Array(unit.length * n);
+      for (let i = 0; i < n; i++) out.set(unit, i * unit.length);
+      return out;
+    };
+    expect(await scanPdf(repeat(MAX_OBJECT_STREAMS))).toEqual({ ok: true });
+    const hostile = repeat(100_000);
+    const t = performance.now();
+    expect(await scanPdf(hostile)).toMatchObject({ ok: false, found: ["unscannable"] });
+    expect(performance.now() - t).toBeLessThan(3000);
+  }, 20_000);
 
   it("answers a file over the in-memory cap with needs_stream_scan, not ok", async () => {
     const huge = new Uint8Array(MAX_PDF_BYTES + 1);

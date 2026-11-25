@@ -153,6 +153,8 @@ export function checkOoxml(
   contentTypesXml: string,
   rels: ReadonlyMap<string, string>,
 ): Check {
+  // A `\` or `%` can spell a separator an extractor honors but `isRelsPart` does not see (`word\_rels\x.rels`).
+  if (names.some((n) => /[\\%]/.test(n))) return fail("bad_structure", "entry name");
   const types = checkContentTypes(contentTypesXml);
   if (!types.ok) return types;
   if (names.some(isRefusedPart)) return fail("macro_content", "macro part");

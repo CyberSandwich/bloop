@@ -152,6 +152,15 @@ describe("DROP-14 external: relationships", () => {
   });
 });
 
+describe("DROP-14 external: entry names", () => {
+  it.each(["word\\_rels\\document.xml.rels", "word/_rels/a%2Fb.rels", "ppt\\slides\\slide1.xml", "a%5Cb"])(
+    "refuses the name %j, which an extractor may read as a path",
+    (name) => {
+      expect(checkOoxml([...BASE, name], TYPES, new Map())).toMatchObject({ ok: false, reason: "entry name" });
+    },
+  );
+});
+
 describe("DROP-14 external: macro-enabled packages", () => {
   const word = (ct: string) => `<Types><Override PartName="/word/document.xml" ContentType="${ct}"/></Types>`;
   const none = new Map<string, string>();
