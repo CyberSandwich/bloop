@@ -221,7 +221,7 @@ function renderActions(/** @type {import("./types.js").PhoneAction[]} */ actions
     if (!node) continue;
     const busy = loading && a.id === "approve";
     node.replaceChildren(...(busy ? [el("span", { class: "spinner", "aria-hidden": "true" }), a.label] : [a.label]));
-    if (node instanceof HTMLButtonElement) node.disabled = loading;
+    if (node instanceof HTMLButtonElement) node.disabled = loading || !!a.disabled;
     ariaFlag(node, "aria-busy", busy);
   }
 }
