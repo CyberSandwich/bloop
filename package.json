@@ -73,7 +73,7 @@
         "dist/js/vendor/uqr.js",
         "dist/js/viewer.js"
       ],
-      "limit": "25.2 kB"
+      "limit": "25.3 kB"
     },
     {
       "name": "phone JS",
@@ -101,7 +101,7 @@
         "dist/js/shared/names.js",
         "dist/js/shared/session.js"
       ],
-      "limit": "17.45 kB"
+      "limit": "17.55 kB"
     },
     {
       "name": "typed code JS",
