@@ -80,14 +80,11 @@ describe("PAIR-07 limits: the global miss alarm", () => {
         );
         for (const a of answers) expect(a.status).toBe(404);
       }
-      // wrangler relays the Worker's log line asynchronously, so a slow runner can lag the last response.
-      const alarmLines = () =>
-        alarm
-          .output()
-          .split("\n")
-          .filter((l) => l.includes("pair.miss_alarm"));
-      for (let i = 0; i < 50 && alarmLines().length === 0; i++) await new Promise((r) => setTimeout(r, 100));
-      const lines = alarmLines();
+      await alarm.logged("pair.miss_alarm");
+      const lines = alarm
+        .output()
+        .split("\n")
+        .filter((l) => l.includes("pair.miss_alarm"));
       expect(lines).toHaveLength(1);
       expect(lines[0]).toContain('"misses":1000');
       const fresh = await alarmApi.post(
@@ -176,11 +173,20 @@ describe("config fails closed", () => {
   });
 
   it("refuses TEST_TIMING on a non-local origin", async () => {
-    const bad = await startWrangler({ HASH_PEPPER: PEPPER, TEST_TIMING: "1", PUBLIC_ORIGIN: "https://bloop.example" });
+    // DEV_MAILBOX is off so the TEST_TIMING check is the only one that can fail the configuration.
+    const bad = await startWrangler({
+      HASH_PEPPER: PEPPER,
+      TEST_TIMING: "1",
+      DEV_MAILBOX: "0",
+      PUBLIC_ORIGIN: "https://bloop.example",
+    });
     try {
       const res = await new Api(bad.url).post("/api/screens", { mode: "demo" }, { origin: "https://bloop.example" });
       expect(res.status).toBe(500);
-      expect(bad.output()).toContain("TEST_TIMING");
+      await bad.logged("config invalid");
+      await new Promise((r) => setTimeout(r, 100));
+      expect(bad.output()).toContain("TEST_TIMING: refused");
+      expect(bad.output()).not.toContain("DEV_MAILBOX: refused");
     } finally {
       await bad.stop();
     }

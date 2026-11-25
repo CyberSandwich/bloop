@@ -13,7 +13,7 @@ export function json(body: unknown, status = 200, headers?: Record<string, strin
   });
 }
 
-/** Every error response is application/problem+json with an ErrorCode and nothing else. */
+/** Every error response is application/problem+json with an ErrorCode or AppError and nothing else. */
 export function problem(status: number, code: ErrorCode | AppError, headers?: Record<string, string>): Response {
   const body = { type: "about:blank", status, code };
   return new Response(JSON.stringify(body), {

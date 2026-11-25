@@ -186,7 +186,7 @@ export const authRoutes: readonly Route[] = [
     ["DELETE"],
     "/api/me",
     "api",
-    withGraph(
+    withConfig(
       accountWrite(async (userId, session, env, config) => {
         const { sessions, vault } = servicesFor(env, config);
         if (await sessions.emailNorm(userId)) {
@@ -197,6 +197,7 @@ export const authRoutes: readonly Route[] = [
           await sessions.requestDeletion(userId, Date.now() + config.account.deleteGraceDays * 86_400_000);
           return;
         }
+        if (!config.graph) return fail("source_unavailable");
         const audit = auditFor(env);
         // Recorded first and not best effort: an erasure nobody can later see is worse than a failed one.
         await audit.record(accountEvent("user.erased", userId, Date.now()));

@@ -82,13 +82,19 @@ async function memberVisible(
   state: LaunchState,
   path: string,
 ): Promise<boolean> {
-  const { sessions } = servicesFor(env, config);
-  const cookie = readCookie(request, SESSION_COOKIE);
-  const userId = cookie ? await sessions.resolve(cookie) : null;
-  if (!userId) return false;
-  const email = await sessions.activeMemberEmail(userId);
-  if (email === null || !admitted(state, config.account, email)) return false;
-  return path !== "/admin" || config.account.adminEmails.has(email);
+  try {
+    const { sessions } = servicesFor(env, config);
+    const cookie = readCookie(request, SESSION_COOKIE);
+    const userId = cookie ? await sessions.resolve(cookie) : null;
+    if (!userId) return false;
+    const email = await sessions.activeMemberEmail(userId);
+    if (email === null || !admitted(state, config.account, email)) return false;
+    return path !== "/admin" || config.account.adminEmails.has(email);
+  } catch {
+    // A database error hides the page like any other doubt; it never shows it and never answers 500.
+    console.error("member_page_check_failed");
+    return false;
+  }
 }
 
 /**
@@ -109,26 +115,22 @@ export async function servePage(
   const shell = AUTH_SHELLS.has(key);
   const member = MEMBER_PAGES.has(key);
   if (!variant && !shell && !member) return asset(env, request, path);
-
-  const state = await launchState(env);
-  if (variant) {
-    if (state.mode === "open") {
-      if (variant.kind === "preview-only") {
-        return new Response(null, {
-          status: 301,
-          headers: { Location: variant.to ?? "/", "Cache-Control": "no-cache" },
-        });
-      }
-      return env.ASSETS.fetch(new Request(new URL(`/open${variant.path}${url.search}`, url), request));
-    }
-    return variant.kind === "open-only" ? notFound(env, request) : asset(env, request, path);
+  // /admin acts on the owner's word, so it never trusts a cached mode (ADR 0026).
+  const state = await launchState(env, { fresh: key === "/admin" });
+  if (shell || member) {
+    if (state.mode === "open") return asset(env, request, path);
+    if (shell) return noindex(await asset(env, request, path));
+    const config = configFor(env);
+    return config.ok && (await memberVisible(request, env, config.config, state, key))
+      ? privateCopy(await asset(env, request, path))
+      : notFound(env, request);
   }
-  if (state.mode === "open") return asset(env, request, path);
-  if (shell) return noindex(await asset(env, request, path));
-  const config = configFor(env);
-  return config.ok && (await memberVisible(request, env, config.config, state, key))
-    ? privateCopy(await asset(env, request, path))
-    : notFound(env, request);
+  if (!variant) return asset(env, request, path);
+  if (state.mode !== "open") return variant.kind === "open-only" ? notFound(env, request) : asset(env, request, path);
+  if (variant.kind === "preview-only") {
+    return new Response(null, { status: 301, headers: { Location: variant.to ?? "/", "Cache-Control": "no-cache" } });
+  }
+  return asset(env, new Request(new URL(`/open${variant.path}${url.search}`, url), request), variant.path);
 }
 
 /** The asset, with the policy of a page whose sources come from configuration completed (headers.ts `pageCsp`). */

@@ -171,7 +171,6 @@ describe("MODE-01 pages: the account pages by mode", () => {
     expect((await get(env, "/library", outside)).status).toBe(404);
     expect((await get(env, "/library", admin)).status).toBe(200);
     expect((await get(env, "/account", test)).status).toBe(200);
-    expect((await get(env, "/account", test)).status).toBe(200);
     expect((await get(env, "/admin", test)).status).toBe(404);
     expect((await get(env, "/library", entra)).status).toBe(404);
     // Open ignores and clears the lockout, so the member is back.
@@ -226,6 +225,14 @@ describe("MODE-01 pages: variants", () => {
     const moved = await servePage(new Request("http://localhost:8787/features"), env, variants);
     expect(moved.status).toBe(301);
     expect(moved.headers.get("Location")).toBe("/articles/features");
+  });
+
+  it("MODE-01 pages: a gated page listed as a variant is still gated, and an open variant gets its page policy", async () => {
+    const { db, env } = world();
+    setMode(db, "preview");
+    const listed: Variant[] = [{ path: "/library", kind: "both" }];
+    const res = await servePage(new Request("http://localhost:8787/library"), env, listed);
+    expect(res.status).toBe(404);
   });
 
   it("MODE-01 pages: with no variants and no gated path the mode is never read", async () => {

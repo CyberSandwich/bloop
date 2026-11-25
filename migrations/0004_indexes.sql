@@ -1,6 +1,6 @@
 -- Indexes for the queries the cron jobs, the account routes and the retention purge run (ADR 0012: additive only).
--- Before this file migrations/ held no CREATE INDEX, so every purge below scanned its table. Needs nothing from 0005;
--- 0005 needs idx_phone_session_user and recreates the two guest_file indexes after its rebuild, identical to these.
+-- Without these every purge below scans its table. 0005 recreates the two guest_file indexes after its rebuild,
+-- identical to these.
 CREATE INDEX IF NOT EXISTS idx_audit_event_at ON audit_event(at);
 CREATE INDEX IF NOT EXISTS idx_audit_event_session_at ON audit_event(session_id, at);
 CREATE INDEX IF NOT EXISTS idx_session_user ON session(user_id);

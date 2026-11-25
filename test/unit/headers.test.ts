@@ -67,7 +67,9 @@ describe("public/_headers matches headers.ts", () => {
   }
 
   it("MODE-01 headers: every page variant under /open/ answers its base page's headers", () => {
-    for (const { path } of VARIANTS) expect(staticHeaders(`/open${path}`)).toEqual(staticHeaders(path));
+    for (const path of [...VARIANTS.map((v) => v.path), "/privacy", "/terms"]) {
+      expect(staticHeaders(`/open${path}`)).toEqual(staticHeaders(path));
+    }
   });
 
   it("no variant has a block of its own in _headers, so the /* landing policy covers the open subtree", () => {

@@ -117,8 +117,9 @@ describe("FO-01 host: the file-origin host", () => {
   it("FO-01 host: answers /fo/ping itself and nothing else", () => {
     expect(offOrigin(new Request(`${FILE}/fo/ping`), OWN, FILE)).toBeNull();
     const other = offOrigin(new Request(`${FILE}/privacy?x=1`), OWN, FILE);
-    // Without the allowance the host is not a workers.dev one, so it passes on to the config and Origin checks.
-    expect(other).toBeNull();
+    expect(other?.status).toBe(301);
+    expect(other?.headers.get("Location")).toBe(`${OWN}/privacy?x=1`);
+    expect(offOrigin(new Request(`${FILE}/api/screens`, { method: "POST" }), OWN, FILE)?.status).toBe(403);
   });
 
   it("FO-01 host: a workers.dev file host redirects every path but /fo/ping to PUBLIC_ORIGIN", () => {

@@ -101,7 +101,7 @@ export default {
   },
 
   // Hourly: leftover guest objects (DROP-07) and session rows that lost their end. Daily: retention (DATA-02).
-  async scheduled(controller, env, _ctx) {
+  async scheduled(controller, env) {
     const config = configFor(env);
     if (!config.ok) return console.error(`config invalid: ${config.problems.join("; ")}`);
     if (controller.cron === HOURLY) {

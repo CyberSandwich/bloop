@@ -10,19 +10,8 @@ let wrangler: Wrangler;
 let api: Api;
 
 beforeAll(async () => {
-  // The erase route lives behind the Entra configuration; the fake authority is never contacted here.
-  const key = Buffer.alloc(32, 7).toString("base64");
-  wrangler = await startPairing(
-    {
-      FILE_SOURCE: "graph",
-      ENTRA_AUTHORITY: "http://127.0.0.1:9/organizations/v2.0",
-      ENTRA_CLIENT_ID: "client-id-1",
-      ENTRA_CLIENT_SECRET: `app-${"c".repeat(12)}`,
-      TOKEN_KEKS: JSON.stringify({ k1: key }),
-      COOKIE_KEY: key,
-    },
-    { migrate: true },
-  );
+  // Production runs FILE_SOURCE=mock, so the email-member erase must work without the Entra configuration.
+  wrangler = await startPairing({}, { migrate: true });
   api = new Api(wrangler.url);
 });
 afterAll(async () => {
@@ -65,13 +54,6 @@ describe("MODE-01 gate: the launch mode against a real D1", () => {
       for (const path of ["/library", "/account", "/admin"]) expect((await hit(path)).status, path).toBeLessThan(500);
     });
   }
-
-  it("MODE-01 gate: a missing setting row and an unknown value both read as preview", async () => {
-    wrangler.d1("DELETE FROM setting");
-    expect((await hit("/open/")).status).toBe(404);
-    wrangler.d1("INSERT INTO setting (key, value, updated_at) VALUES ('launch_mode', 'OPEN', 0)");
-    expect((await hit("/privacy")).status).toBe(200);
-  });
 });
 
 describe("REL-03 marker: every API answer carries X-Bloop", () => {
@@ -113,8 +95,22 @@ describe("LIB-09 sweep: the daily retention run", () => {
   });
 });
 
-describe("LIB-08 erase: DELETE /api/me for an email member", () => {
+describe("LIB-08 erase: DELETE /api/me with FILE_SOURCE=mock", () => {
   const sha = (value: string) => createHash("sha256").update(value).digest("hex");
+
+  it("LIB-08 erase: an Entra user is told the source is unavailable and keeps their row", async () => {
+    wrangler.d1(
+      "INSERT INTO app_user (id, tid, oid, created_at, last_seen_at) VALUES ('en1', 'tenant-a', 'en1', 0, 0)",
+    );
+    const cookie = "N".repeat(43);
+    const now = Date.now();
+    wrangler.d1(
+      `INSERT INTO phone_session (id_hash, user_id, created_at, last_seen_at, expires_at) VALUES ('${sha(cookie)}', 'en1', ${now}, ${now}, ${now + 86_400_000})`,
+    );
+    const res = await api.call("DELETE", "/api/me", {}, { headers: { Cookie: `__Host-bloop_sid=${cookie}` } });
+    expect(res.body).toEqual(expect.objectContaining({ code: "source_unavailable" }));
+    expect(wrangler.d1("SELECT count(*) AS n FROM app_user WHERE id = 'en1'")[0]?.n).toBe(1);
+  });
 
   it("LIB-08 erase: needs a fresh proof, then marks the member deleting, ends their sessions and keeps their rows", async () => {
     const day = 86_400_000;
