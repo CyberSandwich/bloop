@@ -12,6 +12,7 @@
       "!!.lighthouseci",
       "!!playwright-report",
       "!public/js/vendor",
+      "!test/fixtures/site-preview",
       "!package-lock.json",
       "!worker-configuration.d.ts"
     ]
