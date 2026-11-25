@@ -926,9 +926,9 @@ test.describe("a guest's photo and video on the screen (design.md section 7, Vid
   }
 
   /** A demo screen showing one guest file, opened by the screen's Open click. */
-  async function openAsGuest(browser: Browser, name: string, bytes: Buffer, slow = false) {
-    const screen = await demoScreen(browser);
-    const { phone } = await scan(browser, screen.page);
+  async function openAsGuest(browser: Browser, name: string, bytes: Buffer, slow = false, live = false) {
+    const screen = await (live ? liveScreen : demoScreen)(browser);
+    const { phone } = await scan(browser, screen.page, live ? LIVE : DEMO);
     await sendAsGuest(phone.page, name, bytes);
     await expect(heading(screen.page)).toHaveText("Sent by a Guest");
     if (slow) {
@@ -1013,6 +1013,27 @@ test.describe("a guest's photo and video on the screen (design.md section 7, Vid
     await phone.page.getByRole("button", { name: "Revoke" }).click();
     await expect(heading(page)).toHaveText("Session Ended");
     await expect(page.locator("video")).toHaveCount(0);
+    await screen.context.close();
+    await phone.context.close();
+  });
+
+  test("a live screen plays a guest's video in its own page, never a window: a window's sandboxed document cannot play it", async ({
+    browser,
+  }) => {
+    const { screen, phone, page } = await openAsGuest(browser, "Talk.mp4", CLIP, false, true);
+    await expect(page.locator("#frame video")).toBeVisible({ timeout: 15_000 });
+    await expect(page.locator("#frame .loader")).toHaveCount(0);
+    await expect(heading(page)).toHaveText("Talk.mp4");
+    await expect(page.getByRole("button", { name: "Present", exact: true })).toBeEnabled();
+    await page.locator("#frame video").click();
+    await page.locator("#frame video").evaluate((el) => {
+      const v = el as unknown as { paused: boolean; play(): Promise<void> };
+      return v.paused ? v.play() : undefined;
+    });
+    await expect.poll(async () => (await media(page)).at, { timeout: 10_000 }).toBeGreaterThan(0.3);
+    // No window was ever opened: the screen's context holds its one page.
+    expect(screen.context.pages()).toHaveLength(1);
+    await expect(phone.page.getByRole("button", { name: "Revoke" })).toBeVisible();
     await screen.context.close();
     await phone.context.close();
   });
