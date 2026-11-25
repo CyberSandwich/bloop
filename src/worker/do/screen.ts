@@ -18,7 +18,6 @@ import type { AuditEvent } from "../audit.ts";
 import { type Config, configFor } from "../config.ts";
 import type { Env } from "../env.ts";
 import { MAX_FRAME_BYTES, phoneFrame, screenFrame } from "../frames.ts";
-import { fail as httpFail } from "../http.ts";
 import { drawCode, drawMatch, newRef, newSecret, parseCredential, safeEqual, sha256Hex } from "../ids.ts";
 import { fileAt, type ItemDraft } from "../items.ts";
 import { createMachine, type Event, type FileRef, type Machine, nextDeadline, transition } from "../machine.ts";
@@ -26,7 +25,14 @@ import { ipHash, netHash } from "../routes/common.ts";
 import { effectivePolicy } from "../seams/guest-drop/index.ts";
 import { purgeGuest } from "../seams/guest-drop/purge.ts";
 import { guestDropFor } from "../seams/guest-drop/select.ts";
-import { type ClientClass, type LinkRecord, MAX_AUDITED_IPS, mintLink, protocolUri } from "../seams/open-path/links.ts";
+import {
+  type ClientClass,
+  type LinkRecord,
+  MAX_AUDITED_IPS,
+  mintLink,
+  protocolUri,
+  refusalSession,
+} from "../seams/open-path/links.ts";
 import type { PairingStore, PhoneInfo, Result, ScreenCreated, UsedLink } from "../seams/pairing.ts";
 import { auditFor, metricsFor } from "../stores.ts";
 import { directoryStub } from "../stubs.ts";
@@ -34,7 +40,7 @@ import { type Meta, phoneView, roomView, screenView } from "../views.ts";
 import { bestEffort, type EffectDeps, noopSeams, runEffects, type SessionSeams } from "./effects.ts";
 import { LinkLedger, type Use } from "./ledger.ts";
 import { migrate, SCHEMA_KEY, SCHEMA_VERSION } from "./schema.ts";
-import { admit, countAuthed, isLive } from "./sockets.ts";
+import { admit, bindingIp, countAuthed, isLive } from "./sockets.ts";
 
 const HELLO_MS = 5000;
 const MAX_CODE_DRAWS = 3;
@@ -301,18 +307,18 @@ export class Screen extends DurableObject<Env> implements PairingStore {
   // ---- WebSockets ---------------------------------------------------------------------------
 
   override async fetch(request: Request): Promise<Response> {
-    if (!this.m) return new Response(null, { status: 410 });
     if (request.headers.get("Upgrade") !== "websocket") return new Response(null, { status: 426 });
     const role: Role = new URL(request.url).pathname.endsWith("/screen/ws") ? "screen" : "phone";
-    // Hash first: the count and the accept below must run with no await between, or a burst all sees the same count.
+    // Hash first: from the object check to the accept nothing awaits, so a burst cannot all see one count and the
+    // object cannot close under an upgrade it then accepts.
     const cfg = this.config();
     const [ip, net] = [await ipHash(request, cfg), await netHash(request, cfg)];
+    if (!this.m) return new Response(null, { status: 410 });
     const now = Date.now();
-    const admitted = admit(this.openEntries(), role, net, now);
-    if (!admitted.ok) return httpFail("rate_limited");
-    // A full role gives up its oldest waiting socket, so sockets held open by others cannot keep a real screen out:
-    // its hello window ends now, and the alarm below closes it as it does any socket that sent no hello.
-    if (admitted.evict) admitted.evict.ws.serializeAttachment({ ...admitted.evict.att, helloBy: now });
+    // The waiting socket given up for this one (sockets.ts admit): its hello window ends now, and the alarm below
+    // closes it as it does any socket that sent no hello.
+    const evict = admit(this.openEntries(), role, net, now);
+    if (evict) evict.ws.serializeAttachment({ ...evict.att, helloBy: now });
     const [client, server] = Object.values(new WebSocketPair()) as [WebSocket, WebSocket];
     this.ctx.acceptWebSocket(server, [role]);
     server.serializeAttachment({ role, authed: false, helloBy: now + HELLO_MS, ip, net } satisfies SocketAttachment);
@@ -438,13 +444,17 @@ export class Screen extends DurableObject<Env> implements PairingStore {
    */
   private bindLinksUnlessLive(ip: string, except?: WebSocket): void {
     const now = Date.now();
-    const live = this.openEntries(except).some(
-      ({ ws, att }) =>
-        att?.authed &&
-        att.role === "screen" &&
-        isLive(Math.max(att.helloAt ?? now, this.ctx.getWebSocketAutoResponseTimestamp(ws)?.getTime() ?? 0), now),
-    );
-    if (!live) this.bindLinksTo(ip);
+    if (!this.authedScreens(except).some((s) => isLive(s.heardAt, now))) this.bindLinksTo(ip);
+  }
+
+  /** The open screen sockets whose `hello` verified, with when each was last heard (its hello or an answered ping). */
+  private authedScreens(except?: WebSocket): { ip: string; helloAt: number; heardAt: number }[] {
+    return this.openEntries(except).flatMap(({ ws, att }) => {
+      if (!att?.authed || att.role !== "screen") return [];
+      const helloAt = att.helloAt ?? 0;
+      const pong = this.ctx.getWebSocketAutoResponseTimestamp(ws)?.getTime() ?? 0;
+      return [{ ip: att.ip, helloAt, heardAt: Math.max(helloAt, pong) }];
+    });
   }
 
   private openSockets(excluding?: WebSocket): number {
@@ -622,7 +632,7 @@ export class Screen extends DurableObject<Env> implements PairingStore {
 
   /** Whether the fetch came from the screen's address, and the refusal that mismatch earns under `enforce` (OPEN-02). */
   private linkIp(ipHashed: string): { ipMatch: boolean | null; binding: "link_binding_failed" | null } {
-    const screenIp = this.ctx.storage.kv.get<string>("screenIp");
+    const screenIp = bindingIp(this.authedScreens(), Date.now(), this.ctx.storage.kv.get<string>("screenIp"));
     const ipMatch = screenIp === undefined ? null : screenIp === ipHashed;
     const enforce = this.config().links.binding === "enforce";
     return { ipMatch, binding: enforce && ipMatch === false ? "link_binding_failed" : null };
@@ -653,8 +663,8 @@ export class Screen extends DurableObject<Env> implements PairingStore {
       if (record.refused) return fail(error);
       this.links.update(record, { refused: true });
     }
-    // A record minted by an earlier session (the screen paired again) belongs to that one; without its id there is no row.
-    if (record.sessionId) await this.auditLink(record.sessionId, now, "link.refused", { cause: error, ...via });
+    const session = refusalSession(record, m.pairing.sessionId);
+    if (session) await this.auditLink(session, now, "link.refused", { cause: error, ...via });
     await bestEffort(
       metricsFor(this.env).record({
         at: now,

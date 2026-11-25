@@ -357,13 +357,38 @@ describe("PAIR-10 ws-origin and the socket protocol", () => {
     expect((await socket.waitClosed()).code).toBe(1008);
   });
 
-  it("PAIR-10 pending cap: ten parallel bare upgrades leave at most the per-address cap accepted", async () => {
+  it("PAIR-10 pending cap: ten parallel bare upgrades from one address leave at most its cap waiting", async () => {
     const created = await api.post<{ sid: string }>("/api/screens", { mode: "demo" });
     const path = `/api/screen/ws?ref=${created.body.sid.split(".")[0]}`;
-    const tries = await Promise.allSettled(Array.from({ length: 10 }, () => Socket.open(api.base, path)));
-    const accepted = tries.flatMap((t) => (t.status === "fulfilled" ? [t.value] : []));
-    expect(accepted.length).toBe(2);
-    for (const s of accepted) s.close();
+    const opened = await Promise.all(Array.from({ length: 10 }, () => Socket.open(api.base, path)));
+    // Each upgrade past the address's two gives up that address's oldest, whose hello window ends at once.
+    const given = await Promise.all(
+      opened.map((s) =>
+        s
+          .waitFor((f) => f.t === "error", 2000)
+          .then(
+            () => 1,
+            () => 0,
+          ),
+      ),
+    );
+    expect(given.reduce((a: number, b: number) => a + b, 0)).toBe(8);
+    for (const s of opened) s.close();
+  });
+
+  it("PAIR-10 pending cap: two idle sockets behind the venue's address do not keep its real screen out", async () => {
+    const created = await api.post<{ sid: string }>("/api/screens", { mode: "demo" });
+    const { sid } = created.body;
+    const path = `/api/screen/ws?ref=${sid.split(".")[0]}`;
+    const venue = { "CF-Connecting-IP": "198.51.100.77" };
+    const idle = [
+      await Socket.open(api.base, path, api.base, venue),
+      await Socket.open(api.base, path, api.base, venue),
+    ];
+    const real = await Socket.open(api.base, path, api.base, venue);
+    real.send({ t: "hello", sid });
+    expect((await real.stateWhere((v) => v.code !== null)).t).toBe("state");
+    for (const s of [...idle, real]) s.close();
   });
 
   it("PAIR-10 pending cap: sockets held open by others do not keep a real screen's hello out", async () => {
@@ -390,11 +415,12 @@ describe("PAIR-10 ws-origin and the socket protocol", () => {
     const path = `/api/screen/ws?ref=${ref}`;
     const other = { "CF-Connecting-IP": "203.0.113.9" };
     const mine: Socket[] = [];
-    for (const _ of [1, 2]) {
+    for (const _ of [1, 2, 3]) {
       mine.push(await Socket.open(api.base, path));
       await new Promise((done) => setTimeout(done, 10));
     }
-    await expect(Socket.open(api.base, path)).rejects.toThrow();
+    // The address's third gives up its own first, never another address's socket.
+    expect((await (mine[0] as Socket).waitFor((f) => f.t === "error")).code).toBe("unauthorized");
     const bare = [
       ...mine,
       await Socket.open(api.base, path, api.base, other),
@@ -403,7 +429,7 @@ describe("PAIR-10 ws-origin and the socket protocol", () => {
     // Four screen sockets pending fill the role, and the next real upgrade takes the oldest one's place.
     bare.push(await Socket.open(api.base, path, api.base, { "CF-Connecting-IP": "203.0.113.10" }));
     bare.push(await Socket.open(api.base, path, api.base, { "CF-Connecting-IP": "203.0.113.11" }));
-    expect((await (mine[0] as Socket).waitFor((f) => f.t === "error")).code).toBe("unauthorized");
+    expect((await (mine[1] as Socket).waitFor((f) => f.t === "error")).code).toBe("unauthorized");
     for (const s of bare) s.close();
     // Repeated bare opens and closes leave the screen as it was: a hello afterwards still binds and gets its state.
     await new Promise((done) => setTimeout(done, 300));

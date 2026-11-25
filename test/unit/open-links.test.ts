@@ -12,6 +12,7 @@ import {
   parseToken,
   protocolUri,
   refusal,
+  refusalSession,
 } from "../../src/worker/seams/open-path/links.ts";
 import { RATE_LIMIT_STUBS } from "../env-vars.ts";
 
@@ -212,5 +213,26 @@ describe("clientClass", () => {
     expect(clientClass("Mozilla/5.0 (Windows NT 10.0; Win64; x64) Chrome/130 Safari/537.36")).toBe("browser");
     expect(clientClass("curl/8.0")).toBe("other");
     expect(clientClass(null)).toBe("other");
+  });
+});
+
+describe("VID-02 refusal audit", () => {
+  const record = (over: Partial<LinkRecord>): LinkRecord => ({
+    tokenHash: "h",
+    purpose: "view",
+    item: 0,
+    mintedAt: 0,
+    firstFetchAt: null,
+    fetches: 0,
+    revoked: false,
+    ips: [],
+    refused: false,
+    ...over,
+  });
+  it("VID-02 refusal audit: a record goes to its own session; one stored without it to the current session unless revoked", () => {
+    expect(refusalSession(record({ sessionId: "old" }), "now")).toBe("old");
+    expect(refusalSession(record({ sessionId: "old", revoked: true }), "now")).toBe("old");
+    expect(refusalSession(record({}), "now")).toBe("now");
+    expect(refusalSession(record({ revoked: true }), "now")).toBeNull();
   });
 });

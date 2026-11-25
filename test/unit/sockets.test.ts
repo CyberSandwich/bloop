@@ -1,6 +1,13 @@
 import { describe, expect, it } from "vitest";
 import { SILENCE_MS } from "../../public/js/core/timing.js";
-import { admit, countAuthed, isLive, MAX_PENDING_PER_NET, MAX_PENDING_SOCKETS } from "../../src/worker/do/sockets.ts";
+import {
+  admit,
+  bindingIp,
+  countAuthed,
+  isLive,
+  MAX_PENDING_PER_NET,
+  MAX_PENDING_SOCKETS,
+} from "../../src/worker/do/sockets.ts";
 import { must, sec, T0, waiting } from "./machine-helpers.ts";
 
 describe("PAIR-10 socket count", () => {
@@ -25,15 +32,21 @@ describe("PAIR-10 socket count", () => {
   it("PAIR-10 pending cap: per role and per network, authed and expired sockets never count", () => {
     expect(MAX_PENDING_SOCKETS).toBe(4);
     expect(MAX_PENDING_PER_NET).toBe(2);
-    // One network holding its two does not block another network, or the other role.
+    // One network holding its two does not touch another network, or the other role.
     const one = [held("screen", "a", NOW - 2), held("screen", "a", NOW - 1)];
-    expect(admit(one, "screen", "a", NOW)).toEqual({ ok: false });
-    expect(admit(one, "screen", "b", NOW)).toEqual({ ok: true, evict: null });
-    expect(admit(one, "phone", "a", NOW)).toEqual({ ok: true, evict: null });
+    expect(admit(one, "screen", "b", NOW)).toBeNull();
+    expect(admit(one, "phone", "a", NOW)).toBeNull();
     const expired = [held("screen", "a", NOW - 9000), held("screen", "a", NOW - 9000)];
-    expect(admit(expired, "screen", "a", NOW)).toEqual({ ok: true, evict: null });
+    expect(admit(expired, "screen", "a", NOW)).toBeNull();
     const authed = [held("screen", "a", NOW, true), held("screen", "a", NOW, true), { att: null }];
-    expect(admit(authed, "screen", "a", NOW)).toEqual({ ok: true, evict: null });
+    expect(admit(authed, "screen", "a", NOW)).toBeNull();
+  });
+
+  it("PAIR-10 pending cap: two idle sockets behind one address cannot keep the real screen out", () => {
+    // An attacker behind the venue NAT holds two upgrades that never say hello; the screen's own upgrade, from the
+    // same address, still gets in, at the cost of the network's oldest waiting socket.
+    const attacker = [held("screen", "nat", NOW - 2), held("screen", "nat", NOW - 1)];
+    expect(admit(attacker, "screen", "nat", NOW)?.id).toBe(`screen-nat-${NOW - 2}`);
   });
 
   it("PAIR-10 pending cap: a full role evicts its oldest waiting socket, so held slots cannot keep a real screen out", () => {
@@ -43,15 +56,43 @@ describe("PAIR-10 socket count", () => {
       held("screen", "b", NOW - 20),
       held("screen", "b", NOW - 10),
     ];
-    const admitted = admit(full, "screen", "c", NOW);
-    expect(admitted.ok && admitted.evict?.id).toBe(`screen-a-${NOW - 40}`);
-    // The other role is not full, and a network at its own cap is still refused rather than evicting for itself.
-    expect(admit(full, "phone", "c", NOW)).toEqual({ ok: true, evict: null });
-    expect(admit(full, "screen", "a", NOW)).toEqual({ ok: false });
+    expect(admit(full, "screen", "c", NOW)?.id).toBe(`screen-a-${NOW - 40}`);
+    expect(admit(full, "phone", "c", NOW)).toBeNull();
+    // A network at its own cap gives up its own oldest, never another network's.
+    expect(admit(full, "screen", "b", NOW)?.id).toBe(`screen-b-${NOW - 20}`);
   });
 
   it("PAIR-10 liveness: a socket is live until it has been quiet for SILENCE_MS", () => {
     expect(isLive(NOW, NOW + SILENCE_MS - 1)).toBe(true);
     expect(isLive(NOW, NOW + SILENCE_MS)).toBe(false);
+  });
+});
+
+describe("OPEN-02 link binding", () => {
+  const T = 5_000_000;
+  it("OPEN-02 binding after a network change: the old socket going quiet hands the binding to the new one", () => {
+    // The screen moved networks: its old socket (address A) lingers unanswered, the new one (B) said hello later.
+    const screens = (now: number) => [
+      { ip: "A", helloAt: T, heardAt: T },
+      { ip: "B", helloAt: T + 1000, heardAt: now },
+    ];
+    expect(bindingIp(screens(T + 2000), T + 2000, "A")).toBe("A");
+    const later = T + SILENCE_MS + 1;
+    expect(bindingIp(screens(later), later, "A")).toBe("B");
+  });
+
+  it("OPEN-02 binding: a later socket with a leaked sid cannot take it from a screen that is still talking", () => {
+    const now = T + 60_000;
+    const screens = [
+      { ip: "lectern", helloAt: T, heardAt: now - 1000 },
+      { ip: "leak", helloAt: T + 50_000, heardAt: now },
+    ];
+    expect(bindingIp(screens, now, "leak")).toBe("lectern");
+  });
+
+  it("OPEN-02 binding: with no live socket, the last verified proof (a hello or a poll) holds", () => {
+    expect(bindingIp([], T, "poller")).toBe("poller");
+    expect(bindingIp([{ ip: "gone", helloAt: T, heardAt: T }], T + SILENCE_MS, "poller")).toBe("poller");
+    expect(bindingIp([], T, undefined)).toBeUndefined();
   });
 });

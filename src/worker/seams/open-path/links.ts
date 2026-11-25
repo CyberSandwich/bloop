@@ -36,9 +36,17 @@ export interface LinkRecord {
   ips: string[];
   /** A view link's refusal already wrote its one row. */
   refused: boolean;
-  /** The session that minted it, so a refusal after the screen paired again is audited against its own session. Absent: minted before this field. */
+  /** The session that minted it: a refusal is audited against that session, even after the screen paired again. Optional, so a record stored without it still loads. */
   sessionId?: string;
 }
+
+/**
+ * The session a refusal of `record` is audited against: its own; for a record stored without one, the current
+ * session while the record is unrevoked (links are revoked only at a session's end, so an unrevoked one is the
+ * current session's); else none.
+ */
+export const refusalSession = (record: LinkRecord, current: string): string | null =>
+  record.sessionId ?? (record.revoked ? null : current);
 
 /** Distinct foreign IP hashes audited per view link: enough to show a leak, and the record stays small. */
 export const MAX_AUDITED_IPS = 16;
