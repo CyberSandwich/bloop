@@ -1669,17 +1669,17 @@ test.describe("screen and phone layout", () => {
     const state = await page.evaluate(`(async () => {
       const bar = document.getElementById("controls");
       await Promise.all(bar.getAnimations().map((a) => a.finished.catch(() => {})));
-      const hit = [...bar.querySelectorAll(".btn")]
+      // A disabled control takes no pointer, so the point goes through it.
+      const missed = [...bar.querySelectorAll(".btn:not(:disabled)")]
         .filter((b) => b.getClientRects().length)
-        .map((b) => {
+        .filter((b) => {
           const r = b.getBoundingClientRect();
-          return b.contains(document.elementFromPoint(r.left + r.width / 2, r.top + r.height / 2));
-        });
-      return { animations: bar.getAnimations().length, hit };
+          return !b.contains(document.elementFromPoint(r.left + r.width / 2, r.top + r.height / 2));
+        })
+        .map((b) => b.textContent + " " + JSON.stringify(b.getBoundingClientRect()) + " in " + innerWidth + "x" + innerHeight);
+      return { animations: bar.getAnimations().length, missed };
     })()`);
-    const { animations, hit } = state as { animations: number; hit: boolean[] };
-    expect(animations).toBe(0);
-    expect(hit.every(Boolean)).toBe(true);
+    expect(state).toEqual({ animations: 0, missed: [] });
   }
 
   /** Square and portrait pictures standing in for the photo. */
