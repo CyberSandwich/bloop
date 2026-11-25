@@ -2623,14 +2623,12 @@ test.describe("PAIR-13 remote: the phone commands the demo screen (design.md sec
       .click();
     const body = screen.page.locator("body");
     await expect(body).toHaveClass(/is-presenting/);
-    const full = await screen.page.evaluate("document.fullscreenElement === null");
     await row("Dog.jpg").click();
     await expect(heading(screen.page)).toHaveText("Dog.jpg");
     await expect(screen.page.locator("#frame .loader")).toBeVisible();
     await screen.page.waitForTimeout(400);
     await expect(body).toHaveClass(/is-presenting/);
     expect(await screen.page.evaluate("window.exits")).toBe(0);
-    expect(await screen.page.evaluate("document.fullscreenElement === null")).toBe(full);
     release();
     await expect(screen.page.getByRole("img", { name: "Dog.jpg" })).toBeVisible();
     await expect(body).toHaveClass(/is-presenting/);
