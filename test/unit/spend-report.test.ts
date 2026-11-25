@@ -1,6 +1,15 @@
 import { describe, expect, it } from "vitest";
 import type { AnalyticsResult } from "../../src/worker/spend/analytics.ts";
-import { PRICED, PRICED_METERS, p95, resolveLines, resolveTrips, tripLine } from "../../src/worker/spend/caps.ts";
+import {
+  type Caps,
+  PRICED,
+  PRICED_METERS,
+  p95,
+  resolveCaps,
+  resolveLines,
+  resolveTrips,
+  tripLine,
+} from "../../src/worker/spend/caps.ts";
 import {
   buildReport,
   digestText,
@@ -100,13 +109,14 @@ function usage(meter: "email" | "r2_class_a" | "container_seconds", perDay: numb
 
 const reportOf = (
   r: ReturnType<typeof rig>,
-  extra: { analytics?: AnalyticsResult; vars?: Record<string, unknown> } = {},
+  extra: { analytics?: AnalyticsResult; vars?: Record<string, unknown>; caps?: Caps } = {},
 ) =>
   buildReport({
     now: T0,
     vars: extra.vars ?? VARS,
     history: r.ledger.history(T0, REPORT_DAYS),
-    snapshot: r.ledger.snapshot(T0, r.caps),
+    // The guard's caps: the same vars, lowered by any row.
+    snapshot: r.ledger.snapshot(T0, extra.caps ?? resolveCaps(extra.vars ?? VARS)),
     ...(extra.analytics ? { analytics: extra.analytics } : {}),
     adminUrl: "https://bloop.example/admin",
     sources: "counters only (no CF_ANALYTICS_TOKEN)",
@@ -114,6 +124,12 @@ const reportOf = (
 const rowOf = (rep: SpendReport, m: string) => rep.meters.find((x) => x.meter === m)!;
 
 describe("the report", () => {
+  it("a cap.email_day row lowers the email ceiling the report and the breaker use", () => {
+    const row = rowOf(reportOf(usage("email", 40, 12), { caps: resolveCaps(VARS, { email_day: 100 }) }), "email");
+    expect(row).toMatchObject({ floor: 95, ceiling: 100 });
+    expect(row.tripLine).toBeLessThanOrEqual(100);
+  });
+
   it("lists every priced meter with today, 7 and 30 days, month to date, its cost and its line", () => {
     const r = usage("email", 40, 12);
     const row = rowOf(reportOf(r), "email");

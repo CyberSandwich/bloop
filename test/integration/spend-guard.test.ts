@@ -1,5 +1,6 @@
 // The SpendGuard as a real Durable Object in workerd, behind a test-only Worker (test/fixtures/spend), so it runs
 // before the main Worker binds it. Races here are real: concurrent requests reach one single-threaded object.
+import { request } from "node:http";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { startWrangler, type Wrangler } from "./wrangler.ts";
 
@@ -12,11 +13,16 @@ beforeAll(async () => {
 });
 afterAll(() => w?.stop());
 
-const rpc = async (method: string, ...args: unknown[]) => {
-  const res = await fetch(`${w.url}/rpc/${method}`, { method: "POST", body: JSON.stringify(args) });
-  expect(res.status, await res.clone().text()).toBe(200);
-  return (await res.json()) as any;
-};
+/** `/rpc` reaches the global instance, `/rpc/public` the public one. */
+const rpcTo =
+  (prefix: string) =>
+  async (method: string, ...args: unknown[]) => {
+    const res = await fetch(`${w.url}${prefix}/${method}`, { method: "POST", body: JSON.stringify(args) });
+    expect(res.status, await res.clone().text()).toBe(200);
+    return (await res.json()) as any;
+  };
+const rpc = rpcTo("/rpc");
+const publicRpc = rpcTo("/rpc/public");
 
 /** Runs a counter test again if a UTC day or hour rolled over under it: a counter test is exact only within one period. */
 async function sameDay<T>(run: () => Promise<T>): Promise<T> {
@@ -63,7 +69,7 @@ describe("COST-01 COST-02 leases against the real object", () => {
     expect(out.find((r) => !r.ok)).toMatchObject({ reason: "busy" });
     expect(await rpc("release", held[0].leaseId)).toBe(true);
     expect((await rpc("acquire", "convert", 600, "u")).ok).toBe(true);
-    expect((await rpc("snapshot")).pools.convert).toEqual({ live: 3, overdue: 0 });
+    expect((await rpc("snapshot")).pools.convert).toEqual({ live: 3 });
   });
 
   it("COST-01 the guest and demo pool is separate and holds one", async () => {
@@ -73,24 +79,54 @@ describe("COST-01 COST-02 leases against the real object", () => {
 });
 
 describe("the client fails closed and the breaker latches over the real object", () => {
-  it("COST-01 a call the guard throws on is a refusal through the client, not a pass", async () => {
-    const res = await fetch(`${w.url}/client/take`, {
-      method: "POST",
-      body: JSON.stringify({ meter: "no_such_meter", n: 1 }),
+  const clientTake = (body: object, query = "") =>
+    fetch(`${w.url}/client/take${query}`, { method: "POST", body: JSON.stringify(body) });
+
+  it("COST-01 an unreachable guard is a refusal through the client, not a pass; a caller bug is an error, not an outage", async () => {
+    const down = await clientTake({ meter: "container_seconds", n: 1 }, "?down=1");
+    expect(await down.json()).toMatchObject({ ok: false, reason: "unavailable", retryAfterSeconds: 30 });
+    expect((await clientTake({ meter: "no_such_meter", n: 1 })).status).toBe(500);
+    // A caller bug on a fail-open meter is not admitted as if the guard were down.
+    expect((await clientTake({ meter: "email_code", n: 1 }, "?down=1")).status).toBe(500);
+    const good = await clientTake({ meter: "container_seconds", n: 1 });
+    expect(await good.json()).toMatchObject({ ok: true, ticket: { meter: "container_seconds", n: 1 } });
+  });
+
+  it("COST-16 the public meters count on their own instance, so a flood there never reaches the costly one", async () => {
+    await sameDay(async () => {
+      const before = {
+        global: (await rpc("snapshot")).counters.demo_session.day,
+        open: (await publicRpc("snapshot")).counters.demo_session.day,
+      };
+      expect(await (await clientTake({ meter: "demo_session", n: 1 })).json()).toMatchObject({ ok: true });
+      expect((await rpc("snapshot")).counters.demo_session.day).toBe(before.global);
+      expect((await publicRpc("snapshot")).counters.demo_session.day).toBe(before.open + 1);
+      // A costly meter goes the other way.
+      const user = `iso-${crypto.randomUUID()}`;
+      await clientTake({ meter: "export_user", n: 1, scope: user });
+      expect((await publicRpc("snapshot")).counters.export_user.day).toBe(0);
     });
-    expect(await res.json()).toMatchObject({ ok: false, reason: "unavailable", retryAfterSeconds: 30 });
-    const good = await fetch(`${w.url}/client/take`, {
-      method: "POST",
-      body: JSON.stringify({ meter: "d1_writes", n: 1 }),
+  });
+
+  it("the test Worker answers loopback hosts only", async () => {
+    const status = await new Promise<number>((resolve, reject) => {
+      const { hostname, port } = new URL(w.url);
+      const req = request({ hostname, port, path: "/api/health", headers: { host: "bloop.example" } }, (res) => {
+        res.resume();
+        resolve(res.statusCode ?? 0);
+      });
+      req.on("error", reject);
+      req.end();
     });
-    expect(await good.json()).toEqual({ ok: true });
+    expect(status).toBe(403);
+    expect((await fetch(`${w.url}/api/health`)).status).toBe(200);
   });
 
   it("COST-16 demo sessions past their cap trip demo=off once, alert once, and stay latched until reset", async () => {
     await sameDay(async () => {
-      const before = (await rpc("snapshot")).counters.demo_session.day;
-      for (let i = before; i < 5; i++) expect((await rpc("take", "demo_session", 1)).ok).toBe(true);
-      expect((await rpc("take", "demo_session", 1)).ok).toBe(false);
+      const before = (await publicRpc("snapshot")).counters.demo_session.day;
+      for (let i = before; i < 5; i++) expect((await publicRpc("take", "demo_session", 1)).ok).toBe(true);
+      expect((await publicRpc("take", "demo_session", 1)).ok).toBe(false);
       const run = async () => (await (await fetch(`${w.url}/breaker`, { method: "POST" })).json()) as any;
       const first = await run();
       expect(first.report.tripped).toEqual(["demo"]);

@@ -75,10 +75,6 @@ describe("analytics client", () => {
       workersRequests7dMean: 200,
       doRequests: 55,
       doGbSeconds: 1,
-      r2ClassA: 15,
-      r2ClassB: 7,
-      d1RowsWritten: 330,
-      r2StorageBytes: 145,
     });
   });
 

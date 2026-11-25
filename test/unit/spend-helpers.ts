@@ -111,19 +111,23 @@ export function fakeSpend(overrides: Partial<Spend> = {}): Spend & { calls: { me
     };
   return {
     calls,
-    take: spy("take", { ok: true } as const),
+    take: async (meter, n, scope) => {
+      calls.push({ method: "take", args: [meter, n, scope] });
+      return { ok: true, ticket: { meter, n, ...(scope ? { scope } : {}), takenAt: 0 } };
+    },
     charge: spy("charge", { ok: true } as const),
     acquire: spy("acquire", { ok: true, leaseId: "lease-1", deadline: 0 } as const),
     release: spy("release", undefined),
     record: spy("record", undefined),
     refund: spy("refund", undefined),
-    snapshot: spy("snapshot", null),
     ...overrides,
   };
 }
 
 export interface MemoryStore extends SwitchStore {
   rows: Map<string, string>;
+  /** Who wrote each row through `set`; a row put straight into `rows` has no writer, like one the owner set. */
+  actors: Map<string, string>;
   writes: { name: string; value: string; actor: string; reason: string }[];
   failNextSet: boolean;
   /** Switches whose row cannot be read, as when D1 is down. */
@@ -133,6 +137,7 @@ export interface MemoryStore extends SwitchStore {
 export function memoryStore(): MemoryStore {
   const store: MemoryStore = {
     rows: new Map(),
+    actors: new Map(),
     writes: [],
     failNextSet: false,
     unreadable: new Set(),
@@ -140,12 +145,17 @@ export function memoryStore(): MemoryStore {
       if (store.unreadable.has(name)) throw new Error("d1 down");
       return store.rows.get(name);
     },
+    async row(name: SwitchName) {
+      const value = await store.get(name);
+      return value === undefined ? undefined : { value, by: store.actors.get(name) ?? null };
+    },
     async set(name, value, actor, reason) {
       if (store.failNextSet) {
         store.failNextSet = false;
         throw new Error("d1 down");
       }
       store.rows.set(name, value);
+      store.actors.set(name, actor);
       store.writes.push({ name, value, actor, reason });
     },
   };

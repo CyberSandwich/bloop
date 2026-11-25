@@ -113,22 +113,30 @@ interface SpendEnv {
   PUBLIC_ORIGIN: string;
 }
 
-/** The raw stub. Same jurisdiction rule as stubs.ts. */
-export function spendStub(env: SpendEnv): SpendRpc {
+/**
+ * The raw stub. Same jurisdiction rule as stubs.ts. `public` is a second instance of the same class that holds only
+ * the fail-open meters, so a flood of public calls cannot overload the one that guards uploads, conversion and export.
+ */
+export function spendStub(env: SpendEnv, instance: "global" | "public" = "global"): SpendRpc {
   const ns = isLocalOrigin(env.PUBLIC_ORIGIN) ? env.SPEND_GUARD : env.SPEND_GUARD.jurisdiction("eu");
-  return ns.get(ns.idFromName("global")) as unknown as SpendRpc;
+  return ns.get(ns.idFromName(instance)) as unknown as SpendRpc;
 }
 
 /**
  * The composition root's one call: it builds the `Spend` every route and Durable Object receives in its deps, so
- * nothing else reaches for the guard by itself. Fail modes per meter: client.ts.
+ * nothing else reaches for the guard by itself. Fail modes per meter: client.ts. `overrides` returns the `cap.<name>`
+ * rows of the settings snapshot (`capOverridesOf`), so the client's own caps (the R2 block, the isolate allowances)
+ * honor a lowered row like the guard's do.
  */
-export const spendFor = (env: SpendEnv): Spend =>
-  new SpendClient(() => spendStub(env), resolveCaps(env as unknown as Vars));
+export const spendFor = (env: SpendEnv, overrides: () => Partial<Record<CapName, number>> = () => ({})): Spend =>
+  new SpendClient({ global: () => spendStub(env), public: () => spendStub(env, "public") }, () =>
+    resolveCaps(env as unknown as Vars, overrides()),
+  );
 
 /**
  * The latest spend report the breaker stored (at most 5 minutes old), for the /admin panel and the admin-only JSON
- * route; null before the first run or when the guard cannot be reached.
+ * route; null before the first run or when the guard cannot be reached. Checks no auth: the caller must verify an
+ * admin session.
  */
 export async function spendReportFor(env: SpendEnv): Promise<SpendReport | null> {
   try {
@@ -147,6 +155,7 @@ export function runSpendBreaker(env: BreakerEnv, notify: Notify = logNotify): Pr
   const accountId = env.CF_ACCOUNT_ID;
   return runBreaker({
     guard: spendStub(env),
+    publicGuard: spendStub(env, "public"),
     store: d1SwitchStore(dbOf(env.DB), Date.now),
     settings: d1Settings(dbOf(env.DB)),
     notify,

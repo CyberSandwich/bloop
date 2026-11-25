@@ -30,10 +30,6 @@ export interface Readings {
   workersRequests7dMean?: number;
   doRequests?: number;
   doGbSeconds?: number;
-  r2ClassA?: number;
-  r2ClassB?: number;
-  r2StorageBytes?: number;
-  d1RowsWritten?: number;
 }
 
 export interface AnalyticsDeps {
@@ -230,14 +226,7 @@ export function dayValue(result: AnalyticsResult, name: SeriesName, at: number):
 /** Today's figures and the trailing 7-day mean, for the rules that read one day at a time. */
 export function readingsOf(result: AnalyticsResult, now: number): Readings {
   const out: Readings = {};
-  for (const name of [
-    "workersRequests",
-    "doRequests",
-    "doGbSeconds",
-    "r2ClassA",
-    "r2ClassB",
-    "d1RowsWritten",
-  ] as const) {
+  for (const name of ["workersRequests", "doRequests", "doGbSeconds"] as const) {
     const v = dayValue(result, name, now);
     if (v !== undefined) out[name] = v;
   }
@@ -247,6 +236,5 @@ export function readingsOf(result: AnalyticsResult, now: number): Readings {
     for (let i = 1; i <= 7; i++) total += w[dateKey(now - i * DAY_MS)] ?? 0;
     out.workersRequests7dMean = total / 7;
   }
-  if (result.r2StorageBytes !== undefined) out.r2StorageBytes = result.r2StorageBytes;
   return out;
 }

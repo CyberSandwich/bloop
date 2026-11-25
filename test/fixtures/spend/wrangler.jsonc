@@ -1,8 +1,11 @@
 {
-  // Test-only: binds the SpendGuard alone, so the integration test needs nothing F wires.
+  // Test-only: binds the SpendGuard alone, so the integration test needs nothing F wires. Never deploy this config:
+  // its /rpc/* is unauthenticated, and a deployed copy shares the account's Durable Object spend limit.
   "name": "bloop-spend-test",
   "main": "worker.ts",
   "compatibility_date": "2026-11-22",
+  "workers_dev": false,
+  "preview_urls": false,
   "durable_objects": { "bindings": [{ "name": "SPEND_GUARD", "class_name": "SpendGuard" }] },
   "migrations": [{ "tag": "v1", "new_sqlite_classes": ["SpendGuard"] }],
   "vars": { "PUBLIC_ORIGIN": "http://127.0.0.1:1" }

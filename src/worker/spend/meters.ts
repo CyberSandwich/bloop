@@ -6,6 +6,7 @@ import {
   type Caps,
   isMeter,
   isPool,
+  isScoped,
   type Limit,
   METERS,
   type MeterDef,
@@ -57,8 +58,6 @@ export interface PeriodCounts {
 }
 export interface PoolGauge {
   live: number;
-  /** Held past the deadline, inside the grace. */
-  overdue: number;
 }
 export interface TripRow {
   switch: SwitchName;
@@ -77,15 +76,29 @@ export interface Snapshot {
   /** Current-period, all-scopes counts for every meter. */
   counters: Record<MeterName, PeriodCounts>;
   pools: Record<PoolName, PoolGauge>;
-  /** Leases dropped past their grace today: a Converter that did not destroy its container. */
+  /** Leases dropped past deadline plus grace today: a Converter that did not destroy its container. */
   leasesDroppedToday: number;
   trips: TripRow[];
 }
 
-const positiveInt = (n: number, what: string): number => {
+export const positiveInt = (n: number, what: string): number => {
   if (!Number.isSafeInteger(n) || n < 1) throw new RangeError(`${what} must be a positive integer`);
   return n;
 };
+
+/** The argument checks of take and refund, shared with the client so a caller bug throws before any RPC. */
+export function checkCounted(meter: MeterName, n: number, scope: string | undefined): void {
+  positiveInt(n, "n");
+  if (!isMeter(meter)) throw new RangeError(`unknown meter ${meter}`);
+  if (isScoped(meter) && !scope) throw new RangeError(`meter ${meter} needs a scope`);
+}
+
+/** The argument checks of acquire: a pool with a per-scope cap needs a scope, or that cap would be skipped. */
+export function checkAcquire(pool: PoolName, ttlSeconds: number, scope: string | undefined): void {
+  if (!isPool(pool)) throw new RangeError(`unknown pool ${pool}`);
+  if (!Number.isFinite(ttlSeconds) || ttlSeconds <= 0) throw new RangeError("ttlSeconds must be positive");
+  if ("perScopeCap" in POOLS[pool] && !scope) throw new RangeError(`pool ${pool} needs a scope`);
+}
 const retrySeconds = (ms: number) => Math.max(1, Math.ceil(ms / 1000));
 
 export class Ledger {
@@ -124,14 +137,9 @@ export class Ledger {
     return [...set];
   }
 
-  private scoped(meter: MeterName): boolean {
-    const def: MeterDef = METERS[meter];
-    return (def.perScope?.length ?? 0) > 0;
-  }
-
   private rows(meter: MeterName, scope: string | undefined, at: number): [string, string][] {
     const out: [string, string][] = [];
-    const own = this.scoped(meter) ? scope : undefined;
+    const own = isScoped(meter) ? scope : undefined;
     for (const p of this.periods(meter)) {
       const key = periodKey(p, at);
       out.push([ALL, key]);
@@ -145,9 +153,7 @@ export class Ledger {
    * A scoped meter needs a scope (throws without one: a missing scope would skip the per-user cap).
    */
   take(meter: MeterName, n: number, scope: string | undefined, caps: Caps, now: number): TakeResult {
-    positiveInt(n, "n");
-    if (!isMeter(meter)) throw new RangeError(`unknown meter ${meter}`);
-    if (this.scoped(meter) && !scope) throw new RangeError(`meter ${meter} needs a scope`);
+    checkCounted(meter, n, scope);
     const def: MeterDef = METERS[meter];
     let worst: TakeRefusal | undefined;
     const check = (limits: readonly Limit[] | undefined, which: "all" | "own") => {
@@ -183,22 +189,28 @@ export class Ledger {
   /**
    * Gives back part of an earlier take; `at` is when it was taken, so a midnight crossing refunds the right day. A
    * refund is for work that never started, so an `at` in the future or older than the longest lease plus its grace
-   * is a caller bug and does nothing (false); a counter never goes below zero.
+   * is a caller bug and does nothing (false); a counter never goes below zero. A scoped meter needs the scope, and
+   * each period gives back at most what that scope's own row holds, from its row and from the all-scopes row alike,
+   * so one caller cannot erase another's counts.
    */
   refund(meter: MeterName, n: number, scope: string | undefined, at: number, now: number, caps: Caps): boolean {
-    positiveInt(n, "n");
-    if (!isMeter(meter)) throw new RangeError(`unknown meter ${meter}`);
+    checkCounted(meter, n, scope);
     const window =
       (Math.max(caps.lease_max_convert_seconds, caps.lease_max_export_seconds) + caps.lease_grace_seconds) * 1000;
     if (!Number.isFinite(at) || at > now || now - at > window) return false;
-    for (const [s, p] of this.rows(meter, scope, at)) this.add(meter, s, p, -n);
+    const own = isScoped(meter) ? scope : undefined;
+    for (const p of this.periods(meter)) {
+      const key = periodKey(p, at);
+      const back = own ? Math.min(n, this.get(meter, own, key)) : n;
+      this.add(meter, ALL, key, -back);
+      if (own) this.add(meter, own, key, -back);
+    }
     return true;
   }
 
   /** Takes a pool slot for at most `ttlSeconds` (clamped to the pool's maximum). Busy, with nothing held, when full. */
   acquire(pool: PoolName, scope: string | undefined, ttlSeconds: number, caps: Caps, now: number): AcquireResult {
-    if (!isPool(pool)) throw new RangeError(`unknown pool ${pool}`);
-    if (!Number.isFinite(ttlSeconds) || ttlSeconds <= 0) throw new RangeError("ttlSeconds must be positive");
+    checkAcquire(pool, ttlSeconds, scope);
     const def = POOLS[pool];
     this.dropLapsed(now, caps);
     const live = Number(this.sql.exec("SELECT count(*) AS n FROM lease WHERE pool = ?", pool).toArray()[0]?.n ?? 0);
@@ -257,14 +269,8 @@ export class Ledger {
       };
     const pools = {} as Record<PoolName, PoolGauge>;
     for (const pool of Object.keys(POOLS) as PoolName[]) {
-      const row = this.sql
-        .exec(
-          "SELECT count(*) AS live, coalesce(sum(deadline <= ?), 0) AS overdue FROM lease WHERE pool = ?",
-          now,
-          pool,
-        )
-        .toArray()[0];
-      pools[pool] = { live: Number(row?.live ?? 0), overdue: Number(row?.overdue ?? 0) };
+      const row = this.sql.exec("SELECT count(*) AS live FROM lease WHERE pool = ?", pool).toArray()[0];
+      pools[pool] = { live: Number(row?.live ?? 0) };
     }
     return {
       at: now,

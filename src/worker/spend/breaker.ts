@@ -13,8 +13,8 @@ import {
   resolveTrips,
   type Trips,
 } from "./caps.ts";
-import type { SpendRpc } from "./client.ts";
-import type { Snapshot } from "./meters.ts";
+import { PUBLIC_METERS, type SpendRpc } from "./client.ts";
+import type { History, Snapshot, TripRow } from "./meters.ts";
 import { buildReport, digestText, isMonday, REPORT_DAYS, type SpendReport, weekKey } from "./report.ts";
 import { effectiveSwitch, restrictiveness, type SettingsSnapshot, SWITCHES, type SwitchName } from "./switches.ts";
 
@@ -35,6 +35,8 @@ export interface Alert {
   value?: string;
   /** Every switch one trip flipped (the month's budget flips several): one alert, not one per switch. */
   flips?: Flip[];
+  /** False on a trip whose switch row could not be written (D1 down): the latch holds, but nothing is flipped yet. */
+  applied?: false;
   /** Plain numbers only: no file names, addresses or user data. */
   readings: Record<string, number>;
   /** Which sources fed this run, so an alert from counters alone says it saw only counters. */
@@ -58,16 +60,23 @@ export const logNotify: Notify = async (message) => {
 
 export interface SwitchStore {
   get(name: SwitchName): Promise<string | undefined>;
+  /** The row with its writer, so a reset can tell a row the breaker wrote from one the owner set to the same value. */
+  row(name: SwitchName): Promise<{ value: string; by: string | null } | undefined>;
   set(name: SwitchName, value: string, actor: string, reason: string): Promise<void>;
 }
 
 /** The D1 `setting` and `admin_action` tables (docs/spend.md has the DDL F adds). */
 export function d1SwitchStore(db: Db, now: () => number): SwitchStore {
+  const row: SwitchStore["row"] = async (name) => {
+    const found = await db
+      .prepare("SELECT value, updated_by FROM setting WHERE key = ?")
+      .bind(name)
+      .first<{ value: string; updated_by: string | null }>();
+    return found ? { value: found.value, by: found.updated_by } : undefined;
+  };
   return {
-    async get(name) {
-      const row = await db.prepare("SELECT value FROM setting WHERE key = ?").bind(name).first<{ value: string }>();
-      return row?.value;
-    },
+    row,
+    get: async (name) => (await row(name))?.value,
     async set(name, value, actor, reason) {
       const at = now();
       await db
@@ -174,18 +183,19 @@ export function evaluate(snap: Snapshot, readings: Readings | undefined, t: Trip
     });
 
   const live = snap.pools.convert.live + snap.pools.convert_public.live;
-  const overdue = snap.pools.convert.overdue + snap.pools.convert_public.overdue + snap.leasesDroppedToday;
-  if (live > t.leases_live_max)
+  const liveMax = snap.caps.pool_convert + snap.caps.pool_convert_public;
+  if (live > liveMax)
     trip("leases_live", [{ switch: "convert", value: "off" }], "more live conversion leases than the pools allow", {
       live,
-      line: t.leases_live_max,
+      line: liveMax,
     });
-  if (overdue > 0)
+  // Only a lease dropped past deadline plus grace: one still inside the grace is a release in flight.
+  if (snap.leasesDroppedToday > 0)
     trip(
       "leases_overdue",
       [{ switch: "convert", value: "off" }],
-      "a conversion lease outlived its deadline: a container may be running",
-      { overdue },
+      "a conversion lease outlived its deadline and grace: a container may be running",
+      { overdue: snap.leasesDroppedToday },
     );
 
   const failed = day("conversion_failed");
@@ -215,6 +225,8 @@ export function evaluate(snap: Snapshot, readings: Readings | undefined, t: Trip
 
 export interface BreakerDeps {
   guard: SpendRpc;
+  /** The second instance holding the public meters (`PUBLIC_METERS`); absent, `guard` holds them too. */
+  publicGuard?: SpendRpc;
   store: SwitchStore;
   notify: Notify;
   /** The settings snapshot: its `cap.<name>` rows are pushed to the guard each run, where they can only lower a cap. */
@@ -305,17 +317,28 @@ export async function runBreaker(d: BreakerDeps): Promise<BreakerReport> {
       });
   }
   const readings = analytics ? readingsOf(analytics, now) : undefined;
-  // A failed read leaves the overrides the guard already holds: they only lower caps, so stale is safe.
+  const publicGuard = d.publicGuard ?? d.guard;
+  // A failed read leaves the overrides the guards already hold: they only lower caps, so stale is safe.
   if (d.settings) {
     const rows = await d.settings().catch((e) => {
       logError("read settings", e);
       return undefined;
     });
     if (rows)
-      await d.guard.setOverrides(capOverridesOf(rows) as Record<string, number>).catch((e) => logError("push caps", e));
+      for (const g of new Set([d.guard, publicGuard]))
+        await g.setOverrides(capOverridesOf(rows) as Record<string, number>).catch((e) => logError("push caps", e));
   }
 
-  const [snap, history] = await Promise.all([d.guard.snapshot(), d.guard.history(REPORT_DAYS), d.guard.prune()]);
+  const [global, open] = await Promise.all([
+    readState(d.guard),
+    d.publicGuard
+      ? readState(d.publicGuard).catch((e) => {
+          logError("read public guard", e);
+          return undefined;
+        })
+      : undefined,
+  ]);
+  const { snap, history } = mergePublic(global, open);
   const report = buildReport({
     now,
     vars: d.vars,
@@ -358,46 +381,50 @@ export async function runBreaker(d: BreakerDeps): Promise<BreakerReport> {
     }
   }
 
-  // Apply every latched trip, then announce the new ones: all switches one rule flipped in one alert. A failed row
-  // write or alert is retried next run; the latch holds it.
+  // Apply every latched trip, then announce the new ones: all switches one rule flipped in one alert. A trip whose
+  // row could not be written is still announced, marked not applied, since that is when the owner must act by
+  // deploy; it is marked alerted, and so announced as applied, only once the row is written. The latch holds it.
   const latched = (await d.guard.snapshot()).trips;
   const fresh = new Map<string, typeof latched>();
+  const unapplied = new Map<string, typeof latched>();
   for (const t of latched) {
-    try {
-      if (auto) {
-        // The value in force is the stricter of the var and the row; an unknown row value counts as the strictest.
-        const varValue = d.vars[SWITCHES[t.switch].var];
-        const held = effectiveSwitch(
-          t.switch,
-          typeof varValue === "string" ? varValue : undefined,
-          await d.store.get(t.switch),
-        );
-        if (restrictiveness(t.switch, held) < restrictiveness(t.switch, t.value))
-          await d.store.set(t.switch, t.value, BREAKER_ACTOR, t.reason);
+    let applied = true;
+    if (auto) {
+      try {
+        if (!(await applyTrip(d, t))) continue;
+      } catch (e) {
+        applied = false;
+        logError("apply trip", e, { switch: t.switch });
       }
-      if (!t.alerted) fresh.set(t.reason, [...(fresh.get(t.reason) ?? []), t]);
-    } catch (e) {
-      logError("apply trip", e, { switch: t.switch });
+    }
+    if (!t.alerted) {
+      const into = applied ? fresh : unapplied;
+      into.set(t.reason, [...(into.get(t.reason) ?? []), t]);
     }
   }
-  for (const [rule, group] of fresh) {
-    const first = group[0];
-    if (!first) continue;
-    try {
-      const sent = await announce(`trip:${first.switch}:${first.value}`, {
-        kind: "trip",
-        rule,
-        switch: first.switch,
-        value: first.value,
-        ...(group.length > 1 ? { flips: group.map((t) => ({ switch: t.switch, value: t.value })) } : {}),
-        readings: parseReading(first.reading),
-        sources,
-      });
-      if (sent) for (const t of group) await d.guard.markAlerted(t.switch, t.value);
-    } catch (e) {
-      logError("mark trip alerted", e, { rule });
+  for (const [groups, applied] of [
+    [fresh, true],
+    [unapplied, false],
+  ] as const)
+    for (const [rule, group] of groups) {
+      const first = group[0];
+      if (!first) continue;
+      try {
+        const sent = await announce(`${trippedKey(first.switch, first.value)}${applied ? "" : UNAPPLIED}`, {
+          kind: "trip",
+          rule,
+          switch: first.switch,
+          value: first.value,
+          ...(group.length > 1 ? { flips: group.map((t) => ({ switch: t.switch, value: t.value })) } : {}),
+          ...(applied ? {} : { applied: false as const }),
+          readings: parseReading(first.reading),
+          sources,
+        });
+        if (sent && applied) for (const t of group) await d.guard.markAlerted(t.switch, t.value);
+      } catch (e) {
+        logError("mark trip alerted", e, { rule });
+      }
     }
-  }
 
   let digestSent = false;
   if (isMonday(now)) {
@@ -410,6 +437,53 @@ export async function runBreaker(d: BreakerDeps): Promise<BreakerReport> {
     alerts,
     digestSent,
     sources,
+  };
+}
+
+const trippedKey = (name: SwitchName, value: string) => `trip:${name}:${value}`;
+/** Appended to the claim of the alert sent while the row could not be written, so the applied one is still sent. */
+const UNAPPLIED = ":unapplied";
+
+/**
+ * Writes the row when the value in force (the stricter of the var and the row; an unknown row value counts as the
+ * strictest) is looser than the trip. False when a reset cleared the latch since this run read it: the write must
+ * not undo the reset.
+ */
+async function applyTrip(d: BreakerDeps, t: TripRow): Promise<boolean> {
+  const varValue = d.vars[SWITCHES[t.switch].var];
+  const held = effectiveSwitch(
+    t.switch,
+    typeof varValue === "string" ? varValue : undefined,
+    await d.store.get(t.switch),
+  );
+  if (restrictiveness(t.switch, held) >= restrictiveness(t.switch, t.value)) return true;
+  const latched = (await d.guard.snapshot()).trips;
+  if (!latched.some((x) => x.switch === t.switch && x.value === t.value)) return false;
+  await d.store.set(t.switch, t.value, BREAKER_ACTOR, t.reason);
+  return true;
+}
+
+interface State {
+  snap: Snapshot;
+  history: History;
+}
+
+async function readState(guard: SpendRpc): Promise<State> {
+  const [snap, history] = await Promise.all([guard.snapshot(), guard.history(REPORT_DAYS), guard.prune()]);
+  return { snap, history };
+}
+
+/**
+ * The public meters' counters and history come from the public instance. If it cannot be read they stay as the
+ * global instance holds them (zero), and the log line says so.
+ */
+function mergePublic(global: State, open: State | undefined): State {
+  if (!open) return global;
+  const counters = { ...global.snap.counters };
+  for (const m of PUBLIC_METERS) counters[m] = open.snap.counters[m];
+  return {
+    snap: { ...global.snap, counters },
+    history: { ...global.history, series: { ...global.history.series, email: open.history.series.email } },
   };
 }
 
@@ -434,8 +508,10 @@ function parseReading(text: string): Record<string, number> {
 
 /**
  * The owner's reset: puts the row back to what it was before the trip, then clears the latch, as one logged action.
- * Only a row the breaker wrote (still holding the trip's value) is restored: a row someone set since stands, so a
- * reset never loosens past a decision the breaker did not make. The row goes first, so a failure leaves the latch.
+ * Only a row the breaker wrote (still holding the trip's value, with `updated_by` the breaker) is restored: a row
+ * someone set since stands, even to the same value, so a reset never loosens past a decision the breaker did not
+ * make. The row goes first, so a failure leaves the latch. Checks no auth: the caller must verify an admin session
+ * (and CSRF for a POST).
  */
 export async function resetBreaker(
   d: Pick<BreakerDeps, "guard" | "store" | "notify">,
@@ -444,7 +520,8 @@ export async function resetBreaker(
 ): Promise<boolean> {
   const trip = (await d.guard.snapshot()).trips.find((t) => t.switch === name);
   let restored: string | undefined;
-  if (trip && (await d.store.get(name)) === trip.value) {
+  const row = trip ? await d.store.row(name) : undefined;
+  if (trip && row?.value === trip.value && row.by === BREAKER_ACTOR) {
     // An unknown prior (the row could not be read at latch) restores nothing: the default could loosen the owner's row.
     if (trip.prior !== PRIOR_UNKNOWN) {
       restored = trip.prior || SWITCHES[name].default;
@@ -453,7 +530,9 @@ export async function resetBreaker(
   }
   const was = await d.guard.resetTrip(name);
   // The same trip later the same day is a new event and gets its own alert.
-  if (trip) await d.guard.unalert(`trip:${name}:${trip.value}`);
+  if (trip)
+    for (const key of [trippedKey(name, trip.value), trippedKey(name, trip.value) + UNAPPLIED])
+      await d.guard.unalert(key);
   if (was)
     await d.notify({
       kind: "reset",
@@ -466,7 +545,7 @@ export async function resetBreaker(
   return was;
 }
 
-/** Resets every latched trip: what the owner does after raising the budget or a ceiling. */
+/** Resets every latched trip: what the owner does after raising the budget or a ceiling. Checks no auth: see `resetBreaker`. */
 export async function resetAllBreakers(
   d: Pick<BreakerDeps, "guard" | "store" | "notify">,
   actor: string,
