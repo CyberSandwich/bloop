@@ -210,6 +210,10 @@ h1[tabindex="-1"]:focus {
   background: var(--ink);
   color: var(--paper);
 }
+.btn.secondary {
+  background: var(--surface);
+  box-shadow: 0 0 0 1px var(--hairline);
+}
 .btn:active {
   transform: scale(0.97);
 }
