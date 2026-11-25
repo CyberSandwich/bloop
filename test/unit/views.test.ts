@@ -101,6 +101,7 @@ describe("views", () => {
       endReason: null,
       dropMaxBytes: 50,
       maxMinutes: 120,
+      latestEnd: T0 + sec(10) + 120 * 60_000,
     });
     expect(phoneView(META, ended(), T0 + sec(25), LIMITS)).toMatchObject({
       state: "ended",

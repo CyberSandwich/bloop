@@ -63,7 +63,8 @@
         <div class="sheet-card">
           <h2 id="length-h" tabindex="-1">Session Expiry</h2>
           <label class="sr" for="length-at">Expires At</label>
-          <input class="field" id="length-at" type="time" required>
+          <input class="field" id="length-at" type="time" required aria-describedby="length-hint">
+          <p class="sheet-hint" id="length-hint" hidden></p>
         </div>
         <button class="sheet-x" type="button" aria-label="Close"><svg class="icon" viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg></button>
         <fieldset class="chips">
@@ -72,7 +73,7 @@
           <button type="button" data-minutes="60" aria-label="1 hour">1h</button>
           <button type="button" data-minutes="120" aria-label="2 hours">2h</button>
         </fieldset>
-        <button class="btn primary" type="submit">Set</button>
+        <button class="btn primary" type="submit" aria-describedby="length-hint">Set</button>
       </form>
     </dialog>
   </body>
