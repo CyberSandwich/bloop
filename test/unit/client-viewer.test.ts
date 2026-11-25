@@ -1048,6 +1048,39 @@ describe("DEMO-01 the viewer parks for a transient state", () => {
     }
   });
 
+  const tap = (node: Node) => {
+    for (const f of node.listeners.get("click") ?? []) f({ type: "click" });
+  };
+
+  it("each item keeps its page: leaving a deck on its last page and coming back lands there; its own row starts over", () => {
+    const { v, el } = setup();
+    v.render({ ...view, items: [photo, deck] } as ScreenView);
+    tap(el("items").children[1]?.children[0] as Node);
+    expect(v.shown()).toMatchObject({ item: "t2", page: 1 });
+    tap(el("next"));
+    expect(v.shown()).toMatchObject({ item: "t2", page: 2 });
+    tap(el("items").children[0]?.children[0] as Node);
+    expect(v.shown()).toMatchObject({ item: "t1", page: 1 });
+    tap(el("items").children[1]?.children[0] as Node);
+    expect(v.shown()).toMatchObject({ item: "t2", page: 2 });
+    expect(el("dots").textContent).toBe("2 / 2");
+    // The row of the item on stage is a restart, as before.
+    tap(el("items").children[1]?.children[0] as Node);
+    expect(v.shown()).toMatchObject({ item: "t2", page: 1 });
+  });
+
+  it("the remembered pages go with the session: after the end a deck opens on its first page", () => {
+    const { v, el } = setup();
+    v.render({ ...view, items: [photo, deck] } as ScreenView);
+    tap(el("items").children[1]?.children[0] as Node);
+    tap(el("next"));
+    tap(el("items").children[0]?.children[0] as Node);
+    v.render(null);
+    v.render({ ...view, items: [photo, deck] } as ScreenView);
+    tap(el("items").children[1]?.children[0] as Node);
+    expect(v.shown()).toMatchObject({ item: "t2", page: 1 });
+  });
+
   it("a key while parked pages nothing: the deck resumes on the page it was on", () => {
     const { v, el } = setup();
     const deckView = { ...view, items: [deck] } as ScreenView;
