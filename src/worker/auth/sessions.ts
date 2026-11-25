@@ -99,6 +99,17 @@ export class Sessions {
     return row?.email_norm ?? null;
   }
 
+  /** The email of a member who may use the product now: active and not suspended (a deleting member only restores, ADR 0013). */
+  async activeMemberEmail(userId: string): Promise<string | null> {
+    const row = await this.db
+      .prepare(
+        "SELECT email_norm FROM app_user WHERE id = ? AND tid = 'email' AND status = 'active' AND suspended_at IS NULL",
+      )
+      .bind(userId)
+      .first<{ email_norm: string | null }>();
+    return row?.email_norm ?? null;
+  }
+
   /**
    * Starts the deletion grace for an email member: the daily purge deletes them after `deleteAfter`, and every session
    * ends now, so the member returns only through sign-in and restore. Zero changes on the row means the account was

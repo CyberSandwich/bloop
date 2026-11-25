@@ -103,6 +103,8 @@ async function startOnce(vars: Record<string, string>, options: { migrate?: bool
     bin,
     [
       "dev",
+      // No Docker in the harness: the converter container is replaced by CONVERT_MODE=stub.
+      "--enable-containers=false",
       // Without it the Worker sees the custom domain as its host, not the local address.
       "--infer-origin-from-routes=false",
       // Serves /cdn-cgi/handler/scheduled, so a test can run a cron handler.

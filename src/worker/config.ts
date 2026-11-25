@@ -224,7 +224,7 @@ const schema = z
       .enum(["off", "stub", "on"])
       .default("off")
       .describe(
-        "off: no conversion starts. stub: the workflow writes fixed outputs and starts no container (tests). on: real conversion. An operational switch, not an access gate.",
+        "off: no conversion starts. stub: the converter writes fixed outputs and starts no container (tests). on: real conversion. An operational switch, not an access gate.",
       ),
     DEV_MAILBOX: z
       .enum(["0", "1"])

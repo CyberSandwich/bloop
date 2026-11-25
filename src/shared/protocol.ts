@@ -273,15 +273,13 @@ export type AppError = AccountError | LibraryError | PairingAccountError;
 /** The launch mode (ADR 0026): preview shows today's product, open adds accounts, the library and the open pages. */
 export type LaunchMode = "preview" | "open";
 
-/** What the convert Workflow receives (ADR 0019): keys and ids only, never file bytes or an address. */
+/** What starts one conversion in its Converter object (ADR 0019): ids only, never file bytes or an address. */
 export interface ConvertParams {
-  owner: "user" | "guest";
-  ownerRef: string;
   fileId: string;
   version: number;
-  bucket: "library" | "guest";
-  key: string;
-  ext: string;
+  attempt: number;
+  profile: string;
+  scope: string;
 }
 
 /** Body of every error response (application/problem+json). */

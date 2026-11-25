@@ -86,7 +86,7 @@ async function memberVisible(
   const cookie = readCookie(request, SESSION_COOKIE);
   const userId = cookie ? await sessions.resolve(cookie) : null;
   if (!userId) return false;
-  const email = await sessions.emailNorm(userId);
+  const email = await sessions.activeMemberEmail(userId);
   if (email === null || !admitted(state, config.account, email)) return false;
   return path !== "/admin" || config.account.adminEmails.has(email);
 }

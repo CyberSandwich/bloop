@@ -28,7 +28,6 @@ import { pairingRoutes } from "./routes/pairing.ts";
 import { reportRoutes } from "./routes/reports.ts";
 import { uploadRoutes } from "./routes/uploads.ts";
 import { sweepGuestFiles } from "./seams/guest-drop/select.ts";
-import { ConvertWorkflow } from "./workflows/convert.ts";
 
 /** The `triggers.crons` entry in wrangler.jsonc that runs the hourly backstop. */
 const HOURLY = "0 * * * *";
@@ -116,4 +115,4 @@ export default {
 } satisfies ExportedHandler<Env>;
 
 // Every class a binding or a migration names must be exported from here.
-export { Converter, ConvertWorkflow, Directory, Screen, UserLibrary };
+export { Converter, Directory, Screen, UserLibrary };
