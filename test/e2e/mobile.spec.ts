@@ -11,7 +11,7 @@ const WIDTHS = [320, 360, 390] as const;
 
 // Runs in the page. An element counts where it is drawn: an ancestor that clips (overflow other than visible)
 // cuts its right edge, so a scroller's content or a clipped layer is not overflow. A link is a tap target unless
-// it sits in running text (a p, li or td holding other words), where the line, not the box, is what a finger hits.
+// it sits in running text (a p, li, td or th holding other words), where the line, not the box, is what a finger hits.
 const SCAN = `(() => {
   const vw = innerWidth;
   const drawn = (el) => el.checkVisibility({ visibilityProperty: true }) && el.getClientRects().length > 0;
@@ -29,10 +29,13 @@ const SCAN = `(() => {
   for (const el of document.body.querySelectorAll("button, input, summary, a[href]")) {
     if (el.closest(".sr") || !drawn(el)) continue;
     if (el.tagName === "A") {
-      const box = el.closest("p, li, td");
+      const box = el.closest("p, li, td, th");
       if (box && box.textContent.replace(el.textContent, "").trim() !== "") continue;
     }
-    const h = Math.round(el.getBoundingClientRect().height);
+    // A positioned ::after can grow the tap area past the box (legal.css a.num).
+    const after = getComputedStyle(el, "::after");
+    const grow = after.position === "absolute" ? -parseFloat(after.top) - parseFloat(after.bottom) || 0 : 0;
+    const h = Math.round(el.getBoundingClientRect().height + Math.max(0, grow));
     if (h < 44) small.push(name(el) + " " + h);
   }
   return { inner: innerWidth, wide, small };
