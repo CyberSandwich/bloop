@@ -106,15 +106,16 @@ async function signedIn(request: Request, env: Env, config: Config) {
     : { ok: false as const, response: fail("auth_required") };
 }
 
-/** A write that needs a signed-in user: Origin checks first, then the session. */
+/** A write that needs a signed-in user: Origin checks first, then the session. An action may refuse with a response. */
 const accountWrite =
-  (action: (userId: string, session: string, env: Env, config: Config) => Promise<void>): WithConfig =>
+  (action: (userId: string, session: string, env: Env, config: Config) => Promise<Response | undefined>): WithConfig =>
   async (request, env, config) => {
     const body = await write(request, config, emptyBody);
     if (!body.ok) return body.response;
     const who = await signedIn(request, env, config);
     if (!who.ok) return who.response;
-    await action(who.userId, who.session, env, config);
+    const refused = await action(who.userId, who.session, env, config);
+    if (refused) return refused;
     return json({ signedIn: false }, 200, { "Set-Cookie": clearCookie(SESSION_COOKIE) });
   };
 
@@ -141,7 +142,9 @@ export const authRoutes: readonly Route[] = [
     "/api/me/signout",
     "api",
     withGraph(
-      accountWrite(async (_userId, session, env, config) => servicesFor(env, config).sessions.destroy(session)),
+      accountWrite(async (_userId, session, env, config) => {
+        await servicesFor(env, config).sessions.destroy(session);
+      }),
     ),
   ),
 
@@ -184,10 +187,15 @@ export const authRoutes: readonly Route[] = [
     "/api/me",
     "api",
     withGraph(
-      accountWrite(async (userId, _session, env, config) => {
+      accountWrite(async (userId, session, env, config) => {
         const { sessions, vault } = servicesFor(env, config);
         if (await sessions.emailNorm(userId)) {
-          return sessions.requestDeletion(userId, Date.now() + config.account.deleteGraceDays * 86_400_000);
+          // C+R (ADR 0014): a stolen or shared session alone cannot start the deletion.
+          if (!(await sessions.reauthedWithin(session, config.account.reauthSeconds * 1000))) {
+            return fail("reauth_required");
+          }
+          await sessions.requestDeletion(userId, Date.now() + config.account.deleteGraceDays * 86_400_000);
+          return;
         }
         const audit = auditFor(env);
         // Recorded first and not best effort: an erasure nobody can later see is worse than a failed one.

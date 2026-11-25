@@ -130,20 +130,38 @@ describe("MODE-01 pages: the account pages by mode", () => {
     expect(await get(env, "/library", "A".repeat(43))).toHaveProperty("status", 404);
   });
 
+  it("MODE-01 pages: every file and letter-case form of a member page is hidden too, signed out, in preview", async () => {
+    const { db, env } = world();
+    setMode(db, "preview");
+    for (const base of ["/library", "/account", "/admin"]) {
+      for (const form of [`${base}.html`, base.toUpperCase(), `${base}/`, `${base}/index.html`, `${base}.HTML`]) {
+        expect((await get(env, form)).status, form).toBe(404);
+      }
+    }
+  });
+
   it("MODE-01 pages: in open a signed-out request reaches the page, which shows the sign-in form", async () => {
     const { db, env } = world();
     setMode(db, "open");
     for (const path of ["/library", "/account", "/admin"]) expect((await get(env, path)).status).toBe(200);
   });
 
-  it("MODE-01 pages: in preview a signed-in member sees the pages", async () => {
+  it("MODE-01 pages: in preview a signed-in member sees /library and /account, privately, and only an admin sees /admin", async () => {
     const { db, env } = world();
     setMode(db, "preview");
     const cookie = await signIn(db, "m1", "member@example.test");
-    for (const path of ["/library", "/account", "/admin"]) expect((await get(env, path, cookie)).status).toBe(200);
+    const admin = await signIn(db, "m2", "admin@example.test");
+    for (const path of ["/library", "/account"]) {
+      const res = await get(env, path, cookie);
+      expect(res.status).toBe(200);
+      expect(res.headers.get("Cache-Control")).toBe("private, no-store");
+      expect(res.headers.get("Vary")).toContain("Cookie");
+    }
+    expect((await get(env, "/admin", cookie)).status).toBe(404);
+    expect((await get(env, "/admin", admin)).status).toBe(200);
   });
 
-  it("MODE-01 pages: with the lockout a member outside ADMIN_EMAILS and TEST_EMAILS gets 404, the admin and a test address do not, an Entra user does not", async () => {
+  it("MODE-01 pages: with the lockout a member outside ADMIN_EMAILS and TEST_EMAILS gets 404, the admin and a test address do not", async () => {
     const { db, env } = world();
     setMode(db, "preview", true);
     const outside = await signIn(db, "m1", "member@example.test");
@@ -153,7 +171,9 @@ describe("MODE-01 pages: the account pages by mode", () => {
     expect((await get(env, "/library", outside)).status).toBe(404);
     expect((await get(env, "/library", admin)).status).toBe(200);
     expect((await get(env, "/account", test)).status).toBe(200);
-    expect((await get(env, "/account", entra)).status).toBe(200);
+    expect((await get(env, "/account", test)).status).toBe(200);
+    expect((await get(env, "/admin", test)).status).toBe(404);
+    expect((await get(env, "/library", entra)).status).toBe(404);
     // Open ignores and clears the lockout, so the member is back.
     setMode(db, "open");
     expect((await get(env, "/library", outside)).status).toBe(200);
