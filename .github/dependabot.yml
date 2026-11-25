@@ -1,6 +1,15 @@
 # Actions are pinned to commit SHAs; this keeps the pins current. npm updates are grouped to one PR a month.
+# The converter image's base digests and Go toolchain move weekly: they carry the parsers that read uploads.
 version: 2
 updates:
+  - package-ecosystem: docker
+    directory: /container
+    schedule:
+      interval: weekly
+  - package-ecosystem: gomod
+    directory: /container
+    schedule:
+      interval: weekly
   - package-ecosystem: github-actions
     directory: /
     schedule:
