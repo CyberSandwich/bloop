@@ -6,21 +6,61 @@
   "deployWorkflow": "deploy.yml",
   "actor": "lockdown",
   "wafRef": "lockdown",
-  "held": ["Workers Scripts Edit", "D1 Edit"],
+  "held": ["Workers Scripts Write", "D1 Edit"],
+  "deployTokenLevels": ["L1", "L2"],
   "switches": {
-    "convert": { "values": ["on", "account_only", "off"], "default": "account_only" },
-    "convert_video": { "values": ["on", "off"], "default": "on" },
-    "uploads": { "values": ["on", "readonly", "off"], "default": "on" },
-    "demo": { "values": ["on", "off"], "default": "on" },
-    "demo_drop": { "values": ["on", "off"], "default": "on" },
-    "guest_files": { "values": ["on", "stopped"], "default": "on" },
-    "guest_drop": { "values": ["open", "pass", "off"], "default": "open" },
-    "email": { "values": ["on", "admin_only", "off"], "default": "on" },
-    "signin_code": { "values": ["on", "off"], "default": "on" },
-    "invites": { "values": ["on", "off"], "default": "on" },
-    "file_origin": { "values": ["workers_dev", "main", "off"], "default": "workers_dev" },
-    "export": { "values": ["on", "off"], "default": "on" },
-    "previews": { "values": ["on", "off"], "default": "on" }
+    "convert": {
+      "values": ["on", "account_only", "off"],
+      "default": "account_only"
+    },
+    "convert_video": {
+      "values": ["on", "off"],
+      "default": "on"
+    },
+    "uploads": {
+      "values": ["on", "readonly", "off"],
+      "default": "on"
+    },
+    "demo": {
+      "values": ["on", "off"],
+      "default": "on"
+    },
+    "demo_drop": {
+      "values": ["on", "off"],
+      "default": "on"
+    },
+    "guest_files": {
+      "values": ["on", "stopped"],
+      "default": "on"
+    },
+    "guest_drop": {
+      "values": ["open", "pass", "off"],
+      "default": "open"
+    },
+    "email": {
+      "values": ["on", "admin_only", "off"],
+      "default": "on"
+    },
+    "signin_code": {
+      "values": ["on", "off"],
+      "default": "on"
+    },
+    "invites": {
+      "values": ["on", "off"],
+      "default": "on"
+    },
+    "file_origin": {
+      "values": ["workers_dev", "main", "off"],
+      "default": "workers_dev"
+    },
+    "export": {
+      "values": ["on", "off"],
+      "default": "on"
+    },
+    "previews": {
+      "values": ["on", "off"],
+      "default": "on"
+    }
   },
   "rungs": {
     "L1": {
@@ -44,19 +84,42 @@
       "writes": [],
       "calls": [],
       "manual": [],
-      "undo": { "summary": "set the meter's row back to its default (only a row this tool wrote)" }
+      "undo": {
+        "summary": "set the meter's row back to its default (only a row this tool wrote)"
+      }
     },
     "L2": {
       "title": "every costly switch at once",
       "mechanism": "workflow or script",
       "writes": [
-        { "switch": "convert", "value": "off" },
-        { "switch": "uploads", "value": "readonly" },
-        { "switch": "demo_drop", "value": "off" },
-        { "switch": "guest_drop", "value": "off" },
-        { "switch": "email", "value": "admin_only" },
-        { "switch": "export", "value": "off" },
-        { "switch": "previews", "value": "off" }
+        {
+          "switch": "convert",
+          "value": "off"
+        },
+        {
+          "switch": "uploads",
+          "value": "readonly"
+        },
+        {
+          "switch": "demo_drop",
+          "value": "off"
+        },
+        {
+          "switch": "guest_drop",
+          "value": "off"
+        },
+        {
+          "switch": "email",
+          "value": "admin_only"
+        },
+        {
+          "switch": "export",
+          "value": "off"
+        },
+        {
+          "switch": "previews",
+          "value": "off"
+        }
       ],
       "calls": [],
       "manual": [],
@@ -68,13 +131,22 @@
       "title": "cap a product at the platform",
       "mechanism": "workflow or script, then the dashboard",
       "includes": "L2",
-      "writes": [{ "switch": "convert_video", "value": "off" }, { "switch": "email", "value": "off" }],
+      "writes": [
+        {
+          "switch": "convert_video",
+          "value": "off"
+        },
+        {
+          "switch": "email",
+          "value": "off"
+        }
+      ],
       "calls": [
         {
           "id": "terminate-workflows",
           "op": "terminateWorkflows",
           "params": {},
-          "permission": "Workers Scripts Edit",
+          "permission": "Workers Scripts Write",
           "held": true,
           "undo": {
             "manual": "Terminated Workflow instances cannot be resumed; the original files are untouched and users re-run."
@@ -87,7 +159,7 @@
         "Dashboard, Containers: confirm no live instances. Dashboard, Worker, Observability: logs off, then commit the same change."
       ],
       "undo": {
-        "summary": "set the eight rows back to their defaults; raise the spend limits, set a new presign token and re-run the Workflow jobs by hand"
+        "summary": "set the eight rows back to the values they had before; raise the spend limits, set a new presign token and re-run the Workflow jobs by hand"
       }
     },
     "L4": {
@@ -98,18 +170,32 @@
         {
           "id": "waf-block",
           "op": "wafRule",
-          "params": { "enabled": true },
-          "permission": "Zone Read and Zone WAF Edit on the zone",
+          "params": {
+            "enabled": true
+          },
+          "permission": "Zone Read and Zone WAF Edit",
           "held": false,
-          "undo": { "op": "wafRule", "params": { "enabled": false } }
+          "undo": {
+            "op": "wafRule",
+            "params": {
+              "enabled": false
+            }
+          }
         },
         {
           "id": "workers-dev-off",
           "op": "workersDev",
-          "params": { "enabled": false },
-          "permission": "Workers Scripts Edit",
+          "params": {
+            "enabled": false
+          },
+          "permission": "Workers Scripts Write",
           "held": true,
-          "undo": { "op": "workersDev", "params": { "enabled": true } }
+          "undo": {
+            "op": "workersDev",
+            "params": {
+              "enabled": true
+            }
+          }
         }
       ],
       "manual": [
@@ -129,9 +215,12 @@
           "id": "clear-schedules",
           "op": "clearSchedules",
           "params": {},
-          "permission": "Workers Scripts Edit",
+          "permission": "Workers Scripts Write",
           "held": true,
-          "undo": { "manual": "Enable the deploy workflow and run it: a deploy recreates the cron triggers." }
+          "undo": {
+            "op": "restoreSchedules",
+            "params": {}
+          }
         }
       ],
       "manual": [
@@ -139,7 +228,7 @@
         "Dashboard, Billing, Spend limits: Workers and Durable Objects to the current spend."
       ],
       "undo": {
-        "summary": "undo L4, then new tokens with the same scopes, the secrets restored, and a deploy run to recreate the cron triggers"
+        "summary": "undo L4, restore the cron triggers wrangler.jsonc lists; the revoked tokens and lowered spend limits are by hand"
       }
     }
   }
