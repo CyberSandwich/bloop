@@ -4,6 +4,7 @@ import { SESSION_ENDED, WAITLIST_FORM } from "../../public/js/core/copy.js";
 import { TYPED_LETTERS, typedError } from "../../public/js/core/copy-code.js";
 import { phoneCopy, refusalToast, uploadLine, videoTime } from "../../public/js/core/copy-phone.js";
 import { endLine, FRESH_LINE, screenCopy } from "../../public/js/core/copy-screen.js";
+import { RESULTS } from "../../public/js/core/states.js";
 import { SUPPORT } from "../../public/js/shared/errors.js";
 import type { PhoneStateKey, ScreenStateKey } from "../../src/shared/protocol.ts";
 
@@ -631,6 +632,21 @@ describe("phone copy", () => {
           waitlist: true,
         },
       ]);
+    }
+  });
+
+  it("end parity: every phone end state offers the waitlist exactly when the screen's end does", () => {
+    for (const demo of [false, true]) {
+      const screen = screenCopy("ended", { ...sf, demo }).controls.includes("waitlist");
+      for (const key of RESULTS as PhoneStateKey[]) {
+        const phone = phoneCopy(key, { ...pf, demo }).actions;
+        expect(phone.some((a) => a.id === "waitlist")).toBe(screen);
+        // A waitlist action is always the marked same-tab link to the form, never a button.
+        for (const a of phone.filter((x) => x.id === "waitlist")) {
+          expect(a.href?.startsWith(`${WAITLIST_FORM}?source=`)).toBe(true);
+          expect(a.waitlist).toBe(true);
+        }
+      }
     }
   });
 
