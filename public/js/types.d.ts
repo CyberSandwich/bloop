@@ -149,8 +149,6 @@ export interface ScreenLauncher {
   needsClick: () => boolean;
   /** What this PC may still hold: PowerPoint was launched, the name of a download it started. Read before an end resets it. */
   left: () => { ppt: boolean; download: string | null };
-  /** The launch has waited long enough that Download may show. */
-  downloadReady: () => boolean;
   /** Close the PDF window this page opened. */
   closePdf: () => void;
   /** Drop every link and timer (the residue step). */
@@ -201,6 +199,8 @@ export interface PhoneAction {
   href?: string | undefined;
   /** The accessible name, when the label alone is not enough (the match digits). */
   aria?: string;
+  /** Shown but not usable yet (Approve before a row is ticked). */
+  disabled?: boolean;
   /** A link to the waitlist form: it carries data-waitlist, so one grep finds every such link. */
   waitlist?: boolean;
 }
