@@ -966,11 +966,11 @@ test.describe("a guest's photo and video on the screen (design.md section 7, Vid
     await phone.context.close();
   });
 
-  test("a guest's video streams by range under its loader, waits on its first frame with sound, plays, seeks and presents; the end takes it down", async ({
+  test("a guest's video streams by range under its loader, waits on its metadata with sound, plays, seeks and presents; the end takes it down", async ({
     browser,
   }) => {
     const { screen, phone, page } = await openAsGuest(browser, "Talk.mp4", CLIP, true);
-    // Until the first playable frame: the one loader, indeterminate (a video has no byte count to show), Present held.
+    // Until the metadata: the one loader, indeterminate (a video has no byte count to show), Present held.
     const loader = page.locator("#frame .loader.stand-in");
     await expect(loader).toBeVisible();
     await expect(loader).toHaveAttribute("aria-label", "Loading Talk.mp4");

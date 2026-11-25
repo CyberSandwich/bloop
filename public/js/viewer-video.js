@@ -1,12 +1,12 @@
-// A guest video on the stage (design.md section 7, Video), loaded with the first video link: its own size entry.
+// A guest video on the stage; every choice here is design.md section 7, Video.
 /** @import {Shot} from "./viewer.js" */
 import { el } from "./core/ui.js";
 
+export const METADATA_MS = 15_000;
+
 /**
- * Plays a view link in a <video>, which reads it in ranges (VID-02) under the page's `media-src 'self'`. Native
- * controls without their download, full screen and casting: Present is the one way to fill the window. It never
- * autoplays: Play is the presenter's click, so the room hears it with sound.
- * @param {Shot} shot filled in here: its node, its ratio at the metadata, ready at the first playable frame
+ * Ready at the metadata, not canplay: iOS may buffer nothing before Play.
+ * @param {Shot} shot
  * @param {string} url
  * @param {(shot: Shot) => void} onChange never after stop
  */
@@ -21,31 +21,38 @@ export function roll(shot, url, onChange) {
     disableremoteplayback: "",
   });
   let live = true;
+  const fail = () => {
+    shot.ready = false;
+    shot.failed = true;
+  };
+  const late = setTimeout(() => {
+    if (!live) return;
+    fail();
+    onChange(shot);
+  }, METADATA_MS);
   const on = (/** @type {string} */ type, /** @type {() => void} */ then) =>
     video.addEventListener(
       type,
       () => {
         if (!live) return;
+        clearTimeout(late);
         then();
         onChange(shot);
       },
       { once: true },
     );
   on("loadedmetadata", () => {
-    shot.ratio = video.videoWidth / video.videoHeight || null;
-  });
-  on("canplay", () => {
+    // No picture: audio alone, or a codec this engine cannot draw.
+    if (!video.videoWidth || !video.videoHeight) return fail();
+    shot.ratio = video.videoWidth / video.videoHeight;
     shot.ready = true;
   });
-  // Before the first frame or mid-play (a decoder fault, a read refused), the card takes the stage.
-  on("error", () => {
-    shot.ready = false;
-    shot.failed = true;
-  });
+  on("error", fail);
   shot.node = video;
-  // An emptied element stops reading and lets the decoder go.
+  // Emptied, it stops reading and frees the decoder.
   shot.stop = () => {
     live = false;
+    clearTimeout(late);
     video.removeAttribute("src");
     video.load();
   };

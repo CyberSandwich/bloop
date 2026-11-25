@@ -4,14 +4,14 @@
 /** @import {Minted} from "./types.js" */
 import { CANT_PLAY } from "./core/copy.js";
 import { halves, isVideoLink, openTarget, pageMode, pagesOf, placeControls, stepPage, thumbOf } from "./core/demo.js";
-import { hostOf, itemIcon, itemLine, itemName } from "./core/format.js";
+import { hostOf, isVideo, itemIcon, itemLine, itemName } from "./core/format.js";
 import { ICONS } from "./core/icons.js";
 import { loader, readAll, setProgress } from "./core/loader.js";
 import { rowFace, tile } from "./core/rows.js";
 import { onStage } from "./core/states.js";
 import { byId, el, icon, setText, show } from "./core/ui.js";
 
-/** @typedef {{node?: HTMLCanvasElement | HTMLVideoElement, video?: boolean, ratio?: number | null, ready: boolean, failed: boolean, fraction: number | null, stop: () => void}} Shot */
+/** @typedef {{node?: HTMLCanvasElement | HTMLVideoElement, ratio?: number | null, ready: boolean, failed: boolean, fraction: number | null, stop: () => void}} Shot */
 
 /**
  * A photo's view link, read by script to count its bytes, drawn on a canvas: the CSP has no blob: for an <img>.
@@ -60,14 +60,11 @@ function shoot(url, onProgress, onDone) {
   return shot;
 }
 
-/** A video's view link: lazy viewer-video.js fills in the shot. @param {string} url @param {(shot: Shot) => void} onChange */
+/** viewer-video.js fills it in. @param {string} url @param {(shot: Shot) => void} onChange */
 function film(url, onChange) {
   let live = true;
   /** @type {Shot} */
   const shot = {
-    video: true,
-    // Most recordings are 16 : 9.
-    ratio: 16 / 9,
     ready: false,
     failed: false,
     fraction: null,
@@ -86,7 +83,6 @@ function film(url, onChange) {
   return shot;
 }
 
-/** A drawn stage: a slide, a photo's canvas, a video. */
 const STAGED = "picture img, canvas, video";
 
 /** The --ease-out token, for the pill's glide and the photo's fade. */
@@ -345,7 +341,7 @@ export function createViewer(deps) {
     );
   }
 
-  /** An unplayable video says so; the pill's Download is the way on. @param {Item} item */
+  /** @param {Item} item */
   function card(item, unplayable = false) {
     const host = item.kind === "link" ? hostOf(item.url) : "";
     return el("div", unplayable ? { class: "item-card", role: "alert" } : { class: "item-card" }, [
@@ -428,7 +424,7 @@ export function createViewer(deps) {
           waiting = { key, part };
         }
         nodes = [waiting.part];
-      } else nodes = [card(item, !!shot?.failed && !!shot.video)];
+      } else nodes = [card(item, !!shot?.failed && isVideo(item))];
       const commit = () => {
         if (building !== nodes) return;
         building = null;
@@ -465,8 +461,9 @@ export function createViewer(deps) {
       else commit();
     }
     if (loading && waiting) setProgress(waiting.part, shot?.fraction ?? null);
-    // Loader and item share one box (app.css).
-    if (shot?.ratio) (img ?? waiting?.part)?.style.setProperty("--ratio", String(shot.ratio));
+    // Loader and item share one box (app.css); a video's loader is the stage's shape until the metadata.
+    const ratio = shot?.ratio || (isVideo(item) && view.offsetWidth / view.offsetHeight);
+    if (ratio) (img ?? waiting?.part)?.style.setProperty("--ratio", String(ratio));
     show(view, true);
     show(frame, true);
     show(note, false);
@@ -513,7 +510,7 @@ export function createViewer(deps) {
     if (on) opener = /** @type {HTMLElement | null} */ (document.activeElement);
     body.classList.toggle("is-presenting", on);
     show(stop, on);
-    // Focus follows the layout, never dropping to the body; on a video, so Space plays and pauses, not Stop.
+    // Focus follows the layout, never dropping to the body; on a video, so Space plays it.
     if (on) (frame.querySelector("video") ?? stop).focus?.({ preventScroll: true });
     else opener?.focus?.({ preventScroll: true });
     if (on) {
@@ -579,7 +576,8 @@ export function createViewer(deps) {
   let swipe = 0;
   let swiped = false;
   view.addEventListener("pointerdown", (e) => {
-    swipe = e.clientX;
+    // Only pages swipe: a drag on a video scrubs.
+    swipe = pages() ? e.clientX : Number.NaN;
     swiped = false;
   });
   view.addEventListener("pointermove", follow);
@@ -658,17 +656,23 @@ export function createViewer(deps) {
     /** A link the launcher would open in a window. @param {string} url @param {number} item @param {OpenMode} mode */
     take(url, item, mode) {
       const target = openTarget(url, location.origin);
-      if (!target) return false;
-      if (mode !== "view") return fetchOpen(target);
+      if (mode !== "view") return !!target && fetchOpen(target);
       // Before the first render there is no list: it waits by position.
       const was = shown ? images.get(keyOf(item)) : early.get(item);
-      // A photo or video already on stage stays: a fresh link for it would only put its loader back.
+      // On stage, it stays: a fresh link would only put its loader back.
       if (was?.ready) return true;
       was?.stop();
       const done = () => deps.onChange();
-      const shot = isVideoLink(target)
-        ? film(target, done)
-        : shoot(target, (s) => waiting && images.get(waiting.key) === s && setProgress(waiting.part, s.fraction), done);
+      // Off this origin: the card, never a window retry.
+      const shot = !target
+        ? { ready: false, failed: true, fraction: null, stop() {} }
+        : isVideoLink(target)
+          ? film(target, done)
+          : shoot(
+              target,
+              (s) => waiting && images.get(waiting.key) === s && setProgress(waiting.part, s.fraction),
+              done,
+            );
       if (!shown) early.set(item, shot);
       else {
         images.set(keyOf(item), shot);

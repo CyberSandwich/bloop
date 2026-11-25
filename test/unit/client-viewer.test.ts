@@ -233,7 +233,7 @@ const VIDEO = "../../public/js/viewer-video.js";
 interface Viewer {
   render(v: ScreenView | null): void;
   park(line: string): void;
-  take(url: string, item: number, mode: "view"): boolean;
+  take(url: string, item: number, mode: "view" | "pdf"): boolean | Promise<boolean>;
   present(on: boolean): void;
   presentable(): boolean;
   item(): Item | null;
@@ -428,6 +428,12 @@ describe("a guest's photo and video on the stage (design.md section 7, Video)", 
   };
   /** The video the module made, wherever it is (still off stage while it loads). */
   const videoOf = (frame: Node, made: Node[]) => frame.querySelector("video") ?? made.at(-1) ?? null;
+  /** The metadata of a 16 : 9 recording. */
+  const meta = (video: Node | null, w = 1920, h = 1080) => {
+    if (!video) return;
+    video.frame = { w, h };
+    video.emit("loadedmetadata");
+  };
   let made: Node[] = [];
   beforeEach(() => {
     made = [];
@@ -461,14 +467,16 @@ describe("a guest's photo and video on the stage (design.md section 7, Video)", 
     expect(relink).not.toHaveBeenCalled();
   });
 
-  it("holds the loader, indeterminate, until the first playable frame; the frame's ratio shapes it; then it fades in", async () => {
+  it("holds the loader, indeterminate and the stage's shape, until the metadata; the video's ratio shapes it; then it fades in", async () => {
     const { v, el } = setup();
+    el("view").offsetWidth = 1200;
+    el("view").offsetHeight = 800;
     v.take(`${ORIGIN}/f/abc/talk.mov`, 0, "view");
     v.render(guestView(clip));
     const part = el("frame").children[0];
     expect(part?.classes.has("stand-in")).toBe(true);
     expect(part?.attrs.get("aria-label")).toBe("Loading Talk.mov");
-    expect(part?.style["--ratio"]).toBe(String(16 / 9));
+    expect(part?.style["--ratio"]).toBe(String(1200 / 800));
     await loaded();
     const video = videoOf(el("frame"), made);
     expect(video?.attrs.get("src")).toBe(`${ORIGIN}/f/abc/talk.mov`);
@@ -479,14 +487,13 @@ describe("a guest's photo and video on the stage (design.md section 7, Video)", 
     expect(video?.attrs.has("autoplay")).toBe(false);
     expect(video?.attrs.has("muted")).toBe(false);
     expect(el("frame").querySelector("video")).toBeNull();
+    expect(part?.attrs.has("aria-valuenow")).toBe(false);
+    expect(v.presentable()).toBe(false);
+    // On stage at the metadata: canplay may wait for the Play click on iOS or a data saver.
     (video as Node).frame = { w: 1080, h: 1920 };
     video?.emit("loadedmetadata");
     v.render(guestView(clip));
-    expect(part?.style["--ratio"]).toBe(String(1080 / 1920));
-    expect(part?.attrs.has("aria-valuenow")).toBe(false);
-    expect(v.presentable()).toBe(false);
-    video?.emit("canplay");
-    v.render(guestView(clip));
+    expect(video?.style["--ratio"]).toBe(String(1080 / 1920));
     expect(el("frame").children.map((c) => c.tag)).toEqual(["div", "video"]);
     expect(video?.attrs.get("aria-label")).toBe("Talk.mov");
     await settle();
@@ -503,7 +510,7 @@ describe("a guest's photo and video on the stage (design.md section 7, Video)", 
     v.render(guestView(clip));
     await loaded();
     const video = videoOf(el("frame"), made);
-    video?.emit("canplay");
+    meta(video);
     v.render(guestView(clip));
     v.present(true);
     // A decoder or network failure mid-play.
@@ -528,7 +535,7 @@ describe("a guest's photo and video on the stage (design.md section 7, Video)", 
     v.render(null);
     expect(video.attrs.has("src")).toBe(false);
     expect(video.loads).toBe(1);
-    video.emit("canplay");
+    meta(video);
     v.render(guestView(clip));
     expect(el("frame").querySelector("video")).toBeNull();
   });
@@ -548,12 +555,93 @@ describe("a guest's photo and video on the stage (design.md section 7, Video)", 
     v.render(guestView(clip));
     await loaded();
     const video = videoOf(el("frame"), made) as Node;
-    video.emit("canplay");
+    meta(video);
     v.render(guestView(clip));
     v.park("This Screen Is Offline");
     expect(video.pauses).toBe(1);
     v.render(guestView(clip));
     expect(el("frame").querySelector("video")).toBe(video);
+  });
+
+  const cantPlay = (frame: Node) => frame.querySelector(".item-card")?.children[1]?.textContent ?? null;
+
+  it("VID-03 a file with no picture (audio alone, a codec this engine cannot draw) shows the card at its metadata", async () => {
+    const { v, el } = setup();
+    v.take(`${ORIGIN}/f/abc/talk.mov`, 0, "view");
+    v.render(guestView(clip));
+    await loaded();
+    meta(videoOf(el("frame"), made), 0, 0);
+    v.render(guestView(clip));
+    expect(cantPlay(el("frame"))).toBe("This Screen Can't Play This Video");
+    expect(el("frame").querySelector("video")).toBeNull();
+    expect(v.presentable()).toBe(false);
+  });
+
+  it("VID-03 no metadata within METADATA_MS shows the card; metadata in time keeps the video", async () => {
+    const { METADATA_MS } = await import(VIDEO);
+    vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
+    try {
+      // loaded() without its macrotask settles, which these fake timers would hold.
+      const flush = async () => {
+        await import(VIDEO);
+        for (let i = 0; i < 3; i += 1) await Promise.resolve();
+      };
+      const slow = setup();
+      slow.v.take(`${ORIGIN}/f/abc/talk.mov`, 0, "view");
+      slow.v.render(guestView(clip));
+      await flush();
+      expect(made).toHaveLength(1);
+      vi.advanceTimersByTime(METADATA_MS - 1);
+      slow.v.render(guestView(clip));
+      expect(slow.el("frame").querySelector(".stand-in")).not.toBeNull();
+      vi.advanceTimersByTime(1);
+      slow.v.render(guestView(clip));
+      expect(cantPlay(slow.el("frame"))).toBe("This Screen Can't Play This Video");
+
+      const quick = setup();
+      quick.v.take(`${ORIGIN}/f/abc/talk.mov`, 0, "view");
+      quick.v.render(guestView(clip));
+      await flush();
+      meta(made.at(-1) ?? null);
+      vi.advanceTimersByTime(METADATA_MS);
+      quick.v.render(guestView(clip));
+      expect(cantPlay(quick.el("frame"))).toBeNull();
+      expect(quick.v.presentable()).toBe(true);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("a link off this origin shows the item's card at once and reports it taken, so the launcher never retries a window", () => {
+    const { v, el } = setup();
+    v.render(guestView(clip));
+    expect(v.take("https://elsewhere.example/f/abc/talk.mov", 0, "view")).toBe(true);
+    expect(cantPlay(el("frame"))).toBe("This Screen Can't Play This Video");
+    expect(made).toHaveLength(0);
+    const photo = setup();
+    photo.v.render(guestView(shot));
+    expect(photo.v.take("https://elsewhere.example/f/abc/board.png", 0, "view")).toBe(true);
+    expect(photo.el("frame").querySelector(".item-card")?.attrs.has("role")).toBe(false);
+    // Any other mode keeps the launcher's own answer.
+    expect(photo.v.take("https://elsewhere.example/f/abc/board.pdf", 0, "pdf")).toBe(false);
+  });
+
+  it("a drag across a presented video is its scrubber, never a swipe: its click goes through", async () => {
+    const { v, el } = setup();
+    v.take(`${ORIGIN}/f/abc/talk.mov`, 0, "view");
+    v.render(guestView(clip));
+    await loaded();
+    meta(videoOf(el("frame"), made));
+    v.render(guestView(clip));
+    v.present(true);
+    const video = el("frame").querySelector("video");
+    for (const f of el("view").listeners.get("pointerdown") ?? [])
+      f({ type: "pointerdown", clientX: 300, target: video });
+    for (const f of el("view").listeners.get("pointerup") ?? []) f({ type: "pointerup", clientX: 100, target: video });
+    const click = { type: "click", stopPropagation: vi.fn(), preventDefault: vi.fn() };
+    for (const f of el("view").listeners.get("click") ?? []) f(click);
+    expect(click.stopPropagation).not.toHaveBeenCalled();
+    expect(click.preventDefault).not.toHaveBeenCalled();
   });
 });
 

@@ -61,7 +61,8 @@ export const CSP: Readonly<Record<Policy, string>> = {
   // `object-src 'self'` is the one hole: Chromium's PDF viewer is an embedded plugin, which the
   // `default-src 'none'` fallback would block (ADR 0003, field check F-PDF). `sandbox` stays out: it stops the viewer.
   "file-pdf": "default-src 'none'; object-src 'self'; frame-ancestors 'none'",
-  // Shown by the screen page's <img>; opened on its own, the document is sandboxed and can load nothing.
+  // A photo or video, read by the screen page (its canvas, its <video>); opened on its own, the document is sandboxed
+  // with an opaque origin and plays nothing, so the screen never opens it in a window.
   "file-image": "default-src 'none'; sandbox; frame-ancestors 'none'",
 };
 

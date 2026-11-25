@@ -80,6 +80,9 @@ export const firstFile = (items) => /** @type {FileItem | undefined} */ (items.f
 /** A photo or a video: a file with no pages. @param {Item | null} item */
 export const onStage = (item) => item?.kind === "file" && item.type !== "pptx" && item.type !== "pdf";
 
+/** In the page, live too (design.md section 7, The viewer). @param {ScreenView | null} v */
+export const guestOnStage = (v) => v?.kind === "guest" && onStage(firstFile(v.items));
+
 /** A deck shown as a PDF is the fallback; a file that is a PDF is just opened as one. */
 const pdfKey = (/** @type {ScreenView | PhoneView} */ v) =>
   firstFile(v.items)?.type === "pdf" ? "pdf_file" : "pdf_fallback";
@@ -106,9 +109,8 @@ export function screenKey(c) {
     case "approved":
     case "opening":
     case "open":
-      // The page shows the file itself (a reload or a lost frame lands here too): a demo's, and a guest's photo or
-      // video, which a window would leave to the browser's sandboxed viewer.
-      if (v.mode === "demo" || (v.kind === "guest" && onStage(firstFile(v.items)))) return "demo_open";
+      // The page shows the file itself, so a reload or a lost frame lands here too.
+      if (v.mode === "demo" || guestOnStage(v)) return "demo_open";
       if (v.state === "approved") return "approved";
       if (v.openMode === "download") return "open_fallback";
       if (v.openMode === "pdf") return pdfKey(v);

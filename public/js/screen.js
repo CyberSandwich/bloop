@@ -5,7 +5,7 @@ import { openChannel } from "./core/channel.js";
 import { endLine, FRESH_LINE, screenCopy } from "./core/copy.js";
 import { clock, itemName, qrLabel } from "./core/format.js";
 import { qrMatrix, qrPath, qrSize } from "./core/qr.js";
-import { firstFile, screenKey } from "./core/states.js";
+import { firstFile, guestOnStage, screenKey } from "./core/states.js";
 import { PID_KEY, pidStore, refOf, SID_KEY, sameScreen, sessionStore } from "./core/store.js";
 import {
   CODE_GRACE_MS,
@@ -99,11 +99,8 @@ const launcher = createLauncher({
   api,
   sid: () => s.sid,
   assign: (url) => (DEMO ? fetchOpen(url) : location.assign(url)),
-  // A guest's view link is a photo or a video (states.js onStage).
   openWindow: (url, item, mode) =>
-    DEMO || (mode === "view" && s.view?.kind === "guest")
-      ? viewer.take(url, item, mode)
-      : window.open(url, "bloop-pdf"),
+    DEMO || guestOnStage(s.view) ? viewer.take(url, item, mode) : window.open(url, "bloop-pdf"),
   startDownload(url) {
     const a = el("a", { href: url, download: "" });
     document.body.append(a);
