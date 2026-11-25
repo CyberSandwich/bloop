@@ -42,6 +42,7 @@ const back = byId("back");
 const title = byId("title");
 const skelTitle = byId("skel-title");
 const body = byId("body");
+const fileName = byId("file-name");
 const roomSub = byId("room-sub");
 const warn = byId("warn");
 const warnText = byId("warn-text");
@@ -255,6 +256,8 @@ function render() {
   show(skelTitle, key === "checking");
   show(title, key !== "checking");
   setText(title, copy.title);
+  show(fileName, copy.name !== "");
+  setText(fileName, copy.name);
   setText(body, copy.body);
 
   show(roomSub, copy.room && !!c.info?.registered && VERIFIED.roomRegistration);
