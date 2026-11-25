@@ -273,7 +273,7 @@ public/                    the assets' source, built into dist/ (each JS module 
   .well-known/security.txt
 src/fonts/InterVariable.woff2   the source of the font subset, never served
 tools/
-  build-assets.mjs         public/ to dist/, each JS module minified on its own (ADR 0011); wrangler runs it before dev and deploy
+  build-assets.mjs build-assets-cli.mjs   public/ to dist/, each JS module minified on its own (ADR 0011); wrangler runs the CLI before dev and deploy
   make-fixtures.mjs        writes the synthetic sample decks the tests use
   render-slides.py         the demo deck's PDF export to the demo screen's slide images
   change-tier.mjs          classifies the staged diff (T0 to T2) and enforces the commit-msg blocks
@@ -287,7 +287,7 @@ test/
   fixtures/graph/          synthetic Graph JSON for the contract tests (README says so)
   fixtures/jsdoc/          a good and a bad browser module, proving JSDoc @import of protocol.ts is type-checked
 ```
-`.wrangler/` and `dist/` are gitignored. `wrangler.jsonc` sets `assets.directory` to `./dist` and `build.command` to `tools/build-assets.mjs`, so every `wrangler dev` and `wrangler deploy` rebuilds `dist/` from `public/` first (ADR 0011). The Worker imports `public/js/shared/*.js` by relative path, and wrangler's own esbuild bundles it. Type-only contracts stay in `src/shared/*.ts` so they are never served.
+`.wrangler/` and `dist/` are gitignored. `wrangler.jsonc` sets `assets.directory` to `./dist` and `build.command` to `tools/build-assets-cli.mjs`, so every `wrangler dev` and `wrangler deploy` rebuilds `dist/` from `public/` first (ADR 0011). The Worker imports `public/js/shared/*.js` by relative path, and wrangler's own esbuild bundles it. Type-only contracts stay in `src/shared/*.ts` so they are never served.
 
 ## 6. Routes
 
