@@ -238,8 +238,7 @@ h1[tabindex="-1"]:focus {
     backdrop-filter: none;
   }
 }
-/* The loader's sheen (design.md section 8): a 1 s sweep, the first 45 percent of 2.2 s, then a rest. The
-   landing's word sweeps without one, on site.css's own keyframe. */
+/* The loader's sheen (design.md section 8): a 1 s sweep, the first 45 percent of 2.2 s, then a rest. */
 @keyframes sheen {
   0% {
     background-position: 100% 0;
