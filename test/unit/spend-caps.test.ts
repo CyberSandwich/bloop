@@ -8,8 +8,11 @@ import {
   METERS,
   msToPeriodEnd,
   POOLS,
+  PRICED,
+  PRICED_METERS,
   periodKey,
   resolveCaps,
+  resolveLines,
   resolveTrips,
   TRIPS,
 } from "../../src/worker/spend/caps.ts";
@@ -58,11 +61,14 @@ describe("caps: every number pinned", () => {
       convert_failed_min: 10,
       guest_drops_demo_off_day: 1000,
       guest_drops_files_stopped_day: 3000,
-      r2_class_a_day_warn: 50_000,
-      r2_class_a_day_trip: 250_000,
-      r2_class_b_day_warn: 500_000,
-      r2_storage_bytes_warn: 100_000_000_000,
-      d1_rows_day_warn: 1_500_000,
+      budget_month_usd: 10,
+      k: 3,
+      history_days: 14,
+      history_min_days: 7,
+      ceiling_multiple: 5,
+      ceiling_watch_pct: 70,
+      gauge_share_storage_pct: 5,
+      share_logs_pct: 10,
       workers_requests_day_warn: 1_000_000,
       workers_spike_multiple: 3,
       workers_spike_floor: 50_000,
@@ -74,7 +80,8 @@ describe("caps: every number pinned", () => {
 
   it("every var name is unique across caps, trips and switches, and every number has a reason", () => {
     const specs = [...Object.values(CAPS), ...Object.values(TRIPS)];
-    const vars = [...specs.map((s) => s.var), ...SWITCH_NAMES.map((n) => SWITCHES[n].var)];
+    const priced = Object.values(PRICED).flatMap((p) => [p.share.var, p.floorVar, p.ceilingVar]);
+    const vars = [...specs.map((s) => s.var), ...priced, ...SWITCH_NAMES.map((n) => SWITCHES[n].var)];
     expect(new Set(vars).size).toBe(vars.length);
     for (const s of specs) expect(s.reason.length).toBeGreaterThan(10);
   });
@@ -116,9 +123,60 @@ describe("resolving caps", () => {
   });
 
   it("trips read their vars the same way", () => {
-    expect(resolveTrips({}).r2_class_a_day_trip).toBe(250_000);
-    expect(resolveTrips({ BREAKER_R2_A_DAY_TRIP: "10" }).r2_class_a_day_trip).toBe(10);
-    expect(resolveTrips({ BREAKER_R2_A_DAY_TRIP: "x" }).r2_class_a_day_trip).toBe(250_000);
+    expect(resolveTrips({}).budget_month_usd).toBe(10);
+    expect(resolveTrips({ BREAKER_BUDGET_MONTH_USD: "25" }).budget_month_usd).toBe(25);
+    expect(resolveTrips({ BREAKER_BUDGET_MONTH_USD: "x" }).budget_month_usd).toBe(10);
+  });
+});
+
+describe("the $10 month split: each meter's daily floor", () => {
+  const t = resolveTrips({});
+
+  it("shares of the budget, with storage and logs, add to 100 percent", () => {
+    const shares = Object.values(PRICED).map((p) => p.share.default);
+    expect(shares.reduce((a, b) => a + b, 0) + t.gauge_share_storage_pct + t.share_logs_pct).toBe(100);
+  });
+
+  it("pins each floor: share times $10 over 30 days, divided by the unit price", () => {
+    const lines = resolveLines({}, t);
+    expect(Object.fromEntries(PRICED_METERS.map((m) => [m, lines[m].floor]))).toEqual({
+      container_seconds: 3724,
+      r2_class_a: 11_111,
+      r2_class_b: 46_296,
+      d1_writes: 33_333,
+      workflow_steps: 2083,
+      email: 95,
+    });
+  });
+
+  it("each floor costs its share of a day: $0.133 containers, $0.05 R2 A, $0.017 R2 B, $0.033 D1, $0.017 steps, $0.033 email", () => {
+    const lines = resolveLines({}, t);
+    const usd = Object.fromEntries(PRICED_METERS.map((m) => [m, (lines[m].floor * PRICED[m].unitUsd).toFixed(3)]));
+    expect(usd).toEqual({
+      container_seconds: "0.133",
+      r2_class_a: "0.050",
+      r2_class_b: "0.017",
+      d1_writes: "0.033",
+      workflow_steps: "0.017",
+      email: "0.033",
+    });
+  });
+
+  it("the default ceiling is 5 times the floor", () => {
+    const lines = resolveLines({}, t);
+    for (const m of PRICED_METERS) expect(lines[m].ceiling).toBe(lines[m].floor * 5);
+  });
+
+  it("the budget var rescales every floor; a floor or ceiling var replaces one", () => {
+    const doubled = resolveLines({ BREAKER_BUDGET_MONTH_USD: "20" }, resolveTrips({ BREAKER_BUDGET_MONTH_USD: "20" }));
+    expect(doubled.email.floor).toBe(190);
+    const set = resolveLines({ BREAKER_FLOOR_EMAIL: "100", BREAKER_CEILING_EMAIL: "1000" }, t);
+    expect(set.email).toEqual({ floor: 100, ceiling: 1000 });
+    expect(set.r2_class_a.floor).toBe(11_111);
+  });
+
+  it("a ceiling below the floor is raised to the floor, so the line can never sit under it", () => {
+    expect(resolveLines({ BREAKER_CEILING_EMAIL: "10" }, t).email).toEqual({ floor: 95, ceiling: 95 });
   });
 });
 
@@ -161,6 +219,19 @@ describe("docs/spend.md is the owner doc and names every switch, cap and line", 
     for (const [name, s] of Object.entries(TRIPS)) {
       const shown = s.default >= 1000 ? s.default.toLocaleString("en-US") : s.default.toString();
       expect(doc, name).toMatch(row(s.var, shown));
+    }
+  });
+
+  it("lists each priced meter with its share, floor and ceiling vars and its unit price", () => {
+    const t = resolveTrips({});
+    const lines = resolveLines({}, t);
+    for (const m of PRICED_METERS) {
+      const p = PRICED[m];
+      expect(doc, m).toMatch(row(m, p.share.default));
+      for (const v of [p.share.var, p.floorVar, p.ceilingVar]) expect(doc, v).toContain(v);
+      expect(doc, m).toContain(lines[m].floor.toLocaleString("en-US"));
+      expect(doc, m).toContain(`$${(p.unitUsd * 1e6).toFixed(2)} per million`);
+      expect(doc, m).toContain(lines[m].ceiling.toLocaleString("en-US"));
     }
   });
 });

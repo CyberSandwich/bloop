@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { readAnalytics } from "../../src/worker/spend/analytics.ts";
+import { type AnalyticsResult, dayValue, readAnalytics, readingsOf } from "../../src/worker/spend/analytics.ts";
 import { T0 } from "./spend-helpers.ts";
 
 type Body = { query: string; variables: Record<string, string> };
@@ -16,61 +16,82 @@ function fakeApi(data: Record<string, unknown>, calls: Body[] = []): typeof fetc
 }
 
 const deps = (f: typeof fetch) => ({ token: "t0ken", accountId: "acct", now: T0, fetch: f });
+const D = (date: string, sum: object, extra: object = {}) => ({ sum, dimensions: { date, ...extra } });
+
+const FULL = {
+  workersInvocationsAdaptive: {
+    w: [D("2026-11-25", { requests: 120 }), D("2026-11-24", { requests: 700 }), D("2026-11-20", { requests: 700 })],
+  },
+  durableObjectsInvocationsAdaptiveGroups: {
+    req: [D("2026-11-25", { requests: 55 })],
+    active: [D("2026-11-25", { activeTime: 8_000_000 })],
+  },
+  r2OperationsAdaptiveGroups: {
+    ops: [
+      D("2026-11-25", { requests: 10 }, { actionType: "PutObject" }),
+      D("2026-11-25", { requests: 5 }, { actionType: "UploadPart" }),
+      D("2026-11-25", { requests: 7 }, { actionType: "GetObject" }),
+      D("2026-11-24", { requests: 3 }, { actionType: "GetObject" }),
+      D("2026-11-25", { requests: 99 }, { actionType: "DeleteObject" }),
+    ],
+  },
+  r2StorageAdaptiveGroups: {
+    storage: [
+      { max: { payloadSize: 100, metadataSize: 5 }, dimensions: { bucketName: "a" } },
+      { max: { payloadSize: 1, metadataSize: 1 }, dimensions: { bucketName: "a" } },
+      { max: { payloadSize: 40, metadataSize: 0 }, dimensions: { bucketName: "b" } },
+    ],
+  },
+  d1AnalyticsAdaptiveGroups: { d1: [D("2026-11-25", { rowsWritten: 321 }), D("2026-11-25", { rowsWritten: 9 })] },
+};
 
 describe("analytics client", () => {
-  it("reads every dataset into one set of readings", async () => {
+  it("reads every dataset into daily series, summing rows that share a date and classing R2 actions", async () => {
     const calls: Body[] = [];
-    const api = fakeApi(
-      {
-        workersInvocationsAdaptive: {
-          today: [{ sum: { requests: 120, errors: 3 } }],
-          week: [{ sum: { requests: 700 } }],
-        },
-        durableObjectsInvocationsAdaptiveGroups: {
-          requests: [{ sum: { requests: 55 } }],
-          active: [{ sum: { activeTime: 8_000_000 } }],
-        },
-        r2OperationsAdaptiveGroups: {
-          ops: [
-            { sum: { requests: 10 }, dimensions: { actionType: "PutObject" } },
-            { sum: { requests: 5 }, dimensions: { actionType: "UploadPart" } },
-            { sum: { requests: 7 }, dimensions: { actionType: "GetObject" } },
-            { sum: { requests: 99 }, dimensions: { actionType: "DeleteObject" } },
-          ],
-        },
-        r2StorageAdaptiveGroups: {
-          storage: [
-            { max: { payloadSize: 100, metadataSize: 5 }, dimensions: { bucketName: "a" } },
-            { max: { payloadSize: 1, metadataSize: 1 }, dimensions: { bucketName: "a" } },
-            { max: { payloadSize: 40, metadataSize: 0 }, dimensions: { bucketName: "b" } },
-          ],
-        },
-        d1AnalyticsAdaptiveGroups: { d1: [{ sum: { rowsWritten: 321 } }] },
-      },
-      calls,
-    );
-    const result = await readAnalytics(deps(api));
+    const result = await readAnalytics(deps(fakeApi(FULL, calls)));
     expect(result.failed).toEqual([]);
-    expect(result.readings).toEqual({
+    expect(result.daily).toEqual({
+      workersRequests: { "2026-11-25": 120, "2026-11-24": 700, "2026-11-20": 700 },
+      doRequests: { "2026-11-25": 55 },
+      doGbSeconds: { "2026-11-25": 1 },
+      r2ClassA: { "2026-11-25": 15 },
+      r2ClassB: { "2026-11-25": 7, "2026-11-24": 3 },
+      d1RowsWritten: { "2026-11-25": 330 },
+    });
+    expect(result.r2StorageBytes).toBe(145);
+    expect(calls).toHaveLength(5);
+    expect(calls[0]?.variables.account).toBe("acct");
+    // A month of days back from today's start, to now.
+    expect(calls[0]?.variables.from).toBe("2026-10-25T00:00:00.000Z");
+    expect(calls[0]?.variables.to).toBe(new Date(T0).toISOString());
+  });
+
+  it("today's readings and the trailing 7-day mean come from the series", async () => {
+    const result = await readAnalytics(deps(fakeApi(FULL)));
+    expect(dayValue(result, "r2ClassB", T0)).toBe(7);
+    expect(dayValue(result, "r2ClassA", T0 - 86_400_000 * 3)).toBe(0);
+    expect(readingsOf(result, T0)).toEqual({
       workersRequests: 120,
-      workersErrors: 3,
-      workersRequests7dMean: 100,
+      workersRequests7dMean: 200,
       doRequests: 55,
       doGbSeconds: 1,
       r2ClassA: 15,
       r2ClassB: 7,
+      d1RowsWritten: 330,
       r2StorageBytes: 145,
-      d1RowsWritten: 321,
     });
-    expect(calls).toHaveLength(5);
-    expect(calls[0]?.variables.account).toBe("acct");
-    expect(calls[0]?.variables.from).toBe("2026-11-25T00:00:00.000Z");
+  });
+
+  it("a series that was not read is undefined, not zero", () => {
+    const none: AnalyticsResult = { daily: {}, failed: [] };
+    expect(dayValue(none, "r2ClassA", T0)).toBeUndefined();
+    expect(readingsOf(none, T0)).toEqual({});
   });
 
   it("one dataset failing leaves the rest, and names the failure without the token", async () => {
-    const api = fakeApi({ d1AnalyticsAdaptiveGroups: { d1: [{ sum: { rowsWritten: 9 } }] } });
+    const api = fakeApi({ d1AnalyticsAdaptiveGroups: FULL.d1AnalyticsAdaptiveGroups });
     const result = await readAnalytics(deps(api));
-    expect(result.readings).toEqual({ d1RowsWritten: 9 });
+    expect(result.daily).toEqual({ d1RowsWritten: { "2026-11-25": 330 } });
     expect(result.failed.map((f) => f.dataset).sort()).toEqual([
       "durableObjects",
       "r2Operations",
@@ -90,7 +111,7 @@ describe("analytics client", () => {
     ]) {
       const result = await readAnalytics(deps(f));
       expect(result.failed).toHaveLength(5);
-      expect(result.readings).toEqual({});
+      expect(result.daily).toEqual({});
     }
   });
 

@@ -31,6 +31,7 @@ export default {
         store,
         vars: env,
         now: Date.now,
+        adminUrl: `${env.PUBLIC_ORIGIN}/admin`,
         notify: async (alert) => console.log(JSON.stringify({ evt: "breaker", ...alert })),
       });
       return Response.json({ report, rows: Object.fromEntries(rows) });

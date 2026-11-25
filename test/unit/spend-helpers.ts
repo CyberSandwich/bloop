@@ -36,14 +36,21 @@ export interface Rig {
   wake(): Ledger;
 }
 
-export function rig(vars: Record<string, unknown> = {}): Rig {
+/** `bornAt` is when the guard first woke; by default 20 days before T0, so history counts as established. */
+export function rig(vars: Record<string, unknown> = {}, bornAt = T0 - 20 * DAY): Rig {
   const db = new DatabaseSync(":memory:");
-  return { db, ledger: new Ledger(sqlOver(db)), caps: resolveCaps(vars), wake: () => new Ledger(sqlOver(db)) };
+  const clock = () => bornAt;
+  return {
+    db,
+    ledger: new Ledger(sqlOver(db), clock),
+    caps: resolveCaps(vars),
+    wake: () => new Ledger(sqlOver(db), clock),
+  };
 }
 
 /** A SpendRpc backed by one Ledger and a settable clock. */
-export function fakeGuard(vars: Record<string, unknown> = {}, start = T0) {
-  const r = rig(vars);
+export function fakeGuard(vars: Record<string, unknown> = {}, start = T0, bornAt = T0 - 20 * DAY) {
+  const r = rig(vars, bornAt);
   const clock = { now: start };
   let overrides: Record<string, number> = {};
   const caps = () => resolveCaps(vars, overrides);
@@ -64,6 +71,10 @@ export function fakeGuard(vars: Record<string, unknown> = {}, start = T0) {
       r.ledger.setOverrides(v);
     },
     analyticsRun: async (failed) => r.ledger.analyticsRun(failed),
+    unalert: async (k) => r.ledger.unalert(k),
+    history: async (days) => r.ledger.history(clock.now, days),
+    setReport: async (json) => r.ledger.setBlob("report", json),
+    report: async () => r.ledger.blob("report"),
   };
   return { guard, clock, ledger: r.ledger, rig: r };
 }

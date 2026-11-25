@@ -106,6 +106,20 @@ describe("the client fails closed and the breaker latches over the real object",
     });
   });
 
+  it("the object keeps daily history for the learning and stores the breaker's report for the admin route", async () => {
+    await sameDay(async () => {
+      const before = (await rpc("history", 32)).series.email[0];
+      await rpc("record", "email", 3);
+      const history = await rpc("history", 32);
+      expect(history.series.email).toHaveLength(33);
+      expect(history.series.email[0]).toBe(before + 3);
+      expect(history.ageDays).toBe(0);
+      const stored = JSON.parse(await rpc("report"));
+      expect(stored.meters.map((m: { meter: string }) => m.meter)).toContain("container_seconds");
+      expect(stored.adminUrl).toMatch(/\/admin$/);
+    });
+  });
+
   it("an override lowers a cap in the object at once and a bogus name is ignored", async () => {
     await sameDay(async () => {
       await rpc("setOverrides", { export_user_day: 1, not_a_cap: 0 });
