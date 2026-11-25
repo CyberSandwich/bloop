@@ -39,3 +39,12 @@ export const fetchLink = (url: string, init: RequestInit = {}) => fetch(url, { r
 export const problemOf = async (res: Response) => (await res.json()) as { status: number; code: string };
 
 export const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
+
+/**
+ * Waits until at least `needMs` remain in the current rate-limit window. Local bindings count in windows aligned to
+ * the wall clock, so a burst that straddles a boundary gets two budgets and passes a limit it should hit.
+ */
+export async function inOneWindow(periodSeconds = 60, needMs = 10_000): Promise<void> {
+  const left = periodSeconds * 1000 - (Date.now() % (periodSeconds * 1000));
+  if (left < needMs) await sleep(left + 50);
+}
