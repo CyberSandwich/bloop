@@ -21,3 +21,5 @@ ADMIN_EMAILS=admin@example.test
 TEST_EMAILS=test@example.test
 # Mail stays in memory and is read at /api/dev/mailbox; config refuses it unless PUBLIC_ORIGIN is local.
 DEV_MAILBOX=1
+# Local R2 has no S3 endpoint to presign against; set a local origin to route presigned URLs to the dev proxy. Config refuses it on a deployed origin.
+R2_DEV_ENDPOINT=
