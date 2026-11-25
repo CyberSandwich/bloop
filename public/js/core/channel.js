@@ -7,14 +7,9 @@ import {
   COALESCE_MS,
   CONNECT_TIMEOUT_MS,
   jitter,
-  MISSED_PINGS,
-  PING_MS,
-  PROBE_MS,
-  pollDelay,
   reconnectDelay,
-  SILENCE_MS,
   shouldPoll,
-} from "./timing.js";
+} from "./channel-timing.js";
 
 /** Errors after which the credential is dead and retrying is pointless. */
 export const FATAL = /** @type {ReadonlySet<ErrorCode>} */ (
@@ -28,50 +23,24 @@ export const refusal = (code) =>
 /** The tab's memory that its network swallows the socket; not a `bloop.` key, so a session's end keeps it. */
 const BLOCKED_KEY = "ws";
 
-/** A server-side failure: the 5xx answers, which a page reads as one rule (poll and boot alike). @param {string} code */
-export const isDown = (code) => code === "service_down" || code === "internal";
-
-/**
- * Whether this is the second server failure in a row: one 5xx is not yet "bloop isn't responding". Any other answer
- * (ok, offline, blocked, a refusal) resets the count.
- * @returns {(down: boolean) => boolean}
- */
-export function downGate() {
-  let run = 0;
-  return (down) => {
-    run = down ? run + 1 : 0;
-    return run >= 2;
-  };
-}
-
 /** @typedef {{t: string, [key: string]: unknown}} Frame */
 
 /** @param {ChannelOptions} o */
 export function openChannel(o) {
   let closed = false;
   let failures = 0;
-  let pollFailures = 0;
   let live = false;
   /** @type {SocketLike | null} */
   let socket = null;
   /** @type {ReturnType<typeof setTimeout> | null} */
   let retryTimer = null;
   /** @type {ReturnType<typeof setTimeout> | null} */
-  let pollTimer = null;
-  /** @type {ReturnType<typeof setInterval> | null} */
-  let pingTimer = null;
-  /** @type {ReturnType<typeof setTimeout> | null} */
   let connectTimer = null;
-  /** @type {ReturnType<typeof setTimeout> | null} */
-  let probeTimer = null;
-  /** Bumped when polling starts or stops: a poll answered for an older loop ends there. */
-  let pollGen = 0;
-  let polling = false;
+  /** The ping rule, loaded when a socket opens. @type {ReturnType<typeof import("./health.js").watch> | null} */
+  let health = null;
   /** Connect timeouts in a row with no socket ever opening. */
   let timeouts = 0;
   let lastHeard = 0;
-  let pingedAt = 0;
-  let missed = 0;
   /** State frames seen: a read older than a push is stale. */
   let pushed = 0;
   /** The last view's state: how often a poll is worth making. */
@@ -80,97 +49,66 @@ export function openChannel(o) {
   let sendTimer = null;
   /** Frames sent inside the window, the latest of each type. @type {Map<string, Frame>} */
   const pending = new Map();
-  const gate = downGate();
-  const hidden = o.hidden ?? (() => /** @type {any} */ (globalThis).document?.hidden === true);
-  const memory = o.storage === undefined ? safeSession() : o.storage;
-
-  /** @returns {Pick<Storage, "getItem" | "setItem" | "removeItem"> | null} */
-  function safeSession() {
+  const hidden = () => /** @type {any} */ (globalThis).document.hidden;
+  /** The tab's blocked flag: read with no argument, set or cleared with one. @param {boolean} [set] */
+  const flag = (set) => {
     try {
-      return globalThis.sessionStorage ?? null;
-    } catch {
-      return null;
-    }
-  }
-  const blocked = () => {
-    try {
-      return memory?.getItem(BLOCKED_KEY) === "blocked";
-    } catch {
-      return false;
-    }
-  };
-  const remember = (/** @type {boolean} */ on) => {
-    try {
-      if (on) memory?.setItem(BLOCKED_KEY, "blocked");
-      else memory?.removeItem(BLOCKED_KEY);
+      if (set === undefined) return sessionStorage.getItem(BLOCKED_KEY) === "blocked";
+      if (set) sessionStorage.setItem(BLOCKED_KEY, "blocked");
+      else sessionStorage.removeItem(BLOCKED_KEY);
     } catch {
       // storage blocked: the next screen probes first
     }
+    return false;
   };
 
   const clear = () => {
-    for (const t of [retryTimer, pollTimer, connectTimer, probeTimer]) if (t) clearTimeout(t);
-    if (pingTimer) clearInterval(pingTimer);
-    if (sendTimer) clearTimeout(sendTimer);
-    retryTimer = pollTimer = pingTimer = connectTimer = probeTimer = sendTimer = null;
+    for (const t of [retryTimer, connectTimer, sendTimer]) if (t) clearTimeout(t);
+    health?.stop();
+    retryTimer = connectTimer = sendTimer = health = null;
     pending.clear();
   };
 
-  function stopPolling() {
-    if (pollTimer) clearTimeout(pollTimer);
-    pollTimer = null;
-    polling = false;
-    pollGen += 1;
-    pollFailures = 0;
-  }
-
-  async function poll() {
-    pollTimer = null;
-    if (closed || live || !polling) return;
-    const gen = pollGen;
-    const res = await o.api.get(o.statePath, o.credential);
-    if (closed || live || gen !== pollGen) return;
-    let retryAfter = 0;
-    if (res.ok) {
-      pollFailures = 0;
-      gate(false);
-      lastState = res.value?.state ?? lastState;
-      o.onLink("ok");
-      o.onView(res.value);
-    } else if (FATAL.has(res.error)) {
-      stop();
-      o.onError(res.error);
-      return;
-    } else {
-      pollFailures += 1;
-      retryAfter = res.retryAfter ?? 0;
-      const sure = gate(isDown(res.error));
-      if (res.error === "offline") o.onLink("offline");
-      else if (res.error === "network_blocked") o.onLink("blocked");
-      else if (sure) o.onLink("down");
-    }
-    pollTimer = setTimeout(poll, pollDelay(pollFailures, lastState, hidden(), retryAfter));
-  }
-
+  /** The polling fallback loads the first time it is needed. @type {Promise<ReturnType<typeof import("./poll.js").createPoller>> | null} */
+  let poller = null;
+  const poll = () =>
+    (poller ??= import("./poll.js").then((m) =>
+      m.createPoller({
+        api: o.api,
+        path: o.statePath,
+        auth: o.credential,
+        hidden,
+        state: () => lastState,
+        active: () => !closed && !live,
+        fatal: (code) => {
+          if (!FATAL.has(code)) return false;
+          stop();
+          o.onError(code);
+          return true;
+        },
+        onView: (view) => {
+          lastState = view?.state ?? lastState;
+          o.onView(view);
+        },
+        onLink: o.onLink,
+      }),
+    ));
   /** Polls now; one loop at a time. */
-  function startPolling() {
-    if (polling || closed || live) return;
-    polling = true;
-    pollGen += 1;
-    pollTimer = setTimeout(poll, 0);
-  }
+  const startPolling = () => {
+    if (!closed && !live) void poll().then((p) => !closed && !live && p.start());
+  };
+  const stopPolling = () => void poller?.then((p) => p.stop());
 
   function lost() {
     if (closed) return;
     live = false;
-    for (const t of [connectTimer, probeTimer]) if (t) clearTimeout(t);
-    if (pingTimer) clearInterval(pingTimer);
-    pingTimer = connectTimer = probeTimer = null;
-    socket = null;
+    if (connectTimer) clearTimeout(connectTimer);
+    health?.stop();
+    connectTimer = health = socket = null;
     pending.clear();
     failures += 1;
     if (shouldPoll(failures)) startPolling();
-    retryTimer = setTimeout(connect, blocked() ? jitter(BLOCKED_PROBE_MS) : reconnectDelay(failures));
+    retryTimer = setTimeout(connect, flag() ? jitter(BLOCKED_PROBE_MS) : reconnectDelay(failures));
   }
 
   function connect() {
@@ -182,22 +120,20 @@ export function openChannel(o) {
     ws.onopen = () => {
       opened = true;
       lastHeard = Date.now();
-      pingedAt = 0;
-      missed = 0;
       ws.send(JSON.stringify({ v: 1, t: "hello", [o.helloKey]: o.credential }));
-      // Two pings in a row with no frame back drop it. A hidden tab's timers are throttled, so it is judged by the
-      // longer silence instead.
-      pingTimer = setInterval(() => {
-        if (hidden()) {
-          missed = 0;
-          if (Date.now() - lastHeard > SILENCE_MS) return drop(ws);
-        } else {
-          missed = pingedAt && lastHeard < pingedAt ? missed + 1 : 0;
-          if (missed >= MISSED_PINGS) return drop(ws);
-        }
-        pingedAt = Date.now();
-        ws.send(JSON.stringify({ v: 1, t: "ping" }));
-      }, PING_MS);
+      void import("./health.js").then((m) => {
+        if (socket !== ws) return;
+        health = m.watch({
+          ws,
+          heard: () => lastHeard,
+          hidden,
+          drop,
+          replace: (w) => {
+            drop(w);
+            nudge();
+          },
+        });
+      });
     };
     ws.onmessage = (e) => {
       lastHeard = Date.now();
@@ -214,9 +150,9 @@ export function openChannel(o) {
         live = true;
         failures = 0;
         timeouts = 0;
-        for (const t of [connectTimer, probeTimer]) if (t) clearTimeout(t);
-        connectTimer = probeTimer = null;
-        remember(false);
+        if (connectTimer) clearTimeout(connectTimer);
+        connectTimer = null;
+        flag(false);
         stopPolling();
         o.onLink("ok");
       }
@@ -236,7 +172,7 @@ export function openChannel(o) {
       connectTimer = null;
       if (socket !== ws || live) return;
       if (!opened) timeouts += 1;
-      if (timeouts >= 2) remember(true);
+      if (timeouts >= 2) flag(true);
       startPolling();
       drop(ws);
     }, CONNECT_TIMEOUT_MS);
@@ -262,7 +198,7 @@ export function openChannel(o) {
   }
 
   // A tab that already found its socket blocked polls from the first second and tries the socket once a minute.
-  if (blocked()) {
+  if (flag()) {
     startPolling();
     retryTimer = setTimeout(connect, jitter(BLOCKED_PROBE_MS));
   } else connect();
@@ -282,7 +218,6 @@ export function openChannel(o) {
       }
       return true;
     },
-    isLive: () => live,
     nudge,
     refresh,
     /**
@@ -290,12 +225,9 @@ export function openChannel(o) {
      * hello carries the state (no read), or, polling, the next poll comes now.
      */
     wake() {
-      if (live) return probe();
+      if (live) return health?.probe();
       nudge();
-      if (pollTimer) {
-        clearTimeout(pollTimer);
-        pollTimer = setTimeout(poll, 0);
-      }
+      void poller?.then((p) => p.soon());
     },
     stop,
   };
@@ -315,20 +247,6 @@ export function openChannel(o) {
     if (retryTimer) clearTimeout(retryTimer);
     retryTimer = null;
     connect();
-  }
-
-  /** A socket that reports open after a long quiet may be dead (a suspended tab): ask, and replace it if nothing answers. */
-  function probe() {
-    const ws = socket;
-    if (closed || !live || !ws || probeTimer || Date.now() - lastHeard <= PING_MS) return;
-    const asked = Date.now();
-    ws.send(JSON.stringify({ v: 1, t: "ping" }));
-    probeTimer = setTimeout(() => {
-      probeTimer = null;
-      if (socket !== ws || lastHeard >= asked) return;
-      drop(ws);
-      nudge();
-    }, PROBE_MS);
   }
 
   /** Fetch the state once, whatever the socket says. */

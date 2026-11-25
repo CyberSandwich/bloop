@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
+import { RECONNECT_DELAYS, reconnectDelay, shouldPoll } from "../../public/js/core/channel-timing.js";
 import { ago, clock, codeFromSearch, qrLabel, sizeLabel, spelled, splitName } from "../../public/js/core/format.js";
-import { POLL_MS, pollDelay, RECONNECT_DELAYS, reconnectDelay, shouldPoll } from "../../public/js/core/timing.js";
+import { POLL_MS, pollDelay } from "../../public/js/core/poll.js";
 import { typedCode, typedValid } from "../../public/js/core/typed.js";
 
 describe("typed code formatting", () => {
