@@ -13,7 +13,17 @@ declare const document: {
 declare const innerWidth: number;
 declare const getComputedStyle: (el: El) => { position: string; display: string; visibility: string; fontSize: string };
 
-const PAGES = ["/privacy", "/terms", "/security"] as const;
+// The contracts and the articles share one doc layout (design.md section 6, Site build).
+const PAGES = [
+  "/privacy",
+  "/terms",
+  "/security",
+  "/articles",
+  "/articles/how-bloop-works",
+  "/articles/threat-model-for-it-teams",
+  "/articles/what-stays-on-the-pc",
+  "/articles/data-and-retention",
+] as const;
 const WIDTHS = [1440, 834, 600, 390] as const;
 
 for (const width of WIDTHS) {
@@ -110,5 +120,36 @@ test.describe("legal layout at 390", () => {
     const cell = page.locator("#retention td").first();
     expect(await cell.evaluate((el) => getComputedStyle(el as unknown as El).display)).toBe("block");
     expect(await page.locator(".toc").evaluate((el) => getComputedStyle(el as unknown as El).position)).toBe("static");
+  });
+
+  test("the phone menu lists Terms and Articles, and Terms opens the Terms of Use", async ({ page }) => {
+    await page.goto("/");
+    const nav = page.getByRole("navigation", { name: "Primary" });
+    await nav.getByRole("button", { name: "Menu" }).click();
+    await expect(nav.getByRole("link", { name: "Articles" })).toBeVisible();
+    await nav.getByRole("link", { name: "Terms" }).click();
+    await expect(page.locator("h1")).toHaveText("Terms of Use");
+  });
+});
+
+test.describe("structured data and previews", () => {
+  for (const path of ["/", "/privacy", "/articles/how-bloop-works"]) {
+    test(`${path} carries JSON-LD and canonical tags and reports no CSP or Trusted Types violation`, async ({
+      page,
+    }) => {
+      const violations: string[] = [];
+      page.on("console", (m) => {
+        if (m.text().includes("Content Security Policy") || m.text().includes("TrustedHTML")) violations.push(m.text());
+      });
+      await page.goto(path);
+      await expect(page.locator('script[type="application/ld+json"]')).toHaveCount(1, { timeout: 5000 });
+      await expect(page.locator('link[rel="canonical"]')).toHaveAttribute("href", `https://bloop.here${path}`);
+      expect(violations).toEqual([]);
+    });
+  }
+
+  test("an article states its reading time under its title", async ({ page }) => {
+    await page.goto("/articles/how-bloop-works");
+    await expect(page.locator(".meta")).toContainText(/Published .* · \d+ min read/);
   });
 });

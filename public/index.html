@@ -4,9 +4,12 @@
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
     <meta name="color-scheme" content="light">
+    <!-- build:seo -->
     <title>bloop: Present Anywhere</title>
     <meta name="description" content="Scan the QR code, approve on your phone, and present.">
+    <link rel="canonical" href="https://bloop.here/">
     <meta property="og:type" content="website">
+    <meta property="og:site_name" content="bloop">
     <meta property="og:url" content="https://bloop.here/">
     <meta property="og:title" content="bloop: Present Anywhere">
     <meta property="og:description" content="Scan the QR code, approve on your phone, and present.">
@@ -15,6 +18,11 @@
     <meta property="og:image:height" content="630">
     <meta property="og:image:alt" content="bloop: Present Anywhere">
     <meta name="twitter:card" content="summary_large_image">
+    <meta name="twitter:title" content="bloop: Present Anywhere">
+    <meta name="twitter:description" content="Scan the QR code, approve on your phone, and present.">
+    <meta name="twitter:image" content="https://bloop.here/og.png">
+    <script type="application/ld+json">{"@context":"https://schema.org","@graph":[{"@type":"Organization","@id":"https://bloop.here/#organization","name":"bloop","url":"https://bloop.here/","logo":"https://bloop.here/apple-touch-icon.png","email":"hi@bloop.here"},{"@type":"WebSite","@id":"https://bloop.here/#website","name":"bloop","url":"https://bloop.here/","description":"Scan the QR code, approve on your phone, and present.","inLanguage":"en-US","publisher":{"@id":"https://bloop.here/#organization"}}]}</script>
+    <!-- /build:seo -->
     <link rel="icon" href="/favicon.svg" type="image/svg+xml">
     <link rel="apple-touch-icon" href="/apple-touch-icon.png">
     <link rel="preload" href="/fonts/inter-latin.woff2" as="font" type="font/woff2" crossorigin>
@@ -25,12 +33,15 @@
   <body class="page-site">
     <a class="skip" href="#main">Skip to Content</a>
     <div class="sentinel" id="sentinel"></div>
+    <!-- build:nav -->
     <header class="nav">
       <a class="brand nav-logo glass" href="/"><img src="/favicon.svg" width="32" height="32" alt="">bloop</a>
       <nav class="nav-pill glass" aria-label="Primary">
         <ul class="nav-links glass" id="nav-links" popover>
           <li><a href="/#features">Features</a></li>
+          <li><a href="/articles">Articles</a></li>
           <li><a href="/privacy">Privacy</a></li>
+          <li><a href="/terms">Terms</a></li>
           <li><a href="/security">Security</a></li>
         </ul>
         <a class="btn waitlist" href="https://tally.so/r/Yj4KAN?source=landing" data-waitlist>Waitlist</a>
@@ -39,6 +50,7 @@
         </button>
       </nav>
     </header>
+    <!-- /build:nav -->
 
     <main id="main">
       <section class="hero" aria-labelledby="hero-h">
@@ -177,6 +189,7 @@
       </section>
     </main>
 
+    <!-- build:footer -->
     <footer class="footer">
       <div class="footer-top">
         <div class="footer-about">
@@ -184,6 +197,7 @@
           <p><strong>Present anywhere.</strong> <b class="name">bloop</b> puts your files on a shared screen from your phone. The screen gets only the items you approve, never your account.</p>
         </div>
         <ul class="footer-links">
+          <li><a href="/articles">Articles</a></li>
           <li><a href="/privacy">Privacy</a></li>
           <li><a href="/terms">Terms</a></li>
           <li><a href="/security">Security</a></li>
@@ -193,5 +207,6 @@
       </div>
       <p class="footer-legal">© 2026 bloop</p>
     </footer>
+    <!-- /build:footer -->
   </body>
 </html>

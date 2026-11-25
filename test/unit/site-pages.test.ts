@@ -1,14 +1,22 @@
-import { readFileSync } from "node:fs";
+import { readdirSync, readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
 import { EXTENSION_TYPES } from "../../public/js/shared/names.js";
 
 const read = (rel: string) => readFileSync(fileURLToPath(new URL(`../../${rel}`, import.meta.url)), "utf8");
-const SITE = ["index.html", "security.html", "privacy.html", "terms.html", "404.html"] as const;
-// The doc pages (design.md section 6, Legal pages): they also load legal.css and legal.js.
+// The articles are built from content/articles/ (design.md section 6, Site build): the index and one page each.
+const ARTICLES = [
+  "articles.html",
+  ...readdirSync(fileURLToPath(new URL("../../content/articles", import.meta.url)))
+    .filter((f) => f.endsWith(".md") && f !== "index.md")
+    .map((f) => `articles/${f.replace(/\.md$/, ".html")}`),
+];
+// The contracts (design.md section 6, Legal pages).
 const LEGAL = ["privacy.html", "terms.html", "security.html"] as const;
-const isLegal = (page: string) => (LEGAL as readonly string[]).includes(page);
-const ALL = [...SITE, "s.html", "a.html", "code.html"] as const;
+const SITE = ["index.html", ...LEGAL, "404.html", ...ARTICLES];
+// Every doc page also loads legal.css and legal.js.
+const isDoc = (page: string) => (LEGAL as readonly string[]).includes(page) || ARTICLES.includes(page);
+const ALL = [...SITE, "s.html", "a.html", "code.html"];
 const VOID = new Set(["meta", "link", "img", "source", "input", "br", "hr", "wbr"]);
 const CSS_FILES = ["base.css", "site.css", "legal.css", "app.css"] as const;
 const SKIP_TAGS = new Set(["head", "script", "style", "svg", "noscript", "template"]);
@@ -83,7 +91,12 @@ describe.each(SITE)("%s under the strict CSP", (page) => {
   const html = read(`public/${page}`);
 
   it("has no inline script, inline style, style attribute or event handler", () => {
-    expect(html).not.toMatch(/<script(?![^>]*\ssrc=)/i);
+    // A JSON-LD block is data: the browser never runs it, so script-src and Trusted Types do not apply to it.
+    for (const m of html.matchAll(/<script(?![^>]*\ssrc=)([^>]*)>([\s\S]*?)<\/script>/gi)) {
+      expect(m[1]?.trim()).toBe('type="application/ld+json"');
+      expect(() => JSON.parse(m[2] ?? "")).not.toThrow();
+    }
+    expect(html).not.toMatch(/<script(?![^>]*\ssrc=)(?![^>]*type="application\/ld\+json")/i);
     expect(html).not.toMatch(/<style/i);
     expect(html).not.toMatch(/\sstyle\s*=/i);
     expect(html).not.toMatch(/\son[a-z]+\s*=/i);
@@ -92,6 +105,8 @@ describe.each(SITE)("%s under the strict CSP", (page) => {
 
   it("loads only same-origin scripts, styles and images", () => {
     for (const m of html.matchAll(/<(?:script|link|img|source)\b[^>]*?(?:src|href|srcset)="([^"]+)"/g)) {
+      // The canonical link names the page itself; it fetches nothing.
+      if (m[0].includes('rel="canonical"')) continue;
       expect((m[1] as string).startsWith("http"), m[1]).toBe(false);
     }
   });
@@ -568,7 +583,7 @@ describe("site scripts under the strict CSP", () => {
   it("every site page loads only its own script: the landing site.js, the doc pages legal.js, the 404 none", () => {
     for (const page of SITE) {
       const scripts = [...read(`public/${page}`).matchAll(/<script[^>]*src="([^"]+)"/g)].map((m) => m[1]);
-      expect(scripts, page).toEqual(page === "index.html" ? ["/js/site.js"] : isLegal(page) ? ["/js/legal.js"] : []);
+      expect(scripts, page).toEqual(page === "index.html" ? ["/js/site.js"] : isDoc(page) ? ["/js/legal.js"] : []);
     }
   });
 });
@@ -587,7 +602,19 @@ describe("site chrome: one nav and one footer on every site page", () => {
     expect(html).toContain('<nav class="nav-pill glass" aria-label="Primary">');
     const current = [...html.matchAll(/href="([^"]+)" aria-current="page"/g)].map((m) => m[1]);
     expect(new Set(current).size).toBeLessThanOrEqual(1);
-    if (current[0]) expect(current[0]).toBe(`/${page.replace(".html", "")}`);
+    // An article marks the Articles link: the section it sits in.
+    if (current[0]) expect(current[0]).toBe(ARTICLES.includes(page) ? "/articles" : `/${page.replace(".html", "")}`);
+  });
+
+  it.each(SITE)("%s lists Terms and Articles in the menu and the footer", (page) => {
+    const html = read(`public/${page}`);
+    for (const part of [
+      between(html, /<ul class="nav-links/, "</ul>"),
+      between(html, /<ul class="footer-links">/, "</ul>"),
+    ]) {
+      expect(part).toContain(">Terms</a>");
+      expect(part).toContain(">Articles</a>");
+    }
   });
 
   it.each(SITE)("%s links no Source repository and no /it", (page) => {
@@ -602,6 +629,7 @@ describe("site chrome: one nav and one footer on every site page", () => {
     ["privacy.html", "privacy"],
     ["terms.html", "terms"],
     ["404.html", "404"],
+    ...ARTICLES.map((page) => [page, "articles"]),
   ])(
     "%s: every Waitlist link opens the form with source=%s, in the same tab, and carries data-waitlist",
     (page, source) => {
@@ -621,7 +649,7 @@ describe("site chrome: one nav and one footer on every site page", () => {
   it.each(SITE)("%s names hi@bloop.here, security@ only on /security, and no placeholder", (page) => {
     const html = read(`public/${page}`);
     expect(html).not.toMatch(/bloop\.example/);
-    const allowed = ["security.html", "privacy.html"].includes(page)
+    const allowed = ["security.html", "privacy.html", ...ARTICLES].includes(page)
       ? ["hi@bloop.here", "security@bloop.here"]
       : ["hi@bloop.here"];
     for (const m of html.matchAll(/[\w.+-]+@[\w-]+(\.[\w-]+)+/g)) expect(allowed).toContain(m[0]);
@@ -697,7 +725,7 @@ describe("the stylesheets: base.css, then the page's own (design.md section 11)"
   const defines = (file: string, cls: string) => new RegExp(`\\.${cls}(?![\\w-])`).test(css[file] ?? "");
 
   it.each(SITE)("%s links base.css then site.css (then legal.css on a doc page), and nothing else", (page) => {
-    const own = isLegal(page) ? ["/css/legal.css"] : [];
+    const own = isDoc(page) ? ["/css/legal.css"] : [];
     expect(links(read(`public/${page}`))).toEqual(["/css/base.css", "/css/site.css", ...own]);
   });
 
@@ -716,7 +744,7 @@ describe("the stylesheets: base.css, then the page's own (design.md section 11)"
       [...read(`public/${page}`).matchAll(/class="([^"]+)"/g)].flatMap((m) => (m[1] ?? "").split(/\s+/)),
     );
     for (const cls of classes) {
-      const own = defines("base.css", cls) || defines("site.css", cls) || (isLegal(page) && defines("legal.css", cls));
+      const own = defines("base.css", cls) || defines("site.css", cls) || (isDoc(page) && defines("legal.css", cls));
       if (!own) expect(unstyled.has(cls) && !defines("app.css", cls), cls).toBe(true);
     }
   });
@@ -1001,45 +1029,38 @@ describe("the doc pages: one .legal layout (design.md section 6, Legal pages)", 
       ),
     ].map((m) => ({ id: m[1] ?? "", heading: m[2] ?? "", body: m[3] ?? "" }));
 
-  it.each(LEGAL)(
-    "%s carries the header block: its effective date and version are its latest change, each older version archived",
-    (page) => {
-      const html = pages[page] ?? "";
-      const meta = between(html, /<p class="meta">/, "</p>");
-      const [, iso, us] = /<time datetime="(\d{4}-\d{2}-\d{2})">([A-Z][a-z]+ \d{1,2}, \d{4})<\/time>/.exec(meta) ?? [];
-      expect(new Date(`${us} UTC`).toISOString().slice(0, 10)).toBe(iso);
-      // /security has no change list: it stays Version 1.0, its status table no term of use.
-      if (page === "security.html") {
-        expect(visibleText(meta)).toMatch(/Version 1\.0 · No previous versions$/);
-        return;
-      }
-      // Privacy and Terms list every version under #changes, the latest first; an older one links its dated copy.
-      const changes = [
-        ...between(html, /<section id="changes"/, "</section>").matchAll(
-          /<li>(?:<a href="\/([\w-]+)">)?Version (\d+\.\d+)(?:<\/a>)?, <time datetime="([\d-]+)">/g,
-        ),
-      ].map((m) => ({ archive: m[1], version: m[2], iso: m[3] }));
-      expect(changes.length).toBeGreaterThan(0);
-      const [latest, ...older] = changes;
-      expect(latest?.archive).toBeUndefined();
-      expect(latest?.iso).toBe(iso);
-      expect(visibleText(meta)).toMatch(
-        new RegExp(
-          `Version ${(latest?.version ?? "").replace(".", "\\.")} · ${older.length ? "Previous" : "No previous"} versions$`,
-        ),
-      );
-      expect(meta).toContain(`<a href="#changes">${older.length ? "Previous" : "No previous"} versions</a>`);
-      for (const old of older) {
-        expect(old.archive, old.version).toBe(`${page.replace(".html", "")}-${old.iso}`);
-        const copy = read(`public/${old.archive}.html`);
-        expect(copy).toContain('<meta name="robots" content="noindex">');
-        expect(visibleText(between(copy, /<p class="meta">/, "</p>"))).toContain(
-          `Version ${old.version} · Replaced on`,
-        );
-        expect(copy).toContain(`by the <a href="/${page.replace(".html", "")}">`);
-      }
-    },
-  );
+  it.each(LEGAL)("%s carries the header block: its effective date and version are its latest change", (page) => {
+    const html = pages[page] ?? "";
+    const meta = between(html, /<p class="meta">/, "</p>");
+    const [, iso, us] = /<time datetime="(\d{4}-\d{2}-\d{2})">([A-Z][a-z]+ \d{1,2}, \d{4})<\/time>/.exec(meta) ?? [];
+    expect(new Date(`${us} UTC`).toISOString().slice(0, 10)).toBe(iso);
+    // /security has no change list: it stays Version 1.0, its status table no term of use.
+    if (page === "security.html") {
+      expect(visibleText(meta)).toMatch(/Version 1\.0 · No previous versions$/);
+      return;
+    }
+    // Privacy and Terms list every version under #changes, the latest first. No older copy is kept as a page.
+    const changes = [
+      ...between(html, /<section id="changes"/, "</section>").matchAll(
+        /<li>Version (\d+\.\d+), <time datetime="([\d-]+)">/g,
+      ),
+    ].map((m) => ({ version: m[1], iso: m[2] }));
+    expect(changes.length).toBeGreaterThan(0);
+    const [latest, ...older] = changes;
+    expect(latest?.iso).toBe(iso);
+    expect(
+      readdirSync(fileURLToPath(new URL("../../public", import.meta.url))).filter((f) => /^(privacy|terms)-/.test(f)),
+    ).toEqual([]);
+    expect(visibleText(meta)).toMatch(
+      new RegExp(
+        `Version ${(latest?.version ?? "").replace(".", "\\.")} · ${older.length ? "Previous" : "No previous"} versions$`,
+      ),
+    );
+    expect(meta).toContain(`<a href="#changes">${older.length ? "Previous" : "No previous"} versions</a>`);
+    expect(visibleText(between(html, /<section id="changes"/, "</section>"))).toContain(
+      older.length ? "Version" : "Previous versions: none yet.",
+    );
+  });
 
   it.each(LEGAL)("%s leaves no placeholder or flag from the copy", (page) => {
     expect(pages[page]).not.toMatch(/EFFECTIVE_DATE|ICO_POSTAL_ADDRESS|\[FLAG|TODO/);

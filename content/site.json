@@ -1,0 +1,26 @@
+{
+  "name": "bloop",
+  "origin": "https://bloop.here",
+  "email": "hi@bloop.here",
+  "waitlist": "https://tally.so/r/Yj4KAN",
+  "image": { "path": "/og.png", "width": 1200, "height": 630 },
+  "links": [
+    { "label": "Features", "href": "/#features", "in": ["nav"] },
+    { "label": "Articles", "href": "/articles", "in": ["nav", "footer"] },
+    { "label": "Privacy", "href": "/privacy", "in": ["nav", "footer"] },
+    { "label": "Terms", "href": "/terms", "in": ["nav", "footer"] },
+    { "label": "Security", "href": "/security", "in": ["nav", "footer"] }
+  ],
+  "robots": { "disallow": ["/api/"] },
+  "pages": [
+    {
+      "file": "index.html",
+      "path": "/",
+      "title": "bloop: Present Anywhere",
+      "description": "Scan the QR code, approve on your phone, and present.",
+      "source": "landing",
+      "ld": "site"
+    },
+    { "file": "404.html", "title": "bloop: Page Not Found", "source": "404", "noindex": true }
+  ]
+}

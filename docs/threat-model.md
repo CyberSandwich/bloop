@@ -2,6 +2,8 @@
 
 Status: draft for review. Method: STRIDE per seam. Design references: [architecture.md](architecture.md) and [interfaces.md](interfaces.md).
 
+This file owns the facts. The site restates them for readers, each with a test that ties its numbers here (`test/unit/articles-facts.test.ts`): the pairing, file and token rows in `/articles/threat-model-for-it-teams`, section 6 in `/articles/what-stays-on-the-pc`, and section 10 in `/articles/data-and-retention`.
+
 How to read a row: L is likelihood and I is impact (each low, med or high). Status is one of:
 - **mitigated**: mitigated in design, and the named test proves it;
 - **residual**: a mitigation exists, but some risk is accepted, as stated;

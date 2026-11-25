@@ -19,7 +19,9 @@
     "test:cov": "vitest run --coverage --coverage.reporter=text-summary --coverage.include=src/** --coverage.include=public/js/**",
     "html-validate": "html-validate public",
     "size": "size-limit",
-    "check": "npm run typecheck && npm run lint && npm test && npm run test:int && npm run html-validate && npm run size",
+    "build:pages": "node tools/build-pages.mjs",
+    "check:pages": "node tools/build-pages.mjs --check",
+    "check": "npm run check:pages && npm run typecheck &&npm run lint && npm test && npm run test:int && npm run html-validate && npm run size",
     "test:e2e": "playwright test"
   },
   "size-limit": [
@@ -239,6 +241,7 @@
     "@vitest/coverage-v8": "5.1.1",
     "fast-check": "4.11.0",
     "html-validate": "11.21.1",
+    "marked": "18.3.0",
     "size-limit": "14.3.0",
     "typescript": "7.0.2",
     "vitest": "5.1.1",

@@ -117,19 +117,19 @@ for (const vp of VIEWPORTS) {
       expect(logo.top).toBe(pill.top);
     });
 
-    test("the text gap from Privacy to Security equals the text gap from Security to Waitlist, within 1 px", async ({
+    test("the text gap from Terms to Security equals the text gap from Security to Waitlist, within 1 px", async ({
       page,
     }) => {
       test.skip(vp.width < 640, "the links fold into the menu");
       await page.goto("/");
       await page.evaluate(() => document.fonts?.ready);
       // A string, since Range is a DOM type this tsconfig lacks; text edges, not link boxes, are what the eye sees.
-      const [privacyToSecurity = 0, securityToWaitlist = 99] = (await page.evaluate(`(() => {
+      const [termsToSecurity = 0, securityToWaitlist = 99] = (await page.evaluate(`(() => {
         const text = (s) => { const r = document.createRange(); r.selectNodeContents(document.querySelector(s)); return r.getBoundingClientRect(); };
-        const p = text('.nav-links a[href="/privacy"]'), s = text('.nav-links a[href="/security"]'), w = text(".nav .waitlist");
-        return [s.left - p.right, w.left - s.right];
+        const t = text('.nav-links a[href="/terms"]'), s = text('.nav-links a[href="/security"]'), w = text(".nav .waitlist");
+        return [s.left - t.right, w.left - s.right];
       })()`)) as number[];
-      expect(Math.abs(privacyToSecurity - securityToWaitlist)).toBeLessThanOrEqual(1);
+      expect(Math.abs(termsToSecurity - securityToWaitlist)).toBeLessThanOrEqual(1);
     });
 
     test("the nav's Waitlist is visible and inside the viewport, on a phone too", async ({ page }) => {
@@ -187,14 +187,14 @@ for (const vp of VIEWPORTS) {
       await expect(nav.getByRole("link", { name: "bloop" })).toBeInViewport();
     });
 
-    test("the nav reaches Features, Privacy and Security", async ({ page }) => {
+    test("the nav reaches Features, Articles, Privacy, Terms and Security", async ({ page }) => {
       await page.goto("/");
       const nav = page.getByRole("navigation", { name: "Primary" });
       if (vp.width < 640) {
         await expect(nav.getByRole("link", { name: "Privacy" })).toBeHidden();
         await nav.getByRole("button", { name: "Menu" }).click();
       }
-      for (const name of ["Features", "Privacy", "Security"])
+      for (const name of ["Features", "Articles", "Privacy", "Terms", "Security"])
         await expect(nav.getByRole("link", { name })).toBeVisible();
       await nav.getByRole("link", { name: "Features" }).click();
       await expect(page.locator("#features h2")).toBeInViewport();

@@ -1,6 +1,6 @@
 # bloop architecture
 
-Status: draft for review. The stack is fixed by [ADR 0001](adr/0001-stack.md). The choices it leaves open are settled in ADRs 0002 to 0008. Contracts are in [interfaces.md](interfaces.md), and threats in [threat-model.md](threat-model.md).
+Status: draft for review. The stack is fixed by [ADR 0001](adr/0001-stack.md). The choices it leaves open are settled in ADRs 0002 to 0008. Contracts are in [interfaces.md](interfaces.md), and threats in [threat-model.md](threat-model.md). Section 1 and the flows are restated for IT teams and lecturers in `/articles/how-bloop-works`; this file stays the source.
 
 ## 1. What the system does
 
