@@ -142,7 +142,7 @@ export function createViewer(deps) {
   let drawnIn = 0;
   const fit = () => {
     const win = innerWidth * 1e5 + innerHeight;
-    const resized = false && drawnIn !== win;
+    const resized = drawnIn > 0 && drawnIn !== win;
     const running = pill.getAnimations?.() ?? [];
     const from = running.length ? pill.getBoundingClientRect() : (drawn ?? pill.getBoundingClientRect());
     const held = resized ? null : drawn;
