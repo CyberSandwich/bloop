@@ -57,7 +57,11 @@ jobs:
       # Playwright starts `npm run dev` itself (playwright.config.ts); the axe specs run inside it.
       - run: npm run test:e2e
       # Lighthouse CI starts its own `npm run dev` and asserts the budgets in lighthouserc.json.
-      - run: npx lhci autorun
+      # collect fails only when Lighthouse cannot record a run (a runtimeError such as NO_NAVSTART), never on a
+      # score, so it gets one retry; assert, which judges the page, runs once.
+      - run: npx lhci collect || npx lhci collect
+      - run: npx lhci assert
+      - run: npx lhci upload
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         if: always()
         with:
