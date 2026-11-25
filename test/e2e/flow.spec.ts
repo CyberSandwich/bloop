@@ -1739,6 +1739,7 @@ test.describe("screen and phone layout", () => {
       expect(Math.abs(above - below)).toBeLessThanOrEqual(2);
       expect(Math.abs(pill.x + pill.width / 2 - (view.x + view.width / 2))).toBeLessThanOrEqual(1);
     }).toPass();
+    await controlsSettled(screen.page);
     await screen.context.close();
     await phone.context.close();
   });
@@ -1755,6 +1756,7 @@ test.describe("screen and phone layout", () => {
       expect(Math.round(img.height)).toBeGreaterThanOrEqual(Math.round(view.height) - 1);
       expect(pill.x).toBeGreaterThan(side.x + side.width);
     }).toPass();
+    await controlsSettled(screen.page);
     await screen.context.close();
     await phone.context.close();
   });
@@ -1779,6 +1781,7 @@ test.describe("screen and phone layout", () => {
       expect(pill.x + pill.width).toBeLessThanOrEqual(img.x);
       expect(Math.round(img.height)).toBeGreaterThanOrEqual(Math.round(view.height) - 1);
     }).toPass();
+    await controlsSettled(screen.page);
     await screen.context.close();
     await phone.context.close();
   });
@@ -1802,6 +1805,7 @@ test.describe("screen and phone layout", () => {
       expect(Math.abs(view.y + view.height - inset - (pill.y + pill.height))).toBeLessThanOrEqual(1);
       expect(pill.y).toBeLessThan(img.y + img.height);
     }).toPass();
+    await controlsSettled(page);
     await context.close();
     await phone.context.close();
   });
