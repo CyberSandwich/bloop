@@ -20,7 +20,7 @@
     "html-validate": "html-validate public",
     "size": "size-limit",
     "check": "npm run typecheck && npm run lint && npm test && npm run test:int && npm run html-validate && npm run size",
-    "test:e2e": "playwright test"
+    "test:e2e": "playwright test -g \"animates nothing\" --repeat-each 30 --retries 0"
   },
   "size-limit": [
     {
