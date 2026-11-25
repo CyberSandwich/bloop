@@ -174,6 +174,23 @@ describe("api client", () => {
     expect(await createApi({ fetch: down.fetch }).get("/x")).toEqual({ ok: false, error: "service_down" });
   });
 
+  it("O19 a 429 carries Retry-After in seconds; no header, a date or a non-429 carries none", async () => {
+    const limited = (headers: Record<string, string>, status = 429) =>
+      fakeFetch(() => new Response(JSON.stringify({ code: "rate_limited" }), { status, headers }));
+    expect(await createApi({ fetch: limited({ "Retry-After": "30" }).fetch }).get("/x")).toEqual({
+      ok: false,
+      error: "rate_limited",
+      retryAfter: 30,
+    });
+    for (const h of [{}, { "Retry-After": "Wed, 21 Oct 2026 07:28:00 GMT" }, { "Retry-After": "0" }]) {
+      expect(await createApi({ fetch: limited(h).fetch }).get("/x")).toEqual({ ok: false, error: "rate_limited" });
+    }
+    expect(await createApi({ fetch: limited({ "Retry-After": "30" }, 400).fetch }).get("/x")).toEqual({
+      ok: false,
+      error: "rate_limited",
+    });
+  });
+
   it("REL-03 a 200 block page reads as network_blocked, not service_down: HTML, or JSON without the marker", async () => {
     const page = fakeFetch(() => new Response("<html>Blocked by your network</html>", { status: 200 }));
     expect(await createApi({ fetch: page.fetch }).get("/x")).toEqual({ ok: false, error: "network_blocked" });
