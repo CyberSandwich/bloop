@@ -231,12 +231,14 @@ export async function claim(api: Api, code: string, kind: "owner" | "guest" = "o
 }
 
 /**
- * Statuses from `send` up to and including the first 429. A binding's fixed window can roll over mid-loop
- * and admit a second batch, so a flood needs up to 2 * limit + 1 requests to be sure of a refusal.
+ * Statuses from `send` up to and including the first 429, which must come within 2 * limit + 1 requests:
+ * a fixed window that rolls over once mid-loop admits at most two windows' worth (2 * limit) before it
+ * refuses, so a binding configured above `limit` fails here.
  */
 export async function untilRefused(limit: number, send: () => Promise<number>): Promise<number[]> {
   const statuses: number[] = [];
   for (let i = 0; i < 2 * limit + 1 && statuses.at(-1) !== 429; i++) statuses.push(await send());
+  if (statuses.at(-1) !== 429) throw new Error(`no 429 within ${2 * limit + 1} requests: ${statuses.join(",")}`);
   return statuses;
 }
 
