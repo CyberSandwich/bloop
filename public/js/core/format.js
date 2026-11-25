@@ -1,6 +1,5 @@
 // Pure formatting shared by the pages.
 /** @import {Item} from "../../../src/shared/protocol.ts" */
-import { normalize } from "../shared/codes.js";
 import { ICONS } from "./icons.js";
 
 /**
@@ -18,23 +17,8 @@ export function clock(ms, locale = "en-GB", timeZone) {
   }).format(ms);
 }
 
-/**
- * What a person typed, as it should read in the field: upper case, two groups ("K7M Q9X").
- * @param {string} raw
- */
-export function typedCode(raw) {
-  const s = raw
-    .toUpperCase()
-    .replace(/[^A-Z0-9]/g, "")
-    .slice(0, 7);
-  return s.length > 3 ? `${s.slice(0, 3)} ${s.slice(3)}` : s;
-}
-
 /** The pairing code in a QR link's query string (`?c=K7MQ9X`), or null. @param {string} search */
 export const codeFromSearch = (search) => new URLSearchParams(search).get("c");
-
-/** The code the server accepts for what was typed, or null. @param {string} raw */
-export const typedValid = (raw) => normalize(raw);
 
 /**
  * The "10 min ago" part of "Edited 10 min ago": digits and tight units.

@@ -92,7 +92,6 @@
         "dist/js/core/ui.js",
         "dist/js/core/verified.js",
         "dist/js/phone.js",
-        "dist/js/shared/codes.js",
         "dist/js/shared/errors.js",
         "dist/js/shared/names.js",
         "dist/js/shared/session.js"
@@ -106,10 +105,9 @@
         "dist/js/core/api.js",
         "dist/js/core/copy-code.js",
         "dist/js/core/copy.js",
-        "dist/js/core/format.js",
-        "dist/js/core/icons.js",
         "dist/js/core/store.js",
         "dist/js/core/timing.js",
+        "dist/js/core/typed.js",
         "dist/js/core/ui.js",
         "dist/js/shared/codes.js",
         "dist/js/shared/errors.js"

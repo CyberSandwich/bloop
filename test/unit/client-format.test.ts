@@ -1,16 +1,7 @@
 import { describe, expect, it } from "vitest";
-import {
-  ago,
-  clock,
-  codeFromSearch,
-  qrLabel,
-  sizeLabel,
-  spelled,
-  splitName,
-  typedCode,
-  typedValid,
-} from "../../public/js/core/format.js";
+import { ago, clock, codeFromSearch, qrLabel, sizeLabel, spelled, splitName } from "../../public/js/core/format.js";
 import { POLL_MS, pollDelay, RECONNECT_DELAYS, reconnectDelay, shouldPoll } from "../../public/js/core/timing.js";
+import { typedCode, typedValid } from "../../public/js/core/typed.js";
 
 describe("typed code formatting", () => {
   it.each([

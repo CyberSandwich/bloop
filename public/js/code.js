@@ -1,8 +1,8 @@
 // Typed code entry (/code): for a phone whose camera did not open the link.
 import { createApi } from "./core/api.js";
 import { TYPED_LETTERS, typedError } from "./core/copy-code.js";
-import { typedCode, typedValid } from "./core/format.js";
 import { PID_KEY, pidStore } from "./core/store.js";
+import { typedCode, typedValid } from "./core/typed.js";
 import { ariaFlag, byId, focusTitle, isFramed, setText } from "./core/ui.js";
 import { ERRORS } from "./shared/errors.js";
 
