@@ -1,7 +1,7 @@
 import { DatabaseSync } from "node:sqlite";
 import { describe, expect, it } from "vitest";
 import type { SqlLike } from "../../src/worker/do/demo-slots.ts";
-import { resolveCaps } from "../../src/worker/spend/caps.ts";
+import { METERS, type MeterDef, type MeterName, resolveCaps } from "../../src/worker/spend/caps.ts";
 import { Ledger } from "../../src/worker/spend/meters.ts";
 import { DAY, HOUR, rig, sqlOver, T0, transactionOver } from "./spend-helpers.ts";
 
@@ -21,15 +21,15 @@ describe("counters: take is an exact check-and-add", () => {
     expect(ledger.snapshot(T0, caps).counters.email.hour).toBe(60);
   });
 
-  it("COST-14 email: the day cap of 300 holds across hours and the next UTC day starts clean", () => {
+  it("COST-14 email: the day cap of 180 admits exactly 180 across hours and the next UTC day starts clean", () => {
     const { ledger, caps } = rig();
-    let at = T0 - 6 * HOUR;
-    let sent = 0;
-    for (let h = 0; h < 6; h++, at += HOUR)
-      for (let i = 0; i < 60 && sent < 300; i++, sent++) ledger.take("email", 1, undefined, caps, at);
-    expect(sent).toBe(300);
-    const refused = ledger.take("email", 1, undefined, caps, at);
-    expect(refused).toMatchObject({ ok: false, period: "day" });
+    expect(caps.email_day).toBe(180);
+    let admitted = 0;
+    // Six hours of 70 attempts each: the hour cap (60) and the day cap (180) both bind, and the attempts far exceed both.
+    for (let h = 6; h >= 1; h--)
+      for (let i = 0; i < 70; i++) if (ledger.take("email", 1, undefined, caps, T0 - h * HOUR).ok) admitted++;
+    expect(admitted).toBe(180);
+    expect(ledger.take("email", 1, undefined, caps, T0)).toMatchObject({ ok: false, period: "day" });
     expect(ledger.take("email", 1, undefined, caps, Date.UTC(2026, 10, 26, 0, 0, 0)).ok).toBe(true);
   });
 
@@ -100,6 +100,17 @@ describe("counters: take is an exact check-and-add", () => {
     expect(() => ledger.take("nope", 1, undefined, caps, T0)).toThrow(RangeError);
   });
 
+  // Every limit of every meter honors a lowered cap row, so none can be var-only by omission.
+  const limits = Object.entries(METERS).flatMap(([meter, def]) =>
+    [...((def as MeterDef).global ?? []), ...((def as MeterDef).perScope ?? [])].map((l) => [meter, l.cap] as const),
+  );
+  it.each(limits)("a cap row lowers %s through its %s limit", (meter, cap) => {
+    const { ledger } = rig();
+    const lowered = resolveCaps({}, { [cap]: 2 });
+    const take = () => ledger.take(meter as MeterName, 1, "s", lowered, T0);
+    expect([take().ok, take().ok, take().ok]).toEqual([true, true, false]);
+  });
+
   it("a cap of 0 refuses everything, and a lowered override applies at once", () => {
     const { ledger } = rig();
     expect(ledger.take("email", 1, undefined, resolveCaps({ CAP_EMAIL_HOUR: "0" }), T0).ok).toBe(false);
@@ -127,6 +138,21 @@ describe("counters: take is an exact check-and-add", () => {
     ledger.refund("container_seconds", 40, undefined, late, late, caps);
     expect(ledger.snapshot(Date.UTC(2026, 10, 25, 23, 59), caps).counters.container_seconds.day).toBe(60);
     expect(ledger.snapshot(Date.UTC(2026, 10, 26, 0, 1), caps).counters.container_seconds.day).toBe(0);
+  });
+
+  it("COST-11 a refund on a scoped meter needs its scope and never erases another caller's counts", () => {
+    const { ledger, caps } = rig();
+    ledger.take("upload_user_bytes", 100, "u1", caps, T0);
+    ledger.take("upload_user_bytes", 100, "u2", caps, T0);
+    expect(() => ledger.refund("upload_user_bytes", 10, undefined, T0, T0, caps)).toThrow(RangeError);
+    expect(() => ledger.refund("upload_user_bytes", 10, "", T0, T0, caps)).toThrow(RangeError);
+    // u1 took 100 and asks for 150 back: u2's 100 stays in the all-scopes row.
+    ledger.refund("upload_user_bytes", 150, "u1", T0, T0, caps);
+    expect(ledger.snapshot(T0, caps).counters.upload_user_bytes.day).toBe(100);
+    expect(ledger.take("upload_user_bytes", caps.upload_user_bytes_day - 100, "u1", caps, T0).ok).toBe(true);
+    // u2 still has its own 100 counted: a refund from a scope that took nothing changes nothing.
+    ledger.refund("upload_user_bytes", 50, "u3", T0, T0, caps);
+    expect(ledger.snapshot(T0, caps).counters.upload_user_bytes.day).toBe(caps.upload_user_bytes_day);
   });
 
   it("counters are exact across a Durable Object restart", () => {
@@ -224,10 +250,44 @@ describe("pools and leases", () => {
     ledger.acquire("convert_public", undefined, 60, caps, T0);
     const deadline = T0 + 60_000;
     expect(ledger.acquire("convert_public", undefined, 60, caps, deadline + 1).ok).toBe(false);
-    expect(ledger.snapshot(deadline + 1, caps).pools.convert_public).toEqual({ live: 1, overdue: 1 });
+    expect(ledger.snapshot(deadline + 1, caps)).toMatchObject({
+      pools: { convert_public: { live: 1 } },
+      leasesDroppedToday: 0,
+    });
     const after = deadline + 300_000;
     expect(ledger.acquire("convert_public", undefined, 60, caps, after).ok).toBe(true);
     expect(ledger.snapshot(after, caps).leasesDroppedToday).toBe(1);
+  });
+
+  it("COST-13 a pool with a per-scope cap throws without a scope instead of skipping the cap", () => {
+    const { ledger, caps } = rig();
+    expect(() => ledger.acquire("export", undefined, 60, caps, T0)).toThrow(RangeError);
+    expect(() => ledger.acquire("export", "", 60, caps, T0)).toThrow(RangeError);
+    // Pools with no per-scope cap take no scope.
+    expect(ledger.acquire("convert_public", undefined, 60, caps, T0).ok).toBe(true);
+  });
+
+  it("every pool and lease cap honors a lowered row", () => {
+    const { ledger } = rig();
+    const one = resolveCaps(
+      {},
+      { pool_convert: 1, pool_convert_public: 0, pool_export: 1, lease_max_convert_seconds: 10 },
+    );
+    expect(ledger.acquire("convert", "u", 600, one, T0)).toMatchObject({ ok: true, deadline: T0 + 10_000 });
+    expect(ledger.acquire("convert", "u", 600, one, T0).ok).toBe(false);
+    expect(ledger.acquire("convert_public", undefined, 600, one, T0).ok).toBe(false);
+    expect(ledger.acquire("export", "u1", 600, one, T0).ok).toBe(true);
+    expect(ledger.acquire("export", "u2", 600, one, T0).ok).toBe(false);
+    const other = rig();
+    expect(other.ledger.acquire("export", "u3", 600, resolveCaps({}, { pool_export_per_scope: 0 }), T0).ok).toBe(false);
+    const short = resolveCaps({}, { lease_max_export_seconds: 5 });
+    expect(other.ledger.acquire("export", "u3", 600, short, T0)).toMatchObject({ ok: true, deadline: T0 + 5000 });
+    // A lowered grace drops an unreleased lease sooner.
+    const grace = resolveCaps({}, { lease_grace_seconds: 1 });
+    const fresh = rig().ledger;
+    expect(fresh.acquire("convert_public", undefined, 10, grace, T0).ok).toBe(true);
+    expect(fresh.acquire("convert_public", undefined, 10, grace, T0 + 11_000).ok).toBe(true);
+    expect(fresh.snapshot(T0 + 11_000, grace).leasesDroppedToday).toBe(1);
   });
 
   it("COST-13 export: one per user at once and 4 in all", () => {
@@ -325,21 +385,7 @@ describe("schema", () => {
     const r = rig();
     r.wake();
     r.wake();
-    expect(r.db.prepare("SELECT version FROM schema_version").all()).toEqual([{ version: 2 }]);
-  });
-
-  it("a wake that finds the data in an older shape repairs it: the trip table gains its prior column", () => {
-    const db = new DatabaseSync(":memory:");
-    const sql = sqlOver(db);
-    sql.exec(
-      "CREATE TABLE trip (switch TEXT PRIMARY KEY, value TEXT NOT NULL, tripped_at INTEGER NOT NULL, reason TEXT NOT NULL, reading TEXT NOT NULL, alerted INTEGER NOT NULL DEFAULT 0)",
-    );
-    sql.exec("INSERT INTO trip VALUES ('demo', 'off', 1, 'r', '{}', 0)");
-    sql.exec("CREATE TABLE schema_version (id INTEGER PRIMARY KEY CHECK (id = 1), version INTEGER NOT NULL)");
-    sql.exec("INSERT INTO schema_version VALUES (1, 1)");
-    const ledger = new Ledger(sql, () => T0, transactionOver(db));
-    expect(ledger.trips()).toMatchObject([{ switch: "demo", value: "off", prior: "" }]);
-    expect(db.prepare("SELECT version FROM schema_version").all()).toEqual([{ version: 2 }]);
+    expect(r.db.prepare("SELECT version FROM schema_version").all()).toEqual([{ version: 1 }]);
   });
 
   it("a half-applied wake leaves nothing behind and the next wake finishes the job", () => {
@@ -359,7 +405,7 @@ describe("schema", () => {
     expect(db.prepare("SELECT name FROM sqlite_master WHERE name = 'counter'").all()).toEqual([]);
     const ledger = new Ledger(flaky, () => T0, transactionOver(db));
     expect(ledger.trips()).toEqual([]);
-    expect(db.prepare("SELECT version FROM schema_version").all()).toEqual([{ version: 2 }]);
+    expect(db.prepare("SELECT version FROM schema_version").all()).toEqual([{ version: 1 }]);
   });
 
   it("COST-14 a refund for a future or stale take, or more than was taken, does not go below zero or touch other days", () => {

@@ -61,7 +61,6 @@ describe("caps: every number pinned", () => {
       trip_pct: 100,
       warn_pct: 50,
       month_warn_pct: 80,
-      leases_live_max: 4,
       convert_failed_pct: 20,
       convert_failed_min: 10,
       guest_drop_cost_usd: 0.00002,

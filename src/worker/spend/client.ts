@@ -1,10 +1,21 @@
 // What callers hold: the SpendGuard's RPC surface behind a wrapper with a fail mode per meter. A guard that cannot be
-// reached refuses costly work (containers, part mints, uploads, exports, R2 charges) and says so; the two public
-// paths that must not depend on one object (the demo and email, including sign-in codes) fail open, bounded by a
-// per-isolate count. Presenting an already-converted file never calls the guard.
+// reached refuses costly work (containers, part mints, uploads, exports, R2 charges) and says so; the three public
+// meters (the demo, email, sign-in codes) live on a second guard instance and fail open, bounded by a per-isolate
+// count, so neither a flood of public calls nor an outage of one instance takes the other down. Presenting an
+// already-converted file never calls the guard.
+// A caller bug (a bad `n`, a missing scope) throws before any RPC: only a transport error counts as an outage.
 // No import of guard.ts here: the Durable Object module needs Workers types, and this one runs under Node in tests.
-import { type CapName, type Caps, type MeterName, msToPeriodEnd, type PoolName } from "./caps.ts";
-import type { AcquireResult, History, Snapshot, TakeResult } from "./meters.ts";
+import { type CapName, type Caps, type MeterName, msToPeriodEnd, type PoolName, periodKey } from "./caps.ts";
+import {
+  type AcquireResult,
+  checkAcquire,
+  checkCounted,
+  type History,
+  positiveInt,
+  type Snapshot,
+  type TakeRefusal,
+  type TakeResult,
+} from "./meters.ts";
 import type { SwitchName } from "./switches.ts";
 
 /** The Durable Object's methods, all synchronous inside it: a check and its write never straddle an await. */
@@ -63,29 +74,44 @@ export function refusal(result: TakeResult | AcquireResult | Unavailable): Refus
 export type CallerMeter = Exclude<MeterName, "r2_class_a" | "r2_class_b" | "d1_writes">;
 
 /**
+ * What a take hands back, and the only thing `refund` accepts: it carries the scope the take was made under, so a
+ * refund can neither name another caller's scope nor exceed what was taken. `takenAt` 0 marks a take the guard never
+ * counted (admitted while it was down); the guard ignores a refund that old.
+ */
+export interface TakeTicket {
+  meter: CallerMeter;
+  n: number;
+  scope?: string;
+  takenAt: number;
+}
+export type Taken = { ok: true; ticket: TakeTicket };
+
+/**
  * What routes and Durable Objects receive in their deps instead of a global: unit tests of U, V2 and A pass a fake
  * and never start the guard. `spendFor(env)` builds the real one at the composition root only.
  */
 export interface Spend {
-  /** Adds to a capped meter, or refuses. */
-  take(meter: CallerMeter, n: number, scope?: string): Promise<TakeResult | Unavailable>;
+  /** Adds to a capped meter, or refuses. A scoped meter needs a scope; `n` is a positive integer. */
+  take(meter: CallerMeter, n: number, scope?: string): Promise<Taken | TakeRefusal | Unavailable>;
   /** Charges `n` R2 operations of a class against the exact monthly cap, once per request. */
   charge(cls: "A" | "B", n: number): Promise<TakeResult | Unavailable>;
-  /** Takes a pool slot, or says busy. */
+  /** Takes a pool slot, or says busy. A pool with a per-scope cap needs a scope. */
   acquire(pool: PoolName, ttlSeconds: number, scope?: string): Promise<AcquireResult | Unavailable>;
+  /** Idempotent, so a lost response is retried once. */
   release(leaseId: string): Promise<void>;
   record(meter: CallerMeter, n: number, scope?: string): Promise<void>;
-  refund(meter: CallerMeter, n: number, scope: string | undefined, takenAt: number): Promise<void>;
-  /** For /admin; null when the guard cannot be reached. */
-  snapshot(): Promise<Snapshot | null>;
+  /** Gives back up to `n` (default all) of an earlier take, for work that never started. */
+  refund(ticket: TakeTicket, n?: number): Promise<void>;
 }
 
-/** Meters that fail open when the guard is unreachable, with the cap that bounds each isolate meanwhile. */
+/** Meters on the public instance: they fail open when it is unreachable, with the cap that bounds each isolate. */
 const OPEN_ON_OUTAGE: Partial<Record<CallerMeter, CapName>> = {
   email: "isolate_open_email_day",
   email_code: "isolate_open_email_code_ip_day",
   demo_session: "isolate_open_demo_session_day",
 };
+
+export const PUBLIC_METERS = Object.keys(OPEN_ON_OUTAGE) as CallerMeter[];
 
 /** Counts per UTC day inside one Worker isolate: what a fail-open meter allows while the guard is down. */
 export class IsolateCounts {
@@ -108,20 +134,33 @@ export class IsolateCounts {
   }
 }
 
-/** R2 operations an isolate has reserved from the guard and not yet spent, per class. Never returned. */
+/** R2 operations an isolate has reserved from the guard and not yet spent, per class. Never returned, dropped at the month's end. */
 export class Reserves {
-  private readonly left = new Map<string, number>();
+  private month = "";
+  private readonly held = new Map<string, number>();
 
-  /** Spends up to `n` from the reserve and returns how many were not covered. */
-  drain(cls: string, n: number): number {
-    const have = this.left.get(cls) ?? 0;
-    const used = Math.min(have, n);
-    this.left.set(cls, have - used);
-    return n - used;
+  constructor(private readonly now: () => number = Date.now) {}
+
+  private roll(): void {
+    const month = periodKey("month", this.now());
+    if (month === this.month) return;
+    this.month = month;
+    this.held.clear();
+  }
+
+  left(cls: string): number {
+    this.roll();
+    return this.held.get(cls) ?? 0;
+  }
+
+  /** Spends up to `n` from the reserve. */
+  drain(cls: string, n: number): void {
+    const have = this.left(cls);
+    this.held.set(cls, have - Math.min(have, n));
   }
 
   add(cls: string, n: number): void {
-    this.left.set(cls, (this.left.get(cls) ?? 0) + n);
+    this.held.set(cls, this.left(cls) + n);
   }
 }
 
@@ -129,11 +168,18 @@ export class Reserves {
 const isolateCounts = new IsolateCounts();
 const isolateReserves = new Reserves();
 
+export interface SpendStubs {
+  /** Every costly meter, the pools, the breaker's state. */
+  global: () => SpendRpc;
+  /** The `OPEN_ON_OUTAGE` meters only. */
+  public: () => SpendRpc;
+}
+
 export class SpendClient implements Spend {
-  /** `stub` is called per use: a Durable Object stub is not reusable across requests. */
+  /** The stubs are called per use (a Durable Object stub is not reusable across requests), and so are the caps. */
   constructor(
-    private readonly stub: () => SpendRpc,
-    private readonly caps: Caps,
+    private readonly stubs: SpendStubs,
+    private readonly caps: () => Caps,
     private readonly log: (line: string) => void = console.error,
     private readonly isolate: IsolateCounts = isolateCounts,
     private readonly now: () => number = Date.now,
@@ -144,14 +190,21 @@ export class SpendClient implements Spend {
     this.log(JSON.stringify({ evt: "spend_guard_error", op, error: e instanceof Error ? e.message : "unknown" }));
   }
 
-  /** The guard is down: fail open for the public paths, within this isolate's cap, and closed for the rest. */
-  private outage(meter: CallerMeter, n: number, scope: string | undefined): TakeResult | Unavailable {
+  private rpc(meter: CallerMeter): SpendRpc {
+    return Object.hasOwn(OPEN_ON_OUTAGE, meter) ? this.stubs.public() : this.stubs.global();
+  }
+
+  private ticket(meter: CallerMeter, n: number, scope: string | undefined, takenAt: number): Taken {
+    return { ok: true, ticket: { meter, n, ...(scope ? { scope } : {}), takenAt } };
+  }
+
+  /** The guard is down: fail open for the public meters, within this isolate's cap, and closed for the rest. */
+  private outage(meter: CallerMeter, n: number, scope: string | undefined): Taken | TakeRefusal | Unavailable {
     const capName = OPEN_ON_OUTAGE[meter];
     if (!capName) return unavailable;
-    const cap = this.caps[capName];
-    const admitted = n === 1 && this.isolate.admit(`${meter}|${scope ?? ""}`, cap);
+    const admitted = n === 1 && this.isolate.admit(`${meter}|${scope ?? ""}`, this.caps()[capName]);
     this.log(JSON.stringify({ evt: "spend_guard_open", meter, admitted }));
-    if (admitted) return { ok: true };
+    if (admitted) return this.ticket(meter, n, scope, 0);
     return {
       ok: false,
       reason: "cap_hit",
@@ -162,9 +215,11 @@ export class SpendClient implements Spend {
     };
   }
 
-  async take(meter: CallerMeter, n: number, scope?: string): Promise<TakeResult | Unavailable> {
+  async take(meter: CallerMeter, n: number, scope?: string): Promise<Taken | TakeRefusal | Unavailable> {
+    checkCounted(meter, n, scope);
     try {
-      return await this.stub().take(meter, n, scope);
+      const result = await this.rpc(meter).take(meter, n, scope);
+      return result.ok ? this.ticket(meter, n, scope, this.now()) : result;
     } catch (e) {
       this.fail("take", e);
       return this.outage(meter, n, scope);
@@ -174,22 +229,32 @@ export class SpendClient implements Spend {
   /**
    * Spends from this isolate's reserve; when it runs short, reserves whole blocks from the guard (`r2_block_ops`)
    * and keeps the leftover, never returning it, so the guard's count only errs high. Near the cap, where a whole
-   * block no longer fits, it takes exactly what is short, so the cap still refuses at the exact operation.
+   * block no longer fits, it takes exactly what is short, so the cap still refuses at the exact operation. The
+   * reserve is touched only once the guard has answered: a refused or lost charge leaves it for the next one.
    */
   async charge(cls: "A" | "B", n: number): Promise<TakeResult | Unavailable> {
-    const short = this.reserves.drain(cls, n);
-    if (short === 0) return { ok: true };
+    positiveInt(n, "n");
+    const have = this.reserves.left(cls);
+    if (have >= n) {
+      this.reserves.drain(cls, n);
+      return { ok: true };
+    }
+    const short = n - have;
     const meter = cls === "A" ? "r2_class_a" : "r2_class_b";
-    const block = Math.max(1, Math.floor(this.caps.r2_block_ops));
+    const block = Math.max(1, Math.floor(this.caps().r2_block_ops));
     const whole = Math.ceil(short / block) * block;
     try {
-      let result = await this.stub().take(meter, whole);
+      const guard = this.stubs.global();
+      let result = await guard.take(meter, whole);
       let got = whole;
       if (!result.ok && result.reason === "cap_hit" && whole > short) {
-        result = await this.stub().take(meter, short);
+        result = await guard.take(meter, short);
         got = short;
       }
-      if (result.ok) this.reserves.add(cls, got - short);
+      if (result.ok) {
+        this.reserves.drain(cls, have);
+        this.reserves.add(cls, got - short);
+      }
       return result;
     } catch (e) {
       this.fail("charge", e);
@@ -199,8 +264,9 @@ export class SpendClient implements Spend {
 
   /** Unreachable counts as busy. */
   async acquire(pool: PoolName, ttlSeconds: number, scope?: string): Promise<AcquireResult | Unavailable> {
+    checkAcquire(pool, ttlSeconds, scope);
     try {
-      return await this.stub().acquire(pool, ttlSeconds, scope);
+      return await this.stubs.global().acquire(pool, ttlSeconds, scope);
     } catch (e) {
       this.fail("acquire", e);
       return unavailable;
@@ -209,35 +275,32 @@ export class SpendClient implements Spend {
 
   /** The three below never refuse work: they report what already happened, so a lost call is logged, not thrown. */
   async release(leaseId: string): Promise<void> {
-    try {
-      await this.stub().release(leaseId);
-    } catch (e) {
-      this.fail("release", e);
+    for (let attempt = 0; attempt < 2; attempt++) {
+      try {
+        await this.stubs.global().release(leaseId);
+        return;
+      } catch (e) {
+        this.fail("release", e);
+      }
     }
   }
 
   async record(meter: CallerMeter, n: number, scope?: string): Promise<void> {
+    positiveInt(n, "n");
     try {
-      await this.stub().record(meter, n, scope);
+      await this.rpc(meter).record(meter, n, scope);
     } catch (e) {
       this.fail("record", e);
     }
   }
 
-  async refund(meter: CallerMeter, n: number, scope: string | undefined, takenAt: number): Promise<void> {
+  async refund(ticket: TakeTicket, n: number = ticket.n): Promise<void> {
+    positiveInt(n, "n");
+    if (n > ticket.n) throw new RangeError("a refund cannot exceed the take");
     try {
-      await this.stub().refund(meter, n, scope, takenAt);
+      await this.rpc(ticket.meter).refund(ticket.meter, n, ticket.scope, ticket.takenAt);
     } catch (e) {
       this.fail("refund", e);
-    }
-  }
-
-  async snapshot(): Promise<Snapshot | null> {
-    try {
-      return await this.stub().snapshot();
-    } catch (e) {
-      this.fail("snapshot", e);
-      return null;
     }
   }
 }

@@ -113,7 +113,7 @@ export function weekKey(now: number): string {
 export function buildReport(input: ReportInput): SpendReport {
   const { now, vars, history, analytics } = input;
   const t = resolveTrips(vars);
-  const lines = resolveLines(vars, t);
+  const lines = resolveLines(vars, t, input.snapshot.caps);
   const dayOfMonth = new Date(now).getUTCDate();
   const month = dateKey(now).slice(0, 7);
 

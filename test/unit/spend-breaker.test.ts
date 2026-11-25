@@ -213,10 +213,34 @@ describe("rules that stay count-based", () => {
     expect(s.find()).toEqual([]);
     const leak = setup();
     leak.g.ledger.acquire("convert", "u", 60, leak.g.rig.caps, T0);
+    // One second past the deadline the Converter is still destroying the container: no trip. Past the grace, trip.
     leak.g.clock.now = T0 + 61_000;
+    expect(leak.find()).toEqual([]);
+    leak.g.clock.now = T0 + 60_000 + 299_000;
+    expect(leak.find()).toEqual([]);
+    leak.g.clock.now = T0 + 60_000 + 300_000;
     expect(leak.find()).toMatchObject([
       { level: "trip", rule: "leases_overdue", flips: [{ switch: "convert", value: "off" }] },
     ]);
+  });
+
+  it("COST-02 a lease released a second after its deadline never latches convert off, end to end", async () => {
+    const s = setup();
+    const lease = s.g.ledger.acquire("convert", "u", 60, s.g.rig.caps, T0);
+    if (!lease.ok) throw new Error("expected a lease");
+    s.g.clock.now = T0 + 61_000;
+    await s.run();
+    s.g.ledger.release(lease.leaseId);
+    await s.run();
+    expect(s.g.ledger.trips()).toEqual([]);
+    expect(s.store.rows.has("convert")).toBe(false);
+  });
+
+  it("COST-02 the live-lease line follows the pool caps, so raising a pool does not trip it", () => {
+    const s = setup({ CAP_POOL_CONVERT: "6" });
+    for (let i = 0; i < 6; i++) s.g.ledger.acquire("convert", "u", 600, s.g.rig.caps, T0);
+    s.g.ledger.acquire("convert_public", undefined, 600, s.g.rig.caps, T0);
+    expect(s.find()).toEqual([]);
   });
 
   it("COST-03 failed conversions trip convert=account_only only past 20 percent of at least 10", () => {
@@ -320,16 +344,43 @@ describe("runBreaker: flip, latch, alert once", () => {
     expect(s.alerts().filter((a) => a.kind === "trip")).toHaveLength(1);
   });
 
-  it("a failed row write is retried next run, with no alert until it lands", async () => {
+  it("a failed row write is announced as not applied, retried next run, and announced as applied once it lands", async () => {
     const s = setup();
     s.g.ledger.record("demo_session", 2000, undefined, T0);
     s.store.failNextSet = true;
     await s.run();
     expect(s.store.rows.has("demo")).toBe(false);
-    expect(s.alerts().filter((a) => a.kind === "trip")).toHaveLength(0);
+    expect(s.alerts().filter((a) => a.kind === "trip")).toMatchObject([{ switch: "demo", applied: false }]);
+    expect(s.g.ledger.trips()).toMatchObject([{ alerted: false }]);
     await s.run();
     expect(s.store.rows.get("demo")).toBe("off");
-    expect(s.alerts().filter((a) => a.kind === "trip")).toHaveLength(1);
+    const trips = s.alerts().filter((a) => a.kind === "trip");
+    expect(trips).toHaveLength(2);
+    expect(trips[1]).not.toHaveProperty("applied");
+    expect(s.g.ledger.trips()).toMatchObject([{ alerted: true }]);
+    await s.run();
+    expect(s.alerts().filter((a) => a.kind === "trip")).toHaveLength(2);
+  });
+
+  it("a reset that lands between the run's read and its write is not undone", async () => {
+    const s = setup();
+    s.g.ledger.record("demo_session", 2000, undefined, T0);
+    const read = s.store.get;
+    let fired = false;
+    s.store.get = async (name) => {
+      const value = await read(name);
+      // Once the trip is latched, the owner resets it before the run writes the row.
+      if (name === "demo" && !fired && s.g.ledger.trips().length > 0) {
+        fired = true;
+        s.g.ledger.resetTrip("demo");
+      }
+      return value;
+    };
+    await s.run();
+    expect(fired).toBe(true);
+    expect(s.store.rows.has("demo")).toBe(false);
+    expect(s.g.ledger.trips()).toEqual([]);
+    expect(s.alerts().filter((a) => a.kind === "trip")).toHaveLength(0);
   });
 
   it("a failed alert is retried next run and the row is written once", async () => {
@@ -369,6 +420,48 @@ describe("runBreaker: flip, latch, alert once", () => {
     expect(await s.run()).toMatchObject({ tripped: [] });
   });
 
+  it("a reset leaves a row the owner set to the breaker's own value, because the breaker did not write it", async () => {
+    const s = setup();
+    s.g.ledger.record("demo_session", 2000, undefined, T0);
+    await s.run();
+    // The owner sets the same value by hand: the row's writer is no longer the breaker.
+    s.store.rows.set("demo", "off");
+    s.store.actors.set("demo", "owner");
+    expect(await resetBreaker(s.deps, "demo", "admin")).toBe(true);
+    expect(s.store.rows.get("demo")).toBe("off");
+    expect(s.alerts().at(-1)).toMatchObject({ kind: "reset", value: "unchanged" });
+    expect(s.g.ledger.trips()).toEqual([]);
+  });
+
+  it("COST-16 the public meters are read from the public instance, and a global one's counts for them are ignored", async () => {
+    const s = setup();
+    const open = fakeGuard();
+    s.deps.publicGuard = open.guard;
+    s.g.ledger.record("email", 95, undefined, T0);
+    await s.run();
+    expect(s.g.ledger.trips()).toEqual([]);
+    open.ledger.record("email", 95, undefined, T0);
+    open.ledger.record("demo_session", 2000, undefined, T0);
+    await s.run();
+    expect(
+      s.g.ledger
+        .trips()
+        .map((t) => `${t.switch}=${t.value}`)
+        .sort(),
+    ).toEqual(["demo=off", "email=admin_only"]);
+  });
+
+  it("COST-16 a public instance that cannot be read does not stop the run or the costly rules", async () => {
+    const s = setup();
+    const open = fakeGuard();
+    open.guard.snapshot = async () => {
+      throw new Error("public guard down");
+    };
+    s.deps.publicGuard = open.guard;
+    s.g.ledger.record("container_seconds", 4190, undefined, T0);
+    await expect(s.run()).resolves.toMatchObject({ tripped: ["convert"] });
+  });
+
   it("breaker=alert_only: no latch and no row write, a would_trip alert once a day", async () => {
     const s = setup({ SWITCH_BREAKER: "alert_only" });
     s.g.ledger.record("demo_session", 2000, undefined, T0);
@@ -400,7 +493,7 @@ describe("runBreaker: flip, latch, alert once", () => {
     expect(s.alerts().filter((a) => a.kind === "warn")).toHaveLength(2);
   });
 
-  it("D1 down for reads and writes: the run completes, the trip latches, and nothing is alerted as applied", async () => {
+  it("D1 down for reads and writes: the trip latches and the owner is told, marked not applied, never alerted as applied", async () => {
     const s = setup();
     s.store.get = async () => {
       throw new Error("d1 down");
@@ -408,7 +501,9 @@ describe("runBreaker: flip, latch, alert once", () => {
     s.g.ledger.record("demo_session", 2000, undefined, T0);
     await expect(s.run()).resolves.toMatchObject({ tripped: ["demo"] });
     expect(s.g.ledger.trips()).toMatchObject([{ switch: "demo", alerted: false }]);
-    expect(s.alerts().filter((a) => a.kind === "trip")).toHaveLength(0);
+    expect(s.alerts().filter((a) => a.kind === "trip")).toMatchObject([
+      { switch: "demo", value: "off", applied: false },
+    ]);
   });
 
   it("an alert carries numbers only", async () => {

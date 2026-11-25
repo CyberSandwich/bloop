@@ -1,6 +1,7 @@
 // Every cap, pool size and breaker threshold in one place, each with a default, a Worker var that can lower or raise
 // it at deploy time, and the reason for the number. docs/spend.md lists them; test/unit/spend-caps.test.ts pins each.
-// None of these vars is in config.ts or wrangler.jsonc: the default below is the value until a deploy sets the var.
+// config.ts declares one optional var per entry, generated from these registries; none is set in wrangler.jsonc, so
+// the default below is the value until a deploy sets the var.
 
 import type { SettingsSnapshot, SwitchName } from "./switches.ts";
 
@@ -134,11 +135,6 @@ export const TRIPS = {
     var: "BREAKER_MONTH_WARN_PCT",
     default: 80,
     reason: "a monthly meter at this percent of its cap sends a warning",
-  },
-  leases_live_max: {
-    var: "BREAKER_LEASES_LIVE_MAX",
-    default: 4,
-    reason: "more live conversion leases than the pools allow together means a leak: convert off",
   },
   convert_failed_pct: {
     var: "BREAKER_CONVERT_FAILED_PCT",
@@ -309,7 +305,7 @@ export interface Limit {
 export interface MeterDef {
   /** Checked against the all-scopes counter. */
   readonly global?: readonly Limit[];
-  /** Checked against the counter of the scope the caller names (user id, IP hash, recipient hash). */
+  /** Checked against the counter of the scope the caller names (user id, IP hash). */
   readonly perScope?: readonly Limit[];
 }
 
@@ -341,6 +337,8 @@ export const METERS = {
 
 export type MeterName = keyof typeof METERS;
 export const isMeter = (name: string): name is MeterName => Object.hasOwn(METERS, name);
+/** A meter with a per-scope limit: its calls must name a scope. */
+export const isScoped = (name: MeterName): boolean => ((METERS[name] as MeterDef).perScope?.length ?? 0) > 0;
 
 export interface PoolDef {
   readonly cap: CapName;
@@ -376,8 +374,8 @@ export function msToPeriodEnd(period: Period, at: number): number {
 }
 
 // The money side: a monthly budget split across the meters that have no platform spend limit, each priced per unit.
-// Prices are the overage rates in tasks/cost-plan.md section 1, with free allowances NOT subtracted, so the estimate
-// and the lines err toward tripping early. docs/spend.md shows the arithmetic.
+// Prices are the overage rates of the v4 cost plan (kept outside the repo), with free allowances NOT subtracted, so
+// the estimate and the lines err toward tripping early. docs/spend.md shows the arithmetic.
 
 export interface Priced {
   readonly label: string;
@@ -473,9 +471,8 @@ export interface Line {
  * (or its var); the ceiling is its var, or `ceiling_multiple` times the floor (at most the meter's daily cap, when it
  * has one), and never below the floor.
  */
-export function resolveLines(vars: Vars, trips: Trips): Record<PricedMeter, Line> {
+export function resolveLines(vars: Vars, trips: Trips, caps: Caps = resolveCaps(vars)): Record<PricedMeter, Line> {
   const out = {} as Record<PricedMeter, Line>;
-  const caps = resolveCaps(vars);
   for (const m of PRICED_METERS) {
     const p: Priced = PRICED[m];
     const share = positiveVar(vars, p.share.var) ?? p.share.default;

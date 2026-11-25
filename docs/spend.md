@@ -38,13 +38,13 @@ There is one reader of the `setting` table, F's settings reader (one query, one 
 
 - **Flip now:** the `/admin` switch panel writes the row and logs `admin_action`. Effective within 30 seconds (the per-isolate cache).
 - **Flip with D1 or `/admin` unreachable:** `wrangler deploy --var SWITCH_UPLOADS:off` from the owner's machine, then commit the same value to `wrangler.jsonc`. A var is a floor: a row can make it stricter, never looser. Remove the var to lift it.
-- **Reset after a breaker trip:** `/admin` calls `resetBreaker` for one switch or `resetAllBreakers` for all. Each puts the row back to its value from before the first trip (the default when there was no row), then clears the latch in the SpendGuard, and logs it. It restores only a row the breaker wrote: a row someone set since stands, and a reset never loosens past it. When the row could not be read at the trip (D1 down), the prior is recorded as unknown and a reset leaves the row as it is, for the owner to set. Both calls take no auth of their own, so A's route must check an admin session first. Setting a row by hand does not release the latch: the next run puts the flip back when the value in force is looser than the trip.
+- **Reset after a breaker trip:** `/admin` calls `resetBreaker` for one switch or `resetAllBreakers` for all. Each puts the row back to its value from before the first trip (the default when there was no row), then clears the latch in the SpendGuard, and logs it. It restores only a row the breaker wrote (the value is the trip's and `updated_by` is `breaker`): a row someone set since stands, even to the same value, and a reset never loosens past it. When the row could not be read at the trip (D1 down), the prior is recorded as unknown and a reset leaves the row as it is, for the owner to set. Both calls take no auth of their own, so A's route must check an admin session first. Setting a row by hand does not release the latch: the next run puts the flip back when the value in force is looser than the trip.
 - **Reset after the month's stop:** raise `BREAKER_BUDGET_MONTH_USD` by deploy first (or wait for the 1st), then reset. While the month is still over budget the next run trips again.
 - **Stop the automatic flips:** set `breaker` to alert_only. Alerts continue; the breaker names what it would have flipped.
 
 ## 2. What the guard keeps
 
-All counts are global, exact and per UTC period; a day's all-scopes total is kept 40 days. A meter with a per-scope limit also keeps its all-scopes count, which is what the breaker reads. A refused take adds nothing and writes nothing.
+All counts are global, exact and per UTC period; a day's all-scopes total is kept 40 days. A meter with a per-scope limit also keeps its all-scopes count, which is what the breaker reads. A refused take adds nothing and writes nothing. The guard is two instances of one class: `global` holds every costly meter, the pools and the breaker's state; `public` holds only `demo_session`, `email` and `email_code`, the meters that fail open. A flood of public calls can overload `public` and no more: uploads, conversion and export never wait on it. The breaker reads those three meters (and email's history) from `public`.
 
 | meter | counts | limits (cap names in section 3) |
 |---|---|---|
@@ -62,11 +62,11 @@ All counts are global, exact and per UTC period; a day's all-scopes total is kep
 | `demo_session` | demo sessions | day |
 | `d1_writes` | D1 rows written, read from analytics only: no caller records it | none; priced in section 6 |
 
-Pools hold a lease that frees itself: `convert` (accounts), `convert_public` (guest and demo), `export`. A lease has a deadline (the requested time, at most the pool's maximum). The Converter destroys its container at the deadline. An unreleased lease keeps its slot through the grace, then is dropped and counted; the breaker turns `convert` off on any overdue or dropped lease, because a container may still be running.
+Pools hold a lease that frees itself: `convert` (accounts), `convert_public` (guest and demo), `export`. A lease has a deadline (the requested time, at most the pool's maximum). The Converter destroys its container at the deadline. An unreleased lease keeps its slot through the grace (a release is usually in flight), then is dropped and counted; the breaker turns `convert` off on any lease dropped past deadline plus grace, because a container may still be running. A pool with a per-scope cap (`export`) needs a scope.
 
 ## 3. Caps
 
-Each cap has a default in `src/worker/spend/caps.ts` and a var that replaces it; the var is the maximum. A `cap.<name>` row from `/admin` can lower a cap and never raise it (`setOverrides`). A var that is not a number of at least 0 is ignored. None of these vars is in `wrangler.jsonc`; set one with `wrangler deploy --var`. A cap is a hard refusal; the trip lines in section 6 sit under the caps and act first.
+Each cap has a default in `src/worker/spend/caps.ts` and a var that replaces it; the var is the maximum. A `cap.<name>` row from `/admin` can lower any cap and never raise it: the breaker pushes the rows to both guard instances (`setOverrides`), and the composition root passes the same rows to `spendFor(env, overrides)` for the caps the client keeps (the R2 block and the isolate allowances). A var that is not a number of at least 0 is ignored. None of these vars is in `wrangler.jsonc`; set one with `wrangler deploy --var`. A cap is a hard refusal; the trip lines in section 6 sit under the caps and act first.
 
 | var | default | reason |
 |---|---|---|
@@ -101,6 +101,8 @@ Each cap has a default in `src/worker/spend/caps.ts` and a var that replaces it;
 
 The composition root builds one `Spend` with `spendFor(env)` (`src/worker/spend/guard.ts`) and passes it through each route's and Durable Object's deps; nothing else calls `spendFor`. `Spend` (`src/worker/spend/client.ts`) is an interface, so unit tests of U, V2 and A pass a fake and never start the guard. Presenting an already-converted file never calls it. `refusal(result)` returns the response to send.
 
+**A caller bug throws; only a transport error is an outage.** `take`, `charge`, `acquire`, `record` and `refund` check their arguments before any RPC: `n` is a positive integer (a byte meter needs at least 1), a scoped meter and a pool with a per-scope cap need a scope, a ttl is above 0. A bad call throws a `RangeError` and is never admitted as a fail-open outage. On an unauthenticated route, the route's own rate-limit binding (`RL_*`) passes first, then the guard is called.
+
 **When the guard cannot be reached**, each call has a fixed mode, tested per meter:
 
 | path | calls | guard unreachable |
@@ -113,9 +115,9 @@ The composition root builds one `Spend` with `spendFor(env)` (`src/worker/spend/
 | email | `take("email")` | admitted up to `CAP_ISOLATE_OPEN_EMAIL_DAY` a day in that isolate, then 429 |
 | sign-in code | `take("email_code", 1, ipHash)` | admitted up to `CAP_ISOLATE_OPEN_EMAIL_CODE_IP_DAY` a day per IP hash in that isolate, then 429 |
 
-A guard outage must not end code sign-in or the public demo, and email is capped at 200 a day by the platform anyway. The isolate count lives in the isolate (all clients in it share one) and starts again each UTC day; the breaker's lines and the platform quota bound the rest. Every fail-open admission logs `spend_guard_open`.
+A guard outage must not end code sign-in or the public demo, and email is capped at 200 a day by the platform anyway. The three public meters live on the `public` instance, so an outage or flood there fails only them open, and never makes a costly path answer 503. The isolate count lives in the isolate (all clients in it share one) and starts again each UTC day; the breaker's lines and the platform quota bound the rest. Every fail-open admission logs `spend_guard_open`.
 
-**`charge` is block-reserved.** A Worker request is not one guard call per R2 operation: each isolate reserves `CAP_R2_BLOCK_OPS` (100) operations of a class from the guard, spends them locally, and never returns the leftover, so 250 single charges make 3 guard writes. The guard's monthly count is therefore the reserved total, never lower than the spent total; at most one block per isolate per class is counted but not yet used. Where a whole block no longer fits under the cap, the client takes exactly what it is short by, so the cap still refuses at the exact operation. A charge that cannot be covered is refused with 429 (cap) or 503 (guard unreachable); reserved operations already in an isolate keep being spent while the guard is down. A month rollover can leave up to a block per isolate charged to the earlier month.
+**`charge` is block-reserved.** A Worker request is not one guard call per R2 operation: each isolate reserves `CAP_R2_BLOCK_OPS` (100) operations of a class from the guard, spends them locally, and never returns the leftover, so 250 single charges make 3 guard writes. The guard's monthly count is therefore the reserved total, never lower than the spent total; at most one block per isolate per class is counted but not yet used. Where a whole block no longer fits under the cap, the client takes exactly what it is short by, so the cap still refuses at the exact operation. A charge that cannot be covered is refused with 429 (cap) or 503 (guard unreachable); the reserve is touched only after the guard answers, so a refused charge leaves it and reserved operations keep being spent while the guard is down. The reserve is stamped with the UTC month and dropped when the month changes, so a new month is charged from the guard (at most a block per isolate stays counted in the earlier month).
 
 | result | status | code | header |
 |---|---|---|---|
@@ -123,12 +125,12 @@ A guard outage must not end code sign-in or the public demo, and email is capped
 | `busy` | 503 | `service_busy` | `Retry-After`, at most 60 |
 | `unavailable` | 503 | `service_busy` | `Retry-After` 30 |
 
-Calls, by stream. A caller checks its switch first and calls the guard second. A `refund` is for work that never started: it takes the time of the take, does nothing when that time is in the future or older than the longest lease plus its grace, and never takes a counter below zero (a refund larger than the caller's own take can still erase other callers' counts on that day, so refund exactly what was taken).
+Calls, by stream. A caller checks its switch first and calls the guard second. A `refund` is for work that never started, and takes the ticket `take` returned (`meter`, `n`, `scope`, `takenAt`): it refunds at most the ticket's `n` (a larger one throws), under the scope the take used. The guard does nothing when `takenAt` is in the future or older than the longest lease plus its grace (a take admitted while the guard was down has `takenAt` 0), never takes a counter below zero, and on a scoped meter lowers the all-scopes count by at most what that scope's own count holds, so one caller cannot erase another's. A ticket is not redeemed once: refunding the same ticket twice is a caller bug.
 
 | stream | calls |
 |---|---|
 | uploads | `take("upload_user", 1, userId)` and `take("upload_user_bytes", bytes, userId)` at create; `take("guest_drop", 1, ipHash)` per guest drop; `charge("A", n)` once per part-URL mint request; `charge("B", n)` once per validation, where `n` is the reads that validation makes (2 for a small deck, at most 64 for a large one) |
-| conversion | per request: `take("convert_user", 1, userId)`, `take("convert_guest", 1, ipHash)` or `take("convert_demo", 1, ipHash)`: 429. In the Converter: `acquire("convert" or "convert_public", ttlSeconds, scope)`; busy means set the alarm for `retryAfterSeconds` and try again, never a loop; `take("container_seconds", stageTimeoutSum)` before `start()` and `refund` of the unused part with the time of the take; a refusal marks the derived row failed once. `release(leaseId)` in `finally`. `record("conversion_done" or "conversion_failed", 1)` |
+| conversion | per request: `take("convert_user", 1, userId)`, `take("convert_guest", 1, ipHash)` or `take("convert_demo", 1, ipHash)`: 429. In the Converter: `acquire("convert" or "convert_public", ttlSeconds, scope)`; busy means set the alarm for `retryAfterSeconds` and try again, never a loop; `take("container_seconds", stageTimeoutSum)` before `start()` and `refund(ticket, unused)` of the unused part; a refusal marks the derived row failed once. `release(leaseId)` in `finally` (idempotent, retried once by the client). `record("conversion_done" or "conversion_failed", 1)` |
 | accounts | `take("email", 1)` and `take("email_code", 1, ipHash)` before a send: 429, and the code route says "Try Your Passkey or Ask for a Sign-In Link". The per-recipient limit is A's `email_code` buckets, not a guard meter. Also the admin spend panel and routes (section 8) |
 | library | `acquire("export", 900, userId)` and `take("export_user", 1, userId)` |
 | present server | `take("demo_session", 1)` before a demo create |
@@ -137,7 +139,7 @@ Calls, by stream. A caller checks its switch first and calls the guard second. A
 
 `runSpendBreaker(env)` runs on the `*/5 * * * *` cron. It reads the guard's exact counters and, when `CF_ANALYTICS_TOKEN` and `CF_ACCOUNT_ID` are set, daily totals from the GraphQL Analytics API (Account Analytics Read only). With no token it uses counters alone and every alert says "counters only". Each run builds the spend report (section 8) and stores it. It then:
 
-1. latches each trip in the guard (with the row's value from before, so a reset can restore it), writes the switch row as actor `breaker` with an `admin_action` line, and sends one alert per trip, listing every switch the trip flipped (a failed write or alert is retried next run; overlapping runs claim the alert in the guard, so one is sent);
+1. latches each trip in the guard (with the row's value from before, so a reset can restore it), writes the switch row as actor `breaker` with an `admin_action` line, and sends one alert per trip, listing every switch the trip flipped (a failed write or alert is retried next run; overlapping runs claim the alert in the guard, so one is sent). While the row cannot be written (D1 down) the alert is still sent, marked not applied, since that is when the owner sets the floor with `wrangler deploy --var`; the trip is marked alerted, and announced as applied, only once the row is written. A reset that lands between the run's read and its write is not undone: the run checks the latch again just before it writes;
 2. sends a warning at most once per rule per UTC day; every send is in a try, and a failed one releases its claim so the next run retries, and never stops the trips;
 3. never loosens a switch: it writes only when the value in force (the stricter of the Worker var and the row, an unknown row value counting as the strictest) is looser than the trip, and every trip is stricter than its switch's default; a stricter trip on the same switch is a new trip and a new alert;
 4. sends one alert, at most once a UTC day, while analytics has failed 3 or more runs in a row; a dataset that fails keeps its last good figures (the report takes the larger of those and the counters) and the report's sources say so;
@@ -157,8 +159,8 @@ Email bounces come from the GraphQL dataset `emailSendingAdaptive` (`deliveryFai
 | demo conversions or demo sessions reach their daily cap | `BREAKER_TRIP_PCT` percent of the cap | `demo_drop=off`, `demo=off` |
 | R2 class A or B in a month | `BREAKER_MONTH_WARN_PCT` percent of the cap | warning |
 | guest drops in a day | two lines below | `demo_drop=off`, then `guest_files=stopped` |
-| live conversion leases | more than `BREAKER_LEASES_LIVE_MAX` | `convert=off` |
-| a lease past its deadline, or dropped | any | `convert=off` |
+| live conversion leases | more than the two conversion pools allow together (`CAP_POOL_CONVERT` plus `CAP_POOL_CONVERT_PUBLIC`, as lowered by any row) | `convert=off` |
+| a lease dropped past its deadline plus grace | any | `convert=off` |
 | failed conversions | more than `BREAKER_CONVERT_FAILED_PCT` percent of at least `BREAKER_CONVERT_FAILED_MIN` | `convert=off` |
 | Workers and Durable Object usage (analytics) | lines below | warning only |
 
@@ -167,7 +169,6 @@ Email bounces come from the GraphQL dataset `emailSendingAdaptive` (`deliveryFai
 | `BREAKER_TRIP_PCT` | 100 | percent of a daily cap that trips its switch |
 | `BREAKER_WARN_PCT` | 50 | percent of a daily trip line or cap that warns |
 | `BREAKER_MONTH_WARN_PCT` | 80 | percent of a monthly cap or of the budget that warns |
-| `BREAKER_LEASES_LIVE_MAX` | 4 | live conversion leases that mean a leak |
 | `BREAKER_CONVERT_FAILED_PCT` | 20 | failed conversions as a percent of the day's |
 | `BREAKER_CONVERT_FAILED_MIN` | 10 | conversions needed before the percent counts |
 | `BREAKER_GUEST_DROP_COST_USD` | 0.00002 | cost of one guest drop |
@@ -291,7 +292,8 @@ Rules for the Cloudflare side:
 ## 10. Fails closed, and what stays open
 
 - Guard unreachable or erroring: costly work is refused with 503 (section 4). A refusal never writes.
-- D1 unreachable: the settings lookup keeps its last cached value, or the var. The breaker logs the failed write and retries next run; the latch holds.
+- D1 unreachable: the settings lookup keeps its last cached value, or the var. The breaker logs the failed write, sends the trip alert marked not applied, and retries next run; the latch holds.
+- The `public` instance unreachable: the three public meters fail open per isolate, and the breaker runs on `global` alone, so those three read zero until it is back.
 - Analytics unreachable: counters still trip; one alert after 3 runs.
 - A Workers or Durable Object spend block stops crons account-wide (the breaker and the probe) and makes the guard unreachable. Cloudflare's $2 and $5 alert emails are then the only signal. The Converter reads `convert` from F's D1 settings before it starts, so a tripped `convert` holds without the guard.
 - Counters are exact for what the Worker does. Presigned R2 PUTs and floods that never reach a meter are seen only through analytics and the platform spend limits, which stay on.
