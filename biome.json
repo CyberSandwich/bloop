@@ -6,6 +6,7 @@
       "!**/*.md",
       "!!node_modules",
       "!!.wrangler",
+      "!!dist",
       "!!coverage",
       "!!test-results",
       "!!.lighthouseci",

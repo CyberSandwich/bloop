@@ -43,7 +43,7 @@ flowchart TB
     l["/ landing, /privacy, /terms, /security"]
   end
   subgraph cf[Cloudflare account, one Worker, one origin]
-    assets[Static assets: public/ served directly, headers from public/_headers]
+    assets[Static assets: dist/, public/ with its JS minified, served directly, headers from _headers]
     w[Worker: fetch handler with URLPattern routes, plus scheduled handler]
     scr[(Screen Durable Object, one per screen, SQLite, hibernating WebSockets, one alarm)]
     dir[(Directory Durable Object, one instance: typed code to screen, guess counters)]
@@ -247,7 +247,7 @@ src/worker/
   auth/{oauth,vault,sessions,cookies,services,db}.ts   oauth4webapi flow; token vault; phone sessions; cookie format and AEAD seal; per-request objects and the daily job; the D1 slice
   routes/{pairing,files,open,drop,control,auth,export,common}.ts
   retention.ts             cron jobs: closeStaleSessions (hourly), runRetention (daily)
-public/                    wrangler's assets directory, served as it is. Everything here is public: no secrets, no server-only logic
+public/                    the assets' source, built into dist/ (each JS module minified, everything else as it is), which wrangler serves. Everything here is public: no secrets, no server-only logic
   index.html security.html privacy.html s.html a.html code.html 404.html   (the /g and /me pages are not built yet)
   _headers                 static security headers (section 10)
   _redirects               /it answers 301 to /security; /demo 302 to /s?mode=demo
@@ -273,6 +273,7 @@ public/                    wrangler's assets directory, served as it is. Everyth
   .well-known/security.txt
 src/fonts/InterVariable.woff2   the source of the font subset, never served
 tools/
+  build-assets.mjs         public/ to dist/, each JS module minified on its own (ADR 0011); wrangler runs it before dev and deploy
   make-fixtures.mjs        writes the synthetic sample decks the tests use
   render-slides.py         the demo deck's PDF export to the demo screen's slide images
   change-tier.mjs          classifies the staged diff (T0 to T2) and enforces the commit-msg blocks
@@ -286,7 +287,7 @@ test/
   fixtures/graph/          synthetic Graph JSON for the contract tests (README says so)
   fixtures/jsdoc/          a good and a bad browser module, proving JSDoc @import of protocol.ts is type-checked
 ```
-`.wrangler/` is gitignored. There is no copy or build step for assets: `wrangler.jsonc` sets `assets.directory` to `./public`. The Worker imports `public/js/shared/*.js` by relative path, and wrangler's own esbuild bundles it. Type-only contracts stay in `src/shared/*.ts` so they are never served.
+`.wrangler/` and `dist/` are gitignored. `wrangler.jsonc` sets `assets.directory` to `./dist` and `build.command` to `tools/build-assets.mjs`, so every `wrangler dev` and `wrangler deploy` rebuilds `dist/` from `public/` first (ADR 0011). The Worker imports `public/js/shared/*.js` by relative path, and wrangler's own esbuild bundles it. Type-only contracts stay in `src/shared/*.ts` so they are never served.
 
 ## 6. Routes
 
@@ -525,7 +526,7 @@ Logging: Worker logs record the route pattern, status, `ErrorCode` and duration.
 
 - `npm run dev`: `wrangler dev --ip 127.0.0.1 --port 8787 --persist-to .wrangler/state`, after `predev` applies `migrations/` to that local D1 (idempotent; the guest drop and the session records need the tables, and the e2e and Lighthouse servers start through it). This needs no Cloudflare login. DO, D1, R2 and the rate-limit bindings run locally, and `FILE_SOURCE=mock`. It serves plain HTTP: browsers treat `localhost` as a secure context, so `__Host-` cookies work. Trying it from a phone on the LAN needs HTTPS (`--local-protocol https`, accepting the self-signed certificate once) and `PUBLIC_ORIGIN` set to that origin.
 - Local secrets: `cp .dev.vars.example .dev.vars` (every value is fake).
-- `npm run typecheck`: `tsc` for the Worker, for tests and tools (`tsconfig.node.json`), and for the browser JS (`tsconfig.public.json`). `npm run lint`: Biome (markdown is excluded). `npm test`: Vitest unit tests. `npm run check` runs typecheck, lint, test, test:int, html-validate and size-limit. Size budgets are the `size-limit` entries in `package.json`, the only owner.
+- `npm run typecheck`: `tsc` for the Worker, for tests and tools (`tsconfig.node.json`), and for the browser JS (`tsconfig.public.json`). `npm run lint`: Biome (markdown is excluded). `npm test`: Vitest unit tests. `npm run check` checks the generated pages, builds `dist/` (`build:assets`), then runs typecheck, lint, test, test:int, html-validate and size-limit. Size budgets are the `size-limit` entries in `package.json`, the only owner; a JS entry measures the minified build in `dist/`.
 - `npm run test:int`: each test file starts `wrangler dev` on a free port through `test/integration/wrangler.ts` (`{migrate: true}` applies `migrations/` to its throwaway D1 first; `auth.test.ts` uses that, with a local fake Entra on a free port and `ENTRA_AUTHORITY` set to it) (throwaway state directory, `PUBLIC_ORIGIN` set to that port, torn down after), drives the screen and phone with Node's native `WebSocket` (with an `Origin` header) and `fetch`, and moves time by running the Worker with short timings under `TEST_TIMING=1` (section 9) instead of a clock header: Durable Object alarms use real time. `open.test.ts` and `open-timing.test.ts` cover the open path (mint, fetch, methods, the 11th fetch, short windows, stream mode, fallback links, end). Three files cover pairing: `pairing.test.ts` (flows, validation, CSRF, sockets), `pairing-timing.test.ts` (short timings: expiry, rotation, claim timeout, auto-end, hello timeout) and `pairing-limits.test.ts` (production timing, so the rate-limit bindings and the exact guess limit are live, and a config that fails closed). `wrangler dev` does not implement Durable Object jurisdictions, so `stubs.ts` skips `eu` when `PUBLIC_ORIGIN` is local.
 - Task pages (`public/s.html`, `a.html`, `code.html`, `css/base.css`, `css/app.css`, `js/screen.js`, `phone.js`, `code.js`): pure client logic lives in `public/js/core/` (state mapping `states.js`, every string `copy.js` and one file per page beside it (`copy-screen.js`, `copy-phone.js`, `copy-code.js`), so a page loads only its own, `channel.js` for the WebSocket with reconnect 1, 2, 5, 10, 30 s and the 3 s polling fallback, `api.js`, `qr.js`). `/s?mode=demo` opens a demo screen (default `live`). The QR link is `/a?c=<code>`; the phone strips `?c=` with `history.replaceState` when its modules load. `GET /api/files` answers `{files: FileEntry[]}` (`core/files.js` has no fallback: an error is an error). A signed-in live phone shows a Disconnect OneDrive text action (it asks `GET /api/me` once after listing). `public/js/launcher.js` is the screen's launch ladder (the `open` frame, the Download control after 5 s, the PDF view, the Open click when the launch had no user gesture) and `public/js/residue.js` clears the page's state at `ended` and `closed`. Claims marked `[V-n]` in design.md ship only while their flag in `core/verified.js` is true.
 - `npm run test:e2e` (CI): Playwright with two browser contexts (screen at 1440, phone at 390), started with `TEST_TIMING=1` and `.dev.vars` from the example. It runs the full demo flow (the slides in the page with no launch, a reload after Approve, the one-device round trip at phone width), the open path on a live screen (launch, the Download fallback after the 5 s timeout, the PDF view, End clearing the screen's storage), the guest flow with fixtures (upload, then the Open click on the screen and the demo file card), every state string, axe, and the header assertions.
@@ -536,5 +537,5 @@ Logging: Worker logs record the route pattern, status, `ErrorCode` and duration.
 
 CI (`.github/workflows/ci.yml`) runs on every push and pull request, and weekly (Mondays 06:00 UTC, on the default branch) to catch drift in the runner image, the platform and upstream services such as the Cloudflare and Microsoft endpoints; the lockfile pins dependencies, and `npm outdated` belongs to the monthly review. It has two jobs. `check` runs `npm ci` and `npm run check`. `browser` installs Chromium, runs `npm run test:e2e` (Playwright and axe against `npm run dev`), then `lhci autorun` with the budgets in `lighthouserc.json` (accessibility 1.0, LCP 2500 ms, CLS 0.1).
 
-`.github/workflows/deploy.yml` runs on `main`, in the GitHub environment `production` (which requires a reviewer). Secrets cannot be tested in a job-level `if`, so the token is copied into the job `env` and every step gates on `env.CLOUDFLARE_API_TOKEN != ''`; without the secret the job succeeds and only prints a skip notice. With it: `npm ci`, `npm run check`, `wrangler d1 migrations apply DB --remote`, `wrangler deploy`. The post-deploy header grade (`@mdn/mdn-http-observatory "$BLOOP_PREVIEW_URL"`) is not wired yet.
+`.github/workflows/deploy.yml` runs on `main`, in the GitHub environment `production` (which requires a reviewer). Secrets cannot be tested in a job-level `if`, so the token is copied into the job `env` and every step gates on `env.CLOUDFLARE_API_TOKEN != ''`; without the secret the job succeeds and only prints a skip notice. With it: `npm ci`, `npm run check`, `wrangler d1 migrations apply DB --remote`, `wrangler deploy` (which rebuilds `dist/` before it uploads). The post-deploy header grade (`@mdn/mdn-http-observatory "$BLOOP_PREVIEW_URL"`) is not wired yet.
 One-time owner steps (they need the owner's accounts): create the account, the D1 database with `--jurisdiction=eu`, and the R2 bucket with jurisdiction `eu` plus a 1-day lifecycle rule; set the secrets with `wrangler secret put`; register the Entra app (redirect URI `https://<host>/auth/callback`, confidential client, delegated `Files.Read`, `offline_access`, `openid`); set DNS. Until then everything runs locally, with `FILE_SOURCE=mock`.

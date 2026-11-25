@@ -18,123 +18,125 @@
     "test:int": "vitest run --config vitest.int.config.ts",
     "test:cov": "vitest run --coverage --coverage.reporter=text-summary --coverage.include=src/** --coverage.include=public/js/**",
     "html-validate": "html-validate public",
-    "size": "size-limit",
+    "size": "npm run build:assets && size-limit",
     "build:pages": "node tools/build-pages-cli.mjs",
     "check:pages": "node tools/build-pages-cli.mjs --check",
-    "check": "npm run check:pages && npm run typecheck &&npm run lint && npm test && npm run test:int && npm run html-validate && npm run size",
+    "build:assets": "node tools/build-assets.mjs",
+    "build": "npm run build:pages && npm run build:assets",
+    "check": "npm run check:pages && npm run build:assets && npm run typecheck && npm run lint && npm test && npm run test:int && npm run html-validate && npm run size",
     "test:e2e": "playwright test"
   },
   "size-limit": [
     {
       "name": "landing JS",
-      "path": "public/js/site.js",
-      "limit": "1.7 kB"
+      "path": "dist/js/site.js",
+      "limit": "1.15 kB"
     },
     {
       "name": "doc pages JS",
       "path": [
-        "public/js/core/icons.js",
-        "public/js/core/ui.js",
-        "public/js/legal.js"
+        "dist/js/core/icons.js",
+        "dist/js/core/ui.js",
+        "dist/js/legal.js"
       ],
-      "limit": "3.25 kB"
+      "limit": "1.95 kB"
     },
     {
       "name": "room screen JS",
       "path": [
-        "public/js/core/api.js",
-        "public/js/core/channel.js",
-        "public/js/core/copy-screen.js",
-        "public/js/core/copy.js",
-        "public/js/core/demo.js",
-        "public/js/core/format.js",
-        "public/js/core/icons.js",
-        "public/js/core/loader.js",
-        "public/js/core/qr.js",
-        "public/js/core/rows.js",
-        "public/js/core/states.js",
-        "public/js/core/store.js",
-        "public/js/core/timing.js",
-        "public/js/core/ui.js",
-        "public/js/core/verified.js",
-        "public/js/launcher.js",
-        "public/js/residue.js",
-        "public/js/screen.js",
-        "public/js/shared/codes.js",
-        "public/js/shared/errors.js",
-        "public/js/shared/session.js",
-        "public/js/vendor/uqr.js",
-        "public/js/viewer.js"
+        "dist/js/core/api.js",
+        "dist/js/core/channel.js",
+        "dist/js/core/copy-screen.js",
+        "dist/js/core/copy.js",
+        "dist/js/core/demo.js",
+        "dist/js/core/format.js",
+        "dist/js/core/icons.js",
+        "dist/js/core/loader.js",
+        "dist/js/core/qr.js",
+        "dist/js/core/rows.js",
+        "dist/js/core/states.js",
+        "dist/js/core/store.js",
+        "dist/js/core/timing.js",
+        "dist/js/core/ui.js",
+        "dist/js/core/verified.js",
+        "dist/js/launcher.js",
+        "dist/js/residue.js",
+        "dist/js/screen.js",
+        "dist/js/shared/codes.js",
+        "dist/js/shared/errors.js",
+        "dist/js/shared/session.js",
+        "dist/js/vendor/uqr.js",
+        "dist/js/viewer.js"
       ],
-      "limit": "40.4 kB"
+      "limit": "23.7 kB"
     },
     {
       "name": "phone JS",
       "path": [
-        "public/js/core/api.js",
-        "public/js/core/boot-code.js",
-        "public/js/core/channel.js",
-        "public/js/core/copy-phone.js",
-        "public/js/core/copy.js",
-        "public/js/core/demo.js",
-        "public/js/core/drop.js",
-        "public/js/core/files.js",
-        "public/js/core/format.js",
-        "public/js/core/icons.js",
-        "public/js/core/loader.js",
-        "public/js/core/rows.js",
-        "public/js/core/states.js",
-        "public/js/core/store.js",
-        "public/js/core/timing.js",
-        "public/js/core/toast.js",
-        "public/js/core/ui.js",
-        "public/js/core/verified.js",
-        "public/js/phone.js",
-        "public/js/shared/codes.js",
-        "public/js/shared/errors.js",
-        "public/js/shared/names.js",
-        "public/js/shared/session.js"
+        "dist/js/core/api.js",
+        "dist/js/core/boot-code.js",
+        "dist/js/core/channel.js",
+        "dist/js/core/copy-phone.js",
+        "dist/js/core/copy.js",
+        "dist/js/core/demo.js",
+        "dist/js/core/drop.js",
+        "dist/js/core/files.js",
+        "dist/js/core/format.js",
+        "dist/js/core/icons.js",
+        "dist/js/core/loader.js",
+        "dist/js/core/rows.js",
+        "dist/js/core/states.js",
+        "dist/js/core/store.js",
+        "dist/js/core/timing.js",
+        "dist/js/core/toast.js",
+        "dist/js/core/ui.js",
+        "dist/js/core/verified.js",
+        "dist/js/phone.js",
+        "dist/js/shared/codes.js",
+        "dist/js/shared/errors.js",
+        "dist/js/shared/names.js",
+        "dist/js/shared/session.js"
       ],
-      "limit": "29.4 kB"
+      "limit": "15.95 kB"
     },
     {
       "name": "typed code JS",
       "path": [
-        "public/js/code.js",
-        "public/js/core/api.js",
-        "public/js/core/copy-code.js",
-        "public/js/core/copy.js",
-        "public/js/core/format.js",
-        "public/js/core/icons.js",
-        "public/js/core/store.js",
-        "public/js/core/timing.js",
-        "public/js/core/ui.js",
-        "public/js/shared/codes.js",
-        "public/js/shared/errors.js"
+        "dist/js/code.js",
+        "dist/js/core/api.js",
+        "dist/js/core/copy-code.js",
+        "dist/js/core/copy.js",
+        "dist/js/core/format.js",
+        "dist/js/core/icons.js",
+        "dist/js/core/store.js",
+        "dist/js/core/timing.js",
+        "dist/js/core/ui.js",
+        "dist/js/shared/codes.js",
+        "dist/js/shared/errors.js"
       ],
-      "limit": "9.4 kB"
+      "limit": "5.15 kB"
     },
     {
       "name": "phone media, lazy",
       "path": [
-        "public/js/core/photo.js",
-        "public/js/core/video.js"
+        "dist/js/core/photo.js",
+        "dist/js/core/video.js"
       ],
-      "limit": "3.35 kB"
+      "limit": "1.75 kB"
     },
     {
       "name": "screen video, lazy",
-      "path": "public/js/viewer-video.js",
-      "limit": "0.65 kB"
+      "path": "dist/js/viewer-video.js",
+      "limit": "0.5 kB"
     },
     {
       "name": "session length sheet, lazy",
       "path": [
-        "public/js/core/lazy.js",
-        "public/js/core/length.js",
-        "public/js/shared/length.js"
+        "dist/js/core/lazy.js",
+        "dist/js/core/length.js",
+        "dist/js/shared/length.js"
       ],
-      "limit": "2.35 kB"
+      "limit": "1.45 kB"
     },
     {
       "name": "session length sheet CSS, lazy",
@@ -145,11 +147,11 @@
     {
       "name": "phone remote, lazy",
       "path": [
-        "public/js/core/lazy.js",
-        "public/js/core/remote-ui.js",
-        "public/js/core/remote.js"
+        "dist/js/core/lazy.js",
+        "dist/js/core/remote-ui.js",
+        "dist/js/core/remote.js"
       ],
-      "limit": "3.6 kB"
+      "limit": "2.1 kB"
     },
     {
       "name": "phone remote CSS, lazy",
@@ -159,8 +161,8 @@
     },
     {
       "name": "drag and drop, lazy",
-      "path": "public/js/core/drag.js",
-      "limit": "0.45 kB"
+      "path": "dist/js/core/drag.js",
+      "limit": "0.25 kB"
     },
     {
       "name": "font",
@@ -255,6 +257,7 @@
     "@size-limit/file": "14.3.0",
     "@types/node": "26.6.6",
     "@vitest/coverage-v8": "5.1.1",
+    "esbuild": "0.28.2",
     "fast-check": "4.11.0",
     "html-validate": "11.21.1",
     "marked": "18.3.0",

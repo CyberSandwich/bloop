@@ -30,6 +30,7 @@ jobs:
       # The page build is a gate, never a commit: rebuilding must change nothing and add nothing.
       - run: npm run build:pages
       - run: git diff --exit-code && test -z "$(git status --porcelain)"
+      - run: npm run build:assets
       - run: npm run typecheck
       - run: npm run lint
       - run: npm test

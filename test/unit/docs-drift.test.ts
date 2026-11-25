@@ -245,7 +245,17 @@ function firstLoad(script: string): string[] {
 }
 
 describe("size budgets", () => {
-  const entries: { name: string; path: string | string[] }[] = JSON.parse(read("package.json"))["size-limit"];
+  const measured: { name: string; path: string | string[] }[] = JSON.parse(read("package.json"))["size-limit"];
+  // A JS entry measures the served build (dist/js, ADR 0011); its module graph is read from the source it builds.
+  const source = (p: string) => p.replace(/^dist\//, "public/");
+  const entries = measured.map((e) => ({ ...e, path: Array.isArray(e.path) ? e.path.map(source) : source(e.path) }));
+
+  it("every JS entry measures what users download: the minified build, never the source", () => {
+    const js = measured.flatMap((e) => [e.path].flat()).filter((p) => p.endsWith(".js"));
+    expect(js.length).toBeGreaterThan(10);
+    expect(js.filter((p) => !p.startsWith("dist/js/"))).toEqual([]);
+  });
+
   const pageEntries = entries.filter((e) => e.name.endsWith(" JS"));
   const scripts = [
     ...new Set(

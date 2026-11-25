@@ -366,3 +366,5 @@ archive/
 # Repo
 # docs/ stays tracked: technical docs are public
 !docs/
+# the served build of public/ (tools/build-assets.mjs)
+/dist/
