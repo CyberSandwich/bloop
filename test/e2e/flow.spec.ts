@@ -3304,6 +3304,15 @@ test.describe("SHOTS the phone's remote, sheet and question; the pill's frames",
     await phone.context.close();
   });
 
+  test("SHOTS a demo phone's end: the waitlist over Done", async ({ browser }) => {
+    const { screen, phone } = await approved(browser);
+    await revoke(phone.page);
+    await expect(heading(phone.page)).toHaveText("Session Ended");
+    await shoot(phone.page, "a-ended-demo", ["320", "390"]);
+    await screen.context.close();
+    await phone.context.close();
+  });
+
   test("FRAMES the pill's left, width and center per frame through a switch", async ({ browser }) => {
     const screen = await demoScreen(browser);
     const { phone } = await scan(browser, screen.page);
@@ -3326,7 +3335,7 @@ test.describe("SHOTS the phone's remote, sheet and question; the pill's frames",
     await page.waitForTimeout(800);
     await sample("deck to Vevox", async () => {
       const tab = page.context().waitForEvent("page");
-      await sidebarItem(page, "Vevox").click();
+      await sidebarLink(page, "Vevox").click();
       await (await tab).close();
     });
     await screen.context.close();
