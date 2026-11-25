@@ -76,10 +76,11 @@ export async function runRetention(
   const guestPasses = await changes(db, "DELETE FROM guest_pass WHERE expires_at < ?", now);
   const r2OpRows = await changes(db, "DELETE FROM r2_ops WHERE month < ?", monthsBefore(now, R2_OPS_MONTHS));
   const auth = await authMaintenance(env, config, () => now);
-  // After the auth jobs: a user row goes 30 days after its last grant or session is gone.
+  // After the auth jobs: an Entra user row goes 30 days after its last grant or session is gone. An email member never
+  // does: they hold library rows and R2 objects, and leave only through the account purge (ADR 0013).
   const userRows = await changes(
     db,
-    `DELETE FROM app_user WHERE last_seen_at < ?
+    `DELETE FROM app_user WHERE last_seen_at < ? AND tid != 'email'
        AND NOT EXISTS (SELECT 1 FROM token_grant g WHERE g.user_id = app_user.id)
        AND NOT EXISTS (SELECT 1 FROM phone_session p WHERE p.user_id = app_user.id)`,
     now - USER_ROW_DAYS * DAY_MS,

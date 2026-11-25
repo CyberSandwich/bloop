@@ -239,13 +239,56 @@ export type HttpError =
   | "method_not_allowed"
   | "internal";
 export type ClientError = "offline" | "service_down" | "network_blocked";
+/** Accounts, sign-in, invites and the admin routes (ADRs 0013, 0014, 0026). */
+export type AccountError =
+  | "email_invalid"
+  | "code_invalid"
+  | "invite_dead"
+  | "invite_refused"
+  | "already_member"
+  | "turnstile_failed"
+  | "reauth_required"
+  | "restore_too_late"
+  | "gate_incomplete"
+  | "forbidden"
+  | "account_suspended"
+  | "passkey_invalid";
+/** The library, uploads and conversion (ADRs 0013, 0017, 0019). */
+export type LibraryError =
+  | "quota_exceeded"
+  | "library_full"
+  | "upload_not_found"
+  | "upload_expired"
+  | "part_invalid"
+  | "size_mismatch"
+  | "file_disabled"
+  | "convert_unavailable";
+/** Live pairing with accounts (ADR 0015) and the spend guard's refusal. */
+export type PairingAccountError = "match_required" | "service_busy";
+/** The codes the phone and screen pages know (public/js/shared/errors.js). */
 export type ErrorCode = PairError | SourceError | OpenError | DropError | HttpError | ClientError;
+/** The codes of the account, library and spend routes (public/js/shared/errors-app.js); their pages carry their own copy. */
+export type AppError = AccountError | LibraryError | PairingAccountError;
+
+/** The launch mode (ADR 0026): preview shows today's product, open adds accounts, the library and the open pages. */
+export type LaunchMode = "preview" | "open";
+
+/** What the convert Workflow receives (ADR 0019): keys and ids only, never file bytes or an address. */
+export interface ConvertParams {
+  owner: "user" | "guest";
+  ownerRef: string;
+  fileId: string;
+  version: number;
+  bucket: "library" | "guest";
+  key: string;
+  ext: string;
+}
 
 /** Body of every error response (application/problem+json). */
 export interface Problem {
   type: "about:blank";
   status: number;
-  code: ErrorCode;
+  code: ErrorCode | AppError;
 }
 
 // User-facing state keys: the slots in the shared state strings (design.md section 7).

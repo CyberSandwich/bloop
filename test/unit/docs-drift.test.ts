@@ -4,7 +4,9 @@ import { join, posix } from "node:path";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
 import { ERRORS } from "../../public/js/shared/errors.js";
+import { APP_ERRORS } from "../../public/js/shared/errors-app.js";
 import { CONFIG_VARS } from "../../src/worker/config.ts";
+import { sizeEntries } from "../size-entries.ts";
 
 const ROOT = fileURLToPath(new URL("../../", import.meta.url));
 const read = (path: string) => readFileSync(join(ROOT, path), "utf8");
@@ -222,7 +224,8 @@ describe("error table", () => {
   it("interfaces.md section 8 points at errors.js and restates no code", () => {
     const section = read("docs/interfaces.md").split("## 8. ")[1]?.split("\n## ")[0] ?? "";
     expect(section).toContain("public/js/shared/errors.js");
-    expect(Object.keys(ERRORS).filter((code) => new RegExp(`\\b${code}\\b`).test(section))).toEqual([]);
+    const codes = [...Object.keys(ERRORS), ...Object.keys(APP_ERRORS)];
+    expect(codes.filter((code) => new RegExp(`\\b${code}\\b`).test(section))).toEqual([]);
   });
 });
 
@@ -242,7 +245,7 @@ function firstLoad(script: string): string[] {
 }
 
 describe("size budgets", () => {
-  const measured: { name: string; path: string | string[] }[] = JSON.parse(read("package.json"))["size-limit"];
+  const measured = sizeEntries();
   // An entry measures the served build (dist/, ADR 0011); its module graph is read from the source it builds.
   const source = (p: string) => p.replace(/^dist\//, "public/");
   const entries = measured.map((e) => ({ ...e, path: Array.isArray(e.path) ? e.path.map(source) : source(e.path) }));
@@ -315,6 +318,8 @@ describe("size budgets", () => {
       "drag and drop, lazy": "public/js/core/drag.js",
       "support mail, lazy": "public/js/shared/support.js",
       "sheen follow, lazy": "public/js/sheen-follow.js",
+      "trusted types policy, lazy": "public/js/core/tt.js",
+      "account errors, lazy": "public/js/shared/errors-app.js",
     });
     for (const entry of lazyEntries) {
       const own = [entry.path].flat();
@@ -349,12 +354,19 @@ describe("size budgets", () => {
           .map((m) => posix.join(posix.dirname(file), m[1] as string)),
       ),
     );
-    const lazyJs = entries.filter((e) => e.name.endsWith(", lazy") && [e.path].flat().every((p) => p.endsWith(".js")));
-    // The Check This Room page imports its words when it lands; until then nothing reaches them. Delete this line then.
-    const unwired = ["public/js/core/copy-check.js"];
-    const counts = Object.fromEntries(
-      lazyJs.map((e) => [e.name, [e.path].flat().filter((p) => targets.has(p) || unwired.includes(p))]),
+    // Modules the Worker or a later change imports first; the change that adds the browser importer deletes its line.
+    const awaitingImporter = new Set([
+      "public/js/core/copy-check.js",
+      "public/js/core/tt.js",
+      "public/js/shared/errors-app.js",
+    ]);
+    const lazyJs = entries.filter(
+      (e) =>
+        e.name.endsWith(", lazy") &&
+        [e.path].flat().every((p) => p.endsWith(".js")) &&
+        ![e.path].flat().some((p) => awaitingImporter.has(p)),
     );
+    const counts = Object.fromEntries(lazyJs.map((e) => [e.name, [e.path].flat().filter((p) => targets.has(p))]));
     expect(
       Object.values(counts).every((reached) => reached.length === 1),
       JSON.stringify(counts),
@@ -401,8 +413,8 @@ describe("size budgets", () => {
     );
   });
 
-  it("only package.json size-limit states a budget: docs name no entry next to a size", () => {
-    const entries: { name: string; path: string | string[] }[] = JSON.parse(read("package.json"))["size-limit"];
+  it("only tools/size/*.json states a budget: docs name no entry next to a size", () => {
+    const entries = sizeEntries();
     expect(entries.length).toBeGreaterThan(5);
     // An entry is named by its title or by the file it measures (globs and exclusions name no single file).
     const terms = entries.flatMap((e) => [
@@ -428,8 +440,9 @@ describe("size budgets", () => {
 
 describe("threat model", () => {
   it("every mitigated row has its id in a test title", () => {
-    const rows = read("docs/threat-model.md")
-      .split("\n")
+    // The v4 rows live in docs/threats/<area>.md and start `planned`, which needs no test yet.
+    const rows = ["docs/threat-model.md", ...walk("docs/threats", (path) => path.endsWith(".md"))]
+      .flatMap((path) => read(path).split("\n"))
       .filter((line) => /^\| [A-Z]+-\d+ \|/.test(line))
       .map((line) => line.split("|").map((cell) => cell.trim()));
     const mitigated = rows

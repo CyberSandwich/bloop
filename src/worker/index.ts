@@ -1,20 +1,34 @@
 import { configFor } from "./config.ts";
+import { Converter } from "./do/converter.ts";
 import { Directory } from "./do/directory.ts";
 import { Screen } from "./do/screen.ts";
+import { UserLibrary } from "./do/user-library.ts";
 import type { Env } from "./env.ts";
 import { type Policy, policyOf, withHeaders } from "./headers.ts";
 import { json, problem } from "./http.ts";
 import { offOrigin } from "./origin.ts";
+import { servePage } from "./pages.ts";
 import { closeStaleSessions, runRetention } from "./retention.ts";
 import { type Route, route } from "./router.ts";
+import { accountRoutes } from "./routes/account.ts";
+import { adminRoutes } from "./routes/admin.ts";
 import { authRoutes } from "./routes/auth.ts";
 import { controlRoutes } from "./routes/control.ts";
+import { devMailRoutes } from "./routes/dev-mail.ts";
+import { devR2Routes } from "./routes/dev-r2.ts";
 import { dropRoutes } from "./routes/drop.ts";
 import { exportRoutes } from "./routes/export.ts";
+import { fileOriginRoutes } from "./routes/fileorigin.ts";
 import { fileRoutes } from "./routes/files.ts";
+import { hookRoutes } from "./routes/hooks.ts";
+import { libraryRoutes } from "./routes/library.ts";
+import { noteRoutes } from "./routes/notes.ts";
 import { logFetch, openRoutes } from "./routes/open.ts";
 import { pairingRoutes } from "./routes/pairing.ts";
+import { reportRoutes } from "./routes/reports.ts";
+import { uploadRoutes } from "./routes/uploads.ts";
 import { sweepGuestFiles } from "./seams/guest-drop/select.ts";
+import { ConvertWorkflow } from "./workflows/convert.ts";
 
 /** The `triggers.crons` entry in wrangler.jsonc that runs the hourly backstop. */
 const HOURLY = "0 * * * *";
@@ -22,7 +36,7 @@ const HOURLY = "0 * * * *";
 const DAILY = "30 3 * * *";
 
 /** Paths the routes own; everything else is a static asset. wrangler.jsonc sends every request to the Worker so the host check sees it. */
-const DYNAMIC = /^\/(api|f|auth)\//;
+const DYNAMIC = /^\/(api|f|auth)\/|^\/fo\/ping$/;
 
 /** First match wins. Later modules add their routes here, one line each. */
 const routes: readonly Route[] = [
@@ -34,6 +48,16 @@ const routes: readonly Route[] = [
   ...authRoutes,
   ...openRoutes,
   ...exportRoutes,
+  ...accountRoutes,
+  ...adminRoutes,
+  ...hookRoutes,
+  ...reportRoutes,
+  ...devMailRoutes,
+  ...uploadRoutes,
+  ...devR2Routes,
+  ...libraryRoutes,
+  ...fileOriginRoutes,
+  ...noteRoutes,
 ];
 
 /** Methods other than the route's own get 405 with Allow, as /f/ requires for PROPFIND and OPTIONS. */
@@ -69,16 +93,16 @@ async function matchRoute(request: Request, env: Env, url: URL): Promise<{ respo
 
 export default {
   async fetch(request, env): Promise<Response> {
-    const away = offOrigin(request, env.PUBLIC_ORIGIN);
+    const away = offOrigin(request, env.PUBLIC_ORIGIN, env.FILE_ORIGIN);
     if (away) return away;
-    if (!DYNAMIC.test(new URL(request.url).pathname)) return env.ASSETS.fetch(request);
+    if (!DYNAMIC.test(new URL(request.url).pathname)) return servePage(request, env);
     const { response, policy } = await dispatch(request, env);
     // A WebSocket upgrade response must reach the runtime untouched.
     return response.status === 101 ? response : withHeaders(response, policy);
   },
 
   // Hourly: leftover guest objects (DROP-07) and session rows that lost their end. Daily: retention (DATA-02).
-  async scheduled(controller, env) {
+  async scheduled(controller, env, _ctx) {
     const config = configFor(env);
     if (!config.ok) return console.error(`config invalid: ${config.problems.join("; ")}`);
     if (controller.cron === HOURLY) {
@@ -91,4 +115,5 @@ export default {
   },
 } satisfies ExportedHandler<Env>;
 
-export { Directory, Screen };
+// Every class a binding or a migration names must be exported from here.
+export { Converter, ConvertWorkflow, Directory, Screen, UserLibrary };

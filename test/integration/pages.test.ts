@@ -14,8 +14,11 @@ afterAll(() => wrangler?.stop());
 const APP_CSP =
   "default-src 'none'; script-src 'self'; style-src 'self'; img-src 'self'; font-src 'self'; connect-src 'self'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'; require-trusted-types-for 'script'; trusted-types 'none'; upgrade-insecure-requests";
 
-// The screen page alone may play a guest video, from its own origin (VID-01).
-const SCREEN_CSP = APP_CSP.replace("font-src 'self';", "font-src 'self'; media-src 'self';");
+// The screen page alone may play a guest video, from its own origin (VID-01), and runs the viewers' workers under the
+// one Trusted Types policy (ADR 0020). No file origin is configured in the harness, so none is added.
+const SCREEN_CSP = APP_CSP.replace("font-src 'self';", "font-src 'self'; media-src 'self';")
+  .replace("connect-src 'self';", "connect-src 'self'; worker-src 'self';")
+  .replace("trusted-types 'none'", "trusted-types bloop-worker");
 
 describe.each([
   ["/s", "bloop: Screen", "/js/screen.js"],
@@ -51,7 +54,7 @@ describe("/s keeps fullscreen and wake lock for itself", () => {
   it("allows only those two features", async () => {
     const res = await fetch(`${wrangler.url}/s`);
     const policy = res.headers.get("Permissions-Policy") ?? "";
-    expect(policy).toBe(permissionsPolicy(true));
+    expect(policy).toBe(permissionsPolicy("screen"));
     expect(policy).toContain("fullscreen=(self)");
     expect(policy).toContain("screen-wake-lock=(self)");
     expect(policy).toContain("camera=()");

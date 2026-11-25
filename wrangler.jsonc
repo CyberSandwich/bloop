@@ -21,10 +21,34 @@
     "not_found_handling": "404-page",
     "run_worker_first": true
   },
-  "durable_objects": {
-    "bindings": [{ "name": "SCREEN", "class_name": "Screen" }, { "name": "DIRECTORY", "class_name": "Directory" }]
+  // Logs on, invocation logs off: an invocation log keeps the full URL, which holds /f/, /b/, /p/ and invite tokens.
+  // Query strings are redacted from what is logged anyway. Nothing is sampled out while traffic is this small.
+  "observability": {
+    "enabled": true,
+    "head_sampling_rate": 1,
+    "redact_query_string": true,
+    "logs": { "enabled": true, "invocation_logs": false },
+    "issues": { "enabled": true }
   },
-  "migrations": [{ "tag": "v1", "new_sqlite_classes": ["Screen", "Directory"] }],
+  // Conversion work (ADR 0019) outlasts the 30 s default; the spend guard, not this limit, bounds what it costs.
+  "limits": { "cpu_ms": 30000 },
+  "durable_objects": {
+    "bindings": [
+      { "name": "SCREEN", "class_name": "Screen" },
+      { "name": "DIRECTORY", "class_name": "Directory" },
+      { "name": "USER_LIBRARY", "class_name": "UserLibrary" },
+      { "name": "CONVERTER", "class_name": "Converter" }
+    ]
+  },
+  // The Converter container entry (`containers`, with its image digest under `containers[0].images`) arrives with the
+  // image, in the converter change: a container needs its image at deploy.
+  "migrations": [
+    { "tag": "v1", "new_sqlite_classes": ["Screen", "Directory"] },
+    { "tag": "v2", "new_sqlite_classes": ["UserLibrary", "Converter"] }
+  ],
+  "workflows": [{ "name": "bloop-convert", "binding": "CONVERT", "class_name": "ConvertWorkflow" }],
+  // Sends from the one support address only; Email Sending is onboarded for the domain.
+  "send_email": [{ "name": "EMAIL", "allowed_sender_addresses": ["hi@bloop.here"] }],
   // Created with `wrangler d1 create bloop --jurisdiction eu`; a new account prints a new id.
   "d1_databases": [
     {
@@ -34,7 +58,10 @@
       "migrations_dir": "migrations"
     }
   ],
-  "r2_buckets": [{ "binding": "GUEST_FILES", "bucket_name": "bloop-guest-files", "jurisdiction": "eu" }],
+  "r2_buckets": [
+    { "binding": "GUEST_FILES", "bucket_name": "bloop-guest-files", "jurisdiction": "eu" },
+    { "binding": "LIBRARY", "bucket_name": "bloop-library", "jurisdiction": "eu" }
+  ],
   "ratelimits": [
     { "name": "RL_CREATE", "namespace_id": "1001", "simple": { "limit": 10, "period": 60 } },
     { "name": "RL_CLAIM", "namespace_id": "1002", "simple": { "limit": 20, "period": 60 } },
@@ -46,11 +73,39 @@
     { "name": "RL_DEMO_CLAIM", "namespace_id": "1008", "simple": { "limit": 20, "period": 60 } },
     { "name": "RL_FILES", "namespace_id": "1009", "simple": { "limit": 20, "period": 60 } },
     { "name": "RL_CONTROL", "namespace_id": "1010", "simple": { "limit": 120, "period": 60 } },
-    { "name": "RL_UPGRADE", "namespace_id": "1011", "simple": { "limit": 30, "period": 60 } }
+    { "name": "RL_UPGRADE", "namespace_id": "1011", "simple": { "limit": 30, "period": 60 } },
+    { "name": "RL_CODE", "namespace_id": "1012", "simple": { "limit": 5, "period": 60 } },
+    { "name": "RL_INVITE", "namespace_id": "1013", "simple": { "limit": 10, "period": 60 } },
+    { "name": "RL_PASSKEY", "namespace_id": "1014", "simple": { "limit": 20, "period": 60 } },
+    { "name": "RL_UPLOAD_PART", "namespace_id": "1015", "simple": { "limit": 240, "period": 60 } },
+    { "name": "RL_LIBRARY", "namespace_id": "1016", "simple": { "limit": 120, "period": 60 } },
+    { "name": "RL_ADMIN", "namespace_id": "1017", "simple": { "limit": 60, "period": 60 } },
+    { "name": "RL_REPORT", "namespace_id": "1018", "simple": { "limit": 5, "period": 60 } }
   ],
   "triggers": { "crons": ["0 * * * *", "30 3 * * *"] },
   "vars": {
     "PUBLIC_ORIGIN": "https://bloop.here",
+    // The workers.dev host is a separate site, so a file served there never shares an origin or a cookie with the app (ADR 0018).
+    "FILE_ORIGIN": "https://bloop.dsap.workers.dev",
+    // proxy until the direct-upload change lands; convert off until the converter lands. Both are read per request.
+    "UPLOAD_MODE": "proxy",
+    "CONVERT_MODE": "off",
+    "UPLOAD_PART_BYTES": "16777216",
+    "UPLOAD_URL_TTL_SECONDS": "300",
+    "LIBRARY_QUOTA_BYTES": "5368709120",
+    "LIBRARY_MAX_FILE_BYTES": "524288000",
+    "LIBRARY_MAX_FILES": "2000",
+    "LARGE_FILE_CHOICE_BYTES": "31457280",
+    "TRASH_DAYS": "30",
+    "INACTIVE_DAYS": "365",
+    "INACTIVE_GRACE_DAYS": "30",
+    "ACCOUNT_DELETE_GRACE_DAYS": "7",
+    "INVITE_TTL_DAYS": "7",
+    "EMAIL_CODE_TTL_SECONDS": "600",
+    "REAUTH_SECONDS": "300",
+    "EMAIL_FROM": "hi@bloop.here",
+    // Public widget key; the secret half is the Worker secret TURNSTILE_SECRET_KEY.
+    "TURNSTILE_SITE_KEY": "0x4AAAAAAGS20bvgkLOdXzU9",
     "FILE_SOURCE": "mock",
     "OPEN_PATH_MODE": "redirect",
     "TOKEN_MODE": "refresh",

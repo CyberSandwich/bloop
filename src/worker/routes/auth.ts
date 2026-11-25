@@ -177,7 +177,8 @@ export const authRoutes: readonly Route[] = [
     }),
   ),
 
-  // Erasure (DATA-05): the user row, grant and sessions go; audit rows keep the session and lose the person.
+  // Erasure (DATA-05): the user row, grant and sessions go; audit rows keep the session and lose the person. An email
+  // member is not erased here: it starts the deletion grace and the purge removes them with their R2 objects (ADR 0013).
   route(
     ["DELETE"],
     "/api/me",
@@ -185,6 +186,9 @@ export const authRoutes: readonly Route[] = [
     withGraph(
       accountWrite(async (userId, _session, env, config) => {
         const { sessions, vault } = servicesFor(env, config);
+        if (await sessions.emailNorm(userId)) {
+          return sessions.requestDeletion(userId, Date.now() + config.account.deleteGraceDays * 86_400_000);
+        }
         const audit = auditFor(env);
         // Recorded first and not best effort: an erasure nobody can later see is worse than a failed one.
         await audit.record(accountEvent("user.erased", userId, Date.now()));

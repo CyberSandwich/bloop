@@ -1076,7 +1076,7 @@ describe("privacy notice", () => {
       "Off on the live site. If they are turned on, they record each request's details, including your IP address, and keep them at most 7 days",
     );
     expect(read("docs/threat-model.md")).toMatch(
-      /\| Worker logs \| Cloudflare \| off on the live Worker[^|]*if turned on, request details including the IP address, at most 7 days \|/,
+      /\| Worker logs \| Cloudflare \| [^|]*invocation logs off[^|]*invocation logs, if turned on, hold request details including the IP address, at most 7 days \|/,
     );
   });
 
