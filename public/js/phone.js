@@ -5,12 +5,13 @@
 import { createApi } from "./core/api.js";
 import { bootCode } from "./core/boot-code.js";
 import { openChannel, refusal } from "./core/channel.js";
-import { phoneCopy, refusalToast } from "./core/copy.js";
+import { phoneCopy, refusalToast, uploadLine } from "./core/copy.js";
 import { thumbOf } from "./core/demo.js";
-import { fileProblem, prepareFile, sendFile, wholeMB } from "./core/drop.js";
+import { fileProblem, kindOf, prepareFile, sendFile, wholeMB } from "./core/drop.js";
 import { loadFiles } from "./core/files.js";
 import { ago, countdown } from "./core/format.js";
 import { ICONS } from "./core/icons.js";
+import { loader, setProgress } from "./core/loader.js";
 import { rowFace, tile } from "./core/rows.js";
 import { adopt, firstFile, leave, liveClaim, onRefusal, phoneKey, retryStep } from "./core/states.js";
 import { dropPid, PID_KEY, pidStore, refOf, SID_KEY, sameScreen, sessionStore } from "./core/store.js";
@@ -18,6 +19,7 @@ import { toast } from "./core/toast.js";
 import { ariaFlag, byId, el, focusTitle, icon, isFramed, reloadOnRestore, setText, show, wsUrl } from "./core/ui.js";
 import { VERIFIED } from "./core/verified.js";
 import { ERRORS } from "./shared/errors.js";
+import { typeOfName } from "./shared/names.js";
 import { IN_SESSION, LIVE_CLAIM, orderItems } from "./shared/session.js";
 
 const api = createApi();
@@ -48,8 +50,6 @@ const ends = byId("ends");
 const actionsEl = byId("actions");
 const polite = byId("polite");
 const filePick = /** @type {HTMLInputElement} */ (byId("file-pick"));
-const barWrap = byId("bar-wrap");
-const bar = /** @type {HTMLProgressElement} */ (byId("bar"));
 
 /** @type {import("./types.js").PhonePage} */
 const c = {
@@ -137,6 +137,31 @@ function buildSkeleton() {
   fileList.replaceChildren(...Array.from({ length: 5 }, () => el("li", { class: "skel" })));
 }
 
+/** The one file on its way: its row over the loader (design.md section 6), whose fill grows with the bytes sent. */
+function buildUpload() {
+  const name = c.file?.name ?? "Your file";
+  // A HEIC goes as the JPEG made of it.
+  const item = /** @type {Item} */ ({
+    kind: "file",
+    id: "",
+    name,
+    type: typeOfName(name) ?? "jpg",
+    size: c.file?.size ?? null,
+  });
+  const part = loader(name, null);
+  part.setAttribute("aria-label", `Sending ${name}`);
+  fileList.replaceChildren(el("li", {}, [el("div", { class: "row upload" }, [part, ...rowFace(item, null)])]));
+}
+
+function showUpload() {
+  const part = fileList.querySelector(".loader");
+  if (part instanceof HTMLElement) setProgress(part, c.progress);
+  setText(
+    /** @type {HTMLElement} */ (fileList.querySelector(".small")),
+    uploadLine(c.progress, c.file && kindOf(c.file.name)),
+  );
+}
+
 /** Rebuilds the action buttons only when the set changes, so a button keeps focus while it shows progress. */
 function renderActions(/** @type {import("./types.js").PhoneAction[]} */ actions, /** @type {boolean} */ loading) {
   const ids = actions.map((a) => a.id).join();
@@ -195,7 +220,11 @@ function render() {
   const source = copy.files === "list" ? c.files : copy.files === "items" ? (v?.items ?? null) : null;
   const rows = `${copy.files}:${copy.add}`;
   if (copy.files === "skeleton" && c.rows !== rows) buildSkeleton();
-  else if (source && (c.rows !== rows || c.source !== source)) {
+  else if (copy.files === "upload") {
+    if (c.rows !== rows || c.source !== c.file) buildUpload();
+    c.source = c.file;
+    showUpload();
+  } else if (source && (c.rows !== rows || c.source !== source)) {
     if (copy.files === "list") buildRows(/** @type {Entry[]} */ (source), copy.add);
     else buildItems(source);
     c.source = source;
@@ -207,8 +236,6 @@ function render() {
   setText(scope, copy.scope);
   show(ends, copy.ends && !!v?.endsAt);
   countDown();
-  show(barWrap, copy.progress);
-  bar.value = Math.round(c.progress * 100);
   renderActions(copy.actions, copy.loading);
 
   setText(polite, key === "approving" ? "Approving" : "");
@@ -298,15 +325,21 @@ addEventListener("drop", (e) => {
   if (canAdd) choose([...(e.dataTransfer?.files ?? [])]);
 });
 
-const refuse = (/** @type {Parameters<typeof refusalToast>[0]} */ problem) =>
-  toast(refusalToast(problem, { demo: c.info?.mode === "demo", maxMB: wholeMB(c.maxBytes) }));
+const refuse = (/** @type {Parameters<typeof refusalToast>[0]} */ problem, /** @type {File} */ file) =>
+  toast(
+    refusalToast(problem, {
+      demo: c.info?.mode === "demo",
+      maxMB: wholeMB(c.maxBytes),
+      video: kindOf(file.name) === "video",
+    }),
+  );
 
 /** A picked or dropped file: what the phone can refuse is a toast and the page stays; otherwise the offer. */
 function choose(/** @type {File[]} */ files) {
   const file = files[0];
   if (!file) return;
   const problem = files.length > 1 ? "several" : fileProblem(file, c.maxBytes);
-  if (problem) return refuse(problem);
+  if (problem) return refuse(problem, file);
   c.file = file;
   c.drop = "confirm";
   c.error = null;
@@ -369,7 +402,7 @@ async function send() {
   /** @type {{abort: () => void} | null} */
   let up = null;
   c.drop = "sending";
-  c.progress = 0;
+  c.progress = kindOf(file.name) === "file" ? 0 : null;
   c.upload = {
     abort: () => {
       stopped = true;
@@ -380,11 +413,15 @@ async function send() {
   const ready = await prepareFile(file, c.maxBytes);
   if (stopped) return;
   if (!ready.ok) {
+    // The file cannot be made safe to send, so its offer goes too.
     c.upload = null;
     c.drop = "confirm";
-    render();
-    return refuse(ready.problem);
+    if (fromList()) toList();
+    else render();
+    return refuse(ready.problem, file);
   }
+  c.progress = 0;
+  render();
   const sending = sendFile({
     file: ready.file,
     pid: /** @type {string} */ (c.pid),
@@ -483,19 +520,18 @@ function attach(/** @type {string} */ pid) {
   });
 }
 
+/** What a claim or a resumed view says about the room; a guest's list is just its Add a File row. */
+function learn(/** @type {ClaimResponse | PhoneView} */ x) {
+  c.info = { roomName: x.room.name, registered: x.room.registered, match: x.match, mode: x.mode, kind: x.kind };
+  c.maxBytes = x.dropMaxBytes;
+  if (x.kind === "guest") c.files = [];
+}
+
 /** @param {ClaimResponse} claim */
 function paired(claim) {
   pids.set(PID_KEY, claim.pid);
-  c.info = {
-    roomName: claim.room.name,
-    registered: claim.room.registered,
-    match: claim.match,
-    mode: claim.mode,
-    kind: claim.kind,
-  };
-  c.maxBytes = claim.dropMaxBytes;
+  learn(claim);
   attach(claim.pid);
-  if (claim.kind === "guest") c.files = [];
   render();
   if (claim.kind !== "guest") listFiles();
 }
@@ -517,16 +553,8 @@ async function resume(/** @type {string} */ pid) {
     return fail("pairing_invalid");
   }
   const view = /** @type {PhoneView} */ (res.value);
-  c.info = {
-    roomName: view.room.name,
-    registered: view.room.registered,
-    match: view.match,
-    mode: view.mode,
-    kind: view.kind,
-  };
-  if (view.kind === "guest") c.files = [];
+  learn(view);
   setView(view, pid);
-  c.maxBytes = view.dropMaxBytes;
   attach(pid);
   render();
   if (view.kind === "owner" && LIVE_CLAIM.includes(view.state)) listFiles();

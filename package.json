@@ -25,8 +25,20 @@
   "size-limit": [
     {
       "name": "browser JS",
-      "path": "public/js/**/*.js",
-      "limit": "52.5 kB"
+      "path": [
+        "public/js/**/*.js",
+        "!public/js/core/photo.js",
+        "!public/js/core/video.js"
+      ],
+      "limit": "55.45 kB"
+    },
+    {
+      "name": "phone media, lazy",
+      "path": [
+        "public/js/core/photo.js",
+        "public/js/core/video.js"
+      ],
+      "limit": "3.5 kB"
     },
     {
       "name": "landing JS",
@@ -82,7 +94,7 @@
         "public/css/app.css"
       ],
       "gzip": true,
-      "limit": "10.25 kB"
+      "limit": "10.45 kB"
     },
     {
       "name": "hero image",

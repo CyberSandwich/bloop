@@ -1,9 +1,9 @@
 // A photo is re-encoded on the phone before it is sent: smaller on venue Wi-Fi, and a canvas writes no metadata, so
-// the GPS location and every other Exif field are gone (VID-04's photo twin). The server checks all stay.
+// the GPS location and every other Exif, XMP or IPTC field are gone (VID-04's photo twin). The server checks all stay.
 
 export const LONG_SIDE = 2560;
 const QUALITY = 0.82;
-const EXIF_SCAN = 65536;
+const SEGMENT_SCAN = 65536;
 
 /**
  * Whole pixels, the long side at most LONG_SIDE; a smaller image keeps its size.
@@ -16,27 +16,27 @@ export function fitSize(width, height) {
 }
 
 /**
- * True when the file's JPEG segments before the image data hold an Exif APP1 (where the location lives).
+ * False only when the JPEG's segments are walked to the image data with no APP1 (Exif or XMP, where a location
+ * lives) and no APP13 (IPTC); a structure it cannot walk counts as metadata.
  * @param {{slice: (a: number, b: number) => {arrayBuffer: () => Promise<ArrayBuffer>}}} file
  */
-export async function hasExif(file) {
-  const b = new Uint8Array(await file.slice(0, EXIF_SCAN).arrayBuffer());
+export async function hasMetadata(file) {
+  const b = new Uint8Array(await file.slice(0, SEGMENT_SCAN).arrayBuffer());
   let at = 2;
   while (at + 4 <= b.length && b[at] === 0xff) {
     const marker = b[at + 1];
-    const len = ((b[at + 2] ?? 0) << 8) | (b[at + 3] ?? 0);
     if (marker === 0xda) return false;
-    if (marker === 0xe1 && b[at + 4] === 0x45 && b[at + 5] === 0x78) return true;
-    at += 2 + len;
+    if (marker === 0xe1 || marker === 0xed) return true;
+    at += 2 + (((b[at + 2] ?? 0) << 8) | (b[at + 3] ?? 0));
   }
-  return false;
+  return true;
 }
 
 /**
  * @typedef {object} Surface
  * @property {(bitmap: unknown) => void} draw the bitmap, scaled to the surface
  * @property {() => boolean} hasAlpha
- * @property {(quality: number) => Promise<Blob | null>} encode as JPEG
+ * @property {(type: string, quality: number) => Promise<Blob | null>} encode
  */
 /** What the browser provides, so the unit tests (no canvas) can fake it.
  * @typedef {object} PhotoEnv
@@ -63,19 +63,20 @@ function browserEnv() {
           for (let i = 3; i < px.length; i += 4) if (px[i] !== 255) return true;
           return false;
         },
-        encode: (quality) =>
+        encode: (type, quality) =>
           canvas.convertToBlob
-            ? canvas.convertToBlob({ type: "image/jpeg", quality })
-            : new Promise((done) => canvas.toBlob(done, "image/jpeg", quality)),
+            ? canvas.convertToBlob({ type, quality })
+            : new Promise((done) => canvas.toBlob(done, type, quality)),
       };
     },
   };
 }
 
 /**
- * The file to send for a JPEG or PNG: a JPEG at q0.82, its long side at most LONG_SIDE and no metadata. The original
- * goes instead only when it carries no Exif and the re-encode is not smaller or could not be made (a PNG with
- * transparency, which has no location, is always sent as it is). Null: nothing safe to send under the cap.
+ * The file to send for a JPEG, PNG or HEIC, as the canvas wrote it: a JPEG at q0.82 (a PNG with transparency stays a
+ * PNG), its long side at most LONG_SIDE and no metadata. Only a JPEG with no metadata segment may go as it is, when
+ * the re-encode is not smaller or could not be made. Null: nothing safe to send under the cap, a HEIC this browser
+ * cannot decode among them.
  * @param {File} file
  * @param {number} maxBytes
  * @param {PhotoEnv} [env]
@@ -83,7 +84,7 @@ function browserEnv() {
  */
 export async function preparePhoto(file, maxBytes, env = browserEnv()) {
   const jpeg = /\.jpe?g$/i.test(file.name);
-  const original = async () => (file.size <= maxBytes && !(jpeg && (await hasExif(file))) ? file : null);
+  const original = async () => (jpeg && file.size <= maxBytes && !(await hasMetadata(file)) ? file : null);
   let bitmap;
   try {
     bitmap = await env.decode(file, { imageOrientation: "from-image" });
@@ -102,12 +103,13 @@ export async function preparePhoto(file, maxBytes, env = browserEnv()) {
   }
   const surface = env.surface(width, height);
   surface.draw(source);
-  const alpha = !jpeg && surface.hasAlpha();
-  const blob = alpha ? null : await surface.encode(QUALITY);
+  const type = !jpeg && surface.hasAlpha() ? "image/png" : "image/jpeg";
+  const blob = await surface.encode(type, QUALITY);
   if (source !== bitmap) source.close?.();
   bitmap.close?.();
-  if (alpha || blob?.type !== "image/jpeg") return original();
+  if (blob?.type !== type) return original();
   const kept = blob.size < file.size ? null : await original();
   if (kept) return kept;
-  return blob.size > maxBytes ? null : new File([blob], file.name.replace(/\.\w+$/, ".jpg"), { type: "image/jpeg" });
+  const name = file.name.replace(/\.\w+$/, type === "image/png" ? ".png" : ".jpg");
+  return blob.size > maxBytes ? null : new File([blob], name, { type });
 }

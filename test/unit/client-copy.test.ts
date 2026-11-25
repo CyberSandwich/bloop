@@ -10,6 +10,8 @@ import {
   screenCopy,
   TYPED_LETTERS,
   typedError,
+  uploadLine,
+  videoTime,
 } from "../../public/js/core/copy.js";
 import type { PhoneStateKey, ScreenStateKey } from "../../src/shared/protocol.ts";
 
@@ -370,6 +372,15 @@ describe("phone copy", () => {
       error: true,
     });
     expect(refusalToast("large", { demo: false, maxMB: 90 }).body).toBe("bloop takes files up to 90 MB.");
+    // A video's cap reads as recording time at about 1 MB a second (an iPhone's default 1080p30 HEVC).
+    expect(refusalToast("large", { demo: true, maxMB: 25, video: true })).toEqual({
+      title: "Video Too Long",
+      body: "The demo takes videos up to about 20\u00a0seconds (25 MB). Trim it and try again.",
+      error: true,
+    });
+    expect(refusalToast("large", { demo: false, maxMB: 90, video: true }).body).toBe(
+      "bloop takes videos up to about 90\u00a0seconds (90 MB). Trim it and try again.",
+    );
     for (const file of ["js/core/copy.js", "js/core/drop.js", "js/phone.js"]) {
       expect(readFileSync(new URL(`../../public/${file}`, import.meta.url), "utf8"), file).not.toMatch(/\b(25|90) ?MB/);
     }
@@ -383,10 +394,35 @@ describe("phone copy", () => {
       expect(t.body.length, p).toBeGreaterThan(0);
     }
     expect(refusalToast("heic", { demo: false, maxMB: 90 })).toEqual({
-      title: "HEIC Photos Aren't Supported",
-      body: "Export it as JPEG and try again.",
+      title: "This HEIC Photo Can't Be Converted",
+      body: "This browser can't read it. Export it as JPEG and try again.",
       error: true,
     });
+  });
+
+  it("a video cap reads as seconds under 2 minutes (whole tens once there are 10), else whole minutes", () => {
+    expect([1, 5, 10, 25, 59, 90, 119, 120, 179, 720].map(videoTime)).toEqual([
+      "1\u00a0second",
+      "5\u00a0seconds",
+      "10\u00a0seconds",
+      "20\u00a0seconds",
+      "50\u00a0seconds",
+      "90\u00a0seconds",
+      "110\u00a0seconds",
+      "2\u00a0minutes",
+      "2\u00a0minutes",
+      "12\u00a0minutes",
+    ]);
+  });
+
+  it("the upload row says what the phone does first, then the share sent, never 100% before the end", () => {
+    expect(uploadLine(null, "photo")).toBe("Compressing");
+    expect(uploadLine(null, "video")).toBe("Removing location");
+    expect(uploadLine(null, null)).toBe("Sending");
+    expect(uploadLine(0, "file")).toBe("0% sent");
+    expect(uploadLine(0.426, "file")).toBe("43% sent");
+    expect(uploadLine(0.999, "file")).toBe("99% sent");
+    expect(uploadLine(1, "file")).toBe("Finishing");
   });
 
   it("F5 guest states carry the design.md strings, with the room, the file and the size cap filled in", () => {
@@ -405,7 +441,7 @@ describe("phone copy", () => {
       body: "bloop deletes its copy when this ends.",
     });
     expect(phoneCopy("guest_confirm", f).actions.map((a) => a.label)).toEqual(["Cancel", "Send"]);
-    expect(phoneCopy("guest_sending", f)).toMatchObject({ title: "Sending Talk.pptx", progress: true });
+    expect(phoneCopy("guest_sending", f)).toMatchObject({ title: "Sending Talk.pptx", files: "upload" });
     expect(phoneCopy("guest_sending", f).actions.map((a) => a.label)).toEqual(["Cancel"]);
     expect(phoneCopy("guest_refused", f)).toMatchObject({
       title: "This File Can't Be Sent",
@@ -433,8 +469,8 @@ describe("phone copy", () => {
     expect(phoneCopy("guest_off", pf).actions.map((a) => a.label)).toEqual(["Done"]);
   });
 
-  it("only the sending state shows a progress bar", () => {
-    expect(PHONE_KEYS.filter((k) => phoneCopy(k, pf).progress)).toEqual(["guest_sending"]);
+  it("only the sending state shows the upload row", () => {
+    expect(PHONE_KEYS.filter((k) => phoneCopy(k, pf).files === "upload")).toEqual(["guest_sending"]);
   });
 
   it("the Add a file row closes every list a phone can still tick; with no list, Add a File is a text action", () => {
