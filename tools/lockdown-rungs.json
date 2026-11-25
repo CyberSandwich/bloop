@@ -1,0 +1,146 @@
+{
+  "database": "bloop",
+  "worker": "bloop",
+  "zone": "bloop.here",
+  "workflow": "bloop-convert",
+  "deployWorkflow": "deploy.yml",
+  "actor": "lockdown",
+  "wafRef": "lockdown",
+  "held": ["Workers Scripts Edit", "D1 Edit"],
+  "switches": {
+    "convert": { "values": ["on", "account_only", "off"], "default": "account_only" },
+    "convert_video": { "values": ["on", "off"], "default": "on" },
+    "uploads": { "values": ["on", "readonly", "off"], "default": "on" },
+    "demo": { "values": ["on", "off"], "default": "on" },
+    "demo_drop": { "values": ["on", "off"], "default": "on" },
+    "guest_files": { "values": ["on", "stopped"], "default": "on" },
+    "guest_drop": { "values": ["open", "pass", "off"], "default": "open" },
+    "email": { "values": ["on", "admin_only", "off"], "default": "on" },
+    "signin_code": { "values": ["on", "off"], "default": "on" },
+    "invites": { "values": ["on", "off"], "default": "on" },
+    "file_origin": { "values": ["workers_dev", "main", "off"], "default": "workers_dev" },
+    "export": { "values": ["on", "off"], "default": "on" },
+    "previews": { "values": ["on", "off"], "default": "on" }
+  },
+  "rungs": {
+    "L1": {
+      "title": "one switch for one meter",
+      "mechanism": "workflow or script; the admin switch panel first when it is up",
+      "meters": {
+        "convert": "off",
+        "convert_video": "off",
+        "uploads": "readonly",
+        "demo_drop": "off",
+        "guest_files": "stopped",
+        "guest_drop": "off",
+        "previews": "off",
+        "export": "off",
+        "demo": "off",
+        "email": "admin_only",
+        "signin_code": "off",
+        "invites": "off",
+        "file_origin": "main"
+      },
+      "writes": [],
+      "calls": [],
+      "manual": [],
+      "undo": { "summary": "set the meter's row back to its default (only a row this tool wrote)" }
+    },
+    "L2": {
+      "title": "every costly switch at once",
+      "mechanism": "workflow or script",
+      "writes": [
+        { "switch": "convert", "value": "off" },
+        { "switch": "uploads", "value": "readonly" },
+        { "switch": "demo_drop", "value": "off" },
+        { "switch": "guest_drop", "value": "off" },
+        { "switch": "email", "value": "admin_only" },
+        { "switch": "export", "value": "off" },
+        { "switch": "previews", "value": "off" }
+      ],
+      "calls": [],
+      "manual": [],
+      "undo": {
+        "summary": "set the seven rows back to their defaults; a latched breaker also needs its reset in the admin panel"
+      }
+    },
+    "L3": {
+      "title": "cap a product at the platform",
+      "mechanism": "workflow or script, then the dashboard",
+      "includes": "L2",
+      "writes": [{ "switch": "convert_video", "value": "off" }, { "switch": "email", "value": "off" }],
+      "calls": [
+        {
+          "id": "terminate-workflows",
+          "op": "terminateWorkflows",
+          "params": {},
+          "permission": "Workers Scripts Edit (Workflows API: unverified)",
+          "held": true,
+          "undo": {
+            "manual": "Terminated Workflow instances cannot be resumed; the original files are untouched and users re-run."
+          }
+        }
+      ],
+      "manual": [
+        "Dashboard, Billing, Spend limits: lower the Workers and the Durable Objects limit to the current spend.",
+        "Dashboard, R2, Manage API tokens: remove the presign token to stop presigned traffic (reads through the Worker keep working; direct uploads stop until a new token is set).",
+        "Dashboard, Containers: confirm no live instances. Dashboard, Worker, Observability: logs off, then commit the same change."
+      ],
+      "undo": {
+        "summary": "set the eight rows back to their defaults; raise the spend limits, set a new presign token and re-run the Workflow jobs by hand"
+      }
+    },
+    "L4": {
+      "title": "off the routes, data kept",
+      "mechanism": "workflow or script",
+      "writes": [],
+      "calls": [
+        {
+          "id": "waf-block",
+          "op": "wafRule",
+          "params": { "enabled": true },
+          "permission": "Zone Read and Zone WAF Edit on the zone",
+          "held": false,
+          "undo": { "op": "wafRule", "params": { "enabled": false } }
+        },
+        {
+          "id": "workers-dev-off",
+          "op": "workersDev",
+          "params": { "enabled": false },
+          "permission": "Workers Scripts Edit",
+          "held": true,
+          "undo": { "op": "workersDev", "params": { "enabled": true } }
+        }
+      ],
+      "manual": [
+        "Verify: the site answers 403 from Cloudflare and the workers.dev host no longer reaches the Worker. The admin panel is dark: set switches through this tool or the D1 console."
+      ],
+      "undo": {
+        "summary": "disable the block rule (kept, not deleted) and enable workers.dev; an unfrozen main deploy also enables workers.dev"
+      }
+    },
+    "L5": {
+      "title": "full stop, data preserved",
+      "mechanism": "workflow or script, then by hand",
+      "includes": "L4",
+      "writes": [],
+      "calls": [
+        {
+          "id": "clear-schedules",
+          "op": "clearSchedules",
+          "params": {},
+          "permission": "Workers Scripts Edit",
+          "held": true,
+          "undo": { "manual": "Enable the deploy workflow and run it: a deploy recreates the cron triggers." }
+        }
+      ],
+      "manual": [
+        "Last, by hand, because a token cannot safely revoke itself: revoke the deploy token, the R2 presign token and the analytics token, delete the production environment's Cloudflare secret, disable the deploy workflow if it is not already, and revoke any personal access or OAuth grant that can reach the account.",
+        "Dashboard, Billing, Spend limits: Workers and Durable Objects to the current spend."
+      ],
+      "undo": {
+        "summary": "undo L4, then new tokens with the same scopes, the secrets restored, and a deploy run to recreate the cron triggers"
+      }
+    }
+  }
+}
