@@ -7,7 +7,7 @@ import { FETCH_TIMEOUT_MS } from "./timing.js";
 
 /**
  * @template T
- * @typedef {{ok: true, value: T, headers: {get(name: string): string | null}} | {ok: false, error: ErrorCode}} Reply
+ * @typedef {{ok: true, value: T, headers: {get(name: string): string | null}} | {ok: false, error: ErrorCode, retryAfter?: number}} Reply
  */
 
 /** @param {unknown} code @returns {code is ErrorCode} */
@@ -70,7 +70,10 @@ export function createApi(deps = {}) {
         ? { ok: false, error: "network_blocked" }
         : { ok: true, value: body, headers: res.headers };
     const code = body?.code;
-    if (isErrorCode(code)) return { ok: false, error: code };
+    // Retry-After in whole seconds (an HTTP date is not honored).
+    const after = res.status === 429 ? Number.parseInt(res.headers.get("Retry-After") ?? "", 10) : Number.NaN;
+    if (isErrorCode(code))
+      return after > 0 ? { ok: false, error: code, retryAfter: after } : { ok: false, error: code };
     return { ok: false, error: res.status >= 500 || body === null ? "service_down" : "bad_request" };
   }
 
