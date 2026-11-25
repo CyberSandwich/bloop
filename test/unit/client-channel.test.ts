@@ -4,6 +4,7 @@ import { downGate, openChannel, refusal } from "../../public/js/core/channel.js"
 import { onRefusal } from "../../public/js/core/states.js";
 import {
   BLOCKED_PROBE_MS,
+  COALESCE_MS,
   CONNECT_TIMEOUT_MS,
   DOWN_CONFIRM_MS,
   PING_MS,
@@ -50,13 +51,17 @@ class Memory {
   }
 }
 
-type PollReply = { ok: true; value: unknown } | { ok: false; error: ErrorCode };
+type PollReply = { ok: true; value: unknown } | { ok: false; error: ErrorCode; retryAfter?: number };
 
 /** A reply may be a promise the test settles later; `react` is the page's own onError, handed the channel. */
 function setup(
   polls: (PollReply | Promise<PollReply>)[] = [],
   react?: (code: ErrorCode, ch: ReturnType<typeof openChannel>) => void,
-  opts: { storage?: Pick<Storage, "getItem" | "setItem" | "removeItem"> | null; hidden?: { now: boolean } } = {},
+  opts: {
+    storage?: Pick<Storage, "getItem" | "setItem" | "removeItem"> | null;
+    hidden?: { now: boolean };
+    state?: string;
+  } = {},
 ) {
   const sockets: FakeSocket[] = [];
   const views: unknown[] = [];
@@ -67,7 +72,7 @@ function setup(
   const api = {
     get: async (path: string, auth?: string | null) => {
       pollCalls.push(`${path}|${auth}`);
-      return (await polls.shift()) ?? { ok: true, value: { state: "waiting" } };
+      return (await polls.shift()) ?? { ok: true, value: { state: opts.state ?? "waiting" } };
     },
   } as unknown as Api;
   const channel = openChannel({
@@ -338,35 +343,59 @@ describe("live channel", () => {
     expect(t.sockets).toHaveLength(2);
   });
 
-  it("wake reads the state even on a live socket, so a tab whose timers slept catches up (a room screen's code)", async () => {
-    const t = setup([{ ok: true, value: { state: "waiting", code: { code: "NEW234" } } }]);
+  it("FLOW-07 wake on a socket heard from within PING_MS reads nothing and pings nothing", async () => {
+    const t = setup();
     t.sockets[0]?.open();
-    t.sockets[0]?.push({ v: 1, t: "state", view: { state: "waiting", code: { code: "OLD234" } } });
+    t.sockets[0]?.push({ v: 1, t: "state", view: { state: "waiting" } });
+    t.sockets[0]?.sent.splice(0);
+    vi.setSystemTime(Date.now() + PING_MS - 1);
     t.channel.wake();
-    await vi.advanceTimersByTimeAsync(0);
+    await vi.advanceTimersByTimeAsync(PROBE_MS + 1);
+    expect(t.pollCalls).toEqual([]);
+    expect(t.sockets[0]?.sent).toEqual([]);
     expect(t.sockets).toHaveLength(1);
-    expect(t.pollCalls).toEqual(["/api/screen/state|REF.SECRET"]);
-    expect(t.views.at(-1)).toEqual({ state: "waiting", code: { code: "NEW234" } });
   });
 
-  it("wake on a dropped socket reconnects at once and reads the state", async () => {
+  it("FLOW-07 wake on a quiet socket pings and reads nothing; with no answer the replacement's hello brings the state", async () => {
+    const t = setup();
+    t.sockets[0]?.open();
+    t.sockets[0]?.push({ v: 1, t: "state", view: { state: "waiting" } });
+    vi.setSystemTime(Date.now() + PING_MS + 1);
+    t.channel.wake();
+    await vi.advanceTimersByTimeAsync(PROBE_MS);
+    expect(t.sockets).toHaveLength(2);
+    expect(t.pollCalls).toEqual([]);
+  });
+
+  it("FLOW-07 wake on a dropped socket reconnects at once and reads nothing", async () => {
     const t = setup();
     t.sockets[0]?.drop();
     t.channel.wake();
     await vi.advanceTimersByTimeAsync(0);
     expect(t.sockets).toHaveLength(2);
-    expect(t.pollCalls).toHaveLength(1);
+    expect(t.pollCalls).toEqual([]);
   });
 
-  it("a wake read answered after a newer push is dropped: an old view never lies over a new one", async () => {
+  it("wake while polling polls now instead of waiting out a 30 s hidden delay", async () => {
+    const hidden = { now: true };
+    const t = setup([], undefined, { hidden, state: "open" });
+    await vi.advanceTimersByTimeAsync(CONNECT_TIMEOUT_MS + 1);
+    expect(t.pollCalls).toHaveLength(1);
+    hidden.now = false;
+    t.channel.wake();
+    await vi.advanceTimersByTimeAsync(1);
+    expect(t.pollCalls).toHaveLength(2);
+  });
+
+  it("a read answered after a newer push is dropped: an old view never lies over a new one", async () => {
     let answer: (r: PollReply) => void = () => {};
     const late = new Promise<PollReply>((done) => {
       answer = done;
     });
     const t = setup([late]);
     t.sockets[0]?.open();
-    // The wake's read goes out, the claim is pushed, then the read comes back with the older waiting view.
-    t.channel.wake();
+    // The read goes out, the claim is pushed, then the read comes back with the older waiting view.
+    void t.channel.refresh();
     t.sockets[0]?.push({ v: 1, t: "state", view: { state: "claimed" } });
     answer({ ok: true, value: { state: "waiting" } });
     await vi.advanceTimersByTimeAsync(0);
@@ -590,5 +619,73 @@ describe("REL-03 and R11 what a failed poll says", () => {
     expect(gate(true, DOWN_CONFIRM_MS * 3)).toBe(false);
     expect(gate(false, DOWN_CONFIRM_MS * 3 + 1)).toBe(false);
     expect(gate(true, DOWN_CONFIRM_MS * 3 + 2)).toBe(false);
+  });
+});
+
+describe("O19 polling follows the room's state, the tab and Retry-After (REL)", () => {
+  const blocked = () => {
+    const memory = new Memory();
+    memory.setItem("ws", "blocked");
+    return memory;
+  };
+  const perMinute = async (opts: Parameters<typeof setup>[2]) => {
+    const t = setup([], undefined, { storage: blocked(), ...opts });
+    await vi.advanceTimersByTimeAsync(60_000 - 1);
+    return t.pollCalls.length;
+  };
+
+  it("REL a blocked socket in waiting polls about every 3 s", async () => {
+    expect(await perMinute({ state: "waiting" })).toBe(20);
+  });
+
+  it("REL in open it polls every 15 s, and a hidden tab every 30 s", async () => {
+    expect(await perMinute({ state: "open" })).toBe(4);
+    expect(await perMinute({ state: "open", hidden: { now: true } })).toBe(2);
+  });
+
+  it("a 429 with Retry-After waits at least that long, and no more than the cap", async () => {
+    const t = setup([{ ok: false, error: "rate_limited", retryAfter: 40 }], undefined, { storage: blocked() });
+    await vi.advanceTimersByTimeAsync(1);
+    expect(t.pollCalls).toHaveLength(1);
+    await vi.advanceTimersByTimeAsync(39_000);
+    expect(t.pollCalls).toHaveLength(1);
+    await vi.advanceTimersByTimeAsync(1100);
+    expect(t.pollCalls).toHaveLength(2);
+  });
+});
+
+describe("O10 send coalesces over COALESCE_MS", () => {
+  const live = () => {
+    const t = setup();
+    t.sockets[0]?.open();
+    t.sockets[0]?.push({ v: 1, t: "state", view: { state: "open" } });
+    t.sockets[0]?.sent.splice(0);
+    return t;
+  };
+
+  it("the first frame goes at once; a burst after it sends the latest of each type once the window ends", async () => {
+    const t = live();
+    expect(t.channel.send({ t: "page", n: 1 })).toBe(true);
+    t.channel.send({ t: "page", n: 2 });
+    t.channel.send({ t: "page", n: 3 });
+    t.channel.send({ t: "sound", on: true });
+    expect(t.sockets[0]?.sent).toEqual(['{"v":1,"t":"page","n":1}']);
+    await vi.advanceTimersByTimeAsync(COALESCE_MS);
+    expect(t.sockets[0]?.sent.slice(1)).toEqual(['{"v":1,"t":"page","n":3}', '{"v":1,"t":"sound","on":true}']);
+    // The window restarts after a flush, then goes quiet.
+    await vi.advanceTimersByTimeAsync(COALESCE_MS);
+    t.channel.send({ t: "page", n: 4 });
+    expect(t.sockets[0]?.sent).toHaveLength(4);
+    expect(t.sockets[0]?.sent.at(-1)).toBe('{"v":1,"t":"page","n":4}');
+  });
+
+  it("a frame sent while no socket is live is refused, and a drop discards what waited", async () => {
+    const t = live();
+    t.channel.send({ t: "page", n: 1 });
+    t.channel.send({ t: "page", n: 2 });
+    t.sockets[0]?.drop();
+    await vi.advanceTimersByTimeAsync(COALESCE_MS * 2);
+    expect(t.sockets[0]?.sent).toEqual(['{"v":1,"t":"page","n":1}']);
+    expect(t.channel.send({ t: "page", n: 3 })).toBe(false);
   });
 });
