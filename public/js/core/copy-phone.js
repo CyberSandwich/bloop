@@ -4,7 +4,7 @@
 
 import { DOWN, SUPPORT } from "../shared/errors.js";
 import { EXTENSION_TYPES } from "../shared/names.js";
-import { SESSION_ENDED, TYPED_WRONG, WAITLIST_FORM } from "./copy.js";
+import { BLOCKED, SESSION_ENDED, TYPED_WRONG, WAITLIST_FORM } from "./copy.js";
 import { VERIFIED } from "./verified.js";
 
 export const MAIL_SUBJECT = "bloop isn't responding";
@@ -316,6 +316,8 @@ export function phoneCopy(key, f) {
         body: "Try again in a few minutes.",
         actions: [DONE],
       };
+    case "network_blocked":
+      return { ...base, title: BLOCKED, body: "Switch to mobile data, then try again.", actions: retryActions(f) };
     case "service_down":
       return {
         ...base,

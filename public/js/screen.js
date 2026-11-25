@@ -223,6 +223,12 @@ const MODE = {
   ended: "ended",
 };
 
+/** The link state a failed read leaves (the channel's polls say the same, core/channel.js). */
+const LINK_OF = /** @type {Record<string, "offline" | "blocked">} */ ({
+  offline: "offline",
+  network_blocked: "blocked",
+});
+
 const keyNow = () => screenKey({ view: s.view, link: s.link, errored: s.errored, limited: s.limited });
 
 function render() {
@@ -258,6 +264,7 @@ function paint() {
     click: launcher.needsClick(),
     endLine: ended,
     inSession: !!v?.endsAt && v.state !== "ended",
+    host: location.host,
   });
 
   if (parks) viewer.park(copy.heading);
@@ -288,7 +295,9 @@ function paint() {
   // Waiting or refreshing is all a busy room screen can do: Back would leave the lectern on the home page.
   show(
     buttons.back,
-    !has("start_over") && !has("end") && !["ended", "offline", "service_down", "rate_limited"].includes(key),
+    !has("start_over") &&
+      !has("end") &&
+      !["ended", "offline", "service_down", "network_blocked", "rate_limited"].includes(key),
   );
   show(buttons.start_over, has("start_over"));
   show(buttons.home, has("end"));
@@ -379,7 +388,7 @@ function onView(/** @type {ScreenView} */ view) {
   render();
 }
 
-function onLink(/** @type {"ok" | "offline" | "down"} */ link) {
+function onLink(/** @type {"ok" | "offline" | "down" | "blocked"} */ link) {
   s.link = link;
   render();
 }
@@ -515,7 +524,7 @@ async function resume() {
   const sid = store.get(SID_KEY);
   if (!sid) return null;
   const res = await api.get("/api/screen/state", sid);
-  if (!res.ok && (res.error === "offline" || res.error === "service_down")) {
+  if (!res.ok && (res.error === "offline" || res.error === "service_down" || res.error === "network_blocked")) {
     return /** @type {import("./types.js").Booted} */ ({ ok: false, error: res.error });
   }
   if (res.ok && res.value.mode === (DEMO ? "demo" : "live"))
@@ -540,7 +549,7 @@ async function boot(attempt = 0) {
   if (g !== gen) return;
   s.limited = !booted.ok && booted.error === "rate_limited";
   if (!booted.ok) {
-    s.link = booted.error === "offline" ? "offline" : "down";
+    s.link = LINK_OF[booted.error] ?? "down";
     render();
     setTimeout(() => g === gen && boot(attempt + 1), pollDelay(attempt + 1));
     return;

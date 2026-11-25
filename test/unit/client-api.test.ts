@@ -26,7 +26,8 @@ const problem = (status: number, code: string) =>
     status,
     headers: { "Content-Type": "application/problem+json" },
   });
-const ok = (body: unknown) => new Response(JSON.stringify(body), { status: 200 });
+// The marker the Worker puts on every ok answer (REL-03).
+const ok = (body: unknown) => new Response(JSON.stringify(body), { status: 200, headers: { "X-Bloop": "1" } });
 
 describe("api client", () => {
   it("leave is a POST that outlives the page (keepalive); post is not", async () => {
@@ -168,11 +169,22 @@ describe("api client", () => {
     }
   });
 
-  it("a 5xx without a problem body, or a 200 that is not JSON, is service_down", async () => {
+  it("a 5xx without a problem body is service_down", async () => {
     const down = fakeFetch(() => new Response("<html>bad gateway</html>", { status: 502 }));
     expect(await createApi({ fetch: down.fetch }).get("/x")).toEqual({ ok: false, error: "service_down" });
-    const junk = fakeFetch(() => new Response("<html>", { status: 200 }));
-    expect(await createApi({ fetch: junk.fetch }).get("/x")).toEqual({ ok: false, error: "service_down" });
+  });
+
+  it("REL-03 a 200 block page reads as network_blocked, not service_down: HTML, or JSON without the marker", async () => {
+    const page = fakeFetch(() => new Response("<html>Blocked by your network</html>", { status: 200 }));
+    expect(await createApi({ fetch: page.fetch }).get("/x")).toEqual({ ok: false, error: "network_blocked" });
+    const bare = fakeFetch(() => new Response("{}", { status: 200 }));
+    expect(await createApi({ fetch: bare.fetch }).get("/x")).toEqual({ ok: false, error: "network_blocked" });
+    const empty = fakeFetch(() => new Response("", { status: 200, headers: { "X-Bloop": "1" } }));
+    expect(await createApi({ fetch: empty.fetch }).get("/x")).toEqual({
+      ok: true,
+      value: {},
+      headers: expect.anything(),
+    });
   });
 });
 

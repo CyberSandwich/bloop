@@ -102,7 +102,7 @@ function fail(/** @type {ErrorCode} */ code, /** @type {(() => void) | null} */ 
   const key = ERRORS[code].phone ?? "error";
   c.error = key === "typed_wrong" ? "expired" : key;
   c.fault = code;
-  c.retry = ["offline", "error", "service_down"].includes(key) ? retry : null;
+  c.retry = ["offline", "error", "service_down", "network_blocked"].includes(key) ? retry : null;
   render();
 }
 

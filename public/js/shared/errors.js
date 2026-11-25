@@ -54,6 +54,7 @@ export const ERRORS = {
   // client only, never sent by the server
   offline: { status: 0, phone: "offline", screen: "offline" },
   service_down: { status: 0, phone: "service_down", screen: "service_down" },
+  network_blocked: { status: 0, phone: "network_blocked", screen: "network_blocked" },
 };
 
 export const SUPPORT = "hi@bloop.here";
