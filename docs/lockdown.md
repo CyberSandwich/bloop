@@ -65,7 +65,7 @@ The workflow's Cloudflare token is the deploy token. It already holds Workers Sc
 
 | rung | extra permission | why |
 |---|---|---|
-| L1, L2, L3 | none | D1 rows, and Workflow instances (the Workflows API scope is unverified) |
+| L1, L2, L3 | none | D1 rows, and Workflow instances (list needs Workers Scripts Read or Write, terminate needs Workers Scripts Write; checked against the API spec) |
 | L4, L5 | Zone Read and Zone WAF Edit on the zone | the block rule |
 | all, in the workflow | `actions: write` on the run's own token | freeze deploys |
 | L5 by hand | whatever revokes each token | the owner's own sign-in |

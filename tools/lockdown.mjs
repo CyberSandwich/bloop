@@ -25,6 +25,7 @@ const TABLE_URL = new URL("./lockdown-rungs.json", import.meta.url);
 const CF = "https://api.cloudflare.com/client/v4";
 const GH = "https://api.github.com";
 const SQL_TOKEN = /^[A-Za-z0-9_ =:.-]*$/;
+const BATCH = 100;
 const NAME = /^[a-z][a-z0-9_.-]*$/;
 
 /** @returns {Table} */
@@ -239,7 +240,16 @@ export function describeRequests(table, { op, params }) {
           path: `${acct}/workflows/${table.workflow}/instances?status={state}`,
           note: "list live instances",
         },
-        { method: "PATCH", path: `${acct}/workflows/${table.workflow}/instances/{id}/status`, note: "terminate each" },
+        {
+          method: "POST",
+          path: `${acct}/workflows/${table.workflow}/instances/batch/terminate`,
+          note: "terminate up to 100 ids at a time",
+        },
+        {
+          method: "PATCH",
+          path: `${acct}/workflows/${table.workflow}/instances/{id}/status`,
+          note: "fallback if the batch call fails",
+        },
       ];
     default:
       throw new Error(`unknown op ${op}`);
@@ -405,16 +415,24 @@ const OPS = {
 
   async terminateWorkflows(cf, table, account) {
     const base = `/accounts/${account}/workflows/${table.workflow}/instances`;
-    let ended = 0;
+    /** @type {Set<string>} */
+    const ids = new Set();
     for (const state of ["running", "queued", "waiting"]) {
       const list = await cf("GET", `${base}?status=${state}&per_page=100`, undefined, [404]);
       if (list.status === 404) return "unchanged: no such workflow";
-      for (const inst of list.result ?? []) {
-        await cf("PATCH", `${base}/${encodeURIComponent(inst.id)}/status`, { status: "terminate" });
-        ended += 1;
+      for (const inst of list.result ?? []) ids.add(String(inst.id));
+    }
+    const all = [...ids];
+    for (let i = 0; i < all.length; i += BATCH) {
+      const chunk = all.slice(i, i + BATCH);
+      try {
+        await cf("POST", `${base}/batch/terminate`, chunk);
+      } catch {
+        // The batch endpoint is the fast path; one PATCH per instance always works.
+        for (const id of chunk) await cf("PATCH", `${base}/${encodeURIComponent(id)}/status`, { status: "terminate" });
       }
     }
-    return ended ? `changed: ${ended} instance(s) terminated` : "unchanged: no live instances";
+    return all.length ? `changed: ${all.length} instance(s) terminated` : "unchanged: no live instances";
   },
 };
 

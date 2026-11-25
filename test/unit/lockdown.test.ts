@@ -81,6 +81,7 @@ function fakeApi() {
     workersDev: true,
     crons: [{ cron: "0 * * * *" }, { cron: "30 3 * * *" }],
     instances: ["inst-a", "inst-b"],
+    batchFails: false,
     deployState: "active",
   };
   const reply = (status: number, body: unknown) => new Response(JSON.stringify(body), { status });
@@ -128,6 +129,12 @@ function fakeApi() {
     }
     if (/\/instances\?status=running/.test(url)) return ok(state.instances.map((id) => ({ id })));
     if (/\/instances\?status=/.test(url)) return ok([]);
+    if (path.endsWith("/instances/batch/terminate")) {
+      if (state.batchFails) return reply(500, { success: false, errors: [{ code: 1, message: "batch down" }] });
+      const ids = body as string[];
+      state.instances = state.instances.filter((id) => !ids.includes(id));
+      return ok({});
+    }
     if (/\/instances\/[\w-]+\/status$/.test(path)) {
       state.instances = state.instances.filter((id) => !path.includes(`/${id}/`));
       return ok({});
@@ -461,10 +468,32 @@ describe("apply", () => {
     expect(api.state.deployState).toBe("disabled_manually");
   });
 
-  it("L3 terminates live Workflow instances", async () => {
+  it("L3 terminates live Workflow instances in one batch call", async () => {
     const { deps: d, api } = deps();
     await execute(table, planFor("L3"), d);
     expect(api.state.instances).toEqual([]);
+    const batches = api.calls.filter((c) => c.url.endsWith("/instances/batch/terminate"));
+    expect(batches).toHaveLength(1);
+    expect(batches[0]?.body).toEqual(["inst-a", "inst-b"]);
+    expect(api.calls.filter((c) => /\/status$/.test(c.url))).toHaveLength(0);
+  });
+
+  it("batches of at most 100 ids", async () => {
+    const { deps: d, api } = deps();
+    api.state.instances = Array.from({ length: 250 }, (_, i) => `i${i}`);
+    await execute(table, planFor("L3"), d);
+    const sizes = api.calls.filter((c) => c.url.endsWith("/batch/terminate")).map((c) => (c.body as string[]).length);
+    expect(sizes).toEqual([100, 100, 50]);
+    expect(api.state.instances).toEqual([]);
+  });
+
+  it("falls back to one PATCH per instance when the batch call fails", async () => {
+    const { deps: d, api } = deps();
+    api.state.batchFails = true;
+    const result = await execute(table, planFor("L3"), d);
+    expect(result.failed).toBe(false);
+    expect(api.state.instances).toEqual([]);
+    expect(api.calls.filter((c) => /\/status$/.test(c.url))).toHaveLength(2);
   });
 
   it("an L4 undo disables the rule but keeps it, and turns workers.dev back on", async () => {
