@@ -3,6 +3,7 @@ import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
 import {
   CAPS,
+  guestDropLines,
   isMeter,
   isPool,
   METERS,
@@ -59,8 +60,9 @@ describe("caps: every number pinned", () => {
       leases_live_max: 4,
       convert_failed_pct: 20,
       convert_failed_min: 10,
-      guest_drops_demo_off_day: 1000,
-      guest_drops_files_stopped_day: 3000,
+      guest_drop_cost_usd: 0.00002,
+      guest_drops_demo_off_pct: 5,
+      guest_drops_files_stopped_pct: 15,
       budget_month_usd: 10,
       k: 3,
       history_days: 14,
@@ -177,6 +179,20 @@ describe("the $10 month split: each meter's daily floor", () => {
 
   it("a ceiling below the floor is raised to the floor, so the line can never sit under it", () => {
     expect(resolveLines({ BREAKER_CEILING_EMAIL: "10" }, t).email).toEqual({ floor: 95, ceiling: 95 });
+  });
+});
+
+describe("guest-drop lines are shares of the budget", () => {
+  it("833 and 2,500 a day at the defaults, and they scale with the budget and the drop cost", () => {
+    expect(guestDropLines(resolveTrips({}))).toEqual({ demoOff: 833, filesStopped: 2500 });
+    expect(guestDropLines(resolveTrips({ BREAKER_BUDGET_MONTH_USD: "20" }))).toEqual({
+      demoOff: 1667,
+      filesStopped: 5000,
+    });
+    expect(guestDropLines(resolveTrips({ BREAKER_GUEST_DROP_COST_USD: "0.00004" }))).toEqual({
+      demoOff: 417,
+      filesStopped: 1250,
+    });
   });
 });
 

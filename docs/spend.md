@@ -151,8 +151,9 @@ An alert holds numbers only: no file names, addresses or user data. Until email 
 | `BREAKER_LEASES_LIVE_MAX` | 4 | live conversion leases that mean a leak |
 | `BREAKER_CONVERT_FAILED_PCT` | 20 | failed conversions as a percent of the day's |
 | `BREAKER_CONVERT_FAILED_MIN` | 10 | conversions needed before the percent counts |
-| `BREAKER_GUEST_DROPS_DEMO_OFF_DAY` | 1,000 | guest drops in a day: demo drop off |
-| `BREAKER_GUEST_DROPS_FILES_STOPPED_DAY` | 3,000 | guest drops in a day: guest files stopped |
+| `BREAKER_GUEST_DROP_COST_USD` | 0.00002 | cost of one guest drop |
+| `BREAKER_GUEST_DROPS_DEMO_OFF_PCT` | 5 | percent of the budget a day's guest drops may cost: demo drop off |
+| `BREAKER_GUEST_DROPS_FILES_STOPPED_PCT` | 15 | percent of the budget a day's guest drops may cost: guest files stopped |
 | `BREAKER_WORKERS_REQ_DAY_WARN` | 1,000,000 | Worker requests in a day: warn |
 | `BREAKER_WORKERS_SPIKE_MULTIPLE` | 3 | Worker requests over this multiple of the trailing 7-day mean: warn |
 | `BREAKER_WORKERS_SPIKE_FLOOR` | 50,000 | a spike must also pass this many requests |
@@ -160,7 +161,7 @@ An alert holds numbers only: no file names, addresses or user data. Until email 
 | `BREAKER_DO_GBS_DAY_WARN` | 30,000 | Durable Object GB-seconds in a day: warn |
 | `BREAKER_ANALYTICS_FAIL_RUNS` | 3 | consecutive runs with a failed analytics read before the alert |
 
-The guest-drop lines are G's numbers, not from the cost plan.
+The guest-drop lines are shares of the budget. One drop that is not converted costs 3 R2 class A ($0.0000135), 3 class B ($0.0000011) and 5 D1 rows ($0.000005), $0.0000194, rounded up to `BREAKER_GUEST_DROP_COST_USD`. A line is `round(pct / 100 x budget / 30 / cost)` drops a day: 5 percent is 833 and 15 percent is 2,500 at the defaults. These lines overlap the R2 and D1 meter shares in section 6 (the same operations count in both), so either can trip first.
 
 ## 6. The $10 month and the adaptive trip lines
 
@@ -276,11 +277,7 @@ Rules for the Cloudflare side:
 
 ## 11. The tables F adds
 
-```sql
-CREATE TABLE setting (key TEXT PRIMARY KEY, value TEXT NOT NULL, updated_at INTEGER NOT NULL, updated_by TEXT NOT NULL);
-```
-
-No seed rows: an absent row means the default in code, so a default cannot drift from the code. The breaker also writes an `admin_action` row per flip (`admin_user_id` `breaker`, action `switch_flip`, target kind `setting`).
+F adds nothing for the guard beyond the `setting` and `admin_action` tables, both defined by the accounts migration (0005, ADR 0013). The guard reads and writes `setting(key, value, updated_at, updated_by)` and does not create it; `updated_by` is nullable and the breaker writes `breaker`. No seed rows: an absent row means the default in code, so a default cannot drift from the code. The breaker also writes an `admin_action` row per flip (`admin_user_id` `breaker`, action `switch_flip`, target kind `setting`).
 
 ## 12. Unverified
 
@@ -289,3 +286,27 @@ No seed rows: an absent row means the default in code, so a default cannot drift
 - Email bounce spikes have no source yet.
 - Whether auto-responded WebSocket pings bill as messages decides if the Durable Object spend limit is the only stop for a ping storm.
 - The growth table's average days are derived from the cost plan's per-user model; replace them with the measured numbers after the first month.
+
+## 13. Threat ids
+
+A test id `COST-nn` is the cost plan's scenario `Wnn` (section 2 of the v4 cost plan, kept outside the repo). The guard owns the ones marked with tests; the rest are bounded elsewhere or seen only through analytics and the platform spend limits.
+
+| id | cost-plan scenario | guard's part | tests cite it |
+|---|---|---|---|
+| COST-01 | W1 conversion flood from public guest drops | pools of 3 and 1, fail closed, exact under concurrency | yes |
+| COST-02 | W2 containers that never stop | lease deadline and grace, overdue trips `convert=off` | yes |
+| COST-03 | W3 Workflow retry loops | failed-conversion trip, Workflow step meter | yes |
+| COST-04 | W4 request flood on workers.dev | analytics warning only | no |
+| COST-05 | W5 request flood on the zone | analytics warning only | no |
+| COST-06 | W6 client polling loop | analytics warning only | no |
+| COST-07 | W7 leaked presigned URL | R2 class A and B monthly caps and daily trip lines | yes |
+| COST-08 | W8 WebSocket ping storm | Durable Object analytics warning, platform limit | no |
+| COST-09 | W9 non-hibernating objects | Durable Object GB-second warning, platform limit | no |
+| COST-10 | W10 D1 write amplification | D1 rows-written meter and trip line | no |
+| COST-11 | W11 upload floods | per-user count and byte caps, guest drops per IP | yes |
+| COST-12 | W12 zip and slide bombs | bounded by the same pools (the concurrency tests) | yes |
+| COST-13 | W13 export of a large library | 3 a day per user, pool 4 and 1 per user | yes |
+| COST-14 | W14 email abuse | hourly, daily and per-recipient caps, budget trip lines | yes |
+| COST-15 | W15 log ingest blowup | share set aside, not measured | no |
+| COST-16 | W16 bots on the demo | demo caps and trips, latched breaker | yes |
+| COST-17 | W17 CPU bombs in the Worker | not a guard concern (CPU limit) | no |
