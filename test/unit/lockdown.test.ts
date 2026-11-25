@@ -857,6 +857,15 @@ describe("undo scope and the recorded prior value", () => {
     expect(d1.rows().convert?.value).toBe("on");
   });
 
+  it("an undo reports each row by its own statements: a row it did not touch is unchanged", async () => {
+    const { deps: d, d1 } = deps();
+    d1.db.exec("INSERT INTO setting VALUES ('convert', 'off', 5, 'owner'), ('uploads', 'readonly', 5, 'lockdown:L2')");
+    const result = await execute(table, planFor("L2", true), d);
+    expect(text(result)).toContain("D1 convert restored to its prior value: unchanged");
+    expect(text(result)).toContain("D1 uploads restored to its prior value: changed");
+    expect(d1.rows().convert).toMatchObject({ value: "off", updated_by: "owner" });
+  });
+
   it("a row with no prior logged restores its default", async () => {
     const { deps: d, d1 } = deps();
     d1.db.exec("INSERT INTO setting VALUES ('uploads', 'readonly', 5, 'lockdown:L2')");

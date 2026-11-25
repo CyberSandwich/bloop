@@ -806,7 +806,8 @@ export async function execute(table, plan, deps) {
       const offset = perWrite.slice(0, i).reduce((n, s) => n + s.length, 0);
       const seen = /** @type {number[] | null} */ (counts);
       const changed = seen?.[offset + 1];
-      const relabeled = seen?.[offset + 2] ?? 0;
+      // Only a set at L2 or above has a third (relabel) statement; reading past a write's own would be its neighbor's.
+      const relabeled = (perWrite[i]?.length ?? 0) > 2 ? (seen?.[offset + 2] ?? 0) : 0;
       const verdict =
         changed === undefined
           ? "ran (change count unavailable)"
