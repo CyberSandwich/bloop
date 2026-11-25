@@ -4,6 +4,7 @@
 /** @import {ChannelOptions, SocketLike} from "../types.js" */
 import {
   BLOCKED_PROBE_MS,
+  COALESCE_MS,
   CONNECT_TIMEOUT_MS,
   DOWN_CONFIRM_MS,
   MISSED_PINGS,
@@ -44,6 +45,8 @@ export function downGate() {
   };
 }
 
+/** @typedef {{t: string, [key: string]: unknown}} Frame */
+
 /** @param {ChannelOptions} o */
 export function openChannel(o) {
   let closed = false;
@@ -67,6 +70,12 @@ export function openChannel(o) {
   let missed = 0;
   /** State frames seen: a read older than a push is stale. */
   let pushed = 0;
+  /** The last view's state: how often a poll is worth making. */
+  let lastState = "";
+  /** @type {ReturnType<typeof setTimeout> | null} */
+  let sendTimer = null;
+  /** Frames sent inside the window, the latest of each type. @type {Map<string, Frame>} */
+  const pending = new Map();
   const gate = downGate();
   const hidden = o.hidden ?? (() => /** @type {any} */ (globalThis).document?.hidden === true);
   const memory = o.storage === undefined ? safeSession() : o.storage;
@@ -98,7 +107,9 @@ export function openChannel(o) {
   const clear = () => {
     for (const t of [retryTimer, pollTimer, connectTimer, probeTimer]) if (t) clearTimeout(t);
     if (pingTimer) clearInterval(pingTimer);
-    retryTimer = pollTimer = pingTimer = connectTimer = probeTimer = null;
+    if (sendTimer) clearTimeout(sendTimer);
+    retryTimer = pollTimer = pingTimer = connectTimer = probeTimer = sendTimer = null;
+    pending.clear();
   };
 
   function stopPolling() {
@@ -112,9 +123,11 @@ export function openChannel(o) {
     if (closed || live) return;
     const res = await o.api.get(o.statePath, o.credential);
     if (closed || live) return;
+    let retryAfter = 0;
     if (res.ok) {
       pollFailures = 0;
       gate(false);
+      lastState = res.value?.state ?? lastState;
       o.onLink("ok");
       o.onView(res.value);
     } else if (FATAL.has(res.error)) {
@@ -123,11 +136,12 @@ export function openChannel(o) {
       return;
     } else {
       pollFailures += 1;
+      retryAfter = res.retryAfter ?? 0;
       if (res.error === "offline") o.onLink("offline");
       else if (res.error === "network_blocked") o.onLink("blocked");
       else if (gate(res.error === "service_down")) o.onLink("down");
     }
-    pollTimer = setTimeout(poll, pollDelay(pollFailures));
+    pollTimer = setTimeout(poll, pollDelay(pollFailures, lastState, hidden(), retryAfter));
   }
 
   /** Polls now, and remembers it: this tab's next screen polls from its first second and probes the socket by the minute. */
@@ -144,6 +158,7 @@ export function openChannel(o) {
     if (pingTimer) clearInterval(pingTimer);
     pingTimer = connectTimer = probeTimer = null;
     socket = null;
+    pending.clear();
     failures += 1;
     if (shouldPoll(failures)) startPolling();
     retryTimer = setTimeout(connect, blocked() ? BLOCKED_PROBE_MS : reconnectDelay(failures));
@@ -191,6 +206,7 @@ export function openChannel(o) {
       }
       if (frame.t === "state") {
         pushed += 1;
+        lastState = frame.view?.state ?? lastState;
         o.onView(frame.view);
       } else if (frame.t === "error") {
         if (FATAL.has(frame.code)) stop();
@@ -232,22 +248,46 @@ export function openChannel(o) {
   } else connect();
 
   return {
-    /** @param {object} frame */
+    /**
+     * The first frame goes at once; the rest inside COALESCE_MS go together after it, the latest of each type, so a
+     * burst of taps sends absolute values (a page), never deltas.
+     * @param {Frame} frame
+     */
     send(frame) {
-      if (live && socket) socket.send(JSON.stringify({ v: 1, ...frame }));
-      return live;
+      if (!live || !socket) return false;
+      if (sendTimer) pending.set(frame.t, frame);
+      else {
+        socket.send(JSON.stringify({ v: 1, ...frame }));
+        sendTimer = setTimeout(flush, COALESCE_MS);
+      }
+      return true;
     },
     isLive: () => live,
     nudge,
     refresh,
-    /** The tab is visible again: its timers may have slept through pushes and deadlines, so read the state too. */
+    /**
+     * The tab is visible again. A live socket is pinged when it has been quiet; one that is down reconnects, and its
+     * hello carries the state (no read), or, polling, the next poll comes now.
+     */
     wake() {
+      if (live) return probe();
       nudge();
-      probe();
-      void refresh();
+      if (pollTimer) {
+        clearTimeout(pollTimer);
+        pollTimer = setTimeout(poll, 0);
+      }
     },
     stop,
   };
+
+  function flush() {
+    sendTimer = null;
+    const frames = [...pending.values()];
+    pending.clear();
+    if (!live || !socket || !frames.length) return;
+    for (const f of frames) socket.send(JSON.stringify({ v: 1, ...f }));
+    sendTimer = setTimeout(flush, COALESCE_MS);
+  }
 
   /** Retry now: the tab became visible again, or the network came back. */
   function nudge() {
