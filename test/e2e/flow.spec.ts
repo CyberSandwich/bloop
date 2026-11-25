@@ -9,6 +9,24 @@ import { crc32, deflateSync } from "node:zlib";
 import AxeBuilder from "@axe-core/playwright";
 import { type Browser, type BrowserContext, expect, type Locator, type Page, type Route, test } from "@playwright/test";
 
+const SHOT_SIZES = {
+  "320": { width: 320, height: 640 },
+  "390": { width: 390, height: 844 },
+  "430": { width: 430, height: 932 },
+  "844x390": { width: 844, height: 390 },
+  "1440": { width: 1440, height: 900 },
+} as const;
+type ShotSize = keyof typeof SHOT_SIZES;
+async function shoot(page: Page, name: string, sizes: ShotSize[], each?: () => Promise<void>) {
+  for (const size of sizes) {
+    await page.setViewportSize(SHOT_SIZES[size]);
+    await page.waitForTimeout(400);
+    await each?.();
+    await page.waitForTimeout(300);
+    await page.screenshot({ path: `test-results/shots/${name}-${size}.png` });
+  }
+}
+
 /** The item on the stage: a page's picture, the photo's canvas or a video (never the loader's thumbnail). */
 const STAGED = "#frame :is(picture img, canvas, video)";
 
@@ -1399,6 +1417,44 @@ test.describe("a guest's photo and video on the screen (design.md section 7, Vid
     await expect(sound).toHaveAttribute("aria-pressed", "true");
     await screen.context.close();
     await phone.context.close();
+  });
+
+  test("SHOTS video: Tap for Sound, presenting, parked while presenting; the live phone's sheet", async ({
+    browser,
+  }) => {
+    test.setTimeout(150_000);
+    const { screen, phone, page } = await openAsGuest(browser, "Talk.mp4", CLIP, false, false, holdSound);
+    await expect(page.getByRole("button", { name: "Tap for Sound" })).toBeVisible({ timeout: 15_000 });
+    await shoot(page, "s-video-tap", ["390", "844x390", "1440"]);
+    await phone.page.screenshot({ path: "test-results/shots/a-video-blocked-390.png", fullPage: true });
+    // Full screen cannot be resized: each size presents, shoots, parks, shoots, then stops.
+    for (const size of ["390", "844x390", "1440"] as const) {
+      await page.setViewportSize(SHOT_SIZES[size]);
+      await page.waitForTimeout(400);
+      const present = page.locator("#b-present");
+      if (await present.isVisible()) await present.click();
+      await page.waitForTimeout(800);
+      await page.screenshot({ path: `test-results/shots/s-video-presenting-tap-${size}.png` });
+      await screen.context.setOffline(true);
+      await page.waitForTimeout(3000);
+      await page.screenshot({ path: `test-results/shots/s-video-parked-presenting-${size}.png` });
+      await screen.context.setOffline(false);
+      await page.waitForTimeout(4000);
+      await page.keyboard.press("Escape");
+      await page.waitForTimeout(600);
+    }
+    await screen.context.close();
+    await phone.context.close();
+    // Live: the same sheet, its chips cut to the live cap.
+    const live = await openAsGuest(browser, "Board.png", png(300, 200), false, true);
+    const ends = live.phone.page.locator("#ends");
+    if (await ends.isVisible({ timeout: 15_000 }).catch(() => false)) {
+      await shoot(live.phone.page, "a-sheet-live", ["320", "390", "430", "844x390"], async () => {
+        if (!(await live.phone.page.locator("#length[open]").count())) await ends.click();
+      });
+    }
+    await live.screen.context.close();
+    await live.phone.context.close();
   });
 
   test("VID-03 a video this browser cannot play shows This Video Can't Play Here, with Download as the way on", async ({
@@ -3185,6 +3241,96 @@ test.describe("the phone page at phone widths (design.md section 7, Phone page)"
     await expect(heading(phone.page)).toHaveText("Session Ended");
     await phone.page.waitForTimeout(500);
     await expect(toast(phone.page)).toHaveCount(0);
+    await screen.context.close();
+    await phone.context.close();
+  });
+});
+
+test.describe("SHOTS the phone's remote, sheet and question; the pill's frames", () => {
+  async function approved(browser: Browser) {
+    const screen = await demoScreen(browser);
+    const { phone } = await scan(browser, screen.page);
+    await phone.page.getByRole("button", { name: "Approve" }).click();
+    await expect(phone.page.getByRole("group", { name: "The Screen" })).toBeVisible();
+    const row = (name: string) => phone.page.locator("#file-list").getByRole("button", { name: startsWith(name) });
+    return { screen, phone, row };
+  }
+
+  test("SHOTS remote layout: deck, dog, long list with deck; the preview's height threshold", async ({ browser }) => {
+    test.setTimeout(150_000);
+    const { screen, phone, row } = await approved(browser);
+    const page = phone.page;
+    const sizes: ShotSize[] = ["320", "390", "430", "844x390"];
+    await row("Sample deck.pptx").click();
+    await expect(page.locator(".preview")).toBeVisible();
+    await shoot(page, "a-remote-deck", sizes);
+    for (const width of [320, 360, 390, 430, 480]) {
+      let first = 0;
+      for (let height = 500; height <= 900; height += 4) {
+        await page.setViewportSize({ width, height });
+        await page.waitForTimeout(40);
+        if ((await page.locator(".preview").count()) > 0) {
+          first = height;
+          break;
+        }
+      }
+      console.log(`THRESHOLD width ${width}: preview from ${first} tall`);
+    }
+    await row("Dog.jpg").click();
+    await expect(page.locator(".preview")).toHaveCount(0);
+    await shoot(page, "a-remote-dog", sizes);
+    await row("Sample deck.pptx").click();
+    await page
+      .locator("#file-list")
+      .evaluate(
+        "(ul) => { for (let i = 0; i < 3; i++) for (const li of [...ul.children]) ul.append(li.cloneNode(true)); }",
+      );
+    await shoot(page, "a-remote-long-deck", sizes);
+    await screen.context.close();
+    await phone.context.close();
+  });
+
+  test("SHOTS the Session Expiry sheet and Revoke's question", async ({ browser }) => {
+    test.setTimeout(120_000);
+    const { screen, phone } = await approved(browser);
+    const page = phone.page;
+    const ends = page.locator("#ends");
+    await shoot(page, "a-sheet-demo", ["320", "390", "430", "844x390"], async () => {
+      if (!(await page.locator("#length[open]").count())) await ends.click();
+    });
+    await page.keyboard.press("Escape");
+    await shoot(page, "a-revoke", ["320", "390", "844x390"], async () => {
+      if (!(await page.locator("#revoke[open]").count())) await page.getByRole("button", { name: "Revoke" }).click();
+    });
+    await screen.context.close();
+    await phone.context.close();
+  });
+
+  test("FRAMES the pill's left, width and center per frame through a switch", async ({ browser }) => {
+    const screen = await demoScreen(browser);
+    const { phone } = await scan(browser, screen.page);
+    await phone.page.getByRole("button", { name: "Approve" }).click();
+    await expectViewer(screen.page);
+    const page = screen.page;
+    const sample = async (label: string, act: () => Promise<void>) => {
+      await page.evaluate(
+        "(() => { const p = document.getElementById('controls'); const out = (window.frames_ = []); const t0 = performance.now(); const tick = () => { const r = p.getBoundingClientRect(); out.push([Math.round(performance.now() - t0), +r.left.toFixed(1), +r.width.toFixed(1), +(r.left + r.width / 2).toFixed(1), +r.top.toFixed(1)]); if (performance.now() - t0 < 1200) requestAnimationFrame(tick); }; requestAnimationFrame(tick); })()",
+      );
+      await act();
+      await page.waitForTimeout(1300);
+      console.log(
+        `FRAMES ${label} [ms, left, width, center, top]: ${JSON.stringify(await page.evaluate("window.frames_"))}`,
+      );
+    };
+    await sample("dog to deck", () => sidebarItem(page, "Sample deck.pptx").click());
+    await sample("deck to dog", () => sidebarItem(page, "Dog.jpg").click());
+    await sidebarItem(page, "Sample deck.pptx").click();
+    await page.waitForTimeout(800);
+    await sample("deck to Vevox", async () => {
+      const tab = page.context().waitForEvent("page");
+      await sidebarItem(page, "Vevox").click();
+      await (await tab).close();
+    });
     await screen.context.close();
     await phone.context.close();
   });
