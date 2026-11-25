@@ -89,7 +89,7 @@ Each cap has a default in `src/worker/spend/caps.ts` and a var that replaces it;
 | `CAP_UPLOAD_USER_BYTES_DAY` | 10,737,418,240 | 10 GiB uploaded per account per day; a purge does not give bytes back |
 | `CAP_GUEST_DROP_IP_DAY` | 20 | guest drops per IP hash per day; a busy seminar behind one NAT |
 | `CAP_EMAIL_HOUR` | 60 | sends per hour account-wide |
-| `CAP_EMAIL_DAY` | 300 | sends per day account-wide; 1,000 users need about 170 |
+| `CAP_EMAIL_DAY` | 180 | sends per day account-wide; platform quota 200/day until raised; raise this cap only after Cloudflare raises the quota |
 | `CAP_EMAIL_RECIPIENT_DAY` | 10 | sends per recipient per day |
 | `CAP_EMAIL_CODE_IP_DAY` | 20 | sign-in code requests per IP hash per day |
 | `CAP_EXPORT_USER_DAY` | 3 | exports per account per day |
@@ -174,7 +174,7 @@ The guest-drop lines are shares of the budget. One drop that is not converted co
 | `r2_class_b` | R2 class B | $0.36 per million | 5 (`BREAKER_SHARE_R2_CLASS_B`) | $0.50 | $0.017 | 46,296 | 231,480 | `BREAKER_FLOOR_R2_CLASS_B`, `BREAKER_CEILING_R2_CLASS_B` | `previews=off` |
 | `d1_writes` | D1 rows written | $1.00 per million | 10 (`BREAKER_SHARE_D1`) | $1.00 | $0.033 | 33,333 | 166,665 | `BREAKER_FLOOR_D1`, `BREAKER_CEILING_D1` | `demo=off` |
 | `workflow_steps` | Workflow steps | $8.00 per million | 5 (`BREAKER_SHARE_WORKFLOWS`) | $0.50 | $0.017 | 2,083 | 10,415 | `BREAKER_FLOOR_WORKFLOWS`, `BREAKER_CEILING_WORKFLOWS` | `convert=account_only` |
-| `email` | Email sends | $350.00 per million | 10 (`BREAKER_SHARE_EMAIL`) | $1.00 | $0.033 | 95 | 300 | `BREAKER_FLOOR_EMAIL`, `BREAKER_CEILING_EMAIL` | `email=admin_only` |
+| `email` | Email sends | $350.00 per million | 10 (`BREAKER_SHARE_EMAIL`) | $1.00 | $0.033 | 95 | 180 | `BREAKER_FLOOR_EMAIL`, `BREAKER_CEILING_EMAIL` | `email=admin_only` |
 
 The other 15 percent: R2 storage 5 (`BREAKER_SHARE_R2_STORAGE`, $0.50, $0.015 per GB-month, so a warning at 33 GB) and logs 10 (`BREAKER_SHARE_LOGS`, $1.00, not measured yet). Storage and logs warn and never trip; storage counts in the month-to-date cost once analytics reads it.
 
@@ -193,11 +193,11 @@ The other 15 percent: R2 storage 5 (`BREAKER_SHARE_R2_STORAGE`, $0.50, $0.015 pe
 
 - `p95` is the nearest-rank 95th percentile of the meter's daily totals over the last `BREAKER_HISTORY_DAYS` completed UTC days, counting days with no usage as 0. Today is left out.
 - With fewer than `BREAKER_HISTORY_MIN_DAYS` completed days of history (a new guard, or too little data), the line is the floor.
-- The ceiling is the meter's `BREAKER_CEILING_<METER>` var, default `BREAKER_CEILING_MULTIPLE` times the floor, and never below the floor. Email's default is held to `CAP_EMAIL_DAY` (300 here, under 5 times 95), so its adaptive line and its hard cap cannot disagree; raise both together. The line never exceeds the ceiling. Only the owner raises it.
+- The ceiling is the meter's `BREAKER_CEILING_<METER>` var, default `BREAKER_CEILING_MULTIPLE` times the floor, and never below the floor. Email's default is held to `CAP_EMAIL_DAY` (180 here, under 5 times 95), so its adaptive line and its hard cap cannot disagree; raise both together, and the cap only after Cloudflare raises its 200 a day email quota. The line never exceeds the ceiling. Only the owner raises it.
 - The history is the guard's own daily totals, and, with analytics, the larger of the two for each day (presigned R2 PUTs never pass a meter). The guard keeps 40 days.
 - One abuse day can lift the p95 to that day's level, so it can lift the line at most to the ceiling. That is why the ceiling is the owner's to raise.
 
-Worked example, email: floor 95. After 14 days at 50 sends, p95 is 50, so the line is 150: a warning at 75 and a trip at 150. At 80 sends a day the want is 240, 80 percent of the 300 ceiling, so the digest suggests a higher ceiling.
+Worked example, email: floor 95. After 14 days at 40 sends, p95 is 40, so the line is 120: a warning at 60 and a trip at 120. At 50 sends a day the want is 150, 83 percent of the 180 ceiling, so the digest suggests a higher ceiling.
 
 **The warning.** At `BREAKER_WARN_PCT` (50) percent of the current line, one email, no trip, once a day per meter.
 
@@ -266,7 +266,7 @@ Rules for the Cloudflare side:
 |---|---|---|---|---|---|
 | 10 | about $5 | $6 / $8 / $10 / $15 | 10 | defaults hold | $10 each |
 | 100 | about $9 | $11 / $14 / $18 / $27 | 10 | containers 30,000; R2 class A 100,000; the rest default | $10 each |
-| 1,000 | about $62 | $74 / $99 / $124 / $186 | 100 | containers 300,000; R2 class A 1,000,000; R2 class B 670,000; D1 1,000,000; Workflow steps 50,000; email 1,700 with `CAP_EMAIL_DAY` 2,000 | $10 each, or the digest's suggestion once it differs |
+| 1,000 | about $62 | $74 / $99 / $124 / $186 | 100 | containers 300,000; R2 class A 1,000,000; R2 class B 670,000; D1 1,000,000; Workflow steps 50,000; email 1,700 with `CAP_EMAIL_DAY` 2,000, after Cloudflare raises its email quota | $10 each, or the digest's suggestion once it differs |
 
 ## 10. Fails closed, and what stays open
 
