@@ -448,7 +448,7 @@ describe("landing word caps (design.md section 13)", () => {
     expect(html).not.toContain("step-device");
     expect(steps.map((s) => visibleText(between(s, /<\/h2>\s*<p>/, "</p>")))).toEqual([
       "Scan the screen's QR code with your phone camera.",
-      "Select your files, then tap Approve.",
+      "Choose your files, then tap Approve.",
       "Present immediately or download your file.",
     ]);
     for (const step of steps) expect(step).toMatch(/<div class="frag" role="group" aria-label="Example">/);
@@ -896,7 +896,7 @@ describe("stage 1 wording and pictures", () => {
   it("the landing speaks US English and the phone's own verb: Select, then Revoke", () => {
     const text = visibleText(index);
     expect(text).not.toMatch(/\b[Tt]ick\b/);
-    expect(text).toContain("Select your files, then tap Approve.");
+    expect(text).toContain("Choose your files, then tap Approve.");
     expect(text).toContain("Revoke from your phone, and each link expires.");
     expect(text).not.toMatch(/End from your phone|One Tap/);
   });

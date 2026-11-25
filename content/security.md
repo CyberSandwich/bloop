@@ -5,14 +5,14 @@ title: Security
 description: What bloop holds, where it runs, what can stay on a PC, and how to report a problem.
 panel: true
 effective: 2026-11-25
-version: 1.0
+version: 1.1
 ---
 
 bloop puts a file on a shared screen without putting your account there. This page is for the people who look after those screens: what bloop holds, where it runs, what can stay on a PC, and how to reach us. The articles explain each part in more depth, starting with [How bloop Works](/articles/how-bloop-works).
 
 ## How It Works {#how}
 
-1. **Scan.** The Screen shows a code that works once, for 60 seconds. Your phone scans it and shows the room and a number to match.
+1. **Scan.** The Screen shows a code that works once, for 60 seconds. Your phone scans it and shows a number to match against the Screen.
 2. **Approve.** You choose Items on your phone and tap Approve. Nothing is typed on the PC.
 3. **Show.** bloop's server gives the Screen one short-lived link per approved Item. The Screen never gets your account, your other files or a way to list them.
 4. **End.** You end it from your phone or the Screen, or it ends by itself: after 1 hour unless you change it on your phone, and never later than the limit, 12 hours (2 hours in the Demo). Every link stops working at the end.
@@ -110,5 +110,6 @@ No external audit or penetration test yet, and no Cyber Essentials certificate y
 
 ## What Changed {#changes}
 
+- Version 1.1, 2026-11-25: How It Works says the phone shows a number to match, and no longer that it shows the room, which only registered rooms (planned) will name.
 - Version 1.0, 2026-11-25: first published version.
 - Earlier versions were shown for review before this one; they are replaced and never took effect.

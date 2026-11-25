@@ -8,7 +8,7 @@ panel: true
 binds: this notice
 summaryNote: This summary helps you read; the full text applies.
 effective: 2026-11-25
-version: 1.0
+version: 1.1
 ---
 
 bloop is a new, free side project run by one person in the UK. It keeps only what it needs to put your file on the screen, and deletes a guest's file when the session ends. It never sells data and runs no ads, analytics scripts or trackers. Write to <hi@bloop.here> about anything here.
@@ -23,7 +23,7 @@ In short: one named person runs bloop and answers for your data.
 
 1.3 bloop has no data protection officer; none is required. Write to <hi@bloop.here>.
 
-1.4 Words used here: **Screen** means a browser showing bloop's page on a shared display, such as a lectern PC. **Session** means the time from Approve on your phone until it ends. **Item** means a file or link you approve for a Screen. **Guest File** means a file sent from a phone that is not signed in to a file service. **Demo** means the public sample at bloop.here, which uses a bundled sample account.
+1.4 Words used here: **Screen** means a browser showing bloop's page on a shared display, such as a room PC. **Session** means the time from Approve on your phone until it ends. **Item** means a file or link you approve for a Screen. **Guest File** means a file sent from a phone that is not signed in to a file service. **Demo** means the public sample at bloop.here, which uses a bundled sample account.
 
 ## What Works Today {#status}
 
@@ -177,7 +177,7 @@ In short: tell bloop first; you can always go to the ICO.
 
 ## Children {#children}
 
-In short: bloop is for adults at work and study.
+In short: bloop is for work and study, and not for children under 13.
 
 11.1 bloop is made for staff and students at universities, schools and workplaces. It is not meant for children under 13, and bloop does not knowingly collect their data. A Guest File, from anyone, is deleted when its Session ends.
 
@@ -189,5 +189,6 @@ In short: changes are dated and listed here.
 
 ### What Changed
 
+- Version 1.1, 2026-11-25: clarifications only, with no change to how data is handled. The example in 1.4 says room PC, the word used on every page, and the summary of section 11 names the age of 13 its clause gives.
 - Version 1.0, 2026-11-25: first published version.
 - Earlier versions were shown for review before this one; they are replaced and never took effect.

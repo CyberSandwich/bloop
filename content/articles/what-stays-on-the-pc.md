@@ -6,7 +6,7 @@ description: What bloop clears on a room PC when a session ends, what a web page
 published: 2026-11-25
 ---
 
-A shared PC should not remember the last person who used it. bloop does what a web page can do toward that, and this article is honest about where a web page stops. The short answer: bloop clears its own traces, and a downloaded copy, recent file names and browser history can stay until the PC's profile is wiped.
+A shared PC should not remember the last person who used it. bloop does what a web page can do toward that, and this article says where a web page stops. The short answer: bloop clears its own traces, and a downloaded copy, recent file names and browser history can stay until the PC's profile is wiped.
 
 ## What bloop Clears {#cleared}
 
@@ -42,4 +42,4 @@ Whatever you choose, test it in your own rooms: run a session, end it, sign out,
 
 ## What Is Not Measured Yet {#unmeasured}
 
-bloop has not yet measured what remains on real lectern PCs after sign-out and restart, including how long the Microsoft download link persists and what the download history keeps. Until it has, it claims the clearing described above and nothing beyond it. If you run a pilot, those results are the most useful thing you can send to <hi@bloop.here>.
+bloop has not yet measured what remains on real room PCs after sign-out and restart, including how long the Microsoft download link persists and what the download history keeps. Until it has, it claims the clearing described above and nothing beyond it. If you try bloop in your own rooms, those results are the most useful thing you can send to <hi@bloop.here>.

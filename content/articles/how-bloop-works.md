@@ -6,18 +6,18 @@ description: How a phone pairs with a shared screen, what the screen is given, a
 published: 2026-11-25
 ---
 
-bloop lets a lecturer put a file on a shared PC without signing in to that PC. This article follows one session from the first scan to the last link, and says what the room PC holds at each step.
+bloop lets a lecturer put a file on a shared PC without signing in to their own account there. This article follows one session from the first scan to the last link, and says what the room PC holds at each step.
 
 ## The Problem It Solves {#problem}
 
-A lectern PC is used by many people in a day. Signing in to your own account there leaves traces: a cached sign-in, recent file names, a downloaded copy. Plugging in a USB stick moves the risk to the stick. Either way the presenter makes a trade between convenience and leaving something behind.
+A room PC is used by many people in a day. Signing in to your own account there leaves traces: a cached sign-in, recent file names, a downloaded copy. Plugging in a USB stick moves the risk to the stick. Either way the presenter makes a trade between convenience and leaving something behind.
 
 bloop moves the choosing to the presenter's phone. The PC shows a web page, and the phone decides what the page may show. The PC never holds the presenter's account.
 
 ## Four Steps {#steps}
 
-1. **Scan.** The room PC opens bloop's Screen page, which shows a QR code and a short typed code. A code works once and lasts 60 seconds. The phone scans it, or the presenter types it, and the phone shows the room and a two-digit number to match against the Screen.
-2. **Approve.** The presenter picks the files to show and taps Approve. Nothing is typed on the PC.
+1. **Scan.** The room PC opens bloop's Screen page, which shows a QR code and a short typed code. A code works once and lasts 60 seconds. The phone scans it, or the presenter types it, and the phone shows a two-digit number to match against the Screen.
+2. **Approve.** The presenter chooses the files to show and taps Approve. Nothing is typed on the PC.
 3. **Show.** bloop's server gives the Screen one short-lived link for each approved file. The Screen opens it; on a PC with PowerPoint installed, a deck opens in PowerPoint, read-only.
 4. **End.** The presenter ends the session from the phone, or someone ends it at the Screen, or it ends by itself. Every link stops working at that moment.
 
