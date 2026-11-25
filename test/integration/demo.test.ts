@@ -2,7 +2,7 @@
 // the off switch, the per-IP limits and the global cap. The flow runs with TEST_TIMING and a migrated D1; the
 // limits run on instances with the platform bindings live (no TEST_TIMING) or with a tiny cap.
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
-import { approveDemo, fetchLink, sleep } from "./open-client.ts";
+import { approveDemo, fetchLink, inOneWindow, sleep } from "./open-client.ts";
 import { Api, claim, openScreen, PEPPER, startPairing } from "./pairing-client.ts";
 import { startWrangler, type Wrangler } from "./wrangler.ts";
 
@@ -230,6 +230,7 @@ describe("DEMO-02 flood: strict per-IP limits", () => {
 
   it("DEMO-02 flood: demo screen creation is limited to 12 a minute per IP, and another IP is unaffected", async () => {
     const statuses: number[] = [];
+    await inOneWindow();
     for (let i = 0; i < 14; i++)
       statuses.push((await api.post("/api/screens", { mode: "demo" }, ip("203.0.113.10"))).status);
     expect(statuses.filter((s) => s === 201)).toHaveLength(12);
@@ -241,6 +242,7 @@ describe("DEMO-02 flood: strict per-IP limits", () => {
 
   it("DEMO-02 flood: demo claims from one IP stop at 20 a minute, the live claim limit, which the demo one equals", async () => {
     const codes: string[] = [];
+    await inOneWindow();
     for (let i = 0; i < 21; i++) codes.push((await demoCode(api, `203.0.113.${20 + i}`)).code);
     const statuses: number[] = [];
     for (const code of codes) statuses.push((await api.post("/api/claim", { code }, ip("203.0.113.60"))).status);
