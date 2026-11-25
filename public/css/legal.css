@@ -69,7 +69,7 @@
   display: flex;
   align-items: center;
   gap: 8px;
-  min-height: 40px;
+  min-height: 44px;
   padding: 8px 12px;
   border-radius: calc(var(--r-content) - 8px);
   color: var(--ink-2);
@@ -156,8 +156,7 @@
   background: var(--surface);
   font-size: 15px;
 }
-/* A numbered section indents by the gutter, and every number (section, clause, item) hangs in it, out of flow:
-   the text starts on one x, and a number is never an inline link in a run of text (axe link-in-text-block). */
+/* Numbers hang out of flow in the gutter, so none is an inline link in running text (axe link-in-text-block). */
 .legal-text {
   --gutter: 40px;
 }
@@ -176,6 +175,12 @@
 .clause > .num {
   position: absolute;
   left: calc(-1 * var(--gutter));
+}
+/* Every number is positioned: a 44 tall tap area that moves no text. */
+a.num::after {
+  content: "";
+  position: absolute;
+  inset: -9px -6px;
 }
 .items {
   margin: 8px 0 0;
