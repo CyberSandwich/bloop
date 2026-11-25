@@ -3,7 +3,7 @@
 Status: accepted. Applies to every migration, Durable Object schema step, Worker-to-object call and wire frame from `migrations/0004_indexes.sql` on. Data model: ADR 0013.
 
 ## Context
-- A deploy is not atomic. For up to 300 s two versions of the Worker run at once (version skew), and a Durable Object, a page already open in a browser or a Workflow instance can outlive its deploy by hours.
+- A deploy is not atomic. For up to 300 s two versions of the Worker run at once (version skew), and a Durable Object or a page already open in a browser can outlive its deploy by hours.
 - `.github/workflows/deploy.yml` runs `wrangler d1 migrations apply DB --remote` on every push to `main`, before `wrangler deploy`. Whatever migration is on `main` is applied to production at once, whether or not the code that needs it has shipped.
 - D1 has no transactional DDL across a rebuild and no cheap rollback: Time Travel restores the whole database to a point, losing every later write.
 

@@ -148,7 +148,7 @@ CREATE TABLE IF NOT EXISTS derived (
   status TEXT NOT NULL, stage TEXT,
   pages INTEGER, has_notes INTEGER, has_motion INTEGER, fonts_missing TEXT,
   outputs TEXT, bytes INTEGER, error TEXT,
-  attempts INTEGER NOT NULL DEFAULT 0, workflow_id TEXT,
+  attempts INTEGER NOT NULL DEFAULT 0, run_id TEXT,
   created_at INTEGER NOT NULL, updated_at INTEGER NOT NULL,
   PRIMARY KEY (file_id, version));
 CREATE INDEX IF NOT EXISTS idx_derived_status ON derived(status, updated_at);  -- stuck-job sweep, purge termination

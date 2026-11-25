@@ -1,5 +1,6 @@
 // The v4 foundation: the email normalizer, the new configuration, the file-origin host, and the two rules that keep an
 // email member's rows from being deleted by the old Entra-era jobs (ADR 0013).
+import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 import { emailSet, normalizeEmail } from "../../src/worker/auth/email-norm.ts";
 import { Sessions } from "../../src/worker/auth/sessions.ts";
@@ -90,6 +91,22 @@ describe("v4 configuration", () => {
   it("a weak secret fails the parse and a missing one does not", () => {
     expect(problems({ CODE_PEPPER: "short" })).toHaveLength(1);
     expect(config({ CODE_PEPPER: "x".repeat(43) }).secrets.codePepper).toHaveLength(43);
+  });
+});
+
+describe("wrangler.jsonc: platform features that must stay off", () => {
+  const live = readFileSync(new URL("../../wrangler.jsonc", import.meta.url), "utf8")
+    .split("\n")
+    .filter((line) => !line.trim().startsWith("//"))
+    .join("\n");
+
+  it("ADR 0023: Workers Cache is not configured and no Workflow is bound", () => {
+    expect(live).not.toMatch(/"cache"\s*:/);
+    expect(live).not.toMatch(/"workflows"\s*:/);
+  });
+
+  it("no local run starts the converter container", () => {
+    expect(live).toMatch(/"dev"\s*:\s*\{\s*"enable_containers"\s*:\s*false/);
   });
 });
 

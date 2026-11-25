@@ -179,6 +179,17 @@ describe("MODE-01 pages: the account pages by mode", () => {
     expect((await get(env, "/library", outside)).status).toBe(200);
   });
 
+  it("MODE-01 pages: a deleting or suspended member sees the member pages as a signed-out visitor does", async () => {
+    const { db, env } = world();
+    setMode(db, "preview");
+    const deleting = await signIn(db, "d1", "deleting@example.test");
+    const suspended = await signIn(db, "s1", "suspended@example.test");
+    db.raw.prepare("UPDATE app_user SET status = 'deleting' WHERE id = 'd1'").run();
+    db.raw.prepare("UPDATE app_user SET suspended_at = 1 WHERE id = 's1'").run();
+    expect((await get(env, "/library", deleting)).status).toBe(404);
+    expect((await get(env, "/library", suspended)).status).toBe(404);
+  });
+
   it("MODE-01 pages: an invalid configuration hides the member pages instead of showing them", async () => {
     const { db, env } = world({ HASH_PEPPER: "short" });
     setMode(db, "preview");

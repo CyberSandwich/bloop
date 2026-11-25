@@ -30,8 +30,10 @@
     "logs": { "enabled": true, "invocation_logs": false },
     "issues": { "enabled": true }
   },
-  // Conversion work (ADR 0019) outlasts the 30 s default; the spend guard, not this limit, bounds what it costs.
+  // 30000 is the platform default, kept explicit as the floor the conversion work (ADR 0019) relies on; the spend guard bounds cost.
   "limits": { "cpu_ms": 30000 },
+  // The converter container (ADR 0019) never runs locally: no dev server, test or Playwright run starts Docker.
+  "dev": { "enable_containers": false },
   "durable_objects": {
     "bindings": [
       { "name": "SCREEN", "class_name": "Screen" },
@@ -46,7 +48,6 @@
     { "tag": "v1", "new_sqlite_classes": ["Screen", "Directory"] },
     { "tag": "v2", "new_sqlite_classes": ["UserLibrary", "Converter"] }
   ],
-  "workflows": [{ "name": "bloop-convert", "binding": "CONVERT", "class_name": "ConvertWorkflow" }],
   // Sends from the one support address only; Email Sending is onboarded for the domain.
   "send_email": [{ "name": "EMAIL", "allowed_sender_addresses": ["hi@bloop.here"] }],
   // Created with `wrangler d1 create bloop --jurisdiction eu`; a new account prints a new id.

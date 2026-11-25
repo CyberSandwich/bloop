@@ -33,7 +33,7 @@ Runs from the cron for each user whose `delete_after` has passed. Idempotent and
 0. **Claim:** `UPDATE app_user SET status = 'purging' WHERE id = ? AND delete_after <= :now AND status IN ('active', 'deleting')`. Continue only on one change; a later run continues a row already `purging`. From here no sign-in, restore or reserve can succeed.
 1. End live screens (`UserLibrary.endScreens`), then delete every session.
 2. Abort open multipart uploads (R2 and rows).
-3. Terminate every `queued` or `running` `derived.workflow_id` of the user's files. The Workflow's put step re-reads `library_file` and the owner's status before every R2 write and writes nothing if the row is gone or the owner is `purging`, so a step already past termination cannot recreate objects.
+3. Terminate every `queued` or `running` `derived.run_id` of the user's files. The Converter's put step re-reads `library_file` and the owner's status before every R2 write and writes nothing if the row is gone or the owner is `purging`, so a step already past termination cannot recreate objects.
 4. Delete R2 objects under `u/<uid>/` in rounds of at most 1,000 keys, then the user's `derived` rows, then `UserLibrary.purge`.
 5. In one batch: delete `invite` and `waitlist` rows by the user's `email_norm`, then `DELETE FROM app_user WHERE id = ?` (the cascade removes library, upload, part, passkey, code and challenge rows). Then write the R2 tombstone `purged/<uid>` holding the purge time.
 - Rows go last so a crash between steps leaves a row that names what is still to delete (LIB-08).

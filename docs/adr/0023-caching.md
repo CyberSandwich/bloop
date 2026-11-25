@@ -35,6 +35,7 @@ Status: accepted. Supersedes the asset-bypass idea ("option C") from the host-sp
 ## Consequences
 - Each static request costs a Worker invocation; the spend guard owns the ceiling.
 - The unhashed JS and CSS revalidate on every page load; ETag 304s keep the cost to headers.
+- Workers Cache stays off (a test pins `wrangler.jsonc` to it): a hit would skip the Worker, so the mode gate and headers would not run, and its key ignores the host.
 
 ## Threats served
 LIB-03 (a trashed or disabled file is not kept by a cache), LIB-05 and FO-01 (file-origin responses carry their own headers), MODE-01 (no stale variant outlives the 30 s mode window).

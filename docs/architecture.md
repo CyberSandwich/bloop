@@ -583,12 +583,22 @@ Each new module exports an empty route list (every path stays 404) until its str
 | uploads, dev-r2 | U (uploads) | stub |
 | library, and the `UserLibrary` object | L (library) | stub |
 | fileorigin, notes | P1 (present server) | stub |
-| the `Converter` object and the convert workflow | V (conversion) | stub |
+| the `Converter` object | V (conversion) | stub |
 
-The Durable Object and Workflow bindings (`USER_LIBRARY`, `CONVERTER`, `CONVERT`), the library bucket, the email binding and the new rate-limit bindings are in `wrangler.jsonc`. The Converter `containers` entry is not: the conversion stream adds it with its image digest. Variables and secrets are listed in `src/worker/config.ts` only. `UPLOAD_MODE` ships as proxy and `CONVERT_MODE` as off until their streams land.
+The Durable Object bindings (`USER_LIBRARY`, `CONVERTER`), the library bucket, the email binding and the new rate-limit bindings are in `wrangler.jsonc`. The Converter `containers` entry is not: the conversion stream adds it with its image digest. Variables and secrets are listed in `src/worker/config.ts` only. `UPLOAD_MODE` ships as proxy and `CONVERT_MODE` as off until their streams land.
 
 ### 13.4 Observability
 Workers Logs are on and invocation logs are off, because invocation logs keep full URLs, tokens included (SITE-03). Sampling is set in `wrangler.jsonc`. Code logs through the one `log()` shape. Turning on the Issues view is a dashboard step (`docs/setup.md`).
+
+What is stored outside the EU, and what each holds:
+
+| Store | Holds | Kept |
+|---|---|---|
+| Workers Logs | the `log()` lines: events and ids, no URL or token | the platform's retention |
+| Issues | grouped error reports, which may include a request path | the platform's retention (spike F-1 checks the file-origin path) |
+| Durable Object ids in logs | an id derived from a user, file or session reference | with the log line |
+| container images | the converter image, no user data | until replaced |
+| Analytics Engine | usage counts for the spend guard, no identifiers | the platform's retention |
 
 ### 13.5 Test and local runs
 Browser tests and `npm run dev` use a `localhost` base URL, because WebAuthn refuses IP addresses. Integration runs set `DEV_MAILBOX` (the dev mailbox route; refused on an https origin), `UPLOAD_MODE=proxy` and `CONVERT_MODE=stub`.
