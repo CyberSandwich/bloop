@@ -17,7 +17,8 @@ export interface LaunchState {
   lockout: boolean;
 }
 
-const PREVIEW: LaunchState = { mode: "preview", lockout: false };
+/** What a failed read answers: the most restrictive state, so a D1 outage never admits anyone the lockout would refuse. */
+const PREVIEW: LaunchState = { mode: "preview", lockout: true };
 
 /** One query, no cache. Anything but the exact open value reads as preview, and the lockout counts only in preview. */
 export async function readLaunchState(db: Db): Promise<LaunchState> {

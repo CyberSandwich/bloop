@@ -232,7 +232,7 @@ const schema = z
       .describe(
         "Test only. 1 keeps outgoing mail in memory and serves it at GET /api/dev/mailbox; refused unless PUBLIC_ORIGIN is a local address.",
       ),
-    R2_ACCOUNT_ID: optional(z.string().min(1)).describe(
+    R2_ACCOUNT_ID: optional(z.string().regex(/^[0-9a-f]{32}$/)).describe(
       "Secret. The Cloudflare account id that names the R2 EU endpoint; never in the repo.",
     ),
     R2_ACCESS_KEY_ID: optional(z.string().min(1)).describe("Secret. R2 S3 access key id for presigning."),

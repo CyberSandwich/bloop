@@ -82,7 +82,7 @@ describe("MODE-01 modes: the cache", () => {
     expect((await read(raw)).mode).toBe("preview");
   });
 
-  it("MODE-01 modes: a failed read is preview, is logged, and is not cached", async () => {
+  it("MODE-01 modes: a failed read is preview with the lockout, is logged, and is not cached", async () => {
     const error = vi.spyOn(console, "error").mockImplementation(() => {});
     const read = launchReader(() => NOW);
     const raw = testDb();
@@ -92,7 +92,7 @@ describe("MODE-01 modes: the cache", () => {
         throw new Error("D1 down");
       },
     };
-    expect(await read(broken)).toEqual({ mode: "preview", lockout: false });
+    expect(await read(broken)).toEqual({ mode: "preview", lockout: true });
     expect(error).toHaveBeenCalledWith("launch_mode_read_failed");
     expect((await read(raw)).mode).toBe("open");
     error.mockRestore();

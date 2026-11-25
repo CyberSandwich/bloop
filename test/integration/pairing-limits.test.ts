@@ -80,10 +80,14 @@ describe("PAIR-07 limits: the global miss alarm", () => {
         );
         for (const a of answers) expect(a.status).toBe(404);
       }
-      const lines = alarm
-        .output()
-        .split("\n")
-        .filter((l) => l.includes("pair.miss_alarm"));
+      // wrangler relays the Worker's log line asynchronously, so a slow runner can lag the last response.
+      const alarmLines = () =>
+        alarm
+          .output()
+          .split("\n")
+          .filter((l) => l.includes("pair.miss_alarm"));
+      for (let i = 0; i < 50 && alarmLines().length === 0; i++) await new Promise((r) => setTimeout(r, 100));
+      const lines = alarmLines();
       expect(lines).toHaveLength(1);
       expect(lines[0]).toContain('"misses":1000');
       const fresh = await alarmApi.post(

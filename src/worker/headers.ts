@@ -103,7 +103,8 @@ const EXTRA: Readonly<Record<Policy, Record<string, string>>> = {
   screen: {},
   library: {},
   auth: {},
-  api: { "Cache-Control": "no-store" },
+  // X-Bloop marks an answer as ours, so the client can tell a campus filter's block page from a real reply.
+  api: { "Cache-Control": "no-store", "X-Bloop": "1" },
   // A cross-origin probe from the app reads it (ADR 0018); the handler adds Access-Control-Allow-Origin.
   "file-origin": { "Cross-Origin-Resource-Policy": "cross-origin", "Cache-Control": "no-store" },
   "file-pptx": { "Content-Disposition": "attachment", "Cache-Control": "no-store" },
