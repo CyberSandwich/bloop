@@ -213,6 +213,8 @@ export interface PhoneAction {
 
 export interface PhoneCopy {
   title: string;
+  /** A long name the title cut, whole, in a line of its own. */
+  name: string;
   body: string;
   /** The "Registered room" line under a room title. */
   room: boolean;

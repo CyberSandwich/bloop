@@ -989,6 +989,7 @@ a.row:focus-visible {
 }
 .body {
   text-wrap: pretty;
+  overflow-wrap: anywhere;
 }
 .body:empty {
   display: none;
