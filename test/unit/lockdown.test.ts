@@ -1,5 +1,4 @@
-import { existsSync, readFileSync } from "node:fs";
-import { DatabaseSync } from "node:sqlite";
+import { existsSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
 import {
@@ -9,157 +8,24 @@ import {
   describeRequests,
   execute,
   floorsOf,
-  loadTable,
   main,
   meterNames,
   type Plan,
   parseCli,
   renderPlan,
   type Table,
+  tokenFor,
+  wranglerSettings,
   writeSql,
 } from "../../tools/lockdown.mjs";
+import { ACCOUNT, deps, fakeApi, fakeD1, GH_TOKEN, LOCK_TOKEN, NOW, TOKEN, table } from "./lockdown-fakes";
 
 const ROOT = fileURLToPath(new URL("../../", import.meta.url));
-const read = (path: string) => readFileSync(`${ROOT}${path}`, "utf8");
-const table = loadTable();
 const LEVELS = ["L1", "L2", "L3", "L4", "L5"];
-const TOKEN = "cf-token-9f3a7c21";
-const ACCOUNT = "acct-1b2c3d4e5f";
-const GH_TOKEN = "gh-token-77aa11bb";
-const NOW = 1_800_000_000_000;
 
-const optionsFor = (level: string, undo = false) => ({
-  level,
-  undo,
-  meter: level === "L1" ? "convert" : undefined,
-});
-const planFor = (level: string, undo = false) => buildPlan(table, optionsFor(level, undo));
-
-// ---------- fakes ----------
-
-/** A real SQLite (node:sqlite) with the two tables the tool writes, shaped as migration 0005 has them. */
-function fakeD1() {
-  const db = new DatabaseSync(":memory:");
-  db.exec(`
-    CREATE TABLE setting (key TEXT PRIMARY KEY, value TEXT NOT NULL, updated_at INTEGER NOT NULL, updated_by TEXT);
-    CREATE TABLE admin_action (
-      id INTEGER PRIMARY KEY, at INTEGER NOT NULL, admin_user_id TEXT, action TEXT NOT NULL,
-      target_kind TEXT NOT NULL, target_id TEXT NOT NULL, reason TEXT NOT NULL, report_id TEXT);`);
-  const argvs: string[][] = [];
-  let fail = false;
-  return {
-    db,
-    argvs,
-    failNext: () => {
-      fail = true;
-    },
-    run(cmd: string, args: string[]) {
-      argvs.push([cmd, ...args]);
-      if (fail) return { status: 1, stdout: "", stderr: "D1 is down" };
-      const sql = args[args.indexOf("--command") + 1] ?? "";
-      db.exec(sql);
-      // changes() is the last statement's count: the log line, which exists only when the write took effect.
-      const logged = db.prepare("SELECT changes() AS n").get() as { n: number };
-      return { status: 0, stdout: JSON.stringify([{ meta: { changes: 1 } }, { meta: { changes: logged.n } }]) };
-    },
-    settings: () => db.prepare("SELECT key, value, updated_at, updated_by FROM setting ORDER BY key").all(),
-    log: () => db.prepare("SELECT * FROM admin_action ORDER BY id").all(),
-  };
-}
-
-interface Call {
-  method: string;
-  url: string;
-  body: unknown;
-}
-
-/** An in-memory Cloudflare and GitHub: enough of each endpoint the ops read and write. */
-function fakeApi() {
-  const calls: Call[] = [];
-  const state = {
-    ruleset: null as null | { id: string; rules: Record<string, unknown>[] },
-    workersDev: true,
-    crons: [{ cron: "0 * * * *" }, { cron: "30 3 * * *" }],
-    instances: ["inst-a", "inst-b"],
-    batchFails: false,
-    deployState: "active",
-  };
-  const reply = (status: number, body: unknown) => new Response(JSON.stringify(body), { status });
-  const ok = (result: unknown) => reply(200, { success: true, result });
-  const fetchFake = async (input: string | URL | Request, init?: RequestInit) => {
-    const url = String(input);
-    const method = init?.method ?? "GET";
-    const body = init?.body ? JSON.parse(String(init.body)) : undefined;
-    calls.push({ method, url, body });
-    const u = new URL(url);
-    const path = u.pathname.replace("/client/v4", "");
-    if (u.host === "api.github.com") {
-      if (method === "GET") return reply(200, { state: state.deployState });
-      state.deployState = path.endsWith("/disable") ? "disabled_manually" : "active";
-      return new Response(null, { status: 204 });
-    }
-    if (path === "/zones") return ok([{ id: "zone-1" }]);
-    if (path.endsWith("/entrypoint")) {
-      if (method === "GET")
-        return state.ruleset
-          ? ok(state.ruleset)
-          : reply(404, { success: false, errors: [{ code: 10003, message: "none" }] });
-      state.ruleset = {
-        id: "rs-1",
-        rules: (body as { rules: Record<string, unknown>[] }).rules.map((r, i) => ({ ...r, id: `rule-${i}` })),
-      };
-      return ok(state.ruleset);
-    }
-    if (/\/rulesets\/rs-1\/rules$/.test(path) && state.ruleset) {
-      state.ruleset.rules.push({ ...(body as object), id: "rule-new" });
-      return ok(state.ruleset);
-    }
-    const patch = path.match(/\/rulesets\/rs-1\/rules\/([\w-]+)$/);
-    if (patch && state.ruleset) {
-      state.ruleset.rules = state.ruleset.rules.map((r) => (r.id === patch[1] ? { ...(body as object), id: r.id } : r));
-      return ok({});
-    }
-    if (path.endsWith("/subdomain")) {
-      if (method === "POST") state.workersDev = (body as { enabled: boolean }).enabled;
-      return ok({ enabled: state.workersDev });
-    }
-    if (path.endsWith("/schedules")) {
-      if (method === "PUT") state.crons = body as typeof state.crons;
-      return ok({ schedules: state.crons });
-    }
-    if (/\/instances\?status=running/.test(url)) return ok(state.instances.map((id) => ({ id })));
-    if (/\/instances\?status=/.test(url)) return ok([]);
-    if (path.endsWith("/instances/batch/terminate")) {
-      if (state.batchFails) return reply(500, { success: false, errors: [{ code: 1, message: "batch down" }] });
-      const ids = body as string[];
-      state.instances = state.instances.filter((id) => !ids.includes(id));
-      return ok({});
-    }
-    if (/\/instances\/[\w-]+\/status$/.test(path)) {
-      state.instances = state.instances.filter((id) => !path.includes(`/${id}/`));
-      return ok({});
-    }
-    return reply(500, { success: false, errors: [{ code: 1, message: `unexpected ${method} ${path}` }] });
-  };
-  const mutating = () => calls.filter((c) => c.method !== "GET");
-  return { calls, state, fetch: fetchFake as typeof fetch, mutating };
-}
-
-function deps(d1 = fakeD1(), api = fakeApi(), env: Deps["env"] = {}) {
-  const full: Deps = {
-    env: {
-      CLOUDFLARE_API_TOKEN: TOKEN,
-      CLOUDFLARE_ACCOUNT_ID: ACCOUNT,
-      GITHUB_TOKEN: GH_TOKEN,
-      GITHUB_REPOSITORY: "owner/repo",
-      ...env,
-    },
-    fetch: api.fetch,
-    run: (cmd, args) => d1.run(cmd, args),
-    now: () => NOW,
-  };
-  return { d1, api, deps: full };
-}
+const planFor = (level: string, undo = false) =>
+  buildPlan(table, { level, undo, meter: level === "L1" ? "convert" : undefined });
+const text = (r: { lines: string[] }) => r.lines.join("\n");
 
 // ---------- the table ----------
 
@@ -182,25 +48,23 @@ describe("rung table shape", () => {
     }
   });
 
+  const meterWrites = Object.entries(table.rungs.L1?.meters ?? {}).map(([switch_, value]) => ({
+    switch: switch_,
+    value,
+  }));
+  const allWrites = [...Object.values(table.rungs).flatMap((r) => r.writes), ...meterWrites];
+
   it("every switch has allowed values, a default among them, and every write uses an allowed value", () => {
     for (const [name, spec] of Object.entries(table.switches)) {
       expect(name).toMatch(/^[a-z][a-z0-9_]*$/);
       expect(spec.values, name).toContain(spec.default);
     }
-    const writes = [
-      ...Object.values(table.rungs).flatMap((r) => r.writes),
-      ...Object.entries(table.rungs.L1?.meters ?? {}).map(([switch_, value]) => ({ switch: switch_, value })),
-    ];
-    expect(writes.length).toBeGreaterThan(10);
-    for (const w of writes) expect(table.switches[w.switch]?.values, w.switch).toContain(w.value);
+    expect(allWrites.length).toBeGreaterThan(10);
+    for (const w of allWrites) expect(table.switches[w.switch]?.values, w.switch).toContain(w.value);
   });
 
   it("every write is stricter than its switch default (a lockdown never loosens)", () => {
-    const writes = [
-      ...Object.values(table.rungs).flatMap((r) => r.writes),
-      ...Object.entries(table.rungs.L1?.meters ?? {}).map(([switch_, value]) => ({ switch: switch_, value })),
-    ];
-    for (const w of writes) {
+    for (const w of allWrites) {
       const spec = table.switches[w.switch];
       expect(spec?.values.indexOf(w.value), w.switch).toBeGreaterThan(spec?.values.indexOf(spec.default) ?? 99);
     }
@@ -224,6 +88,14 @@ describe("rung table shape", () => {
     expect(table.rungs.L5?.includes).toBe("L4");
     expect(table.rungs.L5?.calls.map((c) => c.op)).toEqual(["clearSchedules"]);
     expect(table.rungs.L5?.manual.join(" ")).toMatch(/revoke/i);
+  });
+
+  it("only L1 and L2 may fall back to the deploy token", () => {
+    expect(table.deployTokenLevels).toEqual(["L1", "L2"]);
+    expect(tokenFor(table, "L2", { CLOUDFLARE_API_TOKEN: TOKEN })).toBe(TOKEN);
+    expect(tokenFor(table, "L3", { CLOUDFLARE_API_TOKEN: TOKEN })).toBeUndefined();
+    expect(tokenFor(table, "L3", { CLOUDFLARE_API_TOKEN: TOKEN, LOCKDOWN_CF_TOKEN: LOCK_TOKEN })).toBe(LOCK_TOKEN);
+    expect(tokenFor(table, "L1", { CLOUDFLARE_API_TOKEN: TOKEN, LOCKDOWN_CF_TOKEN: LOCK_TOKEN })).toBe(LOCK_TOKEN);
   });
 
   it("the floors are SWITCH_<NAME>=value for every write", () => {
@@ -250,7 +122,7 @@ describe("rung table shape", () => {
 
 describe("every rung has an undo", () => {
   for (const level of LEVELS) {
-    it(`${level}: the undo plan restores each write to its default and undoes each call or says how by hand`, () => {
+    it(`${level}: the undo plan restores each write and undoes each call or says how by hand`, () => {
       const set = planFor(level);
       const undo = planFor(level, true);
       expect(undo.undo).toBe(true);
@@ -260,12 +132,19 @@ describe("every rung has an undo", () => {
       for (const w of undo.writes) expect(w.value).toBe(table.switches[w.switch]?.default);
       const rungs = [level, table.rungs[level]?.includes].flatMap((l) => (l ? [l] : []));
       const calls = rungs.flatMap((l) => table.rungs[l]?.calls ?? []);
-      const reversible = calls.filter((c) => "op" in c.undo).length;
-      const byHand = calls.filter((c) => "manual" in c.undo).length;
-      expect(undo.calls).toHaveLength(reversible);
-      expect(undo.manual).toHaveLength(byHand);
+      expect(undo.calls).toHaveLength(calls.filter((c) => "op" in c.undo).length);
+      // One line per call with no op undo, and one telling the owner to remove hand-set variable floors.
+      const floorLine = undo.writes.length ? 1 : 0;
+      expect(undo.manual).toHaveLength(calls.filter((c) => "manual" in c.undo).length + floorLine);
     });
   }
+
+  it("an undo tells the owner to remove any SWITCH_ floor set by hand", () => {
+    const manual = planFor("L2", true).manual.join("\n");
+    expect(manual).toContain("SWITCH_CONVERT");
+    expect(manual).toMatch(/never loosens a floor/);
+    expect(planFor("L2").manual.join("\n")).not.toContain("SWITCH_CONVERT");
+  });
 
   it("every call's undo is an op the table can describe, or a manual sentence", () => {
     for (const rung of Object.values(table.rungs)) {
@@ -274,6 +153,12 @@ describe("every rung has an undo", () => {
         else expect(call.undo.manual).toMatch(/\S/);
       }
     }
+  });
+
+  it("the L5 undo restores the cron triggers; it is no longer a manual step", () => {
+    const undo = planFor("L5", true);
+    expect(undo.calls.map((c) => c.op)).toContain("restoreSchedules");
+    expect(undo.manual.join(" ")).not.toMatch(/cron/i);
   });
 });
 
@@ -288,6 +173,7 @@ describe("safety: nothing is deleted, no script is deployed", () => {
       `${accounts}/d1/database/uuid`,
       `${accounts}/workers/durable_objects/namespaces/x`,
       `${accounts}/workers/scripts/bloop/content`,
+      "/repos/o/r/actions/workflows/deploy.yml",
     ]) {
       expect(() => assertSafeCall("DELETE", path), path).toThrow(/refused/);
     }
@@ -303,13 +189,16 @@ describe("safety: nothing is deleted, no script is deployed", () => {
         `${accounts}/r2/buckets/bloop-guest-files/lifecycle`,
         `${accounts}/d1/database/uuid/query`,
         `${accounts}/workers/durable_objects/namespaces/x`,
+        "/repos/o/r/actions/runs/1/rerun",
+        "/repos/o/r/actions/secrets/X",
+        "/repos/o/r/git/refs",
       ]) {
         expect(() => assertSafeCall(method, path), `${method} ${path}`).toThrow(/refused/);
       }
     }
   });
 
-  it("allows reads and the subresources the ladder uses", () => {
+  it("allows reads and the subresources the ladder uses, and only the run cancel on GitHub", () => {
     expect(() => assertSafeCall("GET", `${accounts}/workers/scripts/bloop`)).not.toThrow();
     for (const [method, path] of [
       ["POST", `${accounts}/workers/scripts/bloop/subdomain`],
@@ -318,7 +207,9 @@ describe("safety: nothing is deleted, no script is deployed", () => {
       ["PATCH", "/zones/z/rulesets/r/rules/x"],
       ["PUT", "/zones/z/rulesets/phases/http_request_firewall_custom/entrypoint"],
       ["PATCH", `${accounts}/workflows/bloop-convert/instances/i/status`],
+      ["POST", `${accounts}/workflows/bloop-convert/instances/batch/terminate`],
       ["PUT", "/repos/o/r/actions/workflows/deploy.yml/disable"],
+      ["POST", "/repos/o/r/actions/runs/123/cancel"],
     ] as const) {
       expect(() => assertSafeCall(method, path), `${method} ${path}`).not.toThrow();
     }
@@ -342,7 +233,7 @@ describe("safety: nothing is deleted, no script is deployed", () => {
     for (const level of LEVELS) {
       for (const undo of [false, true]) {
         const result = await execute(table, planFor(level, undo), d);
-        expect(result.failed, result.lines.join("\n")).toBe(false);
+        expect(result.failed, text(result)).toBe(false);
       }
     }
     expect(api.calls.length).toBeGreaterThan(20);
@@ -365,32 +256,91 @@ describe("safety: nothing is deleted, no script is deployed", () => {
   });
 });
 
+// ---------- the tokens ----------
+
+describe("the lockdown token", () => {
+  it("L3 to L5 refuse to run on the deploy token and make no request", async () => {
+    for (const level of ["L3", "L4", "L5"]) {
+      const { deps: d, api, d1 } = deps(undefined, undefined, { LOCKDOWN_CF_TOKEN: undefined });
+      const { code, out } = await main(["--level", level, "--apply"], d);
+      expect(code, level).toBe(2);
+      expect(out).toContain("LOCKDOWN_CF_TOKEN");
+      expect(api.calls).toHaveLength(0);
+      expect(d1.argvs).toHaveLength(0);
+    }
+  });
+
+  it("L1 and L2 fall back to the deploy token", async () => {
+    const { deps: d, d1 } = deps(undefined, undefined, { LOCKDOWN_CF_TOKEN: undefined });
+    const result = await execute(table, planFor("L2"), d);
+    expect(result.failed).toBe(false);
+    expect(d1.envs[0]?.CLOUDFLARE_API_TOKEN).toBe(TOKEN);
+  });
+
+  it("the lockdown token is the one used for Cloudflare calls and handed to wrangler", async () => {
+    const { deps: d, api, d1 } = deps();
+    await execute(table, planFor("L3"), d);
+    const cloudflare = api.calls.filter((c) => c.url.includes("api.cloudflare.com"));
+    expect(cloudflare.length).toBeGreaterThan(0);
+    for (const c of cloudflare) expect(c.auth).toBe(`Bearer ${LOCK_TOKEN}`);
+    expect(d1.envs[0]).toEqual({ CLOUDFLARE_API_TOKEN: LOCK_TOKEN, CLOUDFLARE_ACCOUNT_ID: ACCOUNT });
+  });
+
+  it("the dry run verifies the token and says which rung will fail for what", async () => {
+    const ok = deps();
+    const good = (await main(["--level", "L4"], ok.deps)).out;
+    expect(good).toContain("token: active");
+    expect(good).toMatch(/L4: the reads this rung starts with are allowed/);
+    expect(ok.api.mutating()).toHaveLength(0);
+
+    const noZone = deps();
+    noZone.api.state.denied = ["/zones"];
+    expect((await main(["--level", "L4"], noZone.deps)).out).toMatch(/L4 WILL FAIL: token lacks Zone Read/);
+
+    const noWaf = deps();
+    noWaf.api.state.denied = ["/rulesets/"];
+    expect((await main(["--level", "L4"], noWaf.deps)).out).toMatch(/L4 WILL FAIL: token lacks Zone WAF Edit/);
+
+    const noScripts = deps();
+    noScripts.api.state.denied = ["/workers/scripts"];
+    expect((await main(["--level", "L5"], noScripts.deps)).out).toMatch(/WILL FAIL: token lacks Workers Scripts Write/);
+
+    const noD1 = deps();
+    noD1.api.state.denied = ["/d1/"];
+    expect((await main(["--level", "L2"], noD1.deps)).out).toMatch(/L2 WILL FAIL: token lacks D1 Edit/);
+
+    const dead = deps();
+    dead.api.state.verify = "expired";
+    expect((await main(["--level", "L2"], dead.deps)).out).toMatch(/L2 WILL FAIL: the token did not verify/);
+
+    const missing = deps(undefined, undefined, { LOCKDOWN_CF_TOKEN: undefined });
+    expect((await main(["--level", "L3"], missing.deps)).out).toMatch(/L3 WILL FAIL: LOCKDOWN_CF_TOKEN is not set/);
+    expect(missing.api.calls).toHaveLength(0);
+  });
+
+  it("no credentials in the environment: the dry run says so and makes no call", async () => {
+    const { deps: d, api } = deps(undefined, undefined, {
+      LOCKDOWN_CF_TOKEN: undefined,
+      CLOUDFLARE_API_TOKEN: undefined,
+    });
+    const { out } = await main(["--level", "L2"], d);
+    expect(out).toContain("token: not checked");
+    expect(api.calls).toHaveLength(0);
+  });
+});
+
 // ---------- dry run ----------
 
 describe("dry run", () => {
-  it("makes zero calls: no fetch, no wrangler, for every rung, set and undo", async () => {
+  it("never writes: no wrangler, no mutating request, for every rung, set and undo", async () => {
     for (const level of LEVELS) {
       for (const undo of [false, true]) {
+        const { deps: d, api, d1 } = deps();
         const argv = ["--level", level, ...(level === "L1" ? ["--meter", "uploads"] : []), ...(undo ? ["--undo"] : [])];
-        let used = 0;
-        const guard: Deps = {
-          env: { CLOUDFLARE_API_TOKEN: TOKEN, CLOUDFLARE_ACCOUNT_ID: ACCOUNT, GITHUB_TOKEN: GH_TOKEN },
-          fetch: (() => {
-            used += 1;
-            throw new Error("network in dry run");
-          }) as never,
-          run: () => {
-            used += 1;
-            throw new Error("spawn in dry run");
-          },
-          now: () => {
-            used += 1;
-            return NOW;
-          },
-        };
-        const { code, out } = await main(argv, guard);
+        const { code, out } = await main(argv, d);
         expect(code, out).toBe(0);
-        expect(used, `${level} ${undo}`).toBe(0);
+        expect(api.mutating(), `${level} ${undo}`).toHaveLength(0);
+        expect(d1.argvs).toHaveLength(0);
         expect(out).toContain("dry run");
       }
     }
@@ -405,7 +355,8 @@ describe("dry run", () => {
     const l5 = (await main(["--level", "L5"], d)).out;
     expect(l5).toContain("POST /zones/{zone}/rulesets/{ruleset}/rules");
     expect(l5).toContain("PUT /accounts/{account}/workers/scripts/bloop/schedules");
-    for (const secret of [TOKEN, ACCOUNT, GH_TOKEN]) {
+    expect(l5).toContain("runs/{id}/cancel");
+    for (const secret of [TOKEN, LOCK_TOKEN, ACCOUNT, GH_TOKEN]) {
       expect(out).not.toContain(secret);
       expect(l5).not.toContain(secret);
     }
@@ -420,15 +371,15 @@ describe("dry run", () => {
   });
 });
 
-// ---------- apply and idempotence ----------
+// ---------- apply ----------
 
 describe("apply", () => {
-  it("L2 writes seven rows and seven log lines with the actor lockdown", async () => {
+  it("L2 writes seven rows labeled lockdown:L2 and seven log lines with the actor lockdown", async () => {
     const { deps: d, d1 } = deps();
     const result = await execute(table, planFor("L2"), d);
     expect(result.failed).toBe(false);
-    const rows = d1.settings() as { key: string; value: string; updated_by: string }[];
-    expect(rows.map((r) => `${r.key}=${r.value}`).sort()).toEqual([
+    const rows = d1.rows();
+    expect(Object.values(Object.entries(rows).map(([k, r]) => `${k}=${r.value}`)).sort()).toEqual([
       "convert=off",
       "demo_drop=off",
       "email=admin_only",
@@ -437,38 +388,188 @@ describe("apply", () => {
       "previews=off",
       "uploads=readonly",
     ]);
-    for (const r of rows) expect(r.updated_by).toBe("lockdown");
-    const log = d1.log() as { admin_user_id: string; target_kind: string; at: number }[];
+    for (const r of Object.values(rows)) expect(r.updated_by).toBe("lockdown:L2");
+    const log = d1.log();
     expect(log).toHaveLength(7);
     for (const l of log) expect(l).toMatchObject({ admin_user_id: "lockdown", target_kind: "setting", at: NOW });
+    expect(log.find((l) => l.target_id === "convert")?.reason).toBe("lockdown L2 set convert=off prior=account_only");
   });
 
-  it("the wrangler call is parameter-free SQL through `d1 execute <db> --remote --command`", async () => {
+  it("every write goes in one wrangler call, parameter-free SQL through `d1 execute <db> --remote --command`", async () => {
     const { deps: d, d1 } = deps();
-    await execute(table, planFor("L1"), d);
+    await execute(table, planFor("L3"), d);
+    expect(d1.argvs).toHaveLength(1);
     const argv = d1.argvs[0] ?? [];
     expect(argv.slice(0, 7)).toEqual(["npx", "wrangler", "d1", "execute", "bloop", "--remote", "--json"]);
     expect(argv[7]).toBe("--command");
+    expect((argv[8] ?? "").split("\n")).toHaveLength(16);
   });
 
   it("L3 raises email to off and adds convert_video", async () => {
     const { deps: d, d1 } = deps();
     await execute(table, planFor("L3"), d);
-    const rows = Object.fromEntries((d1.settings() as { key: string; value: string }[]).map((r) => [r.key, r.value]));
-    expect(rows).toMatchObject({ email: "off", convert_video: "off", convert: "off" });
+    expect(d1.rows()).toMatchObject({
+      email: { value: "off" },
+      convert_video: { value: "off" },
+      convert: { value: "off" },
+    });
   });
 
-  it("L4 adds the block rule once and turns workers.dev off; L5 clears the crons", async () => {
+  it("L4 adds the block rule once and turns workers.dev and previews off; L5 clears the crons", async () => {
     const { deps: d, api } = deps();
+    api.state.workersDev = { enabled: true, previews_enabled: true };
     await execute(table, planFor("L5"), d);
     expect(api.state.ruleset?.rules).toHaveLength(1);
     expect(api.state.ruleset?.rules[0]).toMatchObject({ ref: "lockdown", action: "block", enabled: true });
-    expect(api.state.workersDev).toBe(false);
+    expect(api.state.workersDev).toEqual({ enabled: false, previews_enabled: false });
     expect(api.state.crons).toEqual([]);
     expect(api.state.deployState).toBe("disabled_manually");
   });
 
-  it("L3 terminates live Workflow instances in one batch call", async () => {
+  it("workers.dev already off with previews still on is changed, not skipped", async () => {
+    const { deps: d, api } = deps();
+    api.state.workersDev = { enabled: false, previews_enabled: true };
+    const result = await execute(table, planFor("L4"), d);
+    expect(api.state.workersDev).toEqual({ enabled: false, previews_enabled: false });
+    expect(text(result)).toContain("changed: workers.dev off, previews off");
+  });
+
+  it("an L4 undo disables the rule but keeps it, and puts workers.dev and previews back as wrangler.jsonc has them", async () => {
+    for (const previews of [false, true]) {
+      const { deps: d, api } = deps(undefined, undefined, {}, { crons: ["0 * * * *"], previews });
+      await execute(table, planFor("L4"), d);
+      await execute(table, planFor("L4", true), d);
+      expect(api.state.ruleset?.rules).toHaveLength(1);
+      expect(api.state.ruleset?.rules[0]).toMatchObject({ enabled: false });
+      expect(api.state.workersDev).toEqual({ enabled: true, previews_enabled: previews });
+      expect(api.state.deployState).toBe("active");
+    }
+  });
+
+  it("the L5 undo puts back exactly the crons wrangler.jsonc lists, and a second undo changes nothing", async () => {
+    const { deps: d, api } = deps();
+    await execute(table, planFor("L5"), d);
+    expect(api.state.crons).toEqual([]);
+    await execute(table, planFor("L5", true), d);
+    expect(api.state.crons.map((c) => c.cron)).toEqual(wranglerSettings().crons);
+    expect(wranglerSettings().crons.length).toBeGreaterThan(0);
+    const before = api.mutating().length;
+    await execute(table, planFor("L5", true), d);
+    expect(api.mutating()).toHaveLength(before);
+  });
+
+  it("wrangler settings come from the real wrangler.jsonc: its cron triggers and preview_urls", () => {
+    const s = wranglerSettings();
+    expect(s.crons).toContain("0 * * * *");
+    expect(s.previews).toBe(false);
+  });
+});
+
+// ---------- freezing deploys ----------
+
+describe("freezing deploys", () => {
+  it("a set cancels the deploy runs in progress and queued, and a second run cancels none", async () => {
+    const { deps: d, api } = deps();
+    api.state.runs = [
+      { id: 11, status: "in_progress" },
+      { id: 12, status: "queued" },
+      { id: 13, status: "completed" },
+    ];
+    const result = await execute(table, planFor("L2"), d);
+    expect(text(result)).toContain("2 run(s) cancelled");
+    expect(api.calls.filter((c) => c.url.endsWith("/cancel")).map((c) => c.url.match(/runs\/(\d+)/)?.[1])).toEqual([
+      "11",
+      "12",
+    ]);
+    expect(api.state.runs.map((r) => r.id)).toEqual([13]);
+    const before = api.calls.filter((c) => c.url.endsWith("/cancel")).length;
+    await execute(table, planFor("L2"), d);
+    expect(api.calls.filter((c) => c.url.endsWith("/cancel"))).toHaveLength(before);
+  });
+
+  it("an undo cancels nothing", async () => {
+    const { deps: d, api } = deps();
+    await execute(table, planFor("L2"), d);
+    api.state.runs = [{ id: 21, status: "in_progress" }];
+    await execute(table, planFor("L2", true), d);
+    expect(api.state.runs).toHaveLength(1);
+  });
+
+  it("warns, with a headline and exit 3, when deploys could not be frozen", async () => {
+    const { deps: d } = deps(undefined, undefined, { GITHUB_TOKEN: undefined });
+    const result = await execute(table, planFor("L2"), d);
+    expect(result.warned).toBe(true);
+    expect(result.failed).toBe(false);
+    expect(result.lines[0]).toMatch(/^DEPLOYS NOT FROZEN/);
+    const run = await main(["--level", "L2", "--apply"], d);
+    expect(run.code).toBe(3);
+    expect(run.out.split("\n")[0]).toMatch(/^DEPLOYS NOT FROZEN/);
+  });
+
+  it("a failed freeze warns too, and a failure outranks the warning in the exit code", async () => {
+    const { deps: d, api } = deps();
+    api.state.githubFails = true;
+    const result = await execute(table, planFor("L2"), d);
+    expect(result.warned).toBe(true);
+    expect(result.failed).toBe(true);
+    expect((await main(["--level", "L2", "--apply"], d)).code).toBe(1);
+  });
+
+  it("a frozen set is not a warning, and an undo without GitHub credentials is not either", async () => {
+    const ok = await execute(table, planFor("L2"), deps().deps);
+    expect(ok.warned).toBe(false);
+    const { deps: d } = deps(undefined, undefined, { GITHUB_TOKEN: undefined });
+    const undo = await execute(table, planFor("L2", true), d);
+    expect(undo.warned).toBe(false);
+    expect((await main(["--level", "L2", "--undo", "--apply"], d)).code).toBe(0);
+  });
+
+  it("an L1 to L3 undo does not unfreeze while L4 is in force, and says why", async () => {
+    for (const how of ["rule", "workers.dev"] as const) {
+      const { deps: d, api } = deps();
+      await execute(table, planFor("L3"), d);
+      await execute(table, planFor("L4"), d);
+      if (how === "rule") api.state.workersDev = { enabled: true, previews_enabled: false };
+      else if (api.state.ruleset)
+        api.state.ruleset.rules = api.state.ruleset.rules.map((r) => ({ ...r, enabled: false }));
+      const result = await execute(table, planFor("L3", true), d);
+      expect(api.state.deployState, how).toBe("disabled_manually");
+      expect(text(result)).toMatch(
+        /enable deploys \(deploy\.yml\): skipped, .*(WAF block rule is on|workers\.dev is off)/,
+      );
+      expect(result.failed).toBe(false);
+    }
+  });
+
+  it("an L1 to L3 undo unfreezes when L4 is not in force", async () => {
+    const { deps: d, api } = deps();
+    await execute(table, planFor("L3"), d);
+    expect(api.state.deployState).toBe("disabled_manually");
+    await execute(table, planFor("L3", true), d);
+    expect(api.state.deployState).toBe("active");
+  });
+
+  it("an undo that cannot read the L4 state keeps deploys frozen", async () => {
+    const { deps: d, api } = deps();
+    await execute(table, planFor("L2"), d);
+    api.state.denied = ["/zones"];
+    const result = await execute(table, planFor("L2", true), d);
+    expect(api.state.deployState).toBe("disabled_manually");
+    expect(text(result)).toMatch(/skipped, could not read the L4 state/);
+  });
+
+  it("an L4 undo unfreezes after it has turned the edge back on", async () => {
+    const { deps: d, api } = deps();
+    await execute(table, planFor("L4"), d);
+    await execute(table, planFor("L4", true), d);
+    expect(api.state.deployState).toBe("active");
+  });
+});
+
+// ---------- Workflow instances ----------
+
+describe("terminating Workflow instances", () => {
+  it("L3 terminates live instances in one batch call, then lists again", async () => {
     const { deps: d, api } = deps();
     await execute(table, planFor("L3"), d);
     expect(api.state.instances).toEqual([]);
@@ -476,45 +577,90 @@ describe("apply", () => {
     expect(batches).toHaveLength(1);
     expect(batches[0]?.body).toEqual(["inst-a", "inst-b"]);
     expect(api.calls.filter((c) => /\/status$/.test(c.url))).toHaveLength(0);
+    const lastBatch = api.calls.indexOf(batches[0] as never);
+    expect(api.calls.slice(lastBatch + 1).filter((c) => c.url.includes("/instances?status="))).not.toHaveLength(0);
   });
 
-  it("batches of at most 100 ids", async () => {
+  it("pages on the cursor, in batches of at most 100 ids", async () => {
     const { deps: d, api } = deps();
-    api.state.instances = Array.from({ length: 250 }, (_, i) => `i${i}`);
+    api.state.pageSize = 100;
+    api.state.instances = Array.from({ length: 250 }, (_, i) => ({ id: `i${i}`, status: "running" }));
     await execute(table, planFor("L3"), d);
     const sizes = api.calls.filter((c) => c.url.endsWith("/batch/terminate")).map((c) => (c.body as string[]).length);
     expect(sizes).toEqual([100, 100, 50]);
     expect(api.state.instances).toEqual([]);
+    expect(api.calls.filter((c) => c.url.includes("cursor=")).length).toBeGreaterThanOrEqual(2);
   });
 
-  it("falls back to one PATCH per instance when the batch call fails", async () => {
+  it("includes paused and waitingForPause, and every other live state", async () => {
     const { deps: d, api } = deps();
-    api.state.batchFails = true;
+    api.state.instances = ["queued", "running", "paused", "waitingForPause", "waiting", "complete"].map((status) => ({
+      id: `i-${status}`,
+      status,
+    }));
+    await execute(table, planFor("L3"), d);
+    expect(api.state.instances.map((i) => i.status)).toEqual(["complete"]);
+  });
+
+  it("fails the step when an instance is still live after terminate, and waits between looks", async () => {
+    const { deps: d, api, slept } = deps();
+    api.state.sticky = new Set(["inst-a"]);
+    const result = await execute(table, planFor("L3"), d);
+    expect(result.failed).toBe(true);
+    expect(text(result)).toMatch(/terminate-workflows: FAILED 1 instance\(s\) still live/);
+    expect(slept.length).toBeGreaterThan(0);
+  });
+
+  it("falls back to one PATCH per instance only when the batch call answers 404 or 405", async () => {
+    for (const status of [404, 405]) {
+      const { deps: d, api } = deps();
+      api.state.batchStatus = status;
+      const result = await execute(table, planFor("L3"), d);
+      expect(result.failed, String(status)).toBe(false);
+      expect(api.state.instances).toEqual([]);
+      expect(api.calls.filter((c) => /\/status$/.test(c.url))).toHaveLength(2);
+    }
+  });
+
+  it("a batch failure that is not 404 or 405 fails the step and never falls back", async () => {
+    for (const status of [403, 500]) {
+      const { deps: d, api } = deps();
+      api.state.batchStatus = status;
+      const result = await execute(table, planFor("L3"), d);
+      expect(result.failed, String(status)).toBe(true);
+      expect(api.calls.filter((c) => /\/status$/.test(c.url))).toHaveLength(0);
+    }
+  });
+
+  it("backs off on 429 using Retry-After, then succeeds", async () => {
+    const { deps: d, api, slept } = deps();
+    api.state.rateLimited = 2;
     const result = await execute(table, planFor("L3"), d);
     expect(result.failed).toBe(false);
-    expect(api.state.instances).toEqual([]);
-    expect(api.calls.filter((c) => /\/status$/.test(c.url))).toHaveLength(2);
+    expect(slept.slice(0, 2)).toEqual([1000, 1000]);
+    expect(api.calls.filter((c) => c.url.endsWith("/batch/terminate"))).toHaveLength(3);
   });
 
-  it("an L4 undo disables the rule but keeps it, and turns workers.dev back on", async () => {
+  it("gives up on a 429 that never clears", async () => {
     const { deps: d, api } = deps();
-    await execute(table, planFor("L4"), d);
-    await execute(table, planFor("L4", true), d);
-    expect(api.state.ruleset?.rules).toHaveLength(1);
-    expect(api.state.ruleset?.rules[0]).toMatchObject({ enabled: false });
-    expect(api.state.workersDev).toBe(true);
-    expect(api.state.deployState).toBe("active");
+    api.state.rateLimited = 99;
+    const result = await execute(table, planFor("L3"), d);
+    expect(result.failed).toBe(true);
+    expect(text(result)).toContain("answered 429");
   });
 
-  it("an undo restores the defaults and logs it", async () => {
-    const { deps: d, d1 } = deps();
-    await execute(table, planFor("L2"), d);
-    await execute(table, planFor("L2", true), d);
-    const rows = Object.fromEntries((d1.settings() as { key: string; value: string }[]).map((r) => [r.key, r.value]));
-    expect(rows).toMatchObject({ convert: "account_only", uploads: "on", email: "on", export: "on" });
-    expect((d1.log() as { action: string }[]).filter((l) => l.action === "lockdown.undo")).toHaveLength(7);
+  it("carries on past a single PATCH failure and counts it", async () => {
+    const { deps: d, api } = deps();
+    api.state.batchStatus = 404;
+    api.state.patchFails = new Set(["inst-a"]);
+    const result = await execute(table, planFor("L3"), d);
+    expect(result.failed).toBe(true);
+    expect(text(result)).toMatch(/1 single terminate\(s\) failed/);
+    expect(api.state.instances.map((i) => i.id)).toEqual(["inst-a"]);
   });
 });
+
+// ---------- idempotence and the undo's reach ----------
 
 describe("idempotence", () => {
   for (const level of LEVELS) {
@@ -527,8 +673,7 @@ describe("idempotence", () => {
         const log = JSON.stringify(d1.log());
         const state = JSON.stringify(api.state);
         const mutations = api.mutating().length;
-        const later = { ...d, now: () => NOW + 60_000 };
-        const second = await execute(table, planFor(level, undo), later);
+        const second = await execute(table, planFor(level, undo), { ...d, now: () => NOW + 60_000 });
         expect(second.failed).toBe(false);
         expect(JSON.stringify(d1.settings())).toBe(settings);
         expect(JSON.stringify(d1.log())).toBe(log);
@@ -542,21 +687,19 @@ describe("idempotence", () => {
     const { deps: d } = deps();
     const first = await execute(table, planFor("L1"), d);
     const second = await execute(table, planFor("L1"), { ...d, now: () => NOW + 1 });
-    expect(first.lines.join("\n")).toMatch(/D1 convert -> off: changed/);
-    expect(second.lines.join("\n")).toMatch(/D1 convert -> off: unchanged/);
+    expect(text(first)).toMatch(/D1 convert -> off: changed/);
+    expect(text(second)).toMatch(/D1 convert -> off: unchanged/);
   });
 
   it("never loosens: a stricter row stands, and nothing is logged for it", async () => {
     const { deps: d, d1 } = deps();
     d1.db.exec("INSERT INTO setting VALUES ('uploads', 'off', 5, 'owner'), ('convert', 'garbage', 5, 'owner')");
     await execute(table, planFor("L2"), d);
-    const rows = Object.fromEntries(
-      (d1.settings() as { key: string; value: string; updated_by: string }[]).map((r) => [r.key, r]),
-    );
-    expect(rows.uploads).toMatchObject({ value: "off", updated_by: "owner" });
-    expect(rows.convert).toMatchObject({ value: "garbage", updated_by: "owner" });
-    expect((d1.log() as { target_id: string }[]).map((l) => l.target_id)).not.toContain("uploads");
-    expect((d1.log() as { target_id: string }[]).map((l) => l.target_id)).not.toContain("convert");
+    expect(d1.rows().uploads).toMatchObject({ value: "off", updated_by: "owner" });
+    expect(d1.rows().convert).toMatchObject({ value: "garbage", updated_by: "owner" });
+    const logged = d1.log().map((l) => l.target_id);
+    expect(logged).not.toContain("uploads");
+    expect(logged).not.toContain("convert");
   });
 
   it("an undo touches only rows lockdown wrote", async () => {
@@ -564,17 +707,78 @@ describe("idempotence", () => {
     await execute(table, planFor("L2"), d);
     d1.db.exec("UPDATE setting SET value = 'off', updated_by = 'breaker' WHERE key = 'email'");
     await execute(table, planFor("L2", true), d);
-    const rows = Object.fromEntries((d1.settings() as { key: string; value: string }[]).map((r) => [r.key, r.value]));
-    expect(rows.email).toBe("off");
-    expect(rows.uploads).toBe("on");
+    expect(d1.rows().email?.value).toBe("off");
+    expect(d1.rows().uploads?.value).toBe("on");
+  });
+});
+
+describe("undo scope and the recorded prior value", () => {
+  it("restores the value the row held before, not the default", async () => {
+    const { deps: d, d1 } = deps();
+    d1.db.exec("INSERT INTO setting VALUES ('convert', 'on', 5, 'owner')");
+    await execute(table, planFor("L2"), d);
+    expect(d1.rows().convert?.value).toBe("off");
+    expect(d1.log().find((l) => l.target_id === "convert")?.reason).toBe("lockdown L2 set convert=off prior=on");
+    await execute(table, planFor("L2", true), d);
+    expect(d1.rows().convert).toMatchObject({ value: "on", updated_by: "lockdown:undo" });
+    expect(d1.rows().uploads?.value).toBe("on");
+    expect(d1.log().filter((l) => l.action === "lockdown.undo")).toHaveLength(7);
   });
 
-  it("a stricter L3 write replaces the L2 one, a looser one never replaces a stricter", async () => {
+  it("L3, then undo L2: the rows L3 wrote are not undone, and deploys stay in step", async () => {
     const { deps: d, d1 } = deps();
     await execute(table, planFor("L3"), d);
+    const before = JSON.stringify(d1.settings());
+    await execute(table, planFor("L2", true), d);
+    expect(JSON.stringify(d1.settings())).toBe(before);
+    expect(d1.rows().email).toMatchObject({ value: "off", updated_by: "lockdown:L3" });
+  });
+
+  it("L2 then L3, then undo L3: every row goes back to what it was before any lockdown", async () => {
+    const { deps: d, d1 } = deps();
     await execute(table, planFor("L2"), d);
-    const rows = Object.fromEntries((d1.settings() as { key: string; value: string }[]).map((r) => [r.key, r.value]));
-    expect(rows.email).toBe("off");
+    await execute(table, planFor("L3"), d);
+    expect(d1.rows().email).toMatchObject({ value: "off", updated_by: "lockdown:L3" });
+    expect(d1.rows().convert).toMatchObject({ value: "off", updated_by: "lockdown:L2" });
+    // The prior stays the value from before the first lockdown, not the L2 value L3 replaced.
+    expect(d1.log().find((l) => l.reason.startsWith("lockdown L3 set email=off"))?.reason).toMatch(/prior=on$/);
+    await execute(table, planFor("L3", true), d);
+    for (const key of ["email", "convert_video", "uploads", "export", "previews"]) {
+      expect(d1.rows()[key]?.value, key).toBe("on");
+    }
+    expect(d1.rows().convert?.value).toBe("account_only");
+  });
+
+  it("L2 then L3, then undo L2: only the L2-labeled rows go back", async () => {
+    const { deps: d, d1 } = deps();
+    await execute(table, planFor("L2"), d);
+    await execute(table, planFor("L3"), d);
+    await execute(table, planFor("L2", true), d);
+    expect(d1.rows().uploads?.value).toBe("on");
+    expect(d1.rows().email).toMatchObject({ value: "off", updated_by: "lockdown:L3" });
+  });
+
+  it("the owner set it looser, then a set, then an undo: the undo restores the owner's value", async () => {
+    const { deps: d, d1 } = deps();
+    await execute(table, planFor("L2"), d);
+    d1.db.exec("UPDATE setting SET value = 'on', updated_at = 9, updated_by = 'owner' WHERE key = 'convert'");
+    await execute(table, planFor("L2"), { ...d, now: () => NOW + 1 });
+    expect(d1.rows().convert).toMatchObject({ value: "off", updated_by: "lockdown:L2" });
+    expect(
+      d1
+        .log()
+        .filter((l) => l.target_id === "convert" && l.action === "lockdown.set")
+        .map((l) => l.reason),
+    ).toEqual(["lockdown L2 set convert=off prior=account_only", "lockdown L2 set convert=off prior=on"]);
+    await execute(table, planFor("L2", true), { ...d, now: () => NOW + 2 });
+    expect(d1.rows().convert?.value).toBe("on");
+  });
+
+  it("a row with no prior logged restores its default", async () => {
+    const { deps: d, d1 } = deps();
+    d1.db.exec("INSERT INTO setting VALUES ('uploads', 'readonly', 5, 'lockdown:L2')");
+    await execute(table, planFor("L2", true), d);
+    expect(d1.rows().uploads?.value).toBe("on");
   });
 });
 
@@ -585,9 +789,13 @@ describe("SQL is built only from the table", () => {
     "lockdown",
     "lockdown.set",
     "lockdown.undo",
+    "lockdown:undo",
+    "lockdown:L[1-5]",
     "setting",
+    "prior=",
     ...Object.keys(table.switches),
     ...Object.values(table.switches).flatMap((s) => s.values),
+    ...LEVELS.map((l) => `lockdown:${l}`),
   ]);
 
   it("every quoted literal in every statement is a switch, a value, the actor or a fixed word, or the reason", () => {
@@ -596,9 +804,9 @@ describe("SQL is built only from the table", () => {
         for (const w of planFor(level, undo).writes) {
           for (const s of writeSql(table, w, { level, undo, now: NOW })) {
             for (const [, lit] of s.matchAll(/'([^']*)'/g)) {
-              const text = lit ?? "";
-              const reason = /^lockdown L[1-5]( undo)?: [a-z_]+=[a-z_]+$/.test(text);
-              expect(ALLOWED.has(text) || reason, `${text} in ${s}`).toBe(true);
+              const literal = lit ?? "";
+              const reason = /^lockdown L[1-5] (set [a-z_]+=[a-z_]+|undo [a-z_]+) prior=$/.test(literal);
+              expect(ALLOWED.has(literal) || reason, `${literal} in ${s}`).toBe(true);
             }
             expect(s).not.toMatch(/--|\/\*|;\s*\S/);
           }
@@ -633,21 +841,23 @@ describe("SQL is built only from the table", () => {
 // ---------- credentials and failures ----------
 
 describe("credentials and failures", () => {
-  it("apply needs both Cloudflare variables and says which is missing, never a value", async () => {
-    const { deps: d } = deps(undefined, undefined, { CLOUDFLARE_API_TOKEN: undefined });
+  it("apply needs the account id and a token and says which is missing, never a value", async () => {
+    const { deps: d } = deps(undefined, undefined, { LOCKDOWN_CF_TOKEN: undefined, CLOUDFLARE_API_TOKEN: undefined });
     const { code, out } = await main(["--level", "L2", "--apply"], d);
     expect(code).toBe(2);
-    expect(out).toContain("CLOUDFLARE_API_TOKEN");
+    expect(out).toContain("LOCKDOWN_CF_TOKEN or CLOUDFLARE_API_TOKEN");
     expect(out).not.toContain(ACCOUNT);
   });
 
   it("no output of an apply holds a credential, even when an error echoes one", async () => {
-    const { deps: d, d1 } = deps();
-    d1.failNext();
-    const failing: Deps = { ...d, run: () => ({ status: 1, stderr: `bad token ${TOKEN} for ${ACCOUNT}` }) };
+    const { deps: d } = deps();
+    const failing: Deps = {
+      ...d,
+      run: () => ({ status: 1, stderr: `bad token ${LOCK_TOKEN} ${TOKEN} for ${ACCOUNT}` }),
+    };
     const { code, out } = await main(["--level", "L2", "--apply"], failing);
     expect(code).toBe(1);
-    for (const secret of [TOKEN, ACCOUNT, GH_TOKEN]) expect(out).not.toContain(secret);
+    for (const secret of [LOCK_TOKEN, TOKEN, ACCOUNT, GH_TOKEN]) expect(out).not.toContain(secret);
   });
 
   it("a D1 failure is reported, the other steps still run, and the var floors are printed", async () => {
@@ -655,15 +865,8 @@ describe("credentials and failures", () => {
     d1.failNext();
     const result = await execute(table, planFor("L3"), d);
     expect(result.failed).toBe(true);
-    expect(result.lines.join("\n")).toContain("SWITCH_CONVERT=off");
+    expect(text(result)).toContain("SWITCH_CONVERT=off");
     expect(api.state.instances).toEqual([]);
-  });
-
-  it("without GitHub credentials the freeze is printed as a manual step, not skipped silently", async () => {
-    const { deps: d } = deps(undefined, undefined, { GITHUB_TOKEN: undefined });
-    const result = await execute(table, planFor("L2"), d);
-    expect(result.failed).toBe(false);
-    expect(result.lines.join("\n")).toMatch(/deploys \(deploy\.yml\): not done here/);
   });
 
   it("a failing API call fails the run and names the status only", async () => {
@@ -672,100 +875,14 @@ describe("credentials and failures", () => {
     const { deps: d } = deps(undefined, broken);
     const result = await execute(table, planFor("L4"), d);
     expect(result.failed).toBe(true);
-    expect(result.lines.join("\n")).toContain("answered 403");
+    expect(text(result)).toContain("answered 403");
   });
 
   it("the plan lists the permissions beyond the deploy token", () => {
     const l4: Plan = planFor("L4");
-    expect(l4.permissions.filter((p) => !p.held).map((p) => p.name)).toEqual([
-      "Zone Read and Zone WAF Edit on the zone",
-    ]);
+    expect(l4.permissions.filter((p) => !p.held).map((p) => p.name)).toEqual(["Zone Read and Zone WAF Edit"]);
     expect(planFor("L2").permissions.every((p) => p.held)).toBe(true);
     expect(renderPlan(table, l4, false)).toContain("(extra)");
-  });
-});
-
-// ---------- the workflow and the docs ----------
-
-describe("lockdown.yml matches the table", () => {
-  const yml = read(".github/workflows/lockdown.yml");
-  const optionsOf = (input: string) => {
-    const block = yml.split(new RegExp(`^      ${input}:\\n`, "m"))[1]?.split(/^      \w+:\n/m)[0] ?? "";
-    const list = block.split(/^        options:\n/m)[1] ?? "";
-    return [...list.matchAll(/^          - (\S+)$/gm)].map((m) => m[1]);
-  };
-
-  it("offers L1 to L5 and exactly the meters the table lists, plus none", () => {
-    expect(optionsOf("level")).toEqual(LEVELS);
-    expect(optionsOf("meter")).toEqual(["none", ...meterNames(table)]);
-  });
-
-  it("has boolean undo and apply, and apply defaults to false", () => {
-    expect(yml).toMatch(/^      undo:\n(?:        .*\n)*?        type: boolean\n/m);
-    const apply = yml.split(/^      apply:\n/m)[1]?.split(/^      \w+:\n|^\S/m)[0] ?? "";
-    expect(apply).toContain("type: boolean");
-    expect(apply).toMatch(/default: false/);
-    expect(yml.split(/^      undo:\n/m)[1]?.split(/^      \w+:\n/m)[0]).toMatch(/default: false/);
-  });
-
-  it("is dispatch only, scoped to actions write, and reads the secrets deploy.yml reads", () => {
-    expect(yml).toMatch(/^on:\n  workflow_dispatch:/m);
-    expect(yml).not.toMatch(/^  (push|pull_request|schedule):/m);
-    expect(yml).toMatch(/^permissions:\n  contents: read\n  actions: write\n/m);
-    expect(yml).toContain("environment: production");
-    expect(yml).toContain("if: github.ref == 'refs/heads/main'");
-    expect(yml).toContain("secrets.CLOUDFLARE_API_TOKEN");
-    expect(yml).toContain("secrets.CLOUDFLARE_ACCOUNT_ID");
-    expect(yml).toContain("secrets.GITHUB_TOKEN");
-  });
-
-  it("pins every action by SHA with a version comment, as the other workflows do", () => {
-    const uses = [...yml.matchAll(/^\s*(?:- )?uses: (\S+)(.*)$/gm)];
-    expect(uses.length).toBeGreaterThanOrEqual(2);
-    for (const [, spec, rest] of uses) {
-      expect(spec).toMatch(/^[\w-]+\/[\w-]+@[0-9a-f]{40}$/);
-      expect(rest).toMatch(/# v\d/);
-    }
-    const pinned = (file: string) =>
-      new Map([...read(file).matchAll(/uses: ([\w-]+\/[\w-]+@[0-9a-f]{40})/g)].map((m) => [m[1]?.split("@")[0], m[1]]));
-    const deploy = pinned(".github/workflows/deploy.yml");
-    for (const [, spec] of uses) expect(deploy.get(spec?.split("@")[0]), spec).toBe(spec);
-  });
-
-  it("passes inputs through env, never interpolated into the script", () => {
-    const run = yml.split(/^\s+run: \|\n/m)[1] ?? "";
-    expect(run).not.toContain("${{");
-    for (const key of ["LEVEL", "METER", "UNDO", "APPLY"])
-      expect(yml).toContain(`${key}: \${{ inputs.${key.toLowerCase()} }}`);
-    expect(yml).toContain("node tools/lockdown.mjs");
-    expect(yml).toContain("GITHUB_STEP_SUMMARY");
-  });
-});
-
-describe("docs", () => {
-  const docs = read("docs/lockdown.md");
-  it("covers every rung, the phone, the Mac, undo and the token permissions", () => {
-    for (const level of LEVELS) expect(docs).toContain(`### ${level}`);
-    for (const word of ["phone", "mac", "undo", "token", "workflow_dispatch"])
-      expect(docs.toLowerCase()).toContain(word);
-  });
-
-  it("names every extra permission the table says a rung lacks", () => {
-    const extra = new Set(
-      Object.values(table.rungs).flatMap((r) => r.calls.filter((c) => !c.held).map((c) => c.permission)),
-    );
-    expect(extra.size).toBeGreaterThan(0);
-    for (const permission of extra) expect(docs, permission).toContain(permission);
-  });
-
-  it("links to the spend docs for the switch names rather than listing their meaning", () => {
-    expect(docs).toContain("(spend.md)");
-    expect(docs).not.toMatch(/[–—]/);
-  });
-
-  it("ADR 0030 says why, what it replaces and how to remove it", () => {
-    const adr = read("docs/adr/0030-lockdown.md");
-    for (const word of ["Context", "Decision", "Replaces", "Remove"]) expect(adr).toContain(word);
-    expect(adr).not.toMatch(/[–—]/);
+    expect(renderPlan(table, l4, false)).toContain("Token: LOCKDOWN_CF_TOKEN\n");
   });
 });

@@ -2,13 +2,17 @@
 
 How the owner cuts cost or locks the service from the GitHub phone app or a Mac, without the Cloudflare dashboard. Why a workflow plus a script, what they replace and how to remove them: `docs/adr/0030-lockdown.md`. The rung table is `tools/lockdown-rungs.json`; the script is `tools/lockdown.mjs`; the workflow is `.github/workflows/lockdown.yml`. Switch names, values and what each one stops are owned by the [spend guard doc](spend.md); this page never restates them.
 
-This lands after the settings table and the spend guard (streams F and G): L1 to L3 write rows those streams read. L4 and L5 need neither.
+This lands after the settings table and the spend guard (streams F and G). L1 to L3 write rows those streams read, so migration 0005 (the `setting` and `admin_action` tables) must be applied first; L4 and L5 need neither.
 
 Nothing here deletes anything. No rung deletes the Worker, a Durable Object class, a bucket, a database or any data, and none deploys a script (a deploy without the Durable Object classes erases their storage). The script refuses such a request in code (`assertSafeCall`) and a test pins it.
 
+## Step 0: a leaked deploy token
+
+If the Cloudflare deploy token is the incident, roll it in the dashboard first (the old value dies at once). Then run the ladder with the lockdown token below. If the lockdown token itself is the suspected leak, roll it and use the dashboard instead: this tool cannot help when its own credential is the problem. The same holds if GitHub is the problem.
+
 ## Rungs
 
-Each rung is one tap in the workflow or one command on a Mac. Every rung first freezes deploys (disables the deploy workflow), because a push to main re-applies `wrangler.jsonc` and would drop a dashboard variable and re-enable workers.dev. A rung that changes a switch writes a `setting` row, which a later deploy keeps, and one `admin_action` line with the actor `lockdown`. When D1 itself fails, the run prints the matching Worker variable floors to set by hand and commit.
+Each rung is one tap in the workflow or one command on a Mac. Every set first freezes deploys: it disables the deploy workflow and cancels the deploy runs in progress or queued, because a push to main re-applies `wrangler.jsonc` and would drop a dashboard variable and re-enable workers.dev. A rung that changes a switch writes a `setting` row labeled `lockdown:L<n>`, which a later deploy keeps, and one `admin_action` line with the actor `lockdown` that records the value the row held before. All rows go in one `wrangler d1 execute` call (wrangler sends the whole command as one query and prints one result per statement). When D1 itself fails, the run prints the matching Worker variable floors to set by hand and commit.
 
 ### L1
 
@@ -20,54 +24,66 @@ Every costly switch at once (the seven the budget stop flips). Keeps the site, t
 
 ### L3
 
-L2, plus the video stage and email off, and every running Workflow instance terminated. Terminating loses conversion progress only; the original files stay. Printed by hand: lower the Workers and Durable Objects spend limits, remove the presign token, check Containers and logs.
+L2, plus the video stage and email off, and every live Workflow instance terminated (queued, running, paused and waiting, every page, checked again afterwards; a step fails if any is still live). Terminating loses conversion progress only; the original files stay. Printed by hand: lower the Workers and Durable Objects spend limits, remove the presign token, check Containers and logs.
 
 ### L4
 
-Off the routes, data kept. A block rule on the zone (kept when undone, never deleted) and workers.dev off. The admin panel goes dark too, so switches are set with this tool or the D1 console. Crons keep running.
+Off the routes, data kept. A block rule on the zone (kept when undone, never deleted), workers.dev off and workers.dev previews off. The admin panel goes dark too, so switches are set with this tool or the D1 console. Crons keep running.
 
 ### L5
 
-L4, plus every cron trigger cleared. Revoking tokens is printed as manual steps, last: a token cannot safely revoke itself, and a revoked deploy token ends this tool.
+L4, plus every cron trigger cleared. Revoking tokens is printed as manual steps, last: a token cannot safely revoke itself, and a revoked token ends this tool.
 
 ## Run it from the phone
 
 1. GitHub app, the repository, Actions, lockdown, Run workflow.
-2. Pick the level (and the meter for L1). Leave apply unticked first: the run prints the exact plan in its job summary and changes nothing.
+2. Pick the level (and the meter for L1). Leave apply unticked first: the run prints the exact plan in its job summary and verifies the token without changing anything.
 3. Run it again with apply ticked.
 
-The workflow runs only from main and uses the repository secrets the deploy workflow uses (the Cloudflare token and account), plus the run's own token with `actions: write` to disable the deploy workflow. The workflow must be on the default branch to appear as a workflow_dispatch target.
+The workflow runs only from main and only when the repository owner starts it, set or undo alike. It reads the repository secrets of the production environment: the lockdown token, the account id, and (as the L1 and L2 fallback) the deploy token, plus the run's own token with `actions: write` to disable the deploy workflow and cancel its runs. The workflow must be on the default branch to appear as a workflow_dispatch target. A run that could not freeze deploys ends red with "DEPLOYS NOT FROZEN" at the top of its summary.
 
 ## Run it from the Mac
 
 ```
-export CLOUDFLARE_API_TOKEN=...   # from the password manager; never typed into a file
+export LOCKDOWN_CF_TOKEN=...      # from the password manager; never typed into a file
 export CLOUDFLARE_ACCOUNT_ID=...
-node tools/lockdown.mjs --level L2             # dry run: prints the plan
+node tools/lockdown.mjs --level L2             # dry run: prints the plan and checks the token
 node tools/lockdown.mjs --level L2 --apply
 node tools/lockdown.mjs --level L1 --meter uploads --apply
 ```
 
-Run it from a checkout of main. Without `GITHUB_TOKEN` and `GITHUB_REPOSITORY` the freeze is printed as a step to do by hand (Actions, deploy, the ... menu, Disable workflow). Neither credential is ever printed.
+Run it from a checkout of main. Without `GITHUB_TOKEN` and `GITHUB_REPOSITORY` the freeze is printed as a step to do by hand (Actions, deploy, the ... menu, Disable workflow) and the exit code is 3. Exit codes: 0 done, 1 a step failed, 2 bad input or missing credentials, 3 done but deploys are not frozen. No credential is ever printed.
 
 ## Undo
 
 `--undo` (the undo input) reverses a rung, and a second run changes nothing.
 
-- Rows go back to their defaults, and only rows this tool wrote: a row the breaker or the owner set since stands. A latched breaker also needs its reset in the admin panel.
-- Deploys are enabled again. Undo L1 to L3 only after any L4 or L5 is undone, because an unfrozen deploy re-enables workers.dev.
-- L4: the block rule is disabled (kept) and workers.dev is turned on.
-- Not undoable by this tool: terminated Workflow instances (users re-run), cleared crons (enable the deploy workflow and run it: a deploy recreates them), lowered spend limits and revoked tokens (by hand).
+- Rows: an undo at level n touches only rows labeled `lockdown:L1` to `lockdown:L<n>`, and puts back the value each held before any lockdown touched it (the default when none was recorded). A row the owner or the breaker set since has another label and stands. So undoing L2 after L3 leaves the rows L3 wrote; undo L3 to roll them back. A latched breaker also needs its reset in the admin panel.
+- Remove any `SWITCH_` variable you set by hand (dashboard and `wrangler.jsonc`): a row never loosens a floor, and the undo prints the names.
+- Deploys are enabled again. An L1 to L3 undo first reads the block rule and workers.dev, and skips the unfreeze, saying why, while L4 or L5 is still in force or when it cannot read them, because an unfrozen deploy turns workers.dev back on. Undo L4 first.
+- L4: the block rule is disabled (kept), workers.dev is turned on, and previews go back to what `wrangler.jsonc` says.
+- L5: the cron triggers are put back to the ones `wrangler.jsonc` lists.
+- Not undoable by this tool: terminated Workflow instances (users re-run), lowered spend limits and revoked tokens (by hand).
 
-## Token permissions
+## Tokens
 
-The workflow's Cloudflare token is the deploy token. It already holds Workers Scripts Edit and D1 Edit (the deploy workflow uses both). Beyond that:
+The lockdown token is a separate Cloudflare API token, kept in the password manager and in the production environment as `LOCKDOWN_CF_TOKEN`, so the deploy token does not have to grow. L1 and L2 may fall back to the deploy token (D1 Edit and Workers Scripts Write are already held there); L3 to L5 refuse to run without the lockdown token. The dry run calls the token verify endpoint and one read per permission, and prints "L4 WILL FAIL: token lacks X" for a refusal; a read cannot prove a write permission, so a rung can still fail on its write.
 
-| rung | extra permission | why |
+Permissions of the lockdown token, with the endpoint each covers (API token groups checked against Cloudflare's API schema):
+
+| permission | dashboard name | endpoints |
 |---|---|---|
-| L1, L2, L3 | none | D1 rows, and Workflow instances (list needs Workers Scripts Read or Write, terminate needs Workers Scripts Write; checked against the API spec) |
-| L4, L5 | Zone Read and Zone WAF Edit on the zone | the block rule |
-| all, in the workflow | `actions: write` on the run's own token | freeze deploys |
-| L5 by hand | whatever revokes each token | the owner's own sign-in |
+| Zone Read | Zone, Zone, Read | `GET /zones` |
+| Zone WAF Edit | Zone, Zone WAF, Edit (API group Zone WAF Write) | the zone ruleset entrypoint for the custom rules phase: GET and PUT; POST and PATCH on the ruleset's rules |
+| D1 Edit | Account, D1, Edit (API group D1 Write) | what `wrangler d1 execute --remote` calls: GET the database list and POST the database query |
+| Workers Scripts Write | Account, Workers Scripts, Edit | GET and POST `/workers/scripts/{name}/subdomain`; GET and PUT `/workers/scripts/{name}/schedules`; the Workflows instance list, batch terminate and status endpoints |
 
-A separate token scoped to just these permissions, kept in the password manager, works from any machine and is the better break-glass credential; GitHub itself being the problem is the case this workflow cannot help with.
+Scope the token to the account and the one zone. The schema's group list for the zone ruleset endpoints names several ruleset groups and not Zone WAF Write; the custom rules guide names Zone WAF Write, so this is the one permission to confirm on the first live L4 dry run (unverified).
+
+| rung | beyond the deploy token |
+|---|---|
+| L1, L2 | none (the fallback), or the lockdown token |
+| L3 | the lockdown token (Workers Scripts Write for Workflows) |
+| L4, L5 | Zone Read and Zone WAF Edit on the zone |
+| all, in the workflow | `actions: write` on the run's own token |
+| L5 by hand | whatever revokes each token: the owner's own sign-in |
