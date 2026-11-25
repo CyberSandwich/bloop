@@ -13,7 +13,8 @@ export type AccountError =
   | "gate_incomplete"
   | "forbidden"
   | "account_suspended"
-  | "passkey_invalid";
+  | "passkey_invalid"
+  | "account_deleting";
 /** Live pairing with accounts (ADR 0015) and the spend guard's refusal. */
 export type PairingAccountError = "match_required" | "service_busy";
 

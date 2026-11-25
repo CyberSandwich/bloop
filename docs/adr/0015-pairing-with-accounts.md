@@ -53,6 +53,7 @@ Status: proposed. Amends ADR 0002 (pairing protocol) and ADR 0003's "resolve at 
 ### Live screens follow the account (revocation mid-session)
 - `UserLibrary.screens` records each screen the user started with the claiming session's `public_id`. Approve calls `screenStarted`; end, cancel and timeout call `screenEnded`.
 - **Sign out** ends the screens that session started. **Sign out everywhere**, **suspension** and a **deletion request** call `endScreens` (every screen of the user), and delete the user's other sessions (all of them, for sign-out everywhere and suspension). The **purge** calls `endScreens` at its step 1 (ADR 0013).
+- **Order at approve:** approve writes `screenStarted` first, and the serving predicate for a library file checks that the pinned session is still live, so a screen never serves a file for a session that has ended.
 - Ending goes through each Screen object's own `end`, so links are revoked and guest residue purged exactly as when the phone ends a talk.
 
 ### Speaker notes (NOTES-01 phone-only)

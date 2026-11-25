@@ -9,4 +9,11 @@ export type LibraryError =
   | "part_invalid"
   | "size_mismatch"
   | "file_disabled"
-  | "convert_unavailable";
+  | "convert_unavailable"
+  | "encrypted"
+  | "upload_busy"
+  | "upload_gone"
+  | "up_next_full"
+  | "export_busy"
+  | "export_limit"
+  | "export_paused";

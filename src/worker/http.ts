@@ -13,18 +13,40 @@ export function json(body: unknown, status = 200, headers?: Record<string, strin
   });
 }
 
-/** Every error response is application/problem+json with an ErrorCode or AppError and nothing else. */
-export function problem(status: number, code: ErrorCode | AppError, headers?: Record<string, string>): Response {
+/** The wait a 429 or 503 names when its caller has no better figure; the client treats it as a floor. */
+const DEFAULT_RETRY_AFTER_SECONDS = 10;
+
+/**
+ * Every error response is application/problem+json with an ErrorCode or AppError and nothing else. A 429 or 503 always
+ * carries `Retry-After` in whole seconds, at least 1.
+ */
+export function problem(
+  status: number,
+  code: ErrorCode | AppError,
+  headers?: Record<string, string>,
+  retryAfterSeconds: number = DEFAULT_RETRY_AFTER_SECONDS,
+): Response {
   const body = { type: "about:blank", status, code };
+  const wait =
+    status === 429 || status === 503 ? { "Retry-After": String(Math.max(1, Math.ceil(retryAfterSeconds))) } : {};
   return new Response(JSON.stringify(body), {
     status,
-    headers: { "Content-Type": "application/problem+json", ...headers },
+    headers: { "Content-Type": "application/problem+json", ...wait, ...headers },
   });
 }
 
 /** A problem response whose status comes from the shared error table. */
-export const fail = (code: ErrorCode | AppError, headers?: Record<string, string>): Response =>
-  problem((code in ERRORS ? ERRORS[code as ErrorCode] : APP_ERRORS[code as AppError]).status, code, headers);
+export const fail = (
+  code: ErrorCode | AppError,
+  headers?: Record<string, string>,
+  retryAfterSeconds?: number,
+): Response =>
+  problem(
+    (code in ERRORS ? ERRORS[code as ErrorCode] : APP_ERRORS[code as AppError]).status,
+    code,
+    headers,
+    retryAfterSeconds,
+  );
 
 /**
  * Checks every state-changing request must pass (PAIR-06): the Origin is ours, the browser says the
