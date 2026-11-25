@@ -3299,11 +3299,9 @@ test.describe("SHOTS the phone's remote, sheet and question; the pill's frames",
     await expect(page.locator(".preview")).toHaveCount(0);
     await shoot(page, "a-remote-dog", sizes);
     await row("Sample deck.pptx").click();
-    await page
-      .locator("#file-list")
-      .evaluate(
-        "(ul) => { for (let i = 0; i < 3; i++) for (const li of [...ul.children]) ul.append(li.cloneNode(true)); }",
-      );
+    await page.locator("#file-list").evaluate((ul) => {
+      for (let i = 0; i < 3; i++) for (const li of [...ul.children]) ul.append(li.cloneNode(true));
+    });
     await shoot(page, "a-remote-long-deck", sizes);
     await screen.context.close();
     await phone.context.close();
