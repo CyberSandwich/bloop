@@ -334,7 +334,7 @@ Checked at 1440, 834 and the narrowest window. Model for the viewer: the iCloud 
 | scanned, choosing | the room name (Demo Room) | "Waiting for Approval. Your phone shows 42." for screen readers only; the 42 in the QR card | Back = Start Over |
 | scanned, choosing, this browser holds the claim | the room name | Finish on this device. | Back = Start Over, Continue |
 | approved (live) | Approved | Opening Lecture 4.pptx. | End |
-| opening (live) | Opening in PowerPoint | Lecture 4.pptx (when the launch needs a click: "Lecture 4.pptx. Click Open to start PowerPoint.") | End; Download It Instead (after 5 s); Open (primary) only when the launch had no user gesture or a popup was blocked |
+| opening (live) | Opening in PowerPoint | Lecture 4.pptx (when the launch needs a click: "Lecture 4.pptx. Click Open to start PowerPoint.") | End; Download It Instead (secondary, at once); Open (primary) only when the launch had no user gesture or a popup was blocked |
 | open (live) | Open in PowerPoint (only after a PowerPoint launch; otherwise "Opened") | Lecture 4.pptx. Ends by itself at 11:35. `[V-2]` | End, Download It Instead |
 | demo, approved to open | the item on the stage | (the viewer) | End; Present, Download as they apply |
 | open fallback | PowerPoint Didn't Open | Download the file, then open it from Downloads. | Download, Show as PDF Instead (text), End |
