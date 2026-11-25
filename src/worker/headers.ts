@@ -41,10 +41,11 @@ const PERMISSION_FEATURES = [
   "xr-spatial-tracking",
 ];
 
-/** Features a page keeps for itself: the screen page `/s`, and the sign-in pages (passkeys, ADR 0014). */
+/** Features a page keeps for itself: the screen page `/s`, the phone and library pages (a wake lock keeps a long upload or a talk running), and the sign-in pages (passkeys, ADR 0014). */
 const PAGE_FEATURES = {
   none: new Set<string>(),
   screen: new Set(["fullscreen", "screen-wake-lock"]),
+  wake: new Set(["screen-wake-lock"]),
   auth: new Set(["publickey-credentials-create", "publickey-credentials-get"]),
 };
 type PermissionPage = keyof typeof PAGE_FEATURES;
@@ -54,7 +55,12 @@ export function permissionsPolicy(page: PermissionPage = "none"): string {
 }
 
 /** The permissions a policy's pages keep. */
-const PAGE_OF: Readonly<Partial<Record<Policy, PermissionPage>>> = { screen: "screen", auth: "auth" };
+const PAGE_OF: Readonly<Partial<Record<Policy, PermissionPage>>> = {
+  screen: "screen",
+  app: "wake",
+  library: "wake",
+  auth: "auth",
+};
 
 export const BASE_HEADERS: Readonly<Record<string, string>> = {
   "Strict-Transport-Security": "max-age=63072000; includeSubDomains",

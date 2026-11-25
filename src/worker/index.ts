@@ -1,4 +1,6 @@
 import { configFor } from "./config.ts";
+import { runCron } from "./cron.ts";
+import { JOBS } from "./cron-jobs.ts";
 import { Converter } from "./do/converter.ts";
 import { Directory } from "./do/directory.ts";
 import { Screen } from "./do/screen.ts";
@@ -8,7 +10,6 @@ import { type Policy, policyOf, withHeaders } from "./headers.ts";
 import { json, problem } from "./http.ts";
 import { offOrigin } from "./origin.ts";
 import { servePage } from "./pages.ts";
-import { closeStaleSessions, runRetention } from "./retention.ts";
 import { type Route, route } from "./router.ts";
 import { accountRoutes } from "./routes/account.ts";
 import { adminRoutes } from "./routes/admin.ts";
@@ -27,12 +28,6 @@ import { logFetch, openRoutes } from "./routes/open.ts";
 import { pairingRoutes } from "./routes/pairing.ts";
 import { reportRoutes } from "./routes/reports.ts";
 import { uploadRoutes } from "./routes/uploads.ts";
-import { sweepGuestFiles } from "./seams/guest-drop/select.ts";
-
-/** The `triggers.crons` entry in wrangler.jsonc that runs the hourly backstop. */
-const HOURLY = "0 * * * *";
-/** The daily retention entry. */
-const DAILY = "30 3 * * *";
 
 /** Paths the routes own; everything else is a static asset. wrangler.jsonc sends every request to the Worker so the host check sees it. */
 const DYNAMIC = /^\/(api|f|auth)\/|^\/fo\/ping$/;
@@ -100,17 +95,11 @@ export default {
     return response.status === 101 ? response : withHeaders(response, policy);
   },
 
-  // Hourly: leftover guest objects (DROP-07) and session rows that lost their end. Daily: retention (DATA-02).
+  // The jobs of each trigger are listed in cron-jobs.ts.
   async scheduled(controller, env) {
     const config = configFor(env);
     if (!config.ok) return console.error(`config invalid: ${config.problems.join("; ")}`);
-    if (controller.cron === HOURLY) {
-      const swept = await sweepGuestFiles(env, config.config);
-      const closed = await closeStaleSessions(env, config.config, Date.now());
-      if (swept > 0 || closed > 0) console.log(JSON.stringify({ evt: "hourly", swept, closed }));
-    } else if (controller.cron === DAILY) {
-      console.log(JSON.stringify({ evt: "retention", ...(await runRetention(env, config.config)) }));
-    }
+    await runCron(controller.cron, env, config.config, JOBS);
   },
 } satisfies ExportedHandler<Env>;
 

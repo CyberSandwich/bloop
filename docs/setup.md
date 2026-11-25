@@ -106,7 +106,7 @@ A restore brings back users that were purged and sessions that were signed out. 
 | `IT_EXPORT_TOKEN` | secret | at least 32 characters: `openssl rand -base64 32`. Until it is set, `GET /api/it/export` answers 401 to everyone. Give it to IT only; `curl -H "Authorization: Bearer $TOKEN" "$ORIGIN/api/it/export?format=csv&from=2026-01-01&to=2026-01-31"` |
 | `AUDIT_RETENTION_DAYS`, `METRICS_RETENTION_DAYS`, `DEMO_RETENTION_DAYS` | var | `180`, `90`, `7` (defaults, pending the legal lane, OD-5) |
 
-The two cron triggers (`0 * * * *` hourly, `30 3 * * *` daily) are declared in `wrangler.jsonc` and created by `wrangler deploy`; there is no dashboard step. After the first deploy, check once that both fired: Workers dashboard, the Worker, Logs, filter `retention` and `hourly`. The daily line reports the rows it deleted per table. Apply the migrations first: `wrangler d1 migrations apply bloop --remote`.
+The three cron triggers (`*/5 * * * *`, `0 * * * *` hourly, `30 3 * * *` daily) are declared in `wrangler.jsonc` and created by `wrangler deploy`; there is no dashboard step. After the first deploy, check once that both fired: Workers dashboard, the Worker, Logs, filter `retention` and `hourly`. The daily line reports the rows it deleted per table. Apply the migrations first: `wrangler d1 migrations apply bloop --remote`.
 
 ## Site pages: the contact address and what to renew
 

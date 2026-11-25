@@ -35,9 +35,11 @@ describe.each([
     expect(res.headers.get("X-Frame-Options")).toBe("DENY");
     expect(res.headers.get("Referrer-Policy")).toBe("no-referrer");
     for (const [name, value] of Object.entries(BASE_HEADERS)) {
-      if (name === "Permissions-Policy" && path === "/s") continue;
+      if (name === "Permissions-Policy") continue;
       expect(res.headers.get(name), name).toBe(value);
     }
+    const expected = path === "/s" ? permissionsPolicy("screen") : permissionsPolicy("wake");
+    expect(res.headers.get("Permissions-Policy")).toBe(expected);
     const html = await res.text();
     expect(html).toContain(`<title>${title}</title>`);
     expect(html).toContain(`src="${script}"`);
