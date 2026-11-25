@@ -1,4 +1,4 @@
-// The landing (design.md section 6). No inline style writes (the CSP) and no scroll listener.
+// The landing (design.md section 6): no inline style writes (CSP), no scroll listener.
 
 const nav = document.querySelector(".nav");
 const sentinel = document.getElementById("sentinel");
@@ -19,7 +19,7 @@ if (location.hash) addEventListener("load", () => setTimeout(dropHash));
 else if (kept) addEventListener("load", () => scrollTo(0, kept));
 else scrollTo(0, 0);
 
-// The sheen and the backdrop drifts play only while on screen and the tab is visible.
+// The sheen and the backdrop drifts run only on screen in a visible tab (legal.js pauses the doc panel alike).
 const shown = new Map();
 const pause = () => {
   for (const [el, on] of shown) el.classList.toggle("is-paused", !on || document.hidden);
@@ -31,19 +31,21 @@ const watch = new IntersectionObserver((es) => {
 for (const el of document.querySelectorAll(".sheen, .frag, .panel, .close-panel")) watch.observe(el);
 addEventListener("visibilitychange", pause);
 
-// The Approve still's rows toggle their tick, as the phone's list does.
 document.querySelector(".frag-list")?.addEventListener("click", (e) => {
   const row = e.target instanceof Element && e.target.closest("[aria-pressed]");
   if (row) row.setAttribute("aria-pressed", `${row.getAttribute("aria-pressed") === "false"}`);
 });
 
-// A link closes the sheet, which would cover a jump; Safari 15 and 16 have no popover, so no method.
+// A link closes the sheet over its jump; Safari 15, 16 lack the method, and a non-popover throws.
 const menu = document.getElementById("nav-links");
 menu?.addEventListener("click", (e) => {
-  if (e.target instanceof Element && e.target.closest("a")) menu.hidePopover?.();
+  if (!(e.target instanceof Element && e.target.closest("a"))) return;
+  try {
+    menu.hidePopover?.();
+  } catch {}
 });
 
-// A spring (k 120, c 30, m .4, implicit step) drives a paused animation over the CSS tilt; 1% thresholds wake it.
+// A spring (design.md section 8) drives a paused animation over the CSS tilt; 1% thresholds wake it.
 const stage = document.querySelector(".stage");
 const tiltable = matchMedia("(prefers-reduced-motion: no-preference)");
 if (stage && tiltable.matches) {
