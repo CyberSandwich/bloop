@@ -256,7 +256,7 @@ export function createViewer(deps) {
   let building = null;
   /** The stage's content just changed. */
   let swapped = false;
-  // Per-item state is keyed by idOf: a file sorting in ahead shifts every position.
+  // Per-item state is keyed by the server's item id (`keyOf`): a file sorting in ahead shifts every position.
   /** @type {Map<string, Shot>} */
   const images = new Map();
   /** @type {Map<number, Shot>} taken before the first render */
@@ -313,6 +313,8 @@ export function createViewer(deps) {
 
   /** Present holds for pages, or a photo or video on its way. */
   const can = () => !!pages() || onStage(items()[at] ?? null);
+  /** Presentable now or when its photo lands: a re-present has no gesture for full screen. */
+  const alive = () => can() && !images.get(keyOf(at))?.failed && !refused.has(keyOf(at));
 
   function select(/** @type {number} */ i) {
     at = i;
@@ -323,7 +325,6 @@ export function createViewer(deps) {
     deps.tapped?.();
   }
 
-  /** A step here, or the phone's page `to`. */
   function go(/** @type {number} */ by, /** @type {number} */ to = -1) {
     const p = pages();
     if (!p || parked) return;
@@ -429,7 +430,7 @@ export function createViewer(deps) {
     const key = keyOf(at);
     const shot = photo ? image(at) : null;
     const img = shot?.ready ? shot.node : null;
-    const loading = photo && !img && !shot?.failed && !refused.has(key);
+    const loading = photo && !img && alive();
     arriving = loading;
     const want = p ? `p${at}:${scroll ? "all" : page}` : img ? `i${at}` : loading ? `w${at}` : `c${at}`;
     if (want !== framed) {
@@ -539,8 +540,8 @@ export function createViewer(deps) {
     if (on) opener = /** @type {HTMLElement | null} */ (document.activeElement);
     body.classList.toggle("is-presenting", on);
     show(stop, on);
-    // Focus follows the layout, and on a video so Space plays it; not for the phone's command, which would pin Stop
-    // Presenting over the slide (focus on an untouched page is focus-visible).
+    // Focus follows the layout, and on a video so Space plays it; not for the phone's command (focus-visible would pin
+    // Stop over the slide).
     if (!on) opener?.focus?.({ preventScroll: true });
     else if (!told) (frame.querySelector("video") ?? stop).focus?.({ preventScroll: true });
     if (on) {
@@ -668,7 +669,7 @@ export function createViewer(deps) {
         at = moved >= 0 ? moved : Math.max(0, Math.min(at, nextView.items.length - 1));
         buildList();
       }
-      // A command or report is followed once, never while a tap here is on its way.
+      // Followed once, and never while a tap here is on its way.
       const told = nextView.shown;
       const sig = JSON.stringify(told);
       if (told && sig !== followed && !deps.busy?.()) {
@@ -681,7 +682,7 @@ export function createViewer(deps) {
           go(0, told.page - 1);
         }
       }
-      if (presenting() && !(want && presentable())) present(false);
+      if (presenting() && !(want && alive())) present(false);
       else if (want && !presenting() && presentable()) present(true, true);
       paint();
     },
@@ -739,7 +740,6 @@ export function createViewer(deps) {
     presentable,
     /** The photo on stage is still on its way. */
     arriving: () => arriving,
-    /** From a tap here: it reports. */
     present: ask,
   };
 }

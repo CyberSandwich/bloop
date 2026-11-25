@@ -1,6 +1,5 @@
-// The phone's remote (design.md section 7, Phone page), fetched once the claim is a demo's, its stylesheet first.
-// The file rows put an item on the screen and the row it shows is marked; a preview of what it shows
-// steps by its halves or a swipe; the bubbles above Revoke step and present. Markup: a.html's #remote-parts.
+// The phone's remote (design.md section 7, Phone page), its stylesheet first: file rows that put an item on the screen,
+// a preview that steps by its halves or a swipe, and bubbles that step and present. Markup: a.html's #remote-parts.
 /** @import {PhoneView} from "../../../src/shared/protocol.ts" */
 /** @import {PhonePage} from "../types.js" */
 import { createApi } from "./api.js";
@@ -63,23 +62,24 @@ export function mount(c, onView) {
     if (key !== drawn) {
       drawn = key;
       const name = itemName(item);
-      const base = pages?.[at.page - 1];
       const label = pages
         ? `${item.kind === "file" && item.type === "pdf" ? "Page" : "Slide"} ${at.page} of ${pages.length}`
         : "";
       preview.setAttribute("aria-label", label ? `${name}, ${label}` : name);
-      // Every page is fetched ahead, so a step swaps at once.
-      for (const p of pages ?? []) new Image().src = `${p}.avif`;
-      const face = base
-        ? el("picture", {}, [
-            el("source", { type: "image/avif", srcset: `${base}.avif` }),
-            el("img", { src: `${base}.webp`, alt: "" }),
-          ])
-        : el("div", { class: "card" }, [
-            ...rowFace(item, thumbOf(item, v)),
-            // The screen plays a video under its own controls (design.md section 7, Phone page).
-            ...(isVideo(item) ? [el("span", { class: "small" }, ["Play and pause it on the screen."])] : []),
-          ]);
+      // Built ahead as the pictures shown, so the browser fetches the format it will choose.
+      const faces = pages?.map((p) =>
+        el("picture", {}, [
+          el("source", { type: "image/avif", srcset: `${p}.avif` }),
+          el("img", { src: `${p}.webp`, alt: "" }),
+        ]),
+      );
+      const face =
+        faces?.[at.page - 1] ??
+        el("div", { class: "card" }, [
+          ...rowFace(item, thumbOf(item, v)),
+          // The screen plays a video under its own controls (design.md section 7, Phone page).
+          ...(isVideo(item) ? [el("span", { class: "small" }, ["Play and pause it on the screen."])] : []),
+        ]);
       preview.replaceChildren(face, count);
     }
     setText(count, pages ? `${at.page} / ${pages.length}` : "");

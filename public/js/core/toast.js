@@ -3,13 +3,15 @@
 const SHOW_MS = 5000;
 const OUT_MS = 200;
 
+/** @typedef {{title: string, body: string, error?: boolean, action?: {label: string, run: () => void}}} Toast */
+
 /** The slice of Document it uses, so the unit tests (no DOM) can fake it. @typedef {{createElement: (tag: string) => any, body: {append: (node: any) => void}}} Host */
 
 /**
  * @param {Host} doc
  * @param {(fn: () => void, ms: number) => unknown} [later]
  * @param {(timer: unknown) => void} [cancel]
- * @returns {(t: {title: string, body: string, error?: boolean}) => void}
+ * @returns {(t: Toast) => void}
  */
 export function createToaster(
   doc,
@@ -36,7 +38,7 @@ export function createToaster(
     }, OUT_MS);
   };
 
-  return ({ title, body, error = false }) => {
+  return ({ title, body, error = false, action }) => {
     remove();
     const made = doc.createElement("div");
     made.className = "toast glass";
@@ -46,16 +48,23 @@ export function createToaster(
     const line = doc.createElement("span");
     line.textContent = body;
     made.append(head, line);
+    if (action) {
+      const button = doc.createElement("button");
+      button.className = "btn secondary";
+      button.textContent = action.label;
+      button.addEventListener("click", action.run);
+      made.append(button);
+    }
     made.addEventListener("click", dismiss);
     doc.body.append(made);
     node = made;
-    timer = later(dismiss, SHOW_MS);
+    if (!action) timer = later(dismiss, SHOW_MS);
   };
 }
 
 /** @type {ReturnType<typeof createToaster> | undefined} */
 let shared;
-/** @param {{title: string, body: string, error?: boolean}} t */
+/** @param {Toast} t */
 export function toast(t) {
   shared ??= createToaster(/** @type {any} */ (globalThis).document);
   shared(t);

@@ -96,21 +96,21 @@ describe("api client", () => {
   });
 
   it("a request with no answer in FETCH_TIMEOUT_MS is aborted and ends as offline", async () => {
-    // AbortSignal.timeout runs on Node's own timers, out of reach of fake ones: the test fires it by hand.
-    const timer = new AbortController();
-    const timeout = vi.spyOn(AbortSignal, "timeout").mockReturnValue(timer.signal);
+    vi.useFakeTimers();
     try {
       const f = fakeFetch(
         ({ init }) =>
           new Promise<Response>((_, fail) => init.signal?.addEventListener("abort", () => fail(init.signal?.reason))),
       );
       const pending = createApi({ fetch: f.fetch }).get("/api/screens");
-      expect(timeout).toHaveBeenCalledWith(FETCH_TIMEOUT_MS);
-      expect(f.calls[0]?.init.signal).toBe(timer.signal);
-      timer.abort(new DOMException("timed out", "TimeoutError"));
+      const signal = f.calls[0]?.init.signal;
+      await vi.advanceTimersByTimeAsync(FETCH_TIMEOUT_MS - 1);
+      expect(signal?.aborted).toBe(false);
+      await vi.advanceTimersByTimeAsync(1);
+      expect(signal?.aborted).toBe(true);
       expect(await pending).toEqual({ ok: false, error: "offline" });
     } finally {
-      timeout.mockRestore();
+      vi.useRealTimers();
     }
   });
 
@@ -129,14 +129,28 @@ describe("api client", () => {
     ]);
   });
 
-  it("a browser without AbortSignal.timeout still makes every call, untimed", async () => {
+  it("a browser without AbortSignal.timeout (Safari 15.4) times a read out with an AbortController", async () => {
     const timeout = Object.getOwnPropertyDescriptor(AbortSignal, "timeout");
     Reflect.deleteProperty(AbortSignal, "timeout");
+    vi.useFakeTimers();
     try {
-      const f = fakeFetch(() => ok({ state: "waiting" }));
-      expect(await createApi({ fetch: f.fetch }).get("/api/screen/state", "s.t")).toMatchObject({ ok: true });
-      expect(f.calls[0]?.init.signal).toBeUndefined();
+      const f = fakeFetch(
+        ({ init }) =>
+          new Promise<Response>((_, fail) => init.signal?.addEventListener("abort", () => fail(init.signal?.reason))),
+      );
+      const pending = createApi({ fetch: f.fetch }).get("/api/screen/state", "s.t");
+      const signal = f.calls[0]?.init.signal;
+      expect(signal).toBeInstanceOf(AbortSignal);
+      expect(signal?.aborted).toBe(false);
+      await vi.advanceTimersByTimeAsync(FETCH_TIMEOUT_MS);
+      expect(signal?.aborted).toBe(true);
+      expect(await pending).toEqual({ ok: false, error: "offline" });
+      // A write is untimed, as with the native signal.
+      const write = fakeFetch(() => ok({}));
+      await createApi({ fetch: write.fetch }).post("/api/approve", {}, "p.q");
+      expect(write.calls[0]?.init.signal).toBeUndefined();
     } finally {
+      vi.useRealTimers();
       if (timeout) Object.defineProperty(AbortSignal, "timeout", timeout);
     }
   });

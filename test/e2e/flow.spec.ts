@@ -2577,15 +2577,64 @@ test.describe("PAIR-13 remote: the phone commands the demo screen (design.md sec
     await close(screen, phone);
   });
 
-  test("a remote that failed to load is fetched again with the next view", async ({ browser }) => {
+  test("a remote that failed to load says so with a Reload action, which brings it back", async ({ browser }) => {
     const screen = await demoScreen(browser);
     const { phone } = await scan(browser, screen.page);
     let asked = 0;
     await phone.context.route("**/core/remote-ui.js*", (route) => (asked++ === 0 ? route.abort() : route.continue()));
     await phone.page.reload();
+    const alert = phone.page.getByRole("alert");
+    await expect(alert).toContainText("Remote Didn't Load");
+    // Not fetched again by itself, and the toast waits for a tap.
+    await phone.page.waitForTimeout(500);
+    expect(asked).toBe(1);
+    await alert.getByRole("button", { name: "Reload" }).click();
     await phone.page.getByRole("button", { name: "Approve" }).click();
     await expect(phone.page.locator(".preview")).toBeVisible();
     expect(asked).toBe(2);
+    await expect(phone.page.getByRole("alert")).toHaveCount(0);
+    await close(screen, phone);
+  });
+
+  test("presenting holds while the next photo is still on its way, with no new full screen", async ({ browser }) => {
+    const screen = await demoScreen(browser);
+    const { phone } = await scan(browser, screen.page);
+    let release = () => {};
+    const held = new Promise<void>((done) => {
+      release = done;
+    });
+    // The photo's bytes wait until the test lets them go.
+    await screen.page.route("**/f/**", async (route) => {
+      await held;
+      await route.continue();
+    });
+    await phone.page.getByRole("button", { name: "Approve" }).click();
+    await expect(phone.page.locator(".preview")).toBeVisible();
+    await expect(screen.page.locator("#items > li .item")).toHaveCount(CATALOG.length);
+    await screen.page.evaluate(
+      "(() => { window.exits = 0; const exit = document.exitFullscreen?.bind(document); document.exitFullscreen = (...a) => { window.exits += 1; return exit?.(...a); }; })()",
+    );
+    const row = (name: string) => phone.page.locator("#file-list").getByRole("button", { name: startsWith(name) });
+    await row("Sample deck.pptx").click();
+    await expect(heading(screen.page)).toHaveText("Sample deck.pptx");
+    await phone.page
+      .getByRole("group", { name: "The Screen" })
+      .getByRole("button", { name: "Present", exact: true })
+      .click();
+    const body = screen.page.locator("body");
+    await expect(body).toHaveClass(/is-presenting/);
+    const full = await screen.page.evaluate("document.fullscreenElement === null");
+    await row("Dog.jpg").click();
+    await expect(heading(screen.page)).toHaveText("Dog.jpg");
+    await expect(screen.page.locator("#frame .loader")).toBeVisible();
+    await screen.page.waitForTimeout(400);
+    await expect(body).toHaveClass(/is-presenting/);
+    expect(await screen.page.evaluate("window.exits")).toBe(0);
+    expect(await screen.page.evaluate("document.fullscreenElement === null")).toBe(full);
+    release();
+    await expect(screen.page.getByRole("img", { name: "Dog.jpg" })).toBeVisible();
+    await expect(body).toHaveClass(/is-presenting/);
+    expect(await screen.page.evaluate("window.exits")).toBe(0);
     await close(screen, phone);
   });
 

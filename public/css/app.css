@@ -998,7 +998,7 @@ main:has(> .side:not([hidden])) #stage {
 .ends.soon {
   color: var(--robin-ink);
 }
-/* core/toast.js, one .glass card bottom center; --toast-lift raises it over the band. */
+/* core/toast.js: a .glass card, bottom center; --toast-lift clears the band. */
 .toast {
   position: fixed;
   z-index: 60;
@@ -1018,6 +1018,9 @@ main:has(> .side:not([hidden])) #stage {
 .toast span {
   color: var(--muted);
   font-size: 15px;
+}
+.toast .btn {
+  margin-top: 8px;
 }
 .toast.out {
   animation: toast-out 200ms var(--ease-out) both;
