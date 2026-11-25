@@ -285,7 +285,11 @@ function paint() {
   const has = (/** @type {import("./types.js").ScreenControl} */ c) => copy.controls.includes(c);
   // Another phone's claim shows the title and the number alone; this browser's own shows its line and Continue.
   main.classList.toggle("is-pending", claimed && !has("continue"));
-  show(buttons.back, !has("start_over") && !has("end") && key !== "ended");
+  // Waiting or refreshing is all a busy room screen can do: Back would leave the lectern on the home page.
+  show(
+    buttons.back,
+    !has("start_over") && !has("end") && !["ended", "offline", "service_down", "rate_limited"].includes(key),
+  );
   show(buttons.start_over, has("start_over"));
   show(buttons.home, has("end"));
   show(buttons.end, has("end"));

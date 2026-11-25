@@ -7,7 +7,7 @@
 import { readFileSync } from "node:fs";
 import { crc32, deflateSync } from "node:zlib";
 import AxeBuilder from "@axe-core/playwright";
-import { type Browser, type BrowserContext, expect, type Locator, type Page, test } from "@playwright/test";
+import { type Browser, type BrowserContext, expect, type Locator, type Page, type Route, test } from "@playwright/test";
 
 /** The item on the stage: a page's picture, the photo's canvas or a video (never the loader's thumbnail). */
 const STAGED = "#frame :is(picture img, canvas, video)";
@@ -2370,6 +2370,34 @@ test.describe("screen page", () => {
     await expect(heading(page)).toHaveText("Demo Room", { timeout: 10_000 });
     await context.close();
   });
+
+  // Waiting or a refresh is all these states allow: Back would leave the room PC on the home page.
+  for (const [state, title, fail] of [
+    [
+      "service down",
+      "bloop Isn't Responding",
+      (r: Route) => r.fulfill({ status: 500, contentType: "application/json", body: '{"code":"internal"}' }),
+    ],
+    ["offline", "Offline", (r: Route) => r.abort()],
+    [
+      "rate limited",
+      "Busy Right Now",
+      (r: Route) => r.fulfill({ status: 429, contentType: "application/json", body: '{"code":"rate_limited"}' }),
+    ],
+  ] as const) {
+    test(`${state} outside a session shows no Back; waiting brings it back`, async ({ browser }) => {
+      const context = await browser.newContext({ viewport: SCREEN });
+      const page = await context.newPage();
+      await page.route("**/api/screens", fail);
+      await page.goto("/s");
+      await expect(heading(page)).toHaveText(title);
+      await expect(page.locator("#b-back")).toBeHidden();
+      await page.unroute("**/api/screens");
+      await expect(page.locator("#qr")).toBeVisible({ timeout: 40_000 });
+      await expect(page.locator("#b-back")).toBeVisible();
+      await context.close();
+    });
+  }
 
   test("the wide waiting screen has the QR on the left of the room title, and the QR is one path in a 41 module square with the required label", async ({
     browser,
