@@ -33,8 +33,8 @@ export type Sound = "on" | "off" | "blocked";   // blocked: the screen's browser
 export interface Shown { item: string; page: number; present: boolean; play?: boolean; sound?: Sound; }   // item: a FILE item's id (the screen's own report may also name a link, at page 1); page: 1-based, within the item's pages; play and sound: a video's state, absent meaning playing with sound, so stored data from before them stays valid; either sender may send `blocked`, since a phone's command repeats the view it was built on
 /** The body of POST /api/control and POST /api/screen/shown. Absolute, so a replay changes nothing; a seq not above the sender's last applied one changes nothing, and one more than 24 h ahead of the server's clock is `bad_request`. */
 export interface ShownCommand extends Shown { seq: number; }   // the sender's clock in ms, at least one above its last, and above the `seq` of its latest view (the server's last for that sender), so a clock that fell behind across a reload still sends in order (PAIR-13)
-/** The body of POST /api/session/length: the session ends `minutes` from now, never past approval plus the mode's cap. */
-export interface LengthRequest { minutes: number; }   // whole minutes, MIN_LENGTH_MINUTES (public/js/shared/length.js) to SESSION_MAX_MINUTES
+/** The body of POST /api/session/length: the session ends `seconds` from now, never past approval plus the mode's cap. */
+export interface LengthRequest { seconds: number; }   // whole seconds, MIN_LENGTH_SECONDS (public/js/shared/length.js) to SESSION_MAX_MINUTES x 60
 
 export interface ScreenView {
   state: SessionState;
@@ -329,7 +329,7 @@ export interface PairingStore {
   /** The screen reports its own tap (POST /api/screen/shown), so the phone's highlight stays true. Same rules as `control`, with its own seq. */
   reportShown(sid: string, command: ShownCommand): Promise<Result<ScreenView>>;
   /** The phone sets when the session ends (POST /api/session/length): `minutes` from now, never past approval plus the mode's cap. Both modes. One that arrives after the end ends the session and answers `session_ended`. */
-  setLength(pid: string, minutes: number): Promise<Result<PhoneView>>;
+  setLength(pid: string, seconds: number): Promise<Result<PhoneView>>;
   cancel(pid: string): Promise<Result<PhoneView>>;
   restart(sid: string): Promise<Result<ScreenView>>;
   endFromScreen(sid: string): Promise<Result<ScreenView>>;   // from waiting: closes the object (state "closed")

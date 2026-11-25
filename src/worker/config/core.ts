@@ -122,18 +122,18 @@ export const coreVars = {
     .number()
     .positive()
     .describe(
-      "The latest a live session may end, counted from approval, whatever length the phone sets; production range 5 to 720.",
+      "The latest a live session may end, counted from approval, whatever length the phone sets; production range 1 to 720.",
     ),
   DEMO_MAX_MINUTES: z.coerce
     .number()
     .positive()
-    .describe("SESSION_MAX_MINUTES for a demo session; production range 5 to SESSION_MAX_MINUTES."),
+    .describe("SESSION_MAX_MINUTES for a demo session; production range 1 to SESSION_MAX_MINUTES."),
   SESSION_DEFAULT_MINUTES: z.coerce
     .number()
     .positive()
     .default(60)
     .describe(
-      "The length every session starts with until the phone changes it (POST /api/session/length), never past the mode's cap; production range 5 to SESSION_MAX_MINUTES.",
+      "The length every session starts with until the phone changes it (POST /api/session/length), never past the mode's cap; production range 1 to SESSION_MAX_MINUTES.",
     ),
   DEMO_ENABLED: z
     .enum(["true", "false"])
