@@ -17,7 +17,7 @@ Status: proposed, revised after Fable's review (all required and optional change
 - `auth_required` does tell a prober that a live code exists, which `code_unknown` does not. It is rate-limited like a miss (the same exact per-IP count) and gives nothing a guest claim on the same code would not: a guest claim already reveals a live code and pairs it.
 - A demo code needs no cookie, as today. A live `guest` claim needs no cookie either: the account-free guest send keeps working in both modes (Part 1).
 - The signed-in user id goes into `pairing.userId` at claim and is **pinned**, together with the claiming session's `public_id`: `listed`, `approve`, the notes route and every later owner call require the cookie user to equal it, else `pairing_invalid`. Part 2's "approve may carry a newer account" (today's `approveItems` override, made for claim-then-sign-in) is removed.
-- In preview mode, a signed-in user outside `ADMIN_EMAILS` plus `TEST_EMAILS` counts as signed out (ADR 0026).
+- In preview with `preview_lockout` set, a signed-in user outside `ADMIN_EMAILS` plus `TEST_EMAILS` counts as signed out (ADR 0026).
 
 ### The match pick (PAIR-14 match)
 - At claim, the Screen object draws the 2-digit match as today and two distinct decoys, uniform over 00 to 99 and different from the match and each other. The claim response and the phone view carry `choices` (the three in random order) and never say which is real. The screen view carries only `match`.
