@@ -1361,22 +1361,30 @@ test.describe("a guest's photo and video on the screen (design.md section 7, Vid
   });
 
   test("SHOTS video: Tap for Sound, presenting, parked while presenting", async ({ browser }) => {
-    test.setTimeout(60_000);
+    test.setTimeout(90_000);
+    const sizes = [
+      ["390", { width: 390, height: 844 }],
+      ["844x390", { width: 844, height: 390 }],
+      ["1440", { width: 1440, height: 900 }],
+    ] as const;
+    const shoot = async (name: string) => {
+      for (const [size, viewport] of sizes) {
+        await page.setViewportSize(viewport);
+        await page.waitForTimeout(500);
+        await page.screenshot({ path: `test-results/shots/${name}-${size}.png` });
+      }
+    };
     const { screen, phone, page } = await openAsGuest(browser, "Talk.mp4", CLIP, false, false, holdSound);
     await expect(page.getByRole("button", { name: "Tap for Sound" })).toBeVisible({ timeout: 15_000 });
-    await page.waitForTimeout(600);
-    await page.screenshot({ path: "test-results/shots/s-video-tap-1440.png" });
+    await shoot("s-video-tap");
     await phone.page.waitForTimeout(600);
     await phone.page.screenshot({ path: "test-results/shots/a-video-blocked-390.png", fullPage: true });
     await page.getByRole("button", { name: "Present" }).click();
     await page.waitForTimeout(800);
-    await page.screenshot({ path: "test-results/shots/s-video-presenting-tap-1440.png" });
+    await shoot("s-video-presenting-tap");
     await screen.context.setOffline(true);
     await page.waitForTimeout(3000);
-    await page.screenshot({ path: "test-results/shots/s-video-parked-presenting-1440.png" });
-    await screen.context.setOffline(false);
-    await page.waitForTimeout(4000);
-    await page.screenshot({ path: "test-results/shots/s-video-unparked-1440.png" });
+    await shoot("s-video-parked-presenting");
     await screen.context.close();
     await phone.context.close();
   });
