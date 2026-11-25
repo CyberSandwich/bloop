@@ -120,6 +120,21 @@ describe("reconnect backoff", () => {
 
   it("polls every 3 s while polls work and backs off 5, 10, 30 s when they fail", () => {
     expect(pollDelay(0)).toBe(POLL_MS);
-    expect([1, 2, 3, 4, 9].map(pollDelay)).toEqual([5000, 10_000, 30_000, 30_000, 30_000]);
+    expect([1, 2, 3, 4, 9].map((n) => pollDelay(n))).toEqual([5000, 10_000, 30_000, 30_000, 30_000]);
+  });
+
+  it("O19 polls every 3 s while the room is set up, 15 s in open, 30 s hidden; failures back off from there", () => {
+    for (const state of ["waiting", "claimed", "choosing"]) expect(pollDelay(0, state)).toBe(3000);
+    expect(pollDelay(0, "open")).toBe(15_000);
+    expect(pollDelay(0, "open", true)).toBe(30_000);
+    expect(pollDelay(0, "waiting", true)).toBe(30_000);
+    expect(pollDelay(1, "open")).toBe(15_000);
+    expect(pollDelay(3, "open")).toBe(30_000);
+  });
+
+  it("O19 Retry-After is a floor, capped at 2 minutes", () => {
+    expect(pollDelay(1, "waiting", false, 40)).toBe(40_000);
+    expect(pollDelay(1, "waiting", false, 1)).toBe(5000);
+    expect(pollDelay(1, "waiting", false, 100_000)).toBe(120_000);
   });
 });
