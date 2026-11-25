@@ -190,4 +190,4 @@ In short: changes are dated and listed here.
 ### What Changed
 
 - Version 1.0, 2026-11-25: first published version.
-- Previous versions: none yet.
+- Earlier versions were shown for review before this one; they are replaced and never took effect.

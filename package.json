@@ -19,8 +19,8 @@
     "test:cov": "vitest run --coverage --coverage.reporter=text-summary --coverage.include=src/** --coverage.include=public/js/**",
     "html-validate": "html-validate public",
     "size": "size-limit",
-    "build:pages": "node tools/build-pages.mjs",
-    "check:pages": "node tools/build-pages.mjs --check",
+    "build:pages": "node tools/build-pages-cli.mjs",
+    "check:pages": "node tools/build-pages-cli.mjs --check",
     "check": "npm run check:pages && npm run typecheck &&npm run lint && npm test && npm run test:int && npm run html-validate && npm run size",
     "test:e2e": "playwright test"
   },

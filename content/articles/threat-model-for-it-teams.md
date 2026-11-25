@@ -6,7 +6,7 @@ description: What could go wrong with bloop on a shared PC, what stops it, what 
 published: 2026-11-25
 ---
 
-A threat model is a list of what could go wrong and what is done about it. bloop's is public and kept next to its code. This article restates it for the people who decide whether a tool may run in their rooms: it says what is protected, how, and where the protection stops.
+A threat model is a list of what could go wrong and what is done about it. bloop's is written down and kept next to its code. This article restates it for the people who decide whether a tool may run in their rooms: it says what is protected, how, and where the protection stops.
 
 ## How to Read It {#method}
 

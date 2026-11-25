@@ -25,7 +25,6 @@ describe.each([
   ["/articles/how-bloop-works", 200, LANDING_CSP, "<title>bloop: How bloop Works</title>", /text\/html/],
   ["/sitemap.xml", 200, LANDING_CSP, "<urlset", /xml/],
   ["/robots.txt", 200, LANDING_CSP, "Sitemap: https://bloop.here/sitemap.xml", /text\/plain/],
-  ["/privacy-2026-11-24", 404, LANDING_CSP, "This Page Isn't Here", /text\/html/],
   ["/.well-known/security.txt", 200, LANDING_CSP, "Contact: mailto:", /text\/plain/],
   ["/no-such-page", 404, LANDING_CSP, "This Page Isn't Here", /text\/html/],
   ["/security/deeper/still", 404, LANDING_CSP, "Go to the Home Page", /text\/html/],
@@ -46,6 +45,15 @@ describe("/it", () => {
     const res = await fetch(`${wrangler.url}/it`, { redirect: "manual" });
     expect(res.status).toBe(301);
     expect(new URL(res.headers.get("Location") ?? "", wrangler.url).pathname).toBe("/security");
+    await res.arrayBuffer();
+  });
+});
+
+describe("/privacy-2026-11-24", () => {
+  it("the old dated copy moves for good to /privacy", async () => {
+    const res = await fetch(`${wrangler.url}/privacy-2026-11-24`, { redirect: "manual" });
+    expect(res.status).toBe(301);
+    expect(new URL(res.headers.get("Location") ?? "", wrangler.url).pathname).toBe("/privacy");
     await res.arrayBuffer();
   });
 });

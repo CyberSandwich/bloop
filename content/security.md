@@ -100,9 +100,14 @@ If you look after shared PCs and want to know what bloop does on them:
 - **Nothing to install.** The Screen is a web page; PowerPoint opens files read-only from a link that expires.
 - **The PC gets little.** Never an account, a way to list files, or a way to approve.
 - **A record of use.** Every approval, open and end is recorded with who, which Item, which Screen and when (no file contents, tokens or IP addresses). An export for your organization is available on request.
-- **Open source.** The code is public, and each mitigated threat has a named test that runs on every change.
+- **Tested.** Each threat bloop mitigates has a named test that runs on every change.
 - **Questions or a review:** email <hi@bloop.here>. Where data is kept and for how long: [Where It Runs](#where) and [Privacy, How Long bloop Keeps It](/privacy#retention).
 
 ## Status {#audit}
 
-No external audit or penetration test yet, and no Cyber Essentials certificate yet. The threat model is public, and [Threat Model for IT Teams](/articles/threat-model-for-it-teams) explains it. Dates will be added here once each is booked.
+No external audit or penetration test yet, and no Cyber Essentials certificate yet. The threat model is written down, and [Threat Model for IT Teams](/articles/threat-model-for-it-teams) explains it. Dates will be added here once each is booked.
+
+## What Changed {#changes}
+
+- Version 1.0, 2026-11-25: first published version.
+- Earlier versions were shown for review before this one; they are replaced and never took effect.

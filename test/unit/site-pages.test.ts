@@ -1035,12 +1035,7 @@ describe("the doc pages: one .legal layout (design.md section 6, Legal pages)", 
     const meta = between(html, /<p class="meta">/, "</p>");
     const [, iso, us] = /<time datetime="(\d{4}-\d{2}-\d{2})">([A-Z][a-z]+ \d{1,2}, \d{4})<\/time>/.exec(meta) ?? [];
     expect(new Date(`${us} UTC`).toISOString().slice(0, 10)).toBe(iso);
-    // /security has no change list: it stays Version 1.0, its status table no term of use.
-    if (page === "security.html") {
-      expect(visibleText(meta)).toMatch(/Version 1\.0 · No previous versions$/);
-      return;
-    }
-    // Privacy and Terms list every version under #changes, the latest first. No older copy is kept as a page.
+    // Every legal page lists its versions under #changes, the latest first. No older copy is kept as a page.
     const changes = [
       ...between(html, /<section id="changes"/, "</section>").matchAll(
         /<li>Version (\d+\.\d+), <time datetime="([\d-]+)">/g,
@@ -1059,7 +1054,7 @@ describe("the doc pages: one .legal layout (design.md section 6, Legal pages)", 
     );
     expect(meta).toContain(`<a href="#changes">${older.length ? "Previous" : "No previous"} versions</a>`);
     expect(visibleText(between(html, /<section id="changes"/, "</section>"))).toContain(
-      older.length ? "Version" : "Previous versions: none yet.",
+      older.length ? "Version" : "Earlier versions were shown for review before this one",
     );
   });
 
