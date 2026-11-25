@@ -90,7 +90,6 @@
         "public/js/core/ui.js",
         "public/js/core/verified.js",
         "public/js/phone.js",
-        "public/js/shared/codes.js",
         "public/js/shared/errors.js",
         "public/js/shared/names.js",
         "public/js/shared/session.js"
@@ -104,15 +103,14 @@
         "public/js/core/api.js",
         "public/js/core/copy-code.js",
         "public/js/core/copy.js",
-        "public/js/core/format.js",
-        "public/js/core/icons.js",
         "public/js/core/store.js",
         "public/js/core/timing.js",
+        "public/js/core/typed.js",
         "public/js/core/ui.js",
         "public/js/shared/codes.js",
         "public/js/shared/errors.js"
       ],
-      "limit": "9.4 kB"
+      "limit": "7.3 kB"
     },
     {
       "name": "phone media, lazy",
