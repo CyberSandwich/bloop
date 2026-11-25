@@ -50,8 +50,15 @@ export { orderItems } from "../../public/js/shared/session.js";
 /** The id an item holds from approval on: its place in the approved list, written once and never recomputed. */
 export const itemId = (index: number): string => `i${index + 1}`;
 
-/** Ids for a list already in `orderItems` order. An item's id never changes after this, whatever later reorders the list. */
-export const withIds = (items: readonly ItemDraft[]): ItemRef[] => items.map((item, i) => ({ ...item, id: itemId(i) }));
+const hasId = (item: ItemDraft | ItemRef): item is ItemRef => "id" in item && typeof item.id === "string";
+
+/**
+ * Ids for a list already in `orderItems` order. A list that already holds ids (a guest's file, given its id at
+ * `upload.done` and approved at `open.click`) keeps them, so an item's id never changes, whatever later reorders the
+ * list. A list with any item lacking an id is numbered whole, so no two items share one.
+ */
+export const withIds = (items: readonly (ItemDraft | ItemRef)[]): ItemRef[] =>
+  items.every(hasId) ? [...items] : items.map((item, i) => ({ ...item, id: itemId(i) }));
 
 /** The file item with this id, or null for a link or an unknown id (PAIR-11, LINK-01). */
 export const fileById = (items: readonly ItemRef[], id: string): FileItemRef | null => {

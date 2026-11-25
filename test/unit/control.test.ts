@@ -1,7 +1,9 @@
+import { createHash } from "node:crypto";
 import { describe, expect, it } from "vitest";
 import type { Shown } from "../../src/shared/protocol.ts";
 import { fileById, itemId, pageCount, withIds } from "../../src/worker/items.ts";
 import { type Machine, transition } from "../../src/worker/machine.ts";
+import { PROD_VARS } from "../env-vars.ts";
 import {
   asItem,
   CFG,
@@ -58,6 +60,13 @@ describe("PAIR-13 item ids: server-assigned at approval, unique, never an index"
     expect(offered().session?.items.map((i) => i.id)).toEqual(["i1"]);
     const open = must(offered(), { e: "open.click", now: at, maxMinutes: MAX_MINUTES }).next;
     expect(open.session?.items.map((i) => i.id)).toEqual(["i1"]);
+  });
+
+  it("withIds keeps the ids a stored list holds, whatever its order, and numbers a list missing any id whole", () => {
+    const [deck, dog, link] = withIds([asItem(DECK), asItem(DOG), VEVOX]);
+    if (!deck || !dog || !link) throw new Error("fixture");
+    expect(withIds([link, deck, dog]).map((i) => i.id)).toEqual(["i3", "i1", "i2"]);
+    expect(withIds([link, asItem(DECK)]).map((i) => i.id)).toEqual(["i1", "i2"]);
   });
 
   it("looks a file up by id, and a link or an unknown id is no file", () => {
@@ -142,5 +151,58 @@ describe("PAIR-13 control: only the pairing's phone commands the screen, absolut
     const shown = must(list(), command(deckPage(2))).next;
     const over = must(shown, { e: "end", now: at, by: "phone" }).next;
     expect(over.session).toBeNull();
+  });
+});
+
+describe("PAIR-13 rate limits: RL_FETCH per IP, then per credential", () => {
+  const ORIGIN = "http://127.0.0.1:8787";
+  const REF = "S".repeat(22);
+  const PID = `${REF}.${"p".repeat(43)}`;
+  const PID_HASH = createHash("sha256").update(PID).digest("hex");
+  /** A Worker env whose rate limit and Screen object record the order they are called in. */
+  function env(limitCredential: boolean) {
+    const calls: string[] = [];
+    const RL_FETCH = {
+      limit: async ({ key }: { key: string }) => {
+        const kind = key === PID_HASH ? "credential" : key === REF ? "ref" : "ip";
+        calls.push(`limit:${kind}`);
+        return { success: !(limitCredential && kind === "credential") };
+      },
+    };
+    const control = async () => {
+      calls.push("control");
+      return { ok: true, value: { shown: null } };
+    };
+    const SCREEN = { idFromName: (n: string) => n, get: () => ({ control }) };
+    return { calls, env: { ...PROD_VARS, PUBLIC_ORIGIN: ORIGIN, RL_FETCH, SCREEN } };
+  }
+  type PostRoute = {
+    pattern: URLPattern;
+    handler: (r: Request, env: object, m: URLPatternResult) => Promise<Response>;
+  };
+  const post = async (e: object) => {
+    // A non-literal specifier: the route's type graph needs the Workers types, which the test tsconfig leaves out.
+    const path = "../../src/worker/routes/control.ts";
+    const route = ((await import(path)) as { controlRoutes: readonly PostRoute[] }).controlRoutes[0] as PostRoute;
+    const request = new Request(`${ORIGIN}/api/control`, {
+      method: "POST",
+      headers: { Origin: ORIGIN, "Content-Type": "application/json", Authorization: `Bearer ${PID}` },
+      body: JSON.stringify(deckPage(1)),
+    });
+    return route.handler(request, e, route.pattern.exec(request.url) as URLPatternResult);
+  };
+
+  it("PAIR-13 rate limit: a command spends the IP's budget, then its credential's (by hash, never the screen ref)", async () => {
+    const { calls, env: e } = env(false);
+    expect((await post(e)).status).toBe(200);
+    expect(calls).toEqual(["limit:ip", "limit:credential", "control"]);
+  });
+
+  it("PAIR-13 rate limit: a spent credential budget is a 429 that reaches no Screen object", async () => {
+    const { calls, env: e } = env(true);
+    const res = await post(e);
+    expect(res.status).toBe(429);
+    expect(await res.json()).toEqual(expect.objectContaining({ code: "rate_limited" }));
+    expect(calls).toEqual(["limit:ip", "limit:credential"]);
   });
 });

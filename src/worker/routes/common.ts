@@ -1,5 +1,5 @@
 // Helpers every route module shares: configuration, the write checks, the platform rate limit, one
-// call into a Screen object. Each handler: config, CSRF checks for writes (PAIR-06), rate limit, Zod, work.
+// call into a Screen object. Each handler: config, CSRF checks and Zod for writes (`write`, PAIR-06), rate limit, work.
 import type { z } from "zod";
 import { type Config, configFor } from "../config.ts";
 import type { Env } from "../env.ts";
