@@ -11,8 +11,8 @@ Status: proposed, revised after Fable's review (all required and optional change
 ## Decision
 
 ### The setting
-- One D1 row: `setting` key `launch_mode`, value `preview` or `open` (zod). A missing row, an unknown value or a failed read is `preview`: the gate fails closed (MODE-01).
-- **Read:** one function, cached per isolate for 30 s (module scope: value plus read time). `TEST_TIMING` sets the cache to 0 so tests see a switch at once. A D1 error with an expired cache answers `preview` and does not cache the error, so the next request retries.
+- One D1 row: `setting` key `launch_mode`, value `preview` or `open` (zod). A missing row or an unknown value is `preview`: the gate fails closed (MODE-01).
+- **Read:** one reader of the whole `setting` table (`src/worker/settings.ts`), one SELECT, cached per isolate for 30 s. `TEST_TIMING` sets the cache to 0 so tests see a switch at once. On a D1 error the last good snapshot is served for up to 5 minutes, then each key answers its most restrictive value (`preview` with the lockout set); the error is never cached, so the next request retries. `mode.ts` is a pure view over the snapshot.
 - **Uncached reads** where state is created: invite create, invite accept, code verify, passkey session creation (ADR 0014), and `/admin`. So after a switch back to preview no new member, invite or session slips through the cache window, and the owner always sees the truth.
 - **Who changes it:** only `POST /api/admin/launch {mode, reason}`, Admin and C+R (ADR 0014). Nothing else writes the key: no variable, no secret, no script.
 - **Consequence of the cache:** after a switch, an isolate may serve the old page variant for up to 30 s, and two isolates may disagree within that window. Every check reads the same function, so within one request the mode is consistent.
