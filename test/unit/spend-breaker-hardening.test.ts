@@ -5,6 +5,7 @@ import {
   type Alert,
   type BreakerDeps,
   type DigestMessage,
+  PRIOR_UNKNOWN,
   resetAllBreakers,
   resetBreaker,
   runBreaker,
@@ -179,6 +180,36 @@ describe("reset restores what was there before, and only what the breaker wrote"
     const writes = s.store.writes.length;
     await resetBreaker(s.deps, "demo", "owner");
     expect(s.store.writes).toHaveLength(writes);
+  });
+
+  it("a row that could not be read at latch is restored to nothing: the owner's stricter row survives a reset", async () => {
+    const s = setup();
+    s.store.unreadable.add("uploads");
+    s.g.ledger.record("r2_class_a", 11_111, undefined, T0);
+    await s.run();
+    expect(s.g.ledger.trips()).toMatchObject([{ switch: "uploads", value: "readonly", prior: PRIOR_UNKNOWN }]);
+    s.store.unreadable.clear();
+    s.store.rows.set("uploads", "off");
+    await s.run();
+    expect(s.store.rows.get("uploads")).toBe("off");
+    await resetBreaker(s.deps, "uploads", "owner");
+    expect(s.store.rows.get("uploads")).toBe("off");
+    expect(s.g.ledger.trips()).toEqual([]);
+  });
+
+  it("an unknown prior leaves even the breaker's own row alone on reset, rather than writing the default", async () => {
+    const s = setup();
+    s.store.unreadable.add("uploads");
+    s.g.ledger.record("r2_class_a", 11_111, undefined, T0);
+    await s.run();
+    s.store.unreadable.clear();
+    await s.run();
+    expect(s.store.rows.get("uploads")).toBe("readonly");
+    const writes = s.store.writes.length;
+    await resetBreaker(s.deps, "uploads", "owner");
+    expect(s.store.rows.get("uploads")).toBe("readonly");
+    expect(s.store.writes).toHaveLength(writes);
+    expect(s.g.ledger.trips()).toEqual([]);
   });
 
   it("resetAllBreakers restores every row, and a later identical trip alerts again", async () => {
