@@ -1,6 +1,6 @@
 import { deflateSync } from "node:zlib";
 import { describe, expect, it } from "vitest";
-import { scanPdf } from "../../src/worker/seams/guest-drop/pdf-scan.ts";
+import { MAX_PDF_BYTES, scanPdf } from "../../src/worker/seams/guest-drop/pdf-scan.ts";
 
 const enc = new TextEncoder();
 const pdf = (body: string) => enc.encode(`%PDF-1.5\n${body}\n%%EOF\n`);
@@ -92,5 +92,87 @@ describe("DROP-13 pdf-active: object streams", () => {
   it("refuses an object stream that inflates past the cap", async () => {
     const bomb = objStm(" ".repeat(9 * 1024 * 1024));
     expect(await scanPdf(bomb)).toMatchObject({ ok: false, found: ["unscannable"] });
+  });
+});
+
+describe("DROP-13 pdf-active: hostile input", () => {
+  const cat = (...parts: Uint8Array[]) => {
+    const out = new Uint8Array(parts.reduce((n, p) => n + p.length, 0));
+    let at = 0;
+    for (const p of parts) {
+      out.set(p, at);
+      at += p.length;
+    }
+    return out;
+  };
+  const body = deflateSync(enc.encode("<</S/JavaScript/JS(app.alert(1))>>"));
+  const stream = (dict: string, data: Uint8Array, eol = "\n") =>
+    cat(enc.encode(`1 0 obj<<${dict}>>stream${eol}`), data, enc.encode("\nendstream endobj"));
+
+  it("reads names split by NUL, which PDF treats as white space", async () => {
+    const verdict = await scanPdf(
+      enc.encode("%PDF-1.7\n1 0 obj<</S/JavaScript\x00/JS\x00(app.alert(1))>>endobj\n%%EOF"),
+    );
+    expect(verdict).toMatchObject({ ok: false, found: ["JavaScript", "JS"] });
+  });
+
+  it.each(["XFA", "AA", "GoToR", "GoToE", "SubmitForm", "ImportData", "RichMedia"])("refuses /%s", async (name) => {
+    expect(await scanPdf(pdf(`<< /${name} 1 0 R >>`))).toMatchObject({ ok: false, found: [name] });
+  });
+
+  it("refuses an object stream dictionary with a key outside the plain form", async () => {
+    const dict = "/Type/ObjStm/Filter/FlateDecode/Xobj 1";
+    expect(await scanPdf(stream(dict, body))).toMatchObject({ ok: false, found: ["unscannable"] });
+  });
+
+  it("refuses an object stream whose keyword ends in a bare CR, which a reader may still take", async () => {
+    const data = stream("/Type/ObjStm/Filter/FlateDecode", body, "\r");
+    expect(await scanPdf(data)).toMatchObject({ ok: false, found: ["unscannable"] });
+  });
+
+  it("refuses an object stream whose keyword is followed by a space", async () => {
+    const data = stream("/Type/ObjStm/Filter/FlateDecode", body, " \n");
+    expect(await scanPdf(data)).toMatchObject({ ok: false, found: ["unscannable"] });
+  });
+
+  it("refuses a Flate filter array and a double Flate", async () => {
+    const twice = stream("/Type/ObjStm/Filter[/FlateDecode/FlateDecode]", deflateSync(body));
+    expect(await scanPdf(twice)).toMatchObject({ ok: false, found: ["unscannable"] });
+    const hex = stream("/Type/ObjStm/Filter[/FlateDecode/AHx]", deflateSync(enc.encode("3c3c2f4a53283129")));
+    expect(await scanPdf(hex)).toMatchObject({ ok: false, found: ["unscannable"] });
+  });
+
+  it.each([
+    "/Filter/AHx",
+    "/Filter/A85",
+    "/Filter/LZW",
+    "/Filter/RL",
+    "/Filter/FlateDecode/DecodeParms<</Predictor 12>>",
+  ])("refuses the filter form %s", async (form) => {
+    expect(await scanPdf(stream(`/Type/ObjStm${form}`, body))).toMatchObject({ ok: false, found: ["unscannable"] });
+  });
+
+  it("refuses an object stream whose dictionary starts more than 4 KB back", async () => {
+    const padded = stream(`/Type/ObjStm/Filter/FlateDecode/Length ${" ".repeat(5000)}1`, body);
+    expect(await scanPdf(padded)).toMatchObject({ ok: false, found: ["unscannable"] });
+  });
+
+  it("scans a million stream keywords in linear time", async () => {
+    const hostile = enc.encode(`1 0 obj ${"stream\n".repeat(150_000)}`);
+    const t = performance.now();
+    expect(await scanPdf(hostile)).toEqual({ ok: true });
+    expect(performance.now() - t).toBeLessThan(200);
+  });
+
+  it("stops at the first object stream it cannot read, however many follow", async () => {
+    const hostile = enc.encode(`1 0 obj<</Type/ObjStm>>stream\n`.repeat(30_000));
+    const t = performance.now();
+    expect(await scanPdf(hostile)).toMatchObject({ ok: false, found: ["unscannable"] });
+    expect(performance.now() - t).toBeLessThan(500);
+  });
+
+  it("refuses a file over the size the caller must enforce", async () => {
+    const huge = new Uint8Array(MAX_PDF_BYTES + 1);
+    expect(await scanPdf(huge)).toMatchObject({ ok: false, error: "too_large" });
   });
 });

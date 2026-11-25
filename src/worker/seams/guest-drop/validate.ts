@@ -1,6 +1,7 @@
 // What a stored object really is (DROP-02 to DROP-04). Range reads only: the head, the zip end record and
 // central directory, or the PDF or image tail. The one inflate is the content-types part, capped at a few hundred KB.
 import type { DropError, FileType } from "../../../shared/protocol.ts";
+import { inflate, latin1, majorBrand, startsWith } from "./bytes.ts";
 import { type RangeReader, ZIP_LIMITS } from "./index.ts";
 import { checkSizes, entryBytes, hasEndRecord, readCentralDirectory, type ZipEntry } from "./zip.ts";
 
@@ -21,9 +22,7 @@ const BOX_AFTER_FTYP: ReadonlySet<string> = new Set([
   ...["free", "skip", "wide", "pnot", "uuid", "junk"],
 ]);
 const MIN_FTYP_BYTES = 16;
-const text = new TextDecoder("latin1");
 const hasMagic = (b: Uint8Array, magic: number[]) => b.length >= magic.length && magic.every((m, i) => b[i] === m);
-const startsWith = (b: Uint8Array, s: string) => s.length <= b.length && text.decode(b.subarray(0, s.length)) === s;
 
 type Verdict = { ok: true; type: FileType } | { ok: false; error: DropError };
 const refuse = (error: DropError): Verdict => ({ ok: false, error });
@@ -36,12 +35,8 @@ const readTail = (r: RangeReader): Promise<Uint8Array> =>
  * in the tail (DROP-11, VID-01).
  */
 async function carriesAnother(r: RangeReader, head: Uint8Array, tail: Uint8Array): Promise<boolean> {
-  return text.decode(head).includes("%PDF") || text.decode(tail).includes("%%EOF") || (await hasEndRecord(r));
+  return latin1.decode(head).includes("%PDF") || latin1.decode(tail).includes("%%EOF") || (await hasEndRecord(r));
 }
-
-/** The major brand of an ISO base media file (`ftyp` at offset 4), or null. */
-const majorBrand = (head: Uint8Array): string | null =>
-  head.length >= 12 && text.decode(head.subarray(4, 8)) === "ftyp" ? text.decode(head.subarray(8, 12)) : null;
 
 /** What the first bytes say the file is, or null. HEIC and every other `ftyp` brand are none. */
 function detect(head: Uint8Array): FileType | null {
@@ -54,50 +49,20 @@ function detect(head: Uint8Array): FileType | null {
   return brand !== null && MP4_BRANDS.has(brand) ? "mp4" : null;
 }
 
-async function inflateRaw(data: Uint8Array, limit: number): Promise<Uint8Array | null> {
-  const out = new Response(
-    new Blob([data as Uint8Array<ArrayBuffer>]).stream().pipeThrough(new DecompressionStream("deflate-raw")),
-  ).body?.getReader();
-  if (!out) return null;
-  const chunks: Uint8Array[] = [];
-  let size = 0;
-  try {
-    for (;;) {
-      const { done, value } = await out.read();
-      if (done) break;
-      size += value.length;
-      if (size > limit) {
-        await out.cancel();
-        return null;
-      }
-      chunks.push(value);
-    }
-  } catch {
-    return null;
-  }
-  const joined = new Uint8Array(size);
-  let at = 0;
-  for (const c of chunks) {
-    joined.set(c, at);
-    at += c.length;
-  }
-  return joined;
-}
-
 /** The text of `[Content_Types].xml`, or null when it cannot be read within its cap. */
 async function contentTypes(r: RangeReader, entry: ZipEntry): Promise<string | null> {
   const cap = ZIP_LIMITS.maxContentTypesBytes;
   if (entry.uncompressed > cap || entry.compressed > cap) return null;
   const stored = await entryBytes(r, entry);
   if (!stored) return null;
-  if (entry.method === 0) return text.decode(stored);
+  if (entry.method === 0) return latin1.decode(stored);
   if (entry.method !== 8) return null;
-  const inflated = await inflateRaw(stored, cap);
+  const inflated = await inflate(stored, cap, "deflate-raw");
   return inflated ? new TextDecoder("utf-8").decode(inflated) : null;
 }
 
 async function validateDeck(r: RangeReader, head: Uint8Array): Promise<Verdict> {
-  if (text.decode(head).includes("%PDF")) return refuse("bad_structure");
+  if (latin1.decode(head).includes("%PDF")) return refuse("bad_structure");
   const dir = await readCentralDirectory(r);
   if (!dir.ok) return refuse(dir.error);
   const sizes = checkSizes(dir.entries);
@@ -115,7 +80,7 @@ async function validateDeck(r: RangeReader, head: Uint8Array): Promise<Verdict> 
 async function validatePdf(r: RangeReader): Promise<Verdict> {
   if (await hasEndRecord(r)) return refuse("bad_structure");
   const tail = await readTail(r);
-  return text.decode(tail).includes("%%EOF") ? { ok: true, type: "pdf" } : refuse("bad_structure");
+  return latin1.decode(tail).includes("%%EOF") ? { ok: true, type: "pdf" } : refuse("bad_structure");
 }
 
 /**
@@ -129,7 +94,7 @@ async function validateImage(r: RangeReader, head: Uint8Array, type: FileType): 
   if (await carriesAnother(r, head, tail)) return refuse("bad_structure");
   if (type === "png") {
     const end = tail.subarray(-PNG_END_BYTES);
-    return end.length === PNG_END_BYTES && text.decode(end.subarray(4, 8)) === "IEND"
+    return end.length === PNG_END_BYTES && latin1.decode(end.subarray(4, 8)) === "IEND"
       ? { ok: true, type }
       : refuse("bad_structure");
   }
@@ -144,7 +109,7 @@ async function validateImage(r: RangeReader, head: Uint8Array, type: FileType): 
 async function validateVideo(r: RangeReader, head: Uint8Array, type: FileType): Promise<Verdict> {
   const size = new DataView(head.buffer, head.byteOffset, head.byteLength).getUint32(0);
   if (size < MIN_FTYP_BYTES || size + 8 > head.length) return refuse("bad_structure");
-  if (!BOX_AFTER_FTYP.has(text.decode(head.subarray(size + 4, size + 8)))) return refuse("bad_structure");
+  if (!BOX_AFTER_FTYP.has(latin1.decode(head.subarray(size + 4, size + 8)))) return refuse("bad_structure");
   return (await carriesAnother(r, head, await readTail(r))) ? refuse("bad_structure") : { ok: true, type };
 }
 

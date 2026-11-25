@@ -3,9 +3,11 @@ import {
   checkMagic,
   checkOoxml,
   checkText,
+  decodeXml,
   detectMedia,
-  externalRelationships,
+  isRelsPart,
   MAX_TEXT_BYTES,
+  relationships,
 } from "../../src/worker/seams/guest-drop/formats.ts";
 
 const enc = new TextEncoder();
@@ -20,77 +22,162 @@ const REL = "http://schemas.openxmlformats.org/officeDocument/2006/relationships
 const external = (type: string, extra = 'TargetMode="External"') =>
   `<Relationship Id="rId2" Type="${type}" Target="https://example.com/a" ${extra}/>`;
 const link = (extra?: string) => external(`${REL}/hyperlink`, extra);
-const NAMES = ["[Content_Types].xml", "ppt/presentation.xml", "_rels/.rels"];
+const BASE = ["[Content_Types].xml", "ppt/presentation.xml"];
+
+/** A package whose relationships parts hold the given texts, the first at the root. */
+const pkg = (types: string, ...parts: string[]) => {
+  const names = parts.map((_, i) => (i === 0 ? "_rels/.rels" : `ppt/slides/_rels/slide${i}.xml.rels`));
+  return checkOoxml([...BASE, ...names], types, new Map(names.map((n, i) => [n, parts[i] as string])));
+};
 
 describe("DROP-14 external: relationships", () => {
   it("passes a package whose relationships stay inside", () => {
-    expect(checkOoxml(NAMES, TYPES, [rels(internal)])).toEqual({ ok: true });
+    expect(pkg(TYPES, rels(internal))).toEqual({ ok: true });
   });
 
   it("allows an external hyperlink, in either namespace", () => {
     const strict = external("http://purl.oclc.org/ooxml/officeDocument/relationships/hyperlink");
-    expect(checkOoxml(NAMES, TYPES, [rels(internal, link()), rels(strict)])).toEqual({ ok: true });
+    expect(pkg(TYPES, rels(internal, link()), rels(strict))).toEqual({ ok: true });
   });
 
   it.each(["oleObject", "attachedTemplate", "frame", "image", "audio", "video", "package", "externalLinkPath"])(
     "refuses an external %s relationship in any rels part",
     (kind) => {
-      const verdict = checkOoxml(NAMES, TYPES, [rels(internal, link()), rels(external(`${REL}/${kind}`))]);
-      expect(verdict).toMatchObject({ ok: false, error: "bad_structure", reason: "external relationship" });
+      const verdict = pkg(TYPES, rels(internal, link()), rels(external(`${REL}/${kind}`)));
+      expect(verdict).toMatchObject({ ok: false });
     },
   );
 
   it("refuses an external relationship of an unknown or look-alike type", () => {
     for (const type of ["http://x/t", "", "http://evil.example/relationships/hyperlink", `${REL}/hyperlinks`]) {
-      expect(checkOoxml(NAMES, TYPES, [rels(external(type))])).toMatchObject({ ok: false });
+      expect(pkg(TYPES, rels(external(type)))).toMatchObject({ ok: false, reason: "external relationship" });
     }
   });
 
-  it("refuses an external relationship whose mode is written in another form", () => {
-    expect(checkOoxml(NAMES, TYPES, [rels(external(`${REL}/oleObject`, "TargetMode = 'External'"))])).toMatchObject({
-      ok: false,
-    });
-  });
-
   it.each(["TargetMode = 'External'", 'targetmode="external"', 'TargetMode="External"'])(
-    "reads the form %s",
+    "reads the mode written as %s",
     (mode) => {
-      expect(externalRelationships(rels(link(mode)))).toEqual([
-        { type: `${REL}/hyperlink`, target: "https://example.com/a" },
+      expect(relationships(rels(external(`${REL}/oleObject`, mode)))).toEqual([
+        { type: `${REL}/oleObject`, target: "https://example.com/a", external: true },
       ]);
     },
   );
 
   it("is not fooled by the word External elsewhere", () => {
     const named = '<Relationship Id="r" Type="http://x/t" Target="External.xml"/>';
-    expect(externalRelationships(rels(named))).toEqual([]);
-    expect(externalRelationships(rels(link('TargetMode="Internal"')))).toEqual([]);
+    expect(relationships(rels(named))?.map((r) => r.external)).toEqual([false]);
+    expect(relationships(rels(link('TargetMode="Internal"')))?.map((r) => r.external)).toEqual([false]);
+  });
+
+  it("reads a tag whose attribute value holds a `>`", () => {
+    const tricky = `<Relationship Id="a>" Type="${REL}/oleObject" TargetMode="External" Target="http://x"/>`;
+    expect(pkg(TYPES, rels(tricky))).toMatchObject({ ok: false });
+  });
+
+  it("reads a namespace-prefixed element", () => {
+    const prefixed = `<r:Relationship Type="${REL}/frame" TargetMode="External" Target="http://x"/>`;
+    expect(pkg(TYPES, rels(prefixed))).toMatchObject({ ok: false, reason: "external relationship" });
+  });
+
+  it("is not fooled by an attribute written inside another attribute's value", () => {
+    const shadow = `<Relationship Id=" Type='${REL}/hyperlink'" Type="${REL}/frame" TargetMode="External" Target="x"/>`;
+    expect(relationships(rels(shadow))).toEqual([{ type: `${REL}/frame`, target: "x", external: true }]);
+    expect(pkg(TYPES, rels(shadow))).toMatchObject({ ok: false, reason: "external relationship" });
+  });
+
+  it("refuses a value hidden behind an entity", () => {
+    const entity = `<Relationship Type="${REL}/frame" TargetMode="&#69;xternal" Target="http://x"/>`;
+    expect(pkg(TYPES, rels(entity))).toMatchObject({ ok: false, reason: "unreadable relationships" });
+    const typeEntity = `<Relationship Type="${REL}/h&#121;perlink" TargetMode="External" Target="http://x"/>`;
+    expect(pkg(TYPES, rels(typeEntity))).toMatchObject({ ok: false });
+  });
+
+  it("refuses XML it cannot read plainly: a DOCTYPE, an unterminated tag or comment, a repeated attribute", () => {
+    const doctype = '<!DOCTYPE r [<!ENTITY e "External">]>';
+    for (const bad of [
+      `${doctype}${rels(internal)}`,
+      `<Relationships>${internal.slice(0, -2)}`,
+      `<Relationships><!-- ${internal}</Relationships>`,
+      '<Relationships><Relationship Type="a" Type="b" Target="c"/></Relationships>',
+    ]) {
+      expect(pkg(TYPES, bad)).toMatchObject({ ok: false, reason: "unreadable relationships" });
+    }
+  });
+
+  it("is not hidden by a comment holding an apostrophe", () => {
+    const hidden = `<Relationships><!-- it's --><Relationship Type="${REL}/frame" TargetMode="External" Target="x"/><!-- don't --></Relationships>`;
+    expect(pkg(TYPES, hidden)).toMatchObject({ ok: false, reason: "external relationship" });
+  });
+
+  it("refuses a macro or control relationship that stays inside the package", () => {
+    for (const type of [
+      `${REL}/oleObject`,
+      "http://schemas.microsoft.com/office/2006/relationships/vbaProject",
+      "http://schemas.microsoft.com/office/2006/relationships/activeXControlBinary",
+      `${REL}/control`,
+    ]) {
+      const inside = `<Relationship Id="r" Type="${type}" Target="embeddings/x.bin"/>`;
+      expect(pkg(TYPES, rels(inside))).toMatchObject({ ok: false, reason: "macro relationship" });
+    }
+  });
+
+  it("refuses a package with a relationships part nobody supplied", () => {
+    const names = [...BASE, "_rels/.rels", "ppt/slides/_rels/slide1.xml.rels"];
+    const verdict = checkOoxml(names, TYPES, new Map([["_rels/.rels", rels(internal)]]));
+    expect(verdict).toMatchObject({ ok: false, reason: "unreadable relationships" });
+  });
+
+  it("names a relationships part in any folder, whatever its case", () => {
+    expect(["_rels/.rels", "ppt/_rels/presentation.xml.rels", "A/_RELS/B.RELS"].every(isRelsPart)).toBe(true);
+    expect(["ppt/rels.xml", "x_rels/y.rels", "_rels/y.rels/z"].some(isRelsPart)).toBe(false);
+  });
+
+  it("decodes UTF-8 and refuses UTF-16 and another declared encoding", () => {
+    expect(decodeXml(enc.encode(rels(internal)))).toBe(rels(internal));
+    expect(decodeXml(bytes([0xef, 0xbb, 0xbf], rels(internal)))).toContain("Relationships");
+    expect(decodeXml(Uint8Array.from([0xff, 0xfe, 0x3c, 0x00]))).toBeNull();
+    expect(decodeXml(Uint8Array.from([0xfe, 0xff, 0x00, 0x3c]))).toBeNull();
+    expect(decodeXml(enc.encode('<?xml version="1.0" encoding="UTF-16"?><a/>'))).toBeNull();
+    expect(decodeXml(enc.encode('<?xml version="1.0" encoding="utf-8"?><a/>'))).not.toBeNull();
+    expect(decodeXml(Uint8Array.from([0x3c, 0xff, 0x3e]))).toBeNull();
+  });
+
+  it("scans a large part in linear time", () => {
+    const hostile = "<Relationship ".repeat(18_000);
+    const t = performance.now();
+    expect(relationships(hostile)).toBeNull();
+    expect(performance.now() - t).toBeLessThan(200);
   });
 });
 
 describe("DROP-14 external: macro-enabled packages", () => {
   const word = (ct: string) => `<Types><Override PartName="/word/document.xml" ContentType="${ct}"/></Types>`;
+  const none = new Map<string, string>();
+  const WORD_NAMES = ["[Content_Types].xml", "word/document.xml"];
 
   it.each([
     "application/vnd.ms-word.document.macroEnabled.main+xml",
     "application/vnd.ms-excel.sheet.macroEnabled.main+xml",
     "application/vnd.ms-powerpoint.presentation.macroEnabled.main+xml",
   ])("refuses the content type %s whatever the extension", (ct) => {
-    expect(checkOoxml(["[Content_Types].xml", "word/document.xml"], word(ct), [])).toMatchObject({
-      ok: false,
-      error: "macro_content",
-    });
+    expect(checkOoxml(WORD_NAMES, word(ct), none)).toMatchObject({ ok: false, error: "macro_content" });
+  });
+
+  it("refuses a content type written with an entity", () => {
+    const hidden = word("application/vnd.ms-word.document.macro&#69;nabled.main+xml");
+    expect(checkOoxml(WORD_NAMES, hidden, none)).toMatchObject({ ok: false, reason: "content types" });
+    expect(checkOoxml(WORD_NAMES, "<Types><Override", none)).toMatchObject({ ok: false, reason: "content types" });
   });
 
   it("refuses a VBA project or ActiveX part under any folder", () => {
     for (const name of ["word/vbaProject.bin", "xl/vbaProject.bin", "ppt/activeX/activeX1.xml", "VBAPROJECT.BIN"]) {
-      expect(checkOoxml([...NAMES, name], TYPES, [])).toMatchObject({ ok: false, reason: "macro part" });
+      expect(checkOoxml([...BASE, name], TYPES, none)).toMatchObject({ ok: false, reason: "macro part" });
     }
   });
 
   it("passes the macro-free types", () => {
     const plain = word("application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml");
-    expect(checkOoxml(["[Content_Types].xml", "word/document.xml"], plain, [])).toEqual({ ok: true });
+    expect(checkOoxml(WORD_NAMES, plain, none)).toEqual({ ok: true });
   });
 });
 

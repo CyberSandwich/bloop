@@ -37,9 +37,34 @@ function pack(fields: Field[], ...tails: Uint8Array[]): Uint8Array {
   return out;
 }
 
-/** MS-DOS time and date; a year before 1980 is clamped to it. */
+// biome-ignore lint/suspicious/noControlCharactersInRegex: the point is to find control characters
+const CONTROL = /[\x00-\x1f\x7f]/;
+
+/**
+ * The name an extractor will write: separators are `/`, a drive letter and leading slashes are dropped, empty
+ * segments vanish, and a `.` or `..` segment, a control character or an empty result throws. A name already in
+ * `used` (compared without case, as Windows and macOS extract) gets ` (2)`, ` (3)` before its extension.
+ */
+export function entryName(name: string, used: ReadonlySet<string>): string {
+  const segments = name
+    .replaceAll("\\", "/")
+    .replace(/^[A-Za-z]:/, "")
+    .split("/")
+    .filter((s) => s !== "");
+  if (segments.length === 0 || segments.some((s) => s === "." || s === ".." || CONTROL.test(s))) {
+    throw new RangeError("zip64: unsafe entry name");
+  }
+  const path = segments.join("/");
+  const dot = path.lastIndexOf(".");
+  const [stem, ext] = dot > path.lastIndexOf("/") + 1 ? [path.slice(0, dot), path.slice(dot)] : [path, ""];
+  let candidate = path;
+  for (let n = 2; used.has(candidate.toLowerCase()); n++) candidate = `${stem} (${n})${ext}`;
+  return candidate;
+}
+
+/** MS-DOS time and date; a year outside 1980 to 2107 is clamped to it. */
 function dosTime(d: Date): [time: number, date: number] {
-  const year = Math.max(d.getFullYear(), 1980);
+  const year = Math.min(Math.max(d.getFullYear(), 1980), 2107);
   return [
     (d.getHours() << 11) | (d.getMinutes() << 5) | (d.getSeconds() >> 1),
     ((year - 1980) << 9) | ((d.getMonth() + 1) << 5) | d.getDate(),
@@ -170,6 +195,7 @@ export class Zip64Writer {
   readonly readable: ReadableStream<Uint8Array>;
   readonly #writer: WritableStreamDefaultWriter<Uint8Array>;
   readonly #central: Uint8Array[] = [];
+  readonly #names = new Set<string>();
   #offset = 0;
   #busy = false;
 
@@ -185,14 +211,19 @@ export class Zip64Writer {
     this.#offset += chunk.length;
   }
 
-  /** One entry at a time: await each `add` before the next. A failing body aborts the whole archive. */
+  /**
+   * One entry at a time: await each `add` before the next. The name goes through `entryName` (an unsafe one throws
+   * with nothing written); a failing body aborts the whole archive.
+   */
   async add(name: string, body: ReadableStream<Uint8Array>, modified = new Date()): Promise<void> {
     if (this.#busy) throw new Error("zip64: add while another entry is open");
+    const stored = entryName(name, this.#names);
+    const nameBytes = new TextEncoder().encode(stored);
+    if (nameBytes.length > U16_MAX) throw new RangeError("zip64: entry name too long");
     this.#busy = true;
     const reader = body.getReader();
     try {
-      const nameBytes = new TextEncoder().encode(name);
-      if (nameBytes.length > U16_MAX) throw new RangeError("zip64: entry name too long");
+      this.#names.add(stored.toLowerCase());
       const entry: EntryRecord = { name: nameBytes, crc: 0, size: 0, offset: this.#offset, modified };
       await this.#emit(localHeader(entry));
       for (;;) {
