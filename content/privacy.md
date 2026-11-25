@@ -183,9 +183,9 @@ In short: bloop is for work and study, and not for children under 13.
 
 ## Changes to This Notice {#changes}
 
-In short: changes are dated and listed here.
+In short: every change is dated here, and big ones are announced first.
 
-12.1 bloop will post any change here with a new version and date. For a material change, bloop will email people on the waitlist and, once sign-in is live, signed-in users, before it takes effect.
+12.1 Until this notice is declared final, bloop updates Version 1.0 in place and moves its effective date to the day a change takes effect. After that, bloop will post any change here with a new version and date. For a material change, at any time, bloop will say so on this page and email people on the waitlist and, once sign-in is live, signed-in users, before it takes effect.
 
 ### What Changed
 

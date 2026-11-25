@@ -111,7 +111,7 @@ In short: you can stop any time; bloop can suspend misuse.
 
 In short: dated changes, with notice for big ones.
 
-10.1 bloop may change these Terms. For a material change, bloop will post it here with a new version and date, and give 30 days' notice where it can by email to the waitlist and to signed-in users. Using bloop after a change takes effect means you accept it.
+10.1 bloop may change these Terms. Until they are declared final, bloop updates Version 1.0 in place and moves its effective date to the day a change takes effect; after that, a change gets a new version and date. For a material change, at any time, bloop will post it here and give 30 days' notice where it can by email to the waitlist and to signed-in users. Using bloop after a change takes effect means you accept it.
 
 ### What Changed
 

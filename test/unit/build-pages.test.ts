@@ -402,6 +402,17 @@ describe("the content rules", () => {
       if (d.meta.kind === "article") expect(d.meta.published, d.file).toMatch(/^\d{4}-\d{2}-\d{2}$/);
     }
   });
+
+  it("while the legal pages are 1.0 (before v1 is final), their change clauses say 1.0 is updated in place", () => {
+    const legal = docs.filter((d) => d.meta.kind === "legal");
+    expect(legal.map((d) => d.meta.version)).toEqual(["1.0", "1.0", "1.0"]);
+    // A list of one version: no What Changed line but the first, while 1.0 is updated in place.
+    for (const d of legal) expect(d.body.match(/^- Version /gm), d.file).toHaveLength(1);
+    for (const path of ["/privacy", "/terms"])
+      expect(docs.find((d) => d.path === path)?.body).toMatch(
+        /Until (this notice is|they are) declared final, bloop updates Version 1\.0 in place and moves its effective date to the day a change takes effect/,
+      );
+  });
 });
 
 describe("one public address", () => {
