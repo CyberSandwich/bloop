@@ -1555,6 +1555,15 @@ test.describe("demo viewer", () => {
     await expect(screen.page.getByRole("button", { name: "Next Slide" })).toBeHidden();
     await screen.page.getByRole("button", { name: "Previous Slide" }).click();
     await expect(screen.page.getByRole("img", { name: "Slide 1 of 2" })).toBeVisible();
+    // The arrow shows only in the outer 20% of the slide's width, which is the outer 40% of a half.
+    const nextZone = screen.page.locator("#next");
+    const half = await nextZone.boundingBox();
+    if (!half) throw new Error("the Next zone has no box");
+    const disc = nextZone.locator(".icon");
+    await screen.page.mouse.move(half.x + half.width * 0.3, half.y + half.height / 2);
+    await expect(disc).toHaveCSS("opacity", "0");
+    await screen.page.mouse.move(half.x + half.width * 0.8, half.y + half.height / 2);
+    await expect(disc).toHaveCSS("opacity", "1");
     await screen.page.keyboard.press("ArrowRight");
     await expect(screen.page.getByRole("img", { name: "Slide 2 of 2" })).toBeVisible();
     await expect(screen.page.getByRole("button", { name: "Present" })).toBeVisible();
