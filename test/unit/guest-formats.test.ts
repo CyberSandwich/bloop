@@ -219,6 +219,46 @@ describe("DROP-14 external: macro-enabled packages", () => {
     expect(bad).toEqual({ ok: false, error: "macro_content" });
   });
 
+  describe("a deck's relationships, through the validator", () => {
+    const deck = (relsXml: string, name = "ppt/_rels/presentation.xml.rels", method: 0 | 8 = 8) =>
+      validate(reader(validDeck([{ name, data: relsXml, method }])), "pptx");
+
+    it("passes internal relationships and an external hyperlink", async () => {
+      const verdict = await deck(rels(internal, link()));
+      expect(verdict).toEqual({ ok: true, type: "pptx" });
+    });
+
+    it("refuses an oleObject or vbaProject relationship, inside the package or out", async () => {
+      for (const type of [`${REL}/oleObject`, "http://schemas.microsoft.com/office/2006/relationships/vbaProject"]) {
+        const inside = `<Relationship Id="r" Type="${type}" Target="embeddings/x.bin"/>`;
+        expect(await deck(rels(inside))).toEqual({ ok: false, error: "macro_content" });
+        expect(await deck(rels(external(type)))).toEqual({ ok: false, error: "macro_content" });
+      }
+    });
+
+    it("refuses an external relationship that is not a hyperlink", async () => {
+      expect(await deck(rels(external(`${REL}/frame`)))).toEqual({ ok: false, error: "bad_structure" });
+    });
+
+    it("refuses a relationships part it cannot read as UTF-8 XML", async () => {
+      expect(await deck("<Relationships><Relationship", "ppt/_rels/presentation.xml.rels")).toEqual({
+        ok: false,
+        error: "bad_structure",
+      });
+      const utf16 = Uint8Array.from([0xff, 0xfe, ...[...rels(internal)].flatMap((c) => [c.charCodeAt(0), 0])]);
+      const entry = { name: "ppt/_rels/presentation.xml.rels", data: utf16, method: 8 as const };
+      expect(await validate(reader(validDeck([entry])), "pptx")).toEqual({ ok: false, error: "bad_structure" });
+    });
+
+    it("refuses a part name that hides a relationships part behind a backslash or a percent sign", async () => {
+      expect(await deck(rels(`<Relationship Type="${REL}/oleObject" Target="x"/>`), "ppt\\_rels\\p.xml.rels")).toEqual({
+        ok: false,
+        error: "bad_structure",
+      });
+      expect(await deck(rels(internal), "ppt/slides/a%2Fb.xml")).toEqual({ ok: false, error: "bad_structure" });
+    });
+  });
+
   it("passes the macro-free types", () => {
     const plain = word("application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml");
     expect(checkOoxml(WORD_NAMES, plain, none)).toEqual({ ok: true });
