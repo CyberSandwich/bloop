@@ -128,6 +128,7 @@
     {
       "name": "session length sheet, lazy",
       "path": [
+        "public/js/core/lazy.js",
         "public/js/core/length.js",
         "public/js/shared/length.js"
       ],
@@ -138,6 +139,21 @@
       "path": "public/css/length.css",
       "gzip": true,
       "limit": "0.8 kB"
+    },
+    {
+      "name": "phone remote, lazy",
+      "path": [
+        "public/js/core/lazy.js",
+        "public/js/core/remote-ui.js",
+        "public/js/core/remote.js"
+      ],
+      "limit": "3.6 kB"
+    },
+    {
+      "name": "phone remote CSS, lazy",
+      "path": "public/css/remote.css",
+      "gzip": true,
+      "limit": "0.9 kB"
     },
     {
       "name": "drag and drop, lazy",

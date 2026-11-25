@@ -1,0 +1,96 @@
+/* /a's remote, with core/remote-ui.js (design.md section 7, Phone page). No tap waits on the double-tap zoom. */
+.preview,
+.bubbles .btn,
+button.row {
+  touch-action: manipulation;
+}
+/* The slide's 16 : 10, never past 40% of the height. */
+.preview {
+  position: relative;
+  width: min(100%, 64dvh);
+  aspect-ratio: 16 / 10;
+  overflow: hidden;
+  border-radius: var(--r-list);
+  background: var(--surface);
+  box-shadow: var(--sh-frame);
+  cursor: pointer;
+  -webkit-user-select: none;
+  user-select: none;
+  touch-action: pan-y;
+}
+.preview picture,
+.preview picture img {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+}
+.preview .card {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  height: 100%;
+  padding: 16px;
+  text-align: center;
+}
+.preview .card .thumb {
+  width: 64px;
+  height: 64px;
+}
+.preview .card .row-text {
+  flex: none;
+  max-width: 100%;
+}
+.preview .row-name {
+  justify-content: center;
+}
+.preview .small {
+  color: var(--muted);
+}
+.preview .count {
+  position: absolute;
+  right: 8px;
+  bottom: 8px;
+  padding: 4px 10px;
+  border-radius: var(--r-pill);
+  background: var(--glass-solid);
+  box-shadow: var(--glass-edge);
+  font-size: 13px;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+.bubbles {
+  display: flex;
+  gap: 8px;
+  min-width: 0;
+  margin: 0;
+  padding: 0;
+  border: 0;
+}
+.actions .bubbles .bubble {
+  flex: none;
+  width: 52px;
+  padding: 0;
+}
+/* Held landscape: the bubbles and Revoke share one row. */
+@media (min-width: 640px) and (max-height: 599.98px) {
+  .column > .actions:has(> .bubbles) {
+    flex-direction: row;
+  }
+  .actions > .bubbles {
+    flex: 2;
+  }
+  .actions > .buttons {
+    flex: 1;
+  }
+}
+/* The row the screen shows: the sidebar's selected fill. */
+.row[aria-current] {
+  background: var(--g-select);
+}
+button.row:focus-visible {
+  outline: none;
+  border-color: var(--ink);
+}

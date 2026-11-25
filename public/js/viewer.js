@@ -116,7 +116,8 @@ const linkTo = (
     : el("span", attrs, kids);
 
 /**
- * @param {{relink: (item: number) => Promise<Minted>, onChange: () => void}} deps
+ * @param {{relink: (item: number) => Promise<Minted>, onChange: () => void, tapped?: () => void, busy?: () => boolean}} deps
+ * tapped: a tap here changed what it shows; busy: its report is on its way
  */
 export function createViewer(deps) {
   const side = byId("side");
@@ -273,15 +274,11 @@ export function createViewer(deps) {
   );
 
   const items = () => shown?.items ?? [];
-  /** An item's identity: kind, name or title, and the count of same-named items before it (the protocol has no id).
-   * @param {readonly {kind: string, name?: string, title?: string}[]} list @param {number} i */
-  const idOf = (list, i) => {
-    const it = list[i];
-    if (!it) return null;
-    const label = (/** @type {typeof it} */ x) => `${x.kind}:${x.name ?? x.title}`;
-    return `${label(it)}#${list.slice(0, i).filter((x) => label(x) === label(it)).length}`;
-  };
-  const keyOf = (/** @type {number} */ i) => idOf(items(), i) ?? "";
+  // The server's id: a re-sort never moves it.
+  const keyOf = (/** @type {number} */ i) => items()[i]?.id ?? "";
+  /** Presenting as asked here or by the phone, held until the item can present (a photo on its way). */
+  let want = false;
+  let followed = "";
   const pages = () => {
     const item = items()[at];
     return item && shown ? pagesOf(item, shown) : null;
@@ -314,14 +311,25 @@ export function createViewer(deps) {
     page = 0;
     if (side.matches(":popover-open")) side.hidePopover();
     deps.onChange();
+    deps.tapped?.();
   }
 
-  function go(/** @type {number} */ by) {
+  /** A step here, or the phone's page `to`. */
+  function go(/** @type {number} */ by, /** @type {number} */ to = -1) {
     const p = pages();
     if (!p || parked) return;
-    page = stepPage(page, by, p.length);
+    const was = page;
+    page = stepPage(to < 0 ? page : to, to < 0 ? by : 0, p.length);
     if (tall.has(keyOf(at))) frame.querySelector(`[data-page="${page}"]`)?.scrollIntoView({ block: "start" });
     else paint();
+    if (to < 0 && page !== was) deps.tapped?.();
+  }
+
+  function ask(/** @type {boolean} */ on) {
+    if (on === want && on === presenting()) return;
+    want = on;
+    present(on);
+    deps.tapped?.();
   }
 
   function buildList() {
@@ -500,7 +508,8 @@ export function createViewer(deps) {
     frame.replaceChildren();
     built = framed = null;
     at = page = 0;
-    parked = false;
+    parked = want = false;
+    followed = "";
     hide();
     // A hidden stage while presenting is a black screen: only a real end leaves it.
     present(false);
@@ -513,14 +522,15 @@ export function createViewer(deps) {
   /** @type {HTMLElement | null} */
   let opener = null;
   /** The one way in and out of presenting: the page's layout, which browser full screen then joins. */
-  function present(/** @type {boolean} */ on) {
+  function present(/** @type {boolean} */ on, told = false) {
     if (on === presenting()) return;
     if (on) opener = /** @type {HTMLElement | null} */ (document.activeElement);
     body.classList.toggle("is-presenting", on);
     show(stop, on);
-    // Focus follows the layout, never dropping to the body; on a video, so Space plays it.
-    if (on) (frame.querySelector("video") ?? stop).focus?.({ preventScroll: true });
-    else opener?.focus?.({ preventScroll: true });
+    // Focus follows the layout, never dropping to the body; on a video, so Space plays it. Not for the phone's
+    // command: focus on a page no one has touched is focus-visible, which would pin Stop Presenting over the slide.
+    if (!on) opener?.focus?.({ preventScroll: true });
+    else if (!told) (frame.querySelector("video") ?? stop).focus?.({ preventScroll: true });
     if (on) {
       band = Math.max(BAND, stop.offsetHeight + 32);
       // A Stop that lands before the browser grants it must still leave full screen.
@@ -577,10 +587,10 @@ export function createViewer(deps) {
   // Leaving full screen ends presenting; a held stage then hides.
   document.addEventListener("fullscreenchange", () => {
     if (document.fullscreenElement) return;
-    present(false);
+    if (presenting()) ask(false);
     if (parked) hide();
   });
-  stop.addEventListener("click", () => present(false));
+  stop.addEventListener("click", () => ask(false));
   let swipe = 0;
   let swiped = false;
   view.addEventListener("pointerdown", (e) => {
@@ -615,7 +625,7 @@ export function createViewer(deps) {
   prev.addEventListener("click", () => go(-1));
   next.addEventListener("click", () => go(1));
   document.addEventListener("keydown", (e) => {
-    if (e.key === "Escape") present(false);
+    if (e.key === "Escape") ask(false);
     const step = KEYS[e.key];
     const t = e.target;
     if (!shown || parked || !step || e.altKey || e.ctrlKey || e.metaKey || !pages()) return;
@@ -632,7 +642,7 @@ export function createViewer(deps) {
         shown = null;
         return;
       }
-      const id = shown ? idOf(items(), at) : null;
+      const id = keyOf(at);
       shown = nextView;
       parked = false;
       for (const [i, img] of early) images.set(keyOf(i), img);
@@ -642,12 +652,32 @@ export function createViewer(deps) {
         built = key;
         framed = null;
         // A file joining the list ahead of the selection must not change what is on screen.
-        const moved = nextView.items.findIndex((_, i) => idOf(nextView.items, i) === id);
+        const moved = nextView.items.findIndex((x) => x.id === id);
         at = moved >= 0 ? moved : Math.max(0, Math.min(at, nextView.items.length - 1));
         buildList();
       }
-      if (presenting() && !presentable()) present(false);
+      // The phone's command, or this screen's report, followed once: never while a tap here is on its way.
+      const told = nextView.shown;
+      const sig = JSON.stringify(told);
+      if (told && sig !== followed && !deps.busy?.()) {
+        followed = sig;
+        const i = nextView.items.findIndex((x) => x.id === told.item);
+        if (i >= 0) {
+          if (i !== at) page = 0;
+          at = i;
+          want = told.present;
+          go(0, told.page - 1);
+        }
+      }
+      if (presenting() && !(want && presentable())) present(false);
+      else if (want && !presenting() && presentable()) present(true, true);
       paint();
+    },
+
+    /** As `POST /api/screen/shown` takes it; null on a link. */
+    shown() {
+      const item = items()[at];
+      return item?.kind === "file" ? { item: item.id, page: page + 1, present: want } : null;
     },
 
     /** A transient state hides the stage; presenting, it stays with a status line. @param {string} line */
@@ -697,6 +727,7 @@ export function createViewer(deps) {
     presentable,
     /** The photo on stage is still on its way. */
     arriving: () => arriving,
-    present,
+    /** From a tap here: it reports. */
+    present: ask,
   };
 }

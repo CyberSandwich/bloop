@@ -286,16 +286,27 @@ describe("size budgets", () => {
     expect(Object.fromEntries(lazyEntries.map((e) => [e.name, e.path]))).toEqual({
       "phone media, lazy": ["public/js/core/photo.js", "public/js/core/video.js"],
       "screen video, lazy": "public/js/viewer-video.js",
-      "session length sheet, lazy": ["public/js/core/length.js", "public/js/shared/length.js"],
+      "session length sheet, lazy": [
+        "public/js/core/lazy.js",
+        "public/js/core/length.js",
+        "public/js/shared/length.js",
+      ],
+      "phone remote, lazy": ["public/js/core/lazy.js", "public/js/core/remote-ui.js", "public/js/core/remote.js"],
       "drag and drop, lazy": "public/js/core/drag.js",
     });
     for (const entry of lazyEntries) {
       const own = [entry.path].flat();
-      for (const name of own.map((path) => path.slice(path.lastIndexOf("/") + 1))) {
+      for (const module of own) {
+        const name = module.slice(module.lastIndexOf("/") + 1);
         // A specifier ending in /<name>, not a longer name that ends the same (video.js, viewer-video.js).
         const named = new RegExp(`["'][^"']*/${name.replace(".", "\\.")}["']`);
-        // A module of the same entry may import it statically: they load together.
-        for (const file of walk("public/js", (path) => path.endsWith(".js") && !own.includes(path))) {
+        // A module of an entry that also lists it may import it statically: they load together (core/lazy.js).
+        const together = lazyEntries
+          .flatMap((e) => [e.path].flat())
+          .filter((path) =>
+            lazyEntries.some((e) => [e.path].flat().includes(path) && [e.path].flat().includes(module)),
+          );
+        for (const file of walk("public/js", (path) => path.endsWith(".js") && !together.includes(path))) {
           for (const line of read(file)
             .split("\n")
             .filter((l) => named.test(l) && /\b(import|from)\b/.test(l))) {
@@ -317,7 +328,20 @@ describe("size budgets", () => {
     }
     // Its stylesheet comes with it, never with the page.
     expect(read("public/a.html")).not.toContain("length.css");
-    expect(read("public/js/core/length.js")).toContain('href: "/css/length.css"');
+    expect(read("public/js/core/length.js")).toContain('styled("/css/length.css")');
+  });
+
+  it("PAIR-13 remote: the phone's remote loads only by import(), and its stylesheet only with it", () => {
+    for (const file of walk("public/js", (path) => path.endsWith(".js"))) {
+      for (const line of read(file)
+        .split("\n")
+        .filter((l) => /remote(-ui)?\.js\b/.test(l) && /\b(import|from)\b/.test(l))) {
+        if (file.endsWith("core/remote-ui.js")) expect(line, file).toMatch(/from "\.\/remote\.js"/);
+        else expect(line, file).toMatch(/import\("\.\/core\/remote-ui\.js"\)/);
+      }
+    }
+    expect(read("public/a.html")).not.toContain("remote.css");
+    expect(read("public/js/core/remote-ui.js")).toContain('await styled("/css/remote.css")');
   });
 
   it("the drop hint loads only by import(); phone.js claims a file drag and takes a drop inside the event", () => {

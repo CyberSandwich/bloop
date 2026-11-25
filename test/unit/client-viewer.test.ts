@@ -238,8 +238,15 @@ interface Viewer {
   presentable(): boolean;
   item(): Item | null;
   at(): number;
+  shown(): { item: string; page: number; present: boolean } | null;
 }
-let createViewer: (deps: { relink: (i: number) => Promise<boolean>; onChange: () => void }) => Viewer;
+type Deps = {
+  relink: (i: number) => Promise<boolean>;
+  onChange: () => void;
+  tapped?: () => void;
+  busy?: () => boolean;
+};
+let createViewer: (deps: Deps) => Viewer;
 beforeAll(async () => {
   vi.stubGlobal("document", doc);
   vi.stubGlobal("location", { origin: ORIGIN });
@@ -259,7 +266,7 @@ beforeAll(async () => {
 });
 
 let relinked: () => void;
-const setup = () => {
+const setup = (more: Partial<Deps> = {}) => {
   byId.clear();
   docListeners.clear();
   for (const id of ids) byId.set(id, new Node("div"));
@@ -271,6 +278,7 @@ const setup = () => {
         relinked = () => done(false);
       }),
     onChange: () => {},
+    ...more,
   });
   return { v, el: (id: string) => byId.get(id) as Node };
 };
@@ -694,9 +702,9 @@ describe("DEMO-01 the viewer parks for a transient state", () => {
     expect(shownFrom(el("frame"))).toBe(`${ORIGIN}/f/abc/Dog.jpg`);
   });
 
-  it("two files with one name keep their own state: identity includes the count of same-named items before it", async () => {
+  it("two files with one name keep their own state: each is keyed by its server id, which a re-sort never moves", async () => {
     const { v, el } = setup();
-    const twin = { ...photo } as Item;
+    const twin = { ...photo, id: "t9" } as Item;
     v.render({ ...view, items: [photo, twin] } as ScreenView);
     v.take(`${ORIGIN}/f/one/Dog.jpg`, 0, "view");
     v.take(`${ORIGIN}/f/two/Dog.jpg`, 1, "view");
@@ -964,5 +972,122 @@ describe("the viewer pill", () => {
     resized();
     expect(el("pane").classes.has("is-stacked")).toBe(false);
     expect(el("side").style["--reserve"]).toBeUndefined();
+  });
+});
+
+describe("PAIR-13 the screen follows the phone, and reports its own taps (design.md section 7, Phone page)", () => {
+  const both = (shown: ScreenView["shown"], now = 1) =>
+    ({ ...view, items: [photo, deck], shown, now }) as unknown as ScreenView;
+  const click = (node: Node) => {
+    for (const f of node.listeners.get("click") ?? []) f({ type: "click" });
+  };
+
+  it("follows a command's item, page and present, by the item's id", () => {
+    const { v, el } = setup();
+    v.render(both(null));
+    expect(v.at()).toBe(0);
+    v.render(both({ item: "t2", page: 2, present: false }));
+    expect(v.item()?.id).toBe("t2");
+    expect(el("dots").textContent).toBe("2 / 2");
+    expect(v.shown()).toEqual({ item: "t2", page: 2, present: false });
+    v.render(both({ item: "t2", page: 2, present: true }));
+    expect(doc.body.classes.has("is-presenting")).toBe(true);
+    v.render(both({ item: "t2", page: 1, present: false }));
+    expect(doc.body.classes.has("is-presenting")).toBe(false);
+    expect(el("dots").textContent).toBe("1 / 2");
+  });
+
+  it("a guest file sorting in ahead keeps the commanded item on screen: the id, not the place", () => {
+    const { v } = setup();
+    v.render(both({ item: "t2", page: 1, present: false }));
+    const guest: Item = { kind: "file", id: "t0", name: "A board.png", type: "png", size: 90_000 };
+    v.render({ ...view, items: [guest, photo, deck], shown: { item: "t2", page: 1, present: false } } as ScreenView);
+    expect(v.item()?.id).toBe("t2");
+    expect(v.at()).toBe(2);
+  });
+
+  it("a push of the same shown never undoes a tap here: it is followed once", () => {
+    const tapped = vi.fn();
+    const { v, el } = setup({ tapped });
+    v.render(both({ item: "t2", page: 1, present: false }));
+    click(el("next"));
+    expect(el("dots").textContent).toBe("2 / 2");
+    expect(tapped).toHaveBeenCalledTimes(1);
+    expect(v.shown()).toEqual({ item: "t2", page: 2, present: false });
+    // Another push (a list change, a length) still carries the old shown: the screen stays where it was tapped.
+    v.render(both({ item: "t2", page: 1, present: false }, 2));
+    expect(el("dots").textContent).toBe("2 / 2");
+  });
+
+  it("while its own report is on its way, a push is not followed; once back, the stored shown is", () => {
+    let busy = true;
+    const { v, el } = setup({ tapped: () => {}, busy: () => busy });
+    v.render(both({ item: "t2", page: 1, present: false }));
+    expect(v.at()).toBe(0);
+    busy = false;
+    v.render(both({ item: "t2", page: 1, present: false }));
+    expect(v.at()).toBe(1);
+    click(el("next"));
+    busy = true;
+    v.render(both({ item: "t2", page: 1, present: false }, 3));
+    expect(el("dots").textContent).toBe("2 / 2");
+    busy = false;
+    v.render(both({ item: "t2", page: 2, present: false }, 4));
+    expect(el("dots").textContent).toBe("2 / 2");
+  });
+
+  it("reports a row, a step that moves, Present and Stop; a step held at the end, or a follow, reports nothing", () => {
+    const tapped = vi.fn();
+    const { v, el } = setup({ tapped });
+    v.render(both({ item: "t2", page: 2, present: false }));
+    expect(tapped).not.toHaveBeenCalled();
+    click(el("next"));
+    expect(tapped).not.toHaveBeenCalled();
+    click(el("prev"));
+    expect(tapped).toHaveBeenCalledTimes(1);
+    v.present(true);
+    expect(v.shown()?.present).toBe(true);
+    click(el("b-stop"));
+    expect(v.shown()?.present).toBe(false);
+    expect(tapped).toHaveBeenCalledTimes(3);
+    // Escape when nothing is presented changes nothing to report.
+    for (const f of docListeners.get("keydown") ?? []) f({ type: "keydown", key: "Escape", preventDefault() {} });
+    expect(tapped).toHaveBeenCalledTimes(3);
+    const row = el("items").children[0]?.children[0] as Node;
+    click(row);
+    expect(v.item()?.id).toBe("t1");
+    expect(tapped).toHaveBeenCalledTimes(4);
+  });
+
+  it("Present on a photo still on its way is held, and presents once it lands", async () => {
+    const { v } = setup();
+    v.render(both({ item: "t1", page: 1, present: true }));
+    expect(doc.body.classes.has("is-presenting")).toBe(false);
+    v.take(`${ORIGIN}/f/abc/Dog.jpg`, 0, "view");
+    await settle();
+    v.render(both({ item: "t1", page: 1, present: true }));
+    expect(doc.body.classes.has("is-presenting")).toBe(true);
+    expect(v.shown()).toEqual({ item: "t1", page: 1, present: true });
+  });
+
+  it("the phone's Present moves no focus: on an untouched page focus shows Stop Presenting for good", () => {
+    const { v, el } = setup();
+    doc.activeElement = null;
+    v.render(both({ item: "t2", page: 1, present: true }));
+    expect(doc.body.classes.has("is-presenting")).toBe(true);
+    expect(doc.activeElement).toBeNull();
+    // The screen's own Present still focuses Stop Presenting, so the keyboard is never lost.
+    v.render(both({ item: "t2", page: 1, present: false }, 2));
+    v.present(true);
+    expect(doc.activeElement).toBe(el("b-stop"));
+  });
+
+  it("an id not in the list is ignored, and a link is never reported as shown", () => {
+    const { v } = setup();
+    v.render(both({ item: "zz", page: 1, present: false }));
+    expect(v.at()).toBe(0);
+    const link: Item = { kind: "link", id: "t7", url: "https://vevox.app/", title: "Vevox" };
+    v.render({ ...view, items: [link], shown: null } as ScreenView);
+    expect(v.shown()).toBeNull();
   });
 });

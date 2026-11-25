@@ -52,6 +52,10 @@ const endsText = byId("ends-text");
 const actionsEl = byId("actions");
 const polite = byId("polite");
 const filePick = /** @type {HTMLInputElement} */ (byId("file-pick"));
+const revokeAsk = byId("revoke");
+/** @type {((on: boolean) => void) | null} */
+let remote = null;
+let remoteAsked = false;
 
 /** @type {import("./types.js").PhonePage} */
 const c = {
@@ -88,7 +92,7 @@ function fail(/** @type {ErrorCode} */ code, /** @type {(() => void) | null} */ 
   render();
 }
 
-const look = () => ({ mode: c.info?.mode ?? "live", kind: "owner" });
+const look = () => ({ mode: c.info?.mode ?? "live", kind: c.info?.kind ?? "owner" });
 
 const tickMark = () => el("span", { class: "tick" }, [icon(ICONS.check)]);
 
@@ -125,9 +129,15 @@ function buildRows(/** @type {Entry[]} */ all, /** @type {boolean} */ add) {
   );
 }
 
+/** With the remote, a file's row is a button that puts it on the screen. */
 function buildItems(/** @type {Item[]} */ items) {
   fileList.replaceChildren(
-    ...items.map((item) => el("li", {}, [el("div", { class: "row" }, rowFace(item, thumbOf(item, look())))])),
+    ...items.map((item) => {
+      const tap = remote && item.kind === "file";
+      /** @type {Record<string, string>} */
+      const attrs = tap ? { type: "button", class: "row", "data-id": item.id } : { class: "row" };
+      return el("li", {}, [el(tap ? "button" : "div", attrs, rowFace(item, thumbOf(item, look())))]);
+    }),
   );
 }
 
@@ -224,7 +234,7 @@ function render() {
 
   show(fileList, copy.files !== "none");
   const source = copy.files === "list" ? c.files : copy.files === "items" ? (v?.items ?? null) : null;
-  const rows = `${copy.files}:${copy.add}`;
+  const rows = `${copy.files}:${copy.add}:${!!remote}`;
   if (copy.files === "skeleton" && c.rows !== rows) buildSkeleton();
   else if (copy.files === "upload") {
     if (c.rows !== rows || c.source !== c.file) buildUpload();
@@ -243,6 +253,24 @@ function render() {
   show(ends, copy.ends && !!v?.endsAt);
   countDown();
   renderActions(copy.actions, copy.loading);
+  // Revoke's question goes when Revoke does (an end pushed meanwhile).
+  if (!copy.actions.some((a) => a.id === "end") && revokeAsk.matches(":popover-open")) revokeAsk.hidePopover();
+  // The remote (core/remote-ui.js, lazy): this phone commands a demo session's screen. Fetched once the claim is a
+  // demo's, so it is ready at the approval.
+  const on = demo && (key === "opening" || key === "open");
+  if (demo && !remoteAsked) {
+    remoteAsked = true;
+    import("./core/remote-ui.js").then(
+      (m) => {
+        remote = m.mount(c, setView);
+        render();
+      },
+      () => {
+        remoteAsked = false;
+      },
+    );
+  }
+  remote?.(on);
 
   setText(polite, key === "approving" ? "Approving" : "");
   // A dead end (Done or Enter the Code, no list) centers as one group; a session with Revoke alone does not.
@@ -299,7 +327,7 @@ actionsEl.addEventListener("click", (e) => {
   const id = target?.getAttribute("data-action");
   if (id === "approve") approve();
   else if (id === "cancel") cancel();
-  else if (id === "end") endSession();
+  else if (id === "end") revokeAsk.showPopover();
   else if (id === "done") void leave(c, io, "/", true);
   else if (id === "retry") retry();
   else if (id === "connect") location.assign("/auth/start");
@@ -478,6 +506,11 @@ async function cancelPairing() {
   drop(c.pid);
   render();
 }
+
+byId("revoke-end").addEventListener("click", () => {
+  revokeAsk.hidePopover();
+  endSession();
+});
 
 async function endSession() {
   const res = await api.post("/api/end", {}, c.pid);

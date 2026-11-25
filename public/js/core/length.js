@@ -1,10 +1,9 @@
-// The Session Length sheet (design.md section 7, Phone page), loaded on the first tap on "Ends in". Its markup is in
-// a.html, so this module only wires it: a length applies at once and closes the sheet; Until sets a clock time.
-// A length that fails is a toast over the running session, never a page state: the session and Revoke stay.
-/** @import {ErrorCode, PhoneView} from "../../../src/shared/protocol.ts" */
+// The Session Length sheet (design.md section 7, Phone page), loaded on the first tap on "Ends in"; markup in a.html.
+/** @import {PhoneView} from "../../../src/shared/protocol.ts" */
 /** @import {PhonePage} from "../types.js" */
 import { clampLength, minutesUntil } from "../shared/length.js";
 import { createApi } from "./api.js";
+import { refused, styled } from "./lazy.js";
 import { toast } from "./toast.js";
 
 const MINUTE = 60_000;
@@ -15,49 +14,11 @@ const ends = /** @type {HTMLElement} */ (document.getElementById("ends"));
 let max = 0;
 /** @type {(minutes: number, wanted: number) => void} */
 let set = () => {};
-/** @type {Promise<void> | undefined} */
-let styled;
 
 const pad = (/** @type {number} */ n) => String(n).padStart(2, "0");
 const clock = (/** @type {Date} */ d) => `${pad(d.getHours())}:${pad(d.getMinutes())}`;
+const failed = refused("The Session Length Didn't Change");
 
-/**
- * Its stylesheet before the sheet shows. Never a rejection: a module that failed to evaluate stays failed for the page,
- * so a failed load opens the sheet unstyled (better than none) and the next open tries again.
- */
-function style() {
-  styled ??= new Promise((resolve) => {
-    const link = Object.assign(document.createElement("link"), { rel: "stylesheet", href: "/css/length.css" });
-    link.onload = () => resolve();
-    link.onerror = () => {
-      link.remove();
-      styled = undefined;
-      resolve();
-    };
-    document.head.append(link);
-  });
-  return styled;
-}
-
-/** The ends of a session need no toast: its socket pushes them and the page shows them. */
-const SHOWN_BY_PUSH = /** @type {ErrorCode[]} */ (["session_ended", "pairing_invalid", "wrong_state", "screen_gone"]);
-
-/** A refused or failed change, as a toast; the session runs on as it was. */
-function failed(/** @type {ErrorCode} */ code) {
-  if (SHOWN_BY_PUSH.includes(code)) return;
-  toast({
-    title: "The Session Length Didn't Change",
-    body:
-      code === "rate_limited"
-        ? "Too many changes at once. Wait a minute, then try again."
-        : code === "offline"
-          ? "Check the connection, then try again."
-          : "Try again in a moment.",
-    error: true,
-  });
-}
-
-/** The sheet closes on the tap; the new end arrives in the answer, and on the screen through its socket. */
 function choose(/** @type {number} */ minutes) {
   sheet.close();
   set(clampLength(minutes, max), minutes);
@@ -79,7 +40,7 @@ new MutationObserver(() => {
 }).observe(ends, { attributeFilter: ["hidden"] });
 
 /**
- * Opens the sheet with the lengths the mode's cap allows, and Until at the current end on this phone's clock.
+ * The lengths the mode's cap allows, and Until at the current end on this phone's clock.
  * @param {PhonePage} c
  * @param {(view: PhoneView) => void} onView the phone's view as `POST /api/session/length` answers it
  */
@@ -106,7 +67,7 @@ export async function openLength(c, onView) {
     /** @type {HTMLElement} */ (chip).hidden = Number(chip.getAttribute("data-minutes")) > max;
   }
   at.value = clock(new Date(view.endsAt - c.skew));
-  await style();
+  await styled("/css/length.css");
   // The page may have moved on while the stylesheet loaded.
   if (!ends.hidden) sheet.showModal();
 }

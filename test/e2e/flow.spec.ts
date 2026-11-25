@@ -125,6 +125,12 @@ async function expectViewer(page: Page) {
   await expect(page.getByRole("button", { name: "End", exact: true })).toBeVisible();
 }
 
+/** Revoke, then End Session in the question it asks first. */
+async function revoke(page: Page) {
+  await page.getByRole("button", { name: "Revoke" }).click();
+  await page.getByRole("dialog", { name: "End This Session?" }).getByRole("button", { name: "End Session" }).click();
+}
+
 /** The page's one inset (10 under 640, 12 from it): the edge distance and the gap between floating parts. */
 const insetOf = async (page: Page) =>
   (await page.evaluate("parseFloat(getComputedStyle(document.documentElement).getPropertyValue('--inset'))")) as number;
@@ -575,7 +581,7 @@ test.describe("pairing flow", () => {
     await phone.page.getByRole("button", { name: "Approve" }).click();
     await expectViewer(screen.page);
 
-    await phone.page.getByRole("button", { name: "Revoke" }).click();
+    await revoke(phone.page);
     await expect(heading(phone.page)).toHaveText("Session Ended");
     // PAIR-12: the ended view itself drops the pid; Done has not run yet.
     expect(await phone.page.evaluate(() => localStorage.getItem("bloop.pid"))).toBeNull();
@@ -676,7 +682,7 @@ test.describe("pairing flow", () => {
     await phone.page.getByRole("button", { name: "Approve" }).click();
     await expectViewer(screen.page);
     await phone.page.route("**/api/end", (route) => route.abort());
-    await phone.page.getByRole("button", { name: "Revoke" }).click();
+    await revoke(phone.page);
     await expect(heading(phone.page)).toHaveText("You're Offline");
     await expect(phone.page.getByRole("button", { name: "Revoke" })).toBeVisible();
     // Revoke alone retries its own failure.
@@ -684,7 +690,7 @@ test.describe("pairing flow", () => {
     await expect(phone.page.getByRole("link", { name: "Back", exact: true })).toBeHidden();
     expect(await phone.page.evaluate(() => localStorage.getItem("bloop.pid"))).not.toBeNull();
     await phone.page.unroute("**/api/end");
-    await phone.page.getByRole("button", { name: "Revoke" }).click();
+    await revoke(phone.page);
     await expect(heading(screen.page)).toHaveText("Session Ended");
     await screen.context.close();
     await phone.context.close();
@@ -874,7 +880,7 @@ test.describe("guest drop", () => {
     await screen.page.getByRole("button", { name: "Download" }).click();
     expect((await saved).suggestedFilename()).toBe("sample-deck.pptx");
 
-    await phone.page.getByRole("button", { name: "Revoke" }).click();
+    await revoke(phone.page);
     await expect(heading(screen.page)).toHaveText("Session Ended");
     await screen.context.close();
     await phone.context.close();
@@ -1231,7 +1237,7 @@ test.describe("a guest's photo and video on the screen (design.md section 7, Vid
     await expectNoAxeViolations(page);
 
     // The session ends mid-play: Session Ended takes the screen, and the video and its link go with it.
-    await phone.page.getByRole("button", { name: "Revoke" }).click();
+    await revoke(phone.page);
     await expect(heading(page)).toHaveText("Session Ended");
     await expect(page.locator("video")).toHaveCount(0);
     await screen.context.close();
@@ -2156,7 +2162,7 @@ test.describe("screen and phone layout", () => {
     const page = await context.newPage();
     await page.goto(`/a?c=${code}`);
     await page.getByRole("button", { name: /^Approve/ }).click();
-    await page.getByRole("button", { name: "Revoke" }).click();
+    await revoke(page);
     await expect(heading(page)).toHaveText("Session Ended");
     const title = await heading(page).boundingBox();
     const body = await page.locator("#body").boundingBox();
@@ -2326,4 +2332,165 @@ test.describe("phone pages on a laptop and the way home", () => {
       await expect(page).toHaveURL("/");
     });
   }
+});
+
+test.describe("PAIR-13 remote: the phone commands the demo screen (design.md section 7, Phone page)", () => {
+  /** A demo session approved on a 390 phone, the screen in its viewer and the remote on the phone. */
+  async function remote(browser: Browser) {
+    const screen = await demoScreen(browser);
+    const { phone } = await scan(browser, screen.page);
+    await phone.page.getByRole("button", { name: "Approve" }).click();
+    await expectViewer(screen.page);
+    const preview = phone.page.locator(".preview");
+    await expect(preview).toBeVisible();
+    const row = (name: string) => phone.page.locator("#file-list").getByRole("button", { name: startsWith(name) });
+    const bubbles = phone.page.getByRole("group", { name: "The Screen" });
+    const dots = screen.page.locator("#dots");
+    return { screen, phone, preview, row, bubbles, dots };
+  }
+  const close = async (...opened: Opened[]) => {
+    for (const o of opened) await o.context.close();
+  };
+
+  test("a phone tap moves the screen, and the row on screen is marked; a link row is not a control", async ({
+    browser,
+  }) => {
+    const { screen, phone, row, preview } = await remote(browser);
+    // Before any command the screen shows its first file: that row is marked.
+    await expect(row("Dog.jpg")).toHaveAttribute("aria-current", "true");
+    await expect(phone.page.locator("#file-list").getByRole("button", { name: startsWith("Vevox") })).toHaveCount(0);
+    await row("Sample deck.pptx").click();
+    // The mark moves at the tap, before the answer.
+    await expect(row("Sample deck.pptx")).toHaveAttribute("aria-current", "true");
+    await expect(row("Dog.jpg")).not.toHaveAttribute("aria-current", "true");
+    await expect(heading(screen.page)).toHaveText("Sample deck.pptx");
+    await expect(screen.page.locator(STAGED)).toHaveAttribute("alt", "Slide 1 of 2");
+    await expect(preview).toHaveAttribute("aria-label", "Sample deck.pptx, Slide 1 of 2");
+    await expectNoAxeViolations(phone.page);
+    expect([...screen.csp, ...phone.csp]).toEqual([]);
+    await close(screen, phone);
+  });
+
+  test("a screen tap marks the phone's row and its preview", async ({ browser }) => {
+    const { screen, row, preview, phone, dots } = await remote(browser);
+    await sidebarItem(screen.page, "Sample deck.pdf").click();
+    await expect(row("Sample deck.pdf")).toHaveAttribute("aria-current", "true");
+    await screen.page.locator("#next").click();
+    await expect(dots).toHaveText("2 / 2");
+    await expect(preview).toHaveAttribute("aria-label", "Sample deck.pdf, Page 2 of 2");
+    await expect(preview.locator(".count")).toHaveText("2 / 2");
+    await close(screen, phone);
+  });
+
+  test("the preview's right half steps on and its left half back; a swipe steps too", async ({ browser }) => {
+    const { screen, phone, row, preview, dots } = await remote(browser);
+    await row("Sample deck.pptx").click();
+    await expect(heading(screen.page)).toHaveText("Sample deck.pptx");
+    const box = await preview.boundingBox();
+    const w = box?.width ?? 0;
+    const h = box?.height ?? 0;
+    await preview.click({ position: { x: w * 0.8, y: h / 2 } });
+    await expect(dots).toHaveText("2 / 2");
+    await preview.click({ position: { x: w * 0.2, y: h / 2 } });
+    await expect(dots).toHaveText("1 / 2");
+    // A swipe to the left is Next, and is not also a tap on the half it ends on.
+    const x0 = (box?.x ?? 0) + w * 0.3;
+    const y = (box?.y ?? 0) + h / 2;
+    await preview.dispatchEvent("pointerdown", { clientX: x0 + 80, clientY: y });
+    await preview.dispatchEvent("pointerup", { clientX: x0, clientY: y });
+    await expect(dots).toHaveText("2 / 2");
+    await preview.dispatchEvent("pointerdown", { clientX: x0, clientY: y });
+    await preview.dispatchEvent("pointerup", { clientX: x0 + 80, clientY: y });
+    await expect(dots).toHaveText("1 / 2");
+    await close(screen, phone);
+  });
+
+  test("the bubbles above Revoke step and present, in the floating glass panel", async ({ browser }) => {
+    const { screen, phone, row, bubbles, dots } = await remote(browser);
+    const panel = phone.page.locator(".column > .actions.glass");
+    await expect(panel.getByRole("group", { name: "The Screen" })).toBeInViewport({ ratio: 1 });
+    // The bubbles sit above Revoke.
+    const b = await bubbles.boundingBox();
+    const r = await panel.getByRole("button", { name: "Revoke" }).boundingBox();
+    expect(Math.round((b?.y ?? 0) + (b?.height ?? 0))).toBeLessThan(Math.round(r?.y ?? 0));
+    // A photo has no pages: both arrows are off, Present is on.
+    await expect(bubbles.getByRole("button", { name: "Previous" })).toBeDisabled();
+    await expect(bubbles.getByRole("button", { name: "Next" })).toBeDisabled();
+    await row("Sample deck.pptx").click();
+    await expect(bubbles.getByRole("button", { name: "Previous" })).toBeDisabled();
+    await bubbles.getByRole("button", { name: "Next" }).click();
+    await expect(dots).toHaveText("2 / 2");
+    await expect(bubbles.getByRole("button", { name: "Next" })).toBeDisabled();
+    await bubbles.getByRole("button", { name: "Present" }).click();
+    await expect(screen.page.locator("body")).toHaveClass(/is-presenting/);
+    await expect(bubbles.getByRole("button", { name: "Stop" })).toBeVisible();
+    // A new item while presenting keeps presenting.
+    await row("Dog.jpg").click();
+    await expect(heading(screen.page)).toHaveText("Dog.jpg");
+    await expect(screen.page.locator("body")).toHaveClass(/is-presenting/);
+    // Stop on the screen itself reaches the phone.
+    await screen.page.keyboard.press("Escape");
+    await expect(screen.page.locator("body")).not.toHaveClass(/is-presenting/);
+    await expect(bubbles.getByRole("button", { name: "Present" })).toBeVisible();
+    await close(screen, phone);
+  });
+
+  test("Revoke asks first: Cancel keeps the session, End Session ends it", async ({ browser }) => {
+    const { screen, phone } = await remote(browser);
+    const ask = phone.page.getByRole("dialog", { name: "End This Session?" });
+    await phone.page.getByRole("button", { name: "Revoke" }).click();
+    await expect(ask).toBeVisible();
+    await expect(ask).toContainText("Your files leave the screen.");
+    await expectNoAxeViolations(phone.page);
+    await ask.getByRole("button", { name: "Cancel" }).click();
+    await expect(ask).toBeHidden();
+    await expect(heading(phone.page)).toHaveText("Approved for Demo Room");
+    await expect(heading(screen.page)).toHaveText("Dog.jpg");
+    // The screen's End while the question is open: it goes with Revoke, never floating over Session Ended.
+    await phone.page.getByRole("button", { name: "Revoke" }).click();
+    await expect(ask).toBeVisible();
+    await screen.page.getByRole("button", { name: "End", exact: true }).click();
+    await expect(heading(phone.page)).toHaveText("Session Ended");
+    await expect(ask).toBeHidden();
+    await expect(phone.page.locator(".preview")).toHaveCount(0);
+    await expect(phone.page.getByRole("group", { name: "The Screen" })).toHaveCount(0);
+    await close(screen, phone);
+  });
+
+  test("PAIR-13 stale seq: the answer is the current view, which the phone adopts with no toast", async ({
+    browser,
+  }) => {
+    const { screen, phone, row } = await remote(browser);
+    await row("Sample deck.pptx").click();
+    await expect(heading(screen.page)).toHaveText("Sample deck.pptx");
+    // The next command goes out with a seq below the last applied one: the server changes nothing.
+    await phone.page.route("**/api/control", (route) =>
+      route.continue({ postData: JSON.stringify({ ...route.request().postDataJSON(), seq: 1 }) }),
+    );
+    await row("Sample deck.pdf").click();
+    await expect(row("Sample deck.pptx")).toHaveAttribute("aria-current", "true");
+    await expect(row("Sample deck.pdf")).not.toHaveAttribute("aria-current", "true");
+    await expect(heading(screen.page)).toHaveText("Sample deck.pptx");
+    await expect(phone.page.getByRole("alert")).toHaveCount(0);
+    await close(screen, phone);
+  });
+
+  test("offline or rate limited: a toast, and the mark goes back to what the screen shows", async ({ browser }) => {
+    const { screen, phone, row } = await remote(browser);
+    await phone.page.route("**/api/control", (route) =>
+      route.fulfill({ status: 429, contentType: "application/json", body: JSON.stringify({ code: "rate_limited" }) }),
+    );
+    await row("Sample deck.pptx").click();
+    await expect(phone.page.getByRole("alert")).toContainText("The Screen Didn't Change");
+    await expect(phone.page.getByRole("alert")).toContainText("Wait a minute, then try again.");
+    await expect(row("Dog.jpg")).toHaveAttribute("aria-current", "true");
+    await expect(heading(screen.page)).toHaveText("Dog.jpg");
+    await phone.page.unroute("**/api/control");
+    await phone.page.route("**/api/control", (route) => route.abort());
+    await row("Sample deck.pdf").click();
+    await expect(phone.page.getByRole("alert")).toContainText("Check the connection, then try again.");
+    await expect(row("Dog.jpg")).toHaveAttribute("aria-current", "true");
+    await expect(heading(phone.page)).toHaveText("Approved for Demo Room");
+    await close(screen, phone);
+  });
 });
