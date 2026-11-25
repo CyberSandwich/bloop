@@ -74,7 +74,7 @@
           "id": "terminate-workflows",
           "op": "terminateWorkflows",
           "params": {},
-          "permission": "Workers Scripts Edit (Workflows API: unverified)",
+          "permission": "Workers Scripts Edit",
           "held": true,
           "undo": {
             "manual": "Terminated Workflow instances cannot be resumed; the original files are untouched and users re-run."
