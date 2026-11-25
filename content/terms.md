@@ -81,7 +81,7 @@ In short: your files stay yours.
 
 In short: offered as it is, with no promise of uptime.
 
-7.1 bloop is offered "as is" during early access, with no promise that it will always be available or free of errors. Keep another way to present, such as signing in to the PC as usual.
+7.1 bloop is offered "as is" during early access, with no promise that it will always be available or free of errors. Keep another way to present, such as a copy on a laptop or USB drive.
 
 7.2 bloop may change, pause or end the service. bloop will try to give 30 days' notice before ending it.
 
