@@ -1,0 +1,90 @@
+name: lockdown
+
+# The incident ladder from the GitHub phone app: Actions, lockdown, Run workflow (docs/lockdown.md).
+# Dry run unless apply is ticked. One rung table (tools/lockdown-rungs.json) feeds this and tools/lockdown.mjs.
+on:
+  workflow_dispatch:
+    inputs:
+      level:
+        description: Rung of the ladder, L1 (one switch) to L5 (full stop)
+        type: choice
+        required: true
+        options:
+          - L1
+          - L2
+          - L3
+          - L4
+          - L5
+      meter:
+        description: L1 only, the switch to turn off; none for L2 to L5
+        type: choice
+        default: none
+        options:
+          - none
+          - convert
+          - convert_video
+          - uploads
+          - demo_drop
+          - guest_files
+          - guest_drop
+          - previews
+          - export
+          - demo
+          - email
+          - signin_code
+          - invites
+          - file_origin
+      undo:
+        description: Undo the rung instead (also enables the deploy workflow again)
+        type: boolean
+        default: false
+      apply:
+        description: Make the changes; unticked, only print the plan
+        type: boolean
+        default: false
+
+# actions: write lets the job disable or enable the deploy workflow with its own token (freeze deploys).
+permissions:
+  contents: read
+  actions: write
+
+concurrency:
+  group: lockdown
+  cancel-in-progress: false
+
+jobs:
+  lockdown:
+    # The production secrets run only code that is on main.
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    environment: production
+    env:
+      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+      CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+      GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      LEVEL: ${{ inputs.level }}
+      METER: ${{ inputs.meter }}
+      UNDO: ${{ inputs.undo }}
+      APPLY: ${{ inputs.apply }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+      - run: npm ci
+      - name: Plan or apply
+        run: |
+          args=(--level "$LEVEL")
+          if [ "$METER" != "none" ]; then args+=(--meter "$METER"); fi
+          if [ "$UNDO" = "true" ]; then args+=(--undo); fi
+          if [ "$APPLY" = "true" ]; then args+=(--apply); fi
+          out="$RUNNER_TEMP/lockdown.txt"
+          status=0
+          node tools/lockdown.mjs "${args[@]}" > "$out" 2>&1 || status=$?
+          { echo '### lockdown'; echo '```text'; cat "$out"; echo '```'; } >> "$GITHUB_STEP_SUMMARY"
+          cat "$out"
+          exit "$status"
