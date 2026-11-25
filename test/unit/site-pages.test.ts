@@ -663,7 +663,8 @@ describe("site chrome: one nav and one footer on every site page", () => {
   it("security.txt and SECURITY.md name the /security channels and point to its policy (RFC 9116)", () => {
     const txt = read("public/.well-known/security.txt");
     expect(txt).toMatch(/^Contact: mailto:security@bloop\.here$/m);
-    expect(txt).toMatch(/^Contact: https:\/\/github\.com\/\S+\/bloop\/security\/advisories\/new$/m);
+    expect(txt.match(/^Contact: /gm)).toHaveLength(1);
+    expect(txt).not.toContain("github.com");
     expect(txt).toMatch(/^Policy: https:\/\/bloop\.here\/security#report$/m);
     expect(txt).toMatch(/^Canonical: https:\/\/bloop\.here\/\.well-known\/security\.txt$/m);
     expect(read("SECURITY.md")).toContain("https://bloop.here/security#report");
