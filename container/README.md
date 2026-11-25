@@ -150,7 +150,7 @@ The corpus (`container/test/`: `corpus.mjs` lists the cases, `cases.mjs` and `ma
 - Pruning, last step of `publish`, runs even if the bump failed: `container/prune-images.mjs` reads `container/digest.txt` from `origin/main` (never the working tree), takes the tag each pinning commit's message names (the registry lists tags, not digests; a message that names a digest the file does not hold stops the run), and keeps the live image, the one before it and the one just pushed. It deletes the other `sha-` tags of exactly `bloop-converter` with `wrangler containers images delete`, deletes nothing and fails if the live image is not in the registry, and fails if more than 4 images remain (the account cap is 50 GB). Merge the bump PR promptly: an unmerged push is pruned by the next publish.
 - The registry push, the bump and the prune have never run against the live registry before the first `main` run; their wrangler calls are checked against a fake in `container/test/prune.test.mjs` only.
 
-Dependabot (`.github/dependabot.yml`) raises weekly PRs for the Dockerfile's base image digests and the Go toolchain image, and for `go.mod`. It replaces by-hand digest bumps: both bases carry the parsers that read uploads, and a digest pin never moves on its own. To remove it, delete the `docker` and `gomod` entries and refresh the pins in `container/Dockerfile` and `go.mod` by hand on the monthly run.
+Dependabot raises weekly PRs for the base image digests and `go.mod`; why, what it replaces and how to remove it: ADR 0001.
 
 The deployed reference is `registry.cloudflare.com/<account>/bloop-converter@sha256:<digest>`; the digest comes from `container/digest.txt`.
 
