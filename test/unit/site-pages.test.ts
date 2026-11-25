@@ -237,6 +237,20 @@ describe("every page's text", () => {
     }
   });
 
+  it.each(["s.html", "a.html", "code.html"])("%s preloads the font subset before its CSS", (page) => {
+    const html = read(`public/${page}`);
+    const preload = html.indexOf(
+      '<link rel="preload" href="/fonts/inter-latin.woff2" as="font" type="font/woff2" crossorigin>',
+    );
+    expect(preload).toBeGreaterThan(-1);
+    expect(preload).toBeLessThan(html.indexOf('href="/css/base.css"'));
+  });
+
+  it("the font stack falls back past Inter for characters outside its range", () => {
+    const css = read("public/css/base.css");
+    expect(css).toContain('--font: "Inter", "Inter Fallback", Arial, sans-serif');
+  });
+
   it("the CSS @font-face range is the subset script's range", () => {
     const css = read("public/css/base.css");
     const py = read("tools/subset-font.py");
