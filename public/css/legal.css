@@ -356,7 +356,7 @@ a.num::after {
   }
 }
 
-/* "Link Copied": a glass pill at the foot of the view, below it while empty so the live region stays read. */
+/* Hidden while empty, never display:none, so the live region stays read. */
 .copied {
   position: fixed;
   bottom: 24px;
@@ -369,9 +369,12 @@ a.num::after {
   font-size: 15px;
   font-weight: 600;
   translate: -50% 0;
-  transition: translate 240ms var(--ease-out);
+  transition:
+    translate 240ms var(--ease-out),
+    visibility 240ms allow-discrete;
 }
 .copied:empty {
+  visibility: hidden;
   translate: -50% calc(100% + 48px);
 }
 

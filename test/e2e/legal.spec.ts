@@ -85,6 +85,7 @@ test.describe("legal layout at 1440", () => {
   }) => {
     await context.grantPermissions(["clipboard-read", "clipboard-write"]);
     await page.goto("/terms");
+    await expect(page.locator("#copied")).toBeHidden();
     const num = page.locator('a.num[href="#8.3"]');
     const glyph = num.locator("svg.icon");
     await expect(glyph).toBeHidden();
@@ -95,6 +96,7 @@ test.describe("legal layout at 1440", () => {
     expect(await page.evaluate("navigator.clipboard.readText()")).toMatch(/\/terms#8\.3$/);
     await expect(page).toHaveURL(/#8\.3$/);
     await expect(page.locator("#copied")).toHaveText("", { timeout: 4000 });
+    await expect(page.locator("#copied")).toBeHidden();
   });
 
   test("print shows the text alone: no nav, footer, contents or panel", async ({ page }) => {
