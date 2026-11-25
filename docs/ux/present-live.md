@@ -1,0 +1,248 @@
+# Picking files for a talk, then Present Live
+
+The core flow (README.md, "The core flow"): pack Up Next in the library, scan the room screen, tap the screen's number. This file covers the phone from the Present button to the slide on the wall, and the signed-out branch. The library list itself is library.md; the screen's side is viewers.md.
+
+## 1. Packing: Up Next in the library
+
+Up Next is a flag on library files, at most 12 (`PATCH /api/library/:id {selected}`). It is the order the screen lists them in: the order they were ticked, oldest first, so the first tick is the file that opens first.
+
+```
+390                                       1440 (library.md has the full page)
+.--------------------------------------.  right column of /library:
+| Up Next                     ( Clear ) |  .--------------------------------.
+| +--+ Lecture 5.pptx              [x] |  | Up Next                ( Clear )|
+| |PP| PowerPoint · 18 MB              |  | 1 +--+ Lecture 5.pptx       [x] |
+| +--+                                 |  | 2 +--+ Reading list.pdf     [x] |
+| +--+ Reading list.pdf            [x] |  |                                 |
+| |PD| PDF · 2 MB                      |  | Opens First: Lecture 5.pptx     |
+| +--+                                 |  | [[ Present ]]                   |
+'--------------------------------------'  '--------------------------------'
+```
+
+- On a phone, Up Next is the top group of the library list (library.md, section 2): a group label "Up Next" (14/600 `--muted`, the design.md group label) and the ticked rows in order, then "All Files", which lists every file, ticked ones too. A tick in All Files leaves its row where it is (a row never jumps from under the thumb while several are ticked in a row) and adds a copy to the end of Up Next, instantly, as row selection is.
+- On a desktop it is its own glass card beside the list, numbered, since order matters there and there is room to show it; rows drag to reorder (pointer only; keyboard: the row's More menu has Move Up and Move Down).
+- "Clear" (text button) unticks every Up Next file, with the undo toast: "Up Next Cleared" / "Undo".
+- The 13th tick: the tick does not turn on; toast "Up Next Is Full" / "A talk takes up to 12 files. Untick one first."
+- A file still preparing can be ticked (it opens in PowerPoint either way); a refused file cannot (its tick is absent, library.md).
+
+## 2. The Present button and the Present sheet
+
+The library's bottom action panel holds Add Files and Present (library.md). Present reads "Present" always, with no count: a number in parentheses on a primary is the match digits' pattern ("Approve (42)"), and the Up Next group already shows what will go.
+
+Tap Present (the sheet's module is fetched on pointerdown) and the Present sheet opens: the Session Expiry sheet's pattern (design.md section 7, Phone page: a modal `<dialog>` holding glass bubbles, `--pad` in from the sides and `--inset` above the bottom under 640, centered max 432 from 640).
+
+```
+390, Up Next has 2 files                  1440 (centered, max 432)
+                                          .------------------------------------.
+.--------------------------------------.  | Present on a Screen            (x) |
+| Present on a Screen              (x) |  |                                    |
+|                                      |  |  (monitor)  Open bloop.here/s on   |
+|  (monitor)  Open bloop.here/s on the |  |  the room PC, then scan its code   |
+|  room PC, then scan its code with    |  |  with your camera.                 |
+|  your camera.                        |  |                                    |
+|                                      |  |  Opens first: Lecture 5.pptx       |
+|  Opens first: Lecture 5.pptx         |  |  [ Type the Code ]  [[ Done ]]     |
+|                                      |  '------------------------------------'
+'--------------------------------------'
+.--------------------------------------.
+| [[             Done              ]]  |
+| [          Type the Code         ]   |
+'--------------------------------------'
+```
+
+- Title "Present on a Screen" (22/600, the card title), with Close (`x`, the sheet's quiet icon button).
+- Line, `--ink-2`, with a leading 24 px Lucide `monitor`: "Open bloop.here/s on the room PC, then scan its code with your camera." The address is the host from config, never typed into the string.
+- "Opens first: Lecture 5.pptx" (15 `--muted`; the name in `--ink` 600, middle ellipsis). With Up Next empty instead: "Choose your files after you scan." Over 30 MB first file: "Opens first: Lecture 5.pptx. The screen asks how to open it, since it's 88 MB." (viewers.md, choice sheet).
+- Bubble 2: Done (primary, closes) and Type the Code (secondary, goes to `/code` in this tab, for a screen whose QR the camera will not read: glare, a projector across the room). Stacked under 640 with Done on top (Apple's order, design.md Buttons); side by side from 640, Done last.
+- Why a sheet and not a page: it is an instruction, the library stays under it, and Done returns to the list in the same scroll position.
+- Focus: the title on open (as the Session Expiry sheet), then Close, Type the Code, Done in reading order; Escape and the backdrop close it.
+- Fallback when the sheet's module fails to load: Present becomes a plain link to `/code`, whose page says the same thing.
+
+**Present Live on the landing** (open mode, landing.md) is the room PC's way in: it opens `/s` in live mode, the QR at once. Nothing on the phone changes.
+
+## 3. The scan: `/a` signed in, the match pick
+
+The camera opens `/a?c=K7MQ9X`. The page calls `GET /api/me` and the claim in parallel; the claim answers `auth_required` before it spends the code when there is no cookie (section 5).
+
+**States in order:** checking, then match, then (after the tap) approving, then approved. Each is a state of `/a`'s one column, title focused on change.
+
+### 3.1 Checking (up to the claim's answer)
+
+As today's checking state (design.md section 7, Phone page): a skeleton title bar, "Checking the code.", no buttons. Under a slow network the skeleton stays; after 4 s the line adds "Still checking. Keep this page open." (states.md, slow).
+
+### 3.2 Match, with Up Next packed
+
+```
+390 x 844 (one hand: everything tappable is in the bottom third)
+
+  <Back                                          (Back = Start Over: lets go of the claim)
+
+  Room 2.14                                       title, 34/600, the room ([V-7] fallback "This Screen")
+  Registered screen                               14 --muted, only for a registered room
+
+  Up Next                                         group label, 14/600 --muted
+  +------------------------------------+
+  | +--+ Lecture 5.pptx                |          item rows, read only (a record, not controls)
+  | |PP| PowerPoint · 18 MB            |
+  | +--+ Reading list.pdf              |
+  | |PD| PDF · 2 MB                    |
+  +------------------------------------+
+  ( Change Files )                                text button, opens the chooser (3.4)
+
+  Only these files go to the screen. The screen    scope line, 15 --muted
+  never gets your account.
+
+.--------------------------------------.
+| Tap the Screen's Number              |          legend, 15/600 --ink, visible
+| [   42   ] [   17   ] [   86   ]     |          three choices, --match-h (64), digits 28/600 tabular
+'--------------------------------------'
+```
+
+```
+844 x 390 (phone on its side: two columns, as /a's desktop layout; the panel is one row)
+
+  <Back
+  Room 2.14                    | Up Next
+  Registered screen            | +--+ Lecture 5.pptx
+                               | +--+ Reading list.pdf
+  Only these files go to the   | ( Change Files )
+  screen. The screen never     |
+  gets your account.           |
+ .-----------------------------------------------------------------.
+ | Tap the Screen's Number   [  42  ] [  17  ] [  86  ]            |
+ '-----------------------------------------------------------------'
+```
+
+```
+1440 (a laptop scanning with its webcam is rare; this is a phone on a desk-sized window or /code typed on a laptop)
+
+         <Back
+                      Room 2.14                    +-----------------------------+
+                      Registered screen            | Up Next                     |
+                                                   | +--+ Lecture 5.pptx         |
+                      Only these files go to the   | +--+ Reading list.pdf       |
+                      screen. The screen never     | ( Change Files )            |
+                      gets your account.           +-----------------------------+
+
+                      Tap the Screen's Number
+                      [  42  ] [  17  ] [  86  ]   (in the left column, 24 under the scope,
+                                                    as /a's buttons sit from 900)
+```
+
+- **Choices.** Three, in a random order each claim, one of them the screen's number. Decoys differ from the real number in both digits and are never a digit swap of it (a glance tells 42 from 24 less well than from 86); P1 generates them server side. Each choice is a `<button>` named "42" in a `fieldset` whose legend is "Tap the Screen's Number"; no choice looks selected before the tap.
+- **Why 64 tall:** read at arm's length, hit with a thumb while the eye is on the wall; `--match-h` (README.md additions).
+- **Room for the numbers.** The screen shows its number in the QR card at 0.4 of the card (design.md section 7, Claimed), so the eye moves from wall to thumb with nothing to read in between.
+- **Up Next rows** are the item row (design.md section 6) without ticks, at most 4 shown; more fold into "+3 More Files" (a text button that expands the list in place).
+- **Focus order:** Back, the title (focused on entry), Change Files, the three choices left to right. Enter does nothing unless a choice is focused.
+- **Motion:** the state enters with the house scene change only where `/a` already uses it (none: `/a` swaps instantly and moves focus). The choices appear with the panel, no stagger.
+- **Lazy:** the match pick's module is fetched when the claim answers `claimed` for a signed-in phone; until it arrives (a few ms on a warm cache) the panel holds three skeleton pills of the same size, so nothing moves. If it fails to load: the panel shows "Match Didn't Load" with Reload (as "Remote Didn't Load"), and the claim is released after 2 minutes by the server as today.
+
+### 3.3 The tap
+
+- **Right number:** the tapped choice turns ink (primary fill, paper digits) at once, the other two go to disabled (.38), and the legend becomes "Approving..." with the spinner (design.md section 6 loading). The phone sends `/api/match`, then `/api/approve` with the Up Next ids in Up Next order. On success: the approved state (3.5). Perceived speed: the tap's feedback is instant; the screen's own change (its QR card's number turning into "Opening Lecture 5.pptx") is the real confirmation, usually before the phone's answer.
+- **Wrong number:** the claim is canceled server side and the screen shows a new code (PAIR-14). The phone shows a dead end, laid out as expired (design.md, centered): title "That Wasn't the Screen's Number", line "The screen has a new code now. Scan it again.", button Enter the Code (primary, the one exit). No retry on the same code: a second guess would turn three choices into a coin toss.
+- **Match confirmed, approve refused** (a file trashed meanwhile, a file disabled, a rate limit): the phone goes to the chooser (3.4) with a toast "A File Couldn't Be Added" / "Lecture 5.pptx is no longer in your library." (or the rate limit's "Too Many Changes Right Now" / "Wait a minute, then try again."). Never a dead end: the match stands, so choosing again needs no new scan.
+- **Offline at the tap:** the choice returns to rest, toast "You're Offline" / "Check your connection, then tap the number again." The code may still be alive; if it expired meanwhile, the next tap answers expired.
+
+### 3.4 Match with nothing packed, and Change Files
+
+Nothing in Up Next: the match pick comes first, alone under the title and the line "Tap the screen's number, then choose your files." After the right number, the chooser opens: today's choose state (design.md section 7) with checkboxes (a live library approves up to 12, so the rows are checkboxes, not radios), Up Next files on top and ticked, then the newest ready files (`GET /api/files`, at most 50), and Cancel then Approve. Approve carries no digits here: the match is already done. Two taps from the match.
+
+Change Files (before the tap) opens the same chooser over the match state, as a full page state with Back to the match: changes edit Up Next itself (one model, library.md), and Done returns to the match pick with the new rows. Its list comes from the user's own library (`GET /api/library`, cookie), so it needs no confirmed match.
+
+### 3.5 Approved (live, library items)
+
+```
+390                                          1440 (two columns, as /a's desktop)
+
+  Approved for Room 2.14                       Approved for Room 2.14        +--------------------+
+  Ends in 59:12 >                              Ends in 59:12 >               | +--+ Lecture 5.pptx|
+                                                                             |      On the Screen |
+  +------------------------------------+       Notes                        | +--+ Reading list  |
+  | +--+ Lecture 5.pptx    On the Screen|       +------------------------+  +--------------------+
+  | +--+ Reading list.pdf               |       | Slide 3                |
+  +------------------------------------+       | Ask who has read ch. 2 |
+                                               +------------------------+
+  Notes                                         [! Revoke !]
+  +------------------------------------+
+  | Slide 3                            |
+  | Ask who has read chapter 2 before  |
+  | the break.                         |
+  +------------------------------------+
+.--------------------------------------.
+| [!            Revoke            !]   |
+'--------------------------------------'
+```
+
+- Title "Approved for Room 2.14", "Ends in 59:12" with its chevron (opens Session Expiry, as today), the approved items read only. The item on the screen carries "On the Screen" in its line 2 (13 `--muted`), since a live screen can now hold several.
+- **Notes** (lazy, fetched when an approved item has notes; `GET /api/notes?item=`, pid only): a white card, `--r-content`, padding 20, 17/1.5 `--ink`. The group label "Notes" above it.
+  - When bloop's viewer shows the deck, the card follows the screen's page: "Slide 3" (14/600 `--muted`), then that slide's notes; it changes with the screen's `shown`, instantly.
+  - When PowerPoint presents it, bloop cannot see the page: the card lists every slide's notes in order, each under its "Slide n" label, scrollable inside the page (README.md decision 7).
+  - A slide with no notes: "No notes on this slide." (`--muted`). A deck with none: no card.
+  - Long notes scroll with the page; the action panel stays put.
+- Revoke (rose) asks "End This Session?" as today.
+- Focus after approval: the title.
+
+## 4. Present Live started from the landing on the room PC
+
+The landing's Present Live is a link to `/s` (live). The PC shows the waiting screen with its QR (design.md section 7). Nothing about it is new except that open mode makes it a front-door button; the phone's side is section 3.
+
+## 5. Signed out: the early-access state, and resume
+
+Open mode only. The claim answers `auth_required` before spending the code, so the code is still alive.
+
+```
+390                                            1440 (centered column, buttons under the content)
+
+  <Back
+                                                       Early Access Only
+  Early Access Only                                    Presenting your own files needs an
+  Presenting your own files needs an                   invite. You can still send one file
+  invite. You can still send one file to               to this screen.
+  this screen.
+                                                       [ Send a File Without an Account ]
+  ( Try the Demo )   ( Join the Waitlist )             [[ Sign In ]]
+                                                       ( Try the Demo )  ( Join the Waitlist )
+.--------------------------------------.
+| [[             Sign In            ]] |
+| [ Send a File Without an Account ]   |
+'--------------------------------------'
+```
+
+- Title "Early Access Only"; line "Presenting your own files needs an invite. You can still send one file to this screen."
+- Actions: Sign In (primary), Send a File Without an Account (secondary; the guest path, today's guest add state, with the same code), then two text buttons in one row: Try the Demo (`/demo`) and Join the Waitlist (the Tally link, `source=phone`, `data-waitlist`).
+- The secondary's label is the longest on any phone page (about 250 px at 16/600); the panel's buttons are full width under 640, so at 320 it fits the 272 px button on one line. The 320 shot checks it; if a system font size pushes it over, it wraps inside the pill, which grows (never truncates).
+- Focus: the title, then Try the Demo, Join the Waitlist, Sign In, Send a File Without an Account (reading order; the panel follows the content).
+- Lazy: the state's module loads on `auth_required`; its fallback is a plain link to `/signin?next=/a`.
+- Preview mode: there is no early-access state; a signed-out live claim works as today (guest send, or the existing first use).
+
+### 5.1 Sign In, then resume
+
+Sign In stores the code and the time in `sessionStorage` and goes to `/signin?next=/a` (an allowlist of next paths). signin.md runs; on success it returns to `/a`, which re-claims with the stored code.
+
+- **Code still alive** (a passkey sign-in takes seconds): the match pick, as section 3. The lecturer never sees the camera again.
+- **Code expired** (the email code usually takes longer than the code's life): title "Scan the Screen Again"; line "The code changed while you signed in. You're signed in now, so one scan is all it takes."; button Enter the Code (primary). No Back: one exit.
+- **Taken meanwhile** (someone else scanned): as today's taken state.
+- The stored code is dropped on every outcome, and after 5 minutes unused, so a later visit to `/a` never replays it.
+- Why tell the truth about the time: a code lives about a minute (design.md section 10), and an email round trip is longer; saying "one scan is all it takes" turns the miss into a promise the next scan keeps.
+
+## 6. Strings (this file)
+
+| Slot | String |
+|---|---|
+| library group | Up Next; All Files |
+| clear | Clear; toast Up Next Cleared / Undo |
+| full | toast Up Next Is Full / A talk takes up to 12 files. Untick one first. |
+| Present button | Present |
+| Present sheet | Present on a Screen / Open bloop.here/s on the room PC, then scan its code with your camera. / Opens first: {name} / Choose your files after you scan. / buttons Done, Type the Code |
+| match legend | Tap the Screen's Number; while sending: Approving... |
+| match, nothing packed | line: Tap the screen's number, then choose your files. |
+| more rows | +3 More Files |
+| change | Change Files |
+| scope | Only these files go to the screen. The screen never gets your account. `[V-4]` |
+| wrong number | That Wasn't the Screen's Number / The screen has a new code now. Scan it again. / Enter the Code |
+| approve refused | toast A File Couldn't Be Added / {name} is no longer in your library. |
+| match module failed | Match Didn't Load / Reload |
+| approved | Approved for Room 2.14; On the Screen; Notes; Slide 3; No notes on this slide. |
+| early access | Early Access Only / Presenting your own files needs an invite. You can still send one file to this screen. / Sign In, Send a File Without an Account, Try the Demo, Join the Waitlist |
+| resume, expired | Scan the Screen Again / The code changed while you signed in. You're signed in now, so one scan is all it takes. / Enter the Code |
