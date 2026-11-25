@@ -6,7 +6,7 @@ import { endLine, FRESH_LINE, screenCopy } from "./core/copy-screen.js";
 import { nextSeq } from "./core/demo.js";
 import { clock, itemName, qrLabel } from "./core/format.js";
 import { qrMatrix, qrPath, qrSize } from "./core/qr.js";
-import { firstFile, guestOnStage, screenKey } from "./core/states.js";
+import { firstFile, guestOnStage, hasPdf, screenKey } from "./core/states.js";
 import { PID_KEY, pidStore, refOf, SID_KEY, sameScreen, sessionStore } from "./core/store.js";
 import {
   CODE_GRACE_MS,
@@ -306,13 +306,15 @@ function paint() {
   const mintable = !launcher.spent(target());
   const viewing = key === "demo_open";
   // The viewer's Download is the item's; `approved` refuses a download mint until the first fetch opens the session.
-  const download = viewing
-    ? item?.kind === "file" && v?.state !== "approved"
-    : has("download") && (key !== "opening" || launcher.downloadReady());
+  const download = viewing ? item?.kind === "file" && v?.state !== "approved" : has("download");
   show(buttons.download, mintable && download);
   show(dlNote, !DEMO && mintable && download);
-  setText(buttons.download, viewing || key === "open_fallback" ? "Download" : "Download It Instead");
-  show(buttons.pdf, mintable && has("pdf"));
+  // Until PowerPoint has failed, Download is the way out beside the launch: secondary to Open.
+  const instead = !viewing && key !== "open_fallback";
+  setText(buttons.download, instead ? "Download It Instead" : "Download");
+  buttons.download.classList.toggle("secondary", instead);
+  buttons.download.classList.toggle("primary", !instead);
+  show(buttons.pdf, mintable && has("pdf") && hasPdf(v));
   // A photo on its way holds Present's place, disabled, so the pill keeps one shape.
   const presentable = viewer.presentable();
   show(buttons.present, viewing && (presentable || viewer.arriving()));

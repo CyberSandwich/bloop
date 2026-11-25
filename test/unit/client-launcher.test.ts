@@ -1,11 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { createStore } from "../../public/js/core/store.js";
-import {
-  DOWNLOAD_REUSE_MS,
-  DOWNLOAD_STARTS_PER_LINK,
-  LAUNCH_TIMEOUT_MS,
-  RELINK_WAIT_MS,
-} from "../../public/js/core/timing.js";
+import { DOWNLOAD_REUSE_MS, DOWNLOAD_STARTS_PER_LINK, RELINK_WAIT_MS } from "../../public/js/core/timing.js";
 import { createLauncher } from "../../public/js/launcher.js";
 import { createResidue } from "../../public/js/residue.js";
 import type { LinkSet, ScreenView } from "../../src/shared/protocol.ts";
@@ -112,27 +107,14 @@ describe("launch: the protocol link", () => {
   });
 });
 
-describe("the Download fallback timing", () => {
-  it("is not ready at launch, and becomes ready after the launch timeout with no fetch", () => {
+describe("the Download fallback", () => {
+  it("the opening state keeps no timer: Download needs no wait, so nothing fires a change later", () => {
     const { launcher, calls } = harness();
     launcher.launch(links({ protocol: PROTOCOL }));
     launcher.onView(view("opening"));
-    expect(launcher.downloadReady()).toBe(false);
-    vi.advanceTimersByTime(LAUNCH_TIMEOUT_MS - 1);
-    expect(launcher.downloadReady()).toBe(false);
     const before = calls.changes;
-    vi.advanceTimersByTime(1);
-    expect(launcher.downloadReady()).toBe(true);
-    expect(calls.changes).toBe(before + 1);
-  });
-
-  it("a fetch inside the timeout (state open) cancels the wait", () => {
-    const { launcher } = harness();
-    launcher.onView(view("opening"));
-    vi.advanceTimersByTime(LAUNCH_TIMEOUT_MS - 1000);
-    launcher.onView(view("open"));
-    vi.advanceTimersByTime(5000);
-    expect(launcher.downloadReady()).toBe(false);
+    vi.advanceTimersByTime(60_000);
+    expect(calls.changes).toBe(before);
   });
 });
 
@@ -304,7 +286,6 @@ describe("end of session", () => {
     launcher.onView(view("opening"));
     launcher.onView(view("ended"));
     expect(launcher.needsClick()).toBe(false);
-    expect(launcher.downloadReady()).toBe(false);
     launcher.launch(links({ protocol: PROTOCOL }));
     expect(calls.assign).toEqual([PROTOCOL, PROTOCOL]);
     expect(calls.reports).toEqual(["protocol", "protocol"]);
