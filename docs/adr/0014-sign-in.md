@@ -1,73 +1,95 @@
 # ADR 0014: invite-only sign-in
 
-Status: proposed. Fable reviews it before any code is written against it. Data model: ADR 0013. Mode gate: ADR 0026. The Entra path (ADR 0004) is unchanged and shares the session code.
+Status: proposed, revised after Fable's review (all required and optional changes applied). Data model: ADR 0013. Mode gate: ADR 0026. The Entra path (ADR 0004) is unchanged and shares the session code.
 
 ## Context
 - bloop v4 opens accounts by invite only. Product decision: invites are single-use, hashed, valid 7 days and bound to one email, and opening the link never uses one up. The user enters a 6-digit email code, then is offered a passkey; with no passkey support the offer is hidden, and the email code always works as fallback and recovery.
 - Mail scanners open links (and some run their JavaScript), so a link must be harmless to open.
-- A 6-digit code is 20 bits. Its safety is entirely in the attempt limits, the expiry and the per-email request limits.
+- A 6-digit code is 20 bits. Its safety is entirely in the attempt limits, the expiry and the request limits, and those limits must not become a way for a stranger to lock a member out.
 - The session cookie exists (`src/worker/auth/cookies.ts`, `src/worker/auth/sessions.ts`): `__Host-bloop_sid`, an opaque 256-bit value stored as its SHA-256, 30 days idle and 90 absolute, rotated on sign-in.
 - WebAuthn refuses an IP-address relying party, and today's Permissions-Policy blocks `publickey-credentials-get` on every page.
+- Cloudflare's invocation logs keep full request URLs for days, possibly outside the EU; they are turned off (`invocation_logs: false`, F), so no token in a path reaches them.
 
 ## Decision
 
+### Two sign-in methods, no third
+Email code and passkey. Nothing else creates a session for an email user: no magic link, no admin-issued link. An address that cannot receive codes cannot receive an invite either, so a link fallback would serve no one the invite flow admits.
+
 ### Invites
-- **Token:** 32 random bytes, base64url (43 characters). The link is `https://<host>/invite#t=<token>`: a fragment never reaches a server, a Referer or a log. The page reads it, then removes it with `history.replaceState`. The invite page sends `Referrer-Policy: no-referrer`. Only `SHA-256(token)` is stored (`invite.token_hash`); 256 bits of entropy need no pepper (INV-01).
+- **Token:** 32 random bytes, base64url (43 characters). The link is `https://<host>/invite#t=<token>`: a fragment never reaches a server, a Referer or a log. The page reads it, then removes it with `history.replaceState`. The invite page sends `Referrer-Policy: no-referrer`. Only `SHA-256(token)` is stored; 256 bits of entropy need no pepper (INV-01).
 - **States**, derived, never stored as one column: `open` (not accepted, not revoked, `expires_at` in the future), `accepted`, `revoked`, `expired`. Validity is checked at the moment of use, every time.
-- **Opening never spends it (INV-03).** `POST /api/invite/peek {token}` reads only: it answers `{emailMasked, expiresAt, state}` and writes nothing. The page calls peek on load and shows Continue; nothing happens until a tap.
-- **Continue sends a code to the bound email (INV-02).** `POST /api/invite/accept {token}` checks the invite is open and mails a code with purpose `invite` to the invite's own address. The user cannot type another address. Accept spends nothing either. It is capped at 5 codes per invite per day beside the per-email limits, so a scanner that clicks cannot flood the inbox.
-- **The code spends it.** A correct `invite` code, verified while the invite is still open, creates the user and accepts the invite in one D1 batch: insert `app_user` by `INSERT ... SELECT ... FROM invite WHERE id = ? AND accepted_at IS NULL AND revoked_at IS NULL AND expires_at > ?`, then mark the invite accepted with the same guard, then create the session. Zero rows from the insert means the invite died in between (`invite_dead`); the unique `email_norm` index stops a second account for the same address.
+- **Opening never spends it (INV-03).** `POST /api/invite/peek {token}` reads only: it answers `{emailMasked, expiresAt, state}` and writes nothing. Nothing happens until a tap.
+- **Continue sends a code to the bound email (INV-02).** `POST /api/invite/accept {token}` checks the invite is open and mails a code with purpose `invite` to the invite's own address. The user cannot type another address. Accept spends nothing. Codes for an invite are limited per invite only (5 a day), never by the address, so no request elsewhere can block an invitee.
+- **The acceptance page** says "By continuing you confirm you are 18 or over and accept the Terms", and verify writes `terms_version` and `terms_accepted_at` (ADR 0013).
+- **The code spends it.** A correct `invite` code, verified while the invite is still open, creates the user and accepts the invite in one D1 batch: insert `app_user` by `INSERT ... SELECT ... FROM invite WHERE id = ? AND accepted_at IS NULL AND revoked_at IS NULL AND expires_at > ?`, mark the invite accepted with the same guard, create the session. Zero rows from the insert means the invite died in between (`invite_dead`); the unique `email_norm` index stops a second account for the same address.
 - **Single use (INV-04):** an accepted, revoked or expired invite is refused at peek (state only), accept and verify.
-- **Resend (INV-05)** replaces `token_hash` and resets `expires_at` to 7 days from now on the same row, so the old link dies at once. Creating an invite for an email that already has an open row is a resend of that row (ADR 0013, flag 2). Revoke sets `revoked_at`; the open invite codes die with it because verify re-checks the invite.
-- **Invite for a member:** refused at create (`already_member`), so an invite never shadows an existing account.
-- **Bootstrap:** the first admin's invite is written by the invite tool (tools/invite.mjs, owner A) through `wrangler d1 execute` (owner-run), since no admin exists to create one.
+- **Create and resend (INV-05):** create is `INSERT ... ON CONFLICT (email_norm) WHERE accepted_at IS NULL AND revoked_at IS NULL DO UPDATE SET token_hash = excluded.token_hash, expires_at = excluded.expires_at, sends = invite.sends + 1`, so an email with an open row (expired or not) gets that row reissued, and the old link dies at once. Resend is the same reissue. Revoke sets `revoked_at`; open invite codes die with it because verify re-checks the invite.
+- **Invite for a member:** refused at create (`already_member`).
+- **Bootstrap:** the first admin's invite is written by the owner's invite tool (tools/invite.mjs, owner A) through `wrangler d1 execute`, since no admin exists to create one.
 
 ### Email codes
-- **Code:** 6 decimal digits by rejection sampling over `crypto.getRandomValues` (no modulo bias). Expiry 10 minutes (`EMAIL_CODE_TTL_SECONDS`). The code is the first line of the body and never in the subject, so a lock-screen preview of the subject never shows it.
-- **Storage (AUTH-09 mac):** `code_mac = HMAC-SHA256(CODE_PEPPER, id | purpose | email_norm | code)`. Binding the challenge id, purpose and address means a MAC cannot be moved to another challenge, and a D1 leak without the pepper gives nothing to brute force offline. The pepper is a Worker secret, 32 random bytes.
-- **Verify, race-free (AUTH-09 attempts):**
-  1. `UPDATE email_code SET attempts = attempts + 1 WHERE id = ? AND used_at IS NULL AND expires_at > ? AND attempts < 5 RETURNING ...`. Zero rows: `code_invalid`, with nothing more said.
+- **Code:** 6 decimal digits by rejection sampling over `crypto.getRandomValues` (no modulo bias). Expiry 10 minutes (`EMAIL_CODE_TTL_SECONDS`).
+- **The email:** the first line is a preheader, "Your bloop code is inside. Enter it only at bloop.here.", and the code is on line two. Lock-screen previews show the subject and the first body line, so neither carries the code.
+- **Storage (AUTH-09 mac):** `code_mac = HMAC-SHA256(CODE_PEPPER, id | purpose | email_norm | new_email_norm | code)`, with `new_email_norm` empty when absent. Binding the challenge id, purpose and both addresses means a MAC cannot be moved to another challenge or another target address, and a D1 leak without the pepper gives nothing to brute force offline.
+- **Verify is bound to its endpoint (AUTH-09 attempts):**
+  1. `UPDATE email_code SET attempts = attempts + 1 WHERE id = ? AND purpose = :expected AND used_at IS NULL AND expires_at > ? AND attempts < 5 RETURNING ...`, plus `AND user_id = :sessionUser` for `reauth` and `email_change`. Zero rows: `code_invalid`, with nothing more said. So an `email_change`, `reauth` or `invite` challenge id is never accepted by sign-in verify, nor the other way round.
   2. Compare the MAC in constant time.
-  3. On a match: `UPDATE email_code SET used_at = ? WHERE id = ? AND used_at IS NULL`, and go on only if it changed one row.
+  3. On a match: `UPDATE email_code SET used_at = ? WHERE id = ? AND used_at IS NULL`, and go on only if it changed one row. For `invite`, the batch above re-checks the invite.
   Every verify, right or wrong, spends one of the 5 attempts before the compare, so parallel guesses cannot share an attempt.
-- **Requests supersede:** a new code for the same email and purpose expires every open one (`idx_email_code_email`). With 10 codes a day per email and 5 attempts each, an attacker gets at most 50 guesses a day against one address, about 1 in 20,000.
-- **Request limits:** Turnstile (ADR 0022), `RL_CODE` per IP, then exactly 3 per email per 15 minutes and 10 per day, counted from `email_code` rows.
-- **No enumeration (AUTH-10 uniform):** `POST /api/auth/code/request` always answers 202 `{challengeId}` and always writes a row. For an address that is not an active (or `deleting`) member, or that the mode gate refuses, the row holds a MAC of a code nobody was sent, and no mail goes out. Mail is sent from `ctx.waitUntil`, so the response time does not depend on it. The per-email limits apply to unknown addresses too, so they reveal nothing.
-- **Who receives a sign-in code:** `status` `active` or `deleting` (so a user in the deletion grace can sign in to restore). `suspended` gets nothing.
+- **Limits and supersede are per bucket, so strangers cannot reach a member's bucket:**
+  - `signin`: per `(email_norm, purpose, known)`. `known = 1` when the request carries `__Host-bloop_dev` equal to `HMAC(CODE_PEPPER, "dev|" + user_id)` for the member that address names. The cookie is set at every successful verify (HttpOnly, Secure, SameSite=Lax, Path=/, the longest Max-Age the browser keeps). A stranger has no such cookie, so their requests (3 per 15 minutes, 10 a day) and the codes they trigger supersede only the `known = 0` bucket, and a member on a device they have signed in from before is never blocked or superseded by them.
+  - `invite`: per invite (above). `reauth` and `email_change`: per `(user_id, purpose)`; only the signed-in member can request them.
+  - A new code supersedes the open ones in its own bucket only. At 10 codes a day and 5 attempts each, one bucket allows 50 guesses a day, about 1 in 20,000.
+  - Residual: a member's first sign-in on a new device can be delayed by a stranger filling the `known = 0` bucket for their address. Passkey sign-in is unaffected.
+- **Other request limits:** Turnstile (ADR 0022) and `RL_CODE` per IP before any bucket is counted.
+- **No enumeration (AUTH-10 uniform):** `POST /api/auth/code/request` always answers 202 `{challengeId}` and always writes a row. For an address that is not an active (or `deleting`) member, or that the mode gate refuses, the row holds a MAC of a code nobody was sent, and no mail goes out. Mail is sent from `ctx.waitUntil`, so the response time does not depend on it. The buckets apply to unknown addresses too, and an unknown address can never be `known`, so they reveal nothing.
+- **Who receives a sign-in code:** `status` `active` or `deleting` (so a user in the deletion grace can sign in to restore), and `suspended_at IS NULL`. `purging` and suspended members get nothing.
 - **Recovery:** the email code is always available, so losing every passkey never locks an account. A compromised mailbox is a full account compromise; that is stated plainly (AUTH-17, residual).
 
 ### Passkeys
 - **Library:** @simplewebauthn/server at 14.0.2 or later (its ADR 0001 line is F's). The browser side is the platform API only, in a lazy core webauthn module.
-- **Relying party:** `rpID` is the hostname of `PUBLIC_ORIGIN`; the expected origin is exactly `PUBLIC_ORIGIN`. Local and e2e runs use `http://localhost`, never `127.0.0.1` (WebAuthn refuses IP addresses) (AUTH-12 origin).
-- **Options:** discoverable credential (`residentKey: required`), `userVerification: required`, `attestation: none`. Sign-in sends no `allowCredentials` (usernameless); reauth lists the user's own credentials.
-- **Ceremony (AUTH-12 challenge):** 32 random challenge bytes in `auth_challenge` with its purpose, user (for register and reauth) and `binder_hash`. The binder is a random value set in `__Host-bloop_wa` (HttpOnly, Secure, SameSite=Strict, Path=/, Max-Age 300). Verify deletes the challenge row with `DELETE ... RETURNING` (single use), requires the binder cookie to hash to it, and requires the row to be unexpired. A challenge minted in one browser cannot finish in another.
-- **Counter:** if the stored `sign_count` and the new one are both non-zero and the new one is not larger, refuse and log a clone signal. Synced passkeys report 0 and pass.
-- **The offer is feature-detected.** After a code sign-in the page shows "Add a Passkey" only when `PublicKeyCredential` exists and `isUserVerifyingPlatformAuthenticatorAvailable()` resolves true. When `PublicKeyCredential.getClientCapabilities()` reports `conditionalCreate`, the page instead registers with `mediation: "conditional"`, which the browser may finish without a prompt. Any failure or refusal hides the offer for the session and leaves the code path untouched. The sign-in page offers passkey sign-in only when `isConditionalMediationAvailable()` or the platform check passes, and always shows the email field.
-- **Adding a passkey is C+R (AUTH-11 reauth):** a code sign-in counts as a fresh proof, so the offer right after sign-in passes. Every added passkey mails a "Passkey added" notice to the account address. Deleting one is C+R too.
+- **Relying party:** `rpID` is the hostname of `PUBLIC_ORIGIN`; the expected origin is exactly `PUBLIC_ORIGIN`. Local and e2e runs use `http://localhost`, never `127.0.0.1` (WebAuthn refuses IP addresses) (AUTH-12 origin). Every auth and WebAuthn route answers 404 on the workers.dev file host, which serves no `/.well-known/webauthn`.
+- **Registration:** `user.id` is the bytes of `app_user.id`; discoverable credential (`residentKey: required`), `userVerification: required`, `attestation: none`, and `excludeCredentials` lists the user's existing passkeys so one authenticator is not registered twice.
+- **Sign-in:** no `allowCredentials` (usernameless). Verify looks the credential up by id and requires the response's `userHandle` to equal that row's `user_id`. Reauth lists the user's own credentials and requires the credential to belong to the session user.
+- **Ceremony (AUTH-12 challenge):** 32 random challenge bytes in `auth_challenge` with its purpose, user (for register and reauth) and `binder_hash`. The binder is a random value set in `__Host-bloop_bind` (HttpOnly, Secure, SameSite=Strict, Path=/, Max-Age 600). Verify deletes the challenge row with `DELETE ... RETURNING` (single use) and requires: the row unexpired (5 minutes), its purpose equal to the endpoint's, its user equal to the session user for register and reauth, and the binder cookie hashing to it. A challenge minted in one browser or for one purpose cannot finish in another.
+- **Counter:** `UPDATE passkey SET sign_count = :n, last_used_at = :now WHERE id = ? AND (sign_count = 0 OR sign_count < :n)`. When the stored count is non-zero and the update changes nothing, the assertion is refused and a clone signal is logged. Synced passkeys report 0 and pass.
+- **The offer is an explicit button, feature-detected.** After a code sign-in the page shows "Add a Passkey" only when `PublicKeyCredential` exists and `isUserVerifyingPlatformAuthenticatorAvailable()` resolves true. It never registers silently (no conditional create). Any failure or refusal hides the offer for the session and leaves the code path untouched. The sign-in page offers passkey sign-in only when `isConditionalMediationAvailable()` or the platform check passes, and always shows the email field.
+- **Adding a passkey is C+R (AUTH-11 reauth):** a code sign-in counts as a fresh proof, so the offer right after sign-in passes. Every added passkey mails a "Passkey added" notice. Deleting one is C+R too.
 
 ### Session cookie
 - **Attributes (unchanged, pinned):** `__Host-bloop_sid`, HttpOnly, Secure, SameSite=Lax, Path=/, no Domain, Max-Age 90 days; only its SHA-256 is stored; 30 days idle, 90 absolute. Lax, not Strict: a signed-in user who follows an emailed link to bloop arrives signed in. Every write is still guarded by Origin and `Sec-Fetch-Site` (AUTH-15 csrf).
 - **The file origin never sees it.** The workers.dev host is a different registrable site (workers.dev is on the public suffix list), so the browser never sends a bloop cookie there, and the file-origin handlers never read one.
-- **Rotation (AUTH-08 rotate):** every successful authentication (email code, passkey, reauth, admin sign-in link) issues a new value and deletes the presented one. A value set before sign-in can therefore never become a signed-in session.
-- **Stored per session:** `method` (`code`, `passkey`, `link`, `entra`), a coarse `label` from the User-Agent class (never the raw string), `reauth_at`.
-- **Sign-in hint:** a second cookie, `__Host-bloop_in=1`, readable by page script, carries no secret and only lets the landing page show Library instead of Sign In. The server never reads it. It is set and cleared beside the session cookie.
-- **Revocation (AUTH-13 signout-all):** sign out deletes this session. Sign out everywhere deletes every session of the user and ends their live screens (ADR 0015). Suspension does both and refuses new sign-ins. An email change ends every other session.
+- **Rotation (AUTH-08 rotate):** every successful authentication (email code, passkey, reauth) issues a new value and a new `public_id`, and deletes the presented session. A value set before sign-in can therefore never become a signed-in session.
+- **Stored per session:** `public_id` (the only id shown or sent anywhere), `method` (`code`, `passkey`, `entra`), a coarse `label` from the User-Agent class (never the raw string), `reauth_at`.
+- **Sign-in hint:** `__Host-bloop_in=1`, readable by page script, carries no secret and only lets the landing page show Library instead of Sign In. The server never reads it. It is set and cleared beside the session cookie.
+- **Revocation (AUTH-13 signout-all):**
+  - Sign out deletes this session and ends the live screens this session started (ADR 0015).
+  - Sign out everywhere deletes every session of the user and ends all their live screens.
+  - Suspension does both and refuses new sign-ins.
+  - A deletion request ends all live screens and deletes every other session; the current one stays, limited to `/api/me` and restore.
+  - An email change ends every other session.
 
 ### Reauth
 - **C+R** is a valid session whose own `reauth_at` is within `REAUTH_SECONDS` (300). Sign-in sets it. A later proof is a passkey assertion with purpose `reauth`, or an email code with purpose `reauth` (`POST /api/me/reauth/code`). Either rotates the session and stamps the new row.
 - **Needs C+R:** add or delete a passkey, change email, delete the account, export, and the admin mode switch (ADR 0026).
-- **Email change (AUTH-14 change):** C+R, then a code to the new address (purpose `email_change`, `new_email_norm`), a notice to the old one, and on verify the address moves, every other session ends, and `email_norm` uniqueness is enforced by the index.
+- **Email change (AUTH-14 change):** C+R, then a code to the new address (purpose `email_change`, `new_email_norm` in the MAC). On verify, `UPDATE app_user SET email_norm = :new, email = :newDisplay WHERE id = :u AND email_norm = :old` (so a second change in flight cannot stack), every other session ends, and the unique index refuses an address already in use.
+- **Revert:** the old address gets a notice with a 7-day revert link carrying a 256-bit token (an `email_code` row with purpose `email_revert`, `email_norm` the old address, `new_email_norm` the new one, its MAC over the token). Opening the page shows a button; the tap moves the address back with `WHERE id = :u AND email_norm = :new`, ends every session, and mails the old address. So a hijacked session that changes the email can be undone by the mailbox owner.
 
 ### Admin
-- **Role from the secret (AUTH-16 admin):** a request is admin when its session user's `email_norm` is in `ADMIN_EMAILS` (normalized at config parse), checked on every request. No role column exists, so D1 write access alone cannot make an admin.
-- **Admin sign-in link** (`POST /api/admin/users/:id/signin-link`) is the fallback for a user whose mail filter eats codes: a 256-bit token, stored as an `email_code` row with purpose `link` (its MAC over the token), single use, 15 minutes, shown once to the admin. It is refused for an admin's own account and for any `ADMIN_EMAILS` user, the resulting session has no `reauth_at` (so it cannot add a passkey or change the email without a fresh proof), the user gets a notice email, and the issue is logged to `admin_action`.
+- **Role from the secret (AUTH-16 admin):** a request is admin when its session user's `email_norm` is in `ADMIN_EMAILS` (normalized at config parse), checked on every request. No role column exists, so D1 write access alone cannot make an admin. Admin has no route that signs in as, or reads the library of, another member.
+
+### Mode gate
+State-creating steps (invite create, accept, code verify, passkey session creation) read `launch_mode` uncached, so the 30 s cache (ADR 0026) never lets one through after a switch back to preview.
 
 ## Rejected
 - **Magic links instead of codes:** mail scanners follow links, which would sign them in or spend the link, and a link signs in whichever device opens it, not the one waiting.
+- **An admin-issued sign-in link:** a third method outside the owner's decision, the magic link rejected above, and a hijacked admin session could read any member's library.
+- **Conditional create (silent passkey registration):** not the "offer" decided, and platforms allow it only after a password autofill, which bloop never has.
 - **Invite token in the query string:** it would reach logs and Referer headers.
 - **Consuming the invite on open:** scanners would spend it (INV-03).
 - **Plain SHA-256 of the code:** 10^6 values; a D1 leak would reverse every live code at once.
 - **Reusing `HASH_PEPPER` for code MACs:** rotating it after a code leak would also break every stored IP and session hash; one key per purpose.
+- **One per-email limit for everyone:** a stranger's requests would supersede a member's live code and block sign-in indefinitely.
 - **Passkey only:** no recovery when a device is lost; the code is the recovery.
 - **A role column for admins:** a D1 write would grant admin.
 - **SameSite=Strict session:** every arrival from mail would look signed out.
@@ -75,10 +97,9 @@ Status: proposed. Fable reviews it before any code is written against it. Data m
 
 ## Consequences
 - Sign-in is two taps and one code for everyone; a passkey makes later sign-ins one tap.
-- The email account is the root of trust (AUTH-17). Passkeys raise the bar for sign-in but not for recovery.
-- A third party can make someone's sign-in mail arrive up to 10 times a day (the per-email cap), and then lock out their code path for the rest of the day. A passkey user is unaffected. Stated as residual on AUTH-09.
+- The email account is the root of trust (AUTH-17). Passkeys raise the bar for sign-in but not for recovery; the revert link limits what a hijacked session can do to the address.
 - Turnstile is needed on the code request; a Turnstile outage blocks code sign-in but not passkey sign-in.
-- New secret: `CODE_PEPPER`. Rotating it kills every open code and admin link, nothing else.
+- New secret: `CODE_PEPPER`. Rotating it kills every open code and revert link and resets every known-device cookie to unknown, nothing else.
 
 ## Threats served
 AUTH-08 to AUTH-17, INV-01 to INV-05, MODE-01 (the mode gate at code request, accept and verify, ADR 0026).
@@ -88,10 +109,11 @@ Close invites (refuse `/api/invite/accept`), keep code sign-in for existing user
 
 ## Flags (Part 2 unsafe, ambiguous or contradicting Part 1, and the resolution)
 1. **Race in Part 2's "5 attempts":** read-then-compare lets parallel guesses share an attempt. Resolved: the increment is the guard and comes first.
-2. **Attempt multiplication:** Part 2 never said a new code supersedes the old one, so each request would add 5 fresh guesses. Resolved: supersede per email and purpose.
-3. **Enumeration through the per-email limit and through mail timing:** resolved by writing a row for every address and sending from `waitUntil`.
-4. **Bootstrap contradiction with Part 1 ("invites only to TEST_EMAILS" in preview):** an admin must exist to invite anyone. Resolved: the invite tool (tools/invite.mjs, owner A) writes the admin's invite directly; the route-level rule (route invites only to `TEST_EMAILS` in preview) stands, and accept and verify in preview admit `ADMIN_EMAILS` plus `TEST_EMAILS`.
-5. **The admin sign-in link** in Part 2 is an admin-issued credential with no limits stated. Resolved with the limits above; the reviewer may cut it entirely (the code is the recovery).
-6. **Part 2's C label** says "user status active" but the deletion grace needs a signed-in `deleting` user to restore. Resolved: `deleting` reaches `/api/me` and restore only.
-7. **Reauth rotation** was unstated. Resolved: every fresh proof rotates.
-8. **Sign out everywhere** did not say whether live screens end. Resolved: they do (a lost phone should also cut the screen).
+2. **Attempt multiplication:** Part 2 never said a new code supersedes the old one. Resolved: supersede within the bucket.
+3. **Enumeration through the limits and through mail timing:** resolved by writing a row for every address, buckets that unknown addresses share, and sending from `waitUntil`.
+4. **Lockout through shared limits:** resolved by the per-bucket limits and the known-device cookie.
+5. **Bootstrap contradiction with Part 1 ("invites only to TEST_EMAILS" in preview):** resolved by the owner's invite tool; route invites stay `TEST_EMAILS` only in preview, and accept and verify in preview admit `ADMIN_EMAILS` plus `TEST_EMAILS`.
+6. **Part 2's admin sign-in link:** cut.
+7. **Part 2's "conditional create":** cut; the explicit offer stays.
+8. **Part 2's C label** says "user status active" but the deletion grace needs a signed-in `deleting` user to restore. Resolved: `deleting` reaches `/api/me` and restore only.
+9. **Reauth rotation and revocation scope** were unstated. Resolved above.
