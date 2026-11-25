@@ -1,8 +1,18 @@
-// The doc pages (design.md section 6, Legal pages). A clause or section number copies its link; the contents mark
-// the section being read. No HTML sinks (Trusted Types): the glyph is built as DOM.
+// The doc pages (design.md section 6). No HTML sinks (Trusted Types): the glyph is built as DOM.
 import { ICONS } from "./core/icons.js";
 import { icon } from "./core/ui.js";
 
+// The panel's drift runs only on screen in a visible tab, as site.js does for the landing's.
+const panel = document.querySelector(".panel");
+if (panel) {
+  let on = true;
+  const pause = () => panel.classList.toggle("is-paused", !on || document.hidden);
+  new IntersectionObserver(([e]) => {
+    on = !!e?.isIntersecting;
+    pause();
+  }).observe(panel);
+  addEventListener("visibilitychange", pause);
+}
 const copied = document.getElementById("copied");
 for (const a of document.querySelectorAll(".legal-text a.num")) a.prepend(icon(ICONS.link));
 
@@ -26,9 +36,8 @@ addEventListener("click", (e) => {
   );
 });
 
-// The contents mark the section being read: the one a jump just landed on, until the reader scrolls on; else the last
-// one once the end of the text is in view; else the first crossing a band a third down the view. A short section
-// lands above the band, and the last ones may never reach it, so the band alone marks the wrong row.
+// A jump's section until the reader scrolls on, else the last at the end, else the band's: short and last
+// sections may never cross the band.
 const links = new Map([...document.querySelectorAll(".toc a")].map((a) => [a.getAttribute("href")?.slice(1), a]));
 const sections = [...document.querySelectorAll(".legal-text > section")];
 const seen = new Set();

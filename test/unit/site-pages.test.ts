@@ -1253,9 +1253,16 @@ describe("landing motion and spacing (design.md sections 6 and 8)", () => {
     expect(js).toMatch(/querySelectorAll\("\.sheen, \.frag, \.panel, \.close-panel"\)\) watch\.observe\(el\)/);
     expect(js).toMatch(/addEventListener\("visibilitychange", pause\)/);
     expect(js).toMatch(/toggle\("is-paused", !on \|\| document\.hidden\)/);
-    const rule = css.search(/^\.is-paused,\n\.is-paused::before \{\n {2}animation-play-state: paused;/m);
+    const rule = css.search(
+      /^\.is-paused,\n\.is-paused::before,\n\.hero h1:hover \.sheen,\n\.hero:focus-within \.sheen \{\n {2}animation-play-state: paused;/m,
+    );
     expect(rule).toBeGreaterThan(0);
     for (const m of css.matchAll(/^\s*animation: /gm)) expect(m.index ?? 0).toBeLessThan(rule);
+    // The doc pages' one panel pauses its drift the same way.
+    const legal = read("public/js/legal.js");
+    expect(legal).toMatch(/document\.querySelector\("\.panel"\)/);
+    expect(legal).toMatch(/toggle\("is-paused", !on \|\| document\.hidden\)/);
+    expect(legal).toMatch(/addEventListener\("visibilitychange", pause\)/);
   });
 
   it("the steps sit 40 under the stage, 56 from 768", () => {
