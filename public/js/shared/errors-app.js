@@ -17,6 +17,7 @@ export const APP_ERRORS = {
   forbidden: { status: 403 },
   account_suspended: { status: 403 },
   passkey_invalid: { status: 400 },
+  account_deleting: { status: 403 },
   // library, uploads and conversion
   quota_exceeded: { status: 507 },
   library_full: { status: 409 },
@@ -26,6 +27,13 @@ export const APP_ERRORS = {
   size_mismatch: { status: 422 },
   file_disabled: { status: 403 },
   convert_unavailable: { status: 503 },
+  encrypted: { status: 422 },
+  upload_busy: { status: 409 },
+  upload_gone: { status: 410 },
+  up_next_full: { status: 409 },
+  export_busy: { status: 409 },
+  export_limit: { status: 429 },
+  export_paused: { status: 503 },
   // live pairing with accounts, and the spend guard's refusal
   match_required: { status: 409 },
   service_busy: { status: 503 },
