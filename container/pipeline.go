@@ -405,10 +405,10 @@ func (s *Server) rasterize(ctx context.Context, pdf string) ([]PageDim, error) {
 					cancel()
 				}
 				done++
-				d := done
+				// Under mu, so two workers cannot publish their counts out of order.
+				s.set("rasterize", 40+55*done/pages)
+				s.setPages(done, pages)
 				mu.Unlock()
-				s.set("rasterize", 40+55*d/pages)
-				s.setPages(d, pages)
 			}
 		}()
 	}
