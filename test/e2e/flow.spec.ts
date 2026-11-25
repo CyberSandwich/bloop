@@ -497,7 +497,7 @@ test.describe("pairing flow", () => {
     await phone.context.close();
   });
 
-  /** The time input's value `minutes` whole minutes past the next minute boundary on the phone's clock (60 to 120 s ahead for 1), and its epoch ms. */
+  /** The time input's value `minutes` whole minutes past the current minute's start on the phone's clock (0 to 60 s ahead for 0, 60 to 120 s for 1), and its epoch ms. */
   const clockAhead = (page: Page, minutes: number) =>
     page.evaluate((m) => {
       const t = new Date();
@@ -529,14 +529,14 @@ test.describe("pairing flow", () => {
     await phone.context.close();
   });
 
-  test("SESS-01 an Until time two minutes ahead ends at HH:MM:00; a time not ahead disables Set", async ({
+  test("SESS-01 an Until time three minutes ahead ends at HH:MM:00; a time not ahead disables Set", async ({
     browser,
   }) => {
     const { screen, phone, lengthButton, sheet } = await approvedDemo(browser);
     const countdown = phone.page.locator("#ends-text");
     await lengthButton.click();
     const set = sheet.getByRole("button", { name: "Set" });
-    const target = await clockAhead(phone.page, 2);
+    const target = await clockAhead(phone.page, 3);
     await sheet.getByLabel("Expires At").fill(target.value);
     await expect(set).toBeEnabled();
     const answered = phone.page.waitForResponse("**/api/session/length");
@@ -552,6 +552,51 @@ test.describe("pairing flow", () => {
     await lengthButton.click();
     await sheet.getByLabel("Expires At").fill((await clockAhead(phone.page, 0)).value);
     await expect(set).toBeDisabled();
+    await screen.context.close();
+    await phone.context.close();
+  });
+
+  test("SESS-01 a disabled Set says why in a line under the time, and focus leaves it when it goes disabled", async ({
+    browser,
+  }) => {
+    const { screen, phone, lengthButton, sheet } = await approvedDemo(browser);
+    const set = sheet.getByRole("button", { name: "Set" });
+    const hint = sheet.locator("#length-hint");
+    const time = sheet.getByLabel("Expires At");
+    await lengthButton.click();
+    await time.fill((await clockAhead(phone.page, 3)).value);
+    await expect(set).toBeEnabled();
+    await expect(hint).toBeHidden();
+    // A time just past is a day away: over the room, so refused with the latest end named.
+    await set.focus();
+    const past = (await clockAhead(phone.page, 0)).value;
+    await phone.page.evaluate(
+      `(() => { const el = document.getElementById("length-at"); el.value = "${past}"; el.dispatchEvent(new Event("input")); })()`,
+    );
+    await expect(set).toBeDisabled();
+    await expect(time).toBeFocused();
+    await expect(hint).toHaveText(/^Pick a time before \d{2}:\d{2}$/);
+    await time.fill("");
+    await expect(hint).toHaveText("Pick a time");
+    await screen.context.close();
+    await phone.context.close();
+  });
+
+  test("SESS-01 a typed time past approval plus the cap is refused though it is within the cap of now", async ({
+    browser,
+  }) => {
+    const { screen, phone, lengthButton, sheet } = await approvedDemo(browser);
+    // An hour on, the demo's 2 h cap leaves about an hour: 90 minutes ahead is within 2 h of now but past the latest end.
+    await phone.page.clock.install();
+    await phone.page.clock.setSystemTime(new Date(Date.now() + 3600_000));
+    await lengthButton.click();
+    const time = sheet.getByLabel("Expires At");
+    const set = sheet.getByRole("button", { name: "Set" });
+    await time.fill((await clockAhead(phone.page, 90)).value);
+    await expect(set).toBeDisabled();
+    await expect(sheet.locator("#length-hint")).toHaveText(/^Pick a time before \d{2}:\d{2}$/);
+    await time.fill((await clockAhead(phone.page, 30)).value);
+    await expect(set).toBeEnabled();
     await screen.context.close();
     await phone.context.close();
   });

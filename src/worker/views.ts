@@ -85,6 +85,7 @@ export function phoneView(meta: Meta, m: Machine, now: number, limits: PhoneLimi
     endReason: m.state === "ended" ? m.endReason : null,
     dropMaxBytes: limits.dropMaxBytes,
     maxMinutes: limits.maxMinutes,
+    latestEnd: m.session?.approvedAt == null ? null : m.session.approvedAt + limits.maxMinutes * 60_000,
     seq: m.session?.seq.phone ?? 0,
     v: m.v,
     now,
