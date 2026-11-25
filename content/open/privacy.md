@@ -103,7 +103,7 @@ Caption: How long bloop keeps each kind of data
 | --- | --- |
 | A file in your Library, and its converted copies | Until you delete it. A deleted file goes to your Trash for 30 days, where you can restore it, and is then deleted for good. You can also delete it from the Trash at once |
 | Your Account (email, passkeys, sign-ins) and everything in your Library | Until you delete your Account, which takes effect 7 days after you ask (you can cancel by signing in before then); or, if you do not use your Account for 12 months, bloop emails you a warning and deletes it 30 days later unless you sign in |
-| A Guest File's bytes and converted copies | Deleted when its Session ends. Backstops: an hourly check, and a storage rule that deletes any guest file within 2 days at the latest |
+| A Guest File's bytes and converted copies | Deleted when its Session ends, and in any case within about 2 days: an hourly check, and a storage rule on the bucket, catch any the first step misses |
 | A Guest File's record (name, type, size, times) | 30 days after the file is deleted |
 | Session and access records | 180 days. In the Demo, 7 days |
 | Sign-in codes and passkey steps | A sign-in code works for 10 minutes; the record goes 1 day after it expires |
@@ -117,7 +117,7 @@ Caption: How long bloop keeps each kind of data
 | Codes, pairing secrets and links for a Session | Until the Session ends, is canceled or times out |
 | IP hash for abuse limits | 10 minutes for failed code attempts; until the Session ends for the Screen's own check |
 | Your OneDrive access (Planned) | Until you tap Disconnect OneDrive (deleted at once), remove bloop in My Apps or Microsoft Entra (deleted the next time it fails), ask for erasure, or 30 days unused |
-| bloop's own logs (Workers Logs): errors and events, each line in a fixed shape with no IP address and no URL | On, with Cloudflare's per-request logs off. Cloudflare keeps each line 7 days, possibly outside the EU |
+| bloop's own logs and error reports (Workers Logs and Workers Issues): errors and events, each line in a fixed shape with no IP address and no URL | On, with Cloudflare's per-request logs off. Cloudflare keeps each log line 7 days, possibly outside the EU ([8.1](#8.1)) |
 | Cloudflare's request logs | Off on the live site. If they are turned on, they record each request's details, including your IP address, and keep them at most 7 days |
 | Cloudflare's record of each email bloop sends (to, from, subject, delivered or not) | 31 days |
 | Waitlist answers | Until you ask bloop to delete them, or the waitlist closes; once you are invited, 90 days after the invite |
@@ -164,7 +164,12 @@ Caption: The processors, what each does, the data it handles and where
 
 In short: stored in the EU, run by a US company, with legal safeguards.
 
-8.1 bloop's database, your Library and Guest Files are stored in the EU, and files are converted in the EU. Two parts of what Cloudflare runs for bloop sit outside the EU: the converter's program image, which holds code and never user data, and bloop's own logs ([5.1](#5.1)). bloop never claims "UK only": Cloudflare is a US company, and a request is handled at the Cloudflare data center nearest the person making it.
+8.1 bloop's database, your Library and Guest Files are stored in the EU, and files are converted in the EU. bloop never claims "UK only": Cloudflare is a US company, and a request is handled at the Cloudflare data center nearest the person making it. This is the complete list of what may be stored outside the EU:
+
+1. bloop's own logs and error reports (Workers Logs and Workers Issues): lines in a fixed shape with no IP address and no URL, which can include the internal ID of a Screen or of your Library ([5.1](#5.1));
+2. usage counts (Workers Analytics Engine), which hold no IDs, names or file names;
+3. the converter's program image, which holds code and never user data;
+4. what Tally, Apple and Anthropic handle, as [section 7](#processors) describes.
 
 8.2 Where data goes outside the UK, the safeguards are the UK's adequacy regulations for the EU, and for the US the UK-US data bridge: Cloudflare is certified to the UK Extension of the EU-US Data Privacy Framework. Cloudflare's data processing terms add the EU Standard Contractual Clauses with the UK Addendum in case that certification lapses. Tally's, Apple's and Anthropic's transfers follow their own published terms.
 

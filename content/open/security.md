@@ -42,13 +42,13 @@ Caption: What works today and what is planned
 
 ## Where It Runs {#where}
 
-bloop runs on Cloudflare Workers. Its database (D1), your Library and Guest Files (R2), and Session and Library state (Durable Objects) are held in Cloudflare's EU jurisdiction. Files are converted in Cloudflare's EU jurisdiction too; only the converter's program image, which holds code and never user data, is stored outside the EU. Each request is handled at the nearest Cloudflare data center, so bloop says "stored in the EU", never "UK only". The database can be restored to any minute in the last 30 days; files are never copied into that history, so a file deleted for good is gone. Who processes what, and for how long: [Privacy, Who Helps Run bloop](/privacy#processors) and [How Long bloop Keeps It](/privacy#retention).
+bloop runs on Cloudflare Workers. Its database (D1), your Library and Guest Files (R2), and Session and Library state (Durable Objects) are held in Cloudflare's EU jurisdiction. Files are converted in Cloudflare's EU jurisdiction too. The few things kept outside the EU, such as bloop's own logs and the converter's program image, are listed in [Privacy 8.1](/privacy#8.1). Each request is handled at the nearest Cloudflare data center, so bloop says "stored in the EU", never "UK only". The database can be restored to any minute in the last 30 days; files are never copied into that history, so a file deleted for good is gone. Who processes what, and for how long: [Privacy, Who Helps Run bloop](/privacy#processors) and [How Long bloop Keeps It](/privacy#retention).
 
 ## Your Files {#files}
 
 - **Uploads** go straight to storage in the EU over HTTPS, in parts that resume if your connection drops. Each upload link is for one part of one file, and expires after 15 minutes.
 - **Checks.** Every file is checked by its bytes, not its name, once it arrives. Files with macros, ActiveX, embedded programs, scripts in a PDF or links to outside content are refused, and a file is never stored as a type other than the one its bytes prove.
-- **Conversion.** To show a file in the browser, bloop converts it in a sealed container: no network, a fresh container for each file, a time limit at every step, and macros never run. Each output is checked before it is stored.
+- **Conversion.** To show a file in the browser, bloop converts it in an isolated virtual machine with no internet access, destroyed after each job, with a time limit at every step; macros never run. Each output is checked before it is stored.
 - **Separate address.** Files reach a Screen from a separate bloop address that sets no cookies and runs no scripts of its own, so a file cannot reach your sign-in.
 - **At rest.** Cloudflare encrypts the database and stored files at rest. They are not end-to-end encrypted: bloop's server reads a file to convert and show it.
 - **Your Library only.** Every request for a file is checked against its owner, its status and its version at the moment it is fetched, so a deleted, trashed or disabled file stops at once, even on a Screen.
@@ -97,7 +97,7 @@ When OneDrive arrives:
 - **Shoulder surfing:** a seen code is already used or soon expires, and the first phone to claim it locks the pairing.
 - **Forgotten Session:** it ends by itself when its time runs out.
 - **Unwanted content:** a Guest File never opens by itself; someone at the Screen must click Open, and anyone there can press End or Report.
-- **A harmful file:** checked by its bytes, converted in a sealed container, and served from a separate address with no cookies.
+- **A harmful file:** checked by its bytes, converted in an isolated machine with no internet access, and served from a separate address with no cookies.
 - **Wrong screen:** unregistered screens carry a warning on the phone.
 - **Stolen sign-in or lost phone:** end that sign-in, or sign out everywhere, from Account on any device.
 

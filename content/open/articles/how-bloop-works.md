@@ -20,7 +20,7 @@ A presenter signs in to bloop on their own phone or computer, never on the room 
 
 Files go into the presenter's Library ahead of time, from the phone or a computer, within the limits in [the Terms](/terms#library). bloop stores them in the EU until the presenter deletes them. A deleted file waits in the Trash, where it can be restored, and an Account left unused gets a warning email before it is deleted. [Data and Retention](/articles/data-and-retention) explains each step.
 
-After an upload, bloop prepares the file once to show in a browser, so a deck still shows on a PC without PowerPoint. That work runs in a sealed container in the EU, as [the Security page](/security#files) describes. A deck's speaker notes are kept for the phone and never go to the Screen.
+After an upload, bloop prepares the file once to show in a browser, so a deck still shows on a PC without PowerPoint. That work runs in the EU, in an isolated machine with no internet access, as [the Security page](/security#files) describes. A deck's speaker notes are kept for the phone and never go to the Screen.
 
 ## Five Steps {#steps}
 
@@ -48,7 +48,7 @@ A phone that is not signed in can still send one file straight to the Screen as 
 
 - Each file is checked by its bytes, not its name. A deck with macros, ActiveX or embedded programs is refused.
 - A Guest File never opens by itself. Someone at the Screen must click Open, which proves a person is standing there.
-- bloop deletes the file when the session ends, and two backstops catch any it misses. [The Privacy Notice](/privacy#retention) gives the latest it can last.
+- bloop deletes the file when the session ends, and two backstops catch any it misses. [The Privacy Notice](/privacy#retention) says how long one can last.
 
 ## How a Session Ends {#ending}
 

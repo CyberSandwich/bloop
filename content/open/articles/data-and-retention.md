@@ -28,7 +28,7 @@ An IT team can ask for an export of its organization's records. It is built and 
 
 bloop runs on Cloudflare. Its database, Library files and Guest Files are held in Cloudflare's EU jurisdiction, and files are converted there. Cloudflare is a US company, and each request is handled at the Cloudflare data center nearest the person making it. For that reason bloop says "stored in the EU" and never "UK only".
 
-bloop's own logs are the exception: Cloudflare may keep them outside the EU, so each line has a fixed shape with no IP address and no URL. Cloudflare's per-request logs, which would hold both, stay off. [The Privacy Notice](/privacy#transfers) names the legal safeguards.
+A few things are kept outside the EU: bloop's own logs, which hold no IP address and no URL, the converter's program image, and what Tally, Apple and Anthropic handle. [The Privacy Notice](/privacy#8.1) keeps the complete list and the legal safeguards.
 
 ## A File's Life in the Library {#library}
 
@@ -45,7 +45,7 @@ A Guest File has three layers, so one failure does not leave a file behind:
 
 1. It is deleted when the session ends, whether the presenter ends it or its time runs out.
 2. An hourly sweep deletes any guest file older than the longest a session can last.
-3. A storage rule on the bucket deletes anything left, by the latest date in [the Privacy Notice](/privacy#retention).
+3. A storage rule on the bucket deletes anything left after that, though it can run a little late ([how long](/privacy#retention)).
 
 Records go on a fixed clock: a daily job removes each kind of data when its period ends. The periods are configuration, not code, so changing one means changing a setting, never rewriting the job.
 
