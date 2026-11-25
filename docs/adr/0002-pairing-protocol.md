@@ -10,7 +10,7 @@ A screen with no account must be paired with one phone in seconds, by scan or by
   - the screen's `sid` plays `device_code` (secret, held by the screen);
   - the 6-character code plays `user_code`;
   - `/code` plays `verification_uri`, and the QR URL `https://<host>/a?c=<code>` plays `verification_uri_complete`;
-  - the WebSocket push replaces `interval` polling, and polling remains the fallback;
+  - the WebSocket push replaces `interval` polling, and polling remains the fallback; the client's reconnect policy (jittered backoff, a probe on resume, a 4 s upgrade timeout with a per-tab blocked flag, a missed-ping silence rule, a confirmed "isn't responding") replaces the earlier fixed backoff and single 70 s silence timeout, and is removed by reverting the channel rules table in architecture.md section 7, which owns it;
   - `waiting` maps to `authorization_pending`, `rate_limited` to `slow_down`, `canceled` to `access_denied`, and `code_expired` to `expired_token`.
 - **Departures from RFC 8628:**
   - the user code lives 60 s plus a 10 s grace, not about 15 min, and is single use;
