@@ -117,12 +117,14 @@
       "limit": "5.25 kB"
     },
     {
-      "name": "phone media, lazy",
-      "path": [
-        "dist/js/core/photo.js",
-        "dist/js/core/video.js"
-      ],
-      "limit": "1.7 kB"
+      "name": "phone photo, lazy",
+      "path": "dist/js/core/photo.js",
+      "limit": "0.75 kB"
+    },
+    {
+      "name": "phone video, lazy",
+      "path": "dist/js/core/video.js",
+      "limit": "1.25 kB"
     },
     {
       "name": "screen video, lazy",

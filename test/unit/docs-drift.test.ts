@@ -291,7 +291,8 @@ describe("size budgets", () => {
       (e) => e.name.endsWith(", lazy") && [e.path].flat().every((path) => path.endsWith(".js")),
     );
     expect(Object.fromEntries(lazyEntries.map((e) => [e.name, e.path]))).toEqual({
-      "phone media, lazy": ["public/js/core/photo.js", "public/js/core/video.js"],
+      "phone photo, lazy": "public/js/core/photo.js",
+      "phone video, lazy": "public/js/core/video.js",
       "screen video, lazy": "public/js/viewer-video.js",
       "session length sheet, lazy": [
         "public/js/core/lazy.js",
@@ -322,6 +323,25 @@ describe("size budgets", () => {
         }
       }
     }
+  });
+
+  it("a lazy entry measures one import() target and what it loads with it, so no module's growth hides in a sum", () => {
+    // Code import()s only: a JSDoc `typeof import(...)` names a type and loads nothing.
+    const targets = new Set(
+      walk("public/js", (path) => path.endsWith(".js")).flatMap((file) =>
+        read(file)
+          .split("\n")
+          .filter((line) => !line.includes("typeof import"))
+          .flatMap((line) => [...line.matchAll(/\bimport\(\s*"(\.[^"]+)"\s*\)/g)])
+          .map((m) => posix.join(posix.dirname(file), m[1] as string)),
+      ),
+    );
+    const lazyJs = entries.filter((e) => e.name.endsWith(", lazy") && [e.path].flat().every((p) => p.endsWith(".js")));
+    const counts = Object.fromEntries(lazyJs.map((e) => [e.name, [e.path].flat().filter((p) => targets.has(p))]));
+    expect(
+      Object.values(counts).every((reached) => reached.length === 1),
+      JSON.stringify(counts),
+    ).toBe(true);
   });
 
   it("SESS-01 sheet: the Session Expiry sheet loads only by import(), and its length rules only with it", () => {
