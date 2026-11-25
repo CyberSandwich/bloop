@@ -20,7 +20,7 @@ export class SpendGuard extends DurableObject<Vars> implements SpendOps {
 
   constructor(ctx: DurableObjectState, env: Vars) {
     super(ctx, env);
-    this.ledger = new Ledger(ctx.storage.sql);
+    this.ledger = new Ledger(ctx.storage.sql, Date.now, (fn) => ctx.storage.transactionSync(fn));
     this.overrides = this.ledger.overrides();
   }
 
@@ -37,7 +37,7 @@ export class SpendGuard extends DurableObject<Vars> implements SpendOps {
   }
 
   refund(meter: MeterName, n: number, scope: string | undefined, at: number): void {
-    this.ledger.refund(meter, n, scope, at);
+    this.ledger.refund(meter, n, scope, at, Date.now(), this.caps());
   }
 
   acquire(pool: PoolName, ttlSeconds: number, scope?: string): AcquireResult {
@@ -56,8 +56,8 @@ export class SpendGuard extends DurableObject<Vars> implements SpendOps {
     this.ledger.prune(Date.now());
   }
 
-  latchTrip(name: SwitchName, value: string, reason: string, reading: string): boolean {
-    return this.ledger.latchTrip(name, value, reason, reading, Date.now());
+  latchTrip(name: SwitchName, value: string, reason: string, reading: string, prior?: string): boolean {
+    return this.ledger.latchTrip(name, value, reason, reading, Date.now(), prior);
   }
 
   markAlerted(name: SwitchName, value: string): void {
@@ -93,6 +93,14 @@ export class SpendGuard extends DurableObject<Vars> implements SpendOps {
 
   report(): string | undefined {
     return this.ledger.blob("report");
+  }
+
+  setLastAnalytics(json: string): void {
+    this.ledger.setBlob("analytics", json);
+  }
+
+  lastAnalytics(): string | undefined {
+    return this.ledger.blob("analytics");
   }
 
   analyticsRun(failed: boolean): number {

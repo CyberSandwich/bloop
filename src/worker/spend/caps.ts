@@ -10,6 +10,8 @@ export interface NumberSpec {
   readonly var: string;
   readonly default: number;
   readonly reason: string;
+  /** A zero or negative var would turn a line into zero (an instant trip) or divide by it: the default is used. */
+  readonly positive?: true;
 }
 
 const GIB = 1024 ** 3;
@@ -130,6 +132,7 @@ export const TRIPS = {
   guest_drop_cost_usd: {
     var: "BREAKER_GUEST_DROP_COST_USD",
     default: 0.00002,
+    positive: true,
     reason:
       "cost of one guest drop that is not converted: 3 R2 class A, 3 class B and 5 D1 rows, $0.0000194, rounded up",
   },
@@ -146,6 +149,7 @@ export const TRIPS = {
   budget_month_usd: {
     var: "BREAKER_BUDGET_MONTH_USD",
     default: 10,
+    positive: true,
     reason:
       "estimated month-to-date cost of everything without a platform cap: at this the breaker flips every costly switch",
   },
@@ -164,6 +168,12 @@ export const TRIPS = {
     var: "BREAKER_CEILING_MULTIPLE",
     default: 5,
     reason: "default ceiling of a trip line as a multiple of its floor; only the owner raises it",
+  },
+  line_growth_multiple: {
+    var: "BREAKER_LINE_GROWTH_MULTIPLE",
+    default: 2,
+    positive: true,
+    reason: "a trip line rises at most this multiple of the day before's line, so one abuse day cannot jump it",
   },
   ceiling_watch_pct: {
     var: "BREAKER_CEILING_WATCH_PCT",
@@ -227,11 +237,24 @@ function numberVar(vars: Vars, name: string): number | undefined {
   return Number.isFinite(n) && n >= 0 ? n : undefined;
 }
 
+const rejected = new Set<string>();
+
+/** Like `numberVar` but above zero; a var that is set and not above zero is logged once and ignored. */
+function positiveVar(vars: Vars, name: string): number | undefined {
+  const n = numberVar(vars, name);
+  if (n === undefined || n > 0) return n;
+  if (!rejected.has(name)) {
+    rejected.add(name);
+    console.error(JSON.stringify({ evt: "spend_var_rejected", var: name, why: "must be greater than 0" }));
+  }
+  return undefined;
+}
+
 /** The var when it is a valid number, else the default. A garbage var must not open or close a cap by accident. */
 export function resolveTrips(vars: Vars): Trips {
   const out = {} as Trips;
   for (const [name, s] of Object.entries(TRIPS) as [TripName, NumberSpec][])
-    out[name] = numberVar(vars, s.var) ?? s.default;
+    out[name] = (s.positive ? positiveVar(vars, s.var) : numberVar(vars, s.var)) ?? s.default;
   return out;
 }
 
@@ -349,7 +372,7 @@ export const PRICED = {
     share: { var: "BREAKER_SHARE_CONTAINERS", default: 40 },
     floorVar: "BREAKER_FLOOR_CONTAINERS",
     ceilingVar: "BREAKER_CEILING_CONTAINERS",
-    flip: { switch: "convert", value: "account_only" },
+    flip: { switch: "convert", value: "off" },
   },
   r2_class_a: {
     label: "R2 class A",
@@ -385,7 +408,7 @@ export const PRICED = {
     share: { var: "BREAKER_SHARE_WORKFLOWS", default: 5 },
     floorVar: "BREAKER_FLOOR_WORKFLOWS",
     ceilingVar: "BREAKER_CEILING_WORKFLOWS",
-    flip: { switch: "convert", value: "account_only" },
+    flip: { switch: "convert", value: "off" },
   },
   email: {
     label: "Email",
@@ -433,10 +456,11 @@ export function resolveLines(vars: Vars, trips: Trips): Record<PricedMeter, Line
   const caps = resolveCaps(vars);
   for (const m of PRICED_METERS) {
     const p: Priced = PRICED[m];
-    const share = numberVar(vars, p.share.var) ?? p.share.default;
-    const floor = numberVar(vars, p.floorVar) ?? Math.round(((share / 100) * trips.budget_month_usd) / 30 / p.unitUsd);
+    const share = positiveVar(vars, p.share.var) ?? p.share.default;
+    const floor =
+      positiveVar(vars, p.floorVar) ?? Math.round(((share / 100) * trips.budget_month_usd) / 30 / p.unitUsd);
     const byMultiple = floor * trips.ceiling_multiple;
-    const ceiling = numberVar(vars, p.ceilingVar) ?? (p.capDay ? Math.min(byMultiple, caps[p.capDay]) : byMultiple);
+    const ceiling = positiveVar(vars, p.ceilingVar) ?? (p.capDay ? Math.min(byMultiple, caps[p.capDay]) : byMultiple);
     out[m] = { floor, ceiling: Math.max(floor, ceiling) };
   }
   return out;
@@ -459,10 +483,25 @@ export function p95(values: readonly number[]): number {
 }
 
 /**
- * The daily trip line: k times the trailing p95 of completed days, clamped to [floor, ceiling]. With fewer than
- * `minDays` completed days of history the p95 is not trusted and the line is the floor.
+ * Today's trip line from the completed days, newest first. Each day's line is k times the p95 of the `history_days`
+ * ending at the day before, clamped to [floor, ceiling], and at most `line_growth_multiple` times the line the day
+ * before (never under the floor), so one abuse day cannot lift it past a step. With fewer than `history_min_days`
+ * days behind it the p95 is not trusted and that day's line is the floor.
  */
-export function tripLine(line: Line, history: readonly number[], t: Pick<Trips, "k" | "history_min_days">): number {
-  if (history.length < t.history_min_days) return line.floor;
-  return Math.min(line.ceiling, Math.max(line.floor, t.k * p95(history)));
+export function tripLine(
+  line: Line,
+  completed: readonly number[],
+  t: Pick<Trips, "k" | "history_days" | "history_min_days" | "line_growth_multiple">,
+): number {
+  let day = line.floor;
+  for (let i = completed.length - 1; i >= 0; i--) {
+    const window = completed.slice(i, i + t.history_days);
+    if (window.length < t.history_min_days) {
+      day = line.floor;
+      continue;
+    }
+    const wanted = Math.min(line.ceiling, Math.max(line.floor, t.k * p95(window)));
+    day = Math.min(wanted, Math.max(line.floor, day * t.line_growth_multiple));
+  }
+  return day;
 }

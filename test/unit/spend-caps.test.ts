@@ -68,6 +68,7 @@ describe("caps: every number pinned", () => {
       history_days: 14,
       history_min_days: 7,
       ceiling_multiple: 5,
+      line_growth_multiple: 2,
       ceiling_watch_pct: 70,
       gauge_share_storage_pct: 5,
       share_logs_pct: 10,

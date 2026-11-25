@@ -18,17 +18,8 @@ import {
   type PricedMeter,
   periodKey,
 } from "./caps.ts";
+import { migrate, type Transaction } from "./schema.ts";
 import { isStricter, type SwitchName } from "./switches.ts";
-
-const SCHEMA_STEPS = [
-  `CREATE TABLE counter (meter TEXT NOT NULL, scope TEXT NOT NULL, period TEXT NOT NULL, n INTEGER NOT NULL, PRIMARY KEY (meter, scope, period)) WITHOUT ROWID;
-   CREATE TABLE lease (id TEXT PRIMARY KEY, pool TEXT NOT NULL, scope TEXT NOT NULL, acquired_at INTEGER NOT NULL, deadline INTEGER NOT NULL);
-   CREATE TABLE trip (switch TEXT PRIMARY KEY, value TEXT NOT NULL, tripped_at INTEGER NOT NULL, reason TEXT NOT NULL, reading TEXT NOT NULL, alerted INTEGER NOT NULL DEFAULT 0);
-   CREATE TABLE alert (key TEXT PRIMARY KEY, day TEXT NOT NULL);
-   CREATE TABLE override (name TEXT PRIMARY KEY, value REAL NOT NULL);
-   CREATE TABLE kv (key TEXT PRIMARY KEY, value INTEGER NOT NULL);
-   CREATE TABLE blob (key TEXT PRIMARY KEY, value TEXT NOT NULL);`,
-];
 
 const DAY_MS = 86_400_000;
 const dayStart = (at: number) => at - (at % DAY_MS);
@@ -76,6 +67,8 @@ export interface TripRow {
   reason: string;
   reading: string;
   alerted: boolean;
+  /** The row value before the first trip on this switch; '' when there was none. A reset restores it. */
+  prior: string;
 }
 export interface Snapshot {
   at: number;
@@ -99,21 +92,10 @@ export class Ledger {
   constructor(
     private readonly sql: SqlLike,
     clock: () => number = Date.now,
+    transaction: Transaction = (fn) => fn(),
   ) {
-    this.migrate();
+    migrate(sql, transaction);
     this.sql.exec("INSERT OR IGNORE INTO kv (key, value) VALUES ('born', ?)", dayStart(clock()));
-  }
-
-  // One numbered step per schema change, checked on every wake (CLAUDE.md, Durable Object schema).
-  private migrate(): void {
-    this.sql.exec(
-      "CREATE TABLE IF NOT EXISTS schema_version (id INTEGER PRIMARY KEY CHECK (id = 1), version INTEGER NOT NULL)",
-    );
-    let version = Number(this.sql.exec("SELECT version FROM schema_version WHERE id = 1").toArray()[0]?.version ?? 0);
-    for (; version < SCHEMA_STEPS.length; version++) {
-      this.sql.exec(SCHEMA_STEPS[version] as string);
-      this.sql.exec("INSERT OR REPLACE INTO schema_version (id, version) VALUES (1, ?)", version + 1);
-    }
   }
 
   private get(meter: string, scope: string, period: string): number {
@@ -198,11 +180,19 @@ export class Ledger {
     for (const [s, p] of this.rows(meter, scope, now)) this.add(meter, s, p, n);
   }
 
-  /** Gives back part of an earlier take; `at` is when it was taken, so a midnight crossing refunds the right day. */
-  refund(meter: MeterName, n: number, scope: string | undefined, at: number): void {
+  /**
+   * Gives back part of an earlier take; `at` is when it was taken, so a midnight crossing refunds the right day. A
+   * refund is for work that never started, so an `at` in the future or older than the longest lease plus its grace
+   * is a caller bug and does nothing (false); a counter never goes below zero.
+   */
+  refund(meter: MeterName, n: number, scope: string | undefined, at: number, now: number, caps: Caps): boolean {
     positiveInt(n, "n");
     if (!isMeter(meter)) throw new RangeError(`unknown meter ${meter}`);
+    const window =
+      (Math.max(caps.lease_max_convert_seconds, caps.lease_max_export_seconds) + caps.lease_grace_seconds) * 1000;
+    if (!Number.isFinite(at) || at > now || now - at > window) return false;
     for (const [s, p] of this.rows(meter, scope, at)) this.add(meter, s, p, -n);
+    return true;
   }
 
   /** Takes a pool slot for at most `ttlSeconds` (clamped to the pool's maximum). Busy, with nothing held, when full. */
@@ -304,24 +294,29 @@ export class Ledger {
 
   // Breaker state: latched until reset, one alert per trip.
 
-  /** Latches a switch value. False (nothing changes) when the switch is already latched at this value or a stricter one. */
-  latchTrip(name: SwitchName, value: string, reason: string, reading: string, now: number): boolean {
-    const held = this.sql.exec("SELECT value FROM trip WHERE switch = ?", name).toArray()[0];
+  /**
+   * Latches a switch value. False (nothing changes) when the switch is already latched at this value or a stricter
+   * one. `prior` is the switch's row value before the breaker touched it ('' for no row); a stricter trip on the
+   * same switch keeps the first one's, so a reset restores what was there before any trip.
+   */
+  latchTrip(name: SwitchName, value: string, reason: string, reading: string, now: number, prior = ""): boolean {
+    const held = this.sql.exec("SELECT value, prior FROM trip WHERE switch = ?", name).toArray()[0];
     if (held && !isStricter(name, value, String(held.value))) return false;
     this.sql.exec(
-      "INSERT OR REPLACE INTO trip (switch, value, tripped_at, reason, reading, alerted) VALUES (?, ?, ?, ?, ?, 0)",
+      "INSERT OR REPLACE INTO trip (switch, value, tripped_at, reason, reading, alerted, prior) VALUES (?, ?, ?, ?, ?, 0, ?)",
       name,
       value,
       now,
       reason,
       reading,
+      held ? String(held.prior) : prior,
     );
     return true;
   }
 
   trips(): TripRow[] {
     return this.sql
-      .exec("SELECT switch, value, tripped_at, reason, reading, alerted FROM trip ORDER BY tripped_at, switch")
+      .exec("SELECT switch, value, tripped_at, reason, reading, alerted, prior FROM trip ORDER BY tripped_at, switch")
       .toArray()
       .map((r) => ({
         switch: String(r.switch) as SwitchName,
@@ -330,6 +325,7 @@ export class Ledger {
         reason: String(r.reason),
         reading: String(r.reading),
         alerted: Number(r.alerted) === 1,
+        prior: String(r.prior),
       }));
   }
 
