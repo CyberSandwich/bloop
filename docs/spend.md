@@ -53,7 +53,7 @@ All counts are global, exact and per UTC period; a day's all-scopes total is kep
 | `convert_guest` | guest conversions | day, per IP hash |
 | `convert_demo` | demo conversions | day, and day per IP hash |
 | `conversion_done`, `conversion_failed` | finished and failed conversions | none; the breaker reads them |
-| `r2_class_a`, `r2_class_b` | R2 operations, charged once per request (`charge`, section 4) | month |
+| `r2_class_a`, `r2_class_b` | R2 operations, charged once per request in reserved blocks (`charge`, section 4) | month |
 | `upload_user`, `upload_user_bytes` | library uploads and bytes | day, per user |
 | `guest_drop` | guest drops | day, per IP hash |
 | `email` | sends | hour and day |
@@ -92,6 +92,7 @@ Each cap has a default in `src/worker/spend/caps.ts` and a var that replaces it;
 | `CAP_EMAIL_CODE_IP_DAY` | 20 | sign-in code requests per IP hash per day |
 | `CAP_EXPORT_USER_DAY` | 3 | exports per account per day |
 | `CAP_DEMO_SESSION_DAY` | 2000 | demo sessions per day, all visitors |
+| `CAP_R2_BLOCK_OPS` | 100 | R2 operations of one class an isolate reserves from the guard at a time and spends locally (section 4) |
 | `CAP_ISOLATE_OPEN_EMAIL_DAY` | 20 | sends per day one Worker isolate allows while the guard is unreachable (section 4) |
 | `CAP_ISOLATE_OPEN_EMAIL_CODE_IP_DAY` | 10 | code requests per IP hash per day one isolate allows while the guard is unreachable |
 | `CAP_ISOLATE_OPEN_DEMO_SESSION_DAY` | 200 | demo sessions per day one isolate allows while the guard is unreachable |
@@ -113,6 +114,8 @@ The composition root builds one `Spend` with `spendFor(env)` (`src/worker/spend/
 | sign-in code | `take("email_code", 1, ipHash)` | admitted up to `CAP_ISOLATE_OPEN_EMAIL_CODE_IP_DAY` a day per IP hash in that isolate, then 429 |
 
 A guard outage must not end code sign-in or the public demo, and email is capped at 200 a day by the platform anyway. The isolate count lives in the isolate (all clients in it share one) and starts again each UTC day; the breaker's lines and the platform quota bound the rest. Every fail-open admission logs `spend_guard_open`.
+
+**`charge` is block-reserved.** A Worker request is not one guard call per R2 operation: each isolate reserves `CAP_R2_BLOCK_OPS` (100) operations of a class from the guard, spends them locally, and never returns the leftover, so 250 single charges make 3 guard writes. The guard's monthly count is therefore the reserved total, never lower than the spent total; at most one block per isolate per class is counted but not yet used. Where a whole block no longer fits under the cap, the client takes exactly what it is short by, so the cap still refuses at the exact operation. A charge that cannot be covered is refused with 429 (cap) or 503 (guard unreachable); reserved operations already in an isolate keep being spent while the guard is down. A month rollover can leave up to a block per isolate charged to the earlier month.
 
 | result | status | code | header |
 |---|---|---|---|
