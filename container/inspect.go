@@ -11,6 +11,7 @@ import (
 	"regexp"
 	"sort"
 	"strings"
+	"unicode"
 	"unicode/utf8"
 )
 
@@ -262,7 +263,7 @@ func notesText(b []byte) string {
 			}
 		}
 	}
-	return strings.TrimSpace(strings.Join(out, "\n"))
+	return strings.TrimSpace(stripControls(strings.Join(out, "\n")))
 }
 
 func capRunes(s string, n int) string {
@@ -352,7 +353,12 @@ func analyzeOOXML(p *pkg) Analysis {
 		a.Fonts = append(a.Fonts, v)
 	}
 	sort.Strings(a.Fonts)
-	for i, part := range slideParts(p) {
+	n := 0
+	for _, part := range slideParts(p) {
+		if slide, ok := p.part(part); ok && slideHidden(slide) {
+			continue // LibreOffice leaves hidden slides out of the PDF, so they take no page number
+		}
+		n++
 		rels, _ := p.part(relsName(part))
 		r, ok := relOfType(parseRels(rels), "/notesSlide")
 		if !ok {
@@ -363,10 +369,62 @@ func analyzeOOXML(p *pkg) Analysis {
 			continue
 		}
 		if text := notesText(b); text != "" {
-			a.Notes = append(a.Notes, Note{N: i + 1, Text: capRunes(text, maxNoteRunes)})
+			a.Notes = append(a.Notes, Note{N: n, Text: capRunes(text, maxNoteRunes)})
 		}
 	}
 	return a
+}
+
+// slideHidden reports whether a slide part's root says show="0".
+func slideHidden(b []byte) bool {
+	d := xml.NewDecoder(bytes.NewReader(b))
+	for {
+		tok, err := d.Token()
+		if err != nil {
+			return false
+		}
+		if el, ok := tok.(xml.StartElement); ok {
+			for _, a := range el.Attr {
+				if a.Name.Local == "show" && (a.Value == "0" || a.Value == "false") {
+					return true
+				}
+			}
+			return false
+		}
+	}
+}
+
+// stripControls drops every control character except a newline.
+func stripControls(s string) string {
+	return strings.Map(func(r rune) rune {
+		if r != '\n' && unicode.IsControl(r) {
+			return -1
+		}
+		return r
+	}, s)
+}
+
+const (
+	maxFontsMissing = 50
+	maxFontRunes    = 100
+)
+
+// capFonts bounds the fontsMissing list: names cut to maxFontRunes, sorted, at most maxFontsMissing.
+func capFonts(names []string) []string {
+	out := make([]string, 0, min(len(names), maxFontsMissing))
+	for _, n := range names {
+		n = strings.TrimSpace(strings.Map(func(r rune) rune {
+			if unicode.IsControl(r) {
+				return -1
+			}
+			return r
+		}, n))
+		if n != "" {
+			out = append(out, capRunes(n, maxFontRunes))
+		}
+	}
+	sort.Strings(out)
+	return out[:min(len(out), maxFontsMissing)]
 }
 
 // metricAliases are families LibreOffice renders with a metric-compatible font we ship, so a deck

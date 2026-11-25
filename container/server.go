@@ -90,7 +90,7 @@ type Server struct {
 	starting  bool
 	started   bool
 	chunks    map[int]int64 // received chunk sizes by index
-	uploading map[int]bool
+	uploading map[int]int64 // chunks being received, and the bytes each may use
 	status    Status
 	manifest  *Manifest
 	byPath    map[string]OutFile
@@ -101,7 +101,7 @@ type Server struct {
 func newServer(cfg Config, run runner) *Server {
 	return &Server{
 		cfg: cfg, run: run,
-		chunks: map[int]int64{}, uploading: map[int]bool{},
+		chunks: map[int]int64{}, uploading: map[int]int64{},
 		byPath: map[string]OutFile{},
 		status: Status{State: stateIdle, Ready: []string{}},
 	}
@@ -171,6 +171,8 @@ func (s *Server) fail(code string) {
 	s.started = true
 	s.status.State = stateFailed
 	s.status.Error = &code
+	s.status.Ready = []string{} // a failed job publishes nothing, page 1 included
+	s.byPath = map[string]OutFile{}
 }
 
 // publish makes validated files fetchable before the job is done.
@@ -215,22 +217,28 @@ func (s *Server) handleChunk(w http.ResponseWriter, r *http.Request) {
 		s.mu.Unlock()
 		apiError(w, http.StatusConflict, "job_already_started")
 		return
-	case s.uploading[n]:
+	}
+	if _, busy := s.uploading[n]; busy {
 		s.mu.Unlock()
 		apiError(w, http.StatusConflict, "chunk_in_progress")
 		return
 	}
+	// Chunks in flight count at the room they were granted, so parallel uploads cannot pass MaxInput together.
 	var others int64
 	for i, size := range s.chunks {
 		if i != n {
 			others += size
 		}
 	}
-	s.uploading[n] = true
+	for _, granted := range s.uploading {
+		others += granted
+	}
+	room := s.cfg.MaxInput - others
+	granted := max(min(s.cfg.MaxChunk, room), 0)
+	s.uploading[n] = granted
 	s.mu.Unlock()
 
-	room := s.cfg.MaxInput - others
-	size, err := s.storeChunk(w, r, n, min(s.cfg.MaxChunk, room))
+	size, err := s.storeChunk(w, r, n, granted)
 	s.mu.Lock()
 	delete(s.uploading, n)
 	if err == nil {
@@ -289,8 +297,15 @@ func (s *Server) handleStart(w http.ResponseWriter, r *http.Request) {
 	}
 	ext := strings.ToLower(strings.TrimPrefix(req.Ext, "."))
 	kind, known := kindByExt[ext]
-	if !known {
+	switch {
+	case !known:
 		apiError(w, http.StatusUnsupportedMediaType, "unsupported_ext")
+		return
+	case req.Chunks > maxChunkIndex:
+		apiError(w, http.StatusBadRequest, "bad_start")
+		return
+	case req.Size > s.cfg.MaxInput:
+		apiError(w, http.StatusRequestEntityTooLarge, errTooLarge)
 		return
 	}
 	s.mu.Lock()

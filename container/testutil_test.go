@@ -69,7 +69,8 @@ type fakeTools struct {
 	probeOut string        // ffprobe JSON for the mp4
 	delay    time.Duration // added to every call
 
-	holdPages chan struct{} // when set, pdftoppm for any page after the first waits for a receive or close
+	failLaterPages bool          // pdftoppm fails for every page after the first
+	holdPages      chan struct{} // when set, pdftoppm for any page after the first waits for a receive or close
 }
 
 func newFakeTools(pages int) *fakeTools {
@@ -156,6 +157,9 @@ func (f *fakeTools) run(ctx context.Context, spec cmdSpec) ([]byte, error) {
 		}
 		return []byte(fmt.Sprintf("Title: x\nPages:          %d\n", f.pages)), nil
 	case "pdftoppm":
+		if f.failLaterPages && after(a, "-f") != "1" {
+			return nil, fmt.Errorf("pdftoppm: exit status 1")
+		}
 		if f.holdPages != nil && after(a, "-f") != "1" {
 			select {
 			case <-f.holdPages:
