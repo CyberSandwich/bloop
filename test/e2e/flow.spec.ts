@@ -1667,6 +1667,8 @@ test.describe("screen and phone layout", () => {
   /** Once the glides are awaited: none left, and each visible control is what sits at its own center. */
   async function controlsSettled(page: Page) {
     const state = await page.evaluate(`(async () => {
+      // The resize observer fits the pill after the first frame.
+      await new Promise((done) => requestAnimationFrame(() => requestAnimationFrame(done)));
       const bar = document.getElementById("controls");
       await Promise.all(bar.getAnimations().map((a) => a.finished.catch(() => {})));
       // A disabled control takes no pointer, so the point goes through it.
