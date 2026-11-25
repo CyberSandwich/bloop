@@ -1468,7 +1468,7 @@ test.describe("a guest's photo and video on the screen (design.md section 7, Vid
 });
 
 test.describe("open path", () => {
-  test("RES-01 storage: launch, the Download fallback after 5 s, the PDF view, and End leaving no sid", async ({
+  test("RES-01 storage: launch, the Download fallback at once, the PDF view, and End leaving no sid", async ({
     browser,
   }) => {
     const screen = await liveScreen(browser);
