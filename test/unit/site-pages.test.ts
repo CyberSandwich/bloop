@@ -285,6 +285,13 @@ describe("landing word caps (design.md section 13)", () => {
       new RegExp(`to \\{\\s*background-position: ${tile?.replace(".", "\\.")} 0;\\s*\\}`),
     );
     expect(css).not.toMatch(/text-shadow/);
+    // The ink between bands is under 2em, less than the word, so the next band enters before the last leaves;
+    // each band crosses at 2.5em a second, the speed the owner chose.
+    const em = Number.parseFloat(tile ?? "");
+    const gap = ((100 - Number(stops.at(-1)?.[2]) + Number(stops[0]?.[2])) / 100) * em;
+    expect(gap).toBeLessThan(2);
+    const seconds = Number(/animation: sweep ([\d.]+)s/.exec(moving)?.[1]);
+    expect(em / seconds).toBeCloseTo(2.5, 5);
   });
 
   it("the why sits between the stills and Features, read once as the design.md sentence, its words as the fill's spans", () => {
@@ -1283,8 +1290,8 @@ describe("the doc pages: one .legal layout (design.md section 6, Legal pages)", 
 describe("landing motion and spacing (design.md sections 6 and 8)", () => {
   const css = read("public/css/site.css");
 
-  it("the word's sheen sweeps every 3 s with no rest on its own keyframe; the loader keeps sheen's 2.2 s and rest", () => {
-    expect(css).toMatch(/animation: sweep 3s linear 0\.3s infinite backwards;/);
+  it("the word's sheen sweeps a tile every 2 s with no rest on its own keyframe; the loader keeps sheen's 2.2 s and rest", () => {
+    expect(css).toMatch(/animation: sweep 2s linear 0\.3s infinite backwards;/);
     expect(css).not.toMatch(/animation: sheen/);
     expect(between(read("public/css/base.css"), /@keyframes sheen \{/, "\n}\n")).toMatch(/\n {2}45%,\n {2}100% \{/);
     expect(read("public/css/app.css")).toMatch(/animation: sheen 2\.2s linear infinite;/);

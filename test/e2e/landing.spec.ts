@@ -305,6 +305,18 @@ for (const vp of VIEWPORTS) {
       await expect.poll(() => page.evaluate("scrollY")).toBeGreaterThan(0);
     });
 
+    test("the ink between two sheen bands is narrower than the word, so the word is never all ink", async ({
+      page,
+    }) => {
+      await page.goto("/");
+      const [word, tile] = (await page.evaluate(`(() => {
+        const el = document.querySelector(".sheen");
+        return [el.getBoundingClientRect().width, parseFloat(getComputedStyle(el).backgroundSize)];
+      })()`)) as number[];
+      // The gradient is transparent over the first 35% and last 2% of each tile.
+      expect(0.37 * (tile ?? 0)).toBeLessThan(word ?? 0);
+    });
+
     test("the sheen pauses while the hero is off screen", async ({ page }) => {
       await page.goto("/");
       const sheen = page.locator(".sheen");

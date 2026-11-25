@@ -245,28 +245,29 @@ html:has(.page-site) {
 }
 @supports (background-clip: text) or (-webkit-background-clip: text) {
   @media (prefers-reduced-motion: no-preference) {
-    /* One band per 7.5em tile, a word of ink between; moving one tile is the first frame again: no seam. */
+    /* One 3.15em band per 5em tile: under 2em of ink between, so the next band enters before the last leaves.
+       Moving one tile is the first frame again: no seam. */
     .sheen {
       background:
         linear-gradient(
           100deg,
-          transparent 54%,
-          var(--robin-deep) 66%,
-          var(--robin) 75%,
-          var(--robin-deep) 84%,
-          transparent 96%
+          transparent 35%,
+          var(--robin-deep) 53%,
+          var(--robin) 66%,
+          var(--robin-deep) 80%,
+          transparent 98%
         )
-        0 0 / 7.5em 100% repeat-x var(--ink);
+        0 0 / 5em 100% repeat-x var(--ink);
       -webkit-background-clip: text;
       background-clip: text;
       color: transparent;
-      animation: sweep 3s linear 0.3s infinite backwards;
+      animation: sweep 2s linear 0.3s infinite backwards;
     }
   }
 }
 @keyframes sweep {
   to {
-    background-position: 7.5em 0;
+    background-position: 5em 0;
   }
 }
 .lead {
