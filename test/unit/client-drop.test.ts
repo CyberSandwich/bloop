@@ -154,11 +154,41 @@ describe("preparing a file", () => {
     expect(await prepareFile(file([0, 0, 0, 12, 1, 2, 3], "a.mov"), MB)).toEqual({ ok: false, problem: "video" });
   });
 
-  it("refuses a photo that cannot be decoded and is over the cap", async () => {
+  it("refuses a photo this browser cannot decode, small or not", async () => {
     expect(await prepareFile(file(new Array(200).fill(1), "a.png"), 100)).toEqual({ ok: false, problem: "photo" });
+    expect(await prepareFile(file([0xff, 0xd8, 0xff, 0xda], "a.jpg"), MB)).toEqual({ ok: false, problem: "photo" });
   });
 
   it("names a HEIC this browser cannot decode, and never sends it as it is", async () => {
     expect(await prepareFile(file([0, 0, 0, 24], "IMG_1.HEIC"), MB)).toEqual({ ok: false, problem: "heic" });
+  });
+
+  /** Media modules whose photo step answers `reason`, and whose imports fail when `fail` names them. */
+  const modules = (reason: "decode" | "encode" | "large", fail: ("photo" | "video")[] = []) => {
+    const photo = { preparePhoto: async () => ({ ok: false as const, reason }) };
+    const video = { stripLocation: async () => ({ ok: false as const }) };
+    const load =
+      <T>(name: "photo" | "video", m: T) =>
+      async () => {
+        if (fail.includes(name)) throw new TypeError("Failed to fetch dynamically imported module");
+        return m;
+      };
+    return { photo: load("photo", photo), video: load("video", video) } as unknown as Parameters<typeof prepareFile>[2];
+  };
+
+  it("maps only a decode failure on a HEIC to heic: encode is photo, large is large", async () => {
+    const heic = file([1], "a.heic");
+    expect(await prepareFile(heic, MB, modules("decode"))).toEqual({ ok: false, problem: "heic" });
+    expect(await prepareFile(heic, MB, modules("encode"))).toEqual({ ok: false, problem: "photo" });
+    expect(await prepareFile(heic, MB, modules("large"))).toEqual({ ok: false, problem: "large" });
+    expect(await prepareFile(file([1], "a.jpg"), MB, modules("decode"))).toEqual({ ok: false, problem: "photo" });
+  });
+
+  it("never rejects: a media module that fails to load is the file kind's refusal", async () => {
+    const down = modules("decode", ["photo", "video"]);
+    expect(await prepareFile(file([1], "a.jpg"), MB, down)).toEqual({ ok: false, problem: "photo" });
+    expect(await prepareFile(file([1], "a.mov"), MB, down)).toEqual({ ok: false, problem: "video" });
+    const deck = file([1], "a.pdf");
+    expect(await prepareFile(deck, MB, down)).toEqual({ ok: true, file: deck });
   });
 });

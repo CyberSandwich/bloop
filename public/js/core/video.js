@@ -31,9 +31,13 @@ function header(b, o, left) {
   return { type: fourcc(b, o + 4), head, size };
 }
 
-/** @param {Uint8Array} b @param {number} from @param {number} to */
-function* children(b, from, to) {
+/**
+ * QuickTime lets a `udta` end with a 32-bit zero instead of a box; `terminated` accepts exactly that.
+ * @param {Uint8Array} b @param {number} from @param {number} to @param {boolean} [terminated]
+ */
+function* children(b, from, to, terminated = false) {
   for (let at = from; at < to; ) {
+    if (terminated && to - at === 4 && u32(b, at) === 0) return;
     const h = header(b, at, to - at);
     yield { type: h.type, at, body: at + h.head, end: at + h.size };
     at += h.size;
@@ -99,7 +103,7 @@ export function blankLocation(moov) {
   for (const box of children(moov, h.head, h.size)) {
     if (box.type === "meta") n += blankMeta(moov, box);
     if (box.type !== "udta") continue;
-    for (const atom of children(moov, box.body, box.end)) {
+    for (const atom of children(moov, box.body, box.end, true)) {
       if (atom.type !== "©xyz") continue;
       moov.fill(0, atom.body, atom.end);
       n++;
