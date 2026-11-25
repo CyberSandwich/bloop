@@ -166,8 +166,8 @@
     },
     {
       "name": "support mail, lazy",
-      "path": "public/js/shared/support.js",
-      "limit": "0.35 kB"
+      "path": "dist/js/shared/support.js",
+      "limit": "0.2 kB"
     },
     {
       "name": "font",
