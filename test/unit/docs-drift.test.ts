@@ -234,8 +234,15 @@ describe("size budgets", () => {
     const entries: { name: string; path: string | string[] }[] = JSON.parse(read("package.json"))["size-limit"];
     const media = entries.find((e) => e.name === "phone media, lazy")?.path;
     expect(media).toEqual(["public/js/core/photo.js", "public/js/core/video.js"]);
+    const sheet = entries.find((e) => e.name === "session length sheet, lazy")?.path;
+    expect(sheet).toEqual(["public/js/core/length.js", "public/js/shared/length.js"]);
+    const drag = entries.find((e) => e.name === "drag and drop, lazy")?.path;
+    expect(drag).toBe("public/js/core/drag.js");
     const browser = [entries.find((e) => e.name === "browser JS")?.path ?? []].flat();
-    expect(browser).toEqual(["public/js/**/*.js", ...[media ?? []].flat().map((path) => `!${path}`)]);
+    expect(browser).toEqual([
+      "public/js/**/*.js",
+      ...[media ?? [], sheet ?? [], drag ?? []].flat().map((path) => `!${path}`),
+    ]);
     const lazy = /\b(photo|video)\.js\b/;
     for (const file of walk("public/js", (path) => path.endsWith(".js"))) {
       for (const line of read(file)
@@ -244,6 +251,31 @@ describe("size budgets", () => {
         expect(line, file).toMatch(/import\("\.\/(photo|video)\.js"\)/);
       }
     }
+  });
+
+  it("SESS-01 sheet: the Session Length sheet loads only by import(), and its length rules only with it", () => {
+    for (const file of walk("public/js", (path) => path.endsWith(".js"))) {
+      for (const line of read(file)
+        .split("\n")
+        .filter((l) => /length\.js\b/.test(l) && /\b(import|from)\b/.test(l))) {
+        if (file.endsWith("core/length.js")) expect(line, file).toMatch(/from "\.\.\/shared\/length\.js"/);
+        else expect(line, file).toMatch(/import\("\.\/core\/length\.js"\)/);
+      }
+    }
+    // Its stylesheet comes with it, never with the page.
+    expect(read("public/a.html")).not.toContain("length.css");
+    expect(read("public/js/core/length.js")).toContain('href: "/css/length.css"');
+  });
+
+  it("drag and drop loads only by import(); phone.js claims a file drag and reads its files inside the event", () => {
+    for (const file of walk("public/js", (path) => path.endsWith(".js"))) {
+      for (const line of read(file)
+        .split("\n")
+        .filter((l) => /\bdrag\.js\b/.test(l) && /\b(import|from)\b/.test(l))) {
+        expect(line, file).toMatch(/import\("\.\/core\/drag\.js"\)/);
+      }
+    }
+    expect(read("public/js/phone.js")).toContain("e.preventDefault();\n  const files = [...e.dataTransfer.files];");
   });
 
   it("only package.json size-limit states a budget: docs name no entry next to a size", () => {

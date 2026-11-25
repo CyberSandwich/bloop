@@ -181,7 +181,7 @@ sequenceDiagram
   Note over W,S: the screen end response carries Clear-Site-Data storage
   Note over W,R: every /f/ token now answers 410 (revoked), until the screen object closes
 ```
-Backstops: an hourly cron ends any D1 `session` row still open 95 minutes after approval or claim (`closeStaleSessions`, `end_reason` `auto`), and lists `g/` in the bucket and deletes any guest object older than 2 hours, closing the matching `guest_file` rows. The R2 lifecycle rule (`tools/r2-lifecycle.json`, applied by `deploy.yml`) deletes anything under `g/` older than 1 day.
+Backstops: an hourly cron ends any D1 `session` row still open past the longest a session can last after its approval or claim (`longestSessionMs`: two claim windows, an upload and the 12 h cap, plus 5 min; `closeStaleSessions`, `end_reason` `auto`), and lists `g/` in the bucket and deletes any guest object older than that (plus 10 min), closing the matching `guest_file` rows. Both follow the cap, not a fixed age, so a session the phone made longer keeps its row open and its file. The R2 lifecycle rule (`tools/r2-lifecycle.json`, applied by `deploy.yml`) deletes anything under `g/` older than 1 day.
 
 ### 4.4 Guest drop (host absent)
 
@@ -203,8 +203,8 @@ Per-room policy (ADR 0005): `open` (default) is the flow above. `pass` is option
 - the screen launches nothing: no `ms-powerpoint:` and no `window.open`. On the launch link it fetches the link itself (a HEAD, as PowerPoint would; an image's view link it shows as the image instead), which moves the session to `open`, and from `approved` to `open` it shows every approved item in a viewer in the page (`public/js/viewer.js`), built from the screen's state (`demo_open`), so a reload or a dropped socket shows it again: a sidebar of the items, and the chosen one on the stage. The sample deck and its PDF show as pre-rendered slide images (`public/img/demo-slide-*`, `tools/render-slides.py`; prev and next, arrow keys, Present), an image as itself (another item's view link is minted with `protocol` and that item), a link as a card that opens it in a new tab, and any other file, a guest's included, as a card. Download mints a fresh download link for the shown item on the click;
 - one device can play both parts: in the waiting state the demo screen offers "Approve on This Device", a same-tab link to `/a?c=<code>`; `/a` then offers "See It on the Screen" back to `/s?mode=demo`, which resumes the screen from the sid in that tab's `sessionStorage`. Only the tab that created a screen holds its sid, and a stored sid resumes only a screen of the page's mode. A demo screen runs at phone width; a live one asks for the room's screen;
 - the phone gets no OAuth step, and demo routes never read the phone session cookie;
-- the session lasts 60 min (`DEMO_SESSION_MINUTES`), and guest drops are capped at 25 MB (`DEMO_GUEST_MAX_BYTES`), and the Open click applies as in 4.4;
-- the demo has its own rate limits (section 6): stricter per-IP bindings for creating and claiming, and a global cap on concurrent demo screens held in the Directory (`DEMO_MAX_CONCURRENT`) and a per-IP-hash cap (`DEMO_MAX_PER_IP`) so one address cannot fill it. A demo screen takes a slot at creation, for one claim window plus one session, and gives it back when its session ends or the screen closes; a screen that outlives its hold stops counting. `DEMO_ENABLED=false` makes `POST /api/screens {mode: "demo"}` and any claim of a demo code answer `not_found`;
+- the session starts at 1 hour as a live one does, and the phone can set it up to 2 hours from approval (`DEMO_MAX_MINUTES`, the live cap is 12), and guest drops are capped at 25 MB (`DEMO_GUEST_MAX_BYTES`), and the Open click applies as in 4.4;
+- the demo has its own rate limits (section 6): stricter per-IP bindings for creating and claiming, and a global cap on concurrent demo screens held in the Directory (`DEMO_MAX_CONCURRENT`) and a per-IP-hash cap (`DEMO_MAX_PER_IP`) so one address cannot fill it. A demo screen takes a slot at creation, for one claim window plus the longest demo session, and gives it back when its session ends or the screen closes; a screen that outlives its hold stops counting. `DEMO_ENABLED=false` makes `POST /api/screens {mode: "demo"}` and any claim of a demo code answer `not_found`;
 - its session and audit rows are `mode = demo` with no user, and are kept 7 days;
 - the landing embeds no demo: its Try the demo button opens `/s?mode=demo`, and the landing's hero stage is a static panel, with no connection.
 
@@ -245,7 +245,7 @@ src/worker/
   export-format.ts         CSV with formula-injection protection, export columns, date range parsing
   stores.ts                the one place that picks the AuditLog and Metrics implementations
   auth/{oauth,vault,sessions,cookies,services,db}.ts   oauth4webapi flow; token vault; phone sessions; cookie format and AEAD seal; per-request objects and the daily job; the D1 slice
-  routes/{pairing,files,open,drop,auth,export,common}.ts
+  routes/{pairing,files,open,drop,control,auth,export,common}.ts
   retention.ts             cron jobs: closeStaleSessions (hourly), runRetention (daily)
 public/                    wrangler's assets directory, served as it is. Everything here is public: no secrets, no server-only logic
   index.html security.html privacy.html s.html a.html code.html 404.html   (the /g and /me pages are not built yet)
@@ -254,6 +254,8 @@ public/                    wrangler's assets directory, served as it is. Everyth
   css/base.css             what every page uses: tokens, reset, buttons, glass, the reduced-motion net; linked first
   css/site.css css/app.css   the site pages' rules (and the Worker's auth error page); the task pages' rules
   js/{screen,phone,code,launcher,residue}.js   task pages; js/vendor/uqr.js (+ LICENSE)
+  js/core/length.js js/shared/length.js css/length.css   the phone's Session Length sheet, loaded on its first tap; the length rules the route shares
+  js/core/drag.js   the phone's drop hint and drop, loaded at its first file drag
   js/viewer.js js/core/demo.js   the demo screen's viewer (sidebar, stage, pager, link card, its own link fetch); its pure parts
   img/demo-slide-{n}.{avif,webp}   the sample deck's pages, shown for the deck and its PDF (tools/render-slides.py)
   img/hero-viewer-{1000,1440}.{avif,webp}   the landing stage's screenshot of the Demo Room
@@ -304,6 +306,7 @@ test/
 | POST                     | `/api/approve`                               | Bearer pid, plus cookie as above, Origin | `{ids}`, 1 to 12 distinct entry ids; the Worker resolves each item from the source's list, so an id not in it is `file_not_found` |
 | PUT                      | `/api/drop`                                  | Bearer pid, Origin                    | guest upload, raw body, `X-Bloop-Name` (percent-encoded), `Content-Length` required, octet-stream, PDF or PPTX content type; answers the phone's view (`offered`) |
 | POST                     | `/api/control`                               | Bearer pid, Origin; `RL_CONTROL`      | the phone's remote, `{item, page, present, seq}`: an approved FILE item's id, a 1-based page within its pages, whether to present, and a seq that grows per sender (`ShownCommand`). Absolute, so a replay is a no-op, and a seq not above the phone's last applied one changes nothing. Demo sessions only (live is `wrong_state`); a link or unknown id is `file_not_found`, a page out of range `bad_request`; answers the phone's view |
+| POST                     | `/api/session/length`                       | Bearer pid, Origin; `RL_CONTROL`      | the phone sets when the session ends, `{minutes}` (whole, 5 to `SESSION_MAX_MINUTES`): `endsAt` becomes now plus minutes, never past approval plus the mode's cap (12 h live, 2 h demo); both modes; before approval or after the end `wrong_state`; answers the phone's view, and both sockets get the new `endsAt` (SESS-01) |
 | POST                     | `/api/cancel`                                | Bearer pid, Origin                    | cancel before approve                                          |
 | POST                     | `/api/end`                                   | Bearer pid, Origin                    | end from the phone                                             |
 | POST                     | `/api/guest-passes`                          | session cookie, Origin                | host creates a guest link                                      |
@@ -333,7 +336,7 @@ Every state-changing route checks four things: `Origin` equals `PUBLIC_ORIGIN`; 
 | `/f/`                   | 60 per 60 s per IP; then 60 per 60 s per screen (`RL_FETCH` keyed by the screen ref), or per view link (keyed by its hash), between the Screen object's check and the counted fetch; per link: 10 fetches, none for a view link (VID-02) | binding; exact      |
 | `PUT /api/drop`         | 5 per 60 s per IP (every attempt past the Origin and credential checks counts); one accepted file per session; live bytes under `GUEST_STORAGE_BUDGET_BYTES` | binding; exact; D1  |
 | `/auth/start`           | 10 per 60 s per IP                                                                   | binding             |
-| `POST /api/control`, `POST /api/screen/shown` | 120 per 60 s per IP (`RL_CONTROL`, its own binding so `/f/` range reads never refuse a tap), then 120 per 60 s per credential (keyed by the pid's or sid's hash, never the screen ref: every `/f/` token carries it) (PAIR-13) | binding |
+| `POST /api/control`, `POST /api/screen/shown`, `POST /api/session/length` | 120 per 60 s per IP (`RL_CONTROL`, its own binding so `/f/` range reads never refuse a tap), then 120 per 60 s per credential (keyed by the pid's or sid's hash, never the screen ref: every `/f/` token carries it) (PAIR-13) | binding |
 | `GET /api/files`        | 20 per 60 s per session (`RL_FILES`, keyed by the screen ref), after the credential check: each call is a Graph call | binding |
 | `/api/it/export`        | 10 per 60 s per IP, checked before the token (a per-token key would not slow guessing) | binding             |
 | demo screen creation    | per IP (`RL_DEMO_CREATE` in `wrangler.jsonc`), instead of the live limit             | binding             |
@@ -357,7 +360,7 @@ Both sockets are JSON text frames of at most 4 KB, `{"v":1,"t":<type>,...}`. A s
 |                  | `open`      | `item` and `links: {protocol, download, pdf, view}`, one field set per mint (sent once per mint; never repeated in `state`) |
 |                  | `error`     | `code: ErrorCode`                                                                   |
 | phone to server  | `hello`     | `pid`                                                                               |
-| server to phone  | `state`     | `PhoneView` (state, room, match, items, endsAt for the countdown, mode, kind)       |
+| server to phone  | `state`     | `PhoneView` (state, room, match, items, endsAt for the countdown, maxMinutes, mode, kind) |
 |                  | `error`     | `code`                                                                              |
 
 Phone actions (approve, cancel, end, upload, control) and screen actions that change a session (end, link, restart, shown) use HTTP, so they get the Origin check, idempotency and a clear status. The sockets only push state: a remote command arrives as `shown` inside the ordinary `state` frame, so a reloaded or polling screen catches up with no frame of its own.

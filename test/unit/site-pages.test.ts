@@ -828,7 +828,7 @@ describe("stage 1 wording and pictures", () => {
     const html = read("public/security.html");
     const text = visibleText(html);
     expect(html).not.toContain("What the room PC can and cannot reach");
-    for (const fact of [/60 seconds/g, /90 minutes/g, /Disconnect OneDrive/g, /My Apps/g, /Microsoft Entra/g]) {
+    for (const fact of [/60 seconds/g, /12 hours/g, /Disconnect OneDrive/g, /My Apps/g, /Microsoft Entra/g]) {
       const n = (text.match(fact) ?? []).length;
       expect(n, String(fact)).toBe(1);
     }
@@ -926,9 +926,15 @@ describe("stage 1 wording and pictures", () => {
     for (const page of ["security.html", "privacy.html"]) {
       expect(visibleText(read(`public/${page}`)), page).not.toMatch(/(My Apps|Entra)[^.]*sign(s|ed)? (you )?out/);
     }
-    // The length the Worker enforces today (wrangler.jsonc), until the phone sets it.
-    expect(text).toContain("after 90 minutes (60 in the Demo)");
-    expect(read("wrangler.jsonc")).toMatch(/"SESSION_MAX_MINUTES": "90"[\s\S]*"DEMO_SESSION_MINUTES": "60"/);
+    // The lengths the Worker enforces (wrangler.jsonc): the default the phone can change, and the caps.
+    expect(text).toContain(
+      "after 1 hour unless you change it on your phone, and never later than the limit, 12 hours (2 hours in the Demo)",
+    );
+    const vars = read("wrangler.jsonc");
+    expect(vars).toContain('"SESSION_DEFAULT_MINUTES": "60"');
+    expect(vars).toContain('"SESSION_MAX_MINUTES": "720"');
+    expect(vars).toContain('"DEMO_MAX_MINUTES": "120"');
+    expect(text).toMatch(/Choosing the Session length on your phone ?Live/);
   });
 });
 
@@ -1121,7 +1127,9 @@ describe("the doc pages: one .legal layout (design.md section 6, Legal pages)", 
     const media = [...new Set(Object.values(EXTENSION_TYPES))].filter((t) => t !== "pptx" && t !== "pdf");
     expect(media).toEqual(["jpg", "png", "mp4", "mov"]);
     expect(text).toContain("Guest photos (JPEG, PNG) and videos (MP4, MOV), cleaned on the phone Live");
-    expect(text).not.toMatch(/12 hours|Session length|next, previous, present/i);
+    // The session length shipped (POST /api/session/length); the remote has not.
+    expect(read("src/worker/routes/control.ts")).toContain('"/api/session/length"');
+    expect(text).not.toMatch(/next, previous, present/i);
     const statuses = [...(pages["security.html"] ?? "").matchAll(/<span class="status( on)?">(\w+)<\/span>/g)].map(
       (m) => [m[2], !!m[1]],
     );

@@ -1,0 +1,84 @@
+/* /a's Session Length sheet, loaded with core/length.js on the first tap on "Ends in", after base.css and app.css.
+   The floating panel's recipe: glass, 8 around 52 pills, radius 34. At the foot under 640, as the buttons' panel;
+   centered above. The dialog has no padding, so a click on it is the backdrop's. */
+.sheet {
+  width: min(calc(100% - 2 * var(--pad)), 432px);
+  max-width: none;
+  margin: auto auto calc(var(--inset) + env(safe-area-inset-bottom));
+  padding: 0;
+  border: 0;
+  border-radius: 34px;
+  box-shadow: var(--glass-edge), var(--sh-pill);
+  color: var(--ink);
+  animation: toast-in 250ms var(--ease-out) both;
+}
+.sheet::backdrop {
+  background: rgba(30, 30, 28, 0.24);
+}
+.sheet-in,
+.until {
+  display: flex;
+  gap: 8px;
+}
+.sheet-in {
+  flex-direction: column;
+  padding: 8px;
+}
+.sheet-head,
+.until {
+  align-items: center;
+  padding-left: 16px;
+}
+.sheet-head {
+  display: flex;
+  justify-content: space-between;
+}
+.sheet h2 {
+  font-size: 22px;
+  letter-spacing: -0.025em;
+}
+.close {
+  display: grid;
+  place-items: center;
+  width: 52px;
+  height: 52px;
+  border: 0;
+  border-radius: var(--r-pill);
+  background: none;
+  cursor: pointer;
+}
+.chips {
+  display: flex;
+  gap: 8px;
+  min-width: 0;
+  margin: 0;
+  padding: 0;
+  border: 0;
+}
+.chips .btn {
+  flex: 1;
+  padding: 0;
+  font-size: 15px;
+}
+.until label {
+  font-weight: 600;
+}
+.until .field {
+  flex: 1;
+  min-width: 0;
+  height: 52px;
+  border-radius: var(--r-pill);
+  font-size: 17px;
+  letter-spacing: 0;
+  text-transform: none;
+}
+@media (hover: hover) {
+  .close:hover {
+    background: var(--wash);
+  }
+}
+@media (min-width: 640px) {
+  .sheet {
+    margin: auto;
+  }
+}

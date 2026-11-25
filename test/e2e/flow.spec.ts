@@ -245,7 +245,7 @@ test.describe("pairing flow", () => {
 
     await phone.page.getByRole("button", { name: "Approve" }).click();
     await expect(heading(phone.page)).toHaveText("Approved for Demo Room");
-    await expect(phone.page.locator("#ends")).toHaveText(/^Ends in \d+:\d{2}$/);
+    await expect(phone.page.locator("#ends-text")).toHaveText(/^Ends in \d+:\d{2}$/);
     // The approved items are a record, not controls: no ticks.
     await expect(phone.page.locator("#file-list .row")).toHaveCount(4);
     await expect(phone.page.locator("#file-list .tick")).toHaveCount(0);
@@ -256,6 +256,76 @@ test.describe("pairing flow", () => {
     await expect(screen.page.getByRole("button", { name: "Back", exact: true })).toBeHidden();
 
     expect([...screen.csp, ...phone.csp]).toEqual([]);
+    await screen.context.close();
+    await phone.context.close();
+  });
+
+  test("SESS-01 a chip changes the countdown: the sheet offers the demo's lengths, applies one tap and closes", async ({
+    browser,
+  }) => {
+    const screen = await demoScreen(browser);
+    const { phone } = await scan(browser, screen.page);
+    await phone.page.getByRole("button", { name: "Approve" }).click();
+    const ends = phone.page.locator("#ends-text");
+    await expect(ends).toHaveText(/^Ends in (59|1:00):\d{2}$/);
+    await phone.page.getByRole("button", { name: /Change the Session Length$/ }).click();
+    const sheet = phone.page.getByRole("dialog", { name: "Session Length" });
+    await expect(sheet).toBeVisible();
+    // The demo's cap is 2 hours: 4h and 12h are not offered.
+    await expect(sheet.locator("[data-minutes]:visible")).toHaveText(["30m", "1h", "2h"]);
+    await expect(sheet.getByLabel("Until…")).toHaveValue(/^\d{2}:\d{2}$/);
+    await expectNoAxeViolations(phone.page);
+    await sheet.getByRole("button", { name: "30 minutes" }).click();
+    await expect(sheet).toBeHidden();
+    await expect(ends).toHaveText(/^Ends in (29|30):\d{2}$/);
+    // Escape closes it with no change.
+    await phone.page.getByRole("button", { name: /Change the Session Length$/ }).click();
+    await expect(sheet).toBeVisible();
+    await phone.page.keyboard.press("Escape");
+    await expect(sheet).toBeHidden();
+    await expect(ends).toHaveText(/^Ends in (29|30):\d{2}$/);
+    // The screen's End while it is open: the sheet goes with "Ends in", never floating over Session Ended.
+    await phone.page.getByRole("button", { name: /Change the Session Length$/ }).click();
+    await expect(sheet).toBeVisible();
+    await screen.page.getByRole("button", { name: "End", exact: true }).click();
+    await expect(heading(phone.page)).toHaveText("Session Ended");
+    await expect(sheet).toBeHidden();
+    expect([...screen.csp, ...phone.csp]).toEqual([]);
+    await screen.context.close();
+    await phone.context.close();
+  });
+
+  test("P1 Approved at 390 x 844: Revoke sits in the floating glass panel and the title is one inset from the top", async ({
+    browser,
+  }) => {
+    const screen = await demoScreen(browser);
+    const { phone } = await scan(browser, screen.page);
+    await phone.page.getByRole("button", { name: "Approve" }).click();
+    await expect(heading(phone.page)).toHaveText("Approved for Demo Room");
+    const revoke = phone.page.locator(".column > .actions.glass").getByRole("button", { name: "Revoke" });
+    await expect(revoke).toBeInViewport({ ratio: 1 });
+    const inset = await insetOf(phone.page);
+    await expect(async () => {
+      const title = await heading(phone.page).boundingBox();
+      expect(Math.round(title?.y ?? -1)).toBe(Math.round(inset));
+    }).toPass();
+    await screen.context.close();
+    await phone.context.close();
+  });
+
+  test("P2 the picker opens the chooser directly: its accept list, and no capture attribute to skip the library", async ({
+    browser,
+  }) => {
+    const screen = await demoScreen(browser);
+    const { phone } = await scan(browser, screen.page);
+    const pick = phone.page.locator("#file-pick");
+    await expect(pick).toHaveAttribute("type", "file");
+    await expect(pick).toHaveAttribute("accept", /(^|,)image\/jpeg,.*\.pptx/);
+    await expect(pick).not.toHaveAttribute("capture");
+    await expect(pick).not.toHaveAttribute("multiple");
+    const chooser = phone.page.waitForEvent("filechooser");
+    await phone.page.getByRole("button", { name: "Add a File" }).click();
+    expect((await chooser).isMultiple()).toBe(false);
     await screen.context.close();
     await phone.context.close();
   });
@@ -586,6 +656,41 @@ test.describe("guest drop", () => {
     await (await chooser).setFiles(file);
   }
   const EXE = { name: "notes.exe", mimeType: "application/octet-stream", buffer: Buffer.from("MZ") };
+
+  test("the first file drag loads the drop handlers: the hint shows at once, leaves with the drag, and a drop takes the picker's road", async ({
+    browser,
+  }) => {
+    const screen = await demoScreen(browser);
+    const { phone } = await scan(browser, screen.page);
+    const page = phone.page;
+    // The hint shows from 640 wide.
+    await page.setViewportSize({ width: 834, height: 1112 });
+    const loads: string[] = [];
+    page.on("request", (r) => {
+      if (r.url().endsWith("/js/core/drag.js")) loads.push(r.url());
+    });
+    const files = await page.evaluateHandle(() => {
+      type Transfer = { items: { add(file: File): void } };
+      const d = new (globalThis as unknown as { DataTransfer: new () => Transfer }).DataTransfer();
+      d.items.add(new File(["MZ"], "notes.exe", { type: "application/octet-stream" }));
+      return d;
+    });
+    expect(loads).toEqual([]);
+    await page.dispatchEvent("body", "dragenter", { dataTransfer: files });
+    await expect(page.locator("#drop-hint")).toBeVisible();
+    expect(loads).toHaveLength(1);
+    await page.dispatchEvent("body", "dragleave", { dataTransfer: files });
+    await expect(page.locator("#drop-hint")).toBeHidden();
+    // A drop runs the picker's check: a wrong type is a toast over the same page, and the hint goes.
+    await page.dispatchEvent("body", "dragenter", { dataTransfer: files });
+    await page.dispatchEvent("body", "drop", { dataTransfer: files });
+    await expect(page.getByRole("alert")).toContainText("This File Type Isn't Supported");
+    await expect(page.locator("#drop-hint")).toBeHidden();
+    await expect(heading(page)).toHaveText("Demo Room");
+    expect(loads).toHaveLength(1);
+    await screen.context.close();
+    await phone.context.close();
+  });
 
   test("DEMO-01 flow: a guest adds a file, the screen offers it, and the Open click shows its card, with Download on click", async ({
     browser,
