@@ -2,6 +2,7 @@ import { readdirSync, readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it, vi } from "vitest";
 import { EXTENSION_TYPES } from "../../public/js/shared/names.js";
+import { sizeEntries } from "../size-entries.ts";
 import { contrast, luminance, type Rgb, token } from "./contrast.ts";
 
 const read = (rel: string) => readFileSync(fileURLToPath(new URL(`../../public/${rel}`, import.meta.url)), "utf8");
@@ -186,7 +187,7 @@ describe("the lazy stylesheets", () => {
   const classes = (css: string) => new Set([...css.matchAll(/\.([a-z][\w-]*)/gi)].map((m) => m[1]));
   const page = classes(read("css/app.css") + read("css/base.css"));
   // Every lazy stylesheet the size budgets list: a new one is checked without touching this test.
-  const sheets = (JSON.parse(read("../package.json"))["size-limit"] as { name: string; path: string | string[] }[])
+  const sheets = sizeEntries()
     .filter((e) => e.name.endsWith(", lazy"))
     .flatMap((e) => [e.path].flat())
     .filter((p) => p.endsWith(".css"))

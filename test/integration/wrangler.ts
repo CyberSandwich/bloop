@@ -6,7 +6,7 @@ import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 
 export interface Wrangler {
-  /** Base URL, `http://127.0.0.1:<port>`; also the Worker's PUBLIC_ORIGIN. */
+  /** Base URL, `http://localhost:<port>`; also the Worker's PUBLIC_ORIGIN. */
   url: string;
   /** Everything wrangler and the Worker wrote to stdout and stderr so far. */
   output(): string;
@@ -16,6 +16,12 @@ export interface Wrangler {
   /** Whether the local R2 bucket holds an object under `key`. */
   r2Has(key: string): boolean;
 }
+
+/**
+ * What every test server runs with unless a test overrides it: mail kept in memory, uploads through the Worker (no R2
+ * network endpoint), conversion stubbed (no container), and no file-origin host unless a test names one.
+ */
+const HARNESS_VARS = { DEV_MAILBOX: "1", UPLOAD_MODE: "proxy", CONVERT_MODE: "stub", FILE_ORIGIN: "" };
 
 const root = fileURLToPath(new URL("../..", import.meta.url));
 const bin = join(root, "node_modules", ".bin", "wrangler");
@@ -72,9 +78,13 @@ function killGroup(pid: number, signal: NodeJS.Signals): void {
 
 async function startOnce(vars: Record<string, string>, options: { migrate?: boolean }): Promise<Wrangler> {
   const port = await freePort();
-  const url = `http://127.0.0.1:${port}`;
+  // localhost, not 127.0.0.1: WebAuthn refuses an IP address as its relying party. wrangler still binds 127.0.0.1.
+  const url = `http://localhost:${port}`;
   const state = mkdtempSync(join(tmpdir(), "bloop-wrangler-"));
-  const varArgs = Object.entries({ PUBLIC_ORIGIN: url, ...vars }).flatMap(([k, v]) => ["--var", `${k}:${v}`]);
+  const varArgs = Object.entries({ ...HARNESS_VARS, PUBLIC_ORIGIN: url, ...vars }).flatMap(([k, v]) => [
+    "--var",
+    `${k}:${v}`,
+  ]);
   const chunks: string[] = [];
   const env = { ...process.env, XDG_CONFIG_HOME: join(state, "config"), WRANGLER_SEND_METRICS: "false", CI: "1" };
 
@@ -95,6 +105,8 @@ async function startOnce(vars: Record<string, string>, options: { migrate?: bool
       "dev",
       // Without it the Worker sees the custom domain as its host, not the local address.
       "--infer-origin-from-routes=false",
+      // Serves /cdn-cgi/handler/scheduled, so a test can run a cron handler.
+      "--test-scheduled",
       "--ip",
       "127.0.0.1",
       "--port",

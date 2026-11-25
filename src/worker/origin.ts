@@ -1,6 +1,9 @@
 import { withHeaders } from "./headers.ts";
 import { fail } from "./http.ts";
 
+/** What the file-origin host serves itself. The present-server change adds /f/, /b/ and /p/ here. */
+const FILE_ORIGIN_PATHS: ReadonlySet<string> = new Set(["/fo/ping"]);
+
 /**
  * Two kinds of request move to PUBLIC_ORIGIN: one for a workers.dev host (the old address), and one for the origin's own
  * hostname over plain http. A GET or HEAD answers 301 to the same path and query; anything else (a write, a WebSocket
@@ -9,11 +12,13 @@ import { fail } from "./http.ts";
  * expires after an hour, so a mistake cannot stick in a browser. It reads PUBLIC_ORIGIN alone, so it works even when the
  * rest of the config is invalid; null when PUBLIC_ORIGIN is not a URL (the config check reports that).
  */
-export function offOrigin(request: Request, publicOrigin: string): Response | null {
+export function offOrigin(request: Request, publicOrigin: string, fileOrigin?: string): Response | null {
   if (!URL.canParse(publicOrigin)) return null;
   const target = new URL(publicOrigin);
   const url = new URL(request.url);
   if (url.origin === target.origin) return null;
+  // The file origin (ADR 0018) answers only the paths in FILE_ORIGIN_PATHS; the rest keep the redirect below.
+  if (fileOrigin && url.origin === fileOrigin && FILE_ORIGIN_PATHS.has(url.pathname)) return null;
   const oldHost = url.hostname.endsWith(".workers.dev");
   const plainHttp = url.protocol === "http:" && target.protocol === "https:" && url.hostname === target.hostname;
   if (!oldHost && !plainHttp) return null;
