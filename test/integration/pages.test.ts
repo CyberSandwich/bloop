@@ -1,5 +1,7 @@
+import { readdirSync, readFileSync } from "node:fs";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { BASE_HEADERS, permissionsPolicy } from "../../src/worker/headers.ts";
+import { minify } from "../../tools/build-assets.mjs";
 import { startWrangler, type Wrangler } from "./wrangler.ts";
 
 let wrangler: Wrangler;
@@ -68,6 +70,18 @@ describe("shared assets", () => {
       const res = await fetch(`${wrangler.url}${path}`);
       expect(res.status, path).toBe(200);
       expect(res.headers.get("Content-Type"), path).toMatch(type);
+    }
+  });
+
+  it("serves every module as built from the current source: minified, never the source or a stale build", async () => {
+    const modules = readdirSync("public/js", { recursive: true })
+      .map(String)
+      .filter((f) => f.endsWith(".js"));
+    expect(modules.length).toBeGreaterThan(20);
+    for (const rel of modules) {
+      const res = await fetch(`${wrangler.url}/js/${rel}`);
+      expect(res.status, rel).toBe(200);
+      expect(await res.text(), rel).toBe(minify(readFileSync(`public/js/${rel}`, "utf8"), `js/${rel}`).code);
     }
   });
 
