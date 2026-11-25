@@ -673,7 +673,9 @@ export function checkOpen() {
     try {
       renderDoc(doc, docs);
     } catch (e) {
-      throw new Error(`${doc.file}: ${e instanceof Error ? e.message : e}`, { cause: e });
+      // Some validators name the file already; the rest do not.
+      const message = e instanceof Error ? e.message : String(e);
+      throw message.includes(doc.file) ? e : new Error(`${doc.file}: ${message}`, { cause: e });
     }
   }
 }
