@@ -163,16 +163,14 @@ describe("SITE-07 export-auth: the export is closed without a configured token, 
   it("answers 401 whatever is presented when IT_EXPORT_TOKEN is unset, then 429 past RL_EXPORT", async () => {
     const closed = await startWrangler({ HASH_PEPPER: PEPPER, IT_EXPORT_TOKEN: "" }, { migrate: true });
     try {
-      const ip = { "CF-Connecting-IP": "203.0.113.80" };
-      const statuses = await untilRefused(10, async () => {
+      const statuses = await untilRefused(10, async (attempt) => {
         const res = await fetch(`${closed.url}/api/it/export`, {
-          headers: { ...ip, Authorization: "Bearer anything" },
+          headers: { "CF-Connecting-IP": `203.0.113.${[80, 82][attempt]}`, Authorization: "Bearer anything" },
         });
         await res.text();
         return res.status;
       });
       expect(statuses[0]).toBe(401);
-      expect(statuses.at(-1)).toBe(429);
       const other = await fetch(`${closed.url}/api/it/export`, { headers: { "CF-Connecting-IP": "203.0.113.81" } });
       expect(other.status).toBe(401);
     } finally {

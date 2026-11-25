@@ -99,16 +99,16 @@ describe("PAIR-07 limits: the global miss alarm", () => {
 
 describe("PAIR-09 flood: the platform rate limit binding", () => {
   it("PAIR-09 flood: screen creation is limited per IP and recovers for another address", async () => {
-    const ip = { headers: { "CF-Connecting-IP": "203.0.113.50" } };
     // The demo binding (RL_DEMO_CREATE in wrangler.jsonc) allows 12 a minute.
-    const statuses = await untilRefused(12, async () => (await api.post("/api/screens", { mode: "demo" }, ip)).status);
-    expect(statuses.at(-1)).toBe(429);
+    await untilRefused(12, async (attempt) => {
+      const ip = { headers: { "CF-Connecting-IP": `203.0.113.${[50, 52][attempt]}` } };
+      return (await api.post("/api/screens", { mode: "demo" }, ip)).status;
+    });
     const other = await api.post("/api/screens", { mode: "demo" }, { headers: { "CF-Connecting-IP": "203.0.113.51" } });
     expect(other.status).toBe(201);
   });
 
   it("PAIR-09 flood: claims are limited per IP", async () => {
-    const ip = { headers: { "CF-Connecting-IP": "203.0.113.60" } };
     const created = await api.post<{ sid: string }>(
       "/api/screens",
       { mode: "demo" },
@@ -116,8 +116,10 @@ describe("PAIR-09 flood: the platform rate limit binding", () => {
     );
     const code = (await api.get<{ code: { code: string } }>("/api/screen/state", created.body.sid)).body.code.code;
     // Malformed codes pass the Zod check but not normalize(), so they reach the binding without a Directory miss.
-    const statuses = await untilRefused(20, async () => (await api.post("/api/claim", { code: "!!" }, ip)).status);
-    expect(statuses.at(-1)).toBe(429);
+    await untilRefused(20, async (attempt) => {
+      const ip = { headers: { "CF-Connecting-IP": `203.0.113.${[60, 63][attempt]}` } };
+      return (await api.post("/api/claim", { code: "!!" }, ip)).status;
+    });
     expect((await api.post("/api/claim", { code }, { headers: { "CF-Connecting-IP": "203.0.113.62" } })).status).toBe(
       200,
     );
@@ -142,9 +144,11 @@ describe("PAIR-09 flood: the file listing is limited per session", () => {
   }
 
   it("PAIR-09 flood: /api/files answers 429 past the per-session limit, and another session is unaffected", async () => {
-    const pid = await phone(100);
-    const statuses = await untilRefused(20, async () => (await api.get("/api/files", pid)).status);
-    expect(statuses.at(-1)).toBe(429);
+    const pids: string[] = [];
+    await untilRefused(20, async (attempt) => {
+      pids[attempt] ??= await phone([100, 120][attempt] as number);
+      return (await api.get("/api/files", pids[attempt])).status;
+    });
     expect((await api.get("/api/files", await phone(110))).status).toBe(200);
   });
 });

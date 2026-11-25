@@ -231,18 +231,20 @@ export async function claim(api: Api, code: string, kind: "owner" | "guest" = "o
 }
 
 /**
- * Statuses from `send` up to and including the first 429, which must be the limit + 1th request (so at
- * most `limit` were accepted). A flood takes well under a second against a 60 s fixed window, but the
- * window can roll over mid-flood and admit a fresh batch, so one miss is retried once (the retry meets a
- * partly used window, so its 429 comes no later). Two misses in a row mean the binding admits more than
- * `limit`.
+ * Statuses from `send` up to the first 429, which must be exactly the limit + 1th request. A flood takes
+ * well under a second against a 60 s fixed window, but the window can roll over mid-flood and admit a
+ * fresh batch, so a miss is retried once. `send(attempt)` must use a key (IP, session) no earlier attempt
+ * used, so the retry meets an untouched window and must also refuse at exactly limit + 1. Two misses in a
+ * row mean the binding admits more than `limit`; an early 429 means it admits fewer.
  */
-export async function untilRefused(limit: number, send: () => Promise<number>): Promise<number[]> {
+export async function untilRefused(limit: number, send: (attempt: number) => Promise<number>): Promise<number[]> {
   const statuses: number[] = [];
   for (let attempt = 0; attempt < 2; attempt++) {
     statuses.length = 0;
-    for (let i = 0; i <= limit && statuses.at(-1) !== 429; i++) statuses.push(await send());
-    if (statuses.at(-1) === 429) return statuses;
+    for (let i = 0; i <= limit && statuses.at(-1) !== 429; i++) statuses.push(await send(attempt));
+    if (statuses.at(-1) !== 429) continue;
+    if (statuses.length !== limit + 1) throw new Error(`429 after ${statuses.length - 1} accepted, not ${limit}`);
+    return statuses;
   }
   throw new Error(`no 429 within ${limit + 1} requests, twice: ${statuses.join(",")}`);
 }
