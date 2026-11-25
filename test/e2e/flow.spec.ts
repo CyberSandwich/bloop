@@ -350,7 +350,7 @@ test.describe("pairing flow", () => {
     await phone.page.unroute("**/css/length.css");
     await lengthButton.click();
     await expect(sheet).toBeVisible();
-    await expect(sheet).toHaveCSS("border-radius", "34px");
+    await expect(sheet.locator(".chips")).toHaveCSS("border-radius", "34px");
     await sheet.getByRole("button", { name: "1 hour" }).click();
     await expect(sheet).toBeHidden();
     await screen.context.close();
