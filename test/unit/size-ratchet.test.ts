@@ -1,6 +1,7 @@
 import { existsSync, readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 import { baseRefFor, compare, entriesFrom, parseLimit } from "../../tools/size-ratchet.mjs";
+import { sizeEntries } from "../size-entries.ts";
 
 const entry = (name: string, limit: string, path: string | string[] = `dist/js/${name}.js`) => ({ name, path, limit });
 /** Which public/ files the base and HEAD hold; every other file is in neither. */
@@ -37,10 +38,7 @@ describe("size ratchet: a budget only holds or drops", () => {
   });
 
   it("size ratchet: adding any one of the repo's own entries to the rest never fails (a budget only tightens)", () => {
-    const root = new URL("../../", import.meta.url);
-    const entries: { name: string; path: string | string[]; limit: string }[] = JSON.parse(
-      readFileSync(new URL("package.json", root), "utf8"),
-    )["size-limit"];
+    const entries = sizeEntries();
     const all = { onBase: () => true, onHead: () => true };
     const failing = entries.filter(
       (e) =>
@@ -132,12 +130,9 @@ describe("size ratchet: a budget only holds or drops", () => {
     expect(entriesFrom(at).map((e) => e.name)).toEqual(["a", "b", "c"]);
   });
 
-  it("size ratchet: every entry in package.json measures a file with a public/ source", () => {
+  it("size ratchet: every budget measures a file with a public/ source", () => {
     const root = new URL("../../", import.meta.url);
-    const entries: { name: string; path: string | string[] }[] = JSON.parse(
-      readFileSync(new URL("package.json", root), "utf8"),
-    )["size-limit"];
-    const unchecked = entries.flatMap((e) =>
+    const unchecked = sizeEntries().flatMap((e) =>
       [e.path].flat().filter((p) => !existsSync(new URL(p.replace(/^dist\//, "public/"), root))),
     );
     expect(unchecked).toEqual([]);
