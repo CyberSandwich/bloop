@@ -1141,7 +1141,7 @@ main:has(> .side:not([hidden])) #stage {
     pointer-events: none;
   }
 }
-/* Without Back (Approved) the title is --inset from the top, as the panel is from the bottom. */
+/* Approved hides Back: the title at --inset, mirroring the panel. */
 @media (max-width: 899.98px) {
   .page-phone:not(.is-ended):has(#back[hidden]) .column {
     justify-content: flex-start;
