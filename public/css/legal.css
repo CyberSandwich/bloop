@@ -1,6 +1,5 @@
 /* The doc pages (/privacy, /terms, /security), after base.css and site.css: design.md section 6, Legal pages. */
 /* biome-ignore-all lint/style/noDescendingSpecificity: the file is ordered by part, not by selector weight */
-/* One width for the page's column: the contents and the 68ch text side by side from 1024, the text alone below. */
 .legal {
   --measure: 68ch;
   --toc-w: 240px;
@@ -50,7 +49,6 @@
   }
 }
 
-/* The contents: a card of rows; 8 in, so a row's pill is the card's radius less 8. */
 .toc {
   padding: 8px;
   border-radius: var(--r-content);
@@ -120,7 +118,6 @@
   }
 }
 
-/* The text: 68 characters a line; numbers hang in a gutter so every clause starts on one x. */
 .legal-text {
   max-width: var(--measure);
   color: var(--ink-2);
@@ -246,7 +243,6 @@
   font-size: 15px;
 }
 
-/* How It Works on /security: four numbered cards, two a row from 640. */
 .flow {
   display: grid;
   gap: 12px;
@@ -282,7 +278,6 @@
   display: block;
 }
 
-/* Tables: one white card; under 640 each row stacks, every value under its column's name. */
 .legal table {
   width: 100%;
   margin-top: 16px;
@@ -319,6 +314,9 @@
   padding: 2px 10px;
   font-size: 13px;
 }
+.legal td > .label {
+  display: none;
+}
 @media (max-width: 639.98px) {
   .legal thead {
     display: none;
@@ -340,8 +338,7 @@
   .legal td {
     margin-top: 8px;
   }
-  .legal td::before {
-    content: attr(data-label);
+  .legal td > .label {
     display: block;
     color: var(--muted);
     font-size: 13px;

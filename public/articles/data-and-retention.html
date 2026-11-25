@@ -84,15 +84,15 @@
                 <tr><th scope="col">Data</th><th scope="col">Where</th><th scope="col">Kept</th></tr>
               </thead>
               <tbody>
-                <tr><th scope="row" data-label="Data">A Guest File's bytes</th><td data-label="Where">Cloudflare R2, EU</td><td data-label="Kept">Deleted when its session ends. A storage rule deletes any guest file after 1 day</td></tr>
-                <tr><th scope="row" data-label="Data">A Guest File's record: name, type, size, times</th><td data-label="Where">Cloudflare D1, EU</td><td data-label="Kept">30 days after the file is deleted</td></tr>
-                <tr><th scope="row" data-label="Data">Session and access records</th><td data-label="Where">Cloudflare D1, EU</td><td data-label="Kept">180 days. In the Demo, 7 days</td></tr>
-                <tr><th scope="row" data-label="Data">Usage counts, with no names</th><td data-label="Where">Cloudflare D1, EU</td><td data-label="Kept">90 days, then daily totals for 2 years</td></tr>
-                <tr><th scope="row" data-label="Data">Codes, links and pairing secrets</th><td data-label="Where">The Screen's own Durable Object, EU</td><td data-label="Kept">Until the session ends, is canceled or times out</td></tr>
-                <tr><th scope="row" data-label="Data">Failed code attempts, as a hash of the address</th><td data-label="Where">Cloudflare Durable Object, EU</td><td data-label="Kept">10 minutes</td></tr>
-                <tr><th scope="row" data-label="Data">Cloudflare's request logs</th><td data-label="Where">Cloudflare</td><td data-label="Kept">At most 7 days, with no personal data</td></tr>
-                <tr><th scope="row" data-label="Data">Waitlist answers</th><td data-label="Where">Tally</td><td data-label="Kept">Until you ask for deletion, or the waitlist closes</td></tr>
-                <tr><th scope="row" data-label="Data">Emails to <a href="mailto:hi@bloop.here">hi@bloop.here</a></th><td data-label="Where">Apple iCloud Mail</td><td data-label="Kept">2 years after the last message in a thread</td></tr>
+                <tr><th scope="row">A Guest File's bytes</th><td><span class="label" aria-hidden="true">Where</span>Cloudflare R2, EU</td><td><span class="label" aria-hidden="true">Kept</span>Deleted when its session ends. A storage rule deletes any guest file after 1 day</td></tr>
+                <tr><th scope="row">A Guest File's record: name, type, size, times</th><td><span class="label" aria-hidden="true">Where</span>Cloudflare D1, EU</td><td><span class="label" aria-hidden="true">Kept</span>30 days after the file is deleted</td></tr>
+                <tr><th scope="row">Session and access records</th><td><span class="label" aria-hidden="true">Where</span>Cloudflare D1, EU</td><td><span class="label" aria-hidden="true">Kept</span>180 days. In the Demo, 7 days</td></tr>
+                <tr><th scope="row">Usage counts, with no names</th><td><span class="label" aria-hidden="true">Where</span>Cloudflare D1, EU</td><td><span class="label" aria-hidden="true">Kept</span>90 days, then daily totals for 2 years</td></tr>
+                <tr><th scope="row">Codes, links and pairing secrets</th><td><span class="label" aria-hidden="true">Where</span>The Screen's own Durable Object, EU</td><td><span class="label" aria-hidden="true">Kept</span>Until the session ends, is canceled or times out</td></tr>
+                <tr><th scope="row">Failed code attempts, as a hash of the address</th><td><span class="label" aria-hidden="true">Where</span>Cloudflare Durable Object, EU</td><td><span class="label" aria-hidden="true">Kept</span>10 minutes</td></tr>
+                <tr><th scope="row">Cloudflare's request logs</th><td><span class="label" aria-hidden="true">Where</span>Cloudflare</td><td><span class="label" aria-hidden="true">Kept</span>At most 7 days, with no personal data</td></tr>
+                <tr><th scope="row">Waitlist answers</th><td><span class="label" aria-hidden="true">Where</span>Tally</td><td><span class="label" aria-hidden="true">Kept</span>Until you ask for deletion, or the waitlist closes</td></tr>
+                <tr><th scope="row">Emails to <a href="mailto:hi@bloop.here">hi@bloop.here</a></th><td><span class="label" aria-hidden="true">Where</span>Apple iCloud Mail</td><td><span class="label" aria-hidden="true">Kept</span>2 years after the last message in a thread</td></tr>
               </tbody>
             </table>
           </section>

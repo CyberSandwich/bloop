@@ -316,11 +316,13 @@ function tableHtml(t, caption, where) {
   const heads = t.header.map((c) => c.text);
   const cell = (/** @type {string} */ head, /** @type {string} */ raw) =>
     head === "Status" ? `<span class="status${raw === "Live" ? " on" : ""}">${esc(raw)}</span>` : inline(raw);
+  // A stacked row (legal.css, under 640) shows each value under this span, its column's name, as real text
+  // rather than `content: attr()`, which can drop the name's spaces; aria-hidden, as readers have the heads.
   const rows = t.rows.map((row) => {
     const cells = row.map((c, i) => {
       const head = heads[i] ?? "";
-      const tag = i === 0 ? `th scope="row"` : "td";
-      return `<${tag} data-label="${attr(head)}">${cell(head, c.text)}</${i === 0 ? "th" : "td"}>`;
+      if (i === 0) return `<th scope="row">${cell(head, c.text)}</th>`;
+      return `<td><span class="label" aria-hidden="true">${esc(head)}</span>${cell(head, c.text)}</td>`;
     });
     return `<tr>${cells.join("")}</tr>`;
   });

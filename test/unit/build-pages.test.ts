@@ -377,13 +377,15 @@ describe("the content rules", () => {
     );
   });
 
-  it("draws a table with its caption, a row header, data labels and status chips; a table with no caption is refused", () => {
-    const table = "| Name | Status |\n| --- | --- |\n| A | Live |\n| B | Planned |\n";
+  it("draws a table with its caption, a row header, a hidden label in each cell and status chips; a table with no caption is refused", () => {
+    const table =
+      "| Name | What it does | Status |\n| --- | --- | --- |\n| A | Runs | Live |\n| B | Waits | Planned |\n";
     const html = render(`Summary.\n\n## One {#one}\n\nCaption: What is live\n\n${table}`);
     expect(html).toContain('<caption class="sr">What is live</caption>');
     expect(html).toContain(
-      '<tr><th scope="row" data-label="Name">A</th><td data-label="Status"><span class="status on">Live</span></td></tr>',
+      '<tr><th scope="row">A</th><td><span class="label" aria-hidden="true">What it does</span>Runs</td><td><span class="label" aria-hidden="true">Status</span><span class="status on">Live</span></td></tr>',
     );
+    expect(html).not.toContain("data-label");
     expect(html).toContain('<span class="status">Planned</span>');
     expect(() => render(`Summary.\n\n## One {#one}\n\n${table}`)).toThrow(/needs a "Caption:" paragraph/);
   });
