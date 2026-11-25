@@ -40,7 +40,7 @@ L4, plus every cron trigger cleared. Revoking tokens is printed as manual steps,
 2. Pick the level (and the meter for L1). Leave apply unticked first: the run prints the exact plan in its job summary and verifies the token without changing anything.
 3. Run it again with apply ticked.
 
-The workflow runs only from main and only when the repository owner starts it, set or undo alike. It reads the repository secrets of the production environment: the lockdown token, the account id, and (as the L1 and L2 fallback) the deploy token, plus the run's own token with `actions: write` to disable the deploy workflow and cancel its runs. The workflow must be on the default branch to appear as a workflow_dispatch target. A run that could not freeze deploys ends red with "DEPLOYS NOT FROZEN" at the top of its summary.
+The workflow runs only from main and only when the repository owner starts it, set or undo alike, and appears as a workflow_dispatch target only once it is on the default branch. Its own token (`actions: write`) disables the deploy workflow and cancels its runs. A run that could not freeze deploys ends red with "DEPLOYS NOT FROZEN" at the top of its summary.
 
 ## Run it from the Mac
 
@@ -67,7 +67,7 @@ Run it from a checkout of main. Without `GITHUB_TOKEN` and `GITHUB_REPOSITORY` t
 
 ## Tokens
 
-The lockdown token is a separate Cloudflare API token, kept in the password manager and in the production environment as `LOCKDOWN_CF_TOKEN`, so the deploy token does not have to grow. L1 and L2 may fall back to the deploy token (D1 Edit and Workers Scripts Write are already held there); L3 to L5 refuse to run without the lockdown token. The dry run calls the token verify endpoint, one read per permission, and a read-only `SELECT 1` through wrangler (so it proves the install without scripts works too), and prints "L4 WILL FAIL: token lacks X" for a refusal; a read cannot prove a write permission, so a rung can still fail on its write.
+The lockdown token is a separate Cloudflare API token, so the deploy token does not have to grow. It lives in the `production` environment as `LOCKDOWN_CF_TOKEN` (and a copy in the password manager), nowhere else. L1 and L2 may fall back to the deploy token, which already holds D1 Edit and Workers Scripts Write; L3 to L5 refuse to run without the lockdown token. The dry run calls the token verify endpoint, one read per permission, and a read-only `SELECT 1` through wrangler (so it proves the install without scripts works too), and prints "L4 WILL FAIL: token lacks X" for a refusal; a read cannot prove a write permission, so a rung can still fail on its write.
 
 Permissions of the lockdown token, with the endpoint each covers (API token groups checked against Cloudflare's API schema):
 
@@ -78,12 +78,4 @@ Permissions of the lockdown token, with the endpoint each covers (API token grou
 | D1 Edit | Account, D1, Edit (API group D1 Write) | what `wrangler d1 execute --remote` calls: GET the database list and POST the database query |
 | Workers Scripts Write | Account, Workers Scripts, Edit | GET and POST `/workers/scripts/{name}/subdomain`; GET and PUT `/workers/scripts/{name}/schedules`; the Workflows instance list, batch terminate and status endpoints |
 
-Scope the token to the account and the one zone, with no IP filter and a 1-year expiry; how to create it is in the owner setup doc, under the GitHub step. Workers Scripts Edit can upload scripts, so this token is as sensitive as the deploy token. Zone WAF Edit for the custom rules is as Cloudflare's guide states (developers.cloudflare.com/waf/custom-rules/custom-rulesets/).
-
-| rung | beyond the deploy token |
-|---|---|
-| L1, L2 | none (the fallback), or the lockdown token |
-| L3 | the lockdown token (Workers Scripts Write for Workflows) |
-| L4, L5 | Zone Read and Zone WAF Edit on the zone |
-| all, in the workflow | `actions: write` on the run's own token |
-| L5 by hand | whatever revokes each token: the owner's own sign-in |
+Scope the token to the account and the one zone, with no IP filter and a 1-year expiry. Workers Scripts Edit can upload scripts, so this token is as sensitive as the deploy token. Zone WAF Edit for the custom rules is as Cloudflare's guide states (developers.cloudflare.com/waf/custom-rules/custom-rulesets/). Beyond the deploy token, only L4 and L5 need more: Zone Read and Zone WAF Edit on the zone. Revoking tokens at L5 is by hand, with the owner's own sign-in.
