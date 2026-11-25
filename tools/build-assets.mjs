@@ -1,5 +1,6 @@
 // Builds dist/, the directory wrangler serves: public/ copied byte for byte, except each JS module minified on its
-// own (no bundle), so the module graph, lazy import() specifiers and export names stay as written. ADR 0011.
+// own (no bundle), so the module graph, lazy import() specifiers and export names stay as written, and each
+// stylesheet stripped of comments and whitespace. ADR 0011.
 // The CLI is tools/build-assets-cli.mjs; wrangler.jsonc `build` runs it before `wrangler dev` and `wrangler deploy`.
 import { lstatSync, mkdirSync, readdirSync, readFileSync, renameSync, rmSync, writeFileSync } from "node:fs";
 import { basename, dirname, join, relative, sep } from "node:path";
@@ -46,6 +47,17 @@ export function minify(source, rel) {
   });
 }
 
+/**
+ * A stylesheet with its comments and whitespace removed and nothing else. No minifySyntax: it merges rules with the
+ * same body into one selector list, and a lone `:popover-open` rule must stay apart, since an engine that does not
+ * know the selector drops the whole list (design.md). No target, so no syntax is lowered or rewritten.
+ * @param {string} source
+ * @param {string} rel path under public/
+ */
+export function minifyCss(source, rel) {
+  return transformSync(source, { loader: "css", minifyWhitespace: true, sourcefile: basename(rel) }).code;
+}
+
 /** @param {string} path @param {Buffer | string} data */
 function same(path, data) {
   try {
@@ -79,6 +91,10 @@ export function build(root = REPO) {
   const files = new Map();
   for (const rel of walk(src)) {
     const bytes = readFileSync(join(src, rel));
+    if (rel.endsWith(".css")) {
+      files.set(rel, minifyCss(bytes.toString("utf8"), rel));
+      continue;
+    }
     if (!rel.endsWith(".js")) {
       files.set(rel, bytes);
       continue;

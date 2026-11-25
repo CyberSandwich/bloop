@@ -243,7 +243,7 @@ function firstLoad(script: string): string[] {
 
 describe("size budgets", () => {
   const measured: { name: string; path: string | string[] }[] = JSON.parse(read("package.json"))["size-limit"];
-  // A JS entry measures the served build (dist/js, ADR 0011); its module graph is read from the source it builds.
+  // An entry measures the served build (dist/, ADR 0011); its module graph is read from the source it builds.
   const source = (p: string) => p.replace(/^dist\//, "public/");
   const entries = measured.map((e) => ({ ...e, path: Array.isArray(e.path) ? e.path.map(source) : source(e.path) }));
 
@@ -251,6 +251,12 @@ describe("size budgets", () => {
     const js = measured.flatMap((e) => [e.path].flat()).filter((p) => p.endsWith(".js"));
     expect(js.length).toBeGreaterThan(10);
     expect(js.filter((p) => !p.startsWith("dist/js/"))).toEqual([]);
+  });
+
+  it("every CSS entry measures what users download: the stripped build, never the source", () => {
+    const css = measured.flatMap((e) => [e.path].flat()).filter((p) => p.endsWith(".css"));
+    expect(css.length).toBeGreaterThan(5);
+    expect(css.filter((p) => !p.startsWith("dist/css/"))).toEqual([]);
   });
 
   const pageEntries = entries.filter((e) => e.name.endsWith(" JS"));

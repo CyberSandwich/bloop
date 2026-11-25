@@ -190,7 +190,7 @@ describe("the lazy stylesheets", () => {
     .filter((e) => e.name.endsWith(", lazy"))
     .flatMap((e) => [e.path].flat())
     .filter((p) => p.endsWith(".css"))
-    .map((p) => p.replace(/^public\//, ""));
+    .map((p) => p.replace(/^dist\//, ""));
 
   it("the budgets list the lazy sheets", () => {
     expect(sheets).toEqual(expect.arrayContaining(["css/length.css", "css/remote.css"]));
