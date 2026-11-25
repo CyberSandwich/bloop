@@ -2,7 +2,7 @@
 // central directory, or the PDF or image tail. The one inflate is the content-types part, capped at a few hundred KB.
 import type { DropError, FileType } from "../../../shared/protocol.ts";
 import { inflate, latin1, majorBrand, startsWith } from "./bytes.ts";
-import { isRefusedPart } from "./formats.ts";
+import { checkOoxml, decodeXml, isRelsPart } from "./formats.ts";
 import { type RangeReader, ZIP_LIMITS } from "./index.ts";
 import { checkSizes, entryBytes, hasEndRecord, readCentralDirectory, type ZipEntry } from "./zip.ts";
 
@@ -50,16 +50,31 @@ function detect(head: Uint8Array): FileType | null {
   return brand !== null && MP4_BRANDS.has(brand) ? "mp4" : null;
 }
 
-/** The text of `[Content_Types].xml`, or null when it cannot be read within its cap. */
-async function contentTypes(r: RangeReader, entry: ZipEntry): Promise<string | null> {
-  const cap = ZIP_LIMITS.maxContentTypesBytes;
+/** All the relationships parts together are read within this many inflated bytes. */
+const MAX_RELS_BYTES = 4 * 1024 * 1024;
+
+/** One XML part of the package as text: stored or inflated within `cap`, UTF-8 only; null when it cannot be read so. */
+async function partText(r: RangeReader, entry: ZipEntry, cap: number): Promise<string | null> {
   if (entry.uncompressed > cap || entry.compressed > cap) return null;
   const stored = await entryBytes(r, entry);
   if (!stored) return null;
-  if (entry.method === 0) return latin1.decode(stored);
+  if (entry.method === 0) return decodeXml(stored);
   if (entry.method !== 8) return null;
   const inflated = await inflate(stored, cap, "deflate-raw");
-  return inflated ? new TextDecoder("utf-8").decode(inflated) : null;
+  return inflated ? decodeXml(inflated) : null;
+}
+
+/** The text of every relationships part, or null when one cannot be read or they pass the shared cap. */
+async function relsParts(r: RangeReader, entries: readonly ZipEntry[]): Promise<Map<string, string> | null> {
+  const out = new Map<string, string>();
+  let budget = MAX_RELS_BYTES;
+  for (const entry of entries.filter((e) => isRelsPart(e.name))) {
+    const text = await partText(r, entry, Math.min(ZIP_LIMITS.maxContentTypesBytes, budget));
+    if (text === null) return null;
+    budget -= entry.uncompressed;
+    out.set(entry.name, text);
+  }
+  return out;
 }
 
 async function validateDeck(r: RangeReader, head: Uint8Array): Promise<Verdict> {
@@ -70,12 +85,16 @@ async function validateDeck(r: RangeReader, head: Uint8Array): Promise<Verdict> 
   if (sizes) return refuse(sizes);
   const names = new Map(dir.entries.map((e) => [e.name, e]));
   if (dir.entries.some((e) => e.method !== 0 && e.method !== 8)) return refuse("bad_structure");
-  if (dir.entries.some((e) => isRefusedPart(e.name))) return refuse("macro_content");
   if (!ZIP_LIMITS.requiredParts.every((p) => names.has(p))) return refuse("bad_structure");
-  const types = await contentTypes(r, names.get("[Content_Types].xml") as ZipEntry);
-  if (types === null) return refuse("bad_structure");
-  if (ZIP_LIMITS.refusedContentTypes.some((p) => p.test(types))) return refuse("macro_content");
-  return { ok: true, type: "pptx" };
+  const types = await partText(r, names.get("[Content_Types].xml") as ZipEntry, ZIP_LIMITS.maxContentTypesBytes);
+  const rels = await relsParts(r, dir.entries);
+  if (types === null || rels === null) return refuse("bad_structure");
+  const verdict = checkOoxml(
+    dir.entries.map((e) => e.name),
+    types,
+    rels,
+  );
+  return verdict.ok ? { ok: true, type: "pptx" } : refuse(verdict.error);
 }
 
 async function validatePdf(r: RangeReader): Promise<Verdict> {
