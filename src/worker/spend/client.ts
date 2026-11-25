@@ -123,7 +123,7 @@ export interface Spend {
   /** Idempotent, so a lost response is retried once. */
   release(leaseId: string): Promise<void>;
   record(meter: CallerMeter, n: number, scope?: string): Promise<void>;
-  /** Gives back up to `n` (default all) of an earlier take, for work that never started. */
+  /** Gives back up to `n` (default all) of an earlier take, for work that never started; the guard's own record of the take bounds it, and each ticket is honored once. */
   refund(ticket: TakeTicket, n?: number): Promise<void>;
 }
 
