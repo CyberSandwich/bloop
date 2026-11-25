@@ -258,6 +258,8 @@ beforeAll(async () => {
     getPropertyValue: (name: string) => (name === "--inset" ? "16px" : "60px"),
   }));
   vi.stubGlobal("matchMedia", () => ({ matches: true }));
+  vi.stubGlobal("innerWidth", 1000);
+  vi.stubGlobal("innerHeight", 600);
   vi.stubGlobal("Element", Node);
   vi.stubGlobal("HTMLElement", Node);
   vi.stubGlobal("fetch", echo);

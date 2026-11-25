@@ -139,11 +139,13 @@ export function createViewer(deps) {
   let lastPlace = "";
   /** @type {DOMRect | null} where the controls were last drawn */
   let drawn = null;
+  let drawnIn = 0;
   const fit = () => {
-    // From where they were drawn (their content changed first), or mid-glide.
+    const win = innerWidth * 1e5 + innerHeight;
+    const resized = drawnIn !== win;
     const running = pill.getAnimations?.() ?? [];
     const from = running.length ? pill.getBoundingClientRect() : (drawn ?? pill.getBoundingClientRect());
-    const held = drawn;
+    const held = resized ? null : drawn;
     // Lifted off to measure: a glide to the same target runs on, not restarts.
     for (const a of running) /** @type {KeyframeEffect} */ (a.effect).target = null;
     const swap = swapped;
@@ -192,6 +194,7 @@ export function createViewer(deps) {
     }
     const now = pill.getBoundingClientRect();
     drawn = now;
+    drawnIn = win;
     const was = lastPlace;
     lastPlace = place;
     // Only a change of place, shape or item glides (FLIP: from where they were drawn); a resize moves them at once.
@@ -204,6 +207,7 @@ export function createViewer(deps) {
       else a.cancel();
     if (
       !holds &&
+      !resized &&
       (reshaped || ((swap || (was && was !== place)) && (differs("left") || differs("top")))) &&
       from.width &&
       !presenting() &&
@@ -276,9 +280,8 @@ export function createViewer(deps) {
   );
 
   const items = () => shown?.items ?? [];
-  // The server's id: a re-sort never moves it.
   const keyOf = (/** @type {number} */ i) => items()[i]?.id ?? "";
-  /** Presenting as asked here or by the phone, held until the item can present (a photo on its way). */
+  /** Presenting as asked, held until the item can present. */
   let want = false;
   let followed = "";
   const pages = () => {
@@ -536,8 +539,8 @@ export function createViewer(deps) {
     if (on) opener = /** @type {HTMLElement | null} */ (document.activeElement);
     body.classList.toggle("is-presenting", on);
     show(stop, on);
-    // Focus follows the layout, never dropping to the body; on a video, so Space plays it. Not for the phone's
-    // command: focus on a page no one has touched is focus-visible, which would pin Stop Presenting over the slide.
+    // Focus follows the layout, and on a video so Space plays it; not for the phone's command, which would pin Stop
+    // Presenting over the slide (focus on an untouched page is focus-visible).
     if (!on) opener?.focus?.({ preventScroll: true });
     else if (!told) (frame.querySelector("video") ?? stop).focus?.({ preventScroll: true });
     if (on) {
@@ -665,7 +668,7 @@ export function createViewer(deps) {
         at = moved >= 0 ? moved : Math.max(0, Math.min(at, nextView.items.length - 1));
         buildList();
       }
-      // The phone's command, or this screen's report, followed once: never while a tap here is on its way.
+      // A command or report is followed once, never while a tap here is on its way.
       const told = nextView.shown;
       const sig = JSON.stringify(told);
       if (told && sig !== followed && !deps.busy?.()) {
