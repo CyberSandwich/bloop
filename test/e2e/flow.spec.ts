@@ -306,9 +306,13 @@ test.describe("pairing flow", () => {
     // Focus lands on the title (announced, no ring), not on Close; Tab reaches the time, then Close.
     await expect(sheet.getByRole("heading", { name: "Session Expiry" })).toBeFocused();
     await phone.page.keyboard.press("Tab");
-    await expect(sheet.getByLabel("Expires At")).toBeFocused();
-    await phone.page.keyboard.press("Tab");
-    await expect(sheet.getByRole("button", { name: "Close" })).toBeFocused();
+    const time = sheet.getByLabel("Expires At");
+    await expect(time).toBeFocused();
+    // Chromium's time input takes a Tab per field (hours, minutes) before focus leaves it; nothing sits between.
+    const close = sheet.getByRole("button", { name: "Close" });
+    for (let i = 0; i < 3 && (await time.evaluate((n) => n === n.ownerDocument.activeElement)); i++)
+      await phone.page.keyboard.press("Tab");
+    await expect(close).toBeFocused();
     // A tap above the pane is the backdrop's: it closes with no change.
     await phone.page.mouse.click((pane?.x ?? 0) + (pane?.width ?? 0) / 2, (pane?.y ?? 0) - 12);
     await expect(sheet).toBeHidden();
@@ -415,7 +419,7 @@ test.describe("pairing flow", () => {
     await phone.page.unroute("**/css/length.css");
     await lengthButton.click();
     await expect(sheet).toBeVisible();
-    await expect(sheet.locator(".chips")).toHaveCSS("border-radius", "34px");
+    await expect(sheet.locator(".chips")).toHaveCSS("border-radius", "26px");
     await sheet.getByRole("button", { name: "1 hour" }).click();
     await expect(sheet).toBeHidden();
     await screen.context.close();
@@ -661,6 +665,15 @@ test.describe("pairing flow", () => {
 
     await revoke(phone.page);
     await expect(heading(phone.page)).toHaveText("Session Ended");
+    // A demo phone's end: the waitlist link on top, in the same tab, Done under it.
+    const join = phone.page.locator("#actions").getByRole("link", { name: "Join the Waitlist" });
+    await expect(join).toHaveAttribute("href", "https://tally.so/r/Yj4KAN?source=phone");
+    await expect(join).toHaveAttribute("data-waitlist", "");
+    expect(await join.getAttribute("target")).toBeNull();
+    const done = phone.page.locator("#actions").getByRole("button", { name: "Done" });
+    expect(await done.getAttribute("class")).toContain("secondary");
+    const [j, d] = await Promise.all([join.boundingBox(), done.boundingBox()]);
+    expect(Math.round((j?.y ?? 0) + (j?.height ?? 0))).toBeLessThanOrEqual(Math.round(d?.y ?? -1));
     // PAIR-12: the ended view itself drops the pid; Done has not run yet.
     expect(await phone.page.evaluate(() => localStorage.getItem("bloop.pid"))).toBeNull();
     await expect(heading(screen.page)).toHaveText("Session Ended");
@@ -1458,6 +1471,10 @@ test.describe("open path", () => {
     );
     expect(await screen.page.evaluate(() => sessionStorage.getItem("bloop.sid"))).toBeNull();
     await expect(heading(phone.page)).toHaveText("Session Ended");
+    // A live phone's end is Done alone.
+    await expect(phone.page.locator("#actions").locator(".btn")).toHaveCount(1);
+    await expect(phone.page.locator("#actions").getByRole("button", { name: "Done" })).toBeVisible();
+    await expect(phone.page.locator("[data-waitlist]")).toHaveCount(0);
     await screen.context.close();
     await phone.context.close();
   });

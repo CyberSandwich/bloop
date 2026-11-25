@@ -4,7 +4,7 @@
 
 import { DOWN, SUPPORT } from "../shared/errors.js";
 import { EXTENSION_TYPES } from "../shared/names.js";
-import { SESSION_ENDED, TYPED_WRONG } from "./copy.js";
+import { SESSION_ENDED, TYPED_WRONG, WAITLIST_FORM } from "./copy.js";
 import { VERIFIED } from "./verified.js";
 
 export const MAIL_SUBJECT = "bloop isn't responding";
@@ -70,6 +70,16 @@ const SEND_FILE = { id: "send-file", label: "Add a File", kind: /** @type {const
 const PICK = { id: "pick", label: "Choose File", kind: /** @type {const} */ ("primary") };
 const CANCEL = { id: "cancel", label: "Cancel", kind: /** @type {const} */ ("secondary") };
 const DONE = { id: "done", label: "Done", kind: /** @type {const} */ ("primary") };
+/** A demo's end leads to the waitlist, in the same tab; Done steps back to secondary. */
+const WAITLIST = {
+  id: "waitlist",
+  label: "Join the Waitlist",
+  kind: /** @type {const} */ ("primary"),
+  href: `${WAITLIST_FORM}?source=phone`,
+  waitlist: true,
+};
+const resultActions = (/** @type {PhoneFacts} */ f) =>
+  /** @type {PhoneAction[]} */ (f.demo ? [{ ...DONE, kind: "secondary" }, WAITLIST] : [DONE]);
 const TRY_AGAIN = { id: "retry", label: "Try Again", kind: /** @type {const} */ ("primary") };
 /** Ends the session, as End did: every link stops working. */
 const REVOKE = { id: "end", label: "Revoke", kind: /** @type {const} */ ("rose") };
@@ -264,10 +274,10 @@ export function phoneCopy(key, f) {
           : f.demo
             ? ""
             : "Close PowerPoint on the room PC and delete any download there.",
-        actions: [DONE],
+        actions: resultActions(f),
       };
     case "canceled":
-      return { ...base, title: "Approval Canceled", body: "Nothing was shared.", actions: [DONE] };
+      return { ...base, title: "Approval Canceled", body: "Nothing was shared.", actions: resultActions(f) };
     case "expired":
       return {
         ...base,

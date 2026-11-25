@@ -201,7 +201,12 @@ function renderActions(/** @type {import("./types.js").PhoneAction[]} */ actions
     c.actionIds = ids;
     actionsEl.replaceChildren(
       ...actions.map((a) => {
-        const attrs = { class: `btn ${a.kind}`, "data-action": a.id, ...(a.aria ? { "aria-label": a.aria } : {}) };
+        const attrs = {
+          class: `btn ${a.kind}`,
+          "data-action": a.id,
+          ...(a.aria ? { "aria-label": a.aria } : {}),
+          ...(a.waitlist ? { "data-waitlist": "" } : {}),
+        };
         return a.href ? el("a", { ...attrs, href: a.href }) : el("button", { ...attrs, type: "button" });
       }),
     );

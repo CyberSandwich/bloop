@@ -201,6 +201,8 @@ export interface PhoneAction {
   href?: string | undefined;
   /** The accessible name, when the label alone is not enough (the match digits). */
   aria?: string;
+  /** A link to the waitlist form: it carries data-waitlist, so one grep finds every such link. */
+  waitlist?: boolean;
 }
 
 export interface PhoneCopy {
