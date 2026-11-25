@@ -1,13 +1,14 @@
-// Keeps the image just pushed plus the two newest images built from commits on main, deletes every
-// other sha-tagged bloop-converter image, then fails if more than MAX images remain (the account cap
-// is 50 GB). The digest main pins is the newest or the one before it, so it is never deleted.
+// Prunes the sha-tagged bloop-converter images in the Cloudflare registry, then fails if more than MAX
+// remain (the account cap is 50 GB). Kept: the image main pins in container/digest.txt, the image just
+// pushed, and the newest other image built from a commit on main. Run from the repository root.
 // Usage: node container/prune-images.mjs <wrangler> <current tag>
 import { execFileSync } from "node:child_process";
 
 const [wrangler, current] = process.argv.slice(2);
 const REPO = "bloop-converter";
-const KEEP_ON_MAIN = 2;
+const DIGEST_FILE = "container/digest.txt";
 const MAX = 4;
+const shaTag = /^sha-[0-9a-f]{12}$/;
 
 const run = (cmd, args, stderr = "inherit") =>
   execFileSync(cmd, args, { encoding: "utf8", stdio: ["ignore", "pipe", stderr] });
@@ -35,15 +36,32 @@ function onMain(tag) {
   }
 }
 
-const shaTag = /^sha-[0-9a-f]{12}$/;
-const before = images();
-console.log(`images before: ${before.map((i) => i.tag).join(", ") || "none"}`);
+/**
+ * The tag of the image main pins. The registry lists no digests, so the commit on origin/main that
+ * last wrote digest.txt names the tag it pinned (a squash or merge commit keeps the PR title with it).
+ * The working tree is not consulted: the bump branch built in the same job already holds the new digest.
+ */
+function pinnedTag() {
+  try {
+    run("git", ["cat-file", "-e", `origin/main:${DIGEST_FILE}`], "ignore");
+  } catch {
+    return null;
+  }
+  const message = run("git", ["log", "-1", "--format=%B", "origin/main", "--", DIGEST_FILE]);
+  const tag = message.match(/sha-[0-9a-f]{12}/)?.[0];
+  if (!tag) throw new Error(`${DIGEST_FILE} exists but no commit message names the tag it pins; refusing to prune`);
+  return tag;
+}
 
-const newestOnMain = before
-  .filter((i) => shaTag.test(i.tag) && onMain(i.tag))
+const pinned = pinnedTag();
+const before = images();
+console.log(`images before: ${before.map((i) => i.tag).join(", ") || "none"}; pinned: ${pinned ?? "none"}`);
+
+const newestOther = before
+  .filter((i) => shaTag.test(i.tag) && i.tag !== current && i.tag !== pinned && onMain(i.tag))
   .sort((a, b) => commitTime(b.tag) - commitTime(a.tag))
-  .slice(0, KEEP_ON_MAIN);
-const keep = new Set([current, ...newestOnMain.map((i) => i.tag)]);
+  .slice(0, 1);
+const keep = new Set([current, pinned, ...newestOther.map((i) => i.tag)]);
 
 for (const image of before.filter((i) => shaTag.test(i.tag) && !keep.has(i.tag))) {
   console.log(`deleting ${image.ref}`);
