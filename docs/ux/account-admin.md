@@ -165,6 +165,7 @@ Admin only (`ADMIN_EMAILS`, checked on every request); anyone else gets the 404 
   | Launch Mode                                                    Preview (chip) |
   | Preview shows today's site to everyone. Accounts work for admins and test      |
   | emails only.                                                                   |
+  | ( View the Open Site )                                                         |
   +-------------------------------------------------------------------------------+
   +-------------------------------------------------------------------------------+
   | Before You Open                                                                |
@@ -179,7 +180,8 @@ Admin only (`ADMIN_EMAILS`, checked on every request); anyone else gets the 404 
   +-------------------------------------------------------------------------------+
 ```
 
-- Launch Mode card: the current mode chip and one sentence: Preview: "Preview shows today's site to everyone. Accounts work for admins and test emails only." Open: "Open shows the new site, and invites go to anyone."
+- Launch Mode card: the current mode chip and one sentence: Preview: "Preview shows today's site to everyone. Accounts work for admins and test emails only." Open: "Open shows the new site, and invites go to anyone." Under it in open mode, `--muted` 15: "Open since 2 Dec 10:02, by you" (from the last switch in `admin_action`; another admin's masked email in place of "you").
+- **View the Open Site** (text button, preview only, opens a new tab): the open landing served to this admin alone, with the admin cookie checked on every request (landing.md section 1). In open mode it is gone, since the open site is the site.
 - **Before You Open:** three checkboxes, rows 52 tall: "ICO fee paid", "Online Safety Act assessments signed", "Open-mode legal pages reviewed". Each tick is logged (`admin_action`) and shows who and when on the right; an untick is logged too. The rest of the launch gate (NCA route, first invite) is listed as text, since the switch does not depend on it (the launch gate checklist the lead keeps outside the repo owns the full list; the page shows only these lines).
 - **Switch to Open** (primary) is disabled until the three are ticked (with the line "Tick all three to switch." under it). A tap asks: "Switch to Open?" / "The new site and sign-in go live for everyone within 30 seconds. You can switch back." / Cancel, Switch to Open (primary, not rose: opening is not destructive). Done: the chip turns Open, toast "Open Mode Is On" / "Pages switch within 30 seconds."
 - **Switch to Preview** (secondary, in open mode) asks: "Switch Back to Preview?" / "Signed-in users keep working; the public site goes back to today's." / Cancel, Switch to Preview.
@@ -188,7 +190,7 @@ Admin only (`ADMIN_EMAILS`, checked on every request); anyone else gets the 404 
 
 ## 3. `/report`
 
-Reached from the screen's Report link, a footer link on the open-mode site, or a URL in an email. Anyone can send one, signed in or not.
+Reached from the screen's Report link, a footer link on the open-mode site, or a URL in an email. Anyone can send one, signed in or not. Public in both modes (README.md, Mode): in preview it is linked only from a screen whose file it can name (viewers.md section 7).
 
 ```
 390                                              1440 (column max 480)
@@ -230,5 +232,5 @@ Reached from the screen's Report link, a footer link on the open-mode site, or a
 | reauth | Confirm It's You / Use your passkey, or get a code at {email}. / Use Passkey / Email Me a Code |
 | delete | Delete Your Account? / Your files, library and history are deleted 7 days from now. Until then, signing in cancels it. / Type DELETE to confirm / Delete My Account / Cancel; Account Deletion Scheduled / Sign in before {date} to cancel it. |
 | admin | Admin; Preview; Open; Invites; Waitlist; Reports; Users; Launch; New Invite; Note; Create Invite; This link shows once. The invite email has been sent too.; Preview mode sends invites to test emails only.; Copy Link; Resend; Invite Resent; Revoke; Revoke This Invite? / The link stops working.; Accepted; Expired; Revoked; No invites yet.; Invite; Dismiss; No one is on the waitlist yet.; Waitlist entries arrive once the Tally webhook is set up.; Disable File; Enable File; Suspend Owner; Keep a Copy; Resolve; Disable {name}? / It stops opening anywhere, at once. The owner sees why.; No reports. New ones appear here and by email.; Active; Suspended; Deleting; Suspend; Unsuspend; Send Sign-In Link |
-| launch | Launch Mode; Preview shows today's site to everyone. Accounts work for admins and test emails only.; Open shows the new site, and invites go to anyone.; Before You Open; ICO fee paid; Online Safety Act assessments signed; Open-mode legal pages reviewed; Ticked by you, {date}; Switch to Open; Tick all three to switch.; Switch to Open? / The new site and sign-in go live for everyone within 30 seconds. You can switch back.; Open Mode Is On / Pages switch within 30 seconds.; Switch to Preview; Switch Back to Preview? / Signed-in users keep working; the public site goes back to today's. |
+| launch | Launch Mode; Preview shows today's site to everyone. Accounts work for admins and test emails only.; View the Open Site; Open since {date}, by you; Open shows the new site, and invites go to anyone.; Before You Open; ICO fee paid; Online Safety Act assessments signed; Open-mode legal pages reviewed; Ticked by you, {date}; Switch to Open; Tick all three to switch.; Switch to Open? / The new site and sign-in go live for everyone within 30 seconds. You can switch back.; Open Mode Is On / Pages switch within 30 seconds.; Switch to Preview; Switch Back to Preview? / Signed-in users keep working; the public site goes back to today's. |
 | report | Report a File / Tell bloop what's wrong. Reports are read by a person, usually within a day. / What's wrong? / Details / Your email (optional, for a reply) / Send Report / About the file on {room} at {time}. / Report Sent / Thank you. If you left an email, a reply comes from hi@bloop.here. / Done / If a child is in danger now, call 999. |
