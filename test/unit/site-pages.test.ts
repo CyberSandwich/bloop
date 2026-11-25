@@ -514,7 +514,7 @@ describe("landing word caps (design.md section 13)", () => {
     expect(residue.toLowerCase()).not.toMatch(/nothing (is )?left|leaves nothing/);
     expect(read("public/security.html")).toContain('id="stay"');
     expect(faq).toMatch(
-      /<\/details>\s*<p class="faq-more">Another question\? Email <a href="mailto:hi@bloop\.here">hi@bloop\.here<\/a><\/p>\s*<\/section>$/,
+      /<\/details>\s*<!-- build:ask -->\s*<p class="faq-more">Another question\? Email <a href="mailto:hi@bloop\.here">hi@bloop\.here<\/a><\/p>\s*<!-- \/build:ask -->\s*<\/section>$/,
     );
   });
 

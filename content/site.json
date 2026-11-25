@@ -20,7 +20,8 @@
       "title": "bloop: Present Anywhere",
       "description": "Scan the QR code, approve on your phone, and present.",
       "source": "landing",
-      "ld": "site"
+      "ld": "site",
+      "faq": true
     },
     { "file": "404.html", "title": "bloop: Page Not Found", "source": "404", "noindex": true }
   ]

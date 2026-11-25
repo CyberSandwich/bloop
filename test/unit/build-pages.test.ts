@@ -6,6 +6,7 @@ import { describe, expect, it } from "vitest";
 import {
   buildAll,
   chromeFor,
+  faqOf,
   fill,
   headOfHand,
   injectChrome,
@@ -164,11 +165,61 @@ describe("the head of every page", () => {
     expect(html).not.toMatch(/canonical|og:|twitter:|ld\+json/);
   });
 
-  it("the landing page carries an Organization and a WebSite", () => {
-    const [graph] = ld(built.get("public/index.html") ?? "");
+  it("the landing page carries an Organization from site.json, a WebSite and an FAQPage, in one block", () => {
+    const blocks = ld(built.get("public/index.html") ?? "");
+    expect(blocks).toHaveLength(1);
+    const [graph] = blocks;
     const types = graph["@graph"].map((n: { "@type": string }) => n["@type"]);
-    expect(types).toEqual(["Organization", "WebSite"]);
-    expect(graph["@graph"][1].publisher).toEqual({ "@id": graph["@graph"][0]["@id"] });
+    expect(types).toEqual(["Organization", "WebSite", "FAQPage"]);
+    const [org, web] = graph["@graph"];
+    expect(org).toMatchObject({ name: site.name, url: `${site.origin}/`, email: site.email });
+    expect(org.logo).toBe(`${site.origin}/apple-touch-icon.png`);
+    expect(existsSync(`${ROOT}public/apple-touch-icon.png`)).toBe(true);
+    expect(web.publisher).toEqual({ "@id": org["@id"] });
+  });
+
+  it("the FAQPage says what the visible FAQ says, question for question", () => {
+    const html = built.get("public/index.html") ?? "";
+    const faq = ld(html)[0]["@graph"].find((n: { "@type": string }) => n["@type"] === "FAQPage");
+    const section = /<section class="faq"[\s\S]*?<\/section>/.exec(html)?.[0] ?? "";
+    const text = (s: string) =>
+      s
+        .replace(/<[^>]+>/g, "")
+        .replace(/\s+/g, " ")
+        .trim();
+    const visible = [...section.matchAll(/<summary>([\s\S]*?)<\/summary>\s*<p>([\s\S]*?)<\/p>/g)].map((m) => ({
+      "@type": "Question",
+      name: text(m[1] ?? ""),
+      acceptedAnswer: { "@type": "Answer", text: text(m[2] ?? "") },
+    }));
+    expect(visible).toHaveLength(section.split("<details").length - 1);
+    expect(visible.length).toBeGreaterThanOrEqual(4);
+    expect(faq.mainEntity).toEqual(visible);
+    expect(faq.url).toBe(`${site.origin}/`);
+  });
+
+  it("reads the FAQ only from plain details items, and refuses one it cannot read whole", () => {
+    const item = (q: string, a: string) => `<details>\n  <summary>${q}</summary>\n  <p>${a}</p>\n</details>`;
+    const page = (...items: string[]) => `<section class="faq">${items.join("")}</section>`;
+    expect(faqOf(page(item("Q?", 'Yes, <b class="name">bloop</b>. <a href="/x">More.</a>')), "x")).toEqual([
+      { q: "Q?", a: "Yes, bloop. More." },
+    ]);
+    expect(() => faqOf(page(item("Q?", "A"), "<details><summary>Q2</summary><div>A</div></details>"), "x")).toThrow(
+      /x: the FAQ/,
+    );
+    expect(() => faqOf(page(item("Q &amp; A?", "A")), "x")).toThrow(/entity/);
+    expect(() => faqOf("<main></main>", "x")).toThrow(/x: the FAQ/);
+  });
+
+  it("the landing's email line comes from site.json, and no hand page types the address", () => {
+    const html = built.get("public/index.html") ?? "";
+    expect(region(html, "ask").trim()).toBe(
+      `<p class="faq-more">Another question? Email <a href="mailto:${site.email}">${site.email}</a></p>`,
+    );
+    for (const p of site.pages) {
+      const outside = read(`public/${p.file}`).replace(/<!-- build:(\w+) -->[\s\S]*?<!-- \/build:\1 -->/g, "");
+      expect(outside, p.file).not.toMatch(/@bloop\.here/);
+    }
   });
 
   it("an article carries an Article with its own dates and a reading time that its words support", () => {
@@ -176,6 +227,7 @@ describe("the head of every page", () => {
       const html = built.get(doc.out) ?? "";
       const [node] = ld(html);
       expect(node["@type"]).toBe("Article");
+      expect(node.headline).toBe(doc.meta.title);
       expect(node.datePublished).toBe(doc.meta.published);
       expect(node.dateModified).toBe(doc.meta.updated ?? doc.meta.published);
       expect(node.url).toBe(`${site.origin}${doc.path}`);
@@ -337,6 +389,8 @@ describe("the content rules", () => {
     expect(fill("<a>\n  {{x}}\n</a>\n{{y}}\n", { x: "1\n2", y: "" })).toBe("<a>\n  1\n  2\n</a>\n");
     expect(fill("<i>{{x}}</i>", { x: "v" })).toBe("<i>v</i>");
     expect(() => fill("{{x}}", {})).toThrow(/no value for \{\{x\}\}/);
+    // `{{` is reserved; a page shows two braces by writing the first as an entity.
+    expect(fill("&#123;{x}}", {})).toBe("&#123;{x}}");
   });
 
   it("numbers clauses and letters list items from the source, and refuses a wrong clause number", () => {

@@ -1,6 +1,7 @@
 // Builds the site's generated pages from content/ and keeps one nav, one footer and one head block on every page.
 // `node tools/build-pages-cli.mjs` writes; `--check` writes nothing and exits 1 on drift (npm run check:pages). The
-// design is in docs/design.md section 6, Site build.
+// design is in docs/design.md section 6, Site build. `{{name}}` is reserved in content and templates: a slot the build
+// has no value for is an error, never left in a page. To show two braces, write the first as `&#123;`.
 import { existsSync, mkdirSync, readdirSync, readFileSync, unlinkSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -27,12 +28,14 @@ const attr = (s) => esc(s).replace(/"/g, "&quot;");
 
 /**
  * @typedef {{ label: string, href: string, in: string[] }} Link
- * @typedef {{ file: string, path?: string, title: string, description?: string, source: string, ld?: string, noindex?: boolean }} HandPage
+ * @typedef {{ file: string, path?: string, title: string, description?: string, source: string, ld?: string, noindex?: boolean,
+ *   faq?: boolean }} HandPage
+ * @typedef {{ q: string, a: string }} Faq
  * @typedef {{ name: string, origin: string, email: string, waitlist: string, about: string, image: { path: string, width: number, height: number },
  *   links: Link[], robots: { disallow: string[] }, pages: HandPage[] }} Site
  * @typedef {{ file: string, path?: string, title: string, description?: string, source: string, current?: string | undefined,
  *   noindex?: boolean, kind: "site" | "legal" | "article" | "index" | "none", published?: string | undefined,
- *   modified?: string | undefined }} Head
+ *   modified?: string | undefined, faq?: Faq[] | undefined }} Head
  */
 
 /** @type {Site} */
@@ -164,6 +167,21 @@ function jsonLd(page) {
             inLanguage: "en-US",
             publisher: { "@id": `${site.origin}/#organization` },
           },
+          ...(page.faq
+            ? [
+                {
+                  "@type": "FAQPage",
+                  "@id": `${url}#faq`,
+                  url,
+                  inLanguage: "en-US",
+                  mainEntity: page.faq.map(({ q, a }) => ({
+                    "@type": "Question",
+                    name: q,
+                    acceptedAnswer: { "@type": "Answer", text: a },
+                  })),
+                },
+              ]
+            : []),
         ],
       },
     ];
@@ -235,7 +253,34 @@ export function seoHtml(page) {
 }
 
 /** @param {Head} page @returns {Record<string, string>} */
-export const chromeFor = (page) => ({ seo: seoHtml(page), nav: navHtml(page), footer: footerHtml(page) });
+export const chromeFor = (page) => ({
+  seo: seoHtml(page),
+  nav: navHtml(page),
+  footer: footerHtml(page),
+  ...(page.faq
+    ? { ask: `<p class="faq-more">Another question? Email <a href="mailto:${site.email}">${site.email}</a></p>` }
+    : {}),
+});
+
+/** The FAQ as question and answer text, read from the page's own markup so its structured data says what readers see. */
+/** @param {string} html @param {string} where @returns {Faq[]} */
+export function faqOf(html, where) {
+  const section = /<section class="faq"[\s\S]*?<\/section>/.exec(html)?.[0] ?? "";
+  const items = [...section.matchAll(/<details>\s*<summary>([^<]+)<\/summary>\s*<p>([\s\S]*?)<\/p>\s*<\/details>/g)];
+  if (items.length === 0 || items.length !== section.split("<details").length - 1)
+    throw new Error(`${where}: the FAQ must be <details><summary>question</summary><p>answer</p></details> items`);
+  /** @param {string} s */
+  const text = (s) => {
+    const t = s
+      .replace(/<[^>]+>/g, "")
+      .replace(/\s+/g, " ")
+      .trim();
+    // Decoding is not done here, so an entity would reach the structured data as its raw spelling.
+    if (t.includes("&")) throw new Error(`${where}: an entity in the FAQ text: ${t}`);
+    return t;
+  };
+  return items.map((m) => ({ q: text(m[1] ?? ""), a: text(m[2] ?? "") }));
+}
 
 const REGION = /^([ \t]*)<!-- build:(\w+) -->\n[\s\S]*?^[ \t]*<!-- \/build:\2 -->$/gm;
 /** Rewrites each `build:` region of a page with its generated block; a region with no block is an error. */
@@ -576,6 +621,7 @@ export const headOfHand = (p) => ({
   ...p,
   current: p.path === "/" ? undefined : p.path,
   kind: p.ld === "site" ? "site" : "none",
+  faq: p.faq ? faqOf(read(`public/${p.file}`), p.file) : undefined,
 });
 
 /** Every file the build owns, as repo-relative path to full text; hand-written pages keep their own markup. */
