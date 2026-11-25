@@ -334,13 +334,16 @@ export function splitFrontmatter(src) {
   return { meta, body: src.slice(m[0].length) };
 }
 
-/** @returns {Doc[]} every content file, in the order of its `order`. */
-export function loadDocs() {
+/**
+ * @param {string} [base] a content folder under `content/` (`open`) holding drafts at the same relative paths
+ * @returns {Doc[]} every content file, in the order of its `order`.
+ */
+export function loadDocs(base = "") {
   /** @type {Doc[]} */
   const docs = [];
   for (const dir of ["", "articles"]) {
-    for (const name of readdirSync(join(ROOT, "content", dir)).filter((n) => n.endsWith(".md"))) {
-      const file = join("content", dir, name);
+    for (const name of readdirSync(join(ROOT, "content", base, dir)).filter((n) => n.endsWith(".md"))) {
+      const file = join("content", base, dir, name);
       const slug = name.slice(0, -3);
       // `{{email}}` keeps the one public address in site.json, not repeated by hand in every page.
       const { meta, body } = splitFrontmatter(fillProse(read(file), { email: site.email }));
@@ -658,6 +661,23 @@ export function buildAll() {
   return files;
 }
 
+/**
+ * Renders every `content/open/**` draft in memory through the same validators as the live pages and writes nothing,
+ * so a malformed draft fails the check before anything serves it. Each draft replaces the page at its path.
+ */
+export function checkOpen() {
+  const live = loadDocs();
+  const drafts = loadDocs("open");
+  const docs = [...live.filter((d) => !drafts.some((o) => o.path === d.path)), ...drafts];
+  for (const doc of drafts) {
+    try {
+      renderDoc(doc, docs);
+    } catch (e) {
+      throw new Error(`${doc.file}: ${e instanceof Error ? e.message : e}`, { cause: e });
+    }
+  }
+}
+
 /** @param {Doc[]} docs */
 function sitemap(docs) {
   /** @param {Doc} d @returns {string} */
@@ -734,6 +754,7 @@ export function staleFiles(files) {
  * @returns {{ written: string[], deleted: string[] }} the files that changed and the stale ones removed (or, in a check, that would be)
  */
 export function sync({ check }) {
+  checkOpen();
   const files = buildAll();
   const deleted = staleFiles(files);
   /** @type {string[]} */
