@@ -91,11 +91,12 @@ export function mount(c, onView) {
       setText(count, `${at.page} / ${pages.length}`);
     }
     paged = !!pages;
-    place();
     // The screen holds sound until a tap there: the phone says so under the list.
     if (video && at.sound === "blocked") {
       if (!note.isConnected) list.after(note);
     } else note.remove();
+    // After the note: it changes the column's height, which decides whether the preview fits.
+    place();
     // A video's bubbles play and sound, not step.
     for (const [b, on] of /** @type {const} */ ([
       [play, tuneOf(at).play],
