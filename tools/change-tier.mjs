@@ -23,13 +23,14 @@ const GATES = {
 /** @param {string} path */
 const isDocsOrTest = (path) => path.startsWith("docs/") || path.startsWith("test/") || path.endsWith(".md");
 
-/** Paths whose change is T2 whatever its size: header policy and authentication. */
+/** Paths whose change is T2 whatever its size: header policy, authentication and Durable Object schema. */
 /** @type {{pattern: RegExp, label: string}[]} */
 const SENSITIVE = [
   { pattern: /^src\/worker\/(.*\/)?headers\.ts$/, label: "header policy" },
   { pattern: /^public\/_headers$/, label: "static header policy" },
   { pattern: /^src\/worker\/auth\//, label: "auth code" },
   { pattern: /^src\/worker\/routes\/auth\.ts$/, label: "auth route" },
+  { pattern: /^src\/worker\/(.*\/)?[^/]*schema[^/]*\.ts$/, label: "Durable Object schema" },
 ];
 
 /**
