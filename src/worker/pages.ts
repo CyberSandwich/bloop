@@ -3,7 +3,8 @@
 import { readCookie, SESSION_COOKIE } from "./auth/cookies.ts";
 import { servicesFor } from "./auth/services.ts";
 import { type Config, configFor } from "./config.ts";
-import { DYNAMIC_PAGES, pageCsp } from "./headers.ts";
+import { DYNAMIC_PAGES, pageCsp, withHeaders } from "./headers.ts";
+import { fail } from "./http.ts";
 import { admitted, type LaunchState, launchState } from "./mode.ts";
 
 /** The slice of Env this module uses, so Node-side tests can import it (the Worker's Env needs the workers-types). */
@@ -30,6 +31,8 @@ const AUTH_SHELLS: ReadonlySet<string> = new Set(["/signin", "/invite"]);
 const MEMBER_PAGES: ReadonlySet<string> = new Set(["/library", "/account", "/admin"]);
 /** A path no file has, so the asset layer answers its own 404 page: a hidden page looks exactly like a missing one. */
 const MISSING = "/.missing";
+/** An admin who holds this cookie with a live admin session sees the open pages while the site is in preview. */
+const VIEW_COOKIE = "__Host-bloop_view";
 
 /**
  * The path the rules look at: percent-decoded once, repeated slashes collapsed, dot segments resolved. Null (answer
@@ -54,8 +57,24 @@ export function normalizePath(pathname: string): string | null {
   return `/${segments.join("/")}`;
 }
 
-const notFound = (env: Pick<PageEnv, "ASSETS">, request: Request): Promise<Response> =>
-  env.ASSETS.fetch(new Request(new URL(MISSING, request.url), { method: request.method, headers: request.headers }));
+const fetchAs = (env: Pick<PageEnv, "ASSETS">, request: Request, path: string): Promise<Response> =>
+  env.ASSETS.fetch(new Request(new URL(path, request.url), { method: request.method, headers: request.headers }));
+
+const notFound = (env: Pick<PageEnv, "ASSETS">, request: Request): Promise<Response> => fetchAs(env, request, MISSING);
+
+/**
+ * The 404 a plain asset or a refused path answers. In open mode a browser navigation gets the open 404 page (its own
+ * nav), still with status 404; every other request, and preview, keeps today's. The mode is read only for a navigation.
+ */
+async function missing(env: PageEnv, request: Request, plain: Response): Promise<Response> {
+  if (!(request.headers.get("Accept") ?? "").includes("text/html")) return plain;
+  if ((await launchState(env)).mode !== "open") return plain;
+  const page = await fetchAs(env, request, "/open/404");
+  return page.status === 200 ? new Response(page.body, { status: 404, headers: page.headers }) : plain;
+}
+
+/** The build output path of a variant's open file: `/` is `/open`, because `/open/` would be redirected. */
+const openAsset = (path: string): string => (path === "/" ? "/open" : `/open${path}`);
 
 const noindex = (response: Response): Response => {
   const out = new Response(response.body, response);
@@ -70,6 +89,23 @@ const privateCopy = (response: Response): Response => {
   out.headers.append("Vary", "Cookie");
   return out;
 };
+
+/** An admin's own preview of the open site: the view cookie plus a session that is an ADMIN_EMAILS member right now. */
+async function adminViewing(request: Request, env: PageEnv): Promise<boolean> {
+  if (readCookie(request, VIEW_COOKIE) !== "open") return false;
+  const config = configFor(env);
+  if (!config.ok) return false;
+  try {
+    const { sessions } = servicesFor(env, config.config);
+    const cookie = readCookie(request, SESSION_COOKIE);
+    const userId = cookie ? await sessions.resolve(cookie) : null;
+    const email = userId ? await sessions.activeMemberEmail(userId) : null;
+    return email !== null && config.config.account.adminEmails.has(email);
+  } catch {
+    console.error("admin_view_check_failed");
+    return false;
+  }
+}
 
 /**
  * Whether the page shows in preview: a session of an email member the lockout admits, and for /admin an address in
@@ -108,7 +144,7 @@ export async function servePage(
 ): Promise<Response> {
   const url = new URL(request.url);
   const path = normalizePath(url.pathname);
-  if (path === null) return notFound(env, request);
+  if (path === null) return missing(env, request, await notFound(env, request));
   const variant = variants.find((v) => v.path === path);
   // The file forms of a gated page (`/library.html`, `/library/index.html`) and its other letter cases are the page.
   const key = path.replace(/(\/index)?\.html$/i, "").toLowerCase() || "/";
@@ -126,16 +162,30 @@ export async function servePage(
       : notFound(env, request);
   }
   if (!variant) return asset(env, request, path);
-  if (state.mode !== "open") return variant.kind === "open-only" ? notFound(env, request) : asset(env, request, path);
-  if (variant.kind === "preview-only") {
-    return new Response(null, { status: 301, headers: { Location: variant.to ?? "/", "Cache-Control": "no-cache" } });
+  const viewing = state.mode !== "open" && (await adminViewing(request, env));
+  if (state.mode !== "open" && !viewing) {
+    return variant.kind === "open-only" ? notFound(env, request) : asset(env, request, path);
   }
-  return asset(env, new Request(new URL(`/open${variant.path}${url.search}`, url), request), variant.path);
+  const answer =
+    variant.kind === "preview-only"
+      ? new Response(null, { status: 301, headers: { Location: variant.to ?? "/", "Cache-Control": "no-cache" } })
+      : await openFile(env, request, variant, url.search);
+  return viewing ? noindex(privateCopy(answer)) : answer;
+}
+
+/** A variant's open file. A redirect from the asset layer would leak the build path, so it is a fault, never passed on. */
+async function openFile(env: PageEnv, request: Request, variant: Variant, search: string): Promise<Response> {
+  const target = new URL(`${openAsset(variant.path)}${search}`, request.url);
+  const response = await asset(env, new Request(target, request), variant.path);
+  if (response.status < 300 || response.status > 399) return response;
+  console.error("variant_redirect");
+  return withHeaders(fail("internal"), "api");
 }
 
 /** The asset, with the policy of a page whose sources come from configuration completed (headers.ts `pageCsp`). */
 async function asset(env: PageEnv, request: Request, path: string): Promise<Response> {
   const response = await env.ASSETS.fetch(request);
+  if (response.status === 404) return missing(env, request, response);
   const config = configFor(env);
   // A 304 too: a browser replaces its stored headers with the revalidation's, so it must carry the same policy.
   if (!(path in DYNAMIC_PAGES) || ![200, 304].includes(response.status) || !config.ok) return response;

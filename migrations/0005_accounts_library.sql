@@ -186,9 +186,9 @@ CREATE INDEX IF NOT EXISTS idx_hold_file ON hold(file_id);
 CREATE INDEX IF NOT EXISTS idx_hold_release ON hold(release_after);
 
 -- Addresses that may never sign in again: a closed or banned account. Outside every purge path, so it outlives the
--- account. Plain email_norm, like app_user and invite (ADR 0013), not a hash.
+-- account, so it holds no address: email_hash is 'v1:' + HMAC-SHA256(CODE_PEPPER, email_norm) in hex (ADR 0013).
 CREATE TABLE IF NOT EXISTS email_block (
-  email_norm TEXT PRIMARY KEY, reason TEXT NOT NULL, created_at INTEGER NOT NULL);
+  email_hash TEXT PRIMARY KEY, reason TEXT NOT NULL, created_at INTEGER NOT NULL);
 
 -- Runtime settings changed only from /admin (ADR 0026). Keys: launch_mode (preview | open), preview_lockout ('1' while
 -- set), and gate.ico, gate.osa, gate.legal ('1' when ticked). No row is seeded: a missing launch_mode reads as preview,

@@ -7,7 +7,7 @@ import { type TestDb, testDb } from "./d1-shim.ts";
 const NOW = 1_800_000_000_000;
 
 /** Every path the fake asset layer knows answers 200 with its own path; anything else is its 404 page. */
-function world(over: Record<string, string> = {}) {
+function world(over: Record<string, string> = {}, answer?: (path: string) => Response | undefined) {
   const db = testDb();
   const env = {
     ...PROD_VARS,
@@ -20,6 +20,8 @@ function world(over: Record<string, string> = {}) {
     ASSETS: {
       fetch: async (request: Request) => {
         const path = new URL(request.url).pathname;
+        const special = answer?.(path);
+        if (special) return special;
         return path === "/.missing" ? new Response("not found", { status: 404 }) : new Response(`asset ${path}`);
       },
     },
@@ -243,5 +245,89 @@ describe("MODE-01 pages: variants", () => {
       },
     };
     expect((await get(env, "/privacy")).status).toBe(200);
+  });
+});
+
+const html = { Accept: "text/html" };
+const nav = (env: PageEnv, path: string, headers: Record<string, string> = html, variants?: Variant[]) =>
+  servePage(new Request(`http://localhost:8787${path}`, { headers }), env, variants);
+
+describe("MODE-01 pages: the open site", () => {
+  const all: Variant[] = [
+    { path: "/", kind: "both" },
+    { path: "/privacy", kind: "both" },
+  ];
+
+  it("MODE-01 no variant fetch redirects: / in open is the /open file, 200, no Location", async () => {
+    const { db, env } = world();
+    setMode(db, "open");
+    const res = await nav(env, "/", html, all);
+    expect(res.status).toBe(200);
+    expect(await res.text()).toBe("asset /open");
+    expect(res.headers.get("Location")).toBeNull();
+  });
+
+  it("MODE-01 no variant fetch redirects: a redirect from the asset layer is a fault, never passed on", async () => {
+    const redirecting = (path: string) =>
+      path === "/open" ? new Response(null, { status: 307, headers: { Location: "/open/" } }) : undefined;
+    const { db, env } = world({}, redirecting);
+    setMode(db, "open");
+    const res = await nav(env, "/", html, all);
+    expect(res.status).toBe(500);
+    expect(res.headers.get("Location")).toBeNull();
+  });
+
+  it("MODE-01 open 404 carries the open nav: an HTML navigation to an unknown path gets the open 404 page with status 404", async () => {
+    const missingPage = (path: string) => (path === "/nope" ? new Response("x", { status: 404 }) : undefined);
+    const { db, env } = world({}, missingPage);
+    setMode(db, "open");
+    const res = await nav(env, "/nope");
+    expect(res.status).toBe(404);
+    expect(await res.text()).toBe("asset /open/404");
+    expect(await (await nav(env, "/open/")).text()).toBe("asset /open/404");
+  });
+
+  it("MODE-01 open 404 carries the open nav: preview and non-HTML requests keep today's 404", async () => {
+    const missingPage = (path: string) => (path === "/nope" ? new Response("not found", { status: 404 }) : undefined);
+    const { db, env } = world({}, missingPage);
+    setMode(db, "preview");
+    expect(await (await nav(env, "/nope")).text()).toBe("not found");
+    setMode(db, "open");
+    expect(await (await nav(env, "/nope", { Accept: "application/json" })).text()).toBe("not found");
+  });
+
+  it("MODE-01 admin view: an admin with the view cookie sees the open page in preview, private and noindex", async () => {
+    const { db, env } = world();
+    setMode(db, "preview");
+    const admin = await signIn(db, "a1", "admin@example.test");
+    const viewer = { Cookie: `__Host-bloop_sid=${admin}; __Host-bloop_view=open` };
+    const res = await nav(env, "/privacy", viewer, all);
+    expect(await res.text()).toBe("asset /open/privacy");
+    expect(res.headers.get("X-Robots-Tag")).toBe("noindex");
+    expect(res.headers.get("Cache-Control")).toBe("private, no-store");
+  });
+
+  it("MODE-01 admin view: the cookie alone, a non-admin member, a test address and an Entra user see today's page", async () => {
+    const { db, env } = world();
+    setMode(db, "preview");
+    const member = await signIn(db, "m1", "member@example.test");
+    const tester = await signIn(db, "t1", "test@example.test");
+    const entra = await signIn(db, "e1", null);
+    for (const sid of [undefined, member, tester, entra]) {
+      const cookie = `${sid ? `__Host-bloop_sid=${sid}; ` : ""}__Host-bloop_view=open`;
+      const res = await nav(env, "/privacy", { Cookie: cookie }, all);
+      expect(await res.text()).toBe("asset /privacy");
+    }
+  });
+
+  it("MODE-01 admin view: a deleting admin, or a view cookie with another value, sees today's page", async () => {
+    const { db, env } = world();
+    setMode(db, "preview");
+    const admin = await signIn(db, "a1", "admin@example.test");
+    const odd = await nav(env, "/privacy", { Cookie: `__Host-bloop_sid=${admin}; __Host-bloop_view=yes` }, all);
+    expect(await odd.text()).toBe("asset /privacy");
+    db.raw.prepare("UPDATE app_user SET status = 'deleting' WHERE id = 'a1'").run();
+    const gone = await nav(env, "/privacy", { Cookie: `__Host-bloop_sid=${admin}; __Host-bloop_view=open` }, all);
+    expect(await gone.text()).toBe("asset /privacy");
   });
 });
