@@ -3,7 +3,7 @@ import { describe, expect, it } from "vitest";
 import { SESSION_ENDED, WAITLIST_FORM } from "../../public/js/core/copy.js";
 import { TYPED_LETTERS, typedError } from "../../public/js/core/copy-code.js";
 import { phoneCopy, refusalToast, uploadLine, videoTime } from "../../public/js/core/copy-phone.js";
-import { endLine, FRESH_LINE, screenCopy } from "../../public/js/core/copy-screen.js";
+import { CHECK, endLine, FRESH_LINE, screenCopy } from "../../public/js/core/copy-screen.js";
 import { RESULTS } from "../../public/js/core/states.js";
 import { SUPPORT } from "../../public/js/shared/errors.js";
 import type { PhoneStateKey, ScreenStateKey } from "../../src/shared/protocol.ts";
@@ -88,6 +88,33 @@ const allText = (c: object) =>
         ? v.flatMap((a) => (typeof a?.label === "string" ? [a.label] : []))
         : [],
   );
+
+describe("Check This Room copy", () => {
+  const strings = (v: unknown): string[] =>
+    typeof v === "string" ? [v] : typeof v === "function" ? [v(7)] : Object.values(v as object).flatMap(strings);
+  const all = strings(CHECK);
+  const words = (text: string) => text.split(/\s+/).filter(Boolean).length;
+
+  it("follows the voice rules, in sentences of 20 words or fewer", () => {
+    expect(all.length).toBeGreaterThan(10);
+    for (const text of all) {
+      expectVoice(text);
+      expect(words(text), text).toBeLessThanOrEqual(20);
+    }
+  });
+
+  it("labels are Title Case and at most 5 words", () => {
+    for (const label of [CHECK.link, CHECK.title, CHECK.button, CHECK.running.replace("…", "")]) {
+      expect(words(label), label).toBeLessThanOrEqual(5);
+      expect(label.split(" ").filter((w) => /^[a-z]/.test(w))).toEqual([]);
+    }
+  });
+
+  it("never says whether PowerPoint is installed, and a number is only ever an argument", () => {
+    for (const text of all) expect(text, text).not.toMatch(/powerpoint/i);
+    expect(JSON.stringify(Object.values(CHECK).filter((v) => typeof v !== "function"))).not.toMatch(/\d/);
+  });
+});
 
 describe("screen copy", () => {
   it.each(SCREEN_KEYS)("%s follows the voice rules", (key) => {
