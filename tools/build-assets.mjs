@@ -1,6 +1,6 @@
 // Builds dist/, the directory wrangler serves: public/ copied byte for byte, except each JS module minified on its
 // own (no bundle), so the module graph, lazy import() specifiers and export names stay as written, and each
-// stylesheet stripped of comments and whitespace. ADR 0011.
+// stylesheet stripped of comments and whitespace, and each page of its comments. ADR 0011.
 // The CLI is tools/build-assets-cli.mjs; wrangler.jsonc `build` runs it before `wrangler dev` and `wrangler deploy`.
 import { lstatSync, mkdirSync, readdirSync, readFileSync, renameSync, rmSync, writeFileSync } from "node:fs";
 import { basename, dirname, join, relative, sep } from "node:path";
@@ -58,6 +58,65 @@ export function minifyCss(source, rel) {
   return transformSync(source, { loader: "css", minifyWhitespace: true, sourcefile: basename(rel) }).code;
 }
 
+// A raw-text element's start tag (its content is data, never markup) and a `<pre>` start or end tag.
+const RAW_OPEN = /<(script|style|textarea|title)(?=[\s>/])[^>]*>/iy;
+const PRE_TAG = /<(\/?)pre(?=[\s>/])/iy;
+
+/**
+ * The page without its comments. `<script>`, `<style>`, `<textarea>` and `<title>` content is copied as written
+ * (JSON-LD may hold `<!--`); a line a comment leaves empty goes with it. Anything this does not read the way a
+ * browser does throws, so the strip never guesses: an unterminated, empty (`<!-->`), `--!>`-closed or nested
+ * comment, or any comment inside `<pre>`. ADR 0011.
+ * @param {string} html
+ * @param {string} rel path under public/, for the error
+ */
+export function stripComments(html, rel) {
+  let out = "";
+  let pre = 0;
+  let i = 0;
+  while (i < html.length) {
+    const lt = html.indexOf("<", i);
+    if (lt < 0) break;
+    out += html.slice(i, lt);
+    i = lt;
+    if (html.startsWith("<!--", lt)) {
+      if (html.startsWith("<!-->", lt) || html.startsWith("<!--->", lt)) throw new Error(`${rel}: empty comment`);
+      const end = html.indexOf("-->", lt + 4);
+      if (end < 0) throw new Error(`${rel}: unterminated comment`);
+      const body = html.slice(lt + 4, end);
+      if (body.includes("<!--")) throw new Error(`${rel}: nested comment`);
+      if (body.includes("--!>")) throw new Error(`${rel}: comment closed by --!>`);
+      if (pre > 0) throw new Error(`${rel}: comment inside <pre>`);
+      i = end + 3;
+      // The comment's own line: dropped whole when nothing else is on it.
+      const lineStart = out.lastIndexOf("\n") + 1;
+      const lineEnd = html.indexOf("\n", i);
+      const after = html.slice(i, lineEnd < 0 ? html.length : lineEnd);
+      if (out.slice(lineStart).trim() === "" && after.trim() === "") {
+        out = out.slice(0, lineStart);
+        i = lineEnd < 0 ? html.length : lineEnd + 1;
+      }
+      continue;
+    }
+    RAW_OPEN.lastIndex = lt;
+    const open = RAW_OPEN.exec(html);
+    if (open) {
+      const hit = new RegExp(`</${open[1]}\\s*>`, "i").exec(html.slice(lt + open[0].length));
+      if (!hit) throw new Error(`${rel}: unterminated <${open[1]}>`);
+      const stop = lt + open[0].length + hit.index + hit[0].length;
+      out += html.slice(lt, stop);
+      i = stop;
+      continue;
+    }
+    PRE_TAG.lastIndex = lt;
+    const tag = PRE_TAG.exec(html);
+    if (tag) pre = Math.max(0, pre + (tag[1] ? -1 : 1));
+    out += "<";
+    i = lt + 1;
+  }
+  return out + html.slice(i);
+}
+
 /** @param {string} path @param {Buffer | string} data */
 function same(path, data) {
   try {
@@ -93,6 +152,10 @@ export function build(root = REPO) {
     const bytes = readFileSync(join(src, rel));
     if (rel.endsWith(".css")) {
       files.set(rel, minifyCss(bytes.toString("utf8"), rel));
+      continue;
+    }
+    if (rel.endsWith(".html")) {
+      files.set(rel, stripComments(bytes.toString("utf8"), rel));
       continue;
     }
     if (!rel.endsWith(".js")) {
