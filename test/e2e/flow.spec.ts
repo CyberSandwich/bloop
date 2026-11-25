@@ -1360,6 +1360,27 @@ test.describe("a guest's photo and video on the screen (design.md section 7, Vid
     await phone.context.close();
   });
 
+  test("SHOTS video: Tap for Sound, presenting, parked while presenting", async ({ browser }) => {
+    test.setTimeout(60_000);
+    const { screen, phone, page } = await openAsGuest(browser, "Talk.mp4", CLIP, false, false, holdSound);
+    await expect(page.getByRole("button", { name: "Tap for Sound" })).toBeVisible({ timeout: 15_000 });
+    await page.waitForTimeout(600);
+    await page.screenshot({ path: "test-results/shots/s-video-tap-1440.png" });
+    await phone.page.waitForTimeout(600);
+    await phone.page.screenshot({ path: "test-results/shots/a-video-blocked-390.png", fullPage: true });
+    await page.getByRole("button", { name: "Present" }).click();
+    await page.waitForTimeout(800);
+    await page.screenshot({ path: "test-results/shots/s-video-presenting-tap-1440.png" });
+    await screen.context.setOffline(true);
+    await page.waitForTimeout(3000);
+    await page.screenshot({ path: "test-results/shots/s-video-parked-presenting-1440.png" });
+    await screen.context.setOffline(false);
+    await page.waitForTimeout(4000);
+    await page.screenshot({ path: "test-results/shots/s-video-unparked-1440.png" });
+    await screen.context.close();
+    await phone.context.close();
+  });
+
   test("VID-03 a video this browser cannot play shows This Video Can't Play Here, with Download as the way on", async ({
     browser,
   }) => {
