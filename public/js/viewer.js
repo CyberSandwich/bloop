@@ -142,7 +142,9 @@ export function createViewer(deps) {
     // From where they were drawn (their content changed first), or mid-glide.
     const running = pill.getAnimations?.() ?? [];
     const from = running.length ? pill.getBoundingClientRect() : (drawn ?? pill.getBoundingClientRect());
-    for (const a of running) a.cancel();
+    const held = drawn;
+    // Lifted off to measure: a glide to the same target runs on, not restarts.
+    for (const a of running) /** @type {KeyframeEffect} */ (a.effect).target = null;
     const swap = swapped;
     swapped = false;
     /** @type {any} a slide, a photo's canvas, a video, or their loader */
@@ -192,9 +194,15 @@ export function createViewer(deps) {
     const was = lastPlace;
     lastPlace = place;
     // Only a change of place, shape or item glides (FLIP: from where they were drawn); a resize moves them at once.
-    const differs = (/** @type {"left" | "top" | "width" | "height"} */ k) => Math.abs(from[k] - now[k]) >= 1;
+    const differs = (/** @type {"left" | "top" | "width" | "height"} */ k, a = from) => Math.abs(a[k] - now[k]) >= 1;
     const reshaped = differs("width") || differs("height");
+    const holds =
+      held && !differs("left", held) && !differs("top", held) && !differs("width", held) && !differs("height", held);
+    for (const a of running)
+      if (holds) /** @type {KeyframeEffect} */ (a.effect).target = pill;
+      else a.cancel();
     if (
+      !holds &&
       (reshaped || ((swap || (was && was !== place)) && (differs("left") || differs("top")))) &&
       from.width &&
       !presenting() &&
