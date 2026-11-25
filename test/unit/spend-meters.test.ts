@@ -1,0 +1,326 @@
+import { describe, expect, it } from "vitest";
+import { resolveCaps } from "../../src/worker/spend/caps.ts";
+import { DAY, HOUR, rig, T0 } from "./spend-helpers.ts";
+
+describe("counters: take is an exact check-and-add", () => {
+  it("COST-14 email: 60 sends an hour, then refused with the wait until the hour ends, adding nothing", () => {
+    const { ledger, caps } = rig();
+    for (let i = 0; i < 60; i++) expect(ledger.take("email", 1, undefined, caps, T0).ok).toBe(true);
+    const refused = ledger.take("email", 1, undefined, caps, T0 + 1000);
+    expect(refused).toEqual({
+      ok: false,
+      reason: "cap_hit",
+      meter: "email",
+      period: "hour",
+      scope: "all",
+      retryAfterSeconds: 3599,
+    });
+    expect(ledger.snapshot(T0, caps).counters.email.hour).toBe(60);
+  });
+
+  it("COST-14 email: the day cap of 300 holds across hours and the next UTC day starts clean", () => {
+    const { ledger, caps } = rig();
+    let at = T0 - 6 * HOUR;
+    let sent = 0;
+    for (let h = 0; h < 6; h++, at += HOUR)
+      for (let i = 0; i < 60 && sent < 300; i++, sent++) ledger.take("email", 1, undefined, caps, at);
+    expect(sent).toBe(300);
+    const refused = ledger.take("email", 1, undefined, caps, at);
+    expect(refused).toMatchObject({ ok: false, period: "day" });
+    expect(ledger.take("email", 1, undefined, caps, Date.UTC(2026, 10, 26, 0, 0, 0)).ok).toBe(true);
+  });
+
+  it("a take that would pass the cap by n is refused whole, and a smaller one still fits", () => {
+    const { ledger, caps } = rig();
+    expect(ledger.take("upload_user_bytes", 10 * 1024 ** 3 - 5, "u1", caps, T0).ok).toBe(true);
+    expect(ledger.take("upload_user_bytes", 6, "u1", caps, T0).ok).toBe(false);
+    expect(ledger.take("upload_user_bytes", 5, "u1", caps, T0).ok).toBe(true);
+  });
+
+  it("COST-11 uploads: the per-user cap is per scope, and the all-scopes count is the sum", () => {
+    const { ledger, caps } = rig();
+    for (let i = 0; i < 50; i++) expect(ledger.take("upload_user", 1, "u1", caps, T0).ok).toBe(true);
+    expect(ledger.take("upload_user", 1, "u1", caps, T0)).toMatchObject({ ok: false, scope: "own", period: "day" });
+    expect(ledger.take("upload_user", 1, "u2", caps, T0).ok).toBe(true);
+    expect(ledger.snapshot(T0, caps).counters.upload_user.day).toBe(51);
+  });
+
+  it("COST-16 demo: 200 demo conversions a day all visitors, 10 per IP hash, refusal says which", () => {
+    const { ledger, caps } = rig();
+    for (let i = 0; i < 10; i++) ledger.take("convert_demo", 1, "ip1", caps, T0);
+    expect(ledger.take("convert_demo", 1, "ip1", caps, T0)).toMatchObject({ ok: false, scope: "own" });
+    for (let ip = 2; ip <= 20; ip++) for (let i = 0; i < 10; i++) ledger.take("convert_demo", 1, `ip${ip}`, caps, T0);
+    expect(ledger.take("convert_demo", 1, "ip99", caps, T0)).toMatchObject({ ok: false, scope: "all" });
+  });
+
+  it("COST-16 demo: 2,000 demo sessions a day, global", () => {
+    const { ledger, caps } = rig();
+    expect(ledger.take("demo_session", 2000, undefined, caps, T0).ok).toBe(true);
+    expect(ledger.take("demo_session", 1, undefined, caps, T0).ok).toBe(false);
+  });
+
+  it("COST-13 export: 3 a day per user", () => {
+    const { ledger, caps } = rig();
+    for (let i = 0; i < 3; i++) expect(ledger.take("export_user", 1, "u1", caps, T0).ok).toBe(true);
+    expect(ledger.take("export_user", 1, "u1", caps, T0).ok).toBe(false);
+    expect(ledger.take("export_user", 1, "u2", caps, T0).ok).toBe(true);
+  });
+
+  it("COST-07 R2: class A and B stop at the monthly cap and reset on the 1st", () => {
+    const { ledger, caps } = rig({ CAP_R2_CLASS_A_MONTH: "10" });
+    const small = resolveCaps({ CAP_R2_CLASS_A_MONTH: "10" });
+    expect(ledger.take("r2_class_a", 10, undefined, small, T0).ok).toBe(true);
+    expect(ledger.take("r2_class_a", 1, undefined, small, T0 + DAY)).toMatchObject({ ok: false, period: "month" });
+    expect(ledger.take("r2_class_a", 1, undefined, small, Date.UTC(2026, 11, 1)).ok).toBe(true);
+    expect(caps.r2_class_b_month).toBe(15_000_000);
+  });
+
+  it("a refused take writes nothing, so a flood of refusals costs no storage writes", () => {
+    const { ledger, caps, db } = rig();
+    ledger.take("demo_session", 2000, undefined, caps, T0);
+    const before = db.prepare("SELECT sum(n) AS s, count(*) AS c FROM counter").get();
+    for (let i = 0; i < 100; i++) ledger.take("demo_session", 1, undefined, caps, T0);
+    expect(db.prepare("SELECT sum(n) AS s, count(*) AS c FROM counter").get()).toEqual(before);
+  });
+
+  it("a scoped meter without a scope throws instead of skipping the per-scope cap", () => {
+    const { ledger, caps } = rig();
+    expect(() => ledger.take("upload_user", 1, undefined, caps, T0)).toThrow(RangeError);
+    expect(() => ledger.take("upload_user", 1, "", caps, T0)).toThrow(RangeError);
+  });
+
+  it("rejects n that is not a positive integer, and unknown meters", () => {
+    const { ledger, caps } = rig();
+    for (const n of [0, -1, 1.5, Number.NaN, Number.POSITIVE_INFINITY])
+      expect(() => ledger.take("email", n, undefined, caps, T0)).toThrow(RangeError);
+    // @ts-expect-error a name outside the registry
+    expect(() => ledger.take("nope", 1, undefined, caps, T0)).toThrow(RangeError);
+  });
+
+  it("a cap of 0 refuses everything, and a lowered override applies at once", () => {
+    const { ledger } = rig();
+    expect(ledger.take("email", 1, undefined, resolveCaps({ CAP_EMAIL_HOUR: "0" }), T0).ok).toBe(false);
+    expect(ledger.take("email", 1, undefined, resolveCaps({}, { email_hour: 1 }), T0).ok).toBe(true);
+    expect(ledger.take("email", 1, undefined, resolveCaps({}, { email_hour: 1 }), T0).ok).toBe(false);
+  });
+
+  it("the retry wait is the longest among the limits that refused", () => {
+    const { ledger, caps } = rig({});
+    for (let i = 0; i < 60; i++) ledger.take("email", 1, undefined, caps, T0);
+    const tight = resolveCaps({}, { email_day: 60, email_hour: 60 });
+    const refused = ledger.take("email", 1, undefined, tight, T0);
+    expect(refused).toMatchObject({ ok: false, period: "day", retryAfterSeconds: 12 * 3600 });
+  });
+
+  it("record counts past a cap without refusing; refund gives back, floored at 0, on the day it was taken", () => {
+    const { ledger, caps } = rig();
+    ledger.take("container_seconds", 21_600, undefined, caps, T0);
+    ledger.record("container_seconds", 5, undefined, T0);
+    expect(ledger.snapshot(T0, caps).counters.container_seconds.day).toBe(21_605);
+    ledger.refund("container_seconds", 30_000, undefined, T0);
+    expect(ledger.snapshot(T0, caps).counters.container_seconds.day).toBe(0);
+    ledger.take("container_seconds", 100, undefined, caps, Date.UTC(2026, 10, 25, 23, 59));
+    ledger.refund("container_seconds", 40, undefined, Date.UTC(2026, 10, 25, 23, 59));
+    expect(ledger.snapshot(Date.UTC(2026, 10, 25, 23, 59), caps).counters.container_seconds.day).toBe(60);
+    expect(ledger.snapshot(Date.UTC(2026, 10, 26, 0, 1), caps).counters.container_seconds.day).toBe(0);
+  });
+
+  it("counters are exact across a Durable Object restart", () => {
+    const r = rig();
+    r.ledger.take("email", 7, undefined, r.caps, T0);
+    expect(r.wake().snapshot(T0, r.caps).counters.email.day).toBe(7);
+  });
+
+  it("prune drops old hours, days and months and keeps current ones", () => {
+    const { ledger, caps, db } = rig();
+    ledger.take("email", 1, undefined, caps, T0 - 3 * DAY);
+    ledger.take("email", 1, undefined, caps, T0 - 60 * DAY);
+    ledger.take("email", 1, undefined, caps, T0);
+    ledger.take("r2_class_a", 1, undefined, caps, T0 - 60 * DAY);
+    ledger.take("r2_class_a", 1, undefined, caps, T0 - 500 * DAY);
+    ledger.take("r2_class_a", 1, undefined, caps, T0);
+    ledger.prune(T0);
+    const keys = (meter: string) =>
+      (
+        db.prepare("SELECT period FROM counter WHERE meter = ? AND scope = '' ORDER BY period").all(meter) as {
+          period: string;
+        }[]
+      ).map((r) => r.period);
+    expect(keys("email")).toEqual(["d2026-11-22", "d2026-11-25", "h2026-11-25T12"]);
+    expect(keys("r2_class_a")).toEqual(["d2026-11-25", "m2026-09", "m2026-11"]);
+  });
+});
+
+describe("COST-01 COST-12 concurrent callers: the ledger is synchronous, so a cap is exact", () => {
+  it("methods return values, never promises, so no await can sit between check and act", () => {
+    const { ledger, caps } = rig();
+    for (const out of [
+      ledger.take("email", 1, undefined, caps, T0),
+      ledger.acquire("convert", undefined, 60, caps, T0),
+      ledger.snapshot(T0, caps),
+    ])
+      expect(out).not.toBeInstanceOf(Promise);
+  });
+
+  it("COST-14 500 interleaved async callers against a cap of 60 get exactly 60", async () => {
+    const { ledger, caps } = rig();
+    const results = await Promise.all(
+      Array.from({ length: 500 }, async (_, i) => {
+        await Promise.resolve();
+        if (i % 3 === 0) await Promise.resolve();
+        return ledger.take("email", 1, undefined, caps, T0);
+      }),
+    );
+    expect(results.filter((r) => r.ok)).toHaveLength(60);
+    expect(ledger.snapshot(T0, caps).counters.email.hour).toBe(60);
+  });
+
+  it("COST-01 100 interleaved acquires of the 3-slot pool get exactly 3", async () => {
+    const { ledger, caps } = rig();
+    const results = await Promise.all(
+      Array.from({ length: 100 }, async () => {
+        await Promise.resolve();
+        return ledger.acquire("convert", "u", 60, caps, T0);
+      }),
+    );
+    expect(results.filter((r) => r.ok)).toHaveLength(3);
+  });
+});
+
+describe("pools and leases", () => {
+  it("COST-01 the account pool holds 3 and the public pool 1, independent of each other", () => {
+    const { ledger, caps } = rig();
+    expect([1, 2, 3].map(() => ledger.acquire("convert", "u", 600, caps, T0).ok)).toEqual([true, true, true]);
+    expect(ledger.acquire("convert", "u", 600, caps, T0)).toMatchObject({ ok: false, reason: "busy" });
+    expect(ledger.acquire("convert_public", undefined, 600, caps, T0).ok).toBe(true);
+    expect(ledger.acquire("convert_public", undefined, 600, caps, T0).ok).toBe(false);
+  });
+
+  it("release frees the slot at once, and releasing twice or an unknown id is harmless", () => {
+    const { ledger, caps } = rig();
+    const a = ledger.acquire("convert_public", undefined, 600, caps, T0);
+    if (!a.ok) throw new Error("expected a lease");
+    expect(ledger.acquire("convert_public", undefined, 600, caps, T0).ok).toBe(false);
+    expect(ledger.release(a.leaseId)).toBe(true);
+    expect(ledger.release(a.leaseId)).toBe(false);
+    expect(ledger.release("nope")).toBe(false);
+    expect(ledger.acquire("convert_public", undefined, 600, caps, T0).ok).toBe(true);
+  });
+
+  it("COST-02 a lease's ttl is clamped to the pool maximum and gives the deadline", () => {
+    const { ledger, caps } = rig();
+    const a = ledger.acquire("convert", "u", 999_999, caps, T0);
+    expect(a).toMatchObject({ ok: true, deadline: T0 + 1800 * 1000 });
+    const e = ledger.acquire("export", "u1", 999_999, caps, T0);
+    expect(e).toMatchObject({ ok: true, deadline: T0 + 900 * 1000 });
+  });
+
+  it("COST-02 a leaked lease keeps its slot through the deadline and grace, then is dropped and counted", () => {
+    const { ledger, caps } = rig();
+    ledger.acquire("convert_public", undefined, 60, caps, T0);
+    const deadline = T0 + 60_000;
+    expect(ledger.acquire("convert_public", undefined, 60, caps, deadline + 1).ok).toBe(false);
+    expect(ledger.snapshot(deadline + 1, caps).pools.convert_public).toEqual({ live: 1, overdue: 1 });
+    const after = deadline + 300_000;
+    expect(ledger.acquire("convert_public", undefined, 60, caps, after).ok).toBe(true);
+    expect(ledger.snapshot(after, caps).leasesDroppedToday).toBe(1);
+  });
+
+  it("COST-13 export: one per user at once and 4 in all", () => {
+    const { ledger, caps } = rig();
+    expect(ledger.acquire("export", "u1", 60, caps, T0).ok).toBe(true);
+    expect(ledger.acquire("export", "u1", 60, caps, T0).ok).toBe(false);
+    for (const u of ["u2", "u3", "u4"]) expect(ledger.acquire("export", u, 60, caps, T0).ok).toBe(true);
+    expect(ledger.acquire("export", "u5", 60, caps, T0).ok).toBe(false);
+  });
+
+  it("busy says when to try again, never more than 60 s", () => {
+    const { ledger, caps } = rig();
+    ledger.acquire("convert_public", undefined, 1800, caps, T0);
+    expect(ledger.acquire("convert_public", undefined, 60, caps, T0 + 10_000)).toEqual({
+      ok: false,
+      reason: "busy",
+      retryAfterSeconds: 60,
+    });
+    const short = rig();
+    short.ledger.acquire("convert_public", undefined, 20, short.caps, T0);
+    expect(short.ledger.acquire("convert_public", undefined, 60, short.caps, T0 + 10_000)).toMatchObject({
+      retryAfterSeconds: 10,
+    });
+  });
+
+  it("rejects a bad ttl and an unknown pool", () => {
+    const { ledger, caps } = rig();
+    for (const ttl of [0, -5, Number.NaN])
+      expect(() => ledger.acquire("convert", "u", ttl, caps, T0)).toThrow(RangeError);
+    // @ts-expect-error a name outside the registry
+    expect(() => ledger.acquire("nope", "u", 60, caps, T0)).toThrow(RangeError);
+  });
+
+  it("leases survive a Durable Object restart", () => {
+    const r = rig();
+    for (let i = 0; i < 3; i++) r.ledger.acquire("convert", "u", 600, r.caps, T0);
+    expect(r.wake().acquire("convert", "u", 600, r.caps, T0).ok).toBe(false);
+  });
+});
+
+describe("latched breaker state", () => {
+  it("latches once; the same or a looser value is not new; a stricter one replaces it and re-arms the alert", () => {
+    const { ledger } = rig();
+    expect(ledger.latchTrip("convert", "account_only", "r", "{}", T0)).toBe(true);
+    ledger.markAlerted("convert", "account_only");
+    expect(ledger.latchTrip("convert", "account_only", "r", "{}", T0)).toBe(false);
+    expect(ledger.latchTrip("convert", "on", "r", "{}", T0)).toBe(false);
+    expect(ledger.trips()[0]?.alerted).toBe(true);
+    expect(ledger.latchTrip("convert", "off", "r2", "{}", T0 + 1)).toBe(true);
+    expect(ledger.trips()).toMatchObject([{ switch: "convert", value: "off", reason: "r2", alerted: false }]);
+  });
+
+  it("markAlerted for an older value does not mark a newer trip", () => {
+    const { ledger } = rig();
+    ledger.latchTrip("convert", "account_only", "r", "{}", T0);
+    ledger.latchTrip("convert", "off", "r", "{}", T0);
+    ledger.markAlerted("convert", "account_only");
+    expect(ledger.trips()[0]?.alerted).toBe(false);
+  });
+
+  it("stays latched across a restart until reset", () => {
+    const r = rig();
+    r.ledger.latchTrip("uploads", "readonly", "r", "{}", T0);
+    expect(r.wake().trips()).toHaveLength(1);
+    expect(r.ledger.resetTrip("uploads")).toBe(true);
+    expect(r.ledger.resetTrip("uploads")).toBe(false);
+    expect(r.wake().trips()).toHaveLength(0);
+  });
+
+  it("alertOnce is true once per key per UTC day", () => {
+    const { ledger } = rig();
+    expect(ledger.alertOnce("warn:x", T0)).toBe(true);
+    expect(ledger.alertOnce("warn:x", T0 + HOUR)).toBe(false);
+    expect(ledger.alertOnce("warn:y", T0)).toBe(true);
+    expect(ledger.alertOnce("warn:x", T0 + DAY)).toBe(true);
+  });
+
+  it("overrides are replaced as a set and survive a restart", () => {
+    const r = rig();
+    r.ledger.setOverrides({ email_day: 10, convert_user_day: 5 });
+    r.ledger.setOverrides({ email_day: 7, bad: Number.NaN });
+    expect(r.wake().overrides()).toEqual({ email_day: 7 });
+  });
+
+  it("counts consecutive analytics failures and resets on a clean run", () => {
+    const { ledger } = rig();
+    expect([true, true, true].map((f) => ledger.analyticsRun(f))).toEqual([1, 2, 3]);
+    expect(ledger.analyticsRun(false)).toBe(0);
+    expect(ledger.analyticsRun(true)).toBe(1);
+  });
+});
+
+describe("schema", () => {
+  it("runs the numbered steps once and tolerates waking again and again", () => {
+    const r = rig();
+    r.wake();
+    r.wake();
+    expect(r.db.prepare("SELECT version FROM schema_version").all()).toEqual([{ version: 1 }]);
+  });
+});
