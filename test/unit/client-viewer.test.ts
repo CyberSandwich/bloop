@@ -229,6 +229,7 @@ const shownFrom = (frame: Node) => frame.querySelector("canvas")?.drawn ?? "";
 // Specifiers in variables: the node tsconfig has no DOM lib, so it must not follow these imports into page code.
 const VIEWER = "../../public/js/viewer.js";
 const UI = "../../public/js/core/ui.js";
+const VIDEO = "../../public/js/viewer-video.js";
 interface Viewer {
   render(v: ScreenView | null): void;
   park(line: string): void;
@@ -420,8 +421,10 @@ describe("a guest's photo and video on the stage (design.md section 7, Video)", 
   const shot: Item = { kind: "file", id: "i1", name: "Board.png", type: "png", size: 90_000 };
   const guestView = (item: Item) => ({ ...view, kind: "guest", items: [item] }) as ScreenView;
   /** Lets the video module's import and its fake events settle. */
+  // The viewer's import() and this one share a module record: once this resolves, only the viewer's then() is left.
   const loaded = async () => {
-    for (let i = 0; i < 5; i += 1) await settle();
+    await import(VIDEO);
+    for (let i = 0; i < 3; i += 1) await settle();
   };
   /** The video the module made, wherever it is (still off stage while it loads). */
   const videoOf = (frame: Node, made: Node[]) => frame.querySelector("video") ?? made.at(-1) ?? null;
