@@ -79,7 +79,7 @@ Email code and passkey. Nothing else creates a session for an email user: no mag
 - **Role from the secret (AUTH-16 admin):** a request is admin when its session user's `email_norm` is in `ADMIN_EMAILS` (normalized at config parse), checked on every request. No role column exists, so D1 write access alone cannot make an admin. Admin has no route that signs in as, or reads the library of, another member.
 
 ### Mode gate
-State-creating steps (invite create, accept, code verify, passkey session creation) read `launch_mode` uncached, so the 30 s cache (ADR 0026) never lets one through after a switch back to preview.
+State-creating steps (invite create, accept, code verify, passkey session creation) read `launch_mode` and `preview_lockout` uncached, so the 30 s cache (ADR 0026) never lets one through after a switch back to preview. In preview, existing members sign in as usual unless `preview_lockout` is set; invites stay limited as ADR 0026 says.
 
 ## Rejected
 - **Magic links instead of codes:** mail scanners follow links, which would sign them in or spend the link, and a link signs in whichever device opens it, not the one waiting.
