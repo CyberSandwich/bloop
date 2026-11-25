@@ -180,6 +180,7 @@ describe("Screen object schema steps", () => {
   /** The same session in the current shape: links minted per item, the first included. */
   const { mints: _mints, ...current } = rest;
   const link = { tokenHash: "h", purpose: "protocol", mintedAt: 0, firstFetchAt: null, fetches: 0, revoked: false };
+  const seq = { phone: 0, screen: 0 };
 
   it("turns a stored single file into a one-item list and gives each link record item 0", () => {
     const store = kv({ meta: { mode: "demo" }, machine: { state: "approved", session: v1Session }, links: [link] });
@@ -189,6 +190,7 @@ describe("Screen object schema steps", () => {
       items: [asStored(DECK)],
       minted: [1],
       shown: null,
+      seq,
     });
     expect(store.map.get("links")).toEqual([{ ...link, item: 0, ips: [], refused: false }]);
     expect(store.map.get(SCHEMA_KEY)).toBe(SCHEMA_VERSION);
@@ -198,7 +200,7 @@ describe("Screen object schema steps", () => {
     const store = kv({ meta: {}, machine: { state: "waiting", session: null } });
     migrate(store);
     expect(store.map.get("machine")).toEqual({ state: "waiting", session: null });
-    const current = { state: "approved", session: { items: [{ ...VEVOX, id: "i1" }], shown: null } };
+    const current = { state: "approved", session: { items: [{ ...VEVOX, id: "i1" }], shown: null, seq } };
     store.put("machine", current);
     migrate(store);
     expect(store.map.get("machine")).toBe(current);
@@ -228,27 +230,49 @@ describe("Screen object schema steps", () => {
     expect((store.map.get("machine") as Machine).session?.minted).toEqual([3, 0]);
   });
 
-  it("version 5 to 6: items gain ids in stored order, the session gains a null `shown`", () => {
+  it("version 5 to 6: items gain ids in stored order, the session gains a null `shown` and a zero `seq`", () => {
     const v5 = { ...current, items: [asItem(DECK), VEVOX], minted: [1, 0] };
     const store = kv({ meta: {}, schemaVersion: 5, machine: { state: "open", session: v5 } });
     migrate(store);
     const session = (store.map.get("machine") as Machine).session;
     expect(session?.items.map((i) => i.id)).toEqual(["i1", "i2"]);
     expect(session?.shown).toBeNull();
+    expect(session?.seq).toEqual(seq);
   });
 
-  it("version 6 repairs a malformed `shown` to null and keeps a well-formed one", () => {
-    const items = [asStored(DECK)];
-    const bad = kv({
-      meta: {},
-      machine: { state: "open", session: { ...current, items, minted: [1], shown: { x: 1 } } },
-    });
-    migrate(bad);
-    expect((bad.map.get("machine") as Machine).session?.shown).toBeNull();
-    const shown = { item: "i1", page: 2, present: true };
-    const good = kv({ meta: {}, machine: { state: "open", session: { ...current, items, minted: [1], shown } } });
-    migrate(good);
-    expect((good.map.get("machine") as Machine).session?.shown).toEqual(shown);
+  it("PAIR-13 version 6 keeps a `shown` this session could have set, and repairs any other to null", () => {
+    /** A demo owner's open session holding the deck (two pages) and a link, with this `shown` and `seq`. */
+    const stored = (shown: unknown, items: unknown[] = [asStored(DECK), { ...VEVOX, id: "i2" }], s: unknown = seq) =>
+      kv({
+        meta: {},
+        machine: {
+          state: "open",
+          mode: "demo",
+          pairing: { kind: "owner" },
+          session: { ...current, items, minted: [1, 0], shown, seq: s },
+        },
+      });
+    const migrated = (store: ReturnType<typeof kv>) => {
+      migrate(store);
+      return (store.map.get("machine") as Machine).session;
+    };
+    const good = { item: "i1", page: 2, present: true };
+    expect(migrated(stored(good))?.shown).toEqual(good);
+    for (const bad of [
+      { x: 1 },
+      { ...good, page: 0 },
+      { ...good, page: 3 },
+      { ...good, item: "i2" },
+      { ...good, item: "i9" },
+      { ...good, extra: true },
+    ]) {
+      expect(migrated(stored(bad))?.shown, JSON.stringify(bad)).toBeNull();
+    }
+    // A list renumbered because an item lacked an id: the old `shown` may name another item now.
+    expect(migrated(stored(good, [asItem(DECK), VEVOX]))?.shown).toBeNull();
+    expect(migrated(stored(null, [asStored(DECK)], { phone: "x" }))?.seq).toEqual(seq);
+    const kept = { phone: 5, screen: 9 };
+    expect(migrated(stored(good, undefined, kept))?.seq).toEqual(kept);
   });
 
   it("repairs old-shape data whatever the stored version says (a rollback wrote v1 data under version 3)", () => {
@@ -264,6 +288,7 @@ describe("Screen object schema steps", () => {
       items: [asStored(DECK)],
       minted: [1],
       shown: null,
+      seq,
     });
     expect(store.map.get("links")).toEqual([{ ...link, item: 0, ips: [], refused: false }]);
   });
@@ -280,7 +305,7 @@ describe("Screen object schema steps", () => {
     const store = kv({
       meta: {},
       schemaVersion: SCHEMA_VERSION,
-      machine: { state: "open", session: { ...current, items: [asStored(DECK)], minted: [1], shown: null } },
+      machine: { state: "open", session: { ...current, items: [asStored(DECK)], minted: [1], shown: null, seq } },
       links: [{ ...link, item: 0, ips: [], refused: false }],
     });
     const writes: string[] = [];

@@ -2,7 +2,7 @@ import { createHash } from "node:crypto";
 import { describe, expect, it } from "vitest";
 import type { Shown } from "../../src/shared/protocol.ts";
 import { fileById, itemId, pageCount, withIds } from "../../src/worker/items.ts";
-import { type Machine, transition } from "../../src/worker/machine.ts";
+import { type Machine, type Sender, transition } from "../../src/worker/machine.ts";
 import { PROD_VARS } from "../env-vars.ts";
 import {
   asItem,
@@ -21,7 +21,10 @@ import {
 
 const DOG = { source: "mock", ref: "dog-1", name: "Dog.jpg", type: "jpg" } as const;
 const at = T0 + sec(30);
-const command = (shown: Shown, now = at) => ({ e: "control", now, shown }) as const;
+let clock = 0;
+/** A control event; each call gets a newer seq unless one is given. */
+const command = (shown: Shown, seq = ++clock, from: Sender = "phone") =>
+  ({ e: "control", now: at, from, seq, shown }) as const;
 const deckPage = (page: number, present = false): Shown => ({ item: "i1", page, present });
 
 /** A demo session holding a deck (i1), a photo (i2) and a link (i3). */
@@ -90,18 +93,49 @@ describe("PAIR-13 control: only the pairing's phone commands the screen, absolut
     }
   });
 
-  it("a replay is a no-op: the same machine, no effect, nothing pushed", () => {
-    const first = must(list(), command(deckPage(2))).next;
-    const again = must(first, command(deckPage(2), at + sec(1)));
+  it("PAIR-13 replay: the same command again is a no-op: the same machine, no effect, nothing pushed", () => {
+    const first = must(list(), command(deckPage(2), 5)).next;
+    const again = must(first, command(deckPage(2), 5));
     expect(again.next).toBe(first);
     expect(again.effects).toEqual([]);
   });
 
-  it("a different command replaces the last one, whatever order they arrive in", () => {
+  it("PAIR-13 replay: the same `shown` under a newer seq takes the seq and pushes nothing", () => {
+    const first = must(list(), command(deckPage(2), 5)).next;
+    const again = must(first, command(deckPage(2), 6));
+    expect(again.next.session?.seq.phone).toBe(6);
+    expect(again.effects).toEqual([]);
+  });
+
+  it("a newer command replaces the last one", () => {
     const one = must(list(), command(deckPage(2))).next;
     const two = must(one, command({ item: "i2", page: 1, present: true })).next;
     expect(two.session?.shown).toEqual({ item: "i2", page: 1, present: true });
     expect(must(two, command(deckPage(1))).next.session?.shown).toEqual(deckPage(1));
+  });
+
+  it("PAIR-13 order: an older command from the same sender that arrives late changes nothing", () => {
+    const pageOne = must(list(), command(deckPage(1), 20)).next;
+    const late = must(pageOne, command(deckPage(2), 19));
+    expect(late.next).toBe(pageOne);
+    expect(late.effects).toEqual([]);
+    expect(late.next.session?.shown).toEqual(deckPage(1));
+  });
+
+  it("PAIR-13 order: each sender has its own seq, and between the phone and the screen the last applied wins", () => {
+    const phone = must(list(), command(deckPage(2), 1000)).next;
+    // The screen's clock is behind the phone's: its tap still applies, since its seq is its own.
+    const screen = must(phone, command(deckPage(1), 3, "screen")).next;
+    expect(screen.session?.shown).toEqual(deckPage(1));
+    expect(screen.session?.seq).toEqual({ phone: 1000, screen: 3 });
+    const phoneAgain = must(screen, command({ item: "i2", page: 1, present: false }, 1001)).next;
+    expect(phoneAgain.session?.shown?.item).toBe("i2");
+    expect(must(phoneAgain, command(deckPage(2), 2, "screen")).next).toBe(phoneAgain);
+  });
+
+  it("a new session starts every sender's seq again", () => {
+    expect(list().session?.seq).toEqual({ phone: 0, screen: 0 });
+    expect(offered().session?.seq).toEqual({ phone: 0, screen: 0 });
   });
 
   it("refuses wrong_state before approval, after the end, and in a live session", () => {
@@ -154,7 +188,7 @@ describe("PAIR-13 control: only the pairing's phone commands the screen, absolut
   });
 });
 
-describe("PAIR-13 rate limits: RL_FETCH per IP, then per credential", () => {
+describe("PAIR-13 rate limits: RL_CONTROL per IP, then per credential", () => {
   const ORIGIN = "http://127.0.0.1:8787";
   const REF = "S".repeat(22);
   const PID = `${REF}.${"p".repeat(43)}`;
@@ -162,11 +196,18 @@ describe("PAIR-13 rate limits: RL_FETCH per IP, then per credential", () => {
   /** A Worker env whose rate limit and Screen object record the order they are called in. */
   function env(limitCredential: boolean) {
     const calls: string[] = [];
-    const RL_FETCH = {
+    const RL_CONTROL = {
       limit: async ({ key }: { key: string }) => {
         const kind = key === PID_HASH ? "credential" : key === REF ? "ref" : "ip";
         calls.push(`limit:${kind}`);
         return { success: !(limitCredential && kind === "credential") };
+      },
+    };
+    // `/f/`'s binding, spent by a video's range reads behind the same address: always out of budget here.
+    const RL_FETCH = {
+      limit: async () => {
+        calls.push("limit:fetch");
+        return { success: false };
       },
     };
     const control = async () => {
@@ -174,7 +215,7 @@ describe("PAIR-13 rate limits: RL_FETCH per IP, then per credential", () => {
       return { ok: true, value: { shown: null } };
     };
     const SCREEN = { idFromName: (n: string) => n, get: () => ({ control }) };
-    return { calls, env: { ...PROD_VARS, PUBLIC_ORIGIN: ORIGIN, RL_FETCH, SCREEN } };
+    return { calls, env: { ...PROD_VARS, PUBLIC_ORIGIN: ORIGIN, RL_CONTROL, RL_FETCH, SCREEN } };
   }
   type PostRoute = {
     pattern: URLPattern;
@@ -187,7 +228,7 @@ describe("PAIR-13 rate limits: RL_FETCH per IP, then per credential", () => {
     const request = new Request(`${ORIGIN}/api/control`, {
       method: "POST",
       headers: { Origin: ORIGIN, "Content-Type": "application/json", Authorization: `Bearer ${PID}` },
-      body: JSON.stringify(deckPage(1)),
+      body: JSON.stringify({ ...deckPage(1), seq: 1 }),
     });
     return route.handler(request, e, route.pattern.exec(request.url) as URLPatternResult);
   };
@@ -196,6 +237,12 @@ describe("PAIR-13 rate limits: RL_FETCH per IP, then per credential", () => {
     const { calls, env: e } = env(false);
     expect((await post(e)).status).toBe(200);
     expect(calls).toEqual(["limit:ip", "limit:credential", "control"]);
+  });
+
+  it("PAIR-13 rate limit: a spent /f/ budget (a video's range reads on the same IP) never refuses a tap", async () => {
+    const { calls, env: e } = env(false);
+    expect((await post(e)).status).toBe(200);
+    expect(calls).not.toContain("limit:fetch");
   });
 
   it("PAIR-13 rate limit: a spent credential budget is a 429 that reaches no Screen object", async () => {
