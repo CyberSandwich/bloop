@@ -1,0 +1,141 @@
+<!DOCTYPE html>
+<html lang="en-US">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+    <meta name="color-scheme" content="light">
+    <title>bloop: Accessibility</title>
+    <meta name="description" content="How accessible bloop is, the problems we know about, and how to report one.">
+    <link rel="canonical" href="https://bloop.here/accessibility">
+    <meta property="og:type" content="website">
+    <meta property="og:site_name" content="bloop">
+    <meta property="og:url" content="https://bloop.here/accessibility">
+    <meta property="og:title" content="bloop: Accessibility">
+    <meta property="og:description" content="How accessible bloop is, the problems we know about, and how to report one.">
+    <meta property="og:image" content="https://bloop.here/og.png">
+    <meta property="og:image:width" content="1200">
+    <meta property="og:image:height" content="630">
+    <meta property="og:image:alt" content="bloop: Present Anywhere">
+    <meta name="twitter:card" content="summary_large_image">
+    <meta name="twitter:title" content="bloop: Accessibility">
+    <meta name="twitter:description" content="How accessible bloop is, the problems we know about, and how to report one.">
+    <meta name="twitter:image" content="https://bloop.here/og.png">
+    <script type="application/ld+json">{"@context":"https://schema.org","name":"bloop: Accessibility","description":"How accessible bloop is, the problems we know about, and how to report one.","url":"https://bloop.here/accessibility","inLanguage":"en-US","@type":"WebPage","dateModified":"2026-11-25","publisher":{"@type":"Organization","name":"bloop","url":"https://bloop.here/"}}</script>
+    <link rel="icon" href="/favicon.svg" type="image/svg+xml">
+    <link rel="apple-touch-icon" href="/apple-touch-icon.png">
+    <link rel="preload" href="/fonts/inter-latin.woff2" as="font" type="font/woff2" crossorigin>
+    <link rel="stylesheet" href="/css/base.css">
+    <link rel="stylesheet" href="/css/site.css">
+    <link rel="stylesheet" href="/css/legal.css">
+    <script type="module" src="/js/legal.js"></script>
+  </head>
+  <body class="page-site">
+    <a class="skip" href="#main">Skip to Content</a>
+    <header class="nav">
+      <a class="brand nav-logo glass" href="/"><img src="/favicon.svg" width="32" height="32" alt="">bloop</a>
+      <nav class="nav-pill glass" aria-label="Primary">
+        <ul class="nav-links glass" id="nav-links" popover>
+          <li><a href="/#features">Features</a></li>
+          <li><a href="/articles">Articles</a></li>
+          <li><a href="/privacy">Privacy</a></li>
+          <li><a href="/terms">Terms</a></li>
+          <li><a href="/security">Security</a></li>
+        </ul>
+        <a class="btn waitlist" href="https://tally.so/r/Yj4KAN?source=accessibility" data-waitlist>Waitlist</a>
+        <button class="nav-menu" type="button" popovertarget="nav-links" aria-label="Menu">
+          <svg class="icon menu-open" viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M4 5h16"/><path d="M4 12h16"/><path d="M4 19h16"/></svg><svg class="icon menu-close" viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg>
+        </button>
+      </nav>
+    </header>
+    <main id="main" class="doc legal">
+      <div class="doc-hero">
+        <h1>Accessibility</h1>
+        <p class="meta">Effective <time datetime="2026-11-25">November 25, 2026</time> · Version 1.0 · <a href="#changes">No previous versions</a></p>
+      </div>
+
+      <p class="summary"><b class="name">bloop</b> wants everyone to be able to put a file on a shared screen, whatever their eyesight, hearing, movement or way of reading. This statement covers bloop.here: the site pages, the Screen page a room PC opens, and the phone page your camera opens. It says how accessible they are today, the problems we know about and what we are doing about them.</p>
+
+      <div class="legal-body">
+        <section class="toc" aria-labelledby="toc-h">
+          <h2 id="toc-h">On This Page</h2>
+          <ol>
+            <li><a href="#how">How Accessible bloop Is</a></li>
+            <li><a href="#status">Compliance Status</a></li>
+            <li><a href="#problems">Known Problems</a></li>
+            <li><a href="#report">Report a Problem</a></li>
+            <li><a href="#enforcement">Enforcement</a></li>
+            <li><a href="#prepared">How This Was Prepared</a></li>
+            <li><a href="#changes">What Changed</a></li>
+          </ol>
+        </section>
+        <div class="legal-text">
+          <section id="how" aria-labelledby="how-h">
+            <h2 id="how-h">How Accessible bloop Is</h2>
+            <p>You should be able to:</p>
+            <ul class="bullets">
+              <li>use the pages with a keyboard alone, and with a screen reader on the phone or the room PC</li>
+              <li>zoom the site pages up to 200 percent, and read them at a width of 320 pixels without scrolling sideways</li>
+              <li>turn off motion: with reduced motion set on your device, <b class="name">bloop</b>'s animations stop</li>
+              <li>pair a Screen without the QR code, by typing the code the Screen shows at <a href="/code">bloop.here/code</a></li>
+              <li>approve on your phone rather than at the PC, so nothing is typed on a shared keyboard</li>
+            </ul>
+            <p>Some parts are not fully accessible yet. They are listed under <a href="#problems">Known Problems</a>, each with a way around it.</p>
+          </section>
+          <section id="status" aria-labelledby="status-h">
+            <h2 id="status-h">Compliance Status</h2>
+            <p><b class="name">bloop</b> aims to meet the Web Content Accessibility Guidelines (WCAG) version 2.2 at level AA. It is partially compliant: most of it meets the standard, and the problems listed below do not yet.</p>
+          </section>
+          <section id="problems" aria-labelledby="problems-h">
+            <h2 id="problems-h">Known Problems</h2>
+            <ul class="bullets">
+              <li><strong>Automated checks cover only some screens.</strong> The landing page, these policy pages, the articles and some states of the Screen and phone pages are checked automatically on each change. Other states, such as the Session Expiry sheet or a message that appears and fades, are not yet. <em>Way around:</em> if something does not work with your setup, tell us (below). <em>Plan:</em> check every page and every state automatically.</li>
+              <li><strong>Windows contrast themes are untested on the QR code.</strong> In a Windows contrast theme the Screen's QR code may show in reversed colors, which some phone cameras cannot read. <em>Way around:</em> type the code the Screen shows at <a href="/code">bloop.here/code</a> on your phone. <em>Plan:</em> keep the QR code's own colors in contrast themes, and test it in each Windows theme.</li>
+              <li><strong>Small Screen text at 125 or 150 percent scaling.</strong> When a room PC scales its display, or the browser is zoomed, the Screen page can fall back to a narrower layout whose hint and code text are small. Below 600 pixels wide it asks for a larger window instead of showing a code. <em>Way around:</em> zoom the browser back to 100 percent or make the window full screen; the number to match also shows on your phone. <em>Plan:</em> size the Screen's text with its QR code, and make the message say what to change.</li>
+              <li><strong>The countdown on the phone changes every second.</strong> The "Ends in" button names the time left to the second, so a screen reader can read it again each time it changes. <em>Way around:</em> open it to hear the end time once, as a clock time. <em>Plan:</em> give the button a name that changes only each minute.</li>
+              <li><strong>Older browsers on the room PC.</strong> The Screen's End confirmation and its file list need Chrome or Edge 114, Safari 17, Firefox 125 or later. In an older browser they may not open, or may stay open. <em>Way around:</em> end the Session from your phone; it also ends by itself when its time runs out. <em>Plan:</em> check the browser when the Screen opens and say which version it needs, and use a standard dialog for End.</li>
+            </ul>
+          </section>
+          <section id="report" aria-labelledby="report-h">
+            <h2 id="report-h">Report a Problem</h2>
+            <p>If you find a problem not listed here, or you need something from <b class="name">bloop</b> in another format, such as large print or plain text, email <a href="mailto:hi@bloop.here">hi@bloop.here</a> with "Accessibility" in the subject. Say which page, what you were trying to do and what you use (for example, a screen reader or zoom). <b class="name">bloop</b> will reply within 5 working days.</p>
+          </section>
+          <section id="enforcement" aria-labelledby="enforcement-h">
+            <h2 id="enforcement-h">Enforcement</h2>
+            <p>The Equality and Human Rights Commission (EHRC) enforces the Equality Act 2010 in England, Scotland and Wales. If you are not happy with how <b class="name">bloop</b> answers your report, contact the <a href="https://www.equalityadvisoryservice.com/">Equality Advisory and Support Service (EASS)</a>. In Northern Ireland, contact the <a href="https://www.equalityni.org/">Equality Commission for Northern Ireland</a>.</p>
+          </section>
+          <section id="prepared" aria-labelledby="prepared-h">
+            <h2 id="prepared-h">How This Was Prepared</h2>
+            <p>This statement was prepared on <time datetime="2026-11-25">November 25, 2026</time>, the effective date above, from <b class="name">bloop</b>'s own testing: automated checks that run on every change, and checks by hand on phones and desktop browsers. No external audit has been done yet. <b class="name">bloop</b> will review it when the pages change, and at least once a year.</p>
+          </section>
+          <section id="changes" aria-labelledby="changes-h">
+            <h2 id="changes-h">What Changed</h2>
+            <ul class="bullets">
+              <li>Version 1.0, <time datetime="2026-11-25">November 25, 2026</time>: first published version.</li>
+            </ul>
+          </section>
+          <p class="related">Related: <a href="/privacy">Privacy Notice</a> · <a href="/terms">Terms of Use</a> · <a href="/security">Security</a></p>
+        </div>
+      </div>
+      <p class="copied glass" id="copied" role="status"></p>
+    </main>
+
+    <footer class="footer">
+      <div class="footer-top">
+        <div class="footer-about">
+          <a class="brand" href="/"><img src="/favicon.svg" width="32" height="32" alt="">bloop</a>
+          <p><strong>Present anywhere.</strong> <b class="name">bloop</b> puts your files on a shared screen from your phone. The screen gets only the items you approve, never your account.</p>
+        </div>
+        <ul class="footer-links">
+          <li><a href="/articles">Articles</a></li>
+          <li><a href="/privacy">Privacy</a></li>
+          <li><a href="/terms">Terms</a></li>
+          <li><a href="/security">Security</a></li>
+          <li><a href="/accessibility" aria-current="page">Accessibility</a></li>
+          <li><a href="https://tally.so/r/Yj4KAN?source=accessibility" data-waitlist>Waitlist</a></li>
+          <li><a href="mailto:hi@bloop.here">hi@bloop.here</a></li>
+        </ul>
+      </div>
+      <p class="footer-legal">© 2026 bloop</p>
+    </footer>
+  </body>
+</html>
