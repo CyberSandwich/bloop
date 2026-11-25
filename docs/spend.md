@@ -2,7 +2,7 @@
 
 The owner doc for every switch, cap, breaker line and the review routine. Why a Durable Object and how to remove it: `docs/adr/0029-spend-guard.md`. The code is `src/worker/spend/`; nothing else restates these numbers.
 
-Cloudflare's spend limits cover only Workers and Durable Objects, and the owner sets those in the dashboard. Containers, R2, D1, Workflows, Email and Logs have no platform ceiling, so bloop's own limits are the ceiling. The target is a monthly overage of about $10 across those. Four layers, each with one job:
+Cloudflare's spend limits cover only Workers and Durable Objects, and the owner sets those in the dashboard. Containers, R2, D1, Email and Logs have no platform ceiling, so bloop's own limits are the ceiling. The target is a monthly overage of about $10 across those. Four layers, each with one job:
 
 - **Switches** turn a feature off in seconds with no deploy (section 1).
 - **Caps** are exact counters and pools in one Durable Object, `SpendGuard`, that refuse work past a number (sections 2 to 4).
@@ -13,9 +13,10 @@ Cloudflare's spend limits cover only Workers and Durable Objects, and the owner 
 
 A switch is a D1 `setting` row (key, value). The value in force is the more restrictive of the Worker var and the row, so the var is a floor a deploy can set. With no row, the default applies. A value a switch does not allow, in the row or the var, counts as the most restrictive. Allowed values run from least to most restrictive; `src/worker/spend/switches.ts` is the registry and `effectiveSwitch` is the merge.
 
+There is one reader of the `setting` table, F's settings reader (one query, one 30 second cache, the last good value for at most 5 minutes after an error, then each key's most restrictive value). Its snapshot is a plain key to value record (`SettingsSnapshot`); `effectiveAll(vars, snapshot)` and `capOverridesOf(snapshot)` are pure functions of it, and nothing in the guard reads D1 for a switch on a request path. The launch mode is not a spend switch: it is F's setting (ADR 0026), has no var, and is not in this registry. These fourteen switches are the whole registry.
+
 | switch | var | values | default | stops |
 |---|---|---|---|---|
-| `launch_mode` | `SWITCH_LAUNCH_MODE` | open, preview | preview | the open-mode site and invites (ADR 0026) |
 | `guest_files` | `SWITCH_GUEST_FILES` | on, stopped | on | every guest path: live and demo drops, guest opens, guest reads of `/f/` and `/b/` |
 | `guest_drop` | `SWITCH_GUEST_DROP` | open, pass, off | open | the live-room guest drop policy |
 | `demo` | `SWITCH_DEMO` | on, off | on | demo creates and claims |
@@ -52,16 +53,14 @@ All counts are global, exact and per UTC period; a day's all-scopes total is kep
 | `convert_guest` | guest conversions | day, per IP hash |
 | `convert_demo` | demo conversions | day, and day per IP hash |
 | `conversion_done`, `conversion_failed` | finished and failed conversions | none; the breaker reads them |
-| `workflow_steps` | Workflow steps a conversion ran (about 15 each) | none; priced in section 6 |
-| `r2_class_a`, `r2_class_b` | R2 operations | month |
+| `r2_class_a`, `r2_class_b` | R2 operations, charged once per request (`charge`, section 4) | month |
 | `upload_user`, `upload_user_bytes` | library uploads and bytes | day, per user |
 | `guest_drop` | guest drops | day, per IP hash |
 | `email` | sends | hour and day |
-| `email_recipient` | sends per recipient hash | day, per recipient |
 | `email_code` | sign-in code requests | day, per IP hash |
 | `export_user` | exports | day, per user |
 | `demo_session` | demo sessions | day |
-| `d1_writes` | bloop's own D1 row writes | none; priced in section 6 |
+| `d1_writes` | D1 rows written, read from analytics only: no caller records it | none; priced in section 6 |
 
 Pools hold a lease that frees itself: `convert` (accounts), `convert_public` (guest and demo), `export`. A lease has a deadline (the requested time, at most the pool's maximum). The Converter destroys its container at the deadline. An unreleased lease keeps its slot through the grace, then is dropped and counted; the breaker turns `convert` off on any overdue or dropped lease, because a container may still be running.
 
@@ -90,14 +89,30 @@ Each cap has a default in `src/worker/spend/caps.ts` and a var that replaces it;
 | `CAP_GUEST_DROP_IP_DAY` | 20 | guest drops per IP hash per day; a busy seminar behind one NAT |
 | `CAP_EMAIL_HOUR` | 60 | sends per hour account-wide |
 | `CAP_EMAIL_DAY` | 180 | sends per day account-wide; platform quota 200/day until raised; raise this cap only after Cloudflare raises the quota |
-| `CAP_EMAIL_RECIPIENT_DAY` | 10 | sends per recipient per day |
 | `CAP_EMAIL_CODE_IP_DAY` | 20 | sign-in code requests per IP hash per day |
 | `CAP_EXPORT_USER_DAY` | 3 | exports per account per day |
 | `CAP_DEMO_SESSION_DAY` | 2000 | demo sessions per day, all visitors |
+| `CAP_ISOLATE_OPEN_EMAIL_DAY` | 20 | sends per day one Worker isolate allows while the guard is unreachable (section 4) |
+| `CAP_ISOLATE_OPEN_EMAIL_CODE_IP_DAY` | 10 | code requests per IP hash per day one isolate allows while the guard is unreachable |
+| `CAP_ISOLATE_OPEN_DEMO_SESSION_DAY` | 200 | demo sessions per day one isolate allows while the guard is unreachable |
 
 ## 4. What a caller does on refusal
 
-Every call goes through `spendFor(env)` (`src/worker/spend/guard.ts`), which fails closed: a guard that cannot be reached refuses (`unavailable`). Presenting an already-converted file never calls it. `refusal(result)` returns the response to send.
+The composition root builds one `Spend` with `spendFor(env)` (`src/worker/spend/guard.ts`) and passes it through each route's and Durable Object's deps; nothing else calls `spendFor`. `Spend` (`src/worker/spend/client.ts`) is an interface, so unit tests of U, V2 and A pass a fake and never start the guard. Presenting an already-converted file never calls it. `refusal(result)` returns the response to send.
+
+**When the guard cannot be reached**, each call has a fixed mode, tested per meter:
+
+| path | calls | guard unreachable |
+|---|---|---|
+| container | `acquire("convert" or "convert_public")`, `take("container_seconds")`, the per-scope conversion takes | refused (`unavailable`, 503) |
+| part mint | `charge("A", n)` | refused |
+| upload | `take("upload_user")`, `take("upload_user_bytes")`, `take("guest_drop")`, `charge("B", n)` for the validation reads | refused |
+| export | `acquire("export")`, `take("export_user")` | refused |
+| demo | `take("demo_session")` | admitted up to `CAP_ISOLATE_OPEN_DEMO_SESSION_DAY` a day in that isolate, then 429 |
+| email | `take("email")` | admitted up to `CAP_ISOLATE_OPEN_EMAIL_DAY` a day in that isolate, then 429 |
+| sign-in code | `take("email_code", 1, ipHash)` | admitted up to `CAP_ISOLATE_OPEN_EMAIL_CODE_IP_DAY` a day per IP hash in that isolate, then 429 |
+
+A guard outage must not end code sign-in or the public demo, and email is capped at 200 a day by the platform anyway. The isolate count lives in the isolate (all clients in it share one) and starts again each UTC day; the breaker's lines and the platform quota bound the rest. Every fail-open admission logs `spend_guard_open`.
 
 | result | status | code | header |
 |---|---|---|---|
@@ -109,12 +124,11 @@ Calls, by stream. A caller checks its switch first and calls the guard second. A
 
 | stream | calls |
 |---|---|
-| uploads | `take("upload_user", 1, userId)` and `take("upload_user_bytes", bytes, userId)` at create; `take("guest_drop", 1, ipHash)` per guest drop; `take("r2_class_a", 1)` per part URL minted |
-| conversion | per request: `take("convert_user", 1, userId)`, `take("convert_guest", 1, ipHash)` or `take("convert_demo", 1, ipHash)`: 429. In the Workflow: `acquire("convert" or "convert_public", ttlSeconds, scope)`; busy means `step.sleep(retryAfterSeconds)` and try again, never a loop; `take("container_seconds", stageTimeoutSum)` before `start()` and `refund` of the unused part with the time of the take; a refusal marks the derived row failed once. `release(leaseId)` in `finally`. `record("workflow_steps", steps)` and `record("conversion_done" or "conversion_failed", 1)` |
-| accounts | `take("email", 1)`, `take("email_recipient", 1, recipientHash)`, `take("email_code", 1, ipHash)` before a send: 429, and the code route says "Try Your Passkey or Ask for a Sign-In Link". Also the admin spend panel and routes (section 8) |
+| uploads | `take("upload_user", 1, userId)` and `take("upload_user_bytes", bytes, userId)` at create; `take("guest_drop", 1, ipHash)` per guest drop; `charge("A", n)` once per part-URL mint request; `charge("B", n)` once per validation, where `n` is the reads that validation makes (2 for a small deck, at most 64 for a large one) |
+| conversion | per request: `take("convert_user", 1, userId)`, `take("convert_guest", 1, ipHash)` or `take("convert_demo", 1, ipHash)`: 429. In the Converter: `acquire("convert" or "convert_public", ttlSeconds, scope)`; busy means set the alarm for `retryAfterSeconds` and try again, never a loop; `take("container_seconds", stageTimeoutSum)` before `start()` and `refund` of the unused part with the time of the take; a refusal marks the derived row failed once. `release(leaseId)` in `finally`. `record("conversion_done" or "conversion_failed", 1)` |
+| accounts | `take("email", 1)` and `take("email_code", 1, ipHash)` before a send: 429, and the code route says "Try Your Passkey or Ask for a Sign-In Link". The per-recipient limit is A's `email_code` buckets, not a guard meter. Also the admin spend panel and routes (section 8) |
 | library | `acquire("export", 900, userId)` and `take("export_user", 1, userId)` |
 | present server | `take("demo_session", 1)` before a demo create |
-| anything writing D1 on a hot path | `record("d1_writes", rows)` |
 
 ## 5. The breaker
 
@@ -169,11 +183,10 @@ The guest-drop lines are shares of the budget. One drop that is not converted co
 
 | meter | what | price | share (var) | $ a month | $ a day | floor a day | default ceiling a day | other vars | on trip |
 |---|---|---|---|---|---|---|---|---|---|
-| `container_seconds` | Containers, standard-2 at full CPU, an upper bound | $35.80 per million seconds | 40 (`BREAKER_SHARE_CONTAINERS`) | $4.00 | $0.133 | 3,724 s (1.03 h) | 18,620 | `BREAKER_FLOOR_CONTAINERS`, `BREAKER_CEILING_CONTAINERS` | `convert=off` |
+| `container_seconds` | Containers, standard-2 at full CPU, an upper bound | $35.80 per million seconds | 45 (`BREAKER_SHARE_CONTAINERS`) | $4.50 | $0.150 | 4,190 s (1.16 h) | 20,950 | `BREAKER_FLOOR_CONTAINERS`, `BREAKER_CEILING_CONTAINERS` | `convert=off` |
 | `r2_class_a` | R2 class A | $4.50 per million | 15 (`BREAKER_SHARE_R2_CLASS_A`) | $1.50 | $0.050 | 11,111 | 55,555 | `BREAKER_FLOOR_R2_CLASS_A`, `BREAKER_CEILING_R2_CLASS_A` | `uploads=readonly` |
 | `r2_class_b` | R2 class B | $0.36 per million | 5 (`BREAKER_SHARE_R2_CLASS_B`) | $0.50 | $0.017 | 46,296 | 231,480 | `BREAKER_FLOOR_R2_CLASS_B`, `BREAKER_CEILING_R2_CLASS_B` | `previews=off` |
 | `d1_writes` | D1 rows written | $1.00 per million | 10 (`BREAKER_SHARE_D1`) | $1.00 | $0.033 | 33,333 | 166,665 | `BREAKER_FLOOR_D1`, `BREAKER_CEILING_D1` | `demo=off` |
-| `workflow_steps` | Workflow steps | $8.00 per million | 5 (`BREAKER_SHARE_WORKFLOWS`) | $0.50 | $0.017 | 2,083 | 10,415 | `BREAKER_FLOOR_WORKFLOWS`, `BREAKER_CEILING_WORKFLOWS` | `convert=off` |
 | `email` | Email sends | $350.00 per million | 10 (`BREAKER_SHARE_EMAIL`) | $1.00 | $0.033 | 95 | 180 | `BREAKER_FLOOR_EMAIL`, `BREAKER_CEILING_EMAIL` | `email=admin_only` |
 
 The other 15 percent: R2 storage 5 (`BREAKER_SHARE_R2_STORAGE`, $0.50, $0.015 per GB-month, so a warning at 33 GB) and logs 10 (`BREAKER_SHARE_LOGS`, $1.00, not measured yet). Storage and logs warn and never trip; storage counts in the month-to-date cost once analytics reads it.
@@ -207,7 +220,7 @@ Worked example, email: floor 95. After 14 days at 40 sends, p95 is 40, so the li
 
 | switch | value | why |
 |---|---|---|
-| `convert` | off | containers and Workflow steps |
+| `convert` | off | the containers line, failed conversions, overdue leases |
 | `uploads` | readonly | R2 writes; files stay downloadable |
 | `demo_drop` | off | the public's conversion path |
 | `guest_drop` | off | live-room guest uploads |
@@ -246,7 +259,7 @@ One builder, `buildReport` in `src/worker/spend/report.ts`, feeds the breaker's 
 
 - Weekly: read the Monday digest. Nothing to do unless it flags a meter or a trip.
 - Monthly, first Monday: compare month-to-date and projected against the budget ladder below and against the real bill in Billable usage; check the Workers and Durable Objects platform limits ($10 each to start); raise a ceiling only with the digest's suggestion and a reason.
-- On an event: any budget or spend-limit alert; any breaker trip; a meter at the watch percent of its ceiling; before switching `launch_mode` to open; before any invite batch over 20 people.
+- On an event: any budget or spend-limit alert; any breaker trip; a meter at the watch percent of its ceiling; before the launch mode is set to open (F's setting); before any invite batch over 20 people.
 
 **How to adjust**
 
@@ -268,7 +281,7 @@ Rules for the Cloudflare side:
 |---|---|---|---|---|---|
 | 10 | about $5 | $6 / $8 / $10 / $15 | 10 | defaults hold | $10 each |
 | 100 | about $9 | $11 / $14 / $18 / $27 | 10 | containers 30,000; R2 class A 100,000; the rest default | $10 each |
-| 1,000 | about $62 | $74 / $99 / $124 / $186 | 100 | containers 300,000; R2 class A 1,000,000; R2 class B 670,000; D1 1,000,000; Workflow steps 50,000; email 1,700 with `CAP_EMAIL_DAY` 2,000, after Cloudflare raises its email quota | $10 each, or the digest's suggestion once it differs |
+| 1,000 | about $62 | $74 / $99 / $124 / $186 | 100 | containers 300,000; R2 class A 1,000,000; R2 class B 670,000; D1 1,000,000; email 1,700 with `CAP_EMAIL_DAY` 2,000, after Cloudflare raises its email quota | $10 each, or the digest's suggestion once it differs |
 
 ## 10. Fails closed, and what stays open
 
@@ -284,7 +297,7 @@ F adds nothing for the guard beyond the `setting` and `admin_action` tables, bot
 ## 12. Unverified
 
 - The analytics dataset and field names in `src/worker/spend/analytics.ts` (Workers, Durable Objects, R2, D1) are written from memory of the schema and not yet read back with a live token. Each dataset is its own query, so a wrong name loses one series and shows in the alert's sources.
-- Log ingest and the Containers and Workflows datasets are not read; containers and Workflow steps are counted in the guard, and the share set aside for logs is not enforced.
+- Log ingest and the Containers dataset are not read; container seconds are counted in the guard, and the share set aside for logs is not enforced. D1 rows written and R2 operations beyond the monthly charge are read from analytics only: without `CF_ANALYTICS_TOKEN` the D1 line cannot trip.
 - Email bounce spikes have no source yet.
 - Whether auto-responded WebSocket pings bill as messages decides if the Durable Object spend limit is the only stop for a ping storm.
 - The growth table's average days are derived from the cost plan's per-user model; replace them with the measured numbers after the first month.
@@ -297,7 +310,7 @@ A test id `COST-nn` is the cost plan's scenario `Wnn` (section 2 of the v4 cost 
 |---|---|---|---|
 | COST-01 | W1 conversion flood from public guest drops | pools of 3 and 1, fail closed, exact under concurrency | yes |
 | COST-02 | W2 containers that never stop | lease deadline and grace, overdue trips `convert=off` | yes |
-| COST-03 | W3 Workflow retry loops | failed-conversion trip, Workflow step meter | yes |
+| COST-03 | W3 conversion retry loops | failed-conversion trip, the container-seconds line | yes |
 | COST-04 | W4 request flood on workers.dev | analytics warning only | no |
 | COST-05 | W5 request flood on the zone | analytics warning only | no |
 | COST-06 | W6 client polling loop | analytics warning only | no |

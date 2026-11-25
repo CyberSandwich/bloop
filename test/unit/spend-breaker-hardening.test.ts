@@ -163,7 +163,7 @@ describe("reset restores what was there before, and only what the breaker wrote"
   it("restores the value from before the first trip, however many tightenings followed", async () => {
     const s = setup();
     s.store.rows.set("convert", "on");
-    s.g.ledger.record("container_seconds", 3724, undefined, T0);
+    s.g.ledger.record("container_seconds", 4190, undefined, T0);
     await s.run();
     expect(s.store.rows.get("convert")).toBe("off");
     await resetBreaker(s.deps, "convert", "owner");
@@ -227,7 +227,7 @@ describe("what is in force decides a write", () => {
   it("a row with a value the switch does not allow counts as the strictest: the breaker leaves it", async () => {
     const s = setup();
     s.store.rows.set("convert", "typo");
-    s.g.ledger.record("container_seconds", 3724, undefined, T0);
+    s.g.ledger.record("container_seconds", 4190, undefined, T0);
     await s.run();
     expect(s.store.rows.get("convert")).toBe("typo");
     expect(effectiveSwitch("convert", undefined, s.store.rows.get("convert"))).toBe("off");
@@ -235,7 +235,7 @@ describe("what is in force decides a write", () => {
 
   it("a Worker var already at the trip's value needs no row", async () => {
     const s = setup({ SWITCH_CONVERT: "off" });
-    s.g.ledger.record("container_seconds", 3724, undefined, T0);
+    s.g.ledger.record("container_seconds", 4190, undefined, T0);
     await s.run();
     expect(s.store.writes).toEqual([]);
     expect(s.g.ledger.trips()).toMatchObject([{ switch: "convert", value: "off" }]);

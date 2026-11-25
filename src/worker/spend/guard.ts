@@ -5,9 +5,9 @@ import { DurableObject } from "cloudflare:workers";
 import { dbOf } from "../auth/db.ts";
 import { isLocalOrigin } from "../config.ts";
 import { readAnalytics } from "./analytics.ts";
-import { type BreakerReport, d1SwitchStore, logNotify, type Notify, runBreaker } from "./breaker.ts";
+import { type BreakerReport, d1Settings, d1SwitchStore, logNotify, type Notify, runBreaker } from "./breaker.ts";
 import { CAPS, type CapName, type Caps, type MeterName, type PoolName, resolveCaps } from "./caps.ts";
-import { SpendClient, type SpendOps, type SpendRpc } from "./client.ts";
+import { type Spend, SpendClient, type SpendOps, type SpendRpc } from "./client.ts";
 import { type AcquireResult, type History, Ledger, type Snapshot, type TakeResult } from "./meters.ts";
 import type { SpendReport } from "./report.ts";
 import type { SwitchName } from "./switches.ts";
@@ -119,8 +119,12 @@ export function spendStub(env: SpendEnv): SpendRpc {
   return ns.get(ns.idFromName("global")) as unknown as SpendRpc;
 }
 
-/** Callers' entry point: `spendFor(env).take("email", 1)`; it fails closed (client.ts). */
-export const spendFor = (env: SpendEnv): SpendClient => new SpendClient(() => spendStub(env));
+/**
+ * The composition root's one call: it builds the `Spend` every route and Durable Object receives in its deps, so
+ * nothing else reaches for the guard by itself. Fail modes per meter: client.ts.
+ */
+export const spendFor = (env: SpendEnv): Spend =>
+  new SpendClient(() => spendStub(env), resolveCaps(env as unknown as Vars));
 
 /**
  * The latest spend report the breaker stored (at most 5 minutes old), for the /admin panel and the admin-only JSON
@@ -144,6 +148,7 @@ export function runSpendBreaker(env: BreakerEnv, notify: Notify = logNotify): Pr
   return runBreaker({
     guard: spendStub(env),
     store: d1SwitchStore(dbOf(env.DB), Date.now),
+    settings: d1Settings(dbOf(env.DB)),
     notify,
     // The switch and threshold vars are read by name; an Env interface has no index signature, hence the cast.
     vars: env as unknown as Vars,

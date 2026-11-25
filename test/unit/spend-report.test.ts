@@ -132,7 +132,7 @@ describe("the report", () => {
     // November 1 to 25 holds all 11 days of usage.
     expect(row.monthToDate).toBe(12 + 400);
     expect(row.monthToDateUsd).toBeCloseTo(412 * PRICED.email.unitUsd, 2);
-    expect(rowOf(reportOf(r), "container_seconds")).toMatchObject({ tripLine: 3724, today: 0 });
+    expect(rowOf(reportOf(r), "container_seconds")).toMatchObject({ tripLine: 4190, today: 0 });
     expect(reportOf(r).meters.map((m) => m.meter)).toEqual(PRICED_METERS);
   });
 

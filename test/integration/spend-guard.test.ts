@@ -6,7 +6,7 @@ import { startWrangler, type Wrangler } from "./wrangler.ts";
 let w: Wrangler;
 beforeAll(async () => {
   w = await startWrangler(
-    { CAP_DEMO_SESSION_DAY: "5", CAP_EMAIL_RECIPIENT_DAY: "2" },
+    { CAP_DEMO_SESSION_DAY: "5", CAP_EMAIL_CODE_IP_DAY: "2" },
     { config: "test/fixtures/spend/wrangler.jsonc" },
   );
 });
@@ -40,12 +40,12 @@ describe("COST-14 COST-13 concurrent takes against the real object", () => {
     });
   });
 
-  it("COST-14 the per-recipient cap (set to 2 by a var) holds under concurrency and other recipients are unaffected", async () => {
+  it("COST-14 the per-IP code cap (set to 2 by a var) holds under concurrency and other IPs are unaffected", async () => {
     await sameDay(async () => {
       const a = `r-${crypto.randomUUID()}`;
-      const out = await Promise.all(Array.from({ length: 40 }, () => rpc("take", "email_recipient", 1, a)));
+      const out = await Promise.all(Array.from({ length: 40 }, () => rpc("take", "email_code", 1, a)));
       expect(out.filter((r) => r.ok)).toHaveLength(2);
-      expect((await rpc("take", "email_recipient", 1, `r-${crypto.randomUUID()}`)).ok).toBe(true);
+      expect((await rpc("take", "email_code", 1, `r-${crypto.randomUUID()}`)).ok).toBe(true);
     });
   });
 

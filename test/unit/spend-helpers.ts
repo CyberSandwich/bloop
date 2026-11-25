@@ -4,7 +4,7 @@ import { DatabaseSync, type SQLInputValue } from "node:sqlite";
 import type { SqlLike } from "../../src/worker/do/demo-slots.ts";
 import type { SwitchStore } from "../../src/worker/spend/breaker.ts";
 import { type Caps, resolveCaps } from "../../src/worker/spend/caps.ts";
-import type { SpendRpc } from "../../src/worker/spend/client.ts";
+import type { Spend, SpendRpc } from "../../src/worker/spend/client.ts";
 import { Ledger } from "../../src/worker/spend/meters.ts";
 import type { Transaction } from "../../src/worker/spend/schema.ts";
 import type { SwitchName } from "../../src/worker/spend/switches.ts";
@@ -95,6 +95,31 @@ export function fakeGuard(vars: Record<string, unknown> = {}, start = T0, bornAt
     lastAnalytics: async () => r.ledger.blob("analytics"),
   };
   return { guard, clock, ledger: r.ledger, rig: r };
+}
+
+/**
+ * A `Spend` for unit tests of routes and Durable Objects (U, V2, A): every call is admitted and recorded, and any
+ * method can be replaced to script a refusal. No guard, no fixture Worker.
+ */
+export function fakeSpend(overrides: Partial<Spend> = {}): Spend & { calls: { method: string; args: unknown[] }[] } {
+  const calls: { method: string; args: unknown[] }[] = [];
+  const spy =
+    <A extends unknown[], R>(method: string, result: R) =>
+    async (...args: A): Promise<R> => {
+      calls.push({ method, args });
+      return result;
+    };
+  return {
+    calls,
+    take: spy("take", { ok: true } as const),
+    charge: spy("charge", { ok: true } as const),
+    acquire: spy("acquire", { ok: true, leaseId: "lease-1", deadline: 0 } as const),
+    release: spy("release", undefined),
+    record: spy("record", undefined),
+    refund: spy("refund", undefined),
+    snapshot: spy("snapshot", null),
+    ...overrides,
+  };
 }
 
 export interface MemoryStore extends SwitchStore {
