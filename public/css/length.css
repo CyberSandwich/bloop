@@ -110,6 +110,12 @@
     overflow-y: auto;
   }
 }
+/* Under 360 wide the card is about 180 wide: at 28px a 12-hour time and its picker icon clip. */
+@media (max-width: 359.98px) {
+  .sheet-card .field {
+    font-size: 22px;
+  }
+}
 @media (min-width: 640px) {
   .sheet {
     margin: auto;

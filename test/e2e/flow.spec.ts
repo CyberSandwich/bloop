@@ -391,8 +391,19 @@ test.describe("pairing flow", () => {
         .locator("form")
         .evaluate((f) => Promise.all(f.getAnimations().map((a: { finished: Promise<unknown> }) => a.finished)));
       const field = sheet.getByLabel("Expires At");
-      // The whole time shows, and the input spans its row of the card.
-      expect(await field.evaluate((el) => el.scrollWidth <= el.clientWidth)).toBe(true);
+      // The whole time shows: a time input never scrolls (its scrollWidth is its width even when clipped), so measure
+      // the widest 12-hour time in its font, beside its picker icon (about one em), against its content box.
+      const fits = await phone.page.evaluate(`(() => {
+        const el = document.querySelector(".sheet-card .field");
+        const css = getComputedStyle(el);
+        const ctx = document.createElement("canvas").getContext("2d");
+        ctx.font = css.fontWeight + " " + css.fontSize + " " + css.fontFamily;
+        const text = Math.max(...["00:00 PM", "12:59 AM", "08:48 PM"].map((t) => ctx.measureText(t).width));
+        const room = el.clientWidth - parseFloat(css.paddingLeft) - parseFloat(css.paddingRight);
+        return text + parseFloat(css.fontSize) <= room;
+      })()`);
+      expect(fits).toBe(true);
+      // The input spans its row of the card.
       const card = sheet.locator(".sheet-card");
       const inner = await card.evaluate((n) => n.clientWidth);
       expect(Math.round((await field.boundingBox())?.width ?? 0)).toBe(Math.round(inner));
