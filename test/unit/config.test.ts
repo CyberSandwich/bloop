@@ -1,3 +1,4 @@
+import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 import { parseConfig } from "../../src/worker/config.ts";
 import { declaredRateLimits, PROD_VARS as PROD } from "../env-vars.ts";
@@ -107,6 +108,12 @@ describe("config", () => {
     const c = parseConfig({ ...PROD, DEMO_MAX_PER_IP: "5" });
     expect(c.ok && c.config.demoMaxPerIp).toBe(5);
     expect(problems({ ...PROD, DEMO_MAX_PER_IP: "0" }).join()).toContain("DEMO_MAX_PER_IP");
+  });
+
+  it("DROP-06 shipped policy: production config keeps the live guest drop open until a reviewed change turns it off", () => {
+    // With no accounts yet, a guest send is how a real deck reaches a live screen; flipping this is a product decision.
+    const vars = readFileSync(new URL("../../wrangler.jsonc", import.meta.url), "utf8");
+    expect(vars.match(/"GUEST_DROP": "([a-z]+)"/)?.[1]).toBe("open");
   });
 
   it("PAIR-13 rate limit binding required: the list is exactly the bindings wrangler.jsonc declares", async () => {
