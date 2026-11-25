@@ -258,7 +258,10 @@ public/                    the assets' source, built into dist/ (each JS module 
   js/{screen,phone,code,launcher,residue}.js   task pages; js/vendor/uqr.js (+ LICENSE)
   js/viewer.js js/core/demo.js   the screen's viewer, the demo's and a guest's photo or video (sidebar, stage, pager, link card, its own link fetch); its pure parts
   js/viewer-video.js   a guest's video on the stage, loaded by import() with the first video link
-  js/core/length.js js/shared/length.js css/length.css   the phone's Session Expiry sheet, loaded on its first tap; the length rules the route shares
+  js/core/length.js js/core/length-extra.js js/shared/length.js css/length.css   the phone's Session Expiry sheet, loaded on its first tap, with its time rules and words (Set stays off until they are in); the length floor the route shares
+  js/core/poll.js js/core/health.js   the channel's polling loop and ping rule, loaded on first need
+  js/core/clicker.js   a presenter's clicker keys (F5, Home, End), loaded when the viewer first shows an item
+  js/core/net-states.js   the room screen's words for a blocked network and a service that is down, loaded by the first of them
   js/core/drag.js   the phone's drop hint, loaded at its first file drag
   js/core/remote-ui.js js/core/remote.js css/remote.css   the phone's remote, fetched once its claim is a demo's; its state (seq, the tap shown before the answer)
   js/core/lazy.js   what the length sheet and the remote share: their stylesheet's load, a refusal as a toast
@@ -368,7 +371,7 @@ IPs are never stored. Limits use `HMAC(HASH_PEPPER, ip)` of `CF-Connecting-IP` (
 
 ## 7. WebSocket protocol
 
-Both sockets are JSON text frames of at most 4 KB, `{"v":1,"t":<type>,...}`. A socket that fails to send a valid `hello` within 5 s (the object's alarm closes it, after an `error` frame), sends an unknown type, or sends an oversized frame is closed with 1008. A phone socket is closed with 1000 when its pairing is dropped (after `error pairing_invalid` for a cancel, Start Over or timeout), at that event only: a socket opened later (a reconnect) waits for its `hello`, which earns `error pairing_invalid` and 1008; closed on accept, before its 101, it would hear nothing until the client's missed-ping check. The upgrade is refused (403) unless `Origin` equals `PUBLIC_ORIGIN`, and (400) unless it carries a well-formed `?ref=`. The deadline is stored in the socket attachment and the object keeps one alarm at the earliest of it and the machine's next deadline, so it survives hibernation. `wrangler dev` writes the close frame on time but never closes the TCP connection after the handshake, so Node's `WebSocket` never fires `close` for it; the integration test reads the frames off a raw socket instead. Heartbeats use the DO auto-response (`ping` to `pong`), so they never wake the object. The client's reconnect, poll and failure rules are the table below. `send` on the open socket goes at once for the first frame, and the rest within 150 ms go together after it, the latest of each type: a caller sends absolute values (a page), never deltas. Every server message carries `now` (server epoch ms), so countdowns survive clock skew. Exact types are in interfaces.md (`ScreenMsgIn`, `ScreenMsgOut`, `PhoneMsgIn`, `PhoneMsgOut`).
+Both sockets are JSON text frames of at most 4 KB, `{"v":1,"t":<type>,...}`. A socket that fails to send a valid `hello` within 5 s (the object's alarm closes it, after an `error` frame), sends an unknown type, or sends an oversized frame is closed with 1008. A phone socket is closed with 1000 when its pairing is dropped (after `error pairing_invalid` for a cancel, Start Over or timeout), at that event only: a socket opened later (a reconnect) waits for its `hello`, which earns `error pairing_invalid` and 1008; closed on accept, before its 101, it would hear nothing until the client's missed-ping check. The upgrade is refused (403) unless `Origin` equals `PUBLIC_ORIGIN`, and (400) unless it carries a well-formed `?ref=`. The deadline is stored in the socket attachment and the object keeps one alarm at the earliest of it and the machine's next deadline, so it survives hibernation. `wrangler dev` writes the close frame on time but never closes the TCP connection after the handshake, so Node's `WebSocket` never fires `close` for it; the integration test reads the frames off a raw socket instead. Heartbeats use the DO auto-response (`ping` to `pong`), so they never wake the object. The client's reconnect, poll and failure rules are the table below. Every server message carries `now` (server epoch ms), so countdowns survive clock skew. Exact types are in interfaces.md (`ScreenMsgIn`, `ScreenMsgOut`, `PhoneMsgIn`, `PhoneMsgOut`).
 
 | direction        | type        | body                                                                                |
 | ---------------- | ----------- | ----------------------------------------------------------------------------------- |
@@ -383,7 +386,7 @@ Both sockets are JSON text frames of at most 4 KB, `{"v":1,"t":<type>,...}`. A s
 | server to phone  | `state`     | `PhoneView` (state, room, match, items, endsAt for the countdown, maxMinutes, mode, kind) |
 |                  | `error`     | `code`                                                                              |
 
-**Channel state rules** (`core/channel.js`, constants in `core/channel-timing.js`; the polling loop is `core/poll.js` and the ping rule `core/health.js`, each loaded by `import()` on first need so a healthy page carries neither; the one owner, so a page restates none of it):
+**Channel state rules** (`core/channel.js`, its constants are in it; the polling loop is `core/poll.js` and the ping rule `core/health.js`, each loaded by `import()` on first need so a healthy page carries neither; the one owner, so a page restates none of it):
 
 | Rule | Behavior |
 |---|---|
@@ -395,7 +398,6 @@ Both sockets are JSON text frames of at most 4 KB, `{"v":1,"t":<type>,...}`. A s
 | Silence | A visible tab's socket closes after two pings in a row with no frame back (REL-15); a hidden tab's, whose timers are throttled, after 70 s of silence. |
 | Resume | A socket heard from within 25 s is left alone; a quieter one is pinged and replaced if nothing answers in 3 s (REL-02); one that is down reconnects, and its `hello` brings the state, so no read is made; a polling tab polls at once. |
 | Failed poll or boot | `offline` and `network_blocked` (a 200 without the `X-Bloop` marker) are their own link states. `service_down` and `internal` say "bloop Isn't Responding" only on the second in a row; any other answer resets the count (R11). Poll and boot share the rule. |
-| Send | The first frame goes at once; the rest within 150 ms go together after it, the latest of each type: a caller sends absolute values, never deltas. |
 
 
 Phone actions (approve, cancel, end, upload, control) and screen actions that change a session (end, link, restart, shown) use HTTP, so they get the Origin check, idempotency and a clear status. The sockets only push state: a remote command arrives as `shown` inside the ordinary `state` frame, so a reloaded or polling screen catches up with no frame of its own.
