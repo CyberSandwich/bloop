@@ -40,6 +40,7 @@ describe("views", () => {
         "now",
         "openMode",
         "room",
+        "seq",
         "shown",
         "state",
       ].sort(),
@@ -55,9 +56,10 @@ describe("views", () => {
     const m = must(approved(), { e: "control", now: T0 + sec(12), from: "phone", seq: 1, shown }).next;
     expect(screenView(META, m, CONFIG, T0 + sec(13)).shown).toEqual(shown);
     expect(phoneView(META, m, T0 + sec(13), LIMITS)?.shown).toEqual(shown);
-    // The seq is the server's own bookkeeping: neither view carries it.
-    expect(JSON.stringify(screenView(META, m, CONFIG, T0 + sec(13)))).not.toContain("seq");
-    expect(JSON.stringify(phoneView(META, m, T0 + sec(13), LIMITS))).not.toContain("seq");
+    // Each view carries only its own sender's last applied seq, so a clock that fell behind can go on above it.
+    expect(screenView(META, approved(), CONFIG, T0 + sec(11)).seq).toBe(0);
+    expect(phoneView(META, m, T0 + sec(13), LIMITS)?.seq).toBe(1);
+    expect(screenView(META, m, CONFIG, T0 + sec(13)).seq).toBe(0);
     const over = must(m, { e: "end", now: T0 + sec(14), by: "phone" }).next;
     expect(screenView(META, over, CONFIG, T0 + sec(15)).shown).toBeNull();
     expect(phoneView(META, over, T0 + sec(15), LIMITS)?.shown).toBeNull();

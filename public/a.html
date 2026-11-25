@@ -39,14 +39,14 @@
       <p class="sr" id="polite" role="status"></p>
     </main>
     <div class="drop-hint" id="drop-hint" aria-hidden="true" hidden>Drop a File to Send It</div>
-    <div class="leave" id="revoke" popover role="dialog" aria-labelledby="revoke-q">
+    <dialog class="leave" id="revoke" aria-labelledby="revoke-q">
       <h2 id="revoke-q">End This Session?</h2>
       <p>Your files leave the screen.</p>
-      <div class="buttons">
-        <button type="button" class="btn secondary" popovertarget="revoke" popovertargetaction="hide" autofocus>Cancel</button>
-        <button type="button" class="btn rose" id="revoke-end">End Session</button>
-      </div>
-    </div>
+      <form class="buttons" method="dialog">
+        <button type="submit" class="btn secondary" autofocus>Cancel</button>
+        <button type="submit" class="btn rose" id="revoke-end">End Session</button>
+      </form>
+    </dialog>
     <template id="remote-parts">
       <div class="preview" role="img"><span class="count"></span></div>
       <fieldset class="bubbles">

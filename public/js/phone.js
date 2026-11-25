@@ -52,10 +52,11 @@ const endsText = byId("ends-text");
 const actionsEl = byId("actions");
 const polite = byId("polite");
 const filePick = /** @type {HTMLInputElement} */ (byId("file-pick"));
-const revokeAsk = byId("revoke");
+const revokeAsk = /** @type {HTMLDialogElement} */ (byId("revoke"));
 /** @type {((on: boolean) => void) | null} */
 let remote = null;
-let remoteAsked = false;
+// "" while the remote loads, else the view it failed at.
+let remoteAt = /** @type {unknown} */ (null);
 
 /** @type {import("./types.js").PhonePage} */
 const c = {
@@ -131,6 +132,7 @@ function buildRows(/** @type {Entry[]} */ all, /** @type {boolean} */ add) {
 
 /** With the remote, a file's row is a button that puts it on the screen. */
 function buildItems(/** @type {Item[]} */ items) {
+  const had = document.activeElement?.getAttribute("data-id");
   fileList.replaceChildren(
     ...items.map((item) => {
       const tap = remote && item.kind === "file";
@@ -139,6 +141,7 @@ function buildItems(/** @type {Item[]} */ items) {
       return el("li", {}, [el(tap ? "button" : "div", attrs, rowFace(item, thumbOf(item, look())))]);
     }),
   );
+  if (had) /** @type {HTMLElement | null} */ (fileList.querySelector(`[data-id="${had}"]`))?.focus();
 }
 
 function setView(/** @type {PhoneView} */ view, pid = c.pid) {
@@ -235,15 +238,18 @@ function render() {
   show(fileList, copy.files !== "none");
   const source = copy.files === "list" ? c.files : copy.files === "items" ? (v?.items ?? null) : null;
   const rows = `${copy.files}:${copy.add}:${!!remote}`;
+  // By content: a rebuild drops focus.
+  /** @type {unknown} */
+  const same = copy.files === "items" ? JSON.stringify(source) : source;
   if (copy.files === "skeleton" && c.rows !== rows) buildSkeleton();
   else if (copy.files === "upload") {
     if (c.rows !== rows || c.source !== c.file) buildUpload();
     c.source = c.file;
     showUpload();
-  } else if (source && (c.rows !== rows || c.source !== source)) {
+  } else if (source && (c.rows !== rows || c.source !== same)) {
     if (copy.files === "list") buildRows(/** @type {Entry[]} */ (source), copy.add);
     else buildItems(source);
-    c.source = source;
+    c.source = same;
   }
   c.rows = rows;
   for (const input of fileList.querySelectorAll("input")) input.checked = c.selected.includes(input.value);
@@ -254,19 +260,20 @@ function render() {
   countDown();
   renderActions(copy.actions, copy.loading);
   // Revoke's question goes when Revoke does (an end pushed meanwhile).
-  if (!copy.actions.some((a) => a.id === "end") && revokeAsk.matches(":popover-open")) revokeAsk.hidePopover();
+  if (!copy.actions.some((a) => a.id === "end")) revokeAsk.close();
   // The remote (core/remote-ui.js, lazy): this phone commands a demo session's screen. Fetched once the claim is a
   // demo's, so it is ready at the approval.
   const on = demo && (key === "opening" || key === "open");
-  if (demo && !remoteAsked) {
-    remoteAsked = true;
-    import("./core/remote-ui.js").then(
+  if (demo && !remote && remoteAt !== v && remoteAt !== "") {
+    remoteAt = "";
+    // A failed import stays cached: retry under a new URL.
+    import(`./core/remote-ui.js?r=${Date.now()}`).then(
       (m) => {
         remote = m.mount(c, setView);
         render();
       },
       () => {
-        remoteAsked = false;
+        remoteAt = c.view;
       },
     );
   }
@@ -327,7 +334,7 @@ actionsEl.addEventListener("click", (e) => {
   const id = target?.getAttribute("data-action");
   if (id === "approve") approve();
   else if (id === "cancel") cancel();
-  else if (id === "end") revokeAsk.showPopover();
+  else if (id === "end") revokeAsk.showModal();
   else if (id === "done") void leave(c, io, "/", true);
   else if (id === "retry") retry();
   else if (id === "connect") location.assign("/auth/start");
@@ -507,10 +514,7 @@ async function cancelPairing() {
   render();
 }
 
-byId("revoke-end").addEventListener("click", () => {
-  revokeAsk.hidePopover();
-  endSession();
-});
+byId("revoke-end").addEventListener("click", endSession);
 
 async function endSession() {
   const res = await api.post("/api/end", {}, c.pid);

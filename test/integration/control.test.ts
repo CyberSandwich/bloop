@@ -131,11 +131,18 @@ describe("PAIR-13 control: only the pairing's phone commands the screen", () => 
   it("PAIR-13 order: a command older than the phone's last one changes nothing, and the screen's own seq is separate", async () => {
     const { screen, socket, pid } = await session();
     expect((await api.post("/api/control", cmd(DECK, 2, false, 100), { auth: pid })).status).toBe(200);
-    const late = await api.post<{ shown: unknown }>("/api/control", cmd(DECK, 1, false, 99), { auth: pid });
+    const late = await api.post<{ shown: unknown; seq: number }>("/api/control", cmd(DECK, 1, false, 99), {
+      auth: pid,
+    });
     expect(late.status).toBe(200);
     expect(late.body.shown).toEqual(shown(DECK, 2));
-    const tap = await api.post<{ shown: unknown }>("/api/screen/shown", cmd(DECK, 1, false, 1), { auth: screen.sid });
+    // The stale answer holds the sender's last seq, so a clock that fell behind can send above it.
+    expect(late.body.seq).toBe(100);
+    const tap = await api.post<{ shown: unknown; seq: number }>("/api/screen/shown", cmd(DECK, 1, false, 1), {
+      auth: screen.sid,
+    });
     expect(tap.body.shown).toEqual(shown(DECK, 1));
+    expect(tap.body.seq).toBe(1);
     socket.close();
   });
 
@@ -219,7 +226,11 @@ describe("PAIR-13 screen/shown: the screen reports its own taps", () => {
   it("PAIR-13 shown: the same file-only, in-range and state rules as the phone's", async () => {
     const { screen, socket, pid } = await session();
     const post = (body: unknown) => api.post("/api/screen/shown", body, { auth: screen.sid });
-    expect((await post(cmd(LINK))).body).toEqual(problem("file_not_found"));
+    // A link only as the screen's report of its own card (page 1), which the phone's command never is (LINK-01).
+    expect((await post(cmd(LINK, 2))).body).toEqual(problem("bad_request"));
+    const card = await api.post<{ shown: unknown }>("/api/screen/shown", cmd(LINK), { auth: screen.sid });
+    expect(card.body.shown).toEqual(shown(LINK));
+    expect((await api.get<{ shown: unknown }>("/api/pair/state", pid)).body.shown).toEqual(shown(LINK));
     expect((await post(cmd("i9"))).body).toEqual(problem("file_not_found"));
     expect((await post(cmd(DECK, 3))).body).toEqual(problem("bad_request"));
     expect((await post({ ...cmd(DECK), extra: true })).body).toEqual(problem("bad_request"));

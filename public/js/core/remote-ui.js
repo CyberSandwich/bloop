@@ -37,7 +37,7 @@ export function mount(c, onView) {
 
   const remote = createRemote({
     view: () => c.view,
-    post: (command) => api.post("/api/control", command, c.pid),
+    post: (command) => api.post("/api/control", command, c.pid, true),
     adopt: onView,
     refused: refused("The Screen Didn't Change"),
     paint,
@@ -102,20 +102,18 @@ export function mount(c, onView) {
     if (b === present) remote.tap({ present: true });
     else remote.tap({ step: Number(b.getAttribute("data-step")) });
   });
-  // A tap on the preview's left or right half steps back or on; a swipe over SWIPE px steps, and is not also a tap.
-  let x = Number.NaN;
-  let swiped = false;
+  // A tap on the preview's left or right half steps back or on; a swipe over SWIPE px steps; a drag is no tap.
+  let x = 0;
+  let y = 0;
   preview.addEventListener("pointerdown", (e) => {
-    x = e.clientX;
-    swiped = false;
+    [x, y] = [e.clientX, e.clientY];
   });
   preview.addEventListener("pointerup", (e) => {
     const dx = e.clientX - x;
-    swiped = Math.abs(dx) > SWIPE;
-    if (swiped) remote.tap({ step: dx < 0 ? 1 : -1 });
+    if (Math.abs(dx) > SWIPE) remote.tap({ step: dx < 0 ? 1 : -1 });
   });
   preview.addEventListener("click", (e) => {
-    if (swiped) return;
+    if (Math.hypot(e.clientX - x, e.clientY - y) > 10) return;
     const box = preview.getBoundingClientRect();
     remote.tap({ step: e.clientX < box.left + box.width / 2 ? -1 : 1 });
   });

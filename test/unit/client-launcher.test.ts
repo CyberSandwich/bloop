@@ -30,6 +30,7 @@ const view = (state: ScreenView["state"]): ScreenView => ({
   openMode: null,
   endsAt: null,
   endReason: null,
+  seq: 0,
   now: 0,
 });
 

@@ -68,7 +68,7 @@ export function createRemote(io) {
       mine = next;
       pending += 1;
       io.paint();
-      last = nextSeq(last, io.now?.());
+      last = nextSeq(Math.max(last, view.seq), io.now?.());
       const res = await io.post({ ...next, seq: last });
       pending -= 1;
       // A stale seq answers with the current view: it is adopted like any other, never an error.

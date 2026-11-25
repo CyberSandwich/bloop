@@ -267,8 +267,10 @@ export function createViewer(deps) {
   const tall = new Set();
   const seen = new IntersectionObserver(
     (entries) => {
+      const was = page;
       for (const e of entries) if (e.isIntersecting) page = Number(e.target.getAttribute("data-page"));
       paintDots();
+      if (page !== was) deps.tapped?.();
     },
     { root: frame, threshold: 0.5 },
   );
@@ -306,9 +308,13 @@ export function createViewer(deps) {
     return el("picture", {}, [el("source", { type: "image/avif", srcset: `${base}.avif` }), img]);
   }
 
+  /** Present holds for pages, or a photo or video on its way. */
+  const can = () => !!pages() || onStage(items()[at] ?? null);
+
   function select(/** @type {number} */ i) {
     at = i;
     page = 0;
+    want &&= can();
     if (side.matches(":popover-open")) side.hidePopover();
     deps.onChange();
     deps.tapped?.();
@@ -456,7 +462,10 @@ export function createViewer(deps) {
             .animate({ opacity: [0, 1] }, { duration: reduced.matches ? 0 : 200, easing: easeOut() })
             .finished.catch(() => {})
             .then(() => over.remove());
-        if (scroll && p) for (const one of frame.querySelectorAll("img")) seen.observe(one);
+        if (scroll && p) {
+          frame.querySelector(`[data-page="${page}"]`)?.scrollIntoView({ block: "start" });
+          for (const one of frame.querySelectorAll("img")) seen.observe(one);
+        }
         sized.disconnect();
         // The picture over its fading loader: the loader leaves, the picture's box is the one fit() reads.
         const target = frame.querySelector(STAGED) ?? frame.querySelector(".stand-in") ?? frame.firstElementChild;
@@ -665,7 +674,7 @@ export function createViewer(deps) {
         if (i >= 0) {
           if (i !== at) page = 0;
           at = i;
-          want = told.present;
+          want = told.present && can();
           go(0, told.page - 1);
         }
       }
@@ -674,10 +683,10 @@ export function createViewer(deps) {
       paint();
     },
 
-    /** As `POST /api/screen/shown` takes it; null on a link. */
+    /** As `POST /api/screen/shown` takes it; a link's card is page 1. */
     shown() {
       const item = items()[at];
-      return item?.kind === "file" ? { item: item.id, page: page + 1, present: want } : null;
+      return item ? { item: item.id, page: page + 1, present: want } : null;
     },
 
     /** A transient state hides the stage; presenting, it stays with a status line. @param {string} line */

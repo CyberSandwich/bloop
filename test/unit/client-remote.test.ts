@@ -16,6 +16,7 @@ const viewOf = (over: Partial<PhoneView> = {}): PhoneView =>
     kind: "owner",
     items: [dog, pdf, deck, vevox],
     shown: null,
+    seq: 0,
     now: 100,
     ...over,
   }) as PhoneView;
@@ -184,6 +185,29 @@ describe("the remote's state: a tap shows at once, and the server's shown is the
     await h.tick();
     expect(h.refusals).toEqual([]);
     expect(h.remote.at()).toEqual(truth);
+  });
+
+  it("PAIR-13 seq: a clock behind the server's last (a reload) sends above the seq the view holds", async () => {
+    // The view says the server applied 5_000 from this phone; the clock reads 1_000.
+    const h = harness(viewOf({ seq: 5_000 }));
+    void h.remote.tap({ item: "i3" });
+    expect(h.sent).toEqual([{ item: "i3", page: 1, present: false, seq: 5_001 }]);
+    // An answer carries the last seq again, and the next tap goes on from it.
+    h.answers[0]?.({
+      ok: true,
+      value: viewOf({ shown: { item: "i3", page: 1, present: false }, seq: 5_001, now: 300 }),
+    });
+    await h.tick();
+    void h.remote.tap({ step: 1 });
+    expect(h.sent.at(-1)?.seq).toBe(5_002);
+  });
+
+  it("PAIR-13 seq: a view with a lower seq than a command still on its way never moves the next one back", async () => {
+    const h = harness();
+    void h.remote.tap({ item: "i3" });
+    h.page.view = viewOf({ seq: 0, now: 150 });
+    void h.remote.tap({ item: "i2" });
+    expect(h.sent.map((c) => c.seq)).toEqual([1_000, 1_001]);
   });
 
   it("an answer older than the view a push already brought is dropped: the push is the truth", async () => {

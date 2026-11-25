@@ -2441,7 +2441,12 @@ test.describe("PAIR-13 remote: the phone commands the demo screen (design.md sec
     await phone.page.getByRole("button", { name: "Revoke" }).click();
     await expect(ask).toBeVisible();
     await expect(ask).toContainText("Your files leave the screen.");
+    // A modal <dialog>, not a popover: Safari before 17 has no Popover API.
+    expect(await ask.evaluate((n) => n.matches("dialog:modal"))).toBe(true);
     await expectNoAxeViolations(phone.page);
+    await phone.page.keyboard.press("Escape");
+    await expect(ask).toBeHidden();
+    await phone.page.getByRole("button", { name: "Revoke" }).click();
     await ask.getByRole("button", { name: "Cancel" }).click();
     await expect(ask).toBeHidden();
     await expect(heading(phone.page)).toHaveText("Approved for Demo Room");
@@ -2472,6 +2477,87 @@ test.describe("PAIR-13 remote: the phone commands the demo screen (design.md sec
     await expect(row("Sample deck.pdf")).not.toHaveAttribute("aria-current", "true");
     await expect(heading(screen.page)).toHaveText("Sample deck.pptx");
     await expect(phone.page.getByRole("alert")).toHaveCount(0);
+    await close(screen, phone);
+  });
+
+  test("a push that leaves the list as it was keeps the rows, and the focus on the one that has it", async ({
+    browser,
+  }) => {
+    const { screen, row } = await remote(browser);
+    const kept = row("Sample deck.pptx");
+    await kept.focus();
+    await kept.evaluate((n) => n.setAttribute("data-kept", "1"));
+    // A tap on the screen pushes a new view with the same items.
+    await sidebarItem(screen.page, "Sample deck.pdf").click();
+    await expect(row("Sample deck.pdf")).toHaveAttribute("aria-current", "true");
+    await expect(kept).toHaveAttribute("data-kept", "1");
+    await expect(kept).toBeFocused();
+  });
+
+  test("a vertical drag over the preview is no tap, a tap still is", async ({ browser }) => {
+    const { screen, phone, row, preview, dots } = await remote(browser);
+    await row("Sample deck.pptx").click();
+    await expect(dots).toHaveText("1 / 2");
+    const box = await preview.boundingBox();
+    const x = (box?.x ?? 0) + (box?.width ?? 0) * 0.8;
+    const y = (box?.y ?? 0) + (box?.height ?? 0) * 0.25;
+    await phone.page.mouse.move(x, y);
+    await phone.page.mouse.down();
+    await phone.page.mouse.move(x, y + 30, { steps: 4 });
+    await phone.page.mouse.up();
+    await phone.page.waitForTimeout(400);
+    await expect(dots).toHaveText("1 / 2");
+    await preview.click({ position: { x: (box?.width ?? 0) * 0.8, y: (box?.height ?? 0) * 0.5 } });
+    await expect(dots).toHaveText("2 / 2");
+    await close(screen, phone);
+  });
+
+  test("a command that never answers times out into the offline toast, and the mark goes back", async ({ browser }) => {
+    const { screen, phone, row } = await remote(browser);
+    await phone.page.route("**/api/control", () => {});
+    await row("Sample deck.pptx").click();
+    await expect(row("Sample deck.pptx")).toHaveAttribute("aria-current", "true");
+    await expect(phone.page.getByRole("alert")).toContainText("Check the connection, then try again.", {
+      timeout: 20_000,
+    });
+    await expect(row("Dog.jpg")).toHaveAttribute("aria-current", "true");
+    await close(screen, phone);
+  });
+
+  test("a remote that failed to load is fetched again with the next view", async ({ browser }) => {
+    const screen = await demoScreen(browser);
+    const { phone } = await scan(browser, screen.page);
+    let asked = 0;
+    await phone.context.route("**/core/remote-ui.js*", (route) => (asked++ === 0 ? route.abort() : route.continue()));
+    await phone.page.reload();
+    await phone.page.getByRole("button", { name: "Approve" }).click();
+    await expect(phone.page.locator(".preview")).toBeVisible();
+    expect(asked).toBe(2);
+    await close(screen, phone);
+  });
+
+  test("a scrolling document goes to the page the phone asks for, and a scroll here is reported back", async ({
+    browser,
+  }) => {
+    const screen = await demoScreen(browser);
+    await screen.page.route("**/img/demo-slide-*", (route) =>
+      route.fulfill({ contentType: "image/png", body: png(600, 900) }),
+    );
+    const { phone } = await scan(browser, screen.page);
+    await phone.page.getByRole("button", { name: "Approve" }).click();
+    await expectViewer(screen.page);
+    await phone.page
+      .locator("#file-list")
+      .getByRole("button", { name: startsWith("Sample deck.pdf") })
+      .click();
+    const frame = screen.page.locator("#frame");
+    await expect(frame).toHaveClass(/is-scroll/);
+    const bubbles = phone.page.getByRole("group", { name: "The Screen" });
+    await bubbles.getByRole("button", { name: "Next" }).click();
+    await expect(screen.page.locator('#frame [data-page="1"]')).toBeInViewport({ ratio: 0.5 });
+    // Scrolling back here is a step: the phone's preview follows.
+    await frame.evaluate((n) => n.scrollTo(0, 0));
+    await expect(phone.page.locator(".preview .count")).toHaveText("1 / 2");
     await close(screen, phone);
   });
 

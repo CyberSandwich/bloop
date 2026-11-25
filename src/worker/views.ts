@@ -57,6 +57,7 @@ export function screenView(meta: Meta, m: Machine, cfg: ViewConfig, now: number)
     openMode: m.session?.openMode ?? null,
     endsAt: m.session?.endsAt ?? null,
     endReason: m.state === "ended" || m.state === "waiting" ? m.endReason : null,
+    seq: m.session?.seq.screen ?? 0,
     now,
   };
 }
@@ -83,6 +84,7 @@ export function phoneView(meta: Meta, m: Machine, now: number, limits: PhoneLimi
     endReason: m.state === "ended" ? m.endReason : null,
     dropMaxBytes: limits.dropMaxBytes,
     maxMinutes: limits.maxMinutes,
+    seq: m.session?.seq.phone ?? 0,
     now,
   };
 }

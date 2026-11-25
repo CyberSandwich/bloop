@@ -68,8 +68,8 @@ export function createApi(deps = {}) {
     call,
     /** @param {string} path @param {string | null} [auth] */
     get: (path, auth) => call("GET", path, { auth }),
-    /** @param {string} path @param {unknown} [body] @param {string | null} [auth] */
-    post: (path, body, auth) => call("POST", path, { body, auth }),
+    /** @param {string} path @param {unknown} [body] @param {string | null} [auth] @param {boolean} [timeout] */
+    post: (path, body, auth, timeout = false) => call("POST", path, { body, auth, timeout }),
     /** A POST that outlives the page. @param {string} path @param {string | null} [auth] */
     leave: (path, auth) => call("POST", path, { auth, keepalive: true }),
   };

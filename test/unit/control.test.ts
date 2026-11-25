@@ -157,6 +157,17 @@ describe("PAIR-13 control: only the pairing's phone commands the screen, absolut
     expect(m.session?.shown).toBeNull();
   });
 
+  it("PAIR-13 link report: the screen's own tap on a link is stored at page 1, so the phone's mark leaves the file", () => {
+    const m = list();
+    const card: Shown = { item: "i3", page: 1, present: false };
+    const step = must(m, command(card, 1, "screen"));
+    expect(step.next.session?.shown).toEqual(card);
+    expect(fx(step.effects, "push")).toHaveLength(1);
+    // Only a report: a link is a card with one page, and the phone still never commands one.
+    expect(transition(m, command({ ...card, page: 2 }, 2, "screen"), CFG).ok).toBe(false);
+    expect(refused(m, card)).toBe("file_not_found");
+  });
+
   it("PAIR-11 an id outside the list is file_not_found, and so is an index", () => {
     expect(refused(list(), { item: "i9", page: 1, present: false })).toBe("file_not_found");
     expect(refused(list(), { item: "0", page: 1, present: false })).toBe("file_not_found");

@@ -85,17 +85,21 @@ export const shownSchema = z
 
 /**
  * Why `shown` cannot stand in this session, or null when it can: the item must be a FILE in the list by id, so a link
- * (LINK-01) or an unknown id (PAIR-11) is `file_not_found`, and the page must be one of the item's.
+ * (LINK-01) or an unknown id (PAIR-11) is `file_not_found`, and the page must be one of the item's. `link` also takes a
+ * link's id, at page 1: the screen's own report that it shows a link card, never a command to open one.
  */
 export function shownFault(
   items: readonly ItemRef[],
   shown: Shown,
   view: { mode: Mode; kind: Kind | null },
+  link = false,
 ): "file_not_found" | "bad_request" | null {
-  const file = fileById(items, shown.item);
-  if (!file) return "file_not_found";
+  const item = items.find((i) => i.id === shown.item);
+  if (!item || (item.kind === "link" && !link)) return "file_not_found";
   const { page } = shown;
-  return Number.isInteger(page) && page >= 1 && page <= pageCount(file, view) ? null : "bad_request";
+  return Number.isInteger(page) && page >= 1 && page <= (item.kind === "file" ? pageCount(item, view) : 1)
+    ? null
+    : "bad_request";
 }
 
 export const sameShown = (a: Shown | null, b: Shown): boolean =>
