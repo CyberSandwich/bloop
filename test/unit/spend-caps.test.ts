@@ -164,9 +164,19 @@ describe("the $10 month split: each meter's daily floor", () => {
     });
   });
 
-  it("the default ceiling is 5 times the floor", () => {
+  it("the default ceiling is 5 times the floor, except email, which is held to CAP_EMAIL_DAY", () => {
     const lines = resolveLines({}, t);
-    for (const m of PRICED_METERS) expect(lines[m].ceiling).toBe(lines[m].floor * 5);
+    for (const m of PRICED_METERS) {
+      if (m !== "email") expect(lines[m].ceiling).toBe(lines[m].floor * 5);
+    }
+    expect(lines.email).toEqual({ floor: 95, ceiling: 300 });
+  });
+
+  it("the email ceiling follows CAP_EMAIL_DAY: min(5 x floor, cap), never under the floor, and an explicit var wins", () => {
+    expect(resolveLines({ CAP_EMAIL_DAY: "1000" }, t).email.ceiling).toBe(475);
+    expect(resolveLines({ CAP_EMAIL_DAY: "200" }, t).email.ceiling).toBe(200);
+    expect(resolveLines({ CAP_EMAIL_DAY: "50" }, t).email.ceiling).toBe(95);
+    expect(resolveLines({ CAP_EMAIL_DAY: "200", BREAKER_CEILING_EMAIL: "400" }, t).email.ceiling).toBe(400);
   });
 
   it("the budget var rescales every floor; a floor or ceiling var replaces one", () => {
