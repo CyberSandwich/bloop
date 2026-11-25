@@ -623,9 +623,19 @@ test.describe("pairing flow", () => {
     browser,
   }) => {
     const { screen, phone, lengthButton, sheet } = await approvedDemo(browser);
-    // An hour on, the demo's 2 h cap leaves about an hour: 90 minutes ahead is within 2 h of now but past the latest end.
-    await phone.page.clock.install();
-    await phone.page.clock.setSystemTime(new Date(Date.now() + 3600_000));
+    // Every view the phone gets says the latest end is an hour sooner, as it would an hour after approval: 90 minutes
+    // ahead is within 2 h of now but past it. (The phone corrects its clock by each view, so a faked clock cannot do this.)
+    await phone.page.routeWebSocket(/.*/, (ws) => {
+      const server = ws.connectToServer();
+      ws.onMessage((m) => server.send(m));
+      server.onMessage((m) => {
+        const frame = typeof m === "string" ? JSON.parse(m) : null;
+        if (frame?.t === "state" && frame.view.latestEnd != null) frame.view.latestEnd -= 3600_000;
+        ws.send(frame ? JSON.stringify(frame) : m);
+      });
+    });
+    await phone.page.reload();
+    await expect(phone.page.locator("#ends-text")).toHaveText(/^Ends in /);
     await lengthButton.click();
     const time = sheet.getByLabel("Expires At");
     const set = sheet.getByRole("button", { name: "Set" });
@@ -1290,7 +1300,7 @@ test.describe("guest drop", () => {
     });
     // A long name is cut in the middle, its extension kept; the line under it holds it whole.
     await expect(heading(phone.page)).toHaveText("Send A long holiday phot…nset.png to Demo Room?");
-    await expect(phone.page.getByText("A long holiday photo from the beach at sunset.png.")).toBeVisible();
+    await expect(phone.page.locator("#file-name")).toHaveText("A long holiday photo from the beach at sunset.png");
     expect(await modules(phone.page)).not.toContain("/js/core/photo.js");
     await phone.page.getByRole("button", { name: "Send" }).click();
     await expect(heading(phone.page)).toHaveText("Sending A long holiday photo from the beach at sunset.png");

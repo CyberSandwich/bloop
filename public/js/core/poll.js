@@ -47,14 +47,23 @@ export function downGate() {
 export const bootGate = downGate();
 
 /**
- * What a refused boot leaves: the link state (a first server failure leaves it as it was), and when to try again.
+ * What a refused boot leaves: the link state, and when to try again. A first server failure leaves the link as it was
+ * only when a view is already shown (nothing else would say "down" while it waits); with no view it says so at once.
  * @param {string} error @param {"ok" | "offline" | "down" | "blocked"} link @param {number} attempt 1 for the first
+ * @param {boolean} hasView
  */
-export const bootFailed = (error, link, attempt) => {
+export const bootFailed = (error, link, attempt, hasView) => {
   const down = isDown(error);
   const sure = bootGate(down);
   return {
-    link: error === "offline" ? "offline" : error === "network_blocked" ? "blocked" : down && !sure ? link : "down",
+    link:
+      error === "offline"
+        ? "offline"
+        : error === "network_blocked"
+          ? "blocked"
+          : down && !sure && hasView
+            ? link
+            : "down",
     wait: pollDelay(attempt),
   };
 };
