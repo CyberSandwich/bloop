@@ -9,6 +9,8 @@ import {
   MAX_TEXT_BYTES,
   relationships,
 } from "../../src/worker/seams/guest-drop/formats.ts";
+import { validate } from "../../src/worker/seams/guest-drop/validate.ts";
+import { reader, validDeck } from "../zip-builder.ts";
 
 const enc = new TextEncoder();
 const bytes = (...parts: (string | number[])[]) =>
@@ -173,6 +175,39 @@ describe("DROP-14 external: macro-enabled packages", () => {
     for (const name of ["word/vbaProject.bin", "xl/vbaProject.bin", "ppt/activeX/activeX1.xml", "VBAPROJECT.BIN"]) {
       expect(checkOoxml([...BASE, name], TYPES, none)).toMatchObject({ ok: false, reason: "macro part" });
     }
+  });
+
+  it("passes the printer settings Excel and Word write into ordinary files, and nothing else binary", () => {
+    const xlsx = ["[Content_Types].xml", "_rels/.rels", "xl/workbook.xml", "xl/_rels/workbook.xml.rels"];
+    const rels = new Map([
+      [
+        "_rels/.rels",
+        '<Relationships><Relationship Id="a" Type="http://x/officeDocument" Target="xl/workbook.xml"/></Relationships>',
+      ],
+      [
+        "xl/_rels/workbook.xml.rels",
+        '<Relationships><Relationship Id="b" Type="http://x/worksheet" Target="worksheets/sheet1.xml"/></Relationships>',
+      ],
+    ]);
+    for (const ok of ["xl/printerSettings/printerSettings1.bin", "word/printerSettings/printerSettings12.bin"]) {
+      expect(checkOoxml([...xlsx, ok], TYPES, rels)).toEqual({ ok: true });
+    }
+    for (const bad of [
+      "xl/embeddings/oleObject1.bin",
+      "word/embeddings/oleObject1.bin",
+      "xl/printerSettings/other.bin",
+      "xl/x/printerSettings/y/printerSettings1.bin",
+      "xl/printerSettings/printerSettings.bin",
+    ]) {
+      expect(checkOoxml([...xlsx, bad], TYPES, rels)).toMatchObject({ ok: false, reason: "macro part" });
+    }
+  });
+
+  it("applies the same rule to a deck, through the validator", async () => {
+    const ok = await validate(reader(validDeck([{ name: "ppt/printerSettings/printerSettings1.bin" }])), "pptx");
+    expect(ok).toEqual({ ok: true, type: "pptx" });
+    const bad = await validate(reader(validDeck([{ name: "ppt/embeddings/oleObject1.bin" }])), "pptx");
+    expect(bad).toEqual({ ok: false, error: "macro_content" });
   });
 
   it("passes the macro-free types", () => {

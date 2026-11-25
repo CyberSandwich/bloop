@@ -2,6 +2,7 @@
 // central directory, or the PDF or image tail. The one inflate is the content-types part, capped at a few hundred KB.
 import type { DropError, FileType } from "../../../shared/protocol.ts";
 import { inflate, latin1, majorBrand, startsWith } from "./bytes.ts";
+import { isRefusedPart } from "./formats.ts";
 import { type RangeReader, ZIP_LIMITS } from "./index.ts";
 import { checkSizes, entryBytes, hasEndRecord, readCentralDirectory, type ZipEntry } from "./zip.ts";
 
@@ -69,7 +70,7 @@ async function validateDeck(r: RangeReader, head: Uint8Array): Promise<Verdict> 
   if (sizes) return refuse(sizes);
   const names = new Map(dir.entries.map((e) => [e.name, e]));
   if (dir.entries.some((e) => e.method !== 0 && e.method !== 8)) return refuse("bad_structure");
-  if (dir.entries.some((e) => ZIP_LIMITS.refusedParts.some((p) => p.test(e.name)))) return refuse("macro_content");
+  if (dir.entries.some((e) => isRefusedPart(e.name))) return refuse("macro_content");
   if (!ZIP_LIMITS.requiredParts.every((p) => names.has(p))) return refuse("bad_structure");
   const types = await contentTypes(r, names.get("[Content_Types].xml") as ZipEntry);
   if (types === null) return refuse("bad_structure");

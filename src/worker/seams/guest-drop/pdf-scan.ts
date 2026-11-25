@@ -12,7 +12,10 @@
 import { inflate, latin1 } from "./bytes.ts";
 import { type Check, fail, OK } from "./formats.ts";
 
-/** The caller refuses larger files before reading them: the bytes and their Latin-1 text are both held. */
+/**
+ * The most this in-memory scan reads (the bytes and their Latin-1 text are both held). A larger file gets the
+ * verdict `needs_stream_scan` (not ok, error `too_large`): a chunked scan can answer it later without an API change.
+ */
 export const MAX_PDF_BYTES = 32 * 1024 * 1024;
 
 const REFUSED: ReadonlySet<string> = new Set([
@@ -62,7 +65,7 @@ const refusal = (found: Iterable<string>): Check & { found: string[] } => ({
 
 /** Every refused name in the file or its object streams, deduplicated; `unscannable` when a stream could not be read. */
 export async function scanPdf(pdf: Uint8Array): Promise<Check & { found?: string[] }> {
-  if (pdf.length > MAX_PDF_BYTES) return fail("too_large", "pdf too large to scan");
+  if (pdf.length > MAX_PDF_BYTES) return fail("too_large", "needs_stream_scan");
   const text = latin1.decode(pdf);
   const found = new Set<string>();
   let objStmTokens = 0;
