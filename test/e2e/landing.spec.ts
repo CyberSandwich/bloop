@@ -237,6 +237,33 @@ for (const vp of VIEWPORTS) {
       await expect(sheen).toHaveClass(/is-paused/);
     });
 
+    test("no image drawn under 64 px loads a source over 240 px wide", async ({ page }) => {
+      await page.goto("/");
+      await page.locator(".frag-list").scrollIntoViewIfNeeded();
+      await expect.poll(() => page.evaluate(`[...document.images].every((i) => i.complete)`)).toBe(true);
+      const small = (await page.evaluate(`[...document.images]
+        .filter((i) => i.getBoundingClientRect().width < 64)
+        .map((i) => [i.currentSrc, i.naturalWidth])`)) as [string, number][];
+      expect(small.length).toBeGreaterThan(0);
+      for (const [src, width] of small) expect(width, src).toBeLessThanOrEqual(240);
+    });
+
+    test("the 5 backdrop drifts pause off screen and in a hidden tab", async ({ page }) => {
+      await page.goto("/");
+      const states = () =>
+        page.evaluate(`[...document.querySelectorAll(".frag, .panel, .close-panel")].map((el) =>
+          el.getAnimations({ subtree: true }).filter((a) => a.animationName === "drift").map((a) => a.playState).join())`);
+      // Below the fold at the top of the page.
+      await expect.poll(states).toEqual(["paused", "paused", "paused", "paused", "paused"]);
+      await page.locator(".close-panel").scrollIntoViewIfNeeded();
+      await expect.poll(async () => ((await states()) as string[]).at(-1)).toBe("running");
+      await page.evaluate(`(() => {
+        Object.defineProperty(document, "hidden", { value: true, configurable: true });
+        document.dispatchEvent(new Event("visibilitychange", { bubbles: true }));
+      })()`);
+      await expect.poll(states).toEqual(["paused", "paused", "paused", "paused", "paused"]);
+    });
+
     test("the Approve still's rows toggle their tick, and Present and Download press without leaving", async ({
       page,
     }) => {
@@ -429,6 +456,72 @@ test.describe("narrow nav up to 760", () => {
     await expect(nav.getByRole("link", { name: "Privacy" })).toBeVisible();
     await expect(button.locator(".menu-close")).toBeVisible();
     await expect(button.locator(".menu-open")).toBeHidden();
+  });
+});
+
+test.describe("forced colors", () => {
+  test.use({ viewport: { width: 1440, height: 900 }, forcedColors: "active" });
+
+  test("glass and pills keep their edge as a border, the links list inside its pill does not", async ({ page }) => {
+    await page.goto("/");
+    const borders = (await page.evaluate(`(() => {
+      const of = (s) => { const c = getComputedStyle(document.querySelector(s)); return c.borderTopWidth + " " + c.borderTopStyle; };
+      return [".nav-logo", ".nav-pill", ".hero .btn.primary", ".btn.waitlist", ".frag-list", ".frag-btn", ".group", ".status", ".close-card", ".nav-links"].map(of);
+    })()`)) as string[];
+    expect(borders).toEqual([...Array(9).fill("1px solid"), "0px none"]);
+  });
+});
+
+test.describe("forced colors on a phone", () => {
+  test.use({ viewport: { width: 390, height: 844 }, hasTouch: true, isMobile: true, forcedColors: "active" });
+
+  test("the open menu sheet has a border", async ({ page }) => {
+    await page.goto("/");
+    await page.getByRole("button", { name: "Menu" }).tap();
+    await expect(
+      page.getByRole("navigation", { name: "Primary" }).getByRole("link", { name: "Privacy" }),
+    ).toBeVisible();
+    expect(await page.evaluate(`getComputedStyle(document.getElementById("nav-links")).borderTopStyle`)).toBe("solid");
+  });
+});
+
+test.describe("no popover (Safari 15, 16)", () => {
+  test.use({ viewport: { width: 390, height: 844 }, hasTouch: true, isMobile: true });
+
+  test("the links show as a row of their own, the dead menu button hides, and a link still works", async ({ page }) => {
+    // As those engines parse it: :popover-open is an unknown pseudo-class and the popover attributes mean nothing.
+    await page.route(/\/css\/site\.css$/, async (route) => {
+      const response = await route.fetch();
+      await route.fulfill({ response, body: (await response.text()).replaceAll(":popover-open", ":-x-popover-open") });
+    });
+    await page.route(/\/$/, async (route) => {
+      const response = await route.fetch();
+      const body = (await response.text()).replace(" popover>", ">").replace(/ popovertarget="[^"]+"/, "");
+      await route.fulfill({ response, body });
+    });
+    await page.addInitScript(
+      `for (const m of ["showPopover", "hidePopover", "togglePopover"]) delete HTMLElement.prototype[m];`,
+    );
+    const errors: string[] = [];
+    page.on("pageerror", (e) => errors.push(e.message));
+    await page.goto("/");
+    const nav = page.getByRole("navigation", { name: "Primary" });
+    await expect(nav.getByRole("button", { name: "Menu" })).toBeHidden();
+    for (const name of ["Features", "Articles", "Privacy", "Waitlist"])
+      await expect(nav.getByRole("link", { name })).toBeVisible();
+    // The row sits under the pills, inside the view, and scrolls itself rather than the page.
+    const [pillBottom, rowTop, rowLeft, rowRight, scrollWidth] = (await page.evaluate(`(() => {
+      const pill = document.querySelector(".nav-pill").getBoundingClientRect();
+      const row = document.getElementById("nav-links").getBoundingClientRect();
+      return [pill.bottom, row.top, row.left, row.right, document.documentElement.scrollWidth];
+    })()`)) as number[];
+    expect(rowTop).toBeGreaterThan(pillBottom ?? 0);
+    expect(rowLeft).toBeGreaterThanOrEqual(0);
+    expect(rowRight).toBeLessThanOrEqual(390);
+    expect(scrollWidth).toBeLessThanOrEqual(390);
+    await nav.getByRole("link", { name: "Features" }).click();
+    await expect(page.locator("#features h2")).toBeInViewport();
+    expect(errors).toEqual([]);
   });
 });
 

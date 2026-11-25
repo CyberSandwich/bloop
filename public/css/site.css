@@ -76,14 +76,14 @@ html:has(.page-site) {
 @supports (backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px)) {
   /* The sheet holds text over the hero's type, so it stays firm. */
   .nav.is-scrolled :is(.nav-logo, .nav-pill),
-  .nav-links:popover-open {
+  :is(.nav-links:popover-open) {
     background: var(--glass-firm);
   }
 }
 .nav.is-scrolled :is(.nav-logo, .nav-pill) {
   box-shadow: var(--glass-edge), var(--sh-pill);
 }
-/* The list carries `popover` for the phone sheet; the UA's popover box (fixed, centered, bordered) is undone here. */
+/* Undoes the UA's popover box. Safari 15 and 16 drop a whole list holding :popover-open, so a shared one is in :is(). */
 .nav-links {
   position: static;
   display: flex;
@@ -97,7 +97,7 @@ html:has(.page-site) {
   color: inherit;
   list-style: none;
 }
-.nav-links:not(:popover-open) {
+.nav-links:not(:is(:popover-open)) {
   background: none;
   -webkit-backdrop-filter: none;
   backdrop-filter: none;
@@ -141,7 +141,7 @@ html:has(.page-site) {
   cursor: pointer;
 }
 .nav-menu .menu-close,
-.nav-links:popover-open ~ .nav-menu .menu-open {
+:is(.nav-links:popover-open) ~ .nav-menu .menu-open {
   display: none;
 }
 .nav-links:popover-open ~ .nav-menu .menu-close {
@@ -186,6 +186,23 @@ html:has(.page-site) {
   }
   .nav-menu {
     display: grid;
+  }
+}
+/* No popover: the hiding rule drops, so the list is a row under the pills and the dead button hides. */
+@supports not selector(:popover-open) {
+  @media (max-width: 759.98px) {
+    .nav-menu {
+      display: none;
+    }
+    .nav-links {
+      position: fixed;
+      inset: calc(var(--nav-h) + 20px) 10px auto;
+      overflow-x: auto;
+      padding: 6px;
+      border-radius: var(--r-pill);
+      background: var(--glass-solid);
+      box-shadow: var(--glass-edge), var(--sh-nav);
+    }
   }
 }
 
@@ -946,12 +963,23 @@ h3 {
 /* Every --glass-firm and --glass-clear rule outranks base's reduced-transparency .glass, so each is restated here. */
 @media (prefers-reduced-transparency: reduce) {
   .nav.is-scrolled :is(.nav-logo, .nav-pill),
-  .nav-links:popover-open,
+  :is(.nav-links:popover-open),
   .frag .glass,
   .group,
   .close-card {
     background: var(--surface);
     -webkit-backdrop-filter: none;
     backdrop-filter: none;
+  }
+}
+/* Forced colors drop every shadow and fill, so glass and pills keep their edge as a border (the system's color). */
+@media (forced-colors: active) {
+  .glass:not(.nav-links),
+  :is(.nav-links:popover-open),
+  .group,
+  .btn,
+  .status,
+  .frag-btn {
+    border: 1px solid;
   }
 }
