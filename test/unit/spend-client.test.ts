@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { type CapName, type MeterName, resolveCaps } from "../../src/worker/spend/caps.ts";
-import { IsolateCounts, refusal, Reserves, SpendClient, type SpendRpc } from "../../src/worker/spend/client.ts";
+import { IsolateCounts, Reserves, refusal, SpendClient, type SpendRpc } from "../../src/worker/spend/client.ts";
 import { DAY, fakeGuard, fakeSpend, T0 } from "./spend-helpers.ts";
 
 const broken = (): SpendRpc => {
