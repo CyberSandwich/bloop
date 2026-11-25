@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { type CapName, type MeterName, resolveCaps } from "../../src/worker/spend/caps.ts";
-import { IsolateCounts, refusal, SpendClient, type SpendRpc } from "../../src/worker/spend/client.ts";
+import { IsolateCounts, refusal, Reserves, SpendClient, type SpendRpc } from "../../src/worker/spend/client.ts";
 import { DAY, fakeGuard, fakeSpend, T0 } from "./spend-helpers.ts";
 
 const broken = (): SpendRpc => {
@@ -9,8 +9,13 @@ const broken = (): SpendRpc => {
 
 const caps = resolveCaps({});
 const quiet = () => {};
-const client = (stub: () => SpendRpc = broken, isolate = new IsolateCounts(() => T0), now = () => T0) =>
-  new SpendClient(stub, caps, quiet, isolate, now);
+const client = (
+  stub: () => SpendRpc = broken,
+  isolate = new IsolateCounts(() => T0),
+  now = () => T0,
+  reserves = new Reserves(),
+  clientCaps = caps,
+) => new SpendClient(stub, clientCaps, quiet, isolate, now, reserves);
 
 describe("COST-01 the client fails closed for anything that costs money", () => {
   it("an unreachable guard refuses a take and an acquire, and says to retry", async () => {
@@ -128,7 +133,70 @@ describe("charge: the exact monthly R2 cap, once per request", () => {
     expect(await c.charge("B", 64)).toEqual({ ok: true });
     expect(await c.charge("B", 64)).toMatchObject({ ok: false, reason: "cap_hit", meter: "r2_class_b" });
     const snap = await c.snapshot();
-    expect([snap?.counters.r2_class_a.month, snap?.counters.r2_class_b.month]).toEqual([10, 64]);
+    // Class B took one whole block (100), and the second charge was short by 28 of a 100 cap.
+    expect([snap?.counters.r2_class_a.month, snap?.counters.r2_class_b.month]).toEqual([10, 100]);
+  });
+
+  /** A guard that counts how many takes reach it. */
+  const counting = (vars: Record<string, unknown>) => {
+    const g = fakeGuard(vars);
+    let takes = 0;
+    const inner = g.guard.take;
+    g.guard.take = async (...a) => {
+      takes++;
+      return inner(...a);
+    };
+    return { g, takes: () => takes };
+  };
+
+  it("250 charges of one op make 3 writes to the guard: each isolate reserves blocks of 100 and spends them locally", async () => {
+    const { g, takes } = counting({});
+    const c = client(() => g.guard);
+    for (let i = 0; i < 250; i++) expect(await c.charge("A", 1)).toEqual({ ok: true });
+    expect(takes()).toBe(3);
+    // 300 reserved, 250 spent: the guard counts the reservation, so it errs high and never low.
+    expect((await c.snapshot())?.counters.r2_class_a.month).toBe(300);
+  });
+
+  it("the cap refuses exactly at the block edge, and a cap that is not a multiple of the block is exact too", async () => {
+    const edge = counting({ CAP_R2_CLASS_A_MONTH: "300" });
+    const c = client(() => edge.g.guard);
+    for (let i = 0; i < 300; i++) expect((await c.charge("A", 1)).ok, `charge ${i}`).toBe(true);
+    expect(await c.charge("A", 1)).toMatchObject({ ok: false, reason: "cap_hit", meter: "r2_class_a" });
+
+    const odd = counting({ CAP_R2_CLASS_A_MONTH: "250" });
+    const d = client(() => odd.g.guard);
+    for (let i = 0; i < 250; i++) expect((await d.charge("A", 1)).ok, `charge ${i}`).toBe(true);
+    expect(await d.charge("A", 1)).toMatchObject({ ok: false, reason: "cap_hit" });
+    expect((await d.snapshot())?.counters.r2_class_a.month).toBe(250);
+  });
+
+  it("a charge larger than the block reserves whole blocks, and leftovers carry to the next charge", async () => {
+    const { g, takes } = counting({});
+    const c = client(() => g.guard);
+    expect(await c.charge("B", 64)).toEqual({ ok: true });
+    expect(await c.charge("B", 64)).toEqual({ ok: true });
+    expect(takes()).toBe(2);
+    expect((await c.snapshot())?.counters.r2_class_b.month).toBe(200);
+  });
+
+  it("classes have separate reserves, and two isolates' reserves add up in the guard", async () => {
+    const { g, takes } = counting({});
+    const a = client(() => g.guard);
+    const b = client(() => g.guard);
+    await a.charge("A", 1);
+    await a.charge("B", 1);
+    await b.charge("A", 1);
+    expect(takes()).toBe(3);
+    expect((await a.snapshot())?.counters.r2_class_a.month).toBe(200);
+  });
+
+  it("CAP_R2_BLOCK_OPS sets the block", async () => {
+    const small = resolveCaps({ CAP_R2_BLOCK_OPS: "10" });
+    const { g, takes } = counting({});
+    const c = client(() => g.guard, undefined, undefined, undefined, small);
+    for (let i = 0; i < 25; i++) await c.charge("A", 1);
+    expect(takes()).toBe(3);
   });
 });
 

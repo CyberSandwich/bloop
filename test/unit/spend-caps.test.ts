@@ -48,6 +48,7 @@ describe("caps: every number pinned", () => {
       email_code_ip_day: 20,
       export_user_day: 3,
       demo_session_day: 2000,
+      r2_block_ops: 100,
       isolate_open_email_day: 20,
       isolate_open_email_code_ip_day: 10,
       isolate_open_demo_session_day: 200,

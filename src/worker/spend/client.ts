@@ -108,8 +108,26 @@ export class IsolateCounts {
   }
 }
 
+/** R2 operations an isolate has reserved from the guard and not yet spent, per class. Never returned. */
+export class Reserves {
+  private readonly left = new Map<string, number>();
+
+  /** Spends up to `n` from the reserve and returns how many were not covered. */
+  drain(cls: string, n: number): number {
+    const have = this.left.get(cls) ?? 0;
+    const used = Math.min(have, n);
+    this.left.set(cls, have - used);
+    return n - used;
+  }
+
+  add(cls: string, n: number): void {
+    this.left.set(cls, (this.left.get(cls) ?? 0) + n);
+  }
+}
+
 /** One per isolate, so every route's client in the isolate shares the count. */
 const isolateCounts = new IsolateCounts();
+const isolateReserves = new Reserves();
 
 export class SpendClient implements Spend {
   /** `stub` is called per use: a Durable Object stub is not reusable across requests. */
@@ -119,6 +137,7 @@ export class SpendClient implements Spend {
     private readonly log: (line: string) => void = console.error,
     private readonly isolate: IsolateCounts = isolateCounts,
     private readonly now: () => number = Date.now,
+    private readonly reserves: Reserves = isolateReserves,
   ) {}
 
   private fail(op: string, e: unknown): void {
@@ -152,9 +171,26 @@ export class SpendClient implements Spend {
     }
   }
 
+  /**
+   * Spends from this isolate's reserve; when it runs short, reserves whole blocks from the guard (`r2_block_ops`)
+   * and keeps the leftover, never returning it, so the guard's count only errs high. Near the cap, where a whole
+   * block no longer fits, it takes exactly what is short, so the cap still refuses at the exact operation.
+   */
   async charge(cls: "A" | "B", n: number): Promise<TakeResult | Unavailable> {
+    const short = this.reserves.drain(cls, n);
+    if (short === 0) return { ok: true };
+    const meter = cls === "A" ? "r2_class_a" : "r2_class_b";
+    const block = Math.max(1, Math.floor(this.caps.r2_block_ops));
+    const whole = Math.ceil(short / block) * block;
     try {
-      return await this.stub().take(cls === "A" ? "r2_class_a" : "r2_class_b", n);
+      let result = await this.stub().take(meter, whole);
+      let got = whole;
+      if (!result.ok && result.reason === "cap_hit" && whole > short) {
+        result = await this.stub().take(meter, short);
+        got = short;
+      }
+      if (result.ok) this.reserves.add(cls, got - short);
+      return result;
     } catch (e) {
       this.fail("charge", e);
       return unavailable;

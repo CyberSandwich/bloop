@@ -94,6 +94,12 @@ export const CAPS = {
   email_code_ip_day: { var: "CAP_EMAIL_CODE_IP_DAY", default: 20, reason: "sign-in code requests per IP hash per day" },
   export_user_day: { var: "CAP_EXPORT_USER_DAY", default: 3, reason: "exports per account per day" },
   demo_session_day: { var: "CAP_DEMO_SESSION_DAY", default: 2000, reason: "demo sessions per day, all visitors" },
+  r2_block_ops: {
+    var: "CAP_R2_BLOCK_OPS",
+    default: 100,
+    reason:
+      "R2 operations of one class an isolate reserves from the guard at a time and spends locally; leftovers are never returned, so the count errs high",
+  },
   isolate_open_email_day: {
     var: "CAP_ISOLATE_OPEN_EMAIL_DAY",
     default: 20,
