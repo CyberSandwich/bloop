@@ -160,11 +160,6 @@
 .legal-text {
   --gutter: 40px;
 }
-@media (max-width: 399.98px) {
-  .legal-text {
-    --gutter: 32px;
-  }
-}
 @media (min-width: 640px) {
   .legal-text {
     --gutter: 56px;
@@ -181,11 +176,11 @@
   position: absolute;
   left: calc(-1 * var(--gutter));
 }
-/* Every number is positioned: a 44 tall tap area that moves no text. */
+/* Every number is positioned: a 44 tall tap area that moves no text, grown away from it, never over it. */
 a.num::after {
   content: "";
   position: absolute;
-  inset: -9px -6px;
+  inset: -9px 0 -9px -6px;
 }
 .items {
   margin: 8px 0 0;

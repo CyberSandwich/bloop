@@ -161,18 +161,20 @@ test.describe("legal layout at 390", () => {
     await expect(table.locator("thead")).not.toHaveCSS("display", "none");
   });
 
-  test("a clause number takes a tap 8 px above and beside its box", async ({ page }) => {
+  test("a clause number takes a tap 8 px above and below and 4 to its left, never on the text", async ({ page }) => {
     await page.goto("/terms");
     const hit = await page.evaluate(`(() => {
       const num = document.querySelector('a.num[href="#8.3"]');
       num.scrollIntoView({ block: "center" });
       const r = num.getBoundingClientRect();
+      const text = num.parentElement.getBoundingClientRect().left + 2;
       return [
         document.elementFromPoint(r.left - 4, r.top - 8) === num,
-        document.elementFromPoint(r.right + 4, r.bottom + 8) === num,
+        document.elementFromPoint(r.left + 1, r.bottom + 8) === num,
+        document.elementFromPoint(text, r.top + r.height / 2) !== num,
       ];
     })()`);
-    expect(hit).toEqual([true, true]);
+    expect(hit).toEqual([true, true, true]);
   });
 
   test("the phone menu lists Terms and Articles, and Terms opens the Terms of Use", async ({ page }) => {
@@ -183,6 +185,20 @@ test.describe("legal layout at 390", () => {
     await nav.getByRole("link", { name: "Terms" }).click();
     await expect(page.locator("h1")).toHaveText("Terms of Use");
   });
+});
+
+test.describe("legal numbers at 320", () => {
+  test.use({ viewport: { width: 320, height: 568 }, isMobile: true, hasTouch: true });
+
+  for (const path of ["/privacy", "/terms"]) {
+    test(`${path}: no number's box reaches into its text`, async ({ page }) => {
+      await page.goto(path);
+      const over = (await page.evaluate(`[...document.querySelectorAll(".legal-text a.num")]
+        .filter((a) => Math.round(a.getBoundingClientRect().right) > Math.round(a.parentElement.getBoundingClientRect().left))
+        .map((a) => a.textContent)`)) as string[];
+      expect(over).toEqual([]);
+    });
+  }
 });
 
 test.describe("structured data and previews", () => {
