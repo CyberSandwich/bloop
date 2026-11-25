@@ -1,6 +1,6 @@
 import { execFileSync } from "node:child_process";
 import { existsSync, readdirSync, readFileSync, statSync } from "node:fs";
-import { join } from "node:path";
+import { join, posix } from "node:path";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
 import { ERRORS } from "../../public/js/shared/errors.js";
@@ -229,9 +229,56 @@ describe("error table", () => {
   });
 });
 
+/** What a page downloads before any import(): its module script and every module reached by static imports. */
+function firstLoad(script: string): string[] {
+  const seen = new Set<string>();
+  const stack = [script];
+  while (stack.length) {
+    const file = stack.pop() as string;
+    if (seen.has(file)) continue;
+    seen.add(file);
+    for (const m of read(file).matchAll(/^\s*(?:(?:import|export)\s[^;'"]*?from\s*|import\s+)"(\.[^"]+)"/gm)) {
+      stack.push(posix.join(posix.dirname(file), m[1] as string));
+    }
+  }
+  return [...seen].sort();
+}
+
 describe("size budgets", () => {
-  it("each lazy module has its own entry, browser JS leaves it out, and only import() reaches it", () => {
-    const entries: { name: string; path: string | string[] }[] = JSON.parse(read("package.json"))["size-limit"];
+  const entries: { name: string; path: string | string[] }[] = JSON.parse(read("package.json"))["size-limit"];
+  const pageEntries = entries.filter((e) => e.name.endsWith(" JS"));
+  const scripts = [
+    ...new Set(
+      walk("public", (path) => path.endsWith(".html")).flatMap((page) =>
+        [...read(page).matchAll(/<script type="module" src="\/([^"]+)"/g)].map((m) => `public/${m[1]}`),
+      ),
+    ),
+  ].sort();
+
+  it("each page script has one first-load entry holding exactly its static import closure", () => {
+    expect(scripts).toEqual([
+      "public/js/code.js",
+      "public/js/legal.js",
+      "public/js/phone.js",
+      "public/js/screen.js",
+      "public/js/site.js",
+    ]);
+    const held = (s: string) => pageEntries.filter((e) => [e.path].flat().includes(s)).map((e) => [e.path].flat());
+    expect(Object.fromEntries(scripts.map((s) => [s, held(s)]))).toEqual(
+      Object.fromEntries(scripts.map((s) => [s, [firstLoad(s)]])),
+    );
+    expect(pageEntries).toHaveLength(scripts.length);
+  });
+
+  it("every browser module is in a first-load or a lazy entry, never in both", () => {
+    const lazy = entries.filter((e) => e.name.endsWith(", lazy")).flatMap((e) => [e.path].flat());
+    const first = new Set(pageEntries.flatMap((e) => [e.path].flat()));
+    expect(lazy.filter((path) => first.has(path))).toEqual([]);
+    const modules = walk("public/js", (path) => path.endsWith(".js"));
+    expect(modules.filter((path) => !first.has(path) && !lazy.includes(path))).toEqual([]);
+  });
+
+  it("each lazy module has its own entry, and only import() reaches it", () => {
     // JS entries only: a lazy stylesheet has its own entry and is loaded by its module (the SESS-01 sheet test).
     const lazyEntries = entries.filter(
       (e) => e.name.endsWith(", lazy") && [e.path].flat().every((path) => path.endsWith(".js")),
@@ -242,9 +289,6 @@ describe("size budgets", () => {
       "session length sheet, lazy": ["public/js/core/length.js", "public/js/shared/length.js"],
       "drag and drop, lazy": "public/js/core/drag.js",
     });
-    const lazyPaths = lazyEntries.flatMap((e) => [e.path].flat());
-    const browser = [entries.find((e) => e.name === "browser JS")?.path ?? []].flat();
-    expect(browser).toEqual(["public/js/**/*.js", ...lazyPaths.map((path) => `!${path}`)]);
     for (const entry of lazyEntries) {
       const own = [entry.path].flat();
       for (const name of own.map((path) => path.slice(path.lastIndexOf("/") + 1))) {

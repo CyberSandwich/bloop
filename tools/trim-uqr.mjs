@@ -38,7 +38,7 @@ const code = [...kept.slice(0, from), "export { encode };", ...kept.slice(to + 1
 
 // The license block: everything after the first line of the vendored header, up to its end.
 const license = current.slice(current.indexOf("\n"), current.indexOf("*/") + 2);
-const head = `/*! uqr ${version} (https://github.com/unjs/uqr), vendored from dist/index.mjs by tools/trim-uqr.mjs (the browser JS budget): whole-line comments and the text renderers removed; every other line unmodified.`;
+const head = `/*! uqr ${version} (https://github.com/unjs/uqr), vendored from dist/index.mjs by tools/trim-uqr.mjs (the room screen's JS budget): whole-line comments and the text renderers removed; every other line unmodified.`;
 writeFileSync(target, `${head}${license}\n${code.join("\n")}`);
 
 // Read back: the header slicing kept the body whole, and the file parses (node --check is the guard that matters).

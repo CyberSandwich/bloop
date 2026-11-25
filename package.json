@@ -24,17 +24,93 @@
   },
   "size-limit": [
     {
-      "name": "browser JS",
+      "name": "landing JS",
+      "path": "public/js/site.js",
+      "limit": "1.7 kB"
+    },
+    {
+      "name": "doc pages JS",
       "path": [
-        "public/js/**/*.js",
-        "!public/js/core/photo.js",
-        "!public/js/core/video.js",
-        "!public/js/viewer-video.js",
-        "!public/js/core/length.js",
-        "!public/js/shared/length.js",
-        "!public/js/core/drag.js"
+        "public/js/core/icons.js",
+        "public/js/core/ui.js",
+        "public/js/legal.js"
       ],
-      "limit": "56.3 kB"
+      "limit": "3.25 kB"
+    },
+    {
+      "name": "room screen JS",
+      "path": [
+        "public/js/core/api.js",
+        "public/js/core/channel.js",
+        "public/js/core/copy.js",
+        "public/js/core/demo.js",
+        "public/js/core/format.js",
+        "public/js/core/icons.js",
+        "public/js/core/loader.js",
+        "public/js/core/qr.js",
+        "public/js/core/rows.js",
+        "public/js/core/states.js",
+        "public/js/core/store.js",
+        "public/js/core/timing.js",
+        "public/js/core/ui.js",
+        "public/js/core/verified.js",
+        "public/js/launcher.js",
+        "public/js/residue.js",
+        "public/js/screen.js",
+        "public/js/shared/codes.js",
+        "public/js/shared/errors.js",
+        "public/js/shared/names.js",
+        "public/js/shared/session.js",
+        "public/js/vendor/uqr.js",
+        "public/js/viewer.js"
+      ],
+      "limit": "44.65 kB"
+    },
+    {
+      "name": "phone JS",
+      "path": [
+        "public/js/core/api.js",
+        "public/js/core/boot-code.js",
+        "public/js/core/channel.js",
+        "public/js/core/copy.js",
+        "public/js/core/demo.js",
+        "public/js/core/drop.js",
+        "public/js/core/files.js",
+        "public/js/core/format.js",
+        "public/js/core/icons.js",
+        "public/js/core/loader.js",
+        "public/js/core/rows.js",
+        "public/js/core/states.js",
+        "public/js/core/store.js",
+        "public/js/core/timing.js",
+        "public/js/core/toast.js",
+        "public/js/core/ui.js",
+        "public/js/core/verified.js",
+        "public/js/phone.js",
+        "public/js/shared/codes.js",
+        "public/js/shared/errors.js",
+        "public/js/shared/names.js",
+        "public/js/shared/session.js"
+      ],
+      "limit": "30.55 kB"
+    },
+    {
+      "name": "typed code JS",
+      "path": [
+        "public/js/code.js",
+        "public/js/core/api.js",
+        "public/js/core/copy.js",
+        "public/js/core/format.js",
+        "public/js/core/icons.js",
+        "public/js/core/store.js",
+        "public/js/core/timing.js",
+        "public/js/core/ui.js",
+        "public/js/core/verified.js",
+        "public/js/shared/codes.js",
+        "public/js/shared/errors.js",
+        "public/js/shared/names.js"
+      ],
+      "limit": "15.15 kB"
     },
     {
       "name": "phone media, lazy",
@@ -67,11 +143,6 @@
       "name": "drag and drop, lazy",
       "path": "public/js/core/drag.js",
       "limit": "0.45 kB"
-    },
-    {
-      "name": "landing JS",
-      "path": "public/js/site.js",
-      "limit": "1.7 kB"
     },
     {
       "name": "font",

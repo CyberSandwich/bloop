@@ -1,4 +1,4 @@
-/*! uqr 0.1.3 (https://github.com/unjs/uqr), vendored from dist/index.mjs by tools/trim-uqr.mjs (the browser JS budget): whole-line comments and the text renderers removed; every other line unmodified.
+/*! uqr 0.1.3 (https://github.com/unjs/uqr), vendored from dist/index.mjs by tools/trim-uqr.mjs (the room screen's JS budget): whole-line comments and the text renderers removed; every other line unmodified.
 
  * MIT License
  *
