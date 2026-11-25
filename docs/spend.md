@@ -320,7 +320,7 @@ A test id `COST-nn` is the cost plan's scenario `Wnn` (section 2 of the v4 cost 
 | COST-05 | W5 request flood on the zone | analytics warning only | no |
 | COST-06 | W6 client polling loop | analytics warning only | no |
 | COST-07 | W7 leaked presigned URL | R2 class A and B monthly caps and daily trip lines | yes |
-| COST-08 | W8 WebSocket ping storm | Durable Object analytics warning, platform limit | no |
+| COST-08 | W8 WebSocket ping storm | Durable Object request-growth warning; P1's socket caps are the bound, since the platform limit does not stop socket messages | no |
 | COST-09 | W9 non-hibernating objects | Durable Object GB-second warning, platform limit | no |
 | COST-10 | W10 D1 write amplification | D1 rows-written meter and trip line | yes |
 | COST-11 | W11 upload floods | per-user count and byte caps, guest drops per IP | yes |
