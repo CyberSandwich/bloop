@@ -112,7 +112,7 @@
         "dist/js/shared/codes.js",
         "dist/js/shared/errors.js"
       ],
-      "limit": "5.25 kB"
+      "limit": "4.05 kB"
     },
     {
       "name": "phone photo, lazy",
