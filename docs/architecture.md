@@ -233,7 +233,8 @@ src/worker/
   do/demo-slots.ts         the global cap on concurrent demo screens (SQL in the Directory object)
   machine.ts               pure session state machine (interfaces.md)
   items.ts                 the session's items: types, MAX_ITEMS, order, the link allowlist (ADR 0009)
-  do/schema.ts             the Screen object's numbered storage steps (schemaVersion)
+  do/schema.ts             the Screen object's numbered storage steps (schemaVersion) and `applySteps`, which every object's steps use
+  do/directory-schema.ts   the Directory object's numbered steps (the `expires_at` indexes)
   do/screen.ts  do/directory.ts
   seams/file-source/{index,mock,demo,graph}.ts   interface; MockFileSource; the bundled demo account; GraphFileSource
   source-access.ts         which source serves a screen (mode and FILE_SOURCE), and the server-side resolve of an approved id
@@ -466,7 +467,7 @@ CREATE TABLE r2_ops (                    -- R2 operations bloop performed; 13 mo
 | `miss:<ipHash>` | failed lookups, window start | 10 min                             |
 | `miss:global`   | failed lookups this window, all IP hashes (same table, key `global`) | 10 min                             |
 
-Both objects use SQLite storage: the Screen object through its synchronous key-value API (`ctx.storage.kv`), the Directory through SQL tables `code` and `miss`.
+Both objects use SQLite storage: the Screen object through its synchronous key-value API (`ctx.storage.kv`), the Directory through SQL tables `code`, `miss` and `demo` (the demo slots, `do/demo-slots.ts`). Both keep a `schemaVersion` in `ctx.storage.kv`, stepped by the shared `applySteps` (`do/schema.ts`). The Directory's steps are in `do/directory-schema.ts`: step 2 indexes `expires_at` on `code` and `demo`, so the alarm's and `put`'s sweeps (`DELETE ... WHERE expires_at <= ?`) read only the expired rows however many live ones there are. Every step runs on every wake, and `CREATE INDEX IF NOT EXISTS` repairs a dropped index.
 
 ### 8.4 Screen browser
 

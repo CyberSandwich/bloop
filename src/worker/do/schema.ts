@@ -102,9 +102,14 @@ const isSeq = (v: unknown): v is Session["seq"] => {
   return Number.isSafeInteger(seq?.phone) && Number.isSafeInteger(seq?.screen);
 };
 
+/** Runs every numbered step up to `version`, then records it. Shared by every object that keeps a `schemaVersion`. */
+export function applySteps(kv: Kv, steps: Record<number, (kv: Kv) => void>, version: number): void {
+  for (let v = 2; v <= version; v++) steps[v]?.(kv);
+  if (kv.get<number>(SCHEMA_KEY) !== version) kv.put(SCHEMA_KEY, version);
+}
+
 /** Brings stored state to SCHEMA_VERSION's shape. A fresh object (no `meta`) is written at the current version by `create`. */
 export function migrate(kv: Kv): void {
   if (kv.get("meta") === undefined) return;
-  for (let version = 2; version <= SCHEMA_VERSION; version++) STEPS[version]?.(kv);
-  if (kv.get<number>(SCHEMA_KEY) !== SCHEMA_VERSION) kv.put(SCHEMA_KEY, SCHEMA_VERSION);
+  applySteps(kv, STEPS, SCHEMA_VERSION);
 }
