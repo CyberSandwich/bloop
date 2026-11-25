@@ -57,6 +57,9 @@ describe("stripComments", () => {
     ["<p></p><!-- a", "unterminated comment"],
     ["<pre>a<!-- x -->b</pre>", "<pre>"],
     ["<script>a", "unterminated <script>"],
+    ['<a title="x <!-- y --> z">k</a>', "comment inside a <a> tag"],
+    ["<meta content='<!-- y -->'>", "comment inside a <meta> tag"],
+    ['<a title="x', "unterminated <a> tag"],
   ])("odd input fails the build: %s", (html, why) => {
     expect(() => strip(html)).toThrow(why);
   });
