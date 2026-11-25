@@ -1,11 +1,11 @@
-// The landing (design.md section 6): no inline style writes (CSP), no scroll listener.
+// The landing (design.md section 6). No scroll listener; style writes are custom properties only.
 
 const nav = document.querySelector(".nav");
 const sentinel = document.getElementById("sentinel");
 if (nav && sentinel)
   new IntersectionObserver(([entry]) => nav.classList.toggle("is-scrolled", !entry?.isIntersecting)).observe(sentinel);
 
-// A jump leaves no hash and a reload opens at the top; Back and forward get the place saved on pagehide.
+// A jump leaves no hash, a reload opens at the top, and Back keeps the place saved on pagehide.
 history.scrollRestoration = "manual";
 const dropHash = () => history.replaceState(0, "", location.href.split("#")[0]);
 addEventListener("click", (e) => {
@@ -19,7 +19,7 @@ if (location.hash) addEventListener("load", () => setTimeout(dropHash));
 else if (kept) addEventListener("load", () => scrollTo(0, kept));
 else scrollTo(0, 0);
 
-// The sheen and the backdrop drifts run only on screen in a visible tab (legal.js pauses the doc panel alike).
+// The sheen and the drifts run only on screen in a visible tab.
 const shown = new Map();
 const pause = () => {
   for (const [el, on] of shown) el.classList.toggle("is-paused", !on || document.hidden);
@@ -30,6 +30,13 @@ const watch = new IntersectionObserver((es) => {
 });
 for (const el of document.querySelectorAll(".sheen, .frag, .panel, .close-panel")) watch.observe(el);
 addEventListener("visibilitychange", pause);
+
+// Each why word's index, for its slice of the fill (site.css).
+const words = /** @type {NodeListOf<HTMLElement>} */ (document.querySelectorAll(".why-words > *"));
+for (const [i, w] of words.entries()) {
+  w.style.setProperty("--i", `${i}`);
+  w.style.setProperty("--n", `${words.length}`);
+}
 
 document.querySelector(".frag-list")?.addEventListener("click", (e) => {
   const row = e.target instanceof Element && e.target.closest("[aria-pressed]");
@@ -45,7 +52,7 @@ menu?.addEventListener("click", (e) => {
   } catch {}
 });
 
-// A spring (design.md section 8) drives a paused animation over the CSS tilt; 1% thresholds wake it.
+// A spring (design.md section 6) drives a paused tilt animation; 1% thresholds wake it.
 const stage = document.querySelector(".stage");
 const tiltable = matchMedia("(prefers-reduced-motion: no-preference)");
 if (stage && tiltable.matches) {

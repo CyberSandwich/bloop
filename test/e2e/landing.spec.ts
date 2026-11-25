@@ -316,28 +316,34 @@ for (const vp of VIEWPORTS) {
 
 const WHY =
   "The cloud promised your files would be everywhere. Instead, every room PC asks for your password, and every sign-in opens everything you own, just to show one slide. A USB stick only ever carried what you chose. bloop brings that back, without the stick.";
-// A word's fill is its background x position: 100% faint, 0% ink.
-const fillOf = (page: Page, which: "first" | "last") =>
+// Each word's fill, 0 faint to 1 ink, from its background x position (100% faint, 0% ink).
+const fills = (page: Page) =>
+  page.evaluate(`[...document.querySelectorAll(".why-words > *")].map(
+    (w) => 1 - parseFloat(getComputedStyle(w).backgroundPositionX) / 100)`) as Promise<number[]>;
+// The paragraph at a given progress of its view timeline (0 entering at the bottom, 1 gone at the top).
+const scrollWhyTo = (page: Page, progress: number) =>
   page.evaluate(`(() => {
-    const words = [...document.querySelectorAll(".why-words > *")];
-    return getComputedStyle(words[${which === "first" ? 0 : "words.length - 1"}]).backgroundPositionX;
+    const r = document.querySelector(".why p").getBoundingClientRect();
+    scrollBy(0, r.top - (innerHeight - ${progress} * (innerHeight + r.height)));
   })()`);
 
 for (const vp of [VIEWPORTS[0], VIEWPORTS[2]]) {
   test.describe(`the why at ${vp.name}`, () => {
     test.use({ viewport: { width: vp.width, height: vp.height }, hasTouch: vp.touch, isMobile: vp.width === 390 });
 
-    test("each word fills from faint to ink as it crosses the view, with axe green mid-fill", async ({ page }) => {
+    test("the words fill in reading order, one at a time, with axe green mid-fill", async ({ page }) => {
       await page.goto("/");
-      expect(await fillOf(page, "first")).toBe("100%");
-      // The paragraph's top at the view's middle: the first line is past the fill's end (a third up), the last not.
-      await page.evaluate(`(() => {
-        const r = document.querySelector(".why p").getBoundingClientRect();
-        scrollBy(0, r.top - innerHeight / 2);
-      })()`);
-      await expect.poll(() => fillOf(page, "first")).toBe("0%");
-      expect(await fillOf(page, "last")).not.toBe("0%");
+      expect(new Set(await fills(page))).toEqual(new Set([0]));
+      // Midway through the fill's range (cover 5% to 50%): ink words, then at most one in motion, then faint ones.
+      await scrollWhyTo(page, 0.27);
+      await expect.poll(async () => (await fills(page))[0]).toBe(1);
+      const mid = await fills(page);
+      expect(mid.at(-1)).toBe(0);
+      expect(mid.filter((f) => f > 0.001 && f < 0.999).length).toBeLessThanOrEqual(1);
+      for (let i = 1; i < mid.length; i++) expect(mid[i], `word ${i}`).toBeLessThanOrEqual(mid[i - 1] ?? 1);
       expect((await new AxeBuilder({ page }).analyze()).violations).toEqual([]);
+      await scrollWhyTo(page, 0.6);
+      await expect.poll(async () => new Set(await fills(page))).toEqual(new Set([1]));
     });
 
     test("a screen reader reads one sentence", async ({ page }) => {

@@ -402,25 +402,37 @@ html:has(.page-site) {
 }
 @supports (animation-timeline: view()) {
   @media (prefers-reduced-motion: no-preference) and (forced-colors: none) {
-    /* A box per word for its own timeline, widened as the sheen is; faint holds 3:1. */
+    /* One progress for the paragraph, --why from 0 to 1; word --i of --n (site.js) fills only over its own
+       slice, so the words before it are ink and the ones after faint. Widened as the sheen is; faint holds 3:1. */
+    .why p {
+      view-timeline: --why-view;
+    }
+    .why-words {
+      animation: why linear both;
+      animation-timeline: --why-view;
+      animation-range: cover 5% cover 50%;
+    }
     .why-words > * {
       display: inline-block;
       margin-inline: -0.025em;
       padding-inline: 0.025em;
       background:
-        linear-gradient(90deg, currentColor 50%, color-mix(in srgb, var(--ink) 50%, var(--paper)) 0) 100% 0 / 200% 100%;
+        linear-gradient(90deg, currentColor 50%, color-mix(in srgb, var(--ink) 50%, var(--paper)) 0) 0 0 / 200% 100%;
+      background-position-x: calc(100% - 100% * clamp(0, var(--why) * var(--n) - var(--i), 1));
       -webkit-background-clip: text;
       background-clip: text;
       -webkit-text-fill-color: transparent;
-      animation: ink linear both;
-      animation-timeline: view();
-      animation-range: entry 100% cover 35%;
     }
   }
 }
-@keyframes ink {
+@property --why {
+  syntax: "<number>";
+  inherits: true;
+  initial-value: 0;
+}
+@keyframes why {
   to {
-    background-position: 0 0;
+    --why: 1;
   }
 }
 .connect,

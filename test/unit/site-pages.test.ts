@@ -307,25 +307,34 @@ describe("landing word caps (design.md section 13)", () => {
     expect(fill.match(/<span>/g)).toHaveLength(words(sr).length - 1);
   });
 
-  it("the why fills by a clipped gradient on each word's view timeline, never by opacity, and only with motion allowed", () => {
+  it("the why fills word by word in reading order by a clipped gradient, never by opacity, and only with motion allowed", () => {
     const css = read("public/css/site.css");
     const block = between(
       css,
       /@supports \(animation-timeline: view\(\)\) \{\n {2}@media \(prefers-reduced-motion: no-preference\) and \(forced-colors: none\)/,
       "\n}\n",
     );
+    expect(block).toMatch(/\.why-words > \* \{[^}]*background-clip: text;[^}]*-webkit-text-fill-color: transparent;/);
+    // One progress for the paragraph; a word moves only inside its own slice (index --i of --n, from site.js).
+    expect(block).toMatch(/\.why p \{\s*view-timeline: --why-view;/);
     expect(block).toMatch(
-      /\.why-words > \* \{[^}]*background-clip: text;[^}]*-webkit-text-fill-color: transparent;[^}]*animation: ink linear both;\s*animation-timeline: view\(\);/,
+      /\.why-words \{\s*animation: why linear both;\s*animation-timeline: --why-view;\s*animation-range: cover 5% cover 50%;/,
+    );
+    expect(block).toMatch(
+      /background-position-x: calc\(100% - 100% \* clamp\(0, var\(--why\) \* var\(--n\) - var\(--i\), 1\)\);/,
+    );
+    expect(css).toMatch(/@property --why \{\s*syntax: "<number>";\s*inherits: true;\s*initial-value: 0;/);
+    expect(read("public/js/site.js")).toMatch(
+      /w\.style\.setProperty\("--i", `\$\{i\}`\);\s*w\.style\.setProperty\("--n", `\$\{words\.length\}`\);/,
     );
     expect(block).not.toMatch(/opacity/);
-    // Large text: the faint state holds 3:1 on paper, the fill ends a third of the way up the view, and the word's
-    // box is widened by its tracking so the clip reaches its last glyph.
+    // Large text: the faint state holds 3:1 on paper, and the word's box is widened by its tracking so the clip
+    // reaches its last glyph.
     const faint = Number(/color-mix\(in srgb, var\(--ink\) (\d+)%, var\(--paper\)\)/.exec(block)?.[1]) / 100;
     const [ink, paper] = [token("ink"), token("paper")];
     expect(contrast(ink.map((c, i) => c * faint + (paper[i] ?? 0) * (1 - faint)) as Rgb, paper)).toBeGreaterThanOrEqual(
       3,
     );
-    expect(block).toMatch(/animation-range: entry 100% cover 35%;/);
     expect(block).toMatch(/margin-inline: -0\.025em;\s*padding-inline: 0\.025em;/);
     expect(css).toMatch(/\.why \.sr \{\s*user-select: none;/);
     const why = between(css, /^\.why \{/m, "}");
@@ -612,7 +621,10 @@ describe("site scripts under the strict CSP", () => {
     expect(code).not.toMatch(/new Function\s*\(/);
     expect(code).not.toMatch(/\.(innerHTML|outerHTML)\s*=|insertAdjacentHTML|document\.write/);
     expect(code).not.toMatch(/setTimeout\(\s*["'`]/);
-    expect(code).not.toMatch(/\.style\.|setAttribute\(\s*["']style/);
+    // Styling stays in CSS; script may only hand CSS a number through a custom property (CSSOM, outside the CSP).
+    expect(code.replaceAll(/\.style\.setProperty\("--[\w-]+", /g, "")).not.toMatch(
+      /\.style\b|setAttribute\(\s*["']style/,
+    );
   });
 
   it("the landing script imports nothing and listens to no scroll event", () => {
