@@ -102,6 +102,6 @@ export async function openLength(c, onView) {
   await style();
   if (ends.hidden) return;
   sheet.showModal();
-  // Not Close: its :focus-visible ring read as a large circle on iPhone Safari.
-  sheet.focus();
+  // Not Close: its ring read as a large circle on iPhone Safari.
+  document.getElementById("length-h")?.focus();
 }

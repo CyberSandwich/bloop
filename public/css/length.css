@@ -20,7 +20,7 @@
 .sheet-in {
   flex-direction: column;
 }
-.sheet:focus:not(:focus-visible) {
+.sheet h2:focus-visible {
   outline: none;
 }
 .sheet::backdrop {

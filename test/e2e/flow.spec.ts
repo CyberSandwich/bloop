@@ -279,8 +279,10 @@ test.describe("pairing flow", () => {
     const presets = await sheet.locator(".chips").boundingBox();
     expect(top && presets && Math.round(presets.y - (top.y + top.height))).toBe(8);
     await expect(sheet.getByLabel("Expires At")).toHaveValue(/^\d{2}:\d{2}$/);
-    // Opening it rings nothing: focus lands on the sheet, not on Close.
-    await expect(sheet).toBeFocused();
+    // Focus lands on the title (announced, no ring), not on Close; the first Tab reaches Close.
+    await expect(sheet.getByRole("heading", { name: "Session Expiry" })).toBeFocused();
+    await phone.page.keyboard.press("Tab");
+    await expect(sheet.getByRole("button", { name: "Close" })).toBeFocused();
     // A tap in the gap between the bubbles is the backdrop's: it closes with no change.
     await phone.page.mouse.click((top?.x ?? 0) + (top?.width ?? 0) / 2, (top?.y ?? 0) + (top?.height ?? 0) + 4);
     await expect(sheet).toBeHidden();

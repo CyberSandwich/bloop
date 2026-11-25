@@ -24,6 +24,7 @@ export function minutesUntil(value, now = new Date()) {
 
 /** Hides presets above the cap, and their bubble when none is left. @param {any} bubble @param {number} max */
 export function fitPresets(bubble, max) {
+  if (!bubble) return;
   const chips = [...bubble.querySelectorAll("[data-minutes]")];
   for (const c of chips) c.hidden = Number(c.dataset.minutes) > max;
   bubble.hidden = chips.every((c) => c.hidden);

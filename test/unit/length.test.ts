@@ -137,6 +137,10 @@ describe("SESS-01 sheet: presets above the cap", () => {
     expect(b.hidden).toBe(false);
   });
 
+  it("leaves a missing bubble alone", () => {
+    expect(() => fitPresets(null, 60)).not.toThrow();
+  });
+
   it("hides the whole bubble when no preset fits, and shows all under a roomy cap", () => {
     const none = bubble(30, 60, 120);
     fitPresets(none, 20);
