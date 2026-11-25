@@ -105,6 +105,7 @@ export interface Xhr {
   setRequestHeader: (name: string, value: string) => void;
   send: (body: unknown) => void;
   abort: () => void;
+  getResponseHeader: (name: string) => string | null;
   upload: { onprogress: ((e: { lengthComputable: boolean; loaded: number; total: number }) => void) | null };
   onload: (() => void) | null;
   onerror: (() => void) | null;

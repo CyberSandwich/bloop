@@ -1,7 +1,7 @@
 // The room screen (/s): the QR and typed code, the session through its Screen object, the fallbacks; the viewer.
 /** @import {ScreenView} from "../../src/shared/protocol.ts" */
 import { createApi } from "./core/api.js";
-import { downGate, openChannel } from "./core/channel.js";
+import { downGate, isDown, openChannel } from "./core/channel.js";
 import { endLine, FRESH_LINE, screenCopy } from "./core/copy-screen.js";
 import { nextSeq } from "./core/demo.js";
 import { clock, itemName, qrLabel } from "./core/format.js";
@@ -550,9 +550,9 @@ async function boot(attempt = 0) {
   if (g !== gen) return;
   s.limited = !booted.ok && booted.error === "rate_limited";
   if (!booted.ok) {
-    // One refused boot is no outage: the second `service_down` within 10 s says bloop is down.
-    const sure = confirmDown(booted.error === "service_down");
-    s.link = LINK_OF[booted.error] ?? (sure || booted.error !== "service_down" ? "down" : s.link);
+    // One refused boot is no outage: the second server failure in a row says bloop is down.
+    const sure = confirmDown(isDown(booted.error));
+    s.link = LINK_OF[booted.error] ?? (isDown(booted.error) && !sure ? s.link : "down");
     render();
     setTimeout(() => g === gen && boot(attempt + 1), pollDelay(attempt + 1));
     return;
