@@ -97,7 +97,8 @@ html:has(.page-site) {
   color: inherit;
   list-style: none;
 }
-.nav-links:not(:is(:popover-open)) {
+/* Bare, not :is(): where :popover-open is unknown, :not(:is()) would match the fallback row and clear it. */
+.nav-links:not(:popover-open) {
   background: none;
   -webkit-backdrop-filter: none;
   backdrop-filter: none;
@@ -200,7 +201,8 @@ html:has(.page-site) {
     .nav-menu {
       display: none;
     }
-    .nav-pill {
+    .nav-pill,
+    .nav.is-scrolled .nav-pill {
       background: var(--glass-solid);
       -webkit-backdrop-filter: none;
       backdrop-filter: none;
