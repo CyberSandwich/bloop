@@ -340,6 +340,13 @@ test.describe("pairing flow", () => {
       await phone.page.screenshot({ path: `test-results/shots/${name}-tab.png` });
       await phone.page.keyboard.press("Escape");
       await expect(sheet).toBeHidden();
+      await lengthButton.focus();
+      await phone.page.keyboard.press("Enter");
+      await expect(sheet).toBeVisible();
+      await phone.page.waitForTimeout(600);
+      await phone.page.screenshot({ path: `test-results/shots/${name}-kbd-open.png` });
+      await phone.page.keyboard.press("Escape");
+      await expect(sheet).toBeHidden();
     }
     await screen.context.close();
     await phone.context.close();
