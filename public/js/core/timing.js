@@ -45,18 +45,21 @@ export const PING_MS = 25_000;
 export const PROBE_MS = 3000;
 /** This many pings in a row with no frame back close a socket; a hidden tab is not judged. */
 export const MISSED_PINGS = 2;
-/** The Worker's window for calling a socket quiet (the client counts missed pings instead). */
+/** A hidden tab's socket quiet this long is dropped (its timers are throttled, so pings are not counted); the Worker's window too. */
 export const SILENCE_MS = 70_000;
-/** A second `service_down` answer this soon after the first says "bloop Isn't Responding". */
-export const DOWN_CONFIRM_MS = 10_000;
 
 /**
- * Half to all of the step, so screens that lost their sockets together (a deploy) do not return in the same second.
+ * Half to all of a step, so screens that lost their sockets together (a deploy) do not return in the same second.
+ * @param {number} ms @param {() => number} [random] in [0, 1)
+ */
+export const jitter = (ms, random = Math.random) => (0.5 + random() / 2) * ms;
+
+/**
  * @param {number} failures consecutive failures, 1 for the first
  * @param {() => number} [random] in [0, 1)
  */
 export const reconnectDelay = (failures, random = Math.random) =>
-  (0.5 + random() / 2) * (RECONNECT_DELAYS[Math.min(Math.max(failures, 1), RECONNECT_DELAYS.length) - 1] ?? 30_000);
+  jitter(RECONNECT_DELAYS[Math.min(Math.max(failures, 1), RECONNECT_DELAYS.length) - 1] ?? 30_000, random);
 
 /** @param {number} failures */
 export const shouldPoll = (failures) => failures >= POLL_AFTER_FAILURES;
