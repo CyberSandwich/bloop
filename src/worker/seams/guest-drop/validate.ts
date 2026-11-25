@@ -2,7 +2,7 @@
 // central directory, or the PDF or image tail. The one inflate is the content-types part, capped at a few hundred KB.
 import type { DropError, FileType } from "../../../shared/protocol.ts";
 import { inflate, latin1, majorBrand, startsWith } from "./bytes.ts";
-import { checkOoxml, decodeXml, isRelsPart } from "./formats.ts";
+import { checkOoxml, decodeXml, isRefusedPart, isRelsPart } from "./formats.ts";
 import { type RangeReader, ZIP_LIMITS } from "./index.ts";
 import { checkSizes, entryBytes, hasEndRecord, readCentralDirectory, type ZipEntry } from "./zip.ts";
 
@@ -50,28 +50,33 @@ function detect(head: Uint8Array): FileType | null {
   return brand !== null && MP4_BRANDS.has(brand) ? "mp4" : null;
 }
 
-/** All the relationships parts together are read within this many inflated bytes. */
+/** The relationships parts of a deck: how many, and how many inflated bytes in all. A real deck has one per slide. */
+const MAX_RELS_PARTS = 1024;
 const MAX_RELS_BYTES = 4 * 1024 * 1024;
 
-/** One XML part of the package as text: stored or inflated within `cap`, UTF-8 only; null when it cannot be read so. */
-async function partText(r: RangeReader, entry: ZipEntry, cap: number): Promise<string | null> {
-  if (entry.uncompressed > cap || entry.compressed > cap) return null;
+/**
+ * The bytes of one part, stored or inflated to at most `cap`; null when they cannot be read so. Only the size of
+ * what was read is measured: the sizes a zip declares are claims (zip.ts).
+ */
+async function partBytes(r: RangeReader, entry: ZipEntry, cap: number): Promise<Uint8Array | null> {
+  if (entry.compressed > cap) return null;
   const stored = await entryBytes(r, entry);
   if (!stored) return null;
-  if (entry.method === 0) return decodeXml(stored);
-  if (entry.method !== 8) return null;
-  const inflated = await inflate(stored, cap, "deflate-raw");
-  return inflated ? decodeXml(inflated) : null;
+  if (entry.method === 0) return stored;
+  return entry.method === 8 ? inflate(stored, cap, "deflate-raw") : null;
 }
 
-/** The text of every relationships part, or null when one cannot be read or they pass the shared cap. */
+/** The text of every relationships part, or null when one cannot be read or they pass the shared caps. */
 async function relsParts(r: RangeReader, entries: readonly ZipEntry[]): Promise<Map<string, string> | null> {
+  const parts = entries.filter((e) => isRelsPart(e.name));
+  if (parts.length > MAX_RELS_PARTS) return null;
   const out = new Map<string, string>();
   let budget = MAX_RELS_BYTES;
-  for (const entry of entries.filter((e) => isRelsPart(e.name))) {
-    const text = await partText(r, entry, Math.min(ZIP_LIMITS.maxContentTypesBytes, budget));
-    if (text === null) return null;
-    budget -= entry.uncompressed;
+  for (const entry of parts) {
+    const bytes = await partBytes(r, entry, Math.min(ZIP_LIMITS.maxContentTypesBytes, budget));
+    const text = bytes === null ? null : decodeXml(bytes);
+    if (bytes === null || text === null) return null;
+    budget -= bytes.length;
     out.set(entry.name, text);
   }
   return out;
@@ -85,8 +90,11 @@ async function validateDeck(r: RangeReader, head: Uint8Array): Promise<Verdict> 
   if (sizes) return refuse(sizes);
   const names = new Map(dir.entries.map((e) => [e.name, e]));
   if (dir.entries.some((e) => e.method !== 0 && e.method !== 8)) return refuse("bad_structure");
+  if (dir.entries.some((e) => isRefusedPart(e.name))) return refuse("macro_content");
+  if (new Set(dir.entries.map((e) => e.name.toLowerCase())).size !== dir.entries.length) return refuse("bad_structure");
   if (!ZIP_LIMITS.requiredParts.every((p) => names.has(p))) return refuse("bad_structure");
-  const types = await partText(r, names.get("[Content_Types].xml") as ZipEntry, ZIP_LIMITS.maxContentTypesBytes);
+  const typesBytes = await partBytes(r, names.get("[Content_Types].xml") as ZipEntry, ZIP_LIMITS.maxContentTypesBytes);
+  const types = typesBytes === null ? null : decodeXml(typesBytes);
   const rels = await relsParts(r, dir.entries);
   if (types === null || rels === null) return refuse("bad_structure");
   const verdict = checkOoxml(
