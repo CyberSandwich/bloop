@@ -339,6 +339,8 @@ test/
 | GET, POST | `/api/match`, `/api/notes`; `/api/claim`, `/api/files`, `/api/approve` extended | Bearer pid, session | planned (P1): the match pick, speaker notes, the library source |
 | GET | `/f/`, `/b/`, `/p/` on the file origin | the token | planned (P1): session links, bundles, owner previews |
 
+Every ok JSON answer carries `X-Bloop: 1` (`json()` in `http.ts`), so `api.js` reads a 200 without it, or one that is not JSON, as the client-only `network_blocked` (a filter's block page), never `service_down`.
+
 Every state-changing route checks four things: `Origin` equals `PUBLIC_ORIGIN`; `Sec-Fetch-Site` is `same-origin` when present; `Content-Type: application/json` (or the declared upload type); and a Zod-parsed body. Bearer credentials come from `sessionStorage` and travel in `Authorization`, never in a URL. Errors are `application/problem+json` with an `ErrorCode` (interfaces.md). A POST with no fields still sends `Content-Type: application/json` and a body of `{}` (or no body): that header is what turns a cross-site form post into a 415. Bodies are at most 4 KB, and Zod schemas refuse unknown keys. `POST /api/claim` takes `{code, kind?}`: `kind` defaults to `owner`, and a phone that wants the guest drop path sends `guest`. Any other field, a `pass` included, is `bad_request`.
 
 ### Rate limits
