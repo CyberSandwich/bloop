@@ -320,6 +320,22 @@ test.describe("pairing flow", () => {
     return { screen, phone, lengthButton, sheet };
   }
 
+  test("SESS-01 at 320 wide the whole time and its icon show beside Set", async ({ browser }) => {
+    const { screen, phone, lengthButton, sheet } = await approvedDemo(browser);
+    await phone.page.setViewportSize({ width: 320, height: 640 });
+    await lengthButton.click();
+    await expect(sheet).toBeVisible();
+    const field = sheet.getByLabel("Expires At");
+    expect(await field.evaluate((el) => el.scrollWidth <= el.clientWidth)).toBe(true);
+    const [input, set] = await Promise.all([
+      field.boundingBox(),
+      sheet.getByRole("button", { name: "Set" }).boundingBox(),
+    ]);
+    expect(input && set && input.x + input.width <= set.x).toBe(true);
+    await screen.context.close();
+    await phone.context.close();
+  });
+
   test("SESS-01 a refused length is a toast over the running session: the countdown, Revoke and the sheet stay", async ({
     browser,
   }) => {
