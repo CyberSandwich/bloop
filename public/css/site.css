@@ -180,7 +180,6 @@ html:has(.page-site) {
       transform: translateY(-6px) scale(0.98);
     }
   }
-  /* The sheet floats over the hero's type, so a light scrim sets it apart; a tap on it closes the sheet. */
   .nav-links:popover-open::backdrop {
     background: rgba(0, 0, 0, 0.18);
   }
@@ -193,9 +192,7 @@ html:has(.page-site) {
     display: grid;
   }
 }
-/* No popover: the hiding rule drops, so the list is a row under the pills and the dead button hides. The pill
-   drops its filter, which would make it the fixed row's containing block; .nav's translate stays one, so the
-   inset is from the nav's own edges. */
+/* No popover. A pill filter would contain the fixed row; the inset is from .nav (its translate contains it). */
 @supports not selector(:popover-open) {
   @media (max-width: 759.98px) {
     .nav-menu {
@@ -405,8 +402,7 @@ html:has(.page-site) {
 }
 @supports (animation-timeline: view()) {
   @media (prefers-reduced-motion: no-preference) and (forced-colors: none) {
-    /* A box per word, so each has its own view timeline; widened as the sheen is, so the clip reaches the last
-       glyph past the tracking. Faint is 3.16:1 on paper, so text at rest low in the view still reads. */
+    /* A box per word for its own timeline, widened as the sheen is; faint holds 3:1. */
     .why-words > * {
       display: inline-block;
       margin-inline: -0.025em;
@@ -478,9 +474,11 @@ h3 {
     animation: drift 40s ease-in-out infinite alternate;
   }
 }
-/* Off screen or in a hidden tab (site.js): after every animated rule, so it outranks their shorthands. */
+/* Off screen, hidden tab, or the sheen on hover or focus (2.2.2): after every animated rule, which it outranks. */
 .is-paused,
-.is-paused::before {
+.is-paused::before,
+.hero h1:hover .sheen,
+.hero:focus-within .sheen {
   animation-play-state: paused;
 }
 @keyframes drift {
@@ -525,7 +523,7 @@ h3 {
   pointer-events: none;
 }
 
-/* minmax(0, 1fr): an auto column grows to its widest unbreakable line (the stills' pill) and widens the page. */
+/* An auto column would grow to the stills' unbreakable pill and widen the page. */
 .steps,
 .grid {
   display: grid;
@@ -649,7 +647,6 @@ h3 {
   font-weight: 400;
   font-variant-numeric: tabular-nums;
 }
-/* Under 360 the pill fits only its two buttons. */
 @media (max-width: 359.98px) {
   .frag-count {
     display: none;

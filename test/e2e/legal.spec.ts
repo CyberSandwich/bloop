@@ -99,6 +99,25 @@ test.describe("legal layout at 1440", () => {
     await expect(page.locator("#copied")).toBeHidden();
   });
 
+  test("the panel's drift runs on screen and pauses off it and in a hidden tab", async ({ page }) => {
+    await page.goto("/privacy");
+    const state = () =>
+      page.evaluate(
+        `document.querySelector(".panel").getAnimations({ subtree: true }).find((a) => a.animationName === "drift")?.playState`,
+      );
+    await page.locator(".panel").scrollIntoViewIfNeeded();
+    await expect.poll(state).toBe("running");
+    await page.evaluate("scrollTo(0, document.documentElement.scrollHeight)");
+    await expect.poll(state).toBe("paused");
+    await page.locator(".panel").scrollIntoViewIfNeeded();
+    await expect.poll(state).toBe("running");
+    await page.evaluate(`(() => {
+      Object.defineProperty(document, "hidden", { value: true, configurable: true });
+      document.dispatchEvent(new Event("visibilitychange", { bubbles: true }));
+    })()`);
+    await expect.poll(state).toBe("paused");
+  });
+
   test("print shows the text alone: no nav, footer, contents or panel", async ({ page }) => {
     await page.goto("/privacy");
     await page.emulateMedia({ media: "print" });

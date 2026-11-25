@@ -233,6 +233,18 @@ for (const vp of VIEWPORTS) {
       await page.goto("/");
       const sheen = page.locator(".sheen");
       await expect(sheen).not.toHaveClass(/is-paused/);
+      const state = () => page.evaluate(`document.querySelector(".sheen").getAnimations()[0]?.playState`);
+      await expect.poll(state).toBe("running");
+      // WCAG 2.2.2: the endless sweep stops while the heading is hovered or the hero holds focus.
+      if (!vp.touch) {
+        await page.locator(".hero h1").hover();
+        await expect.poll(state).toBe("paused");
+        await page.mouse.move(0, vp.height - 1);
+        await expect.poll(state).toBe("running");
+      }
+      await page.locator(".hero").getByRole("link", { name: "Try the Demo" }).focus();
+      await expect.poll(state).toBe("paused");
+      await page.evaluate("document.activeElement.blur()");
       await page.evaluate("scrollTo(0, 2500)");
       await expect(sheen).toHaveClass(/is-paused/);
     });
