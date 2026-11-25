@@ -584,11 +584,15 @@ describe("phone copy", () => {
     const file = "Week 7 lecture recording, final cut.mp4";
     const c = phoneCopy("guest_confirm", { ...pf, file });
     expect(c.title).toBe("Send Week 7 lecture reco\u2026 cut.mp4 to Room 2.14?");
-    expect(c.body.startsWith(`${file}.`)).toBe(true);
+    expect(c.name).toBe(file);
+    // The name is no sentence: no period is put after it, with or without the deletion line.
+    expect(c.body).not.toContain(file);
+    expect(c.body.startsWith(".")).toBe(false);
     // 28 characters or fewer stay whole, and the body does not repeat them.
     const short = phoneCopy("guest_confirm", { ...pf, file: "Board.png" });
     expect(short.title).toBe("Send Board.png to Room 2.14?");
     expect(short.body).not.toContain("Board.png");
+    expect(short.name).toBe("");
   });
 
   it("S7 the offer's cut counts code points, so an emoji at either cut stays whole", () => {
