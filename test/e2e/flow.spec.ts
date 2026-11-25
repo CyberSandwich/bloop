@@ -376,7 +376,7 @@ test.describe("pairing flow", () => {
       // The whole time shows, and the input spans its row of the card.
       expect(await field.evaluate((el) => el.scrollWidth <= el.clientWidth)).toBe(true);
       const card = sheet.locator(".sheet-card");
-      const inner = (await card.evaluate("(n) => n.clientWidth")) as number;
+      const inner = await card.evaluate((n) => n.clientWidth);
       expect(Math.round((await field.boundingBox())?.width ?? 0)).toBe(Math.round(inner));
       // The presets share one row.
       const tops = new Set<number>();
@@ -2733,10 +2733,10 @@ test.describe("PAIR-13 remote: the phone commands the demo screen (design.md sec
     await row("Sample deck.pptx").click();
     await expect(preview).toBeVisible();
     // Copies of the demo's rows stand in for a long list: layout only, the next push draws the list again.
-    await list.evaluate(
-      "(ul) => { for (let i = 0; i < 3; i++) for (const li of [...ul.children]) ul.append(li.cloneNode(true)); }",
-    );
-    const [scroll, client] = (await list.evaluate("(ul) => [ul.scrollHeight, ul.clientHeight]")) as number[];
+    await list.evaluate((ul) => {
+      for (let i = 0; i < 3; i++) for (const li of [...ul.children]) ul.append(li.cloneNode(true));
+    });
+    const [scroll, client] = await list.evaluate((ul) => [ul.scrollHeight, ul.clientHeight]);
     expect(scroll ?? 0).toBeGreaterThan(client ?? 0);
     const l = await list.boundingBox();
     const p = await preview.boundingBox();
@@ -3017,7 +3017,9 @@ test.describe("the phone page at phone widths (design.md section 7, Phone page)"
   /** Scrolled to its end (the page, and the list where it scrolls inside itself), the last row clears the panel. */
   async function lastRowClear(page: Page, label: string) {
     await page.evaluate("window.scrollTo(0, document.documentElement.scrollHeight)");
-    await page.locator("#file-list").evaluate("(ul) => { ul.scrollTop = ul.scrollHeight; }");
+    await page.locator("#file-list").evaluate((ul) => {
+      ul.scrollTop = ul.scrollHeight;
+    });
     const row = await page.locator("#file-list > li").last().boundingBox();
     const panel = await page.locator(".column > .actions").boundingBox();
     expect(row && panel && row.y + row.height <= panel.y, label).toBe(true);
