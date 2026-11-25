@@ -16,8 +16,10 @@ const TYPES =
   '<Types xmlns="x"><Override PartName="/ppt/presentation.xml" ContentType="application/vnd.openxmlformats-officedocument.presentationml.presentation.main+xml"/></Types>';
 const rels = (...rel: string[]) => `<?xml version="1.0"?><Relationships xmlns="x">${rel.join("")}</Relationships>`;
 const internal = '<Relationship Id="rId1" Type="http://x/slide" Target="slides/slide1.xml"/>';
-const link = (extra = 'TargetMode="External"') =>
-  `<Relationship Id="rId2" Type="http://x/hyperlink" Target="https://example.com/a" ${extra}/>`;
+const REL = "http://schemas.openxmlformats.org/officeDocument/2006/relationships";
+const external = (type: string, extra = 'TargetMode="External"') =>
+  `<Relationship Id="rId2" Type="${type}" Target="https://example.com/a" ${extra}/>`;
+const link = (extra?: string) => external(`${REL}/hyperlink`, extra);
 const NAMES = ["[Content_Types].xml", "ppt/presentation.xml", "_rels/.rels"];
 
 describe("DROP-14 external: relationships", () => {
@@ -25,16 +27,36 @@ describe("DROP-14 external: relationships", () => {
     expect(checkOoxml(NAMES, TYPES, [rels(internal)])).toEqual({ ok: true });
   });
 
-  it("refuses an external relationship in any rels part", () => {
-    const verdict = checkOoxml(NAMES, TYPES, [rels(internal), rels(link())]);
-    expect(verdict).toMatchObject({ ok: false, error: "bad_structure", reason: "external relationship" });
+  it("allows an external hyperlink, in either namespace", () => {
+    const strict = external("http://purl.oclc.org/ooxml/officeDocument/relationships/hyperlink");
+    expect(checkOoxml(NAMES, TYPES, [rels(internal, link()), rels(strict)])).toEqual({ ok: true });
+  });
+
+  it.each(["oleObject", "attachedTemplate", "frame", "image", "audio", "video", "package", "externalLinkPath"])(
+    "refuses an external %s relationship in any rels part",
+    (kind) => {
+      const verdict = checkOoxml(NAMES, TYPES, [rels(internal, link()), rels(external(`${REL}/${kind}`))]);
+      expect(verdict).toMatchObject({ ok: false, error: "bad_structure", reason: "external relationship" });
+    },
+  );
+
+  it("refuses an external relationship of an unknown or look-alike type", () => {
+    for (const type of ["http://x/t", "", "http://evil.example/relationships/hyperlink", `${REL}/hyperlinks`]) {
+      expect(checkOoxml(NAMES, TYPES, [rels(external(type))])).toMatchObject({ ok: false });
+    }
+  });
+
+  it("refuses an external relationship whose mode is written in another form", () => {
+    expect(checkOoxml(NAMES, TYPES, [rels(external(`${REL}/oleObject`, "TargetMode = 'External'"))])).toMatchObject({
+      ok: false,
+    });
   });
 
   it.each(["TargetMode = 'External'", 'targetmode="external"', 'TargetMode="External"'])(
     "reads the form %s",
     (mode) => {
       expect(externalRelationships(rels(link(mode)))).toEqual([
-        { type: "http://x/hyperlink", target: "https://example.com/a" },
+        { type: `${REL}/hyperlink`, target: "https://example.com/a" },
       ]);
     },
   );
