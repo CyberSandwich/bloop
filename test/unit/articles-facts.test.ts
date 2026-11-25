@@ -105,8 +105,10 @@ describe("Data and Retention states the periods the Worker runs and the threat m
   it("failed code attempts, request logs and email keep what the threat model and the notice say", () => {
     expect(text).toMatch(/Failed code attempts[^|]*\| [^|]*\| 10 minutes/);
     expect(threatModel).toContain("| failed-lookup counters | Directory DO | 10 min |");
-    expect(text).toContain("At most 7 days, with no personal data");
-    expect(threatModel).toMatch(/\| Worker logs \| Cloudflare \| [^|]*at most 7 days, no personal data \|/);
+    expect(text).toContain(
+      "Off on the live site. If they are turned on, they record each request's details, including your IP address",
+    );
+    expect(threatModel).toMatch(/\| Worker logs \| Cloudflare \| [^|]*including the IP address, at most 7 days \|/);
     expect(text).toContain("2 years after the last message in a thread");
     expect(privacy).toContain("2 years after the last message in a thread");
   });

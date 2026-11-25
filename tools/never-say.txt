@@ -8,3 +8,5 @@ can't open your files anymore
 cancelled
 seamless
 effortless
+# An IP address is personal data, so this is almost never true of a web service; name what is and is not kept.
+no personal data

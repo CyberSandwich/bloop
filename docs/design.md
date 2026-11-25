@@ -54,7 +54,7 @@ bloop puts your slides on a shared screen. You scan the code on the screen, choo
 |---|---|
 | your slides, your file, the screen, the room PC, scan, choose, Approve, End, one file, ends by itself `[V-2]`, early access, demo | the phrases in `tools/never-say.txt`, the house banned words (`references/ai-tells.md`), ephemeral, pilot, university-approved, single sign-on, AI, platform, room features, remote, polls, secure (as a bare adjective), buy now, subscribe, any price |
 
-`tools/never-say.txt` holds bloop's never-say phrases, one per line; the build greps every page and string file against it and fails on a hit.
+`tools/never-say.txt` holds bloop's never-say phrases, one per line (a `#` line is a comment saying why); among them "no personal data", since an IP address is personal data and a page must name what is and is not kept instead; the unit tests grep every page and string file against it and fails on a hit.
 
 ### Strings (one per slot)
 

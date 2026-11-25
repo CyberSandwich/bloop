@@ -45,7 +45,7 @@ Caption: What bloop collects, where it comes from, and its status
 | --- | --- | --- |
 | A Guest File (its bytes, name, type and size) | the person who sends it | Live |
 | A record of each Session: which Item, on which Screen, when, and how it ended | bloop's own records of what you do | Live |
-| A keyed hash of your IP address, used to stop abuse (bloop never stores the address itself) | your browser's connection | Live |
+| A keyed hash of your IP address, used to stop abuse (bloop does not store the address itself, except in Cloudflare's request logs if they are turned on: [section 5](#retention)) | your browser's connection | Live |
 | Usage counts with no names or file names | bloop's own records | Live |
 | Emails you send to <{{email}}>, and bloop's replies | you | Live |
 | Waitlist answers: your role, where you would use bloop, your organization, what you would like next, your timing and your email, plus the page you came from | you, through the Tally form | Live |
@@ -101,7 +101,7 @@ Caption: How long bloop keeps each kind of data
 | Phone sign-in (Planned) | 30 days unused, 90 days at most |
 | Your account record (Planned) | While you have OneDrive access or a phone sign-in, then 30 days |
 | Guest passes (Planned) | 24 hours |
-| Cloudflare's request logs | At most 7 days, with no personal data |
+| Cloudflare's request logs | Off on the live site. If they are turned on, they record each request's details, including your IP address, and keep them at most 7 days |
 | Waitlist answers | Until you ask bloop to delete them, or the waitlist closes |
 | Emails to <{{email}}> | 2 years after the last message in a thread |
 
@@ -115,7 +115,7 @@ Caption: The processors, what each does, the data it handles and where
 
 | Processor | What it does | Data | Where |
 | --- | --- | --- | --- |
-| Cloudflare, Inc. (US) | Hosting, database, file storage, network, DNS | Everything in section 3 except waitlist answers and email | Stored in Cloudflare's EU jurisdiction; each request is handled at the nearest Cloudflare data center |
+| Cloudflare, Inc. (US) | Hosting, database, file storage, network, DNS | Everything in section 3 except waitlist answers and email, and its request logs if they are turned on | Stored in Cloudflare's EU jurisdiction; each request is handled at the nearest Cloudflare data center |
 | Tally BV (Belgium) | The waitlist form | Waitlist answers | EU; Tally uses its own subprocessors, some in the US |
 | Apple (iCloud Mail) | The mailbox behind <{{email}}> | Emails you send and bloop's replies | Apple's data centers, in the US and elsewhere |
 

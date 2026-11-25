@@ -16,6 +16,7 @@ import {
   staleFiles,
   usDate,
 } from "../../tools/build-pages.mjs";
+import { NEVER_SAY } from "./never-say.ts";
 
 const ROOT = fileURLToPath(new URL("../../", import.meta.url));
 const read = (rel: string) => readFileSync(`${ROOT}${rel}`, "utf8");
@@ -241,11 +242,7 @@ describe("sitemap.xml and robots.txt", () => {
     }
     // House copy rules hold here too: US English with no dashes, and nothing from the never-say list.
     expect(llms).not.toMatch(/[–—]/);
-    for (const phrase of read("tools/never-say.txt")
-      .split("\n")
-      .map((l) => l.trim().toLowerCase())
-      .filter(Boolean))
-      expect(llms.toLowerCase(), phrase).not.toContain(phrase);
+    for (const phrase of NEVER_SAY) expect(llms.toLowerCase(), phrase).not.toContain(phrase);
     // A convention file, not a page: no robots or sitemap entry.
     expect(built.get("public/robots.txt")).not.toContain("llms");
     expect(sitemap).not.toContain("llms");
