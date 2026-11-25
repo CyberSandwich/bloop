@@ -7,7 +7,15 @@
 import { readFileSync } from "node:fs";
 import { crc32, deflateSync } from "node:zlib";
 import AxeBuilder from "@axe-core/playwright";
-import { type Browser, type BrowserContext, expect, type Locator, type Page, test } from "@playwright/test";
+import { type Browser, type BrowserContext, expect, type Locator, type Page, type Route, test } from "@playwright/test";
+
+const SHOT_SIZES = [
+  ["320", { width: 320, height: 640 }],
+  ["390", { width: 390, height: 844 }],
+  ["430", { width: 430, height: 932 }],
+  ["844x390", { width: 844, height: 390 }],
+  ["1440", { width: 1440, height: 900 }],
+] as const;
 
 /** The item on the stage: a page's picture, the photo's canvas or a video (never the loader's thumbnail). */
 const STAGED = "#frame :is(picture img, canvas, video)";
@@ -1351,6 +1359,20 @@ test.describe("a guest's photo and video on the screen (design.md section 7, Vid
     await expect(tap).toBeHidden();
     await expect(line).toBeHidden();
     await expect(sound).toHaveAttribute("aria-pressed", "true");
+    await screen.context.close();
+    await phone.context.close();
+  });
+
+  test("SHOTS the screen's video with Tap for Sound", async ({ browser }) => {
+    const { screen, phone, page } = await openAsGuest(browser, "Talk.mp4", CLIP, false, false, holdSound);
+    await expect(page.getByRole("button", { name: "Tap for Sound" })).toBeVisible({ timeout: 15_000 });
+    for (const [name, size] of SHOT_SIZES) {
+      await page.setViewportSize(size);
+      await page.waitForTimeout(600);
+      await page.screenshot({ path: `test-results/shots/s-video-tap-${name}.png` });
+    }
+    await phone.page.waitForTimeout(600);
+    await phone.page.screenshot({ path: "test-results/shots/a-video-remote-blocked-390.png", fullPage: true });
     await screen.context.close();
     await phone.context.close();
   });
@@ -2953,5 +2975,70 @@ test.describe("the phone page at phone widths (design.md section 7, Phone page)"
     await expect(toast(phone.page).getByRole("button", { name: "Reload" })).toBeVisible();
     await screen.context.close();
     await phone.context.close();
+  });
+
+  test("SHOTS the phone's states and the screen's down states", async ({ browser }) => {
+    const shoot = async (page: Page, name: string) => {
+      for (const [size, viewport] of SHOT_SIZES) {
+        await page.setViewportSize(viewport);
+        await page.waitForTimeout(500);
+        await page.screenshot({ path: `test-results/shots/${name}-${size}.png` });
+      }
+    };
+    const screen = await demoScreen(browser);
+    const code = await typedCodeOf(screen.page);
+    const phone = await open(browser, "phone", `/a?c=${code}`);
+    const page = phone.page;
+    await expect(page.getByRole("button", { name: /^Approve/ })).toBeEnabled();
+    await addFile(page, {
+      name: "Week 7 lecture recording final cut.png",
+      mimeType: "image/png",
+      buffer: png(300, 200),
+    });
+    await expect(heading(page)).toHaveText(/^Send Week 7/);
+    await shoot(page, "a-offer");
+    await page.getByRole("button", { name: "Cancel" }).click();
+    await page.getByRole("button", { name: /^Approve/ }).click();
+    await expect(page.locator(".preview")).toBeVisible();
+    await shoot(page, "a-approved");
+    await page.route("**/api/session/length", (route) => route.abort());
+    for (const [size, viewport] of SHOT_SIZES) {
+      await page.setViewportSize(viewport);
+      await page.locator("#ends").click();
+      const sheet = page.getByRole("dialog", { name: "Session Expiry" });
+      await page.waitForTimeout(500);
+      await page.screenshot({ path: `test-results/shots/a-sheet-${size}.png` });
+      await sheet.getByRole("button", { name: "30 minutes" }).click();
+      await expect(page.locator(".toast:not(.out)")).toHaveCSS("opacity", "1");
+      await page.screenshot({ path: `test-results/shots/a-toast-${size}.png` });
+    }
+
+    const down = await browser.newContext({ viewport: PHONE, hasTouch: true, isMobile: true, deviceScaleFactor: 3 });
+    await down.route("**/api/claim", (route) =>
+      route.fulfill({ status: 500, contentType: "application/json", body: '{"code":"internal"}' }),
+    );
+    const downPage = await down.newPage();
+    await downPage.goto(`/a?c=${await typedCodeOf(screen.page)}`);
+    await expect(heading(downPage)).toHaveText("bloop Isn't Responding");
+    await shoot(downPage, "a-service-down");
+
+    for (const [name, fail] of [
+      [
+        "s-service-down",
+        (r: Route) => r.fulfill({ status: 500, contentType: "application/json", body: '{"code":"internal"}' }),
+      ],
+      ["s-offline", (r: Route) => r.abort()],
+    ] as const) {
+      const s = await browser.newContext({ viewport: SCREEN });
+      await s.route("**/api/screens", fail);
+      const sp = await s.newPage();
+      await sp.goto("/s?mode=demo");
+      await expect(heading(sp)).toHaveText(name === "s-offline" ? "Offline" : "bloop Isn't Responding");
+      await shoot(sp, name);
+      await s.close();
+    }
+    await down.close();
+    await phone.context.close();
+    await screen.context.close();
   });
 });
