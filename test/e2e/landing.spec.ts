@@ -50,7 +50,7 @@ for (const vp of VIEWPORTS) {
       expect((await page.content()).toLowerCase()).not.toContain("robin");
     });
 
-    test("every feature card opens on a still warm band, its glyph on a glass tile in line with the title", async ({
+    test("every feature card opens on a still warm band, its glyph on a glass tile centered in it", async ({
       page,
     }) => {
       await page.goto("/");
@@ -68,8 +68,12 @@ for (const vp of VIEWPORTS) {
           corners: [style.borderTopLeftRadius, style.borderBottomLeftRadius],
           // The glyph box, before the house optical scale (--glyph) draws it smaller, as every icon is sized.
           tile: [Math.round(t.width), Math.round(t.height), getComputedStyle(svg).width],
-          column: Math.round(t.left - h.left),
-          centered: Math.round(t.top + t.height / 2 - (b.top + b.height / 2)),
+          // The tile's center within 1 px of the band's, across and down.
+          centered: [t.left + t.width / 2 - (b.left + b.width / 2), t.top + t.height / 2 - (b.top + b.height / 2)].map(
+            (d) => Math.abs(d) <= 1,
+          ),
+          // The title and body stay left, at the card's text inset.
+          text: Math.round(h.left - c.left),
           still: before.animationName,
           backdrop: before.backgroundImage.includes("radial-gradient"),
         };
@@ -82,8 +86,8 @@ for (const vp of VIEWPORTS) {
           flush: [0, 0, 0],
           corners: ["24px", "0px"],
           tile: [56, 56, "28px"],
-          column: 0,
-          centered: 0,
+          centered: [true, true],
+          text: 24,
           still: "none",
           backdrop: true,
         });

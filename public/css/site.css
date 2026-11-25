@@ -742,6 +742,7 @@ h3 {
 .band {
   display: flex;
   align-items: center;
+  justify-content: center;
   height: 96px;
   margin: -24px -24px 0;
   padding-inline: 24px;
