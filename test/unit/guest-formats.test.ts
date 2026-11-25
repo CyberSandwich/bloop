@@ -10,7 +10,7 @@ import {
   relationships,
 } from "../../src/worker/seams/guest-drop/formats.ts";
 import { validate } from "../../src/worker/seams/guest-drop/validate.ts";
-import { reader, validDeck } from "../zip-builder.ts";
+import { type BuiltEntry, reader, validDeck } from "../zip-builder.ts";
 
 const enc = new TextEncoder();
 const bytes = (...parts: (string | number[])[]) =>
@@ -248,6 +248,45 @@ describe("DROP-14 external: macro-enabled packages", () => {
       const utf16 = Uint8Array.from([0xff, 0xfe, ...[...rels(internal)].flatMap((c) => [c.charCodeAt(0), 0])]);
       const entry = { name: "ppt/_rels/presentation.xml.rels", data: utf16, method: 8 as const };
       expect(await validate(reader(validDeck([entry])), "pptx")).toEqual({ ok: false, error: "bad_structure" });
+    });
+
+    const relsEntry = (name: string, data: string, declared?: number): BuiltEntry => ({
+      name,
+      data,
+      method: 8,
+      ...(declared === undefined ? {} : { declaredUncompressed: declared }),
+    });
+
+    it("measures the relationships it inflates, not the size the archive declares", async () => {
+      const padded = `<Relationships/>${" ".repeat(256 * 1024 - 16)}`;
+      const lying = Array.from({ length: 100 }, (_, i) => relsEntry(`x/_rels/a${i}.rels`, padded, 0));
+      expect(await validate(reader(validDeck(lying)), "pptx")).toEqual({ ok: false, error: "bad_structure" });
+    });
+
+    it("refuses a deck with more than 1024 relationships parts", async () => {
+      const part = (i: number) => relsEntry(`x/_rels/a${i}.rels`, "<Relationships/>", 0);
+      const ok = Array.from({ length: 1024 }, (_, i) => part(i));
+      expect(await validate(reader(validDeck(ok)), "pptx")).toEqual({ ok: true, type: "pptx" });
+      expect(await validate(reader(validDeck([...ok, part(1024)])), "pptx")).toEqual({
+        ok: false,
+        error: "bad_structure",
+      });
+    });
+
+    it("answers macro_content for a macro deck even when its relationships cannot be read", async () => {
+      const utf16 = { name: "ppt/_rels/p.xml.rels", data: Uint8Array.from([0xff, 0xfe, 0x3c, 0]), method: 8 as const };
+      const entries = [relsEntry("ppt/vbaProject.bin", "x"), utf16];
+      expect(await validate(reader(validDeck(entries)), "pptx")).toEqual({ ok: false, error: "macro_content" });
+    });
+
+    it("refuses two parts of one name, whose reader would pick either", async () => {
+      const clean = relsEntry("_rels/.rels", rels(internal));
+      const evil = relsEntry("_rels/.rels", rels(`<Relationship Type="${REL}/oleObject" Target="x"/>`));
+      expect(await validate(reader(validDeck([clean, evil])), "pptx")).toEqual({ ok: false, error: "bad_structure" });
+      expect(await validate(reader(validDeck([clean, { ...clean, name: "_RELS/.RELS" }])), "pptx")).toEqual({
+        ok: false,
+        error: "bad_structure",
+      });
     });
 
     it("refuses a part name that hides a relationships part behind a backslash or a percent sign", async () => {
