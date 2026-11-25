@@ -15,3 +15,11 @@ too many screens
 your files leave the screen
 # An IP address is personal data, so this is almost never true of a web service; name what is and is not kept.
 no personal data
+# bloop is in early access; "beta" promises a product stage the pages do not.
+beta
+# A promise of speed the PC, the network and a conversion cannot all keep; also catches "instantly".
+instant
+# The OSA classification rests on bloop not being storage or file sharing, so never market it as either.
+file sharing
+file-sharing
+cloud storage
