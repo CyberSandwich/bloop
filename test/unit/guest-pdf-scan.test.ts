@@ -171,8 +171,8 @@ describe("DROP-13 pdf-active: hostile input", () => {
     expect(performance.now() - t).toBeLessThan(500);
   });
 
-  it("refuses a file over the size the caller must enforce", async () => {
+  it("answers a file over the in-memory cap with needs_stream_scan, not ok", async () => {
     const huge = new Uint8Array(MAX_PDF_BYTES + 1);
-    expect(await scanPdf(huge)).toMatchObject({ ok: false, error: "too_large" });
+    expect(await scanPdf(huge)).toEqual({ ok: false, error: "too_large", reason: "needs_stream_scan" });
   });
 });
