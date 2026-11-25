@@ -106,6 +106,8 @@ const KEYS = /** @type {Record<string, number>} */ ({
   ArrowUp: -1,
   PageUp: -1,
 });
+/** Home and End: the first and the last page (`go` clamps the far one). */
+const EDGES = /** @type {Record<string, number>} */ ({ Home: 0, End: Number.MAX_SAFE_INTEGER });
 
 /**
  * @param {{relink: (item: number) => Promise<Minted>, onChange: () => void, tapped?: () => void, busy?: () => boolean}} deps
@@ -721,14 +723,29 @@ export function createViewer(deps) {
   });
   prev.addEventListener("click", () => go(-1));
   next.addEventListener("click", () => go(1));
+  /** First or last page, reported to the phone as a tap here is. */
+  function jump(/** @type {number} */ to) {
+    const was = page;
+    go(0, to);
+    if (page !== was) deps.tapped?.();
+  }
   document.addEventListener("keydown", (e) => {
     if (e.key === "Escape") ask(false);
-    const step = KEYS[e.key];
     const t = e.target;
-    if (!shown || parked || !step || e.altKey || e.ctrlKey || e.metaKey || !pages()) return;
-    if (t instanceof Element && (side.contains(t) || t.matches("input, textarea"))) return;
+    const typing = t instanceof Element && (side.contains(t) || t.matches("input, textarea"));
+    const plain = !e.altKey && !e.ctrlKey && !e.metaKey;
+    // A clicker's play button sends F5, which would reload the page mid-talk: it starts Present instead.
+    if (e.key === "F5" && shown && !parked && plain) {
+      e.preventDefault();
+      if (!e.repeat && !typing && !presenting() && can()) ask(true);
+      return;
+    }
+    const step = KEYS[e.key];
+    const edge = EDGES[e.key];
+    if (!shown || parked || (!step && edge === undefined) || !plain || !pages() || typing) return;
     e.preventDefault();
-    go(step);
+    if (edge === undefined) go(step ?? 0);
+    else jump(edge);
   });
 
   return {
