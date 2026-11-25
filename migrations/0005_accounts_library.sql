@@ -107,7 +107,8 @@ CREATE TABLE IF NOT EXISTS library_file (
   created_at INTEGER NOT NULL, updated_at INTEGER NOT NULL,
   last_presented_at INTEGER, selected_at INTEGER,
   trashed_at INTEGER, purge_after INTEGER,
-  disabled_at INTEGER, disabled_reason TEXT);
+  disabled_at INTEGER, disabled_reason TEXT,
+  crc32 INTEGER);                                        -- CRC-32 of the stored original, written when the upload settles
 -- Serves the files view (trashed_at IS NULL) and the trash view (IS NOT NULL) sorted by updated_at, the row count, and
 -- the FK cascade. Name and size sorts read the same user prefix, which LIBRARY_MAX_FILES bounds, and sort in memory.
 CREATE INDEX IF NOT EXISTS idx_lib_user ON library_file(user_id, trashed_at, updated_at);
@@ -127,12 +128,15 @@ CREATE TABLE IF NOT EXISTS upload (
   part_bytes INTEGER NOT NULL, parts INTEGER NOT NULL,
   fingerprint TEXT NOT NULL,                             -- client SHA-256 over name, size and sampled bytes: the resume key
   created_at INTEGER NOT NULL, expires_at INTEGER NOT NULL,
+  mints INTEGER NOT NULL DEFAULT 0,                       -- part URLs minted, bounded per upload
+  idem_key TEXT,                                         -- SHA-256 of the Idempotency-Key (src/worker/idem.ts)
   completing_at INTEGER, completed_at INTEGER, aborted_at INTEGER);
 -- Full, not partial, so the FK cascade from app_user can use it; resume, the reconcile and the open-upload count add
 -- the IS NULL tests.
 CREATE INDEX IF NOT EXISTS idx_upload_user ON upload(user_id, fingerprint);
 CREATE INDEX IF NOT EXISTS idx_upload_session ON upload(session_id, fingerprint) WHERE session_id IS NOT NULL;
 CREATE INDEX IF NOT EXISTS idx_upload_open ON upload(expires_at) WHERE completed_at IS NULL AND aborted_at IS NULL;
+CREATE UNIQUE INDEX IF NOT EXISTS idx_upload_idem ON upload(COALESCE(user_id, session_id), idem_key) WHERE idem_key IS NOT NULL;
 CREATE INDEX IF NOT EXISTS idx_upload_closed ON upload(COALESCE(completed_at, aborted_at))
   WHERE completed_at IS NOT NULL OR aborted_at IS NOT NULL;
 
@@ -176,10 +180,15 @@ CREATE INDEX IF NOT EXISTS idx_admin_at ON admin_action(at);           -- retent
 -- NCA hold copies: 1 year, outside every lifecycle and every user purge. No FKs, so erasing the owner or the file
 -- leaves the hold. r2_key is the copy's own key (h/<id>), never the user's prefix.
 CREATE TABLE IF NOT EXISTS hold (
-  id TEXT PRIMARY KEY, file_id TEXT NOT NULL, owner_user_id TEXT, r2_key TEXT NOT NULL, sha256 TEXT,
+  id TEXT PRIMARY KEY, file_id TEXT NOT NULL, owner_user_id TEXT, bucket TEXT NOT NULL, r2_key TEXT NOT NULL, sha256 TEXT,
   report_id TEXT, created_at INTEGER NOT NULL, release_after INTEGER NOT NULL);
 CREATE INDEX IF NOT EXISTS idx_hold_file ON hold(file_id);
 CREATE INDEX IF NOT EXISTS idx_hold_release ON hold(release_after);
+
+-- Addresses that may never sign in again: a closed or banned account. Outside every purge path, so it outlives the
+-- account. Plain email_norm, like app_user and invite (ADR 0013), not a hash.
+CREATE TABLE IF NOT EXISTS email_block (
+  email_norm TEXT PRIMARY KEY, reason TEXT NOT NULL, created_at INTEGER NOT NULL);
 
 -- Runtime settings changed only from /admin (ADR 0026). Keys: launch_mode (preview | open), preview_lockout ('1' while
 -- set), and gate.ico, gate.osa, gate.legal ('1' when ticked). No row is seeded: a missing launch_mode reads as preview,

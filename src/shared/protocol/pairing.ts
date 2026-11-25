@@ -52,6 +52,13 @@ export interface Shown {
   // phone's command built on that view carries it on.
   play?: boolean | undefined;
   sound?: Sound | undefined;
+  /** Live decks only: who asked for the launch. `app` runs today's launch ladder for the item (plan P1). */
+  via?: "viewer" | "app" | undefined;
+}
+/** A library upload in progress, as the screen shows it (`upload.progress`; wave 2 fills it). */
+export interface UploadView {
+  bytes: number;
+  total: number;
 }
 export type Sound = "on" | "off" | "blocked";
 
@@ -79,6 +86,9 @@ export interface ScreenView {
   openMode: OpenMode | null;
   endsAt: number | null;
   endReason: EndReason | null;
+  /** Wave 2 fills these: the upload in progress, and LARGE_FILE_CHOICE_BYTES for the choice sheet. */
+  upload?: UploadView | null | undefined;
+  choiceBytes?: number | undefined;
   /** The last `control` seq applied from this screen (0 before any). */
   seq: number;
   /** Applied changes so far: of two views, the one with the larger `v` is the newer; equal ones are one state. */
@@ -92,6 +102,9 @@ export interface PhoneView {
   kind: Kind;
   room: RoomView;
   match: string;
+  /** Live and unconfirmed only: the three shuffled two-digit choices; the phone never holds the real match then (ADR 0015). */
+  choices?: string[] | null | undefined;
+  confirmed?: boolean | undefined;
   items: Item[]; // as in ScreenView
   shown: Shown | null; // as in ScreenView
   openMode: OpenMode | null;
@@ -152,6 +165,7 @@ export interface ClaimResponse {
   kind: Kind;
   needsAuth: boolean;
   dropMaxBytes: number;
+  choices?: string[] | null | undefined;
 }
 /** A row of the phone's list (`GET /api/files` answers `{items: Entry[]}`); approve names entries by id. */
 export interface FileEntry extends Omit<FileItem, "id"> {

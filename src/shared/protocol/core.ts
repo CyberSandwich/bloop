@@ -5,6 +5,23 @@ import type { LibraryError } from "./library.ts";
 export type Mode = "live" | "demo";
 export type Kind = "owner" | "guest";
 export type FileType = "pptx" | "pdf" | "jpg" | "png" | "mp4" | "mov";
+/**
+ * The formats the upload stream adds. They join `FileType` together with their entries in `CONTENT_TYPES` and
+ * `formats.ts`, so no type is accepted before the type that serves it is fixed.
+ */
+export type PlannedFileType =
+  | "ppt"
+  | "doc"
+  | "xls"
+  | "docx"
+  | "xlsx"
+  | "gif"
+  | "webp"
+  | "heic"
+  | "webm"
+  | "txt"
+  | "md"
+  | "csv";
 /** `view` is a photo or video shown in the screen page; `pdf` a PDF file's own view or a deck's rendition. */
 export const OPEN_MODES = ["protocol", "download", "pdf", "view"] as const;
 export type OpenMode = (typeof OPEN_MODES)[number];

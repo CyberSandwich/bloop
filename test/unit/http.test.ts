@@ -75,6 +75,19 @@ describe("http helpers", () => {
     expect(await r.json()).toEqual({ type: "about:blank", status: 410, code: "code_expired" });
   });
 
+  it("REL-03 retry: a 429 and a 503 carry Retry-After in whole seconds, a caller's figure rounded up", () => {
+    expect(fail("rate_limited").headers.get("Retry-After")).toBe("10");
+    expect(fail("rate_limited", undefined, 2.2).headers.get("Retry-After")).toBe("3");
+    expect(fail("service_busy").status).toBe(503);
+    expect(fail("service_busy", undefined, 30).headers.get("Retry-After")).toBe("30");
+    expect(fail("service_busy", undefined, 0).headers.get("Retry-After")).toBe("1");
+  });
+
+  it("REL-03 retry: no other status carries Retry-After", () => {
+    expect(fail("code_expired").headers.has("Retry-After")).toBe(false);
+    expect(fail("internal").headers.has("Retry-After")).toBe(false);
+  });
+
   it("bearer reads only a Bearer header", () => {
     const req = (auth?: string) => new Request(ORIGIN, auth ? { headers: { Authorization: auth } } : {});
     expect(bearer(req("Bearer abc"))).toBe("abc");

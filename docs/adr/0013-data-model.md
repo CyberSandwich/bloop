@@ -58,6 +58,10 @@ Runs from the cron for each user whose `delete_after` has passed. Idempotent and
 - **`derived` has no FK.** Its `file_id` names a library file or a guest file, so a purge deletes its rows explicitly.
 - **Moderation and the log outlive their subjects.** `report`, `admin_action` and `hold` have no FK to users or files. A `hold` copy lives under its own R2 prefix (`h/<id>`), never the user's, so an account purge cannot reach it (OSA-02). `admin_action.admin_user_id` survives the admin's own deletion (OSA-05). An `admin_action` row is inserted with the same WHERE predicate as the write it records, so a refused write logs nothing.
 - **Sessions** gain `public_id` (128-bit, unique): the only session identifier that leaves D1 (the sessions list, revocation, UserLibrary's screen records). `id_hash` never does.
+- **`email_block (email_norm, reason, created_at)`** holds the address of a closed or banned account. It has no FK and no purge path, so it outlives the account; it stores the plain normalized address like `app_user` and `invite`. Restore and invite create refuse a blocked address.
+- **Closing an account** (admin) blocks the address, clears `suspended_at` and sets `status = 'deleting'`. The purge claim requires `suspended_at IS NULL` and no live `hold` for the user's files.
+- **A library file is never replaced in place:** replacing means delete, then upload. `library_file.version` exists for a conversion, not for a new original.
+- **Columns the streams rely on:** `upload.mints` (part URLs minted), `upload.idem_key` with `idx_upload_idem` (the storage adapter of `src/worker/idem.ts`), `library_file.crc32` (written at settle), `hold.bucket` (which bucket the copy came from; the hold row is written before the copy).
 - **Settings.** `setting (key, value, updated_at, updated_by)`; ADR 0026 owns the keys. No row is seeded: a missing `launch_mode` reads as `preview`, which keeps one owner (the code default) and fails closed.
 - **`guest_file` is rebuilt without its type CHECK**, by the 0003 pattern, and 0004's two `guest_file` indexes are recreated after the rebuild (a rebuild drops them). The two must stay identical to 0004's.
 
