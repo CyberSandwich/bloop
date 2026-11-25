@@ -7,7 +7,7 @@
 import { readFileSync } from "node:fs";
 import { crc32, deflateSync } from "node:zlib";
 import AxeBuilder from "@axe-core/playwright";
-import { type Browser, type BrowserContext, expect, type Locator, type Page, test } from "@playwright/test";
+import { type Browser, type BrowserContext, expect, type Locator, type Page, type Route, test } from "@playwright/test";
 
 /** The item on the stage: a page's picture, the photo's canvas or a video (never the loader's thumbnail). */
 const STAGED = "#frame :is(picture img, canvas, video)";
@@ -59,12 +59,19 @@ interface Opened {
   csp: string[];
 }
 
-async function open(browser: Browser, kind: "screen" | "phone", path: string): Promise<Opened> {
+/** `prep` runs before the first load: a route, or an init script. */
+async function open(
+  browser: Browser,
+  kind: "screen" | "phone",
+  path: string,
+  prep?: (context: BrowserContext) => Promise<unknown>,
+): Promise<Opened> {
   const context = await browser.newContext(
     kind === "screen"
       ? { viewport: SCREEN }
       : { viewport: PHONE, hasTouch: true, isMobile: true, deviceScaleFactor: 3 },
   );
+  await prep?.(context);
   const page = await context.newPage();
   const csp: string[] = [];
   page.on("console", (m) => {
@@ -75,11 +82,23 @@ async function open(browser: Browser, kind: "screen" | "phone", path: string): P
 }
 
 const heading = (page: Page) => page.getByRole("heading", { level: 1 });
-const demoScreen = (browser: Browser) => open(browser, "screen", "/s?mode=demo");
+/** No toast now, read once: a retrying toHaveCount(0) passes once a toast leaves by itself (5 s). */
+const expectNoToast = async (page: Page) =>
+  expect(await page.locator(".toast:not(.out)").count(), "a toast is up").toBe(0);
+type Prep = Parameters<typeof open>[3];
+const demoScreen = (browser: Browser, prep?: Prep) => open(browser, "screen", "/s?mode=demo", prep);
 /** A live screen on the mock source: the lectern path, which launches PowerPoint (ADR 0003). */
-const liveScreen = (browser: Browser) => open(browser, "screen", "/s");
-const DEMO = { room: "Demo Room", title: "Demo Room" };
-const LIVE = { room: "Unregistered screen", title: "Unregistered screen" };
+const liveScreen = (browser: Browser, prep?: Prep) => open(browser, "screen", "/s", prep);
+const DEMO: { room: string; title: string | RegExp } = { room: "Demo Room", title: "Demo Room" };
+/** An unregistered room has no name: no heading on the screen, the match number as the phone's title. */
+const LIVE = { room: "", title: /^\d{2}$/ };
+
+/** Taps Add a File, which opens the native picker at once, and answers the browser's file chooser. */
+async function addFile(page: Page, file: string | { name: string; mimeType: string; buffer: Buffer }) {
+  const chooser = page.waitForEvent("filechooser");
+  await page.getByRole("button", { name: "Add a File" }).click();
+  await (await chooser).setFiles(file);
+}
 /** The demo catalog as the viewer orders it: files by name, then links by title. */
 const CATALOG = ["Dog.jpg", "Sample deck.pdf", "Sample deck.pptx", "Vevox"];
 
@@ -95,7 +114,12 @@ async function scan(
   screen: Page,
   expected = DEMO,
 ): Promise<{ phone: Opened; code: string; match: string }> {
-  await expect(heading(screen)).toHaveText(expected.room);
+  // An unregistered room's screen has no heading at all, never an empty one.
+  if (expected.room) await expect(heading(screen)).toHaveText(expected.room);
+  else {
+    await expect(screen.locator("#qr")).toBeVisible();
+    await expect(screen.locator("h1:not([hidden])")).toHaveCount(0);
+  }
   const code = await typedCodeOf(screen);
   const phone = await open(browser, "phone", `/a?c=${code}`);
   await expect(heading(phone.page)).toHaveText(expected.title);
@@ -300,22 +324,25 @@ test.describe("pairing flow", () => {
     await phone.page.getByRole("button", { name: /Change the Session Expiry$/ }).click();
     const sheet = phone.page.getByRole("dialog", { name: "Session Expiry" });
     await expect(sheet).toBeVisible();
-    // Exactly three presets, in a second bubble stacked below the first (title, Close, the time and Set).
+    // Exactly three presets, one row under the title and time, in one glass pane.
     await expect(sheet.locator("[data-minutes]")).toHaveText(["30m", "1h", "2h"]);
-    expect(await sheet.locator(".pane").count()).toBe(2);
-    // Measured at rest, even from the entry animation's first frame (8 px low): the gap click below lands in the gap.
+    // Measured at rest, even from the entry animation's first frame (8 px low): the click above lands on the backdrop.
     await atStart(sheet);
     await atRest(sheet);
-    const top = await sheet.locator(".sheet-in").boundingBox();
-    const presets = await sheet.locator(".chips").boundingBox();
-    expect(top && presets && Math.round(presets.y - (top.y + top.height))).toBe(8);
+    const pane = await sheet.locator("form").boundingBox();
     await expect(sheet.getByLabel("Expires At")).toHaveValue(/^\d{2}:\d{2}$/);
-    // Focus lands on the title (announced, no ring), not on Close; the first Tab reaches Close.
+    // Focus lands on the title (announced, no ring), not on Close; Tab reaches the time, then Close.
     await expect(sheet.getByRole("heading", { name: "Session Expiry" })).toBeFocused();
     await phone.page.keyboard.press("Tab");
-    await expect(sheet.getByRole("button", { name: "Close" })).toBeFocused();
-    // A tap in the gap between the bubbles is the backdrop's: it closes with no change.
-    await phone.page.mouse.click((top?.x ?? 0) + (top?.width ?? 0) / 2, (top?.y ?? 0) + (top?.height ?? 0) + 4);
+    const time = sheet.getByLabel("Expires At");
+    await expect(time).toBeFocused();
+    // Chromium's time input takes a Tab per field (hours, minutes) before focus leaves it; nothing sits between.
+    const close = sheet.getByRole("button", { name: "Close" });
+    for (let i = 0; i < 6 && (await time.evaluate((n) => n === n.ownerDocument.activeElement)); i++)
+      await phone.page.keyboard.press("Tab");
+    await expect(close).toBeFocused();
+    // A tap above the pane is the backdrop's: it closes with no change.
+    await phone.page.mouse.click((pane?.x ?? 0) + (pane?.width ?? 0) / 2, (pane?.y ?? 0) - 12);
     await expect(sheet).toBeHidden();
     await phone.page.getByRole("button", { name: /Change the Session Expiry$/ }).click();
     await expect(sheet).toBeVisible();
@@ -351,21 +378,46 @@ test.describe("pairing flow", () => {
     return { screen, phone, lengthButton, sheet };
   }
 
-  test("SESS-01 at 320 wide the whole time and its icon show beside Set", async ({ browser }) => {
-    const { screen, phone, lengthButton, sheet } = await approvedDemo(browser);
-    await phone.page.setViewportSize({ width: 320, height: 640 });
-    await lengthButton.click();
-    await expect(sheet).toBeVisible();
-    const field = sheet.getByLabel("Expires At");
-    expect(await field.evaluate((el) => el.scrollWidth <= el.clientWidth)).toBe(true);
-    const [input, set] = await Promise.all([
-      field.boundingBox(),
-      sheet.getByRole("button", { name: "Set" }).boundingBox(),
-    ]);
-    expect(input && set && input.x + input.width <= set.x).toBe(true);
-    await screen.context.close();
-    await phone.context.close();
-  });
+  for (const width of [320, 390]) {
+    test(`SESS-01 at ${width} the sheet is a 2 x 2 grid: the card and Close, the presets and Set`, async ({
+      browser,
+    }) => {
+      const { screen, phone, lengthButton, sheet } = await approvedDemo(browser);
+      await phone.page.setViewportSize({ width, height: 640 });
+      await lengthButton.click();
+      await expect(sheet).toBeVisible();
+      // Measured at rest: the pane's entry animation moves every box until it ends.
+      await sheet
+        .locator("form")
+        .evaluate((f) => Promise.all(f.getAnimations().map((a: { finished: Promise<unknown> }) => a.finished)));
+      const field = sheet.getByLabel("Expires At");
+      // The whole time shows, and the input spans its row of the card.
+      expect(await field.evaluate((el) => el.scrollWidth <= el.clientWidth)).toBe(true);
+      const card = sheet.locator(".sheet-card");
+      const inner = await card.evaluate((n) => n.clientWidth);
+      expect(Math.round((await field.boundingBox())?.width ?? 0)).toBe(Math.round(inner));
+      // The presets share one row.
+      const tops = new Set<number>();
+      for (const chip of await sheet.locator("[data-minutes]").all())
+        tops.add(Math.round((await chip.boundingBox())?.y ?? -1));
+      expect(tops.size).toBe(1);
+      // Close spans the card's height; Set is Close's width.
+      const [c, x, set] = await Promise.all([
+        card.boundingBox(),
+        sheet.getByRole("button", { name: "Close" }).boundingBox(),
+        sheet.getByRole("button", { name: "Set" }).boundingBox(),
+      ]);
+      expect(Math.round(x?.height ?? 0)).toBe(Math.round(c?.height ?? -1));
+      expect(Math.round(set?.width ?? 0)).toBe(Math.round(x?.width ?? -1));
+      expect((x?.width ?? 0) >= 44).toBe(true);
+      await expectNoAxeViolations(phone.page);
+      // Close closes with no change.
+      await sheet.getByRole("button", { name: "Close" }).click();
+      await expect(sheet).toBeHidden();
+      await screen.context.close();
+      await phone.context.close();
+    });
+  }
 
   test("SESS-01 a refused length is a toast over the running session: the countdown, Revoke and the sheet stay", async ({
     browser,
@@ -399,7 +451,7 @@ test.describe("pairing flow", () => {
     await phone.page.unroute("**/css/length.css");
     await lengthButton.click();
     await expect(sheet).toBeVisible();
-    await expect(sheet.locator(".chips")).toHaveCSS("border-radius", "34px");
+    await expect(sheet.locator(".chips")).toHaveCSS("border-radius", "26px");
     await sheet.getByRole("button", { name: "1 hour" }).click();
     await expect(sheet).toBeHidden();
     await screen.context.close();
@@ -434,19 +486,30 @@ test.describe("pairing flow", () => {
     await phone.context.close();
   });
 
-  test("SESS-01 a choice past the cap is cut to it, and a toast names the end it set", async ({ browser }) => {
+  test("SESS-01 a choice past the cap is cut to it with no toast: the countdown shows the end it set", async ({
+    browser,
+  }) => {
     const { screen, phone, lengthButton, sheet } = await approvedDemo(browser);
+    const countdown = phone.page.locator("#ends-text");
+    // The 2h preset, the demo's cap: cut to approval plus the cap.
+    await lengthButton.click();
+    await sheet.getByRole("button", { name: "2 hours" }).click();
+    await expect(sheet).toBeHidden();
+    await expect(countdown).toHaveText(/^Ends in 1:59:\d{2}$/);
+    // A typed time past the cap, cut the same way.
     await lengthButton.click();
     const later = await phone.page.evaluate(() => {
       const t = new Date(Date.now() + 3 * 3600_000);
       return `${String(t.getHours()).padStart(2, "0")}:${String(t.getMinutes()).padStart(2, "0")}`;
     });
     await sheet.getByLabel("Expires At").fill(later);
+    // Past the answer: a toast would be up by then, in the same task as the view.
+    const answered = phone.page.waitForResponse("**/api/session/length");
     await sheet.getByRole("button", { name: "Set" }).click();
-    await expect(phone.page.getByRole("status").filter({ hasText: /^Ends at \d{2}:\d{2}/ })).toContainText(
-      "That's the longest this session can run.",
-    );
-    await expect(phone.page.locator("#ends-text")).toHaveText(/^Ends in 1:59:\d{2}$/);
+    expect((await answered).ok()).toBe(true);
+    await expect(countdown).toHaveText(/^Ends in 1:59:\d{2}$/);
+    await phone.page.waitForTimeout(300);
+    await expectNoToast(phone.page);
     await screen.context.close();
     await phone.context.close();
   });
@@ -637,6 +700,15 @@ test.describe("pairing flow", () => {
 
     await revoke(phone.page);
     await expect(heading(phone.page)).toHaveText("Session Ended");
+    // A demo phone's end: the waitlist link on top, in the same tab, Done under it.
+    const join = phone.page.locator("#actions").getByRole("link", { name: "Join the Waitlist" });
+    await expect(join).toHaveAttribute("href", "https://tally.so/r/Yj4KAN?source=phone");
+    await expect(join).toHaveAttribute("data-waitlist", "");
+    expect(await join.getAttribute("target")).toBeNull();
+    const done = phone.page.locator("#actions").getByRole("button", { name: "Done" });
+    expect(await done.getAttribute("class")).toContain("secondary");
+    const [j, d] = await Promise.all([join.boundingBox(), done.boundingBox()]);
+    expect(Math.round((j?.y ?? 0) + (j?.height ?? 0))).toBeLessThanOrEqual(Math.round(d?.y ?? -1));
     // PAIR-12: the ended view itself drops the pid; Done has not run yet.
     expect(await phone.page.evaluate(() => localStorage.getItem("bloop.pid"))).toBeNull();
     await expect(heading(screen.page)).toHaveText("Session Ended");
@@ -700,7 +772,7 @@ test.describe("pairing flow", () => {
       await page.mouse.click(SCREEN.width / 2, 80);
       await page.waitForTimeout(100);
     }
-    await expect(page.locator("#line")).toHaveText("Starting a fresh screen.");
+    await expect(page.locator("#line")).toHaveText("Getting a new code.");
     await expect(heading(page)).toHaveText(DEMO.room, { timeout: 6000 });
     expect(Date.now() - since).toBeLessThan(6000);
     expect(await page.evaluate("window.__asks")).toBe(1);
@@ -804,13 +876,6 @@ test.describe("pairing flow", () => {
 
 test.describe("guest drop", () => {
   const DECK = "test/fixtures/decks/sample-deck.pptx";
-
-  /** Taps Add a File, which opens the native picker at once, and answers the browser's file chooser. */
-  async function addFile(page: Page, file: string | { name: string; mimeType: string; buffer: Buffer }) {
-    const chooser = page.waitForEvent("filechooser");
-    await page.getByRole("button", { name: "Add a File" }).click();
-    await (await chooser).setFiles(file);
-  }
   const EXE = { name: "notes.exe", mimeType: "application/octet-stream", buffer: Buffer.from("MZ") };
 
   test("the first file drag loads the drop hint: it shows at once, leaves with the drag, and a drop takes the picker's road", async ({
@@ -924,7 +989,6 @@ test.describe("guest drop", () => {
     await expectPillUnder(screen.page, screen.page.locator(".item-card"));
     await expect(heading(screen.page)).toHaveText("sample-deck.pptx");
     await expect(screen.page.locator("#items")).toBeHidden();
-    await expect(screen.page.locator(".foot")).toBeHidden();
     await expect(heading(phone.page)).toHaveText("Approved for Demo Room");
     expect(await launches()).toEqual({ opened: 0, left: [] });
     await expectNoAxeViolations(screen.page);
@@ -1100,9 +1164,9 @@ test.describe("guest drop", () => {
       mimeType: "image/png",
       buffer: png(3000, 2000),
     });
-    await expect(heading(phone.page)).toHaveText(
-      "Send A long holiday photo from the beach at sunset.png to Demo Room?",
-    );
+    // A long name is cut in the middle, its extension kept; the line under it holds it whole.
+    await expect(heading(phone.page)).toHaveText("Send A long holiday phot…nset.png to Demo Room?");
+    await expect(phone.page.getByText("A long holiday photo from the beach at sunset.png.")).toBeVisible();
     expect(await modules(phone.page)).not.toContain("/js/core/photo.js");
     await phone.page.getByRole("button", { name: "Send" }).click();
     await expect(heading(phone.page)).toHaveText("Sending A long holiday photo from the beach at sunset.png");
@@ -1207,8 +1271,8 @@ test.describe("a guest's photo and video on the screen (design.md section 7, Vid
   }
 
   /** A demo screen showing one guest file, opened by the screen's Open click. */
-  async function openAsGuest(browser: Browser, name: string, bytes: Buffer, slow = false, live = false) {
-    const screen = await (live ? liveScreen : demoScreen)(browser);
+  async function openAsGuest(browser: Browser, name: string, bytes: Buffer, slow = false, live = false, prep?: Prep) {
+    const screen = await (live ? liveScreen : demoScreen)(browser, prep);
     const { phone } = await scan(browser, screen.page, live ? LIVE : DEMO);
     await sendAsGuest(phone.page, name, bytes);
     await expect(heading(screen.page)).toHaveText("Sent by a Guest");
@@ -1265,17 +1329,11 @@ test.describe("a guest's photo and video on the screen (design.md section 7, Vid
     // Its own 16 : 9 frame, never the photo's 3 : 2.
     const frame = await page.locator("#frame video").boundingBox();
     expect(Math.round(((frame?.width ?? 0) / (frame?.height ?? 1)) * 100)).toBe(178);
-    // Nothing plays by itself, and nothing is muted: Play is the presenter's click.
-    expect(await media(page)).toMatchObject({ paused: true, muted: false, autoplay: false });
     await expect(page.getByRole("button", { name: "Present", exact: true })).toBeEnabled();
-
-    // A click is the gesture that lets it play with sound; where the click alone did not start it, play() does.
-    await page.locator("#frame video").click();
-    await page.locator("#frame video").evaluate((el) => {
-      const v = el as unknown as { paused: boolean; play(): Promise<void> };
-      return v.paused ? v.play() : undefined;
-    });
+    // VID-05 sound: it plays at once, with sound (the Open click was this page's gesture), and no Tap for Sound.
     await expect.poll(async () => (await media(page)).at, { timeout: 10_000 }).toBeGreaterThan(0.3);
+    expect(await media(page)).toMatchObject({ paused: false, muted: false, autoplay: false });
+    await expect(page.getByRole("button", { name: "Tap for Sound" })).toBeHidden();
     await page.locator("#frame video").evaluate((el) => {
       (el as unknown as { currentTime: number }).currentTime = 3;
     });
@@ -1306,11 +1364,6 @@ test.describe("a guest's photo and video on the screen (design.md section 7, Vid
     await expect(page.locator("#frame .loader")).toHaveCount(0);
     await expect(heading(page)).toHaveText("Talk.mp4");
     await expect(page.getByRole("button", { name: "Present", exact: true })).toBeEnabled();
-    await page.locator("#frame video").click();
-    await page.locator("#frame video").evaluate((el) => {
-      const v = el as unknown as { paused: boolean; play(): Promise<void> };
-      return v.paused ? v.play() : undefined;
-    });
     await expect.poll(async () => (await media(page)).at, { timeout: 10_000 }).toBeGreaterThan(0.3);
     // No window was ever opened: the screen's context holds its one page.
     expect(screen.context.pages()).toHaveLength(1);
@@ -1319,12 +1372,76 @@ test.describe("a guest's photo and video on the screen (design.md section 7, Vid
     await phone.context.close();
   });
 
-  test("VID-03 a video this browser cannot play shows This Screen Can't Play This Video, with Download as the way on", async ({
+  /** A browser that holds sound until Tap for Sound is tapped: the autoplay policy Playwright's Chromium skips. */
+  const holdSound = (context: BrowserContext) =>
+    context.addInitScript({
+      content: `{
+        const play = HTMLMediaElement.prototype.play;
+        let held = true;
+        addEventListener("click", (e) => { if (e.target instanceof Element && e.target.id === "b-sound") held = false; }, true);
+        HTMLMediaElement.prototype.play = function () {
+          return held && !this.muted ? Promise.reject(new DOMException("held", "NotAllowedError")) : play.call(this);
+        };
+      }`,
+    });
+
+  test("VID-05 sound: the phone pauses, plays and mutes the screen's video, and the screen's own hand reports back", async ({
+    browser,
+  }) => {
+    const { screen, phone, page } = await openAsGuest(browser, "Talk.mp4", CLIP);
+    await expect(page.locator("#frame video")).toBeVisible({ timeout: 15_000 });
+    await expect.poll(async () => (await media(page)).paused).toBe(false);
+    const bubbles = phone.page.getByRole("group", { name: "The Screen" });
+    const play = bubbles.getByRole("button", { name: "Play" });
+    const sound = bubbles.getByRole("button", { name: "Sound" });
+    // A video's bubbles play and sound instead of stepping.
+    await expect(bubbles.getByRole("button", { name: "Next" })).toBeHidden();
+    await expect(play).toHaveAttribute("aria-pressed", "true");
+    await expect(sound).toHaveAttribute("aria-pressed", "true");
+    await play.click();
+    await expect.poll(async () => (await media(page)).paused).toBe(true);
+    await expect(play).toHaveAttribute("aria-pressed", "false");
+    await play.click();
+    await expect.poll(async () => (await media(page)).paused).toBe(false);
+    await sound.click();
+    await expect.poll(async () => (await media(page)).muted).toBe(true);
+    await expect(sound).toHaveAttribute("aria-pressed", "false");
+    // The screen's own hand (a pause with user activation, as its native controls make) reaches the phone.
+    await page.mouse.click(4, SCREEN.height - 4);
+    await page.locator("#frame video").evaluate((el) => (el as unknown as { pause(): void }).pause());
+    await expect(play).toHaveAttribute("aria-pressed", "false");
+    await screen.context.close();
+    await phone.context.close();
+  });
+
+  test("VID-05 sound: a screen whose browser holds sound plays the video muted with Tap for Sound, the phone says so, and the tap brings sound", async ({
+    browser,
+  }) => {
+    const { screen, phone, page } = await openAsGuest(browser, "Talk.mp4", CLIP, false, false, holdSound);
+    await expect(page.locator("#frame video")).toBeVisible({ timeout: 15_000 });
+    const tap = page.getByRole("button", { name: "Tap for Sound" });
+    await expect(tap).toBeVisible();
+    await expect.poll(() => media(page)).toMatchObject({ paused: false, muted: true });
+    const line = phone.page.getByText("Tap the screen once for sound.");
+    await expect(line).toBeVisible();
+    const sound = phone.page.getByRole("group", { name: "The Screen" }).getByRole("button", { name: "Sound" });
+    await expect(sound).toHaveAttribute("aria-pressed", "false");
+    await expectNoAxeViolations(page);
+    await tap.click();
+    await expect.poll(() => media(page)).toMatchObject({ paused: false, muted: false });
+    await expect(tap).toBeHidden();
+    await expect(line).toBeHidden();
+    await expect(sound).toHaveAttribute("aria-pressed", "true");
+    await screen.context.close();
+    await phone.context.close();
+  });
+
+  test("VID-03 a video this browser cannot play shows This Video Can't Play Here, with Download as the way on", async ({
     browser,
   }) => {
     const { screen, phone, page } = await openAsGuest(browser, "Broken.mp4", BROKEN);
     const card = page.locator(".item-card");
-    await expect(card).toContainText("This Screen Can't Play This Video", { timeout: 15_000 });
+    await expect(card).toContainText("This Video Can't Play Here", { timeout: 15_000 });
     // The card's own line, as every file card: the name is the stage's heading.
     await expect(card).toContainText("MP4 video · 2 KB");
     await expect(heading(page)).toHaveText("Broken.mp4");
@@ -1389,6 +1506,10 @@ test.describe("open path", () => {
     );
     expect(await screen.page.evaluate(() => sessionStorage.getItem("bloop.sid"))).toBeNull();
     await expect(heading(phone.page)).toHaveText("Session Ended");
+    // A live phone's end is Done alone.
+    await expect(phone.page.locator("#actions").locator(".btn")).toHaveCount(1);
+    await expect(phone.page.locator("#actions").getByRole("button", { name: "Done" })).toBeVisible();
+    await expect(phone.page.locator("[data-waitlist]")).toHaveCount(0);
     await screen.context.close();
     await phone.context.close();
   });
@@ -1896,6 +2017,61 @@ test.describe("screen and phone layout", () => {
     await phone.context.close();
   });
 
+  test("a switch that adds or drops the page count keeps the pill's center; only the count's segment moves", async ({
+    browser,
+  }) => {
+    const { screen, phone } = await viewerWith(browser);
+    const page = screen.page;
+    await expect(heading(page)).toHaveText("Dog.jpg");
+    await page.waitForTimeout(600);
+    /** Per frame for 1.2 s from now: [left, width, center, top] of the pill. */
+    const sample = async (act: () => Promise<void>) => {
+      await page.evaluate(
+        "(() => { const p = document.getElementById('controls'); const out = (window.frames_ = []); const t0 = performance.now(); const tick = () => { const r = p.getBoundingClientRect(); out.push([r.left, r.width, r.left + r.width / 2, r.top]); if (performance.now() - t0 < 1200) requestAnimationFrame(tick); }; requestAnimationFrame(tick); })()",
+      );
+      await act();
+      await page.waitForTimeout(1300);
+      return (await page.evaluate("window.frames_")) as [number, number, number, number][];
+    };
+    /** Every frame's step goes the way the whole move goes, or holds: nothing steps back. */
+    const oneWay = (values: number[], what: string) => {
+      const way = Math.sign((values.at(-1) ?? 0) - (values[0] ?? 0));
+      for (let i = 1; i < values.length; i++) {
+        const step = (values[i] ?? 0) - (values[i - 1] ?? 0);
+        expect(step * way >= -0.5, `${what}, frame ${i}: ${step}`).toBe(true);
+      }
+    };
+    for (const [to, grows] of [
+      ["Sample deck.pptx", true],
+      ["Dog.jpg", false],
+    ] as const) {
+      const frames = await sample(() => sidebarItem(page, to).click());
+      const last = frames.at(-1) ?? [0, 0, 0];
+      for (const [, , center] of frames)
+        expect(Math.abs(Math.round(center) - Math.round(last[2]))).toBeLessThanOrEqual(1);
+      // The width and the top only ever move one way, so nothing steps back.
+      const widths = frames.map((f) => f[1]);
+      oneWay(widths, `${to} width`);
+      oneWay(
+        frames.map((f) => f[3]),
+        `${to} top`,
+      );
+      expect(grows ? last[1] > (frames[0]?.[1] ?? 0) : last[1] < (frames[0]?.[1] ?? 0)).toBe(true);
+      // Once the width starts to move it keeps moving until it is within a pixel of the end: no stall.
+      const from = widths.findIndex((w) => Math.abs(w - (widths[0] ?? 0)) > 0.5);
+      const settled = widths.findIndex((w) => Math.abs(w - last[1]) <= 1);
+      for (let i = Math.max(from, 1); i < settled; i++)
+        expect(Math.abs((widths[i] ?? 0) - (widths[i - 1] ?? 0)) > 0.01, `${to} width stalls at frame ${i}`).toBe(true);
+    }
+    // Under reduced motion it changes at once.
+    await page.emulateMedia({ reducedMotion: "reduce" });
+    await sidebarItem(page, "Sample deck.pptx").click();
+    await expect(page.locator("#dots")).toBeVisible();
+    expect(await page.evaluate("document.getElementById('dots').getAnimations().length")).toBe(0);
+    await screen.context.close();
+    await phone.context.close();
+  });
+
   test("switching between two items with one placement keeps the controls' node and animates nothing", async ({
     browser,
   }) => {
@@ -2178,7 +2354,7 @@ test.describe("screen and phone layout", () => {
     await phone.context.close();
   });
 
-  test("a screen shows no footer or Back before its first paint, then both", async ({ browser }) => {
+  test("a screen shows no Back before its first paint, then shows it", async ({ browser }) => {
     const context = await browser.newContext({ viewport: { width: 834, height: 1000 } });
     const page = await context.newPage();
     let release = () => {};
@@ -2191,21 +2367,20 @@ test.describe("screen and phone layout", () => {
     });
     await page.goto("/s");
     await expect(page.locator("body")).toHaveClass(/is-booting/);
-    await expect(page.locator(".foot")).toHaveCSS("visibility", "hidden");
     await expect(page.locator("#b-back")).toHaveCSS("visibility", "hidden");
     release();
     await typedCodeOf(page);
-    await expect(page.locator(".foot")).toBeVisible();
     await expect(page.locator("#b-back")).toBeVisible();
+    // No footer line: the screen never sends anyone to another way in (design.md section 3).
+    await expect(page.getByText(/sign in/i)).toHaveCount(0);
     await context.close();
   });
 
-  test("with no script the screen keeps its static Back and footer", async ({ browser }) => {
+  test("with no script the screen keeps its static Back", async ({ browser }) => {
     const context = await browser.newContext({ viewport: { width: 834, height: 1000 }, javaScriptEnabled: false });
     const page = await context.newPage();
     await page.goto("/s");
     await expect(page.locator("#b-back")).toBeVisible();
-    await expect(page.locator(".foot")).toBeVisible();
     await context.close();
   });
 
@@ -2331,6 +2506,34 @@ test.describe("screen page", () => {
     await context.close();
   });
 
+  // Waiting or a refresh is all these states allow: Back would leave the room PC on the home page.
+  for (const [state, title, fail] of [
+    [
+      "service down",
+      "bloop Isn't Responding",
+      (r: Route) => r.fulfill({ status: 500, contentType: "application/json", body: '{"code":"internal"}' }),
+    ],
+    ["offline", "Offline", (r: Route) => r.abort()],
+    [
+      "rate limited",
+      "Busy Right Now",
+      (r: Route) => r.fulfill({ status: 429, contentType: "application/json", body: '{"code":"rate_limited"}' }),
+    ],
+  ] as const) {
+    test(`${state} outside a session shows no Back; waiting brings it back`, async ({ browser }) => {
+      const context = await browser.newContext({ viewport: SCREEN });
+      const page = await context.newPage();
+      await page.route("**/api/screens", fail);
+      await page.goto("/s");
+      await expect(heading(page)).toHaveText(title);
+      await expect(page.locator("#b-back")).toBeHidden();
+      await page.unroute("**/api/screens");
+      await expect(page.locator("#qr")).toBeVisible({ timeout: 40_000 });
+      await expect(page.locator("#b-back")).toBeVisible();
+      await context.close();
+    });
+  }
+
   test("the wide waiting screen has the QR on the left of the room title, and the QR is one path in a 41 module square with the required label", async ({
     browser,
   }) => {
@@ -2443,9 +2646,9 @@ test.describe("PAIR-13 remote: the phone commands the demo screen (design.md sec
     await phone.page.getByRole("button", { name: "Approve" }).click();
     await expectViewer(screen.page);
     const preview = phone.page.locator(".preview");
-    await expect(preview).toBeVisible();
     const row = (name: string) => phone.page.locator("#file-list").getByRole("button", { name: startsWith(name) });
     const bubbles = phone.page.getByRole("group", { name: "The Screen" });
+    await expect(bubbles).toBeVisible();
     const dots = screen.page.locator("#dots");
     return { screen, phone, preview, row, bubbles, dots };
   }
@@ -2460,6 +2663,24 @@ test.describe("PAIR-13 remote: the phone commands the demo screen (design.md sec
     // Before any command the screen shows its first file: that row is marked.
     await expect(row("Dog.jpg")).toHaveAttribute("aria-current", "true");
     await expect(phone.page.locator("#file-list").getByRole("button", { name: startsWith("Vevox") })).toHaveCount(0);
+    // A link row opens its link in a new tab here: no command, never marked as on the screen, no preview.
+    const link = phone.page.locator("#file-list").getByRole("link", { name: startsWith("Vevox") });
+    await expect(link).toHaveAttribute("target", "_blank");
+    await expect(link).toHaveAttribute("rel", "noopener noreferrer");
+    await expect(link).toContainText("New Tab");
+    let commands = 0;
+    await phone.page.route("**/api/control", (route) => {
+      commands += 1;
+      return route.continue();
+    });
+    const tab = phone.context.waitForEvent("page");
+    await link.click();
+    await (await tab).close();
+    await phone.page.waitForTimeout(300);
+    expect(commands).toBe(0);
+    await expect(link).not.toHaveAttribute("aria-current", "true");
+    await expect(preview).toHaveCount(0);
+    await phone.page.unroute("**/api/control");
     await row("Sample deck.pptx").click();
     // The mark moves at the tap, before the answer.
     await expect(row("Sample deck.pptx")).toHaveAttribute("aria-current", "true");
@@ -2536,12 +2757,80 @@ test.describe("PAIR-13 remote: the phone commands the demo screen (design.md sec
     await close(screen, phone);
   });
 
+  test("the list sits under the title; a paged item's preview sits --inset over the panel, a photo has none", async ({
+    browser,
+  }) => {
+    const { screen, phone, row, preview } = await remote(browser);
+    const page = phone.page;
+    const list = page.locator("#file-list");
+    const panel = page.locator(".column > .actions");
+    const inset = await insetOf(page);
+    // The screen shows Dog.jpg first: its row already says what the screen shows.
+    await expect(row("Dog.jpg")).toHaveAttribute("aria-current", "true");
+    await expect(preview).toHaveCount(0);
+    const top = (await list.boundingBox())?.y;
+    await row("Sample deck.pptx").click();
+    await expect(preview).toBeVisible();
+    const l = await list.boundingBox();
+    const p = await preview.boundingBox();
+    const pill = await panel.boundingBox();
+    expect(l && p && l.y < p.y).toBe(true);
+    expect(p && pill && Math.round(pill.y - (p.y + p.height))).toBe(inset);
+    expect(l && p && Math.round(p.y - (l.y + l.height)) >= 24).toBe(true);
+    // The list never moves as the preview comes and goes.
+    expect(l?.y).toBe(top);
+    await row("Dog.jpg").click();
+    await expect(preview).toHaveCount(0);
+    expect((await list.boundingBox())?.y).toBe(top);
+    await close(screen, phone);
+  });
+
+  test("a long list stops over the preview with the section gap and scrolls inside itself", async ({ browser }) => {
+    const { screen, phone, row, preview } = await remote(browser);
+    const page = phone.page;
+    const list = page.locator("#file-list");
+    await row("Sample deck.pptx").click();
+    await expect(preview).toBeVisible();
+    // Copies of the demo's rows stand in for a long list: layout only, the next push draws the list again.
+    await list.evaluate((ul) => {
+      for (let i = 0; i < 3; i++) for (const li of [...ul.children]) ul.append(li.cloneNode(true));
+    });
+    const [scroll, client] = await list.evaluate((ul) => [ul.scrollHeight, ul.clientHeight]);
+    expect(scroll ?? 0).toBeGreaterThan(client ?? 0);
+    const l = await list.boundingBox();
+    const p = await preview.boundingBox();
+    const pill = await page.locator(".column > .actions").boundingBox();
+    expect(l && p && Math.round(p.y - (l.y + l.height))).toBe(24);
+    expect(p && pill && Math.round(pill.y - (p.y + p.height))).toBe(await insetOf(page));
+    // At least two rows stay in view, and the page itself does not scroll.
+    expect((l?.height ?? 0) >= 2 * 56).toBe(true);
+    expect(await page.evaluate("document.documentElement.scrollHeight <= innerHeight")).toBe(true);
+    await close(screen, phone);
+  });
+
+  test("held landscape at 844 x 390 a paged item has no preview, and Next still steps", async ({ browser }) => {
+    const { screen, phone, row, preview, bubbles, dots } = await remote(browser);
+    await phone.page.setViewportSize({ width: 844, height: 390 });
+    await row("Sample deck.pptx").click();
+    await expect(heading(screen.page)).toHaveText("Sample deck.pptx");
+    await expect(preview).toHaveCount(0);
+    await bubbles.getByRole("button", { name: "Next" }).click();
+    await expect(dots).toHaveText("2 / 2");
+    await close(screen, phone);
+  });
+
   test("Revoke asks first: Cancel keeps the session, End Session ends it", async ({ browser }) => {
     const { screen, phone } = await remote(browser);
     const ask = phone.page.getByRole("dialog", { name: "End This Session?" });
     await phone.page.getByRole("button", { name: "Revoke" }).click();
     await expect(ask).toBeVisible();
-    await expect(ask).toContainText("Your files leave the screen.");
+    // The title and its two buttons, on the phone's glass.
+    await expect(ask.locator("p")).toHaveCount(0);
+    await expect(ask).toHaveClass(/\bglass\b/);
+    // Opened by a tap, the focus it moves to Cancel draws no ring; opened by a key, it does (WCAG 2.4.7).
+    const cancel = ask.getByRole("button", { name: "Cancel" });
+    await expect(cancel).toBeFocused();
+    await expect(cancel).toHaveCSS("outline-style", "none");
     // A modal <dialog>, not a popover: Safari before 17 has no Popover API.
     expect(await ask.evaluate((n) => n.matches("dialog:modal"))).toBe(true);
     await expectNoAxeViolations(phone.page);
@@ -2549,6 +2838,12 @@ test.describe("PAIR-13 remote: the phone commands the demo screen (design.md sec
     await expect(ask).toBeHidden();
     await phone.page.getByRole("button", { name: "Revoke" }).click();
     await ask.getByRole("button", { name: "Cancel" }).click();
+    await expect(ask).toBeHidden();
+    await phone.page.getByRole("button", { name: "Revoke" }).focus();
+    await phone.page.keyboard.press("Enter");
+    await expect(cancel).toBeFocused();
+    await expect(cancel).not.toHaveCSS("outline-style", "none");
+    await phone.page.keyboard.press("Escape");
     await expect(ask).toBeHidden();
     await expect(heading(phone.page)).toHaveText("Approved for Demo Room");
     await expect(heading(screen.page)).toHaveText("Dog.jpg");
@@ -2573,11 +2868,14 @@ test.describe("PAIR-13 remote: the phone commands the demo screen (design.md sec
     await phone.page.route("**/api/control", (route) =>
       route.continue({ postData: JSON.stringify({ ...route.request().postDataJSON(), seq: 1 }) }),
     );
+    const answered = phone.page.waitForResponse("**/api/control");
     await row("Sample deck.pdf").click();
+    await answered;
     await expect(row("Sample deck.pptx")).toHaveAttribute("aria-current", "true");
     await expect(row("Sample deck.pdf")).not.toHaveAttribute("aria-current", "true");
     await expect(heading(screen.page)).toHaveText("Sample deck.pptx");
-    await expect(phone.page.getByRole("alert")).toHaveCount(0);
+    await phone.page.waitForTimeout(300);
+    await expectNoToast(phone.page);
     await close(screen, phone);
   });
 
@@ -2644,15 +2942,20 @@ test.describe("PAIR-13 remote: the phone commands the demo screen (design.md sec
     await phone.context.route("**/core/remote-ui.js*", (route) => (asked++ === 0 ? route.abort() : route.continue()));
     await phone.page.reload();
     const alert = phone.page.getByRole("alert");
+    // Before the approval there is no remote to miss.
+    await expect.poll(() => asked).toBe(1);
+    await phone.page.waitForTimeout(300);
+    await expectNoToast(phone.page);
+    await phone.page.getByRole("button", { name: "Approve" }).click();
     await expect(alert).toContainText("Remote Didn't Load");
     // Not fetched again by itself, and the toast waits for a tap.
     await phone.page.waitForTimeout(500);
     expect(asked).toBe(1);
     await alert.getByRole("button", { name: "Reload" }).click();
-    await phone.page.getByRole("button", { name: "Approve" }).click();
-    await expect(phone.page.locator(".preview")).toBeVisible();
+    await expect(phone.page.getByRole("group", { name: "The Screen" })).toBeVisible();
     expect(asked).toBe(2);
-    await expect(phone.page.getByRole("alert")).toHaveCount(0);
+    // Gone on the tap: a wait for its leaving, not a claim that none came.
+    await expect(phone.page.getByRole("alert")).toBeHidden();
     await close(screen, phone);
   });
 
@@ -2669,7 +2972,7 @@ test.describe("PAIR-13 remote: the phone commands the demo screen (design.md sec
       await route.continue();
     });
     await phone.page.getByRole("button", { name: "Approve" }).click();
-    await expect(phone.page.locator(".preview")).toBeVisible();
+    await expect(phone.page.getByRole("group", { name: "The Screen" })).toBeVisible();
     await expect(screen.page.locator("#items > li .item")).toHaveCount(CATALOG.length);
     await screen.page.evaluate(
       "(() => { window.exits = 0; const exit = document.exitFullscreen?.bind(document); document.exitFullscreen = (...a) => { window.exits += 1; return exit?.(...a); }; })()",
@@ -2738,5 +3041,205 @@ test.describe("PAIR-13 remote: the phone commands the demo screen (design.md sec
     await expect(row("Dog.jpg")).toHaveAttribute("aria-current", "true");
     await expect(heading(phone.page)).toHaveText("Approved for Demo Room");
     await close(screen, phone);
+  });
+});
+
+test.describe("the phone page at phone widths (design.md section 7, Phone page)", () => {
+  /** A sid or pid (`<22-char ref>.<43-char secret>`) or a pairing code: none may ride in the support mail. */
+  const CREDENTIALS = [/[A-Za-z0-9_-]{22}\.[A-Za-z0-9_-]{43}/, /\b[23456789ABCDEFGHJKMNPQRSTVWXYZ]{6,7}\b/];
+  const toast = (page: Page) => page.locator(".toast:not(.out)");
+
+  /**
+   * What a phone width breaks: a layout wider than the screen (a zoomed-out page), a part past its edge, a target
+   * under 44 px. A string, so the node tsconfig needs no DOM types.
+   */
+  const measure = (page: Page) =>
+    page.evaluate(`(() => {
+      const vw = document.documentElement.clientWidth;
+      const seen = (el) => {
+        const r = el.getBoundingClientRect();
+        return r.width > 0 && r.height > 0 && getComputedStyle(el).visibility !== "hidden" && !el.closest(".sr, .skip");
+      };
+      const name = (el) => el.tagName.toLowerCase() + (el.id ? "#" + el.id : "") + "." + String(el.className).trim().split(/\\s+/).join(".");
+      const past = [...document.querySelectorAll("body *")].filter((el) => {
+        const r = el.getBoundingClientRect();
+        return seen(el) && (r.right > vw + 0.5 || r.left < -0.5);
+      });
+      const small = [...document.querySelectorAll("button, a[href], [role=button]")].filter((el) => {
+        const r = el.getBoundingClientRect();
+        return seen(el) && (r.height < 43.5 || r.width < 43.5);
+      });
+      return { inner: innerWidth, scroll: document.documentElement.scrollWidth, past: past.map(name), small: small.map(name) };
+    })()`) as Promise<{ inner: number; scroll: number; past: string[]; small: string[] }>;
+
+  async function guard(page: Page, width: number, label: string) {
+    const m = await measure(page);
+    expect(m, label).toEqual({ inner: width, scroll: width, past: [], small: [] });
+  }
+
+  /** Scrolled to its end (the page, and the list where it scrolls inside itself), the last row clears the panel. */
+  async function lastRowClear(page: Page, label: string) {
+    await page.evaluate("window.scrollTo(0, document.documentElement.scrollHeight)");
+    await page.locator("#file-list").evaluate((ul) => {
+      ul.scrollTop = ul.scrollHeight;
+    });
+    const row = await page.locator("#file-list > li").last().boundingBox();
+    const panel = await page.locator(".column > .actions").boundingBox();
+    expect(row && panel && row.y + row.height <= panel.y, label).toBe(true);
+  }
+
+  for (const width of [320, 360, 390]) {
+    test(`at ${width} wide every /a state fits: approve, a long offer, approved with the remote, a toast over the panel`, async ({
+      browser,
+    }) => {
+      const screen = await demoScreen(browser);
+      const code = await typedCodeOf(screen.page);
+      const context = await browser.newContext({
+        viewport: { width, height: 568 },
+        hasTouch: true,
+        isMobile: true,
+        deviceScaleFactor: 2,
+      });
+      const page = await context.newPage();
+      await page.goto(`/a?c=${code}`);
+      await expect(page.getByRole("button", { name: /^Approve/ })).toBeEnabled();
+      await guard(page, width, "approve");
+      await lastRowClear(page, "approve");
+
+      await addFile(page, {
+        name: "Week 7 lecture recording final cut.png",
+        mimeType: "image/png",
+        buffer: png(300, 200),
+      });
+      await expect(heading(page)).toHaveText("Send Week 7 lecture reco… cut.png to Demo Room?");
+      await guard(page, width, "offer");
+      await page.getByRole("button", { name: "Cancel" }).click();
+
+      await page.getByRole("button", { name: /^Approve/ }).click();
+      await expect(heading(page)).toHaveText("Approved for Demo Room");
+      await expect(page.getByRole("group", { name: "The Screen" })).toBeVisible();
+      await expect(page.locator("#ends")).toHaveCSS("min-height", "44px");
+      await guard(page, width, "approved");
+      await lastRowClear(page, "approved");
+
+      // A toast sits just above the panel, never over the list.
+      await page.route("**/api/session/length", (route) => route.abort());
+      await page.locator("#ends").click();
+      await page.getByRole("dialog", { name: "Session Expiry" }).getByRole("button", { name: "30 minutes" }).click();
+      await expect(toast(page)).toContainText("The Session Expiry Didn't Change");
+      await expect(toast(page)).toHaveCSS("opacity", "1");
+      const t = await toast(page).boundingBox();
+      const panel = await page.locator(".column > .actions").boundingBox();
+      expect(t && panel && Math.round(panel.y - (t.y + t.height))).toBe(8);
+      await guard(page, width, "toast");
+      await context.close();
+      await screen.context.close();
+    });
+  }
+
+  /** /a on a claim the server fails (`internal`): service down. */
+  async function downPhone(browser: Browser, code: string, supportLoads = true) {
+    const context = await browser.newContext({ viewport: { width: 320, height: 640 }, hasTouch: true, isMobile: true });
+    await context.route("**/api/claim", (route) =>
+      route.fulfill({ status: 500, contentType: "application/json", body: '{"code":"internal"}' }),
+    );
+    if (!supportLoads) await context.route("**/js/shared/support.js", (route) => route.abort());
+    const page = await context.newPage();
+    await page.goto(`/a?c=${code}`);
+    await expect(heading(page)).toHaveText("bloop Isn't Responding");
+    const mail = page.getByRole("link", { name: "Email bloop" });
+    // Unloadable, the facts are asked for again on the way to the link.
+    if (!supportLoads) await mail.focus();
+    return { context, page, mail };
+  }
+
+  test("held landscape at 844 x 390, the approve list's end and Add a File clear the floating panel", async ({
+    browser,
+  }) => {
+    const screen = await demoScreen(browser);
+    const code = await typedCodeOf(screen.page);
+    const context = await browser.newContext({ viewport: { width: 844, height: 390 }, hasTouch: true, isMobile: true });
+    const page = await context.newPage();
+    await page.goto(`/a?c=${code}`);
+    await expect(page.getByRole("button", { name: /^Approve/ })).toBeEnabled();
+    await lastRowClear(page, "approve, landscape");
+    await guard(page, 844, "approve, landscape");
+    await context.close();
+    await screen.context.close();
+  });
+
+  test("service down offers a prefilled support mail with no credential in it", async ({ browser }) => {
+    const screen = await demoScreen(browser);
+    const code = await typedCodeOf(screen.page);
+    const { context, page, mail } = await downPhone(browser, code);
+    await expect(page.locator("#body")).toHaveText("Something's wrong on bloop's side.");
+    // The facts fill the link as it shows, with no tap or focus on it.
+    await expect(mail).toHaveAttribute("href", /^mailto:hi@bloop\.here\?subject=bloop%20isn't%20responding&body=/);
+    const href = (await mail.getAttribute("href")) ?? "";
+    const body = new URL(href).searchParams.get("body") ?? "";
+    expect(body).toContain("Page: /a\nState: service_down\nError: internal\nTime: ");
+    for (const pattern of CREDENTIALS) expect(body, String(pattern)).not.toMatch(pattern);
+    expect(body).not.toContain(code);
+    await expect(page.getByRole("button", { name: "Try Again" })).toBeVisible();
+    await guard(page, 320, "service down");
+    await context.close();
+    await screen.context.close();
+  });
+
+  test("service down's mail stays the plain one when its facts cannot load", async ({ browser }) => {
+    const screen = await demoScreen(browser);
+    const { context, page, mail } = await downPhone(browser, await typedCodeOf(screen.page), false);
+    await page.waitForTimeout(500);
+    await expect(mail).toHaveAttribute("href", "mailto:hi@bloop.here?subject=bloop%20isn't%20responding");
+    await context.close();
+    await screen.context.close();
+  });
+
+  test("a Remote Didn't Load toast that another toast took the place of comes back with the next view", async ({
+    browser,
+  }) => {
+    const screen = await demoScreen(browser);
+    const code = await typedCodeOf(screen.page);
+    const phone = await open(browser, "phone", `/a?c=${code}`, (c) =>
+      c.route("**/js/core/remote-ui.js", (route) => route.abort()),
+    );
+    await phone.page.getByRole("button", { name: /^Approve/ }).click();
+    await expectViewer(screen.page);
+    await expect(toast(phone.page)).toContainText("Remote Didn't Load");
+    // Views while it shows leave it as it is.
+    await expect(toast(phone.page)).toContainText("Remote Didn't Load");
+    await phone.page.route("**/api/session/length", (route) => route.abort());
+    await phone.page.locator("#ends").click();
+    await phone.page
+      .getByRole("dialog", { name: "Session Expiry" })
+      .getByRole("button", { name: "30 minutes" })
+      .click();
+    await expect(toast(phone.page)).toContainText("The Session Expiry Didn't Change");
+    // The screen's own tap is the next view the phone gets.
+    await sidebarItem(screen.page, "Sample deck.pdf").click();
+    await expect(toast(phone.page)).toContainText("Remote Didn't Load");
+    await expect(toast(phone.page).getByRole("button", { name: "Reload" })).toBeVisible();
+    await screen.context.close();
+    await phone.context.close();
+  });
+
+  test("a Remote Didn't Load toast shows only where the remote would: not on the ended page that follows", async ({
+    browser,
+  }) => {
+    const screen = await demoScreen(browser);
+    const code = await typedCodeOf(screen.page);
+    const phone = await open(browser, "phone", `/a?c=${code}`, (c) =>
+      c.route("**/js/core/remote-ui.js", (route) => route.abort()),
+    );
+    await phone.page.getByRole("button", { name: /^Approve/ }).click();
+    await expect(toast(phone.page)).toContainText("Remote Didn't Load");
+    await toast(phone.page).locator("strong").click();
+    await expect(toast(phone.page)).toBeHidden();
+    await revoke(phone.page);
+    await expect(heading(phone.page)).toHaveText("Session Ended");
+    await phone.page.waitForTimeout(500);
+    await expectNoToast(phone.page);
+    await screen.context.close();
+    await phone.context.close();
   });
 });

@@ -1,4 +1,5 @@
 // One toast at a time: a title and a line, gone after 5 s or on a tap. An error is announced at once (role alert).
+// The toast showing, passed again, stays as it is.
 
 const SHOW_MS = 5000;
 const OUT_MS = 200;
@@ -22,6 +23,8 @@ export function createToaster(
   let node = null;
   /** @type {unknown} */
   let timer = null;
+  /** @type {Toast | null} */
+  let last = null;
 
   const remove = () => {
     cancel(timer);
@@ -38,7 +41,10 @@ export function createToaster(
     }, OUT_MS);
   };
 
-  return ({ title, body, error = false, action }) => {
+  return (t) => {
+    if (node && t === last) return;
+    last = t;
+    const { title, body, error = false, action } = t;
     remove();
     const made = doc.createElement("div");
     made.className = "toast glass";

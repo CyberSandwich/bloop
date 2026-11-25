@@ -1,4 +1,5 @@
-/* Two bubbles in one fill-less dialog: a click on it, gap included, is the backdrop's. */
+/* The Session Expiry sheet (design.md section 7): one glass pane (app.css .glass-pane), a 2 x 2 grid of shapes. Left,
+   the title and time card over the presets; right, Close and Set in one column. */
 .sheet {
   width: min(calc(100% - 2 * var(--pad)), 432px);
   max-width: none;
@@ -9,80 +10,97 @@
   overflow: visible;
   color: var(--ink);
 }
-.sheet[open],
-.pane,
-.sheet-head,
-.until {
-  display: flex;
-  gap: 8px;
-}
-.sheet[open],
-.sheet-in {
-  flex-direction: column;
-}
-.sheet h2:focus-visible {
-  outline: none;
-}
 .sheet::backdrop {
   background: rgba(30, 30, 28, 0.24);
 }
-.pane {
-  min-width: 0;
-  margin: 0;
+/* As app.css's .leave: focus the opening moved rings only after a key. */
+.sheet h2:focus-visible,
+:root:not(.keyed) .sheet :focus-visible {
+  outline: none;
+}
+.until {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 72px;
+  gap: 8px;
   padding: 8px;
-  border: 0;
   border-radius: 34px;
-  box-shadow: var(--glass-edge), var(--sh-pill);
   animation: toast-in 250ms var(--ease-out) backwards;
 }
-.pane + .pane {
-  animation-delay: 40ms;
-}
-.sheet-head,
-.until {
-  align-items: center;
-}
-.sheet-head {
-  justify-content: space-between;
-  padding-left: 16px;
+/* The shapes: the pane's radius less its padding, so they sit concentric in it. */
+.sheet-card,
+.sheet-x,
+.chips {
+  min-width: 0;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  border-radius: 26px;
+  background: var(--surface);
+  box-shadow: 0 0 0 1px var(--hairline);
+  overflow: hidden;
 }
 .sheet h2 {
-  font-size: 22px;
-  letter-spacing: -0.025em;
+  padding: 14px 16px 12px;
+  font-size: 17px;
+}
+/* The whole row is the time's target; the hairline parts it from the title. */
+.sheet-card .field {
+  display: block;
+  height: 60px;
+  border-top: 1px solid var(--hairline);
+  border-radius: 0;
+  background: none;
+  box-shadow: none;
+  font-size: 28px;
+  letter-spacing: 0;
+  text-align: left;
+  text-transform: none;
+}
+.sheet-card .field::-webkit-date-and-time-value {
+  text-align: left;
+}
+.sheet-card .field:focus {
+  box-shadow: none;
+}
+.keyed .sheet-card:has(.field:focus) {
+  box-shadow: 0 0 0 2px var(--ink);
 }
 .sheet-x {
   display: grid;
   place-items: center;
-  width: 44px;
-  height: 44px;
-  padding: 0;
-  border: 0;
-  border-radius: var(--r-pill);
-  background: none;
+  color: var(--ink);
   cursor: pointer;
 }
-.sheet-x:focus-visible {
-  outline-offset: -4px;
+.chips {
+  display: flex;
 }
-.sheet-x:active {
-  background: var(--wash);
-}
-.until .field {
+.chips button {
   flex: 1;
   min-width: 0;
-  height: 52px;
-  border-radius: var(--r-pill);
-  font-size: 17px;
-  letter-spacing: 0;
-  text-transform: none;
-}
-.chips .btn {
-  flex: 1;
+  min-height: 52px;
   padding: 0;
+  border: 0;
+  background: none;
+  color: var(--ink);
+  font: inherit;
   font-size: 15px;
+  font-weight: 600;
+  cursor: pointer;
+}
+.chips button + button {
+  border-left: 1px solid var(--hairline);
+}
+:is(.sheet-x, .chips button):focus-visible {
+  outline-offset: -4px;
+}
+:is(.sheet-x, .chips button):active {
+  background: var(--wash);
+}
+.until .btn {
+  padding: 0;
 }
 @media (hover: hover) {
-  .sheet-x:hover {
+  :is(.sheet-x, .chips button):hover {
     background: var(--wash);
   }
 }

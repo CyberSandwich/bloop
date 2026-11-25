@@ -8,5 +8,10 @@ can't open your files anymore
 cancelled
 seamless
 effortless
+sign in to the pc
+sign in to this pc
+this screen is
+too many screens
+your files leave the screen
 # An IP address is personal data, so this is almost never true of a web service; name what is and is not kept.
 no personal data

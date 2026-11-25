@@ -15,7 +15,6 @@ import {
   ENDED_QR_RETURN_MS,
   ENDED_SKIP_GRACE_MS,
   ERROR_RECOVER_MS,
-  OFFLINE_HINT_MS,
   pollDelay,
   ROTATE_AHEAD_MS,
 } from "./core/timing.js";
@@ -56,7 +55,6 @@ const qrSvg = byId("qr");
 const qrPathEl = byId("qr-path");
 const matchEl = byId("match");
 const awaiting = byId("awaiting");
-const foot = byId("foot");
 const typedHost = byId("typed-host");
 const typedCode = byId("typed-code");
 const polite = byId("polite");
@@ -90,7 +88,6 @@ const s = {
   channel: null,
   shown: null,
   scene: null,
-  offlineSince: null,
   timers: {},
 };
 
@@ -168,7 +165,7 @@ function fitQr() {
   const rest = pane.offsetHeight - qrPanel.offsetHeight + 2 * parseFloat(getComputedStyle(main).paddingTop);
   // At most the column; at least 205 (5 px a module, about 5.4 cm: a camera reads it from arm's length), even where
   // that leaves the page short of room.
-  const room = Math.min(innerHeight / 2, innerHeight - rest - foot.offsetHeight, pane.clientWidth);
+  const room = Math.min(innerHeight / 2, innerHeight - rest, pane.clientWidth);
   const size = qrSize(Math.max(205, room), devicePixelRatio || 1);
   qrSvg.setAttribute("width", String(size));
   qrSvg.setAttribute("height", String(size));
@@ -255,7 +252,6 @@ function paint() {
     file: item ? itemName(item) : null,
     endsAt: v?.endsAt ? clock(v.endsAt) : null,
     guest: v?.kind === "guest",
-    offlineLong: s.offlineSince !== null && Date.now() - s.offlineSince >= OFFLINE_HINT_MS,
     demo: DEMO,
     openMode: v?.openMode ?? null,
     mine: sameScreen(s.sid, pids.get(PID_KEY)),
@@ -267,6 +263,8 @@ function paint() {
   if (parks) viewer.park(copy.heading);
   const changed = heading.textContent !== copy.heading;
   setText(heading, copy.heading);
+  // An unregistered room has no name: no empty heading for assistive tech to meet.
+  show(heading, !!copy.heading);
   setText(line, copy.line);
   stage.setAttribute("role", copy.alert ? "alert" : "status");
   stage.setAttribute("aria-live", copy.alert ? "assertive" : "polite");
@@ -287,7 +285,11 @@ function paint() {
   const has = (/** @type {import("./types.js").ScreenControl} */ c) => copy.controls.includes(c);
   // Another phone's claim shows the title and the number alone; this browser's own shows its line and Continue.
   main.classList.toggle("is-pending", claimed && !has("continue"));
-  show(buttons.back, !has("start_over") && !has("end") && key !== "ended");
+  // Waiting or refreshing is all a busy room screen can do: Back would leave the lectern on the home page.
+  show(
+    buttons.back,
+    !has("start_over") && !has("end") && !["ended", "offline", "service_down", "rate_limited"].includes(key),
+  );
   show(buttons.start_over, has("start_over"));
   show(buttons.home, has("end"));
   show(buttons.end, has("end"));
@@ -335,10 +337,6 @@ function schedule(/** @type {import("../../src/shared/protocol.ts").ScreenStateK
 
   if (key === "error") after("error", ERROR_RECOVER_MS, recover);
   else cancel("error");
-
-  const waited = s.offlineSince === null ? OFFLINE_HINT_MS : Date.now() - s.offlineSince;
-  if (key === "offline" && waited < OFFLINE_HINT_MS) after("hint", OFFLINE_HINT_MS - waited, render);
-  else cancel("hint");
 }
 
 function requestCode() {
@@ -379,7 +377,6 @@ function onView(/** @type {ScreenView} */ view) {
 
 function onLink(/** @type {"ok" | "offline" | "down"} */ link) {
   s.link = link;
-  s.offlineSince = link === "offline" ? (s.offlineSince ?? Date.now()) : null;
   render();
 }
 
@@ -540,14 +537,12 @@ async function boot(attempt = 0) {
   s.limited = !booted.ok && booted.error === "rate_limited";
   if (!booted.ok) {
     s.link = booted.error === "offline" ? "offline" : "down";
-    s.offlineSince = s.link === "offline" ? (s.offlineSince ?? Date.now()) : null;
     render();
     setTimeout(() => g === gen && boot(attempt + 1), pollDelay(attempt + 1));
     return;
   }
   ariaFlag(buttons.renew, "aria-disabled", false);
   s.link = "ok";
-  s.offlineSince = null;
   // The sid first: the first view can already ask for a link. Stored only now, so a boot that a later gen dropped
   // leaves nothing to resume.
   s.sid = booted.sid;

@@ -159,6 +159,57 @@ describe("the phone's band", () => {
   });
 });
 
+describe("the phone's dialogs", () => {
+  it("Revoke's question and the Session Expiry sheet share one glass surface, defined once", () => {
+    const html = read("a.html");
+    expect(html).toMatch(/<dialog class="leave glass glass-pane" id="revoke"/);
+    expect(html).toMatch(/<dialog class="sheet" id="length"[^>]*>\s*<form class="until glass glass-pane">/);
+    // The shadow is the surface's own: no dialog sheet copies it.
+    const app = read("css/app.css");
+    expect(app).toMatch(/\.glass-pane \{\s*box-shadow: var\(--glass-edge\), var\(--sh-pill\);\s*\}/);
+    expect(read("css/length.css")).not.toMatch(/glass-edge|--glass\b|backdrop-filter/);
+  });
+
+  it("Revoke's question is the title and its two buttons: no line under it", () => {
+    const revoke = /<dialog[^>]* id="revoke"[\s\S]*?<\/dialog>/.exec(read("a.html"))?.[0] ?? "";
+    expect(revoke).toContain("End This Session?");
+    expect(revoke).not.toMatch(/<p\b/);
+  });
+});
+
+describe("the lazy stylesheets", () => {
+  /** Each selector's first compound when it is one bare class: `.x`, not `.x[attr]`, `button.x` or `.x .y`. */
+  const bare = (css: string) =>
+    new Set(
+      [...css.replace(/\/\*[\s\S]*?\*\//g, "").matchAll(/(?:^|[,}])\s*\.([a-z][\w-]*)\s*(?=[,{])/gi)].map((m) => m[1]),
+    );
+  const classes = (css: string) => new Set([...css.matchAll(/\.([a-z][\w-]*)/gi)].map((m) => m[1]));
+  const page = classes(read("css/app.css") + read("css/base.css"));
+  // Every lazy stylesheet the size budgets list: a new one is checked without touching this test.
+  const sheets = (JSON.parse(read("../package.json"))["size-limit"] as { name: string; path: string | string[] }[])
+    .filter((e) => e.name.endsWith(", lazy"))
+    .flatMap((e) => [e.path].flat())
+    .filter((p) => p.endsWith(".css"))
+    .map((p) => p.replace(/^public\//, ""));
+
+  it("the budgets list the lazy sheets", () => {
+    expect(sheets).toEqual(expect.arrayContaining(["css/length.css", "css/remote.css"]));
+  });
+
+  // A lazy sheet's bare `.x` is its own part; refining a shared one (`.chips .btn`, `button.row`) is fine.
+  it.each(sheets)(
+    "%s names its own parts: no bare class of it is styled by the page's sheet or another lazy one",
+    (sheet) => {
+      const others = new Set([...page, ...sheets.filter((s) => s !== sheet).flatMap((s) => [...bare(read(s))])]);
+      expect([...bare(read(sheet))].filter((c) => others.has(c))).toEqual([]);
+    },
+  );
+
+  it("the check catches a collision", () => {
+    expect([...bare(".pane,\n.sheet-head {}\n.row[open] {}\n.actions .x {}")]).toEqual(["pane", "sheet-head"]);
+  });
+});
+
 describe("secondary text on every neutral it sits on (design.md section 12)", () => {
   const glass = token("glass", "paper");
   const grounds: [string, Rgb][] = [
@@ -180,8 +231,8 @@ describe("secondary text on every neutral it sits on (design.md section 12)", ()
 });
 
 describe("the screen before its first paint", () => {
-  it("hides the bar and footer only once the script has run past the framed and narrow exits", () => {
-    expect(read("css/app.css")).toMatch(/\n\.is-booting:not\(\.is-ready\) :is\(\.bar > \*, \.foot\) \{/);
+  it("hides the bar only once the script has run past the framed and narrow exits", () => {
+    expect(read("css/app.css")).toContain("\n.is-booting:not(.is-ready) .bar > * {");
     expect(read("css/app.css")).not.toMatch(/\.page-screen:not\(\.is-ready\)/);
     const start = read("js/screen.js").match(/function start\(\) \{([\s\S]*?)\n\}/)?.[1] ?? "";
     const at = (s: string) => start.indexOf(s);
@@ -193,10 +244,9 @@ describe("the screen before its first paint", () => {
 });
 
 describe("the demo screen", () => {
-  it("hides the live footer line, which sends the visitor to a PC sign-in they do not have", () => {
-    expect(read("s.html")).toMatch(/<p class="foot" id="foot">Phone not with you\?/);
+  it("marks itself, so a phone-width window may run it", () => {
     expect(read("js/screen.js")).toContain('document.body.classList.add("is-demo")');
-    expect(read("css/app.css")).toMatch(/\.is-demo > \.foot \{\s*display: none;\s*\}/);
+    expect(read("css/app.css")).toContain(".page-screen:not(.is-demo) :is(.pane, .bar > *) {");
   });
 
   it("the waitlist link opens the form with source=viewer, in the same tab, and carries data-waitlist", () => {
@@ -206,9 +256,11 @@ describe("the demo screen", () => {
   });
 
   it("LINK-01 a link item opens in a new tab with no opener or referrer, and is never framed", () => {
-    const viewer = read("js/viewer.js");
-    expect(viewer).toMatch(/target: "_blank", rel: "noopener noreferrer"/);
-    expect(viewer).toContain('startsWith("https://")');
+    const rows = read("js/core/rows.js");
+    expect(rows).toMatch(/target: "_blank", rel: "noopener noreferrer"/);
+    expect(rows).toContain('startsWith("https://")');
+    // The screen's sidebar and the phone's list draw a link's row with the one helper.
+    for (const file of ["js/viewer.js", "js/phone.js"]) expect(read(file), file).toContain('linkRow(item.url, "');
     for (const file of ["js/viewer.js", "js/screen.js", "s.html"]) expect(read(file), file).not.toMatch(/iframe/i);
   });
 

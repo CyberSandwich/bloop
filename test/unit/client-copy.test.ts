@@ -1,9 +1,11 @@
 import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
-import { SESSION_ENDED } from "../../public/js/core/copy.js";
+import { SESSION_ENDED, WAITLIST_FORM } from "../../public/js/core/copy.js";
 import { TYPED_LETTERS, typedError } from "../../public/js/core/copy-code.js";
 import { phoneCopy, refusalToast, uploadLine, videoTime } from "../../public/js/core/copy-phone.js";
-import { endLine, SIGN_IN_HINT, screenCopy } from "../../public/js/core/copy-screen.js";
+import { endLine, FRESH_LINE, screenCopy } from "../../public/js/core/copy-screen.js";
+import { RESULTS } from "../../public/js/core/states.js";
+import { SUPPORT } from "../../public/js/shared/errors.js";
 import type { PhoneStateKey, ScreenStateKey } from "../../src/shared/protocol.ts";
 
 const SCREEN_KEYS: ScreenStateKey[] = [
@@ -58,6 +60,7 @@ const PHONE_KEYS: PhoneStateKey[] = [
   "guest_sent",
   "guest_pass_needed",
   "guest_off",
+  "service_down",
 ];
 
 const sf = {
@@ -65,7 +68,6 @@ const sf = {
   file: "Lecture 4.pptx",
   endsAt: "11:35",
   guest: false,
-  offlineLong: false,
 };
 const pf = { room: "Room 2.14", file: "Lecture 4.pptx" };
 
@@ -114,7 +116,7 @@ describe("screen copy", () => {
     const words = (text: string) => text.split(/\s+/).filter(Boolean).length;
     for (const key of SCREEN_KEYS.filter((k) => k !== "demo_open")) {
       for (const demo of [false, true]) {
-        const heading = screenCopy(key, { ...one, guest: false, offlineLong: false, demo }).heading;
+        const heading = screenCopy(key, { ...one, guest: false, demo }).heading;
         expect(words(heading), heading).toBeLessThanOrEqual(5);
       }
     }
@@ -253,12 +255,37 @@ describe("screen copy", () => {
     );
   });
 
-  it("offline adds the sign-in hint after a while", () => {
-    expect(screenCopy("offline", sf).line).toBe("Reconnecting.");
-    expect(screenCopy("offline", { ...sf, offlineLong: true }).line).toBe(`Reconnecting. ${SIGN_IN_HINT}`);
+  it("offline says it is reconnecting, and in a session that the phone can still end it; no sign-in fallback", () => {
+    expect(screenCopy("offline", sf)).toMatchObject({ heading: "Offline", line: "Reconnecting." });
     expect(screenCopy("offline", { ...sf, inSession: true }).line).toBe(
       "Reconnecting. You can still end from your phone.",
     );
+  });
+
+  it("S7 no state suggests signing in to the PC: some people are already signed in, some verify on a laptop", () => {
+    const facts = [sf, { ...sf, inSession: true }, { ...sf, demo: true }];
+    for (const key of SCREEN_KEYS)
+      for (const f of facts) for (const text of allText(screenCopy(key, f))) expect(text, key).not.toMatch(/sign in/i);
+    for (const key of PHONE_KEYS)
+      for (const text of allText(phoneCopy(key, pf))) expect(text, key).not.toMatch(/sign in/i);
+    expect(readFileSync(new URL("../../public/s.html", import.meta.url), "utf8")).not.toMatch(/sign in/i);
+  });
+
+  it("S7 service down says what is wrong and the way on, once, with the address as text on the screen", () => {
+    expect(screenCopy("service_down", sf)).toMatchObject({
+      heading: "bloop Isn't Responding",
+      line: `Something's wrong on bloop's side. Refresh this page, or email ${SUPPORT}.`,
+      controls: [],
+    });
+    expect(SUPPORT).toBe("hi@bloop.here");
+  });
+
+  it("S7 screen is no named thing: Offline, Busy Right Now, a new code after Session Ended", () => {
+    expect(screenCopy("rate_limited", sf).heading).toBe("Busy Right Now");
+    expect(FRESH_LINE).toBe("Getting a new code.");
+    // "The Room's Screen" is how people say it; no heading names a screen as a thing of bloop's.
+    for (const key of SCREEN_KEYS.filter((k) => k !== "phone_width"))
+      expect(screenCopy(key, { ...sf, demo: false }).heading, key).not.toMatch(/screen/i);
   });
 
   it("in a session every transient state keeps End, so Back never leaves a session running", () => {
@@ -280,14 +307,11 @@ describe("screen copy", () => {
       controls: [],
       alert: false,
     });
-    expect(screenCopy("rate_limited", sf).heading).toBe("Too Many Screens Right Now");
+    expect(screenCopy("rate_limited", sf).heading).toBe("Busy Right Now");
   });
 
-  it("the footer line is the one design.md gives, in the static markup of /s (no script draws it)", () => {
-    const foot = /<p class="foot" id="foot">([^<]*)<\/p>/.exec(
-      readFileSync(new URL("../../public/s.html", import.meta.url), "utf8"),
-    )?.[1];
-    expect(foot).toBe("Phone not with you? Sign in to this PC as usual.");
+  it("S7 the screen has no footer line: it sent people to a PC sign-in", () => {
+    expect(readFileSync(new URL("../../public/s.html", import.meta.url), "utf8")).not.toContain('class="foot"');
   });
 });
 
@@ -457,8 +481,8 @@ describe("phone copy", () => {
 
   it("a guest drop that is switched off says so plainly, with the way out", () => {
     expect(phoneCopy("guest_off", pf)).toMatchObject({
-      title: "This Screen Can't Take Files",
-      body: "Sign in to the PC as usual to open your file.",
+      title: "This Room Can't Take Files",
+      body: "Files from phones are off here. Ask your IT team to turn them on.",
     });
     expect(phoneCopy("guest_off", pf).actions.map((a) => a.label)).toEqual(["Done"]);
   });
@@ -493,8 +517,56 @@ describe("phone copy", () => {
 
   it("the unregistered screen adds a warning", () => {
     expect(phoneCopy("unregistered", pf).warn).toBe(
-      "This screen isn't registered. Only approve if you can see it in front of you.",
+      "This room isn't registered. Only approve if you can see the screen in front of you.",
     );
+  });
+
+  it("S7 an unregistered room has no name: the list's title is the match digits, and no title names a room", () => {
+    const nameless = { ...pf, room: "", match: "42" };
+    for (const key of ["match", "choose", "approve", "unregistered", "approving"] as const)
+      expect(phoneCopy(key, nameless).title, key).toBe("42");
+    expect(phoneCopy("open", nameless).title).toBe("Approved");
+    expect(phoneCopy("guest_sent", nameless).title).toBe("Sent");
+    expect(phoneCopy("guest_confirm", nameless).title).toBe("Send Lecture 4.pptx?");
+    expect(phoneCopy("pdf_fallback", nameless).title).toBe("Showing a PDF");
+    expect(phoneCopy("pdf_file", nameless).title).toBe("PDF Opened");
+  });
+
+  it("S7 the offer's title keeps a long name's start and extension; the body then holds it whole", () => {
+    const file = "Week 7 lecture recording, final cut.mp4";
+    const c = phoneCopy("guest_confirm", { ...pf, file });
+    expect(c.title).toBe("Send Week 7 lecture reco\u2026 cut.mp4 to Room 2.14?");
+    expect(c.body.startsWith(`${file}.`)).toBe(true);
+    // 28 characters or fewer stay whole, and the body does not repeat them.
+    const short = phoneCopy("guest_confirm", { ...pf, file: "Board.png" });
+    expect(short.title).toBe("Send Board.png to Room 2.14?");
+    expect(short.body).not.toContain("Board.png");
+  });
+
+  it("S7 the offer's cut counts code points, so an emoji at either cut stays whole", () => {
+    // 29 code points: an emoji is the 19th, the last eight start with one; String.slice would halve both.
+    const file = `${"a".repeat(18)}\u{1F3AC}bb\u{1F600}clp.mp4`;
+    expect(Array.from(file)).toHaveLength(29);
+    const title = phoneCopy("guest_confirm", { ...pf, file }).title;
+    expect(title).toBe(`Send ${"a".repeat(18)}\u{1F3AC}\u2026\u{1F600}clp.mp4 to Room 2.14?`);
+    expect(title).not.toMatch(/[\uD800-\uDBFF](?![\uDC00-\uDFFF])|(?<![\uD800-\uDBFF])[\uDC00-\uDFFF]/);
+    // 28 code points stay whole, though their UTF-16 length is over 28.
+    const fits = `${"a".repeat(26)}\u{1F3AC}\u{1F600}`;
+    expect(phoneCopy("guest_confirm", { ...pf, file: fits }).title).toBe(`Send ${fits} to Room 2.14?`);
+  });
+
+  it("S7 service down on the phone: what is wrong, Try Again, and the prefilled support mail", () => {
+    const mail = "mailto:hi@bloop.here?subject=bloop%20isn't%20responding";
+    const c = phoneCopy("service_down", pf);
+    expect(c).toMatchObject({
+      title: "bloop Isn't Responding",
+      // Its buttons say Try Again and Email bloop, so the line restates neither.
+      body: "Something's wrong on bloop's side.",
+    });
+    expect(c.actions).toEqual([
+      { id: "mail", label: "Email bloop", kind: "text", href: mail },
+      { id: "retry", label: "Try Again", kind: "primary" },
+    ]);
   });
 
   it("approved is Approved for the room, the items read only, the time left and Revoke in rose", () => {
@@ -544,6 +616,43 @@ describe("phone copy", () => {
     // The line about the file link is held back until open item 1 passes.
     expect(phoneCopy("ended", pf).body).toBe("Close PowerPoint on the room PC and delete any download there.");
     expect(phoneCopy("ended", { ...pf, demo: true }).body).toBe("");
+  });
+
+  it("a demo phone's end leads to the waitlist, Done under it as secondary; a live one has Done alone", () => {
+    for (const key of ["ended", "canceled"] as const) {
+      expect(phoneCopy(key, pf).actions).toEqual([{ id: "done", label: "Done", kind: "primary" }]);
+      // Primary last: stacked, app.css puts it on top.
+      expect(phoneCopy(key, { ...pf, demo: true }).actions).toEqual([
+        { id: "done", label: "Done", kind: "secondary" },
+        {
+          id: "waitlist",
+          label: "Join the Waitlist",
+          kind: "primary",
+          href: "https://tally.so/r/Yj4KAN?source=phone",
+          waitlist: true,
+        },
+      ]);
+    }
+  });
+
+  it("end parity: every phone end state offers the waitlist exactly when the screen's end does", () => {
+    for (const demo of [false, true]) {
+      const screen = screenCopy("ended", { ...sf, demo }).controls.includes("waitlist");
+      for (const key of RESULTS as PhoneStateKey[]) {
+        const phone = phoneCopy(key, { ...pf, demo }).actions;
+        expect(phone.some((a) => a.id === "waitlist")).toBe(screen);
+        // A waitlist action is always the marked same-tab link to the form, never a button.
+        for (const a of phone.filter((x) => x.id === "waitlist")) {
+          expect(a.href?.startsWith(`${WAITLIST_FORM}?source=`)).toBe(true);
+          expect(a.waitlist).toBe(true);
+        }
+      }
+    }
+  });
+
+  it("the waitlist form is the one content/site.json names", () => {
+    const site = JSON.parse(readFileSync(new URL("../../content/site.json", import.meta.url), "utf8"));
+    expect(WAITLIST_FORM).toBe(site.waitlist);
   });
 
   it("a page opened with no code asks for a scan, not an expired code", () => {

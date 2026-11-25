@@ -27,13 +27,15 @@ export function ariaFlag(el, name, on) {
   else el.removeAttribute(name);
 }
 
-// The ring follows a key only: a room screen often has no input of its own (WCAG 2.4.7).
+// The ring follows a key only: a room screen often has no input of its own (WCAG 2.4.7). `.keyed` on the root gives
+// CSS the same rule, for focus a dialog moves on opening.
 let keyed = false;
 for (const t of ["keydown", "pointerdown"])
   addEventListener(
     t,
     (e) => {
       keyed = e.type === "keydown";
+      document.documentElement.classList.toggle("keyed", keyed);
     },
     true,
   );

@@ -57,8 +57,21 @@ class Node {
   /** A video's pauses and loads, as the viewer asked for them. */
   pauses = 0;
   loads = 0;
+  paused = true;
+  muted = false;
+  ended = false;
+  /** What play() answers: a browser that holds sound refuses an unmuted play with NotAllowedError. */
+  refuseSound = false;
+  plays: boolean[] = [];
   pause() {
     this.pauses += 1;
+    this.paused = true;
+  }
+  play() {
+    this.plays.push(this.muted);
+    if (this.refuseSound && !this.muted) return Promise.reject(new DOMException("held", "NotAllowedError"));
+    this.paused = false;
+    return Promise.resolve();
   }
   load() {
     this.loads += 1;
@@ -171,6 +184,7 @@ const ids = [
   "pane",
   "b-end",
   "b-stop",
+  "b-sound",
 ];
 const byId = new Map<string, Node>();
 const docListeners = new Map<string, Listener[]>();
@@ -274,6 +288,9 @@ const setup = (more: Partial<Deps> = {}) => {
   for (const id of ids) byId.set(id, new Node("div"));
   const parked = byId.get("parked");
   if (parked) parked.hidden = true;
+  // As s.html: the page count starts hidden.
+  const dots = byId.get("dots");
+  if (dots) dots.hidden = true;
   const v = createViewer({
     relink: () =>
       new Promise<boolean>((done) => {
@@ -490,7 +507,7 @@ describe("a guest's photo and video on the stage (design.md section 7, Video)", 
     await loaded();
     const video = videoOf(el("frame"), made);
     expect(video?.attrs.get("src")).toBe(`${ORIGIN}/f/abc/talk.mov`);
-    // Native controls without download, full screen or casting; no autoplay and no mute: Play is the presenter's.
+    // Native controls without download, full screen or casting; no autoplay or mute attribute: play() decides.
     expect(video?.attrs.get("controls")).toBe("");
     expect(video?.attrs.get("controlslist")).toBe("nodownload nofullscreen noremoteplayback noplaybackrate");
     expect(video?.attrs.has("disablepictureinpicture")).toBe(true);
@@ -514,7 +531,7 @@ describe("a guest's photo and video on the stage (design.md section 7, Video)", 
     expect(doc.activeElement).toBe(video);
   });
 
-  it("VID-03 a video the browser cannot play shows This Screen Can't Play This Video over its kind line, and ends presenting", async () => {
+  it("VID-03 a video the browser cannot play shows This Video Can't Play Here over its kind line, and ends presenting", async () => {
     const { v, el } = setup();
     v.take(`${ORIGIN}/f/abc/talk.mov`, 0, "view");
     v.render(guestView(clip));
@@ -529,7 +546,7 @@ describe("a guest's photo and video on the stage (design.md section 7, Video)", 
     const card = el("frame").querySelector(".item-card");
     expect(card?.attrs.get("role")).toBe("alert");
     expect(card?.children.slice(1).map((c) => c.textContent)).toEqual([
-      "This Screen Can't Play This Video",
+      "This Video Can't Play Here",
       "QuickTime video · 4.8 MB",
     ]);
     expect(el("frame").querySelector("video")).toBeNull();
@@ -567,10 +584,206 @@ describe("a guest's photo and video on the stage (design.md section 7, Video)", 
     const video = videoOf(el("frame"), made) as Node;
     meta(video);
     v.render(guestView(clip));
-    v.park("This Screen Is Offline");
+    v.park("Offline");
     expect(video.pauses).toBe(1);
     v.render(guestView(clip));
     expect(el("frame").querySelector("video")).toBe(video);
+  });
+
+  describe("VID-05 sound", () => {
+    /** A guest video on stage, its metadata in, as a command or the default tells it. */
+    const staged = async (refuseSound = false, more: Partial<Deps> = {}) => {
+      const { v, el } = setup(more);
+      v.take(`${ORIGIN}/f/abc/talk.mov`, 0, "view");
+      v.render(guestView(clip));
+      await loaded();
+      const video = videoOf(el("frame"), made) as Node;
+      video.refuseSound = refuseSound;
+      meta(video);
+      v.render(guestView(clip));
+      await settle();
+      return { v, el, video };
+    };
+    const told = (shown: Partial<NonNullable<ScreenView["shown"]>>, now = 2) =>
+      ({ ...guestView(clip), shown: { item: "i1", page: 1, present: false, ...shown }, now }) as ScreenView;
+    let active = false;
+    beforeEach(() => {
+      active = false;
+      vi.stubGlobal("navigator", {
+        userActivation: {
+          get isActive() {
+            return active;
+          },
+        },
+      });
+    });
+
+    it("VID-05 sound: on stage it plays with sound at once, as the page's first try", async () => {
+      const { v, el, video } = await staged();
+      expect(video.plays).toEqual([false]);
+      expect(video.paused).toBe(false);
+      expect(el("b-sound").hidden).toBe(true);
+      expect(v.shown()).toMatchObject({ play: true, sound: "on" });
+    });
+
+    it("VID-05 sound: a browser that holds sound gets it muted, Tap for Sound, and a blocked report; the tap unmutes", async () => {
+      const tapped = vi.fn();
+      const { v, el, video } = await staged(true, { tapped });
+      await settle();
+      expect(video.plays).toEqual([false, true]);
+      expect(video.muted).toBe(true);
+      expect(video.paused).toBe(false);
+      expect(el("b-sound").hidden).toBe(false);
+      expect(tapped).toHaveBeenCalledTimes(1);
+      expect(v.shown()).toMatchObject({ play: true, sound: "blocked" });
+      // The tap is the page's user activation: the video's own volumechange then reports sound on.
+      active = true;
+      for (const f of el("b-sound").listeners.get("click") ?? []) f({ type: "click" });
+      expect(video.muted).toBe(false);
+      (video as unknown as { onvolumechange: () => void }).onvolumechange();
+      expect(v.shown()).toMatchObject({ sound: "on" });
+      expect(el("b-sound").hidden).toBe(true);
+      expect(tapped).toHaveBeenCalledTimes(2);
+    });
+
+    it("VID-05 sound: an interrupted play (AbortError, a pause meanwhile) is no refusal of sound", async () => {
+      const tapped = vi.fn();
+      const { v, el, video } = await staged(false, { tapped });
+      v.render(told({ sound: "off" }));
+      video.play = () => Promise.reject(new DOMException("paused", "AbortError"));
+      v.render(told({ sound: "on" }, 3));
+      await settle();
+      expect(video.muted).toBe(false);
+      expect(el("b-sound").hidden).toBe(true);
+      expect(v.shown()).toMatchObject({ sound: "on" });
+      expect(tapped).not.toHaveBeenCalled();
+    });
+
+    it("VID-05 sound: a command pauses, plays and mutes it, once per change; its own events report nothing", async () => {
+      const tapped = vi.fn();
+      const { v, video } = await staged(false, { tapped });
+      v.render(told({ play: false }));
+      expect(video.paused).toBe(true);
+      const pauses = video.pauses;
+      v.render(told({ play: false }, 3));
+      expect(video.pauses).toBe(pauses);
+      v.render(told({ play: true, sound: "off" }, 4));
+      expect(video.muted).toBe(true);
+      expect(video.paused).toBe(false);
+      // No user activation: the play and pause a command caused are not this screen's hand.
+      (video as unknown as { onpause: () => void }).onpause();
+      expect(tapped).not.toHaveBeenCalled();
+    });
+
+    it("VID-05 sound: the screen's own controls and the end report the state, and a repeat of it reports nothing", async () => {
+      const tapped = vi.fn();
+      const { v, video } = await staged(false, { tapped });
+      active = true;
+      video.paused = true;
+      (video as unknown as { onpause: () => void }).onpause();
+      expect(v.shown()).toMatchObject({ play: false });
+      expect(tapped).toHaveBeenCalledTimes(1);
+      (video as unknown as { onpause: () => void }).onpause();
+      expect(tapped).toHaveBeenCalledTimes(1);
+      active = false;
+      video.paused = false;
+      video.ended = true;
+      video.paused = true;
+      v.render(told({ play: true }));
+      video.paused = true;
+      (video as unknown as { onpause: () => void }).onpause();
+      expect(v.shown()).toMatchObject({ play: false });
+    });
+
+    it("VID-05 sound: a video leaving the stage pauses, and coming back plays again", async () => {
+      const deckView = (shown: object, now: number) =>
+        ({ ...view, kind: "guest", items: [clip, { ...deck, id: "i2" }], shown, now }) as unknown as ScreenView;
+      const { v, video } = await staged();
+      v.render(deckView({ item: "i2", page: 1, present: false }, 3));
+      expect(video.paused).toBe(true);
+      v.render(deckView({ item: "i1", page: 1, present: false }, 4));
+      expect(video.paused).toBe(false);
+      v.park("Offline");
+      expect(video.paused).toBe(true);
+      v.render(deckView({ item: "i1", page: 1, present: false }, 4));
+      expect(video.paused).toBe(false);
+    });
+
+    it("VID-05 sound: a file joining the list leaves the video on stage playing", async () => {
+      const { v, el, video } = await staged();
+      const pauses = video.pauses;
+      const grown = { ...view, kind: "guest", items: [{ ...shot, id: "i0" }, clip], now: 3 };
+      v.render({ ...grown, shown: { item: "i1", page: 1, present: false } } as unknown as ScreenView);
+      await settle();
+      expect(el("frame").querySelector("video")).toBe(video);
+      expect(video.pauses).toBe(pauses);
+      expect(video.paused).toBe(false);
+      expect(v.shown()).toMatchObject({ item: "i1", play: true });
+    });
+
+    it("VID-05 sound: a switch to another video lets go of the first: its handlers, and a refusal it answers late", async () => {
+      const two: Item = { ...clip, id: "i2", name: "Demo.mov" };
+      const list = (item: string, now: number) =>
+        ({
+          ...view,
+          kind: "guest",
+          items: [clip, two],
+          shown: { item, page: 1, present: false },
+          now,
+        }) as unknown as ScreenView;
+      const tapped = vi.fn();
+      const { v, el } = setup({ tapped });
+      v.take(`${ORIGIN}/f/abc/talk.mov`, 0, "view");
+      v.render(list("i1", 1));
+      await loaded();
+      const a = videoOf(el("frame"), made) as Node;
+      // A's play answers only later, with the refusal a browser holding sound gives.
+      let refuse = () => {};
+      a.play = () => {
+        a.paused = false;
+        return new Promise((_, no) => {
+          refuse = () => no(new DOMException("held", "NotAllowedError"));
+        });
+      };
+      meta(a);
+      v.render(list("i1", 1));
+      await settle();
+      v.take(`${ORIGIN}/f/abc/demo.mov`, 1, "view");
+      v.render(list("i2", 2));
+      await loaded();
+      const b = videoOf(el("frame"), made) as Node;
+      expect(b).not.toBe(a);
+      meta(b);
+      v.render(list("i2", 2));
+      await settle();
+      expect(a.paused).toBe(true);
+      expect((a as unknown as { onplay: unknown }).onplay).toBeNull();
+      expect(b.paused).toBe(false);
+      refuse();
+      await settle();
+      expect(b.muted).toBe(false);
+      expect(el("b-sound").hidden).toBe(true);
+      expect(v.shown()).toMatchObject({ item: "i2", play: true, sound: "on" });
+      expect(tapped).not.toHaveBeenCalled();
+    });
+
+    it("VID-05 sound: parked, Tap for Sound is hidden and a tap on it does nothing", async () => {
+      const { v, el, video } = await staged(true);
+      expect(el("b-sound").hidden).toBe(false);
+      v.park("Offline");
+      expect(el("b-sound").hidden).toBe(true);
+      active = true;
+      for (const f of el("b-sound").listeners.get("click") ?? []) f({ type: "click" });
+      expect(video.muted).toBe(true);
+      expect(video.paused).toBe(true);
+    });
+
+    it("VID-05 sound: a command that pauses and mutes at once does both", async () => {
+      const { v, video } = await staged();
+      v.render(told({ play: false, sound: "off" }));
+      expect(video.paused).toBe(true);
+      expect(video.muted).toBe(true);
+    });
   });
 
   const cantPlay = (frame: Node) => frame.querySelector(".item-card")?.children[1]?.textContent ?? null;
@@ -582,7 +795,7 @@ describe("a guest's photo and video on the stage (design.md section 7, Video)", 
     await loaded();
     meta(videoOf(el("frame"), made), 0, 0);
     v.render(guestView(clip));
-    expect(cantPlay(el("frame"))).toBe("This Screen Can't Play This Video");
+    expect(cantPlay(el("frame"))).toBe("This Video Can't Play Here");
     expect(el("frame").querySelector("video")).toBeNull();
     expect(v.presentable()).toBe(false);
   });
@@ -606,7 +819,7 @@ describe("a guest's photo and video on the stage (design.md section 7, Video)", 
       expect(slow.el("frame").querySelector(".stand-in")).not.toBeNull();
       vi.advanceTimersByTime(1);
       slow.v.render(guestView(clip));
-      expect(cantPlay(slow.el("frame"))).toBe("This Screen Can't Play This Video");
+      expect(cantPlay(slow.el("frame"))).toBe("This Video Can't Play Here");
 
       const quick = setup();
       quick.v.take(`${ORIGIN}/f/abc/talk.mov`, 0, "view");
@@ -626,7 +839,7 @@ describe("a guest's photo and video on the stage (design.md section 7, Video)", 
     const { v, el } = setup();
     v.render(guestView(clip));
     expect(v.take("https://elsewhere.example/f/abc/talk.mov", 0, "view")).toBe(true);
-    expect(cantPlay(el("frame"))).toBe("This Screen Can't Play This Video");
+    expect(cantPlay(el("frame"))).toBe("This Video Can't Play Here");
     expect(made).toHaveLength(0);
     const photo = setup();
     photo.v.render(guestView(shot));
@@ -713,6 +926,48 @@ describe("DEMO-01 the viewer parks for a transient state", () => {
     await settle();
     v.render({ ...view, items: [photo, twin, deck] } as ScreenView);
     expect(shownFrom(el("frame"))).toBe(`${ORIGIN}/f/one/Dog.jpg`);
+  });
+
+  it("the page count's segment grows once: a repeat paint leaves it running, a reversal runs it back from there", () => {
+    vi.stubGlobal("matchMedia", () => ({ matches: false }));
+    try {
+      const { v, el } = setup();
+      const dots = el("dots");
+      type Run = { cancel: () => void; reverse: () => void; reverses: number; onfinish: unknown };
+      const runs: Run[] = [];
+      let started = 0;
+      Object.assign(dots, {
+        animate: () => {
+          started += 1;
+          const a: Run = {
+            reverses: 0,
+            onfinish: null,
+            cancel: () => runs.splice(runs.indexOf(a), 1),
+            reverse: () => {
+              a.reverses += 1;
+            },
+          };
+          runs.push(a);
+          return a;
+        },
+        getAnimations: () => runs,
+      });
+      const deckView = { ...view, items: [deck] } as ScreenView;
+      v.render(deckView);
+      expect(started).toBe(1);
+      expect(dots.textContent).toBe("1 / 2");
+      // Every scroll and render repaints the count: mid-flight, the same target restarts nothing.
+      v.render(deckView);
+      expect(started).toBe(1);
+      expect(runs).toHaveLength(1);
+      // A switch away mid-flight runs the same animation back, then hides the count.
+      v.render({ ...view, items: [photo] } as ScreenView);
+      expect(started).toBe(1);
+      expect(runs[0]?.reverses).toBe(1);
+      expect(typeof runs[0]?.onfinish).toBe("function");
+    } finally {
+      vi.stubGlobal("matchMedia", () => ({ matches: true }));
+    }
   });
 
   it("a key while parked pages nothing: the deck resumes on the page it was on", () => {
@@ -904,18 +1159,25 @@ describe("presenting is one layout, with or without browser full screen", () => 
 });
 
 describe("the focus ring follows a key", () => {
-  it("focusTitle shows the ring after a key and hides it after a pointer", async () => {
+  it("focusTitle shows the ring after a key and hides it after a pointer; the root's .keyed says the same to CSS", async () => {
     const listeners = new Map<string, Listener>();
+    const root = new Set<string>();
     vi.resetModules();
     vi.stubGlobal("addEventListener", (t: string, f: Listener) => listeners.set(t, f));
+    vi.stubGlobal("document", {
+      ...doc,
+      documentElement: { classList: { toggle: (c: string, on: boolean) => (on ? root.add(c) : root.delete(c)) } },
+    });
     const { focusTitle }: { focusTitle: (t: unknown) => void } = await import(UI);
     const title = { focus: vi.fn() };
     listeners.get("keydown")?.({ type: "keydown" });
     focusTitle(title);
     expect(title.focus).toHaveBeenLastCalledWith({ preventScroll: true, focusVisible: true });
+    expect(root.has("keyed")).toBe(true);
     listeners.get("pointerdown")?.({ type: "pointerdown" });
     focusTitle(title);
     expect(title.focus).toHaveBeenLastCalledWith({ preventScroll: true, focusVisible: false });
+    expect(root.has("keyed")).toBe(false);
   });
 });
 
@@ -991,7 +1253,7 @@ describe("PAIR-13 the screen follows the phone, and reports its own taps (design
     v.render(both({ item: "t2", page: 2, present: false }));
     expect(v.item()?.id).toBe("t2");
     expect(el("dots").textContent).toBe("2 / 2");
-    expect(v.shown()).toEqual({ item: "t2", page: 2, present: false });
+    expect(v.shown()).toMatchObject({ item: "t2", page: 2, present: false });
     v.render(both({ item: "t2", page: 2, present: true }));
     expect(doc.body.classes.has("is-presenting")).toBe(true);
     v.render(both({ item: "t2", page: 1, present: false }));
@@ -1015,7 +1277,7 @@ describe("PAIR-13 the screen follows the phone, and reports its own taps (design
     click(el("next"));
     expect(el("dots").textContent).toBe("2 / 2");
     expect(tapped).toHaveBeenCalledTimes(1);
-    expect(v.shown()).toEqual({ item: "t2", page: 2, present: false });
+    expect(v.shown()).toMatchObject({ item: "t2", page: 2, present: false });
     // Another push (a list change, a length) still carries the old shown: the screen stays where it was tapped.
     v.render(both({ item: "t2", page: 1, present: false }, 2));
     expect(el("dots").textContent).toBe("2 / 2");
@@ -1069,7 +1331,7 @@ describe("PAIR-13 the screen follows the phone, and reports its own taps (design
     await settle();
     v.render(both({ item: "t1", page: 1, present: true }));
     expect(doc.body.classes.has("is-presenting")).toBe(true);
-    expect(v.shown()).toEqual({ item: "t1", page: 1, present: true });
+    expect(v.shown()).toMatchObject({ item: "t1", page: 1, present: true });
   });
 
   it("the phone's Present moves no focus: on an untouched page focus shows Stop Presenting for good", () => {
@@ -1090,7 +1352,7 @@ describe("PAIR-13 the screen follows the phone, and reports its own taps (design
     expect(v.at()).toBe(0);
     const link: Item = { kind: "link", id: "t7", url: "https://vevox.app/", title: "Vevox" };
     v.render({ ...view, items: [link], shown: null } as ScreenView);
-    expect(v.shown()).toEqual({ item: "t7", page: 1, present: false });
+    expect(v.shown()).toMatchObject({ item: "t7", page: 1, present: false });
   });
 
   describe("Present is held only for an item that can present", () => {
@@ -1105,6 +1367,14 @@ describe("PAIR-13 the screen follows the phone, and reports its own taps (design
       click(el("items").children[1]?.children[0] as Node);
       expect(v.item()?.id).toBe("t2");
       expect(v.shown()?.present).toBe(false);
+    });
+
+    it("VID-05 sound: a row picked here starts its item as a phone's command does: playing, sound tried again", () => {
+      const { v, el } = setup();
+      v.render(guest({ item: "t1", page: 1, present: false, play: false, sound: "blocked" }));
+      expect(v.shown()).toMatchObject({ play: false, sound: "blocked" });
+      click(el("items").children[1]?.children[0] as Node);
+      expect(v.shown()).toMatchObject({ item: "t2", play: true, sound: "on" });
     });
 
     it("a command that presents a card is followed to the card, without Present", () => {

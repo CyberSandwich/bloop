@@ -1,6 +1,14 @@
 // Type-only shapes of the browser modules, imported by JSDoc `@import ... from "./types.js"`. Never served
 // (`public/.assetsignore`): the pages ship unminified, so types kept here cost none of the browser JS budget.
-import type { Entry, LinkSet, OpenMode, PhoneStateKey, PhoneView, ScreenView } from "../../src/shared/protocol.ts";
+import type {
+  Entry,
+  ErrorCode,
+  LinkSet,
+  OpenMode,
+  PhoneStateKey,
+  PhoneView,
+  ScreenView,
+} from "../../src/shared/protocol.ts";
 import type { Api } from "./core/api.js";
 import type { openChannel } from "./core/channel.js";
 
@@ -20,7 +28,6 @@ export interface ScreenPage {
   shown: string | null;
   /** The scene the shared enter motion last ran for. */
   scene: string | null;
-  offlineSince: number | null;
   timers: Record<string, ReturnType<typeof setTimeout> | undefined>;
 }
 
@@ -47,6 +54,8 @@ export interface PhonePage extends PhoneCtx {
   progress: number | null;
   /** Back or Done is on its way out: a second tap does nothing. */
   leaving: boolean;
+  /** The last failure's code, for the support mail. */
+  fault: ErrorCode | null;
 }
 
 /** The slice of WebSocket core/channel.js uses, so tests can fake it. */
@@ -171,8 +180,6 @@ export interface ScreenFacts {
   /** Local time, "11:35". */
   endsAt: string | null;
   guest: boolean;
-  /** The screen has been offline for a while. */
-  offlineLong: boolean;
   /** A demo screen (`/s?mode=demo`). */
   demo?: boolean;
   /** How the screen opened the file; only `protocol` is a PowerPoint launch. */
@@ -191,15 +198,17 @@ export interface PhoneAction {
   id: string;
   label: string;
   kind: "primary" | "secondary" | "text" | "rose";
-  href?: string;
+  href?: string | undefined;
   /** The accessible name, when the label alone is not enough (the match digits). */
   aria?: string;
+  /** A link to the waitlist form: it carries data-waitlist, so one grep finds every such link. */
+  waitlist?: boolean;
 }
 
 export interface PhoneCopy {
   title: string;
   body: string;
-  /** The "Registered screen" line under a room title. */
+  /** The "Registered room" line under a room title. */
   room: boolean;
   /** The list to tick, the approved items read only, or the one file on its way over the loader. */
   files: "none" | "skeleton" | "list" | "items" | "upload";
@@ -250,7 +259,7 @@ export interface ScreenCtx {
 
 /** What the claim or a resumed view says about the room. */
 export interface PhoneInfo {
-  roomName: string;
+  roomName: string | null;
   registered: boolean;
   match: string;
   mode: "live" | "demo";

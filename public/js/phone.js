@@ -5,14 +5,14 @@
 import { createApi } from "./core/api.js";
 import { bootCode } from "./core/boot-code.js";
 import { openChannel, refusal } from "./core/channel.js";
-import { phoneCopy, refusalToast, uploadLine } from "./core/copy-phone.js";
+import { MAIL_SUBJECT, phoneCopy, refusalToast, uploadLine } from "./core/copy-phone.js";
 import { thumbOf } from "./core/demo.js";
 import { fileProblem, kindOf, prepareFile, sendFile, wholeMB } from "./core/drop.js";
 import { loadFiles } from "./core/files.js";
 import { ago, countdown } from "./core/format.js";
 import { ICONS } from "./core/icons.js";
 import { loader, setProgress } from "./core/loader.js";
-import { rowFace, tile } from "./core/rows.js";
+import { linkRow, rowFace, tile } from "./core/rows.js";
 import { adopt, firstFile, leave, liveClaim, onRefusal, phoneKey, retryStep } from "./core/states.js";
 import { dropPid, PID_KEY, pidStore, refOf, SID_KEY, sameScreen, sessionStore } from "./core/store.js";
 import { toast } from "./core/toast.js";
@@ -56,6 +56,14 @@ const revokeAsk = /** @type {HTMLDialogElement} */ (byId("revoke"));
 /** @type {((on: boolean) => void) | null} */
 let remote = null;
 let remoteAsked = false;
+let remoteLost = false;
+// One object, so a view while it shows changes nothing (core/toast.js); another toast in its place gives way to it.
+const RELOAD = {
+  title: "Remote Didn't Load",
+  body: "Reload to try again.",
+  error: true,
+  action: { label: "Reload", run: () => location.reload() },
+};
 
 /** @type {import("./types.js").PhonePage} */
 const c = {
@@ -82,13 +90,15 @@ const c = {
   upload: null,
   progress: null,
   leaving: false,
+  fault: null,
 };
 
 /** Failed calls become the state key the shared error table names; offline and generic errors can retry. */
 function fail(/** @type {ErrorCode} */ code, /** @type {(() => void) | null} */ retry = null) {
   const key = ERRORS[code].phone ?? "error";
   c.error = key === "typed_wrong" ? "expired" : key;
-  c.retry = key === "offline" || key === "error" ? retry : null;
+  c.fault = code;
+  c.retry = ["offline", "error", "service_down"].includes(key) ? retry : null;
   render();
 }
 
@@ -134,10 +144,13 @@ function buildItems(/** @type {Item[]} */ items) {
   const had = document.activeElement?.getAttribute("data-id");
   fileList.replaceChildren(
     ...items.map((item) => {
+      const face = rowFace(item, thumbOf(item, look()));
+      // A link opens here, in a new tab: never a command (LINK-01), never marked as on the screen.
+      if (item.kind === "link") return el("li", {}, [linkRow(item.url, "row", face)]);
       const tap = remote && item.kind === "file";
       /** @type {Record<string, string>} */
       const attrs = tap ? { type: "button", class: "row", "data-id": item.id } : { class: "row" };
-      return el("li", {}, [el(tap ? "button" : "div", attrs, rowFace(item, thumbOf(item, look())))]);
+      return el("li", {}, [el(tap ? "button" : "div", attrs, face)]);
     }),
   );
   if (had) /** @type {HTMLElement | null} */ (fileList.querySelector(`[data-id="${had}"]`))?.focus();
@@ -146,6 +159,7 @@ function buildItems(/** @type {Item[]} */ items) {
 function setView(/** @type {PhoneView} */ view, pid = c.pid) {
   adopt(c, view, drop, pid);
   render();
+  if (remoteLost && remoteOn()) toast(RELOAD);
 }
 
 function buildSkeleton() {
@@ -187,10 +201,16 @@ function renderActions(/** @type {import("./types.js").PhoneAction[]} */ actions
     c.actionIds = ids;
     actionsEl.replaceChildren(
       ...actions.map((a) => {
-        const attrs = { class: `btn ${a.kind}`, "data-action": a.id, ...(a.aria ? { "aria-label": a.aria } : {}) };
+        const attrs = {
+          class: `btn ${a.kind}`,
+          "data-action": a.id,
+          ...(a.aria ? { "aria-label": a.aria } : {}),
+          ...(a.waitlist ? { "data-waitlist": "" } : {}),
+        };
         return a.href ? el("a", { ...attrs, href: a.href }) : el("button", { ...attrs, type: "button" });
       }),
     );
+    fillMail();
   }
   for (const [i, a] of actions.entries()) {
     const node = actionsEl.children[i];
@@ -201,6 +221,9 @@ function renderActions(/** @type {import("./types.js").PhoneAction[]} */ actions
     ariaFlag(node, "aria-busy", busy);
   }
 }
+
+/** Where the remote shows (a demo, opening or open), and so its Reload toast. */
+const remoteOn = () => c.info?.mode === "demo" && ["opening", "open"].includes(phoneKey(c));
 
 function render() {
   const key = phoneKey(c);
@@ -261,7 +284,7 @@ function render() {
   // An end pushed meanwhile closes Revoke's question.
   if (!copy.actions.some((a) => a.id === "end")) revokeAsk.close();
   // The remote (core/remote-ui.js, lazy): fetched on a demo claim, so it is ready at the approval.
-  const on = demo && (key === "opening" || key === "open");
+  const on = remoteOn();
   if (demo && !remoteAsked) {
     remoteAsked = true;
     import("./core/remote-ui.js").then(
@@ -269,13 +292,10 @@ function render() {
         remote = m.mount(c, setView);
         render();
       },
-      () =>
-        toast({
-          title: "Remote Didn't Load",
-          body: "Reload to try again.",
-          error: true,
-          action: { label: "Reload", run: () => location.reload() },
-        }),
+      () => {
+        remoteLost = true;
+        if (remoteOn()) toast(RELOAD);
+      },
     );
   }
   remote?.(on);
@@ -343,6 +363,28 @@ actionsEl.addEventListener("click", (e) => {
   else if (id === "send-file" || id === "pick") pickFile();
   else if (id === "send") send();
 });
+
+// Fills the support mail's facts (shared/support.js) as its link shows, and again on the way to it; if they cannot
+// load, the plain link stands.
+function fillMail() {
+  const a = actionsEl.querySelector("[data-action='mail']");
+  if (a)
+    import("./shared/support.js").then(
+      (m) =>
+        a.setAttribute(
+          "href",
+          m.supportMail(MAIL_SUBJECT, {
+            Page: "/a",
+            State: String(c.error),
+            Error: c.fault,
+            Time: new Date().toISOString(),
+            Browser: navigator.userAgent,
+          }),
+        ),
+      () => {},
+    );
+}
+for (const type of ["pointerdown", "focusin"]) actionsEl.addEventListener(type, fillMail);
 
 filePick.addEventListener("change", () => {
   if (filePick.files?.length) choose(filePick.files);
@@ -612,6 +654,9 @@ async function resume(/** @type {string} */ pid) {
 }
 
 function start() {
+  // The floating panel's height, so the toast sits just above it (app.css --toast-lift).
+  const panel = /** @type {HTMLElement} */ (actionsEl.parentElement);
+  new ResizeObserver(() => document.body.style.setProperty("--panel", `${panel.offsetHeight}px`)).observe(panel);
   if (isFramed()) {
     c.error = "framed";
     render();

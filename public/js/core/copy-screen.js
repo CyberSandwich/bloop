@@ -1,15 +1,15 @@
 // The room screen's strings (the rules: copy.js).
 /** @import {ScreenStateKey} from "../../../src/shared/protocol.ts" */
 /** @import {ScreenControl, ScreenCopy, ScreenFacts} from "../types.js" */
+import { down } from "../shared/errors.js";
 import { SESSION_ENDED } from "./copy.js";
 import { VERIFIED } from "./verified.js";
 
-export const SIGN_IN_HINT = "Sign in to this PC as usual to open your file.";
 /** A claim's status, for screen readers only: the room screen shows the title and the match number alone. */
 const WAITING_LINE = "Waiting for Approval";
 /** Under Session Ended once a tap or Enter has asked for a new code. */
-export const FRESH_LINE = "Starting a fresh screen.";
-export const CANT_PLAY = "This Screen Can't Play This Video";
+export const FRESH_LINE = "Getting a new code.";
+export const CANT_PLAY = "This Video Can't Play Here";
 
 /**
  * @param {ScreenStateKey} key
@@ -89,26 +89,22 @@ export function screenCopy(key, f) {
     case "offline":
       return {
         ...base,
-        heading: "This Screen Is Offline",
-        line: f.inSession
-          ? "Reconnecting. You can still end from your phone."
-          : f.offlineLong
-            ? `Reconnecting. ${SIGN_IN_HINT}`
-            : "Reconnecting.",
+        heading: "Offline",
+        line: f.inSession ? "Reconnecting. You can still end from your phone." : "Reconnecting.",
       };
     case "service_down":
-      return { ...base, heading: "bloop Isn't Responding", line: "Sign in to this PC as usual." };
+      return { ...base, heading: "bloop Isn't Responding", line: down("Refresh this page") };
     case "rate_limited":
       return {
         ...base,
-        heading: f.demo ? "Too Many Demos Right Now" : "Too Many Screens Right Now",
+        heading: f.demo ? "Too Many Demos Right Now" : "Busy Right Now",
         line: "Trying again by itself.",
       };
     case "error":
       return {
         ...base,
         heading: "Unable to Open Your File",
-        line: "Try again on your phone, or sign in to this PC as usual.",
+        line: "Try again on your phone.",
         alert: true,
       };
     case "phone_width":

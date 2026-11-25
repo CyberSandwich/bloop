@@ -1,17 +1,19 @@
 // The demo viewer (DEMO-01, design.md section 7): the page fetches the launched link itself.
 // A photo or a video is kept for the session: a second mint spends the budget.
-/** @import {Item, OpenMode, ScreenView} from "../../src/shared/protocol.ts" */
+/** @import {Item, OpenMode, ScreenView, Sound} from "../../src/shared/protocol.ts" */
 /** @import {Minted} from "./types.js" */
 import { CANT_PLAY } from "./core/copy-screen.js";
 import { halves, isVideoLink, openTarget, pageMode, pagesOf, placeControls, stepPage, thumbOf } from "./core/demo.js";
 import { hostOf, isVideo, itemIcon, itemLine, itemName } from "./core/format.js";
 import { ICONS } from "./core/icons.js";
 import { loader, readAll, setProgress } from "./core/loader.js";
-import { rowFace, tile } from "./core/rows.js";
+import { linkRow, linkTo, rowFace, tile } from "./core/rows.js";
 import { onStage } from "./core/states.js";
 import { byId, el, icon, setText, show } from "./core/ui.js";
+import { TUNE, tuneOf } from "./shared/session.js";
 
-/** @typedef {{node?: HTMLCanvasElement | HTMLVideoElement, ratio?: number | null, ready: boolean, failed: boolean, fraction: number | null, stop: () => void}} Shot */
+/** @typedef {{play: boolean, sound: Sound}} Tune */
+/** @typedef {{node?: HTMLCanvasElement | HTMLVideoElement, ratio?: number | null, ready: boolean, failed: boolean, fraction: number | null, stop: () => void, tune?: (want: Tune, retune: (next: Tune) => void) => void}} Shot */
 
 /**
  * A photo's view link, read by script to count its bytes, drawn on a canvas: the CSP has no blob: for an <img>.
@@ -105,16 +107,6 @@ const KEYS = /** @type {Record<string, number>} */ ({
   PageUp: -1,
 });
 
-/** https only (LINK-01): the server allows nothing else, and the page checks again before it makes a link. */
-const linkTo = (
-  /** @type {string} */ url,
-  /** @type {Record<string, string>} */ attrs,
-  /** @type {(Node | string)[]} */ kids,
-) =>
-  url.startsWith("https://")
-    ? el("a", { ...attrs, href: url, target: "_blank", rel: "noopener noreferrer" }, kids)
-    : el("span", attrs, kids);
-
 /**
  * @param {{relink: (item: number) => Promise<Minted>, onChange: () => void, tapped?: () => void, busy?: () => boolean}} deps
  * tapped: a tap here changed what it shows; busy: its report is on its way
@@ -128,11 +120,14 @@ export function createViewer(deps) {
   const prev = /** @type {HTMLButtonElement} */ (byId("prev"));
   const next = /** @type {HTMLButtonElement} */ (byId("next"));
   const dots = byId("dots");
+  /** Where the page count's segment is going: shown, or collapsing and then hidden (setDots). */
+  let dotsOn = !dots.hidden;
   const note = byId("parked");
   const pill = byId("controls");
   const pane = byId("pane");
   const end = byId("b-end");
   const stop = byId("b-stop");
+  const tapSound = byId("b-sound");
   const body = document.body;
   const presenting = () => body.classList.contains("is-presenting");
   // Placement is `placeControls` (core/demo.js), applied and glided here. Offsets, not client rects: the swap scales the img.
@@ -148,8 +143,6 @@ export function createViewer(deps) {
     const held = resized ? null : drawn;
     // Lifted off to measure: a glide to the same target runs on, not restarts.
     for (const a of running) /** @type {KeyframeEffect} */ (a.effect).target = null;
-    const swap = swapped;
-    swapped = false;
     /** @type {any} a slide, a photo's canvas, a video, or their loader */
     const img = frame.querySelector(STAGED) ?? frame.querySelector(".stand-in");
     const item = frame.classList.contains("is-scroll") ? null : (img ?? frame.firstElementChild);
@@ -197,7 +190,8 @@ export function createViewer(deps) {
     drawnIn = win;
     const was = lastPlace;
     lastPlace = place;
-    // Only a change of place, shape or item glides (FLIP: from where they were drawn); a resize moves them at once.
+    // Only a change of place glides (FLIP: from where they were drawn). A new item in the same place moves it in the
+    // same frame as the stage, and its width changes by the page count alone (setDots), so its center holds.
     const differs = (/** @type {"left" | "top" | "width" | "height"} */ k, a = from) => Math.abs(a[k] - now[k]) >= 1;
     const reshaped = differs("width") || differs("height");
     const holds =
@@ -208,7 +202,9 @@ export function createViewer(deps) {
     if (
       !holds &&
       !resized &&
-      (reshaped || ((swap || (was && was !== place)) && (differs("left") || differs("top")))) &&
+      was &&
+      was !== place &&
+      (reshaped || differs("left") || differs("top")) &&
       from.width &&
       !presenting() &&
       !reduced.matches
@@ -255,7 +251,6 @@ export function createViewer(deps) {
   /** The nodes waiting on an image decode: a stale swap must not land. @type {unknown} */
   let building = null;
   /** The stage's content just changed. */
-  let swapped = false;
   // Per-item state is keyed by the server's item id (`keyOf`): a file sorting in ahead shifts every position.
   /** @type {Map<string, Shot>} */
   const images = new Map();
@@ -284,6 +279,10 @@ export function createViewer(deps) {
   /** Presenting as asked, held until the item can present. */
   let want = false;
   let followed = "";
+  /** A video's play state (design.md section 7, Video), and what the one on stage was last set to. */
+  /** @type {Tune} */
+  let tune = { ...TUNE };
+  let tuned = "";
   const pages = () => {
     const item = items()[at];
     return item && shown ? pagesOf(item, shown) : null;
@@ -320,6 +319,8 @@ export function createViewer(deps) {
     at = i;
     page = 0;
     want &&= can();
+    // A new item starts as a phone's command starts it: playing, sound tried again.
+    tune = { ...TUNE };
     if (side.matches(":popover-open")) side.hidePopover();
     deps.onChange();
     deps.tapped?.();
@@ -351,11 +352,7 @@ export function createViewer(deps) {
         const face = rowFace(item, thumbOf(item, v));
         const row =
           item.kind === "link"
-            ? linkTo(item.url, { class: "item" }, [
-                ...face,
-                icon(ICONS["arrow-up-right"], true),
-                el("span", { class: "sr" }, ["New Tab"]),
-              ])
+            ? linkRow(item.url, "item", face)
             : el("button", { type: "button", class: "item" }, face);
         if (item.kind === "file") row.addEventListener("click", () => select(i));
         const split = item.kind === "link" && files > 0 && files === i;
@@ -395,14 +392,47 @@ export function createViewer(deps) {
     return null;
   }
 
+  /**
+   * The page count comes and goes as one segment of the pill: its width, padding and the gap after it, with its
+   * opacity, so the pill keeps its center and Present and Download slide. At once while presenting, stacked or under
+   * reduced motion. @param {boolean} on
+   */
+  function setDots(on, now = false) {
+    const running = dots.getAnimations?.() ?? [];
+    const instant = now || reduced.matches || presenting() || pane.classList.contains("is-stacked");
+    // Every scroll repaints: the same target leaves a running segment alone, or the width would restart from 0.
+    if (on === dotsOn && !(instant && running.length)) return;
+    dotsOn = on;
+    const [flight] = running;
+    if (flight && !instant && running.length === 1) {
+      flight.onfinish = on ? null : () => show(dots, false);
+      return flight.reverse();
+    }
+    for (const a of running) a.cancel();
+    show(dots, true);
+    if (instant) return show(dots, on);
+    const css = getComputedStyle(dots);
+    const full = { width: `${dots.offsetWidth}px`, opacity: 1, paddingInline: css.paddingInline, marginRight: "0px" };
+    const none = {
+      width: "0px",
+      opacity: 0,
+      paddingInline: "0px",
+      marginRight: `-${getComputedStyle(pill).columnGap}`,
+    };
+    const a = dots.animate(on ? [none, full] : [full, none], { duration: 300, easing: easeOut() });
+    if (!on) a.onfinish = () => show(dots, false);
+  }
+
   function paintDots() {
     const p = pages();
     if (parked) return;
-    show(dots, !!p && p.length > 1);
-    if (!p) return;
-    prev.disabled = page === 0;
-    next.disabled = page === p.length - 1;
-    setText(dots, `${page + 1} / ${p.length}`);
+    // The text first: a growing segment is measured with it.
+    if (p) {
+      prev.disabled = page === 0;
+      next.disabled = page === p.length - 1;
+      setText(dots, `${page + 1} / ${p.length}`);
+    }
+    setDots(!!p && p.length > 1);
   }
 
   function paint() {
@@ -459,6 +489,8 @@ export function createViewer(deps) {
         frame.classList.toggle("is-scroll", scroll);
         // A photo replacing its own loader fades in over it; anything else swaps at once.
         const over = img && waiting?.key === key && frame.firstElementChild === waiting.part ? waiting.part : null;
+        const leaving = frame.querySelector("video");
+        if (!nodes.some((n) => n === leaving || n.contains?.(leaving))) hush(leaving);
         frame.replaceChildren(...(over ? [over] : []), ...nodes);
         if (!loading) waiting = null;
         if (img && over)
@@ -475,7 +507,9 @@ export function createViewer(deps) {
         const target = frame.querySelector(STAGED) ?? frame.querySelector(".stand-in") ?? frame.firstElementChild;
         // The pill (its buttons appear after the item) and the list (it grows with a guest's file) set the place too.
         for (const box of [target, view, pill, side, end]) if (box) sized.observe(box);
-        swapped = true;
+        // A swap moves or replaces the video: it is set again.
+        tuned = "";
+        play();
       };
       building = nodes;
       // The old item stays until the new one has decoded.
@@ -499,10 +533,37 @@ export function createViewer(deps) {
     show(prev, !!p && !scroll && p.length > 1);
     show(next, !!p && !scroll && p.length > 1);
     paintDots();
+    play();
+  }
+
+  /** Off the stage or parked, a video stops and reports nothing: its events would retune the item after it. */
+  const hush = (/** @type {HTMLVideoElement | null} */ v) => {
+    if (!v) return;
+    v.onplay = v.onpause = v.onvolumechange = null;
+    v.pause();
+  };
+
+  /** Sets the video on stage to `tune`, once per change (viewer-video.js); what it reports back is reported on. */
+  function play() {
+    const set = parked || !frame.querySelector("video") ? undefined : images.get(keyOf(at))?.tune;
+    show(tapSound, !!set && tune.sound === "blocked");
+    const key = set ? keyOf(at) + tune.play + tune.sound : "";
+    if (key === tuned) return;
+    tuned = key;
+    const mine = keyOf(at);
+    set?.(tune, (/** @type {Tune} */ next) => {
+      // A late answer for an item no longer on stage, or while parked, is not this one's.
+      if (parked || keyOf(at) !== mine || (next.play === tune.play && next.sound === tune.sound)) return;
+      tune = next;
+      tuned = "";
+      play();
+      deps.tapped?.();
+    });
   }
 
   function hide() {
-    for (const part of [side, handle, view, dots]) show(part, false);
+    for (const part of [side, handle, view]) show(part, false);
+    setDots(false, true);
     if (side.matches(":popover-open")) side.hidePopover();
   }
 
@@ -522,7 +583,8 @@ export function createViewer(deps) {
     built = framed = null;
     at = page = 0;
     parked = want = false;
-    followed = "";
+    followed = tuned = "";
+    tune = { ...TUNE };
     hide();
     // A hidden stage while presenting is a black screen: only a real end leaves it.
     present(false);
@@ -635,6 +697,11 @@ export function createViewer(deps) {
     },
     true,
   );
+  // The gesture sound needs; the video's volumechange then reports it.
+  tapSound.addEventListener("click", () => {
+    const video = frame.querySelector("video");
+    if (video && !parked) video.muted = false;
+  });
   prev.addEventListener("click", () => go(-1));
   next.addEventListener("click", () => go(1));
   document.addEventListener("keydown", (e) => {
@@ -679,6 +746,7 @@ export function createViewer(deps) {
           if (i !== at) page = 0;
           at = i;
           want = told.present && can();
+          tune = tuneOf(told);
           go(0, told.page - 1);
         }
       }
@@ -690,14 +758,16 @@ export function createViewer(deps) {
     /** As `POST /api/screen/shown` takes it; a link's card is page 1. */
     shown() {
       const item = items()[at];
-      return item ? { item: item.id, page: page + 1, present: want } : null;
+      return item ? { item: item.id, page: page + 1, present: want, ...tune } : null;
     },
 
     /** A transient state hides the stage; presenting, it stays with a status line. @param {string} line */
     park(line) {
       parked = true;
-      // A hidden video would play on unseen.
-      frame.querySelector("video")?.pause();
+      // A hidden video would play on unseen; unparked, it is set again (as off the stage, paint).
+      hush(frame.querySelector("video"));
+      show(tapSound, false);
+      tuned = "";
       if (!presenting()) return hide();
       for (const part of [frame, prev, next]) show(part, false);
       setText(note, line);

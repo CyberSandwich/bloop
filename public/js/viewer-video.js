@@ -1,5 +1,5 @@
 // A guest video on the stage; every choice here is design.md section 7, Video.
-/** @import {Shot} from "./viewer.js" */
+/** @import {Shot, Tune} from "./viewer.js" */
 import { el } from "./core/ui.js";
 
 export const METADATA_MS = 15_000;
@@ -49,6 +49,23 @@ export function roll(shot, url, onChange) {
   });
   on("error", fail);
   shot.node = video;
+  /**
+   * Sound first; where the browser holds it (no tap on the page yet) muted, so it reports blocked. Only the screen's
+   * own hand (user activation, the end) reports a change: a command's play() and pause() have no activation.
+   * @param {Tune} want @param {(next: Tune) => void} retune
+   */
+  shot.tune = (want, retune) => {
+    video.onplay =
+      video.onpause =
+      video.onvolumechange =
+        () =>
+          (video.ended || navigator.userActivation?.isActive) &&
+          retune({ play: !video.paused, sound: !video.muted ? "on" : want.sound === "on" ? "off" : want.sound });
+    video.muted = want.sound !== "on";
+    if (!want.play) return video.pause();
+    // An interrupted play() (a pause, the end) is no refusal of sound.
+    video.play().catch((e) => !video.muted && e.name === "NotAllowedError" && retune({ ...want, sound: "blocked" }));
+  };
   // Emptied, it stops reading and frees the decoder.
   shot.stop = () => {
     live = false;
