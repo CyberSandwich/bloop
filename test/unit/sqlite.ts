@@ -8,6 +8,7 @@ export function sqlOver(db: DatabaseSync): SqlLike {
   return {
     exec(query, ...bindings) {
       // node:sqlite compiles only the first statement and drops the rest without a word; one statement per call.
+      // It errs toward refusing: a ";" inside a string literal or a comment also trips it.
       if (/;\s*\S/.test(query)) throw new Error(`one statement per exec: ${query}`);
       const statement = db.prepare(query);
       const values = bindings as SQLInputValue[];
