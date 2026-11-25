@@ -1,0 +1,106 @@
+name: container
+
+# Builds the conversion image, runs the fixture corpus against it the way production runs it
+# (docker run --network none --read-only), and on main, the monthly schedule or a manual run
+# pushes it to the Cloudflare registry and opens a PR that bumps container/digest.txt.
+#
+# The push needs the repository secrets CLOUDFLARE_API_TOKEN (a token with Containers edit and
+# registry push) and CLOUDFLARE_ACCOUNT_ID. Without them the test steps still run and the push
+# steps are skipped.
+
+on:
+  push:
+    paths:
+      - "container/**"
+      - ".github/workflows/container.yml"
+  pull_request:
+    paths:
+      - "container/**"
+      - ".github/workflows/container.yml"
+  schedule:
+    - cron: "0 5 1 * *"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: container-${{ github.event_name }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  IMAGE: bloop-converter:ci
+
+jobs:
+  image:
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    permissions:
+      contents: write
+      pull-requests: write
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version-file: .nvmrc
+      - name: Go unit tests
+        run: docker build --target test container
+      - name: Build the image
+        run: docker build --tag "$IMAGE" container
+      - name: Generate the fixtures
+        run: node container/fixtures/make.mjs
+      - name: Run the corpus
+        run: node container/test/corpus.mjs
+      - name: Image size
+        run: docker image ls "$IMAGE" --format 'image {{.Size}}' | tee -a "$GITHUB_STEP_SUMMARY"
+
+      - name: Check for registry credentials
+        id: creds
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+        run: |
+          if [ -n "$CLOUDFLARE_API_TOKEN" ] && [ -n "$CLOUDFLARE_ACCOUNT_ID" ]; then echo "present=true" >> "$GITHUB_OUTPUT"; else echo "registry secrets absent: push skipped" | tee -a "$GITHUB_STEP_SUMMARY"; fi
+
+      - name: Push to the Cloudflare registry
+        id: push
+        continue-on-error: ${{ github.ref != 'refs/heads/main' }}
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+        if: >-
+          github.event_name != 'pull_request'
+          && (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/ci/v1-containerc' || github.event_name == 'schedule' || github.event_name == 'workflow_dispatch')
+          && steps.creds.outputs.present == 'true'
+        run: |
+          set -euo pipefail
+          tag="sha-${GITHUB_SHA::12}"
+          docker tag "$IMAGE" "bloop-converter:${tag}"
+          npm install --prefix "$RUNNER_TEMP/wrangler" --no-audit --no-fund wrangler@4.166.0
+          "$RUNNER_TEMP/wrangler/node_modules/.bin/wrangler" containers push "bloop-converter:${tag}"
+          remote="registry.cloudflare.com/${CLOUDFLARE_ACCOUNT_ID}/bloop-converter:${tag}"
+          digest="$(docker image inspect --format '{{range .RepoDigests}}{{println .}}{{end}}' "$remote" | grep -o 'sha256:[0-9a-f]\{64\}' | head -n1)"
+          test -n "$digest"
+          echo "digest=${digest}" >> "$GITHUB_OUTPUT"
+          echo "pushed bloop-converter:${tag} as ${digest}" | tee -a "$GITHUB_STEP_SUMMARY"
+
+      - name: Open a PR that bumps the digest
+        if: steps.push.outputs.digest != '' && github.ref == 'refs/heads/main'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          DIGEST: ${{ steps.push.outputs.digest }}
+        run: |
+          set -euo pipefail
+          branch="container-digest-$(date -u +%Y%m%d)"
+          echo "$DIGEST" > container/digest.txt
+          git add container/digest.txt
+          if git diff --cached --quiet; then echo "digest unchanged"; exit 0; fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git checkout -b "$branch"
+          git commit -m "Converter image: bump digest to ${DIGEST}"
+          auth="$(printf 'x-access-token:%s' "$GH_TOKEN" | base64 -w0)"
+          git -c "http.extraheader=Authorization: Basic ${auth}" push origin "$branch"
+          gh pr create --base main --head "$branch" --title "Converter image: bump digest" --body "Rebuilt and pushed by container.yml; the corpus passed on this build. Digest: ${DIGEST}"
