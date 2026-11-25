@@ -67,7 +67,7 @@
     "LINK_MINTS_PER_ITEM": "5",
     "LINK_BINDING_DEFAULT": "log",
     "GRAPH_DOWNLOAD_HOSTS": "*.sharepoint.com,*.files.1drv.com,my.microsoftpersonalcontent.com",
-    // Open: with no accounts yet, a guest send is how a real deck reaches a live screen (config-guest-drop.test.ts).
+    // Open: with no accounts yet, a guest send is how a real deck reaches a live screen (test/unit/config.test.ts).
     "GUEST_DROP": "open",
     "GUEST_MAX_BYTES": "94371840",
     "GUEST_STORAGE_BUDGET_BYTES": "5368709120",

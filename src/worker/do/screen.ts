@@ -40,7 +40,7 @@ import { type Meta, phoneView, roomView, screenView } from "../views.ts";
 import { bestEffort, type EffectDeps, noopSeams, runEffects, type SessionSeams } from "./effects.ts";
 import { LinkLedger, type Use } from "./ledger.ts";
 import { migrate, SCHEMA_KEY, SCHEMA_VERSION } from "./schema.ts";
-import { admit, bindingIp, countAuthed, isLive } from "./sockets.ts";
+import { admit, countAuthed, holdBinding, isLive } from "./sockets.ts";
 
 const HELLO_MS = 5000;
 const MAX_CODE_DRAWS = 3;
@@ -309,8 +309,9 @@ export class Screen extends DurableObject<Env> implements PairingStore {
   override async fetch(request: Request): Promise<Response> {
     if (request.headers.get("Upgrade") !== "websocket") return new Response(null, { status: 426 });
     const role: Role = new URL(request.url).pathname.endsWith("/screen/ws") ? "screen" : "phone";
-    // Hash first: from the object check to the accept nothing awaits, so a burst cannot all see one count and the
-    // object cannot close under an upgrade it then accepts.
+    // Hash first: from the object check to the accept nothing awaits, so a burst cannot all see one count. Closing
+    // clears this.m before its first await (deleteAll), so an upgrade checked after that is refused, and one accepted
+    // before it is closed by its loop.
     const cfg = this.config();
     const [ip, net] = [await ipHash(request, cfg), await netHash(request, cfg)];
     if (!this.m) return new Response(null, { status: 410 });
@@ -444,7 +445,8 @@ export class Screen extends DurableObject<Env> implements PairingStore {
    */
   private bindLinksUnlessLive(ip: string, except?: WebSocket): void {
     const now = Date.now();
-    if (!this.authedScreens(except).some((s) => isLive(s.heardAt, now))) this.bindLinksTo(ip);
+    const silence = this.config().socketSilenceMs;
+    if (!this.authedScreens(except).some((s) => isLive(s.heardAt, now, silence))) this.bindLinksTo(ip);
   }
 
   /** The open screen sockets whose `hello` verified, with when each was last heard (its hello or an answered ping). */
@@ -632,7 +634,8 @@ export class Screen extends DurableObject<Env> implements PairingStore {
 
   /** Whether the fetch came from the screen's address, and the refusal that mismatch earns under `enforce` (OPEN-02). */
   private linkIp(ipHashed: string): { ipMatch: boolean | null; binding: "link_binding_failed" | null } {
-    const screenIp = bindingIp(this.authedScreens(), Date.now(), this.ctx.storage.kv.get<string>("screenIp"));
+    const store = { get: () => this.ctx.storage.kv.get<string>("screenIp"), set: (ip: string) => this.bindLinksTo(ip) };
+    const screenIp = holdBinding(this.authedScreens(), Date.now(), store, this.config().socketSilenceMs);
     const ipMatch = screenIp === undefined ? null : screenIp === ipHashed;
     const enforce = this.config().links.binding === "enforce";
     return { ipMatch, binding: enforce && ipMatch === false ? "link_binding_failed" : null };
@@ -743,7 +746,11 @@ export class Screen extends DurableObject<Env> implements PairingStore {
       seams: { ...noopSeams, ...this.linkSeams(), ...this.guestSeams() },
       push: (to) => this.push(to),
       deleteAll: async () => {
-        if (this.meta?.mode === "demo") await directoryStub(this.env).demoRelease(this.meta.screenRef);
+        // Gone before the first await, so an upgrade still hashing sees it at its object check (fetch).
+        const meta = this.meta;
+        this.m = null;
+        this.meta = null;
+        if (meta?.mode === "demo") await directoryStub(this.env).demoRelease(meta.screenRef);
         for (const ws of this.ctx.getWebSockets()) {
           try {
             ws.close(1000, "closed");
@@ -753,8 +760,6 @@ export class Screen extends DurableObject<Env> implements PairingStore {
         }
         await this.ctx.storage.deleteAlarm();
         await this.ctx.storage.deleteAll();
-        this.m = null;
-        this.meta = null;
       },
     };
   }

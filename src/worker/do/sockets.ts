@@ -1,6 +1,6 @@
 import { SILENCE_MS } from "../../../public/js/core/timing.js";
 
-/** Sockets waiting for their `hello`, per role: a full role evicts its oldest waiting socket for the next upgrade. */
+/** Sockets waiting for their `hello`, per role: a full role evicts one for the next upgrade (admit). */
 export const MAX_PENDING_SOCKETS = 4;
 /** Of those, one network may hold this many per role; past it the network's own oldest goes, never another's. */
 export const MAX_PENDING_PER_NET = 2;
@@ -25,18 +25,23 @@ const oldest = <T extends Entry>(list: readonly T[]): T =>
 /**
  * The waiting socket to close so one more socket of `role` from `net` may wait for its `hello`, or null. Every upgrade
  * is admitted: a network at its cap gives up its own oldest, so sockets held open behind a shared address (a venue
- * NAT) cannot keep a real screen out, and a full role gives up its oldest overall. A socket past its `helloBy` is
- * already dying and counts for nothing.
+ * NAT) cannot keep a real screen out. A full role gives up the oldest socket of the network holding the most (the
+ * oldest overall among networks tied for it), so two or more networks flooding the role pay for it before a lone
+ * real screen does. A socket past its `helloBy` is already dying and counts for nothing.
  */
 export function admit<T extends Entry>(entries: readonly T[], role: string, net: string, now: number): T | null {
   const waiting = entries.filter((e) => e.att && !e.att.authed && e.att.role === role && e.att.helloBy > now);
   const mine = waiting.filter((e) => e.att?.net === net);
   if (mine.length >= MAX_PENDING_PER_NET) return oldest(mine);
-  return waiting.length >= MAX_PENDING_SOCKETS ? oldest(waiting) : null;
+  if (waiting.length < MAX_PENDING_SOCKETS) return null;
+  const held = new Map<string | undefined, number>();
+  for (const e of waiting) held.set(e.att?.net, (held.get(e.att?.net) ?? 0) + 1);
+  const most = Math.max(...held.values());
+  return oldest(waiting.filter((e) => held.get(e.att?.net) === most));
 }
 
-/** A socket is live while it said something (its `hello`, or a ping the runtime answered) within `SILENCE_MS`. */
-export const isLive = (heardAt: number, now: number): boolean => now - heardAt < SILENCE_MS;
+/** A socket is live while it said something (its `hello`, or a ping the runtime answered) within `silenceMs`. */
+export const isLive = (heardAt: number, now: number, silenceMs = SILENCE_MS): boolean => now - heardAt < silenceMs;
 
 interface Screen {
   /** The upgrade's address hash. */
@@ -53,8 +58,29 @@ interface Screen {
  * is still talking), and once that one goes quiet the next live one does. With none live, `stored`: the last
  * verified proof, by `hello` or by poll.
  */
-export function bindingIp(screens: readonly Screen[], now: number, stored: string | undefined): string | undefined {
-  const live = screens.filter((s) => isLive(s.heardAt, now));
+export function bindingIp(
+  screens: readonly Screen[],
+  now: number,
+  stored: string | undefined,
+  silenceMs = SILENCE_MS,
+): string | undefined {
+  const live = screens.filter((s) => isLive(s.heardAt, now, silenceMs));
   if (live.length === 0) return stored;
   return live.reduce((a, b) => (a.helloAt <= b.helloAt ? a : b)).ip;
+}
+
+/**
+ * bindingIp, written through to the store whenever a live holder differs from it, so a holder that took over and
+ * then closes stays the fallback instead of the address it replaced.
+ */
+export function holdBinding(
+  screens: readonly Screen[],
+  now: number,
+  store: { get(): string | undefined; set(ip: string): void },
+  silenceMs = SILENCE_MS,
+): string | undefined {
+  const stored = store.get();
+  const ip = bindingIp(screens, now, stored, silenceMs);
+  if (ip !== undefined && ip !== stored) store.set(ip);
+  return ip;
 }

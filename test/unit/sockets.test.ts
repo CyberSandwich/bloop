@@ -4,6 +4,7 @@ import {
   admit,
   bindingIp,
   countAuthed,
+  holdBinding,
   isLive,
   MAX_PENDING_PER_NET,
   MAX_PENDING_SOCKETS,
@@ -62,6 +63,17 @@ describe("PAIR-10 socket count", () => {
     expect(admit(full, "screen", "b", NOW)?.id).toBe(`screen-b-${NOW - 20}`);
   });
 
+  it("PAIR-10 pending cap: a full role evicts from the network holding the most, so a lone real screen stays", () => {
+    // R waits alone and oldest; Y holds two; Z one. The next upgrade (W) costs Y its oldest, never R.
+    const full = [
+      held("screen", "r", NOW - 40),
+      held("screen", "y", NOW - 30),
+      held("screen", "y", NOW - 20),
+      held("screen", "z", NOW - 10),
+    ];
+    expect(admit(full, "screen", "w", NOW)?.id).toBe(`screen-y-${NOW - 30}`);
+  });
+
   it("PAIR-10 liveness: a socket is live until it has been quiet for SILENCE_MS", () => {
     expect(isLive(NOW, NOW + SILENCE_MS - 1)).toBe(true);
     expect(isLive(NOW, NOW + SILENCE_MS)).toBe(false);
@@ -88,6 +100,26 @@ describe("OPEN-02 link binding", () => {
       { ip: "leak", helloAt: T + 50_000, heardAt: now },
     ];
     expect(bindingIp(screens, now, "leak")).toBe("lectern");
+  });
+
+  it("OPEN-02 binding: a holder that took over is written through, so when it closes it stays the fallback", () => {
+    let stored: string | undefined = "A";
+    const store = {
+      get: () => stored,
+      set: (ip: string) => {
+        stored = ip;
+      },
+    };
+    const later = T + SILENCE_MS + 1;
+    const both = [
+      { ip: "A", helloAt: T, heardAt: T },
+      { ip: "B", helloAt: T + 1000, heardAt: later },
+    ];
+    expect(holdBinding(both, later, store)).toBe("B");
+    expect(stored).toBe("B");
+    // B closes after taking over: no live socket, and the fallback is B, not the address it replaced.
+    expect(holdBinding([{ ip: "A", helloAt: T, heardAt: T }], later + 1, store)).toBe("B");
+    expect(holdBinding([], later + 1, store)).toBe("B");
   });
 
   it("OPEN-02 binding: with no live socket, the last verified proof (a hello or a poll) holds", () => {

@@ -1,9 +1,10 @@
 // OPEN-02 binding: with LINK_BINDING_DEFAULT=enforce a fetch from another address than the screen's is refused.
 // Migrated: the view-link case stores a guest drop.
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { TEST_SILENCE_MS } from "../../src/worker/config.ts";
 import { validVideo } from "../zip-builder.ts";
 import { openGuestView } from "./drop-client.ts";
-import { approveDemo, fetchLink, problemOf } from "./open-client.ts";
+import { approveDemo, fetchLink, problemOf, sleep } from "./open-client.ts";
 import { Api, claim, Socket, startPairing } from "./pairing-client.ts";
 import type { Wrangler } from "./wrangler.ts";
 
@@ -78,6 +79,27 @@ describe("OPEN-02 binding", () => {
     expect((await fetchLink(url, { headers: other })).status).toBe(403);
     expect((await fetchLink(url)).status).toBe(200);
     intruder.close();
+    socket.close();
+  });
+
+  it("OPEN-02 binding handover: the lectern gone quiet hands the binding to the newer live screen, which keeps it after closing", async () => {
+    const { screen, socket, url } = await approveDemo(api);
+    const moved = { "CF-Connecting-IP": "203.0.113.20" };
+    const b = await Socket.open(api.base, `/api/screen/ws?ref=${screen.ref}`, api.base, moved);
+    b.send({ t: "hello", sid: screen.sid });
+    await b.stateWhere(() => true);
+    expect((await fetchLink(url, { headers: moved })).status).toBe(403);
+    // The lectern says nothing past the silence window (TEST_TIMING shortens it); B answers the runtime's ping.
+    const until = Date.now() + TEST_SILENCE_MS + 500;
+    while (Date.now() < until) {
+      b.send('{"v":1,"t":"ping"}');
+      await sleep(500);
+    }
+    expect((await fetchLink(url, { headers: moved })).status).toBe(200);
+    expect((await fetchLink(url)).status).toBe(403);
+    b.close();
+    await sleep(300);
+    expect((await fetchLink(url, { headers: moved })).status).toBe(200);
     socket.close();
   });
 

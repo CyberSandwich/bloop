@@ -1,6 +1,7 @@
 // Zod-parsed Worker configuration. Fails closed: a bad value returns an error instead of a default.
 // Covers the pairing variables so far; later modules add theirs to the schema.
 import { z } from "zod";
+import { SILENCE_MS } from "../../public/js/core/timing.js";
 import { MIN_LENGTH_MINUTES } from "../../public/js/shared/length.js";
 import type { Keks } from "./auth/vault.ts";
 import type { MachineConfig } from "./machine.ts";
@@ -279,6 +280,8 @@ export interface Config {
   r2ClassBMonthlyCap: number;
   /** Test only: the platform rate-limit bindings are skipped; the exact limits in the objects stay on. */
   testTiming: boolean;
+  /** An authed screen socket heard from within this is live (the OPEN-02 binding); TEST_TIMING shortens it. */
+  socketSilenceMs: number;
   machine: MachineConfig;
 }
 
@@ -286,6 +289,8 @@ export interface Config {
 const MAX_CODES_PER_MINUTE = 6;
 const ENDED_MIN_SECONDS = 3;
 const CLOSE_AFTER_SECONDS = 600;
+/** Short enough for a test to watch a binding hand over, long enough for one test's steps after a hello. */
+export const TEST_SILENCE_MS = 4000;
 
 export type ConfigResult = { ok: true; config: Config } | { ok: false; problems: string[] };
 
@@ -346,6 +351,7 @@ export function parseConfig(env: Record<string, unknown>): ConfigResult {
       r2ClassAMonthlyCap: v.R2_CLASS_A_MONTHLY_CAP,
       r2ClassBMonthlyCap: v.R2_CLASS_B_MONTHLY_CAP,
       testTiming: v.TEST_TIMING === "1",
+      socketSilenceMs: v.TEST_TIMING === "1" ? TEST_SILENCE_MS : SILENCE_MS,
       machine: {
         codeTtlSeconds: v.CODE_TTL_SECONDS,
         codeGraceSeconds: v.CODE_GRACE_SECONDS,

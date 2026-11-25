@@ -1,6 +1,13 @@
 import fc from "fast-check";
 import { describe, expect, it } from "vitest";
-import { createMachine, type Event, type Machine, nextDeadline, transition } from "../../src/worker/machine.ts";
+import {
+  createMachine,
+  type Effect,
+  type Event,
+  type Machine,
+  nextDeadline,
+  transition,
+} from "../../src/worker/machine.ts";
 import { asItem, CFG, DECK, GUEST_FILE, MAX_MINUTES, T0, violations } from "./machine-helpers.ts";
 
 type Action =
@@ -63,6 +70,7 @@ interface Trace {
   after: Machine;
   event: Event;
   ok: boolean;
+  effects: Effect[];
   /** Codes issued so far: value to issue time. */
   issued: Map<string, number>;
 }
@@ -80,6 +88,7 @@ function run(steps: { dt: number; a: Action }[], observe: (t: Trace) => void): M
     if (!ev) continue;
     const before = structuredClone(m);
     const step = transition(m, ev, CFG);
+    const effects = step.ok ? step.effects : [];
     if (step.ok) {
       m = step.next;
       if (ev.e === "code.next") {
@@ -90,7 +99,7 @@ function run(steps: { dt: number; a: Action }[], observe: (t: Trace) => void): M
       // Purity: a refusal leaves the input untouched.
       expect(m).toEqual(before);
     }
-    observe({ before, after: m, event: ev, ok: step.ok, issued });
+    observe({ before, after: m, event: ev, ok: step.ok, effects, issued });
   }
   return m;
 
@@ -287,6 +296,21 @@ describe("machine properties", () => {
         run(steps, ({ after }) => expect(violations(after)).toEqual([]));
       }),
       { numRuns: 600 },
+    );
+  });
+
+  // refusalSession (links.ts) reads an unrevoked link with no session id as the current session's: it holds only if
+  // no approved session ever gives way to another, or to none, without revoking its links.
+  it("OPEN-01 every step that leaves an approved session revokes its links", () => {
+    fc.assert(
+      fc.property(script, (steps) => {
+        run(steps, ({ before, after, effects }) => {
+          if (before.session?.approvedAt == null) return;
+          const left = after.session?.approvedAt == null || after.pairing?.sessionId !== before.pairing?.sessionId;
+          if (left) expect(effects.map((e) => e.fx)).toContain("revokeLinks");
+        });
+      }),
+      RUNS,
     );
   });
 
