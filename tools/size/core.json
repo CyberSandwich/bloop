@@ -11,11 +11,7 @@
   },
   {
     "name": "doc pages JS",
-    "path": [
-      "dist/js/core/icons.js",
-      "dist/js/core/ui.js",
-      "dist/js/legal.js"
-    ],
+    "path": ["dist/js/core/icons.js", "dist/js/core/ui.js", "dist/js/legal.js"],
     "limit": "2 kB"
   },
   {
@@ -133,11 +129,7 @@
   },
   {
     "name": "session length sheet, lazy",
-    "path": [
-      "dist/js/core/lazy.js",
-      "dist/js/core/length.js",
-      "dist/js/shared/length.js"
-    ],
+    "path": ["dist/js/core/lazy.js", "dist/js/core/length.js", "dist/js/shared/length.js"],
     "limit": "1.35 kB"
   },
   {
@@ -153,11 +145,7 @@
   },
   {
     "name": "phone remote, lazy",
-    "path": [
-      "dist/js/core/lazy.js",
-      "dist/js/core/remote-ui.js",
-      "dist/js/core/remote.js"
-    ],
+    "path": ["dist/js/core/lazy.js", "dist/js/core/remote-ui.js", "dist/js/core/remote.js"],
     "limit": "2.25 kB"
   },
   {
@@ -226,19 +214,13 @@
   },
   {
     "name": "site page CSS",
-    "path": [
-      "dist/css/base.css",
-      "dist/css/site.css"
-    ],
+    "path": ["dist/css/base.css", "dist/css/site.css"],
     "gzip": true,
     "limit": "6.15 kB"
   },
   {
     "name": "app page CSS",
-    "path": [
-      "dist/css/base.css",
-      "dist/css/app.css"
-    ],
+    "path": ["dist/css/base.css", "dist/css/app.css"],
     "gzip": true,
     "limit": "7.1 kB"
   },
