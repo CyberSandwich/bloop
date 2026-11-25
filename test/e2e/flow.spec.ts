@@ -9,6 +9,17 @@ import { crc32, deflateSync } from "node:zlib";
 import AxeBuilder from "@axe-core/playwright";
 import { type Browser, type BrowserContext, expect, type Locator, type Page, type Route, test } from "@playwright/test";
 
+const SHOT_SIZES = { "320": { width: 320, height: 640 }, "390": { width: 390, height: 844 } } as const;
+async function shoot(page: Page, name: string, sizes: (keyof typeof SHOT_SIZES)[], each?: () => Promise<void>) {
+  for (const size of sizes) {
+    await page.setViewportSize(SHOT_SIZES[size]);
+    await page.waitForTimeout(400);
+    await each?.();
+    await page.waitForTimeout(300);
+    await page.screenshot({ path: `test-results/shots/${name}-${size}.png` });
+  }
+}
+
 /** The item on the stage: a page's picture, the photo's canvas or a video (never the loader's thumbnail). */
 const STAGED = "#frame :is(picture img, canvas, video)";
 
@@ -349,6 +360,51 @@ test.describe("pairing flow", () => {
     const sheet = phone.page.getByRole("dialog", { name: "Session Expiry" });
     return { screen, phone, lengthButton, sheet };
   }
+
+  test("PROBE main's sheet layout and Revoke's tap ring in Chromium", async ({ browser }) => {
+    const { screen, phone, lengthButton, sheet } = await approvedDemo(browser);
+    const page = phone.page;
+    for (const width of [320, 390]) {
+      await page.setViewportSize({ width, height: 640 });
+      await lengthButton.click();
+      await expect(sheet).toBeVisible();
+      await page.waitForTimeout(500);
+      const tops = await sheet
+        .locator("[data-minutes]")
+        .evaluateAll((els) => els.map((e) => Math.round(e.getBoundingClientRect().top)));
+      const align = await sheet
+        .locator("h2")
+        .evaluate((e) => e.ownerDocument.defaultView?.getComputedStyle(e).textAlign);
+      const panes = await sheet.locator(".pane, .sheet-pane").evaluateAll((els) =>
+        els.map((e) => {
+          const cs = e.ownerDocument.defaultView?.getComputedStyle(e);
+          return [e.className, cs?.display, cs?.flexDirection, cs?.alignItems, cs?.textAlign];
+        }),
+      );
+      console.log(
+        `PROBE sheet ${width}: chip tops ${JSON.stringify(tops)}, h2 ${align}, panes ${JSON.stringify(panes)}`,
+      );
+      await page.keyboard.press("Escape");
+      await expect(sheet).toBeHidden();
+    }
+    await shoot(page, "old45-sheet", ["320", "390"], async () => {
+      if (!(await page.locator("#length[open]").count())) await lengthButton.click();
+    });
+    await page.keyboard.press("Escape");
+    await page.setViewportSize({ width: 390, height: 844 });
+    await page.getByRole("button", { name: "Revoke" }).click();
+    const ask = page.getByRole("dialog", { name: "End This Session?" });
+    const cancel = ask.getByRole("button", { name: "Cancel" });
+    await expect(cancel).toBeFocused();
+    const ring = await cancel.evaluate((e) => {
+      const cs = e.ownerDocument.defaultView?.getComputedStyle(e);
+      return [e.matches(":focus-visible"), cs?.outlineStyle, cs?.outlineWidth, cs?.boxShadow];
+    });
+    console.log(`PROBE revoke by tap: focus-visible, outline style, width, shadow ${JSON.stringify(ring)}`);
+    await page.screenshot({ path: "test-results/shots/old45-revoke-tap-390.png" });
+    await screen.context.close();
+    await phone.context.close();
+  });
 
   for (const width of [320, 390]) {
     test(`SESS-01 at ${width} the sheet is a 2 x 2 grid: the card and Close, the presets and Set`, async ({
