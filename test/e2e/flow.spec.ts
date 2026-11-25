@@ -582,6 +582,43 @@ test.describe("pairing flow", () => {
     await phone.context.close();
   });
 
+  test("SESS-01 Set on the time the end already shows changes nothing: no request, and the sheet closes", async ({
+    browser,
+  }) => {
+    const { screen, phone, lengthButton, sheet } = await approvedDemo(browser);
+    const posts: string[] = [];
+    phone.page.on("request", (r) => {
+      if (r.url().includes("/api/session/length")) posts.push(r.method());
+    });
+    await lengthButton.click();
+    // The sheet opens on the end's own HH:MM, a minute the end falls in: Set is enabled, and a post would cut its seconds.
+    const set = sheet.getByRole("button", { name: "Set" });
+    await expect(set).toBeEnabled();
+    await set.click();
+    await expect(sheet).toBeHidden();
+    await phone.page.waitForTimeout(500);
+    expect(posts).toEqual([]);
+    await screen.context.close();
+    await phone.context.close();
+  });
+
+  test("SESS-01 an end the server cuts more than a minute short of the ask shows a Capped toast", async ({
+    browser,
+  }) => {
+    const { screen, phone, lengthButton, sheet } = await approvedDemo(browser);
+    // The answer comes back an hour short of the 2 h asked, as late in a session it would.
+    await phone.page.route("**/api/session/length", async (route) => {
+      const response = await route.fetch();
+      const view = await response.json();
+      await route.fulfill({ response, json: { ...view, endsAt: view.now + 3600_000 } });
+    });
+    await lengthButton.click();
+    await sheet.getByRole("button", { name: "2 hours" }).click();
+    await expect(phone.page.getByText(/^Capped at \d{2}:\d{2}$/)).toBeVisible();
+    await screen.context.close();
+    await phone.context.close();
+  });
+
   test("SESS-01 a typed time past approval plus the cap is refused though it is within the cap of now", async ({
     browser,
   }) => {

@@ -1,15 +1,16 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { Api } from "../../public/js/core/api.js";
-import { downGate, isDown, openChannel, refusal } from "../../public/js/core/channel.js";
-import { onRefusal } from "../../public/js/core/states.js";
+import { openChannel, refusal } from "../../public/js/core/channel.js";
 import {
   BLOCKED_PROBE_MS,
   COALESCE_MS,
   CONNECT_TIMEOUT_MS,
   PING_MS,
   PROBE_MS,
-  SILENCE_MS,
-} from "../../public/js/core/timing.js";
+} from "../../public/js/core/channel-timing.js";
+import { downGate, isDown } from "../../public/js/core/poll.js";
+import { onRefusal } from "../../public/js/core/states.js";
+import { SILENCE_MS } from "../../public/js/core/timing.js";
 import type { SocketLike } from "../../public/js/types.js";
 import type { ErrorCode } from "../../src/shared/protocol.ts";
 
@@ -64,6 +65,12 @@ function setup(
     delay?: number;
   } = {},
 ) {
+  vi.stubGlobal("sessionStorage", opts.storage ?? new Memory());
+  vi.stubGlobal("document", {
+    get hidden() {
+      return opts.hidden?.now ?? false;
+    },
+  });
   const sockets: FakeSocket[] = [];
   const views: unknown[] = [];
   const errors: ErrorCode[] = [];
@@ -95,8 +102,6 @@ function setup(
     },
     onFrame: (f) => frames.push(f),
     onLink: (l) => links.push(l),
-    storage: opts.storage ?? null,
-    hidden: () => opts.hidden?.now ?? false,
   });
   return { channel, sockets, views, errors, links, frames, pollCalls };
 }
@@ -108,6 +113,7 @@ beforeEach(() => {
 });
 afterEach(() => {
   vi.restoreAllMocks();
+  vi.unstubAllGlobals();
   vi.useRealTimers();
 });
 
@@ -151,7 +157,7 @@ describe("live channel", () => {
     t.sockets[0]?.push({ v: 1, t: "state", view: { state: "waiting" } });
     expect(t.views).toEqual([{ state: "waiting" }]);
     expect(t.links).toEqual(["ok"]);
-    expect(t.channel.isLive()).toBe(true);
+    expect(t.channel.send({ t: "x" })).toBe(true);
   });
 
   it("hands other frames to onFrame, and ignores pong, junk and wrong versions", () => {
@@ -325,10 +331,11 @@ describe("live channel", () => {
     expect(JSON.parse(t.sockets[0]?.sent.at(-1) ?? "{}")).toEqual({ v: 1, t: "code.next" });
   });
 
-  it("pings while open and drops a socket that has gone silent", () => {
+  it("pings while open and drops a socket that has gone silent", async () => {
     const t = setup();
     t.sockets[0]?.open();
     t.sockets[0]?.push({ v: 1, t: "state", view: {} });
+    await vi.advanceTimersByTimeAsync(0);
     vi.advanceTimersByTime(25_000);
     expect(t.sockets[0]?.sent.at(-1)).toBe('{"v":1,"t":"ping"}');
     vi.advanceTimersByTime(25_000);
@@ -362,6 +369,7 @@ describe("live channel", () => {
     const t = setup();
     t.sockets[0]?.open();
     t.sockets[0]?.push({ v: 1, t: "state", view: { state: "waiting" } });
+    await vi.advanceTimersByTimeAsync(0);
     vi.setSystemTime(Date.now() + PING_MS + 1);
     t.channel.wake();
     await vi.advanceTimersByTimeAsync(PROBE_MS);
@@ -446,15 +454,16 @@ describe("live channel", () => {
 });
 
 describe("REL-02 a socket that says it is open after a long quiet is probed", () => {
-  const live = (opts?: Parameters<typeof setup>[2]) => {
+  const live = async (opts?: Parameters<typeof setup>[2]) => {
     const t = setup([], undefined, opts);
     t.sockets[0]?.open();
     t.sockets[0]?.push({ v: 1, t: "state", view: {} });
+    await vi.advanceTimersByTimeAsync(0);
     return t;
   };
 
   it("REL-02 after more than PING_MS quiet, wake pings; no frame back in 3 s replaces the socket at once", async () => {
-    const t = live();
+    const t = await live();
     t.sockets[0]?.sent.splice(0);
     // The tab slept: nothing was heard (and no ping tick ran).
     vi.setSystemTime(Date.now() + PING_MS + 1);
@@ -469,7 +478,7 @@ describe("REL-02 a socket that says it is open after a long quiet is probed", ()
   });
 
   it("REL-02 an answer inside 3 s keeps the socket", async () => {
-    const t = live();
+    const t = await live();
     vi.setSystemTime(Date.now() + PING_MS + 1);
     t.channel.wake();
     await vi.advanceTimersByTimeAsync(1000);
@@ -479,8 +488,8 @@ describe("REL-02 a socket that says it is open after a long quiet is probed", ()
     expect(t.sockets[0]?.closed).toBe(false);
   });
 
-  it("REL-02 a socket heard from within PING_MS is not probed", () => {
-    const t = live();
+  it("REL-02 a socket heard from within PING_MS is not probed", async () => {
+    const t = await live();
     t.sockets[0]?.sent.splice(0);
     t.channel.wake();
     expect(t.sockets[0]?.sent).toEqual([]);
@@ -488,15 +497,16 @@ describe("REL-02 a socket that says it is open after a long quiet is probed", ()
 });
 
 describe("REL-15 the silence rule counts missed pings and skips a hidden tab", () => {
-  const open = (hidden: { now: boolean }) => {
+  const open = async (hidden: { now: boolean }) => {
     const t = setup([], undefined, { hidden });
     t.sockets[0]?.open();
     t.sockets[0]?.push({ v: 1, t: "state", view: {} });
+    await vi.advanceTimersByTimeAsync(0);
     return t;
   };
 
-  it("REL-15 one missed ping is no loss; the second in a row closes", () => {
-    const t = open({ now: false });
+  it("REL-15 one missed ping is no loss; the second in a row closes", async () => {
+    const t = await open({ now: false });
     vi.advanceTimersByTime(PING_MS);
     vi.advanceTimersByTime(PING_MS);
     expect(t.sockets[0]?.closed).toBe(false);
@@ -504,8 +514,8 @@ describe("REL-15 the silence rule counts missed pings and skips a hidden tab", (
     expect(t.sockets[0]?.closed).toBe(true);
   });
 
-  it("REL-15 an answer between pings resets the count", () => {
-    const t = open({ now: false });
+  it("REL-15 an answer between pings resets the count", async () => {
+    const t = await open({ now: false });
     for (let i = 0; i < 6; i++) {
       vi.advanceTimersByTime(PING_MS);
       t.sockets[0]?.push({ v: 1, t: "pong" });
@@ -513,25 +523,25 @@ describe("REL-15 the silence rule counts missed pings and skips a hidden tab", (
     expect(t.sockets[0]?.closed).toBe(false);
   });
 
-  it("REL-15 a hidden tab is judged by the 70 s silence instead, and showing again starts the count afresh", () => {
+  it("REL-15 a hidden tab is judged by the 70 s silence instead, and showing again starts the count afresh", async () => {
     const hidden = { now: true };
-    const t = open(hidden);
+    const t = await open(hidden);
     vi.advanceTimersByTime(PING_MS * 2);
     expect(PING_MS * 2).toBeLessThan(SILENCE_MS);
     expect(t.sockets[0]?.closed).toBe(false);
     hidden.now = false;
     vi.advanceTimersByTime(PING_MS);
     expect(t.sockets[0]?.closed).toBe(false);
-    const dead = open({ now: true });
+    const dead = await open({ now: true });
     vi.advanceTimersByTime(PING_MS * 3);
     expect(dead.sockets[0]?.closed).toBe(true);
   });
 
   it("REL-15 a missed-ping drop gives the socket up for good: not live, handlers off, a new one on the next try", async () => {
-    const t = open({ now: false });
+    const t = await open({ now: false });
     for (let i = 0; i < 3; i++) vi.advanceTimersByTime(PING_MS);
     const ws = t.sockets[0];
-    expect(t.channel.isLive()).toBe(false);
+    expect(t.channel.send({ t: "x" })).toBe(false);
     expect(t.channel.send({ t: "x" })).toBe(false);
     expect([ws?.onclose, ws?.onerror, ws?.onmessage, ws?.onopen]).toEqual([null, null, null, null]);
     await vi.advanceTimersByTimeAsync(1000);
@@ -747,7 +757,7 @@ describe("O10 send coalesces over COALESCE_MS", () => {
   };
 
   it("the first frame goes at once; a burst after it sends the latest of each type once the window ends", async () => {
-    const t = live();
+    const t = await live();
     expect(t.channel.send({ t: "page", n: 1 })).toBe(true);
     t.channel.send({ t: "page", n: 2 });
     t.channel.send({ t: "page", n: 3 });
@@ -763,7 +773,7 @@ describe("O10 send coalesces over COALESCE_MS", () => {
   });
 
   it("a frame sent while no socket is live is refused, and a drop discards what waited", async () => {
-    const t = live();
+    const t = await live();
     t.channel.send({ t: "page", n: 1 });
     t.channel.send({ t: "page", n: 2 });
     t.sockets[0]?.drop();

@@ -45,6 +45,7 @@
       "name": "room screen JS",
       "path": [
         "dist/js/core/api.js",
+        "dist/js/core/channel-timing.js",
         "dist/js/core/channel.js",
         "dist/js/core/copy-screen.js",
         "dist/js/core/copy.js",
@@ -68,13 +69,14 @@
         "dist/js/vendor/uqr.js",
         "dist/js/viewer.js"
       ],
-      "limit": "25.3 kB"
+      "limit": "24.55 kB"
     },
     {
       "name": "phone JS",
       "path": [
         "dist/js/core/api.js",
         "dist/js/core/boot-code.js",
+        "dist/js/core/channel-timing.js",
         "dist/js/core/channel.js",
         "dist/js/core/copy-phone.js",
         "dist/js/core/copy.js",
@@ -96,7 +98,7 @@
         "dist/js/shared/names.js",
         "dist/js/shared/session.js"
       ],
-      "limit": "17.55 kB"
+      "limit": "16.95 kB"
     },
     {
       "name": "typed code JS",
@@ -112,7 +114,17 @@
         "dist/js/shared/codes.js",
         "dist/js/shared/errors.js"
       ],
-      "limit": "4.3 kB"
+      "limit": "4.05 kB"
+    },
+    {
+      "name": "channel polling, lazy",
+      "path": "dist/js/core/poll.js",
+      "limit": "0.61 kB"
+    },
+    {
+      "name": "channel health, lazy",
+      "path": "dist/js/core/health.js",
+      "limit": "0.32 kB"
     },
     {
       "name": "phone photo, lazy",
@@ -136,7 +148,12 @@
         "dist/js/core/length.js",
         "dist/js/shared/length.js"
       ],
-      "limit": "1.7 kB"
+      "limit": "1.35 kB"
+    },
+    {
+      "name": "session length words, lazy",
+      "path": "dist/js/core/length-extra.js",
+      "limit": "0.45 kB"
     },
     {
       "name": "session length sheet CSS, lazy",
