@@ -1,8 +1,8 @@
-import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 import { callbackErrorPage, WORDS } from "../../src/worker/auth/error-page.ts";
 import type { SignInError } from "../../src/worker/auth/oauth.ts";
 import { policyOf } from "../../src/worker/headers.ts";
+import { NEVER_SAY } from "./never-say.ts";
 
 const FAILURES = Object.keys(WORDS) as SignInError[];
 
@@ -34,14 +34,10 @@ describe("the /auth/callback error page", () => {
   });
 
   it("follows the voice rules and never-say list", () => {
-    const never = readFileSync(new URL("../../tools/never-say.txt", import.meta.url), "utf8")
-      .split("\n")
-      .map((l) => l.trim().toLowerCase())
-      .filter((l) => l && !l.startsWith("#"));
     const text = Object.values(WORDS)
       .flatMap((w) => [w.title, w.body])
       .join(" ");
     expect(text).not.toMatch(/[–—!]/);
-    for (const phrase of never) expect(text.toLowerCase(), phrase).not.toContain(phrase);
+    for (const phrase of NEVER_SAY) expect(text.toLowerCase(), phrase).not.toContain(phrase);
   });
 });

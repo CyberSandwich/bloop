@@ -2,6 +2,7 @@ import { readdirSync, readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
 import { EXTENSION_TYPES } from "../../public/js/shared/names.js";
+import { NEVER_SAY } from "./never-say.ts";
 
 const read = (rel: string) => readFileSync(fileURLToPath(new URL(`../../${rel}`, import.meta.url)), "utf8");
 // The articles are built from content/articles/ (design.md section 6, Site build): the index and one page each.
@@ -177,10 +178,6 @@ describe.each(SITE)("%s under the strict CSP", (page) => {
 });
 
 describe("every page's text", () => {
-  const never = read("tools/never-say.txt")
-    .split("\n")
-    .map((l) => l.trim().toLowerCase())
-    .filter(Boolean);
   const sources = [
     ...ALL.map((p) => [p, read(`public/${p}`)] as const),
     ...["copy", "copy-screen", "copy-phone", "copy-code"].map(
@@ -192,7 +189,7 @@ describe("every page's text", () => {
 
   it.each(sources)("%s has no never-say phrase", (_name, text) => {
     const lower = text.toLowerCase();
-    for (const phrase of never) expect(lower, phrase).not.toContain(phrase);
+    for (const phrase of NEVER_SAY) expect(lower, phrase).not.toContain(phrase);
   });
 
   it.each(sources)("%s has no em or en dash and no exclamation mark in its text", (_name, text) => {
@@ -1026,10 +1023,12 @@ describe("privacy notice", () => {
   it("states the audit retention the Worker runs, and the request logs as the threat model does", () => {
     expect(row("Session and access records")).toContain("180 days. In the Demo, 7 days");
     expect(read("wrangler.jsonc")).toMatch(/"AUDIT_RETENTION_DAYS": "180"[\s\S]*"DEMO_RETENTION_DAYS": "7"/);
-    // The live Worker logs nothing, so "at most" holds whatever the platform keeps.
-    expect(row("Cloudflare's request logs")).toContain("At most 7 days, with no personal data");
+    // An IP address is personal data, so the notice names it rather than claiming none.
+    expect(row("Cloudflare's request logs")).toContain(
+      "Off on the live site. If they are turned on, they record each request's details, including your IP address, and keep them at most 7 days",
+    );
     expect(read("docs/threat-model.md")).toMatch(
-      /\| Worker logs \| Cloudflare \| [^|]*at most 7 days, no personal data \|/,
+      /\| Worker logs \| Cloudflare \| off on the live Worker[^|]*if turned on, request details including the IP address, at most 7 days \|/,
     );
   });
 

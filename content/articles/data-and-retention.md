@@ -22,7 +22,7 @@ Caption: What bloop keeps, where, and for how long
 | Usage counts, with no names | Cloudflare D1, EU | 90 days, then daily totals for 2 years |
 | Codes, links and pairing secrets | The Screen's own Durable Object, EU | Until the session ends, is canceled or times out |
 | Failed code attempts, as a hash of the address | Cloudflare Durable Object, EU | 10 minutes |
-| Cloudflare's request logs | Cloudflare | At most 7 days, with no personal data |
+| Cloudflare's request logs | Cloudflare | Off on the live site. If they are turned on, they record each request's details, including your IP address, and keep them at most 7 days |
 | Waitlist answers | Tally | Until you ask for deletion, or the waitlist closes |
 | Emails to <{{email}}> | Apple iCloud Mail | 2 years after the last message in a thread |
 
