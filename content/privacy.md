@@ -8,7 +8,7 @@ panel: true
 binds: this notice
 summaryNote: This summary helps you read; the full text applies.
 effective: 2026-11-25
-version: 1.1
+version: 1.0
 ---
 
 bloop is a new, free side project run by one person in the UK. It keeps only what it needs to put your file on the screen, and deletes a guest's file when the session ends. It never sells data and runs no ads, analytics scripts or trackers. Write to <{{email}}> about anything here.
@@ -189,6 +189,5 @@ In short: changes are dated and listed here.
 
 ### What Changed
 
-- Version 1.1, 2026-11-25: clarifications only, with no change to how data is handled. The example in 1.4 says room PC, the word used on every page, and the summary of section 11 names the age of 13 its clause gives. Sections 3, 5 and 6 name the one address all mail now goes to; the mailbox behind it is the same.
 - Version 1.0, 2026-11-25: first published version.
 - Earlier versions were shown for review before this one; they are replaced and never took effect.

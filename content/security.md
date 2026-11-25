@@ -5,7 +5,7 @@ title: Security
 description: What bloop holds, where it runs, what can stay on a PC, and how to report a problem.
 panel: true
 effective: 2026-11-25
-version: 1.1
+version: 1.0
 ---
 
 bloop puts a file on a shared screen without putting your account there. This page is for the people who look after those screens: what bloop holds, where it runs, what can stay on a PC, and how to reach us. The articles explain each part in more depth, starting with [How bloop Works](/articles/how-bloop-works).
@@ -109,6 +109,5 @@ No external audit or penetration test yet, and no Cyber Essentials certificate y
 
 ## What Changed {#changes}
 
-- Version 1.1, 2026-11-25: How It Works says the phone shows a number to match, and no longer that it shows the room, which only registered rooms (planned) will name. Reports go to the one public address, not a separate one.
 - Version 1.0, 2026-11-25: first published version.
 - Earlier versions were shown for review before this one; they are replaced and never took effect.
