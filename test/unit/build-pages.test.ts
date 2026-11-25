@@ -10,6 +10,7 @@ import {
   headOfHand,
   injectChrome,
   loadDocs,
+  readingMinutes,
   renderDoc,
   site,
   splitFrontmatter,
@@ -401,6 +402,16 @@ describe("the content rules", () => {
       if (d.meta.kind === "legal") expect(d.meta.effective, d.file).toMatch(/^\d{4}-\d{2}-\d{2}$/);
       if (d.meta.kind === "article") expect(d.meta.published, d.file).toMatch(/^\d{4}-\d{2}-\d{2}$/);
     }
+  });
+
+  it("counts reading time from the words read, not a stacked table's hidden column labels", () => {
+    const labeled =
+      '<tr><th scope="row">A</th><td><span class="label" aria-hidden="true">What it does</span>Runs</td></tr>';
+    const plain = '<tr><th scope="row">A</th><td>Runs</td></tr>';
+    // 1,000 words read either way; the labels would add 1,500 more.
+    const minutes = (row: string) => readingMinutes([{ id: "a", title: "A", html: row.repeat(500) }]);
+    expect(minutes(labeled)).toBe(minutes(plain));
+    expect(minutes(labeled)).toBeLessThan(readingMinutes([{ id: "a", title: "A", html: "x ".repeat(2500) }]));
   });
 
   it("while the legal pages are 1.0 (before v1 is final), their change clauses say 1.0 is updated in place", () => {

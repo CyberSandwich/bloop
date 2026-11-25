@@ -297,8 +297,10 @@ const need = (/** @type {Doc} */ doc, /** @type {string} */ key) => {
   if (typeof v !== "string" || !v) throw new Error(`${doc.file}: frontmatter ${key} is required`);
   return v;
 };
+// The words a reader reads: a stacked table's column-name labels are aria-hidden copies of the heads.
 const textOf = (/** @type {string} */ html) =>
   html
+    .replace(/<span class="label" aria-hidden="true">[^<]*<\/span>/g, " ")
     .replace(/<[^>]+>/g, " ")
     .replace(/\s+/g, " ")
     .trim();
