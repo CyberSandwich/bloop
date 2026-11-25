@@ -93,11 +93,3 @@ MODE-01 (preview never exposes the open surfaces or invites to non-test emails; 
 
 ## How to remove it
 Once open is permanent: make the open pages the base pages in `build-pages`, delete the variant list, the open-subtree handling and the 404 rule, make `launchMode()` return `open` and then delete it and every call, and leave the `setting` rows and their `admin_action` history in place as the record of the gate.
-
-## Flags (Part 2 unsafe, ambiguous or contradicting Part 1, and the resolution)
-1. **Missing in Part 2:** the mode exists only in Part 1. Every Part 2 surface is mapped in the table above.
-2. **Contradiction:** "`/signin`, `/library` and `/account` work for ADMIN_EMAILS plus TEST_EMAILS only" cannot apply to a static page before sign-in. Resolved: `/signin` and `/invite` are unlinked `noindex` shells, the session pages 404 when signed out, and the APIs carry the gate.
-3. **Contradiction:** "invites only to TEST_EMAILS" leaves no way to create the first admin. Resolved: the owner's invite tool, outside the routes.
-4. **Unsafe:** `_headers` would leave the variants without their page's CSP. Resolved: the subtree gets the same rules and the drift test checks it.
-5. **Unsafe:** a check-then-write for the three ticks races an untick, and an unguarded log insert records refused changes. Resolved: both carry the guard in the statement.
-6. **Ambiguous:** what a switch back does to members and talks. Resolved by the owner: members keep working by default, and `preview_lockout` restricts them when set.

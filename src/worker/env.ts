@@ -10,7 +10,6 @@ export interface Env {
   DB: D1Database;
   GUEST_FILES: R2Bucket;
   LIBRARY: R2Bucket;
-  EMAIL: SendEmail;
   RL_CREATE: RateLimit;
   RL_CLAIM: RateLimit;
   RL_FETCH: RateLimit;

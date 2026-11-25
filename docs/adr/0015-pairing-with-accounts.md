@@ -15,8 +15,8 @@ Status: proposed. Amends ADR 0002 (pairing protocol) and ADR 0003's "resolve at 
 - The claim route resolves the session cookie first (one D1 read; no cookie is no read), before the Directory and before the Screen object.
 - It passes `{kind, signedIn}` to `Directory.lookup`. For a live code with `kind = owner` and no signed-in user, the Directory answers `auth_required` without routing to the Screen, and records the attempt as a miss against the IP hash. The code is never marked consumed, so the real presenter can still claim it.
 - `auth_required` does tell a prober that a live code exists, which `code_unknown` does not. It is rate-limited like a miss (the same exact per-IP count) and gives nothing a guest claim on the same code would not: a guest claim already reveals a live code and pairs it.
-- A demo code needs no cookie, as today. A live `guest` claim needs no cookie either: the account-free guest send keeps working in both modes (Part 1).
-- The signed-in user id goes into `pairing.userId` at claim and is **pinned**, together with the claiming session's `public_id`: `listed`, `approve`, the notes route and every later owner call require the cookie user to equal it, else `pairing_invalid`. Part 2's "approve may carry a newer account" (today's `approveItems` override, made for claim-then-sign-in) is removed.
+- A demo code needs no cookie, as today. A live `guest` claim needs no cookie either: the account-free guest send keeps working in both modes.
+- The signed-in user id goes into `pairing.userId` at claim and is **pinned**, together with the claiming session's `public_id`: `listed`, `approve`, the notes route and every later owner call require the cookie user to equal it, else `pairing_invalid`. Today's `approveItems` override (made for claim-then-sign-in) that lets approve carry a newer account is removed.
 - In preview with `preview_lockout` set, a signed-in user outside `ADMIN_EMAILS` plus `TEST_EMAILS` counts as signed out (ADR 0026).
 
 ### The match pick (PAIR-14 match)
@@ -34,7 +34,7 @@ Status: proposed. Amends ADR 0002 (pairing protocol) and ADR 0003's "resolve at 
 - Session links and bundle links are minted by the Screen object as today (ADR 0003), so the screen holds only links that die at session end.
 
 ### Early access and resume (open mode)
-- `/a` calls `GET /api/me` **before** claiming. Signed in: claim as owner. Signed out, in open mode, on a live code: the phone does not claim and shows the "Early Access Only" sheet with four actions (Part 1; Part 2 listed three):
+- `/a` calls `GET /api/me` **before** claiming. Signed in: claim as owner. Signed out, in open mode, on a live code: the phone does not claim and shows the "Early Access Only" sheet with four actions:
   - **Sign In:** stores `{code, at}` in `sessionStorage` and goes to `/signin?next=/a`. `next` is checked against an allowlist of exact paths (`/a`, `/library`, `/account`); anything else becomes `/library`. On return, `/a` re-claims if less than 70 s have passed, else shows "Scan the Screen Again". A passkey sign-in fits inside the window; an emailed code usually does not, and the rescan is the expected path, not an error.
   - **Try the Demo**, **Join the Waitlist** (Tally), **Send a File Without an Account** (a guest claim, which then confirms the match like any live claim).
 - In preview the sheet never shows (MODE-01): a signed-out phone on a live code gets the guest send, as today minus the mock list.
@@ -61,7 +61,7 @@ Status: proposed. Amends ADR 0002 (pairing protocol) and ADR 0003's "resolve at 
 - Guest items with notes are served the same way to the guest's pid. Demo items have none.
 
 ## Rejected
-- **Cookie check before the Directory lookup with no code knowledge** (Part 2's literal wording): the route cannot tell a demo code from a live one before the lookup, so it would demand a cookie for the demo. The lookup does not spend a code, so checking inside the lookup, before the Screen, keeps the invariant.
+- **Cookie check before the Directory lookup with no code knowledge**: the route cannot tell a demo code from a live one before the lookup, so it would demand a cookie for the demo. The lookup does not spend a code, so checking inside the lookup, before the Screen, keeps the invariant.
 - **Typing the screen's number into the phone:** stronger against a guess (1 in 100) but slower and error-prone on a lectern, and no stronger against a relay that controls the display. Revisit if relay attacks are seen.
 - **Holding the code while a signed-out phone signs in:** a stranger could park any screen.
 - **Putting the user on the screen view "for display":** the screen is untrusted (section 9 of the threat model).
@@ -80,14 +80,3 @@ PAIR-14, PAIR-15, PAIR-16, NOTES-01, LIB-01, LIB-03, SRC-01, SRC-02, SRC-04, PAI
 ## How to remove it
 - The pick: drop the `match` event and `confirmed`, and the screen falls back to the passive match (a schema step that sets `confirmed` true on wake).
 - Accounts on live screens: set `FILE_SOURCE` back and remove the `auth_required` branch from the lookup; guests are unaffected.
-
-## Flags (Part 2 unsafe, ambiguous or contradicting Part 1, and the resolution)
-1. **Contradiction:** Part 2 checks the cookie "before the Directory lookup", which breaks the demo. Resolved: inside the lookup, before the Screen; the attempt counts as a miss.
-2. **Gap (unsafe):** Part 2 left live guest claims without the match pick, so reverse QRLjacking still worked against guest files. Resolved: guests confirm the match; a stranger may still occupy a live screen as a guest, as today (PAIR-02, first claim wins, Start Over).
-3. **Unsafe:** the phone view carrying the real `match` beside the choices. Resolved: the phone gets only the shuffled `choices`.
-4. **Ambiguous:** account switch mid-pairing. Resolved: the claim's user is pinned.
-5. **Contradiction:** Part 1's sheet has four actions, Part 2's three. Part 1 wins.
-6. **Ambiguous:** the sheet in preview. Resolved: never shown; guest send only.
-7. **Timing:** "on return it re-claims" will usually fail for code sign-in (60 s codes). Resolved: rescan is the designed path.
-8. **Ambiguous:** notes "live only". Resolved: pid only for any item with notes; the mode is not the control.
-9. **Gap:** single sign-out and a deletion request left screens serving. Resolved above.

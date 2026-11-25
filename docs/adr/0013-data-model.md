@@ -9,7 +9,7 @@ Status: proposed. Ships with `migrations/0005_accounts_library.sql`. It follows 
 - The daily job deletes any `app_user` row with no grant, no session and `last_seen_at` older than 30 days (`src/worker/retention.ts`). Written for Entra users who hold nothing, it would delete an email user, and by cascade their library rows, 30 days after their last session ends.
 - The existing erase route (`DELETE /api/me` in `src/worker/routes/auth.ts`, through `Sessions.deleteUser`) deletes the user row at once, which for an email user would cascade the D1 rows and orphan every R2 object.
 - D1 Time Travel keeps 30 days of restorable history, so a deleted row is recoverable by the operator for 30 days.
-- 0004 (indexes) lands before 0005. Data-hardening's identity and org migration, sketched as its own 0005, becomes 0006 or later (see "Flags").
+- 0004 (indexes) lands before 0005., and data-hardening's identity and org migration is 0006 or later.
 
 ## Decision
 
@@ -23,7 +23,7 @@ Status: proposed. Ships with `migrations/0005_accounts_library.sql`. It follows 
 - **"Active" means `status = 'active' AND suspended_at IS NULL`** everywhere it is a guard: the C auth label (plan A.4), the quota reserve, code mail, session creation, the library FileSource, the fetch-time check.
 - **`delete_after`** is the one clock for both inactivity deletion (`status = 'active'`) and requested deletion (`status = 'deleting'`). A `deleting` user who signs in may reach only `GET /api/me` and `POST /api/me/restore`. A `purging` user gets no code, no session and no reserve.
 - **Restore** is `UPDATE ... SET status = 'active', delete_after = NULL WHERE id = ? AND status = 'deleting' AND delete_after > :now`; zero changes is `restore_too_late`.
-- **Activity clock is the existing `last_seen_at`.** It is set at sign-in and touched at most once a day when a session resolves. Part 2's `last_active_at` is dropped: two clocks for one fact. Any sign-in or use clears `inactive_warned_at` and the inactivity `delete_after` by `UPDATE ... WHERE id = ? AND status = 'active'`, so it can never undo a requested deletion or a purge.
+- **Activity clock is the existing `last_seen_at`.** It is set at sign-in and touched at most once a day when a session resolves. There is no second `last_active_at`: two clocks for one fact. Any sign-in or use clears `inactive_warned_at` and the inactivity `delete_after` by `UPDATE ... WHERE id = ? AND status = 'active'`, so it can never undo a requested deletion or a purge.
 - **Inactivity sweep** (`idx_app_user_idle`): warns at `INACTIVE_DAYS` and sets `delete_after` `INACTIVE_GRACE_DAYS` later. While `preview_lockout` is set (ADR 0026) it skips members the lockout refuses (outside `ADMIN_EMAILS` plus `TEST_EMAILS`), since they could not have signed in.
 - **The user-row sweep never touches email users.** The retention query gains `AND tid != 'email'` in the same deploy that applies 0005. Email users leave only through the purge below. A test proves an email user with no session survives the sweep (LIB-09).
 - **The erase route hands email users to the purge.** `DELETE /api/me` keeps its immediate erase for Entra rows; for `tid = 'email'` it is the C+R deletion request (ADR 0014: status `deleting`, `delete_after` now plus `ACCOUNT_DELETE_GRACE_DAYS`). `Sessions.deleteUser` is never called on an email row outside purge step 5; a test asserts it.
@@ -41,7 +41,7 @@ Runs from the cron for each user whose `delete_after` has passed. Idempotent and
 - **Restore runbook (`docs/setup.md`, F):** a Time Travel restore resurrects purged users and signed-out sessions. After any restore, replay the purge for every tombstone newer than the restore point, then run `DELETE FROM phone_session` so every member signs in again.
 
 ### Quota (LIB-02): one owner per number, every move guarded
-- `quota_bytes` is NULL for every user and means `LIBRARY_QUOTA_BYTES`; a non-NULL value is an admin override. Part 2's DDL default (5 GiB written into the table) is dropped: it restated the config value.
+- `quota_bytes` is NULL for every user and means `LIBRARY_QUOTA_BYTES`; a non-NULL value is an admin override. The table carries no default: a 5 GiB column default would restate the config value.
 - **`used_bytes`** = `SUM(bytes)` of the user's `library_file` rows with `status IN ('checking', 'ready')`, trash included (a trashed file occupies R2 until purged). A refused file's object is deleted at refusal and does not count. Derived outputs do not count: they are bloop's cost.
 - **`reserved_bytes`** = `SUM(bytes)` of the user's `upload` rows with `owner_kind = 'library'`, `completed_at IS NULL` and `aborted_at IS NULL`.
 - **Reserve, after R2's create:** one batch. First `INSERT INTO upload ... SELECT ... FROM app_user WHERE id = :u AND status = 'active' AND suspended_at IS NULL AND used_bytes + reserved_bytes + :b <= COALESCE(quota_bytes, :default) AND (SELECT count(*) FROM library_file WHERE user_id = :u) < :maxFiles`, then `UPDATE app_user SET reserved_bytes = reserved_bytes + :b WHERE id = :u AND EXISTS (SELECT 1 FROM upload WHERE id = :id)`. Zero inserts: abort the R2 upload and answer `quota_exceeded` or `library_full`. The row and the reservation commit together or not at all.
@@ -61,6 +61,8 @@ Runs from the cron for each user whose `delete_after` has passed. Idempotent and
 - **Settings.** `setting (key, value, updated_at, updated_by)`; ADR 0026 owns the keys. No row is seeded: a missing `launch_mode` reads as `preview`, which keeps one owner (the code default) and fails closed.
 - **`guest_file` is rebuilt without its type CHECK**, by the 0003 pattern, and 0004's two `guest_file` indexes are recreated after the rebuild (a rebuild drops them). The two must stay identical to 0004's.
 
+Invite create is an upsert on `idx_invite_open`: it reissues the open row (new token, new expiry, `sends + 1`), so an invite that merely expired never blocks a new one.
+
 ### Retention
 `email_code` and `auth_challenge` expiry plus 1 day; `upload` and its parts 1 day after closing (`idx_upload_closed`); `invite` expiry plus 90 days (every invite is closed by its expiry at the latest); `waitlist` 90 days after invite or dismissal; `report` 1 year, or 5 years when `nca_ref` is set (an NCA reference is kept 5 years); `admin_action` 2 years; `hold` by `release_after`. Each sweep is bounded per statement (ADR 0006). An account purge also deletes the address's `invite` and `waitlist` rows at once (step 5).
 
@@ -72,7 +74,7 @@ Before the remote apply: rehearse 0005 on a copy of the production database (res
 
 ## Rejected
 - **A separate `email_user` table:** every FK to `app_user` (sessions, audit, guest passes) would need a union or a second column.
-- **`issuer, subject` now:** that is data-hardening's identity migration, which waits for its own ADR; 0005 stays compatible with it (see "Flags").
+- **`issuer, subject` now:** that is data-hardening's identity migration, which waits for its own ADR; 0005 stays compatible with it: its backfill reads `WHERE tid != 'email'`, and an email row maps to `issuer = 'bloop:email'`, `subject = id`.
 - **Suspension as a status value:** it overwrites the deletion marker.
 - **A CHECK on status or kind columns:** ADR 0012; a new value would need a table rebuild.
 - **Quota as a SUM at upload time:** two concurrent creates both pass; the guarded batch is the serialization point.
@@ -91,14 +93,3 @@ LIB-01, LIB-02, LIB-08, LIB-09, UP-02, UP-03, UP-08, OSA-02, OSA-05, AUTH-04, MO
 
 ## How to remove it
 Accounts off: stop routing `/api/auth/*`, `/api/library*` and `/api/uploads*`, run the purge for every email user, then (expand and contract, ADR 0012) drop the new tables one deploy after no code reads them. `guest_file` keeps its CHECK-free shape.
-
-## Flags (Part 2 unsafe, ambiguous or contradicting Part 1, and the resolution)
-1. **Unsafe:** the existing user-row sweep would delete email users. Resolved above; the retention edit ships with 0005.
-2. **Unsafe:** `idx_invite_open` blocks every new invite for an email whose invite merely expired. Resolved: invite create is an upsert on that index, reissuing the open row (new token, new expiry, `sends + 1`).
-3. **Unsafe:** 0005 rebuilds `guest_file` after 0004 indexes it, silently dropping the indexes. Resolved: recreated at the end of 0005.
-4. **Duplicate fact:** Part 2's `quota_bytes DEFAULT 5368709120`. Resolved: NULL means the config value.
-5. **Duplicate fact:** Part 2's `last_active_at` beside `last_seen_at`. Resolved: one clock.
-6. **Missing:** Part 2's SQL has no `setting` table. Added.
-7. **Missing indexes and retention:** FK cascades, admin lists, closed uploads, the report, admin-log and waitlist sweeps. Added.
-8. **Conflict with data-hardening:** both plans claimed 0005. Accounts take 0005; the identity backfill must read `WHERE tid != 'email'`, and an email row maps to `issuer = 'bloop:email'`, `subject = id`.
-9. **Unsafe:** the erase route would orphan an email user's R2 objects. Resolved: email users go to the purge.
