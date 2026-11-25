@@ -72,6 +72,17 @@ describe("classify", () => {
     expect(classify([file("src/worker/routes/files.ts", 1)], SAME).tier).toBe(1);
   });
 
+  it("T2: a Durable Object schema file, whatever its status, but not other files in do/", () => {
+    for (const path of ["src/worker/do/schema.ts", "src/worker/do/directory-schema.ts"]) {
+      const tier = classify([file(path, 3)], SAME);
+      expect(tier.tier, path).toBe(2);
+      expect(tier.reasons[0]).toContain("Durable Object schema step");
+    }
+    expect(classify([file("src/worker/do/future-schema.ts", 3, "A")], SAME).tier).toBe(2);
+    expect(classify([file("src/worker/do/directory.ts", 3)], SAME).tier).toBe(1);
+    expect(classify([file("test/unit/directory-schema.test.ts", 3)], SAME).tier).toBe(0);
+  });
+
   it("T2 outranks T0: a tiny docs change beside a dependency change", () => {
     expect(classify([file("docs/design.md", 1), file("package.json", 1)], ADDED_DEP).tier).toBe(2);
   });
