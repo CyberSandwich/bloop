@@ -154,7 +154,7 @@ describe("PAIR-13 control: only the pairing's phone commands the screen", () => 
     expect(control.body.v).toBeGreaterThan(v0);
     const tap = await api.post<{ v: number }>("/api/screen/shown", cmd(DECK, 1), { auth: screen.sid });
     expect(tap.body.v).toBeGreaterThan(control.body.v);
-    const length = await api.post<{ v: number }>("/api/session/length", { minutes: 30 }, { auth: pid });
+    const length = await api.post<{ v: number }>("/api/session/length", { seconds: 1800 }, { auth: pid });
     expect(length.body.v).toBeGreaterThan(tap.body.v);
     // A stale command changes nothing, so the answer is the state as it stands.
     const stale = await api.post<{ v: number }>("/api/control", cmd(DECK, 2, false, 1), { auth: pid });
@@ -284,8 +284,8 @@ describe("SESS-01 length: the phone sets when the session ends", () => {
   const MIN = 60_000;
   type Ends = { endsAt: number; now: number; maxMinutes: number };
   const left = (v: Ends) => v.endsAt - v.now;
-  const setLength = (pid: string, minutes: unknown, auth = pid) =>
-    api.post<Ends>("/api/session/length", { minutes }, { auth });
+  const setLength = (pid: string, seconds: unknown, auth = pid) =>
+    api.post<Ends>("/api/session/length", { seconds }, { auth });
 
   /** A live session on the mock source: the phone lists first, then approves one file. */
   async function live() {
@@ -313,7 +313,7 @@ describe("SESS-01 length: the phone sets when the session ends", () => {
   it("SESS-01 length: a change answers the new end and reaches the screen's and the phone's sockets", async () => {
     const { socket, pid } = await session();
     const phone = await phoneSocket(api, pid);
-    const res = await setLength(pid, 30);
+    const res = await setLength(pid, 1800);
     expect(res.status).toBe(200);
     expect(left(res.body)).toBeLessThanOrEqual(30 * MIN);
     expect(left(res.body)).toBeGreaterThan(29 * MIN);
@@ -323,16 +323,27 @@ describe("SESS-01 length: the phone sets when the session ends", () => {
     phone.close();
   });
 
+  it("SESS-01 length: a 60 second end lands 60 s out, and the old minutes body is bad_request", async () => {
+    const { socket, pid } = await session();
+    const res = await setLength(pid, 60);
+    expect(res.status).toBe(200);
+    expect(left(res.body)).toBeLessThanOrEqual(60_000);
+    expect(left(res.body)).toBeGreaterThan(58_000);
+    expect((await api.post("/api/session/length", { minutes: 5 }, { auth: pid })).body).toEqual(problem("bad_request"));
+    expect((await setLength(pid, 59)).body).toEqual(problem("bad_request"));
+    socket.close();
+  });
+
   it("SESS-01 cap: past the live cap is bad_request, and a demo session stops at its own 2 hours", async () => {
     const room = await live();
-    expect((await setLength(room.pid, 721)).body).toEqual(problem("bad_request"));
-    const twelve = await setLength(room.pid, 720);
+    expect((await setLength(room.pid, 43260)).body).toEqual(problem("bad_request"));
+    const twelve = await setLength(room.pid, 43200);
     expect(left(twelve.body)).toBeGreaterThan(719 * MIN);
     room.socket.close();
 
     const { socket, pid } = await session();
     const before = (await api.get<Ends & { items: unknown }>("/api/pair/state", pid)).body;
-    const clamped = await setLength(pid, 720);
+    const clamped = await setLength(pid, 43200);
     expect(clamped.status).toBe(200);
     // Approval plus 120 minutes, at most: never 12 hours from now.
     expect(left(clamped.body)).toBeLessThanOrEqual(120 * MIN);
@@ -345,11 +356,11 @@ describe("SESS-01 length: the phone sets when the session ends", () => {
     const { screen, socket, pid } = await session();
     const [ref] = pid.split(".");
     const before = (await api.get<Ends>("/api/pair/state", pid)).body.endsAt;
-    expect((await setLength(pid, 30, `${ref}.${"A".repeat(43)}`)).body).toEqual(problem("pairing_invalid"));
-    expect((await setLength(pid, 30, screen.sid)).body).toEqual(problem("pairing_invalid"));
-    expect((await api.post("/api/session/length", { minutes: 30 })).body).toEqual(problem("unauthorized"));
+    expect((await setLength(pid, 1800, `${ref}.${"A".repeat(43)}`)).body).toEqual(problem("pairing_invalid"));
+    expect((await setLength(pid, 1800, screen.sid)).body).toEqual(problem("pairing_invalid"));
+    expect((await api.post("/api/session/length", { seconds: 1800 })).body).toEqual(problem("unauthorized"));
     const other = await session();
-    expect((await setLength(other.pid, 30)).status).toBe(200);
+    expect((await setLength(other.pid, 1800)).status).toBe(200);
     expect((await api.get<Ends>("/api/pair/state", pid)).body.endsAt).toBe(before);
     socket.close();
     other.socket.close();
@@ -357,7 +368,11 @@ describe("SESS-01 length: the phone sets when the session ends", () => {
 
   it("SESS-01 csrf: a cross-origin or form-encoded change is refused (PAIR-06)", async () => {
     const { socket, pid } = await session();
-    const cross = await api.post("/api/session/length", { minutes: 30 }, { auth: pid, origin: "https://evil.example" });
+    const cross = await api.post(
+      "/api/session/length",
+      { seconds: 1800 },
+      { auth: pid, origin: "https://evil.example" },
+    );
     expect(cross.body).toEqual(problem("forbidden_origin"));
     const form = await api.post("/api/session/length", undefined, {
       auth: pid,
@@ -371,11 +386,11 @@ describe("SESS-01 length: the phone sets when the session ends", () => {
   it("SESS-01 state: before approval and after the end it is wrong_state", async () => {
     const claimedOnly = await openScreen(api, "demo");
     const { body } = await claim(api, claimedOnly.code);
-    expect((await setLength(body.pid, 30)).body).toEqual(problem("wrong_state"));
+    expect((await setLength(body.pid, 1800)).body).toEqual(problem("wrong_state"));
     claimedOnly.socket.close();
     const { socket, pid } = await session();
     await api.post("/api/end", {}, { auth: pid });
-    expect((await setLength(pid, 30)).body).toEqual(problem("wrong_state"));
+    expect((await setLength(pid, 1800)).body).toEqual(problem("wrong_state"));
     socket.close();
   });
 });
