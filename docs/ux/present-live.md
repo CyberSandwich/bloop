@@ -73,7 +73,7 @@ As today's checking state (design.md section 7, Phone page): a skeleton title ba
 ### 3.2 Match, with Up Next packed
 
 ```
-390 x 844 (one hand: everything tappable is in the bottom third)
+390 x 844 (one hand: the tap that commits is in the bottom third; Back and Change Files are the rare taps)
 
   <Back                                          (Back = Start Over: lets go of the claim)
 
