@@ -282,7 +282,7 @@ describe("PAIR-13 screen/shown: the screen reports its own taps", () => {
 
 describe("SESS-01 length: the phone sets when the session ends", () => {
   const MIN = 60_000;
-  type Ends = { endsAt: number; now: number; maxMinutes: number };
+  type Ends = { endsAt: number; now: number; maxMinutes: number; latestEnd: number };
   const left = (v: Ends) => v.endsAt - v.now;
   const setLength = (pid: string, seconds: unknown, auth = pid) =>
     api.post<Ends>("/api/session/length", { seconds }, { auth });
@@ -303,9 +303,13 @@ describe("SESS-01 length: the phone sets when the session ends", () => {
     expect(left(view)).toBeLessThanOrEqual(60 * MIN);
     expect(left(view)).toBeGreaterThan(59 * MIN);
     expect(view.maxMinutes).toBe(120);
+    // Approval plus the cap: what the sheet checks a typed time against.
+    expect(view.latestEnd - view.now).toBeLessThanOrEqual(120 * MIN);
+    expect(view.latestEnd - view.now).toBeGreaterThan(119 * MIN);
     const room = await live();
     expect(left(room.approved)).toBeGreaterThan(59 * MIN);
     expect(room.approved.maxMinutes).toBe(720);
+    expect(room.approved.latestEnd - room.approved.now).toBeGreaterThan(719 * MIN);
     demo.socket.close();
     room.socket.close();
   });

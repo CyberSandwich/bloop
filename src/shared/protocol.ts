@@ -114,6 +114,8 @@ export interface PhoneView {
   dropMaxBytes: number;
   /** The mode's cap (SESSION_MAX_MINUTES or DEMO_MAX_MINUTES): the longest length the phone offers. */
   maxMinutes: number;
+  /** Epoch ms the server will not move the end past (approval plus the cap); null before approval. */
+  latestEnd: number | null;
   /** The last `control` seq applied from this phone (0 before any). */
   seq: number;
   v: number; // as in ScreenView
