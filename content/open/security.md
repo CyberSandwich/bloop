@@ -7,7 +7,7 @@ effective: 2026-11-25
 version: 2.0
 ---
 
-bloop puts a file on a shared screen without putting your account there. This page is for the people who use it and the people who look after those screens: how files are stored and shown, where they live, who can see them, what can stay on a PC, and how to reach us. The articles explain each part in more depth, starting with [How bloop Works](/articles/how-bloop-works).
+bloop puts a file on a shared screen without putting your account there. This page is for the people who use it and the people who look after those screens: how files are stored and shown, where they live, who can see them, what can stay on a PC, and how to reach bloop. The articles explain each part in more depth, starting with [How bloop Works](/articles/how-bloop-works).
 
 ## How It Works {#how}
 
@@ -109,7 +109,7 @@ If a breach puts people's data at risk, bloop tells affected people and organiza
 
 ## Report a Problem {#report}
 
-Found a security problem? Thank you; please tell us.
+Found a security problem? Thank you; please tell bloop.
 
 - **How:** email <{{email}}> with "Security" in the subject. Do not post it in public. Include what you found, how to reproduce it, and its impact.
 - **What happens next:** an acknowledgement within 5 working days, then updates until it is fixed. bloop will credit you if you wish.

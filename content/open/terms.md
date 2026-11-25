@@ -12,11 +12,11 @@ version: 2.0
 
 bloop is a new, free side project, not a commercial service, and may change. Accounts are by invite, for adults. Your files stay yours: bloop stores them in the EU, uses them only to show them where you choose, and deletes them when you say. Show only files you have the right to show; bloop may remove a file or suspend an Account that breaks these terms, and you can appeal. The law of England and Wales applies.
 
-## Who We Are {#who}
+## Who Runs bloop {#who}
 
 In short: bloop is run by one person in the UK.
 
-1.1 bloop is run by **Duke DJ Saputra**, an individual based in the United Kingdom (**"bloop"**, **"we"**), as a free side project in early access. Contact: <{{email}}>; a postal address is available on request.
+1.1 bloop is run by **Duke DJ Saputra**, an individual based in the United Kingdom (**"bloop"**), as a free side project in early access. Contact: <{{email}}>; a postal address is available on request.
 
 1.2 These **Terms** apply to anyone who uses bloop at bloop.here, with or without an Account, including the **Demo** (**"you"**). The words **Account**, **Library**, **Screen**, **Session**, **Item**, **Guest File** and **Demo** mean what they mean in [the Privacy Notice](/privacy#1.4), section 1.4.
 

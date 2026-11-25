@@ -17,7 +17,7 @@ bloop is a new, free side project run by one person in the UK. If you have an ac
 
 In short: one named person runs bloop and answers for your data.
 
-1.1 bloop is run by **Duke DJ Saputra**, an individual based in the United Kingdom (**"bloop"**, **"we"**), as a free side project in early access; it is not a commercial service. bloop is the **controller** of the personal data described here: it decides why and how that data is used.
+1.1 bloop is run by **Duke DJ Saputra**, an individual based in the United Kingdom (**"bloop"**), as a free side project in early access; it is not a commercial service. bloop is the **controller** of the personal data described here: it decides why and how that data is used.
 
 1.2 Contact: <{{email}}>. A postal address is available on request to that address.
 
@@ -176,7 +176,7 @@ Caption: What bloop stores in your browser, why, for how long, and its status
 | Name | Kind | Why | How long | Status |
 | --- | --- | --- | --- | --- |
 | `__Host-bloop_sid` | cookie | Keeps you signed in | 30 days unused, 90 days at most | Live |
-| `__Host-bloop_in` | cookie | Tells bloop's pages you are signed in, so the menu shows Library; it holds no secret | As long as your sign-in | Live |
+| `__Host-bloop_in` | cookie | Tells bloop's pages you are signed in, so they show Library in place of Sign In; it holds no secret | As long as your sign-in | Live |
 | `__Host-bloop_bind` | cookie | Ties a passkey step to the browser that started it | 10 minutes | Live |
 | `bloop.pid` | phone, local storage | Lets your phone end or control the Session after you close the tab | Until the Session ends | Live |
 | `bloop.sid` | Screen, session storage | Keeps the Screen in its Session on reload | Until the Session ends or the tab closes | Live |
