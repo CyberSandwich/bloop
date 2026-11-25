@@ -22,58 +22,5 @@ export const RELINK_WAIT_MS = 1500;
 /** A request with no answer by now counts as offline. */
 export const FETCH_TIMEOUT_MS = 10_000;
 
-/** Reconnect delays after the 1st, 2nd, ... failure; the last repeats. */
-export const RECONNECT_DELAYS = [1000, 2000, 5000, 10_000, 30_000];
-/** Failed reconnects before the polling fallback starts. */
-export const POLL_AFTER_FAILURES = 3;
-export const POLL_MS = 3000;
-/** A poll in `open`, where little changes by itself, and in a hidden tab. */
-export const POLL_QUIET_MS = 15_000;
-export const POLL_HIDDEN_MS = 30_000;
-/** The longest a `Retry-After` is honored. */
-export const RETRY_AFTER_MAX_MS = 120_000;
-/** Frames sent within this long of the last one go together after it, the latest of each type. */
-export const COALESCE_MS = 150;
-/** Poll delays after the 1st, 2nd, ... failed poll; the last repeats. */
-export const POLL_BACKOFF = [5000, 10_000, 30_000];
-/** A socket with no first frame by now is abandoned and polling starts at once (a proxy that holds the upgrade). */
-export const CONNECT_TIMEOUT_MS = 4000;
-/** Once the socket is found blocked, it is tried again this often while polling carries the page. */
-export const BLOCKED_PROBE_MS = 60_000;
-export const PING_MS = 25_000;
-/** A socket quiet for longer than PING_MS when the tab shows again is asked; no frame back in this long replaces it. */
-export const PROBE_MS = 3000;
-/** This many pings in a row with no frame back close a socket; a hidden tab is not judged. */
-export const MISSED_PINGS = 2;
 /** A hidden tab's socket quiet this long is dropped (its timers are throttled, so pings are not counted); the Worker's window too. */
 export const SILENCE_MS = 70_000;
-
-/**
- * Half to all of a step, so screens that lost their sockets together (a deploy) do not return in the same second.
- * @param {number} ms @param {() => number} [random] in [0, 1)
- */
-export const jitter = (ms, random = Math.random) => (0.5 + random() / 2) * ms;
-
-/**
- * @param {number} failures consecutive failures, 1 for the first
- * @param {() => number} [random] in [0, 1)
- */
-export const reconnectDelay = (failures, random = Math.random) =>
-  jitter(RECONNECT_DELAYS[Math.min(Math.max(failures, 1), RECONNECT_DELAYS.length) - 1] ?? 30_000, random);
-
-/** @param {number} failures */
-export const shouldPoll = (failures) => failures >= POLL_AFTER_FAILURES;
-
-/**
- * The wait before the next poll: fast while the room is being set up, slower in `open` and slowest when the tab is
- * hidden; a failure backs off from that, and a `Retry-After` is a floor.
- * @param {number} pollFailures consecutive failed polls, 0 when the last one worked
- * @param {string} [state] the last view's state
- * @param {boolean} [hidden]
- * @param {number} [retryAfter] seconds the server asked for
- */
-export const pollDelay = (pollFailures, state = "", hidden = false, retryAfter = 0) => {
-  const base = hidden ? POLL_HIDDEN_MS : state === "open" ? POLL_QUIET_MS : POLL_MS;
-  const backoff = pollFailures <= 0 ? 0 : (POLL_BACKOFF[Math.min(pollFailures, POLL_BACKOFF.length) - 1] ?? 30_000);
-  return Math.max(base, backoff, Math.min(retryAfter * 1000, RETRY_AFTER_MAX_MS));
-};

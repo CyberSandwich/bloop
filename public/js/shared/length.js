@@ -42,11 +42,5 @@ export function fitPresets(pane, max) {
   pane.hidden = chips.every((c) => c.hidden);
 }
 
-/**
- * Whether the server stopped the end more than a minute short of what was asked (approval plus the cap): the phone says
- * so rather than let a long ask look accepted. @param {number} endsAt @param {number} now @param {number} seconds
- */
-export const cutShort = (endsAt, now, seconds) => endsAt < now + seconds * 1000 - 60_000;
-
 /** A preset's length the route takes: at least the minimum, at most the mode's cap. @param {number} seconds @param {number} maxSeconds */
 export const clampLength = (seconds, maxSeconds) => Math.min(Math.max(seconds, MIN_LENGTH_SECONDS), maxSeconds);

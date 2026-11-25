@@ -1,7 +1,7 @@
 // The room screen (/s): the QR and typed code, the session through its Screen object, the fallbacks; the viewer.
 /** @import {ScreenView} from "../../src/shared/protocol.ts" */
 import { createApi } from "./core/api.js";
-import { downGate, isDown, openChannel } from "./core/channel.js";
+import { openChannel } from "./core/channel.js";
 import { endLine, FRESH_LINE, screenCopy } from "./core/copy-screen.js";
 import { nextSeq } from "./core/demo.js";
 import { clock, itemName, qrLabel } from "./core/format.js";
@@ -15,7 +15,6 @@ import {
   ENDED_QR_RETURN_MS,
   ENDED_SKIP_GRACE_MS,
   ERROR_RECOVER_MS,
-  pollDelay,
   ROTATE_AHEAD_MS,
 } from "./core/timing.js";
 import {
@@ -223,7 +222,8 @@ const MODE = {
   ended: "ended",
 };
 
-const confirmDown = downGate();
+/** The failure rules, loaded by the first refused boot. @type {typeof import("./core/poll.js") | null} */
+let failed = null;
 /** The link state a failed read leaves (the channel's polls say the same, core/channel.js). */
 const LINK_OF = /** @type {Record<string, "offline" | "blocked">} */ ({
   offline: "offline",
@@ -550,15 +550,18 @@ async function boot(attempt = 0) {
   if (g !== gen) return;
   s.limited = !booted.ok && booted.error === "rate_limited";
   if (!booted.ok) {
+    failed ??= await import("./core/poll.js");
+    if (g !== gen) return;
     // One refused boot is no outage: the second server failure in a row says bloop is down.
-    const sure = confirmDown(isDown(booted.error));
-    s.link = LINK_OF[booted.error] ?? (isDown(booted.error) && !sure ? s.link : "down");
+    const down = failed.isDown(booted.error);
+    const sure = failed.bootGate(down);
+    s.link = LINK_OF[booted.error] ?? (down && !sure ? s.link : "down");
     render();
-    setTimeout(() => g === gen && boot(attempt + 1), pollDelay(attempt + 1));
+    setTimeout(() => g === gen && boot(attempt + 1), failed.pollDelay(attempt + 1));
     return;
   }
   ariaFlag(buttons.renew, "aria-disabled", false);
-  confirmDown(false);
+  failed?.bootGate(false);
   s.link = "ok";
   // The sid first: the first view can already ask for a link. Stored only now, so a boot that a later gen dropped
   // leaves nothing to resume.
