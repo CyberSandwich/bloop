@@ -441,6 +441,18 @@ test.describe("phone menu", () => {
       expect(ms).toBeLessThanOrEqual(200);
     }
   });
+
+  test("the open sheet lays a light scrim over the hero, and a tap on it closes the sheet", async ({ page }) => {
+    await page.goto("/");
+    await page.getByRole("button", { name: "Menu" }).tap();
+    await expect(page.locator("#nav-links")).toBeVisible();
+    const scrim = await page.evaluate(
+      `getComputedStyle(document.getElementById("nav-links"), "::backdrop").backgroundColor`,
+    );
+    expect(scrim).toBe("rgba(0, 0, 0, 0.18)");
+    await page.touchscreen.tap(195, 800);
+    await expect(page.locator("#nav-links")).toBeHidden();
+  });
 });
 
 test.describe("narrow nav up to 760", () => {

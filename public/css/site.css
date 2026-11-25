@@ -179,6 +179,10 @@ html:has(.page-site) {
       transform: translateY(-6px) scale(0.98);
     }
   }
+  /* The sheet floats over the hero's type, so a light scrim sets it apart; a tap on it closes the sheet. */
+  .nav-links:popover-open::backdrop {
+    background: rgba(0, 0, 0, 0.18);
+  }
   .nav-links:popover-open a {
     padding: 0 14px;
     border-radius: var(--r-field);
