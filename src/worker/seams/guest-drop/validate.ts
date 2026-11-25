@@ -94,8 +94,9 @@ async function validateDeck(whole: RangeReader, head: Uint8Array): Promise<Verdi
   try {
     return await checkDeck(planReads(whole));
   } catch (error) {
-    if (error instanceof ReadBudgetExceeded) return refuse("bad_structure");
-    throw error;
+    if (!(error instanceof ReadBudgetExceeded)) throw error;
+    console.warn(JSON.stringify({ evt: "drop.refused", reason: "read_budget", bytes: whole.size }));
+    return refuse("bad_structure");
   }
 }
 

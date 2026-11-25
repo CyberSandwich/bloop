@@ -19,6 +19,7 @@ function fakeObject(size: number, entries: ZipEntry[], extra = 0) {
         const header = new Uint8Array(30 + e.name.length + extra);
         const v = new DataView(header.buffer);
         v.setUint32(0, LOCAL_SIG, true);
+        v.setUint16(8, e.method, true);
         v.setUint16(26, e.name.length, true);
         v.setUint16(28, extra, true);
         header.set(new TextEncoder().encode(e.name), 30);
@@ -86,6 +87,15 @@ describe("DROP-14 external: the read plan", () => {
     const parts = await readParts(planReads(obj), [real[0] as ZipEntry, lying, real[1] as ZipEntry], LIMITS);
     expect(parts?.map((p) => p?.length ?? null)).toEqual([10, null, 20]);
     expect([...(parts?.[0] ?? [])].every((b) => b === 0x41)).toBe(true);
+  });
+
+  it("returns null for a local header whose method or name differs from the directory's", async () => {
+    const real = entry("a", 1000, 10);
+    const obj = fakeObject(100 * MIB, [real]);
+    const plan = planReads(obj);
+    expect((await readParts(plan, [{ ...real, method: 0 }], LIMITS))?.[0]).toBeNull();
+    expect((await readParts(plan, [{ ...real, name: "b" }], LIMITS))?.[0]).toBeNull();
+    expect((await readParts(plan, [real], LIMITS))?.[0]?.length).toBe(10);
   });
 
   it("re-reads once when a local extra field is longer than the slack", async () => {
