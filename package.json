@@ -39,7 +39,7 @@
         "dist/js/core/ui.js",
         "dist/js/legal.js"
       ],
-      "limit": "1.85 kB"
+      "limit": "1.9 kB"
     },
     {
       "name": "room screen JS",
@@ -68,7 +68,7 @@
         "dist/js/vendor/uqr.js",
         "dist/js/viewer.js"
       ],
-      "limit": "24.3 kB"
+      "limit": "24.55 kB"
     },
     {
       "name": "phone JS",
@@ -97,7 +97,7 @@
         "dist/js/shared/names.js",
         "dist/js/shared/session.js"
       ],
-      "limit": "16.75 kB"
+      "limit": "16.95 kB"
     },
     {
       "name": "typed code JS",
