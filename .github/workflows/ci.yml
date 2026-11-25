@@ -21,11 +21,17 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
+          # The size ratchet reads the budgets at the merge-base with main, or at the push's previous tip.
+          fetch-depth: 0
       - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
           node-version-file: .nvmrc
           cache: npm
       - run: npm ci
+      # A size-limit budget only holds or drops (design.md); a raised one fails here, naming it.
+      - run: node tools/size-ratchet.mjs
+        env:
+          BEFORE: ${{ github.event.before }}
       # The same steps as `npm run check`, one per step so a failure names its check.
       # The page build is a gate, never a commit: rebuilding must change nothing and add nothing.
       - run: npm run build:pages
