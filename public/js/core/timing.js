@@ -29,6 +29,8 @@ export const POLL_AFTER_FAILURES = 3;
 export const POLL_MS = 3000;
 /** Poll delays after the 1st, 2nd, ... failed poll; the last repeats. */
 export const POLL_BACKOFF = [5000, 10_000, 30_000];
+/** A socket with no first frame by now is abandoned and polling starts at once (a proxy that holds the upgrade). */
+export const CONNECT_TIMEOUT_MS = 8000;
 export const PING_MS = 25_000;
 /** A socket that has said nothing for this long is dropped and reconnected. */
 export const SILENCE_MS = 70_000;
