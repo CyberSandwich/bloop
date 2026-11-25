@@ -28,6 +28,11 @@
   },
   "size-limit": [
     {
+      "name": "landing HTML",
+      "path": "dist/index.html",
+      "limit": "3.5 kB"
+    },
+    {
       "name": "landing JS",
       "path": "dist/js/site.js",
       "limit": "1.2 kB"
