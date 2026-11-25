@@ -299,19 +299,18 @@ test.describe("pairing flow", () => {
     await phone.page.getByRole("button", { name: /Change the Session Expiry$/ }).click();
     const sheet = phone.page.getByRole("dialog", { name: "Session Expiry" });
     await expect(sheet).toBeVisible();
-    // Exactly three presets, in a second bubble stacked below the first (title, Close, the time and Set).
+    // Exactly three presets, one row under the title and time, in one glass pane.
     await expect(sheet.locator("[data-minutes]")).toHaveText(["30m", "1h", "2h"]);
-    expect(await sheet.locator(".sheet-pane").count()).toBe(2);
-    const top = await sheet.locator(".sheet-in").boundingBox();
-    const presets = await sheet.locator(".chips").boundingBox();
-    expect(top && presets && Math.round(presets.y - (top.y + top.height))).toBe(8);
+    const pane = await sheet.locator("form").boundingBox();
     await expect(sheet.getByLabel("Expires At")).toHaveValue(/^\d{2}:\d{2}$/);
-    // Focus lands on the title (announced, no ring), not on Close; the first Tab reaches Close.
+    // Focus lands on the title (announced, no ring), not on Close; Tab reaches the time, then Close.
     await expect(sheet.getByRole("heading", { name: "Session Expiry" })).toBeFocused();
     await phone.page.keyboard.press("Tab");
+    await expect(sheet.getByLabel("Expires At")).toBeFocused();
+    await phone.page.keyboard.press("Tab");
     await expect(sheet.getByRole("button", { name: "Close" })).toBeFocused();
-    // A tap in the gap between the bubbles is the backdrop's: it closes with no change.
-    await phone.page.mouse.click((top?.x ?? 0) + (top?.width ?? 0) / 2, (top?.y ?? 0) + (top?.height ?? 0) + 4);
+    // A tap above the pane is the backdrop's: it closes with no change.
+    await phone.page.mouse.click((pane?.x ?? 0) + (pane?.width ?? 0) / 2, (pane?.y ?? 0) - 12);
     await expect(sheet).toBeHidden();
     await phone.page.getByRole("button", { name: /Change the Session Expiry$/ }).click();
     await expect(sheet).toBeVisible();
@@ -347,21 +346,42 @@ test.describe("pairing flow", () => {
     return { screen, phone, lengthButton, sheet };
   }
 
-  test("SESS-01 at 320 wide the whole time and its icon show beside Set", async ({ browser }) => {
-    const { screen, phone, lengthButton, sheet } = await approvedDemo(browser);
-    await phone.page.setViewportSize({ width: 320, height: 640 });
-    await lengthButton.click();
-    await expect(sheet).toBeVisible();
-    const field = sheet.getByLabel("Expires At");
-    expect(await field.evaluate((el) => el.scrollWidth <= el.clientWidth)).toBe(true);
-    const [input, set] = await Promise.all([
-      field.boundingBox(),
-      sheet.getByRole("button", { name: "Set" }).boundingBox(),
-    ]);
-    expect(input && set && input.x + input.width <= set.x).toBe(true);
-    await screen.context.close();
-    await phone.context.close();
-  });
+  for (const width of [320, 390]) {
+    test(`SESS-01 at ${width} the sheet is a 2 x 2 grid: the card and Close, the presets and Set`, async ({
+      browser,
+    }) => {
+      const { screen, phone, lengthButton, sheet } = await approvedDemo(browser);
+      await phone.page.setViewportSize({ width, height: 640 });
+      await lengthButton.click();
+      await expect(sheet).toBeVisible();
+      const field = sheet.getByLabel("Expires At");
+      // The whole time shows, and the input spans its row of the card.
+      expect(await field.evaluate((el) => el.scrollWidth <= el.clientWidth)).toBe(true);
+      const card = sheet.locator(".sheet-card");
+      const inner = (await card.evaluate("(n) => n.clientWidth")) as number;
+      expect(Math.round((await field.boundingBox())?.width ?? 0)).toBe(Math.round(inner));
+      // The presets share one row.
+      const tops = new Set<number>();
+      for (const chip of await sheet.locator("[data-minutes]").all())
+        tops.add(Math.round((await chip.boundingBox())?.y ?? -1));
+      expect(tops.size).toBe(1);
+      // Close spans the card's height; Set is Close's width.
+      const [c, x, set] = await Promise.all([
+        card.boundingBox(),
+        sheet.getByRole("button", { name: "Close" }).boundingBox(),
+        sheet.getByRole("button", { name: "Set" }).boundingBox(),
+      ]);
+      expect(Math.round(x?.height ?? 0)).toBe(Math.round(c?.height ?? -1));
+      expect(Math.round(set?.width ?? 0)).toBe(Math.round(x?.width ?? -1));
+      expect((x?.width ?? 0) >= 44).toBe(true);
+      await expectNoAxeViolations(phone.page);
+      // Close closes with no change.
+      await sheet.getByRole("button", { name: "Close" }).click();
+      await expect(sheet).toBeHidden();
+      await screen.context.close();
+      await phone.context.close();
+    });
+  }
 
   test("SESS-01 a refused length is a toast over the running session: the countdown, Revoke and the sheet stay", async ({
     browser,
@@ -2528,6 +2548,24 @@ test.describe("PAIR-13 remote: the phone commands the demo screen (design.md sec
     // Before any command the screen shows its first file: that row is marked.
     await expect(row("Dog.jpg")).toHaveAttribute("aria-current", "true");
     await expect(phone.page.locator("#file-list").getByRole("button", { name: startsWith("Vevox") })).toHaveCount(0);
+    // A link row opens its link in a new tab here: no command, never marked as on the screen, no preview.
+    const link = phone.page.locator("#file-list").getByRole("link", { name: startsWith("Vevox") });
+    await expect(link).toHaveAttribute("target", "_blank");
+    await expect(link).toHaveAttribute("rel", "noopener noreferrer");
+    await expect(link).toContainText("New Tab");
+    let commands = 0;
+    await phone.page.route("**/api/control", (route) => {
+      commands += 1;
+      return route.continue();
+    });
+    const tab = phone.context.waitForEvent("page");
+    await link.click();
+    await (await tab).close();
+    await phone.page.waitForTimeout(300);
+    expect(commands).toBe(0);
+    await expect(link).not.toHaveAttribute("aria-current", "true");
+    await expect(preview).toHaveCount(0);
+    await phone.page.unroute("**/api/control");
     await row("Sample deck.pptx").click();
     // The mark moves at the tap, before the answer.
     await expect(row("Sample deck.pptx")).toHaveAttribute("aria-current", "true");
@@ -2671,7 +2709,13 @@ test.describe("PAIR-13 remote: the phone commands the demo screen (design.md sec
     const ask = phone.page.getByRole("dialog", { name: "End This Session?" });
     await phone.page.getByRole("button", { name: "Revoke" }).click();
     await expect(ask).toBeVisible();
-    await expect(ask).toContainText("Your files leave the screen.");
+    // The title and its two buttons, on the phone's glass.
+    await expect(ask.locator("p")).toHaveCount(0);
+    await expect(ask).toHaveClass(/\bglass\b/);
+    // Opened by a tap, the focus it moves to Cancel draws no ring; opened by a key, it does (WCAG 2.4.7).
+    const cancel = ask.getByRole("button", { name: "Cancel" });
+    await expect(cancel).toBeFocused();
+    await expect(cancel).toHaveCSS("outline-style", "none");
     // A modal <dialog>, not a popover: Safari before 17 has no Popover API.
     expect(await ask.evaluate((n) => n.matches("dialog:modal"))).toBe(true);
     await expectNoAxeViolations(phone.page);
@@ -2679,6 +2723,12 @@ test.describe("PAIR-13 remote: the phone commands the demo screen (design.md sec
     await expect(ask).toBeHidden();
     await phone.page.getByRole("button", { name: "Revoke" }).click();
     await ask.getByRole("button", { name: "Cancel" }).click();
+    await expect(ask).toBeHidden();
+    await phone.page.getByRole("button", { name: "Revoke" }).focus();
+    await phone.page.keyboard.press("Enter");
+    await expect(cancel).toBeFocused();
+    await expect(cancel).not.toHaveCSS("outline-style", "none");
+    await phone.page.keyboard.press("Escape");
     await expect(ask).toBeHidden();
     await expect(heading(phone.page)).toHaveText("Approved for Demo Room");
     await expect(heading(screen.page)).toHaveText("Dog.jpg");

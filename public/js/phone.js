@@ -12,7 +12,7 @@ import { loadFiles } from "./core/files.js";
 import { ago, countdown } from "./core/format.js";
 import { ICONS } from "./core/icons.js";
 import { loader, setProgress } from "./core/loader.js";
-import { rowFace, tile } from "./core/rows.js";
+import { linkRow, rowFace, tile } from "./core/rows.js";
 import { adopt, firstFile, leave, liveClaim, onRefusal, phoneKey, retryStep } from "./core/states.js";
 import { dropPid, PID_KEY, pidStore, refOf, SID_KEY, sameScreen, sessionStore } from "./core/store.js";
 import { toast } from "./core/toast.js";
@@ -144,10 +144,13 @@ function buildItems(/** @type {Item[]} */ items) {
   const had = document.activeElement?.getAttribute("data-id");
   fileList.replaceChildren(
     ...items.map((item) => {
+      const face = rowFace(item, thumbOf(item, look()));
+      // A link opens here, in a new tab: never a command (LINK-01), never marked as on the screen.
+      if (item.kind === "link") return el("li", {}, [linkRow(item.url, "row", face)]);
       const tap = remote && item.kind === "file";
       /** @type {Record<string, string>} */
       const attrs = tap ? { type: "button", class: "row", "data-id": item.id } : { class: "row" };
-      return el("li", {}, [el(tap ? "button" : "div", attrs, rowFace(item, thumbOf(item, look())))]);
+      return el("li", {}, [el(tap ? "button" : "div", attrs, face)]);
     }),
   );
   if (had) /** @type {HTMLElement | null} */ (fileList.querySelector(`[data-id="${had}"]`))?.focus();

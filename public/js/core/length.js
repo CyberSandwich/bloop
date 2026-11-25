@@ -25,11 +25,13 @@ function choose(/** @type {number} */ minutes) {
 }
 
 sheet.addEventListener("click", (e) => {
-  const chip = e.target instanceof Element && e.target.closest("[data-minutes]");
+  const t = e.target instanceof Element ? e.target : null;
+  const chip = t?.closest("[data-minutes]");
   if (chip) choose(Number(chip.getAttribute("data-minutes")));
-  else if (e.target === sheet) sheet.close();
+  // Close is a plain button: a submit in the time's form would ask for a valid time first.
+  else if (t === sheet || t?.closest(".sheet-x")) sheet.close();
 });
-sheet.querySelector("form.until")?.addEventListener("submit", (e) => {
+sheet.querySelector("form")?.addEventListener("submit", (e) => {
   e.preventDefault();
   choose(minutesUntil(at.value));
 });

@@ -7,7 +7,7 @@ import { halves, isVideoLink, openTarget, pageMode, pagesOf, placeControls, step
 import { hostOf, isVideo, itemIcon, itemLine, itemName } from "./core/format.js";
 import { ICONS } from "./core/icons.js";
 import { loader, readAll, setProgress } from "./core/loader.js";
-import { rowFace, tile } from "./core/rows.js";
+import { linkRow, linkTo, rowFace, tile } from "./core/rows.js";
 import { onStage } from "./core/states.js";
 import { byId, el, icon, setText, show } from "./core/ui.js";
 import { TUNE, tuneOf } from "./shared/session.js";
@@ -106,16 +106,6 @@ const KEYS = /** @type {Record<string, number>} */ ({
   ArrowUp: -1,
   PageUp: -1,
 });
-
-/** https only (LINK-01): the server allows nothing else, and the page checks again before it makes a link. */
-const linkTo = (
-  /** @type {string} */ url,
-  /** @type {Record<string, string>} */ attrs,
-  /** @type {(Node | string)[]} */ kids,
-) =>
-  url.startsWith("https://")
-    ? el("a", { ...attrs, href: url, target: "_blank", rel: "noopener noreferrer" }, kids)
-    : el("span", attrs, kids);
 
 /**
  * @param {{relink: (item: number) => Promise<Minted>, onChange: () => void, tapped?: () => void, busy?: () => boolean}} deps
@@ -360,11 +350,7 @@ export function createViewer(deps) {
         const face = rowFace(item, thumbOf(item, v));
         const row =
           item.kind === "link"
-            ? linkTo(item.url, { class: "item" }, [
-                ...face,
-                icon(ICONS["arrow-up-right"], true),
-                el("span", { class: "sr" }, ["New Tab"]),
-              ])
+            ? linkRow(item.url, "item", face)
             : el("button", { type: "button", class: "item" }, face);
         if (item.kind === "file") row.addEventListener("click", () => select(i));
         const split = item.kind === "link" && files > 0 && files === i;

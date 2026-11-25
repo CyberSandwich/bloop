@@ -102,15 +102,25 @@
 .bar :is(#b-here, #b-end) {
   margin-left: auto;
 }
+/* The phone's dialogs (Revoke's question, the Session Expiry sheet) float on this one surface, with .glass. */
+.glass-pane {
+  box-shadow: var(--glass-edge), var(--sh-pill);
+}
+/* Focus moved by a dialog's opening rings only after a key (core/ui.js sets .keyed; WCAG 2.4.7). */
+:root:not(.keyed) .leave :focus-visible {
+  outline: none;
+}
 .leave {
   width: min(100% - 2 * var(--pad), 420px);
   padding: 24px;
   border: 0;
   border-radius: var(--r-stage);
-  background: var(--surface);
-  box-shadow: var(--sh-pill);
   color: inherit;
   text-align: center;
+}
+.leave:not(.glass) {
+  background: var(--surface);
+  box-shadow: var(--sh-pill);
 }
 .leave h2 {
   font-size: 22px;
@@ -746,14 +756,15 @@ main:has(> .side:not([hidden])) #stage {
 }
 .item,
 .handle,
-:is(label, button).row {
+:is(label, button, a).row {
   cursor: pointer;
 }
 .item,
 .row {
   background: none;
 }
-.item:focus-visible {
+.item:focus-visible,
+a.row:focus-visible {
   outline: none;
   border-color: var(--ink);
 }
@@ -850,11 +861,11 @@ main:has(> .side:not([hidden])) #stage {
 }
 @media (hover: hover) and (pointer: fine) {
   .item:not([aria-current]):hover,
-  :is(label, button).row:hover {
+  :is(label, button, a).row:hover {
     background: var(--wash);
   }
 }
-.item > .icon:last-of-type {
+:is(.item, a.row) > .icon:last-of-type {
   color: var(--muted);
 }
 .handle {
