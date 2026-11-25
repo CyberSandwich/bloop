@@ -2,6 +2,7 @@ import { describe, expect, it, vi } from "vitest";
 import {
   adopt,
   guestOnStage,
+  hasPdf,
   leave,
   liveClaim,
   onRefusal,
@@ -123,6 +124,21 @@ describe("screen state to view mapping", () => {
     expect(screenKey(ctx("approved", { kind: "guest", items: file("pdf") }))).toBe("approved");
     expect(screenKey(ctx("open", { kind: "owner", items: file("jpg"), openMode: "view" }))).toBe("open");
     expect(screenKey(ctx("offered", { kind: "guest", items: file("mp4") }))).toBe("guest_open");
+  });
+
+  it("hasPdf: a PDF and an owner's deck have a PDF view; a guest's deck, photos and videos, and no file, have none", () => {
+    const view = (kind: "guest" | "owner", type: "jpg" | "png" | "mp4" | "mov" | "pptx" | "pdf") =>
+      ({ kind, items: [{ kind: "file", id: "i1", name: `F.${type}`, type, size: 1 }] }) as unknown as ScreenView;
+    expect(hasPdf(view("owner", "pptx"))).toBe(true);
+    expect(hasPdf(view("owner", "pdf"))).toBe(true);
+    expect(hasPdf(view("guest", "pdf"))).toBe(true);
+    expect(hasPdf(view("guest", "pptx"))).toBe(false);
+    for (const type of ["jpg", "png", "mp4", "mov"] as const) {
+      expect(hasPdf(view("owner", type)), type).toBe(false);
+      expect(hasPdf(view("guest", type)), type).toBe(false);
+    }
+    expect(hasPdf(screenView("open"))).toBe(false);
+    expect(hasPdf(null)).toBe(false);
   });
 
   it("guestOnStage, which both the state key and the screen's window routing read: a guest's photo or video only", () => {
