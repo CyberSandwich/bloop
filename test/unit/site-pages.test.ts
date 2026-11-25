@@ -1,6 +1,7 @@
 import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
+import { EXTENSION_TYPES } from "../../public/js/shared/names.js";
 
 const read = (rel: string) => readFileSync(fileURLToPath(new URL(`../../${rel}`, import.meta.url)), "utf8");
 const SITE = ["index.html", "security.html", "privacy.html", "terms.html", "404.html"] as const;
@@ -993,21 +994,41 @@ describe("the doc pages: one .legal layout (design.md section 6, Legal pages)", 
     ].map((m) => ({ id: m[1] ?? "", heading: m[2] ?? "", body: m[3] ?? "" }));
 
   it.each(LEGAL)(
-    "%s carries the header block: one effective date shared by the three, Version 1.0, previous versions",
+    "%s carries the header block: its effective date and version are its latest change, each older version archived",
     (page) => {
       const html = pages[page] ?? "";
       const meta = between(html, /<p class="meta">/, "</p>");
       const [, iso, us] = /<time datetime="(\d{4}-\d{2}-\d{2})">([A-Z][a-z]+ \d{1,2}, \d{4})<\/time>/.exec(meta) ?? [];
       expect(new Date(`${us} UTC`).toISOString().slice(0, 10)).toBe(iso);
-      expect(meta).toContain(`<time datetime="${iso}">`);
-      for (const other of LEGAL) expect(pages[other]).toContain(`<p class="meta">Effective <time datetime="${iso}">`);
-      expect(visibleText(meta)).toMatch(/Version 1\.0 · No previous versions$/);
-      // Privacy and Terms list their versions under #changes; /security has no change list.
-      if (page !== "security.html") {
-        expect(meta).toContain('<a href="#changes">No previous versions</a>');
-        expect(visibleText(between(html, /<section id="changes"/, "</section>"))).toContain(
-          `Version 1.0, ${us} : first published version.`,
+      // /security has no change list: it stays Version 1.0, its status table no term of use.
+      if (page === "security.html") {
+        expect(visibleText(meta)).toMatch(/Version 1\.0 · No previous versions$/);
+        return;
+      }
+      // Privacy and Terms list every version under #changes, the latest first; an older one links its dated copy.
+      const changes = [
+        ...between(html, /<section id="changes"/, "</section>").matchAll(
+          /<li>(?:<a href="\/([\w-]+)">)?Version (\d+\.\d+)(?:<\/a>)?, <time datetime="([\d-]+)">/g,
+        ),
+      ].map((m) => ({ archive: m[1], version: m[2], iso: m[3] }));
+      expect(changes.length).toBeGreaterThan(0);
+      const [latest, ...older] = changes;
+      expect(latest?.archive).toBeUndefined();
+      expect(latest?.iso).toBe(iso);
+      expect(visibleText(meta)).toMatch(
+        new RegExp(
+          `Version ${(latest?.version ?? "").replace(".", "\\.")} · ${older.length ? "Previous" : "No previous"} versions$`,
+        ),
+      );
+      expect(meta).toContain(`<a href="#changes">${older.length ? "Previous" : "No previous"} versions</a>`);
+      for (const old of older) {
+        expect(old.archive, old.version).toBe(`${page.replace(".html", "")}-${old.iso}`);
+        const copy = read(`public/${old.archive}.html`);
+        expect(copy).toContain('<meta name="robots" content="noindex">');
+        expect(visibleText(between(copy, /<p class="meta">/, "</p>"))).toContain(
+          `Version ${old.version} · Replaced on`,
         );
+        expect(copy).toContain(`by the <a href="/${page.replace(".html", "")}">`);
       }
     },
   );
@@ -1096,9 +1117,10 @@ describe("the doc pages: one .legal layout (design.md section 6, Legal pages)", 
 
   it("/security claims nothing the main branch has not shipped", () => {
     const text = visibleText(pages["security.html"] ?? "");
-    const guestTypes = /const EXTENSION = (\/.*\/i);/.exec(read("public/js/core/drop.js"))?.[1] ?? "";
-    // Photos and videos ship with the phone's cleaning step; the status table names them only once drop.js takes them.
-    if (!/jpg|mp4/.test(guestTypes)) expect(text).not.toMatch(/\b(MP4|MOV|JPEG|photos)\b/i);
+    // The status row names exactly the photo and video types a guest may send (shared/names.js).
+    const media = [...new Set(Object.values(EXTENSION_TYPES))].filter((t) => t !== "pptx" && t !== "pdf");
+    expect(media).toEqual(["jpg", "png", "mp4", "mov"]);
+    expect(text).toContain("Guest photos (JPEG, PNG) and videos (MP4, MOV), cleaned on the phone Live");
     expect(text).not.toMatch(/12 hours|Session length|next, previous, present/i);
     const statuses = [...(pages["security.html"] ?? "").matchAll(/<span class="status( on)?">(\w+)<\/span>/g)].map(
       (m) => [m[2], !!m[1]],
