@@ -1,6 +1,7 @@
 // The per-screen record of minted links (architecture section 8.2, `links`). It holds hashes and counters,
-// never a token or a URL, and survives `end` as revoked tombstones until the object closes: a holder of a
-// real token then gets "gone" (410) while a guess gets "unknown" (404), and a guesser cannot tell them apart.
+// never a token or a URL, and survives `end` as revoked tombstones until the next session mints its first link: a
+// holder of that session's token gets "gone" (410) while a guess, or an older session's token, gets "unknown" (404).
+// One Screen object hosts many sessions, so the next mint drops every tombstone to keep the record bounded.
 
 import type { OpenError } from "../../shared/protocol.ts";
 import type { LinkConfig } from "../config.ts";
@@ -25,7 +26,8 @@ export class LinkLedger {
   }
 
   add(record: LinkRecord): void {
-    this.kv.put(KEY, [...this.all(), record]);
+    // A revoked record is from an ended session: links are revoked only at end.
+    this.kv.put(KEY, [...this.all().filter((r) => !r.revoked), record]);
   }
 
   /** The link rules alone: counts nothing. */

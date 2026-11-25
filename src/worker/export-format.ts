@@ -36,6 +36,7 @@ export const AUDIT_COLUMNS = [
   "method",
   "client",
   "count",
+  "ends_at",
 ] as const;
 
 /** One flat record per audit row; the same keys head the CSV and name the JSON fields. */
@@ -61,6 +62,7 @@ export function auditRecord(r: AuditRow): Record<(typeof AUDIT_COLUMNS)[number],
     method: d.method ?? null,
     client: d.client ?? null,
     count: d.count ?? null,
+    ends_at: d.endsAt === undefined ? null : new Date(d.endsAt).toISOString(),
   };
 }
 

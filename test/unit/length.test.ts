@@ -47,8 +47,15 @@ describe("SESS-01 length: the phone sets when the session ends", () => {
       expect(next.session?.endsAt).toBe(at + 30 * MIN);
       expect(nextDeadline(next, CFG)).toBe(at + 30 * MIN);
       expect(fx(effects, "push")).toEqual([{ fx: "push", to: "both" }]);
-      expect(effects).toHaveLength(1);
+      expect(effects).toHaveLength(2);
     }
+  });
+
+  it("SESS-01 audit: a length change is audited by the phone, and a replay audits nothing", () => {
+    const at = APPROVED_AT + MIN;
+    const step = must(approved(), length(at, 30));
+    expect(fx(step.effects, "audit")).toEqual([{ fx: "audit", type: "session.length", actor: "phone" }]);
+    expect(fx(must(step.next, length(at, 30)).effects, "audit")).toEqual([]);
   });
 
   it("shortens as well as lengthens", () => {

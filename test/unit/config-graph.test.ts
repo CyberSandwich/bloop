@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { parseConfig } from "../../src/worker/config.ts";
+import { RATE_LIMIT_STUBS } from "../env-vars.ts";
 
 const base = {
   PUBLIC_ORIGIN: "https://bloop.example",
@@ -13,6 +14,7 @@ const base = {
   DEMO_MAX_MINUTES: "10",
   DEMO_ENABLED: "true",
   GUEST_DROP: "open",
+  ...RATE_LIMIT_STUBS,
 };
 const key = Buffer.alloc(32, 5).toString("base64");
 const graph = {

@@ -174,7 +174,7 @@ export type ScreenStateKey =
 | offered | `open.click` | from the screen socket (a repeat in approved, opening or open returns the current view) | approved | as approve: `endsAt`, mint link; push screen `open`; audit `approved` (actor screen) |
 | uploading | `upload.failed(e)` | | claimed | delete object; push both `state`; audit `guest.refused` with cause `e` (the drop route answers the phone with `e`) |
 | approved, opening, open | `control(from, seq, shown)` | from the phone (`POST /api/control`, pid) or the screen (`POST /api/screen/shown`, sid); demo only (a live session is `wrong_state`); `shown.item` names a FILE item by id, else `file_not_found` (PAIR-11, LINK-01); `shown.page` is within the item's pages (a demo owner's deck or PDF has 2, anything else 1), else `bad_request`; any other state is `wrong_state` | (same) | a `seq` not above `session.seq[from]` changes nothing (a replay, or a late older command); else store the seq, and store `session.shown` and push both unless it is the same `shown`, which pushes nothing. Between senders the last applied wins (PAIR-13) |
-| approved, opening, open | `length(minutes, maxMinutes)` | from the phone (`POST /api/session/length`, pid), both modes; the route takes whole `minutes` from 5 to `SESSION_MAX_MINUTES`, and the Screen object passes the mode's cap; any other state is `wrong_state` | (same) | `endsAt` = min(now + minutes, approvedAt + maxMinutes), so no run of changes outlives the cap; push both and the alarm moves to it; the same `endsAt` again pushes nothing. Absolute, never a delta: a replay sets about the same end. At or past `endsAt` (an alarm running late) it ends the session as `timer` would (`ended`, `auto`), and the Screen object answers `session_ended` (SESS-01) |
+| approved, opening, open | `length(minutes, maxMinutes)` | from the phone (`POST /api/session/length`, pid), both modes; the route takes whole `minutes` from 5 to `SESSION_MAX_MINUTES`, and the Screen object passes the mode's cap; any other state is `wrong_state` | (same) | `endsAt` = min(now + minutes, approvedAt + maxMinutes), so no run of changes outlives the cap; audit `session.length` (actor `phone`, detail `endsAt`), push both and the alarm moves to it; the same `endsAt` again audits and pushes nothing. Absolute, never a delta: a replay sets about the same end. At or past `endsAt` (an alarm running late) it ends the session as `timer` would (`ended`, `auto`), and the Screen object answers `session_ended` (SESS-01) |
 | approved | `launched(mode)` | from the screen | opening | record mode; metric |
 | approved, opening | `fetched(link)` | first fetch of any link | open | `first_open_at`; metric `scan_to_open_ms`; push both |
 | opening, open | `fallback(mode, item)` | `item` (default: the first file) names a file, else `file_not_found` (PAIR-11); mints left | (same) | mint a link for `mode` and that item; when it is the launched item, set the open mode to what the link serves for the type (`effectivePurpose`: a deck's view is its PDF); metric `fallback`; push `open` to the screen and `state` to both |
@@ -272,7 +272,7 @@ export type Effect =
 
 export type AuditType =
   | "claimed" | "approved" | "link.minted" | "link.fetched" | "link.refused" | "canceled"
-  | "ended" | "guest.uploaded" | "guest.refused" | "guest.deleted";
+  | "ended" | "guest.uploaded" | "guest.refused" | "guest.deleted" | "session.length";
 export type MetricName =
   | "scan_to_open_ms" | "approve_to_open_ms" | "failure" | "fallback" | "session_minutes";
 
@@ -492,7 +492,7 @@ export declare function parseToken(token: string): { screenRef: string } | null;
 export declare function refusal(rec: LinkRecord, now: number, limits: LinkConfig): OpenError | null;   // revoked, exhausted, expired
 export declare function clientClass(userAgent: string | null): "office" | "browser" | "other";
 ```
-`do/ledger.ts` keeps the `LinkRecord`s in the Screen object (`tokenHash`, `purpose`, `item`, `mintedAt`, `firstFetchAt`, `fetches`, `revoked`, and a view link's audit state: `ips`, the foreign IP hashes already audited, at most 16, and `refused`, whether a refusal was); `item` is the index of the file the link serves. `check` applies the rules and counts nothing; `use` checks a link and counts the fetch in one synchronous step, so two requests cannot take the last allowed fetch. A view link audits its first fetch, the first fetch from each foreign IP hash and its first refusal; every other link audits every fetch and refusal. `revokeAll` marks records revoked and keeps them until the object closes.
+`do/ledger.ts` keeps the `LinkRecord`s in the Screen object (`tokenHash`, `purpose`, `item`, `mintedAt`, `firstFetchAt`, `fetches`, `revoked`, and a view link's audit state: `ips`, the foreign IP hashes already audited, at most 16, and `refused`, whether a refusal was); `item` is the index of the file the link serves. `check` applies the rules and counts nothing; `use` checks a link and counts the fetch in one synchronous step, so two requests cannot take the last allowed fetch. A view link audits its first fetch, the first fetch from each foreign IP hash and its first refusal; every other link audits every fetch and refusal. `revokeAll` marks records revoked and keeps them until the next `add`, which drops every revoked record first (they belong to an ended session), so the stored set is one session's worth and an earlier session's token is `link_unknown`.
 
 The status of each `/f/` refusal is the one in `public/js/shared/errors.js` (`link_unknown` 404, `link_expired`, `link_exhausted` and `link_revoked` 410, `link_binding_failed` 403, `upstream_failed` 502, `pdf_unavailable` 404, `mint_limit` 429); 410 tells Office the file is gone for good. The name segment of the link comes from `public/js/shared/names.js`: `[A-Za-z0-9-]`, 1 to 60 characters, no dots except the extension, sized so the whole link fits 200 characters for the configured origin (`PUBLIC_ORIGIN` is capped at 120 characters), which keeps the `ms-powerpoint:ofv|u|` URI under Office's 256.
 
@@ -610,7 +610,7 @@ export interface AuditEvent {
   type: AuditType | "grant.created" | "grant.deleted" | "user.erased" | "export.run" | "pass.created";
   /** Allowed keys only. Never tokens, codes, URLs, IPs or Graph ids. */
   detail: { fileName?: string; source?: "mock" | "graph" | "guest"; purpose?: string;
-            cause?: ErrorCode; reason?: string; bytes?: number; ipMatch?: boolean;
+            cause?: ErrorCode; reason?: string; bytes?: number; ipMatch?: boolean; endsAt?: number; /* session.length: the new end */
             /** An /f/ request: method, class of client (never the raw User-Agent), fetch count. */
             method?: string; client?: "office" | "browser" | "other"; count?: number };
 }
@@ -648,7 +648,7 @@ export interface Metrics {
 
 Implementations: `audit-d1.ts` (`D1AuditLog`) and `metrics-d1.ts` (`D1Metrics`), picked in `stores.ts`. The `session` row is created by the first event that carries a `SessionContext` (`claimed`) and updated by `approved`, `guest.uploaded`, `link.fetched` (first open), `ended` and `canceled`. A demo session never keeps a user id. `detail` is filtered to the keys of `AuditEvent["detail"]` before the write. The `failure` metric carries the cause: a refused guest upload (`upload.failed`) and a refused `/f/` request (`link.refused`). `screen_offline` and `phone_offline` causes have no emitter yet.
 
-`GET /api/it/export` (`routes/export.ts`): Bearer `IT_EXPORT_TOKEN`; query `format=json|csv` (default json), `data=audit|metrics` (default audit), `from` and `to` as inclusive UTC days (default: the last 30 days; at most 366 days); `RL_EXPORT` per pseudonymous IP; each run writes an `export.run` row (actor `it`, session id `export`) first. Audit CSV columns: `id,time,session,room,mode,kind,actor,type,user,file_name,source,purpose,cause,reason,bytes,ip_match,method,client,count`; metrics: `mode,name,cause,n,p50_ms,p90_ms`.
+`GET /api/it/export` (`routes/export.ts`): Bearer `IT_EXPORT_TOKEN`; query `format=json|csv` (default json), `data=audit|metrics` (default audit), `from` and `to` as inclusive UTC days (default: the last 30 days; at most 366 days); `RL_EXPORT` per pseudonymous IP; each run writes an `export.run` row (actor `it`, session id `export`) first. Audit CSV columns: `id,time,session,room,mode,kind,actor,type,user,file_name,source,purpose,cause,reason,bytes,ip_match,method,client,count,ends_at`; metrics: `mode,name,cause,n,p50_ms,p90_ms`.
 
 Cron (`retention.ts`, `index.ts` `scheduled`): hourly `0 * * * *` runs the guest sweep and `closeStaleSessions(env, now)`; daily `30 3 * * *` runs `runRetention(env, config, now)`, which returns a report of rows deleted per table and the auth maintenance report. Both are plain functions with the clock passed in.
 

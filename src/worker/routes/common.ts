@@ -32,15 +32,15 @@ export const ipHash = (request: Request, config: Config): Promise<string> =>
 
 /**
  * Coarse platform limit, per pseudonymous IP unless the caller names another key (a session ref).
- * Skipped when the binding is absent or under TEST_TIMING.
+ * Skipped under TEST_TIMING; any other config holds every binding (`parseConfig` refuses one that lacks it).
  */
 export async function limited(
-  binding: RateLimit | undefined,
+  binding: RateLimit,
   request: Request,
   config: Config,
   key?: string,
 ): Promise<Response | null> {
-  if (config.testTiming || typeof binding?.limit !== "function") return null;
+  if (config.testTiming) return null;
   return (await binding.limit({ key: key ?? (await ipHash(request, config)) })).success ? null : fail("rate_limited");
 }
 

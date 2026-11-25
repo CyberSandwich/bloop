@@ -37,6 +37,8 @@ export interface AuditEvent {
     method?: string;
     client?: "office" | "browser" | "other";
     count?: number;
+    /** A session.length change: the new end, epoch ms. */
+    endsAt?: number;
   };
   /** Present on the machine's events; later events find the row by `sessionId`. */
   session?: SessionContext;
@@ -89,6 +91,7 @@ export const DETAIL_KEYS = [
   "method",
   "client",
   "count",
+  "endsAt",
 ] as const;
 
 export function sanitizeDetail(detail: AuditEvent["detail"]): AuditEvent["detail"] {

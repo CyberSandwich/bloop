@@ -139,7 +139,15 @@ describe("DROP-11 image polyglot", () => {
     expect(await validate(reader(open), "jpg")).toEqual({ ok: false, error: "bad_structure" });
   });
 
-  it("DROP-11 refuses a JPEG or PNG carrying a PDF: %PDF in the head or %%EOF in the tail", async () => {
+  it("DROP-11 image polyglot data after EOI: a JPEG whose last two bytes are not FF D9 is refused", async () => {
+    const refused = { ok: false, error: "bad_structure" };
+    for (const after of ["<html><script>x</script>", "\0", "\xff"]) {
+      expect(await validate(reader(concat([validJpeg(), enc.encode(after)])), "jpg")).toEqual(refused);
+    }
+    expect(await validate(reader(validJpeg()), "jpg")).toEqual({ ok: true, type: "jpg" });
+  });
+
+  it("DROP-11 refuses a JPEG or PNG carrying a PDF:%PDF in the head or %%EOF in the tail", async () => {
     const refused = { ok: false, error: "bad_structure" };
     expect(await validate(reader(validJpeg("%PDF-1.4")), "jpg")).toEqual(refused);
     expect(await validate(reader(concat([validJpeg(), enc.encode("%%EOF\n")])), "jpg")).toEqual(refused);

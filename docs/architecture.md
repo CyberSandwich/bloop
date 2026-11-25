@@ -345,7 +345,7 @@ Every state-changing route checks four things: `Origin` equals `PUBLIC_ORIGIN`; 
 | concurrent demo screens | `DEMO_MAX_CONCURRENT` across all visitors, and `DEMO_MAX_PER_IP` per IP hash (values in `wrangler.jsonc`); the next create answers 429 `rate_limited` | exact, Directory DO |
 | demo screens            | plus a 60-min session and a 25 MB drop cap                                           | config              |
 
-IPs are never stored. Limits use `HMAC(HASH_PEPPER, ip)` of `CF-Connecting-IP` (Cloudflare sets it; a local run has none and shares one key), kept only in DO storage until the window ends. The rate-limit bindings run in `wrangler dev` too. `TEST_TIMING=1` skips them so one integration run can create more screens than the per-IP limit allows; the exact limits in the objects stay on.
+IPs are never stored. Limits use `HMAC(HASH_PEPPER, ip)` of `CF-Connecting-IP` (Cloudflare sets it; a local run has none and shares one key), kept only in DO storage until the window ends. The rate-limit bindings run in `wrangler dev` too. `TEST_TIMING=1` skips them so one integration run can create more screens than the per-IP limit allows; the exact limits in the objects stay on. Any other config refuses to load without every binding (`RATE_LIMIT_BINDINGS` in `config.ts`, checked against `wrangler.jsonc` by a test), so a missing binding is a 500, never an open limit.
 
 ## 7. WebSocket protocol
 
@@ -451,7 +451,7 @@ CREATE TABLE r2_ops (                    -- R2 operations bloop performed; 13 mo
 | `meta`             | `screenRef`, mode, room id and name, `screenSecretHash`, created                                                                 | until the screen closes (10 min with no socket and no session) |
 | `machine`          | the whole pure-machine record (`src/worker/machine.ts`): state, current and previous code (value, issuedAt, expiresAt, consumed), code request times, pairing (session id, secret hash, kind, match, claimedAt, listed ids, pass hash, user id), session (the approved items in order, each with its id, approvedAt, endsAt, open mode, links minted per item index, `shown`), deadlines, end reason, open socket count | rewritten on every transition; pairing and session fields are dropped at end |
 | `schemaVersion`    | the storage version (`do/schema.ts`); every shape-checked step runs on every wake, so old-shape data is repaired whatever the stored version | until the screen closes |
-| `links`            | per link: `tokenHash`, purpose, item index, mintedAt, firstFetchAt, fetches, revoked. At end every record is marked revoked and kept, so a holder of a real token gets 410 while a guess gets 404 | until the screen closes |
+| `links`            | per link: `tokenHash`, purpose, item index, mintedAt, firstFetchAt, fetches, revoked. At end every record is marked revoked and kept, so a holder of that session's token gets 410 while a guess gets 404; the next session's first mint drops the revoked records, so an older token is 404 too and the set stays one session's worth | until the screen closes |
 | `screenIp`         | HMAC of the IP the screen's socket connected from, for the link binding check (ADR 0003)                                         | until the screen closes                                        |
 | socket attachments | `{role, authed}`                                                                                                                 | the socket's life                                              |
 

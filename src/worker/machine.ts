@@ -117,7 +117,8 @@ export type AuditType =
   | "ended"
   | "guest.uploaded"
   | "guest.refused"
-  | "guest.deleted";
+  | "guest.deleted"
+  | "session.length";
 export type MetricName = "scan_to_open_ms" | "approve_to_open_ms" | "failure" | "fallback" | "session_minutes";
 
 export type Effect =
@@ -468,7 +469,10 @@ export function transition(m: Machine, ev: Event, cfg: MachineConfig): Step {
       // plus the cap, so no run of changes keeps a session alive longer than the cap.
       const endsAt = Math.min(now + ev.minutes * MINUTE, session.approvedAt + ev.maxMinutes * MINUTE);
       if (endsAt === session.endsAt) return ok(m);
-      return ok({ ...m, session: { ...session, endsAt } }, [{ fx: "push", to: "both" }]);
+      return ok({ ...m, session: { ...session, endsAt } }, [
+        { fx: "audit", type: "session.length", actor: "phone" },
+        { fx: "push", to: "both" },
+      ]);
     }
 
     case "fallback": {
