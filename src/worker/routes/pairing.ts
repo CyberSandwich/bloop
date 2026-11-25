@@ -9,7 +9,7 @@ import { checkOrigin, fail, json } from "../http.ts";
 import { newRef } from "../ids.ts";
 import { type Route, route } from "../router.ts";
 import { directoryStub, screenStub } from "../stubs.ts";
-import { ipHash, limited, respond, withConfig, withScreen, write } from "./common.ts";
+import { ipHash, limited, netHash, respond, withConfig, withScreen, write } from "./common.ts";
 
 const mode = z.enum(["live", "demo"]);
 const createBody = z.object({ mode }).strict();
@@ -25,8 +25,8 @@ const REF = /^[A-Za-z0-9_-]{22}$/;
 
 /**
  * WebSocket upgrade: the Origin must be ours; the credential is the first frame, so the URL carries only the ref.
- * `RL_UPGRADE`, its own binding so reconnects never spend a tap's, is spent per screen and address before the Screen
- * object is reached (PAIR-10).
+ * `RL_UPGRADE`, its own binding so reconnects never spend a tap's, is spent per screen and network (an IPv6 /64, as
+ * the Screen object's pending cap counts) before the Screen object is reached (PAIR-10).
  */
 async function upgrade(request: Request, env: Env, config: Config): Promise<Response> {
   const refused = checkOrigin(request, config.origin);
@@ -34,7 +34,7 @@ async function upgrade(request: Request, env: Env, config: Config): Promise<Resp
   if (request.headers.get("Upgrade")?.toLowerCase() !== "websocket") return fail("bad_request");
   const ref = new URL(request.url).searchParams.get("ref") ?? "";
   if (!REF.test(ref)) return fail("bad_request");
-  const tooMany = await limited(env, "RL_UPGRADE", request, config, `${ref}.${await ipHash(request, config)}`);
+  const tooMany = await limited(env, "RL_UPGRADE", request, config, `${ref}.${await netHash(request, config)}`);
   if (tooMany) return tooMany;
   return screenStub(env, ref).fetch(request);
 }
