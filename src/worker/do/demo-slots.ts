@@ -7,12 +7,9 @@ export interface SqlLike {
   exec(query: string, ...bindings: (string | number)[]): { toArray(): Record<string, unknown>[] };
 }
 
+/** Over the `demo` table, which `initDirectoryStorage` (do/directory-schema.ts) creates. */
 export class DemoSlots {
-  constructor(private readonly sql: SqlLike) {
-    sql.exec(
-      "CREATE TABLE IF NOT EXISTS demo (screen_ref TEXT PRIMARY KEY, ip_hash TEXT NOT NULL, expires_at INTEGER NOT NULL)",
-    );
-  }
+  constructor(private readonly sql: SqlLike) {}
 
   /**
    * Holds a slot for `holdMs`, or refuses with false when `cap` live slots are taken or this IP hash already

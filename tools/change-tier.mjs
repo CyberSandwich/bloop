@@ -30,7 +30,7 @@ const SENSITIVE = [
   { pattern: /^public\/_headers$/, label: "static header policy" },
   { pattern: /^src\/worker\/auth\//, label: "auth code" },
   { pattern: /^src\/worker\/routes\/auth\.ts$/, label: "auth route" },
-  { pattern: /^src\/worker\/do\/[^/]*schema[^/]*\.ts$/, label: "Durable Object schema step" },
+  { pattern: /^src\/worker\/do\/(.*\/)?[^/]*schema[^/]*\.ts$/, label: "Durable Object schema step" },
 ];
 
 /**

@@ -31,14 +31,11 @@ import {
   T0,
   VEVOX,
 } from "./machine-helpers.ts";
+import { memKv } from "./sqlite.ts";
 
 const kv = (entries: Record<string, unknown> = {}) => {
-  const map = new Map<string, unknown>(Object.entries(entries));
-  return {
-    map,
-    get: <T>(k: string) => map.get(k) as T | undefined,
-    put: (k: string, v: unknown) => void map.set(k, v),
-  };
+  const store = memKv(entries);
+  return { ...store, map: store.data };
 };
 /** A userinfo part, built so no literal credential URL sits in the source. */
 const USERINFO = ["user", "pw"].join(":");

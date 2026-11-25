@@ -5,7 +5,7 @@ import type { Env } from "../env.ts";
 import type { CodeDirectory, DemoCap } from "../seams/pairing.ts";
 import type { DemoSlots } from "./demo-slots.ts";
 import { isBlocked, MISS_WINDOW_MS, type MissRow, recordGlobalMiss, recordMiss } from "./directory-rules.ts";
-import { initDirectoryStorage } from "./directory-schema.ts";
+import { initDirectoryStorage, ROWS_LEFT } from "./directory-schema.ts";
 
 /**
  * An expired code keeps routing to its screen for this long, so the Screen answers `code_expired`
@@ -83,12 +83,7 @@ export class Directory extends DurableObject<Env> implements CodeDirectory, Demo
     sql.exec("DELETE FROM code WHERE expires_at <= ?", now - GRAVE_MS);
     sql.exec("DELETE FROM miss WHERE window_start <= ?", now - MISS_WINDOW_MS);
     this.slots.prune(now);
-    const left = sql
-      .exec<{ n: number }>(
-        "SELECT (SELECT count(*) FROM code) + (SELECT count(*) FROM miss) + (SELECT count(*) FROM demo) AS n",
-      )
-      .one();
-    if (left.n > 0) await this.ctx.storage.setAlarm(now + SWEEP_MS);
+    if (sql.exec<{ n: number }>(ROWS_LEFT).one().n) await this.ctx.storage.setAlarm(now + SWEEP_MS);
   }
 
   private missRow(key: string): MissRow | null {

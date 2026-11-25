@@ -110,7 +110,7 @@ const isSeq = (v: unknown): v is Session["seq"] => {
 export function applySteps(kv: Kv, steps: Record<number, (kv: Kv) => void>, version: number): void {
   for (let v = 2; v <= version; v++) steps[v]?.(kv);
   const stored = kv.get<number>(SCHEMA_KEY);
-  if (typeof stored !== "number" || stored < version) kv.put(SCHEMA_KEY, version);
+  if (!Number.isSafeInteger(stored) || (stored as number) < version) kv.put(SCHEMA_KEY, version);
 }
 
 /** Brings stored state to SCHEMA_VERSION's shape. A fresh object (no `meta`) is written at the current version by `create`. */

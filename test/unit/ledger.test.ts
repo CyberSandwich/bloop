@@ -1,17 +1,19 @@
 import { describe, expect, it } from "vitest";
 import { type Kv, LinkLedger } from "../../src/worker/do/ledger.ts";
 import { type LinkRecord, MAX_AUDITED_IPS } from "../../src/worker/seams/open-path/links.ts";
+import { memKv } from "./sqlite.ts";
 
 const LIMITS = { firstFetchSeconds: 600, fetchWindowSeconds: 120, maxFetches: 10 } as Parameters<
   LinkLedger["check"]
 >[2];
 
 function memoryKv(): Kv & { size(): number } {
-  const m = new Map<string, unknown>();
+  const kv = memKv();
+  // Copied on put, as the platform serializes it, so no test leans on a shared object.
   return {
-    get: <T>(k: string) => m.get(k) as T | undefined,
-    put: (k, v) => void m.set(k, JSON.parse(JSON.stringify(v))),
-    size: () => JSON.stringify([...m.values()]).length,
+    ...kv,
+    put: (key, value) => kv.put(key, JSON.parse(JSON.stringify(value))),
+    size: () => JSON.stringify([...kv.data.values()]).length,
   };
 }
 

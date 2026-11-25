@@ -1,10 +1,11 @@
 import { DatabaseSync } from "node:sqlite";
 import { describe, expect, it } from "vitest";
-import { DemoSlots } from "../../src/worker/do/demo-slots.ts";
-import { sqlOver } from "./sqlite.ts";
+import type { DemoSlots } from "../../src/worker/do/demo-slots.ts";
+import { initDirectoryStorage } from "../../src/worker/do/directory-schema.ts";
+import { memKv, sqlOver } from "./sqlite.ts";
 
 function slots(): DemoSlots {
-  return new DemoSlots(sqlOver(new DatabaseSync(":memory:")));
+  return initDirectoryStorage(sqlOver(new DatabaseSync(":memory:")), memKv());
 }
 
 const T = 1_000_000;

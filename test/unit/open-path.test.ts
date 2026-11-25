@@ -6,6 +6,7 @@ import type { Resolved, SourceContext } from "../../src/worker/seams/file-source
 import { MockFileSource } from "../../src/worker/seams/file-source/mock.ts";
 import type { LinkRecord } from "../../src/worker/seams/open-path/links.ts";
 import { openPathFor } from "../../src/worker/seams/open-path/select.ts";
+import { memKv } from "./sqlite.ts";
 
 const HOSTS = ["*.sharepoint.com", "*.files.1drv.com"];
 const BYTES = new Uint8Array([80, 75, 3, 4, 1, 2, 3]);
@@ -168,10 +169,7 @@ describe("LinkLedger", () => {
     maxMints: 5,
     binding: "log",
   } as const;
-  const kv = () => {
-    const map = new Map<string, unknown>();
-    return { get: <T>(k: string) => map.get(k) as T | undefined, put: (k: string, v: unknown) => void map.set(k, v) };
-  };
+  const kv = memKv;
   const rec = (tokenHash: string): LinkRecord => ({
     tokenHash,
     purpose: "protocol",
