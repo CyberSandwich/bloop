@@ -15,6 +15,7 @@ import { type Check, fail, OK } from "./formats.ts";
 /**
  * The most this in-memory scan reads (the bytes and their Latin-1 text are both held). A larger file gets the
  * verdict `needs_stream_scan` (not ok, error `too_large`): a chunked scan can answer it later without an API change.
+ * Memory is about 2 to 3 times the file size: `latin1` decodes as windows-1252, so bytes 0x80 to 0x9F take two bytes.
  */
 export const MAX_PDF_BYTES = 32 * 1024 * 1024;
 
@@ -29,6 +30,8 @@ const OBJSTM_KEYS: ReadonlySet<string> = new Set([
 const MAX_STREAM_BYTES = 8 * 1024 * 1024;
 const MAX_TOTAL_INFLATED = 32 * 1024 * 1024;
 const DICT_LOOKBACK = 4096;
+/** A real file has a handful of object streams; each one costs an inflate. */
+export const MAX_OBJECT_STREAMS = 4096;
 
 // PDF white space includes NUL; delimiters end a name.
 // biome-ignore lint/suspicious/noControlCharactersInRegex: NUL is PDF white space
@@ -91,7 +94,7 @@ export async function scanPdf(pdf: Uint8Array): Promise<Check & { found?: string
     const from = m.index + m[0].length;
     const end = text.indexOf("endstream", from);
     const inflated =
-      end === -1 || !plainObjStm(dict)
+      scanned >= MAX_OBJECT_STREAMS || end === -1 || !plainObjStm(dict)
         ? null
         : await inflate(pdf.subarray(from, withoutEol(pdf, from, end)), Math.min(MAX_STREAM_BYTES, budget), "deflate");
     if (!inflated) return refusal(found.add("unscannable"));
