@@ -95,6 +95,7 @@ A restore brings back users that were purged and sessions that were signed out. 
 - `DEV_MAILBOX` exposes the codes the Worker would email, at a local route, so tests and local sign-in work with no mail. It is refused when `PUBLIC_ORIGIN` is not a local address; never set it on a deployment.
 - Browser tests and local runs use `http://localhost:<port>`, not `127.0.0.1`: WebAuthn refuses IP addresses as a relying-party id. Set `PUBLIC_ORIGIN` in `.dev.vars` to the same `localhost` origin.
 - The integration run sets `UPLOAD_MODE=proxy` (the bucket stand-in, no presigned URLs) and `CONVERT_MODE=stub`.
+- Every dev server runs with `--enable-containers=false` (also `dev.enable_containers` in `wrangler.jsonc`), so no run needs Docker once the converter container is declared.
 
 ## Audit export, retention and the cron jobs
 

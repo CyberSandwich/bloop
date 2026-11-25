@@ -7,7 +7,6 @@ export interface Env {
   DIRECTORY: DurableObjectNamespace;
   USER_LIBRARY: DurableObjectNamespace;
   CONVERTER: DurableObjectNamespace;
-  CONVERT: Workflow;
   DB: D1Database;
   GUEST_FILES: R2Bucket;
   LIBRARY: R2Bucket;
