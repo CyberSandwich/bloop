@@ -18,11 +18,6 @@ afterAll(async () => {
   await wrangler?.stop();
 });
 
-const setMode = (mode: "preview" | "open", lockout = false) => {
-  wrangler.d1(`INSERT OR REPLACE INTO setting (key, value, updated_at) VALUES ('launch_mode', '${mode}', 0)`);
-  wrangler.d1("DELETE FROM setting WHERE key = 'preview_lockout'");
-  if (lockout) wrangler.d1("INSERT INTO setting (key, value, updated_at) VALUES ('preview_lockout', '1', 0)");
-};
 const hit = (path: string) => fetch(`${wrangler.url}${path}`, { redirect: "manual" });
 
 const OPEN_FORMS = ["/open/", "/open", "/Open/", "/OPEN/x", "/%6Fpen/", "//open/", "/./open/", "/%5Copen/"];
@@ -36,7 +31,7 @@ describe("MODE-01 gate: the launch mode against a real D1", () => {
     const label = `${mode}${lockout ? " with the lockout" : ""}`;
 
     it(`MODE-01 gate: every form of /open is the same 404 as an unknown path in ${label}`, async () => {
-      setMode(mode, lockout);
+      wrangler.setLaunchMode(mode, lockout);
       const unknown = await hit("/no-such-page");
       expect(unknown.status).toBe(404);
       const unknownBody = await unknown.text();
@@ -48,7 +43,7 @@ describe("MODE-01 gate: the launch mode against a real D1", () => {
     });
 
     it(`MODE-01 gate: today's pages answer and signed-out /library, /account, /admin never fail in ${label}`, async () => {
-      setMode(mode, lockout);
+      wrangler.setLaunchMode(mode, lockout);
       expect((await hit("/privacy")).status).toBe(200);
       expect((await hit("/")).status).toBe(200);
       for (const path of ["/library", "/account", "/admin"]) expect((await hit(path)).status, path).toBeLessThan(500);
