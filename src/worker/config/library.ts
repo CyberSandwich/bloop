@@ -11,6 +11,9 @@ export const libraryVars = {
   ).describe(
     "The separate host that serves session links, bundles and previews (ADR 0018). Unset: no file-origin host, every workers.dev request redirects to PUBLIC_ORIGIN.",
   ),
+  R2_DEV_ENDPOINT: optional(z.url().max(MAX_ORIGIN_CHARS)).describe(
+    "Test only. The origin of a local S3-compatible stand-in for the R2 EU endpoint; refused unless PUBLIC_ORIGIN is a local address, so it is never set in a deployment.",
+  ),
   UPLOAD_MODE: z
     .enum(["direct", "proxy"])
     .default("proxy")
@@ -57,6 +60,8 @@ export interface LibraryConfig {
   /** FILE_ORIGIN, or null while the file host is off. */
   fileOrigin: string | null;
   uploadMode: "direct" | "proxy";
+  /** Set only on a local origin: where presigned part URLs point instead of the R2 EU endpoint. */
+  r2DevEndpoint: string | null;
   partBytes: number;
   urlTtlSeconds: number;
   quotaBytes: number;

@@ -74,6 +74,30 @@ describe("v4 configuration", () => {
     ).toBe(true);
   });
 
+  it("R2_DEV_ENDPOINT and CONVERT_MODE=stub are refused on a deployed origin and allowed on a local one", () => {
+    expect(problems({ R2_DEV_ENDPOINT: "http://127.0.0.1:9000" })).toEqual([
+      "R2_DEV_ENDPOINT: refused: PUBLIC_ORIGIN is not a local address",
+    ]);
+    expect(problems({ CONVERT_MODE: "stub" })).toEqual([
+      "CONVERT_MODE: stub refused: PUBLIC_ORIGIN is not a local address",
+    ]);
+    const local = { PUBLIC_ORIGIN: "http://localhost:8787", TEST_TIMING: "0" };
+    expect(config({ ...local, R2_DEV_ENDPOINT: "http://127.0.0.1:9000" }).library.r2DevEndpoint).toBe(
+      "http://127.0.0.1:9000",
+    );
+    expect(config({ ...local, CONVERT_MODE: "stub" }).library.convertMode).toBe("stub");
+    expect(config().library.r2DevEndpoint).toBeNull();
+  });
+
+  it("wrangler.jsonc never sets a test-only variable", () => {
+    const live = readFileSync(new URL("../../wrangler.jsonc", import.meta.url), "utf8")
+      .split("\n")
+      .filter((line) => !line.trim().startsWith("//"))
+      .join("\n");
+    expect(live).not.toMatch(/"(R2_DEV_ENDPOINT|DEV_MAILBOX|TEST_TIMING)"\s*:/);
+    expect(live).not.toMatch(/"CONVERT_MODE"\s*:\s*"stub"/);
+  });
+
   it("FILE_ORIGIN must be an origin, differ from PUBLIC_ORIGIN and be https unless local; empty means off", () => {
     expect(config({ FILE_ORIGIN: "" }).library.fileOrigin).toBeNull();
     expect(config({ FILE_ORIGIN: "https://files.example" }).library.fileOrigin).toBe("https://files.example");

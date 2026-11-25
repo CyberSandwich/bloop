@@ -81,7 +81,7 @@
     { "name": "RL_ADMIN", "namespace_id": "1017", "simple": { "limit": 60, "period": 60 } },
     { "name": "RL_REPORT", "namespace_id": "1018", "simple": { "limit": 5, "period": 60 } }
   ],
-  "triggers": { "crons": ["0 * * * *", "30 3 * * *"] },
+  "triggers": { "crons": ["*/5 * * * *", "0 * * * *", "30 3 * * *"] },
   "vars": {
     "PUBLIC_ORIGIN": "https://bloop.here",
     // The workers.dev host is a separate site, so a file served there never shares an origin or a cookie with the app (ADR 0018).

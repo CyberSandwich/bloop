@@ -30,6 +30,12 @@ const schema = z.object({ ...coreVars, ...libraryVars, ...accountVars, ...spendV
   if (v.DEV_MAILBOX === "1" && !isLocalOrigin(v.PUBLIC_ORIGIN)) {
     issue("DEV_MAILBOX", "refused: PUBLIC_ORIGIN is not a local address");
   }
+  if (v.R2_DEV_ENDPOINT && !isLocalOrigin(v.PUBLIC_ORIGIN)) {
+    issue("R2_DEV_ENDPOINT", "refused: PUBLIC_ORIGIN is not a local address");
+  }
+  if (v.CONVERT_MODE === "stub" && !isLocalOrigin(v.PUBLIC_ORIGIN)) {
+    issue("CONVERT_MODE", "stub refused: PUBLIC_ORIGIN is not a local address");
+  }
   if (v.FILE_ORIGIN) {
     if (new URL(v.FILE_ORIGIN).origin === new URL(v.PUBLIC_ORIGIN).origin) {
       issue("FILE_ORIGIN", "must differ from PUBLIC_ORIGIN");
@@ -209,6 +215,7 @@ export function parseConfig(env: Record<string, unknown>): ConfigResult {
       library: {
         fileOrigin: v.FILE_ORIGIN ?? null,
         uploadMode: v.UPLOAD_MODE,
+        r2DevEndpoint: v.R2_DEV_ENDPOINT ?? null,
         partBytes: v.UPLOAD_PART_BYTES,
         urlTtlSeconds: v.UPLOAD_URL_TTL_SECONDS,
         quotaBytes: v.LIBRARY_QUOTA_BYTES,

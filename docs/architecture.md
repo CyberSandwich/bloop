@@ -247,7 +247,8 @@ src/worker/
   stores.ts                the one place that picks the AuditLog and Metrics implementations
   auth/{oauth,vault,sessions,cookies,services,db}.ts   oauth4webapi flow; token vault; phone sessions; cookie format and AEAD seal; per-request objects and the daily job; the D1 slice
   routes/{pairing,files,open,drop,control,auth,export,common}.ts
-  retention.ts             cron jobs: closeStaleSessions (hourly), runRetention (daily)
+  cron.ts                  the cron dispatcher; cron-jobs.ts lists each trigger's jobs
+  retention.ts             closeStaleSessions (hourly), runRetention (daily)
 public/                    the assets' source, built into dist/ (each JS module minified, each stylesheet stripped of comments and whitespace, everything else as it is), which wrangler serves. Everything here is public: no secrets, no server-only logic
   index.html security.html privacy.html s.html a.html code.html 404.html
   _headers                 static security headers (section 10)
@@ -623,4 +624,4 @@ What is stored outside the EU, and what each holds:
 Browser tests and `npm run dev` use a `localhost` base URL, because WebAuthn refuses IP addresses. Integration runs set `DEV_MAILBOX` (the dev mailbox route; refused on an https origin), `UPLOAD_MODE=proxy` and `CONVERT_MODE=stub`.
 
 ### 13.6 Cron seams
-Two crons exist: hourly and daily (section 9). Each calls a list of jobs, and a stream adds its sweep to that list. The spend-guard stream adds its five-minute breaker trigger.
+Three crons exist: every five minutes (no job yet; the spend guard's breaker goes there), hourly and daily (section 9). `src/worker/cron-jobs.ts` lists each trigger's jobs, and a stream adds its sweep to one list. A job gets an allotment of rows or objects for the tick and returns whether more is left, so a backlog pages across ticks; one failing job does not stop the rest.

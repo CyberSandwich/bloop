@@ -119,13 +119,18 @@ describe("headers.ts", () => {
 
   it("every policy carries the base headers", () => {
     for (const policy of POLICIES) {
-      // Permissions-Policy varies by page kind (screen, auth); every other base header is shared.
+      // Permissions-Policy varies by page kind (screen, wake, auth); every other base header is shared.
       // The file-origin ping is read cross-origin, so its CORP is cross-origin.
       const { "Permissions-Policy": _own, "Cross-Origin-Resource-Policy": corp, ...shared } = BASE_HEADERS;
       expect(headersFor(policy)).toMatchObject(shared);
       expect(headersFor(policy)["Cross-Origin-Resource-Policy"]).toBe(policy === "file-origin" ? "cross-origin" : corp);
-      const page = policy === "screen" || policy === "auth" ? policy : "none";
-      expect(headersFor(policy)["Permissions-Policy"]).toBe(permissionsPolicy(page));
+      const kinds: Partial<Record<Policy, Parameters<typeof permissionsPolicy>[0]>> = {
+        screen: "screen",
+        app: "wake",
+        library: "wake",
+        auth: "auth",
+      };
+      expect(headersFor(policy)["Permissions-Policy"]).toBe(permissionsPolicy(kinds[policy] ?? "none"));
     }
   });
 
