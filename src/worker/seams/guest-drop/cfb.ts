@@ -15,9 +15,11 @@ const DIR_ENTRY_BYTES = 128;
 const HEADER_DIFAT_ENTRIES = 109;
 
 /** Bounds: a real Office file stays far below each; a crafted one stops at them. */
-export const CFB_LIMITS = { maxDirEntries: 4096, maxDifatSectors: 64, maxFatSectors: 4096 } as const;
+export const CFB_LIMITS = { maxSectorReads: 64, maxDifatSectors: 64, maxFatSectors: 4096 } as const;
 
 const UNALLOCATED = 0;
+/** Storage, stream, root: the only entry types a directory holds. */
+const ENTRY_TYPES: ReadonlySet<number> = new Set([1, 2, 5]);
 const MACRO_NAMES = ["vba", "_vba_project_cur", "_vba_project", "macros", "projectwm"];
 const OBJECT_NAMES = ["objectpool", "\x01ole10native"];
 const ENCRYPTED_NAMES = ["encryptioninfo", "encryptedpackage", "\x06dataspaces"];
@@ -36,7 +38,19 @@ function verdictFor(names: readonly string[]): Check {
   return OK;
 }
 
+class ReadBudget extends Error {}
+
+/** Reads at most `CFB_LIMITS.maxSectorReads` sectors; a file that needs more is refused as unscannable. */
 export async function scanCfb(r: RangeReader): Promise<Check> {
+  try {
+    return await scan(r);
+  } catch (error) {
+    if (error instanceof ReadBudget) return bad("cfb unscannable");
+    throw error;
+  }
+}
+
+async function scan(r: RangeReader): Promise<Check> {
   const head = await r.read(0, HEADER_BYTES);
   if (head.length < HEADER_BYTES || !MAGIC.every((m, i) => head[i] === m))
     return fail("bad_type", "not a compound file");
@@ -51,9 +65,11 @@ export async function scanCfb(r: RangeReader): Promise<Check> {
   if (fatCount === 0 || fatCount > CFB_LIMITS.maxFatSectors || difatCount > CFB_LIMITS.maxDifatSectors)
     return bad("cfb header");
 
+  let reads = 0;
   const sector = async (id: number): Promise<DataView | null> => {
     const offset = (id + 1) * sectorSize;
     if (id > MAX_REG_SECTOR || offset + sectorSize > r.size) return null;
+    if (++reads > CFB_LIMITS.maxSectorReads) throw new ReadBudget();
     const bytes = await r.read(offset, sectorSize);
     return bytes.length === sectorSize ? view(bytes) : null;
   };
@@ -85,17 +101,18 @@ export async function scanCfb(r: RangeReader): Promise<Check> {
     return u32(s, (id % perSector) * 4);
   };
 
-  const maxChain = Math.ceil((CFB_LIMITS.maxDirEntries * DIR_ENTRY_BYTES) / sectorSize);
   const names: string[] = [];
   const seen = new Set<number>();
   for (let id = firstDir; id !== END_OF_CHAIN; ) {
-    if (seen.has(id) || seen.size >= maxChain) return bad("cfb directory chain");
+    if (seen.has(id)) return bad("cfb directory chain");
     seen.add(id);
     const s = await sector(id);
     if (!s) return bad("cfb directory sector");
     for (let at = 0; at < sectorSize; at += DIR_ENTRY_BYTES) {
       const nameBytes = u16(s, at + 64);
-      if (s.getUint8(at + 66) === UNALLOCATED) continue;
+      const type = s.getUint8(at + 66);
+      if (type === UNALLOCATED) continue;
+      if (!ENTRY_TYPES.has(type)) return bad("cfb entry type");
       if (nameBytes < 2 || nameBytes > 64 || nameBytes % 2 !== 0) return bad("cfb directory name");
       const chars = new Uint16Array((nameBytes - 2) / 2).map((_, i) => s.getUint16(at + i * 2, true));
       names.push(String.fromCharCode(...chars).toLowerCase());

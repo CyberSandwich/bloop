@@ -50,9 +50,32 @@ describe("DROP-12 cfb: hostile structure is bounded", () => {
     expect(await scan(WORD, { difatCycle: true })).toMatchObject({ ok: false, error: "bad_structure" });
   });
 
-  it("refuses a directory longer than the entry cap", async () => {
-    const names = Array.from({ length: CFB_LIMITS.maxDirEntries + 8 }, (_, i) => `S${i}`);
-    expect(await scan(names)).toMatchObject({ ok: false, reason: "cfb directory chain" });
+  it("stops reading at the sector budget and refuses the file as unscannable", async () => {
+    const names = Array.from({ length: 4 * CFB_LIMITS.maxSectorReads }, (_, i) => `S${i}`);
+    const file = buildCfb(names);
+    let reads = 0;
+    const counted = {
+      size: file.length,
+      read: async (at: number, n: number) => {
+        reads++;
+        return file.slice(at, at + n);
+      },
+    };
+    expect(await scanCfb(counted)).toMatchObject({ ok: false, reason: "cfb unscannable" });
+    expect(reads).toBe(CFB_LIMITS.maxSectorReads + 1);
+  });
+
+  it("passes a directory that fits the budget", async () => {
+    const names = Array.from({ length: 4 * (CFB_LIMITS.maxSectorReads - 6) }, (_, i) => `S${i}`);
+    expect(await scan(names)).toEqual({ ok: true });
+  });
+
+  it.each([3, 4, 6, 255])("refuses a directory entry of type %i", async (type) => {
+    expect(await scan(WORD, { lastEntryType: type })).toMatchObject({ ok: false, reason: "cfb entry type" });
+  });
+
+  it("skips an unallocated entry", async () => {
+    expect(await scan(WORD, { lastEntryType: 0 })).toEqual({ ok: true });
   });
 
   it("refuses a directory sector past the end of the file", async () => {

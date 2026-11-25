@@ -1,6 +1,7 @@
 // Pure format checks for the wider guest-drop types (DROP-14, DROP-15): OOXML relationships and content types,
 // magic bytes and brands, plain text. Nothing here reads storage; callers pass the bytes or text they already hold.
 import type { DropError } from "../../../shared/protocol.ts";
+import { ascii, majorBrand } from "./bytes.ts";
 import { ZIP_LIMITS } from "./index.ts";
 
 /** The verdict shape shared by cfb.ts, pdf-scan.ts and this file; `reason` names the rule for logs and tests. */
@@ -8,50 +9,155 @@ export type Check = { ok: true } | { ok: false; error: DropError; reason: string
 export const OK: Check = { ok: true };
 export const fail = (error: DropError, reason: string): Check => ({ ok: false, error, reason });
 
-const latin1 = new TextDecoder("latin1");
-const ascii = (b: Uint8Array, at: number, length: number) => latin1.decode(b.subarray(at, at + length));
+/** A relationships part, in any folder: the wiring passes every part whose name matches. */
+export const isRelsPart = (name: string): boolean => /(^|\/)_rels\/[^/]*\.rels$/i.test(name);
 
-/** A macro project or ActiveX control in any Office package, whichever folder holds it. */
-const MACRO_PARTS = [/(^|\/)vbaProject\.bin$/i, /(^|\/)activeX\//i];
-
-export interface ExternalRelationship {
-  type: string;
-  target: string;
+/** An XML part as text, or null when it is UTF-16 (a byte order mark), not valid UTF-8, or declares another encoding. */
+export function decodeXml(bytes: Uint8Array): string | null {
+  if ((bytes[0] === 0xff && bytes[1] === 0xfe) || (bytes[0] === 0xfe && bytes[1] === 0xff)) return null;
+  let text: string;
+  try {
+    text = new TextDecoder("utf-8", { fatal: true, ignoreBOM: true }).decode(bytes);
+  } catch {
+    return null;
+  }
+  const declared = /^\uFEFF?<\?xml[^>]*\sencoding\s*=\s*["']([^"']*)["']/i.exec(text)?.[1];
+  return declared === undefined || /^utf-8$/i.test(declared) ? text : null;
 }
 
-const attr = (tag: string, name: string): string =>
-  new RegExp(`\\s${name}\\s*=\\s*(?:"([^"]*)"|'([^']*)')`, "i")
-    .exec(tag)
-    ?.slice(1)
-    .find((v) => v !== undefined) ?? "";
+type Attrs = ReadonlyMap<string, string>;
+const ATTR = /\s*([^\s=/>"']+)\s*=\s*(?:"([^"]*)"|'([^']*)')/y;
+const TAIL = /\s*\/?\s*$/y;
+const SKIPPED = [
+  ["<!--", "-->"],
+  ["<![CDATA[", "]]>"],
+  ["<?", "?>"],
+] as const;
 
+/** The attributes of one start tag's text after its name, keyed in lower case; null when malformed or one repeats. */
+function attributes(rest: string): Attrs | null {
+  const out = new Map<string, string>();
+  let at = 0;
+  for (;;) {
+    ATTR.lastIndex = at;
+    const m = ATTR.exec(rest);
+    if (!m) break;
+    const key = (m[1] as string).toLowerCase();
+    if (out.has(key)) return null;
+    out.set(key, (m[2] ?? m[3]) as string);
+    at = ATTR.lastIndex;
+  }
+  TAIL.lastIndex = at;
+  return TAIL.test(rest) ? out : null;
+}
+
+/** Where a comment, CDATA section or processing instruction at `i` ends; null when unterminated; undefined when none. */
+function skipMarkup(xml: string, i: number): number | null | undefined {
+  for (const [open, close] of SKIPPED) {
+    if (!xml.startsWith(open, i)) continue;
+    const end = xml.indexOf(close, i + open.length);
+    return end === -1 ? null : end + close.length;
+  }
+  return undefined;
+}
+
+/**
+ * The attributes of every element with the local name `local` (a namespace prefix is ignored), or null when the XML
+ * is not plain: a DOCTYPE (entities), an unterminated tag or comment, a malformed attribute. Quotes are honored, so a
+ * `>` or a look-alike attribute inside a value is data. One pass, linear in the text.
+ */
+function elements(xml: string, local: string): Attrs[] | null {
+  const out: Attrs[] = [];
+  for (let i = xml.indexOf("<"); i !== -1; i = xml.indexOf("<", i)) {
+    const past = skipMarkup(xml, i);
+    if (past === null || (past === undefined && xml.startsWith("<!", i))) return null;
+    if (past !== undefined) {
+      i = past;
+      continue;
+    }
+    let quote = "";
+    let j = i + 1;
+    for (; j < xml.length; j++) {
+      const c = xml[j] as string;
+      if (quote) quote = c === quote ? "" : quote;
+      else if (c === '"' || c === "'") quote = c;
+      else if (c === ">") break;
+    }
+    if (j >= xml.length) return null;
+    const tag = /^(?:[\w.-]+:)?([\w.-]+)/.exec(xml.slice(i + 1, j));
+    if (tag?.[1] === local) {
+      const attrs = attributes(xml.slice(i + 1 + tag[0].length, j));
+      if (!attrs) return null;
+      out.push(attrs);
+    }
+    i = j + 1;
+  }
+  return out;
+}
+
+/** A macro project or ActiveX control relationship, internal or not. */
+const REFUSED_REL_TYPE = /\/(vbaProject\w*|activeXControl\w*|control|oleObject)$/i;
 /** The only relationship types that may leave the package: a link the reader clicks, never one a converter follows. */
 const HYPERLINK_TYPES: ReadonlySet<string> = new Set([
   "http://schemas.openxmlformats.org/officeDocument/2006/relationships/hyperlink",
   "http://purl.oclc.org/ooxml/officeDocument/relationships/hyperlink",
 ]);
 
-/** Every `TargetMode="External"` relationship in one `.rels` part, whatever its type. */
-export function externalRelationships(relsXml: string): ExternalRelationship[] {
-  const out: ExternalRelationship[] = [];
-  for (const [tag] of relsXml.matchAll(/<Relationship\b[^>]*>/gi)) {
-    if (attr(tag, "TargetMode").toLowerCase() === "external")
-      out.push({ type: attr(tag, "Type"), target: attr(tag, "Target") });
+export interface Relationship {
+  type: string;
+  target: string;
+  external: boolean;
+}
+
+/** Every relationship in one `.rels` part, or null when the part is not plain XML or hides a value behind an entity. */
+export function relationships(relsXml: string): Relationship[] | null {
+  const found = elements(relsXml, "Relationship");
+  if (!found) return null;
+  const out: Relationship[] = [];
+  for (const a of found) {
+    const [type, mode] = [a.get("type") ?? "", a.get("targetmode") ?? ""];
+    if (type.includes("&") || mode.includes("&")) return null;
+    out.push({ type, target: a.get("target") ?? "", external: mode.toLowerCase() === "external" });
   }
   return out;
 }
 
+/** Refuses a macro-enabled or VBA content type, and a content types part that is not plain XML or hides a value. */
+function checkContentTypes(xml: string): Check {
+  const entries = [elements(xml, "Default"), elements(xml, "Override")];
+  if (entries.some((e) => e === null)) return fail("bad_structure", "content types");
+  const values = entries.flatMap((e) => (e ?? []).map((a) => a.get("contenttype") ?? ""));
+  if (values.some((v) => v.includes("&"))) return fail("bad_structure", "content types");
+  if (ZIP_LIMITS.refusedContentTypes.some((p) => p.test(xml))) return fail("macro_content", "macro content type");
+  return OK;
+}
+
 /**
  * An OOXML package (docx, xlsx, pptx and their macro twins) is refused when its content types name a macro-enabled
- * main part or a VBA project, when a macro or ActiveX part is present, or when a relationship other than a hyperlink
- * points outside the package. Judged on content, never on the extension: a `.docx` that carries a docm content type is a docm.
+ * main part or a VBA project, when a macro or ActiveX part or relationship is present, or when a relationship other
+ * than a hyperlink points outside the package. Judged on content, never on the extension: a `.docx` that carries a
+ * docm content type is a docm.
+ *
+ * Wiring contract: `rels` holds the text (see `decodeXml`) of every part for which `isRelsPart(name)` is true; a
+ * missing one is refused, so a partial list cannot pass.
  */
-export function checkOoxml(names: readonly string[], contentTypesXml: string, relsXml: readonly string[]): Check {
-  if (ZIP_LIMITS.refusedContentTypes.some((p) => p.test(contentTypesXml)))
-    return fail("macro_content", "macro content type");
-  if (names.some((n) => MACRO_PARTS.some((p) => p.test(n)))) return fail("macro_content", "macro part");
-  if (relsXml.some((x) => externalRelationships(x).some((r) => !HYPERLINK_TYPES.has(r.type))))
-    return fail("bad_structure", "external relationship");
+export function checkOoxml(
+  names: readonly string[],
+  contentTypesXml: string,
+  rels: ReadonlyMap<string, string>,
+): Check {
+  const types = checkContentTypes(contentTypesXml);
+  if (!types.ok) return types;
+  if (names.some((n) => ZIP_LIMITS.refusedParts.some((p) => p.test(n)))) return fail("macro_content", "macro part");
+  for (const name of names.filter(isRelsPart)) {
+    const text = rels.get(name);
+    const parsed = text === undefined ? null : relationships(text);
+    if (!parsed) return fail("bad_structure", "unreadable relationships");
+    if (parsed.some((r) => REFUSED_REL_TYPE.test(r.type))) return fail("macro_content", "macro relationship");
+    if (parsed.some((r) => r.external && !HYPERLINK_TYPES.has(r.type))) {
+      return fail("bad_structure", "external relationship");
+    }
+  }
   return OK;
 }
 
@@ -77,7 +183,8 @@ const hasSequence = (b: Uint8Array, seq: number[], from = 0, to = b.length): boo
 export function detectMedia(head: Uint8Array): MediaKind | null {
   if (ascii(head, 0, 4) === "RIFF" && ascii(head, 8, 4) === "WEBP") return "webp";
   if (ascii(head, 0, 6) === "GIF87a" || ascii(head, 0, 6) === "GIF89a") return "gif";
-  if (head.length >= 12 && ascii(head, 4, 4) === "ftyp" && HEIC_BRANDS.has(ascii(head, 8, 4))) return "heic";
+  const brand = majorBrand(head);
+  if (brand !== null && HEIC_BRANDS.has(brand)) return "heic";
   if (EBML_MAGIC.every((m, i) => head[i] === m) && hasSequence(head, WEBM_DOCTYPE, 4, EBML_SCAN_BYTES)) return "webm";
   return null;
 }
