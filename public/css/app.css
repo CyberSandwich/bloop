@@ -450,6 +450,8 @@ main:has(> .side:not([hidden])) #stage {
   /* One inset all round: the bar's corner, the list's edge, the stage's edges, and the gaps between them. */
   --top: calc(var(--inset) * 2 + var(--frame-h));
   padding-bottom: var(--inset);
+  /* A glide past the window's edge never scrolls the page. */
+  overflow: clip;
 }
 [data-mode="viewer"] .pane {
   height: calc(100dvh - var(--top) - var(--inset));
