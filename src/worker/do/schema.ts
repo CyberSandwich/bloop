@@ -2,7 +2,7 @@
 // shape and writes only what is still old, and every step runs on every wake whatever the stored version: a rollback
 // that wrote old-shape data under a newer version is repaired by the next deploy.
 import type { Shown } from "../../shared/protocol.ts";
-import { type ItemDraft, itemId, launchIndex } from "../items.ts";
+import { type ItemDraft, launchIndex, withIds } from "../items.ts";
 import type { FileRef, Machine } from "../machine.ts";
 import type { LinkRecord } from "../seams/open-path/links.ts";
 import type { Kv } from "./ledger.ts";
@@ -76,8 +76,7 @@ const STEPS: Record<number, (kv: Kv) => void> = {
     const hasIds = s.items.every((i) => typeof i.id === "string");
     const shownOk = s.shown === null || (s.shown !== undefined && isShown(s.shown));
     if (hasIds && shownOk) return;
-    const items = hasIds ? s.items : s.items.map((item, i) => ({ ...item, id: itemId(i) }));
-    kv.put("machine", { ...m, session: { ...s, items, shown: shownOk ? s.shown : null } });
+    kv.put("machine", { ...m, session: { ...s, items: withIds(s.items), shown: shownOk ? s.shown : null } });
   },
 };
 
