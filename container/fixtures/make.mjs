@@ -30,8 +30,8 @@ put("external.docx", docx("A document that links to the outside", { externalBase
 put("macro.odp", odfWithMacro("odp", MACRO_SENTINEL));
 put("macro.odt", odfWithMacro("odt", MACRO_SENTINEL));
 put("macro.ods", odfWithMacro("ods", MACRO_SENTINEL));
-put("plain.pdf", pdf(["One", "Two", "Three"]));
 put("pdf-js.pdf", pdf(["Active", "Content"], { active: true }));
+put("big.pdf", pdf(["Over the chunk size"], { pad: 110 << 20 }));
 put("pages-301.pdf", pdf(Array.from({ length: 301 }, (_, i) => `Page ${i + 1}`)));
 put("bad-magic.pptx", "this is plain text, not a zip archive\n");
 
