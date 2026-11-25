@@ -45,7 +45,7 @@ export interface FileSource {
 }
 
 /** The deck type a file name stands for, or null. `.pptm` and every other extension are refused. */
-export function typeOfName(name: string): FileType | null {
+export function deckTypeOfName(name: string): FileType | null {
   const lower = name.toLowerCase();
   if (lower.endsWith(".pptx")) return "pptx";
   return lower.endsWith(".pdf") ? "pdf" : null;

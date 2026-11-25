@@ -2,6 +2,7 @@
 // period, lines as sentences. A string marked [V-n] there is gated by verified.js.
 /** @import {PhoneStateKey, ScreenStateKey} from "../../../src/shared/protocol.ts" */
 /** @import {PhoneAction, PhoneCopy, PhoneFacts, ScreenControl, ScreenCopy, ScreenFacts} from "../types.js" */
+import { EXTENSION_TYPES } from "../shared/names.js";
 import { VERIFIED } from "./verified.js";
 
 export const FOOTER_LINE = "Phone not with you? Sign in to this PC as usual.";
@@ -141,7 +142,11 @@ export function endLine(
 const ENTER_CODE = { id: "code", label: "Enter the Code", kind: /** @type {const} */ ("primary"), href: "/code" };
 /** Revokes the stored OneDrive access (docs/architecture.md section 6, /api/me/disconnect). */
 const DISCONNECT = { id: "disconnect", label: "Disconnect OneDrive", kind: /** @type {const} */ ("text") };
-const FILE_TYPES = ".pptx, .pdf, .jpg, .png, .mp4 or .mov";
+/** ".pptx, .pdf, .jpg, .png, .mp4 or .mov": each type once, by the extension that names it. */
+const FILE_TYPES = [...new Set(Object.values(EXTENSION_TYPES))]
+  .map((t) => `.${t}`)
+  .join(", ")
+  .replace(/, (?=[^,]*$)/, " or ");
 
 /**
  * A video cap as recording time, at about 1 MB a second: an iPhone's default 1080p at 30 fps (HEVC) is about 60 MB a

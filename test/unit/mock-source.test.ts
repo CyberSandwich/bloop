@@ -2,7 +2,7 @@ import { readFileSync, statSync } from "node:fs";
 import { inflateRawSync } from "node:zlib";
 import { describe, expect, it } from "vitest";
 import { SLIDES } from "../../public/js/core/demo.js";
-import { type SourceContext, typeOfName } from "../../src/worker/seams/file-source/index.ts";
+import { deckTypeOfName, type SourceContext } from "../../src/worker/seams/file-source/index.ts";
 import { MockFileSource, type MockFixture } from "../../src/worker/seams/file-source/mock.ts";
 
 const decks = new URL("../fixtures/decks/", import.meta.url);
@@ -72,13 +72,13 @@ describe("MockFileSource", () => {
   });
 });
 
-describe("typeOfName", () => {
+describe("deckTypeOfName", () => {
   it("accepts .pptx and .pdf in any case and refuses everything else, macro decks included", () => {
-    expect(typeOfName("A.pptx")).toBe("pptx");
-    expect(typeOfName("A.PPTX")).toBe("pptx");
-    expect(typeOfName("a.b.Pdf")).toBe("pdf");
+    expect(deckTypeOfName("A.pptx")).toBe("pptx");
+    expect(deckTypeOfName("A.PPTX")).toBe("pptx");
+    expect(deckTypeOfName("a.b.Pdf")).toBe("pdf");
     for (const name of ["a.pptm", "a.ppt", "a.ppsx", "a.potx", "a.docx", "pptx", "a.pptx.exe", ""]) {
-      expect(typeOfName(name), name).toBeNull();
+      expect(deckTypeOfName(name), name).toBeNull();
     }
   });
 });

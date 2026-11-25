@@ -2,7 +2,7 @@
 // Uses fetch only. Calls: https://learn.microsoft.com/graph/api/driveitem-list-children and
 // driveitem-get-content-format (the PDF conversion).
 import type { FileEntry, SourceError } from "../../../shared/protocol.ts";
-import { type FileSource, type Resolved, type SourceContext, typeOfName } from "./index.ts";
+import { deckTypeOfName, type FileSource, type Resolved, type SourceContext } from "./index.ts";
 
 const GRAPH = "https://graph.microsoft.com/v1.0";
 /** Graph ids are opaque but never contain a slash or percent sign; anything else is refused before it reaches a URL. */
@@ -64,7 +64,7 @@ export class GraphFileSource implements FileSource {
     if (!page || !Array.isArray(page.value)) return { ok: false, error: "source_unavailable" } as const;
     const files = page.value
       .flatMap((item): FileEntry[] => {
-        const type = item.file && !item.folder && item.name ? typeOfName(item.name) : null;
+        const type = item.file && !item.folder && item.name ? deckTypeOfName(item.name) : null;
         const modifiedAt = Date.parse(item.lastModifiedDateTime ?? "");
         if (!type || !item.id || !item.name || Number.isNaN(modifiedAt)) return [];
         return [{ kind: "file", id: item.id, name: item.name, type, modifiedAt, size: item.size ?? null }];
@@ -79,7 +79,7 @@ export class GraphFileSource implements FileSource {
     const res = await this.call(ctx, `/me/drive/items/${fileId}?$select=${SELECT},@microsoft.graph.downloadUrl`);
     if (!res.ok) return res;
     const item = (await res.value.json().catch(() => null)) as DriveItem | null;
-    const type = item?.file && !item.folder && item.name ? typeOfName(item.name) : null;
+    const type = item?.file && !item.folder && item.name ? deckTypeOfName(item.name) : null;
     if (!item?.name) return { ok: false, error: "source_unavailable" } as const;
     if (!type) return { ok: false, error: "file_type_refused" } as const;
     const url = item["@microsoft.graph.downloadUrl"];
