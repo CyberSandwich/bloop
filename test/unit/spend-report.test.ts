@@ -13,7 +13,9 @@ import {
 import { DAY, rig, T0 } from "./spend-helpers.ts";
 
 const t = resolveTrips({});
-const email = resolveLines({}, t).email; // floor 95, ceiling 475
+// The email day cap is raised so the default ceiling is 5 x floor: floor 95, ceiling 475.
+const VARS = { CAP_EMAIL_DAY: "1000" };
+const email = resolveLines(VARS, t).email;
 
 describe("p95", () => {
   it("is nearest-rank: the 19th of 20, the maximum of 14, and 0 for nothing", () => {
@@ -85,7 +87,7 @@ const reportOf = (
 ) =>
   buildReport({
     now: T0,
-    vars: extra.vars ?? {},
+    vars: extra.vars ?? VARS,
     history: r.ledger.history(T0, REPORT_DAYS),
     snapshot: r.ledger.snapshot(T0, r.caps),
     ...(extra.analytics ? { analytics: extra.analytics } : {}),
