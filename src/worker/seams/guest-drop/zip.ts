@@ -120,10 +120,16 @@ export function checkSizes(entries: readonly ZipEntry[]): DropError | null {
 
 export const LOCAL_HEADER_BYTES = 30;
 
-/** Where an entry's stored data starts, as an index into `bytes` holding its local header at `at`; null when none is there. */
-export function dataStart(bytes: Uint8Array, at: number): number | null {
+/**
+ * Where an entry's stored data starts, as an index into `bytes` holding its local header at `at`; null when the header
+ * is not there or disagrees with the central directory on the name or the method (an extractor may trust either).
+ */
+export function dataStart(bytes: Uint8Array, at: number, entry: ZipEntry): number | null {
   if (at < 0 || at + LOCAL_HEADER_BYTES > bytes.length) return null;
   const v = view(bytes);
-  if (u32(v, at) !== LOCAL_SIG) return null;
-  return at + LOCAL_HEADER_BYTES + u16(v, at + 26) + u16(v, at + 28);
+  if (u32(v, at) !== LOCAL_SIG || u16(v, at + 8) !== entry.method) return null;
+  const nameEnd = at + LOCAL_HEADER_BYTES + u16(v, at + 26);
+  if (nameEnd > bytes.length) return null;
+  if (new TextDecoder("utf-8").decode(bytes.subarray(at + LOCAL_HEADER_BYTES, nameEnd)) !== entry.name) return null;
+  return nameEnd + u16(v, at + 28);
 }
