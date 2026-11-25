@@ -2,7 +2,7 @@ package main
 
 import "bytes"
 
-// Job kinds: what the converter does with an input, chosen by X-Job-Ext.
+// Job kinds: what the converter does with an input, chosen by the extension given to /job/start.
 const (
 	kindDeck  = "deck"
 	kindDoc   = "doc"
@@ -27,7 +27,6 @@ const (
 	errBadArchive    = "bad_archive"
 	errBomb          = "bomb"
 	errTooLarge      = "too_large"
-	errTooManyPages  = "too_many_pages"
 	errBadPageSize   = "bad_page_size"
 	errBadMedia      = "bad_media"
 	errConvertFailed = "convert_failed"

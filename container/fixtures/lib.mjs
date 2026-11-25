@@ -234,8 +234,8 @@ export function docx(text, { externalBase } = {}) {
   return zip(parts);
 }
 
-/** A PDF with page text plus every kind of active content the plan refuses. */
-export function pdf(pages, { active = false } = {}) {
+/** A PDF with page text, optionally every kind of active content the plan refuses, and `pad` bytes in an unreferenced stream. */
+export function pdf(pages, { active = false, pad = 0 } = {}) {
   const text = (s) => s.replace(/[\\()]/g, "\\$&");
   const objects = [];
   const add = (body) => objects.push(body) && objects.length;
@@ -254,6 +254,7 @@ export function pdf(pages, { active = false } = {}) {
       `<< /Type /Page /Parent ${tree} 0 R /MediaBox [0 0 792 446] /Contents ${content} 0 R /Resources << /Font << /F1 ${font} 0 R >> >>${aa} >>`,
     );
   });
+  if (pad) add(`<< /Length ${pad} >>\nstream\n${" ".repeat(pad)}\nendstream`);
   const activeKeys = active
     ? ` /OpenAction ${js} 0 R /Names << /EmbeddedFiles << /Names [(a.txt) ${spec} 0 R] >> >>`
     : "";

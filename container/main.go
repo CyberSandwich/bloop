@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"os"
 	"runtime"
+	"slices"
 	"strconv"
 	"strings"
 	"time"
@@ -19,8 +20,10 @@ type Config struct {
 	TmpDir       string
 	LORegistry   string // seeded into every fresh LibreOffice profile
 	MaxInput     int64
+	MaxChunk     int64
 	Limits       Limits
-	MaxPages     int
+	MaxPages     int   // pages beyond this are not rendered; the manifest records the true count
+	Widths       []int // rendered widths, widest first; the smallest is the thumbnail source
 	MaxVideoSecs float64
 	MaxImagePx   int64
 	Workers      int
@@ -54,6 +57,8 @@ func loadConfig(getenv func(string) string) Config {
 		TmpDir:       str("BLOOP_TMP", "/tmp"),
 		LORegistry:   str("BLOOP_LO_REGISTRY", "/opt/bloop/lo-registry.xcu"),
 		MaxInput:     num("BLOOP_MAX_INPUT", 2<<30),
+		MaxChunk:     num("BLOOP_MAX_CHUNK", 64<<20),
+		Widths:       parseWidths(getenv("BLOOP_WIDTHS")),
 		Limits:       Limits{MaxUnpacked: num("BLOOP_MAX_UNPACKED", 2<<30), MaxEntries: int(num("BLOOP_MAX_ENTRIES", 20000))},
 		MaxPages:     int(num("BLOOP_MAX_PAGES", 300)),
 		MaxVideoSecs: float64(num("BLOOP_MAX_VIDEO_SECONDS", 4*3600)),
@@ -66,6 +71,27 @@ func loadConfig(getenv func(string) string) Config {
 		c.Timeouts[stage] = time.Duration(secs) * time.Second
 	}
 	return c
+}
+
+// parseWidths reads "3840,1920,480". Anything but 1 to 6 strictly descending widths in 1..7680 whose
+// smallest fits the thumbnail falls back to the default.
+func parseWidths(v string) []int {
+	def := slices.Clone(defaultWidths)
+	if v == "" {
+		return def
+	}
+	var out []int
+	for _, f := range strings.Split(v, ",") {
+		w, err := strconv.Atoi(strings.TrimSpace(f))
+		if err != nil || w < 1 || w > 7680 || (len(out) > 0 && w >= out[len(out)-1]) {
+			return def
+		}
+		out = append(out, w)
+	}
+	if len(out) > 6 || out[len(out)-1] > thumbWidth {
+		return def
+	}
+	return out
 }
 
 func main() {

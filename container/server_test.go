@@ -11,6 +11,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -31,13 +32,9 @@ func newHarness(t *testing.T, tools *fakeTools) *harness {
 	return &harness{t: t, srv: srv, ts: ts, tools: tools}
 }
 
-func (h *harness) post(id, ext string, body []byte) *http.Response {
+func (h *harness) do(method, path string, body []byte) *http.Response {
 	h.t.Helper()
-	req, _ := http.NewRequest("POST", h.ts.URL+"/job", bytes.NewReader(body))
-	if id != "" {
-		req.Header.Set("X-Job-Id", id)
-	}
-	req.Header.Set("X-Job-Ext", ext)
+	req, _ := http.NewRequest(method, h.ts.URL+path, bytes.NewReader(body))
 	res, err := http.DefaultClient.Do(req)
 	if err != nil {
 		h.t.Fatal(err)
@@ -45,6 +42,32 @@ func (h *harness) post(id, ext string, body []byte) *http.Response {
 	h.t.Cleanup(func() { res.Body.Close() })
 	return res
 }
+
+// upload sends body in chunks of chunk bytes (0 = one chunk), then starts the job. It returns the
+// first response that is not a success, or the start response.
+func (h *harness) upload(id, ext string, body []byte, chunk int) *http.Response {
+	h.t.Helper()
+	if chunk <= 0 {
+		chunk = max(len(body), 1)
+	}
+	n := 0
+	for off := 0; off < len(body) || n == 0; off += chunk {
+		res := h.do("PUT", "/job/input/"+itoa(n), body[off:min(off+chunk, len(body))])
+		if res.StatusCode != 200 {
+			return res
+		}
+		n++
+	}
+	return h.start(id, ext, body, n)
+}
+
+func (h *harness) start(id, ext string, body []byte, chunks int) *http.Response {
+	h.t.Helper()
+	req := mustJSON(h.t, startRequest{JobID: id, Ext: ext, Size: int64(len(body)), SHA256: sum(body), Chunks: chunks})
+	return h.do("POST", "/job/start", req)
+}
+
+func (h *harness) post(id, ext string, body []byte) *http.Response { return h.upload(id, ext, body, 0) }
 
 func (h *harness) get(path string) (int, []byte, http.Header) {
 	h.t.Helper()
@@ -144,6 +167,21 @@ func TestJobRequestValidation(t *testing.T) {
 			t.Errorf("%s: %d, want %d", name, res.StatusCode, c.want)
 		}
 	}
+	for name, body := range map[string]string{
+		"not json":      `x`,
+		"unknown field": `{"jobId":"j1","ext":"pdf","size":1,"sha256":"` + hex64 + `","chunks":1,"x":1}`,
+		"bad sha":       `{"jobId":"j1","ext":"pdf","size":1,"sha256":"ABC","chunks":1}`,
+		"no chunks":     `{"jobId":"j1","ext":"pdf","size":1,"sha256":"` + hex64 + `","chunks":0}`,
+	} {
+		if res := h.do("POST", "/job/start", []byte(body)); res.StatusCode != 400 {
+			t.Errorf("%s: %d", name, res.StatusCode)
+		}
+	}
+	for _, p := range []string{"/job/input/-1", "/job/input/x", "/job/input/100000"} {
+		if res := h.do("PUT", p, []byte("x")); res.StatusCode != 400 {
+			t.Errorf("%s: %d", p, res.StatusCode)
+		}
+	}
 	if st := h.status(); st.State != stateIdle {
 		t.Fatalf("a rejected request must not spend the container: %+v", st)
 	}
@@ -157,6 +195,9 @@ func TestCONV07FreshOneJobPerContainer(t *testing.T) {
 	h.wait()
 	if res := h.post("j2", "pdf", fakePDF); res.StatusCode != 409 {
 		t.Fatalf("second job: %d", res.StatusCode)
+	}
+	if res := h.start("j2", "pdf", fakePDF, 1); res.StatusCode != 409 {
+		t.Fatalf("second start: %d", res.StatusCode)
 	}
 	// A refused upload must not have touched the first job's input.
 	b, _ := os.ReadFile(inputPath(h.srv.cfg, "pdf"))
@@ -204,6 +245,17 @@ func TestDeckEndToEnd(t *testing.T) {
 	}
 	if m.JobID != "job-1" || m.Kind != kindDeck || m.V != 1 {
 		t.Errorf("manifest header = %+v", m)
+	}
+	if m.Pages == nil || *m.Pages != (PagesInfo{Total: 2, Rendered: 2}) {
+		t.Errorf("manifest pages = %+v", m.Pages)
+	}
+	for _, g := range []string{groupSlides, groupPDF, groupNotes} {
+		if !m.Groups[g].OK {
+			t.Errorf("group %s = %+v", g, m.Groups[g])
+		}
+	}
+	if st := h.status(); st.Pages == nil || *st.Pages != (PagesStatus{Done: 2, Total: 2}) || len(st.Ready) != 0 {
+		t.Errorf("final status = %+v", st)
 	}
 	for _, f := range m.Files {
 		code, b, hdr := h.get("/out/" + f.Path)
@@ -337,14 +389,20 @@ func TestDROP13PdfActiveContentIsRewrittenNotCopied(t *testing.T) {
 	}
 }
 
-func TestCONV04OutputsAConverterThatEmitsActiveContentFailsTheJob(t *testing.T) {
+func TestCONV04OutputsAConverterThatEmitsActiveContentWithholdsOnlyThePdf(t *testing.T) {
 	tools := newFakeTools(1)
 	tools.pdfOut = append(append([]byte{}, fakePDF...), "/Launch"...)
 	h := newHarness(t, tools)
 	h.post("j1", "docx", mkZip([2]string{"word/document.xml", "<w:document/>"}))
-	h.mustFail(h.wait(), errOutputInvalid)
-	if code, _, _ := h.get("/out/manifest.json"); code != 409 {
-		t.Fatalf("a failed job published a manifest: %d", code)
+	m := h.mustSucceed(h.wait())
+	if m.Groups[groupPDF].OK || !m.Groups[groupSlides].OK || !m.Groups[groupNotes].OK {
+		t.Fatalf("groups = %+v", m.Groups)
+	}
+	if m.has("doc.pdf") || !m.has("s/1/3840.webp") || !m.has("notes.json") {
+		t.Fatalf("files = %v", paths(m.Files))
+	}
+	if code, _, _ := h.get("/out/doc.pdf"); code != 404 {
+		t.Fatalf("the withheld pdf was served: %d", code)
 	}
 }
 
@@ -365,17 +423,23 @@ func TestCONV02CapsZipBombIsRefused(t *testing.T) {
 	}
 }
 
-func TestCONV02CapsTooManyPages(t *testing.T) {
-	h := newHarness(t, newFakeTools(301))
-	h.post("j1", "pdf", fakePDF)
-	h.mustFail(h.wait(), errTooManyPages)
-}
-
 func TestCONV02CapsUploadOverTheLimit(t *testing.T) {
 	h := newHarness(t, newFakeTools(1))
 	h.srv.cfg.MaxInput = 100
 	if res := h.post("j1", "pdf", bytes.Repeat([]byte("a"), 1000)); res.StatusCode != 413 {
 		t.Fatalf("status %d", res.StatusCode)
+	}
+	h.mustFail(h.status(), errTooLarge)
+}
+
+func TestCONV02CapsChunksTogetherOverTheLimit(t *testing.T) {
+	h := newHarness(t, newFakeTools(1))
+	h.srv.cfg.MaxInput = 100
+	for i := range 3 {
+		res := h.do("PUT", "/job/input/"+itoa(i), bytes.Repeat([]byte("a"), 40))
+		if want := map[bool]int{true: 200, false: 413}[i < 2]; res.StatusCode != want {
+			t.Fatalf("chunk %d: %d, want %d", i, res.StatusCode, want)
+		}
 	}
 	h.mustFail(h.status(), errTooLarge)
 }
@@ -502,7 +566,7 @@ func TestRunCmdUsesOnlyTheGivenEnvironment(t *testing.T) {
 
 func TestLoadConfigDefaultsAndOverrides(t *testing.T) {
 	c := loadConfig(func(string) string { return "" })
-	if c.MaxPages != 300 || c.Limits.MaxUnpacked != 2<<30 || c.Timeouts["convert"] != 180*time.Second ||
+	if c.MaxPages != 300 || c.MaxChunk != 64<<20 || !slices.Equal(c.Widths, []int{3840, 1920, 480}) || c.Limits.MaxUnpacked != 2<<30 || c.Timeouts["convert"] != 180*time.Second ||
 		c.Timeouts["rasterize"] != 240*time.Second || c.Timeouts["video"] != 900*time.Second ||
 		c.Timeouts["inspect"] != 30*time.Second || c.Timeouts["heic"] != 60*time.Second || c.Addr != ":8080" {
 		t.Fatalf("defaults = %+v", c)

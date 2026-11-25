@@ -103,12 +103,15 @@ func (s *Server) pipeline(job jobInfo) error {
 	if err := writeJSONFile(s.dir("out", "meta.json"), meta); err != nil {
 		return failed(errInternal, err)
 	}
-	want := expectation{kind: job.kind, pages: s.pageCount}
-	files, err := validateOutputs(s.dir("out"), want)
+	want := expectation{kind: job.kind, widths: s.cfg.Widths}
+	if s.pages != nil {
+		want.pages = s.pages.Rendered
+	}
+	files, groups, err := validateOutputs(s.dir("out"), want)
 	if err != nil {
 		return failed(errOutputInvalid, err)
 	}
-	s.finish(&Manifest{V: 1, JobID: job.id, Kind: job.kind, Files: files})
+	s.finish(&Manifest{V: 1, JobID: job.id, Kind: job.kind, Pages: s.pages, Groups: groups, Files: files})
 	return nil
 }
 
@@ -244,16 +247,12 @@ func (s *Server) documentJob(job jobInfo, meta *metaJSON) error {
 	}); err != nil {
 		return err
 	}
-	s.pageCount = len(pages)
-	if err := copyFile(s.dir("out", "t.webp"), s.dir("out", "s", "1", "480.webp")); err != nil {
-		return failed(errInternal, err)
-	}
 	notes := an.Notes
 	if notes == nil {
 		notes = []Note{}
 	}
 	for name, v := range map[string]any{
-		"slides.json": slidesJSON{V: 1, Pages: pages, Motion: an.Motion, Media: an.Media},
+		"slides.json": slidesJSON{V: 1, Widths: s.cfg.Widths, Pages: pages, Motion: an.Motion, Media: an.Media},
 		"notes.json":  notesJSON{V: 1, Notes: notes},
 	} {
 		if err := writeJSONFile(s.dir("out", name), v); err != nil {
@@ -345,20 +344,20 @@ func checkPageSizes(out []byte, pages int) error {
 	return nil
 }
 
-// rasterize renders every page at 3840 wide and downsizes to 1920 and 480, all as WebP.
-// It returns each page's size at the widest rendition.
+// rasterize renders the first MaxPages pages at every configured width, as WebP, and returns each
+// page's size at the widest rendition. Page 1 is rendered alone first and published at once; the
+// manifest records the true page count when the document is longer.
 func (s *Server) rasterize(ctx context.Context, pdf string) ([]PageDim, error) {
 	info, err := s.tool(ctx, "pdfinfo", pdf)
 	if err != nil {
 		return nil, convertErr(err)
 	}
-	pages := pdfPageCount(info)
-	if pages < 1 {
+	total := pdfPageCount(info)
+	if total < 1 {
 		return nil, failed(errConvertFailed, errors.New("no pages"))
 	}
-	if pages > s.cfg.MaxPages {
-		return nil, failed(errTooManyPages, fmt.Errorf("%d pages", pages))
-	}
+	pages := min(total, s.cfg.MaxPages)
+	s.pages = &PagesInfo{Total: total, Rendered: pages}
 	sizes, err := s.tool(ctx, "pdfinfo", "-f", "1", "-l", strconv.Itoa(pages), pdf)
 	if err != nil {
 		return nil, convertErr(err)
@@ -366,14 +365,22 @@ func (s *Server) rasterize(ctx context.Context, pdf string) ([]PageDim, error) {
 	if err := checkPageSizes(sizes, pages); err != nil {
 		return nil, err
 	}
+	s.setPages(0, pages)
+	if err := s.renderPage(ctx, pdf, 1); err != nil {
+		return nil, err
+	}
+	if err := s.publishFirstPage(); err != nil {
+		return nil, err
+	}
+	s.setPages(1, pages)
 	ctx, cancel := context.WithCancel(ctx)
 	defer cancel()
 	jobs := make(chan int)
 	var wg sync.WaitGroup
 	var mu sync.Mutex
 	var first error
-	done := 0
-	for range min(s.cfg.Workers, pages) {
+	done := 1
+	for range min(s.cfg.Workers, pages-1) {
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
@@ -388,13 +395,14 @@ func (s *Server) rasterize(ctx context.Context, pdf string) ([]PageDim, error) {
 					cancel()
 				}
 				done++
-				pct := 40 + 55*done/pages
+				d := done
 				mu.Unlock()
-				s.set("rasterize", pct)
+				s.set("rasterize", 40+55*d/pages)
+				s.setPages(d, pages)
 			}
 		}()
 	}
-	for n := 1; n <= pages; n++ {
+	for n := 2; n <= pages; n++ {
 		jobs <- n
 	}
 	close(jobs)
@@ -404,7 +412,7 @@ func (s *Server) rasterize(ctx context.Context, pdf string) ([]PageDim, error) {
 	}
 	dims := make([]PageDim, pages)
 	for n := 1; n <= pages; n++ {
-		f, err := os.Open(s.dir("out", "s", strconv.Itoa(n), "3840.webp"))
+		f, err := os.Open(s.dir("out", "s", strconv.Itoa(n), strconv.Itoa(s.cfg.Widths[0])+".webp"))
 		if err != nil {
 			return nil, failed(errInternal, err)
 		}
@@ -419,22 +427,57 @@ func (s *Server) rasterize(ctx context.Context, pdf string) ([]PageDim, error) {
 	return dims, nil
 }
 
+// publishFirstPage makes page 1 and the thumbnail fetchable while the other pages render. A file
+// that fails its check is not published; the final validation then withholds the whole group.
+func (s *Server) publishFirstPage() error {
+	widths := s.cfg.Widths
+	out := s.dir("out")
+	if err := copyFile(filepath.Join(out, "t.webp"), filepath.Join(out, "s", "1", strconv.Itoa(widths[len(widths)-1])+".webp")); err != nil {
+		return failed(errInternal, err)
+	}
+	rels := []string{"t.webp"}
+	for _, w := range widths {
+		rels = append(rels, fmt.Sprintf("s/1/%d.webp", w))
+	}
+	var files []OutFile
+	for _, rel := range rels {
+		p := filepath.Join(out, filepath.FromSlash(rel))
+		info, err := os.Stat(p)
+		if err != nil {
+			return failed(errInternal, err)
+		}
+		typ, _, _, err := checkFile(p, rel, info.Size(), widths)
+		if err != nil {
+			log.Printf("first page %s: %v", rel, err)
+			return nil
+		}
+		sum, err := fileSHA256(p)
+		if err != nil {
+			return failed(errInternal, err)
+		}
+		files = append(files, OutFile{Path: rel, Size: info.Size(), SHA256: sum, Type: typ})
+	}
+	s.publish(files)
+	return nil
+}
+
 func (s *Server) renderPage(ctx context.Context, pdf string, n int) error {
 	dir := s.dir("out", "s", strconv.Itoa(n))
 	if err := os.MkdirAll(dir, 0o700); err != nil {
 		return failed(errInternal, err)
 	}
+	widest := strconv.Itoa(s.cfg.Widths[0])
 	base := s.dir("scratch", "p"+strconv.Itoa(n))
 	png := base + ".png"
 	defer os.Remove(png)
 	if _, err := s.tool(ctx, "pdftoppm", "-f", strconv.Itoa(n), "-l", strconv.Itoa(n),
-		"-scale-to-x", "3840", "-scale-to-y", "-1", "-png", "-singlefile", pdf, base); err != nil {
+		"-scale-to-x", widest, "-scale-to-y", "-1", "-png", "-singlefile", pdf, base); err != nil {
 		return convertErr(err)
 	}
-	if _, err := s.tool(ctx, "vips", "copy", png, filepath.Join(dir, "3840.webp")+"[Q=80]"); err != nil {
+	if _, err := s.tool(ctx, "vips", "copy", png, filepath.Join(dir, widest+".webp")+"[Q=80]"); err != nil {
 		return convertErr(err)
 	}
-	for _, w := range pageWidths[1:] {
+	for _, w := range s.cfg.Widths[1:] {
 		out := filepath.Join(dir, strconv.Itoa(w)+".webp") + "[Q=80]"
 		if _, err := s.tool(ctx, "vips", "thumbnail", png, out, strconv.Itoa(w), "--height", "1000000"); err != nil {
 			return convertErr(err)

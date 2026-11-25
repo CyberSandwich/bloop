@@ -68,6 +68,8 @@ type fakeTools struct {
 	probeIn  string        // ffprobe JSON for the upload
 	probeOut string        // ffprobe JSON for the mp4
 	delay    time.Duration // added to every call
+
+	holdPages chan struct{} // when set, pdftoppm for any page after the first waits for a receive or close
 }
 
 func newFakeTools(pages int) *fakeTools {
@@ -146,13 +148,21 @@ func (f *fakeTools) run(ctx context.Context, spec cmdSpec) ([]byte, error) {
 	case "pdfinfo":
 		if after(a, "-f") != "" {
 			var b strings.Builder
-			for n := 1; n <= f.pages; n++ {
+			last, _ := strconv.Atoi(after(a, "-l"))
+			for n := 1; n <= min(f.pages, last); n++ {
 				fmt.Fprintf(&b, "Page %4d size: 960 x 540 pts\n", n)
 			}
 			return []byte(b.String()), nil
 		}
 		return []byte(fmt.Sprintf("Title: x\nPages:          %d\n", f.pages)), nil
 	case "pdftoppm":
+		if f.holdPages != nil && after(a, "-f") != "1" {
+			select {
+			case <-f.holdPages:
+			case <-ctx.Done():
+				return nil, ctx.Err()
+			}
+		}
 		return nil, write(last+".png", []byte("png"))
 	case "vipsheader":
 		if after(a, "-f") == "width" {
@@ -162,10 +172,11 @@ func (f *fakeTools) run(ctx context.Context, spec cmdSpec) ([]byte, error) {
 	case "vips":
 		switch a[0] {
 		case "copy":
-			if strings.HasSuffix(stripOpts(a[2]), ".webp") && strings.Contains(a[2], "3840") {
-				return nil, write(stripOpts(a[2]), fakeWebP(3840, 2160))
+			out := stripOpts(a[2])
+			if w, err := strconv.Atoi(strings.TrimSuffix(filepath.Base(out), ".webp")); err == nil {
+				return nil, write(out, fakeWebP(w, w*9/16))
 			}
-			return nil, write(stripOpts(a[2]), fakeWebP(480, 270))
+			return nil, write(out, fakeWebP(480, 270))
 		case "thumbnail":
 			out := stripOpts(a[2])
 			w, _ := strconv.Atoi(a[3])

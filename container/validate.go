@@ -10,9 +10,12 @@ import (
 	"fmt"
 	"io"
 	"io/fs"
+	"log"
 	"os"
 	"path/filepath"
 	"regexp"
+	"slices"
+	"sort"
 	"strconv"
 	"unicode/utf8"
 )
@@ -30,10 +33,20 @@ const (
 	thumbWidth = 480
 )
 
-var pageWidths = []int{3840, 1920, 480}
+// Output groups. A group is published or withheld as a whole; one failing never hides another.
+const (
+	groupSlides = "slides"
+	groupPDF    = "pdf"
+	groupNotes  = "notes"
+	groupMedia  = "media"
+	groupImage  = "image"
+	groupMeta   = "meta"
+)
+
+var defaultWidths = []int{3840, 1920, 480}
 
 var (
-	rePagePath  = regexp.MustCompile(`^s/([1-9][0-9]*)/(3840|1920|480)\.webp$`)
+	rePagePath  = regexp.MustCompile(`^s/([1-9][0-9]*)/([0-9]+)\.webp$`)
 	reVideoPath = regexp.MustCompile(`^m/[0-9]+\.mp4$`)
 )
 
@@ -51,6 +64,7 @@ type PageDim struct {
 
 type slidesJSON struct {
 	V      int       `json:"v"`
+	Widths []int     `json:"widths"`
 	Pages  []PageDim `json:"pages"`
 	Motion bool      `json:"motion"`
 	Media  bool      `json:"media"`
@@ -89,6 +103,12 @@ type OutFile struct {
 	Size   int64  `json:"size"`
 	SHA256 string `json:"sha256"`
 	Type   string `json:"type"`
+}
+
+// GroupResult is one group's verdict in the manifest.
+type GroupResult struct {
+	OK    bool   `json:"ok"`
+	Error string `json:"error,omitempty"`
 }
 
 var errInvalid = errors.New("invalid output")
@@ -203,18 +223,54 @@ func fileSHA256(path string) (string, error) {
 
 // expectation says what a finished job's output must contain.
 type expectation struct {
-	kind  string
-	pages int // office and pdf kinds: the page count of doc.pdf
+	kind   string
+	pages  int   // office and pdf kinds: pages rendered
+	widths []int // rendered widths, widest first
 }
 
-// validateOutputs walks dir and checks every file by its path: only known names, regular files,
-// magic bytes, sizes, dimensions and JSON shape. It returns the manifest entries, sorted by path.
-func validateOutputs(dir string, want expectation) ([]OutFile, error) {
-	var files []OutFile
-	dims := map[string][2]int{}
+// groupsFor lists the groups a kind must produce.
+func groupsFor(kind string) []string {
+	switch kind {
+	case kindVideo:
+		return []string{groupMedia}
+	case kindImage:
+		return []string{groupImage}
+	}
+	return []string{groupSlides, groupPDF, groupNotes}
+}
+
+// groupOf maps an output path to its group for a kind. The thumbnail belongs to the kind's visual group.
+func groupOf(rel, kind string) (string, bool) {
+	switch {
+	case rel == "meta.json":
+		return groupMeta, true
+	case rel == "t.webp":
+		return groupsFor(kind)[0], true
+	case rel == "doc.pdf":
+		return groupPDF, true
+	case rel == "notes.json":
+		return groupNotes, true
+	case rel == "slides.json" || rePagePath.MatchString(rel):
+		return groupSlides, true
+	case reVideoPath.MatchString(rel):
+		return groupMedia, true
+	case rel == "i/1920.jpg":
+		return groupImage, true
+	}
+	return "", false
+}
+
+// validateOutputs walks dir. Anything that is not a regular file, any unknown name and any total
+// over the cap fail the whole job. Everything else is judged per group: a failing group is left out
+// of the returned files and reported in the group map, and the others are published. Only when every
+// expected group fails (or meta.json is bad) is the job itself invalid.
+func validateOutputs(dir string, want expectation) ([]OutFile, map[string]GroupResult, error) {
+	type found struct {
+		rel  string
+		size int64
+	}
+	byGroup := map[string][]found{}
 	var total int64
-	seen := map[string]bool{}
-	pages := map[int]map[int]bool{}
 	err := filepath.WalkDir(dir, func(p string, d fs.DirEntry, err error) error {
 		if err != nil {
 			return err
@@ -231,50 +287,141 @@ func validateOutputs(dir string, want expectation) ([]OutFile, error) {
 		if !info.Mode().IsRegular() {
 			return invalid("%s is not a regular file", rel)
 		}
-		total += info.Size()
-		if total > maxTotal {
+		group, ok := groupOf(rel, want.kind)
+		if !ok {
+			return invalid("%s is an unexpected file", rel)
+		}
+		if total += info.Size(); total > maxTotal {
 			return invalid("outputs exceed %d bytes", int64(maxTotal))
 		}
-		typ, w, h, err := checkFile(p, rel, info.Size())
-		if err != nil {
-			return invalid("%s: %v", rel, err)
-		}
-		if w > 0 {
-			dims[rel] = [2]int{w, h}
-		}
-		if m := rePagePath.FindStringSubmatch(rel); m != nil {
-			n, _ := strconv.Atoi(m[1])
-			width, _ := strconv.Atoi(m[2])
-			if pages[n] == nil {
-				pages[n] = map[int]bool{}
-			}
-			pages[n][width] = true
-		}
-		seen[rel] = true
-		files = append(files, OutFile{Path: rel, Size: info.Size(), Type: typ})
+		byGroup[group] = append(byGroup[group], found{rel, info.Size()})
 		return nil
 	})
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
-	if err := checkRequired(want, seen, pages); err != nil {
-		return nil, err
-	}
-	if err := checkJSONFiles(dir, want, dims); err != nil {
-		return nil, err
-	}
-	for i := range files {
-		sum, err := fileSHA256(filepath.Join(dir, filepath.FromSlash(files[i].Path)))
-		if err != nil {
-			return nil, err
+
+	failed := map[string]string{}
+	dims := map[string][2]int{}
+	pages := map[int]map[int]bool{}
+	types := map[string]string{}
+	for group, list := range byGroup {
+		for _, f := range list {
+			p := filepath.Join(dir, filepath.FromSlash(f.rel))
+			typ, w, h, err := checkFile(p, f.rel, f.size, want.widths)
+			if err != nil {
+				log.Printf("output %s: %v", f.rel, err)
+				failed[group] = errOutputInvalid
+				continue
+			}
+			types[f.rel] = typ
+			if w > 0 {
+				dims[f.rel] = [2]int{w, h}
+			}
+			if m := rePagePath.FindStringSubmatch(f.rel); m != nil {
+				n, _ := strconv.Atoi(m[1])
+				width, _ := strconv.Atoi(m[2])
+				if pages[n] == nil {
+					pages[n] = map[int]bool{}
+				}
+				pages[n][width] = true
+			}
 		}
-		files[i].SHA256 = sum
 	}
-	return files, nil
+	if _, bad := failed[groupMeta]; bad || len(byGroup[groupMeta]) == 0 {
+		return nil, nil, invalid("meta.json is missing or bad")
+	}
+	if err := checkMeta(dir, want); err != nil {
+		return nil, nil, err
+	}
+	have := func(g, rel string) bool {
+		for _, f := range byGroup[g] {
+			if f.rel == rel {
+				return true
+			}
+		}
+		return false
+	}
+	need := func(g string, rels ...string) {
+		for _, r := range rels {
+			if !have(g, r) {
+				log.Printf("group %s: missing %s", g, r)
+				failed[g] = errOutputInvalid
+			}
+		}
+	}
+	for _, g := range groupsFor(want.kind) {
+		switch g {
+		case groupSlides:
+			need(g, "slides.json", "t.webp")
+			for n := 1; n <= want.pages; n++ {
+				for _, w := range want.widths {
+					if !pages[n][w] {
+						log.Printf("group slides: page %d has no %d image", n, w)
+						failed[g] = errOutputInvalid
+					}
+				}
+			}
+			if len(pages) != want.pages {
+				log.Printf("group slides: %d pages rendered, want %d", len(pages), want.pages)
+				failed[g] = errOutputInvalid
+			}
+			if failed[g] == "" {
+				if err := checkSlides(dir, want, dims); err != nil {
+					log.Printf("group slides: %v", err)
+					failed[g] = errOutputInvalid
+				}
+			}
+		case groupPDF:
+			need(g, "doc.pdf")
+		case groupNotes:
+			need(g, "notes.json")
+			if failed[g] == "" {
+				if err := checkNotes(dir, want); err != nil {
+					log.Printf("group notes: %v", err)
+					failed[g] = errOutputInvalid
+				}
+			}
+		case groupMedia:
+			need(g, "m/0.mp4", "t.webp")
+		case groupImage:
+			need(g, "i/1920.jpg", "t.webp")
+		}
+	}
+
+	results := map[string]GroupResult{}
+	var files []OutFile
+	passing := 0
+	for _, g := range groupsFor(want.kind) {
+		if code, bad := failed[g]; bad {
+			results[g] = GroupResult{OK: false, Error: code}
+			continue
+		}
+		results[g] = GroupResult{OK: true}
+		passing++
+		for _, f := range byGroup[g] {
+			sum, err := fileSHA256(filepath.Join(dir, filepath.FromSlash(f.rel)))
+			if err != nil {
+				return nil, nil, err
+			}
+			files = append(files, OutFile{Path: f.rel, Size: f.size, SHA256: sum, Type: types[f.rel]})
+		}
+	}
+	if passing == 0 {
+		return nil, nil, invalid("every output group failed")
+	}
+	meta := byGroup[groupMeta][0]
+	sum, err := fileSHA256(filepath.Join(dir, "meta.json"))
+	if err != nil {
+		return nil, nil, err
+	}
+	files = append(files, OutFile{Path: "meta.json", Size: meta.size, SHA256: sum, Type: "application/json"})
+	sort.Slice(files, func(i, j int) bool { return files[i].Path < files[j].Path })
+	return files, results, nil
 }
 
 // checkFile validates one output by its relative path and returns its MIME type and, for images, its size.
-func checkFile(p, rel string, size int64) (typ string, w, h int, err error) {
+func checkFile(p, rel string, size int64, widths []int) (typ string, w, h int, err error) {
 	f, err := os.Open(p)
 	if err != nil {
 		return "", 0, 0, err
@@ -297,8 +444,8 @@ func checkFile(p, rel string, size int64) (typ string, w, h int, err error) {
 			return "", 0, 0, errors.New("riff size does not match the file")
 		}
 		if m := rePagePath.FindStringSubmatch(rel); m != nil {
-			if width, _ := strconv.Atoi(m[2]); w != width || h < 1 {
-				return "", 0, 0, fmt.Errorf("width %d, want %d", w, width)
+			if width, _ := strconv.Atoi(m[2]); !slices.Contains(widths, width) || w != width || h < 1 {
+				return "", 0, 0, fmt.Errorf("width %d, want %s", w, m[2])
 			}
 		} else if w > thumbWidth || w < 1 || h < 1 {
 			return "", 0, 0, fmt.Errorf("thumbnail is %dx%d", w, h)
@@ -361,40 +508,6 @@ func checkFile(p, rel string, size int64) (typ string, w, h int, err error) {
 	return "", 0, 0, errors.New("unexpected file")
 }
 
-func checkRequired(want expectation, seen map[string]bool, pages map[int]map[int]bool) error {
-	need := []string{"meta.json", "t.webp"}
-	switch want.kind {
-	case kindVideo:
-		need = append(need, "m/0.mp4")
-	case kindImage:
-		need = append(need, "i/1920.jpg")
-	default:
-		need = append(need, "doc.pdf", "slides.json", "notes.json")
-	}
-	for _, n := range need {
-		if !seen[n] {
-			return invalid("missing %s", n)
-		}
-	}
-	if want.kind == kindVideo || want.kind == kindImage {
-		if len(pages) > 0 {
-			return invalid("page images in a %s job", want.kind)
-		}
-		return nil
-	}
-	if len(pages) != want.pages {
-		return invalid("%d pages rendered, want %d", len(pages), want.pages)
-	}
-	for n := 1; n <= want.pages; n++ {
-		for _, w := range pageWidths {
-			if !pages[n][w] {
-				return invalid("page %d has no %d image", n, w)
-			}
-		}
-	}
-	return nil
-}
-
 func readJSON(dir, name string, v any) error {
 	b, err := os.ReadFile(filepath.Join(dir, name))
 	if err != nil {
@@ -408,7 +521,7 @@ func readJSON(dir, name string, v any) error {
 	return nil
 }
 
-func checkJSONFiles(dir string, want expectation, dims map[string][2]int) error {
+func checkMeta(dir string, want expectation) error {
 	var meta metaJSON
 	if err := readJSON(dir, "meta.json", &meta); err != nil {
 		return err
@@ -419,22 +532,27 @@ func checkJSONFiles(dir string, want expectation, dims map[string][2]int) error 
 	if _, err := hex.DecodeString(meta.SHA256); err != nil {
 		return invalid("meta.json sha256: %v", err)
 	}
-	if want.kind == kindVideo || want.kind == kindImage {
-		return nil
-	}
+	return nil
+}
+
+func checkSlides(dir string, want expectation, dims map[string][2]int) error {
 	var slides slidesJSON
 	if err := readJSON(dir, "slides.json", &slides); err != nil {
 		return err
 	}
-	if slides.V != 1 || len(slides.Pages) != want.pages {
-		return invalid("slides.json has %d pages, want %d", len(slides.Pages), want.pages)
+	if slides.V != 1 || len(slides.Pages) != want.pages || !slices.Equal(slides.Widths, want.widths) {
+		return invalid("slides.json has %d pages and widths %v, want %d and %v", len(slides.Pages), slides.Widths, want.pages, want.widths)
 	}
 	for i, p := range slides.Pages {
-		got := dims[fmt.Sprintf("s/%d/%d.webp", p.N, pageWidths[0])]
+		got := dims[fmt.Sprintf("s/%d/%d.webp", p.N, want.widths[0])]
 		if p.N != i+1 || p.W != got[0] || p.H != got[1] {
 			return invalid("slides.json page %d does not match its image", i+1)
 		}
 	}
+	return nil
+}
+
+func checkNotes(dir string, want expectation) error {
 	var notes notesJSON
 	if err := readJSON(dir, "notes.json", &notes); err != nil {
 		return err
