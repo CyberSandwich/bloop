@@ -4,6 +4,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { attributed, conflictCopies, refusals } from "../../tools/land.mjs";
+import { SPAWN_TIMEOUT } from "./spawn.ts";
 
 /** A bare remote with one commit on main, and a clone of it to land from. */
 let root: string;
@@ -29,10 +30,10 @@ beforeEach(() => {
   git(clone, "checkout", "-q", "-b", "main");
   commit("first");
   git(clone, "push", "-q", "origin", "main");
-});
+}, SPAWN_TIMEOUT);
 afterEach(() => rmSync(root, { recursive: true, force: true }));
 
-describe("land: what a fast-forward to main refuses", () => {
+describe("land: what a fast-forward to main refuses", { timeout: SPAWN_TIMEOUT }, () => {
   it("land: a clean fast-forward has no refusals", () => {
     const sha = commit("second");
     expect(refusals({ cwd: clone, sha })).toEqual([]);
@@ -83,7 +84,7 @@ describe("land: what a fast-forward to main refuses", () => {
   });
 });
 
-describe("land: the attribution and conflict-copy rules", () => {
+describe("land: the attribution and conflict-copy rules", { timeout: SPAWN_TIMEOUT }, () => {
   it("land: the trailers and footers count, a commit that only mentions CLAUDE.md does not", () => {
     expect(attributed("x\n\nCo-Authored-By: A <a@b>")).toBe(true);
     expect(attributed("x\n\nClaude-Session: https://example.test/s")).toBe(true);
