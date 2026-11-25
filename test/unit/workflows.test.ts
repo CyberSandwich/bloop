@@ -20,18 +20,39 @@ function broadScopes(text: string, secret: string): number[] {
   return found;
 }
 
-/** Every `lhci` command a workflow runs, as written after `run:`. */
-const lhciRuns = (text: string): string[] =>
-  text
-    .split("\n")
-    .map((line) => /^\s*-?\s*run:\s*(.*\blhci\b.*)$/.exec(line)?.[1]?.trim())
-    .filter((run): run is string => run != null);
+/**
+ * Every `lhci` command a workflow runs: a one-line `run:` as written (quotes dropped), and each line of a `run: |` or
+ * `run: >` block, marked `inBlock` so the guard can refuse it (one command per step keeps the retry rule checkable).
+ */
+function lhciRuns(text: string): { run: string; inBlock: boolean }[] {
+  const lines = text.split("\n");
+  const found: { run: string; inBlock: boolean }[] = [];
+  lines.forEach((line, i) => {
+    const step = /^(\s*-?\s*)run:\s*(.*)$/.exec(line);
+    if (!step) return;
+    const value = (step[2] ?? "").trim();
+    if (!/^[|>][-+]?$/.test(value)) {
+      const run = value.replace(/^(["'])(.*)\1$/, "$2");
+      if (/\blhci\b/.test(run)) found.push({ run, inBlock: false });
+      return;
+    }
+    const indent = (step[1] ?? "").length;
+    for (let j = i + 1; j < lines.length; j++) {
+      const next = lines[j] ?? "";
+      if (next.trim() !== "" && next.length - next.trimStart().length <= indent) break;
+      if (/\blhci\b/.test(next)) found.push({ run: next.trim(), inBlock: true });
+    }
+  });
+  return found;
+}
 
 /** Why a workflow's Lighthouse steps break the rule: a tool error retried once, a page judgment never. */
 function lhciProblems(text: string): string[] {
-  const runs = lhciRuns(text);
-  if (runs.length === 0) return [];
+  const found = lhciRuns(text);
+  if (found.length === 0) return [];
+  const runs = found.map((f) => f.run);
   const problems: string[] = [];
+  if (found.some((f) => f.inBlock)) problems.push("lhci runs inside a block step");
   if (runs.some((r) => r.includes("autorun"))) problems.push("autorun joins collect and assert in one try");
   if (!runs.includes("npx lhci collect || npx lhci collect")) problems.push("collect is not retried once");
   const asserts = runs.filter((r) => r.includes("lhci assert"));
@@ -56,6 +77,19 @@ describe("Lighthouse steps", () => {
       "      - run: npx lhci collect || npx lhci collect\n      - run: npx lhci assert || npx lhci assert\n";
     expect(lhciProblems(retried)).toEqual(["assert must run once, unretried"]);
     expect(lhciProblems("      - run: npm test\n")).toEqual([]);
+  });
+
+  it("Lighthouse: the guard sees lhci in a quoted step and in a `|` or `>` block step", () => {
+    expect(lhciProblems('      - run: "npx lhci autorun"\n')).toContain("autorun joins collect and assert in one try");
+    for (const style of ["|", ">", "|-"]) {
+      const block = `      - run: ${style}\n          npm ci\n          npx lhci autorun\n      - run: npm test\n`;
+      expect(lhciRuns(block), style).toEqual([{ run: "npx lhci autorun", inBlock: true }]);
+      expect(lhciProblems(block), style).toContain("lhci runs inside a block step");
+    }
+    const good = "      - run: npx lhci collect || npx lhci collect\n      - run: npx lhci assert\n";
+    expect(lhciProblems(`${good}      - run: |\n          npx lhci upload\n`)).toEqual([
+      "lhci runs inside a block step",
+    ]);
   });
 });
 
