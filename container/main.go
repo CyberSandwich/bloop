@@ -30,6 +30,9 @@ type Config struct {
 	Timeouts     map[string]time.Duration
 }
 
+// maxWidth keeps the tallest page (aspect 0.25, see minAspect) inside WebP's 16383 px side limit.
+const maxWidth = 4095
+
 var stageDefaults = map[string]time.Duration{
 	"inspect":   30 * time.Second,
 	"convert":   180 * time.Second,
@@ -73,7 +76,7 @@ func loadConfig(getenv func(string) string) Config {
 	return c
 }
 
-// parseWidths reads "3840,1920,480". Anything but 1 to 6 strictly descending widths in 1..7680 whose
+// parseWidths reads "3840,1920,480". Anything but 1 to 6 strictly descending widths in 1..4095 whose
 // smallest fits the thumbnail falls back to the default.
 func parseWidths(v string) []int {
 	def := slices.Clone(defaultWidths)
@@ -83,7 +86,7 @@ func parseWidths(v string) []int {
 	var out []int
 	for _, f := range strings.Split(v, ",") {
 		w, err := strconv.Atoi(strings.TrimSpace(f))
-		if err != nil || w < 1 || w > 7680 || (len(out) > 0 && w >= out[len(out)-1]) {
+		if err != nil || w < 1 || w > maxWidth || (len(out) > 0 && w >= out[len(out)-1]) {
 			return def
 		}
 		out = append(out, w)

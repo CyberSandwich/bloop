@@ -17,6 +17,8 @@ import (
 	"slices"
 	"sort"
 	"strconv"
+	"strings"
+	"unicode"
 	"unicode/utf8"
 )
 
@@ -532,6 +534,14 @@ func checkMeta(dir string, want expectation) error {
 	if _, err := hex.DecodeString(meta.SHA256); err != nil {
 		return invalid("meta.json sha256: %v", err)
 	}
+	if len(meta.FontsMissing) > maxFontsMissing || !sort.StringsAreSorted(meta.FontsMissing) {
+		return invalid("meta.json fontsMissing has %d names or is unsorted", len(meta.FontsMissing))
+	}
+	for _, f := range meta.FontsMissing {
+		if f == "" || !utf8.ValidString(f) || utf8.RuneCountInString(f) > maxFontRunes || strings.ContainsFunc(f, unicode.IsControl) {
+			return invalid("meta.json fontsMissing has a bad name")
+		}
+	}
 	return nil
 }
 
@@ -562,7 +572,7 @@ func checkNotes(dir string, want expectation) error {
 	}
 	last := 0
 	for _, n := range notes.Notes {
-		if n.N <= last || n.N > want.pages || n.Text == "" || !utf8.ValidString(n.Text) || utf8.RuneCountInString(n.Text) > maxNoteRunes {
+		if n.N <= last || n.N > want.pages || n.Text == "" || !utf8.ValidString(n.Text) || utf8.RuneCountInString(n.Text) > maxNoteRunes || stripControls(n.Text) != n.Text {
 			return invalid("notes.json entry %d is not valid", n.N)
 		}
 		last = n.N

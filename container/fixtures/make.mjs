@@ -2,7 +2,7 @@
 // The committed binaries (media/, macro/) are not made here; see container/README.md for their provenance.
 import { mkdirSync, writeFileSync } from "node:fs";
 import { crc32, createDeflateRaw } from "node:zlib";
-import { docx, odfWithMacro, pdf, pptx } from "./lib.mjs";
+import { docx, linkedOdt, linkedRtf, odfWithMacro, pdf, pptx } from "./lib.mjs";
 
 /** Where the external-relationship fixtures point; the corpus runner listens here and must see nothing. */
 export const CANARY = "http://127.0.0.1:8099";
@@ -25,11 +25,23 @@ put("aptos.pptx", pptx([slide(1), slide(2)], { major: "Aptos Display", minor: "A
 put("plain.pptx", pptx([slide(1), slide(2)]));
 put("deck-20.pptx", pptx(deck(20)));
 put("deck-100.pptx", pptx(deck(100)));
+put("deck-300.pptx", pptx(deck(300)));
+put(
+  "hidden.pptx",
+  pptx([slide(1), slide(2, { hidden: true, notes: "never shown" }), slide(3, { notes: "Third\tslide\nnote" })]),
+);
+put(
+  "notes-late.pptx",
+  pptx([slide(1), slide(2, { notes: "kept" }), slide(3), slide(4), slide(5, { notes: "past the page cap" })]),
+);
 put("external.pptx", pptx([slide(1)], { externalBase: CANARY }));
 put("external.docx", docx("A document that links to the outside", { externalBase: CANARY }));
 put("macro.odp", odfWithMacro("odp", MACRO_SENTINEL));
 put("macro.odt", odfWithMacro("odt", MACRO_SENTINEL));
 put("macro.ods", odfWithMacro("ods", MACRO_SENTINEL));
+put("linked.odt", linkedOdt());
+put("linked.docx", docx("Before the link.", { includeText: true }));
+put("linked.rtf", linkedRtf());
 put("pdf-js.pdf", pdf(["Active", "Content"], { active: true }));
 put("big.pdf", pdf(["Over the chunk size"], { pad: 110 << 20 }));
 put("pages-301.pdf", pdf(Array.from({ length: 301 }, (_, i) => `Page ${i + 1}`)));

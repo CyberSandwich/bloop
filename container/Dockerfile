@@ -2,7 +2,7 @@
 # fonts, and the Go job server. Contract and limits: container/README.md.
 # Build context is this directory.
 
-FROM golang:1.24-trixie@sha256:5835f052b784aa39f2fe9070def3568605c8bc3fcd810f10402066348b61e716 AS build
+FROM golang:1.26-trixie@sha256:e38b9d87c900de416a12351135e18daa9e477a79faa60fcb108f9b8279b85f8c AS build
 WORKDIR /src
 COPY go.mod ./
 COPY *.go ./
@@ -12,7 +12,7 @@ RUN CGO_ENABLED=0 go build -trimpath -ldflags="-s -w" -o /out/bloopconv .
 FROM build AS test
 RUN go vet ./... && go test -race -count=1 ./...
 
-FROM debian:trixie-slim@sha256:8aa5a7bf5a1955bddbe7d74fcdd0b91ab30e74362a8b73af672b0481b35b44a0
+FROM debian:trixie-slim@sha256:ab3b3c8c5159eebfca4376430132d53c4d425f869c765ecbe47177a030da575d
 
 # No recommends: that is what keeps the Java runtime out. libheif-plugin-libde265 is the HEIC decoder.
 RUN apt-get update \

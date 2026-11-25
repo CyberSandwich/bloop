@@ -109,6 +109,8 @@ func TestParseWidths(t *testing.T) {
 		"1920,x,480":       def,
 		"0,480":            def,
 		"9000,480":         def,
+		"4096,480":         def, // a 1:4 page would pass WebP's 16383 px side limit
+		"4095,480":         {4095, 480},
 		"6,5,4,3,2,1,0":    def,
 		"7000,6,5,4,3,2,1": def, // more than six
 	} {

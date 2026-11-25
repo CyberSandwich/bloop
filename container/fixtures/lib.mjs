@@ -102,7 +102,7 @@ function notesSlideXml(n, text) {
 }
 
 /**
- * One deck. slides: [{title, lines, notes?, motion?}]. Options: major/minor theme fonts,
+ * One deck. slides: [{title, lines, notes?, motion?, hidden?}]. Options: major/minor theme fonts,
  * runFont (a latin typeface on every run), externalBase (adds a linked picture and a hyperlink
  * that point at that URL with TargetMode="External").
  */
@@ -172,7 +172,7 @@ export function pptx(slides, { major = "Arial", minor = "Arial", runFont, extern
       : "";
     parts.push([
       `ppt/slides/slide${n}.xml`,
-      `${XML}<p:sld xmlns:a="${NS_A}" xmlns:r="${NS_R}" xmlns:p="${NS_P}"><p:cSld><p:spTree>${emptyGroup}${shapes}${extra}</p:spTree></p:cSld><p:clrMapOvr><a:masterClrMapping/></p:clrMapOvr>${s.motion ? TRANSITION + TIMING : ""}</p:sld>`,
+      `${XML}<p:sld xmlns:a="${NS_A}" xmlns:r="${NS_R}" xmlns:p="${NS_P}"${s.hidden ? ' show="0"' : ""}><p:cSld><p:spTree>${emptyGroup}${shapes}${extra}</p:spTree></p:cSld><p:clrMapOvr><a:masterClrMapping/></p:clrMapOvr>${s.motion ? TRANSITION + TIMING : ""}</p:sld>`,
     ]);
     parts.push([
       `ppt/slides/_rels/slide${n}.xml.rels`,
@@ -196,12 +196,28 @@ export function pptx(slides, { major = "Arial", minor = "Arial", runFont, extern
   return zip(parts);
 }
 
-/** A one-paragraph .docx; externalBase adds a linked picture and an attached template pointing at it. */
-export function docx(text, { externalBase } = {}) {
+/** The file the link fixtures point at (the corpus creates it inside the container) and the text it holds. */
+export const LINK_PATH = "/tmp/bloop-link-marker.txt";
+export const LINK_MARKER = "BLOOP-LINK-MARKER-7f3a91";
+
+/** A one-paragraph .rtf with an INCLUDETEXT field that names LINK_PATH. */
+export const linkedRtf = () =>
+  Buffer.from(
+    `{\\rtf1\\ansi\\deff0 Before the link.\\par {\\field{\\*\\fldinst INCLUDETEXT "${LINK_PATH}"}{\\fldrslt cached text}}\\par}\n`,
+  );
+
+/**
+ * A one-paragraph .docx; externalBase adds a linked picture and an attached template pointing at it,
+ * includeText a complex INCLUDETEXT field that names that local file.
+ */
+export function docx(text, { externalBase, includeText } = {}) {
   const NS_W = "http://schemas.openxmlformats.org/wordprocessingml/2006/main";
   const NS_WP = "http://schemas.openxmlformats.org/drawingml/2006/wordprocessingDrawing";
   const picture = externalBase
     ? `<w:p><w:r><w:drawing><wp:inline distT="0" distB="0" distL="0" distR="0"><wp:extent cx="914400" cy="914400"/><wp:docPr id="1" name="Linked picture"/><a:graphic xmlns:a="${NS_A}"><a:graphicData uri="http://schemas.openxmlformats.org/drawingml/2006/picture"><pic:pic xmlns:pic="http://schemas.openxmlformats.org/drawingml/2006/picture"><pic:nvPicPr><pic:cNvPr id="0" name="linked.png"/><pic:cNvPicPr/></pic:nvPicPr><pic:blipFill><a:blip r:link="rId2"/><a:stretch><a:fillRect/></a:stretch></pic:blipFill><pic:spPr><a:xfrm><a:off x="0" y="0"/><a:ext cx="914400" cy="914400"/></a:xfrm><a:prstGeom prst="rect"><a:avLst/></a:prstGeom></pic:spPr></pic:pic></a:graphicData></a:graphic></wp:inline></w:drawing></w:r></w:p>`
+    : "";
+  const include = includeText
+    ? `<w:p><w:r><w:fldChar w:fldCharType="begin"/></w:r><w:r><w:instrText xml:space="preserve"> INCLUDETEXT "${LINK_PATH}" </w:instrText></w:r><w:r><w:fldChar w:fldCharType="separate"/></w:r><w:r><w:t>cached text</w:t></w:r><w:r><w:fldChar w:fldCharType="end"/></w:r></w:p>`
     : "";
   const parts = [
     [
@@ -211,7 +227,7 @@ export function docx(text, { externalBase } = {}) {
     ["_rels/.rels", rels([["rId1", "officeDocument", "word/document.xml"]])],
     [
       "word/document.xml",
-      `${XML}<w:document xmlns:w="${NS_W}" xmlns:r="${NS_R}" xmlns:wp="${NS_WP}"><w:body><w:p><w:r><w:t>${esc(text)}</w:t></w:r></w:p>${picture}</w:body></w:document>`,
+      `${XML}<w:document xmlns:w="${NS_W}" xmlns:r="${NS_R}" xmlns:wp="${NS_WP}"><w:body><w:p><w:r><w:t>${esc(text)}</w:t></w:r></w:p>${picture}${include}</w:body></w:document>`,
     ],
     [
       "word/settings.xml",
@@ -278,6 +294,21 @@ const ODF_NS =
 /** The Basic module every macro fixture carries: on open it writes `sentinel`. */
 export const macroModule = (sentinel) =>
   `${XML}<!DOCTYPE script:module PUBLIC "-//OpenOffice.org//DTD OfficeDocument 1.0//EN" "module.dtd"><script:module xmlns:script="http://openoffice.org/2000/script" script:name="Module1" script:language="StarBasic">Sub Main\n  Dim n As Integer\n  n = FreeFile\n  Open "${sentinel}" For Output As #n\n  Print #n, "the macro ran"\n  Close #n\nEnd Sub\n</script:module>`;
+
+/** An .odt with a section linked to LINK_PATH: updating the link replaces "cached text" with the file's content. */
+export function linkedOdt() {
+  const mime = "application/vnd.oasis.opendocument.text";
+  const content = `${XML}<office:document-content ${ODF_NS} office:version="1.3"><office:body><office:text><text:p>Before the link.</text:p><text:section text:name="Linked1"><text:section-source xlink:href="file://${LINK_PATH}" xlink:type="simple" xlink:show="embed" text:filter-name="Text"/><text:p>cached text</text:p></text:section></office:text></office:body></office:document-content>`;
+  const manifest = `${XML}<manifest:manifest xmlns:manifest="urn:oasis:names:tc:opendocument:xmlns:manifest:1.0" manifest:version="1.3"><manifest:file-entry manifest:full-path="/" manifest:media-type="${mime}"/><manifest:file-entry manifest:full-path="content.xml" manifest:media-type="text/xml"/></manifest:manifest>`;
+  return zip(
+    [
+      ["mimetype", mime],
+      ["content.xml", content],
+      ["META-INF/manifest.xml", manifest],
+    ],
+    { store: ["mimetype"] },
+  );
+}
 
 /** An ODF text or presentation file whose Basic macro is bound to the document-open event. */
 export function odfWithMacro(kind, sentinel) {
