@@ -3,7 +3,7 @@
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { validDeck } from "../zip-builder.ts";
 import { pairPhone, putDrop } from "./drop-client.ts";
-import { approveDemo, fetchLink, sleep } from "./open-client.ts";
+import { approveDemo, fetchLink, inOneWindow, sleep } from "./open-client.ts";
 import { Api, PEPPER, startPairing } from "./pairing-client.ts";
 import { startWrangler, type Wrangler } from "./wrangler.ts";
 
@@ -165,6 +165,7 @@ describe("SITE-07 export-auth: the export is closed without a configured token, 
     try {
       const ip = { "CF-Connecting-IP": "203.0.113.80" };
       const statuses: number[] = [];
+      await inOneWindow();
       for (let i = 0; i < 14; i++) {
         const res = await fetch(`${closed.url}/api/it/export`, {
           headers: { ...ip, Authorization: "Bearer anything" },
@@ -172,9 +173,8 @@ describe("SITE-07 export-auth: the export is closed without a configured token, 
         statuses.push(res.status);
         await res.text();
       }
-      expect(statuses[0]).toBe(401);
-      expect(statuses.filter((s) => s === 401).length).toBeLessThanOrEqual(10);
-      expect(statuses).toContain(429);
+      expect(statuses.indexOf(429)).toBe(10);
+      expect(statuses.slice(0, 10).every((s) => s === 401)).toBe(true);
       const other = await fetch(`${closed.url}/api/it/export`, { headers: { "CF-Connecting-IP": "203.0.113.81" } });
       expect(other.status).toBe(401);
     } finally {
