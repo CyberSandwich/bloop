@@ -22,6 +22,14 @@ import { SWITCH_NAMES, SWITCHES } from "../../src/worker/spend/switches.ts";
 
 const GIB = 1024 ** 3;
 
+describe("caps: the refund window", () => {
+  it("COST-14 no lease var defaults above the container's 6 hour inactivity limit, which bounds how long a take can wait for its refund", () => {
+    const SIX_HOURS = 21_600;
+    for (const name of ["lease_max_convert_seconds", "lease_max_export_seconds", "lease_grace_seconds"] as const)
+      expect(CAPS[name].default, name).toBeLessThanOrEqual(SIX_HOURS);
+  });
+});
+
 describe("caps: every number pinned", () => {
   it("pins each cap's default", () => {
     const defaults = Object.fromEntries(Object.entries(CAPS).map(([k, v]) => [k, v.default]));

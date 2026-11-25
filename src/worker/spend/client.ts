@@ -5,7 +5,16 @@
 // already-converted file never calls the guard.
 // A caller bug (a bad `n`, a missing scope) throws before any RPC: only a transport error counts as an outage.
 // No import of guard.ts here: the Durable Object module needs Workers types, and this one runs under Node in tests.
-import { type CapName, type Caps, type MeterName, msToPeriodEnd, type PoolName, periodKey } from "./caps.ts";
+import {
+  type CapName,
+  type Caps,
+  isRefundable,
+  type MeterName,
+  msToPeriodEnd,
+  type PoolName,
+  periodKey,
+  type RefundableMeter,
+} from "./caps.ts";
 import {
   type AcquireResult,
   checkAcquire,
@@ -22,14 +31,22 @@ import type { SwitchName } from "./switches.ts";
 export interface SpendOps {
   take(meter: MeterName, n: number, scope?: string): TakeResult;
   record(meter: MeterName, n: number, scope?: string): void;
-  /** `id`: the take ticket's; the guard honors each id once. */
-  refund(meter: MeterName, n: number, scope: string | undefined, at: number, id: string): void;
+  /** `id`: the one the guard minted in `take`; it honors each id once, for at most what that take counted. */
+  refund(id: string, n: number): void;
   acquire(pool: PoolName, ttlSeconds: number, scope?: string): AcquireResult;
   release(leaseId: string): boolean;
   snapshot(): Snapshot;
   prune(): void;
   /** `prior`: the switch's row value before this trip ('' for none), restored on reset. */
-  latchTrip(name: SwitchName, value: string, reason: string, reading: string, prior?: string): boolean;
+  /** `evaluatedAt`: when the snapshot behind the trip was read; the guard refuses it if a reset came after. */
+  latchTrip(
+    name: SwitchName,
+    value: string,
+    reason: string,
+    reading: string,
+    prior?: string,
+    evaluatedAt?: number,
+  ): boolean;
   markAlerted(name: SwitchName, value: string): void;
   resetTrip(name: SwitchName): boolean;
   alertOnce(key: string): boolean;
@@ -75,25 +92,17 @@ export function refusal(result: TakeResult | AcquireResult | Unavailable): Refus
 export type CallerMeter = Exclude<MeterName, "r2_class_a" | "r2_class_b" | "d1_writes">;
 
 /**
- * What a take hands back, and the only thing `refund` accepts: it carries the scope the take was made under, so a
- * refund can neither name another caller's scope nor exceed what was taken. `takenAt` 0 marks a take the guard never
- * counted (admitted while it was down); the guard ignores a refund that old.
+ * What a take of a refundable meter hands back, and the only thing `refund` accepts. The guard minted the id and
+ * recorded the meter, scope and amount against it, so a refund can neither name another scope nor exceed the take.
  */
 export interface TakeTicket {
-  /** Random, 96 bits: the guard refunds a ticket once, so a second refund of it does nothing. */
   id: string;
-  meter: CallerMeter;
+  meter: RefundableMeter;
   n: number;
-  scope?: string;
-  takenAt: number;
 }
 export type Taken = { ok: true; ticket: TakeTicket };
-
-/** 12 random bytes as base64url (no padding at this length). */
-const ticketId = (): string =>
-  btoa(String.fromCharCode(...crypto.getRandomValues(new Uint8Array(12))))
-    .replaceAll("+", "-")
-    .replaceAll("/", "_");
+/** A take of a meter nobody refunds: nothing to hold on to. */
+export type TakenPlain = { ok: true };
 
 /**
  * What routes and Durable Objects receive in their deps instead of a global: unit tests of U, V2 and A pass a fake
@@ -101,7 +110,12 @@ const ticketId = (): string =>
  */
 export interface Spend {
   /** Adds to a capped meter, or refuses. A scoped meter needs a scope; `n` is a positive integer. */
-  take(meter: CallerMeter, n: number, scope?: string): Promise<Taken | TakeRefusal | Unavailable>;
+  take(meter: RefundableMeter, n: number, scope?: string): Promise<Taken | TakeRefusal | Unavailable>;
+  take(
+    meter: Exclude<CallerMeter, RefundableMeter>,
+    n: number,
+    scope?: string,
+  ): Promise<TakenPlain | TakeRefusal | Unavailable>;
   /** Charges `n` R2 operations of a class against the exact monthly cap, once per request. */
   charge(cls: "A" | "B", n: number): Promise<TakeResult | Unavailable>;
   /** Takes a pool slot, or says busy. A pool with a per-scope cap needs a scope. */
@@ -168,7 +182,9 @@ export class Reserves {
     this.held.set(cls, have - Math.min(have, n));
   }
 
-  add(cls: string, n: number): void {
+  /** `month`: the one the charge started in; an amount that outlived it belongs to a month already gone. */
+  add(cls: string, n: number, month: string): void {
+    if (month !== periodKey("month", this.now())) return;
     this.held.set(cls, this.left(cls) + n);
   }
 }
@@ -203,17 +219,13 @@ export class SpendClient implements Spend {
     return Object.hasOwn(OPEN_ON_OUTAGE, meter) ? this.stubs.public() : this.stubs.global();
   }
 
-  private ticket(meter: CallerMeter, n: number, scope: string | undefined, takenAt: number): Taken {
-    return { ok: true, ticket: { id: ticketId(), meter, n, ...(scope ? { scope } : {}), takenAt } };
-  }
-
   /** The guard is down: fail open for the public meters, within this isolate's cap, and closed for the rest. */
-  private outage(meter: CallerMeter, n: number, scope: string | undefined): Taken | TakeRefusal | Unavailable {
+  private outage(meter: CallerMeter, n: number, scope: string | undefined): TakenPlain | TakeRefusal | Unavailable {
     const capName = OPEN_ON_OUTAGE[meter];
     if (!capName) return unavailable;
     const admitted = n === 1 && this.isolate.admit(`${meter}|${scope ?? ""}`, this.caps()[capName]);
     this.log(JSON.stringify({ evt: "spend_guard_open", meter, admitted }));
-    if (admitted) return this.ticket(meter, n, scope, 0);
+    if (admitted) return { ok: true };
     return {
       ok: false,
       reason: "cap_hit",
@@ -224,11 +236,18 @@ export class SpendClient implements Spend {
     };
   }
 
-  async take(meter: CallerMeter, n: number, scope?: string): Promise<Taken | TakeRefusal | Unavailable> {
+  take(meter: RefundableMeter, n: number, scope?: string): Promise<Taken | TakeRefusal | Unavailable>;
+  take(
+    meter: Exclude<CallerMeter, RefundableMeter>,
+    n: number,
+    scope?: string,
+  ): Promise<TakenPlain | TakeRefusal | Unavailable>;
+  async take(meter: CallerMeter, n: number, scope?: string): Promise<Taken | TakenPlain | TakeRefusal | Unavailable> {
     checkCounted(meter, n, scope);
     try {
       const result = await this.rpc(meter).take(meter, n, scope);
-      return result.ok ? this.ticket(meter, n, scope, this.now()) : result;
+      if (!result.ok) return result;
+      return isRefundable(meter) && result.id ? { ok: true, ticket: { id: result.id, meter, n } } : { ok: true };
     } catch (e) {
       this.fail("take", e);
       return this.outage(meter, n, scope);
@@ -244,6 +263,7 @@ export class SpendClient implements Spend {
    */
   async charge(cls: "A" | "B", n: number): Promise<TakeResult | Unavailable> {
     positiveInt(n, "n");
+    const month = periodKey("month", this.now());
     const have = this.reserves.left(cls);
     if (have >= n) {
       this.reserves.drain(cls, n);
@@ -264,10 +284,10 @@ export class SpendClient implements Spend {
         result = await guard.take(meter, short);
         got = short;
       }
-      this.reserves.add(cls, result.ok ? got - short : have);
+      this.reserves.add(cls, result.ok ? got - short : have, month);
       return result;
     } catch (e) {
-      this.reserves.add(cls, have);
+      this.reserves.add(cls, have, month);
       this.fail("charge", e);
       return unavailable;
     }
@@ -309,7 +329,7 @@ export class SpendClient implements Spend {
     positiveInt(n, "n");
     if (n > ticket.n) throw new RangeError("a refund cannot exceed the take");
     try {
-      await this.rpc(ticket.meter).refund(ticket.meter, n, ticket.scope, ticket.takenAt, ticket.id);
+      await this.rpc(ticket.meter).refund(ticket.id, n);
     } catch (e) {
       this.fail("refund", e);
     }

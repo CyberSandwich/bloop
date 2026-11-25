@@ -177,6 +177,7 @@ describe("the month-to-date stop", () => {
     expect(await resetAllBreakers(s.deps, "admin")).toHaveLength(7);
     expect(s.g.ledger.trips()).toEqual([]);
     expect(s.store.rows.get("convert")).toBe("account_only");
+    s.g.clock.now += 1000;
     await s.run();
     expect(s.g.ledger.trips()).toHaveLength(7);
   });
@@ -413,6 +414,29 @@ describe("runBreaker: flip, latch, alert once", () => {
     expect(s.alerts().filter((a) => a.kind === "trip")).toHaveLength(0);
   });
 
+  it("a reset fired while the run still holds an older snapshot refuses that run's latch, and a later run latches", async () => {
+    const s = setup();
+    s.g.ledger.record("demo_session", 2000, undefined, T0);
+    const read = s.store.get;
+    let fired = false;
+    s.store.get = async (name) => {
+      const value = await read(name);
+      // The snapshot is already taken; the owner resets before the run's first latch.
+      if (name === "breaker" && !fired) {
+        fired = true;
+        s.g.ledger.resetTrip("demo", s.g.clock.now, s.g.rig.caps);
+      }
+      return value;
+    };
+    await s.run();
+    expect(fired).toBe(true);
+    expect(s.g.ledger.trips()).toEqual([]);
+    expect(s.store.rows.has("demo")).toBe(false);
+    s.g.clock.now += 1000;
+    await s.run();
+    expect(s.g.ledger.trips()).toMatchObject([{ switch: "demo", value: "off" }]);
+  });
+
   it("a failed alert is retried next run and the row is written once", async () => {
     const s = setup();
     let down = true;
@@ -507,7 +531,7 @@ describe("runBreaker: flip, latch, alert once", () => {
     expect(s.g.ledger.trips()).toEqual([]);
     const down = s.alerts().filter((a) => a.rule === "public_guard_unreadable");
     expect(down).toHaveLength(1);
-    expect(down[0]).toMatchObject({ kind: "analytics_down" });
+    expect(down[0]).toMatchObject({ kind: "public_unreadable" });
     expect(down[0]?.sources).toContain("public guard unreadable");
     const stored = JSON.parse((await s.deps.guard.report()) ?? "null") as SpendReport;
     expect(stored.sources).toContain("public guard unreadable");

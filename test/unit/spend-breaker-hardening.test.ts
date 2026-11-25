@@ -107,6 +107,7 @@ describe("a dataset that fails keeps its last good figures", () => {
     fail = true;
     await s.g.guard.resetTrip("uploads");
     s.store.rows.delete("uploads");
+    s.g.clock.now += 1000;
     await s.run();
     // Not reset by the failure: the held figure trips it again, with the counters at zero.
     expect(s.store.rows.get("uploads")).toBe("readonly");
@@ -218,6 +219,7 @@ describe("reset restores what was there before, and only what the breaker wrote"
     await s.run();
     expect(await resetAllBreakers(s.deps, "owner")).toEqual(["demo"]);
     expect(s.store.rows.get("demo")).toBe("on");
+    s.g.clock.now += 1000;
     await s.run();
     expect(s.alerts().filter((a) => a.kind === "trip")).toHaveLength(2);
   });

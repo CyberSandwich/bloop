@@ -29,7 +29,7 @@ export interface Flip {
 }
 
 export interface Alert {
-  kind: "trip" | "warn" | "would_trip" | "analytics_down" | "reset";
+  kind: "trip" | "warn" | "would_trip" | "analytics_down" | "public_unreadable" | "reset";
   /** The rule that fired; stable, so an alert rule can match it. */
   rule: string;
   switch?: SwitchName;
@@ -364,7 +364,7 @@ export async function runBreaker(d: BreakerDeps): Promise<BreakerReport> {
   if (unread.length) {
     sources += `; public guard unreadable (${unread.join(", ")} not evaluated)`;
     await announce("public_guard_unreadable", {
-      kind: "analytics_down",
+      kind: "public_unreadable",
       rule: "public_guard_unreadable",
       readings: {},
       sources,
@@ -397,7 +397,7 @@ export async function runBreaker(d: BreakerDeps): Promise<BreakerReport> {
               (v) => v ?? "",
               () => PRIOR_UNKNOWN,
             );
-        await d.guard.latchTrip(flip.switch, flip.value, f.rule, JSON.stringify(f.readings), prior);
+        await d.guard.latchTrip(flip.switch, flip.value, f.rule, JSON.stringify(f.readings), prior, snap.at);
       }
     } else {
       const flip = f.flips?.[0];
