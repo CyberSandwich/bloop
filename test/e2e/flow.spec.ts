@@ -320,34 +320,41 @@ test.describe("pairing flow", () => {
     return { screen, phone, lengthButton, sheet };
   }
 
-  test("SHOTS the sheet at 390 and 1440", async ({ browser }) => {
+  test("SHOTS the sheet", async ({ browser }) => {
     const { screen, phone, lengthButton, sheet } = await approvedDemo(browser);
-    for (const [name, size] of [["390", PHONE], ["1440", SCREEN]] as const) {
+    const sizes = [
+      ["320", { width: 320, height: 640 }],
+      ["390", PHONE],
+      ["430", { width: 430, height: 932 }],
+      ["844x390", { width: 844, height: 390 }],
+      ["1440", SCREEN],
+    ] as const;
+    for (const [name, size] of sizes) {
       await phone.page.setViewportSize(size);
       await lengthButton.click();
       await expect(sheet).toBeVisible();
       await phone.page.waitForTimeout(600);
       await phone.page.screenshot({ path: `test-results/shots/${name}-rest.png` });
-      await sheet.getByLabel("Expires At").focus();
-      await phone.page.screenshot({ path: `test-results/shots/${name}-time-focus.png` });
-      if (name === "1440") {
-        await sheet.getByRole("button", { name: "Close" }).hover();
-        await phone.page.screenshot({ path: `test-results/shots/${name}-x-hover.png` });
-      }
-      await phone.page.keyboard.press("Tab");
-      await phone.page.keyboard.press("Tab");
-      await phone.page.keyboard.press("Tab");
-      await phone.page.screenshot({ path: `test-results/shots/${name}-tab.png` });
       await phone.page.keyboard.press("Escape");
       await expect(sheet).toBeHidden();
+    }
+    for (const [name, size] of sizes) {
+      await phone.page.setViewportSize(size);
       await lengthButton.focus();
       await phone.page.keyboard.press("Enter");
       await expect(sheet).toBeVisible();
       await phone.page.waitForTimeout(600);
       await phone.page.screenshot({ path: `test-results/shots/${name}-kbd-open.png` });
+      await phone.page.keyboard.press("Tab");
+      await phone.page.screenshot({ path: `test-results/shots/${name}-kbd-tab.png` });
       await phone.page.keyboard.press("Escape");
       await expect(sheet).toBeHidden();
     }
+    await phone.page.setViewportSize(SCREEN);
+    await lengthButton.click();
+    await expect(sheet).toBeVisible();
+    await sheet.getByRole("button", { name: "Close" }).hover();
+    await phone.page.screenshot({ path: "test-results/shots/1440-x-hover.png" });
     await screen.context.close();
     await phone.context.close();
   });
