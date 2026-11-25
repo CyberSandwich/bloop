@@ -106,6 +106,7 @@ const revokeActions = (/** @type {PhoneFacts} */ f) =>
 export function phoneCopy(key, f) {
   const base = {
     title: "",
+    name: "",
     body: "",
     room: false,
     files: /** @type {PhoneCopy["files"]} */ ("none"),
@@ -200,14 +201,15 @@ export function phoneCopy(key, f) {
         body: `Add one file from this ${f.back ? "device" : "phone"}. Only\u00a0this file goes to the screen.`,
       };
     case "guest_confirm": {
-      // A long name keeps its start and its extension; the body then holds it whole.
+      // A long name keeps its start and its extension; its own line then holds it whole.
       // By code points, so the cut never splits an emoji's surrogate pair.
       const chars = Array.from(file);
       const long = chars.length > 28;
       return {
         ...base,
         title: `Send ${long ? `${chars.slice(0, 19).join("")}…${chars.slice(-8).join("")}` : file}${to("to")}?`,
-        body: `${long ? `${file}. ` : ""}${VERIFIED.guestDelete ? "bloop deletes its copy when this ends." : ""}`.trim(),
+        name: long ? file : "",
+        body: VERIFIED.guestDelete ? "bloop deletes its copy when this ends." : "",
         actions: [CANCEL, { id: "send", label: `Send${code}`, kind: "primary", ...aria("Send") }],
       };
     }
