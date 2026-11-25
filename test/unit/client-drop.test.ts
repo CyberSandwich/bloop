@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { fileProblem, prepareFile, sendFile, wholeMB } from "../../public/js/core/drop.js";
+import { fileProblem, kindOf, prepareFile, sendFile, wholeMB } from "../../public/js/core/drop.js";
 
 const MB = 1024 * 1024;
 
@@ -19,9 +19,17 @@ describe("what a phone can check before sending", () => {
     expect(fileProblem({ name: "clip.mov", size: 90 * MB + 1 }, 90 * MB)).toBe("large");
   });
 
-  it("names a HEIC photo, in any case, apart from other types", () => {
-    expect(fileProblem({ name: "IMG_0001.HEIC", size: 1000 }, 50 * MB)).toBe("heic");
-    expect(fileProblem({ name: "a.heif", size: 1000 }, 50 * MB)).toBe("heic");
+  it("takes a HEIC, in any case, as a photo to convert, whatever its size", () => {
+    expect(fileProblem({ name: "IMG_0001.HEIC", size: 1000 }, 50 * MB)).toBeNull();
+    expect(fileProblem({ name: "a.heif", size: 60 * MB }, 25 * MB)).toBeNull();
+    expect(kindOf("IMG_0001.HEIC")).toBe("photo");
+  });
+
+  it("knows each kind by its name: a photo to compress, a video to clean, a file to send as it is", () => {
+    expect(["a.jpg", "a.JPEG", "a.png", "a.heic"].map(kindOf)).toEqual(["photo", "photo", "photo", "photo"]);
+    expect(["a.mp4", "a.MOV"].map(kindOf)).toEqual(["video", "video"]);
+    expect(["a.pptx", "a.pdf"].map(kindOf)).toEqual(["file", "file"]);
+    expect(["a.webp", "a.gif", "a.exe", "pptx"].map(kindOf)).toEqual([null, null, null, null]);
   });
 
   it("leaves a photo's size to its compression", () => {
@@ -148,5 +156,9 @@ describe("preparing a file", () => {
 
   it("refuses a photo that cannot be decoded and is over the cap", async () => {
     expect(await prepareFile(file(new Array(200).fill(1), "a.png"), 100)).toEqual({ ok: false, problem: "photo" });
+  });
+
+  it("names a HEIC this browser cannot decode, and never sends it as it is", async () => {
+    expect(await prepareFile(file([0, 0, 0, 24], "IMG_1.HEIC"), MB)).toEqual({ ok: false, problem: "heic" });
   });
 });

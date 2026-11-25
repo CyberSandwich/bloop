@@ -33,6 +33,22 @@ function png(width: number, height: number): Buffer {
   ]);
 }
 
+/** An MP4 as an Android phone writes one: ftyp, a moov whose udta holds the `©xyz` location, then mdat. */
+function androidMp4(location: string): Buffer {
+  const box = (type: string, ...body: Buffer[]) => {
+    const inner = Buffer.concat(body);
+    const size = Buffer.alloc(4);
+    size.writeUInt32BE(8 + inner.length);
+    return Buffer.concat([size, Buffer.from(type, "latin1"), inner]);
+  };
+  const xyz = box("\u00a9xyz", Buffer.from([0, location.length, 0x15, 0xc7]), Buffer.from(location, "latin1"));
+  return Buffer.concat([
+    box("ftyp", Buffer.from("isom"), Buffer.alloc(4), Buffer.from("isom")),
+    box("moov", box("mvhd", Buffer.alloc(20, 5)), box("udta", xyz)),
+    box("mdat", Buffer.alloc(64, 7)),
+  ]);
+}
+
 const SCREEN = { width: 1440, height: 900 };
 const PHONE = { width: 390, height: 844 };
 
@@ -587,9 +603,18 @@ test.describe("guest drop", () => {
     await addFile(phone.page, { name: "big.pdf", mimeType: "application/pdf", buffer: Buffer.alloc(11 * 1024 * 1024) });
     await expect(phone.page.getByRole("alert")).toContainText("The demo takes files up to 10 MB.");
     await expect(heading(phone.page)).toHaveText("Demo Room");
-    // a raw HEIC is named, not sent
+    // a video over the cap is told as recording time (about 1 MB a second), with the cap itself
+    await addFile(phone.page, { name: "clip.mp4", mimeType: "video/mp4", buffer: Buffer.alloc(11 * 1024 * 1024) });
+    await expect(phone.page.getByRole("alert")).toContainText("Video Too Long");
+    await expect(phone.page.getByRole("alert")).toContainText(
+      "The demo takes videos up to about 10\u00a0seconds (10 MB).",
+    );
+    // a HEIC this browser cannot decode is never sent: its offer goes, and the toast asks for a JPEG
     await addFile(phone.page, { name: "IMG_1.HEIC", mimeType: "image/heic", buffer: Buffer.from("x") });
-    await expect(phone.page.getByRole("alert")).toContainText("HEIC Photos Aren't Supported");
+    await expect(heading(phone.page)).toHaveText("Send IMG_1.HEIC to Demo Room?");
+    await phone.page.getByRole("button", { name: "Send" }).click();
+    await expect(phone.page.getByRole("alert")).toContainText("This HEIC Photo Can't Be Converted");
+    await expect(heading(phone.page)).toHaveText("Demo Room");
 
     await addFile(phone.page, DECK);
     await expect(heading(phone.page)).toHaveText("Send sample-deck.pptx to Demo Room?");
@@ -710,6 +735,96 @@ test.describe("guest drop", () => {
     await phone.page.getByRole("button", { name: "Cancel" }).click();
     await expect(heading(phone.page)).toHaveText("Approval Canceled");
     await expect(heading(screen.page)).toHaveText("Demo Room");
+    await screen.context.close();
+    await phone.context.close();
+  });
+
+  /** The script modules this page has fetched so far, by path. */
+  const modules = (page: Page) =>
+    page.evaluate(() =>
+      performance
+        .getEntriesByType("resource")
+        .map((e) => new URL(e.name).pathname)
+        .filter((path) => path.startsWith("/js/core/")),
+    );
+  /** Keeps the body XMLHttpRequest sends, so a test reads the bytes that left the phone. */
+  type Sending = { sent: File; XMLHttpRequest: { prototype: { send: (this: unknown, body: unknown) => void } } };
+  const keepSent = (page: Page) =>
+    page.evaluate(() => {
+      const w = globalThis as unknown as Sending;
+      const send = w.XMLHttpRequest.prototype.send;
+      w.XMLHttpRequest.prototype.send = function (body) {
+        w.sent = body as File;
+        send.call(this, body);
+      };
+    });
+  const sent = (page: Page) =>
+    page.evaluate(async () => {
+      const body = (globalThis as unknown as Sending).sent;
+      return { name: body.name, bytes: [...new Uint8Array(await body.arrayBuffer())] };
+    });
+
+  test("a photo loads photo.js only when it is sent, shows its row on the loader, and leaves as a JPEG", async ({
+    browser,
+  }) => {
+    const screen = await demoScreen(browser);
+    const { phone } = await scan(browser, screen.page);
+    expect(await modules(phone.page)).not.toContain("/js/core/photo.js");
+    await keepSent(phone.page);
+    // Held until the row is read, so the in-between state is on the page.
+    let release = () => {};
+    const held = new Promise<void>((done) => {
+      release = done;
+    });
+    await phone.page.route("**/api/drop", async (route) => {
+      await held;
+      await route.continue();
+    });
+
+    await addFile(phone.page, { name: "shot.png", mimeType: "image/png", buffer: png(3000, 2000) });
+    await expect(heading(phone.page)).toHaveText("Send shot.png to Demo Room?");
+    expect(await modules(phone.page)).not.toContain("/js/core/photo.js");
+    await phone.page.getByRole("button", { name: "Send" }).click();
+    await expect(heading(phone.page)).toHaveText("Sending shot.png");
+    const row = phone.page.locator("#file-list .row.upload");
+    await expect(row.getByRole("progressbar", { name: "Sending shot.png" })).toBeVisible();
+    await expect(row.locator(".small")).toHaveText(/^(Compressing|\d+% sent|Finishing)$/);
+    await expect(phone.page.locator("progress")).toHaveCount(0);
+    release();
+
+    await expect(heading(phone.page)).toHaveText("Sent to Demo Room");
+    const modulesNow = await modules(phone.page);
+    expect(modulesNow).toContain("/js/core/photo.js");
+    expect(modulesNow).not.toContain("/js/core/video.js");
+    // Re-encoded on the phone: a JPEG (SOI, then a JFIF APP0 from the canvas), named .jpg, its long side at 2560.
+    const out = await sent(phone.page);
+    expect(out.name).toBe("shot.jpg");
+    expect(out.bytes.slice(0, 3)).toEqual([0xff, 0xd8, 0xff]);
+    await expect(heading(screen.page)).toHaveText("Sent by a Guest");
+    await screen.context.close();
+    await phone.context.close();
+  });
+
+  test("VID-04 a video loads video.js only when it is sent and leaves with its location blanked in place", async ({
+    browser,
+  }) => {
+    const screen = await demoScreen(browser);
+    const { phone } = await scan(browser, screen.page);
+    await keepSent(phone.page);
+    const where = "+37.3861-122.0839/";
+    const clip = androidMp4(where);
+
+    await addFile(phone.page, { name: "clip.mp4", mimeType: "video/mp4", buffer: clip });
+    expect(await modules(phone.page)).not.toContain("/js/core/video.js");
+    await phone.page.getByRole("button", { name: "Send" }).click();
+    await expect(heading(phone.page)).toHaveText("Sent to Demo Room");
+    const modulesNow = await modules(phone.page);
+    expect(modulesNow).toContain("/js/core/video.js");
+    expect(modulesNow).not.toContain("/js/core/photo.js");
+    const out = await sent(phone.page);
+    expect(out.name).toBe("clip.mp4");
+    expect(out.bytes.length).toBe(clip.length);
+    expect(Buffer.from(out.bytes).includes(Buffer.from(where, "latin1"))).toBe(false);
     await screen.context.close();
     await phone.context.close();
   });

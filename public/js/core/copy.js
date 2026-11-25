@@ -144,26 +144,50 @@ const DISCONNECT = { id: "disconnect", label: "Disconnect OneDrive", kind: /** @
 const FILE_TYPES = ".pptx, .pdf, .jpg, .png, .mp4 or .mov";
 
 /**
+ * A video cap as recording time, at about 1 MB a second: an iPhone's default 1080p at 30 fps (HEVC) is about 60 MB a
+ * minute (design.md, Toast). Under 2 minutes it says seconds, rounded down to 10 once there are 10; a no-break space
+ * keeps the number on its unit's line.
+ * @param {number} maxMB
+ */
+export function videoTime(maxMB) {
+  if (maxMB >= 120) return `${Math.floor(maxMB / 60)}\u00a0minutes`;
+  const s = maxMB < 10 ? maxMB : Math.floor(maxMB / 10) * 10;
+  return `${s}\u00a0second${s === 1 ? "" : "s"}`;
+}
+
+/**
  * What a refusal the phone can name before sending says, as a toast. The cap is the server's (`dropMaxBytes`).
  * @param {"heic" | "type" | "empty" | "large" | "several" | "photo" | "video"} problem
- * @param {{demo: boolean, maxMB: number}} f
+ * @param {{demo: boolean, maxMB: number, video?: boolean}} f `video`: the file too large is a video
  * @returns {{title: string, body: string, error: true}}
  */
 export function refusalToast(problem, f) {
-  /** @type {Record<Exclude<typeof problem, "large">, [string, string]>} */
-  const fixed = {
-    heic: ["HEIC Photos Aren't Supported", "Export it as JPEG and try again."],
+  const takes = f.demo ? "The demo takes" : "bloop takes";
+  /** @type {Record<typeof problem, [string, string]>} */
+  const all = {
+    heic: ["This HEIC Photo Can't Be Converted", "This browser can't read it. Export it as JPEG and try again."],
     type: ["This File Type Isn't Supported", `Choose a ${FILE_TYPES} file.`],
     empty: ["This File Is Empty", "Choose another file."],
+    large: f.video
+      ? ["Video Too Long", `${takes} videos up to about ${videoTime(f.maxMB)} (${f.maxMB} MB). Trim it and try again.`]
+      : ["File Too Large", `${takes} files up to ${f.maxMB} MB.`],
     several: ["One File at a Time", "Drop a single file."],
     photo: ["This Photo Can't Be Sent", "Export it as a JPEG under the size limit and try again."],
     video: ["This Video Can't Be Sent", "bloop couldn't remove its location. Try another video."],
   };
-  const [title, body] =
-    problem === "large"
-      ? ["File Too Large", `${f.demo ? "The demo takes" : "bloop takes"} files up to ${f.maxMB} MB.`]
-      : fixed[problem];
+  const [title, body] = all[problem];
   return { title, body, error: true };
+}
+
+/**
+ * The upload row's second line: what the phone does to the file first, then the share sent (rounded as the loader's
+ * aria-valuenow, but never 100 before the server answers).
+ * @param {number | null} progress 0 to 1; null before the first byte
+ * @param {"photo" | "video" | "file" | null} kind null after a reload, when this page holds no file
+ */
+export function uploadLine(progress, kind) {
+  if (progress === null) return kind === "photo" ? "Compressing" : kind === "video" ? "Removing location" : "Sending";
+  return progress >= 1 ? "Finishing" : `${Math.min(99, Math.round(progress * 100))}% sent`;
 }
 
 /** The guest entry where there is no list to end with the "Add a file" row. */
@@ -206,7 +230,6 @@ export function phoneCopy(key, f) {
     warn: "",
     actions: /** @type {PhoneAction[]} */ ([]),
     loading: false,
-    progress: false,
   };
   const file = f.file ?? "your file";
   const disconnect = f.account ? [DISCONNECT] : [];
@@ -290,7 +313,7 @@ export function phoneCopy(key, f) {
         actions: [CANCEL, { id: "send", label: `Send${code}`, kind: "primary", ...aria("Send") }],
       };
     case "guest_sending":
-      return { ...base, title: `Sending ${file}`, progress: true, actions: [CANCEL] };
+      return { ...base, title: `Sending ${file}`, files: "upload", actions: [CANCEL] };
     case "guest_refused":
       return {
         ...base,

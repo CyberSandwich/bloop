@@ -1,4 +1,5 @@
-// The name segment of a /f/ link. Cosmetic: the server ignores it, but it is the file name PowerPoint
+// File names: the type a name declares, a name safe to show, and the name segment of a /f/ link.
+// The segment is cosmetic: the server ignores it, but it is the file name PowerPoint
 // and the browser show and write into shortcuts, and it sits inside the 256-character Office URI.
 // ASCII letters, digits and single hyphens only: no character the URI rules ban, no percent-encoding
 // to inflate the length, no ".." possible.
@@ -8,12 +9,31 @@
 export const MAX_BASE = 60;
 
 /**
+ * The one list of file extensions a guest may send and the type each declares: the drop route reads it, the phone
+ * refuses anything else before sending, and a test ties the picker's accept list to it.
+ * @type {Readonly<Record<string, FileType>>}
+ */
+export const EXTENSION_TYPES = {
+  pptx: "pptx",
+  pdf: "pdf",
+  jpg: "jpg",
+  jpeg: "jpg",
+  png: "png",
+  mp4: "mp4",
+  mov: "mov",
+};
+const EXTENSION = new RegExp(`\\.(${Object.keys(EXTENSION_TYPES).join("|")})$`, "i");
+
+/** @param {string} name @returns {FileType | null} the type its extension declares */
+export const typeOfName = (name) => EXTENSION_TYPES[EXTENSION.exec(name)?.[1]?.toLowerCase() ?? ""] ?? null;
+
+/**
  * @param {string} name a display name, with or without its file type's extension
  * @param {number} [max] longest base name
  * @returns {string} 1 to `max` characters of [A-Za-z0-9-], never starting or ending with a hyphen
  */
 export function slugBase(name, max = MAX_BASE) {
-  const stem = name.replace(/\.(pptx|pdf|jpe?g|png|webp|mp4|mov)$/i, "");
+  const stem = name.replace(EXTENSION, "");
   const ascii = stem
     .normalize("NFKD")
     .replace(/\p{M}/gu, "")

@@ -13,7 +13,6 @@ export const CONTENT_TYPES: Record<FileType, string> = {
   pdf: "application/pdf",
   jpg: "image/jpeg",
   png: "image/png",
-  webp: "image/webp",
   // A .mov is served as MP4 too: the bytes decide nothing about the served type.
   mp4: "video/mp4",
   mov: "video/mp4",

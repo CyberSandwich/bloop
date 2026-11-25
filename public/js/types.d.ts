@@ -43,7 +43,8 @@ export interface PhonePage extends PhoneCtx {
   file: File | null;
   maxBytes: number;
   upload: { abort: () => void } | null;
-  progress: number;
+  /** The share sent, 0 to 1; null while the file is prepared or the total is unknown. */
+  progress: number | null;
   /** Back or Done is on its way out: a second tap does nothing. */
   leaving: boolean;
 }
@@ -200,8 +201,8 @@ export interface PhoneCopy {
   body: string;
   /** The "Registered screen" line under a room title. */
   room: boolean;
-  /** The list to tick, or the approved items read only. */
-  files: "none" | "skeleton" | "list" | "items";
+  /** The list to tick, the approved items read only, or the one file on its way over the loader. */
+  files: "none" | "skeleton" | "list" | "items" | "upload";
   /** The "Add a file" row closes the list: the guest path, for a file not in it `[V-10]`. */
   add: boolean;
   /** The "Ends in 59:12" countdown `[V-2]`. */
@@ -213,8 +214,6 @@ export interface PhoneCopy {
   actions: PhoneAction[];
   /** The primary action shows its progress label. */
   loading: boolean;
-  /** The upload progress bar. */
-  progress: boolean;
 }
 
 export interface PhoneFacts {

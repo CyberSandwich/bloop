@@ -86,7 +86,7 @@ describe("LINK-01 link items: https only, on an allowed host", () => {
 
 describe("IMG-01 image items: fixed image types under nosniff", () => {
   const open = openPathFor("stream", []);
-  const image = (type: "jpg" | "png" | "webp") => ({
+  const image = (type: "jpg" | "png") => ({
     name: `Dog.${type}`,
     type,
     size: 3,
@@ -105,7 +105,7 @@ describe("IMG-01 image items: fixed image types under nosniff", () => {
   });
 
   it("an image link is always the inline view, or a download", () => {
-    for (const type of ["jpg", "png", "webp"] as const) {
+    for (const type of ["jpg", "png"] as const) {
       expect(effectivePurpose(type, "protocol")).toBe("view");
       expect(effectivePurpose(type, "pdf")).toBe("view");
       expect(effectivePurpose(type, "view")).toBe("view");
@@ -117,8 +117,8 @@ describe("IMG-01 image items: fixed image types under nosniff", () => {
   });
 
   it("serves the fixed image type inline, sandboxed, no-store and nosniff", async () => {
-    const want = { jpg: "image/jpeg", png: "image/png", webp: "image/webp" } as const;
-    for (const type of ["jpg", "png", "webp"] as const) {
+    const want = { jpg: "image/jpeg", png: "image/png" } as const;
+    for (const type of ["jpg", "png"] as const) {
       expect(CONTENT_TYPES[type]).toBe(want[type]);
       const r = await open.serve(new Request("https://bloop.test/f/t/Dog.jpg"), image(type), "view");
       const res = withHeaders(r, policyOf(r, "api"));

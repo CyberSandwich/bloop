@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import { countdown, hostOf, itemIcon, itemLine, itemName } from "../../public/js/core/format.js";
 import type { Item } from "../../src/shared/protocol.ts";
 
-const file = (name: string, type: "pptx" | "pdf" | "jpg" | "png" | "webp", size: number | null = null): Item => ({
+const file = (name: string, type: "pptx" | "pdf" | "jpg" | "png", size: number | null = null): Item => ({
   kind: "file",
   id: name,
   name,
@@ -18,7 +18,6 @@ describe("item row tile", () => {
     const picture = itemIcon(file("Dog.jpg", "jpg"));
     expect(new Set([slides, doc, picture, itemIcon(link)]).size).toBe(4);
     expect(itemIcon(file("a.png", "png"))).toBe(picture);
-    expect(itemIcon(file("a.webp", "webp"))).toBe(picture);
   });
 });
 
@@ -30,7 +29,6 @@ describe("item row lines", () => {
       "JPEG image · 68 KB · Edited 10 min ago",
     );
     expect(itemLine(file("a.png", "png"))).toBe("PNG image");
-    expect(itemLine(file("a.webp", "webp"))).toBe("WebP image");
   });
 
   it("a link reads Link and its host, named by its title", () => {
