@@ -15,6 +15,8 @@ export interface Wrangler {
   stop(): Promise<void>;
   /** A read-only query against the throwaway local D1 (migrated only with `migrate: true`). */
   d1(sql: string): Record<string, unknown>[];
+  /** Writes the launch mode (and the preview lockout) the next request sees. Needs TEST_TIMING=1, which turns the Worker's 30 s cache off. */
+  setLaunchMode(mode: "preview" | "open", lockout?: boolean): void;
   /** Whether the local R2 bucket holds an object under `key`. */
   r2Has(key: string): boolean;
 }
@@ -162,6 +164,13 @@ async function startOnce(vars: Record<string, string>, options: { migrate?: bool
     return done.status === 0;
   };
 
+  const setLaunchMode = (mode: "preview" | "open", lockout = false) => {
+    if (vars.TEST_TIMING !== "1")
+      throw new Error("setLaunchMode needs TEST_TIMING=1: the Worker caches the mode for 30 s");
+    d1(`INSERT OR REPLACE INTO setting (key, value, updated_at) VALUES ('launch_mode', '${mode}', 0)`);
+    d1("DELETE FROM setting WHERE key = 'preview_lockout'");
+    if (lockout) d1("INSERT INTO setting (key, value, updated_at) VALUES ('preview_lockout', '1', 0)");
+  };
   const output = () => chunks.join("");
   const logged = async (text: string, ms = 5000) => {
     for (const end = Date.now() + ms; Date.now() < end && !output().includes(text); ) await sleep(100);
@@ -177,7 +186,7 @@ async function startOnce(vars: Record<string, string>, options: { migrate?: bool
       throw new Failure(`wrangler dev exited early (code ${child.exitCode}):\n${all.slice(-1500)}`);
     }
     try {
-      if ((await fetch(`${url}/api/health`)).ok) return { url, output, logged, stop, d1, r2Has };
+      if ((await fetch(`${url}/api/health`)).ok) return { url, output, logged, stop, d1, setLaunchMode, r2Has };
     } catch {
       // not listening yet
     }
