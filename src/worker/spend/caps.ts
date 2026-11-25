@@ -83,7 +83,12 @@ export const CAPS = {
     reason: "guest drops per IP hash per day; a busy seminar behind one NAT",
   },
   email_hour: { var: "CAP_EMAIL_HOUR", default: 60, reason: "sends per hour account-wide" },
-  email_day: { var: "CAP_EMAIL_DAY", default: 300, reason: "sends per day account-wide; 1,000 users need about 170" },
+  email_day: {
+    var: "CAP_EMAIL_DAY",
+    default: 180,
+    reason:
+      "sends per day account-wide; platform quota 200/day until raised; raise this cap only after Cloudflare raises the quota",
+  },
   email_recipient_day: { var: "CAP_EMAIL_RECIPIENT_DAY", default: 10, reason: "sends per recipient per day" },
   email_code_ip_day: { var: "CAP_EMAIL_CODE_IP_DAY", default: 20, reason: "sign-in code requests per IP hash per day" },
   export_user_day: { var: "CAP_EXPORT_USER_DAY", default: 3, reason: "exports per account per day" },

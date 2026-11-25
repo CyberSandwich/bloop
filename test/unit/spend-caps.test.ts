@@ -43,7 +43,7 @@ describe("caps: every number pinned", () => {
       upload_user_bytes_day: 10 * GIB,
       guest_drop_ip_day: 20,
       email_hour: 60,
-      email_day: 300,
+      email_day: 180,
       email_recipient_day: 10,
       email_code_ip_day: 20,
       export_user_day: 3,
@@ -108,20 +108,20 @@ describe("caps: every number pinned", () => {
 
 describe("resolving caps", () => {
   it("uses the default with no var, the var as the maximum, and ignores a bad var", () => {
-    expect(resolveCaps({}).email_day).toBe(300);
+    expect(resolveCaps({}).email_day).toBe(180);
     expect(resolveCaps({ CAP_EMAIL_DAY: "100" }).email_day).toBe(100);
     expect(resolveCaps({ CAP_EMAIL_DAY: "1000" }).email_day).toBe(1000);
     for (const bad of ["abc", "-5", "", "Infinity", "NaN"])
-      expect(resolveCaps({ CAP_EMAIL_DAY: bad }).email_day).toBe(300);
+      expect(resolveCaps({ CAP_EMAIL_DAY: bad }).email_day).toBe(180);
     expect(resolveCaps({ CAP_EMAIL_DAY: "0" }).email_day).toBe(0);
   });
 
   it("an override can lower a cap and never raise it", () => {
     expect(resolveCaps({}, { email_day: 50 }).email_day).toBe(50);
-    expect(resolveCaps({}, { email_day: 5000 }).email_day).toBe(300);
+    expect(resolveCaps({}, { email_day: 5000 }).email_day).toBe(180);
     expect(resolveCaps({ CAP_EMAIL_DAY: "100" }, { email_day: 200 }).email_day).toBe(100);
-    expect(resolveCaps({}, { email_day: -1 }).email_day).toBe(300);
-    expect(resolveCaps({}, { email_day: Number.NaN }).email_day).toBe(300);
+    expect(resolveCaps({}, { email_day: -1 }).email_day).toBe(180);
+    expect(resolveCaps({}, { email_day: Number.NaN }).email_day).toBe(180);
   });
 
   it("trips read their vars the same way", () => {
@@ -169,12 +169,13 @@ describe("the $10 month split: each meter's daily floor", () => {
     for (const m of PRICED_METERS) {
       if (m !== "email") expect(lines[m].ceiling).toBe(lines[m].floor * 5);
     }
-    expect(lines.email).toEqual({ floor: 95, ceiling: 300 });
+    expect(lines.email).toEqual({ floor: 95, ceiling: 180 });
   });
 
   it("the email ceiling follows CAP_EMAIL_DAY: min(5 x floor, cap), never under the floor, and an explicit var wins", () => {
     expect(resolveLines({ CAP_EMAIL_DAY: "1000" }, t).email.ceiling).toBe(475);
     expect(resolveLines({ CAP_EMAIL_DAY: "200" }, t).email.ceiling).toBe(200);
+    expect(resolveLines({ CAP_EMAIL_DAY: "150" }, t).email.ceiling).toBe(150);
     expect(resolveLines({ CAP_EMAIL_DAY: "50" }, t).email.ceiling).toBe(95);
     expect(resolveLines({ CAP_EMAIL_DAY: "200", BREAKER_CEILING_EMAIL: "400" }, t).email.ceiling).toBe(400);
   });
