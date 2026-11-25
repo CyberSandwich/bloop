@@ -1,6 +1,9 @@
+import { DatabaseSync } from "node:sqlite";
 import { describe, expect, it } from "vitest";
+import type { SqlLike } from "../../src/worker/do/demo-slots.ts";
 import { resolveCaps } from "../../src/worker/spend/caps.ts";
-import { DAY, HOUR, rig, T0 } from "./spend-helpers.ts";
+import { Ledger } from "../../src/worker/spend/meters.ts";
+import { DAY, HOUR, rig, sqlOver, T0, transactionOver } from "./spend-helpers.ts";
 
 describe("counters: take is an exact check-and-add", () => {
   it("COST-14 email: 60 sends an hour, then refused with the wait until the hour ends, adding nothing", () => {
@@ -117,10 +120,11 @@ describe("counters: take is an exact check-and-add", () => {
     ledger.take("container_seconds", 21_600, undefined, caps, T0);
     ledger.record("container_seconds", 5, undefined, T0);
     expect(ledger.snapshot(T0, caps).counters.container_seconds.day).toBe(21_605);
-    ledger.refund("container_seconds", 30_000, undefined, T0);
+    ledger.refund("container_seconds", 30_000, undefined, T0, T0, caps);
     expect(ledger.snapshot(T0, caps).counters.container_seconds.day).toBe(0);
-    ledger.take("container_seconds", 100, undefined, caps, Date.UTC(2026, 10, 25, 23, 59));
-    ledger.refund("container_seconds", 40, undefined, Date.UTC(2026, 10, 25, 23, 59));
+    const late = Date.UTC(2026, 10, 25, 23, 59);
+    ledger.take("container_seconds", 100, undefined, caps, late);
+    ledger.refund("container_seconds", 40, undefined, late, late, caps);
     expect(ledger.snapshot(Date.UTC(2026, 10, 25, 23, 59), caps).counters.container_seconds.day).toBe(60);
     expect(ledger.snapshot(Date.UTC(2026, 10, 26, 0, 1), caps).counters.container_seconds.day).toBe(0);
   });
@@ -321,6 +325,52 @@ describe("schema", () => {
     const r = rig();
     r.wake();
     r.wake();
-    expect(r.db.prepare("SELECT version FROM schema_version").all()).toEqual([{ version: 1 }]);
+    expect(r.db.prepare("SELECT version FROM schema_version").all()).toEqual([{ version: 2 }]);
+  });
+
+  it("a wake that finds the data in an older shape repairs it: the trip table gains its prior column", () => {
+    const db = new DatabaseSync(":memory:");
+    const sql = sqlOver(db);
+    sql.exec(
+      "CREATE TABLE trip (switch TEXT PRIMARY KEY, value TEXT NOT NULL, tripped_at INTEGER NOT NULL, reason TEXT NOT NULL, reading TEXT NOT NULL, alerted INTEGER NOT NULL DEFAULT 0)",
+    );
+    sql.exec("INSERT INTO trip VALUES ('demo', 'off', 1, 'r', '{}', 0)");
+    sql.exec("CREATE TABLE schema_version (id INTEGER PRIMARY KEY CHECK (id = 1), version INTEGER NOT NULL)");
+    sql.exec("INSERT INTO schema_version VALUES (1, 1)");
+    const ledger = new Ledger(sql, () => T0, transactionOver(db));
+    expect(ledger.trips()).toMatchObject([{ switch: "demo", value: "off", prior: "" }]);
+    expect(db.prepare("SELECT version FROM schema_version").all()).toEqual([{ version: 2 }]);
+  });
+
+  it("a half-applied wake leaves nothing behind and the next wake finishes the job", () => {
+    const db = new DatabaseSync(":memory:");
+    const real = sqlOver(db);
+    let breakOnce = true;
+    const flaky: SqlLike = {
+      exec(query, ...bindings) {
+        if (breakOnce && query.includes("CREATE TABLE IF NOT EXISTS blob")) {
+          breakOnce = false;
+          throw new Error("storage hiccup");
+        }
+        return real.exec(query, ...bindings);
+      },
+    };
+    expect(() => new Ledger(flaky, () => T0, transactionOver(db))).toThrow("storage hiccup");
+    expect(db.prepare("SELECT name FROM sqlite_master WHERE name = 'counter'").all()).toEqual([]);
+    const ledger = new Ledger(flaky, () => T0, transactionOver(db));
+    expect(ledger.trips()).toEqual([]);
+    expect(db.prepare("SELECT version FROM schema_version").all()).toEqual([{ version: 2 }]);
+  });
+
+  it("COST-14 a refund for a future or stale take, or more than was taken, does not go below zero or touch other days", () => {
+    const { ledger, caps } = rig();
+    ledger.record("email", 10, undefined, T0 - DAY);
+    ledger.take("email", 5, undefined, caps, T0);
+    expect(ledger.refund("email", 3, undefined, T0 + 1000, T0, caps)).toBe(false);
+    expect(ledger.refund("email", 3, undefined, T0 - DAY, T0, caps)).toBe(false);
+    expect(ledger.snapshot(T0, caps).counters.email.day).toBe(5);
+    expect(ledger.history(T0, 3).series.email[1]).toBe(10);
+    expect(ledger.refund("email", 99, undefined, T0, T0, caps)).toBe(true);
+    expect(ledger.snapshot(T0, caps).counters.email.day).toBe(0);
   });
 });

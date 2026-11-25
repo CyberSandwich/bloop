@@ -9,8 +9,9 @@ import {
   resetBreaker,
   runBreaker,
 } from "../../src/worker/spend/breaker.ts";
-import { COSTLY_FLIPS, resolveTrips } from "../../src/worker/spend/caps.ts";
+import { COSTLY_FLIPS, PRICED, PRICED_METERS, resolveTrips } from "../../src/worker/spend/caps.ts";
 import { buildReport, REPORT_DAYS, type SpendReport } from "../../src/worker/spend/report.ts";
+import { effectiveSwitch, isStricter, SWITCHES } from "../../src/worker/spend/switches.ts";
 import { DAY, fakeGuard, memoryStore, T0 } from "./spend-helpers.ts";
 
 const MONDAY = Date.UTC(2026, 10, 30, 9);
@@ -78,11 +79,11 @@ describe("COST-14 COST-16 daily trip lines: the $10 month split", () => {
       s.g.ledger.record(meter, n, undefined, T0);
       return flipsOf(s.find());
     };
-    expect(at("container_seconds", 3724)).toEqual(["convert=account_only"]);
+    expect(at("container_seconds", 3724)).toEqual(["convert=off"]);
     expect(at("r2_class_a", 11_111)).toEqual(["uploads=readonly"]);
     expect(at("r2_class_b", 46_296)).toEqual(["previews=off"]);
     expect(at("d1_writes", 33_333)).toEqual(["demo=off"]);
-    expect(at("workflow_steps", 2083)).toEqual(["convert=account_only"]);
+    expect(at("workflow_steps", 2083)).toEqual(["convert=off"]);
     expect(at("container_seconds", 3723)).toEqual([]);
   });
 
@@ -276,23 +277,42 @@ describe("runBreaker: flip, latch, alert once", () => {
     expect(s.g.ledger.trips()).toHaveLength(1);
   });
 
-  it("escalation: a stricter value on the same switch is a new trip and a new alert", async () => {
+  it("COST-02 a trip changes what is in force: from the default rows, every convert trip writes convert=off", async () => {
+    const cases: [string, (s: ReturnType<typeof setup>) => void][] = [
+      ["containers line", (s) => s.g.ledger.record("container_seconds", 3724, undefined, T0)],
+      ["workflow steps line", (s) => s.g.ledger.record("workflow_steps", 2083, undefined, T0)],
+      [
+        "failed conversions",
+        (s) => {
+          s.g.ledger.record("conversion_failed", 8, undefined, T0);
+          s.g.ledger.record("conversion_done", 4, undefined, T0);
+        },
+      ],
+    ];
+    for (const [, trip] of cases) {
+      const s = setup();
+      expect(effectiveSwitch("convert", undefined, s.store.rows.get("convert"))).toBe("account_only");
+      trip(s);
+      await s.run();
+      expect(s.store.rows.get("convert")).toBe("off");
+      expect(effectiveSwitch("convert", undefined, s.store.rows.get("convert"))).toBe("off");
+    }
+  });
+
+  it("every flip the breaker can make is stricter than its switch's default", () => {
+    const flips = [...PRICED_METERS.map((m) => PRICED[m].flip), ...COSTLY_FLIPS];
+    for (const f of flips) expect(isStricter(f.switch, f.value, SWITCHES[f.switch].default)).toBe(true);
+  });
+
+  it("a second rule on the same switch and value is not a new trip or a new alert", async () => {
     const s = setup();
     s.g.ledger.record("container_seconds", 3724, undefined, T0);
     await s.run();
-    // convert already defaults to account_only, so the first trip latches and alerts without a row write.
-    expect(s.store.rows.has("convert")).toBe(false);
-    expect(s.g.ledger.trips()).toMatchObject([{ switch: "convert", value: "account_only" }]);
     s.g.ledger.acquire("convert", "u", 60, s.g.rig.caps, T0);
     s.g.clock.now = T0 + 400_000;
     await s.run();
     expect(s.store.rows.get("convert")).toBe("off");
-    expect(
-      s
-        .alerts()
-        .filter((a) => a.kind === "trip")
-        .map((a) => a.value),
-    ).toEqual(["account_only", "off"]);
+    expect(s.alerts().filter((a) => a.kind === "trip")).toHaveLength(1);
   });
 
   it("a trip never loosens a row the owner or the var already made stricter", async () => {
@@ -469,7 +489,7 @@ describe("runBreaker: sources", () => {
   it("three runs in a row with a failed dataset send one analytics_down alert, then no more until a clean run", async () => {
     const s = setup({}, async () => ({ daily: {}, failed: [{ dataset: "d1", error: "bad field" }] }));
     const report = await s.run();
-    expect(report.sources).toBe("counters plus analytics (failed: d1)");
+    expect(report.sources).toBe("counters plus analytics (failed: d1; last good figures held)");
     await s.run();
     expect(s.alerts().filter((a) => a.kind === "analytics_down")).toHaveLength(0);
     await s.run();

@@ -37,7 +37,7 @@ A switch is a D1 `setting` row (key, value). The value in force is the more rest
 
 - **Flip now:** the `/admin` switch panel writes the row and logs `admin_action`. Effective within 30 seconds (the per-isolate cache).
 - **Flip with D1 or `/admin` unreachable:** `wrangler deploy --var SWITCH_UPLOADS:off` from the owner's machine, then commit the same value to `wrangler.jsonc`. A var is a floor: a row can make it stricter, never looser. Remove the var to lift it.
-- **Reset after a breaker trip:** `/admin` calls `resetBreaker` for one switch or `resetAllBreakers` for all. Each clears the latch in the SpendGuard, sets the row back to its default and logs it. Setting a row by hand does not release the latch: the next run puts the flip back.
+- **Reset after a breaker trip:** `/admin` calls `resetBreaker` for one switch or `resetAllBreakers` for all. Each puts the row back to its value from before the first trip (the default when there was no row), then clears the latch in the SpendGuard, and logs it. It restores only a row the breaker wrote: a row someone set since stands, and a reset never loosens past it. Both calls take no auth of their own, so A's route must check an admin session first. Setting a row by hand does not release the latch: the next run puts the flip back when the value in force is looser than the trip.
 - **Reset after the month's stop:** raise `BREAKER_BUDGET_MONTH_USD` by deploy first (or wait for the 1st), then reset. While the month is still over budget the next run trips again.
 - **Stop the automatic flips:** set `breaker` to alert_only. Alerts continue; the breaker names what it would have flipped.
 
@@ -105,7 +105,7 @@ Every call goes through `spendFor(env)` (`src/worker/spend/guard.ts`), which fai
 | `busy` | 503 | `service_busy` | `Retry-After`, at most 60 |
 | `unavailable` | 503 | `service_busy` | `Retry-After` 30 |
 
-Calls, by stream. A caller checks its switch first and calls the guard second.
+Calls, by stream. A caller checks its switch first and calls the guard second. A `refund` is for work that never started: it takes the time of the take, does nothing when that time is in the future or older than the longest lease plus its grace, and never takes a counter below zero (a refund larger than the caller's own take can still erase other callers' counts on that day, so refund exactly what was taken).
 
 | stream | calls |
 |---|---|
@@ -120,10 +120,10 @@ Calls, by stream. A caller checks its switch first and calls the guard second.
 
 `runSpendBreaker(env)` runs on the `*/5 * * * *` cron. It reads the guard's exact counters and, when `CF_ANALYTICS_TOKEN` and `CF_ACCOUNT_ID` are set, daily totals from the GraphQL Analytics API (Account Analytics Read only). With no token it uses counters alone and every alert says "counters only". Each run builds the spend report (section 8) and stores it. It then:
 
-1. latches each trip in the guard, writes the switch row as actor `breaker` with an `admin_action` line, and sends one alert per trip, listing every switch the trip flipped (a failed write or alert is retried next run);
-2. sends a warning at most once per rule per UTC day;
-3. never loosens a switch; a stricter trip on the same switch is a new trip and a new alert;
-4. sends one alert when analytics fails 3 runs in a row;
+1. latches each trip in the guard (with the row's value from before, so a reset can restore it), writes the switch row as actor `breaker` with an `admin_action` line, and sends one alert per trip, listing every switch the trip flipped (a failed write or alert is retried next run; overlapping runs claim the alert in the guard, so one is sent);
+2. sends a warning at most once per rule per UTC day; every send is in a try, and a failed one releases its claim so the next run retries, and never stops the trips;
+3. never loosens a switch: it writes only when the value in force (the stricter of the Worker var and the row, an unknown row value counting as the strictest) is looser than the trip, and every trip is stricter than its switch's default; a stricter trip on the same switch is a new trip and a new alert;
+4. sends one alert, at most once a UTC day, while analytics has failed 3 or more runs in a row; a dataset that fails keeps its last good figures (the report takes the larger of those and the counters) and the report's sources say so;
 5. on Mondays, sends the digest (section 7), once per ISO week.
 
 An alert holds numbers only: no file names, addresses or user data. Until email is wired the alert is a log line `{"evt":"breaker",...}`.
@@ -140,7 +140,7 @@ An alert holds numbers only: no file names, addresses or user data. Until email 
 | guest drops in a day | two lines below | `demo_drop=off`, then `guest_files=stopped` |
 | live conversion leases | more than `BREAKER_LEASES_LIVE_MAX` | `convert=off` |
 | a lease past its deadline, or dropped | any | `convert=off` |
-| failed conversions | more than `BREAKER_CONVERT_FAILED_PCT` percent of at least `BREAKER_CONVERT_FAILED_MIN` | `convert=account_only` |
+| failed conversions | more than `BREAKER_CONVERT_FAILED_PCT` percent of at least `BREAKER_CONVERT_FAILED_MIN` | `convert=off` |
 | Workers and Durable Object usage (analytics) | lines below | warning only |
 
 | var | default | line |
@@ -169,11 +169,11 @@ The guest-drop lines are shares of the budget. One drop that is not converted co
 
 | meter | what | price | share (var) | $ a month | $ a day | floor a day | default ceiling a day | other vars | on trip |
 |---|---|---|---|---|---|---|---|---|---|
-| `container_seconds` | Containers, standard-2 at full CPU, an upper bound | $35.80 per million seconds | 40 (`BREAKER_SHARE_CONTAINERS`) | $4.00 | $0.133 | 3,724 s (1.03 h) | 18,620 | `BREAKER_FLOOR_CONTAINERS`, `BREAKER_CEILING_CONTAINERS` | `convert=account_only` |
+| `container_seconds` | Containers, standard-2 at full CPU, an upper bound | $35.80 per million seconds | 40 (`BREAKER_SHARE_CONTAINERS`) | $4.00 | $0.133 | 3,724 s (1.03 h) | 18,620 | `BREAKER_FLOOR_CONTAINERS`, `BREAKER_CEILING_CONTAINERS` | `convert=off` |
 | `r2_class_a` | R2 class A | $4.50 per million | 15 (`BREAKER_SHARE_R2_CLASS_A`) | $1.50 | $0.050 | 11,111 | 55,555 | `BREAKER_FLOOR_R2_CLASS_A`, `BREAKER_CEILING_R2_CLASS_A` | `uploads=readonly` |
 | `r2_class_b` | R2 class B | $0.36 per million | 5 (`BREAKER_SHARE_R2_CLASS_B`) | $0.50 | $0.017 | 46,296 | 231,480 | `BREAKER_FLOOR_R2_CLASS_B`, `BREAKER_CEILING_R2_CLASS_B` | `previews=off` |
 | `d1_writes` | D1 rows written | $1.00 per million | 10 (`BREAKER_SHARE_D1`) | $1.00 | $0.033 | 33,333 | 166,665 | `BREAKER_FLOOR_D1`, `BREAKER_CEILING_D1` | `demo=off` |
-| `workflow_steps` | Workflow steps | $8.00 per million | 5 (`BREAKER_SHARE_WORKFLOWS`) | $0.50 | $0.017 | 2,083 | 10,415 | `BREAKER_FLOOR_WORKFLOWS`, `BREAKER_CEILING_WORKFLOWS` | `convert=account_only` |
+| `workflow_steps` | Workflow steps | $8.00 per million | 5 (`BREAKER_SHARE_WORKFLOWS`) | $0.50 | $0.017 | 2,083 | 10,415 | `BREAKER_FLOOR_WORKFLOWS`, `BREAKER_CEILING_WORKFLOWS` | `convert=off` |
 | `email` | Email sends | $350.00 per million | 10 (`BREAKER_SHARE_EMAIL`) | $1.00 | $0.033 | 95 | 180 | `BREAKER_FLOOR_EMAIL`, `BREAKER_CEILING_EMAIL` | `email=admin_only` |
 
 The other 15 percent: R2 storage 5 (`BREAKER_SHARE_R2_STORAGE`, $0.50, $0.015 per GB-month, so a warning at 33 GB) and logs 10 (`BREAKER_SHARE_LOGS`, $1.00, not measured yet). Storage and logs warn and never trip; storage counts in the month-to-date cost once analytics reads it.
@@ -185,6 +185,7 @@ The other 15 percent: R2 storage 5 (`BREAKER_SHARE_R2_STORAGE`, $0.50, $0.015 pe
 | `BREAKER_HISTORY_DAYS` | 14 | completed days the p95 is taken over |
 | `BREAKER_HISTORY_MIN_DAYS` | 7 | completed days needed before the p95 counts |
 | `BREAKER_CEILING_MULTIPLE` | 5 | default ceiling as a multiple of the floor |
+| `BREAKER_LINE_GROWTH_MULTIPLE` | 2 | a line rises at most this multiple of the day before's line |
 | `BREAKER_CEILING_WATCH_PCT` | 70 | percent of its ceiling a meter's wanted line may reach before the digest flags it |
 | `BREAKER_SHARE_R2_STORAGE` | 5 | percent of the budget for R2 storage (warn only) |
 | `BREAKER_SHARE_LOGS` | 10 | percent of the budget set aside for logs (no meter yet) |
@@ -195,7 +196,8 @@ The other 15 percent: R2 storage 5 (`BREAKER_SHARE_R2_STORAGE`, $0.50, $0.015 pe
 - With fewer than `BREAKER_HISTORY_MIN_DAYS` completed days of history (a new guard, or too little data), the line is the floor.
 - The ceiling is the meter's `BREAKER_CEILING_<METER>` var, default `BREAKER_CEILING_MULTIPLE` times the floor, and never below the floor. Email's default is held to `CAP_EMAIL_DAY` (180 here, under 5 times 95), so its adaptive line and its hard cap cannot disagree; raise both together, and the cap only after Cloudflare raises its 200 a day email quota. The line never exceeds the ceiling. Only the owner raises it.
 - The history is the guard's own daily totals, and, with analytics, the larger of the two for each day (presigned R2 PUTs never pass a meter). The guard keeps 40 days.
-- One abuse day can lift the p95 to that day's level, so it can lift the line at most to the ceiling. That is why the ceiling is the owner's to raise.
+- A line rises at most `BREAKER_LINE_GROWTH_MULTIPLE` (2) times the line of the day before, never under the floor: each day's line is worked out from the days before it, oldest first, so one abuse day lifts it one step a day, and the ceiling still caps it. That is why the ceiling is the owner's to raise.
+- `BREAKER_BUDGET_MONTH_USD`, `BREAKER_GUEST_DROP_COST_USD`, `BREAKER_LINE_GROWTH_MULTIPLE`, every share, and every floor and ceiling var must be above 0: a value that is not is logged once and the default is used. A line that still computes to zero or not a number (a budget so small a floor rounds to 0) trips its switch at once; it is never skipped.
 
 Worked example, email: floor 95. After 14 days at 40 sends, p95 is 40, so the line is 120: a warning at 60 and a trip at 120. At 50 sends a day the want is 150, 83 percent of the 180 ceiling, so the digest suggests a higher ceiling.
 
@@ -302,7 +304,7 @@ A test id `COST-nn` is the cost plan's scenario `Wnn` (section 2 of the v4 cost 
 | COST-07 | W7 leaked presigned URL | R2 class A and B monthly caps and daily trip lines | yes |
 | COST-08 | W8 WebSocket ping storm | Durable Object analytics warning, platform limit | no |
 | COST-09 | W9 non-hibernating objects | Durable Object GB-second warning, platform limit | no |
-| COST-10 | W10 D1 write amplification | D1 rows-written meter and trip line | no |
+| COST-10 | W10 D1 write amplification | D1 rows-written meter and trip line | yes |
 | COST-11 | W11 upload floods | per-user count and byte caps, guest drops per IP | yes |
 | COST-12 | W12 zip and slide bombs | bounded by the same pools (the concurrency tests) | yes |
 | COST-13 | W13 export of a large library | 3 a day per user, pool 4 and 1 per user | yes |
