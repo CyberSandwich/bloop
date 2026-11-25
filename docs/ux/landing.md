@@ -8,6 +8,11 @@ Preview serves the landing as it is on main today, byte for byte: the nav (Featu
 
 - The guard: a page test holds the preview variant equal to today's built landing (a golden copy taken when the variant build lands), so a change meant for open mode can never leak into preview (MODE-01). A deliberate preview change updates the golden copy in the same commit.
 - Signed-in admins and testers in preview still see the preview landing (the mode is per site, not per user); they reach `/library` by typing it or from the email link. Why: preview must look exactly like what a visitor sees, so the owner checks the real thing.
+- **The open variant stays unreachable in preview:**
+  - `/open/*` (the build's subtree in `dist/`) is never a public path, in either mode: a request for it answers the 404 page. The Worker reads the variant from its assets internally; no URL names it.
+  - In preview the Worker does no hint-cookie rewrite (the preview nav has no Sign In pill to rewrite), and `sitemap.xml`, `robots.txt` and `llms.txt` list no open-only page.
+  - An e2e per mode guards all three: in preview, `/open/` and `/open/index.html` are 404, the landing equals the golden copy, and no open page is in the sitemap; in open, `/open/` is still 404 and the landing is the open variant.
+- **View the Open Site** (admin only): a link on `/admin`'s Launch tab (account-admin.md section 2.5) serves the open variant of the landing to that admin while the site is in preview, so the owner can check it before switching. The Worker checks the admin cookie on every such request (not the hint cookie, and not a cached answer), and the response is `private, no-store`, so a shared cache never hands it to a visitor. Anyone else asking for it gets the preview page.
 
 ## 2. Open mode
 

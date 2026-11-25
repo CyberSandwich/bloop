@@ -31,9 +31,10 @@ One face for every upload: the library's Add Files (one file or many), a library
 | uploading | Lecture 5.pptx | 34 of 88 MB; after 5 s of samples: 34 of 88 MB · 1 min left (minutes rounded up; under a minute: · Under a minute left) | bytes | Cancel |
 | waiting (offline mid upload) | Lecture 5.pptx | Waiting for a Connection | held where it was, no sheen | Cancel |
 | checking (complete, then validation) | Checking Your File | Lecture 5.pptx | full, sheen | none (too late to cancel) |
-| done, library | Saved | Lecture 5.pptx | full, then leaves | none |
+| done, library | Saved | Lecture 5.pptx | full, then leaves | Add to Up Next (text button, in Close's place) |
 | done, guest | Sent | Lecture 5.pptx | full, then leaves | none |
 
+- **Add to Up Next** on the library's Saved pill ticks the file (the same PATCH as the row's tick) and the pill reads "Added to Up Next" for 2 s, then leaves. Holding an action, the Saved pill stays 8 s (the toast-with-action rule, README.md additions), paused while hovered or focused. Absent when Up Next is full, and on a batch's "3 Files Saved" (one action cannot name three files; the rows' ticks are right there). A row gains its tick only at Saved (library.md section 2), so this is the earliest a file can join a talk.
 - **Units.** Under 1 MB: "340 of 900 KB". Both numbers in the same unit as the total, one decimal under 10 ("3.4 of 8.8 MB"), whole above. Tabular, so the line never jitters.
 - **Time left** is shown only after 5 s of samples and only while over 20 s remain; it is a moving average over the last 10 s, rounded up to the minute, so it never counts up and down by seconds.
 - **Waiting** resumes by itself on `online`, from the last confirmed part (the same fingerprint resumes, plan A.4). Waiting over 2 minutes adds the line "Keep this page open. It finishes when you're back online."
@@ -100,4 +101,4 @@ The guest's sending state (design.md section 7, Phone page) keeps the file's row
 
 ## 8. Strings (this file)
 
-Preparing Your Photo; Removing Location; Starting; 34 of 88 MB; 34 of 88 MB · 1 min left; · Under a minute left; 340 of 900 KB; Waiting for a Connection; Keep this page open. It finishes when you're back online.; Checking Your File; Saved; Sent; Uploading 3 Files; 3 Files Saved; Can't Be Added; Uploading {name} (progress name); Cancel Upload of {name}; {name} Is Paused / Choose the file again to finish. / Choose File; Upload Canceled / {name} wasn't added.; Upload Didn't Load / Reload the page, then try again. / Reload; the refusal toasts in section 4.
+Preparing Your Photo; Removing Location; Starting; 34 of 88 MB; 34 of 88 MB · 1 min left; · Under a minute left; 340 of 900 KB; Waiting for a Connection; Keep this page open. It finishes when you're back online.; Checking Your File; Saved; Add to Up Next; Added to Up Next; Sent; Uploading 3 Files; 3 Files Saved; Can't Be Added; Uploading {name} (progress name); Cancel Upload of {name}; {name} Is Paused / Choose the file again to finish. / Choose File; Upload Canceled / {name} wasn't added.; Upload Didn't Load / Reload the page, then try again. / Reload; the refusal toasts in section 4.

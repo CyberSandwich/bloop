@@ -37,7 +37,7 @@ Rejected, one line each:
 - **Push from the library to a recent screen, no scan:** the screen holds no account, so a code is the only way to name it, and a list of screens reopens reverse QRLjacking.
 - **Match pick, then a separate Approve screen:** one more tap and one more screen with nothing new on it, since the files are already shown above the numbers.
 - **Typing the 2 match digits:** slower than picking 1 of 3, and error-prone one-handed.
-- **Up Next cleared after each talk:** a weekly lecturer would re-pack every week; the names shown above the numbers catch a stale pack instead.
+- **Up Next cleared after each talk:** a weekly lecturer would re-pack every week; the "Last Presented" line and its one-tap swap catch a stale pack instead.
 
 Changes for builders: L stores Up Next (`selected_at`, already in migration 0005); P2 builds the combined tap in `/a` (no protocol change: two calls in order, and a refused approve after a confirmed match falls back to the list, never a dead end); P1 keeps `approve` refused until `confirmed`, which the client order satisfies. Detail and every state: present-live.md.
 
@@ -72,7 +72,11 @@ Changes for builders: L stores Up Next (`selected_at`, already in migration 0005
 - **Focus** moves to the new title on every state change (as `/a`); errors are `role="alert"`, status lines `role="status"`.
 - **One loader.** Anything on its way uses the loader (design.md section 6); a skeleton (`--g1` bars) only for text whose length is unknown.
 - **Signed-in hint.** `__Host-bloop_in` is a non-secret cookie A sets at sign-in and clears at sign-out; it only chooses a label (Sign In or Library). Every page that needs to know for sure asks `GET /api/me`.
-- **Mode.** In preview, every surface in these files except the landing's preview variant exists only for `ADMIN_EMAILS` and `TEST_EMAILS` (MODE-01); a visitor who types `/library` gets the 404 page, never a sign-in prompt, so preview never advertises accounts.
+- **Mode.** In preview, the account surfaces exist only for `ADMIN_EMAILS` and `TEST_EMAILS` (MODE-01), and nothing advertises them:
+  - `/signin` is served but linked from nowhere and `noindex`; every address gets the same "if" answer, and codes go only to allowed emails (signin.md section 9).
+  - Signed out, `/library`, `/account` and `/admin` answer the 404 page, never a sign-in prompt. Only in open do they redirect to `/signin?next=`.
+  - `/open/*` (the open variant's build path) is never a public path in either mode: it answers 404 (landing.md section 1).
+  - `/report` is public in both modes (account-admin.md section 3); a Report link shows in preview only where reporting works (viewers.md section 7).
 
 ## Lazy-load map (first load carries only the first paint and the first likely tap)
 
@@ -91,7 +95,7 @@ Each lazy module keeps a working fallback when its import fails (design.md secti
 ## Open questions decided here (each with the reason)
 
 1. **Match tap approves Up Next.** Decided above; it needs no protocol change.
-2. **Up Next survives a talk.** A weekly lecture reuses it; the names over the numbers catch a stale pack.
+2. **Up Next survives a talk.** A weekly lecture reuses it. A pack whose files were all presented, with nothing ticked since, says "Last Presented 18 Nov" in ink above its rows and offers each file added since as one tap, "Use Lecture 6.pptx Instead", with the numbers left where they are (present-live.md 3.2); a true repeat needs no extra tap.
 3. **The library's upload ends on "Saved", the guest's on "Sent".** A guest's file goes to a screen; a library file goes nowhere yet, and "Sent" there read as if it had reached a room. Both share every other pill string.
 4. **The upload pill replaces the guest row's loader on `/a`.** One loader on screen at a time (design.md section 6); the row stays as the file's face.
 5. **Early access on `/a` is a page state, not a bottom sheet.** It is the whole answer to a signed-out scan, it keeps Back, and its actions sit in the one action panel; a sheet over nothing would be a page in disguise.
@@ -110,7 +114,7 @@ Each lazy module keeps a working fallback when its import fails (design.md secti
 **Parts (design.md section 6):**
 - **Upload pill** (upload.md): a user of the loader shaped as a pill (`--r-pill`, 56 tall: 8 + a 40 tile + 8, so the tile is concentric), glass, floating `--inset` above the bottom action panel or the window's foot, max 360, a title (15/600) and one line (13 `--muted` tabular). One per page; several files fold into it.
 - **Match pick** (present-live.md): a `fieldset` of three radio-like buttons, each a secondary pill `--match-h` tall sharing the row, the digits 28/600 tabular Inter (not mono: mono is the room screen's number only), legend visible.
-- **Toast with an action** (library.md): the toast (design.md section 8) gains one optional text button at its end ("Undo"), 44 hit area; such a toast stays 8 s instead of 5, since the action needs reading time, and pauses while hovered or focused.
+- **Toast with an action** (library.md): the toast (design.md section 8) gains one optional text button at its end ("Undo"), 44 hit area; such a toast stays 8 s instead of 5, since the action needs reading time, and pauses while hovered or focused. The upload pill's Saved state with Add to Up Next follows the same rule (upload.md section 2).
 - **Screen toast** (viewers.md): the same toast part on `/s`, bottom center at `--inset`, over the stage, never over the control pill (it rises above the pill when they would meet), hidden while presenting.
 - **Choice sheet** (viewers.md): the `.leave` question card's layout (design.md section 7, Screen page) with three actions instead of two; the screen's only new dialog.
 - **Status chip on a row** (library.md): the Connect panel's status chip (design.md section 6) at 13 px inside an item row's line 2, for "Preparing Slides" (`--amber` pair) and "Can't Show Slides" (`--rose` pair). A state on a row, so the pastel pairs that already mean "not yet" and "stop".
