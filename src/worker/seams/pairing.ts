@@ -79,8 +79,8 @@ export interface PairingStore {
   /** From waiting, there is no session: the object closes (codes removed, storage deleted, demo slot released). */
   endFromScreen(sid: string): Promise<Result<ScreenView>>;
   endFromPhone(pid: string): Promise<Result<PhoneView>>;
-  /** Polling fallback. A screen poll also rotates the code when it is due. */
-  screenView(sid: string): Promise<Result<ScreenView>>;
+  /** Polling fallback. A screen poll also rotates the code when it is due, and binds links to its address `ip`. */
+  screenView(sid: string, ip: string): Promise<Result<ScreenView>>;
   phoneView(pid: string): Promise<Result<PhoneView>>;
   /**
    * A phone is about to upload a file (the guest drop). Checks the room's policy and the size, moves the session to

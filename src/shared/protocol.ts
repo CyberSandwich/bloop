@@ -206,7 +206,6 @@ export type OpenError =
 export type DropError =
   | "drop_disabled"
   | "pass_required"
-  | "pass_invalid"
   | "length_required"
   | "too_large"
   | "bad_type"

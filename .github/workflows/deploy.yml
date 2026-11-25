@@ -18,7 +18,8 @@ jobs:
     environment: production
     steps:
       # A secret cannot be tested in an `if`, so this step reads it and reports whether it exists. The token
-      # is set on the wrangler steps alone: no install script or test can read it.
+      # is set on the wrangler steps alone, so it is not in the environment during install or tests (code that
+      # `npm ci` installed still runs at deploy: SITE-05).
       - name: Check for Cloudflare secrets
         id: gate
         env:

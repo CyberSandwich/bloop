@@ -2,8 +2,9 @@
 // values for static pages; test/unit/headers.test.ts enforces it.
 
 // `landing` is also the static default (`/*` in _headers): Cloudflare does not detach `/*`'s CSP on the root path,
-// so the root receives the default too. No page under it connects anywhere; dropping `connect-src` means changing
-// `/*` in _headers and this policy together (test/unit/headers.test.ts).
+// so the root receives the default too. No page under it fetches anything or has a manifest, so it carries neither
+// `connect-src` nor `manifest-src`; a page that needs one changes `/*` in _headers and this policy together
+// (test/unit/headers.test.ts).
 export type Policy = "landing" | "app" | "screen" | "api" | "file-pptx" | "file-pdf" | "file-image";
 
 const PERMISSION_FEATURES = [
@@ -52,7 +53,6 @@ const PAGE_TAIL =
 const SELF = "script-src 'self'; style-src 'self'; img-src 'self'; font-src 'self'";
 
 export const CSP: Readonly<Record<Policy, string>> = {
-  // The landing and legal pages fetch nothing and have no manifest, so default-src 'none' covers both.
   landing: `default-src 'none'; ${SELF}; ${PAGE_TAIL}`,
   app: `default-src 'none'; ${SELF}; connect-src 'self'; ${PAGE_TAIL}`,
   // The screen page plays a guest video from its own origin; no blob: and no other host.

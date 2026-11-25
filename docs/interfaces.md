@@ -116,7 +116,7 @@ export type OpenError =
   | "link_unknown" | "link_expired" | "link_exhausted" | "link_revoked"
   | "link_binding_failed" | "upstream_failed" | "launch_timeout" | "pdf_unavailable" | "mint_limit";
 export type DropError =
-  | "drop_disabled" | "pass_required" | "pass_invalid" | "length_required" | "too_large"
+  | "drop_disabled" | "pass_required" | "length_required" | "too_large"
   | "bad_type" | "bad_structure" | "macro_content" | "storage_full" | "upload_aborted"
   | "already_uploaded";
 export type HttpError =

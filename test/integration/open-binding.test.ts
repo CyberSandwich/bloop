@@ -4,7 +4,7 @@ import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { validVideo } from "../zip-builder.ts";
 import { openGuestView } from "./drop-client.ts";
 import { approveDemo, fetchLink, problemOf } from "./open-client.ts";
-import { Api, Socket, startPairing } from "./pairing-client.ts";
+import { Api, claim, Socket, startPairing } from "./pairing-client.ts";
 import type { Wrangler } from "./wrangler.ts";
 
 let wrangler: Wrangler;
@@ -36,6 +36,25 @@ describe("OPEN-02 binding", () => {
     expect((await fetchLink(url)).status).toBe(200);
     bare.close();
     socket.close();
+  });
+
+  it("OPEN-02 binding: a screen that only polls still binds its links to its address", async () => {
+    const created = await api.post<{ sid: string }>("/api/screens", { mode: "demo" });
+    const { sid } = created.body;
+    const state = await api.get<{ code: { code: string } }>("/api/screen/state", sid);
+    const claimed = await claim(api, state.body.code.code);
+    await api.get("/api/files", claimed.body.pid);
+    expect((await api.post("/api/approve", { ids: ["demo-deck"] }, { auth: claimed.body.pid })).status).toBe(200);
+    const minted = await api.post<{ links: Record<string, string | null> }>(
+      "/api/screen/link",
+      { purpose: "protocol" },
+      { auth: sid },
+    );
+    expect(minted.status).toBe(200);
+    const url = (minted.body.links.protocol ?? minted.body.links.pdf ?? "").replace("ms-powerpoint:ofv|u|", "");
+    const other = await fetchLink(url, { headers: { "CF-Connecting-IP": "203.0.113.9" } });
+    expect(other.status).toBe(403);
+    expect((await fetchLink(url)).status).toBe(200);
   });
 
   it("VID-02 a refused view link writes one audit row, however often its player retries", async () => {

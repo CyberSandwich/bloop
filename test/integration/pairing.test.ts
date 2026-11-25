@@ -357,6 +357,26 @@ describe("PAIR-10 ws-origin and the socket protocol", () => {
     expect((await socket.waitClosed()).code).toBe(1008);
   });
 
+  it("PAIR-10 pending cap: a fifth socket waiting for its hello is refused, and a hello still works after they close", async () => {
+    const created = await api.post<{ sid: string }>("/api/screens", { mode: "demo" });
+    const { sid } = created.body;
+    const ref = sid.split(".")[0];
+    const path = `/api/screen/ws?ref=${ref}`;
+    const bare = await Promise.all([1, 2, 3, 4].map(() => Socket.open(api.base, path)));
+    await expect(Socket.open(api.base, path)).rejects.toThrow();
+    for (const s of bare) s.close();
+    // Repeated bare opens and closes leave the screen as it was: a hello afterwards still binds and gets its state.
+    await new Promise((done) => setTimeout(done, 300));
+    for (let i = 0; i < 6; i++) {
+      (await Socket.open(api.base, path)).close();
+      await new Promise((done) => setTimeout(done, 100));
+    }
+    const real = await Socket.open(api.base, path);
+    real.send({ t: "hello", sid });
+    expect((await real.stateWhere((v) => v.code !== null)).t).toBe("state");
+    real.close();
+  });
+
   it("closes 1008 on an unknown type, a frame before hello, bad JSON and an oversized frame", async () => {
     const created = await api.post<{ sid: string }>("/api/screens", { mode: "demo" });
     const ref = created.body.sid.split(".")[0];

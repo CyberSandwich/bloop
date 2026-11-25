@@ -74,14 +74,15 @@ export const pairingRoutes: readonly Route[] = [
     ["GET"],
     "/api/screen/state",
     "api",
-    withConfig((request, env) =>
-      withScreen(
+    withConfig(async (request, env, config) => {
+      const ip = await ipHash(request, config);
+      return withScreen(
         request,
         env,
-        (stub, sid) => stub.screenView(sid),
+        (stub, sid) => stub.screenView(sid, ip),
         (view) => json(view),
-      ),
-    ),
+      );
+    }),
   ),
 
   route(
