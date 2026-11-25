@@ -55,7 +55,7 @@ bloop puts your slides on a shared screen. You scan the code on the screen, choo
 ### Vocabulary
 | Use | Avoid |
 |---|---|
-| your slides, your file, the screen (as a place: "on the screen"), the room, the room PC, scan, choose, Approve, End, one file, ends by itself `[V-2]`, early access, demo | "this screen" or "screens" as a thing ("This Screen Is Offline", "Too Many Screens", "Unregistered screen"), "sign in to the PC as usual", the phrases in `tools/never-say.txt`, the house banned words (`references/ai-tells.md`), ephemeral, pilot, university-approved, single sign-on, AI, platform, room features, remote, polls, secure (as a bare adjective), buy now, subscribe, any price |
+| your slides, your file, the screen (as a place: "on the screen"), the room, the room PC, scan, choose, Approve, End, one file, ends by itself `[V-2]`, early access (never "beta"), demo | "this screen" or "screens" as a thing ("This Screen Is Offline", "Too Many Screens", "Unregistered screen"), "sign in to the PC as usual", the phrases in `tools/never-say.txt`, the house banned words (`references/ai-tells.md`), ephemeral, pilot, university-approved, single sign-on, AI, platform, room features, remote, polls, secure (as a bare adjective), buy now, subscribe, any price |
 
 `tools/never-say.txt` holds bloop's never-say phrases, one per line (a `#` line is a comment saying why); among them "no personal data", since an IP address is personal data and a page must name what is and is not kept instead; the unit tests grep every page and string file against it and fails on a hit.
 
@@ -351,6 +351,20 @@ Checked at 1440, 834 and the narrowest window. Model for the viewer: the iCloud 
 | error | Unable to Open Your File | Try again on your phone. | none (new QR after 5 s) |
 
 Each heading change is announced in a `role="status"` region; error uses `role="alert"`. A live screen keeps its PowerPoint launch ladder; the viewer is the demo's.
+
+**Check This Room (`/s?check`; strings in `CHECK`, `core/copy-screen.js`).** The link is a text button on the waiting screen's footer line, live mode only (never the Demo Room, never Use the Room's Screen). Numbers are arguments filled at runtime, so no string restates a limit. No row says whether PowerPoint is installed. The brand is set bold where it renders.
+| Slot | String |
+|---|---|
+| footer link, title | Check This Room |
+| while running | Checking… |
+| verdict | This room is ready. / This room works, with the limits below. / bloop can't run in this room. Ask your IT team to allow bloop.here, then check again. |
+| API | bloop answers on this network. / This network blocks bloop. |
+| live updates | Live updates work here. / Live updates are blocked here, so bloop checks every {s} s instead. |
+| file origin | Files load from their own address. / Files come from bloop.here instead. |
+| download speed | Downloads run at about {n} MB a second. |
+| wake and full screen | This browser can keep the screen awake. / This browser may let the screen sleep. |
+| clock | This PC's clock is right. / This PC's clock is {n} minutes off. |
+| button | Check Again |
 
 **Viewer deviations from the iCloud Drive model (each with its reason)**
 | bloop | iCloud Drive | Why |
