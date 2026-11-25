@@ -181,8 +181,9 @@ CREATE TABLE IF NOT EXISTS hold (
 CREATE INDEX IF NOT EXISTS idx_hold_file ON hold(file_id);
 CREATE INDEX IF NOT EXISTS idx_hold_release ON hold(release_after);
 
--- Runtime settings changed only from /admin (ADR 0026). Keys: launch_mode (preview | open) and gate.ico, gate.osa,
--- gate.legal ('1' when ticked). No row is seeded: a missing launch_mode reads as preview.
+-- Runtime settings changed only from /admin (ADR 0026). Keys: launch_mode (preview | open), preview_lockout ('1' while
+-- set), and gate.ico, gate.osa, gate.legal ('1' when ticked). No row is seeded: a missing launch_mode reads as preview,
+-- a missing preview_lockout as not set.
 CREATE TABLE IF NOT EXISTS setting (
   key TEXT PRIMARY KEY, value TEXT NOT NULL, updated_at INTEGER NOT NULL, updated_by TEXT);
 
