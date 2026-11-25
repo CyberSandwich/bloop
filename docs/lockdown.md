@@ -12,7 +12,7 @@ If the Cloudflare deploy token is the incident, roll it in the dashboard first (
 
 ## Rungs
 
-Each rung is one tap in the workflow or one command on a Mac. Every set first freezes deploys: it disables the deploy workflow and cancels the deploy runs in progress or queued, because a push to main re-applies `wrangler.jsonc` and would drop a dashboard variable and re-enable workers.dev. A rung that changes a switch writes a `setting` row labeled `lockdown:L<n>`, which a later deploy keeps, and one `admin_action` line with the actor `lockdown` that records the value the row held before. All rows go in one `wrangler d1 execute` call (wrangler sends the whole command as one query and prints one result per statement). When D1 itself fails, the run prints the matching Worker variable floors to set by hand and commit.
+Each rung is one tap in the workflow or one command on a Mac. Every set first freezes deploys: it disables the deploy workflow and cancels the deploy runs in progress or queued, because a push to main re-applies `wrangler.jsonc` and would drop a dashboard variable and re-enable workers.dev. A rung that changes a switch writes a `setting` row labeled `lockdown:L<n>`, which a later deploy keeps, and one `admin_action` line with the actor `lockdown` that records the value the row held before. All rows go in one `wrangler d1 execute` call: a single transaction, so one bad statement (migration 0005 not applied, say) fails every row, and the run then prints the matching Worker variable floors to set by hand and commit. Wrangler prints one result per statement. Raising a rung over an equal value only relabels the row to the higher level (no new log line), so undoing the lower rung later leaves it alone.
 
 ### L1
 
@@ -52,13 +52,13 @@ node tools/lockdown.mjs --level L2 --apply
 node tools/lockdown.mjs --level L1 --meter uploads --apply
 ```
 
-Run it from a checkout of main. Without `GITHUB_TOKEN` and `GITHUB_REPOSITORY` the freeze is printed as a step to do by hand (Actions, deploy, the ... menu, Disable workflow) and the exit code is 3. Exit codes: 0 done, 1 a step failed, 2 bad input or missing credentials, 3 done but deploys are not frozen. No credential is ever printed.
+Run it from a checkout of main. Without `GITHUB_TOKEN` and `GITHUB_REPOSITORY` the freeze is printed as a step to do by hand (Actions, deploy, the ... menu, Disable workflow) and the exit code is 3. Exit codes: 0 done, 1 a step failed, 2 bad input or missing credentials, 3 done but deploys are not frozen (a set; headline "DEPLOYS NOT FROZEN") or could not be enabled (an undo; headline "DEPLOYS STILL FROZEN"). No credential is ever printed.
 
 ## Undo
 
 `--undo` (the undo input) reverses a rung, and a second run changes nothing.
 
-- Rows: an undo at level n touches only rows labeled `lockdown:L1` to `lockdown:L<n>`, and puts back the value each held before any lockdown touched it (the default when none was recorded). A row the owner or the breaker set since has another label and stands. So undoing L2 after L3 leaves the rows L3 wrote; undo L3 to roll them back. A latched breaker also needs its reset in the admin panel.
+- Rows: an undo at level n touches only rows labeled `lockdown:L1` to `lockdown:L<n>`, and puts back the value each held before any lockdown touched it (the default when none was recorded). A row the owner or the breaker set since has another label and stands. So undoing L2 after L3 changes nothing, because L3 relabeled every row it holds; undo L3 to roll them back. A latched breaker also needs its reset in the admin panel.
 - Remove any `SWITCH_` variable you set by hand (dashboard and `wrangler.jsonc`): a row never loosens a floor, and the undo prints the names.
 - Deploys are enabled again. An L1 to L3 undo first reads the block rule and workers.dev, and skips the unfreeze, saying why, while L4 or L5 is still in force or when it cannot read them, because an unfrozen deploy turns workers.dev back on. Undo L4 first.
 - L4: the block rule is disabled (kept), workers.dev is turned on, and previews go back to what `wrangler.jsonc` says.
@@ -67,7 +67,7 @@ Run it from a checkout of main. Without `GITHUB_TOKEN` and `GITHUB_REPOSITORY` t
 
 ## Tokens
 
-The lockdown token is a separate Cloudflare API token, kept in the password manager and in the production environment as `LOCKDOWN_CF_TOKEN`, so the deploy token does not have to grow. L1 and L2 may fall back to the deploy token (D1 Edit and Workers Scripts Write are already held there); L3 to L5 refuse to run without the lockdown token. The dry run calls the token verify endpoint and one read per permission, and prints "L4 WILL FAIL: token lacks X" for a refusal; a read cannot prove a write permission, so a rung can still fail on its write.
+The lockdown token is a separate Cloudflare API token, kept in the password manager and in the production environment as `LOCKDOWN_CF_TOKEN`, so the deploy token does not have to grow. L1 and L2 may fall back to the deploy token (D1 Edit and Workers Scripts Write are already held there); L3 to L5 refuse to run without the lockdown token. The dry run calls the token verify endpoint, one read per permission, and a read-only `SELECT 1` through wrangler (so it proves the install without scripts works too), and prints "L4 WILL FAIL: token lacks X" for a refusal; a read cannot prove a write permission, so a rung can still fail on its write.
 
 Permissions of the lockdown token, with the endpoint each covers (API token groups checked against Cloudflare's API schema):
 
@@ -78,7 +78,7 @@ Permissions of the lockdown token, with the endpoint each covers (API token grou
 | D1 Edit | Account, D1, Edit (API group D1 Write) | what `wrangler d1 execute --remote` calls: GET the database list and POST the database query |
 | Workers Scripts Write | Account, Workers Scripts, Edit | GET and POST `/workers/scripts/{name}/subdomain`; GET and PUT `/workers/scripts/{name}/schedules`; the Workflows instance list, batch terminate and status endpoints |
 
-Scope the token to the account and the one zone. The schema's group list for the zone ruleset endpoints names several ruleset groups and not Zone WAF Write; the custom rules guide names Zone WAF Write, so this is the one permission to confirm on the first live L4 dry run (unverified).
+Scope the token to the account and the one zone, with no IP filter and a 1-year expiry; how to create it is in the owner setup doc, under the GitHub step. Workers Scripts Edit can upload scripts, so this token is as sensitive as the deploy token. Zone WAF Edit for the custom rules is as Cloudflare's guide states (developers.cloudflare.com/waf/custom-rules/custom-rulesets/).
 
 | rung | beyond the deploy token |
 |---|---|

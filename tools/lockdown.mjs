@@ -29,6 +29,7 @@ const GH = "https://api.github.com";
 const SQL_TOKEN = /^[A-Za-z0-9_ =:.-]*$/;
 const BATCH = 100;
 const RETRIES_429 = 3;
+const LOOKS = 5;
 const LIVE_STATES = ["queued", "running", "paused", "waitingForPause", "waiting"];
 const RUN_STATES = ["in_progress", "queued", "waiting", "requested"];
 // A row this tool wrote at some level; the undo's own label ('lockdown:undo') deliberately does not match.
@@ -224,9 +225,15 @@ export function writeSql(table, write, { level, undo, now }) {
   }
   const owner = lit(`${table.actor}:L${rungNumber}`);
   const prior = `CASE WHEN EXISTS (SELECT 1 FROM setting WHERE key = ${key} AND ${OWNED}) THEN COALESCE(${lastPrior}, ${fallback}) ELSE COALESCE((SELECT value FROM setting WHERE key = ${key}), ${fallback}) END`;
+  const lower = Array.from({ length: Number(rungNumber) - 1 }, (_, i) => lit(`${table.actor}:L${i + 1}`));
+  // Escalating over an equal value only relabels the row, so an undo of the lower level no longer reaches it.
+  const relabel = lower.length
+    ? `UPDATE setting SET updated_by = ${owner} WHERE key = ${key} AND value = ${value} AND updated_by IN (${lower.join(", ")});`
+    : undefined;
   return [
     `${insertLog} 'lockdown.set', 'setting', ${key}, ${lit(`${table.actor} L${rungNumber} set ${write.switch}=${write.value} prior=`)} || ${prior} WHERE NOT EXISTS (SELECT 1 FROM setting WHERE key = ${key} AND ${rank("value")} >= ${rank(value)});`,
     `INSERT INTO setting (key, value, updated_at, updated_by) VALUES (${key}, ${value}, ${now}, ${owner}) ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = excluded.updated_at, updated_by = excluded.updated_by WHERE ${rank("setting.value")} < ${rank("excluded.value")};`,
+    ...(relabel ? [relabel] : []),
   ];
 }
 
@@ -602,10 +609,10 @@ const OPS = {
     }
     if (ids.length === 0) return "unchanged: no live instances";
     let left = ids;
-    for (let attempt = 0; attempt < 3; attempt += 1) {
+    for (let attempt = 0; attempt < LOOKS; attempt += 1) {
       left = (await liveInstances(cf, base)) ?? [];
       if (left.length === 0) break;
-      await ctx.sleep(2000);
+      if (attempt < LOOKS - 1) await ctx.sleep(1000 * 2 ** attempt);
     }
     if (left.length > 0 || failures > 0) {
       throw new ApiError(
@@ -680,7 +687,7 @@ async function edgeInForce(cf, table, account) {
  * @param {Table} table
  * @param {Plan} plan
  * @param {Deps} deps
- * @returns {Promise<{lines: string[], failed: boolean, warned: boolean}>}
+ * @returns {Promise<{lines: string[], failed: boolean, warned: boolean, stillFrozen: boolean}>}
  */
 export async function execute(table, plan, deps) {
   const env = deps.env;
@@ -705,6 +712,7 @@ export async function execute(table, plan, deps) {
   const lines = [`${plan.level} ${plan.undo ? "UNDO" : "lockdown"}: ${plan.summary}`];
   let failed = false;
   let warned = false;
+  let stillFrozen = false;
   /** @param {string} label @param {() => Promise<string> | string} run @returns {Promise<boolean>} */
   const step = async (label, run) => {
     try {
@@ -725,6 +733,7 @@ export async function execute(table, plan, deps) {
     if (!repo || !ghToken) {
       lines.push(`${label}: not done here (no GITHUB_TOKEN or GITHUB_REPOSITORY): ${hand}`);
       warned = !plan.undo;
+      stillFrozen = plan.undo;
       return;
     }
     const { gh, base } = githubClient(deps, repo, ghToken);
@@ -741,6 +750,7 @@ export async function execute(table, plan, deps) {
         lines.push(
           `${label}: skipped, could not read the L4 state (${e instanceof Error ? e.message : String(e)}); ${hand}`,
         );
+        stillFrozen = true;
         return;
       }
     }
@@ -765,11 +775,15 @@ export async function execute(table, plan, deps) {
       }
       return did.length ? `changed: ${did.join(", ")}` : `unchanged: already ${plan.freeze.action}d`;
     });
-    if (!ok && !plan.undo) warned = true;
+    if (!ok) {
+      warned = !plan.undo;
+      stillFrozen = plan.undo;
+    }
   };
 
   const rows = async () => {
-    const statements = plan.writes.flatMap((w) => writeSql(table, w, { level: plan.level, undo: plan.undo, now }));
+    const perWrite = plan.writes.map((w) => writeSql(table, w, { level: plan.level, undo: plan.undo, now }));
+    const statements = perWrite.flat();
     if (statements.length === 0) return;
     /** @type {number[] | null} */
     let counts = null;
@@ -789,8 +803,18 @@ export async function execute(table, plan, deps) {
       return;
     }
     plan.writes.forEach((w, i) => {
-      const changed = /** @type {number[] | null} */ (counts)?.[2 * i + 1];
-      const verdict = changed === undefined ? "ran (change count unavailable)" : changed > 0 ? "changed" : "unchanged";
+      const offset = perWrite.slice(0, i).reduce((n, s) => n + s.length, 0);
+      const seen = /** @type {number[] | null} */ (counts);
+      const changed = seen?.[offset + 1];
+      const relabeled = seen?.[offset + 2] ?? 0;
+      const verdict =
+        changed === undefined
+          ? "ran (change count unavailable)"
+          : changed > 0
+            ? "changed"
+            : relabeled > 0
+              ? "relabeled"
+              : "unchanged";
       lines.push(`D1 ${w.switch} ${plan.undo ? "restored to its prior value" : `-> ${w.value}`}: ${verdict}`);
     });
   };
@@ -822,7 +846,12 @@ export async function execute(table, plan, deps) {
       "DEPLOYS NOT FROZEN: a push to main redeploys and can undo this lockdown. Disable the deploy workflow by hand now (Actions, deploy, the ... menu, Disable workflow).",
     );
   }
-  return { lines: lines.map((l) => redact(env, l)), failed, warned };
+  if (stillFrozen) {
+    lines.unshift(
+      "DEPLOYS STILL FROZEN: this undo could not enable the deploy workflow. Enable it by hand (Actions, deploy, the ... menu, Enable workflow) once L4 is off.",
+    );
+  }
+  return { lines: lines.map((l) => redact(env, l)), failed, warned, stillFrozen };
 }
 
 /**
@@ -858,7 +887,8 @@ export async function tokenReport(table, plan, deps) {
     try {
       return await cf("GET", path, undefined, accept);
     } catch (e) {
-      if ([401, 403].includes(statusOf(e))) lacks.push(`${permission} (${e instanceof Error ? e.message : "refused"})`);
+      if ([401, 403].includes(statusOf(e)))
+        lacks.push(`token lacks ${permission} (${e instanceof Error ? e.message : "refused"})`);
       return undefined;
     }
   };
@@ -885,9 +915,21 @@ export async function tokenReport(table, plan, deps) {
       );
     }
   }
+  if (plan.writes.length) {
+    // Proves the toolchain the writes depend on (npx, wrangler with no install scripts, D1 reachable) without writing.
+    const res = deps.run("npx", wranglerArgs(table, ["SELECT 1;"]), {
+      CLOUDFLARE_API_TOKEN: token,
+      CLOUDFLARE_ACCOUNT_ID: account,
+    });
+    if (res.status === 0) out.push("wrangler: d1 execute reached the database (read-only SELECT 1)");
+    else {
+      const why = (res.stderr || res.stdout || "").trim().split("\n").find(Boolean) ?? "no output";
+      lacks.push(`wrangler d1 execute failed (${why.slice(0, 200)})`);
+    }
+  }
   out.push(
     lacks.length
-      ? `${plan.level} WILL FAIL: token lacks ${[...new Set(lacks)].join("; ")}`
+      ? `${plan.level} WILL FAIL: ${[...new Set(lacks)].join("; ")}`
       : `${plan.level}: the reads this rung starts with are allowed (a write permission is proven only by running it)`,
   );
   return out;
@@ -934,8 +976,8 @@ export async function main(argv, deps) {
       const report = await tokenReport(table, plan, deps);
       return { code: 0, out: `${renderPlan(table, plan, false)}\n\n${redact(deps.env, report.join("\n"))}` };
     }
-    const { lines, failed, warned } = await execute(table, plan, deps);
-    return { code: failed ? 1 : warned ? 3 : 0, out: lines.join("\n") };
+    const { lines, failed, warned, stillFrozen } = await execute(table, plan, deps);
+    return { code: failed ? 1 : warned || stillFrozen ? 3 : 0, out: lines.join("\n") };
   } catch (e) {
     return { code: 2, out: `lockdown: ${redact(deps.env, e instanceof Error ? e.message : String(e))}\n${USAGE}` };
   }

@@ -110,6 +110,9 @@ describe("docs", () => {
 
   it("documents the exit codes, the undo's reach and removing hand-set floors", () => {
     expect(docs).toMatch(/3 done but deploys are not frozen/);
+    expect(docs).toContain("DEPLOYS STILL FROZEN");
+    expect(docs).toMatch(/single transaction/);
+    expect(docs).not.toContain("(unverified)");
     expect(docs).toMatch(/Remove any `SWITCH_` variable you set by hand/);
     expect(docs).toMatch(/lockdown:L1.*lockdown:L<n>/);
   });
