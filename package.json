@@ -28,7 +28,8 @@
       "path": [
         "public/js/**/*.js",
         "!public/js/core/photo.js",
-        "!public/js/core/video.js"
+        "!public/js/core/video.js",
+        "!public/js/viewer-video.js"
       ],
       "limit": "56.3 kB"
     },
@@ -39,6 +40,11 @@
         "public/js/core/video.js"
       ],
       "limit": "3.35 kB"
+    },
+    {
+      "name": "screen video, lazy",
+      "path": "public/js/viewer-video.js",
+      "limit": "0.75 kB"
     },
     {
       "name": "landing JS",

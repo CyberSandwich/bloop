@@ -531,26 +531,26 @@ main:has(> .side:not([hidden])) #stage {
 .frame picture {
   display: contents;
 }
-/* The photo's loader holds its fitted box (3 : 2, by container units), so the picture replaces it with no jump. */
-.frame:has(> .stand-in) {
+/* A photo or video and its loader: one box, as large as fits at --ratio (viewer.js), so nothing jumps. */
+.frame:has(> :is(.stand-in, canvas, video)) {
   container-type: size;
 }
-.frame > .stand-in {
+.frame > :is(.stand-in, canvas, video) {
+  width: min(100cqw, 100cqh * var(--ratio, 1.5));
+  aspect-ratio: var(--ratio, 1.5);
+}
+.frame > .stand-in,
+.frame :is(picture img, canvas, video) {
   grid-area: 1 / 1;
-  width: min(100cqw, 100cqh * 3 / 2);
-  aspect-ratio: 3 / 2;
   border-radius: var(--r-list);
   box-shadow: var(--sh-frame);
 }
-.frame :is(picture img, canvas) {
-  grid-area: 1 / 1;
+.frame :is(picture img, canvas, video) {
   max-width: 100%;
   max-height: 100%;
   width: auto;
   height: auto;
-  border-radius: var(--r-list);
   background: var(--surface);
-  box-shadow: var(--sh-frame);
 }
 /* Presenting (viewer.js present): the item on pure black (the body too, for the strip a phone tints) in the safe area. */
 .is-presenting :is(.bar, .side, .handle, #controls, .foot) {
@@ -571,7 +571,7 @@ main:has(> .side:not([hidden])) #stage {
   padding: 0;
 }
 /* Contained in the whole window, so a small picture grows to two opposite edges; a scrolling document keeps its column. */
-.is-presenting .view .frame:not(.is-scroll) :is(picture img, canvas) {
+.is-presenting .view .frame:not(.is-scroll) :is(picture img, canvas, video) {
   width: 100%;
   height: 100%;
   max-width: none;

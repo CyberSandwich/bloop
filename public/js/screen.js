@@ -1,4 +1,4 @@
-// The room screen (/s): the QR and typed code, the session through its Screen object, the fallbacks; the demo's viewer.
+// The room screen (/s): the QR and typed code, the session through its Screen object, the fallbacks; the viewer.
 /** @import {ScreenView} from "../../src/shared/protocol.ts" */
 import { createApi } from "./core/api.js";
 import { openChannel } from "./core/channel.js";
@@ -93,13 +93,17 @@ const s = {
   timers: {},
 };
 
-const viewer = DEMO ? createViewer({ relink: (item) => launcher.relink(item), onChange: () => render() }) : null;
+const viewer = createViewer({ relink: (item) => launcher.relink(item), onChange: () => render() });
 
 const launcher = createLauncher({
   api,
   sid: () => s.sid,
   assign: (url) => (DEMO ? fetchOpen(url) : location.assign(url)),
-  openWindow: (url, item, mode) => (viewer ? viewer.take(url, item, mode) : window.open(url, "bloop-pdf")),
+  // A guest's view link is a photo or a video (states.js onStage).
+  openWindow: (url, item, mode) =>
+    DEMO || (mode === "view" && s.view?.kind === "guest")
+      ? viewer.take(url, item, mode)
+      : window.open(url, "bloop-pdf"),
   startDownload(url) {
     const a = el("a", { href: url, download: "" });
     document.body.append(a);
@@ -225,9 +229,9 @@ function paint() {
   const key = keyNow();
   const v = s.view;
   const parks = key !== "demo_open" && !!v && IN_SESSION.includes(v.state);
-  if (key === "demo_open") viewer?.render(v);
-  else if (!parks) viewer?.render(null);
-  const item = viewer?.item() ?? firstFile(v?.items ?? []);
+  if (key === "demo_open") viewer.render(v);
+  else if (!parks) viewer.render(null);
+  const item = viewer.item() ?? firstFile(v?.items ?? []);
   const copy = screenCopy(key, {
     room: v?.room.name ?? "",
     match: v?.match ?? null,
@@ -243,7 +247,7 @@ function paint() {
     inSession: !!v?.endsAt && v.state !== "ended",
   });
 
-  if (parks) viewer?.park(copy.heading);
+  if (parks) viewer.park(copy.heading);
   const changed = heading.textContent !== copy.heading;
   setText(heading, copy.heading);
   setText(line, copy.line);
@@ -291,8 +295,8 @@ function paint() {
   setText(buttons.download, viewing || key === "open_fallback" ? "Download" : "Download It Instead");
   show(buttons.pdf, mintable && has("pdf"));
   // A photo on its way holds Present's place, disabled, so the pill keeps one shape.
-  const presentable = !!viewer?.presentable();
-  show(buttons.present, viewing && (presentable || !!viewer?.arriving()));
+  const presentable = viewer.presentable();
+  show(buttons.present, viewing && (presentable || viewer.arriving()));
   buttons.present.toggleAttribute("disabled", !presentable);
   // With the sidebar showing, the h1 is visually hidden: focus lands on the selected row instead.
   const row = document.querySelector("#items [aria-current]");
@@ -420,7 +424,7 @@ byId("b-leave").addEventListener("click", () => {
 });
 // Back ends a waiting screen, so its code and demo slot go at once.
 buttons.back.addEventListener("click", () => leave(s.view?.state === "waiting"));
-buttons.present.addEventListener("click", () => viewer?.present(true));
+buttons.present.addEventListener("click", () => viewer.present(true));
 // A tap anywhere but a link, or Enter, cuts Session Ended to the server's floor (design.md section 7, Ended).
 function skipEnded() {
   if (keyNow() !== "ended" || Date.now() - endedSince < ENDED_SKIP_GRACE_MS) return;
@@ -457,7 +461,7 @@ buttons.open.addEventListener("click", () => {
   if (s.view?.state !== "offered") return launcher.click();
   if (!s.channel?.send({ t: "open.click" })) flagError();
 });
-const target = () => (viewer?.item() ? viewer.at() : undefined);
+const target = () => (viewer.item() ? viewer.at() : undefined);
 
 const fallback = (/** @type {() => Promise<import("./types.js").Minted>} */ run) => async () => {
   if ((await run()) === "failed") flagError();

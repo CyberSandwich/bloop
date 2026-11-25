@@ -279,4 +279,4 @@ export type ScreenStateKey =
   | "error"
   | "phone_width"
   | "rate_limited"
-  | "demo_open"; // a demo screen shows the approved file in the page (DEMO-01)
+  | "demo_open"; // the page shows the approved file itself: a demo screen (DEMO-01), and a guest's photo or video anywhere

@@ -18,6 +18,7 @@ USED = {
     'presentation': 'presentation',
     'file-text': 'file-text',
     'image': 'image',
+    'film': 'film',
     'link': 'link',
     'check': 'check',
     'plus': 'plus',

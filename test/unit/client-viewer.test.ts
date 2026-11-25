@@ -22,6 +22,7 @@ class Node {
     removeProperty: (k: string) => {
       delete this.style[k];
     },
+    getPropertyValue: (k: string) => String(this.style[k] ?? ""),
   };
   attrs = new Map<string, string>();
   listeners = new Map<string, Listener[]>();
@@ -36,15 +37,36 @@ class Node {
   offsetTop = 0;
   offsetWidth = 0;
   offsetHeight = 0;
-  // A canvas, as in a browser, has no natural size.
+  // A canvas or a video, as in a browser, has no natural size.
   get naturalWidth() {
-    return this.tag === "canvas" ? undefined : 0;
+    return this.tag === "canvas" || this.tag === "video" ? undefined : 0;
   }
   get naturalHeight() {
-    return this.tag === "canvas" ? undefined : 0;
+    return this.tag === "canvas" || this.tag === "video" ? undefined : 0;
   }
   width = 0;
   height = 0;
+  /** Only a video has a frame size; anything else reads undefined, as in a browser. */
+  frame = { w: 0, h: 0 };
+  get videoWidth() {
+    return this.tag === "video" ? this.frame.w : undefined;
+  }
+  get videoHeight() {
+    return this.tag === "video" ? this.frame.h : undefined;
+  }
+  /** A video's pauses and loads, as the viewer asked for them. */
+  pauses = 0;
+  loads = 0;
+  pause() {
+    this.pauses += 1;
+  }
+  load() {
+    this.loads += 1;
+  }
+  /** Runs this node's listeners for an event, as a media element would fire it. */
+  emit(type: string) {
+    for (const f of this.listeners.get(type) ?? []) f({ type });
+  }
   parent: Node | null = null;
   /** What a canvas last drew: the URL its fake bitmap came from. */
   drawn = "";
@@ -98,7 +120,8 @@ class Node {
   }
   append(...kids: (Node | string)[]) {
     for (const k of kids)
-      if (typeof k !== "string") {
+      if (typeof k === "string") this.textContent += k;
+      else {
         k.parent = this;
         this.children.push(k);
       }
@@ -389,6 +412,145 @@ describe("the photo's loader (design.md section 6, Loader)", () => {
     } finally {
       vi.stubGlobal("createImageBitmap", async (blob: Blob) => ({ src: await blob.text(), ...bitmap, close() {} }));
     }
+  });
+});
+
+describe("a guest's photo and video on the stage (design.md section 7, Video)", () => {
+  const clip: Item = { kind: "file", id: "i1", name: "Talk.mov", type: "mov", size: 5_000_000 };
+  const shot: Item = { kind: "file", id: "i1", name: "Board.png", type: "png", size: 90_000 };
+  const guestView = (item: Item) => ({ ...view, kind: "guest", items: [item] }) as ScreenView;
+  /** Lets the video module's import and its fake events settle. */
+  const loaded = async () => {
+    for (let i = 0; i < 5; i += 1) await settle();
+  };
+  /** The video the module made, wherever it is (still off stage while it loads). */
+  const videoOf = (frame: Node, made: Node[]) => frame.querySelector("video") ?? made.at(-1) ?? null;
+  let made: Node[] = [];
+  beforeEach(() => {
+    made = [];
+    vi.stubGlobal("document", {
+      ...doc,
+      createElement: (tag: string) => {
+        const n = new Node(tag);
+        if (tag === "video") made.push(n);
+        return n;
+      },
+    });
+  });
+  afterEach(() => vi.stubGlobal("document", doc));
+
+  it("a guest's photo is drawn through the photo's own path, on a canvas", async () => {
+    const { v, el } = setup();
+    v.take(`${ORIGIN}/f/abc/board.png`, 0, "view");
+    await settle();
+    v.render(guestView(shot));
+    expect(shownFrom(el("frame"))).toBe(`${ORIGIN}/f/abc/board.png`);
+    expect(el("frame").querySelector("canvas")?.attrs.get("aria-label")).toBe("Board.png");
+  });
+
+  it("a guest's deck shows its card and never asks for a link", () => {
+    const relink = vi.fn(() => new Promise<boolean>(() => {}));
+    byId.clear();
+    for (const id of ids) byId.set(id, new Node("div"));
+    const v = createViewer({ relink, onChange: () => {} });
+    v.render({ ...guestView(deck), state: "open" } as ScreenView);
+    expect(byId.get("view")?.classes.has("is-card")).toBe(true);
+    expect(relink).not.toHaveBeenCalled();
+  });
+
+  it("holds the loader, indeterminate, until the first playable frame; the frame's ratio shapes it; then it fades in", async () => {
+    const { v, el } = setup();
+    v.take(`${ORIGIN}/f/abc/talk.mov`, 0, "view");
+    v.render(guestView(clip));
+    const part = el("frame").children[0];
+    expect(part?.classes.has("stand-in")).toBe(true);
+    expect(part?.attrs.get("aria-label")).toBe("Loading Talk.mov");
+    expect(part?.style["--ratio"]).toBe(String(16 / 9));
+    await loaded();
+    const video = videoOf(el("frame"), made);
+    expect(video?.attrs.get("src")).toBe(`${ORIGIN}/f/abc/talk.mov`);
+    // Native controls without download, full screen or casting; no autoplay and no mute: Play is the presenter's.
+    expect(video?.attrs.get("controls")).toBe("");
+    expect(video?.attrs.get("controlslist")).toBe("nodownload nofullscreen noremoteplayback noplaybackrate");
+    expect(video?.attrs.has("disablepictureinpicture")).toBe(true);
+    expect(video?.attrs.has("autoplay")).toBe(false);
+    expect(video?.attrs.has("muted")).toBe(false);
+    expect(el("frame").querySelector("video")).toBeNull();
+    (video as Node).frame = { w: 1080, h: 1920 };
+    video?.emit("loadedmetadata");
+    v.render(guestView(clip));
+    expect(part?.style["--ratio"]).toBe(String(1080 / 1920));
+    expect(part?.attrs.has("aria-valuenow")).toBe(false);
+    expect(v.presentable()).toBe(false);
+    video?.emit("canplay");
+    v.render(guestView(clip));
+    expect(el("frame").children.map((c) => c.tag)).toEqual(["div", "video"]);
+    expect(video?.attrs.get("aria-label")).toBe("Talk.mov");
+    await settle();
+    expect(el("frame").children.map((c) => c.tag)).toEqual(["video"]);
+    expect(v.presentable()).toBe(true);
+    // Presenting focuses the video, so Space plays and pauses it rather than pressing Stop Presenting.
+    v.present(true);
+    expect(doc.activeElement).toBe(video);
+  });
+
+  it("VID-03 a video the browser cannot play shows This Screen Can't Play This Video over its kind line, and ends presenting", async () => {
+    const { v, el } = setup();
+    v.take(`${ORIGIN}/f/abc/talk.mov`, 0, "view");
+    v.render(guestView(clip));
+    await loaded();
+    const video = videoOf(el("frame"), made);
+    video?.emit("canplay");
+    v.render(guestView(clip));
+    v.present(true);
+    // A decoder or network failure mid-play.
+    video?.emit("error");
+    v.render(guestView(clip));
+    const card = el("frame").querySelector(".item-card");
+    expect(card?.attrs.get("role")).toBe("alert");
+    expect(card?.children.slice(1).map((c) => c.textContent)).toEqual([
+      "This Screen Can't Play This Video",
+      "QuickTime video · 4.8 MB",
+    ]);
+    expect(el("frame").querySelector("video")).toBeNull();
+    expect(doc.body.classes.has("is-presenting")).toBe(false);
+  });
+
+  it("the session's end empties the video, and its late events change nothing", async () => {
+    const { v, el } = setup();
+    v.take(`${ORIGIN}/f/abc/talk.mov`, 0, "view");
+    v.render(guestView(clip));
+    await loaded();
+    const video = videoOf(el("frame"), made) as Node;
+    v.render(null);
+    expect(video.attrs.has("src")).toBe(false);
+    expect(video.loads).toBe(1);
+    video.emit("canplay");
+    v.render(guestView(clip));
+    expect(el("frame").querySelector("video")).toBeNull();
+  });
+
+  it("a video ended before its module arrives is never made", async () => {
+    const { v } = setup();
+    v.render(guestView(clip));
+    v.take(`${ORIGIN}/f/abc/talk.mov`, 0, "view");
+    v.render(null);
+    await loaded();
+    expect(made.length).toBe(0);
+  });
+
+  it("a parked stage pauses its video, which waits where it was", async () => {
+    const { v, el } = setup();
+    v.take(`${ORIGIN}/f/abc/talk.mov`, 0, "view");
+    v.render(guestView(clip));
+    await loaded();
+    const video = videoOf(el("frame"), made) as Node;
+    video.emit("canplay");
+    v.render(guestView(clip));
+    v.park("This Screen Is Offline");
+    expect(video.pauses).toBe(1);
+    v.render(guestView(clip));
+    expect(el("frame").querySelector("video")).toBe(video);
   });
 });
 

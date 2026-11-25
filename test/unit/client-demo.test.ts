@@ -2,6 +2,7 @@ import { existsSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 import {
   halves,
+  isVideoLink,
   openTarget,
   PHOTO_THUMB,
   pageMode,
@@ -11,6 +12,7 @@ import {
   stepPage,
   thumbOf,
 } from "../../public/js/core/demo.js";
+import { linkFileName } from "../../public/js/shared/names.js";
 import { orderItems } from "../../public/js/shared/session.js";
 import type { Item } from "../../src/shared/protocol.ts";
 
@@ -46,6 +48,19 @@ describe("DEMO-01 the demo screen's own open", () => {
     expect(openTarget("ms-powerpoint:ofv|u|https://evil.example/f/abc/x.pptx", ORIGIN)).toBeNull();
     expect(openTarget("https://evil.example/f/abc/x.pdf", ORIGIN)).toBeNull();
     expect(openTarget("not a url", ORIGIN)).toBeNull();
+  });
+
+  it("tells a video's view link by the name every link is minted with, and nothing else by its query or a look-alike", () => {
+    for (const [type, video] of [
+      ["mp4", true],
+      ["mov", true],
+      ["jpg", false],
+      ["png", false],
+      ["pdf", false],
+    ] as const)
+      expect(isVideoLink(`${ORIGIN}/f/abc/${linkFileName("Talk.mov", type)}`), type).toBe(video);
+    expect(isVideoLink(`${ORIGIN}/f/abc/board.png?x=.mp4`)).toBe(false);
+    expect(isVideoLink(`${ORIGIN}/f/abc/clip.mp4.png`)).toBe(false);
   });
 
   it("the tap zones are the slide box's two halves, never the paper beside it", () => {

@@ -19,6 +19,21 @@ describe("item row tile", () => {
     expect(new Set([slides, doc, picture, itemIcon(link)]).size).toBe(4);
     expect(itemIcon(file("a.png", "png"))).toBe(picture);
   });
+
+  it("uses a film strip for both video types, its own glyph, and reads the kind and size on the line", () => {
+    const video = (name: string, type: "mp4" | "mov"): Item => ({
+      kind: "file",
+      id: name,
+      name,
+      type,
+      size: 5_242_880,
+    });
+    const film = itemIcon(video("Talk.mov", "mov"));
+    expect(itemIcon(video("Talk.mp4", "mp4"))).toBe(film);
+    expect(film).not.toBe(itemIcon(file("Dog.jpg", "jpg")));
+    expect(itemLine(video("Talk.mov", "mov"))).toBe("QuickTime video · 5.0 MB");
+    expect(itemLine(video("Talk.mp4", "mp4"))).toBe("MP4 video · 5.0 MB");
+  });
 });
 
 describe("item row lines", () => {

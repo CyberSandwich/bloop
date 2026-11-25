@@ -230,18 +230,25 @@ describe("error table", () => {
 });
 
 describe("size budgets", () => {
-  it("the lazy phone media have their own entry, browser JS leaves them out, and only import() reaches them", () => {
+  it("each lazy module has its own entry, browser JS leaves it out, and only import() reaches it", () => {
     const entries: { name: string; path: string | string[] }[] = JSON.parse(read("package.json"))["size-limit"];
-    const media = entries.find((e) => e.name === "phone media, lazy")?.path;
-    expect(media).toEqual(["public/js/core/photo.js", "public/js/core/video.js"]);
+    const lazyEntries = entries.filter((e) => e.name.endsWith(", lazy"));
+    expect(Object.fromEntries(lazyEntries.map((e) => [e.name, e.path]))).toEqual({
+      "phone media, lazy": ["public/js/core/photo.js", "public/js/core/video.js"],
+      "screen video, lazy": "public/js/viewer-video.js",
+    });
+    const lazyPaths = lazyEntries.flatMap((e) => [e.path].flat());
     const browser = [entries.find((e) => e.name === "browser JS")?.path ?? []].flat();
-    expect(browser).toEqual(["public/js/**/*.js", ...[media ?? []].flat().map((path) => `!${path}`)]);
-    const lazy = /\b(photo|video)\.js\b/;
-    for (const file of walk("public/js", (path) => path.endsWith(".js"))) {
-      for (const line of read(file)
-        .split("\n")
-        .filter((l) => lazy.test(l) && /\b(import|from)\b/.test(l))) {
-        expect(line, file).toMatch(/import\("\.\/(photo|video)\.js"\)/);
+    expect(browser).toEqual(["public/js/**/*.js", ...lazyPaths.map((path) => `!${path}`)]);
+    for (const name of lazyPaths.map((path) => path.slice(path.lastIndexOf("/") + 1))) {
+      // A specifier ending in /<name>, not a longer name that ends the same (video.js, viewer-video.js).
+      const named = new RegExp(`["'][^"']*/${name.replace(".", "\\.")}["']`);
+      for (const file of walk("public/js", (path) => path.endsWith(".js"))) {
+        for (const line of read(file)
+          .split("\n")
+          .filter((l) => named.test(l) && /\b(import|from)\b/.test(l))) {
+          expect(line, file).toMatch(new RegExp(`import\\(["'][^"']*/${name.replace(".", "\\.")}["']\\)`));
+        }
       }
     }
   });

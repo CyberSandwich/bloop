@@ -1,15 +1,17 @@
 // The demo viewer (DEMO-01, design.md section 7): the page fetches the launched link itself.
-// A photo is kept for the session: a second mint spends the budget.
+// A photo or a video is kept for the session: a second mint spends the budget.
 /** @import {Item, OpenMode, ScreenView} from "../../src/shared/protocol.ts" */
 /** @import {Minted} from "./types.js" */
-import { halves, openTarget, pageMode, pagesOf, placeControls, stepPage, thumbOf } from "./core/demo.js";
+import { CANT_PLAY } from "./core/copy.js";
+import { halves, isVideoLink, openTarget, pageMode, pagesOf, placeControls, stepPage, thumbOf } from "./core/demo.js";
 import { hostOf, itemIcon, itemLine, itemName } from "./core/format.js";
 import { ICONS } from "./core/icons.js";
 import { loader, readAll, setProgress } from "./core/loader.js";
 import { rowFace, tile } from "./core/rows.js";
+import { onStage } from "./core/states.js";
 import { byId, el, icon, setText, show } from "./core/ui.js";
 
-/** @typedef {{canvas: HTMLCanvasElement, ready: boolean, failed: boolean, fraction: number | null, stop: () => void}} Shot */
+/** @typedef {{node?: HTMLCanvasElement | HTMLVideoElement, video?: boolean, ratio?: number | null, ready: boolean, failed: boolean, fraction: number | null, stop: () => void}} Shot */
 
 /**
  * A photo's view link, read by script to count its bytes, drawn on a canvas: the CSP has no blob: for an <img>.
@@ -20,16 +22,17 @@ import { byId, el, icon, setText, show } from "./core/ui.js";
  */
 function shoot(url, onProgress, onDone) {
   const abort = new AbortController();
+  const canvas = el("canvas", { role: "img" });
   /** @type {Shot} */
   const shot = {
-    canvas: /** @type {HTMLCanvasElement} */ (el("canvas", { role: "img" })),
+    node: canvas,
     ready: false,
     failed: false,
     fraction: null,
     // A zero-size canvas frees its pixels.
     stop: () => {
       abort.abort();
-      shot.canvas.width = 0;
+      canvas.width = 0;
     },
   };
   fetch(url, { signal: abort.signal, cache: "no-store", credentials: "omit", referrerPolicy: "no-referrer" })
@@ -43,9 +46,10 @@ function shoot(url, onProgress, onDone) {
     .then((blob) => createImageBitmap(blob, { imageOrientation: "from-image" }))
     .then((bitmap) => {
       if (abort.signal.aborted) return bitmap.close();
-      shot.canvas.width = bitmap.width;
-      shot.canvas.height = bitmap.height;
-      shot.canvas.getContext("2d")?.drawImage(bitmap, 0, 0);
+      canvas.width = bitmap.width;
+      canvas.height = bitmap.height;
+      canvas.getContext("2d")?.drawImage(bitmap, 0, 0);
+      shot.ratio = bitmap.width / bitmap.height;
       bitmap.close();
       shot.ready = true;
     })
@@ -55,6 +59,35 @@ function shoot(url, onProgress, onDone) {
     .then(() => abort.signal.aborted || onDone(shot));
   return shot;
 }
+
+/** A video's view link: lazy viewer-video.js fills in the shot. @param {string} url @param {(shot: Shot) => void} onChange */
+function film(url, onChange) {
+  let live = true;
+  /** @type {Shot} */
+  const shot = {
+    video: true,
+    // Most recordings are 16 : 9.
+    ratio: 16 / 9,
+    ready: false,
+    failed: false,
+    fraction: null,
+    stop: () => {
+      live = false;
+    },
+  };
+  import("./viewer-video.js").then(
+    (m) => live && m.roll(shot, url, onChange),
+    () => {
+      if (!live) return;
+      shot.failed = true;
+      onChange(shot);
+    },
+  );
+  return shot;
+}
+
+/** A drawn stage: a slide, a photo's canvas, a video. */
+const STAGED = "picture img, canvas, video";
 
 /** The --ease-out token, for the pill's glide and the photo's fade. */
 const easeOut = () => getComputedStyle(document.documentElement).getPropertyValue("--ease-out").trim();
@@ -116,19 +149,19 @@ export function createViewer(deps) {
     for (const a of running) a.cancel();
     const swap = swapped;
     swapped = false;
-    /** @type {any} a slide, a photo's canvas (no natural size), or the photo's loader */
-    const img = frame.querySelector("picture img, canvas") ?? frame.querySelector(".stand-in");
+    /** @type {any} a slide, a photo's canvas, a video, or their loader */
+    const img = frame.querySelector(STAGED) ?? frame.querySelector(".stand-in");
     const item = frame.classList.contains("is-scroll") ? null : (img ?? frame.firstElementChild);
     const css = getComputedStyle(view);
     const inset = parseFloat(css.getPropertyValue("--inset"));
     const pillH = parseFloat(css.getPropertyValue("--pill"));
     const stackW = parseFloat(css.getPropertyValue("--stack"));
-    // The stand-in is the photo's 3 : 2.
+    // A photo, a video or their loader: the --ratio paint() sets, 3 : 2 until known.
     const ratio = !img
       ? 0
-      : img.matches(".stand-in")
-        ? 1.5
-        : (img.naturalWidth ?? img.width) / (img.naturalHeight ?? img.height);
+      : img.naturalWidth
+        ? img.naturalWidth / img.naturalHeight
+        : parseFloat(img.style.getPropertyValue("--ratio")) || 1.5;
     const stage = { w: view.offsetWidth, h: view.offsetHeight };
     const w = Math.min(stage.w, stage.h * ratio);
     // The column's height is read with it on.
@@ -312,12 +345,12 @@ export function createViewer(deps) {
     );
   }
 
-  /** @param {Item} item */
-  function card(item) {
+  /** An unplayable video says so; the pill's Download is the way on. @param {Item} item */
+  function card(item, unplayable = false) {
     const host = item.kind === "link" ? hostOf(item.url) : "";
-    return el("div", { class: "item-card" }, [
+    return el("div", unplayable ? { class: "item-card", role: "alert" } : { class: "item-card" }, [
       tile(itemIcon(item)),
-      el("p", { class: "item-title" }, [host || itemName(item)]),
+      el("p", { class: "item-title" }, [unplayable ? CANT_PLAY : host || itemName(item)]),
       el("p", { class: "small" }, [item.kind === "link" ? item.title : itemLine(item)]),
       ...(item.kind === "link"
         ? [linkTo(item.url, { class: "btn primary" }, [`Open ${host}`, el("span", { class: "sr" }, [" in a New Tab"])])]
@@ -370,11 +403,11 @@ export function createViewer(deps) {
 
     const p = pages();
     const scroll = !!p && tall.has(keyOf(at));
-    // A demo account's file with no pages is the photo; a guest's own file has only a card.
-    const photo = item.kind === "file" && !p && v.kind === "owner";
+    // A guest's deck or PDF has no pages, only a card.
+    const photo = !p && onStage(item);
     const key = keyOf(at);
     const shot = photo ? image(at) : null;
-    const img = shot?.ready ? shot.canvas : null;
+    const img = shot?.ready ? shot.node : null;
     const loading = photo && !img && !shot?.failed && !refused.has(key);
     arriving = loading;
     const want = p ? `p${at}:${scroll ? "all" : page}` : img ? `i${at}` : loading ? `w${at}` : `c${at}`;
@@ -395,7 +428,7 @@ export function createViewer(deps) {
           waiting = { key, part };
         }
         nodes = [waiting.part];
-      } else nodes = [card(item)];
+      } else nodes = [card(item, !!shot?.failed && !!shot.video)];
       const commit = () => {
         if (building !== nodes) return;
         building = null;
@@ -414,8 +447,7 @@ export function createViewer(deps) {
         if (scroll && p) for (const one of frame.querySelectorAll("img")) seen.observe(one);
         sized.disconnect();
         // The picture over its fading loader: the loader leaves, the picture's box is the one fit() reads.
-        const target =
-          frame.querySelector("picture img, canvas") ?? frame.querySelector(".stand-in") ?? frame.firstElementChild;
+        const target = frame.querySelector(STAGED) ?? frame.querySelector(".stand-in") ?? frame.firstElementChild;
         // The pill (its buttons appear after the item) and the list (it grows with a guest's file) set the place too.
         for (const box of [target, view, pill, side, end]) if (box) sized.observe(box);
         swapped = true;
@@ -433,6 +465,8 @@ export function createViewer(deps) {
       else commit();
     }
     if (loading && waiting) setProgress(waiting.part, shot?.fraction ?? null);
+    // Loader and item share one box (app.css).
+    if (shot?.ratio) (img ?? waiting?.part)?.style.setProperty("--ratio", String(shot.ratio));
     show(view, true);
     show(frame, true);
     show(note, false);
@@ -467,7 +501,7 @@ export function createViewer(deps) {
     present(false);
   }
 
-  /** Pages and a loaded image; a link or a file card has nothing to present. */
+  /** Pages, a loaded photo or a playable video; a link or a file card has nothing to present. */
   const presentable = () => !!pages() || !!images.get(keyOf(at))?.ready;
   let arriving = false;
   let sleep = 0;
@@ -479,8 +513,8 @@ export function createViewer(deps) {
     if (on) opener = /** @type {HTMLElement | null} */ (document.activeElement);
     body.classList.toggle("is-presenting", on);
     show(stop, on);
-    // Focus follows the layout, never dropping to the body.
-    if (on) stop.focus?.({ preventScroll: true });
+    // Focus follows the layout, never dropping to the body; on a video, so Space plays and pauses, not Stop.
+    if (on) (frame.querySelector("video") ?? stop).focus?.({ preventScroll: true });
     else opener?.focus?.({ preventScroll: true });
     if (on) {
       band = Math.max(BAND, stop.offsetHeight + 32);
@@ -613,6 +647,8 @@ export function createViewer(deps) {
     /** A transient state hides the stage; presenting, it stays with a status line. @param {string} line */
     park(line) {
       parked = true;
+      // A hidden video would play on unseen.
+      frame.querySelector("video")?.pause();
       if (!presenting()) return hide();
       for (const part of [frame, prev, next]) show(part, false);
       setText(note, line);
@@ -626,14 +662,13 @@ export function createViewer(deps) {
       if (mode !== "view") return fetchOpen(target);
       // Before the first render there is no list: it waits by position.
       const was = shown ? images.get(keyOf(item)) : early.get(item);
-      // A photo already drawn stays on stage: a fresh link for it would only put its loader back.
+      // A photo or video already on stage stays: a fresh link for it would only put its loader back.
       if (was?.ready) return true;
       was?.stop();
-      const shot = shoot(
-        target,
-        (s) => waiting && images.get(waiting.key) === s && setProgress(waiting.part, s.fraction),
-        () => deps.onChange(),
-      );
+      const done = () => deps.onChange();
+      const shot = isVideoLink(target)
+        ? film(target, done)
+        : shoot(target, (s) => waiting && images.get(waiting.key) === s && setProgress(waiting.part, s.fraction), done);
       if (!shown) early.set(item, shot);
       else {
         images.set(keyOf(item), shot);

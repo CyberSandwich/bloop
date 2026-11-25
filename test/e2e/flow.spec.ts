@@ -4,12 +4,13 @@
 // platform rate limits that ten fresh screens a minute would trip. Selectors are roles and names first, ids where
 // the page names a slot (docs/design.md section 7).
 
+import { readFileSync } from "node:fs";
 import { crc32, deflateSync } from "node:zlib";
 import AxeBuilder from "@axe-core/playwright";
 import { type Browser, type BrowserContext, expect, type Locator, type Page, test } from "@playwright/test";
 
-/** The item on the stage: a page's picture, or the photo's canvas (never the loader's thumbnail). */
-const STAGED = "#frame :is(picture img, canvas)";
+/** The item on the stage: a page's picture, the photo's canvas or a video (never the loader's thumbnail). */
+const STAGED = "#frame :is(picture img, canvas, video)";
 
 /** A black PNG of the given size: the photo's stand-in for a test (the viewer decodes raster bytes, not SVG). */
 function png(width: number, height: number): Buffer {
@@ -878,6 +879,159 @@ test.describe("guest drop", () => {
     expect(out.name).toBe("clip.mp4");
     expect(out.bytes.length).toBe(clip.length);
     expect(Buffer.from(out.bytes).includes(Buffer.from(where, "latin1"))).toBe(false);
+    await screen.context.close();
+    await phone.context.close();
+  });
+});
+
+test.describe("a guest's photo and video on the screen (design.md section 7, Video)", () => {
+  /** A 4 s, 128 x 72 VP9 MP4 (ffmpeg testsrc2): Playwright's Chromium plays VP9, not H.264. */
+  const CLIP = readFileSync("test/fixtures/media/clip.mp4");
+  /** Passes the server's checks (an ftyp box, then a data box) but holds no movie, so no browser can play it. */
+  const BROKEN = (() => {
+    const box = (type: string, body: Buffer) => {
+      const head = Buffer.alloc(8);
+      head.writeUInt32BE(8 + body.length);
+      head.write(type, 4, "latin1");
+      return Buffer.concat([head, body]);
+    };
+    return Buffer.concat([
+      box("ftyp", Buffer.from("isom\0\0\x02\0isom", "latin1")),
+      box("mdat", Buffer.alloc(2048, 0xab)),
+    ]);
+  })();
+
+  /** The phone's claim becomes a guest at the first byte: the drop API the phone's picker sends through. */
+  async function sendAsGuest(phone: Page, name: string, bytes: Buffer) {
+    const status = await phone.evaluate(
+      async ([n, b]) => {
+        const g = globalThis as unknown as {
+          localStorage: { getItem(k: string): string | null };
+          fetch: (u: string, i: object) => Promise<{ status: number }>;
+        };
+        const res = await g.fetch("/api/drop", {
+          method: "PUT",
+          headers: {
+            Authorization: `Bearer ${g.localStorage.getItem("bloop.pid")}`,
+            "Content-Type": "application/octet-stream",
+            "X-Bloop-Name": encodeURIComponent(n),
+          },
+          body: new Uint8Array(b),
+        });
+        return res.status;
+      },
+      [name, [...bytes]] as const,
+    );
+    expect(status).toBe(200);
+  }
+
+  /** A demo screen showing one guest file, opened by the screen's Open click. */
+  async function openAsGuest(browser: Browser, name: string, bytes: Buffer, slow = false) {
+    const screen = await demoScreen(browser);
+    const { phone } = await scan(browser, screen.page);
+    await sendAsGuest(phone.page, name, bytes);
+    await expect(heading(screen.page)).toHaveText("Sent by a Guest");
+    if (slow) {
+      let first = true;
+      await screen.page.route("**/f/**", async (route) => {
+        if (first) await new Promise((done) => setTimeout(done, 1500));
+        first = false;
+        await route.continue();
+      });
+    }
+    await screen.page.getByRole("button", { name: "Open" }).click();
+    return { screen, phone, page: screen.page };
+  }
+
+  /** The stage video's state; the node tsconfig has no DOM lib, so it is typed by hand. */
+  const media = (page: Page) =>
+    page.locator("#frame video").evaluate((el) => {
+      const v = el as unknown as { paused: boolean; muted: boolean; autoplay: boolean; currentTime: number };
+      return { paused: v.paused, muted: v.muted, autoplay: v.autoplay, at: v.currentTime };
+    });
+
+  test("a guest's photo is drawn on the stage as the demo's is, and presents edge to edge", async ({ browser }) => {
+    const { screen, phone, page } = await openAsGuest(browser, "Board.png", png(1200, 800));
+    await expect(page.getByRole("img", { name: "Board.png" })).toBeVisible();
+    await expect(page.locator("#frame .loader")).toHaveCount(0);
+    await expect(heading(page)).toHaveText("Board.png");
+    await expect(page.locator("#items")).toBeHidden();
+    await page.getByRole("button", { name: "Present", exact: true }).click();
+    await expect(page.locator("body")).toHaveClass(/is-presenting/);
+    const box = await page.locator(STAGED).boundingBox();
+    expect([Math.round(box?.width ?? 0), Math.round(box?.height ?? 0)]).toEqual([SCREEN.width, SCREEN.height]);
+    await page.keyboard.press("Escape");
+    await expect(page.locator("body")).not.toHaveClass(/is-presenting/);
+    await screen.context.close();
+    await phone.context.close();
+  });
+
+  test("a guest's video streams by range under its loader, waits on its first frame with sound, plays, seeks and presents; the end takes it down", async ({
+    browser,
+  }) => {
+    const { screen, phone, page } = await openAsGuest(browser, "Talk.mp4", CLIP, true);
+    // Until the first playable frame: the one loader, indeterminate (a video has no byte count to show), Present held.
+    const loader = page.locator("#frame .loader.stand-in");
+    await expect(loader).toBeVisible();
+    await expect(loader).toHaveAttribute("aria-label", "Loading Talk.mp4");
+    expect(await loader.getAttribute("aria-valuenow")).toBeNull();
+    await expect(page.getByRole("button", { name: "Present", exact: true })).toBeDisabled();
+    const ranged = page.waitForResponse((r) => r.url().includes("/f/") && r.status() === 206);
+    await expect(page.locator("#frame video")).toBeVisible({ timeout: 15_000 });
+    await ranged;
+    await expect(page.locator("#frame .loader")).toHaveCount(0);
+    await expect(page.locator("#frame video")).toHaveAttribute("aria-label", "Talk.mp4");
+    // Its own 16 : 9 frame, never the photo's 3 : 2.
+    const frame = await page.locator("#frame video").boundingBox();
+    expect(Math.round(((frame?.width ?? 0) / (frame?.height ?? 1)) * 100)).toBe(178);
+    // Nothing plays by itself, and nothing is muted: Play is the presenter's click.
+    expect(await media(page)).toMatchObject({ paused: true, muted: false, autoplay: false });
+    await expect(page.getByRole("button", { name: "Present", exact: true })).toBeEnabled();
+
+    // A click is the gesture that lets it play with sound; where the click alone did not start it, play() does.
+    await page.locator("#frame video").click();
+    await page.locator("#frame video").evaluate((el) => {
+      const v = el as unknown as { paused: boolean; play(): Promise<void> };
+      return v.paused ? v.play() : undefined;
+    });
+    await expect.poll(async () => (await media(page)).at, { timeout: 10_000 }).toBeGreaterThan(0.3);
+    await page.locator("#frame video").evaluate((el) => {
+      (el as unknown as { currentTime: number }).currentTime = 3;
+    });
+    await expect.poll(async () => (await media(page)).at).toBeGreaterThanOrEqual(3);
+
+    await page.getByRole("button", { name: "Present", exact: true }).click();
+    await expect(page.locator("body")).toHaveClass(/is-presenting/);
+    const full = await page.locator("#frame video").boundingBox();
+    expect([Math.round(full?.width ?? 0), Math.round(full?.height ?? 0)]).toEqual([SCREEN.width, SCREEN.height]);
+    await expect(page.locator("#frame video")).toHaveCSS("object-fit", "contain");
+    await page.keyboard.press("Escape");
+    await expect(page.locator("body")).not.toHaveClass(/is-presenting/);
+    await expectNoAxeViolations(page);
+
+    // The session ends mid-play: Session Ended takes the screen, and the video and its link go with it.
+    await phone.page.getByRole("button", { name: "Revoke" }).click();
+    await expect(heading(page)).toHaveText("Session Ended");
+    await expect(page.locator("video")).toHaveCount(0);
+    await screen.context.close();
+    await phone.context.close();
+  });
+
+  test("VID-03 a video this browser cannot play shows This Screen Can't Play This Video, with Download as the way on", async ({
+    browser,
+  }) => {
+    const { screen, phone, page } = await openAsGuest(browser, "Broken.mp4", BROKEN);
+    const card = page.locator(".item-card");
+    await expect(card).toContainText("This Screen Can't Play This Video", { timeout: 15_000 });
+    // The card's own line, as every file card: the name is the stage's heading.
+    await expect(card).toContainText("MP4 video · 2 KB");
+    await expect(heading(page)).toHaveText("Broken.mp4");
+    await expect(card).toHaveAttribute("role", "alert");
+    await expect(page.locator("#frame video")).toHaveCount(0);
+    await expect(page.locator("#frame .loader")).toHaveCount(0);
+    await expect(page.getByRole("button", { name: "Present", exact: true })).toBeHidden();
+    await expect(page.getByRole("button", { name: "Download" })).toBeVisible();
+    await expectNoAxeViolations(page);
     await screen.context.close();
     await phone.context.close();
   });

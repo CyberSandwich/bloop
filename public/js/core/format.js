@@ -122,16 +122,10 @@ export function itemLine(item, date = null) {
 /** A row's name: a link's title, a file's name. @param {Item} item */
 export const itemName = (item) => (item.kind === "link" ? item.title : item.name);
 
-/** The type tile's glyph by kind: slides, a document, a picture, a link. */
-const TYPE_ICONS = {
-  pptx: ICONS.presentation,
-  pdf: ICONS["file-text"],
-  image: ICONS.image,
-  link: ICONS.link,
-};
-
-/** The type tile's glyph: slides, a document for a PDF, a picture for an image, a link. @param {Item} item */
+/** The type tile's glyph: slides, a document for a PDF, a film for a video, a picture, a link. @param {Item} item */
 export function itemIcon(item) {
-  if (item.kind === "link") return TYPE_ICONS.link;
-  return item.type === "pptx" || item.type === "pdf" ? TYPE_ICONS[item.type] : TYPE_ICONS.image;
+  if (item.kind === "link") return ICONS.link;
+  if (item.type === "pptx") return ICONS.presentation;
+  if (item.type === "pdf") return ICONS["file-text"];
+  return item.type === "mp4" || item.type === "mov" ? ICONS.film : ICONS.image;
 }

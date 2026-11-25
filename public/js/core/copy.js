@@ -13,6 +13,7 @@ const WAITING_LINE = "Waiting for Approval";
 export const SESSION_ENDED = "Session Ended";
 /** Under Session Ended once a tap or Enter has asked for a new code. */
 export const FRESH_LINE = "Starting a fresh screen.";
+export const CANT_PLAY = "This Screen Can't Play This Video";
 
 /**
  * @param {ScreenStateKey} key

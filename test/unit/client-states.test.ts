@@ -94,6 +94,23 @@ describe("screen state to view mapping", () => {
     expect(screenKey(ctx("open", { mode: "demo" }, { link: "offline" }))).toBe("offline");
   });
 
+  it("a guest's photo or video shows in the page on a live screen too; a guest's deck or PDF and an owner's photo keep the launch ladder", () => {
+    const file = (type: "jpg" | "png" | "mp4" | "mov" | "pptx" | "pdf") => [
+      { kind: "file" as const, id: "i1", name: `F.${type}`, type, size: 1 },
+    ];
+    for (const state of ["approved", "opening", "open"] as const) {
+      for (const type of ["jpg", "png", "mp4", "mov"] as const) {
+        for (const openMode of [null, "view", "download"] as const) {
+          expect(screenKey(ctx(state, { kind: "guest", items: file(type), openMode })), type).toBe("demo_open");
+        }
+      }
+    }
+    expect(screenKey(ctx("open", { kind: "guest", items: file("pptx"), openMode: "protocol" }))).toBe("open");
+    expect(screenKey(ctx("approved", { kind: "guest", items: file("pdf") }))).toBe("approved");
+    expect(screenKey(ctx("open", { kind: "owner", items: file("jpg"), openMode: "view" }))).toBe("open");
+    expect(screenKey(ctx("offered", { kind: "guest", items: file("mp4") }))).toBe("guest_open");
+  });
+
   it("F10 an original PDF shown as a PDF is not the PowerPoint fallback", () => {
     expect(
       screenKey(

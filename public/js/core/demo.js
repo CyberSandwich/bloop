@@ -18,6 +18,9 @@ export function openTarget(/** @type {string} */ link, /** @type {string} */ ori
   }
 }
 
+/** A link's name ends in its type (mintLink). */
+export const isVideoLink = (/** @type {string} */ url) => /\.(mp4|mov)$/.test(new URL(url).pathname);
+
 /** How a document shows: portrait pages (taller than wide) scroll as one column; slides page one at a time. */
 export const pageMode = (/** @type {number} */ width, /** @type {number} */ height) =>
   height > width ? "scroll" : "paged";
