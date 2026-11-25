@@ -82,7 +82,7 @@ Caption: Each purpose, the data it uses, and its lawful basis
 | Show a Guest File on the Screen its sender chose | the Guest File | Legitimate interests: showing the file the sender picked, for the time they picked |
 | Invite you, and keep invites tied to one email | invites, waitlist answers | Legitimate interests: running an invite-only early access |
 | Stop abuse and keep the service safe | IP hash, Turnstile signals, sign-ins, Session records | Legitimate interests: security and fraud prevention |
-| Act on reports of illegal content, suspend Accounts that break the Terms, and keep a record of each decision | reports, the reported file, records of actions | Legal obligation: the Online Safety Act 2023; and legitimate interests: keeping the service safe and lawful |
+| Act on reports of illegal content, suspend Accounts that break the Terms, and keep a record of each decision | reports, the reported file, records of actions, the block list | Legal obligation: the Online Safety Act 2023; and legitimate interests: keeping the service safe and lawful |
 | Report child sexual abuse content to the National Crime Agency, and keep it as the law requires | the reported file, its records, Session records, IP hash | Legal obligation: the Online Safety Act 2023 and the CSEA reporting regulations |
 | Give your organization's IT team a record of what was opened where | Session records | Legitimate interests: accountability on shared machines; under an agreement with your organization, bloop acts on its instructions instead |
 | Count use, with no names, to improve bloop | usage counts | Legitimate interests: improving the service |
@@ -111,6 +111,7 @@ Caption: How long bloop keeps each kind of data
 | Invites | 7 days to accept; the record goes 90 days after it is accepted, revoked or expired |
 | Reports about content | 1 year |
 | Records of what bloop did to an Account or file, and why | 2 years |
+| The email address of an Account closed for a serious breach of the Terms, or banned for child sexual abuse content | Kept with no end date on a block list, so the address cannot be invited or sign up again. It stays when the Account is deleted |
 | Content held for a report to the National Crime Agency | See [5.3](#5.3) |
 | Usage counts | 90 days, then only daily totals, for 2 years |
 | Codes, pairing secrets and links for a Session | Until the Session ends, is canceled or times out |
@@ -125,7 +126,7 @@ Caption: How long bloop keeps each kind of data
 
 5.3 If bloop becomes aware of child sexual abuse content stored or sent through it, the law requires bloop to report it to the National Crime Agency. Once a report is sent, bloop must keep the reported content, the report, and related data it holds for 1 year from the report, and the report's reference for 5 years. bloop keeps nothing else for this reason, and deletes each item when its period ends.
 
-5.4 When your Account is deleted, bloop deletes your email, passkeys, sign-ins, every file in your Library and its converted copies, and removes your email and file names from its Session records. It keeps only what [5.1](#5.1) lists as kept for longer (reports, records of actions, and an invite record for up to 90 days), anything [5.3](#5.3) requires, and sends one email to say it is done.
+5.4 When your Account is deleted, bloop deletes your email, passkeys, sign-ins, every file in your Library and its converted copies, and removes your email and file names from its Session records. It keeps only what [5.1](#5.1) lists as kept for longer (reports, records of actions, an invite record for up to 90 days, and the block list), anything [5.3](#5.3) requires, and sends one email to say it is done.
 
 ## Who Can See Your Data {#access}
 
