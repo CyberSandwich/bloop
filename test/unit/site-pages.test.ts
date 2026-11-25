@@ -906,6 +906,7 @@ describe("the stylesheets: base.css, then the page's own (design.md section 11)"
     const site = css["site.css"] ?? "";
     const band = site.slice(site.lastIndexOf("\n.band {"), site.indexOf("}", site.lastIndexOf("\n.band {")));
     expect(band).toContain("height: 96px;");
+    expect(band).toMatch(/align-items: center;\s*justify-content: center;/);
     expect(band).toContain("margin: -24px -24px 0;");
     expect(band).toContain("border-radius: var(--r-content) var(--r-content) 0 0;");
     expect(block(".cell")).toContain("padding: 24px;");
