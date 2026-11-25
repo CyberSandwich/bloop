@@ -1,5 +1,5 @@
-// The Session Length sheet (design.md section 7, Phone page), loaded on the first tap on "Ends in". Its markup is in
-// a.html, so this module only wires it: a length applies at once and closes the sheet; Until sets a clock time.
+// The Session Expiry sheet (design.md section 7, Phone page), loaded on the first tap on "Ends in". Its markup is in
+// a.html, so this module only wires it: a preset applies at once and closes the sheet; the time input applies on Set.
 // A length that fails is a toast over the running session, never a page state: the session and Revoke stay.
 /** @import {ErrorCode, PhoneView} from "../../../src/shared/protocol.ts" */
 /** @import {PhonePage} from "../types.js" */
@@ -46,7 +46,7 @@ const SHOWN_BY_PUSH = /** @type {ErrorCode[]} */ (["session_ended", "pairing_inv
 function failed(/** @type {ErrorCode} */ code) {
   if (SHOWN_BY_PUSH.includes(code)) return;
   toast({
-    title: "The Session Length Didn't Change",
+    title: "The Session Expiry Didn't Change",
     body:
       code === "rate_limited"
         ? "Too many changes at once. Wait a minute, then try again."
@@ -79,7 +79,7 @@ new MutationObserver(() => {
 }).observe(ends, { attributeFilter: ["hidden"] });
 
 /**
- * Opens the sheet with the lengths the mode's cap allows, and Until at the current end on this phone's clock.
+ * Opens the sheet with the time input at the current end on this phone's clock.
  * @param {PhonePage} c
  * @param {(view: PhoneView) => void} onView the phone's view as `POST /api/session/length` answers it
  */
@@ -102,11 +102,11 @@ export async function openLength(c, onView) {
       });
     }
   };
-  for (const chip of sheet.querySelectorAll("[data-minutes]")) {
-    /** @type {HTMLElement} */ (chip).hidden = Number(chip.getAttribute("data-minutes")) > max;
-  }
   at.value = clock(new Date(view.endsAt - c.skew));
   await style();
   // The page may have moved on while the stylesheet loaded.
-  if (!ends.hidden) sheet.showModal();
+  if (ends.hidden) return;
+  sheet.showModal();
+  // The browser focuses Close, and its :focus-visible ring reads as a large circle on iPhone Safari.
+  sheet.focus();
 }

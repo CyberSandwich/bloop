@@ -256,7 +256,7 @@ public/                    wrangler's assets directory, served as it is. Everyth
   js/{screen,phone,code,launcher,residue}.js   task pages; js/vendor/uqr.js (+ LICENSE)
   js/viewer.js js/core/demo.js   the screen's viewer, the demo's and a guest's photo or video (sidebar, stage, pager, link card, its own link fetch); its pure parts
   js/viewer-video.js   a guest's video on the stage, loaded by import() with the first video link
-  js/core/length.js js/shared/length.js css/length.css   the phone's Session Length sheet, loaded on its first tap; the length rules the route shares
+  js/core/length.js js/shared/length.js css/length.css   the phone's Session Expiry sheet, loaded on its first tap; the length rules the route shares
   js/core/drag.js   the phone's drop hint, loaded at its first file drag
   img/demo-slide-{n}.{avif,webp}   the sample deck's pages, shown for the deck and its PDF (tools/render-slides.py)
   img/hero-viewer-{1000,1440}.{avif,webp}   the landing stage's screenshot of the Demo Room

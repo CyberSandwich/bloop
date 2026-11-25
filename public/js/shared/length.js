@@ -1,4 +1,4 @@
-// One copy for the Worker's length route and the phone's Session Length sheet, which loads it only when opened.
+// One copy for the Worker's length route and the phone's Session Expiry sheet, which loads it only when opened.
 
 /** The shortest length the phone may set (`POST /api/session/length`). */
 export const MIN_LENGTH_MINUTES = 5;

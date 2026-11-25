@@ -269,24 +269,35 @@ test.describe("pairing flow", () => {
     await phone.page.getByRole("button", { name: "Approve" }).click();
     const ends = phone.page.locator("#ends-text");
     await expect(ends).toHaveText(/^Ends in (59|1:00):\d{2}$/);
-    await phone.page.getByRole("button", { name: /Change the Session Length$/ }).click();
-    const sheet = phone.page.getByRole("dialog", { name: "Session Length" });
+    await phone.page.getByRole("button", { name: /Change the Session Expiry$/ }).click();
+    const sheet = phone.page.getByRole("dialog", { name: "Session Expiry" });
     await expect(sheet).toBeVisible();
-    // The demo's cap is 2 hours: 4h and 12h are not offered.
-    await expect(sheet.locator("[data-minutes]:visible")).toHaveText(["30m", "1h", "2h"]);
-    await expect(sheet.getByLabel("Until…")).toHaveValue(/^\d{2}:\d{2}$/);
+    // Exactly three presets, in a second bubble stacked below the first (title, Close, the time and Set).
+    await expect(sheet.locator("[data-minutes]")).toHaveText(["30m", "1h", "2h"]);
+    expect(await sheet.locator(".bubble").count()).toBe(2);
+    const top = await sheet.locator(".sheet-in").boundingBox();
+    const presets = await sheet.locator(".chips").boundingBox();
+    expect(top && presets && Math.round(presets.y - (top.y + top.height))).toBe(8);
+    await expect(sheet.getByLabel("Expires At")).toHaveValue(/^\d{2}:\d{2}$/);
+    // Opening it rings nothing: focus lands on the sheet, not on Close.
+    await expect(sheet).toBeFocused();
+    // A tap in the gap between the bubbles is the backdrop's: it closes with no change.
+    await phone.page.mouse.click((top?.x ?? 0) + (top?.width ?? 0) / 2, (top?.y ?? 0) + (top?.height ?? 0) + 4);
+    await expect(sheet).toBeHidden();
+    await phone.page.getByRole("button", { name: /Change the Session Expiry$/ }).click();
+    await expect(sheet).toBeVisible();
     await expectNoAxeViolations(phone.page);
     await sheet.getByRole("button", { name: "30 minutes" }).click();
     await expect(sheet).toBeHidden();
     await expect(ends).toHaveText(/^Ends in (29|30):\d{2}$/);
     // Escape closes it with no change.
-    await phone.page.getByRole("button", { name: /Change the Session Length$/ }).click();
+    await phone.page.getByRole("button", { name: /Change the Session Expiry$/ }).click();
     await expect(sheet).toBeVisible();
     await phone.page.keyboard.press("Escape");
     await expect(sheet).toBeHidden();
     await expect(ends).toHaveText(/^Ends in (29|30):\d{2}$/);
     // The screen's End while it is open: the sheet goes with "Ends in", never floating over Session Ended.
-    await phone.page.getByRole("button", { name: /Change the Session Length$/ }).click();
+    await phone.page.getByRole("button", { name: /Change the Session Expiry$/ }).click();
     await expect(sheet).toBeVisible();
     await screen.page.getByRole("button", { name: "End", exact: true }).click();
     await expect(heading(phone.page)).toHaveText("Session Ended");
@@ -302,8 +313,8 @@ test.describe("pairing flow", () => {
     const { phone } = await scan(browser, screen.page);
     await phone.page.getByRole("button", { name: "Approve" }).click();
     await expect(phone.page.locator("#ends-text")).toHaveText(/^Ends in /);
-    const lengthButton = phone.page.getByRole("button", { name: /Change the Session Length$/ });
-    const sheet = phone.page.getByRole("dialog", { name: "Session Length" });
+    const lengthButton = phone.page.getByRole("button", { name: /Change the Session Expiry$/ });
+    const sheet = phone.page.getByRole("dialog", { name: "Session Expiry" });
     return { screen, phone, lengthButton, sheet };
   }
 
@@ -381,7 +392,7 @@ test.describe("pairing flow", () => {
       const t = new Date(Date.now() + 3 * 3600_000);
       return `${String(t.getHours()).padStart(2, "0")}:${String(t.getMinutes()).padStart(2, "0")}`;
     });
-    await sheet.getByLabel("Until…").fill(later);
+    await sheet.getByLabel("Expires At").fill(later);
     await sheet.getByRole("button", { name: "Set" }).click();
     await expect(phone.page.getByRole("status").filter({ hasText: /^Ends at \d{2}:\d{2}/ })).toContainText(
       "That's the longest this session can run.",
