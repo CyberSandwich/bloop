@@ -26,6 +26,7 @@ describe.each([
   ["/sitemap.xml", 200, LANDING_CSP, "<urlset", /xml/],
   ["/robots.txt", 200, LANDING_CSP, "Sitemap: https://bloop.here/sitemap.xml", /text\/plain/],
   ["/.well-known/security.txt", 200, LANDING_CSP, "Contact: mailto:", /text\/plain/],
+  ["/llms.txt", 200, LANDING_CSP, "# bloop\n", /text\/plain/],
   ["/no-such-page", 404, LANDING_CSP, "This Page Isn't Here", /text\/html/],
   ["/security/deeper/still", 404, LANDING_CSP, "Go to the Home Page", /text\/html/],
 ] as const)("%s", (path, status, csp, marker, type) => {
@@ -37,6 +38,13 @@ describe.each([
     expect(res.headers.get("X-Frame-Options")).toBe("DENY");
     expectBase(res);
     expect(await res.text()).toContain(marker);
+  });
+});
+
+describe("/llms.txt", () => {
+  it("opens with the site's name as its title", async () => {
+    const res = await fetch(`${wrangler.url}/llms.txt`);
+    expect((await res.text()).startsWith("# bloop\n")).toBe(true);
   });
 });
 
