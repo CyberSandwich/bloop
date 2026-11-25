@@ -330,6 +330,8 @@ export interface Priced {
   /** Optional absolute replacements for the derived floor and the default ceiling (units per day). */
   readonly floorVar: string;
   readonly ceilingVar: string;
+  /** A daily hard cap on the same unit: the default ceiling never exceeds it, so the line and the cap agree. */
+  readonly capDay?: CapName;
   /** Tripped when the day's usage reaches the line. */
   readonly flip: { readonly switch: SwitchName; readonly value: string };
 }
@@ -387,6 +389,7 @@ export const PRICED = {
     share: { var: "BREAKER_SHARE_EMAIL", default: 10 },
     floorVar: "BREAKER_FLOOR_EMAIL",
     ceilingVar: "BREAKER_CEILING_EMAIL",
+    capDay: "email_day",
     flip: { switch: "email", value: "admin_only" },
   },
 } as const satisfies Record<string, Priced>;
@@ -417,15 +420,18 @@ export interface Line {
 
 /**
  * Per-day floor and ceiling of each priced meter. The floor is the meter's share of budget / 30 days, in units
- * (or its var); the ceiling is its var, or `ceiling_multiple` times the floor, and never below the floor.
+ * (or its var); the ceiling is its var, or `ceiling_multiple` times the floor (at most the meter's daily cap, when it
+ * has one), and never below the floor.
  */
 export function resolveLines(vars: Vars, trips: Trips): Record<PricedMeter, Line> {
   const out = {} as Record<PricedMeter, Line>;
+  const caps = resolveCaps(vars);
   for (const m of PRICED_METERS) {
     const p: Priced = PRICED[m];
     const share = numberVar(vars, p.share.var) ?? p.share.default;
     const floor = numberVar(vars, p.floorVar) ?? Math.round(((share / 100) * trips.budget_month_usd) / 30 / p.unitUsd);
-    const ceiling = numberVar(vars, p.ceilingVar) ?? floor * trips.ceiling_multiple;
+    const byMultiple = floor * trips.ceiling_multiple;
+    const ceiling = numberVar(vars, p.ceilingVar) ?? (p.capDay ? Math.min(byMultiple, caps[p.capDay]) : byMultiple);
     out[m] = { floor, ceiling: Math.max(floor, ceiling) };
   }
   return out;

@@ -174,7 +174,7 @@ The guest-drop lines are shares of the budget. One drop that is not converted co
 | `r2_class_b` | R2 class B | $0.36 per million | 5 (`BREAKER_SHARE_R2_CLASS_B`) | $0.50 | $0.017 | 46,296 | 231,480 | `BREAKER_FLOOR_R2_CLASS_B`, `BREAKER_CEILING_R2_CLASS_B` | `previews=off` |
 | `d1_writes` | D1 rows written | $1.00 per million | 10 (`BREAKER_SHARE_D1`) | $1.00 | $0.033 | 33,333 | 166,665 | `BREAKER_FLOOR_D1`, `BREAKER_CEILING_D1` | `demo=off` |
 | `workflow_steps` | Workflow steps | $8.00 per million | 5 (`BREAKER_SHARE_WORKFLOWS`) | $0.50 | $0.017 | 2,083 | 10,415 | `BREAKER_FLOOR_WORKFLOWS`, `BREAKER_CEILING_WORKFLOWS` | `convert=account_only` |
-| `email` | Email sends | $350.00 per million | 10 (`BREAKER_SHARE_EMAIL`) | $1.00 | $0.033 | 95 | 475 | `BREAKER_FLOOR_EMAIL`, `BREAKER_CEILING_EMAIL` | `email=admin_only` |
+| `email` | Email sends | $350.00 per million | 10 (`BREAKER_SHARE_EMAIL`) | $1.00 | $0.033 | 95 | 300 | `BREAKER_FLOOR_EMAIL`, `BREAKER_CEILING_EMAIL` | `email=admin_only` |
 
 The other 15 percent: R2 storage 5 (`BREAKER_SHARE_R2_STORAGE`, $0.50, $0.015 per GB-month, so a warning at 33 GB) and logs 10 (`BREAKER_SHARE_LOGS`, $1.00, not measured yet). Storage and logs warn and never trip; storage counts in the month-to-date cost once analytics reads it.
 
@@ -193,11 +193,11 @@ The other 15 percent: R2 storage 5 (`BREAKER_SHARE_R2_STORAGE`, $0.50, $0.015 pe
 
 - `p95` is the nearest-rank 95th percentile of the meter's daily totals over the last `BREAKER_HISTORY_DAYS` completed UTC days, counting days with no usage as 0. Today is left out.
 - With fewer than `BREAKER_HISTORY_MIN_DAYS` completed days of history (a new guard, or too little data), the line is the floor.
-- The ceiling is the meter's `BREAKER_CEILING_<METER>` var, default `BREAKER_CEILING_MULTIPLE` times the floor, and never below the floor. The line never exceeds it. Only the owner raises it.
+- The ceiling is the meter's `BREAKER_CEILING_<METER>` var, default `BREAKER_CEILING_MULTIPLE` times the floor, and never below the floor. Email's default is held to `CAP_EMAIL_DAY` (300 here, under 5 times 95), so its adaptive line and its hard cap cannot disagree; raise both together. The line never exceeds the ceiling. Only the owner raises it.
 - The history is the guard's own daily totals, and, with analytics, the larger of the two for each day (presigned R2 PUTs never pass a meter). The guard keeps 40 days.
 - One abuse day can lift the p95 to that day's level, so it can lift the line at most to the ceiling. That is why the ceiling is the owner's to raise.
 
-Worked example, email: floor 95. After 14 days at 50 sends, p95 is 50, so the line is 150: a warning at 75 and a trip at 150. At 120 sends a day the want is 360, 76 percent of the 475 ceiling, so the digest suggests a higher ceiling.
+Worked example, email: floor 95. After 14 days at 50 sends, p95 is 50, so the line is 150: a warning at 75 and a trip at 150. At 80 sends a day the want is 240, 80 percent of the 300 ceiling, so the digest suggests a higher ceiling.
 
 **The warning.** At `BREAKER_WARN_PCT` (50) percent of the current line, one email, no trip, once a day per meter.
 
