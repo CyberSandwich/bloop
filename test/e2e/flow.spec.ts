@@ -1664,9 +1664,49 @@ test.describe("screen and phone layout", () => {
     return b;
   };
 
+  /** Once the glides are awaited: none left, and each visible control is what sits at its own center. */
+  async function controlsSettled(page: Page) {
+    const state = await page.evaluate(`(async () => {
+      const bar = document.getElementById("controls");
+      await Promise.all(bar.getAnimations().map((a) => a.finished.catch(() => {})));
+      const hit = [...bar.querySelectorAll(".btn")]
+        .filter((b) => b.getClientRects().length)
+        .map((b) => {
+          const r = b.getBoundingClientRect();
+          return b.contains(document.elementFromPoint(r.left + r.width / 2, r.top + r.height / 2));
+        });
+      return { animations: bar.getAnimations().length, hit };
+    })()`);
+    const { animations, hit } = state as { animations: number; hit: boolean[] };
+    expect(animations).toBe(0);
+    expect(hit.every(Boolean)).toBe(true);
+  }
+
   /** Square and portrait pictures standing in for the photo. */
   const SQUARE = png(900, 900);
   const WIDE = png(1500, 1000);
+
+  test("a resize that moves the pill never glides it from the old window", async ({ browser }) => {
+    const { screen, phone } = await viewerWith(browser);
+    const page = screen.page;
+    await page.setViewportSize({ width: 1300, height: 440 });
+    await expect(page.locator(STAGED)).toBeVisible();
+    await controlsSettled(page);
+    await page.setViewportSize({ width: 1000, height: 604 });
+    // On the next frame: nothing animates, and the pill is inside the window.
+    const next = await page.evaluate(`new Promise((done) => requestAnimationFrame(() => {
+      const bar = document.getElementById("controls");
+      const r = bar.getBoundingClientRect();
+      done({
+        animations: bar.getAnimations().length,
+        inside: r.left >= 0 && r.top >= 0 && r.right <= innerWidth && r.bottom <= innerHeight,
+      });
+    }))`);
+    expect(next).toEqual({ animations: 0, inside: true });
+    await controlsSettled(page);
+    await screen.context.close();
+    await phone.context.close();
+  });
 
   /** Where the controls went, and the boxes that say so. */
   async function slotOf(page: Page) {
@@ -2492,6 +2532,18 @@ test.describe("PAIR-13 remote: the phone commands the demo screen (design.md sec
     await expect(row("Sample deck.pdf")).toHaveAttribute("aria-current", "true");
     await expect(kept).toHaveAttribute("data-kept", "1");
     await expect(kept).toBeFocused();
+  });
+
+  test("PAIR-13 reload: a phone reloaded mid-session still moves the screen with its next tap", async ({ browser }) => {
+    const { screen, phone, row } = await remote(browser);
+    await row("Sample deck.pptx").click();
+    await expect(heading(screen.page)).toHaveText("Sample deck.pptx");
+    await phone.page.reload();
+    await expect(row("Sample deck.pptx")).toHaveAttribute("aria-current", "true");
+    await row("Sample deck.pdf").click();
+    await expect(heading(screen.page)).toHaveText("Sample deck.pdf");
+    await expect(row("Sample deck.pdf")).toHaveAttribute("aria-current", "true");
+    await close(screen, phone);
   });
 
   test("a vertical drag over the preview is no tap, a tap still is", async ({ browser }) => {
