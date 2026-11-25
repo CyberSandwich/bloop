@@ -470,7 +470,7 @@ describe("landing word caps (design.md section 13)", () => {
     ]);
     // The deck's tile is its first page, shown whole, as rows.js draws it.
     expect(rows[0]?.[2]).toMatch(
-      /<img class="fit" src="\/img\/demo-slide-1\.webp" width="32" height="32" alt="" loading="lazy"/,
+      /<img class="fit" src="\/img\/demo-slide-1-thumb\.webp" width="32" height="32" alt="" loading="lazy"/,
     );
     expect(read("public/css/site.css")).toMatch(/\.frag-tile \.fit \{\s*object-fit: contain;/);
     expect(steps[2]).toMatch(
@@ -1220,6 +1220,35 @@ describe("landing motion and spacing (design.md sections 6 and 8)", () => {
     expect(css).toMatch(/animation: sweep 3s linear 0\.3s infinite backwards;/);
     expect(css).not.toMatch(/animation: sheen/);
     expect(between(read("public/css/base.css"), /@keyframes sheen \{/, "\n}\n")).toMatch(/\n {2}45%,\n {2}100% \{/);
+    expect(read("public/css/app.css")).toMatch(/animation: sheen 2\.2s linear infinite;/);
+  });
+
+  it("where :popover-open is invalid (Safari 15, 16), no shared rule drops and the narrow nav shows its links", () => {
+    for (const m of css.matchAll(/(?:^|[}/])\s*([^{}@/]+)\{/g)) {
+      const list = (m[1] ?? "").trim().split(/,\s*(?![^()]*\))/);
+      if (list.length < 2) continue;
+      // A bare :popover-open in a list would take the other selectors down with it.
+      for (const sel of list)
+        expect(sel.replace(/:is\([^()]*:popover-open\)/g, ""), sel).not.toContain(":popover-open");
+    }
+    const fallback = between(css, /@supports not selector\(:popover-open\) \{/, "\n}\n");
+    expect(fallback).toMatch(/@media \(max-width: 759\.98px\) \{\s*\.nav-menu \{\s*display: none;/);
+    expect(fallback).toMatch(/\.nav-links \{[^}]*position: fixed;[^}]*overflow-x: auto;/);
+    // The rule that hides the list is a bare :not(:popover-open), so those engines drop it and the list shows.
+    expect(between(css, /@media \(max-width: 759\.98px\) \{/, "\n}\n")).toMatch(
+      /\.nav-links:not\(:popover-open\) \{\s*display: none;/,
+    );
+    expect(read("public/js/site.js")).not.toContain(":popover-open");
+  });
+
+  it("the sheen and the 5 backdrop drifts pause off screen and in a hidden tab, one rule after every animated one", () => {
+    const js = read("public/js/site.js");
+    expect(js).toMatch(/querySelectorAll\("\.sheen, \.frag, \.panel, \.close-panel"\)\) watch\.observe\(el\)/);
+    expect(js).toMatch(/addEventListener\("visibilitychange", pause\)/);
+    expect(js).toMatch(/toggle\("is-paused", !on \|\| document\.hidden\)/);
+    const rule = css.search(/^\.is-paused,\n\.is-paused::before \{\n {2}animation-play-state: paused;/m);
+    expect(rule).toBeGreaterThan(0);
+    for (const m of css.matchAll(/^\s*animation: /gm)) expect(m.index ?? 0).toBeLessThan(rule);
   });
 
   it("the steps sit 40 under the stage, 56 from 768", () => {

@@ -28,7 +28,7 @@ const attr = (s) => esc(s).replace(/"/g, "&quot;");
 /**
  * @typedef {{ label: string, href: string, in: string[] }} Link
  * @typedef {{ file: string, path?: string, title: string, description?: string, source: string, ld?: string, noindex?: boolean }} HandPage
- * @typedef {{ name: string, origin: string, email: string, waitlist: string, image: { path: string, width: number, height: number },
+ * @typedef {{ name: string, origin: string, email: string, waitlist: string, about: string, image: { path: string, width: number, height: number },
  *   links: Link[], robots: { disallow: string[] }, pages: HandPage[] }} Site
  * @typedef {{ file: string, path?: string, title: string, description?: string, source: string, current?: string | undefined,
  *   noindex?: boolean, kind: "site" | "legal" | "article" | "index" | "none", published?: string | undefined,
@@ -585,6 +585,7 @@ export function buildAll() {
   }
   files.set("public/sitemap.xml", sitemap(docs));
   files.set("public/robots.txt", robots());
+  files.set("public/llms.txt", llms(docs));
   return files;
 }
 
@@ -603,6 +604,37 @@ function sitemap(docs) {
     (e) => `  <url><loc>${site.origin}${e.path}</loc>${e.lastmod ? `<lastmod>${e.lastmod}</lastmod>` : ""}</url>`,
   );
   return `<?xml version="1.0" encoding="UTF-8"?>\n<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">\n${urls.join("\n")}\n</urlset>\n`;
+}
+
+/** llms.txt (llmstxt.org): the name, the landing's line, what bloop is, then every content page with its description. */
+/** @param {Doc[]} docs */
+function llms(docs) {
+  const landing = site.pages.find((p) => p.path === "/");
+  if (!landing?.description || !site.about)
+    throw new Error("content/site.json: llms.txt needs about and the landing's description");
+  /** @param {string} title @param {Doc[]} list */
+  const group = (title, list) => [
+    `## ${title}`,
+    "",
+    ...list.map((d) => `- [${need(d, "title")}](${site.origin}${d.path}): ${need(d, "description")}`),
+    "",
+  ];
+  return [
+    `# ${site.name}`,
+    "",
+    `> ${landing.description}`,
+    "",
+    site.about,
+    "",
+    ...group(
+      "Articles",
+      docs.filter((d) => kindOf(d) !== "legal"),
+    ),
+    ...group(
+      "Policies",
+      docs.filter((d) => kindOf(d) === "legal"),
+    ),
+  ].join("\n");
 }
 
 function robots() {

@@ -224,6 +224,33 @@ describe("sitemap.xml and robots.txt", () => {
     for (const l of locs) expect(new URL(l ?? "").pathname.startsWith("/api/")).toBe(false);
   });
 
+  it("llms.txt is generated: the name, the landing's line, what bloop is, and every content page once with its description", () => {
+    const llms = built.get("public/llms.txt") ?? "";
+    expect(read("public/llms.txt")).toBe(llms);
+    const landing = site.pages.find((p) => p.path === "/");
+    expect(llms.startsWith(`# ${site.name}\n\n> ${landing?.description}\n\n${site.about}\n\n## Articles\n`)).toBe(true);
+    const links = [...llms.matchAll(/^- \[([^\]]+)\]\(([^)]+)\): (.+)$/gm)];
+    expect(links.map((m) => m[2])).toEqual(
+      [...docs.filter((d) => d.meta.kind !== "legal"), ...docs.filter((d) => d.meta.kind === "legal")].map(
+        (d) => `${site.origin}${d.path}`,
+      ),
+    );
+    for (const m of links) {
+      const d = docs.find((x) => `${site.origin}${x.path}` === m[2]);
+      expect([m[1], m[3]]).toEqual([d?.meta.title, d?.meta.description]);
+    }
+    // House copy rules hold here too: US English with no dashes, and nothing from the never-say list.
+    expect(llms).not.toMatch(/[–—]/);
+    for (const phrase of read("tools/never-say.txt")
+      .split("\n")
+      .map((l) => l.trim().toLowerCase())
+      .filter(Boolean))
+      expect(llms.toLowerCase(), phrase).not.toContain(phrase);
+    // A convention file, not a page: no robots or sitemap entry.
+    expect(built.get("public/robots.txt")).not.toContain("llms");
+    expect(sitemap).not.toContain("llms");
+  });
+
   it("the origin is the Worker's public origin", () => {
     expect(read("wrangler.jsonc")).toContain(`"PUBLIC_ORIGIN": "${site.origin}"`);
   });

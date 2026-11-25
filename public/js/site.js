@@ -19,17 +19,17 @@ if (location.hash) addEventListener("load", () => setTimeout(dropHash));
 else if (kept) addEventListener("load", () => scrollTo(0, kept));
 else scrollTo(0, 0);
 
-// The sheen pulses only while it is on screen and the tab is visible.
-const sheen = document.querySelector(".sheen");
-let onScreen = true;
-const pulse = () => sheen?.classList.toggle("is-paused", !onScreen || document.hidden);
-if (sheen) {
-  new IntersectionObserver(([e]) => {
-    onScreen = !!e?.isIntersecting;
-    pulse();
-  }).observe(sheen);
-  addEventListener("visibilitychange", pulse);
-}
+// The sheen and the backdrop drifts play only while on screen and the tab is visible.
+const shown = new Map();
+const pause = () => {
+  for (const [el, on] of shown) el.classList.toggle("is-paused", !on || document.hidden);
+};
+const watch = new IntersectionObserver((es) => {
+  for (const e of es) shown.set(e.target, e.isIntersecting);
+  pause();
+});
+for (const el of document.querySelectorAll(".sheen, .frag, .panel, .close-panel")) watch.observe(el);
+addEventListener("visibilitychange", pause);
 
 // The Approve still's rows toggle their tick, as the phone's list does.
 document.querySelector(".frag-list")?.addEventListener("click", (e) => {
@@ -37,10 +37,10 @@ document.querySelector(".frag-list")?.addEventListener("click", (e) => {
   if (row) row.setAttribute("aria-pressed", `${row.getAttribute("aria-pressed") === "false"}`);
 });
 
-// A popover stays open over a same-page jump such as Features.
+// A link closes the sheet, which would cover a jump; Safari 15 and 16 have no popover, so no method.
 const menu = document.getElementById("nav-links");
 menu?.addEventListener("click", (e) => {
-  if (e.target instanceof Element && e.target.closest("a") && menu.matches(":popover-open")) menu.hidePopover();
+  if (e.target instanceof Element && e.target.closest("a")) menu.hidePopover?.();
 });
 
 // A spring (k 120, c 30, m .4, implicit step) drives a paused animation over the CSS tilt; 1% thresholds wake it.
