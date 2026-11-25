@@ -2,7 +2,7 @@
 // A photo or a video is kept for the session: a second mint spends the budget.
 /** @import {Item, OpenMode, ScreenView} from "../../src/shared/protocol.ts" */
 /** @import {Minted} from "./types.js" */
-import { CANT_PLAY } from "./core/copy.js";
+import { CANT_PLAY } from "./core/copy-screen.js";
 import { halves, isVideoLink, openTarget, pageMode, pagesOf, placeControls, stepPage, thumbOf } from "./core/demo.js";
 import { hostOf, isVideo, itemIcon, itemLine, itemName } from "./core/format.js";
 import { ICONS } from "./core/icons.js";

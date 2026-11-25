@@ -1,5 +1,5 @@
 // State to view mapping: the server's view plus what only the client knows become one state key.
-// Pure; the pages render the key through copy.js.
+// Pure; the pages render the key through their copy (core/copy.js).
 /** @import {ErrorCode, FileItem, Item, PhoneStateKey, PhoneView, ScreenStateKey, ScreenView} from "../../../src/shared/protocol.ts" */
 /** @import {PhoneCtx, ScreenCtx} from "../types.js" */
 import { IN_SESSION, LIVE_CLAIM, PAIRING_OVER } from "../shared/session.js";

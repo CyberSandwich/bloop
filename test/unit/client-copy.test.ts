@@ -1,17 +1,9 @@
 import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
-import {
-  endLine,
-  phoneCopy,
-  refusalToast,
-  SESSION_ENDED,
-  SIGN_IN_HINT,
-  screenCopy,
-  TYPED_LETTERS,
-  typedError,
-  uploadLine,
-  videoTime,
-} from "../../public/js/core/copy.js";
+import { SESSION_ENDED } from "../../public/js/core/copy.js";
+import { TYPED_LETTERS, typedError } from "../../public/js/core/copy-code.js";
+import { phoneCopy, refusalToast, uploadLine, videoTime } from "../../public/js/core/copy-phone.js";
+import { endLine, SIGN_IN_HINT, screenCopy } from "../../public/js/core/copy-screen.js";
 import type { PhoneStateKey, ScreenStateKey } from "../../src/shared/protocol.ts";
 
 const SCREEN_KEYS: ScreenStateKey[] = [
@@ -383,7 +375,7 @@ describe("phone copy", () => {
     expect(refusalToast("large", { demo: false, maxMB: 90, video: true }).body).toBe(
       "bloop takes videos up to about 90\u00a0seconds (90 MB). Trim it and try again.",
     );
-    for (const file of ["js/core/copy.js", "js/core/drop.js", "js/phone.js"]) {
+    for (const file of ["js/core/copy-phone.js", "js/core/drop.js", "js/phone.js"]) {
       expect(readFileSync(new URL(`../../public/${file}`, import.meta.url), "utf8"), file).not.toMatch(/\b(25|90) ?MB/);
     }
   });

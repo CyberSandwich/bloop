@@ -181,7 +181,7 @@ export interface ScreenFacts {
   mine?: boolean;
   /** The launch needs a click (no user gesture). */
   click?: boolean;
-  /** The line under Session Ended (endLine in copy.js). */
+  /** The line under Session Ended (endLine in copy-screen.js). */
   endLine?: string;
   /** A session is running (approved to open). */
   inSession?: boolean;

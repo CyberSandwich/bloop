@@ -2,7 +2,7 @@
 /** @import {ScreenView} from "../../src/shared/protocol.ts" */
 import { createApi } from "./core/api.js";
 import { openChannel } from "./core/channel.js";
-import { endLine, FRESH_LINE, screenCopy } from "./core/copy.js";
+import { endLine, FRESH_LINE, screenCopy } from "./core/copy-screen.js";
 import { clock, itemName, qrLabel } from "./core/format.js";
 import { qrMatrix, qrPath, qrSize } from "./core/qr.js";
 import { firstFile, guestOnStage, screenKey } from "./core/states.js";

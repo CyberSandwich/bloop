@@ -42,6 +42,7 @@
       "path": [
         "public/js/core/api.js",
         "public/js/core/channel.js",
+        "public/js/core/copy-screen.js",
         "public/js/core/copy.js",
         "public/js/core/demo.js",
         "public/js/core/format.js",
@@ -59,12 +60,11 @@
         "public/js/screen.js",
         "public/js/shared/codes.js",
         "public/js/shared/errors.js",
-        "public/js/shared/names.js",
         "public/js/shared/session.js",
         "public/js/vendor/uqr.js",
         "public/js/viewer.js"
       ],
-      "limit": "44.65 kB"
+      "limit": "40.4 kB"
     },
     {
       "name": "phone JS",
@@ -72,6 +72,7 @@
         "public/js/core/api.js",
         "public/js/core/boot-code.js",
         "public/js/core/channel.js",
+        "public/js/core/copy-phone.js",
         "public/js/core/copy.js",
         "public/js/core/demo.js",
         "public/js/core/drop.js",
@@ -92,25 +93,24 @@
         "public/js/shared/names.js",
         "public/js/shared/session.js"
       ],
-      "limit": "30.55 kB"
+      "limit": "29.4 kB"
     },
     {
       "name": "typed code JS",
       "path": [
         "public/js/code.js",
         "public/js/core/api.js",
+        "public/js/core/copy-code.js",
         "public/js/core/copy.js",
         "public/js/core/format.js",
         "public/js/core/icons.js",
         "public/js/core/store.js",
         "public/js/core/timing.js",
         "public/js/core/ui.js",
-        "public/js/core/verified.js",
         "public/js/shared/codes.js",
-        "public/js/shared/errors.js",
-        "public/js/shared/names.js"
+        "public/js/shared/errors.js"
       ],
-      "limit": "15.15 kB"
+      "limit": "9.4 kB"
     },
     {
       "name": "phone media, lazy",

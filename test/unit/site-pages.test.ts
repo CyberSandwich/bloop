@@ -168,7 +168,9 @@ describe("every page's text", () => {
     .filter(Boolean);
   const sources = [
     ...ALL.map((p) => [p, read(`public/${p}`)] as const),
-    ["core/copy.js", read("public/js/core/copy.js")] as const,
+    ...["copy", "copy-screen", "copy-phone", "copy-code"].map(
+      (f) => [`core/${f}.js`, read(`public/js/core/${f}.js`)] as const,
+    ),
     ["site.js", read("public/js/site.js")] as const,
     ["legal.js", read("public/js/legal.js")] as const,
   ];
@@ -899,7 +901,7 @@ describe("stage 1 wording and pictures", () => {
   it("AUTH-07 copy: /security and /privacy name bloop's own Disconnect first, as the code does it, then My Apps and Entra", () => {
     const text = visibleText(read("public/security.html"));
     // The claim's ground: the phone's button, and a route that deletes the grant and every session at once.
-    expect(read("public/js/core/copy.js")).toMatch(/id: "disconnect", label: "Disconnect OneDrive"/);
+    expect(read("public/js/core/copy-phone.js")).toMatch(/id: "disconnect", label: "Disconnect OneDrive"/);
     const route = between(read("src/worker/routes/auth.ts"), /"\/api\/me\/disconnect"/, "),\n  ),");
     expect(route).toMatch(/vault\.delete\(userId\)/);
     expect(route).toMatch(/sessions\.destroyAll\(userId\)/);
