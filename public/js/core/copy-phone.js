@@ -149,7 +149,8 @@ export function phoneCopy(key, f) {
     case "match":
       return { ...room, files: "skeleton", add: false };
     case "choose":
-      return { ...room, actions: disconnect };
+      // Approve shows from the first list, disabled until a row is ticked, so the panel never changes shape.
+      return { ...room, actions: [...disconnect, CANCEL, { ...APPROVE, disabled: true }] };
     case "approve":
       return { ...room, scope: accountLine, actions: [...disconnect, CANCEL, APPROVE] };
     case "approve_demo":
