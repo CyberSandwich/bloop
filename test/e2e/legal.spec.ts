@@ -125,6 +125,20 @@ test.describe("legal layout at 390", () => {
     expect(await label.evaluate("(el) => el.innerText")).toBe("What it does");
   });
 
+  test("a clause number takes a tap 8 px above and beside its box", async ({ page }) => {
+    await page.goto("/terms");
+    const hit = await page.evaluate(`(() => {
+      const num = document.querySelector('a.num[href="#8.3"]');
+      num.scrollIntoView({ block: "center" });
+      const r = num.getBoundingClientRect();
+      return [
+        document.elementFromPoint(r.left - 4, r.top - 8) === num,
+        document.elementFromPoint(r.right + 4, r.bottom + 8) === num,
+      ];
+    })()`);
+    expect(hit).toEqual([true, true]);
+  });
+
   test("the phone menu lists Terms and Articles, and Terms opens the Terms of Use", async ({ page }) => {
     await page.goto("/");
     const nav = page.getByRole("navigation", { name: "Primary" });
