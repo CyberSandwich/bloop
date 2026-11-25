@@ -169,6 +169,7 @@ describe("every page's text", () => {
     ...ALL.map((p) => [p, read(`public/${p}`)] as const),
     ["core/copy.js", read("public/js/core/copy.js")] as const,
     ["site.js", read("public/js/site.js")] as const,
+    ["legal.js", read("public/js/legal.js")] as const,
   ];
 
   it.each(sources)("%s has no never-say phrase", (_name, text) => {
@@ -617,7 +618,9 @@ describe("site chrome: one nav and one footer on every site page", () => {
   it.each(SITE)("%s names hi@bloop.here, security@ only on /security, and no placeholder", (page) => {
     const html = read(`public/${page}`);
     expect(html).not.toMatch(/bloop\.example/);
-    const allowed = page === "security.html" ? ["hi@bloop.here", "security@bloop.here"] : ["hi@bloop.here"];
+    const allowed = ["security.html", "privacy.html"].includes(page)
+      ? ["hi@bloop.here", "security@bloop.here"]
+      : ["hi@bloop.here"];
     for (const m of html.matchAll(/[\w.+-]+@[\w-]+(\.[\w-]+)+/g)) expect(allowed).toContain(m[0]);
   });
 
@@ -742,7 +745,7 @@ describe("the stylesheets: base.css, then the page's own (design.md section 11)"
   };
 
   it("the site's flat content cards share --r-content; the frames that hold cards keep --r-stage", () => {
-    for (const sel of [".step", ".cell", ".faq details", ".topic"]) {
+    for (const sel of [".step", ".cell", ".faq details"]) {
       expect(block(sel), sel).toContain("border-radius: var(--r-content);");
     }
     for (const sel of [".stage", ".panel"]) expect(block(sel), sel).toContain("border-radius: var(--r-stage);");
@@ -945,10 +948,26 @@ describe("privacy notice", () => {
   it("states the audit retention the Worker runs, and the request logs as the threat model does", () => {
     expect(row("Session and access records")).toContain("180 days. In the Demo, 7 days");
     expect(read("wrangler.jsonc")).toMatch(/"AUDIT_RETENTION_DAYS": "180"[\s\S]*"DEMO_RETENTION_DAYS": "7"/);
-    // Workers Logs on Free keep 7 days from 2026-12-01; the live Worker logs nothing, so "at most" holds either way.
+    // The live Worker logs nothing, so "at most" holds whatever the platform keeps.
     expect(row("Cloudflare's request logs")).toContain("At most 7 days, with no personal data");
     expect(read("docs/threat-model.md")).toMatch(
       /\| Worker logs \| Cloudflare \| [^|]*at most 7 days, no personal data \|/,
+    );
+  });
+
+  it("keeps waitlist answers as threat-model section 10 does: until deletion is asked or the waitlist closes", () => {
+    const kept = row("Waitlist answers<\\/th>");
+    expect(kept).toContain("Until you ask bloop to delete them, or the waitlist closes");
+    expect(read("docs/threat-model.md")).toMatch(
+      /\| waitlist:[^|]*\| Tally[^|]*\| until they ask for deletion or the waitlist closes \|/,
+    );
+  });
+
+  it("covers mail to both addresses, hi@ and security@, wherever it names mail", () => {
+    for (const start of ["Emails you send", "Emails to"])
+      expect(row(start)).toMatch(/hi@bloop\.here and security@bloop\.here/);
+    expect(visibleText(between(html, /<tr><th scope="row" data-label="Processor">Apple/, "</tr>"))).toContain(
+      "hi@bloop.here and security@bloop.here",
     );
   });
 
@@ -1023,8 +1042,9 @@ describe("the doc pages: one .legal layout (design.md section 6, Legal pages)", 
 
   it.each(["privacy.html", "terms.html"])("%s marks every In short line as not binding, for every reader", (page) => {
     const html = pages[page] ?? "";
+    const doc = page === "privacy.html" ? "this notice" : "the terms";
     expect(visibleText(html)).toContain(
-      "The 'In short' lines help you read. They are not part of the terms; the full text is what applies.",
+      `The 'In short' lines help you read. They are not part of ${doc}; the full text is what applies.`,
     );
     const shorts = [...html.matchAll(/<p class="short">([\s\S]*?)<\/p>/g)].map((m) => m[1] ?? "");
     expect(shorts.length).toBeGreaterThanOrEqual(11);

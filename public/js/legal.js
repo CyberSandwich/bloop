@@ -26,23 +26,54 @@ addEventListener("click", (e) => {
   );
 });
 
-// The section crossing a band at about a third of the view is the one being read.
+// The contents mark the section being read: the one a jump just landed on, until the reader scrolls on; else the last
+// one once the end of the text is in view; else the first crossing a band a third down the view. A short section
+// lands above the band, and the last ones may never reach it, so the band alone marks the wrong row.
 const links = new Map([...document.querySelectorAll(".toc a")].map((a) => [a.getAttribute("href")?.slice(1), a]));
 const sections = [...document.querySelectorAll(".legal-text > section")];
 const seen = new Set();
-const spy = new IntersectionObserver(
+let atEnd = false;
+/** @type {{ id: string, y: number } | null} */
+let jumped = null;
+
+const render = () => {
+  if (jumped && Math.abs(scrollY - jumped.y) > 48) jumped = null;
+  const id = jumped?.id ?? (atEnd ? sections.at(-1)?.id : sections.find((s) => seen.has(s))?.id);
+  if (!id) return;
+  for (const [key, a] of links) {
+    if (key === id) a.setAttribute("aria-current", "location");
+    else a.removeAttribute("aria-current");
+  }
+};
+const land = () => {
+  const target = location.hash ? document.getElementById(location.hash.slice(1)) : null;
+  const section = target?.closest(".legal-text > section");
+  if (!section) return;
+  jumped = { id: section.id, y: scrollY };
+  render();
+};
+
+const band = new IntersectionObserver(
   (entries) => {
     for (const e of entries) {
       if (e.isIntersecting) seen.add(e.target);
       else seen.delete(e.target);
     }
-    const current = sections.find((s) => seen.has(s));
-    if (!current) return;
-    for (const [id, a] of links) {
-      if (id === current.id) a.setAttribute("aria-current", "location");
-      else a.removeAttribute("aria-current");
-    }
+    render();
   },
   { rootMargin: "-30% 0px -60% 0px" },
 );
-for (const s of sections) spy.observe(s);
+for (const s of sections) band.observe(s);
+const end = document.querySelector(".related");
+if (end) {
+  new IntersectionObserver(([e]) => {
+    atEnd = !!e?.isIntersecting;
+    render();
+  }).observe(end);
+}
+addEventListener("hashchange", land);
+// A second click on the same row changes no hash, so the click lands too, after the jump.
+addEventListener("click", (e) => {
+  if (e.target instanceof Element && e.target.closest(".toc a")) setTimeout(land);
+});
+addEventListener("load", () => setTimeout(land));

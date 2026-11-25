@@ -63,7 +63,7 @@ bloop puts your slides on a shared screen. You scan the code on the screen, choo
 | `<title>` landing | bloop: Present Anywhere |
 | meta and OG description | Scan the QR code, approve on your phone, and present. (the sub, word for word; it makes no claim about the account, which "stays on your phone" overstated: the server holds a refresh token, AUTH-01) |
 | `<title>` `/security`, `/s`, `/a`, `/code` | bloop: Security; bloop: Screen; bloop: Approve; bloop: Enter the Code |
-| `<title>` `/privacy`, 404 | bloop: Privacy Notice; bloop: Page Not Found |
+| `<title>` `/privacy`, `/terms`, 404 | bloop: Privacy Notice; bloop: Terms of Use; bloop: Page Not Found |
 | OG image alt | bloop: Present Anywhere (`public/og.png` must show the same h1; `tools/render-og.py` renders it) |
 
 **Site chrome (every site page, the same markup; a unit test holds them equal)**

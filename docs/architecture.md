@@ -40,7 +40,7 @@ flowchart TB
   subgraph browser[Browsers]
     s["/s screen page"]
     a["/a, /code, /g phone pages"]
-    l["/ landing, /security, /privacy"]
+    l["/ landing, /privacy, /terms, /security"]
   end
   subgraph cf[Cloudflare account, one Worker, one origin]
     assets[Static assets: public/ served directly, headers from public/_headers]
@@ -289,7 +289,7 @@ test/
 
 | method                   | path                                         | auth                                  | purpose                                                        |
 | ------------------------ | -------------------------------------------- | ------------------------------------- | -------------------------------------------------------------- |
-| GET                      | `/`, `/security`, `/privacy`, `/s`, `/a`, `/code`, `/g`, `/me`, `/.well-known/security.txt` | none (static) | pages; `/it` answers 301 to `/security`; any other path is `404.html` with status 404 |
+| GET                      | `/`, `/privacy`, `/terms`, `/security`, `/s`, `/a`, `/code`, `/g`, `/me`, `/.well-known/security.txt` | none (static) | pages; `/it` answers 301 to `/security`; any other path is `404.html` with status 404 |
 | POST                     | `/api/screens`                               | none, or room cookie (registered)     | create a screen: `{mode}` to `{sid, room}`                     |
 | GET                      | `/api/screen/ws?ref=<screenRef>`             | `hello{sid}` as first message, Origin | screen socket (the ref only routes to the object; it is no secret) |
 | GET                      | `/api/screen/state`                          | Bearer sid                            | polling fallback; also the rotation clock when there is no socket. A poll writes nothing unless a code is due or the close deadline is a tenth of its window stale |
@@ -497,7 +497,7 @@ CSP per page type. Every page uses no inline script or style and no HTML string 
 
 | page                             | Content-Security-Policy                                                                                                                                                                                                                                                               |
 | -------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| landing `/`, `/security`, `/privacy`, `404`, `security.txt` (the `/*` default) | `default-src 'none'; script-src 'self'; style-src 'self'; img-src 'self'; font-src 'self'; connect-src 'self'; manifest-src 'self'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'; require-trusted-types-for 'script'; trusted-types 'none'; upgrade-insecure-requests` |
+| landing `/`, `/privacy`, `/terms`, `/security`, `404`, `security.txt` (the `/*` default) | `default-src 'none'; script-src 'self'; style-src 'self'; img-src 'self'; font-src 'self'; connect-src 'self'; manifest-src 'self'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'; require-trusted-types-for 'script'; trusted-types 'none'; upgrade-insecure-requests` |
 | screen `/s`                      | `default-src 'none'; script-src 'self'; style-src 'self'; img-src 'self'; font-src 'self'; connect-src 'self'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'; require-trusted-types-for 'script'; trusted-types 'none'; upgrade-insecure-requests`                      |
 | phone `/a`, `/code`, `/g`, `/me` | same as `/s`                                                                                                                                                                                                                                                                          |
 | `/api/*`, `/auth/*`              | `default-src 'none'; frame-ancestors 'none'`, plus `Cache-Control: no-store`                                                                                                                                                                                                          |

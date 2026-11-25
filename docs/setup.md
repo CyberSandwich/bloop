@@ -54,7 +54,7 @@ Every contact on the public pages is one role address, hi@bloop.here (the footer
 
 - **Legal pages:** `/privacy`, `/terms` and `/security` are version 1.0. A change gets a new version and effective date in the header block of all three and a line under `#changes`; a material change is emailed to the waitlist first. Privacy's retention table repeats `threat-model.md` section 10, so change both together.
 - **Social image:** `og:image` and `og:url` in `public/index.html` name `https://bloop.here` absolutely, as link previews need; change them with the host.
-- **Stream mode:** if you set `OPEN_PATH_MODE=stream` (field test T3 below), delete the sentence about the Microsoft download link from the "What the PC holds" row of `public/security.html` and design.md.
+- **Stream mode:** if you set `OPEN_PATH_MODE=stream` (field test T3 below), delete the sentence about the Microsoft download link from "What the PC Holds" (`#pc`) in `public/security.html`.
 
 ### Regenerating the site assets
 All outputs are committed; run these only when a source changes. Make one throwaway venv with `fonttools` and `brotli` (`python3 -m venv` in a temp directory, then its `pip install fonttools brotli`; inside the Claude Code sandbox set `PIP_USE_DEPRECATED=legacy-certs`). ImageMagick, `avifenc` and `cwebp` come from Homebrew (`imagemagick`, `libavif`, `webp`).

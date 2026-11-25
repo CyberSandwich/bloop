@@ -59,6 +59,16 @@ test.describe("legal layout at 1440", () => {
     await expect(page.locator('.toc a[aria-current="location"]')).toHaveCount(1);
   });
 
+  test("a jump to a short section marks that section, and the end of the text marks the last", async ({ page }) => {
+    await page.goto("/security");
+    await page.locator('.toc a[href="#pc"]').click();
+    await expect(page.locator('.toc a[href="#pc"]')).toHaveAttribute("aria-current", "location");
+    await expect(page.locator('.toc a[aria-current="location"]')).toHaveCount(1);
+    await page.goto("/terms");
+    await page.evaluate("scrollTo(0, document.documentElement.scrollHeight)");
+    await expect(page.locator('.toc a[href="#contact"]')).toHaveAttribute("aria-current", "location");
+  });
+
   test("a clause number shows its link glyph on hover, and a click copies its URL and says so", async ({
     page,
     context,
