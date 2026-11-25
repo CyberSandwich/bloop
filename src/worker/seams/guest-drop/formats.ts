@@ -122,6 +122,13 @@ export function relationships(relsXml: string): Relationship[] | null {
   return out;
 }
 
+/** The one `.bin` part Word and Excel write into ordinary files; every other `.bin` is refused. */
+const PRINTER_SETTINGS = /(^|\/)printerSettings\/printerSettings\d+\.bin$/;
+
+/** A macro, ActiveX or other binary part, in a docx, xlsx or pptx. */
+export const isRefusedPart = (name: string): boolean =>
+  !PRINTER_SETTINGS.test(name) && ZIP_LIMITS.refusedParts.some((p) => p.test(name));
+
 /** Refuses a macro-enabled or VBA content type, and a content types part that is not plain XML or hides a value. */
 function checkContentTypes(xml: string): Check {
   const entries = [elements(xml, "Default"), elements(xml, "Override")];
@@ -148,7 +155,7 @@ export function checkOoxml(
 ): Check {
   const types = checkContentTypes(contentTypesXml);
   if (!types.ok) return types;
-  if (names.some((n) => ZIP_LIMITS.refusedParts.some((p) => p.test(n)))) return fail("macro_content", "macro part");
+  if (names.some(isRefusedPart)) return fail("macro_content", "macro part");
   for (const name of names.filter(isRelsPart)) {
     const text = rels.get(name);
     const parsed = text === undefined ? null : relationships(text);
