@@ -22,7 +22,8 @@ import type { SwitchName } from "./switches.ts";
 export interface SpendOps {
   take(meter: MeterName, n: number, scope?: string): TakeResult;
   record(meter: MeterName, n: number, scope?: string): void;
-  refund(meter: MeterName, n: number, scope: string | undefined, at: number): void;
+  /** `id`: the take ticket's; the guard honors each id once. */
+  refund(meter: MeterName, n: number, scope: string | undefined, at: number, id: string): void;
   acquire(pool: PoolName, ttlSeconds: number, scope?: string): AcquireResult;
   release(leaseId: string): boolean;
   snapshot(): Snapshot;
@@ -79,12 +80,20 @@ export type CallerMeter = Exclude<MeterName, "r2_class_a" | "r2_class_b" | "d1_w
  * counted (admitted while it was down); the guard ignores a refund that old.
  */
 export interface TakeTicket {
+  /** Random, 96 bits: the guard refunds a ticket once, so a second refund of it does nothing. */
+  id: string;
   meter: CallerMeter;
   n: number;
   scope?: string;
   takenAt: number;
 }
 export type Taken = { ok: true; ticket: TakeTicket };
+
+/** 12 random bytes as base64url (no padding at this length). */
+const ticketId = (): string =>
+  btoa(String.fromCharCode(...crypto.getRandomValues(new Uint8Array(12))))
+    .replaceAll("+", "-")
+    .replaceAll("/", "_");
 
 /**
  * What routes and Durable Objects receive in their deps instead of a global: unit tests of U, V2 and A pass a fake
@@ -195,7 +204,7 @@ export class SpendClient implements Spend {
   }
 
   private ticket(meter: CallerMeter, n: number, scope: string | undefined, takenAt: number): Taken {
-    return { ok: true, ticket: { meter, n, ...(scope ? { scope } : {}), takenAt } };
+    return { ok: true, ticket: { id: ticketId(), meter, n, ...(scope ? { scope } : {}), takenAt } };
   }
 
   /** The guard is down: fail open for the public meters, within this isolate's cap, and closed for the rest. */
@@ -298,7 +307,7 @@ export class SpendClient implements Spend {
     positiveInt(n, "n");
     if (n > ticket.n) throw new RangeError("a refund cannot exceed the take");
     try {
-      await this.rpc(ticket.meter).refund(ticket.meter, n, ticket.scope, ticket.takenAt);
+      await this.rpc(ticket.meter).refund(ticket.meter, n, ticket.scope, ticket.takenAt, ticket.id);
     } catch (e) {
       this.fail("refund", e);
     }

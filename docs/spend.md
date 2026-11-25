@@ -62,7 +62,7 @@ All counts are global, exact and per UTC period; a day's all-scopes total is kep
 | `demo_session` | demo sessions | day |
 | `d1_writes` | D1 rows written, read from analytics only: no caller records it | none; priced in section 6 |
 
-Pools hold a lease that frees itself: `convert` (accounts), `convert_public` (guest and demo), `export`. A lease has a deadline (the requested time, at most the pool's maximum). The Converter destroys its container at the deadline. An unreleased lease keeps its slot through the grace (a release is usually in flight), then is dropped and counted; the breaker turns `convert` off on any lease dropped past deadline plus grace, because a container may still be running. A pool with a per-scope cap (`export`) needs a scope.
+Pools hold a lease that frees itself: `convert` (accounts), `convert_public` (guest and demo), `export`. A lease has a deadline (the requested time, at most the pool's maximum). The Converter destroys its container at the deadline. An unreleased lease keeps its slot through the grace (a release is usually in flight), then is dropped and counted; the breaker turns `convert` off on any lease dropped past deadline plus grace, because a container may still be running. A reset of `convert` takes the day's dropped leases as seen, so only a lease dropped after it trips again. A pool with a per-scope cap (`export`) needs a scope.
 
 ## 3. Caps
 
@@ -125,7 +125,7 @@ A guard outage must not end code sign-in or the public demo, and email is capped
 | `busy` | 503 | `service_busy` | `Retry-After`, at most 60 |
 | `unavailable` | 503 | `service_busy` | `Retry-After` 30 |
 
-Calls, by stream. A caller checks its switch first and calls the guard second. A `refund` is for work that never started, and takes the ticket `take` returned (`meter`, `n`, `scope`, `takenAt`): it refunds at most the ticket's `n` (a larger one throws), under the scope the take used. The guard does nothing when `takenAt` is in the future or older than the longest lease plus its grace (a take admitted while the guard was down has `takenAt` 0), never takes a counter below zero, and on a scoped meter lowers the all-scopes count by at most what that scope's own count holds, so one caller cannot erase another's. A ticket is not redeemed once: refunding the same ticket twice is a caller bug.
+Calls, by stream. A caller checks its switch first and calls the guard second. A `refund` is for work that never started, and takes the ticket `take` returned (`meter`, `n`, `scope`, `takenAt`): it refunds at most the ticket's `n` (a larger one throws), under the scope the take used. The guard does nothing when `takenAt` is in the future or older than the longest lease plus its grace (a take admitted while the guard was down has `takenAt` 0), never takes a counter below zero, and on a scoped meter lowers the all-scopes count by at most what that scope's own count holds, so one caller cannot erase another's. A ticket carries a random id and the guard honors each id once (kept two days): a second refund of the same ticket does nothing, so a partial refund is the ticket's only one.
 
 | stream | calls |
 |---|---|

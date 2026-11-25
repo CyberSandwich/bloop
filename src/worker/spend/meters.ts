@@ -36,6 +36,8 @@ export interface History {
 const ALL = "";
 /** Counter name the breaker reads for leases dropped past their grace. */
 const OVERDUE_METER = "lease_overdue";
+/** Dropped leases the owner has already reset past, same day: the breaker trips only on a count above it. */
+const OVERDUE_SEEN_METER = "lease_overdue_seen";
 
 export type TakeRefusal = {
   ok: false;
@@ -78,6 +80,8 @@ export interface Snapshot {
   pools: Record<PoolName, PoolGauge>;
   /** Leases dropped past deadline plus grace today: a Converter that did not destroy its container. */
   leasesDroppedToday: number;
+  /** Of those, how many an owner reset has already answered. */
+  leasesDroppedSeen: number;
   trips: TripRow[];
 }
 
@@ -191,13 +195,24 @@ export class Ledger {
    * refund is for work that never started, so an `at` in the future or older than the longest lease plus its grace
    * is a caller bug and does nothing (false); a counter never goes below zero. A scoped meter needs the scope, and
    * each period gives back at most what that scope's own row holds, from its row and from the all-scopes row alike,
-   * so one caller cannot erase another's counts.
+   * so one caller cannot erase another's counts. `id` is the take ticket's: a second refund of it does nothing.
    */
-  refund(meter: MeterName, n: number, scope: string | undefined, at: number, now: number, caps: Caps): boolean {
+  refund(
+    meter: MeterName,
+    n: number,
+    scope: string | undefined,
+    at: number,
+    id: string,
+    now: number,
+    caps: Caps,
+  ): boolean {
     checkCounted(meter, n, scope);
+    if (!id) throw new RangeError("a refund needs its ticket id");
     const window =
       (Math.max(caps.lease_max_convert_seconds, caps.lease_max_export_seconds) + caps.lease_grace_seconds) * 1000;
     if (!Number.isFinite(at) || at > now || now - at > window) return false;
+    if (this.sql.exec("SELECT 1 AS one FROM refunded WHERE id = ?", id).toArray().length > 0) return false;
+    this.sql.exec("INSERT INTO refunded (id, day) VALUES (?, ?)", id, periodKey("day", now));
     const own = isScoped(meter) ? scope : undefined;
     for (const p of this.periods(meter)) {
       const key = periodKey(p, at);
@@ -278,6 +293,7 @@ export class Ledger {
       counters,
       pools,
       leasesDroppedToday: this.get(OVERDUE_METER, ALL, periodKey("day", now)),
+      leasesDroppedSeen: this.get(OVERDUE_SEEN_METER, ALL, periodKey("day", now)),
       trips: this.trips(),
     };
   }
@@ -296,6 +312,7 @@ export class Ledger {
         periodKey(p, now - age),
       );
     this.sql.exec("DELETE FROM alert WHERE day < ?", periodKey("day", now - 2 * 86_400_000));
+    this.sql.exec("DELETE FROM refunded WHERE day < ?", periodKey("day", now - 2 * 86_400_000));
   }
 
   // Breaker state: latched until reset, one alert per trip.
@@ -340,9 +357,19 @@ export class Ledger {
     this.sql.exec("UPDATE trip SET alerted = 1 WHERE switch = ? AND value = ?", name, value);
   }
 
-  resetTrip(name: SwitchName): boolean {
+  /**
+   * Clears a latch. Resetting `convert` also takes the day's dropped-lease count as seen, so only a lease dropped
+   * after the reset trips it again.
+   */
+  resetTrip(name: SwitchName, now: number, caps: Caps): boolean {
     const held = this.sql.exec("SELECT 1 AS one FROM trip WHERE switch = ?", name).toArray().length > 0;
     if (held) this.sql.exec("DELETE FROM trip WHERE switch = ?", name);
+    if (name === "convert") {
+      this.dropLapsed(now, caps);
+      const day = periodKey("day", now);
+      const seen = this.get(OVERDUE_SEEN_METER, ALL, day);
+      this.add(OVERDUE_SEEN_METER, ALL, day, this.get(OVERDUE_METER, ALL, day) - seen);
+    }
     return held;
   }
 

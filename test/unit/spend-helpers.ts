@@ -73,14 +73,14 @@ export function fakeGuard(vars: Record<string, unknown> = {}, start = T0, bornAt
   const guard: SpendRpc = {
     take: async (m, n, s) => r.ledger.take(m, n, s, caps(), clock.now),
     record: async (m, n, s) => r.ledger.record(m, n, s, clock.now),
-    refund: async (m, n, s, at) => void r.ledger.refund(m, n, s, at, clock.now, caps()),
+    refund: async (m, n, s, at, id) => void r.ledger.refund(m, n, s, at, id, clock.now, caps()),
     acquire: async (p, ttl, s) => r.ledger.acquire(p, s, ttl, caps(), clock.now),
     release: async (id) => r.ledger.release(id),
     snapshot: async () => r.ledger.snapshot(clock.now, caps()),
     prune: async () => r.ledger.prune(clock.now),
     latchTrip: async (n, v, reason, reading, prior) => r.ledger.latchTrip(n, v, reason, reading, clock.now, prior),
     markAlerted: async (n, v) => r.ledger.markAlerted(n, v),
-    resetTrip: async (n) => r.ledger.resetTrip(n),
+    resetTrip: async (n) => r.ledger.resetTrip(n, clock.now, caps()),
     alertOnce: async (k) => r.ledger.alertOnce(k, clock.now),
     setOverrides: async (v) => {
       overrides = v;
@@ -113,7 +113,7 @@ export function fakeSpend(overrides: Partial<Spend> = {}): Spend & { calls: { me
     calls,
     take: async (meter, n, scope) => {
       calls.push({ method: "take", args: [meter, n, scope] });
-      return { ok: true, ticket: { meter, n, ...(scope ? { scope } : {}), takenAt: 0 } };
+      return { ok: true, ticket: { id: `fake-${calls.length}`, meter, n, ...(scope ? { scope } : {}), takenAt: 0 } };
     },
     charge: spy("charge", { ok: true } as const),
     acquire: spy("acquire", { ok: true, leaseId: "lease-1", deadline: 0 } as const),

@@ -189,13 +189,15 @@ export function evaluate(snap: Snapshot, readings: Readings | undefined, t: Trip
       live,
       line: liveMax,
     });
-  // Only a lease dropped past deadline plus grace: one still inside the grace is a release in flight.
-  if (snap.leasesDroppedToday > 0)
+  // Only a lease dropped past deadline plus grace (one inside the grace is a release in flight), and only one
+  // dropped since the owner's last reset, so a reset is not undone by the day's old count.
+  const newDrops = snap.leasesDroppedToday - snap.leasesDroppedSeen;
+  if (newDrops > 0)
     trip(
       "leases_overdue",
       [{ switch: "convert", value: "off" }],
       "a conversion lease outlived its deadline and grace: a container may be running",
-      { overdue: snap.leasesDroppedToday },
+      { overdue: newDrops },
     );
 
   const failed = day("conversion_failed");
