@@ -43,13 +43,10 @@ document.querySelector(".frag-list")?.addEventListener("click", (e) => {
   if (row) row.setAttribute("aria-pressed", `${row.getAttribute("aria-pressed") === "false"}`);
 });
 
-// A link closes the sheet over its jump; Safari 15, 16 lack the method, and a non-popover throws.
+// A link closes the sheet over its jump; Safari 15, 16 keep the attribute but lack the method.
 const menu = document.getElementById("nav-links");
 menu?.addEventListener("click", (e) => {
-  if (!(e.target instanceof Element && e.target.closest("a"))) return;
-  try {
-    menu.hidePopover?.();
-  } catch {}
+  if (e.target instanceof Element && e.target.closest("a") && menu.hasAttribute("popover")) menu.hidePopover?.();
 });
 
 // A spring (design.md section 6) drives a paused tilt animation; 1% thresholds wake it.

@@ -775,6 +775,12 @@ describe("site chrome: one nav and one footer on every site page", () => {
     expect(nav).toMatch(/<button class="nav-menu" type="button" popovertarget="nav-links" aria-label="Menu">/);
   });
 
+  it("a menu link closes the sheet only on a popover, and through a method Safari 15, 16 may lack, with no swallowed error", () => {
+    const js = read("public/js/site.js");
+    expect(js).toContain('menu.hasAttribute("popover")) menu.hidePopover?.();');
+    expect(js).not.toMatch(/catch\s*(\(\w*\))?\s*\{\s*\}/);
+  });
+
   it("the footer ends with the year line", () => {
     expect(footer).toMatch(/<p class="footer-legal">© 2026 bloop<\/p>\s*<\/footer>$/);
   });
