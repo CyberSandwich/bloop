@@ -16,6 +16,7 @@ declare const document: {
   fonts?: { ready: Promise<unknown> };
 };
 declare const innerWidth: number;
+declare const innerHeight: number;
 declare const getComputedStyle: (el: El) => {
   visibility: string;
   lineHeight: string;
@@ -46,6 +47,31 @@ for (const vp of VIEWPORTS) {
       expect(csp).toEqual([]);
       expect(requests.filter((u) => /robin/.test(u))).toEqual([]);
       expect((await page.content()).toLowerCase()).not.toContain("robin");
+    });
+
+    test("the hero loads the source for its width, and every image below the fold waits to be scrolled to", async ({
+      page,
+    }) => {
+      await page.goto("/");
+      await page.waitForLoadState("load");
+      const imgs = await page.evaluate(() =>
+        [
+          ...(document.querySelectorAll("img") as Iterable<El & { loading: string; currentSrc: string; src: string }>),
+        ].map((img) => ({
+          src: img.currentSrc,
+          file: img.src,
+          lazy: img.loading === "lazy",
+          below: img.getBoundingClientRect().top >= innerHeight,
+          hero: img.closest(".stage") !== null,
+        })),
+      );
+      const hero = imgs.find((i) => i.hero);
+      expect(hero?.lazy).toBe(false);
+      // A phone never fetches the desktop screenshot.
+      expect(hero?.src).toMatch(vp.width < 640 ? /\/img\/hero-phone-(600|900)\./ : /\/img\/hero-viewer-(1000|1440)\./);
+      const raster = imgs.filter((i) => !i.hero && !i.file.endsWith(".svg"));
+      expect(raster.length).toBeGreaterThan(0);
+      for (const i of raster) expect(i, i.file).toMatchObject({ lazy: true, below: true });
     });
 
     test("the h1 is one line from 640 (two below), with no horizontal scroll and every target at least 44 px", async ({
