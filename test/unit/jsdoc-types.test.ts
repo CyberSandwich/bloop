@@ -1,13 +1,14 @@
 import { spawnSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
+import { SPAWN_TIMEOUT } from "./spawn.ts";
 
 const path = (relative: string) => fileURLToPath(new URL(relative, import.meta.url));
 const tsc = path("../../node_modules/typescript/bin/tsc");
 const check = (config: string) =>
   spawnSync(process.execPath, [tsc, "-p", path(`../fixtures/jsdoc/${config}`)], { encoding: "utf8" });
 
-describe("browser JS typed by JSDoc against src/shared/protocol.ts", () => {
+describe("browser JS typed by JSDoc against src/shared/protocol.ts", { timeout: SPAWN_TIMEOUT }, () => {
   it("accepts a module that imports a type through @import and uses it correctly", () => {
     const result = check("tsconfig.json");
     expect(result.stdout).toBe("");

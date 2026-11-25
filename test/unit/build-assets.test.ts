@@ -16,6 +16,7 @@ import { fileURLToPath, pathToFileURL } from "node:url";
 import { build as esbuild } from "esbuild";
 import { afterEach, describe, expect, it } from "vitest";
 import { build, minify } from "../../tools/build-assets.mjs";
+import { SPAWN_TIMEOUT } from "./spawn.ts";
 
 const REPO = fileURLToPath(new URL("../../", import.meta.url));
 
@@ -145,7 +146,7 @@ describe("build", () => {
     expect(() => build(root)).toThrow();
   });
 
-  it("the CLI builds even when reached through a symlinked path", () => {
+  it("the CLI builds even when reached through a symlinked path", { timeout: SPAWN_TIMEOUT }, () => {
     project({ "js/a.js": "export const a = 1; // gone\n" });
     const link = join(root, "tools-link");
     symlinkSync(join(REPO, "tools"), link);

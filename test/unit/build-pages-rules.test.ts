@@ -6,6 +6,7 @@ import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { afterEach, describe, expect, it } from "vitest";
 import { loadDocs, renderDoc } from "../../tools/build-pages.mjs";
+import { SPAWN_TIMEOUT } from "./spawn.ts";
 
 const REPO = fileURLToPath(new URL("../../", import.meta.url));
 const docs = loadDocs();
@@ -90,7 +91,7 @@ describe("version counting on a legal page", () => {
   });
 });
 
-describe("the CLI", () => {
+describe("the CLI", { timeout: SPAWN_TIMEOUT }, () => {
   let copy = "";
   afterEach(() => rmSync(copy, { recursive: true, force: true }));
   const run = (...args: string[]) =>

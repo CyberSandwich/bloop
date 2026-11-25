@@ -5,6 +5,7 @@ import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
 import { blocks, classify, dependencySections, depsChanged, parseDiff } from "../../tools/change-tier.mjs";
+import { SPAWN_TIMEOUT } from "./spawn.ts";
 
 type Status = "A" | "M" | "D" | "T";
 const file = (path: string, lines = 5, status: Status = "M") => ({ path, status, added: lines, deleted: 0 });
@@ -121,7 +122,7 @@ describe("parseDiff", () => {
   });
 });
 
-describe("the CLI against a real repository", () => {
+describe("the CLI against a real repository", { timeout: SPAWN_TIMEOUT }, () => {
   const TOOL = fileURLToPath(new URL("../../tools/change-tier.mjs", import.meta.url));
   const git = (cwd: string, ...args: string[]) =>
     execFileSync("git", ["-c", "user.name=t", "-c", "user.email=t@t", ...args], { cwd, encoding: "utf8" });
