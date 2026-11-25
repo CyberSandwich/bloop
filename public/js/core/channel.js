@@ -2,7 +2,7 @@
 // first frame, never in the URL.
 /** @import {ErrorCode} from "../../../src/shared/protocol.ts" */
 /** @import {ChannelOptions, SocketLike} from "../types.js" */
-import { PING_MS, pollDelay, reconnectDelay, SILENCE_MS, shouldPoll } from "./timing.js";
+import { CONNECT_TIMEOUT_MS, PING_MS, pollDelay, reconnectDelay, SILENCE_MS, shouldPoll } from "./timing.js";
 
 /** Errors after which the credential is dead and retrying is pointless. */
 export const FATAL = /** @type {ReadonlySet<ErrorCode>} */ (
@@ -31,11 +31,15 @@ export function openChannel(o) {
   /** State frames seen: a read older than a push is stale. */
   let pushed = 0;
 
+  /** @type {ReturnType<typeof setTimeout> | null} */
+  let connectTimer = null;
+
   const clear = () => {
     if (retryTimer) clearTimeout(retryTimer);
     if (pollTimer) clearTimeout(pollTimer);
     if (pingTimer) clearInterval(pingTimer);
-    retryTimer = pollTimer = pingTimer = null;
+    if (connectTimer) clearTimeout(connectTimer);
+    retryTimer = pollTimer = pingTimer = connectTimer = null;
   };
 
   function stopPolling() {
@@ -73,7 +77,8 @@ export function openChannel(o) {
     if (closed) return;
     live = false;
     if (pingTimer) clearInterval(pingTimer);
-    pingTimer = null;
+    if (connectTimer) clearTimeout(connectTimer);
+    pingTimer = connectTimer = null;
     socket = null;
     failures += 1;
     if (shouldPoll(failures)) startPolling();
@@ -107,6 +112,8 @@ export function openChannel(o) {
       if (!live) {
         live = true;
         failures = 0;
+        if (connectTimer) clearTimeout(connectTimer);
+        connectTimer = null;
         stopPolling();
         o.onLink("ok");
       }
@@ -125,6 +132,14 @@ export function openChannel(o) {
     };
     ws.onclose = gone;
     ws.onerror = gone;
+    // A proxy that holds the upgrade (or the first frame) fires neither close nor error: poll now, retry the socket.
+    connectTimer = setTimeout(() => {
+      connectTimer = null;
+      if (socket !== ws || live) return;
+      startPolling();
+      ws.close();
+      gone();
+    }, CONNECT_TIMEOUT_MS);
   }
 
   function stop() {

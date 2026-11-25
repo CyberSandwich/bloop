@@ -2,6 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { Api } from "../../public/js/core/api.js";
 import { openChannel, refusal } from "../../public/js/core/channel.js";
 import { onRefusal } from "../../public/js/core/states.js";
+import { CONNECT_TIMEOUT_MS } from "../../public/js/core/timing.js";
 import type { SocketLike } from "../../public/js/types.js";
 import type { ErrorCode } from "../../src/shared/protocol.ts";
 
@@ -176,6 +177,54 @@ describe("live channel", () => {
     expect(t.pollCalls).toHaveLength(polled);
   });
 
+  it("a socket that never answers (no open, close or error) is dropped at the connect timeout and polling starts at once", async () => {
+    const t = setup([{ ok: true, value: { state: "claimed" } }]);
+    await vi.advanceTimersByTimeAsync(CONNECT_TIMEOUT_MS - 1);
+    expect(t.pollCalls).toEqual([]);
+    expect(t.sockets[0]?.closed).toBe(false);
+    await vi.advanceTimersByTimeAsync(1);
+    expect(t.sockets[0]?.closed).toBe(true);
+    await vi.advanceTimersByTimeAsync(1);
+    expect(t.pollCalls).toEqual(["/api/screen/state|REF.SECRET"]);
+    expect(t.views).toEqual([{ state: "claimed" }]);
+    // The socket is retried on the usual backoff, while the poll keeps the page current.
+    expect(t.sockets).toHaveLength(1);
+    await vi.advanceTimersByTimeAsync(1000);
+    expect(t.sockets).toHaveLength(2);
+  });
+
+  it("an open socket that never sends a first frame times out the same way, and a late close adds no second failure", async () => {
+    const t = setup();
+    t.sockets[0]?.open();
+    await vi.advanceTimersByTimeAsync(CONNECT_TIMEOUT_MS);
+    await vi.advanceTimersByTimeAsync(1);
+    expect(t.pollCalls).toHaveLength(1);
+    t.sockets[0]?.drop();
+    await vi.advanceTimersByTimeAsync(998);
+    expect(t.sockets).toHaveLength(1);
+    await vi.advanceTimersByTimeAsync(1);
+    expect(t.sockets).toHaveLength(2);
+  });
+
+  it("a socket whose first frame arrives in time is kept, and never polled", async () => {
+    const t = setup();
+    t.sockets[0]?.open();
+    await vi.advanceTimersByTimeAsync(CONNECT_TIMEOUT_MS - 1);
+    t.sockets[0]?.push({ v: 1, t: "state", view: { state: "waiting" } });
+    await vi.advanceTimersByTimeAsync(CONNECT_TIMEOUT_MS * 2);
+    expect(t.sockets).toHaveLength(1);
+    expect(t.sockets[0]?.closed).toBe(false);
+    expect(t.pollCalls).toEqual([]);
+  });
+
+  it("stop cancels a pending connect timeout", async () => {
+    const t = setup();
+    t.channel.stop();
+    await vi.advanceTimersByTimeAsync(CONNECT_TIMEOUT_MS * 2);
+    expect(t.pollCalls).toEqual([]);
+    expect(t.sockets).toHaveLength(1);
+  });
+
   it("reports offline when polls fail, backing off 5 s", async () => {
     const t = setup([
       { ok: false, error: "offline" },
@@ -253,6 +302,7 @@ describe("live channel", () => {
   it("pings while open and drops a socket that has gone silent", () => {
     const t = setup();
     t.sockets[0]?.open();
+    t.sockets[0]?.push({ v: 1, t: "state", view: {} });
     vi.advanceTimersByTime(25_000);
     expect(t.sockets[0]?.sent.at(-1)).toBe('{"v":1,"t":"ping"}');
     vi.advanceTimersByTime(25_000);
