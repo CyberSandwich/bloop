@@ -30,6 +30,29 @@ describe("size ratchet: a budget only holds or drops", () => {
     expect(compare(base, head, has)).toEqual([]);
   });
 
+  it("size ratchet: a new budget on a file the base already had passes when no entry gave bytes up", () => {
+    const head = [entry("app", "7 kB"), entry("landing HTML", "3.5 kB", "dist/index.html")];
+    const has = files([src("app"), "public/index.html"], [src("app"), "public/index.html"]);
+    expect(compare([entry("app", "7 kB")], head, has)).toEqual([]);
+  });
+
+  it("size ratchet: adding any one of the repo's own entries to the rest never fails (a budget only tightens)", () => {
+    const root = new URL("../../", import.meta.url);
+    const entries: { name: string; path: string | string[]; limit: string }[] = JSON.parse(
+      readFileSync(new URL("package.json", root), "utf8"),
+    )["size-limit"];
+    const all = { onBase: () => true, onHead: () => true };
+    const failing = entries.filter(
+      (e) =>
+        compare(
+          entries.filter((x) => x !== e),
+          entries,
+          all,
+        ).length > 0,
+    );
+    expect(failing.map((e) => e.name)).toEqual([]);
+  });
+
   it("size ratchet: a removed entry passes once its file is deleted, and fails while the file stays", () => {
     const base = [entry("old", "1 kB")];
     expect(compare(base, [], files([src("old")], []))).toEqual([]);

@@ -56,11 +56,12 @@ const kb = (/** @type {number} */ bytes) => `${bytes / 1000} kB`;
 /**
  * Why HEAD's budgets break the ratchet, one line each; none means it passes.
  * - An entry matched by name, or else by path, fails when its limit rises or its compression changes.
- * - Moved bytes: a matched entry whose measure changed, a removed entry, and an added entry for a file the base
- *   already had all join one group, whose limits on HEAD may not sum past the base's. A split or a newly lazy module
- *   moves bytes and passes; a rename plus a raise, or a narrowed path plus a new entry for the rest, fails.
- * - A removed entry also fails while any of its files stays. An added entry for files new in HEAD passes alone, unless
- *   the change also removes an entry: then it may be that entry's file renamed, so it joins the group.
+ * - Moved bytes: when a base entry gives bytes up (its measure changed, or it was removed), those entries and every
+ *   added entry form one group whose limits on HEAD may not sum past the base's, since an added entry may be what the
+ *   bytes moved to (a split, a rename). A split or a newly lazy module moves bytes and passes; a rename plus a raise,
+ *   or a narrowed path plus a new entry for the rest, fails.
+ * - With nothing given up, an added entry is a budget that did not exist and passes, even for a file the base had.
+ * - A removed entry also fails while any of its files stays.
  * @param {Entry[]} base @param {Entry[]} head @param {Sources} has
  */
 export function compare(base, head, has) {
@@ -68,7 +69,6 @@ export function compare(base, head, has) {
   /** @type {Entry[]} */ const movedFrom = [];
   /** @type {Entry[]} */ const movedTo = [];
   /** @type {Set<Entry>} */ const matched = new Set();
-  /** @type {Set<Entry>} */ const matchedBase = new Set();
   for (const before of base) {
     const after =
       head.find((e) => e.name === before.name) ?? head.find((e) => !matched.has(e) && measure(e) === measure(before));
@@ -79,7 +79,6 @@ export function compare(base, head, has) {
       continue;
     }
     matched.add(after);
-    matchedBase.add(before);
     if (parseLimit(after.limit) > parseLimit(before.limit)) {
       problems.push(`"${after.name}" limit raised from ${before.limit} to ${after.limit}`);
     }
@@ -91,11 +90,7 @@ export function compare(base, head, has) {
       movedTo.push(after);
     }
   }
-  // With an entry removed, every added one may be its file renamed, so none passes alone.
-  const removed = base.some((e) => !matchedBase.has(e));
-  for (const added of head.filter((e) => !matched.has(e))) {
-    if (removed || sources(added).some((p) => !checkable(p) || has.onBase(p))) movedTo.push(added);
-  }
+  if (movedFrom.length > 0) movedTo.push(...head.filter((e) => !matched.has(e)));
   const sum = (/** @type {Entry[]} */ es) => es.reduce((n, e) => n + parseLimit(e.limit), 0);
   if (movedTo.length > 0 && sum(movedTo) > sum(movedFrom)) {
     const names = (/** @type {Entry[]} */ es) => es.map((e) => `"${e.name}"`).join(", ") || "none";
