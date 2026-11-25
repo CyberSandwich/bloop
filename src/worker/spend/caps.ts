@@ -122,15 +122,21 @@ export const TRIPS = {
     default: 10,
     reason: "conversions needed in a day before the failure percent counts",
   },
-  guest_drops_demo_off_day: {
-    var: "BREAKER_GUEST_DROPS_DEMO_OFF_DAY",
-    default: 1000,
-    reason: "guest drops in a day, all IPs: demo drop off",
+  guest_drop_cost_usd: {
+    var: "BREAKER_GUEST_DROP_COST_USD",
+    default: 0.00002,
+    reason:
+      "cost of one guest drop that is not converted: 3 R2 class A, 3 class B and 5 D1 rows, $0.0000194, rounded up",
   },
-  guest_drops_files_stopped_day: {
-    var: "BREAKER_GUEST_DROPS_FILES_STOPPED_DAY",
-    default: 3000,
-    reason: "guest drops in a day, all IPs: guest files stopped",
+  guest_drops_demo_off_pct: {
+    var: "BREAKER_GUEST_DROPS_DEMO_OFF_PCT",
+    default: 5,
+    reason: "percent of the monthly budget, spent in one day by guest drops, that turns demo drop off",
+  },
+  guest_drops_files_stopped_pct: {
+    var: "BREAKER_GUEST_DROPS_FILES_STOPPED_PCT",
+    default: 15,
+    reason: "percent of the monthly budget, spent in one day by guest drops, that stops guest files",
   },
   budget_month_usd: {
     var: "BREAKER_BUDGET_MONTH_USD",
@@ -423,6 +429,15 @@ export function resolveLines(vars: Vars, trips: Trips): Record<PricedMeter, Line
     out[m] = { floor, ceiling: Math.max(floor, ceiling) };
   }
   return out;
+}
+
+/**
+ * Guest drops a day at which demo drop turns off, and at which guest files stop: the day's spend by drops alone
+ * (`guest_drop_cost_usd` each) as a share of the budget over 30 days. They overlap the R2 and D1 lines above.
+ */
+export function guestDropLines(t: Trips): { demoOff: number; filesStopped: number } {
+  const perDay = (pct: number) => Math.round(((pct / 100) * t.budget_month_usd) / 30 / t.guest_drop_cost_usd);
+  return { demoOff: perDay(t.guest_drops_demo_off_pct), filesStopped: perDay(t.guest_drops_files_stopped_pct) };
 }
 
 /** Nearest-rank 95th percentile; 0 for no values. */
