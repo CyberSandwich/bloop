@@ -6,7 +6,17 @@ import { expect, test } from "@playwright/test";
 const ARTICLES = readdirSync(fileURLToPath(new URL("../../content/articles", import.meta.url)))
   .filter((f) => f.endsWith(".md") && f !== "index.md")
   .map((f) => `/articles/${f.slice(0, -3)}`);
-const PAGES = ["/", "/articles", ...ARTICLES, "/privacy", "/terms", "/security", "/code", "/no-such-page"];
+const PAGES = [
+  "/",
+  "/articles",
+  ...ARTICLES,
+  "/privacy",
+  "/terms",
+  "/security",
+  "/accessibility",
+  "/code",
+  "/no-such-page",
+];
 const WIDTHS = [320, 360, 390] as const;
 
 // Runs in the page. An element counts where it is drawn: an ancestor that clips (overflow other than visible)

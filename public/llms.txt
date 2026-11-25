@@ -17,3 +17,4 @@ bloop puts your files on a shared screen, such as a room PC, from your phone. Yo
 - [Privacy Notice](https://bloop.here/privacy): What bloop collects, why, how long it keeps it, and your rights.
 - [Terms of Use](https://bloop.here/terms): The terms for using bloop, a free early-access side project.
 - [Security](https://bloop.here/security): What bloop holds, where it runs, what can stay on a PC, and how to report a problem.
+- [Accessibility](https://bloop.here/accessibility): How accessible bloop is, the problems we know about, and how to report one.

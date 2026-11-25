@@ -14,7 +14,7 @@ const ARTICLES = [
     .map((f) => `articles/${f.replace(/\.md$/, ".html")}`),
 ];
 // The contracts (design.md section 6, Legal pages).
-const LEGAL = ["privacy.html", "terms.html", "security.html"] as const;
+const LEGAL = ["privacy.html", "terms.html", "security.html", "accessibility.html"] as const;
 const SITE = ["index.html", ...LEGAL, "404.html", ...ARTICLES];
 // Every doc page also loads legal.css and legal.js.
 const isDoc = (page: string) => (LEGAL as readonly string[]).includes(page) || ARTICLES.includes(page);
@@ -1129,9 +1129,11 @@ describe("the doc pages: one .legal layout (design.md section 6, Legal pages)", 
       ),
     );
     expect(meta).toContain(`<a href="#changes">${older.length ? "Previous" : "No previous"} versions</a>`);
-    expect(visibleText(between(html, /<section id="changes"/, "</section>"))).toContain(
-      older.length ? "Version" : "Earlier versions were shown for review before this one",
-    );
+    const changed = visibleText(between(html, /<section id="changes"/, "</section>"));
+    expect(changed).toContain(older.length ? "Version" : "first published version");
+    // The three contracts had review drafts; the accessibility statement was first published as 1.0.
+    if (!older.length && page !== "accessibility.html")
+      expect(changed).toContain("Earlier versions were shown for review before this one");
   });
 
   it.each(LEGAL)("%s leaves no placeholder or flag from the copy", (page) => {
@@ -1177,6 +1179,39 @@ describe("the doc pages: one .legal layout (design.md section 6, Legal pages)", 
     );
   });
 
+  it("/accessibility states its target and status, each known problem with a way around and a plan, how to report and who enforces", () => {
+    const html = pages["accessibility.html"] ?? "";
+    expect(html).not.toContain('class="num"');
+    expect(sections(html).map((s) => s.id)).toEqual([
+      "how",
+      "status",
+      "problems",
+      "report",
+      "enforcement",
+      "prepared",
+      "changes",
+    ]);
+    expect(visibleText(html)).toContain("(WCAG) version 2.2 at level AA. It is partially compliant");
+    const problems = [...between(html, /<section id="problems"/, "</section>").matchAll(/<li>([\s\S]*?)<\/li>/g)].map(
+      (m) => visibleText(m[1] ?? ""),
+    );
+    expect(problems).toHaveLength(5);
+    for (const p of problems) expect(p, p).toMatch(/Way around: .+ Plan: .+\.$/);
+    // A plan carries no date: the statement promises the fix, not when.
+    for (const p of problems) expect(p, p).not.toMatch(/\b(20\d\d|by (the )?(end|spring|summer|autumn|winter))\b/i);
+    expect(between(html, /<section id="report"/, "</section>")).toContain('href="mailto:hi@bloop.here"');
+    expect(between(html, /<section id="enforcement"/, "</section>")).toMatch(
+      /Equality and Human Rights Commission \(EHRC\)/,
+    );
+    const effective = /datetime="([\d-]+)"/.exec(between(html, /<p class="meta">/, "</p>"))?.[1];
+    expect(between(html, /<section id="prepared"/, "</section>")).toContain(`<time datetime="${effective}">`);
+    for (const page of ["privacy.html", "terms.html", "security.html"])
+      expect(between(pages[page] ?? "", /<p class="related">/, "</p>"), page).toContain(
+        '<a href="/accessibility">Accessibility</a>',
+      );
+    expect(read("public/index.html")).toContain('<li><a href="/accessibility">Accessibility</a></li>');
+  });
+
   it("/security is not a contract: no numbers and no In short lines", () => {
     const html = pages["security.html"] ?? "";
     expect(html).not.toContain('class="short"');
@@ -1195,7 +1230,7 @@ describe("the doc pages: one .legal layout (design.md section 6, Legal pages)", 
 
   it.each(LEGAL)("%s links only to anchors that exist, on its own page or another doc page", (page) => {
     const html = pages[page] ?? "";
-    for (const m of html.matchAll(/href="(\/(privacy|terms|security))?#([^"]+)"/g)) {
+    for (const m of html.matchAll(/href="(\/(privacy|terms|security|accessibility))?#([^"]+)"/g)) {
       const target = m[2] ? (pages[`${m[2]}.html`] ?? "") : html;
       expect(ids(target).has(m[3]), m[0]).toBe(true);
     }

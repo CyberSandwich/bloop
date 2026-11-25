@@ -21,6 +21,7 @@ describe.each([
   ["/security", 200, LANDING_CSP, "<title>bloop: Security</title>", /text\/html/],
   ["/privacy", 200, LANDING_CSP, "<title>bloop: Privacy Notice</title>", /text\/html/],
   ["/terms", 200, LANDING_CSP, "<title>bloop: Terms of Use</title>", /text\/html/],
+  ["/accessibility", 200, LANDING_CSP, "<title>bloop: Accessibility</title>", /text\/html/],
   ["/articles", 200, LANDING_CSP, "<title>bloop: Articles</title>", /text\/html/],
   ["/articles/how-bloop-works", 200, LANDING_CSP, "<title>bloop: How bloop Works</title>", /text\/html/],
   ["/sitemap.xml", 200, LANDING_CSP, "<urlset", /xml/],

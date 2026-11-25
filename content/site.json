@@ -10,7 +10,8 @@
     { "label": "Articles", "href": "/articles", "in": ["nav", "footer"] },
     { "label": "Privacy", "href": "/privacy", "in": ["nav", "footer"] },
     { "label": "Terms", "href": "/terms", "in": ["nav", "footer"] },
-    { "label": "Security", "href": "/security", "in": ["nav", "footer"] }
+    { "label": "Security", "href": "/security", "in": ["nav", "footer"] },
+    { "label": "Accessibility", "href": "/accessibility", "in": ["footer"] }
   ],
   "robots": { "disallow": ["/api/"] },
   "pages": [

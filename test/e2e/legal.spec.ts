@@ -18,6 +18,7 @@ const PAGES = [
   "/privacy",
   "/terms",
   "/security",
+  "/accessibility",
   "/articles",
   "/articles/how-bloop-works",
   "/articles/threat-model-for-it-teams",

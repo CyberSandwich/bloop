@@ -340,7 +340,11 @@ describe("routes and headers", () => {
         if (target) {
           if (frag) expect(target, `${rel}: ${href}`).toContain(`id="${frag}"`);
         } else {
-          const known = existsSync(`${ROOT}public${path}`) || new RegExp(`^${path} `, "m").test(redirects);
+          // A hand page outside the build (/code) is served from its .html file.
+          const known =
+            existsSync(`${ROOT}public${path}`) ||
+            existsSync(`${ROOT}public${path}.html`) ||
+            new RegExp(`^${path} `, "m").test(redirects);
           expect(known, `${rel}: ${href}`).toBe(true);
         }
       }
@@ -478,7 +482,8 @@ describe("the content rules", () => {
 
   it("while the legal pages are 1.0 (before v1 is final), their change clauses say 1.0 is updated in place", () => {
     const legal = docs.filter((d) => d.meta.kind === "legal");
-    expect(legal.map((d) => d.meta.version)).toEqual(["1.0", "1.0", "1.0"]);
+    expect(legal.map((d) => d.path)).toEqual(["/privacy", "/terms", "/security", "/accessibility"]);
+    for (const d of legal) expect(d.meta.version, d.file).toBe("1.0");
     // A list of one version: no What Changed line but the first, while 1.0 is updated in place.
     for (const d of legal) expect(d.body.match(/^- Version /gm), d.file).toHaveLength(1);
     for (const path of ["/privacy", "/terms"])
