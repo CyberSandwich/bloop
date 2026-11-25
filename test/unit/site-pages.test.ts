@@ -1267,8 +1267,11 @@ describe("landing motion and spacing (design.md sections 6 and 8)", () => {
     expect(js).toMatch(/addEventListener\("visibilitychange", pause\)/);
     expect(js).toMatch(/toggle\("is-paused", !on \|\| document\.hidden\)/);
     const rule = css.search(
-      /^\.is-paused,\n\.is-paused::before,\n\.hero h1:hover \.sheen,\n\.hero:focus-within \.sheen \{\n {2}animation-play-state: paused;/m,
+      /^\.is-paused,\n\.is-paused::before,\n\.hero:focus-within \.sheen \{\n {2}animation-play-state: paused;/m,
     );
+    // Hover pauses only where a pointer hovers: a tap would leave :hover stuck on, and the sheen paused.
+    expect(css).toMatch(/@media \(hover: hover\) \{\s*\.hero h1:hover \.sheen \{\s*animation-play-state: paused;/);
+    expect(css.replace(/@media \(hover: hover\) \{[^@]*?\n\}\n/g, "")).not.toContain("h1:hover .sheen");
     expect(rule).toBeGreaterThan(0);
     for (const m of css.matchAll(/^\s*animation: /gm)) expect(m.index ?? 0).toBeLessThan(rule);
     // The doc pages' one panel pauses its drift the same way.

@@ -489,9 +489,14 @@ h3 {
 /* Off screen, hidden tab, or the sheen on hover or focus (2.2.2): after every animated rule, which it outranks. */
 .is-paused,
 .is-paused::before,
-.hero h1:hover .sheen,
 .hero:focus-within .sheen {
   animation-play-state: paused;
+}
+/* A tap would leave :hover on, so only a pointer that hovers pauses it. */
+@media (hover: hover) {
+  .hero h1:hover .sheen {
+    animation-play-state: paused;
+  }
 }
 @keyframes drift {
   from {
