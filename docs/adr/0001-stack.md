@@ -49,6 +49,8 @@ Asset tools outside npm: `tools/render-og.py`, `render-slides.py` and `subset-fo
 
 Client parts beyond the table: `public/js/core/loader.js`, the one loading part (design.md section 6, Loader), with `readAll`, which counts a `fetch` body against its `Content-Length`. The viewer draws a photo it read that way on a `<canvas>`: the CSP has no `blob:` (and stays without it), so script-held bytes can never become an `<img>`. Why: real progress on a slow photo, which an `<img>` cannot report, with no second download and no wider CSP. Replaces: the blurred thumbnail stand-in. Remove: set the view link as an `<img>` `src` again, and show the part indeterminate.
 
+A guest's video plays in a native `<video>` on its view link, in the screen page on a live screen too (`viewer-video.js`, a lazy `import()` with its own size entry, so a session with no video loads none of it). Why: a window on the view link is a top-level document under its `sandbox` CSP, an opaque origin that the link's `Cross-Origin-Resource-Policy: same-origin` refuses, so it never plays; in the page it stays under `media-src 'self'` with no CSP change. Native controls over custom ones: no bytes and the engines' own keyboard and screen reader paths. Remove: drop the module and route a guest's view link back to the window.
+
 ## Rejected
 
 - **Node container plus SQLite** (Hetzner or Fly): best exit path and no US provider, but it costs money from day one and is a single machine to patch. It remains the exit: the code is plain `fetch` and SQL, so only the Durable Object module would need rewriting.

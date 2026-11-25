@@ -5,7 +5,7 @@
 export type Mode = "live" | "demo";
 export type Kind = "owner" | "guest";
 export type FileType = "pptx" | "pdf" | "jpg" | "png" | "mp4" | "mov";
-/** `view` is an image shown in the screen page; `pdf` a PDF file's own view or a deck's rendition. */
+/** `view` is a photo or video shown in the screen page; `pdf` a PDF file's own view or a deck's rendition. */
 export const OPEN_MODES = ["protocol", "download", "pdf", "view"] as const;
 export type OpenMode = (typeof OPEN_MODES)[number];
 export type EndReason = "phone" | "screen" | "auto" | "canceled" | "claim_timeout" | "error";

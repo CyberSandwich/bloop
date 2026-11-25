@@ -495,7 +495,7 @@ Screen side (`public/js/launcher.js`; its types are in `public/js/types.d.ts`; `
 /** Launch ladder: protocol, then Download after 5 s with no fetch, then the PDF view. Each link is acted on once, whether it arrived as an `open` frame or as a /api/screen/link answer. */
 type Minted = "ok" | "spent" | "failed";
 export interface ScreenLauncher {
-  launch(links: LinkSet, item?: number): void; // protocol: location.assign + one "launched" report; pdf and view (an image): window.open("bloop-pdf"), reported as pdf or view; download: <a download>. The demo passes pdf and view to the viewer instead (`viewer.js`: a HEAD for a PDF, the stage <img> for an image)
+  launch(links: LinkSet, item?: number): void; // protocol: location.assign + one "launched" report; pdf and view (an image): window.open("bloop-pdf"), reported as pdf or view; download: <a download>. The demo passes pdf and view to the viewer instead (`viewer.js`: a HEAD for a PDF, the stage canvas for an image, a <video> for a video); a live screen passes a guest's view link (a photo or video) to it too
   click(): void;                           // the Open control: launch again, or open a PDF the popup blocker refused, under a user gesture
   download(item?: number): Promise<Minted>; // the link it started for that item under a minute ago again (3 starts at most), else POST /api/screen/link {purpose:"download", item} (no item: the first file) and launch the answer
   showPdf(): Promise<Minted>;              // POST /api/screen/link {purpose:"pdf"}
