@@ -34,6 +34,7 @@ const io = { post: api.post, drop, assign: (/** @type {string} */ to) => locatio
 const fromList = () => !!c.files && (c.drop === "confirm" || c.error === "guest_refused");
 /** The offer pushed a history entry, so the browser's Back returns to the list as Cancel does. */
 let pushed = false;
+let forgetting = false;
 /** The state offers a file picker (so a dropped file is welcome too). */
 let canAdd = false;
 
@@ -74,7 +75,7 @@ const c = {
   file: null,
   maxBytes: 0,
   upload: null,
-  progress: 0,
+  progress: null,
   leaving: false,
 };
 
@@ -150,7 +151,10 @@ function buildUpload() {
   });
   const part = loader(name, null);
   part.setAttribute("aria-label", `Sending ${name}`);
-  fileList.replaceChildren(el("li", {}, [el("div", { class: "row upload" }, [part, ...rowFace(item, null)])]));
+  const [face, ...text] = rowFace(item, null);
+  // After a reload this page holds no file, so no type to draw: an empty tile.
+  const lead = c.file && face ? face : el("span", { class: "thumb" });
+  fileList.replaceChildren(el("li", {}, [el("div", { class: "row upload" }, [part, lead, ...text])]));
 }
 
 function showUpload() {
@@ -344,8 +348,11 @@ function choose(/** @type {File[]} */ files) {
   c.drop = "confirm";
   c.error = null;
   c.retry = null;
-  if (!pushed) history.pushState(null, "");
-  pushed = true;
+  // Only an offer over a list has a list for Back to return to.
+  if (!pushed && c.files) {
+    history.pushState(null, "");
+    pushed = true;
+  }
   render();
 }
 
@@ -353,6 +360,14 @@ function choose(/** @type {File[]} */ files) {
 function toList() {
   if (pushed) history.back();
   else showList();
+}
+
+/** Leaving the offer another way (sent, failed, canceled): its entry goes too, so Back leaves the page at once. */
+function forgetEntry() {
+  if (!pushed) return;
+  pushed = false;
+  forgetting = true;
+  history.back();
 }
 
 function showList() {
@@ -364,6 +379,11 @@ function showList() {
 }
 
 addEventListener("popstate", () => {
+  // forgetEntry's own Back: the page has already moved on, so there is no list to show.
+  if (forgetting) {
+    forgetting = false;
+    return;
+  }
   pushed = false;
   if (fromList()) showList();
 });
@@ -413,11 +433,11 @@ async function send() {
   const ready = await prepareFile(file, c.maxBytes);
   if (stopped) return;
   if (!ready.ok) {
-    // The file cannot be made safe to send, so its offer goes too.
+    // The file cannot be made safe to send, so its offer goes too, with or without a list under it.
     c.upload = null;
     c.drop = "confirm";
     if (fromList()) toList();
-    else render();
+    else showList();
     return refuse(ready.problem, file);
   }
   c.progress = 0;
@@ -439,6 +459,8 @@ async function send() {
     setView(res.view);
     render();
   } else fail(res.error, send);
+  // A refusal over the list keeps the entry: Back returns to the list, as Cancel does.
+  if (!fromList()) forgetEntry();
 }
 
 /** On an offer or a refusal over a list, Cancel goes back to the list; Back is the one way out of that. */
@@ -455,6 +477,7 @@ async function cancelPairing() {
   c.canceling = false;
   if (!res.ok) return fail(res.error);
   c.canceled = true;
+  forgetEntry();
   c.channel?.stop();
   c.channel = null;
   drop(c.pid);

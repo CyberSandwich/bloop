@@ -291,16 +291,47 @@ describe("phone state to view mapping", () => {
 });
 
 describe("PAIR-12 the phone takes a view", () => {
+  const taking = (kind: "owner" | "guest", files: FileEntry[] | null = null, selected: string[] = []) => ({
+    pid: null as string | null,
+    view: null as PhoneView | null,
+    skew: 0,
+    info: { roomName: "Room 2.14", registered: true, match: "42", mode: "live", kind } as PhoneCtx["info"],
+    files: files as PhoneCtx["files"],
+    selected,
+  });
+
   it("a resumed pid is set before its view, so a pairing already over drops that pid", () => {
-    const c = { pid: null as string | null, view: null as PhoneView | null, skew: 0 };
+    const c = taking("owner");
     const drop = vi.fn();
     adopt(c, phoneView("ended", { endReason: "phone" }), drop, "PID-1");
     expect(c.pid).toBe("PID-1");
     expect(drop).toHaveBeenCalledWith("PID-1");
   });
 
+  it("an owner turned guest by its first byte keeps no OneDrive list, only the Add a File row", () => {
+    const c = taking("owner", [file("a"), file("b")], ["a"]);
+    const before = c.info;
+    adopt(c, phoneView("claimed", { kind: "guest" }), vi.fn());
+    expect(c.files).toEqual([]);
+    expect(c.selected).toEqual([]);
+    expect(c.info?.kind).toBe("guest");
+    expect(before?.kind).toBe("owner");
+    expect(phoneKey({ ...c, error: null, approving: false, canceled: false, drop: null })).toBe("guest_add");
+  });
+
+  it("an owner's own view, and a guest's, leave the list as it is", () => {
+    const owner = taking("owner", [file("a")], ["a"]);
+    adopt(owner, phoneView("open"), vi.fn());
+    expect(owner.files).toHaveLength(1);
+    expect(owner.selected).toEqual(["a"]);
+    const guest = taking("guest", []);
+    const files = guest.files;
+    adopt(guest, phoneView("claimed", { kind: "guest" }), vi.fn());
+    expect(guest.files).toBe(files);
+  });
+
   it("a live view keeps the pid; a pairing that fell back to waiting drops it", () => {
-    const c = { pid: "PID-1" as string | null, view: null as PhoneView | null, skew: 0 };
+    const c = { ...taking("owner"), pid: "PID-1" as string | null };
     const drop = vi.fn();
     adopt(c, phoneView("open"), drop);
     expect(drop).not.toHaveBeenCalled();
