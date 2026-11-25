@@ -7,8 +7,9 @@ const panel = document.querySelector(".panel");
 if (panel) {
   let on = true;
   const pause = () => panel.classList.toggle("is-paused", !on || document.hidden);
-  new IntersectionObserver(([e]) => {
-    on = !!e?.isIntersecting;
+  // A batch can hold an enter and a leave; the last entry is the current state.
+  new IntersectionObserver((es) => {
+    for (const e of es) on = e.isIntersecting;
     pause();
   }).observe(panel);
   addEventListener("visibilitychange", pause);

@@ -1277,6 +1277,8 @@ describe("landing motion and spacing (design.md sections 6 and 8)", () => {
     // The doc pages' one panel pauses its drift the same way.
     const legal = read("public/js/legal.js");
     expect(legal).toMatch(/document\.querySelector\("\.panel"\)/);
+    // Every entry of a batch, so the last state wins, never the first.
+    expect(legal).toMatch(/for \(const e of es\) on = e\.isIntersecting;/);
     expect(legal).toMatch(/toggle\("is-paused", !on \|\| document\.hidden\)/);
     expect(legal).toMatch(/addEventListener\("visibilitychange", pause\)/);
   });
