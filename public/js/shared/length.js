@@ -22,5 +22,12 @@ export function minutesUntil(value, now = new Date()) {
   return Math.round((target.getTime() - now.getTime()) / 60_000);
 }
 
+/** Hides presets above the cap, and their bubble when none is left. @param {any} bubble @param {number} max */
+export function fitPresets(bubble, max) {
+  const chips = [...bubble.querySelectorAll("[data-minutes]")];
+  for (const c of chips) c.hidden = Number(c.dataset.minutes) > max;
+  bubble.hidden = chips.every((c) => c.hidden);
+}
+
 /** A length the route takes: at least the minimum, at most the mode's cap. @param {number} minutes @param {number} max */
 export const clampLength = (minutes, max) => Math.min(Math.max(minutes, MIN_LENGTH_MINUTES), max);

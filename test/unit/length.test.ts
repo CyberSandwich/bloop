@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { clampLength, MIN_LENGTH_MINUTES, minutesUntil } from "../../public/js/shared/length.js";
+import { clampLength, fitPresets, MIN_LENGTH_MINUTES, minutesUntil } from "../../public/js/shared/length.js";
 import { type Event, type Machine, nextDeadline, transition } from "../../src/worker/machine.ts";
 import {
   approved,
@@ -116,6 +116,34 @@ describe("SESS-01 length: the phone sets when the session ends", () => {
     const open = must(offered(), { e: "open.click", now: at, minutes: 60 }).next;
     expect(open.session?.endsAt).toBe(at + 60 * MIN);
     expect(must(open, length(at + MIN, 30)).next.session?.endsAt).toBe(at + 31 * MIN);
+  });
+});
+
+describe("SESS-01 sheet: presets above the cap", () => {
+  const preset = (minutes: number) => ({ dataset: { minutes: String(minutes) }, hidden: false });
+  const bubble = (...minutes: number[]) => {
+    const chips = minutes.map(preset);
+    return { chips, hidden: false, querySelectorAll: () => chips } as {
+      chips: typeof chips;
+      hidden: boolean;
+      querySelectorAll: () => typeof chips;
+    };
+  };
+
+  it("hides each preset above the mode's cap and keeps the rest", () => {
+    const b = bubble(30, 60, 120);
+    fitPresets(b, 60);
+    expect(b.chips.map((c) => c.hidden)).toEqual([false, false, true]);
+    expect(b.hidden).toBe(false);
+  });
+
+  it("hides the whole bubble when no preset fits, and shows all under a roomy cap", () => {
+    const none = bubble(30, 60, 120);
+    fitPresets(none, 20);
+    expect(none.hidden).toBe(true);
+    const all = bubble(30, 60, 120);
+    fitPresets(all, 720);
+    expect(all.chips.some((c) => c.hidden) || all.hidden).toBe(false);
   });
 });
 

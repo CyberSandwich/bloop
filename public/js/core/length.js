@@ -1,9 +1,8 @@
-// The Session Expiry sheet (design.md section 7, Phone page), loaded on the first tap on "Ends in". Its markup is in
-// a.html, so this module only wires it: a preset applies at once and closes the sheet; the time input applies on Set.
-// A length that fails is a toast over the running session, never a page state: the session and Revoke stay.
+// The Session Expiry sheet (design.md section 7), loaded on the first tap on "Ends in"; its markup is in a.html.
+// A failed change is a toast over the running session, never a page state.
 /** @import {ErrorCode, PhoneView} from "../../../src/shared/protocol.ts" */
 /** @import {PhonePage} from "../types.js" */
-import { clampLength, minutesUntil } from "../shared/length.js";
+import { clampLength, fitPresets, minutesUntil } from "../shared/length.js";
 import { createApi } from "./api.js";
 import { toast } from "./toast.js";
 
@@ -21,10 +20,7 @@ let styled;
 const pad = (/** @type {number} */ n) => String(n).padStart(2, "0");
 const clock = (/** @type {Date} */ d) => `${pad(d.getHours())}:${pad(d.getMinutes())}`;
 
-/**
- * Its stylesheet before the sheet shows. Never a rejection: a module that failed to evaluate stays failed for the page,
- * so a failed load opens the sheet unstyled (better than none) and the next open tries again.
- */
+/** Its stylesheet before the sheet shows. Never a rejection (a failed module stays failed): unstyled, and the next open retries. */
 function style() {
   styled ??= new Promise((resolve) => {
     const link = Object.assign(document.createElement("link"), { rel: "stylesheet", href: "/css/length.css" });
@@ -66,20 +62,19 @@ function choose(/** @type {number} */ minutes) {
 sheet.addEventListener("click", (e) => {
   const chip = e.target instanceof Element && e.target.closest("[data-minutes]");
   if (chip) choose(Number(chip.getAttribute("data-minutes")));
-  // The dialog box has no padding of its own, so a click on it is a click on the backdrop.
   else if (e.target === sheet) sheet.close();
 });
 sheet.querySelector("form.until")?.addEventListener("submit", (e) => {
   e.preventDefault();
   choose(minutesUntil(at.value));
 });
-// The sheet belongs to a running session: when the page hides "Ends in" (an end, an error, a reconnect), it goes too.
+// The sheet goes when the page hides "Ends in" (an end, an error, a reconnect).
 new MutationObserver(() => {
   if (ends.hidden) sheet.close();
 }).observe(ends, { attributeFilter: ["hidden"] });
 
 /**
- * Opens the sheet with the time input at the current end on this phone's clock.
+ * Opens the sheet: presets within the cap, the time input at the current end on this phone's clock.
  * @param {PhonePage} c
  * @param {(view: PhoneView) => void} onView the phone's view as `POST /api/session/length` answers it
  */
@@ -92,9 +87,9 @@ export async function openLength(c, onView) {
     const res = await api.post("/api/session/length", { minutes }, c.pid);
     if (!res.ok) return failed(res.error);
     const next = res.value;
-    // The socket's push is the truth: an answer older than the view it already brought (an End meanwhile) is dropped.
+    // The socket's push is the truth: an older answer (an End meanwhile) is dropped.
     if (next.now >= (c.view?.now ?? 0)) onView(next);
-    // The cap (here, or approval plus it on the server) cut the choice short: say the end it set.
+    // The cap cut the choice short: say the end it set.
     if (next.state !== "ended" && next.endsAt && next.endsAt - c.skew < asked - MINUTE) {
       toast({
         title: `Ends at ${clock(new Date(next.endsAt - c.skew))}`,
@@ -102,11 +97,11 @@ export async function openLength(c, onView) {
       });
     }
   };
+  fitPresets(sheet.querySelector(".chips"), max);
   at.value = clock(new Date(view.endsAt - c.skew));
   await style();
-  // The page may have moved on while the stylesheet loaded.
   if (ends.hidden) return;
   sheet.showModal();
-  // The browser focuses Close, and its :focus-visible ring reads as a large circle on iPhone Safari.
+  // Not Close: its :focus-visible ring read as a large circle on iPhone Safari.
   sheet.focus();
 }

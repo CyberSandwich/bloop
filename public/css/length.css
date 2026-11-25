@@ -1,5 +1,4 @@
-/* /a's Session Expiry sheet, loaded with core/length.js on first open, after base.css and app.css. Two bubbles in one
-   fill-less dialog, so a click on it, gap included, is the backdrop's. */
+/* Two bubbles in one fill-less dialog: a click on it, gap included, is the backdrop's. */
 .sheet {
   width: min(calc(100% - 2 * var(--pad)), 432px);
   max-width: none;
@@ -9,7 +8,6 @@
   background: none;
   overflow: visible;
   color: var(--ink);
-  animation: toast-in 250ms var(--ease-out) both;
 }
 .sheet[open],
 .bubble,
@@ -22,8 +20,7 @@
 .sheet-in {
   flex-direction: column;
 }
-/* length.js focuses the sheet, so Close shows no ring until Tab. */
-.sheet:focus {
+.sheet:focus:not(:focus-visible) {
   outline: none;
 }
 .sheet::backdrop {
@@ -36,6 +33,10 @@
   border: 0;
   border-radius: 34px;
   box-shadow: var(--glass-edge), var(--sh-pill);
+  animation: toast-in 250ms var(--ease-out) both;
+}
+.bubble + .bubble {
+  animation-delay: 40ms;
 }
 .sheet-head,
 .until {
@@ -80,6 +81,12 @@
 @media (hover: hover) {
   .sheet-x:hover {
     background: var(--wash);
+  }
+}
+@media (max-height: 360px) {
+  .sheet {
+    max-height: calc(100dvh - 2 * var(--inset));
+    overflow-y: auto;
   }
 }
 @media (min-width: 640px) {
