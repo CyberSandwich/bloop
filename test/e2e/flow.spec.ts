@@ -1957,6 +1957,46 @@ test.describe("screen and phone layout", () => {
     await phone.context.close();
   });
 
+  test("a switch that adds or drops the page count keeps the pill's center; only the count's segment moves", async ({
+    browser,
+  }) => {
+    const { screen, phone } = await viewerWith(browser);
+    const page = screen.page;
+    await expect(heading(page)).toHaveText("Dog.jpg");
+    await page.waitForTimeout(600);
+    /** Per frame for 1.2 s from now: [left, width, center] of the pill. */
+    const sample = async (act: () => Promise<void>) => {
+      await page.evaluate(
+        "(() => { const p = document.getElementById('controls'); const out = (window.frames_ = []); const t0 = performance.now(); const tick = () => { const r = p.getBoundingClientRect(); out.push([r.left, r.width, r.left + r.width / 2]); if (performance.now() - t0 < 1200) requestAnimationFrame(tick); }; requestAnimationFrame(tick); })()",
+      );
+      await act();
+      await page.waitForTimeout(1300);
+      return (await page.evaluate("window.frames_")) as [number, number, number][];
+    };
+    for (const [to, grows] of [
+      ["Sample deck.pptx", true],
+      ["Dog.jpg", false],
+    ] as const) {
+      const frames = await sample(() => sidebarItem(page, to).click());
+      const last = frames.at(-1) ?? [0, 0, 0];
+      for (const [, , center] of frames)
+        expect(Math.abs(Math.round(center) - Math.round(last[2]))).toBeLessThanOrEqual(1);
+      // The width only ever moves one way, so nothing steps back.
+      for (let i = 1; i < frames.length; i++) {
+        const step = (frames[i]?.[1] ?? 0) - (frames[i - 1]?.[1] ?? 0);
+        expect(grows ? step >= -0.5 : step <= 0.5, `${to}, frame ${i}: ${step}`).toBe(true);
+      }
+      expect(grows ? last[1] > (frames[0]?.[1] ?? 0) : last[1] < (frames[0]?.[1] ?? 0)).toBe(true);
+    }
+    // Under reduced motion it changes at once.
+    await page.emulateMedia({ reducedMotion: "reduce" });
+    await sidebarItem(page, "Sample deck.pptx").click();
+    await expect(page.locator("#dots")).toBeVisible();
+    expect(await page.evaluate("document.getElementById('dots').getAnimations().length")).toBe(0);
+    await screen.context.close();
+    await phone.context.close();
+  });
+
   test("switching between two items with one placement keeps the controls' node and animates nothing", async ({
     browser,
   }) => {

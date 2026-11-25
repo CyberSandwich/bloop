@@ -141,8 +141,6 @@ export function createViewer(deps) {
     const held = resized ? null : drawn;
     // Lifted off to measure: a glide to the same target runs on, not restarts.
     for (const a of running) /** @type {KeyframeEffect} */ (a.effect).target = null;
-    const swap = swapped;
-    swapped = false;
     /** @type {any} a slide, a photo's canvas, a video, or their loader */
     const img = frame.querySelector(STAGED) ?? frame.querySelector(".stand-in");
     const item = frame.classList.contains("is-scroll") ? null : (img ?? frame.firstElementChild);
@@ -190,7 +188,8 @@ export function createViewer(deps) {
     drawnIn = win;
     const was = lastPlace;
     lastPlace = place;
-    // Only a change of place, shape or item glides (FLIP: from where they were drawn); a resize moves them at once.
+    // Only a change of place glides (FLIP: from where they were drawn). A new item in the same place moves it in the
+    // same frame as the stage, and its width changes by the page count alone (setDots), so its center holds.
     const differs = (/** @type {"left" | "top" | "width" | "height"} */ k, a = from) => Math.abs(a[k] - now[k]) >= 1;
     const reshaped = differs("width") || differs("height");
     const holds =
@@ -201,7 +200,9 @@ export function createViewer(deps) {
     if (
       !holds &&
       !resized &&
-      (reshaped || ((swap || (was && was !== place)) && (differs("left") || differs("top")))) &&
+      was &&
+      was !== place &&
+      (reshaped || differs("left") || differs("top")) &&
       from.width &&
       !presenting() &&
       !reduced.matches
@@ -248,7 +249,6 @@ export function createViewer(deps) {
   /** The nodes waiting on an image decode: a stale swap must not land. @type {unknown} */
   let building = null;
   /** The stage's content just changed. */
-  let swapped = false;
   // Per-item state is keyed by the server's item id (`keyOf`): a file sorting in ahead shifts every position.
   /** @type {Map<string, Shot>} */
   const images = new Map();
@@ -390,10 +390,33 @@ export function createViewer(deps) {
     return null;
   }
 
+  /**
+   * The page count comes and goes as one segment of the pill: its width, padding and the gap after it, with its
+   * opacity, so the pill keeps its center and Present and Download slide. At once while presenting, stacked or under
+   * reduced motion. @param {boolean} on
+   */
+  function setDots(on, now = false) {
+    const running = dots.getAnimations?.() ?? [];
+    if (on === !dots.hidden && !running.length) return;
+    for (const a of running) a.cancel();
+    show(dots, true);
+    if (now || reduced.matches || presenting() || pane.classList.contains("is-stacked")) return show(dots, on);
+    const css = getComputedStyle(dots);
+    const full = { width: `${dots.offsetWidth}px`, opacity: 1, paddingInline: css.paddingInline, marginRight: "0px" };
+    const none = {
+      width: "0px",
+      opacity: 0,
+      paddingInline: "0px",
+      marginRight: `-${getComputedStyle(pill).columnGap}`,
+    };
+    const a = dots.animate(on ? [none, full] : [full, none], { duration: 300, easing: easeOut() });
+    if (!on) a.onfinish = () => show(dots, false);
+  }
+
   function paintDots() {
     const p = pages();
     if (parked) return;
-    show(dots, !!p && p.length > 1);
+    setDots(!!p && p.length > 1);
     if (!p) return;
     prev.disabled = page === 0;
     next.disabled = page === p.length - 1;
@@ -472,7 +495,6 @@ export function createViewer(deps) {
         const target = frame.querySelector(STAGED) ?? frame.querySelector(".stand-in") ?? frame.firstElementChild;
         // The pill (its buttons appear after the item) and the list (it grows with a guest's file) set the place too.
         for (const box of [target, view, pill, side, end]) if (box) sized.observe(box);
-        swapped = true;
         // A swap moves or replaces the video: it is set again.
         tuned = "";
         play();
@@ -528,7 +550,8 @@ export function createViewer(deps) {
   }
 
   function hide() {
-    for (const part of [side, handle, view, dots]) show(part, false);
+    for (const part of [side, handle, view]) show(part, false);
+    setDots(false, true);
     if (side.matches(":popover-open")) side.hidePopover();
   }
 

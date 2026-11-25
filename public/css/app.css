@@ -683,6 +683,7 @@ main:has(> .side:not([hidden])) #stage {
 }
 .dots {
   padding: 0 8px;
+  overflow: hidden;
   text-align: center;
   white-space: nowrap;
   font-size: 15px;
