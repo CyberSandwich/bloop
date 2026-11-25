@@ -10,7 +10,7 @@ This file owns the job contract. `container.yml` builds, tests and publishes the
 - LibreOffice Impress, Writer and Calc; poppler-utils; libvips-tools with libheif and the libde265 plugin; ffmpeg.
 - Fonts: Carlito (Calibri), Caladea (Cambria), Liberation 2 (Arial, Times New Roman, Courier New), Noto core.
 - `bloopconv`, a static Go binary, built in a multi-stage build. `docker build --target test container` runs `go vet` and `go test -race`.
-- User `conv` (uid 10001). Setuid and setgid bits are stripped. Only `/work` and `/tmp` need to be writable; run with `--read-only --tmpfs /work --tmpfs /tmp` where the platform allows (the corpus does).
+- User `conv` (uid 10001). Setuid and setgid bits are stripped. Only `/work` and `/tmp` need to be writable; the corpus runs with `--read-only --tmpfs /work --tmpfs /tmp`, which the deployed platform does not offer (see Security model).
 - `lo-registry.xcu` is copied into every job's fresh LibreOffice profile before `soffice` starts: macro security level 3, macro execution disabled, VBA neither loaded nor executable, links never updated on load, update checks off. A job whose profile cannot be seeded fails with `internal` and never starts `soffice`.
 
 ## Job server (`:8080`)
@@ -99,9 +99,10 @@ Outputs are judged by group: `slides` (page images, `slides.json`, and `t.webp`)
 
 ## Security model
 
+- Production isolation (CONV-01) is the platform's: a VM per instance, no internet, no DNS, one job per instance, destroyed at the deadline, and every output revalidated by the Durable Object. In a deployed container every process has root's capabilities and `start()` offers no read-only root filesystem, so non-root and read-only hold only in the corpus run, which uses `docker run --network none --read-only` as a stricter proxy.
 - No network: the image never opens a connection, and the corpus runs it with `--network none`. Links in documents are not fetched (the registry sets update-on-load to never); the corpus proves it with a listener in the container's network namespace.
 - Macros never run: level 3 plus the master switch off, VBA not loaded, every conversion in a fresh profile. The corpus proves it with fixtures whose macro would write `/tmp/bloop-macro-ran`, and proves the fixtures are live with a positive control: the same file under a relaxed registry (level 0, execution allowed) and under the production registry.
-  - ODF Basic (`.odp`, `.odt`, `.ods`): the control fires when LibreOffice opens the document with security off and stays silent under the production registry. It does not fire under `--convert-to` even with security off, (it apparently skips document-open events), so the job path is silent for a second reason; the open-path result is the one that tests the registry.
+  - ODF Basic (`.odp`, `.odt`, `.ods`): the control fires when LibreOffice opens the document with security off and stays silent under the production registry. It does not fire under `--convert-to` even with security off (it apparently skips document-open events), so the job path is silent for a second reason; the open-path result is the one that tests the registry.
   - VBA (`.ppt`, `.doc`, `.xls`): LibreOffice cannot write a VBA project from ODF Basic, so CI converts the ODF fixtures to the legacy formats and `fixtures/inject-vba.mjs` adds the `_VBA_PROJECT_CUR` and `Macros/VBA` storages (a hand-written CFB writer, `fixtures/cfb.mjs`). Their control does not fire even with security off, so the "silent under production" half is unverified for VBA. The backstop is the Worker's refusal of macro-carrying CFB files at upload (DROP-12); the corpus still asserts the legacy files convert and leave no sentinel.
 - Tools start with an empty environment of our own making (`PATH`, `HOME`, `LANG`, `TMPDIR`, `XDG_CACHE_HOME`); nothing is inherited from the server.
 - A tool runs in its own process group; the deadline kills the group, so `soffice.bin` never outlives its stage.
@@ -138,7 +139,7 @@ The corpus (`container/test/corpus.mjs`) starts one container per case, drives i
 
 ## CI and publishing
 
-`.github/workflows/container.yml` runs on changes under `container/`, on pull requests, monthly (`0 5 1 * *`) and by hand. Steps: Go tests in the Docker build, build, generate fixtures, corpus, image size. Except on pull requests, and only when the repository has the secrets `CLOUDFLARE_API_TOKEN` (Containers edit and registry push) and `CLOUDFLARE_ACCOUNT_ID`, it tags the image `sha-<12 chars of the commit>`, runs `wrangler containers push` and reads the pushed digest. A failed push is red on `main` and tolerated on other branches. On `main` it also opens a PR that writes the digest to `container/digest.txt`. Without the secrets, the test steps run and the push steps are skipped.
+`.github/workflows/container.yml` runs on changes under `container/`, on pull requests, monthly (`0 5 1 * *`) and by hand. Steps: Go tests in the Docker build, build, generate fixtures, corpus, image size. Except on pull requests, and only when the repository has the secrets `CLOUDFLARE_API_TOKEN` (Containers edit and registry push) and `CLOUDFLARE_ACCOUNT_ID`, it tags the image `sha-<12 chars of the commit>`, runs `wrangler containers push` and reads the pushed digest. A failed push is red on `main` and tolerated on other branches. On `main` it also opens a PR that writes the digest to `container/digest.txt`. After a push, `container/prune-images.mjs` keeps this image and the two newest built from `main` (the live digest and the one before it), deletes the other `sha-` images with `wrangler containers images delete`, and fails if more than 4 images remain (the account cap is 50 GB). Without the secrets, the test steps run and the push steps are skipped.
 
 The deployed reference is `registry.cloudflare.com/<account>/bloop-converter@sha256:<digest>`; the digest comes from `container/digest.txt`.
 
