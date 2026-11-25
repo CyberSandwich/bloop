@@ -304,11 +304,11 @@ for (const vp of VIEWPORTS) {
 
 const WHY =
   "The cloud promised your files would be everywhere. Instead, every room PC asks for your password, and every sign-in opens everything you own, just to show one slide. A USB stick only ever carried what you chose. bloop brings that back, without the stick.";
-// A word's fill is its background position: 100% faint, 0% ink.
+// A word's fill is its background x position: 100% faint, 0% ink.
 const fillOf = (page: Page, which: "first" | "last") =>
   page.evaluate(`(() => {
     const words = [...document.querySelectorAll(".why-words > *")];
-    return getComputedStyle(words[${which === "first" ? 0 : "words.length - 1"}]).backgroundPosition;
+    return getComputedStyle(words[${which === "first" ? 0 : "words.length - 1"}]).backgroundPositionX;
   })()`);
 
 for (const vp of [VIEWPORTS[0], VIEWPORTS[2]]) {
@@ -317,14 +317,14 @@ for (const vp of [VIEWPORTS[0], VIEWPORTS[2]]) {
 
     test("each word fills from faint to ink as it crosses the view, with axe green mid-fill", async ({ page }) => {
       await page.goto("/");
-      expect(await fillOf(page, "first")).toBe("100% 0%");
+      expect(await fillOf(page, "first")).toBe("100%");
       // The paragraph's middle at the view's middle: the first line has passed it, the last has not.
       await page.evaluate(`(() => {
         const r = document.querySelector(".why p").getBoundingClientRect();
         scrollBy(0, r.top + r.height / 2 - innerHeight / 2);
       })()`);
-      await expect.poll(() => fillOf(page, "first")).toBe("0% 0%");
-      expect(await fillOf(page, "last")).not.toBe("0% 0%");
+      await expect.poll(() => fillOf(page, "first")).toBe("0%");
+      expect(await fillOf(page, "last")).not.toBe("0%");
       expect((await new AxeBuilder({ page }).analyze()).violations).toEqual([]);
     });
 
@@ -516,8 +516,9 @@ test.describe("no popover (Safari 15, 16)", () => {
       return [pill.bottom, row.top, row.left, row.right, document.documentElement.scrollWidth];
     })()`)) as number[];
     expect(rowTop).toBeGreaterThan(pillBottom ?? 0);
-    expect(rowLeft).toBeGreaterThanOrEqual(0);
-    expect(rowRight).toBeLessThanOrEqual(390);
+    // As wide as the nav row (10 in from each side), not boxed inside the links pill.
+    expect(Math.round(rowLeft ?? 0)).toBe(10);
+    expect(Math.round(rowRight ?? 0)).toBe(380);
     expect(scrollWidth).toBeLessThanOrEqual(390);
     await nav.getByRole("link", { name: "Features" }).click();
     await expect(page.locator("#features h2")).toBeInViewport();
