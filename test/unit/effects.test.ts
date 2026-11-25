@@ -165,7 +165,7 @@ describe("effects: audit and metrics hooks at each transition", () => {
     const f = fakes();
     const prev = approved();
     const at = T0 + sec(70);
-    const step = must(prev, { e: "length", now: at, minutes: 30, maxMinutes: 720 });
+    const step = must(prev, { e: "length", now: at, seconds: 1800, maxMinutes: 720 });
     await runEffects(step.effects, { meta: META, prev, next: step.next, now: at }, f.deps);
     expect(f.audits).toHaveLength(1);
     expect(f.audits[0]).toMatchObject({ type: "session.length", actor: "phone", detail: { endsAt: at + 30 * 60_000 } });
