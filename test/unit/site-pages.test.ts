@@ -2,6 +2,7 @@ import { readdirSync, readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
 import { EXTENSION_TYPES } from "../../public/js/shared/names.js";
+import { contrast, type Rgb, token } from "./contrast.ts";
 import { NEVER_SAY } from "./never-say.ts";
 
 const read = (rel: string) => readFileSync(fileURLToPath(new URL(`../../${rel}`, import.meta.url)), "utf8");
@@ -317,6 +318,16 @@ describe("landing word caps (design.md section 13)", () => {
       /\.why-words > \* \{[^}]*background-clip: text;[^}]*-webkit-text-fill-color: transparent;[^}]*animation: ink linear both;\s*animation-timeline: view\(\);/,
     );
     expect(block).not.toMatch(/opacity/);
+    // Large text: the faint state holds 3:1 on paper, the fill ends a third of the way up the view, and the word's
+    // box is widened by its tracking so the clip reaches its last glyph.
+    const faint = Number(/color-mix\(in srgb, var\(--ink\) (\d+)%, var\(--paper\)\)/.exec(block)?.[1]) / 100;
+    const [ink, paper] = [token("ink"), token("paper")];
+    expect(contrast(ink.map((c, i) => c * faint + (paper[i] ?? 0) * (1 - faint)) as Rgb, paper)).toBeGreaterThanOrEqual(
+      3,
+    );
+    expect(block).toMatch(/animation-range: entry 100% cover 35%;/);
+    expect(block).toMatch(/margin-inline: -0\.025em;\s*padding-inline: 0\.025em;/);
+    expect(css).toMatch(/\.why \.sr \{\s*user-select: none;/);
     const why = between(css, /^\.why \{/m, "}");
     expect(why).toMatch(/width: min\(100% - 2 \* var\(--pad\), 22em\);/);
     expect(why).toMatch(/font-size: 28px;/);

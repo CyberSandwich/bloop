@@ -394,6 +394,10 @@ html:has(.page-site) {
   letter-spacing: -0.025em;
   text-align: center;
 }
+/* A selection takes the visible words once, not the hidden copy too. */
+.why .sr {
+  user-select: none;
+}
 @media (min-width: 768px) {
   .why {
     font-size: 40px;
@@ -401,17 +405,20 @@ html:has(.page-site) {
 }
 @supports (animation-timeline: view()) {
   @media (prefers-reduced-motion: no-preference) and (forced-colors: none) {
-    /* A box per word, so each has its own view timeline. */
+    /* A box per word, so each has its own view timeline; widened as the sheen is, so the clip reaches the last
+       glyph past the tracking. Faint is 3.16:1 on paper, so text at rest low in the view still reads. */
     .why-words > * {
       display: inline-block;
+      margin-inline: -0.025em;
+      padding-inline: 0.025em;
       background:
-        linear-gradient(90deg, currentColor 50%, color-mix(in srgb, var(--ink) 16%, var(--paper)) 0) 100% 0 / 200% 100%;
+        linear-gradient(90deg, currentColor 50%, color-mix(in srgb, var(--ink) 50%, var(--paper)) 0) 100% 0 / 200% 100%;
       -webkit-background-clip: text;
       background-clip: text;
       -webkit-text-fill-color: transparent;
       animation: ink linear both;
       animation-timeline: view();
-      animation-range: entry 100% cover 50%;
+      animation-range: entry 100% cover 35%;
     }
   }
 }

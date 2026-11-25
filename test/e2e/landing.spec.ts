@@ -318,10 +318,10 @@ for (const vp of [VIEWPORTS[0], VIEWPORTS[2]]) {
     test("each word fills from faint to ink as it crosses the view, with axe green mid-fill", async ({ page }) => {
       await page.goto("/");
       expect(await fillOf(page, "first")).toBe("100%");
-      // The paragraph's middle at the view's middle: the first line has passed it, the last has not.
+      // The paragraph's top at the view's middle: the first line is past the fill's end (a third up), the last not.
       await page.evaluate(`(() => {
         const r = document.querySelector(".why p").getBoundingClientRect();
-        scrollBy(0, r.top + r.height / 2 - innerHeight / 2);
+        scrollBy(0, r.top - innerHeight / 2);
       })()`);
       await expect.poll(() => fillOf(page, "first")).toBe("0%");
       expect(await fillOf(page, "last")).not.toBe("0%");
