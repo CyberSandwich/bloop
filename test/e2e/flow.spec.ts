@@ -82,6 +82,9 @@ async function open(
 }
 
 const heading = (page: Page) => page.getByRole("heading", { level: 1 });
+/** No toast now, read once: a retrying toHaveCount(0) passes once a toast leaves by itself (5 s). */
+const expectNoToast = async (page: Page) =>
+  expect(await page.locator(".toast:not(.out)").count(), "a toast is up").toBe(0);
 type Prep = Parameters<typeof open>[3];
 const demoScreen = (browser: Browser, prep?: Prep) => open(browser, "screen", "/s?mode=demo", prep);
 /** A live screen on the mock source: the lectern path, which launches PowerPoint (ADR 0003). */
@@ -475,10 +478,13 @@ test.describe("pairing flow", () => {
       return `${String(t.getHours()).padStart(2, "0")}:${String(t.getMinutes()).padStart(2, "0")}`;
     });
     await sheet.getByLabel("Expires At").fill(later);
+    // Past the answer: a toast would be up by then, in the same task as the view.
+    const answered = phone.page.waitForResponse("**/api/session/length");
     await sheet.getByRole("button", { name: "Set" }).click();
+    expect((await answered).ok()).toBe(true);
     await expect(countdown).toHaveText(/^Ends in 1:59:\d{2}$/);
-    await phone.page.waitForTimeout(500);
-    await expect(phone.page.locator(".toast")).toHaveCount(0);
+    await phone.page.waitForTimeout(300);
+    await expectNoToast(phone.page);
     await screen.context.close();
     await phone.context.close();
   });
@@ -2837,11 +2843,14 @@ test.describe("PAIR-13 remote: the phone commands the demo screen (design.md sec
     await phone.page.route("**/api/control", (route) =>
       route.continue({ postData: JSON.stringify({ ...route.request().postDataJSON(), seq: 1 }) }),
     );
+    const answered = phone.page.waitForResponse("**/api/control");
     await row("Sample deck.pdf").click();
+    await answered;
     await expect(row("Sample deck.pptx")).toHaveAttribute("aria-current", "true");
     await expect(row("Sample deck.pdf")).not.toHaveAttribute("aria-current", "true");
     await expect(heading(screen.page)).toHaveText("Sample deck.pptx");
-    await expect(phone.page.getByRole("alert")).toHaveCount(0);
+    await phone.page.waitForTimeout(300);
+    await expectNoToast(phone.page);
     await close(screen, phone);
   });
 
@@ -2911,7 +2920,7 @@ test.describe("PAIR-13 remote: the phone commands the demo screen (design.md sec
     // Before the approval there is no remote to miss.
     await expect.poll(() => asked).toBe(1);
     await phone.page.waitForTimeout(300);
-    await expect(alert).toHaveCount(0);
+    await expectNoToast(phone.page);
     await phone.page.getByRole("button", { name: "Approve" }).click();
     await expect(alert).toContainText("Remote Didn't Load");
     // Not fetched again by itself, and the toast waits for a tap.
@@ -2920,7 +2929,8 @@ test.describe("PAIR-13 remote: the phone commands the demo screen (design.md sec
     await alert.getByRole("button", { name: "Reload" }).click();
     await expect(phone.page.getByRole("group", { name: "The Screen" })).toBeVisible();
     expect(asked).toBe(2);
-    await expect(phone.page.getByRole("alert")).toHaveCount(0);
+    // Gone on the tap: a wait for its leaving, not a claim that none came.
+    await expect(phone.page.getByRole("alert")).toBeHidden();
     await close(screen, phone);
   });
 
@@ -3199,11 +3209,11 @@ test.describe("the phone page at phone widths (design.md section 7, Phone page)"
     await phone.page.getByRole("button", { name: /^Approve/ }).click();
     await expect(toast(phone.page)).toContainText("Remote Didn't Load");
     await toast(phone.page).locator("strong").click();
-    await expect(toast(phone.page)).toHaveCount(0);
+    await expect(toast(phone.page)).toBeHidden();
     await revoke(phone.page);
     await expect(heading(phone.page)).toHaveText("Session Ended");
     await phone.page.waitForTimeout(500);
-    await expect(toast(phone.page)).toHaveCount(0);
+    await expectNoToast(phone.page);
     await screen.context.close();
     await phone.context.close();
   });
