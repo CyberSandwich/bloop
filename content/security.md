@@ -28,6 +28,7 @@ Caption: What works today and what is planned
 | The Demo, with bloop's sample files | Live |
 | Pairing a Screen by QR or typed code, approval on the phone | Live |
 | Choosing the Session length on your phone | Live |
+| Controlling the Screen from your phone (next, previous, present) | Live |
 | Guest Files from a phone: PowerPoint and PDF | Live |
 | Guest photos (JPEG, PNG) and videos (MP4, MOV), cleaned on the phone | Live |
 | Microsoft OneDrive sign-in and files | Planned |
