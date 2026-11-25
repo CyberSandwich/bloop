@@ -67,6 +67,8 @@ const LIVE = { room: "Unregistered screen", title: "Unregistered screen" };
 const CATALOG = ["Dog.jpg", "Sample deck.pdf", "Sample deck.pptx", "Vevox"];
 
 async function typedCodeOf(page: Page): Promise<string> {
+  // A new code replaces the old one 150 ms into its swap: until then the card still reads the old, spent code.
+  await expect(page.locator("#qr-panel")).not.toHaveClass(/\bis-swapping\b/);
   await expect(page.locator("#typed-code")).toHaveText(/^[A-Z0-9]{3} [A-Z0-9]{3}$/);
   return ((await page.locator("#typed-code").textContent()) ?? "").replace(/\s/g, "");
 }
