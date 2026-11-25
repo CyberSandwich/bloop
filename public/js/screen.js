@@ -263,6 +263,8 @@ function paint() {
   if (parks) viewer.park(copy.heading);
   const changed = heading.textContent !== copy.heading;
   setText(heading, copy.heading);
+  // An unregistered room has no name: no empty heading for assistive tech to meet.
+  show(heading, !!copy.heading);
   setText(line, copy.line);
   stage.setAttribute("role", copy.alert ? "alert" : "status");
   stage.setAttribute("aria-live", copy.alert ? "assertive" : "polite");

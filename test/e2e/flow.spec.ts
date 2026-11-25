@@ -111,7 +111,12 @@ async function scan(
   screen: Page,
   expected = DEMO,
 ): Promise<{ phone: Opened; code: string; match: string }> {
-  await expect(heading(screen)).toHaveText(expected.room);
+  // An unregistered room's screen has no heading at all, never an empty one.
+  if (expected.room) await expect(heading(screen)).toHaveText(expected.room);
+  else {
+    await expect(screen.locator("#qr")).toBeVisible();
+    await expect(screen.locator("h1:not([hidden])")).toHaveCount(0);
+  }
   const code = await typedCodeOf(screen);
   const phone = await open(browser, "phone", `/a?c=${code}`);
   await expect(heading(phone.page)).toHaveText(expected.title);
