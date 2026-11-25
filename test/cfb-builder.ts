@@ -13,6 +13,8 @@ export interface CfbOptions {
   difatCycle?: boolean;
   /** Point the directory start past the end of the file. */
   outOfRange?: boolean;
+  /** The type byte of the last directory entry (1 storage, 2 stream, 5 root). */
+  lastEntryType?: number;
 }
 
 export function buildCfb(names: string[], options: CfbOptions = {}): Uint8Array {
@@ -50,7 +52,8 @@ export function buildCfb(names: string[], options: CfbOptions = {}): Uint8Array 
     const at = dirStart + i * 128;
     for (let c = 0; c < name.length; c++) v.setUint16(at + c * 2, name.charCodeAt(c), true);
     v.setUint16(at + 64, (name.length + 1) * 2, true);
-    v.setUint8(at + 66, i === 0 ? 5 : 1);
+    const last = i === entries.length - 1 && options.lastEntryType !== undefined;
+    v.setUint8(at + 66, last ? (options.lastEntryType as number) : i === 0 ? 5 : 1);
     v.setUint8(at + 67, 1);
     for (const off of [68, 72, 76]) v.setUint32(at + off, FREE, true);
   });

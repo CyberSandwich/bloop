@@ -208,3 +208,74 @@ describe("zip64 records past 4 GiB", () => {
     expect(end.length).toBe(56 + 20 + 22);
   });
 });
+
+describe("zip64 entry names", () => {
+  const stored = async (...names: string[]) =>
+    readZip(await build(names.map((n) => [n, [enc.encode("x")]]))).map((e) => e.name);
+
+  it("maps backslashes to slashes and drops drive letters, leading slashes and empty segments", async () => {
+    expect(await stored("a\\b\\c.txt", "/abs/path.txt", "C:\\win\\x.txt", "d:rel.txt", "p//q.txt")).toEqual([
+      "a/b/c.txt",
+      "abs/path.txt",
+      "win/x.txt",
+      "rel.txt",
+      "p/q.txt",
+    ]);
+  });
+
+  it.each(["../evil", "a/../../evil", "a/./b", "..\\evil", "a/..", ".", "/", "", "C:\\"])(
+    "rejects %j",
+    async (name) => {
+      const zip = new Zip64Writer();
+      void new Response(zip.readable).arrayBuffer().catch(() => {});
+      await expect(zip.add(name, streamOf())).rejects.toThrow("unsafe entry name");
+    },
+  );
+
+  it.each(["a\x00b", "a\x01b", "a\x1fb", "a\x7fb", "a\nb"])("rejects control characters in %j", async (name) => {
+    const zip = new Zip64Writer();
+    void new Response(zip.readable).arrayBuffer().catch(() => {});
+    await expect(zip.add(name, streamOf())).rejects.toThrow("unsafe entry name");
+  });
+
+  it("keeps the archive usable after rejecting a name", async () => {
+    const zip = new Zip64Writer();
+    const collected = new Response(zip.readable).arrayBuffer();
+    await expect(zip.add("../x", streamOf())).rejects.toThrow();
+    await zip.add("ok.txt", streamOf(enc.encode("fine")));
+    await zip.finish();
+    expect(readZip(new Uint8Array(await collected)).map((e) => e.name)).toEqual(["ok.txt"]);
+  });
+
+  it("numbers a repeated name before its extension, without regard to case", async () => {
+    expect(await stored("a.txt", "a.txt", "A.TXT", "dir/b", "dir/b", "dir.v1/c", "dir.v1/c")).toEqual([
+      "a.txt",
+      "a (2).txt",
+      "A (3).TXT",
+      "dir/b",
+      "dir/b (2)",
+      "dir.v1/c",
+      "dir.v1/c (2)",
+    ]);
+  });
+
+  it("does not treat a leading dot as an extension", async () => {
+    expect(await stored(".env", ".env")).toEqual([".env", ".env (2)"]);
+  });
+
+  it("clamps a date outside 1980 to 2107 and still reads back", async () => {
+    const zip = new Zip64Writer();
+    const collected = new Response(zip.readable).arrayBuffer();
+    await zip.add("old", streamOf(), new Date(1970, 0, 1));
+    await zip.add("far", streamOf(), new Date(2300, 5, 5));
+    await zip.finish();
+    const out = new Uint8Array(await collected);
+    const v = new DataView(out.buffer);
+    const years: number[] = [];
+    for (let at = u32(v, out.length - 22 + 16), n = 0; n < 2; n++) {
+      years.push(1980 + (u16(v, at + 14) >> 9));
+      at += 46 + u16(v, at + 28) + u16(v, at + 30);
+    }
+    expect(years).toEqual([1980, 2107]);
+  });
+});
