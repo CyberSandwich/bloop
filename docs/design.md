@@ -393,7 +393,7 @@ Each heading change is announced in a `role="status"` region; error uses `role="
 |---|---|---|---|
 | checking | (skeleton title bar) | Checking the code. | none |
 | match | Room 2.14 | a skeleton list | continues to choose |
-| choose (nothing selected) | Room 2.14 | the list | none besides the Add a File row |
+| choose (nothing selected) | Room 2.14 | the list | Cancel and a disabled Approve (the primary keeps its place) |
 | approve | Room 2.14 | the list; Only the file you select goes to the screen. The screen never gets your account. `[V-4]` | Cancel, Approve (42) |
 | approve, demo | Demo Room | the list, the whole catalog selected | Cancel, Approve (42) |
 | unregistered room | as approve, titled with the match number (42), plus one card (Lucide `triangle-alert`, sentence in `--ink` 600; no tint, no stripe) | This room isn't registered. Only approve if you can see the screen in front of you. `[V-7]` | Cancel, Approve (42) |
