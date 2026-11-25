@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { RECONNECT_DELAYS, reconnectDelay, shouldPoll } from "../../public/js/core/channel-timing.js";
+import { RECONNECT_DELAYS, reconnectDelay } from "../../public/js/core/channel.js";
 import { ago, clock, codeFromSearch, qrLabel, sizeLabel, spelled, splitName } from "../../public/js/core/format.js";
 import { POLL_MS, pollDelay } from "../../public/js/core/poll.js";
 import { typedCode, typedValid } from "../../public/js/core/typed.js";
@@ -113,10 +113,6 @@ describe("reconnect backoff", () => {
       expect(d).toBeGreaterThanOrEqual(2500);
       expect(d).toBeLessThanOrEqual(5000);
     }
-  });
-
-  it("polls after the 3rd failed reconnect", () => {
-    expect([0, 1, 2, 3, 4].map(shouldPoll)).toEqual([false, false, false, true, true]);
   });
 
   it("polls every 3 s while polls work and backs off 5, 10, 30 s when they fail", () => {

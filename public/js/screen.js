@@ -224,12 +224,8 @@ const MODE = {
 
 /** The failure rules, loaded by the first refused boot. @type {typeof import("./core/poll.js") | null} */
 let failed = null;
-/** The link state a failed read leaves (the channel's polls say the same, core/channel.js). */
-const LINK_OF = /** @type {Record<string, "offline" | "blocked">} */ ({
-  offline: "offline",
-  network_blocked: "blocked",
-});
-
+/** The network failures' words, loaded by the first one. @type {typeof import("./core/net-states.js") | null} */
+let net = null;
 const keyNow = () => screenKey({ view: s.view, link: s.link, errored: s.errored, limited: s.limited });
 
 function render() {
@@ -253,7 +249,7 @@ function paint() {
   if (key === "demo_open") viewer.render(v);
   else if (!parks) viewer.render(null);
   const item = viewer.item() ?? firstFile(v?.items ?? []);
-  const copy = screenCopy(key, {
+  const facts = {
     room: v?.room.name ?? "",
     match: v?.match ?? null,
     file: item ? itemName(item) : null,
@@ -266,7 +262,16 @@ function paint() {
     endLine: ended,
     inSession: !!v?.endsAt && v.state !== "ended",
     host: location.host,
-  });
+  };
+  const copy = screenCopy(key, facts);
+  if (key === "service_down" || key === "network_blocked") {
+    if (net) Object.assign(copy, net.screenNet(key, facts));
+    else
+      void import("./core/net-states.js").then((m) => {
+        net = m;
+        render();
+      });
+  }
 
   if (parks) viewer.park(copy.heading);
   const changed = heading.textContent !== copy.heading;
@@ -553,11 +558,10 @@ async function boot(attempt = 0) {
     failed ??= await import("./core/poll.js");
     if (g !== gen) return;
     // One refused boot is no outage: the second server failure in a row says bloop is down.
-    const down = failed.isDown(booted.error);
-    const sure = failed.bootGate(down);
-    s.link = LINK_OF[booted.error] ?? (down && !sure ? s.link : "down");
+    const next = failed.bootFailed(booted.error, s.link, attempt + 1);
+    s.link = next.link;
     render();
-    setTimeout(() => g === gen && boot(attempt + 1), failed.pollDelay(attempt + 1));
+    setTimeout(() => g === gen && boot(attempt + 1), next.wait);
     return;
   }
   ariaFlag(buttons.renew, "aria-disabled", false);

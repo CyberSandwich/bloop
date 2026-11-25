@@ -1,7 +1,12 @@
 // Whether an open socket is still alive, loaded once one opens (the first ping is PING_MS away, so it is not in the
 // first load). Rules: docs/architecture.md section 7.
-import { MISSED_PINGS, PING_MS, PROBE_MS } from "./channel-timing.js";
 import { SILENCE_MS } from "./timing.js";
+
+export const PING_MS = 25_000;
+/** A socket quiet for longer than PING_MS when the tab shows again is asked; no frame back in this long replaces it. */
+export const PROBE_MS = 3000;
+/** This many pings in a row with no frame back drop a visible tab's socket. */
+export const MISSED_PINGS = 2;
 
 /** @import {SocketLike} from "../types.js" */
 

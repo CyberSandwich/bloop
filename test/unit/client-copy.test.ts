@@ -4,6 +4,7 @@ import { SESSION_ENDED, WAITLIST_FORM } from "../../public/js/core/copy.js";
 import { TYPED_LETTERS, typedError } from "../../public/js/core/copy-code.js";
 import { phoneCopy, refusalToast, uploadLine, videoTime } from "../../public/js/core/copy-phone.js";
 import { endLine, FRESH_LINE, screenCopy } from "../../public/js/core/copy-screen.js";
+import { screenNet } from "../../public/js/core/net-states.js";
 import { RESULTS } from "../../public/js/core/states.js";
 import { SUPPORT } from "../../public/js/shared/errors.js";
 import type { PhoneStateKey, ScreenStateKey } from "../../src/shared/protocol.ts";
@@ -274,16 +275,19 @@ describe("screen copy", () => {
   });
 
   it("S7 service down says what is wrong and the way on, once, with the address as text on the screen", () => {
-    expect(screenCopy("service_down", sf)).toMatchObject({
+    expect({ ...screenCopy("service_down", sf), ...screenNet("service_down", sf) }).toMatchObject({
       heading: "bloop Isn't Responding",
       line: `Something's wrong on bloop's side. Refresh this page, or email ${SUPPORT}.`,
       controls: [],
     });
+    // Until the words load, a plain line, never a blank heading.
+    expect(screenCopy("service_down", sf).heading).not.toBe("");
     expect(SUPPORT).toBe("hi@bloop.here");
   });
 
   it("REL-03 a blocked network names who can fix it: the screen says which address to allow, the phone says what to do", () => {
-    expect(screenCopy("network_blocked", { ...sf, host: "bloop.here" })).toMatchObject({
+    const blocked = { ...sf, host: "bloop.here" };
+    expect({ ...screenCopy("network_blocked", blocked), ...screenNet("network_blocked", blocked) }).toMatchObject({
       heading: "This Network Blocks bloop",
       line: "Ask IT to allow bloop.here, or try another network.",
       controls: [],

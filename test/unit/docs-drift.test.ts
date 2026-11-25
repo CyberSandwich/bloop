@@ -305,7 +305,9 @@ describe("size budgets", () => {
         "public/js/core/length.js",
         "public/js/shared/length.js",
       ],
-      "session length words, lazy": "public/js/core/length-extra.js",
+      "session length words, lazy": ["public/js/core/length-extra.js", "public/js/shared/length.js"],
+      "clicker keys, lazy": "public/js/core/clicker.js",
+      "room network states, lazy": "public/js/core/net-states.js",
       "channel polling, lazy": "public/js/core/poll.js",
       "channel health, lazy": "public/js/core/health.js",
       "phone remote, lazy": ["public/js/core/lazy.js", "public/js/core/remote-ui.js", "public/js/core/remote.js"],
@@ -320,11 +322,10 @@ describe("size budgets", () => {
         // A specifier ending in /<name>, not a longer name that ends the same (video.js, viewer-video.js).
         const named = new RegExp(`["'][^"']*/${name.replace(".", "\\.")}["']`);
         // A module of an entry that also lists it may import it statically: they load together (core/lazy.js).
+        // (a basename shared by two modules, core/length.js and shared/length.js, counts for both).
         const together = lazyEntries
-          .flatMap((e) => [e.path].flat())
-          .filter((path) =>
-            lazyEntries.some((e) => [e.path].flat().includes(path) && [e.path].flat().includes(module)),
-          );
+          .filter((e) => [e.path].flat().some((path) => path.endsWith(`/${name}`)))
+          .flatMap((e) => [e.path].flat());
         for (const file of walk("public/js", (path) => path.endsWith(".js") && !together.includes(path))) {
           for (const line of read(file)
             .split("\n")
