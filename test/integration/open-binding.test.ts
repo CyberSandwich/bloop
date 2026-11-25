@@ -69,6 +69,34 @@ describe("OPEN-02 binding", () => {
     socket.close();
   });
 
+  it("OPEN-02 binding: a hello from another address cannot rebind past a live lectern", async () => {
+    const { screen, socket, url } = await approveDemo(api);
+    const other = { "CF-Connecting-IP": "203.0.113.9" };
+    const intruder = await Socket.open(api.base, `/api/screen/ws?ref=${screen.ref}`, api.base, other);
+    intruder.send({ t: "hello", sid: screen.sid });
+    await intruder.stateWhere(() => true);
+    expect((await fetchLink(url, { headers: other })).status).toBe(403);
+    expect((await fetchLink(url)).status).toBe(200);
+    intruder.close();
+    socket.close();
+  });
+
+  it("OPEN-02 audit: a refused link of an ended session is audited against the session that minted it", async () => {
+    const rows = (where: string) =>
+      Number(wrangler.d1(`SELECT count(*) AS n FROM audit_event WHERE type = 'link.refused' AND ${where}`)[0]?.n ?? 0);
+    const { screen, socket, url } = await approveDemo(api);
+    const minted = wrangler.d1(
+      "SELECT session_id FROM audit_event WHERE type = 'link.minted' ORDER BY at DESC LIMIT 1",
+    );
+    const first = String(minted[0]?.session_id);
+    expect((await api.post("/api/screen/end", {}, { auth: screen.sid })).status).toBe(200);
+    const othersBefore = rows(`session_id != '${first}'`);
+    expect((await fetchLink(url)).status).toBeGreaterThanOrEqual(400);
+    expect(rows(`session_id = '${first}'`)).toBe(1);
+    expect(rows(`session_id != '${first}'`)).toBe(othersBefore);
+    socket.close();
+  });
+
   it("VID-02 a refused view link writes one audit row, however often its player retries", async () => {
     const refusedRows = () =>
       Number(wrangler.d1("SELECT count(*) AS n FROM audit_event WHERE type = 'link.refused'")[0]?.n ?? 0);

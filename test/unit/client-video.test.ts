@@ -278,4 +278,21 @@ describe("VID-04 location strip, every placement", () => {
     );
     expect(await stripLocation(f)).toEqual({ ok: true, file: f });
   });
+
+  it.each(["sbtl", "text", "subt"])("VID-04 location strip refuses a track whose handler is %s", async (handler) => {
+    const track = trak(
+      box(
+        "mdia",
+        box("hdlr", u32(0), u32(0), enc(handler), new Array(13).fill(0)),
+        box("minf", box("stbl", box("stsd", u32(0), u32(1), box("tx3g", new Array(8).fill(0))))),
+      ),
+    );
+    await refusedFile(box("moov", mvhd(), track));
+  });
+
+  it("VID-04 location strip refuses a `gps ` box in moov and an `XMP_` box in udta", async () => {
+    await refusedFile(box("moov", mvhd(), box("gps ", new Array(16).fill(1))));
+    await refusedFile(box("moov", mvhd(), box("udta", box("XMP_", enc("<x:xmpmeta/>")))));
+    await refusedFile(box("moov", mvhd(), trak(box("udta", box("XMP_", enc("<x:xmpmeta/>"))))));
+  });
 });

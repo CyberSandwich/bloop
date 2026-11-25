@@ -411,7 +411,7 @@ Layout: section 6, Legal pages. `/it` answers 301 to `/security` from `public/_r
 - One owner per fact across the three: the operator and contact in Privacy 1 (Terms 1 restates the name, as each legal document must); retention, processors, transfers, storage, rights and complaints in Privacy; what is live in Security `#status`; session length, link life, encryption and data flow in Security; acceptable use, the Guest File license and content reports in Terms 4 and 5; disclosure in Security `#report` (`SECURITY.md` and `security.txt` link to it); what can stay on the PC in Security `#stay` (the landing FAQ links it).
 - Privacy's retention rows restate `docs/threat-model.md` section 10; change both together. The session length on Security is the Worker's (`wrangler.jsonc`), and a test holds the two equal.
 - Security's threats point to Sign-In and Permissions for a lost phone; that section and Privacy 9.3 carry the one Disconnect, My Apps and Entra pair of sentences (AUTH-07).
-- `/.well-known/security.txt` (RFC 9116): two `Contact`s (security@bloop.here, GitHub private reporting), `Expires` at most a year ahead, `Policy` (`/security#report`), `Canonical`, `Preferred-Languages: en`. Renewing it is in `docs/setup.md`.
+- `/.well-known/security.txt` (RFC 9116): two `Contact`s (hi@bloop.here, GitHub private reporting), `Expires` at most a year ahead, `Policy` (`/security#report`), `Canonical`, `Preferred-Languages: en`. Renewing it is in `docs/setup.md`.
 
 ## 8. Motion
 

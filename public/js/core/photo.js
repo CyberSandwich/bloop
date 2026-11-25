@@ -68,9 +68,7 @@ export async function preparePhoto(file, maxBytes, env = browserEnv()) {
     try {
       const small = await env.decode(bitmap, { resizeWidth: width, resizeHeight: height, resizeQuality: "high" });
       if (small.width === width && small.height === height) source = small;
-    } catch {
-      // drawImage scales
-    }
+    } catch {}
   }
   const jpeg = /\.jpe?g$/i.test(file.name);
   let type = "image/jpeg";

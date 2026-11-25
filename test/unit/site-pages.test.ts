@@ -1,4 +1,4 @@
-import { readFileSync } from "node:fs";
+import { existsSync, readdirSync, readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
 import { EXTENSION_TYPES } from "../../public/js/shared/names.js";
@@ -618,13 +618,27 @@ describe("site chrome: one nav and one footer on every site page", () => {
     },
   );
 
-  it.each(SITE)("%s names hi@bloop.here, security@ only on /security, and no placeholder", (page) => {
+  it.each(SITE)("%s names hi@bloop.here only, and no placeholder", (page) => {
     const html = read(`public/${page}`);
     expect(html).not.toMatch(/bloop\.example/);
-    const allowed = ["security.html", "privacy.html"].includes(page)
-      ? ["hi@bloop.here", "security@bloop.here"]
-      : ["hi@bloop.here"];
-    for (const m of html.matchAll(/[\w.+-]+@[\w-]+(\.[\w-]+)+/g)) expect(allowed).toContain(m[0]);
+    for (const m of html.matchAll(/[\w.+-]+@[\w-]+(\.[\w-]+)+/g)) expect(m[0]).toBe("hi@bloop.here");
+  });
+
+  it("no file under public/ or content/ names a bloop.here address other than hi@", () => {
+    const seen: string[] = [];
+    const walk = (dir: string) => {
+      if (!existsSync(dir)) return;
+      for (const entry of readdirSync(dir, { withFileTypes: true })) {
+        const path = `${dir}/${entry.name}`;
+        if (entry.isDirectory()) walk(path);
+        else if (/\.(html|txt|md|xml|json|webmanifest)$/.test(entry.name)) {
+          for (const m of readFileSync(path, "utf8").matchAll(/[\w.+-]+@bloop\.here/g)) seen.push(`${path}: ${m[0]}`);
+        }
+      }
+    };
+    for (const dir of ["public", "content"]) walk(new URL(`../../${dir}`, import.meta.url).pathname);
+    expect(seen.filter((s) => !s.endsWith(": hi@bloop.here"))).toEqual([]);
+    expect(seen.length).toBeGreaterThan(0);
   });
 
   it("the footer lists the address as a mailto link beside the other footer links, with its text visible", () => {
@@ -634,13 +648,13 @@ describe("site chrome: one nav and one footer on every site page", () => {
 
   it("security.txt and SECURITY.md name the /security channels and point to its policy (RFC 9116)", () => {
     const txt = read("public/.well-known/security.txt");
-    expect(txt).toMatch(/^Contact: mailto:security@bloop\.here$/m);
+    expect(txt).toMatch(/^Contact: mailto:hi@bloop\.here$/m);
     expect(txt).toMatch(/^Contact: https:\/\/github\.com\/\S+\/bloop\/security\/advisories\/new$/m);
     expect(txt).toMatch(/^Policy: https:\/\/bloop\.here\/security#report$/m);
     expect(txt).toMatch(/^Canonical: https:\/\/bloop\.here\/\.well-known\/security\.txt$/m);
     expect(read("SECURITY.md")).toContain("https://bloop.here/security#report");
     const report = visibleText(between(read("public/security.html"), /<section id="report"/, "</section>"));
-    expect(report).toContain("security@bloop.here");
+    expect(report).toContain("hi@bloop.here");
     expect(report).toContain("within 5 working days");
     expect(read("SECURITY.md")).not.toMatch(/\d+ (working )?days/);
   });
@@ -972,11 +986,10 @@ describe("privacy notice", () => {
     );
   });
 
-  it("covers mail to both addresses, hi@ and security@, wherever it names mail", () => {
-    for (const start of ["Emails you send", "Emails to"])
-      expect(row(start)).toMatch(/hi@bloop\.here and security@bloop\.here/);
+  it("covers mail to hi@, the one address, wherever it names mail", () => {
+    for (const start of ["Emails you send", "Emails to"]) expect(row(start)).toContain("hi@bloop.here");
     expect(visibleText(between(html, /<tr><th scope="row" data-label="Processor">Apple/, "</tr>"))).toContain(
-      "hi@bloop.here and security@bloop.here",
+      "The mailbox behind hi@bloop.here",
     );
   });
 

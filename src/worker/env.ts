@@ -17,13 +17,14 @@ export interface Env {
   RL_DEMO_CLAIM: RateLimit;
   RL_FILES: RateLimit;
   RL_CONTROL: RateLimit;
+  RL_UPGRADE: RateLimit;
   PUBLIC_ORIGIN: string;
 }
 
 /** The platform rate-limit bindings of wrangler.jsonc (a test pins the list to it); `limited` refuses a route lacking one. */
 export const RATE_LIMIT_BINDINGS = [
   ...["RL_CREATE", "RL_CLAIM", "RL_FETCH", "RL_UPLOAD", "RL_AUTH"],
-  ...["RL_EXPORT", "RL_DEMO_CREATE", "RL_DEMO_CLAIM", "RL_FILES", "RL_CONTROL"],
+  ...["RL_EXPORT", "RL_DEMO_CREATE", "RL_DEMO_CLAIM", "RL_FILES", "RL_CONTROL", "RL_UPGRADE"],
 ] as const satisfies readonly (keyof Env)[];
 
 export type RateLimitName = (typeof RATE_LIMIT_BINDINGS)[number];

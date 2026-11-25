@@ -1,5 +1,5 @@
-// VID-04: in moov, location values (`©xyz`, `loci`, location mdta keys) are blanked in place; timed-metadata tracks
-// are refused, but a `mebx` with no location key. Not covered: XMP in `uuid`.
+// VID-04: moov location (`©xyz`, `loci`, location mdta keys) is blanked in place; `gps `, `XMP_`, text and timed-metadata
+// tracks are refused (a `mebx` with no location key stays). Not covered: XMP in `uuid`, location in mdat samples.
 
 const KEY_PREFIX = "com.apple.quicktime.location.";
 const MAX_MOOV = 32 * 1024 * 1024;
@@ -83,13 +83,12 @@ function blankMeta(/** @type {Uint8Array} */ b, /** @type {Box} */ meta, nested 
 
 const CONTAINERS = new Set(["trak", "mdia", "minf", "stbl", "udta"]);
 
-const TIMED = new Set(["gpmd", "mett", "metx", "camm", "rtmd"]);
+const REFUSED = new Set(["gps ", "XMP_", "gpmd", "mett", "metx", "camm", "rtmd"]);
 
-/** Timed metadata keeps its values in mdat, out of reach. */
 function refuseTimed(/** @type {Uint8Array} */ b, /** @type {Box} */ stsd, timed = false) {
   for (const e of children(b, stsd.body + 8, stsd.end)) {
     const mebx = e.type === "mebx";
-    if ((mebx && latin1(b, e).includes(KEY_PREFIX)) || TIMED.has(e.type) || (timed && !mebx)) throw unsupported();
+    if ((mebx && latin1(b, e).includes(KEY_PREFIX)) || REFUSED.has(e.type) || (timed && !mebx)) throw unsupported();
   }
 }
 
@@ -103,6 +102,7 @@ function walk(
 ) {
   let n = 0;
   for (const box of children(b, from, to, term)) {
+    if (REFUSED.has(box.type)) throw unsupported();
     if (box.type === "©xyz" || box.type === "loci") {
       b.fill(0, box.body, box.end);
       n++;
@@ -115,7 +115,7 @@ function walk(
         box.end,
         box.type === "udta",
         true,
-        timed || (box.type === "mdia" && /hdlr[\s\S]{8}meta/.test(latin1(b, box))),
+        timed || (box.type === "mdia" && /hdlr[\s\S]{8}(meta|sbtl|text|subt)/.test(latin1(b, box))),
       );
     }
   }

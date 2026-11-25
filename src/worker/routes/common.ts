@@ -5,6 +5,7 @@ import { type Config, configFor } from "../config.ts";
 import type { Env, RateLimitName } from "../env.ts";
 import { bearer, checkWrite, fail, json, readJson } from "../http.ts";
 import { hmacHex, parseCredential } from "../ids.ts";
+import { network } from "../net.ts";
 import type { Handler } from "../router.ts";
 import type { Result } from "../seams/pairing.ts";
 import { screenStub } from "../stubs.ts";
@@ -26,9 +27,15 @@ export const withConfig =
 export const respond = <T>(result: Result<T>, status = 200): Response =>
   result.ok ? json(result.value, status) : fail(result.error);
 
+const clientIp = (request: Request): string => request.headers.get("CF-Connecting-IP") ?? "local";
+
 /** Never stored raw: HMAC with the pepper. Local dev has no CF-Connecting-IP and shares one key. */
 export const ipHash = (request: Request, config: Config): Promise<string> =>
-  hmacHex(config.hashPepper, request.headers.get("CF-Connecting-IP") ?? "local");
+  hmacHex(config.hashPepper, clientIp(request));
+
+/** The same, of the client's network (an IPv6 /64), for caps one host could dodge by rotating addresses. */
+export const netHash = (request: Request, config: Config): Promise<string> =>
+  hmacHex(config.hashPepper, network(clientIp(request)));
 
 const reported = new Set<RateLimitName>();
 

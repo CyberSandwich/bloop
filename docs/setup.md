@@ -60,7 +60,7 @@ The two cron triggers (`0 * * * *` hourly, `30 3 * * *` daily) are declared in `
 
 ## Site pages: the contact address and what to renew
 
-Every contact on the public pages is one role address, hi@bloop.here (the footer and the legal pages), except security reports, which go to security@bloop.here on `/security` and in `public/.well-known/security.txt` (RFC 9116); both reach the same mailbox through the domain's catch-all; the Waitlist links open the Tally form `https://tally.so/r/Yj4KAN?source=<page>`. Change them together; `test/unit/site-pages.test.ts` fails on any other address. Renew `Expires` in `security.txt` at most a year ahead (`test/integration/site.test.ts` fails once it is past or more than about 13 months out).
+Every contact on the public pages, security reports included (`/security` and `public/.well-known/security.txt`, RFC 9116), is the one role address hi@bloop.here; the Waitlist links open the Tally form `https://tally.so/r/Yj4KAN?source=<page>`. Change them together; `test/unit/site-pages.test.ts` fails on any other address. Renew `Expires` in `security.txt` at most a year ahead (`test/integration/site.test.ts` fails once it is past or more than about 13 months out).
 
 - **Legal pages:** `/privacy`, `/terms` and `/security` are version 1.0. A change gets a new version and effective date in the header block of all three and a line under `#changes`; a material change is emailed to the waitlist first. Privacy's retention table repeats `threat-model.md` section 10, so change both together.
 - **Social image:** `og:image` and `og:url` in `public/index.html` name `https://bloop.here` absolutely, as link previews need; change them with the host.

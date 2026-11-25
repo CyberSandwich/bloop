@@ -9,13 +9,22 @@ interface UpgradeRoute {
   handler: (r: Request, env: object, m: URLPatternResult) => Promise<Response>;
 }
 
-/** A Worker env whose rate limit and Screen object record the order they are called in. */
+/** A Worker env whose rate limits and Screen object record the order they are called in. */
 function env(allow: boolean) {
   const calls: string[] = [];
+  const keys: string[] = [];
+  const RL_UPGRADE = {
+    limit: async ({ key }: { key: string }) => {
+      calls.push("limit");
+      keys.push(key);
+      return { success: allow };
+    },
+  };
+  // A tap's budget: an upgrade must never spend it.
   const RL_CONTROL = {
     limit: async () => {
-      calls.push("limit");
-      return { success: allow };
+      calls.push("control");
+      return { success: true };
     },
   };
   const stub = {
@@ -24,10 +33,8 @@ function env(allow: boolean) {
       return new Response(null, { status: 200 });
     },
   };
-  return {
-    calls,
-    env: { ...PROD_VARS, PUBLIC_ORIGIN: ORIGIN, RL_CONTROL, SCREEN: { idFromName: (n: string) => n, get: () => stub } },
-  };
+  const SCREEN = { idFromName: (n: string) => n, get: () => stub };
+  return { calls, keys, env: { ...PROD_VARS, PUBLIC_ORIGIN: ORIGIN, RL_UPGRADE, RL_CONTROL, SCREEN } };
 }
 
 async function upgrade(e: object, path: "/api/screen/ws" | "/api/pair/ws") {
@@ -39,7 +46,7 @@ async function upgrade(e: object, path: "/api/screen/ws" | "/api/pair/ws") {
   return route.handler(request, e, route.pattern.exec(request.url) as URLPatternResult);
 }
 
-describe("PAIR-10 upgrade rate limit: RL_CONTROL per address before the Screen object", () => {
+describe("PAIR-10 upgrade rate limit: RL_UPGRADE per screen and address before the Screen object", () => {
   for (const path of ["/api/screen/ws", "/api/pair/ws"] as const) {
     it(`PAIR-10 upgrade rate limit ${path}: a spent budget answers 429 and reaches no Screen object`, async () => {
       const spent = env(false);
@@ -48,11 +55,12 @@ describe("PAIR-10 upgrade rate limit: RL_CONTROL per address before the Screen o
       const open = env(true);
       expect((await upgrade(open.env, path)).status).toBe(200);
       expect(open.calls).toEqual(["limit", "screen"]);
+      expect(open.keys[0]?.startsWith(`${REF}.`)).toBe(true);
     });
   }
 
   it("PAIR-13 rate limit binding required: a missing binding is logged once per name, with the name", async () => {
-    const { RL_CONTROL: _, ...without } = env(true).env;
+    const { RL_UPGRADE: _, ...without } = env(true).env;
     const errors: string[] = [];
     const log = console.error;
     console.error = (...args: unknown[]) => void errors.push(args.join(" "));
@@ -61,7 +69,6 @@ describe("PAIR-10 upgrade rate limit: RL_CONTROL per address before the Screen o
     } finally {
       console.error = log;
     }
-    expect(errors.filter((line) => line.includes("RL_CONTROL")).length).toBeLessThanOrEqual(1);
-    expect(errors.some((line) => line.includes("rate-limit binding missing: RL_CONTROL"))).toBe(true);
+    expect(errors.filter((line) => line.includes("RL_UPGRADE"))).toEqual(["rate-limit binding missing: RL_UPGRADE"]);
   });
 });
