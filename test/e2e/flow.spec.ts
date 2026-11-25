@@ -2666,6 +2666,52 @@ test.describe("PAIR-13 remote: the phone commands the demo screen (design.md sec
     await close(screen, phone);
   });
 
+  test("SHOTS remote layout: deck, dog, long list with deck; the preview's height threshold", async ({ browser }) => {
+    test.setTimeout(120_000);
+    const { screen, phone, row, preview } = await remote(browser);
+    const page = phone.page;
+    const sizes = [
+      ["320", { width: 320, height: 640 }],
+      ["390", { width: 390, height: 844 }],
+      ["430", { width: 430, height: 932 }],
+      ["844x390", { width: 844, height: 390 }],
+    ] as const;
+    const shoot = async (name: string) => {
+      for (const [size, viewport] of sizes) {
+        await page.setViewportSize(viewport);
+        await page.waitForTimeout(500);
+        await page.screenshot({ path: `test-results/shots/a-remote-${name}-${size}.png` });
+      }
+    };
+    await row("Sample deck.pptx").click();
+    await expect(preview).toBeVisible();
+    await shoot("deck");
+    // The lowest height that keeps the preview, per width.
+    for (const width of [320, 360, 390, 430, 480]) {
+      let first = 0;
+      for (let height = 500; height <= 900; height += 4) {
+        await page.setViewportSize({ width, height });
+        await page.waitForTimeout(50);
+        if ((await preview.count()) > 0) {
+          first = height;
+          break;
+        }
+      }
+      console.log(`THRESHOLD width ${width}: preview from ${first} tall`);
+    }
+    await row("Dog.jpg").click();
+    await expect(preview).toHaveCount(0);
+    await shoot("dog");
+    await row("Sample deck.pptx").click();
+    await page
+      .locator("#file-list")
+      .evaluate(
+        "(ul) => { for (let i = 0; i < 3; i++) for (const li of [...ul.children]) ul.append(li.cloneNode(true)); }",
+      );
+    await shoot("long-deck");
+    await close(screen, phone);
+  });
+
   test("Revoke asks first: Cancel keeps the session, End Session ends it", async ({ browser }) => {
     const { screen, phone } = await remote(browser);
     const ask = phone.page.getByRole("dialog", { name: "End This Session?" });
