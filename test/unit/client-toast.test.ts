@@ -91,6 +91,19 @@ describe("toast", () => {
     expect(timers.size).toBe(1);
   });
 
+  it("an action is one button that runs it, and the toast stays until tapped", () => {
+    const { show, live, timers } = setup();
+    let ran = 0;
+    show({ title: "T", body: "B", action: { label: "Reload", run: () => (ran += 1) } });
+    const button = live()[0]?.kids[2];
+    expect(button?.textContent).toBe("Reload");
+    button?.listeners.click?.();
+    expect(ran).toBe(1);
+    expect(timers.size).toBe(0);
+    live()[0]?.listeners.click?.();
+    expect(live()[0]?.classes.has("out")).toBe(true);
+  });
+
   it("a stale leave timer never removes the next toast", () => {
     const { show, live, fire } = setup();
     show({ title: "One", body: "a" });

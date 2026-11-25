@@ -55,8 +55,7 @@ const filePick = /** @type {HTMLInputElement} */ (byId("file-pick"));
 const revokeAsk = /** @type {HTMLDialogElement} */ (byId("revoke"));
 /** @type {((on: boolean) => void) | null} */
 let remote = null;
-// "" while the remote loads, else the view it failed at.
-let remoteAt = /** @type {unknown} */ (null);
+let remoteAsked = false;
 
 /** @type {import("./types.js").PhonePage} */
 const c = {
@@ -238,7 +237,7 @@ function render() {
   show(fileList, copy.files !== "none");
   const source = copy.files === "list" ? c.files : copy.files === "items" ? (v?.items ?? null) : null;
   const rows = `${copy.files}:${copy.add}:${!!remote}`;
-  // By content: a rebuild drops focus.
+  // By content: a rebuild loses focus.
   /** @type {unknown} */
   const same = copy.files === "items" ? JSON.stringify(source) : source;
   if (copy.files === "skeleton" && c.rows !== rows) buildSkeleton();
@@ -259,22 +258,24 @@ function render() {
   show(ends, copy.ends && !!v?.endsAt);
   countDown();
   renderActions(copy.actions, copy.loading);
-  // Revoke's question goes when Revoke does (an end pushed meanwhile).
+  // An end pushed meanwhile closes Revoke's question.
   if (!copy.actions.some((a) => a.id === "end")) revokeAsk.close();
-  // The remote (core/remote-ui.js, lazy): this phone commands a demo session's screen. Fetched once the claim is a
-  // demo's, so it is ready at the approval.
+  // The remote (core/remote-ui.js, lazy): fetched on a demo claim, so it is ready at the approval.
   const on = demo && (key === "opening" || key === "open");
-  if (demo && !remote && remoteAt !== v && remoteAt !== "") {
-    remoteAt = "";
-    // A failed import stays cached: retry under a new URL.
-    import(`./core/remote-ui.js?r=${Date.now()}`).then(
+  if (demo && !remoteAsked) {
+    remoteAsked = true;
+    import("./core/remote-ui.js").then(
       (m) => {
         remote = m.mount(c, setView);
         render();
       },
-      () => {
-        remoteAt = c.view;
-      },
+      () =>
+        toast({
+          title: "Remote Didn't Load",
+          body: "Reload to try again.",
+          error: true,
+          action: { label: "Reload", run: () => location.reload() },
+        }),
     );
   }
   remote?.(on);

@@ -37,9 +37,12 @@ export function createApi(deps = {}) {
       credentials: "same-origin",
       keepalive: !!options.keepalive,
     };
-    // Reads and the boot only: a slow approve may still land (design.md, corner bar).
-    const signal = method === "GET" || options.timeout ? AbortSignal.timeout?.(FETCH_TIMEOUT_MS) : undefined;
-    if (signal) init.signal = signal;
+    // Reads, the boot and the remote only: a slow approve may still land. Not AbortSignal.timeout (Safari 15.4).
+    const stop = new AbortController();
+    if (method === "GET" || options.timeout) {
+      setTimeout(() => stop.abort(), FETCH_TIMEOUT_MS);
+      init.signal = stop.signal;
+    }
     if (method !== "GET") {
       headers["Content-Type"] = "application/json";
       init.body = JSON.stringify(options.body ?? {});
