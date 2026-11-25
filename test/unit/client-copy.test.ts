@@ -22,6 +22,7 @@ const SCREEN_KEYS: ScreenStateKey[] = [
   "ended",
   "offline",
   "service_down",
+  "network_blocked",
   "error",
   "phone_width",
   "rate_limited",
@@ -61,6 +62,7 @@ const PHONE_KEYS: PhoneStateKey[] = [
   "guest_pass_needed",
   "guest_off",
   "service_down",
+  "network_blocked",
 ];
 
 const sf = {
@@ -307,6 +309,17 @@ describe("screen copy", () => {
     expect(SUPPORT).toBe("hi@bloop.here");
   });
 
+  it("REL-03 a blocked network names who can fix it: the screen says which address to allow, the phone says what to do", () => {
+    expect(screenCopy("network_blocked", { ...sf, host: "bloop.here" })).toMatchObject({
+      heading: "This Network Blocks bloop",
+      line: "Ask IT to allow bloop.here, or try another network.",
+      controls: [],
+    });
+    const phone = phoneCopy("network_blocked", pf);
+    expect(phone).toMatchObject({ title: "This Network Blocks bloop", body: "Switch to mobile data, then try again." });
+    expect(phone.actions.map((a) => a.label)).toContain("Try Again");
+  });
+
   it("S7 screen is no named thing: Offline, Busy Right Now, a new code after Session Ended", () => {
     expect(screenCopy("rate_limited", sf).heading).toBe("Busy Right Now");
     expect(FRESH_LINE).toBe("Getting a new code.");
@@ -316,7 +329,7 @@ describe("screen copy", () => {
   });
 
   it("in a session every transient state keeps End, so Back never leaves a session running", () => {
-    for (const key of ["offline", "error", "service_down", "rate_limited"] as const) {
+    for (const key of ["offline", "error", "service_down", "network_blocked", "rate_limited"] as const) {
       expect(screenCopy(key, { ...sf, inSession: true }).controls, key).toEqual(["end"]);
       expect(screenCopy(key, sf).controls, key).toEqual([]);
     }

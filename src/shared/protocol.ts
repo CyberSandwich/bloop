@@ -236,7 +236,7 @@ export type HttpError =
   | "not_found"
   | "method_not_allowed"
   | "internal";
-export type ClientError = "offline" | "service_down";
+export type ClientError = "offline" | "service_down" | "network_blocked";
 export type ErrorCode = PairError | SourceError | OpenError | DropError | HttpError | ClientError;
 
 /** Body of every error response (application/problem+json). */
@@ -280,7 +280,8 @@ export type PhoneStateKey =
   | "guest_pass_needed"
   | "guest_off"
   | "busy" // the three above: new strings, section 9
-  | "service_down";
+  | "service_down"
+  | "network_blocked";
 export type ScreenStateKey =
   | "waiting"
   | "scanned"
@@ -295,6 +296,7 @@ export type ScreenStateKey =
   | "ended"
   | "offline"
   | "service_down"
+  | "network_blocked"
   | "error"
   | "phone_width"
   | "rate_limited"

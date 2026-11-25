@@ -64,8 +64,11 @@ export function createApi(deps = {}) {
     } finally {
       clearTimeout(timer);
     }
+    // A 200 that is not ours (no marker, or not JSON) is a filter's block page: the network, not bloop (REL-03).
     if (res.ok)
-      return body === null ? { ok: false, error: "service_down" } : { ok: true, value: body, headers: res.headers };
+      return body === null || res.headers.get("X-Bloop") !== "1"
+        ? { ok: false, error: "network_blocked" }
+        : { ok: true, value: body, headers: res.headers };
     const code = body?.code;
     if (isErrorCode(code)) return { ok: false, error: code };
     return { ok: false, error: res.status >= 500 || body === null ? "service_down" : "bad_request" };
