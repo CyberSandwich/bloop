@@ -3,11 +3,15 @@ import { describe, expect, it } from "vitest";
 import {
   BASE_HEADERS,
   CSP,
+  DYNAMIC_PAGES,
   headersFor,
   type Policy,
+  pageCsp,
   permissionsPolicy,
   withHeaders,
+  withSources,
 } from "../../src/worker/headers.ts";
+import { VARIANTS } from "../../src/worker/pages.ts";
 
 /** Resolves public/_headers for one path the way Cloudflare does: matching blocks in order, `! Name` detaches. */
 function staticHeaders(path: string): Record<string, string> {
@@ -37,25 +41,75 @@ function staticHeaders(path: string): Record<string, string> {
 const lower = (headers: Record<string, string>) =>
   Object.fromEntries(Object.entries(headers).map(([k, v]) => [k.toLowerCase(), v]));
 
-const pages: [string, Policy, boolean][] = [
-  ["/", "landing", false],
-  ["/s", "screen", true],
-  ["/a", "app", false],
-  ["/code", "app", false],
-  ["/security", "landing", false],
-  ["/privacy", "landing", false],
-  ["/terms", "landing", false],
-  ["/.well-known/security.txt", "landing", false],
-  ["/anything-else", "landing", false],
+const pages: [string, Policy][] = [
+  ["/", "landing"],
+  ["/s", "screen"],
+  ["/a", "app"],
+  ["/code", "app"],
+  ["/signin", "auth"],
+  ["/invite", "auth"],
+  ["/account", "auth"],
+  ["/admin", "auth"],
+  ["/report", "auth"],
+  ["/library", "library"],
+  ["/security", "landing"],
+  ["/privacy", "landing"],
+  ["/terms", "landing"],
+  ["/.well-known/security.txt", "landing"],
+  ["/anything-else", "landing"],
 ];
 
 describe("public/_headers matches headers.ts", () => {
-  for (const [path, policy, screen] of pages) {
+  for (const [path, policy] of pages) {
     it(`${path} gets the ${policy} policy`, () => {
-      const expected = lower({ ...headersFor(policy), "Permissions-Policy": permissionsPolicy(screen) });
-      expect(staticHeaders(path)).toEqual(expected);
+      expect(staticHeaders(path)).toEqual(lower(headersFor(policy)));
     });
   }
+
+  it("MODE-01 headers: every page variant under /open/ answers its base page's headers", () => {
+    for (const { path } of VARIANTS) expect(staticHeaders(`/open${path}`)).toEqual(staticHeaders(path));
+  });
+
+  it("no variant has a block of its own in _headers, so the /* landing policy covers the open subtree", () => {
+    expect(VARIANTS.filter(({ path }) => pages.some(([p, policy]) => p === path && policy !== "landing"))).toEqual([]);
+  });
+});
+
+describe("dynamic sources: the file origin and the R2 EU endpoint are added at serve time", () => {
+  const file = "https://files.example";
+  const r2 = "https://acct.eu.r2.cloudflarestorage.com";
+
+  it("the screen page gains the file origin in img, media and connect, and nothing else", () => {
+    const csp = pageCsp("/s", { fileOrigin: file, r2Endpoint: r2 }) as string;
+    expect(csp).toContain(`img-src 'self' ${file};`);
+    expect(csp).toContain(`media-src 'self' ${file};`);
+    expect(csp).toContain(`connect-src 'self' ${file};`);
+    expect(csp).not.toContain(r2);
+    expect(csp.replaceAll(` ${file}`, "")).toBe(CSP.screen);
+  });
+
+  it("the phone page gains only the exact R2 endpoint, in connect-src", () => {
+    const csp = pageCsp("/a", { fileOrigin: file, r2Endpoint: r2 }) as string;
+    expect(csp).toContain(`connect-src 'self' ${r2};`);
+    expect(csp).not.toContain(file);
+    expect(csp.replace(` ${r2}`, "")).toBe(CSP.app);
+  });
+
+  it("the library page gains both; with neither configured every page keeps its static policy", () => {
+    const csp = pageCsp("/library", { fileOrigin: file, r2Endpoint: r2 }) as string;
+    expect(csp).toContain(`connect-src 'self' ${file} ${r2};`);
+    for (const page of Object.keys(DYNAMIC_PAGES)) {
+      expect(pageCsp(page, { fileOrigin: null, r2Endpoint: null })).toBe(CSP[DYNAMIC_PAGES[page]?.policy as Policy]);
+    }
+    expect(pageCsp("/privacy", { fileOrigin: file, r2Endpoint: r2 })).toBeNull();
+  });
+
+  it("withSources adds a missing directive after default-src and leaves an empty list alone", () => {
+    expect(withSources("default-src 'none'; img-src 'self'", "media-src", ["https://x"])).toBe(
+      "default-src 'none'; media-src https://x; img-src 'self'",
+    );
+    expect(withSources("default-src 'none'", "connect-src", [])).toBe("default-src 'none'");
+  });
 });
 
 describe("headers.ts", () => {
@@ -63,7 +117,13 @@ describe("headers.ts", () => {
 
   it("every policy carries the base headers", () => {
     for (const policy of POLICIES) {
-      expect(headersFor(policy)).toMatchObject(BASE_HEADERS);
+      // Permissions-Policy varies by page kind (screen, auth); every other base header is shared.
+      // The file-origin ping is read cross-origin, so its CORP is cross-origin.
+      const { "Permissions-Policy": _own, "Cross-Origin-Resource-Policy": corp, ...shared } = BASE_HEADERS;
+      expect(headersFor(policy)).toMatchObject(shared);
+      expect(headersFor(policy)["Cross-Origin-Resource-Policy"]).toBe(policy === "file-origin" ? "cross-origin" : corp);
+      const page = policy === "screen" || policy === "auth" ? policy : "none";
+      expect(headersFor(policy)["Permissions-Policy"]).toBe(permissionsPolicy(page));
     }
   });
 

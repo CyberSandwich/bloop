@@ -81,9 +81,35 @@ export class Sessions {
     await this.db.prepare("DELETE FROM phone_session WHERE user_id = ?").bind(userId).run();
   }
 
-  /** Erasure: the user row goes, and with it the grant, every phone session and any guest pass (ON DELETE CASCADE). */
+  /**
+   * Erasure of an Entra user: the row goes, and with it the grant, every phone session and any guest pass (ON DELETE
+   * CASCADE). An email user is never deleted here, since the cascade would drop their library rows and orphan their R2
+   * objects: only the account purge removes one (ADR 0013), so the statement itself refuses the row.
+   */
   async deleteUser(userId: string): Promise<void> {
-    await this.db.prepare("DELETE FROM app_user WHERE id = ?").bind(userId).run();
+    await this.db.prepare("DELETE FROM app_user WHERE id = ? AND tid != 'email'").bind(userId).run();
+  }
+
+  /** The user's normalized email when they are an email member, null for an Entra user or an unknown id (the erase route and the page gate branch on it). */
+  async emailNorm(userId: string): Promise<string | null> {
+    const row = await this.db
+      .prepare("SELECT email_norm FROM app_user WHERE id = ? AND tid = 'email'")
+      .bind(userId)
+      .first<{ email_norm: string | null }>();
+    return row?.email_norm ?? null;
+  }
+
+  /**
+   * Starts the deletion grace for an email member: the daily purge deletes them after `deleteAfter`. Zero changes
+   * means the account was not active (already deleting or purging), which is fine to repeat.
+   */
+  async requestDeletion(userId: string, deleteAfter: number): Promise<void> {
+    await this.db
+      .prepare(
+        "UPDATE app_user SET status = 'deleting', delete_after = ? WHERE id = ? AND tid = 'email' AND status = 'active'",
+      )
+      .bind(deleteAfter, userId)
+      .run();
   }
 
   /** Daily cron. Returns how many rows were deleted. */

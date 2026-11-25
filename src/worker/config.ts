@@ -3,6 +3,7 @@
 import { z } from "zod";
 import { SILENCE_MS } from "../../public/js/core/timing.js";
 import { MIN_LENGTH_MINUTES } from "../../public/js/shared/length.js";
+import { emailSet } from "./auth/email-norm.ts";
 import type { Keks } from "./auth/vault.ts";
 import type { MachineConfig } from "./machine.ts";
 
@@ -173,6 +174,86 @@ const schema = z
       .describe(
         "R2 gets and heads per UTC calendar month: 50% of the free tier's 10M. At the cap /f/ reads of guest files answer upstream_failed (502).",
       ),
+    FILE_ORIGIN: optional(
+      z
+        .url()
+        .max(MAX_ORIGIN_CHARS)
+        .refine((v) => new URL(v).origin === v, "an origin: scheme and host, no path or trailing slash"),
+    ).describe(
+      "The separate host that serves session links, bundles and previews (ADR 0018). Unset: no file-origin host, every workers.dev request redirects to PUBLIC_ORIGIN.",
+    ),
+    UPLOAD_MODE: z
+      .enum(["direct", "proxy"])
+      .default("proxy")
+      .describe(
+        "direct: the browser PUTs parts to the R2 EU endpoint on presigned URLs. proxy: parts go through the Worker, the fallback and the local path (ADR 0017).",
+      ),
+    UPLOAD_PART_BYTES: int(5_242_880, 134_217_728)
+      .default(16_777_216)
+      .describe("Bytes per multipart part; R2 requires at least 5 MiB for every part but the last."),
+    UPLOAD_URL_TTL_SECONDS: int(60, 900).default(300).describe("A presigned part URL works this long."),
+    LIBRARY_QUOTA_BYTES: int(1, Number.MAX_SAFE_INTEGER)
+      .default(5_368_709_120)
+      .describe("Library bytes one user may hold, trash included; an admin override per user outranks it."),
+    LIBRARY_MAX_FILE_BYTES: int(1, Number.MAX_SAFE_INTEGER)
+      .default(524_288_000)
+      .describe("Largest single library file in bytes."),
+    LIBRARY_MAX_FILES: int(1, 100_000)
+      .default(2000)
+      .describe("Library rows one user may hold; bounds the in-memory sorts and the count."),
+    TRASH_DAYS: int(1, 365).default(30).describe("A trashed library file is purged after this many days."),
+    INACTIVE_DAYS: int(30, 3650).default(365).describe("An account unused this long gets the inactivity warning."),
+    INACTIVE_GRACE_DAYS: int(1, 365)
+      .default(30)
+      .describe("An inactive account is deleted this long after its warning."),
+    ACCOUNT_DELETE_GRACE_DAYS: int(1, 90)
+      .default(7)
+      .describe("A requested account deletion can be cancelled for this long, then the purge runs."),
+    INVITE_TTL_DAYS: int(1, 30).default(7).describe("An invite link works this long."),
+    EMAIL_CODE_TTL_SECONDS: int(60, 3600).default(600).describe("An emailed code works this long."),
+    REAUTH_SECONDS: int(30, 3600)
+      .default(300)
+      .describe("A fresh proof (code or passkey) unlocks sensitive account actions this long."),
+    EMAIL_FROM: z.email().default("hi@bloop.here").describe("The sender of every bloop email."),
+    TURNSTILE_SITE_KEY: optional(z.string().min(1)).describe(
+      "The public Turnstile widget key; unset means the widget is not rendered.",
+    ),
+    LARGE_FILE_CHOICE_BYTES: int(1, Number.MAX_SAFE_INTEGER)
+      .default(31_457_280)
+      .describe("A presentation over this size gets the choice sheet: PowerPoint, slides here, or download."),
+    CONVERT_MODE: z
+      .enum(["off", "stub", "on"])
+      .default("off")
+      .describe(
+        "off: no conversion starts. stub: the workflow writes fixed outputs and starts no container (tests). on: real conversion. An operational switch, not an access gate.",
+      ),
+    DEV_MAILBOX: z
+      .enum(["0", "1"])
+      .default("0")
+      .describe(
+        "Test only. 1 keeps outgoing mail in memory and serves it at GET /api/dev/mailbox; refused unless PUBLIC_ORIGIN is a local address.",
+      ),
+    R2_ACCOUNT_ID: optional(z.string().min(1)).describe(
+      "Secret. The Cloudflare account id that names the R2 EU endpoint; never in the repo.",
+    ),
+    R2_ACCESS_KEY_ID: optional(z.string().min(1)).describe("Secret. R2 S3 access key id for presigning."),
+    R2_SECRET_ACCESS_KEY: optional(z.string().min(1)).describe("Secret. R2 S3 secret key for presigning."),
+    FILE_TOKEN_KEY: optional(z.string().min(32)).describe(
+      "Secret. 32 random bytes that MAC preview tokens and the file-origin checks; at least 32 characters.",
+    ),
+    CODE_PEPPER: optional(z.string().min(32)).describe(
+      "Secret. 32 random bytes that key the email-code MACs and the known-device cookie; at least 32 characters.",
+    ),
+    TURNSTILE_SECRET_KEY: optional(z.string().min(1)).describe("Secret. Turnstile server key for siteverify."),
+    TALLY_SIGNING_SECRET: optional(z.string().min(1)).describe(
+      "Secret. Signs the Tally waitlist webhook; the webhook fails closed while it is unset.",
+    ),
+    ADMIN_EMAILS: optional(z.string()).describe(
+      "Secret. Comma-separated addresses that hold the admin role, checked per request (ADR 0014). An entry that does not normalize admits nobody.",
+    ),
+    TEST_EMAILS: optional(z.string()).describe(
+      "Secret. Comma-separated test addresses: the only invitees and sign-ins in preview mode (ADR 0026).",
+    ),
     TEST_TIMING: z
       .enum(["0", "1"])
       .default("0")
@@ -194,6 +275,15 @@ const schema = z
         issue("ENTRA_AUTHORITY", "must be https");
       }
       if (!v.ENTRA_SCOPES.split(/\s+/).includes("openid")) issue("ENTRA_SCOPES", "must include openid");
+    }
+    if (v.DEV_MAILBOX === "1" && !isLocalOrigin(v.PUBLIC_ORIGIN)) {
+      issue("DEV_MAILBOX", "refused: PUBLIC_ORIGIN is not a local address");
+    }
+    if (v.FILE_ORIGIN) {
+      if (new URL(v.FILE_ORIGIN).origin === new URL(v.PUBLIC_ORIGIN).origin) {
+        issue("FILE_ORIGIN", "must differ from PUBLIC_ORIGIN");
+      }
+      if (!v.FILE_ORIGIN.startsWith("https://") && !isLocalOrigin(v.FILE_ORIGIN)) issue("FILE_ORIGIN", "must be https");
     }
     if (test && !isLocalOrigin(v.PUBLIC_ORIGIN)) {
       return issue("TEST_TIMING", "refused: PUBLIC_ORIGIN is not a local address");
@@ -225,6 +315,48 @@ export interface GraphConfig {
   scopes: string[];
   keks: Keks;
   cookieKey: string;
+}
+
+/** Library, upload and conversion settings (ADRs 0013, 0016, 0017, 0019). */
+export interface LibraryConfig {
+  /** FILE_ORIGIN, or null while the file host is off. */
+  fileOrigin: string | null;
+  uploadMode: "direct" | "proxy";
+  partBytes: number;
+  urlTtlSeconds: number;
+  quotaBytes: number;
+  maxFileBytes: number;
+  maxFiles: number;
+  trashDays: number;
+  largeFileChoiceBytes: number;
+  convertMode: "off" | "stub" | "on";
+}
+
+/** Account and sign-in settings (ADRs 0013, 0014, 0026). */
+export interface AccountConfig {
+  inactiveDays: number;
+  inactiveGraceDays: number;
+  deleteGraceDays: number;
+  inviteTtlDays: number;
+  codeTtlSeconds: number;
+  reauthSeconds: number;
+  emailFrom: string;
+  turnstileSiteKey: string | null;
+  /** Normalized, so a lookup is `.has(emailNorm)`. */
+  adminEmails: ReadonlySet<string>;
+  testEmails: ReadonlySet<string>;
+  devMailbox: boolean;
+}
+
+/** Secrets of the v4 features, each null while unset; a feature that needs one fails closed without it. */
+export interface V4Secrets {
+  r2AccountId: string | null;
+  r2AccessKeyId: string | null;
+  r2SecretAccessKey: string | null;
+  fileTokenKey: string | null;
+  codePepper: string | null;
+  turnstileSecret: string | null;
+  tallySecret: string | null;
 }
 
 /** The open path's limits (ADR 0003): how long and how often a /f/ link works. */
@@ -280,6 +412,9 @@ export interface Config {
   r2ClassBMonthlyCap: number;
   /** Test only: the platform rate-limit bindings are skipped; the exact limits in the objects stay on. */
   testTiming: boolean;
+  library: LibraryConfig;
+  account: AccountConfig;
+  secrets: V4Secrets;
   /** An authed screen socket heard from within this is live (the OPEN-02 binding); TEST_TIMING shortens it. */
   socketSilenceMs: number;
   machine: MachineConfig;
@@ -351,6 +486,40 @@ export function parseConfig(env: Record<string, unknown>): ConfigResult {
       r2ClassAMonthlyCap: v.R2_CLASS_A_MONTHLY_CAP,
       r2ClassBMonthlyCap: v.R2_CLASS_B_MONTHLY_CAP,
       testTiming: v.TEST_TIMING === "1",
+      library: {
+        fileOrigin: v.FILE_ORIGIN ?? null,
+        uploadMode: v.UPLOAD_MODE,
+        partBytes: v.UPLOAD_PART_BYTES,
+        urlTtlSeconds: v.UPLOAD_URL_TTL_SECONDS,
+        quotaBytes: v.LIBRARY_QUOTA_BYTES,
+        maxFileBytes: v.LIBRARY_MAX_FILE_BYTES,
+        maxFiles: v.LIBRARY_MAX_FILES,
+        trashDays: v.TRASH_DAYS,
+        largeFileChoiceBytes: v.LARGE_FILE_CHOICE_BYTES,
+        convertMode: v.CONVERT_MODE,
+      },
+      account: {
+        inactiveDays: v.INACTIVE_DAYS,
+        inactiveGraceDays: v.INACTIVE_GRACE_DAYS,
+        deleteGraceDays: v.ACCOUNT_DELETE_GRACE_DAYS,
+        inviteTtlDays: v.INVITE_TTL_DAYS,
+        codeTtlSeconds: v.EMAIL_CODE_TTL_SECONDS,
+        reauthSeconds: v.REAUTH_SECONDS,
+        emailFrom: v.EMAIL_FROM,
+        turnstileSiteKey: v.TURNSTILE_SITE_KEY ?? null,
+        adminEmails: emailSet(v.ADMIN_EMAILS),
+        testEmails: emailSet(v.TEST_EMAILS),
+        devMailbox: v.DEV_MAILBOX === "1",
+      },
+      secrets: {
+        r2AccountId: v.R2_ACCOUNT_ID ?? null,
+        r2AccessKeyId: v.R2_ACCESS_KEY_ID ?? null,
+        r2SecretAccessKey: v.R2_SECRET_ACCESS_KEY ?? null,
+        fileTokenKey: v.FILE_TOKEN_KEY ?? null,
+        codePepper: v.CODE_PEPPER ?? null,
+        turnstileSecret: v.TURNSTILE_SECRET_KEY ?? null,
+        tallySecret: v.TALLY_SIGNING_SECRET ?? null,
+      },
       socketSilenceMs: v.TEST_TIMING === "1" ? TEST_SILENCE_MS : SILENCE_MS,
       machine: {
         codeTtlSeconds: v.CODE_TTL_SECONDS,

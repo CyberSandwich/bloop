@@ -1,6 +1,7 @@
 import type { ZodType } from "zod";
 import { ERRORS } from "../../public/js/shared/errors.js";
-import type { ErrorCode } from "../shared/protocol.ts";
+import { APP_ERRORS } from "../../public/js/shared/errors-app.js";
+import type { AppError, ErrorCode } from "../shared/protocol.ts";
 
 export function json(body: unknown, status = 200, headers?: Record<string, string>): Response {
   return new Response(JSON.stringify(body), {
@@ -10,7 +11,7 @@ export function json(body: unknown, status = 200, headers?: Record<string, strin
 }
 
 /** Every error response is application/problem+json with an ErrorCode and nothing else. */
-export function problem(status: number, code: ErrorCode, headers?: Record<string, string>): Response {
+export function problem(status: number, code: ErrorCode | AppError, headers?: Record<string, string>): Response {
   const body = { type: "about:blank", status, code };
   return new Response(JSON.stringify(body), {
     status,
@@ -19,8 +20,8 @@ export function problem(status: number, code: ErrorCode, headers?: Record<string
 }
 
 /** A problem response whose status comes from the shared error table. */
-export const fail = (code: ErrorCode, headers?: Record<string, string>): Response =>
-  problem(ERRORS[code].status, code, headers);
+export const fail = (code: ErrorCode | AppError, headers?: Record<string, string>): Response =>
+  problem((code in ERRORS ? ERRORS[code as ErrorCode] : APP_ERRORS[code as AppError]).status, code, headers);
 
 /**
  * Checks every state-changing request must pass (PAIR-06): the Origin is ours, the browser says the
