@@ -160,7 +160,7 @@ export function writeCfb(root) {
   let miniFatStart = END;
   if (miniFat.length) {
     const mf = Buffer.alloc(Math.ceil(miniFat.length / 128) * SECTOR, 0xff);
-    miniFat.forEach((v, i) => mf.writeUInt32LE(v, i * 4));
+    for (const [i, v] of miniFat.entries()) mf.writeUInt32LE(v, i * 4);
     miniFatStart = place(mf);
   }
   const dirBuf = Buffer.alloc(Math.ceil(flat.length / 4) * SECTOR);
@@ -196,7 +196,7 @@ export function writeCfb(root) {
   }
   const fatBuf = Buffer.concat(sectors.slice(fatStart));
   fatBuf.fill(0xff);
-  fatEntries.forEach((v, i) => fatBuf.writeUInt32LE(v, i * 4));
+  for (const [i, v] of fatEntries.entries()) fatBuf.writeUInt32LE(v, i * 4);
   for (let i = 0; i < fatSectors; i++) fatBuf.copy(sectors[fatStart + i], 0, i * SECTOR, (i + 1) * SECTOR);
 
   const header = Buffer.alloc(SECTOR, 0);
