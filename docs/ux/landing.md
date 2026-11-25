@@ -49,7 +49,7 @@ Preview serves the landing as it is on main today, byte for byte: the nav (Featu
 
                   [[ Try the Demo -> ]]   [ Present Live ]
 
-                      Early access? Join the waitlist (arrow-down)
+                      Invite only for now. Join the waitlist (arrow-down)
 
         +----------------------------------------------------------------------+
         |                         the stage (at the fold)                      |
@@ -63,19 +63,19 @@ Preview serves the landing as it is on main today, byte for byte: the nav (Featu
 
    [[ Try the Demo -> ]] [ Present Live ]
 
-   Early access? Join the waitlist (arrow-down)
+   Invite only for now. Join the waitlist (arrow-down)
 
 320 (the two pills no longer fit side by side: stacked, primary on top, full width)
 
    [[     Try the Demo ->     ]]
    [        Present Live       ]
-   Early access? Join the waitlist (arrow-down)
+   Invite only for now. Join the waitlist (arrow-down)
 ```
 
 - h1 and sub unchanged (design.md section 3). Actions: Try the Demo (primary, `/demo`, its trailing `arrow-right`) then Present Live (secondary, white pill with the hairline ring, to `/s`), 52 tall, gap 12, side by side while both fit on one line (390 fits: about 166 and 136 wide; 320 does not), stacked below that with Try the Demo on top (`flex-wrap` on a container query, not a breakpoint, so a larger system font stacks them too).
-- **Present Live** is for the room PC: it opens the waiting screen with its QR. On a phone it still shows (README.md decision 8); `/s` answers a narrow window with "Use the Room's Screen".
-- **The hint:** "Early access? Join the waitlist ↓" (15 `--muted`, 16 under the actions; the arrow is U+2193, in the Inter subset), a link to `#waitlist` (the end block). The whole line is the link (44 tall hit area); its underline only on hover and focus, as the site's text buttons. With smooth scroll allowed it scrolls; under reduced motion it jumps.
-- Word caps (design.md section 13): the hero stays under 40 words (h1 2, sub 10, buttons 5, hint 5).
+- **Present Live** is for the room PC: it opens the waiting screen with its QR. On a phone it still shows (README.md decision 8); `/s` answers a narrow window with "Use the Room's Screen". That state gains a second exit, Try the Demo (secondary, `/demo`) beside its Enter the Code, so a phone that tapped Present Live by mistake still reaches the product (README.md decision 13).
+- **The hint:** "Invite only for now. Join the waitlist ↓" (the owner's wording, README.md decision 13; 15 `--muted`, 16 under the actions; the arrow is U+2193, in the Inter subset), a link to `#waitlist` (the end block). The whole line is the link (44 tall hit area); its underline only on hover and focus, as the site's text buttons. With smooth scroll allowed it scrolls; under reduced motion it jumps.
+- Word caps (design.md section 13): the hero stays under 40 words (h1 2, sub 10, buttons 5, hint 7).
 - The stage stays the Demo Room screenshot until S2 recaptures it showing the library flow.
 
 ### 2.3 Sections between hero and close (open mode)
@@ -146,7 +146,7 @@ As today, with the open variant's links from `content/site.json`: Articles, Priv
 |---|---|
 | nav | Articles; Privacy; Terms; Sign In; Library |
 | hero actions | Try the Demo; Present Live |
-| hint | Early access? Join the waitlist ↓ |
+| hint | Invite only for now. Join the waitlist ↓ |
 | share rows | Slides; Documents; PDFs; Spreadsheets; Photos; Videos; Links |
 | FAQ answer | Slides, documents, PDFs, spreadsheets, photos, videos and links. |
 | waitlist block | Join the Waitlist (h2); bloop is invite only during early access. Join the waitlist to get an invite.; Join the Waitlist; Try the Demo |
