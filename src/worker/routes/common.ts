@@ -2,7 +2,7 @@
 // call into a Screen object. Each handler: config, CSRF checks and Zod for writes (`write`, PAIR-06), rate limit, work.
 import type { z } from "zod";
 import { type Config, configFor } from "../config.ts";
-import type { Env } from "../env.ts";
+import type { Env, RateLimitName } from "../env.ts";
 import { bearer, checkWrite, fail, json, readJson } from "../http.ts";
 import { hmacHex, parseCredential } from "../ids.ts";
 import type { Handler } from "../router.ts";
@@ -30,23 +30,25 @@ export const respond = <T>(result: Result<T>, status = 200): Response =>
 export const ipHash = (request: Request, config: Config): Promise<string> =>
   hmacHex(config.hashPepper, request.headers.get("CF-Connecting-IP") ?? "local");
 
-let reported = false;
+const reported = new Set<RateLimitName>();
 
 /**
  * Coarse platform limit, per pseudonymous IP unless the caller names another key (a session ref).
- * Skipped under TEST_TIMING. A missing binding fails closed for this route alone (the config-invalid 500): the
- * sweep and the Screen alarms never call this and must keep running.
+ * Skipped under TEST_TIMING. A missing binding fails closed for this route alone (the config-invalid 500), logged
+ * once per name: the sweep and the Screen alarms never call this and must keep running.
  */
 export async function limited(
-  binding: RateLimit | undefined,
+  env: Env,
+  name: RateLimitName,
   request: Request,
   config: Config,
   key?: string,
 ): Promise<Response | null> {
   if (config.testTiming) return null;
+  const binding: RateLimit | undefined = env[name];
   if (typeof binding?.limit !== "function") {
-    if (!reported) console.error("rate-limit binding missing");
-    reported = true;
+    if (!reported.has(name)) console.error(`rate-limit binding missing: ${name}`);
+    reported.add(name);
     return fail("internal");
   }
   return (await binding.limit({ key: key ?? (await ipHash(request, config)) })).success ? null : fail("rate_limited");

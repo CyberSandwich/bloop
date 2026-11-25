@@ -34,7 +34,7 @@ import { type Meta, phoneView, roomView, screenView } from "../views.ts";
 import { bestEffort, type EffectDeps, noopSeams, runEffects, type SessionSeams } from "./effects.ts";
 import { LinkLedger, type Use } from "./ledger.ts";
 import { migrate, SCHEMA_KEY, SCHEMA_VERSION } from "./schema.ts";
-import { countAuthed, countPending, MAX_PENDING_SOCKETS } from "./sockets.ts";
+import { countAuthed, mayWait } from "./sockets.ts";
 
 const HELLO_MS = 5000;
 const MAX_CODE_DRAWS = 3;
@@ -49,8 +49,8 @@ interface SocketAttachment {
   authed: boolean;
   /** Epoch ms by which `hello` must arrive. */
   helloBy: number;
-  /** A screen socket's address hash, kept as the link binding only once `hello` verifies the sid (OPEN-02). */
-  ip?: string;
+  /** The upgrade's address hash: caps pending sockets per address; a screen's becomes the link binding only once `hello` verifies the sid (OPEN-02). */
+  ip: string;
 }
 
 /** `next`: the machine the event committed, which outlives `this.m` when the event closed the object. */
@@ -205,7 +205,8 @@ export class Screen extends DurableObject<Env> implements PairingStore {
   async screenView(sid: string, ip: string): Promise<Result<ScreenView>> {
     const auth = await this.screenAuth(sid);
     if (!auth.ok) return auth;
-    this.bindLinksTo(ip);
+    // A poll binds only when no authed screen socket holds the binding: a leaked sid cannot rebind past a live screen.
+    if (!this.openAttachments().some((a) => a?.authed && a.role === "screen")) this.bindLinksTo(ip);
     const code = this.m?.codes.current;
     const due = !code || Date.now() >= code.issuedAt + this.config().machine.codeTtlSeconds * 1000;
     if (this.m?.state === "waiting" && due) await this.issueCode(); // rate_limited: a code is already fresh
@@ -300,16 +301,12 @@ export class Screen extends DurableObject<Env> implements PairingStore {
     if (!this.m) return new Response(null, { status: 410 });
     if (request.headers.get("Upgrade") !== "websocket") return new Response(null, { status: 426 });
     const role: Role = new URL(request.url).pathname.endsWith("/screen/ws") ? "screen" : "phone";
-    if (countPending(this.openAttachments()) >= MAX_PENDING_SOCKETS) return problem("rate_limited");
+    // Hash first: the count and the accept below must run with no await between, or a burst all sees the same count.
+    const ip = await ipHash(request, this.config());
+    if (!mayWait(this.openAttachments(), role, ip)) return problem("rate_limited");
     const [client, server] = Object.values(new WebSocketPair()) as [WebSocket, WebSocket];
-    const ip = role === "screen" ? { ip: await ipHash(request, this.config()) } : {};
     this.ctx.acceptWebSocket(server, [role]);
-    server.serializeAttachment({
-      role,
-      authed: false,
-      helloBy: Date.now() + HELLO_MS,
-      ...ip,
-    } satisfies SocketAttachment);
+    server.serializeAttachment({ role, authed: false, helloBy: Date.now() + HELLO_MS, ip } satisfies SocketAttachment);
     // Only the hello timeout: a bare upgrade is no socket event and never moves the close deadline.
     await this.rearm();
     return new Response(null, { status: 101, webSocket: client });
@@ -537,7 +534,7 @@ export class Screen extends DurableObject<Env> implements PairingStore {
       return ws.close(1008, "auth");
     }
     ws.serializeAttachment({ ...att, authed: true } satisfies SocketAttachment);
-    if (att.ip) this.bindLinksTo(att.ip);
+    if (att.role === "screen") this.bindLinksTo(att.ip);
     await this.apply({ e: "socket", now: Date.now(), open: this.openSockets() });
     this.sendState(ws, att.role);
     if (att.role === "screen" && this.m?.state === "waiting" && !this.m.codes.current) await this.issueCode();

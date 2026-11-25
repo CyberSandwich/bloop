@@ -70,6 +70,33 @@ describe("SESS-01 length: the phone sets when the session ends", () => {
     expect(moved.effects.map((e) => e.fx)).toEqual(["push", "audit"]);
   });
 
+  it("SESS-01 audit: thirty repeats 59 s apart each move the end under a minute, yet the net drift is audited", () => {
+    let m = must(claimedOwner(), { e: "approve", now: APPROVED_AT, items: [asItem(DECK)], minutes: 30 }).next;
+    let rows = 0;
+    for (let i = 1; i <= 30; i++) {
+      const step = must(m, length(APPROVED_AT + i * sec(59), 30));
+      rows += fx(step.effects, "audit").length;
+      m = step.next;
+    }
+    // The first repeat is 59 s from the approved end (unlogged); the second is 118 s from it (logged), and so on.
+    expect(rows).toBe(15);
+  });
+
+  it("SESS-01 audit: a 30 then a 29 within 20 s is audited when the net move since the last audit is a minute", () => {
+    const approvedFor31 = must(claimedOwner(), {
+      e: "approve",
+      now: APPROVED_AT,
+      items: [asItem(DECK)],
+      minutes: 31,
+    }).next;
+    expect(approvedFor31.session && "auditedEndsAt" in approvedFor31.session).toBe(false);
+    const first = must(approvedFor31, length(APPROVED_AT + sec(5), 30));
+    expect(fx(first.effects, "audit")).toEqual([]);
+    const second = must(first.next, length(APPROVED_AT + sec(15), 29));
+    expect(fx(second.effects, "audit")).toHaveLength(1);
+    expect(second.next.session?.auditedEndsAt).toBe(second.next.session?.endsAt);
+  });
+
   it("shortens as well as lengthens", () => {
     const a = approved();
     const at = APPROVED_AT + MIN;

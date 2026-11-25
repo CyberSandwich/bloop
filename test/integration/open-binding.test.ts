@@ -57,6 +57,18 @@ describe("OPEN-02 binding", () => {
     expect((await fetchLink(url)).status).toBe(200);
   });
 
+  it("OPEN-02 binding: a poll from another address cannot rebind past a live authed screen socket", async () => {
+    const { screen, socket, url } = await approveDemo(api);
+    const polled = await api.call("GET", "/api/screen/state", undefined, {
+      auth: screen.sid,
+      headers: { "CF-Connecting-IP": "203.0.113.9" },
+    });
+    expect(polled.status).toBe(200);
+    expect((await fetchLink(url, { headers: { "CF-Connecting-IP": "203.0.113.9" } })).status).toBe(403);
+    expect((await fetchLink(url)).status).toBe(200);
+    socket.close();
+  });
+
   it("VID-02 a refused view link writes one audit row, however often its player retries", async () => {
     const refusedRows = () =>
       Number(wrangler.d1("SELECT count(*) AS n FROM audit_event WHERE type = 'link.refused'")[0]?.n ?? 0);

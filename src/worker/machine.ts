@@ -58,6 +58,8 @@ export interface Machine {
     items: ItemRef[];
     approvedAt: number | null;
     endsAt: number | null;
+    /** The end last written to the audit, or the approved end once a change went unaudited; absent: never changed. */
+    auditedEndsAt?: number;
     openMode: OpenMode | null;
     firstOpenAt: number | null;
     /** Links minted so far per item index, the first included (PC-02: each item gets 1 + LINK_MINTS_PER_ITEM). */
@@ -470,11 +472,11 @@ export function transition(m: Machine, ev: Event, cfg: MachineConfig): Step {
       const endsAt = Math.min(now + ev.minutes * MINUTE, session.approvedAt + ev.maxMinutes * MINUTE);
       if (endsAt === session.endsAt) return ok(m);
       const effects: Effect[] = [{ fx: "push", to: "both" }];
-      // A repeat of the same choice moves the end by seconds: only a real change is audited.
-      if (session.endsAt == null || Math.abs(endsAt - session.endsAt) >= MINUTE) {
-        effects.push({ fx: "audit", type: "session.length", actor: "phone" });
-      }
-      return ok({ ...m, session: { ...session, endsAt } }, effects);
+      // Measured from the end last audited (the approved end until then), so a run of small moves cannot stay unlogged.
+      const base = session.auditedEndsAt ?? session.endsAt;
+      const audited = base == null || Math.abs(endsAt - base) >= MINUTE;
+      if (audited) effects.push({ fx: "audit", type: "session.length", actor: "phone" });
+      return ok({ ...m, session: { ...session, endsAt, auditedEndsAt: audited ? endsAt : base } }, effects);
     }
 
     case "fallback": {

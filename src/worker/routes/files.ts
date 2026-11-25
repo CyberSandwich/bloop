@@ -53,7 +53,7 @@ export const fileRoutes: readonly Route[] = [
       const phone = await phoneAccess(request, env, config);
       if (!phone.ok) return phone.response;
       // Each listing is a Graph call: limited per session, after the credential check so a stranger cannot spend it.
-      const tooMany = await limited(env.RL_FILES, request, config, phone.screen.ref);
+      const tooMany = await limited(env, "RL_FILES", request, config, phone.screen.ref);
       if (tooMany) return tooMany;
       const listed = await listEntries(phone.access);
       if (!listed.ok) return fail(listed.error);

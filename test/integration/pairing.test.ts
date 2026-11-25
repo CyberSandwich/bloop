@@ -357,13 +357,31 @@ describe("PAIR-10 ws-origin and the socket protocol", () => {
     expect((await socket.waitClosed()).code).toBe(1008);
   });
 
-  it("PAIR-10 pending cap: a fifth socket waiting for its hello is refused, and a hello still works after they close", async () => {
+  it("PAIR-10 pending cap: ten parallel bare upgrades leave at most the per-address cap accepted", async () => {
+    const created = await api.post<{ sid: string }>("/api/screens", { mode: "demo" });
+    const path = `/api/screen/ws?ref=${created.body.sid.split(".")[0]}`;
+    const tries = await Promise.allSettled(Array.from({ length: 10 }, () => Socket.open(api.base, path)));
+    const accepted = tries.flatMap((t) => (t.status === "fulfilled" ? [t.value] : []));
+    expect(accepted.length).toBe(2);
+    for (const s of accepted) s.close();
+  });
+
+  it("PAIR-10 pending cap: one address holding its two does not block another address or the other role", async () => {
     const created = await api.post<{ sid: string }>("/api/screens", { mode: "demo" });
     const { sid } = created.body;
     const ref = sid.split(".")[0];
     const path = `/api/screen/ws?ref=${ref}`;
-    const bare = await Promise.all([1, 2, 3, 4].map(() => Socket.open(api.base, path)));
+    const other = { "CF-Connecting-IP": "203.0.113.9" };
+    const mine = await Promise.all([1, 2].map(() => Socket.open(api.base, path)));
     await expect(Socket.open(api.base, path)).rejects.toThrow();
+    const bare = [
+      ...mine,
+      await Socket.open(api.base, path, api.base, other),
+      await Socket.open(api.base, `/api/pair/ws?ref=${ref}`),
+    ];
+    // Four screen sockets pending fill the role for everyone.
+    bare.push(await Socket.open(api.base, path, api.base, { "CF-Connecting-IP": "203.0.113.10" }));
+    await expect(Socket.open(api.base, path, api.base, { "CF-Connecting-IP": "203.0.113.11" })).rejects.toThrow();
     for (const s of bare) s.close();
     // Repeated bare opens and closes leave the screen as it was: a hello afterwards still binds and gets its state.
     await new Promise((done) => setTimeout(done, 300));

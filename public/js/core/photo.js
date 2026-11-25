@@ -1,4 +1,4 @@
-// A photo is re-encoded before it is sent: a canvas writes no metadata, so Exif, XMP and IPTC are gone (VID-04).
+// VID-04: a canvas writes no metadata, so a re-encoded photo has no Exif, XMP or IPTC.
 
 export const LONG_SIDE = 2560;
 const QUALITY = 0.82;
@@ -15,8 +15,7 @@ export function fitSize(width, height) {
  * @property {() => boolean} hasAlpha
  * @property {(type: string, quality: number) => Promise<Blob | null>} encode
  */
-/** What the browser provides; tests fake it.
- * @typedef {object} PhotoEnv
+/** @typedef {object} PhotoEnv
  * @property {(src: unknown, options: object) => Promise<{width: number, height: number, close?: () => void}>} decode
  * @property {(width: number, height: number) => Surface} surface
  */
@@ -50,8 +49,7 @@ function browserEnv() {
 }
 
 /**
- * The canvas re-encode of a JPEG, PNG or HEIC: JPEG q0.82 (a PNG with transparency stays PNG), no metadata. The
- * original's bytes never go, even when smaller (Privacy 3.4). Refused: `decode` (unreadable here), `encode`, `large`.
+ * The canvas re-encode of a JPEG, PNG or HEIC (PNG only with transparency); the original's bytes never go (Privacy 3.4).
  * @param {File} file
  * @param {number} maxBytes
  * @param {PhotoEnv} [env]

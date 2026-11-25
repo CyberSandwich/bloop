@@ -242,10 +242,40 @@ describe("VID-04 location strip, every placement", () => {
     }
   });
 
-  it("VID-04 location strip skips a nested meta it cannot locate, and still refuses one directly in moov", async () => {
+  it("VID-04 location strip skips a nested meta with no ilst or keys, and still refuses one directly in moov", async () => {
     const stray = box("meta", new Array(20).fill(9));
     const f = fileOf(mp4(box("moov", mvhd(), trak(stray))) as Uint8Array<ArrayBuffer>, "a.mp4");
     expect(await stripLocation(f)).toEqual({ ok: true, file: f });
     await refusedFile(box("moov", mvhd(), stray));
+  });
+
+  it("VID-04 location strip refuses a nested meta with no hdlr that holds an ilst or keys, in either meta form", async () => {
+    const tags = [box("ilst", item(1, ISO6709)), box("keys", u32(0), u32(0))];
+    for (const inner of tags) {
+      await refusedFile(box("moov", mvhd(), trak(box("meta", u32(0), inner))));
+      await refusedFile(box("moov", mvhd(), trak(box("meta", inner))));
+    }
+  });
+
+  it.each(["mett", "metx", "camm", "rtmd"])("VID-04 location strip refuses a %s timed-metadata track", async (type) => {
+    await refusedFile(box("moov", mvhd(), timedTrack(box(type, new Array(8).fill(0)))));
+  });
+
+  it("VID-04 location strip refuses any entry in a track whose handler is meta, but accepts a clean mebx there", async () => {
+    const metaTrackOf = (entry: Uint8Array) =>
+      trak(
+        box(
+          "mdia",
+          box("hdlr", u32(0), u32(0), enc("meta"), new Array(13).fill(0)),
+          box("minf", box("stbl", box("stsd", u32(0), u32(1), entry))),
+        ),
+      );
+    await refusedFile(box("moov", mvhd(), metaTrackOf(box("zzzz", new Array(8).fill(0)))));
+    await refusedFile(box("moov", mvhd(), metaTrackOf(mebx("com.apple.quicktime.location.ISO6709"))));
+    const f = fileOf(
+      mp4(box("moov", mvhd(), metaTrackOf(mebx("com.apple.quicktime.detected-face")))) as Uint8Array<ArrayBuffer>,
+      "a.mp4",
+    );
+    expect(await stripLocation(f)).toEqual({ ok: true, file: f });
   });
 });
