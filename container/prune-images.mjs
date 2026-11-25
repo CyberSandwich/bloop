@@ -1,75 +1,63 @@
-// Prunes the sha-tagged bloop-converter images in the Cloudflare registry, then fails if more than MAX
-// remain (the account cap is 50 GB). Kept: the image main pins in container/digest.txt, the image just
-// pushed, and the newest other image built from a commit on main. Run from the repository root.
-// Usage: node container/prune-images.mjs <wrangler> <current tag>
+// Deletes old bloop-converter images from the Cloudflare registry; container/README.md (CI and publishing) owns the rules.
+// Usage, from the repository root: node container/prune-images.mjs <wrangler> <tag just pushed>
 import { execFileSync } from "node:child_process";
 
 const [wrangler, current] = process.argv.slice(2);
 const REPO = "bloop-converter";
 const DIGEST_FILE = "container/digest.txt";
 const MAX = 4;
-const shaTag = /^sha-[0-9a-f]{12}$/;
+const TAG = /sha-[0-9a-f]{12}-\d+-\d+/;
+const ours = (tag) => new RegExp(`^${TAG.source}$`).test(tag);
 
-const run = (cmd, args, stderr = "inherit") =>
-  execFileSync(cmd, args, { encoding: "utf8", stdio: ["ignore", "pipe", stderr] });
+const run = (cmd, args) => execFileSync(cmd, args, { encoding: "utf8", stdio: ["ignore", "pipe", "inherit"] });
 
+/** Exact repository name: `--filter` matches substrings, and another repository's tags are not ours to count. */
 const images = () =>
-  JSON.parse(run(wrangler, ["containers", "images", "list", "--json", "--filter", REPO])).flatMap((r) =>
-    r.tags.map((tag) => ({ ref: `${r.name}:${tag}`, tag })),
-  );
-
-/** Commit time of the sha a tag names; 0 when the commit is unknown here. */
-function commitTime(tag) {
-  try {
-    return Number(run("git", ["log", "-1", "--format=%ct", tag.slice(4)], "ignore").trim()) || 0;
-  } catch {
-    return 0;
-  }
-}
-
-function onMain(tag) {
-  try {
-    run("git", ["merge-base", "--is-ancestor", tag.slice(4), "origin/main"], "ignore");
-    return true;
-  } catch {
-    return false;
-  }
-}
+  JSON.parse(run(wrangler, ["containers", "images", "list", "--json", "--filter", REPO]))
+    .filter((r) => r.name === REPO)
+    .flatMap((r) => r.tags);
 
 /**
- * The tag of the image main pins. The registry lists no digests, so the commit on origin/main that
- * last wrote digest.txt names the tag it pinned (a squash or merge commit keeps the PR title with it).
- * The working tree is not consulted: the bump branch built in the same job already holds the new digest.
+ * What origin/main pinned, newest first, as {digest, tag}. The registry lists tags, not digests, so each
+ * commit that wrote digest.txt names its tag in its message and the file at that commit holds the digest.
+ * Read from origin/main, never the working tree: the job's checkout is the bump branch.
  */
-function pinnedTag() {
-  try {
-    run("git", ["cat-file", "-e", `origin/main:${DIGEST_FILE}`], "ignore");
-  } catch {
-    return null;
-  }
-  const message = run("git", ["log", "-1", "--format=%B", "origin/main", "--", DIGEST_FILE]);
-  const tag = message.match(/sha-[0-9a-f]{12}/)?.[0];
-  if (!tag) throw new Error(`${DIGEST_FILE} exists but no commit message names the tag it pins; refusing to prune`);
-  return tag;
+function pins() {
+  const commits = run("git", ["log", "--format=%H", "origin/main", "--", DIGEST_FILE]).split("\n").filter(Boolean);
+  return commits.flatMap((c) => {
+    let digest;
+    try {
+      digest = run("git", ["show", `${c}:${DIGEST_FILE}`]).trim();
+    } catch {
+      return []; // the file was deleted in this commit
+    }
+    const message = run("git", ["log", "-1", "--format=%B", c]);
+    const tag = message.match(TAG)?.[0];
+    if (!tag) throw new Error(`commit ${c} wrote ${DIGEST_FILE} but its message names no tag; refusing to prune`);
+    const said = message.match(/sha256:[0-9a-f]{64}/)?.[0];
+    if (said && said !== digest) throw new Error(`commit ${c} says ${said} but pins ${digest}; refusing to prune`);
+    return [{ digest, tag }];
+  });
 }
 
-const pinned = pinnedTag();
+const [live, previous] = pins();
 const before = images();
-console.log(`images before: ${before.map((i) => i.tag).join(", ") || "none"}; pinned: ${pinned ?? "none"}`);
+console.log(
+  `images before: ${before.join(", ") || "none"}; live: ${live?.tag ?? "none"}; previous: ${previous?.tag ?? "none"}`,
+);
+if (live && !before.includes(live.tag)) {
+  console.error(`the live image ${live.tag} (${live.digest}) is not in the registry; deleting nothing`);
+  process.exit(1);
+}
 
-const newestOther = before
-  .filter((i) => shaTag.test(i.tag) && i.tag !== current && i.tag !== pinned && onMain(i.tag))
-  .sort((a, b) => commitTime(b.tag) - commitTime(a.tag))
-  .slice(0, 1);
-const keep = new Set([current, pinned, ...newestOther.map((i) => i.tag)]);
-
-for (const image of before.filter((i) => shaTag.test(i.tag) && !keep.has(i.tag))) {
-  console.log(`deleting ${image.ref}`);
-  run(wrangler, ["containers", "images", "delete", image.ref, "--skip-confirmation"]);
+const keep = new Set([current, live?.tag, previous?.tag]);
+for (const tag of before.filter((t) => ours(t) && !keep.has(t))) {
+  console.log(`deleting ${REPO}:${tag}`);
+  run(wrangler, ["containers", "images", "delete", `${REPO}:${tag}`, "--skip-confirmation"]);
 }
 
 const after = images();
-console.log(`images after: ${after.map((i) => i.tag).join(", ")}`);
+console.log(`images after: ${after.join(", ")}`);
 if (after.length > MAX) {
   console.error(`${after.length} images remain, more than ${MAX}`);
   process.exit(1);
