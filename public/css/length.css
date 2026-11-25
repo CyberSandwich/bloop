@@ -59,6 +59,14 @@
 .sheet-card .field::-webkit-date-and-time-value {
   text-align: left;
 }
+/* Why Set is off: a short line under the time. */
+.sheet-hint {
+  margin: 0;
+  padding: 10px 16px;
+  border-top: 1px solid var(--hairline);
+  color: var(--muted);
+  font-size: 13px;
+}
 .sheet-card .field:focus {
   box-shadow: none;
 }
