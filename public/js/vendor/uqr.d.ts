@@ -1,4 +1,4 @@
-// Types for the vendored uqr.js, only the part bloop calls. The vendored file stays unmodified.
+// Types for the vendored uqr.js, which exports only encode (tools/trim-uqr.mjs); its other lines are uqr's own.
 export interface QrCode {
   version: number;
   maskPattern: number;

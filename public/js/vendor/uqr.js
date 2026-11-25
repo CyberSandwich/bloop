@@ -1,4 +1,4 @@
-/*! uqr 0.1.3 (https://github.com/unjs/uqr), vendored from dist/index.mjs with its whole-line comments removed by tools/trim-uqr.mjs (the browser JS budget); the code is unmodified.
+/*! uqr 0.1.3 (https://github.com/unjs/uqr), vendored from dist/index.mjs by tools/trim-uqr.mjs (the browser JS budget): whole-line comments and the text renderers removed; every other line unmodified.
 
  * MIT License
  *
@@ -614,85 +614,4 @@ function addBorder(input, border = 1) {
   }
   return input;
 }
-function getDataAt(data, x, y, defaults = false) {
-  if (x < 0 || y < 0 || x >= data.length || y >= data.length)
-    return defaults;
-  return data[y][x];
-}
-
-function renderUnicode(data, options = {}) {
-  const {
-    whiteChar = "\u2588",
-    blackChar = "\u2591"
-  } = options;
-  const result = encode(data, options);
-  return result.data.map((row) => {
-    return row.map((mod) => mod ? blackChar : whiteChar).join("");
-  }).join("\n");
-}
-function renderANSI(data, options = {}) {
-  return renderUnicode(data, {
-    ...options,
-    blackChar: "\x1B[40m\u3000\x1B[0m",
-    whiteChar: "\x1B[47m\u3000\x1B[0m"
-  });
-}
-function renderUnicodeCompact(data, options = {}) {
-  const palette = {
-    WHITE_ALL: "\u2588",
-    WHITE_BLACK: "\u2580",
-    BLACK_WHITE: "\u2584",
-    BLACK_ALL: " "
-  };
-  const result = encode(data, options);
-  const WHITE = false;
-  const BLACK = true;
-  const at = (x, y) => getDataAt(result.data, x, y, true);
-  const lines = [];
-  let line = "";
-  for (let row = 0; row < result.size; row += 2) {
-    for (let col = 0; col < result.size; col++) {
-      if (at(col, row) === WHITE && at(col, row + 1) === WHITE)
-        line += palette.WHITE_ALL;
-      else if (at(col, row) === WHITE && at(col, row + 1) === BLACK)
-        line += palette.WHITE_BLACK;
-      else if (at(col, row) === BLACK && at(col, row + 1) === WHITE)
-        line += palette.BLACK_WHITE;
-      else
-        line += palette.BLACK_ALL;
-    }
-    lines.push(line);
-    line = "";
-  }
-  return lines.join("\n");
-}
-
-function escapeAttr(value) {
-  return value.replace(/&/g, "&amp;").replace(/"/g, "&quot;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
-}
-function renderSVG(data, options = {}) {
-  const result = encode(data, options);
-  const {
-    pixelSize = 10,
-    whiteColor = "white",
-    blackColor = "black"
-  } = options;
-  const height = result.size * pixelSize;
-  const width = result.size * pixelSize;
-  let svg = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${width} ${height}">`;
-  const paths = [];
-  for (let row = 0; row < result.size; row++) {
-    for (let col = 0; col < result.size; col++) {
-      const x = col * pixelSize;
-      const y = row * pixelSize;
-      if (result.data[row][col])
-        paths.push(`M${x},${y}h${pixelSize}v${pixelSize}h-${pixelSize}z`);
-    }
-  }
-  svg += `<rect fill="${escapeAttr(whiteColor)}" width="${width}" height="${height}"/>`;
-  svg += `<path fill="${escapeAttr(blackColor)}" d="${paths.join("")}"/>`;
-  svg += "</svg>";
-  return svg;
-}
-
-export { QrCodeDataType, encode, renderANSI, renderSVG, renderUnicode, renderUnicodeCompact };
+export { encode };

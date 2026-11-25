@@ -17,11 +17,28 @@ if (lines.some((l) => (l.match(/`/g) ?? []).length % 2 === 1)) {
   throw new Error("a template literal spans lines: trim by hand and check the diff");
 }
 const comment = (/** @type {string} */ l) => /^\s*\/\//.test(l) || /^\s*\/\*(?!!)(?:(?!\*\/).)*\*\/\s*$/.test(l);
-const code = lines.filter((l) => !comment(l));
+const kept = lines.filter((l) => !comment(l));
+
+// The text renderers run from getDataAt to the export line; bloop calls encode alone (core/qr.js), so they go whole
+// and the export names encode only. A source whose tail differs is refused rather than cut by guess.
+const RENDERERS = ["getDataAt", "renderUnicode", "renderANSI", "renderUnicodeCompact", "escapeAttr", "renderSVG"];
+const from = kept.findIndex((l) => l.startsWith("function getDataAt("));
+const to = kept.findIndex((l) => l.startsWith("export {"));
+const declared = kept.slice(from, to).flatMap((l) => l.match(/^function (\w+)\(/)?.[1] ?? []);
+const rest = [...kept.slice(0, from), ...kept.slice(to + 1)];
+if (
+  from < 0 ||
+  to < from ||
+  declared.join() !== RENDERERS.join() ||
+  rest.some((l) => RENDERERS.some((n) => l.includes(n)))
+) {
+  throw new Error("uqr's renderers are not where this script expects them: trim by hand and check the diff");
+}
+const code = [...kept.slice(0, from), "export { encode };", ...kept.slice(to + 1)];
 
 // The license block: everything after the first line of the vendored header, up to its end.
 const license = current.slice(current.indexOf("\n"), current.indexOf("*/") + 2);
-const head = `/*! uqr ${version} (https://github.com/unjs/uqr), vendored from dist/index.mjs with its whole-line comments removed by tools/trim-uqr.mjs (the browser JS budget); the code is unmodified.`;
+const head = `/*! uqr ${version} (https://github.com/unjs/uqr), vendored from dist/index.mjs by tools/trim-uqr.mjs (the browser JS budget): whole-line comments and the text renderers removed; every other line unmodified.`;
 writeFileSync(target, `${head}${license}\n${code.join("\n")}`);
 
 // Read back: the header slicing kept the body whole, and the file parses (node --check is the guard that matters).
