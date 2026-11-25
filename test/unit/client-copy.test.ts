@@ -1,6 +1,6 @@
 import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
-import { SESSION_ENDED } from "../../public/js/core/copy.js";
+import { SESSION_ENDED, WAITLIST_FORM } from "../../public/js/core/copy.js";
 import { TYPED_LETTERS, typedError } from "../../public/js/core/copy-code.js";
 import { phoneCopy, refusalToast, uploadLine, videoTime } from "../../public/js/core/copy-phone.js";
 import { endLine, FRESH_LINE, screenCopy } from "../../public/js/core/copy-screen.js";
@@ -615,6 +615,28 @@ describe("phone copy", () => {
     // The line about the file link is held back until open item 1 passes.
     expect(phoneCopy("ended", pf).body).toBe("Close PowerPoint on the room PC and delete any download there.");
     expect(phoneCopy("ended", { ...pf, demo: true }).body).toBe("");
+  });
+
+  it("a demo phone's end leads to the waitlist, Done under it as secondary; a live one has Done alone", () => {
+    for (const key of ["ended", "canceled"] as const) {
+      expect(phoneCopy(key, pf).actions).toEqual([{ id: "done", label: "Done", kind: "primary" }]);
+      // Primary last: stacked, app.css puts it on top.
+      expect(phoneCopy(key, { ...pf, demo: true }).actions).toEqual([
+        { id: "done", label: "Done", kind: "secondary" },
+        {
+          id: "waitlist",
+          label: "Join the Waitlist",
+          kind: "primary",
+          href: "https://tally.so/r/Yj4KAN?source=phone",
+          waitlist: true,
+        },
+      ]);
+    }
+  });
+
+  it("the waitlist form is the one content/site.json names", () => {
+    const site = JSON.parse(readFileSync(new URL("../../content/site.json", import.meta.url), "utf8"));
+    expect(WAITLIST_FORM).toBe(site.waitlist);
   });
 
   it("a page opened with no code asks for a scan, not an expired code", () => {

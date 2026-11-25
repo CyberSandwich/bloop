@@ -1114,18 +1114,25 @@ describe("presenting is one layout, with or without browser full screen", () => 
 });
 
 describe("the focus ring follows a key", () => {
-  it("focusTitle shows the ring after a key and hides it after a pointer", async () => {
+  it("focusTitle shows the ring after a key and hides it after a pointer; the root's .keyed says the same to CSS", async () => {
     const listeners = new Map<string, Listener>();
+    const root = new Set<string>();
     vi.resetModules();
     vi.stubGlobal("addEventListener", (t: string, f: Listener) => listeners.set(t, f));
+    vi.stubGlobal("document", {
+      ...doc,
+      documentElement: { classList: { toggle: (c: string, on: boolean) => (on ? root.add(c) : root.delete(c)) } },
+    });
     const { focusTitle }: { focusTitle: (t: unknown) => void } = await import(UI);
     const title = { focus: vi.fn() };
     listeners.get("keydown")?.({ type: "keydown" });
     focusTitle(title);
     expect(title.focus).toHaveBeenLastCalledWith({ preventScroll: true, focusVisible: true });
+    expect(root.has("keyed")).toBe(true);
     listeners.get("pointerdown")?.({ type: "pointerdown" });
     focusTitle(title);
     expect(title.focus).toHaveBeenLastCalledWith({ preventScroll: true, focusVisible: false });
+    expect(root.has("keyed")).toBe(false);
   });
 });
 

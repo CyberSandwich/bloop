@@ -299,19 +299,22 @@ test.describe("pairing flow", () => {
     await phone.page.getByRole("button", { name: /Change the Session Expiry$/ }).click();
     const sheet = phone.page.getByRole("dialog", { name: "Session Expiry" });
     await expect(sheet).toBeVisible();
-    // Exactly three presets, in a second bubble stacked below the first (title, Close, the time and Set).
+    // Exactly three presets, one row under the title and time, in one glass pane.
     await expect(sheet.locator("[data-minutes]")).toHaveText(["30m", "1h", "2h"]);
-    expect(await sheet.locator(".sheet-pane").count()).toBe(2);
-    const top = await sheet.locator(".sheet-in").boundingBox();
-    const presets = await sheet.locator(".chips").boundingBox();
-    expect(top && presets && Math.round(presets.y - (top.y + top.height))).toBe(8);
+    const pane = await sheet.locator("form").boundingBox();
     await expect(sheet.getByLabel("Expires At")).toHaveValue(/^\d{2}:\d{2}$/);
-    // Focus lands on the title (announced, no ring), not on Close; the first Tab reaches Close.
+    // Focus lands on the title (announced, no ring), not on Close; Tab reaches the time, then Close.
     await expect(sheet.getByRole("heading", { name: "Session Expiry" })).toBeFocused();
     await phone.page.keyboard.press("Tab");
-    await expect(sheet.getByRole("button", { name: "Close" })).toBeFocused();
-    // A tap in the gap between the bubbles is the backdrop's: it closes with no change.
-    await phone.page.mouse.click((top?.x ?? 0) + (top?.width ?? 0) / 2, (top?.y ?? 0) + (top?.height ?? 0) + 4);
+    const time = sheet.getByLabel("Expires At");
+    await expect(time).toBeFocused();
+    // Chromium's time input takes a Tab per field (hours, minutes) before focus leaves it; nothing sits between.
+    const close = sheet.getByRole("button", { name: "Close" });
+    for (let i = 0; i < 3 && (await time.evaluate((n) => n === n.ownerDocument.activeElement)); i++)
+      await phone.page.keyboard.press("Tab");
+    await expect(close).toBeFocused();
+    // A tap above the pane is the backdrop's: it closes with no change.
+    await phone.page.mouse.click((pane?.x ?? 0) + (pane?.width ?? 0) / 2, (pane?.y ?? 0) - 12);
     await expect(sheet).toBeHidden();
     await phone.page.getByRole("button", { name: /Change the Session Expiry$/ }).click();
     await expect(sheet).toBeVisible();
@@ -347,21 +350,42 @@ test.describe("pairing flow", () => {
     return { screen, phone, lengthButton, sheet };
   }
 
-  test("SESS-01 at 320 wide the whole time and its icon show beside Set", async ({ browser }) => {
-    const { screen, phone, lengthButton, sheet } = await approvedDemo(browser);
-    await phone.page.setViewportSize({ width: 320, height: 640 });
-    await lengthButton.click();
-    await expect(sheet).toBeVisible();
-    const field = sheet.getByLabel("Expires At");
-    expect(await field.evaluate((el) => el.scrollWidth <= el.clientWidth)).toBe(true);
-    const [input, set] = await Promise.all([
-      field.boundingBox(),
-      sheet.getByRole("button", { name: "Set" }).boundingBox(),
-    ]);
-    expect(input && set && input.x + input.width <= set.x).toBe(true);
-    await screen.context.close();
-    await phone.context.close();
-  });
+  for (const width of [320, 390]) {
+    test(`SESS-01 at ${width} the sheet is a 2 x 2 grid: the card and Close, the presets and Set`, async ({
+      browser,
+    }) => {
+      const { screen, phone, lengthButton, sheet } = await approvedDemo(browser);
+      await phone.page.setViewportSize({ width, height: 640 });
+      await lengthButton.click();
+      await expect(sheet).toBeVisible();
+      const field = sheet.getByLabel("Expires At");
+      // The whole time shows, and the input spans its row of the card.
+      expect(await field.evaluate((el) => el.scrollWidth <= el.clientWidth)).toBe(true);
+      const card = sheet.locator(".sheet-card");
+      const inner = await card.evaluate((n) => n.clientWidth);
+      expect(Math.round((await field.boundingBox())?.width ?? 0)).toBe(Math.round(inner));
+      // The presets share one row.
+      const tops = new Set<number>();
+      for (const chip of await sheet.locator("[data-minutes]").all())
+        tops.add(Math.round((await chip.boundingBox())?.y ?? -1));
+      expect(tops.size).toBe(1);
+      // Close spans the card's height; Set is Close's width.
+      const [c, x, set] = await Promise.all([
+        card.boundingBox(),
+        sheet.getByRole("button", { name: "Close" }).boundingBox(),
+        sheet.getByRole("button", { name: "Set" }).boundingBox(),
+      ]);
+      expect(Math.round(x?.height ?? 0)).toBe(Math.round(c?.height ?? -1));
+      expect(Math.round(set?.width ?? 0)).toBe(Math.round(x?.width ?? -1));
+      expect((x?.width ?? 0) >= 44).toBe(true);
+      await expectNoAxeViolations(phone.page);
+      // Close closes with no change.
+      await sheet.getByRole("button", { name: "Close" }).click();
+      await expect(sheet).toBeHidden();
+      await screen.context.close();
+      await phone.context.close();
+    });
+  }
 
   test("SESS-01 a refused length is a toast over the running session: the countdown, Revoke and the sheet stay", async ({
     browser,
@@ -395,7 +419,7 @@ test.describe("pairing flow", () => {
     await phone.page.unroute("**/css/length.css");
     await lengthButton.click();
     await expect(sheet).toBeVisible();
-    await expect(sheet.locator(".chips")).toHaveCSS("border-radius", "34px");
+    await expect(sheet.locator(".chips")).toHaveCSS("border-radius", "26px");
     await sheet.getByRole("button", { name: "1 hour" }).click();
     await expect(sheet).toBeHidden();
     await screen.context.close();
@@ -430,8 +454,17 @@ test.describe("pairing flow", () => {
     await phone.context.close();
   });
 
-  test("SESS-01 a choice past the cap is cut to it, and a toast names the end it set", async ({ browser }) => {
+  test("SESS-01 a choice past the cap is cut to it with no toast: the countdown shows the end it set", async ({
+    browser,
+  }) => {
     const { screen, phone, lengthButton, sheet } = await approvedDemo(browser);
+    const countdown = phone.page.locator("#ends-text");
+    // The 2h preset, the demo's cap: cut to approval plus the cap.
+    await lengthButton.click();
+    await sheet.getByRole("button", { name: "2 hours" }).click();
+    await expect(sheet).toBeHidden();
+    await expect(countdown).toHaveText(/^Ends in 1:59:\d{2}$/);
+    // A typed time past the cap, cut the same way.
     await lengthButton.click();
     const later = await phone.page.evaluate(() => {
       const t = new Date(Date.now() + 3 * 3600_000);
@@ -439,10 +472,9 @@ test.describe("pairing flow", () => {
     });
     await sheet.getByLabel("Expires At").fill(later);
     await sheet.getByRole("button", { name: "Set" }).click();
-    await expect(phone.page.getByRole("status").filter({ hasText: /^Ends at \d{2}:\d{2}/ })).toContainText(
-      "That's the longest this session can run.",
-    );
-    await expect(phone.page.locator("#ends-text")).toHaveText(/^Ends in 1:59:\d{2}$/);
+    await expect(countdown).toHaveText(/^Ends in 1:59:\d{2}$/);
+    await phone.page.waitForTimeout(500);
+    await expect(phone.page.locator(".toast")).toHaveCount(0);
     await screen.context.close();
     await phone.context.close();
   });
@@ -633,6 +665,15 @@ test.describe("pairing flow", () => {
 
     await revoke(phone.page);
     await expect(heading(phone.page)).toHaveText("Session Ended");
+    // A demo phone's end: the waitlist link on top, in the same tab, Done under it.
+    const join = phone.page.locator("#actions").getByRole("link", { name: "Join the Waitlist" });
+    await expect(join).toHaveAttribute("href", "https://tally.so/r/Yj4KAN?source=phone");
+    await expect(join).toHaveAttribute("data-waitlist", "");
+    expect(await join.getAttribute("target")).toBeNull();
+    const done = phone.page.locator("#actions").getByRole("button", { name: "Done" });
+    expect(await done.getAttribute("class")).toContain("secondary");
+    const [j, d] = await Promise.all([join.boundingBox(), done.boundingBox()]);
+    expect(Math.round((j?.y ?? 0) + (j?.height ?? 0))).toBeLessThanOrEqual(Math.round(d?.y ?? -1));
     // PAIR-12: the ended view itself drops the pid; Done has not run yet.
     expect(await phone.page.evaluate(() => localStorage.getItem("bloop.pid"))).toBeNull();
     await expect(heading(screen.page)).toHaveText("Session Ended");
@@ -1430,6 +1471,10 @@ test.describe("open path", () => {
     );
     expect(await screen.page.evaluate(() => sessionStorage.getItem("bloop.sid"))).toBeNull();
     await expect(heading(phone.page)).toHaveText("Session Ended");
+    // A live phone's end is Done alone.
+    await expect(phone.page.locator("#actions").locator(".btn")).toHaveCount(1);
+    await expect(phone.page.locator("#actions").getByRole("button", { name: "Done" })).toBeVisible();
+    await expect(phone.page.locator("[data-waitlist]")).toHaveCount(0);
     await screen.context.close();
     await phone.context.close();
   });
@@ -1933,6 +1978,46 @@ test.describe("screen and phone layout", () => {
       expect(Math.abs(view.y - inset)).toBeLessThanOrEqual(1);
       expect(Math.abs(view.y + view.height + inset - height)).toBeLessThanOrEqual(1);
     }).toPass();
+    await screen.context.close();
+    await phone.context.close();
+  });
+
+  test("a switch that adds or drops the page count keeps the pill's center; only the count's segment moves", async ({
+    browser,
+  }) => {
+    const { screen, phone } = await viewerWith(browser);
+    const page = screen.page;
+    await expect(heading(page)).toHaveText("Dog.jpg");
+    await page.waitForTimeout(600);
+    /** Per frame for 1.2 s from now: [left, width, center] of the pill. */
+    const sample = async (act: () => Promise<void>) => {
+      await page.evaluate(
+        "(() => { const p = document.getElementById('controls'); const out = (window.frames_ = []); const t0 = performance.now(); const tick = () => { const r = p.getBoundingClientRect(); out.push([r.left, r.width, r.left + r.width / 2]); if (performance.now() - t0 < 1200) requestAnimationFrame(tick); }; requestAnimationFrame(tick); })()",
+      );
+      await act();
+      await page.waitForTimeout(1300);
+      return (await page.evaluate("window.frames_")) as [number, number, number][];
+    };
+    for (const [to, grows] of [
+      ["Sample deck.pptx", true],
+      ["Dog.jpg", false],
+    ] as const) {
+      const frames = await sample(() => sidebarItem(page, to).click());
+      const last = frames.at(-1) ?? [0, 0, 0];
+      for (const [, , center] of frames)
+        expect(Math.abs(Math.round(center) - Math.round(last[2]))).toBeLessThanOrEqual(1);
+      // The width only ever moves one way, so nothing steps back.
+      for (let i = 1; i < frames.length; i++) {
+        const step = (frames[i]?.[1] ?? 0) - (frames[i - 1]?.[1] ?? 0);
+        expect(grows ? step >= -0.5 : step <= 0.5, `${to}, frame ${i}: ${step}`).toBe(true);
+      }
+      expect(grows ? last[1] > (frames[0]?.[1] ?? 0) : last[1] < (frames[0]?.[1] ?? 0)).toBe(true);
+    }
+    // Under reduced motion it changes at once.
+    await page.emulateMedia({ reducedMotion: "reduce" });
+    await sidebarItem(page, "Sample deck.pptx").click();
+    await expect(page.locator("#dots")).toBeVisible();
+    expect(await page.evaluate("document.getElementById('dots').getAnimations().length")).toBe(0);
     await screen.context.close();
     await phone.context.close();
   });
@@ -2511,9 +2596,9 @@ test.describe("PAIR-13 remote: the phone commands the demo screen (design.md sec
     await phone.page.getByRole("button", { name: "Approve" }).click();
     await expectViewer(screen.page);
     const preview = phone.page.locator(".preview");
-    await expect(preview).toBeVisible();
     const row = (name: string) => phone.page.locator("#file-list").getByRole("button", { name: startsWith(name) });
     const bubbles = phone.page.getByRole("group", { name: "The Screen" });
+    await expect(bubbles).toBeVisible();
     const dots = screen.page.locator("#dots");
     return { screen, phone, preview, row, bubbles, dots };
   }
@@ -2528,6 +2613,24 @@ test.describe("PAIR-13 remote: the phone commands the demo screen (design.md sec
     // Before any command the screen shows its first file: that row is marked.
     await expect(row("Dog.jpg")).toHaveAttribute("aria-current", "true");
     await expect(phone.page.locator("#file-list").getByRole("button", { name: startsWith("Vevox") })).toHaveCount(0);
+    // A link row opens its link in a new tab here: no command, never marked as on the screen, no preview.
+    const link = phone.page.locator("#file-list").getByRole("link", { name: startsWith("Vevox") });
+    await expect(link).toHaveAttribute("target", "_blank");
+    await expect(link).toHaveAttribute("rel", "noopener noreferrer");
+    await expect(link).toContainText("New Tab");
+    let commands = 0;
+    await phone.page.route("**/api/control", (route) => {
+      commands += 1;
+      return route.continue();
+    });
+    const tab = phone.context.waitForEvent("page");
+    await link.click();
+    await (await tab).close();
+    await phone.page.waitForTimeout(300);
+    expect(commands).toBe(0);
+    await expect(link).not.toHaveAttribute("aria-current", "true");
+    await expect(preview).toHaveCount(0);
+    await phone.page.unroute("**/api/control");
     await row("Sample deck.pptx").click();
     // The mark moves at the tap, before the answer.
     await expect(row("Sample deck.pptx")).toHaveAttribute("aria-current", "true");
@@ -2604,12 +2707,80 @@ test.describe("PAIR-13 remote: the phone commands the demo screen (design.md sec
     await close(screen, phone);
   });
 
+  test("the list sits under the title; a paged item's preview sits --inset over the panel, a photo has none", async ({
+    browser,
+  }) => {
+    const { screen, phone, row, preview } = await remote(browser);
+    const page = phone.page;
+    const list = page.locator("#file-list");
+    const panel = page.locator(".column > .actions");
+    const inset = await insetOf(page);
+    // The screen shows Dog.jpg first: its row already says what the screen shows.
+    await expect(row("Dog.jpg")).toHaveAttribute("aria-current", "true");
+    await expect(preview).toHaveCount(0);
+    const top = (await list.boundingBox())?.y;
+    await row("Sample deck.pptx").click();
+    await expect(preview).toBeVisible();
+    const l = await list.boundingBox();
+    const p = await preview.boundingBox();
+    const pill = await panel.boundingBox();
+    expect(l && p && l.y < p.y).toBe(true);
+    expect(p && pill && Math.round(pill.y - (p.y + p.height))).toBe(inset);
+    expect(l && p && Math.round(p.y - (l.y + l.height)) >= 24).toBe(true);
+    // The list never moves as the preview comes and goes.
+    expect(l?.y).toBe(top);
+    await row("Dog.jpg").click();
+    await expect(preview).toHaveCount(0);
+    expect((await list.boundingBox())?.y).toBe(top);
+    await close(screen, phone);
+  });
+
+  test("a long list stops over the preview with the section gap and scrolls inside itself", async ({ browser }) => {
+    const { screen, phone, row, preview } = await remote(browser);
+    const page = phone.page;
+    const list = page.locator("#file-list");
+    await row("Sample deck.pptx").click();
+    await expect(preview).toBeVisible();
+    // Copies of the demo's rows stand in for a long list: layout only, the next push draws the list again.
+    await list.evaluate((ul) => {
+      for (let i = 0; i < 3; i++) for (const li of [...ul.children]) ul.append(li.cloneNode(true));
+    });
+    const [scroll, client] = await list.evaluate((ul) => [ul.scrollHeight, ul.clientHeight]);
+    expect(scroll ?? 0).toBeGreaterThan(client ?? 0);
+    const l = await list.boundingBox();
+    const p = await preview.boundingBox();
+    const pill = await page.locator(".column > .actions").boundingBox();
+    expect(l && p && Math.round(p.y - (l.y + l.height))).toBe(24);
+    expect(p && pill && Math.round(pill.y - (p.y + p.height))).toBe(await insetOf(page));
+    // At least two rows stay in view, and the page itself does not scroll.
+    expect((l?.height ?? 0) >= 2 * 56).toBe(true);
+    expect(await page.evaluate("document.documentElement.scrollHeight <= innerHeight")).toBe(true);
+    await close(screen, phone);
+  });
+
+  test("held landscape at 844 x 390 a paged item has no preview, and Next still steps", async ({ browser }) => {
+    const { screen, phone, row, preview, bubbles, dots } = await remote(browser);
+    await phone.page.setViewportSize({ width: 844, height: 390 });
+    await row("Sample deck.pptx").click();
+    await expect(heading(screen.page)).toHaveText("Sample deck.pptx");
+    await expect(preview).toHaveCount(0);
+    await bubbles.getByRole("button", { name: "Next" }).click();
+    await expect(dots).toHaveText("2 / 2");
+    await close(screen, phone);
+  });
+
   test("Revoke asks first: Cancel keeps the session, End Session ends it", async ({ browser }) => {
     const { screen, phone } = await remote(browser);
     const ask = phone.page.getByRole("dialog", { name: "End This Session?" });
     await phone.page.getByRole("button", { name: "Revoke" }).click();
     await expect(ask).toBeVisible();
-    await expect(ask).toContainText("Your files leave the screen.");
+    // The title and its two buttons, on the phone's glass.
+    await expect(ask.locator("p")).toHaveCount(0);
+    await expect(ask).toHaveClass(/\bglass\b/);
+    // Opened by a tap, the focus it moves to Cancel draws no ring; opened by a key, it does (WCAG 2.4.7).
+    const cancel = ask.getByRole("button", { name: "Cancel" });
+    await expect(cancel).toBeFocused();
+    await expect(cancel).toHaveCSS("outline-style", "none");
     // A modal <dialog>, not a popover: Safari before 17 has no Popover API.
     expect(await ask.evaluate((n) => n.matches("dialog:modal"))).toBe(true);
     await expectNoAxeViolations(phone.page);
@@ -2617,6 +2788,12 @@ test.describe("PAIR-13 remote: the phone commands the demo screen (design.md sec
     await expect(ask).toBeHidden();
     await phone.page.getByRole("button", { name: "Revoke" }).click();
     await ask.getByRole("button", { name: "Cancel" }).click();
+    await expect(ask).toBeHidden();
+    await phone.page.getByRole("button", { name: "Revoke" }).focus();
+    await phone.page.keyboard.press("Enter");
+    await expect(cancel).toBeFocused();
+    await expect(cancel).not.toHaveCSS("outline-style", "none");
+    await phone.page.keyboard.press("Escape");
     await expect(ask).toBeHidden();
     await expect(heading(phone.page)).toHaveText("Approved for Demo Room");
     await expect(heading(screen.page)).toHaveText("Dog.jpg");
@@ -2722,7 +2899,7 @@ test.describe("PAIR-13 remote: the phone commands the demo screen (design.md sec
     await phone.page.waitForTimeout(500);
     expect(asked).toBe(1);
     await alert.getByRole("button", { name: "Reload" }).click();
-    await expect(phone.page.locator(".preview")).toBeVisible();
+    await expect(phone.page.getByRole("group", { name: "The Screen" })).toBeVisible();
     expect(asked).toBe(2);
     await expect(phone.page.getByRole("alert")).toHaveCount(0);
     await close(screen, phone);
@@ -2741,7 +2918,7 @@ test.describe("PAIR-13 remote: the phone commands the demo screen (design.md sec
       await route.continue();
     });
     await phone.page.getByRole("button", { name: "Approve" }).click();
-    await expect(phone.page.locator(".preview")).toBeVisible();
+    await expect(phone.page.getByRole("group", { name: "The Screen" })).toBeVisible();
     await expect(screen.page.locator("#items > li .item")).toHaveCount(CATALOG.length);
     await screen.page.evaluate(
       "(() => { window.exits = 0; const exit = document.exitFullscreen?.bind(document); document.exitFullscreen = (...a) => { window.exits += 1; return exit?.(...a); }; })()",
@@ -2846,9 +3023,12 @@ test.describe("the phone page at phone widths (design.md section 7, Phone page)"
     expect(m, label).toEqual({ inner: width, scroll: width, past: [], small: [] });
   }
 
-  /** Scrolled to its end, the list's last row clears the floating panel. */
+  /** Scrolled to its end (the page, and the list where it scrolls inside itself), the last row clears the panel. */
   async function lastRowClear(page: Page, label: string) {
     await page.evaluate("window.scrollTo(0, document.documentElement.scrollHeight)");
+    await page.locator("#file-list").evaluate((ul) => {
+      ul.scrollTop = ul.scrollHeight;
+    });
     const row = await page.locator("#file-list > li").last().boundingBox();
     const panel = await page.locator(".column > .actions").boundingBox();
     expect(row && panel && row.y + row.height <= panel.y, label).toBe(true);
@@ -2883,7 +3063,7 @@ test.describe("the phone page at phone widths (design.md section 7, Phone page)"
 
       await page.getByRole("button", { name: /^Approve/ }).click();
       await expect(heading(page)).toHaveText("Approved for Demo Room");
-      await expect(page.locator(".preview")).toBeVisible();
+      await expect(page.getByRole("group", { name: "The Screen" })).toBeVisible();
       await expect(page.locator("#ends")).toHaveCSS("min-height", "44px");
       await guard(page, width, "approved");
       await lastRowClear(page, "approved");

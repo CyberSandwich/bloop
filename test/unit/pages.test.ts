@@ -159,6 +159,24 @@ describe("the phone's band", () => {
   });
 });
 
+describe("the phone's dialogs", () => {
+  it("Revoke's question and the Session Expiry sheet share one glass surface, defined once", () => {
+    const html = read("a.html");
+    expect(html).toMatch(/<dialog class="leave glass glass-pane" id="revoke"/);
+    expect(html).toMatch(/<dialog class="sheet" id="length"[^>]*>\s*<form class="until glass glass-pane">/);
+    // The shadow is the surface's own: no dialog sheet copies it.
+    const app = read("css/app.css");
+    expect(app).toMatch(/\.glass-pane \{\s*box-shadow: var\(--glass-edge\), var\(--sh-pill\);\s*\}/);
+    expect(read("css/length.css")).not.toMatch(/glass-edge|--glass\b|backdrop-filter/);
+  });
+
+  it("Revoke's question is the title and its two buttons: no line under it", () => {
+    const revoke = /<dialog[^>]* id="revoke"[\s\S]*?<\/dialog>/.exec(read("a.html"))?.[0] ?? "";
+    expect(revoke).toContain("End This Session?");
+    expect(revoke).not.toMatch(/<p\b/);
+  });
+});
+
 describe("the lazy stylesheets", () => {
   /** Each selector's first compound when it is one bare class: `.x`, not `.x[attr]`, `button.x` or `.x .y`. */
   const bare = (css: string) =>
@@ -238,9 +256,11 @@ describe("the demo screen", () => {
   });
 
   it("LINK-01 a link item opens in a new tab with no opener or referrer, and is never framed", () => {
-    const viewer = read("js/viewer.js");
-    expect(viewer).toMatch(/target: "_blank", rel: "noopener noreferrer"/);
-    expect(viewer).toContain('startsWith("https://")');
+    const rows = read("js/core/rows.js");
+    expect(rows).toMatch(/target: "_blank", rel: "noopener noreferrer"/);
+    expect(rows).toContain('startsWith("https://")');
+    // The screen's sidebar and the phone's list draw a link's row with the one helper.
+    for (const file of ["js/viewer.js", "js/phone.js"]) expect(read(file), file).toContain('linkRow(item.url, "');
     for (const file of ["js/viewer.js", "js/screen.js", "s.html"]) expect(read(file), file).not.toMatch(/iframe/i);
   });
 
