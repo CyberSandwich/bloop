@@ -264,6 +264,17 @@ describe("runBreaker: flip, latch, alert once", () => {
     expect(s.alerts.filter((a) => a.kind === "warn")).toHaveLength(2);
   });
 
+  it("D1 down for reads and writes: the run completes, the trip latches, and nothing is alerted as applied", async () => {
+    const s = setup();
+    s.store.get = async () => {
+      throw new Error("d1 down");
+    };
+    s.g.ledger.record("demo_session", 2000, undefined, T0);
+    await expect(s.run()).resolves.toMatchObject({ tripped: ["demo"] });
+    expect(s.g.ledger.trips()).toMatchObject([{ switch: "demo", alerted: false }]);
+    expect(s.alerts.filter((a) => a.kind === "trip")).toHaveLength(0);
+  });
+
   it("an alert carries numbers only", async () => {
     const s = setup();
     s.g.ledger.record("email", 300, undefined, T0);
