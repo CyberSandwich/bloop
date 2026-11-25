@@ -5,7 +5,7 @@
 import { createApi } from "./core/api.js";
 import { bootCode } from "./core/boot-code.js";
 import { openChannel, refusal } from "./core/channel.js";
-import { phoneCopy, refusalToast, uploadLine } from "./core/copy-phone.js";
+import { MAIL_SUBJECT, phoneCopy, refusalToast, uploadLine } from "./core/copy-phone.js";
 import { thumbOf } from "./core/demo.js";
 import { fileProblem, kindOf, prepareFile, sendFile, wholeMB } from "./core/drop.js";
 import { loadFiles } from "./core/files.js";
@@ -21,7 +21,6 @@ import { VERIFIED } from "./core/verified.js";
 import { ERRORS } from "./shared/errors.js";
 import { typeOfName } from "./shared/names.js";
 import { IN_SESSION, LIVE_CLAIM, orderItems } from "./shared/session.js";
-import { supportMail } from "./shared/support.js";
 
 const api = createApi();
 const store = sessionStore();
@@ -230,13 +229,6 @@ function render() {
     live: !!v && IN_SESSION.includes(v.state),
     revoking: c.retry === endSession,
     list: fromList(),
-    mail: supportMail("bloop isn't responding", {
-      Page: "/a",
-      State: key,
-      Error: c.fault,
-      Time: new Date().toISOString(),
-      Browser: navigator.userAgent,
-    }),
   });
 
   canAdd = copy.add || key === "guest_confirm" || copy.actions.some((a) => a.id === "send-file" || a.id === "pick");
@@ -359,6 +351,27 @@ actionsEl.addEventListener("click", (e) => {
   else if (id === "send-file" || id === "pick") pickFile();
   else if (id === "send") send();
 });
+
+// The support mail's facts (shared/support.js) load on the way to its link; if they cannot, the plain one stands.
+for (const type of ["pointerdown", "focusin"])
+  actionsEl.addEventListener(type, (e) => {
+    const a = e.target instanceof Element ? e.target.closest("[data-action='mail']") : null;
+    if (a)
+      import("./shared/support.js").then(
+        (m) =>
+          a.setAttribute(
+            "href",
+            m.supportMail(MAIL_SUBJECT, {
+              Page: "/a",
+              State: String(c.error),
+              Error: c.fault,
+              Time: new Date().toISOString(),
+              Browser: navigator.userAgent,
+            }),
+          ),
+        () => {},
+      );
+  });
 
 filePick.addEventListener("change", () => {
   if (filePick.files?.length) choose(filePick.files);

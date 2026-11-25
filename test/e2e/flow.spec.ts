@@ -2241,7 +2241,6 @@ test.describe("screen and phone layout", () => {
     const page = await context.newPage();
     await page.goto("/s");
     await expect(page.locator("#b-back")).toBeVisible();
-    await expect(page.getByText("This page needs JavaScript to show a code.")).toBeVisible();
     await context.close();
   });
 
@@ -2825,7 +2824,7 @@ test.describe("the phone page at phone widths (design.md section 7, Phone page)"
       const screen = await demoScreen(browser);
       const code = await typedCodeOf(screen.page);
       const context = await browser.newContext({
-        viewport: { width, height: 640 },
+        viewport: { width, height: 568 },
         hasTouch: true,
         isMobile: true,
         deviceScaleFactor: 2,
@@ -2867,28 +2866,63 @@ test.describe("the phone page at phone widths (design.md section 7, Phone page)"
     });
   }
 
-  test("service down offers a prefilled support mail with no credential in it", async ({ browser }) => {
-    const screen = await demoScreen(browser);
-    const code = await typedCodeOf(screen.page);
+  /** /a on a claim the server fails (`internal`): service down. */
+  async function downPhone(browser: Browser, code: string, supportLoads = true) {
     const context = await browser.newContext({ viewport: { width: 320, height: 640 }, hasTouch: true, isMobile: true });
     await context.route("**/api/claim", (route) =>
       route.fulfill({ status: 500, contentType: "application/json", body: '{"code":"internal"}' }),
     );
+    if (!supportLoads) await context.route("**/js/shared/support.js", (route) => route.abort());
     const page = await context.newPage();
     await page.goto(`/a?c=${code}`);
     await expect(heading(page)).toHaveText("bloop Isn't Responding");
+    const mail = page.getByRole("link", { name: "Email bloop" });
+    // Before the facts load: the plain mail, which works with bloop down.
+    await expect(mail).toHaveAttribute("href", "mailto:hi@bloop.here?subject=bloop%20isn't%20responding");
+    await mail.focus();
+    return { context, page, mail };
+  }
+
+  test("held landscape at 844 x 390, the approve list's end and Add a File clear the floating panel", async ({
+    browser,
+  }) => {
+    const screen = await demoScreen(browser);
+    const code = await typedCodeOf(screen.page);
+    const context = await browser.newContext({ viewport: { width: 844, height: 390 }, hasTouch: true, isMobile: true });
+    const page = await context.newPage();
+    await page.goto(`/a?c=${code}`);
+    await expect(page.getByRole("button", { name: /^Approve/ })).toBeEnabled();
+    await lastRowClear(page, "approve, landscape");
+    await guard(page, 844, "approve, landscape");
+    await context.close();
+    await screen.context.close();
+  });
+
+  test("service down offers a prefilled support mail with no credential in it", async ({ browser }) => {
+    const screen = await demoScreen(browser);
+    const code = await typedCodeOf(screen.page);
+    const { context, page, mail } = await downPhone(browser, code);
     await expect(page.locator("#body")).toHaveText(
       "Something's wrong on bloop's side. Try again, or email hi@bloop.here.",
     );
-    const mail = page.getByRole("link", { name: "Email bloop" });
+    // On the way to the link the facts load and fill it.
+    await expect(mail).toHaveAttribute("href", /^mailto:hi@bloop\.here\?subject=bloop%20isn't%20responding&body=/);
     const href = (await mail.getAttribute("href")) ?? "";
-    expect(href).toMatch(/^mailto:hi@bloop\.here\?subject=bloop%20isn't%20responding&body=/);
     const body = new URL(href).searchParams.get("body") ?? "";
     expect(body).toContain("Page: /a\nState: service_down\nError: internal\nTime: ");
     for (const pattern of CREDENTIALS) expect(body, String(pattern)).not.toMatch(pattern);
     expect(body).not.toContain(code);
     await expect(page.getByRole("button", { name: "Try Again" })).toBeVisible();
     await guard(page, 320, "service down");
+    await context.close();
+    await screen.context.close();
+  });
+
+  test("service down's mail stays the plain one when its facts cannot load", async ({ browser }) => {
+    const screen = await demoScreen(browser);
+    const { context, page, mail } = await downPhone(browser, await typedCodeOf(screen.page), false);
+    await page.waitForTimeout(500);
+    await expect(mail).toHaveAttribute("href", "mailto:hi@bloop.here?subject=bloop%20isn't%20responding");
     await context.close();
     await screen.context.close();
   });

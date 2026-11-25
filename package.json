@@ -93,8 +93,7 @@
         "public/js/shared/codes.js",
         "public/js/shared/errors.js",
         "public/js/shared/names.js",
-        "public/js/shared/session.js",
-        "public/js/shared/support.js"
+        "public/js/shared/session.js"
       ],
       "limit": "29.4 kB"
     },
@@ -162,6 +161,11 @@
       "name": "drag and drop, lazy",
       "path": "public/js/core/drag.js",
       "limit": "0.45 kB"
+    },
+    {
+      "name": "support mail, lazy",
+      "path": "public/js/shared/support.js",
+      "limit": "0.35 kB"
     },
     {
       "name": "font",

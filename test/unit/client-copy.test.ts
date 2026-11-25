@@ -543,8 +543,8 @@ describe("phone copy", () => {
   });
 
   it("S7 service down on the phone: what is wrong, Try Again, and the prefilled support mail", () => {
-    const mail = "mailto:hi@bloop.here?subject=x";
-    const c = phoneCopy("service_down", { ...pf, mail });
+    const mail = "mailto:hi@bloop.here?subject=bloop%20isn't%20responding";
+    const c = phoneCopy("service_down", pf);
     expect(c).toMatchObject({
       title: "bloop Isn't Responding",
       body: "Something's wrong on bloop's side. Try again, or email hi@bloop.here.",

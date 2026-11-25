@@ -1,7 +1,7 @@
 // The room screen's strings (the rules: copy.js).
 /** @import {ScreenStateKey} from "../../../src/shared/protocol.ts" */
 /** @import {ScreenControl, ScreenCopy, ScreenFacts} from "../types.js" */
-import { DOWN, orEmail } from "../shared/errors.js";
+import { down } from "../shared/errors.js";
 import { SESSION_ENDED } from "./copy.js";
 import { VERIFIED } from "./verified.js";
 
@@ -93,7 +93,7 @@ export function screenCopy(key, f) {
         line: f.inSession ? "Reconnecting. You can still end from your phone." : "Reconnecting.",
       };
     case "service_down":
-      return { ...base, heading: "bloop Isn't Responding", line: `${DOWN} ${orEmail("Refresh this page")}` };
+      return { ...base, heading: "bloop Isn't Responding", line: down("Refresh this page") };
     case "rate_limited":
       return {
         ...base,

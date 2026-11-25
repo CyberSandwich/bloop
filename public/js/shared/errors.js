@@ -58,6 +58,6 @@ export const ERRORS = {
 };
 
 export const SUPPORT = "hi@bloop.here";
-// The support line (design.md section 3).
+// The support line and service down's, one wording on every page (design.md section 3).
 export const orEmail = (/** @type {string} */ retry) => `${retry}, or email ${SUPPORT}.`;
-export const DOWN = "Something's wrong on bloop's side.";
+export const down = (/** @type {string} */ retry) => `Something's wrong on bloop's side. ${orEmail(retry)}`;

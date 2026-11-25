@@ -598,11 +598,13 @@ main:has(> .side:not([hidden])) #stage {
   opacity: 1;
   pointer-events: auto;
 }
-/* Over a video the browser muted (viewer.js play): the tap is the gesture sound needs. */
+/* Absolute: a placed grid item would push the frame to an empty row. */
 #b-sound {
-  grid-area: 1 / 1;
-  place-self: center;
+  position: absolute;
+  top: 50%;
+  left: 50%;
   z-index: 6;
+  translate: -50% -50%;
   min-height: 44px;
 }
 .is-presenting .view.is-idle {

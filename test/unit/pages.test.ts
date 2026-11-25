@@ -167,11 +167,23 @@ describe("the lazy stylesheets", () => {
     );
   const classes = (css: string) => new Set([...css.matchAll(/\.([a-z][\w-]*)/gi)].map((m) => m[1]));
   const page = classes(read("css/app.css") + read("css/base.css"));
+  // Every lazy stylesheet the size budgets list: a new one is checked without touching this test.
+  const sheets = (JSON.parse(read("../package.json"))["size-limit"] as { name: string; path: string | string[] }[])
+    .filter((e) => e.name.endsWith(", lazy"))
+    .flatMap((e) => [e.path].flat())
+    .filter((p) => p.endsWith(".css"))
+    .map((p) => p.replace(/^public\//, ""));
 
-  it.each(["css/length.css", "css/remote.css"])(
-    "%s names its own parts: no bare class of it is one the page's sheet already styles",
+  it("the budgets list the lazy sheets", () => {
+    expect(sheets).toEqual(expect.arrayContaining(["css/length.css", "css/remote.css"]));
+  });
+
+  // A lazy sheet's bare `.x` is its own part; refining a shared one (`.chips .btn`, `button.row`) is fine.
+  it.each(sheets)(
+    "%s names its own parts: no bare class of it is styled by the page's sheet or another lazy one",
     (sheet) => {
-      expect([...bare(read(sheet))].filter((c) => page.has(c))).toEqual([]);
+      const others = new Set([...page, ...sheets.filter((s) => s !== sheet).flatMap((s) => [...bare(read(s))])]);
+      expect([...bare(read(sheet))].filter((c) => others.has(c))).toEqual([]);
     },
   );
 

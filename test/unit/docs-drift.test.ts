@@ -293,6 +293,7 @@ describe("size budgets", () => {
       ],
       "phone remote, lazy": ["public/js/core/lazy.js", "public/js/core/remote-ui.js", "public/js/core/remote.js"],
       "drag and drop, lazy": "public/js/core/drag.js",
+      "support mail, lazy": "public/js/shared/support.js",
     });
     for (const entry of lazyEntries) {
       const own = [entry.path].flat();

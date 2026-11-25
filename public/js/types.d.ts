@@ -244,8 +244,6 @@ export interface PhoneFacts {
   revoking?: boolean;
   /** The guest offer came from the list (Add a File), so Cancel goes back to it. */
   list?: boolean;
-  /** The prefilled support mail (shared/support.js). */
-  mail?: string;
 }
 
 export interface ScreenCtx {

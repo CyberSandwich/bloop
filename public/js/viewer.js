@@ -11,7 +11,8 @@ import { rowFace, tile } from "./core/rows.js";
 import { onStage } from "./core/states.js";
 import { byId, el, icon, setText, show } from "./core/ui.js";
 
-/** @typedef {{node?: HTMLCanvasElement | HTMLVideoElement, ratio?: number | null, ready: boolean, failed: boolean, fraction: number | null, stop: () => void}} Shot */
+/** @typedef {{play: boolean, sound: Sound}} Tune */
+/** @typedef {{node?: HTMLCanvasElement | HTMLVideoElement, ratio?: number | null, ready: boolean, failed: boolean, fraction: number | null, stop: () => void, tune?: (want: Tune, retune: (next: Tune) => void) => void}} Shot */
 
 /**
  * A photo's view link, read by script to count its bytes, drawn on a canvas: the CSP has no blob: for an <img>.
@@ -286,7 +287,8 @@ export function createViewer(deps) {
   let want = false;
   let followed = "";
   /** A video's play state (design.md section 7, Video), and what the one on stage was last set to. */
-  let tune = { play: true, sound: /** @type {Sound} */ ("on") };
+  /** @type {Tune} */
+  let tune = { play: true, sound: "on" };
   let tuned = "";
   const pages = () => {
     const item = items()[at];
@@ -509,35 +511,20 @@ export function createViewer(deps) {
     play();
   }
 
-  /**
-   * Sets the video on stage to `tune`, once per change: sound first, and where the browser holds it (no tap here yet)
-   * muted, with Tap for Sound. Only this screen's own hand moves `tune` here: a command's play() has no activation.
-   */
+  /** Sets the video on stage to `tune`, once per change (viewer-video.js); what it reports back is reported on. */
   function play() {
-    /** @type {HTMLVideoElement | null} */
-    const video = frame.querySelector("video");
-    show(tapSound, !!video && tune.sound === "blocked");
-    const key = video ? keyOf(at) + tune.play + tune.sound : "";
+    const set = frame.querySelector("video") && images.get(keyOf(at))?.tune;
+    show(tapSound, !!set && tune.sound === "blocked");
+    const key = set ? keyOf(at) + tune.play + tune.sound : "";
     if (key === tuned) return;
     tuned = key;
-    if (!video) return;
-    const retune = (/** @type {typeof tune} */ next) => {
+    set?.(tune, (next) => {
       if (next.play === tune.play && next.sound === tune.sound) return;
       tune = next;
       tuned = "";
       play();
       deps.tapped?.();
-    };
-    video.onplay =
-      video.onpause =
-      video.onvolumechange =
-        () =>
-          (video.ended || navigator.userActivation?.isActive) &&
-          retune({ play: !video.paused, sound: !video.muted ? "on" : tune.sound === "on" ? "off" : tune.sound });
-    if (!tune.play) return video.pause();
-    video.muted = tune.sound !== "on";
-    // An interrupted play() (a pause, the end) is no refusal of sound.
-    video.play().catch((e) => !video.muted && e.name === "NotAllowedError" && retune({ ...tune, sound: "blocked" }));
+    });
   }
 
   function hide() {

@@ -2,10 +2,12 @@
 /** @import {PhoneStateKey} from "../../../src/shared/protocol.ts" */
 /** @import {PhoneAction, PhoneCopy, PhoneFacts} from "../types.js" */
 
-import { DOWN, orEmail } from "../shared/errors.js";
+import { down, SUPPORT } from "../shared/errors.js";
 import { EXTENSION_TYPES } from "../shared/names.js";
 import { SESSION_ENDED, TYPED_WRONG } from "./copy.js";
 import { VERIFIED } from "./verified.js";
+
+export const MAIL_SUBJECT = "bloop isn't responding";
 
 const ENTER_CODE = { id: "code", label: "Enter the Code", kind: /** @type {const} */ ("primary"), href: "/code" };
 /** Revokes the stored OneDrive access (docs/architecture.md section 6, /api/me/disconnect). */
@@ -305,8 +307,17 @@ export function phoneCopy(key, f) {
       return {
         ...base,
         title: "bloop Isn't Responding",
-        body: `${DOWN} ${orEmail("Try again")}`,
-        actions: [{ id: "mail", label: "Email bloop", kind: "text", href: f.mail }, ...retryActions(f)],
+        body: down("Try again"),
+        // Plain, so it works with bloop down; phone.js adds the facts on the way to it.
+        actions: [
+          {
+            id: "mail",
+            label: "Email bloop",
+            kind: "text",
+            href: `mailto:${SUPPORT}?subject=${encodeURIComponent(MAIL_SUBJECT)}`,
+          },
+          ...retryActions(f),
+        ],
       };
     case "framed":
       return { ...base, title: "Open This Page Directly" };
