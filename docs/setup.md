@@ -51,7 +51,7 @@ Guest uploads (ADR 0005) live in one private R2 bucket in the `eu` jurisdiction.
 
 ### The library bucket
 
-Create it, and onboard Email Sending for the sender domain, before the first deploy that carries the v4 bindings: migrations apply first, so a deploy that then fails on a missing binding leaves 0005 applied under the old code. `deploy.yml` checks both buckets and stops before any migration when one is missing; it cannot check the Email Sending onboarding.
+Create it before the first deploy that carries the v4 bindings: migrations apply first, so a deploy that then fails on a missing binding leaves 0005 applied under the old code. `deploy.yml` checks both buckets and stops before any migration when one is missing.
 
 User files (v4) live in a second private bucket in the `eu` jurisdiction, bound as `LIBRARY`: `npx wrangler r2 bucket create bloop-library --jurisdiction eu`. It has no public URL. Its one lifecycle rule aborts incomplete multipart uploads after 1 day, set once with the same token as above (dashboard: R2, the bucket, Settings, Object lifecycle rules). Never add an expiry rule to this bucket: files stay until the user deletes them. CORS on both buckets allows only the `https://bloop.here` origin, the PUT method, the `content-type` header, exposes `ETag`, and has a 3600 s max age.
 

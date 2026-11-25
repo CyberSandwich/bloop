@@ -106,14 +106,3 @@ AUTH-08 to AUTH-17, INV-01 to INV-05, MODE-01 (the mode gate at code request, ac
 
 ## How to remove it
 Close invites (refuse `/api/invite/accept`), keep code sign-in for existing users, or turn accounts off entirely as ADR 0013 describes. Passkeys alone come out by deleting the passkey routes, the lazy module and the `passkey` and `auth_challenge` tables one deploy later, and the email code remains the only method.
-
-## Flags (Part 2 unsafe, ambiguous or contradicting Part 1, and the resolution)
-1. **Race in Part 2's "5 attempts":** read-then-compare lets parallel guesses share an attempt. Resolved: the increment is the guard and comes first.
-2. **Attempt multiplication:** Part 2 never said a new code supersedes the old one. Resolved: supersede within the bucket.
-3. **Enumeration through the limits and through mail timing:** resolved by writing a row for every address, buckets that unknown addresses share, and sending from `waitUntil`.
-4. **Lockout through shared limits:** resolved by the per-bucket limits and the known-device cookie.
-5. **Bootstrap contradiction with Part 1 ("invites only to TEST_EMAILS" in preview):** resolved by the owner's invite tool; route invites stay `TEST_EMAILS` only in preview, and accept and verify in preview admit `ADMIN_EMAILS` plus `TEST_EMAILS`.
-6. **Part 2's admin sign-in link:** cut.
-7. **Part 2's "conditional create":** cut; the explicit offer stays.
-8. **Part 2's C label** says "user status active" but the deletion grace needs a signed-in `deleting` user to restore. Resolved: `deleting` reaches `/api/me` and restore only.
-9. **Reauth rotation and revocation scope** were unstated. Resolved above.
