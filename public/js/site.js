@@ -5,8 +5,7 @@ const sentinel = document.getElementById("sentinel");
 if (nav && sentinel)
   new IntersectionObserver(([entry]) => nav.classList.toggle("is-scrolled", !entry?.isIntersecting)).observe(sentinel);
 
-// A same-page jump leaves no hash, so a reload opens at the top; Back and forward keep their place, restored here:
-// the browser's own restores a reload too, and Chrome restores after load, so it cannot be switched off for one.
+// A jump leaves no hash and a reload opens at the top; Back and forward get the place saved on pagehide.
 history.scrollRestoration = "manual";
 const dropHash = () => history.replaceState(0, "", location.href.split("#")[0]);
 addEventListener("click", (e) => {
@@ -44,8 +43,7 @@ menu?.addEventListener("click", (e) => {
   if (e.target instanceof Element && e.target.closest("a") && menu.matches(":popover-open")) menu.hidePopover();
 });
 
-// The spring (k 120, c 30, m .4, implicit step) drives a paused animation that outranks the CSS tilt. Over the entry
-// the visible share tracks the goal, so 1% thresholds wake the loop that stops once settled.
+// A spring (k 120, c 30, m .4, implicit step) drives a paused animation over the CSS tilt; 1% thresholds wake it.
 const stage = document.querySelector(".stage");
 const tiltable = matchMedia("(prefers-reduced-motion: no-preference)");
 if (stage && tiltable.matches) {
@@ -77,7 +75,6 @@ if (stage && tiltable.matches) {
   ).observe(stage);
 }
 
-const still = matchMedia("(prefers-reduced-motion: reduce)");
 if (!CSS.supports("interpolate-size", "allow-keywords")) {
   for (const details of /** @type {NodeListOf<HTMLDetailsElement>} */ (document.querySelectorAll(".faq details"))) {
     // The asked state: `open` lags while a close runs, and find in page opens one without a click.
@@ -86,7 +83,7 @@ if (!CSS.supports("interpolate-size", "allow-keywords")) {
       if (!details.getAnimations().length) opening = details.open;
     });
     details.querySelector("summary")?.addEventListener("click", (e) => {
-      if (still.matches) return;
+      if (!tiltable.matches) return;
       e.preventDefault();
       const from = details.offsetHeight;
       for (const a of details.getAnimations()) a.cancel();

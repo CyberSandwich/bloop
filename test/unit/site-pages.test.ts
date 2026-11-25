@@ -280,6 +280,43 @@ describe("landing word caps (design.md section 13)", () => {
     expect(css).not.toMatch(/text-shadow/);
   });
 
+  it("the why sits between the stills and Features, read once as the design.md sentence, its words as the fill's spans", () => {
+    const why = between(html, /<section class="why" aria-label="Why bloop">/, "</section>");
+    expect(main.indexOf('<section class="how"')).toBeLessThan(main.indexOf('<section class="why"'));
+    expect(main.indexOf('<section class="why"')).toBeLessThan(main.indexOf('<section class="features"'));
+    const sr = (/<span class="sr">(.+?)<\/span>/.exec(why)?.[1] ?? "").replace(/<[^>]+>/g, "");
+    const row = /^\| Why \| (.+?) \(/m.exec(read("docs/design.md"))?.[1]?.replace(/\*\*/g, "") ?? "";
+    expect(sr).toBe(row);
+    for (const sentence of sr.split(/(?<=[.?])\s+/)) expect(words(sentence).length, sentence).toBeLessThanOrEqual(20);
+    // The fill's copy is hidden from assistive tech and holds the same words, bloop as the name in body copy.
+    const fill = between(why, /<span class="why-words" aria-hidden="true">/, "</p>");
+    expect(
+      fill
+        .replace(/<[^>]+>/g, "")
+        .replace(/\s+/g, " ")
+        .trim(),
+    ).toBe(sr);
+    expect(fill).toContain('<b class="name">bloop</b>');
+    expect(fill.match(/<span>/g)).toHaveLength(words(sr).length - 1);
+  });
+
+  it("the why fills by a clipped gradient on each word's view timeline, never by opacity, and only with motion allowed", () => {
+    const css = read("public/css/site.css");
+    const block = between(
+      css,
+      /@supports \(animation-timeline: view\(\)\) \{\n {2}@media \(prefers-reduced-motion: no-preference\) and \(forced-colors: none\)/,
+      "\n}\n",
+    );
+    expect(block).toMatch(
+      /\.why-words > \* \{[^}]*background-clip: text;[^}]*-webkit-text-fill-color: transparent;[^}]*animation: ink linear both;\s*animation-timeline: view\(\);/,
+    );
+    expect(block).not.toMatch(/opacity/);
+    const why = between(css, /^\.why \{/m, "}");
+    expect(why).toMatch(/width: min\(100% - 2 \* var\(--pad\), 22em\);/);
+    expect(why).toMatch(/font-size: 28px;/);
+    expect(css).toMatch(/\.why \{\s*font-size: 40px;/);
+  });
+
   it("the sub names the QR code, the phone and presenting in at most 2 sentences and 30 words", () => {
     const sub = visibleText(between(html, /<p class="lead">/, "</p>"));
     expect(words(sub).length).toBeLessThanOrEqual(30);

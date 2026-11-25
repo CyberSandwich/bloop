@@ -1,4 +1,4 @@
-/* The site pages (/, /privacy, /terms, /security, 404, the Worker's error page), after base.css; the legal pages add legal.css. */
+/* The site pages after base.css (design.md sections 5 and 6); the doc pages add legal.css. */
 /* biome-ignore-all lint/suspicious/noDuplicateProperties: 100vh is the fallback for browsers without 100dvh */
 /* biome-ignore-all lint/style/noDescendingSpecificity: the file is ordered by page, not by selector weight */
 .brand {
@@ -17,8 +17,7 @@
   height: var(--mark);
 }
 
-/* ---- Site pages: the landing, the legal pages and 404 ---- */
-/* A tap acts at once, never waiting on a double-tap zoom; pinch zoom stays. */
+/* No double-tap zoom wait; pinch zoom stays. */
 html:has(.page-site) {
   scroll-padding-top: 96px;
   touch-action: manipulation;
@@ -41,7 +40,7 @@ html:has(.page-site) {
   height: 12px;
 }
 
-/* Insets are (pill height - inner height) / 2: concentric ends. The two pills center as one pair. */
+/* Insets are (pill height - inner height) / 2. */
 .nav {
   position: fixed;
   top: 14px;
@@ -122,7 +121,7 @@ html:has(.page-site) {
     background: var(--wash);
   }
 }
-/* The same 16 px padding as the links, so Security's text to Waitlist's text is the links' own 36 px. */
+/* The links' padding, so text to text is the links' own 36 px. */
 .btn.waitlist {
   min-height: 44px;
   padding: 0 16px;
@@ -148,7 +147,7 @@ html:has(.page-site) {
 .nav-links:popover-open ~ .nav-menu .menu-close {
   display: block;
 }
-/* Narrow nav up to 760: between 640 and 760 the two pills met. */
+/* Up to 760: below it the two pills met. */
 @media (max-width: 759.98px) {
   .nav {
     top: 10px;
@@ -174,7 +173,6 @@ html:has(.page-site) {
       opacity 180ms var(--ease-out),
       transform 180ms var(--ease-out);
   }
-  /* Laid out in the tap's next frame, then settles; closing is instant. */
   @starting-style {
     .nav-links:popover-open {
       opacity: 0;
@@ -191,7 +189,6 @@ html:has(.page-site) {
   }
 }
 
-/* Equal padding centers the block in the whole first view; the stage starts below the fold. */
 .hero {
   display: flex;
   flex-direction: column;
@@ -202,7 +199,7 @@ html:has(.page-site) {
   text-align: center;
 }
 .hero h1 {
-  /* One line at every width: the line is about 9.6em wide at this tracking, so the size follows the column. */
+  /* The line is about 9.6em wide, so the size follows the column. */
   font-size: min(56px, (100vw - 2 * var(--pad)) / 5);
   line-height: 1;
   letter-spacing: -0.05em;
@@ -214,7 +211,7 @@ html:has(.page-site) {
 }
 /* Ink at rest, like the rest of the h1; an orange band sweeps through, rests, and sweeps again (design.md section 8). */
 .sheen {
-  /* background-clip paints only inside the box, and the tracking pulls it inside the last glyph's ink: net width 0. */
+  /* The clip paints only inside the box, which the tracking pulls inside the last glyph: net width 0. */
   margin-inline: -0.05em;
   padding-inline: 0.05em;
   color: var(--ink);
@@ -278,7 +275,6 @@ html:has(.page-site) {
   perspective: 2200px;
   perspective-origin: 50% 0;
 }
-/* The screenshot is painted on paper like the page, so only the frame says it is a picture; --g1 shows while it loads. */
 .stage {
   overflow: hidden;
   border-radius: var(--r-stage);
@@ -291,7 +287,6 @@ html:has(.page-site) {
   width: 100%;
   height: auto;
 }
-/* The phone picture is its own device frame on a transparent ground: no frame, fill or shadow of the stage's. */
 @media (max-width: 639.98px) {
   .stage {
     overflow: visible;
@@ -318,7 +313,6 @@ html:has(.page-site) {
   }
 }
 
-/* Section heads share one size; text columns are 760, the grids, stage and doc cards the full 1136. */
 :is(.features, .connect, .faq) > h2,
 .doc h1 {
   font-size: 30px;
@@ -348,13 +342,47 @@ html:has(.page-site) {
   margin: 0 auto;
   padding-top: var(--section);
 }
-/* Closer than a section gap: the steps explain the stage. */
 .how {
   padding-top: 40px;
 }
 @media (min-width: 768px) {
   .how {
     padding-top: 56px;
+  }
+}
+/* Each word fills on its own view timeline by a clipped gradient: axe would grade an opacity as dim text. */
+.why {
+  width: min(100% - 2 * var(--pad), 22em);
+  margin: 0 auto;
+  padding-top: var(--section);
+  font-size: 28px;
+  font-weight: 600;
+  line-height: 1.25;
+  letter-spacing: -0.025em;
+  text-align: center;
+}
+@media (min-width: 768px) {
+  .why {
+    font-size: 40px;
+  }
+}
+@supports (animation-timeline: view()) {
+  @media (prefers-reduced-motion: no-preference) and (forced-colors: none) {
+    .why-words > * {
+      background:
+        linear-gradient(90deg, currentColor 50%, color-mix(in srgb, var(--ink) 16%, var(--paper)) 0) 100% 0 / 200% 100%;
+      -webkit-background-clip: text;
+      background-clip: text;
+      -webkit-text-fill-color: transparent;
+      animation: ink linear both;
+      animation-timeline: view();
+      animation-range: entry 100% cover 50%;
+    }
+  }
+}
+@keyframes ink {
+  to {
+    background-position: 0 0;
   }
 }
 .connect,
@@ -365,12 +393,11 @@ html:has(.page-site) {
   padding-bottom: var(--section);
 }
 
-/* base.css balances h1 and h2; site cards title in h3, so these balance too. */
 h3 {
   text-wrap: balance;
 }
 
-/* The warm backdrop (design.md section 4): a drifting layer, mirrored per box; paper without color-mix. */
+/* The warm backdrop (design.md section 4); paper without color-mix. */
 .frag,
 .panel,
 .close-panel {
@@ -417,7 +444,7 @@ h3 {
     translate: 10% 6%;
   }
 }
-/* Liquid glass: a clear fill, a rim lit from the top left, a shade below. Ink only: --muted fails 4.5:1 here. */
+/* Liquid glass. Ink only: --muted fails 4.5:1 here. */
 .frag .glass,
 .group,
 .close-card {
@@ -426,7 +453,7 @@ h3 {
     inset 0 -1px 3px rgba(0, 0, 0, 0.06),
     var(--sh-pill);
 }
-/* The close card keeps .glass's fill: on the clear one the logo's disc sank into the peach. */
+/* The close card keeps .glass's fill: on the clear one the logo sank into the peach. */
 @supports (backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px)) {
   .frag .glass,
   .group {
@@ -451,7 +478,6 @@ h3 {
   pointer-events: none;
 }
 
-/* How It Works: white step cards, each a verb and a line over a still of that step. */
 .steps,
 .grid {
   display: grid;
@@ -503,7 +529,6 @@ h3 {
 .step h2 + p {
   margin-bottom: 24px;
 }
-/* A row toggles its tick (site.js); its inset is the list's 8 plus its own 4. */
 .frag-row {
   display: flex;
   align-items: center;
@@ -519,7 +544,7 @@ h3 {
   text-align: left;
   cursor: pointer;
 }
-/* Off by weight, an empty tile and no tick; never by opacity or a lighter ink. */
+/* Off: never by opacity or a lighter ink. */
 .frag-row[aria-pressed="false"] {
   font-weight: 400;
 }
@@ -552,11 +577,9 @@ h3 {
   height: 100%;
   object-fit: cover;
 }
-/* A page shows whole on its tile, as rows.js draws it. */
 .frag-tile .fit {
   object-fit: contain;
 }
-/* A copy of the viewer's pill (count, Present, Download). */
 .frag-pill {
   display: flex;
   align-items: center;
@@ -577,7 +600,6 @@ h3 {
   font-weight: 400;
   font-variant-numeric: tabular-nums;
 }
-/* Present and Download press like the viewer's and do nothing more. */
 .frag-btn {
   display: inline-flex;
   align-items: center;
@@ -616,7 +638,6 @@ h3 {
   border-radius: var(--r-field);
 }
 
-/* The grid sits on a white band, so the cells' paper reads as the one neutral fill. */
 .features {
   padding-bottom: var(--section);
   margin-top: var(--section);
@@ -634,8 +655,7 @@ h3 {
   .grid {
     grid-template-columns: repeat(3, minmax(0, 1fr));
   }
-  /* The cards share the list's rows (title, line, still), so a two-line line in one card moves every still
-     down together, and every still is the tallest one's height, 12 above its card's bottom. */
+  /* Subgrid: every still starts on one line at the tallest one's height. */
   .step {
     display: grid;
     grid-row: span 3;
@@ -677,7 +697,6 @@ h3 {
   }
 }
 
-/* The page ends on the action it opened with: the mark over one Try the Demo, on a glass card over the warm backdrop. */
 .close {
   width: min(100% - 2 * var(--pad), 1136px);
   margin: 0 auto;

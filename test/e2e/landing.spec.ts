@@ -1,6 +1,6 @@
 // The landing against docs/design.md section 13 at the three check widths. CI only.
 import AxeBuilder from "@axe-core/playwright";
-import { expect, test } from "@playwright/test";
+import { expect, type Page, test } from "@playwright/test";
 
 // The callbacks below run in the browser; the test tsconfig has no DOM library, so these names are
 // declared here, for this file only.
@@ -275,8 +275,53 @@ for (const vp of VIEWPORTS) {
   });
 }
 
+const WHY =
+  "The cloud promised your files would be everywhere. Instead, every room PC asks for your password, and every sign-in opens everything you own, just to show one slide. A USB stick only ever carried what you chose. bloop brings that back, without the stick.";
+// A word's fill is its background position: 100% faint, 0% ink.
+const fillOf = (page: Page, which: "first" | "last") =>
+  page.evaluate(`(() => {
+    const words = [...document.querySelectorAll(".why-words > *")];
+    return getComputedStyle(words[${which === "first" ? 0 : "words.length - 1"}]).backgroundPosition;
+  })()`);
+
+for (const vp of [VIEWPORTS[0], VIEWPORTS[2]]) {
+  test.describe(`the why at ${vp.name}`, () => {
+    test.use({ viewport: { width: vp.width, height: vp.height }, hasTouch: vp.touch, isMobile: vp.width === 390 });
+
+    test("each word fills from faint to ink as it crosses the view, with axe green mid-fill", async ({ page }) => {
+      await page.goto("/");
+      expect(await fillOf(page, "first")).toBe("100% 0%");
+      // The paragraph's middle at the view's middle: the first line has passed it, the last has not.
+      await page.evaluate(`(() => {
+        const r = document.querySelector(".why p").getBoundingClientRect();
+        scrollBy(0, r.top + r.height / 2 - innerHeight / 2);
+      })()`);
+      await expect.poll(() => fillOf(page, "first")).toBe("0% 0%");
+      expect(await fillOf(page, "last")).not.toBe("0% 0%");
+      expect((await new AxeBuilder({ page }).analyze()).violations).toEqual([]);
+    });
+
+    test("a screen reader reads one sentence", async ({ page }) => {
+      await page.goto("/");
+      await expect(page.getByRole("region", { name: "Why bloop" })).toMatchAriaSnapshot(
+        `- region "Why bloop":\n  - paragraph: ${JSON.stringify(WHY)}`,
+      );
+    });
+  });
+}
+
 test.describe("reduced motion", () => {
   test.use({ viewport: { width: 1440, height: 900 }, reducedMotion: "reduce" });
+
+  test("the why is plain ink", async ({ page }) => {
+    await page.goto("/");
+    const [image, fill, color] = (await page.evaluate(`(() => {
+      const c = getComputedStyle(document.querySelector(".why-words > *"));
+      return [c.backgroundImage, c.webkitTextFillColor, c.color];
+    })()`)) as string[];
+    expect(image).toBe("none");
+    expect(fill).toBe(color);
+  });
 
   test("the stage rests flat", async ({ page }) => {
     await page.goto("/");
