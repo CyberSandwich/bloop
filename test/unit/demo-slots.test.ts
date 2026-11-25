@@ -1,20 +1,10 @@
-import { DatabaseSync, type SQLInputValue } from "node:sqlite";
+import { DatabaseSync } from "node:sqlite";
 import { describe, expect, it } from "vitest";
-import { DemoSlots, type SqlLike } from "../../src/worker/do/demo-slots.ts";
+import { DemoSlots } from "../../src/worker/do/demo-slots.ts";
+import { sqlOver } from "./sqlite.ts";
 
 function slots(): DemoSlots {
-  const db = new DatabaseSync(":memory:");
-  const sql: SqlLike = {
-    exec(query, ...bindings) {
-      const statement = db.prepare(query);
-      const values = bindings as SQLInputValue[];
-      // Like the platform's cursor, a statement runs when exec is called, not when its rows are read.
-      const rows = /^\s*select/i.test(query) ? (statement.all(...values) as Record<string, unknown>[]) : [];
-      if (!rows.length && !/^\s*select/i.test(query)) statement.run(...values);
-      return { toArray: () => rows };
-    },
-  };
-  return new DemoSlots(sql);
+  return new DemoSlots(sqlOver(new DatabaseSync(":memory:")));
 }
 
 const T = 1_000_000;
