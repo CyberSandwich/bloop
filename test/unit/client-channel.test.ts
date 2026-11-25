@@ -2,7 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { Api } from "../../public/js/core/api.js";
 import { BLOCKED_PROBE_MS, CONNECT_TIMEOUT_MS, openChannel, refusal } from "../../public/js/core/channel.js";
 import { PING_MS, PROBE_MS } from "../../public/js/core/health.js";
-import { downGate, isDown } from "../../public/js/core/poll.js";
+import { bootFailed, bootGate, downGate, isDown, pollDelay } from "../../public/js/core/poll.js";
 import { onRefusal } from "../../public/js/core/states.js";
 import { SILENCE_MS } from "../../public/js/core/timing.js";
 import type { SocketLike } from "../../public/js/types.js";
@@ -706,6 +706,16 @@ describe("REL-03 and R11 what a failed poll says", () => {
     expect(gate(true)).toBe(false);
     expect(isDown("service_down") && isDown("internal")).toBe(true);
     expect(isDown("offline") || isDown("rate_limited") || isDown("network_blocked")).toBe(false);
+  });
+
+  it("R11 a refused boot says down at once with no view yet, and on the second failure with one", () => {
+    bootGate(false);
+    expect(bootFailed("internal", "ok", 1, false)).toEqual({ link: "down", wait: pollDelay(1) });
+    bootGate(false);
+    expect(bootFailed("internal", "ok", 1, true).link).toBe("ok");
+    expect(bootFailed("internal", "ok", 2, true).link).toBe("down");
+    expect(bootFailed("offline", "ok", 1, true).link).toBe("offline");
+    expect(bootFailed("network_blocked", "ok", 1, false).link).toBe("blocked");
   });
 });
 
