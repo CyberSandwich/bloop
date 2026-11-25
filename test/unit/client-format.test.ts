@@ -90,16 +90,28 @@ describe("time and size words", () => {
 });
 
 describe("reconnect backoff", () => {
-  it("waits 1, 2, 5, 10, then 30 s", () => {
-    expect([1, 2, 3, 4, 5].map(reconnectDelay)).toEqual([1000, 2000, 5000, 10_000, 30_000]);
+  const full = (n: number) => reconnectDelay(n, () => 1);
+
+  it("waits 1, 2, 5, 10, then 30 s at most", () => {
+    expect([1, 2, 3, 4, 5].map(full)).toEqual([1000, 2000, 5000, 10_000, 30_000]);
     expect(RECONNECT_DELAYS).toEqual([1000, 2000, 5000, 10_000, 30_000]);
   });
 
   it("holds at 30 s and never goes below 1 s", () => {
-    expect(reconnectDelay(6)).toBe(30_000);
-    expect(reconnectDelay(500)).toBe(30_000);
-    expect(reconnectDelay(0)).toBe(1000);
-    expect(reconnectDelay(-3)).toBe(1000);
+    expect(full(6)).toBe(30_000);
+    expect(full(500)).toBe(30_000);
+    expect(full(0)).toBe(1000);
+    expect(full(-3)).toBe(1000);
+  });
+
+  it("REL-01 jitter: half to all of each step, so screens dropped together do not return together", () => {
+    expect([1, 2, 3, 4, 5].map((n) => reconnectDelay(n, () => 0))).toEqual([500, 1000, 2500, 5000, 15_000]);
+    expect(reconnectDelay(5, () => 0.5)).toBe(22_500);
+    for (let i = 0; i < 50; i++) {
+      const d = reconnectDelay(3);
+      expect(d).toBeGreaterThanOrEqual(2500);
+      expect(d).toBeLessThanOrEqual(5000);
+    }
   });
 
   it("polls after the 3rd failed reconnect", () => {
