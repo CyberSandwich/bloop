@@ -19,7 +19,7 @@ export interface ScreenPage {
   view: ScreenView | null;
   /** Server clock minus this clock. */
   skew: number;
-  link: "ok" | "offline" | "down";
+  link: "ok" | "offline" | "down" | "blocked";
   errored: boolean;
   limited: boolean;
   sid: string | null;
@@ -90,7 +90,7 @@ export interface ChannelOptions {
   /** `open` and any other frame the page handles. */
   // biome-ignore lint/suspicious/noExplicitAny: frames are checked by the page that takes them
   onFrame?: (frame: any) => void;
-  onLink: (link: "ok" | "offline" | "down") => void;
+  onLink: (link: "ok" | "offline" | "down" | "blocked") => void;
 }
 
 export type SendResult = { ok: true; view: PhoneView } | { ok: false; error: ErrorCode };
@@ -190,6 +190,8 @@ export interface ScreenFacts {
   endLine?: string;
   /** A session is running (approved to open). */
   inSession?: boolean;
+  /** The address to ask IT to allow (`location.host`). */
+  host?: string;
 }
 
 export interface PhoneAction {
@@ -250,7 +252,7 @@ export interface PhoneFacts {
 
 export interface ScreenCtx {
   view: ScreenView | null;
-  link: "ok" | "offline" | "down";
+  link: "ok" | "offline" | "down" | "blocked";
   /** An action or a pushed error failed; clears after a pause. */
   errored: boolean;
   /** Creating the screen was refused with `rate_limited` (the demo caps, DEMO-02); the page retries. */

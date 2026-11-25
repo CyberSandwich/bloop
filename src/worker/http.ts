@@ -2,10 +2,13 @@ import type { ZodType } from "zod";
 import { ERRORS } from "../../public/js/shared/errors.js";
 import type { ErrorCode } from "../shared/protocol.ts";
 
+/** The marker on every ok API answer: a client that gets a 200 without it is behind a filter's block page (REL-03). */
+export const API_MARKER = { "X-Bloop": "1" };
+
 export function json(body: unknown, status = 200, headers?: Record<string, string>): Response {
   return new Response(JSON.stringify(body), {
     status,
-    headers: { "Content-Type": "application/json; charset=utf-8", ...headers },
+    headers: { "Content-Type": "application/json; charset=utf-8", ...API_MARKER, ...headers },
   });
 }
 

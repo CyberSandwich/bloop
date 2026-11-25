@@ -4,6 +4,8 @@
 
 /** The one string that names the session (design.md section 3). */
 export const SESSION_ENDED = "Session Ended";
+/** A 200 that is not bloop's: the network is the problem, and who can fix it is named. */
+export const BLOCKED = "This Network Blocks bloop";
 export const TYPED_WRONG = "Check the code on the screen.";
 /** The waitlist form, as content/site.json names it (a unit test holds them equal); each link adds its ?source=. */
 export const WAITLIST_FORM = "https://tally.so/r/Yj4KAN";

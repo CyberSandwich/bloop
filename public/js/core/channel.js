@@ -63,7 +63,7 @@ export function openChannel(o) {
       return;
     } else {
       pollFailures += 1;
-      o.onLink(res.error === "offline" ? "offline" : "down");
+      o.onLink(res.error === "offline" ? "offline" : res.error === "network_blocked" ? "blocked" : "down");
     }
     pollTimer = setTimeout(poll, pollDelay(pollFailures));
   }
