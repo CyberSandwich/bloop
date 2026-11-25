@@ -10,10 +10,6 @@
   line-height: 1.45;
   color: var(--muted);
 }
-.btn.secondary {
-  background: var(--surface);
-  box-shadow: 0 0 0 1px var(--hairline);
-}
 .btn.text {
   min-height: 44px;
   padding: 0 12px;
