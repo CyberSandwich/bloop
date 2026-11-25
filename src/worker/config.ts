@@ -318,7 +318,7 @@ export interface GraphConfig {
 }
 
 /** Library, upload and conversion settings (ADRs 0013, 0016, 0017, 0019). */
-export interface LibraryConfig {
+interface LibraryConfig {
   /** FILE_ORIGIN, or null while the file host is off. */
   fileOrigin: string | null;
   uploadMode: "direct" | "proxy";
@@ -349,7 +349,7 @@ export interface AccountConfig {
 }
 
 /** Secrets of the v4 features, each null while unset; a feature that needs one fails closed without it. */
-export interface V4Secrets {
+interface V4Secrets {
   r2AccountId: string | null;
   r2AccessKeyId: string | null;
   r2SecretAccessKey: string | null;

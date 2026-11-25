@@ -30,7 +30,7 @@
     "logs": { "enabled": true, "invocation_logs": false },
     "issues": { "enabled": true }
   },
-  // 30000 is the platform default, kept explicit as the floor the conversion work (ADR 0019) relies on; the spend guard bounds cost.
+  // 30000 is the platform default, kept explicit as the ceiling the conversion work (ADR 0019) runs under; the spend guard bounds cost.
   "limits": { "cpu_ms": 30000 },
   // The converter container (ADR 0019) never runs locally: no dev server, test or Playwright run starts Docker.
   "dev": { "enable_containers": false },

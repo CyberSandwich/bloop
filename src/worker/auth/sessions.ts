@@ -90,7 +90,7 @@ export class Sessions {
     await this.db.prepare("DELETE FROM app_user WHERE id = ? AND tid != 'email'").bind(userId).run();
   }
 
-  /** The user's normalized email when they are an email member, null for an Entra user or an unknown id (the erase route and the page gate branch on it). */
+  /** The user's normalized email when they are an email member, null for an Entra user or an unknown id (the erase route branches on it). */
   async emailNorm(userId: string): Promise<string | null> {
     const row = await this.db
       .prepare("SELECT email_norm FROM app_user WHERE id = ? AND tid = 'email'")

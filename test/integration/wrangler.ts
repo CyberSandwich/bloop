@@ -10,6 +10,8 @@ export interface Wrangler {
   url: string;
   /** Everything wrangler and the Worker wrote to stdout and stderr so far. */
   output(): string;
+  /** Resolves once `output()` holds `text` (wrangler relays the Worker's log lines late), or after `ms`. */
+  logged(text: string, ms?: number): Promise<void>;
   stop(): Promise<void>;
   /** A read-only query against the throwaway local D1 (migrated only with `migrate: true`). */
   d1(sql: string): Record<string, unknown>[];
@@ -160,6 +162,11 @@ async function startOnce(vars: Record<string, string>, options: { migrate?: bool
     return done.status === 0;
   };
 
+  const output = () => chunks.join("");
+  const logged = async (text: string, ms = 5000) => {
+    for (const end = Date.now() + ms; Date.now() < end && !output().includes(text); ) await sleep(100);
+  };
+
   const deadline = Date.now() + 90_000;
   while (Date.now() < deadline) {
     // The tail holds the cause; CI annotations cut a long message after the bindings table.
@@ -170,7 +177,7 @@ async function startOnce(vars: Record<string, string>, options: { migrate?: bool
       throw new Failure(`wrangler dev exited early (code ${child.exitCode}):\n${all.slice(-1500)}`);
     }
     try {
-      if ((await fetch(`${url}/api/health`)).ok) return { url, output: () => chunks.join(""), stop, d1, r2Has };
+      if ((await fetch(`${url}/api/health`)).ok) return { url, output, logged, stop, d1, r2Has };
     } catch {
       // not listening yet
     }

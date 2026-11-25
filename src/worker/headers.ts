@@ -47,7 +47,7 @@ const PAGE_FEATURES = {
   screen: new Set(["fullscreen", "screen-wake-lock"]),
   auth: new Set(["publickey-credentials-create", "publickey-credentials-get"]),
 };
-export type PermissionPage = keyof typeof PAGE_FEATURES;
+type PermissionPage = keyof typeof PAGE_FEATURES;
 
 export function permissionsPolicy(page: PermissionPage = "none"): string {
   return PERMISSION_FEATURES.map((f) => `${f}=${PAGE_FEATURES[page].has(f) ? "(self)" : "()"}`).join(", ");
