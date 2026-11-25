@@ -416,16 +416,20 @@ describe("landing word caps (design.md section 13)", () => {
   it("the stills, the Connect panel and the close panel share one warm backdrop rule, and their components are glass", () => {
     const css = read("public/css/site.css");
     expect(css.match(/radial-gradient\(ellipse at 25% 25%/g)).toHaveLength(1);
-    const layer = between(css, /^\.frag::before,\n\.panel::before,\n\.close-panel::before \{/m, "}");
+    const layer = between(css, /^\.frag::before,\n\.panel::before,\n\.close-panel::before,\n\.band::before \{/m, "}");
     for (const token of ["--robin-deep", "--robin", "--amber", "--rose"]) expect(layer).toContain(`var(${token}`);
     // The shapes drift slowly by translate alone (a compositor property), and never under reduced motion.
     const moving = between(css, /@media \(prefers-reduced-motion: no-preference\) \{\s*\.frag::before/, "\n}");
     expect(moving).toContain("animation: drift 40s ease-in-out infinite alternate;");
+    // The feature bands share the backdrop but never move: six would repaint for decoration.
+    expect(moving).not.toContain(".band");
+    const rules = css.replace(/\/\*[\s\S]*?\*\//g, "");
+    for (const m of rules.matchAll(/([^{}]*)\{[^{}]*\banimation(-name)?:/g)) expect(m[1], m[1]).not.toMatch(/\.band\b/);
     expect(between(css, /@keyframes drift \{/, "\n}\n")).not.toMatch(/background|transform:/);
     // Liquid glass: the clear fill and its filter are their own tokens, so the nav's firm glass keeps its value.
     const clear = between(
       css,
-      /@supports \(backdrop-filter: blur\(1px\)\) or \(-webkit-backdrop-filter: blur\(1px\)\) \{\s*\.frag \.glass,/,
+      /@supports \(backdrop-filter: blur\(1px\)\) or \(-webkit-backdrop-filter: blur\(1px\)\) \{\s*:is\(\.frag, \.band\) \.glass,/,
       "\n}",
     );
     expect(clear).toContain("background: var(--glass-clear);");
@@ -441,7 +445,7 @@ describe("landing word caps (design.md section 13)", () => {
     // Download stays solid; the firm fill is restated for reduced transparency, since it outranks .glass there.
     expect(html).toContain('<button class="frag-btn ink" type="button">Download</button>');
     const solid = between(css, /@media \(prefers-reduced-transparency: reduce\) \{/, "\n}");
-    for (const sel of [".close-card", ".group", ".frag .glass"]) expect(solid).toContain(sel);
+    for (const sel of [".close-card", ".group", ":is(.frag, .band) .glass"]) expect(solid).toContain(sel);
     expect(solid).toContain("backdrop-filter: none;");
     // The sky tint is retired: the panels sit on the warm backdrop.
     for (const f of CSS_FILES) expect(read(`public/css/${f}`)).not.toContain("--sky");
@@ -548,13 +552,13 @@ describe("landing word caps (design.md section 13)", () => {
     expect(text.indexOf("Google Drive™")).toBe(text.indexOf("Google Drive"));
   });
 
-  it("the features grid is six neutral cells: an icon, a title and one or two sentences; no mocks", () => {
+  it("the features grid is six cells: a warm band holding a 28 px glyph on glass, a title and one or two sentences; no mocks", () => {
     const grid = between(html, /<ul class="grid">/, "</ul>");
     const cells = [...grid.matchAll(/<li class="cell">([\s\S]*?)<\/li>/g)].map((m) => m[1] ?? "");
     expect(cells).toHaveLength(6);
     for (const cell of cells) {
       expect(cell).toMatch(
-        /^\s*<svg class="icon"[^>]*aria-hidden="true"[^>]*>[\s\S]*?<\/svg>\s*<h3>[^<]+<\/h3>\s*<p>[\s\S]+<\/p>\s*$/,
+        /^\s*<span class="band"><span class="band-tile glass"><svg class="icon" viewBox="0 0 24 24" width="28" height="28"[^>]*aria-hidden="true"[^>]*>[\s\S]*?<\/svg><\/span><\/span>\s*<h3>[^<]+<\/h3>\s*<p>[\s\S]+<\/p>\s*$/,
       );
       const line = visibleText(/<p>([\s\S]*?)<\/p>/.exec(cell)?.[1] ?? "");
       expect(line.split(/(?<=\.)\s+/).length, line).toBeLessThanOrEqual(2);
@@ -885,7 +889,7 @@ describe("the stylesheets: base.css, then the page's own (design.md section 11)"
     expect(css["site.css"]).toMatch(/^h3 \{\s*text-wrap: balance;\s*\}/m);
   });
 
-  it("the steps stretch to one row height, and under 640 a cell's icon sits inline before its title", () => {
+  it("the steps stretch to one row height, and a feature band is a fixed height with only its top corners round", () => {
     expect(block(".step")).not.toContain("align-self");
     // From 1024 the cards share the list's rows, so every still is one height and ends 12 above its card's bottom.
     expect(block(".step")).toContain("padding: 24px 24px 12px;");
@@ -898,12 +902,17 @@ describe("the stylesheets: base.css, then the page's own (design.md section 11)"
       expect(card.match(/^\s*<(p|h2|div)\b/gm)).toHaveLength(3);
     }
     expect(block(".frag")).toContain("align-content: center;");
-    const narrow = between(css["site.css"] ?? "", /@media \(max-width: 639\.98px\) \{\s*\.cell \{/, "\n}\n");
-    expect(narrow).toContain("grid-template-columns: auto minmax(0, 1fr);");
-    expect(narrow).toMatch(/\.cell p \{\s*grid-column: 1 \/ -1;/);
-    // Same selectors as the base cell rules, so the query must come after them or the title keeps its top margin.
+    // A fixed height, not a share of the card, so stacked cards on a phone stay short.
     const site = css["site.css"] ?? "";
-    expect(site.indexOf(narrow)).toBeGreaterThan(site.search(/^\.cell h3 \{/m));
+    const band = site.slice(site.lastIndexOf("\n.band {"), site.indexOf("}", site.lastIndexOf("\n.band {")));
+    expect(band).toContain("height: 96px;");
+    expect(band).toContain("margin: -24px -24px 0;");
+    expect(band).toContain("border-radius: var(--r-content) var(--r-content) 0 0;");
+    expect(block(".cell")).toContain("padding: 24px;");
+    expect(css["site.css"]).toMatch(/@media \(max-width: 767\.98px\) \{\s*\.band \{\s*height: 80px;/);
+    expect(block(".band-tile")).toMatch(/width: 56px;\s*height: 56px;/);
+    // The glyph on the glass holds 3:1 on the backdrop's darkest stop, before the glass lightens it.
+    expect(contrast(token("ink"), token("robin-deep"))).toBeGreaterThanOrEqual(3);
   });
 });
 

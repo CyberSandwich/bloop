@@ -22,6 +22,7 @@ declare const getComputedStyle: (el: El) => {
   lineHeight: string;
   transform: string;
   backgroundColor: string;
+  color: string;
 };
 
 const VIEWPORTS = [
@@ -47,6 +48,50 @@ for (const vp of VIEWPORTS) {
       expect(csp).toEqual([]);
       expect(requests.filter((u) => /robin/.test(u))).toEqual([]);
       expect((await page.content()).toLowerCase()).not.toContain("robin");
+    });
+
+    test("every feature card opens on a still warm band, its glyph on a glass tile in line with the title", async ({
+      page,
+    }) => {
+      await page.goto("/");
+      const cards = (await page.evaluate(`[...document.querySelectorAll("#features .cell")].map((cell) => {
+        const band = cell.querySelector(":scope > .band");
+        const tile = band && band.querySelector(":scope > .band-tile.glass");
+        const svg = tile && tile.querySelector("svg");
+        if (!svg) return null;
+        const c = cell.getBoundingClientRect(), b = band.getBoundingClientRect(), t = tile.getBoundingClientRect();
+        const h = cell.querySelector("h3").getBoundingClientRect(), s = svg.getBoundingClientRect();
+        const style = getComputedStyle(band), before = getComputedStyle(band, "::before");
+        return {
+          height: Math.round(b.height),
+          flush: [b.top - c.top, b.left - c.left, c.right - b.right].map(Math.round),
+          corners: [style.borderTopLeftRadius, style.borderBottomLeftRadius],
+          tile: [Math.round(t.width), Math.round(t.height), Math.round(s.width)],
+          column: Math.round(t.left - h.left),
+          centered: Math.round(t.top + t.height / 2 - (b.top + b.height / 2)),
+          still: before.animationName,
+          backdrop: before.backgroundImage.includes("radial-gradient"),
+        };
+      })`)) as unknown[];
+      expect(cards).toHaveLength(6);
+      const height = vp.width < 768 ? 80 : 96;
+      for (const card of cards)
+        expect(card).toEqual({
+          height,
+          flush: [0, 0, 0],
+          corners: ["24px", "0px"],
+          tile: [56, 56, 28],
+          column: 0,
+          centered: 0,
+          still: "none",
+          backdrop: true,
+        });
+      // The six bands are not stamped from one mold.
+      const placed = await page.evaluate(`[...document.querySelectorAll("#features .band")].map((b) => {
+        const s = getComputedStyle(b, "::before");
+        return s.scale + " " + s.rotate + " " + s.translate;
+      })`);
+      expect(new Set(placed as string[]).size).toBe(6);
     });
 
     test("the hero loads the source for its width, and every image below the fold waits to be scrolled to", async ({
@@ -522,9 +567,14 @@ test.describe("forced colors", () => {
     await page.goto("/");
     const borders = (await page.evaluate(`(() => {
       const of = (s) => { const c = getComputedStyle(document.querySelector(s)); return c.borderTopWidth + " " + c.borderTopStyle; };
-      return [".nav-logo", ".nav-pill", ".hero .btn.primary", ".btn.waitlist", ".frag-list", ".frag-btn", ".group", ".status", ".close-card", ".nav-links"].map(of);
+      return [".nav-logo", ".nav-pill", ".hero .btn.primary", ".btn.waitlist", ".frag-list", ".frag-btn", ".group", ".status", ".close-card", ".band-tile", ".nav-links"].map(of);
     })()`)) as string[];
-    expect(borders).toEqual([...Array(9).fill("1px solid"), "0px none"]);
+    expect(borders).toEqual([...Array(10).fill("1px solid"), "0px none"]);
+    // The band's color may drop; the glyph keeps the system's text color.
+    const glyph = page.locator(".band-tile svg").first();
+    expect(await glyph.evaluate((el) => getComputedStyle(el as unknown as El).color)).not.toMatch(
+      /rgba\(.*, 0\)|transparent/,
+    );
   });
 });
 

@@ -402,8 +402,7 @@ html:has(.page-site) {
 }
 @supports (animation-timeline: view()) {
   @media (prefers-reduced-motion: no-preference) and (forced-colors: none) {
-    /* One progress for the paragraph, --why from 0 to 1; word --i of --n (site.js) fills only over its own
-       slice, so the words before it are ink and the ones after faint. Widened as the sheen is; faint holds 3:1. */
+    /* --why runs 0 to 1 over the paragraph; word --i of --n (site.js) fills over its own slice. */
     .why p {
       view-timeline: --why-view;
     }
@@ -450,7 +449,8 @@ h3 {
 /* The warm backdrop (design.md section 4); paper without color-mix. */
 .frag,
 .panel,
-.close-panel {
+.close-panel,
+.band {
   position: relative;
   z-index: 0;
   overflow: hidden;
@@ -458,7 +458,8 @@ h3 {
 }
 .frag::before,
 .panel::before,
-.close-panel::before {
+.close-panel::before,
+.band::before {
   content: "";
   position: absolute;
   z-index: -1;
@@ -507,7 +508,7 @@ h3 {
   }
 }
 /* Liquid glass. Ink only: --muted fails 4.5:1 here. */
-.frag .glass,
+:is(.frag, .band) .glass,
 .group,
 .close-card {
   position: relative;
@@ -517,14 +518,14 @@ h3 {
 }
 /* The close card keeps .glass's fill: on the clear one the logo sank into the peach. */
 @supports (backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px)) {
-  .frag .glass,
+  :is(.frag, .band) .glass,
   .group {
     background: var(--glass-clear);
     -webkit-backdrop-filter: var(--glass-clear-filter);
     backdrop-filter: var(--glass-clear-filter);
   }
 }
-.frag .glass::after,
+:is(.frag, .band) .glass::after,
 .group::after,
 .close-card::after {
   content: "";
@@ -737,6 +738,36 @@ h3 {
   border-radius: var(--r-content);
   background: var(--paper);
 }
+/* Still: six drifting bands would repaint for decoration. */
+.band {
+  display: flex;
+  align-items: center;
+  height: 96px;
+  margin: -24px -24px 0;
+  padding-inline: 24px;
+  border-radius: var(--r-content) var(--r-content) 0 0;
+}
+.cell:nth-child(2n) .band::before {
+  scale: -1 1;
+}
+.cell:nth-child(n + 4) .band::before {
+  rotate: 180deg;
+}
+.cell:nth-child(3n) .band::before {
+  translate: 12%;
+}
+.band-tile {
+  display: grid;
+  place-items: center;
+  width: 56px;
+  height: 56px;
+  border-radius: var(--r-field);
+}
+@media (max-width: 767.98px) {
+  .band {
+    height: 80px;
+  }
+}
 .cell h3 {
   margin: 16px 0 0;
   font-size: 19px;
@@ -749,21 +780,6 @@ h3 {
 .cell a {
   text-decoration: underline;
   text-underline-offset: 3px;
-}
-/* After the cell rules: the same selectors, so order decides. */
-@media (max-width: 639.98px) {
-  .cell {
-    display: grid;
-    grid-template-columns: auto minmax(0, 1fr);
-    align-items: start;
-    column-gap: 12px;
-  }
-  .cell h3 {
-    margin: 0;
-  }
-  .cell p {
-    grid-column: 1 / -1;
-  }
 }
 
 .close {
@@ -1004,11 +1020,11 @@ h3 {
     transition: none;
   }
 }
-/* Every --glass-firm and --glass-clear rule outranks base's reduced-transparency .glass, so each is restated here. */
+/* These outrank base's reduced-transparency .glass. */
 @media (prefers-reduced-transparency: reduce) {
   .nav.is-scrolled :is(.nav-logo, .nav-pill),
   :is(.nav-links:popover-open),
-  .frag .glass,
+  :is(.frag, .band) .glass,
   .group,
   .close-card {
     background: var(--surface);
@@ -1016,7 +1032,7 @@ h3 {
     backdrop-filter: none;
   }
 }
-/* Forced colors drop every shadow and fill, so glass and pills keep their edge as a border (the system's color). */
+/* Forced colors drop shadows and fills: glass and pills keep an edge. */
 @media (forced-colors: active) {
   .glass:not(.nav-links),
   :is(.nav-links:popover-open),
