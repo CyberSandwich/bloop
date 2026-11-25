@@ -107,6 +107,29 @@ describe("PAIR-13 control: only the pairing's phone commands the screen, absolut
     expect(again.effects).toEqual([]);
   });
 
+  it("PAIR-13 seq bound: a seq more than a day ahead of the clock is refused, and the next normal tap applies", () => {
+    const m = list();
+    const day = 24 * 3600 * 1000;
+    const far = transition(m, command(deckPage(2), at + day + 1), CFG);
+    expect(far).toEqual({ ok: false, error: "bad_request" });
+    // Not stored, so it cannot lock out the sender's later commands.
+    const next = must(m, command(deckPage(2), at + day)).next;
+    expect(next.session?.shown).toEqual(deckPage(2));
+    expect(must(m, command(deckPage(2), 10)).next.session?.shown).toEqual(deckPage(2));
+  });
+
+  it("PAIR-13 v: every applied change counts one, a no-op or a refusal counts none", () => {
+    const m = list();
+    const one = must(m, command(deckPage(2), 5));
+    expect(one.next.v).toBe(m.v + 1);
+    const again = must(one.next, command(deckPage(2), 5));
+    expect(again.next).toBe(one.next);
+    expect(again.next.v).toBe(one.next.v);
+    // The same `shown` under a newer seq changes the machine (the seq), so it counts.
+    expect(must(one.next, command(deckPage(2), 6)).next.v).toBe(one.next.v + 1);
+    expect(transition(one.next, command(deckPage(9), 7), CFG).ok).toBe(false);
+  });
+
   it("a newer command replaces the last one", () => {
     const one = must(list(), command(deckPage(2))).next;
     const two = must(one, command({ item: "i2", page: 1, present: true })).next;

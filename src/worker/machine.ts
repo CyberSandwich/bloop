@@ -75,6 +75,8 @@ export interface Machine {
   closeAt: number | null;
   /** Open WebSocket count, set by the `socket` event. */
   sockets: number;
+  /** Counts every applied change and rides in every view, so a client keeps the newer of two views of one state. */
+  v: number;
 }
 
 export type Event =
@@ -167,6 +169,7 @@ export function createMachine(mode: Mode, now: number, cfg: MachineConfig): Mach
     endReason: null,
     closeAt: closeAtFor(0, now, cfg),
     sockets: 0,
+    v: 0,
   };
 }
 
@@ -303,7 +306,13 @@ function approveItems(
 const validItems = (items: readonly ItemDraft[]): boolean =>
   items.length >= 1 && items.length <= MAX_ITEMS && new Set(items.map((i) => i.ref)).size === items.length;
 
+/** One event applied: a changed machine counts it in `v`; a no-op returns the machine itself. */
 export function transition(m: Machine, ev: Event, cfg: MachineConfig): Step {
+  const step = apply(m, ev, cfg);
+  return step.ok && step.next !== m ? { ...step, next: { ...step.next, v: m.v + 1 } } : step;
+}
+
+function apply(m: Machine, ev: Event, cfg: MachineConfig): Step {
   if (m.state === "closed") return fail("screen_gone");
   const { now } = ev;
 
@@ -451,6 +460,8 @@ export function transition(m: Machine, ev: Event, cfg: MachineConfig): Step {
       if (fault) return fail(fault);
       // Per sender, only a newer command applies: a replay, or an older one that arrives late, changes nothing.
       // Between the phone and the screen, the last one applied wins.
+      // A seq is a clock in ms: one far ahead would refuse every later command from this sender.
+      if (ev.seq > now + 24 * 3600 * SECOND) return fail("bad_request");
       const { seq } = m.session;
       if (ev.seq <= seq[ev.from]) return ok(m);
       const session = { ...m.session, seq: { ...seq, [ev.from]: ev.seq } };

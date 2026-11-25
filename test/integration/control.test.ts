@@ -146,6 +146,33 @@ describe("PAIR-13 control: only the pairing's phone commands the screen", () => 
     socket.close();
   });
 
+  it("PAIR-13 v: every view carries a counter that grows with each applied change (control, shown, length) and holds on a no-op", async () => {
+    const { screen, socket, pid } = await session();
+    const vOf = async () => (await api.get<{ v: number }>("/api/pair/state", pid)).body.v;
+    const v0 = await vOf();
+    const control = await api.post<{ v: number }>("/api/control", cmd(DECK, 2), { auth: pid });
+    expect(control.body.v).toBeGreaterThan(v0);
+    const tap = await api.post<{ v: number }>("/api/screen/shown", cmd(DECK, 1), { auth: screen.sid });
+    expect(tap.body.v).toBeGreaterThan(control.body.v);
+    const length = await api.post<{ v: number }>("/api/session/length", { minutes: 30 }, { auth: pid });
+    expect(length.body.v).toBeGreaterThan(tap.body.v);
+    // A stale command changes nothing, so the answer is the state as it stands.
+    const stale = await api.post<{ v: number }>("/api/control", cmd(DECK, 2, false, 1), { auth: pid });
+    expect(stale.body.v).toBe(length.body.v);
+    expect(await vOf()).toBe(length.body.v);
+    socket.close();
+  });
+
+  it("PAIR-13 seq bound: a seq days ahead is bad_request, and the next normal tap applies", async () => {
+    const { socket, pid } = await session();
+    const far = await api.post("/api/control", cmd(DECK, 2, false, Date.now() + 3 * 24 * 3600 * 1000), { auth: pid });
+    expect(far.body).toEqual(problem("bad_request"));
+    expect((await api.post<{ shown: unknown }>("/api/control", cmd(DECK, 2), { auth: pid })).body.shown).toEqual(
+      shown(DECK, 2),
+    );
+    socket.close();
+  });
+
   it("LINK-01 link: a link item is never remote-opened", async () => {
     const { socket, pid } = await session();
     const res = await api.post("/api/control", cmd(LINK), { auth: pid });

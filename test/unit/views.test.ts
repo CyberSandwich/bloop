@@ -43,6 +43,7 @@ describe("views", () => {
         "seq",
         "shown",
         "state",
+        "v",
       ].sort(),
     );
     expect(view.items).toEqual([{ kind: "file", id: "i1", name: "Deck.pptx", type: "pptx", size: null }]);

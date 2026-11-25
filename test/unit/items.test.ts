@@ -10,6 +10,7 @@ import {
   LINK_HOSTS,
   MAX_ITEMS,
   orderItems,
+  shownFault,
 } from "../../src/worker/items.ts";
 import { type Machine, transition } from "../../src/worker/machine.ts";
 import { openPathFor } from "../../src/worker/seams/open-path/select.ts";
@@ -199,8 +200,8 @@ describe("Screen object schema steps", () => {
   it("leaves a machine with no session alone, and runs once", () => {
     const store = kv({ meta: {}, machine: { state: "waiting", session: null } });
     migrate(store);
-    expect(store.map.get("machine")).toEqual({ state: "waiting", session: null });
-    const current = { state: "approved", session: { items: [{ ...VEVOX, id: "i1" }], shown: null, seq } };
+    expect(store.map.get("machine")).toEqual({ state: "waiting", session: null, v: 0 });
+    const current = { state: "approved", v: 0, session: { items: [{ ...VEVOX, id: "i1" }], shown: null, seq } };
     store.put("machine", current);
     migrate(store);
     expect(store.map.get("machine")).toBe(current);
@@ -278,6 +279,42 @@ describe("Screen object schema steps", () => {
     expect(migrated(stored(good, undefined, kept))?.seq).toEqual(kept);
   });
 
+  it("PAIR-13 rollback: a link `shown` run through a link=false validator is null, and the current migrate leaves null alone", () => {
+    const items = [asStored(DECK), { ...VEVOX, id: "i2" }];
+    const view = { mode: "demo" as const, kind: "owner" as const };
+    const card = { item: "i2", page: 1, present: false };
+    // What a build that refused every link would do to the stored report: it cannot stand there.
+    expect(shownFault(items, card, view, false)).toBe("file_not_found");
+    expect(shownFault(items, card, view, true)).toBeNull();
+    // The repaired (null) `shown` is current-shape data: waking again changes nothing.
+    const store = kv({
+      meta: {},
+      schemaVersion: SCHEMA_VERSION,
+      machine: {
+        state: "open",
+        mode: "demo",
+        v: 2,
+        pairing: { kind: "owner" },
+        session: { ...current, items, minted: [1, 0], shown: null, seq },
+      },
+    });
+    const before = store.map.get("machine");
+    migrate(store);
+    expect(store.map.get("machine")).toBe(before);
+  });
+
+  it("version 6 to 7: a machine without a whole-number `v` starts it at 0, and one that has it keeps it", () => {
+    for (const bad of [undefined, "3", 1.5, null, Number.NaN]) {
+      const store = kv({ meta: {}, schemaVersion: 6, machine: { state: "waiting", session: null, v: bad } });
+      migrate(store);
+      expect((store.map.get("machine") as Machine).v, String(bad)).toBe(0);
+    }
+    const store = kv({ meta: {}, schemaVersion: 6, machine: { state: "waiting", session: null, v: 12 } });
+    migrate(store);
+    expect((store.map.get("machine") as Machine).v).toBe(12);
+    expect(store.map.get(SCHEMA_KEY)).toBe(SCHEMA_VERSION);
+  });
+
   it("repairs old-shape data whatever the stored version says (a rollback wrote v1 data under version 3)", () => {
     const store = kv({
       meta: {},
@@ -308,7 +345,11 @@ describe("Screen object schema steps", () => {
     const store = kv({
       meta: {},
       schemaVersion: SCHEMA_VERSION,
-      machine: { state: "open", session: { ...current, items: [asStored(DECK)], minted: [1], shown: null, seq } },
+      machine: {
+        state: "open",
+        v: 3,
+        session: { ...current, items: [asStored(DECK)], minted: [1], shown: null, seq },
+      },
       links: [{ ...link, item: 0, ips: [], refused: false }],
     });
     const writes: string[] = [];
