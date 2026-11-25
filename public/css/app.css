@@ -317,7 +317,7 @@ main:has(> .side:not([hidden])) #stage {
 :is([data-mode="waiting"], [data-mode="scanned"]) #stage {
   grid-area: stage;
 }
-/* The hint place shows the status; the line keeps it for screen readers. */
+/* A claim shows the title and the match number alone; the line keeps the status for screen readers. */
 .is-claimed #line {
   position: absolute;
   clip-path: inset(50%);
@@ -570,8 +570,8 @@ main:has(> .side:not([hidden])) #stage {
   padding: 0;
 }
 /* The box is the whole window and the picture is contained in it, so a picture smaller than the window grows to
-   meet two opposite edges (max-width alone never scales one up). */
-.is-presenting .view .frame :is(picture img, canvas) {
+   meet two opposite edges (max-width alone never scales one up). A scrolling document keeps its readable column. */
+.is-presenting .view .frame:not(.is-scroll) :is(picture img, canvas) {
   width: 100%;
   height: 100%;
   max-width: none;
@@ -707,26 +707,30 @@ main:has(> .side:not([hidden])) #stage {
   transform-origin: left;
   transition: transform 250ms var(--ease-out);
 }
-/* The landing's sheen (site.css, design.md section 8) in white light: a 1 s sweep, then a rest, every 2.2 s. */
+/* The landing's sheen (base.css, design.md section 8) in white light: a 1 s sweep, then a rest, every 2.2 s. */
 .loader::after {
   content: "";
   background:
     linear-gradient(100deg, transparent 32%, rgba(255, 255, 255, 0.7) 50%, transparent 68%) 100% 0 / 300% 100% no-repeat;
   animation: sheen 2.2s linear infinite;
 }
-@keyframes sheen {
-  0% {
-    background-position: 100% 0;
-    animation-timing-function: var(--ease-out);
-  }
-  45%,
-  100% {
-    background-position: 0 0;
-  }
-}
 @media (prefers-reduced-motion: reduce) {
   .loader::after {
     content: none;
+  }
+}
+/* The glass turns --surface and hides the thumbnail; white on it would show nothing, so the fill and sheen take ink. */
+@media (prefers-reduced-transparency: reduce) {
+  .loader-fill {
+    background: color-mix(in srgb, var(--ink) 10%, transparent);
+  }
+  .loader::after {
+    background-image: linear-gradient(
+      100deg,
+      transparent 32%,
+      color-mix(in srgb, var(--ink) 8%, transparent) 50%,
+      transparent 68%
+    );
   }
 }
 

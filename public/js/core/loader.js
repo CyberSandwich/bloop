@@ -1,4 +1,4 @@
-// The one loading part (docs/design.md section 6, Loader); the phone's upload rows reuse it.
+// The one loading part (docs/design.md section 6, Loader). The phone's upload rows move onto it with c-phone.
 import { el } from "./ui.js";
 
 /**

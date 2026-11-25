@@ -340,6 +340,51 @@ describe("the photo's loader (design.md section 6, Loader)", () => {
     v.render(null);
     expect(net.aborted).toEqual([`${ORIGIN}/f/abc/Dog.jpg`]);
   });
+
+  it("a photo still decoding when the session ends is closed, never drawn", async () => {
+    let decoded: (b: object) => void = () => {};
+    const close = vi.fn();
+    const draw = vi.spyOn(Node.prototype, "getContext");
+    vi.stubGlobal("createImageBitmap", () => new Promise((done) => (decoded = done)));
+    try {
+      const { v } = setup();
+      v.take(`${ORIGIN}/f/abc/Dog.jpg`, 0, "view");
+      v.render(view);
+      await settle();
+      v.render(null);
+      decoded({ ...bitmap, close });
+      await settle();
+      expect(close).toHaveBeenCalledOnce();
+      expect(draw).not.toHaveBeenCalled();
+    } finally {
+      draw.mockRestore();
+      vi.stubGlobal("createImageBitmap", async (blob: Blob) => ({ src: await blob.text(), ...bitmap, close() {} }));
+    }
+  });
+
+  it("decodes with the photo's own orientation, and a fresh link for a photo already drawn keeps it on stage", async () => {
+    const options: unknown[] = [];
+    vi.stubGlobal("createImageBitmap", async (blob: Blob, o: unknown) => {
+      options.push(o);
+      return { src: await blob.text(), ...bitmap, close() {} };
+    });
+    try {
+      const { v, el } = setup();
+      v.take(`${ORIGIN}/f/abc/Dog.jpg`, 0, "view");
+      await settle();
+      v.render(view);
+      const drawn = el("frame").querySelector("canvas");
+      expect(drawn).not.toBeNull();
+      v.take(`${ORIGIN}/f/def/Dog.jpg`, 0, "view");
+      await settle();
+      expect(el("frame").querySelector(".loader")).toBeNull();
+      expect(el("frame").querySelector("canvas")).toBe(drawn);
+      expect(shownFrom(el("frame"))).toBe(`${ORIGIN}/f/abc/Dog.jpg`);
+      expect(options).toEqual([{ imageOrientation: "from-image" }]);
+    } finally {
+      vi.stubGlobal("createImageBitmap", async (blob: Blob) => ({ src: await blob.text(), ...bitmap, close() {} }));
+    }
+  });
 });
 
 describe("DEMO-01 the viewer parks for a transient state", () => {

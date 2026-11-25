@@ -37,8 +37,9 @@ function shoot(url, onProgress, onDone) {
         onProgress(shot);
       });
     })
-    .then((blob) => createImageBitmap(blob))
+    .then((blob) => createImageBitmap(blob, { imageOrientation: "from-image" }))
     .then((bitmap) => {
+      if (abort.signal.aborted) return bitmap.close();
       shot.canvas.width = bitmap.width;
       shot.canvas.height = bitmap.height;
       shot.canvas.getContext("2d")?.drawImage(bitmap, 0, 0);
@@ -51,6 +52,9 @@ function shoot(url, onProgress, onDone) {
     .then(() => abort.signal.aborted || onDone(shot));
   return shot;
 }
+
+/** The motion token (base.css), read when used: one curve for the pill's glide and the photo's fade. */
+const easeOut = () => getComputedStyle(document.documentElement).getPropertyValue("--ease-out").trim();
 
 /** A picture's own size: a slide's natural size, a photo's canvas. @param {HTMLImageElement | HTMLCanvasElement} pic */
 const sizeOf = (pic) =>
@@ -179,7 +183,7 @@ export function createViewer(deps) {
           },
           { translate: `${bx} 0`, scale: "1 1", transformOrigin: "0 0" },
         ],
-        { duration: 300, easing: "cubic-bezier(0.22, 1, 0.36, 1)" },
+        { duration: 300, easing: easeOut() },
       );
     }
     if (!img) return;
@@ -405,15 +409,14 @@ export function createViewer(deps) {
         if (!loading) waiting = null;
         if (img && over)
           img
-            .animate(
-              { opacity: [0, 1] },
-              { duration: reduced.matches ? 0 : 200, easing: "cubic-bezier(0.22, 1, 0.36, 1)" },
-            )
+            .animate({ opacity: [0, 1] }, { duration: reduced.matches ? 0 : 200, easing: easeOut() })
             .finished.catch(() => {})
             .then(() => over.remove());
         if (scroll && p) for (const one of frame.querySelectorAll("img")) seen.observe(one);
         sized.disconnect();
-        const target = frame.querySelector("picture img, canvas, .stand-in") ?? frame.firstElementChild;
+        // The picture over its fading loader: the loader leaves, the picture's box is the one fit() reads.
+        const target =
+          frame.querySelector("picture img, canvas") ?? frame.querySelector(".stand-in") ?? frame.firstElementChild;
         // The pill (its buttons appear after the item) and the list (it grows with a guest's file) set the place too.
         for (const box of [target, view, pill, side, end]) if (box) sized.observe(box);
         swapped = true;
@@ -625,13 +628,19 @@ export function createViewer(deps) {
       const target = openTarget(url, location.origin);
       if (!target) return false;
       if (mode !== "view") return fetchOpen(target);
+      // Before the first render there is no list: it waits by position.
+      const was = shown ? images.get(keyOf(item)) : early.get(item);
+      // A photo already drawn stays on stage: a fresh link for it would only put its loader back.
+      if (was?.ready) return true;
+      if (was) {
+        was.stop();
+        was.canvas.width = 0;
+      }
       const shot = shoot(
         target,
         (s) => waiting && images.get(waiting.key) === s && setProgress(waiting.part, s.fraction),
         () => deps.onChange(),
       );
-      // Before the first render there is no list: it waits by position.
-      (shown ? images.get(keyOf(item)) : early.get(item))?.stop();
       if (!shown) early.set(item, shot);
       else {
         images.set(keyOf(item), shot);
