@@ -83,7 +83,7 @@ export default {
     if (!config.ok) return console.error(`config invalid: ${config.problems.join("; ")}`);
     if (controller.cron === HOURLY) {
       const swept = await sweepGuestFiles(env, config.config);
-      const closed = await closeStaleSessions(env, Date.now());
+      const closed = await closeStaleSessions(env, config.config, Date.now());
       if (swept > 0 || closed > 0) console.log(JSON.stringify({ evt: "hourly", swept, closed }));
     } else if (controller.cron === DAILY) {
       console.log(JSON.stringify({ evt: "retention", ...(await runRetention(env, config.config)) }));

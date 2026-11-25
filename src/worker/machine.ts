@@ -91,14 +91,15 @@ export type Event =
       passHash: string | null;
     }
   | { e: "listed"; now: number; ids: string[] }
-  | { e: "approve"; now: number; items: ItemDraft[]; maxMinutes: number; userId?: string | null }
+  | { e: "approve"; now: number; items: ItemDraft[]; minutes: number; userId?: string | null } // minutes: the starting length
   | { e: "upload.start"; now: number; timeoutSeconds: number }
   | { e: "upload.done"; now: number; file: FileRef }
   | { e: "upload.failed"; now: number; error: ErrorCode }
-  | { e: "open.click"; now: number; maxMinutes: number } // the Open button on a guest offer
+  | { e: "open.click"; now: number; minutes: number } // the Open button on a guest offer
   | { e: "launched"; now: number; mode: OpenMode }
   | { e: "fetched"; now: number }
   | { e: "control"; now: number; from: Sender; seq: number; shown: Shown } // the phone's remote, or the screen's own tap
+  | { e: "length"; now: number; minutes: number; maxMinutes: number } // the phone sets the end; maxMinutes: the mode's cap
   | { e: "fallback"; now: number; mode: OpenMode; item: number | null; maxMints: number } // null: the launched item; maxMints: per item, after its first link
   | { e: "cancel"; now: number }
   | { e: "restart"; now: number }
@@ -145,6 +146,7 @@ type Actor = "screen" | "phone" | "system";
 
 const PRE_APPROVAL: readonly SessionState[] = ["claimed", "choosing", "uploading", "offered"];
 const SECOND = 1000;
+const MINUTE = 60 * SECOND;
 
 const ok = (next: Machine, effects: Effect[] = []): Step => ({ ok: true, next, effects });
 const fail = (error: ErrorCode): Step => ({ ok: false, error });
@@ -269,7 +271,7 @@ function approveItems(
   m: Machine,
   now: number,
   items: readonly ItemDraft[],
-  maxMinutes: number,
+  minutes: number,
   actor: Actor,
   userId: string | null = null,
 ): Step {
@@ -285,7 +287,7 @@ function approveItems(
         ordered.map((_, i) => (i === launch ? 1 : 0)),
       ),
       approvedAt: now,
-      endsAt: now + maxMinutes * 60 * SECOND,
+      endsAt: now + minutes * MINUTE,
     },
     uploadAt: null,
     offerAt: null,
@@ -386,7 +388,7 @@ export function transition(m: Machine, ev: Event, cfg: MachineConfig): Step {
       // A live screen has no viewer: it can show only the one file it launches, so a live session takes exactly one.
       if (m.mode === "live" && (ev.items.length !== 1 || ev.items[0]?.kind !== "file")) return fail("bad_request");
       if (m.mode === "live" && !ev.items.every((i) => listed.includes(i.ref))) return fail("file_not_found");
-      return approveItems(m, now, ev.items, ev.maxMinutes, "phone", ev.userId);
+      return approveItems(m, now, ev.items, ev.minutes, "phone", ev.userId);
     }
 
     case "upload.start": {
@@ -424,7 +426,7 @@ export function transition(m: Machine, ev: Event, cfg: MachineConfig): Step {
         if (IN_SESSION.includes(m.state)) return ok(m);
         return fail(m.state === "ended" ? "session_ended" : "wrong_state");
       }
-      return approveItems(m, now, m.session.items, ev.maxMinutes, "screen");
+      return approveItems(m, now, m.session.items, ev.minutes, "screen");
     }
 
     case "launched": {
@@ -455,6 +457,16 @@ export function transition(m: Machine, ev: Event, cfg: MachineConfig): Step {
       // Absolute: the same `shown` again is stored for its seq and pushes nothing.
       if (sameShown(m.session.shown, ev.shown)) return ok({ ...m, session });
       return ok({ ...m, session: { ...session, shown: ev.shown } }, [{ fx: "push", to: "both" }]);
+    }
+
+    case "length": {
+      const session = m.session;
+      if (!IN_SESSION.includes(m.state) || session?.approvedAt == null) return fail("wrong_state");
+      // Absolute, never a delta: a replay sets about the same end again instead of adding to it. Never past approval
+      // plus the cap, so no run of changes keeps a session alive longer than the cap.
+      const endsAt = Math.min(now + ev.minutes * MINUTE, session.approvedAt + ev.maxMinutes * MINUTE);
+      if (endsAt === session.endsAt) return ok(m);
+      return ok({ ...m, session: { ...session, endsAt } }, [{ fx: "push", to: "both" }]);
     }
 
     case "fallback": {

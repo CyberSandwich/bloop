@@ -68,7 +68,7 @@ export const claimedOwner = (mode: Mode = "demo") => claim(waiting(mode));
 export const claimedGuest = () => claim(waiting("demo"), "guest");
 
 export function approved(now = T0 + sec(10)): Machine {
-  return must(claimedOwner(), { e: "approve", now, items: [asItem(DECK)], maxMinutes: MAX_MINUTES }).next;
+  return must(claimedOwner(), { e: "approve", now, items: [asItem(DECK)], minutes: MAX_MINUTES }).next;
 }
 
 export function offered(now = T0 + sec(10)): Machine {

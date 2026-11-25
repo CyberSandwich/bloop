@@ -142,7 +142,7 @@ describe("SRC-01 screen-view: the view carries items, never a source ref", () =>
   it("names, types, sizes and link urls only", () => {
     const step = transition(
       claimedOwner(),
-      { e: "approve", now: T0 + sec(5), items: [asItem({ ...DECK, size: 10 }), VEVOX], maxMinutes: MAX_MINUTES },
+      { e: "approve", now: T0 + sec(5), items: [asItem({ ...DECK, size: 10 }), VEVOX], minutes: MAX_MINUTES },
       CFG,
     );
     if (!step.ok) throw new Error(step.error);
@@ -330,7 +330,7 @@ describe("machine: a session holds a list of items", () => {
   const PDF = asItem({ source: "mock", ref: "pdf-1", name: "Atlas.pdf", type: "pdf" });
   const DOG = asItem({ source: "mock", ref: "dog-1", name: "Dog.jpg", type: "jpg" });
   const approve = (m: Machine, items: ItemDraft[]) =>
-    transition(m, { e: "approve", now: T0 + sec(5), items, maxMinutes: MAX_MINUTES }, CFG);
+    transition(m, { e: "approve", now: T0 + sec(5), items, minutes: MAX_MINUTES }, CFG);
 
   it("orders files by name, then links, and launches the first file", () => {
     const step = approve(claimedOwner(), [VEVOX, asItem(DECK), DOG, PDF]);

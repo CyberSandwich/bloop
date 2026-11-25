@@ -53,7 +53,7 @@ describe("DEMO-01 isolation: the full demo flow, with no account", () => {
     const links = open.links as { protocol: string };
     const url = links.protocol.replace("ms-powerpoint:ofv|u|", "");
 
-    // A session lasts DEMO_SESSION_MINUTES (60), not the live 90.
+    // A session starts at SESSION_DEFAULT_MINUTES (60), in the demo as in a live room.
     const view = (await socket.stateWhere((v) => v.state === "approved")).view as { endsAt: number; now: number };
     expect(view.endsAt - view.now).toBeLessThanOrEqual(60 * 60_000);
     expect(view.endsAt - view.now).toBeGreaterThan(59 * 60_000);
@@ -262,7 +262,7 @@ describe("DEMO-02 flood: the global cap on concurrent demo sessions", () => {
     wrangler = await startPairing({
       DEMO_MAX_CONCURRENT: "2",
       CLAIM_TIMEOUT_SECONDS: "1",
-      DEMO_SESSION_MINUTES: "0.02",
+      DEMO_MAX_MINUTES: "0.02",
     });
     api = new Api(wrangler.url);
   });

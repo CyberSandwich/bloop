@@ -153,7 +153,7 @@ describe("effects: audit and metrics hooks at each transition", () => {
 
 describe("effects: order and the other seams", () => {
   it("runs effects in the order the machine lists them", async () => {
-    const prev = must(offered(), { e: "open.click", now: T0 + sec(40), maxMinutes: 90 }).next;
+    const prev = must(offered(), { e: "open.click", now: T0 + sec(40), minutes: 90 }).next;
     const step = must(prev, { e: "end", now: T0 + sec(70), by: "phone" });
     const f = fakes();
     await runEffects(step.effects, { meta: META, prev, next: step.next, now: T0 + sec(70) }, f.deps);

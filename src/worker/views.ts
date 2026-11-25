@@ -61,8 +61,14 @@ export function screenView(meta: Meta, m: Machine, cfg: ViewConfig, now: number)
   };
 }
 
+/** The per-mode limits a phone shows: the largest drop and the longest session. */
+export interface PhoneLimits {
+  dropMaxBytes: number;
+  maxMinutes: number;
+}
+
 /** Null when no phone is paired: the caller answers `pairing_invalid`. */
-export function phoneView(meta: Meta, m: Machine, now: number, dropMaxBytes: number): PhoneView | null {
+export function phoneView(meta: Meta, m: Machine, now: number, limits: PhoneLimits): PhoneView | null {
   if (!m.pairing) return null;
   return {
     state: m.state,
@@ -75,7 +81,8 @@ export function phoneView(meta: Meta, m: Machine, now: number, dropMaxBytes: num
     openMode: m.session?.openMode ?? null,
     endsAt: m.session?.endsAt ?? null,
     endReason: m.state === "ended" ? m.endReason : null,
-    dropMaxBytes,
+    dropMaxBytes: limits.dropMaxBytes,
+    maxMinutes: limits.maxMinutes,
     now,
   };
 }

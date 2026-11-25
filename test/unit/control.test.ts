@@ -33,7 +33,7 @@ const list = (): Machine =>
     e: "approve",
     now: T0 + sec(10),
     items: [VEVOX, asItem(DECK), asItem(DOG)],
-    maxMinutes: MAX_MINUTES,
+    minutes: MAX_MINUTES,
   }).next;
 
 const refused = (m: Machine, shown: Shown) => {
@@ -55,13 +55,13 @@ describe("PAIR-13 item ids: server-assigned at approval, unique, never an index"
 
   it("an approve replayed with the same items changes nothing, so ids are not reissued", () => {
     const m = list();
-    const again = must(m, { e: "approve", now: at, items: [asItem(DOG), VEVOX, asItem(DECK)], maxMinutes: 1 });
+    const again = must(m, { e: "approve", now: at, items: [asItem(DOG), VEVOX, asItem(DECK)], minutes: 1 });
     expect(again.next).toBe(m);
   });
 
   it("a guest's offered file already has its id, and approval keeps it", () => {
     expect(offered().session?.items.map((i) => i.id)).toEqual(["i1"]);
-    const open = must(offered(), { e: "open.click", now: at, maxMinutes: MAX_MINUTES }).next;
+    const open = must(offered(), { e: "open.click", now: at, minutes: MAX_MINUTES }).next;
     expect(open.session?.items.map((i) => i.id)).toEqual(["i1"]);
   });
 
@@ -146,7 +146,7 @@ describe("PAIR-13 control: only the pairing's phone commands the screen, absolut
       e: "approve",
       now: T0 + sec(5),
       items: [asItem(DECK)],
-      maxMinutes: MAX_MINUTES,
+      minutes: MAX_MINUTES,
     }).next;
     expect(refused(live, deckPage(1))).toBe("wrong_state");
   });
@@ -169,7 +169,7 @@ describe("PAIR-13 control: only the pairing's phone commands the screen, absolut
     expect(refused(list(), deckPage(1.5))).toBe("bad_request");
     expect(refused(list(), { item: "i2", page: 2, present: false })).toBe("bad_request");
     expect(must(list(), command({ item: "i2", page: 1, present: false })).next.session?.shown?.item).toBe("i2");
-    const guest = must(offered(), { e: "open.click", now: at, maxMinutes: MAX_MINUTES }).next;
+    const guest = must(offered(), { e: "open.click", now: at, minutes: MAX_MINUTES }).next;
     expect(refused(guest, deckPage(2))).toBe("bad_request");
   });
 
@@ -210,28 +210,54 @@ describe("PAIR-13 rate limits: RL_CONTROL per IP, then per credential", () => {
         return { success: false };
       },
     };
-    const control = async () => {
-      calls.push("control");
+    const call = (name: string) => async () => {
+      calls.push(name);
       return { ok: true, value: { shown: null } };
     };
-    const SCREEN = { idFromName: (n: string) => n, get: () => ({ control }) };
+    const stub = { control: call("control"), setLength: call("setLength") };
+    const SCREEN = { idFromName: (n: string) => n, get: () => stub };
     return { calls, env: { ...PROD_VARS, PUBLIC_ORIGIN: ORIGIN, RL_CONTROL, RL_FETCH, SCREEN } };
   }
   type PostRoute = {
     pattern: URLPattern;
     handler: (r: Request, env: object, m: URLPatternResult) => Promise<Response>;
   };
-  const post = async (e: object) => {
+  const post = async (e: object, url = "/api/control", body: unknown = { ...deckPage(1), seq: 1 }) => {
     // A non-literal specifier: the route's type graph needs the Workers types, which the test tsconfig leaves out.
     const path = "../../src/worker/routes/control.ts";
-    const route = ((await import(path)) as { controlRoutes: readonly PostRoute[] }).controlRoutes[0] as PostRoute;
-    const request = new Request(`${ORIGIN}/api/control`, {
+    const routes = (await import(path)) as { controlRoutes: readonly PostRoute[] };
+    const request = new Request(`${ORIGIN}${url}`, {
       method: "POST",
       headers: { Origin: ORIGIN, "Content-Type": "application/json", Authorization: `Bearer ${PID}` },
-      body: JSON.stringify({ ...deckPage(1), seq: 1 }),
+      body: JSON.stringify(body),
     });
+    const route = routes.controlRoutes.find((r) => r.pattern.test(request.url)) as PostRoute;
     return route.handler(request, e, route.pattern.exec(request.url) as URLPatternResult);
   };
+  const setLength = (e: object, minutes: unknown) => post(e, "/api/session/length", { minutes });
+
+  it("SESS-01 rate limit: a length change spends RL_CONTROL per IP, then per credential, never RL_FETCH", async () => {
+    const { calls, env: e } = env(false);
+    expect((await setLength(e, 30)).status).toBe(200);
+    expect(calls).toEqual(["limit:ip", "limit:credential", "setLength"]);
+    const spent = env(true);
+    expect((await setLength(spent.env, 30)).status).toBe(429);
+    expect(spent.calls).toEqual(["limit:ip", "limit:credential"]);
+  });
+
+  it("SESS-01 schema: minutes is a whole number from 5 to the live cap, alone; anything else reaches no Screen object", async () => {
+    // PROD_VARS caps a live session at 90 minutes.
+    for (const minutes of [5, 90]) expect((await setLength(env(false).env, minutes)).status, String(minutes)).toBe(200);
+    for (const minutes of [4, 91, 30.5, "30", null, -1]) {
+      const { calls, env: e } = env(false);
+      const res = await setLength(e, minutes);
+      expect(res.status, String(minutes)).toBe(400);
+      expect(calls, String(minutes)).toEqual([]);
+    }
+    const extra = env(false);
+    expect((await post(extra.env, "/api/session/length", { minutes: 30, endsAt: 1 })).status).toBe(400);
+    expect(extra.calls).toEqual([]);
+  });
 
   it("PAIR-13 rate limit: a command spends the IP's budget, then its credential's (by hash, never the screen ref)", async () => {
     const { calls, env: e } = env(false);

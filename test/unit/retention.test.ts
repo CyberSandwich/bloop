@@ -115,21 +115,25 @@ describe("DATA-02 retention: the daily job moves past each period", () => {
 });
 
 describe("DATA-02 retention: the hourly closer", () => {
-  it("ends rows still open 95 minutes after approval or claim, and leaves live and ended rows", async () => {
+  it("ends rows still open past the longest session after approval or claim, and leaves live and ended rows", async () => {
     const db = testDb();
     const ins = db.raw.prepare(
       "INSERT INTO session (id, screen_ref, mode, kind, claimed_at, approved_at, ended_at) VALUES (?, 'r', 'live', 'owner', ?, ?, ?)",
     );
     const min = 60_000;
-    ins.run("stale-approved", NOW - 300 * min, NOW - 100 * min, null);
-    ins.run("stale-claimed", NOW - 100 * min, null, null);
-    ins.run("running", NOW - 100 * min, NOW - 20 * min, null);
-    ins.run("done", NOW - 300 * min, NOW - 290 * min, NOW - 280 * min);
-    expect(await closeStaleSessions({ DB: db }, NOW)).toBe(2);
-    expect(await closeStaleSessions({ DB: db }, NOW)).toBe(0);
+    // 12 h cap: two 5 min claim windows, a 15 min upload and 720 min make 745, plus 5 of slack.
+    const cfg = config({ SESSION_MAX_MINUTES: "720" });
+    expect(cfg.longestSessionMs).toBe(745 * min);
+    ins.run("stale-approved", NOW - 900 * min, NOW - 751 * min, null);
+    ins.run("stale-claimed", NOW - 751 * min, null, null);
+    // A session the phone made 10 h long is still running, though far past the old fixed 95 minutes.
+    ins.run("running", NOW - 605 * min, NOW - 600 * min, null);
+    ins.run("done", NOW - 900 * min, NOW - 890 * min, NOW - 880 * min);
+    expect(await closeStaleSessions({ DB: db }, cfg, NOW)).toBe(2);
+    expect(await closeStaleSessions({ DB: db }, cfg, NOW)).toBe(0);
     const rows = db.raw.prepare("SELECT id, ended_at, end_reason FROM session ORDER BY id").all();
     expect(rows).toEqual([
-      { id: "done", ended_at: NOW - 280 * min, end_reason: null },
+      { id: "done", ended_at: NOW - 880 * min, end_reason: null },
       { id: "running", ended_at: null, end_reason: null },
       { id: "stale-approved", ended_at: NOW, end_reason: "auto" },
       { id: "stale-claimed", ended_at: NOW, end_reason: "auto" },

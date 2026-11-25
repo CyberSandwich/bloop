@@ -32,6 +32,8 @@ export type Item = FileItem | LinkItem;
 export interface Shown { item: string; page: number; present: boolean; }   // item: a FILE item's id; page: 1-based, within the item's pages
 /** The body of POST /api/control and POST /api/screen/shown. Absolute, so a replay changes nothing; a seq not above the sender's last applied one changes nothing. */
 export interface ShownCommand extends Shown { seq: number; }   // grows per sender, across reloads too (the sender's clock in ms)
+/** The body of POST /api/session/length: the session ends `minutes` from now, never past approval plus the mode's cap. */
+export interface LengthRequest { minutes: number; }   // whole minutes, MIN_LENGTH_MINUTES (public/js/shared/length.js) to SESSION_MAX_MINUTES
 
 export interface ScreenView {
   state: SessionState;
@@ -60,6 +62,7 @@ export interface PhoneView {
   endsAt: number | null;       // with `now`, the phone's countdown to the session's own end
   endReason: EndReason | null;
   dropMaxBytes: number;        // the largest guest file this screen takes (GUEST_MAX_BYTES, or the demo cap)
+  maxMinutes: number;          // the mode's cap (SESSION_MAX_MINUTES, or DEMO_MAX_MINUTES): the longest length the phone offers
   now: number;
 }
 
@@ -151,7 +154,7 @@ export type ScreenStateKey =
 | claimed, choosing | `claimAt` = claimedAt + `CLAIM_TIMEOUT_SECONDS` | `waiting` (end reason `claim_timeout`) |
 | uploading | `uploadAt` = upload start + `UPLOAD_TIMEOUT_SECONDS` | `waiting` (`claim_timeout`), object deleted |
 | offered | `offerAt` = offeredAt + `CLAIM_TIMEOUT_SECONDS` | `waiting` (`claim_timeout`), object deleted (the object has no file ref while still uploading, so `purge` carries `file: null` and the guest-drop module deletes by session key) |
-| approved, opening, open | `endsAt` = approvedAt + `SESSION_MAX_MINUTES` (demo: `DEMO_SESSION_MINUTES`) | `ended` (`auto`) |
+| approved, opening, open | `endsAt` = approvedAt + `SESSION_DEFAULT_MINUTES`, then wherever the phone's `length` sets it, never past approvedAt + the mode's cap (`SESSION_MAX_MINUTES`; demo `DEMO_MAX_MINUTES`) | `ended` (`auto`) |
 | ended | `closeAt` as in waiting | `closed` |
 
 - Code expiry is not a timer. A code is valid while `now < expiresAt`, which is `issuedAt + CODE_TTL_SECONDS + CODE_GRACE_SECONDS`. The screen asks for the next code every `CODE_TTL_SECONDS`. The previous code stays claimable until the earlier of its own `expiresAt` and `CODE_GRACE_SECONDS` after its successor was issued. The code a screen shows (`CodeView.expiresAt`) is `issuedAt + CODE_TTL_SECONDS`.
@@ -171,6 +174,7 @@ export type ScreenStateKey =
 | offered | `open.click` | from the screen socket (a repeat in approved, opening or open returns the current view) | approved | as approve: `endsAt`, mint link; push screen `open`; audit `approved` (actor screen) |
 | uploading | `upload.failed(e)` | | claimed | delete object; push both `state`; audit `guest.refused` with cause `e` (the drop route answers the phone with `e`) |
 | approved, opening, open | `control(from, seq, shown)` | from the phone (`POST /api/control`, pid) or the screen (`POST /api/screen/shown`, sid); demo only (a live session is `wrong_state`); `shown.item` names a FILE item by id, else `file_not_found` (PAIR-11, LINK-01); `shown.page` is within the item's pages (a demo owner's deck or PDF has 2, anything else 1), else `bad_request`; any other state is `wrong_state` | (same) | a `seq` not above `session.seq[from]` changes nothing (a replay, or a late older command); else store the seq, and store `session.shown` and push both unless it is the same `shown`, which pushes nothing. Between senders the last applied wins (PAIR-13) |
+| approved, opening, open | `length(minutes, maxMinutes)` | from the phone (`POST /api/session/length`, pid), both modes; the route takes whole `minutes` from 5 to `SESSION_MAX_MINUTES`, and the Screen object passes the mode's cap; any other state is `wrong_state` | (same) | `endsAt` = min(now + minutes, approvedAt + maxMinutes), so no run of changes outlives the cap; push both and the alarm moves to it; the same `endsAt` again pushes nothing. Absolute, never a delta: a replay sets about the same end (SESS-01) |
 | approved | `launched(mode)` | from the screen | opening | record mode; metric |
 | approved, opening | `fetched(link)` | first fetch of any link | open | `first_open_at`; metric `scan_to_open_ms`; push both |
 | opening, open | `fallback(mode, item)` | `item` (default: the first file) names a file, else `file_not_found` (PAIR-11); mints left | (same) | mint a link for `mode` and that item; when it is the launched item, set the open mode to what the link serves for the type (`effectivePurpose`: a deck's view is its PDF); metric `fallback`; push `open` to the screen and `state` to both |
@@ -317,6 +321,8 @@ export interface PairingStore {
   control(pid: string, command: ShownCommand): Promise<Result<PhoneView>>;
   /** The screen reports its own tap (POST /api/screen/shown), so the phone's highlight stays true. Same rules as `control`, with its own seq. */
   reportShown(sid: string, command: ShownCommand): Promise<Result<ScreenView>>;
+  /** The phone sets when the session ends (POST /api/session/length): `minutes` from now, never past approval plus the mode's cap. Both modes. */
+  setLength(pid: string, minutes: number): Promise<Result<PhoneView>>;
   cancel(pid: string): Promise<Result<PhoneView>>;
   restart(sid: string): Promise<Result<ScreenView>>;
   endFromScreen(sid: string): Promise<Result<ScreenView>>;   // from waiting: closes the object (state "closed")

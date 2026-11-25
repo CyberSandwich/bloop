@@ -12,7 +12,7 @@ beforeAll(async () => {
     CODE_GRACE_SECONDS: "1",
     CLAIM_TIMEOUT_SECONDS: "3",
     SESSION_MAX_MINUTES: "0.05",
-    DEMO_SESSION_MINUTES: "0.05",
+    DEMO_MAX_MINUTES: "0.05",
   });
   api = new Api(wrangler.url);
 });
