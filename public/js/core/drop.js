@@ -104,7 +104,10 @@ export function sendFile({ file, pid, onProgress, xhr: make = browserXhr }) {
       } catch {
         // an empty or non-JSON answer is handled below
       }
-      if (req.status >= 200 && req.status < 300 && body) return resolve({ ok: true, view: body });
+      const ours = req.getResponseHeader("X-Bloop") === "1";
+      if (req.status >= 200 && req.status < 300 && body && ours) return resolve({ ok: true, view: body });
+      // A 200 that is not bloop's (no marker) is a filter's page: the network, not bloop (REL-03).
+      if (req.status >= 200 && req.status < 300) return resolve({ ok: false, error: "network_blocked" });
       if (isErrorCode(body?.code)) return resolve({ ok: false, error: body.code });
       resolve({ ok: false, error: req.status >= 500 || body === null ? "service_down" : "bad_request" });
     };

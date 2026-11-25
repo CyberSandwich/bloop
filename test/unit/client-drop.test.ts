@@ -70,9 +70,14 @@ class FakeXhr {
   abort() {
     this.onabort?.();
   }
-  reply(status: number, body: string) {
+  marked = true;
+  getResponseHeader(name: string) {
+    return this.marked && name === "X-Bloop" ? "1" : null;
+  }
+  reply(status: number, body: string, marked = true) {
     this.status = status;
     this.responseText = body;
+    this.marked = marked;
     this.onload?.();
   }
 }
@@ -82,6 +87,17 @@ const start = (xhr: FakeXhr, onProgress: (fraction: number) => void = () => {}) 
   sendFile({ file, pid: "ref.secret", onProgress, xhr: () => xhr });
 
 describe("sending a file", () => {
+  it("REL-03 a 200 JSON answer without bloop's marker is a filter's page: network_blocked, not service_down", async () => {
+    const xhr = new FakeXhr();
+    const sending = start(xhr);
+    xhr.reply(200, "{}", false);
+    expect(await sending.done).toEqual({ ok: false, error: "network_blocked" });
+    const html = new FakeXhr();
+    const other = start(html);
+    html.reply(200, "<html>blocked</html>", false);
+    expect(await other.done).toEqual({ ok: false, error: "network_blocked" });
+  });
+
   it("PUTs the raw file to /api/drop with the credential and a percent-encoded name", () => {
     const xhr = new FakeXhr();
     start(xhr);
