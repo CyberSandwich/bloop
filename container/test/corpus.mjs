@@ -1,5 +1,6 @@
-// Runs the fixture corpus against the built image, the way production runs it:
-// `docker run --network none --read-only`, non-root, tmpfs for /work and /tmp.
+// Runs the fixture corpus against the built image: `docker run --network none --read-only`, non-root,
+// tmpfs for /work and /tmp. That is stricter than the deployed platform (root capabilities, writable
+// root), so the non-root and read-only checks hold in this run only.
 //
 // A --network none container publishes no ports, so the runner talks to it from the host with curl
 // entered into the container's network namespace (sudo nsenter). Linux only; CI is the arbiter.
@@ -235,7 +236,10 @@ function expectDeckOutputs(r, pages, label, { widths = [3840, 1920, 480], total 
     }
   }
   check(!r.files[`s/${pages + 1}/${widths.at(-1)}.webp`], `${label}: no page beyond ${pages}`);
-  check(r.files["t.webp"] && webpWidth(r.files["t.webp"]) === 480, `${label}: t.webp is 480 px`);
+  check(
+    r.files["t.webp"] && webpWidth(r.files["t.webp"]) === widths.at(-1),
+    `${label}: t.webp is as wide as the smallest rendition`,
+  );
   const slides = JSON.parse(r.files["slides.json"]);
   const notes = JSON.parse(r.files["notes.json"]);
   const meta = JSON.parse(r.files["meta.json"]);
@@ -680,29 +684,29 @@ async function caseIsolation() {
   try {
     check(await healthy(c), "isolation: container is healthy");
     const exec = (...a) => docker("exec", c.name, ...a);
-    check(exec("id", "-u").out === "10001", "CONV-01 isolation: runs as uid 10001");
+    check(exec("id", "-u").out === "10001", "CONV-01 corpus run: runs as uid 10001");
     check(
       exec("sh", "-c", "touch /usr/bloop-write-test").code !== 0,
-      "CONV-01 isolation: the root filesystem is read-only",
+      "CONV-01 corpus run: the root filesystem is read-only",
     );
-    check(exec("sh", "-c", "touch /work/ok /tmp/ok").code === 0, "CONV-01 isolation: /work and /tmp are writable");
+    check(exec("sh", "-c", "touch /work/ok /tmp/ok").code === 0, "CONV-01 corpus run: /work and /tmp are writable");
     check(
       exec("cat", "/opt/bloop/lo-registry.xcu").out.includes("MacroSecurityLevel"),
       "CONV-03 macros: the job user can read the lockdown registry (a perms regression would fail every job as internal)",
     );
     check(
       exec("sh", "-c", "ls /sys/class/net").out === "lo",
-      `CONV-01 isolation: only a loopback interface (got ${exec("sh", "-c", "ls /sys/class/net").out})`,
+      `CONV-01 corpus run: only a loopback interface (got ${exec("sh", "-c", "ls /sys/class/net").out})`,
     );
-    check(exec("bash", "-c", "exec 3<>/dev/tcp/1.1.1.1/53").code !== 0, "CONV-01 isolation: no route to the internet");
+    check(exec("bash", "-c", "exec 3<>/dev/tcp/1.1.1.1/53").code !== 0, "CONV-01 corpus run: no route to the internet");
     const info = JSON.parse(docker("inspect", c.name).out)[0].HostConfig;
     check(
       info.NetworkMode === "none" && info.ReadonlyRootfs === true,
-      "CONV-01 isolation: started with --network none --read-only",
+      "CONV-01 corpus run: started with --network none --read-only",
     );
     check(
       exec("sh", "-c", "find / -xdev -perm /6000 -type f 2>/dev/null | head -1").out === "",
-      "CONV-01 isolation: no setuid or setgid binary",
+      "CONV-01 corpus run: no setuid or setgid binary",
     );
   } finally {
     stop(c);

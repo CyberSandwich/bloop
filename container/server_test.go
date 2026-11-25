@@ -297,7 +297,7 @@ func TestDeckEndToEnd(t *testing.T) {
 		}
 	}
 
-	// CONV-01 isolation: tools get a fresh environment and run with no inherited variable.
+	// CONV-01 corpus run: tools get a fresh environment and run with no inherited variable.
 	for _, c := range tools.calls {
 		for _, e := range c.env {
 			if strings.HasPrefix(e, "BLOOP_SECRET_TEST") {

@@ -1,7 +1,7 @@
 name: container
 
-# Builds the conversion image, runs the fixture corpus against it the way production runs it
-# (docker run --network none --read-only), and pushes it to the Cloudflare registry tagged by
+# Builds the conversion image, runs the fixture corpus against it under
+# docker run --network none --read-only (stricter than the deployed platform), and pushes it to the Cloudflare registry tagged by
 # commit sha. Never on pull_request. A push failure is red on main and tolerated elsewhere. On
 # main it also opens a PR that bumps container/digest.txt.
 #
@@ -43,6 +43,7 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
+          fetch-depth: 0 # image pruning needs commit dates and main's ancestry
       - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
           node-version-file: .nvmrc
@@ -102,3 +103,13 @@ jobs:
           auth="$(printf 'x-access-token:%s' "$GH_TOKEN" | base64 -w0)"
           git -c "http.extraheader=Authorization: Basic ${auth}" push origin "$branch"
           gh pr create --base main --head "$branch" --title "Converter image: bump digest" --body "Rebuilt and pushed by container.yml; the corpus passed on this build. Digest: ${DIGEST}"
+
+      # Keeps this push and the two newest images built from main (so the live digest and the one
+      # before it), deletes the rest, and fails when more than 4 remain: the account cap is 50 GB.
+      - name: Prune old images
+        if: steps.push.outputs.digest != ''
+        continue-on-error: ${{ github.ref != 'refs/heads/main' }}
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+        run: node container/prune-images.mjs "$RUNNER_TEMP/wrangler/node_modules/.bin/wrangler" "sha-${GITHUB_SHA::12}"
