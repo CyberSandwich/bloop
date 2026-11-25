@@ -277,7 +277,7 @@ tools/
   render-slides.py         the demo deck's PDF export to the demo screen's slide images
   change-tier.mjs          classifies the staged diff (T0 to T2) and enforces the commit-msg blocks
   render-og.py og.svg      the social image and the touch icon, from the logo; og.svg is the image's SVG source
-  subset-font.py           Inter to the Latin subset, wght 400 to 600, opsz pinned to 14
+  subset-font.py           Inter to the Latin subset, wght 400 to 600, opsz pinned to 17
 test/
   unit/                    vitest + fast-check: machine, codes, names, zip, vault, csv, headers
   integration/             against a real wrangler dev (wrangler.ts starts one on a free port): every route, sockets, timers, threat tests

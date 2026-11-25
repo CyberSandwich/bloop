@@ -129,7 +129,7 @@ Status colors (`--ok`, `--warn`, `--err`) are not used: a state is a sentence pl
 ### Type
 - `--font:"Inter","Inter Fallback",Arial,sans-serif`, self-hosted, 400 and 600 only. Body 17/1.5, -0.011em.
 - `--mono:ui-monospace, "SF Mono", Menlo, monospace`, system, never loaded: the match number on the room screen, 600, and nothing else.
-- `@font-face` "Inter" from `/fonts/inter-latin.woff2` (`tools/subset-font.py` from `src/fonts/InterVariable.woff2`, `opsz` pinned to 14, so large headings use the text cut; the display cut cost a third of the file; features kept: kern, liga, calt, ccmp, locl, mark, mkmk, tnum), `font-weight:400 600`, `font-display:swap`, the Latin `unicode-range` (U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+2000-206F, U+2074, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD). "Inter Fallback": `local("Arial")`, `size-adjust:107.1%`, `ascent-override:90.4%`, `descent-override:22.5%`, `line-gap-override:0%` (open item 11).
+- `@font-face` "Inter" from `/fonts/inter-latin.woff2` (`tools/subset-font.py` from `src/fonts/InterVariable.woff2`, `opsz` pinned to 17, the body size, so body text and its 68ch measure are unchanged and large headings use the text cut; the display cut cost a third of the file; features kept: kern, liga, calt, ccmp, locl, mark, mkmk, tnum), `font-weight:400 600`, `font-display:swap`, the Latin `unicode-range` (U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+2000-206F, U+2074, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD). "Inter Fallback": `local("Arial")`, `size-adjust:107.1%`, `ascent-override:90.4%`, `descent-override:22.5%`, `line-gap-override:0%` (open item 11).
 
 | Role | Size | Line height | Tracking | Weight |
 |---|---|---|---|---|
@@ -573,7 +573,7 @@ Font: Inter (SIL OFL 1.1), subset from the official `InterVariable.woff2`, licen
 | 8 | Opening in installed PowerPoint (Protected View, download blocks, license prompts); the PDF fallback | Download It Instead visible from the start |
 | 9 | Phone account needs (connect once, admin consent, sign-in lifetime) | first-use body "bloop reads your slides from OneDrive." |
 | 10 | Guest flow and its file size limit `{N}` | the guest states removed |
-| 11 | Inter subset size (settled: about 28.8 kB with `opsz` pinned to 14, within its `size-limit` entry; with `opsz` kept it is 43 kB); fallback metrics measured against it (open: needs a browser) | keep the starting metrics |
+| 11 | Inter subset size (settled: about 29 kB with `opsz` pinned to 17 (14 changed the width of every line: the 68ch measure grew 5 percent), within its `size-limit` entry; with `opsz` kept it is 43 kB); fallback metrics measured against it (open: needs a browser) | keep the starting metrics |
 | 12 | Camera apps keep the `?c=` query (iOS, Android, common in-app scanners); the log and Referer exposure of a one-use 60 s code | move the code into a path on the API origin |
 | 13 | Final name, host and a public role address | keep `SITE_NAME` and `{host}` placeholders out of production |
 | 14 | API origin; WebSocket allowed on campus networks | long-polling every 2 s |

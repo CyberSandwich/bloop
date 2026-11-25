@@ -166,7 +166,7 @@
       "name": "font",
       "path": "public/fonts/inter-latin.woff2",
       "brotli": false,
-      "limit": "29 kB"
+      "limit": "29.5 kB"
     },
     {
       "name": "demo deck",
