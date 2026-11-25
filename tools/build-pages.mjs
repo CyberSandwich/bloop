@@ -282,7 +282,8 @@ export function loadDocs() {
     for (const name of readdirSync(join(ROOT, "content", dir)).filter((n) => n.endsWith(".md"))) {
       const file = join("content", dir, name);
       const slug = name.slice(0, -3);
-      const { meta, body } = splitFrontmatter(read(file));
+      // `{{email}}` keeps the one public address in site.json, not repeated by hand in every page.
+      const { meta, body } = splitFrontmatter(fill(read(file), { email: site.email }));
       const path = dir ? (slug === "index" ? `/${dir}` : `/${dir}/${slug}`) : `/${slug}`;
       docs.push({ file, path, out: `public${path}.html`, slug, dir, meta, body });
     }

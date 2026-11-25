@@ -24,7 +24,7 @@ Caption: What bloop keeps, where, and for how long
 | Failed code attempts, as a hash of the address | Cloudflare Durable Object, EU | 10 minutes |
 | Cloudflare's request logs | Cloudflare | At most 7 days, with no personal data |
 | Waitlist answers | Tally | Until you ask for deletion, or the waitlist closes |
-| Emails to <hi@bloop.here> and <security@bloop.here> | Apple iCloud Mail | 2 years after the last message in a thread |
+| Emails to <{{email}}> | Apple iCloud Mail | 2 years after the last message in a thread |
 
 ## What a Record Holds {#records}
 
@@ -48,8 +48,8 @@ Records go on a fixed clock: a daily job removes each kind of data when its peri
 
 ## Roles {#roles}
 
-Today bloop is the controller of the personal data it holds, run by one named individual. Under an agreement with a university, bloop would act on the university's instructions for staff use and for guest uploads on its rooms. No such agreement exists yet. If you need one, or a data protection impact assessment, write to <hi@bloop.here>.
+Today bloop is the controller of the personal data it holds, run by one named individual. Under an agreement with a university, bloop would act on the university's instructions for staff use and for guest uploads on its rooms. No such agreement exists yet. If you need one, or a data protection impact assessment, write to <{{email}}>.
 
 ## Asking for Your Data {#asking}
 
-A person can ask to see, correct, restrict, move or erase their data, or to object, by writing to <hi@bloop.here>. bloop replies within one month. The [Privacy Notice](/privacy#rights) has the full list of rights and how to complain to the ICO.
+A person can ask to see, correct, restrict, move or erase their data, or to object, by writing to <{{email}}>. bloop replies within one month. The [Privacy Notice](/privacy#rights) has the full list of rights and how to complain to the ICO.

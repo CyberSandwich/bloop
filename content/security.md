@@ -83,7 +83,7 @@ If a breach puts people's data at risk, bloop tells affected people and organiza
 
 Found a security problem? Thank you; please tell us.
 
-- **How:** email <security@bloop.here>. Do not post it in public. Include what you found, how to reproduce it, and its impact.
+- **How:** email <{{email}}> with "Security" in the subject. Do not post it in public. Include what you found, how to reproduce it, and its impact.
 - **What happens next:** an acknowledgement within 5 working days, then updates until it is fixed. bloop will credit you if you wish.
 - **In scope:** bloop.here.
 - **Out of scope:** Cloudflare, Microsoft, Tally and Apple (report to them); denial of service, spam or social engineering; findings that need a rooted or unlocked device.
@@ -101,7 +101,7 @@ If you look after shared PCs and want to know what bloop does on them:
 - **The PC gets little.** Never an account, a way to list files, or a way to approve.
 - **A record of use.** Every approval, open and end is recorded with who, which Item, which Screen and when (no file contents, tokens or IP addresses). An export for your organization is available on request.
 - **Tested.** Each threat bloop mitigates has a named test that runs on every change.
-- **Questions or a review:** email <hi@bloop.here>. Where data is kept and for how long: [Where It Runs](#where) and [Privacy, How Long bloop Keeps It](/privacy#retention).
+- **Questions or a review:** email <{{email}}>. Where data is kept and for how long: [Where It Runs](#where) and [Privacy, How Long bloop Keeps It](/privacy#retention).
 
 ## Status {#audit}
 
@@ -109,6 +109,6 @@ No external audit or penetration test yet, and no Cyber Essentials certificate y
 
 ## What Changed {#changes}
 
-- Version 1.1, 2026-11-25: How It Works says the phone shows a number to match, and no longer that it shows the room, which only registered rooms (planned) will name.
+- Version 1.1, 2026-11-25: How It Works says the phone shows a number to match, and no longer that it shows the room, which only registered rooms (planned) will name. Reports go to the one public address, not a separate one.
 - Version 1.0, 2026-11-25: first published version.
 - Earlier versions were shown for review before this one; they are replaced and never took effect.

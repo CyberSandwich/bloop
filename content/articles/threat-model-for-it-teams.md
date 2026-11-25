@@ -65,4 +65,4 @@ Malware on the PC could copy a file it is shown. That is true of any presenting 
 
 ## Checking It Yourself {#verify}
 
-Every mitigated threat has a test with its id in the name, and the checks run on every change to the code. For a walkthrough of the current model, or a questionnaire your team already uses, write to <hi@bloop.here>.
+Every mitigated threat has a test with its id in the name, and the checks run on every change to the code. For a walkthrough of the current model, or a questionnaire your team already uses, write to <{{email}}>.

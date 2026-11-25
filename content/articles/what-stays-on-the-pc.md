@@ -42,4 +42,4 @@ Whatever you choose, test it in your own rooms: run a session, end it, sign out,
 
 ## What Is Not Measured Yet {#unmeasured}
 
-bloop has not yet measured what remains on real room PCs after sign-out and restart, including how long the Microsoft download link persists and what the download history keeps. Until it has, it claims the clearing described above and nothing beyond it. If you try bloop in your own rooms, those results are the most useful thing you can send to <hi@bloop.here>.
+bloop has not yet measured what remains on real room PCs after sign-out and restart, including how long the Microsoft download link persists and what the download history keeps. Until it has, it claims the clearing described above and nothing beyond it. If you try bloop in your own rooms, those results are the most useful thing you can send to <{{email}}>.
