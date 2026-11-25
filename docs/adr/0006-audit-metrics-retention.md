@@ -44,3 +44,4 @@ IT must be able to check every claim, so each session is audited, and the audit 
 - IT gets a verifiable trail without bloop keeping identities in analytics.
 - One shared export token is a known limit (threat model SITE-07).
 - Workers Logs carry no personal data, so they need no retention rule beyond the platform's own (threat-model section 10).
+  - Amended: an IP address is personal data, so the line above is wrong. Workers Logs are off on the live site; if turned on, they record each request's details, including the IP address, and keep them at most 7 days (threat-model section 10; Privacy, How Long bloop Keeps It, `/privacy#retention`).
