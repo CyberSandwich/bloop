@@ -44,10 +44,11 @@ function exited(child: ChildProcess): Promise<void> {
  * Starts `wrangler dev` on a free port with a throwaway state directory and resolves once
  * `/api/health` answers. Needs no Cloudflare login. `vars` override wrangler.jsonc vars.
  * `migrate` applies migrations/ to the throwaway D1 first, for tests that touch the database.
+ * `config` serves a test-only Worker from another wrangler config (a path under the repo) instead of wrangler.jsonc.
  */
 export async function startWrangler(
   vars: Record<string, string> = {},
-  options: { migrate?: boolean } = {},
+  options: { migrate?: boolean; config?: string } = {},
 ): Promise<Wrangler> {
   try {
     return await startOnce(vars, options);
@@ -70,7 +71,10 @@ function killGroup(pid: number, signal: NodeJS.Signals): void {
   }
 }
 
-async function startOnce(vars: Record<string, string>, options: { migrate?: boolean }): Promise<Wrangler> {
+async function startOnce(
+  vars: Record<string, string>,
+  options: { migrate?: boolean; config?: string },
+): Promise<Wrangler> {
   const port = await freePort();
   const url = `http://127.0.0.1:${port}`;
   const state = mkdtempSync(join(tmpdir(), "bloop-wrangler-"));
@@ -93,6 +97,7 @@ async function startOnce(vars: Record<string, string>, options: { migrate?: bool
     bin,
     [
       "dev",
+      ...(options.config ? ["--config", options.config] : []),
       // Without it the Worker sees the custom domain as its host, not the local address.
       "--infer-origin-from-routes=false",
       "--ip",
