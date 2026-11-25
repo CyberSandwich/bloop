@@ -408,30 +408,53 @@ const WHY =
 const fills = (page: Page) =>
   page.evaluate(`[...document.querySelectorAll(".why-words > *")].map(
     (w) => 1 - parseFloat(getComputedStyle(w).backgroundPositionX) / 100)`) as Promise<number[]>;
-// The paragraph at a given progress of its view timeline (0 entering at the bottom, 1 gone at the top).
-const scrollWhyTo = (page: Page, progress: number) =>
+// Scrolls so the paragraph's top sits `progress` of its height above the view's center, plus `px` lower:
+// 0 is its top at the center, 1 its bottom at the center (the fill's range).
+const scrollWhyTo = (page: Page, progress: number, px = 0) =>
   page.evaluate(`(() => {
     const r = document.querySelector(".why p").getBoundingClientRect();
-    scrollBy(0, r.top - (innerHeight - ${progress} * (innerHeight + r.height)));
+    scrollBy(0, r.top - (innerHeight / 2 - ${progress} * r.height + ${px}));
   })()`);
+const faint = (page: Page) => expect.poll(async () => new Set(await fills(page))).toEqual(new Set([0]));
+const ink = (page: Page) => expect.poll(async () => new Set(await fills(page))).toEqual(new Set([1]));
 
-for (const vp of [VIEWPORTS[0], VIEWPORTS[2]]) {
+// 844x390: a phone on its side, where the paragraph is taller than half the view.
+for (const vp of [VIEWPORTS[0], VIEWPORTS[2], { name: "844x390", width: 844, height: 390, touch: true }]) {
   test.describe(`the why at ${vp.name}`, () => {
     test.use({ viewport: { width: vp.width, height: vp.height }, hasTouch: vp.touch, isMobile: vp.width === 390 });
 
     test("the words fill in reading order, one at a time, with axe green mid-fill", async ({ page }) => {
       await page.goto("/");
       expect(new Set(await fills(page))).toEqual(new Set([0]));
-      // Midway through the fill's range (cover 5% to 50%): ink words, then at most one in motion, then faint ones.
-      await scrollWhyTo(page, 0.27);
+      // Midway: ink words, then at most one in motion, then faint ones.
+      await scrollWhyTo(page, 0.5);
       await expect.poll(async () => (await fills(page))[0]).toBe(1);
       const mid = await fills(page);
       expect(mid.at(-1)).toBe(0);
       expect(mid.filter((f) => f > 0.001 && f < 0.999).length).toBeLessThanOrEqual(1);
       for (let i = 1; i < mid.length; i++) expect(mid[i], `word ${i}`).toBeLessThanOrEqual(mid[i - 1] ?? 1);
       expect((await new AxeBuilder({ page }).analyze()).violations).toEqual([]);
-      await scrollWhyTo(page, 0.6);
-      await expect.poll(async () => new Set(await fills(page))).toEqual(new Set([1]));
+      await scrollWhyTo(page, 1, -1);
+      await ink(page);
+    });
+
+    test("the fill starts as the paragraph's top reaches the view's center and ends, in view, as its bottom does", async ({
+      page,
+    }) => {
+      await page.goto("/");
+      // From mid-fill back, so the faint read is the timeline's, not the page's first frame.
+      await scrollWhyTo(page, 0.5);
+      await expect.poll(async () => (await fills(page))[0]).toBe(1);
+      await scrollWhyTo(page, 0, 10);
+      await faint(page);
+      await scrollWhyTo(page, 0, -10);
+      await expect.poll(async () => (await fills(page))[0]).toBeGreaterThan(0);
+      await scrollWhyTo(page, 1, 10);
+      await expect.poll(async () => (await fills(page)).at(-1)).toBeLessThan(1);
+      await scrollWhyTo(page, 1, -1);
+      await ink(page);
+      const bottom = (await page.evaluate(`document.querySelector(".why p").getBoundingClientRect().bottom`)) as number;
+      expect(bottom).toBeLessThan(vp.height);
     });
 
     test("a screen reader reads one sentence", async ({ page }) => {

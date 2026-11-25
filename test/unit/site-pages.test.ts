@@ -323,9 +323,11 @@ describe("landing word caps (design.md section 13)", () => {
     );
     expect(block).toMatch(/\.why-words > \* \{[^}]*background-clip: text;[^}]*-webkit-text-fill-color: transparent;/);
     // One progress for the paragraph; a word moves only inside its own slice (index --i of --n, from site.js).
-    expect(block).toMatch(/\.why p \{\s*view-timeline: --why-view;/);
+    // The port is the view's center line: the fill starts as the paragraph's top reaches eye level and ends as its
+    // bottom does, at any paragraph height.
+    expect(block).toMatch(/\.why p \{\s*view-timeline: --why-view;\s*view-timeline-inset: 50%;\s*\}/);
     expect(block).toMatch(
-      /\.why-words \{\s*animation: why linear both;\s*animation-timeline: --why-view;\s*animation-range: cover 5% cover 50%;/,
+      /\.why-words \{\s*animation: why linear both;\s*animation-timeline: --why-view;\s*animation-range: cover;/,
     );
     expect(block).toMatch(
       /background-position-x: calc\(100% - 100% \* clamp\(0, var\(--why\) \* var\(--n\) - var\(--i\), 1\)\);/,

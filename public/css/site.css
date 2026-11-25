@@ -403,14 +403,16 @@ html:has(.page-site) {
 }
 @supports (animation-timeline: view()) {
   @media (prefers-reduced-motion: no-preference) and (forced-colors: none) {
-    /* --why runs 0 to 1 over the paragraph; word --i of --n (site.js) fills over its own slice. */
+    /* --why runs 0 to 1 as the paragraph crosses the view's center line (the 50% insets; design.md, Why);
+       word --i of --n (site.js) fills over its own slice. */
     .why p {
       view-timeline: --why-view;
+      view-timeline-inset: 50%;
     }
     .why-words {
       animation: why linear both;
       animation-timeline: --why-view;
-      animation-range: cover 5% cover 50%;
+      animation-range: cover;
     }
     .why-words > * {
       display: inline-block;
