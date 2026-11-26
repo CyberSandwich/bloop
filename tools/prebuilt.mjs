@@ -3,7 +3,8 @@
 // flag that skips it, so the deploy job swaps the command for an assertion that dist/ is what the check job built.
 // Imports nothing third-party: it runs in the job that holds the token.
 //   node tools/prebuilt.mjs manifest  in the check job, after the build: dist/.build-manifest.json, every file's hash
-//   node tools/prebuilt.mjs rewrite   in the deploy job's checkout, before wrangler runs
+//   node tools/prebuilt.mjs rewrite   in the deploy job's checkout, before wrangler runs: the build command, and the
+//                                     account id (CLOUDFLARE_ACCOUNT_ID) in the converter image reference
 //   node tools/prebuilt.mjs assert    the command wrangler then runs: dist/ equals its manifest, dotfiles included
 import { createHash } from "node:crypto";
 import { existsSync, lstatSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
@@ -21,6 +22,18 @@ export function withPrebuilt(config) {
   return config.replace(BUILD, () => PREBUILT);
 }
 
+const ACCOUNT = "{ACCOUNT_ID}";
+/** What the placeholder becomes where there is no secret (the CI rehearsal's dry run): a value no account has. */
+const NO_ACCOUNT = "0".repeat(32);
+
+/** wrangler.jsonc with the account id in the converter image reference; the repo never holds the id (CONV-06).
+ * @param {string} config @param {string | undefined} accountId */
+export function withAccount(config, accountId) {
+  if (accountId !== undefined && !/^[0-9a-f]{32}$/.test(accountId))
+    throw new Error("CLOUDFLARE_ACCOUNT_ID is not a 32-character hex account id");
+  return config.replaceAll(ACCOUNT, accountId ?? NO_ACCOUNT);
+}
+
 /** Throws unless the parsed top-level build block, and any environment's, is exactly the assertion, so a deploy run in
  * the wrong order fails closed instead of building in the job that holds the token.
  * @param {string} config */
@@ -33,6 +46,8 @@ export function requirePrebuilt(config) {
     envs.every((env) => env.build === undefined || JSON.stringify(env.build) === assertion);
   if (!swapped || config.includes(BUILD))
     throw new Error("wrangler.jsonc still builds: run tools/prebuilt.mjs rewrite first");
+  if (config.includes(ACCOUNT))
+    throw new Error("wrangler.jsonc still has the account placeholder: run tools/prebuilt.mjs rewrite first");
 }
 
 /** Every file under dir, dotfiles included, with its SHA-256; the manifest itself is not listed. Anything that is not
@@ -86,7 +101,10 @@ const command = process.argv[1]?.endsWith("prebuilt.mjs") ? process.argv[2] : un
 if (command === "manifest") {
   writeFileSync(join("dist", MANIFEST), `${JSON.stringify(filesOf("dist"), null, 1)}\n`);
 } else if (command === "rewrite") {
-  writeFileSync("wrangler.jsonc", withPrebuilt(readFileSync("wrangler.jsonc", "utf8")));
+  writeFileSync(
+    "wrangler.jsonc",
+    withAccount(withPrebuilt(readFileSync("wrangler.jsonc", "utf8")), process.env.CLOUDFLARE_ACCOUNT_ID || undefined),
+  );
 } else if (command === "assert") {
   const problems = manifestProblems("dist");
   if (problems.length > 0) throw new Error(`dist/ is not the check job's build: ${problems.join("; ")}`);
