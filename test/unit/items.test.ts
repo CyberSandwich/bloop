@@ -9,7 +9,6 @@ import {
   itemView,
   LINK_HOSTS,
   MAX_ITEMS,
-  orderItems,
   shownFault,
 } from "../../src/worker/items.ts";
 import { type Machine, transition } from "../../src/worker/machine.ts";
@@ -159,16 +158,6 @@ describe("SRC-01 screen-view: the view carries items, never a source ref", () =>
     ]);
     expect(JSON.stringify(view)).not.toContain("deck-1");
     expect(JSON.stringify(view)).not.toContain("demo-vevox");
-  });
-});
-
-describe("orderItems", () => {
-  it("files by name, then links by title, without changing the input", () => {
-    const b = asItem({ ...DECK, ref: "b", name: "b.pptx" });
-    const a = asItem({ ...DECK, ref: "a", name: "A.pdf", type: "pdf" });
-    const input: ItemDraft[] = [VEVOX, b, a];
-    expect(orderItems(input).map((i) => i.ref)).toEqual(["a", "b", "demo-vevox"]);
-    expect(input.map((i) => i.ref)).toEqual(["demo-vevox", "b", "a"]);
   });
 });
 

@@ -18,7 +18,7 @@ export interface Code {
   consumed: boolean;
 }
 export interface FileRef {
-  source: "mock" | "graph" | "guest";
+  source: "mock" | "graph" | "guest" | "library";
   ref: string;
   name: string;
   type: FileType;

@@ -1,5 +1,13 @@
 // Pairing, the screen and phone views, items, WebSocket frames and the file list (docs/interfaces.md section 1).
-import type { Actor, EndReason, ErrorCode, FileType, Kind, Mode, OpenMode } from "./core.ts";
+import {
+  type EndReason,
+  type ErrorCode,
+  type FileType,
+  type Kind,
+  type Mode,
+  OPEN_MODES,
+  type OpenMode,
+} from "./core.ts";
 
 /** Session states owned by the Screen object (section 2). */
 export type SessionState =
@@ -32,6 +40,24 @@ export interface FileItem {
   name: string; // display name
   type: FileType; // an original PDF shown as a PDF is not a fallback
   size: number | null; // bytes, when the source gave a size
+  /** Which viewer shows it: `kindOf(type)` on the server (src/worker/items.ts), never sent by a client. */
+  show?: ItemKind | undefined;
+  /** What conversion produced; null for a demo, Graph or unconverted guest file. */
+  derived?: DerivedFlags | null | undefined;
+}
+/** What an item is shown as. */
+export type ItemKind = "deck" | "pdf" | "doc" | "sheet" | "text" | "image" | "video";
+/** The screen-safe derived flags: exactly these keys (ADR 0015, PAIR-16). */
+export interface DerivedFlags {
+  slides: boolean;
+  pdf: boolean;
+  pages: number | null;
+  motion: boolean;
+}
+/** Phone-only extras on an item, for the owner's or guest's phone; never in a ScreenView. */
+export interface PhoneItemExtra {
+  notes: boolean;
+  fontsMissing: string[];
 }
 /** One approved web link: https on an allowed host only (LINK-01). The screen shows a card, never a frame. */
 export interface LinkItem {
@@ -79,6 +105,8 @@ export interface ScreenView {
   room: RoomView;
   code: CodeView | null; // only in "waiting" and "ended"
   match: string | null; // 2 digits, from "claimed" to "open"
+  /** The phone picked the match; the ring closes on it. */
+  confirmed?: boolean | undefined;
   /** From "offered" (guest) or "approved"; files by name, then links by title. A link or mint names an item by its index here. */
   items: Item[];
   /** Null until the remote or the screen's own tap sets it; null outside an approved session. */
@@ -105,7 +133,9 @@ export interface PhoneView {
   /** Live and unconfirmed only: the three shuffled two-digit choices; the phone never holds the real match then (ADR 0015). */
   choices?: string[] | null | undefined;
   confirmed?: boolean | undefined;
-  items: Item[]; // as in ScreenView
+  /** Server epoch ms the first item was shown, so the elapsed time survives a reload. */
+  firstShownAt?: number | null | undefined;
+  items: (Item & { extra?: PhoneItemExtra | undefined })[]; // as in ScreenView, plus the phone-only extras
   shown: Shown | null; // as in ScreenView
   openMode: OpenMode | null;
   /** Epoch ms the session ends by itself; with `now`, the phone's countdown. */
@@ -133,13 +163,14 @@ export interface LinkSet {
   download: string | null;
   pdf: string | null; // a PDF file's own view, or a deck's PDF rendition
   view: string | null; // an image, inline
+  bundle?: string | null | undefined; // the bundle base, `.../b/<token>/`
 }
 
 // WebSocket frames, all {v: 1, t: ...}, at most 4 KB. The upgrade URL carries the non-secret screenRef
 // (`/api/screen/ws?ref=<screenRef>`, `/api/pair/ws?ref=<screenRef>`): the first frame is the credential.
 // The exact text {"v":1,"t":"ping"} is answered with {"v":1,"t":"pong"} by the runtime without waking the object.
 export type ScreenMsgIn =
-  | { v: 1; t: "hello"; sid: string }
+  | { v: 1; t: "hello"; sid: string; fo?: "file" | "main" | undefined } // fo: which origin the screen's links use (FO-01)
   | { v: 1; t: "code.next" }
   | { v: 1; t: "open.click" } // the Open button on a guest offer
   | { v: 1; t: "launched"; mode: OpenMode }
@@ -182,9 +213,22 @@ export type Entry = FileEntry | LinkEntry;
 export interface ApproveRequest {
   ids: string[];
 }
+/** `POST /api/match`: the phone's pick, plus Up Next's ids to approve in the same call. */
+export interface MatchRequest {
+  choice: string;
+  ids?: string[];
+}
+export interface MatchResponse {
+  view: PhoneView;
+  approved: boolean;
+  approveError: ErrorCode | null;
+}
+/** What a screen may ask a link for: an open mode, or a viewer item's bundle. */
+export const LINK_PURPOSES = [...OPEN_MODES, "bundle"] as const;
+export type LinkPurpose = (typeof LINK_PURPOSES)[number];
 /** `POST /api/screen/link`: item defaults to the one the approval launched (the first file). */
 export interface LinkRequest {
-  purpose: OpenMode;
+  purpose: LinkPurpose;
   item?: number;
 }
 export interface LinkResponse {

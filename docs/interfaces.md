@@ -2,7 +2,7 @@
 
 The contracts for the five seams (pairing, file source, open path, guest drop, residue), plus audit and metrics. Each block names the file it belongs in. Types are TypeScript. Browser code imports the `src/shared/protocol.ts` types through JSDoc (`/** @import {ScreenView} from "../../src/shared/protocol.ts" */`, from `public/js/`). Runtime code shared by the browser and the Worker lives in `public/js/shared/` as plain JSDoc-typed ES modules, and the Worker imports it by relative path. No type from Cloudflare, Graph or R2 crosses a seam: adapters translate at the edge, so the Node exit path (ADR 0001) rewrites adapters only.
 
-## 1. Shared protocol (`src/shared/protocol.ts`, contracts, never served; type-only except `OPEN_MODES`, the one list the Worker's schemas build from)
+## 1. Shared protocol (`src/shared/protocol.ts`, contracts, never served; type-only except `OPEN_MODES` and `LINK_PURPOSES`, the lists the Worker's schemas build from)
 ```ts
 export type Mode = "live" | "demo";
 export type Kind = "owner" | "guest";
@@ -109,8 +109,20 @@ export interface FileEntry extends Omit<FileItem, "id"> { id: string; modifiedAt
 export interface LinkEntry extends Omit<LinkItem, "id"> { id: string; }
 export type Entry = FileEntry | LinkEntry;
 export interface ApproveRequest { ids: string[]; }                     // POST /api/approve: 1 to MAX_ITEMS (12) distinct entry ids
-export interface LinkRequest { purpose: OpenMode; item?: number; }    // POST /api/screen/link: item defaults to the launched one
+export interface LinkRequest { purpose: LinkPurpose; item?: number; }   // POST /api/screen/link: item defaults to the launched one
 export interface LinkResponse { item: number; links: LinkSet; }
+
+// The present additions (ADRs 0015, 0018), all optional until the present server fills them.
+export type ItemKind = "deck" | "pdf" | "doc" | "sheet" | "text" | "image" | "video";   // FileItem.show: kindOf(type) in src/worker/items.ts, never sent by a client
+export interface DerivedFlags { slides: boolean; pdf: boolean; pages: number | null; motion: boolean; }   // FileItem.derived; exactly these keys (PAIR-16); null for a demo, Graph or unconverted guest file
+export interface PhoneItemExtra { notes: boolean; fontsMissing: string[]; }   // PhoneView.items[i].extra; never in a ScreenView
+// Shown.via ("viewer" | "app", live decks); ScreenView.confirmed, upload {bytes, total}, choiceBytes;
+// PhoneView.choices (the three shuffled, live and unconfirmed), confirmed, firstShownAt; ClaimResponse.choices;
+// LinkSet.bundle (the base `.../b/<token>/`); the screen's hello `fo: "file" | "main"` (FO-01).
+export interface MatchRequest { choice: string; ids?: string[]; }   // POST /api/match; ids: Up Next, approved in the same call
+export interface MatchResponse { view: PhoneView; approved: boolean; approveError: ErrorCode | null; }
+export const LINK_PURPOSES = [...OPEN_MODES, "bundle"] as const;   // bundle is a link purpose, not an open mode
+export type LinkPurpose = (typeof LINK_PURPOSES)[number];
 
 export type PairError =
   | "code_malformed" | "code_unknown" | "code_expired" | "code_taken"
@@ -194,7 +206,7 @@ export type ScreenStateKey =
 | waiting | `end(screen)` | from the screen only (a phone or system end here is `wrong_state`) | closed | both codes removed, `deleteAll()` (which releases a demo slot); no audit, as there was no session. The answer is the closed view, and the sid then answers `screen_gone`. A `claimed` screen still goes to `ended`, so its phone reads why |
 | closed | any | | closed | every call returns `screen_gone` |
 
-An event the table does not list for a state returns `wrong_state` and changes nothing; approve in `ended` returns `session_ended`. Approve (the same set of items, in any order), open.click, fetched, control and end are idempotent: a repeat in the target state returns the current view. Cancel is not: it drops the pairing, so a repeat fails with `pairing_invalid` before it reaches the machine.
+An event the table does not list for a state returns `wrong_state` and changes nothing; approve in `ended` returns `session_ended`. Approve (the same set of items, in any order; library items in the same order), open.click, fetched, control and end are idempotent: a repeat in the target state returns the current view. Cancel is not: it drops the pairing, so a repeat fails with `pairing_invalid` before it reaches the machine.
 
 ### 2.3 The pure machine (`src/worker/machine.ts`)
 `machine.ts` holds the types, `transition` (one `switch` that dispatches by event) and `nextDeadline`. The 2.2 rows are reduced in `src/worker/machine/`: `pairing.ts` (code.next, claim, cancel, restart, socket, timer), `items.ts` (listed, approve, open.click, fallback), `upload.ts` (upload.start, upload.done, upload.failed) and `control.ts` (control, length, launched, fetched, end); `step.ts` holds what they share.
@@ -202,7 +214,7 @@ An event the table does not list for a state returns `wrong_state` and changes n
 import type { EndReason, ErrorCode, FileType, Kind, Mode, OpenMode, SessionState } from "../shared/protocol.ts";
 
 export interface Code { value: string; issuedAt: number; expiresAt: number; consumed: boolean; }
-export interface FileRef { source: "mock" | "graph" | "guest"; ref: string; name: string; type: FileType; size?: number; }
+export interface FileRef { source: "mock" | "graph" | "guest" | "library"; ref: string; name: string; type: FileType; size?: number; }
 
 // src/worker/items.ts: the item types, the order and the link rule, shared by the machine, the routes and the tests.
 export interface LinkRef { kind: "link"; id: string; ref: string; url: string; title: string; }
@@ -212,7 +224,8 @@ export type ItemDraft = Omit<FileItemRef, "id"> | Omit<LinkRef, "id">;   // an i
 export const MAX_ITEMS = 12;
 export const LINK_HOSTS: readonly string[];          // ["www.vevox.com"]
 export declare function allowedLink(url: string): string | null;   // URL-parsed: https, an allowed host, no credentials, no explicit non-default port, at most 2048 characters; answers url.href, the only form an item stores
-export declare function orderItems<T extends ItemDraft>(items: readonly T[]): T[];   // files by name, then links by title
+export declare function orderItems<T extends ItemDraft>(items: readonly T[]): T[];   // library files only: the caller's (Up Next) order; else files by name, then links by title
+export declare function kindOf(type: FileType): ItemKind;   // the viewer per type; a Record over FileType, so a new type fails the typecheck until it has one
 export declare function withIds(items: readonly (ItemDraft | ItemRef)[]): ItemRef[];   // "i1", "i2", ... by place in the ordered list, written at approval (or upload.done); a list whose items all hold ids keeps them (a guest's file at open.click), one missing any is numbered whole
 export declare const shownSchema: z.ZodType<Shown>;   // the one shape check for `shown` (strict; `play` and `sound` optional): the remote's body extends it with `seq`, and schema step 6 repairs stored data with it (step 7 starts a missing or malformed `Machine.v` at 0)
 export declare function shownFault(items: readonly ItemRef[], shown: Shown, view: { mode: Mode; kind: Kind | null }): "file_not_found" | "bad_request" | null;   // not a FILE id in the list, or a page outside it
@@ -617,7 +630,7 @@ export interface AuditEvent {
   sessionId: string; at: number; actor: Actor; session?: SessionContext;
   type: AuditType | "grant.created" | "grant.deleted" | "user.erased" | "export.run" | "pass.created";
   /** Allowed keys only. Never tokens, codes, URLs, IPs or Graph ids. */
-  detail: { fileName?: string; source?: "mock" | "graph" | "guest"; purpose?: string;
+  detail: { fileName?: string; source?: FileRef["source"]; purpose?: string;
             cause?: ErrorCode; reason?: string; bytes?: number; ipMatch?: boolean; endsAt?: number; /* session.length: the new end */
             /** An /f/ request: method, class of client (never the raw User-Agent), fetch count. */
             method?: string; client?: "office" | "browser" | "other"; count?: number };

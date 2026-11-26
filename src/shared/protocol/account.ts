@@ -15,8 +15,8 @@ export type AccountError =
   | "account_suspended"
   | "passkey_invalid"
   | "account_deleting";
-/** Live pairing with accounts (ADR 0015) and the spend guard's refusal. */
-export type PairingAccountError = "match_required" | "service_busy";
+/** Live pairing with accounts (ADR 0015) and the spend guard's refusal. match_wrong: a wrong pick canceled the claim. */
+export type PairingAccountError = "match_required" | "service_busy" | "match_wrong";
 
 /** The launch mode (ADR 0026): preview shows today's product, open adds accounts, the library and the open pages. */
 export type LaunchMode = "preview" | "open";
