@@ -159,6 +159,16 @@ describe("config", () => {
     expect(problems({ ...PROD, IT_EXPORT_TOKEN: "short" }).join()).toContain("IT_EXPORT_TOKEN");
   });
 
+  it("FILE_TOKEN_KEY_PREVIOUS is optional, empty means absent, and must be 32 characters otherwise", () => {
+    const unset = parseConfig(PROD);
+    expect(unset.ok && unset.config.secrets.fileTokenKeyPrevious).toBeNull();
+    const empty = parseConfig({ ...PROD, FILE_TOKEN_KEY_PREVIOUS: "" });
+    expect(empty.ok && empty.config.secrets.fileTokenKeyPrevious).toBeNull();
+    const set = parseConfig({ ...PROD, FILE_TOKEN_KEY_PREVIOUS: "p".repeat(32) });
+    expect(set.ok && set.config.secrets.fileTokenKeyPrevious).toBe("p".repeat(32));
+    expect(problems({ ...PROD, FILE_TOKEN_KEY_PREVIOUS: "short" }).join()).toContain("FILE_TOKEN_KEY_PREVIOUS");
+  });
+
   it("TEST_TIMING is refused on any non-local origin", () => {
     expect(problems({ ...PROD, TEST_TIMING: "1", CODE_TTL_SECONDS: "2" }).join()).toContain("TEST_TIMING");
     expect(problems({ ...PROD, TEST_TIMING: "1", PUBLIC_ORIGIN: "https://127.0.0.1.evil.example" }).join()).toContain(
