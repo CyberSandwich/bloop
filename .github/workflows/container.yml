@@ -69,9 +69,6 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 30
     environment: production
-    permissions:
-      contents: write
-      pull-requests: write
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -111,37 +108,12 @@ jobs:
           test -n "$digest"
           echo "digest=${digest}" >> "$GITHUB_OUTPUT"
           echo "tag=${tag}" >> "$GITHUB_OUTPUT"
-          echo "pushed bloop-converter:${tag} as ${digest}" | tee -a "$GITHUB_STEP_SUMMARY"
+          {
+            echo "pushed bloop-converter:${tag} as ${digest}"
+            echo "pin it: write the digest to container/digest.txt in a commit whose message starts \"Converter image ${tag}: bump digest to ${digest}\""
+          } | tee -a "$GITHUB_STEP_SUMMARY"
 
-      # The commit message and PR title name the tag: prune-images.mjs reads it back from origin/main.
-      - name: Open a PR that bumps the digest
-        id: bump
-        env:
-          GH_TOKEN: ${{ github.token }}
-          DIGEST: ${{ steps.push.outputs.digest }}
-          TAG: ${{ steps.push.outputs.tag }}
-        run: |
-          set -euo pipefail
-          branch="container-digest-${GITHUB_SHA::12}"
-          echo "$DIGEST" > container/digest.txt
-          git add container/digest.txt
-          if git diff --cached --quiet; then echo "digest unchanged"; exit 0; fi
-          git config user.name "github-actions[bot]"
-          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git checkout -b "$branch"
-          git commit -m "Converter image ${TAG}: bump digest to ${DIGEST}"
-          auth="$(printf 'x-access-token:%s' "$GH_TOKEN" | base64 -w0)"
-          git -c "http.extraheader=Authorization: Basic ${auth}" push --force origin "$branch"
-          title="Converter image ${TAG}: bump digest"
-          body="Pushed by container.yml after the corpus passed on this build (${DIGEST}). Checks do not run on a pull request opened with GITHUB_TOKEN; the main run that built this image is the test, so merge on that. Close it unmerged and the image is pruned by a later publish."
-          if [ -n "$(gh pr list --head "$branch" --state open --json number --jq '.[0].number')" ]; then
-            gh pr edit "$branch" --title "$title" --body "$body"
-          else
-            gh pr create --base main --head "$branch" --title "$title" --body "$body" \
-              || { echo "::error::The digest ${DIGEST} (${TAG}) is pushed but not pinned: GitHub Actions cannot create the PR. Enable Settings > Actions > General > Allow GitHub Actions to create and approve pull requests, then open a PR from ${branch}."; exit 1; }
-          fi
-
-      # Runs even when the bump failed: the image just pushed is always kept, so a failed bump loses nothing.
+      # The image just pushed is always kept, whether or not it has been pinned yet.
       - name: Prune old images
         if: always() && steps.push.outputs.digest != ''
         env:
