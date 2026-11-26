@@ -86,9 +86,9 @@ describe("api client", () => {
     });
   });
 
-  it("an unknown code in a problem body is not trusted", async () => {
+  it("an unknown code in a problem body is not trusted as the page's, only carried as `code` for a lazy module", async () => {
     const f = fakeFetch(() => problem(400, "made_up"));
-    expect(await createApi({ fetch: f.fetch }).get("/x")).toEqual({ ok: false, error: "bad_request" });
+    expect(await createApi({ fetch: f.fetch }).get("/x")).toEqual({ code: "made_up", ok: false, error: "bad_request" });
   });
 
   it("a network failure is offline", async () => {

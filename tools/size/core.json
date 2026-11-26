@@ -62,6 +62,7 @@
       "dist/js/core/format.js",
       "dist/js/core/icons.js",
       "dist/js/core/loader.js",
+      "dist/js/core/phone-states.js",
       "dist/js/core/rows.js",
       "dist/js/core/states.js",
       "dist/js/core/store.js",
@@ -158,6 +159,22 @@
     "path": "dist/css/remote.css",
     "gzip": true,
     "limit": "0.8 kB"
+  },
+  {
+    "name": "phone match pick, lazy",
+    "path": ["dist/js/core/lazy.js", "dist/js/core/match.js", "dist/js/core/pick.js"],
+    "limit": "1.35 kB"
+  },
+  {
+    "name": "phone match pick CSS, lazy",
+    "path": "dist/css/match.css",
+    "gzip": true,
+    "limit": "0.2 kB"
+  },
+  {
+    "name": "phone refusal words, lazy",
+    "path": "dist/js/core/refusal.js",
+    "limit": "0.5 kB"
   },
   {
     "name": "drag and drop, lazy",

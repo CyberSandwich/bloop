@@ -6,8 +6,8 @@
 
 import { readFileSync } from "node:fs";
 import { crc32, deflateSync } from "node:zlib";
-import AxeBuilder from "@axe-core/playwright";
 import { type Browser, type BrowserContext, expect, type Locator, type Page, type Route, test } from "@playwright/test";
+import { expectNoAxeViolations, heading, type Opened, open, PHONE, pickMatch, SCREEN, typedCodeOf } from "./pairing.ts";
 
 /** The item on the stage: a page's picture, the photo's canvas or a video (never the loader's thumbnail). */
 const STAGED = "#frame :is(picture img, canvas, video)";
@@ -50,38 +50,6 @@ function androidMp4(location: string): Buffer {
   ]);
 }
 
-const SCREEN = { width: 1440, height: 900 };
-const PHONE = { width: 390, height: 844 };
-
-interface Opened {
-  context: BrowserContext;
-  page: Page;
-  csp: string[];
-}
-
-/** `prep` runs before the first load: a route, or an init script. */
-async function open(
-  browser: Browser,
-  kind: "screen" | "phone",
-  path: string,
-  prep?: (context: BrowserContext) => Promise<unknown>,
-): Promise<Opened> {
-  const context = await browser.newContext(
-    kind === "screen"
-      ? { viewport: SCREEN }
-      : { viewport: PHONE, hasTouch: true, isMobile: true, deviceScaleFactor: 3 },
-  );
-  await prep?.(context);
-  const page = await context.newPage();
-  const csp: string[] = [];
-  page.on("console", (m) => {
-    if (m.text().includes("Content Security Policy")) csp.push(m.text());
-  });
-  await page.goto(path);
-  return { context, page, csp };
-}
-
-const heading = (page: Page) => page.getByRole("heading", { level: 1 });
 /** No toast now, read once: a retrying toHaveCount(0) passes once a toast leaves by itself (5 s). */
 const expectNoToast = async (page: Page) =>
   expect(await page.locator(".toast:not(.out)").count(), "a toast is up").toBe(0);
@@ -90,8 +58,8 @@ const demoScreen = (browser: Browser, prep?: Prep) => open(browser, "screen", "/
 /** A live screen on the mock source: the lectern path, which launches PowerPoint (ADR 0003). */
 const liveScreen = (browser: Browser, prep?: Prep) => open(browser, "screen", "/s", prep);
 const DEMO: { room: string; title: string | RegExp } = { room: "Demo Room", title: "Demo Room" };
-/** An unregistered room has no name: no heading on the screen, the match number as the phone's title. */
-const LIVE = { room: "", title: /^\d{2}$/ };
+/** An unregistered room has no name: no heading on the screen, "This Screen" as the phone's title. */
+const LIVE = { room: "", title: "This Screen" };
 
 /** Taps Add a File, which opens the native picker at once, and answers the browser's file chooser. */
 async function addFile(page: Page, file: string | { name: string; mimeType: string; buffer: Buffer }) {
@@ -101,13 +69,6 @@ async function addFile(page: Page, file: string | { name: string; mimeType: stri
 }
 /** The demo catalog as the viewer orders it: files by name, then links by title. */
 const CATALOG = ["Dog.jpg", "Sample deck.pdf", "Sample deck.pptx", "Vevox"];
-
-async function typedCodeOf(page: Page): Promise<string> {
-  // A new code replaces the old one 150 ms into its swap: until then the card still reads the old, spent code.
-  await expect(page.locator("#qr-panel")).not.toHaveClass(/\bis-swapping\b/);
-  await expect(page.locator("#typed-code")).toHaveText(/^[A-Z0-9]{3} [A-Z0-9]{3}$/);
-  return ((await page.locator("#typed-code").textContent()) ?? "").replace(/\s/g, "");
-}
 
 async function scan(
   browser: Browser,
@@ -123,6 +84,12 @@ async function scan(
   const code = await typedCodeOf(screen);
   const phone = await open(browser, "phone", `/a?c=${code}`);
   await expect(heading(phone.page)).toHaveText(expected.title);
+  // A live claim picks the screen's number first (PAIR-14); the chooser's Approve then carries no digits.
+  if (expected === LIVE) {
+    const match = await pickMatch(phone.page, screen);
+    await expect(phone.page.getByRole("button", { name: "Approve", exact: true })).toBeEnabled();
+    return { phone, code, match };
+  }
   await expect(phone.page.getByRole("button", { name: "Approve" })).toBeEnabled();
   // The match digits ride on the Approve button: "Approve (42)", named "Approve, code 42 on the screen".
   const approve = phone.page.getByRole("button", { name: /^Approve, code \d{2} on the screen$/ });
@@ -224,27 +191,6 @@ async function atStart(locator: Locator) {
       a.currentTime = 0;
     }
   });
-}
-
-async function expectNoAxeViolations(page: Page) {
-  // axe blends text with its ancestors' opacity: a pane still fading in (380 ms) reads as low contrast. Wait for the
-  // opacity fades only: the QR ring restarts a 1 s transition every second and the spinner never ends. page.evaluate,
-  // not waitForFunction: the latter evals a string in the page, which the CSP refuses.
-  type Animated = {
-    document: { getAnimations(): { playState: string; effect: { getKeyframes(): object[] } | null }[] };
-  };
-  await expect
-    .poll(() =>
-      page.evaluate(
-        () =>
-          (globalThis as unknown as Animated).document
-            .getAnimations()
-            .filter((a) => a.playState === "running" && a.effect?.getKeyframes().some((k) => "opacity" in k)).length,
-      ),
-    )
-    .toBe(0);
-  const results = await new AxeBuilder({ page }).withTags(["wcag2a", "wcag2aa", "wcag21aa", "wcag22aa"]).analyze();
-  expect(results.violations).toEqual([]);
 }
 
 test.describe("pairing flow", () => {
@@ -1278,6 +1224,32 @@ test.describe("guest drop", () => {
     await addFile(phone.page, { name: "a.png", mimeType: "image/png", buffer: Buffer.from("x") });
     await phone.page.getByRole("button", { name: "Send" }).click();
     await expect(phone.page.getByRole("alert")).toContainText("This Photo Can't Be Sent");
+    await expect(heading(phone.page)).toHaveText("Demo Room");
+    await expect(phone.page.getByRole("button", { name: "Add a File" })).toBeVisible();
+    await screen.context.close();
+    await phone.context.close();
+  });
+
+  test("a refusal's words load on the refusal (core/refusal.js), never on the first load", async ({ browser }) => {
+    const screen = await demoScreen(browser);
+    const { phone } = await scan(browser, screen.page);
+    expect(await modules(phone.page)).not.toContain("/js/core/refusal.js");
+    await addFile(phone.page, { name: "empty.png", mimeType: "image/png", buffer: Buffer.alloc(0) });
+    await expect(phone.page.getByRole("alert")).toContainText("This File Is Empty");
+    expect(await modules(phone.page)).toContain("/js/core/refusal.js");
+    await expect(heading(phone.page)).toHaveText("Demo Room");
+    await screen.context.close();
+    await phone.context.close();
+  });
+
+  test("refusal words that fail to load are the general refusal toast, and the list stays", async ({ browser }) => {
+    const screen = await demoScreen(browser);
+    const { phone } = await scan(browser, screen.page);
+    await phone.page.route("**/js/core/refusal.js", (route) => route.abort());
+    await addFile(phone.page, { name: "empty.png", mimeType: "image/png", buffer: Buffer.alloc(0) });
+    const alert = phone.page.getByRole("alert");
+    await expect(alert).toContainText("This File Can't Be Sent");
+    await expect(alert).toContainText(/Choose a \.pptx, .* file under \d+ MB\./);
     await expect(heading(phone.page)).toHaveText("Demo Room");
     await expect(phone.page.getByRole("button", { name: "Add a File" })).toBeVisible();
     await screen.context.close();
