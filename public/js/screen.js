@@ -226,6 +226,8 @@ const MODE = {
 let failed = null;
 /** The network failures' words, loaded by the first one. @type {typeof import("./core/net-states.js") | null} */
 let net = null;
+/** The outside-tap dismiss, asked once. @type {Promise<unknown> | null} */
+let dismiss = null;
 const keyNow = () => screenKey({ view: s.view, link: s.link, errored: s.errored, limited: s.limited });
 
 function render() {
@@ -308,6 +310,12 @@ function paint() {
   show(buttons.start_over, has("start_over"));
   show(buttons.home, has("end"));
   show(buttons.end, has("end"));
+  // The logo's question and the item sheet open only in a session. Failed, a popover still closes; the tap can land.
+  if (has("end"))
+    dismiss ??= import("./core/dismiss.js").then(
+      (m) => m.guardDismiss(),
+      () => (dismiss = null),
+    );
   show(buttons.here, has("here") && !!code);
   show(buttons.phone, has("here") && !!code);
   if (code) for (const b of [buttons.here, buttons.phone]) b.setAttribute("href", `/a?c=${code.code}`);
