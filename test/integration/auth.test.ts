@@ -347,7 +347,7 @@ describe("sign-in, sessions and revocation", () => {
   it("the session identifies the user, and a live phone with it needs no sign-in while one without does", async () => {
     const { session } = await signIn();
     expect(await me(session)).toEqual({ source: "graph", signedIn: true, email: "someone@example.test" });
-    expect(await me()).toEqual({ source: "graph", signedIn: false, email: null });
+    expect(await me()).toEqual({ source: "graph", signedIn: false, launchMode: "preview" });
 
     const live = await openScreen(api, "live");
     const without = await claim(api, live.code);
@@ -416,7 +416,11 @@ describe("sign-in, sessions and revocation", () => {
     const other = (await signIn()).session as string;
     const res = await api.post("/api/me/signout", {}, { headers: sid(mine) });
     expect(res.status).toBe(200);
-    expect(res.headers.get("Set-Cookie")).toBe("__Host-bloop_sid=; Max-Age=0; Path=/; Secure; HttpOnly; SameSite=Lax");
+    // The sign-in hint goes with the session cookie; the device cookie stays (AUTH-09 device).
+    expect(res.headers.getSetCookie()).toEqual([
+      "__Host-bloop_sid=; Max-Age=0; Path=/; Secure; HttpOnly; SameSite=Lax",
+      "__Host-bloop_in=; Max-Age=0; Path=/; Secure; HttpOnly; SameSite=Lax",
+    ]);
     expect((await me(mine)).signedIn).toBe(false);
     expect((await me(other)).signedIn).toBe(true);
   });
