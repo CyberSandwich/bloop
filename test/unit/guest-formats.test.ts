@@ -10,7 +10,7 @@ import {
 } from "../../src/worker/seams/guest-drop/formats.ts";
 import { ReadBudgetExceeded } from "../../src/worker/seams/guest-drop/read-plan.ts";
 import { validate } from "../../src/worker/seams/guest-drop/validate.ts";
-import { type BuiltEntry, reader, validDeck } from "../zip-builder.ts";
+import { type BuiltEntry, buildZip, reader, validDeck } from "../zip-builder.ts";
 
 const enc = new TextEncoder();
 const bytes = (...parts: (string | number[])[]) =>
@@ -265,6 +265,27 @@ describe("DROP-14 external: macro-enabled packages", () => {
       data,
       method: 8,
       ...(declared === undefined ? {} : { declaredUncompressed: declared }),
+    });
+
+    describe("the 256 KiB cap on each inflated part, measured, not declared (declared 0)", () => {
+      const CAP = 256 * 1024;
+      const padTo = (xml: string, size: number) => `${xml}${" ".repeat(size - xml.length)}`;
+      const types = (size: number) =>
+        buildZip([
+          { name: "[Content_Types].xml", data: padTo(TYPES, size), method: 8, declaredUncompressed: 0 },
+          { name: "ppt/presentation.xml", data: "<root/>", method: 8 },
+        ]);
+      const oneRels = (size: number) => validDeck([relsEntry("_rels/.rels", padTo(rels(internal), size), 0)]);
+
+      it("refuses a content-types part that inflates to 256 KiB + 1 (a lying declared size passed the cap)", async () => {
+        expect(await validate(reader(types(CAP)), "pptx")).toEqual({ ok: true, type: "pptx" });
+        expect(await validate(reader(types(CAP + 1)), "pptx")).toEqual({ ok: false, error: "bad_structure" });
+      });
+
+      it("refuses a single relationships part that inflates to 256 KiB + 1 (a lying declared size passed the cap)", async () => {
+        expect(await validate(reader(oneRels(CAP)), "pptx")).toEqual({ ok: true, type: "pptx" });
+        expect(await validate(reader(oneRels(CAP + 1)), "pptx")).toEqual({ ok: false, error: "bad_structure" });
+      });
     });
 
     it("measures the relationships it inflates, not the size the archive declares", async () => {

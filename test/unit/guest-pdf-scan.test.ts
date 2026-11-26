@@ -412,6 +412,20 @@ describe("DROP-13 pdf-active: the chunked and the whole scan agree", () => {
     expect(await chunked(big, 1024 * 1024 + 7)).toEqual(whole);
   }, 60_000);
 
+  it("DROP-13 pdf-active: stops reading an object stream at its cap, its buffer within SCAN_BUFFER_BYTES (read on to endstream)", async () => {
+    const huge = cat([
+      enc.encode("%PDF-1.5\n"),
+      objStmOf(storedPadding(3 * PDF_WINDOW_BYTES, "1 0 <</Type/Page>>")),
+      enc.encode("%%EOF\n"),
+    ]);
+    let peak = 0;
+    const verdict = await scanPdfChunks(pieces(huge, [PDF_WINDOW_BYTES]), (bytes) => {
+      peak = Math.max(peak, bytes);
+    });
+    expect(verdict).toMatchObject({ ok: false, found: ["unscannable"] });
+    expect(peak).toBeLessThanOrEqual(SCAN_BUFFER_BYTES);
+  }, 60_000);
+
   /** Deterministic so a failure reproduces. */
   const random = (seed: number) => () => {
     seed = (seed + 0x6d2b79f5) | 0;

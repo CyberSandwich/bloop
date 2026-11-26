@@ -138,7 +138,8 @@ async function validatePdf(r: RangeReader): Promise<Verdict<"pdf">> {
  * (16 MiB); with its Latin-1 text, the window in flight and an object stream's inflate, one scan measured 25 to 45 MiB
  * of live buffers on a worst-case file (four 8 MiB incompressible object streams). Nothing waits on another scan, so a
  * few hostile near-cap PDFs validating at once in one isolate can pass 128 MB: accepted, since the isolate is reset,
- * no file is accepted, and the hourly sweep deletes the stored objects.
+ * no file is accepted, and the hourly sweep deletes the stored objects; the reset also fails any unrelated request
+ * in flight in that isolate.
  */
 function scanWindows(r: RangeReader): Promise<Check & { found?: string[] }> {
   let at = 0;
