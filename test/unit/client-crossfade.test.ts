@@ -101,9 +101,9 @@ describe("swap, the phone's preview", () => {
     const b = box();
     const [last, count] = b.kids as [Fake, Fake];
     const pic = picture("pdf");
-    expect(await mod.swap(b, pic, count, "1 / 2", () => true)).toBe(true);
+    expect(await mod.swap(b, pic, count, "the new tally", () => true)).toBe(true);
     expect(b.kids).toEqual([pic, last, count]);
-    expect(count.textContent).toBe("1 / 2");
+    expect(count.textContent).toBe("the new tally");
     expect(last.style.cssText).toBe("position:absolute;inset:0");
     expect(last.inert).toBe(true);
     await settle();
@@ -119,7 +119,7 @@ describe("swap, the phone's preview", () => {
       const b = box();
       const count = b.kids[1] as Fake;
       const pic = picture(item);
-      mod.swap(b, pic, count, "2 / 2", () => true);
+      mod.swap(b, pic, count, "a turned tally", () => true);
       await settle();
       expect(b.kids).toEqual([pic, count]);
       expect(pic.kids[0]?.runs).toEqual([]);
@@ -127,7 +127,7 @@ describe("swap, the phone's preview", () => {
     const b = box();
     const before = [...b.kids];
     // Not landed: the page and the chip's count stay as they were.
-    expect(await mod.swap(b, picture("pdf"), b.kids[1] as Fake, "9 / 9", () => false)).toBe(false);
+    expect(await mod.swap(b, picture("pdf"), b.kids[1] as Fake, "a stale tally", () => false)).toBe(false);
     expect(b.kids).toEqual(before);
     expect((b.kids[1] as Fake).textContent).toBe("");
   });

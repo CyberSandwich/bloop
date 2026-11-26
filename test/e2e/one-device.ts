@@ -1,5 +1,6 @@
 // The one-device demo at phone width, shared by the specs that drive its viewer by touch.
 import { expect, type Locator, type Page } from "@playwright/test";
+import { DEMO_ITEMS } from "../../src/shared/demo-catalog.ts";
 
 export const PHONE = { viewport: { width: 390, height: 844 }, hasTouch: true, isMobile: true };
 
@@ -22,10 +23,10 @@ export async function pick(page: Page, name: string) {
   await expect(heading(page)).toHaveText(name);
 }
 
-/** The demo approved on the phone itself, showing its first file, the photo. */
+/** The demo approved on the phone itself, showing its first file, the deck. */
 export async function oneDevice(page: Page) {
   await page.goto("/s?mode=demo");
   await page.getByRole("link", { name: "Approve on This Phone" }).tap();
   await page.getByRole("button", { name: "Approve" }).tap();
-  await expect(heading(page)).toHaveText("Dog.jpg");
+  await expect(heading(page)).toHaveText(DEMO_ITEMS.deck.name);
 }
