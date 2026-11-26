@@ -755,7 +755,7 @@ test.describe("phone hero", () => {
       (el as unknown as { offsetWidth: number }).offsetWidth,
       (el as unknown as { offsetHeight: number }).offsetHeight,
     ]);
-    expect(Math.abs(w / h - 390 / 844)).toBeLessThan(0.01);
+    expect(Math.abs(w / h - 390 / 711)).toBeLessThan(0.01);
     expect(requested.filter((u) => u.includes("hero-viewer"))).toEqual([]);
   });
 });

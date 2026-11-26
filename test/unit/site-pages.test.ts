@@ -430,12 +430,14 @@ describe("landing word caps (design.md section 13)", () => {
     expect(at).not.toContain(-1);
     const img = /<img\b[^>]*>/.exec(stage)?.[0] ?? "";
     expect(img).toMatch(
-      /src="\/img\/hero-viewer-1100\.[0-9a-f]{8}\.webp" width="1440" height="828" fetchpriority="high"/,
+      /src="\/img\/hero-viewer-1100\.[0-9a-f]{8}\.webp" width="1440" height="904" fetchpriority="high"/,
     );
-    expect(img).toContain('alt="The bloop viewer presenting a dog, full screen"');
+    expect(img).toContain(
+      'alt="The bloop room screen: a list of files, a dog selected, and Present and Download buttons"',
+    );
     // The phone's picture has its own ratio, so the swap shifts nothing.
     expect(read("public/css/site.css")).toMatch(
-      /@media \(max-width: 639\.98px\) \{\s*\.stage,\s*\.close-panel \{\s*border-radius: 16px;\s*\}\s*\.stage img \{\s*aspect-ratio: 390 \/ 844;/,
+      /@media \(max-width: 639\.98px\) \{\s*\.stage,\s*\.close-panel \{\s*border-radius: 16px;\s*\}\s*\.stage img \{\s*aspect-ratio: 390 \/ 711;/,
     );
     expect(img).not.toMatch(/loading="lazy"/);
     expect(visibleText(stage)).toBe("");

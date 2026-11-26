@@ -4,8 +4,8 @@ the desktop capture, public/img/hero-phone-{600,900}.HASH.{avif,webp} from the p
 Hero stage).
 
 Use: python3 -I tools/render-hero.py DESKTOP.png PHONE.png [AVIF_Q WEBP_Q]
-DESKTOP is the room screen presenting at 1440 x 828 and 2x (2880 x 1656), PHONE the same at 390 x 844 and 3x
-(1170 x 2532): HERO_CAPTURE=1 npx playwright test hero-capture --project=preview.
+DESKTOP is the room screen at 1440 x 904 and 2x (2880 x 1808), PHONE the same at 390 x 711 and 3x
+(1170 x 2133): HERO_CAPTURE=1 npx playwright test hero-capture --project=preview.
 Needs ImageMagick, avifenc and cwebp. Metadata stripped; the qualities, the widths and why: design.md, Hero stage.
 HASH is the first 8 hex digits of the file's sha256: /img is cached for days, so a changed picture needs a new name.
 Old files of each stem and width are deleted and the references in public/index.html and tools/size/core.json are

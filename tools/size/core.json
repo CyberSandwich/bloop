@@ -273,28 +273,28 @@
   },
   {
     "name": "hero image 2200",
-    "path": "public/img/hero-viewer-2200.e4e40f1d.avif",
+    "path": "public/img/hero-viewer-2200.54a40e61.avif",
     "gzip": false,
     "brotli": false,
     "limit": "234 kB"
   },
   {
     "name": "hero image fallback 1600",
-    "path": "public/img/hero-viewer-1600.3bf9d652.webp",
+    "path": "public/img/hero-viewer-1600.f09ebeab.webp",
     "gzip": false,
     "brotli": false,
     "limit": "244 kB"
   },
   {
     "name": "phone hero image 900",
-    "path": "public/img/hero-phone-900.0d43ffa3.avif",
+    "path": "public/img/hero-phone-900.14c28d26.avif",
     "gzip": false,
     "brotli": false,
     "limit": "63.2 kB"
   },
   {
     "name": "phone hero image fallback 900",
-    "path": "public/img/hero-phone-900.6956db9f.webp",
+    "path": "public/img/hero-phone-900.09daf7ed.webp",
     "gzip": false,
     "brotli": false,
     "limit": "80.5 kB"
