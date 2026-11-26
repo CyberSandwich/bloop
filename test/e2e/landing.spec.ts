@@ -1,6 +1,7 @@
 // The landing against docs/design.md section 13 at the three check widths. CI only.
 import AxeBuilder from "@axe-core/playwright";
 import { expect, type Page, test } from "@playwright/test";
+import { DEMO_ITEMS } from "../../src/shared/demo-catalog.ts";
 
 // The callbacks below run in the browser; the test tsconfig has no DOM library, so these names are
 // declared here, for this file only.
@@ -604,13 +605,13 @@ for (const vp of VIEWPORTS) {
     }) => {
       await page.goto("/");
       const still = page.locator(".step").nth(1).getByRole("group", { name: "Example" });
-      const vevox = still.getByRole("button", { name: "Vevox" });
+      const vevox = still.getByRole("button", { name: DEMO_ITEMS.link.name });
       await expect(vevox).toHaveAttribute("aria-pressed", "false");
       await expect(vevox.locator(".frag-tick")).toBeHidden();
       await vevox.click();
       await expect(vevox).toHaveAttribute("aria-pressed", "true");
       await expect(vevox.locator(".frag-tick")).toBeVisible();
-      const dog = still.getByRole("button", { name: "Dog.jpg" });
+      const dog = still.getByRole("button", { name: DEMO_ITEMS.horizontal.name });
       await dog.click();
       await expect(dog).toHaveAttribute("aria-pressed", "false");
       const pill = page.locator(".step").nth(2).getByRole("group", { name: "Example" });
@@ -618,7 +619,7 @@ for (const vp of VIEWPORTS) {
       await pill.getByRole("button", { name: "Download" }).click();
       await expect(page).toHaveURL(/\/$/);
       // The deck's tile is its first page, loaded once scrolled near.
-      const deck = still.getByRole("button", { name: "Sample deck.pptx" }).locator("img");
+      const deck = still.getByRole("button", { name: DEMO_ITEMS.deck.name }).locator("img");
       await deck.scrollIntoViewIfNeeded();
       await expect
         .poll(() => deck.evaluate((el) => (el as unknown as { naturalWidth: number }).naturalWidth))

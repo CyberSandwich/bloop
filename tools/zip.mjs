@@ -1,4 +1,4 @@
-// A minimal zip writer shared by the tools that build Office packages (make-fixtures.mjs, make-demo-deck.mjs).
+// A minimal zip writer shared by the tools that build Office packages (make-fixtures.mjs).
 import { crc32, deflateRawSync } from "node:zlib";
 
 /** A zip with deflated entries and a fixed timestamp (1980-01-01), so the output never changes. @param {[string, string][]} entries */

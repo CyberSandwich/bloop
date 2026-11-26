@@ -1,9 +1,9 @@
 #!/usr/bin/env python3
 """slim-deck: shrink a .pptx for the demo and strip who made it, without changing a slide.
 
-Use: python3 -I tools/slim-deck.py IN.pptx OUT.pptx [--quality N]   (jpegtran on PATH shrinks the JPEGs; --quality needs Pillow)
-Drops slide layouts no slide uses and every part they alone reach (media, thumbnail, label info), blanks the
-creator, last modifier, company and manager, runs jpegtran (lossless) on every JPEG and zips at deflate 9 with fixed
+Use: python3 -I tools/slim-deck.py IN.pptx OUT.pptx [--quality N | --quality=N]   (jpegtran on PATH shrinks the JPEGs; --quality needs Pillow)
+Drops slide layouts no slide uses and every part they alone reach (media, thumbnail, label info), removes the
+creator, last modifier, title, company, manager, template and the created and modified dates, runs jpegtran (lossless) on every JPEG and zips at deflate 9 with fixed
 timestamps. Notes slides and the notes master stay. With --quality the kept JPEGs are re-encoded (lossy), only when smaller.
 Then checks the package: every relationship target exists, every part has a content type, every XML part parses.
 test/unit/slim-deck.test.ts runs it on a small fixture.
@@ -176,9 +176,20 @@ def slim(src, dst, quality=None):
 
 
 if __name__ == "__main__":
-    args = [a for a in sys.argv[1:] if not a.startswith("--")]
-    quality = next((int(a.split("=")[1]) for a in sys.argv[1:] if a.startswith("--quality=")), None)
+    usage = "usage: python3 -I tools/slim-deck.py IN.pptx OUT.pptx [--quality N | --quality=N]"
+    argv, args, quality = sys.argv[1:], [], None
+    while argv:
+        a = argv.pop(0)
+        if a == "--quality" or a.startswith("--quality="):
+            value = a.partition("=")[2] if "=" in a else (argv.pop(0) if argv else "")
+            if not value.isdigit():
+                sys.exit(usage)
+            quality = int(value)
+        elif a.startswith("--"):
+            sys.exit(usage)
+        else:
+            args.append(a)
     if len(args) != 2:
-        sys.exit("usage: python3 -I tools/slim-deck.py IN.pptx OUT.pptx [--quality=N]")
+        sys.exit(usage)
     before, after = slim(args[0], args[1], quality)
     print(f"{before} -> {after} bytes")
