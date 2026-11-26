@@ -1,5 +1,5 @@
 import { configFor, problemVars } from "./config.ts";
-import { CRON, runCronFor } from "./cron.ts";
+import { invalidConfigJobs, runCronFor } from "./cron.ts";
 import { JOBS, spendBreakerJob } from "./cron-jobs.ts";
 import { Converter } from "./do/converter.ts";
 import { Directory } from "./do/directory.ts";
@@ -101,9 +101,9 @@ export default {
     const config = configFor(env);
     if (!config.ok) console.error(`config invalid: ${config.problems.join("; ")}`);
     // The breaker needs no config, so a bad var does not switch spend protection off; the other jobs do not run.
-    await runCronFor(controller.cron, env, config, JOBS, (problems) => ({
-      [CRON.fiveMinutes]: [spendBreakerJob(problemVars(problems))],
-    }));
+    await runCronFor(controller.cron, env, config, JOBS, (problems) =>
+      invalidConfigJobs(spendBreakerJob(problemVars(problems))),
+    );
   },
 } satisfies ExportedHandler<Env>;
 

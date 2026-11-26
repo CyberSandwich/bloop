@@ -524,10 +524,11 @@ describe("freezing deploys", () => {
     const result = await execute(table, planFor("L2"), d);
     expect(result.warned).toBe(true);
     expect(result.failed).toBe(false);
-    expect(result.lines[0]).toMatch(/^DEPLOYS NOT FROZEN/);
+    // Line 0 is the spend-block answer; the headline follows it.
+    expect(result.lines[1]).toMatch(/^DEPLOYS NOT FROZEN/);
     const run = await main(["--level", "L2", "--apply"], d);
     expect(run.code).toBe(3);
-    expect(run.out.split("\n")[0]).toMatch(/^DEPLOYS NOT FROZEN/);
+    expect(run.out.split("\n")[1]).toMatch(/^DEPLOYS NOT FROZEN/);
   });
 
   it("a failed freeze warns too, and a failure outranks the warning in the exit code", async () => {
@@ -547,7 +548,7 @@ describe("freezing deploys", () => {
     const undo = await execute(table, planFor("L2", true), d);
     expect(undo.warned).toBe(false);
     expect(undo.stillFrozen).toBe(true);
-    expect(undo.lines[0]).toMatch(/^DEPLOYS STILL FROZEN/);
+    expect(undo.lines[1]).toMatch(/^DEPLOYS STILL FROZEN/);
     expect((await main(["--level", "L2", "--undo", "--apply"], d)).code).toBe(3);
   });
 
@@ -557,7 +558,7 @@ describe("freezing deploys", () => {
     api.state.denied = ["/zones"];
     const run = await main(["--level", "L2", "--undo", "--apply"], d);
     expect(run.code).toBe(3);
-    expect(run.out.split("\n")[0]).toMatch(/^DEPLOYS STILL FROZEN/);
+    expect(run.out.split("\n")[1]).toMatch(/^DEPLOYS STILL FROZEN/);
     expect(api.state.deployState).toBe("disabled_manually");
   });
 

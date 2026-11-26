@@ -695,7 +695,6 @@ async function edgeInForce(cf, table, account) {
  */
 export async function execute(table, plan, deps) {
   const env = deps.env;
-  const block = await spendBlockCheck(table, deps);
   const token = tokenFor(table, plan.level, env);
   const account = env.CLOUDFLARE_ACCOUNT_ID;
   const missing = [
@@ -709,12 +708,13 @@ export async function execute(table, plan, deps) {
     ...(account ? [] : ["CLOUDFLARE_ACCOUNT_ID"]),
   ];
   if (missing.length) throw new Error(`set ${missing.join(" and ")} in the environment`);
+  const block = await spendBlockCheck(table, deps);
   const cf = client(deps, CF, { Authorization: `Bearer ${token}` });
   const sleep = deps.sleep ?? ((/** @type {number} */ ms) => new Promise((resolve) => setTimeout(resolve, ms)));
   const ctx = { settings: (deps.wrangler ?? wranglerSettings)(), sleep };
   const now = deps.now();
   /** @type {string[]} */
-  const lines = [block, `${plan.level} ${plan.undo ? "UNDO" : "lockdown"}: ${plan.summary}`];
+  const lines = [`${plan.level} ${plan.undo ? "UNDO" : "lockdown"}: ${plan.summary}`];
   let failed = false;
   let warned = false;
   let stillFrozen = false;
@@ -857,7 +857,8 @@ export async function execute(table, plan, deps) {
       "DEPLOYS STILL FROZEN: this undo could not enable the deploy workflow. Enable it by hand (Actions, deploy, the ... menu, Enable workflow) once L4 is off.",
     );
   }
-  return { lines: lines.map((l) => redact(env, l)), failed, warned, stillFrozen };
+  // The spend-block answer is the first line, above any DEPLOYS headline.
+  return { lines: [block, ...lines].map((l) => redact(env, l)), failed, warned, stillFrozen };
 }
 
 /**

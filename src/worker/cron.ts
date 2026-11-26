@@ -35,6 +35,11 @@ export async function runCron<Env, Config>(
   }
 }
 
+/** What runs under an invalid config: the one config-free `job`, on the five-minute trigger and no other. */
+export const invalidConfigJobs = <Env>(job: CronJob<Env, undefined>): CronJobs<Env, undefined> => ({
+  [CRON.fiveMinutes]: [job],
+});
+
 /**
  * One tick for a parsed config. A valid config runs the trigger's jobs; an invalid one runs only `whenInvalid`, the
  * jobs that need no config (the spend breaker), and none of the others.
