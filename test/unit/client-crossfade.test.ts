@@ -6,8 +6,10 @@ const CROSSFADE = "../../public/js/core/crossfade.js";
 
 class Fake {
   inert = false;
+  textContent = "";
   style: Record<string, string> = {};
   gone = false;
+  dataset: Record<string, string> = {};
   runs: { keyframes: unknown; timing: { duration: number; easing: string }; cancelled: boolean }[] = [];
   kids: Fake[] = [];
   constructor(readonly localName: string) {}
@@ -35,7 +37,7 @@ class Fake {
 let reduced = false;
 let mod: {
   crossfade: (into: Fake[], out: Fake[]) => void;
-  swap: (box: Fake, pic: Fake, count: Fake, other: boolean, live: () => boolean) => void;
+  swap: (box: Fake, pic: Fake, count: Fake, tally: string, live: () => boolean) => Promise<boolean>;
 };
 const settle = () => new Promise((r) => setTimeout(r, 0));
 
@@ -49,8 +51,9 @@ beforeEach(() => {
   reduced = false;
 });
 
-const picture = () => {
+const picture = (item = "deck") => {
   const p = new Fake("picture");
+  p.dataset.item = item;
   p.kids = [new Fake("img")];
   return p;
 };
@@ -97,34 +100,35 @@ describe("swap, the phone's preview", () => {
   it("another item: the new page over the last, which fades out on top and leaves", async () => {
     const b = box();
     const [last, count] = b.kids as [Fake, Fake];
-    const pic = picture();
-    mod.swap(b, pic, count, true, () => true);
-    await settle();
+    const pic = picture("pdf");
+    expect(await mod.swap(b, pic, count, "1 / 2", () => true)).toBe(true);
     expect(b.kids).toEqual([pic, last, count]);
+    expect(count.textContent).toBe("1 / 2");
     expect(last.style.cssText).toBe("position:absolute;inset:0");
     expect(last.inert).toBe(true);
     await settle();
     expect(last.gone).toBe(true);
   });
 
-  it("a page turn, reduced motion, or a later page meanwhile: no fade", async () => {
-    for (const [other, still, live] of [
-      [false, false, true],
-      [true, true, true],
+  it("a page turn (the same data-item), reduced motion, or a later page meanwhile: no fade", async () => {
+    for (const [item, still] of [
+      ["deck", false],
+      ["pdf", true],
     ] as const) {
       reduced = still;
       const b = box();
       const count = b.kids[1] as Fake;
-      const pic = picture();
-      mod.swap(b, pic, count, other, () => live);
+      const pic = picture(item);
+      mod.swap(b, pic, count, "2 / 2", () => true);
       await settle();
       expect(b.kids).toEqual([pic, count]);
       expect(pic.kids[0]?.runs).toEqual([]);
     }
     const b = box();
     const before = [...b.kids];
-    mod.swap(b, picture(), b.kids[1] as Fake, true, () => false);
-    await settle();
+    // Not landed: the page and the chip's count stay as they were.
+    expect(await mod.swap(b, picture("pdf"), b.kids[1] as Fake, "9 / 9", () => false)).toBe(false);
     expect(b.kids).toEqual(before);
+    expect((b.kids[1] as Fake).textContent).toBe("");
   });
 });

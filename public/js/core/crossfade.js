@@ -29,20 +29,26 @@ export function crossfade(into, out) {
 }
 
 /**
- * The phone's preview: the last page stays until `pic` decodes; another item (`other`) then cross-fades over it.
- * @param {HTMLElement} box @param {HTMLElement} pic @param {HTMLElement} count @param {boolean} other
+ * The phone's preview: the last page stays until `pic` decodes; if the page shown then is another item's (its
+ * `data-item`), `pic` cross-fades over it. The chip's `tally` changes with the page it counts.
+ * @param {HTMLElement} box @param {HTMLElement} pic @param {HTMLElement} count @param {string} tally
  * @param {() => boolean} live false once a later page took its place
+ * @returns {Promise<boolean>} whether `pic` landed
  */
-export function swap(box, pic, count, other, live) {
-  const last = other && !still() ? /** @type {HTMLElement | null} */ (box.querySelector("picture")) : null;
-  /** @type {HTMLImageElement} */ (pic.querySelector("img"))
+export function swap(box, pic, count, tally, live) {
+  return /** @type {HTMLImageElement} */ (pic.querySelector("img"))
     .decode()
     .catch(() => {})
     .then(() => {
-      if (!live()) return;
+      if (!live()) return false;
+      const was = /** @type {HTMLElement | null} */ (box.querySelector("picture"));
+      const last = was && was.dataset.item !== pic.dataset.item && !still() ? was : null;
       box.replaceChildren(pic, ...(last ? [last] : []), count);
-      if (!last) return;
-      last.style.cssText = "position:absolute;inset:0";
-      crossfade([pic], [last]);
+      count.textContent = tally;
+      if (last) {
+        last.style.cssText = "position:absolute;inset:0";
+        crossfade([pic], [last]);
+      }
+      return true;
     });
 }

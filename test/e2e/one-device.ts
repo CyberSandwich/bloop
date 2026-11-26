@@ -3,10 +3,11 @@ import { expect, type Locator, type Page } from "@playwright/test";
 
 export const PHONE = { viewport: { width: 390, height: 844 }, hasTouch: true, isMobile: true };
 
-/** Ends every animation under `locator`, so a box read next is where it comes to rest. */
+/** Ends every animation under `locator` that has an end (a loader's sheen has none), so a box read next is at rest. */
 export const atRest = (locator: Locator) =>
   locator.evaluate((el) => {
-    for (const a of el.getAnimations({ subtree: true })) a.finish();
+    for (const a of el.getAnimations({ subtree: true }))
+      if (a.effect?.getComputedTiming().endTime !== Number.POSITIVE_INFINITY) a.finish();
   });
 
 export const heading = (page: Page) => page.getByRole("heading", { level: 1 });
