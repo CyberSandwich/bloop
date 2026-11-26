@@ -6,13 +6,17 @@ import { choice, expectNoAxeViolations, heading, type Opened, open, pickMatch, t
 const PICK = "Tap the Screen's Number";
 const group = (phone: Page) => phone.getByRole("group", { name: PICK });
 
-/** A live screen and a phone that scanned it, at the pick. `prep` runs on the phone before its first load. */
+/**
+ * A live screen and a phone that scanned it, at the pick. `prep` runs on the phone before its first load; with none,
+ * the three choices are in before it returns, so the digits read are never the skeleton's none.
+ */
 async function atPick(browser: Browser, prep?: Parameters<typeof open>[3]) {
   const screen = await open(browser, "screen", "/s");
   await expect(screen.page.locator("#qr")).toBeVisible();
   const code = await typedCodeOf(screen.page);
   const phone = await open(browser, "phone", `/a?c=${code}`, prep);
   await expect(heading(phone.page)).toHaveText("This Screen");
+  if (!prep) await expect(phone.page.locator("#pick").getByRole("button")).toHaveCount(3);
   return { screen, phone, code };
 }
 
@@ -192,7 +196,6 @@ test.describe("PAIR-14 the match pick", () => {
     browser,
   }) => {
     const { screen, phone } = await atPick(browser);
-    await expect(group(phone.page).getByRole("button")).toHaveCount(3);
     const three = await digits(phone.page);
     await phone.page.reload();
     await expect(heading(phone.page)).toHaveText("This Screen");
