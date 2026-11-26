@@ -162,7 +162,7 @@
   padding: 8px;
   overflow: auto;
   list-style: none;
-  border-radius: 34px;
+  border-radius: var(--r-panel);
   animation: toast-in 250ms var(--ease-out) backwards;
 }
 .up-item {
