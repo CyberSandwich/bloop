@@ -29,28 +29,31 @@ const u16 = (v: DataView, at: number) => v.getUint16(at, true);
 const u32 = (v: DataView, at: number) => v.getUint32(at, true);
 const view = (b: Uint8Array) => new DataView(b.buffer, b.byteOffset, b.byteLength);
 
-/** Directory names compare case-insensitively (MS-CFB 2.6.4). */
-function verdictFor(names: readonly string[]): Check {
+/** Directory names compare case-insensitively (MS-CFB 2.6.4). The refused sets outrank the required stream. */
+function verdictFor(names: readonly string[], requiredStream: readonly string[]): Check {
   const has = (set: readonly string[]) => names.some((n) => set.includes(n));
   if (has(MACRO_NAMES)) return fail("macro_content", "macro storage");
   if (has(OBJECT_NAMES)) return fail("macro_content", "embedded object");
-  if (has(ENCRYPTED_NAMES)) return fail("bad_structure", "encrypted storage");
-  return OK;
+  if (has(ENCRYPTED_NAMES)) return fail("encrypted", "encrypted storage");
+  return has(requiredStream) ? OK : bad("cfb stream missing");
 }
 
 class ReadBudget extends Error {}
 
-/** Reads at most `CFB_LIMITS.maxSectorReads` sectors; a file that needs more is refused as unscannable. */
-export async function scanCfb(r: RangeReader): Promise<Check> {
+/**
+ * Reads at most `CFB_LIMITS.maxSectorReads` sectors; a file that needs more is refused as unscannable. The file must
+ * hold one of `requiredStream` (lower case names): a compound file of another kind is not this type.
+ */
+export async function scanCfb(r: RangeReader, requiredStream: readonly string[]): Promise<Check> {
   try {
-    return await scan(r);
+    return await scan(r, requiredStream);
   } catch (error) {
     if (error instanceof ReadBudget) return bad("cfb unscannable");
     throw error;
   }
 }
 
-async function scan(r: RangeReader): Promise<Check> {
+async function scan(r: RangeReader, requiredStream: readonly string[]): Promise<Check> {
   const head = await r.read(0, HEADER_BYTES);
   if (head.length < HEADER_BYTES || !MAGIC.every((m, i) => head[i] === m))
     return fail("bad_type", "not a compound file");
@@ -121,5 +124,5 @@ async function scan(r: RangeReader): Promise<Check> {
     if (link === null || (link > MAX_REG_SECTOR && link !== END_OF_CHAIN)) return bad("cfb fat chain");
     id = link;
   }
-  return names.length === 0 ? bad("cfb empty directory") : verdictFor(names);
+  return names.length === 0 ? bad("cfb empty directory") : verdictFor(names, requiredStream);
 }
