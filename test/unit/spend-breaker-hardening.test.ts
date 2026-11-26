@@ -305,6 +305,20 @@ describe("an invalid Worker config", () => {
     expect(alerts[0]?.sources).toContain("config invalid (CAP_POOL_CONVERT)");
     expect(s.store.rows.get("demo")).toBe("off");
   });
+
+  it("COST-16 a second var broken later the same day alerts again, and an unnamed problem still alerts", async () => {
+    const s = setup();
+    await runBreaker({ ...s.deps, configProblems: ["CAP_POOL_CONVERT"] });
+    await runBreaker({ ...s.deps, configProblems: ["CAP_POOL_CONVERT", "BREAKER_K"] });
+    await runBreaker({ ...s.deps, configProblems: [] });
+    const sources = s
+      .alerts()
+      .filter((a) => a.kind === "config_invalid")
+      .map((a) => a.sources);
+    expect(sources).toHaveLength(3);
+    expect(sources[1]).toContain("(CAP_POOL_CONVERT,BREAKER_K)");
+    expect(sources[2]).toContain("(unknown)");
+  });
 });
 
 describe("the settings reader the breaker is wired to", () => {

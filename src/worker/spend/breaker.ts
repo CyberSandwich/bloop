@@ -377,9 +377,16 @@ export async function runBreaker(d: BreakerDeps): Promise<BreakerReport> {
       sources,
     });
   }
-  if (d.configProblems?.length) {
-    sources += `; config invalid (${d.configProblems.join(", ")})`;
-    await announce("config_invalid", { kind: "config_invalid", rule: "config_invalid", readings: {}, sources });
+  if (d.configProblems) {
+    const names = d.configProblems.join(",") || "unknown";
+    sources += `; config invalid (${names})`;
+    // Keyed by the names, so a second var broken later the same day still alerts.
+    await announce(`config_invalid:${names}`, {
+      kind: "config_invalid",
+      rule: "config_invalid",
+      readings: {},
+      sources,
+    });
   }
   const report = buildReport({
     now,

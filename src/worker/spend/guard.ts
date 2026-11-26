@@ -157,10 +157,7 @@ export async function spendReportFor(env: SpendEnv): Promise<SpendReport | null>
 
 type BreakerEnv = SpendEnv & { DB: unknown; CF_ANALYTICS_TOKEN?: string; CF_ACCOUNT_ID?: string };
 
-/**
- * The cron's one call. `notify` defaults to a log line until A wires email. `configProblems` (var names) is set when the
- * Worker's config is invalid: the run needs only the bindings and the registry defaults, so it still protects.
- */
+/** The cron's one call (`spendBreakerJob`). `notify` defaults to a log line until A wires email. */
 export function runSpendBreaker(
   env: BreakerEnv,
   notify: Notify = logNotify,

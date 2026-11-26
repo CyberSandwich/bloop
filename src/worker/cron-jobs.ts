@@ -6,16 +6,20 @@ import { closeStaleSessions, runRetention } from "./retention.ts";
 import { sweepGuestFiles } from "./seams/guest-drop/select.ts";
 import { runSpendBreaker } from "./spend/guard.ts";
 
+/**
+ * The breaker's job. It needs no Config, so the same job runs when the config is invalid: `configProblems` (var
+ * names) then makes it alert, and `notify` is the one place A wires email for both paths.
+ */
+export const spendBreakerJob = (configProblems?: readonly string[]): CronJob<Env, unknown> => ({
+  name: "spend_breaker",
+  run: async (env) => {
+    await runSpendBreaker(env, undefined, configProblems);
+    return { more: false };
+  },
+});
+
 export const JOBS: Readonly<Record<CronTrigger, readonly CronJob<Env, Config>[]>> = {
-  [CRON.fiveMinutes]: [
-    {
-      name: "spend_breaker",
-      run: async (env) => {
-        await runSpendBreaker(env);
-        return { more: false };
-      },
-    },
-  ],
+  [CRON.fiveMinutes]: [spendBreakerJob()],
   [CRON.hourly]: [
     {
       name: "guest_files",

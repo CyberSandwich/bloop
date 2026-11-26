@@ -295,6 +295,7 @@ Rules for the Cloudflare side:
 - D1 unreachable: the settings lookup keeps its last cached value, or the var. The breaker logs the failed write, sends the trip alert marked not applied, and retries next run; the latch holds.
 - The `public` instance unreachable: the three public meters fail open per isolate, and the breaker skips the rules of those three meters rather than reading them as zero, marks the report and the digest "public guard unreadable", and sends one `public_unreadable` alert a day saying so.
 - Analytics unreachable: counters still trip; one alert after 3 runs.
+- An invalid Worker config (a mistyped var): the site answers 503, but the `*/5` cron still runs the breaker, with the vars the registry can read and its defaults for the rest. It sends one `config_invalid` alert a day per set of invalid vars, naming the vars and never their values. The hourly and daily jobs do not run.
 - A Workers or Durable Object spend block stops crons account-wide (the breaker and the probe) and makes the guard unreachable. Cloudflare's $2 and $5 alert emails are then the only signal. The Converter reads `convert` from F's D1 settings before it starts, so a tripped `convert` holds without the guard.
 - Counters are exact for what the Worker does. Presigned R2 PUTs and floods that never reach a meter are seen only through analytics and the platform spend limits, which stay on.
 
