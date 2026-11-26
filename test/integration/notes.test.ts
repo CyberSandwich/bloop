@@ -146,7 +146,8 @@ describe("NOTES-01 phone-only: nothing the screen can read carries a note", () =
     const polled = await api.get("/api/screen/state", screen.sid);
     expectNoNotes("poll while shown", polled.body);
     expectNoNotes("socket frames", socket.frames);
-    const link = await api.post("/api/screen/link", { purpose: "download", item: DECK }, { auth: screen.sid });
+    const link = await api.post("/api/screen/link", { purpose: "download", item: 0 }, { auth: screen.sid });
+    expect(link.status).toBe(200);
     expectNoNotes("minted link", link.body);
     // The phone's own views are views too: notes are not part of them either.
     expectNoNotes("phone view", (await api.get("/api/pair/state", pid)).body);
