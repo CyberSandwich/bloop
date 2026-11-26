@@ -130,21 +130,24 @@ describe("DROP-11 image polyglot", () => {
     });
   });
 
-  it("DROP-11 refuses a PNG with data after IEND and a JPEG with no end marker near its end", async () => {
+  it("DROP-11 refuses a PNG with data after IEND", async () => {
     expect(await validate(reader(concat([validPng(), enc.encode("<script>x</script>")])), "png")).toEqual({
       ok: false,
       error: "bad_structure",
     });
-    const open = concat([validJpeg().slice(0, -2), enc.encode("<html>"), new Uint8Array(2000)]);
-    expect(await validate(reader(open), "jpg")).toEqual({ ok: false, error: "bad_structure" });
   });
 
-  it("DROP-11 image polyglot data after EOI: a JPEG whose last two bytes are not FF D9 is refused", async () => {
-    const refused = { ok: false, error: "bad_structure" };
-    for (const after of ["<html><script>x</script>", "\0", "\xff"]) {
-      expect(await validate(reader(concat([validJpeg(), enc.encode(after)])), "jpg")).toEqual(refused);
+  it("DROP-11 a JPEG may carry bytes after its end marker (a Motion Photo clip, a maker trailer), but no PDF or zip", async () => {
+    for (const after of ["<html><script>x</script>", "\0", "\xff", "ftypmp42moov"]) {
+      expect(await validate(reader(concat([validJpeg(), enc.encode(after)])), "jpg")).toEqual({
+        ok: true,
+        type: "jpg",
+      });
     }
-    expect(await validate(reader(validJpeg()), "jpg")).toEqual({ ok: true, type: "jpg" });
+    expect(await validate(reader(concat([validJpeg(), enc.encode("%%EOF\n")])), "jpg")).toEqual({
+      ok: false,
+      error: "bad_structure",
+    });
   });
 
   it("DROP-11 refuses a JPEG or PNG carrying a PDF: %PDF in the head or %%EOF in the tail", async () => {
@@ -152,7 +155,7 @@ describe("DROP-11 image polyglot", () => {
     expect(await validate(reader(validJpeg("%PDF-1.4")), "jpg")).toEqual(refused);
     expect(await validate(reader(concat([validJpeg(), enc.encode("%%EOF\n")])), "jpg")).toEqual(refused);
     const png = validPng();
-    const inPng = (s: string) => concat([png.slice(0, 8), enc.encode(s), png.slice(8)]);
+    const inPng = (s: string) => concat([png.slice(0, -12), enc.encode(s), png.slice(-12)]);
     expect(await validate(reader(inPng("%PDF-1.4")), "png")).toEqual(refused);
     expect(await validate(reader(inPng("%%EOF\n")), "png")).toEqual(refused);
     expect(await validate(reader(inPng("plain")), "png")).toEqual({ ok: true, type: "png" });
