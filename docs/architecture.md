@@ -351,6 +351,8 @@ Every ok JSON answer carries `X-Bloop: 1` (`json()` in `http.ts`), so `api.js` r
 
 Every state-changing route checks four things: `Origin` equals `PUBLIC_ORIGIN`; `Sec-Fetch-Site` is `same-origin` when present; `Content-Type: application/json` (or the declared upload type); and a Zod-parsed body. Bearer credentials come from `sessionStorage` and travel in `Authorization`, never in a URL. Errors are `application/problem+json` with an `ErrorCode` (interfaces.md). A POST with no fields still sends `Content-Type: application/json` and a body of `{}` (or no body): that header is what turns a cross-site form post into a 415. Bodies are at most 4 KB, and Zod schemas refuse unknown keys. `POST /api/claim` takes `{code, kind?}`: `kind` defaults to `owner`, and a phone that wants the guest drop path sends `guest`. Any other field, a `pass` included, is `bad_request`.
 
+A regex that takes user text keeps its top-level alternatives disjoint, so no code point can be matched two ways and no refused input backtracks; `names.ts` proves it with a scan of every code point and a worst-case timing per piece.
+
 ### Rate limits
 
 | where                   | limit                                                                                | kind                |
@@ -362,9 +364,9 @@ Every state-changing route checks four things: `Origin` equals `PUBLIC_ORIGIN`; 
 | `/f/`                   | 60 per 60 s per IP; then 60 per 60 s per screen (`RL_FETCH` keyed by the screen ref), or per view link (keyed by its hash), between the Screen object's check and the counted fetch; per link: 10 fetches, none for a view link (VID-02) | binding; exact      |
 | `PUT /api/drop`         | 5 per 60 s per IP (every attempt past the Origin and credential checks counts); one accepted file per session; live bytes under `GUEST_STORAGE_BUDGET_BYTES` | binding; exact; D1  |
 | `/auth/start`           | 10 per 60 s per IP                                                                   | binding             |
-| member routes (`/api/me/*`) | every route: 300 per 60 s per IP (`RL_MEMBER_IP`) before any D1 read, a flood guard sized for a shared campus NAT, so unmetered D1 reads are impossible; the per-member `RL_MEMBER` at 120 stays the real limiter; then 120 per 60 s per member (`RL_MEMBER`) after the session read (ADR 0014) | binding |
-| `GET /api/me`           | 300 per 60 s per IP (`RL_MEMBER_IP`) before any read; then 120 per 60 s per member (`RL_MEMBER`) once a live session is read | binding |
-| `/api/admin/*`          | 300 per 60 s per IP (`RL_MEMBER_IP`) before the session read, a refusal answering the unknown path's 404 like everything else before the admin check; then 60 per 60 s per admin (`RL_ADMIN`) | binding |
+| member routes (`/api/me/*`) | every route: 300 per 60 s per IP (`RL_MEMBER_IP`) before any D1 read, a flood guard sized for a shared campus NAT; then 120 per 60 s per member (`RL_MEMBER`), the real limiter, after the session read (ADR 0014) | binding |
+| `GET /api/me`           | `RL_MEMBER_IP` before any read, then `RL_MEMBER` once a live session is read (limits: the member routes row) | binding |
+| `/api/admin/*`          | `RL_MEMBER_IP` (the member routes row) before the session read, a refusal answering the unknown path's 404 like everything else before the admin check; then 60 per 60 s per admin (`RL_ADMIN`) | binding |
 | `GET /api/screen/ws`, `GET /api/pair/ws` | 30 per 60 s per screen ref and network (IPv4 address or IPv6 /64) (`RL_UPGRADE`, its own binding so reconnect storms never refuse a tap), before the Screen object; then at most 4 sockets waiting for their `hello` per role and 2 per network, the network's own oldest evicted at its 2 and the oldest overall when a role is full, never a refusal (PAIR-10) | binding; exact |
 | `POST /api/control`, `POST /api/screen/shown`, `POST /api/session/length` | 120 per 60 s per IP (`RL_CONTROL`, its own binding so `/f/` range reads never refuse a tap), then 120 per 60 s per credential (keyed by the pid's or sid's hash, never the screen ref: every `/f/` token carries it) (PAIR-13) | binding |
 | `GET /api/files`        | 20 per 60 s per session (`RL_FILES`, keyed by the screen ref), after the credential check: each call is a Graph call | binding |

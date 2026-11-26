@@ -8,6 +8,17 @@ import { type TestDb, testDb } from "./d1-shim.ts";
 
 export const ORIGIN = "http://localhost:8787";
 
+const key = Buffer.alloc(32, 5).toString("base64");
+/** The vars that turn on FILE_SOURCE=graph, so the Entra routes (disconnect) exist. */
+export const GRAPH = {
+  FILE_SOURCE: "graph",
+  ENTRA_CLIENT_ID: "client-id",
+  ENTRA_CLIENT_SECRET: "x".repeat(12),
+  TOKEN_KEKS: JSON.stringify({ k1: key }),
+  TOKEN_KEK_CURRENT: "k1",
+  COOKIE_KEY: key,
+};
+
 export function memberWorld(over: Record<string, string> = {}) {
   const db = testDb();
   const env = {
