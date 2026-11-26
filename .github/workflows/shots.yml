@@ -20,7 +20,7 @@ jobs:
       - run: npm ci
       - run: npx playwright install --with-deps chromium
       - run: cp .dev.vars.example .dev.vars
-      - run: npx playwright test test/e2e/upload-shots.spec.ts
+      - run: npx playwright test test/e2e/upload-shots.spec.ts -g "still checking"
       - if: always()
         run: |
           git config user.name "shots"
