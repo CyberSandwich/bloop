@@ -417,6 +417,8 @@ Each heading change is announced in a `role="status"` region; error uses `role="
 | approve, demo | Demo Room | the list, the whole catalog selected | Cancel, Approve (42) |
 | unregistered room | as approve, titled This Screen, plus one card (Lucide `triangle-alert`, sentence in `--ink` 600; no tint, no stripe) | This room isn't registered. Only approve if you can see the screen in front of you. `[V-7]` | Cancel, Approve |
 | (choose, approve, unregistered room, signed in to OneDrive) | as that state | as that state | Disconnect OneDrive (text) first: deletes bloop's stored access and signs out every phone (`POST /api/me/disconnect`), then shows first use |
+| early access (open, a live code refused signed out; `core/early.js`) | the strings, actions and focus order of present-live.md section 5 | | Sign In keeps the code, then `/auth/start`; Send One File claims it as a guest |
+| resume, code gone | as present-live.md 5.1, laid out as expired | | Enter the Code (primary, no Back) |
 | first use | Connect Your OneDrive | bloop reads your files from OneDrive. You do this once, on this phone. `[V-9]` | Add a File (text, the guest path) `[V-10]`, Cancel, Connect OneDrive |
 | needs admin | Your IT Must Approve bloop | Ask your IT team to approve it, then scan again. | Done |
 | sign-in declined (`/auth/callback` page) | bloop wasn't given access. | bloop can't read your slides without it. Scan the code on the screen to try again. | Enter the Code |

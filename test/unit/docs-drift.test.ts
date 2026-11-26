@@ -349,6 +349,8 @@ describe("size budgets", () => {
       "phone remote, lazy": ["public/js/core/lazy.js", "public/js/core/remote-ui.js", "public/js/core/remote.js"],
       "phone match pick, lazy": ["public/js/core/lazy.js", "public/js/core/match.js", "public/js/core/pick.js"],
       "phone refusal words, lazy": "public/js/core/refusal.js",
+      "phone early access, lazy": "public/js/core/early.js",
+      "phone guest send, lazy": "public/js/core/send.js",
       "drag and drop, lazy": "public/js/core/drag.js",
       "support mail, lazy": "public/js/shared/support.js",
       "sheen follow, lazy": "public/js/sheen-follow.js",

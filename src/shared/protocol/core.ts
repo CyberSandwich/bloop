@@ -98,6 +98,8 @@ export type PhoneStateKey =
   | "checking"
   | "pick" // the live match pick (present-live.md 3.2)
   | "match_wrong"
+  | "early" // open mode, a live code refused signed out (present-live.md 5); its words are core/early.js's
+  | "rescan" // the code a resume after sign-in claimed was gone (present-live.md 5.1); core/early.js's too
   | "match"
   | "choose"
   | "approve"

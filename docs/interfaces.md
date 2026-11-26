@@ -156,7 +156,7 @@ export interface Problem { type: "about:blank"; status: number; code: ErrorCode;
 
 // User-facing state keys: the slots in the shared state strings (design.md section 7).
 export type PhoneStateKey =
-  | "checking" | "match" | "choose" | "approve" | "approve_demo" | "unregistered" | "first_use"
+  | "checking" | "pick" | "match_wrong" | "early" | "rescan" | "match" | "choose" | "approve" | "approve_demo" | "unregistered" | "first_use"
   | "needs_admin" | "empty" | "approving" | "opening" | "open" | "open_fallback" | "pdf_fallback"
   | "pdf_file" | "ended" | "canceled" | "expired" | "taken" | "offline" | "error" | "guest_add"
   | "guest_confirm" | "guest_sending" | "guest_refused" | "guest_sent" | "typed_wrong" | "framed"
