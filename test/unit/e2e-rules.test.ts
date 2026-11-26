@@ -100,4 +100,8 @@ describe("e2e specs wait on the state the page shows, never read it once", () =>
     const pairing = specs.find((s) => s.f === "pairing.ts")?.text ?? "";
     expect(pairing).toMatch(/export const choice = \(phone: Page, digits: string\) =>\s*phone\.locator\("#pick"\)/);
   });
+
+  it("the drawn choices are button.choice: a.html's skeleton pills are .choice too, so a bare one counts them", () => {
+    for (const { f, text } of specs) expect(text, f).not.toMatch(/#pick \.choice/);
+  });
 });
