@@ -1,6 +1,6 @@
 // Throwaway screenshots of the match pick, never merged.
-import { type Browser, expect, test } from "@playwright/test";
-import { choice, heading, open, typedCodeOf } from "./pairing.ts";
+import { type Browser, expect, type Page, test } from "@playwright/test";
+import { choice, heading, open, shownMatch, typedCodeOf } from "./pairing.ts";
 
 const VPS = [
   { w: 320, h: 568, phone: true },
@@ -9,6 +9,8 @@ const VPS = [
   { w: 844, h: 390, phone: true },
   { w: 1440, h: 900, phone: false },
 ] as const;
+
+const buttons = (page: Page) => page.locator("#pick").getByRole("button");
 
 async function phoneAt(browser: Browser, vp: (typeof VPS)[number], code: string) {
   const context = await browser.newContext({
@@ -20,7 +22,7 @@ async function phoneAt(browser: Browser, vp: (typeof VPS)[number], code: string)
   const page = await context.newPage();
   await page.goto(`/a?c=${code}`);
   await expect(heading(page)).toHaveText("This Screen");
-  await expect(page.getByRole("group", { name: "Tap the Screen's Number" }).getByRole("button")).toHaveCount(3);
+  await expect(buttons(page)).toHaveCount(3);
   await page.evaluate("document.fonts.ready");
   return { context, page };
 }
@@ -33,22 +35,20 @@ for (const vp of VPS) {
     const code = await typedCodeOf(screen.page);
     const { context, page } = await phoneAt(browser, vp, code);
     await page.screenshot({ path: `${dir}/1-pending.png` });
-    const shown = ((await screen.page.locator("#match").textContent()) ?? "").trim();
+    const shown = await shownMatch(screen.page);
     await page.route("**/api/match", () => {});
     await choice(page, shown).click();
     await expect(page.locator("#pick legend")).toHaveText("Approving...");
     await page.screenshot({ path: `${dir}/2-tapped.png` });
-    await page.waitForTimeout(4300);
+    await expect(page.locator("#pick .pick-slow")).toHaveText("Still approving. Keep this page open.", { timeout: 8000 });
     await page.screenshot({ path: `${dir}/3-slow.png` });
     await context.close();
 
     const screen2 = await open(browser, "screen", "/s");
     const second = await phoneAt(browser, vp, await typedCodeOf(screen2.page));
-    const right = ((await screen2.page.locator("#match").textContent()) ?? "").trim();
-    const digits = await second.page
-      .getByRole("group", { name: "Tap the Screen's Number" })
-      .getByRole("button")
-      .allTextContents();
+    const right = await shownMatch(screen2.page);
+    await expect(buttons(second.page)).toHaveCount(3);
+    const digits = await buttons(second.page).allTextContents();
     await choice(second.page, digits.map((d) => d.trim()).find((d) => d !== right) ?? "").click();
     await expect(heading(second.page)).toHaveText("That Wasn't the Screen's Number");
     await second.page.screenshot({ path: `${dir}/4-wrong.png` });

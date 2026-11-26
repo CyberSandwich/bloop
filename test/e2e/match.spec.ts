@@ -1,7 +1,17 @@
 // The live match pick on /a (present-live.md 3.2 to 3.4, PAIR-14): the phone gets three numbers, never the screen's,
 // and the person taps the one the screen shows. Runs in CI only, as flow.spec.ts.
 import { type Browser, expect, type Page, test } from "@playwright/test";
-import { choice, expectNoAxeViolations, heading, type Opened, open, pickMatch, typedCodeOf } from "./pairing.ts";
+import {
+  choice,
+  enterCode,
+  expectNoAxeViolations,
+  heading,
+  type Opened,
+  open,
+  pickMatch,
+  shownMatch,
+  typedCodeOf,
+} from "./pairing.ts";
 
 const PICK = "Tap the Screen's Number";
 const group = (phone: Page) => phone.getByRole("group", { name: PICK });
@@ -20,9 +30,12 @@ async function atPick(browser: Browser, prep?: Parameters<typeof open>[3]) {
   return { screen, phone, code };
 }
 
-/** The three choices on the phone, in their order there; the group keeps its id while its legend reads Approving. */
-const digits = async (phone: Page) =>
-  (await phone.locator("#pick").getByRole("button").allTextContents()).map((t) => t.trim());
+/** The three choices on the phone, in their order there: read once all three are drawn (the skeleton has none). */
+async function digits(phone: Page) {
+  const buttons = phone.locator("#pick").getByRole("button");
+  await expect(buttons).toHaveCount(3);
+  return (await buttons.allTextContents()).map((t) => t.trim());
+}
 
 const closeAll = async (...all: Opened[]) => {
   for (const o of all) await o.context.close();
@@ -32,7 +45,7 @@ test.describe("PAIR-14 the match pick", () => {
   test("the phone shows three numbers, the screen's among them, and no digits anywhere else", async ({ browser }) => {
     const { screen, phone } = await atPick(browser);
     await expect(group(phone.page).getByRole("button")).toHaveCount(3);
-    const shown = (await screen.page.locator("#match").textContent())?.trim() ?? "";
+    const shown = await shownMatch(screen.page);
     const three = await digits(phone.page);
     expect(three).toHaveLength(3);
     expect(new Set(three).size).toBe(3);
@@ -127,7 +140,7 @@ test.describe("PAIR-14 the match pick", () => {
       await held;
       await route.continue();
     });
-    const shown = (await screen.page.locator("#match").textContent())?.trim() ?? "";
+    const shown = await shownMatch(screen.page);
     await choice(phone.page, shown).click();
     await expect(choice(phone.page, shown)).toHaveClass(/\bprimary\b/);
     for (const d of (await digits(phone.page)).filter((d) => d !== shown))
@@ -151,7 +164,7 @@ test.describe("PAIR-14 the match pick", () => {
     browser,
   }) => {
     const { screen, phone, code } = await atPick(browser);
-    const shown = (await screen.page.locator("#match").textContent())?.trim() ?? "";
+    const shown = await shownMatch(screen.page);
     const wrong = (await digits(phone.page)).find((d) => d !== shown) ?? "";
     const pid = await phone.page.evaluate(() => localStorage.getItem("bloop.pid"));
     await choice(phone.page, wrong).click();
@@ -187,8 +200,8 @@ test.describe("PAIR-14 the match pick", () => {
     // The fallback: Enter the Code, then the screen's new code, back to a fresh pick.
     await phone.page.getByRole("link", { name: "Enter the Code" }).click();
     await expect(phone.page).toHaveURL(/\/code$/);
-    await phone.page.getByRole("textbox").fill(next);
-    await phone.page.keyboard.press("Enter");
+    await enterCode(phone.page, next);
+    await expect(phone.page).toHaveURL(/\/a$/);
     await expect(group(phone.page).getByRole("button")).toHaveCount(3);
     await closeAll(screen, phone);
   });
@@ -198,7 +211,7 @@ test.describe("PAIR-14 the match pick", () => {
   }) => {
     const { screen, phone } = await atPick(browser);
     await phone.page.route("**/api/match", (route) => route.abort("internetdisconnected"));
-    const shown = (await screen.page.locator("#match").textContent())?.trim() ?? "";
+    const shown = await shownMatch(screen.page);
     await choice(phone.page, shown).click();
     const alert = phone.page.getByRole("alert");
     await expect(alert).toContainText("You're Offline");
@@ -209,6 +222,146 @@ test.describe("PAIR-14 the match pick", () => {
     await phone.page.unroute("**/api/match");
     await choice(phone.page, shown).click();
     await expect(phone.page.getByRole("button", { name: "Approve", exact: true })).toBeVisible();
+    await closeAll(screen, phone);
+  });
+
+  test("a press on one number released on another picks neither; the right one then picks once", async ({
+    browser,
+  }) => {
+    const { screen, phone } = await atPick(browser);
+    const sent: string[] = [];
+    phone.page.on("request", (r) => {
+      if (new URL(r.url()).pathname === "/api/match") sent.push(r.postData() ?? "");
+    });
+    const shown = await shownMatch(screen.page);
+    const [a, b] = (await digits(phone.page)).filter((d) => d !== shown);
+    const at = async (d: string | undefined) => {
+      const box = await choice(phone.page, d ?? "").boundingBox();
+      return { x: (box?.x ?? 0) + (box?.width ?? 0) / 2, y: (box?.y ?? 0) + (box?.height ?? 0) / 2 };
+    };
+    const from = await at(a);
+    const to = await at(b);
+    await phone.page.mouse.move(from.x, from.y);
+    await phone.page.mouse.down();
+    await phone.page.mouse.move(to.x, to.y, { steps: 4 });
+    await phone.page.mouse.up();
+    // Had the drag picked, a wrong number would have ended the claim; the right number still approves, sent alone.
+    await choice(phone.page, shown).click();
+    await expect(phone.page.getByRole("button", { name: "Approve", exact: true })).toBeVisible();
+    expect(sent).toEqual([JSON.stringify({ choice: shown })]);
+    await closeAll(screen, phone);
+  });
+
+  test("a retried pick carries the same Idempotency-Key as the try whose answer was lost", async ({ browser }) => {
+    const { screen, phone } = await atPick(browser);
+    const keys: (string | undefined)[] = [];
+    let first = true;
+    await phone.page.route("**/api/match", async (route) => {
+      keys.push(route.request().headers()["idempotency-key"]);
+      if (first) {
+        first = false;
+        return route.abort("internetdisconnected");
+      }
+      return route.continue();
+    });
+    const shown = await shownMatch(screen.page);
+    await choice(phone.page, shown).click();
+    await expect(phone.page.getByRole("alert")).toContainText("You're Offline");
+    await expect(choice(phone.page, shown)).toBeEnabled();
+    await choice(phone.page, shown).click();
+    await expect(phone.page.getByRole("button", { name: "Approve", exact: true })).toBeVisible();
+    expect(keys).toHaveLength(2);
+    expect(keys[0]).toMatch(/^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/);
+    expect(keys[1]).toBe(keys[0]);
+    await closeAll(screen, phone);
+  });
+
+  test("sending and slow are spoken: #polite says Approving, then the line under the choices, in the page and empty from the mount", async ({
+    browser,
+  }) => {
+    const { screen, phone } = await atPick(browser);
+    const line = phone.page.locator("#pick .pick-slow");
+    // Mounted: shown, a status region, and empty, before any words arrive.
+    await expect(line).toHaveAttribute("role", "status");
+    expect(await line.evaluate((el) => (el as unknown as { hidden: boolean }).hidden)).toBe(false);
+    await expect(line).toHaveText("");
+    await expect(phone.page.locator("#polite")).toHaveText("");
+    let release: () => void = () => {};
+    const held = new Promise<void>((done) => (release = done));
+    await phone.page.route("**/api/match", async (route) => {
+      await held;
+      await route.continue();
+    });
+    await choice(phone.page, await shownMatch(screen.page)).click();
+    await expect(phone.page.locator("#polite")).toHaveText("Approving...");
+    await expect(line).toHaveText("Still approving. Keep this page open.", { timeout: 8000 });
+    release();
+    await expect(phone.page.getByRole("button", { name: "Approve", exact: true })).toBeVisible();
+    await closeAll(screen, phone);
+  });
+
+  test("a confirmed push that beats the pick's answer still lists the files once", async ({ browser }) => {
+    const { screen, phone } = await atPick(browser);
+    let lists = 0;
+    phone.page.on("request", (r) => {
+      if (new URL(r.url()).pathname === "/api/files") lists += 1;
+    });
+    let release: () => void = () => {};
+    const held = new Promise<void>((done) => (release = done));
+    // The server confirms (and pushes the view) at once; only the answer to this page is held.
+    await phone.page.route("**/api/match", async (route) => {
+      const response = await route.fetch();
+      await held;
+      await route.fulfill({ response });
+    });
+    await choice(phone.page, await shownMatch(screen.page)).click();
+    // The pushed, confirmed view hides the pick before the answer comes.
+    await expect(phone.page.locator("#pick")).toBeHidden();
+    release();
+    await expect(phone.page.locator("#file-list input[type=radio]:checked")).toHaveCount(1);
+    await expect(phone.page.getByRole("button", { name: "Approve", exact: true })).toBeEnabled();
+    expect(lists).toBe(1);
+    await closeAll(screen, phone);
+  });
+
+  test("a guest's pick: after the right number, Add a File, and no OneDrive list is asked for", async ({ browser }) => {
+    const screen = await open(browser, "screen", "/s");
+    await expect(screen.page.locator("#qr")).toBeVisible();
+    const code = await typedCodeOf(screen.page);
+    const phone = await open(browser, "phone", "/code");
+    let lists = 0;
+    phone.page.on("request", (r) => {
+      if (new URL(r.url()).pathname === "/api/files") lists += 1;
+    });
+    // A guest claim, held as the page holds its own, then /a resumes it.
+    const pid = await phone.page.evaluate(async (c) => {
+      const res = await fetch("/api/claim", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ code: c, kind: "guest" }),
+      });
+      return ((await res.json()) as { pid: string }).pid;
+    }, code);
+    await phone.page.evaluate((p) => localStorage.setItem("bloop.pid", p), pid);
+    await phone.page.goto("/a");
+    await pickMatch(phone.page, screen.page);
+    await expect(phone.page.getByRole("button", { name: "Add a File" })).toBeVisible();
+    expect(lists).toBe(0);
+    await closeAll(screen, phone);
+  });
+
+  test("a match module that loads but fails to draw says so with Reload too", async ({ browser }) => {
+    const { screen, phone } = await atPick(browser, (context) =>
+      context.route("**/js/core/match.js", (route) =>
+        route.fulfill({
+          contentType: "text/javascript",
+          body: 'export async function mount() { throw new Error("draw"); }',
+        }),
+      ),
+    );
+    const alert = phone.page.getByRole("alert");
+    await expect(alert).toContainText("Match Didn't Load");
+    await expect(alert.getByRole("button", { name: "Reload" })).toBeVisible();
     await closeAll(screen, phone);
   });
 
@@ -228,6 +381,7 @@ test.describe("PAIR-14 the match pick", () => {
   }) => {
     const { screen, phone } = await atPick(browser);
     const three = await digits(phone.page);
+    expect(three).toHaveLength(3);
     await phone.page.reload();
     await expect(heading(phone.page)).toHaveText("This Screen");
     await expect(group(phone.page).getByRole("button")).toHaveCount(3);
