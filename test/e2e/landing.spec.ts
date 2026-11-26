@@ -119,7 +119,7 @@ for (const vp of VIEWPORTS) {
       const hero = imgs.find((i) => i.hero);
       expect(hero?.lazy).toBe(false);
       // Under 640 the stage is hidden and its picture is the logo's own file (the phone test below counts requests).
-      expect(hero?.src).toMatch(vp.width < 640 ? /\/favicon\.svg$/ : /\/img\/hero-viewer-(750|1100|1600|2200)\./);
+      expect(hero?.src).toMatch(vp.width < 640 ? /\/favicon\.svg$/ : /\/img\/hero-viewer-(750|1100|1600|2000)\./);
       const raster = imgs.filter((i) => !i.hero && !i.file.endsWith(".svg"));
       expect(raster.length).toBeGreaterThan(0);
       for (const i of raster) expect(i, i.file).toMatchObject({ lazy: true, below: true });

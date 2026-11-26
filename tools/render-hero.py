@@ -1,10 +1,10 @@
 #!/usr/bin/env python3
-"""render-hero: the landing hero, public/img/hero-viewer-{750,1100,1600,2200}.HASH.avif and {750,1100,1600}.HASH.webp from
-the desktop capture (docs/design.md section 6, Hero stage).
+"""render-hero: the landing hero, public/img/hero-viewer-{750,1100,1600,2000}.HASH.avif and {750,1100,1600}.HASH.webp from
+the desktop screenshot (docs/design.md section 6, Hero stage).
 
 Use: python3 -I tools/render-hero.py DESKTOP.png [AVIF_Q WEBP_Q]
-DESKTOP is the room screen presenting at 1440 x 828 and 2x (2880 x 1656):
-HERO_CAPTURE=1 npx playwright test hero-capture --project=preview.
+DESKTOP is a real browser screenshot of the room screen on a Retina Mac at 1440 CSS px wide, at least 2000 px wide;
+never a headless capture, whose font rendering differs. A width above the source's is refused, never upscaled.
 Needs ImageMagick, avifenc and cwebp. Metadata stripped; the qualities, the widths and why: design.md, Hero stage.
 HASH is the first 8 hex digits of the file's sha256: /img is cached for days, so a changed picture needs a new name.
 Old files of each width are deleted and the references in public/index.html and tools/size/core.json are rewritten;
@@ -21,7 +21,7 @@ ROOT = Path(__file__).resolve().parent.parent
 OUT = ROOT / 'public' / 'img'
 REFERENCES = (ROOT / 'public' / 'index.html', ROOT / 'tools' / 'size' / 'core.json')
 STEM = 'hero-viewer'
-AVIF_WIDTHS = (750, 1100, 1600, 2200)
+AVIF_WIDTHS = (750, 1100, 1600, 2000)
 WEBP_WIDTHS = (750, 1100, 1600)
 
 
@@ -41,6 +41,9 @@ def main():
         sys.exit(__doc__.split('\n\n')[1])
     source = sys.argv[1]
     avif_q, webp_q = (sys.argv[2], sys.argv[3]) if len(sys.argv) == 4 else ('49', '60')
+    wide = int(subprocess.run(['magick', 'identify', '-format', '%w', source], check=True, capture_output=True, text=True).stdout)
+    if wide < max(AVIF_WIDTHS):
+        sys.exit(f'{source} is {wide} px wide, under the {max(AVIF_WIDTHS)} px ladder: no upscaling')
     renamed = []
     with tempfile.TemporaryDirectory() as tmp:
         for width in AVIF_WIDTHS:
