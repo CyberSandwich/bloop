@@ -28,11 +28,12 @@ import { noteRoutes } from "./routes/notes.ts";
 import { logFetch, openRoutes } from "./routes/open.ts";
 import { pairingRoutes } from "./routes/pairing.ts";
 import { reportRoutes } from "./routes/reports.ts";
+import { thumbRoutes } from "./routes/thumb.ts";
 import { uploadRoutes } from "./routes/uploads.ts";
 import { SpendGuard } from "./spend/guard.ts";
 
 /** Paths the routes own; everything else is a page. wrangler.jsonc `run_worker_first` sends every path to the Worker except the static trees, so the host check sees every page. */
-const DYNAMIC = /^\/(api|f|auth)\/|^\/fo\/ping$/;
+const DYNAMIC = /^\/(api|f|auth|yt)\/|^\/fo\/ping$/;
 
 /** First match wins. Later modules add their routes here, one line each. */
 const routes: readonly Route[] = [
@@ -54,6 +55,7 @@ const routes: readonly Route[] = [
   ...libraryRoutes,
   ...fileOriginRoutes,
   ...noteRoutes,
+  ...thumbRoutes,
 ];
 
 /** The error's name only: its message can carry a path, a query or a user's text. */

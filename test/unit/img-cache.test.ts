@@ -6,7 +6,8 @@ import { createHash } from "node:crypto";
 import { readdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
-import { DECK_PAGES, DEMO_NAMES, demoId, SLIDES } from "../../public/js/core/demo.js";
+import { DECK_PAGES, demoId, SLIDES } from "../../public/js/core/demo.js";
+import { DEMO_ITEMS } from "../../src/shared/demo-catalog.ts";
 import { staticHeaders as resolve } from "../../tools/static-headers.mjs";
 import { wranglerConfig } from "../../tools/wrangler-config.mjs";
 
@@ -72,8 +73,7 @@ describe("/img: a changed picture is never served stale", () => {
       for (const ext of ["avif", "webp"])
         expect(files, `${slide}.${ext}`).toContain(`${slide.slice("/img/".length)}.${ext}`);
     }
-    const photos = DEMO_NAMES.filter((name) => /\.jpe?g$/.test(name));
-    expect(photos.length).toBeGreaterThan(0);
-    for (const name of photos) expect(files, `${name} thumbnail`).toContain(`${demoId(name)}-thumb.webp`);
+    for (const { name } of [DEMO_ITEMS.horizontal, DEMO_ITEMS.vertical])
+      expect(files, `${name} thumbnail`).toContain(`${demoId(name)}-thumb.webp`);
   });
 });
