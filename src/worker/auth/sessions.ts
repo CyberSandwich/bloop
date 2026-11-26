@@ -1,7 +1,7 @@
 // Phone sessions: an opaque random cookie value, stored only as its SHA-256 (AUTH-05). Valid for 30 days
 // idle and 90 days absolute. Every authentication issues a new value and deletes the one it replaces (AUTH-08).
 import { newRef, newSecret, sha256Hex } from "../ids.ts";
-import { BUMP_DEVICE_EPOCH } from "./codes.ts";
+import { BUMP_DEVICE_EPOCH, bumpDeviceEpochIf } from "./codes.ts";
 import type { BatchDb } from "./db.ts";
 
 const DAY_MS = 86_400_000;
@@ -12,6 +12,9 @@ export const SESSION_MAX_AGE_SECONDS = ABSOLUTE_DAYS * 86_400;
 const TOUCH_MS = 3_600_000;
 /** app_user.last_seen_at, a member's inactivity clock (ADR 0013), at most this often. */
 const USER_TOUCH_MS = DAY_MS;
+/** The epoch bump while the user still has the session the change removes. Binds: user, user, public id. */
+const BUMP_IF_SESSION = bumpDeviceEpochIf("SELECT 1 FROM phone_session WHERE user_id = ? AND public_id = ?");
+
 /** phone_session.public_id as `create` writes it (newRef, 128 bits): what L's resolveMember and socket tags take. */
 export const PUBLIC_ID = /^[A-Za-z0-9_-]{22}$/;
 
@@ -210,33 +213,41 @@ export class Sessions {
       .run();
   }
 
-  /** Ends one of the user's sessions by its public id; false when the user has no such session. */
+  /**
+   * Ends one of the user's sessions by its public id, and with it every known-device value (a revoked device loses
+   * `known`); one batch, the bump guarded by the session's existence. False when the user has no such session.
+   */
   async destroyPublic(userId: string, publicId: string): Promise<boolean> {
-    const res = await this.db
-      .prepare("DELETE FROM phone_session WHERE user_id = ? AND public_id = ?")
-      .bind(userId, publicId)
-      .run();
-    return res.meta.changes > 0;
+    const [, removed] = await this.db.batch([
+      this.db.prepare(BUMP_IF_SESSION).bind(userId, userId, publicId),
+      this.db.prepare("DELETE FROM phone_session WHERE user_id = ? AND public_id = ?").bind(userId, publicId),
+    ]);
+    return (removed?.meta.changes ?? 0) > 0;
   }
 
   /** Ends every session of the user but `keepHash`. Returns the public ids that ended. TRANSITIONAL(a-7): email change. */
   destroyOthers(userId: string, keepHash: string): Promise<string[]> {
-    return this.deleteReturning("DELETE FROM phone_session WHERE user_id = ? AND id_hash != ? RETURNING public_id", [
+    return this.publicIds("DELETE FROM phone_session WHERE user_id = ? AND id_hash != ? RETURNING public_id", [
       userId,
       keepHash,
     ]);
   }
 
   /**
-   * Every session of the user (sign out everywhere, Entra disconnect), and every known-device value with them (the
-   * epoch bump, first, so a failure in between errs toward forgetting devices). Returns the public ids that ended.
+   * Every session of the user (sign out everywhere, Entra disconnect) and every known-device value with them: the
+   * epoch bump and the deletes are one batch. Returns the public ids, read just before it (see `requestDeletion`).
    */
   async destroyAll(userId: string): Promise<string[]> {
-    await this.db.prepare(BUMP_DEVICE_EPOCH).bind(userId).run();
-    return this.deleteReturning("DELETE FROM phone_session WHERE user_id = ? RETURNING public_id", [userId]);
+    const ended = await this.publicIds("SELECT public_id FROM phone_session WHERE user_id = ?", [userId]);
+    await this.db.batch([
+      this.db.prepare(BUMP_DEVICE_EPOCH).bind(userId),
+      this.db.prepare("DELETE FROM phone_session WHERE user_id = ?").bind(userId),
+    ]);
+    return ended;
   }
 
-  private async deleteReturning(sql: string, params: unknown[]): Promise<string[]> {
+  /** The public ids a SELECT or a DELETE ... RETURNING names. */
+  private async publicIds(sql: string, params: unknown[]): Promise<string[]> {
     const { results } = await this.db
       .prepare(sql)
       .bind(...params)
@@ -270,10 +281,10 @@ export class Sessions {
    * id, and its library sockets close at their next cookie check.
    */
   async requestDeletion(userId: string, deleteAfter: number, keepHash: string): Promise<string[]> {
-    const { results } = await this.db
-      .prepare("SELECT public_id FROM phone_session WHERE user_id = ? AND id_hash != ?")
-      .bind(userId, keepHash)
-      .all<{ public_id: string | null }>();
+    const ended = await this.publicIds("SELECT public_id FROM phone_session WHERE user_id = ? AND id_hash != ?", [
+      userId,
+      keepHash,
+    ]);
     await this.db.batch([
       this.db
         .prepare(
@@ -283,7 +294,7 @@ export class Sessions {
       this.db.prepare(BUMP_DEVICE_EPOCH).bind(userId),
       this.db.prepare("DELETE FROM phone_session WHERE user_id = ? AND id_hash != ?").bind(userId, keepHash),
     ]);
-    return results.flatMap((r) => (r.public_id ? [r.public_id] : []));
+    return ended;
   }
 
   /** Cancels a requested deletion inside its grace (ADR 0013); false when it is too late or there was none. */

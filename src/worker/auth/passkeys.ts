@@ -1,7 +1,10 @@
 // A member's passkeys (ADR 0014): the account page's list, rename and remove, and the age the admin step-up reads.
 // Every statement is scoped by user_id, so one member can never name another's credential.
-import { BUMP_DEVICE_EPOCH } from "./codes.ts";
+import { bumpDeviceEpochIf } from "./codes.ts";
 import type { BatchDb, Db } from "./db.ts";
+
+/** The epoch bump while the user still has the passkey the removal names. Binds: user, passkey id, user. */
+const BUMP_IF_PASSKEY = bumpDeviceEpochIf("SELECT 1 FROM passkey WHERE id = ? AND user_id = ?");
 
 export interface PasskeyEntry {
   id: string;
@@ -35,13 +38,11 @@ export async function renamePasskey(db: Db, userId: string, id: string, name: st
 
 /**
  * False when the user has no passkey with this id. A removal moves the device epoch in the same batch, guarded by the
- * passkey's existence, so a refused id forgets no devices.
+ * passkey's existence.
  */
 export async function deletePasskey(db: BatchDb, userId: string, id: string): Promise<boolean> {
   const [, removed] = await db.batch([
-    db
-      .prepare(`${BUMP_DEVICE_EPOCH} AND EXISTS (SELECT 1 FROM passkey WHERE id = ? AND user_id = ?)`)
-      .bind(userId, id, userId),
+    db.prepare(BUMP_IF_PASSKEY).bind(userId, id, userId),
     db.prepare("DELETE FROM passkey WHERE id = ? AND user_id = ?").bind(id, userId),
   ]);
   return removed?.meta.changes === 1;

@@ -15,7 +15,7 @@ import {
 } from "../auth/cookies.ts";
 import { callbackErrorPage } from "../auth/error-page.ts";
 import { beginSignIn, finishSignIn, PENDING_SECONDS, type Pending } from "../auth/oauth.ts";
-import { endSessions, screenDeps } from "../auth/screens.ts";
+import { endSessions, type ScreenDeps, screenDeps } from "../auth/screens.ts";
 import { phoneUser, servicesFor } from "../auth/services.ts";
 import { deviceLabel, SESSION_MAX_AGE_SECONDS } from "../auth/sessions.ts";
 import type { Config, GraphConfig } from "../config.ts";
@@ -92,7 +92,8 @@ export async function recordBestEffort(env: Env, event: AuditEvent): Promise<voi
   }
 }
 
-export const authRoutes: readonly Route[] = [
+/** The routes, with the live-screen calls injected so a test can watch the disconnect's cleanup. */
+export const authRoutesWith = (deps: ScreenDeps): readonly Route[] => [
   route(["GET"], "/auth/start", "api", start),
   route(["GET"], "/auth/callback", "api", callback),
 
@@ -113,9 +114,11 @@ export const authRoutes: readonly Route[] = [
       if (!userId) return fail("auth_required");
       const hadGrant = await vault.has(userId);
       await vault.delete(userId);
-      await endSessions(screenDeps, env, userId, await sessions.destroyAll(userId));
+      await endSessions(deps, env, userId, await sessions.destroyAll(userId));
       if (hadGrant) await recordBestEffort(env, accountEvent("grant.deleted", userId, Date.now()));
       return withCookies(json({ signedIn: false }), signedOutCookies({ everywhere: true }));
     }),
   ),
 ];
+
+export const authRoutes: readonly Route[] = authRoutesWith(screenDeps);
