@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
-import { fileProblem, kindOf, prepareFile, sendFile, wholeMB } from "../../public/js/core/drop.js";
+import { fileProblem, kindOf, wholeMB } from "../../public/js/core/drop.js";
+import { prepareFile, sendFile } from "../../public/js/core/send.js";
 
 const MB = 1024 * 1024;
 
