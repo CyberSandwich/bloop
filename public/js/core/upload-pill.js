@@ -202,6 +202,7 @@ export async function mountUploads({ maxMB, upNext = null, host = document.body,
     show(
       {
         title,
+        wrap: f.state === "unsettled",
         line: text,
         label: `Uploading ${f.name}`,
         glyph: glyphOf(f.name),
