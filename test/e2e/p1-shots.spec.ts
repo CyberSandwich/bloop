@@ -24,7 +24,13 @@ for (const vp of [
     test.use({ viewport: vp, hasTouch: true, isMobile: true });
     test("sheet, dismiss, mid cross-fade", async ({ page }) => {
       const n = `${vp.width}x${vp.height}`;
-      await oneDevice(page);
+      if (vp.width < 600) await oneDevice(page);
+      else {
+        await page.goto("/s?mode=demo");
+        await page.getByRole("link", { name: "Approve on This Device" }).tap();
+        await page.getByRole("button", { name: "Approve" }).tap();
+        await expect(page.getByRole("heading", { level: 1 })).toHaveText("Dog.jpg");
+      }
       await atRest(page.locator("main"));
       const rail = vp.width >= 760;
       if (!rail) await page.locator("#handle").tap();
