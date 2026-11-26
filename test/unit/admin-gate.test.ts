@@ -101,7 +101,7 @@ describe("AUTH-16 admin: the role comes only from ADMIN_EMAILS", () => {
     }
   });
 
-  it("AUTH-16 admin: FF with real limits and every limiter refusing, a non-admin's admin write is still not_found", async () => {
+  it("AUTH-16 admin: FF with real limits and every limiter refusing, any admin call by a non-admin is still not_found", async () => {
     const world = memberWorld({ TEST_TIMING: "0" });
     const refusing = Object.fromEntries(
       Object.keys(declaredRateLimits()).map((name) => [name, { limit: async () => ({ success: false }) }]),
@@ -109,9 +109,9 @@ describe("AUTH-16 admin: the role comes only from ADMIN_EMAILS", () => {
     const env = { ...world.env, ...refusing };
     const member = await seedMember(world.db, "m1", "member@example.test");
     const routes = await routesOf("admin", "adminRoutes");
-    const writes = routes.flatMap((r) => r.methods.filter((m) => m !== "GET").map((m) => [r, m] as const));
-    expect(writes.length).toBeGreaterThan(0);
-    for (const [r, method] of writes) {
+    const calls = routes.flatMap((r) => r.methods.map((m) => [r, m] as const));
+    expect(calls.length).toBeGreaterThan(0);
+    for (const [r, method] of calls) {
       const path = r.pattern.pathname.replace(/:(\w+)/g, "x");
       for (const options of [{ cookie: sid(member) }, {}]) {
         const res = await callRoute(routes, env, method, path, options);

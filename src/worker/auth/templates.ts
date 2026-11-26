@@ -2,6 +2,7 @@
 // text plus at most a date or a meter kind, never a code or anything a user typed. Each value passes through `oneLine`,
 // and the HTML escapes it, so a file name cannot add a header line or markup. Links point only at the configured origin.
 import type { Alert, DigestMessage } from "../spend/breaker.ts";
+import { isSwitchName } from "../spend/switches.ts";
 
 export interface Email {
   subject: string;
@@ -23,9 +24,9 @@ const MAX_VALUE_CHARS = 120;
  */
 export const stripControls = (value: string): string => value.replace(/[\p{Cc}\p{Cf}\u2028\u2029]/gu, "");
 
-/** One line of at most 120 characters (`stripControls`). */
+/** One line of at most 120 code points (`stripControls`), cut between code points so no surrogate pair splits. */
 export function oneLine(value: string): string {
-  return stripControls(value).slice(0, MAX_VALUE_CHARS);
+  return [...stripControls(value)].slice(0, MAX_VALUE_CHARS).join("");
 }
 
 export function escapeHtml(value: string): string {
@@ -174,10 +175,29 @@ const numberLines = (v: Record<string, unknown>): string[] =>
       : [],
   );
 
-/** To the admin, from the spend breaker: the kind and the numbers under `readings` only; any other field is dropped. */
-export const spendAlert = (v: Pick<Alert, "kind" | "readings">, c: Pick<TemplateConfig, "origin">): Email => {
-  const kind = oneLine(v.kind).replace(/[^a-z_]/g, "");
-  return render(c, `bloop Spend: ${kind}`, [`Spend alert: ${kind}.`, ...numberLines(v.readings)]);
+/** An identifier from the breaker: lowercase letters, digits and `_` only, whatever the field held. */
+const ident = (value: unknown): string => (typeof value === "string" ? oneLine(value).replace(/[^a-z0-9_]/g, "") : "");
+
+/**
+ * To the admin, from the spend breaker: the kind, the rule, each switch it flipped (a known switch name only) with its
+ * new value, and the numbers under `readings`; any other field is dropped.
+ */
+export const spendAlert = (
+  v: Pick<Alert, "kind" | "rule" | "switch" | "value" | "flips" | "readings">,
+  c: Pick<TemplateConfig, "origin">,
+): Email => {
+  const kind = ident(v.kind);
+  const rule = ident(v.rule);
+  const flips = [...(v.flips ?? []), ...(v.switch ? [{ switch: v.switch, value: v.value ?? "" }] : [])]
+    .filter((f) => isSwitchName(f.switch))
+    .map((f) => `${f.switch} set to ${ident(f.value)}`);
+  const switches = [...new Set(flips)];
+  return render(c, `bloop Spend: ${kind}`, [
+    `Spend alert: ${kind}.`,
+    ...(rule ? [`Rule: ${rule}.`] : []),
+    ...(switches.length > 0 ? [`Switches: ${switches.join(", ")}.`] : []),
+    ...numberLines(v.readings),
+  ]);
 };
 
 /** To the admin, the breaker's Monday digest: spend/report.ts builds its text from numbers and fixed labels only. */

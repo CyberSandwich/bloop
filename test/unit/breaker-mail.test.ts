@@ -1,7 +1,7 @@
 // The spend breaker's mail, end to end: the five-minute job with a tripped guard, G's once-a-day claim, and the
 // release that a failed send triggers.
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { breakerNotify, cronNotify } from "../../src/worker/auth/email.ts";
+import { ALERT_MAIL_TRIES, breakerNotify, cronNotify } from "../../src/worker/auth/email.ts";
 import type { CronJob } from "../../src/worker/cron.ts";
 import type { Alert } from "../../src/worker/spend/breaker.ts";
 import { testDb } from "./d1-shim.ts";
@@ -105,7 +105,7 @@ describe("COST-14 the five-minute job mails a trip to the admins", () => {
     const w = world({ PUBLIC_ORIGIN: "not a url" });
     const log = vi.mocked(console.log);
     const alert: Alert = { kind: "config_invalid", rule: "config_invalid", readings: { problems: 1 }, sources: "x" };
-    await cronNotify(w.env)(alert);
+    await cronNotify(w.env, async () => true)(alert);
     expect(w.send).not.toHaveBeenCalled();
     expect(log).toHaveBeenCalledWith(JSON.stringify({ evt: "breaker", ...alert }));
   });
@@ -113,7 +113,33 @@ describe("COST-14 the five-minute job mails a trip to the admins", () => {
   it("COST-16 DEV_MAILBOX never applies on a deployed origin, though this parse skips the config's refusal", async () => {
     const w = world({ PUBLIC_ORIGIN: "https://bloop.example", DEV_MAILBOX: "1" });
     const alert: Alert = { kind: "trip", rule: "email_day", readings: { sends: 95 }, sources: "x" };
-    await cronNotify(w.env)(alert);
+    await cronNotify(w.env, async () => true)(alert);
+    expect(w.sent.map((m) => m.to).sort()).toEqual([ADMIN, OTHER].sort());
+  });
+
+  it("COST-14 a send failing all day writes the alert's log line once and tries the mail at most 6 times", async () => {
+    const w = world();
+    w.pub.ledger.record("email", 95, undefined, T0);
+    w.send.mockRejectedValue(Object.assign(new Error("down"), { code: "E_INTERNAL" }));
+    const log = vi.mocked(console.log);
+    const job = await breakerJob();
+    for (let run = 0; run < 12; run++) await job.run(w.env, undefined, 0);
+    const tripLines = log.mock.calls.filter(([line]) => {
+      const parsed = JSON.parse(String(line)) as { evt?: string; kind?: string };
+      return parsed.evt === "breaker" && parsed.kind === "trip";
+    });
+    expect(tripLines).toHaveLength(1);
+    const toAdmin = w.send.mock.calls.filter(([m]) => m.to === ADMIN && m.subject === "bloop Spend: trip");
+    expect(toAdmin).toHaveLength(ALERT_MAIL_TRIES);
+  });
+
+  it("COST-14 an unreachable claim store still logs and mails: the alert errs toward going out", async () => {
+    const w = world();
+    const alert: Alert = { kind: "trip", rule: "email_day", readings: { sends: 95 }, sources: "x" };
+    await cronNotify(w.env, async () => {
+      throw new Error("guard down");
+    })(alert);
+    expect(vi.mocked(console.log)).toHaveBeenCalledWith(JSON.stringify({ evt: "breaker", ...alert }));
     expect(w.sent.map((m) => m.to).sort()).toEqual([ADMIN, OTHER].sort());
   });
 });
