@@ -219,9 +219,9 @@ function renderActions(/** @type {import("./types.js").PhoneAction[]} */ actions
   const ids = actions.map((a) => a.id).join();
   if (ids !== c.actionIds) {
     c.actionIds = ids;
-    // "Ends in" (a.html) leads the row, so it sits on the left of Revoke.
-    actionsEl.replaceChildren(
-      ends,
+    // "Ends in" (a.html) leads the row, left of Revoke, and is never detached, so it keeps focus too.
+    while (ends.nextSibling) ends.nextSibling.remove();
+    ends.after(
       ...actions.map((a) => {
         const attrs = {
           class: `btn ${a.kind}`,
@@ -375,9 +375,12 @@ function countDown() {
   const at = c.view?.endsAt;
   if (ends.hidden || !at) return;
   const left = at - (Date.now() + c.skew);
-  // Under 375 the row holds only the time beside Revoke: "Ends in" stays in the name, for screen readers.
-  const words = el("span", innerWidth < 375 ? { class: "sr" } : {}, ["Ends in "]);
-  endsText.replaceChildren(words, countdown(left), offline ? " · Reconnecting" : "");
+  // The space outside the words' span: a name trims each element's text, so "Ends in" would run into the time.
+  const words = el("span", {}, ["Ends in"]);
+  endsText.replaceChildren(words, ` ${countdown(left)}`, offline ? " · Reconnecting" : "");
+  // Where Revoke (always next) wraps off the row, only the time shows: "Ends in" stays in the name.
+  const next = /** @type {HTMLElement | null} */ (ends.nextElementSibling);
+  if (next && ends.offsetTop !== next.offsetTop) words.className = "sr";
   ends.classList.toggle("soon", left <= SOON_MS);
 }
 

@@ -1,7 +1,7 @@
 /* The Session Expiry sheet (design.md section 7): one glass pane (app.css .glass-pane), a 2 x 2 grid of shapes. Left,
    the title and time card over the presets; right, Close and Set in one column. */
 .sheet {
-  width: min(calc(100% - 2 * var(--pad)), 432px);
+  width: min(100% - 2 * var(--pad), 432px);
   max-width: none;
   margin: auto auto calc(var(--inset) + env(safe-area-inset-bottom));
   padding: 0;
@@ -44,7 +44,7 @@
    keyboard types it. */
 .sheet-card {
   display: flex;
-  flex-wrap: wrap;
+  flex-flow: wrap;
   justify-content: center;
   align-items: baseline;
   column-gap: 8px;
@@ -61,6 +61,7 @@
   box-shadow: none;
   font-size: 28px;
   letter-spacing: 0;
+  text-transform: none;
 }
 .sheet-card .field::-webkit-calendar-picker-indicator {
   display: none;
