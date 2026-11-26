@@ -212,6 +212,12 @@ describe("live-check: what each page kind answers, by mode", () => {
     expect(find(preview(), "the site has no /fo/ping").expect).toEqual({ status: 404 });
     expect(preview({ ...fixture, fileOrigin: null }).some((c) => c.url.includes("/fo/"))).toBe(false);
   });
+
+  it("a signed-out upload list is refused with auth_required in either mode, file origin or not", () => {
+    const want = { url: `${ORIGIN}/api/uploads`, expect: { status: 401, body: '"code":"auth_required"' } };
+    for (const checks of [preview(), open(), preview({ ...fixture, fileOrigin: null })])
+      expect(find(checks, "a signed-out upload list is refused with auth_required")).toMatchObject(want);
+  });
 });
 
 describe("live-check: files a build that drops dotfiles or leaks sources would get wrong", () => {

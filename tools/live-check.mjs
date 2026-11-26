@@ -330,6 +330,11 @@ export function checksFor(reg, mode) {
       { what: "the site has no /fo/ping", url: `${origin}/fo/ping`, expect: { status: 404 } },
     );
   }
+  checks.push({
+    what: "a signed-out upload list is refused with auth_required",
+    url: `${origin}/api/uploads`,
+    expect: { status: 401, body: '"code":"auth_required"' },
+  });
   return checks;
 }
 
