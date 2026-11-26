@@ -118,7 +118,8 @@ export interface DerivedFlags { slides: boolean; pdf: boolean; pages: number | n
 export interface PhoneItemExtra { notes: boolean; fontsMissing: string[]; }   // PhoneView.items[i].extra; never in a ScreenView
 // Shown.via ("viewer" | "app", live decks); ScreenView.confirmed, upload {bytes, total}, choiceBytes;
 // PhoneView.choices (the three shuffled, live and unconfirmed), confirmed, firstShownAt; ClaimResponse.choices;
-// LinkSet.bundle (the base `.../b/<token>/`); the screen's hello `fo: "file" | "main"` (FO-01).
+// LinkSet.bundle (the base `.../b/<token>/`); the screen's hello `fo: "file" | "main"` (FO-01);
+// PairingAccountError "match_required" | "service_busy" | "match_wrong" (a wrong pick canceled the claim); statuses in errors-app.js.
 export interface MatchRequest { choice: string; ids?: string[]; }   // POST /api/match; ids: Up Next, approved in the same call
 export interface MatchResponse { view: PhoneView; approved: boolean; approveError: ErrorCode | null; }
 export const LINK_PURPOSES = [...OPEN_MODES, "bundle"] as const;   // bundle is a link purpose, not an open mode
@@ -209,7 +210,7 @@ export type ScreenStateKey =
 An event the table does not list for a state returns `wrong_state` and changes nothing; approve in `ended` returns `session_ended`. Approve (the same set of items, in any order; library items in the same order), open.click, fetched, control and end are idempotent: a repeat in the target state returns the current view. Cancel is not: it drops the pairing, so a repeat fails with `pairing_invalid` before it reaches the machine.
 
 ### 2.3 The pure machine (`src/worker/machine.ts`)
-`machine.ts` holds the types, `transition` (one `switch` that dispatches by event) and `nextDeadline`. The 2.2 rows are reduced in `src/worker/machine/`: `pairing.ts` (code.next, claim, cancel, restart, socket, timer), `items.ts` (listed, approve, open.click, fallback), `upload.ts` (upload.start, upload.done, upload.failed) and `control.ts` (control, length, launched, fetched, end); `step.ts` holds what they share.
+`machine.ts` holds the types, `transition` (one `switch` that dispatches by event) and `nextDeadline`. The 2.2 rows are reduced in `src/worker/machine/`: `pairing.ts` (code.next, claim, cancel, restart, socket, timer), `lists.ts` (listed, approve, open.click, fallback), `upload.ts` (upload.start, upload.done, upload.failed) and `control.ts` (control, length, launched, fetched, end); `step.ts` holds what they share: the step constructors, a new session, `endSession` and `close`.
 ```ts
 import type { EndReason, ErrorCode, FileType, Kind, Mode, OpenMode, SessionState } from "../shared/protocol.ts";
 
@@ -224,7 +225,7 @@ export type ItemDraft = Omit<FileItemRef, "id"> | Omit<LinkRef, "id">;   // an i
 export const MAX_ITEMS = 12;
 export const LINK_HOSTS: readonly string[];          // ["www.vevox.com"]
 export declare function allowedLink(url: string): string | null;   // URL-parsed: https, an allowed host, no credentials, no explicit non-default port, at most 2048 characters; answers url.href, the only form an item stores
-export declare function orderItems<T extends ItemDraft>(items: readonly T[]): T[];   // library files only: the caller's (Up Next) order; else files by name, then links by title
+export declare function orderItems<T extends ItemDraft>(items: readonly T[]): T[];   // every file a library file (links beside them or not): the caller's (Up Next) order; else, links alone included, files by name, then links by title
 export declare function kindOf(type: FileType): ItemKind;   // the viewer per type; a Record over FileType, so a new type fails the typecheck until it has one
 export declare function withIds(items: readonly (ItemDraft | ItemRef)[]): ItemRef[];   // "i1", "i2", ... by place in the ordered list, written at approval (or upload.done); a list whose items all hold ids keeps them (a guest's file at open.click), one missing any is numbered whole
 export declare const shownSchema: z.ZodType<Shown>;   // the one shape check for `shown` (strict; `play` and `sound` optional): the remote's body extends it with `seq`, and schema step 6 repairs stored data with it (step 7 starts a missing or malformed `Machine.v` at 0)
