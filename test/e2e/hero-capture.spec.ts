@@ -1,5 +1,5 @@
-// Capture for the landing hero (docs/design.md, Hero stage): the demo room screen in Present mode, the horizontal photo
-// at 1440 x 828 and 2x, the vertical photo on a phone at 390 x 844 and 3x.
+// Capture for the landing hero (docs/design.md, Hero stage): the demo room screen as a visitor sees it, the horizontal
+// photo selected on a desktop at 1440 x 904 and 2x, the vertical photo on a phone at 390 x 711 and 3x.
 // Run: HERO_CAPTURE=1 npx playwright test hero-capture --project=preview; the PNGs land in test-results/shots/.
 import { type Browser, expect, type Page, test } from "@playwright/test";
 import { DEMO_ITEMS } from "../../src/shared/demo-catalog.ts";
@@ -28,28 +28,23 @@ async function expectRealFont(page: Page) {
   expect(font.button).toMatch(/^"?Inter"?,/);
 }
 
-/** Presenting, the item drawn, the controls hidden, and everything settled: fonts, the image, animations, focus. */
-async function presentAndSettle(page: Page, name: string) {
+/** The item drawn and everything settled: fonts, the image, animations, focus; the pointer parked off every control. */
+async function settle(page: Page, name: string) {
   await expect(page.getByRole("heading", { level: 1 })).toHaveText(name);
   await expect(page.locator("#frame :is(picture img, canvas, video)").first()).toBeVisible();
-  await page.getByRole("button", { name: "Present", exact: true }).click();
-  await expect(page.locator("body")).toHaveClass(/\bis-presenting\b/);
-  for (const part of ["#controls", "#handle", ".bar", "#items"]) await expect(page.locator(part)).toBeHidden();
-  // Stop Presenting follows the pointer and a tap shows it for 3 s: wait for it to be gone.
-  await expect(page.locator("#view")).not.toHaveClass(/\bis-awake\b/, { timeout: 8000 });
   await page.evaluate(`(async () => {
     await document.fonts.ready;
     await Promise.all([...document.images].map((img) => img.decode().catch(() => undefined)));
     await Promise.all(document.getAnimations().map((a) => a.finished.catch(() => undefined)));
     document.activeElement?.blur();
   })()`);
+  await page.mouse.move(2, 2);
   await page.waitForTimeout(800);
 }
 
-/** The screenshot, after the last look at the chrome: still presenting, Stop Presenting faded out, no toast up. */
+/** The screenshot, after the last look: not presenting, no toast up. */
 async function shoot(page: Page, file: string) {
-  await expect(page.locator("body")).toHaveClass(/\bis-presenting\b/);
-  await expect(page.locator("#b-stop")).toHaveCSS("opacity", "0");
+  await expect(page.locator("body")).not.toHaveClass(/\bis-presenting\b/);
   expect(await page.locator(".toast:not(.out)").count(), "a toast is up").toBe(0);
   await page.screenshot({ path: `${SHOTS}/${file}` });
 }
@@ -57,12 +52,12 @@ async function shoot(page: Page, file: string) {
 async function newContext(browser: Browser, phone: boolean) {
   return browser.newContext(
     phone
-      ? { viewport: { width: 390, height: 844 }, hasTouch: true, isMobile: true, deviceScaleFactor: 3 }
-      : { viewport: { width: 1440, height: 828 }, deviceScaleFactor: 2 },
+      ? { viewport: { width: 390, height: 711 }, hasTouch: true, isMobile: true, deviceScaleFactor: 3 }
+      : { viewport: { width: 1440, height: 904 }, deviceScaleFactor: 2 },
   );
 }
 
-test("the room screen presenting the horizontal photo at 1440 x 828 and 2x", async ({ browser }) => {
+test("the room screen with the horizontal photo selected at 1440 x 904 and 2x", async ({ browser }) => {
   const screenContext = await newContext(browser, false);
   const screen = await screenContext.newPage();
   await screen.goto("/s?mode=demo");
@@ -76,17 +71,16 @@ test("the room screen presenting the horizontal photo at 1440 x 828 and 2x", asy
   await phone.goto(`/a?c=${code}`);
   await phone.getByRole("button", { name: "Approve" }).click();
 
-  // The viewer opens on the deck; the font is read on the list, which Present then hides.
   await expect(screen.getByRole("heading", { level: 1 })).toHaveText(DEMO_ITEMS.deck.name);
   await expectRealFont(screen);
   await screen.locator("#items").getByRole("button", { name: DEMO_ITEMS.horizontal.name }).click();
-  await presentAndSettle(screen, DEMO_ITEMS.horizontal.name);
+  await settle(screen, DEMO_ITEMS.horizontal.name);
   await shoot(screen, "hero-desktop-2x.png");
   await screenContext.close();
   await phoneContext.close();
 });
 
-test("a phone presenting the vertical photo at 390 x 844 and 3x", async ({ browser }) => {
+test("a phone with the vertical photo selected at 390 x 711 and 3x", async ({ browser }) => {
   const context = await newContext(browser, true);
   const page = await context.newPage();
   await page.goto("/s?mode=demo");
@@ -96,7 +90,7 @@ test("a phone presenting the vertical photo at 390 x 844 and 3x", async ({ brows
   await expectRealFont(page);
   await page.locator("#handle").click();
   await page.locator("#items").getByRole("button", { name: DEMO_ITEMS.vertical.name }).click();
-  await presentAndSettle(page, DEMO_ITEMS.vertical.name);
+  await settle(page, DEMO_ITEMS.vertical.name);
   await shoot(page, "hero-phone-3x.png");
   await context.close();
 });
