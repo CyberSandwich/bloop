@@ -6,13 +6,18 @@ import { type BrowserContext, expect, type Page, test } from "@playwright/test";
 
 const now = Date.now();
 const sha = (t: string) => createHash("sha256").update(t).digest("hex");
+// Parallel workers share one local database: a locked one is tried again.
 const d1 = (sql: string) => {
-  const r = spawnSync(
-    "npx",
-    ["wrangler", "d1", "execute", "bloop", "--local", "--persist-to", ".wrangler/state", "--command", sql],
-    { encoding: "utf8" },
-  );
-  if (r.status !== 0) throw new Error(r.stderr.slice(-400));
+  for (let tries = 0; ; tries++) {
+    const r = spawnSync(
+      "npx",
+      ["wrangler", "d1", "execute", "bloop", "--local", "--persist-to", ".wrangler/state", "--command", sql],
+      { encoding: "utf8" },
+    );
+    if (r.status === 0) return;
+    if (tries >= 10 || !/locked|BUSY/.test(r.stderr)) throw new Error(r.stderr.slice(-400));
+    Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 500 + tries * 300);
+  }
 };
 
 function seed(): string {
@@ -49,7 +54,7 @@ async function scene(
   const page = await context.newPage();
   await options.before?.(page);
   await page.goto(`/upload-shots.html?scene=${name}`);
-  await page.waitForFunction("window.__ready === true");
+  await page.locator("body[data-ready]").waitFor({ state: "attached" });
   return { context, page };
 }
 const shot = (page: Page, file: string) => page.screenshot({ path: `test-results/shots/${file}.png` });

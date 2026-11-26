@@ -56,4 +56,4 @@ if (scene === "saved") {
   // Holds the pill as a pointer on it would, so a shot has time to be taken.
   setTimeout(() => document.querySelector(".up-pill")?.dispatchEvent(new Event("pointerenter")), 300);
 }
-window.__ready = true;
+document.body.dataset.ready = "1";
