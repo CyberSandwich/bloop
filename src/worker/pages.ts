@@ -56,6 +56,22 @@ const fetchAs = (
 const notFound = (env: Pick<PageEnv, "ASSETS">, request: Request): Promise<Response> => fetchAs(env, request, MISSING);
 
 /**
+ * Whether every open draft's date is final: the build's `/_launch.json` (tools/build-pages.mjs launchManifest), read
+ * through the asset binding, which skips `servePage` (the public request is 404). A missing file, a non-200, bad JSON
+ * or anything but `launchReady: true` is false, so a broken build never reads as ready.
+ */
+export async function launchReady(env: Pick<PageEnv, "ASSETS">, request: Request): Promise<boolean> {
+  try {
+    const res = await env.ASSETS.fetch(new Request(new URL("/_launch.json", request.url)));
+    if (res.status !== 200) return false;
+    const body: unknown = await res.json();
+    return typeof body === "object" && body !== null && (body as { launchReady?: unknown }).launchReady === true;
+  } catch {
+    return false;
+  }
+}
+
+/**
  * The 404 a plain asset or a refused path answers. In open mode a browser navigation gets the open 404 page (its own
  * nav), still with status 404; every other request, and preview, keeps today's. The mode is read only for a navigation.
  */
