@@ -6,6 +6,8 @@ import { DurableObject } from "cloudflare:workers";
 import type { Env } from "../env.ts";
 import { purgeDueFiles } from "../library/purge.ts";
 import { purgeDepsFor } from "../library/wiring.ts";
+import type { OwnerEnd } from "../live-screens.ts";
+import { screenStub } from "../stubs.ts";
 import {
   allProgress,
   clearProgress,
@@ -24,6 +26,7 @@ import {
   releaseLease,
   rowsLeft,
   type ScreenRow,
+  screensMatching,
   takeLease,
 } from "./user-library-rules.ts";
 import { initUserLibraryStorage } from "./user-library-schema.ts";
@@ -117,6 +120,23 @@ export class UserLibrary extends DurableObject<Env> {
 
   async listScreens(): Promise<ScreenRow[]> {
     return liveScreens(this.ctx.storage.sql);
+  }
+
+  /**
+   * Ends the user's live screens, all of them or those of one phone session or showing one file. Each Screen ends its own
+   * session, and only if the pairing's user is `userId`; the row is marked ended either way. A Screen that cannot be
+   * reached is logged: the serving predicate already refuses its fetches for a signed-out or purging owner.
+   */
+  async endScreens(userId: string, filter: { bySession?: string; fileId?: string } = {}): Promise<void> {
+    const rows = screensMatching(liveScreens(this.ctx.storage.sql), filter);
+    for (const row of rows) {
+      try {
+        await (screenStub(this.env, row.screenRef) as unknown as OwnerEnd).endFromOwner(userId);
+      } catch {
+        console.error(JSON.stringify({ evt: "end_screen_failed" }));
+      }
+      endScreenRow(this.ctx.storage.sql, row.sessionId, Date.now());
+    }
   }
 
   async forgetScreens(sessionIds: string[]): Promise<void> {

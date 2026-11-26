@@ -21,11 +21,23 @@ export function fakeBucket(initial: Record<string, string | Uint8Array> = {}): F
     beforeDelete: () => {},
     bucket: {
       async list(options = {}) {
-        const keys = [...objects.keys()].filter((k) => k.startsWith(options.prefix ?? "")).sort();
+        const prefix = options.prefix ?? "";
+        const keys = [...objects.keys()].filter((k) => k.startsWith(prefix)).sort();
         const limit = options.limit ?? 1000;
+        const folded = options.delimiter
+          ? new Set(
+              keys.flatMap((k) =>
+                k.includes(options.delimiter as string, prefix.length)
+                  ? [k.slice(0, k.indexOf(options.delimiter as string, prefix.length) + 1)]
+                  : [],
+              ),
+            )
+          : new Set<string>();
+        const flat = keys.filter((k) => !options.delimiter || !k.includes(options.delimiter, prefix.length));
         return {
-          objects: keys.slice(0, limit).map((key) => ({ key, size: objects.get(key)?.length ?? 0 })),
-          truncated: keys.length > limit,
+          objects: flat.slice(0, limit).map((key) => ({ key, size: objects.get(key)?.length ?? 0 })),
+          truncated: flat.length > limit,
+          delimitedPrefixes: [...folded],
         };
       },
       async delete(keys) {
@@ -44,7 +56,11 @@ export function fakeBucket(initial: Record<string, string | Uint8Array> = {}): F
         const part = options?.range
           ? body.slice(options.range.offset, options.range.offset + options.range.length)
           : body;
-        return { body: new Blob([part]).stream(), size: body.length };
+        return {
+          body: new Blob([part]).stream(),
+          size: body.length,
+          text: async () => new TextDecoder().decode(part),
+        };
       },
       async put(key, value) {
         if (value instanceof ReadableStream) {

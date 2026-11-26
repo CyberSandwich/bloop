@@ -3,6 +3,8 @@ import { cronNotify } from "./auth/email.ts";
 import type { Config } from "./config.ts";
 import { CRON, type CronJob, type CronTrigger } from "./cron.ts";
 import type { Env } from "./env.ts";
+import { runLibraryRetention } from "./library/retention.ts";
+import { retentionDepsFor } from "./library/wiring.ts";
 import { closeStaleSessions, runRetention } from "./retention.ts";
 import { sweepGuestFiles } from "./seams/guest-drop/select.ts";
 import { runSpendBreaker, spendStub } from "./spend/guard.ts";
@@ -20,6 +22,16 @@ export const spendBreakerJob = (configProblems?: readonly string[]): CronJob<Env
       configProblems,
     );
     return { more: false };
+  },
+});
+
+/** The library's due work: trash, requested deletions and holds each hour, the inactivity and orphan scans each day. */
+const libraryJob = (daily: boolean): CronJob<Env, Config> => ({
+  name: daily ? "library_daily" : "library_due",
+  run: async (env, config) => {
+    const report = await runLibraryRetention(env, config.account, await retentionDepsFor(env, config), { daily });
+    console.log(JSON.stringify({ evt: "library_retention", ...report }));
+    return { more: report.more };
   },
 });
 
@@ -42,6 +54,7 @@ export const JOBS: Readonly<Record<CronTrigger, readonly CronJob<Env, Config>[]>
         return { more: false };
       },
     },
+    libraryJob(false),
   ],
   [CRON.daily]: [
     {
@@ -51,5 +64,6 @@ export const JOBS: Readonly<Record<CronTrigger, readonly CronJob<Env, Config>[]>
         return { more: false };
       },
     },
+    libraryJob(true),
   ],
 };
