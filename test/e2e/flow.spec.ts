@@ -67,9 +67,7 @@ const SCREENS = [
 /** Each box lies whole inside the viewport, `--inset` in from every edge, and clear of every corner pill shown. */
 async function expectInView(page: Page, selectors: string[]) {
   const { width, height } = page.viewportSize() ?? { width: 0, height: 0 };
-  const inset = Number(
-    await page.evaluate("parseFloat(getComputedStyle(document.documentElement).getPropertyValue('--inset'))"),
-  );
+  const inset = await insetOf(page);
   const pills = await Promise.all((await page.locator(".bar > :visible").all()).map((p) => p.boundingBox()));
   const edges = (b: { x: number; y: number; width: number; height: number }) => ({
     l: Math.round(b.x),
@@ -173,6 +171,17 @@ const insetOf = async (page: Page) =>
   (await page.evaluate("parseFloat(getComputedStyle(document.documentElement).getPropertyValue('--inset'))")) as number;
 
 type Box = { x: number; y: number; width: number; height: number };
+
+/** `inner`'s box lies whole inside `outer`'s, to the nearest pixel: nothing clipped. */
+async function expectWithin(inner: Locator, outer: Locator) {
+  const [i, o] = [await inner.boundingBox(), await outer.boundingBox()];
+  if (!i || !o) throw new Error("no box");
+  const at = `${JSON.stringify(i)} in ${JSON.stringify(o)}`;
+  expect(Math.round(i.x), at).toBeGreaterThanOrEqual(Math.round(o.x));
+  expect(Math.round(i.y), at).toBeGreaterThanOrEqual(Math.round(o.y));
+  expect(Math.round(i.x + i.width), at).toBeLessThanOrEqual(Math.round(o.x + o.width));
+  expect(Math.round(i.y + i.height), at).toBeLessThanOrEqual(Math.round(o.y + o.height));
+}
 
 /**
  * The pill and its count, read in one frame once nothing finite animates in the pill. A change of place glides it
@@ -313,7 +322,7 @@ test.describe("pairing flow", () => {
     await expectNoAxeViolations(screen.page);
 
     await phone.page.getByRole("button", { name: "Approve" }).click();
-    await expect(heading(phone.page)).toHaveText("Approved for Demo Room");
+    await expect(heading(phone.page)).toHaveText("Demo Room");
     await expect(phone.page.locator("#ends-text")).toHaveText(/^Ends in \d+:\d{2}$/);
     // The approved items are a record, not controls: no ticks.
     await expect(phone.page.locator("#file-list .row")).toHaveCount(4);
@@ -428,22 +437,19 @@ test.describe("pairing flow", () => {
         .locator("form")
         .evaluate((f) => Promise.all(f.getAnimations().map((a: { finished: Promise<unknown> }) => a.finished)));
       const field = sheet.getByLabel("Expires At");
-      // The whole time shows: a time input never scrolls (its scrollWidth is its width even when clipped), so measure
-      // the widest 12-hour time in its font, beside its picker icon (about one em), against its content box.
+      // The whole time shows, inside the card: a time input never scrolls (its scrollWidth is its width even when
+      // clipped), so measure the widest 12-hour time in its font against its content box.
       const fits = await phone.page.evaluate(`(() => {
         const el = document.querySelector(".sheet-card .field");
         const css = getComputedStyle(el);
         const ctx = document.createElement("canvas").getContext("2d");
         ctx.font = css.fontWeight + " " + css.fontSize + " " + css.fontFamily;
         const text = Math.max(...["00:00 PM", "12:59 AM", "08:48 PM"].map((t) => ctx.measureText(t).width));
-        const room = el.clientWidth - parseFloat(css.paddingLeft) - parseFloat(css.paddingRight);
-        return text + parseFloat(css.fontSize) <= room;
+        return text <= el.clientWidth;
       })()`);
       expect(fits).toBe(true);
-      // The input spans its row of the card.
       const card = sheet.locator(".sheet-card");
-      const inner = await card.evaluate((n) => n.clientWidth);
-      expect(Math.round((await field.boundingBox())?.width ?? 0)).toBe(Math.round(inner));
+      await expectWithin(field, card);
       // The presets share one row.
       const tops = new Set<number>();
       for (const chip of await sheet.locator("[data-minutes]").all())
@@ -467,6 +473,76 @@ test.describe("pairing flow", () => {
     });
   }
 
+  // The title and the time share one baseline where one row holds both (a 24-hour time at 390 and 844 x 390), and
+  // wrap as two centered lines where it can't (at 320, and a 12-hour time at 390). A time input's text is centered
+  // in its box, so its baseline is the box's middle less half the font's descent and plus half its ascent.
+  for (const [width, height, locale, oneRow] of [
+    [390, 844, "en-GB", true],
+    [844, 390, "en-GB", true],
+    [320, 640, "en-GB", false],
+    [390, 844, "en-US", false],
+  ] as const) {
+    test(`SESS-01 at ${width} x ${height} in ${locale} the sheet's title and time are centered, ${oneRow ? "on one baseline" : "on two lines, nothing clipped"}`, async ({
+      browser,
+    }) => {
+      const screen = await demoScreen(browser);
+      const code = await typedCodeOf(screen.page);
+      const context = await browser.newContext({ viewport: { width, height }, locale, isMobile: true, hasTouch: true });
+      const page = await context.newPage();
+      await page.goto(`/a?c=${code}`);
+      await page.getByRole("button", { name: /^Approve, code/ }).click();
+      await page.getByRole("button", { name: /Change the Session Expiry$/ }).click();
+      const sheet = page.getByRole("dialog", { name: "Session Expiry" });
+      await expect(sheet).toBeVisible();
+      await sheet
+        .locator("form")
+        .evaluate((f) => Promise.all(f.getAnimations().map((a: { finished: Promise<unknown> }) => a.finished)));
+      await page.evaluate("document.fonts.ready.then(() => true)");
+      const m = (await page.evaluate(`(() => {
+        const card = document.querySelector(".sheet-card");
+        const h2 = card.querySelector("h2");
+        const field = card.querySelector(".field");
+        const probe = document.createElement("span");
+        probe.style.cssText = "display:inline-block;width:0;height:0";
+        h2.append(probe);
+        const titleBase = probe.getBoundingClientRect().bottom;
+        probe.remove();
+        const css = getComputedStyle(field);
+        const ctx = document.createElement("canvas").getContext("2d");
+        ctx.font = css.fontWeight + " " + css.fontSize + " " + css.fontFamily;
+        const t = ctx.measureText("0");
+        const f = field.getBoundingClientRect();
+        const h = h2.getBoundingClientRect();
+        const c = card.getBoundingClientRect();
+        return {
+          titleBase,
+          timeBase: f.top + (f.height + t.fontBoundingBoxAscent - t.fontBoundingBoxDescent) / 2,
+          card: (c.left + c.right) / 2,
+          title: { left: h.left, right: h.right, bottom: h.bottom },
+          field: { left: f.left, right: f.right, top: f.top },
+        };
+      })()`)) as {
+        titleBase: number;
+        timeBase: number;
+        card: number;
+        title: { left: number; right: number; bottom: number };
+        field: { left: number; right: number; top: number };
+      };
+      const at = JSON.stringify(m);
+      if (oneRow) {
+        expect(Math.abs(m.titleBase - m.timeBase), at).toBeLessThanOrEqual(1);
+        expect(Math.abs((m.title.left + m.field.right) / 2 - m.card), at).toBeLessThanOrEqual(1);
+      } else {
+        expect(Math.round(m.field.top), at).toBeGreaterThanOrEqual(Math.round(m.title.bottom));
+        expect(Math.abs((m.title.left + m.title.right) / 2 - m.card), at).toBeLessThanOrEqual(1);
+        expect(Math.abs((m.field.left + m.field.right) / 2 - m.card), at).toBeLessThanOrEqual(1);
+      }
+      await expectWithin(sheet.getByLabel("Expires At"), sheet.locator(".sheet-card"));
+      await context.close();
+      await screen.context.close();
+    });
+  }
+
   test("SESS-01 a refused length is a toast over the running session: the countdown, Revoke and the sheet stay", async ({
     browser,
   }) => {
@@ -477,7 +553,7 @@ test.describe("pairing flow", () => {
     await lengthButton.click();
     await sheet.getByRole("button", { name: "30 minutes" }).click();
     await expect(phone.page.getByRole("alert")).toContainText("Wait a minute, then try again.");
-    await expect(heading(phone.page)).toHaveText("Approved for Demo Room");
+    await expect(heading(phone.page)).toHaveText("Demo Room");
     await expect(phone.page.locator("#ends-text")).toHaveText(/^Ends in (59|1:00):\d{2}$/);
     await expect(phone.page.getByRole("button", { name: "Revoke" })).toBeVisible();
     // The sheet still works once the server takes changes again.
@@ -695,23 +771,45 @@ test.describe("pairing flow", () => {
     await phone.context.close();
   });
 
-  test("P1 Approved at 390 x 844: Revoke sits in the floating glass panel and the title is one inset from the top", async ({
-    browser,
-  }) => {
-    const screen = await demoScreen(browser);
-    const { phone } = await scan(browser, screen.page);
-    await phone.page.getByRole("button", { name: "Approve" }).click();
-    await expect(heading(phone.page)).toHaveText("Approved for Demo Room");
-    const revoke = phone.page.locator(".column > .actions.glass").getByRole("button", { name: "Revoke" });
-    await expect(revoke).toBeInViewport({ ratio: 1 });
-    const inset = await insetOf(phone.page);
-    await expect(async () => {
-      const title = await heading(phone.page).boundingBox();
-      expect(Math.round(title?.y ?? -1)).toBe(Math.round(inset));
-    }).toPass();
-    await screen.context.close();
-    await phone.context.close();
-  });
+  for (const width of [320, 390, 430]) {
+    test(`P1 Approved at ${width} x 844: the h1 names the room for screen readers alone, the list is one inset from the top, and Ends in sits left of Revoke in the glass panel`, async ({
+      browser,
+    }) => {
+      const screen = await demoScreen(browser);
+      const { phone } = await scan(browser, screen.page);
+      await phone.page.setViewportSize({ width, height: 844 });
+      await phone.page.getByRole("button", { name: "Approve" }).click();
+      const h1 = heading(phone.page);
+      await expect(h1).toHaveText("Demo Room");
+      await expect(h1).toHaveClass(/\bsr\b/);
+      expect(Math.round((await h1.boundingBox())?.width ?? 9)).toBeLessThanOrEqual(1);
+      const inset = await insetOf(phone.page);
+      await expect(async () => {
+        const top = await phone.page.evaluate(
+          "(() => { const n = document.getElementById('file-list'); return n.getBoundingClientRect().top - parseFloat(getComputedStyle(n).marginTop); })()",
+        );
+        expect(Math.round(Number(top))).toBe(Math.round(inset));
+      }).toPass();
+      const panel = phone.page.locator(".column > .actions.glass");
+      const revoke = panel.getByRole("button", { name: "Revoke" });
+      await expect(revoke).toBeInViewport({ ratio: 1 });
+      // Under 375 the time alone shows; the name still says Ends in.
+      const ends = panel.getByRole("button", { name: /^Ends in \d+:\d{2}(:\d{2})?\. Change the Session Expiry$/ });
+      await expect(ends).toBeVisible();
+      await expect(phone.page.locator("#ends-text .sr")).toHaveCount(width < 375 ? 1 : 0);
+      const [e, r] = [await ends.boundingBox(), await revoke.boundingBox()];
+      if (!e || !r) throw new Error("no box");
+      expect(Math.round(e.y)).toBe(Math.round(r.y));
+      expect(Math.round(e.height)).toBe(Math.round(r.height));
+      expect(Math.round(e.x + e.width)).toBeLessThanOrEqual(Math.round(r.x));
+      // Both labels whole: neither box is narrower than its words.
+      for (const b of [ends, revoke]) expect(await b.evaluate((n) => n.scrollWidth <= n.clientWidth)).toBe(true);
+      await expectWithin(ends, panel);
+      await expectWithin(revoke, panel);
+      await screen.context.close();
+      await phone.context.close();
+    });
+  }
 
   test("P2 the picker opens the chooser directly: its accept list, and no capture attribute to skip the library", async ({
     browser,
@@ -1219,7 +1317,7 @@ test.describe("guest drop", () => {
     await expectPillUnder(screen.page, screen.page.locator(".item-card"));
     await expect(heading(screen.page)).toHaveText("sample-deck.pptx");
     await expect(screen.page.locator("#items")).toBeHidden();
-    await expect(heading(phone.page)).toHaveText("Approved for Demo Room");
+    await expect(heading(phone.page)).toHaveText("Demo Room");
     expect(await launches()).toEqual({ opened: 0, left: [] });
     await expectNoAxeViolations(screen.page);
 
@@ -1753,7 +1851,7 @@ test.describe("open path", () => {
     expect(await screen.page.evaluate(() => sessionStorage.getItem("bloop.sid"))).toBeNull();
     await expect(heading(phone.page)).toHaveText("Session Ended");
     // A live phone's end is Done alone.
-    await expect(phone.page.locator("#actions").locator(".btn")).toHaveCount(1);
+    await expect(phone.page.locator("#actions").locator("[data-action]")).toHaveCount(1);
     await expect(phone.page.locator("#actions").getByRole("button", { name: "Done" })).toBeVisible();
     await expect(phone.page.locator("[data-waitlist]")).toHaveCount(0);
     await screen.context.close();
@@ -1771,7 +1869,7 @@ test.describe("demo viewer", () => {
     await phone.page.getByRole("button", { name: "Approve" }).click();
     await expectViewer(screen.page);
     // The page's own fetch of the launched link (the deck's view) stands in for PowerPoint's, so the session opens.
-    await expect(heading(phone.page)).toHaveText("Approved for Demo Room");
+    await expect(heading(phone.page)).toHaveText("Demo Room");
     await expect(phone.page.locator("#file-list .row")).toHaveCount(CATALOG.length);
     expect(await launches()).toEqual({ opened: 0, left: [] });
     await expectNoAxeViolations(screen.page);
@@ -1879,7 +1977,7 @@ test.describe("demo viewer", () => {
       await phone.page.getByRole("checkbox", { name: startsWith(name) }).uncheck();
     }
     await phone.page.getByRole("button", { name: "Approve" }).click();
-    await expect(heading(phone.page)).toHaveText("Approved for Demo Room");
+    await expect(heading(phone.page)).toHaveText("Demo Room");
     await expect(heading(screen.page)).toHaveText(DEMO_ITEMS.link.name);
     await expect(screen.page.getByRole("link", { name: "Open vevox.com" })).toBeVisible();
     await expect(screen.page.locator("#items")).toBeHidden();
@@ -2758,7 +2856,7 @@ test.describe("screen and phone layout", () => {
     const approve = page.getByRole("button", { name: /^Approve/ });
     await expect(approve).toBeInViewport({ ratio: 1 });
     await approve.click();
-    await expect(heading(page)).toHaveText("Approved for Demo Room");
+    await expect(heading(page)).toHaveText("Demo Room");
     await page.setViewportSize({ width: 834, height: 560 });
     await expect(page.getByRole("button", { name: "Revoke" })).toBeInViewport({ ratio: 1 });
     await context.close();
@@ -3228,7 +3326,7 @@ test.describe("PAIR-13 remote: the phone commands the demo screen (design.md sec
     await expect(cancel).not.toHaveCSS("outline-style", "none");
     await phone.page.keyboard.press("Escape");
     await expect(ask).toBeHidden();
-    await expect(heading(phone.page)).toHaveText("Approved for Demo Room");
+    await expect(heading(phone.page)).toHaveText("Demo Room");
     await expect(heading(screen.page)).toHaveText(DEMO_ITEMS.deck.name);
     // The screen's End while the question is open: it goes with Revoke, never floating over Session Ended.
     await phone.page.getByRole("button", { name: "Revoke" }).click();
@@ -3423,7 +3521,7 @@ test.describe("PAIR-13 remote: the phone commands the demo screen (design.md sec
     await row(DEMO_ITEMS.vertical.name).click();
     await expect(phone.page.getByRole("alert")).toContainText("Check the connection, then try again.");
     await expect(row(DEMO_ITEMS.deck.name)).toHaveAttribute("aria-current", "true");
-    await expect(heading(phone.page)).toHaveText("Approved for Demo Room");
+    await expect(heading(phone.page)).toHaveText("Demo Room");
     await close(screen, phone);
   });
 });
@@ -3500,9 +3598,9 @@ test.describe("the phone page at phone widths (design.md section 7, Phone page)"
       await page.getByRole("button", { name: "Cancel" }).click();
 
       await page.getByRole("button", { name: /^Approve/ }).click();
-      await expect(heading(page)).toHaveText("Approved for Demo Room");
+      await expect(heading(page)).toHaveText("Demo Room");
       await expect(page.getByRole("group", { name: "The Screen" })).toBeVisible();
-      await expect(page.locator("#ends")).toHaveCSS("min-height", "44px");
+      await expect(page.locator("#ends")).toHaveCSS("min-height", "52px");
       await guard(page, width, "approved");
       await lastRowClear(page, "approved");
 
