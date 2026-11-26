@@ -66,6 +66,7 @@ describe("doc paths", () => {
     "slides.json",
     "meta.json",
     "m/0.mp4",
+    "m/720.mp4",
     "i/1920.jpg",
     "vbaProject.bin",
     "bloop.example",

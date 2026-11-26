@@ -167,7 +167,7 @@ export interface Harness {
   portCalls: string[];
   posts: { jobId: string; chunks: number }[];
   puts: number[];
-  starts: { env: Record<string, string> }[];
+  starts: { env: Record<string, string>; instance: string }[];
   destroys: number;
   inactivity: number[];
   gates: { mode: "off" | "stub" | "on"; convert: string; convertVideo: string };
@@ -241,11 +241,11 @@ export function harness(o: Options = {}): Harness {
 
   const inner = stubPort(h.store, () => h.clock.t);
   const port: ContainerPort = {
-    start(env) {
+    start(env, instance) {
       h.tick("port.start");
-      h.starts.push({ env });
+      h.starts.push({ env, instance });
       h.events.push("container start");
-      inner.start(env);
+      inner.start(env, instance);
     },
     running: () => inner.running(),
     async destroy() {

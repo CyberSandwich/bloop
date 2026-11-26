@@ -51,6 +51,7 @@ export function parsePath(path: string): PathInfo | null {
     case "t.webp":
       return { type: "thumb" };
     case "m/0.mp4":
+    case "m/720.mp4":
       return { type: "mp4" };
     case "i/1920.jpg":
       return { type: "jpeg" };
@@ -88,7 +89,12 @@ export function groupOf(info: PathInfo, kind: Kind): Group | null {
 }
 
 /** The exact set of paths a manifest may list, given the groups it says passed. */
-export function expectedPaths(rendered: number, widths: readonly number[], passed: ReadonlySet<Group>): Set<string> {
+export function expectedPaths(
+  rendered: number,
+  widths: readonly number[],
+  passed: ReadonlySet<Group>,
+  preview = false,
+): Set<string> {
   const out = new Set<string>(["meta.json"]);
   if (passed.has("pdf")) out.add("doc.pdf");
   if (passed.has("notes")) out.add("notes.json");
@@ -96,7 +102,7 @@ export function expectedPaths(rendered: number, widths: readonly number[], passe
     out.add("t.webp").add("slides.json");
     for (let n = 1; n <= rendered; n++) for (const w of widths) out.add(`s/${n}/${w}.webp`);
   }
-  if (passed.has("media")) out.add("m/0.mp4").add("t.webp");
+  if (passed.has("media")) out.add(preview ? "m/720.mp4" : "m/0.mp4").add("t.webp");
   if (passed.has("image")) out.add("i/1920.jpg").add("t.webp");
   return out;
 }
@@ -115,6 +121,8 @@ export interface CheckedManifest {
   rendered: number;
   total: number;
   pieces: Map<string, Piece>;
+  /** The video's mp4 is the 720p, not the full encode. */
+  preview: boolean;
 }
 
 export type ManifestResult = { ok: true; checked: CheckedManifest } | { ok: false; reason: string };
@@ -153,9 +161,11 @@ export function checkManifest(raw: unknown, ctx: { jobId: string; ext: string; p
   }
   if (sum > ctx.profile.totalBytes) return bad("total_cap");
 
-  const expected = expectedPaths(rendered, ctx.profile.widths, passed);
+  // A video's one mp4 is the full encode (m/0.mp4) or, when the full encode did not finish, the 720p (m/720.mp4).
+  const preview = kind === "video" && pieces.has("m/720.mp4");
+  const expected = expectedPaths(rendered, ctx.profile.widths, passed, preview);
   if (expected.size !== pieces.size || ![...pieces.keys()].every((p) => expected.has(p))) return bad("path_set");
-  return { ok: true, checked: { manifest: m, passed, rendered, total, pieces } };
+  return { ok: true, checked: { manifest: m, passed, rendered, total, pieces, preview } };
 }
 
 // ---------------------------------------------------------------- the three JSON files
@@ -503,7 +513,7 @@ export function storedPaths(group: Group, widths: readonly number[]): string[] {
     case "notes":
       return ["notes.json"];
     case "media":
-      return ["m/0.mp4", "t.webp"];
+      return ["m/0.mp4", "m/720.mp4", "t.webp"];
     case "image":
       return ["i/1920.jpg", "t.webp"];
   }
@@ -511,4 +521,4 @@ export function storedPaths(group: Group, widths: readonly number[]): string[] {
 
 /** The stored-name grammar: the only names `keys.ts` will turn into a key. */
 export const STORED =
-  /^(?:t\.webp|slides\.json|doc\.pdf|notes\.json|m\/0\.mp4|i\/1920\.jpg|s\/[1-9][0-9]{0,4}\.pack|s\/1\/[1-9][0-9]{0,4}\.webp)$/;
+  /^(?:t\.webp|slides\.json|doc\.pdf|notes\.json|m\/(?:0|720)\.mp4|i\/1920\.jpg|s\/[1-9][0-9]{0,4}\.pack|s\/1\/[1-9][0-9]{0,4}\.webp)$/;

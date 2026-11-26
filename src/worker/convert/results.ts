@@ -5,9 +5,34 @@ import type { Db } from "../auth/db.ts";
 import { MAX_ATTEMPTS, RETRYABLE } from "./codes.ts";
 import { GUEST_SERVABLE, LIBRARY_FROM, LIBRARY_SERVABLE, type OwnerKind } from "./keys.ts";
 
-export const DERIVED_STATUS = ["queued", "running", "done", "failed", "skipped", "cancelled"] as const;
+/** `ready720`: a video's 720p mp4 is stored and playable; the full encode is still running (the row has a stage) or has
+ * ended without one (no stage), in which case the 720p is the final output. */
+export const DERIVED_STATUS = ["queued", "running", "ready720", "done", "failed", "skipped", "cancelled"] as const;
 export type DerivedStatus = (typeof DERIVED_STATUS)[number];
-export const LIVE: readonly DerivedStatus[] = ["queued", "running"];
+
+/** Readers ask this and never compare the status themselves: true when the row has something to play. */
+export const isPlayable = (status: string | null | undefined): boolean => status === "done" || status === "ready720";
+
+/** The stored name a player reads: the full encode when it is stored, else the 720p. Null when neither is. */
+export function playableKey(row: { status: string; outputs: string | null }): "m/0.mp4" | "m/720.mp4" | null {
+  if (!isPlayable(row.status) || row.outputs === null) return null;
+  const parsed = outputsSchema.safeParse(safeJson(row.outputs));
+  if (!parsed.success || !parsed.data.groups.media) return null;
+  const names = new Set(parsed.data.files.map((f) => f.path));
+  return names.has("m/0.mp4") ? "m/0.mp4" : names.has("m/720.mp4") ? "m/720.mp4" : null;
+}
+
+function safeJson(text: string): unknown {
+  try {
+    return JSON.parse(text);
+  } catch {
+    return null;
+  }
+}
+
+/** A row whose run is still going: queued, running, or a ready720 whose full encode has not ended (it keeps a stage). */
+const liveWhere = (col = ""): string =>
+  `(${col}status IN ('queued', 'running') OR (${col}status = 'ready720' AND ${col}stage IS NOT NULL))`;
 
 export interface RunKey {
   fileId: string;
@@ -61,7 +86,6 @@ export const derivedRowSchema = z.object({
 export type DerivedRow = z.infer<typeof derivedRowSchema>;
 
 const placeholders = (n: number) => Array.from({ length: n }, () => "?").join(", ");
-const LIVE_SQL = LIVE.map((s) => `'${s}'`).join(", ");
 
 /**
  * The one claim: a new run id on a version that is skipped, cancelled or failed retryably with starts to spare. One
@@ -90,7 +114,10 @@ const GUARD = `file_id = ? AND version = ? AND run_id = ?`;
 export async function setStage(db: Db, k: RunKey, stage: string, now: number): Promise<boolean> {
   const status = stage === "waiting" ? "queued" : "running";
   const r = await db
-    .prepare(`UPDATE derived SET status = ?, stage = ?, updated_at = ? WHERE ${GUARD} AND status IN (${LIVE_SQL})`)
+    .prepare(
+      // A ready720 row stays playable while its full encode reports stages.
+      `UPDATE derived SET status = CASE WHEN status = 'ready720' THEN status ELSE ? END, stage = ?, updated_at = ? WHERE ${GUARD} AND ${liveWhere()}`,
+    )
     .bind(status, stage, now, k.fileId, k.version, k.runId)
     .run();
   return r.meta.changes === 1;
@@ -100,7 +127,7 @@ export async function setStage(db: Db, k: RunKey, stage: string, now: number): P
 export async function startAttempt(db: Db, k: RunKey, now: number): Promise<boolean> {
   const r = await db
     .prepare(
-      `UPDATE derived SET attempts = attempts + 1, status = 'running', stage = 'starting', updated_at = ? WHERE ${GUARD} AND status IN (${LIVE_SQL}) AND attempts < ?`,
+      `UPDATE derived SET attempts = attempts + 1, status = 'running', stage = 'starting', updated_at = ? WHERE ${GUARD} AND ${liveWhere()} AND attempts < ?`,
     )
     .bind(now, k.fileId, k.version, k.runId, MAX_ATTEMPTS)
     .run();
@@ -109,7 +136,7 @@ export async function startAttempt(db: Db, k: RunKey, now: number): Promise<bool
 
 export async function heartbeat(db: Db, k: RunKey, now: number): Promise<boolean> {
   const r = await db
-    .prepare(`UPDATE derived SET updated_at = ? WHERE ${GUARD} AND status IN (${LIVE_SQL})`)
+    .prepare(`UPDATE derived SET updated_at = ? WHERE ${GUARD} AND ${liveWhere()}`)
     .bind(now, k.fileId, k.version, k.runId)
     .run();
   return r.meta.changes === 1;
@@ -124,16 +151,28 @@ export interface DonePayload {
   bytes: number;
 }
 
-/** Publishes the outputs, only while the run is live and the file is still servable (the same fragments as `locate`). */
-export async function publishDone(db: Db, k: RunKey, p: DonePayload, now: number): Promise<boolean> {
+/**
+ * Publishes the outputs, only while the run is live and the file is still servable (the same fragments as `locate`).
+ * `done` is the end. `ready720` with a stage is the early 720p publish while the full encode runs; `ready720` with no
+ * stage is the 720p as the final output.
+ */
+export async function publishDone(
+  db: Db,
+  k: RunKey,
+  p: DonePayload,
+  now: number,
+  as: { status: "done" | "ready720"; stage: string | null } = { status: "done", stage: null },
+): Promise<boolean> {
   const r = await db
     .prepare(
-      `UPDATE derived SET status = 'done', stage = NULL, error = NULL, pages = ?, has_notes = ?, has_motion = ?, fonts_missing = ?, outputs = ?, bytes = ?, updated_at = ?
-       WHERE ${GUARD} AND status = 'running' AND (
+      `UPDATE derived SET status = ?, stage = ?, error = NULL, pages = ?, has_notes = ?, has_motion = ?, fonts_missing = ?, outputs = ?, bytes = ?, updated_at = ?
+       WHERE ${GUARD} AND (status = 'running' OR (status = 'ready720' AND stage IS NOT NULL)) AND (
          (owner_kind = 'library' AND EXISTS (SELECT 1 FROM ${LIBRARY_FROM} WHERE f.id = derived.file_id AND f.version = derived.version AND ${LIBRARY_SERVABLE}))
          OR (owner_kind = 'guest' AND EXISTS (SELECT 1 FROM guest_file g WHERE g.session_id = derived.file_id AND ${GUEST_SERVABLE})))`,
     )
     .bind(
+      as.status,
+      as.stage,
       p.pages,
       p.hasNotes ? 1 : 0,
       p.hasMotion ? 1 : 0,
@@ -149,10 +188,21 @@ export async function publishDone(db: Db, k: RunKey, p: DonePayload, now: number
   return r.meta.changes === 1;
 }
 
+/** The full encode ended without output: the 720p already published is the final one. Only a live ready720 row moves. */
+export async function settlePreview(db: Db, k: RunKey, now: number): Promise<boolean> {
+  const r = await db
+    .prepare(
+      `UPDATE derived SET stage = NULL, updated_at = ? WHERE ${GUARD} AND status = 'ready720' AND stage IS NOT NULL`,
+    )
+    .bind(now, k.fileId, k.version, k.runId)
+    .run();
+  return r.meta.changes === 1;
+}
+
 export async function markFailed(db: Db, k: RunKey, code: string, now: number): Promise<boolean> {
   const r = await db
     .prepare(
-      `UPDATE derived SET status = 'failed', stage = NULL, error = ?, updated_at = ? WHERE ${GUARD} AND status IN (${LIVE_SQL})`,
+      `UPDATE derived SET status = 'failed', stage = NULL, error = ?, updated_at = ? WHERE ${GUARD} AND ${liveWhere()}`,
     )
     .bind(code, now, k.fileId, k.version, k.runId)
     .run();
@@ -163,7 +213,7 @@ export async function markFailed(db: Db, k: RunKey, code: string, now: number): 
 export async function markSkipped(db: Db, k: RunKey, code: string, now: number): Promise<boolean> {
   const r = await db
     .prepare(
-      `UPDATE derived SET status = 'skipped', stage = NULL, error = ?, updated_at = ? WHERE ${GUARD} AND status IN (${LIVE_SQL})`,
+      `UPDATE derived SET status = 'skipped', stage = NULL, error = ?, updated_at = ? WHERE ${GUARD} AND ${liveWhere()}`,
     )
     .bind(code, now, k.fileId, k.version, k.runId)
     .run();
@@ -183,7 +233,7 @@ export async function markCancelled(
 ): Promise<string | null> {
   const row = await db
     .prepare(
-      `UPDATE derived SET status = 'cancelled', stage = NULL, updated_at = ? WHERE file_id = ? AND version = ? AND status IN (${LIVE_SQL}) AND (? IS NULL OR run_id = ?) RETURNING run_id`,
+      `UPDATE derived SET status = 'cancelled', stage = NULL, updated_at = ? WHERE file_id = ? AND version = ? AND ${liveWhere()} AND (? IS NULL OR run_id = ?) RETURNING run_id`,
     )
     .bind(now, fileId, version, onlyRun, onlyRun)
     .first<{ run_id: string | null }>();
@@ -203,7 +253,7 @@ export async function staleRuns(
 ): Promise<{ fileId: string; version: number; runId: string }[]> {
   const { results } = await db
     .prepare(
-      `SELECT file_id, version, run_id FROM derived WHERE status IN (${LIVE_SQL}) AND ? > updated_at AND run_id IS NOT NULL ORDER BY updated_at LIMIT ?`,
+      `SELECT file_id, version, run_id FROM derived WHERE ${liveWhere()} AND ? > updated_at AND run_id IS NOT NULL ORDER BY updated_at LIMIT ?`,
     )
     .bind(before, limit)
     .all<{ file_id: string; version: number; run_id: string }>();
@@ -215,9 +265,9 @@ export async function queueDepth(db: Db, userId: string | null): Promise<{ all: 
   const row = await db
     .prepare(
       `SELECT
-         (SELECT count(*) FROM derived WHERE status IN (${LIVE_SQL})) AS n_all,
-         (SELECT count(*) FROM derived WHERE status IN (${LIVE_SQL}) AND owner_kind = 'guest') AS n_guest,
-         (SELECT count(*) FROM derived d JOIN library_file f ON f.id = d.file_id WHERE d.status IN (${LIVE_SQL}) AND d.owner_kind = 'library' AND f.user_id = ?) AS n_user`,
+         (SELECT count(*) FROM derived WHERE ${liveWhere()}) AS n_all,
+         (SELECT count(*) FROM derived WHERE ${liveWhere()} AND owner_kind = 'guest') AS n_guest,
+         (SELECT count(*) FROM derived d JOIN library_file f ON f.id = d.file_id WHERE ${liveWhere("d.")} AND d.owner_kind = 'library' AND f.user_id = ?) AS n_user`,
     )
     .bind(userId ?? "")
     .first<{ n_all: number; n_guest: number; n_user: number }>();
