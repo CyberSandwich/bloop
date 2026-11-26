@@ -1,9 +1,10 @@
 import { type ChildProcess, spawn, spawnSync } from "node:child_process";
-import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { createServer } from "node:net";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
+import { declaredRateLimits, RATE_LIMIT_ENTRY } from "../env-vars.ts";
 
 export interface Wrangler {
   /** Base URL, `http://localhost:<port>`; also the Worker's PUBLIC_ORIGIN. */
@@ -82,21 +83,34 @@ class PortTaken extends Error {}
  * made absolute and the build runs from the repo, since a config's relative paths resolve from its own directory.
  */
 function limitedConfig(state: string, limits: Readonly<Record<string, number>>): string {
-  let text = readFileSync(join(root, "wrangler.jsonc"), "utf8").replace(
+  let text = readFileSync(join(root, "wrangler.jsonc"), "utf8");
+  const declared = declaredRateLimits(text);
+  for (const [name, limit] of Object.entries(limits)) {
+    if (!declared[name]) throw new Error(`wrangler.jsonc declares no rate-limit binding ${name}`);
+    if (!Number.isInteger(limit) || limit < 1) throw new Error(`${name}: a limit is a positive integer, not ${limit}`);
+  }
+  text = text.replace(RATE_LIMIT_ENTRY, (entry, head: string, name: string, _limit: string, tail: string) =>
+    name in limits ? `${head}${limits[name]}${tail}` : entry,
+  );
+  text = text.replace(
     /"(main|directory|watch_dir|migrations_dir)": "([^"]+)"/g,
     (_, key: string, value: string) => `"${key}": ${JSON.stringify(resolve(root, value))}`,
   );
   const build = '"build": {';
   if (!text.includes(build)) throw new Error("wrangler.jsonc has no build block to run from the repo");
   text = text.replace(build, `${build} "cwd": ${JSON.stringify(root)},`);
-  for (const [name, limit] of Object.entries(limits)) {
-    const binding = new RegExp(`("name": "${name}"[^}]*"limit": )\\d+`);
-    if (!binding.test(text)) throw new Error(`wrangler.jsonc declares no rate-limit binding ${name}`);
-    text = text.replace(binding, `$1${limit}`);
-  }
   const path = join(state, "wrangler.jsonc");
   writeFileSync(path, text);
   return path;
+}
+
+/**
+ * wrangler reads `.dev.vars`, else `.env`, from its config's directory, so a config in the state directory points it
+ * at the repo's own file instead (read in place, never copied).
+ */
+export function devVarsArgs(dir = root): string[] {
+  const file = [".dev.vars", ".env"].map((name) => join(dir, name)).find((path) => existsSync(path));
+  return file ? ["--env-file", file] : [];
 }
 
 /** Signals the whole process group; ESRCH (already gone) is fine. */
@@ -114,7 +128,14 @@ async function startOnce(vars: Record<string, string>, options: StartOptions): P
   // localhost, not 127.0.0.1: WebAuthn refuses an IP address as its relying party. wrangler still binds 127.0.0.1.
   const url = `http://localhost:${port}`;
   const state = mkdtempSync(join(tmpdir(), "bloop-wrangler-"));
-  const config = options.limits ? limitedConfig(state, options.limits) : options.config;
+  let config = options.config;
+  let cleanState = true;
+  try {
+    if (options.limits) config = limitedConfig(state, options.limits);
+    cleanState = false;
+  } finally {
+    if (cleanState) rmSync(state, { recursive: true, force: true });
+  }
   const varArgs = Object.entries({ ...HARNESS_VARS, PUBLIC_ORIGIN: url, ...vars }).flatMap(([k, v]) => [
     "--var",
     `${k}:${v}`,
@@ -137,6 +158,7 @@ async function startOnce(vars: Record<string, string>, options: StartOptions): P
     bin,
     [
       "dev",
+      ...(options.limits ? devVarsArgs() : []),
       // No Docker in the harness: the converter container is replaced by CONVERT_MODE=stub.
       "--enable-containers=false",
       ...(config ? ["--config", config] : []),

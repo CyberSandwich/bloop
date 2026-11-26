@@ -4,7 +4,7 @@ import { z } from "zod";
 import { type AccountConfig, accountVars } from "../config/account.ts";
 import { coreVars, isLocalOrigin } from "../config/core.ts";
 import { readSettings } from "../settings.ts";
-import { logNotify, type Notify } from "../spend/breaker.ts";
+import { deliveryClaims, logNotify, type Notify } from "../spend/breaker.ts";
 import type { Spend } from "../spend/client.ts";
 import { effectiveAll } from "../spend/switches.ts";
 import { emailSet, normalizeEmail } from "./email-norm.ts";
@@ -139,23 +139,22 @@ const alertVars = z.object({
   DEV_MAILBOX: accountVars.DEV_MAILBOX,
 });
 
-/** Mail tries per message per UTC day; past them the alert stays a log line until tomorrow. */
-export const ALERT_MAIL_TRIES = 6;
-
 /** The guard's once-a-UTC-day claim (`alertOnce`). An unreachable guard counts as claimed, so the alert still goes out. */
 export type Claim = (key: string) => Promise<boolean>;
 
 /**
  * The five-minute breaker's `notify` (cron-jobs.ts), valid config or not. The breaker calls it again on every run until
  * it resolves, so the structured log line (an Observability alert matches it) has its own claim and is written once a
- * day, and the mail has `ALERT_MAIL_TRIES` claims: a failed send throws and is retried next run, at most that often.
+ * day, and the mail has `ALERT_MAIL_TRIES` claims (`deliveryClaims`, which a breaker reset releases): a failed send
+ * throws and is retried next run, at most that often.
  * The `email` switch is read fresh. An invalid alert var leaves the log line only.
  */
 export const cronNotify =
   (env: { DB: unknown; EMAIL?: Sender }, claim: Claim): Notify =>
   async (message, key) => {
     const claimed = (claimKey: string) => claim(claimKey).catch(() => true);
-    if (await claimed(`log:${key}`)) await logNotify(message, key);
+    const [logClaim, ...mailClaims] = deliveryClaims(key);
+    if (await claimed(logClaim ?? "")) await logNotify(message, key);
     const parsed = alertVars.safeParse(env);
     if (!parsed.success) return;
     const v = parsed.data;
@@ -168,7 +167,10 @@ export const cronNotify =
       devMailbox: v.DEV_MAILBOX === "1" && isLocalOrigin(v.PUBLIC_ORIGIN),
     };
     let tried = false;
-    for (let n = 1; n <= ALERT_MAIL_TRIES && !tried; n++) tried = await claimed(`mail:${key}:${n}`);
+    for (const mailClaim of mailClaims) {
+      tried = await claimed(mailClaim);
+      if (tried) break;
+    }
     if (!tried) return;
     await breakerNotify(
       { account, sender: env.EMAIL, emailSwitch },
