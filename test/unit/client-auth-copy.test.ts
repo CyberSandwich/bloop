@@ -1,7 +1,9 @@
-// The sign-in and invite strings (public/js/auth/copy.js): the voice rules, the UX string tables, and the first paint.
+// The sign-in and invite strings (public/js/auth/copy.js, copy-signin.js, copy-invite.js): the voice rules, the UX string tables, and the first paint.
 import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 import { AUTH, clock } from "../../public/js/auth/copy.js";
+import { INVITE } from "../../public/js/auth/copy-invite.js";
+import { SIGNIN } from "../../public/js/auth/copy-signin.js";
 import { NEVER_SAY } from "./never-say.ts";
 
 const read = (path: string) => readFileSync(new URL(`../../${path}`, import.meta.url), "utf8");
@@ -13,32 +15,32 @@ function strings(value: unknown): string[] {
   if (value && typeof value === "object") return Object.values(value).flatMap(strings);
   return [];
 }
-const ALL = strings(AUTH).filter((s) => !["home", "signin", "retry"].includes(s));
+const ALL = strings([AUTH, SIGNIN, INVITE]).filter((s) => !["home", "signin", "retry"].includes(s));
 // A time or a count is one token, as a name is (design.md section 3).
 const words = (text: string) => text.split(/\s+/).filter((w) => w && !/\d/.test(w)).length;
 const SMALL = new Set("a an the and but or nor for as at by in of on to with bloop".split(" "));
 const titles = [
-  AUTH.signin.title,
+  SIGNIN.title,
   AUTH.code.title,
-  AUTH.invite.title,
-  AUTH.invite.signedInAs,
-  AUTH.invite.signedInAs.replace("{masked}", "a**@other.example"),
-  ...Object.values(AUTH.dead).map((d) => d.title),
+  INVITE.title,
+  INVITE.signedInAs,
+  INVITE.signedInAs.replace("{masked}", "a**@other.example"),
+  ...Object.values(INVITE.dead).map((d) => d.title),
 ];
 const labels = [
-  AUTH.signin.email,
+  SIGNIN.email,
   AUTH.code.label,
-  AUTH.signin.send,
+  SIGNIN.send,
   AUTH.code.other,
   AUTH.code.resend,
   AUTH.code.resendIn(24_000),
-  AUTH.invite.accept,
-  AUTH.invite.signOut,
-  AUTH.invite.library,
-  AUTH.invite.home,
-  AUTH.invite.signIn,
-  AUTH.invite.retry,
-  AUTH.turnstile.retry,
+  INVITE.accept,
+  INVITE.signOut,
+  INVITE.library,
+  INVITE.home,
+  INVITE.signIn,
+  INVITE.retry,
+  SIGNIN.retry,
 ];
 
 describe("sign-in copy", () => {
@@ -61,14 +63,16 @@ describe("sign-in copy", () => {
       expect(text, text).not.toMatch(/\.$/);
       expect(words(text), text).toBeLessThanOrEqual(5);
       expect(
-        text.split(" ").filter((w, i) => i > 0 && /^[a-z]/.test(w) && !SMALL.has(w) && !w.includes("@")),
+        text
+          .split(" ")
+          .filter((w: string, i: number) => i > 0 && /^[a-z]/.test(w) && !SMALL.has(w) && !w.includes("@")),
         text,
       ).toEqual([]);
     }
   });
 
   it("lines are sentences of at most 20 words, ending in a period", () => {
-    const lines = ALL.filter((s) => ![...titles, ...labels].includes(s) && s !== AUTH.turnstile.checking);
+    const lines = ALL.filter((s) => ![...titles, ...labels].includes(s) && s !== SIGNIN.checking);
     for (const text of lines) {
       expect(text, text).toMatch(/[.?]$/);
       for (const sentence of text.split(/(?<=\.) /)) expect(words(sentence), sentence).toBeLessThanOrEqual(20);
@@ -98,21 +102,21 @@ describe("sign-in copy", () => {
   });
 });
 
-describe("the pages' first paint says what copy.js says", () => {
+describe("the pages' first paint says what the copy modules say", () => {
   const text = (html: string) => html.replace(/<[^>]+>/g, "").replace(/\s+/g, " ");
 
   it("/signin", () => {
     const page = text(read("public/signin.html"));
     for (const s of [
-      AUTH.signin.title,
-      AUTH.signin.lead,
-      AUTH.signin.email,
-      AUTH.signin.send,
-      AUTH.signin.waitlist,
+      SIGNIN.title,
+      SIGNIN.lead,
+      SIGNIN.email,
+      SIGNIN.send,
+      SIGNIN.waitlist,
       AUTH.code.label,
       AUTH.code.other,
       AUTH.code.resend,
-      AUTH.turnstile.retry,
+      SIGNIN.retry,
     ])
       expect(page, s).toContain(s);
   });
@@ -120,15 +124,15 @@ describe("the pages' first paint says what copy.js says", () => {
   it("/invite", () => {
     const page = text(read("public/invite.html"));
     for (const s of [
-      AUTH.invite.title,
-      AUTH.invite.about,
-      AUTH.invite.adult,
-      AUTH.invite.accept,
-      AUTH.invite.signOut,
-      AUTH.invite.library,
-      AUTH.invite.home,
-      AUTH.invite.signIn,
-      AUTH.invite.retry,
+      INVITE.title,
+      INVITE.about,
+      INVITE.adult,
+      INVITE.accept,
+      INVITE.signOut,
+      INVITE.library,
+      INVITE.home,
+      INVITE.signIn,
+      INVITE.retry,
       AUTH.code.label,
       AUTH.code.resend,
     ])

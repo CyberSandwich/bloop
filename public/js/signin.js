@@ -1,8 +1,9 @@
 // /signin: the email step, then the code step (docs/ux/signin.md sections 1 and 2). Passkeys come with
 // core/webauthn.js; until then the page offers none, so nothing on it depends on a passkey route.
-/** @import {Row} from "./auth/code-entry.js" */
-import { createCodeEntry, createRow, expiryOf, land, nextFrom, showFailure, watch } from "./auth/code-entry.js";
+/** @import {Hold, Row} from "./auth/row.js" */
 import { AUTH, fill } from "./auth/copy.js";
+import { SIGNIN } from "./auth/copy-signin.js";
+import { createRow, nextFrom, quietSkip, showFailure, watch } from "./auth/row.js";
 import { createApi } from "./core/api.js";
 import { byId, focusTitle, setText, show } from "./core/ui.js";
 
@@ -30,21 +31,63 @@ const codeRow = rowOf("code");
 /** @type {string | null} */
 let challengeId = null;
 let sending = false;
+/** The slow rule of the send in flight; Turnstile pauses it while a person solves a challenge. */
+/** @type {Hold} */
+let hold = {};
+/** The code request in flight, so a resubmit after the stop waits for it instead of mailing a second code. */
+/** @type {{to: string, reply: Promise<import("./auth/row.js").Reply>} | null} */
+let inflight = null;
 
-/** Turnstile on intent: its module, its script and the site key are fetched on the email field's first focus. */
+/** Turnstile on intent: its module, its script and the site key, fetched together once. */
 /** @type {Promise<{token: () => Promise<string>} | null> | undefined} */
 let guard;
 function turnstile() {
   guard ??= (async () => {
     const [me, mod] = await Promise.all([api.get("/api/me"), import("./auth/turnstile.js")]);
-    const key = me.ok ? me.value.turnstileSiteKey : null;
+    // A failed read is forgotten with the rest, so Try Again asks again.
+    if (!me.ok) throw new Error(me.error);
+    const key = me.value.turnstileSiteKey;
+    const person = { pause: () => hold.pause?.(), resume: () => hold.resume?.() };
     // No key configured (a local build): the request goes without a token and the server decides.
-    return typeof key === "string" && key ? mod.widget(byId("ts-box"), key, "signin") : null;
+    return typeof key === "string" && key ? mod.widget(byId("ts-box"), key, "signin", person) : null;
   })().catch((e) => {
     guard = undefined;
     throw e;
   });
   return guard;
+}
+
+/** The code step, loaded on intent beside Turnstile and bound once. */
+/** @type {Promise<{start: (answer: unknown) => void, stop: () => void}> | undefined} */
+let codeStep;
+function code() {
+  codeStep ??= import("./auth/code-entry.js")
+    .then(({ createCodeEntry, land }) =>
+      createCodeEntry(
+        { input: /** @type {HTMLInputElement} */ (byId("code")), row: codeRow, resend, doc: document },
+        {
+          verify: (digits) => api.post("/api/auth/code/verify", { challengeId, code: digits }),
+          resend: request,
+          done: () =>
+            land(
+              () => api.get("/api/me"),
+              next,
+              codeRow,
+              (path) => location.assign(path),
+            ),
+          refused: (reply) => {
+            if (reply.error !== "turnstile_failed") return false;
+            blocked(codeRow);
+            return true;
+          },
+        },
+      ),
+    )
+    .catch((e) => {
+      codeStep = undefined;
+      throw e;
+    });
+  return codeStep;
 }
 
 /**
@@ -59,13 +102,13 @@ function gate() {
 function busy(/** @type {boolean} */ on) {
   sending = on;
   /** @type {HTMLElement} */ (send.querySelector(".spinner")).hidden = !on;
-  setText(byId("send-text"), on ? AUTH.turnstile.checking : AUTH.signin.send);
+  setText(byId("send-text"), on ? SIGNIN.checking : SIGNIN.send);
   gate();
 }
 
 /** The content-blocking line, in the row of the step that asked; Try Again sits on the email step. */
 function blocked(/** @type {Row} */ row) {
-  row.alert(AUTH.turnstile.blocked);
+  row.alert(SIGNIN.blocked);
   show(retry, row === emailRow);
 }
 
@@ -83,26 +126,6 @@ async function request() {
   return reply;
 }
 
-const code = createCodeEntry(
-  { input: /** @type {HTMLInputElement} */ (byId("code")), row: codeRow, resend, doc: document },
-  {
-    verify: (digits) => api.post("/api/auth/code/verify", { challengeId, code: digits }),
-    resend: request,
-    done: () =>
-      land(
-        () => api.get("/api/me"),
-        next,
-        codeRow,
-        (path) => location.assign(path),
-      ),
-    refused: (reply) => {
-      if (reply.error !== "turnstile_failed") return false;
-      blocked(codeRow);
-      return true;
-    },
-  },
-);
-
 function showStep(/** @type {"email" | "code"} */ step) {
   const onCode = step === "code";
   show(emailForm, !onCode);
@@ -110,17 +133,24 @@ function showStep(/** @type {"email" | "code"} */ step) {
   show(send, !onCode);
   show(resend, onCode);
   show(byId("waitlist"), !onCode);
-  setText(title, onCode ? AUTH.code.title : AUTH.signin.title);
+  setText(title, onCode ? AUTH.code.title : SIGNIN.title);
   if (onCode) fill(lead, AUTH.code.ifSent, { email: email.value.trim() });
   else {
-    code.stop();
-    setText(lead, AUTH.signin.lead);
+    codeStep?.then((c) => c.stop()).catch(() => {});
+    setText(lead, SIGNIN.lead);
   }
   focusTitle(title);
 }
 
+/** Intent, not focus: the page focuses the field itself, and a visit that only looks loads nothing from Cloudflare. */
+const INTENT = ["pointerdown", "keydown", "input"];
+function intent() {
+  for (const type of INTENT) email.removeEventListener(type, intent);
+  turnstile().catch(() => blocked(emailRow));
+  code().catch(() => {});
+}
+for (const type of INTENT) email.addEventListener(type, intent);
 email.addEventListener("input", gate);
-email.addEventListener("focus", () => turnstile().catch(() => blocked(emailRow)), { once: true });
 retry.addEventListener("click", () => {
   show(retry, false);
   emailRow.clear();
@@ -133,24 +163,45 @@ emailForm.addEventListener("submit", async (e) => {
   emailRow.clear();
   show(retry, false);
   busy(true);
+  const to = email.value.trim();
+  if (inflight?.to !== to) {
+    const mine = { to, reply: request() };
+    inflight = mine;
+    mine.reply.finally(() => {
+      if (inflight === mine) inflight = null;
+    });
+  }
   let stopped = false;
-  const reply = await watch(request(), {
-    slow: () => emailRow.status(AUTH.slow.still, true),
-    stop: () => {
-      stopped = true;
-      busy(false);
-      emailRow.alert(AUTH.slow.tooLong);
+  hold = {};
+  const reply = await watch(
+    /** @type {NonNullable<typeof inflight>} */ (inflight).reply,
+    {
+      slow: () => emailRow.status(AUTH.slow.still, true),
+      stop: () => {
+        stopped = true;
+        busy(false);
+        emailRow.alert(AUTH.slow.tooLong);
+      },
     },
-  });
+    undefined,
+    hold,
+  );
   // A code sent after the stop still opens the code step: the email is on its way.
   if (stopped && !reply.ok) return;
   busy(false);
   if (reply.ok) {
+    let step;
+    try {
+      step = await code();
+    } catch {
+      showFailure({ error: "offline" }, emailRow);
+      return;
+    }
     emailRow.clear();
     // One history entry: Back on the code step returns here, never off the site.
     history.pushState({ step: "code" }, "");
     showStep("code");
-    code.start(expiryOf(reply.value.expiresAt));
+    step.start(reply.value);
   } else if (reply.error === "email_invalid") {
     // The browser accepted it, the normalizer did not: the lead line already says which address to use.
     emailRow.clear();
@@ -173,6 +224,7 @@ byId("back").addEventListener("click", (e) => {
   e.preventDefault();
   history.back();
 });
+quietSkip(document, () => focusTitle(title));
 
 // A reload on the code step has lost its challenge: the email step.
 if (history.state?.step === "code") history.replaceState(null, "");

@@ -9,7 +9,7 @@ import { fail } from "./http.ts";
 import { SECRET_SHAPE } from "./ids.ts";
 import { launchState } from "./mode.ts";
 import { pillRequest, withAccountPill } from "./nav-pill.ts";
-import { AUTH_SHELLS, MEMBER_PAGES, VARIANTS, type Variant } from "./page-registry.ts";
+import { AUTH_SHELLS, MEMBER_PAGES, signinNext, VARIANTS, type Variant } from "./page-registry.ts";
 import { type Limiter, spendLimit } from "./rate-limit.ts";
 
 const SHELLS: ReadonlySet<string> = new Set(AUTH_SHELLS);
@@ -151,6 +151,20 @@ async function memberVisible(request: Request, env: PageEnv, config: Config, pat
   }
 }
 
+/** Where a signed-in member's /signin goes instead (its allowlisted `next`), or null to serve the form. */
+async function signedInNext(request: Request, env: PageEnv, url: URL): Promise<string | null> {
+  const config = configFor(env);
+  if (!config.ok) return null;
+  try {
+    const member = await pageMember(request, env, config.config);
+    return member ? signinNext(url.searchParams.get("next"), member.admin) : null;
+  } catch {
+    // A database error serves the form, which works signed in or not; never a 500.
+    console.error("signin_member_check_failed");
+    return null;
+  }
+}
+
 /**
  * Answers a static request: a 404 for any form of `/open`, the mode's file for a listed variant, the preview rules for
  * the account pages, else the plain asset. The mode is read only for a path that needs it.
@@ -180,6 +194,10 @@ export async function servePage(
     return (await launchState(env)).mode === "open"
       ? new Response(null, { status: 307, headers: { Location: `${bare}${url.search}`, "Cache-Control": "no-cache" } })
       : asset(env, request, path);
+  }
+  if (key === "/signin") {
+    const to = await signedInNext(request, env, url);
+    if (to) return new Response(null, { status: 302, headers: { Location: to, "Cache-Control": "no-store" } });
   }
   const shell = SHELLS.has(key);
   const member = MEMBERS.has(key);

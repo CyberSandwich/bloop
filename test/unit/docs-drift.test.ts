@@ -338,6 +338,7 @@ describe("size budgets", () => {
       "trusted types policy, lazy": "public/js/core/tt.js",
       "account errors, lazy": "public/js/shared/errors-app.js",
       "turnstile loader, lazy": "public/js/auth/turnstile.js",
+      "code step, lazy": "public/js/auth/code-entry.js",
     });
     for (const entry of lazyEntries) {
       const own = [entry.path].flat();

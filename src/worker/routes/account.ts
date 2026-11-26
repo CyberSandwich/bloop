@@ -169,8 +169,8 @@ export function accountRoutesWith(deps: AccountDeps): readonly Route[] {
         const flood = await limited(env, "RL_MEMBER_IP", request, config);
         if (flood) return flood;
         const cookie = readCookie(request, SESSION_COOKIE);
-        // The public Turnstile key rides on the signed-out answers: the sign-in and report forms are static pages
-        // and read it here on intent (ADR 0022).
+        // The public Turnstile key rides on every answer: the sign-in and report forms are static pages and read it
+        // here on intent (ADR 0022), signed in or not.
         const { turnstileSiteKey } = config.account;
         if (!cookie && !config.graph && isLocalOrigin(config.origin) && isLocalRequest(request)) {
           return json({ ...MOCK_ME, launchMode: (await launchState(env)).mode, turnstileSiteKey });
@@ -179,7 +179,7 @@ export function accountRoutesWith(deps: AccountDeps): readonly Route[] {
         const tooMany = view ? await limited(env, "RL_MEMBER", request, config, view.userId) : null;
         if (tooMany) return tooMany;
         if (view && view.tid !== "email" && config.graph) {
-          return json({ source: "graph", signedIn: true, email: view.email });
+          return json({ source: "graph", signedIn: true, email: view.email, turnstileSiteKey });
         }
         const { mode: launchMode } = await launchState(env);
         // C(d): a deleting member sees their deletion and can restore; every other refusal reads as signed out.
@@ -200,6 +200,7 @@ export function accountRoutesWith(deps: AccountDeps): readonly Route[] {
           passkeys: summary.passkeys,
           quota: { used: summary.usedBytes, total: summary.quotaBytes ?? config.library.quotaBytes },
           userHandle: userHandle(member.userId),
+          turnstileSiteKey,
         });
       }),
     ),

@@ -35,5 +35,10 @@ export const VARIANTS: readonly Variant[] = Object.freeze([
 
 /** Served and linked in open; in preview served unlinked and noindex, so test accounts reach them on the real host. */
 export const AUTH_SHELLS: readonly string[] = Object.freeze(["/signin", "/invite"]);
+/** Where a sign-in may land (ADR 0015): exact paths, `/admin` only for an admin; public/js/auth/row.js holds the same. */
+export const SIGNIN_NEXT: readonly string[] = Object.freeze(["/library", "/a", "/account", "/admin"]);
+export const signinNext = (next: string | null, admin: boolean): string =>
+  next !== null && SIGNIN_NEXT.includes(next) && (next !== "/admin" || admin) ? next : "/library";
+
 /** Need a session: in preview a signed-out request, or one the lockout refuses, gets the 404 any unknown path gets. */
 export const MEMBER_PAGES: readonly string[] = Object.freeze(["/library", "/account", "/admin"]);

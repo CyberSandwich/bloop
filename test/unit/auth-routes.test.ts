@@ -75,7 +75,7 @@ describe("AUTH-10 uniform: the code request answers every address alike", () => 
       const body = (await res.json()) as Record<string, unknown>;
       return { status: res.status, keys: Object.keys(body).sort(), cookies: cookieNames(res) };
     };
-    const want = { status: 202, keys: ["challengeId", "expiresAt"], cookies: [] };
+    const want = { status: 202, keys: ["challengeId", "expiresAt", "expiresIn"], cookies: [] };
     for (const email of [
       "member@example.test",
       "deleting@example.test",
