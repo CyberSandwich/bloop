@@ -410,7 +410,7 @@ describe("landing word caps (design.md section 13)", () => {
       new RegExp(
         `<source type="image/${type}" srcset="${widths.map((w) => `/img/hero-viewer-${w}\\.[0-9a-f]{8}\\.${type} ${w}w`).join(", ")}" sizes="[^"]+">`,
       );
-    expect(stage).toMatch(srcset("avif", [750, 1100, 1600, 2200]));
+    expect(stage).toMatch(srcset("avif", [750, 1100, 1600, 2000]));
     expect(stage).toMatch(srcset("webp", [750, 1100, 1600]));
     expect(stage.indexOf('<source type="image/avif"')).toBeLessThan(stage.indexOf('<source type="image/webp"'));
     // Under 640 the stage is display: none, which does not stop an img's fetch: a first source with that media picks
@@ -422,9 +422,11 @@ describe("landing word caps (design.md section 13)", () => {
     expect(read("public/css/site.css")).toMatch(/@media \(max-width: 639\.98px\) \{\s*\.tilt \{\s*display: none;/);
     const img = /<img\b[^>]*>/.exec(stage)?.[0] ?? "";
     expect(img).toMatch(
-      /src="\/img\/hero-viewer-1100\.[0-9a-f]{8}\.webp" width="1440" height="828" fetchpriority="high"/,
+      /src="\/img\/hero-viewer-1100\.[0-9a-f]{8}\.webp" width="1440" height="904" fetchpriority="high"/,
     );
-    expect(img).toContain('alt="The bloop viewer presenting a dog, full screen"');
+    expect(img).toContain(
+      'alt="The bloop room screen: a list of files, a dog selected, and Present and Download buttons"',
+    );
     expect(img).not.toMatch(/loading="lazy"/);
     expect(visibleText(stage)).toBe("");
     expect(stage).not.toMatch(/<(video|svg|iframe)\b/);
