@@ -6,8 +6,8 @@ import { TYPED_LETTERS, typedError } from "../../public/js/core/copy-code.js";
 import { phoneCopy, REFUSED, refusedLine, uploadLine } from "../../public/js/core/copy-phone.js";
 import { endLine, screenCopy } from "../../public/js/core/copy-screen.js";
 import { screenNet } from "../../public/js/core/net-states.js";
-import { RESULTS } from "../../public/js/core/phone-states.js";
 import { refusalToast, videoTime } from "../../public/js/core/refusal.js";
+import { RESULTS } from "../../public/js/core/states.js";
 import { SUPPORT } from "../../public/js/shared/errors.js";
 import type { PhoneStateKey, ScreenStateKey } from "../../src/shared/protocol.ts";
 

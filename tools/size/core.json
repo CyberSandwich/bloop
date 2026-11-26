@@ -62,7 +62,6 @@
       "dist/js/core/format.js",
       "dist/js/core/icons.js",
       "dist/js/core/loader.js",
-      "dist/js/core/phone-states.js",
       "dist/js/core/rows.js",
       "dist/js/core/states.js",
       "dist/js/core/store.js",
