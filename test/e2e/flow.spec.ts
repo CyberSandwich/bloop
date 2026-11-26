@@ -3268,6 +3268,9 @@ test.describe("PAIR-13 remote: the phone commands the demo screen (design.md sec
       .click();
     const body = screen.page.locator("body");
     await expect(body).toHaveClass(/is-presenting/);
+    // The deck has notes, so presenting folds the list to its row: a tap on that row opens it again.
+    await expect(phone.page.locator("#file-list")).toHaveClass(/notes-folded/);
+    await row(DEMO_ITEMS.deck.name).click();
     await row(DEMO_ITEMS.horizontal.name).click();
     await expect(heading(screen.page)).toHaveText(DEMO_ITEMS.horizontal.name);
     await expect(screen.page.locator("#frame .loader")).toBeVisible();
@@ -3548,8 +3551,15 @@ test.describe("NOTES-01 phone-only: the presenter's notes on the phone (design.m
       return { x: r.x, y: r.y, width: r.width, height: r.height };
     });
   /** A computed length of `target`, in px. */
-  const px = async (target: Locator, prop: string) =>
-    Number(await target.evaluate(`(n) => parseFloat(getComputedStyle(n).${prop})`));
+  const px = (target: Locator, prop: string) =>
+    target.evaluate(
+      (n, p) =>
+        parseFloat(
+          (globalThis as unknown as { getComputedStyle(n: unknown): Record<string, string> }).getComputedStyle(n)[p] ??
+            "",
+        ),
+      prop,
+    );
   const expectSameBox = (a: Box, b: Box, what: string) => {
     for (const k of ["x", "y", "width", "height"] as const)
       expect(Math.abs(a[k] - b[k]), `${what} ${k}`).toBeLessThanOrEqual(1);
