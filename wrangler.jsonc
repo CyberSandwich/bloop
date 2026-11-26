@@ -45,8 +45,20 @@
       { "name": "SPEND_GUARD", "class_name": "SpendGuard" }
     ]
   },
-  // The Converter container entry (`containers`, with its image digest under `containers[0].images`) arrives with the
-  // image, in the converter change: a container needs its image at deploy.
+  // The Converter's container (ADR 0019). The Object picks the image and the size when it starts one, and the image is
+  // the digest in container/digest.txt (a test keeps them equal). {ACCOUNT_ID} is not in the repo: `prebuilt.mjs
+  // rewrite` fills it from CLOUDFLARE_ACCOUNT_ID in the deploy job.
+  "containers": [
+    {
+      "class_name": "Converter",
+      "scheduling_policy": "durable_object",
+      "images": {
+        "converter": {
+          "image": "registry.cloudflare.com/{ACCOUNT_ID}/bloop-converter@sha256:5bc2cd3ac488823e7c919debd74e4bcd41831a8c39117cab2cfa5a8f578e4a66"
+        }
+      }
+    }
+  ],
   "migrations": [
     { "tag": "v1", "new_sqlite_classes": ["Screen", "Directory"] },
     { "tag": "v2", "new_sqlite_classes": ["UserLibrary", "Converter"] },
