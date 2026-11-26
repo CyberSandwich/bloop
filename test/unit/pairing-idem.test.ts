@@ -4,6 +4,7 @@ import { describe, expect, it } from "vitest";
 import type { ClaimResponse } from "../../src/shared/protocol.ts";
 import { IDEM_WINDOW_MS, idempotency } from "../../src/worker/idem.ts";
 import {
+  claimOwner,
   claimSecret,
   idemPurge,
   idemRepair,
@@ -129,5 +130,23 @@ describe("REL-14 pairing idem adapter", () => {
     expect(secret).toBe(expected);
     // Any HMAC keyed by the pepper directly (the IP, network and user hashes) cannot meet it, whatever its message.
     expect(secret).not.toBe(createHmac("sha256", pepper).update(`pid:${nonce}`).digest("base64url"));
+  });
+
+  it("REL-14 claim owner: the account when signed in, else the tab's nonce under its own sub-key, else nobody", async () => {
+    const pepper = "pepper-for-tests";
+    const a = "a".repeat(43);
+    const b = "b".repeat(43);
+    expect(await claimOwner(pepper, "u1", a)).toBe("user:u1");
+    const device = await claimOwner(pepper, null, a);
+    const sub = Buffer.from(hkdfSync("sha256", pepper, Buffer.alloc(0), "bloop device", 32));
+    expect(device).toBe(`device:${createHmac("sha256", sub).update(a).digest("base64url")}`);
+    // Stable for one tab across networks, apart for two tabs behind one address, and never the nonce itself.
+    expect(await claimOwner(pepper, null, a)).toBe(device);
+    expect(await claimOwner(pepper, null, b)).not.toBe(device);
+    expect(device).not.toContain(a);
+    // Missing or malformed: no owner, so no replay and no error.
+    for (const bad of [null, "", "a".repeat(42), "a".repeat(44), `${"a".repeat(42)}=`, `${"a".repeat(42)}:`]) {
+      expect(await claimOwner(pepper, null, bad), String(bad)).toBeNull();
+    }
   });
 });

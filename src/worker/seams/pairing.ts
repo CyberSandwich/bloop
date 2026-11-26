@@ -150,21 +150,24 @@ export interface PairingStore {
 export interface CodeDirectory {
   put(code: string, screenRef: string, expiresAt: number, demo: boolean): Promise<"ok" | "collision">;
   /**
-   * Routes a typed code. A live code claimed by a signed-out owner answers `auth_required` without routing, so the
-   * code is never spent, and counts as a miss: the answer says a live code exists (PAIR-15).
+   * Routes a typed code (PAIR-15). A live code claimed by a signed-out owner answers `auth_required` without routing,
+   * so the code is never spent, and is no miss: the phone signs in and claims it. A live code claimed as a guest the
+   * drop refuses answers that refusal unrouted and counts as a miss, like a wrong code.
    */
   lookup(code: string, ipHash: string, now: number, who: ClaimWho): Promise<Lookup>;
   remove(code: string): Promise<void>;
 }
 
-/** Who claims: an owner signed out of a live code is refused before routing (PAIR-15). */
+/** Who claims. `guestRefusal`: what the guest drop answers a guest claim, null when it admits one. */
 export interface ClaimWho {
   kind: Kind;
   signedIn: boolean;
+  guestRefusal: GuestRefusal | null;
 }
+export type GuestRefusal = "drop_disabled" | "pass_required";
 export type Lookup =
   | { ok: true; screenRef: string; demo: boolean }
-  | { ok: false; error: "code_unknown" | "rate_limited" | "auth_required" };
+  | { ok: false; error: "code_unknown" | "rate_limited" | "auth_required" | GuestRefusal };
 
 /** The limits on concurrent demo sessions, held in the same object as the codes. */
 export interface DemoCap {

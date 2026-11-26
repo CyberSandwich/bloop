@@ -4,7 +4,14 @@ import { DurableObject } from "cloudflare:workers";
 import type { Env } from "../env.ts";
 import type { ClaimWho, CodeDirectory, DemoCap, Lookup } from "../seams/pairing.ts";
 import type { DemoSlots } from "./demo-slots.ts";
-import { isBlocked, MISS_WINDOW_MS, type MissRow, recordGlobalMiss, recordMiss } from "./directory-rules.ts";
+import {
+  isBlocked,
+  lookupVerdict,
+  MISS_WINDOW_MS,
+  type MissRow,
+  recordGlobalMiss,
+  recordMiss,
+} from "./directory-rules.ts";
 import { initDirectoryStorage, ROWS_LEFT } from "./directory-schema.ts";
 
 /**
@@ -51,15 +58,16 @@ export class Directory extends DurableObject<Env> implements CodeDirectory, Demo
     const hit = sql
       .exec<{ screen_ref: string; demo: number }>("SELECT screen_ref, demo FROM code WHERE code = ?", code)
       .toArray()[0];
-    const demo = hit?.demo === 1;
-    if (hit && (demo || who.kind !== "owner" || who.signedIn)) return { ok: true, screenRef: hit.screen_ref, demo };
+    const verdict = lookupVerdict(hit ? { screenRef: hit.screen_ref, demo: hit.demo === 1 } : null, who);
+    if (verdict.ok) return verdict;
+    if (!verdict.miss) return { ok: false, error: verdict.error };
 
     this.saveMiss(ipHash, recordMiss(misses, now));
     const global = recordGlobalMiss(this.missRow(GLOBAL_KEY), now);
     this.saveMiss(GLOBAL_KEY, global.row);
     if (global.alarm) console.warn(JSON.stringify({ evt: "pair.miss_alarm", misses: global.row.count }));
     await this.armSweep();
-    return { ok: false, error: hit ? "auth_required" : "code_unknown" };
+    return { ok: false, error: verdict.error };
   }
 
   async demoReserve(screenRef: string, ipHash: string, holdMs: number, cap: number, perIp: number): Promise<boolean> {

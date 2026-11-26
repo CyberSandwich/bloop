@@ -1,5 +1,6 @@
-// The pairing objects' Idempotency-Key adapter (R8): idem.ts owns the key check, the hashes, the window and the
-// verdict; this keeps the rows in a Screen's or the Directory's KV storage under one key, bounded and shape-checked.
+// The Screen object's Idempotency-Key adapter (R8): idem.ts owns the key check, the hashes, the window and the
+// verdict; this keeps the rows in the Screen's KV storage under one key, bounded and shape-checked, and derives the
+// claim's owner and pid secret from HASH_PEPPER sub-keys.
 import type { ClaimResponse } from "../../../shared/protocol.ts";
 import type { Kv } from "../../do/ledger.ts";
 import { IDEM_WINDOW_MS, type IdemStore } from "../../idem.ts";
@@ -89,20 +90,38 @@ export interface SealedClaim {
 
 const encoder = new TextEncoder();
 
-/**
- * The pid secret for `nonce`, in the 43-character form a fresh secret has: HMAC-SHA-256 under a sub-key HKDF derives
- * from the pepper (info "bloop pid"), so the pepper's other HMACs (IP, network, user pseudonym) share no key with it.
- */
-export async function claimSecret(pepper: string, nonce: string): Promise<string> {
+/** HMAC-SHA-256 of `message` under the sub-key HKDF derives from the pepper for `info`: one key per purpose. */
+async function subKeyMac(pepper: string, info: string, message: string): Promise<Uint8Array> {
   const ikm = await crypto.subtle.importKey("raw", encoder.encode(pepper), "HKDF", false, ["deriveKey"]);
   const key = await crypto.subtle.deriveKey(
-    { name: "HKDF", hash: "SHA-256", salt: new Uint8Array(0), info: encoder.encode("bloop pid") },
+    { name: "HKDF", hash: "SHA-256", salt: new Uint8Array(0), info: encoder.encode(info) },
     ikm,
     { name: "HMAC", hash: "SHA-256", length: 256 },
     false,
     ["sign"],
   );
-  return base64url(new Uint8Array(await crypto.subtle.sign("HMAC", key, encoder.encode(`pid:${nonce}`))));
+  return new Uint8Array(await crypto.subtle.sign("HMAC", key, encoder.encode(message)));
+}
+
+/**
+ * The pid secret for `nonce`, in the 43-character form a fresh secret has, under the "bloop pid" sub-key, so the
+ * pepper's other HMACs (IP, network, user pseudonym, device) share no key with it.
+ */
+export const claimSecret = async (pepper: string, nonce: string): Promise<string> =>
+  base64url(await subKeyMac(pepper, "bloop pid", `pid:${nonce}`));
+
+/** `X-Bloop-Nonce`: 32 random bytes as unpadded base64url, kept by the phone per tab (sessionStorage). */
+export const DEVICE_NONCE = /^[A-Za-z0-9_-]{43}$/;
+
+/**
+ * Whose Idempotency-Key a claim is (REL-14): the account when signed in, else the tab's nonce under the "bloop device"
+ * sub-key, so a row never holds the nonce and one address's phones never share a key. Null (no replay) without either:
+ * an address is shared by a room, so it is never an owner.
+ */
+export async function claimOwner(pepper: string, userId: string | null, nonce: string | null): Promise<string | null> {
+  if (userId !== null) return `user:${userId}`;
+  if (nonce === null || !DEVICE_NONCE.test(nonce)) return null;
+  return `device:${base64url(await subKeyMac(pepper, "bloop device", nonce))}`;
 }
 
 export const sealClaim = ({ pid: _, ...answer }: ClaimResponse, nonce: string): SealedClaim => ({ nonce, answer });
