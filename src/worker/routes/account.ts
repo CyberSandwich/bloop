@@ -83,12 +83,11 @@ export interface MemberRouteOptions<T> extends MemberOptions {
 }
 
 /**
- * A route for a signed-in member. A write checks Origin, Sec-Fetch-Site and the content type and spends the coarse
- * IP-keyed RL_MEMBER_IP before the session read; then every route spends the member-keyed limit and a write reads the
- * body, so a refused caller learns nothing from the schema. A read spends only the member-keyed limit, so one shared
- * campus address is never one bucket for its readers. An admin route, read or write, spends RL_MEMBER_IP before the
- * session read too, so no D1 read goes unmetered, but checks nothing else before the admin check and answers a refusal
- * of that limit with `not_found`, so a non-admin's answer is the unknown path's at every request count.
+ * A route for a signed-in member. Every route spends the coarse IP-keyed RL_MEMBER_IP before the session read, so no
+ * D1 read goes unmetered; then the member-keyed limit, which is the one that binds a shared campus address. A write
+ * also checks Origin, Sec-Fetch-Site and the content type first and reads the body last, so a refused caller learns
+ * nothing from the schema. An admin route checks nothing else before the admin check and answers a refusal of the IP
+ * meter with `not_found`, so a non-admin's answer is the unknown path's at every request count.
  */
 export function memberRoute<T = Record<string, never>>(
   methods: readonly string[],
@@ -102,7 +101,7 @@ export function memberRoute<T = Record<string, never>>(
       const refusedWrite = () => (writes ? checkWrite(req, config.origin) : null);
       const early = options.admin ? null : refusedWrite();
       if (early) return early;
-      const flood = writes || options.admin ? await limited(e, "RL_MEMBER_IP", req, config) : null;
+      const flood = await limited(e, "RL_MEMBER_IP", req, config);
       if (flood) return options.admin ? fail("not_found") : flood;
       const who = await resolveMember(req, e, config, options);
       const hidden = options.admin ? (who.ok ? requireAdmin(who.member) : fail("not_found")) : null;
@@ -261,6 +260,8 @@ export function accountRoutesWith(deps: AccountDeps): readonly Route[] {
       withConfig(async (request, env, config) => {
         const query = pageQuery.safeParse(Object.fromEntries(new URL(request.url).searchParams));
         if (!query.success) return fail("bad_request");
+        const flood = await limited(env, "RL_MEMBER_IP", request, config);
+        if (flood) return flood;
         const { sessions, view } = await sessionView(request, env, config);
         if (!view) return fail("auth_required");
         if (view.tid === "email") {
