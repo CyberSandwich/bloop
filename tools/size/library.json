@@ -1,0 +1,26 @@
+[
+  {
+    "name": "library page JS",
+    "path": [
+      "dist/js/core/copy-library.js",
+      "dist/js/core/format.js",
+      "dist/js/core/icons.js",
+      "dist/js/core/loader.js",
+      "dist/js/core/store.js",
+      "dist/js/core/timing.js",
+      "dist/js/core/toast.js",
+      "dist/js/core/ui.js",
+      "dist/js/library.js",
+      "dist/js/library/glyphs.js",
+      "dist/js/library/model.js",
+      "dist/js/library/net.js"
+    ],
+    "limit": "14 kB"
+  },
+  {
+    "name": "library page CSS",
+    "path": "dist/css/library.css",
+    "gzip": true,
+    "limit": "2.5 kB"
+  }
+]
