@@ -519,10 +519,17 @@ h3 {
 .is-paused::before {
   animation-play-state: paused;
 }
-/* Focus in the hero (2.2.2): the band fades out as it stops, so a frozen band is never seen. */
-.hero:focus-within .sheen {
+/* Keyboard focus in the hero (2.2.2; a mouse click is not focus-visible) stops the band by fading it to ink, so a
+   frozen band is never seen. Hover does the same only once sheen-follow.js has failed to load (site.js). */
+.hero:has(:focus-visible) .sheen {
   color: var(--ink);
   animation-play-state: paused;
+}
+@media (hover: hover) {
+  .still .sheen:hover {
+    color: var(--ink);
+    animation-play-state: paused;
+  }
 }
 @keyframes drift {
   from {

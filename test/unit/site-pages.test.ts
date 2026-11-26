@@ -1342,17 +1342,18 @@ describe("landing motion and spacing (design.md sections 6 and 8)", () => {
 
   it("the sheen and the 5 backdrop drifts pause off screen and in a hidden tab, one rule after every animated one", () => {
     const js = read("public/js/site.js");
-    expect(js).toMatch(/querySelectorAll\("\.sheen, \.frag, \.panel, \.close-panel"\)\) watch\.observe\(el\)/);
+    expect(js).toMatch(/querySelectorAll\("\.sheen,\.frag,\.panel,\.close-panel"\)\) watch\.observe\(el\)/);
     expect(js).toMatch(/addEventListener\("visibilitychange", pause\)/);
     expect(js).toMatch(/toggle\("is-paused", !on \|\| document\.hidden\)/);
     const rule = css.search(/^\.is-paused,\n\.is-paused::before \{\n {2}animation-play-state: paused;/m);
     // A hover never pauses the sheen: the follower, fetched on the first pointerenter of the h1, only where a
     // pointer hovers and motion is allowed, with no import before it, takes it over (design.md section 8).
+    // Only a failed load makes the hover still (the guard below pairs it with a fade); a tap never leaves :hover on.
     expect(css).not.toContain("h1:hover .sheen");
-    expect(js).toMatch(/querySelector\("\.hero h1"\)\?\.addEventListener\(\s*"pointerenter"/);
-    expect(js).toMatch(
-      /if \(tiltable\.matches && matchMedia\("\(hover: hover\)"\)\.matches\)\s*import\("\.\/sheen-follow\.js"\)/,
-    );
+    expect(css).toMatch(/@media \(hover: hover\) \{\s*\.still \.sheen:hover \{/);
+    expect(js).toMatch(/\(\) => document\.body\.classList\.add\("still"\)/);
+    expect(js).toMatch(/querySelector\("\.hero h1"\)\)\?\.addEventListener\(\s*"pointerenter"/);
+    expect(js).toMatch(/if \(tiltable\.matches && e\.pointerType === "mouse"\)\s*import\("\.\/sheen-follow\.js"\)/);
     expect(js).not.toMatch(/^import /m);
     expect(rule).toBeGreaterThan(0);
     for (const m of css.matchAll(/^\s*animation: /gm)) expect(m.index ?? 0).toBeLessThan(rule);
@@ -1370,14 +1371,14 @@ describe("landing motion and spacing (design.md sections 6 and 8)", () => {
     const pauses = [...bare.matchAll(/([^{}]+)\{([^{}]*animation-play-state: paused[^{}]*)\}/g)].filter((m) =>
       /:hover|:focus/.test(m[1] ?? ""),
     );
-    // The hero's focus pause is the one today; a second one needs the same pairing.
-    expect(pauses.length).toBeGreaterThan(0);
+    // Today: keyboard focus in the hero, and a hover once the follower has failed to load.
+    expect(pauses).toHaveLength(2);
     for (const [, selector = "", body = ""] of pauses) {
       const name = selector.trim();
       // The element that stops is the selector's last compound; its own rule carries the transition.
-      const target = (name.split(/\s+/).at(-1) ?? "").replace(".", "\\.");
+      const target = (name.split(/\s+/).at(-1) ?? "").replace(/:.*/, "").replace(/\./g, "\\.");
       const prop = /([\w-]+):/.exec(body.replace("animation-play-state: paused", ""))?.[1];
-      expect(prop, `${name} pauses with no fade`).toBeTruthy();
+      expect(prop, `${name} must fade by color or opacity`).toMatch(/^(color|opacity)$/);
       expect(bare, `${target} has no transition on ${prop}`).toMatch(
         new RegExp(`${target} \\{[^{}]*transition: ${prop} [^;{}]*;`),
       );

@@ -57,13 +57,12 @@ export function follow() {
   /** @param {number} now */
   const step = (now) => {
     const r = el.getBoundingClientRect();
-    const d = offsetAt(target - r.left, r.width, em) - cur;
-    const gap = d - Math.round(d);
-    cur = easeTo(cur, cur + gap, now - last);
-    last = now;
+    let gap = offsetAt(target - r.left, r.width, em) - cur;
+    gap -= Math.round(gap);
     // Under half a pixel it lands, and nothing runs until the pointer moves again.
     const landed = Math.abs(gap) * TILE_EM * em < 0.5;
-    if (landed) cur += gap;
+    cur = landed ? cur + gap : easeTo(cur, cur + gap, now - last);
+    last = now;
     show();
     frame = landed ? 0 : requestAnimationFrame(step);
   };
@@ -72,13 +71,13 @@ export function follow() {
     if (e.pointerType === "touch") return;
     target = e.clientX;
     if (!on) {
-      // Focus in the hero keeps its pause (2.2.2).
-      if (h1.closest(".hero")?.matches(":focus-within")) return;
-      ramp?.cancel();
+      // Keyboard focus in the hero keeps its pause (2.2.2).
+      if (h1.closest(".hero")?.matches(":has(:focus-visible)")) return;
       on = true;
       measure();
-      // The band eases from where the sweep has it to the pointer, so entry has no jump.
+      // The band eases from where it is drawn (the sweep, or a leave ramp still running) to the pointer: no jump.
       cur = parseFloat(getComputedStyle(el).backgroundPosition) / em / TILE_EM;
+      ramp?.cancel();
       el.classList.add("is-following");
       show();
     }
