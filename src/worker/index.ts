@@ -55,14 +55,23 @@ const routes: readonly Route[] = [
 ];
 
 /** Methods other than the route's own get 405 with Allow, as /f/ requires for PROPFIND and OPTIONS. */
-async function dispatch(request: Request, env: Env): Promise<{ response: Response; policy: Policy }> {
+async function dispatch(
+  request: Request,
+  env: Env,
+  ctx: ExecutionContext,
+): Promise<{ response: Response; policy: Policy }> {
   const url = new URL(request.url);
-  const out = await matchRoute(request, env, url);
+  const out = await matchRoute(request, env, ctx, url);
   if (url.pathname.startsWith("/f/")) logFetch(request, out.response);
   return out;
 }
 
-async function matchRoute(request: Request, env: Env, url: URL): Promise<{ response: Response; policy: Policy }> {
+async function matchRoute(
+  request: Request,
+  env: Env,
+  ctx: ExecutionContext,
+  url: URL,
+): Promise<{ response: Response; policy: Policy }> {
   let refused: { allow: Set<string>; policy: Policy } | null = null;
   for (const r of routes) {
     const match = r.pattern.exec(url);
@@ -73,7 +82,7 @@ async function matchRoute(request: Request, env: Env, url: URL): Promise<{ respo
       for (const method of r.methods) refused.allow.add(method);
       continue;
     }
-    const response = await r.handler(request, env, match);
+    const response = await r.handler(request, env, match, ctx);
     return { response, policy: policyOf(response, r.policy) };
   }
   if (refused) {
@@ -86,11 +95,11 @@ async function matchRoute(request: Request, env: Env, url: URL): Promise<{ respo
 }
 
 export default {
-  async fetch(request, env): Promise<Response> {
+  async fetch(request, env, ctx): Promise<Response> {
     const away = offOrigin(request, env.PUBLIC_ORIGIN, env.FILE_ORIGIN);
     if (away) return away;
     if (!DYNAMIC.test(new URL(request.url).pathname)) return servePage(request, env);
-    const { response, policy } = await dispatch(request, env);
+    const { response, policy } = await dispatch(request, env, ctx);
     // A WebSocket upgrade response must reach the runtime untouched.
     return response.status === 101 ? response : withHeaders(response, policy);
   },
