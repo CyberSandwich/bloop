@@ -355,4 +355,18 @@ test.describe("library", () => {
     await expect(page.locator("#file-list > li")).toHaveCount(2);
     await expect(page.getByRole("dialog")).toBeVisible();
   });
+
+  test("a toast's Undo still works with the Empty Trash confirm open over the page", async ({ page, context }) => {
+    await page.setViewportSize({ width: 390, height: 844 });
+    await signedIn(context, members.undo);
+    await page.goto("/library");
+    await page.getByRole("button", { name: "More for Reading list.pdf" }).click();
+    await page.getByRole("dialog").getByRole("button", { name: "Move to Trash" }).click();
+    await page.getByRole("button", { name: /^Trash · 1$/ }).click();
+    await page.getByRole("button", { name: "Empty Trash" }).click();
+    await expect(page.getByRole("dialog", { name: "Empty the Trash?" })).toBeVisible();
+    await page.getByRole("button", { name: "Undo" }).click({ timeout: 5000 });
+    await expect(page.getByRole("dialog", { name: "Empty the Trash?" })).toBeVisible();
+    await expectNoToast(page);
+  });
 });

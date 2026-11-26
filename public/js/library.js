@@ -85,23 +85,25 @@ const toaster = createToaster({
     append: (/** @type {HTMLElement} */ node) => {
       shown = node;
       document.body.append(node);
-      lift();
     },
   },
 });
 
 /**
- * An open sheet is modal: the page under it is inert, so a toast there could not be pressed. The toast moves into the
- * sheet, where nothing is inert, and into the top layer above it as a popover; when no sheet is open it goes back.
+ * An open modal dialog (a sheet or a confirm) makes the page under it inert, so a toast there could not be pressed. The
+ * toast moves into the top-most modal, where nothing is inert, and into the top layer above it as a popover; when none
+ * is open it goes back. One hook sees every dialog: an added node, or a close (which does not bubble).
  */
 function lift() {
-  const open = document.querySelector(".lib-sheet[open]");
-  if (!shown?.isConnected) return;
+  const open = [...document.querySelectorAll("dialog:modal")].pop() ?? null;
+  if (!shown?.isConnected || shown.parentNode === (open ?? document.body)) return;
   // append moves the node, and a move hides a shown popover, so showPopover never finds it open.
   (open ?? document.body).append(shown);
   shown.popover = open && "manual";
   if (open) shown.showPopover();
 }
+new MutationObserver(lift).observe(document.body, { childList: true });
+document.addEventListener("close", lift, true);
 /** The one Undo that a toast offers right now; Cmd+Z runs it while that toast shows. @type {(() => void) | null} */
 let undoing = null;
 let undoKind = "";
@@ -651,7 +653,6 @@ async function sheet(labelledBy, parts, opener, cls = "") {
   // A repaint while the sheet is open replaces a row's opener; its data-key finds the one drawn in its place.
   const key = opener?.getAttribute("data-key");
   dialog.addEventListener("close", () => {
-    lift();
     dialog.remove();
     const back = opener?.isConnected ? opener : byKey(key);
     if (back) back.focus();
@@ -659,7 +660,6 @@ async function sheet(labelledBy, parts, opener, cls = "") {
   });
   document.body.append(dialog);
   dialog.showModal();
-  lift();
   const title = /** @type {HTMLElement | null} */ (dialog.querySelector("[tabindex='-1']"));
   if (title) focusTitle(title);
   return dialog;
