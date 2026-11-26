@@ -9,6 +9,12 @@ type CloseSessions = (
 ) => Promise<void>;
 
 interface ScreensModule {
+  endSessions: (
+    deps: { endScreens: () => Promise<void>; closeSessions: () => Promise<void> },
+    env: unknown,
+    userId: string,
+    publicIds: readonly string[],
+  ) => Promise<void>;
   LIBRARY_CLOSES_SESSIONS: boolean;
   closeSessions: CloseSessions;
   librarySessions: (enabled: boolean) => CloseSessions;
@@ -104,5 +110,23 @@ describe("closeSessions: a session end closes its library sockets on the member'
       await expect(close({ USER_LIBRARY, PUBLIC_ORIGIN: "https://bloop.here" }, "u1", [P])).resolves.toBeUndefined();
     }
     expect(logs).toEqual(Array(2).fill(JSON.stringify({ evt: "library", kind: "close_sessions_failed" })));
+  });
+});
+
+describe("endSessions: a failing screen end never skips the library close", () => {
+  it("logs end_screens_failed by kind, still closes the library sockets and does not throw", async () => {
+    const { endSessions } = await screens();
+    const logs: string[] = [];
+    vi.spyOn(console, "log").mockImplementation((line: string) => void logs.push(line));
+    const closed: string[] = [];
+    const deps = {
+      endScreens: async () => {
+        throw new Error("live layer unavailable");
+      },
+      closeSessions: async () => void closed.push("closed"),
+    };
+    await expect(endSessions(deps, {}, "u1", [P])).resolves.toBeUndefined();
+    expect(closed).toEqual(["closed"]);
+    expect(logs).toEqual([JSON.stringify({ evt: "auth", kind: "end_screens_failed" })]);
   });
 });

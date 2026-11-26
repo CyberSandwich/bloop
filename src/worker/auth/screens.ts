@@ -53,7 +53,10 @@ export interface ScreenDeps {
 
 export const screenDeps: ScreenDeps = { endScreens, closeSessions };
 
-/** Every session end: the screens the ended sessions started (or all of the member's), then their library sockets. */
+/**
+ * Every session end: the screens the ended sessions started (or all of the member's), then their library sockets. The
+ * session rows are already gone, so a screen end that fails is logged and the sockets still close.
+ */
 export async function endSessions(
   deps: ScreenDeps,
   env: Env,
@@ -61,6 +64,10 @@ export async function endSessions(
   publicIds: readonly string[],
   scope: ScreenScope = {},
 ): Promise<void> {
-  await deps.endScreens(env, userId, scope);
+  try {
+    await deps.endScreens(env, userId, scope);
+  } catch {
+    console.log(JSON.stringify({ evt: "auth", kind: "end_screens_failed" }));
+  }
   await deps.closeSessions(env, userId, publicIds);
 }
