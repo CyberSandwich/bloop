@@ -152,7 +152,13 @@ export async function finish(c, limitMs = 20 * 60 * 1000) {
     if (body?.stage) stageAt[body.stage] ??= Date.now() - t0;
     if (body?.ready?.length && !early) {
       early = { status: body, hashes: {} };
-      for (const p of body.ready) early.hashes[p] = sha(download(c, p, join(work, `early-${uniq()}`)));
+      try {
+        for (const p of body.ready) early.hashes[p] = sha(download(c, p, join(work, `early-${uniq()}`)));
+      } catch (e) {
+        // A job that fails withdraws page 1 between the status and the fetch; any other failure is real.
+        if (getJSON(c, "/job/status").body?.state !== "failed") throw e;
+        early = null;
+      }
     }
     if (body && (body.state === "done" || body.state === "failed"))
       return { status: body, ms: Date.now() - t0, early, stageAt };
