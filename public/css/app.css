@@ -1147,7 +1147,7 @@ a.row:focus-visible {
     padding: 0 12px;
   }
 }
-/* The match pick (present-live.md 3.2): the legend over three choices sharing a row, one row on a short window. Its
+/* The match pick (present-live.md 3.2): the legend over three choices sharing a row, one row on a short, wide window (a phone held landscape; a 320 x 568 phone is short too, but too narrow). Its
    boxes are here, so a.html's skeleton pills and core/match.js's choices are the same size. `all: unset` drops a
    fieldset's border, padding, margin and min-content width. */
 .pick {
@@ -1169,7 +1169,7 @@ a.row:focus-visible {
   font-size: 15px;
   font-weight: 600;
 }
-@media (max-height: 599.98px) {
+@media (min-width: 640px) and (max-height: 599.98px) {
   .pick {
     grid-template-columns: auto repeat(3, 1fr);
   }
