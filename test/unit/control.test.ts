@@ -342,12 +342,13 @@ describe("PAIR-13 rate limits: RL_CONTROL per IP, then per credential", () => {
       const { calls, env: e } = env(false);
       const res = await setLength(e, seconds);
       expect(res.status, String(seconds)).toBe(400);
-      expect(calls, String(seconds)).toEqual([]);
+      // The per-IP limit is spent before the body is read, so a bad body costs a stranger budget too.
+      expect(calls, String(seconds)).toEqual(["limit:ip"]);
     }
     for (const body of [{ minutes: 30 }, { seconds: 60, minutes: 1 }, { seconds: 60, endsAt: 1 }]) {
       const extra = env(false);
       expect((await post(extra.env, "/api/session/length", body)).status, JSON.stringify(body)).toBe(400);
-      expect(extra.calls).toEqual([]);
+      expect(extra.calls).toEqual(["limit:ip"]);
     }
   });
 

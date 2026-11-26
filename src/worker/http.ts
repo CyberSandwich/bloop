@@ -85,15 +85,39 @@ export function checkOrigin(request: Request, origin: string): Response | null {
 
 const MAX_BODY_BYTES = 4096;
 
-/** Reads a small JSON body, `{}` when empty, and validates it. Unknown keys are refused by the schemas. */
+/**
+ * The body as text, or null past MAX_BODY_BYTES: a declared length over it is refused unread, and a body without one
+ * is read only until it passes the cap, so an oversized body is never buffered whole.
+ */
+async function boundedText(request: Request): Promise<string | null> {
+  if (Number(request.headers.get("Content-Length") ?? 0) > MAX_BODY_BYTES) return null;
+  const reader = request.body?.getReader();
+  if (!reader) return "";
+  const body = new Uint8Array(MAX_BODY_BYTES);
+  let size = 0;
+  for (;;) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    if (size + value.byteLength > MAX_BODY_BYTES) {
+      await reader.cancel();
+      return null;
+    }
+    body.set(value, size);
+    size += value.byteLength;
+  }
+  return new TextDecoder().decode(body.subarray(0, size));
+}
+
+/**
+ * Reads a small JSON body, `{}` when empty, and validates it. Unknown keys are refused by the schemas. `text` is the
+ * body as sent, for a route that hashes it (the Idempotency-Key's body digest), so nothing reads the body twice.
+ */
 export async function readJson<T>(
   request: Request,
   schema: ZodType<T>,
-): Promise<{ ok: true; value: T } | { ok: false; response: Response }> {
-  const declared = Number(request.headers.get("Content-Length") ?? 0);
-  if (declared > MAX_BODY_BYTES) return { ok: false, response: fail("bad_request") };
-  const text = await request.text();
-  if (text.length > MAX_BODY_BYTES) return { ok: false, response: fail("bad_request") };
+): Promise<{ ok: true; value: T; text: string } | { ok: false; response: Response }> {
+  const text = await boundedText(request);
+  if (text === null) return { ok: false, response: fail("bad_request") };
   let body: unknown = {};
   if (text !== "") {
     try {
@@ -103,7 +127,7 @@ export async function readJson<T>(
     }
   }
   const parsed = schema.safeParse(body);
-  return parsed.success ? { ok: true, value: parsed.data } : { ok: false, response: fail("bad_request") };
+  return parsed.success ? { ok: true, value: parsed.data, text } : { ok: false, response: fail("bad_request") };
 }
 
 /** The Bearer credential, or null when the header is missing or not a Bearer. */
