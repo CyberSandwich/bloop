@@ -212,10 +212,10 @@ export class Screen extends DurableObject<Env> implements PairingStore {
     if (!idem) return this.claimOnce(code, phone);
     return oneFlight(this.ctx.storage.kv, this.claiming, idem, Date.now(), {
       run: () => this.claimOnce(code, phone, idem),
-      // A row whose pairing has gone answers nothing, so the claim runs as a new one.
+      // A row whose pairing has gone answers null, so oneFlight runs the claim as a new one inside the key's flight.
       replay: async (stored) => {
         const opened = await this.openClaimRow(stored);
-        return opened ? { ok: true, value: opened } : this.claimOnce(code, phone, idem);
+        return opened ? { ok: true, value: opened } : null;
       },
       conflict: fail("bad_request"),
     });

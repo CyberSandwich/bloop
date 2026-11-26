@@ -68,6 +68,25 @@ describe("REL-14 claim single flight", () => {
     expect(h.log).toEqual(["run", "replay"]);
   });
 
+  it("REL-14 claim single flight: with the row's pairing gone, two calls at once claim once and share its answer", async () => {
+    const kv = memKv();
+    const flights: Flights<string> = new Map();
+    idemSave(kv, idem.owner, idem, "stale", NOW);
+    let runs = 0;
+    const calls = {
+      run: async () => `pid-${++runs}`,
+      // The stored pid no longer pairs: opening it awaits, then answers nothing.
+      replay: async () => null,
+      conflict: "conflict",
+    };
+    const both = await Promise.all([
+      oneFlight(kv, flights, idem, NOW, calls),
+      oneFlight(kv, flights, idem, NOW, calls),
+    ]);
+    expect(both).toEqual(["pid-1", "pid-1"]);
+    expect(runs).toBe(1);
+  });
+
   it("REL-14 claim single flight: a first call that fails leaves no flight behind", async () => {
     const kv = memKv();
     const flights: Flights<string> = new Map();
