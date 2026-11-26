@@ -3,12 +3,20 @@
 // through `deps`, so the unit tests drive it with fakes. XMLHttpRequest sends the parts because only it reports upload
 // progress in every phone browser.
 /** @import {Xhr} from "../types.js" */
-import { cleanName } from "../shared/names.js";
 import { createApi } from "./api.js";
 
 const KIB = 1024;
 const SAMPLE_BYTES = 64 * KIB;
 const MAX_PARTS = 10_000;
+
+/** @type {Promise<typeof import("../shared/file-name.js")> | null} */
+let nameRule = null;
+/** The stored-name rule, fetched on first use; a failed fetch is forgotten so the next call tries again. */
+const loadNameRule = () =>
+  (nameRule ??= import("../shared/file-name.js").catch((error) => {
+    nameRule = null;
+    throw error;
+  }));
 const MAX_URLS = 8;
 const MAX_CONCURRENT = 4;
 const FAST_MS = 10_000;
@@ -97,6 +105,7 @@ function browserDeps() {
  * @returns {Promise<string>} 64 lowercase hex characters
  */
 export async function fingerprint(file, subtle = globalThis.crypto.subtle) {
+  const { cleanName } = await loadNameRule();
   const len = Math.min(SAMPLE_BYTES, file.size);
   /** @type {(string | Blob)[]} */
   const parts = [
@@ -939,11 +948,14 @@ export function createUploader({ onChange, deps }) {
      * @param {number} id the paused row
      * @param {{name: string, size: number, slice: (s: number, e: number) => Blob}} file
      */
-    resume(id, file) {
+    async resume(id, file) {
+      if (find(id)?.state !== "paused") return;
+      // Without the rule the file cannot be told from the paused one, so it starts fresh.
+      const rule = await loadNameRule().catch(() => null);
       const r = find(id);
       if (r?.state !== "paused") return;
       const paused = r.uploadId;
-      const same = cleanName(file.name) === r.name && file.size === r.size;
+      const same = rule !== null && rule.cleanName(file.name) === r.name && file.size === r.size;
       const fields = { id: r.id, file, name: file.name, size: file.size, state: /** @type {const} */ ("queued") };
       records[records.indexOf(r)] = record(paused && same ? { ...fields, pausedId: paused } : fields);
       // A file that plainly is not the paused one frees the row before it asks for room of its own.

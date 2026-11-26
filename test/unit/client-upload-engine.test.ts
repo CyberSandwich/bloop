@@ -922,7 +922,7 @@ describe("paused rows", () => {
     listing(world, [{ ...row, name: "Caf\u00e9 Menu.pdf" }]);
     const up = world.start();
     await world.flush();
-    up.resume(world.last.files[0].id, world.file(50, "Cafe\u0301   Menu.pdf"));
+    await up.resume(world.last.files[0].id, world.file(50, "Cafe\u0301   Menu.pdf"));
     await world.flush();
     expect(paths(world, "DELETE")).toEqual([]);
     expect(fileOf(world)).toMatchObject({ state: "saved", uploadId: "up1" });
@@ -946,7 +946,7 @@ describe("paused rows", () => {
     listing(world, [row]);
     const up = world.start();
     await world.flush();
-    up.resume(world.last.files[0].id, world.file(50));
+    await up.resume(world.last.files[0].id, world.file(50));
     await world.flush();
     expect(fileOf(world)).toMatchObject({ state: "saved", uploadId: "up1" });
     expect(world.puts.map((p) => p.n)).toEqual([2, 3]);
@@ -958,7 +958,7 @@ describe("paused rows", () => {
     listing(world, [{ ...row, id: "old", bytes: 999 }]);
     const up = world.start();
     await world.flush();
-    up.resume(world.last.files[0].id, world.file(50, "Other.pptx"));
+    await up.resume(world.last.files[0].id, world.file(50, "Other.pptx"));
     await world.flush();
     expect(paths(world, "DELETE")).toEqual(["DELETE /api/uploads/old"]);
     expect(fileOf(world)).toMatchObject({ state: "saved", name: "Other.pptx" });
@@ -969,7 +969,7 @@ describe("paused rows", () => {
     listing(world, [{ ...row, id: "old" }]);
     const up = world.start();
     await world.flush();
-    up.resume(world.last.files[0].id, world.file(50));
+    await up.resume(world.last.files[0].id, world.file(50));
     await world.flush();
     expect(paths(world, "DELETE")).toEqual(["DELETE /api/uploads/old"]);
   });

@@ -2,7 +2,7 @@ import { readdirSync, readFileSync, statSync } from "node:fs";
 import { join } from "node:path";
 import fc from "fast-check";
 import { describe, expect, it } from "vitest";
-import { cleanName, isValidName, NAME_MAX } from "../../src/worker/uploads/file-name.ts";
+import { cleanName, isValidName, NAME_MAX } from "../../public/js/shared/file-name.js";
 
 const ZWJ = "\u200d";
 const ZWNJ = "\u200c";
@@ -31,7 +31,12 @@ describe("DROP-08 xss: the one refused set, upload and rename", () => {
   });
 
   it("strips exactly the reference set, checked over every code point (the u-flag class equals the v-flag one)", () => {
-    const reference = new RegExp("[[\\p{C}--[\\u200C\\u200D\\u{E0020}-\\u{E007F}]]\\u115F\\u1160\\u3164\\uFFA0]", "v");
+    // The v flag is only this test's reference; the tsconfig target predates it, so the flag is not a literal.
+    const setFlag: string = "v";
+    const reference = new RegExp(
+      "[[\\p{C}--[\\u200C\\u200D\\u{E0020}-\\u{E007F}]]\\u115F\\u1160\\u3164\\uFFA0]",
+      setFlag,
+    );
     const wrong: string[] = [];
     for (let code = 0; code <= 0x10ffff; code++) {
       const char = String.fromCodePoint(code);

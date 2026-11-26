@@ -346,6 +346,7 @@ describe("size budgets", () => {
       "trusted types policy, lazy": "public/js/core/tt.js",
       "account errors, lazy": "public/js/shared/errors-app.js",
       "upload engine, lazy": "public/js/core/upload.js",
+      "file name rule, lazy": "public/js/shared/file-name.js",
       "upload pill face, lazy": "public/js/core/pill.js",
       "upload pill binding, lazy": ["public/js/core/lazy.js", "public/js/core/upload-pill.js"],
       "upload progress words, lazy": "public/js/core/upload-format.js",
