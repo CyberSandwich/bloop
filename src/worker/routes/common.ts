@@ -14,18 +14,23 @@ import { screenStub } from "../stubs.ts";
 /** The body of a write that takes no input: `{}` or nothing, and no other key. */
 export const emptyBody = z.object({}).strict();
 
-export type WithConfig = (request: Request, env: Env, config: Config) => Response | Promise<Response>;
+export type WithConfig = (
+  request: Request,
+  env: Env,
+  config: Config,
+  ctx: ExecutionContext,
+) => Response | Promise<Response>;
 
 /** Fails closed with 500 when the configuration is invalid. */
 export const withConfig =
   (handler: WithConfig): Handler =>
-  (request, env) => {
+  (request, env, _match, ctx) => {
     const config = configFor(env);
     if (!config.ok) {
       console.error(`config invalid: ${config.problems.join("; ")}`);
       return fail("internal");
     }
-    return handler(request, env, config.config);
+    return handler(request, env, config.config, ctx);
   };
 
 export const respond = <T>(result: Result<T>, status = 200): Response =>

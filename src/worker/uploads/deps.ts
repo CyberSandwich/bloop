@@ -6,6 +6,7 @@ import { readSettings } from "../settings.ts";
 import { capOverridesOf } from "../spend/caps.ts";
 import { spendFor } from "../spend/guard.ts";
 import { effectiveAll } from "../spend/switches.ts";
+import { convertWhenReady } from "./convert-ready.ts";
 import { multipartOver, type UploadBucket } from "./multipart.ts";
 import type { Deps } from "./pipeline.ts";
 
@@ -15,9 +16,13 @@ export const bucketFor = (env: Pick<Env, "LIBRARY" | "GUEST_FILES">, which: "lib
 
 /**
  * The pipeline's deps and the `uploads` switch in force, from one settings read: on, readonly (no new upload, no new
- * URL) or off (nothing but a cancel and a read).
+ * URL) or off (nothing but a cancel and a read). `ctx` is the request's, where there is one.
  */
-export async function uploadContext(env: Env, config: Config): Promise<{ d: Deps; uploads: string }> {
+export async function uploadContext(
+  env: Env,
+  config: Config,
+  ctx?: Pick<ExecutionContext, "waitUntil">,
+): Promise<{ d: Deps; uploads: string }> {
   const settings = await readSettings(env);
   return {
     d: {
@@ -26,6 +31,7 @@ export async function uploadContext(env: Env, config: Config): Promise<{ d: Deps
       spend: spendFor(env, () => capOverridesOf(settings)),
       config,
       now: Date.now,
+      afterReady: convertWhenReady(env, ctx),
     },
     uploads: effectiveAll(env as unknown as Record<string, unknown>, settings).uploads,
   };
