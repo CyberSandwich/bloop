@@ -52,7 +52,7 @@
   flex-direction: column;
   min-width: 0;
 }
-/* One line: the name gives way in the middle, the end of it and the status never shrink. */
+/* One line: the name gives way in the middle, then the end of it; the status never shrinks. */
 .up-title {
   display: flex;
   min-width: 0;
@@ -67,7 +67,11 @@
   text-overflow: ellipsis;
   white-space: nowrap;
 }
-.up-title .tail,
+.up-title .tail {
+  min-width: 0;
+  overflow: hidden;
+  white-space: pre;
+}
 .up-status {
   flex: none;
   white-space: pre;
@@ -79,7 +83,11 @@
 /* A pill with an action has no room for the tile on a narrow screen. */
 @media (max-width: 360px) {
   .up-pill:has(.up-act) {
+    gap: 8px;
     padding-left: 20px;
+  }
+  .up-act {
+    padding-inline: 6px;
   }
   .up-pill:has(.up-act) .up-tile {
     display: none;
