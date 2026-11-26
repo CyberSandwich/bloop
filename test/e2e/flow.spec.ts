@@ -536,6 +536,32 @@ test.describe("pairing flow", () => {
     });
   }
 
+  test("SESS-01 at 390 x 844 the sheet's time value is vertically centered in its field", async ({ browser }) => {
+    const { screen, phone, lengthButton, sheet } = await approvedDemo(browser);
+    await phone.page.setViewportSize({ width: 390, height: 844 });
+    await lengthButton.click();
+    await expect(sheet).toBeVisible();
+    await sheet
+      .locator("form")
+      .evaluate((f) => Promise.all(f.getAnimations().map((a: { finished: Promise<unknown> }) => a.finished)));
+    await phone.page.evaluate("document.fonts.ready.then(() => true)");
+    const gap = (await phone.page.evaluate(`(() => {
+      const field = document.querySelector(".sheet-card .field");
+      const css = getComputedStyle(field);
+      const ctx = document.createElement("canvas").getContext("2d");
+      ctx.font = css.fontWeight + " " + css.fontSize + " " + css.fontFamily;
+      const t = ctx.measureText("21:09");
+      const glyph = t.fontBoundingBoxAscent + t.fontBoundingBoxDescent;
+      const box = field.getBoundingClientRect();
+      const content = box.height - parseFloat(css.paddingTop) - parseFloat(css.paddingBottom);
+      const above = parseFloat(css.paddingTop) + (content - glyph) / 2;
+      return above - (box.height - above - glyph);
+    })()`)) as number;
+    expect(Math.round(gap)).toBe(0);
+    await screen.context.close();
+    await phone.context.close();
+  });
+
   test("SESS-01 a refused length is a toast over the running session: the countdown, Revoke and the sheet stay", async ({
     browser,
   }) => {
