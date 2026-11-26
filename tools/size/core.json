@@ -123,6 +123,16 @@
     "limit": "0.75 kB"
   },
   {
+    "name": "phone link ask, lazy",
+    "path": "dist/js/core/link-ask.js",
+    "limit": "0.52 kB"
+  },
+  {
+    "name": "screen link open, lazy",
+    "path": "dist/js/core/link-open.js",
+    "limit": "0.49 kB"
+  },
+  {
     "name": "phone video, lazy",
     "path": "dist/js/core/video.js",
     "limit": "1.25 kB"

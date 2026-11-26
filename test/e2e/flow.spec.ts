@@ -2961,10 +2961,10 @@ test.describe("PAIR-13 remote: the phone commands the demo screen (design.md sec
       commands += 1;
       return route.continue();
     });
-    const tab = phone.context.waitForEvent("page");
+    // The tap asks the screen to open it (link-open.spec.ts): this phone opens no tab and sends no command.
     await link.click();
-    await (await tab).close();
     await phone.page.waitForTimeout(300);
+    expect(phone.context.pages()).toHaveLength(1);
     expect(commands).toBe(0);
     await expect(link).not.toHaveAttribute("aria-current", "true");
     await expect(preview).toHaveAttribute("aria-label", `${DEMO_ITEMS.deck.name}, Slide 1 of ${DECK_PAGES}`);
