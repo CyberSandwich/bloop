@@ -22,13 +22,16 @@ function showError(/** @type {string} */ text) {
   ariaFlag(input, "aria-invalid", text !== "");
 }
 
-input.addEventListener("input", () => {
+function check() {
   const formatted = typedCode(input.value);
   if (formatted !== input.value) input.value = formatted;
   go.disabled = typedValid(input.value) === null || busy;
   // The alphabet leaves out the look-alikes: say so as soon as one is typed.
   showError(/[01ILOU]/.test(input.value) ? TYPED_LETTERS : "");
-});
+}
+input.addEventListener("input", check);
+// A code typed, pasted or restored before this module ran fired no input event this listener heard: read it once.
+check();
 
 form.addEventListener("submit", async (e) => {
   e.preventDefault();
