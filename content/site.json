@@ -13,6 +13,17 @@
     { "label": "Security", "href": "/security", "in": ["nav", "footer"] },
     { "label": "Accessibility", "href": "/accessibility", "in": ["footer"] }
   ],
+  "open": {
+    "about": "bloop puts your files on a shared screen, such as a room PC, from your phone. You scan the QR code the screen shows and approve on your phone; the screen gets a link to each item you approve, never your account, and you can end it from your phone. It shows slides, documents, PDFs, spreadsheets, photos, videos and links. bloop is in early access with invite-only accounts, and the demo is at {{demo}}.",
+    "links": [
+      { "label": "Articles", "href": "/articles", "in": ["nav", "footer"] },
+      { "label": "Privacy", "href": "/privacy", "in": ["nav", "footer"] },
+      { "label": "Terms", "href": "/terms", "in": ["nav", "footer"] },
+      { "label": "Security", "href": "/security", "in": ["footer"] },
+      { "label": "Accessibility", "href": "/accessibility", "in": ["footer"] },
+      { "label": "Report a File", "href": "/report", "in": ["footer"] }
+    ]
+  },
   "robots": { "disallow": ["/api/"] },
   "pages": [
     {

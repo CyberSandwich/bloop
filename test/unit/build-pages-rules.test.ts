@@ -131,7 +131,7 @@ describe("the CLI", { timeout: SPAWN_TIMEOUT }, () => {
     expect(existsSync(join(copy, "public/articles/data-and-retention.html"))).toBe(false);
   });
 
-  it("content/open is validated: a malformed draft fails --check and nothing is emitted for it", () => {
+  it("content/open is validated: a malformed draft fails --check and a build, and nothing is emitted for it", () => {
     setup();
     expect(run("--check").status).toBe(0);
     writeFileSync(
@@ -141,8 +141,7 @@ describe("the CLI", { timeout: SPAWN_TIMEOUT }, () => {
     const check = run("--check");
     expect(check.status).toBe(1);
     expect(check.stderr).toMatch(/content\/open\/articles\/bad\.md.*raw HTML/s);
-    expect(existsSync(join(copy, "public/open"))).toBe(false);
     expect(run().status).toBe(1);
-    expect(existsSync(join(copy, "public/open"))).toBe(false);
+    expect(existsSync(join(copy, "public/open/articles/bad.html"))).toBe(false);
   });
 });
