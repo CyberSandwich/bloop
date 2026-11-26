@@ -13,7 +13,11 @@ window.XMLHttpRequest = class extends Real {
     return super.open(method, url, ...rest);
   }
   send(body) {
-    if (this.part > hold) return;
+    if (this.part > hold) {
+      // The waiting scene: a held part fails as a dropped connection does.
+      if (scene === "waiting") setTimeout(() => this.dispatchEvent(new ProgressEvent("error")), 2500);
+      return;
+    }
     return super.send(body);
   }
 };

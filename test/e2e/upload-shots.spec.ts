@@ -76,7 +76,11 @@ async function scene(
   await page.locator("body[data-ready]").waitFor({ state: "attached" });
   return { context, page };
 }
-const shot = (page: Page, file: string) => page.screenshot({ path: `test-results/shots/${file}.png` });
+/** Taken after the entrance animations and the fill's ease have settled. */
+const shot = async (page: Page, file: string) => {
+  await page.waitForTimeout(900);
+  await page.screenshot({ path: `test-results/shots/${file}.png` });
+};
 /** The server keeps these answers `checking`, as a read budget past the cap does. */
 const stuck = (page: Page) =>
   page.route("**/api/uploads/*/complete", (route) =>
