@@ -77,8 +77,11 @@ export class Put {
     this.onload?.();
   }
   ok() {
-    if (this.url.startsWith("/api/")) this.reply(200, { text: JSON.stringify({ n: this.n, etag: `"e${this.n}"` }) });
-    else this.reply(200, { etag: `"e${this.n}"` });
+    // A part sent through bloop is recorded by the server as it is stored; a direct one is confirmed by the page.
+    if (this.url.startsWith("/api/")) {
+      this.world.state.done.add(this.n);
+      this.reply(200, { text: JSON.stringify({ n: this.n, etag: `"e${this.n}"` }) });
+    } else this.reply(200, { etag: `"e${this.n}"` });
   }
   fail() {
     this.finished = true;
@@ -109,6 +112,8 @@ export interface Options {
   partBytes?: number;
   /** Parts the create answer carries URLs for. */
   firstUrls?: number;
+  /** How long a minted URL lives. */
+  ttlMs?: number;
   done?: number[];
   wakeLock?: boolean;
 }
@@ -118,7 +123,18 @@ export type World = ReturnType<typeof makeWorld>;
 export function makeWorld(options: Options = {}) {
   const kind = options.kind ?? "library";
   const partBytes = options.partBytes ?? 20;
-  const state = { now: 0, id: 0, mints: 0, keys: 0, mode: options.mode ?? "direct", done: new Set(options.done ?? []) };
+  const state = {
+    now: 0,
+    id: 0,
+    mints: 0,
+    keys: 0,
+    bytes: 0,
+    fingerprint: undefined as string | undefined,
+    /** Completes answered `checking` before one settles. */
+    checking: 0,
+    mode: options.mode ?? "direct",
+    done: new Set(options.done ?? []),
+  };
   const timers: { at: number; fn: () => void; id: number }[] = [];
   const calls: Call[] = [];
   const puts: Put[] = [];
@@ -138,12 +154,19 @@ export function makeWorld(options: Options = {}) {
   const urlsFor = (parts: number[], mode: string = state.mode) =>
     parts.map((n) => ({
       n,
-      url: mode === "proxy" ? `/api/uploads/up1/parts/${n}` : `https://r2.test/up1/${n}?sig=${++state.mints}`,
+      url:
+        mode === "proxy"
+          ? `/api/uploads/up1/parts/${n}`
+          : `https://acct.eu.r2.cloudflarestorage.com/up1/${n}?sig=${++state.mints}`,
     }));
 
   const server = (call: Call): Response => {
     const { method, path, body } = call;
     if (method === "POST" && path === "/api/uploads") {
+      state.bytes = body.bytes;
+      // One upload row: another file starts it afresh.
+      if (state.fingerprint !== undefined && state.fingerprint !== body.fingerprint) state.done.clear();
+      state.fingerprint = body.fingerprint as string;
       const parts = Math.ceil(body.bytes / partBytes);
       const first = [...Array(parts).keys()].map((i) => i + 1).filter((n) => !state.done.has(n));
       return json(state.done.size ? 200 : 201, {
@@ -154,22 +177,38 @@ export function makeWorld(options: Options = {}) {
         done: [...state.done],
         mode: state.mode,
         expiresAt: 0,
-        ttlMs: 300000,
+        ttlMs: options.ttlMs ?? 300000,
         urls: urlsFor(first.slice(0, options.firstUrls ?? 8)),
       });
     }
     if (method === "GET" && path === "/api/uploads") return json(200, { uploads: [] });
+    // The routes' bodies are strict (zod): a key the server does not know is a 400, as here.
     if (method === "POST" && path === "/api/uploads/up1/urls")
-      return json(200, { urls: urlsFor(body.parts, body.mode ?? state.mode), ttlMs: 300000 });
+      return Object.keys(body ?? {}).join() === "parts" && Array.isArray(body.parts)
+        ? json(200, { urls: urlsFor(body.parts), ttlMs: options.ttlMs ?? 300000 })
+        : problem(400, "invalid_body");
     const done = /^\/api\/uploads\/up1\/parts\/(\d+)\/done$/.exec(path);
     if (method === "POST" && done) {
       state.done.add(Number(done[1]));
       return json(200, { n: Number(done[1]), confirmed: state.done.size, total: 0 });
     }
-    if (method === "POST" && path === "/api/uploads/up1/complete")
+    if (method === "POST" && path === "/api/uploads/up1/complete") {
+      const keys = Object.keys(body ?? {})
+        .sort()
+        .join();
+      const total = Math.ceil(state.bytes / partBytes);
+      // {} or {n, etag, bytes}, and the one part that rides is the last, with every other part done.
+      const rider = keys === "bytes,etag,n" ? Number(body.n) : 0;
+      const sound = (keys === "" || rider === total) && state.done.size + (rider ? 1 : 0) === total;
+      if (!sound) return problem(400, "invalid_body");
+      if (state.checking > 0) {
+        state.checking--;
+        return json(200, { state: "checking", file: { id: "f1", status: "checking" } });
+      }
       return kind === "guest"
         ? json(200, { state: "offered" })
         : json(200, { state: "ready", file: { id: "f1", status: "ready" } });
+    }
     if (method === "GET" && path === "/api/uploads/up1")
       return json(200, { id: "up1", state: "open", done: [...state.done] });
     if (method === "DELETE" && path === "/api/uploads/up1") return json(204, null);

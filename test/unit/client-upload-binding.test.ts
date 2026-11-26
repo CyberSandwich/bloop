@@ -4,6 +4,7 @@ import { FakeNode } from "./client-upload-dom.ts";
 
 const ENGINE = "../../public/js/core/upload.js";
 const BINDING = "../../public/js/core/upload-pill.js";
+const REFUSALS = "../../public/js/core/upload-refusals.js";
 
 interface Snap {
   id: number;
@@ -35,18 +36,20 @@ const batch = (files: Snap[], more: object = {}) => ({
 });
 
 let host: FakeNode;
+/** The element with the keyboard's focus. */
+const focus: { on: FakeNode | null } = { on: null };
 let emit: (b: unknown) => void;
-let toasts: { title: string; body: string; error?: boolean }[];
+let toasts: { title: string; body: string; error?: boolean; action?: { label: string; run: () => void } }[];
 let engine: { added: unknown[][]; canceled: number[]; resumed: unknown[][]; disposed: number };
 
 async function mount(options: object = {}) {
   vi.resetModules();
   toasts = [];
   engine = { added: [], canceled: [], resumed: [], disposed: 0 };
-  const actual = await vi.importActual<{ formatBytes: unknown; etaLabel: unknown }>(ENGINE);
+  const actual = await vi.importActual<{ formatBytes: unknown; progressLine: unknown }>(ENGINE);
   vi.doMock(ENGINE, () => ({
     formatBytes: actual.formatBytes,
-    etaLabel: actual.etaLabel,
+    progressLine: actual.progressLine,
     createUploader: ({ onChange }: { onChange: (b: unknown) => void }) => {
       emit = onChange;
       return {
@@ -66,6 +69,7 @@ async function mount(options: object = {}) {
   return mountUploads({ host: host as never, ...options });
 }
 const pillNode = () => host.byClass("up-pill");
+const tap = (node: FakeNode | undefined) => node?.click();
 const title = () => pillNode()?.byClass("up-title")?.textContent;
 const line = () => pillNode()?.byClass("up-line")?.textContent;
 const bar = () => pillNode()?.byClass("loader");
@@ -75,10 +79,14 @@ beforeEach(() => {
   vi.useFakeTimers();
   vi.stubGlobal("addEventListener", () => {});
   vi.stubGlobal("matchMedia", () => ({ matches: false }));
+  focus.on = null;
   vi.stubGlobal("document", {
     createElement: (tag: string) => new FakeNode(tag),
     createElementNS: (_ns: string, tag: string) => new FakeNode(tag),
     body: host,
+    get activeElement() {
+      return focus.on;
+    },
   });
 });
 afterEach(() => {
@@ -359,7 +367,7 @@ describe("the refusal strings", () => {
 
   it("every upload error code has a string of its own, never the fallback and never another code's", async () => {
     await mount();
-    const { refusalToast } = (await import(BINDING)) as {
+    const { refusalToast } = (await import(REFUSALS)) as {
       refusalToast: (name: string, code: string, maxMB?: number) => { title: string; body: string };
     };
     const fallback = refusalToast("Talk.pptx", "no_such_code", 500);
@@ -376,7 +384,7 @@ describe("the refusal strings", () => {
 
   it("File Too Large names the library's cap, and still says something without it", async () => {
     await mount();
-    const { refusalToast } = (await import(BINDING)) as {
+    const { refusalToast } = (await import(REFUSALS)) as {
       refusalToast: (name: string, code: string, maxMB?: number) => { title: string; body: string };
     };
     expect(refusalToast("a.pptx", "too_large", 500)).toEqual({
@@ -403,5 +411,196 @@ describe("a guest's send", () => {
     emit(batch([file({ id: 2, state: "canceled" })]));
     expect(seen).toHaveLength(2);
     expect(toasts).toEqual([]);
+  });
+});
+
+describe("a batch's refusals", () => {
+  const sheetOf = () => host.kids.find((k) => k.tag === "dialog");
+  const refusedThree = () => [
+    file({ id: 1, name: "a.exe", state: "refused", error: "bad_type" }),
+    file({ id: 2, name: "b.pptm", state: "refused", error: "macro_content" }),
+    file({ id: 3, name: "c.bin", state: "refused", error: "empty" }),
+  ];
+
+  it("three refusals are one toast that opens a sheet of three rows, each with its own reason", async () => {
+    await mount();
+    emit(batch(refusedThree()));
+    expect(toasts).toHaveLength(1);
+    const [one] = toasts;
+    expect(one).toMatchObject({ title: "3 Files Couldn't Be Added", error: true });
+    expect(one?.action?.label).toBe("See Why");
+    expect(sheetOf()).toBeUndefined();
+    one?.action?.run();
+    expect(sheetOf()?.open).toBe(true);
+    const rows = sheetOf()?.byClass("up-list")?.kids ?? [];
+    expect(rows.map((r) => r.byClass("up-title")?.textContent)).toEqual(["a.exe", "b.pptm", "c.bin"]);
+    expect(rows.map((r) => r.byClass("up-line")?.textContent)).toEqual([
+      "bloop takes decks, documents, PDFs, spreadsheets, text, photos and videos.",
+      "This file has macros. Save a copy without them as .pptx.",
+      "This File Is Empty",
+    ]);
+    expect(rows.every((r) => r.byClass("up-close") === undefined)).toBe(true);
+  });
+
+  it("tells them when the batch ends, not one by one while it runs, and each only once", async () => {
+    await mount();
+    const [a, b, c] = refusedThree() as [Snap, Snap, Snap];
+    const waiting = file({ id: 4, name: "d.pptx", state: "queued", loaded: 0, fraction: 0 });
+    emit(batch([a, waiting]));
+    emit(batch([a, b, waiting]));
+    expect(toasts).toEqual([]);
+    emit(batch([a, b, { ...waiting, state: "saved" }]));
+    expect(toasts.map((t) => t.title)).toEqual(["2 Files Couldn't Be Added"]);
+    emit(batch([a, b, c, { ...waiting, state: "saved" }]));
+    expect(toasts.map((t) => t.title)).toEqual(["2 Files Couldn't Be Added", "This File Is Empty"]);
+    emit(batch([a, b, c, { ...waiting, state: "saved" }]));
+    expect(toasts).toHaveLength(2);
+  });
+
+  it("one refusal among files is that file's own toast, as before", async () => {
+    await mount();
+    emit(
+      batch([
+        file({ id: 1, state: "saved", fraction: 1 }),
+        file({ id: 2, name: "x.exe", state: "refused", error: "bad_type" }),
+      ]),
+    );
+    expect(toasts.map((t) => t.title)).toEqual(["This File Type Isn't Supported"]);
+    expect(toasts[0]?.action).toBeUndefined();
+  });
+
+  it("a guest still has no toast", async () => {
+    await mount({ kind: "guest", pid: "ref.secret" });
+    emit(batch(refusedThree()));
+    expect(toasts).toEqual([]);
+  });
+});
+
+describe("what the page keeps in hand", () => {
+  const saved = (id: number, fileId: string) =>
+    file({ id, name: `f${id}.pptx`, state: "saved", loaded: 88 * 1024 * 1024, fraction: 1, fileId });
+
+  it("Add to Up Next works again on the next file: one tick does not lock the pill for good", async () => {
+    const upNext = vi.fn(async () => {});
+    await mount({ upNext });
+    emit(batch([saved(1, "f1")]));
+    tap(pillNode()?.byClass("up-act"));
+    await vi.advanceTimersByTimeAsync(2500);
+    emit(batch([saved(1, "f1"), saved(2, "f2")].slice(1)));
+    tap(host.kids.filter((k) => k.classes.has("up-pill") && !k.removed)[0]?.byClass("up-act"));
+    await vi.advanceTimersByTimeAsync(0);
+    expect(upNext.mock.calls).toEqual([["f1"], ["f2"]]);
+  });
+
+  it("a tick the page refused can be tried again", async () => {
+    const upNext = vi.fn().mockRejectedValueOnce(new Error("full")).mockResolvedValue(undefined);
+    await mount({ upNext });
+    emit(batch([saved(1, "f1")]));
+    const act = pillNode()?.byClass("up-act") as FakeNode;
+    act.click();
+    await vi.advanceTimersByTimeAsync(0);
+    act.click();
+    await vi.advanceTimersByTimeAsync(0);
+    expect(upNext).toHaveBeenCalledTimes(2);
+  });
+
+  it("paused rows are told apart by id: dismissing one shows the next, with its own Cancel", async () => {
+    await mount();
+    const one = file({ id: 4, name: "One.pptx", state: "paused", loaded: 0, fraction: 0 });
+    const two = file({ id: 5, name: "Two.pptx", state: "paused", loaded: 0, fraction: 0 });
+    emit(batch([one, two]));
+    expect(title()).toBe("One.pptx Is Paused");
+    tap(pillNode()?.byClass("up-close"));
+    emit(batch([{ ...one, state: "canceled" }, two]));
+    expect(title()).toBe("Two.pptx Is Paused");
+    expect(pillNode()?.byClass("up-close")?.getAttribute("aria-label")).toBe("Cancel Upload of Two.pptx");
+    tap(pillNode()?.byClass("up-close"));
+    expect(engine.canceled).toEqual([4, 5]);
+  });
+
+  it("a guest cannot cancel a file the server is checking, in the pill or in the sheet", async () => {
+    await mount({ kind: "guest", pid: "ref.secret" });
+    emit(batch([file({ state: "checking", fraction: 0.99 })]));
+    expect(pillNode()?.byClass("up-close")).toBeUndefined();
+    emit(
+      batch([file({ id: 1, state: "checking" }), file({ id: 2, name: "b.pdf", state: "uploading" })], { total: 200 }),
+    );
+    tap(pillNode()?.byClass("up-press"));
+    const rows = host.kids.find((k) => k.tag === "dialog")?.byClass("up-list")?.kids ?? [];
+    expect(rows[0]?.byClass("up-close")).toBeUndefined();
+    expect(rows[1]?.byClass("up-close")).toBeDefined();
+  });
+
+  it("Cancel's name follows the file it is for, fresh on every snapshot", async () => {
+    await mount();
+    emit(batch([file()]));
+    const close = pillNode()?.byClass("up-close") as FakeNode;
+    close.setAttribute("aria-label", "stale");
+    emit(batch([file({ loaded: 50 * 1024 * 1024 })]));
+    expect(close.getAttribute("aria-label")).toBe("Cancel Upload of Lecture 5.pptx");
+  });
+});
+
+describe("what a screen reader and the keyboard are given", () => {
+  const spoken = () => pillNode()?.byClass("sr")?.textContent;
+
+  it("Waiting for a Connection is announced when it starts, and cleared when it ends", async () => {
+    await mount();
+    emit(batch([file()]));
+    expect(spoken()).toBe("Lecture 5.pptx");
+    emit(batch([file({ state: "waiting" })]));
+    expect(spoken()).toBe("Waiting for a Connection");
+    emit(batch([file({ state: "waiting", loaded: 35 * 1024 * 1024 })]));
+    expect(spoken()).toBe("Waiting for a Connection");
+    emit(batch([file()]));
+    expect(spoken()).toBe("");
+    emit(batch([file({ state: "waiting" })]));
+    expect(spoken()).toBe("Waiting for a Connection");
+  });
+
+  it("a title that changes as the wait ends is what is said", async () => {
+    await mount();
+    emit(batch([file({ state: "waiting" })]));
+    emit(batch([file({ state: "checking", fraction: 0.99 })]));
+    expect(spoken()).toBe("Checking Your File");
+  });
+
+  it("a wait inside a batch is announced too", async () => {
+    await mount();
+    emit(batch([file({ id: 1 }), file({ id: 2, name: "b.pdf", state: "queued" })]));
+    emit(batch([file({ id: 1 }), file({ id: 2, name: "b.pdf", state: "waiting" })]));
+    expect(spoken()).toBe("Waiting for a Connection");
+  });
+
+  it("focus returns to what opened the upload when the pill goes with it inside", async () => {
+    const trigger = new FakeNode("button");
+    await mount({ trigger });
+    emit(batch([file({ state: "saved", fraction: 1, fileId: "f1" })]));
+    focus.on = pillNode()?.byClass("up-title") as FakeNode;
+    vi.advanceTimersByTime(2000 + 200);
+    expect(trigger.focused).toBe(1);
+  });
+
+  it("focus elsewhere is left where it is", async () => {
+    const trigger = new FakeNode("button");
+    await mount({ trigger });
+    emit(batch([file({ state: "saved", fraction: 1 })]));
+    focus.on = new FakeNode("input");
+    vi.advanceTimersByTime(2000 + 200);
+    expect(trigger.focused).toBe(0);
+  });
+
+  it("focus in the sheet returns too when the batch is done", async () => {
+    const trigger = new FakeNode("button");
+    await mount({ trigger });
+    const files = [
+      file({ id: 1, name: "a.pptx", state: "saved", fraction: 1 }),
+      file({ id: 2, name: "b.pdf", state: "saved", fraction: 1 }),
+    ];
+    emit(batch(files));
+    tap(pillNode()?.byClass("up-press"));
+    focus.on = host.kids.find((k) => k.tag === "dialog")?.byClass("up-list") ?? null;
+    vi.advanceTimersByTime(2000 + 200);
+    expect(trigger.focused).toBe(1);
   });
 });

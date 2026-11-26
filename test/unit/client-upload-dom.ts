@@ -73,6 +73,13 @@ export class FakeNode {
   remove() {
     this.removed = true;
   }
+  focused = 0;
+  focus() {
+    this.focused++;
+  }
+  contains(other: FakeNode): boolean {
+    return this === other || this.kids.some((k) => k.contains(other));
+  }
   find(pred: (n: FakeNode) => boolean): FakeNode | undefined {
     if (pred(this)) return this;
     for (const k of this.kids) {

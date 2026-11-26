@@ -19,7 +19,7 @@ beforeAll(async () => {
   vi.stubGlobal("matchMedia", () => calm);
   // Specifiers in variables, for the same reason.
   const PILL = "../../public/js/core/pill.js";
-  const BINDING = "../../public/js/core/upload-pill.js";
+  const BINDING = "../../public/js/core/upload-refusals.js";
   pillModule = await import(PILL);
   bindingModule = await import(BINDING);
 });

@@ -12,6 +12,7 @@ export const CLOSE = /** @type {import("../types.js").IconPart[]} */ (["M18 6 6 
  * @typedef {object} Face
  * @property {string} [title]
  * @property {string} [line]
+ * @property {string} [say] announced beside the title, for a change the title does not carry ("Waiting for a Connection")
  * @property {number | null} [fill] 0 to 1; null while there is nothing to show yet
  * @property {import("../types.js").IconPart[] | null} [glyph] the tile's glyph
  * @property {string} [label] the progress bar's name, "Uploading Lecture 5.pptx"
@@ -53,7 +54,9 @@ export function pill({ host = document.body, ...first }) {
 
   /** @param {Face} patch */
   function update(patch) {
+    let retitled = false;
     if (patch.title !== undefined && patch.title !== shownTitle) {
+      retitled = true;
       shownTitle = patch.title;
       // A long name ellipsizes in the middle: the head gives way, the end and extension stay.
       const [head, tail] = splitName(patch.title);
@@ -61,6 +64,8 @@ export function pill({ host = document.body, ...first }) {
       setText(live, patch.title);
       press.setAttribute("aria-label", patch.title);
     }
+    // Said over the title; an empty one only clears what an earlier say left, never the title just announced.
+    if (patch.say !== undefined && (patch.say || !retitled)) setText(live, patch.say);
     if (patch.line !== undefined) setText(line, patch.line);
     if (patch.fill !== undefined) setProgress(bar, patch.fill);
     if (patch.label !== undefined) bar.setAttribute("aria-label", patch.label);

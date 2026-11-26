@@ -18,27 +18,28 @@ const etaLabelAt = (eta: Parameters<typeof etaLeft>[0], now: number) => etaLabel
 
 describe("fingerprint", () => {
   it("is 64 lowercase hex characters, stable for the same file", async () => {
-    const a = await fingerprint(new File([bytes(300_000)], "Talk.pptx"));
+    const a = await fingerprint(new File([bytes(300_000)], "Talk.pptx", { lastModified: 5 }));
     expect(a).toMatch(/^[0-9a-f]{64}$/);
-    expect(await fingerprint(new File([bytes(300_000)], "Talk.pptx"))).toBe(a);
+    expect(await fingerprint(new File([bytes(300_000)], "Talk.pptx", { lastModified: 5 }))).toBe(a);
   });
 
-  it("ignores lastModified: an iOS picker stamps each copy with the current time", async () => {
+  it("changes with lastModified: an edited file of the same name, size and sampled bytes is another file", async () => {
     const a = await fingerprint(new File([bytes(1000)], "Talk.pptx", { lastModified: 1 }));
     const b = await fingerprint(new File([bytes(1000)], "Talk.pptx", { lastModified: 2_000_000_000_000 }));
-    expect(a).toBe(b);
+    expect(a).not.toBe(b);
   });
 
   it("changes with the name, the size, and the first and last bytes", async () => {
-    const base = await fingerprint(new File([bytes(300_000)], "Talk.pptx"));
-    expect(await fingerprint(new File([bytes(300_000)], "Other.pptx"))).not.toBe(base);
-    expect(await fingerprint(new File([bytes(300_001)], "Talk.pptx"))).not.toBe(base);
+    const at = { lastModified: 5 };
+    const base = await fingerprint(new File([bytes(300_000)], "Talk.pptx", at));
+    expect(await fingerprint(new File([bytes(300_000)], "Other.pptx", at))).not.toBe(base);
+    expect(await fingerprint(new File([bytes(300_001)], "Talk.pptx", at))).not.toBe(base);
     const first = bytes(300_000);
     first[0] = 9;
-    expect(await fingerprint(new File([first], "Talk.pptx"))).not.toBe(base);
+    expect(await fingerprint(new File([first], "Talk.pptx", at))).not.toBe(base);
     const last = bytes(300_000);
     last[299_999] = 9;
-    expect(await fingerprint(new File([last], "Talk.pptx"))).not.toBe(base);
+    expect(await fingerprint(new File([last], "Talk.pptx", at))).not.toBe(base);
   });
 
   it("reads 16 samples of 64 KiB at most, the first and last included, and never the middle of a big file whole", async () => {
@@ -46,6 +47,7 @@ describe("fingerprint", () => {
     const file = {
       name: "Big.pptx",
       size: 450 * MIB,
+      lastModified: 5,
       slice: (start: number, end: number) => {
         read.push([start, end]);
         return new Blob([new ArrayBuffer(end - start)]);
