@@ -1,4 +1,4 @@
-// Sign-in and the account routes (architecture section 6). They exist only when FILE_SOURCE=graph with
+// The Entra sign-in and the grant's disconnect (architecture section 6). They exist only when FILE_SOURCE=graph with
 // the Entra settings present; otherwise every one answers `source_unavailable` (docs/setup.md).
 import { z } from "zod";
 import { type AuditEvent, accountEvent } from "../audit.ts";
@@ -10,22 +10,22 @@ import {
   SESSION_COOKIE,
   sealCookie,
   setCookie,
+  signedOutCookies,
+  withCookies,
 } from "../auth/cookies.ts";
 import { callbackErrorPage } from "../auth/error-page.ts";
 import { beginSignIn, finishSignIn, PENDING_SECONDS, type Pending } from "../auth/oauth.ts";
-import { phoneUser, servicesFor } from "../auth/services.ts";
-import { SESSION_MAX_AGE_SECONDS } from "../auth/sessions.ts";
+import { servicesFor } from "../auth/services.ts";
+import { deviceLabel, SESSION_MAX_AGE_SECONDS } from "../auth/sessions.ts";
 import type { Config, GraphConfig } from "../config.ts";
 import type { Env } from "../env.ts";
-import { auditRecord } from "../export-format.ts";
 import { fail, json } from "../http.ts";
-import { endLiveScreens } from "../live-screens.ts";
-import { admitted, launchState } from "../mode.ts";
 import { type Route, route } from "../router.ts";
 import { auditFor } from "../stores.ts";
-import { limited, type WithConfig, withConfig, write } from "./common.ts";
+import { limited, withConfig, write } from "./common.ts";
 
-const emptyBody = z.object({}).strict();
+/** The body of a write that takes no input: `{}` or nothing, and no other key. */
+export const emptyBody = z.object({}).strict();
 const pendingShape = z.object({
   state: z.string(),
   nonce: z.string(),
@@ -33,19 +33,10 @@ const pendingShape = z.object({
   expiresAt: z.number(),
 });
 
-/** Cursor paging for /api/me/audit: `beforeId` is the `id` of the last row of the previous page. */
-const pageQuery = z.object({
-  limit: z.coerce.number().int().min(1).max(200).default(50),
-  beforeId: z.coerce.number().int().positive().optional(),
-});
-
 const redirectUri = (config: Config) => `${config.origin}/auth/callback`;
 
-const redirect = (location: string, cookies: string[]): Response => {
-  const headers = new Headers({ Location: location });
-  for (const cookie of cookies) headers.append("Set-Cookie", cookie);
-  return new Response(null, { status: 302, headers });
-};
+const redirect = (location: string, cookies: string[]): Response =>
+  withCookies(new Response(null, { status: 302, headers: { Location: location } }), cookies);
 
 /** Runs `handler` only when the Graph source is configured. */
 const withGraph = (
@@ -85,12 +76,16 @@ const callback = withGraph(async (request, env, config, graph) => {
   });
   if (!hadGrant) await recordBestEffort(env, accountEvent("grant.created", userId, Date.now()));
   // Rotation: a new session value on every sign-in, and the presented one is deleted.
-  const session = await services.sessions.create(userId, readCookie(request, SESSION_COOKIE));
+  const session = await services.sessions.create(userId, readCookie(request, SESSION_COOKIE), {
+    method: "entra",
+    label: deviceLabel(request.headers.get("User-Agent")),
+    reauthAt: Date.now(),
+  });
   return redirect("/a", [setCookie(SESSION_COOKIE, session, SESSION_MAX_AGE_SECONDS), clearCookie(OAUTH_COOKIE)]);
 });
 
 /** Account rows are evidence, not part of the flow: a failed write must not fail the sign-in or the disconnect. */
-async function recordBestEffort(env: Env, event: AuditEvent): Promise<void> {
+export async function recordBestEffort(env: Env, event: AuditEvent): Promise<void> {
   try {
     await auditFor(env).record(event);
   } catch {
@@ -98,121 +93,27 @@ async function recordBestEffort(env: Env, event: AuditEvent): Promise<void> {
   }
 }
 
-/** The signed-in user behind the cookie, or the 401 to send. */
-async function signedIn(request: Request, env: Env, config: Config) {
-  const services = servicesFor(env, config);
-  const session = readCookie(request, SESSION_COOKIE);
-  const userId = session ? await services.sessions.resolve(session) : null;
-  return session && userId
-    ? { ok: true as const, services, session, userId }
-    : { ok: false as const, response: fail("auth_required") };
-}
-
-/** A write that needs a signed-in user: Origin checks first, then the session. An action may refuse with a response. */
-const accountWrite =
-  (action: (userId: string, session: string, env: Env, config: Config) => Promise<Response | undefined>): WithConfig =>
-  async (request, env, config) => {
-    const body = await write(request, config, emptyBody);
-    if (!body.ok) return body.response;
-    const who = await signedIn(request, env, config);
-    if (!who.ok) return who.response;
-    const refused = await action(who.userId, who.session, env, config);
-    if (refused) return refused;
-    return json({ signedIn: false }, 200, { "Set-Cookie": clearCookie(SESSION_COOKIE) });
-  };
-
 export const authRoutes: readonly Route[] = [
   route(["GET"], "/auth/start", "api", start),
   route(["GET"], "/auth/callback", "api", callback),
-
-  route(
-    ["GET"],
-    "/api/me",
-    "api",
-    withConfig(async (request, env, config) => {
-      if (!config.graph) return json({ source: "mock", signedIn: true, email: null });
-      const services = servicesFor(env, config);
-      const userId = await phoneUser(request, services);
-      if (!userId) return json({ source: "graph", signedIn: false, email: null });
-      return json({ source: "graph", signedIn: true, email: await services.sessions.email(userId) });
-    }),
-  ),
-
-  // Sign out: this phone only. The grant stays, so the next sign-in is silent.
-  route(
-    ["POST"],
-    "/api/me/signout",
-    "api",
-    withGraph(
-      accountWrite(async (_userId, session, env, config) => {
-        await servicesFor(env, config).sessions.destroy(session);
-      }),
-    ),
-  ),
 
   // Revoke: the stored grant and every session of the user go at once (AUTH-07). Entra's consent stays.
   route(
     ["POST"],
     "/api/me/disconnect",
     "api",
-    withGraph(
-      accountWrite(async (userId, _session, env, config) => {
-        const { sessions, vault } = servicesFor(env, config);
-        const hadGrant = await vault.has(userId);
-        await vault.delete(userId);
-        await sessions.destroyAll(userId);
-        if (hadGrant) await recordBestEffort(env, accountEvent("grant.deleted", userId, Date.now()));
-      }),
-    ),
-  ),
-
-  // Subject access: the user's own audit rows, newest first, a page at a time (DATA-05).
-  route(
-    ["GET"],
-    "/api/me/audit",
-    "api",
     withGraph(async (request, env, config) => {
-      const query = pageQuery.safeParse(Object.fromEntries(new URL(request.url).searchParams));
-      if (!query.success) return fail("bad_request");
-      const who = await signedIn(request, env, config);
-      if (!who.ok) return who.response;
-      const { limit, beforeId } = query.data;
-      const rows = await auditFor(env).forUser(who.userId, limit, beforeId);
-      return json({ rows: rows.map(auditRecord), nextId: rows.length === limit ? (rows.at(-1)?.id ?? null) : null });
+      const body = await write(request, config, emptyBody);
+      if (!body.ok) return body.response;
+      const { sessions, vault } = servicesFor(env, config);
+      const cookie = readCookie(request, SESSION_COOKIE);
+      const userId = cookie ? await sessions.resolve(cookie) : null;
+      if (!userId) return fail("auth_required");
+      const hadGrant = await vault.has(userId);
+      await vault.delete(userId);
+      await sessions.destroyAll(userId);
+      if (hadGrant) await recordBestEffort(env, accountEvent("grant.deleted", userId, Date.now()));
+      return withCookies(json({ signedIn: false }), signedOutCookies({ everywhere: true }));
     }),
-  ),
-
-  // Erasure (DATA-05): the user row, grant and sessions go; audit rows keep the session and lose the person. An email
-  // member is not erased here: it starts the deletion grace and the purge removes them with their R2 objects (ADR 0013).
-  route(
-    ["DELETE"],
-    "/api/me",
-    "api",
-    withConfig(
-      accountWrite(async (userId, session, env, config) => {
-        const { sessions, vault } = servicesFor(env, config);
-        const email = await sessions.emailNorm(userId);
-        if (email) {
-          // C (ADR 0013) and the lockout (ADR 0026): a suspended or locked-out member is signed out here too.
-          const admittedNow = admitted(await launchState(env, { fresh: true }), config.account, email);
-          if (!admittedNow || !(await sessions.activeMemberEmail(userId))) return fail("auth_required");
-          // C+R (ADR 0014): a stolen or shared session alone cannot start the deletion.
-          if (!(await sessions.reauthedWithin(session, config.account.reauthSeconds * 1000))) {
-            return fail("reauth_required");
-          }
-          await sessions.requestDeletion(userId, Date.now() + config.account.deleteGraceDays * 86_400_000, session);
-          await endLiveScreens(env, userId);
-          return json({ signedIn: true, deleting: true });
-        }
-        if (!config.graph) return fail("source_unavailable");
-        const audit = auditFor(env);
-        // Recorded first and not best effort: an erasure nobody can later see is worse than a failed one.
-        await audit.record(accountEvent("user.erased", userId, Date.now()));
-        if (await vault.has(userId)) await recordBestEffort(env, accountEvent("grant.deleted", userId, Date.now()));
-        // Before the user row goes: its sessions are found through the user id, which the delete clears.
-        await audit.anonymizeUser(userId);
-        await sessions.deleteUser(userId);
-      }),
-    ),
   ),
 ];

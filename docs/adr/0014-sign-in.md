@@ -83,6 +83,11 @@ Email code and passkey. Nothing else creates a session for an email user: no mag
 ### Mode gate
 State-creating steps (invite create, accept, code verify, passkey session creation) read `launch_mode` and `preview_lockout` uncached, so the 30 s cache (ADR 0026) never lets one through after a switch back to preview. In preview, existing members sign in as usual unless `preview_lockout` is set; invites stay limited as ADR 0026 says.
 
+### Amendments
+- **Reauth keeps `public_id`:** a reauth rotates the cookie value and deletes the presented row, but carries `public_id` over, because a live screen is keyed to the claiming session's `public_id` (ADR 0015) and a reauth changes no privilege. Every sign-in still mints a new one. The delete and the insert are one batch.
+- **The hint cookie is HttpOnly:** `__Host-bloop_in` has the session cookie's attributes and only the server reads it; no page script reads any bloop cookie. It still grants nothing.
+- **Sign-out and the device cookie:** a plain sign-out clears the session and hint cookies and keeps `__Host-bloop_dev`, so the device stays known; sign out everywhere clears all three. Any live session may sign itself out, including a deleting or locked-out member's and an Entra user's.
+
 ## Rejected
 - **Magic links instead of codes:** mail scanners follow links, which would sign them in or spend the link, and a link signs in whichever device opens it, not the one waiting.
 - **An admin-issued sign-in link:** a third method outside the owner's decision, the magic link rejected above, and a hijacked admin session could read any member's library.
