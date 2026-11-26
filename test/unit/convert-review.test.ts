@@ -67,12 +67,23 @@ describe("CONV-02 no container call outlives the run's deadline", () => {
           });
         }),
     );
-    const courier = new Courier(port);
-    courier.limitAt = Date.now() + 40;
+    // A frozen clock is the timer firing before `now` reaches the limit; the outcome cannot depend on the runner's pace.
+    const courier = new Courier(port, () => 1_000);
+    courier.limitAt = 1_005;
     await expect(courier.call("PUT", "/job/input/0", { timeoutMs: 60_000 })).rejects.toMatchObject({
       code: "deadline",
     });
     expect(waited).toBeLessThan(2000);
+  });
+
+  it("a call that its own shorter timeout cut is interrupted, not the deadline, while the clock is short of it", async () => {
+    const port = portOf(
+      (_path, init) =>
+        new Promise((_resolve, reject) => init.signal?.addEventListener("abort", () => reject(new Error("aborted")))),
+    );
+    const courier = new Courier(port, () => 1_000);
+    courier.limitAt = 1_000 + 60_000;
+    await expect(courier.call("PUT", "/job/input/0", { timeoutMs: 5 })).rejects.toMatchObject({ code: "interrupted" });
   });
 
   it("a call cut by something other than the deadline stays a retryable interruption", async () => {
