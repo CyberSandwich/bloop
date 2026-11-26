@@ -11,10 +11,10 @@ const migrations = fileURLToPath(new URL("../../migrations", import.meta.url));
 const toSql = (v: unknown): SQLInputValue => (v instanceof ArrayBuffer ? new Uint8Array(v) : (v as SQLInputValue));
 
 class Prepared implements Statement {
-  values: SQLInputValue[] = [];
+  private values: SQLInputValue[] = [];
   constructor(
     private readonly db: DatabaseSync,
-    readonly sql: string,
+    private readonly sql: string,
   ) {}
 
   bind(...values: unknown[]): Statement {
@@ -27,6 +27,9 @@ class Prepared implements Statement {
   }
   async run() {
     await Promise.resolve();
+    return this.runNow();
+  }
+  runNow() {
     const info = this.db.prepare(this.sql).run(...this.values);
     return { meta: { changes: Number(info.changes) } };
   }
@@ -41,6 +44,20 @@ export interface TestDb extends BatchDb {
   raw: DatabaseSync;
 }
 
+/** One yield, then every statement in one transaction with no await between them, as D1 runs a batch. */
+async function batch(raw: DatabaseSync, statements: Statement[]) {
+  await Promise.resolve();
+  raw.exec("BEGIN");
+  try {
+    const out = statements.map((s) => (s as Prepared).runNow());
+    raw.exec("COMMIT");
+    return out;
+  } catch (e) {
+    raw.exec("ROLLBACK");
+    throw e;
+  }
+}
+
 export function testDb(): TestDb {
   const raw = new DatabaseSync(":memory:");
   raw.exec("PRAGMA foreign_keys = ON");
@@ -49,26 +66,7 @@ export function testDb(): TestDb {
     .sort()) {
     raw.exec(readFileSync(join(migrations, file), "utf8"));
   }
-  return {
-    raw,
-    prepare: (sql) => new Prepared(raw, sql),
-    // Like D1: one transaction, rolled back whole when any statement throws.
-    async batch(statements) {
-      await Promise.resolve();
-      raw.exec("BEGIN");
-      try {
-        const results = statements.map((s) => {
-          const { sql, values } = s as Prepared;
-          return { meta: { changes: Number(raw.prepare(sql).run(...values).changes) } };
-        });
-        raw.exec("COMMIT");
-        return results;
-      } catch (error) {
-        raw.exec("ROLLBACK");
-        throw error;
-      }
-    },
-  };
+  return { raw, prepare: (sql) => new Prepared(raw, sql), batch: (statements) => batch(raw, statements) };
 }
 
 /** An app_user row, which token_grant and phone_session reference. */

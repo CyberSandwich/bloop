@@ -1,5 +1,5 @@
 // The cron jobs by trigger. A stream adds its job to one list; every trigger in CRON must have a list.
-import { batchDbOf } from "./auth/db.ts";
+import { dbOf } from "./auth/db.ts";
 import type { Config } from "./config.ts";
 import { CRON, type CronJob, type CronTrigger } from "./cron.ts";
 import type { Env } from "./env.ts";
@@ -55,7 +55,7 @@ export const JOBS: Readonly<Record<CronTrigger, readonly CronJob<Env, Config>[]>
     {
       name: "quota_reconcile",
       run: async (env, _config, allotment) => {
-        const { drifts, more } = await reconcileQuotas(batchDbOf(env.DB), allotment);
+        const { drifts, more } = await reconcileQuotas(dbOf(env.DB), allotment);
         if (drifts.length > 0) console.log(JSON.stringify({ evt: "quota_drift", drifts }));
         return { more };
       },

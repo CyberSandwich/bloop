@@ -11,15 +11,13 @@ export interface Db {
   prepare(sql: string): Statement;
 }
 
-/** A Db that also runs a batch: the statements in order as one transaction, any failure rolling all of them back. */
+/** D1's `batch`: the statements run in order as one transaction, so no other request sees a partial result. */
 export interface BatchDb extends Db {
   batch(statements: Statement[]): Promise<{ meta: { changes: number } }[]>;
 }
 
 /** The one cast from the platform binding to the slice above. */
-export const dbOf = (binding: unknown): Db => binding as Db;
-/** The same binding for code that needs `batch` (the quota moves). */
-export const batchDbOf = (binding: unknown): BatchDb => binding as BatchDb;
+export const dbOf = (binding: unknown): BatchDb => binding as BatchDb;
 
 export function bytes(value: unknown): Uint8Array<ArrayBuffer> {
   if (value instanceof Uint8Array) return Uint8Array.from(value);

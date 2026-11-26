@@ -6,7 +6,7 @@
 import { z } from "zod";
 import { cleanName } from "../../../public/js/shared/names.js";
 import { readCookie, SESSION_COOKIE } from "../auth/cookies.ts";
-import { batchDbOf, dbOf } from "../auth/db.ts";
+import { dbOf } from "../auth/db.ts";
 import { phoneUser, servicesFor } from "../auth/services.ts";
 import type { Config } from "../config.ts";
 import type { Env } from "../env.ts";
@@ -198,7 +198,7 @@ const complete: Handler = async ({ request, row, d }) => {
 const read = withConfig(async (request, env, config) => {
   const loaded = await load(request, env, config, "RL_UPLOAD_PART");
   if (!loaded.ok) return loaded.response;
-  return json(await pipeline.stateOf({ db: batchDbOf(env.DB), now: Date.now }, loaded.row));
+  return json(await pipeline.stateOf({ db: dbOf(env.DB), now: Date.now }, loaded.row));
 });
 
 const cancel: Handler = async ({ row, d }) => {

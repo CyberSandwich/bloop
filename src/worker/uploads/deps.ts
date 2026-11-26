@@ -1,5 +1,5 @@
 // The composition root of the upload pipeline: the real D1, the library bucket and the spend client behind `Deps`.
-import { batchDbOf } from "../auth/db.ts";
+import { dbOf } from "../auth/db.ts";
 import type { Config } from "../config.ts";
 import type { Env } from "../env.ts";
 import { readSettings } from "../settings.ts";
@@ -21,7 +21,7 @@ export async function uploadContext(env: Env, config: Config): Promise<{ d: Deps
   const settings = await readSettings(env);
   return {
     d: {
-      db: batchDbOf(env.DB),
+      db: dbOf(env.DB),
       mp: multipartOver(bucketFor(env, "library")),
       spend: spendFor(env, () => capOverridesOf(settings)),
       config,
