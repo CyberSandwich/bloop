@@ -1,6 +1,7 @@
 // Throwaway: positive controls for the strace connect detector, and soffice handed an http URL with the network on.
 import { spawn } from "node:child_process";
-import { copyFileSync, mkdirSync } from "node:fs";
+import { copyFileSync, mkdirSync, writeFileSync } from "node:fs";
+import { linkedOdt } from "../../container/fixtures/lib.mjs";
 import { join } from "node:path";
 import { GEN, docker, sleep, work } from "../../container/test/lib.mjs";
 
@@ -22,7 +23,7 @@ const run = (label, script, net) => {
 const www = join(work, "www");
 mkdirSync(www, { recursive: true });
 copyFileSync(join(GEN, "linked.odt"), join(www, "x.odt"));
-copyFileSync(join(GEN, "img-http.odt"), join(www, "img.odt"));
+writeFileSync(join(www, "img.odt"), linkedOdt({ href: "http://127.0.0.1:8099/i.png", image: true }));
 
 // 1. positive control for strace itself: bash connects to a closed loopback port.
 run("bash /dev/tcp under strace", `${prep}\nstrace -f -qq -e trace=connect -o /tmp/st bash -c 'exec 3<>/dev/tcp/127.0.0.1/8099' 2>/dev/null; ${count}`, "none");
