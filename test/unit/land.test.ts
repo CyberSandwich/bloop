@@ -3,7 +3,7 @@ import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { basename, join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { attributed, conflictCopies, main, refusals } from "../../tools/land.mjs";
+import { attributed, conflictCopies, main, migrationProblems, refusals } from "../../tools/land.mjs";
 import { SPAWN_TIMEOUT } from "./spawn.ts";
 
 /** A bare remote with one commit on main, and a clone of it to land from. */
@@ -111,6 +111,31 @@ describe("land: what a fast-forward to main refuses", { timeout: SPAWN_TIMEOUT }
     writeFileSync(join(admin, "index 2"), "");
     expect(refusals({ cwd: wt, sha })[0]).toContain(join("worktrees", basename(admin), "index 2"));
   });
+
+  it("land: a Durable Object migration tag that skips or reuses a number, or an edited shipped step, is refused", () => {
+    const steps = (...s: object[]) => `{\n  // the classes\n  "migrations": ${JSON.stringify(s)}\n}\n`;
+    const v1 = { tag: "v1", new_sqlite_classes: ["Screen"] };
+    const writeAndCommit = (text: string) => {
+      writeFileSync(join(clone, "wrangler.jsonc"), text);
+      git(clone, "add", "wrangler.jsonc");
+      git(clone, "commit", "-q", "-m", "migration");
+      return git(clone, "rev-parse", "HEAD");
+    };
+    writeAndCommit(steps(v1));
+    git(clone, "push", "-q", "origin", "main");
+    const next = writeAndCommit(steps(v1, { tag: "v2", new_sqlite_classes: ["Guard"] }));
+    expect(refusals({ cwd: clone, sha: next })).toEqual([]);
+    git(clone, "reset", "-q", "--hard", "origin/main");
+    const skipped = writeAndCommit(steps(v1, { tag: "v3", new_sqlite_classes: ["Guard"] }));
+    expect(refusals({ cwd: clone, sha: skipped })).toEqual([
+      "new Durable Object migration tag v3 must be v2: renumber it",
+    ]);
+    git(clone, "reset", "-q", "--hard", "origin/main");
+    const edited = writeAndCommit(steps({ tag: "v1", new_sqlite_classes: ["Screen", "Guard"] }));
+    expect(refusals({ cwd: clone, sha: edited })).toEqual([
+      "Durable Object migration v1 was edited or removed: a shipped step never changes",
+    ]);
+  });
 });
 
 describe("land: the CLI", { timeout: SPAWN_TIMEOUT }, () => {
@@ -160,5 +185,39 @@ describe("land: the attribution and conflict-copy rules", { timeout: SPAWN_TIMEO
       join("refs", "heads", "x 2"),
     ]);
     rmSync(dir, { recursive: true, force: true });
+  });
+});
+
+describe("land: Durable Object migration steps", () => {
+  const v = (n: number, classes = ["C"]) => ({ tag: `v${n}`, new_sqlite_classes: classes });
+
+  it("land: new steps numbered on from the last shipped tag pass, as do none and a first step", () => {
+    expect(migrationProblems([v(1), v(2)], [v(1), v(2), v(3), v(4)])).toEqual([]);
+    expect(migrationProblems([v(1)], [v(1)])).toEqual([]);
+    expect(migrationProblems([], [v(1)])).toEqual([]);
+  });
+
+  it("land: a reused, skipped or out-of-order tag is refused once per wrong step", () => {
+    expect(migrationProblems([v(1), v(2)], [v(1), v(2), v(2, ["D"])])).toEqual([
+      "new Durable Object migration tag v2 must be v3: renumber it",
+    ]);
+    expect(migrationProblems([v(1)], [v(1), v(3), v(2)])).toEqual([
+      "new Durable Object migration tag v3 must be v2: renumber it",
+      "new Durable Object migration tag v2 must be v3: renumber it",
+    ]);
+  });
+
+  it("land: a shipped step edited, removed or moved is refused, and nothing is numbered after it", () => {
+    expect(migrationProblems([v(1), v(2)], [v(1), v(2, ["D"]), v(3)])).toEqual([
+      "Durable Object migration v2 was edited or removed: a shipped step never changes",
+    ]);
+    expect(migrationProblems([v(1), v(2)], [v(1)])).toHaveLength(1);
+    expect(migrationProblems([v(1), v(2)], [v(2), v(1)])).toHaveLength(2);
+  });
+
+  it("land: a shipped tag that is not v<n> is refused rather than guessed", () => {
+    expect(migrationProblems([{ tag: "init" }], [{ tag: "init" }, v(1)])).toEqual([
+      "cannot number after the shipped Durable Object migration tag init",
+    ]);
   });
 });

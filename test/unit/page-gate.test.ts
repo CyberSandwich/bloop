@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { Sessions } from "../../src/worker/auth/sessions.ts";
-import { normalizePath, type PageEnv, servePage, type Variant } from "../../src/worker/pages.ts";
+import type { Variant } from "../../src/worker/page-registry.ts";
+import { normalizePath, type PageEnv, servePage } from "../../src/worker/pages.ts";
 import { PROD_VARS } from "../env-vars.ts";
 import { type TestDb, testDb } from "./d1-shim.ts";
 
