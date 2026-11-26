@@ -4,6 +4,7 @@
 import { isLocalOrigin } from "./config.ts";
 import type { Directory } from "./do/directory.ts";
 import type { Screen } from "./do/screen.ts";
+import type { UserLibrary } from "./do/user-library.ts";
 import type { Env } from "./env.ts";
 
 function inJurisdiction<T extends Rpc.DurableObjectBranded | undefined>(
@@ -16,6 +17,15 @@ function inJurisdiction<T extends Rpc.DurableObjectBranded | undefined>(
 export function screenStub(env: Pick<Env, "SCREEN" | "PUBLIC_ORIGIN">, screenRef: string): DurableObjectStub<Screen> {
   const ns = inJurisdiction(env.SCREEN as DurableObjectNamespace<Screen>, env.PUBLIC_ORIGIN);
   return ns.get(ns.idFromName(screenRef));
+}
+
+/** The user's own object: named by a user id from the session or from server state, never from a request (LIB-01). */
+export function userLibraryStub(
+  env: Pick<Env, "USER_LIBRARY" | "PUBLIC_ORIGIN">,
+  userId: string,
+): DurableObjectStub<UserLibrary> {
+  const ns = inJurisdiction(env.USER_LIBRARY as DurableObjectNamespace<UserLibrary>, env.PUBLIC_ORIGIN);
+  return ns.get(ns.idFromName(userId));
 }
 
 export function directoryStub(env: Pick<Env, "DIRECTORY" | "PUBLIC_ORIGIN">): DurableObjectStub<Directory> {
