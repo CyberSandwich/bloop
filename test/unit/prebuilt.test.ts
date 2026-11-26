@@ -1,4 +1,4 @@
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
@@ -47,5 +47,29 @@ describe("SITE-05 prebuilt manifest", () => {
     const none = dist();
     rmSync(join(none, MANIFEST));
     expect(manifestProblems(none)).toEqual([`${MANIFEST} is missing`]);
+  });
+
+  it("SITE-05 token jobs: a symlinked file or folder fails the assert, so a link cannot publish a file from outside dist/", () => {
+    const file = dist();
+    symlinkSync("/etc/hosts", join(file, "link.txt"));
+    expect(() => manifestProblems(file)).toThrow(/link\.txt is not a plain file or folder/);
+    const folder = dist();
+    symlinkSync("/etc", join(folder, "linked-dir"));
+    expect(() => manifestProblems(folder)).toThrow(/linked-dir is not a plain file or folder/);
+    const dangling = dist();
+    symlinkSync("/nonexistent/target", join(dangling, "dangling"));
+    expect(() => manifestProblems(dangling)).toThrow(/dangling is not a plain file or folder/);
+  });
+
+  it("SITE-05 token jobs: a file named __proto__ or toString is an ordinary name, listed and compared", () => {
+    const dir = dist();
+    writeFileSync(join(dir, "__proto__"), "1");
+    writeFileSync(join(dir, "toString"), "1");
+    expect(manifestProblems(dir)).toEqual(["__proto__ is not in the manifest", "toString is not in the manifest"]);
+    writeFileSync(join(dir, MANIFEST), JSON.stringify(filesOf(dir)));
+    expect(Object.keys(filesOf(dir))).toContain("__proto__");
+    expect(manifestProblems(dir)).toEqual([]);
+    writeFileSync(join(dir, "__proto__"), "2");
+    expect(manifestProblems(dir)).toEqual(["__proto__ changed"]);
   });
 });

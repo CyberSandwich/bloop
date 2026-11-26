@@ -29,10 +29,10 @@ let root = "";
 afterEach(() => rmSync(root, { recursive: true, force: true }));
 
 /** A copy of the CLI's own folder layout with a fake wrangler the lockfile pins, so ROOT resolves into the temp dir. */
-function project() {
+function project(swapped = true) {
   root = mkdtempSync(join(tmpdir(), "bloop-staging-cli-"));
   mkdirSync(join(root, "tools"));
-  for (const file of ["staging.mjs", "pinned-wrangler.mjs"]) {
+  for (const file of ["staging.mjs", "pinned-wrangler.mjs", "prebuilt.mjs"]) {
     copyFileSync(join(REPO, "tools", file), join(root, "tools", file));
   }
   mkdirSync(join(root, "node_modules/wrangler/bin"), { recursive: true });
@@ -46,12 +46,12 @@ function project() {
   );
   const config = readFileSync(join(REPO, "wrangler.jsonc"), "utf8");
   // The prebuilt-dist action has already swapped the build command when the staging step runs.
-  writeFileSync(join(root, "wrangler.jsonc"), withPrebuilt(config));
+  writeFileSync(join(root, "wrangler.jsonc"), swapped ? withPrebuilt(config) : config);
   return join(root, "calls.log");
 }
 
-function run(command: string, env: Record<string, string>) {
-  const calls = project();
+function run(command: string, env: Record<string, string>, swapped = true) {
+  const calls = project(swapped);
   writeFileSync(calls, "");
   writeFileSync(`${calls}.token`, "");
   const result = spawnSync(process.execPath, [join(root, "tools/staging.mjs"), command], {
@@ -127,6 +127,36 @@ describe("tools/staging.mjs as the workflow runs it", () => {
     const config = readFileSync(join(root, "wrangler.jsonc"), "utf8");
     expect(config).toContain(`"database_id": "${D1_ID}"`);
     expect(config).toContain("node tools/prebuilt.mjs assert");
+  });
+
+  it("deploy: refuses to run while wrangler.jsonc still has the real build command", {
+    timeout: SPAWN_TIMEOUT,
+  }, () => {
+    const res = run("deploy", {}, false);
+    expect(res.status).not.toBe(0);
+    expect(res.stderr).toContain("still builds");
+    expect(res.calls).toEqual([]);
+  });
+
+  it("pinned-wrangler: a deploy with the token needs the swapped build command, and one without it passes through", {
+    timeout: SPAWN_TIMEOUT,
+  }, () => {
+    const calls = project(false);
+    writeFileSync(calls, "");
+    writeFileSync(`${calls}.token`, "");
+    const wrangler = (token: string) =>
+      spawnSync(process.execPath, [join(root, "tools/pinned-wrangler.mjs"), "deploy", "--dry-run"], {
+        cwd: root,
+        encoding: "utf8",
+        env: { ...process.env, CALLS: calls, CLOUDFLARE_API_TOKEN: token },
+      });
+    const refused = wrangler("token-under-test");
+    expect(refused.status).not.toBe(0);
+    expect(refused.stderr).toContain("still builds");
+    expect(readFileSync(calls, "utf8")).toBe("");
+    // The rehearsal has no token: wrangler itself runs the build command, which is the point of the dry run.
+    expect(wrangler("").status).toBe(0);
+    expect(readFileSync(calls, "utf8")).toBe("deploy --dry-run\n");
   });
 
   it("refuses a wrangler that is not the version the lockfile pins", {

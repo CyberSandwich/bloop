@@ -146,7 +146,7 @@ export function probeForms(/** @type {string} */ path) {
 /** What a page's headers must be: _headers for the path, a dynamic page's CSP completed with the file origin. */
 function pageExpect(/** @type {Registry} */ reg, /** @type {string} */ path) {
   /** @type {Expect} */
-  const out = { status: 200, header: staticHeaders(reg.headersFile, path) };
+  const out = { status: 200, header: staticHeaders(reg.headersFile, path, new URL(reg.publicOrigin).host) };
   const spec = DYNAMIC_PAGES[path];
   if (!spec) return out;
   const csp = /** @type {string} */ (pageCsp(path, { fileOrigin: reg.fileOrigin, r2Endpoint: null }));

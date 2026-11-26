@@ -17,7 +17,9 @@ import { staticHeaders as resolve } from "../../tools/static-headers.mjs";
 import { wranglerConfig } from "../../tools/wrangler-config.mjs";
 
 const HEADERS_FILE = readFileSync(new URL("../../public/_headers", import.meta.url), "utf8");
-const staticHeaders = (path: string, host?: string): Record<string, string> => resolve(HEADERS_FILE, path, host);
+const VARS = wranglerConfig(readFileSync(new URL("../../wrangler.jsonc", import.meta.url), "utf8")).vars;
+const SITE_HOST = new URL(VARS.PUBLIC_ORIGIN).host;
+const staticHeaders = (path: string, host = SITE_HOST): Record<string, string> => resolve(HEADERS_FILE, path, host);
 
 const lower = (headers: Record<string, string>) =>
   Object.fromEntries(Object.entries(headers).map(([k, v]) => [k.toLowerCase(), v]));
@@ -109,9 +111,7 @@ describe("caching and worker policy in _headers", () => {
   });
 
   it("a static 404 on the file origin carries the file origin's sandbox CSP, and the site's host does not", () => {
-    const fileHost = new URL(
-      wranglerConfig(readFileSync(new URL("../../wrangler.jsonc", import.meta.url), "utf8")).vars.FILE_ORIGIN,
-    ).host;
+    const fileHost = new URL(VARS.FILE_ORIGIN).host;
     expect(staticHeaders("/js/no-such.js", fileHost)["content-security-policy"]).toBe(
       headersFor("file-origin")["Content-Security-Policy"],
     );

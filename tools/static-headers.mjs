@@ -16,10 +16,10 @@ function rulePattern(rule) {
 
 /**
  * @param {string} text the _headers file @param {string} path an exact page path
- * @param {string} [host] the request's host; a rule written as `https://host/path` applies to that host only
+ * @param {string} host the request's host; a rule written as `https://host/path` applies to that host only
  * @returns {Record<string, string>} lower-case names
  */
-export function staticHeaders(text, path, host = "bloop.here") {
+export function staticHeaders(text, path, host) {
   const out = new Map();
   let applies = false;
   for (const line of text.split("\n")) {

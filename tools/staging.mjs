@@ -3,11 +3,13 @@
 //   ready    prints one line and sets `ready=true|false`: false (a clean skip) until the staging D1 exists. The buckets
 //            are not probed: a missing one fails the deploy, and the token then needs no R2 permission.
 //   deploy   writes the D1 id (STAGING_D1_ID in the environment) into wrangler.jsonc for this job's checkout and
-//            swaps its build command for the check that dist/ was downloaded, applies the migrations, deploys, then sets every missing staging secret from a random value that is piped in
+//            refuses to run unless the prebuilt-dist action has swapped the build command for the manifest check, applies
+//            the migrations, deploys, then sets every missing staging secret from a random value that is piped in
 import { spawnSync } from "node:child_process";
 import { randomBytes } from "node:crypto";
 import { appendFileSync, readFileSync, writeFileSync } from "node:fs";
 import { wranglerEntry } from "./pinned-wrangler.mjs";
+import { requirePrebuilt } from "./prebuilt.mjs";
 
 export const D1_NAME = "bloop-staging";
 export const PLACEHOLDER = "STAGING_D1_ID";
@@ -78,7 +80,9 @@ function ready() {
 
 function deploy() {
   const file = "wrangler.jsonc";
-  writeFileSync(file, withD1Id(readFileSync(file, "utf8"), process.env.STAGING_D1_ID ?? ""));
+  const config = readFileSync(file, "utf8");
+  requirePrebuilt(config);
+  writeFileSync(file, withD1Id(config, process.env.STAGING_D1_ID ?? ""));
   wranglerOk(["d1", "migrations", "apply", "DB", "--remote", "-e", "staging"]);
   wranglerOk(["deploy", "-e", "staging"]);
   for (const name of missingSecrets(wranglerOk(["secret", "list", "-e", "staging", "--format", "json"]))) {

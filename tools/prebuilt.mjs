@@ -6,8 +6,8 @@
 //   node tools/prebuilt.mjs rewrite   in the deploy job's checkout, before wrangler runs
 //   node tools/prebuilt.mjs assert    the command wrangler then runs: dist/ equals its manifest, dotfiles included
 import { createHash } from "node:crypto";
-import { existsSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
-import { join, relative, sep } from "node:path";
+import { existsSync, lstatSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
+import { join } from "node:path";
 
 const BUILD = '"build": { "command": "node tools/build-assets-cli.mjs", "watch_dir": "public" }';
 const PREBUILT = '"build": { "command": "node tools/prebuilt.mjs assert" }';
@@ -20,20 +20,38 @@ export function withPrebuilt(config) {
   return config.replace(BUILD, () => PREBUILT);
 }
 
-/** Every file under dir, dotfiles included, with its SHA-256; the manifest itself is not listed.
+/** Throws unless wrangler.jsonc's build command is the assertion, so a deploy run in the wrong order fails closed
+ * instead of building in the job that holds the token.
+ * @param {string} config */
+export function requirePrebuilt(config) {
+  if (!config.includes(PREBUILT)) throw new Error("wrangler.jsonc still builds: run tools/prebuilt.mjs rewrite first");
+}
+
+/** Every file under dir, dotfiles included, with its SHA-256; the manifest itself is not listed. Anything that is not
+ * a plain file or folder (a symlink above all) throws: a link could publish a file from outside dist/. The result has
+ * no prototype, so a file named __proto__ is an ordinary key.
  * @param {string} dir @returns {Record<string, string>} */
 export function filesOf(dir) {
   /** @type {Record<string, string>} */
-  const files = {};
-  for (const entry of readdirSync(dir, { recursive: true, withFileTypes: true })) {
-    if (!entry.isFile()) continue;
-    const rel = relative(dir, join(entry.parentPath, entry.name)).split(sep).join("/");
-    if (rel !== MANIFEST)
-      files[rel] = createHash("sha256")
-        .update(readFileSync(join(dir, rel)))
-        .digest("hex");
-  }
-  return Object.fromEntries(Object.entries(files).sort(([a], [b]) => (a < b ? -1 : 1)));
+  const found = Object.create(null);
+  /** @param {string} rel */
+  const walk = (rel) => {
+    for (const name of readdirSync(join(dir, rel))) {
+      const path = rel ? `${rel}/${name}` : name;
+      const stat = lstatSync(join(dir, path));
+      if (stat.isDirectory()) walk(path);
+      else if (!stat.isFile()) throw new Error(`${dir}/${path} is not a plain file or folder`);
+      else if (path !== MANIFEST)
+        found[path] = createHash("sha256")
+          .update(readFileSync(join(dir, path)))
+          .digest("hex");
+    }
+  };
+  walk("");
+  /** @type {Record<string, string>} */
+  const files = Object.create(null);
+  for (const path of Object.keys(found).sort()) files[path] = found[path] ?? "";
+  return files;
 }
 
 /** What differs between dist/ and its manifest: a file missing, extra or changed.
@@ -42,15 +60,16 @@ export function manifestProblems(dir) {
   if (!existsSync(join(dir, MANIFEST))) return [`${MANIFEST} is missing`];
   const expected = JSON.parse(readFileSync(join(dir, MANIFEST), "utf8"));
   const actual = filesOf(dir);
+  const has = (/** @type {object} */ files, /** @type {string} */ rel) => Object.hasOwn(files, rel);
   return [
     ...Object.keys(expected)
-      .filter((rel) => !(rel in actual))
+      .filter((rel) => !has(actual, rel))
       .map((rel) => `${rel} is missing`),
     ...Object.keys(actual)
-      .filter((rel) => !(rel in expected))
+      .filter((rel) => !has(expected, rel))
       .map((rel) => `${rel} is not in the manifest`),
     ...Object.keys(actual)
-      .filter((rel) => rel in expected && expected[rel] !== actual[rel])
+      .filter((rel) => has(expected, rel) && expected[rel] !== actual[rel])
       .map((rel) => `${rel} changed`),
   ];
 }
