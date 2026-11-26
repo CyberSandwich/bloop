@@ -18,7 +18,8 @@ Rows start `planned` and flip to `mitigated` when their test lands; same columns
 ## Refused content
 | id | STRIDE | threat | L | I | mitigation | test | status |
 |---|---|---|---|---|---|---|---|
-| DROP-12 | E | Legacy Office files (.ppt, .doc, .xls) with a macro, an object pool or an encrypted storage | med | high | Refuse the file when its compound storage holds a macro, an ObjectPool or encryption | `DROP-12 cfb` | planned |
-| DROP-13 | E | A PDF with JavaScript, a Launch action, an embedded file or an open action | med | high | Refuse the file when its structure names any of them | `DROP-13 pdf-active` | planned |
-| DROP-14 | E, I | An Office file with an external relationship, or a macro-enabled type | med | high | Refuse any relationship with an external target and the docm, xlsm and pptm content types | `DROP-14 external` | planned |
-| DROP-15 | T | Bad magic bytes or brand (webp, gif, heic, webm), or text that is not UTF-8 or is oversize | med | med | Refuse a file whose magic or brand does not match its kind, and text that is not UTF-8 or is over its size cap | `DROP-15 magic` | planned |
+| DROP-12 | E | Legacy Office files (.ppt, .doc, .xls) with a macro, an object pool or an encrypted storage | med | high | Refuse the file when its compound storage holds a macro, an ObjectPool or encryption | `DROP-12 cfb` | mitigated |
+| DROP-13 | E | A PDF with JavaScript, a Launch action, an embedded file or an open action | med | high | Refuse the file when its structure names any of them | `DROP-13 pdf-active` | mitigated |
+| DROP-14 | E, I | An Office file with an external relationship, or a macro-enabled type | med | high | Refuse any relationship with an external target and the docm, xlsm and pptm content types | `DROP-14 external` | mitigated |
+| DROP-15 | T | Bad magic bytes or brand (webp, gif, heic, webm), or text that is not UTF-8 or is oversize | med | med | Refuse a file whose magic or brand does not match its kind, and text that is not UTF-8 or is over its size cap | `DROP-15 magic` | mitigated |
+| DROP-16 | D | An image with a huge pixel size (a decompression bomb) that takes down the room screen's tab | low | med | The size in the image's own header (PNG, JPEG, GIF, WebP) is at most 100 megapixels; a missing or zero size is `bad_structure`, one over the cap is `too_large`; HEIC dimensions are the converter's limits | `DROP-16 pixels` | mitigated |
