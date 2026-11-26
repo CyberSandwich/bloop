@@ -117,8 +117,7 @@ for (const vp of VIEWPORTS) {
       );
       const hero = imgs.find((i) => i.hero);
       expect(hero?.lazy).toBe(false);
-      // A phone never fetches the desktop screenshot.
-      expect(hero?.src).toMatch(vp.width < 640 ? /\/img\/hero-phone-(600|900)\./ : /\/img\/hero-viewer-(1000|1440)\./);
+      expect(hero?.src).toMatch(/\/img\/hero-viewer-(750|1100|1600|2200)\./);
       const raster = imgs.filter((i) => !i.hero && !i.file.endsWith(".svg"));
       expect(raster.length).toBeGreaterThan(0);
       for (const i of raster) expect(i, i.file).toMatchObject({ lazy: true, below: true });
@@ -719,23 +718,23 @@ test.describe("reduced motion", () => {
 test.describe("phone hero", () => {
   test.use({ viewport: { width: 390, height: 844 }, hasTouch: true, isMobile: true });
 
-  test("the phone mockup replaces the screenshot, bare of the stage's frame, and still tilts", async ({ page }) => {
+  test("the phone shows the desktop screenshot in the stage's frame at 16 px, and still tilts", async ({ page }) => {
     await page.goto("/");
     const img = page.locator(".stage img");
     await expect
       .poll(() => img.evaluate((el) => (el as unknown as { currentSrc: string }).currentSrc))
-      .toMatch(/\/img\/hero-phone-(600|900)\.(avif|webp)$/);
+      .toMatch(/\/img\/hero-viewer-(750|1100|1600|2200)\.(avif|webp)$/);
     const style = await page.locator(".stage").evaluate((el) => {
       const c = getComputedStyle(el as unknown as El) as unknown as Record<string, string>;
-      return [c.borderRadius, c.boxShadow, c.backgroundColor];
+      return [c.borderRadius, c.overflow, c.boxShadow === "none"];
     });
-    expect(style).toEqual(["0px", "none", "rgba(0, 0, 0, 0)"]);
+    expect(style).toEqual(["16px", "hidden", false]);
     // The layout box, not the bounding box: the stage is tilted and scaled while it enters.
     const [w = 0, h = 1] = await img.evaluate((el) => [
       (el as unknown as { offsetWidth: number }).offsetWidth,
       (el as unknown as { offsetHeight: number }).offsetHeight,
     ]);
-    expect(Math.abs(w / h - 1155 / 2366)).toBeLessThan(0.01);
+    expect(Math.abs(w / h - 1440 / 828)).toBeLessThan(0.01);
     await page.locator(".stage").scrollIntoViewIfNeeded();
     expect(
       await page
