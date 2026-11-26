@@ -66,7 +66,7 @@ func loadConfig(getenv func(string) string) Config {
 		MaxPages:     int(num("BLOOP_MAX_PAGES", 300)),
 		MaxVideoSecs: float64(num("BLOOP_MAX_VIDEO_SECONDS", 4*3600)),
 		MaxImagePx:   num("BLOOP_MAX_IMAGE_PIXELS", 100_000_000),
-		Workers:      int(num("BLOOP_WORKERS", int64(min(4, runtime.NumCPU())))),
+		Workers:      int(num("BLOOP_WORKERS", int64(min(4, runtime.GOMAXPROCS(0))))), // GOMAXPROCS follows the cgroup CPU quota; NumCPU counts the host
 		Timeouts:     map[string]time.Duration{},
 	}
 	for stage, def := range stageDefaults {
