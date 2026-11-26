@@ -395,6 +395,26 @@ describe("notify", () => {
   });
 });
 
+describe("CONV-11 a library file's owner comes from its row", () => {
+  it("the scope and the progress target ignore what the caller claims", async () => {
+    const h = harness();
+    const seen: { scope?: string; target?: unknown }[] = [];
+    const converter = () => ({
+      enqueue: async (spec: { scope: string; target: unknown }) => {
+        seen.push(spec);
+        return "queued" as const;
+      },
+      cancel: async () => "done" as const,
+      check: async () => "live" as const,
+    });
+    const liar = libraryReq(h, { scope: "someone-else", target: { kind: "library", userId: "someone-else" } });
+    await startConversion(depsFor(h, { converter }), liar);
+    expect(seen).toEqual([
+      expect.objectContaining({ scope: h.w.userId, target: { kind: "library", userId: h.w.userId } }),
+    ]);
+  });
+});
+
 describe("guest rows", () => {
   it("a guest file's start claims under the session id", async () => {
     const h = harness();

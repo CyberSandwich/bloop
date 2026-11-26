@@ -48,6 +48,10 @@ async function begin(deps: ConvertDeps, req: StartRequest): Promise<StartResult>
   const loc = await locate(deps.db, req.ownerKind, req.fileId, req.version);
   if (!loc) return { state: "skipped", code: "gone" };
 
+  // A library file's owner comes from its row: the queue cap, the per-day take and the progress target never trust a
+  // caller's word for whose file this is. A guest's scope (the IP hash) is not in D1, so it stays the caller's.
+  const scope = loc.userId ?? req.scope;
+  const target: Target = loc.userId ? { kind: "library", userId: loc.userId } : req.target;
   const now = deps.now();
   const runId = deps.newRunId();
   const key = { fileId: req.fileId, version: req.version, runId };
@@ -70,14 +74,14 @@ async function begin(deps: ConvertDeps, req: StartRequest): Promise<StartResult>
   if (deadlineSeconds(kind, loc.ext, loc.bytes, PROFILES[req.profile]) > deps.leaseMaxSeconds) {
     return refuse("too_large", true);
   }
-  const depth = await queueDepth(deps.db, req.ownerKind === "library" ? req.scope : null);
+  const depth = await queueDepth(deps.db, loc.userId);
   const full =
     depth.all >= QUEUE_CAPS.all ||
     (req.ownerKind === "library" ? depth.user >= QUEUE_CAPS.user : depth.guest >= QUEUE_CAPS.public);
   if (full) return refuse("queue_full");
 
   if (!(await claim())) return { state: "exists" };
-  const taken = await deps.spend.take(meterFor(req), 1, req.scope);
+  const taken = await deps.spend.take(meterFor(req), 1, scope);
   if (!taken.ok) {
     const code = taken.reason === "cap_hit" ? "daily_limit" : "busy";
     await markSkipped(deps.db, key, code, now);
@@ -87,11 +91,11 @@ async function begin(deps: ConvertDeps, req: StartRequest): Promise<StartResult>
     const result = await deps.converter(req.fileId, req.version).enqueue({
       runId,
       ownerKind: req.ownerKind,
-      target: req.target,
+      target,
       fileId: req.fileId,
       version: req.version,
       profile: req.profile,
-      scope: req.scope,
+      scope,
       enqueuedAt: now,
     });
     if (result === "busy") throw new Error("the version's Converter holds another run");

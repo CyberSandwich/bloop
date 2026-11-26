@@ -144,6 +144,16 @@ describe("DROP-07 purge", () => {
     expect(await drop.purge("s1", r.r2Key)).toBe(false); // idempotent
   });
 
+  it("CONV-09 deletes the converted outputs under the file's key too, and nothing of another file", async () => {
+    const { drop, bucket } = setup();
+    const r = await drop.reserve("s1", 10, "a.pptx", "pptx");
+    if (!r.ok) throw new Error("reserve");
+    for (const k of [r.r2Key, `${r.r2Key}/d/s/1920.pack`, `${r.r2Key}/n/notes.json`, `${r.r2Key}x`, "g/other/d/t.webp"])
+      await bucket.put(k);
+    await drop.purge("s1", r.r2Key);
+    expect([...bucket.objects.keys()].sort()).toEqual([`${r.r2Key}x`, "g/other/d/t.webp"]);
+  });
+
   it("leaves the row open when the delete fails, so the sweep finds it", async () => {
     const { drop, bucket, db } = setup();
     const r = await drop.reserve("s1", 10, "a.pdf", "pdf");

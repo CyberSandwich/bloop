@@ -72,6 +72,8 @@ The prefix is the original's key without `/orig`, read from D1, never from a cal
 
 `d/` holds `slides.json`, `t.webp`, `s/1/<w>.webp`, `s/<w>.pack`, `doc.pdf`, `m/0.mp4` and `i/1920.jpg`, only for the groups that passed. `meta.json` is read, never stored. `bundleAllowlist` is the served set (notes and meta never). A pack is the pages' WebP files one after another; `slides.json` (`v: 2`) carries each page's `[start, length]`. A pack's `sha256` in `outputs` is the digest of its pieces' hashes, since R2 cannot hash a streamed object as a whole.
 
+A guest's end deletes everything under `g/<ref>/` as well as the original (`R2GuestDrop.purge`). The manifest is read once, checked, and pinned by its digest in the plan: a later unit that sees a different manifest fails the run. Every call to the container is cut at the run's deadline, and a status or error body is capped at 2 MiB.
+
 Groups are `slides`, `pdf`, `notes`, `media` and `image`. A document is done when `slides` or `pdf` passed; bad notes only clear `has_notes`; a failed media or image group fails the job.
 
 ## 5. Profiles and the deadline

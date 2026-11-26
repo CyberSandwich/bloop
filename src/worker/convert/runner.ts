@@ -114,7 +114,7 @@ export class JobRunner {
   private readonly courier: Courier;
 
   constructor(private readonly d: RunnerDeps) {
-    this.courier = new Courier(d.port);
+    this.courier = new Courier(d.port, d.now);
   }
 
   // ------------------------------------------------------------------ entry points
@@ -179,6 +179,7 @@ export class JobRunner {
     if (j.infraErrors > MAX_INFRA_ERRORS && !j.end) return this.route(j, { fail: "interrupted" });
     if (j.phase !== "finish" && j.deadline > 0 && this.d.now() >= j.deadline)
       return this.route(j, { fail: "deadline" });
+    this.courier.limitAt = j.deadline > 0 && j.phase !== "finish" ? j.deadline : null;
     return this.route(j, await this.cases[j.phase](j));
   }
 
@@ -291,7 +292,10 @@ export class JobRunner {
     if (e.state === "failed") await markFailed(this.d.db, this.key(j), e.code ?? "internal", now);
     else if (e.state === "skipped") await markSkipped(this.d.db, this.key(j), e.code ?? "busy", now);
     else if (e.state === "cancelled") await markCancelled(this.d.db, j.fileId, j.version, now, j.runId);
-    if (e.state === "done" || e.state === "failed") {
+    if ((e.state === "done" || e.state === "failed") && !j.recorded) {
+      // Flag first: a repeat of this step after a later fault must not count the run twice (the breaker reads the rate).
+      j.recorded = true;
+      await writeJob(this.d.store, j);
       await this.d.spend.record(e.state === "done" ? "conversion_done" : "conversion_failed", 1);
     }
     await this.d.notify.terminal(j.target, j.fileId, j.version, e.state as EndState, e.code);
@@ -349,20 +353,30 @@ export class JobRunner {
     if (!loc) return { cancelled: true };
     const kind = kindOf(loc.ext);
     if (!kind) return { fail: "unsupported" };
-    const gates = await this.d.gates();
-    if (gates.mode === "off" || gates.convert === "off") return { skip: "off" };
-    if (gates.convert === "account_only" && j.ownerKind === "guest" && j.profile === "full")
-      return { skip: "account_only" };
-    if (kind === "video" && (j.profile === "demo" || gates.convertVideo === "off")) return { skip: "video_off" };
+    const refused = await this.gateRefusal(j, kind);
+    if (refused) return { skip: refused };
     if (deadlineSeconds(kind, loc.ext, loc.bytes, PROFILES[j.profile]) > this.d.leaseMaxSeconds)
       return { fail: "too_large" };
     j.sha256 = loc.sha256;
     return { phase: "lease" };
   }
 
+  /** The switches, as they are now: the code to skip with, or null. A retry asks again, so a tripped breaker holds. */
+  private async gateRefusal(j: JobRecord, kind: string | undefined): Promise<string | null> {
+    const gates = await this.d.gates();
+    if (gates.mode === "off" || gates.convert === "off") return "off";
+    if (gates.convert === "account_only" && j.ownerKind === "guest" && j.profile === "full") return "account_only";
+    if (kind === "video" && (j.profile === "demo" || gates.convertVideo === "off")) return "video_off";
+    return null;
+  }
+
   private async lease(j: JobRecord): Promise<Next> {
     const loc = await this.located(j);
     if (!loc) return { cancelled: true };
+    if (j.attempt > 1) {
+      const refused = await this.gateRefusal(j, kindOf(loc.ext));
+      if (refused) return { skip: refused };
+    }
     const seconds = deadlineSeconds(kindOf(loc.ext), loc.ext, loc.bytes, PROFILES[j.profile]);
     const pool = j.ownerKind === "library" && j.profile === "full" ? "convert" : "convert_public";
     // A lease already held (this alarm ran before, then failed after the acquire) is reused, never taken twice.
