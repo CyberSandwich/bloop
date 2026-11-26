@@ -51,6 +51,20 @@ describe("UP-04 abort: an object a crash stranded after a won release", () => {
     expect(r.mp.objects.has(row.r2Key)).toBe(false);
   });
 
+  it("UP-04 abort: a delete that threw once is tried again by the next sweep", async () => {
+    const r = rig();
+    const row = await open(r);
+    r.mp.objects.set(row.r2Key, DECK);
+    await store.claim(r.db, row.id, r.clock.now);
+    await releaseLibrary(r.db, { id: row.id, userId: "u1", bytes: row.bytes }, r.clock.now, r.clock.now);
+    r.mp.failNext("delete");
+    await sweepUploads(r.d, 50);
+    expect(r.mp.objects.has(row.r2Key)).toBe(true);
+    r.clock.now += HOUR;
+    await sweepUploads(r.d, 50);
+    expect(r.mp.objects.has(row.r2Key)).toBe(false);
+  });
+
   it("UP-04 abort: a stranded key is left once its row is older than the keep window", async () => {
     const r = rig();
     const row = await open(r);
