@@ -54,6 +54,9 @@ describe("MODE-01 landing and legal bodies differ by mode", () => {
     expect(await (await hit("/sitemap.xml")).text()).not.toContain("/articles/features");
     wrangler.setLaunchMode("open");
     expect((await hit("/articles/features")).status).toBe(200);
+    const form = await hit("/articles/features.html");
+    expect(form.status).toBe(307);
+    expect(form.headers.get("Location")).toBe("/articles/features");
     expect(await (await hit("/sitemap.xml")).text()).toContain("/articles/features");
   });
 
