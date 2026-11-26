@@ -24,3 +24,5 @@ TEST_EMAILS=test@example.test
 DEV_MAILBOX=1
 # Local R2 has no S3 endpoint to presign against; set a local origin to route presigned URLs to the dev proxy. Config refuses it on a deployed origin.
 R2_DEV_ENDPOINT=
+# Test only: a local stand-in for i.ytimg.com that the thumbnail route fetches from. Config refuses it on a deployed origin.
+YT_THUMB_ORIGIN=
