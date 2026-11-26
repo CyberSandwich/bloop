@@ -85,6 +85,12 @@ func (s *Server) videoJob(job jobInfo, meta *metaJSON) error {
 		// An index that cannot be read means a transcode: ffmpeg decides what the file is.
 		boxes, _ := topBoxes(orig)
 		remux := canRemux(p, demuxer, s.cfg.VideoWidth, boxes)
+		if remux {
+			// A copy drops the SEI units, and with them the recovery point a stream without an IDR starts from.
+			if idr, err := s.startsWithIDR(ctx, orig); err != nil || !idr {
+				remux = false
+			}
+		}
 		ceiling := s.cfg.Timeouts["video"]
 		budget := transcodeBudget(seconds, s.cfg.VideoRate, s.cfg.VideoFixed, ceiling)
 		st, err := os.Stat(orig)
@@ -113,10 +119,13 @@ func (s *Server) videoJob(job jobInfo, meta *metaJSON) error {
 		}
 		err = run(remux, budget)
 		if err != nil && remux && codeOf(err) != errTimeout && ctx.Err() == nil && seconds <= s.cfg.MaxVideoSecs {
-			// A copy ffmpeg could not finish may still encode, when the clip is within the encode cap.
-			log.Printf("remux failed, encoding instead: %v", err)
-			err = run(false, transcodeBudget(seconds, s.cfg.VideoRate, s.cfg.VideoFixed, ceiling))
-			remux = false
+			// A copy ffmpeg could not finish may still encode, when the clip is within the encode cap and the stage
+			// has the time left for it.
+			if left, ok := stageTimeLeft(ctx, s.cfg.VideoFixed); ok {
+				log.Printf("remux failed, encoding instead: %v", err)
+				err = run(false, min(transcodeBudget(seconds, s.cfg.VideoRate, s.cfg.VideoFixed, ceiling), left))
+				remux = false
+			}
 		}
 		if err != nil {
 			return err
@@ -143,6 +152,50 @@ func (s *Server) videoJob(job jobInfo, meta *metaJSON) error {
 		meta.Video = &VideoMeta{W: ow, H: oh, DurationMs: int(out.seconds() * 1000)}
 		return s.videoThumb(ctx, dst, out.seconds())
 	})
+}
+
+// idrProbeBudget bounds the one-packet read that decides whether a copy starts on an IDR picture.
+const idrProbeBudget = 20 * time.Second
+
+// startsWithIDR reports whether the first access unit of the first video stream holds an IDR slice. ffmpeg writes
+// that one unit as Annex B on stdout; the container's own index is never trusted for it.
+func (s *Server) startsWithIDR(ctx context.Context, in string) (bool, error) {
+	pctx, cancel := context.WithTimeout(ctx, idrProbeBudget)
+	defer cancel()
+	out, err := s.tool(pctx, "ffmpeg", "-nostdin", "-hide_banner", "-loglevel", "error",
+		"-protocol_whitelist", "file", "-f", "mov", "-i", in, "-map", "0:v:0", "-c", "copy",
+		"-bsf:v", "h264_mp4toannexb", "-frames:v", "1", "-f", "h264", "pipe:1")
+	if err != nil {
+		return false, convertErr(err)
+	}
+	return firstSliceIsIDR(out), nil
+}
+
+// stageTimeLeft is what remains of the stage's timeout after keeping `reserve` for the probes and the thumbnail that
+// follow; ok is false when nothing usable is left. A context with no deadline has all the time there is.
+func stageTimeLeft(ctx context.Context, reserve time.Duration) (time.Duration, bool) {
+	deadline, has := ctx.Deadline()
+	if !has {
+		return time.Duration(math.MaxInt64), true
+	}
+	left := time.Until(deadline) - reserve
+	return left, left > 0
+}
+
+// firstSliceIsIDR reads Annex B NAL units and reports whether the first picture slice (types 1 to 5) is an IDR (5).
+func firstSliceIsIDR(annexB []byte) bool {
+	for i := 0; i+3 < len(annexB); i++ {
+		if annexB[i] == 0 && annexB[i+1] == 0 && annexB[i+2] == 1 {
+			switch t := annexB[i+3] & 0x1f; {
+			case t == 5:
+				return true
+			case t >= 1 && t <= 4:
+				return false
+			}
+			i += 2
+		}
+	}
+	return false
 }
 
 // ffmpeg runs one ffmpeg command, publishing its progress as the video stage's percentage.

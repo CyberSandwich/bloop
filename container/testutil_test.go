@@ -89,6 +89,8 @@ type fakeTools struct {
 	probeOut string        // ffprobe JSON for the mp4
 	delay    time.Duration // added to every call
 
+	firstAU        []byte        // what the first-access-unit read returns; nil is an IDR slice
+	encodeLeft     time.Duration // time the last encode had before its budget ended
 	failOnCopy     bool          // ffmpeg fails when it is asked to copy streams
 	failLaterPages bool          // pdftoppm fails for every page after the first
 	holdPages      chan struct{} // when set, pdftoppm for any page after the first waits for a receive or close
@@ -104,12 +106,33 @@ func newFakeTools(pages int) *fakeTools {
 	}
 }
 
+// isIDRProbe is the one-access-unit read that decides whether a copy starts on an IDR picture.
+func isIDRProbe(spec cmdSpec) bool {
+	return spec.name == "ffmpeg" && slices.Contains(spec.args, "pipe:1") && slices.Contains(spec.args, "h264")
+}
+
+// NAL unit header bytes: a reference slice of a non-IDR picture (type 1) and of an IDR picture (type 5).
+const (
+	nalNonIDR byte = 0x41
+	nalIDR    byte = 0x65
+)
+
+// annexB is an Annex B access unit: an SPS, a PPS and an SEI, then one slice with the given NAL header byte.
+func annexB(slice byte) []byte {
+	return []byte{0, 0, 0, 1, 0x67, 1, 2, 0, 0, 0, 1, 0x68, 3, 0, 0, 1, 0x06, 4, 0, 0, 1, slice, 5, 6}
+}
+
+// called lists the runs of a tool, leaving out the IDR probe so a test counts the work that makes the output.
 func (f *fakeTools) called(name string) []cmdSpec {
+	return f.calledWhere(name, func(c cmdSpec) bool { return !isIDRProbe(c) })
+}
+
+func (f *fakeTools) calledWhere(name string, keep func(cmdSpec) bool) []cmdSpec {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	var out []cmdSpec
 	for _, c := range f.calls {
-		if c.name == name {
+		if c.name == name && keep(c) {
 			out = append(out, c)
 		}
 	}
@@ -136,12 +159,23 @@ func (f *fakeTools) run(ctx context.Context, spec cmdSpec) ([]byte, error) {
 	f.mu.Lock()
 	f.calls = append(f.calls, spec)
 	f.mu.Unlock()
+	if isIDRProbe(spec) {
+		if f.firstAU != nil {
+			return f.firstAU, nil
+		}
+		return annexB(nalIDR), nil
+	}
 	if f.delay > 0 {
 		time.Sleep(f.delay)
 	}
 	if spec.name == f.blockOn {
 		<-ctx.Done()
 		return nil, ctx.Err()
+	}
+	if dl, ok := ctx.Deadline(); ok && spec.name == "ffmpeg" && slices.Contains(spec.args, "libx264") {
+		f.mu.Lock()
+		f.encodeLeft = time.Until(dl)
+		f.mu.Unlock()
 	}
 	if spec.name == "ffmpeg" && f.failOnCopy && slices.Contains(spec.args, "copy") {
 		return nil, fmt.Errorf("ffmpeg: exit status 1")
