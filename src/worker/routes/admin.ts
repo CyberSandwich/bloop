@@ -4,14 +4,15 @@
 import { z } from "zod";
 import { clearCookie, setCookie, VIEW_COOKIE, VIEW_MAX_AGE_SECONDS, withCookies } from "../auth/cookies.ts";
 import { dbOf } from "../auth/db.ts";
+import { stripControls } from "../auth/templates.ts";
 import { json } from "../http.ts";
 import type { Route } from "../router.ts";
 import { memberRoute } from "./account.ts";
 
 const ADMIN = { admin: true, limit: "RL_ADMIN", fresh: true } as const;
 
-/** Why the admin acted, as every admin write records it. */
-const reason = z.string().trim().min(1).max(500);
+/** Why the admin acted, as every admin write records it: control and format characters go first (`stripControls`). */
+const reason = z.string().transform(stripControls).pipe(z.string().trim().min(1).max(500));
 
 const viewBody = z.object({ open: z.boolean(), reason }).strict();
 

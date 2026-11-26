@@ -229,12 +229,27 @@ export async function verifyCode(
 }
 
 /**
- * The member's device epoch is in the MAC, so a bump (sign out everywhere, a passkey or email change, a deletion
- * request) refuses every device value issued before it, on every device. TRANSITIONAL(F): the epoch needs
- * `app_user.device_epoch INTEGER NOT NULL DEFAULT 0`; until that column exists callers pass 0 and nothing bumps it.
+ * The member's device epoch (`app_user.device_epoch`) is in the MAC, so a bump refuses every device value issued
+ * before it, on every device, not only on the one that cleared its cookie.
  */
 const deviceMac = (pepper: string, userId: string, epoch: number, nonce: string): Promise<string> =>
   hmacHex(pepper, `dev|${userId}|${epoch}|${nonce}`);
+
+/** The epoch to mint and check device values at; 0 for no row, whose values verify for nobody anyway. */
+export async function deviceEpoch(db: Db, userId: string): Promise<number> {
+  const row = await db
+    .prepare("SELECT device_epoch FROM app_user WHERE id = ?")
+    .bind(userId)
+    .first<{ device_epoch: number }>();
+  return row?.device_epoch ?? 0;
+}
+
+/**
+ * The bump, batched with the change that calls for it: sign out everywhere (sessions.ts `destroyAll`), a passkey
+ * removal and a deletion request. TRANSITIONAL(a-5): passkey registration batches it too. TRANSITIONAL(a-7): so
+ * does an email change.
+ */
+export const BUMP_DEVICE_EPOCH = "UPDATE app_user SET device_epoch = device_epoch + 1 WHERE id = ?";
 
 /**
  * TRANSITIONAL(a-4): code verify sets it.

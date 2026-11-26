@@ -319,7 +319,7 @@ test/
 | POST                     | `/api/session/length`                       | Bearer pid, Origin; `RL_CONTROL`      | the phone sets when the session ends, `{seconds}` (interfaces.md `LengthRequest`): `endsAt` becomes now plus seconds, never past approval plus the mode's cap (12 h live, 2 h demo); both modes; before approval or after the end `wrong_state`; answers the phone's view, and both sockets get the new `endsAt` (SESS-01) |
 | POST                     | `/api/cancel`                                | Bearer pid, Origin                    | cancel before approve                                          |
 | POST                     | `/api/end`                                   | Bearer pid, Origin                    | end from the phone                                             |
-| GET                      | `/api/me`                                    | session cookie, or none               | a member (a deleting one too): `{source, signedIn: true, email, admin, launchMode, status, deleteAfter, passkeys, quota: {used, total}, userHandle}`; an Entra user under `graph`: `{source: "graph", signedIn: true, email}`; anyone else `{source, signedIn: false, launchMode}`; with `FILE_SOURCE=mock`, no cookie and a local origin and request only, the demo account `{source: "mock", signedIn: true, email: null, launchMode}`; a cookie naming no live session also clears the session and hint cookies |
+| GET                      | `/api/me`                                    | session cookie, or none               | a member (a deleting one too): `{source, signedIn: true, email, admin, launchMode, status, deleteAfter, passkeys, quota: {used, total}, userHandle}`; an Entra user under `graph`: `{source: "graph", signedIn: true, email}`; anyone else `{source, signedIn: false, launchMode}`; with `FILE_SOURCE=mock`, no cookie and a local origin and request only, the demo account `{source: "mock", signedIn: true, email: null, launchMode}`; it never sets or clears a cookie |
 | POST                     | `/api/me/signout`, `/api/me/signout-all`     | any live session, Origin              | end this session and its screens, or every session and screen of the user (AUTH-13); clear the session and hint cookies, and for signout-all the device cookie too, even when the session is already dead (`auth_required`); an Entra grant stays |
 | GET, DELETE              | `/api/me/sessions`, `/api/me/sessions/:id`   | member session; DELETE: Origin        | the user's live sessions `[{id, label, method, createdAt, lastSeenAt, current}]` (`id` is the public id); DELETE ends another one and its screens (204); the current one is `bad_request` |
 | GET, PATCH, DELETE       | `/api/me/passkeys`, `/api/me/passkeys/:id`   | member session; writes: Origin; DELETE: fresh proof | `[{id, name, createdAt, lastUsedAt, backedUp}]`; PATCH `{name}` (1 to 40 letters, digits, emoji, spaces, hyphens and apostrophes: `auth/names.ts`); DELETE 204, `reauth_required` without a proof within `REAUTH_SECONDS` |
@@ -362,6 +362,8 @@ Every state-changing route checks four things: `Origin` equals `PUBLIC_ORIGIN`; 
 | `/f/`                   | 60 per 60 s per IP; then 60 per 60 s per screen (`RL_FETCH` keyed by the screen ref), or per view link (keyed by its hash), between the Screen object's check and the counted fetch; per link: 10 fetches, none for a view link (VID-02) | binding; exact      |
 | `PUT /api/drop`         | 5 per 60 s per IP (every attempt past the Origin and credential checks counts); one accepted file per session; live bytes under `GUEST_STORAGE_BUDGET_BYTES` | binding; exact; D1  |
 | `/auth/start`           | 10 per 60 s per IP                                                                   | binding             |
+| member routes (`/api/me/*`) | a write: 60 per 60 s per IP (`RL_MEMBER_IP`) before the session read; every route: 120 per 60 s per member (`RL_MEMBER`) after it (ADR 0014) | binding |
+| `/api/admin/*`          | none before the admin check, so a non-admin always gets the unknown path's 404; then 60 per 60 s per admin (`RL_ADMIN`) | binding |
 | `GET /api/screen/ws`, `GET /api/pair/ws` | 30 per 60 s per screen ref and network (IPv4 address or IPv6 /64) (`RL_UPGRADE`, its own binding so reconnect storms never refuse a tap), before the Screen object; then at most 4 sockets waiting for their `hello` per role and 2 per network, the network's own oldest evicted at its 2 and the oldest overall when a role is full, never a refusal (PAIR-10) | binding; exact |
 | `POST /api/control`, `POST /api/screen/shown`, `POST /api/session/length` | 120 per 60 s per IP (`RL_CONTROL`, its own binding so `/f/` range reads never refuse a tap), then 120 per 60 s per credential (keyed by the pid's or sid's hash, never the screen ref: every `/f/` token carries it) (PAIR-13) | binding |
 | `GET /api/files`        | 20 per 60 s per session (`RL_FILES`, keyed by the screen ref), after the credential check: each call is a Graph call | binding |
@@ -485,7 +487,7 @@ CREATE TABLE r2_ops (                    -- R2 operations bloop performed; 13 mo
   PRIMARY KEY (month, class));          -- month 'YYYY-MM' UTC; A = put, list; B = get, head
 ```
 
-That is the schema as of `0001_init.sql` and migrations 0002 and 0003. Migration `0004_indexes.sql` adds indexes. `0005_accounts_library.sql` adds email users (`app_user` rows with `tid = 'email'`), invites, codes, passkeys, the library, uploads, `derived`, reports, `admin_action`, `hold`, `setting` and `waitlist`, and rebuilds `guest_file` without its type CHECK. ADR 0013 owns those columns and their retention; ADR 0012 owns how migrations ship.
+That is the schema as of `0001_init.sql` and migrations 0002 and 0003. Migration `0004_indexes.sql` adds indexes. `0005_accounts_library.sql` adds email users (`app_user` rows with `tid = 'email'`), invites, codes, passkeys, the library, uploads, `derived`, reports, `admin_action`, `hold`, `setting` and `waitlist`, and rebuilds `guest_file` without its type CHECK. `0006_device_epoch.sql` adds `app_user.device_epoch` (ADR 0014). ADR 0013 owns those columns and their retention; ADR 0012 owns how migrations ship.
 
 ### 8.2 Screen Durable Object storage (all deleted at session end, or with `deleteAll()` at close)
 
@@ -613,6 +615,10 @@ Each new module exports an empty route list (every path stays 404) until its str
 
 The Durable Object bindings (`USER_LIBRARY`, `CONVERTER`), the library bucket and the new rate-limit bindings are in `wrangler.jsonc`. So is the `send_email` binding `EMAIL` (ADR 0021). The Converter `containers` entry is not: the conversion stream adds it with its image digest. Variables and secrets are listed in `src/worker/config.ts` and `src/worker/config/` only. `UPLOAD_MODE` ships as proxy and `CONVERT_MODE` as off until their streams land.
 
+A `TRANSITIONAL(<slice>)` comment marks an export that ships before its caller or its counterpart: the comment says what wires it, and that change removes the marker. A slice is a later accounts change (`a-<n>`) or a stream's letter. A docs-drift test refuses any other slice and any marker that names a plan, a section or a stream instead of code.
+
+Transitional slices: `a-4`, `a-5`, `a-7`, `a-8`, `a-9`, `L`.
+
 ### 13.4 Observability
 Workers Logs are on and invocation logs are off, because invocation logs keep full URLs, tokens included (SITE-03). Sampling is set in `wrangler.jsonc`. Code logs through the one `log()` shape. Turning on the Issues view is a dashboard step (`docs/setup.md`).
 
@@ -630,4 +636,4 @@ What is stored outside the EU, and what each holds:
 Browser tests and `npm run dev` use a `localhost` base URL, because WebAuthn refuses IP addresses. Integration runs set `DEV_MAILBOX` (the dev mailbox route; refused on an https origin), `UPLOAD_MODE=proxy` and `CONVERT_MODE=stub`.
 
 ### 13.6 Cron seams
-Three crons exist: every five minutes (no job yet; the spend guard's breaker goes there), hourly (upload and guest sweeps) and daily (retention and the account and trash purges; section 9). `src/worker/cron-jobs.ts` lists each trigger's jobs, and a stream adds its sweep to one list. A job gets an allotment of rows or objects for the tick and returns whether more is left, so a backlog pages across ticks; one failing job does not stop the rest.
+Three crons exist: every five minutes (the spend breaker, which mails the admins: ADR 0021), hourly (upload and guest sweeps) and daily (retention and the account and trash purges; section 9). `src/worker/cron-jobs.ts` lists each trigger's jobs, and a stream adds its sweep to one list. A job gets an allotment of rows or objects for the tick and returns whether more is left, so a backlog pages across ticks; one failing job does not stop the rest.

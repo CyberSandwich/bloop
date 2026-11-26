@@ -62,3 +62,15 @@ it("0003 widens guest_file.type to images and keeps every earlier row", () => {
   expect(() => insert.run("s1", "g/f", 1, "pdf", "gg", "dup.pdf", 6, null)).toThrow(); // the primary key survived
   expect(db.prepare("SELECT name FROM sqlite_master WHERE name = 'guest_file_new'").all()).toEqual([]);
 });
+
+it("0006 adds app_user.device_epoch, 0 for every existing row", () => {
+  const db = new DatabaseSync(":memory:");
+  const files = readdirSync(dir)
+    .filter((f) => f.endsWith(".sql"))
+    .sort();
+  for (const file of files.filter((f) => f < "0006")) db.exec(readFileSync(join(dir, file), "utf8"));
+  db.prepare("INSERT INTO app_user (id, tid, oid, created_at, last_seen_at) VALUES ('u1', 'email', 'u1', 0, 0)").run();
+  db.exec(readFileSync(join(dir, "0006_device_epoch.sql"), "utf8"));
+  expect(db.prepare("SELECT device_epoch FROM app_user").all()).toEqual([{ device_epoch: 0 }]);
+  expect(() => db.prepare("UPDATE app_user SET device_epoch = NULL").run()).toThrow(/NOT NULL/);
+});
