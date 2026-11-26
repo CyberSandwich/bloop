@@ -7,10 +7,15 @@ import { SWITCHES } from "../spend/switches.ts";
 import { optional } from "./core.ts";
 
 /** `positive` matches the registry's `positiveVar`, which refuses 0 for a line (a zero line trips at once). */
-const number = (describe: string, positive: boolean) =>
-  optional(positive ? z.coerce.number().positive() : z.coerce.number().min(0)).describe(describe);
+const number = (describe: string, positive: boolean, min = 0) => {
+  // A floor above zero says why: the registry's reason names the guarantee a lower value would break.
+  const floor = min > 0 ? `must be at least ${min}: ${describe}` : undefined;
+  return optional(positive ? z.coerce.number().positive().min(min, floor) : z.coerce.number().min(min, floor)).describe(
+    describe,
+  );
+};
 
-const spec = (s: NumberSpec): [string, z.ZodType] => [s.var, number(s.reason, s.positive === true)];
+const spec = (s: NumberSpec): [string, z.ZodType] => [s.var, number(s.reason, s.positive === true, s.min)];
 
 const entries: [string, z.ZodType][] = [
   // A switch var is a floor, and the registry treats an unknown value as the most restrictive, so it is not rejected here.
