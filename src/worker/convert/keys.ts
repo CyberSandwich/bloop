@@ -15,6 +15,8 @@ export interface Located {
   ext: string;
   bytes: number;
   sha256: string | null;
+  /** The library file's owner, read from the row so a caller's claim of who owns it is never used; null for a guest. */
+  userId: string | null;
 }
 
 /**
@@ -37,10 +39,10 @@ export async function locate(db: Db, ownerKind: OwnerKind, fileId: string, versi
   if (ownerKind === "library") {
     const row = await db
       .prepare(
-        `SELECT f.r2_key, f.ext, f.bytes, f.sha256 FROM ${LIBRARY_FROM} WHERE f.id = ? AND f.version = ? AND ${LIBRARY_SERVABLE}`,
+        `SELECT f.r2_key, f.ext, f.bytes, f.sha256, f.user_id FROM ${LIBRARY_FROM} WHERE f.id = ? AND f.version = ? AND ${LIBRARY_SERVABLE}`,
       )
       .bind(fileId, version)
-      .first<{ r2_key: string; ext: string; bytes: number; sha256: string | null }>();
+      .first<{ r2_key: string; ext: string; bytes: number; sha256: string | null; user_id: string }>();
     return row
       ? {
           bucket: "LIBRARY",
@@ -49,6 +51,7 @@ export async function locate(db: Db, ownerKind: OwnerKind, fileId: string, versi
           ext: row.ext.toLowerCase(),
           bytes: row.bytes,
           sha256: row.sha256,
+          userId: row.user_id,
         }
       : null;
   }
@@ -66,6 +69,7 @@ export async function locate(db: Db, ownerKind: OwnerKind, fileId: string, versi
         ext: extOf(row.name),
         bytes: row.bytes,
         sha256: row.sha256,
+        userId: null,
       }
     : null;
 }

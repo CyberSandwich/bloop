@@ -87,6 +87,8 @@ export const jobRecordSchema = z.strictObject({
   stored: z.array(z.strictObject({ path: z.string(), size: int, sha256: z.string() })).max(64),
   infraErrors: int,
   released: z.boolean(),
+  /** The end was counted for the breaker; set before the count so a repeated finish never counts twice. */
+  recorded: z.boolean(),
   /** Set once: the run's end. `code` is set for failed and skipped. */
   end: z.strictObject({ state: z.enum(TERMINAL_STATES), code: z.string().nullable() }).nullable(),
 });
@@ -160,5 +162,6 @@ export const newRecord = (spec: EnqueueSpec): JobRecord => ({
   stored: [],
   infraErrors: 0,
   released: false,
+  recorded: false,
   end: null,
 });
