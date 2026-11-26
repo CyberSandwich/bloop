@@ -5,6 +5,7 @@ import { typeOfName } from "../shared/names.js";
 import { toast } from "./toast.js";
 
 const MB = 1024 * 1024;
+const SENT_MS = 2000;
 /** Not a type bloop stores: a HEIC is sent only as the JPEG this browser can make of it (design.md, Upload). */
 export const HEIC = /\.(heic|heif)$/i;
 
@@ -69,9 +70,9 @@ export async function prepareFile(file, maxBytes, load = MEDIA) {
 }
 
 /**
- * Starts the guest's upload through the engine (core/upload.js), which loads now: a page that sends nothing never
- * fetches it. `abort()` stops it; the result then says `upload_aborted`. If the engine cannot load nothing was sent:
- * a toast says so and the result is `offline`, so Try Again sends again.
+ * Starts the guest's upload through the engine and its pill (core/upload-pill.js), which load now: a page that sends
+ * nothing never fetches them. `abort()` stops it; the result then says `upload_aborted`. If they cannot load nothing
+ * was sent: a toast says so and the result is `offline`, so Try Again sends again.
  * @param {object} args
  * @param {File} args.file
  * @param {string} args.pid
@@ -84,34 +85,48 @@ export function sendFile({ file, pid, onProgress }) {
     stopped = true;
   };
   /** @type {Promise<SendResult>} */
-  const done = import("./upload.js").then(
-    ({ createUploader }) =>
-      new Promise((resolve) => {
-        if (stopped) return resolve({ ok: false, error: "upload_aborted" });
-        const up = createUploader({
+  const done = new Promise((resolve) => {
+    /** @type {{dispose: () => void} | null} */
+    let mounted = null;
+    let settled = false;
+    /** @param {SendResult} result @param {number} lingerMs how long the pill stays: "Sent" is read before it goes */
+    const settle = (result, lingerMs) => {
+      if (settled) return;
+      settled = true;
+      resolve(result);
+      setTimeout(() => mounted?.dispose(), lingerMs);
+    };
+    import("./upload-pill.js")
+      .then(({ mountUploads }) =>
+        mountUploads({
           kind: "guest",
           pid,
           onChange: ({ files: [mine] }) => {
             if (!mine) return;
-            if (mine.state === "sent") resolve({ ok: true, view: /** @type {PhoneView} */ (mine.view) });
-            else if (mine.state === "refused") resolve({ ok: false, error: /** @type {ErrorCode} */ (mine.error) });
-            else if (mine.state === "canceled") resolve({ ok: false, error: "upload_aborted" });
-            else return onProgress(mine.fraction);
-            up.dispose();
+            if (mine.state === "sent") settle({ ok: true, view: /** @type {PhoneView} */ (mine.view) }, SENT_MS);
+            else if (mine.state === "refused") settle({ ok: false, error: /** @type {ErrorCode} */ (mine.error) }, 0);
+            else if (mine.state === "canceled") settle({ ok: false, error: "upload_aborted" }, 0);
+            else onProgress(mine.fraction);
           },
-        });
-        const [id] = up.add([file]);
-        stop = () => up.cancel(/** @type {number} */ (id));
-      }),
-    () => {
-      toast({
-        title: "Upload Didn't Load",
-        body: "Reload the page, then try again.",
-        error: true,
-        action: { label: "Reload", run: () => /** @type {any} */ (globalThis).location.reload() },
-      });
-      return { ok: false, error: "offline" };
-    },
-  );
+        }),
+      )
+      .then(
+        (up) => {
+          mounted = up;
+          if (stopped) return settle({ ok: false, error: "upload_aborted" }, 0);
+          const [id] = up.add([file]);
+          stop = () => up.cancel(/** @type {number} */ (id));
+        },
+        () => {
+          toast({
+            title: "Upload Didn't Load",
+            body: "Reload the page, then try again.",
+            error: true,
+            action: { label: "Reload", run: () => /** @type {any} */ (globalThis).location.reload() },
+          });
+          resolve({ ok: false, error: "offline" });
+        },
+      );
+  });
   return { done, abort: () => stop() };
 }

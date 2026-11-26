@@ -65,6 +65,17 @@ describe("the pill's face", () => {
     expect(node.byClass("up-title")?.textContent).toBe("Lecture 5.pptx");
   });
 
+  it("wraps its title only while told to, and leaves it alone otherwise", () => {
+    const { part, node } = make();
+    expect(node.classes.has("wrap")).toBe(false);
+    part.update({ wrap: true });
+    expect(node.classes.has("wrap")).toBe(true);
+    part.update({ line: "x" });
+    expect(node.classes.has("wrap")).toBe(true);
+    part.update({ wrap: false });
+    expect(node.classes.has("wrap")).toBe(false);
+  });
+
   it("announces a changed title to the page, and never a changed line", () => {
     const { part, node } = make();
     const live = node.find((n) => n.getAttribute("role") === "status") as FakeNode;
@@ -135,11 +146,11 @@ describe("the refusal toasts", () => {
     });
     expect(t("a.pptx", "empty", undefined).title).toBe("This File Is Empty");
     expect(t("a.pptx", "too_large", 500)).toEqual({ title: "File Too Large", body: "bloop takes files up to 500 MB." });
-    for (const code of ["quota_exceeded", "library_full"])
-      expect(t("a.pptx", code, undefined)).toEqual({
-        title: "Not Enough Space",
-        body: "Delete files or empty the trash to add this one.",
-      });
+    expect(t("a.pptx", "quota_exceeded", undefined)).toEqual({
+      title: "Not Enough Space",
+      body: "Delete files or empty the trash to add this one.",
+    });
+    expect(t("a.pptx", "library_full", undefined).title).toBe("Your Library Is Full");
     expect(t("Lecture 5.pptm", "macro_content", undefined)).toEqual({
       title: "Lecture 5.pptm Can't Be Added",
       body: "This file has macros. Save a copy without them as .pptx.",
@@ -160,7 +171,7 @@ describe("the refusal toasts", () => {
   });
 
   it("a code without a string of its own reads as the plain can't-be-added", () => {
-    expect(bindingModule.refusalToast("a.pptx", "storage_full", undefined)).toEqual({
+    expect(bindingModule.refusalToast("a.pptx", "no_such_code", undefined)).toEqual({
       title: "a.pptx Can't Be Added",
       body: "Try again in a moment.",
     });

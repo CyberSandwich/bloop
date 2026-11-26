@@ -352,7 +352,6 @@ describe("size budgets", () => {
     const awaitingImporter = new Set([
       "public/js/core/copy-check.js",
       "public/js/core/tt.js",
-      "public/js/core/upload-pill.js",
       "public/js/shared/errors-app.js",
     ]);
     const lazyJs = entries.filter(

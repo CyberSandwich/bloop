@@ -4,6 +4,8 @@ import { createUploader } from "../../public/js/core/upload.js";
 
 export const MARK = { "X-Bloop": "1" };
 export const NETWORK = Symbol("network");
+// The real timer, kept for flush: a test that fakes the global one (the api wrapper's request timeout) still settles.
+const tick = globalThis.setTimeout;
 
 export interface Call {
   method: string;
@@ -226,8 +228,8 @@ export function makeWorld(options: Options = {}) {
       uuid: () => `key-${++state.keys}`,
       // Settles in the same flush however loaded the machine is; real SHA-256 is covered in client-upload.test.ts.
       subtle: {
-        digest: async (_name: string, data: Uint8Array) => {
-          const bytes = data;
+        digest: async (_name: string, data: ArrayBuffer) => {
+          const bytes = new Uint8Array(data);
           const out = new Uint8Array(new ArrayBuffer(32));
           bytes.forEach((b, i) => {
             out[i % 32] = ((out[i % 32] ?? 0) * 31 + b) & 255;
@@ -256,7 +258,7 @@ export function makeWorld(options: Options = {}) {
     },
     /** Lets every promise settle. */
     async flush() {
-      for (let i = 0; i < 3; i++) await new Promise((resolve) => setTimeout(resolve, 0));
+      for (let i = 0; i < 3; i++) await new Promise((resolve) => tick(resolve, 0));
     },
     /** Moves the clock, running each timer in its turn. */
     async advance(ms: number) {
