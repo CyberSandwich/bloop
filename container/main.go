@@ -27,7 +27,7 @@ type Config struct {
 	MaxVideoSecs float64       // the longest clip that is re-encoded; a remux has no cap
 	VideoRate    float64       // seconds of video the encoder finishes per second of wall time, measured
 	VideoWidth   int           // widest video output
-	PreviewWidth int           // an HEVC source wider than this is encoded at this width first
+	PreviewWidth int           // an HEVC source whose longer side is over this is encoded to fit it first
 	VideoFixed   time.Duration // probes and thumbnail, added to every video budget
 	MaxImagePx   int64
 	Workers      int
@@ -66,22 +66,22 @@ func loadConfig(getenv func(string) string) Config {
 		rate = r
 	}
 	c := Config{
-		Addr:       str("BLOOP_ADDR", ":8080"),
-		WorkDir:    str("BLOOP_WORK", "/work"),
-		TmpDir:     str("BLOOP_TMP", "/tmp"),
-		LORegistry: str("BLOOP_LO_REGISTRY", "/opt/bloop/lo-registry.xcu"),
-		MaxInput:   num("BLOOP_MAX_INPUT", 2<<30),
-		MaxChunk:   num("BLOOP_MAX_CHUNK", 64<<20),
-		Widths:     parseWidths(getenv("BLOOP_WIDTHS")),
-		Limits:     Limits{MaxUnpacked: num("BLOOP_MAX_UNPACKED", 2<<30), MaxEntries: int(num("BLOOP_MAX_ENTRIES", 20000))},
-		MaxPages:   int(num("BLOOP_MAX_PAGES", 300)),
-		VideoRate:  rate,
-		VideoWidth: int(num("BLOOP_VIDEO_WIDTH", 1920)),
+		Addr:         str("BLOOP_ADDR", ":8080"),
+		WorkDir:      str("BLOOP_WORK", "/work"),
+		TmpDir:       str("BLOOP_TMP", "/tmp"),
+		LORegistry:   str("BLOOP_LO_REGISTRY", "/opt/bloop/lo-registry.xcu"),
+		MaxInput:     num("BLOOP_MAX_INPUT", 2<<30),
+		MaxChunk:     num("BLOOP_MAX_CHUNK", 64<<20),
+		Widths:       parseWidths(getenv("BLOOP_WIDTHS")),
+		Limits:       Limits{MaxUnpacked: num("BLOOP_MAX_UNPACKED", 2<<30), MaxEntries: int(num("BLOOP_MAX_ENTRIES", 20000))},
+		MaxPages:     int(num("BLOOP_MAX_PAGES", 300)),
+		VideoRate:    rate,
+		VideoWidth:   int(num("BLOOP_VIDEO_WIDTH", 1920)),
 		PreviewWidth: int(num("BLOOP_VIDEO_PREVIEW_WIDTH", 1280)),
-		VideoFixed: 30 * time.Second,
-		MaxImagePx: num("BLOOP_MAX_IMAGE_PIXELS", 100_000_000),
-		Workers:    int(num("BLOOP_WORKERS", int64(min(4, runtime.GOMAXPROCS(0))))), // GOMAXPROCS follows the cgroup CPU quota; NumCPU counts the host
-		Timeouts:   map[string]time.Duration{},
+		VideoFixed:   30 * time.Second,
+		MaxImagePx:   num("BLOOP_MAX_IMAGE_PIXELS", 100_000_000),
+		Workers:      int(num("BLOOP_WORKERS", int64(min(4, runtime.GOMAXPROCS(0))))), // GOMAXPROCS follows the cgroup CPU quota; NumCPU counts the host
+		Timeouts:     map[string]time.Duration{},
 	}
 	for stage, def := range stageDefaults {
 		secs := num("BLOOP_TIMEOUT_"+strings.ToUpper(stage), int64(def/time.Second))

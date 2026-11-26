@@ -111,7 +111,7 @@ func (s *Server) videoJob(job jobInfo, meta *metaJSON) error {
 			if copying {
 				err = s.remux(bctx, orig, dst, size, seconds)
 			} else {
-				err = s.transcode(bctx, demuxer, orig, dst, seconds, s.cfg.VideoWidth)
+				err = s.transcode(bctx, demuxer, orig, dst, seconds, widthScale(s.cfg.VideoWidth))
 			}
 			if err != nil && bctx.Err() != nil && ctx.Err() == nil {
 				return failed(errTimeout, fmt.Errorf("video (copy %v) over its %v budget", copying, budget))
@@ -122,7 +122,7 @@ func (s *Server) videoJob(job jobInfo, meta *metaJSON) error {
 		// then the full one, which is best-effort once the 720p stands.
 		previewed := false
 		var previewVideo VideoMeta
-		if !remux && isHEVC(p) && w > s.cfg.PreviewWidth {
+		if !remux && isHEVC(p) && longSide(p) > s.cfg.PreviewWidth {
 			if v, err := s.encodePreview(ctx, job.id, demuxer, orig, seconds, transcodeBudget(seconds, s.cfg.VideoRate, s.cfg.VideoFixed, ceiling), meta); err != nil {
 				log.Printf("720p encode failed, encoding the full size alone: %v", err)
 			} else {
@@ -130,7 +130,7 @@ func (s *Server) videoJob(job jobInfo, meta *metaJSON) error {
 				if left, ok := stageTimeLeft(ctx, s.cfg.VideoFixed); ok {
 					budget = min(budget, left)
 				} else {
-					return s.keepPreview(dst, meta, previewVideo, errors.New("no time left for the full encode"))
+					return s.keepPreview(ctx, dst, meta, previewVideo, errors.New("no time left for the full encode"))
 				}
 			}
 		}
@@ -150,9 +150,9 @@ func (s *Server) videoJob(job jobInfo, meta *metaJSON) error {
 		if previewed {
 			// The 720p stands whatever the full encode did: a failure keeps it, a success replaces it.
 			if err != nil {
-				return s.keepPreview(dst, meta, previewVideo, err)
+				return s.keepPreview(ctx, dst, meta, previewVideo, err)
 			}
-			return os.Remove(s.dir("out", "m", "720.mp4"))
+			return nil
 		}
 		return err
 	})
@@ -180,7 +180,17 @@ func (s *Server) checkVideoOutput(ctx context.Context, dst string, copied bool, 
 		return failed(errOutputInvalid, fmt.Errorf("copy ran to the %d s slack: %.0f s from %.0f s", copySlackSeconds, out.seconds(), seconds))
 	}
 	meta.Video = &VideoMeta{W: ow, H: oh, DurationMs: int(out.seconds() * 1000)}
-	return s.videoThumb(ctx, dst, out.seconds())
+	return s.videoThumb(ctx, dst, out.seconds(), s.dir("out", "t.webp"))
+}
+
+// longSide is the longer side of the first video stream as it is displayed.
+func longSide(p probe) int {
+	st, ok := p.first("video")
+	if !ok {
+		return 0
+	}
+	w, h := st.displayed()
+	return max(w, h)
 }
 
 func isHEVC(p probe) bool {
@@ -188,21 +198,23 @@ func isHEVC(p probe) bool {
 	return ok && v.CodecName == "hevc"
 }
 
-// previewThumb is where the 720p's thumbnail waits while the full encode may overwrite t.webp.
-func (s *Server) previewThumb() string { return s.dir("scratch", "t720.webp") }
+// previewFiles are the paths the 720p lists ready, kept under work/preview so the full encode never touches the
+// files a caller may be fetching.
+var previewFiles = []string{"m/720.mp4", "t.webp", "meta.json"}
 
-// encodePreview writes out/m/720.mp4, its thumbnail and a meta.json, checks all three the way the finished job's
-// outputs are checked, and lists them ready with a manifest of their own. On any failure nothing is left behind.
+// encodePreview writes the 720p, its thumbnail and a meta.json under work/preview, checks all three the way the
+// finished job's outputs are checked, and lists them ready with a manifest of their own. On any failure nothing is
+// left behind.
 func (s *Server) encodePreview(ctx context.Context, jobID, demuxer, orig string, seconds float64, budget time.Duration, meta *metaJSON) (VideoMeta, error) {
-	mp4 := s.dir("out", "m", "720.mp4")
-	cleanup := func() {
-		for _, p := range []string{mp4, s.dir("out", "t.webp"), s.dir("out", "meta.json"), s.previewThumb()} {
-			os.Remove(p)
-		}
+	root := s.dir("preview")
+	mp4 := filepath.Join(root, "m", "720.mp4")
+	cleanup := func() { os.RemoveAll(root) }
+	if err := os.MkdirAll(filepath.Dir(mp4), 0o700); err != nil {
+		return VideoMeta{}, failed(errInternal, err)
 	}
 	bctx, cancel := context.WithTimeout(ctx, budget)
 	defer cancel()
-	if err := s.transcode(bctx, demuxer, orig, mp4, seconds, s.cfg.PreviewWidth); err != nil {
+	if err := s.transcode(bctx, demuxer, orig, mp4, seconds, longSideScale(s.cfg.PreviewWidth)); err != nil {
 		cleanup()
 		return VideoMeta{}, err
 	}
@@ -221,23 +233,19 @@ func (s *Server) encodePreview(ctx context.Context, jobID, demuxer, orig string,
 		return VideoMeta{}, failed(errOutputInvalid, fmt.Errorf("720p produced %q in %q", codec, out.Format.FormatName))
 	}
 	video := VideoMeta{W: ow, H: oh, DurationMs: int(out.seconds() * 1000)}
-	if err := s.videoThumb(ctx, mp4, out.seconds()); err != nil {
+	if err := s.videoThumb(ctx, mp4, out.seconds(), filepath.Join(root, "t.webp")); err != nil {
 		cleanup()
 		return VideoMeta{}, err
 	}
 	m := *meta
 	m.Video = &video
-	if err := writeJSONFile(s.dir("out", "meta.json"), m); err != nil {
-		cleanup()
-		return VideoMeta{}, failed(errInternal, err)
-	}
-	if err := copyFile(s.previewThumb(), s.dir("out", "t.webp")); err != nil {
+	if err := writeJSONFile(filepath.Join(root, "meta.json"), m); err != nil {
 		cleanup()
 		return VideoMeta{}, failed(errInternal, err)
 	}
 	var files []OutFile
-	for _, rel := range []string{"m/720.mp4", "t.webp", "meta.json"} {
-		p := filepath.Join(s.dir("out"), filepath.FromSlash(rel))
+	for _, rel := range previewFiles {
+		p := filepath.Join(root, filepath.FromSlash(rel))
 		info, err := os.Stat(p)
 		if err != nil {
 			cleanup()
@@ -257,19 +265,30 @@ func (s *Server) encodePreview(ctx context.Context, jobID, demuxer, orig string,
 		}
 		files = append(files, OutFile{Path: rel, Size: info.Size(), SHA256: sum, Type: typ})
 	}
-	s.publishPreview(files, &Manifest{V: 1, JobID: jobID, Kind: kindVideo, Groups: map[string]GroupResult{groupMedia: {OK: true}}, Files: files})
+	s.publishPreview(root, files, &Manifest{V: 1, JobID: jobID, Kind: kindVideo, Groups: map[string]GroupResult{groupMedia: {OK: true}}, Files: files})
 	return video, nil
 }
 
-// keepPreview ends a job whose full encode did not finish: the 720p, its thumbnail and its meta.json are the outputs.
-func (s *Server) keepPreview(full string, meta *metaJSON, video VideoMeta, cause error) error {
+// keepPreview ends a job whose full encode did not finish: the 720p and its thumbnail become the outputs, and the
+// job's own meta.json (written from meta) describes the 720p. A cancelled job stays cancelled. A stage that ran out
+// of time still keeps the 720p: the copies below are local and quick.
+func (s *Server) keepPreview(ctx context.Context, full string, meta *metaJSON, video VideoMeta, cause error) error {
+	if errors.Is(ctx.Err(), context.Canceled) {
+		return ctx.Err()
+	}
 	log.Printf("full encode after the 720p did not finish, keeping the 720p: %v", cause)
-	os.Remove(full)
+	os.RemoveAll(full)
+	os.Remove(s.dir("out", "t.webp")) // the full encode's own thumbnail, if it got that far; copyFile never overwrites
 	meta.Video = &video
-	thumb := s.dir("out", "t.webp")
-	os.Remove(thumb) // the full encode's own thumbnail, if it got that far; copyFile never overwrites
-	if err := copyFile(thumb, s.previewThumb()); err != nil {
-		return failed(errInternal, err)
+	root := s.dir("preview")
+	for _, rel := range []string{"m/720.mp4", "t.webp"} {
+		dst := s.dir("out", filepath.FromSlash(rel))
+		if err := os.MkdirAll(filepath.Dir(dst), 0o700); err != nil {
+			return failed(errInternal, err)
+		}
+		if err := copyFile(dst, filepath.Join(root, filepath.FromSlash(rel))); err != nil {
+			return failed(errInternal, err)
+		}
 	}
 	return nil
 }
@@ -350,27 +369,37 @@ func (s *Server) remux(ctx context.Context, in, dst string, size int64, seconds 
 }
 
 // transcode bounds the output at MaxVideoSecs with -t, whatever the input's header claims.
-func (s *Server) transcode(ctx context.Context, demuxer, in, dst string, seconds float64, width int) error {
+func (s *Server) transcode(ctx context.Context, demuxer, in, dst string, seconds float64, scale string) error {
 	return s.ffmpeg(ctx, []string{
 		"-nostdin", "-hide_banner", "-loglevel", "error", "-y",
 		"-protocol_whitelist", "file", "-f", demuxer, "-i", in,
 		"-t", strconv.FormatFloat(s.cfg.MaxVideoSecs, 'f', -1, 64),
 		"-map", "0:v:0", "-map", "0:a:0?", "-sn", "-dn", "-map_metadata", "-1",
-		"-vf", fmt.Sprintf("scale=w='min(%d,trunc(iw/2)*2)':h=-2,format=yuv420p", width),
+		"-vf", scale + ",format=yuv420p",
 		"-c:v", "libx264", "-preset", "veryfast", "-crf", "23", "-profile:v", "high",
 		"-c:a", "aac", "-b:a", "128k", "-ac", "2",
 		"-movflags", "+faststart", "-progress", "pipe:1", "-nostats", dst,
 	}, seconds)
 }
 
-func (s *Server) videoThumb(ctx context.Context, mp4 string, seconds float64) error {
+// widthScale caps the picture's width (as ffmpeg rotates it) and keeps its shape.
+func widthScale(width int) string {
+	return fmt.Sprintf("scale=w='min(%d,trunc(iw/2)*2)':h=-2", width)
+}
+
+// longSideScale caps the longer side, so a portrait clip's 720p is as small as a landscape one's.
+func longSideScale(long int) string {
+	return fmt.Sprintf("scale=w='if(gte(iw,ih),min(%[1]d,trunc(iw/2)*2),-2)':h='if(gte(iw,ih),-2,min(%[1]d,trunc(ih/2)*2))'", long)
+}
+
+func (s *Server) videoThumb(ctx context.Context, mp4 string, seconds float64, dst string) error {
 	png := s.dir("scratch", "t.png")
 	at := strconv.FormatFloat(min(1, seconds/2), 'f', 3, 64)
 	if _, err := s.tool(ctx, "ffmpeg", "-nostdin", "-hide_banner", "-loglevel", "error", "-y",
 		"-protocol_whitelist", "file", "-f", "mov", "-ss", at, "-i", mp4, "-frames:v", "1", "-vf", "scale=w='min(480,iw)':h=-2", png); err != nil {
 		return convertErr(err)
 	}
-	_, err := s.tool(ctx, "vips", "copy", png, s.dir("out", "t.webp")+"[Q=80]")
+	_, err := s.tool(ctx, "vips", "copy", png, dst+"[Q=80]")
 	return convertErr(err)
 }
 

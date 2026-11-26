@@ -122,6 +122,22 @@ type stream struct {
 	Width     int    `json:"width"`
 	Height    int    `json:"height"`
 	Level     int    `json:"level"` // H.264 level times ten: 52 is 5.2
+
+	SideData []sideData `json:"side_data_list"`
+}
+
+type sideData struct {
+	Rotation float64 `json:"rotation"`
+}
+
+// displayed is the picture's size after the rotation ffmpeg applies on its own: a quarter turn swaps the sides.
+func (st stream) displayed() (w, h int) {
+	for _, d := range st.SideData {
+		if turns := math.Mod(math.Abs(d.Rotation), 180); turns == 90 {
+			return st.Height, st.Width
+		}
+	}
+	return st.Width, st.Height
 }
 
 // maxCopyLevel is the highest H.264 level that is copied: 5.2 is 4K at 60 fps, the most a browser is sure to decode.

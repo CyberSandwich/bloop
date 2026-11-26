@@ -3,6 +3,7 @@
 // row that names what is still to delete, and rows go last (LIB-08). Only keys under `u/<uid>/` are ever listed or
 // deleted: holds (`h/`) and tombstones (`purged/`) sit outside it (OSA-02).
 import { type Db, dbOf } from "../auth/db.ts";
+import { liveWhere } from "../convert/results.ts";
 import { bucketOf } from "./bucket.ts";
 import { type Budget, deletePrefix, holdPending, LATE_WRITE_WINDOW_MS, type PurgeDeps } from "./purge.ts";
 import { libDbOf } from "./store.ts";
@@ -74,7 +75,7 @@ export async function purgeUser(
   const running = await db
     .prepare(
       `SELECT f.id FROM library_file f JOIN derived d ON d.file_id = f.id AND d.version = f.version
-       WHERE f.user_id = ?1 AND d.status IN ('queued', 'running')`,
+       WHERE f.user_id = ?1 AND ${liveWhere("d.")}`,
     )
     .bind(userId)
     .all<{ id: string }>();

@@ -225,6 +225,12 @@ export class JobRunner {
 
   /** A retryable code gets one new container while the version has starts left; anything else ends the run. */
   private async fail(j: JobRecord, code: string): Promise<void> {
+    if (j.preview === "storing" && (await this.previewCommitted(j))) {
+      // The early publish committed and this record never learned it: the 720p is published.
+      j.preview = "stored";
+      j.plan = null;
+      j.unit = 0;
+    }
     // A published 720p is never thrown away for a retry: the full encode is best-effort, so its failure ends the run.
     if (!isRetryable(code) || j.attempt >= MAX_ATTEMPTS || j.end || j.preview === "stored") {
       await this.finish(j, { state: "failed", code });
@@ -297,11 +303,15 @@ export class JobRunner {
     j.phase = "finish";
     await writeJob(this.d.store, j);
     await this.releaseAttempt(j);
-    const e = j.end;
+    let e = j.end;
     const now = this.d.now();
     if (e.state === "done" && j.preview === "stored") {
-      await settlePreview(this.d.db, this.key(j), now);
-      await this.dropUnpublished(j);
+      if (await this.settled(j, now)) await this.dropUnpublished(j);
+      else {
+        // The row is no longer ours (a cancel or a replacement got there first): nothing was published to keep.
+        e = j.end = { state: "cancelled", code: null };
+        await writeJob(this.d.store, j);
+      }
     }
     if (e.state === "failed") await markFailed(this.d.db, this.key(j), e.code ?? "internal", now);
     else if (e.state === "skipped") await markSkipped(this.d.db, this.key(j), e.code ?? "busy", now);
@@ -317,6 +327,19 @@ export class JobRunner {
     j.phase = "done";
     await writeJob(this.d.store, j);
     await this.d.store.setAlarm(this.d.now() + CLEANUP_AFTER_MS);
+  }
+
+  /** True when the row is this run's and published: settled now, by an earlier try of this step, or done. */
+  private async settled(j: JobRecord, now: number): Promise<boolean> {
+    if (await settlePreview(this.d.db, this.key(j), now)) return true;
+    const row = await readRun(this.d.db, j.fileId, j.version);
+    return row?.run_id === j.runId && (row.status === "done" || (row.status === "ready720" && row.stage === null));
+  }
+
+  /** True when the early publish of this run's 720p is in the row. */
+  private async previewCommitted(j: JobRecord): Promise<boolean> {
+    const row = await readRun(this.d.db, j.fileId, j.version);
+    return row?.run_id === j.runId && row.status === "ready720";
   }
 
   /** Deletes what this run put that the row does not list: a full encode's partial files when only the 720p stands. */
@@ -347,7 +370,9 @@ export class JobRunner {
     const [fileId, runId] = [str(raw?.fileId), str(raw?.runId)];
     const version = typeof raw?.version === "number" ? raw.version : null;
     if (fileId && runId && version !== null) {
-      await markFailed(this.d.db, { fileId, version, runId }, "internal", this.d.now());
+      const k = { fileId, version, runId };
+      // A ready720 row is playable: only its full encode is lost.
+      if (!(await settlePreview(this.d.db, k, this.d.now()))) await markFailed(this.d.db, k, "internal", this.d.now());
     }
     await this.d.store.deleteAll();
   }

@@ -86,15 +86,16 @@ type Server struct {
 	cfg Config
 	run runner
 
-	mu        sync.Mutex
-	starting  bool
-	started   bool
-	chunks    map[int]int64 // received chunk sizes by index
-	uploading map[int]int64 // chunks being received, and the bytes each may use
-	status    Status
-	manifest  *Manifest
-	preview   *Manifest // a video's 720p listing while its full encode runs
-	byPath    map[string]OutFile
+	mu         sync.Mutex
+	starting   bool
+	started    bool
+	chunks     map[int]int64 // received chunk sizes by index
+	uploading  map[int]int64 // chunks being received, and the bytes each may use
+	status     Status
+	manifest   *Manifest
+	preview    *Manifest // a video's 720p listing while its full encode runs
+	previewDir string    // where those files are served from
+	byPath     map[string]OutFile
 
 	pages *PagesInfo // written by the pipeline goroutine only, read after it validates
 }
@@ -179,11 +180,17 @@ func (s *Server) fail(code string) {
 
 // publishPreview lists a video's 720p files ready and serves their manifest at /out/preview.json: the same shape as
 // the finished job's, so the caller checks it the same way.
-func (s *Server) publishPreview(files []OutFile, m *Manifest) {
-	s.publish(files)
+// The files are served from `root` while the preview is listed, so the full encode never rewrites a file in flight;
+// the listing and the manifest appear together.
+func (s *Server) publishPreview(root string, files []OutFile, m *Manifest) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
+	s.previewDir = root
 	s.preview = m
+	for _, f := range files {
+		s.byPath[f.Path] = f
+		s.status.Ready = append(s.status.Ready, f.Path)
+	}
 }
 
 // publish makes validated files fetchable before the job is done.
@@ -446,6 +453,10 @@ func (s *Server) handleOut(w http.ResponseWriter, r *http.Request) {
 	s.mu.Lock()
 	entry, ok := s.byPath[r.PathValue("path")]
 	done := s.manifest != nil
+	base := filepath.Join(s.cfg.WorkDir, "out")
+	if s.preview != nil {
+		base = s.previewDir
+	}
 	s.mu.Unlock()
 	if !ok {
 		if done {
@@ -455,7 +466,7 @@ func (s *Server) handleOut(w http.ResponseWriter, r *http.Request) {
 		}
 		return
 	}
-	f, err := os.Open(filepath.Join(s.cfg.WorkDir, "out", filepath.FromSlash(entry.Path)))
+	f, err := os.Open(filepath.Join(base, filepath.FromSlash(entry.Path)))
 	if err != nil {
 		apiError(w, http.StatusInternalServerError, errInternal)
 		return

@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { sha256Hex } from "../../src/worker/convert/outputs.ts";
 import {
   deadlineSeconds,
   instanceFor,
@@ -7,8 +8,9 @@ import {
   PROFILES,
 } from "../../src/worker/convert/profile.ts";
 import { isPlayable, playableKey } from "../../src/worker/convert/results.ts";
-import { buildStubOutputs, type StubOutputs } from "../../src/worker/convert/stub-outputs.ts";
-import { RECORD_KEY } from "../../src/worker/do/converter-schema.ts";
+import { buildStubOutputs, type StubOutputs, stubWebp } from "../../src/worker/convert/stub-outputs.ts";
+import { STALE_AFTER_MS, sweepConversions } from "../../src/worker/convert/sweep.ts";
+import { jobRecordSchema, RECORD_KEY } from "../../src/worker/do/converter-schema.ts";
 import { begin, derived, type Harness, harness } from "./convert-harness.ts";
 
 const JOB = "f1_v1_a1";
@@ -27,18 +29,30 @@ interface Scenario {
   corrupt?: boolean;
   /** The container never lists a 720p: the copy path. */
   noPreview?: boolean;
+  /** The full encode's bytes are not what its manifest claims. */
+  badFull?: boolean;
 }
 
 /** A video container that lists its 720p as ready, keeps encoding, then ends as the scenario says. */
 async function videoContainer(h: Harness, s: Scenario): Promise<void> {
   const sha = "a".repeat(64);
   const full = await buildStubOutputs(JOB, "mp4", PROFILES.full, sha, { pages: 0 });
+  // The preview's thumbnail has bytes of its own, so a store that confuses the two shows.
+  const thumb = stubWebp(480, 270, 7);
+  const thumbSha = await sha256Hex(thumb);
   const rename = (o: StubOutputs): StubOutputs => {
     const files = new Map(o.files);
     const bytes = files.get("m/0.mp4") as Uint8Array;
     files.delete("m/0.mp4");
     files.set("m/720.mp4", bytes);
-    const list = o.manifest.files.map((f) => (f.path === "m/0.mp4" ? { ...f, path: "m/720.mp4" } : f));
+    files.set("t.webp", thumb);
+    const list = o.manifest.files.map((f) =>
+      f.path === "m/0.mp4"
+        ? { ...f, path: "m/720.mp4" }
+        : f.path === "t.webp"
+          ? { ...f, size: thumb.length, sha256: thumbSha }
+          : f,
+    );
     return { files, manifest: { ...o.manifest, files: list } };
   };
   const preview = rename(full);
@@ -78,6 +92,7 @@ async function videoContainer(h: Harness, s: Scenario): Promise<void> {
     const bytes = from.files.get(rel);
     if (!bytes) return json({ error: "not_found" }, 404);
     if (s.corrupt && rel === "m/720.mp4" && !finished()) return new Response(new Uint8Array(bytes.length));
+    if (s.badFull && rel === "m/0.mp4") return new Response(new Uint8Array(bytes.length));
     return new Response(bytes as Uint8Array<ArrayBuffer>);
   };
 }
@@ -132,6 +147,8 @@ describe("the 720p comes first: a video's row is playable before its full encode
     expect(playableKey(row)).toBe("m/0.mp4");
     expect(h.starts).toHaveLength(1);
     expect(h.notify.terminal_.map((t) => t.state)).toEqual(["done", "done"]);
+    // The published thumbnail is never written again, so a reader fetching it never sees it change.
+    expect(h.bucket.objects.get(key("t.webp"))).toEqual(stubWebp(480, 270, 7));
   });
 
   it("the 720p alone is playable while the full encode runs, and counts against the row's bytes", async () => {
@@ -210,6 +227,109 @@ describe("the 720p comes first: a video's row is playable before its full encode
   });
 });
 
+/** Runs alarms until the row shows ready720 with its stage (the 720p is published, the full encode still going). */
+async function untilReady720(h: Harness): Promise<void> {
+  for (let i = 0; i < 60 && (derived(h) as { status: string }).status !== "ready720"; i++) {
+    h.clock.t = Math.max(h.clock.t, h.store.alarmAt as number);
+    h.store.alarmAt = null;
+    await h.runner.alarm();
+  }
+  expect((derived(h) as { status: string }).status).toBe("ready720");
+}
+
+describe("the published 720p is the row's: nothing later in the run may take it away", () => {
+  it("a full encode that fails its checks leaves the 720p and its thumbnail published and stored", async () => {
+    const { h, row } = await run({ readyAfter: 1, endAfter: 3, ending: "full", badFull: true });
+    expect(row.status).toBe("ready720");
+    expect(row.stage).toBeNull();
+    expect(files(row)).toEqual(["m/720.mp4", "t.webp"]);
+    expect(h.bucket.keys(`${PREFIX}/d/`)).toEqual([key("m/720.mp4"), key("t.webp")]);
+    expect(h.notify.terminal_.map((t) => t.state)).not.toContain("failed");
+    expect(h.starts).toHaveLength(1);
+  });
+
+  it("a cancel that lands before the full encode's failed end leaves the row cancelled and the bucket empty", async () => {
+    const h = harness({ ext: "mp4", bytes: 4000 });
+    await videoContainer(h, { readyAfter: 0, endAfter: 6, ending: "fails" });
+    await begin(h, { ext: "mp4" });
+    await untilReady720(h);
+    h.w.db.raw.exec("UPDATE derived SET status = 'cancelled', stage = NULL");
+    await watch(h);
+    expect((derived(h) as { status: string }).status).toBe("cancelled");
+    expect(h.bucket.keys(`${PREFIX}/d/`)).toEqual([]);
+    expect(h.notify.terminal_.at(-1)?.state).toBe("cancelled");
+    expect(h.spend.calls).not.toContain("record:conversion_failed");
+  });
+
+  it("a lost Converter record leaves a ready720 row playable: the sweep settles it instead of failing it", async () => {
+    const h = harness({ ext: "mp4", bytes: 4000 });
+    await videoContainer(h, { readyAfter: 0, endAfter: 50, ending: "full" });
+    await begin(h, { ext: "mp4" });
+    await untilReady720(h);
+    await h.store.deleteAll();
+    h.clock.t += STALE_AFTER_MS + 1;
+    const deps = {
+      db: h.w.db,
+      spend: h.spend,
+      converter: () => h.runner,
+      gates: async () => h.gates,
+      leaseMaxSeconds: 1800,
+      now: () => h.clock.t,
+      newRunId: () => "x",
+      log: () => undefined,
+    };
+    expect(await sweepConversions(deps)).toMatchObject({ checked: 1, lost: 1 });
+    expect(derived(h)).toMatchObject({ status: "ready720", stage: null, error: null });
+  });
+
+  it("only a video may use the early manifest: a deck whose container lists a 720p is not published early", async () => {
+    const h = harness({ ext: "pptx" });
+    const deck = await buildStubOutputs(JOB, "pptx", PROFILES.full, "a".repeat(64), { pages: 2 });
+    let polls = 0;
+    h.respond = (path) => {
+      const json = (v: unknown, status = 200) =>
+        new Response(JSON.stringify(v), { status, headers: { "content-type": "application/json" } });
+      if (path === "/job/status") {
+        polls++;
+        return polls > 3
+          ? json({ state: "done", stage: "done", pct: 100, error: null, pages: null, ready: [] })
+          : json({ state: "running", stage: "convert", pct: 10, error: null, pages: null, ready: ["m/720.mp4"] });
+      }
+      if (!path.startsWith("/out/")) return null;
+      const rel = path.slice("/out/".length);
+      if (rel === "preview.json") return json(deck.manifest);
+      if (rel === "manifest.json") return polls > 3 ? json(deck.manifest) : json({ error: "not_ready" }, 409);
+      const bytes = deck.files.get(rel);
+      return bytes ? new Response(bytes as Uint8Array<ArrayBuffer>) : json({ error: "not_found" }, 404);
+    };
+    await begin(h, { ext: "pptx" });
+    const seen = await watch(h);
+    expect(seen).not.toContain("ready720:convert");
+    expect(seen.some((s) => s.startsWith("ready720"))).toBe(false);
+    expect((derived(h) as { status: string }).status).toBe("done");
+  });
+
+  it("a record stored before the 720p existed still parses, with no preview and a weight of one", async () => {
+    const h = harness({ ext: "mp4", bytes: 4000 });
+    await begin(h, { ext: "mp4" });
+    const rec = (await h.store.get(RECORD_KEY)) as Record<string, unknown>;
+    const { preview: _p, weight: _w, ...old } = rec;
+    expect(jobRecordSchema.parse(old)).toMatchObject({ preview: "none", weight: 1 });
+    const plan = {
+      manifest: "m",
+      rendered: 0,
+      total: 0,
+      passed: ["media"],
+      pages: [],
+      noteCount: 0,
+      motion: false,
+      media: false,
+      fonts: [],
+    };
+    expect(jobRecordSchema.parse({ ...old, plan }).plan?.preview).toBe(false);
+  });
+});
+
 describe("a video runs on standard-4 and the meter counts it at standard-4 rates", () => {
   it("the container starts on standard-4 with the measured encode rate, and a deck stays on standard-2", async () => {
     const { h } = await run({ readyAfter: 1, endAfter: 2, ending: "full" });
@@ -241,13 +361,14 @@ describe("a video runs on standard-4 and the meter counts it at standard-4 rates
   it("a standard-4 run takes container seconds at that weight, and a refund counts the same weight", async () => {
     const { h } = await run({ readyAfter: 1, endAfter: 2, ending: "full" });
     const seconds = deadlineSeconds("video", "mp4", 4000, PROFILES.full);
-    const taken = h.spend.refunds.length > 0 ? h.spend.refunds : [];
-    // The ticket is for the weighted seconds; what the run did not use comes back in the same unit.
-    expect(Math.ceil(seconds * 3.11)).toBeGreaterThan(seconds * 3);
-    const rec = (await h.store.get(RECORD_KEY)) as { weight: number; secondsTaken: number };
+    const rec = (await h.store.get(RECORD_KEY)) as { weight: number; secondsTaken: number; takenAt: number };
     expect(rec.weight).toBe(3.11);
     expect(rec.secondsTaken).toBe(Math.ceil(seconds * 3.11));
-    for (const r of taken) expect(r.n).toBeLessThanOrEqual(rec.secondsTaken);
+    // The run used some of the ticket; the rest comes back counted at the same weight.
+    const used = Math.ceil(((h.clock.t - rec.takenAt) / 1000) * 3.11);
+    expect(used).toBeGreaterThan(0);
+    expect(used).toBeLessThan(rec.secondsTaken);
+    expect(h.spend.refunds).toEqual([{ meter: "container_seconds", n: rec.secondsTaken - used }]);
   });
 });
 
