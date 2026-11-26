@@ -37,11 +37,17 @@ func TestACopyThatDoesNotStartOnAnIDRIsEncodedInstead(t *testing.T) {
 	h := newHarness(t, tools)
 	h.post("j1", "mp4", fakeFaststartMP4)
 	h.mustSucceed(h.wait())
+	// The first run makes the output: an encode. A later one only takes the thumbnail.
 	calls := tools.called("ffmpeg")
-	if len(calls) != 1 {
-		t.Fatalf("%d ffmpeg runs, want one encode", len(calls))
+	if len(calls) == 0 {
+		t.Fatal("no ffmpeg run")
 	}
-	if enc := strings.Join(calls[0].args, " "); !strings.Contains(enc, "libx264") || strings.Contains(enc, "-c copy") {
+	for _, c := range calls {
+		if strings.Contains(strings.Join(c.args, " "), "-c copy") {
+			t.Fatalf("a stream with no IDR must not be copied: %v", c.args)
+		}
+	}
+	if enc := strings.Join(calls[0].args, " "); !strings.Contains(enc, "libx264") {
 		t.Fatalf("a stream with no IDR must be encoded: %s", enc)
 	}
 }
