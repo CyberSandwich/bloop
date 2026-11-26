@@ -20,6 +20,7 @@ Status: accepted. Page variants by mode: ADR 0026.
 | the library list (`api-revalidate`) | `private, no-cache` with an ETag (`revalidated` in `http.ts`): a revisit sends `If-None-Match` and gets a 304 |
 | `/b`, `/p`, and the notes routes | `no-store`: the library can be opened on a shared computer |
 
+- **A hashed `/img` name must exist before any page references it.** Its rule also covers a 404, which would then be cached as immutable.
 - **HTML is never immutable.** The two mode variants (ADR 0026) have different ETags, so after a switch the next revalidation returns the other page with a 200. No purge, no deploy.
 - **An immutable unit is named for its bytes.** The name ends in the first 8 hex of the SHA-256 of the unit's built files, so an upgrade, and a minifier upgrade, is a new name and the old one is deleted with the code that named it. A name stands for one content, so it is safe to cache forever, and a name that is not yet deployed is not cached as present. `node tools/rehash-immutable.mjs` renames a unit and follows its references.
 - **`/f` is `no-store`** (links are single-session secrets). **`/b` and `/p` are `no-store`**: the library can be opened on a shared computer, so a preview stays in memory.
