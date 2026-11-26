@@ -179,7 +179,10 @@ export class R2GuestDrop implements GuestDrop {
     );
     const found = heads.some(Boolean);
     // One DeleteObject each: only that call is documented as free, the bulk DeleteObjects is not.
-    for (const k of keys) await this.bucket.delete(k);
+    for (const k of keys) {
+      await this.bucket.delete(k);
+      await this.deleteConverted(k);
+    }
     // Marked only after the delete returned: a failed delete leaves the row for the sweep (DROP-07).
     if (sessionId) {
       await this.db
@@ -188,6 +191,18 @@ export class R2GuestDrop implements GuestDrop {
         .run();
     }
     return found || row !== null;
+  }
+
+  /** The converter's outputs sit under `<key>/` (d/, n/); a list past the op cap leaves them to the lifecycle rule. */
+  private async deleteConverted(key: string): Promise<void> {
+    let cursor: string | undefined;
+    for (let page = 0; page < MAX_SWEEP_PAGES; page++) {
+      if (!(await this.meter.charge("A").catch(() => false))) return;
+      const listed = await this.bucket.list({ prefix: `${key}/`, ...(cursor ? { cursor } : {}) });
+      for (const o of listed.objects) await this.bucket.delete(o.key);
+      if (!listed.truncated) return;
+      cursor = listed.cursor;
+    }
   }
 
   async sweep(olderThanMs: number): Promise<number> {
