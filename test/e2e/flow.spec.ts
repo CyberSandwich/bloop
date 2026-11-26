@@ -2342,6 +2342,8 @@ test.describe("screen and phone layout", () => {
     const present = page.getByRole("button", { name: "Present", exact: true });
     await expect(present).toBeVisible();
     await expect(present).toBeDisabled();
+    // Download joins the pill once the session leaves `approved` (no mint before the first fetch); measure after it.
+    await expect(page.getByRole("button", { name: "Download", exact: true })).toBeVisible();
     const pill = await page.locator("#controls").boundingBox();
     const values: number[] = [];
     await expect
