@@ -235,7 +235,11 @@ export async function verifyCode(
 const deviceMac = (pepper: string, userId: string, epoch: number, nonce: string): Promise<string> =>
   hmacHex(pepper, `dev|${userId}|${epoch}|${nonce}`);
 
-/** The epoch to mint and check device values at; 0 for no row, whose values verify for nobody anyway. */
+/**
+ * TRANSITIONAL(a-4): code verify and the code request read it.
+ *
+ * The epoch to mint and check device values at; 0 for no row, whose values verify for nobody anyway.
+ */
 export async function deviceEpoch(db: Db, userId: string): Promise<number> {
   const row = await db
     .prepare("SELECT device_epoch FROM app_user WHERE id = ?")
@@ -245,11 +249,14 @@ export async function deviceEpoch(db: Db, userId: string): Promise<number> {
 }
 
 /**
- * The bump, batched with the change that calls for it: sign out everywhere (sessions.ts `destroyAll`), a passkey
- * removal and a deletion request. TRANSITIONAL(a-5): passkey registration batches it too. TRANSITIONAL(a-7): so
- * does an email change.
+ * The bump, in one batch with the change that calls for it: sign out everywhere (sessions.ts `destroyAll`), ending one
+ * session, a passkey removal and a deletion request. TRANSITIONAL(a-5): passkey registration batches it too.
+ * TRANSITIONAL(a-7): so does an email change.
  */
 export const BUMP_DEVICE_EPOCH = "UPDATE app_user SET device_epoch = device_epoch + 1 WHERE id = ?";
+
+/** The bump only while `exists` (a SELECT) finds the row the change removes, so a refused id forgets no devices. */
+export const bumpDeviceEpochIf = (exists: string): string => `${BUMP_DEVICE_EPOCH} AND EXISTS (${exists})`;
 
 /**
  * TRANSITIONAL(a-4): code verify sets it.

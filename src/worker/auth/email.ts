@@ -136,14 +136,28 @@ const alertVars = z.object({
   DEV_MAILBOX: accountVars.DEV_MAILBOX,
 });
 
+/** Mail tries per message per UTC day; past them the alert stays a log line until tomorrow. */
+export const ALERT_MAIL_TRIES = 6;
+
+/** A message's identity for its own claims: the same alert on a later run maps to the same keys. */
+const messageId = (m: Parameters<Notify>[0]): string =>
+  m.kind === "digest" ? `digest:${m.subject}` : [m.kind, m.rule, m.switch ?? "", m.value ?? ""].join(":");
+
+/** The guard's once-a-UTC-day claim (`alertOnce`). An unreachable guard counts as claimed, so the alert still goes out. */
+export type Claim = (key: string) => Promise<boolean>;
+
 /**
- * The five-minute breaker's `notify` (cron-jobs.ts), valid config or not: the structured log line always (an Observability
- * alert matches it), then the mail, with the `email` switch read fresh. An invalid alert var leaves the log line only.
+ * The five-minute breaker's `notify` (cron-jobs.ts), valid config or not. The breaker calls it again on every run until
+ * it resolves, so the structured log line (an Observability alert matches it) has its own claim and is written once a
+ * day, and the mail has `ALERT_MAIL_TRIES` claims: a failed send throws and is retried next run, at most that often.
+ * The `email` switch is read fresh. An invalid alert var leaves the log line only.
  */
 export const cronNotify =
-  (env: { DB: unknown; EMAIL?: Sender }): Notify =>
+  (env: { DB: unknown; EMAIL?: Sender }, claim: Claim): Notify =>
   async (message) => {
-    await logNotify(message);
+    const claimed = (key: string) => claim(key).catch(() => true);
+    const id = messageId(message);
+    if (await claimed(`log:${id}`)) await logNotify(message);
     const parsed = alertVars.safeParse(env);
     if (!parsed.success) return;
     const v = parsed.data;
@@ -155,6 +169,9 @@ export const cronNotify =
       // Config refuses DEV_MAILBOX on a deployed origin; this parse does not, so the rule is repeated here.
       devMailbox: v.DEV_MAILBOX === "1" && isLocalOrigin(v.PUBLIC_ORIGIN),
     };
+    let tried = false;
+    for (let n = 1; n <= ALERT_MAIL_TRIES && !tried; n++) tried = await claimed(`mail:${id}:${n}`);
+    if (!tried) return;
     await breakerNotify(
       { account, sender: env.EMAIL, emailSwitch },
       { origin: new URL(v.PUBLIC_ORIGIN).origin },

@@ -5,7 +5,7 @@ import { CRON, type CronJob, type CronTrigger } from "./cron.ts";
 import type { Env } from "./env.ts";
 import { closeStaleSessions, runRetention } from "./retention.ts";
 import { sweepGuestFiles } from "./seams/guest-drop/select.ts";
-import { runSpendBreaker } from "./spend/guard.ts";
+import { runSpendBreaker, spendStub } from "./spend/guard.ts";
 
 /**
  * The breaker's job. It needs no Config, so the same job runs when the config is invalid: `configProblems` (var
@@ -14,7 +14,11 @@ import { runSpendBreaker } from "./spend/guard.ts";
 export const spendBreakerJob = (configProblems?: readonly string[]): CronJob<Env, unknown> => ({
   name: "spend_breaker",
   run: async (env) => {
-    await runSpendBreaker(env, cronNotify(env), configProblems);
+    await runSpendBreaker(
+      env,
+      cronNotify(env, (key) => spendStub(env).alertOnce(key)),
+      configProblems,
+    );
     return { more: false };
   },
 });
