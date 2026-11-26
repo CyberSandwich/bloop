@@ -4,13 +4,13 @@ import { atRest, oneDevice, pick } from "./one-device.ts";
 
 const shot = (page: Page, name: string) => page.screenshot({ path: `test-results/shots/${name}.png` });
 
-/** Holds the cross-fade at its middle frame. */
-async function midFade(page: Page) {
+/** Holds the cross-fade at `t` ms. */
+async function midFade(page: Page, t = 100) {
   await expect
     .poll(() => page.evaluate('document.querySelectorAll("#frame > *").length'), { timeout: 5000 })
     .toBe(2);
   await page.evaluate(
-    '(() => { for (const a of document.getAnimations()) { if (a.effect && a.effect.getTiming().duration === 200) { a.pause(); a.currentTime = 100; } } })()',
+    `(() => { for (const a of document.getAnimations()) { if (a.effect && a.effect.getTiming().duration === 200) { a.pause(); a.currentTime = ${t}; } } })()`,
   );
 }
 
@@ -49,6 +49,12 @@ for (const vp of [
         ),
       );
       await shot(page, `${n}-1-midfade-photo-to-deck`);
+      for (const t of [20, 60, 180]) {
+        await page.evaluate(
+          `(() => { for (const a of document.getAnimations()) if (a.effect && a.effect.getTiming().duration === 200) a.currentTime = ${t}; })()`,
+        );
+        await shot(page, `${n}-1-fade-at-${t}`);
+      }
       await atRest(page.locator("main"));
       await page.waitForTimeout(300);
       if (rail) {
