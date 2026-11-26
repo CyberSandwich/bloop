@@ -6,6 +6,7 @@ const SIZES = [
   [390, 844],
   [430, 932],
   [844, 390],
+  [1440, 900],
 ] as const;
 
 for (const [width, height] of SIZES) {
