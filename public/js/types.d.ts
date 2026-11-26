@@ -266,7 +266,10 @@ export interface ScreenCtx {
 export interface PhoneInfo {
   roomName: string | null;
   registered: boolean;
-  match: string;
+  /** The 2 digits; a live claim has none until the pick, and its buttons never carry them (core/copy-phone.js). */
+  match: string | null;
+  /** The live pick's three, until it is made. */
+  choices: string[] | null;
   mode: "live" | "demo";
   kind: "owner" | "guest";
 }

@@ -13,46 +13,15 @@ const ENTER_CODE = { id: "code", label: "Enter the Code", kind: /** @type {const
 /** Revokes the stored OneDrive access (docs/architecture.md section 6, /api/me/disconnect). */
 const DISCONNECT = { id: "disconnect", label: "Disconnect OneDrive", kind: /** @type {const} */ ("text") };
 /** ".pptx, .pdf, .jpg, .png, .mp4 or .mov": each type once, by the extension that names it. */
-const FILE_TYPES = [...new Set(Object.values(EXTENSION_TYPES))]
+export const FILE_TYPES = [...new Set(Object.values(EXTENSION_TYPES))]
   .map((t) => `.${t}`)
   .join(", ")
   .replace(/, (?=[^,]*$)/, " or ");
 
-/**
- * A video cap as recording time, at about 1 MB a second: an iPhone's default 1080p at 30 fps (HEVC) is about 60 MB a
- * minute (design.md, Toast). Under 2 minutes it says seconds, rounded down to 10 once there are 10; a no-break space
- * keeps the number on its unit's line.
- * @param {number} maxMB
- */
-export function videoTime(maxMB) {
-  if (maxMB >= 120) return `${Math.floor(maxMB / 60)}\u00a0minutes`;
-  const s = maxMB < 10 ? maxMB : Math.floor(maxMB / 10) * 10;
-  return `${s}\u00a0second${s === 1 ? "" : "s"}`;
-}
-
-/**
- * What a refusal the phone can name before sending says, as a toast. The cap is the server's (`dropMaxBytes`).
- * @param {"heic" | "type" | "empty" | "large" | "several" | "photo" | "video"} problem
- * @param {{demo: boolean, maxMB: number, video?: boolean}} f `video`: the file too large is a video
- * @returns {{title: string, body: string, error: true}}
- */
-export function refusalToast(problem, f) {
-  const takes = f.demo ? "The demo takes" : "bloop takes";
-  /** @type {Record<typeof problem, [string, string]>} */
-  const all = {
-    heic: ["This HEIC Photo Can't Be Converted", "This browser can't read it. Export it as JPEG and try again."],
-    type: ["This File Type Isn't Supported", `Choose a ${FILE_TYPES} file.`],
-    empty: ["This File Is Empty", "Choose another file."],
-    large: f.video
-      ? ["Video Too Long", `${takes} videos up to about ${videoTime(f.maxMB)} (${f.maxMB} MB). Trim it and try again.`]
-      : ["File Too Large", `${takes} files up to ${f.maxMB} MB.`],
-    several: ["One File at a Time", "Drop a single file."],
-    photo: ["This Photo Can't Be Sent", "This browser can't read it. Try another photo."],
-    video: ["This Video Can't Be Sent", "bloop couldn't remove its location. Try another video."],
-  };
-  const [title, body] = all[problem];
-  return { title, body, error: true };
-}
+/** A file this phone or the server refused, said generally; also the toast when core/refusal.js cannot load. */
+export const REFUSED = "This File Can't Be Sent";
+export const refusedLine = (/** @type {number | undefined} */ maxMB) =>
+  `Choose a ${FILE_TYPES} file under ${maxMB ?? 50} MB.`;
 
 /**
  * The upload row's second line: what the phone does to the file first, then the share sent (rounded as the loader's
@@ -121,9 +90,9 @@ export function phoneCopy(key, f) {
   // A room with no name (unregistered) has none here either: the match digits say which screen.
   const to = (/** @type {string} */ word) => (f.room ? ` ${word} ${f.room}` : "");
   const disconnect = f.account ? [DISCONNECT] : [];
-  // The match digits ride on the button that commits: the person compares them with the screen. One device has
-  // nothing to compare.
-  const match = f.back ? null : f.match;
+  // A demo's match digits ride on the button that commits: the person compares them with the screen. One device has
+  // nothing to compare, and a live phone compared them in the pick.
+  const match = f.back || !f.demo ? null : f.match;
   const code = match ? ` (${match})` : "";
   const aria = (/** @type {string} */ verb) => (match ? { aria: `${verb}, code ${match} on the screen` } : {});
   const APPROVE = {
@@ -136,10 +105,10 @@ export function phoneCopy(key, f) {
   const accountLine = VERIFIED.accountNeverReaches
     ? "Only the file you select goes to the screen. The screen never gets your account."
     : "Only the file you select goes to the screen.";
-  /** The room as the title over the list (match to approving). */
+  /** The room as the title over the list (pick to approving); an unregistered one has no name `[V-7]`. */
   const room = {
     ...base,
-    title: f.room || (f.match ?? ""),
+    title: f.room || "This Screen",
     room: true,
     files: /** @type {const} */ ("list"),
     add: true,
@@ -147,6 +116,15 @@ export function phoneCopy(key, f) {
   switch (key) {
     case "checking":
       return { ...base, body: "Checking the code." };
+    case "pick":
+      return { ...room, files: "none", add: false, body: "Tap the screen's number, then choose your files." };
+    case "match_wrong":
+      return {
+        ...base,
+        title: "That Wasn't the Screen's Number",
+        body: "Scan the screen again, or type its code.",
+        actions: [ENTER_CODE],
+      };
     case "match":
       return { ...room, files: "skeleton", add: false };
     case "choose":
@@ -218,8 +196,8 @@ export function phoneCopy(key, f) {
     case "guest_refused":
       return {
         ...base,
-        title: "This File Can't Be Sent",
-        body: `Choose a ${FILE_TYPES} file under ${f.maxMB ?? 50} MB.`,
+        title: REFUSED,
+        body: refusedLine(f.maxMB),
         actions: f.list ? [CANCEL, PICK] : [PICK],
       };
     case "guest_sent":
