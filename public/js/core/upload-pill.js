@@ -67,7 +67,7 @@ export async function mountUploads({ maxMB, upNext = null, host = document.body,
   const picker = Object.assign(document.createElement("input"), { type: "file", hidden: true });
   picker.addEventListener("change", () => {
     const [file] = picker.files ?? [];
-    if (file && picking !== null) uploader.resume(picking, file);
+    if (file && picking !== null) void uploader.resume(picking, file);
     picker.value = "";
   });
 
