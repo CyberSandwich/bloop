@@ -11,6 +11,7 @@ import sizeEntries from "../.size-limit.mjs";
 import { DYNAMIC_PAGES, pageCsp } from "../src/worker/headers.ts";
 import { AUTH_SHELLS, MEMBER_PAGES, VARIANTS } from "../src/worker/page-registry.ts";
 import { CLEAN, HOSTILE } from "../test/pdf-corpus.ts";
+import { validDeck } from "../test/zip-builder.ts";
 import { paths } from "./size-ratchet.mjs";
 import { staticHeaders } from "./static-headers.mjs";
 import { wranglerConfig } from "./wrangler-config.mjs";
@@ -508,9 +509,15 @@ function screenSocket(url, origin, sid) {
 
 const FORGED = "forged marks in a string of an object stream dictionary";
 
+const PDF = { name: "Paper.pdf", type: "application/pdf" };
+const DECK = { name: "Deck.pptx", type: "application/vnd.openxmlformats-officedocument.presentationml.presentation" };
+/** @type {Expect} */
+const OFFERED = { status: 200, body: '"state":"offered"' };
+
 /**
  * The guest drops: each on its own demo screen, which is ended whatever the drop answers. A refused action name is
- * macro_content; a scan that can only answer "unscannable" is bad_structure (validate.ts).
+ * macro_content; a scan that can only answer "unscannable" is bad_structure (validate.ts). The 5 MiB deck is a
+ * mid-size single PUT, the control beside the single-PUT cap.
  */
 export const DROPS = [
   {
@@ -527,13 +534,20 @@ export const DROPS = [
     code: "bad_structure",
   },
   { what: "a clean PDF", fixture: CLEAN, name: "LaTeX hyperref", code: null },
-].map(({ what, fixture, name, code }) => {
-  const build = fixture.find(([n]) => n === name)?.[1];
-  if (!build) throw new Error(`live-check: test/pdf-corpus.ts has no fixture "${name}"`);
-  /** @type {Expect} */
-  const expect = code ? { status: 422, body: `"code":"${code}"` } : { status: 200, body: '"state":"offered"' };
-  return { what: `guest drop of ${what}`, bytes: build(), expect };
-});
+]
+  .map(({ what, fixture, name, code }) => {
+    const build = fixture.find(([n]) => n === name)?.[1];
+    if (!build) throw new Error(`live-check: test/pdf-corpus.ts has no fixture "${name}"`);
+    /** @type {Expect} */
+    const expect = code ? { status: 422, body: `"code":"${code}"` } : OFFERED;
+    return { what: `guest drop of ${what}`, bytes: build(), file: PDF, expect };
+  })
+  .concat({
+    what: "guest drop of a 5 MiB deck (one stored image)",
+    bytes: validDeck([{ name: "ppt/media/image1.jpg", data: new Uint8Array(5 * 1024 * 1024).fill(7), method: 0 }]),
+    file: DECK,
+    expect: OFFERED,
+  });
 
 /**
  * A guest drop through the public API on a demo screen, which needs no account: create the screen, take its code
@@ -567,8 +581,8 @@ export async function dropMisses(origin, drops, io) {
       const headers = {
         Origin: origin,
         Authorization: `Bearer ${pid}`,
-        "Content-Type": "application/pdf",
-        "X-Bloop-Name": "Paper.pdf",
+        "Content-Type": d.file.type,
+        "X-Bloop-Name": d.file.name,
       };
       const o = await io.send("PUT", `${origin}/api/drop`, headers, d.bytes);
       misses.push(...missesFor(d.expect, o).map((m) => `${d.what}: ${m}`));

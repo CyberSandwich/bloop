@@ -4,6 +4,7 @@ import type { AddressInfo } from "node:net";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { CSP, pageCsp } from "../../src/worker/headers.ts";
 import { AUTH_SHELLS, MEMBER_PAGES } from "../../src/worker/page-registry.ts";
+import { validate } from "../../src/worker/seams/guest-drop/validate.ts";
 import {
   checksFor,
   DROPS,
@@ -552,12 +553,14 @@ function demo(
 ) {
   const log: string[] = [];
   const closed: string[] = [];
+  const files: string[] = [];
   const send = async (method: string, url: string, headers: Record<string, string>, body: string | Uint8Array) => {
     const path = new URL(url).pathname;
     log.push(`${method} ${path}${headers.Authorization ? ` ${headers.Authorization}` : ""}`);
     if (path === "/api/screens") return over.create ?? ok({ status: 201, body: '{"sid":"ref1.secret"}' });
     if (path === "/api/claim") return over.claim ?? ok({ body: '{"pid":"pid1"}' });
     if (path === "/api/drop") {
+      files.push(`${headers["X-Bloop-Name"]} ${headers["Content-Type"]}`);
       const bytes = body as Uint8Array;
       if (over.drop) return over.drop(bytes);
       // A site that answers each drop as it should: the code its expectation names, or offered.
@@ -572,7 +575,7 @@ function demo(
     if (over.socket === "fail") throw new Error("screen socket refused");
     return { code: "123456", close: () => closed.push(sid) };
   };
-  return { io: { send, socket }, log, closed };
+  return { io: { send, socket }, log, closed, files };
 }
 
 describe("live-check: guest drops on a demo screen", () => {
@@ -600,7 +603,18 @@ describe("live-check: guest drops on a demo screen", () => {
       { status: 422, body: '"code":"bad_structure"' },
       { status: 422, body: '"code":"bad_structure"' },
       { status: 200, body: '"state":"offered"' },
+      { status: 200, body: '"state":"offered"' },
     ]);
+    const deck = "application/vnd.openxmlformats-officedocument.presentationml.presentation";
+    expect(d.files).toEqual([...DROPS.slice(0, -1).map(() => "Paper.pdf application/pdf"), `Deck.pptx ${deck}`]);
+  });
+
+  it("the deck drop is a valid 5 MiB deck: a mid-size single PUT the site must still offer", async () => {
+    const deck = drop("a 5 MiB deck (one stored image)").bytes;
+    expect(deck.length).toBeGreaterThan(5 * 1024 * 1024);
+    expect(deck.length).toBeLessThan(6 * 1024 * 1024);
+    const object = { size: deck.length, read: async (at: number, n: number) => deck.slice(at, at + n) };
+    expect(await validate(object, "pptx")).toEqual({ ok: true, type: "pptx" });
   });
 
   it("a hostile drop the site accepts, or refuses with another code, is a miss", async () => {
