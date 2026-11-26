@@ -18,10 +18,12 @@ import {
   storedPaths,
 } from "./outputs.ts";
 import type { Profile } from "./profile.ts";
-import { type ConvBucket, checkManifestFor } from "./store-types.ts";
+import { type ConvBucket, checkManifestFor, type ManifestName } from "./store-types.ts";
 
 export interface StoreEnv {
   courier: Courier;
+  /** Which of the container's manifests this store reads. */
+  manifest: ManifestName;
   bucket: ConvBucket;
   loc: Located;
   profile: Profile;
@@ -81,7 +83,12 @@ const manifestDigest = (manifest: unknown): Promise<string> =>
 
 /** Unit 0: the manifest and the three JSON files, so every later unit reads only checked values. */
 export async function prepare(env: StoreEnv, j: JobRecord): Promise<{ fail: string } | null> {
-  const loaded = await checkManifestFor(env.courier, { jobId: env.jobId, ext: env.loc.ext, profile: env.profile });
+  const loaded = await checkManifestFor(env.courier, {
+    jobId: env.jobId,
+    ext: env.loc.ext,
+    profile: env.profile,
+    manifest: env.manifest,
+  });
   if ("fault" in loaded) return { fail: "output_invalid" };
   const { pieces, rendered, total } = loaded;
   const passed = new Set<Group>(loaded.passed);
@@ -123,6 +130,7 @@ export async function prepare(env: StoreEnv, j: JobRecord): Promise<{ fail: stri
     motion,
     media,
     fonts: meta.fontsMissing ?? [],
+    preview: loaded.preview,
   };
   j.unit = 0;
   await env.persist(j);
@@ -159,6 +167,23 @@ function packStream(
   });
 }
 
+/**
+ * The full encode is stored: the 720p leaves the stored list, so the published outputs and the quota count only what is
+ * served. Its key stays in `written` until the publish commits and the runner deletes it (`deleteRetiredPreview`).
+ */
+async function retirePreview(env: StoreEnv, j: JobRecord): Promise<void> {
+  j.stored = j.stored.filter((s) => s.path !== "m/720.mp4");
+  await env.persist(j);
+}
+
+/** After the row names the full encode: the 720p's object, no longer listed, is deleted. */
+export async function deleteRetiredPreview(bucket: ConvBucket, prefix: string, j: JobRecord): Promise<void> {
+  const key = outputKey(prefix, "m/720.mp4");
+  if (!j.written.includes(key) || j.stored.some((s) => s.path === "m/720.mp4")) return;
+  await bucket.delete(key);
+  j.written = j.written.filter((k) => k !== key);
+}
+
 /** A group failed a check: its keys go and its later units are skipped. */
 async function dropGroup(env: StoreEnv, j: JobRecord, plan: Plan, group: Group): Promise<void> {
   const names = new Set(storedPaths(group, env.profile.widths));
@@ -176,7 +201,12 @@ async function dropGroup(env: StoreEnv, j: JobRecord, plan: Plan, group: Group):
  */
 export async function putUnit(env: StoreEnv, j: JobRecord, unit: string): Promise<"ok" | "abandon"> {
   const plan = j.plan as Plan;
-  const loaded = await checkManifestFor(env.courier, { jobId: env.jobId, ext: env.loc.ext, profile: env.profile });
+  const loaded = await checkManifestFor(env.courier, {
+    jobId: env.jobId,
+    ext: env.loc.ext,
+    profile: env.profile,
+    manifest: env.manifest,
+  });
   if ("fault" in loaded) throw new ContainerFault("output_invalid", loaded.fault);
   if ((await manifestDigest(loaded.manifest)) !== plan.manifest)
     throw new ContainerFault("output_invalid", "manifest changed after it was checked");
@@ -208,6 +238,8 @@ export async function putUnit(env: StoreEnv, j: JobRecord, unit: string): Promis
       await env.bucket.delete(key);
       return false;
     }
+    // The thumbnail is stored again when the full encode replaces the 720p: one entry per name.
+    j.stored = j.stored.filter((s) => s.path !== rel);
     j.stored.push({ path: rel, size, sha256: sha });
     return true;
   };
@@ -226,8 +258,12 @@ export async function putUnit(env: StoreEnv, j: JobRecord, unit: string): Promis
       kept = await singles(["t.webp", ...widths.map((w) => `s/1/${w}.webp`)]);
       if (kept) await env.pageReady();
     } else if (unit === "pdf") kept = await singles(["doc.pdf"]);
-    else if (unit === "media") kept = await singles(["m/0.mp4", "t.webp"]);
-    else if (unit === "image") kept = await singles(["i/1920.jpg", "t.webp"]);
+    else if (unit === "media") {
+      // The 720p stored early is the final output when the full encode did not finish; a full one replaces it.
+      const have720 = j.stored.some((s) => s.path === "m/720.mp4");
+      kept = plan.preview ? have720 || (await singles(["m/720.mp4", "t.webp"])) : await singles(["m/0.mp4", "t.webp"]);
+      if (kept && !plan.preview) await retirePreview(env, j);
+    } else if (unit === "image") kept = await singles(["i/1920.jpg", "t.webp"]);
     else if (unit === "notes") {
       const piece = pieces.get("notes.json") as Piece;
       const bytes = (await env.courier.readPiece("notes.json", piece, ctx)) as Uint8Array<ArrayBuffer>;

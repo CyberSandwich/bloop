@@ -24,13 +24,41 @@ export const PROFILES: Record<ProfileName, Profile> = {
 
 export const profileFor = (name: ProfileName): Profile => PROFILES[name];
 
+/** Cloudflare's instance types a job may run on, with the resources each bills (Containers pricing). */
+export const INSTANCES = {
+  "standard-2": { vcpu: 1, memoryGiB: 6, diskGB: 12 },
+  "standard-4": { vcpu: 4, memoryGiB: 12, diskGB: 20 },
+} as const;
+export type InstanceName = keyof typeof INSTANCES;
+
+/** Micro-dollars per second at full CPU use: $0.000020 per vCPU-second, $0.0000025 per GiB-second, $0.00000007 per GB-second. */
+export const instanceMicroUsdPerSecond = (name: InstanceName): number => {
+  const i = INSTANCES[name];
+  return i.vcpu * 20 + i.memoryGiB * 2.5 + i.diskGB * 0.07;
+};
+
+/** Seconds of `container_seconds` one second on this instance costs: the meter counts standard-2 seconds. */
+export const meterWeight = (name: InstanceName): number =>
+  Math.ceil((instanceMicroUsdPerSecond(name) / instanceMicroUsdPerSecond("standard-2")) * 100) / 100;
+
+/** A video encodes, and the 4 vCPUs are what bring a long clip under its ceiling; everything else keeps the smaller size. */
+export const instanceFor = (kind: Kind): InstanceName => (kind === "video" ? "standard-4" : "standard-2");
+
+/**
+ * Seconds of video the encoder finishes per second of wall time on standard-4: the measured 1.19 at four CPUs and 1920
+ * wide (container/README.md), lowered by the 16 percent a CI runner's speed varied between two runs. It prices the 1080p
+ * encode and bounds the 720p one, which is faster than its 1080p figure at every CPU count measured.
+ */
+export const VIDEO_RATE_STANDARD_4 = 1;
+
 /** The container's environment for one job: the caps, with the input cap equal to the stored size. */
-export function containerEnv(profile: Profile, bytes: number): Record<string, string> {
+export function containerEnv(profile: Profile, bytes: number, kind?: Kind): Record<string, string> {
   return {
     BLOOP_MAX_INPUT: String(bytes),
     BLOOP_MAX_PAGES: String(profile.maxPages),
     BLOOP_MAX_UNPACKED: String(profile.maxUnpacked),
     BLOOP_WIDTHS: profile.widths.join(","),
+    ...(kind === "video" ? { BLOOP_VIDEO_RATE: String(VIDEO_RATE_STANDARD_4) } : {}),
   };
 }
 

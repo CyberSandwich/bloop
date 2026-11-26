@@ -51,12 +51,12 @@ One alarm does one bounded unit, then sets the next alarm or ends the job. The d
 |---|---|
 | `admit` | re-reads the row, the file and the switches; refuses or goes on |
 | `lease` | takes a pool slot, then the container seconds; busy waits `retryAfter` plus 0 to 5 s of jitter, for 30 minutes at most |
-| `start` | destroys any container, starts a fresh one (no internet, `standard-2`), arms its inactivity stop |
+| `start` | destroys any container, starts a fresh one (no internet, `standard-4` for video and `standard-2` for the rest, ADR 0019), arms its inactivity stop |
 | `health` | polls `/healthz` for 10 s; a container not up after 90 s is `start_failed` |
 | `input` | sends up to 4 chunks of 64 MiB, then starts the job with the size, SHA-256 and chunk count; resumes at the next unsent chunk |
 | `run` | polls `/job/status` for 25 s; a stage change goes to D1, page counts only to the watcher |
 | `store` | one unit: the manifest and the JSON files, then page 1, then one pack per width, the PDF, the notes, the media or image, and last `slides.json` |
-| `publish` | one guarded write of the outputs |
+| `publish` | one guarded write of the outputs; for an HEVC video's 720p, an early write that sets `ready720` and goes back to `run` |
 | `finish` | destroys the container, releases the lease, refunds unused seconds, tells the watcher, deletes what a failed run wrote; the record is deleted an hour later |
 
 Spend calls in order: `take` the per-day meter (`start.ts`), `acquire`, `take("container_seconds")`, `release` and `refund` of the unused seconds, `record("conversion_done" or "conversion_failed")`.
@@ -70,7 +70,7 @@ The prefix is the original's key without `/orig`, read from D1, never from a cal
 | library | `u/<uid>/<fid>/v<n>/d/…` | `u/<uid>/<fid>/v<n>/n/notes.json` |
 | guest, demo | `g/<ref>/d/…` | `g/<ref>/n/notes.json` |
 
-`d/` holds `slides.json`, `t.webp`, `s/1/<w>.webp`, `s/<w>.pack`, `doc.pdf`, `m/0.mp4` and `i/1920.jpg`, only for the groups that passed. `meta.json` is read, never stored. `bundleAllowlist` is the served set (notes and meta never). A pack is the pages' WebP files one after another; `slides.json` (`v: 2`) carries each page's `[start, length]`. A pack's `sha256` in `outputs` is the digest of its pieces' hashes, since R2 cannot hash a streamed object as a whole.
+`d/` holds `slides.json`, `t.webp`, `s/1/<w>.webp`, `s/<w>.pack`, `doc.pdf`, `m/0.mp4` (or `m/720.mp4` while an HEVC video's full encode runs or when it failed) and `i/1920.jpg`, only for the groups that passed. `meta.json` is read, never stored. `bundleAllowlist` is the served set (notes and meta never). A pack is the pages' WebP files one after another; `slides.json` (`v: 2`) carries each page's `[start, length]`. A pack's `sha256` in `outputs` is the digest of its pieces' hashes, since R2 cannot hash a streamed object as a whole.
 
 A guest's end deletes everything under `g/<ref>/` as well as the original (`R2GuestDrop.purge`). The manifest is read once, checked, and pinned by its digest in the plan: a later unit that sees a different manifest fails the run. Every call to the container is cut at the run's deadline, and a status or error body is capped at 2 MiB.
 

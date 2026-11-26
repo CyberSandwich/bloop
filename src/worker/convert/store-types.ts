@@ -14,11 +14,14 @@ export interface ConvBucket {
   delete(keys: string | string[]): Promise<void>;
 }
 
+/** The two manifests a job offers: the finished job's, and a video's 720p listing while its full encode still runs. */
+export type ManifestName = "manifest.json" | "preview.json";
+
 /** The container's manifest, checked; `fault` names the first rule it broke. */
 export async function checkManifestFor(
   courier: Courier,
-  ctx: { jobId: string; ext: string; profile: Profile },
+  ctx: { jobId: string; ext: string; profile: Profile; manifest: ManifestName },
 ): Promise<CheckedManifest | { fault: string }> {
-  const r = checkManifest(await courier.getJson("/out/manifest.json"), ctx);
+  const r = checkManifest(await courier.getJson(`/out/${ctx.manifest}`), ctx);
   return r.ok ? r.checked : { fault: r.reason };
 }

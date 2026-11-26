@@ -17,25 +17,27 @@ import type { Spend } from "../spend/client.ts";
 import { isRetryable, MAX_ATTEMPTS } from "./codes.ts";
 import { CHUNK_BYTES, CONTAINER_ERRORS, isDocument, KIND_BY_EXT, type StartBody, statusSchema } from "./contract.ts";
 import { ContainerFault, Courier, FILE_CALL_MS } from "./courier.ts";
-import { type Located, locate, type OwnerKind } from "./keys.ts";
+import { type Located, locate, type OwnerKind, outputKey } from "./keys.ts";
 import type { EndState, Notifier } from "./notify.ts";
 import { decideGroups, type Group, sha256Hasher } from "./outputs.ts";
 import type { ContainerPort } from "./port.ts";
-import { containerEnv, deadlineSeconds, PROFILES } from "./profile.ts";
+import { containerEnv, deadlineSeconds, instanceFor, meterWeight, PROFILES } from "./profile.ts";
 import {
   heartbeat,
   markCancelled,
   markFailed,
   markSkipped,
   type Outputs,
+  outputsSchema,
   publishDone,
   type RunKey,
   readRun,
   setStage,
+  settlePreview,
   startAttempt,
 } from "./results.ts";
 import type { ConvBucket } from "./store-types.ts";
-import { nextUnit, prepare, putUnit, type StoreEnv } from "./store-units.ts";
+import { deleteRetiredPreview, nextUnit, prepare, putUnit, type StoreEnv } from "./store-units.ts";
 
 export type { ConvBucket };
 
@@ -223,7 +225,8 @@ export class JobRunner {
 
   /** A retryable code gets one new container while the version has starts left; anything else ends the run. */
   private async fail(j: JobRecord, code: string): Promise<void> {
-    if (!isRetryable(code) || j.attempt >= MAX_ATTEMPTS || j.end) {
+    // A published 720p is never thrown away for a retry: the full encode is best-effort, so its failure ends the run.
+    if (!isRetryable(code) || j.attempt >= MAX_ATTEMPTS || j.end || j.preview === "stored") {
       await this.finish(j, { state: "failed", code });
       return;
     }
@@ -247,6 +250,7 @@ export class JobRunner {
       lastPushAt: 0,
       infraErrors: 0,
       released: false,
+      preview: "none",
     } satisfies Partial<JobRecord>);
     await writeJob(this.d.store, j);
     await setStage(this.d.db, this.key(j), "waiting", this.d.now());
@@ -273,7 +277,8 @@ export class JobRunner {
       // Refund first, then forget the ticket: the guard honors each ticket once, so a repeat after a fault is harmless
       // and a lost refund never is.
       const ticket = j.secondsTicket;
-      const unused = Math.min(ticket.n, j.secondsTaken - Math.ceil((this.d.now() - j.takenAt) / 1000));
+      const used = Math.ceil(((this.d.now() - j.takenAt) / 1000) * j.weight);
+      const unused = Math.min(ticket.n, j.secondsTaken - used);
       if (unused > 0) await this.d.spend.refund(ticket, unused);
       j.secondsTicket = null;
       await writeJob(this.d.store, j);
@@ -283,12 +288,21 @@ export class JobRunner {
 
   /** The one end: every path (done, failed, skipped, cancelled) comes here, and each step may run again. */
   private async finish(j: JobRecord, end: NonNullable<JobRecord["end"]>): Promise<void> {
+    if (!j.end && j.preview === "stored" && (end.state === "failed" || end.state === "skipped")) {
+      // The 720p is published and playable, so a full encode that ends badly is a log line, never a user's error.
+      this.d.log(JSON.stringify({ evt: "convert_full_encode_ended", state: end.state, code: end.code }));
+      end = { state: "done", code: null };
+    }
     j.end ??= end;
     j.phase = "finish";
     await writeJob(this.d.store, j);
     await this.releaseAttempt(j);
     const e = j.end;
     const now = this.d.now();
+    if (e.state === "done" && j.preview === "stored") {
+      await settlePreview(this.d.db, this.key(j), now);
+      await this.dropUnpublished(j);
+    }
     if (e.state === "failed") await markFailed(this.d.db, this.key(j), e.code ?? "internal", now);
     else if (e.state === "skipped") await markSkipped(this.d.db, this.key(j), e.code ?? "busy", now);
     else if (e.state === "cancelled") await markCancelled(this.d.db, j.fileId, j.version, now, j.runId);
@@ -303,6 +317,25 @@ export class JobRunner {
     j.phase = "done";
     await writeJob(this.d.store, j);
     await this.d.store.setAlarm(this.d.now() + CLEANUP_AFTER_MS);
+  }
+
+  /** Deletes what this run put that the row does not list: a full encode's partial files when only the 720p stands. */
+  private async dropUnpublished(j: JobRecord): Promise<void> {
+    const loc = await this.located(j);
+    const row = await readRun(this.d.db, j.fileId, j.version);
+    if (!loc || !row?.outputs) return;
+    let listed: Set<string>;
+    try {
+      const parsed = outputsSchema.parse(JSON.parse(row.outputs));
+      listed = new Set(parsed.files.map((f) => outputKey(loc.prefix, f.path)));
+    } catch {
+      return;
+    }
+    const stale = j.written.filter((k) => !listed.has(k));
+    if (stale.length === 0) return;
+    await this.d.bucket(loc.bucket).delete(stale);
+    j.written = j.written.filter((k) => listed.has(k));
+    await writeJob(this.d.store, j);
   }
 
   private async failUnreadable(): Promise<void> {
@@ -392,13 +425,16 @@ export class JobRunner {
       await writeJob(this.d.store, j);
     }
     if (!j.secondsTicket) {
-      const taken = await this.d.spend.take("container_seconds", seconds);
+      // The meter counts standard-2 seconds, so a second on a larger instance takes more of it.
+      j.weight = meterWeight(instanceFor(kindOf(loc.ext)));
+      const units = Math.ceil(seconds * j.weight);
+      const taken = await this.d.spend.take("container_seconds", units);
       if (!taken.ok) {
         await this.releaseAttempt(j);
         return { skip: taken.reason === "cap_hit" ? "daily_budget" : "busy" };
       }
       j.secondsTicket = taken.ticket;
-      j.secondsTaken = seconds;
+      j.secondsTaken = units;
       j.takenAt = this.d.now();
       j.deadline = j.takenAt + seconds * 1000;
     }
@@ -421,7 +457,8 @@ export class JobRunner {
       return { fail: "start_failed" };
     }
     try {
-      this.d.port.start(containerEnv(PROFILES[j.profile], loc.bytes));
+      const kind = kindOf(loc.ext);
+      this.d.port.start(containerEnv(PROFILES[j.profile], loc.bytes, kind), instanceFor(kind));
       await this.d.port.setInactivity(Math.max(1000, j.deadline - this.d.now()));
     } catch (e) {
       this.d.log(JSON.stringify({ evt: "convert_start_failed", error: e instanceof Error ? e.message : "unknown" }));
@@ -542,6 +579,11 @@ export class JobRunner {
         j.lastPct = Math.max(j.lastPct, st.pct);
         await this.beat(j);
         if (st.state === "done") return { phase: "store" };
+        // A video's 720p is listed ready while its full encode still runs: store and publish it now.
+        if (j.preview === "none" && st.ready.includes("m/720.mp4")) {
+          j.preview = "storing";
+          return { phase: "store" };
+        }
         if (this.d.now() >= stop) return { phase: "run" };
         await this.d.sleep(1000);
       }
@@ -563,6 +605,7 @@ export class JobRunner {
     if (!loc) return { cancelled: true };
     const env: StoreEnv = {
       courier: this.courier,
+      manifest: j.preview === "storing" ? "preview.json" : "manifest.json",
       bucket: this.d.bucket(loc.bucket),
       loc,
       profile: PROFILES[j.profile],
@@ -572,9 +615,11 @@ export class JobRunner {
       mine: (rec) => this.mine(rec),
       pageReady: () => this.d.notify.pageReady(j.target, j.fileId, j.version),
     };
+    const early = j.preview === "storing";
     try {
       if (!j.plan) {
         const refused = await prepare(env, j);
+        if (refused && early) return await this.dropPreview(j);
         return refused ?? { phase: "store" };
       }
       const step = nextUnit(j.plan, env.profile.widths, j.unit);
@@ -583,9 +628,19 @@ export class JobRunner {
       j.unit = step.index + 1;
       return { phase: nextUnit(j.plan, env.profile.widths, j.unit) ? "store" : "publish" };
     } catch (e) {
-      if (e instanceof ContainerFault) return { fail: e.code };
+      if (e instanceof ContainerFault) return early ? await this.dropPreview(j) : { fail: e.code };
       throw e;
     }
+  }
+
+  /** The 720p could not be read or did not check out: forget it and wait for the finished job's own outputs. */
+  private async dropPreview(j: JobRecord): Promise<Next> {
+    this.d.log(JSON.stringify({ evt: "convert_preview_dropped" }));
+    await this.deleteWritten(j);
+    j.plan = null;
+    j.unit = 0;
+    j.preview = "dropped";
+    return { phase: "run" };
   }
 
   private async publish(j: JobRecord): Promise<Next> {
@@ -608,6 +663,13 @@ export class JobRunner {
       ),
       ...(!loc.sha256 && j.sha256 ? { originalSha256: j.sha256 } : {}),
     };
+    // The early 720p publish keeps the row live (a stage) for the full encode; a 720p that is the last output does not.
+    const early = j.preview === "storing";
+    const as = early
+      ? { status: "ready720" as const, stage: j.lastStage ?? "video" }
+      : plan.preview
+        ? { status: "ready720" as const, stage: null }
+        : undefined;
     const published = await publishDone(
       this.d.db,
       this.key(j),
@@ -620,10 +682,30 @@ export class JobRunner {
         bytes: j.stored.reduce((n, s) => n + s.size, 0),
       },
       this.d.now(),
+      as,
     );
-    if (published) return { done: true };
+    let earlyDone = published && early;
+    if (!published && early) {
+      // A publish that committed before its caller saw it answers false on the retry.
+      const seen = await readRun(this.d.db, j.fileId, j.version);
+      earlyDone = seen?.status === "ready720" && seen.run_id === j.runId;
+    }
+    if (earlyDone) {
+      j.preview = "stored";
+      j.plan = null;
+      j.unit = 0;
+      await writeJob(this.d.store, j);
+      await this.d.notify.terminal(j.target, j.fileId, j.version, "done", null);
+      return { phase: "run" };
+    }
+    if (published) {
+      await deleteRetiredPreview(this.d.bucket(loc.bucket), loc.prefix, j);
+      await writeJob(this.d.store, j);
+      return { done: true };
+    }
     // A publish that committed before its caller saw it answers false on the retry: that is done, not cancelled.
     const row = await readRun(this.d.db, j.fileId, j.version);
-    return row?.status === "done" && row.run_id === j.runId ? { done: true } : { cancelled: true };
+    const committed = row?.status === "done" || (plan.preview && row?.status === "ready720" && row.stage === null);
+    return committed && row?.run_id === j.runId ? { done: true } : { cancelled: true };
   }
 }

@@ -1,9 +1,11 @@
 // The Converter's view of its container, so the alarm machine runs under Node over a fake. `realPort` is the only
-// Workers-only code here. Instance size, image and the no-internet flag are fixed in one place (CONV-01).
+// Workers-only code here. The image and the no-internet flag are fixed in one place (CONV-01); the instance is the
+// job's (profile.ts `instanceFor`).
+import type { InstanceName } from "./profile.ts";
 
 export interface ContainerPort {
   /** Starts a fresh container and returns before it is ready; the caller polls /healthz. */
-  start(env: Record<string, string>): void;
+  start(env: Record<string, string>, instance: InstanceName): void;
   running(): boolean;
   destroy(): Promise<void>;
   setInactivity(ms: number): Promise<void>;
@@ -11,8 +13,6 @@ export interface ContainerPort {
   fetch(path: string, init: RequestInit): Promise<Response>;
 }
 
-/** The size every profile runs on until the staging timings say otherwise. */
-export const INSTANCE = "standard-2";
 export const JOB_PORT = 8080;
 
 /** Raised when the platform offers no container (a local `wrangler dev` without Docker). */
@@ -24,7 +24,7 @@ export interface ContainerApi {
   images: Record<string, string | undefined>;
   start(o: {
     image: string;
-    instance: typeof INSTANCE;
+    instance: InstanceName;
     enableInternet: boolean;
     env: Record<string, string>;
     labels: Record<string, string>;
@@ -40,11 +40,11 @@ export function realPort(ctx: { container?: ContainerApi }): ContainerPort {
     return ctx.container;
   };
   return {
-    start(env) {
+    start(env, instance) {
       const container = c();
       const image = container.images.converter;
       if (!image) throw new NoContainer("no converter image configured");
-      container.start({ image, instance: INSTANCE, enableInternet: false, env, labels: { app: "bloop-converter" } });
+      container.start({ image, instance, enableInternet: false, env, labels: { app: "bloop-converter" } });
     },
     running: () => ctx.container?.running ?? false,
     destroy: async () => {

@@ -23,7 +23,7 @@ describe("CONV-01 isolation", () => {
       interceptAllOutboundHttp: () => touched.push("all"),
       interceptOutboundHttps: () => touched.push("https"),
     };
-    realPort({ container } as unknown as Parameters<typeof realPort>[0]).start({ BLOOP_MAX_INPUT: "1" });
+    realPort({ container } as unknown as Parameters<typeof realPort>[0]).start({ BLOOP_MAX_INPUT: "1" }, "standard-2");
     expect(starts).toEqual([
       {
         image: "registry.example/converter@sha256:abc",
@@ -37,9 +37,9 @@ describe("CONV-01 isolation", () => {
   });
 
   it("a Durable Object with no container or no image cannot start one", () => {
-    expect(() => realPort({}).start({})).toThrow();
+    expect(() => realPort({}).start({}, "standard-2")).toThrow();
     expect(() =>
-      realPort({ container: { images: {} } } as unknown as Parameters<typeof realPort>[0]).start({}),
+      realPort({ container: { images: {} } } as unknown as Parameters<typeof realPort>[0]).start({}, "standard-2"),
     ).toThrow();
   });
 });
