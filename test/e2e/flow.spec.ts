@@ -104,7 +104,7 @@ async function scan(
 }
 
 /** A row's accessible name starts with the item's name, then its kind line. */
-const startsWith = (name: string) => new RegExp(`^${name.replace(".", "\\.")}`);
+const startsWith = (name: string) => new RegExp(`^${name.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}`);
 /** A file row is a button; a link row is a link that opens a new tab and leaves the stage as it is. */
 const sidebarItem = (page: Page, name: string) =>
   page.locator("#items").getByRole("button", { name: startsWith(name) });
@@ -113,7 +113,7 @@ const sidebarLink = (page: Page, name: string) => page.locator("#items").getByRo
 /** The demo viewer from approval: the sidebar with the whole catalog, and the first item (the deck) on the stage. */
 async function expectViewer(page: Page) {
   await expect(page.locator("#items > li .item")).toHaveCount(CATALOG.length);
-  await expect(sidebarLink(page, DEMO_ITEMS.link.name)).toBeVisible();
+  for (const link of [DEMO_ITEMS.video, DEMO_ITEMS.link]) await expect(sidebarLink(page, link.name)).toBeVisible();
   for (const name of CATALOG.slice(0, 3)) await expect(sidebarItem(page, name)).toBeVisible();
   await expect(heading(page)).toHaveText(DEMO_ITEMS.deck.name);
   await expect(page.getByRole("img", { name: `Slide 1 of ${DECK_PAGES}` })).toBeVisible();
@@ -274,7 +274,7 @@ test.describe("pairing flow", () => {
     await expect(heading(phone.page)).toHaveText("Approved for Demo Room");
     await expect(phone.page.locator("#ends-text")).toHaveText(/^Ends in \d+:\d{2}$/);
     // The approved items are a record, not controls: no ticks.
-    await expect(phone.page.locator("#file-list .row")).toHaveCount(4);
+    await expect(phone.page.locator("#file-list .row")).toHaveCount(CATALOG.length);
     await expect(phone.page.locator("#file-list .tick")).toHaveCount(0);
     await expect(phone.page.getByRole("button", { name: "Revoke" })).toBeVisible();
     // In a session Revoke is the phone's one way out.
@@ -1720,7 +1720,7 @@ test.describe("open path", () => {
 });
 
 test.describe("demo viewer", () => {
-  test("DEMO-01 flow: the sidebar holds 4 items, and each shows on the stage; nothing launches; a reload still shows it", async ({
+  test("DEMO-01 flow: the sidebar holds the whole catalog, and each shows on the stage; nothing launches; a reload still shows it", async ({
     browser,
   }) => {
     const screen = await demoScreen(browser);
@@ -1785,6 +1785,10 @@ test.describe("demo viewer", () => {
     await expect(vevox).toHaveAttribute("href", "https://www.vevox.com/");
     await expect(vevox).toHaveAttribute("target", "_blank");
     await expect(vevox).toHaveAttribute("rel", "noopener noreferrer");
+    // The video link is the same kind of card, listed before it (titles A to Z); video-link.spec.ts checks its row.
+    const video = sidebarLink(screen.page, DEMO_ITEMS.video.name);
+    await expect(video).toHaveAttribute("target", "_blank");
+    await expect(video).toHaveAttribute("rel", "noopener noreferrer");
     await expect(screen.page.locator("iframe")).toHaveCount(0);
     await expect(heading(screen.page)).toHaveText(DEMO_ITEMS.horizontal.name);
     await expectNoAxeViolations(screen.page);
@@ -1833,7 +1837,7 @@ test.describe("demo viewer", () => {
   test("DEMO-01 links only: the session holds one link, shown as a lone centered card", async ({ browser }) => {
     const screen = await demoScreen(browser);
     const { phone } = await scan(browser, screen.page);
-    for (const name of CATALOG.slice(0, 3)) {
+    for (const name of [...CATALOG.slice(0, 3), DEMO_ITEMS.video.name]) {
       await phone.page.getByRole("checkbox", { name: startsWith(name) }).uncheck();
     }
     await phone.page.getByRole("button", { name: "Approve" }).click();
