@@ -4,9 +4,8 @@
 // unknown id is the same 404), then one settings read for the switch and the deps. The one raw body is a proxy part,
 // whose declared length must equal the part's before a byte is read.
 import { z } from "zod";
-import { readCookie, SESSION_COOKIE } from "../auth/cookies.ts";
-import { batchDbOf, dbOf } from "../auth/db.ts";
-import { phoneUser, servicesFor } from "../auth/services.ts";
+import { dbOf } from "../auth/db.ts";
+import { resolveMember } from "../auth/member.ts";
 import type { Config } from "../config.ts";
 import type { Env } from "../env.ts";
 import { checkOrigin, checkWrite, fail, json, readJson } from "../http.ts";
@@ -42,12 +41,10 @@ const completeBody = z.union([
   }),
 ]);
 
-/** The signed-in library member behind the session cookie: active and not suspended. */
+/** The signed-in library member behind the session cookie: the C gate every member route uses. */
 async function memberOf(request: Request, env: Env, config: Config): Promise<string | null> {
-  if (!readCookie(request, SESSION_COOKIE)) return null;
-  const services = servicesFor(env, config);
-  const userId = await phoneUser(request, services);
-  return userId && (await services.sessions.activeMemberEmail(userId)) ? userId : null;
+  const who = await resolveMember(request, env, config);
+  return who.ok ? who.member.userId : null;
 }
 
 const reply = <T>(out: pipeline.Out<T>, status = 200, map: (value: T) => unknown = (v) => v): Response =>
@@ -198,7 +195,7 @@ const complete: Handler = async ({ request, row, d }) => {
 const read = withConfig(async (request, env, config) => {
   const loaded = await load(request, env, config, "RL_UPLOAD_PART");
   if (!loaded.ok) return loaded.response;
-  return json(await pipeline.stateOf({ db: batchDbOf(env.DB), now: Date.now }, loaded.row));
+  return json(await pipeline.stateOf({ db: dbOf(env.DB), now: Date.now }, loaded.row));
 });
 
 const cancel: Handler = async ({ row, d }) => {
