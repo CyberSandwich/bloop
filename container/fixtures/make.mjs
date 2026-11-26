@@ -2,7 +2,7 @@
 // The committed binaries (media/, macro/) are not made here; see container/README.md for their provenance.
 import { mkdirSync, writeFileSync } from "node:fs";
 import { crc32, createDeflateRaw } from "node:zlib";
-import { docx, linkedOdt, linkedRtf, odfWithMacro, pdf, pptx } from "./lib.mjs";
+import { docx, LINK_IMAGE_PATH, linkedOdt, linkedRtf, odfWithMacro, pdf, pptx } from "./lib.mjs";
 
 /** Where the external-relationship fixtures point; the corpus runner listens here and must see nothing. */
 export const CANARY = "http://127.0.0.1:8099";
@@ -40,6 +40,7 @@ put("macro.odp", odfWithMacro("odp", MACRO_SENTINEL));
 put("macro.odt", odfWithMacro("odt", MACRO_SENTINEL));
 put("macro.ods", odfWithMacro("ods", MACRO_SENTINEL));
 put("linked.odt", linkedOdt());
+put("linked-image.odt", linkedOdt({ href: `file://${LINK_IMAGE_PATH}`, image: true }));
 put("linked.docx", docx("Before the link.", { includeText: true }));
 put("linked.rtf", linkedRtf());
 put("pdf-js.pdf", pdf(["Active", "Content"], { active: true }));

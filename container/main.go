@@ -36,7 +36,7 @@ const maxWidth = 4095
 var stageDefaults = map[string]time.Duration{
 	"inspect":   30 * time.Second,
 	"convert":   180 * time.Second,
-	"rasterize": 1500 * time.Second,
+	"rasterize": 400 * time.Second,
 	"video":     900 * time.Second,
 	"heic":      60 * time.Second,
 }
