@@ -133,8 +133,8 @@ describe("config", () => {
 
   it("DEMO-02 flood: the demo claim binding is no looser than the live one, which runs first and would hide it", () => {
     const limits = declaredRateLimits();
-    expect(limits.RL_CLAIM).toBe(20);
-    expect(limits.RL_DEMO_CLAIM).toBeLessThanOrEqual(limits.RL_CLAIM ?? 0);
+    expect(limits.RL_CLAIM?.limit).toBe(20);
+    expect(limits.RL_DEMO_CLAIM?.limit).toBeLessThanOrEqual(limits.RL_CLAIM?.limit ?? 0);
   });
 
   it("DEMO-03 off: DEMO_ENABLED is a strict true or false and defaults to nothing", () => {

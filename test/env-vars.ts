@@ -1,13 +1,23 @@
 import { readFileSync } from "node:fs";
 
-/** Each platform rate-limit binding wrangler.jsonc declares, with its limit per period. */
-export const declaredRateLimits = (): Record<string, number> =>
+/**
+ * One production `ratelimits` entry as wrangler.jsonc writes it, on one line: groups are the text before the limit,
+ * the name, the limit, the text after it, and the period. env.staging's multi-line copies never match.
+ */
+export const RATE_LIMIT_ENTRY =
+  /("name": "(RL_[A-Z_]+)", "namespace_id": "\d+", "simple": \{ "limit": )(\d+)(, "period": (\d+) \})/g;
+
+export interface RateLimit {
+  limit: number;
+  period: number;
+}
+
+/** Each platform rate-limit binding wrangler.jsonc (or `text`, a copy of it) declares, with its limit and period. */
+export const declaredRateLimits = (
+  text = readFileSync(new URL("../wrangler.jsonc", import.meta.url), "utf8"),
+): Record<string, RateLimit> =>
   Object.fromEntries(
-    [
-      ...readFileSync(new URL("../wrangler.jsonc", import.meta.url), "utf8").matchAll(
-        /"name": "(RL_[A-Z_]+)"[^}]*"limit": (\d+)/g,
-      ),
-    ].map((m) => [m[1], Number(m[2])]),
+    [...text.matchAll(RATE_LIMIT_ENTRY)].map((m) => [m[2] ?? "", { limit: Number(m[3]), period: Number(m[5]) }]),
   );
 
 /** Every declared binding, each allowing everything: a route refuses a missing one (PAIR-13). */
