@@ -14,6 +14,8 @@ Rows start `planned` and flip to `mitigated` when their test lands; same columns
 | UP-07 | E | Misuse of the S3 credentials | low | high | The R2 token is scoped to the two buckets, Object Read and Write only (an owner setup step) | none | planned |
 | UP-08 | T | Tampering with resume state | low | med | Part ETags are read only from D1, never from the client at complete | `UP-08 resume` | planned |
 | UP-09 | D | A retry on the same guest code duplicates or wedges a send | med | low | The same fingerprint resumes the same upload | `UP-09 retry` | planned |
+| UP-10 | D | A time-left estimate that jumps or counts up, so a person abandons a healthy upload | med | low | The estimate is an EWMA of the bytes moved per second, shown after 5 s, and moves only on a 20 percent change | `UP-10 estimate hysteresis` | mitigated |
+| UP-11 | D | A fill that runs backward on a part retry, or stalls at 100 before the file is checked | med | low | The shown fill never decreases and stays under 100 percent until complete answers | `UP-11 fill never moves back on a part retry` | mitigated |
 
 ## Refused content
 | id | STRIDE | threat | L | I | mitigation | test | status |
