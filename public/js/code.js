@@ -1,6 +1,6 @@
 // Typed code entry (/code): for a phone whose camera did not open the link.
 import { createApi } from "./core/api.js";
-import { TYPED_LETTERS, typedError } from "./core/copy-code.js";
+import { TYPED_LETTERS, TYPED_PASTE, typedError } from "./core/copy-code.js";
 import { PID_KEY, pidStore } from "./core/store.js";
 import { typedCode, typedValid } from "./core/typed.js";
 import { ariaFlag, byId, focusTitle, isFramed, setText } from "./core/ui.js";
@@ -32,6 +32,17 @@ function check() {
 input.addEventListener("input", check);
 // A code typed, pasted or restored before this module ran fired no input event this listener heard: read it once.
 check();
+
+// Paste is a rare path: its module loads on the first tap. A load that fails says so on the sentence row.
+const paste = byId("paste");
+paste.hidden = !navigator.clipboard?.readText;
+paste.addEventListener("click", () => {
+  const tapped = input.value;
+  import("./core/paste.js").then(
+    (m) => m.pasteInto(input, check, showError, tapped),
+    () => showError(TYPED_PASTE),
+  );
+});
 
 form.addEventListener("submit", async (e) => {
   e.preventDefault();
