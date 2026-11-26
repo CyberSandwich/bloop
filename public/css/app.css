@@ -1279,12 +1279,7 @@ a.row:focus-visible {
   );
 }
 .code-form {
-  display: flex;
-  flex-flow: column;
   margin-top: 16px;
-}
-.code-form .actions {
-  margin-top: 8px;
 }
 .paste-row {
   display: flex;
@@ -1299,16 +1294,10 @@ a.row:focus-visible {
   box-shadow: inset 0 0 0 1.5px var(--g2);
 }
 .paste {
-  flex: none;
   display: grid;
   place-items: center;
   width: 56px;
-  padding: 0;
-  color: var(--ink);
   cursor: pointer;
-}
-.paste:active {
-  transform: scale(0.97);
 }
 .paste-row .field {
   flex: 1;
@@ -1323,8 +1312,7 @@ a.row:focus-visible {
   font-variant-numeric: tabular-nums;
   text-transform: uppercase;
 }
-.field:focus,
-.paste:focus-visible {
+.field:focus {
   outline: none;
   box-shadow: inset 0 0 0 2px var(--ink);
 }
@@ -1336,6 +1324,6 @@ a.row:focus-visible {
   min-height: 24px;
   line-height: 24px;
   gap: 8px;
-  margin-top: 8px;
+  margin: 8px 0;
   font-weight: 600;
 }
