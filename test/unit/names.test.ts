@@ -38,12 +38,32 @@ describe("DROP-08 xss: the one refused set, upload and rename", () => {
       setFlag,
     );
     const wrong: string[] = [];
+    const strippedIn = (char: string) => cleanName(`a${char}b`) === "ab";
+    // Most code points are unassigned, so the expected-stripped ones go through cleanName in chunks (one call per
+    // 2000, `-` between pieces so nothing composes across them); a chunk that differs is re-read one by one. A walk of
+    // 1.1M single calls took 1.4 s idle and passed the 5 s default only by luck on a loaded runner.
+    const CHUNK = 5000;
+    const want = Array(CHUNK).fill("ab").join("-");
+    let chunk: number[] = [];
+    let text = "";
+    const flush = () => {
+      if (cleanName(text, Number.MAX_SAFE_INTEGER) !== want.slice(0, chunk.length * 3 - 1))
+        for (const c of chunk) if (!strippedIn(String.fromCodePoint(c))) wrong.push(c.toString(16));
+      chunk = [];
+      text = "";
+    };
     for (let code = 0; code <= 0x10ffff; code++) {
       const char = String.fromCodePoint(code);
-      const stripped = cleanName(`a${char}b`) === "ab";
-      const tag = code >= 0xe0020 && code <= 0xe007f;
-      if (stripped !== (reference.test(char) || tag)) wrong.push(code.toString(16));
+      const expected = reference.test(char) || (code >= 0xe0020 && code <= 0xe007f);
+      if (!expected) {
+        if (strippedIn(char)) wrong.push(code.toString(16));
+        continue;
+      }
+      chunk.push(code);
+      text += `${chunk.length > 1 ? "-" : ""}a${char}b`;
+      if (chunk.length === CHUNK) flush();
     }
+    flush();
     expect(wrong).toEqual([]);
   });
 
