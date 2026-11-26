@@ -2,7 +2,8 @@
 // the off switch, the per-IP limits and the global cap. The flow runs with TEST_TIMING and a migrated D1; the
 // limits run on instances with the platform bindings live (no TEST_TIMING) or with a tiny cap.
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
-import { approveDemo, fetchLink, inOneWindow, sleep } from "./open-client.ts";
+import { DEMO_ITEMS } from "../../src/shared/demo-catalog.ts";
+import { approveDemo, fetchLink, inOneWindow, PROTOCOL_PREFIX, sleep } from "./open-client.ts";
 import { Api, claim, openScreen, PEPPER, startPairing } from "./pairing-client.ts";
 import { startWrangler, type Wrangler } from "./wrangler.ts";
 
@@ -43,11 +44,16 @@ describe("DEMO-01 isolation: the full demo flow, with no account", () => {
     expect(claimed.body.match).toMatch(/^[0-9]{2}$/);
     await socket.stateWhere((v) => v.state === "claimed" && v.match === claimed.body.match);
 
-    // The demo catalog: the deck, its PDF, a photo and one link (LINK-01: it passed the allowlist to be listed).
+    // The demo catalog: the deck, two photos and one link (LINK-01: it passed the allowlist to be listed).
     const files = await api.get<{ items: { id: string }[] }>("/api/files", claimed.body.pid);
-    expect(files.body.items.map((f) => f.id)).toEqual(["demo-deck", "demo-pdf", "demo-dog", "demo-vevox"]);
+    expect(files.body.items.map((f) => f.id)).toEqual([
+      DEMO_ITEMS.deck.id,
+      DEMO_ITEMS.horizontal.id,
+      DEMO_ITEMS.vertical.id,
+      DEMO_ITEMS.link.id,
+    ]);
 
-    const approved = await api.post("/api/approve", { ids: ["demo-deck"] }, { auth: claimed.body.pid });
+    const approved = await api.post("/api/approve", { ids: [DEMO_ITEMS.deck.id] }, { auth: claimed.body.pid });
     expect(approved.status).toBe(200);
     const open = await socket.waitFor((f) => f.t === "open");
     const links = open.links as { protocol: string };
@@ -73,7 +79,7 @@ describe("DEMO-01 isolation: the full demo flow, with no account", () => {
 
   it("DEMO-01 flow: the phone ends a demo too, and an unlisted or second set of ids is refused", async () => {
     const { socket, pid } = await approveDemo(api);
-    for (const fileId of ["not-in-the-account", "demo-pdf", "demo-review"]) {
+    for (const fileId of ["not-in-the-account", "demo-review"]) {
       expect((await api.post("/api/approve", { ids: [fileId] }, { auth: pid })).status, fileId).toBeGreaterThanOrEqual(
         400,
       );
@@ -87,34 +93,42 @@ describe("DEMO-01 isolation: the full demo flow, with no account", () => {
     const { screen, socket, code } = await openScreen(api, "demo");
     const pid = (await claim(api, code)).body.pid;
     await api.get("/api/files", pid);
-    const ids = ["demo-vevox", "demo-dog", "demo-pdf", "demo-deck"];
+    const ids = [DEMO_ITEMS.link.id, DEMO_ITEMS.vertical.id, DEMO_ITEMS.horizontal.id, DEMO_ITEMS.deck.id];
     expect((await api.post("/api/approve", { ids }, { auth: pid })).status).toBe(200);
-    // Items are files by name, then links: 0 Dog.jpg, 1 Sample deck.pdf, 2 Sample deck.pptx, 3 Vevox. The first file launches.
+    // Items are files by name, then links: 0 the deck, 1 the horizontal photo, 2 the vertical photo, 3 the link. The first file launches.
     const first = await socket.waitFor((f) => f.t === "open");
     expect(first.item).toBe(0);
     const firstLinks = first.links as { protocol: string | null; view: string | null };
-    expect(firstLinks.protocol).toBeNull();
-    const image = await fetchLink(firstLinks.view as string);
-    expect(image.status).toBe(200);
-    expect(image.headers.get("Content-Type")).toBe("image/jpeg");
-    expect(image.headers.get("X-Content-Type-Options")).toBe("nosniff");
-    expect(image.headers.get("Content-Disposition")).toBe("inline");
-    expect(image.headers.get("Content-Security-Policy")).toBe("default-src 'none'; sandbox; frame-ancestors 'none'");
-    expect(image.headers.get("Cache-Control")).toBe("no-store");
-    expect([...new Uint8Array(await image.arrayBuffer()).slice(0, 3)]).toEqual([0xff, 0xd8, 0xff]);
-    // The screen reports an image launch as view; the socket stays up and the session moves on.
-    socket.send({ t: "launched", mode: "view" });
+    expect(firstLinks.view).toBeNull();
+    expect(firstLinks.protocol).toMatch(/^ms-powerpoint:ofv\|u\|.*\.pptx$/);
+    const deckBytes = await fetchLink(firstLinks.protocol?.replace(PROTOCOL_PREFIX, "") as string);
+    expect(deckBytes.status).toBe(200);
+    expect([...new Uint8Array(await deckBytes.arrayBuffer()).slice(0, 2)]).toEqual([0x50, 0x4b]);
+    socket.send({ t: "launched", mode: "protocol" });
     await socket.stateWhere((v) => v.state === "opening" || v.state === "open");
 
     const mint = (body: Record<string, unknown>) =>
       api.post<{ item: number; links: Record<string, string | null> }>("/api/screen/link", body, { auth: screen.sid });
-    const pdf = await mint({ purpose: "protocol", item: 1 });
-    expect(pdf.body.item).toBe(1);
-    const pdfView = await fetchLink(pdf.body.links.pdf as string);
-    expect(pdfView.headers.get("Content-Type")).toBe("application/pdf");
-    expect(pdfView.headers.get("Content-Disposition")).toBe("inline");
-    expect((await mint({ purpose: "view", item: 0 })).status).toBe(200);
-    const deck = await mint({ purpose: "protocol", item: 2 });
+    // Each photo is served inline as its own JPEG, with headers that keep it an image and nothing else.
+    for (const item of [1, 2]) {
+      const photo = await mint({ purpose: "view", item });
+      expect(photo.status).toBe(200);
+      expect(photo.body.item).toBe(item);
+      expect(photo.body.links.protocol).toBeNull();
+      const image = await fetchLink(photo.body.links.view as string);
+      expect(image.status, `item ${item}`).toBe(200);
+      expect(image.headers.get("Content-Type")).toBe("image/jpeg");
+      expect(image.headers.get("X-Content-Type-Options")).toBe("nosniff");
+      expect(image.headers.get("Content-Disposition")).toBe("inline");
+      expect(image.headers.get("Content-Security-Policy")).toBe("default-src 'none'; sandbox; frame-ancestors 'none'");
+      expect(image.headers.get("Cache-Control")).toBe("no-store");
+      expect([...new Uint8Array(await image.arrayBuffer()).slice(0, 3)]).toEqual([0xff, 0xd8, 0xff]);
+    }
+    // The deck has no PDF rendition, so its view link answers pdf_unavailable.
+    const deckView = await mint({ purpose: "view", item: 0 });
+    expect(deckView.status).toBe(200);
+    expect((await fetchLink(deckView.body.links.pdf as string)).status).toBe(404);
+    const deck = await mint({ purpose: "protocol", item: 0 });
     expect(deck.body.links.protocol).toMatch(/^ms-powerpoint:ofv\|u\|.*\.pptx$/);
 
     // A link item never becomes a /f/ link, and an index past the list names nothing (PAIR-11).
@@ -126,9 +140,9 @@ describe("DEMO-01 isolation: the full demo flow, with no account", () => {
     expect(state.body.items.map((i) => i.kind)).toEqual(["file", "file", "file", "link"]);
     expect(state.body.items[3]).toEqual({
       kind: "link",
-      id: "i4",
+      id: DEMO_ITEMS.link.slot,
       url: "https://www.vevox.com/",
-      title: "Vevox",
+      title: DEMO_ITEMS.link.name,
     });
     socket.close();
   });
@@ -144,7 +158,7 @@ describe("DEMO-01 isolation: the full demo flow, with no account", () => {
       state: "approved",
       mode: "demo",
       kind: "owner",
-      items: [{ kind: "file", name: "Sample deck.pptx", type: "pptx", size: expect.any(Number) }],
+      items: [{ kind: "file", name: DEMO_ITEMS.deck.name, type: "pptx", size: expect.any(Number) }],
     });
 
     // The page asks for the link it missed and fetches it as PowerPoint would (a HEAD), which marks the file open.
@@ -305,7 +319,9 @@ describe("F14 DEMO-02 flood: one IP cannot fill the cap", () => {
     const state = await api.get<{ code: { code: string } }>("/api/screen/state", first.body.sid);
     const claimed = await claim(api, state.body.code.code);
     await api.get("/api/files", claimed.body.pid);
-    expect((await api.post("/api/approve", { ids: ["demo-deck"] }, { auth: claimed.body.pid })).status).toBe(200);
+    expect((await api.post("/api/approve", { ids: [DEMO_ITEMS.deck.id] }, { auth: claimed.body.pid })).status).toBe(
+      200,
+    );
     expect((await api.post("/api/end", {}, { auth: claimed.body.pid })).status).toBe(200);
     expect((await api.post("/api/screens", { mode: "demo" }, mine)).status).toBe(201);
   });

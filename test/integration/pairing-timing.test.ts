@@ -1,6 +1,7 @@
 // Timers with the test-only short timings. TEST_TIMING=1 lowers the config floors and is refused unless
 // PUBLIC_ORIGIN is a local address; production never sets it (docs/architecture.md section 11).
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { DEMO_ITEMS } from "../../src/shared/demo-catalog.ts";
 import { Api, claim, openScreen, phoneSocket, silentSocketOutcome, startPairing } from "./pairing-client.ts";
 import type { Wrangler } from "./wrangler.ts";
 
@@ -86,7 +87,11 @@ describe("session timers", () => {
     const { screen, socket, code } = await openScreen(api);
     const { body } = await claim(api, code);
     const phone = await phoneSocket(api, body.pid);
-    const approved = await api.post<{ endsAt: number }>("/api/approve", { ids: ["demo-deck"] }, { auth: body.pid });
+    const approved = await api.post<{ endsAt: number }>(
+      "/api/approve",
+      { ids: [DEMO_ITEMS.deck.id] },
+      { auth: body.pid },
+    );
     expect(approved.body.endsAt).toBeLessThan(Date.now() + 4000);
     for (const s of [socket, phone]) {
       const frame = await s.stateWhere((v) => v.state === "ended", 8000);
@@ -94,7 +99,7 @@ describe("session timers", () => {
     }
     const polled = await api.get<{ state: string; endReason: string }>("/api/pair/state", body.pid);
     expect(polled.body).toMatchObject({ state: "ended", endReason: "auto" });
-    expect((await api.post("/api/approve", { ids: ["demo-deck"] }, { auth: body.pid })).status).toBe(410);
+    expect((await api.post("/api/approve", { ids: [DEMO_ITEMS.deck.id] }, { auth: body.pid })).status).toBe(410);
     expect((await api.get<{ state: string }>("/api/screen/state", screen.sid)).body.state).toBe("ended");
     socket.close();
     phone.close();

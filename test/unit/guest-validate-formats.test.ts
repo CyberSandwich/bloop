@@ -363,7 +363,7 @@ describe("DROP-16 pixels: headers behind large metadata", () => {
 
   it("passes the demo photo", async () => {
     const dog = new Uint8Array(
-      readFileSync(new URL("../../src/worker/seams/file-source/demo-files/demo-dog.jpg", import.meta.url)),
+      readFileSync(new URL("../../src/worker/seams/file-source/demo-files/demo-horizontal.jpg", import.meta.url)),
     );
     expect(await check(dog, "jpg")).toEqual({ ok: true, type: "jpg" });
   });

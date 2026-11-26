@@ -3,6 +3,7 @@
 import { createHash } from "node:crypto";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { verifyPreview } from "../../src/worker/library/preview.ts";
+import { SAMPLE_NAME } from "../../src/worker/library/sample.ts";
 import { Socket, startPairing } from "./pairing-client.ts";
 import type { Wrangler } from "./wrangler.ts";
 
@@ -291,7 +292,7 @@ describe("the Sample Deck", () => {
   it("adds one ready deck per Idempotency-Key, answers the same row on a replay, and lists it", async () => {
     const first = await call("sal", "POST", "/api/library/sample", {}, { "Idempotency-Key": KEY });
     expect(first.status).toBe(201);
-    expect(first.body).toMatchObject({ name: "Sample deck.pptx", ext: "pptx", kind: "deck", status: "ready" });
+    expect(first.body).toMatchObject({ name: SAMPLE_NAME, ext: "pptx", kind: "deck", status: "ready" });
     const again = await call("sal", "POST", "/api/library/sample", {}, { "Idempotency-Key": KEY });
     expect([again.status, again.body.id]).toEqual([200, first.body.id]);
     expect(filesOf(await call("sal", "GET", "/api/library"))).toEqual([first.body.id]);

@@ -1,12 +1,13 @@
 // The phone's remote state (core/remote.js) and the seq every sender sends (core/demo.js nextSeq), PAIR-13.
 import { describe, expect, it } from "vitest";
-import { nextSeq } from "../../public/js/core/demo.js";
+import { nextSeq, SLIDES } from "../../public/js/core/demo.js";
 import { canPresent, command, createRemote, current } from "../../public/js/core/remote.js";
+import { DEMO_ITEMS } from "../../src/shared/demo-catalog.ts";
 import type { ErrorCode, Item, PhoneView, Shown, ShownCommand } from "../../src/shared/protocol.ts";
 
 const dog: Item = { kind: "file", id: "i1", name: "Dog.jpg", type: "jpg", size: 70_000 };
-const pdf: Item = { kind: "file", id: "i2", name: "Sample deck.pdf", type: "pdf", size: 81_000 };
-const deck: Item = { kind: "file", id: "i3", name: "Sample deck.pptx", type: "pptx", size: 82_000 };
+const pdf: Item = { kind: "file", id: "i2", name: "Handout.pdf", type: "pdf", size: 81_000 };
+const deck: Item = { kind: "file", id: "i3", name: DEMO_ITEMS.deck.name, type: "pptx", size: 82_000 };
 const vevox: Item = { kind: "link", id: "i4", url: "https://vevox.app/", title: "Vevox" };
 
 const viewOf = (over: Partial<PhoneView> = {}): PhoneView =>
@@ -102,20 +103,20 @@ describe("the remote's commands", () => {
       page: 2,
       present: false,
     });
-    expect(command(v, { item: "i3", page: 2, present: false }, { step: 1 })).toBeNull();
+    expect(command(v, { item: "i3", page: SLIDES.length, present: false }, { step: 1 })).toBeNull();
     expect(command(v, { item: "i3", page: 1, present: false }, { step: -1 })).toBeNull();
     expect(command(v, { item: "i1", page: 1, present: false }, { step: 1 })).toBeNull();
   });
 
   it("Present and Stop toggle on what can be presented only", () => {
     const v = viewOf();
-    expect(command(v, { item: "i2", page: 2, present: false }, { present: true })).toEqual({
-      item: "i2",
+    expect(command(v, { item: "i3", page: 2, present: false }, { present: true })).toEqual({
+      item: "i3",
       page: 2,
       present: true,
     });
-    expect(command(v, { item: "i2", page: 2, present: true }, { present: true })).toEqual({
-      item: "i2",
+    expect(command(v, { item: "i3", page: 2, present: true }, { present: true })).toEqual({
+      item: "i3",
       page: 2,
       present: false,
     });
@@ -304,7 +305,7 @@ describe("the remote's state: a tap shows at once, and the server's shown is the
   });
 
   it("a tap that changes nothing sends nothing", async () => {
-    const h = harness(viewOf({ shown: { item: "i3", page: 2, present: false } }));
+    const h = harness(viewOf({ shown: { item: "i3", page: SLIDES.length, present: false } }));
     void h.remote.tap({ step: 1 });
     void h.remote.tap({ item: "i4" });
     expect(h.sent).toEqual([]);

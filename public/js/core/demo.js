@@ -3,10 +3,13 @@
 
 const PROTOCOL_PREFIX = "ms-powerpoint:ofv|u|";
 
-/** The sample deck's pages, one AVIF and one WebP each (tools/render-slides.py). The PDF is its export: same pages. */
-export const SLIDES = ["/img/demo-slide-1", "/img/demo-slide-2"];
-/** The catalog photo's 120 px square thumbnail, so its row has a picture before any link is minted. */
-export const PHOTO_THUMB = "/img/demo-dog-thumb.webp";
+/** The sample deck's pages, one AVIF and one WebP each (tools/render-slides.py). */
+export const SLIDES = Array.from({ length: 5 }, (_, i) => `/img/demo-slide-${i + 1}`);
+/** The catalog photos' 120 px square thumbnails by name, so a row has a picture before any link is minted. */
+export const PHOTO_THUMBS = /** @type {Record<string, string>} */ ({
+  "Horizontal.jpg": "/img/demo-horizontal-thumb.webp",
+  "Vertical.jpg": "/img/demo-vertical-thumb.webp",
+});
 
 /** The https link inside a pushed link (protocol or plain), when it is on this origin; null otherwise. */
 export function openTarget(/** @type {string} */ link, /** @type {string} */ origin) {
@@ -54,23 +57,21 @@ export const halves = (box) => [
 ];
 
 /**
- * The pre-rendered pages of a demo account's deck or PDF; null for anything else (a guest's own file has none).
+ * The pre-rendered pages of a demo account's deck; null for anything else (a guest's own file has none).
  * @param {Item} item
  * @param {{mode: Mode, kind: string | null}} view
  */
 export const pagesOf = (item, view) =>
-  view.mode === "demo" && view.kind === "owner" && item.kind === "file" && (item.type === "pptx" || item.type === "pdf")
-    ? SLIDES
-    : null;
+  view.mode === "demo" && view.kind === "owner" && item.kind === "file" && item.type === "pptx" ? SLIDES : null;
 
 /**
- * A demo account's row thumbnail: page 1 of the deck or PDF, the photo's own thumbnail; null shows the type tile.
+ * A demo account's row thumbnail: page 1 of the deck, the photo's own thumbnail; null shows the type tile.
  * @param {Item} item
  * @param {{mode: Mode, kind: string | null}} view
  */
 export function thumbOf(item, view) {
   if (pagesOf(item, view)) return `${SLIDES[0]}.webp`;
   return view.mode === "demo" && view.kind === "owner" && item.kind === "file" && item.type === "jpg"
-    ? PHOTO_THUMB
+    ? (PHOTO_THUMBS[item.name] ?? null)
     : null;
 }

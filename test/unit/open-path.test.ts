@@ -1,5 +1,6 @@
 import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
+import { DEMO_ITEMS } from "../../src/shared/demo-catalog.ts";
 import { LinkLedger } from "../../src/worker/do/ledger.ts";
 import { policyOf, withHeaders } from "../../src/worker/headers.ts";
 import type { Resolved, SourceContext } from "../../src/worker/seams/file-source/index.ts";
@@ -141,7 +142,14 @@ describe("StreamOpenPath", () => {
   it("the mock source serves its sample bytes in both modes", async () => {
     const sample = new Uint8Array(readFileSync(new URL("../fixtures/decks/sample-deck.pptx", import.meta.url)));
     const source = new MockFileSource([
-      { id: "demo-deck", name: "Sample deck.pptx", type: "pptx", bytes: sample, editedMinutesAgo: 1, pdfId: null },
+      {
+        id: DEMO_ITEMS.deck.id,
+        name: DEMO_ITEMS.deck.name,
+        type: "pptx",
+        bytes: sample,
+        editedMinutesAgo: 1,
+        pdfId: null,
+      },
     ]);
     const ctx: SourceContext = {
       mode: "demo",
@@ -149,7 +157,7 @@ describe("StreamOpenPath", () => {
       folderId: null,
       accessToken: async () => ({ ok: false, error: "auth_required" }),
     };
-    const file = await source.resolve(ctx, "demo-deck");
+    const file = await source.resolve(ctx, DEMO_ITEMS.deck.id);
     if (!file.ok) throw new Error("no demo deck");
     for (const mode of ["redirect", "stream"] as const) {
       const res = await openPathFor(mode, HOSTS).serve(req(), file.file, "protocol");

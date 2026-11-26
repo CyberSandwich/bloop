@@ -1,37 +1,37 @@
-// The demo account's catalog, bundled as data: a real deck, its PDF export and a photo in demo-files/ (slimmed,
-// author fields and photo metadata stripped; size budgets in package.json), plus one web link. The demo screen shows
-// the deck and the PDF as pre-rendered images of their pages (public/img/demo-slide-*, tools/render-slides.py); the
-// PDF is also the deck's rendition. Kept apart from mock.ts so unit tests can build a MockFileSource without the bundler.
+// The demo account's catalog, bundled as data: a deck and two photos in demo-files/ (the deck slimmed by
+// tools/slim-deck.py, author fields stripped; size budgets in tools/size/core.json), plus one web link. The demo screen
+// shows the deck as pre-rendered images of its pages (public/img/demo-slide-*, tools/render-slides.py). Kept apart from mock.ts so unit tests can build a MockFileSource without the bundler.
 
+import { DEMO_ITEMS } from "../../../../src/shared/demo-catalog.ts";
 import type { LinkEntry } from "../../../shared/protocol.ts";
 import deck from "./demo-files/demo-deck.pptx";
-import dog from "./demo-files/demo-dog.jpg";
-import handout from "./demo-files/demo-handout.pdf";
+import horizontal from "./demo-files/demo-horizontal.jpg";
+import vertical from "./demo-files/demo-vertical.jpg";
 import { MockFileSource } from "./mock.ts";
 
 export const demoSource = (): MockFileSource =>
   new MockFileSource([
     {
-      id: "demo-deck",
-      name: "Sample deck.pptx",
+      id: DEMO_ITEMS.deck.id,
+      name: DEMO_ITEMS.deck.name,
       type: "pptx",
       bytes: new Uint8Array(deck),
-      editedMinutesAgo: 10,
-      pdfId: "demo-pdf",
-    },
-    {
-      id: "demo-pdf",
-      name: "Sample deck.pdf",
-      type: "pdf",
-      bytes: new Uint8Array(handout),
       editedMinutesAgo: 10,
       pdfId: null,
     },
     {
-      id: "demo-dog",
-      name: "Dog.jpg",
+      id: DEMO_ITEMS.horizontal.id,
+      name: DEMO_ITEMS.horizontal.name,
       type: "jpg",
-      bytes: new Uint8Array(dog),
+      bytes: new Uint8Array(horizontal),
+      editedMinutesAgo: 30,
+      pdfId: null,
+    },
+    {
+      id: DEMO_ITEMS.vertical.id,
+      name: DEMO_ITEMS.vertical.name,
+      type: "jpg",
+      bytes: new Uint8Array(vertical),
       editedMinutesAgo: 30,
       pdfId: null,
     },
@@ -39,5 +39,5 @@ export const demoSource = (): MockFileSource =>
 
 /** The demo account's links. One that `allowedLink` refuses is never listed (test/integration/demo.test.ts). */
 export const DEMO_LINKS: readonly LinkEntry[] = [
-  { kind: "link", id: "demo-vevox", url: "https://www.vevox.com/", title: "Vevox" },
+  { kind: "link", id: DEMO_ITEMS.link.id, url: "https://www.vevox.com/", title: DEMO_ITEMS.link.name },
 ];

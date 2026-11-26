@@ -432,9 +432,9 @@ export interface FileSource {
   resolvePdf(ctx: SourceContext, fileId: string): Promise<{ ok: true; file: Resolved } | { ok: false; error: SourceError | "pdf_unavailable" }>;
 }
 
-/** The demo account and local runs. Default. `demo.ts` builds it from a real deck, its PDF export and a photo in
+/** The demo account and local runs. Default. `demo.ts` builds it from a deck and two photos in
  *  src/worker/seams/file-source/demo-files/, imported as raw bytes through the `rules` entry in wrangler.jsonc:
- *  Sample deck.pptx, Sample deck.pdf (also the deck's rendition) and Dog.jpg. `DEMO_LINKS` beside it is the
+ *  Deck.pptx, Horizontal.jpg and Vertical.jpg. `DEMO_LINKS` beside it is the
  *  account's one link, Vevox (`https://www.vevox.com/`). */
 export interface MockFixture {
   id: string; name: string; type: FileType; bytes: Uint8Array;

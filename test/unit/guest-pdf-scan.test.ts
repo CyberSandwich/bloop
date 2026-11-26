@@ -47,13 +47,7 @@ const worked = async (bytes: Uint8Array) => {
   return { out, work };
 };
 const fixture = (path: string) => new Uint8Array(readFileSync(new URL(`../../${path}`, import.meta.url)));
-const FILES: [string, Uint8Array][] = [
-  ["the sample handout", fixture("test/fixtures/decks/sample-handout.pdf")],
-  [
-    "the demo handout (a real export with object streams)",
-    fixture("src/worker/seams/file-source/demo-files/demo-handout.pdf"),
-  ],
-];
+const FILES: [string, Uint8Array][] = [["the sample handout", fixture("test/fixtures/decks/sample-handout.pdf")]];
 
 /** An 8 MiB-class zlib stream that inflates to `inner`: empty stored blocks, then one stored block holding it. */
 const storedPadding = (rawBytes: number, inner = "") => {
