@@ -16,6 +16,8 @@ import type {
 } from "../../shared/protocol.ts";
 import type { AuditEvent } from "../audit.ts";
 import { type Config, configFor } from "../config.ts";
+import { cancelConversion } from "../convert/cancel.ts";
+import { convertDepsFor } from "../convert/deps.ts";
 import type { Env } from "../env.ts";
 import { MAX_FRAME_BYTES, phoneFrame, screenFrame } from "../frames.ts";
 import { drawCode, drawMatch, newRef, newSecret, parseCredential, safeEqual, sha256Hex } from "../ids.ts";
@@ -720,7 +722,15 @@ export class Screen extends DurableObject<Env> implements PairingStore {
   private guestSeams(): Pick<SessionSeams, "purge"> {
     return {
       purge: (input) =>
-        purgeGuest({ drop: guestDropFor(this.env, this.config()), audit: auditFor(this.env), now: Date.now }, input),
+        purgeGuest(
+          {
+            drop: guestDropFor(this.env, this.config()),
+            audit: auditFor(this.env),
+            now: Date.now,
+            cancelConversion: (sessionId) => cancelConversion(convertDepsFor(this.env), sessionId, 1, "guest_end"),
+          },
+          input,
+        ),
     };
   }
 

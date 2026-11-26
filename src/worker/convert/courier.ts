@@ -7,7 +7,7 @@ import type { ContainerPort } from "./port.ts";
 /** The container or its transport failed; `code` is the retry code to fail the attempt with. */
 export class ContainerFault extends Error {
   constructor(
-    readonly code: "interrupted" | "store_failed" | "output_invalid",
+    readonly code: "interrupted" | "store_failed" | "output_invalid" | "deadline",
     message: string,
   ) {
     super(message);
@@ -35,9 +35,14 @@ export class Courier {
     private readonly now: () => number = Date.now,
   ) {}
 
+  /** True once the run's deadline has passed: a call cut off then ended the run, it did not fail the container. */
+  pastDeadline(): boolean {
+    return this.limitAt !== null && this.now() >= this.limitAt;
+  }
+
   async call(method: "GET" | "PUT" | "POST", path: string, init: CallInit = {}): Promise<Response> {
     const left = this.limitAt === null ? Number.POSITIVE_INFINITY : this.limitAt - this.now();
-    if (left <= 0) throw new ContainerFault("interrupted", `${path}: past the deadline`);
+    if (left <= 0) throw new ContainerFault("deadline", `${path}: past the deadline`);
     const once = () =>
       this.port.fetch(path, {
         method,
@@ -46,7 +51,10 @@ export class Courier {
         signal: AbortSignal.timeout(Math.min(init.timeoutMs ?? SHORT_CALL_MS, left)),
       });
     const unreachable = (e: unknown) =>
-      new ContainerFault("interrupted", `${path}: ${e instanceof Error ? e.message : "unreachable"}`);
+      new ContainerFault(
+        this.pastDeadline() ? "deadline" : "interrupted",
+        `${path}: ${e instanceof Error ? e.message : "unreachable"}`,
+      );
     try {
       return await once();
     } catch (e) {

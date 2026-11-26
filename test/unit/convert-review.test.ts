@@ -69,8 +69,33 @@ describe("CONV-02 no container call outlives the run's deadline", () => {
     );
     const courier = new Courier(port);
     courier.limitAt = Date.now() + 40;
-    await expect(courier.call("PUT", "/job/input/0", { timeoutMs: 60_000 })).rejects.toBeInstanceOf(ContainerFault);
+    await expect(courier.call("PUT", "/job/input/0", { timeoutMs: 60_000 })).rejects.toMatchObject({
+      code: "deadline",
+    });
     expect(waited).toBeLessThan(2000);
+  });
+
+  it("a call cut by something other than the deadline stays a retryable interruption", async () => {
+    const courier = new Courier(
+      portOf(async () => {
+        throw new Error("reset");
+      }),
+    );
+    courier.limitAt = Date.now() + 60_000;
+    await expect(courier.call("PUT", "/job/input/0")).rejects.toMatchObject({ code: "interrupted" });
+  });
+
+  it("a run cut off by its deadline mid-alarm ends deadline, with no second container", async () => {
+    const h = harness();
+    h.respond = (path) => {
+      if (!path.startsWith("/job/input/")) return null;
+      h.clock.t += 24 * 3_600_000;
+      throw new Error("aborted");
+    };
+    await begin(h);
+    await drive(h);
+    expect(derived(h)).toMatchObject({ status: "failed", error: "deadline" });
+    expect(h.starts).toHaveLength(1);
   });
 
   it("a call after the deadline is refused without reaching the container", async () => {
