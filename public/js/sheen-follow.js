@@ -35,9 +35,9 @@ const TAU_MS = 120;
 export const easeTo = (from, to, dt) => from + (to - from) * (1 - Math.exp(-Math.min(Math.max(dt, 0), 64) / TAU_MS));
 
 export function follow() {
-  const h1 = document.querySelector(".hero h1");
-  const el = h1?.querySelector(".sheen");
-  if (!(h1 instanceof HTMLElement && el instanceof HTMLElement)) return;
+  const h1 = /** @type {HTMLElement} */ (document.querySelector(".hero h1"));
+  const el = /** @type {HTMLElement} */ (h1.querySelector(".sheen"));
+  const style = getComputedStyle(el);
   let on = false;
   let em = 1;
   let target = 0;
@@ -49,7 +49,7 @@ export function follow() {
   let ramp;
 
   const measure = () => {
-    em = parseFloat(getComputedStyle(el).fontSize);
+    em = parseFloat(style.fontSize);
   };
   // Any number of tiles is a valid position: the background repeats.
   const show = () => el.style.setProperty("--sheen-x", `${cur}`);
@@ -72,11 +72,11 @@ export function follow() {
     target = e.clientX;
     if (!on) {
       // Keyboard focus in the hero keeps its pause (2.2.2).
-      if (h1.closest(".hero")?.matches(":has(:focus-visible)")) return;
+      if (document.querySelector(".hero:has(:focus-visible)")) return;
       on = true;
       measure();
       // The band eases from where it is drawn (the sweep, or a leave ramp still running) to the pointer: no jump.
-      cur = parseFloat(getComputedStyle(el).backgroundPosition) / em / TILE_EM;
+      cur = parseFloat(style.backgroundPosition) / em / TILE_EM;
       ramp?.cancel();
       el.classList.add("is-following");
       show();
@@ -93,20 +93,17 @@ export function follow() {
     cancelAnimationFrame(frame);
     frame = 0;
     const to = cur + EASE_TILES;
-    const ease = el.animate(
+    ramp = el.animate(
       { backgroundPosition: [`${cur * TILE_EM}em 0`, `${to * TILE_EM}em 0`] },
       // t squared: speed climbs linearly from rest to the sweep's own.
       { duration: EASE_MS, easing: "cubic-bezier(.33,0,.67,.33)", fill: "forwards" },
     );
-    ramp = ease;
-    ease.onfinish = () => {
+    ramp.onfinish = () => {
       el.style.animationDelay = `${-timeAt(to - Math.floor(to))}ms`;
       el.classList.remove("is-following");
-      ease.cancel();
+      ramp?.cancel();
     };
   });
 
-  addEventListener("resize", () => {
-    if (on) measure();
-  });
+  addEventListener("resize", () => on && measure());
 }

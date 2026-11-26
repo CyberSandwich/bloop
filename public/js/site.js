@@ -1,15 +1,15 @@
 // The landing (design.md section 6). No scroll listener; style writes are custom properties only.
 
-const nav = document.querySelector(".nav");
-const sentinel = document.getElementById("sentinel");
-if (nav && sentinel)
-  new IntersectionObserver(([entry]) => nav.classList.toggle("is-scrolled", !entry?.isIntersecting)).observe(sentinel);
+const nav = /** @type {Element} */ (document.querySelector(".nav"));
+new IntersectionObserver(([entry]) => nav.classList.toggle("is-scrolled", !entry?.isIntersecting)).observe(
+  /** @type {Element} */ (document.getElementById("sentinel")),
+);
 
 // A jump leaves no hash, a reload opens at the top, and Back keeps the place saved on pagehide.
 history.scrollRestoration = "manual";
 const dropHash = () => history.replaceState(0, "", location.href.split("#")[0]);
 addEventListener("click", (e) => {
-  if (e.target instanceof Element && e.target.closest('a[href^="/#"],a[href^="#"]')) setTimeout(dropHash);
+  if (/** @type {Element} */ (e.target).closest('a[href^="/#"],a[href^="#"]')) setTimeout(dropHash);
 });
 addEventListener("pagehide", () => history.replaceState({ y: scrollY }, ""));
 const kept =
@@ -33,20 +33,20 @@ addEventListener("visibilitychange", pause);
 
 // Each why word's index, for its slice of the fill (site.css).
 const words = /** @type {NodeListOf<HTMLElement>} */ (document.querySelectorAll(".why-words>*"));
-for (const [i, w] of words.entries()) {
+words.forEach((w, i) => {
   w.style.setProperty("--i", `${i}`);
   w.style.setProperty("--n", `${words.length}`);
-}
+});
 
 document.querySelector(".frag-list")?.addEventListener("click", (e) => {
-  const row = e.target instanceof Element && e.target.closest("[aria-pressed]");
+  const row = /** @type {Element} */ (e.target).closest("[aria-pressed]");
   if (row) row.setAttribute("aria-pressed", `${row.getAttribute("aria-pressed") === "false"}`);
 });
 
 // A link closes the sheet over its jump; Safari 15, 16 keep the attribute but lack the method.
-const menu = document.getElementById("nav-links");
-menu?.addEventListener("click", (e) => {
-  if (e.target instanceof Element && e.target.closest("a") && menu.hasAttribute("popover")) menu.hidePopover?.();
+const menu = /** @type {HTMLElement} */ (document.getElementById("nav-links"));
+menu.addEventListener("click", (e) => {
+  if (/** @type {Element} */ (e.target).closest("a") && menu.hasAttribute("popover")) menu.hidePopover?.();
 });
 
 const tiltable = matchMedia("(prefers-reduced-motion: no-preference)");
@@ -64,11 +64,12 @@ h1.onpointerenter = (e) => {
 };
 
 // A spring (design.md section 6) drives a paused tilt animation; 1% thresholds wake it.
-const stage = document.querySelector(".stage");
-if (stage && tiltable.matches) {
+const stage = /** @type {HTMLElement} */ (document.querySelector(".stage"));
+if (tiltable.matches) {
   const tilt = stage.animate({ transform: ["rotateX(24deg) scale(.9)", "none"] }, { duration: 1000, fill: "both" });
   tilt.pause();
-  let x = -1;
+  /** @type {number | undefined} */
+  let x;
   let v = 0;
   let last = 0;
   let frame = 0;
@@ -78,7 +79,7 @@ if (stage && tiltable.matches) {
     const goal = Math.min(1, Math.max(0, (innerHeight - r.top) / Math.min(r.height, innerHeight)));
     const dt = Math.min(now - last, 64) / 1000;
     last = now;
-    if (x < 0) x = goal;
+    x ??= goal;
     v = (v - 300 * (x - goal) * dt) / (1 + 75 * dt);
     x += v * dt;
     tilt.currentTime = tiltable.matches ? x * 1000 : 1000;
@@ -101,7 +102,7 @@ if (!CSS.supports("interpolate-size", "allow-keywords")) {
     details.addEventListener("toggle", () => {
       if (!details.getAnimations().length) opening = details.open;
     });
-    details.querySelector("summary")?.addEventListener("click", (e) => {
+    /** @type {Element} */ (details.querySelector("summary")).addEventListener("click", (e) => {
       if (!tiltable.matches) return;
       e.preventDefault();
       const from = details.offsetHeight;
