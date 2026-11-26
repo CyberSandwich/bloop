@@ -80,6 +80,7 @@ interface V4Secrets {
   r2AccessKeyId: string | null;
   r2SecretAccessKey: string | null;
   fileTokenKey: string | null;
+  fileTokenKeyPrevious: string | null;
   codePepper: string | null;
   turnstileSecret: string | null;
   tallySecret: string | null;
@@ -247,6 +248,7 @@ export function parseConfig(env: Record<string, unknown>): ConfigResult {
         r2AccessKeyId: v.R2_ACCESS_KEY_ID ?? null,
         r2SecretAccessKey: v.R2_SECRET_ACCESS_KEY ?? null,
         fileTokenKey: v.FILE_TOKEN_KEY ?? null,
+        fileTokenKeyPrevious: v.FILE_TOKEN_KEY_PREVIOUS ?? null,
         codePepper: v.CODE_PEPPER ?? null,
         turnstileSecret: v.TURNSTILE_SECRET_KEY ?? null,
         tallySecret: v.TALLY_SIGNING_SECRET ?? null,

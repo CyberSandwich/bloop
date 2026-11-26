@@ -1,5 +1,12 @@
 import { describe, expect, it } from "vitest";
-import { type Claims, keyId, mintPreview, PREVIEW_TTL_MS, verifyPreview } from "../../src/worker/library/preview.ts";
+import {
+  type Claims,
+  keyId,
+  mintPreview,
+  PREVIEW_TTL_MS,
+  previewKeys,
+  verifyPreview,
+} from "../../src/worker/library/preview.ts";
 
 const KEY = "k".repeat(32);
 const OLD = "o".repeat(32);
@@ -74,6 +81,21 @@ describe("LIB-04 rotation", () => {
     expect(await verifyPreview(keys, old, NOW + 10_000)).not.toBeNull();
     expect(await verifyPreview(keys, old, NOW + PREVIEW_TTL_MS + 1)).toBeNull();
     expect(await verifyPreview([KEY], old, NOW + 10_000)).toBeNull();
+  });
+
+  it("verifies under the configured current and previous keys, and under neither of an unrelated key", async () => {
+    const keys = previewKeys({ fileTokenKey: KEY, fileTokenKeyPrevious: OLD });
+    expect(await verifyPreview(keys, await mint(OLD), NOW + 1)).not.toBeNull();
+    expect(await verifyPreview(keys, await mint(KEY), NOW + 1)).not.toBeNull();
+    expect(await verifyPreview(keys, await mint("z".repeat(32)), NOW + 1)).toBeNull();
+  });
+
+  it("without a previous key only the current verifies; without a current key nothing does", async () => {
+    expect(previewKeys({ fileTokenKey: KEY, fileTokenKeyPrevious: null })).toEqual([KEY]);
+    expect(
+      await verifyPreview(previewKeys({ fileTokenKey: KEY, fileTokenKeyPrevious: null }), await mint(OLD), NOW),
+    ).toBeNull();
+    expect(previewKeys({ fileTokenKey: null, fileTokenKeyPrevious: OLD })).toEqual([]);
   });
 
   it("names its key by a short hash, not the key", async () => {
