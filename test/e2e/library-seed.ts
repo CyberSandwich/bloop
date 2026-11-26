@@ -29,7 +29,8 @@ export function seeder(now = Date.now()) {
     /** @param used the account's used bytes (the quota bar) */
     member(files: FileRow[] = [], options: { used?: number; derived?: DerivedRow[] } = {}): Member {
       const user = `e2e-${randomUUID()}`;
-      const cookie = `${user}-cookie`;
+      // 43 base64url characters: the page gate drops any other shape before it reads a session.
+      const cookie = `${user}-cookie`.padEnd(43, "0");
       sql.push(
         insert("app_user", {
           id: user,

@@ -11,7 +11,8 @@ let wrangler: Wrangler;
 
 const now = Date.now();
 const sha = (text: string) => createHash("sha256").update(text).digest("hex");
-const cookieOf = (name: string) => `${name}-cookie-value`;
+// 43 base64url characters: the page gate drops any other shape before it reads a session.
+const cookieOf = (name: string) => `${name}-cookie-value`.padEnd(43, "0");
 const JAR = (name: string) => `__Host-bloop_sid=${cookieOf(name)}`;
 
 function member(name: string, extra = ""): string[] {
