@@ -1,8 +1,10 @@
 // Microsoft Graph file source: lists decks in the allowed folder and resolves one item at open time.
 // Uses fetch only. Calls: https://learn.microsoft.com/graph/api/driveitem-list-children and
 // driveitem-get-content-format (the PDF conversion).
-import type { FileEntry, SourceError } from "../../../shared/protocol.ts";
-import { deckTypeOfName, type FileSource, type Resolved, type SourceContext } from "./index.ts";
+import { typeOfName } from "../../../../public/js/shared/names.js";
+import type { FileEntry, FileType, SourceError } from "../../../shared/protocol.ts";
+import { kindOf } from "../../items.ts";
+import type { FileSource, Resolved, SourceContext } from "./index.ts";
 
 const GRAPH = "https://graph.microsoft.com/v1.0";
 /** Graph ids are opaque but never contain a slash or percent sign; anything else is refused before it reaches a URL. */
@@ -19,6 +21,15 @@ interface DriveItem {
   file?: object;
   folder?: object;
   "@microsoft.graph.downloadUrl"?: string;
+}
+
+/**
+ * The type of a file Graph may offer: a deck or a PDF, by the one extension list. A `.pptm` has no entry there, so a
+ * macro deck is never offered.
+ */
+function deckType(item: DriveItem | null): FileType | null {
+  const type = item?.file && !item.folder && item.name ? typeOfName(item.name) : null;
+  return type && (kindOf(type) === "deck" || kindOf(type) === "pdf") ? type : null;
 }
 
 /** `*.example.com` matches any subdomain of it; anything else must match exactly. HTTPS only. */
@@ -64,7 +75,7 @@ export class GraphFileSource implements FileSource {
     if (!page || !Array.isArray(page.value)) return { ok: false, error: "source_unavailable" } as const;
     const files = page.value
       .flatMap((item): FileEntry[] => {
-        const type = item.file && !item.folder && item.name ? deckTypeOfName(item.name) : null;
+        const type = deckType(item);
         const modifiedAt = Date.parse(item.lastModifiedDateTime ?? "");
         if (!type || !item.id || !item.name || Number.isNaN(modifiedAt)) return [];
         return [{ kind: "file", id: item.id, name: item.name, type, modifiedAt, size: item.size ?? null }];
@@ -79,7 +90,7 @@ export class GraphFileSource implements FileSource {
     const res = await this.call(ctx, `/me/drive/items/${fileId}?$select=${SELECT},@microsoft.graph.downloadUrl`);
     if (!res.ok) return res;
     const item = (await res.value.json().catch(() => null)) as DriveItem | null;
-    const type = item?.file && !item.folder && item.name ? deckTypeOfName(item.name) : null;
+    const type = deckType(item);
     if (!item?.name) return { ok: false, error: "source_unavailable" } as const;
     if (!type) return { ok: false, error: "file_type_refused" } as const;
     const url = item["@microsoft.graph.downloadUrl"];

@@ -202,6 +202,31 @@ describe("GraphFileSource.resolve", () => {
     expect(calls).toHaveLength(0);
   });
 
+  it("SRC-05 filter: takes .pptx and .pdf in any case and refuses every other name, guest types included", async () => {
+    const resolveName = async (name: string) => {
+      const body = JSON.stringify({ id: "01SYNTHETIC", name, size: 1, file: {} });
+      const res = await graph(() => ({ body })).source.resolve(ctx(), "01SYNTHETIC");
+      return res.ok ? res.file.type : res.error;
+    };
+    expect(await resolveName("A.pptx")).toBe("pptx");
+    expect(await resolveName("A.PPTX")).toBe("pptx");
+    expect(await resolveName("a.b.Pdf")).toBe("pdf");
+    for (const name of [
+      "a.pptm",
+      "a.ppt",
+      "a.ppsx",
+      "a.potx",
+      "a.docx",
+      "a.jpg",
+      "a.png",
+      "a.mp4",
+      "pptx",
+      "a.pptx.exe",
+    ]) {
+      expect(await resolveName(name), name).toBe("file_type_refused");
+    }
+  });
+
   it("body() streams the item's content with the token, following Graph's redirect", async () => {
     const { source, calls } = graph((url) =>
       url.pathname.endsWith("/content")

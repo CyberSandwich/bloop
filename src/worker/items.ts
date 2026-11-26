@@ -2,7 +2,8 @@
 // Pure, so the machine, the routes and the unit tests share one definition.
 import { z } from "zod";
 import { pagesOf } from "../../public/js/core/demo.js";
-import type { FileType, Item, Kind, Mode, OpenMode, Shown } from "../shared/protocol.ts";
+import { orderItems as byLabel, tuneOf } from "../../public/js/shared/session.js";
+import type { FileType, Item, ItemKind, Kind, Mode, OpenMode, Shown } from "../shared/protocol.ts";
 import type { FileRef } from "./machine.ts";
 
 /** A web link the source offered. `url` is what `allowedLink` answered, never the raw input (LINK-01). */
@@ -46,9 +47,25 @@ export function allowedLink(raw: string): string | null {
   return allowed && url.href.length <= MAX_URL_CHARS ? url.href : null;
 }
 
-export { orderItems } from "../../public/js/shared/session.js";
+/** The viewer each type is shown in. A `Record`, so a type added to `FileType` fails the typecheck until it has one. */
+const KINDS: Readonly<Record<FileType, ItemKind>> = {
+  pptx: "deck",
+  pdf: "pdf",
+  jpg: "image",
+  png: "image",
+  mp4: "video",
+  mov: "video",
+};
 
-import { tuneOf } from "../../public/js/shared/session.js";
+/** What a file of this type is shown as: derived on the server, never taken from a client. */
+export const kindOf = (type: FileType): ItemKind => KINDS[type];
+
+/**
+ * The order a session stores: a list of library files keeps the caller's order (Up Next's, ADR 0009); any other list
+ * is files by name, then links by title.
+ */
+export const orderItems = <T extends ItemDraft>(items: readonly T[]): T[] =>
+  items.every((i) => i.kind === "file" && i.source === "library") ? [...items] : byLabel(items);
 
 /** The id an item holds from approval on: its place in the approved list, written once and never recomputed. */
 export const itemId = (index: number): string => `i${index + 1}`;
