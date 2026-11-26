@@ -52,17 +52,18 @@ export function makeExportRoute(deps: ExportDeps): Route {
     "/api/me/export.zip",
     "api",
     withConfig(async (request, env, config) => {
-      // Cross-site navigations are refused before any storage is read (LIB-10).
-      if (request.headers.get("Sec-Fetch-Site") !== "same-origin") return fail("forbidden_origin");
-      const params = new URL(request.url).searchParams;
-      const key = KEY.safeParse(params.get("k"));
-      if (!key.success) return fail("bad_request");
       const now = deps.now();
+      const flood = await limited(env, "RL_MEMBER_IP", request, config);
+      if (flood) return flood;
       const who = await deps.resolve(request, env, config, now);
       if (!who.ok) return who.response;
       const { userId } = who.member;
       const tooMany = await limited(env, "RL_LIBRARY", request, config, userId);
       if (tooMany) return tooMany;
+      // Cross-site navigations are refused before any file or Durable Object is read (LIB-10).
+      if (request.headers.get("Sec-Fetch-Site") !== "same-origin") return fail("forbidden_origin");
+      const key = KEY.safeParse(new URL(request.url).searchParams.get("k"));
+      if (!key.success) return fail("bad_request");
       const tokenKey = config.secrets.fileTokenKey;
       if (!tokenKey || (await deps.switches(env)).export !== "on") return fail("export_paused");
       return start({ request, env, config, userId, now, k: key.data, tokenKey, take: deps.take });
@@ -81,6 +82,14 @@ interface Start {
   take(env: Env, userId: string): Promise<boolean>;
 }
 
+/** C+R: the session's own proof is within REAUTH_SECONDS (`requireFresh` of auth/member.ts, on a bare cookie). */
+async function proofFresh(request: Request, env: Env, config: Config, now: number): Promise<boolean> {
+  const cookie = readCookie(request, SESSION_COOKIE) ?? "";
+  const view = await new Sessions(dbOf(env.DB), () => now).lookup(cookie);
+  const at = view?.reauthAt ?? null;
+  return at !== null && now - at <= config.account.reauthSeconds * 1000;
+}
+
 async function start(s: Start): Promise<Response> {
   const { request, env, config, userId, now } = s;
   const stub = userLibraryStub(env, userId);
@@ -93,12 +102,7 @@ async function start(s: Start): Promise<Response> {
   const resumes = issuedAt !== null;
   let takenAt = issuedAt ?? now;
   if (!resumes) {
-    const cookie = readCookie(request, SESSION_COOKIE) ?? "";
-    const fresh = await new Sessions(dbOf(env.DB), () => now).reauthedWithin(
-      cookie,
-      config.account.reauthSeconds * 1000,
-    );
-    if (!fresh) return fail("reauth_required");
+    if (!(await proofFresh(request, env, config, now))) return fail("reauth_required");
   }
   // The same key while its lease is live is a retried navigation: it never takes a second lease.
   if ((await stub.idemGet(`${KEY_PREFIX}${s.k}`)) !== null && (await stub.exportActive())) return fail("export_busy");
@@ -128,12 +132,7 @@ async function start(s: Start): Promise<Response> {
     // A resume that changed under the client, whose Range is ignored, or that starts again from byte 0, is a whole
     // new download: it spends a start and is laid out as of now, so the stored moment moves on with it.
     if (resumes && (range === null || range.offset === 0)) {
-      const cookie = readCookie(request, SESSION_COOKIE) ?? "";
-      const proof = await new Sessions(dbOf(env.DB), () => now).reauthedWithin(
-        cookie,
-        config.account.reauthSeconds * 1000,
-      );
-      if (!proof) return fail("reauth_required");
+      if (!(await proofFresh(request, env, config, now))) return fail("reauth_required");
       if (!(await s.take(env, userId))) return fail("export_limit");
       takenAt = now;
       ({ archive, etag } = await build(takenAt));

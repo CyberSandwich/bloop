@@ -10,7 +10,6 @@ import { newRef } from "../ids.ts";
 import { type Member, type Resolved, resolveMember } from "../library/member.ts";
 import { mintPreview } from "../library/preview.ts";
 import { addSample } from "../library/sample.ts";
-import { sampleDeck } from "../library/sample-deck.ts";
 import {
   CURSOR_MAX_CHARS,
   type FileRow,
@@ -84,8 +83,7 @@ const allOn = async (): Promise<Switches> => ({
 });
 
 export const defaultDeps: LibraryDeps = {
-  // transitional: A: A's member resolver replaces this one
-  resolve: (request, env, config, now) => resolveMember(request, env, config, now),
+  resolve: (request, env, config) => resolveMember(request, env, config),
   switches: allOn,
   now: Date.now,
 };
@@ -106,7 +104,7 @@ export function makeLibraryRoutes(deps: LibraryDeps): readonly Route[] {
   /** The front of every route: config, the request checks, the member, then the platform limit. */
   const member =
     (handler: Handler, kind: Kind) =>
-    (request: Request, env: Env, match: URLPatternResult): Promise<Response> | Response =>
+    (request: Request, env: Env, match: URLPatternResult, execution: ExecutionContext): Promise<Response> | Response =>
       withConfig(async (req, e, config) => {
         const refused =
           kind === "write"
@@ -116,12 +114,15 @@ export function makeLibraryRoutes(deps: LibraryDeps): readonly Route[] {
               : null;
         if (refused) return refused;
         const now = deps.now();
+        // The coarse per-IP meter comes before the first session read (AUTH-19).
+        const flood = await limited(e, "RL_MEMBER_IP", req, config);
+        if (flood) return flood;
         const who = await deps.resolve(req, e, config, now);
         if (!who.ok) return who.response;
         const tooMany = await limited(e, "RL_LIBRARY", req, config, who.member.userId);
         if (tooMany) return tooMany;
         return handler({ request: req, env: e, config, member: who.member, now }, match);
-      })(request, env, match);
+      })(request, env, match, execution);
 
   const fileId = (match: URLPatternResult) => match.pathname.groups.id ?? "";
 
@@ -200,6 +201,8 @@ export function makeLibraryRoutes(deps: LibraryDeps): readonly Route[] {
       const again = await fileRow(db, userId, idem.stored);
       return again ? json(await wireOf(ctx, again)) : fail("not_found");
     }
+    // Loaded here, not at the top: the deck is a bundler data module that the unit runner's route walk cannot import.
+    const { sampleDeck } = await import("../library/sample-deck.ts");
     const added = await addSample(ctx.env, userId, sampleDeck(), ctx.config.library, newRef(), ctx.now);
     if (!added.ok) return fail(added.error);
     if (idem.kind === "fresh") await stub.idemPut(`sample:${idem.keyHash}`, idem.bodyHash, added.id);
