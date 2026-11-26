@@ -36,7 +36,8 @@
     text-decoration: underline;
   }
 }
-.spinner {
+/* In a busy button or the pick's legend; base.css's reduced-motion net stops it (client-match.test.ts holds that). */
+:is(.btn, .pick) .spinner {
   width: 16px;
   height: 16px;
   border: 2px solid currentColor;
@@ -1098,10 +1099,6 @@ a.row:focus-visible {
   flex-direction: column;
   margin-top: 24px;
 }
-/* Beside the match pick, no gap for a row of none. */
-.buttons:empty {
-  display: none;
-}
 /* The band (pages.test.ts pins both queries): /a's buttons stay in reach, a result above Done is centered. */
 @media (max-width: 639.98px), (max-height: 599.98px) and (max-width: 899.98px) {
   .is-ended .flow {
@@ -1125,7 +1122,7 @@ a.row:focus-visible {
       var(--glass-edge),
       0 0 0 1px var(--hairline);
   }
-  .column > .actions:not(:has(.btn, .pick:not([hidden]))) {
+  .column > .actions:not(:has(> :not([hidden]))) {
     display: none;
   }
   .page-phone .column::after {
@@ -1135,16 +1132,14 @@ a.row:focus-visible {
     height: 24px;
   }
   /* Just above the panel, whatever it holds: phone.js measures it. */
-  .page-phone:has(.actions .btn, .pick:not([hidden])) {
+  .page-phone:has(.actions > :not([hidden])) {
     --toast-lift: calc(var(--panel, 68px) + 8px);
   }
-  .actions .pick legend {
-    padding: 0 12px;
-  }
 }
-/* The match pick (present-live.md 3.2): the legend over three choices sharing a row, one row on a short, wide window (a phone held landscape; a 320 x 568 phone is short too, but too narrow). Its
-   boxes are here, so a.html's skeleton pills and core/match.js's choices are the same size. `all: unset` drops a
-   fieldset's border, padding, margin and min-content width. */
+/* The match pick (present-live.md 3.2): the legend over three choices sharing a row; one row on a short, wide window
+   (a phone held landscape; a 320 x 568 phone is short too, but too narrow). Its boxes are here, so a.html's skeleton
+   pills and core/match.js's choices are the same size. `all: unset` drops a fieldset's border, padding, margin and
+   min-content width. */
 .pick {
   all: unset;
   display: grid;
@@ -1154,13 +1149,14 @@ a.row:focus-visible {
 }
 /* 64, a step over a page action's 52: read at arm's length, hit with a thumb while the eye is on the wall. */
 .choice {
-  min-height: 64px;
+  min-height: var(--choice-h);
   border-radius: var(--r-pill);
 }
-/* Floated, a legend is laid out as any grid item, so it can share the row. */
+/* Unfloated, the fieldset draws its legend over the grid; floated, it is laid out as a grid item and shares the row.
+   12 in at every width, as the line under the choices, so both sit in from the pills' rounded ends. */
 .pick legend {
-  float: left;
-  grid-column: 1 / -1;
+  margin-bottom: 8px;
+  padding: 0 12px;
   font-size: 15px;
   font-weight: 600;
 }
@@ -1169,7 +1165,8 @@ a.row:focus-visible {
     grid-template-columns: auto repeat(3, 1fr);
   }
   .pick legend {
-    grid-column: auto;
+    float: left;
+    margin: 0;
   }
 }
 /* A file dragged over /a, from 640 wide (core/drag.js); it never takes the pointer. */
@@ -1210,7 +1207,7 @@ a.row:focus-visible {
     backdrop-filter: none;
   }
 }
-/* A page action is .btn's 52, a text one .btn.text's 44; nothing here sets a height, so the pick's choices keep 64. */
+/* A page action is .btn's 52, a text one .btn.text's 44; nothing here sets a height, so the pick's choices keep theirs. */
 .actions .btn {
   flex: 1;
 }

@@ -19,22 +19,28 @@ export async function mount(c, io) {
   const box = /** @type {HTMLFieldSetElement} */ (document.getElementById("pick"));
   const legend = /** @type {HTMLLegendElement} */ (box.querySelector("legend"));
   const line = /** @type {HTMLElement} */ (box.querySelector(".pick-slow"));
+  const polite = /** @type {HTMLElement} */ (document.getElementById("polite"));
   const buttons = (c.view?.choices ?? c.info?.choices ?? []).map((n) => {
     const b = document.createElement("button");
-    b.type = "button";
     b.className = "btn secondary choice";
     b.textContent = n;
     return b;
   });
   for (const skel of box.querySelectorAll(".skel")) skel.remove();
   legend.after(...buttons);
+  // A live region is in the page, empty, before its words: one shown and filled in the same tick is often not read.
+  line.hidden = false;
   const spinner = document.createElement("span");
   spinner.className = "spinner";
   spinner.setAttribute("aria-hidden", "true");
 
   const pick = createPick(c, {
     ...io,
-    post: createApi().post,
+    // The Idempotency-Key rides on this one request; api.js stays as the room screen loads it.
+    post: (path, body, auth, key) =>
+      createApi({
+        fetch: (url, init) => fetch(url, { ...init, headers: { ...init?.headers, "Idempotency-Key": key } }),
+      }).post(path, body, auth),
     // The tapped choice fills ink at once, the other two go to disabled; the legend says it is sending.
     paint: (tapped, slow) => {
       for (const b of buttons) {
@@ -46,8 +52,8 @@ export async function mount(c, io) {
       legend.replaceChildren(...(tapped === null ? [LEGEND] : [spinner, SENDING]));
       if (tapped === null) box.removeAttribute("aria-busy");
       else box.setAttribute("aria-busy", "true");
+      polite.textContent = tapped && SENDING;
       line.textContent = slow ? SLOW : "";
-      line.hidden = !slow;
     },
     toast,
     // Android only; iOS has no web haptic, and none is faked.
@@ -55,18 +61,10 @@ export async function mount(c, io) {
     later: (fn, ms) => setTimeout(fn, ms),
     stop: (timer) => clearTimeout(/** @type {number} */ (timer)),
   });
-  const choiceOf = (/** @type {Event} */ e) => {
-    const b = e.target instanceof Element ? e.target.closest(".choice") : null;
-    return b instanceof HTMLButtonElement && !b.disabled ? b.textContent : null;
-  };
-  // The tap is the pointerup: a drag that scrolls ends in pointercancel instead, so it picks nothing.
-  box.addEventListener("pointerup", (e) => {
-    const n = e.isPrimary ? choiceOf(e) : null;
-    if (n) void pick(n);
-  });
-  // A key or assistive tech clicks with no pointer (detail 0); a pointer's own click follows its pointerup.
+  // The click alone: a press on one number released on another clicks neither, and a wrong pick cannot be undone.
+  // `touch-action: manipulation` (css/match.css) takes the tap delay away.
   box.addEventListener("click", (e) => {
-    const n = e.detail === 0 ? choiceOf(e) : null;
-    if (n) void pick(n);
+    const b = e.target instanceof Element ? e.target.closest(".choice") : null;
+    if (b instanceof HTMLButtonElement && !b.disabled && b.textContent) void pick(b.textContent);
   });
 }
