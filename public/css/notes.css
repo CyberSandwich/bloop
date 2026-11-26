@@ -55,7 +55,7 @@
       opacity: 0;
     }
   }
-  .notes.is-swap > :not([hidden]) {
+  .is-swap > * {
     animation: notes-swap 140ms var(--ease-out);
   }
   .notes-text {

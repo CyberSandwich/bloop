@@ -44,7 +44,7 @@ describe("NOTES-01 notes box: one radius with the panel, ending above it", () =>
       expect(props.length, name).toBeGreaterThan(0);
       for (const prop of props) expect(["opacity", "transform"], `${name} animates ${prop}`).toContain(prop);
     }
-    for (const selector of [".notes", ".notes.is-swap > :not([hidden])"]) {
+    for (const selector of [".notes", ".is-swap > *"]) {
       const animation = /animation:\s*([^;]*);/.exec(rule(notes, selector))?.[1] ?? "";
       expect(animation, selector).toContain("var(--ease-out)");
       expect(animation, `${selector} leaves the animation list when it ends`).not.toMatch(/both|forwards/);

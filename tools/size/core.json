@@ -224,7 +224,7 @@
     "name": "phone notes CSS, lazy",
     "path": "dist/css/notes.css",
     "gzip": true,
-    "limit": "0.58 kB"
+    "limit": "0.57 kB"
   },
   {
     "name": "drag and drop, lazy",
