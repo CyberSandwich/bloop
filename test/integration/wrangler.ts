@@ -1,8 +1,8 @@
 import { type ChildProcess, spawn, spawnSync } from "node:child_process";
-import { mkdtempSync, rmSync } from "node:fs";
+import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { createServer } from "node:net";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
 export interface Wrangler {
@@ -55,11 +55,10 @@ function exited(child: ChildProcess): Promise<void> {
  * `/api/health` answers. Needs no Cloudflare login. `vars` override wrangler.jsonc vars.
  * `migrate` applies migrations/ to the throwaway D1 first, for tests that touch the database.
  * `config` serves a test-only Worker from another wrangler config (a path under the repo) instead of wrangler.jsonc.
+ * `limits` serves wrangler.jsonc with those rate-limit bindings lowered, so a burst test crosses a limit in a few
+ * requests; use it rather than a copied config.
  */
-export async function startWrangler(
-  vars: Record<string, string> = {},
-  options: { migrate?: boolean; config?: string } = {},
-): Promise<Wrangler> {
+export async function startWrangler(vars: Record<string, string> = {}, options: StartOptions = {}): Promise<Wrangler> {
   try {
     return await startOnce(vars, options);
   } catch (e) {
@@ -70,7 +69,35 @@ export async function startWrangler(
   }
 }
 
+interface StartOptions {
+  migrate?: boolean;
+  config?: string;
+  limits?: Readonly<Record<string, number>>;
+}
+
 class PortTaken extends Error {}
+
+/**
+ * wrangler.jsonc with the named rate-limit bindings set to `limits`, written into the state directory. Its paths are
+ * made absolute and the build runs from the repo, since a config's relative paths resolve from its own directory.
+ */
+function limitedConfig(state: string, limits: Readonly<Record<string, number>>): string {
+  let text = readFileSync(join(root, "wrangler.jsonc"), "utf8").replace(
+    /"(main|directory|watch_dir|migrations_dir)": "([^"]+)"/g,
+    (_, key: string, value: string) => `"${key}": ${JSON.stringify(resolve(root, value))}`,
+  );
+  const build = '"build": {';
+  if (!text.includes(build)) throw new Error("wrangler.jsonc has no build block to run from the repo");
+  text = text.replace(build, `${build} "cwd": ${JSON.stringify(root)},`);
+  for (const [name, limit] of Object.entries(limits)) {
+    const binding = new RegExp(`("name": "${name}"[^}]*"limit": )\\d+`);
+    if (!binding.test(text)) throw new Error(`wrangler.jsonc declares no rate-limit binding ${name}`);
+    text = text.replace(binding, `$1${limit}`);
+  }
+  const path = join(state, "wrangler.jsonc");
+  writeFileSync(path, text);
+  return path;
+}
 
 /** Signals the whole process group; ESRCH (already gone) is fine. */
 function killGroup(pid: number, signal: NodeJS.Signals): void {
@@ -81,14 +108,13 @@ function killGroup(pid: number, signal: NodeJS.Signals): void {
   }
 }
 
-async function startOnce(
-  vars: Record<string, string>,
-  options: { migrate?: boolean; config?: string },
-): Promise<Wrangler> {
+async function startOnce(vars: Record<string, string>, options: StartOptions): Promise<Wrangler> {
+  if (options.config && options.limits) throw new Error("limits applies to wrangler.jsonc, not to another config");
   const port = await freePort();
   // localhost, not 127.0.0.1: WebAuthn refuses an IP address as its relying party. wrangler still binds 127.0.0.1.
   const url = `http://localhost:${port}`;
   const state = mkdtempSync(join(tmpdir(), "bloop-wrangler-"));
+  const config = options.limits ? limitedConfig(state, options.limits) : options.config;
   const varArgs = Object.entries({ ...HARNESS_VARS, PUBLIC_ORIGIN: url, ...vars }).flatMap(([k, v]) => [
     "--var",
     `${k}:${v}`,
@@ -113,7 +139,7 @@ async function startOnce(
       "dev",
       // No Docker in the harness: the converter container is replaced by CONVERT_MODE=stub.
       "--enable-containers=false",
-      ...(options.config ? ["--config", options.config] : []),
+      ...(config ? ["--config", config] : []),
       // Without it the Worker sees the custom domain as its host, not the local address.
       "--infer-origin-from-routes=false",
       // Serves /cdn-cgi/handler/scheduled, so a test can run a cron handler.
