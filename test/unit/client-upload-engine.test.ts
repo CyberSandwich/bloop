@@ -1,6 +1,6 @@
 // The upload engine end to end over a fake world (client-upload-world.ts): the wire, the parts loop, retries, waiting,
 // the fill, cancel, resume and the guest's send.
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { makeWorld, NETWORK, type Put, type World } from "./client-upload-world.ts";
 
 /** Starts one file of `size` bytes and lets the create and the first parts go out. */
@@ -1136,16 +1136,26 @@ describe("a request that never answers", () => {
     world.onPut = (p) => (offline ? p.fail() : p.ok());
     const real = world.deps.fetch;
     world.deps.fetch = (path: string, init: RequestInit = {}) =>
-      hang && path === "/api/uploads/up1" ? new Promise<Response>(() => {}) : real(path, init);
+      hang && path === "/api/uploads/up1"
+        ? new Promise<Response>((_, fail) => init.signal?.addEventListener("abort", () => fail(init.signal?.reason)))
+        : real(path, init);
     await begin(world, 50);
     await world.advance(13_000);
     expect(fileOf(world).state).toBe("waiting");
     offline = false;
     hang = true;
-    await world.advance(15_000 + 29_999);
-    expect(fileOf(world).state).toBe("waiting");
-    hang = false;
-    await world.advance(1 + 15_000);
+    vi.useFakeTimers();
+    try {
+      await world.advance(15_000);
+      vi.advanceTimersByTime(29_999);
+      await world.flush();
+      expect(fileOf(world).state).toBe("waiting");
+      hang = false;
+      vi.advanceTimersByTime(1);
+      await world.advance(15_000);
+    } finally {
+      vi.useRealTimers();
+    }
     expect(fileOf(world).state).toBe("saved");
   });
 });
@@ -1205,5 +1215,73 @@ describe("what the server lists and sends", () => {
     );
     await begin(world, 50);
     expect(world.puts.map((p) => p.url)).toEqual(["https://r2.test/up1/1?sig=1"]);
+  });
+});
+
+describe("a file the server is still validating", () => {
+  const checking = (world: World, then: (n: number) => unknown) => {
+    let asked = 0;
+    world.intercept.push((c) => {
+      if (c.method === "POST" && c.path === "/api/uploads/up1/complete") return world.json(200, { state: "checking" });
+      if (c.method === "GET" && c.path === "/api/uploads/up1") return world.json(200, then(++asked));
+    });
+    return () => asked;
+  };
+
+  it("stays Checking until the server says ready, then Saved with the file", async () => {
+    const world = makeWorld({ mode: "proxy", partBytes: 100 });
+    const asked = checking(world, (n) =>
+      n < 2 ? { state: "checking", done: [] } : { state: "ready", done: [], file: { id: "f9", status: "ready" } },
+    );
+    await begin(world, 50);
+    expect(fileOf(world).state).toBe("checking");
+    await world.advance(2000);
+    expect(fileOf(world).state).toBe("checking");
+    await world.advance(2000);
+    expect(fileOf(world)).toMatchObject({ state: "saved", fileId: "f9", fileStatus: "ready" });
+    expect(asked()).toBe(2);
+    expect(states(world).indexOf("saved")).toBeGreaterThan(states(world).lastIndexOf("checking"));
+    expect(world.vibrations).toEqual([12]);
+  });
+
+  it("is refused with the server's reason when validation fails, and never shows Saved", async () => {
+    const world = makeWorld({ mode: "proxy", partBytes: 100 });
+    checking(world, (n) =>
+      n < 2
+        ? { state: "checking", done: [] }
+        : { state: "refused", done: [], file: { id: "f1", refusal: "macro_content" } },
+    );
+    await begin(world, 50);
+    await world.advance(4000);
+    expect(fileOf(world)).toMatchObject({ state: "refused", error: "macro_content" });
+    expect(states(world)).not.toContain("saved");
+    expect(world.vibrations).toEqual([]);
+  });
+
+  it("gives up after five minutes of checking, as the service being down, so the queue never wedges", async () => {
+    const world = makeWorld({ mode: "proxy", partBytes: 100 });
+    checking(world, () => ({ state: "checking", done: [] }));
+    await begin(world, 50);
+    await world.advance(299_000);
+    expect(fileOf(world).state).toBe("checking");
+    await world.advance(2000);
+    expect(fileOf(world)).toMatchObject({ state: "refused", error: "service_down" });
+  });
+
+  it("a canceled-elsewhere upload found while checking is paused, not Saved", async () => {
+    const world = makeWorld({ mode: "proxy", partBytes: 100 });
+    checking(world, () => ({ state: "aborted", done: [] }));
+    await begin(world, 50);
+    await world.advance(2000);
+    expect(fileOf(world).state).toBe("paused");
+  });
+
+  it("a guest's send waits for the same answer before it is Sent", async () => {
+    const world = makeWorld({ kind: "guest", mode: "proxy", partBytes: 100 });
+    checking(world, (n) => (n < 2 ? { state: "checking", done: [] } : { state: "offered", done: [] }));
+    await begin(world, 50);
+    expect(fileOf(world).state).toBe("checking");
+    await world.advance(4000);
+    expect(fileOf(world)).toMatchObject({ state: "sent", view: { state: "offered" } });
   });
 });

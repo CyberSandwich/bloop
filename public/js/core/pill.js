@@ -16,6 +16,7 @@ export const CLOSE = /** @type {import("../types.js").IconPart[]} */ (["M18 6 6 
  * @property {import("../types.js").IconPart[] | null} [glyph] the tile's glyph
  * @property {string} [label] the progress bar's name, "Uploading Lecture 5.pptx"
  * @property {boolean} [sheen] the sweep: while bytes move, or while the work is not measurable
+ * @property {boolean} [wrap] the title wraps (to two lines) instead of giving way in the middle: it ends in its own words
  * @property {(() => void) | null} [press] the pill is a button (a batch opening its sheet)
  * @property {(Node | string)[]} [slot] the end of the pill: Cancel, an action
  */
@@ -69,6 +70,7 @@ export function pill({ host = document.body, ...first }) {
       tile.replaceChildren(...(patch.glyph ? [icon(patch.glyph)] : []));
     }
     if (patch.sheen !== undefined) node.classList.toggle("moving", patch.sheen);
+    if (patch.wrap !== undefined) node.classList.toggle("wrap", patch.wrap);
     if (patch.press !== undefined) {
       onPress = patch.press;
       press.hidden = !patch.press;

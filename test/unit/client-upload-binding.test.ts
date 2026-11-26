@@ -273,3 +273,135 @@ describe("the page's handle", () => {
     expect(host.kids.every((k) => k.removed)).toBe(true);
   });
 });
+
+describe("what holds still while the snapshots change", () => {
+  const sheetOf = () => host.kids.find((k) => k.tag === "dialog");
+  const pressPill = () => pillNode()?.byClass("up-press")?.click();
+  const items = () => sheetOf()?.byClass("up-list")?.kids ?? [];
+  const three = (over: Partial<Snap>[] = []) =>
+    [
+      file({ id: 1, name: "a.pptx", size: 100, loaded: 100, state: "saved", fraction: 1 }),
+      file({ id: 2, name: "b.pdf", size: 100, loaded: 40, state: "uploading" }),
+      file({ id: 3, name: "c.pdf", size: 100, loaded: 0, state: "queued", fraction: 0 }),
+    ].map((f, i) => ({ ...f, ...over[i] }));
+
+  it("the pill's Cancel is the same button on every snapshot, so a tap in progress still lands", async () => {
+    await mount();
+    emit(batch([file()]));
+    const first = pillNode()?.byClass("up-close");
+    emit(batch([file({ loaded: 50 * 1024 * 1024 })]));
+    emit(batch([file({ loaded: 60 * 1024 * 1024 })], { etaMs: 90_000 }));
+    expect(pillNode()?.byClass("up-close")).toBe(first);
+  });
+
+  it("the paused row shows again once the pill of the file saved beside it has left", async () => {
+    await mount();
+    const saved = file({ id: 1, state: "saved", loaded: 88 * 1024 * 1024, fraction: 1 });
+    const paused = file({ id: 4, name: "Old.pptx", state: "paused", loaded: 0, fraction: 0 });
+    emit(batch([saved, paused]));
+    expect(title()).toBe("Saved");
+    vi.advanceTimersByTime(2000 + 200);
+    emit(batch([saved, paused]));
+    const live = host.kids.filter((k) => k.classes.has("up-pill") && !k.removed);
+    expect(live.map((k) => k.byClass("up-title")?.textContent)).toEqual(["Old.pptx Is Paused"]);
+  });
+
+  it("the sheet's lines change in place while the files and their states hold, and are rebuilt when one changes", async () => {
+    await mount();
+    emit(batch(three(), { total: 300, loaded: 140 }));
+    pressPill();
+    expect(sheetOf()?.open).toBe(true);
+    const list = sheetOf()?.byClass("up-list");
+    const second = items()[1];
+    expect(second?.byClass("up-line")?.textContent).toBe("0 of 1 KB");
+    emit(batch(three([{}, { loaded: 90 }]), { total: 300, loaded: 190 }));
+    expect(sheetOf()?.byClass("up-list")).toBe(list);
+    expect(items()[1]).toBe(second);
+    expect(second?.byClass("up-line")?.textContent).toBe("0 of 1 KB");
+    emit(batch(three([{}, { state: "checking" }]), { total: 300, loaded: 190 }));
+    expect(sheetOf()?.byClass("up-list")).not.toBe(list);
+    expect(items()[1]?.byClass("up-line")?.textContent).toBe("Checking Your File");
+  });
+
+  it("a file that was canceled is not in the sheet", async () => {
+    await mount();
+    emit(batch(three(), { total: 300, loaded: 140 }));
+    pressPill();
+    expect(items()).toHaveLength(3);
+    emit(batch(three([{}, { state: "canceled" }]), { total: 200, loaded: 100 }));
+    expect(items().map((i) => i.byClass("up-title")?.textContent)).toEqual(["a.pptx", "c.pdf"]);
+  });
+});
+
+describe("the refusal strings", () => {
+  const SERVER_CODES = [
+    "bad_type",
+    "too_large",
+    "quota_exceeded",
+    "library_full",
+    "rate_limited",
+    "service_busy",
+    "upload_busy",
+    "upload_gone",
+    "upload_aborted",
+    "size_mismatch",
+    "bad_structure",
+    "macro_content",
+    "encrypted",
+    "bad_request",
+    "length_required",
+    "not_found",
+    "unauthorized",
+    "storage_full",
+    "empty",
+    "service_down",
+  ];
+
+  it("every upload error code has a string of its own, never the fallback and never another code's", async () => {
+    await mount();
+    const { refusalToast } = (await import(BINDING)) as {
+      refusalToast: (name: string, code: string, maxMB?: number) => { title: string; body: string };
+    };
+    const fallback = refusalToast("Talk.pptx", "no_such_code", 500);
+    expect(fallback).toEqual({ title: "Talk.pptx Can't Be Added", body: "Try again in a moment." });
+    const seen = new Set<string>();
+    for (const code of SERVER_CODES) {
+      const t = refusalToast("Talk.pptx", code, 500);
+      expect(t, code).not.toEqual(fallback);
+      expect(seen.has(JSON.stringify(t)), `${code} repeats another code's string`).toBe(false);
+      seen.add(JSON.stringify(t));
+      expect(`${t.title} ${t.body}`, code).not.toMatch(/\bchecked\b|[\u2013\u2014]/i);
+    }
+  });
+
+  it("File Too Large names the library's cap, and still says something without it", async () => {
+    await mount();
+    const { refusalToast } = (await import(BINDING)) as {
+      refusalToast: (name: string, code: string, maxMB?: number) => { title: string; body: string };
+    };
+    expect(refusalToast("a.pptx", "too_large", 500)).toEqual({
+      title: "File Too Large",
+      body: "bloop takes files up to 500 MB.",
+    });
+    expect(refusalToast("a.pptx", "too_large", undefined).body).not.toBe("");
+  });
+});
+
+describe("a guest's send", () => {
+  it("shows the waiting state when the phone goes offline, instead of nothing", async () => {
+    await mount({ kind: "guest", pid: "ref.secret" });
+    emit(batch([file({ state: "waiting" })]));
+    expect(title()).toBe("Lecture 5.pptx");
+    expect(line()).toBe("Waiting for a Connection");
+  });
+
+  it("tells the page each snapshot and never toasts a refusal or a cancel: the page has its own states", async () => {
+    const seen: unknown[] = [];
+    await mount({ kind: "guest", pid: "ref.secret", onChange: (b: unknown) => seen.push(b) });
+    const refused = batch([file({ state: "refused", error: "bad_type" })]);
+    emit(refused);
+    emit(batch([file({ id: 2, state: "canceled" })]));
+    expect(seen).toHaveLength(2);
+    expect(toasts).toEqual([]);
+  });
+});
