@@ -202,6 +202,7 @@ export interface ClaimResponse {
   match: string | null;
   mode: Mode;
   kind: Kind;
+  /** Always false: a signed-out owner is refused before the claim (PAIR-15); kept one deploy for old phones. */
   needsAuth: boolean;
   dropMaxBytes: number;
   choices: string[] | null;
