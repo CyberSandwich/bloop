@@ -4,6 +4,7 @@ order: 0.5
 title: Features
 description: What bloop does: present from your phone, keep your files ready in your Library, and stay in charge of the screen.
 published: 2026-11-25
+datePending: true
 ---
 
 bloop puts your files on a shared screen from your phone. This page lists what it does today and what comes next.

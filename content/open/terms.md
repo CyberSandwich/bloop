@@ -8,6 +8,7 @@ binds: the terms
 summaryNote: This summary helps you read; the full text applies.
 effective: 2026-11-25
 version: 2.0
+datePending: true
 ---
 
 bloop is a new, free side project, not a commercial service, and may change. Accounts are by invite, for adults. Your files stay yours: bloop stores them in the EU, uses them only to show them where you choose, and deletes them when you say. Show only files you have the right to show; bloop may remove a file or suspend an Account that breaks these terms, and you can appeal. The law of England and Wales applies.

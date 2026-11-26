@@ -4,6 +4,7 @@ order: 1
 title: How bloop Works
 description: How a phone pairs with a shared screen, what the screen is given, and how a session ends. Written for IT teams and lecturers.
 published: 2026-11-25
+datePending: true
 ---
 
 bloop lets a presenter put their own files on a shared PC without signing in to anything on it. This article follows one session from the first scan to the last link, and says what the room PC holds at each step.
