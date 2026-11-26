@@ -34,8 +34,6 @@ export const libraryVars = {
     .default(2000)
     .describe("Library rows one user may hold; bounds the in-memory sorts and the count."),
   TRASH_DAYS: int(1, 365).default(30).describe("A trashed library file is purged after this many days."),
-  INACTIVE_DAYS: int(30, 3650).default(365).describe("An account unused this long gets the inactivity warning."),
-  INACTIVE_GRACE_DAYS: int(1, 365).default(30).describe("An inactive account is deleted this long after its warning."),
   LARGE_FILE_CHOICE_BYTES: int(1, Number.MAX_SAFE_INTEGER)
     .default(31_457_280)
     .describe("A presentation over this size gets the choice sheet: PowerPoint, slides here, or download."),

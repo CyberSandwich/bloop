@@ -93,6 +93,12 @@ describe("Lighthouse steps", () => {
   });
 });
 
+describe("deploy.yml", () => {
+  it("does not read R2: the deploy token has no R2 permission (SITE-05)", () => {
+    expect(readFileSync(new URL("deploy.yml", dir), "utf8")).not.toMatch(/wrangler r2/);
+  });
+});
+
 describe("SITE-05 deploy token scope", () => {
   it("SITE-05 token scope: no workflow sets CLOUDFLARE_API_TOKEN at workflow or job level", () => {
     const files = readdirSync(dir).filter((f) => /\.ya?ml$/.test(f));

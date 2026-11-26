@@ -4,6 +4,10 @@ import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 import { emailSet, normalizeEmail } from "../../src/worker/auth/email-norm.ts";
 import { Sessions } from "../../src/worker/auth/sessions.ts";
+import { accountVars } from "../../src/worker/config/account.ts";
+import { coreVars } from "../../src/worker/config/core.ts";
+import { libraryVars } from "../../src/worker/config/library.ts";
+import { spendVars } from "../../src/worker/config/spend.ts";
 import { parseConfig } from "../../src/worker/config.ts";
 import { offOrigin } from "../../src/worker/origin.ts";
 import { runRetention } from "../../src/worker/retention.ts";
@@ -87,6 +91,11 @@ describe("v4 configuration", () => {
     );
     expect(config({ ...local, CONVERT_MODE: "stub" }).library.convertMode).toBe("stub");
     expect(config().library.r2DevEndpoint).toBeNull();
+  });
+
+  it("no variable is declared in two config groups, where the later spread would silently win", () => {
+    const keys = [coreVars, libraryVars, accountVars, spendVars].flatMap((group) => Object.keys(group));
+    expect(keys.filter((key, i) => keys.indexOf(key) !== i)).toEqual([]);
   });
 
   it("wrangler.jsonc never sets a test-only variable", () => {
