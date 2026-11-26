@@ -103,6 +103,11 @@
     "limit": "0.39 kB"
   },
   {
+    "name": "overlay dismiss, lazy",
+    "path": "dist/js/core/dismiss.js",
+    "limit": "0.3 kB"
+  },
+  {
     "name": "room network states, lazy",
     "path": "dist/js/core/net-states.js",
     "limit": "0.21 kB"
