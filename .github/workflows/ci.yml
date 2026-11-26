@@ -28,7 +28,8 @@ jobs:
         with:
           node-version-file: .nvmrc
           cache: npm
-      - run: npm ci
+      # No install scripts, as in deploy.yml's check: deploy may ship this job's dist/ (ADR 0031).
+      - run: npm ci --ignore-scripts
       # A size-limit budget only holds or drops (design.md); a raised one fails here, naming it.
       - run: node tools/size-ratchet.mjs
         env:
@@ -47,6 +48,9 @@ jobs:
       - run: npm run size || { npx size-limit --json | node -e 'let s="";process.stdin.on("data",d=>s+=d).on("end",()=>{let r;try{r=JSON.parse(s)}catch{r=[{name:s.slice(0,500)}]}for(const e of [].concat(r))console.log("::error title=size::"+[e.name,e.size,e.sizeLimit,e.passed].join(" "))})'; exit 1; }
       # The rehearsal job takes this dist/ the way a deploy job does.
       - run: node tools/prebuilt.mjs manifest
+      # deploy.yml's reuse job reads this line from this job's own log, which no other job can write (ADR 0031).
+      - name: Manifest digest for deploy reuse
+        run: node tools/ci-reuse.mjs digest
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: dist

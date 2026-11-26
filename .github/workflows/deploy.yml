@@ -13,10 +13,12 @@ concurrency:
 
 jobs:
   # No secret and no third-party code: ships the dist/ of the ci.yml push run that already passed this exact commit, so
-  # check can skip (ADR 0031). The run match proves where dist/ came from and the manifest assert that it is intact;
-  # anything that fails leaves `reused` unset and check runs in full.
+  # check can skip (ADR 0031). The run match and its check job's logged digest prove where dist/ came from, and the
+  # manifest assert that it is intact. Anything that fails leaves `reused` unset and check runs in full, and a failed
+  # reuse never fails the run.
   reuse:
     runs-on: ubuntu-latest
+    continue-on-error: true
     timeout-minutes: 5
     permissions:
       contents: read
@@ -49,8 +51,14 @@ jobs:
         if: steps.get.outcome == 'success'
         continue-on-error: true
         run: node tools/prebuilt.mjs assert
-      - id: put
+      - id: verify
         if: steps.assert.outcome == 'success'
+        continue-on-error: true
+        run: node tools/ci-reuse.mjs verify
+        env:
+          EXPECT: ${{ steps.find.outputs.manifest_sha256 }}
+      - id: put
+        if: steps.verify.outcome == 'success'
         continue-on-error: true
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
@@ -68,7 +76,9 @@ jobs:
   # Third-party code runs here (install, tests, the build) and the job has no environment, so no token.
   check:
     needs: reuse
-    if: (success() || failure()) && needs.reuse.outputs.reused != 'true'
+    # success() is false once a job in the needs chain is skipped or failed, so the status test is cancelled() alone
+    # (written as a comparison: a bare leading ! is a YAML tag).
+    if: cancelled() == false && needs.reuse.outputs.reused != 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 25
     steps:
@@ -98,7 +108,7 @@ jobs:
     needs:
       - reuse
       - check
-    if: (success() || failure()) && (needs.check.result == 'success' || (needs.check.result == 'skipped' && needs.reuse.outputs.reused == 'true'))
+    if: cancelled() == false && (needs.check.result == 'success' || (needs.check.result == 'skipped' && needs.reuse.outputs.reused == 'true'))
     runs-on: ubuntu-latest
     timeout-minutes: 15
     environment: production

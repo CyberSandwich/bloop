@@ -61,7 +61,7 @@ const PINNED: Record<string, string[]> = {
     "    needs:",
     "      - reuse",
     "      - check",
-    "    if: (success() || failure()) && (needs.check.result == 'success' || (needs.check.result == 'skipped' && needs.reuse.outputs.reused == 'true'))",
+    "    if: cancelled() == false && (needs.check.result == 'success' || (needs.check.result == 'skipped' && needs.reuse.outputs.reused == 'true'))",
     "    runs-on: ubuntu-latest",
     "    timeout-minutes: 15",
     "    environment: production",
