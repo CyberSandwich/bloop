@@ -156,14 +156,19 @@ interface Parsed {
   [key: string]: unknown;
 }
 
-/** Parsed mapping keys with an uppercase letter, other than the names under env, with and outputs, which are variables:
- * every key GitHub reads is lower case, so a `Defaults` or `Uses` is refused rather than reasoned about. */
-function keyCaseProblems(f: string, node: unknown, parent = ""): string[] {
-  if (Array.isArray(node)) return node.flatMap((item) => keyCaseProblems(f, item, parent));
+/** The mapping positions whose keys are variable names, by path: the workflow's env, a job's env and outputs, a step's
+ * env and with (and the action's own steps). A job that is merely named env is not one. */
+const VARIABLE_KEYS = /^(env|jobs\/[^/]+\/(env|outputs)|(jobs\/[^/]+\/|runs\/)steps\/\d+\/(env|with))$/;
+
+/** Parsed mapping keys with an uppercase letter, outside the positions above: every key GitHub reads is lower case, so
+ * a `Defaults` or `Uses` is refused rather than reasoned about. */
+function keyCaseProblems(f: string, node: unknown, path: string[] = []): string[] {
+  if (Array.isArray(node)) return node.flatMap((item, i) => keyCaseProblems(f, item, [...path, String(i)]));
   if (typeof node !== "object" || node === null) return [];
+  const variables = VARIABLE_KEYS.test(path.join("/"));
   return Object.entries(node).flatMap(([key, value]) => [
-    ...(/[A-Z]/.test(key) && !["env", "with", "outputs"].includes(parent) ? [`${f}: parsed key ${key}`] : []),
-    ...keyCaseProblems(f, value, key),
+    ...(/[A-Z]/.test(key) && !variables ? [`${f}: parsed key ${key}`] : []),
+    ...keyCaseProblems(f, value, [...path, key]),
   ]);
 }
 
@@ -483,6 +488,16 @@ describe("SITE-05 third-party code never shares a job with the token", () => {
         "a job Container with a capital",
         addJob("  go:\n    Container: evil:1\n    steps: []\n"),
         "new.yml: parsed key Container",
+      ],
+      [
+        "a job named env does not exempt its own keys",
+        addJob("  env:\n    Container: evil:1\n    steps: []\n"),
+        "new.yml: parsed key Container",
+      ],
+      [
+        "a variable-looking key outside env, with and outputs",
+        addJob("  go:\n    steps:\n      - run: x\n        Shell: y\n"),
+        "new.yml: parsed key Shell",
       ],
       [
         "a job Services with a capital",
