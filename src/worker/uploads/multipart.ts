@@ -28,10 +28,23 @@ export interface UploadBucket {
 // Declared here because the Node tsconfig (tests) has no Workers types; undefined outside the Workers runtime.
 declare const FixedLengthStream: (new (length: number) => TransformStream<Uint8Array, Uint8Array>) | undefined;
 
+/**
+ * Why a part was not stored: `body`, the client's body was not the declared length; `gone`, R2 no longer has the
+ * multipart; `fault`, anything else, worth a retry.
+ */
+export class PartFailed extends Error {
+  constructor(readonly why: "body" | "gone" | "fault") {
+    super(`part not stored: ${why}`);
+  }
+}
+
+/** R2's NoSuchUpload (code 10024, unverified against the live binding's message). */
+const isGone = (error: unknown): boolean => /NoSuchUpload|\b10024\b/i.test(String(error));
+
 export interface Multipart {
   /** Opens a multipart upload and returns R2's upload id. */
   create(key: string): Promise<string>;
-  /** Stores one part from a body of exactly `length` bytes (a longer or shorter body errors) and returns R2's ETag. */
+  /** Stores one part from a body of exactly `length` bytes and returns R2's ETag; any failure is a `PartFailed`. */
   part(key: string, uploadId: string, n: number, body: ReadableStream<Uint8Array>, length: number): Promise<string>;
   /** Joins the parts; every part but the last must be the same size, or R2 refuses. */
   complete(key: string, uploadId: string, parts: readonly PartRef[]): Promise<void>;
@@ -51,12 +64,25 @@ export function multipartOver(bucket: UploadBucket): Multipart {
     async part(key, uploadId, n, body, length) {
       if (typeof FixedLengthStream === "undefined") throw new Error("needs the Workers runtime");
       const fixed = new FixedLengthStream(length);
-      const piped = body.pipeTo(fixed.writable);
+      // Counted before the fixed-length stream, so a body of the wrong length tells itself apart from an R2 fault
+      // (either one errors both sides of the pipe).
+      let seen = 0;
+      let ended = false;
+      const counter = new TransformStream<Uint8Array, Uint8Array>({
+        transform(chunk, out) {
+          seen += chunk.byteLength;
+          out.enqueue(chunk);
+        },
+        flush() {
+          ended = true;
+        },
+      });
+      const piped = body.pipeThrough(counter).pipeTo(fixed.writable);
       const stored = bucket.resumeMultipartUpload(key, uploadId).uploadPart(n, fixed.readable);
       const [pipe, put] = await Promise.allSettled([piped, stored]);
-      if (pipe.status === "rejected") throw pipe.reason;
-      if (put.status === "rejected") throw put.reason;
-      return put.value.etag;
+      if (pipe.status === "fulfilled" && put.status === "fulfilled") return put.value.etag;
+      if (seen > length || (ended && seen !== length)) throw new PartFailed("body");
+      throw new PartFailed(put.status === "rejected" && isGone(put.reason) ? "gone" : "fault");
     },
     async complete(key, uploadId, parts) {
       await bucket.resumeMultipartUpload(key, uploadId).complete(parts.map((p) => ({ partNumber: p.n, etag: p.etag })));
