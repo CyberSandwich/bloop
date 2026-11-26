@@ -65,7 +65,8 @@
         <div class="stage">
           <picture>
             <!-- Under 640 the stage is hidden; this source is the logo's own cached file, so a phone fetches no hero bytes. -->
-            <source media="(max-width: 639.98px)" srcset="/favicon.svg">
+            <source media="(max-width: 639.98px)" type="image/avif" srcset="/img/hero-phone-600.4371c003.avif 600w, /img/hero-phone-900.efa9369b.avif 900w" sizes="calc(100vw - 48px)">
+            <source media="(max-width: 639.98px)" type="image/webp" srcset="/img/hero-phone-600.84bd859a.webp 600w, /img/hero-phone-900.38eb9c82.webp 900w" sizes="calc(100vw - 48px)">
             <source type="image/avif" srcset="/img/hero-viewer-750.35661956.avif 750w, /img/hero-viewer-1100.9d63310d.avif 1100w, /img/hero-viewer-1600.83e7b7a1.avif 1600w, /img/hero-viewer-2000.904e998e.avif 2000w" sizes="(min-width: 1216px) 1136px, calc(100vw - 80px)">
             <source type="image/webp" srcset="/img/hero-viewer-750.53ef22b7.webp 750w, /img/hero-viewer-1100.cb5c69b7.webp 1100w, /img/hero-viewer-1600.8b68ecef.webp 1600w" sizes="(min-width: 1216px) 1136px, calc(100vw - 80px)">
             <img src="/img/hero-viewer-1100.cb5c69b7.webp" width="1440" height="904" fetchpriority="high" decoding="async" alt="The bloop room screen: a list of files, a dog selected, and Present and Download buttons">
