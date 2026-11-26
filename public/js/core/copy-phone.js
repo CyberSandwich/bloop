@@ -41,7 +41,7 @@ export function refusalToast(problem, f) {
   /** @type {Record<typeof problem, [string, string]>} */
   const all = {
     heic: ["This HEIC Photo Can't Be Converted", "This browser can't read it. Export it as JPEG and try again."],
-    type: ["This File Type Isn't Supported", `Choose a ${FILE_TYPES} file.`],
+    type: ["File Type Not Supported", `Choose a ${FILE_TYPES} file.`],
     empty: ["This File Is Empty", "Choose another file."],
     large: f.video
       ? ["Video Too Long", `${takes} videos up to about ${videoTime(f.maxMB)} (${f.maxMB} MB). Trim it and try again.`]

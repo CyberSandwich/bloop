@@ -288,7 +288,7 @@ describe("several files", () => {
     await settle();
     expect(toasts).toEqual([
       {
-        title: "This File Type Isn't Supported",
+        title: "File Type Not Supported",
         say: "bloop takes decks, documents, PDFs, spreadsheets, text, photos and videos.",
         error: true,
       },
@@ -484,6 +484,8 @@ describe("the refusal strings", () => {
       expect(seen.has(JSON.stringify(t)), `${code} repeats another code's string`).toBe(false);
       seen.add(JSON.stringify(t));
       expect(`${t.title} ${t.status ?? ""} ${t.say}`, code).not.toMatch(/\bchecked\b|[\u2013\u2014]/i);
+      // A toast with no name is its title alone on one line: 28 characters of semibold 15 px fit 232 px, the card at 320.
+      if (t.status === undefined) expect(t.title.length, `${code} title fits one line at 320`).toBeLessThanOrEqual(28);
     }
   });
 
@@ -564,7 +566,7 @@ describe("a batch's refusals", () => {
       ]),
     );
     await settle();
-    expect(toasts.map((t) => t.title)).toEqual(["This File Type Isn't Supported"]);
+    expect(toasts.map((t) => t.title)).toEqual(["File Type Not Supported"]);
     expect(toasts[0]?.action).toBeUndefined();
   });
 
@@ -582,7 +584,7 @@ describe("a batch's refusals", () => {
     emit(batch([file({ id: 2, name: "x.exe", state: "refused", error: "bad_type" })]));
     await settle();
     expect(loaded).toBe(1);
-    expect(toasts.map((t) => t.title)).toEqual(["This File Type Isn't Supported"]);
+    expect(toasts.map((t) => t.title)).toEqual(["File Type Not Supported"]);
   });
 
   it("still says a refusal when the words cannot be loaded: a plain line, with the file's name", async () => {

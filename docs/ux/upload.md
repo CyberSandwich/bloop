@@ -56,7 +56,7 @@ The phone refuses what it can before a byte is sent, as a toast, and the page st
 
 | When | Toast line | Said (hidden) |
 |---|---|---|
-| type not supported | This File Type Isn't Supported | bloop takes decks, documents, PDFs, spreadsheets, text, photos and videos. |
+| type not supported | File Type Not Supported | bloop takes decks, documents, PDFs, spreadsheets, text, photos and videos. |
 | empty | This File Is Empty | (none) |
 | over the file cap | File Too Large | bloop takes files up to 500 MB. (from the API, never restated; without the number: This file is over bloop's size limit.) |
 | over the quota | Not Enough Space | Delete files or empty the trash to add this one. |

@@ -140,7 +140,7 @@ describe("the refusal toasts", () => {
   it("say the spec's strings for each code, naming the file where the spec does", () => {
     const t = bindingModule.refusalToast;
     expect(t("a.exe", "bad_type", undefined)).toEqual({
-      title: "This File Type Isn't Supported",
+      title: "File Type Not Supported",
       say: "bloop takes decks, documents, PDFs, spreadsheets, text, photos and videos.",
     });
     expect(t("a.pptx", "empty", undefined).title).toBe("This File Is Empty");

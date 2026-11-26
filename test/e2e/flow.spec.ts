@@ -1099,7 +1099,7 @@ test.describe("guest drop", () => {
     // A drop runs the picker's check: a wrong type is a toast over the same page, and the hint goes.
     await page.dispatchEvent("body", "dragenter", { dataTransfer: files });
     await page.dispatchEvent("body", "drop", { dataTransfer: files });
-    await expect(page.getByRole("alert")).toContainText("This File Type Isn't Supported");
+    await expect(page.getByRole("alert")).toContainText("File Type Not Supported");
     await expect(page.locator("#drop-hint")).toBeHidden();
     await expect(heading(page)).toHaveText("Demo Room");
     expect(loads).toHaveLength(1);
@@ -1122,7 +1122,7 @@ test.describe("guest drop", () => {
     });
     await page.dispatchEvent("body", "dragenter", { dataTransfer: files });
     await page.dispatchEvent("body", "drop", { dataTransfer: files });
-    await expect(page.getByRole("alert")).toContainText("This File Type Isn't Supported");
+    await expect(page.getByRole("alert")).toContainText("File Type Not Supported");
     await expect(heading(page)).toHaveText("Demo Room");
     await screen.context.close();
     await phone.context.close();
@@ -1137,7 +1137,7 @@ test.describe("guest drop", () => {
 
     // a wrong type is refused on the phone before a byte leaves it, as a toast over the same page
     await addFile(phone.page, EXE);
-    await expect(phone.page.getByRole("alert")).toContainText("This File Type Isn't Supported");
+    await expect(phone.page.getByRole("alert")).toContainText("File Type Not Supported");
     await expect(heading(phone.page)).toHaveText("Demo Room");
     await expectNoAxeViolations(phone.page);
     // over this server's demo cap (wrangler.jsonc, 25 MB), which the toast reads from the claim
@@ -1256,7 +1256,7 @@ test.describe("guest drop", () => {
     await expect(heading(page)).toHaveText("Demo Room");
     // A file refused on the phone is a toast; the list stays.
     await addFile(page, EXE);
-    await expect(page.getByRole("alert")).toContainText("This File Type Isn't Supported");
+    await expect(page.getByRole("alert")).toContainText("File Type Not Supported");
     await expect(heading(page)).toHaveText("Demo Room");
     await expect(screen.page.locator("#line")).toHaveText(/^Waiting for Approval\. Your phone shows \d{2}\.$/);
     await context.close();
