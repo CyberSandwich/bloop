@@ -134,13 +134,13 @@ function checkJob(text: string): string {
 }
 
 describe("check job time", () => {
-  it("every check job has the same 25-minute timeout, and ci.yml warns at 70% of it", () => {
+  it("every check job has the same 25-minute timeout, and ci.yml's last check step warns at 70% of it, pass or fail", () => {
     for (const f of ["ci.yml", "deploy.yml", "staging.yml"]) {
       expect(checkJob(readFileSync(new URL(f, dir), "utf8")), f).toMatch(/^ {4}timeout-minutes: 25$/m);
     }
     const ci = checkJob(readFileSync(new URL("ci.yml", dir), "utf8"));
     expect(ci).toMatch(/^ {6}- run: echo "CHECK_START=\$\(date \+%s\)" >> "\$GITHUB_ENV"$/m);
-    expect(ci).toContain("$(( 25 * 60 * 7 / 10 ))");
+    expect(ci).toMatch(/ {6}- if: always\(\)\n {8}run: \|\n {10}used=.*\n.*\$\(\( 25 \* 60 \* 7 \/ 10 \)\).*\n\s*$/);
   });
 
   it("the check job reader stops at the next job", () => {
