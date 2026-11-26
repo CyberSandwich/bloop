@@ -268,5 +268,19 @@
     "gzip": false,
     "brotli": false,
     "limit": "244 kB"
+  },
+  {
+    "name": "phone hero image 900",
+    "path": "public/img/hero-phone-900.0d43ffa3.avif",
+    "gzip": false,
+    "brotli": false,
+    "limit": "63.2 kB"
+  },
+  {
+    "name": "phone hero image fallback 900",
+    "path": "public/img/hero-phone-900.6956db9f.webp",
+    "gzip": false,
+    "brotli": false,
+    "limit": "80.5 kB"
   }
 ]
