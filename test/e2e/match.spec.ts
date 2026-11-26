@@ -187,8 +187,12 @@ test.describe("PAIR-14 the match pick", () => {
     // The fallback: Enter the Code, then the screen's new code, back to a fresh pick.
     await phone.page.getByRole("link", { name: "Enter the Code" }).click();
     await expect(phone.page).toHaveURL(/\/code$/);
-    await phone.page.getByRole("textbox").fill(next);
-    await phone.page.keyboard.press("Enter");
+    // Continue is enabled once code.js has read the field: a key pressed before then submits nothing.
+    await phone.page.getByLabel("Code").fill(next);
+    const go = phone.page.getByRole("button", { name: "Continue" });
+    await expect(go).toBeEnabled();
+    await go.click();
+    await expect(phone.page).toHaveURL(/\/a$/);
     await expect(group(phone.page).getByRole("button")).toHaveCount(3);
     await closeAll(screen, phone);
   });
