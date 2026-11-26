@@ -1,12 +1,12 @@
 // Which static page answers a path, by launch mode (ADR 0026). Every non-dynamic request outside the static trees
 // (wrangler.jsonc `run_worker_first`) passes through `servePage`, so the rules below hold whatever the asset layer
 // would do with the raw path.
-import { readCookie, SESSION_COOKIE } from "./auth/cookies.ts";
-import { servicesFor } from "./auth/services.ts";
+import { readCookie, VIEW_COOKIE } from "./auth/cookies.ts";
+import { resolveMember } from "./auth/member.ts";
 import { type Config, configFor } from "./config.ts";
 import { DYNAMIC_PAGES, pageCsp, withHeaders } from "./headers.ts";
 import { fail } from "./http.ts";
-import { admitted, type LaunchState, launchState } from "./mode.ts";
+import { launchState } from "./mode.ts";
 import { pillRequest, withAccountPill } from "./nav-pill.ts";
 import { AUTH_SHELLS, MEMBER_PAGES, VARIANTS, type Variant } from "./page-registry.ts";
 
@@ -21,8 +21,6 @@ export interface PageEnv {
 
 /** A path no file has, so the asset layer answers its own 404 page: a hidden page looks exactly like a missing one. */
 const MISSING = "/.missing";
-/** An admin who holds this cookie with a live admin session sees the open pages while the site is in preview. */
-const VIEW_COOKIE = "__Host-bloop_view";
 
 /**
  * The path the rules look at: percent-decoded once, repeated slashes collapsed, dot segments resolved. Null (answer
@@ -108,21 +106,14 @@ const privateCopy = (response: Response): Response => {
   return out;
 };
 
-/** The active member email of the request's session, or null. */
-async function memberEmail(request: Request, env: PageEnv, config: Config): Promise<string | null> {
-  const cookie = readCookie(request, SESSION_COOKIE);
-  const userId = cookie ? await servicesFor(env, config).sessions.resolve(cookie) : null;
-  return userId ? servicesFor(env, config).sessions.activeMemberEmail(userId) : null;
-}
-
 /** An admin's own preview of the open site: the view cookie plus a session that is an ADMIN_EMAILS member right now. */
 async function adminViewing(request: Request, env: PageEnv): Promise<boolean> {
   if (readCookie(request, VIEW_COOKIE) !== "open") return false;
   const config = configFor(env);
   if (!config.ok) return false;
   try {
-    const email = await memberEmail(request, env, config.config);
-    return email !== null && config.config.account.adminEmails.has(email);
+    const who = await resolveMember(request, env, config.config);
+    return who.ok && who.member.admin;
   } catch {
     console.error("admin_view_check_failed");
     return false;
@@ -130,20 +121,14 @@ async function adminViewing(request: Request, env: PageEnv): Promise<boolean> {
 }
 
 /**
- * Whether the page shows in preview: a session of an email member the lockout admits, and for /admin an address in
- * ADMIN_EMAILS. An Entra user is not a member of the invite-only product, so they see what a signed-out visitor sees.
+ * Whether the page shows in preview: a session of an active email member the lockout admits (the C gate every member
+ * route uses), and for /admin an address in ADMIN_EMAILS. An Entra user is not a member of the invite-only product,
+ * so they see what a signed-out visitor sees.
  */
-async function memberVisible(
-  request: Request,
-  env: PageEnv,
-  config: Config,
-  state: LaunchState,
-  path: string,
-): Promise<boolean> {
+async function memberVisible(request: Request, env: PageEnv, config: Config, path: string): Promise<boolean> {
   try {
-    const email = await memberEmail(request, env, config);
-    if (email === null || !admitted(state, config.account, email)) return false;
-    return path !== "/admin" || config.account.adminEmails.has(email);
+    const who = await resolveMember(request, env, config, { fresh: path === "/admin" });
+    return who.ok && (path !== "/admin" || who.member.admin);
   } catch {
     // A database error hides the page like any other doubt; it never shows it and never answers 500.
     console.error("member_page_check_failed");
@@ -190,7 +175,7 @@ export async function servePage(
     if (state.mode === "open") return asset(env, request, path);
     if (shell) return noindex(await asset(env, request, path));
     const config = configFor(env);
-    return config.ok && (await memberVisible(request, env, config.config, state, key))
+    return config.ok && (await memberVisible(request, env, config.config, key))
       ? privateCopy(await asset(env, request, path))
       : notFound(env, request);
   }
