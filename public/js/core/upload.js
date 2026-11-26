@@ -15,21 +15,24 @@ const MAX_CONCURRENT = 4;
 const FAST_MS = 10_000;
 const STALL_MS = 30_000;
 const PROBE_MS = 15_000;
+// A direct URL is minted again this long before it ends, but never sooner than half its life.
 const REMINT_MS = 60_000;
+// Direct URLs are the R2 EU endpoint's, nobody else's.
+const DIRECT_HOST = /\.eu\.r2\.cloudflarestorage\.com$/;
 const DEFAULT_TTL_MS = 300_000;
 const RETRY_MS = [1000, 3000, 9000];
 // A Retry-After beyond this is a limit to report, not to wait out; no long timers (a hidden tab throttles them).
 const MAX_WAIT_S = 120;
 const MAX_429 = 5;
-const MAX_BUSY = 5;
 const MAX_ROUNDS = 5;
 const MAX_REJECTED = 3;
 // A request with no answer by then is the network; a complete may wait on the server's check.
 const CALL_MS = 30_000;
 const COMPLETE_MS = 120_000;
-// The server's validation after complete: asked every 2 s, for 5 minutes.
-const POLL_MS = 2000;
-const MAX_POLLS = 150;
+// The server's check ends within 90 s of complete's 120 s claim: complete is repeated, by the clock, a little past it.
+const CHECK_MS = 150_000;
+const CHECK_WAIT_MS = 2000;
+const CHECK_WAIT_MAX_MS = 10_000;
 const ETA_AFTER_S = 5;
 const ETA_MOVE = 0.2;
 const ETA_WEIGHT = 0.2;
@@ -89,14 +92,14 @@ function browserDeps() {
 /**
  * SHA-256 over the name, the size and 16 evenly spaced 64 KiB samples, the first and last included. No
  * `lastModified`: an iOS picker stamps each copy with the current time, which would break resuming.
- * @param {{name: string, size: number, slice: (start: number, end: number) => Blob}} file
+ * @param {{name: string, size: number, lastModified: number, slice: (start: number, end: number) => Blob}} file
  * @param {Deps["subtle"]} [subtle]
  * @returns {Promise<string>} 64 lowercase hex characters
  */
 export async function fingerprint(file, subtle = globalThis.crypto.subtle) {
   const len = Math.min(SAMPLE_BYTES, file.size);
   /** @type {(string | Blob)[]} */
-  const parts = [JSON.stringify([file.name, file.size])];
+  const parts = [JSON.stringify([file.name, file.size, file.lastModified])];
   for (let i = 0; i < SAMPLES; i++) {
     const at = Math.floor((i * (file.size - len)) / (SAMPLES - 1));
     parts.push(file.slice(at, at + len));
@@ -166,6 +169,10 @@ export function etaOf(s, loaded, total, now) {
 /** @param {number} ms @returns {string} whole minutes rounded up, so it never counts by seconds */
 export const etaLabel = (ms) => (ms < 60_000 ? "Under a minute left" : `${Math.ceil(ms / 60_000)} min left`);
 
+/** @param {number} loaded @param {number} total @param {number | null} left the time left, when known @returns {string} "34 of 88 MB · 2 min left" */
+export const progressLine = (loaded, total, left) =>
+  `${formatBytes(loaded, total)}${left === null ? "" : ` · ${etaLabel(left)}`}`;
+
 /**
  * "34 of 88 MB": both numbers in the total's unit, one decimal under 10, whole above (UX: units). The sent share
  * rounds down, so it never reads ahead of the bytes.
@@ -211,8 +218,6 @@ const seconds = (header) => {
  * @property {Set<number>} sending the parts a task has taken
  * @property {Set<Xhr>} xhrs
  * @property {Pace} pace
- * @property {boolean} directOk a direct part has succeeded
- * @property {number} netErrs network errors on direct PUTs before that
  * @property {number} shown bytes shown: never goes back
  * @property {boolean} stopped ended: canceled, refused or disposed
  * @property {boolean} halted the parts loop stops starting parts and drains
@@ -239,6 +244,7 @@ export function createUploader({ kind, pid, onChange, deps }) {
   let records = [];
   let nextId = 1;
   let eta = etaStart();
+  let shown = 0;
   let moving = false;
   let disposed = false;
   let draining = false;
@@ -307,12 +313,15 @@ export function createUploader({ kind, pid, onChange, deps }) {
       moving = nowMoving;
       effects();
     }
+    // A file leaving the batch shrinks its total; the fill still never goes back (UP-11).
+    shown = active ? Math.max(shown, total ? Math.min(0.99, loaded / total) : 0) : 0;
+    const fraction = active ? shown : total ? 1 : 0;
     onChange({
       files: records.map(snap),
       active,
       total,
       loaded,
-      fraction: total && active ? Math.min(0.99, loaded / total) : total ? 1 : 0,
+      fraction,
       etaMs: moving ? etaLeft(eta, d.now()) : null,
     });
   }
@@ -425,7 +434,7 @@ export function createUploader({ kind, pid, onChange, deps }) {
     if (r.stopped) throw END;
   }
 
-  /** Retry after 1, 3 and 9 s on the network or a 5xx; wait out a 429. Null: gave up. @param {Rec} r @param {() => Promise<Answer>} send @param {boolean} [keep] hand back the answer of a file that ended meanwhile */
+  /** Retry after 1, 3 and 9 s on the network or a 5xx; wait out a 429. Null: the network is out; a 5xx that stays is service_busy. @param {Rec} r @param {() => Promise<Answer>} send @param {boolean} [keep] hand back the answer of a file that ended meanwhile */
   async function tryRequest(r, send, keep = false) {
     let tries = 0;
     let limited = 0;
@@ -440,7 +449,7 @@ export function createUploader({ kind, pid, onChange, deps }) {
         continue;
       }
       if (res.status !== 0 && res.status < 500) return res;
-      if (tries >= RETRY_MS.length) return null;
+      if (tries >= RETRY_MS.length) return res.status ? refuse(r, "service_busy") : null;
       await pause(r, RETRY_MS[tries++] ?? 0);
       if (r.stopped) throw END;
     }
@@ -511,10 +520,10 @@ export function createUploader({ kind, pid, onChange, deps }) {
         continue;
       }
       try {
-        // Another host than bloop's: this page's cookies must not ride on a part.
-        const { protocol, origin } = new URL(item.url);
-        if (protocol === "https:" && origin !== d.win.location?.origin)
-          r.urls.set(n, { url: item.url, direct: true, expires: at + life });
+        // The storage host's, never bloop's or another's: this page's cookies must not ride on a part.
+        const { protocol, hostname, username, password } = new URL(item.url);
+        if (protocol === "https:" && DIRECT_HOST.test(hostname) && !username && !password)
+          r.urls.set(n, { url: item.url, direct: true, expires: at + Math.max(life - REMINT_MS, life / 2) });
       } catch {
         // not a URL: never used
       }
@@ -524,20 +533,15 @@ export function createUploader({ kind, pid, onChange, deps }) {
   /** @param {Rec} r @param {number} n @returns {boolean} */
   const fresh = (r, n) => {
     const u = r.urls.get(n);
-    return !!u && d.now() < u.expires - REMINT_MS;
+    return !!u && d.now() < u.expires;
   };
 
   /** Mints the next batch of up to 8 pending parts, the wanted one first. @param {Rec} r @param {number} n */
   async function mint(r, n) {
     const want = [n];
     for (const m of gaps(r)) if (want.length < MAX_URLS && m !== n && !fresh(r, m) && !r.sending.has(m)) want.push(m);
-    const mode = r.mode;
-    const res = await ask(r, () =>
-      call("POST", `${base(r)}/urls`, mode === "proxy" ? { parts: want, mode } : { parts: want }),
-    );
+    const res = await ask(r, () => call("POST", `${base(r)}/urls`, { parts: want }));
     if (res.status !== 200) return failed(r, res);
-    // The upload went to proxy while this was on the wire: its direct URLs are no use, and the part mints again.
-    if (r.mode !== mode) return;
     keepUrls(r, res.body?.urls, res.body?.ttlMs);
     if (!r.urls.has(n)) refuse(r, "service_down");
   }
@@ -612,12 +616,6 @@ export function createUploader({ kind, pid, onChange, deps }) {
     });
   }
 
-  /** @param {Rec} r a direct upload whose storage host cannot be reached goes through bloop for the rest */
-  function toProxy(r) {
-    r.mode = "proxy";
-    r.urls.clear();
-  }
-
   /** One part to its end: sent, confirmed, or the loop halted. @param {Rec} r @param {number} n */
   async function sendPart(r, n) {
     const [start, end] = /** @type {[number, number]} */ (r.plan[n - 1]);
@@ -643,12 +641,10 @@ export function createUploader({ kind, pid, onChange, deps }) {
       const status = ok && !(u.direct ? etag : res.ours) ? 0 : res.status;
       if (ok && status !== 0) {
         if (!u.direct) r.done.add(n);
-        else if (r.done.size + 1 === r.plan.length) r.rider = { n, etag, bytes: end - start };
+        // The last part, once every other is done, is confirmed by complete itself.
+        else if (n === r.plan.length && r.done.size === n - 1) r.rider = { n, etag, bytes: end - start };
         else await confirm(r, n, etag, end - start);
-        if (u.direct) {
-          r.directOk = true;
-          r.rejected = 0;
-        }
+        if (u.direct) r.rejected = 0;
         r.pace = nextConcurrency(r.pace, { ok: true, ms: d.now() - began });
         bump(r);
         return;
@@ -668,12 +664,9 @@ export function createUploader({ kind, pid, onChange, deps }) {
       // bloop's own answer to a part is final; a storage host's 4xx is retried a few times, then it is refused.
       if (status >= 400 && status < 500 && (!u.direct || ++r.rejected > MAX_REJECTED)) return refuse(r, codeOf(res));
       r.pace = nextConcurrency(r.pace, { ok: false, ms: 0 });
-      // A host that does not answer, or answers 403 to a fresh URL, is a proxy refusing it: go through bloop.
-      if (u.direct && (status === 0 || status === 403) && !r.directOk && ++r.netErrs >= 2) {
-        toProxy(r);
-        continue;
-      }
       if (tries >= RETRY_MS.length) {
+        // The network is out (wait for it), or the service keeps failing (a refusal).
+        if (status >= 500) refuse(r, "service_busy");
         r.halted = true;
         return;
       }
@@ -741,7 +734,8 @@ export function createUploader({ kind, pid, onChange, deps }) {
   /** @param {Rec} r @returns {Promise<boolean>} true: complete answered; false: parts are missing, send the gaps */
   async function complete(r) {
     set(r, "checking");
-    for (let busy = 0; ; busy++) {
+    const until = d.now() + CHECK_MS;
+    for (let again = 0; ; again++) {
       const body = r.rider ? { n: r.rider.n, etag: r.rider.etag, bytes: r.rider.bytes } : {};
       const res = await ask(r, () => call("POST", `${base(r)}/complete`, body, {}, COMPLETE_MS));
       if (res.status === 400) {
@@ -750,23 +744,16 @@ export function createUploader({ kind, pid, onChange, deps }) {
         if (!(await sync(r))) await outage(r);
         return false;
       }
-      if (res.status === 409 && busy < MAX_BUSY) {
-        await pause(r, RETRY_MS[1] ?? 0);
+      // Still checking, or another request holds the claim: the same complete again settles it (the check reruns
+      // there; a read of the upload would not). Only the server's own refusal refuses the file.
+      const b = res.body;
+      if (res.status === 200 ? b?.state === "checking" : res.status === 409 && codeOf(res) === "upload_busy") {
+        if (d.now() >= until) return refuse(r, "service_busy");
+        await pause(r, Math.min(CHECK_WAIT_MAX_MS, CHECK_WAIT_MS * 2 ** again));
         if (r.stopped) throw END;
         continue;
       }
       if (res.status !== 200) return failed(r, res);
-      let b = res.body;
-      // The server is still validating: ask until it says ready or refused.
-      for (let polls = 0; b?.state === "checking"; polls++) {
-        if (polls >= MAX_POLLS) return refuse(r, "service_down");
-        await pause(r, POLL_MS);
-        if (r.stopped) throw END;
-        const again = await ask(r, () => call("GET", base(r)));
-        if (again.status !== 200) return failed(r, again);
-        if (again.body?.state === "aborted") return gone(r);
-        b = again.body;
-      }
       if (guest) {
         if (!b || typeof b !== "object") return refuse(r, "service_down");
         finishRec(r, "sent", { view: b });
@@ -871,8 +858,6 @@ export function createUploader({ kind, pid, onChange, deps }) {
       sending: new Set(),
       xhrs: new Set(),
       pace: PACE,
-      directOk: false,
-      netErrs: 0,
       shown: 0,
       stopped: false,
       halted: false,
@@ -933,6 +918,7 @@ export function createUploader({ kind, pid, onChange, deps }) {
       if (records.every(ended)) {
         records = records.filter((r) => r.state === "paused");
         eta = etaStart();
+        shown = 0;
       }
       const made = files.map((file) => record({ file, name: file.name, size: file.size, state: "queued" }));
       records.push(...made);
