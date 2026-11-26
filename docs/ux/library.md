@@ -56,7 +56,7 @@ The signed-in user's files: add, see what is ready, pack Up Next, rename, trash,
   - A disabled file (admin): rose chip "Unavailable" and "This file was disabled after a report." No tick, no preview; More holds Delete only.
 - **Sort** (lazy): a menu sheet (the Session Expiry sheet's bubble) with three radio rows: Newest First (default), Name, Size. Remembered per device (`localStorage`).
 - **Order:** Up Next in Up Next order; All Files by the sort. All Files lists every file, Up Next ones too (ticked), so ticking several never moves a row from under the thumb; Up Next repeats them at the top. The phone mockup above leaves the repeats out to save lines. On a desktop Up Next is its own card, so the same rule holds.
-- **Long names:** the middle ellipsis; `minmax(0, 1fr)` columns (lessons: a grid list grows to a long name otherwise). A stored name is at most 200 code points (`NAME_MAX`, `shared/names.js`); the shots walk a 200 code point name.
+- **Long names:** the middle ellipsis; `minmax(0, 1fr)` columns (lessons: a grid list grows to a long name otherwise). A stored name is at most 200 code points (`NAME_MAX`, `src/worker/uploads/file-name.ts`); the shots walk a 200 code point name.
 
 ### 2.1 Phone on its side (844x390)
 
