@@ -26,4 +26,15 @@ describe("e2e specs", () => {
       expect(bad, f).toEqual([]);
     }
   });
+
+  it("never read the viewer pill's box straight off a locator: settledPill reads it in one frame, glides done", () => {
+    // The pill moves when the stage lays out a new item and glides on a change of place; two boundingBox calls can
+    // straddle that move, and one taken mid-glide is scaled.
+    // A locator held in a variable or passed to a wrapper slips past this; review keeps those to settledPill.
+    const direct = /locator\((["'`])#(controls|dots)\1\)\.boundingBox\(/;
+    for (const { f, text } of specs) {
+      const bad = text.split("\n").filter((line) => direct.test(line) && !line.trim().startsWith("/"));
+      expect(bad, f).toEqual([]);
+    }
+  });
 });

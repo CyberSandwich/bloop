@@ -159,28 +159,52 @@ async function revoke(page: Page) {
 const insetOf = async (page: Page) =>
   (await page.evaluate("parseFloat(getComputedStyle(document.documentElement).getPropertyValue('--inset'))")) as number;
 
+type Box = { x: number; y: number; width: number; height: number };
+
+/**
+ * The pill and its count, read in one frame once nothing finite animates in the pill. A change of place glides it
+ * (viewer.js fit: translate plus scale, 300 ms) and the count grows in, so a box read mid-flight is scaled or
+ * moving; two separate boundingBox calls can also straddle a frame. Every pill box read goes through here
+ * (e2e-rules.test.ts).
+ */
+async function settledPill(page: Page): Promise<{ pill: Box; dots: Box }> {
+  const read = `(() => {
+    const pill = document.getElementById("controls");
+    const dots = document.getElementById("dots");
+    if (!pill || !dots) return null;
+    const moving = pill.getAnimations({ subtree: true }).some((a) => a.effect?.getComputedTiming().endTime !== Infinity);
+    if (moving) return null;
+    const box = (e) => { const r = e.getBoundingClientRect(); return { x: r.x, y: r.y, width: r.width, height: r.height }; };
+    return { pill: box(pill), dots: box(dots) };
+  })()`;
+  const held: { boxes: { pill: Box; dots: Box } | null } = { boxes: null };
+  await expect(async () => {
+    held.boxes = (await page.evaluate(read)) as { pill: Box; dots: Box } | null;
+    expect(held.boxes, "the pill is still gliding").not.toBeNull();
+  }).toPass();
+  if (!held.boxes) throw new Error("the pill never settled");
+  return held.boxes;
+}
+
 /** The viewer's pill rides one inset under the item on the stage. */
 async function expectPillUnder(page: Page, item: Locator) {
   await expect(item).toBeVisible();
   const inset = await insetOf(page);
   await expect(async () => {
     const box = await item.boundingBox();
-    const pill = await page.locator("#controls").boundingBox();
-    expect(Math.abs((pill?.y ?? 0) - ((box?.y ?? 0) + (box?.height ?? 0)) - inset)).toBeLessThanOrEqual(1);
+    const { pill } = await settledPill(page);
+    expect(Math.abs(pill.y - ((box?.y ?? 0) + (box?.height ?? 0)) - inset)).toBeLessThanOrEqual(1);
   }).toPass();
 }
 
 /** The pill is as wide as its contents: "1 / 2" stays one line and the pill keeps its 60. */
 async function expectOneLinePill(page: Page) {
   await expect(page.locator("#dots")).toHaveText("1 / 2");
-  const dots = await page.locator("#dots").boundingBox();
-  const pill = await page.locator("#controls").boundingBox();
-  expect(dots?.height ?? 99).toBeLessThanOrEqual(24);
+  const { dots, pill } = await settledPill(page);
+  expect(dots.height).toBeLessThanOrEqual(24);
   // Boxes are sub-pixel (59.99997 on CI runners): compare to the nearest pixel, never exactly.
-  expect(Math.round(pill?.height ?? 0)).toBe(60);
-  expect(
-    (dots?.y ?? 0) >= (pill?.y ?? 0) - 0.5 && (dots?.y ?? 0) + (dots?.height ?? 0) <= (pill?.y ?? 0) + 60 + 0.5,
-  ).toBe(true);
+  expect(Math.round(pill.height)).toBe(60);
+  expect(dots.y >= pill.y - 0.5 && dots.y + dots.height <= pill.y + 60 + 0.5).toBe(true);
 }
 
 /** Records every window.open and every navigation away, so a test can assert the demo launches nothing. */
@@ -2367,7 +2391,7 @@ test.describe("screen and phone layout", () => {
     await expect(present).toBeDisabled();
     // Download joins the pill once the session leaves `approved` (no mint before the first fetch); measure after it.
     await expect(page.getByRole("button", { name: "Download", exact: true })).toBeVisible();
-    const pill = await page.locator("#controls").boundingBox();
+    const { pill } = await settledPill(page);
     const values: number[] = [];
     await expect
       .poll(async () => {
@@ -2379,7 +2403,7 @@ test.describe("screen and phone layout", () => {
     await expect(page.locator(STAGED)).toBeVisible({ timeout: 15_000 });
     await expect(page.getByRole("img", { name: "Dog.jpg" })).toBeVisible();
     await expect(present).toBeEnabled();
-    expect(Math.round((await page.locator("#controls").boundingBox())?.width ?? 0)).toBe(Math.round(pill?.width ?? -1));
+    expect(Math.round((await settledPill(page)).pill.width)).toBe(Math.round(pill.width));
     // It rose, never fell, and the loader left once the photo had faded in.
     expect(values.some((v) => v > 0 && v < 100)).toBe(true);
     expect(values).toEqual([...values].sort((a, b) => a - b));
