@@ -79,9 +79,12 @@ async function start(s: Start): Promise<Response> {
   const stub = userLibraryStub(env, userId);
   const rangeHeader = request.headers.get("Range");
   const ifRange = request.headers.get("If-Range");
-  // A resume names an ETag the server issued in the last day; that needs no new proof and no new daily start.
-  const resumes =
-    rangeHeader !== null && ifRange !== null && (await stub.idemGet(`${ETAG_LEASE_PREFIX}${ifRange}`)) !== null;
+  // A resume names an ETag the server issued in the last day. The first run stored its snapshot moment with it, so the
+  // same archive is laid out again however long the client was away; a resume from offset 0 is a new download below.
+  const issued = rangeHeader !== null && ifRange !== null ? await stub.idemGet(`${ETAG_LEASE_PREFIX}${ifRange}`) : null;
+  const issuedAt = issued === null ? Number.NaN : Number(issued.answer);
+  const resumes = Number.isSafeInteger(issuedAt);
+  const takenAt = resumes ? issuedAt : now;
   if (!resumes) {
     const cookie = readCookie(request, SESSION_COOKIE) ?? "";
     const fresh = await new Sessions(dbOf(env.DB), () => now).reauthedWithin(
@@ -107,15 +110,19 @@ async function start(s: Start): Promise<Response> {
       if (rows.length < AUDIT_PAGE) break;
       before = rows.at(-1)?.at;
     }
-    const built = await buildExport(await takeSnapshot(db, userId, audit, config.library.quotaBytes), s.tokenKey);
+    const built = await buildExport(
+      await takeSnapshot(db, userId, audit, config.library.quotaBytes, takenAt),
+      s.tokenKey,
+    );
     const { archive, etag } = built;
     const matches = resumes && ifRange !== null && safeEqual(ifRange, etag);
     const range = matches && rangeHeader !== null ? parseRange(rangeHeader, archive.length) : null;
     if (range === "unsatisfiable") {
       return new Response(null, { status: 416, headers: { "Content-Range": `bytes */${archive.length}` } });
     }
-    // A resume that changed under the client, or whose Range is ignored, is a whole download under the normal rules.
-    if (resumes && range === null) {
+    // A resume that changed under the client, whose Range is ignored, or that starts again from byte 0, is a whole
+    // download and spends a start like one.
+    if (resumes && (range === null || range.offset === 0)) {
       const cookie = readCookie(request, SESSION_COOKIE) ?? "";
       const proof = await new Sessions(dbOf(env.DB), () => now).reauthedWithin(
         cookie,
@@ -138,7 +145,7 @@ async function start(s: Start): Promise<Response> {
       return fail("internal");
     }
     await stub.idemPut(`${KEY_PREFIX}${s.k}`, "", etag);
-    await stub.idemPut(`${ETAG_LEASE_PREFIX}${etag}`, "", "1");
+    await stub.idemPut(`${ETAG_LEASE_PREFIX}${etag}`, "", String(takenAt));
     const [start, end] = range ? [range.offset, range.offset + range.length - 1] : [0, archive.length - 1];
     const length = end - start + 1;
     const body = exportStream(
