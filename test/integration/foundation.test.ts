@@ -85,6 +85,9 @@ describe("failure matrix: a dependency that throws", () => {
 
   it("D1 down: today's pages still answer, and a member page stays hidden", async () => {
     wrangler.setLaunchMode("preview");
+    // One good read first: with D1 down the Worker serves its last good snapshot (settings.ts STALE_MS), and the last
+    // one read was open, where /library is served to anyone.
+    await fetch(`${wrangler.url}/privacy`);
     const fault = { "X-Bloop-Fault": "d1" };
     expect((await fetch(`${wrangler.url}/privacy`, { headers: fault })).status).toBe(200);
     expect((await fetch(`${wrangler.url}/library`, { headers: fault })).status).toBe(404);
