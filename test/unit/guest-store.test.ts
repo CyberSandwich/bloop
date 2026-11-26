@@ -151,7 +151,7 @@ describe("DROP-07 purge", () => {
     for (const k of [r.r2Key, `${r.r2Key}/d/s/1920.pack`, `${r.r2Key}/n/notes.json`, `${r.r2Key}x`, "g/other/d/t.webp"])
       await bucket.put(k);
     await drop.purge("s1", r.r2Key);
-    expect([...bucket.objects.keys()].sort()).toEqual([`${r.r2Key}x`, "g/other/d/t.webp"]);
+    expect([...bucket.objects.keys()].sort()).toEqual([`${r.r2Key}x`, "g/other/d/t.webp"].sort());
   });
 
   it("leaves the row open when the delete fails, so the sweep finds it", async () => {

@@ -37,8 +37,8 @@ export const SECOND_CONVERT_EXTS: readonly string[] = ["ppt", "pps", "odp"];
 export const STAGES = ["inspect", "convert", "rasterize", "video", "heic", "done"] as const;
 export type ContainerStage = (typeof STAGES)[number];
 
-/** Seconds, the container's per-stage defaults. */
-export const STAGE_TIMEOUT_S = { inspect: 30, convert: 180, rasterize: 500, video: 900, heic: 60 } as const;
+/** Seconds, the container's per-stage defaults; video is the ceiling its own budget stays under. */
+export const STAGE_TIMEOUT_S = { inspect: 30, convert: 180, rasterize: 500, video: 1440, heic: 60 } as const;
 
 export const CONTAINER_ERRORS = [
   "bad_magic",
