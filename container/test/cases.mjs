@@ -119,7 +119,39 @@ export async function caseExternal(fixtureName, ext) {
   }
 }
 
+/** The NAL type of the first picture slice of a video-only faststart mp4: 5 is an IDR, 1 a non-IDR picture. A copy
+ * strips the SEI units, so an intra-refresh stream that was copied would start on a 1. */
+function firstSliceType(mp4) {
+  let pos = 0;
+  while (pos + 8 <= mp4.length) {
+    const size = mp4.readUInt32BE(pos);
+    if (size < 8) return -1;
+    if (mp4.toString("latin1", pos + 4, pos + 8) === "mdat") {
+      for (let at = pos + 8; at + 5 <= pos + size; at += 4 + mp4.readUInt32BE(at)) {
+        const type = mp4[at + 4] & 0x1f;
+        if (type >= 1 && type <= 5) return type;
+      }
+      return -1;
+    }
+    pos += size;
+  }
+  return -1;
+}
+
 export async function caseMedia() {
+  console.log("video intra-refresh.mp4");
+  const ir = start();
+  try {
+    check(await healthy(ir), "intra-refresh.mp4: container is healthy");
+    const r = await runJob(ir, join(MEDIA, "intra-refresh.mp4"), "mp4");
+    check(r.status.state === "done", `intra-refresh.mp4: done (status ${JSON.stringify(r.status)})`);
+    check(
+      firstSliceType(r.files["m/0.mp4"] ?? Buffer.alloc(0)) === 5,
+      "intra-refresh.mp4: encoded, so the output starts on an IDR (a copy would start with no recovery point)",
+    );
+  } finally {
+    stop(ir);
+  }
   console.log("video hevc.mov");
   let c = start();
   try {
