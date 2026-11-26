@@ -12,7 +12,7 @@ Every library upload is a multipart upload, whatever its size. Parts are 16 MiB 
 4. **Resume**: `POST /api/uploads` with the same file answers the open upload with its stored parts. `GET /api/uploads` lists a user's open uploads and `GET /api/uploads/:id` reads one.
 5. **Cancel**: `DELETE /api/uploads/:id` aborts the multipart and returns the reservation. A repeat is a no-op.
 
-Create refuses before it costs anything, in this order: the name's extension (`bad_type`), the size (`too_large`), the open upload of the same file (answered as a resume), the quota and file count (`quota_exceeded`, `library_full`), then the spend takes, then one R2 call, then the D1 reserve. A refused request writes no row and leaves no take behind (W10).
+Create refuses before it costs anything, in this order: the name's extension (`bad_type`), the size (`too_large`), the open upload of the same file (answered as a resume), the quota and file count (`quota_exceeded`, `library_full`), then the D1 reserve (so a user over quota always hears the quota refusal), then the spend takes, then one R2 call. A failure after the reserve releases it and refunds the takes, so a refused request leaves no reservation and no take (W10).
 
 ## 2. Quota
 

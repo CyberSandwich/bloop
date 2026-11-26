@@ -293,8 +293,7 @@ describe("LIB-02 race: the quota under concurrent creates", () => {
     const admitted = replies.filter((r) => r.status === 201);
     const refused = replies.filter((r) => r.status !== 201);
     expect(admitted).toHaveLength(5);
-    // A concurrent take can meet the per-user daily byte cap before the reserve does; either refusal is a refusal.
-    for (const r of refused) expect(["quota_exceeded", "rate_limited"]).toContain((r.body as { code: string }).code);
+    expect(refused.map((r) => (r.body as { code: string }).code)).toEqual(Array(7).fill("quota_exceeded"));
     expect(counters("race1")).toEqual({ used: 0, reserved: 5 * GIB });
     expect(wrangler.d1("SELECT count(*) AS n FROM upload WHERE user_id = 'race1'")[0]?.n).toBe(5);
   });
