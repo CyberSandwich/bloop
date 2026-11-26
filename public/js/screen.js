@@ -180,7 +180,7 @@ function fitQr() {
   const under = Math.min(want, pane.clientWidth, room - pane.offsetHeight);
   const beside = Math.min(want, side, room);
   main.classList.toggle("is-beside", beside >= under);
-  const size = qrSize(Math.max(beside, under), devicePixelRatio || 1);
+  const size = qrSize(Math.max(beside, under), devicePixelRatio);
   sizeQr(size);
   pane.style.setProperty("--qr", `${size}px`);
   const r = 28;
