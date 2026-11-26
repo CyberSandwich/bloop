@@ -39,28 +39,35 @@
   box-shadow: 0 0 0 1px var(--hairline);
   overflow: hidden;
 }
+/* The title and the time on one baseline, centered as a pair over the presets; where one row can't hold both, the
+   time wraps under the title, centered too. The picker glyph would crowd the row: a phone opens its picker on a tap on the time, and a
+   keyboard types it. */
+.sheet-card {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  align-items: baseline;
+  column-gap: 8px;
+}
 .sheet h2 {
-  padding: 14px 16px 12px;
+  padding: 14px 0 12px;
   font-size: 17px;
 }
-/* The whole row is the time's target; the hairline parts it from the title. */
 .sheet-card .field {
-  display: block;
+  width: auto;
   height: 60px;
-  border-top: 1px solid var(--hairline);
-  border-radius: 0;
+  padding: 0;
   background: none;
   box-shadow: none;
   font-size: 28px;
   letter-spacing: 0;
-  text-align: left;
-  text-transform: none;
 }
-.sheet-card .field::-webkit-date-and-time-value {
-  text-align: left;
+.sheet-card .field::-webkit-calendar-picker-indicator {
+  display: none;
 }
 /* Why Set is off: a short line under the time. */
 .sheet-hint {
+  flex-basis: 100%;
   margin: 0;
   padding: 10px 16px;
   border-top: 1px solid var(--hairline);
@@ -110,12 +117,6 @@
   .sheet {
     max-height: calc(100dvh - 2 * var(--inset));
     overflow-y: auto;
-  }
-}
-/* Under 360 wide the card is about 180 wide: at 28px a 12-hour time and its picker icon clip. */
-@media (max-width: 359.98px) {
-  .sheet-card .field {
-    font-size: 22px;
   }
 }
 @media (min-width: 640px) {
