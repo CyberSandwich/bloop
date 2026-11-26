@@ -71,7 +71,8 @@ export interface AuditQuery {
 
 export interface AuditLog {
   record(e: AuditEvent): Promise<void>;
-  forUser(userId: string, limit: number, before?: number): Promise<AuditRow[]>;
+  /** Newest first; the cursor is the unique `id` of the last row, never a timestamp (rows tie on `at`). */
+  forUser(userId: string, limit: number, beforeId?: number): Promise<AuditRow[]>;
   /** IT export of `[from, to)`. CSV cells starting with = + - @ tab or CR get a leading apostrophe. */
   export(q: AuditQuery): Promise<ReadableStream<Uint8Array>>;
   purge(now: number, retention: { liveDays: number; demoDays: number }): Promise<number>;
