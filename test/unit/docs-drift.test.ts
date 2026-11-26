@@ -438,6 +438,17 @@ describe("size budgets", () => {
   });
 });
 
+describe("shipped code points only at tracked docs", () => {
+  it("no file in src/, public/ or tools/ names the gitignored plans (tasks/, plan-*, g-wiring)", () => {
+    const shipped = REPO_FILES.filter((path) => /^(src|public|tools)\//.test(path) && existsSync(join(ROOT, path)));
+    expect(shipped.length).toBeGreaterThan(100);
+    const offenders = shipped.filter((path) =>
+      /\btasks\/|\bplan-[a-z0-9]|\bg-wiring\b|\bplan [A-Z]\.\d/.test(read(path)),
+    );
+    expect(offenders, "point at an ADR or docs/architecture.md instead").toEqual([]);
+  });
+});
+
 describe("threat model", () => {
   it("every mitigated row has its id in a test title", () => {
     // The v4 rows live in docs/threats/<area>.md and start `planned`, which needs no test yet.

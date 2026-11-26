@@ -308,7 +308,7 @@ describe("F12 DATA-05 dsar: /api/me/audit and DELETE /api/me", () => {
     expect(wrangler.d1(`SELECT count(*) AS n FROM audit_event WHERE session_id = 'user:${userId}'`)[0]?.n).toBe(0);
   });
 
-  it("PAIR-06 write checks: DELETE /api/me needs the Origin, a JSON body and a session", async () => {
+  it("AUTH-15 csrf: DELETE /api/me needs the Origin, a JSON body and a session", async () => {
     idp.oid = "oid-checks";
     const { session } = await signIn();
     const cookie = sid(session as string);
@@ -434,7 +434,7 @@ describe("sign-in, sessions and revocation", () => {
     expect((await me(b)).signedIn).toBe(false);
   });
 
-  it("PAIR-06 write checks: sign-out and disconnect need the Origin, a JSON body and a session", async () => {
+  it("AUTH-15 csrf: sign-out and disconnect need the Origin, a JSON body and a session", async () => {
     const { session } = await signIn();
     const cookie = sid(session as string);
     for (const path of ["/api/me/signout", "/api/me/disconnect"]) {

@@ -15,17 +15,16 @@ import {
 } from "../auth/cookies.ts";
 import { callbackErrorPage } from "../auth/error-page.ts";
 import { beginSignIn, finishSignIn, PENDING_SECONDS, type Pending } from "../auth/oauth.ts";
-import { servicesFor } from "../auth/services.ts";
+import { endSessions, screenDeps } from "../auth/screens.ts";
+import { phoneUser, servicesFor } from "../auth/services.ts";
 import { deviceLabel, SESSION_MAX_AGE_SECONDS } from "../auth/sessions.ts";
 import type { Config, GraphConfig } from "../config.ts";
 import type { Env } from "../env.ts";
 import { fail, json } from "../http.ts";
 import { type Route, route } from "../router.ts";
 import { auditFor } from "../stores.ts";
-import { limited, withConfig, write } from "./common.ts";
+import { emptyBody, limited, withConfig, write } from "./common.ts";
 
-/** The body of a write that takes no input: `{}` or nothing, and no other key. */
-export const emptyBody = z.object({}).strict();
 const pendingShape = z.object({
   state: z.string(),
   nonce: z.string(),
@@ -97,7 +96,8 @@ export const authRoutes: readonly Route[] = [
   route(["GET"], "/auth/start", "api", start),
   route(["GET"], "/auth/callback", "api", callback),
 
-  // Revoke: the stored grant and every session of the user go at once (AUTH-07). Entra's consent stays.
+  // Revoke: the stored grant and every session of the user go at once (AUTH-07), with the same session-end cleanup
+  // as sign out everywhere. Entra's consent stays.
   route(
     ["POST"],
     "/api/me/disconnect",
@@ -105,13 +105,15 @@ export const authRoutes: readonly Route[] = [
     withGraph(async (request, env, config) => {
       const body = await write(request, config, emptyBody);
       if (!body.ok) return body.response;
-      const { sessions, vault } = servicesFor(env, config);
-      const cookie = readCookie(request, SESSION_COOKIE);
-      const userId = cookie ? await sessions.resolve(cookie) : null;
+      const flood = await limited(env, "RL_AUTH", request, config);
+      if (flood) return flood;
+      const services = servicesFor(env, config);
+      const { sessions, vault } = services;
+      const userId = await phoneUser(request, services);
       if (!userId) return fail("auth_required");
       const hadGrant = await vault.has(userId);
       await vault.delete(userId);
-      await sessions.destroyAll(userId);
+      await endSessions(screenDeps, env, userId, await sessions.destroyAll(userId));
       if (hadGrant) await recordBestEffort(env, accountEvent("grant.deleted", userId, Date.now()));
       return withCookies(json({ signedIn: false }), signedOutCookies({ everywhere: true }));
     }),

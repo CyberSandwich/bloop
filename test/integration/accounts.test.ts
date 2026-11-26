@@ -139,7 +139,7 @@ describe("AUTH-13 signout-all and AUTH-09 device: sign-out", () => {
     expect(wrangler.d1(`SELECT count(*) AS n FROM phone_session WHERE user_id = '${m.id}'`)[0]?.n).toBe(0);
   });
 
-  it("PAIR-06 write checks: sign-out everywhere needs the Origin and a JSON body", async () => {
+  it("AUTH-15 csrf: sign-out and sign-out everywhere need the Origin and a JSON body", async () => {
     const m = member();
     for (const path of ["/api/me/signout", "/api/me/signout-all"]) {
       expect((await api.post(path, {}, { ...cookie(m.sid), origin: "https://evil.example" })).status).toBe(403);
@@ -218,14 +218,34 @@ describe("MODE-01 gate: the admin view cookie", () => {
     const owner = admin();
     const plain = member();
     for (const who of [plain.sid, undefined]) {
-      const res = await api.post("/api/admin/view", { open: true }, who ? cookie(who) : {});
+      const res = await api.post("/api/admin/view", { open: true, reason: "x" }, who ? cookie(who) : {});
       expect(res.status).toBe(404);
       expect(res.headers.getSetCookie()).toEqual([]);
     }
-    const on = await api.post("/api/admin/view", { open: true }, cookie(owner.sid));
+    const on = await api.post("/api/admin/view", { open: true, reason: "check open" }, cookie(owner.sid));
     expect(on.body).toEqual({ viewing: true });
-    expect(on.headers.getSetCookie()[0]).toMatch(/^__Host-bloop_view=open; Max-Age=86400; Path=\/; Secure; HttpOnly;/);
-    const off = await api.post("/api/admin/view", { open: false }, cookie(owner.sid));
+    expect(on.headers.getSetCookie()[0]).toMatch(/^__Host-bloop_view=open; Max-Age=28800; Path=\/; Secure; HttpOnly;/);
+    const off = await api.post("/api/admin/view", { open: false, reason: "done" }, cookie(owner.sid));
     expect(off.headers.getSetCookie()[0]).toMatch(/^__Host-bloop_view=; Max-Age=0;/);
+  });
+
+  it("AUTH-16 admin: a wrong method on an admin path is the unknown-path 404, with no Allow, for anyone", async () => {
+    const owner = admin();
+    const plain = member();
+    const unknown = await api.call("GET", "/api/admin/no-such-path", undefined, {});
+    expect(unknown.status).toBe(404);
+    for (const who of [plain.sid, owner.sid, undefined]) {
+      for (const method of ["GET", "PUT", "DELETE", "PATCH"]) {
+        const res = await api.call(
+          method,
+          "/api/admin/view",
+          method === "GET" ? undefined : {},
+          who ? cookie(who) : {},
+        );
+        expect(res.status, `${method} ${who ?? "signed out"}`).toBe(404);
+        expect(res.headers.get("Allow"), method).toBeNull();
+        expect(res.body).toEqual(unknown.body);
+      }
+    }
   });
 });

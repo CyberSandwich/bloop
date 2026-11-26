@@ -1,6 +1,7 @@
 // The one way mail leaves bloop (ADR 0021): the `email` switch, then the spend takes, then the Email Service binding,
 // all inside ctx.waitUntil so no response waits on mail or reveals by its timing whether mail was sent (AUTH-10).
 import type { AccountConfig } from "../config/account.ts";
+import type { Db } from "./db.ts";
 import { normalizeEmail } from "./email-norm.ts";
 import { type Email, spendAlert, type TemplateConfig } from "./templates.ts";
 
@@ -62,7 +63,7 @@ function switchAllows(deps: Pick<MailDeps, "account" | "emailSwitch">, to: strin
 }
 
 async function admit(deps: MailDeps, message: Message, now: number): Promise<boolean> {
-  if (!switchAllows(deps, message.to)) return false;
+  if (normalizeEmail(message.to) === null || !switchAllows(deps, message.to)) return false;
   let guardDown = false;
   const takes = message.codeScope === undefined ? [] : [() => deps.spend.take("email_code", 1, message.codeScope)];
   for (const take of [...takes, () => deps.spend.take("email", 1)]) {
@@ -112,9 +113,11 @@ async function deliver(account: MailDeps["account"], sender: Sender | undefined,
 }
 
 /**
- * Queues one email. Resolves to whether it was admitted (switch and spend), never to whether it was delivered, so a
- * caller may await it (an invite's `mailed`) or ignore it (a code request, which must not wait). A refusal sends
- * nothing and is not an error.
+ * TRANSITIONAL(a-4): the code and invite routes are the first callers.
+ *
+ * Queues one email. Resolves to whether it was admitted (a valid address, the switch and spend), never to whether it
+ * was delivered, so a caller may await it (an invite's `mailed`) or ignore it (a code request, which must not wait).
+ * A refusal sends nothing and is not an error.
  */
 export function mail(deps: MailDeps, ctx: WaitUntil, message: Message, now: number = Date.now()): Promise<boolean> {
   const admitted = admit(deps, message, now).catch(() => {
@@ -125,17 +128,47 @@ export function mail(deps: MailDeps, ctx: WaitUntil, message: Message, now: numb
   return admitted;
 }
 
+/** One alert key mails at most once in this window. */
+export const ALERT_WINDOW_MS = 86_400_000;
+
+/** The kind and the rule name an alert: its `setting` row key, letters, digits and `_` only. */
+const alertKey = (message: { kind: string } & Record<string, unknown>): string =>
+  `alert.${[message.kind, typeof message.rule === "string" ? message.rule : ""]
+    .map((part) => part.replace(/[^A-Za-z0-9_]/g, ""))
+    .join(".")}`;
+
 /**
- * The spend breaker's `notify` (g-wiring 1.2): one mail to each ADMIN_EMAILS address, never to anyone else, under the
- * `email` switch. It skips the spend takes, which would call back into the guard the breaker is acting on. The
- * breaker already runs inside the cron's waitUntil.
+ * Claims the key's window in one guarded UPSERT (the row's `updated_at` is the last send), so overlapping runs and
+ * retries send one mail per key per window. False when the window is already taken.
+ */
+async function claimAlert(db: Db, key: string, now: number): Promise<boolean> {
+  const res = await db
+    .prepare(
+      `INSERT INTO setting (key, value, updated_at, updated_by) VALUES (?1, ?2, ?2, 'breaker')
+       ON CONFLICT (key) DO UPDATE SET value = excluded.value, updated_at = excluded.updated_at
+       WHERE setting.updated_at <= ?3`,
+    )
+    .bind(key, now, now - ALERT_WINDOW_MS)
+    .run();
+  return res.meta.changes === 1;
+}
+
+export interface NotifyDeps extends Pick<MailDeps, "account" | "sender" | "emailSwitch"> {
+  db: Db;
+}
+
+/**
+ * TRANSITIONAL(G): the spend cron passes this as runSpendBreaker's `notify` once the spend guard is in this tree.
+ *
+ * The spend breaker's `notify`: one mail to each ADMIN_EMAILS address, never to anyone else, under the `email` switch,
+ * at most once per alert key per window. It skips the spend takes, which would call back into the guard the breaker is
+ * acting on. The breaker already runs inside the cron's waitUntil.
  */
 export const breakerNotify =
-  (deps: Pick<MailDeps, "account" | "sender" | "emailSwitch">, config: TemplateConfig) =>
+  (deps: NotifyDeps, config: TemplateConfig, now: () => number = Date.now) =>
   async (message: { kind: string } & Record<string, unknown>): Promise<void> => {
+    const to = [...deps.account.adminEmails].filter((address) => switchAllows(deps, address));
+    if (to.length === 0 || !(await claimAlert(deps.db, alertKey(message), now()))) return;
     const alert = spendAlert(message, config);
-    const now = Date.now();
-    for (const to of deps.account.adminEmails) {
-      if (switchAllows(deps, to)) await deliver(deps.account, deps.sender, { to, ...alert }, now);
-    }
+    for (const address of to) await deliver(deps.account, deps.sender, { to: address, ...alert }, now());
   };

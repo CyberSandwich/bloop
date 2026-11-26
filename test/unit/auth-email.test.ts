@@ -2,6 +2,7 @@ import { readFileSync } from "node:fs";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type * as EmailModule from "../../src/worker/auth/email.ts";
 import { signinCode } from "../../src/worker/auth/templates.ts";
+import { testDb } from "./d1-shim.ts";
 
 type Mod = typeof EmailModule;
 type Take = EmailModule.EmailSpend["take"];
@@ -104,7 +105,7 @@ describe("email", () => {
     expect(await mod.mail(d, c, message(" Admin@Example.test "), T0)).toBe(true);
   });
 
-  it("email: the binding gets the sender, and the response never waits for it", async () => {
+  it("AUTH-10 uniform: the binding gets the sender, and the response never waits for the mail", async () => {
     const c = ctx();
     const send = vi.fn(() => new Promise<never>(() => {}));
     const d = deps({ account: { ...deps().account, devMailbox: false }, sender: { send } });
@@ -164,7 +165,8 @@ describe("email", () => {
     const account = { ...deps({ take }).account, adminEmails: new Set([ADMIN, other]), devMailbox: false };
     for (const emailSwitch of ["on", "admin_only"] as const) {
       send.mockClear();
-      await mod.breakerNotify({ account, sender: { send }, emailSwitch }, CONFIG)({ kind: "trip", spentUsd: 9 });
+      const notify = mod.breakerNotify({ account, sender: { send }, emailSwitch, db: testDb() }, CONFIG);
+      await notify({ kind: "trip", spentUsd: 9 });
       expect(send.mock.calls.map(([m]) => m.to).sort()).toEqual([ADMIN, other].sort());
       for (const [m] of send.mock.calls)
         expect(m).toMatchObject({ from: "hi@bloop.here", subject: "bloop Spend: trip" });
@@ -175,10 +177,44 @@ describe("email", () => {
   it("email: the breaker's notify sends nothing under email off, or with no admin address", async () => {
     const send = vi.fn(async () => ({ messageId: "m" }));
     const account = { ...deps().account, devMailbox: false };
-    await mod.breakerNotify({ account, sender: { send }, emailSwitch: "off" }, CONFIG)({ kind: "trip" });
+    const db = testDb();
+    await mod.breakerNotify({ account, sender: { send }, emailSwitch: "off", db }, CONFIG)({ kind: "trip" });
     const noAdmins = { ...account, adminEmails: new Set<string>() };
-    await mod.breakerNotify({ account: noAdmins, sender: { send }, emailSwitch: "on" }, CONFIG)({ kind: "trip" });
+    await mod.breakerNotify({ account: noAdmins, sender: { send }, emailSwitch: "on", db }, CONFIG)({ kind: "trip" });
     expect(send).not.toHaveBeenCalled();
+    // Nothing sent claims nothing: the next run with the switch on still mails.
+    expect(db.raw.prepare("SELECT count(*) AS n FROM setting").get()).toEqual({ n: 0 });
+  });
+
+  it("email: each alert key mails each admin at most once a window, across runs, and again once the window passes", async () => {
+    const send = vi.fn(async (_m: { to: string }) => ({ messageId: "m" }));
+    const account = { ...deps().account, devMailbox: false };
+    const db = testDb();
+    const clock = { t: T0 };
+    const notify = () => mod.breakerNotify({ account, sender: { send }, emailSwitch: "on", db }, CONFIG, () => clock.t);
+    const trip = { kind: "trip", rule: "month_budget", readings: { spentUsd: 9 } };
+    await notify()(trip);
+    await notify()(trip);
+    await Promise.all([notify()(trip), notify()(trip)]);
+    await notify()({ ...trip, rule: "r2_class_a" });
+    await notify()({ kind: "warn", rule: "month_budget", readings: {} });
+    expect(send.mock.calls.map(([m]) => m.to)).toEqual([ADMIN, ADMIN, ADMIN]);
+    expect(send.mock.calls[0]?.[0]).toMatchObject({ text: expect.stringContaining("spentUsd: 9") });
+    clock.t += mod.ALERT_WINDOW_MS - 1;
+    await notify()(trip);
+    expect(send).toHaveBeenCalledTimes(3);
+    clock.t += 1;
+    await notify()(trip);
+    expect(send).toHaveBeenCalledTimes(4);
+  });
+
+  it("email: an address normalizeEmail refuses is never admitted or sent, under any switch", async () => {
+    const c = ctx();
+    for (const to of ["not an address", "a@b", "x@example.test\r\nBcc: y@example.test", ""]) {
+      expect(await mod.mail(deps(), c, message(to), T0), to).toBe(false);
+    }
+    await c.flush();
+    expect(mod.readDevMailbox()).toEqual([]);
   });
 
   it("email: wrangler.jsonc has the one EMAIL binding, which sends only as EMAIL_FROM", () => {
