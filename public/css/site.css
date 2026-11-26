@@ -519,8 +519,8 @@ h3 {
 .is-paused::before {
   animation-play-state: paused;
 }
-/* Keyboard focus in the hero (2.2.2; a mouse click is not focus-visible) stops the band by fading it to ink, so a
-   frozen band is never seen. Hover does the same only once sheen-follow.js has failed to load (site.js). */
+/* Keyboard focus in the hero (2.2.2; a mouse click is not focus-visible) stops the band while it fades to ink, so
+   no band stays frozen in view. Hover does the same only once sheen-follow.js has failed to load (site.js). */
 .hero:has(:focus-visible) .sheen {
   color: var(--ink);
   animation-play-state: paused;

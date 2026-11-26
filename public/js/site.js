@@ -52,17 +52,16 @@ menu?.addEventListener("click", (e) => {
 const tiltable = matchMedia("(prefers-reduced-motion: no-preference)");
 
 // A hovering pointer takes the sheen's band (design.md section 8); a failed load makes the word hover-still (site.css).
-/** @type {HTMLElement | null} */ (document.querySelector(".hero h1"))?.addEventListener(
-  "pointerenter",
-  (e) => {
-    if (tiltable.matches && e.pointerType === "mouse")
-      import("./sheen-follow.js").then(
-        (m) => m.follow(),
-        () => document.body.classList.add("still"),
-      );
-  },
-  { once: true },
-);
+const h1 = /** @type {HTMLElement} */ (document.querySelector(".hero h1"));
+// The handler stays until the first pointer that is not a finger: a tap must not use the load up.
+h1.onpointerenter = (e) => {
+  if (!tiltable.matches || e.pointerType === "touch") return;
+  h1.onpointerenter = null;
+  import("./sheen-follow.js").then(
+    (m) => m.follow(),
+    () => (h1.className = "still"),
+  );
+};
 
 // A spring (design.md section 6) drives a paused tilt animation; 1% thresholds wake it.
 const stage = document.querySelector(".stage");
