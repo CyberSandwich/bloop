@@ -51,6 +51,51 @@ function androidMp4(location: string): Buffer {
   ]);
 }
 
+/** The room screen's viewports: iPads both ways, laptops, a portrait TV, and phones on their side (Safari's bars on). */
+const SCREENS = [
+  { width: 1180, height: 820 },
+  { width: 1024, height: 768 },
+  { width: 834, height: 1112 },
+  { width: 1366, height: 1024 },
+  { width: 1440, height: 900 },
+  { width: 844, height: 390 },
+  { width: 932, height: 430 },
+  { width: 667, height: 330 },
+  { width: 1080, height: 1920 },
+];
+
+/** Each box lies whole inside the viewport, `--inset` in from every edge, and clear of every corner pill shown. */
+async function expectInView(page: Page, selectors: string[]) {
+  const { width, height } = page.viewportSize() ?? { width: 0, height: 0 };
+  const inset = Number(
+    await page.evaluate("parseFloat(getComputedStyle(document.documentElement).getPropertyValue('--inset'))"),
+  );
+  const pills = await Promise.all((await page.locator(".bar > :visible").all()).map((p) => p.boundingBox()));
+  const edges = (b: { x: number; y: number; width: number; height: number }) => ({
+    l: Math.round(b.x),
+    t: Math.round(b.y),
+    r: Math.round(b.x + b.width),
+    b: Math.round(b.y + b.height),
+  });
+  for (const selector of selectors) {
+    const box = await page.locator(selector).boundingBox();
+    expect(box, selector).not.toBeNull();
+    if (!box) continue;
+    const at = `${selector} at ${width} x ${height}: ${JSON.stringify(box)}`;
+    const e = edges(box);
+    expect(e.l, at).toBeGreaterThanOrEqual(inset);
+    expect(e.t, at).toBeGreaterThanOrEqual(inset);
+    expect(e.r, at).toBeLessThanOrEqual(width - inset);
+    expect(e.b, at).toBeLessThanOrEqual(height - inset);
+    for (const pill of pills) {
+      if (!pill) continue;
+      const p = edges(pill);
+      const apart = e.l >= p.r || e.r <= p.l || e.t >= p.b || e.b <= p.t;
+      expect(apart, `${at} meets a corner pill ${JSON.stringify(pill)}`).toBe(true);
+    }
+  }
+}
+
 /** No toast now, read once: a retrying toHaveCount(0) passes once a toast leaves by itself (5 s). */
 const expectNoToast = async (page: Page) =>
   expect(await page.locator(".toast:not(.out)").count(), "a toast is up").toBe(0);
@@ -2038,7 +2083,41 @@ test.describe("screen and phone layout", () => {
     await screen.context.close();
   });
 
-  for (const viewport of [PHONE, { width: 1280, height: 720 }]) {
+  for (const viewport of SCREENS) {
+    test(`the whole QR and the code are in view at ${viewport.width} x ${viewport.height}, beside the title when landscape`, async ({
+      browser,
+    }) => {
+      const context = await browser.newContext({ viewport });
+      const page = await context.newPage();
+      await page.goto("/s?mode=demo");
+      await typedCodeOf(page);
+      await page.evaluate("document.fonts.ready.then(() => true)");
+      await expectInView(page, ["#qr-panel", "#b-new", "#b-copy", "#heading"]);
+      const card = await page.locator("#qr-panel").boundingBox();
+      const title = await heading(page).boundingBox();
+      // Landscape holds the QR at least as large beside the title; upright, the title stacks over it.
+      if (viewport.width > viewport.height)
+        expect(title?.x ?? 0).toBeGreaterThanOrEqual((card?.x ?? 0) + (card?.width ?? 0));
+      else expect((title?.y ?? 0) + (title?.height ?? 0)).toBeLessThanOrEqual(card?.y ?? 0);
+      expect(await page.evaluate("document.scrollingElement.scrollHeight <= innerHeight")).toBe(true);
+      // A claim keeps the card in place, the match number in it.
+      const { phone } = await scan(browser, page);
+      await expect(page.locator("#match")).toBeVisible();
+      await expectInView(page, ["#qr-panel", "#heading"]);
+      // A live room's screen has no title: the same card and code row.
+      const liveContext = await browser.newContext({ viewport });
+      const live = await liveContext.newPage();
+      await live.goto("/s");
+      await typedCodeOf(live);
+      await expectInView(live, ["#qr-panel", "#b-new", "#b-copy"]);
+      await liveContext.close();
+      await context.close();
+      await phone.context.close();
+    });
+  }
+
+  // Every /s state in the states table the demo reaches, at every room screen size: the page never scrolls.
+  for (const viewport of [PHONE, { width: 1280, height: 720 }, ...SCREENS]) {
     test(`/s never scrolls the page, at ${viewport.width} x ${viewport.height}: waiting, claimed, viewer, presenting, ended`, async ({
       browser,
     }) => {
