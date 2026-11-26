@@ -667,7 +667,7 @@ main:has(> .side:not([hidden])) #stage {
   padding: 8px;
   border-radius: var(--r-pill);
   box-shadow: var(--glass-edge), var(--sh-pill);
-  /* `translate`, not `transform`: viewer.js glides the pill with the same property. */
+  /* The centering, never animated: viewer.js glides the pill with `transform` (fit), so it is always this. */
   translate: -50% 0;
 }
 /* A --stack wide column (viewer.js fit): at the stage's bottom right, or under the side list. */
