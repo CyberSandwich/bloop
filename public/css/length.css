@@ -67,16 +67,12 @@
   color: var(--muted);
   font-size: 13px;
 }
-.sheet-card .field:focus {
-  box-shadow: none;
-}
 .keyed .sheet-card:has(.field:focus) {
   box-shadow: 0 0 0 2px var(--ink);
 }
 .sheet-x {
   display: grid;
   place-items: center;
-  color: var(--ink);
   cursor: pointer;
 }
 .chips {
@@ -89,8 +85,6 @@
   padding: 0;
   border: 0;
   background: none;
-  color: var(--ink);
-  font: inherit;
   font-size: 15px;
   font-weight: 600;
   cursor: pointer;

@@ -1,13 +1,13 @@
 # ADR 0009: a session holds a list of items
 
-Status: accepted as built.
+Status: accepted as built. Amended: Up Next's order wins for library items (below; ADR 0018).
 
 ## Context
 A session used to carry one file. A presenter wants a deck, its PDF, a photo and a poll link in one approval, shown in one viewer. The screen must still learn nothing beyond what the phone approved (SRC-01), mint nothing but links for approved files (PAIR-11), and a stored session from the old shape must survive a deploy.
 
 ## Decision
 - **One `Item` union** in `src/shared/protocol.ts`: `FileItem {kind: "file", name, type, size}` or `LinkItem {kind: "link", url, title}`. Views carry `items: Item[]`; the phone's list is `Entry[]` (an item plus its opaque id). Why: one shape for every page and every approval path. Replaces: `fileName`, `fileType`, `fileSize` on the views and `FileEntry` alone. Remove: back to one `FileItem`.
-- **Server-side order and index:** the machine stores items as `orderItems` sorts them (files by name, then links by title), and a link mint or an `open` frame names an item by its index in that list. The first file is the launched one; a session of links only mints nothing.
+- **Server-side order and index:** the machine stores items as `orderItems` sorts them (files by name, then links by title), and a link mint or an `open` frame names an item by its index in that list. The first file is the launched one; a session of links only mints nothing. **Amend:** a list whose files are all library files, with or without links among them, keeps the order it arrives in, the presenter's Up Next order, and `orderItems` keeps it; any other list sorts as above. Why: the presenter set the running order. Remove: sort every list again.
 - **Cap:** `MAX_ITEMS` (12) in `src/worker/items.ts`, checked by the approve route's schema and again by the machine.
 - **Types:** `FileType` gains `jpg` and `png` (no WebP: no source makes one, and a phone photo is sent as JPEG); `OpenMode` gains `view` (an image inline). `effectivePurpose` maps a requested purpose to what the type can serve, so an image is never launched and a PDF is always its own view. Images stream with a fixed `image/*` type under `nosniff` and the `file-image` header policy (IMG-01).
 - **Links:** https only, host on `LINK_HOSTS` (`items.ts`, a constant, not a config variable: adding a host is a reviewed code change), checked by URL parse at listing and at approve (LINK-01). Only the demo account has links (`DEMO_LINKS`); Graph offers none. Remove: drop `LinkItem`, `LINK_HOSTS` and `DEMO_LINKS`.

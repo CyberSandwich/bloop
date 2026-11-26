@@ -1,5 +1,15 @@
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
-import { Api, claim, openScreen, phoneSocket, rawUpgrade, Socket, startPairing } from "./pairing-client.ts";
+import {
+  Api,
+  claim,
+  claimOnly,
+  openScreen,
+  phoneSocket,
+  pick,
+  rawUpgrade,
+  Socket,
+  startPairing,
+} from "./pairing-client.ts";
 import type { Wrangler } from "./wrangler.ts";
 
 let wrangler: Wrangler;
@@ -71,6 +81,67 @@ describe("pairing: the whole flow over WebSockets", () => {
 
     const state = await api.get<{ state: string }>("/api/pair/state", first.body.pid);
     expect(state.body.state).toBe("claimed");
+    socket.close();
+  });
+
+  const KEY = "6f1c2a9e-3b4d-4c5e-8f70-112233445566";
+  /** A signed-out phone's claim headers: its key, its tab's nonce (X-Bloop-Nonce) and the address it comes from. */
+  const signedOut = (nonce: string | null, ip = "198.51.100.20", key = KEY) => ({
+    headers: { "Idempotency-Key": key, "CF-Connecting-IP": ip, ...(nonce === null ? {} : { "X-Bloop-Nonce": nonce }) },
+  });
+  const TAB_A = "A".repeat(43);
+  const TAB_B = "B".repeat(43);
+
+  it("REL-14 claim owner: a signed-out tab's replay follows its nonce across networks and changes nothing", async () => {
+    const { socket, code } = await openScreen(api, "live");
+    const first = await api.post<{ pid: string }>("/api/claim", { code }, signedOut(TAB_A));
+    expect(first.status).toBe(200);
+    // The phone moved from the venue's Wi-Fi to mobile data; the same tab retries the lost answer.
+    const again = await api.post("/api/claim", { code }, signedOut(TAB_A, "203.0.113.50"));
+    expect(again.status).toBe(200);
+    expect(again.body).toEqual(first.body);
+    expect((await api.get("/api/pair/state", first.body.pid)).status).toBe(200);
+    // The same key with another body is refused; a bad key with a nonce is refused too.
+    expect((await api.post("/api/claim", { code, kind: "guest" }, signedOut(TAB_A))).body).toEqual(
+      problem("bad_request"),
+    );
+    expect((await api.post("/api/claim", { code }, signedOut(TAB_A, undefined, "nope"))).body).toEqual(
+      problem("bad_request"),
+    );
+    socket.close();
+  });
+
+  it("REL-14 claim owner: two phones behind one address with the same key and other nonces share no answer", async () => {
+    const { socket, code } = await openScreen(api, "live");
+    const first = await api.post<{ pid: string }>("/api/claim", { code }, signedOut(TAB_A));
+    expect(first.status).toBe(200);
+    expect((await api.post("/api/claim", { code }, signedOut(TAB_B))).body).toEqual(problem("code_taken"));
+    socket.close();
+  });
+
+  it("REL-14 claim owner: with no nonce, or a malformed one, a key replays nothing and is no error", async () => {
+    for (const nonce of [null, "short", `${"A".repeat(42)}=`]) {
+      const { socket, code } = await openScreen(api, "live");
+      const first = await api.post<{ pid: string }>("/api/claim", { code }, signedOut(nonce));
+      expect(first.status, String(nonce)).toBe(200);
+      const again = await api.post("/api/claim", { code }, signedOut(nonce));
+      expect(again.body, String(nonce)).toEqual(problem("code_taken"));
+      // Without an owner the key is never read, so even a malformed one is no error.
+      const { socket: s2, code: c2 } = await openScreen(api, "live");
+      expect((await api.post("/api/claim", { code: c2 }, signedOut(nonce, undefined, "nope"))).status).toBe(200);
+      s2.close();
+      socket.close();
+    }
+  });
+
+  it("REL-14 claim single flight: two claims with one key at once both get the first claim's answer", async () => {
+    const { socket, code } = await openScreen(api, "live");
+    const [a, b] = await Promise.all([
+      api.post<{ pid: string }>("/api/claim", { code }, signedOut(TAB_A)),
+      api.post<{ pid: string }>("/api/claim", { code }, signedOut(TAB_A)),
+    ]);
+    expect([a.status, b.status]).toEqual([200, 200]);
+    expect(b.body.pid).toBe(a.body.pid);
     socket.close();
   });
 
@@ -228,6 +299,81 @@ describe("pairing: the whole flow over WebSockets", () => {
     const res = await api.get("/api/screen/state", ghost);
     expect(res.status).toBe(410);
     expect(res.body).toEqual(problem("screen_gone"));
+  });
+});
+
+describe("PAIR-14 match: the live pick over the Screen object", () => {
+  it("PAIR-14 match: every live claim answers three choices and no match; the phone acts only after the right pick", async () => {
+    const { socket, code } = await openScreen(api, "live");
+    const claimed = await claimOnly(api, code);
+    expect(claimed.status).toBe(200);
+    expect(claimed.body.match).toBeNull();
+    const choices = claimed.body.choices as string[];
+    expect(new Set(choices).size).toBe(3);
+    const onScreen = await socket.stateWhere((v) => v.state === "claimed");
+    const shown = (onScreen.view as { match: string; confirmed: boolean }).match;
+    expect(choices).toContain(shown);
+    expect((onScreen.view as { confirmed: boolean }).confirmed).toBe(false);
+    const pid = claimed.body.pid;
+    const before = await api.get<{ match: unknown; choices: unknown; confirmed: boolean }>("/api/pair/state", pid);
+    expect(before.body).toMatchObject({ match: null, choices, confirmed: false });
+    expect(JSON.stringify(before.body)).not.toContain(`"match":"${shown}"`);
+    expect((await api.get("/api/files", pid)).body).toEqual(problem("match_required"));
+    const picked = await pick(api, pid);
+    expect(picked.status).toBe(200);
+    expect(picked.body).toEqual({ view: expect.objectContaining({ match: shown, confirmed: true }) });
+    await socket.stateWhere((v) => v.confirmed === true);
+    // One pick per claim: a later one, right or wrong, changes nothing.
+    const wrong = choices.find((c) => c !== shown) as string;
+    expect((await pick(api, pid, wrong)).status).toBe(200);
+    expect((await api.get("/api/files", pid)).status).toBe(200);
+    socket.close();
+  });
+
+  it("REL-14 match replay: a retried pick with the same Idempotency-Key gets the first answer; the key is the pairing's own", async () => {
+    const { socket, code, screen } = await openScreen(api, "live");
+    const { pid } = (await claimOnly(api, code)).body;
+    const shown = (await api.get<{ match: string }>("/api/screen/state", screen.sid)).body.match;
+    const key = { "Idempotency-Key": "0b7d3c1a-2e4f-4a6b-8c9d-aabbccddeeff" };
+    const first = await api.post("/api/match", { choice: shown }, { auth: pid, headers: key });
+    expect(first.status).toBe(200);
+    // A control in between moves `v`; the replay still answers the first view, changing nothing.
+    await api.get("/api/files", pid);
+    const again = await api.post("/api/match", { choice: shown }, { auth: pid, headers: key });
+    expect(again.body).toEqual(first.body);
+    // The same key with another choice is a conflict; a new key after the right pick is the one-pick no-op.
+    const other = shown === "00" ? "01" : "00";
+    expect((await api.post("/api/match", { choice: other }, { auth: pid, headers: key })).body).toEqual(
+      problem("bad_request"),
+    );
+    const next = { "Idempotency-Key": "0b7d3c1a-2e4f-4a6b-8c9d-001122334455" };
+    const later = await api.post<{ view: { confirmed: boolean } }>(
+      "/api/match",
+      { choice: other },
+      { auth: pid, headers: next },
+    );
+    expect(later.status).toBe(200);
+    expect(later.body.view.confirmed).toBe(true);
+    // Another pid's request with the same key is its own: it never reads this pairing's row.
+    const forged = `${pid.split(".")[0]}.${"x".repeat(43)}`;
+    const stranger = await api.post("/api/match", { choice: shown }, { auth: forged, headers: key });
+    expect(stranger.status).not.toBe(200);
+    expect(stranger.body).not.toEqual(first.body);
+    socket.close();
+  });
+
+  it("PAIR-14 match: a wrong pick cancels the claim, answers match_wrong, and the old pid is pairing_invalid", async () => {
+    const { socket, code } = await openScreen(api, "live");
+    const claimed = await claimOnly(api, code);
+    const view = await socket.stateWhere((v) => v.state === "claimed");
+    const shown = (view.view as { match: string }).match;
+    const wrong = (claimed.body.choices as string[]).find((c) => c !== shown) as string;
+    const res = await pick(api, claimed.body.pid, wrong);
+    expect(res.status).toBe(409);
+    expect(res.body).toEqual(problem("match_wrong"));
+    expect((await api.get("/api/pair/state", claimed.body.pid)).body).toEqual(problem("pairing_invalid"));
+    await socket.stateWhere((v) => v.state === "waiting" && v.code !== null);
+    socket.close();
   });
 });
 

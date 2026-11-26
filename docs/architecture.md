@@ -96,19 +96,23 @@ sequenceDiagram
   R->>D: put(code, screenRef, expiresAt)
   R-->>S: code K7MQ9X, expires in 60 s
   Note over S: QR encodes https://host/a?c=K7MQ9X
-  P->>W: POST /api/claim {code}
-  W->>D: lookup(code, ipHash)
-  D-->>W: screenRef
-  W->>R: claim(code, phone)
-  R-->>P: pid, room, match 42, mode, needsAuth
-  R-->>S: state claimed, match 42
+  P->>W: POST /api/claim {code} (cookie, Idempotency-Key, X-Bloop-Nonce)
+  W->>D: lookup(code, ipHash, kind, signedIn, guestRefusal)
   alt no phone session yet
+    D-->>W: auth_required (the code unspent, no miss)
+    W-->>P: 401 auth_required (the phone keeps the code in sessionStorage)
     P->>W: GET /auth/start
     W-->>P: 302 to Entra authorize (state, PKCE S256, nonce in AEAD cookie)
     P->>W: GET /auth/callback?code&state
     W->>W: exchange code, check iss and tid, encrypt refresh token
-    W-->>P: Set-Cookie session, 302 to /a (pairing resumes from sessionStorage)
+    W-->>P: Set-Cookie session, 302 to /a
+    P->>W: POST /api/claim {code} again (cookie)
+    W->>D: lookup(code, ipHash, kind, signedIn)
   end
+  D-->>W: screenRef
+  W->>R: claim(code, phone)
+  R-->>P: pid, room, three choices, mode
+  R-->>S: state claimed, match 42
   P->>W: GET /api/files (Bearer pid, cookie)
   W->>G: list recent decks (access token from vault)
   W->>R: listed(ids)
@@ -232,7 +236,7 @@ src/worker/
   origin.ts                the 301 from a workers.dev host or plain http to PUBLIC_ORIGIN (or the 403 for a write)
   config.ts                Zod schema for env, fails closed at startup
   do/demo-slots.ts         the global cap on concurrent demo screens (SQL in the Directory object)
-  machine.ts               pure session state machine (interfaces.md)
+  machine.ts machine/      pure session state machine: types and dispatcher, one reducer file per event group (interfaces.md 2.3)
   items.ts                 the session's items: types, MAX_ITEMS, order, the link allowlist (ADR 0009)
   do/schema.ts             the Screen object's numbered storage steps (schemaVersion) and `applySteps`, which every object's steps use
   do/directory-schema.ts   the Directory object's tables and numbered steps (the `code` expiry index)
@@ -311,7 +315,7 @@ test/
 | POST                     | `/api/screen/link`                           | Bearer sid                            | one more link for an approved file `{purpose: protocol, download, pdf or view, item?}` to `{item, links}` (`item` defaults to the first file; a link item is `file_not_found`); an item's first link is free, then each counts against that item's `LINK_MINTS_PER_ITEM`; `protocol` only from `approved` (the screen lost its link) |
 | POST                     | `/api/screen/shown`                          | Bearer sid, Origin; `RL_CONTROL`      | the screen reports its own tap, `{item, page, present, seq}` (an item id, a 1-based page, the screen's own seq), so the phone's highlight stays true; the same rules as `/api/control`; demo sessions only |
 | POST                     | `/api/screen/end`                            | Bearer sid                            | end; from `waiting` it closes the screen at once (a demo slot is freed); response carries `Clear-Site-Data: "storage"` |
-| POST                     | `/api/claim`                                 | none; rate-limited                    | `{code, kind?}` to `{pid, room, match, mode, kind, needsAuth, dropMaxBytes}` |
+| POST                     | `/api/claim`                                 | cookie for a live owner (else `auth_required`, nothing spent, no miss); a live guest only when the drop admits one (else its refusal for any non-demo code, existing or not, no miss); rate-limited | `{code, kind?}` to `{pid, room, match, choices, mode, kind, needsAuth: false, dropMaxBytes}`; `Idempotency-Key` replays the first answer for the account, else for the tab's `X-Bloop-Nonce` |
 | GET                      | `/api/pair/ws?ref=<screenRef>`               | `hello{pid}`, Origin                  | phone socket                                                   |
 | GET                      | `/api/pair/state`                            | Bearer pid                            | polling fallback                                               |
 | GET                      | `/api/files`                                 | Bearer pid, plus session cookie when `FILE_SOURCE=graph` and the screen is live | up to 5 recent files, then the account's links, as `{items: Entry[]}`; tells the Screen object the ids shown |
@@ -375,7 +379,7 @@ A regex that takes user text must not split any string into its top-level altern
 | member routes (`/api/me/*`) | every route: 300 per 60 s per IP (`RL_MEMBER_IP`) before any D1 read, a flood guard sized for a shared campus NAT; then, on every route but `DELETE /api/me` (a fresh proof bounds it) and the disconnect (`RL_AUTH`), 120 per 60 s per member (`RL_MEMBER`), the real limiter, after the session read (ADR 0014) | binding |
 | `GET /api/me`           | `RL_MEMBER_IP` before any read, then `RL_MEMBER` once a live session is read (limits: the member routes row) | binding |
 | `/api/admin/*`          | `RL_MEMBER_IP` (the member routes row) before the session read, a refusal answering the unknown path's 404 like everything else before the admin check; then 60 per 60 s per admin (`RL_ADMIN`) | binding |
-| `GET /api/screen/ws`, `GET /api/pair/ws` | 30 per 60 s per screen ref and network (IPv4 address or IPv6 /64) (`RL_UPGRADE`, its own binding so reconnect storms never refuse a tap), before the Screen object; then at most 4 sockets waiting for their `hello` per role and 2 per network, the network's own oldest evicted at its 2 and the oldest overall when a role is full, never a refusal (PAIR-10) | binding; exact |
+| `GET /api/screen/ws`, `GET /api/pair/ws` | 30 per 60 s per screen ref and network (IPv4 address, an IPv4-mapped IPv6 one in either form included, or IPv6 /64 with any zone id dropped) (`RL_UPGRADE`, its own binding so reconnect storms never refuse a tap), before the Screen object; then at most 4 sockets waiting for their `hello` per role and 2 per network, the network's own oldest evicted at its 2 and the oldest overall when a role is full, never a refusal (PAIR-10) | binding; exact |
 | `POST /api/control`, `POST /api/screen/shown`, `POST /api/session/length` | 120 per 60 s per IP (`RL_CONTROL`, its own binding so `/f/` range reads never refuse a tap), then 120 per 60 s per credential (keyed by the pid's or sid's hash, never the screen ref: every `/f/` token carries it) (PAIR-13) | binding |
 | `GET /api/files`        | 20 per 60 s per session (`RL_FILES`, keyed by the screen ref), after the credential check: each call is a Graph call | binding |
 | `/api/it/export`        | 10 per 60 s per IP (`RL_EXPORT`), checked before the token (a per-token key would not slow guessing) | binding             |
@@ -395,11 +399,11 @@ IPs are never stored. Limits use `HMAC(HASH_PEPPER, ip)` of `CF-Connecting-IP` (
 
 ## 7. WebSocket protocol
 
-Both sockets are JSON text frames of at most 4 KB, `{"v":1,"t":<type>,...}`. A socket that fails to send a valid `hello` within 5 s (the object's alarm closes it, after an `error` frame), sends an unknown type, or sends an oversized frame is closed with 1008. A phone socket is closed with 1000 when its pairing is dropped (after `error pairing_invalid` for a cancel, Start Over or timeout), at that event only: a socket opened later (a reconnect) waits for its `hello`, which earns `error pairing_invalid` and 1008; closed on accept, before its 101, it would hear nothing until the client's missed-ping check. The upgrade is refused (403) unless `Origin` equals `PUBLIC_ORIGIN`, and (400) unless it carries a well-formed `?ref=`. The deadline is stored in the socket attachment and the object keeps one alarm at the earliest of it and the machine's next deadline, so it survives hibernation. `wrangler dev` writes the close frame on time but never closes the TCP connection after the handshake, so Node's `WebSocket` never fires `close` for it; the integration test reads the frames off a raw socket instead. Heartbeats use the DO auto-response (`ping` to `pong`), so they never wake the object. The client's reconnect, poll and failure rules are the table below. Every server message carries `now` (server epoch ms), so countdowns survive clock skew. Exact types are in interfaces.md (`ScreenMsgIn`, `ScreenMsgOut`, `PhoneMsgIn`, `PhoneMsgOut`).
+Both sockets are JSON text frames of at most 4 KB, `{"v":1,"t":<type>,...}`. A socket that fails to send a valid `hello` within 5 s (the object's alarm closes it, after an `error` frame), sends an unknown type, or sends an oversized frame is closed with 1008. A phone socket is closed with 1000 when its pairing is dropped (after `error pairing_invalid` for a cancel, Start Over or timeout), at that event only: a socket opened later (a reconnect) waits for its `hello`, which earns `error pairing_invalid` and 1008; closed on accept, before its 101, it would hear nothing until the client's missed-ping check. The upgrade is refused (403) unless `Origin` equals `PUBLIC_ORIGIN`, and (400) unless it carries a well-formed `?ref=`. The deadline is stored in the socket attachment and the object keeps one alarm at the earliest of it and the machine's next deadline, so it survives hibernation. `wrangler dev` writes the close frame on time but never closes the TCP connection after the handshake, so Node's `WebSocket` never fires `close` for it; the integration test reads the frames off a raw socket instead. Heartbeats use the DO auto-response (`ping` to `pong`), so they never wake the object. `state` frames to one socket coalesce (O10, `StateCoalescer` in `do/sockets.ts`): the first after 150 ms of quiet goes at once, a burst inside the window sends only its latest when the window closes, any other frame (`open`, `error`) or a close sends the held state first, and a socket that closes drops its timer. Slots key on the socket's attachment id, since the runtime need not return the same wrapper twice. A state is absolute, so only the latest matters; a pending timer keeps the object awake 150 ms at most. Every send and close in the Screen object is guarded, so a socket that closed under it never skips the alarm's machine timer. The client's reconnect, poll and failure rules are the table below. Every server message carries `now` (server epoch ms), so countdowns survive clock skew. Exact types are in interfaces.md (`ScreenMsgIn`, `ScreenMsgOut`, `PhoneMsgIn`, `PhoneMsgOut`).
 
 | direction        | type        | body                                                                                |
 | ---------------- | ----------- | ----------------------------------------------------------------------------------- |
-| screen to server | `hello`     | `sid`                                                                               |
+| screen to server | `hello`     | `sid`; `fo: file or main`, the origin its links use, kept only before approval (FO-01) |
 |                  | `code.next` | none (also sent when the tab becomes visible)                                       |
 |                  | `launched`  | `mode: protocol or pdf`, sent once, at the first launch (any other state ignores it) |
 |                  | `ping`      | none                                                                                |
@@ -407,7 +411,7 @@ Both sockets are JSON text frames of at most 4 KB, `{"v":1,"t":<type>,...}`. A s
 |                  | `open`      | `item` and `links: {protocol, download, pdf, view}`, one field set per mint (sent once per mint; never repeated in `state`) |
 |                  | `error`     | `code: ErrorCode`                                                                   |
 | phone to server  | `hello`     | `pid`                                                                               |
-| server to phone  | `state`     | `PhoneView` (state, room, match, items, endsAt for the countdown, maxMinutes, mode, kind) |
+| server to phone  | `state`     | `PhoneView` (state, room, match, or the live pick's `choices` before it, items, endsAt for the countdown, maxMinutes, mode, kind) |
 |                  | `error`     | `code`                                                                              |
 
 **Channel state rules** (`core/channel.js`, its constants are in it; the polling loop is `core/poll.js` and the ping rule `core/health.js`, each loaded by `import()` on first need so a healthy page carries neither; the one owner, so a page restates none of it):
@@ -510,12 +514,14 @@ That is the schema as of `0001_init.sql` and migrations 0002 and 0003. Migration
 
 | key                | holds                                                                                                                            | lifetime                                                       |
 | ------------------ | -------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------- |
-| `meta`             | `screenRef`, mode, room id and name, `screenSecretHash`, created                                                                 | until the screen closes (10 min with no socket and no session) |
-| `machine`          | the whole pure-machine record (`src/worker/machine.ts`): state, current and previous code (value, issuedAt, expiresAt, consumed), code request times, pairing (session id, secret hash, kind, match, claimedAt, listed ids, pass hash, user id), session (the approved items in order, each with its id, approvedAt, endsAt, open mode, links minted per item index, `shown`), deadlines, end reason, open socket count | rewritten on every transition; pairing and session fields are dropped at end |
-| `schemaVersion`    | the storage version (`do/schema.ts`); every shape-checked step runs on every wake, so old-shape data is repaired whatever the stored version | until the screen closes |
+| `meta`             | `screenRef`, mode, room id and name, `screenSecretHash`, created, `linkOrigin` (`file` or `main`, set by the screen's hello before approval) | until the screen closes (10 min with no socket and no session) |
+| `machine`          | the whole pure-machine record (`src/worker/machine.ts`): state, current and previous code (value, issuedAt, expiresAt, consumed), code request times, pairing (session id, secret hash, kind, match, claimedAt, listed ids, pass hash, user id and sign-in, the live pick), session (the approved items in order, each with its id, approvedAt, endsAt, open mode, links minted per item index, `shown`), deadlines, end reason, open socket count | rewritten on every transition; pairing and session fields are dropped at end |
+| `schemaVersion`    | the storage version (`do/schema.ts`, 8); every shape-checked step runs on every wake, so old-shape data is repaired whatever the stored version. Step 8: a pairing reads confirmed unless it is a live claim still waiting on its pick, and one waiting with no valid `choices` ends; bad `choices`, `upload` and start clocks become null, an item's unknown `show` becomes its type's, bad `derived` null and bad `extra` `{}`, an unknown `linkOrigin` `file`, a link of an unknown purpose is revoked, and items the build cannot serve (no list, an unknown type or kind, a malformed library ref) end the session (`error`, `corruptEnd`) | until the screen closes |
+| `idem`             | Idempotency-Key rows (`seams/pairing/idem.ts`): owner, key and body hashes, time, the first answer (a claim's without its pid: a nonce the secret is derived from under `HASH_PEPPER`); at most 32, shape-checked on wake | 24 h per row (`IDEM_WINDOW_MS`), all of them when the pairing or the session ends |
+| `corruptEnd`       | The end step 8 made, from the machine before repair: its session id and effects (the codes' removal, a guest file's purge, the audit row, the push). The constructor arms the alarm now; the alarm runs each effect on its own, then drops the idempotency rows and a demo's slot, and deletes the key | until that wake                                                |
 | `links`            | per link: `tokenHash`, purpose, item index, mintedAt, firstFetchAt, fetches, revoked. At end every record is marked revoked and kept, so a holder of that session's token gets 410 while a guess gets 404; the next session's first mint drops the revoked records, so an older token is 404 too and the set stays one session's worth | until the screen closes |
-| `screenIp`         | HMAC of the IP of the newest proof of the sid (a `hello` or a poll), the link binding when no authed screen socket is live (ADR 0003) | until the screen closes                                        |
-| socket attachments | `{role, authed}`                                                                                                                 | the socket's life                                              |
+| `screenIp`         | HMAC of the IP of the newest proof of the sid (a `hello` or a poll), the link binding when no authed screen socket holds it (ADR 0003, OPEN-02) | until the screen closes                                        |
+| socket attachments | `{id, role, authed}`                                                                                                             | the socket's life                                              |
 
 ### 8.3 Directory Durable Object storage
 
@@ -576,7 +582,7 @@ CSP per page type. Every page uses no inline script or style and no HTML string 
 
 The landing and legal pages fetch nothing and have no manifest, so their policy has no `connect-src` or `manifest-src`. `connect-src 'self'` on the app pages covers `wss:` to the same host under CSP Level 3. A Playwright test asserts that no CSP violation is reported on any page. COEP is not set: nothing on the site needs cross-origin isolation, and it would add a failure mode.
 
-Every `/auth/*` route, `/api/me/disconnect`, the Entra erase and audit read (and the `/api/files` listing for a live Graph screen) answer `source_unavailable` (502) unless `FILE_SOURCE=graph` and the Entra settings are present; `config.ts` already refuses to start on `graph` with a partial configuration, so `source_unavailable` is what a mock deployment returns. With `FILE_SOURCE=mock` the demo account is the user (on a deployed origin `/api/me` still says signed out without a real session): no sign-in, `needsAuth` is false, and live screens list the same sample decks as demo screens. With `graph`, only a live screen builds `GraphFileSource` and reads the phone cookie; a demo screen ignores a cookie it is sent and always uses the demo account (SRC-04). The claim route resolves the cookie only under `graph`, so a signed-in phone claims with `needsAuth` false.
+Every `/auth/*` route, `/api/me/disconnect`, the Entra erase and audit read (and the `/api/files` listing for a live Graph screen) answer `source_unavailable` (502) unless `FILE_SOURCE=graph` and the Entra settings are present; `config.ts` already refuses to start on `graph` with a partial configuration, so `source_unavailable` is what a mock deployment returns. With `FILE_SOURCE=mock` the demo account is the user (on a deployed origin `/api/me` still says signed out without a real session): no sign-in, `needsAuth` is false, and live screens list the same sample decks as demo screens. With `graph`, only a live screen builds `GraphFileSource` and reads the phone cookie; a demo screen ignores a cookie it is sent and always uses the demo account (SRC-04). The claim route resolves the cookie only under `graph`, where a live owner claim without a session answers `auth_required` before the code is spent (PAIR-15), so `needsAuth` is always false.
 
 Cookies: `__Host-bloop_sid` (phone session: a random 256-bit value, only its SHA-256 in `phone_session`; HttpOnly, Secure, SameSite=Lax, Path=/, 90 days; sign-in issues a new value and deletes the presented one), `__Host-bloop_oauth` (state, PKCE verifier and nonce, AES-GCM with `COOKIE_KEY` and the cookie name as AAD, 10 min, SameSite=Lax; cleared by the callback), `__Host-bloop_room` (registered screens; HttpOnly, Secure, SameSite=Strict), `__Host-bloop_in` (`1` beside a member session, read only by the server, grants nothing), `__Host-bloop_dev` (the known-device value, 400 days, cleared by sign out everywhere), `__Host-bloop_bind` (the WebAuthn ceremony binder, SameSite=Strict, 10 min) and `__Host-bloop_view` (an admin's preview of the open site, 8 hours). The format is in `auth/cookies.ts`; ADR 0014 owns the member cookies and ADR 0026 the view cookie.
 

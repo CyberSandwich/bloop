@@ -92,11 +92,32 @@ describe("client code under the strict CSP", () => {
 
   it("the phone page strips the code from the address when its modules load, before it makes a request", () => {
     const phone = read("js/phone.js");
-    expect(phone).toMatch(/import \{ bootCode \} from "\.\/core\/boot-code\.js"/);
+    expect(phone).toMatch(/import \{ bootCode, KEPT, takeClaim \} from "\.\/core\/boot-code\.js"/);
     expect(read("js/core/boot-code.js")).toContain('history.replaceState(null, "", location.pathname)');
     // Modules only define things; the one top-level call that starts a request is `start()` at the end.
     expect(phone.trimEnd().endsWith("start();")).toBe(true);
     expect(phone.match(/^(?:await )?(?:api|fetch)\b/gm)).toBeNull();
+  });
+});
+
+describe("every page's live regions (design.md, Live regions)", () => {
+  const root = fileURLToPath(new URL("../../public/", import.meta.url));
+  const pages = readdirSync(root, { recursive: true, encoding: "utf8" }).filter((f) => f.endsWith(".html"));
+  // The screen's stage is a region over what it shows from the first paint, rewritten in place: not a message line.
+  const OVER_CONTENT = ['id="stage"'];
+
+  it("mount empty: a status, alert or aria-live element in the markup holds no words before the script gives them", () => {
+    let regions = 0;
+    for (const page of pages) {
+      const html = read(page);
+      for (const m of html.matchAll(/<(\w+)\b([^>]*\b(?:role="(?:status|alert)"|aria-live=)[^>]*)>([\s\S]*?)<\/\1>/g)) {
+        const [, , attrs = "", inner = ""] = m;
+        if (OVER_CONTENT.some((a) => attrs.includes(a))) continue;
+        regions += 1;
+        expect(inner, `${page}: <${m[1]}${attrs}>`).toBe("");
+      }
+    }
+    expect(regions).toBeGreaterThan(3);
   });
 });
 

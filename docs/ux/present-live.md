@@ -64,7 +64,7 @@ Tap Present (the sheet's module is fetched on pointerdown) and the Present sheet
 
 ## 3. The scan: `/a` signed in, the match pick
 
-The camera opens `/a?c=K7MQ9X`. The page calls `GET /api/me` and the claim in parallel; the claim answers `auth_required` before it spends the code when there is no cookie (section 5).
+The camera opens `/a?c=K7MQ9X`. The page claims the code (`kind: "owner"`, with an `Idempotency-Key` per attempt and the tab's `X-Bloop-Nonce`); the claim answers `auth_required` before it spends the code when there is no cookie, and only then does the page ask `GET /api/me`, beside loading the state's module (section 5).
 
 **States in order:** checking, then match, then (after the tap) approving, then approved. Each is a state of `/a`'s one column, title focused on change.
 
@@ -217,7 +217,7 @@ The landing's Present Live is a link to `/s` (live). The PC shows the waiting sc
 Open mode only. The claim answers `auth_required` before spending the code, so the code is still alive.
 
 ```
-390                                            1440 (centered column, buttons under the content)
+390 (all four in the glass panel, stacked)       1440 and 844 x 390 (two rows: four do not fit 480)
 
   <Back
                                                        Early Access Only
@@ -225,28 +225,31 @@ Open mode only. The claim answers `auth_required` before spending the code, so t
   Sign in to present your own files.                   No invite yet? You can still send
   No invite yet? You can still send one                one file to this screen.
   file to this screen.
-                                                       [ Send One File ]  [[ Sign In ]]
-  ( Try the Demo )   ( Join the Waitlist )             ( Try the Demo )  ( Join the Waitlist )
+                                                       ( Try the Demo ) ( Join the Waitlist )
+                                                       [ Send One File ] [[ Sign In ]]
 .--------------------------------------.
 | [[             Sign In            ]] |
 | [          Send One File         ]   |
+|          ( Join the Waitlist )       |
+|            ( Try the Demo )          |
 '--------------------------------------'
 ```
 
 - Title "Early Access Only"; line "Sign in to present your own files. No invite yet? You can still send one file to this screen." (owner's choice: it leads with what a signed-out member does, and the second sentence tells a guest the way on.)
-- Actions: Sign In (primary), Send One File (secondary; the guest path, today's guest add state, with the same code), then two text buttons in one row: Try the Demo (`/demo`) and Join the Waitlist (the Tally link, `source=phone`, `data-waitlist`).
-- Focus: the title, then Try the Demo, Join the Waitlist, Sign In, Send One File (reading order; the panel follows the content).
-- Lazy: the state's module loads on `auth_required`; its fallback is a plain link to `/signin?next=/a`.
-- Preview mode: there is no early-access state; a signed-out live claim works as today (guest send, or the existing first use).
+- Actions, in the action row (from 640 wide, four wrap to two: the text pair over the buttons): Try the Demo (text, `/demo`), Join the Waitlist (text, the Tally link, `source=phone`, `data-waitlist`), Send One File (secondary; the guest path, today's guest add state, with the same code), Sign In (primary).
+- Focus: the title, then Try the Demo, Join the Waitlist, Send One File, Sign In (reading order, the primary last as in every state; stacked, the panel puts Sign In on top).
+- Lazy: `core/early.js` loads on `auth_required`, with `GET /api/me` asked beside it; the state shows only when that answers `launchMode: "open"`. If the module cannot load, the code goes the guest way.
+- Preview mode (or `/api/me` failed): there is no early-access state; the phone claims the same code as a guest at once (one more claim; the refused one spent nothing).
 
 ### 5.1 Sign In, then resume
 
-Sign In stores the code and the time in `sessionStorage` and goes to `/signin?next=/a` (an allowlist of next paths). signin.md runs; on success it returns to `/a`, which re-claims with the stored code.
+Sign In keeps the code, its `Idempotency-Key` and the time in `sessionStorage` (`bloop.resume`) and goes to `/auth/start`, which takes no parameters; `/auth/callback` always lands on `/a` with no code, so `/a` takes the kept code (once: read and dropped; `core/boot-code.js`, on first load, so a failed lazy load never loses it) and claims it again as the owner, with the same key.
 
 - **Code still alive** (a passkey sign-in takes seconds): the match pick, as section 3. The lecturer never sees the camera again.
-- **Code expired** (the email code usually takes longer than the code's life): title "Scan the Screen Again"; line "The code changed while you signed in. You're signed in now, so one scan is all it takes."; button Enter the Code (primary). No Back: one exit.
+- **Code expired** (the claim answers `code_expired` for the 5 minutes the screen keeps a dead code routing, `code_unknown` after; an email code usually takes longer than the code's life): title "Scan the Screen Again"; line "The code changed while you signed in. You're signed in now, so one scan is all it takes." when `/api/me` says signed in, otherwise (the sign-in failed or `/api/me` gave no answer) "The code on the screen changed while you were away. One scan picks it up again."; button Enter the Code (primary). No Back: one exit.
+- **Still signed out, code alive**: the claim answers `auth_required` again, so the early-access state again.
 - **Taken meanwhile** (someone else scanned): as today's taken state.
-- The stored code is dropped on every outcome, and after 5 minutes unused, so a later visit to `/a` never replays it.
+- The stored code is taken on the next load of `/a` whatever follows, dropped by a new scan, and ignored after 5 minutes unused, so a later visit to `/a` never replays it.
 - Why tell the truth about the time: a code lives about a minute (design.md section 10), and an email round trip is longer; saying "one scan is all it takes" turns the miss into a promise the next scan keeps.
 
 ## 6. Strings (this file)
@@ -269,4 +272,4 @@ Sign In stores the code and the time in `sessionStorage` and goes to `/signin?ne
 | match module failed | Match Didn't Load / Reload |
 | approved | Approved for Room 2.14; On the Screen; Notes; Slide 3; No notes on this slide.; Open in PowerPoint; Show Slides Here; Preparing Slides; fallback line: Choose on the screen how to open it. |
 | early access | Early Access Only / Sign in to present your own files. No invite yet? You can still send one file to this screen. / Sign In, Send One File, Try the Demo, Join the Waitlist |
-| resume, expired | Scan the Screen Again / The code changed while you signed in. You're signed in now, so one scan is all it takes. / Enter the Code |
+| resume, expired | Scan the Screen Again / The code changed while you signed in. You're signed in now, so one scan is all it takes. (signed out: The code on the screen changed while you were away. One scan picks it up again.) / Enter the Code |

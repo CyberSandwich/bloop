@@ -161,17 +161,10 @@ describe("PAIR-13 control: only the pairing's phone commands the screen, absolut
     expect(offered().session?.seq).toEqual({ phone: 0, screen: 0 });
   });
 
-  it("refuses wrong_state before approval, after the end, and in a live session", () => {
+  it("refuses wrong_state before approval and after the end (live rules: machine-live.test.ts)", () => {
     expect(refused(claimedOwner(), deckPage(1))).toBe("wrong_state");
     expect(refused(offered(), deckPage(1))).toBe("wrong_state");
     expect(refused(ended(), deckPage(1))).toBe("wrong_state");
-    const live = must(must(claimedOwner("live"), { e: "listed", now: T0 + sec(2), ids: ["deck-1"] }).next, {
-      e: "approve",
-      now: T0 + sec(5),
-      items: [asItem(DECK)],
-      minutes: MAX_MINUTES,
-    }).next;
-    expect(refused(live, deckPage(1))).toBe("wrong_state");
   });
 
   it("LINK-01 a link is never remote-opened: file_not_found, and nothing is stored", () => {
@@ -349,12 +342,13 @@ describe("PAIR-13 rate limits: RL_CONTROL per IP, then per credential", () => {
       const { calls, env: e } = env(false);
       const res = await setLength(e, seconds);
       expect(res.status, String(seconds)).toBe(400);
-      expect(calls, String(seconds)).toEqual([]);
+      // The per-IP limit is spent before the body is read, so a bad body costs a stranger budget too.
+      expect(calls, String(seconds)).toEqual(["limit:ip"]);
     }
     for (const body of [{ minutes: 30 }, { seconds: 60, minutes: 1 }, { seconds: 60, endsAt: 1 }]) {
       const extra = env(false);
       expect((await post(extra.env, "/api/session/length", body)).status, JSON.stringify(body)).toBe(400);
-      expect(extra.calls).toEqual([]);
+      expect(extra.calls).toEqual(["limit:ip"]);
     }
   });
 

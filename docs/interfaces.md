@@ -2,14 +2,14 @@
 
 The contracts for the five seams (pairing, file source, open path, guest drop, residue), plus audit and metrics. Each block names the file it belongs in. Types are TypeScript. Browser code imports the `src/shared/protocol.ts` types through JSDoc (`/** @import {ScreenView} from "../../src/shared/protocol.ts" */`, from `public/js/`). Runtime code shared by the browser and the Worker lives in `public/js/shared/` as plain JSDoc-typed ES modules, and the Worker imports it by relative path. No type from Cloudflare, Graph or R2 crosses a seam: adapters translate at the edge, so the Node exit path (ADR 0001) rewrites adapters only.
 
-## 1. Shared protocol (`src/shared/protocol.ts`, contracts, never served; type-only except `OPEN_MODES`, the one list the Worker's schemas build from)
+## 1. Shared protocol (`src/shared/protocol.ts`, contracts, never served; type-only except `OPEN_MODES` and `LINK_PURPOSES`, the lists the Worker's schemas build from)
 ```ts
 export type Mode = "live" | "demo";
 export type Kind = "owner" | "guest";
 export type FileType = "pptx" | "pdf" | "jpg" | "png" | "mp4" | "mov";
 export const OPEN_MODES = ["protocol", "download", "pdf", "view"] as const;   // the launched frame and POST /api/screen/link both use it
 export type OpenMode = (typeof OPEN_MODES)[number];   // view: an image shown in the screen page
-export type EndReason = "phone" | "screen" | "auto" | "canceled" | "claim_timeout" | "error";
+export type EndReason = "phone" | "screen" | "auto" | "canceled" | "claim_timeout" | "error" | "account";   // account: endFromOwner
 export type Actor = "screen" | "phone" | "system" | "host" | "it";
 
 export type Result<T, E extends string> = { ok: true; value: T } | { ok: false; error: E };
@@ -23,7 +23,7 @@ export interface RoomView { name: string | null; registered: boolean; }   // nam
 export interface CodeView { code: string; expiresAt: number; qrUrl: string; }
 
 /** What a page may show of an approved item: no source id or URL (SRC-01). */
-export interface FileItem { kind: "file"; id: string; name: string; type: FileType; size: number | null; }   // id: server-assigned at approval ("i1", "i2", ... in list order), opaque, unique in the session, never an index or derived from the source; size: bytes, when the source gave one
+export interface FileItem { kind: "file"; id: string; name: string; type: FileType; size: number | null; show?: ItemKind; derived?: DerivedFlags | null; }   // a view always sets show and derived; id: server-assigned at approval ("i1", "i2", ... in list order), opaque, unique in the session, never an index or derived from the source; size: bytes, when the source gave one
 /** https on an allowed host only (LINK-01); the screen shows a card with the host, opened by a click, never a frame. */
 export interface LinkItem { kind: "link"; id: string; url: string; title: string; }   // id: as on FileItem
 export type Item = FileItem | LinkItem;
@@ -32,7 +32,7 @@ export type Item = FileItem | LinkItem;
 export type Sound = "on" | "off" | "blocked";   // blocked: the screen's browser refused unmuted play (no tap on the page yet), so it plays muted with Tap for Sound (VID-05)
 export interface Shown { item: string; page: number; present: boolean; play?: boolean; sound?: Sound; }   // item: a FILE item's id (the screen's own report may also name a link, at page 1); page: 1-based, within the item's pages; play and sound: a video's state, absent meaning playing with sound, so stored data from before them stays valid; either sender may send `blocked`, since a phone's command repeats the view it was built on
 /** The body of POST /api/control and POST /api/screen/shown. Absolute, so a replay changes nothing; a seq not above the sender's last applied one changes nothing, and one more than 24 h ahead of the server's clock is `bad_request`. */
-export interface ShownCommand extends Shown { seq: number; }   // the sender's clock in ms, at least one above its last, and above the `seq` of its latest view (the server's last for that sender), so a clock that fell behind across a reload still sends in order (PAIR-13)
+export interface ShownCommand extends Shown { seq: number; base?: number; }   // base: the screen's report only, the `v` of the last view it applied (REL-13); seq: the sender's clock in ms, at least one above its last, and above the `seq` of its latest view (the server's last for that sender), so a clock that fell behind across a reload still sends in order (PAIR-13)
 /** The body of POST /api/session/length: the session ends `seconds` from now, never past approval plus the mode's cap. */
 export interface LengthRequest { seconds: number; }   // whole seconds, MIN_LENGTH_SECONDS (public/js/shared/length.js) to SESSION_MAX_MINUTES x 60
 
@@ -43,11 +43,14 @@ export interface ScreenView {
   room: RoomView;
   code: CodeView | null;       // only in "waiting" and "ended"
   match: string | null;        // 2 digits, from "claimed" to "open"
-  items: Item[];               // from "offered" (guest) or "approved", else []; files by name, then links by title; a link or mint names an item by its index here, the remote by its `id`
-  shown: Shown | null;         // set by the phone's remote or the screen's own tap (demo only); null until then and outside a session
+  confirmed: boolean;          // the phone picked the match (a demo, or a pairing stored before the pick: true); the ring closes on it
+  items: Item[];               // from "offered" (guest) or "approved", else []; files by name, then links by title; a link or mint names an item by its index here, the remote by its `id`. Exactly these keys at every depth (PAIR-16)
+  shown: Shown | null;         // set by the phone's remote or the screen's own tap; null until then and outside a session
   openMode: OpenMode | null;   // an original PDF shown as a PDF is the `pdf_file` state, not `pdf_fallback`
   endsAt: number | null;
   endReason: EndReason | null;
+  upload: { bytes: number; total: number } | null;   // a guest's upload, while uploading only
+  choiceBytes: number;         // LARGE_FILE_CHOICE_BYTES, for the choice sheet
   seq: number;                 // the last `control` seq applied from this screen; 0 before any
   v: number;                   // applied changes so far (`Machine.v`): of two views of one session the larger `v` is the newer, equal ones are one state; a client adopts only a larger one
   now: number;
@@ -58,8 +61,11 @@ export interface PhoneView {
   mode: Mode;
   kind: Kind;
   room: RoomView;
-  match: string;
-  items: Item[];               // as in ScreenView
+  match: string | null;        // null while a live pick is open: the phone never holds the match before it (ADR 0015)
+  choices: string[] | null;    // the three shuffled choices, live and unconfirmed only
+  confirmed: boolean;
+  firstShownAt: number | null; // server ms the first item was shown, so elapsed time survives a reload
+  items: (Item & { extra?: PhoneItemExtra })[];   // as in ScreenView, plus each item's phone-only extras
   shown: Shown | null;         // as in ScreenView
   openMode: OpenMode | null;
   endsAt: number | null;       // with `now`, the phone's countdown to the session's own end
@@ -84,7 +90,7 @@ export interface LinkSet {
 // (`/api/screen/ws?ref=<screenRef>`, `/api/pair/ws?ref=<screenRef>`): the first frame is the credential.
 // The exact text {"v":1,"t":"ping"} is answered with {"v":1,"t":"pong"} by the runtime without waking the object.
 export type ScreenMsgIn =
-  | { v: 1; t: "hello"; sid: string }
+  | { v: 1; t: "hello"; sid: string; fo?: "file" | "main" }   // fo: the origin the screen's links use, kept only before approval (FO-01)
   | { v: 1; t: "code.next" }
   | { v: 1; t: "open.click" }      // the Open button on a guest offer
   | { v: 1; t: "launched"; mode: OpenMode }
@@ -102,15 +108,29 @@ export type PhoneMsgOut =
 
 export interface ClaimRequest { code: string; kind?: Kind; }   // kind defaults to "owner"; "guest" asks for the drop path
 export interface ClaimResponse {
-  pid: string; room: RoomView; match: string; mode: Mode; kind: Kind; needsAuth: boolean; dropMaxBytes: number;
-}
+  pid: string; room: RoomView; match: string | null; choices: string[] | null; mode: Mode; kind: Kind; needsAuth: boolean; dropMaxBytes: number;
+}   // live: choices and no match; demo: the match and no choices
 /** A row of the phone's list: `GET /api/files` answers `{items: Entry[]}`, files first, then links. */
 export interface FileEntry extends Omit<FileItem, "id"> { id: string; modifiedAt: number; }   // id: the source's entry id, not an item id; opaque to the phone; never a Graph URL
 export interface LinkEntry extends Omit<LinkItem, "id"> { id: string; }
 export type Entry = FileEntry | LinkEntry;
 export interface ApproveRequest { ids: string[]; }                     // POST /api/approve: 1 to MAX_ITEMS (12) distinct entry ids
-export interface LinkRequest { purpose: OpenMode; item?: number; }    // POST /api/screen/link: item defaults to the launched one
+export interface LinkRequest { purpose: LinkPurpose; item?: number; }   // POST /api/screen/link: item defaults to the launched one
 export interface LinkResponse { item: number; links: LinkSet; }
+
+// The present additions (ADRs 0015, 0018).
+export const ITEM_KINDS = ["deck", "pdf", "doc", "sheet", "text", "image", "video"] as const;
+export type ItemKind = (typeof ITEM_KINDS)[number];   // FileItem.show: kindOf(type) in src/worker/items.ts, never sent by a client
+export interface DerivedFlags { slides: boolean; pdf: boolean; pages: number | null; motion: boolean; }   // FileItem.derived; exactly these keys (PAIR-16); null for a demo, Graph or unconverted guest file
+export interface PhoneItemExtra { notes: boolean; fontsMissing: string[]; }   // PhoneView.items[i].extra; never in a ScreenView
+// Shown.via ("viewer" | "app", live decks); LinkSet.bundle (the base `.../b/<token>/`);
+// PairingAccountError "match_required" | "service_busy" | "match_wrong" (a wrong pick canceled the claim); statuses in errors-app.js.
+// The pick's codes are phone-only, so the screen's ERRORS never carries them; the machine's MachineError and the
+// store's Result add them to ErrorCode (dropDone, after the gated upload.start, answers ErrorCode only).
+export interface MatchRequest { choice: string; }   // POST /api/match
+export interface MatchResponse { view: PhoneView; }
+export const LINK_PURPOSES = [...OPEN_MODES, "bundle"] as const;   // bundle is a link purpose, not an open mode
+export type LinkPurpose = (typeof LINK_PURPOSES)[number];
 
 export type PairError =
   | "code_malformed" | "code_unknown" | "code_expired" | "code_taken"
@@ -136,7 +156,7 @@ export interface Problem { type: "about:blank"; status: number; code: ErrorCode;
 
 // User-facing state keys: the slots in the shared state strings (design.md section 7).
 export type PhoneStateKey =
-  | "checking" | "match" | "choose" | "approve" | "approve_demo" | "unregistered" | "first_use"
+  | "checking" | "pick" | "match_wrong" | "early" | "rescan" | "match" | "choose" | "approve" | "approve_demo" | "unregistered" | "first_use"
   | "needs_admin" | "empty" | "approving" | "opening" | "open" | "open_fallback" | "pdf_fallback"
   | "pdf_file" | "ended" | "canceled" | "expired" | "taken" | "offline" | "error" | "guest_add"
   | "guest_confirm" | "guest_sending" | "guest_refused" | "guest_sent" | "typed_wrong" | "framed"
@@ -161,6 +181,7 @@ export type ScreenStateKey =
 | uploading | `uploadAt` = upload start + `UPLOAD_TIMEOUT_SECONDS` | `waiting` (`claim_timeout`), object deleted |
 | offered | `offerAt` = offeredAt + `CLAIM_TIMEOUT_SECONDS` | `waiting` (`claim_timeout`), object deleted (the object has no file ref while still uploading, so `purge` carries `file: null` and the guest-drop module deletes by session key) |
 | approved, opening, open | `endsAt` = approvedAt + `SESSION_DEFAULT_MINUTES`, then wherever the phone's `length` sets it, never past approvedAt + the mode's cap (`SESSION_MAX_MINUTES`; demo `DEMO_MAX_MINUTES`) | `ended` (`auto`) |
+| approved, opening, open | `startBy` = approvedAt + 15 s, until the first fetch or the screen's first report starts the session (`startedAt`), when it is earlier than `endsAt` | the same state: one `start` effect, `ok` false with `startCause` (else `timeout`), and `startBy` cleared (REL-16). A session that ends first writes no point |
 | ended | `closeAt` as in waiting | `closed` |
 
 - Code expiry is not a timer. A code is valid while `now < expiresAt`, which is `issuedAt + CODE_TTL_SECONDS + CODE_GRACE_SECONDS`. The screen asks for the next code every `CODE_TTL_SECONDS`. The previous code stays claimable until the earlier of its own `expiresAt` and `CODE_GRACE_SECONDS` after its successor was issued. The code a screen shows (`CodeView.expiresAt`) is `issuedAt + CODE_TTL_SECONDS`.
@@ -171,37 +192,48 @@ export type ScreenStateKey =
 | from | event | guard | to | effects |
 |---|---|---|---|---|
 | waiting, ended | `code.next` | at most 6 per min (`rate_limited`); ended for at least 3 s | waiting | issue code, Directory put (the previous-but-one code is removed), push screen `state` |
-| waiting | `claim(code)` | code is current or previous, unconsumed, unexpired. In any other state the answer is `code_taken` for a code the screen still holds and `code_expired` otherwise | claimed | consume code (the Directory keeps it, so a replay answers `code_taken`); session id, pairing secret, match code; push both; audit `claimed` |
+| waiting | `claim(code, choices)` | code is current or previous, unconsumed, unexpired. In any other state the answer is `code_taken` for a code the screen still holds and `code_expired` otherwise. Live `choices` (the Screen object draws them, `drawChoices`): three distinct two-digit strings holding the match, else `bad_request`, so every live claim carries the pick (a demo claim ignores them) | claimed | consume code (the Directory keeps it, so a replay answers `code_taken`); session id, pairing secret, match code; the pinned user and sign-in (`userId`, `phoneSession`); a live claim stores the choices unconfirmed; push both; audit `claimed` |
 | waiting | `claim(code, pass)` | as above, plus a pass valid for this room | claimed (kind guest) | as above; mark the pass used |
-| claimed | `listed(ids)` | owner kind | choosing | store ids; push both |
-| claimed, choosing | `approve(items)` | 1 to `MAX_ITEMS` items with distinct refs, else `bad_request`; live: exactly one file, else `bad_request` (a live screen has no viewer to reach a second item or a link); owner kind; every ref in stored ids (live) or entries the Worker resolved (demo), else `file_not_found` | approved | items in `orderItems` order, `endsAt`, mint the protocol link for the first file (none for links only); push screen `open`; audit `approved` |
-| claimed, choosing | `upload.start` | policy allows it (checked by `beginDrop`), no file yet; a `choosing` pairing must be an owner's | uploading | set `uploadAt`; an owner pairing becomes a guest (list and account dropped), so a phone can claim first and choose to send a file later |
+| claimed, choosing | `match(choice)` | a confirmed or demo pairing takes it as a no-op (one pick per claim) | claimed, choosing; or waiting | the match: confirmed, push both. Any other choice: as cancel, with cause `match_wrong`, and the phone is answered `match_wrong` (PAIR-14) |
+| claimed | `listed(ids)` | owner kind; a live pairing before its pick is `match_required` | choosing | store ids; push both |
+| claimed, choosing | `approve(items)` | 1 to `MAX_ITEMS` items with distinct refs, else `bad_request`; owner kind; a live pairing before its pick is `match_required`. Live: an Up Next list (every item a library file) was checked by the route; it needs a pinned user (`auth_required`) and each ref in the library's shape (22 id characters, `:`, a version of 1 to 6 digits; `bad_request`). Any other live list, links included, is exactly one listed file, else `bad_request` or `file_not_found` (until the library is the live source). Demo: entries the Worker resolved | approved | items in `orderItems` order, `endsAt`, `startBy`, mint the protocol link for the first file (none for links only); the pairing's user stays the claim's; push screen `open`; audit `approved` |
+| claimed, choosing | `upload.start` | policy allows it (checked by `beginDrop`), no file yet; a `choosing` pairing must be an owner's; a live pairing before its pick is `match_required` | uploading | set `uploadAt`, clear `upload`; an owner pairing becomes a guest (list and account dropped), so a phone can claim first and choose to send a file later |
+| uploading | `upload.progress(bytes, total)` | safe integers, 0 to `total`, else `bad_request`; the first report fixes the total, and another is `bad_request` | (same) | store `upload`; push screen. A count not above the stored one changes nothing, so the pill never moves back |
 | uploading | `upload.done(file)` | validated | offered | store the R2 ref and `offerAt`; push screen `guest_open` (file name, Open); audit `guest.uploaded` |
 | offered | `open.click` | from the screen socket (a repeat in approved, opening or open returns the current view) | approved | as approve: `endsAt`, mint link; push screen `open`; audit `approved` (actor screen) |
-| uploading | `upload.failed(e)` | | claimed | delete object; push both `state`; audit `guest.refused` with cause `e` (the drop route answers the phone with `e`) |
-| approved, opening, open | `control(from, seq, shown)` | from the phone (`POST /api/control`, pid) or the screen (`POST /api/screen/shown`, sid); demo only (a live session is `wrong_state`); `shown.item` names a FILE item by id, else `file_not_found` (PAIR-11, LINK-01), except that the screen's report may name a link's id (the card it shows, so the phone's mark leaves the file; never a command); `shown.page` is within the item's pages (a demo owner's deck or PDF has 2, anything else and a link 1), else `bad_request`; `shown.play` and `shown.sound` set a video's play state (VID-05); any other state is `wrong_state` | (same) | a `seq` more than 24 h ahead of the event's clock is `bad_request` (one far ahead would refuse every later command from its sender); a `seq` not above `session.seq[from]` changes nothing (a replay, or a late older command); else store the seq, and store `session.shown` and push both unless it is the same `shown` (an absent `play` equals true and an absent `sound` equals `on`), which pushes nothing. Between senders the last applied wins (PAIR-13) |
+| uploading | `upload.failed(e)` | | claimed | delete object; clear `upload`; the pairing and its pick are kept, so the phone can send again (UP-09); push both `state`; audit `guest.refused` with cause `e` (the drop route answers the phone with `e`) |
+| offered, approved, opening, open | `derivedReady(ref, derived, extra)` | `derived` is exactly the `DerivedFlags` keys and `extra` a `PhoneItemExtra` (at most 50 font names of at most 100 characters), else `bad_request` | (same) | the file item with `ref` takes `derived`, `session.extra[id]` takes `extra`; push both. A ref no item holds is a stale call and changes nothing |
+| approved, opening, open | `control(from, seq, shown)` | from the phone (`POST /api/control`, pid) or the screen (`POST /api/screen/shown`, sid); `shown.item` names a FILE item by id, else `file_not_found` (PAIR-11, LINK-01), except that the screen's report may name a link's id (the card it shows, so the phone's mark leaves the file; never a command); `shown.page` is within the item's pages (`derived.pages` when set; else a demo owner's deck or PDF has 2, anything else and a link 1), else `bad_request`; `shown.via` only for a deck with `derived.slides`, else `bad_request`; `shown.play` and `shown.sound` set a video's play state (VID-05). Live: a phone must be a confirmed owner, and the item a deck, PDF or doc, else `wrong_state`; any other state is `wrong_state` | (same) | a `seq` more than 24 h ahead of the event's clock is `bad_request` (one far ahead would refuse every later command from its sender); a `seq` not above `session.seq[from]` changes nothing (a replay, or a late older command); a screen report whose `base` is below `phoneV` was built before the phone's latest turn and changes nothing (REL-13; one with no `base` is ordered per sender only); else store the seq, and store `session.shown` (and `firstShownAt`, once; a phone's change also sets `phoneV`) and push both unless it is the same `shown` (an absent `play` equals true and an absent `sound` equals `on`), which pushes nothing. Between senders the last applied wins (PAIR-13). The screen's report starts the session (`startedAt`, the `start` effect ok) when the start is still awaited |
 | approved, opening, open | `length(seconds, maxMinutes)` | from the phone (`POST /api/session/length`, pid), both modes; the route takes the `LengthRequest` above, and the Screen object passes the mode's cap; any other state is `wrong_state` | (same) | `endsAt` = min(now + seconds, approvedAt + maxMinutes), so no run of changes outlives the cap; audit `session.length` (actor `phone`, detail `endsAt`), push both and the alarm moves to it; the audit row is written only when the end is a minute or more from the end last audited (`auditedEndsAt`, set then; until then the approved end), and the same `endsAt` again pushes nothing. Absolute, never a delta: a replay sets about the same end. At or past `endsAt` (an alarm running late) it ends the session as `timer` would (`ended`, `auto`), and the Screen object answers `session_ended` (SESS-01) |
-| approved | `launched(mode)` | from the screen | opening | record mode; metric |
-| approved, opening | `fetched(link)` | first fetch of any link | open | `first_open_at`; metric `scan_to_open_ms`; push both |
+| approved | `launched(mode)` | from the screen | opening | record mode; `startCause` `launch_no_fetch` while the start is awaited (a launch starts nothing until the app fetches); push both |
+| approved, opening | `fetched(link)` | first fetch of any link | open | `first_open_at`; starts the session as a screen report does; metric `scan_to_open_ms`; push both |
+| approved, opening, open | `started(cause)` | from the Screen object: `fetch_refused` (a refused /f/ request of this session) or `fo_fallback` (commit 6) | (same) | `startCause` while the start is awaited; the latest wins; no push |
 | opening, open | `fallback(mode, item)` | `item` (default: the first file) names a file, else `file_not_found` (PAIR-11); mints left | (same) | mint a link for `mode` and that item; when it is the launched item, set the open mode to what the link serves for the type (`effectivePurpose`: a deck's view is its PDF); metric `fallback`; push `open` to the screen and `state` to both |
 | approved | `fallback(protocol, item)` | as above | (same) | the screen lost its link, or shows another item: mint its protocol (or view) link, no mode change, no metric |
 | claimed, choosing, uploading, offered | `cancel` | from the phone | waiting | end reason `canceled`; audit; delete any object; both codes wiped, a fresh one issued; phone sockets get `error pairing_invalid` and close |
 | claimed, choosing, uploading, offered | `restart` | from the screen ("Start Over") | waiting | end reason `canceled`, actor screen; audit; delete any object; as cancel |
-| approved, opening, open | `end(by)` | | ended | revoke links; residue purge; audit `ended`; metric; push both |
+| approved, opening, open | `end(by)` | | ended | end reason `by`, except `system` is `auto`; revoke links; residue purge; audit `ended` (an `account` end by actor system); metric; push both |
 | claimed to offered | `end(by)` | | ended | as above, no session row change beyond `ended_at` |
 | any timer state | `timer(now)` | deadline passed | per 2.1 | per 2.1 |
 | ended, waiting | `timer(now)` | `closeAt` passed, no socket | closed | `deleteAll()` |
 | waiting | `end(screen)` | from the screen only (a phone or system end here is `wrong_state`) | closed | both codes removed, `deleteAll()` (which releases a demo slot); no audit, as there was no session. The answer is the closed view, and the sid then answers `screen_gone`. A `claimed` screen still goes to `ended`, so its phone reads why |
 | closed | any | | closed | every call returns `screen_gone` |
 
-An event the table does not list for a state returns `wrong_state` and changes nothing; approve in `ended` returns `session_ended`. Approve (the same set of items, in any order), open.click, fetched, control and end are idempotent: a repeat in the target state returns the current view. Cancel is not: it drops the pairing, so a repeat fails with `pairing_invalid` before it reaches the machine.
+An event the table does not list for a state returns `wrong_state` and changes nothing; approve in `ended` returns `session_ended`. Approve (the same set of items, in any order; library items in the same order), open.click, fetched, control and end are idempotent: a repeat in the target state returns the current view. Cancel is not: it drops the pairing, so a repeat fails with `pairing_invalid` before it reaches the machine.
 
 ### 2.3 The pure machine (`src/worker/machine.ts`)
+`machine.ts` holds the types, `transition` (one `switch` that dispatches by event) and `nextDeadline`. The 2.2 rows are reduced in `src/worker/machine/`: `pairing.ts` (code.next, claim, match, cancel, restart, socket, timer), `lists.ts` (listed, approve, open.click, fallback, derivedReady), `upload.ts` (upload.start, upload.progress, upload.done, upload.failed) and `control.ts` (control, length, launched, fetched, started, end); `step.ts` holds what they share: the step constructors, a new session, the start (`withStart`, `START_SECONDS` 15), the pick gate (`unconfirmed`), `endSession` and `close`.
 ```ts
-import type { EndReason, ErrorCode, FileType, Kind, Mode, OpenMode, SessionState } from "../shared/protocol.ts";
+import type {
+  DerivedFlags, EndReason, ErrorCode, FileType, ItemKind, Kind, Mode, OpenMode, PairingAccountError, PhoneItemExtra,
+  SessionState,
+} from "../shared/protocol.ts";
 
 export interface Code { value: string; issuedAt: number; expiresAt: number; consumed: boolean; }
-export interface FileRef { source: "mock" | "graph" | "guest"; ref: string; name: string; type: FileType; size?: number; }
+export interface FileRef { source: "mock" | "graph" | "guest" | "library"; ref: string; name: string; type: FileType; size?: number;
+  show?: ItemKind;                   // absent on items stored before kinds: `showOf` reads kindOf(type)
+  derived?: DerivedFlags | null; }   // set by derivedReady
+export type StartCause = "launch_no_fetch" | "fetch_refused" | "fo_fallback" | "timeout";
 
 // src/worker/items.ts: the item types, the order and the link rule, shared by the machine, the routes and the tests.
 export interface LinkRef { kind: "link"; id: string; ref: string; url: string; title: string; }
@@ -211,7 +243,8 @@ export type ItemDraft = Omit<FileItemRef, "id"> | Omit<LinkRef, "id">;   // an i
 export const MAX_ITEMS = 12;
 export const LINK_HOSTS: readonly string[];          // ["www.vevox.com"]
 export declare function allowedLink(url: string): string | null;   // URL-parsed: https, an allowed host, no credentials, no explicit non-default port, at most 2048 characters; answers url.href, the only form an item stores
-export declare function orderItems<T extends ItemDraft>(items: readonly T[]): T[];   // files by name, then links by title
+export declare function orderItems<T extends ItemDraft>(items: readonly T[]): T[];   // every file a library file (links beside them or not): the caller's (Up Next) order; else, links alone included, files by name, then links by title
+export declare function kindOf(type: FileType): ItemKind;   // the viewer per type; a Record over FileType, so a new type fails the typecheck until it has one
 export declare function withIds(items: readonly (ItemDraft | ItemRef)[]): ItemRef[];   // "i1", "i2", ... by place in the ordered list, written at approval (or upload.done); a list whose items all hold ids keeps them (a guest's file at open.click), one missing any is numbered whole
 export declare const shownSchema: z.ZodType<Shown>;   // the one shape check for `shown` (strict; `play` and `sound` optional): the remote's body extends it with `seq`, and schema step 6 repairs stored data with it (step 7 starts a missing or malformed `Machine.v` at 0)
 export declare function shownFault(items: readonly ItemRef[], shown: Shown, view: { mode: Mode; kind: Kind | null }): "file_not_found" | "bad_request" | null;   // not a FILE id in the list, or a page outside it
@@ -231,6 +264,9 @@ export interface Machine {
     sessionId: string;               // the D1 session id and the audit key; one per claim
     kind: Kind; match: string; claimedAt: number; secretHash: string;
     listed: string[]; userId: string | null; passHash: string | null;
+    confirmed?: boolean;             // live: false until the pick; absent (stored before the pick): confirmed
+    choices?: string[] | null;       // the three, in display order; live and unconfirmed only
+    phoneSession?: string | null;    // the claiming sign-in's public id, kept only with a user; the end drops it
   } | null;
   session: {                         // the approved items, ordered; approvedAt and endsAt are null while "offered" (one guest file)
     items: ItemRef[]; approvedAt: number | null; endsAt: number | null;
@@ -238,7 +274,13 @@ export interface Machine {
     openMode: OpenMode | null; firstOpenAt: number | null; minted: number[];   // links minted per item index, the first included; capped at 1 + LINK_MINTS_PER_ITEM
     shown: Shown | null;   // set by `control`
     seq: { phone: number; screen: number };   // the last `control` seq applied per sender; 0 in a new session
+    phoneV?: number;                 // the machine's v after the phone last changed `shown` (REL-13)
+    extra?: Record<string, PhoneItemExtra>;   // phone-only, per item id, apart from the items the screen sees
+    firstShownAt?: number | null; startedAt?: number | null;
+    startBy?: number | null;         // approval + START_SECONDS while nothing started; null once started or missed
+    startCause?: StartCause | null;  // the last hint of why nothing started
   } | null;
+  upload?: { bytes: number; total: number } | null;   // a guest send's progress, while uploading
   uploadAt: number | null;
   offerAt: number | null;
   endedAt: number | null;
@@ -250,20 +292,24 @@ export interface Machine {
 export type Event =
   | { e: "code.next"; now: number; value: string }                      // value drawn by the caller
   | { e: "claim"; now: number; code: string; sessionId: string; secretHash: string; match: string;
-      kind: Kind; userId: string | null; passHash: string | null }
+      kind: Kind; userId: string | null; phoneSession?: string | null; passHash: string | null; choices?: string[] | null }
+  | { e: "match"; now: number; choice: string }
   | { e: "listed"; now: number; ids: string[] }
-  | { e: "approve"; now: number; items: ItemDraft[]; maxMinutes: number; userId?: string | null }
+  | { e: "approve"; now: number; items: ItemDraft[]; minutes: number }   // minutes: the starting length
   | { e: "upload.start"; now: number; timeoutSeconds: number }
+  | { e: "upload.progress"; now: number; bytes: number; total: number }
+  | { e: "derivedReady"; now: number; ref: string; derived: DerivedFlags; extra: PhoneItemExtra }
+  | { e: "started"; now: number; cause: "fetch_refused" | "fo_fallback" }   // a hint the Screen object saw
   | { e: "upload.done"; now: number; file: FileRef }
   | { e: "upload.failed"; now: number; error: ErrorCode }
-  | { e: "open.click"; now: number; maxMinutes: number }                 // the Open button on a guest offer
+  | { e: "open.click"; now: number; minutes: number }                    // the Open button on a guest offer
   | { e: "launched"; now: number; mode: OpenMode }
   | { e: "fetched"; now: number }
-  | { e: "control"; now: number; from: "phone" | "screen"; seq: number; shown: Shown }   // the phone's remote, or the screen reporting its own tap
+  | { e: "control"; now: number; from: "phone" | "screen"; seq: number; shown: Shown; base?: number }   // the phone's remote, or the screen reporting its own tap
   | { e: "fallback"; now: number; mode: OpenMode; item: number | null; maxMints: number }   // null: the first file
   | { e: "cancel"; now: number }
   | { e: "restart"; now: number }
-  | { e: "end"; now: number; by: "phone" | "screen" | "system" }
+  | { e: "end"; now: number; by: "phone" | "screen" | "system" | "account" }   // account: endFromOwner, reason account, actor system
   | { e: "socket"; now: number; open: number }                          // open socket count
   | { e: "timer"; now: number };
 
@@ -274,8 +320,9 @@ export type Effect =
   | { fx: "mint"; purpose: OpenMode; item: number }                    // approve mints "protocol" for the first file
   | { fx: "revokeLinks" }
   | { fx: "purge"; file: FileRef | null }                              // Residue.server: a guest object only (null while uploading); an owner session purges nothing
-  | { fx: "audit"; type: AuditType; actor: "screen" | "phone" | "system"; cause?: ErrorCode }
+  | { fx: "audit"; type: AuditType; actor: "screen" | "phone" | "system"; cause?: MachineError }
   | { fx: "metric"; name: MetricName; ms?: number; cause?: ErrorCode }
+  | { fx: "start"; ok: boolean; cause: StartCause | null }            // one point per session (REL-16): SessionSeams.start, which R fills (R9); a no-op until then
   | { fx: "deleteAll" };
 
 export type AuditType =
@@ -284,7 +331,8 @@ export type AuditType =
 export type MetricName =
   | "scan_to_open_ms" | "approve_to_open_ms" | "failure" | "fallback" | "session_minutes";
 
-export type Step = { ok: true; next: Machine; effects: Effect[] } | { ok: false; error: ErrorCode };
+export type MachineError = ErrorCode | PairingAccountError;
+export type Step = { ok: true; next: Machine; effects: Effect[] } | { ok: false; error: MachineError };
 
 /** Pure: no I/O, no clock, no randomness. The Screen object applies effects in order. */
 export type Transition = (m: Machine, ev: Event, cfg: MachineConfig) => Step;
@@ -306,11 +354,12 @@ import type {
 import type { ItemDraft } from "../items.ts";
 import type { FileRef } from "../machine.ts";
 
-/** Errors are PairError codes, plus file_not_found (approve), unauthorized (a bad sid) and internal. */
-export type Result<T> = { ok: true; value: T } | { ok: false; error: ErrorCode };
+/** Errors are PairError codes, plus file_not_found (approve), unauthorized (a bad sid), internal and the pick's codes. */
+export type Result<T, E = ErrorCode | PairingAccountError> = { ok: true; value: T } | { ok: false; error: E };
 
 export interface ScreenCreated { sid: string; room: RoomView; view: ScreenView; }
-export interface PhoneInfo { kind: Kind; ipHash: string; userId: string | null; passHash: string | null; }
+export interface PhoneInfo { kind: Kind; ipHash: string; userId: string | null; phoneSession?: string | null; passHash: string | null; }   // phoneSession: the sign-in's public id, pinned with userId
+export interface IdemKey { owner: string; keyHash: string; bodyHash: string; }   // idem.ts's `fresh` hashes plus the key's owner
 
 /**
  * One per screen. sid = screenRef + "." + screenSecret; pid = screenRef + "." + pairingSecret.
@@ -321,11 +370,24 @@ export interface PhoneInfo { kind: Kind; ipHash: string; userId: string | null; 
 export interface PairingStore {
   create(input: { screenRef: string; mode: Mode; roomId: string | null; roomName: string | null }): Promise<Result<ScreenCreated>>;
   nextCode(sid: string): Promise<Result<CodeView>>;
-  claim(code: string, phone: PhoneInfo): Promise<Result<ClaimResponse>>;
+  /** Live: answers the three `choices` and `match: null`; a demo the match. With `idem`, the answer is kept for that key. */
+  claim(code: string, phone: PhoneInfo, idem?: IdemKey): Promise<Result<ClaimResponse>>;
+  /** idem.ts's `IdemStore.find` over this object's rows (`seams/pairing/idem.ts`), the pid derived again from the row's nonce. */
+  idemFind(owner: string, keyHash: string, since: number): Promise<{ bodyHash: string; stored: ClaimResponse } | null>;
+  /** POST /api/match: the pick; a wrong one answers `match_wrong`; a repeat after a right one, in session too, is a no-op. With `idem` (the route's Idempotency-Key), a right pick's answer is kept for the key, scoped to the pairing. */
+  match(pid: string, choice: string, idem?: { keyHash: string; bodyHash: string }): Promise<Result<MatchResponse>>;
+  /** The first match answer kept for a key of this pid's pairing, for the route's replay. */
+  matchIdemFind(pid: string, keyHash: string, since: number): Promise<{ bodyHash: string; stored: MatchResponse } | null>;
   listed(pid: string, ids: string[]): Promise<Result<PhoneView>>;
-  /** `userId`: the account the approving phone is signed in as now; the object keeps it for /f/ (null for demo and guest). */
-  approve(pid: string, items: ItemDraft[], userId: string | null): Promise<Result<PhoneView>>;
-  /** The phone's remote (POST /api/control): what the screen shows. Absolute, so a repeat is a no-op, and a seq not above the phone's last applied one changes nothing. Demo only: a live session is `wrong_state`. */
+  /** A live pick not yet made is `match_required`. `cookieUser` (null signed out) must be the claim's pinned user, else `pairing_invalid`: a pinned user is final (ADR 0015). */
+  approve(pid: string, items: ItemDraft[], cookieUser: string | null): Promise<Result<PhoneView>>;
+  /** A guest upload's bytes so far (U's caller): the machine's `upload.progress`. */
+  uploadProgress(pid: string, bytes: number, total: number): Promise<Result<PhoneView>>;
+  /** For the paired phone only (a sid fails the pid hash): an approved library item of this session whose extras say notes; any miss is null (NOTES-01). */
+  notesTarget(pid: string, itemId: string): Promise<{ bucket: "LIBRARY"; prefix: string; userId: string } | null>;
+  /** Whom the pairing is pinned to, for the routes' cookie check. */
+  pinnedUser(pid: string): Promise<Result<{ userId: string | null; sessionPublicId: string | null }>>;
+  /** The phone's remote (POST /api/control): what the screen shows. Absolute, so a repeat is a no-op, and a seq not above the phone's last applied one changes nothing. Live: a confirmed owner, a deck, PDF or doc. */
   control(pid: string, command: ShownCommand): Promise<Result<PhoneView>>;
   /** The screen reports its own tap (POST /api/screen/shown), so the phone's highlight stays true. Same rules as `control`, with its own seq. */
   reportShown(sid: string, command: ShownCommand): Promise<Result<ScreenView>>;
@@ -370,8 +432,13 @@ export interface UsedLink { file: FileRef; purpose: OpenMode; mode: Mode; userId
 export interface CodeDirectory {
   /** `demo` is the screen's mode: the claim route reads it back to apply the demo claim limit and the off switch. */
   put(code: string, screenRef: string, expiresAt: number, demo: boolean): Promise<"ok" | "collision">;
-  lookup(code: string, ipHash: string, now: number):
-    Promise<{ ok: true; screenRef: string; demo: boolean } | { ok: false; error: "code_unknown" | "rate_limited" }>;
+  /**
+   * PAIR-15 (`directory-rules.ts` lookupVerdict): a live code claimed by a signed-out owner is `auth_required`, not
+   * routed, so not spent, and no miss; a guest claim the drop refuses answers `guestRefusal` for any non-demo code,
+   * existing or not, and is no miss.
+   */
+  lookup(code: string, ipHash: string, now: number, who: { kind: Kind; signedIn: boolean; guestRefusal: GuestRefusal | null }):
+    Promise<{ ok: true; screenRef: string; demo: boolean } | { ok: false; error: "code_unknown" | "rate_limited" | "auth_required" | GuestRefusal }>;
   remove(code: string): Promise<void>;
 }
 
@@ -383,6 +450,7 @@ export interface DemoCap {
   demoRelease(screenRef: string): Promise<void>;
 }
 ```
+`Screen.endFromOwner(userId: string): Promise<Result<null>>` is called object to object only (the library's endScreens). It is on the Screen class, not on `PairingStore`, and a test pins that no route, router, entry point or frame names it. It ends the session `userId` owns with reason `account` (actor system; links revoked, as `end`; the screen shows the phone-end line, never "Time's up."); no pairing or another owner changes nothing. The end is committed before its effects run, so a call on a screen an account end already ended re-runs its revoke and push (`accountEndRedo`, idempotent): a caller retries a revoke that threw by calling again. Its bodies are in `seams/open-path/lookups.ts`, with `notesTarget`'s, `pinnedUser`'s and the approve pin's (`cookieMismatch`). `Screen.derivedReady(ref, derived, extra): Promise<Result<null>>` is object to object too (L's UserLibrary; V2 for a demo guest): the machine's `derivedReady`, and with no session, or one past it, nothing changes.
 
 ### 2.5 Codes (`public/js/shared/codes.js`, pure)
 ```js
@@ -611,15 +679,7 @@ import type { AuditType, MetricName } from "./machine.ts";
 /** Lets the first event create the `session` row; later events find it by sessionId. Set by the machine's effects. */
 export interface SessionContext { screenRef: string; roomId: string | null; mode: Mode; kind: Kind; userId: string | null; }
 
-export interface AuditEvent {
-  sessionId: string; at: number; actor: Actor; session?: SessionContext;
-  type: AuditType | "grant.created" | "grant.deleted" | "user.erased" | "export.run" | "pass.created";
-  /** Allowed keys only. Never tokens, codes, URLs, IPs or Graph ids. */
-  detail: { fileName?: string; source?: "mock" | "graph" | "guest"; purpose?: string;
-            cause?: ErrorCode; reason?: string; bytes?: number; ipMatch?: boolean; endsAt?: number; /* session.length: the new end */
-            /** An /f/ request: method, class of client (never the raw User-Agent), fetch count. */
-            method?: string; client?: "office" | "browser" | "other"; count?: number };
-}
+// AuditEvent: its type union and its allowed detail keys (cause: ErrorCode | PairingAccountError) are in audit.ts.
 /** mode and kind are null for a row with no session (an export run). */
 export interface AuditRow extends Omit<AuditEvent, "session"> { id: number; roomName: string | null; userEmail: string | null; mode: Mode | null; kind: Kind | null; }
 

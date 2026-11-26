@@ -25,7 +25,8 @@ export type PlannedFileType =
 /** `view` is a photo or video shown in the screen page; `pdf` a PDF file's own view or a deck's rendition. */
 export const OPEN_MODES = ["protocol", "download", "pdf", "view"] as const;
 export type OpenMode = (typeof OPEN_MODES)[number];
-export type EndReason = "phone" | "screen" | "auto" | "canceled" | "claim_timeout" | "error";
+/** `account`: the owner's account action ended it (endFromOwner); `auto`: its time ran out. */
+export type EndReason = "phone" | "screen" | "auto" | "canceled" | "claim_timeout" | "error" | "account";
 export type Actor = "screen" | "phone" | "system" | "host" | "it";
 
 export type Result<T, E extends string> = { ok: true; value: T } | { ok: false; error: E };
@@ -95,6 +96,10 @@ export interface Problem {
 // User-facing state keys: the slots in the shared state strings (design.md section 7).
 export type PhoneStateKey =
   | "checking"
+  | "pick" // the live match pick (present-live.md 3.2)
+  | "match_wrong"
+  | "early" // open mode, a live code refused signed out (present-live.md 5); its words are core/early.js's
+  | "rescan" // the code a resume after sign-in claimed was gone (present-live.md 5.1); core/early.js's too
   | "match"
   | "choose"
   | "approve"

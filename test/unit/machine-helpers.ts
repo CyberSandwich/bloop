@@ -50,8 +50,10 @@ export function waiting(mode: Mode = "demo", code = "AAAAAA", now = T0): Machine
   return must(m, { e: "code.next", now, value: code }).next;
 }
 
+/** A claim, and for a live screen the right pick after it: the pairing every later live test starts from. */
 export function claim(m: Machine, kind: Kind = "owner", now = T0 + sec(1), code = "AAAAAA", sessionId = "s1"): Machine {
-  return must(m, {
+  const live = m.mode === "live";
+  const claimed = must(m, {
     e: "claim",
     now,
     code,
@@ -61,7 +63,9 @@ export function claim(m: Machine, kind: Kind = "owner", now = T0 + sec(1), code 
     kind,
     userId: null,
     passHash: null,
+    choices: live ? ["17", "42", "85"] : null,
   }).next;
+  return live ? must(claimed, { e: "match", now, choice: "42" }).next : claimed;
 }
 
 export const claimedOwner = (mode: Mode = "demo") => claim(waiting(mode));
@@ -69,6 +73,12 @@ export const claimedGuest = () => claim(waiting("demo"), "guest");
 
 export function approved(now = T0 + sec(10)): Machine {
   return must(claimedOwner(), { e: "approve", now, items: [asItem(DECK)], minutes: MAX_MINUTES }).next;
+}
+
+/** The start deadline spent (REL-16), so the next deadline is the session's end. */
+export function pastStart(m: Machine): Machine {
+  const by = m.session?.startBy;
+  return by == null ? m : must(m, { e: "timer", now: by }).next;
 }
 
 export function offered(now = T0 + sec(10)): Machine {

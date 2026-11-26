@@ -73,10 +73,11 @@ export function screensOf(entries: readonly { att: Authed | null; pong: number }
 }
 
 /**
- * The address a link must come from (OPEN-02), read when the link is checked, so it never goes stale: the live
- * authed screen socket that verified first holds it (a leaked sid's later socket cannot take it from a screen that
- * is still talking), and once that one goes quiet the next live one does. With none live, `stored`: the last
- * verified proof, by `hello` or by poll.
+ * The address a link must come from (OPEN-02), read when the link is checked, so it never goes stale. A live authed
+ * screen socket from the stored binding's address keeps it, whatever its age: a lectern that reconnects from the
+ * bound address is the holder, not a younger rival to an older socket elsewhere. With none from there, the live
+ * socket that verified first takes it (a leaked sid's later socket cannot take it from a screen still talking).
+ * With none live, `stored`: the last verified proof, by `hello` or by poll.
  */
 export function bindingIp(
   screens: readonly Screen[],
@@ -84,8 +85,8 @@ export function bindingIp(
   stored: string | undefined,
   silenceMs = SILENCE_MS,
 ): string | undefined {
-  const live = screens.filter((s) => isLive(s.heardAt, now, silenceMs));
-  if (live.length === 0) return stored;
+  const live = screens.filter((s) => holds(s, now, silenceMs));
+  if (live.length === 0 || live.some((s) => s.ip === stored)) return stored;
   return live.reduce((a, b) => (a.helloAt <= b.helloAt ? a : b)).ip;
 }
 
@@ -103,4 +104,144 @@ export function holdBinding(
   const ip = bindingIp(screens, now, stored, silenceMs);
   if (ip !== undefined && ip !== stored) store.set(ip);
   return ip;
+}
+
+/**
+ * The address a verified `hello` binds links to (OPEN-02), or null to leave the binding alone: no string address (a
+ * socket hibernated from before addresses were kept), or another screen socket that still holds it.
+ */
+export function helloBinding(
+  ip: unknown,
+  others: readonly Screen[],
+  now: number,
+  silenceMs = SILENCE_MS,
+): string | null {
+  if (typeof ip !== "string") return null;
+  return others.some((s) => holds(s, now, silenceMs)) ? null : ip;
+}
+
+/**
+ * A screen socket holds the binding until it closes or stays silent for the full silence window: a throttled
+ * background tab pings late, so any shorter estimate would hand a live lectern's links to another address.
+ */
+const holds = (s: Screen, now: number, silenceMs: number): boolean => isLive(s.heardAt, now, silenceMs);
+
+/** WebSocket readyState OPEN. */
+export const OPEN = 1;
+
+interface Closable {
+  readyState: number;
+  send(text: string): void;
+  close(code: number, reason: string): void;
+}
+
+/**
+ * Closes each OPEN socket whose `hello` window ran out, telling it why. Never throws: the alarm runs the machine's
+ * timer after this, and a socket that closed under us must not skip it.
+ */
+export function closeLateHellos(
+  entries: readonly { ws: Closable; att: { authed: boolean; helloBy: number } | null }[],
+  now: number,
+): void {
+  const frame = JSON.stringify({ v: 1, t: "error", code: "unauthorized", now });
+  for (const { ws, att } of entries) {
+    if (ws.readyState !== OPEN || !att || att.authed || att.helloBy > now) continue;
+    try {
+      ws.send(frame);
+      ws.close(1008, "hello timeout");
+    } catch {
+      // closed under us: its close handler updates the count
+    }
+  }
+}
+
+/** Sends to a socket that may have closed under us; its close handler updates the count. */
+export function safeSend(ws: { send(text: string): void }, text: string): void {
+  try {
+    ws.send(text);
+  } catch {
+    // closed under us
+  }
+}
+
+/** State frames to one socket closer together than this coalesce, the latest winning (O10). */
+export const COALESCE_MS = 150;
+
+interface Timers {
+  now(): number;
+  set(fn: () => void, ms: number): unknown;
+  clear(handle: unknown): void;
+}
+const realTimers: Timers = {
+  now: Date.now,
+  set: (fn, ms) => setTimeout(fn, ms),
+  clear: (h) => clearTimeout(h as ReturnType<typeof setTimeout>),
+};
+
+/**
+ * Coalesces `state` frames per socket (O10). A state frame is absolute, so only the latest matters: the first after a
+ * quiet COALESCE_MS goes at once, and those that follow inside the window are held, the latest sent when it closes.
+ * Any other frame (error, open) flushes the held state first, so frames never pass each other.
+ * Invariant: a pending timer keeps a hibernatable object awake for at most COALESCE_MS; with no timer pending nothing
+ * is held, so hibernation (which drops this in-memory map) loses nothing.
+ * Slots are keyed by `keyOf`, not by the object: the runtime need not hand back the same wrapper for one socket from
+ * getWebSockets() and a handler, so the Screen object keys on the attachment's id. A held frame goes to the latest
+ * wrapper seen.
+ */
+export class StateCoalescer<W extends { send(text: string): void }> {
+  private readonly slots = new Map<unknown, { ws: W; sentAt: number; held: string | null; timer: unknown }>();
+  private readonly timers: Timers;
+  private readonly keyOf: (ws: W) => unknown;
+
+  constructor(opts: { timers?: Timers; keyOf?: (ws: W) => unknown } = {}) {
+    this.timers = opts.timers ?? realTimers;
+    this.keyOf = opts.keyOf ?? ((ws) => ws);
+  }
+
+  state(ws: W, text: string): void {
+    const now = this.timers.now();
+    const key = this.keyOf(ws);
+    const slot = this.slots.get(key);
+    if (!slot || (slot.held === null && now - slot.sentAt >= COALESCE_MS)) {
+      this.slots.set(key, { ws, sentAt: now, held: null, timer: null });
+      safeSend(ws, text);
+      return;
+    }
+    slot.ws = ws;
+    slot.held = text;
+    slot.timer ??= this.timers.set(() => this.flush(key), slot.sentAt + COALESCE_MS - now);
+  }
+
+  /** Any frame that must not be coalesced: the held state goes first. */
+  other(ws: W, text: string): void {
+    this.flush(this.keyOf(ws));
+    safeSend(ws, text);
+  }
+
+  /** Before closing a socket: its held state goes out, and its timer goes. */
+  closing(ws: W): void {
+    const key = this.keyOf(ws);
+    this.flush(key);
+    this.forget(key);
+  }
+
+  /** The socket is already closed: drop what it held, send nothing. */
+  gone(ws: W): void {
+    this.forget(this.keyOf(ws));
+  }
+
+  private forget(key: unknown): void {
+    const slot = this.slots.get(key);
+    if (slot?.timer != null) this.timers.clear(slot.timer);
+    this.slots.delete(key);
+  }
+
+  private flush(key: unknown): void {
+    const slot = this.slots.get(key);
+    if (!slot || slot.held === null) return;
+    if (slot.timer != null) this.timers.clear(slot.timer);
+    const text = slot.held;
+    this.slots.set(key, { ws: slot.ws, sentAt: this.timers.now(), held: null, timer: null });
+    safeSend(slot.ws, text);
+  }
 }

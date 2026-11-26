@@ -1,3 +1,4 @@
+import { readFileSync } from "node:fs";
 import { describe, expect, it, vi } from "vitest";
 import {
   adopt,
@@ -22,11 +23,14 @@ const screenView = (state: SessionState, over: Partial<ScreenView> = {}): Screen
   room: { name: "Room 2.14", registered: true },
   code: null,
   match: null,
+  confirmed: false,
   items: [],
   shown: null,
   openMode: null,
   endsAt: null,
   endReason: null,
+  upload: null,
+  choiceBytes: 30_000_000,
   seq: 0,
   v: 0,
   now: 0,
@@ -39,6 +43,9 @@ const phoneView = (state: SessionState, over: Partial<PhoneView> = {}): PhoneVie
   kind: "owner",
   room: { name: "Room 2.14", registered: true },
   match: "42",
+  choices: null,
+  confirmed: true,
+  firstShownAt: null,
   items: [],
   shown: null,
   openMode: null,
@@ -201,7 +208,7 @@ describe("screen state to view mapping", () => {
 describe("phone state to view mapping", () => {
   const base: PhoneCtx = {
     error: null,
-    info: { roomName: "Room 2.14", registered: true, match: "42", mode: "live", kind: "owner" },
+    info: { roomName: "Room 2.14", registered: true, match: "42", choices: null, mode: "live", kind: "owner" },
     view: phoneView("claimed"),
     files: null,
     selected: [],
@@ -236,7 +243,14 @@ describe("phone state to view mapping", () => {
 
   it("demo and unregistered rooms change the approve state", () => {
     const files = [file("a")];
-    const info = { roomName: "Room 2.14", registered: true, match: "42", mode: "live", kind: "owner" } as const;
+    const info = {
+      roomName: "Room 2.14",
+      registered: true,
+      match: "42",
+      choices: null,
+      mode: "live",
+      kind: "owner",
+    } as const;
     expect(phoneKey(ctx({ files, selected: ["a"], info: { ...info, mode: "demo", registered: false } }))).toBe(
       "approve_demo",
     );
@@ -355,6 +369,88 @@ describe("phone state to view mapping", () => {
   });
 });
 
+describe("PAIR-14 the live pick comes first (phone.js maps it over core/states.js's key)", () => {
+  const phoneJs = readFileSync(new URL("../../public/js/phone.js", import.meta.url), "utf8");
+  /** phone.js's CHOOSER: the keys the pick replaces. phone.js runs only in a page, so its list is read from the source. */
+  const chooser = JSON.parse(phoneJs.match(/const CHOOSER = (\[[^\]]*\]);/)?.[1] ?? "null") as string[];
+  const info = {
+    roomName: null,
+    registered: false,
+    match: null,
+    choices: ["17", "42", "86"],
+    mode: "live",
+    kind: "owner",
+  } as const;
+  const c = (over: Partial<PhoneCtx>): PhoneCtx => ({
+    error: null,
+    info: { ...info, choices: [...info.choices] },
+    view: null,
+    files: null,
+    selected: [],
+    approving: false,
+    canceled: false,
+    drop: null,
+    ...over,
+  });
+  const unconfirmed = phoneView("claimed", { match: null, choices: ["17", "42", "86"], confirmed: false });
+
+  it("phone.js renders the pick over core/states.js's key, on choices and an unconfirmed view", () => {
+    expect(phoneJs).toContain("const key = withPick(phoneKey(c));");
+    expect(phoneJs).toMatch(/c\.info\?\.choices && !c\.view\?\.confirmed && CHOOSER\.includes\(key\) \? "pick" : key/);
+  });
+
+  it("every key a claim reads before it is confirmed is in the chooser, so the pick covers it", () => {
+    const before = [
+      c({}),
+      c({ view: unconfirmed }),
+      c({ files: [] }),
+      c({ files: [file("a")] }),
+      c({ files: [file("a")], selected: ["a"] }),
+      c({ files: [file("a")], selected: ["a"], approving: true }),
+      c({ files: [file("a")], selected: ["a"], info: { ...info, registered: true, choices: [...info.choices] } }),
+      c({ info: { ...info, kind: "guest", choices: [...info.choices] }, files: [] }),
+      c({ view: phoneView("claimed", { kind: "guest", confirmed: false, match: null }) }),
+    ];
+    for (const ctx of before) expect(chooser, phoneKey(ctx)).toContain(phoneKey(ctx));
+  });
+
+  it("a result, an error, a dead code and a session are never in it, so the pick never hides them", () => {
+    const after = [
+      c({ error: "match_wrong", view: unconfirmed }),
+      c({ error: "offline" }),
+      c({ view: phoneView("waiting") }),
+      c({ view: phoneView("ended", { endReason: "canceled" }) }),
+      c({ view: phoneView("ended", { endReason: "phone" }) }),
+      c({ view: phoneView("opening") }),
+      c({ view: phoneView("open") }),
+      c({ view: phoneView("offered", { kind: "guest" }) }),
+      c({ info: null }),
+    ];
+    for (const ctx of after) expect(chooser, phoneKey(ctx)).not.toContain(phoneKey(ctx));
+  });
+
+  it("core/states.js's key once confirmed is the chooser itself: the list loading, then choose", () => {
+    expect(phoneKey(c({ view: phoneView("claimed") }))).toBe("match");
+    expect(phoneKey(c({ view: phoneView("claimed"), files: [file("a")] }))).toBe("choose");
+  });
+});
+
+describe("the room screen's first load carries none of the pick", () => {
+  it("core/states.js, in the screen's bundle, has no pick branch, and copy-phone.js holds words only", () => {
+    const states = readFileSync(new URL("../../public/js/core/states.js", import.meta.url), "utf8");
+    for (const word of ['"pick"', "choices", "confirmed", "withPick"]) expect(states, word).not.toContain(word);
+    const copy = readFileSync(new URL("../../public/js/core/copy-phone.js", import.meta.url), "utf8");
+    for (const word of ["withPick", "CHOOSER", "confirmed"]) expect(copy, word).not.toContain(word);
+    const budgets = JSON.parse(readFileSync(new URL("../../tools/size/core.json", import.meta.url), "utf8")) as {
+      name: string;
+      path: string | string[];
+    }[];
+    const screen = budgets.find((b) => b.name === "room screen JS")?.path ?? [];
+    expect(screen).toContain("dist/js/core/states.js");
+    expect(screen).not.toContain("dist/js/phone.js");
+  });
+});
+
 describe("PAIR-12 the phone takes a view", () => {
   const taking = (kind: "owner" | "guest", files: FileEntry[] | null = null, selected: string[] = []) => ({
     pid: null as string | null,
@@ -409,7 +505,14 @@ describe("PAIR-12 the phone takes a view", () => {
     const act = { drop: vi.fn(), stop: vi.fn(), fail: vi.fn() };
     const c = {
       error: null,
-      info: { roomName: "Room", registered: true, match: "42", mode: "live" as const, kind: "owner" as const },
+      info: {
+        roomName: "Room",
+        registered: true,
+        match: "42",
+        choices: null,
+        mode: "live" as const,
+        kind: "owner" as const,
+      },
       view,
       files: null,
       selected: [],

@@ -1,0 +1,18 @@
+/* The match pick's look (core/match.js, loaded with it); its boxes are app.css's, so nothing moves when this lands. */
+/* No side padding: three share 256 at 320, and the 1fr columns must not grow to fit it. */
+.pick .choice {
+  padding: 0;
+  font-size: 28px;
+  font-variant-numeric: tabular-nums;
+  touch-action: manipulation;
+}
+/* The live region is in the page from the mount; empty, it is out of the grid, so it adds no row. Shown, it is the
+   first row: the panel grows upward from its bottom edge and the choices stay where the finger is. */
+.pick-slow {
+  grid-row: 1;
+  grid-column: 1 / -1;
+  padding: 0 12px 4px;
+}
+.pick-slow:empty {
+  position: absolute;
+}

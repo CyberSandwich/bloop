@@ -2,10 +2,13 @@
 // drive it with fakes. Each effect maps to one seam; the stubs are replaced by their modules.
 import type { LinkResponse, OpenMode } from "../../shared/protocol.ts";
 import type { AuditEvent, AuditLog } from "../audit.ts";
-import type { Effect, FileRef, Machine } from "../machine.ts";
+import type { Effect, FileRef, Machine, StartCause } from "../machine.ts";
 import type { Metrics } from "../metrics.ts";
+import { idemPurge } from "../seams/pairing/idem.ts";
 import type { CodeDirectory } from "../seams/pairing.ts";
 import type { Meta } from "../views.ts";
+import type { Kv } from "./ledger.ts";
+import { CORRUPT_END_KEY, type CorruptEnd } from "./schema.ts";
 
 /** Seams owned by later modules: the open path (links), file sources and guest drop (purge). */
 export interface SessionSeams {
@@ -14,6 +17,8 @@ export interface SessionSeams {
   revokeLinks(): Promise<void>;
   /** Deletes a guest object and drops any in-memory access token. `file` is null when none was stored yet. */
   purge(input: { sessionId: string | null; file: FileRef | null }): Promise<void>;
+  /** One start data point (REL-16): the mode, ok and a cause, nothing that names a person. R's writer fills it (R9). */
+  start(input: { mode: Meta["mode"]; ok: boolean; cause: StartCause | null }): Promise<void>;
 }
 
 export const noopSeams: SessionSeams = {
@@ -22,6 +27,8 @@ export const noopSeams: SessionSeams = {
   },
   async revokeLinks() {},
   async purge() {},
+  // transitional: removed in R9 (R's Analytics Engine writer)
+  async start() {},
 };
 
 export interface EffectDeps {
@@ -64,6 +71,44 @@ export async function bestEffort(write: Promise<void>): Promise<void> {
   } catch {
     console.error("record_failed");
   }
+}
+
+/** Runs each effect on its own, in order: one that throws never skips those after it. */
+export async function runEach(effects: readonly Effect[], run: (fx: Effect) => Promise<unknown>): Promise<void> {
+  for (const fx of effects) {
+    try {
+      await run(fx);
+    } catch {
+      console.error("effect_failed");
+    }
+  }
+}
+
+/**
+ * The end step 8 made (schema.ts corruptEndOf): each effect on its own, so one that throws never skips the audit row
+ * or the push, then the idempotency rows and a demo's slot. The marker goes only after every one was tried; an alarm
+ * that dies midway is retried and runs them again.
+ */
+export async function finishCorruptEnd(
+  kv: Kv & { delete(key: string): unknown },
+  { m, meta, now }: { m: Machine | null; meta: Meta | null; now: number },
+  deps: EffectDeps,
+  releaseDemo: () => Promise<void>,
+): Promise<void> {
+  const pending = kv.get<CorruptEnd | null>(CORRUPT_END_KEY);
+  if (pending === undefined) return;
+  if (pending && m && meta) {
+    const ctx = { meta, prev: m, next: m, now };
+    // The guest object is named by the session the corrupt machine held, apart from the repaired pairing.
+    await runEach(Array.isArray(pending.effects) ? pending.effects : [], (fx) =>
+      fx.fx === "purge"
+        ? deps.seams.purge({ sessionId: pending.sessionId, file: fx.file })
+        : runEffects([fx], ctx, deps),
+    );
+    idemPurge(kv);
+    if (meta.mode === "demo") await bestEffort(releaseDemo());
+  }
+  kv.delete(CORRUPT_END_KEY);
 }
 
 /**
@@ -158,6 +203,9 @@ export async function runEffects(
             }),
           );
         }
+        break;
+      case "start":
+        await bestEffort(deps.seams.start({ mode: meta.mode, ok: fx.ok, cause: fx.cause }));
         break;
       case "deleteAll":
         await deps.deleteAll();

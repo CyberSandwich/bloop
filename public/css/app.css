@@ -36,7 +36,8 @@
     text-decoration: underline;
   }
 }
-.btn .spinner {
+/* In a busy button or the pick's legend; base.css's reduced-motion net stops it (client-match.test.ts holds that). */
+:is(.btn, .pick) .spinner {
   width: 16px;
   height: 16px;
   border: 2px solid currentColor;
@@ -78,6 +79,8 @@
 }
 #b-home {
   padding-left: calc((var(--frame-h) - var(--mark)) / 2);
+  font-size: var(--wordmark);
+  letter-spacing: -0.03em;
 }
 .framed.square {
   padding: 0;
@@ -127,7 +130,7 @@
   color: var(--muted);
 }
 .leave::backdrop {
-  background: rgba(0, 0, 0, 0.18);
+  background: #0000002e;
 }
 /* Stacked (the .buttons default, the rose primary on top) until two columns hold "End Session" with its 16 padding. */
 .leave .buttons {
@@ -142,16 +145,12 @@
 .leave .btn {
   padding: 0 16px;
 }
-#b-home {
-  font-size: var(--wordmark);
-  letter-spacing: -0.03em;
-}
 
 /* ---- /s, the room screen ---- */
 /* The page never scrolls: the bar is fixed, and only the side list scrolls inside its own box. */
 .page-screen {
   display: flex;
-  flex-direction: column;
+  flex-flow: column;
   height: 100vh;
   height: 100dvh;
   overflow: hidden;
@@ -175,7 +174,7 @@
 .pane {
   position: relative;
   display: flex;
-  flex-direction: column;
+  flex-flow: column;
   align-items: center;
   gap: 16px;
   width: 100%;
@@ -270,7 +269,6 @@ main:has(> .side:not([hidden])) #stage {
   font-size: calc(var(--qr) * 0.4);
   font-weight: 600;
   line-height: 1;
-  color: var(--ink);
 }
 .code-row,
 [data-mode="scanned"] #controls {
@@ -328,40 +326,39 @@ main:has(> .side:not([hidden])) #stage {
   position: absolute;
   clip-path: inset(50%);
 }
-@media (min-width: 900px) and (min-aspect-ratio: 1 / 1) {
-  :is([data-mode="waiting"], [data-mode="scanned"]) .pane {
-    grid-template: 1fr auto auto auto 1fr / auto fit-content(600px);
-    grid-template-areas: "qr ." "qr stage" "qr hint" "qr code" "qr .";
-    column-gap: clamp(48px, 6vw, 112px);
-    row-gap: 24px;
-    justify-content: center;
-    justify-items: stretch;
-    text-align: left;
-  }
-  :is([data-mode="waiting"], [data-mode="scanned"]) .qr-card {
-    align-self: center;
-  }
-  :is([data-mode="waiting"], [data-mode="scanned"]) :is(.hint, .awaiting) {
-    font-size: 22px;
-    line-height: 1.35;
-    color: var(--ink-2);
-  }
-  [data-mode="scanned"] #controls {
-    justify-content: start;
-  }
-  /* Another phone's claim: the title alone, centered on the card. The hidden hint and code row share its cell, so
-     the column keeps its width and the card never moves. */
-  .is-pending .pane {
-    grid-template-rows: 1fr auto 1fr;
-    grid-template-areas: "qr ." "qr stage" "qr .";
-  }
-  .is-pending :is(#stage, .hint, .code-row) {
-    grid-area: stage;
-    align-self: center;
-  }
-  :is([data-mode="waiting"], [data-mode="scanned"], [data-mode="ended"]) h1 {
-    font-size: var(--display);
-  }
+/* Beside, where fitQr's slot check finds it holds the QR at least as large as stacking. The gap and the lines shrink
+   with a short window, so a phone held on its side keeps the title, the lines and the code row beside the card. Each
+   item starts the column at its own width, so the code row and Continue's row sit on its left edge. */
+.is-beside .pane {
+  grid-template: 1fr auto auto auto 1fr / auto fit-content(600px);
+  grid-template-areas: "qr ." "qr stage" "qr hint" "qr code" "qr .";
+  column-gap: clamp(48px, 6vw, 112px);
+  row-gap: min(24px, 3vh);
+  justify-content: center;
+  justify-items: start;
+  text-align: left;
+}
+.is-beside .qr-card {
+  align-self: center;
+}
+.is-beside :is(.hint, .awaiting) {
+  font-size: clamp(13px, 3vh, 22px);
+  line-height: 1.35;
+  color: var(--ink-2);
+}
+/* Another phone's claim: the title alone, centered on the card. The hidden hint and code row share its cell, so
+   the column keeps its width and the card never moves. */
+.is-pending.is-beside .pane {
+  grid-template-rows: 1fr auto 1fr;
+  grid-template-areas: "qr ." "qr stage" "qr .";
+}
+.is-pending.is-beside :is(#stage, .hint, .code-row) {
+  grid-area: stage;
+  align-self: center;
+}
+.is-beside h1,
+[data-mode="ended"] h1 {
+  font-size: var(--display);
 }
 /* Session Ended sits at the true center of the viewport, whatever the bar and footer take. */
 [data-mode="ended"] .pane {
@@ -369,16 +366,13 @@ main:has(> .side:not([hidden])) #stage {
   inset: 0;
   display: grid;
   place-content: center;
+  gap: 24px;
   max-width: none;
   padding: var(--pad);
-  text-align: center;
 }
 /* A result centers title, line and Done as one group; where the band shows, Done keeps it. */
 .is-ended .column {
   text-align: center;
-}
-[data-mode="ended"] .pane {
-  gap: 24px;
 }
 .actions-row {
   display: flex;
@@ -481,7 +475,7 @@ main:has(> .side:not([hidden])) #stage {
 /* A portrait document scrolls as one column at a readable width. */
 .frame.is-scroll {
   display: flex;
-  flex-direction: column;
+  flex-flow: column;
   align-items: center;
   gap: 24px;
   overflow: auto;
@@ -496,7 +490,6 @@ main:has(> .side:not([hidden])) #stage {
   position: absolute;
   border: 0;
   background: none;
-  color: var(--ink);
   cursor: w-resize;
 }
 #next {
@@ -643,7 +636,7 @@ main:has(> .side:not([hidden])) #stage {
 }
 .item-card {
   display: flex;
-  flex-direction: column;
+  flex-flow: column;
   align-items: center;
   gap: 4px;
   width: 100%;
@@ -735,6 +728,17 @@ main:has(> .side:not([hidden])) #stage {
   background: linear-gradient(100deg, transparent 32%, var(--band) 50%, transparent 68%) 100% 0 / 300% 100% no-repeat;
   animation: sheen 2.2s linear infinite;
 }
+/* A 1 s sweep, the first 45 percent of 2.2 s, then a rest (design.md section 8). */
+@keyframes sheen {
+  0% {
+    background-position: 100% 0;
+    animation-timing-function: var(--ease-out);
+  }
+  45%,
+  100% {
+    background-position: 0 0;
+  }
+}
 @media (prefers-reduced-motion: reduce) {
   .loader::after {
     content: none;
@@ -805,7 +809,7 @@ a.row:focus-visible {
 }
 .row-text {
   display: flex;
-  flex-direction: column;
+  flex-flow: column;
   gap: 2px;
   flex: 1;
   min-width: 0;
@@ -841,8 +845,6 @@ a.row:focus-visible {
 .list {
   display: grid;
   gap: 2px;
-}
-.items {
   margin: 0;
   padding: 0;
   list-style: none;
@@ -919,7 +921,7 @@ a.row:focus-visible {
     background: var(--g1);
   }
   .side::backdrop {
-    background: rgba(0, 0, 0, 0.18);
+    background: #0000002e;
   }
   .handle:not([hidden]) {
     display: flex;
@@ -942,7 +944,7 @@ a.row:focus-visible {
 /* ---- /a and /code ---- */
 .column {
   display: flex;
-  flex-direction: column;
+  flex-flow: column;
   width: 100%;
   max-width: 480px;
   min-height: 100vh;
@@ -953,7 +955,7 @@ a.row:focus-visible {
 }
 .flow {
   display: flex;
-  flex-direction: column;
+  flex-flow: column;
   gap: 16px;
 }
 .title {
@@ -1003,7 +1005,6 @@ a.row:focus-visible {
   padding: 0;
   border: 0;
   background: none;
-  font-size: 17px;
   font-variant-numeric: tabular-nums;
   cursor: pointer;
 }
@@ -1016,7 +1017,7 @@ a.row:focus-visible {
   z-index: 60;
   inset: auto 0 calc(var(--inset) + env(safe-area-inset-bottom) + var(--toast-lift, 0px));
   display: flex;
-  flex-direction: column;
+  flex-flow: column;
   gap: 4px;
   width: min(calc(100% - 2 * var(--pad)), 360px);
   margin: 0 auto;
@@ -1054,7 +1055,6 @@ a.row:focus-visible {
   grid-template-columns: minmax(0, 1fr);
   margin: 16px 0 0;
   padding: var(--list-pad);
-  list-style: none;
   border-radius: var(--r-list);
   background: var(--surface);
 }
@@ -1090,12 +1090,12 @@ a.row:focus-visible {
 .actions,
 .buttons {
   display: flex;
-  flex-direction: column-reverse;
+  flex-flow: column-reverse;
   gap: 8px;
 }
 .actions {
   flex: none;
-  flex-direction: column;
+  flex-flow: column;
   margin-top: 24px;
 }
 /* The band (pages.test.ts pins both queries): /a's buttons stay in reach, a result above Done is centered. */
@@ -1121,7 +1121,7 @@ a.row:focus-visible {
       var(--glass-edge),
       0 0 0 1px var(--hairline);
   }
-  .column > .actions:has(> .buttons:empty) {
+  .column > .actions:not(:has(> :not([hidden]))) {
     display: none;
   }
   .page-phone .column::after {
@@ -1131,8 +1131,47 @@ a.row:focus-visible {
     height: 24px;
   }
   /* Just above the panel, whatever it holds: phone.js measures it. */
-  .page-phone:has(.actions .btn) {
+  .page-phone:has(.actions > :not([hidden])) {
     --toast-lift: calc(var(--panel, 68px) + 8px);
+  }
+}
+/* The match pick (present-live.md 3.2): the legend over three choices sharing a row; one row on a short, wide window
+   (a phone held landscape; a 320 x 568 phone is short too, but too narrow). Its boxes are here, so a.html's skeleton
+   pills and core/match.js's choices are the same size. `all: unset` drops a fieldset's border, padding, margin and
+   min-content width. */
+.pick {
+  all: unset;
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  align-items: center;
+  gap: 8px;
+}
+/* 64, a step over a page action's 52: read at arm's length, hit with a thumb while the eye is on the wall. */
+.choice {
+  min-height: var(--choice-h);
+  border-radius: var(--r-pill);
+}
+/* Unfloated, the fieldset draws its legend over the grid; floated, it is laid out as a grid item and shares the row.
+   12 in at every width, as the line under the choices, so both sit in from the pills' rounded ends. */
+.pick legend {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 8px;
+  padding: 0 12px;
+  font-size: 15px;
+  font-weight: 600;
+}
+/* The legend's track is a share of the row, never its words' width: "Approving..." is narrower than the legend it
+   replaces, and an auto track would widen the choices under the finger. 3fr keeps the legend to two lines, inside the
+   choices' 64. */
+@media (min-width: 640px) and (max-height: 599.98px) {
+  .pick {
+    grid-template-columns: 3fr repeat(3, 1fr);
+  }
+  .pick legend {
+    float: left;
+    margin: 0;
   }
 }
 /* A file dragged over /a, from 640 wide (core/drag.js); it never takes the pointer. */
@@ -1173,22 +1212,20 @@ a.row:focus-visible {
     backdrop-filter: none;
   }
 }
+/* A page action is .btn's 52, a text one .btn.text's 44; nothing here sets a height, so the pick's choices keep theirs. */
 .actions .btn {
   flex: 1;
-  min-height: 52px;
-}
-.actions .btn.text {
-  min-height: 44px;
 }
 @media (min-width: 640px) {
+  /* Wraps: four overflow the 480 column in one row, so the text pair takes a row over the buttons. */
   .buttons {
-    flex-direction: row;
+    flex-flow: wrap;
     align-items: center;
   }
-  .actions .btn.text {
+  .actions .text {
     flex: none;
   }
-  .buttons > .btn.text:first-child {
+  .buttons > .text:first-child {
     margin-left: -12px;
   }
 }
@@ -1235,7 +1272,7 @@ a.row:focus-visible {
 }
 .code-form {
   display: flex;
-  flex-direction: column;
+  flex-flow: column;
   flex: 1;
   margin-top: 24px;
 }

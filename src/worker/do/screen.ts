@@ -3,13 +3,17 @@
 // Concurrency rule: async work (hashing, drawing) happens before the check-and-`apply` pair, and
 // `apply` commits before its first await, so a credential cannot go stale between check and commit.
 import { DurableObject } from "cloudflare:workers";
+import { ERRORS } from "../../../public/js/shared/errors.js";
 import type {
   ClaimResponse,
   CodeView,
+  DerivedFlags,
   ErrorCode,
   LinkResponse,
   LinkSet,
+  MatchResponse,
   OpenMode,
+  PhoneItemExtra,
   PhoneView,
   ScreenView,
   ShownCommand,
@@ -20,9 +24,17 @@ import { cancelConversion } from "../convert/cancel.ts";
 import { convertDepsFor } from "../convert/deps.ts";
 import type { Env } from "../env.ts";
 import { MAX_FRAME_BYTES, phoneFrame, screenFrame } from "../frames.ts";
-import { drawCode, drawMatch, newRef, newSecret, parseCredential, safeEqual, sha256Hex } from "../ids.ts";
+import { drawCode, drawMatch, newRef, newSecret, parseCredential, randomInt, safeEqual, sha256Hex } from "../ids.ts";
 import { fileAt, type ItemDraft } from "../items.ts";
-import { createMachine, type Event, type FileRef, type Machine, nextDeadline, transition } from "../machine.ts";
+import {
+  createMachine,
+  type Event,
+  type FileRef,
+  type Machine,
+  type MachineError,
+  nextDeadline,
+  transition,
+} from "../machine.ts";
 import { ipHash, netHash } from "../routes/common.ts";
 import { effectivePolicy } from "../seams/guest-drop/index.ts";
 import { purgeGuest } from "../seams/guest-drop/purge.ts";
@@ -35,24 +47,71 @@ import {
   protocolUri,
   refusalSession,
 } from "../seams/open-path/links.ts";
-import type { PairingStore, PhoneInfo, Result, ScreenCreated, UsedLink } from "../seams/pairing.ts";
+import {
+  accountEndRedo,
+  cookieMismatch,
+  type NotesTarget,
+  notesTarget,
+  ownerEnd,
+  type Pinned,
+  pinnedUser,
+} from "../seams/open-path/lookups.ts";
+import {
+  claimSecret,
+  type Flights,
+  idemPurge,
+  idemSave,
+  idemStore,
+  oneFlight,
+  openClaim,
+  type SealedClaim,
+  sealClaim,
+} from "../seams/pairing/idem.ts";
+import {
+  drawChoices,
+  type IdemKey,
+  type PairingStore,
+  type PhoneInfo,
+  type Result,
+  type ScreenCreated,
+  type UsedLink,
+} from "../seams/pairing.ts";
 import { auditFor, metricsFor } from "../stores.ts";
 import { directoryStub } from "../stubs.ts";
 import { type Meta, phoneView, roomView, screenView } from "../views.ts";
-import { bestEffort, closeObject, type EffectDeps, noopSeams, runEffects, type SessionSeams } from "./effects.ts";
+import {
+  bestEffort,
+  closeObject,
+  type EffectDeps,
+  finishCorruptEnd,
+  noopSeams,
+  runEffects,
+  type SessionSeams,
+} from "./effects.ts";
 import { LinkLedger, type Use } from "./ledger.ts";
-import { migrate, SCHEMA_KEY, SCHEMA_VERSION } from "./schema.ts";
-import { admit, countAuthed, holdBinding, isLive, screensOf } from "./sockets.ts";
+import { CORRUPT_END_KEY, migrate, SCHEMA_KEY, SCHEMA_VERSION } from "./schema.ts";
+import {
+  admit,
+  closeLateHellos,
+  countAuthed,
+  helloBinding,
+  holdBinding,
+  OPEN,
+  StateCoalescer,
+  safeSend,
+  screensOf,
+} from "./sockets.ts";
 
 const HELLO_MS = 5000;
 const MAX_CODE_DRAWS = 3;
 const PING = '{"v":1,"t":"ping"}';
 const PONG = '{"v":1,"t":"pong"}';
-/** WebSocket readyState OPEN. */
-const OPEN = 1;
-
+/** The states a screen's hello may still choose its link origin in: before any link exists (FO-01). */
+const ORIGIN_STATES: readonly Machine["state"][] = ["waiting", "claimed", "choosing", "uploading", "offered"];
 type Role = "screen" | "phone";
 interface SocketAttachment {
+  /** The coalescer's key (O10); absent on a socket hibernated from before ids were kept, which keys on itself. */
+  id?: string;
   role: Role;
   authed: boolean;
   /** Epoch ms by which `hello` must arrive. */
@@ -68,16 +127,24 @@ interface SocketAttachment {
 /** `next`: the machine the event committed, which outlives `this.m` when the event closed the object. */
 type Applied =
   | { ok: true; collided: boolean; next: Machine; minted: LinkResponse | null }
-  | { ok: false; error: ErrorCode };
+  | { ok: false; error: MachineError };
 
 type LinkVia = { method: string; client: ClientClass };
 
 const fail = (error: ErrorCode): { ok: false; error: ErrorCode } => ({ ok: false, error });
+const isErrorCode = (error: string): error is ErrorCode => Object.hasOwn(ERRORS, error);
+/** Match keys are one pairing's own: a new claim's pick never replays the last one's answer. */
+const matchOwner = (m: Machine | null): string | null => (m?.pairing ? `match:${m.pairing.sessionId}` : null);
 
 export class Screen extends DurableObject<Env> implements PairingStore {
   private meta: Meta | null;
   private m: Machine | null;
   private readonly links: LinkLedger;
+  private readonly claiming: Flights<Result<ClaimResponse>> = new Map();
+  /** Every frame to a socket goes through it, so a state burst coalesces and nothing passes a held state (O10). */
+  private readonly out = new StateCoalescer<WebSocket>({
+    keyOf: (ws) => (ws.deserializeAttachment() as SocketAttachment | null)?.id ?? ws,
+  });
 
   constructor(ctx: DurableObjectState, env: Env) {
     super(ctx, env);
@@ -86,6 +153,18 @@ export class Screen extends DurableObject<Env> implements PairingStore {
     this.meta = ctx.storage.kv.get<Meta>("meta") ?? null;
     this.m = ctx.storage.kv.get<Machine>("machine") ?? null;
     ctx.setWebSocketAutoResponse(new WebSocketRequestResponsePair(PING, PONG));
+    // The ended machine is already stored, so nothing needs to wait: the end's effects run from the alarm, now.
+    if (ctx.storage.kv.get(CORRUPT_END_KEY) !== undefined) {
+      void ctx.blockConcurrencyWhile(() => ctx.storage.setAlarm(Date.now()));
+    }
+  }
+
+  /** Runs first in the alarm, before its timer can close the object (effects.ts finishCorruptEnd). */
+  private async finishCorruptEnd(): Promise<void> {
+    const { meta } = this;
+    await finishCorruptEnd(this.ctx.storage.kv, { m: this.m, meta, now: Date.now() }, this.deps(), () =>
+      meta ? directoryStub(this.env).demoRelease(meta.screenRef) : Promise.resolve(),
+    );
   }
 
   // ---- PairingStore -------------------------------------------------------------------------
@@ -101,7 +180,7 @@ export class Screen extends DurableObject<Env> implements PairingStore {
     if (this.meta) return fail("wrong_state");
     const now = Date.now();
     const cfg = this.config();
-    const meta: Meta = { ...input, screenSecretHash, createdAt: now };
+    const meta: Meta = { ...input, screenSecretHash, createdAt: now, linkOrigin: "file" };
     const m = createMachine(input.mode, now, cfg.machine);
     this.meta = meta;
     this.m = m;
@@ -124,56 +203,149 @@ export class Screen extends DurableObject<Env> implements PairingStore {
     return code ? { ok: true, value: code } : fail("internal");
   }
 
-  async claim(code: string, phone: PhoneInfo): Promise<Result<ClaimResponse>> {
+  /**
+   * A live claim stores the three choices and answers them, never the match (PAIR-14); a demo answers the match. With
+   * `idem`, the answer is kept for the key and every call with it gets the first's answer and pid, not `code_taken`
+   * (`oneFlight`): the route's `idemFind` only spares the trip.
+   */
+  async claim(code: string, phone: PhoneInfo, idem?: IdemKey): Promise<Result<ClaimResponse>> {
+    if (!idem) return this.claimOnce(code, phone);
+    return oneFlight(this.ctx.storage.kv, this.claiming, idem, Date.now(), {
+      run: () => this.claimOnce(code, phone, idem),
+      // A row whose pairing has gone answers null, so oneFlight runs the claim as a new one inside the key's flight.
+      replay: async (stored) => {
+        const opened = await this.openClaimRow(stored);
+        return opened ? { ok: true, value: opened } : null;
+      },
+      conflict: fail("bad_request"),
+    });
+  }
+
+  private async claimOnce(code: string, phone: PhoneInfo, idem?: IdemKey): Promise<Result<ClaimResponse>> {
     if (!this.m || !this.meta) return fail("screen_gone");
     if (phone.kind === "guest" && this.meta.mode === "live") {
       const policy = this.config().guestDrop;
       if (policy === "off") return fail("drop_disabled");
       if (policy === "pass" && !phone.passHash) return fail("pass_required");
     }
-    const secret = newSecret();
+    // With a key, the secret is derived from a stored nonce so a replay can answer the same pid without storing it.
+    const pepper = this.config().hashPepper;
+    const nonce = idem ? newSecret() : null;
+    const secret = nonce ? await claimSecret(pepper, nonce) : newSecret();
     const secretHash = await sha256Hex(secret);
     const match = drawMatch();
+    const live = this.meta.mode === "live";
+    const choices = live ? drawChoices(match, randomInt) : null;
     // A demo screen never carries an account (architecture 4.5), whatever the route resolved.
-    const userId = this.meta.mode === "demo" ? null : phone.userId;
+    const userId = live ? phone.userId : null;
+    const now = Date.now();
     const applied = await this.apply({
       e: "claim",
-      now: Date.now(),
+      now,
       code,
       sessionId: newRef(),
       secretHash,
       match,
       kind: phone.kind,
       userId,
+      phoneSession: userId === null ? null : (phone.phoneSession ?? null),
       passHash: phone.passHash,
+      choices,
     });
     if (!applied.ok) return applied;
     const meta = this.meta as Meta;
-    return {
-      ok: true,
-      value: {
-        pid: `${meta.screenRef}.${secret}`,
-        room: roomView(meta),
-        match,
-        mode: meta.mode,
-        kind: phone.kind,
-        // Only the Graph source has accounts, and a phone already signed in needs nothing more.
-        needsAuth: meta.mode === "live" && phone.kind === "owner" && this.config().graph !== null && userId === null,
-        dropMaxBytes: this.dropMaxBytes(),
-      },
+    const answer: ClaimResponse = {
+      pid: `${meta.screenRef}.${secret}`,
+      room: roomView(meta),
+      match: live ? null : match,
+      choices,
+      mode: meta.mode,
+      kind: phone.kind,
+      // Auth-first refuses a signed-out owner before the claim (PAIR-15), so no claim ever needs it.
+      // transitional: removed in P2 (its last commit: the field goes once a deploy has shipped it false, Q.12)
+      needsAuth: false,
+      dropMaxBytes: this.dropMaxBytes(),
     };
+    // Only while this claim still pairs: an event during apply's awaits may have dropped it, and its purge ran.
+    if (idem && nonce && this.m?.pairing?.secretHash === secretHash) {
+      idemSave(this.ctx.storage.kv, idem.owner, idem, sealClaim(answer, nonce), now);
+    }
+    return { ok: true, value: answer };
+  }
+
+  /** The first answer stored for a key (idem.ts's `IdemStore.find`), for the route's verdict, its pid derived again. */
+  async idemFind(
+    owner: string,
+    keyHash: string,
+    since: number,
+  ): Promise<{ bodyHash: string; stored: ClaimResponse } | null> {
+    const row = await idemStore<SealedClaim>(this.ctx.storage.kv).find(owner, keyHash, since);
+    const stored = row && (await this.openClaimRow(row.stored));
+    return row && stored ? { bodyHash: row.bodyHash, stored } : null;
+  }
+
+  /** A stored claim answer with its pid derived again, or null unless the current pairing still holds that pid. */
+  private async openClaimRow(sealed: unknown): Promise<ClaimResponse | null> {
+    if (!this.meta) return null;
+    const stored = await openClaim(sealed, this.meta.screenRef, this.config().hashPepper);
+    const secret = stored && parseCredential(stored.pid)?.secret;
+    if (!stored || !secret) return null;
+    // The derivation awaited: answer only a pid the current pairing still holds.
+    return this.m?.pairing?.secretHash === (await sha256Hex(secret)) ? stored : null;
+  }
+
+  /**
+   * The phone's pick (PAIR-14). A wrong pick answers `match_wrong`; a repeat after a right one is a no-op. With
+   * `idem`, a right pick's answer is kept for the key, scoped to this pairing (a wrong one drops the pairing and its
+   * rows).
+   */
+  async match(pid: string, choice: string, idem?: Omit<IdemKey, "owner">): Promise<Result<MatchResponse>> {
+    const auth = await this.phoneAuth(pid);
+    if (!auth.ok) return auth;
+    if (!this.m || !this.meta) return fail("screen_gone");
+    if (!this.phoneMatches(auth.hash)) return fail("pairing_invalid");
+    const owner = matchOwner(this.m);
+    const now = Date.now();
+    const applied = await this.apply({ e: "match", now, choice });
+    if (!applied.ok) return applied;
+    if (!this.phoneMatches(auth.hash)) return { ok: false, error: "match_wrong" };
+    const view = this.phoneResult(auth.hash);
+    if (!view.ok) return view;
+    const answer: MatchResponse = { view: view.value };
+    if (idem && owner) idemSave(this.ctx.storage.kv, owner, idem, answer, now);
+    return { ok: true, value: answer };
+  }
+
+  /** The first match answer kept for a key of this pid's pairing, for the route's verdict. */
+  async matchIdemFind(
+    pid: string,
+    keyHash: string,
+    since: number,
+  ): Promise<{ bodyHash: string; stored: MatchResponse } | null> {
+    const auth = await this.phoneAuth(pid);
+    const owner = auth.ok && this.phoneMatches(auth.hash) ? matchOwner(this.m) : null;
+    return owner ? idemStore<MatchResponse>(this.ctx.storage.kv).find(owner, keyHash, since) : null;
   }
 
   async listed(pid: string, ids: string[]): Promise<Result<PhoneView>> {
     return this.phoneEvent(pid, () => ({ e: "listed", now: Date.now(), ids }));
   }
 
-  async control(pid: string, { seq, ...shown }: ShownCommand): Promise<Result<PhoneView>> {
+  async control(pid: string, { seq, base: _, ...shown }: ShownCommand): Promise<Result<PhoneView>> {
     return this.phoneEvent(pid, () => ({ e: "control", now: Date.now(), from: "phone", seq, shown }));
   }
 
-  async reportShown(sid: string, { seq, ...shown }: ShownCommand): Promise<Result<ScreenView>> {
-    return this.screenEvent(sid, { e: "control", now: Date.now(), from: "screen", seq, shown });
+  async reportShown(sid: string, { seq, base, ...shown }: ShownCommand): Promise<Result<ScreenView>> {
+    const ev: Event = {
+      e: "control",
+      now: Date.now(),
+      from: "screen",
+      seq,
+      shown,
+      // transitional: removed in P2 (the screen sends `base` on every report, REL-13; then it is required)
+      ...(base === undefined ? {} : { base }),
+    };
+    return this.screenEvent(sid, ev);
   }
 
   /** A change that arrives after the end ends the session (the machine's `length`), and says so: `session_ended`. */
@@ -187,14 +359,42 @@ export class Screen extends DurableObject<Env> implements PairingStore {
     return res.ok && res.value.state === "ended" ? fail("session_ended") : res;
   }
 
-  async approve(pid: string, items: ItemDraft[], userId: string | null): Promise<Result<PhoneView>> {
-    return this.phoneEvent(pid, () => ({
-      e: "approve",
-      now: Date.now(),
-      items,
-      minutes: this.sessionMinutes(),
-      userId: this.meta?.mode === "demo" ? null : userId,
-    }));
+  /** `cookieUser` is the route's signed-in user (null signed out); anyone but the pinned one is `pairing_invalid`. */
+  async approve(pid: string, items: ItemDraft[], cookieUser: string | null): Promise<Result<PhoneView>> {
+    return this.phoneEvent(
+      pid,
+      () => ({ e: "approve", now: Date.now(), items, minutes: this.sessionMinutes() }),
+      () => (cookieMismatch(this.m, cookieUser) ? "pairing_invalid" : null),
+    );
+  }
+
+  /** A guest upload's progress for the screen's pill (U's caller). Absolute, so a repeat or a late report is a no-op. */
+  async uploadProgress(pid: string, bytes: number, total: number): Promise<Result<PhoneView>> {
+    return this.phoneEvent(pid, () => ({ e: "upload.progress", now: Date.now(), bytes, total }));
+  }
+
+  /**
+   * Conversion finished for the file with `ref` (L's or V2's caller, object to object: no credential). A ref this
+   * session does not hold, or no session, changes nothing.
+   */
+  async derivedReady(ref: string, derived: DerivedFlags, extra: PhoneItemExtra): Promise<Result<null>> {
+    if (!this.m?.session) return { ok: true, value: null };
+    const applied = await this.apply({ e: "derivedReady", now: Date.now(), ref, derived, extra });
+    return applied.ok || applied.error === "wrong_state" ? { ok: true, value: null } : applied;
+  }
+
+  /** Where `itemId`'s notes live, for the paired phone only (NOTES-01); a sid fails the pid's hash. Any miss is null. */
+  async notesTarget(pid: string, itemId: string): Promise<NotesTarget | null> {
+    const auth = await this.phoneAuth(pid);
+    return auth.ok && this.phoneMatches(auth.hash) ? notesTarget(this.m, itemId) : null;
+  }
+
+  /** Whom the pairing is pinned to, for the routes' cookie check. */
+  async pinnedUser(pid: string): Promise<Result<Pinned>> {
+    const auth = await this.phoneAuth(pid);
+    if (!auth.ok) return auth;
+    const pinned = this.phoneMatches(auth.hash) ? pinnedUser(this.m) : null;
+    return pinned ? { ok: true, value: pinned } : fail("pairing_invalid");
   }
 
   async cancel(pid: string): Promise<Result<PhoneView>> {
@@ -211,6 +411,24 @@ export class Screen extends DurableObject<Env> implements PairingStore {
 
   async endFromScreen(sid: string): Promise<Result<ScreenView>> {
     return this.screenEvent(sid, { e: "end", now: Date.now(), by: "screen" });
+  }
+
+  /**
+   * Ends the session `userId` owns here, as the phone's End would, by "system". Called object to object only (the
+   * library's endScreens): no route or frame reaches it, since the caller holds no credential of this screen.
+   * Idempotent: no pairing, another owner or an ended session changes nothing.
+   */
+  async endFromOwner(userId: string): Promise<Result<null>> {
+    const { m, meta } = this;
+    const now = Date.now();
+    const ev = ownerEnd(m, userId, now);
+    if (ev) {
+      const applied = await this.apply(ev);
+      return applied.ok ? { ok: true, value: null } : applied;
+    }
+    const redo = accountEndRedo(m);
+    if (m && meta && redo.length > 0) await runEffects(redo, { meta, prev: m, next: m, now }, this.deps());
+    return { ok: true, value: null };
   }
 
   /** Polling fallback. With no socket, a poll is also the rotation clock and keeps the screen open. */
@@ -252,8 +470,11 @@ export class Screen extends DurableObject<Env> implements PairingStore {
     return applied.ok ? { ok: true, value: { sessionId } } : applied;
   }
 
-  async dropDone(pid: string, file: FileRef): Promise<Result<PhoneView>> {
-    return this.phoneEvent(pid, () => ({ e: "upload.done", now: Date.now(), file }));
+  async dropDone(pid: string, file: FileRef): Promise<Result<PhoneView, ErrorCode>> {
+    const done = await this.phoneEvent(pid, () => ({ e: "upload.done", now: Date.now(), file }));
+    if (done.ok) return done;
+    // upload.start is gated by the pick, so no pick code can follow it here.
+    return fail(isErrorCode(done.error) ? done.error : "internal");
   }
 
   async dropFailed(pid: string, error: ErrorCode): Promise<Result<PhoneView>> {
@@ -324,7 +545,15 @@ export class Screen extends DurableObject<Env> implements PairingStore {
     if (evict) evict.ws.serializeAttachment({ ...evict.att, helloBy: now });
     const [client, server] = Object.values(new WebSocketPair()) as [WebSocket, WebSocket];
     this.ctx.acceptWebSocket(server, [role]);
-    server.serializeAttachment({ role, authed: false, helloBy: now + HELLO_MS, ip, net } satisfies SocketAttachment);
+    const id = crypto.randomUUID();
+    server.serializeAttachment({
+      id,
+      role,
+      authed: false,
+      helloBy: now + HELLO_MS,
+      ip,
+      net,
+    } satisfies SocketAttachment);
     // Only the hello timeout: a bare upgrade is no socket event and never moves the close deadline.
     await this.rearm();
     return new Response(null, { status: 101, webSocket: client });
@@ -332,29 +561,29 @@ export class Screen extends DurableObject<Env> implements PairingStore {
 
   override async webSocketMessage(ws: WebSocket, message: string | ArrayBuffer): Promise<void> {
     const att = ws.deserializeAttachment() as SocketAttachment | null;
-    if (!att || !this.m) return ws.close(1011, "gone");
-    if (typeof message !== "string" || message.length > MAX_FRAME_BYTES) return ws.close(1008, "frame");
+    if (!att || !this.m) return this.drop(ws, 1011, "gone");
+    if (typeof message !== "string" || message.length > MAX_FRAME_BYTES) return this.drop(ws, 1008, "frame");
     let raw: unknown;
     try {
       raw = JSON.parse(message);
     } catch {
-      return ws.close(1008, "frame");
+      return this.drop(ws, 1008, "frame");
     }
 
     if (att.role === "phone") {
       const parsed = phoneFrame.safeParse(raw);
-      if (!parsed.success) return ws.close(1008, "frame");
-      if (parsed.data.t === "ping") return ws.send(PONG);
-      if (att.authed) return ws.close(1008, "hello");
+      if (!parsed.success) return this.drop(ws, 1008, "frame");
+      if (parsed.data.t === "ping") return this.out.other(ws, PONG);
+      if (att.authed) return this.drop(ws, 1008, "hello");
       return this.hello(ws, att, parsed.data.pid);
     }
 
     const parsed = screenFrame.safeParse(raw);
-    if (!parsed.success) return ws.close(1008, "frame");
+    if (!parsed.success) return this.drop(ws, 1008, "frame");
     const msg = parsed.data;
-    if (msg.t === "ping") return ws.send(PONG);
-    if (msg.t === "hello") return att.authed ? ws.close(1008, "hello") : this.hello(ws, att, msg.sid);
-    if (!att.authed) return ws.close(1008, "hello");
+    if (msg.t === "ping") return this.out.other(ws, PONG);
+    if (msg.t === "hello") return att.authed ? this.drop(ws, 1008, "hello") : this.hello(ws, att, msg.sid, msg.fo);
+    if (!att.authed) return this.drop(ws, 1008, "hello");
 
     const now = Date.now();
     const result =
@@ -363,7 +592,7 @@ export class Screen extends DurableObject<Env> implements PairingStore {
         : msg.t === "open.click"
           ? await this.apply({ e: "open.click", now, minutes: this.sessionMinutes() })
           : await this.apply({ e: "launched", now, mode: msg.mode });
-    if (!result.ok) ws.send(JSON.stringify({ v: 1, t: "error", code: result.error, now: Date.now() }));
+    if (!result.ok) this.out.other(ws, JSON.stringify({ v: 1, t: "error", code: result.error, now: Date.now() }));
   }
 
   override async webSocketClose(ws: WebSocket): Promise<void> {
@@ -376,20 +605,29 @@ export class Screen extends DurableObject<Env> implements PairingStore {
 
   /** A socket that never authed was never counted, so its end changes nothing. */
   private async socketGone(ws: WebSocket): Promise<void> {
+    this.out.gone(ws);
     if (!(ws.deserializeAttachment() as SocketAttachment | null)?.authed) return;
     await this.apply({ e: "socket", now: Date.now(), open: this.openSockets(ws) });
   }
 
+  /** Closes a socket we chose to drop: what it held goes first, and its coalescing timer goes with it. */
+  private drop(ws: WebSocket, code: number, reason: string): void {
+    this.out.closing(ws);
+    try {
+      ws.close(code, reason);
+    } catch {
+      // already closed
+    }
+  }
+
   override async alarm(): Promise<void> {
+    await this.finishCorruptEnd();
     if (!this.m) return;
     const now = Date.now();
-    for (const ws of this.ctx.getWebSockets()) {
-      const att = ws.deserializeAttachment() as SocketAttachment | null;
-      if (att && !att.authed && att.helloBy <= now) {
-        ws.send(JSON.stringify({ v: 1, t: "error", code: "unauthorized", now }));
-        ws.close(1008, "hello timeout");
-      }
-    }
+    closeLateHellos(
+      this.ctx.getWebSockets().map((ws) => ({ ws, att: ws.deserializeAttachment() as SocketAttachment | null })),
+      now,
+    );
     await this.apply({ e: "timer", now });
   }
 
@@ -442,13 +680,12 @@ export class Screen extends DurableObject<Env> implements PairingStore {
   }
 
   /**
-   * Proof of the sid, by `hello` or by poll, moves the link binding (OPEN-02) unless another authed screen socket is
-   * live, so a leaked sid cannot take the binding from a lectern that is still talking. Otherwise the newest proof wins.
+   * Proof of the sid, by `hello` or by poll, moves the link binding (OPEN-02) unless another authed screen socket still
+   * holds it (sockets.ts `helloBinding`), so a leaked sid cannot take it from a lectern that is still talking.
    */
-  private bindLinksUnlessLive(ip: string, except?: WebSocket): void {
-    const now = Date.now();
-    const silence = this.config().socketSilenceMs;
-    if (!this.authedScreens(except).some((s) => isLive(s.heardAt, now, silence))) this.bindLinksTo(ip);
+  private bindLinksUnlessLive(ip: unknown, except?: WebSocket): void {
+    const bound = helloBinding(ip, this.authedScreens(except), Date.now(), this.config().socketSilenceMs);
+    if (bound !== null) this.bindLinksTo(bound);
   }
 
   /** The open screen sockets whose `hello` verified, with when each was last heard (its hello or an answered ping). */
@@ -497,12 +734,19 @@ export class Screen extends DurableObject<Env> implements PairingStore {
     return view ? { ok: true, value: view } : fail("pairing_invalid");
   }
 
-  private async phoneEvent(pid: string, event: () => Event): Promise<Result<PhoneView>> {
+  /** `refuse` runs after the pid check and before the commit, with no await between, so what it read cannot change. */
+  private async phoneEvent(
+    pid: string,
+    event: () => Event,
+    refuse: () => ErrorCode | null = () => null,
+  ): Promise<Result<PhoneView>> {
     const auth = await this.phoneAuth(pid);
     if (!auth.ok) return auth;
     const { m: before, meta } = this;
     if (!before || !meta) return fail("screen_gone");
     if (!this.phoneMatches(auth.hash)) return fail("pairing_invalid");
+    const refused = refuse();
+    if (refused) return fail(refused);
     const applied = await this.apply(event());
     if (!applied.ok) return applied;
     if (this.phoneMatches(auth.hash)) return this.phoneResult(auth.hash);
@@ -537,6 +781,10 @@ export class Screen extends DurableObject<Env> implements PairingStore {
     if (step.next !== m) {
       this.m = step.next;
       this.ctx.storage.kv.put("machine", step.next);
+      // In the same synchronous step as the write: a replay must never answer a pid that no longer pairs.
+      if ((m.pairing && !step.next.pairing) || (step.next.state === "ended" && m.state !== "ended")) {
+        idemPurge(this.ctx.storage.kv);
+      }
     }
     const { collided, minted } = await runEffects(
       step.effects,
@@ -569,7 +817,12 @@ export class Screen extends DurableObject<Env> implements PairingStore {
     return fail("internal");
   }
 
-  private async hello(ws: WebSocket, att: SocketAttachment, credential: string): Promise<void> {
+  private async hello(
+    ws: WebSocket,
+    att: SocketAttachment,
+    credential: string,
+    fo?: Meta["linkOrigin"],
+  ): Promise<void> {
     let auth: { ok: true } | { ok: false; error: ErrorCode };
     if (att.role === "screen") {
       auth = await this.screenAuth(credential);
@@ -578,15 +831,29 @@ export class Screen extends DurableObject<Env> implements PairingStore {
       auth = phone.ok && !this.phoneMatches(phone.hash) ? fail("pairing_invalid") : phone;
     }
     if (!auth.ok) {
-      ws.send(JSON.stringify({ v: 1, t: "error", code: auth.error, now: Date.now() }));
-      return ws.close(1008, "auth");
+      safeSend(ws, JSON.stringify({ v: 1, t: "error", code: auth.error, now: Date.now() }));
+      return this.drop(ws, 1008, "auth");
     }
     ws.serializeAttachment({ ...att, authed: true, helloAt: Date.now() } satisfies SocketAttachment);
-    if (att.role === "screen") this.bindLinksUnlessLive(att.ip, ws);
+    if (att.role === "screen") {
+      this.bindLinksUnlessLive(att.ip, ws);
+      if (fo) this.chooseLinkOrigin(fo);
+    }
     await this.apply({ e: "socket", now: Date.now(), open: this.openSockets() });
     this.sendState(ws, att.role);
     if (att.role === "screen" && this.m?.state === "waiting" && !this.m.codes.current) await this.issueCode();
     await this.rearm();
+  }
+
+  /**
+   * FO-01: only the screen's verified hello names the origin its links use, and only before approval, so no phone,
+   * link request or later hello can move links to another host.
+   */
+  private chooseLinkOrigin(fo: Meta["linkOrigin"]): void {
+    const { meta, m } = this;
+    if (!meta || !m || meta.linkOrigin === fo || !ORIGIN_STATES.includes(m.state)) return;
+    this.meta = { ...meta, linkOrigin: fo };
+    this.ctx.storage.kv.put("meta", this.meta);
   }
 
   private sendState(ws: WebSocket, role: Role): void {
@@ -594,14 +861,8 @@ export class Screen extends DurableObject<Env> implements PairingStore {
     if (!meta || !m) return;
     const now = Date.now();
     const view = role === "screen" ? screenView(meta, m, this.config(), now) : this.phoneViewOf(m);
-    const frame = view
-      ? { v: 1, t: "state", view }
-      : { v: 1, t: "error", code: "pairing_invalid" satisfies ErrorCode, now };
-    try {
-      ws.send(JSON.stringify(frame));
-    } catch {
-      // the socket closed under us; its close handler updates the count
-    }
+    if (view) this.out.state(ws, JSON.stringify({ v: 1, t: "state", view }));
+    else this.out.other(ws, JSON.stringify({ v: 1, t: "error", code: "pairing_invalid" satisfies ErrorCode, now }));
   }
 
   private push(to: Role | "both"): void {
@@ -616,13 +877,7 @@ export class Screen extends DurableObject<Env> implements PairingStore {
 
   /** A phone socket outlives its pairing only until the next event: close it. */
   private closePhoneSockets(): void {
-    for (const ws of this.ctx.getWebSockets("phone")) {
-      try {
-        ws.close(1000, "done");
-      } catch {
-        // already closed
-      }
-    }
+    for (const ws of this.ctx.getWebSockets("phone")) this.drop(ws, 1000, "done");
   }
 
   private async auditLink(
@@ -670,6 +925,9 @@ export class Screen extends DurableObject<Env> implements PairingStore {
     }
     const session = refusalSession(record, m.pairing.sessionId);
     if (session) await this.auditLink(session, now, "link.refused", { cause: error, ...via });
+    // The likely cause if this session never starts (REL-16); outside a session the machine refuses it, harmlessly.
+    if (session === m.pairing.sessionId) await this.apply({ e: "started", now, cause: "fetch_refused" });
+    // transitional: removed in P1 commit 6 (the screen's hello `fo: "main"` sends started fo_fallback, FO-01)
     await bestEffort(
       metricsFor(this.env).record({
         at: now,
@@ -739,12 +997,8 @@ export class Screen extends DurableObject<Env> implements PairingStore {
     const frame = JSON.stringify({ v: 1, t: "open", item, links, now: Date.now() });
     for (const ws of this.ctx.getWebSockets("screen")) {
       const att = ws.deserializeAttachment() as SocketAttachment | null;
-      if (!att?.authed) continue;
-      try {
-        ws.send(frame);
-      } catch {
-        // the socket closed under us; the screen asks again on its next view
-      }
+      // A lost one is asked for again on the screen's next view.
+      if (att?.authed) this.out.other(ws, frame);
     }
   }
 
@@ -761,7 +1015,9 @@ export class Screen extends DurableObject<Env> implements PairingStore {
         this.m = null;
         this.meta = null;
         const release = meta?.mode === "demo" ? () => directoryStub(this.env).demoRelease(meta.screenRef) : null;
-        await closeObject(release, this.ctx.getWebSockets(), async () => {
+        const sockets = this.ctx.getWebSockets();
+        for (const ws of sockets) this.out.closing(ws);
+        await closeObject(release, sockets, async () => {
           await this.ctx.storage.deleteAlarm();
           await this.ctx.storage.deleteAll();
         });
@@ -773,6 +1029,8 @@ export class Screen extends DurableObject<Env> implements PairingStore {
   private async rearm(): Promise<void> {
     if (!this.m) return;
     const times = [nextDeadline(this.m, this.config().machine)];
+    // A corrupt end still to finish keeps the alarm due, whatever else re-arms it first.
+    if (this.ctx.storage.kv.get(CORRUPT_END_KEY) !== undefined) times.push(Date.now());
     for (const ws of this.ctx.getWebSockets()) {
       const att = ws.deserializeAttachment() as SocketAttachment | null;
       if (att && !att.authed && ws.readyState === OPEN) times.push(att.helloBy);

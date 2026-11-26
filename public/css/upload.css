@@ -3,11 +3,10 @@
 .up-pill {
   position: fixed;
   z-index: 55;
-  right: 0;
+  inset-inline: 0;
   bottom: calc(var(--inset) + env(safe-area-inset-bottom) + var(--toast-lift, 0px));
-  left: 0;
   display: flex;
-  flex-wrap: wrap;
+  flex-flow: wrap;
   align-items: center;
   gap: 12px;
   width: fit-content;
@@ -43,13 +42,13 @@
 .up-pill:not(.moving) .loader::after {
   content: none;
 }
-.up-pill .up-tile {
+.up-tile {
   border-radius: 20px;
 }
 .up-text {
   display: flex;
   flex: 1 0 8rem;
-  flex-direction: column;
+  flex-flow: column;
   min-width: 0;
 }
 .up-title {
@@ -58,14 +57,13 @@
   font-weight: 600;
   line-height: 1.3;
 }
+/* overflow: hidden already drops the flex item's automatic minimum width, so the head gives way first. */
 .up-title .head {
-  min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 .up-title .tail {
-  flex: none;
   white-space: pre;
 }
 /* The paused and still-checking titles end in their own words ("Is Paused"), so they wrap rather than giving way in the
@@ -112,10 +110,6 @@
   position: absolute;
   inset: 0;
   width: 100%;
-  border: 0;
-  border-radius: inherit;
-  background: none;
-  cursor: pointer;
 }
 /* A button too wide to sit beside the name drops to its own row: the name keeps the full width. */
 .up-slot {
@@ -130,7 +124,10 @@
   width: 44px;
   height: 44px;
   margin: -2px;
-  padding: 0;
+}
+/* The press fills the pill, so the pill's radius is its own. */
+.up-press,
+.up-close {
   border: 0;
   border-radius: var(--r-pill);
   background: none;

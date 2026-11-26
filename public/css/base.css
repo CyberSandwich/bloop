@@ -6,7 +6,6 @@
   font-family: "Inter";
   src: url("/fonts/inter-latin-cc089b5d.woff2") format("woff2");
   font-weight: 400 600;
-  font-style: normal;
   font-display: swap;
   unicode-range:
     U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+2000-206F, U+2074, U+20AC,
@@ -52,6 +51,7 @@
   --r-stage: 28px;
   --r-content: 24px;
   --r-pill: 9999px;
+  --choice-h: 64px;
 
   --sh-frame: 0 0 0 1px rgba(0, 0, 0, 0.06), 0 30px 60px -30px rgba(0, 0, 0, 0.35);
   --sh-nav: 0 0 0 0.5px rgba(0, 0, 0, 0.08), 0 4px 18px rgba(0, 0, 0, 0.05);
@@ -240,17 +240,6 @@ h1[tabindex="-1"]:focus {
     background: var(--surface);
     -webkit-backdrop-filter: none;
     backdrop-filter: none;
-  }
-}
-/* The loader's sheen (design.md section 8): a 1 s sweep, the first 45 percent of 2.2 s, then a rest. */
-@keyframes sheen {
-  0% {
-    background-position: 100% 0;
-    animation-timing-function: var(--ease-out);
-  }
-  45%,
-  100% {
-    background-position: 0 0;
   }
 }
 @media (prefers-reduced-motion: reduce) {

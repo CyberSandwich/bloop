@@ -5,8 +5,10 @@ import type {
   ErrorCode,
   Kind,
   LinkResponse,
+  MatchResponse,
   Mode,
   OpenMode,
+  PairingAccountError,
   PhoneView,
   RoomView,
   ScreenView,
@@ -15,12 +17,21 @@ import type {
 import type { ItemDraft } from "../items.ts";
 import type { FileRef } from "../machine.ts";
 import type { ClientClass } from "./open-path/links.ts";
+import type { NotesTarget, Pinned } from "./open-path/lookups.ts";
+
+/** What a route hands a creating call for its Idempotency-Key: idem.ts's `fresh` hashes, plus the key's owner. */
+export interface IdemKey {
+  owner: string;
+  keyHash: string;
+  bodyHash: string;
+}
 
 /**
  * Errors are the PairError codes, plus `file_not_found` (approve), `unauthorized` (a bad sid) and
- * `internal`. A screen that never existed or has closed answers `screen_gone`.
+ * `internal`, and a live pick's `match_required` or `match_wrong` (phone-only AppErrors). A screen that never
+ * existed or has closed answers `screen_gone`.
  */
-export type Result<T> = { ok: true; value: T } | { ok: false; error: ErrorCode };
+export type Result<T, E = ErrorCode | PairingAccountError> = { ok: true; value: T } | { ok: false; error: E };
 
 export interface ScreenCreated {
   sid: string;
@@ -38,6 +49,8 @@ export interface PhoneInfo {
   kind: Kind;
   ipHash: string;
   userId: string | null;
+  /** The sign-in's `phone_session.public_id`, pinned with `userId` (ADR 0015). */
+  phoneSession?: string | null;
   passHash: string | null;
 }
 
@@ -53,17 +66,38 @@ export interface PairingStore {
     roomName: string | null;
   }): Promise<Result<ScreenCreated>>;
   nextCode(sid: string): Promise<Result<CodeView>>;
-  claim(code: string, phone: PhoneInfo): Promise<Result<ClaimResponse>>;
+  /** Live: answers the three `choices` and no match (PAIR-14). `idem` keeps the answer for the route's replay. */
+  claim(code: string, phone: PhoneInfo, idem?: IdemKey): Promise<Result<ClaimResponse>>;
+  /** The first claim answer stored for an Idempotency-Key hash (idem.ts `IdemStore.find`), its pid derived again. */
+  idemFind(owner: string, keyHash: string, since: number): Promise<{ bodyHash: string; stored: ClaimResponse } | null>;
+  /**
+   * The phone's pick; a wrong one cancels the claim and answers `match_wrong`; a repeat after a right one is a no-op.
+   * With `idem`, the answer is kept for the key, scoped to the pairing.
+   */
+  match(pid: string, choice: string, idem?: Omit<IdemKey, "owner">): Promise<Result<MatchResponse>>;
+  /** The first match answer kept for a key of this pid's pairing (idem.ts `IdemStore.find`), or null. */
+  matchIdemFind(
+    pid: string,
+    keyHash: string,
+    since: number,
+  ): Promise<{ bodyHash: string; stored: MatchResponse } | null>;
   listed(pid: string, ids: string[]): Promise<Result<PhoneView>>;
   /**
-   * The Worker resolves `items` from the source's list; the object checks every ref against the listed ids (live)
-   * and refuses an empty list, a repeat or more than MAX_ITEMS (`bad_request`).
+   * The Worker resolves `items` from the source's list; the object refuses an empty list, a repeat or more than
+   * MAX_ITEMS (`bad_request`), a live pick not yet made (`match_required`), and a `cookieUser` other than the
+   * claim's pinned user (`pairing_invalid`, signed out included).
    */
-  approve(pid: string, items: ItemDraft[], userId: string | null): Promise<Result<PhoneView>>;
+  approve(pid: string, items: ItemDraft[], cookieUser: string | null): Promise<Result<PhoneView>>;
+  /** A guest upload's bytes so far, for the screen's pill; monotonic (a lower count changes nothing). */
+  uploadProgress(pid: string, bytes: number, total: number): Promise<Result<PhoneView>>;
+  /** Where an item's notes live, for the paired phone only, or null for any miss (NOTES-01). */
+  notesTarget(pid: string, itemId: string): Promise<NotesTarget | null>;
+  /** The pinned user and sign-in, for the routes' cookie check. */
+  pinnedUser(pid: string): Promise<Result<Pinned>>;
   /**
    * The phone's remote: what the screen should show. Absolute, so a repeat is a no-op, and a `seq` not above the
-   * phone's last applied one changes nothing. Demo sessions only; the item must be a file in the approved list and the
-   * page within its pages.
+   * phone's last applied one changes nothing. The item must be a file in the approved list and the page within its
+   * pages; live, the phone a confirmed owner and the item a deck, PDF or doc.
    */
   control(pid: string, command: ShownCommand): Promise<Result<PhoneView>>;
   /** The screen reports its own tap, so the phone's highlight stays true. Same rules as `control`, with its own `seq`. */
@@ -88,7 +122,7 @@ export interface PairingStore {
    */
   beginDrop(pid: string, length: number): Promise<Result<{ sessionId: string }>>;
   /** The object was stored and validated: the session is `offered`. */
-  dropDone(pid: string, file: FileRef): Promise<Result<PhoneView>>;
+  dropDone(pid: string, file: FileRef): Promise<Result<PhoneView, ErrorCode>>;
   /** The upload failed or was refused: back to `claimed`, and the object is purged. */
   dropFailed(pid: string, error: ErrorCode): Promise<Result<PhoneView>>;
   /**
@@ -115,13 +149,25 @@ export interface PairingStore {
 /** One instance. Routes typed codes; counts misses exactly (ADR 0002). */
 export interface CodeDirectory {
   put(code: string, screenRef: string, expiresAt: number, demo: boolean): Promise<"ok" | "collision">;
-  lookup(
-    code: string,
-    ipHash: string,
-    now: number,
-  ): Promise<{ ok: true; screenRef: string; demo: boolean } | { ok: false; error: "code_unknown" | "rate_limited" }>;
+  /**
+   * Routes a typed code (PAIR-15). A live code claimed by a signed-out owner answers `auth_required` without routing,
+   * so the code is never spent, and is no miss: the phone signs in and claims it. A guest claim the drop refuses
+   * answers that refusal unrouted for any code but a demo one, whether it exists or not, and is no miss.
+   */
+  lookup(code: string, ipHash: string, now: number, who: ClaimWho): Promise<Lookup>;
   remove(code: string): Promise<void>;
 }
+
+/** Who claims. `guestRefusal`: what the guest drop answers a guest claim, null when it admits one. */
+export interface ClaimWho {
+  kind: Kind;
+  signedIn: boolean;
+  guestRefusal: GuestRefusal | null;
+}
+export type GuestRefusal = "drop_disabled" | "pass_required";
+export type Lookup =
+  | { ok: true; screenRef: string; demo: boolean }
+  | { ok: false; error: "code_unknown" | "rate_limited" | "auth_required" | GuestRefusal };
 
 /** The limits on concurrent demo sessions, held in the same object as the codes. */
 export interface DemoCap {
@@ -131,4 +177,27 @@ export interface DemoCap {
    */
   demoReserve(screenRef: string, ipHash: string, holdMs: number, cap: number, perIp: number): Promise<boolean>;
   demoRelease(screenRef: string): Promise<void>;
+}
+
+/**
+ * The live pick's three choices (PAIR-14): the match and two decoys, in a uniform shuffle. A decoy differs from the
+ * match in both digits and is not its digit swap, so a glance at either digit tells them apart, and the two decoys
+ * differ. `rand(n)` answers a uniform integer in [0, n); the Screen object passes `randomInt` (ids.ts).
+ */
+export function drawChoices(match: string, rand: (n: number) => number): string[] {
+  if (!/^\d{2}$/.test(match)) throw new RangeError("match: two digits");
+  const swap = `${match[1]}${match[0]}`;
+  const decoys: string[] = [];
+  for (let n = 0; n < 100; n++) {
+    const d = String(n).padStart(2, "0");
+    if (d[0] !== match[0] && d[1] !== match[1] && d !== swap) decoys.push(d);
+  }
+  const first = rand(decoys.length);
+  const second = rand(decoys.length - 1);
+  const picks = [match, decoys[first] as string, decoys[second >= first ? second + 1 : second] as string];
+  for (let i = picks.length - 1; i > 0; i--) {
+    const j = rand(i + 1);
+    [picks[i], picks[j]] = [picks[j] as string, picks[i] as string];
+  }
+  return picks;
 }

@@ -2,9 +2,16 @@
 // Single-threaded, so a count and the refusal that follows it cannot race.
 import { DurableObject } from "cloudflare:workers";
 import type { Env } from "../env.ts";
-import type { CodeDirectory, DemoCap } from "../seams/pairing.ts";
+import type { ClaimWho, CodeDirectory, DemoCap, Lookup } from "../seams/pairing.ts";
 import type { DemoSlots } from "./demo-slots.ts";
-import { isBlocked, MISS_WINDOW_MS, type MissRow, recordGlobalMiss, recordMiss } from "./directory-rules.ts";
+import {
+  isBlocked,
+  lookupVerdict,
+  MISS_WINDOW_MS,
+  type MissRow,
+  recordGlobalMiss,
+  recordMiss,
+} from "./directory-rules.ts";
 import { initDirectoryStorage, ROWS_LEFT } from "./directory-schema.ts";
 
 /**
@@ -43,11 +50,7 @@ export class Directory extends DurableObject<Env> implements CodeDirectory, Demo
     return "ok";
   }
 
-  async lookup(
-    code: string,
-    ipHash: string,
-    now: number,
-  ): Promise<{ ok: true; screenRef: string; demo: boolean } | { ok: false; error: "code_unknown" | "rate_limited" }> {
+  async lookup(code: string, ipHash: string, now: number, who: ClaimWho): Promise<Lookup> {
     const sql = this.ctx.storage.sql;
     const misses = this.missRow(ipHash);
     if (isBlocked(misses, now)) return { ok: false, error: "rate_limited" };
@@ -55,14 +58,16 @@ export class Directory extends DurableObject<Env> implements CodeDirectory, Demo
     const hit = sql
       .exec<{ screen_ref: string; demo: number }>("SELECT screen_ref, demo FROM code WHERE code = ?", code)
       .toArray()[0];
-    if (hit) return { ok: true, screenRef: hit.screen_ref, demo: hit.demo === 1 };
+    const verdict = lookupVerdict(hit ? { screenRef: hit.screen_ref, demo: hit.demo === 1 } : null, who);
+    if (verdict.ok) return verdict;
+    if (!verdict.miss) return { ok: false, error: verdict.error };
 
     this.saveMiss(ipHash, recordMiss(misses, now));
     const global = recordGlobalMiss(this.missRow(GLOBAL_KEY), now);
     this.saveMiss(GLOBAL_KEY, global.row);
     if (global.alarm) console.warn(JSON.stringify({ evt: "pair.miss_alarm", misses: global.row.count }));
     await this.armSweep();
-    return { ok: false, error: "code_unknown" };
+    return { ok: false, error: verdict.error };
   }
 
   async demoReserve(screenRef: string, ipHash: string, holdMs: number, cap: number, perIp: number): Promise<boolean> {
