@@ -365,6 +365,44 @@ test.describe("PAIR-14 the match pick", () => {
     await closeAll(screen, phone);
   });
 
+  for (const vp of [
+    { width: 844, height: 390 },
+    { width: 320, height: 568 },
+    { width: 390, height: 844 },
+  ]) {
+    test(`at ${vp.width} x ${vp.height} the choices keep their boxes from the tap to the slow line`, async ({
+      browser,
+    }) => {
+      const { screen, phone } = await atPick(browser);
+      await phone.page.setViewportSize(vp);
+      const choices = phone.page.locator("#pick .choice");
+      await expect(choices).toHaveCount(3);
+      await phone.page.evaluate(() =>
+        (globalThis as unknown as { document: { fonts: { ready: Promise<unknown> } } }).document.fonts.ready.then(
+          () => null,
+        ),
+      );
+      const boxes = async () =>
+        Promise.all(
+          (await choices.all()).map(async (b) => {
+            const r = await b.boundingBox();
+            return [r?.x, r?.y, r?.width, r?.height].map((n) => Math.round(n ?? -1));
+          }),
+        );
+      const pending = await boxes();
+      // Held, the answer never comes: the legend reads Approving..., then the slow line shows.
+      await phone.page.route("**/api/match", () => {});
+      await choice(phone.page, await shownMatch(screen.page)).click();
+      await expect(phone.page.locator("#pick legend")).toHaveText("Approving...");
+      expect(await boxes()).toEqual(pending);
+      await expect(phone.page.locator("#pick .pick-slow")).toHaveText("Still approving. Keep this page open.", {
+        timeout: 8000,
+      });
+      expect(await boxes()).toEqual(pending);
+      await closeAll(screen, phone);
+    });
+  }
+
   test("a match module that fails to load says so with Reload, over the skeleton pills", async ({ browser }) => {
     const { screen, phone } = await atPick(browser, (context) =>
       context.route("**/js/core/match.js", (route) => route.abort()),
