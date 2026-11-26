@@ -119,70 +119,127 @@ describe("SITE-05 deploy token scope", () => {
   });
 });
 
-/** Each job of a workflow: its name, whether it names an environment, and every command its steps run. */
-function jobs(text: string): { name: string; environment: boolean; runs: string[] }[] {
-  const lines = text.split("\n");
-  const found: { name: string; environment: boolean; runs: string[] }[] = [];
-  let job: { name: string; environment: boolean; runs: string[] } | undefined;
-  lines.forEach((line, i) => {
-    const head = /^ {2}([\w-]+):\s*$/.exec(line);
-    if (head && i > lines.indexOf("jobs:")) {
-      job = { name: head[1] ?? "", environment: false, runs: [] };
-      found.push(job);
-    }
-    if (!job) return;
-    if (/^ {4}environment:/.test(line)) job.environment = true;
-    const step = /^(\s*-?\s*)run:\s*(.*)$/.exec(line);
-    if (!step) return;
-    const value = (step[2] ?? "").trim();
-    if (!/^[|>][-+]?$/.test(value)) {
-      job.runs.push(value);
-      return;
-    }
-    const indent = (step[1] ?? "").length;
-    for (let j = i + 1; j < lines.length; j++) {
-      const next = lines[j] ?? "";
-      if (next.trim() !== "" && next.length - next.trimStart().length <= indent) break;
-      if (next.trim() !== "") job.runs.push(next.trim());
-    }
-  });
-  return found;
+interface Job {
+  name: string;
+  text: string;
+  environment: boolean;
+  runs: string[];
+  uses: string[];
+  shells: string[];
 }
 
-/** Commands a job that holds the Cloudflare token may run: first-party tools, the pinned wrangler, a scripted install. */
-const TOKEN_JOB_RUNS =
-  /^(node tools\/(pinned-wrangler|staging|prebuilt)\.mjs\b|npm ci --ignore-scripts$|if \[ -n "\$CLOUDFLARE_API_TOKEN" \])/;
+/** Each job of a workflow: its text, whether it names an environment, and what its steps run and use. */
+function jobsOf(workflow: string): Job[] {
+  const lines = workflow.split("\n");
+  const start = lines.indexOf("jobs:");
+  const heads = lines.flatMap((line, i) => (i > start && /^ {2}[\w-]+:\s*$/.test(line) ? [i] : []));
+  return heads.map((from, n) => {
+    const body = lines.slice(from, heads[n + 1] ?? lines.length);
+    const job: Job = {
+      name: (body[0] ?? "").trim().slice(0, -1),
+      text: body.join("\n"),
+      environment: body.some((line) => /^ {4}environment:/.test(line)),
+      runs: [],
+      uses: [],
+      shells: [],
+    };
+    body.forEach((line, i) => {
+      const use = /^\s*-?\s*uses:\s*(\S+)/.exec(line);
+      if (use) job.uses.push(use[1] ?? "");
+      if (/^\s*-?\s*shell:/.test(line)) job.shells.push(line.trim());
+      const step = /^(\s*-?\s*)run:\s*(.*)$/.exec(line);
+      if (!step) return;
+      const value = (step[2] ?? "").trim();
+      if (!/^[|>][-+]?$/.test(value)) {
+        job.runs.push(value);
+        return;
+      }
+      const indent = (step[1] ?? "").length;
+      for (let j = i + 1; j < body.length; j++) {
+        const next = body[j] ?? "";
+        if (next.trim() !== "" && next.length - next.trimStart().length <= indent) break;
+        if (next.trim() !== "") job.runs.push(next.trim());
+      }
+    });
+    return job;
+  });
+}
+
+/** What a job that holds the Cloudflare token may run: first-party tools with plain arguments, a scripted-free install. */
+const TOKEN_RUN = /^(node tools\/(pinned-wrangler|staging|prebuilt)\.mjs( [\w.=-]+)*|npm ci --ignore-scripts)$/;
+/** The token gates: a fixed test and echo, allowed whole because they hold a semicolon. */
+const GATES = [
+  'if [ -n "$CLOUDFLARE_API_TOKEN" ]; then echo "has=true" >> "$GITHUB_OUTPUT"; else echo "No CLOUDFLARE_API_TOKEN; skipping deploy."; fi',
+  'if [ -n "$CLOUDFLARE_API_TOKEN" ]; then echo "has=true" >> "$GITHUB_OUTPUT"; else echo "Staging skipped: no CLOUDFLARE_API_TOKEN in the staging environment."; fi',
+];
+/** The actions a token job may use, by pinned commit: checkout, setup-node, download-artifact. */
+const TOKEN_USES = [
+  "actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1",
+  "actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1",
+  "actions/download-artifact@37930b1c2abaa49bbe596cd826c3c89aef350131",
+];
+
+/** Why a workflow's token jobs (any job naming an environment or CLOUDFLARE_API_TOKEN) could run third-party code. */
+function tokenJobProblems(workflow: string): string[] {
+  const problems: string[] = [];
+  for (const job of jobsOf(workflow).filter((j) => j.environment || j.text.includes("CLOUDFLARE_API_TOKEN"))) {
+    for (const run of job.runs)
+      if (!TOKEN_RUN.test(run) && !GATES.includes(run)) problems.push(`${job.name}: run ${run}`);
+    for (const use of job.uses) if (!TOKEN_USES.includes(use)) problems.push(`${job.name}: uses ${use}`);
+    for (const shell of job.shells) problems.push(`${job.name}: ${shell}`);
+  }
+  return problems;
+}
 
 describe("SITE-05 third-party code never shares a job with the token", () => {
-  const files = ["deploy.yml", "staging.yml"];
+  const workflows = readdirSync(dir)
+    .filter((f) => /\.ya?ml$/.test(f))
+    .map((f) => [f, readFileSync(new URL(f, dir), "utf8")] as const);
 
-  it("SITE-05 token jobs: a job with an environment runs only first-party tools, the pinned wrangler and a scripted install", () => {
-    for (const f of files) {
-      const withEnvironment = jobs(readFileSync(new URL(f, dir), "utf8")).filter((j) => j.environment);
-      expect(withEnvironment.length, f).toBe(1);
-      for (const job of withEnvironment) {
-        for (const run of job.runs) expect(run, `${f} ${job.name}`).toMatch(TOKEN_JOB_RUNS);
-      }
+  it("SITE-05 token jobs: every job that names an environment or the token runs only the allowed commands and actions", () => {
+    let tokenJobs = 0;
+    for (const [f, text] of workflows) {
+      expect(tokenJobProblems(text), f).toEqual([]);
+      tokenJobs += jobsOf(text).filter((j) => j.environment || j.text.includes("CLOUDFLARE_API_TOKEN")).length;
     }
+    expect(tokenJobs).toBe(2);
   });
 
-  it("SITE-05 token jobs: the check job has no environment and no secret, and hands dist/ over as an artifact", () => {
-    for (const f of files) {
+  it("SITE-05 token jobs: the check job has no environment and no secret, and hands dist/ over with its hidden files", () => {
+    for (const f of ["deploy.yml", "staging.yml"]) {
       const text = readFileSync(new URL(f, dir), "utf8");
-      const check = text.slice(text.indexOf("  check:\n"), text.search(/\n {2}(deploy|staging):\n/));
-      expect(check, f).toContain("npm run check");
-      expect(check, f).toContain("upload-artifact");
-      expect(check, f).not.toMatch(/environment:|secrets\./);
-      expect(text, f).toContain("download-artifact");
+      const check = jobsOf(text).find((j) => j.name === "check");
+      expect(check?.runs, f).toEqual(["npm ci --ignore-scripts", "npm run check", "node tools/prebuilt.mjs manifest"]);
+      expect(check?.text, f).not.toMatch(/environment:|secrets\./);
+      expect(check?.text, f).toContain("include-hidden-files: true");
       expect(text, f).toContain("needs: check");
+      expect(text, f).not.toContain("cache: npm\n      - if");
     }
   });
 
-  it("SITE-05 token jobs: the guard sees a token job that runs a build or a test", () => {
-    const bad = "jobs:\n  deploy:\n    environment: production\n    steps:\n      - run: npm run check\n";
-    expect(jobs(bad)).toEqual([{ name: "deploy", environment: true, runs: ["npm run check"] }]);
-    expect("npm run check").not.toMatch(TOKEN_JOB_RUNS);
-    expect("node tools/pinned-wrangler.mjs deploy").toMatch(TOKEN_JOB_RUNS);
+  it("SITE-05 token jobs: the guard refuses each way to run other code in a token job", () => {
+    const job = (steps: string, header = "    environment: production\n") =>
+      `jobs:\n  deploy:\n${header}    steps:\n${steps}`;
+    const bad = [
+      "      - run: node tools/prebuilt.mjs rewrite && npx vitest\n",
+      "      - run: node tools/staging.mjs deploy; curl example.test\n",
+      "      - run: node tools/staging.mjs deploy | tee out\n",
+      "      - run: node tools/staging.mjs `id`\n",
+      "      - run: node tools/staging.mjs $(id)\n",
+      '      - run: if [ -n "$CLOUDFLARE_API_TOKEN" ]; then npx x; fi\n',
+      "      - run: npm run check\n",
+      "      - uses: someone/action@v1\n",
+      "      - uses: actions/checkout@v4\n",
+      "      - run: node tools/staging.mjs ready\n        shell: npx foo {0}\n",
+    ];
+    for (const step of bad) expect(tokenJobProblems(job(step)), step).not.toEqual([]);
+    // A job with no environment that reads the repository secret is a token job too.
+    const noEnv =
+      "jobs:\n  build:\n    steps:\n      - run: npm test\n        env:\n          CLOUDFLARE_API_TOKEN: ${{ secrets.X }}\n";
+    expect(tokenJobProblems(noEnv)).toEqual(["build: run npm test"]);
+    expect(
+      tokenJobProblems(job("      - run: node tools/pinned-wrangler.mjs d1 migrations apply DB --remote\n")),
+    ).toEqual([]);
   });
 
   it("SITE-05 token jobs: wrangler.jsonc's build block is the one the deploy jobs know how to swap", () => {

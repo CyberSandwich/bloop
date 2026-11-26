@@ -1,7 +1,8 @@
 // Builds dist/, the directory wrangler serves: public/ copied byte for byte, except each JS module minified on its
 // own (no bundle), so the module graph, lazy import() specifiers and export names stay as written, and each
 // stylesheet stripped of comments and whitespace, and each page of its comments. ADR 0011.
-// The CLI is tools/build-assets-cli.mjs; wrangler.jsonc `build` runs it before `wrangler dev` and `wrangler deploy`.
+// The CLI is tools/build-assets-cli.mjs; wrangler.jsonc `build` runs it before a local `wrangler dev` and `wrangler deploy`
+// (the CI deploy jobs use the check job's dist/ instead: tools/prebuilt.mjs).
 import { spawnSync } from "node:child_process";
 import { createHash } from "node:crypto";
 import { lstatSync, mkdirSync, readdirSync, readFileSync, renameSync, rmSync, writeFileSync } from "node:fs";

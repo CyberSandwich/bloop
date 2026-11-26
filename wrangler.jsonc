@@ -11,8 +11,9 @@
   "preview_urls": false,
   // Cloudflare creates the DNS record and certificate on deploy; no apex record is added by hand.
   "routes": [{ "pattern": "bloop.here", "custom_domain": true }],
-  // dist/ is public/ with each JS module minified (ADR 0011). Every `wrangler dev` and `wrangler deploy` rebuilds it
-  // first, and dev rebuilds on any change under public/, so no server or upload reads a stale copy.
+  // dist/ is public/ with each JS module minified (ADR 0011). A local `wrangler dev` and `wrangler deploy` rebuild it
+  // first, and dev rebuilds on any change under public/. The CI deploy jobs do not build: they swap this command for
+  // tools/prebuilt.mjs, which checks the check job's dist/ artifact.
   "build": { "command": "node tools/build-assets-cli.mjs", "watch_dir": "public" },
   "assets": {
     "directory": "./dist",

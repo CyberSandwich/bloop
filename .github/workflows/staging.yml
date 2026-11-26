@@ -31,10 +31,13 @@ jobs:
           cache: npm
       - run: npm ci --ignore-scripts
       - run: npm run check
+      - run: node tools/prebuilt.mjs manifest
+      # Dotfiles (.assetsignore, .well-known/) are part of dist/; the deploy job checks the manifest.
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: dist
           path: dist
+          include-hidden-files: true
           if-no-files-found: error
           retention-days: 1
   # Only the lockfile's wrangler runs with the token: a fresh install with no scripts, the built dist/ from the check
@@ -61,7 +64,6 @@ jobs:
         uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
           node-version-file: .nvmrc
-          cache: npm
       - if: steps.gate.outputs.has == 'true'
         run: npm ci --ignore-scripts
       - if: steps.gate.outputs.has == 'true'
