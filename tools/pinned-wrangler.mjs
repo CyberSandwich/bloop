@@ -48,8 +48,10 @@ export function configArgs(args, root = ROOT) {
 export const holdsToken = (env) => ["CLOUDFLARE_API_TOKEN", "CF_API_TOKEN", "CLOUDFLARE_API_KEY"].some((k) => env[k]);
 
 /** The commands that never run wrangler.jsonc's build command. Everything else, including a command added later, is
- * treated as one that does. */
-const NEVER_BUILDS = ["d1", "secret", "whoami", "kv", "r2", "deployments", "tail"];
+ * treated as one that does. `containers` only drives docker and the registry API: in the pinned wrangler's
+ * wrangler-dist/cli.js no containers handler reaches getEntry, the one caller of runCustomBuild (deploy, dev, types,
+ * versions and preview do). Re-check that on a wrangler upgrade. */
+const NEVER_BUILDS = ["d1", "secret", "whoami", "kv", "r2", "deployments", "tail", "containers"];
 
 /** Whether a wrangler command may run the build command: true unless its first argument is on the safe list, so a
  * leading flag or flag value (`-e d1 deploy`) fails closed.
