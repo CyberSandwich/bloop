@@ -78,8 +78,9 @@ describe("shipped pages", () => {
     expect(pages.length).toBeGreaterThan(5);
     for (const path of pages) {
       const text = stripComments(readFileSync(path, "utf8"), path);
-      // What is left may hold `<!--` only inside raw text.
-      const outside = text.replace(/<(script|style|textarea|title)\b[\s\S]*?<\/\1\s*>/gi, "");
+      // What is left may hold `<!--` only inside raw text. A space, not "", stands in for each element, so the text
+      // either side of one cannot join into a `<!--` the page does not hold.
+      const outside = text.replace(/<(script|style|textarea|title)\b[\s\S]*?<\/\1\s*>/gi, " ");
       expect(outside, path).not.toContain("<!--");
     }
   });

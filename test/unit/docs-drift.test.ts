@@ -10,6 +10,7 @@ import { CONFIG_VARS, parseConfig } from "../../src/worker/config.ts";
 import { importClosure, withModulePreload } from "../../tools/build-assets.mjs";
 import { wranglerConfig } from "../../tools/wrangler-config.mjs";
 import { sizeEntries } from "../size-entries.ts";
+import { escapeRegExp } from "./regexp.ts";
 
 const ROOT = fileURLToPath(new URL("../../", import.meta.url));
 const read = (path: string) => readFileSync(join(ROOT, path), "utf8");
@@ -470,7 +471,6 @@ describe("size budgets", () => {
       e.name,
       ...[e.path].flat().flatMap((p) => (/[*!]/.test(p) ? [] : [p.slice(p.lastIndexOf("/") + 1)])),
     ]);
-    const escapeRegExp = (s: string) => s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
     const named = terms.map(
       (t) => new RegExp(`${/^\w/.test(t) ? "\\b" : ""}${escapeRegExp(t)}${/\w$/.test(t) ? "\\b" : ""}`, "i"),
     );

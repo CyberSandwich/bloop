@@ -215,10 +215,7 @@ describe("every internal link resolves within its variant", () => {
   ] as const) {
     it(`${name}: each href names a page and an id that exist`, () => {
       const pages = new Map(
-        files.map((f) => [
-          `/${f.replace(/(^|\/)index\.html$/, "").replace(/\.html$/, "")}`.replace(/^\/$/, "/"),
-          read(`${dir}/${f}`),
-        ]),
+        files.map((f) => [`/${f.replace(/(^|\/)index\.html$/, "").replace(/\.html$/, "")}`, read(`${dir}/${f}`)]),
       );
       for (const [path, html] of pages) {
         for (const m of html.matchAll(/href="(\/[^"]*)"/g)) {

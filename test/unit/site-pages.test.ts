@@ -2,8 +2,10 @@ import { readdirSync, readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
 import { EXTENSION_TYPES } from "../../public/js/shared/names.js";
+import { stripTags } from "../../tools/build-pages.mjs";
 import { contrast, type Rgb, token } from "./contrast.ts";
 import { NEVER_SAY } from "./never-say.ts";
+import { escapeRegExp } from "./regexp.ts";
 
 const read = (rel: string) => readFileSync(fileURLToPath(new URL(`../../${rel}`, import.meta.url)), "utf8");
 // The articles are built from content/articles/ (design.md section 6, Site build): the index and one page each.
@@ -309,18 +311,13 @@ describe("landing word caps (design.md section 13)", () => {
     const why = between(html, /<section class="why" aria-label="Why bloop">/, "</section>");
     expect(main.indexOf('<section class="how"')).toBeLessThan(main.indexOf('<section class="why"'));
     expect(main.indexOf('<section class="why"')).toBeLessThan(main.indexOf('<section class="features"'));
-    const sr = (/<span class="sr">(.+?)<\/span>/.exec(why)?.[1] ?? "").replace(/<[^>]+>/g, "");
+    const sr = stripTags(/<span class="sr">(.+?)<\/span>/.exec(why)?.[1] ?? "");
     const row = /^\| Why \| (.+?) \(/m.exec(read("docs/design.md"))?.[1]?.replace(/\*\*/g, "") ?? "";
     expect(sr).toBe(row);
     for (const sentence of sr.split(/(?<=[.?])\s+/)) expect(words(sentence).length, sentence).toBeLessThanOrEqual(20);
     // The fill's copy is hidden from assistive tech and holds the same words, bloop as the name in body copy.
     const fill = between(why, /<span class="why-words" aria-hidden="true">/, "</p>");
-    expect(
-      fill
-        .replace(/<[^>]+>/g, "")
-        .replace(/\s+/g, " ")
-        .trim(),
-    ).toBe(sr);
+    expect(stripTags(fill).replace(/\s+/g, " ").trim()).toBe(sr);
     expect(fill).toContain('<b class="name">bloop</b>');
     expect(fill.match(/<span>/g)).toHaveLength(words(sr).length - 1);
   });
@@ -1384,7 +1381,7 @@ describe("landing motion and spacing (design.md sections 6 and 8)", () => {
     for (const [, selector = "", body = ""] of pauses) {
       const name = selector.trim();
       // The element that stops is the selector's last compound; its own rule carries the transition.
-      const target = (name.split(/\s+/).at(-1) ?? "").replace(/:.*/, "").replace(/\./g, "\\.");
+      const target = escapeRegExp((name.split(/\s+/).at(-1) ?? "").replace(/:.*/, ""));
       const prop = /([\w-]+):/.exec(body.replace("animation-play-state: paused", ""))?.[1];
       expect(prop, `${name} must fade by color or opacity`).toMatch(/^(color|opacity)$/);
       expect(bare, `${target} has no transition on ${prop}`).toMatch(

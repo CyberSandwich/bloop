@@ -430,7 +430,7 @@ describe("live-check: running the checks", () => {
     const asked: string[] = [];
     const result = await run([gated], async (url) => {
       asked.push(url);
-      return url.startsWith(ORIGIN)
+      return new URL(url).origin === ORIGIN
         ? ok({ status: 302, headers: { location: "https://elsewhere.example/x" } })
         : notFound;
     });

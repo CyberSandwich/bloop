@@ -290,7 +290,7 @@ describe("the lockdown token", () => {
   it("the lockdown token is the one used for Cloudflare calls and handed to wrangler", async () => {
     const { deps: d, api, d1 } = deps();
     await execute(table, planFor("L3"), d);
-    const cloudflare = api.calls.filter((c) => c.url.includes("api.cloudflare.com"));
+    const cloudflare = api.calls.filter((c) => new URL(c.url).host === "api.cloudflare.com");
     expect(cloudflare.length).toBeGreaterThan(0);
     for (const c of cloudflare) expect(c.auth).toBe(`Bearer ${LOCK_TOKEN}`);
     expect(d1.envs[0]).toEqual({ CLOUDFLARE_API_TOKEN: LOCK_TOKEN, CLOUDFLARE_ACCOUNT_ID: ACCOUNT });

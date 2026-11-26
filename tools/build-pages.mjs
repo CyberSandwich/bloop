@@ -284,6 +284,20 @@ export const chromeFor = (page) => ({
     : {}),
 });
 
+/**
+ * `html` with every tag removed. The pass repeats to a fixed point, so the result provably holds no tag whatever the
+ * nesting (the form CodeQL's multi-character sanitization check accepts).
+ * @param {string} html
+ */
+export function stripTags(html) {
+  let prev;
+  do {
+    prev = html;
+    html = html.replace(/<[^>]+>/g, "");
+  } while (html !== prev);
+  return html;
+}
+
 /** The FAQ as question and answer text, read from the page's own markup so its structured data says what readers see. */
 /** @param {string} html @param {string} where @returns {Faq[]} */
 export function faqOf(html, where) {
@@ -294,9 +308,7 @@ export function faqOf(html, where) {
   /** @param {string} s */
   const text = (s) => {
     // A linked sentence points elsewhere on the page ("See what can stay."), which says nothing in a search answer.
-    const t = s
-      .replace(/<a\b[^>]*>[\s\S]*?<\/a>/g, "")
-      .replace(/<[^>]+>/g, "")
+    const t = stripTags(s.replace(/<a\b[^>]*>[\s\S]*?<\/a>/g, ""))
       .replace(/\s+/g, " ")
       .trim();
     // Decoding is not done here, so an entity would reach the structured data as its raw spelling.

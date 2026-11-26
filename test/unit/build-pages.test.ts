@@ -18,9 +18,11 @@ import {
   site,
   splitFrontmatter,
   staleFiles,
+  stripTags,
   usDate,
 } from "../../tools/build-pages.mjs";
 import { NEVER_SAY } from "./never-say.ts";
+import { escapeRegExp } from "./regexp.ts";
 
 const ROOT = fileURLToPath(new URL("../../", import.meta.url));
 const read = (rel: string) => readFileSync(`${ROOT}${rel}`, "utf8");
@@ -36,6 +38,22 @@ const pages = [...built].filter(([rel]) => rel.endsWith(".html"));
 const region = (html: string, name: string) =>
   new RegExp(`<!-- build:${name} -->\\n([\\s\\S]*?)\\n\\s*<!-- /build:${name} -->`).exec(html)?.[1] ?? "";
 const hrefs = (html: string) => [...html.matchAll(/href="([^"]+)"/g)].map((m) => m[1] ?? "");
+
+describe("text helpers", () => {
+  it("stripTags leaves no tag, however the input nests its angle brackets", () => {
+    expect(stripTags("<p>a <b>b</b></p>")).toBe("a b");
+    expect(stripTags("a < b")).toBe("a < b");
+    for (const s of ["<scr<b>ipt>x</scr<i>ipt>", "<<b>script>", "<<script>script>alert(1)<</script>/script>"])
+      expect(stripTags(s), s).not.toMatch(/<[^>]+>/);
+  });
+
+  it("escapeRegExp matches its input literally, backslashes and every metacharacter included", () => {
+    for (const s of [".hero", "a\\.b", "$x", "^(a|b)[c]{2}*+?/"]) {
+      expect(new RegExp(`^${escapeRegExp(s)}$`).test(s), s).toBe(true);
+      expect(new RegExp(escapeRegExp(s)).test(s.replace(/[^\w]/g, "x")), s).toBe(false);
+    }
+  });
+});
 
 describe("the generated pages are what the build produces (the drift gate)", () => {
   it.each([...every.keys()])("%s on disk equals the build's output", (rel) => {

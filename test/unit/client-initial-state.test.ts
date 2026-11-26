@@ -3,6 +3,7 @@
 import { readdirSync, readFileSync } from "node:fs";
 import { join, relative, resolve } from "node:path";
 import { describe, expect, it } from "vitest";
+import { escapeRegExp } from "./regexp.ts";
 
 const JS = resolve(import.meta.dirname, "../../public/js");
 
@@ -30,7 +31,7 @@ function unprimed(src: string): string[] {
     .map((m) => (m[1] ?? m[2] ?? "").trim())
     .filter((handler) => {
       if (!/^[A-Za-z_$][\w$]*$/.test(handler)) return true;
-      return !new RegExp(`^${handler.replace(/\$/g, "\\$")}\\(\\);?\\s*$`, "m").test(src);
+      return !new RegExp(`^${escapeRegExp(handler)}\\(\\);?\\s*$`, "m").test(src);
     });
 }
 
