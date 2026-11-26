@@ -144,7 +144,7 @@ const PINNED: Record<string, string[]> = {
     "          package-manager-cache: false",
     "      - name: Install the repo's wrangler",
     "        run: npm ci --ignore-scripts --no-audit --no-fund",
-    "      - uses: actions/download-artifact@37930b1c2abaa49bbe596cd826c3c89aef350131 # v7.0.0",
+    "      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2",
     "        with:",
     "          name: converter-image",
     "          path: ${{ runner.temp }}",
@@ -227,7 +227,7 @@ const PINNED: Record<string, string[]> = {
     "        package-manager-cache: false",
     "    - run: npm ci --ignore-scripts",
     "      shell: bash",
-    "    - uses: actions/download-artifact@37930b1c2abaa49bbe596cd826c3c89aef350131 # v7.0.0",
+    "    - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2",
     "      with:",
     "        name: dist",
     "        path: dist",
@@ -241,7 +241,7 @@ const ALLOWED_USES = [
   "actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1",
   "actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1",
   "actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9",
-  "actions/download-artifact@37930b1c2abaa49bbe596cd826c3c89aef350131",
+  "actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333",
   "./.github/actions/prebuilt-dist",
 ];
 
@@ -686,7 +686,7 @@ describe("SITE-05 third-party code never shares a job with the token", () => {
         "an action step with an allowlist miss",
         pinProblems(
           files,
-          action.replace("actions/download-artifact@37930b1c2abaa49bbe596cd826c3c89aef350131", "evil/x@1"),
+          action.replace("actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333", "evil/x@1"),
         ).join("\n"),
         "action.yml: parsed uses evil/x@1",
       ],
