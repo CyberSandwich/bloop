@@ -769,7 +769,8 @@ test.describe("pairing flow", () => {
 
     await screen.page.getByRole("button", { name: "Back", exact: true }).click();
     await expect(heading(screen.page)).toHaveText("Demo Room");
-    expect(await typedCodeOf(screen.page)).not.toBe(before);
+    // The heading reads Demo Room before and after; the new code lands when the drop's answer does.
+    await expect.poll(() => typedCodeOf(screen.page)).not.toBe(before);
     await expect(heading(phone.page)).toHaveText("This Code Has Expired");
     // One exit, a full button: no Back beside it.
     await expect(phone.page.getByRole("link", { name: "Enter the Code" })).toHaveAttribute("href", "/code");
