@@ -130,7 +130,7 @@ export const openRoutes: readonly Route[] = [
     ["POST"],
     "/api/screen/link",
     "api",
-    // transitional: removed in P1 commit 4 (the Idempotency-Key replay, REL-14)
+    // transitional: removed in P1 commit 8 (the Idempotency-Key replay, REL-14: a link's token needs a nonce row too)
     withConfig(async (request, env, config) => {
       const body = await write(request, config, linkBody);
       if (!body.ok) return body.response;
