@@ -18,6 +18,7 @@ const HEADER_DIFAT_ENTRIES = 109;
 export const CFB_LIMITS = { maxSectorReads: 64, maxDifatSectors: 64, maxFatSectors: 4096 } as const;
 
 const UNALLOCATED = 0;
+const STREAM = 2;
 /** Storage, stream, root: the only entry types a directory holds. */
 const ENTRY_TYPES: ReadonlySet<number> = new Set([1, 2, 5]);
 const MACRO_NAMES = ["vba", "_vba_project_cur", "_vba_project", "macros", "projectwm"];
@@ -29,13 +30,22 @@ const u16 = (v: DataView, at: number) => v.getUint16(at, true);
 const u32 = (v: DataView, at: number) => v.getUint32(at, true);
 const view = (b: Uint8Array) => new DataView(b.buffer, b.byteOffset, b.byteLength);
 
-/** Directory names compare case-insensitively (MS-CFB 2.6.4). The refused sets outrank the required stream. */
-function verdictFor(names: readonly string[], requiredStream: readonly string[]): Check {
-  const has = (set: readonly string[]) => names.some((n) => set.includes(n));
+interface Entry {
+  /** Lower case: directory names compare case-insensitively (MS-CFB 2.6.4). */
+  name: string;
+  type: number;
+}
+
+/**
+ * The refused names match an entry of any type and outrank the required stream, which must be a stream entry: a
+ * storage of that name is not the document.
+ */
+function verdictFor(entries: readonly Entry[], requiredStream: readonly string[]): Check {
+  const has = (set: readonly string[]) => entries.some((e) => set.includes(e.name));
   if (has(MACRO_NAMES)) return fail("macro_content", "macro storage");
   if (has(OBJECT_NAMES)) return fail("macro_content", "embedded object");
   if (has(ENCRYPTED_NAMES)) return fail("encrypted", "encrypted storage");
-  return has(requiredStream) ? OK : bad("cfb stream missing");
+  return entries.some((e) => e.type === STREAM && requiredStream.includes(e.name)) ? OK : bad("cfb stream missing");
 }
 
 class ReadBudget extends Error {}
@@ -104,7 +114,7 @@ async function scan(r: RangeReader, requiredStream: readonly string[]): Promise<
     return u32(s, (id % perSector) * 4);
   };
 
-  const names: string[] = [];
+  const entries: Entry[] = [];
   const seen = new Set<number>();
   for (let id = firstDir; id !== END_OF_CHAIN; ) {
     if (seen.has(id)) return bad("cfb directory chain");
@@ -118,11 +128,11 @@ async function scan(r: RangeReader, requiredStream: readonly string[]): Promise<
       if (!ENTRY_TYPES.has(type)) return bad("cfb entry type");
       if (nameBytes < 2 || nameBytes > 64 || nameBytes % 2 !== 0) return bad("cfb directory name");
       const chars = new Uint16Array((nameBytes - 2) / 2).map((_, i) => s.getUint16(at + i * 2, true));
-      names.push(String.fromCharCode(...chars).toLowerCase());
+      entries.push({ name: String.fromCharCode(...chars).toLowerCase(), type });
     }
     const link = await next(id);
     if (link === null || (link > MAX_REG_SECTOR && link !== END_OF_CHAIN)) return bad("cfb fat chain");
     id = link;
   }
-  return names.length === 0 ? bad("cfb empty directory") : verdictFor(names, requiredStream);
+  return entries.length === 0 ? bad("cfb empty directory") : verdictFor(entries, requiredStream);
 }

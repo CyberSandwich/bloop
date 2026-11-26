@@ -147,9 +147,38 @@ export const validPng = (width = 1, height = 1): Uint8Array =>
     new Uint8Array([0xae, 0x42, 0x60, 0x82]),
   ]);
 
-/** A minimal GIF: header, logical screen of the given size, trailer. */
-export const validGif = (width = 1, height = 1): Uint8Array =>
-  concat([enc.encode("GIF89a"), u16le(width), u16le(height), new Uint8Array([0, 0, 0]), new Uint8Array([0x3b])]);
+/** A GIF extension block: introducer, label, the data in sub-blocks of at most 255 bytes, terminator. */
+export const gifExtension = (label: number, data: Uint8Array): Uint8Array => {
+  const blocks: Uint8Array[] = [new Uint8Array([0x21, label])];
+  for (let at = 0; at < data.length; at += 255) {
+    const part = data.subarray(at, at + 255);
+    blocks.push(new Uint8Array([part.length]), part);
+  }
+  blocks.push(new Uint8Array([0]));
+  return concat(blocks);
+};
+
+/**
+ * A minimal GIF: header, logical screen of the given size, any extension blocks, one image descriptor (the screen's
+ * size unless `frame` says otherwise) with an empty LZW stream, trailer.
+ */
+export const validGif = (
+  width = 1,
+  height = 1,
+  frame = { width, height },
+  extensions: Uint8Array = new Uint8Array(),
+): Uint8Array =>
+  concat([
+    enc.encode("GIF89a"),
+    u16le(width),
+    u16le(height),
+    new Uint8Array([0, 0, 0]),
+    extensions,
+    new Uint8Array([0x2c, 0, 0, 0, 0]),
+    u16le(frame.width),
+    u16le(frame.height),
+    new Uint8Array([0, 2, 0, 0x3b]),
+  ]);
 
 /** A minimal lossless WebP of the given size: RIFF length equals the file's. */
 export const validWebp = (width = 1, height = 1): Uint8Array => {

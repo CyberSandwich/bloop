@@ -1,24 +1,75 @@
+import { readFileSync } from "node:fs";
 import { deflateSync } from "node:zlib";
 import { describe, expect, it } from "vitest";
-import { MAX_OBJECT_STREAMS, scanPdf } from "../../src/worker/seams/guest-drop/pdf-scan.ts";
+import {
+  type ChunkSource,
+  MAX_OBJECT_STREAMS,
+  PDF_WINDOW_BYTES,
+  scanPdf,
+  scanPdfChunks,
+} from "../../src/worker/seams/guest-drop/pdf-scan.ts";
+import { CLEAN, concat as cat, HOSTILE } from "../pdf-corpus.ts";
 
 const enc = new TextEncoder();
 const pdf = (body: string) => enc.encode(`%PDF-1.5\n${body}\n%%EOF\n`);
 const objStm = (inner: string, dictExtra = "/Filter /FlateDecode") => {
   const data = dictExtra.includes("Flate") ? deflateSync(enc.encode(inner)) : enc.encode(inner);
-  const head = enc.encode(`5 0 obj\n<< /Type /ObjStm /N 1 /First 4 ${dictExtra} /Length ${data.length} >>\nstream\n`);
-  const tail = enc.encode("\nendstream\nendobj\n");
-  const body = new Uint8Array(head.length + data.length + tail.length);
-  body.set(head);
-  body.set(data, head.length);
-  body.set(tail, head.length + data.length);
-  const start = enc.encode("%PDF-1.5\n");
-  const out = new Uint8Array(start.length + body.length + 6);
-  out.set(start);
-  out.set(body, start.length);
-  out.set(enc.encode("%%EOF\n"), start.length + body.length);
+  return cat([
+    enc.encode(`%PDF-1.5\n5 0 obj\n<< /Type /ObjStm /N 1 /First 4 ${dictExtra} /Length ${data.length} >>\nstream\n`),
+    data,
+    enc.encode("\nendstream\nendobj\n%%EOF\n"),
+  ]);
+};
+const body = deflateSync(enc.encode("<</S/JavaScript/JS(app.alert(1))>>"));
+const stream = (dict: string, data: Uint8Array, eol = "\n") =>
+  cat([enc.encode(`1 0 obj<<${dict}>>stream${eol}`), data, enc.encode("\nendstream endobj")]);
+
+/** A source that hands out `bytes` in pieces of the given sizes, cycling through them. */
+const pieces = (bytes: Uint8Array, sizes: number[]): ChunkSource => {
+  let at = 0;
+  let i = 0;
+  return async () => {
+    if (at >= bytes.length) return null;
+    const n = sizes[i++ % sizes.length] as number;
+    const chunk = bytes.subarray(at, at + n);
+    at += n;
+    return chunk;
+  };
+};
+const chunked = (bytes: Uint8Array, size: number) => scanPdfChunks(pieces(bytes, [size]));
+const fixture = (path: string) => new Uint8Array(readFileSync(new URL(`../../${path}`, import.meta.url)));
+const FILES: [string, Uint8Array][] = [
+  ["the sample handout", fixture("test/fixtures/decks/sample-handout.pdf")],
+  [
+    "the demo handout (a real export with object streams)",
+    fixture("src/worker/seams/file-source/demo-files/demo-handout.pdf"),
+  ],
+];
+
+/** An 8 MiB-class zlib stream that inflates to `inner`: empty stored blocks, then one stored block holding it. */
+const storedPadding = (rawBytes: number, inner = "") => {
+  const tail = enc.encode(inner);
+  const blocks = Math.floor((rawBytes - 2 - 5 - tail.length - 4) / 5);
+  const out = new Uint8Array(2 + blocks * 5 + 5 + tail.length + 4);
+  out.set([0x78, 0x01]);
+  for (let i = 0; i < blocks; i++) out.set([0x00, 0x00, 0x00, 0xff, 0xff], 2 + i * 5);
+  const at = 2 + blocks * 5;
+  out.set([0x01, tail.length & 255, tail.length >>> 8, ~tail.length & 255, (~tail.length >>> 8) & 255], at);
+  out.set(tail, at + 5);
+  let [a, b] = [1, 0];
+  for (const c of tail) {
+    a = (a + c) % 65521;
+    b = (b + a) % 65521;
+  }
+  new DataView(out.buffer).setUint32(at + 5 + tail.length, ((b << 16) | a) >>> 0);
   return out;
 };
+const objStmOf = (data: Uint8Array) =>
+  cat([
+    enc.encode(`9 0 obj\n<< /Type /ObjStm /N 1 /First 4 /Filter /FlateDecode /Length ${data.length} >>\nstream\n`),
+    data,
+    enc.encode("\nendstream\nendobj\n"),
+  ]);
 
 describe("DROP-13 pdf-active: clean files", () => {
   it("passes a plain PDF", async () => {
@@ -26,44 +77,76 @@ describe("DROP-13 pdf-active: clean files", () => {
   });
 
   it("passes a content stream and a clean object stream", async () => {
-    const clean = objStm("<< /Type /Page /Parent 2 0 R >>");
-    expect(await scanPdf(clean)).toEqual({ ok: true });
+    expect(await scanPdf(objStm("<< /Type /Page /Parent 2 0 R >>"))).toEqual({ ok: true });
   });
 
   it("does not match a longer name that merely starts the same", async () => {
-    expect(await scanPdf(pdf("<< /JSON 1 /Launching 2 /OpenActions 3 /EmbeddedFileX 4 >>"))).toEqual({ ok: true });
+    expect(await scanPdf(pdf("<< /JSON 1 /Launching 2 /GoToRx 3 /EmbeddedFileX 4 >>"))).toEqual({ ok: true });
+  });
+
+  it("passes an /OpenAction or /AA that only goes to a page or a destination (refused keys, not types)", async () => {
+    for (const body of [
+      "<< /Type /Catalog /OpenAction [ 3 0 R /Fit ] >>",
+      "<< /Type /Catalog /Open#41ction [1 0 R /Fit] >>",
+      "<< /Type /Catalog /OpenAction << /S /GoTo /D (section.1) >> >>",
+      "<< /Type /Page /AA << /O << /S /GoTo /D [ 3 0 R /Fit ] >> /C << /S /GoTo /D (top) >> >> >>",
+    ]) {
+      expect(await scanPdf(pdf(body)), body).toEqual({ ok: true });
+    }
+  });
+
+  it.each(CLEAN)("passes what %s writes", async (_, build) => {
+    expect(await scanPdf(build())).toEqual({ ok: true });
+  });
+
+  it.each(FILES)("passes %s", async (_, bytes) => {
+    expect(await scanPdf(bytes)).toEqual({ ok: true });
   });
 });
 
-describe("DROP-13 pdf-active: refused names", () => {
-  it.each(["JS", "JavaScript", "Launch", "EmbeddedFile", "EmbeddedFiles", "OpenAction"])(
-    "refuses /%s",
-    async (name) => {
-      const verdict = await scanPdf(pdf(`1 0 obj\n<< /${name} 4 0 R >>\nendobj`));
-      expect(verdict).toMatchObject({ ok: false, error: "macro_content", found: [name] });
-    },
-  );
+describe("DROP-13 pdf-active: refused action types", () => {
+  it.each([
+    ...["JS", "JavaScript", "Launch", "EmbeddedFile", "EmbeddedFiles", "XFA"],
+    ...["GoToR", "GoToE", "SubmitForm", "ImportData", "RichMedia"],
+  ])("refuses /%s", async (name) => {
+    const verdict = await scanPdf(pdf(`1 0 obj\n<< /${name} 4 0 R >>\nendobj`));
+    expect(verdict).toMatchObject({ ok: false, error: "macro_content", found: [name] });
+  });
+
+  it.each(HOSTILE)("refuses %s", async (_, build, found) => {
+    expect(await scanPdf(build())).toMatchObject({ ok: false, error: "macro_content", found });
+  });
+
+  it("refuses a dangerous type inside /OpenAction and /AA", async () => {
+    expect(await scanPdf(pdf("<< /OpenAction << /S /Launch /F (x) >> >>"))).toMatchObject({ found: ["Launch"] });
+    expect(await scanPdf(pdf("<< /AA << /O << /S /GoToR /F (x.pdf) >> >> >>"))).toMatchObject({ found: ["GoToR"] });
+  });
 
   it("decodes hex-escaped names", async () => {
     expect(await scanPdf(pdf("<< /J#61vaScript 1 0 R >>"))).toMatchObject({ ok: false, found: ["JavaScript"] });
     expect(await scanPdf(pdf("<< /#4A#53 (app.alert(1)) >>"))).toMatchObject({ ok: false, found: ["JS"] });
-    expect(await scanPdf(pdf("<< /Open#41ction [1 0 R /Fit] >>"))).toMatchObject({ ok: false, found: ["OpenAction"] });
+    expect(await scanPdf(pdf("<< /S /La#75nch >>"))).toMatchObject({ ok: false, found: ["Launch"] });
   });
 
-  it("reports every distinct name once", async () => {
-    const verdict = await scanPdf(pdf("<< /JS 1 0 R /JS 2 0 R /Launch 3 0 R >>"));
+  it("reports every distinct name once, sorted", async () => {
+    const verdict = await scanPdf(pdf("<< /Launch 3 0 R /JS 1 0 R /JS 2 0 R >>"));
     expect(verdict).toMatchObject({ ok: false, found: ["JS", "Launch"] });
   });
 
   it("refuses an encrypted file, whose streams cannot be read", async () => {
     expect(await scanPdf(pdf("trailer << /Encrypt 9 0 R >>"))).toMatchObject({ ok: false, found: ["Encrypt"] });
   });
+
+  it("still finds Encrypt after an object stream it cannot read (an encrypted file's object streams are ciphertext)", async () => {
+    const encrypted = cat([objStm("x", "/Filter /LZWDecode"), enc.encode("trailer << /Encrypt 9 0 R >>\n%%EOF\n")]);
+    expect(await scanPdf(encrypted)).toMatchObject({ ok: false, found: ["Encrypt", "unscannable"] });
+  });
 });
 
 describe("DROP-13 pdf-active: object streams", () => {
   it("finds a name inside a deflated object stream", async () => {
     const verdict = await scanPdf(objStm("<< /S /JavaScript /JS (app.alert(1)) >>"));
-    expect(verdict).toMatchObject({ ok: false, found: ["JavaScript", "JS"] });
+    expect(verdict).toMatchObject({ ok: false, found: ["JS", "JavaScript"] });
   });
 
   it("finds a hex-escaped name inside an object stream", async () => {
@@ -82,42 +165,51 @@ describe("DROP-13 pdf-active: object streams", () => {
   });
 
   it("refuses a Flate object stream that does not inflate", async () => {
-    const broken = objStm("x");
     const text = new TextDecoder("latin1")
-      .decode(broken)
+      .decode(objStm("x"))
       .replace(/stream\n[\s\S]*\nendstream/, "stream\nnot deflate\nendstream");
     expect(await scanPdf(enc.encode(text))).toMatchObject({ ok: false, found: ["unscannable"] });
   });
 
   it("refuses an object stream that inflates past the cap", async () => {
-    const bomb = objStm(" ".repeat(9 * 1024 * 1024));
-    expect(await scanPdf(bomb)).toMatchObject({ ok: false, found: ["unscannable"] });
+    expect(await scanPdf(objStm(" ".repeat(9 * 1024 * 1024)))).toMatchObject({ ok: false, found: ["unscannable"] });
+  });
+
+  it("DROP-13 pdf-active: a decoy that balances the object stream count does not hide a padded object stream (fail-open)", async () => {
+    const decoy = cat([
+      enc.encode("1 0 obj<</Filter/FlateDecode/Type/ObjStmstream\n"),
+      deflateSync(enc.encode("<<>>")),
+    ]);
+    const hidden = deflateSync(enc.encode("1 0 <</OpenAction<</S/JavaScript/JS(app.alert(1))>>>>"));
+    const file = cat([
+      enc.encode("%PDF-1.5\n"),
+      decoy,
+      enc.encode("endstream endobj\n2 0 obj<</Type/ObjStm/N 1/First 4/Filter/FlateDecode"),
+      enc.encode(" ".repeat(5000)),
+      enc.encode(`/Length ${hidden.length}>>stream\n`),
+      hidden,
+      enc.encode("\nendstream endobj\n%%EOF\n"),
+    ]);
+    expect(await scanPdf(file)).toMatchObject({ ok: false, found: ["unscannable"] });
+    for (const size of [1, 100, 4096, 9000, file.length]) {
+      expect(await chunked(file, size), `window ${size}`).toMatchObject({ ok: false, found: ["unscannable"] });
+    }
+  });
+
+  it("refuses an /ObjStm token outside every scanned object stream dictionary", async () => {
+    const clean = stream("/Type/ObjStm/N 1/First 4/Filter/FlateDecode", deflateSync(enc.encode("1 0 <<>>")));
+    const file = cat([enc.encode("%PDF-1.5\n"), clean, enc.encode("\n3 0 obj<</Note/ObjStm>>endobj\n%%EOF\n")]);
+    expect(await scanPdf(file)).toMatchObject({ ok: false, found: ["unscannable"] });
+    expect(await scanPdf(cat([enc.encode("%PDF-1.5\n"), clean, enc.encode("\n%%EOF\n")]))).toEqual({ ok: true });
   });
 });
 
 describe("DROP-13 pdf-active: hostile input", () => {
-  const cat = (...parts: Uint8Array[]) => {
-    const out = new Uint8Array(parts.reduce((n, p) => n + p.length, 0));
-    let at = 0;
-    for (const p of parts) {
-      out.set(p, at);
-      at += p.length;
-    }
-    return out;
-  };
-  const body = deflateSync(enc.encode("<</S/JavaScript/JS(app.alert(1))>>"));
-  const stream = (dict: string, data: Uint8Array, eol = "\n") =>
-    cat(enc.encode(`1 0 obj<<${dict}>>stream${eol}`), data, enc.encode("\nendstream endobj"));
-
   it("reads names split by NUL, which PDF treats as white space", async () => {
     const verdict = await scanPdf(
       enc.encode("%PDF-1.7\n1 0 obj<</S/JavaScript\x00/JS\x00(app.alert(1))>>endobj\n%%EOF"),
     );
-    expect(verdict).toMatchObject({ ok: false, found: ["JavaScript", "JS"] });
-  });
-
-  it.each(["XFA", "AA", "GoToR", "GoToE", "SubmitForm", "ImportData", "RichMedia"])("refuses /%s", async (name) => {
-    expect(await scanPdf(pdf(`<< /${name} 1 0 R >>`))).toMatchObject({ ok: false, found: [name] });
+    expect(verdict).toMatchObject({ ok: false, found: ["JS", "JavaScript"] });
   });
 
   it("refuses an object stream dictionary with a key outside the plain form", async () => {
@@ -157,6 +249,15 @@ describe("DROP-13 pdf-active: hostile input", () => {
     expect(await scanPdf(padded)).toMatchObject({ ok: false, found: ["unscannable"] });
   });
 
+  it("does not take a dictionary opened more than 64 white-space bytes after `obj` (unbounded `obj\\s*<<`)", async () => {
+    const far = enc.encode(`5 0 obj${" ".repeat(65)}<</Type/ObjStm/N 1/First 4/Filter/FlateDecode>>stream\n`);
+    const file = cat([enc.encode("%PDF-1.5\n"), far, body, enc.encode("\nendstream\n%%EOF\n")]);
+    expect(await scanPdf(file)).toMatchObject({ ok: false, found: ["unscannable"] });
+    const near = enc.encode(`5 0 obj${" ".repeat(64)}<</Type/ObjStm/N 1/First 4/Filter/FlateDecode>>stream\n`);
+    const ok = cat([enc.encode("%PDF-1.5\n"), near, body, enc.encode("\nendstream\n%%EOF\n")]);
+    expect(await scanPdf(ok)).toMatchObject({ ok: false, found: ["JS", "JavaScript"] });
+  });
+
   it("scans a million stream keywords in linear time", async () => {
     const hostile = enc.encode(`1 0 obj ${"stream\n".repeat(150_000)}`);
     const t = performance.now();
@@ -164,7 +265,7 @@ describe("DROP-13 pdf-active: hostile input", () => {
     expect(performance.now() - t).toBeLessThan(200);
   });
 
-  it("stops at the first object stream it cannot read, however many follow", async () => {
+  it("stops inflating at the first object stream it cannot read, however many follow", async () => {
     const hostile = enc.encode(`1 0 obj<</Type/ObjStm>>stream\n`.repeat(30_000));
     const t = performance.now();
     expect(await scanPdf(hostile)).toMatchObject({ ok: false, found: ["unscannable"] });
@@ -184,4 +285,104 @@ describe("DROP-13 pdf-active: hostile input", () => {
     expect(await scanPdf(hostile)).toMatchObject({ ok: false, found: ["unscannable"] });
     expect(performance.now() - t).toBeLessThan(10_000);
   }, 30_000);
+});
+
+describe("DROP-13 pdf-active: bounded memory", () => {
+  it("DROP-13 pdf-active: the chunked buffer stays under two windows over a chain of 8 MiB object streams (unbounded growth)", async () => {
+    const link = objStmOf(storedPadding(PDF_WINDOW_BYTES - 64));
+    const file = cat([enc.encode("%PDF-1.5\n"), ...Array.from({ length: 5 }, () => link), enc.encode("%%EOF\n")]);
+    let peak = 0;
+    const verdict = await scanPdfChunks(pieces(file, [PDF_WINDOW_BYTES]), (bytes) => {
+      peak = Math.max(peak, bytes);
+    });
+    expect(verdict).toEqual({ ok: true });
+    expect(peak).toBeGreaterThan(PDF_WINDOW_BYTES);
+    expect(peak).toBeLessThanOrEqual(2 * PDF_WINDOW_BYTES + 3 * 4096);
+  }, 60_000);
+});
+
+describe("DROP-13 pdf-active: the chunked and the whole scan agree", () => {
+  it("DROP-13 pdf-active: an object stream over 8 MiB that inflates small gets one verdict from both scans", async () => {
+    const big = cat([
+      enc.encode("%PDF-1.5\n"),
+      objStmOf(storedPadding(PDF_WINDOW_BYTES + 1024 * 1024, "1 0 <</Type/Page>>")),
+      enc.encode("%%EOF\n"),
+    ]);
+    const whole = await scanPdf(big);
+    expect(whole).toMatchObject({ ok: false, found: ["unscannable"] });
+    expect(await chunked(big, PDF_WINDOW_BYTES)).toEqual(whole);
+    expect(await chunked(big, 1024 * 1024 + 7)).toEqual(whole);
+  }, 60_000);
+
+  /** Deterministic so a failure reproduces. */
+  const random = (seed: number) => () => {
+    seed = (seed + 0x6d2b79f5) | 0;
+    let t = Math.imul(seed ^ (seed >>> 15), 1 | seed);
+    t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+  };
+  const NOISE = [
+    " ",
+    "\n",
+    "\x00",
+    "% a comment\n",
+    "stream\n",
+    "obj<<",
+    "endstream",
+    "/ObjStm",
+    "/JS",
+    "/Open#41ction",
+    "obj                                                                  <<",
+    "\xff\xfe\x80",
+  ];
+  /** `base` with noise inserted at a few random places. */
+  const mutate = (base: Uint8Array, rand: () => number) => {
+    const parts: Uint8Array[] = [];
+    let at = 0;
+    const cuts = Array.from({ length: 1 + Math.floor(rand() * 6) }, () => Math.floor(rand() * base.length)).sort(
+      (a, b) => a - b,
+    );
+    for (const cut of cuts) {
+      parts.push(base.subarray(at, cut));
+      const noise = NOISE[Math.floor(rand() * NOISE.length)] as string;
+      const pad = rand() < 0.3 ? " ".repeat(Math.floor(rand() * 9000)) : "";
+      parts.push(Uint8Array.from(pad + noise, (c) => c.charCodeAt(0)));
+      at = cut;
+    }
+    parts.push(base.subarray(at));
+    return cat(parts);
+  };
+
+  const small: Uint8Array[] = [
+    pdf("1 0 obj\n<< /Type /Catalog >>\nendobj"),
+    objStm("<< /Type /Page >>"),
+    objStm("<< /S /JavaScript >>"),
+    objStm("x", "/Filter /LZWDecode"),
+    stream("/Type/ObjStm/Filter/FlateDecode", body, "\r"),
+    stream(`/Type/ObjStm/Filter/FlateDecode/Length ${" ".repeat(5000)}1`, body),
+    pdf(`/JavaScript${"x".repeat(9000)}`),
+    pdf("trailer << /Encrypt 9 0 R >>"),
+    cat([enc.encode("%PDF-1.5\n5 0 obj<</Type/ObjStm/Filter/FlateDecode>>stream\n"), body, enc.encode("\nendstream")]),
+    cat([enc.encode(`%PDF-1.5\n1 0 obj<</Type/ObjStm/Filter/FlateDecode>>stream\n`), deflateSync(enc.encode("<<>>"))]),
+    cat([objStm("x", "/Filter /LZWDecode"), pdf("<< /S /Launch >> trailer << /Encrypt 1 0 R >>")]),
+  ];
+  const corpus: Uint8Array[] = [
+    ...small,
+    ...CLEAN.map(([, build]) => build()),
+    ...HOSTILE.map(([, build]) => build()),
+    ...FILES.map(([, bytes]) => bytes),
+  ];
+
+  it("gives the same verdict at every window size over the corpus and random mutations of it", async () => {
+    const rand = random(13);
+    const inputs = [...corpus, ...corpus.flatMap((base) => Array.from({ length: 4 }, () => mutate(base, rand)))];
+    for (const [i, bytes] of inputs.entries()) {
+      const whole = await scanPdf(bytes);
+      const sizes = [7, 64, 4095, 8193, 20_011, bytes.length + 5];
+      if (bytes.length < 8_000) sizes.push(1);
+      for (const size of sizes) expect(await chunked(bytes, size), `input ${i}, window ${size}`).toEqual(whole);
+      const split = Array.from({ length: 16 }, () => 1 + Math.floor(rand() * 3000));
+      expect(await scanPdfChunks(pieces(bytes, split)), `input ${i}, split ${split}`).toEqual(whole);
+    }
+  }, 120_000);
 });

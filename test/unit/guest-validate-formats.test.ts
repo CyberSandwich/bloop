@@ -1,13 +1,16 @@
+import { readFileSync } from "node:fs";
 import { deflateSync } from "node:zlib";
 import { describe, expect, it } from "vitest";
 import { FORMATS, type FormatType } from "../../src/worker/seams/guest-drop/formats.ts";
-import { MAX_PIXELS } from "../../src/worker/seams/guest-drop/image.ts";
+import { checkImageSize, MAX_PIXELS, WALK_LIMITS } from "../../src/worker/seams/guest-drop/image.ts";
 import { PDF_WINDOW_BYTES, scanPdf, scanPdfChunks } from "../../src/worker/seams/guest-drop/pdf-scan.ts";
 import { validate } from "../../src/worker/seams/guest-drop/validate.ts";
 import { buildCfb } from "../cfb-builder.ts";
+import { CLEAN, HOSTILE } from "../pdf-corpus.ts";
 import {
   buildZip,
   concat,
+  gifExtension,
   reader,
   validDeck,
   validGif,
@@ -194,12 +197,149 @@ describe("DROP-13 pdf-active: through validate", () => {
 
   it("accepts a clean PDF and refuses active content, encryption and an unreadable object stream", async () => {
     expect(await check(validPdf(), "pdf")).toEqual({ ok: true, type: "pdf" });
-    expect(await check(withBody("<< /OpenAction 1 0 R >>"), "pdf")).toEqual(refused("macro_content"));
+    expect(await check(withBody("<< /OpenAction [ 1 0 R /Fit ] >>"), "pdf")).toEqual({ ok: true, type: "pdf" });
+    expect(await check(withBody("<< /OpenAction << /S /Launch >> >>"), "pdf")).toEqual(refused("macro_content"));
     expect(await check(withBody("<< /J#61vaScript 1 0 R >>"), "pdf")).toEqual(refused("macro_content"));
     expect(await check(withBody("trailer << /Encrypt 9 0 R >>"), "pdf")).toEqual(refused("encrypted"));
     expect(
       await check(withBody("5 0 obj\n<< /Type /ObjStm /Filter /LZWDecode >>\nstream\nxx\nendstream"), "pdf"),
     ).toEqual(refused("bad_structure"));
+  });
+
+  it.each(CLEAN)("accepts what %s writes", async (_, build) => {
+    expect(await check(build(), "pdf")).toEqual({ ok: true, type: "pdf" });
+  });
+
+  it.each(HOSTILE)("refuses %s as macro_content", async (_, build) => {
+    expect(await check(build(), "pdf")).toEqual(refused("macro_content"));
+  });
+});
+
+describe("DROP-13 pdf-active: the reads behind the scan", () => {
+  /** A PDF of `size` bytes: header, spaces, `/JS` at `hit`, `%%EOF`. */
+  const spaced = (size: number, hit: number) => {
+    const bytes = new Uint8Array(size).fill(0x20);
+    bytes.set(enc.encode("%PDF-1.5\n"));
+    bytes.set(enc.encode("/JS "), hit);
+    bytes.set(enc.encode("%%EOF\n"), size - 6);
+    return bytes;
+  };
+  const W = PDF_WINDOW_BYTES;
+
+  it("DROP-13 pdf-active: refuses a short window read instead of skipping its bytes, and never reads past the end (scanWindows)", async () => {
+    const size = 2 * W + 1000;
+    const bytes = spaced(size, W + 100);
+    const reads: [number, number][] = [];
+    const honest = {
+      size,
+      read: async (offset: number, length: number) => {
+        reads.push([offset, length]);
+        return bytes.slice(offset, offset + length);
+      },
+    };
+    expect(await validate(honest, "pdf")).toEqual(refused("macro_content"));
+    expect(reads.filter(([o, n]) => o + n > size)).toEqual([]);
+    const lossy = { size, read: async (o: number, n: number) => (o === W ? new Uint8Array() : bytes.slice(o, o + n)) };
+    expect(await validate(lossy, "pdf")).toEqual(refused("bad_structure"));
+  }, 30_000);
+
+  it("DROP-13 pdf-active: refuses a short whole-file read of a small PDF", async () => {
+    const size = 100 * 1024;
+    const bytes = spaced(size, 5000);
+    const short = { size, read: async (o: number, n: number) => bytes.slice(o, n === size ? o + 10 : o + n) };
+    expect(await validate(short, "pdf")).toEqual(refused("bad_structure"));
+  });
+});
+
+describe("DROP-02 polyglot: text that is another format", () => {
+  it.each(["txt", "md", "csv"] as const)(
+    "DROP-02 polyglot: refuses %s that is a PDF, a zip, HTML or a binary format",
+    async (type) => {
+      for (const text of [
+        "%PDF-1.7\n1 0 obj",
+        "notes\n%PDF-1.4 inside the head",
+        "PK\x03\x04 a zip local header",
+        "trailing text then PK\x05\x06 an end record",
+        "<!DOCTYPE html><p>x",
+        "  \n<html><body>",
+        "\uFEFF<script>alert(1)</script>",
+        "\t<SCRIPT src=x>",
+        "<!doctype HTML>",
+        "GIF89a and text",
+        "1234ftypisom text",
+      ]) {
+        expect(await check(enc.encode(text), type), JSON.stringify(text)).toEqual(refused("bad_structure"));
+      }
+    },
+  );
+
+  it.each(["txt", "md", "csv"] as const)("accepts %s that only mentions those formats", async (type) => {
+    for (const text of ["notes about <html> and <script> tags", "a,b\nPK,zip\n", "PDF files end in %%EOF"]) {
+      expect(await check(enc.encode(text), type), text).toEqual({ ok: true, type });
+    }
+  });
+});
+
+describe("DROP-16 pixels: headers behind large metadata", () => {
+  const segment = (marker: number, bytes: number) =>
+    concat([new Uint8Array([0xff, marker, (bytes + 2) >>> 8, (bytes + 2) & 255]), new Uint8Array(bytes).fill(0x41)]);
+  /** SOI, `count` APP1 segments of `bytes` each (extended XMP), then the rest of a minimal JPEG. */
+  const behind = (count: number, bytes: number, width = 4000, height = 3000) =>
+    concat([
+      new Uint8Array([0xff, 0xd8]),
+      ...Array.from({ length: count }, () => segment(0xe1, bytes)),
+      validJpeg("x", width, height).subarray(2),
+    ]);
+
+  it("DROP-16 pixels: reads a JPEG frame header behind more than 256 KiB of extended XMP (fixed marker window)", async () => {
+    expect(await check(behind(5, 65533), "jpg")).toEqual({ ok: true, type: "jpg" });
+    expect(await check(behind(5, 65533, 12000, 12000), "jpg")).toEqual(refused("too_large"));
+  });
+
+  it("walks a JPEG with small range reads, and refuses one past the read, segment or step cap", async () => {
+    const file = behind(5, 65533);
+    const reads: number[] = [];
+    const counted = {
+      size: file.length,
+      read: async (o: number, n: number) => {
+        reads.push(n);
+        return file.slice(o, o + n);
+      },
+    };
+    expect(await checkImageSize("jpg", counted, file.subarray(0, 1024))).toEqual({ ok: true });
+    expect(reads.length).toBe(6);
+    expect(Math.max(...reads)).toBeLessThanOrEqual(WALK_LIMITS.blockBytes);
+    expect(await check(behind(WALK_LIMITS.maxReads + 1, 65533), "jpg")).toEqual(refused("bad_structure"));
+    expect(await check(behind(WALK_LIMITS.maxSegments + 1, 4), "jpg")).toEqual(refused("bad_structure"));
+    const fill = concat([
+      new Uint8Array([0xff, 0xd8]),
+      new Uint8Array(WALK_LIMITS.maxSteps + 1).fill(0xff),
+      validJpeg().subarray(2),
+    ]);
+    expect(await check(fill, "jpg")).toEqual(refused("bad_structure"));
+  });
+
+  it("passes the demo photo", async () => {
+    const dog = new Uint8Array(
+      readFileSync(new URL("../../src/worker/seams/file-source/demo-files/demo-dog.jpg", import.meta.url)),
+    );
+    expect(await check(dog, "jpg")).toEqual({ ok: true, type: "jpg" });
+  });
+
+  it("DROP-16 pixels: checks a GIF's first frame against the cap, not only its logical screen", async () => {
+    expect(await check(validGif(1, 1, { width: 20000, height: 20000 }), "gif")).toEqual(refused("too_large"));
+    expect(await check(validGif(1, 1, { width: 0, height: 5 }), "gif")).toEqual(refused("bad_structure"));
+    const extensions = concat([
+      gifExtension(0xf9, new Uint8Array([4, 0, 0, 0, 0])),
+      gifExtension(0xfe, enc.encode("c".repeat(3000))),
+      gifExtension(0xff, new Uint8Array(70_000).fill(0x42)),
+    ]);
+    expect(await check(validGif(640, 480, { width: 640, height: 480 }, extensions), "gif")).toEqual({
+      ok: true,
+      type: "gif",
+    });
+    const noFrame = concat([enc.encode("GIF89a"), new Uint8Array([1, 0, 1, 0, 0, 0, 0, 0x3b])]);
+    expect(await check(noFrame, "gif")).toEqual(refused("bad_structure"));
   });
 });
 
