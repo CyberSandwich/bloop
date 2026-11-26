@@ -5,10 +5,12 @@ import { normalize } from "../../../public/js/shared/codes.js";
 import { phoneUser, servicesFor } from "../auth/services.ts";
 import type { Config } from "../config.ts";
 import type { Env } from "../env.ts";
-import { checkOrigin, fail, json } from "../http.ts";
+import { checkOrigin, checkWrite, fail, json, readJson } from "../http.ts";
 import { idempotency } from "../idem.ts";
 import { newRef } from "../ids.ts";
 import { type Route, route } from "../router.ts";
+import { claimOwner } from "../seams/pairing/idem.ts";
+import type { GuestRefusal } from "../seams/pairing.ts";
 import { directoryStub, screenStub } from "../stubs.ts";
 import { ipHash, limited, netHash, respond, withConfig, withScreen, write } from "./common.ts";
 
@@ -23,6 +25,13 @@ const claimBody = z
 const emptyBody = z.object({}).strict();
 
 const REF = /^[A-Za-z0-9_-]{22}$/;
+
+/**
+ * What the guest drop answers a guest claim on a live code, so the Directory refuses it unrouted (PAIR-15); null when
+ * it admits one. A claim carries no pass, so a pass policy refuses every guest claim here, as the Screen would.
+ */
+const guestRefusal = (config: Config): GuestRefusal | null =>
+  config.guestDrop === "off" ? "drop_disabled" : config.guestDrop === "pass" ? "pass_required" : null;
 
 /**
  * WebSocket upgrade: the Origin must be ours; the credential is the first frame, so the URL carries only the ref.
@@ -45,7 +54,6 @@ export const pairingRoutes: readonly Route[] = [
     ["POST"],
     "/api/screens",
     "api",
-    // transitional: removed in P1 commit 8 (the Idempotency-Key replay, REL-14: the sid's secret needs a nonce row too)
     withConfig(async (request, env, config) => {
       const body = await write(request, config, createBody);
       if (!body.ok) return body.response;
@@ -131,45 +139,44 @@ export const pairingRoutes: readonly Route[] = [
     "/api/claim",
     "api",
     withConfig(async (request, env, config) => {
-      const text = await request.clone().text();
-      const body = await write(request, config, claimBody);
+      // The CSRF checks and the per-IP limit before the body is read, so a refused request costs no read.
+      const refused = checkWrite(request, config.origin) ?? (await limited(env, "RL_CLAIM", request, config));
+      if (refused) return refused;
+      const body = await readJson(request, claimBody);
       if (!body.ok) return body.response;
-      const tooMany = await limited(env, "RL_CLAIM", request, config);
-      if (tooMany) return tooMany;
       const code = normalize(body.value.code);
       if (!code) return fail("code_malformed");
       const hashed = await ipHash(request, config);
       const kind = body.value.kind ?? "owner";
       // The cookie first, so a signed-out owner never spends a live code (PAIR-15).
-      const userId = await phoneUser(request, servicesFor(env, config));
-      // transitional: removed in P1 commit 5 (with no sign-in configured the mock source stands in for an account)
+      // transitional: removed in P1 commit 5 (no sign-in configured: the mock stands in for an account, a cookie for none)
+      const userId = config.graph ? await phoneUser(request, servicesFor(env, config)) : null;
       const signedIn = userId !== null || config.graph === null;
-      const found = await directoryStub(env).lookup(code, hashed, Date.now(), { kind, signedIn });
+      const who = { kind, signedIn, guestRefusal: guestRefusal(config) };
+      const found = await directoryStub(env).lookup(code, hashed, Date.now(), who);
       if (!found.ok) return fail(found.error);
-      if (found.demo) {
-        if (!config.demoEnabled) return fail("not_found");
-        const slow = await limited(env, "RL_DEMO_CLAIM", request, config);
-        if (slow) return slow;
-      }
+      if (found.demo && !config.demoEnabled) return fail("not_found");
       const screen = screenStub(env, found.screenRef);
       // A replay answers the first claim, so a lost answer never reads as `code_taken` (REL-14). Routing a code
-      // spends nothing, so the replay is read after the lookup that names its screen. The key is scoped to a person:
-      // with no account there is none to scope it to (an address is shared), so a signed-out claim replays nothing.
+      // spends nothing, so the replay is read after the lookup that names its screen, and before the demo limit.
+      const owner = await claimOwner(config.hashPepper, userId, request.headers.get("X-Bloop-Nonce"));
       const idem =
-        userId === null
+        owner === null
           ? ({ kind: "off" } as const)
-          : await idempotency(request, text, userId, {
+          : await idempotency(request, body.text, owner, {
               find: (o, keyHash, since) => screen.idemFind(o, keyHash, since),
             });
       if (idem.kind === "bad" || idem.kind === "conflict") return fail("bad_request");
       if (idem.kind === "replay") return json(idem.stored);
+      if (found.demo) {
+        const slow = await limited(env, "RL_DEMO_CLAIM", request, config);
+        if (slow) return slow;
+      }
       const claimed = await screen.claim(
         code,
         // transitional: removed in A (the signed-in phone session's public id, once sessionUser lands)
         { kind, ipHash: hashed, userId, phoneSession: null, passHash: null },
-        idem.kind === "fresh" && userId !== null
-          ? { owner: userId, keyHash: idem.keyHash, bodyHash: idem.bodyHash }
-          : undefined,
+        idem.kind === "fresh" && owner !== null ? { owner, keyHash: idem.keyHash, bodyHash: idem.bodyHash } : undefined,
       );
       return respond(claimed);
     }),

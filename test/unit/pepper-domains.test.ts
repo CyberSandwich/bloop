@@ -22,6 +22,10 @@ const SITES: Record<string, string> = {
   "src/worker/metrics-d1.ts: hmacHex(this.pepper, userId)": "a user id is newRef(): base64url, never a colon",
   "src/worker/do/screen.ts: claimSecret(pepper, nonce)": "the pid secret itself: 'pid:' + a base64url nonce",
   "src/worker/seams/pairing/idem.ts: claimSecret(pepper, s.nonce)": "the same secret, derived again for a replay",
+  'src/worker/seams/pairing/idem.ts: subKeyMac(pepper, "bloop pid", `pid:${nonce}`)':
+    "claimSecret's own HMAC, under the 'bloop pid' sub-key",
+  'src/worker/seams/pairing/idem.ts: subKeyMac(pepper, "bloop device", nonce)':
+    "a device nonce, under its own 'bloop device' sub-key: never the pid's key",
 };
 
 describe("REL-14 pepper domains", () => {
@@ -30,7 +34,7 @@ describe("REL-14 pepper domains", () => {
       // A call with its arguments, nested two calls deep; a definition (`function name(`) is no call site.
       [
         ...readFileSync(join(root, path), "utf8").matchAll(
-          /(?<!function )(?:hmacHex|claimSecret)\((?:[^()]|\((?:[^()]|\([^()]*\))*\))*\)/g,
+          /(?<!function )(?:hmacHex|claimSecret|subKeyMac)\((?:[^()]|\((?:[^()]|\([^()]*\))*\))*\)/g,
         ),
       ]
         .map((m) => m[0])

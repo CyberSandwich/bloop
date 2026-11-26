@@ -386,18 +386,47 @@ describe("sign-in, sessions and revocation", () => {
     live.socket.close();
   });
 
-  it("PAIR-15 auth-first: each refused signed-out claim counts as a miss, so probing live codes is rate limited", async () => {
+  it("PAIR-15 auth-first: a right live code signed out is no miss, so a venue's phones are never locked out; wrong codes are", async () => {
     // The Directory's miss window starts at the first miss; the window guards RL_CLAIM, which follows the clock.
     await inOneWindow();
     const live = await openScreen(api, "live");
-    const probe = { "CF-Connecting-IP": "198.51.100.77" };
+    const venue = { headers: { "CF-Connecting-IP": "198.51.100.77" } };
+    for (let i = 0; i < MISS_LIMIT + 1; i++) {
+      const res = await api.post<{ code: string }>("/api/claim", { code: live.code }, venue);
+      expect(res.body.code, `claim ${i}`).toBe("auth_required");
+    }
+    // A wrong code from another address counts, so probing for codes is still rate limited.
+    const wrong = live.code.slice(0, -1) + (live.code.endsWith("2") ? "3" : "2");
+    const probe = { headers: { "CF-Connecting-IP": "198.51.100.78" } };
     const answers: string[] = [];
     for (let i = 0; i < MISS_LIMIT + 1; i++) {
-      const res = await api.post<{ code: string }>("/api/claim", { code: live.code }, { headers: probe });
-      answers.push(res.body.code);
+      answers.push((await api.post<{ code: string }>("/api/claim", { code: wrong }, probe)).body.code);
     }
-    expect(answers.slice(0, MISS_LIMIT)).toEqual(Array(MISS_LIMIT).fill("auth_required"));
+    expect(answers.slice(0, MISS_LIMIT)).toEqual(Array(MISS_LIMIT).fill("code_unknown"));
     expect(answers.at(-1)).toBe("rate_limited");
+    live.socket.close();
+  });
+
+  it("PAIR-15 auth-first: signed out, a guest claims a live code under an open drop, and an owner claims a demo code", async () => {
+    const live = await openScreen(api, "live");
+    const guest = await api.post<{ kind: string; pid: string }>("/api/claim", { code: live.code, kind: "guest" });
+    expect(guest.status).toBe(200);
+    expect(guest.body.kind).toBe("guest");
+    const demo = await openScreen(api, "demo");
+    const owner = await api.post<{ mode: string; match: string | null }>("/api/claim", { code: demo.code });
+    expect(owner.status).toBe(200);
+    expect(owner.body).toMatchObject({ mode: "demo", match: expect.any(String) });
+    live.socket.close();
+    demo.socket.close();
+  });
+
+  it("REL-14 claim owner: under Graph a signed-out guest's claim replays by its tab's nonce", async () => {
+    const live = await openScreen(api, "live");
+    const headers = { "Idempotency-Key": "9a8b7c6d-5e4f-4a3b-8c2d-1e0f9a8b7c6d", "X-Bloop-Nonce": "N".repeat(43) };
+    const first = await api.post<{ pid: string }>("/api/claim", { code: live.code, kind: "guest" }, { headers });
+    expect(first.status).toBe(200);
+    const again = await api.post("/api/claim", { code: live.code, kind: "guest" }, { headers });
+    expect(again.body).toEqual(first.body);
     live.socket.close();
   });
 
