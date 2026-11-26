@@ -17,10 +17,12 @@ import { build as esbuild } from "esbuild";
 import { afterEach, describe, expect, it } from "vitest";
 import {
   build,
+  builtFiles,
   immutableUnits,
   importClosure,
   minify,
   minifyCss,
+  staleBuilt,
   staleUnits,
   unitHash,
   withModulePreload,
@@ -234,11 +236,9 @@ describe("immutable names", () => {
   });
 
   it("every immutable unit in public/ carries the hash of its bytes", () => {
-    const rels = readdirSync(join(REPO, "public"), { recursive: true, withFileTypes: true })
-      .filter((d) => d.isFile())
-      .map((d) => join(d.parentPath, d.name).slice(join(REPO, "public").length + 1));
-    expect(immutableUnits(rels).size).toBeGreaterThan(2);
-    expect(staleUnits(rels, (rel) => readFileSync(join(REPO, "public", rel)))).toEqual([]);
+    const built = builtFiles(REPO);
+    expect(immutableUnits([...built.keys()]).size).toBeGreaterThan(2);
+    expect(staleBuilt(built)).toEqual([]);
   });
 });
 

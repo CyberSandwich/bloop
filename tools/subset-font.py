@@ -20,7 +20,9 @@ from fontTools.varLib import instancer
 
 ROOT = Path(__file__).resolve().parent.parent
 SRC = ROOT / 'src' / 'fonts' / 'InterVariable.woff2'
-DST = next((ROOT / 'public' / 'fonts').glob('inter-latin-*.woff2'))
+DST = next((ROOT / 'public' / 'fonts').glob('inter-latin-*.woff2'), None)
+if DST is None:
+    sys.exit('no public/fonts/inter-latin-<hash>.woff2 to rewrite: create inter-latin-00000000.woff2 first')
 BUDGET = 55 * 1024
 # Same list as the unicode-range in public/css/base.css and design.md section 4.
 UNICODES = ('U+0000-00FF U+0131 U+0152-0153 U+02BB-02BC U+02C6 U+02DA U+02DC U+2000-206F U+2074 '

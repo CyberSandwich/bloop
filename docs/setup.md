@@ -88,7 +88,7 @@ Names only; never put a value in a file, a commit or a chat. Set each with `npx 
 
 To make a key without printing it, pipe it straight in: `openssl rand -base64 32 | tr '+/' '-_' | tr -d '=\n' | npx wrangler secret put FILE_TOKEN_KEY`. The value goes from the pipe to Cloudflare and is never printed or saved.
 
-To rotate `FILE_TOKEN_KEY` without breaking open previews: put the old value in `FILE_TOKEN_KEY_PREVIOUS`, set a new `FILE_TOKEN_KEY`, deploy, and delete the previous key after the longest preview token life. Tokens are signed with the current key only and verified against the current key, then the previous one.
+To rotate `FILE_TOKEN_KEY` without breaking open previews: put the old value in `FILE_TOKEN_KEY_PREVIOUS`, set a new `FILE_TOKEN_KEY`, deploy, and delete the previous key after the longest preview token life. The library's token code signs with the current key only and verifies against the current key, then the previous one.
 
 ## Migrations 0004 and 0005 rollout
 

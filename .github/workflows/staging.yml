@@ -1,8 +1,8 @@
 name: staging
 
 # A push to the `staging` branch deploys that commit to the bloop-staging Worker (docs/setup.md, Staging). No other
-# branch runs this job: it holds a Cloudflare token, and the `staging` environment allows that branch only. It skips
-# with a log line until the staging D1 and the environment's secrets exist, so it never fails the repo.
+# branch runs these jobs: the deploy job holds a Cloudflare token, and the `staging` environment allows that branch only.
+# It skips with a log line until the staging D1 and the environment's secrets exist; a bad token or an outage fails it.
 on:
   push:
     branches: [staging]
@@ -16,8 +16,25 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
+  # The checks run test and lint tooling, so this job has no environment and no token.
+  check:
+    if: github.ref_name == 'staging'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+      - run: npm ci --ignore-scripts
+      - run: npm run check
+  # Only the lockfile's wrangler and esbuild (the deploy's build) run with the token: a fresh install, no scripts, no checks.
   staging:
     if: github.ref_name == 'staging'
+    needs: check
     runs-on: ubuntu-latest
     timeout-minutes: 15
     environment: staging
@@ -41,8 +58,6 @@ jobs:
       # No install script runs in a job that will hold the token; tools/staging.mjs runs the lockfile's wrangler by path.
       - if: steps.gate.outputs.has == 'true'
         run: npm ci --ignore-scripts
-      - if: steps.gate.outputs.has == 'true'
-        run: npm run check
       - name: Look for the staging resources
         id: resources
         if: steps.gate.outputs.has == 'true'

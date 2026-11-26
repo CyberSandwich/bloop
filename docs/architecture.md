@@ -255,7 +255,7 @@ public/                    the assets' source, built into dist/ (each JS module 
   _redirects               /it answers 301 to /security; /demo 302 to /s?mode=demo
   css/base.css             what every page uses: tokens, reset, buttons, glass, the reduced-motion net; linked first
   css/site.css css/app.css   the site pages' rules (and the Worker's auth error page); the task pages' rules
-  js/{screen,phone,code,launcher,residue}.js   task pages; js/vendor/uqr-62028138/uqr.js (+ LICENSE)
+  js/{screen,phone,code,launcher,residue}.js   task pages; js/vendor/uqr-1289037a/uqr.js (+ LICENSE)
   js/viewer.js js/core/demo.js   the screen's viewer, the demo's and a guest's photo or video (sidebar, stage, pager, link card, its own link fetch); its pure parts
   js/viewer-video.js   a guest's video on the stage, loaded by import() with the first video link
   js/core/length.js js/core/length-extra.js js/shared/length.js css/length.css   the phone's Session Expiry sheet, loaded on its first tap, with its time rules and words (Set stays off until they are in); the length floor the route shares
@@ -633,7 +633,7 @@ One row per dependency: what the system does when it fails (a call throws, or an
 | Dependency | The system | Phone | Screen |
 |---|---|---|---|
 | D1 | The settings reader serves its last good snapshot for 5 minutes, then the restrictive values (preview, lockout); the page gate hides member pages (404); a route that needs D1 answers 500 `internal`; the cron job fails alone and the next tick retries | "bloop Isn't Responding": "Something's wrong on bloop's side." with Email bloop and Try Again | "bloop Isn't Responding": "Something's wrong on bloop's side. Refresh this page, or email hi@bloop.here." |
-| R2 (guest and library buckets) | A guest-file read on `/f/` that throws is 502 `upstream_failed`, and the fetch is still logged; any other throw is 500 `internal` (a refused quota is its own answer, not this row) | "Unable to Open Your File": "Check the file opens on your phone, then try again." with Try Again | "Unable to Open Your File": "Try again on your phone." |
+| R2 (guest and library buckets) | A throw while `/f/` serves a file is 502 `upstream_failed`, logged `unhandled`, and the fetch is still logged; a throw anywhere else is 500 `internal` (a refused quota is its own answer, not this row) | "Unable to Open Your File": "Check the file opens on your phone, then try again." with Try Again | "Unable to Open Your File": "Try again on your phone." |
 | Directory object | No code can be minted or resolved: create and claim answer 500 `internal`; a screen already paired is untouched (its Screen object holds the session) | "bloop Isn't Responding" as for D1; a code in hand shows "This Code Has Expired": "Scan the new code on the screen." | "bloop Isn't Responding" while it cannot create a code |
 | Screen object | The WebSocket closes and a command answers 500 `internal`; the session's state is in the object's storage and survives the restart | "You're Offline": "Check your connection, then try again."; the session line shows "Reconnecting" | "Offline": "Reconnecting. You can still end from your phone." |
 | Spend guard | Over a cap, the refused operation answers 503 `service_busy` with `Retry-After`; sessions already running are never cut | "bloop Can't Take Files Now": "Try again in a few minutes." | "Busy Right Now": "Trying again by itself." |

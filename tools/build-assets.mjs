@@ -193,9 +193,10 @@ function kind(path) {
 /**
  * The immutable units of public/ (ADR 0023): each file in fonts/ and js/vendor/, and each folder in js/vendor/ and
  * js/workers/ (a script directly in js/workers/ is not one). A unit is served `immutable`, so it changes only by
- * getting a new name: the name ends in `-<8 hex>`, the start of the SHA-256 of its bytes, before any extension, so
- * a URL cannot be guessed before the file is published.
- * @param {string[]} rels paths under public/
+ * getting a new name: the name ends in `-<8 hex>`, the start of the SHA-256 of its built bytes, before any extension.
+ * The hash is of what is served, so a minifier upgrade renames the unit too. A name is not known until its bytes are
+ * final; once pushed it is public in the source, so the window to prime a cached 404 for it is the push-to-deploy gap.
+ * @param {string[]} rels paths under dist/
  * @returns {Map<string, string[]>} unit path to the files it holds
  */
 export function immutableUnits(rels) {
@@ -249,6 +250,47 @@ export function staleUnits(rels, read) {
 }
 
 /**
+ * The built bytes of every file of `<root>/public`, by path under dist/.
+ * @param {string} root
+ */
+export function builtFiles(root = REPO) {
+  const src = join(root, "public");
+  /** @type {Map<string, Buffer | string>} */
+  const files = new Map();
+  for (const rel of walk(src)) {
+    const bytes = readFileSync(join(src, rel));
+    if (rel.endsWith(".css")) {
+      files.set(rel, minifyCss(bytes.toString("utf8"), rel));
+    } else if (rel.endsWith(".html")) {
+      const html = stripComments(bytes.toString("utf8"), rel);
+      files.set(
+        rel,
+        withModulePreload(html, (path) => readFileSync(join(src, path), "utf8")),
+      );
+    } else if (rel.endsWith(".js")) {
+      const { code, map } = minify(bytes.toString("utf8"), rel);
+      files.set(rel, code);
+      files.set(`${rel}.map`, map);
+    } else {
+      files.set(rel, bytes);
+    }
+  }
+  return files;
+}
+
+/**
+ * The immutable units of a build whose name is not the hash of its served bytes. A source map is left out of the hash:
+ * it names its own file, and it is a debugging aid, not what a page runs.
+ * @param {Map<string, Buffer | string>} files
+ */
+export function staleBuilt(files) {
+  return staleUnits(
+    [...files.keys()].filter((rel) => !rel.endsWith(".map")),
+    (rel) => files.get(rel) ?? "",
+  );
+}
+
+/**
  * Brings `<root>/dist` to the build of `<root>/public`. Stale files go first, then any path of the wrong kind (a
  * file that became a folder, or the reverse). A changed file is written to a per-process temp name and renamed
  * over its target, so a server reading dist/ never sees half a file and two builds never share a temp file; an
@@ -257,39 +299,14 @@ export function staleUnits(rels, read) {
  * @returns {{ written: string[], deleted: string[] }}
  */
 export function build(root = REPO) {
-  const src = join(root, "public");
   const out = join(root, "dist");
-  /** @type {Map<string, Buffer | string>} */
-  const files = new Map();
-  const sources = walk(src);
-  const stale = staleUnits(sources, (rel) => readFileSync(join(src, rel)));
+  const files = builtFiles(root);
+  const stale = staleBuilt(files);
   if (stale.length > 0) {
     const list = stale.map((s) => (s.expected ? `${s.unit} should be ${s.expected}` : `${s.unit} has no hash`));
     throw new Error(
       `an immutable name must end in the hash of its bytes (node tools/rehash-immutable.mjs): ${list.join("; ")}`,
     );
-  }
-  for (const rel of sources) {
-    const bytes = readFileSync(join(src, rel));
-    if (rel.endsWith(".css")) {
-      files.set(rel, minifyCss(bytes.toString("utf8"), rel));
-      continue;
-    }
-    if (rel.endsWith(".html")) {
-      const html = stripComments(bytes.toString("utf8"), rel);
-      files.set(
-        rel,
-        withModulePreload(html, (path) => readFileSync(join(src, path), "utf8")),
-      );
-      continue;
-    }
-    if (!rel.endsWith(".js")) {
-      files.set(rel, bytes);
-      continue;
-    }
-    const { code, map } = minify(bytes.toString("utf8"), rel);
-    files.set(rel, code);
-    files.set(`${rel}.map`, map);
   }
 
   const deleted = walk(out).filter((rel) => !files.has(rel) && !IN_FLIGHT.test(rel));

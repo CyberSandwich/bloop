@@ -14,7 +14,13 @@ afterAll(() => wrangler?.stop());
 function asOldHost(
   path: string,
   method = "GET",
-): Promise<{ status: number; location: string | undefined; cacheControl: string | undefined; body: string }> {
+): Promise<{
+  status: number;
+  location: string | undefined;
+  cacheControl: string | undefined;
+  csp: string | undefined;
+  body: string;
+}> {
   return new Promise((resolve, reject) => {
     const req = request(`${wrangler.url}${path}`, { method, headers: { Host: OLD_HOST } }, (res) => {
       let body = "";
@@ -26,6 +32,7 @@ function asOldHost(
           status: res.statusCode ?? 0,
           location: res.headers.location,
           cacheControl: res.headers["cache-control"],
+          csp: res.headers["content-security-policy"] as string | undefined,
           body,
         }),
       );
@@ -36,6 +43,12 @@ function asOldHost(
 }
 
 describe("the old workers.dev host", () => {
+  it("a static path that does not exist answers 404 with the file origin's sandbox CSP", async () => {
+    const res = await asOldHost("/js/no-such-file.js");
+    expect(res.status).toBe(404);
+    expect(res.csp).toContain("sandbox");
+  });
+
   it.each(["/", "/privacy", "/a?c=ABC123", "/api/health", "/f/token/name.pdf?x=1", "/no-such-page?x=1"])(
     "answers 301 for %s to the same path and query on PUBLIC_ORIGIN",
     async (path) => {

@@ -20,12 +20,12 @@ Status: accepted. Page variants by mode: ADR 0026.
 | `/b`, `/p`, and the notes routes | `no-store`: the library can be opened on a shared computer |
 
 - **HTML is never immutable.** The two mode variants (ADR 0026) have different ETags, so after a switch the next revalidation returns the other page with a 200. No purge, no deploy.
-- **An immutable unit is named for its bytes.** The name ends in the first 8 hex of the SHA-256 of the unit's files, so an upgrade is a new name, the old one is deleted with the code that named it, and no URL can be guessed before it is published (`_headers` rules apply to a 404 too, so a guessable name could be cached as missing). `node tools/rehash-immutable.mjs` renames a unit and follows its references.
+- **An immutable unit is named for its bytes.** The name ends in the first 8 hex of the SHA-256 of the unit's built files, so an upgrade, and a minifier upgrade, is a new name and the old one is deleted with the code that named it. A name is not known until its bytes are final; `_headers` rules apply to a 404 too, so the remaining risk is a 404 cached for a name between its push (public in the source) and its deploy. `node tools/rehash-immutable.mjs` renames a unit and follows its references.
 - **`/f` is `no-store`** (links are single-session secrets). **`/b` and `/p` are `no-store`**: the library can be opened on a shared computer, so a preview stays in memory.
 
 ### What the foundation change ships
 - The vendored immutable rule and the file-origin classes (`/f`, `/b`, `/p`, `/fo/ping`) are set where their handlers and headers live (`_headers` and `src/worker/headers.ts`), so they apply when a stream adds the first vendored folder or file-origin route.
-- `/fonts` and `/js/vendor` are immutable in `_headers`, and the build refuses a unit whose name is not the hash of its bytes (`staleUnits` in `tools/build-assets.mjs`); `/js/workers/<hash>/` is immutable too, a script directly in `/js/workers/` is not; `/img` is cached a day. The workers.dev redirect of `/f`, `/b`, `/p` and `/fo` is `no-store`, since the path is the secret.
+- `/fonts` and `/js/vendor` are immutable in `_headers`, and the build refuses a unit whose name is not the hash of its bytes (`staleUnits` in `tools/build-assets.mjs`); a script directly in `/js/workers/` is not a unit; `/img` is cached a day. The workers.dev redirect of `/f`, `/b`, `/p` and `/fo` is `no-store`, since the path is the secret.
 
 ## Rejected
 - **Option C, asset-bypass for pages:** narrow `run_worker_first` to `/api`, `/f`, `/auth` and the new routes. The asset layer would then answer pages on the `workers.dev` host too, so the site itself would be served from the file origin, and the path normalizer and the variant choice would never run on pages. Only the static trees are bypassed.

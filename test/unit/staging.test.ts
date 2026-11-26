@@ -135,6 +135,7 @@ describe("staging: .github/workflows/staging.yml", () => {
   it("runs for the staging branch only, and skips with a log line until the resources exist", () => {
     expect(yml).toContain("branches: [staging]");
     expect(yml).toContain("if: github.ref_name == 'staging'\n");
+    expect(yml.match(/if: github.ref_name == 'staging'\n/g)).toHaveLength(2);
     expect(yml).not.toContain("ci/");
     expect(yml).toContain("Staging skipped: no CLOUDFLARE_API_TOKEN");
     expect(yml).toContain("steps.resources.outputs.ready == 'true'");
@@ -148,6 +149,15 @@ describe("staging: .github/workflows/staging.yml", () => {
       JSON.parse(read("node_modules/wrangler/package.json")).version,
     );
     expect(() => lockedWranglerVersion("{}")).toThrow(/does not pin/);
+  });
+
+  it("runs the checks in a job with no environment and no secrets, and deploys in one that needs it", () => {
+    const [check = "", staging = ""] = yml.split("\n  staging:\n");
+    expect(check).toContain("npm run check");
+    expect(check).not.toMatch(/secrets\.|environment:/);
+    expect(staging).toContain("needs: check");
+    expect(staging).toContain("environment: staging");
+    expect(staging).not.toContain("npm run check");
   });
 
   it("generates secrets in the job and never writes one to the log", () => {

@@ -43,7 +43,7 @@
       "dist/js/shared/codes.js",
       "dist/js/shared/errors.js",
       "dist/js/shared/session.js",
-      "dist/js/vendor/uqr-62028138/uqr.js",
+      "dist/js/vendor/uqr-1289037a/uqr.js",
       "dist/js/viewer.js"
     ],
     "limit": "24.55 kB"
