@@ -1,6 +1,7 @@
 // The guest drop against `wrangler dev` with a local R2 bucket and D1: a full drop to the Open click, the refusals,
 // and the deletion paths. Short timers and the budget live in guest-drop-timing.test.ts.
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
+import { HOSTILE, latexHyperref } from "../pdf-corpus.ts";
 import { buildZip, concat, validDeck, validJpeg, validPdf, validPng, validVideo } from "../zip-builder.ts";
 import { guestRow, openGuestView, pairPhone, problemCode, putDrop } from "./drop-client.ts";
 import { fetchLink } from "./open-client.ts";
@@ -159,6 +160,32 @@ describe("DROP-01 size", () => {
     } as RequestInit);
     expect(res.status).toBe(411);
     expect(await problemCode(res)).toBe("length_required");
+    socket.close();
+  });
+});
+
+describe("DROP-13 pdf-active: an object stream inflates in workerd", () => {
+  // The producer and hostile fixtures pack their dictionaries in a Flate object stream: the scan inflates it on
+  // workerd's own DecompressionStream, from a view into its window buffer.
+  const hostile = HOSTILE.find(([name]) => name === "JS in an object stream")?.[1]() as Uint8Array;
+
+  it("accepts a PDF whose catalog sits in a compressed object stream", async () => {
+    const { socket, pid } = await pairPhone(api);
+    const pdf = latexHyperref();
+    expect(pdf.length).toBeLessThan(MAX);
+    const res = await putDrop(api, pid, pdf, { name: "Paper.pdf" });
+    expect(res.status).toBe(200);
+    expect(await res.json()).toMatchObject({ state: "offered", items: [{ name: "Paper.pdf" }] });
+    socket.close();
+  });
+
+  it("refuses a PDF whose /JavaScript action sits inside a compressed object stream, and keeps nothing", async () => {
+    const { socket, pid } = await pairPhone(api);
+    expect(new TextDecoder("latin1").decode(hostile)).not.toContain("JavaScript");
+    const res = await putDrop(api, pid, hostile, { name: "Paper.pdf" });
+    expect(res.status).toBe(422);
+    expect(await problemCode(res)).toBe("macro_content");
+    expect(wrangler.r2Has(String(guestRow(wrangler.d1)?.r2_key))).toBe(false);
     socket.close();
   });
 });
