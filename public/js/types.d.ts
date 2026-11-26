@@ -95,7 +95,7 @@ export interface ChannelOptions {
 
 export type SendResult = { ok: true; view: PhoneView } | { ok: false; error: ErrorCode };
 
-/** The slice of XMLHttpRequest core/drop.js uses, so tests can fake it (the Node config has no DOM types). */
+/** The slice of XMLHttpRequest core/upload.js uses, so tests can fake it (the Node config has no DOM types). */
 export interface Xhr {
   open: (method: string, url: string) => void;
   setRequestHeader: (name: string, value: string) => void;
