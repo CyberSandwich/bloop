@@ -353,7 +353,8 @@ test/
 | GET | `/api/me/export.zip` | member session, same-origin, C+R for a new export | `?k=<idempotency key>`; the account export as a zip with exact `Content-Length`, `ETag` and `Range` resume (docs/library.md section 8); 409 `export_busy`, 429 `export_limit`, 503 `export_paused` |
 | GET, DELETE | `/api/me/screens`, `/api/me/screens/:sessionId` | member session | the user's live screens, and ending one; `{ended}` is 0 for a screen already gone |
 | POST | `/api/library/sample` | session | planned (L): the sample deck |
-| GET, POST | `/api/match`, `/api/notes`; `/api/claim`, `/api/files`, `/api/approve` extended | Bearer pid, session | planned (P1): the match pick, speaker notes, the library source |
+| GET | `/api/notes?item=<id>` | Bearer pid only (a sid is refused); `RL_CONTROL` | demo implemented: `{notes: string[]}`, one entry per page of the item, `[]` for an item with none; the item id is looked up in the Screen object's own session list (states `approved`, `opening`, `open`), the source's optional `notes` answers, `no-store`; never a link, never in a view or frame (NOTES-01). The library source is planned (P1) |
+| GET, POST | `/api/match`; `/api/claim`, `/api/files`, `/api/approve` extended | Bearer pid, session | planned (P1): the match pick, the library source |
 | GET | `/f/`, `/b/`, `/p/` on the file origin | the token | planned (P1): session links, bundles, owner previews |
 
 Every ok JSON answer carries `X-Bloop: 1` (`json()` in `http.ts`), so `api.js` reads a 200 without it, or one that is not JSON, as the client-only `network_blocked` (a filter's block page), never `service_down`.

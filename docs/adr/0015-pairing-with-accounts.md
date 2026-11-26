@@ -59,7 +59,7 @@ Status: proposed. Amends ADR 0002 (pairing protocol) and ADR 0003's "resolve at 
 ### Speaker notes (NOTES-01 phone-only)
 - Notes are stored under their own prefix, `u/<uid>/<fid>/v<n>/n/`, apart from the bundle assets under `d/`. The bundle handler maps only into `d/`, so no bundle path can address a notes object; a test asserts the bundle allowlist refuses every notes path.
 - `GET /api/notes?item=<id>`: Bearer pid only (a sid is refused), the pinned cookie user for an owner pairing, session in `approved`, `opening` or `open`, item from the server's own session list, its derived row has notes. The Worker builds the R2 key from server state and answers JSON with `Cache-Control: no-store`. Notes are never minted as a link and never served by the file origin.
-- Guest items with notes are served the same way to the guest's pid. Demo items have none.
+- Guest items with notes are served the same way to the guest's pid. The demo deck has notes (`demo-files/demo-notes.json`); a demo photo and a link have none.
 
 ## Rejected
 - **Cookie check before the Directory lookup with no code knowledge**: the route cannot tell a demo code from a live one before the lookup, so it would demand a cookie for the demo. The lookup does not spend a code, so checking inside the lookup, before the Screen, keeps the invariant.
