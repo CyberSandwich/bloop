@@ -28,7 +28,7 @@ const TYPES = { ".js": "text/javascript", ".css": "text/css" };
  * @typedef {{ path: string, kind: "both" | "open-only" | "preview-only", to?: string }} Variant
  * @typedef {{ pages: { path: string, noindex: boolean }[], shells: Gated[], members: Gated[], variants: Variant[],
  *   lazy: { path: string, type: string | null }[], typeFiles: string[], immutable: string[], headersFile: string,
- *   publicOrigin: string,
+ *   publicOrigin: string, publicHost: string,
  *   fileOrigin: string | null, uploadMode: string }} Registry
  * @typedef {{ status?: number, success?: boolean, header?: Record<string, string>, headerNot?: Record<string, string>,
  *   headerAbsent?: string[], cspIgnoringR2?: string, body?: string, bodyNot?: string, contentType?: string }} Expect
@@ -93,7 +93,9 @@ export function registryFrom() {
     .flatMap((/** @type {string} */ p) => expandLazy(p, files));
   const vars = wranglerConfig(readFileSync(join(ROOT, "wrangler.jsonc"), "utf8")).vars ?? {};
   const headersFile = readFileSync(join(pub, "_headers"), "utf8");
-  const publicHost = new URL(String(vars.PUBLIC_ORIGIN)).host;
+  const publicUrl = URL.parse(String(vars.PUBLIC_ORIGIN ?? ""));
+  if (!publicUrl) throw new Error("live-check: wrangler.jsonc vars.PUBLIC_ORIGIN is missing or not a URL");
+  const publicHost = publicUrl.host;
   return {
     pages: [...html]
       .map((rel) => ({ path: pathOf(rel), noindex: readFileSync(join(pub, rel), "utf8").includes(NOINDEX_META) }))
@@ -118,7 +120,8 @@ export function registryFrom() {
           /\bimmutable\b/.test(staticHeaders(headersFile, p, publicHost)["cache-control"] ?? ""),
       ),
     headersFile,
-    publicOrigin: String(vars.PUBLIC_ORIGIN ?? ""),
+    publicOrigin: publicUrl.origin,
+    publicHost,
     fileOrigin: vars.FILE_ORIGIN || null,
     uploadMode: vars.UPLOAD_MODE ?? "proxy",
   };
@@ -179,7 +182,7 @@ export function unhashed(/** @type {string} */ path) {
 /** What a page's headers must be: _headers for the path, a dynamic page's CSP completed with the file origin. */
 function pageExpect(/** @type {Registry} */ reg, /** @type {string} */ path) {
   /** @type {Expect} */
-  const out = { status: 200, header: staticHeaders(reg.headersFile, path, new URL(reg.publicOrigin).host) };
+  const out = { status: 200, header: staticHeaders(reg.headersFile, path, reg.publicHost) };
   const spec = DYNAMIC_PAGES[path];
   if (!spec) return out;
   const csp = /** @type {string} */ (pageCsp(path, { fileOrigin: reg.fileOrigin, r2Endpoint: null }));
@@ -281,9 +284,8 @@ export function checksFor(reg, mode) {
   for (const path of reg.typeFiles) {
     checks.push({ what: `type file ${path} is not served`, url: `${origin}${path}`, expect: { status: 404 } });
   }
-  const host = new URL(origin).host;
   for (const path of reg.immutable) {
-    const cacheControl = staticHeaders(reg.headersFile, path, host)["cache-control"] ?? "";
+    const cacheControl = staticHeaders(reg.headersFile, path, reg.publicHost)["cache-control"] ?? "";
     checks.push(
       {
         what: `immutable ${path}`,

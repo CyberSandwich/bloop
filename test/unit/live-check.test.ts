@@ -56,6 +56,7 @@ const fixture: Reg = {
     "/fonts/*\n  Cache-Control: forever\n\n/js/vendor/*\n  Cache-Control: forever\n\n" +
     "https://files.example/*\n  ! Content-Security-Policy\n  Content-Security-Policy: sandboxed\n",
   publicOrigin: ORIGIN,
+  publicHost: new URL(ORIGIN).host,
   fileOrigin: FILES,
   uploadMode: "proxy",
 };
@@ -334,6 +335,7 @@ describe("live-check: the registry is the repo's, not a list in the tool", { tim
     expect(reg.lazy).toContainEqual({ path: "/js/core/copy-check.js", type: "text/javascript" });
     expect(reg.lazy).toContainEqual({ path: "/css/length.css", type: "text/css" });
     expect(reg.publicOrigin).toBe("https://bloop.here");
+    expect(reg.publicHost).toBe("bloop.here");
     expect(reg.fileOrigin).toMatch(/^https:\/\//);
   });
 
