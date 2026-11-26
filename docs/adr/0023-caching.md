@@ -1,14 +1,14 @@
 # ADR 0023: caching
 
-Status: accepted. Supersedes the asset-bypass idea ("option C") from the host-split review. Page variants by mode: ADR 0026.
+Status: accepted. Page variants by mode: ADR 0026.
 
 ## Context
-- Every request reaches the Worker first (`run_worker_first: true`, ADR 0010). The Worker serves static files from the asset binding and decides the host, the mode variant and the headers.
+- Every page and API request reaches the Worker first (`run_worker_first`, ADR 0010); the static trees (`/js`, `/css`, `/img`, `/fonts`, the icons) do not. The Worker serves pages from the asset binding and decides the host, the mode variant and the headers.
 - v4 adds third-party viewer libraries (immutable by name), user files on another host (never cacheable by a shared cache), and HTML that differs by launch mode, so a stale HTML copy would show the wrong mode.
-- The asset layer would serve files without waking the Worker if `run_worker_first` were narrowed to API paths. That is cheaper per request, but it bypasses the host split, the path normalizer and the mode variants.
+- The asset layer serves the static trees without waking the Worker, which is cheaper per request. Pages stay behind the Worker, which owns the host split, the path normalizer and the mode variants.
 
 ## Decision
-`run_worker_first: true` stays. The Worker serves every path, and the asset binding answers with the headers below.
+`run_worker_first` lists every path but the static trees. The Worker serves every page, the asset layer answers the static trees, and both answer with the headers below.
 
 | response | Cache-Control |
 |---|---|
@@ -21,19 +21,19 @@ Status: accepted. Supersedes the asset-bypass idea ("option C") from the host-sp
 
 - **HTML is never immutable.** The two mode variants (ADR 0026) have different ETags, so after a switch the next revalidation returns the other page with a 200. No purge, no deploy.
 - **A vendored library is immutable because its folder carries its version.** An upgrade is a new folder and a new URL; the old one is deleted with the code that named it.
-- **`/f` is `no-store`** (links are single-session secrets). **`/b` and `/p` are `private`** so a shared cache never keeps a user's file; five minutes matches the preview token's life.
+- **`/f` is `no-store`** (links are single-session secrets). **`/b` and `/p` are `no-store`**: the library can be opened on a shared computer, so a preview stays in memory.
 
 ### What the foundation change ships
 - The vendored immutable rule and the file-origin classes (`/f`, `/b`, `/p`, `/fo/ping`) are set where their handlers and headers live (`_headers` and `src/worker/headers.ts`), so they apply when a stream adds the first vendored folder or file-origin route.
-- The `/img` and font rules are **not applied** by the foundation change. Today's images and font keep their current headers, so no live behavior changes. Each rule ships with the stream that renames the assets with a version suffix or adds the new ones.
+- `/fonts` and `/js/vendor` are immutable in `_headers`, and the build refuses a file in either folder whose path has no version (`4.1`, `0.1.3`); `/img` is cached a day. The workers.dev redirect of `/f`, `/b`, `/p` and `/fo` is `no-store`, since the path is the secret.
 
 ## Rejected
-- **Option C, asset-bypass:** narrow `run_worker_first` to `/api`, `/f`, `/auth` and the new routes. It saves a Worker invocation per static request, but the asset layer would then answer on the `workers.dev` host too, so the site itself would be served from the file origin, and the path normalizer and the variant choice would never run on pages.
+- **Option C, asset-bypass for pages:** narrow `run_worker_first` to `/api`, `/f`, `/auth` and the new routes. The asset layer would then answer pages on the `workers.dev` host too, so the site itself would be served from the file origin, and the path normalizer and the variant choice would never run on pages. Only the static trees are bypassed.
 - **Long max-age on HTML with purge on switch:** a purge is a second mechanism, and a missed purge shows the wrong mode.
 - **`public` on `/b` and `/p`:** a shared cache could hold a user's file past its trash or disable.
 
 ## Consequences
-- Each static request costs a Worker invocation; the spend guard owns the ceiling.
+- Each page and API request costs a Worker invocation; the spend guard owns the ceiling. A static asset costs none, on any host.
 - The unhashed JS and CSS revalidate on every page load; ETag 304s keep the cost to headers.
 - Workers Cache stays off (a test pins `wrangler.jsonc` to it): a hit would skip the Worker, so the mode gate and headers would not run, and its key ignores the host.
 

@@ -152,6 +152,30 @@ function kind(path) {
 }
 
 /**
+ * The file origin (ADR 0018) as a module, so a page that needs it stays a plain asset with a stable ETag. It is
+ * FILE_ORIGIN from the environment (a staging build), else the `vars` entry of wrangler.jsonc.
+ * @param {string} root
+ * @param {Record<string, string | undefined>} env
+ */
+export function fileOriginModule(root, env = process.env) {
+  const live = readFileSync(join(root, "wrangler.jsonc"), "utf8")
+    .split("\n")
+    .filter((line) => !line.trim().startsWith("//"))
+    .join("\n");
+  const origin = env.FILE_ORIGIN ?? JSON.parse(live).vars?.FILE_ORIGIN ?? "";
+  return `export const FILE_ORIGIN = ${JSON.stringify(origin)};\n`;
+}
+
+/**
+ * The files under fonts/ and js/vendor/ whose path carries no version (`4.1`, `0.1.3`). Those two folders are served
+ * `immutable` (ADR 0023), so a file changes only by getting a new name.
+ * @param {string[]} rels paths under public/
+ */
+export function unversioned(rels) {
+  return rels.filter((rel) => /^(fonts|js\/vendor)\//.test(rel) && !/\d+\.\d+/.test(rel));
+}
+
+/**
  * Brings `<root>/dist` to the build of `<root>/public`. Stale files go first, then any path of the wrong kind (a
  * file that became a folder, or the reverse). A changed file is written to a per-process temp name and renamed
  * over its target, so a server reading dist/ never sees half a file and two builds never share a temp file; an
@@ -164,7 +188,10 @@ export function build(root = REPO) {
   const out = join(root, "dist");
   /** @type {Map<string, Buffer | string>} */
   const files = new Map();
-  for (const rel of walk(src)) {
+  const sources = walk(src);
+  const bare = unversioned(sources);
+  if (bare.length > 0) throw new Error(`immutable folders need a version in the name: ${bare.join(", ")}`);
+  for (const rel of sources) {
     const bytes = readFileSync(join(src, rel));
     if (rel.endsWith(".css")) {
       files.set(rel, minifyCss(bytes.toString("utf8"), rel));
@@ -182,6 +209,9 @@ export function build(root = REPO) {
     files.set(rel, code);
     files.set(`${rel}.map`, map);
   }
+
+  // Only a real project has a wrangler.jsonc: a build of a bare folder bakes nothing.
+  if (kind(join(root, "wrangler.jsonc")) === "file") files.set("js/shared/fo.js", fileOriginModule(root));
 
   const deleted = walk(out).filter((rel) => !files.has(rel) && !IN_FLIGHT.test(rel));
   for (const rel of deleted) rmSync(join(out, rel), { force: true });
