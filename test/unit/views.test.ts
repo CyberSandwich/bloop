@@ -9,9 +9,10 @@ const META: Meta = {
   roomName: null,
   screenSecretHash: "x",
   createdAt: T0,
+  linkOrigin: "file",
 };
 const LIMITS = { dropMaxBytes: 50, maxMinutes: 120 };
-const CONFIG = { origin: "https://bloop.example", machine: CFG };
+const CONFIG = { origin: "https://bloop.example", machine: CFG, library: { largeFileChoiceBytes: 30_000_000 } };
 
 describe("views", () => {
   it("shows the code and the QR URL only while waiting", () => {
@@ -27,26 +28,11 @@ describe("views", () => {
   });
 
   it("SRC-01 screen-view carries the approved items' names, types and sizes and nothing else about files", () => {
+    // The view's exact key set is PAIR-16's (views-keys.test.ts).
     const view = screenView(META, approved(), CONFIG, T0 + sec(11));
-    expect(Object.keys(view).sort()).toEqual(
-      [
-        "code",
-        "endReason",
-        "endsAt",
-        "items",
-        "kind",
-        "match",
-        "mode",
-        "now",
-        "openMode",
-        "room",
-        "seq",
-        "shown",
-        "state",
-        "v",
-      ].sort(),
-    );
-    expect(view.items).toEqual([{ kind: "file", id: "i1", name: "Deck.pptx", type: "pptx", size: null }]);
+    expect(view.items).toEqual([
+      { kind: "file", id: "i1", name: "Deck.pptx", type: "pptx", size: null, show: "deck", derived: null },
+    ]);
     expect(JSON.stringify(view)).not.toContain("deck-1");
   });
 

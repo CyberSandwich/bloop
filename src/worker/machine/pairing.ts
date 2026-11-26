@@ -95,9 +95,9 @@ export function claim(m: Machine, ev: EventOf<"claim">, cfg: MachineConfig): Ste
   if (!slot || !code) return fail("code_expired");
   if (code.consumed) return fail("code_taken");
   if (now >= code.expiresAt) return fail("code_expired");
-  // transitional: removed in P1 commit 3 (a live claim with no choices is the passive match, confirmed at once)
+  // Every live claim carries the pick (PAIR-14); a demo has none.
   const choices = m.mode === "live" ? (ev.choices ?? null) : null;
-  if (choices && !validChoices(choices, ev.match)) return fail("bad_request");
+  if (m.mode === "live" && !(choices && validChoices(choices, ev.match))) return fail("bad_request");
   const next: Machine = {
     ...m,
     state: "claimed",
@@ -110,6 +110,7 @@ export function claim(m: Machine, ev: EventOf<"claim">, cfg: MachineConfig): Ste
       secretHash: ev.secretHash,
       listed: [],
       userId: ev.userId,
+      phoneSession: ev.userId === null ? null : (ev.phoneSession ?? null),
       passHash: ev.passHash,
       confirmed: choices === null,
       choices,

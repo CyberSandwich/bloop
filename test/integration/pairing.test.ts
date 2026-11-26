@@ -1,5 +1,15 @@
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
-import { Api, claim, openScreen, phoneSocket, rawUpgrade, Socket, startPairing } from "./pairing-client.ts";
+import {
+  Api,
+  claim,
+  claimOnly,
+  openScreen,
+  phoneSocket,
+  pick,
+  rawUpgrade,
+  Socket,
+  startPairing,
+} from "./pairing-client.ts";
 import type { Wrangler } from "./wrangler.ts";
 
 let wrangler: Wrangler;
@@ -228,6 +238,49 @@ describe("pairing: the whole flow over WebSockets", () => {
     const res = await api.get("/api/screen/state", ghost);
     expect(res.status).toBe(410);
     expect(res.body).toEqual(problem("screen_gone"));
+  });
+});
+
+describe("PAIR-14 match: the live pick over the Screen object", () => {
+  it("PAIR-14 match: every live claim answers three choices and no match; the phone acts only after the right pick", async () => {
+    const { socket, code } = await openScreen(api, "live");
+    const claimed = await claimOnly(api, code);
+    expect(claimed.status).toBe(200);
+    expect(claimed.body.match).toBeNull();
+    const choices = claimed.body.choices as string[];
+    expect(new Set(choices).size).toBe(3);
+    const onScreen = await socket.stateWhere((v) => v.state === "claimed");
+    const shown = (onScreen.view as { match: string; confirmed: boolean }).match;
+    expect(choices).toContain(shown);
+    expect((onScreen.view as { confirmed: boolean }).confirmed).toBe(false);
+    const pid = claimed.body.pid;
+    const before = await api.get<{ match: unknown; choices: unknown; confirmed: boolean }>("/api/pair/state", pid);
+    expect(before.body).toMatchObject({ match: null, choices, confirmed: false });
+    expect(JSON.stringify(before.body)).not.toContain(`"match":"${shown}"`);
+    expect((await api.get("/api/files", pid)).body).toEqual(problem("match_required"));
+    const picked = await pick(api, pid);
+    expect(picked.status).toBe(200);
+    expect(picked.body).toMatchObject({ approved: false, approveError: null, view: { match: shown, confirmed: true } });
+    await socket.stateWhere((v) => v.confirmed === true);
+    // One pick per claim: a later one, right or wrong, changes nothing.
+    const wrong = choices.find((c) => c !== shown) as string;
+    expect((await pick(api, pid, wrong)).status).toBe(200);
+    expect((await api.get("/api/files", pid)).status).toBe(200);
+    socket.close();
+  });
+
+  it("PAIR-14 match: a wrong pick cancels the claim, answers match_wrong, and the old pid is pairing_invalid", async () => {
+    const { socket, code } = await openScreen(api, "live");
+    const claimed = await claimOnly(api, code);
+    const view = await socket.stateWhere((v) => v.state === "claimed");
+    const shown = (view.view as { match: string }).match;
+    const wrong = (claimed.body.choices as string[]).find((c) => c !== shown) as string;
+    const res = await pick(api, claimed.body.pid, wrong);
+    expect(res.status).toBe(409);
+    expect(res.body).toEqual(problem("match_wrong"));
+    expect((await api.get("/api/pair/state", claimed.body.pid)).body).toEqual(problem("pairing_invalid"));
+    await socket.stateWhere((v) => v.state === "waiting" && v.code !== null);
+    socket.close();
   });
 });
 

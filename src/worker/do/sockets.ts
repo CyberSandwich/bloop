@@ -1,5 +1,11 @@
 import { SILENCE_MS } from "../../../public/js/core/timing.js";
 
+/**
+ * MISSED_PINGS of the client's PING_MS (public/js/core/health.js, a browser module the Worker build cannot import; a
+ * unit test pins the product).
+ */
+export const TAKEOVER_MS = 50_000;
+
 /** Sockets waiting for their `hello`, per role: a full role evicts one for the next upgrade (admit). */
 export const MAX_PENDING_SOCKETS = 4;
 /** Of those, one network may hold this many per role; past it the network's own oldest goes, never another's. */
@@ -84,7 +90,7 @@ export function bindingIp(
   stored: string | undefined,
   silenceMs = SILENCE_MS,
 ): string | undefined {
-  const live = screens.filter((s) => isLive(s.heardAt, now, silenceMs));
+  const live = screens.filter((s) => holds(s, now, silenceMs));
   if (live.length === 0) return stored;
   return live.reduce((a, b) => (a.helloAt <= b.helloAt ? a : b)).ip;
 }
@@ -103,4 +109,130 @@ export function holdBinding(
   const ip = bindingIp(screens, now, stored, silenceMs);
   if (ip !== undefined && ip !== stored) store.set(ip);
   return ip;
+}
+
+/**
+ * The address a verified `hello` binds links to (OPEN-02), or null to leave the binding alone: no string address (a
+ * socket hibernated from before addresses were kept), or another screen socket that still holds it.
+ */
+export function helloBinding(
+  ip: unknown,
+  others: readonly Screen[],
+  now: number,
+  silenceMs = SILENCE_MS,
+): string | null {
+  if (typeof ip !== "string") return null;
+  return others.some((s) => holds(s, now, silenceMs)) ? null : ip;
+}
+
+/**
+ * A screen socket holds the binding while it misses fewer than MISSED_PINGS pings in a row, so a lectern that roamed
+ * to a new address takes it over in about 50 s rather than waiting out the silence window it still counts as open in.
+ */
+const holds = (s: Screen, now: number, silenceMs: number): boolean =>
+  isLive(s.heardAt, now, Math.min(TAKEOVER_MS, silenceMs));
+
+/** WebSocket readyState OPEN. */
+export const OPEN = 1;
+
+interface Closable {
+  readyState: number;
+  send(text: string): void;
+  close(code: number, reason: string): void;
+}
+
+/**
+ * Closes each OPEN socket whose `hello` window ran out, telling it why. Never throws: the alarm runs the machine's
+ * timer after this, and a socket that closed under us must not skip it.
+ */
+export function closeLateHellos(
+  entries: readonly { ws: Closable; att: { authed: boolean; helloBy: number } | null }[],
+  now: number,
+): void {
+  const frame = JSON.stringify({ v: 1, t: "error", code: "unauthorized", now });
+  for (const { ws, att } of entries) {
+    if (ws.readyState !== OPEN || !att || att.authed || att.helloBy > now) continue;
+    try {
+      ws.send(frame);
+      ws.close(1008, "hello timeout");
+    } catch {
+      // closed under us: its close handler updates the count
+    }
+  }
+}
+
+/** Sends to a socket that may have closed under us; its close handler updates the count. */
+export function safeSend(ws: { send(text: string): void }, text: string): void {
+  try {
+    ws.send(text);
+  } catch {
+    // closed under us
+  }
+}
+
+/** State frames to one socket closer together than this coalesce, the latest winning (O10). */
+export const COALESCE_MS = 150;
+
+interface Timers {
+  now(): number;
+  set(fn: () => void, ms: number): unknown;
+  clear(handle: unknown): void;
+}
+const realTimers: Timers = {
+  now: Date.now,
+  set: (fn, ms) => setTimeout(fn, ms),
+  clear: (h) => clearTimeout(h as ReturnType<typeof setTimeout>),
+};
+
+/**
+ * Coalesces `state` frames per socket (O10). A state frame is absolute, so only the latest matters: the first after a
+ * quiet COALESCE_MS goes at once, and those that follow inside the window are held, the latest sent when it closes.
+ * Any other frame (error, open) flushes the held state first, so frames never pass each other.
+ * Invariant: a pending timer keeps a hibernatable object awake for at most COALESCE_MS; with no timer pending nothing
+ * is held, so hibernation (which drops this in-memory map) loses nothing.
+ */
+export class StateCoalescer<W extends { send(text: string): void }> {
+  private readonly slots = new Map<W, { sentAt: number; held: string | null; timer: unknown }>();
+
+  constructor(private readonly timers: Timers = realTimers) {}
+
+  state(ws: W, text: string): void {
+    const now = this.timers.now();
+    const slot = this.slots.get(ws);
+    if (!slot || (slot.held === null && now - slot.sentAt >= COALESCE_MS)) {
+      this.slots.set(ws, { sentAt: now, held: null, timer: null });
+      safeSend(ws, text);
+      return;
+    }
+    slot.held = text;
+    slot.timer ??= this.timers.set(() => this.flush(ws), slot.sentAt + COALESCE_MS - now);
+  }
+
+  /** Any frame that must not be coalesced: the held state goes first. */
+  other(ws: W, text: string): void {
+    this.flush(ws);
+    safeSend(ws, text);
+  }
+
+  /** Before closing a socket: its held state goes out, and its timer goes. */
+  closing(ws: W): void {
+    this.flush(ws);
+    this.gone(ws);
+  }
+
+  /** The socket is already closed: drop what it held, send nothing. */
+  gone(ws: W): void {
+    const slot = this.slots.get(ws);
+    if (slot?.timer != null) this.timers.clear(slot.timer);
+    this.slots.delete(ws);
+  }
+
+  private flush(ws: W): void {
+    const slot = this.slots.get(ws);
+    if (!slot || slot.held === null) return;
+    if (slot.timer != null) this.timers.clear(slot.timer);
+    const text = slot.held;
+    this.slots.set(ws, { sentAt: this.timers.now(), held: null, timer: null });
+    safeSend(ws, text);
+  }
 }

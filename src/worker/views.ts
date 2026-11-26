@@ -1,5 +1,6 @@
 // The two views of a session (docs/interfaces.md section 1), built from the machine. Pure.
-// The views carry the approved items as `itemView` shapes them and nothing else about the source (SRC-01).
+// The views carry the approved items as `itemView` shapes them and nothing else about the source (SRC-01). Phone-only
+// data (`session.extra`, the live pick's choices) is added in `phoneView` alone, so a screen view cannot carry it.
 import type { Mode, PhoneView, RoomView, ScreenView, SessionState } from "../shared/protocol.ts";
 import { itemView } from "./items.ts";
 import type { Machine, MachineConfig } from "./machine.ts";
@@ -11,11 +12,14 @@ export interface Meta {
   roomName: string | null;
   screenSecretHash: string;
   createdAt: number;
+  /** The origin the screen's links use: set only by the screen's own hello, and only before approval (FO-01). */
+  linkOrigin: "file" | "main";
 }
 
 export interface ViewConfig {
   origin: string;
   machine: MachineConfig;
+  library: { largeFileChoiceBytes: number };
 }
 
 const MATCH_STATES: readonly SessionState[] = [
@@ -44,6 +48,9 @@ function codeView(m: Machine, cfg: ViewConfig, now: number): ScreenView["code"] 
   };
 }
 
+/** Only `false` is an open pick: no pairing reads false, and a demo or a pairing stored before the pick reads true. */
+const isConfirmed = (m: Machine): boolean => m.pairing !== null && m.pairing.confirmed !== false;
+
 export function screenView(meta: Meta, m: Machine, cfg: ViewConfig, now: number): ScreenView {
   return {
     state: m.state,
@@ -52,11 +59,14 @@ export function screenView(meta: Meta, m: Machine, cfg: ViewConfig, now: number)
     room: roomView(meta),
     code: codeView(m, cfg, now),
     match: m.pairing && MATCH_STATES.includes(m.state) ? m.pairing.match : null,
+    confirmed: isConfirmed(m),
     items: m.session?.items.map(itemView) ?? [],
     shown: m.session?.shown ?? null,
     openMode: m.session?.openMode ?? null,
     endsAt: m.session?.endsAt ?? null,
     endReason: m.state === "ended" || m.state === "waiting" ? m.endReason : null,
+    upload: m.state === "uploading" ? (m.upload ?? null) : null,
+    choiceBytes: cfg.library.largeFileChoiceBytes,
     seq: m.session?.seq.screen ?? 0,
     v: m.v,
     now,
@@ -71,22 +81,33 @@ export interface PhoneLimits {
 
 /** Null when no phone is paired: the caller answers `pairing_invalid`. */
 export function phoneView(meta: Meta, m: Machine, now: number, limits: PhoneLimits): PhoneView | null {
-  if (!m.pairing) return null;
+  const { pairing, session } = m;
+  if (!pairing) return null;
+  const confirmed = isConfirmed(m);
+  const extra = session?.extra ?? {};
   return {
     state: m.state,
     mode: meta.mode,
-    kind: m.pairing.kind,
+    kind: pairing.kind,
     room: roomView(meta),
-    match: m.pairing.match,
-    items: m.session?.items.map(itemView) ?? [],
-    shown: m.session?.shown ?? null,
-    openMode: m.session?.openMode ?? null,
-    endsAt: m.session?.endsAt ?? null,
+    // Before the pick the phone holds the three choices and never the match (PAIR-14).
+    match: confirmed ? pairing.match : null,
+    choices: confirmed ? null : (pairing.choices ?? null),
+    confirmed,
+    firstShownAt: session?.firstShownAt ?? null,
+    items:
+      session?.items.map((i) => {
+        const view = itemView(i);
+        return Object.hasOwn(extra, i.id) ? { ...view, extra: extra[i.id] } : view;
+      }) ?? [],
+    shown: session?.shown ?? null,
+    openMode: session?.openMode ?? null,
+    endsAt: session?.endsAt ?? null,
     endReason: m.state === "ended" ? m.endReason : null,
     dropMaxBytes: limits.dropMaxBytes,
     maxMinutes: limits.maxMinutes,
-    latestEnd: m.session?.approvedAt == null ? null : m.session.approvedAt + limits.maxMinutes * 60_000,
-    seq: m.session?.seq.phone ?? 0,
+    latestEnd: session?.approvedAt == null ? null : session.approvedAt + limits.maxMinutes * 60_000,
+    seq: session?.seq.phone ?? 0,
     v: m.v,
     now,
   };

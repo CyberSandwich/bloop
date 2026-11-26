@@ -1,14 +1,22 @@
+import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
+import { MISSED_PINGS, PING_MS } from "../../public/js/core/health.js";
 import { SILENCE_MS } from "../../public/js/core/timing.js";
 import {
   admit,
   bindingIp,
+  COALESCE_MS,
+  closeLateHellos,
   countAuthed,
+  helloBinding,
   holdBinding,
   isLive,
   MAX_PENDING_PER_NET,
   MAX_PENDING_SOCKETS,
+  OPEN,
+  StateCoalescer,
   screensOf,
+  TAKEOVER_MS,
 } from "../../src/worker/do/sockets.ts";
 import { must, sec, T0, waiting } from "./machine-helpers.ts";
 
@@ -156,5 +164,180 @@ describe("OPEN-02 link binding", () => {
     expect(bindingIp([], T, "poller")).toBe("poller");
     expect(bindingIp([{ ip: "gone", helloAt: T, heardAt: T }], T + SILENCE_MS, "poller")).toBe("poller");
     expect(bindingIp([], T, undefined)).toBeUndefined();
+  });
+
+  it("OPEN-02 hello: a verified hello with no string address leaves the binding alone", () => {
+    // A socket hibernated from before addresses were kept says hello again: binding `undefined` would disable OPEN-02.
+    for (const ip of [undefined, null, 7, {}]) expect(helloBinding(ip, [], T), String(ip)).toBeNull();
+    expect(helloBinding("B", [], T)).toBe("B");
+  });
+
+  it("OPEN-02 roaming: a new address takes over once the old socket has missed 2 pings, well before SILENCE_MS", () => {
+    // The lectern moved networks: its old socket (A) still counts as open, quiet since its last ping.
+    expect(TAKEOVER_MS).toBe(MISSED_PINGS * PING_MS);
+    const old = { ip: "A", helloAt: T, heardAt: T };
+    const missed = T + 2 * PING_MS + 1;
+    expect(missed).toBeLessThan(T + SILENCE_MS);
+    expect(helloBinding("B", [old], missed)).toBe("B");
+    expect(bindingIp([old, { ip: "B", helloAt: missed, heardAt: missed }], missed, "B")).toBe("B");
+    // One missed ping is not enough: a lectern that is still talking keeps it.
+    const once = T + 2 * PING_MS - 1;
+    expect(helloBinding("B", [old], once)).toBeNull();
+    expect(bindingIp([old, { ip: "B", helloAt: once, heardAt: once }], once, "A")).toBe("A");
+  });
+});
+
+describe("Screen alarm: hello timeouts", () => {
+  const sock = (readyState: number, fail = false) => {
+    const sent: string[] = [];
+    const closed: number[] = [];
+    return {
+      sent,
+      closed,
+      readyState,
+      send(text: string) {
+        if (fail) throw new Error("closed under us");
+        sent.push(text);
+      },
+      close(code: number) {
+        if (fail) throw new Error("closed under us");
+        closed.push(code);
+      },
+    };
+  };
+  const late = { authed: false, helloBy: 10 };
+
+  it("a socket that throws on send or close cannot stop the others, or the caller's machine timer", () => {
+    const [bad, good] = [sock(OPEN, true), sock(OPEN)];
+    const entries = [
+      { ws: bad, att: late },
+      { ws: good, att: late },
+    ];
+    expect(() => closeLateHellos(entries, 20)).not.toThrow();
+    expect(good.closed).toEqual([1008]);
+    expect(JSON.parse(good.sent[0] as string)).toMatchObject({ t: "error", code: "unauthorized" });
+  });
+
+  it("skips a socket that is not OPEN, one still inside its hello window, and one already authed", () => {
+    const [closing, early, authed] = [sock(2), sock(OPEN), sock(OPEN)];
+    closeLateHellos(
+      [
+        { ws: closing, att: late },
+        { ws: early, att: { authed: false, helloBy: 30 } },
+        { ws: authed, att: { authed: true, helloBy: 10 } },
+      ],
+      20,
+    );
+    expect([closing.sent, closing.closed, early.closed, authed.closed]).toEqual([[], [], [], []]);
+  });
+});
+
+describe("Screen object: every socket write is guarded", () => {
+  it("screen.ts sends only through the coalescer or safeSend, and closes only through drop, so a throw skips nothing", () => {
+    const source = readFileSync(new URL("../../src/worker/do/screen.ts", import.meta.url), "utf8");
+    expect(source.match(/\.send\(/g) ?? []).toEqual([]);
+    expect(source.match(/\.close\(/g) ?? []).toHaveLength(1);
+    expect(source).toMatch(/private drop\(ws: WebSocket[\s\S]*?try \{\s*ws\.close\(code, reason\);/);
+  });
+});
+
+describe("O10 state frames coalesce per socket", () => {
+  /** A hand-run clock: `tick(ms)` fires every timer due by then, in order. */
+  const clock = () => {
+    let now = 0;
+    let next = 0;
+    const timers = new Map<number, { at: number; fn: () => void }>();
+    return {
+      timers,
+      t: {
+        now: () => now,
+        set: (fn: () => void, ms: number) => {
+          timers.set(++next, { at: now + ms, fn });
+          return next;
+        },
+        clear: (h: unknown) => void timers.delete(h as number),
+      },
+      tick(ms: number) {
+        const until = now + ms;
+        for (;;) {
+          const due = [...timers.entries()].filter(([, v]) => v.at <= until).sort((a, b) => a[1].at - b[1].at)[0];
+          if (!due) break;
+          now = due[1].at;
+          timers.delete(due[0]);
+          due[1].fn();
+        }
+        now = until;
+      },
+    };
+  };
+  const socket = () => {
+    const sent: string[] = [];
+    return { sent, send: (text: string) => void sent.push(text) };
+  };
+
+  it("O10 leading edge: the first state after a quiet window goes at once; the latest of a burst goes when it closes", () => {
+    const c = clock();
+    const s = new StateCoalescer(c.t);
+    const ws = socket();
+    s.state(ws, "v1");
+    expect(ws.sent).toEqual(["v1"]);
+    c.tick(50);
+    s.state(ws, "v2");
+    c.tick(50);
+    s.state(ws, "v3");
+    expect(ws.sent).toEqual(["v1"]);
+    c.tick(COALESCE_MS - 100);
+    expect(ws.sent).toEqual(["v1", "v3"]);
+    // Quiet for a full window after that send: the next goes at once again, and nothing is left pending.
+    c.tick(COALESCE_MS);
+    s.state(ws, "v4");
+    expect(ws.sent).toEqual(["v1", "v3", "v4"]);
+    expect(c.timers.size).toBe(0);
+  });
+
+  it("O10 order: an error or open frame flushes the held state first, so nothing reaches the socket out of order", () => {
+    const c = clock();
+    const s = new StateCoalescer(c.t);
+    const ws = socket();
+    s.state(ws, "v1");
+    s.state(ws, "v2");
+    s.other(ws, "open");
+    expect(ws.sent).toEqual(["v1", "v2", "open"]);
+    expect(c.timers.size).toBe(0);
+    s.other(ws, "error");
+    expect(ws.sent).toEqual(["v1", "v2", "open", "error"]);
+  });
+
+  it("O10 close: closing flushes then clears the timer; a socket already gone gets nothing and leaves no timer", () => {
+    const c = clock();
+    const s = new StateCoalescer(c.t);
+    const [a, b] = [socket(), socket()];
+    s.state(a, "a1");
+    s.state(a, "a2");
+    s.closing(a);
+    expect(a.sent).toEqual(["a1", "a2"]);
+    s.state(b, "b1");
+    s.state(b, "b2");
+    s.gone(b);
+    expect(c.timers.size).toBe(0);
+    c.tick(COALESCE_MS * 2);
+    expect(b.sent).toEqual(["b1"]);
+  });
+
+  it("O10 sockets are independent, and a socket that throws on send never throws to the caller", () => {
+    const c = clock();
+    const s = new StateCoalescer(c.t);
+    const [a, b] = [socket(), socket()];
+    s.state(a, "a1");
+    s.state(b, "b1");
+    expect([a.sent, b.sent]).toEqual([["a1"], ["b1"]]);
+    const broken = {
+      send: () => {
+        throw new Error("closed");
+      },
+    };
+    expect(() => s.state(broken, "x")).not.toThrow();
+    s.state(broken, "y");
+    expect(() => c.tick(COALESCE_MS)).not.toThrow();
   });
 });
