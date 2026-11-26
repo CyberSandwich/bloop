@@ -1,7 +1,8 @@
 import { defineConfig } from "@playwright/test";
+import type { Mode } from "./test/e2e/mode.ts";
 
 // CI only: headless Chrome cannot start in the local sandbox.
-export default defineConfig({
+export default defineConfig<{ mode: Mode }>({
   testDir: "test/e2e",
   fullyParallel: true,
   forbidOnly: !!process.env.CI,
@@ -9,6 +10,19 @@ export default defineConfig({
   reporter: process.env.CI ? [["github"], ["html", { open: "never" }]] : "list",
   // localhost, not 127.0.0.1: WebAuthn refuses an IP address as its relying party, so passkey flows need a name.
   use: { baseURL: "http://localhost:8787", trace: "retain-on-failure" },
+  // The server's launch mode is one shared row, so the projects run in turn: preview, then open (flipped by
+  // open-setup, put back by its teardown). Only the landing's open variants and the mode-aware specs run in open.
+  projects: [
+    { name: "preview", testIgnore: [/landing-open/, /\.setup\./] },
+    { name: "open-setup", testMatch: /open\.setup/, dependencies: ["preview"], teardown: "preview-restore" },
+    { name: "preview-restore", testMatch: /restore\.setup/ },
+    {
+      name: "open",
+      testMatch: [/landing-open/, /mode\.spec/, /a11y\.spec/, /mobile\.spec/],
+      dependencies: ["open-setup"],
+      use: { mode: "open" },
+    },
+  ],
   webServer: {
     // TEST_TIMING skips the platform rate limits, which a suite creating many screens a minute would trip.
     // Every browser shares one IP hash, so the per-IP demo cap (DEMO-02) would refuse the third demo screen, and a
