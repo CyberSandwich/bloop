@@ -11,13 +11,8 @@ import (
 )
 
 type probe struct {
-	Streams []struct {
-		CodecType string `json:"codec_type"`
-		CodecName string `json:"codec_name"`
-		Width     int    `json:"width"`
-		Height    int    `json:"height"`
-	} `json:"streams"`
-	Format struct {
+	Streams []stream `json:"streams"`
+	Format  struct {
 		FormatName string `json:"format_name"`
 		Duration   string `json:"duration"`
 	} `json:"format"`
@@ -25,12 +20,11 @@ type probe struct {
 
 // video is the first video stream, the one ffmpeg maps as 0:v:0; ok is false when it has no size.
 func (p probe) video() (w, h int, codec string, ok bool) {
-	for _, st := range p.Streams {
-		if st.CodecType == "video" {
-			return st.Width, st.Height, st.CodecName, st.Width > 0 && st.Height > 0
-		}
+	st, found := p.first("video")
+	if !found {
+		return 0, 0, "", false
 	}
-	return 0, 0, "", false
+	return st.Width, st.Height, st.CodecName, st.Width > 0 && st.Height > 0
 }
 
 func (p probe) seconds() float64 {
@@ -61,7 +55,9 @@ func (s *Server) probe(ctx context.Context, demuxer, path string) (probe, error)
 
 const maxVideoDim = 8192
 
-// videoJob probes the upload, re-encodes it to H.264/AAC mp4, and takes a thumbnail.
+// videoJob probes the upload, copies it into an mp4 when it already is browser H.264 (no duration cap: the input
+// size quota bounds it) or re-encodes it (capped at MaxVideoSecs), and takes a thumbnail. Each runs under a budget
+// from the probed length or size, never over the video stage's timeout.
 func (s *Server) videoJob(job jobInfo, meta *metaJSON) error {
 	var an Analysis
 	if err := s.stage("inspect", 2, func(ctx context.Context) error { return s.inspect(ctx, job, &an) }); err != nil {
@@ -72,19 +68,45 @@ func (s *Server) videoJob(job jobInfo, meta *metaJSON) error {
 	if err := os.MkdirAll(filepath.Dir(dst), 0o700); err != nil {
 		return failed(errInternal, err)
 	}
-	var seconds float64
-	err := s.stage("video", 5, func(ctx context.Context) error {
+	return s.stage("video", 5, func(ctx context.Context) error {
 		demuxer := demuxerFor(job.ext)
 		p, err := s.probe(ctx, demuxer, orig)
 		if err != nil {
 			return err
 		}
 		w, h, _, ok := p.video()
-		seconds = p.seconds()
-		if !ok || w > maxVideoDim || h > maxVideoDim || seconds <= 0 || seconds > s.cfg.MaxVideoSecs {
+		seconds := p.seconds()
+		if !ok || w > maxVideoDim || h > maxVideoDim || seconds <= 0 {
 			return failed(errBadMedia, fmt.Errorf("video %dx%d, %.0f s, stream %v", w, h, seconds, ok))
 		}
-		if err := s.transcode(ctx, demuxer, orig, dst, seconds); err != nil {
+		// An index that cannot be read means a transcode: ffmpeg decides what the file is.
+		boxes, _ := topBoxes(orig)
+		remux := canRemux(p, demuxer, s.cfg.VideoWidth, boxes)
+		ceiling := s.cfg.Timeouts["video"]
+		budget := transcodeBudget(seconds, s.cfg.VideoRate, s.cfg.VideoFixed, ceiling)
+		if remux {
+			st, err := os.Stat(orig)
+			if err != nil {
+				return failed(errInternal, err)
+			}
+			budget = remuxBudget(st.Size(), s.cfg.VideoFixed, ceiling)
+		} else if seconds > s.cfg.MaxVideoSecs {
+			return failed(errBadMedia, fmt.Errorf("%.0f s of video to re-encode, at most %.0f s", seconds, s.cfg.MaxVideoSecs))
+		}
+		bctx, cancel := context.WithTimeout(ctx, budget)
+		defer cancel()
+		if remux {
+			err = s.remux(bctx, orig, dst, seconds)
+		} else {
+			err = s.transcode(bctx, demuxer, orig, dst, seconds)
+		}
+		if err != nil {
+			if bctx.Err() != nil && ctx.Err() == nil {
+				return failed(errTimeout, fmt.Errorf("video (remux %v) over its %v budget", remux, budget))
+			}
+			return err
+		}
+		if err := checkFaststart(dst); err != nil {
 			return err
 		}
 		out, err := s.probe(ctx, "mov", dst)
@@ -93,34 +115,47 @@ func (s *Server) videoJob(job jobInfo, meta *metaJSON) error {
 		}
 		ow, oh, codec, ok := out.video()
 		if !ok || codec != "h264" || !strings.Contains(out.Format.FormatName, "mp4") {
-			return failed(errOutputInvalid, fmt.Errorf("transcode produced %q in %q", codec, out.Format.FormatName))
+			return failed(errOutputInvalid, fmt.Errorf("video produced %q in %q", codec, out.Format.FormatName))
 		}
 		meta.Video = &VideoMeta{W: ow, H: oh, DurationMs: int(out.seconds() * 1000)}
 		return s.videoThumb(ctx, dst, out.seconds())
 	})
-	return err
 }
 
-// transcode bounds the output at MaxVideoSecs with -t, whatever the input's header claims.
-func (s *Server) transcode(ctx context.Context, demuxer, in, dst string, seconds float64) error {
-	args := []string{
-		"-nostdin", "-hide_banner", "-loglevel", "error", "-y",
-		"-protocol_whitelist", "file", "-f", demuxer, "-i", in,
-		"-t", strconv.FormatFloat(s.cfg.MaxVideoSecs, 'f', -1, 64),
-		"-map", "0:v:0", "-map", "0:a:0?", "-sn", "-dn", "-map_metadata", "-1",
-		"-vf", "scale=w='min(1920,trunc(iw/2)*2)':h=-2,format=yuv420p",
-		"-c:v", "libx264", "-preset", "veryfast", "-crf", "23", "-profile:v", "high",
-		"-c:a", "aac", "-b:a", "128k", "-ac", "2",
-		"-movflags", "+faststart", "-progress", "pipe:1", "-nostats", dst,
-	}
+// ffmpeg runs one ffmpeg command, publishing its progress as the video stage's percentage.
+func (s *Server) ffmpeg(ctx context.Context, args []string, seconds float64) error {
 	_, err := s.run(ctx, cmdSpec{name: "ffmpeg", args: args, env: s.env(), onLine: func(line string) {
 		if us, ok := strings.CutPrefix(line, "out_time_us="); ok {
 			if v, err := strconv.ParseFloat(us, 64); err == nil && seconds > 0 {
-				s.set("video", 5+int(90*v/1e6/seconds))
+				s.set("video", 5+int(90*min(1, v/1e6/seconds)))
 			}
 		}
 	}})
 	return convertErr(err)
+}
+
+// remux copies the first video and audio streams into a faststart mp4 without decoding them.
+func (s *Server) remux(ctx context.Context, in, dst string, seconds float64) error {
+	return s.ffmpeg(ctx, []string{
+		"-nostdin", "-hide_banner", "-loglevel", "error", "-y",
+		"-protocol_whitelist", "file", "-f", "mov", "-i", in,
+		"-map", "0:v:0", "-map", "0:a:0?", "-sn", "-dn", "-map_metadata", "-1",
+		"-c", "copy", "-movflags", "+faststart", "-progress", "pipe:1", "-nostats", dst,
+	}, seconds)
+}
+
+// transcode bounds the output at MaxVideoSecs with -t, whatever the input's header claims.
+func (s *Server) transcode(ctx context.Context, demuxer, in, dst string, seconds float64) error {
+	return s.ffmpeg(ctx, []string{
+		"-nostdin", "-hide_banner", "-loglevel", "error", "-y",
+		"-protocol_whitelist", "file", "-f", demuxer, "-i", in,
+		"-t", strconv.FormatFloat(s.cfg.MaxVideoSecs, 'f', -1, 64),
+		"-map", "0:v:0", "-map", "0:a:0?", "-sn", "-dn", "-map_metadata", "-1",
+		"-vf", fmt.Sprintf("scale=w='min(%d,trunc(iw/2)*2)':h=-2,format=yuv420p", s.cfg.VideoWidth),
+		"-c:v", "libx264", "-preset", "veryfast", "-crf", "23", "-profile:v", "high",
+		"-c:a", "aac", "-b:a", "128k", "-ac", "2",
+		"-movflags", "+faststart", "-progress", "pipe:1", "-nostats", dst,
+	}, seconds)
 }
 
 func (s *Server) videoThumb(ctx context.Context, mp4 string, seconds float64) error {

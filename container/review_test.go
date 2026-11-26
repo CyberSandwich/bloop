@@ -324,7 +324,7 @@ func TestVideoDemuxerIsForcedByExtensionAndLengthIsBounded(t *testing.T) {
 		h.post("j1", ext, body)
 		h.mustSucceed(h.wait())
 		enc := strings.Join(tools.called("ffmpeg")[0].args, " ")
-		if !strings.Contains(enc, want) || !strings.Contains(enc, "-t 122") {
+		if !strings.Contains(enc, want) || !strings.Contains(enc, "-t 243") {
 			t.Errorf("%s: ffmpeg args %s", ext, enc)
 		}
 		if probe := strings.Join(tools.called("ffprobe")[0].args, " "); !strings.Contains(probe, strings.TrimSuffix(want, " -i")) {
