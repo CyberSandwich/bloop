@@ -5,7 +5,8 @@ import { execFileSync } from "node:child_process";
 import { readdirSync, realpathSync } from "node:fs";
 import { basename, dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { blocks, dependencySections, parseDiff } from "./change-tier.mjs";
+import { attributed } from "./attribution.mjs";
+import { ATTRIBUTED, blocks, depsAround, parseDiff } from "./change-tier.mjs";
 import { wranglerConfig } from "./wrangler-config.mjs";
 
 /**
@@ -80,30 +81,31 @@ export function markerProblems(log) {
 
 /**
  * The commit-msg hook's blocks (`change-tier.mjs`), run on each commit in `range`: cherry-pick and rebase commit
- * without running the hook, so a commit made that way is checked here or nowhere.
+ * without running the hook, so a commit made that way is checked here or nowhere. Lookups use the full hash (a ref
+ * named like a short one would win); the short one is for display.
  * @param {(args: string[]) => string} git @param {string} range @returns {string[]}
  */
-function commitMsgProblems(git, range) {
-  /** @param {string} rev */
-  const deps = (rev) => {
-    try {
-      return dependencySections(git(["show", `${rev}:package.json`]));
-    } catch {
-      return undefined;
-    }
-  };
+export function commitMsgProblems(git, range) {
+  const show = (/** @type {string} */ spec) => git(["show", spec]);
   const diff = (/** @type {string} */ hash, /** @type {string} */ mode) =>
     git(["diff-tree", "--root", "--no-commit-id", "-r", "--no-renames", "-z", mode, hash]);
-  return git(["rev-list", "--reverse", "--abbrev-commit", range])
+  return git(["log", "--reverse", "--format=%H %h", range])
     .split("\n")
     .filter(Boolean)
-    .flatMap((hash) =>
-      blocks(
-        parseDiff(diff(hash, "--numstat"), diff(hash, "--name-status")),
-        { before: deps(`${hash}^`), after: deps(hash) },
-        git(["log", "-1", "--format=%B", hash]),
-      ).map((problem) => `${hash}: ${problem}`),
-    );
+    .flatMap((line) => {
+      const [hash = "", short = ""] = line.split(" ");
+      // The stored message, read raw: the hook's comment stripping must not hide a `#` line that verbatim cleanup kept.
+      const message = git(["log", "-1", "--format=%B", hash]);
+      const out = new Set(
+        blocks(
+          parseDiff(diff(hash, "--numstat"), diff(hash, "--name-status")),
+          depsAround(show, `${hash}^:`, `${hash}:`),
+          message,
+        ),
+      );
+      if (attributed(message)) out.add(ATTRIBUTED);
+      return [...out].map((problem) => `${short}: ${problem}`);
+    });
 }
 
 /**

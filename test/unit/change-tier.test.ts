@@ -4,7 +4,16 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
-import { blocks, classify, dependencySections, depsChanged, parseDiff } from "../../tools/change-tier.mjs";
+import {
+  blocks,
+  classify,
+  dependencySections,
+  depsAround,
+  depsChanged,
+  offRegistry,
+  parseDiff,
+  registryRange,
+} from "../../tools/change-tier.mjs";
 import { SPAWN_TIMEOUT } from "./spawn.ts";
 
 type Status = "A" | "M" | "D" | "T";
@@ -45,7 +54,7 @@ describe("classify", () => {
   it("T2: dependencies change", () => {
     const tier = classify([file("package.json", 2)], ADDED_DEP);
     expect(tier.tier).toBe(2);
-    expect(tier.reasons).toContain("dependencies or devDependencies changed");
+    expect(tier.reasons).toContain("package.json dependency sections changed");
     expect(classify([file("package.json", 2)], SAME).tier).toBe(1);
   });
 
@@ -122,8 +131,28 @@ describe("dev dependencies", () => {
     expect(blocks([file("package.json", 2)], { before, after }, "drop vitest")).toHaveLength(1);
   });
 
+  it("only a registry range on both sides counts as a version bump", () => {
+    const ranges = ["1", "^1.2.3", "~1.2", ">=1.0.0 <2", "1.x", "*", "1.2.3 - 2", "^1 || ^2", "2.0.0-beta.1+b.7", "v1"];
+    for (const spec of ranges) expect(registryRange(spec), spec).toBe(true);
+    const others = [
+      "x.tgz",
+      "x.tar",
+      "x.tar.gz",
+      "1.0.0-x.tgz",
+      "..",
+      ".",
+      "~/x",
+      "workspace:*",
+      "link:x",
+      "latest",
+      "",
+    ];
+    for (const spec of others) expect(registryRange(spec), spec).toBe(false);
+  });
+
   it("a spec that swaps the source under a kept name needs an ADR, either way round", () => {
-    for (const spec of ["npm:other@1", "git+https://example.test/x.git", "file:../x", "user/repo"]) {
+    const specs = ["npm:other@1", "git+https://example.test/x.git", "file:../x", "user/repo", "x.tgz", "x.tar"];
+    for (const spec of [...specs, "..", ".", "~/x", "workspace:*", "link:x", "1.0.0-x.tgz", "latest"]) {
       const after = dependencySections(`{"dependencies":{"zod":"${spec}"},"devDependencies":{"vitest":"1"}}`);
       expect(blocks([file("package.json", 2)], { before, after }, "swap"), spec).toHaveLength(1);
       expect(blocks([file("package.json", 2)], { before: after, after: before }, "swap back"), spec).toHaveLength(1);
@@ -136,11 +165,91 @@ describe("dev dependencies", () => {
     expect(blocks([file("package.json", 2)], { before, after }, "move")).toHaveLength(1);
   });
 
+  it("optional, peer and bundled dependencies, overrides and resolutions all count", () => {
+    const base = '"dependencies":{"zod":"1"},"devDependencies":{"vitest":"1"}';
+    const changed = [
+      '"optionalDependencies":{"left":"1"}',
+      '"peerDependencies":{"left":"1"}',
+      '"bundleDependencies":["zod"]',
+      '"bundledDependencies":true',
+      '"overrides":{"zod":"npm:evil@1"}',
+      '"resolutions":{"zod":"1"}',
+    ];
+    for (const extra of changed) {
+      const after = dependencySections(`{${base},${extra}}`);
+      expect(classify([file("package.json", 2)], { before, after }).tier, extra).toBe(2);
+      expect(blocks([file("package.json", 2)], { before, after }, "x"), extra).toHaveLength(1);
+    }
+    const nested = (spec: string) => dependencySections(`{${base},"overrides":{"zod":{"left":"${spec}"}}}`);
+    expect(blocks([file("package.json", 2)], { before: nested("1"), after: nested("2") }, "x")).toHaveLength(1);
+  });
+
+  it("a deleted ADR file does not satisfy the ADR rule", () => {
+    const after = dependencySections('{"dependencies":{"zod":"1"},"devDependencies":{}}');
+    expect(blocks([file("package.json", 2), file("docs/adr/0009-x.md", 5, "D")], { before, after }, "x")).toHaveLength(
+      1,
+    );
+    expect(blocks([file("package.json", 2), file("docs/adr/0001-x.md", 1)], { before, after }, "x")).toEqual([]);
+  });
+
   it("scripts-only edits to package.json change nothing", () => {
     const after = dependencySections(
       '{"scripts":{"x":"y"},"dependencies":{"zod":"1"},"devDependencies":{"vitest":"1"}}',
     );
     expect(depsChanged(before, after)).toBe(false);
+  });
+});
+
+describe("lockfile sources", () => {
+  const lock = (entries: Record<string, string | undefined>) =>
+    JSON.stringify({
+      lockfileVersion: 3,
+      packages: Object.fromEntries(Object.entries(entries).map(([k, resolved]) => [k, { version: "1", resolved }])),
+    });
+  const REG = "https://registry.npmjs.org/zod/-/zod-1.tgz";
+
+  it("lists every entry resolved off the npm registry, v1 nested entries included", () => {
+    expect(offRegistry(lock({ "": undefined, "node_modules/zod": REG }))).toEqual([]);
+    const bad = lock({
+      "node_modules/a": "https://evil.example/a-1.tgz",
+      "node_modules/b": "http://registry.npmjs.org/b/-/b-1.tgz",
+      "node_modules/c": "git+ssh://git@example.test/c.git#abc",
+      "node_modules/d": "https://registry.npmjs.org.evil.example/d-1.tgz",
+      "node_modules/e": "not a url",
+    });
+    expect(offRegistry(bad)).toHaveLength(5);
+    const v1 = {
+      lockfileVersion: 1,
+      dependencies: { a: { resolved: REG, dependencies: { b: { resolved: "file:b" } } } },
+    };
+    expect(offRegistry(JSON.stringify(v1))).toEqual(["a>b file:b"]);
+  });
+
+  it("blocks only an off-registry entry the change brings in", () => {
+    const old = offRegistry(lock({ "node_modules/a": "https://evil.example/a-1.tgz" }));
+    const now = offRegistry(
+      lock({ "node_modules/a": "https://evil.example/a-1.tgz", "node_modules/zod": "https://evil.example/zod.tgz" }),
+    );
+    const out = blocks([file("package-lock.json", 2)], { ...SAME, lockBefore: old, lockAfter: now }, "bump");
+    expect(out).toEqual([
+      "package-lock.json resolves node_modules/zod https://evil.example/zod.tgz: only https://registry.npmjs.org is allowed.",
+    ]);
+    expect(blocks([file("package-lock.json", 2)], { ...SAME, lockBefore: old, lockAfter: old }, "x")).toEqual([]);
+  });
+
+  it("depsAround reads a missing or broken file as none", () => {
+    const files: Record<string, string> = { "a:package.json": '{"dependencies":{"zod":"1"}}', "b:package.json": "{" };
+    const show = (spec: string) => {
+      const text = files[spec];
+      if (text === undefined) throw new Error("missing");
+      return text;
+    };
+    expect(depsAround(show, "a:", "b:")).toEqual({
+      before: { "dependencies:zod": "1" },
+      after: undefined,
+      lockBefore: [],
+      lockAfter: [],
+    });
   });
 });
 

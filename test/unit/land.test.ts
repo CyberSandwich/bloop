@@ -4,7 +4,15 @@ import { tmpdir } from "node:os";
 import { basename, join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { attributed } from "../../tools/attribution.mjs";
-import { conflictCopies, main, markerProblems, migrationProblems, refusals } from "../../tools/land.mjs";
+import { ATTRIBUTED } from "../../tools/change-tier.mjs";
+import {
+  commitMsgProblems,
+  conflictCopies,
+  main,
+  markerProblems,
+  migrationProblems,
+  refusals,
+} from "../../tools/land.mjs";
 import { SPAWN_TIMEOUT } from "./spawn.ts";
 
 /** A bare remote with one commit on main, and a clone of it to land from. */
@@ -104,9 +112,76 @@ describe("land: what a fast-forward to main refuses", { timeout: SPAWN_TIMEOUT }
     const out = refusals({ cwd: clone, sha: tested });
     expect(out).toHaveLength(2);
     expect(out[0]).toMatch(new RegExp(`^${bare}: src/ changed but no docs/ or test/ file`));
-    expect(out[1]).toMatch(new RegExp(`^${added}: a package was added to or removed from`));
+    expect(out[1]).toMatch(new RegExp(`^${added}: a package was added, removed or re-sourced`));
     expect(out.join("\n")).not.toContain(bumped);
     expect(out.join("\n")).not.toContain(trailer);
+  });
+
+  it("land: attribution is read from the stored message, so a `#` line kept by verbatim cleanup still counts", () => {
+    writeFileSync(join(clone, "a.txt"), "x\n");
+    git(clone, "add", "a.txt");
+    git(clone, "commit", "-q", "--cleanup=verbatim", "-m", "work\n\n#Generated with [Claude Code]");
+    const sha = git(clone, "rev-parse", "--short", "HEAD");
+    expect(refusals({ cwd: clone, sha })).toEqual([`${sha}: ${ATTRIBUTED}`]);
+  });
+
+  it("land: odd paths, a binary file and a broken or deleted package.json go through the real diff-tree", () => {
+    const add = (path: string, data: string | Buffer) => {
+      mkdirSync(join(clone, path, ".."), { recursive: true });
+      writeFileSync(join(clone, path), data);
+      git(clone, "add", "--", path);
+    };
+    add("src/tab\there.ts", "export {};\n");
+    add("src/new\nline.ts", "export {};\n");
+    add("src/blob.bin", Buffer.from([0, 1, 2, 0, 255]));
+    git(clone, "commit", "-q", "-m", "odd paths\n\nDocs: none needed");
+    expect(refusals({ cwd: clone, sha: git(clone, "rev-parse", "HEAD") })).toEqual([]);
+    add("src/only\ttab.ts", "export {};\n");
+    git(clone, "commit", "-q", "-m", "src alone, odd path");
+    const alone = git(clone, "rev-parse", "--short", "HEAD");
+    expect(refusals({ cwd: clone, sha: alone })).toEqual([
+      expect.stringMatching(new RegExp(`^${alone}: src/ changed but no docs/ or test/`)),
+    ]);
+    git(clone, "reset", "-q", "--hard", "HEAD~1");
+
+    add("package.json", '{"devDependencies":{"vitest":"1"}}\n');
+    add("docs/adr/0001-x.md", "vitest\n");
+    git(clone, "commit", "-q", "-m", "package");
+    git(clone, "push", "-q", "origin", "main");
+    add("package.json", "{ not json\n");
+    git(clone, "commit", "-q", "-m", "break it");
+    const broken = git(clone, "rev-parse", "--short", "HEAD");
+    git(clone, "rm", "-q", "package.json");
+    git(clone, "commit", "-q", "-m", "delete it");
+    const out = refusals({ cwd: clone, sha: git(clone, "rev-parse", "HEAD") });
+    // Breaking the file reads as removing every package; deleting the broken one then changes nothing.
+    expect(out).toEqual([expect.stringMatching(new RegExp(`^${broken}: a package was added, removed or re-sourced`))]);
+  });
+
+  it("land: a root commit in the range is checked against no package.json at all", () => {
+    const run = (args: string[]) => git(clone, ...args);
+    run(["checkout", "-q", "--orphan", "fresh"]);
+    run(["rm", "-rq", "--cached", "."]);
+    writeFileSync(join(clone, "package.json"), '{"dependencies":{"zod":"1"}}\n');
+    run(["add", "package.json"]);
+    run(["commit", "-q", "-m", "root"]);
+    const root = run(["rev-parse", "--short", "HEAD"]);
+    expect(commitMsgProblems(run, "HEAD")).toEqual([
+      expect.stringMatching(new RegExp(`^${root}: a package was added`)),
+    ]);
+  });
+
+  it("land: a tag named like a short hash never redirects the checks to another commit", () => {
+    const base = git(clone, "rev-parse", "HEAD");
+    mkdirSync(join(clone, "src"), { recursive: true });
+    writeFileSync(join(clone, "src/a.ts"), "export {};\n");
+    git(clone, "add", "src/a.ts");
+    git(clone, "commit", "-q", "-m", "src alone");
+    const blocked = git(clone, "rev-parse", "HEAD");
+    git(clone, "reset", "-q", "--hard", base);
+    const clean = commit("clean", "b.txt");
+    git(clone, "tag", clean.slice(0, 7), blocked);
+    expect(commitMsgProblems((a) => git(clone, ...a), `origin/main..${clean}`)).toEqual([]);
   });
 
   it("land: a range of one with only a Claude-Session line, or only the noreply address, is refused", () => {
