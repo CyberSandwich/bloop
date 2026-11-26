@@ -93,6 +93,11 @@
     "limit": "4.05 kB"
   },
   {
+    "name": "typed code paste, lazy",
+    "path": "dist/js/core/paste.js",
+    "limit": "0.21 kB"
+  },
+  {
     "name": "clicker keys, lazy",
     "path": "dist/js/core/clicker.js",
     "limit": "0.35 kB"
