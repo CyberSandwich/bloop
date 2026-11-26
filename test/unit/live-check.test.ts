@@ -560,9 +560,9 @@ function demo(
     if (path === "/api/drop") {
       const bytes = body as Uint8Array;
       if (over.drop) return over.drop(bytes);
-      return bytes === DROPS[0]?.bytes
-        ? ok({ status: 422, body: '{"code":"macro_content"}' })
-        : ok({ body: '{"state":"offered"}' });
+      // A site that answers each drop as it should: the code its expectation names, or offered.
+      const code = /"code":"(\w+)"/.exec(DROPS.find((x) => x.bytes === bytes)?.expect.body ?? "")?.[1];
+      return code ? ok({ status: 422, body: `{"code":"${code}"}` }) : ok({ body: '{"state":"offered"}' });
     }
     if (path === "/api/screen/end") return over.end ?? ok({ body: "{}" });
     throw new Error(`unexpected ${method} ${path}`);
@@ -576,9 +576,14 @@ function demo(
 }
 
 describe("live-check: guest drops on a demo screen", () => {
-  const one = (i: number) => [DROPS[i] as (typeof DROPS)[number]];
+  const drop = (what: string) => {
+    const d = DROPS.find((x) => x.what === `guest drop of ${what}`);
+    if (!d) throw new Error(`no drop ${what}`);
+    return d;
+  };
+  const one = (what: string) => [drop(what)];
 
-  it("the hostile drop must be macro_content and the clean one offered, each on its own ended screen", async () => {
+  it("each hostile drop must be refused with its code and the clean one offered, each on its own ended screen", async () => {
     const d = demo();
     expect(await dropMisses(ORIGIN, DROPS, d.io)).toEqual([]);
     const flow = [
@@ -588,19 +593,27 @@ describe("live-check: guest drops on a demo screen", () => {
       "PUT /api/drop Bearer pid1",
       "POST /api/screen/end Bearer ref1.secret",
     ];
-    expect(d.log).toEqual([...flow, ...flow]);
-    expect(d.closed).toEqual(["ref1.secret", "ref1.secret"]);
+    expect(d.log).toEqual(DROPS.flatMap(() => flow));
+    expect(d.closed).toEqual(DROPS.map(() => "ref1.secret"));
     expect(DROPS.map((x) => x.expect)).toEqual([
       { status: 422, body: '"code":"macro_content"' },
+      { status: 422, body: '"code":"bad_structure"' },
+      { status: 422, body: '"code":"bad_structure"' },
       { status: 200, body: '"state":"offered"' },
     ]);
   });
 
-  it("a hostile drop the site accepts is a miss", async () => {
-    const misses = await dropMisses(ORIGIN, one(0), demo({ drop: () => ok({ body: '{"state":"offered"}' }) }).io);
-    expect(misses).toEqual([
-      "guest drop of a PDF with /JavaScript in an object stream: status 200, want 422",
-      'guest drop of a PDF with /JavaScript in an object stream: body lacks "code":"macro_content"',
+  it("a hostile drop the site accepts, or refuses with another code, is a miss", async () => {
+    const js = "a PDF with /JavaScript in an object stream";
+    const accepted = demo({ drop: () => ok({ body: '{"state":"offered"}' }) });
+    expect(await dropMisses(ORIGIN, one(js), accepted.io)).toEqual([
+      `guest drop of ${js}: status 200, want 422`,
+      `guest drop of ${js}: body lacks "code":"macro_content"`,
+    ]);
+    const padded = "a PDF with forged object marks in a string past the lookback";
+    const otherCode = demo({ drop: () => ok({ status: 422, body: '{"code":"macro_content"}' }) });
+    expect(await dropMisses(ORIGIN, one(padded), otherCode.io)).toEqual([
+      `guest drop of ${padded}: body lacks "code":"bad_structure"`,
     ]);
   });
 
@@ -618,7 +631,7 @@ describe("live-check: guest drops on a demo screen", () => {
       ],
     ] as const) {
       const d = demo(over);
-      expect(await dropMisses(ORIGIN, one(1), d.io)).toEqual([`guest drop of a clean PDF: ${miss}`]);
+      expect(await dropMisses(ORIGIN, one("a clean PDF"), d.io)).toEqual([`guest drop of a clean PDF: ${miss}`]);
       expect(d.log.at(-1)).toBe("POST /api/screen/end Bearer ref1.secret");
       // A socket that never opened has nothing to close; one that did is closed whatever failed after it.
       expect(d.closed).toEqual("socket" in over ? [] : ["ref1.secret"]);
@@ -627,20 +640,28 @@ describe("live-check: guest drops on a demo screen", () => {
 
   it("a screen that could not be made has nothing to end; an end that fails is a miss", async () => {
     const none = demo({ create: ok({ status: 503, body: "{}" }) });
-    expect(await dropMisses(ORIGIN, one(1), none.io)).toEqual([
+    expect(await dropMisses(ORIGIN, one("a clean PDF"), none.io)).toEqual([
       "guest drop of a clean PDF: screen create answered 503",
     ]);
     expect(none.log).toEqual(["POST /api/screens"]);
     const stuck = demo({ end: ok({ status: 500, body: "{}" }) });
-    expect(await dropMisses(ORIGIN, one(1), stuck.io)).toEqual(["guest drop of a clean PDF: screen end answered 500"]);
+    expect(await dropMisses(ORIGIN, one("a clean PDF"), stuck.io)).toEqual([
+      "guest drop of a clean PDF: screen end answered 500",
+    ]);
   });
 
   it("the drop bytes are the corpus fixtures: the hostile one hides its JavaScript in a compressed stream", () => {
     const text = (b: Uint8Array) => new TextDecoder("latin1").decode(b);
-    expect(text(DROPS[0]?.bytes as Uint8Array)).not.toContain("JavaScript");
-    expect(text(DROPS[1]?.bytes as Uint8Array).startsWith("%PDF-")).toBe(true);
+    const js = drop("a PDF with /JavaScript in an object stream").bytes;
+    expect(text(js)).not.toContain("JavaScript");
+    expect(text(drop("a clean PDF").bytes).startsWith("%PDF-")).toBe(true);
     const built = (list: typeof HOSTILE | typeof CLEAN, name: string) => list.find(([n]) => n === name)?.[1]();
-    expect(DROPS[0]?.bytes).toEqual(built(HOSTILE, "JS in an object stream"));
-    expect(DROPS[1]?.bytes).toEqual(built(CLEAN, "LaTeX hyperref"));
+    const forged = "forged marks in a string of an object stream dictionary";
+    expect(js).toEqual(built(HOSTILE, "JS in an object stream"));
+    expect(drop("a PDF with forged object marks in a string").bytes).toEqual(built(HOSTILE, forged));
+    const padded = drop("a PDF with forged object marks in a string past the lookback").bytes;
+    expect(padded).toEqual(built(HOSTILE, `${forged}, the string longer than the lookback`));
+    expect(padded.length).toBeGreaterThan(4096);
+    expect(drop("a clean PDF").bytes).toEqual(built(CLEAN, "LaTeX hyperref"));
   });
 });

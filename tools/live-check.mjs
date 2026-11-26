@@ -506,16 +506,32 @@ function screenSocket(url, origin, sid) {
   });
 }
 
-/** The guest drops: each on its own demo screen, which is ended whatever the drop answers. */
+const FORGED = "forged marks in a string of an object stream dictionary";
+
+/**
+ * The guest drops: each on its own demo screen, which is ended whatever the drop answers. A refused action name is
+ * macro_content; a scan that can only answer "unscannable" is bad_structure (validate.ts).
+ */
 export const DROPS = [
-  { what: "a PDF with /JavaScript in an object stream", fixture: HOSTILE, name: "JS in an object stream" },
-  { what: "a clean PDF", fixture: CLEAN, name: "LaTeX hyperref" },
-].map(({ what, fixture, name }) => {
+  {
+    what: "a PDF with /JavaScript in an object stream",
+    fixture: HOSTILE,
+    name: "JS in an object stream",
+    code: "macro_content",
+  },
+  { what: "a PDF with forged object marks in a string", fixture: HOSTILE, name: FORGED, code: "bad_structure" },
+  {
+    what: "a PDF with forged object marks in a string past the lookback",
+    fixture: HOSTILE,
+    name: `${FORGED}, the string longer than the lookback`,
+    code: "bad_structure",
+  },
+  { what: "a clean PDF", fixture: CLEAN, name: "LaTeX hyperref", code: null },
+].map(({ what, fixture, name, code }) => {
   const build = fixture.find(([n]) => n === name)?.[1];
   if (!build) throw new Error(`live-check: test/pdf-corpus.ts has no fixture "${name}"`);
   /** @type {Expect} */
-  const expect =
-    fixture === HOSTILE ? { status: 422, body: '"code":"macro_content"' } : { status: 200, body: '"state":"offered"' };
+  const expect = code ? { status: 422, body: `"code":"${code}"` } : { status: 200, body: '"state":"offered"' };
   return { what: `guest drop of ${what}`, bytes: build(), expect };
 });
 
