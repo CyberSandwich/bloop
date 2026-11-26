@@ -18,7 +18,7 @@ export default defineConfig<{ mode: Mode }>({
     { name: "preview-restore", testMatch: /restore\.setup/ },
     {
       name: "open",
-      testMatch: [/landing-open/, /mode\.spec/, /a11y\.spec/, /mobile\.spec/],
+      testMatch: [/s5-shots/, /landing-open/, /mode\.spec/, /a11y\.spec/, /mobile\.spec/],
       dependencies: ["open-setup"],
       use: { mode: "open" },
     },
