@@ -18,7 +18,7 @@ export function uploadStart(m: Machine, ev: EventOf<"upload.start">): Step {
 
 /**
  * How far the send has got, for the screen's pill. Monotonic: a lower count than stored (a part report that arrived
- * late) changes nothing, so the pill never moves back.
+ * late) changes nothing, so the pill never moves back. The first report fixes the total; another total is refused.
  */
 export function uploadProgress(m: Machine, ev: EventOf<"upload.progress">): Step {
   const { bytes, total } = ev;
@@ -27,7 +27,8 @@ export function uploadProgress(m: Machine, ev: EventOf<"upload.progress">): Step
   }
   if (m.state !== "uploading") return fail("wrong_state");
   const held = m.upload ?? null;
-  if (held && held.total === total && bytes <= held.bytes) return ok(m);
+  if (held && held.total !== total) return fail("bad_request");
+  if (held && bytes <= held.bytes) return ok(m);
   return ok({ ...m, upload: { bytes, total } }, [{ fx: "push", to: "screen" }]);
 }
 

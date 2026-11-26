@@ -141,6 +141,7 @@ export interface DemoCap {
  * differ. `rand(n)` answers a uniform integer in [0, n); the Screen object passes `randomInt` (ids.ts).
  */
 export function drawChoices(match: string, rand: (n: number) => number): string[] {
+  if (!/^\d{2}$/.test(match)) throw new RangeError("match: two digits");
   const swap = `${match[1]}${match[0]}`;
   const decoys: string[] = [];
   for (let n = 0; n < 100; n++) {

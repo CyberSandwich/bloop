@@ -11,14 +11,19 @@ const walk = (dir: string): string[] =>
     return statSync(join(root, path)).isDirectory() ? walk(path) : [path];
   });
 
-/** `<file>: commit <n>` for every marker still allowed. */
-const ALLOWED = ["src/worker/machine/pairing.ts: commit 3", "src/worker/machine/lists.ts: commit 5"];
+/** `<file>: <owner>` for every marker still allowed: a P1 commit, or the stream that fills a seam. */
+const ALLOWED = [
+  "src/worker/machine/pairing.ts: P1 commit 3",
+  "src/worker/machine/lists.ts: P1 commit 5",
+  "src/worker/do/screen.ts: P1 commit 6",
+  "src/worker/do/effects.ts: R9",
+];
 
 describe("transitional seams", () => {
-  it("every `transitional: removed in P1 commit N` marker is one still allowed, and each allowed one is present", () => {
+  it("every `transitional: removed in <owner>` marker is one still allowed, and each allowed one is present", () => {
     const found = walk("src").flatMap((path) =>
-      [...readFileSync(join(root, path), "utf8").matchAll(/transitional: removed in P1 commit (\d+)/g)].map(
-        (m) => `${path}: commit ${m[1]}`,
+      [...readFileSync(join(root, path), "utf8").matchAll(/transitional: removed in (P1 commit \d+|R\d+)/g)].map(
+        (m) => `${path}: ${m[1]}`,
       ),
     );
     expect(found.sort()).toEqual([...ALLOWED].sort());

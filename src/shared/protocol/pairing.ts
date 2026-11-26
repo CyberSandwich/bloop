@@ -96,6 +96,8 @@ export type Sound = "on" | "off" | "blocked";
  */
 export interface ShownCommand extends Shown {
   seq: number;
+  /** The screen's report: the `v` of the last view it applied, so a report from before a phone turn is dropped. */
+  base?: number | undefined;
 }
 
 export interface ScreenView {
