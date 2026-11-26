@@ -5,6 +5,7 @@ import { execFileSync } from "node:child_process";
 import { readdirSync, realpathSync } from "node:fs";
 import { basename, dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
+import { wranglerConfig } from "./wrangler-config.mjs";
 
 /** Trailers and footers that attribute a commit to an AI tool (CLAUDE.md: commits carry none). */
 const ATTRIBUTION = [
@@ -34,6 +35,26 @@ export function conflictCopies(gitDir) {
     if (!userNamed && / \d+(\.[^/]*)?$/.test(d.name)) found.push(join(d.parentPath, d.name));
   }
   return found.sort();
+}
+
+/**
+ * Why `head`'s Durable Object migration steps break the shipped ones, one line each: a shipped step is never edited,
+ * removed or moved, and each new step's tag is the next `v<n>` after the last shipped one (wrangler applies tags in
+ * order, once each).
+ * @param {{ tag: string }[]} shipped @param {{ tag: string }[]} head @returns {string[]}
+ */
+export function migrationProblems(shipped, head) {
+  const changed = shipped
+    .filter((step, i) => JSON.stringify(head[i]) !== JSON.stringify(step))
+    .map((step) => `Durable Object migration ${step.tag} was edited or removed: a shipped step never changes`);
+  if (changed.length > 0) return changed;
+  const last = shipped.at(-1)?.tag ?? "v0";
+  const n = /^v(\d+)$/.exec(last);
+  if (!n) return [`cannot number after the shipped Durable Object migration tag ${last}`];
+  return head.slice(shipped.length).flatMap((step, k) => {
+    const want = `v${Number(n[1]) + k + 1}`;
+    return step.tag === want ? [] : [`new Durable Object migration tag ${step.tag} must be ${want}: renumber it`];
+  });
 }
 
 /**
@@ -70,6 +91,20 @@ export function refusals({ cwd, sha, remote = "origin", branch = "main" }) {
   for (const line of git(["log", "--format=%h%x00%B%x01", `${tip}..${sha}`]).split("\x01")) {
     const [hash = "", body = ""] = line.trim().split("\0");
     if (hash && attributed(body)) problems.push(`${hash} carries AI attribution in its message`);
+  }
+  const steps = (/** @type {string} */ rev) => {
+    try {
+      git(["cat-file", "-e", `${rev}:wrangler.jsonc`]);
+    } catch {
+      return null;
+    }
+    return wranglerConfig(git(["show", `${rev}:wrangler.jsonc`])).migrations ?? [];
+  };
+  try {
+    const [shipped, head] = [steps(tip), steps(sha)];
+    if (shipped && head) problems.push(...migrationProblems(shipped, head));
+  } catch (e) {
+    problems.push(`cannot read wrangler.jsonc migrations: ${/** @type {Error} */ (e).message}`);
   }
   return problems;
 }
