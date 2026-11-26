@@ -980,6 +980,7 @@ export async function spendBlockCheck(table, deps) {
   let why;
   try {
     const res = await deps.fetch(url, { signal: AbortSignal.timeout(10_000) });
+    /** @type {any} */
     const body = await res.json().catch(() => null);
     if (res.ok && body?.status === "ok") return `spend block: none seen (${url} answers)`;
     why = `answered ${res.status}`;
