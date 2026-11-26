@@ -6,6 +6,7 @@ import { describe, expect, it } from "vitest";
 import { ERRORS } from "../../public/js/shared/errors.js";
 import { APP_ERRORS } from "../../public/js/shared/errors-app.js";
 import { CONFIG_VARS } from "../../src/worker/config.ts";
+import { importClosure, withModulePreload } from "../../tools/build-assets.mjs";
 import { sizeEntries } from "../size-entries.ts";
 
 const ROOT = fileURLToPath(new URL("../../", import.meta.url));
@@ -230,19 +231,7 @@ describe("error table", () => {
 });
 
 /** What a page downloads before any import(): its module script and every module reached by static imports. */
-function firstLoad(script: string): string[] {
-  const seen = new Set<string>();
-  const stack = [script];
-  while (stack.length) {
-    const file = stack.pop() as string;
-    if (seen.has(file)) continue;
-    seen.add(file);
-    for (const m of read(file).matchAll(/^\s*(?:(?:import|export)\s[^;'"]*?from\s*|import\s+)"(\.[^"]+)"/gm)) {
-      stack.push(posix.join(posix.dirname(file), m[1] as string));
-    }
-  }
-  return [...seen].sort();
-}
+const firstLoad = (script: string): string[] => importClosure(script, read);
 
 describe("size budgets", () => {
   const measured = sizeEntries();
@@ -284,6 +273,31 @@ describe("size budgets", () => {
       Object.fromEntries(scripts.map((s) => [s, [firstLoad(s)]])),
     );
     expect(pageEntries).toHaveLength(scripts.length);
+  });
+
+  it("O1: each page preloads exactly the modules its first-load budget holds, less the script itself", () => {
+    const pages = walk("public", (path) => path.endsWith(".html"));
+    let checked = 0;
+    for (const page of pages) {
+      const script = /<script type="module" src="\/([^"]+)"/.exec(read(page))?.[1];
+      if (!script) continue;
+      const links = [
+        ...withModulePreload(read(page), (rel) => read(`public/${rel}`)).matchAll(
+          /<link rel="modulepreload" href="\/([^"]+)">/g,
+        ),
+      ]
+        .map((m) => `public/${m[1]}`)
+        .sort();
+      const budget = pageEntries.find((e) => [e.path].flat().includes(`public/${script}`));
+      expect(links, page).toEqual(
+        [budget?.path]
+          .flat()
+          .filter((p) => p !== `public/${script}`)
+          .sort(),
+      );
+      checked++;
+    }
+    expect(checked).toBeGreaterThan(8);
   });
 
   it("every browser module is in a first-load or a lazy entry, never in both", () => {
