@@ -15,6 +15,7 @@ import {
   MAX_MINUTES,
   must,
   offered,
+  pastStart,
   sec,
   T0,
   violations,
@@ -380,18 +381,22 @@ describe("machine: open, fetch, fallback", () => {
     expect(step.effects).toContainEqual({ fx: "push", to: "both" });
   });
 
-  it("an approve names the account the phone has now, keeping the claim's when it has none", () => {
-    const claimed = claimedOwner();
-    const signedIn = must(claimed, {
-      e: "approve",
-      now: T0 + sec(10),
-      items: [asItem(DECK)],
-      minutes: 90,
+  it("an approve keeps the claim's user: a pinned user is final", () => {
+    const pinned = must(waiting(), {
+      e: "claim",
+      now: T0 + sec(1),
+      code: "AAAAAA",
+      sessionId: "s1",
+      secretHash: "hash",
+      match: "42",
+      kind: "owner",
       userId: "u1",
+      passHash: null,
     }).next;
-    expect(signedIn.pairing?.userId).toBe("u1");
-    const noChange = must(claimed, { e: "approve", now: T0 + sec(10), items: [asItem(DECK)], minutes: 90 }).next;
-    expect(noChange.pairing?.userId).toBeNull();
+    const next = must(pinned, { e: "approve", now: T0 + sec(10), items: [asItem(DECK)], minutes: 90 }).next;
+    expect(next.pairing?.userId).toBe("u1");
+    const unsigned = must(claimedOwner(), { e: "approve", now: T0 + sec(10), items: [asItem(DECK)], minutes: 90 });
+    expect(unsigned.next.pairing?.userId).toBeNull();
   });
 });
 
@@ -554,7 +559,7 @@ describe("machine: timers", () => {
   });
 
   it("ends an approved session by itself at the maximum, with reason auto (PC-04)", () => {
-    const m = approved(T0 + sec(10));
+    const m = pastStart(approved(T0 + sec(10)));
     const due = T0 + sec(10) + MAX_MINUTES * 60_000;
     expect(must(m, { e: "timer", now: due - 1 }).next).toBe(m);
     const { next, effects } = must(m, { e: "timer", now: due });
@@ -638,7 +643,9 @@ describe("machine: nextDeadline", () => {
       nextDeadline(must(claimedGuest(), { e: "upload.start", now: T0 + sec(5), timeoutSeconds: 900 }).next, CFG),
     ).toBe(T0 + sec(905));
     expect(nextDeadline(offered(T0 + sec(10)), CFG)).toBe(T0 + sec(311));
-    expect(nextDeadline(approved(T0 + sec(10)), CFG)).toBe(T0 + sec(10) + 90 * 60_000);
+    // An approved session first waits for its start (REL-16), then for its end.
+    expect(nextDeadline(approved(T0 + sec(10)), CFG)).toBe(T0 + sec(10) + sec(15));
+    expect(nextDeadline(pastStart(approved(T0 + sec(10))), CFG)).toBe(T0 + sec(10) + 90 * 60_000);
     expect(nextDeadline(closed(), CFG)).toBeNull();
   });
 });

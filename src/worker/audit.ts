@@ -1,6 +1,6 @@
 // AuditLog seam (docs/interfaces.md section 7). The Screen object calls `record` at each transition;
 // the D1 implementation is audit-d1.ts, picked in stores.ts.
-import type { Actor, ErrorCode, Kind, Mode } from "../shared/protocol.ts";
+import type { Actor, ErrorCode, Kind, Mode, PairingAccountError } from "../shared/protocol.ts";
 import type { AuditType, FileRef } from "./machine.ts";
 
 /** Where a session sits, so the first event can create its `session` row. Never a secret, IP or token. */
@@ -36,7 +36,7 @@ export interface AuditEvent {
     fileName?: string;
     source?: FileRef["source"];
     purpose?: string;
-    cause?: ErrorCode;
+    cause?: ErrorCode | PairingAccountError;
     reason?: string;
     bytes?: number;
     ipMatch?: boolean;

@@ -161,17 +161,10 @@ describe("PAIR-13 control: only the pairing's phone commands the screen, absolut
     expect(offered().session?.seq).toEqual({ phone: 0, screen: 0 });
   });
 
-  it("refuses wrong_state before approval, after the end, and in a live session", () => {
+  it("refuses wrong_state before approval and after the end (live rules: machine-live.test.ts)", () => {
     expect(refused(claimedOwner(), deckPage(1))).toBe("wrong_state");
     expect(refused(offered(), deckPage(1))).toBe("wrong_state");
     expect(refused(ended(), deckPage(1))).toBe("wrong_state");
-    const live = must(must(claimedOwner("live"), { e: "listed", now: T0 + sec(2), ids: ["deck-1"] }).next, {
-      e: "approve",
-      now: T0 + sec(5),
-      items: [asItem(DECK)],
-      minutes: MAX_MINUTES,
-    }).next;
-    expect(refused(live, deckPage(1))).toBe("wrong_state");
   });
 
   it("LINK-01 a link is never remote-opened: file_not_found, and nothing is stored", () => {

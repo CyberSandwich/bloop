@@ -41,6 +41,7 @@ function fakes(over: Partial<EffectDeps> = {}) {
       },
       revokeLinks: async () => void log.push("revoke"),
       purge: async (i) => void log.push(`purge ${i.file?.ref ?? "none"}`),
+      start: async (s) => void log.push(`start ${s.ok} ${s.cause ?? "none"}`),
     },
     push: (to) => void log.push(`push ${to}`),
     deleteAll: async () => void log.push("deleteAll"),

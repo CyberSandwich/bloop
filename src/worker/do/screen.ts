@@ -3,6 +3,7 @@
 // Concurrency rule: async work (hashing, drawing) happens before the check-and-`apply` pair, and
 // `apply` commits before its first await, so a credential cannot go stale between check and commit.
 import { DurableObject } from "cloudflare:workers";
+import { ERRORS } from "../../../public/js/shared/errors.js";
 import type {
   ClaimResponse,
   CodeView,
@@ -20,7 +21,15 @@ import type { Env } from "../env.ts";
 import { MAX_FRAME_BYTES, phoneFrame, screenFrame } from "../frames.ts";
 import { drawCode, drawMatch, newRef, newSecret, parseCredential, safeEqual, sha256Hex } from "../ids.ts";
 import { fileAt, type ItemDraft } from "../items.ts";
-import { createMachine, type Event, type FileRef, type Machine, nextDeadline, transition } from "../machine.ts";
+import {
+  createMachine,
+  type Event,
+  type FileRef,
+  type Machine,
+  type MachineError,
+  nextDeadline,
+  transition,
+} from "../machine.ts";
 import { ipHash, netHash } from "../routes/common.ts";
 import { effectivePolicy } from "../seams/guest-drop/index.ts";
 import { purgeGuest } from "../seams/guest-drop/purge.ts";
@@ -67,11 +76,12 @@ interface SocketAttachment {
 /** `next`: the machine the event committed, which outlives `this.m` when the event closed the object. */
 type Applied =
   | { ok: true; collided: boolean; next: Machine; minted: LinkResponse | null }
-  | { ok: false; error: ErrorCode };
+  | { ok: false; error: MachineError };
 
 type LinkVia = { method: string; client: ClientClass };
 
 const fail = (error: ErrorCode): { ok: false; error: ErrorCode } => ({ ok: false, error });
+const isErrorCode = (error: string): error is ErrorCode => Object.hasOwn(ERRORS, error);
 
 export class Screen extends DurableObject<Env> implements PairingStore {
   private meta: Meta | null;
@@ -186,14 +196,8 @@ export class Screen extends DurableObject<Env> implements PairingStore {
     return res.ok && res.value.state === "ended" ? fail("session_ended") : res;
   }
 
-  async approve(pid: string, items: ItemDraft[], userId: string | null): Promise<Result<PhoneView>> {
-    return this.phoneEvent(pid, () => ({
-      e: "approve",
-      now: Date.now(),
-      items,
-      minutes: this.sessionMinutes(),
-      userId: this.meta?.mode === "demo" ? null : userId,
-    }));
+  async approve(pid: string, items: ItemDraft[]): Promise<Result<PhoneView>> {
+    return this.phoneEvent(pid, () => ({ e: "approve", now: Date.now(), items, minutes: this.sessionMinutes() }));
   }
 
   async cancel(pid: string): Promise<Result<PhoneView>> {
@@ -262,8 +266,11 @@ export class Screen extends DurableObject<Env> implements PairingStore {
     return applied.ok ? { ok: true, value: { sessionId } } : applied;
   }
 
-  async dropDone(pid: string, file: FileRef): Promise<Result<PhoneView>> {
-    return this.phoneEvent(pid, () => ({ e: "upload.done", now: Date.now(), file }));
+  async dropDone(pid: string, file: FileRef): Promise<Result<PhoneView, ErrorCode>> {
+    const done = await this.phoneEvent(pid, () => ({ e: "upload.done", now: Date.now(), file }));
+    if (done.ok) return done;
+    // upload.start is gated by the pick, so no pick code can follow it here.
+    return fail(isErrorCode(done.error) ? done.error : "internal");
   }
 
   async dropFailed(pid: string, error: ErrorCode): Promise<Result<PhoneView>> {
