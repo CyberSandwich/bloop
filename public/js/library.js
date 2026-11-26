@@ -47,11 +47,9 @@ const els = {
   cardLine: byId("card-line"),
   cardAction: /** @type {HTMLButtonElement} */ (byId("card-action")),
   empty: byId("empty"),
-  up: byId("up"),
   upList: byId("up-list"),
   first: byId("first"),
   clear: byId("clear"),
-  files: byId("files"),
   fileList: byId("file-list"),
   trashLink: byId("trash-link"),
   trashView: byId("trash-view"),
@@ -93,9 +91,10 @@ const toaster = createToaster({
 /**
  * An open sheet is modal: the page under it is inert, so a toast there could not be pressed. The toast moves into the
  * sheet, where nothing is inert, and into the top layer above it as a popover; when no sheet is open it goes back.
+ * Every dialog on the page is a sheet (test/unit/library-modals.test.ts).
  */
 function lift() {
-  const open = document.querySelector(".lib-sheet[open]");
+  const open = document.querySelector("dialog[open]");
   if (!shown?.isConnected) return;
   // append moves the node, and a move hides a shown popover, so showPopover never finds it open.
   (open ?? document.body).append(shown);

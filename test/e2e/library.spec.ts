@@ -355,4 +355,37 @@ test.describe("library", () => {
     await expect(page.locator("#file-list > li")).toHaveCount(2);
     await expect(page.getByRole("dialog")).toBeVisible();
   });
+
+  test("a toast's Undo still works with the Empty Trash confirm open over the page", async ({ page, context }) => {
+    await page.setViewportSize({ width: 390, height: 844 });
+    await signedIn(context, members.undo);
+    await page.goto("/library");
+    await page.getByRole("button", { name: "More for Reading list.pdf" }).click();
+    await page.getByRole("dialog").getByRole("button", { name: "Move to Trash" }).click();
+    await page.getByRole("button", { name: /^Trash · 1$/ }).click();
+    await page.getByRole("button", { name: "Empty Trash" }).click();
+    await expect(page.getByRole("dialog", { name: "Empty the Trash?" })).toBeVisible();
+    await expect(page.getByRole("button", { name: "Cancel" })).toBeFocused();
+    await page.getByRole("button", { name: "Undo" }).click({ timeout: 5000 });
+    await expect(page.getByRole("dialog", { name: "Empty the Trash?" })).toBeVisible();
+    await expectNoToast(page);
+  });
+
+  test("the Present sheet's buttons sit centered from 640", async ({ page, context }) => {
+    await page.setViewportSize({ width: 700, height: 900 });
+    await signedIn(context, members.undo);
+    await page.goto("/library");
+    await page.locator("#present:visible, #present-card:visible").first().click();
+    const dialog = page.getByRole("dialog");
+    await expect(dialog).toBeVisible();
+    const buttons = dialog.locator(".buttons > .btn");
+    const [sheet, first, last] = [
+      await dialog.boundingBox(),
+      await buttons.first().boundingBox(),
+      await buttons.last().boundingBox(),
+    ];
+    const left = Math.min(first?.x ?? 0, last?.x ?? 0);
+    const right = Math.max((first?.x ?? 0) + (first?.width ?? 0), (last?.x ?? 0) + (last?.width ?? 0));
+    expect(Math.abs((sheet?.x ?? 0) + (sheet?.width ?? 0) / 2 - (left + right) / 2)).toBeLessThan(2);
+  });
 });
