@@ -19,8 +19,8 @@
 // within `DICT_LOOKBACK` bytes of its `stream` keyword and its data is at most `MAX_STREAM_BYTES`; anything else, and
 // any `/ObjStm` token or direct `/First` count outside every dictionary read so (a keyword followed by a space, a
 // dictionary too far back or split by a second `obj<<`), is refused as `unscannable`, as is a reference `/First` (an
-// outline's, or a count a reader resolves) whose object reaches a stream keyword before its `endobj` without that
-// stream's dictionary being read, and any `/Encrypt` (its streams are ciphertext). After the first object stream it
+// outline's, or a count a reader resolves) whose object reaches a stream word of any form before its `endobj` without
+// that stream's dictionary being read, and any `/Encrypt` (its streams are ciphertext). After the first object stream it
 // cannot read the scan inflates no more, but reads every name to the end. Names built at run time by a script are the
 // script's own business: `/JS` and `/JavaScript` already refuse the script.
 import { inflate, latin1 } from "./bytes.ts";
@@ -58,12 +58,13 @@ export const MAX_OBJECT_STREAMS = 4096;
 const NAME = /\/[^\x00\t\n\f\r /<>[\](){}%]+/g;
 /**
  * A dictionary opening (`obj<<`, white space bounded so every scan sees the whole match), an `endobj` keyword, or a
- * stream keyword with its EOL (CR LF, LF, or the CR alone a reader also takes) after white space or `>>`, found in one
- * pass. The left boundaries keep `/ObjStmstream` and `/endobj` names, not keywords.
+ * stream word after white space or `>>`, with its EOL (CR LF, LF, or the CR alone a reader also takes) when it is the
+ * keyword the scan reads from, found in one pass. A stream word without that EOL (`stream \n`) is matched too: a
+ * lenient reader may still take it. The left boundaries keep `/ObjStmstream` and `/endobj` names, not keywords.
  */
 const MARKS =
   // biome-ignore lint/suspicious/noControlCharactersInRegex: NUL is PDF white space
-  /(?<!end)obj[\x00\t\n\f\r ]{0,64}<<|(?<![^\x00\t\n\f\r >)\]])endobj(?![^\x00\t\n\f\r /<>[\](){}%])|(?<![^\x00\t\n\f\r >])stream(?:\r\n|\r|\n)/g;
+  /(?<!end)obj[\x00\t\n\f\r ]{0,64}<<|(?<![^\x00\t\n\f\r >)\]])endobj(?![^\x00\t\n\f\r /<>[\](){}%])|(?<![^\x00\t\n\f\r >])stream(?:\r\n|\r|\n)?/g;
 /** What follows `/First` in an outline: a reference. Anything else is an object stream's count. */
 const REFERENCE =
   // biome-ignore lint/suspicious/noControlCharactersInRegex: NUL is PDF white space
@@ -252,6 +253,11 @@ export async function scanPdfChunks(
       if (tracking()) scanNames(text, at);
       if (m[0] === "endobj") {
         refs = [];
+        continue;
+      }
+      if (m[0] === "stream") {
+        // A stream word of any form since a reference `/First`: its `endobj` no longer closes a plain object.
+        if (tracking() && refs.length > 0) stray();
         continue;
       }
       const dictStart = dictAt;

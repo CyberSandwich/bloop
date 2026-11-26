@@ -30,6 +30,8 @@ export interface PdfSpec {
   firstRef?: boolean;
   /** Spaces at the end of the object stream's dictionary, to open it out of a scanner's lookback. */
   dictPad?: number;
+  /** What follows the object stream's `stream` keyword: white space before the EOL is one a lenient reader takes. */
+  keywordEol?: string;
 }
 
 const latin1 = (s: string): Uint8Array => Uint8Array.from(s, (c) => c.charCodeAt(0) & 0xff);
@@ -44,12 +46,12 @@ export function concat(parts: Uint8Array[]): Uint8Array {
   return out;
 }
 
-const streamBytes = (num: number, s: StreamObj): Uint8Array => {
+const streamBytes = (num: number, s: StreamObj, eol = "\n"): Uint8Array => {
   const raw = typeof s.data === "string" ? latin1(s.data) : s.data;
   const data = s.flate ? new Uint8Array(deflateSync(raw)) : raw;
   const filter = s.flate ? " /Filter /FlateDecode" : "";
   return concat([
-    latin1(`${num} 0 obj\n<< ${s.dict}${filter} /Length ${data.length} >>\nstream\n`),
+    latin1(`${num} 0 obj\n<< ${s.dict}${filter} /Length ${data.length} >>\nstream${eol}`),
     data,
     latin1("\nendstream\nendobj\n"),
   ]);
@@ -104,7 +106,7 @@ export function writePdf(spec: PdfSpec): Uint8Array {
     const first = count ? `${count} 0 R` : `${header.length}`;
     const pad = " ".repeat(spec.dictPad ?? 0);
     const dict = `${spec.untyped ? "" : "/Type /ObjStm "}/N ${members.length} /First ${first}${pad}`;
-    push(stm, streamBytes(stm, { dict, data: header + data, flate: true }));
+    push(stm, streamBytes(stm, { dict, data: header + data, flate: true }, spec.keywordEol));
     if (count) push(count, latin1(`${count} 0 obj\n${header.length}\nendobj\n`));
   }
   const size = next + (spec.xref === "table" ? 0 : 1);
@@ -403,6 +405,26 @@ export const HOSTILE: [string, () => Uint8Array, string[]][] = [
         untyped: true,
         firstRef: true,
         dictPad: 5000,
+        xref: "stream",
+        trailer: "/Root 1 0 R",
+      }),
+    ["unscannable"],
+  ],
+  [
+    "JS in an untyped object stream whose /First is a reference and whose stream keyword has white space before its EOL",
+    () =>
+      writePdf({
+        version: "1.7",
+        objects: {
+          1: "<< /Type /Catalog /Pages 2 0 R /OpenAction 4 0 R >>",
+          2: "<< /Type /Pages /Kids [ 3 0 R ] /Count 1 >>",
+          3: "<< /Type /Page /Parent 2 0 R /MediaBox [ 0 0 100 100 ] >>",
+          4: "<< /S /JavaScript /JS (app.alert\\(1\\)) >>",
+        },
+        packed: [4],
+        untyped: true,
+        firstRef: true,
+        keywordEol: " \r\n",
         xref: "stream",
         trailer: "/Root 1 0 R",
       }),

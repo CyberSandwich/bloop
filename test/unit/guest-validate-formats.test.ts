@@ -314,6 +314,8 @@ describe("DROP-16 pixels: headers behind large metadata", () => {
         reads.push(n);
         return file.slice(o, o + n);
       },
+      // A plan with reads to spare: the walk's own cap is the one under test.
+      readsLeft: () => Number.POSITIVE_INFINITY,
     };
     const jpeg = WALK_LIMITS.jpeg;
     expect(await checkImageSize("jpg", counted, file.subarray(0, 1024))).toEqual({ ok: true });

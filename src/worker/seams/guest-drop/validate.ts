@@ -1,7 +1,7 @@
 // What a stored object really is (DROP-02 to DROP-04, DROP-11 to DROP-16), for every format in `FORMATS`. Range reads
 // only: the head, the zip end record and central directory, the PDF or image tail, a JPEG's or GIF's headers in small
 // blocks. The one inflate in a package is its content types and relationships parts, capped at a few hundred KB; a
-// PDF is read whole when small, else in windows. Every validator reads through the one plan `validate` makes, so a
+// PDF is scanned in windows. Every validator reads through the one plan `validate` makes, so a
 // small object is one read and a large one at most `READ_PLAN.maxReads`.
 import { inflate, latin1 } from "./bytes.ts";
 import { scanCfb } from "./cfb.ts";
@@ -21,7 +21,7 @@ import {
 import { checkImageSize } from "./image.ts";
 import { type RangeReader, readExact, ShortRead, ZIP_LIMITS } from "./index.ts";
 import { PDF_WINDOW_BYTES, scanPdfChunks } from "./pdf-scan.ts";
-import { planReads, READ_PLAN, ReadBudgetExceeded, readParts } from "./read-plan.ts";
+import { type PlannedReader, planReads, ReadBudgetExceeded, readParts } from "./read-plan.ts";
 import { checkSizes, hasEndRecord, readCentralDirectory, type ZipEntry } from "./zip.ts";
 
 /**
@@ -125,36 +125,23 @@ async function validatePackage<T extends FormatType>(
 async function validatePdf(r: RangeReader): Promise<Verdict<"pdf">> {
   if (await hasEndRecord(r)) return refuse("bad_structure");
   if (!latin1.decode(await readTail(r)).includes("%%EOF")) return refuse("bad_structure");
-  const scan =
-    r.size <= READ_PLAN.smallObjectBytes
-      ? await oneWholeScan(() => scanReads(r, r.size))
-      : await scanReads(r, PDF_WINDOW_BYTES);
+  const scan = await scanWindows(r);
   if (scan.ok) return { ok: true, type: "pdf" };
   const found = new Set("found" in scan ? scan.found : []);
   if (found.has("Encrypt")) return refuse("encrypted");
   return refuse(found.size === 1 && found.has("unscannable") ? "bad_structure" : scan.error);
 }
 
-/** The scans waiting for or running the whole-file scan, in order; each one starts when the one before it settles. */
-let wholeScans: Promise<unknown> = Promise.resolve();
-
 /**
- * Runs `scan` once no other whole-file scan runs in this isolate. One holds the file, its Latin-1 text and its inflate
- * buffers, tens of MB at the whole-read size, so two together could pass the 128 MB isolate; a windowed scan holds
- * two windows and runs at once.
+ * The PDF scan over `r` in order, one `PDF_WINDOW_BYTES` window at a time, whatever the size: a small object's windows
+ * are slices of the one read the plan made, a large one's are one metered read each. So no scan holds more than two
+ * windows of text, and none waits on another.
  */
-function oneWholeScan<T>(scan: () => Promise<T>): Promise<T> {
-  const run = wholeScans.then(scan);
-  wholeScans = run.catch(() => undefined);
-  return run;
-}
-
-/** The PDF scan over `r` read in order, `window` bytes at a time; each read is one metered class B read. */
-function scanReads(r: RangeReader, window: number): Promise<Check & { found?: string[] }> {
+function scanWindows(r: RangeReader): Promise<Check & { found?: string[] }> {
   let at = 0;
   return scanPdfChunks(async () => {
     if (at >= r.size) return null;
-    const chunk = await readExact(r, at, Math.min(window, r.size - at));
+    const chunk = await readExact(r, at, Math.min(PDF_WINDOW_BYTES, r.size - at));
     at += chunk.length;
     return chunk;
   });
@@ -167,7 +154,7 @@ function scanReads(r: RangeReader, window: number): Promise<Check & { found?: st
  * clip, a maker trailer): a browser ignores them, and the fixed type and `nosniff` keep them inert.
  */
 async function validateImage<T extends "jpg" | "png" | "gif" | "webp">(
-  r: RangeReader,
+  r: PlannedReader,
   head: Uint8Array,
   type: T,
 ): Promise<Verdict<T>> {
@@ -253,7 +240,7 @@ export async function validate<T extends FormatType>(r: RangeReader, declared: T
   }
 }
 
-async function validatePlanned<T extends FormatType>(r: RangeReader, declared: T): Promise<Verdict<T>> {
+async function validatePlanned<T extends FormatType>(r: PlannedReader, declared: T): Promise<Verdict<T>> {
   const format = FORMATS[declared];
   if (format.family === null) return validateText(r, declared);
   const head = await readExact(r, 0, Math.min(r.size, HEAD_BYTES));

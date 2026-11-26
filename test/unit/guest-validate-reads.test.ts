@@ -58,14 +58,14 @@ describe("one read plan per object, made in validate", () => {
     expect(3 + Math.ceil(MAX_OBJECT_BYTES / PDF_WINDOW_BYTES)).toBeLessThanOrEqual(READ_PLAN.maxReads);
   });
 
-  it("refuses an object over MAX_OBJECT_BYTES as too_large without reading it (no explicit size bound)", async () => {
+  it("refuses an object over MAX_OBJECT_BYTES as too_large without reading it (no upper bound on the size)", async () => {
     const read = vi.fn(async () => new Uint8Array());
     expect(await validate({ size: MAX_OBJECT_BYTES + 1, read }, "mp4")).toEqual(refused("too_large"));
     expect(read).not.toHaveBeenCalled();
   });
 
   it.each(FILES)(
-    "answers a spent read budget on a %s as bad_structure, never a throw (object left in R2)",
+    "answers a spent read budget on a %s as bad_structure (a throw left the object in R2)",
     async (type, build) => {
       const bytes = build();
       const spent = {
@@ -118,7 +118,7 @@ describe("a short read is refused, never checked as fewer bytes (readExact)", ()
     };
   };
 
-  it("refuses a large video whose tail comes back short (polyglot check on missing bytes)", async () => {
+  it("refuses a large video whose tail comes back short (the polyglot check ran on missing bytes)", async () => {
     const video = validVideo();
     const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
     expect(await validate(shortAfterHead(video, 17 * MIB), "mp4")).toEqual(refused("bad_structure"));
@@ -128,9 +128,8 @@ describe("a short read is refused, never checked as fewer bytes (readExact)", ()
     warn.mockRestore();
   });
 
-  // A compound file reads no tail, so a byte missing at its end is one no check reads.
-  it.each(FILES.filter(([type]) => type !== "doc"))(
-    "refuses a small %s whose one read comes back short",
+  it.each(FILES)(
+    "refuses a small %s whose one whole read comes back short (the checks ran on fewer bytes)",
     async (type, build) => {
       const bytes = build();
       const short = { size: bytes.length, read: async (o: number, n: number) => bytes.slice(o, o + n - 1) };
@@ -142,9 +141,8 @@ describe("a short read is refused, never checked as fewer bytes (readExact)", ()
 });
 
 describe("the codes a guest's phone knows", () => {
-  it("maps encrypted to bad_structure and service_busy to upload_aborted; every other code is its own", () => {
+  it("maps encrypted to bad_structure; every other code is its own", () => {
     expect(dropError("encrypted")).toBe("bad_structure");
-    expect(dropError("service_busy")).toBe("upload_aborted");
     for (const code of ["too_large", "bad_type", "bad_structure", "macro_content"] as const) {
       expect(dropError(code)).toBe(code);
     }

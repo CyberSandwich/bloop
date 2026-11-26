@@ -257,6 +257,13 @@ describe("DROP-13 pdf-active: hostile input", () => {
     expect(await scanPdf(read)).toEqual({ ok: true });
   });
 
+  it("DROP-13 pdf-active: refuses a reference /First whose endobj follows a stream word with white space before its EOL (endobj released it)", async () => {
+    const poc = HOSTILE.find(([name]) => name.includes("white space before its EOL"))?.[1]() as Uint8Array;
+    for (const size of [1, 64, 4096, poc.length]) {
+      expect(await chunked(poc, size), `window ${size}`).toMatchObject({ ok: false, found: ["unscannable"] });
+    }
+  });
+
   it("DROP-13 pdf-active: refuses a direct /First the scan cannot tie to an object stream it read (far or split dictionary)", async () => {
     const far = stream(`/N 1/First 4/Filter/FlateDecode${" ".repeat(5000)}/Length 9`, body);
     expect(await scanPdf(far)).toMatchObject({ ok: false, found: ["unscannable"] });

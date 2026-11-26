@@ -7,14 +7,10 @@ import { ZIP_LIMITS } from "./index.ts";
 
 /** Every type the validators know. The library takes them all; a guest takes the six `FileType`s. */
 export type FormatType = FileType | PlannedFileType;
-/**
- * A refusal code: a `DropError`, plus `encrypted` (a password protected file) and `service_busy` (a walk out of time,
- * worth a retry), which only the library has copy for.
- */
-export type Refusal = DropError | "encrypted" | "service_busy";
-/** The code a guest's phone knows for a refusal: it has no copy for `encrypted` or `service_busy`. */
-export const dropError = (error: Refusal): DropError =>
-  error === "encrypted" ? "bad_structure" : error === "service_busy" ? "upload_aborted" : error;
+/** A refusal code: a `DropError`, plus `encrypted` (a password protected file; the library's own copy). */
+export type Refusal = DropError | "encrypted";
+/** The code a guest's phone knows for a refusal: it has no copy for `encrypted`. */
+export const dropError = (error: Refusal): DropError => (error === "encrypted" ? "bad_structure" : error);
 
 /** What the first bytes say a file is. `zip` and `cfb` hold several types; the part or stream tells which. */
 type Family = "zip" | "cfb" | "pdf" | "jpg" | "png" | "gif" | "webp" | "heic" | "mp4" | "mov" | "webm";
