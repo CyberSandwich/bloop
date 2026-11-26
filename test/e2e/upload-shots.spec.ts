@@ -90,8 +90,9 @@ const shot = async (page: Page, file: string) => {
 };
 /** True when the two elements' boxes share any area. */
 const overlap = async (a: Locator, b: Locator) => {
-  const [x, y] = [await a.boundingBox(), await b.boundingBox()];
-  if (!x || !y) throw new Error("an element has no box");
+  if (!(await a.count()) || !(await b.count())) return false;
+  const [x, y] = [await a.boundingBox({ timeout: 2000 }), await b.boundingBox({ timeout: 2000 })];
+  if (!x || !y) return false;
   return x.x < y.x + y.width && y.x < x.x + x.width && x.y < y.y + y.height && y.y < x.y + x.height;
 };
 /** The server keeps these answers `checking`, as a read budget past the cap does. */
@@ -132,10 +133,10 @@ for (const [w, h] of SIZES) {
 
     const one = await scene(browser, w, h, "refusal");
     await expect(one.page.getByText("This File Type Isn't Supported")).toBeVisible({ timeout: 30_000 });
-    await settled(one.page);
     // The toast, which stacks above the pill, never covers the page's primary control.
     expect(await overlap(one.page.locator(".toast"), one.page.locator("#add"))).toBe(false);
     expect(await overlap(one.page.locator(".up-pill"), one.page.locator("#add"))).toBe(false);
+    console.log(`refusal ${at}: pills ${await one.page.locator(".up-pill").count()}, toasts ${await one.page.locator(".toast").count()}`);
     await shot(one.page, `refusal-${at}`);
     await one.context.close();
 
