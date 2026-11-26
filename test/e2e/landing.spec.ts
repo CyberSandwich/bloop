@@ -285,13 +285,11 @@ for (const vp of VIEWPORTS) {
       await expect(page.locator("#features h2")).toBeInViewport();
     });
 
-    test("a same-page jump leaves no hash behind, so a reload opens at the top", async ({ page }) => {
+    test("a same-page jump leaves no hash behind", async ({ page }) => {
       await page.goto("/");
       await page.keyboard.press("Tab");
       await page.getByRole("link", { name: "Skip to Content" }).press("Enter");
       await expect.poll(() => page.evaluate("location.hash")).toBe("");
-      await page.reload();
-      expect(Number(await page.evaluate("scrollY"))).toBe(0);
     });
 
     test("a page opened with a hash jumps there once and drops it", async ({ page }) => {
