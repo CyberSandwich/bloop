@@ -165,6 +165,24 @@ describe("the small file path", () => {
     expect(state.body.state).toBe("completed");
   });
 
+  it("a file that turns ready starts its conversion after the response: the derived row for version 1 appears", async () => {
+    const cookie = member("conv1");
+    const { bytes } = deck("clip.mp4");
+    const made = await createOf(cookie, "clip.mp4", bytes, "conv1");
+    expect((await putPart(cookie, made.body.uploadId, 1, bytes)).status).toBe(200);
+    const done = await call<{ state: string }>(cookie, "POST", `/api/uploads/${made.body.uploadId}/complete`, {});
+    expect(done.body.state).toBe("ready");
+    const select = `SELECT owner_kind AS ownerKind, status FROM derived WHERE file_id = '${made.body.fileId}' AND version = 1`;
+    let rows = wrangler.d1(select);
+    // The start runs in waitUntil, so the row may land just after the answer.
+    for (let tries = 0; tries < 50 && rows.length === 0; tries++) {
+      await new Promise((resolve) => setTimeout(resolve, 100));
+      rows = wrangler.d1(select);
+    }
+    expect(rows).toHaveLength(1);
+    expect(rows[0]).toMatchObject({ ownerKind: "library" });
+  });
+
   it("names count code points: 200 stay whole, 201 are cut to 200 with the extension, never refused", async () => {
     const cookie = member("names1");
     const { bytes } = deck("clip.mp4");
