@@ -20,7 +20,10 @@ describe("the ordering rule lives in one place", () => {
           .filter((line) => /\bmp\.(delete|abort)\(/.test(line))
           .map((line) => `${f}: ${line.trim()}`),
       );
-    expect(calls).toEqual(["pipeline.ts: await d.mp.abort(key, r2UploadId);"]);
+    expect(calls).toEqual([
+      "pipeline.ts: await d.mp.abort(key, r2UploadId);",
+      'sweep.ts: await d.mp.delete(key).catch(() => console.error(JSON.stringify({ evt: "upload_sweep_failed", step: "stranded" })));',
+    ]);
   });
 });
 

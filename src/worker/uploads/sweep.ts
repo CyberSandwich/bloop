@@ -11,6 +11,7 @@ import {
   refuseLibrary,
   releaseLibrary,
   staleChecking,
+  strandedKeys,
 } from "./quota.ts";
 import { reclaim } from "./reclaim.ts";
 import * as store from "./store.ts";
@@ -67,6 +68,18 @@ async function recheck(d: Deps, f: CheckingFile): Promise<"rechecked" | "refused
     : "skipped";
 }
 
+/** Deletes objects a crash stranded between a won release or refusal and its delete (see reclaim.ts). */
+async function strandStep(d: Deps, allotment: number, report: SweepReport, start: number): Promise<void> {
+  const keys = await strandedKeys(d.db, d.now() - CLOSED_KEEP_MS, allotment);
+  for (const key of keys) {
+    if (d.now() - start >= SWEEP_WALL_MS) {
+      report.more = true;
+      return;
+    }
+    await d.mp.delete(key).catch(() => console.error(JSON.stringify({ evt: "upload_sweep_failed", step: "stranded" })));
+  }
+}
+
 /**
  * Hourly. At most `allotment` rows of each kind (stale completes, uploads nobody can finish, files left checking),
  * within `SWEEP_WALL_MS`; closed rows past the keep window go too. A row that throws is logged by id and skipped.
@@ -99,6 +112,7 @@ export async function sweepUploads(d: Deps, allotment: number): Promise<SweepRep
     (await giveUp(d, row)) ? "released" : "skipped",
   );
   await each("checking", await staleChecking(d.db, d.now(), allotment), (f) => recheck(d, f));
+  await strandStep(d, allotment, report, start);
   report.deleted = await store.deleteClosed(d.db, d.now() - CLOSED_KEEP_MS, allotment);
   if (report.deleted >= allotment) report.more = true;
   return report;

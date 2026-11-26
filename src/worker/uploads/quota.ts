@@ -232,6 +232,22 @@ export async function staleChecking(db: Db, now: number, limit: number): Promise
   return results;
 }
 
+/**
+ * Object keys a crash can have stranded since `since`: files refused by a check, and uploads aborted after a complete
+ * took its claim (the only uploads that can hold a joined object). A delete of a key already gone is free, so the sweep
+ * repeats it until the rows age out.
+ */
+export async function strandedKeys(db: Db, since: number, limit: number): Promise<string[]> {
+  const { results } = await db
+    .prepare(
+      `SELECT r2_key AS key FROM library_file WHERE status = 'refused' AND updated_at >= ?1
+       UNION SELECT r2_key FROM upload WHERE aborted_at >= ?1 AND completing_at IS NOT NULL LIMIT ?2`,
+    )
+    .bind(since, limit)
+    .all<{ key: string }>();
+  return results.map((r) => r.key);
+}
+
 export interface Drift {
   userId: string;
   before: { used: number; reserved: number };
