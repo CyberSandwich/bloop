@@ -2,9 +2,10 @@
 // read back. Plain functions over injected deps, so a unit test runs them on node:sqlite and a fake bucket. The
 // routes (routes/uploads.ts) own the guard, the auth and the status codes; nothing here knows a Request.
 //
-// Order of every create: refusals that cost nothing, then the spend takes, then R2, then the D1 reserve, so a refused
-// request writes no row and makes no R2 call (W10). A library upload and (with the guest owner) a guest's differ only
-// in what reserve and settle do.
+// Order of every create: refusals that cost nothing, then the D1 reserve (a quota refusal is never masked by a spend
+// one), then the spend takes, then R2; a failure after the reserve releases it and refunds the takes, so a refused
+// request leaves no reservation, no take and no R2 upload (W10). A library upload and (with the guest owner) a guest's
+// differ only in what reserve and settle do.
 import type { AppError, ErrorCode } from "../../shared/protocol.ts";
 import type { BatchDb } from "../auth/db.ts";
 import type { Config } from "../config.ts";
@@ -14,15 +15,7 @@ import type { Spend } from "../spend/client.ts";
 import { refusal } from "../spend/client.ts";
 import { checkStored } from "./check.ts";
 import type { Multipart } from "./multipart.ts";
-import {
-  claimCheck,
-  markReady,
-  precheckLibrary,
-  refuseLibrary,
-  releaseLibrary,
-  reserveLibrary,
-  settleLibrary,
-} from "./quota.ts";
+import { claimCheck, markReady, refuseLibrary, releaseLibrary, reserveLibrary, settleLibrary } from "./quota.ts";
 import * as store from "./store.ts";
 import { libraryTypeOf } from "./types.ts";
 
@@ -155,42 +148,17 @@ export async function createLibrary(
   if (resumed) return resumed;
 
   const limits = { quotaBytes: library.quotaBytes, maxFiles: library.maxFiles };
-  const pre = await precheckLibrary(d.db, userId, req.bytes, limits);
-  if (pre) return no(pre);
-
-  const bytesTake = await d.spend.take("upload_user_bytes", req.bytes, userId);
-  if (!bytesTake.ok) return spendFailure(bytesTake);
-  const countTake = await d.spend.take("upload_user", 1, userId);
-  if (!countTake.ok) {
-    await d.spend.refund(bytesTake.ticket);
-    return spendFailure(countTake);
-  }
-  const refundTakes = async () => {
-    await d.spend.refund(bytesTake.ticket);
-    await d.spend.refund(countTake.ticket);
-  };
-
-  const classA = await d.spend.charge("A", 1);
-  if (!classA.ok) {
-    await refundTakes();
-    return spendFailure(classA);
-  }
+  // The reserve comes first, so a user over their quota always hears `quota_exceeded` and never a spend refusal that a
+  // concurrent request's take caused. The row carries no R2 upload id until R2 answers; every later failure releases it.
   const fileId = newRef();
   const key = `u/${userId}/${fileId}/v1/orig`;
-  let r2UploadId: string;
-  try {
-    r2UploadId = await d.mp.create(key);
-  } catch {
-    await refundTakes();
-    return no("internal");
-  }
   const now = d.now();
   const row: store.NewUpload = {
     id: newRef(),
     owner,
     fileId,
     r2Key: key,
-    r2UploadId,
+    r2UploadId: "",
     name: req.name,
     ext: type,
     bytes: req.bytes,
@@ -205,16 +173,47 @@ export async function createLibrary(
   try {
     refused = await reserveLibrary(d.db, row, limits);
   } catch {
-    // A race the guards did not see (a unique index) or a D1 fault: nothing was reserved, so undo the R2 and spend side.
-    await d.mp.abort(key, r2UploadId);
-    await refundTakes();
     return no("internal");
   }
   if (refused) {
-    await d.mp.abort(key, r2UploadId);
-    await refundTakes();
     if (refused === "twin") return (await resume(d, owner, req)) ?? no("bad_request");
     return no(refused);
+  }
+  const release = () => releaseLibrary(d.db, { id: row.id, userId, bytes: req.bytes }, d.now());
+
+  const bytesTake = await d.spend.take("upload_user_bytes", req.bytes, userId);
+  if (!bytesTake.ok) {
+    await release();
+    return spendFailure(bytesTake);
+  }
+  const countTake = await d.spend.take("upload_user", 1, userId);
+  if (!countTake.ok) {
+    await d.spend.refund(bytesTake.ticket);
+    await release();
+    return spendFailure(countTake);
+  }
+  const undo = async () => {
+    await d.spend.refund(bytesTake.ticket);
+    await d.spend.refund(countTake.ticket);
+    await release();
+  };
+
+  const classA = await d.spend.charge("A", 1);
+  if (!classA.ok) {
+    await undo();
+    return spendFailure(classA);
+  }
+  let r2UploadId: string;
+  try {
+    r2UploadId = await d.mp.create(key);
+  } catch {
+    await undo();
+    return no("internal");
+  }
+  if (!(await store.setUploadId(d.db, row.id, r2UploadId))) {
+    await d.mp.abort(key, r2UploadId);
+    await undo();
+    return no("upload_gone");
   }
   const created = await store.get(d.db, row.id);
   if (!created) return no("internal");
@@ -230,6 +229,7 @@ async function resume(
 ): Promise<Out<{ created: boolean; answer: CreateAnswer }> | null> {
   const found = await store.findOpen(d.db, owner, req.fingerprint, d.now());
   if (!found || found.bytes !== req.bytes || found.name !== req.name) return null;
+  if (found.r2UploadId === "") return no("upload_busy");
   const answer = await answerFor(d, found);
   return answer.ok ? yes({ created: false, answer: answer.value }) : answer;
 }
