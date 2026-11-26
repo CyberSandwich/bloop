@@ -90,10 +90,10 @@
 }
 @media (max-width: 360px) {
   .up-pill {
-    gap: 8px;
+    gap: 6px;
   }
   .up-act {
-    padding-inline: 4px;
+    padding-inline: 2px;
     font-size: 14px;
   }
   .up-title {
