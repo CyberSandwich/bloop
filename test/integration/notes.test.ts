@@ -3,7 +3,7 @@
 import { readFileSync } from "node:fs";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { DEMO_IDS, DEMO_ITEMS } from "../../src/shared/demo-catalog.ts";
-import { approveDemo } from "./open-client.ts";
+import { approveDemo, fetchLink, PROTOCOL_PREFIX } from "./open-client.ts";
 import { Api, claim, openScreen, startPairing } from "./pairing-client.ts";
 import type { Wrangler } from "./wrangler.ts";
 
@@ -131,7 +131,7 @@ describe("NOTES-01 phone-only: refusals", () => {
 
 describe("NOTES-01 phone-only: nothing the screen can read carries a note", () => {
   it("NOTES-01 phone-only: the screen's poll, its socket and its links hold no note, approved or shown", async () => {
-    const { screen, socket, pid } = await session();
+    const { screen, socket, pid, url } = await session();
     const approved = await api.get("/api/screen/state", screen.sid);
     expectNoNotes("poll after approval", approved.body);
     // The phone has read the notes: a view built afterward is the same state, still without them.
@@ -146,6 +146,10 @@ describe("NOTES-01 phone-only: nothing the screen can read carries a note", () =
     const polled = await api.get("/api/screen/state", screen.sid);
     expectNoNotes("poll while shown", polled.body);
     expectNoNotes("socket frames", socket.frames);
+    // A link is minted once the screen has fetched the first item and launched it (the session is then open).
+    expect((await fetchLink(url.replace(PROTOCOL_PREFIX, ""))).status).toBe(200);
+    socket.send({ t: "launched", mode: "protocol" });
+    await socket.stateWhere((v) => v.state === "opening" || v.state === "open");
     const link = await api.post("/api/screen/link", { purpose: "download", item: 0 }, { auth: screen.sid });
     expect(link.status).toBe(200);
     expectNoNotes("minted link", link.body);
