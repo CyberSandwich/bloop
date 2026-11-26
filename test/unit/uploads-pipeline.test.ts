@@ -361,7 +361,8 @@ describe("W10: a refused request leaves no row, no R2 call and no kept take", ()
     });
     expect(r.spend.calls.filter((c) => c.method === "refund")).toHaveLength(1);
     expect(r.mp.calls).toEqual([]);
-    expect(r.db.raw.prepare("SELECT count(*) AS n FROM upload").get()).toEqual({ n: 0 });
+    expect(r.db.raw.prepare("SELECT count(*) AS n FROM upload WHERE aborted_at IS NULL").get()).toEqual({ n: 0 });
+    expect(r.counters()).toEqual({ used: 0, reserved: 0 });
   });
 
   it("W10: an R2 failure at create refunds both takes and writes nothing", async () => {
@@ -379,7 +380,8 @@ describe("W10: a refused request leaves no row, no R2 call and no kept take", ()
       error: "internal",
     });
     expect(r.spend.calls.filter((c) => c.method === "refund")).toHaveLength(2);
-    expect(r.db.raw.prepare("SELECT count(*) AS n FROM upload").get()).toEqual({ n: 0 });
+    expect(r.db.raw.prepare("SELECT count(*) AS n FROM upload WHERE aborted_at IS NULL").get()).toEqual({ n: 0 });
+    expect(r.counters()).toEqual({ used: 0, reserved: 0 });
   });
 
   it("W10: a part over a refused class A charge stores nothing", async () => {
