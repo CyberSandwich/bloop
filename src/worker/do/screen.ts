@@ -44,7 +44,7 @@ import {
   protocolUri,
   refusalSession,
 } from "../seams/open-path/links.ts";
-import { ownerEnd } from "../seams/open-path/lookups.ts";
+import { accountEndRedo, ownerEnd } from "../seams/open-path/lookups.ts";
 import type { PairingStore, PhoneInfo, Result, ScreenCreated, UsedLink } from "../seams/pairing.ts";
 import { auditFor, metricsFor } from "../stores.ts";
 import { directoryStub } from "../stubs.ts";
@@ -224,9 +224,16 @@ export class Screen extends DurableObject<Env> implements PairingStore {
    * Idempotent: no pairing, another owner or an ended session changes nothing.
    */
   async endFromOwner(userId: string): Promise<Result<null>> {
-    const ev = ownerEnd(this.m, userId, Date.now());
-    const applied = ev ? await this.apply(ev) : null;
-    return !applied || applied.ok ? { ok: true, value: null } : applied;
+    const { m, meta } = this;
+    const now = Date.now();
+    const ev = ownerEnd(m, userId, now);
+    if (ev) {
+      const applied = await this.apply(ev);
+      return applied.ok ? { ok: true, value: null } : applied;
+    }
+    const redo = accountEndRedo(m);
+    if (m && meta && redo.length > 0) await runEffects(redo, { meta, prev: m, next: m, now }, this.deps());
+    return { ok: true, value: null };
   }
 
   /** Polling fallback. With no socket, a poll is also the rotation clock and keeps the screen open. */

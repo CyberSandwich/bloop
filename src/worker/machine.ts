@@ -142,7 +142,7 @@ export type Event =
   | { e: "fallback"; now: number; mode: OpenMode; item: number | null; maxMints: number } // null: the launched item; maxMints: per item, after its first link
   | { e: "cancel"; now: number }
   | { e: "restart"; now: number }
-  | { e: "end"; now: number; by: "phone" | "screen" | "system" }
+  | { e: "end"; now: number; by: "phone" | "screen" | "system" | "account" } // account: endFromOwner
   | { e: "socket"; now: number; open: number } // open socket count
   | { e: "timer"; now: number };
 
