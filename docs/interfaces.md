@@ -25,7 +25,7 @@ export interface CodeView { code: string; expiresAt: number; qrUrl: string; }
 /** What a page may show of an approved item: no source id or URL (SRC-01). */
 export interface FileItem { kind: "file"; id: string; name: string; type: FileType; size: number | null; show?: ItemKind; derived?: DerivedFlags | null; }   // a view always sets show and derived; id: server-assigned at approval ("i1", "i2", ... in list order), opaque, unique in the session, never an index or derived from the source; size: bytes, when the source gave one
 /** https on an allowed host only (LINK-01); the screen shows a card with the host, opened by a click, never a frame. */
-export interface LinkItem { kind: "link"; id: string; url: string; title: string; }   // id: as on FileItem
+export interface LinkItem { kind: "link"; id: string; url: string; title: string; preview?: string; }   // id: as on FileItem; preview: a same-origin thumbnail path of the one shape `/yt/<11 id characters>.jpg` (PREVIEW-01), never an absolute or third-party URL, absent for a link with none; the rows show it as the thumbnail and fall back to the link glyph tile when it fails to load
 export type Item = FileItem | LinkItem;
 
 /** What the screen shows: `shown` in both views. */
@@ -236,12 +236,15 @@ export interface FileRef { source: "mock" | "graph" | "guest" | "library"; ref: 
 export type StartCause = "launch_no_fetch" | "fetch_refused" | "fo_fallback" | "timeout";
 
 // src/worker/items.ts: the item types, the order and the link rule, shared by the machine, the routes and the tests.
-export interface LinkRef { kind: "link"; id: string; ref: string; url: string; title: string; }
+export interface LinkRef { kind: "link"; id: string; ref: string; url: string; title: string; preview?: string; }
 export type FileItemRef = FileRef & { kind: "file"; id: string };
 export type ItemRef = FileItemRef | LinkRef;
 export type ItemDraft = Omit<FileItemRef, "id"> | Omit<LinkRef, "id">;   // an item before approval gives it an id
 export const MAX_ITEMS = 12;
-export const LINK_HOSTS: readonly string[];          // ["www.vevox.com"]
+export const LINK_HOSTS: readonly string[];          // ["www.vevox.com", "www.youtube.com"]
+export declare const allowedPreview: (path: string) => string | null;   // the path itself when it is exactly `/yt/<11 characters of A-Za-z0-9_->.jpg`, else null; applied beside `allowedLink` in `listEntries`, so a link with any other preview is not listed
+// src/worker/yt-thumb.ts (pure): `previewId(path)`, `previewPath(id)`, `upstreamUrl(id, origin)`, and `fetchThumb(id, fetch, origin, timeoutMs, max)`: one GET to `https://i.ytimg.com/vi/<id>/hqdefault.jpg` (redirects manual, no cookie or referrer, a timeout) answering the bytes of a 200 `image/jpeg` under the cap that starts FF D8 FF, else `{ok: false}` with no reason (the cap and timeout are constants there)
+// `GET /yt/<id>.jpg` (src/worker/routes/thumb.ts): the ids of `DEMO_THUMB_IDS` (derived from `DEMO_LINKS` previews in demo.ts) only; `RL_FETCH` per IP first; the Workers Cache API keyed by the id; 200 `image/jpeg` + `nosniff` + `Cache-Control: public, max-age=86400` (policy `thumb`), else 404 `not_found` + `no-store` (policy `api`)
 export declare function allowedLink(url: string): string | null;   // URL-parsed: https, an allowed host, no credentials, no explicit non-default port, at most 2048 characters; answers url.href, the only form an item stores
 export declare function orderItems<T extends ItemDraft>(items: readonly T[]): T[];   // every file a library file (links beside them or not): the caller's (Up Next) order; else, links alone included, files by name, then links by title
 export declare function kindOf(type: FileType): ItemKind;   // the viewer per type; a Record over FileType, so a new type fails the typecheck until it has one
@@ -506,7 +509,9 @@ export interface FileSource {
 /** The demo account and local runs. Default. `demo.ts` builds it from a deck and two photos in
  *  src/worker/seams/file-source/demo-files/, imported as raw bytes through the `rules` entry in wrangler.jsonc:
  *  Deck.pptx, Horizontal.jpg and Vertical.jpg. `DEMO_LINKS` beside it is the
- *  account's one link, Vevox (`https://www.vevox.com/`). */
+ *  account's two links, in title order (as `orderItems` sorts them; the catalog
+ *  owner, src/shared/demo-catalog.ts, holds the names): a YouTube video with its
+ *  same-origin `preview`, and Vevox (`https://www.vevox.com/`). */
 export interface MockFixture {
   id: string; name: string; type: FileType; bytes: Uint8Array;
   editedMinutesAgo: number;     // listed relative to now, so the list always looks recent
@@ -539,7 +544,7 @@ export declare class GraphFileSource implements FileSource {
 - **Errors:** 401 `auth_required`; 403 with `consent` in the body `admin_consent_required`, other 403 `source_unavailable`; 404 `file_not_found`; 429 and 503 `source_throttled`; anything else, and a network failure, `source_unavailable`.
 - **Open items (need the Entra app, F-ENTRA):** whether this listing works for both work and personal accounts, whether `/me/drive/recent` is a better call, and whether `Files.Read.Selected` can serve this flow (unverified).
 
-`source-access.ts` picks the source: `MockFileSource` for a demo screen and whenever `FILE_SOURCE=mock`; `GraphFileSource` only for a live screen under `FILE_SOURCE=graph`, for the user the session cookie names. `Access.links` holds the account's web links: `DEMO_LINKS` for the mock source, none for Graph. `listEntries` is the phone's list: `listRecent` (5 files), then every link `allowedLink` accepts, carrying the URL it normalized. `resolveListed` runs the same list at approve and builds an `ItemRef` from each entry whose id matches, so the client's ids are the only thing trusted and an id not in the list is `file_not_found`.
+`source-access.ts` picks the source: `MockFileSource` for a demo screen and whenever `FILE_SOURCE=mock`; `GraphFileSource` only for a live screen under `FILE_SOURCE=graph`, for the user the session cookie names. `Access.links` holds the account's web links: `DEMO_LINKS` for the mock source, none for Graph. `listEntries` is the phone's list: `listRecent` (5 files), then every link `allowedLink` accepts, carrying the URL it normalized; a link with a `preview` is listed only when `allowedPreview` accepts it too (PREVIEW-01). `resolveListed` runs the same list at approve and builds an `ItemRef` from each entry whose id matches, so the client's ids are the only thing trusted and an id not in the list is `file_not_found`.
 
 ## 4. `OpenPath` (`src/worker/seams/open-path/`)
 Minting and the link rules do not depend on the mode, so they are plain functions in `links.ts`; the seam (`index.ts`) is only how an accepted request is answered. `select.ts` picks the class from `OPEN_PATH_MODE`.
