@@ -274,8 +274,9 @@ label.lib-tick::before {
 .is-empty .lib-panel {
   flex-direction: column-reverse;
 }
+/* Just above the panel, whatever it holds: library.js measures it. */
 .page-library {
-  --toast-lift: 76px;
+  --toast-lift: calc(var(--panel, 68px) + 8px);
 }
 .lib-present,
 .is-empty .lib-up,
