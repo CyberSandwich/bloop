@@ -391,6 +391,15 @@ describe("latched breaker state", () => {
     expect(ledger.alertOnce("warn:x", T0 + DAY)).toBe(true);
   });
 
+  it("unalertMany forgets every key it names and no other, past the 100 keys of one statement", () => {
+    const { ledger } = rig();
+    const keys = Array.from({ length: 150 }, (_, i) => `k${i}`);
+    for (const key of [...keys, "kept"]) ledger.alertOnce(key, T0);
+    ledger.unalertMany(keys);
+    for (const key of keys) expect(ledger.alertOnce(key, T0), key).toBe(true);
+    expect(ledger.alertOnce("kept", T0)).toBe(false);
+  });
+
   it("overrides are replaced as a set and survive a restart", () => {
     const r = rig();
     r.ledger.setOverrides({ email_day: 10, convert_user_day: 5 });

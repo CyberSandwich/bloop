@@ -91,6 +91,10 @@ export class SpendGuard extends DurableObject<Vars> implements SpendOps {
     this.ledger.unalert(key);
   }
 
+  unalertMany(keys: string[]): void {
+    this.ledger.unalertMany(keys);
+  }
+
   history(days: number): History {
     return this.ledger.history(Date.now(), days);
   }

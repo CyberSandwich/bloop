@@ -493,11 +493,11 @@ export async function runBreaker(d: BreakerDeps): Promise<BreakerReport> {
 const trippedKey = (name: SwitchName, value: string) => `trip:${name}:${value}`;
 /** Mail tries per alert key per UTC day; past them the alert stays a log line until tomorrow. */
 export const ALERT_MAIL_TRIES = 6;
-/** The claims a notify holds for one alert key besides the key itself: its log line, then its mail tries. */
-export const deliveryClaims = (key: string): string[] => [
-  `log:${key}`,
-  ...Array.from({ length: ALERT_MAIL_TRIES }, (_, i) => `mail:${key}:${i + 1}`),
-];
+/** The claims a notify holds for one alert key besides the key itself: its log line and its mail tries. */
+export const deliveryClaims = (key: string): { log: string; mail: string[] } => ({
+  log: `log:${key}`,
+  mail: Array.from({ length: ALERT_MAIL_TRIES }, (_, i) => `mail:${key}:${i + 1}`),
+});
 /** Appended to the claim of the alert sent while the row could not be written, so the applied one is still sent. */
 const UNAPPLIED = ":unapplied";
 
@@ -586,10 +586,17 @@ export async function resetBreaker(
     }
   }
   const was = await d.guard.resetTrip(name);
-  // The same trip later the same day is a new event and gets its own alert, log line and mail tries.
-  if (trip)
-    for (const key of [trippedKey(name, trip.value), trippedKey(name, trip.value) + UNAPPLIED])
-      for (const claim of [key, ...deliveryClaims(key)]) await d.guard.unalert(claim);
+  // The same trip later the same day is a new event and gets its own alert, log line and mail tries. One call, not
+  // caught: a failure reaches the owner's reset instead of leaving claims held unseen.
+  if (trip) {
+    const keys = [trippedKey(name, trip.value), trippedKey(name, trip.value) + UNAPPLIED];
+    await d.guard.unalertMany(
+      keys.flatMap((key) => {
+        const { log, mail } = deliveryClaims(key);
+        return [key, log, ...mail];
+      }),
+    );
+  }
   if (was)
     await d.notify(
       {
