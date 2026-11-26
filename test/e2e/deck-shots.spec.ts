@@ -41,7 +41,8 @@ for (const [width, height] of SIZES) {
       await screen.locator("#handle").click();
       await screen.waitForTimeout(600);
       await screen.screenshot({ path: `test-results/shots/sheet-${width}.png` });
-      await screen.locator("#handle").click();
+      await screen.keyboard.press("Escape");
+      await screen.waitForTimeout(400);
     }
     await pick("Deck.pptx");
     await expect(screen.getByRole("img", { name: /^Slide 1 of 5$/ })).toBeVisible();
