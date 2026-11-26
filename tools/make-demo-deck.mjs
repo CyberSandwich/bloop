@@ -465,7 +465,7 @@ function slides() {
       [
         s.title("What the Screen Never Gets"),
         ...column("The Screen Gets", 0.8, gets, "tick"),
-        ...column("The Screen Never Gets", 6.67, never, "cross"),
+        ...column("The Screen Never Gets", 6.815, never, "cross"),
         s.textBox("Close", 0.8, 6.05, 11.73, 0.5, [
           s.para([{ t: "This sample is yours to delete. Add your own files and show them the same way.", sz: 18, color: C.ink2 }]),
         ]),
