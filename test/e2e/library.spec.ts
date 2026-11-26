@@ -369,10 +369,9 @@ test.describe("library", () => {
       await page.goto("/library");
       const head = page.locator(`${list} .row-name .head`).first();
       await expect(head).toBeVisible();
-      const lines = await head.evaluate((n) =>
-        Math.round(n.getBoundingClientRect().height / Number.parseFloat(getComputedStyle(n).lineHeight)),
-      );
-      expect(lines, "two lines").toBe(2);
+      // One 15px line is 19.5 high; the clamp stops at two.
+      const box = await head.boundingBox();
+      expect(Math.round((box?.height ?? 0) / 19.5), "two lines").toBe(2);
     });
   }
 
@@ -383,15 +382,17 @@ test.describe("library", () => {
     await page.locator("#present:visible, #present-card:visible").first().click();
     const dialog = page.getByRole("dialog");
     await expect(dialog).toBeVisible();
-    const centers = await dialog.evaluate((d) => {
-      const mid = (r: DOMRect) => r.left + r.width / 2;
-      const buttons = [...d.querySelectorAll(".buttons > .btn")].map((b) => b.getBoundingClientRect());
-      return {
-        sheet: mid(d.getBoundingClientRect()),
-        buttons: (Math.min(...buttons.map((r) => r.left)) + Math.max(...buttons.map((r) => r.right))) / 2,
-      };
-    });
-    expect(Math.abs(centers.sheet - centers.buttons)).toBeLessThan(2);
+    const buttons = dialog.locator(".buttons > .btn");
+    const [sheet, first, last] = [
+      await dialog.boundingBox(),
+      await buttons.first().boundingBox(),
+      await buttons.last().boundingBox(),
+    ];
+    const [left, right] = [
+      Math.min(first?.x ?? 0, last?.x ?? 0),
+      Math.max((first?.x ?? 0) + (first?.width ?? 0), (last?.x ?? 0) + (last?.width ?? 0)),
+    ];
+    expect(Math.abs((sheet?.x ?? 0) + (sheet?.width ?? 0) / 2 - (left + right) / 2)).toBeLessThan(2);
   });
 
   test("a toast's Undo still works with the Empty Trash confirm open over the page", async ({ page, context }) => {
