@@ -29,15 +29,18 @@ export const tile = (parts) => el("span", { class: "thumb" }, [icon(parts)]);
  */
 export function rowFace(item, thumb, date = null) {
   const [head, tail] = splitName(itemName(item));
+  // A page is shown whole on the tile (contained); a photo or a link's preview fills it (cover).
+  const pic = thumb
+    ? el("img", {
+        class: `thumb${item.kind === "file" && (item.type === "pptx" || item.type === "pdf") ? " fit" : ""}`,
+        src: thumb,
+        alt: "",
+      })
+    : null;
+  // A picture that fails to load gives way to the type tile.
+  pic?.addEventListener("error", () => pic.replaceWith(tile(itemIcon(item))), { once: true });
   return [
-    // A page is shown whole on the tile (contained); a photo fills it (cover).
-    thumb
-      ? el("img", {
-          class: `thumb${item.kind === "file" && (item.type === "pptx" || item.type === "pdf") ? " fit" : ""}`,
-          src: thumb,
-          alt: "",
-        })
-      : tile(itemIcon(item)),
+    pic ?? tile(itemIcon(item)),
     el("span", { class: "row-text" }, [
       el("span", { class: "row-name" }, [el("span", { class: "head" }, [head]), el("span", { class: "tail" }, [tail])]),
       el("span", { class: "small" }, [itemLine(item, date)]),
