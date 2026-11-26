@@ -1,5 +1,5 @@
 // The signed-out owner's claim on /a (core/early.js, present-live.md 5): the preview/open split, the code kept across
-// sign-in in sessionStorage and the claim again on return.
+// sign-in in sessionStorage (taken back by core/boot-code.js) and a kept code gone by then.
 import { beforeAll, describe, expect, it, vi } from "vitest";
 import { createStore } from "../../public/js/core/store.js";
 import type { PhoneStateKey } from "../../src/shared/protocol.ts";
@@ -24,6 +24,7 @@ beforeAll(() => {
 
 /** By a name, as client-viewer.test.ts does: the module reads DOM globals the node tsconfig has no types for. */
 const EARLY = "../../public/js/core/early.js";
+const BOOT = "../../public/js/core/boot-code.js";
 type Store = ReturnType<typeof createStore>;
 type Kept = { code: string; key: string; at: number };
 type Words = {
@@ -33,12 +34,12 @@ type Words = {
 };
 interface Early {
   keepClaim(store: Store, kept: Kept): void;
-  takeClaim(store: Store, now?: number): Kept | null;
-  resume(store: Store, claim: (...args: unknown[]) => Promise<void>, none: () => void): void;
   refused(error: string, io: unknown): Promise<void>;
   words(key: string): Words | null;
 }
 const early = (): Promise<Early> => import(EARLY);
+const takeClaim = async (store: Store, now?: number): Promise<Kept | null> =>
+  ((await import(BOOT)) as { takeClaim(s: Store, n?: number): Kept | null }).takeClaim(store, now);
 const memory = () => {
   const area = new Map<string, string>();
   return {
@@ -70,40 +71,28 @@ function io(me: unknown) {
 
 describe("the kept claim (present-live.md 5.1)", () => {
   it("is taken once: read and dropped, so a later /a never replays it", async () => {
-    const { keepClaim, takeClaim } = await early();
+    const { keepClaim } = await early();
     const { area, store } = memory();
     keepClaim(store, { code: "K7MQ9X", key: "k", at: 1000 });
     expect(area.get("bloop.resume")).toBe(JSON.stringify({ code: "K7MQ9X", key: "k", at: 1000 }));
-    expect(takeClaim(store, 2000)).toEqual({ code: "K7MQ9X", key: "k", at: 1000 });
+    expect(await takeClaim(store, 2000)).toEqual({ code: "K7MQ9X", key: "k", at: 1000 });
     expect(area.has("bloop.resume")).toBe(false);
-    expect(takeClaim(store, 2000)).toBeNull();
+    expect(await takeClaim(store, 2000)).toBeNull();
   });
 
   it("unused for 5 minutes, corrupt, or missing its key, it is none, and it is dropped all the same", async () => {
-    const { keepClaim, takeClaim } = await early();
+    const { keepClaim } = await early();
     const { area, store } = memory();
     keepClaim(store, { code: "K7MQ9X", key: "k", at: 0 });
-    expect(takeClaim(store, 300_000)).toBeNull();
-    expect(takeClaim(store, 299_999)).toBeNull();
+    expect(await takeClaim(store, 300_000)).toBeNull();
+    expect(await takeClaim(store, 299_999)).toBeNull();
     keepClaim(store, { code: "K7MQ9X", key: "k", at: 0 });
-    expect(takeClaim(store, 299_999)).not.toBeNull();
+    expect(await takeClaim(store, 299_999)).not.toBeNull();
     for (const raw of ["{", "null", '{"code":"K7MQ9X","at":0}', '{"key":"k","at":0}']) {
       area.set("bloop.resume", raw);
-      expect(takeClaim(store, 1), raw).toBeNull();
+      expect(await takeClaim(store, 1), raw).toBeNull();
       expect(area.has("bloop.resume")).toBe(false);
     }
-  });
-
-  it("resume claims the kept code as an owner with its own key, marked resumed; with none, the page goes on", async () => {
-    const { keepClaim, resume } = await early();
-    const { store } = memory();
-    const claim = vi.fn(async () => {});
-    const none = vi.fn();
-    keepClaim(store, { code: "K7MQ9X", key: "k", at: Date.now() });
-    resume(store, claim, none);
-    expect(claim).toHaveBeenCalledWith("K7MQ9X", "owner", "k", true);
-    resume(store, claim, none);
-    expect(none).toHaveBeenCalledOnce();
   });
 });
 
@@ -123,7 +112,7 @@ describe("a live code refused signed out (auth_required)", () => {
   });
 
   it("open: the early-access state; Sign In keeps the code and its key, then goes to /auth/start", async () => {
-    const { refused, takeClaim } = await early();
+    const { refused } = await early();
     const r = io({ ok: true, value: { signedIn: false, launchMode: "open" } });
     await refused("auth_required", r.io);
     expect(r.io.c.error).toBe("early");
@@ -133,7 +122,7 @@ describe("a live code refused signed out (auth_required)", () => {
     const tapped = Date.now();
     click?.({ target: new FakeElement("signin") });
     expect(assign).toHaveBeenCalledWith("/auth/start");
-    const kept = takeClaim(r.io.store);
+    const kept = await takeClaim(r.io.store);
     expect(kept).toMatchObject({ code: "K7MQ9X", key: r.io.key });
     expect(kept?.at).toBeGreaterThanOrEqual(tapped);
   });
@@ -151,17 +140,27 @@ describe("a live code refused signed out (auth_required)", () => {
     expect(r.io.claim).toHaveBeenCalledOnce();
   });
 
-  it("a kept code gone after sign-in reads Scan the Screen Again", async () => {
-    const { refused } = await early();
-    const r = io({ ok: true, value: {} });
-    await refused("code_unknown", r.io);
-    expect(r.io.c.error).toBe("rescan");
+  it("a kept code gone (unknown or expired) reads Scan the Screen Again, saying signed in only when /api/me does", async () => {
+    const { refused, words } = await early();
+    const cases = [
+      ["code_unknown", { ok: true, value: { signedIn: true } }, "You're signed in now"],
+      ["code_expired", { ok: true, value: { signedIn: true } }, "You're signed in now"],
+      ["code_unknown", { ok: true, value: { signedIn: false } }, "while you were away"],
+      ["code_expired", { ok: false, error: "offline" }, "while you were away"],
+    ] as const;
+    for (const [error, me, says] of cases) {
+      const r = io(me);
+      await refused(error, r.io);
+      expect(r.io.c.error, error).toBe("rescan");
+      expect(r.io.claim).not.toHaveBeenCalled();
+      expect(words("rescan")?.body, JSON.stringify(me)).toContain(says);
+    }
   });
 });
 
 describe("the early-access words (present-live.md 6)", () => {
   it("follow the spec and the voice rules: Title Case labels, no dashes", async () => {
-    const { words } = await early();
+    const { words, refused } = await early();
     const e = words("early");
     expect(e?.title).toBe("Early Access Only");
     expect(e?.body).toBe(
@@ -174,11 +173,15 @@ describe("the early-access words (present-live.md 6)", () => {
       ["Sign In", "primary"],
     ]);
     expect(e?.actions[1]).toMatchObject({ waitlist: true, href: expect.stringContaining("source=phone") });
+    await refused("code_unknown", io({ ok: true, value: { signedIn: true } }).io);
     const r = words("rescan");
     expect(r?.title).toBe("Scan the Screen Again");
     expect(r?.body).toBe("The code changed while you signed in. You're signed in now, so one scan is all it takes.");
     expect(r?.actions.map((a) => a.label)).toEqual(["Enter the Code"]);
-    for (const copy of [e, r]) {
+    await refused("code_unknown", io({ ok: true, value: { signedIn: false } }).io);
+    const out = words("rescan");
+    expect(out?.body).toBe("The code on the screen changed while you were away. One scan picks it up again.");
+    for (const copy of [e, r, out]) {
       for (const text of [copy?.title ?? "", copy?.body ?? "", ...(copy?.actions ?? []).map((a) => a.label)])
         expect(text).not.toMatch(/[–—!]/);
       for (const label of [copy?.title ?? "", ...(copy?.actions ?? []).map((a) => a.label)])

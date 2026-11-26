@@ -74,7 +74,7 @@
       "dist/js/shared/names.js",
       "dist/js/shared/session.js"
     ],
-    "limit": "16.6 kB"
+    "limit": "16.7 kB"
   },
   {
     "name": "typed code JS",
@@ -178,7 +178,7 @@
   {
     "name": "phone early access, lazy",
     "path": "dist/js/core/early.js",
-    "limit": "0.85 kB"
+    "limit": "0.78 kB"
   },
   {
     "name": "phone guest send, lazy",
