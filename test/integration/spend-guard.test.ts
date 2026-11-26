@@ -13,13 +13,25 @@ beforeAll(async () => {
 });
 afterAll(() => w?.stop());
 
+/** The reply fields these tests read; each rpc method fills only its own. */
+type Reply = {
+  ok: boolean;
+  leaseId: string;
+  retryAfterSeconds: number;
+  counters: Record<"demo_session" | "export_user", { day: number }>;
+  pools: { convert: unknown };
+  trips: string[];
+  series: { email: [number, ...number[]] };
+  ageDays: number;
+};
+
 /** `/rpc` reaches the global instance, `/rpc/public` the public one. */
 const rpcTo =
   (prefix: string) =>
-  async (method: string, ...args: unknown[]) => {
+  async <T = Reply>(method: string, ...args: unknown[]): Promise<T> => {
     const res = await fetch(`${w.url}${prefix}/${method}`, { method: "POST", body: JSON.stringify(args) });
     expect(res.status, await res.clone().text()).toBe(200);
-    return (await res.json()) as any;
+    return (await res.json()) as T;
   };
 const rpc = rpcTo("/rpc");
 const publicRpc = rpcTo("/rpc/public");
@@ -41,8 +53,8 @@ describe("COST-14 COST-13 concurrent takes against the real object", () => {
       expect(out.filter((r) => r.ok)).toHaveLength(3);
       const refused = out.find((r) => !r.ok);
       expect(refused).toMatchObject({ reason: "cap_hit", meter: "export_user", scope: "own", period: "day" });
-      expect(refused.retryAfterSeconds).toBeGreaterThan(0);
-      expect(refused.retryAfterSeconds).toBeLessThanOrEqual(86_400);
+      expect(refused?.retryAfterSeconds).toBeGreaterThan(0);
+      expect(refused?.retryAfterSeconds).toBeLessThanOrEqual(86_400);
     });
   });
 
@@ -67,7 +79,7 @@ describe("COST-01 COST-02 leases against the real object", () => {
     const held = out.filter((r) => r.ok);
     expect(held).toHaveLength(3);
     expect(out.find((r) => !r.ok)).toMatchObject({ reason: "busy" });
-    expect(await rpc("release", held[0].leaseId)).toBe(true);
+    expect(await rpc("release", held[0]?.leaseId)).toBe(true);
     expect((await rpc("acquire", "convert", 600, "u")).ok).toBe(true);
     expect((await rpc("snapshot")).pools.convert).toEqual({ live: 3 });
   });
@@ -127,7 +139,11 @@ describe("the client fails closed and the breaker latches over the real object",
       const before = (await publicRpc("snapshot")).counters.demo_session.day;
       for (let i = before; i < 5; i++) expect((await publicRpc("take", "demo_session", 1)).ok).toBe(true);
       expect((await publicRpc("take", "demo_session", 1)).ok).toBe(false);
-      const run = async () => (await (await fetch(`${w.url}/breaker`, { method: "POST" })).json()) as any;
+      const run = async () =>
+        (await (await fetch(`${w.url}/breaker`, { method: "POST" })).json()) as {
+          report: { tripped: string[] };
+          rows: Record<string, string>;
+        };
       const first = await run();
       expect(first.report.tripped).toEqual(["demo"]);
       expect(first.rows.demo).toBe("off");
@@ -150,7 +166,7 @@ describe("the client fails closed and the breaker latches over the real object",
       expect(history.series.email).toHaveLength(33);
       expect(history.series.email[0]).toBe(before + 3);
       expect(history.ageDays).toBe(0);
-      const stored = JSON.parse(await rpc("report"));
+      const stored = JSON.parse(await rpc<string>("report"));
       expect(stored.meters.map((m: { meter: string }) => m.meter)).toContain("container_seconds");
       expect(stored.adminUrl).toMatch(/\/admin$/);
     });

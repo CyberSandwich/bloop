@@ -121,7 +121,11 @@ const reportOf = (
     adminUrl: "https://bloop.example/admin",
     sources: "counters only (no CF_ANALYTICS_TOKEN)",
   });
-const rowOf = (rep: SpendReport, m: string) => rep.meters.find((x) => x.meter === m)!;
+const rowOf = (rep: SpendReport, m: string) => {
+  const row = rep.meters.find((x) => x.meter === m);
+  if (!row) throw new Error(`no ${m} row in the report`);
+  return row;
+};
 
 describe("the report", () => {
   it("a cap.email_day row lowers the email ceiling the report and the breaker use", () => {
