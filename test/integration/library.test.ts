@@ -253,6 +253,19 @@ describe("trash, restore and Delete Now", () => {
     expect((await call("ann", "GET", "/api/library?view=trash")).body.files).toEqual([]);
   });
 
+  it("a retried Delete Now of a file that is already due still starts the purge", async () => {
+    seed([file("r1", "bob", { trashed_at: now - 5000, purge_after: now - 1000 })]);
+    const again = await call("bob", "POST", "/api/library/trash/delete", { ids: ["r1"] });
+    expect([again.status, again.body.due]).toEqual([202, 0]);
+    const until = Date.now() + 20_000;
+    let status: unknown = "ready";
+    while (status !== "purged" && Date.now() < until) {
+      status = wrangler.d1("SELECT status FROM library_file WHERE id = 'r1'")[0]?.status;
+      if (status !== "purged") await new Promise((r) => setTimeout(r, 500));
+    }
+    expect(status).toBe("purged");
+  });
+
   it("empties the trash with all, and an empty body is refused", async () => {
     seed([file("e1", "bob", { trashed_at: now, purge_after: now + 86_400_000 })]);
     const emptied = await call("bob", "POST", "/api/library/trash/delete", {
