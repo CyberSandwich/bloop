@@ -6,6 +6,7 @@ import { DEMO_ITEMS } from "../../../shared/demo-catalog.ts";
 import type { LinkEntry } from "../../../shared/protocol.ts";
 import deck from "./demo-files/demo-deck.pptx";
 import horizontal from "./demo-files/demo-horizontal.jpg";
+import notes from "./demo-files/demo-notes.json";
 import vertical from "./demo-files/demo-vertical.jpg";
 import { MockFileSource } from "./mock.ts";
 
@@ -18,6 +19,7 @@ export const demoSource = (): MockFileSource =>
       bytes: new Uint8Array(deck),
       editedMinutesAgo: 10,
       pdfId: null,
+      notes,
     },
     {
       id: DEMO_ITEMS.horizontal.id,

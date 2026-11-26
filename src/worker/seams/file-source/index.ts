@@ -48,4 +48,12 @@ export interface FileSource {
     ctx: SourceContext,
     fileId: string,
   ): Promise<{ ok: true; file: Resolved } | { ok: false; error: SourceError | "pdf_unavailable" }>;
+  /**
+   * Speaker notes, one entry per page, "" for a page with none; `[]` for a file that has none. Phone-only: the route
+   * answers the pairing's pid and nothing else carries them (NOTES-01). A source with no notes leaves this out.
+   */
+  notes?(
+    ctx: SourceContext,
+    fileId: string,
+  ): Promise<{ ok: true; notes: string[] } | { ok: false; error: SourceError }>;
 }

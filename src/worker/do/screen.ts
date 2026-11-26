@@ -4,6 +4,7 @@
 // `apply` commits before its first await, so a credential cannot go stale between check and commit.
 import { DurableObject } from "cloudflare:workers";
 import { ERRORS } from "../../../public/js/shared/errors.js";
+import { IN_SESSION } from "../../../public/js/shared/session.js";
 import type {
   ClaimResponse,
   CodeView,
@@ -12,6 +13,7 @@ import type {
   LinkResponse,
   LinkSet,
   MatchResponse,
+  Mode,
   OpenMode,
   PhoneItemExtra,
   PhoneView,
@@ -25,7 +27,7 @@ import { convertDepsFor } from "../convert/deps.ts";
 import type { Env } from "../env.ts";
 import { MAX_FRAME_BYTES, phoneFrame, screenFrame } from "../frames.ts";
 import { drawCode, drawMatch, newRef, newSecret, parseCredential, randomInt, safeEqual, sha256Hex } from "../ids.ts";
-import { fileAt, type ItemDraft } from "../items.ts";
+import { type FileItemRef, fileAt, type ItemDraft } from "../items.ts";
 import {
   createMachine,
   type Event,
@@ -447,6 +449,25 @@ export class Screen extends DurableObject<Env> implements PairingStore {
     const auth = await this.phoneAuth(pid);
     if (!auth.ok) return auth;
     return this.phoneResult(auth.hash);
+  }
+
+  /**
+   * The item the phone asks speaker notes for, from the session's own list (NOTES-01): its file ref, or null for a link,
+   * which has none. The route asks the source; nothing here carries notes, so no view or frame can.
+   */
+  async noteItem(
+    pid: string,
+    id: string,
+  ): Promise<Result<{ file: FileItemRef | null; mode: Mode; userId: string | null }>> {
+    const auth = await this.phoneAuth(pid);
+    if (!auth.ok) return auth;
+    const { m, meta } = this;
+    if (!m || !meta) return fail("screen_gone");
+    if (!this.phoneMatches(auth.hash) || !m.pairing) return fail("pairing_invalid");
+    if (!IN_SESSION.includes(m.state) || !m.session) return fail("wrong_state");
+    const item = m.session.items.find((i) => i.id === id);
+    if (!item) return fail("file_not_found");
+    return { ok: true, value: { file: item.kind === "file" ? item : null, mode: meta.mode, userId: m.pairing.userId } };
   }
 
   async beginDrop(pid: string, length: number): Promise<Result<{ sessionId: string }>> {
