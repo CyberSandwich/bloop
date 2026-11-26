@@ -1140,16 +1140,20 @@ a.row:focus-visible {
     padding: 0 12px;
   }
 }
-/* The match pick (present-live.md 3.2): the legend over three choices sharing a row, one row held landscape. Its
-   boxes are here, so a.html's skeleton pills and core/match.js's choices are the same size. */
+/* The match pick (present-live.md 3.2): the legend over three choices sharing a row, one row on a short window. Its
+   boxes are here, so a.html's skeleton pills and core/match.js's choices are the same size. `all: unset` drops a
+   fieldset's border, padding, margin and min-content width. */
 .pick {
+  all: unset;
   display: grid;
   grid-template-columns: repeat(3, 1fr);
   align-items: center;
   gap: 8px;
-  margin: 0;
-  padding: 0;
-  border: 0;
+}
+/* 64, a step over a page action's 52: read at arm's length, hit with a thumb while the eye is on the wall. */
+.choice {
+  min-height: 64px;
+  border-radius: var(--r-pill);
 }
 /* Floated, a legend is laid out as any grid item, so it can share the row. */
 .pick legend {
@@ -1158,7 +1162,7 @@ a.row:focus-visible {
   font-size: 15px;
   font-weight: 600;
 }
-@media (orientation: landscape) and (max-height: 599.98px) and (max-width: 899.98px) {
+@media (max-height: 599.98px) {
   .pick {
     grid-template-columns: auto repeat(3, 1fr);
   }
@@ -1204,18 +1208,9 @@ a.row:focus-visible {
     backdrop-filter: none;
   }
 }
+/* A page action is .btn's 52, a text one .btn.text's 44; nothing here sets a height, so the pick's choices keep 64. */
 .actions .btn {
   flex: 1;
-  min-height: 52px;
-}
-.actions .btn.text {
-  min-height: 44px;
-}
-/* 64, a step over a page action's 52: read at arm's length, hit with a thumb while the eye is on the wall. After
-   .actions .btn, which it outranks only by order. */
-.pick .choice {
-  min-height: 64px;
-  border-radius: var(--r-pill);
 }
 @media (min-width: 640px) {
   .buttons {
