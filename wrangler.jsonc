@@ -45,16 +45,16 @@
       { "name": "SPEND_GUARD", "class_name": "SpendGuard" }
     ]
   },
-  // The Converter's container (ADR 0019). The Object picks the image and the size when it starts one. `prebuilt.mjs
-  // rewrite` fills {ACCOUNT_ID} from CLOUDFLARE_ACCOUNT_ID (the repo never holds it) and {DIGEST} from
-  // container/digest.txt, so a pinning commit touches one file.
+  // The Converter's container (ADR 0019). The Object picks the image and the size when it starts one. The image is a
+  // placeholder in the shape wrangler checks (all zeros): `prebuilt.mjs rewrite` puts in the account id from
+  // CLOUDFLARE_ACCOUNT_ID (the repo never holds it) and the digest from container/digest.txt, so a pin is one file.
   "containers": [
     {
       "class_name": "Converter",
       "scheduling_policy": "durable_object",
       "images": {
         "converter": {
-          "image": "registry.cloudflare.com/{ACCOUNT_ID}/bloop-converter@{DIGEST}"
+          "image": "registry.cloudflare.com/00000000000000000000000000000000/bloop-converter@sha256:0000000000000000000000000000000000000000000000000000000000000000"
         }
       }
     }
