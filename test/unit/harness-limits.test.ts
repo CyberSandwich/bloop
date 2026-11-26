@@ -17,16 +17,18 @@ afterEach(() => {
 });
 
 describe("startWrangler limits", () => {
-  it("points the derived config at the repo's .dev.vars, else its .env, as wrangler would read them in place", () => {
-    const both = dir([".dev.vars", ".env"]);
+  it("points the derived config at the repo's .dev.vars, else its .env and .env.local, read in place", () => {
+    const both = dir([".dev.vars", ".env", ".env.local"]);
     expect(devVarsArgs(both)).toEqual(["--env-file", join(both, ".dev.vars")]);
-    const env = dir([".env"]);
-    expect(devVarsArgs(env)).toEqual(["--env-file", join(env, ".env")]);
+    const env = dir([".env", ".env.local"]);
+    expect(devVarsArgs(env)).toEqual(["--env-file", join(env, ".env"), "--env-file", join(env, ".env.local")]);
+    const local = dir([".env.local"]);
+    expect(devVarsArgs(local)).toEqual(["--env-file", join(local, ".env.local")]);
     expect(devVarsArgs(dir([]))).toEqual([]);
   });
 
   it.each([
-    [{ RL_NOPE: 5 }, "declares no rate-limit binding RL_NOPE"],
+    [{ RL_NOPE: 5 }, "no one-line production ratelimits entry for RL_NOPE"],
     [{ RL_MEMBER_IP: 0 }, "a limit is a positive integer"],
     [{ RL_MEMBER_IP: 2.5 }, "a limit is a positive integer"],
   ])("refuses %o before starting anything", async (limits, message) => {

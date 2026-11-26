@@ -51,6 +51,7 @@ export interface SpendOps {
   resetTrip(name: SwitchName): boolean;
   alertOnce(key: string): boolean;
   unalert(key: string): void;
+  unalertMany(keys: string[]): void;
   history(days: number): History;
   /** The breaker stores its latest report (JSON) here; the admin panel and route read it back. */
   setReport(json: string): void;

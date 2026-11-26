@@ -12,7 +12,10 @@ export interface RateLimit {
   period: number;
 }
 
-/** Each platform rate-limit binding wrangler.jsonc (or `text`, a copy of it) declares, with its limit and period. */
+/**
+ * Each platform rate-limit binding wrangler.jsonc (or `text`, a copy of it) declares, with its limit and period:
+ * only the one-line production entries `RATE_LIMIT_ENTRY` matches.
+ */
 export const declaredRateLimits = (
   text = readFileSync(new URL("../wrangler.jsonc", import.meta.url), "utf8"),
 ): Record<string, RateLimit> =>

@@ -7,6 +7,7 @@ import {
   ALERT_MAIL_TRIES,
   type Alert,
   d1SwitchStore,
+  deliveryClaims,
   logNotify,
   resetBreaker,
 } from "../../src/worker/spend/breaker.ts";
@@ -86,10 +87,15 @@ describe("COST-14 the five-minute job mails a trip to the admins", () => {
     await job.run(w.env, undefined, 0);
     const [trip] = (await w.global.guard.snapshot()).trips;
     expect(trip).toBeDefined();
+    const held = () => (w.global.rig.db.prepare("SELECT key FROM alert").all() as { key: string }[]).map((r) => r.key);
+    const key = `trip:${trip?.switch}:${trip?.value}`;
+    const { log, mail } = deliveryClaims(key);
+    expect(held()).toEqual(expect.arrayContaining([key, log, mail[0]]));
     const store = d1SwitchStore(w.db, Date.now);
     expect(
       await resetBreaker({ guard: w.global.guard, store, notify: logNotify }, trip?.switch ?? "email", "owner"),
     ).toBe(true);
+    expect(held().filter((claim) => [key, log, ...mail].includes(claim))).toEqual([]);
     const later = T0 + 60_000;
     vi.setSystemTime(later);
     w.global.clock.now = later;

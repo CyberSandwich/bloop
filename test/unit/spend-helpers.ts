@@ -89,6 +89,7 @@ export function fakeGuard(vars: Record<string, unknown> = {}, start = T0, bornAt
     },
     analyticsRun: async (failed) => r.ledger.analyticsRun(failed),
     unalert: async (k) => r.ledger.unalert(k),
+    unalertMany: async (keys) => r.ledger.unalertMany(keys),
     history: async (days) => r.ledger.history(clock.now, days),
     setReport: async (json) => r.ledger.setBlob("report", json),
     report: async () => r.ledger.blob("report"),

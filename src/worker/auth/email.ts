@@ -153,8 +153,8 @@ export const cronNotify =
   (env: { DB: unknown; EMAIL?: Sender }, claim: Claim): Notify =>
   async (message, key) => {
     const claimed = (claimKey: string) => claim(claimKey).catch(() => true);
-    const [logClaim, ...mailClaims] = deliveryClaims(key);
-    if (await claimed(logClaim ?? "")) await logNotify(message, key);
+    const claims = deliveryClaims(key);
+    if (await claimed(claims.log)) await logNotify(message, key);
     const parsed = alertVars.safeParse(env);
     if (!parsed.success) return;
     const v = parsed.data;
@@ -167,7 +167,7 @@ export const cronNotify =
       devMailbox: v.DEV_MAILBOX === "1" && isLocalOrigin(v.PUBLIC_ORIGIN),
     };
     let tried = false;
-    for (const mailClaim of mailClaims) {
+    for (const mailClaim of claims.mail) {
       tried = await claimed(mailClaim);
       if (tried) break;
     }

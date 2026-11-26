@@ -227,6 +227,7 @@ src/shared/
 src/worker/
   index.ts                 fetch + scheduled entry, route table
   http.ts                  json(), problem(), origin and fetch-metadata checks, body limits
+  rate-limit.ts            the platform rate limit's one call and the pseudonymous IP key, for the routes and the page gate
   headers.ts               the header policy; applied to every Worker response
   origin.ts                the 301 from a workers.dev host or plain http to PUBLIC_ORIGIN (or the 403 for a write)
   config.ts                Zod schema for env, fails closed at startup
@@ -536,7 +537,7 @@ The Worker's variables are listed once, in `src/worker/config.ts`: the Zod schem
 `TEST_TIMING=1` is test-only and never set in a deployment (`config.ts` refuses it unless `PUBLIC_ORIGIN` is a local address). The integration tests set it through `startPairing()` in `test/integration/pairing-client.ts`, with short timings such as `CODE_TTL_SECONDS=2` and `SESSION_MAX_MINUTES=0.05`. It also skips the platform rate-limit bindings and shortens how long an authed screen socket stays live with nothing heard (`TEST_SILENCE_MS` in `config.ts`, `SILENCE_MS` otherwise), so a test can watch the link binding hand over (OPEN-02).
 
 Deploy-only values (`CLOUDFLARE_ACCOUNT_ID`, `CLOUDFLARE_API_TOKEN`) are GitHub environment secrets read by `.github/workflows/deploy.yml`, never by the Worker; there is no `.env` file. `BLOOP_PREVIEW_URL`, for the post-deploy header grade, is not wired yet: `deploy.yml` does not read it. Token scopes: `docs/setup.md`.
-Bindings in `wrangler.jsonc` (not env vars): `ASSETS`, `SCREEN` and `DIRECTORY` (Durable Objects, SQLite classes), `DB` (D1, `eu`), `GUEST_FILES` (R2, `jurisdiction: "eu"`), `RL_CREATE`, `RL_CLAIM`, `RL_FETCH`, `RL_UPLOAD`, `RL_AUTH`, `RL_EXPORT`, `RL_FILES`, `RL_DEMO_CREATE`, `RL_DEMO_CLAIM`, `RL_CONTROL`, `RL_UPGRADE` (rate limits), the v4 bindings in section 13, and three crons (`*/5 * * * *` the spend breaker, `0 * * * *` hourly backstop, `30 3 * * *` daily retention). The D1 database id in `wrangler.jsonc` is not a secret.
+Bindings in `wrangler.jsonc` (not env vars): `ASSETS`, `SCREEN` and `DIRECTORY` (Durable Objects, SQLite classes), `DB` (D1, `eu`), `GUEST_FILES` (R2, `jurisdiction: "eu"`), the rate-limit bindings (section 6, Rate limits, lists each), the v4 bindings in section 13, and three crons (`*/5 * * * *` the spend breaker, `0 * * * *` hourly backstop, `30 3 * * *` daily retention). The D1 database id in `wrangler.jsonc` is not a secret.
 
 ## 10. Security headers
 
