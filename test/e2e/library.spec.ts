@@ -314,4 +314,19 @@ test.describe("library", () => {
     await page.getByRole("button", { name: "More for Lecture 12.pptx" }).click();
     await expect(page.getByRole("dialog").getByRole("button", { name: "Move to Trash" })).toBeInViewport({ ratio: 1 });
   });
+
+  test("Download never replaces the library, even when the file shows inline", async ({ page, context }) => {
+    await signedIn(context, members.preview);
+    // A link the browser shows rather than saves, as an inline PDF on the file host would be.
+    await page.route(
+      (url) => url.pathname.endsWith("/preview"),
+      (route) => route.fulfill({ json: { base: "/privacy", exp: Date.now() + 300_000 } }),
+    );
+    await page.goto("/library");
+    await page.getByRole("button", { name: "More for Reading list.pdf" }).click();
+    const opened = context.waitForEvent("page");
+    await page.getByRole("dialog").getByRole("button", { name: "Download" }).click();
+    await opened;
+    await expect(page).toHaveURL(/\/library$/);
+  });
 });
