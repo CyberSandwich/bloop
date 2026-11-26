@@ -570,7 +570,7 @@ const modules = {
   menu: () => import("./library/menu.js"),
   trash: () => import("./library/trash.js"),
   sort: () => import("./library/sort.js"),
-  preview: inert,
+  preview: () => import("./library/preview.js"),
   present: () => import("./library/present.js"),
   socket: () => import("./library/socket.js"),
   reorder: () => import("./library/reorder.js"),
