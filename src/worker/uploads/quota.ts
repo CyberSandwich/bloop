@@ -6,7 +6,16 @@
 // Invariant: for each user, `reserved_bytes` is the sum of their open library uploads' bytes and `used_bytes` the sum of
 // their `checking` and `ready` files', and `used + reserved <= quota` after every committed batch.
 import type { BatchDb, Db } from "../auth/db.ts";
-import { CLAIM_MS, claimFree, INSERT_COLUMNS, INSERT_PLACEHOLDERS, insertValues, type NewUpload } from "./store.ts";
+import {
+  CLAIM_MS,
+  claimFree,
+  INSERT_COLUMNS,
+  INSERT_PLACEHOLDERS,
+  insertValues,
+  live,
+  type NewUpload,
+  OPEN,
+} from "./store.ts";
 
 export interface Limits {
   /** LIBRARY_QUOTA_BYTES: the default for a user with no override. */
@@ -14,70 +23,79 @@ export interface Limits {
   maxFiles: number;
 }
 
-export type ReserveRefusal = "quota_exceeded" | "library_full" | "upload_gone" | "twin";
+export type ReserveRefusal = "quota_exceeded" | "library_full" | "upload_gone" | "upload_busy" | "twin";
 
-const OPEN = "completed_at IS NULL AND aborted_at IS NULL";
+/** A library file that takes a slot under `maxFiles`: a refused one does not, a trashed one does until it is purged. */
+const COUNTED_FILE = "status IN ('checking', 'ready')";
+/** A reserve refused for a reason that is gone when read is tried again this many times in all. */
+const RESERVE_TRIES = 3;
 
 /**
  * Reserves `n.bytes` and inserts the upload row in one batch. The insert carries every guard: the owner is active and
- * not suspended, the bytes fit what remains of the quota, the file count stays under the cap (open uploads count,
- * since each becomes a file), and no open upload of the same fingerprint exists (a double tap). Zero inserts means a
- * refusal, and nothing changed. Returns the refusal, or null when reserved.
+ * not suspended, the bytes fit what remains of the quota, the file count stays under the cap (live uploads count,
+ * since each becomes a file), and no live upload of the same fingerprint exists (a double tap). `n.createdAt` is the
+ * now of the live tests. Zero inserts means a refusal, and nothing changed. Returns the refusal, or null when reserved.
  */
 export async function reserveLibrary(db: BatchDb, n: NewUpload, limits: Limits): Promise<ReserveRefusal | null> {
   if (n.owner.kind !== "library") throw new TypeError("a library upload needs a user");
   const { userId } = n.owner;
-  const [inserted] = await db.batch([
-    db
-      .prepare(
-        `INSERT INTO upload (${INSERT_COLUMNS}) SELECT ${INSERT_PLACEHOLDERS()} FROM app_user
-         WHERE id = ?19 AND status = 'active' AND suspended_at IS NULL
-           AND used_bytes + reserved_bytes + ?12 <= COALESCE(quota_bytes, ?20)
-           AND (SELECT count(*) FROM library_file WHERE user_id = ?19)
-             + (SELECT count(*) FROM upload WHERE user_id = ?19 AND ${OPEN}) < ?21
-           AND NOT EXISTS (SELECT 1 FROM upload WHERE user_id = ?19 AND fingerprint = ?15 AND ${OPEN})`,
-      )
-      .bind(...insertValues(n), userId, limits.quotaBytes, limits.maxFiles),
-    db
-      .prepare(
-        "UPDATE app_user SET reserved_bytes = reserved_bytes + ?1 WHERE id = ?2 AND EXISTS (SELECT 1 FROM upload WHERE id = ?3)",
-      )
-      .bind(n.bytes, userId, n.id),
-  ]);
-  if (inserted && inserted.meta.changes > 0) return null;
-  return whyRefused(db, userId, n, limits);
+  for (let tries = 0; tries < RESERVE_TRIES; tries++) {
+    const [inserted] = await db.batch([
+      db
+        .prepare(
+          `INSERT INTO upload (${INSERT_COLUMNS}) SELECT ${INSERT_PLACEHOLDERS()} FROM app_user
+           WHERE id = ?19 AND status = 'active' AND suspended_at IS NULL
+             AND used_bytes + reserved_bytes + ?12 <= COALESCE(quota_bytes, ?20)
+             AND (SELECT count(*) FROM library_file WHERE user_id = ?19 AND ${COUNTED_FILE})
+               + (SELECT count(*) FROM upload WHERE user_id = ?19 AND ${live(16)}) < ?21
+             AND NOT EXISTS (SELECT 1 FROM upload WHERE user_id = ?19 AND fingerprint = ?15 AND ${live(16)})`,
+        )
+        .bind(...insertValues(n), userId, limits.quotaBytes, limits.maxFiles),
+      db
+        .prepare(
+          "UPDATE app_user SET reserved_bytes = reserved_bytes + ?1 WHERE id = ?2 AND EXISTS (SELECT 1 FROM upload WHERE id = ?3)",
+        )
+        .bind(n.bytes, userId, n.id),
+    ]);
+    if (inserted && inserted.meta.changes > 0) return null;
+    const why = await whyRefused(db, userId, n, limits);
+    if (why) return why;
+  }
+  return "upload_busy";
 }
 
 /**
- * The cheap read of reserve's guards, before any R2 call: the refusal a reserve would meet now, or null. It is a
- * courtesy, never the guard: reserve re-checks everything in its own batch.
+ * The cheap read of reserve's guards: the refusal a reserve would meet at `now`, or null. It is a courtesy, never the
+ * guard: reserve re-checks everything in its own batch.
  */
 export async function precheckLibrary(
   db: Db,
   userId: string,
   bytes: number,
   limits: Limits,
-): Promise<Exclude<ReserveRefusal, "twin"> | null> {
+  now: number,
+): Promise<Exclude<ReserveRefusal, "twin" | "upload_busy"> | null> {
   const user = await db
     .prepare(
       `SELECT status, suspended_at AS suspendedAt, used_bytes + reserved_bytes + ?2 <= COALESCE(quota_bytes, ?3) AS fits,
-         (SELECT count(*) FROM library_file WHERE user_id = ?1) + (SELECT count(*) FROM upload WHERE user_id = ?1 AND ${OPEN}) AS files
+         (SELECT count(*) FROM library_file WHERE user_id = ?1 AND ${COUNTED_FILE})
+           + (SELECT count(*) FROM upload WHERE user_id = ?1 AND ${live(4)}) AS files
        FROM app_user WHERE id = ?1`,
     )
-    .bind(userId, bytes, limits.quotaBytes)
+    .bind(userId, bytes, limits.quotaBytes, now)
     .first<{ status: string; suspendedAt: number | null; fits: number; files: number }>();
   if (user?.status !== "active" || user.suspendedAt !== null) return "upload_gone";
   if (!user.fits) return "quota_exceeded";
   return user.files >= limits.maxFiles ? "library_full" : null;
 }
 
-/** What stopped a reserve, read after the fact: a twin first (the answer is the resume), then the first guard that fails now. */
-async function whyRefused(db: BatchDb, userId: string, n: NewUpload, limits: Limits): Promise<ReserveRefusal> {
+/** What stopped a reserve, read after the fact: a twin first (the answer is the resume), then the first guard that fails now; null when none does. */
+async function whyRefused(db: BatchDb, userId: string, n: NewUpload, limits: Limits): Promise<ReserveRefusal | null> {
   const twin = await db
-    .prepare(`SELECT 1 AS one FROM upload WHERE user_id = ? AND fingerprint = ? AND ${OPEN}`)
-    .bind(userId, n.fingerprint)
+    .prepare(`SELECT 1 AS one FROM upload WHERE user_id = ?1 AND fingerprint = ?2 AND ${live(3)}`)
+    .bind(userId, n.fingerprint, n.createdAt)
     .first();
-  return twin ? "twin" : ((await precheckLibrary(db, userId, n.bytes, limits)) ?? "library_full");
+  return twin ? "twin" : precheckLibrary(db, userId, n.bytes, limits, n.createdAt);
 }
 
 /**
@@ -190,6 +208,28 @@ export async function claimCheck(db: BatchDb, f: { id: string; userId: string },
     .bind(f.id, f.userId, now)
     .run();
   return res.meta.changes > 0;
+}
+
+/** A library file the check left `checking`: what the sweep needs to check it again or give it up. */
+export interface CheckingFile {
+  id: string;
+  userId: string;
+  r2Key: string;
+  bytes: number;
+  ext: string;
+  createdAt: number;
+}
+
+/** Files still `checking` that no check touched within the claim window, oldest first. */
+export async function staleChecking(db: Db, now: number, limit: number): Promise<CheckingFile[]> {
+  const { results } = await db
+    .prepare(
+      `SELECT id, user_id AS userId, r2_key AS r2Key, bytes, ext, created_at AS createdAt FROM library_file
+       WHERE status = 'checking' AND updated_at < ?1 - ${CLAIM_MS} ORDER BY updated_at LIMIT ?2`,
+    )
+    .bind(now, limit)
+    .all<CheckingFile>();
+  return results;
 }
 
 export interface Drift {

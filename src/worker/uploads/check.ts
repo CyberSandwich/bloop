@@ -1,6 +1,6 @@
 // What a stored object really is, once it is whole: the digests the library keeps and the validators' verdict, for
 // library and guest alike. A small object is read once and everything runs over that one buffer; a large one is
-// streamed once for its digests and the validators range-read the few parts they need (read-plan.ts bounds them).
+// streamed once for its digests and the validators range-read the few parts they need, never more than were charged.
 import { crc32 } from "../crc32.ts";
 import type { FormatType, Refusal } from "../seams/guest-drop/formats.ts";
 import type { RangeReader } from "../seams/guest-drop/index.ts";
@@ -30,9 +30,32 @@ export interface CheckOptions {
 
 const hex = (buf: ArrayBuffer) => Array.from(new Uint8Array(buf), (b) => b.toString(16).padStart(2, "0")).join("");
 
-/** The most reads a large object's validation can spend: the stream, the plan's ranges, or a PDF's windows. */
+/** Range reads a validator makes outside its own cap: the head, the tail, a header and a directory. */
+const FIXED_READS = 4;
+
+/**
+ * The most reads a large object's validation can spend, all charged up front: the one stream for the digests, then the
+ * ranged reads (`capReads` holds the validators to them): the fixed ones plus a read plan or a PDF's windows.
+ */
 export const readBudget = (size: number): number =>
-  size <= READ_PLAN.smallObjectBytes ? 1 : 1 + Math.max(READ_PLAN.maxReads, Math.ceil(size / PDF_WINDOW_BYTES) + 4);
+  size <= READ_PLAN.smallObjectBytes
+    ? 1
+    : 1 + FIXED_READS + Math.max(READ_PLAN.maxReads, Math.ceil(size / PDF_WINDOW_BYTES));
+
+/**
+ * A reader that passes at most `max` reads through. Past that it reads nothing (an empty answer) and `over()` turns
+ * true; the check then refuses the file as `bad_structure` whatever the validator said, since it was not read whole.
+ */
+export function capReads(inner: RangeReader, max: number): { reader: RangeReader; over: () => boolean } {
+  let reads = 0;
+  return {
+    reader: {
+      size: inner.size,
+      read: async (offset, length) => (++reads > max ? new Uint8Array() : inner.read(offset, length)),
+    },
+    over: () => reads > max,
+  };
+}
 
 export async function checkStored(
   m: Multipart,
@@ -53,7 +76,9 @@ export async function checkStored(
   }
   const digests = await streamDigests(m, key, options);
   if (digests === null) return { ok: "later" };
-  const verdict = await validate(ranged(m, key, size), declared);
+  const capped = capReads(ranged(m, key, size), readBudget(size) - 1);
+  const verdict = await validate(capped.reader, declared);
+  if (capped.over()) return { ok: false, error: "bad_structure" };
   return verdict.ok ? { ok: true, type: verdict.type, ...digests } : verdict;
 }
 
