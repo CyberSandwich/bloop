@@ -1351,9 +1351,12 @@ describe("landing motion and spacing (design.md sections 6 and 8)", () => {
     // Only a failed load makes the hover still (the guard below pairs it with a fade); a tap never leaves :hover on.
     expect(css).not.toContain("h1:hover .sheen");
     expect(css).toMatch(/@media \(hover: hover\) \{\s*\.still \.sheen:hover \{/);
-    expect(js).toMatch(/\(\) => document\.body\.classList\.add\("still"\)/);
-    expect(js).toMatch(/querySelector\("\.hero h1"\)\)\?\.addEventListener\(\s*"pointerenter"/);
-    expect(js).toMatch(/if \(tiltable\.matches && e\.pointerType === "mouse"\)\s*import\("\.\/sheen-follow\.js"\)/);
+    expect(js).toMatch(/\(\) => \(h1\.className = "still"\)/);
+    expect(js).toMatch(/querySelector\("\.hero h1"\)\);/);
+    // A finger never uses the load up (sheen-follow.js ignores touch the same way); the first other pointer does.
+    expect(js).toMatch(
+      /h1\.onpointerenter = \(e\) => \{\s*if \(!tiltable\.matches \|\| e\.pointerType === "touch"\) return;\s*h1\.onpointerenter = null;\s*import\("\.\/sheen-follow\.js"\)/,
+    );
     expect(js).not.toMatch(/^import /m);
     expect(rule).toBeGreaterThan(0);
     for (const m of css.matchAll(/^\s*animation: /gm)) expect(m.index ?? 0).toBeLessThan(rule);
