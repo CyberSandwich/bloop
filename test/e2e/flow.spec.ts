@@ -101,6 +101,8 @@ async function addFile(page: Page, file: string | { name: string; mimeType: stri
 }
 /** The demo catalog as the viewer orders it: files by name, then links by title. */
 const CATALOG = ["Dog.jpg", "Sample deck.pdf", "Sample deck.pptx", "Vevox"];
+/** The sample deck and its PDF page count: SLIDES in public/js/core/demo.js. */
+const PAGES = 7;
 
 async function typedCodeOf(page: Page): Promise<string> {
   // A new code replaces the old one 150 ms into its swap: until then the card still reads the old, spent code.
@@ -197,9 +199,9 @@ async function expectPillUnder(page: Page, item: Locator) {
   }).toPass();
 }
 
-/** The pill is as wide as its contents: "1 / 2" stays one line and the pill keeps its 60. */
+/** The pill is as wide as its contents: "1 / 7" stays one line and the pill keeps its 60. */
 async function expectOneLinePill(page: Page) {
-  await expect(page.locator("#dots")).toHaveText("1 / 2");
+  await expect(page.locator("#dots")).toHaveText(`1 / ${PAGES}`);
   const { dots, pill } = await settledPill(page);
   expect(dots.height).toBeLessThanOrEqual(24);
   // Boxes are sub-pixel (59.99997 on CI runners): compare to the nearest pixel, never exactly.
@@ -1750,15 +1752,17 @@ test.describe("demo viewer", () => {
     await sidebarItem(screen.page, "Sample deck.pptx").click();
     await expect(heading(screen.page)).toHaveText("Sample deck.pptx");
     await expect(sidebarItem(screen.page, "Sample deck.pptx")).toHaveAttribute("aria-current", "true");
-    await expect(screen.page.getByRole("img", { name: "Slide 1 of 2" })).toBeVisible();
+    await expect(screen.page.getByRole("img", { name: `Slide 1 of ${PAGES}` })).toBeVisible();
     await expect(screen.page.getByRole("button", { name: "Previous Slide" })).toBeHidden();
-    await expect(screen.page.locator("#dots")).toHaveText("1 / 2");
+    await expect(screen.page.locator("#dots")).toHaveText(`1 / ${PAGES}`);
     await screen.page.getByRole("button", { name: "Next Slide" }).click();
-    await expect(screen.page.getByRole("img", { name: "Slide 2 of 2" })).toBeVisible();
-    await expect(screen.page.locator("#dots")).toHaveText("2 / 2");
+    await expect(screen.page.getByRole("img", { name: `Slide 2 of ${PAGES}` })).toBeVisible();
+    await expect(screen.page.locator("#dots")).toHaveText(`2 / ${PAGES}`);
+    for (let n = 3; n <= PAGES; n++) await screen.page.getByRole("button", { name: "Next Slide" }).click();
+    await expect(screen.page.locator("#dots")).toHaveText(`${PAGES} / ${PAGES}`);
     await expect(screen.page.getByRole("button", { name: "Next Slide" })).toBeHidden();
-    await screen.page.getByRole("button", { name: "Previous Slide" }).click();
-    await expect(screen.page.getByRole("img", { name: "Slide 1 of 2" })).toBeVisible();
+    for (let n = 1; n < PAGES; n++) await screen.page.getByRole("button", { name: "Previous Slide" }).click();
+    await expect(screen.page.getByRole("img", { name: `Slide 1 of ${PAGES}` })).toBeVisible();
     // The arrow shows only in the outer 20% of the slide's width, which is the outer 40% of a half.
     const nextZone = screen.page.locator("#next");
     const half = await nextZone.boundingBox();
@@ -1769,13 +1773,13 @@ test.describe("demo viewer", () => {
     await screen.page.mouse.move(half.x + half.width * 0.8, half.y + half.height / 2);
     await expect(disc).toHaveCSS("opacity", "1");
     await screen.page.keyboard.press("ArrowRight");
-    await expect(screen.page.getByRole("img", { name: "Slide 2 of 2" })).toBeVisible();
+    await expect(screen.page.getByRole("img", { name: `Slide 2 of ${PAGES}` })).toBeVisible();
     await expect(screen.page.getByRole("button", { name: "Present" })).toBeVisible();
 
     // The PDF: the same pages, named as pages.
     await sidebarItem(screen.page, "Sample deck.pdf").click();
     await expect(heading(screen.page)).toHaveText("Sample deck.pdf");
-    await expect(screen.page.getByRole("img", { name: "Page 1 of 2" })).toBeVisible();
+    await expect(screen.page.getByRole("img", { name: `Page 1 of ${PAGES}` })).toBeVisible();
 
     // Download of the PDF mints that item's link.
     const saved = screen.page.waitForEvent("download");
@@ -1814,7 +1818,7 @@ test.describe("demo viewer", () => {
     await phone.page.getByRole("button", { name: "Approve" }).click();
     await expectViewer(screen.page);
     await sidebarItem(screen.page, "Sample deck.pdf").click();
-    await expect(screen.page.getByRole("img", { name: "Page 1 of 2" })).toBeVisible();
+    await expect(screen.page.getByRole("img", { name: `Page 1 of ${PAGES}` })).toBeVisible();
     await screen.page.route("**/api/screen/link", (route) => route.fulfill({ status: 500, body: "" }));
     await screen.page.getByRole("button", { name: "Download" }).click();
     await expect(heading(screen.page)).toHaveText("Unable to Open Your File");
@@ -1827,7 +1831,7 @@ test.describe("demo viewer", () => {
     await screen.page.unroute("**/api/screen/link");
     // The error clears by itself, and the viewer comes back where it was: the key moved nothing.
     await expect(heading(screen.page)).toHaveText("Sample deck.pdf", { timeout: 15_000 });
-    await expect(screen.page.getByRole("img", { name: "Page 1 of 2" })).toBeVisible();
+    await expect(screen.page.getByRole("img", { name: `Page 1 of ${PAGES}` })).toBeVisible();
     await screen.context.close();
     await phone.context.close();
   });
@@ -2913,8 +2917,8 @@ test.describe("PAIR-13 remote: the phone commands the demo screen (design.md sec
     await expect(row("Sample deck.pptx")).toHaveAttribute("aria-current", "true");
     await expect(row("Dog.jpg")).not.toHaveAttribute("aria-current", "true");
     await expect(heading(screen.page)).toHaveText("Sample deck.pptx");
-    await expect(screen.page.locator(STAGED)).toHaveAttribute("alt", "Slide 1 of 2");
-    await expect(preview).toHaveAttribute("aria-label", "Sample deck.pptx, Slide 1 of 2");
+    await expect(screen.page.locator(STAGED)).toHaveAttribute("alt", `Slide 1 of ${PAGES}`);
+    await expect(preview).toHaveAttribute("aria-label", `Sample deck.pptx, Slide 1 of ${PAGES}`);
     await expectNoAxeViolations(phone.page);
     expect([...screen.csp, ...phone.csp]).toEqual([]);
     await close(screen, phone);
@@ -2925,9 +2929,9 @@ test.describe("PAIR-13 remote: the phone commands the demo screen (design.md sec
     await sidebarItem(screen.page, "Sample deck.pdf").click();
     await expect(row("Sample deck.pdf")).toHaveAttribute("aria-current", "true");
     await screen.page.locator("#next").click();
-    await expect(dots).toHaveText("2 / 2");
-    await expect(preview).toHaveAttribute("aria-label", "Sample deck.pdf, Page 2 of 2");
-    await expect(preview.locator(".count")).toHaveText("2 / 2");
+    await expect(dots).toHaveText(`2 / ${PAGES}`);
+    await expect(preview).toHaveAttribute("aria-label", `Sample deck.pdf, Page 2 of ${PAGES}`);
+    await expect(preview.locator(".count")).toHaveText(`2 / ${PAGES}`);
     await close(screen, phone);
   });
 
@@ -2939,18 +2943,18 @@ test.describe("PAIR-13 remote: the phone commands the demo screen (design.md sec
     const w = box?.width ?? 0;
     const h = box?.height ?? 0;
     await preview.click({ position: { x: w * 0.8, y: h / 2 } });
-    await expect(dots).toHaveText("2 / 2");
+    await expect(dots).toHaveText(`2 / ${PAGES}`);
     await preview.click({ position: { x: w * 0.2, y: h / 2 } });
-    await expect(dots).toHaveText("1 / 2");
+    await expect(dots).toHaveText(`1 / ${PAGES}`);
     // A swipe to the left is Next, and is not also a tap on the half it ends on.
     const x0 = (box?.x ?? 0) + w * 0.3;
     const y = (box?.y ?? 0) + h / 2;
     await preview.dispatchEvent("pointerdown", { clientX: x0 + 80, clientY: y });
     await preview.dispatchEvent("pointerup", { clientX: x0, clientY: y });
-    await expect(dots).toHaveText("2 / 2");
+    await expect(dots).toHaveText(`2 / ${PAGES}`);
     await preview.dispatchEvent("pointerdown", { clientX: x0, clientY: y });
     await preview.dispatchEvent("pointerup", { clientX: x0 + 80, clientY: y });
-    await expect(dots).toHaveText("1 / 2");
+    await expect(dots).toHaveText(`1 / ${PAGES}`);
     await close(screen, phone);
   });
 
@@ -2968,7 +2972,9 @@ test.describe("PAIR-13 remote: the phone commands the demo screen (design.md sec
     await row("Sample deck.pptx").click();
     await expect(bubbles.getByRole("button", { name: "Previous" })).toBeDisabled();
     await bubbles.getByRole("button", { name: "Next" }).click();
-    await expect(dots).toHaveText("2 / 2");
+    await expect(dots).toHaveText(`2 / ${PAGES}`);
+    for (let n = 3; n <= PAGES; n++) await bubbles.getByRole("button", { name: "Next" }).click();
+    await expect(dots).toHaveText(`${PAGES} / ${PAGES}`);
     await expect(bubbles.getByRole("button", { name: "Next" })).toBeDisabled();
     await bubbles.getByRole("button", { name: "Present" }).click();
     await expect(screen.page.locator("body")).toHaveClass(/is-presenting/);
@@ -3042,7 +3048,7 @@ test.describe("PAIR-13 remote: the phone commands the demo screen (design.md sec
     await expect(heading(screen.page)).toHaveText("Sample deck.pptx");
     await expect(preview).toHaveCount(0);
     await bubbles.getByRole("button", { name: "Next" }).click();
-    await expect(dots).toHaveText("2 / 2");
+    await expect(dots).toHaveText(`2 / ${PAGES}`);
     await close(screen, phone);
   });
 
@@ -3135,7 +3141,7 @@ test.describe("PAIR-13 remote: the phone commands the demo screen (design.md sec
   test("a vertical drag over the preview is no tap, a tap still is", async ({ browser }) => {
     const { screen, phone, row, preview, dots } = await remote(browser);
     await row("Sample deck.pptx").click();
-    await expect(dots).toHaveText("1 / 2");
+    await expect(dots).toHaveText(`1 / ${PAGES}`);
     const box = await preview.boundingBox();
     const x = (box?.x ?? 0) + (box?.width ?? 0) * 0.8;
     const y = (box?.y ?? 0) + (box?.height ?? 0) * 0.25;
@@ -3144,9 +3150,9 @@ test.describe("PAIR-13 remote: the phone commands the demo screen (design.md sec
     await phone.page.mouse.move(x, y + 30, { steps: 4 });
     await phone.page.mouse.up();
     await phone.page.waitForTimeout(400);
-    await expect(dots).toHaveText("1 / 2");
+    await expect(dots).toHaveText(`1 / ${PAGES}`);
     await preview.click({ position: { x: (box?.width ?? 0) * 0.8, y: (box?.height ?? 0) * 0.5 } });
-    await expect(dots).toHaveText("2 / 2");
+    await expect(dots).toHaveText(`2 / ${PAGES}`);
     await close(screen, phone);
   });
 
@@ -3247,7 +3253,7 @@ test.describe("PAIR-13 remote: the phone commands the demo screen (design.md sec
     await expect(screen.page.locator('#frame [data-page="1"]')).toBeInViewport({ ratio: 0.5 });
     // Scrolling back here is a step: the phone's preview follows.
     await frame.evaluate((n) => n.scrollTo(0, 0));
-    await expect(phone.page.locator(".preview .count")).toHaveText("1 / 2");
+    await expect(phone.page.locator(".preview .count")).toHaveText(`1 / ${PAGES}`);
     await close(screen, phone);
   });
 

@@ -4,7 +4,7 @@
 const PROTOCOL_PREFIX = "ms-powerpoint:ofv|u|";
 
 /** The sample deck's pages, one AVIF and one WebP each (tools/render-slides.py). The PDF is its export: same pages. */
-export const SLIDES = ["/img/demo-slide-1", "/img/demo-slide-2"];
+export const SLIDES = Array.from({ length: 7 }, (_, i) => `/img/demo-slide-${i + 1}`);
 /** The catalog photo's 120 px square thumbnail, so its row has a picture before any link is minted. */
 export const PHOTO_THUMB = "/img/demo-dog-thumb.webp";
 

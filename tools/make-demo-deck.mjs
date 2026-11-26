@@ -1,7 +1,8 @@
 // @ts-nocheck: a plain script that builds string templates; test/unit/mock-source.test.ts checks what it writes.
 // Writes bloop's own sample deck, "Welcome to bloop", and its PDF export into src/worker/seams/file-source/demo-files/:
 //   demo-deck.pptx   Office Open XML written here, zipped with tools/zip.mjs (no template, image or font is embedded)
-//   demo-handout.pdf the deck exported by LibreOffice (soffice on PATH or in /Applications)
+//   demo-handout.pdf the deck exported by LibreOffice (soffice on PATH or in /Applications); its fonts are
+//                    Calibri where installed, else Carlito (SIL OFL), which has the same metrics
 // The deck is original: native shapes in design.md's paper, ink and robin tokens, and the logo drawn from
 // public/favicon.svg. Text is Calibri, which every Windows PowerPoint has. The pptx is byte-for-byte reproducible.
 // Run: node tools/make-demo-deck.mjs, then python3 -I tools/render-slides.py for the demo screen's page images.
@@ -152,10 +153,34 @@ function builder() {
   const badge = (kind, x, y, size, fill, ink) => {
     const g =
       kind === "tick"
-        ? [{ d: [["M", 26, 52], ["L", 43, 69], ["L", 76, 31]], close: false, open: true }]
+        ? [
+            {
+              d: [
+                ["M", 26, 52],
+                ["L", 43, 69],
+                ["L", 76, 31],
+              ],
+              close: false,
+              open: true,
+            },
+          ]
         : [
-            { d: [["M", 30, 30], ["L", 70, 70]], close: false, open: true },
-            { d: [["M", 70, 30], ["L", 30, 70]], close: false, open: true },
+            {
+              d: [
+                ["M", 30, 30],
+                ["L", 70, 70],
+              ],
+              close: false,
+              open: true,
+            },
+            {
+              d: [
+                ["M", 70, 30],
+                ["L", 30, 70],
+              ],
+              close: false,
+              open: true,
+            },
           ];
     const glyph = `<p:sp><p:nvSpPr><p:cNvPr id="${id()}" name="${kind}"/><p:cNvSpPr/><p:nvPr/></p:nvSpPr><p:spPr>${xfrm(x, y, size, size)}${cust(100, 100, g)}<a:noFill/>${stroke(ink, size * 6, ' cap="rnd"')}</p:spPr><p:txBody><a:bodyPr/><a:lstStyle/><a:p><a:endParaRPr lang="en-US"/></a:p></p:txBody></p:sp>`;
     return shape({ name: `${kind} disc`, x, y, w: size, h: size, geom: "ellipse", fill }) + glyph;
@@ -176,18 +201,28 @@ function builder() {
     });
 
   const card = (name, x, y, w, h, extra = {}) =>
-    shape({ name, x, y, w, h, geom: "roundRect", radius: 0.25, fill: C.white, line: { color: C.hairline, pt: 0.75 }, ...extra });
+    shape({
+      name,
+      x,
+      y,
+      w,
+      h,
+      geom: "roundRect",
+      radius: 0.25,
+      fill: C.white,
+      line: { color: C.hairline, pt: 0.75 },
+      ...extra,
+    });
 
   const title = (text, { x = 0.8, y = 0.55, w = 11.73, h = 0.95, ph = "title" } = {}) =>
     `<p:sp><p:nvSpPr><p:cNvPr id="${id()}" name="Title"/><p:cNvSpPr><a:spLocks noGrp="1"/></p:cNvSpPr><p:nvPr><p:ph type="${ph}"/></p:nvPr></p:nvSpPr><p:spPr>${ph === "ctrTitle" ? xfrm(x, y, w, h) : ""}</p:spPr><p:txBody><a:bodyPr/><a:lstStyle/><a:p><a:r><a:rPr lang="en-US" dirty="0"/><a:t>${esc(text)}</a:t></a:r></a:p></p:txBody></p:sp>`;
 
-  const lead = (text, y = 1.45) =>
-    textBox("Lead", 0.8, y, 11.73, 0.5, [para([{ t: text, sz: 20, color: C.lead }])]);
+  const lead = (text, y = 1.45) => textBox("Lead", 0.8, y, 11.73, 0.5, [para([{ t: text, sz: 20, color: C.lead }])]);
 
   return { shape, textBox, para, cust, logo, badge, numberDisc, card, title, lead, xfrm };
 }
 
-const slideXml = (shapes, layout) =>
+const slideXml = (shapes) =>
   `${XML}<p:sld xmlns:a="${NS_A}" xmlns:r="${NS_R}" xmlns:p="${NS_P}"><p:cSld><p:spTree><p:nvGrpSpPr><p:cNvPr id="1" name=""/><p:cNvGrpSpPr/><p:nvPr/></p:nvGrpSpPr><p:grpSpPr><a:xfrm><a:off x="0" y="0"/><a:ext cx="0" cy="0"/><a:chOff x="0" y="0"/><a:chExt cx="0" cy="0"/></a:xfrm></p:grpSpPr>${shapes.join("")}</p:spTree></p:cSld><p:clrMapOvr><a:masterClrMapping/></p:clrMapOvr></p:sld>`;
 
 /** The slides: [layout number, shapes]. Wording follows content/security.md and the how-bloop-works article. */
@@ -200,12 +235,25 @@ function slides() {
       2,
       [
         s.shape({ name: "Warm Circle", x: 8.6, y: -0.9, w: 7.6, h: 7.6, geom: "ellipse", fill: C.robin, alpha: 40 }),
-        s.shape({ name: "Small Warm Circle", x: 7.6, y: 3.9, w: 4.2, h: 4.2, geom: "ellipse", fill: C.robin, alpha: 24 }),
+        s.shape({
+          name: "Small Warm Circle",
+          x: 7.6,
+          y: 3.9,
+          w: 4.2,
+          h: 4.2,
+          geom: "ellipse",
+          fill: C.robin,
+          alpha: 24,
+        }),
         s.logo(0.8, 1.0, 1.0),
         s.textBox("Wordmark", 2.0, 1.12, 3, 0.8, [s.para([{ t: "bloop", sz: 34, b: true }])], "ctr"),
         s.title("Welcome to bloop", { x: 0.8, y: 2.55, w: 8.2, h: 1.3, ph: "ctrTitle" }),
-        s.textBox("Subtitle", 0.8, 3.95, 7.4, 1.0, [s.para([{ t: "A short guide to presenting with bloop.", sz: 26, color: C.lead }])]),
-        s.textBox("Four Words", 0.8, 5.35, 7.4, 0.5, [s.para([{ t: "Scan. Approve. Show. End.", sz: 20, b: true, color: C.ink2 }])]),
+        s.textBox("Subtitle", 0.8, 3.95, 7.4, 1.0, [
+          s.para([{ t: "A short guide to presenting with bloop.", sz: 26, color: C.lead }]),
+        ]),
+        s.textBox("Four Words", 0.8, 5.35, 7.4, 0.5, [
+          s.para([{ t: "Scan. Approve. Show. End.", sz: 20, b: true, color: C.ink2 }]),
+        ]),
       ],
     ]);
   }
@@ -230,7 +278,9 @@ function slides() {
     });
     shapes.push(
       s.textBox("Note", 0.8, 5.95, 11.73, 0.5, [
-        s.para([{ t: "Nothing is typed on the room PC, and it never signs in to your account.", sz: 18, color: C.ink2 }]),
+        s.para([
+          { t: "Nothing is typed on the room PC, and it never signs in to your account.", sz: 18, color: C.ink2 },
+        ]),
       ]),
     );
     out.push([1, shapes]);
@@ -273,9 +323,30 @@ function slides() {
     // A stylized code card: three finder squares and a fixed scatter of modules (not a real, scannable code).
     const N = 13;
     const finder = (x0, y0) => [
-      { d: [["M", x0, y0], ["L", x0 + 5, y0], ["L", x0 + 5, y0 + 5], ["L", x0, y0 + 5]] },
-      { d: [["M", x0 + 1, y0 + 1], ["L", x0 + 1, y0 + 4], ["L", x0 + 4, y0 + 4], ["L", x0 + 4, y0 + 1]] },
-      { d: [["M", x0 + 2, y0 + 2], ["L", x0 + 3, y0 + 2], ["L", x0 + 3, y0 + 3], ["L", x0 + 2, y0 + 3]] },
+      {
+        d: [
+          ["M", x0, y0],
+          ["L", x0 + 5, y0],
+          ["L", x0 + 5, y0 + 5],
+          ["L", x0, y0 + 5],
+        ],
+      },
+      {
+        d: [
+          ["M", x0 + 1, y0 + 1],
+          ["L", x0 + 1, y0 + 4],
+          ["L", x0 + 4, y0 + 4],
+          ["L", x0 + 4, y0 + 1],
+        ],
+      },
+      {
+        d: [
+          ["M", x0 + 2, y0 + 2],
+          ["L", x0 + 3, y0 + 2],
+          ["L", x0 + 3, y0 + 3],
+          ["L", x0 + 2, y0 + 3],
+        ],
+      },
     ];
     const paths = [...finder(0, 0), ...finder(N - 5, 0), ...finder(0, N - 5)];
     let seed = 7;
@@ -284,7 +355,14 @@ function slides() {
         const inFinder = (c < 6 || c >= N - 6) && r < 6 ? true : c < 6 && r >= N - 6;
         seed = (seed * 1103515245 + 12345) % 2147483648;
         if (!inFinder && seed % 5 < 2) {
-          paths.push({ d: [["M", c, r], ["L", c + 1, r], ["L", c + 1, r + 1], ["L", c, r + 1]] });
+          paths.push({
+            d: [
+              ["M", c, r],
+              ["L", c + 1, r],
+              ["L", c + 1, r + 1],
+              ["L", c, r + 1],
+            ],
+          });
         }
       }
     }
@@ -326,7 +404,16 @@ function slides() {
     const [px, py] = [8.95, 1.75];
     shapes.push(
       s.shape({ name: "Phone", x: px, y: py, w: 3.4, h: 4.8, geom: "roundRect", radius: 0.45, fill: C.ink }),
-      s.shape({ name: "Phone Screen", x: px + 0.12, y: py + 0.12, w: 3.16, h: 4.56, geom: "roundRect", radius: 0.35, fill: C.paper }),
+      s.shape({
+        name: "Phone Screen",
+        x: px + 0.12,
+        y: py + 0.12,
+        w: 3.16,
+        h: 4.56,
+        geom: "roundRect",
+        radius: 0.35,
+        fill: C.paper,
+      }),
       s.textBox("Phone Title", px + 0.4, py + 0.4, 2.6, 0.45, [s.para([{ t: "Choose Your Files", sz: 16, b: true }])]),
     );
     [
@@ -336,14 +423,32 @@ function slides() {
     ].forEach(([name, kind, ticked], i) => {
       const y = py + 1.0 + i * 0.78;
       shapes.push(
-        s.shape({ name: `File ${i + 1}`, x: px + 0.3, y, w: 2.8, h: 0.66, geom: "roundRect", radius: 0.16, fill: C.white, line: { color: C.hairline, pt: 0.75 } }),
+        s.shape({
+          name: `File ${i + 1}`,
+          x: px + 0.3,
+          y,
+          w: 2.8,
+          h: 0.66,
+          geom: "roundRect",
+          radius: 0.16,
+          fill: C.white,
+          line: { color: C.hairline, pt: 0.75 },
+        }),
         s.textBox(`File ${i + 1} Name`, px + 0.45, y + 0.06, 1.9, 0.56, [
           s.para([{ t: name, sz: 14, b: true }]),
           s.para([{ t: kind, sz: 11, color: C.muted }]),
         ]),
         ticked
           ? s.badge("tick", px + 2.55, y + 0.15, 0.36, C.ink, C.white)
-          : s.shape({ name: "Empty tick", x: px + 2.55, y: y + 0.15, w: 0.36, h: 0.36, geom: "ellipse", line: { color: "A3A39C", pt: 1.5 } }),
+          : s.shape({
+              name: "Empty tick",
+              x: px + 2.55,
+              y: y + 0.15,
+              w: 0.36,
+              h: 0.36,
+              geom: "ellipse",
+              line: { color: "A3A39C", pt: 1.5 },
+            }),
       );
     });
     shapes.push(
@@ -374,7 +479,9 @@ function slides() {
     files.forEach(([name, kind, active], i) => {
       const x = 0.8 + i * 4.01;
       shapes.push(
-        s.card(`File ${i + 1}`, x, 2.2, 3.71, 1.3, { line: active ? { color: C.ink, pt: 2.25 } : { color: C.hairline, pt: 0.75 } }),
+        s.card(`File ${i + 1}`, x, 2.2, 3.71, 1.3, {
+          line: active ? { color: C.ink, pt: 2.25 } : { color: C.hairline, pt: 0.75 },
+        }),
         s.shape({
           name: `Type ${i + 1}`,
           x: x + 0.3,
@@ -430,11 +537,26 @@ function slides() {
     shapes.push(
       s.textBox("Length Title", bx, 3.9, 6, 0.45, [s.para([{ t: "Session Length", sz: 20, b: true }])]),
       s.shape({ name: "Track", x: bx, y: by, w: bw, h: 0.24, geom: "roundRect", radius: 0.12, fill: C.g1 }),
-      s.shape({ name: "Default Length", x: bx, y: by, w: bw / 12, h: 0.24, geom: "roundRect", radius: 0.12, fill: C.ink }),
-      s.textBox("Default Label", bx, by + 0.35, 4, 0.45, [s.para([{ t: "1 Hour to Start", sz: 17, b: true, color: C.ink2 }])]),
-      s.textBox("Limit Label", bx + bw - 4, by + 0.35, 4, 0.45, [s.para([{ t: "12 Hours at Most", sz: 17, b: true, color: C.ink2 }], { algn: "r" })]),
+      s.shape({
+        name: "Default Length",
+        x: bx,
+        y: by,
+        w: bw / 12,
+        h: 0.24,
+        geom: "roundRect",
+        radius: 0.12,
+        fill: C.ink,
+      }),
+      s.textBox("Default Label", bx, by + 0.35, 4, 0.45, [
+        s.para([{ t: "1 Hour to Start", sz: 17, b: true, color: C.ink2 }]),
+      ]),
+      s.textBox("Limit Label", bx + bw - 4, by + 0.35, 4, 0.45, [
+        s.para([{ t: "12 Hours at Most", sz: 17, b: true, color: C.ink2 }], { algn: "r" }),
+      ]),
       s.textBox("Change Note", bx, by + 0.85, bw, 0.5, [
-        s.para([{ t: "Change it any time on your phone. When it ends, every link stops working.", sz: 18, color: C.muted }]),
+        s.para([
+          { t: "Change it any time on your phone. When it ends, every link stops working.", sz: 18, color: C.muted },
+        ]),
       ]),
     );
     out.push([1, shapes]);
@@ -467,7 +589,13 @@ function slides() {
         ...column("The Screen Gets", 0.8, gets, "tick"),
         ...column("The Screen Never Gets", 6.815, never, "cross"),
         s.textBox("Close", 0.8, 6.05, 11.73, 0.5, [
-          s.para([{ t: "This sample is yours to delete. Add your own files and show them the same way.", sz: 18, color: C.ink2 }]),
+          s.para([
+            {
+              t: "This sample is yours to delete. Add your own files and show them the same way.",
+              sz: 18,
+              color: C.ink2,
+            },
+          ]),
         ]),
       ],
     ]);
@@ -536,17 +664,39 @@ function parts(deck) {
         ["rId3", "theme", "../theme/theme1.xml"],
       ]),
     ],
-    ["ppt/slideLayouts/slideLayout1.xml", layout("Title Only", "titleOnly", true, '<p:sp><p:nvSpPr><p:cNvPr id="2" name="Title 1"/><p:cNvSpPr><a:spLocks noGrp="1"/></p:cNvSpPr><p:nvPr><p:ph type="title"/></p:nvPr></p:nvSpPr><p:spPr/><p:txBody><a:bodyPr/><a:lstStyle/><a:p><a:r><a:rPr lang="en-US"/><a:t>Click to edit Master title style</a:t></a:r></a:p></p:txBody></p:sp>')],
-    ["ppt/slideLayouts/_rels/slideLayout1.xml.rels", rels([["rId1", "slideMaster", "../slideMasters/slideMaster1.xml"]])],
+    [
+      "ppt/slideLayouts/slideLayout1.xml",
+      layout(
+        "Title Only",
+        "titleOnly",
+        true,
+        '<p:sp><p:nvSpPr><p:cNvPr id="2" name="Title 1"/><p:cNvSpPr><a:spLocks noGrp="1"/></p:cNvSpPr><p:nvPr><p:ph type="title"/></p:nvPr></p:nvSpPr><p:spPr/><p:txBody><a:bodyPr/><a:lstStyle/><a:p><a:r><a:rPr lang="en-US"/><a:t>Click to edit Master title style</a:t></a:r></a:p></p:txBody></p:sp>',
+      ),
+    ],
+    [
+      "ppt/slideLayouts/_rels/slideLayout1.xml.rels",
+      rels([["rId1", "slideMaster", "../slideMasters/slideMaster1.xml"]]),
+    ],
     [
       "ppt/slideLayouts/slideLayout2.xml",
-      layout("Title", "title", false, `<p:sp><p:nvSpPr><p:cNvPr id="2" name="Title 1"/><p:cNvSpPr><a:spLocks noGrp="1"/></p:cNvSpPr><p:nvPr><p:ph type="ctrTitle"/></p:nvPr></p:nvSpPr><p:spPr><a:xfrm><a:off x="${E(0.8)}" y="${E(2.55)}"/><a:ext cx="${E(8.2)}" cy="${E(1.3)}"/></a:xfrm></p:spPr><p:txBody><a:bodyPr lIns="0" tIns="0" rIns="0" bIns="0" anchor="ctr"><a:normAutofit/></a:bodyPr><a:lstStyle><a:lvl1pPr algn="l"><a:defRPr sz="6600" b="1"/></a:lvl1pPr></a:lstStyle><a:p><a:r><a:rPr lang="en-US"/><a:t>Click to edit Master title style</a:t></a:r></a:p></p:txBody></p:sp>`),
+      layout(
+        "Title",
+        "title",
+        false,
+        `<p:sp><p:nvSpPr><p:cNvPr id="2" name="Title 1"/><p:cNvSpPr><a:spLocks noGrp="1"/></p:cNvSpPr><p:nvPr><p:ph type="ctrTitle"/></p:nvPr></p:nvSpPr><p:spPr><a:xfrm><a:off x="${E(0.8)}" y="${E(2.55)}"/><a:ext cx="${E(8.2)}" cy="${E(1.3)}"/></a:xfrm></p:spPr><p:txBody><a:bodyPr lIns="0" tIns="0" rIns="0" bIns="0" anchor="ctr"><a:normAutofit/></a:bodyPr><a:lstStyle><a:lvl1pPr algn="l"><a:defRPr sz="6600" b="1"/></a:lvl1pPr></a:lstStyle><a:p><a:r><a:rPr lang="en-US"/><a:t>Click to edit Master title style</a:t></a:r></a:p></p:txBody></p:sp>`,
+      ),
     ],
-    ["ppt/slideLayouts/_rels/slideLayout2.xml.rels", rels([["rId1", "slideMaster", "../slideMasters/slideMaster1.xml"]])],
+    [
+      "ppt/slideLayouts/_rels/slideLayout2.xml.rels",
+      rels([["rId1", "slideMaster", "../slideMasters/slideMaster1.xml"]]),
+    ],
     ["ppt/theme/theme1.xml", THEME],
     ...deck.flatMap(([lay, shapes], i) => [
-      [`ppt/slides/slide${i + 1}.xml`, slideXml(shapes, lay)],
-      [`ppt/slides/_rels/slide${i + 1}.xml.rels`, rels([["rId1", "slideLayout", `../slideLayouts/slideLayout${lay}.xml`]])],
+      [`ppt/slides/slide${i + 1}.xml`, slideXml(shapes)],
+      [
+        `ppt/slides/_rels/slide${i + 1}.xml.rels`,
+        rels([["rId1", "slideLayout", `../slideLayouts/slideLayout${lay}.xml`]]),
+      ],
     ]),
   ];
 }
@@ -565,7 +715,19 @@ function main() {
   console.log(`demo-deck.pptx: ${pptx.length} bytes, ${deck.length} slides`);
   const tmp = mkdtempSync(join(tmpdir(), "demo-deck-"));
   try {
-    execFileSync(soffice(), [`-env:UserInstallation=file://${tmp}/profile`, "--headless", "--convert-to", "pdf", "--outdir", tmp, `${OUT}demo-deck.pptx`], { stdio: "pipe" });
+    execFileSync(
+      soffice(),
+      [
+        `-env:UserInstallation=file://${tmp}/profile`,
+        "--headless",
+        "--convert-to",
+        "pdf",
+        "--outdir",
+        tmp,
+        `${OUT}demo-deck.pptx`,
+      ],
+      { stdio: "pipe" },
+    );
     renameSync(join(tmp, "demo-deck.pdf"), `${OUT}demo-handout.pdf`);
     console.log(`demo-handout.pdf: ${readFileSync(`${OUT}demo-handout.pdf`).length} bytes`);
   } finally {

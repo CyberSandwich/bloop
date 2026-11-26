@@ -1,4 +1,4 @@
-// The demo account's catalog, bundled as data: a real deck, its PDF export and a photo in demo-files/ (slimmed,
+// The demo account's catalog, bundled as data: bloop's own deck (tools/make-demo-deck.mjs), its PDF export and a photo in demo-files/ (slimmed,
 // author fields and photo metadata stripped; size budgets in package.json), plus one web link. The demo screen shows
 // the deck and the PDF as pre-rendered images of their pages (public/img/demo-slide-*, tools/render-slides.py); the
 // PDF is also the deck's rendition. Kept apart from mock.ts so unit tests can build a MockFileSource without the bundler.

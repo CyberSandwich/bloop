@@ -190,10 +190,10 @@ describe("demo files (src/worker/seams/file-source/demo-files)", () => {
   const demo = new URL("../../src/worker/seams/file-source/demo-files/", import.meta.url);
   const readDemo = (name: string) => new Uint8Array(readFileSync(new URL(name, demo)));
 
-  it("demo-deck.pptx is a consistent 2-slide package with blank author fields", () => {
+  it("demo-deck.pptx is a consistent 7-slide package with blank author fields", () => {
     const parts = unzip(readDemo("demo-deck.pptx"));
     expect([...parts.keys()][0]).toBe("[Content_Types].xml");
-    expect(expectConsistentDeck(parts, 2)).toHaveLength(SLIDES.length);
+    expect(expectConsistentDeck(parts, SLIDES.length)).toHaveLength(SLIDES.length);
     const core = parts.get("docProps/core.xml") as string;
     expect(core).not.toMatch(/<dc:creator>[^<]/);
     expect(core).not.toMatch(/<cp:lastModifiedBy>[^<]/);

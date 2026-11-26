@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { SLIDES } from "../../public/js/core/demo.js";
 import { migrate, SCHEMA_KEY, SCHEMA_VERSION } from "../../src/worker/do/schema.ts";
 import { policyOf, withHeaders } from "../../src/worker/headers.ts";
 import {
@@ -239,7 +240,7 @@ describe("Screen object schema steps", () => {
   });
 
   it("PAIR-13 version 6 keeps a `shown` this session could have set, and repairs any other to null", () => {
-    /** A demo owner's open session holding the deck (two pages) and a link, with this `shown` and `seq`. */
+    /** A demo owner's open session holding the deck (SLIDES.length pages) and a link, with this `shown` and `seq`. */
     const stored = (shown: unknown, items: unknown[] = [asStored(DECK), { ...VEVOX, id: "i2" }], s: unknown = seq) =>
       kv({
         meta: {},
@@ -259,7 +260,7 @@ describe("Screen object schema steps", () => {
     for (const bad of [
       { x: 1 },
       { ...good, page: 0 },
-      { ...good, page: 3 },
+      { ...good, page: SLIDES.length + 1 },
       { item: "i2", page: 2, present: false },
       { ...good, item: "i9" },
       { ...good, extra: true },
