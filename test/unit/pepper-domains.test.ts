@@ -15,8 +15,11 @@ const walk = (dir: string): string[] =>
 
 /** `<file>: <the keyed call>` for every HMAC under the pepper, and why its input never starts with "pid:". */
 const SITES: Record<string, string> = {
-  "src/worker/routes/common.ts: hmacHex(config.hashPepper, clientIp(request))":
+  "src/worker/rate-limit.ts: hmacHex(config.hashPepper, clientIp(request))":
     "an IP literal or 'local': hex digits, dots and colons, and 'p' and 'i' are no hex digit",
+  'src/worker/auth/codes.ts: hmacHex(\n    pepper,\n    [m.id, m.purpose, m.emailNorm, m.newEmailNorm ?? "", m.code].map((f) => `${f.length}:${f}`).join("|"),\n  )':
+    "length-prefixed fields: it starts with the id's length, a digit",
+  "src/worker/auth/codes.ts: hmacHex(pepper, `dev|${userId}|${epoch}|${nonce}`)": "it starts with 'dev|'",
   "src/worker/routes/common.ts: hmacHex(config.hashPepper, network(clientIp(request)))":
     "an IPv4 address or an IPv6 /64 in hex groups: no 'p' or 'i'",
   "src/worker/metrics-d1.ts: hmacHex(this.pepper, userId)": "a user id is newRef(): base64url, never a colon",
