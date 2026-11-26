@@ -12,7 +12,7 @@ import { type Route, route } from "../router.ts";
 import { claimOwner } from "../seams/pairing/idem.ts";
 import type { GuestRefusal } from "../seams/pairing.ts";
 import { directoryStub, screenStub } from "../stubs.ts";
-import { ipHash, limited, netHash, respond, withConfig, withScreen, write } from "./common.ts";
+import { emptyBody, ipHash, limited, netHash, respond, withConfig, withScreen, write } from "./common.ts";
 
 const mode = z.enum(["live", "demo"]);
 const createBody = z.object({ mode }).strict();
@@ -22,7 +22,6 @@ const claimBody = z
     kind: z.enum(["owner", "guest"]).optional(),
   })
   .strict();
-const emptyBody = z.object({}).strict();
 
 const REF = /^[A-Za-z0-9_-]{22}$/;
 
