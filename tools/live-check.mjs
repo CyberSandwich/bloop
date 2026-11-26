@@ -480,20 +480,28 @@ function screenSocket(url, origin, sid) {
   const ws = new WebSocket(url, { headers: { Origin: origin } });
   const close = () => ws.close();
   return new Promise((resolve, reject) => {
-    const timer = setTimeout(() => {
+    // A settled promise ignores later calls, so whichever of these comes first decides.
+    const fail = (/** @type {string} */ why) => {
+      clearTimeout(timer);
       close();
-      reject(new Error("no pairing code in 10 s"));
-    }, 10_000);
+      reject(new Error(why));
+    };
+    const timer = setTimeout(() => fail("no pairing code in 10 s"), 10_000);
     ws.addEventListener("open", () => ws.send(JSON.stringify({ v: 1, t: "hello", sid })));
-    ws.addEventListener("error", () => {
-      clearTimeout(timer);
-      reject(new Error("screen socket refused"));
-    });
+    ws.addEventListener("error", () => fail("screen socket refused"));
+    ws.addEventListener("close", (e) => fail(`screen socket closed (${e.code}) before a pairing code`));
     ws.addEventListener("message", (e) => {
-      const f = JSON.parse(String(e.data));
-      if (f.t !== "state" || !f.view?.code?.code) return;
+      /** @type {{ t?: string, view?: { code?: { code?: string } } }} */
+      let f;
+      try {
+        f = JSON.parse(String(e.data));
+      } catch {
+        return fail("screen socket sent a frame that is not JSON");
+      }
+      const code = f.t === "state" ? f.view?.code?.code : undefined;
+      if (!code) return;
       clearTimeout(timer);
-      resolve({ code: f.view.code.code, close });
+      resolve({ code, close });
     });
   });
 }

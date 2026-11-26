@@ -20,6 +20,7 @@ import {
   run,
   unhashed,
 } from "../../tools/live-check.mjs";
+import { CLEAN, HOSTILE } from "../pdf-corpus.ts";
 import { SPAWN_TIMEOUT } from "./spawn.ts";
 
 type Observed = { status: number; headers: Record<string, string>; body: string };
@@ -619,6 +620,8 @@ describe("live-check: guest drops on a demo screen", () => {
       const d = demo(over);
       expect(await dropMisses(ORIGIN, one(1), d.io)).toEqual([`guest drop of a clean PDF: ${miss}`]);
       expect(d.log.at(-1)).toBe("POST /api/screen/end Bearer ref1.secret");
+      // A socket that never opened has nothing to close; one that did is closed whatever failed after it.
+      expect(d.closed).toEqual("socket" in over ? [] : ["ref1.secret"]);
     }
   });
 
@@ -636,5 +639,8 @@ describe("live-check: guest drops on a demo screen", () => {
     const text = (b: Uint8Array) => new TextDecoder("latin1").decode(b);
     expect(text(DROPS[0]?.bytes as Uint8Array)).not.toContain("JavaScript");
     expect(text(DROPS[1]?.bytes as Uint8Array).startsWith("%PDF-")).toBe(true);
+    const built = (list: typeof HOSTILE | typeof CLEAN, name: string) => list.find(([n]) => n === name)?.[1]();
+    expect(DROPS[0]?.bytes).toEqual(built(HOSTILE, "JS in an object stream"));
+    expect(DROPS[1]?.bytes).toEqual(built(CLEAN, "LaTeX hyperref"));
   });
 });
