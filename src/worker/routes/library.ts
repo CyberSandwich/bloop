@@ -70,7 +70,7 @@ const fileBase = (config: Config): string | null =>
 /** A thumbnail's token expires on a 150 s boundary, so the list answer (and its ETag) holds still between refreshes. */
 const TOKEN_STEP_MS = 150_000;
 
-/** Until the spend guard's registry is wired, every switch reads as on. */
+// transitional: G: the spend guard's registry replaces this; every switch reads as on until then
 const allOn = async (): Promise<Switches> => ({
   uploads: "on",
   previews: "on",
@@ -78,6 +78,7 @@ const allOn = async (): Promise<Switches> => ({
 });
 
 export const defaultDeps: LibraryDeps = {
+  // transitional: A: A's member resolver replaces this one
   resolve: (request, env, config, now) => resolveMember(request, env, config, now),
   switches: allOn,
   now: Date.now,
@@ -291,7 +292,7 @@ export function makeLibraryRoutes(deps: LibraryDeps): readonly Route[] {
   ];
 }
 
-/** G's exact daily `take("export", 1, uid)` replaces this when the spend guard lands; the lease and RL_LIBRARY bound it until then. */
+// transitional: G: G's daily `take("export", 1, uid)` replaces this; the lease and RL_LIBRARY bound it until then
 const takeExport = async (): Promise<boolean> => true;
 
 export const libraryRoutes: readonly Route[] = [

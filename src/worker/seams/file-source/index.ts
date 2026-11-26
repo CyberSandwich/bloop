@@ -1,5 +1,6 @@
 // FileSource seam (docs/interfaces.md section 3). The route layer talks to this interface only.
 import type { FileEntry, FileType, Mode, SourceError } from "../../../shared/protocol.ts";
+import type { Pinned } from "../../library/store.ts";
 import type { ByteRange } from "../open-path/range.ts";
 
 export interface SourceContext {
@@ -9,6 +10,11 @@ export interface SourceContext {
   folderId: string | null;
   /** Graph only: returns a fresh access token from the vault, refreshing with compare-and-swap. */
   accessToken(): Promise<{ ok: true; token: string } | { ok: false; error: SourceError }>;
+  /**
+   * Library only: the phone session the fetch is on behalf of, so a signed-out phone stops serving. `null` is for the
+   * `/p/` preview fetch, which carries no session; left out, the library source finds nothing.
+   */
+  pinned?: Pinned | null;
 }
 
 export interface Resolved {
@@ -26,7 +32,7 @@ export interface Resolved {
 }
 
 export interface FileSource {
-  readonly kind: "mock" | "graph";
+  readonly kind: "mock" | "graph" | "library";
   /** At most `limit` decks, newest edit first. Never .pptm or macro-enabled types. */
   listRecent(
     ctx: SourceContext,
