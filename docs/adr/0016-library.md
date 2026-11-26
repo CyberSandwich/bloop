@@ -30,7 +30,7 @@ Status: proposed. Data model: ADR 0013. Serving and pairing: ADR 0015. Behavior 
 
 ### Export
 - A STORE-only zip with each entry's real CRC and size in its local header (U computes the CRC at upload, so no file byte is hashed), no data descriptors, Zip64 only for offsets and the end records. The whole archive is a pure function of the snapshot, so `Content-Length`, `ETag` and `Range` resume are exact (O18). A disabled file is listed but its bytes are left out.
-- One export at a time per user (a 2-hour lease in the user's object), capped per day by the spend guard. A purge skips a user with a live lease; an account purge does not wait.
+- One export at a time per user (a 15-minute lease in the user's object, renewed while the client reads, because a vanished client is not always reported to the Worker: a long lease would hold the user out for hours, and a short unrenewed one would cut a slow download off), capped per day by the spend guard. A purge skips a user with a live lease; an account purge does not wait.
 - New abstractions, each removable: the zip layout (`library/zip.ts`) and the alarm-driven purge. No new dependency.
 
 ### Preview tokens

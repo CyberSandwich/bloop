@@ -44,6 +44,12 @@ const isClaims = (c: unknown): c is Claims => {
   );
 };
 
+/** The keys a token may verify under: the current, then the previous during a rotation. None without a current key. */
+export const previewKeys = (secrets: { fileTokenKey: string | null; fileTokenKeyPrevious: string | null }): string[] =>
+  secrets.fileTokenKey === null
+    ? []
+    : [secrets.fileTokenKey, ...(secrets.fileTokenKeyPrevious === null ? [] : [secrets.fileTokenKeyPrevious])];
+
 /**
  * The claims of a token signed by one of `keys` (the current key, then the one before a rotation), or null. Shape first,
  * then the MAC in constant time, then the clock; a token from the previous key dies by its own `exp`, at most 300 s on.
