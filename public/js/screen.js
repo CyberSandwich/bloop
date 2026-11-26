@@ -383,6 +383,8 @@ function onView(/** @type {ScreenView} */ view) {
     endedSince = Date.now();
     endedAsked = 0;
     endedHold = ended || DEMO ? ENDED_HOLD_MS : ENDED_QR_RETURN_MS;
+    // The listeners come with the first Session Ended; without them the hold runs its length.
+    void import("./core/skip-ended.js").then((m) => m.listen(skipEnded));
   }
   if (view.state === "ended" || view.state === "closed") dropMine(s.sid);
   s.view = view;
@@ -465,12 +467,6 @@ function skipEnded() {
   endedHold = ENDED_QR_RETURN_MS;
   render();
 }
-document.addEventListener("click", (e) => {
-  if (!(e.target instanceof Element && e.target.closest("a"))) skipEnded();
-});
-document.addEventListener("keydown", (e) => {
-  if (e.key === "Enter" && !e.repeat && !(e.target instanceof HTMLAnchorElement)) skipEnded();
-});
 buttons.copy.addEventListener("click", () => {
   if (!s.shown) return;
   navigator.clipboard?.writeText(format(s.shown)).then(

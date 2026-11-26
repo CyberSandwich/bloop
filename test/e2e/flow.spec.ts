@@ -963,6 +963,28 @@ test.describe("pairing flow", () => {
     await screen.context.close();
   });
 
+  test("the Ended skip's module failing to load leaves Session Ended to its own 10 s hold, and nothing else breaks", async ({
+    browser,
+  }) => {
+    const screen = await demoScreen(browser);
+    const page = screen.page;
+    await page.route("**/js/core/skip-ended.js", (route) => route.abort());
+    const { phone } = await scan(browser, page);
+    await phone.page.getByRole("button", { name: "Approve" }).click();
+    await expectViewer(page);
+    await page.getByRole("button", { name: "End", exact: true }).click();
+    await expect(heading(page)).toHaveText("Session Ended");
+    await page.waitForTimeout(800);
+    await page.mouse.click(SCREEN.width / 2, 80);
+    await page.keyboard.press("Enter");
+    // Past the 3 s a tap would have cut it to, the hold still stands.
+    await page.waitForTimeout(3500);
+    await expect(heading(page)).toHaveText("Session Ended");
+    await expect(heading(page)).toHaveText(DEMO.room, { timeout: 15_000 });
+    await phone.context.close();
+    await screen.context.close();
+  });
+
   test("PAIR-12 a Revoke that fails offline keeps Revoke alone and the pid, and shows no Back that would strand the session", async ({
     browser,
   }) => {

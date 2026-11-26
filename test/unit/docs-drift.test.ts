@@ -334,6 +334,7 @@ describe("size budgets", () => {
     expect(Object.fromEntries(lazyEntries.map((e) => [e.name, e.path]))).toEqual({
       "phone photo, lazy": "public/js/core/photo.js",
       "phone video, lazy": "public/js/core/video.js",
+      "screen ended skip, lazy": "public/js/core/skip-ended.js",
       "screen video, lazy": "public/js/viewer-video.js",
       "session length sheet, lazy": [
         "public/js/core/lazy.js",
