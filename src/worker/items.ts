@@ -15,6 +15,7 @@ import type {
   Shown,
 } from "../shared/protocol.ts";
 import type { FileRef } from "./machine.ts";
+import { previewId } from "./yt-thumb.ts";
 
 /** A web link the source offered. `url` is what `allowedLink` answered, never the raw input (LINK-01). */
 export interface LinkRef {
@@ -23,6 +24,8 @@ export interface LinkRef {
   ref: string;
   url: string;
   title: string;
+  /** What `allowedPreview` answered: a same-origin thumbnail path, absent when the link has none (PREVIEW-01). */
+  preview?: string;
 }
 export type FileItemRef = FileRef & { kind: "file"; id: string };
 export type ItemRef = FileItemRef | LinkRef;
@@ -33,7 +36,7 @@ export type ItemDraft = Omit<FileItemRef, "id"> | Omit<LinkRef, "id">;
 export const MAX_ITEMS = 12;
 
 /** Hosts a link item may point at. A link is a card the presenter clicks, never a frame (LINK-01). */
-export const LINK_HOSTS: readonly string[] = ["www.vevox.com"];
+export const LINK_HOSTS: readonly string[] = ["www.vevox.com", "www.youtube.com"];
 const MAX_URL_CHARS = 2048;
 
 /**
@@ -66,6 +69,9 @@ const KINDS: Readonly<Record<FileType, ItemKind>> = {
   mp4: "video",
   mov: "video",
 };
+
+/** A link's preview path when it is a same-origin `/yt/<id>.jpg` (PREVIEW-01), else null: never an absolute URL. */
+export const allowedPreview = (raw: string): string | null => (previewId(raw) ? raw : null);
 
 /** What a file of this type is shown as: derived on the server, never taken from a client. */
 // Own keys only: a stored type such as "constructor" must not read Object.prototype.
@@ -209,7 +215,8 @@ export function fileAt(items: readonly ItemRef[], index: number): FileItemRef | 
  * by name, so a stored object holding more can never pass it through (PAIR-16).
  */
 export const itemView = (i: ItemRef): Item => {
-  if (i.kind === "link") return { kind: "link", id: i.id, url: i.url, title: i.title };
+  if (i.kind === "link")
+    return { kind: "link", id: i.id, url: i.url, title: i.title, ...(i.preview ? { preview: i.preview } : {}) };
   const d = i.derived;
   return {
     kind: "file",

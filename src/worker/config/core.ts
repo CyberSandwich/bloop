@@ -168,6 +168,9 @@ export const coreVars = {
     .describe(
       "R2 gets and heads per UTC calendar month: 50% of the free tier's 10M. At the cap /f/ reads of guest files answer upstream_failed (502).",
     ),
+  YT_THUMB_ORIGIN: optional(z.url().max(MAX_ORIGIN_CHARS)).describe(
+    "Test only. The origin of a local stand-in for i.ytimg.com that the thumbnail route fetches from; refused unless PUBLIC_ORIGIN is a local address, so it is never set in a deployment.",
+  ),
   TEST_TIMING: z
     .enum(["0", "1"])
     .default("0")

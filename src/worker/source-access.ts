@@ -6,7 +6,7 @@ import { phoneUser, servicesFor } from "./auth/services.ts";
 import type { Config } from "./config.ts";
 import type { Env } from "./env.ts";
 import { fail } from "./http.ts";
-import { allowedLink, type ItemDraft } from "./items.ts";
+import { allowedLink, allowedPreview, type ItemDraft } from "./items.ts";
 import { DEMO_LINKS, demoSource } from "./seams/file-source/demo.ts";
 import { GraphFileSource } from "./seams/file-source/graph.ts";
 import type { FileSource, SourceContext } from "./seams/file-source/index.ts";
@@ -72,7 +72,9 @@ export async function listEntries(
       ...listed.files,
       ...access.links.flatMap((l) => {
         const url = allowedLink(l.url);
-        return url ? [{ ...l, url }] : [];
+        // A link whose preview is not a same-origin thumbnail path is not listed at all (PREVIEW-01).
+        const previewOk = l.preview === undefined || allowedPreview(l.preview) !== null;
+        return url && previewOk ? [{ ...l, url }] : [];
       }),
     ],
   };
@@ -91,7 +93,13 @@ export async function resolveListed(
     if (!entry) return { ok: false, error: "file_not_found" };
     items.push(
       entry.kind === "link"
-        ? { kind: "link", ref: entry.id, url: entry.url, title: entry.title }
+        ? {
+            kind: "link",
+            ref: entry.id,
+            url: entry.url,
+            title: entry.title,
+            ...(entry.preview ? { preview: entry.preview } : {}),
+          }
         : {
             kind: "file",
             source: access.source.kind,

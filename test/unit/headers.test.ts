@@ -218,6 +218,18 @@ describe("headers.ts", () => {
     }
   });
 
+  it("PREVIEW-01 thumb policy: the handler's Cache-Control survives, the page policies are never widened", () => {
+    expect(headersFor("thumb")["Cache-Control"]).toBeUndefined();
+    expect(CSP.thumb).toBe(CSP.api);
+    const kept = withHeaders(new Response("x", { headers: { "Cache-Control": "public, max-age=86400" } }), "thumb");
+    expect(kept.headers.get("Cache-Control")).toBe("public, max-age=86400");
+    expect(kept.headers.get("X-Content-Type-Options")).toBe("nosniff");
+    for (const policy of ["landing", "app", "screen", "library"] as const) {
+      expect(CSP[policy]).toContain("img-src 'self'");
+      expect(CSP[policy]).not.toMatch(/img-src[^;]*(ytimg|youtube|https:)/);
+    }
+  });
+
   it("withHeaders overrides what a handler set and keeps status and body", async () => {
     const res = withHeaders(new Response("x", { status: 418, headers: { "X-Frame-Options": "SAMEORIGIN" } }), "api");
     expect(res.status).toBe(418);
