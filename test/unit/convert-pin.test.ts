@@ -1,6 +1,6 @@
 import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
-import { requirePrebuilt, withImage, withPrebuilt } from "../../tools/prebuilt.mjs";
+import { requirePrebuilt, withAccount, withDigest, withPrebuilt } from "../../tools/prebuilt.mjs";
 import { wranglerConfig } from "../../tools/wrangler-config.mjs";
 
 const wrangler = readFileSync(new URL("../../wrangler.jsonc", import.meta.url), "utf8");
@@ -26,24 +26,27 @@ describe("CONV-06 pin: the container the Converter starts is the image container
     expect(imageOf(wrangler)).toBe(ZEROS);
   });
 
-  it("the rewrite names the account's own registry and the digest in digest.txt, never a tag", () => {
-    const filled = withImage(withPrebuilt(wrangler), ACCOUNT, digest);
+  it("rewrite fills the digest in digest.txt and leaves the account zeros; never a tag", () => {
+    const rewritten = withDigest(withPrebuilt(wrangler), digest);
+    expect(imageOf(rewritten)).toBe(`registry.cloudflare.com/${"0".repeat(32)}/bloop-converter@${digest}`);
+  });
+
+  it("account fills the account's own registry, and the result passes requirePrebuilt", () => {
+    const filled = withAccount(withDigest(withPrebuilt(wrangler), digest), ACCOUNT);
     expect(imageOf(filled)).toBe(`registry.cloudflare.com/${ACCOUNT}/bloop-converter@${digest}`);
     expect(() => requirePrebuilt(filled)).not.toThrow();
   });
 
-  it("an unrewritten config is refused by a deploy", () => {
-    expect(() => requirePrebuilt(withPrebuilt(wrangler))).toThrow(/image placeholder/);
+  it("a deploy that skipped rewrite or account is refused", () => {
+    expect(() => requirePrebuilt(withPrebuilt(wrangler))).toThrow(/digest placeholder/);
+    expect(() => requirePrebuilt(withDigest(withPrebuilt(wrangler), digest))).toThrow(/account placeholder/);
   });
 
-  it("without a secret the account stays zeros but the digest is still filled; bad input is refused", () => {
-    expect(imageOf(withImage(wrangler, undefined, digest))).toBe(
-      `registry.cloudflare.com/${"0".repeat(32)}/bloop-converter@${digest}`,
-    );
-    expect(() => withImage(wrangler, "not-an-id", digest)).toThrow(/32-character hex/);
-    expect(() => withImage(wrangler, `${ACCOUNT}\n`, digest)).toThrow(/32-character hex/);
-    expect(() => withImage(wrangler, ACCOUNT, "latest")).toThrow(/sha256 digest/);
-    expect(() => withImage(wrangler, ACCOUNT, `${digest}x`)).toThrow(/sha256 digest/);
-    expect(() => withImage(wrangler, ACCOUNT, `sha256:${"0".repeat(64)}`)).toThrow(/sha256 digest/);
+  it("account refuses an unset, short, non-hex, padded or all-zero id and rewrite refuses a bad digest", () => {
+    for (const bad of [undefined, "", "abc", "g".repeat(32), `${ACCOUNT}\n`, ACCOUNT.toUpperCase(), "0".repeat(32)])
+      expect(() => withAccount(wrangler, bad)).toThrow(/32-character hex/);
+    expect(() => withDigest(wrangler, "latest")).toThrow(/sha256 digest/);
+    expect(() => withDigest(wrangler, `${digest}x`)).toThrow(/sha256 digest/);
+    expect(() => withDigest(wrangler, `sha256:${"0".repeat(64)}`)).toThrow(/sha256 digest/);
   });
 });
