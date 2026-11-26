@@ -267,6 +267,7 @@ public/                    the assets' source, built into dist/ (each JS module 
   js/core/drag.js   the phone's drop hint, loaded at its first file drag
   js/core/remote-ui.js js/core/remote.js css/remote.css   the phone's remote, fetched once its claim is a demo's; its state (seq, the tap shown before the answer)
   js/core/lazy.js   what the length sheet and the remote share: their stylesheet's load, a refusal as a toast
+  js/core/upload.js js/core/pill.js js/core/upload-pill.js css/upload.css   the upload engine (no DOM), the pill's face, their binding with the batch sheet, and the stylesheet; loaded on the first intent to add (docs/ux/upload.md)
   img/demo-slide-{n}.{avif,webp}   the sample deck's pages, shown for the deck and its PDF (tools/render-slides.py)
   img/hero-viewer-{1000,1440}.{avif,webp}   the landing stage's screenshot of the Demo Room
   img/hero-phone-{600,900}.{avif,webp}      the landing stage's phone mockup, under 640 wide
