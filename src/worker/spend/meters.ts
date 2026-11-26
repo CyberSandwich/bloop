@@ -454,6 +454,14 @@ export class Ledger {
     this.sql.exec("DELETE FROM alert WHERE key = ?", key);
   }
 
+  /** Forgets several claims, one statement per 100 keys (SQLite's bind limit is far above it). */
+  unalertMany(keys: readonly string[]): void {
+    for (let i = 0; i < keys.length; i += 100) {
+      const chunk = keys.slice(i, i + 100);
+      this.sql.exec(`DELETE FROM alert WHERE key IN (${chunk.map(() => "?").join(", ")})`, ...chunk);
+    }
+  }
+
   setBlob(key: string, value: string): void {
     this.sql.exec("INSERT OR REPLACE INTO blob (key, value) VALUES (?, ?)", key, value);
   }

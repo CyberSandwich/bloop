@@ -1,10 +1,21 @@
-// Every member and admin route spends the coarse per-IP meter before its first D1 read. The walk loads every route
-// module, so a member route a new module adds is covered without a list to update.
+// Every member and admin route, and the member page gate, spends the coarse per-IP meter before its first session
+// read. The walk loads every route module, so a member route a new module adds is covered without a list to update.
 import { readdirSync, readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it, vi } from "vitest";
 import type { Statement } from "../../src/worker/auth/db.ts";
-import { type AnyRoute, callRoute, GRAPH, memberWorld, recordingLimits, seedMember, sid } from "./member-fixture.ts";
+import type { Variant } from "../../src/worker/page-registry.ts";
+import { type PageEnv, servePage } from "../../src/worker/pages.ts";
+import {
+  type AnyRoute,
+  callRoute,
+  GRAPH,
+  memberWorld,
+  recordingLimits,
+  seedMember,
+  setMode,
+  sid,
+} from "./member-fixture.ts";
 
 vi.mock("cloudflare:workers", () => ({ DurableObject: class {} }));
 
@@ -28,6 +39,21 @@ async function memberRoutes(): Promise<AnyRoute[]> {
   return found.filter((r) => MEMBER_PATH.test(r.pattern.pathname));
 }
 
+/** A member world whose limiter and D1 both log into `seen`, in order; `refuse` names limits that say no. */
+async function metered(refuse: string[] = []) {
+  const world = memberWorld({ ...GRAPH, TEST_TIMING: "0" });
+  const cookie = await seedMember(world.db, "m1", "admin@example.test");
+  const { seen, bindings } = recordingLimits(refuse);
+  const db = {
+    ...world.db,
+    prepare: (sql: string): Statement => {
+      seen.push(["D1", sql]);
+      return world.db.prepare(sql);
+    },
+  };
+  return { world, cookie, seen, env: { ...world.env, ...bindings, DB: db } };
+}
+
 describe("AUTH-19 meter: no D1 read before the per-IP meter", () => {
   it("AUTH-19 meter: every member and admin route in every route module, with a live or a forged cookie, spends RL_MEMBER_IP before it touches D1", async () => {
     const routes = await memberRoutes();
@@ -36,17 +62,7 @@ describe("AUTH-19 meter: no D1 read before the per-IP meter", () => {
     for (const [r, method] of calls) {
       const path = r.pattern.pathname.replace(/:(\w+)/g, "A".repeat(22));
       for (const live of [true, false]) {
-        const world = memberWorld({ ...GRAPH, TEST_TIMING: "0" });
-        const cookie = await seedMember(world.db, "m1", "admin@example.test");
-        const { seen, bindings } = recordingLimits();
-        const db = {
-          ...world.db,
-          prepare: (sql: string): Statement => {
-            seen.push(["D1", sql]);
-            return world.db.prepare(sql);
-          },
-        };
-        const env = { ...world.env, ...bindings, DB: db };
+        const { cookie, seen, env } = await metered();
         const value = live ? cookie : "A".repeat(43);
         await callRoute([r], env, method, path, { cookie: sid(value) }).catch(() => undefined);
         const label = `${method} ${path} ${live ? "live" : "forged"} cookie`;
@@ -58,5 +74,54 @@ describe("AUTH-19 meter: no D1 read before the per-IP meter", () => {
         expect(meter, label).toBeLessThan(firstRead);
       }
     }
+  });
+});
+
+describe("AUTH-19 meter: the member page gate", () => {
+  const PRIVACY: Variant[] = [{ path: "/privacy", kind: "both" }];
+  const page = async (env: object, path: string, cookie?: string, variants?: Variant[]) => {
+    const assets = {
+      fetch: async (request: Request) => {
+        const at = new URL(request.url).pathname;
+        return at === "/.missing" ? new Response("not found", { status: 404 }) : new Response(`asset ${at}`);
+      },
+    };
+    const headers: Record<string, string> = cookie ? { Cookie: cookie } : {};
+    const res = await servePage(
+      new Request(`http://localhost:8787${path}`, { headers }),
+      { ...env, ASSETS: assets } as unknown as PageEnv,
+      variants,
+    );
+    return { status: res.status, text: await res.text() };
+  };
+  const sessionReads = (seen: [string, string][]) =>
+    seen.flatMap(([name, sql], i) => (name === "D1" && sql.includes("phone_session") ? [i] : []));
+
+  it("AUTH-19 meter: a session cookie of the wrong shape is dropped before any session read or meter", async () => {
+    const { world, seen, env } = await metered();
+    setMode(world.db, "preview");
+    const signedOut = await page(env, "/library");
+    seen.length = 0;
+    expect(await page(env, "/library", sid("not-a-session"))).toEqual(signedOut);
+    expect(sessionReads(seen)).toEqual([]);
+    expect(seen.some(([name]) => name === "RL_MEMBER_IP")).toBe(false);
+  });
+
+  it("AUTH-19 meter: a well-formed cookie spends RL_MEMBER_IP before the session lookup", async () => {
+    const { world, cookie, seen, env } = await metered();
+    setMode(world.db, "preview");
+    expect(await page(env, "/library", sid(cookie))).toEqual({ status: 200, text: "asset /library" });
+    const meter = seen.findIndex(([name]) => name === "RL_MEMBER_IP");
+    expect(meter).toBeGreaterThanOrEqual(0);
+    expect(sessionReads(seen)[0]).toBeGreaterThan(meter);
+  });
+
+  it("AUTH-19 meter: over RL_MEMBER_IP a page renders as for a signed-out visitor, a 200 for the open view, never an error", async () => {
+    const { world, cookie, seen, env } = await metered(["RL_MEMBER_IP"]);
+    setMode(world.db, "preview");
+    expect(await page(env, "/library", sid(cookie))).toEqual(await page(env, "/library"));
+    const viewer = `${sid(cookie)}; __Host-bloop_view=open`;
+    expect(await page(env, "/privacy", viewer, PRIVACY)).toEqual({ status: 200, text: "asset /privacy" });
+    expect(sessionReads(seen)).toEqual([]);
   });
 });

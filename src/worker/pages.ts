@@ -1,14 +1,15 @@
 // Which static page answers a path, by launch mode (ADR 0026). Every non-dynamic request outside the static trees
 // (wrangler.jsonc `run_worker_first`) passes through `servePage`, so the rules below hold whatever the asset layer
 // would do with the raw path.
-import { readCookie, VIEW_COOKIE } from "./auth/cookies.ts";
-import { resolveMember } from "./auth/member.ts";
+import { readCookie, SESSION_COOKIE, VIEW_COOKIE } from "./auth/cookies.ts";
+import { type Member, type MemberOptions, resolveMember } from "./auth/member.ts";
 import { type Config, configFor } from "./config.ts";
 import { DYNAMIC_PAGES, pageCsp, withHeaders } from "./headers.ts";
 import { fail } from "./http.ts";
 import { launchState } from "./mode.ts";
 import { pillRequest, withAccountPill } from "./nav-pill.ts";
 import { AUTH_SHELLS, MEMBER_PAGES, VARIANTS, type Variant } from "./page-registry.ts";
+import { type Limiter, spendLimit } from "./rate-limit.ts";
 
 const SHELLS: ReadonlySet<string> = new Set(AUTH_SHELLS);
 const MEMBERS: ReadonlySet<string> = new Set(MEMBER_PAGES);
@@ -17,6 +18,23 @@ const MEMBERS: ReadonlySet<string> = new Set(MEMBER_PAGES);
 export interface PageEnv {
   ASSETS: { fetch(request: Request): Promise<Response> };
   DB: unknown;
+  RL_MEMBER_IP?: Limiter;
+}
+
+/** A session cookie of the shape `newSecret` makes (32 bytes, base64url); any other value reads nothing. */
+const SESSION_VALUE = /^[A-Za-z0-9_-]{43}$/;
+
+/**
+ * The member a page shows for, or null as for a signed-out visitor. A cookie of the wrong shape is dropped before
+ * any D1 read; a well-formed one spends the coarse per-IP RL_MEMBER_IP before the session lookup (AUTH-19), and
+ * over it the page renders as signed out, never an error.
+ */
+async function pageMember(request: Request, env: PageEnv, config: Config, options: MemberOptions = {}) {
+  const cookie = readCookie(request, SESSION_COOKIE);
+  if (!cookie || !SESSION_VALUE.test(cookie)) return null;
+  if (await spendLimit(env.RL_MEMBER_IP, "RL_MEMBER_IP", request, config)) return null;
+  const who = await resolveMember(request, env, config, options);
+  return who.ok ? who.member : null;
 }
 
 /** A path no file has, so the asset layer answers its own 404 page: a hidden page looks exactly like a missing one. */
@@ -112,8 +130,7 @@ async function adminViewing(request: Request, env: PageEnv): Promise<boolean> {
   const config = configFor(env);
   if (!config.ok) return false;
   try {
-    const who = await resolveMember(request, env, config.config);
-    return who.ok && who.member.admin;
+    return (await pageMember(request, env, config.config))?.admin === true;
   } catch {
     console.error("admin_view_check_failed");
     return false;
@@ -127,8 +144,8 @@ async function adminViewing(request: Request, env: PageEnv): Promise<boolean> {
  */
 async function memberVisible(request: Request, env: PageEnv, config: Config, path: string): Promise<boolean> {
   try {
-    const who = await resolveMember(request, env, config, { fresh: path === "/admin" });
-    return who.ok && (path !== "/admin" || who.member.admin);
+    const member: Member | null = await pageMember(request, env, config, { fresh: path === "/admin" });
+    return member !== null && (path !== "/admin" || member.admin);
   } catch {
     // A database error hides the page like any other doubt; it never shows it and never answers 500.
     console.error("member_page_check_failed");

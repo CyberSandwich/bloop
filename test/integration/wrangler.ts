@@ -87,7 +87,7 @@ function limitedConfig(state: string, limits: Readonly<Record<string, number>>):
   let text = readFileSync(join(root, "wrangler.jsonc"), "utf8");
   const declared = declaredRateLimits(text);
   for (const [name, limit] of Object.entries(limits)) {
-    if (!declared[name]) throw new Error(`wrangler.jsonc declares no rate-limit binding ${name}`);
+    if (!declared[name]) throw new Error(`wrangler.jsonc has no one-line production ratelimits entry for ${name}`);
     if (!Number.isInteger(limit) || limit < 1) throw new Error(`${name}: a limit is a positive integer, not ${limit}`);
   }
   text = text.replace(RATE_LIMIT_ENTRY, (entry, head: string, name: string, _limit: string, tail: string) =>
@@ -106,12 +106,14 @@ function limitedConfig(state: string, limits: Readonly<Record<string, number>>):
 }
 
 /**
- * wrangler reads `.dev.vars`, else `.env`, from its config's directory, so a config in the state directory points it
- * at the repo's own file instead (read in place, never copied).
+ * wrangler reads `.dev.vars`, else `.env` then `.env.local`, from its config's directory, so a config in the state
+ * directory points it at the repo's own files instead (read in place, never copied). Trap: with `--env-file` it
+ * reads only the files named, so the `.env.<environment>` forms are not passed; the harness selects no environment.
  */
 export function devVarsArgs(dir = root): string[] {
-  const file = [".dev.vars", ".env"].map((name) => join(dir, name)).find((path) => existsSync(path));
-  return file ? ["--env-file", file] : [];
+  const at = (name: string) => join(dir, name);
+  const files = existsSync(at(".dev.vars")) ? [at(".dev.vars")] : [at(".env"), at(".env.local")].filter(existsSync);
+  return files.flatMap((file) => ["--env-file", file]);
 }
 
 /** Signals the whole process group; ESRCH (already gone) is fine. */
