@@ -20,6 +20,7 @@ const members = {
   rename: fixtures.member([
     ["a", "Lecture 10.pptx", { selected_at: now - 10 }],
     ["b", "Lecture 2.pptx"],
+    ["c", "Alpha.pptx"],
   ]),
   sample: fixtures.member(),
   preview: fixtures.member([["a", "Reading list.pdf"]]),
@@ -131,7 +132,9 @@ test.describe("library", () => {
 
     await page.getByRole("button", { name: "Sort" }).click();
     await page.getByRole("menuitemradio", { name: "Name" }).click();
-    await expect(page.locator("#file-list > li").first()).toContainText("Lecture 3.pptx");
+    // Newest First would put the renamed file first, and a plain string order would put Lecture 10 before Lecture 3.
+    const names = page.locator("#file-list > li .row-name");
+    await expect(names).toHaveText(["Alpha.pptx", "Lecture 3.pptx", "Lecture 10.pptx"]);
 
     await page.locator("#present:visible, #present-card:visible").first().click();
     const sheet = page.getByRole("dialog", { name: "Present on a Screen" });
