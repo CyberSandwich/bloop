@@ -78,15 +78,16 @@ export interface MemberRouteOptions<T> extends MemberOptions {
    * a foreign Origin or a wrong content type looks exactly like a missing path.
    */
   admin?: boolean;
-  /** The platform limit the route spends after the member is known, keyed by the member (RL_AUTH when absent). */
+  /** The platform limit the route spends after the member is known, keyed by the member (RL_MEMBER when absent). */
   limit?: RateLimitName;
 }
 
 /**
- * A route for a signed-in member. A write checks Origin, Sec-Fetch-Site and the content type (an admin route only
- * after the admin check), spends the IP-keyed RL_AUTH before the session read, then the member-keyed limit, then reads
- * the body, so a refused caller learns nothing from the schema. A read spends only the member-keyed limit, so one
- * shared campus address is never one bucket for its readers.
+ * A route for a signed-in member. A write checks Origin, Sec-Fetch-Site and the content type and spends the coarse
+ * IP-keyed RL_MEMBER_IP before the session read; then every route spends the member-keyed limit and a write reads the
+ * body, so a refused caller learns nothing from the schema. A read spends only the member-keyed limit, so one shared
+ * campus address is never one bucket for its readers. An admin route spends nothing and checks nothing before the
+ * admin check, so a non-admin's answer is the unknown path's at every request count.
  */
 export function memberRoute<T = Record<string, never>>(
   methods: readonly string[],
@@ -100,7 +101,7 @@ export function memberRoute<T = Record<string, never>>(
       const refusedWrite = () => (writes ? checkWrite(req, config.origin) : null);
       const early = options.admin ? null : refusedWrite();
       if (early) return early;
-      const flood = writes ? await limited(e, "RL_AUTH", req, config) : null;
+      const flood = writes && !options.admin ? await limited(e, "RL_MEMBER_IP", req, config) : null;
       if (flood) return flood;
       const who = await resolveMember(req, e, config, options);
       const hidden = options.admin ? (who.ok ? requireAdmin(who.member) : fail("not_found")) : null;
@@ -108,7 +109,7 @@ export function memberRoute<T = Record<string, never>>(
       if (!who.ok) return who.response;
       const late = options.admin ? refusedWrite() : null;
       if (late) return late;
-      const tooMany = await limited(e, options.limit ?? "RL_AUTH", req, config, who.member.userId);
+      const tooMany = await limited(e, options.limit ?? "RL_MEMBER", req, config, who.member.userId);
       if (tooMany) return tooMany;
       let body = {} as T;
       if (options.body) {
@@ -140,15 +141,14 @@ export function accountRoutesWith(deps: AccountDeps): readonly Route[] {
     withConfig(async (request, env, config) => {
       const body = await write(request, config, emptyBody);
       if (!body.ok) return body.response;
-      const flood = await limited(env, "RL_AUTH", request, config);
+      const flood = await limited(env, "RL_MEMBER_IP", request, config);
       if (flood) return flood;
       const cleared = signedOutCookies({ everywhere });
       const { cookie, sessions, view } = await sessionView(request, env, config);
       if (!cookie || !view) return withCookies(fail("auth_required"), cleared);
-      const tooMany = await limited(env, "RL_AUTH", request, config, view.userId);
+      const tooMany = await limited(env, "RL_MEMBER", request, config, view.userId);
       if (tooMany) return tooMany;
       if (everywhere) {
-        // TRANSITIONAL(F): this also bumps app_user.device_epoch (codes.ts deviceMac) once that column exists.
         await endSessions(deps, env, view.userId, await sessions.destroyAll(view.userId));
       } else {
         await sessions.destroy(cookie);
@@ -176,11 +176,9 @@ export function accountRoutesWith(deps: AccountDeps): readonly Route[] {
         const { mode: launchMode } = await launchState(env);
         // C(d): a deleting member sees their deletion and can restore; every other refusal reads as signed out.
         const who = view ? await memberOf(view, env, config, sessions, { allowDeleting: true }) : null;
-        if (!who?.ok) {
-          const signedOut = json({ source: config.fileSource, signedIn: false, launchMode });
-          // A cookie that names no live session goes, with the hint beside it.
-          return cookie && !view ? withCookies(signedOut, signedOutCookies({ everywhere: false })) : signedOut;
-        }
+        // A read never clears a cookie: a slow GET that resolved before a sign-in rotated the session would otherwise
+        // clear the new one. Only a write or an explicit sign-out clears.
+        if (!who?.ok) return json({ source: config.fileSource, signedIn: false, launchMode });
         const { member } = who;
         const summary = await sessions.summary(member.userId);
         return json({
@@ -233,7 +231,6 @@ export function accountRoutesWith(deps: AccountDeps): readonly Route[] {
       if (!id) return fail("bad_request");
       const stale = requireFresh(member, config);
       if (stale) return stale;
-      // TRANSITIONAL(F): a removed passkey also bumps app_user.device_epoch once that column exists.
       return (await deletePasskey(dbOf(env.DB), member.userId, id)) ? noContent() : fail("not_found");
     }),
 
@@ -264,7 +261,7 @@ export function accountRoutesWith(deps: AccountDeps): readonly Route[] {
           const who = await memberOf(view, env, config, sessions);
           if (!who.ok) return who.response;
         } else if (!config.graph) return fail("source_unavailable");
-        const tooMany = await limited(env, "RL_AUTH", request, config, view.userId);
+        const tooMany = await limited(env, "RL_MEMBER", request, config, view.userId);
         if (tooMany) return tooMany;
         const { limit, beforeId } = query.data;
         const rows = await auditFor(env).forUser(view.userId, limit, beforeId);
@@ -282,7 +279,7 @@ export function accountRoutesWith(deps: AccountDeps): readonly Route[] {
       withConfig(async (request, env, config) => {
         const body = await write(request, config, emptyBody);
         if (!body.ok) return body.response;
-        const flood = await limited(env, "RL_AUTH", request, config);
+        const flood = await limited(env, "RL_MEMBER_IP", request, config);
         if (flood) return flood;
         const { sessions, vault, view } = await sessionView(request, env, config);
         if (!view) return fail("auth_required");
@@ -295,7 +292,6 @@ export function accountRoutesWith(deps: AccountDeps): readonly Route[] {
           const stale = requireFresh(who.member, config);
           if (stale) return stale;
           const deleteAfter = Date.now() + config.account.deleteGraceDays * 86_400_000;
-          // TRANSITIONAL(F): this also bumps app_user.device_epoch once that column exists.
           const ended = await sessions.requestDeletion(userId, deleteAfter, view.hash);
           await endSessions(deps, env, userId, ended);
           return json({ signedIn: true, deleting: true });

@@ -454,13 +454,28 @@ describe("size budgets", () => {
 });
 
 describe("shipped code points only at tracked docs", () => {
+  const shipped = REPO_FILES.filter((path) => /^(src|public|tools)\//.test(path) && existsSync(join(ROOT, path)));
+
   it("no file in src/, public/ or tools/ names the gitignored plans (tasks/, plan-*, g-wiring)", () => {
-    const shipped = REPO_FILES.filter((path) => /^(src|public|tools)\//.test(path) && existsSync(join(ROOT, path)));
     expect(shipped.length).toBeGreaterThan(100);
     const offenders = shipped.filter((path) =>
-      /\btasks\/|\bplan-[a-z0-9]|\bg-wiring\b|\bplan [A-Z]\.\d/.test(read(path)),
+      /\btasks\/|\bplan-[a-z0-9]|\bg-wiring\b|\bplan [A-Z]\.\d|\bplan section\b/i.test(read(path)),
     );
     expect(offenders, "point at an ADR or docs/architecture.md instead").toEqual([]);
+  });
+
+  it("every TRANSITIONAL marker names a slice docs/architecture.md lists, and says what wires it in the code's words", () => {
+    const listed = (read("docs/architecture.md").match(/^Transitional slices: (.+)\.$/m)?.[1] ?? "")
+      .split(", ")
+      .map((s) => s.replace(/`/g, ""));
+    expect(listed.length).toBeGreaterThan(1);
+    const markers = shipped.flatMap((path) =>
+      [...read(path).matchAll(/TRANSITIONAL\(([^)]*)\)(.*)/g)].map((m) => ({ path, slice: m[1] ?? "", text: m[2] })),
+    );
+    expect(markers.length).toBeGreaterThan(10);
+    expect(markers.filter((m) => !listed.includes(m.slice))).toEqual([]);
+    // A marker names the code that ends it, never a plan, a section or a stream.
+    expect(markers.filter((m) => /\b(plan|section|stream)s?\b/i.test(m.text ?? ""))).toEqual([]);
   });
 });
 
