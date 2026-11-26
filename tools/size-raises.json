@@ -13,5 +13,10 @@
     "entry": "phone remote, lazy",
     "max": "2.32 kB",
     "decision": "owner-approved raises: 31 B for the phone preview cross-fade hook, 39 B more for the link-ask import and mount"
+  },
+  {
+    "entry": "phone JS",
+    "max": "16.715 kB",
+    "decision": "owner-approved 15 B raise for the /a layout fixes (no visible title, Ends in beside Revoke)"
   }
 ]
