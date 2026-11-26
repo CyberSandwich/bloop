@@ -1,6 +1,6 @@
 // /api/files and approve against the default mock source, and the OAuth routes while Entra is not configured.
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
-import { DEMO_IDS, DEMO_ITEMS } from "../../src/shared/demo-catalog.ts";
+import { DEMO_IDS, DEMO_ITEMS, DEMO_VIDEO_ID } from "../../src/shared/demo-catalog.ts";
 import { Api, claim, openScreen, startPairing } from "./pairing-client.ts";
 import type { Wrangler } from "./wrangler.ts";
 
@@ -13,6 +13,12 @@ beforeAll(async () => {
 afterAll(() => wrangler?.stop());
 
 const problem = (code: string) => expect.objectContaining({ code });
+/** The catalog's video link as the phone lists it and the views carry it: the watch URL and its same-origin thumbnail. */
+const VIDEO = {
+  url: `https://www.youtube.com/watch?v=${DEMO_VIDEO_ID}`,
+  title: DEMO_ITEMS.video.name,
+  preview: `/yt/${DEMO_VIDEO_ID}.jpg`,
+};
 /** A catalog file as an approved session lists it: its slot id and its name. */
 const slotted = (item: { slot: string; name: string }) => ({ id: item.slot, name: item.name });
 interface Files {
@@ -42,14 +48,24 @@ describe("GET /api/files with the mock source", () => {
     expect(res.body.items.map((f) => f.id)).toEqual(DEMO_IDS);
     for (const f of res.body.items) {
       if (f.kind === "link") {
-        expect(f).toEqual({ kind: "link", id: DEMO_ITEMS.link.id, url: "https://www.vevox.com/", title: "Vevox" });
+        expect(f).toEqual(
+          f.id === DEMO_ITEMS.video.id
+            ? { kind: "link", id: DEMO_ITEMS.video.id, ...VIDEO }
+            : { kind: "link", id: DEMO_ITEMS.link.id, url: "https://www.vevox.com/", title: DEMO_ITEMS.link.name },
+        );
         continue;
       }
       expect(Object.keys(f).sort()).toEqual(["id", "kind", "modifiedAt", "name", "size", "type"]);
       expect(f.modifiedAt).toBeLessThanOrEqual(Date.now());
       expect(f.size).toBeGreaterThan(0);
     }
-    expect(res.body.items.map((f) => (f.kind === "file" ? f.type : f.kind))).toEqual(["pptx", "jpg", "jpg", "link"]);
+    expect(res.body.items.map((f) => (f.kind === "file" ? f.type : f.kind))).toEqual([
+      "pptx",
+      "jpg",
+      "jpg",
+      "link",
+      "link",
+    ]);
     expect(res.headers.get("Cache-Control")).toBe("no-store");
     socket.close();
   });
@@ -201,6 +217,7 @@ describe("POST /api/approve resolves the file on the server", () => {
         show: "image",
         derived: null,
       },
+      { kind: "link", id: DEMO_ITEMS.video.slot, ...VIDEO },
       { kind: "link", id: DEMO_ITEMS.link.slot, url: "https://www.vevox.com/", title: DEMO_ITEMS.link.name },
     ];
     expect(approved.body.items).toEqual(want);

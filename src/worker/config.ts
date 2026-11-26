@@ -9,6 +9,7 @@ import { coreVars, isLocalOrigin } from "./config/core.ts";
 import { type LibraryConfig, libraryVars } from "./config/library.ts";
 import { spendVars } from "./config/spend.ts";
 import type { MachineConfig } from "./machine.ts";
+import { THUMB_ORIGIN } from "./yt-thumb.ts";
 
 export type { AccountConfig };
 export { isLocalOrigin };
@@ -32,6 +33,9 @@ const schema = z.object({ ...coreVars, ...libraryVars, ...accountVars, ...spendV
   }
   if (v.R2_DEV_ENDPOINT && !isLocalOrigin(v.PUBLIC_ORIGIN)) {
     issue("R2_DEV_ENDPOINT", "refused: PUBLIC_ORIGIN is not a local address");
+  }
+  if (v.YT_THUMB_ORIGIN && !isLocalOrigin(v.PUBLIC_ORIGIN)) {
+    issue("YT_THUMB_ORIGIN", "refused: PUBLIC_ORIGIN is not a local address");
   }
   if (v.CONVERT_MODE === "stub" && !isLocalOrigin(v.PUBLIC_ORIGIN)) {
     issue("CONVERT_MODE", "stub refused: PUBLIC_ORIGIN is not a local address");
@@ -139,6 +143,8 @@ export interface Config {
   r2ClassBMonthlyCap: number;
   /** Test only: the platform rate-limit bindings are skipped; the exact limits in the objects stay on. */
   testTiming: boolean;
+  /** Where the thumbnail route fetches from: i.ytimg.com, or (test only) a local stand-in. */
+  thumbOrigin: string;
   library: LibraryConfig;
   account: AccountConfig;
   secrets: V4Secrets;
@@ -217,6 +223,7 @@ export function parseConfig(env: Record<string, unknown>): ConfigResult {
       r2ClassAMonthlyCap: v.R2_CLASS_A_MONTHLY_CAP,
       r2ClassBMonthlyCap: v.R2_CLASS_B_MONTHLY_CAP,
       testTiming: v.TEST_TIMING === "1",
+      thumbOrigin: v.YT_THUMB_ORIGIN ?? THUMB_ORIGIN,
       library: {
         fileOrigin: v.FILE_ORIGIN ?? null,
         uploadMode: v.UPLOAD_MODE,
