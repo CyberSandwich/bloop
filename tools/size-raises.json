@@ -8,5 +8,10 @@
     "entry": "demo vertical photo",
     "max": "229 kB",
     "decision": "owner-approved exception for the demo files, docs/design.md section 11"
+  },
+  {
+    "entry": "room screen JS",
+    "max": "24.632 kB",
+    "decision": "owner-approved 82 B raise for the lazy tap-through and cross-fade hooks"
   }
 ]
