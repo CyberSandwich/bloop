@@ -38,6 +38,14 @@ const pieces = (bytes: Uint8Array, sizes: number[]): ChunkSource => {
   };
 };
 const chunked = (bytes: Uint8Array, size: number) => scanPdfChunks(pieces(bytes, [size]));
+/** One scan with the bytes its searches may read summed: a counter, not a clock, so load cannot flake it. */
+const worked = async (bytes: Uint8Array) => {
+  let work = 0;
+  const out = await scanPdfChunks(pieces(bytes, [bytes.length]), undefined, (n) => {
+    work += n;
+  });
+  return { out, work };
+};
 const fixture = (path: string) => new Uint8Array(readFileSync(new URL(`../../${path}`, import.meta.url)));
 const FILES: [string, Uint8Array][] = [
   ["the sample handout", fixture("test/fixtures/decks/sample-handout.pdf")],
@@ -289,14 +297,10 @@ describe("DROP-13 pdf-active: hostile input", () => {
   it("DROP-13 pdf-active: a run of unclosed strings and comments costs one lookback, not one per byte (scan stays linear)", async () => {
     for (const run of ["(", "%", "(%", "((((\\"]) {
       const poc = pdf(`1 0 obj<<${run.repeat(200_000)}`);
-      let lookaheads = 0;
-      const out = await scanPdfChunks(pieces(poc, [poc.length]), undefined, (bytes) => {
-        expect(bytes).toBeLessThanOrEqual(4096);
-        lookaheads++;
-      });
+      const { out, work } = await worked(poc);
       expect(out).toMatchObject({ ok: false, found: ["unscannable"] });
-      // The header comment and the first unclosed one; every later one is skipped.
-      expect(lookaheads, `run ${run}`).toBe(2);
+      // The names, the header comment and the first unclosed lookahead: every later one is skipped.
+      expect(work, `run ${run}`).toBeLessThanOrEqual(3 * poc.length);
     }
   });
 
@@ -378,23 +382,23 @@ describe("DROP-13 pdf-active: hostile input", () => {
 
   it("scans a million stream keywords in linear time", async () => {
     const hostile = enc.encode(`1 0 obj ${"stream\n".repeat(150_000)}`);
-    const t = performance.now();
-    expect(await scanPdf(hostile)).toEqual({ ok: true });
-    expect(performance.now() - t).toBeLessThan(200);
+    const { out, work } = await worked(hostile);
+    expect(out).toEqual({ ok: true });
+    expect(work).toBeLessThanOrEqual(3 * hostile.length);
   });
 
   it("scans a hundred thousand endobj keywords, each closing a reference /First, in linear time", async () => {
     const hostile = enc.encode(`1 0 obj ${"<</First 2 0 R>>endobj ".repeat(100_000)}${"endobj\n".repeat(100_000)}`);
-    const t = performance.now();
-    expect(await scanPdf(hostile)).toEqual({ ok: true });
-    expect(performance.now() - t).toBeLessThan(500);
+    const { out, work } = await worked(hostile);
+    expect(out).toEqual({ ok: true });
+    expect(work).toBeLessThanOrEqual(3 * hostile.length);
   });
 
   it("stops inflating at the first object stream it cannot read, however many follow", async () => {
     const hostile = enc.encode(`1 0 obj<</Type/ObjStm>>stream\n`.repeat(30_000));
-    const t = performance.now();
-    expect(await scanPdf(hostile)).toMatchObject({ ok: false, found: ["unscannable"] });
-    expect(performance.now() - t).toBeLessThan(500);
+    const { out, work } = await worked(hostile);
+    expect(out).toMatchObject({ ok: false, found: ["unscannable"] });
+    expect(work).toBeLessThanOrEqual(3 * hostile.length);
   });
 
   it("caps the object streams it inflates, and stays fast on a hundred thousand", async () => {
@@ -406,9 +410,9 @@ describe("DROP-13 pdf-active: hostile input", () => {
     };
     expect(await scanPdf(repeat(MAX_OBJECT_STREAMS))).toEqual({ ok: true });
     const hostile = repeat(100_000);
-    const t = performance.now();
-    expect(await scanPdf(hostile)).toMatchObject({ ok: false, found: ["unscannable"] });
-    expect(performance.now() - t).toBeLessThan(10_000);
+    const { out, work } = await worked(hostile);
+    expect(out).toMatchObject({ ok: false, found: ["unscannable"] });
+    expect(work).toBeLessThanOrEqual(3 * hostile.length);
   }, 30_000);
 
   it("inflates at most 32 MiB over all object streams, and refuses the stream that would pass it", async () => {

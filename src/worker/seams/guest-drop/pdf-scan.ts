@@ -156,13 +156,14 @@ const join = (a: Uint8Array, b: Uint8Array): Uint8Array => {
 /**
  * Every refused name in the file or its object streams, deduplicated and sorted; `unscannable` when a stream could
  * not be read or an `/ObjStm` token lies outside every dictionary read. Offsets are absolute (from the file's start);
- * the buffer `data` begins at `base`. `onBuffer` sees the buffer's size after each read, `onQuote` the bytes each string
- * or comment lookahead may read (tests bound both).
+ * the buffer `data` begins at `base`. `onBuffer` sees the buffer's size after each read, `onWork` the bytes each search
+ * (names, string and comment lookahead, `endstream`, a dictionary's text) may read: tests bound their sum, so a scan that
+ * reads a stretch again fails without a clock.
  */
 export async function scanPdfChunks(
   next: ChunkSource,
   onBuffer?: (bytes: number) => void,
-  onQuote?: (bytes: number) => void,
+  onWork?: (bytes: number) => void,
 ): Promise<Check & { found?: string[] }> {
   const found = new Set<string>();
   let data: Uint8Array = new Uint8Array();
@@ -264,8 +265,16 @@ export async function scanPdfChunks(
       }
       // With no match, a name may yet start at the last byte, once the bytes after it arrive.
       nameAhead = base + (m === null ? text.length - 1 : m.index);
+      onWork?.(nameAhead - namesDone);
     }
     namesDone = to;
+  };
+
+  /** `findEnd` over the buffer, counting what it read. */
+  const endOf = (from: number): number => {
+    const end = findEnd(data, from);
+    onWork?.((end === -1 ? data.length : end) - from);
+    return end;
   };
 
   /** Reads on until `endstream` after `from` arrives or the data is past one stream's cap; its offset, or -1. */
@@ -273,7 +282,7 @@ export async function scanPdfChunks(
     const need = from + MAX_STREAM_BYTES + ENDSTREAM.length;
     let searched = from;
     for (;;) {
-      const end = findEnd(data, searched - base);
+      const end = endOf(searched - base);
       if (end !== -1) return base + end;
       if (last || base + data.length >= need) return -1;
       searched = Math.max(from, base + data.length - ENDSTREAM.length + 1);
@@ -286,7 +295,7 @@ export async function scanPdfChunks(
   let dataEnd = Number.POSITIVE_INFINITY;
   /** Finds the `endstream` at or after `from` in the buffer; infinity when it has not arrived. */
   const refind = (from: number): void => {
-    const end = findEnd(data, Math.max(0, from - base));
+    const end = endOf(Math.max(0, from - base));
     dataEnd = end === -1 ? Number.POSITIVE_INFINITY : base + end;
   };
 
@@ -308,7 +317,7 @@ export async function scanPdfChunks(
         // Stream data is binary: its parentheses and percent signs are not strings or comments. Once the file is
         // refused nothing steers, and skipping keeps a run of unclosed ones from costing a lookback each.
         if (inData || !tracking()) continue;
-        onQuote?.(Math.min(text.length - m.index, DICT_LOOKBACK));
+        onWork?.(Math.min(text.length - m.index, DICT_LOOKBACK));
         const end = quotedEnd(text, m.index, last);
         if (end === -1) {
           // Too long to read as a string or comment: the marks inside it could be forged, so none is trusted.
@@ -342,6 +351,7 @@ export async function scanPdfChunks(
       const dictStart = dictAt;
       dictAt = -1;
       const dict = dictStart === -1 || at - dictStart > DICT_LOOKBACK ? "" : text.slice(dictStart - base, m.index);
+      onWork?.(dict.length);
       if (!isObjStm(dict)) {
         if (tracking()) streamMet(Number.POSITIVE_INFINITY);
         if (!inData) {
@@ -354,7 +364,7 @@ export async function scanPdfChunks(
       const from = at + m[0].length;
       let end = -1;
       if (streams < MAX_OBJECT_STREAMS && plainObjStm(dict)) {
-        end = findEnd(data, from - base);
+        end = endOf(from - base);
         if (end !== -1) end += base;
         else if (!last) {
           // The data runs past the buffer: keep only the data, then read on.
