@@ -25,8 +25,8 @@ export const pinnedUser = (m: Machine | null): Pinned | null =>
 
 /**
  * The approve gate (ADR 0015): the cookie user must be the pinned one, signed out included.
- * transitional: removed in P1 commit 4 (PAIR-15 auth-first: a live claim is then always signed in, so the
- * signed-out pairing this lets through goes, and the gate reads the pinned phone session too)
+ * transitional: removed in P1 commit 5 (PAIR-15 auth-first holds only with sign-in configured; once the mock source
+ * is no live default, a live pairing is always signed in and the signed-out match this lets through goes)
  */
 export const cookieMismatch = (m: Machine | null, cookieUser: string | null): boolean =>
   !m?.pairing || m.pairing.userId !== cookieUser;

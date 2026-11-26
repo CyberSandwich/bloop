@@ -6,6 +6,7 @@ import { phoneUser, servicesFor } from "../auth/services.ts";
 import type { Config } from "../config.ts";
 import type { Env } from "../env.ts";
 import { checkOrigin, fail, json } from "../http.ts";
+import { idempotency } from "../idem.ts";
 import { newRef } from "../ids.ts";
 import { type Route, route } from "../router.ts";
 import { directoryStub, screenStub } from "../stubs.ts";
@@ -44,7 +45,7 @@ export const pairingRoutes: readonly Route[] = [
     ["POST"],
     "/api/screens",
     "api",
-    // transitional: removed in P1 commit 4 (the Idempotency-Key replay, REL-14)
+    // transitional: removed in P1 commit 8 (the Idempotency-Key replay, REL-14: the sid's secret needs a nonce row too)
     withConfig(async (request, env, config) => {
       const body = await write(request, config, createBody);
       if (!body.ok) return body.response;
@@ -130,6 +131,7 @@ export const pairingRoutes: readonly Route[] = [
     "/api/claim",
     "api",
     withConfig(async (request, env, config) => {
+      const text = await request.clone().text();
       const body = await write(request, config, claimBody);
       if (!body.ok) return body.response;
       const tooMany = await limited(env, "RL_CLAIM", request, config);
@@ -137,22 +139,33 @@ export const pairingRoutes: readonly Route[] = [
       const code = normalize(body.value.code);
       if (!code) return fail("code_malformed");
       const hashed = await ipHash(request, config);
-      const found = await directoryStub(env).lookup(code, hashed, Date.now());
+      const kind = body.value.kind ?? "owner";
+      // The cookie first, so a signed-out owner never spends a live code (PAIR-15).
+      const userId = await phoneUser(request, servicesFor(env, config));
+      // transitional: removed in P1 commit 5 (with no sign-in configured the mock source stands in for an account)
+      const signedIn = userId !== null || config.graph === null;
+      const found = await directoryStub(env).lookup(code, hashed, Date.now(), { kind, signedIn });
       if (!found.ok) return fail(found.error);
       if (found.demo) {
         if (!config.demoEnabled) return fail("not_found");
         const slow = await limited(env, "RL_DEMO_CLAIM", request, config);
         if (slow) return slow;
       }
-      // transitional: removed in P1 commit 4 (auth-first PAIR-15, the Idempotency-Key replay, the phoneSession pin)
-      // Only the Graph source has accounts. The Screen object drops the user for a demo screen.
-      const userId = config.graph ? await phoneUser(request, servicesFor(env, config)) : null;
-      const claimed = await screenStub(env, found.screenRef).claim(code, {
-        kind: body.value.kind ?? "owner",
-        ipHash: hashed,
-        userId,
-        passHash: null,
+      const screen = screenStub(env, found.screenRef);
+      // A replay answers the first claim, so a lost answer never reads as `code_taken` (REL-14). Routing a code
+      // spends nothing, so the replay is read after the lookup that names its screen.
+      const owner = userId ?? `ip:${hashed}`;
+      const idem = await idempotency(request, text, owner, {
+        find: (o, keyHash, since) => screen.idemFind(o, keyHash, since),
       });
+      if (idem.kind === "bad" || idem.kind === "conflict") return fail("bad_request");
+      if (idem.kind === "replay") return json(idem.stored);
+      const claimed = await screen.claim(
+        code,
+        // transitional: removed in A (the signed-in phone session's public id, once sessionUser lands)
+        { kind, ipHash: hashed, userId, phoneSession: null, passHash: null },
+        idem.kind === "fresh" ? { owner, keyHash: idem.keyHash, bodyHash: idem.bodyHash } : undefined,
+      );
       return respond(claimed);
     }),
   ),
