@@ -235,6 +235,29 @@ describe("sessions: the devices list and its writes", () => {
     await sessions.touchUser((await sessions.lookup(value)) as NonNullable<Awaited<ReturnType<Sessions["lookup"]>>>);
     expect(seen()).toBe(clock.t);
   });
+
+  it("touchUser clears an inactivity warning and its deletion date on an active member, and a deletion request on none", async () => {
+    const { db, clock, now, sessions } = setup();
+    const a = await seedMember(db, "u1", "a@example.test", {}, { now });
+    const d = await seedMember(db, "u2", "d@example.test", {}, { now });
+    db.raw
+      .prepare("UPDATE app_user SET inactive_warned_at = ?, delete_after = ? WHERE id = 'u1'")
+      .run(T0 + 1, T0 + 5 * DAY);
+    db.raw
+      .prepare("UPDATE app_user SET status = 'deleting', inactive_warned_at = ?, delete_after = ? WHERE id = 'u2'")
+      .run(T0 + 1, T0 + 5 * DAY);
+    clock.t += DAY + 1;
+    for (const value of [a, d]) {
+      await sessions.touchUser((await sessions.lookup(value)) as NonNullable<Awaited<ReturnType<Sessions["lookup"]>>>);
+    }
+    const rows = db.raw
+      .prepare("SELECT id, inactive_warned_at AS w, delete_after AS d FROM app_user ORDER BY id")
+      .all();
+    expect(rows).toEqual([
+      { id: "u1", w: null, d: null },
+      { id: "u2", w: T0 + 1, d: T0 + 5 * DAY },
+    ]);
+  });
 });
 
 describe("deviceLabel: a coarse class, never the raw User-Agent", () => {

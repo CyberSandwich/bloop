@@ -171,11 +171,22 @@ export class Sessions {
     return (await this.lookup(value))?.userId ?? null;
   }
 
-  /** Moves a member's inactivity clock, at most daily (ADR 0013). */
+  /**
+   * Moves a member's inactivity clock, at most daily (ADR 0013). Use also clears an inactivity warning and its deletion
+   * date, but never a requested deletion: that is only for an active member.
+   */
   async touchUser(view: SessionView): Promise<void> {
     const now = this.now();
     if (now - view.userSeenAt <= USER_TOUCH_MS) return;
-    await this.db.prepare("UPDATE app_user SET last_seen_at = ? WHERE id = ?").bind(now, view.userId).run();
+    await this.db
+      .prepare(
+        `UPDATE app_user SET last_seen_at = ?1,
+           inactive_warned_at = CASE WHEN status = 'active' THEN NULL ELSE inactive_warned_at END,
+           delete_after = CASE WHEN status = 'active' THEN NULL ELSE delete_after END
+         WHERE id = ?2`,
+      )
+      .bind(now, view.userId)
+      .run();
   }
 
   /** The user's live sessions, most recently used first; `current` marks the one whose hash is given. */
