@@ -128,16 +128,30 @@ const suspend = (db: LibTestDb, id: string, at: number) =>
 describe("LIB-11 moderation: resumeClocks", () => {
   it("moves trash, deletion and last-seen later by the suspended time, never past now", async () => {
     const db = libWith(["u1"]);
-    addFile(db, { id: "t", trashedAt: 1, purgeAfter: 5000 });
+    addFile(db, { id: "t", trashedAt: 1, purgeAfter: NOW + 5000 });
     addFile(db, { id: "k" });
-    db.raw.prepare("UPDATE app_user SET delete_after = 9000, last_seen_at = ? WHERE id = 'u1'").run(NOW - 10);
+    db.raw
+      .prepare("UPDATE app_user SET delete_after = 9000, inactive_warned_at = ?, last_seen_at = ? WHERE id = 'u1'")
+      .run(NOW - 50, NOW - 60);
     suspend(db, "u1", NOW - 100);
     await db.batch(resumeClocks(db, "u1", NOW));
     expect(db.raw.prepare("SELECT id, purge_after AS p FROM library_file ORDER BY id").all()).toEqual([
       { id: "k", p: null },
-      { id: "t", p: 5100 },
+      { id: "t", p: NOW + 5100 },
     ]);
-    expect(user(db, "u1")).toMatchObject({ d: 9100, l: NOW });
+    expect(user(db, "u1")).toMatchObject({ d: 9100, w: NOW + 50, l: NOW });
+  });
+
+  it("a file already due when the suspension began keeps its time, so Delete Now stays final", async () => {
+    const db = libWith(["u1"]);
+    addFile(db, { id: "gone", trashedAt: 1, purgeAfter: NOW - 500 });
+    addFile(db, { id: "later", trashedAt: 1, purgeAfter: NOW - 50 });
+    suspend(db, "u1", NOW - 100);
+    await db.batch(resumeClocks(db, "u1", NOW));
+    expect(db.raw.prepare("SELECT id, purge_after AS p FROM library_file ORDER BY id").all()).toEqual([
+      { id: "gone", p: NOW - 500 },
+      { id: "later", p: NOW + 50 },
+    ]);
   });
 
   it("leaves a user with no deletion time without one, and does not touch other users", async () => {
@@ -159,7 +173,7 @@ describe("LIB-11 moderation: resumeClocks", () => {
 
   it("is idempotent: a retried or concurrent unsuspend shifts the clocks once", async () => {
     const db = libWith(["u1"]);
-    addFile(db, { id: "t", trashedAt: 1, purgeAfter: 5000 });
+    addFile(db, { id: "t", trashedAt: 1, purgeAfter: NOW + 5000 });
     suspend(db, "u1", NOW - 100);
     const unsuspendBatch = () =>
       db.batch([
@@ -168,7 +182,7 @@ describe("LIB-11 moderation: resumeClocks", () => {
       ]);
     await Promise.all([unsuspendBatch(), unsuspendBatch()]);
     await unsuspendBatch();
-    expect(db.raw.prepare("SELECT purge_after AS p FROM library_file").get()).toEqual({ p: 5100 });
+    expect(db.raw.prepare("SELECT purge_after AS p FROM library_file").get()).toEqual({ p: NOW + 5100 });
   });
 
   it("a user who is not suspended is left alone", async () => {

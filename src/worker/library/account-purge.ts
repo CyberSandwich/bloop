@@ -26,6 +26,13 @@ const prefixOf = (userId: string) => `u/${userId}/`;
 const tombstone = (userId: string) => `purged/${userId}`;
 
 /**
+ * A requested deletion stands on its own; one from inactivity stands only while the user is still unseen since the warning
+ * (last use before it), so a returning member is never purged even if the page that clears the mark never ran.
+ */
+const DELETION_STANDS_SQL =
+  "(status = 'deleting' OR (inactive_warned_at IS NOT NULL AND last_seen_at < inactive_warned_at))";
+
+/**
  * Purges one user. `skipped` is a user the claim refused (not due, suspended, or with a hold whose copy is pending). `more` ran out of
  * budget or met an upload still settling; the row stays `purging` and the next run continues.
  */
@@ -42,7 +49,7 @@ export async function purgeUser(
   await db
     .prepare(
       `UPDATE app_user SET status = 'purging' WHERE id = ?1 AND delete_after <= ?2 AND status IN ('active', 'deleting')
-         AND suspended_at IS NULL AND NOT EXISTS (SELECT 1 FROM hold WHERE owner_user_id = ?1 AND release_after > ?2 AND copied_at IS NULL)`,
+         AND ${DELETION_STANDS_SQL} AND suspended_at IS NULL AND NOT EXISTS (SELECT 1 FROM hold WHERE owner_user_id = ?1 AND release_after > ?2 AND copied_at IS NULL)`,
     )
     .bind(userId, now)
     .run();
@@ -105,7 +112,8 @@ export async function dueUsers(env: { DB: unknown }, now: number, limit: number)
   const { results } = await dbOf(env.DB)
     .prepare(
       `SELECT id FROM app_user WHERE status = 'purging'
-         OR (delete_after IS NOT NULL AND delete_after <= ?1 AND status IN ('active', 'deleting') AND suspended_at IS NULL
+         OR (delete_after IS NOT NULL AND delete_after <= ?1 AND status IN ('active', 'deleting') AND ${DELETION_STANDS_SQL}
+             AND suspended_at IS NULL
              AND NOT EXISTS (SELECT 1 FROM hold WHERE owner_user_id = app_user.id AND release_after > ?1 AND copied_at IS NULL))
        ORDER BY status = 'purging' DESC, delete_after LIMIT ?2`,
     )

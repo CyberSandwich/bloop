@@ -81,7 +81,8 @@ export async function runLibraryRetention(
 /**
  * Unsuspending gives back the time spent suspended: every clock of the user moves later by it (moderation: suspension
  * pauses trash, inactivity and requested deletion). The statements join the caller's unsuspend batch, which clears
- * `suspended_at`; `last_seen_at` never passes `now`.
+ * `suspended_at`; `last_seen_at` never passes `now`. A file already due when the suspension began (Delete Now) keeps its
+ * time: shifting it would reopen its restore.
  */
 export function resumeClocks(db: LibDb, userId: string, now: number): Statement[] {
   // The pause is read from the row itself and only while it is still suspended, so a retried or concurrent unsuspend
@@ -92,12 +93,13 @@ export function resumeClocks(db: LibDb, userId: string, now: number): Statement[
       .prepare(
         `UPDATE library_file SET purge_after = purge_after + (SELECT ${paused} FROM app_user WHERE id = ?1)
          WHERE user_id = ?1 AND purge_after IS NOT NULL AND status != 'purged'
-           AND EXISTS (SELECT 1 FROM app_user WHERE id = ?1 AND suspended_at IS NOT NULL)`,
+           AND purge_after > (SELECT suspended_at FROM app_user WHERE id = ?1)`,
       )
       .bind(userId, now),
     db
       .prepare(
         `UPDATE app_user SET delete_after = CASE WHEN delete_after IS NULL THEN NULL ELSE delete_after + ${paused} END,
+           inactive_warned_at = CASE WHEN inactive_warned_at IS NULL THEN NULL ELSE inactive_warned_at + ${paused} END,
            last_seen_at = MIN(last_seen_at + ${paused}, ?2)
          WHERE id = ?1 AND suspended_at IS NOT NULL`,
       )
