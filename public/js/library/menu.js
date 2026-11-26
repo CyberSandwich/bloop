@@ -106,7 +106,7 @@ export function start(page) {
     const renaming = () => {
       const now = find(id);
       if (!now) return close();
-      const base = now.name; const unused = now.ext && now.name.endsWith(`.${now.ext}`) ? now.name.slice(0, -now.ext.length - 1) : now.name;
+      const base = now.ext && now.name.endsWith(`.${now.ext}`) ? now.name.slice(0, -now.ext.length - 1) : now.name;
       const field = /** @type {HTMLInputElement} */ (
         el("input", { class: "field", type: "text", maxlength: "200", "aria-label": "Name", autocomplete: "off" })
       );
