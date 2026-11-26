@@ -141,10 +141,18 @@ describe("PAIR-14 the match pick", () => {
     expect(lazy).toMatch(/\.pick \.choice \{[^}]*touch-action: manipulation;/);
   });
 
-  it("OFFLINE is its own toast, not lazy.js's refused(): the retry it names is a tap on the number", () => {
-    const pick = readFileSync(new URL("../../public/js/core/pick.js", import.meta.url), "utf8");
-    expect(pick).toMatch(/Not lazy\.js's refused\(\)/);
+  it("OFFLINE is its own toast, not lazy.js's refused(): the retry it names is a tap on the number", async () => {
+    vi.resetModules();
+    const shown = vi.fn();
+    vi.doMock("../../public/js/core/toast.js", () => ({ toast: shown }));
+    const LAZY = "../../public/js/core/lazy.js";
+    const { refused }: { refused: (t: string) => (code: string) => void } = await import(LAZY);
+    refused("You're Offline")("offline");
+    const general = shown.mock.calls[0]?.[0];
+    expect(general.body).toBe("Check the connection, then try again.");
+    expect(OFFLINE.body).not.toBe(general.body);
     expect(OFFLINE.body).toContain("tap the number again");
+    vi.doUnmock("../../public/js/core/toast.js");
   });
 });
 
