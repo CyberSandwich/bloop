@@ -28,6 +28,7 @@ const escText = (s) =>
 const attr = (s) => esc(s).replace(/"/g, "&quot;");
 
 /**
+ * @typedef {"preview" | "open"} Mode
  * @typedef {{ label: string, href: string, in: string[] }} Link
  * @typedef {{ file: string, path?: string, title: string, description?: string, source: string, ld?: string, noindex?: boolean,
  *   faq?: boolean }} HandPage
@@ -36,11 +37,27 @@ const attr = (s) => esc(s).replace(/"/g, "&quot;");
  *   links: Link[], robots: { disallow: string[] }, pages: HandPage[] }} Site
  * @typedef {{ file: string, path?: string, title: string, description?: string, source: string, current?: string | undefined,
  *   noindex?: boolean, kind: "site" | "legal" | "article" | "index" | "none", published?: string | undefined,
- *   modified?: string | undefined, faq?: Faq[] | undefined }} Head
+ *   modified?: string | undefined, faq?: Faq[] | undefined, mode?: Mode | undefined }} Head
  */
 
-/** @type {Site} */
-export const site = JSON.parse(read("content/site.json"));
+// The facts open mode may say differently. Anything else in `site.open` would be a second copy of a fact.
+const OPEN_KEYS = ["links", "about"];
+
+/** @param {string} json content/site.json @returns {{ site: Site, open: Partial<Site> }} */
+export function parseSite(json) {
+  const { open = {}, ...base } = JSON.parse(json);
+  const extra = Object.keys(open).filter((k) => !OPEN_KEYS.includes(k));
+  if (extra.length > 0) throw new Error(`content/site.json: open.${extra[0]} is not a mode difference (${OPEN_KEYS})`);
+  return { site: base, open };
+}
+
+const parsed = parseSite(read("content/site.json"));
+/** The preview site: what every page says unless its mode says otherwise. */
+export const site = parsed.site;
+/** @param {Mode} mode @returns {Site} */
+export const siteFor = (mode) => (mode === "open" ? { ...site, ...parsed.open } : site);
+/** @param {Head} page */
+const siteOf = (page) => siteFor(page.mode ?? "preview");
 
 /** @param {string} iso */
 export function usDate(iso) {
@@ -107,11 +124,11 @@ const indented = (text, indent) =>
 /** @param {string} label @param {string} href @param {string | undefined} current */
 const linkItem = (label, href, current) =>
   `<li><a href="${href}"${href === current ? ' aria-current="page"' : ""}>${label}</a></li>`;
-/** @param {string} where @param {string | undefined} current */
-const linkList = (where, current) =>
-  site.links
-    .filter((l) => l.in.includes(where))
-    .map((l) => linkItem(l.label, l.href, current))
+/** @param {string} where @param {Head} page */
+const linkList = (where, page) =>
+  siteOf(page)
+    .links.filter((l) => l.in.includes(where))
+    .map((l) => linkItem(l.label, l.href, page.current))
     .join("\n");
 
 /** @param {Head} page */
@@ -119,17 +136,23 @@ function waitlistUrl(page) {
   return `${site.waitlist}?source=${page.source}`;
 }
 
+// Both labels share one grid cell, so the pill is as wide as the wider one in either state. The Worker (nav-pill.ts)
+// shows the other label by swapping aria-hidden and the href for a signed-in visitor; no script is involved.
+const ACCOUNT_PILL =
+  '<a class="btn account" href="/signin" data-account><span>Sign In</span><span aria-hidden="true">Library</span></a>';
+
 /** @param {Head} page */
 export function navHtml(page) {
-  return fill(read("tools/pages/nav.html"), {
-    links: linkList("nav", page.current),
-    waitlist: waitlistUrl(page),
-  }).trimEnd();
+  const cta =
+    page.mode === "open"
+      ? ACCOUNT_PILL
+      : `<a class="btn waitlist" href="${waitlistUrl(page)}" data-waitlist>Waitlist</a>`;
+  return fill(read("tools/pages/nav.html"), { links: linkList("nav", page), cta }).trimEnd();
 }
 /** @param {Head} page */
 export function footerHtml(page) {
   return fill(read("tools/pages/footer.html"), {
-    links: linkList("footer", page.current),
+    links: linkList("footer", page),
     waitlist: waitlistUrl(page),
     email: site.email,
   }).trimEnd();
@@ -307,7 +330,8 @@ export function injectChrome(html, blocks, where) {
 
 /**
  * @typedef {{ meta: Record<string, string | boolean>, body: string }} Source
- * @typedef {{ file: string, path: string, out: string, slug: string, dir: string, meta: Record<string, string | boolean>, body: string }} Doc
+ * @typedef {{ file: string, path: string, out: string, slug: string, dir: string, meta: Record<string, string | boolean>, body: string,
+ *   mode?: Mode }} Doc
  */
 
 const CODE = /(^```[\s\S]*?^```$|`[^`\n]+`)/gm;
@@ -351,7 +375,24 @@ export function loadDocs(base = "") {
       docs.push({ file, path, out: `public${path}.html`, slug, dir, meta, body });
     }
   }
-  return docs.sort((a, b) => Number(a.meta.order ?? 0) - Number(b.meta.order ?? 0));
+  return docs.sort(byOrder);
+}
+
+/** @param {Doc} a @param {Doc} b */
+const byOrder = (a, b) => Number(a.meta.order ?? 0) - Number(b.meta.order ?? 0);
+
+/**
+ * The documents a mode serves. Open overlays `content/open/**` on the base documents at the same path (a draft
+ * replaces the page, a new path adds one) and writes under `public/open/`, the Worker's variant subtree (ADR 0026).
+ * @param {Mode} mode
+ */
+export function docsFor(mode) {
+  const base = loadDocs();
+  if (mode === "preview") return base;
+  const drafts = loadDocs("open");
+  return [...base.filter((d) => !drafts.some((o) => o.path === d.path)), ...drafts]
+    .map((d) => ({ ...d, mode, out: `public/open${d.path}.html` }))
+    .sort(byOrder);
 }
 
 const SECTION_ID = /\s*\{#([\w-]+)\}\s*$/;
@@ -603,7 +644,7 @@ function indexSections(docs) {
     .filter((d) => kindOf(d) === "article")
     .map((d) => {
       const slug = d.slug;
-      const minutes = readingMinutes(parseBody(d, md.lexer(d.body), false).sections);
+      const minutes = inFile(d, () => readingMinutes(parseBody(d, md.lexer(d.body), false).sections));
       return {
         id: slug,
         title: need(d, "title"),
@@ -632,53 +673,102 @@ function headOf(doc, modified) {
     kind,
     published: typeof doc.meta.published === "string" ? doc.meta.published : undefined,
     modified,
+    mode: doc.mode,
   };
 }
 
 // ---- the whole build ----
 
-/** @param {HandPage} p @returns {Head} */
-export const headOfHand = (p) => ({
+/** @param {HandPage} p @param {Mode} [mode] @param {string} [html] the variant's own markup, which its FAQ is read from @returns {Head} */
+export const headOfHand = (p, mode = "preview", html = read(`public/${p.file}`)) => ({
   ...p,
   current: p.path === "/" ? undefined : p.path,
   kind: p.ld === "site" ? "site" : "none",
-  faq: p.faq ? faqOf(read(`public/${p.file}`), p.file) : undefined,
+  faq: p.faq ? faqOf(html, p.file) : undefined,
+  mode,
 });
 
-/** Every file the build owns, as repo-relative path to full text; hand-written pages keep their own markup. */
-export function buildAll() {
-  const docs = loadDocs();
-  /** @type {Map<string, string>} */
-  const files = new Map();
-  for (const doc of docs) files.set(doc.out, renderDoc(doc, docs));
-  for (const p of site.pages) {
-    const rel = `public/${p.file}`;
-    files.set(rel, injectChrome(read(rel), chromeFor(headOfHand(p)), rel));
+// A hand page differs in open only inside `mode:` regions, each replaced by the same-named region of
+// tools/pages/open/<file>. A region named on one side only is an error, so the two files cannot drift apart.
+const MODE_REGION = /^([ \t]*)<!-- mode:([\w-]+) -->\n[\s\S]*?^[ \t]*<!-- \/mode:\2 -->(\n*)/gm;
+const OVERRIDE_REGION = /^<!-- mode:([\w-]+) -->\n([\s\S]*?)^<!-- \/mode:\1 -->$/gm;
+
+/**
+ * The open variant of a hand page's markup.
+ * @param {string} html the page as written (preview, with its regions)
+ * @param {string | undefined} override the open override file, or undefined when the page has none
+ * @param {string} where for errors
+ */
+export function openVariant(html, override, where) {
+  const given = new Map(
+    [...(override ?? "").matchAll(OVERRIDE_REGION)].map((m) => [m[1] ?? "", (m[2] ?? "").trimEnd()]),
+  );
+  const used = new Set();
+  const out = html.replace(MODE_REGION, (_m, indent, name, trail) => {
+    const body = given.get(name);
+    if (body === undefined) throw new Error(`${where}: the open override has no mode:${name} region`);
+    used.add(name);
+    return body === "" ? "" : `${indented(body, indent)}${trail}`;
+  });
+  if (override !== undefined && used.size === 0)
+    throw new Error(`${where}: an open override for a page with no mode regions`);
+  for (const name of given.keys()) if (!used.has(name)) throw new Error(`${where}: no mode:${name} region in the page`);
+  return out;
+}
+
+/** Wraps a render so its error names the content file (some validators already do). @template T @param {Doc} doc @param {() => T} render */
+function inFile(doc, render) {
+  try {
+    return render();
+  } catch (e) {
+    const message = e instanceof Error ? e.message : String(e);
+    throw message.includes(doc.file) ? e : new Error(`${doc.file}: ${message}`, { cause: e });
   }
-  files.set("public/sitemap.xml", sitemap(docs));
-  files.set("public/robots.txt", robots());
-  files.set("public/llms.txt", llms(docs));
-  return files;
+}
+
+/** One hand page in one mode, chrome injected. */
+/** @param {HandPage} p @param {Mode} mode */
+function handPage(p, mode) {
+  const rel = `public/${p.file}`;
+  const source = read(rel);
+  const overrideRel = `tools/pages/open/${p.file}`;
+  const override = existsSync(join(ROOT, overrideRel)) ? read(overrideRel) : undefined;
+  const variant = openVariant(source, override, rel);
+  const html = mode === "open" ? variant : source;
+  const page = injectChrome(html, chromeFor(headOfHand(p, mode, html)), rel);
+  if (mode === "preview") return page;
+  const from = override === undefined ? `${rel}. Edit that file` : `${rel} and ${overrideRel}. Edit those files`;
+  return page.replace(
+    "<!DOCTYPE html>\n",
+    `<!DOCTYPE html>\n${GENERATED} from ${from}, then run npm run build:pages. -->\n`,
+  );
 }
 
 /**
- * Renders every `content/open/**` draft in memory through the same validators as the live pages and writes nothing,
- * so a malformed draft fails the check before anything serves it. Each draft replaces the page at its path.
+ * Every file one mode owns, as repo-relative path to full text; hand-written pages keep their own markup. Open files
+ * sit under `public/open/` at the same relative paths.
+ * @param {Mode} [mode]
  */
-export function checkOpen() {
-  const live = loadDocs();
-  const drafts = loadDocs("open");
-  const docs = [...live.filter((d) => !drafts.some((o) => o.path === d.path)), ...drafts];
-  for (const doc of drafts) {
-    try {
-      renderDoc(doc, docs);
-    } catch (e) {
-      // Some validators name the file already; the rest do not.
-      const message = e instanceof Error ? e.message : String(e);
-      throw message.includes(doc.file) ? e : new Error(`${doc.file}: ${message}`, { cause: e });
-    }
-  }
+export function buildAll(mode = "preview") {
+  const docs = docsFor(mode);
+  const s = siteFor(mode);
+  const at = (/** @type {string} */ rel) => (mode === "open" ? rel.replace(/^public\//, "public/open/") : rel);
+  /** @type {Map<string, string>} */
+  const files = new Map();
+  for (const doc of docs)
+    files.set(
+      doc.out,
+      inFile(doc, () => renderDoc(doc, docs)),
+    );
+  for (const p of site.pages) files.set(at(`public/${p.file}`), handPage(p, mode));
+  files.set(at("public/sitemap.xml"), sitemap(docs));
+  files.set(at("public/robots.txt"), robots());
+  files.set(at("public/llms.txt"), llms(docs, s.about));
+  return files;
 }
+
+/** Both modes' files: the whole of what the build owns. */
+export const buildEvery = () => new Map([...buildAll("preview"), ...buildAll("open")]);
 
 /** @param {Doc[]} docs */
 function sitemap(docs) {
@@ -698,10 +788,10 @@ function sitemap(docs) {
 }
 
 /** llms.txt (llmstxt.org): the name, the landing's line, what bloop is, then every content page with its description. */
-/** @param {Doc[]} docs */
-function llms(docs) {
+/** @param {Doc[]} docs @param {string} about the mode's own line */
+function llms(docs, about) {
   const landing = site.pages.find((p) => p.path === "/");
-  if (!landing?.description || !site.about)
+  if (!landing?.description || !about)
     throw new Error("content/site.json: llms.txt needs about and the landing's description");
   /** @param {string} title @param {Doc[]} list */
   const group = (title, list) => [
@@ -715,7 +805,7 @@ function llms(docs) {
     "",
     `> ${landing.description}`,
     "",
-    fill(site.about, { demo: `${site.origin}/demo` }),
+    fill(about, { demo: `${site.origin}/demo` }),
     "",
     ...group(
       "Articles",
@@ -756,8 +846,7 @@ export function staleFiles(files) {
  * @returns {{ written: string[], deleted: string[] }} the files that changed and the stale ones removed (or, in a check, that would be)
  */
 export function sync({ check }) {
-  checkOpen();
-  const files = buildAll();
+  const files = buildEvery();
   const deleted = staleFiles(files);
   /** @type {string[]} */
   const written = [];

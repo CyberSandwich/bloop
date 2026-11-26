@@ -5,6 +5,7 @@ import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
 import {
   buildAll,
+  buildEvery,
   chromeFor,
   faqOf,
   fill,
@@ -24,6 +25,7 @@ import { NEVER_SAY } from "./never-say.ts";
 const ROOT = fileURLToPath(new URL("../../", import.meta.url));
 const read = (rel: string) => readFileSync(`${ROOT}${rel}`, "utf8");
 const built = buildAll();
+const every = buildEvery();
 const docs = loadDocs();
 const pathOf = (rel: string) =>
   rel
@@ -36,12 +38,12 @@ const region = (html: string, name: string) =>
 const hrefs = (html: string) => [...html.matchAll(/href="([^"]+)"/g)].map((m) => m[1] ?? "");
 
 describe("the generated pages are what the build produces (the drift gate)", () => {
-  it.each([...built.keys()])("%s on disk equals the build's output", (rel) => {
-    expect(read(rel)).toBe(built.get(rel));
+  it.each([...every.keys()])("%s on disk equals the build's output", (rel) => {
+    expect(read(rel)).toBe(every.get(rel));
   });
 
   it("no generated page is left behind by a deleted content file", () => {
-    expect(staleFiles(built)).toEqual([]);
+    expect(staleFiles(every)).toEqual([]);
   });
 
   it("every generated page says where its source is", () => {
@@ -58,7 +60,7 @@ describe("the generated pages are what the build produces (the drift gate)", () 
 });
 
 describe("one source for every page's chrome", () => {
-  const owned = new Set(built.keys());
+  const owned = new Set(every.keys());
   const files = (readdirSync(`${ROOT}public`, { recursive: true }) as string[]).filter((f) => f.endsWith(".html"));
 
   it("every html page that draws a nav or a footer is owned by the build", () => {

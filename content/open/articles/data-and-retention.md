@@ -30,7 +30,7 @@ bloop runs on Cloudflare. Its database, Library files and Guest Files are held i
 
 A few things are kept outside the EU: bloop's own logs, which hold no IP address and no URL, the converter's program image, and what Tally, Apple and Anthropic handle. [The Privacy Notice](/privacy#8.1) keeps the complete list and the legal safeguards.
 
-## A File's Life in the Library {#library}
+## A File's Life {#library}
 
 1. **Kept.** A file stays in the Library until its owner deletes it, within the limits in [the Terms](/terms#library).
 2. **Trash.** A deleted file goes to the Trash first, where its owner can restore it. When the Trash period ends, or the owner empties it, the file and its copies are deleted for good.
