@@ -548,7 +548,7 @@ const OPS = {
       else await cf("PUT", phase, { rules: [blockRule(table)] });
       return "changed: block rule added";
     }
-    if (!rule || !rule.enabled) return "unchanged: block rule already off";
+    if (!rule?.enabled) return "unchanged: block rule already off";
     await cf("PATCH", `/zones/${zone}/rulesets/${ruleset.id}/rules/${rule.id}`, {
       ...blockRule(table),
       enabled: false,

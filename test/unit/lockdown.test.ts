@@ -18,7 +18,7 @@ import {
   wranglerSettings,
   writeSql,
 } from "../../tools/lockdown.mjs";
-import { ACCOUNT, deps, fakeApi, fakeD1, GH_TOKEN, LOCK_TOKEN, NOW, TOKEN, table } from "./lockdown-fakes";
+import { ACCOUNT, deps, fakeApi, GH_TOKEN, LOCK_TOKEN, NOW, TOKEN, table } from "./lockdown-fakes";
 
 const ROOT = fileURLToPath(new URL("../../", import.meta.url));
 const LEVELS = ["L1", "L2", "L3", "L4", "L5"];
