@@ -49,28 +49,41 @@ async function expectWholeRow(row: Locator, trailing: Locator) {
   await expect(row.locator(".row-name")).toHaveText(DEMO_ITEMS.video.name);
   await expect(trailing).toBeVisible();
 
-  // A string, run in the page: the test project has no DOM types.
-  const geometry = (await row.evaluate(`(el) => {
-    const rect = (node) => {
-      const r = node ? node.getBoundingClientRect() : null;
+  // Typed callback, serialized into the page: a string function expression is not called by evaluate, and the test
+  // project has no DOM types.
+  const geometry = await row.evaluate((el) => {
+    interface Node_ {
+      getBoundingClientRect(): { left: number; right: number; top: number; bottom: number; height: number };
+      querySelector(selector: string): Node_ | null;
+      closest(selector: string): { scrollWidth: number; clientWidth: number } | null;
+      scrollWidth: number;
+      clientWidth: number;
+    }
+    const page = globalThis as unknown as {
+      document: { documentElement: { scrollWidth: number; clientWidth: number } };
+      getComputedStyle(node: Node_): { lineHeight: string };
+    };
+    const box = el as unknown as Node_;
+    const rect = (node: Node_ | null) => {
+      const r = node?.getBoundingClientRect();
       return r ? { left: r.left, right: r.right, top: r.top, bottom: r.bottom, height: r.height } : null;
     };
-    const name = el.querySelector(".row-name");
-    const list = el.closest("ul");
+    const name = box.querySelector(".row-name");
+    const list = box.closest("ul");
     return {
-      row: rect(el),
-      text: rect(el.querySelector(".row-text")),
+      row: rect(box),
+      text: rect(box.querySelector(".row-text")),
       name: rect(name),
-      thumb: rect(el.querySelector(".thumb")),
-      lineHeight: Number.parseFloat(getComputedStyle(name).lineHeight),
-      scrollWidth: el.scrollWidth,
-      clientWidth: el.clientWidth,
+      thumb: rect(box.querySelector(".thumb")),
+      lineHeight: name ? Number.parseFloat(page.getComputedStyle(name).lineHeight) : 0,
+      scrollWidth: box.scrollWidth,
+      clientWidth: box.clientWidth,
       listScroll: list ? list.scrollWidth : 0,
       listClient: list ? list.clientWidth : 0,
-      pageScroll: document.documentElement.scrollWidth,
-      pageClient: document.documentElement.clientWidth,
+      pageScroll: page.document.documentElement.scrollWidth,
+      pageClient: page.document.documentElement.clientWidth,
     };
-  }`)) as Geometry;
+  });
   const icon = await trailing.boundingBox();
   if (!geometry.row || !geometry.text || !geometry.name || !geometry.thumb || !icon)
     throw new Error("a part has no box");
@@ -98,27 +111,6 @@ async function expectWholeRow(row: Locator, trailing: Locator) {
   expect(icon.y + icon.height).toBeLessThanOrEqual(box.bottom + 1);
   expect(thumb.right).toBeLessThanOrEqual(text.left + 1);
   expect(text.right).toBeLessThanOrEqual(icon.x + 1);
-}
-
-interface Box {
-  left: number;
-  right: number;
-  top: number;
-  bottom: number;
-  height: number;
-}
-interface Geometry {
-  row: Box | null;
-  text: Box | null;
-  name: Box | null;
-  thumb: Box | null;
-  lineHeight: number;
-  scrollWidth: number;
-  clientWidth: number;
-  listScroll: number;
-  listClient: number;
-  pageScroll: number;
-  pageClient: number;
 }
 
 /** The row's picture: the one same-origin thumbnail, decoded. */
