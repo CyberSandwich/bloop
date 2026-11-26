@@ -81,6 +81,37 @@ test.describe("PAIR-14 the match pick", () => {
     await closeAll(screen, phone);
   });
 
+  test("the legend sits over the choices on a phone, beside them held landscape, and all three fit inside it", async ({
+    browser,
+  }) => {
+    const { screen, phone } = await atPick(browser);
+    for (const [width, height, beside] of [
+      [320, 568, false],
+      [390, 844, false],
+      [844, 390, true],
+    ] as const) {
+      await phone.page.setViewportSize({ width, height });
+      const legend = await phone.page.locator("#pick legend").boundingBox();
+      const pick = await phone.page.locator("#pick").boundingBox();
+      const edge = Math.min(width, (pick?.x ?? 0) + (pick?.width ?? 0));
+      const boxes = await phone.page.locator("#pick .choice").evaluateAll((els) =>
+        els.map((el) => {
+          const r = el.getBoundingClientRect();
+          return { top: r.top, right: r.right, height: r.height };
+        }),
+      );
+      expect(boxes, `${width}`).toHaveLength(3);
+      for (const b of boxes) {
+        expect(Math.round(b.height), `${width}`).toBe(64);
+        expect(b.right, `${width}`).toBeLessThanOrEqual(edge + 0.5);
+        expect(Math.round(b.top), `${width}`).toBe(Math.round(boxes[0]?.top ?? -1));
+      }
+      const below = (legend?.y ?? 0) + (legend?.height ?? 0) <= (boxes[0]?.top ?? 0);
+      expect(below, `${width}: the legend ${beside ? "beside" : "over"} the choices`).toBe(!beside);
+    }
+    await closeAll(screen, phone);
+  });
+
   test("the right number: the tapped one fills ink at once, Android ticks once, then the chooser and the file flow", async ({
     browser,
   }) => {
