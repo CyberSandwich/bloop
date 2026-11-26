@@ -65,6 +65,12 @@ async function scene(
   page.on("requestfailed", (r) => seen.push(`FAILED ${r.method()} ${r.url()} ${r.failure()?.errorText}`));
   page.on("console", (m) => seen.push(`console ${m.type()} ${m.text()}`));
   page.on("pageerror", (e) => seen.push(`pageerror ${e.message}`));
+  // The throwaway page gets the default CSP, which has no connect-src; the real pages are given one.
+  await page.route("**/upload-shots.html*", async (route) => {
+    const res = await route.fetch();
+    const csp = (res.headers()["content-security-policy"] ?? "").replace("default-src 'none';", "default-src 'none'; connect-src 'self';");
+    await route.fulfill({ response: res, headers: { ...res.headers(), "content-security-policy": csp } });
+  });
   await options.before?.(page);
   await page.goto(`/upload-shots.html?scene=${name}`);
   await page.locator("body[data-ready]").waitFor({ state: "attached" });
