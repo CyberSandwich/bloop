@@ -215,6 +215,12 @@ describe("land: conflict markers in a patch", () => {
     expect(markerProblems(patch("aaa1111", "x.md", "=====", "========", "a <<<<<<< b", "<<<<<<<<"))).toEqual([]);
     expect(markerProblems("")).toEqual([]);
   });
+
+  it("a \\x01 byte inside an added line is content, never the start of another commit", () => {
+    expect(markerProblems(patch("aaa1111", "x.txt", "a\x01zzz9999", "=======", "\x01yyy", ">>>>>>> b"))).toEqual([
+      "aaa1111 adds a conflict marker to x.txt",
+    ]);
+  });
 });
 
 describe("land: the attribution and conflict-copy rules", { timeout: SPAWN_TIMEOUT }, () => {

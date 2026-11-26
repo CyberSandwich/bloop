@@ -62,7 +62,8 @@ const MARKER = /^\+(?:<{7}|\|{7}|={7}|>{7})(?: |$)/;
  */
 export function markerProblems(log) {
   const out = new Set();
-  for (const chunk of log.split("\x01").slice(1)) {
+  // A commit starts where \x01 opens a line; patch content lines open with +, - or a space, so \x01 inside one is text.
+  for (const chunk of `\n${log}`.split("\n\x01").slice(1)) {
     const [hash = "", ...lines] = chunk.split("\n");
     let file = "";
     // Between `diff --git` and the first hunk a `+++` line names the file; inside a hunk it is content.

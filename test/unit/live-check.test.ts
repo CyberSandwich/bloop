@@ -650,7 +650,7 @@ describe("live-check: guest drops on a demo screen", () => {
     ]);
   });
 
-  it("the drop bytes are the corpus fixtures: the hostile one hides its JavaScript in a compressed stream", () => {
+  it("the drop bytes are the corpus fixtures: the JS one hides its JavaScript in a compressed stream", () => {
     const text = (b: Uint8Array) => new TextDecoder("latin1").decode(b);
     const js = drop("a PDF with /JavaScript in an object stream").bytes;
     expect(text(js)).not.toContain("JavaScript");
