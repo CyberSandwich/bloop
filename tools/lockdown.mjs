@@ -237,7 +237,11 @@ export function writeSql(table, write, { level, undo, now }) {
   ];
 }
 
-/** The wrangler argv for the whole write batch, one call. @param {Table} table @param {string[]} statements */
+/**
+ * The wrangler argv for the whole write batch, one call. Only `d1 execute`, never a deploy: a forced Durable Object
+ * code update (`--durable-objects-code-update-mode immediate`) drops live sockets and resets a running conversion.
+ * @param {Table} table @param {string[]} statements
+ */
 const wranglerArgs = (table, statements) => [
   "wrangler",
   "d1",
@@ -691,6 +695,7 @@ async function edgeInForce(cf, table, account) {
  */
 export async function execute(table, plan, deps) {
   const env = deps.env;
+  const block = await spendBlockCheck(table, deps);
   const token = tokenFor(table, plan.level, env);
   const account = env.CLOUDFLARE_ACCOUNT_ID;
   const missing = [
@@ -709,7 +714,7 @@ export async function execute(table, plan, deps) {
   const ctx = { settings: (deps.wrangler ?? wranglerSettings)(), sleep };
   const now = deps.now();
   /** @type {string[]} */
-  const lines = [`${plan.level} ${plan.undo ? "UNDO" : "lockdown"}: ${plan.summary}`];
+  const lines = [block, `${plan.level} ${plan.undo ? "UNDO" : "lockdown"}: ${plan.summary}`];
   let failed = false;
   let warned = false;
   let stillFrozen = false;
@@ -962,6 +967,32 @@ export function parseCli(argv) {
 }
 
 /**
+ * The ladder's first check, before any rung: does the site answer? A Workers or Durable Objects spend block rejects
+ * every invocation, crons included, so the breaker and the spend guard are down and Cloudflare's own spend alert mails
+ * are the only signal. This tool's API calls are not Worker invocations, so the ladder still runs; the line says what
+ * the block means for it. An L4 or L5 already in force answers the same way.
+ * @param {Table} table
+ * @param {Deps} deps
+ * @returns {Promise<string>}
+ */
+export async function spendBlockCheck(table, deps) {
+  const url = `https://${table.zone}/api/health`;
+  let why;
+  try {
+    const res = await deps.fetch(url, { signal: AbortSignal.timeout(10_000) });
+    const body = await res.json().catch(() => null);
+    if (res.ok && body?.status === "ok") return `spend block: none seen (${url} answers)`;
+    why = `answered ${res.status}`;
+  } catch {
+    why = "did not answer";
+  }
+  return [
+    `SPEND BLOCK ACTIVE? ${url} ${why}: a Workers or Durable Objects spend block, an L4 or L5 in force, or an outage.`,
+    "During a spend block every invocation is rejected, crons included, so the breaker and the spend guard are down and Cloudflare's spend-limit alert mails ($2, $5) are the only signal. Raise or clear the limit in the dashboard (Billing, Spend limits); the rungs below still run, since they are API calls.",
+  ].join("\n");
+}
+
+/**
  * Exit codes: 0 done, 1 a step failed, 2 bad input or missing credentials, 3 done but deploys are not frozen.
  * @param {string[]} argv
  * @param {Deps} deps
@@ -974,8 +1005,12 @@ export async function main(argv, deps) {
     const table = loadTable();
     const plan = buildPlan(table, cli.options);
     if (!cli.apply) {
+      const block = await spendBlockCheck(table, deps);
       const report = await tokenReport(table, plan, deps);
-      return { code: 0, out: `${renderPlan(table, plan, false)}\n\n${redact(deps.env, report.join("\n"))}` };
+      return {
+        code: 0,
+        out: `${block}\n\n${renderPlan(table, plan, false)}\n\n${redact(deps.env, report.join("\n"))}`,
+      };
     }
     const { lines, failed, warned, stillFrozen } = await execute(table, plan, deps);
     return { code: failed ? 1 : warned || stillFrozen ? 3 : 0, out: lines.join("\n") };
