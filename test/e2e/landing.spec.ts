@@ -120,7 +120,9 @@ for (const vp of VIEWPORTS) {
       expect(hero?.lazy).toBe(false);
       // Under 640 the phone's own picture; a phone never fetches the desktop screenshot.
       expect(hero?.src).toMatch(
-        vp.width < 640 ? /\/img\/hero-phone-(600|900)\./ : /\/img\/hero-viewer-(750|1100|1600|2200)\./,
+        vp.width < 640
+          ? /\/img\/hero-phone-(600|900)-[0-9a-f]{8}\./
+          : /\/img\/hero-viewer-(750|1100|1600|2200)-[0-9a-f]{8}\./,
       );
       const raster = imgs.filter((i) => !i.hero && !i.file.endsWith(".svg"));
       expect(raster.length).toBeGreaterThan(0);
@@ -747,7 +749,7 @@ test.describe("phone hero", () => {
     await expect(page.locator(".stage")).toHaveCSS("border-radius", "16px");
     await expect
       .poll(() => img.evaluate((el) => (el as unknown as { currentSrc: string }).currentSrc))
-      .toMatch(/\/img\/hero-phone-(600|900)\.(avif|webp)$/);
+      .toMatch(/\/img\/hero-phone-(600|900)-[0-9a-f]{8}\.(avif|webp)$/);
     // The layout box, not the bounding box: the stage is tilted and scaled while it enters.
     const [w = 0, h = 1] = await img.evaluate((el) => [
       (el as unknown as { offsetWidth: number }).offsetWidth,

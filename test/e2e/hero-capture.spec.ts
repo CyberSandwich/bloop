@@ -28,17 +28,15 @@ async function expectRealFont(page: Page) {
   expect(font.button).toMatch(/^"?Inter"?,/);
 }
 
-/** Presenting, the item drawn, and nothing of the chrome left: no controls, no Stop Presenting mid-fade, no toast. */
+/** Presenting, the item drawn, the controls hidden, and everything settled: fonts, the image, animations, focus. */
 async function presentAndSettle(page: Page, name: string) {
   await expect(page.getByRole("heading", { level: 1 })).toHaveText(name);
   await expect(page.locator("#frame :is(picture img, canvas, video)").first()).toBeVisible();
   await page.getByRole("button", { name: "Present", exact: true }).click();
   await expect(page.locator("body")).toHaveClass(/\bis-presenting\b/);
   for (const part of ["#controls", "#handle", ".bar", "#items"]) await expect(page.locator(part)).toBeHidden();
-  // Stop Presenting follows the pointer and a tap shows it for 3 s: wait for it to be gone, then read it once.
+  // Stop Presenting follows the pointer and a tap shows it for 3 s: wait for it to be gone.
   await expect(page.locator("#view")).not.toHaveClass(/\bis-awake\b/, { timeout: 8000 });
-  await expect(page.locator("#b-stop")).toHaveCSS("opacity", "0");
-  expect(await page.locator(".toast:not(.out)").count(), "a toast is up").toBe(0);
   await page.evaluate(`(async () => {
     await document.fonts.ready;
     await Promise.all([...document.images].map((img) => img.decode().catch(() => undefined)));
@@ -46,6 +44,14 @@ async function presentAndSettle(page: Page, name: string) {
     document.activeElement?.blur();
   })()`);
   await page.waitForTimeout(800);
+}
+
+/** The screenshot, after the last look at the chrome: still presenting, Stop Presenting faded out, no toast up. */
+async function shoot(page: Page, file: string) {
+  await expect(page.locator("body")).toHaveClass(/\bis-presenting\b/);
+  await expect(page.locator("#b-stop")).toHaveCSS("opacity", "0");
+  expect(await page.locator(".toast:not(.out)").count(), "a toast is up").toBe(0);
+  await page.screenshot({ path: `${SHOTS}/${file}` });
 }
 
 async function newContext(browser: Browser, phone: boolean) {
@@ -75,7 +81,7 @@ test("the room screen presenting the horizontal photo at 1440 x 828 and 2x", asy
   await expectRealFont(screen);
   await screen.locator("#items").getByRole("button", { name: DEMO_ITEMS.horizontal.name }).click();
   await presentAndSettle(screen, DEMO_ITEMS.horizontal.name);
-  await screen.screenshot({ path: `${SHOTS}/hero-desktop-2x.png` });
+  await shoot(screen, "hero-desktop-2x.png");
   await screenContext.close();
   await phoneContext.close();
 });
@@ -91,6 +97,6 @@ test("a phone presenting the vertical photo at 390 x 844 and 3x", async ({ brows
   await page.locator("#handle").click();
   await page.locator("#items").getByRole("button", { name: DEMO_ITEMS.vertical.name }).click();
   await presentAndSettle(page, DEMO_ITEMS.vertical.name);
-  await page.screenshot({ path: `${SHOTS}/hero-phone-3x.png` });
+  await shoot(page, "hero-phone-3x.png");
   await context.close();
 });

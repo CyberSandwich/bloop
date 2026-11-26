@@ -343,7 +343,8 @@ html:has(.page-site) {
   height: auto;
 }
 @media (max-width: 639.98px) {
-  .stage {
+  .stage,
+  .close-panel {
     border-radius: 16px;
   }
   .stage img {
@@ -829,11 +830,6 @@ h3 {
 }
 .close-card .hero-actions {
   margin-top: 0;
-}
-@media (max-width: 639.98px) {
-  .close-panel {
-    border-radius: 16px;
-  }
 }
 
 .panel {

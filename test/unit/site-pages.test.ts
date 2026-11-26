@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import { readdirSync, readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
@@ -408,7 +409,7 @@ describe("landing word caps (design.md section 13)", () => {
     const stage = between(html, /<div class="tilt">/, "</picture>");
     const srcset = (media: string, type: string, stem: string, widths: number[], sizes: string) =>
       new RegExp(
-        `<source ${media}type="image/${type}" srcset="${widths.map((w) => `/img/${stem}-${w}\\.${type} ${w}w`).join(", ")}" sizes="${sizes}">`,
+        `<source ${media}type="image/${type}" srcset="${widths.map((w) => `/img/${stem}-${w}-[0-9a-f]{8}\\.${type} ${w}w`).join(", ")}" sizes="${sizes}">`,
       );
     const under640 = 'media="\\(max-width: 639\\.98px\\)" ';
     const wide = "\\(min-width: 1216px\\) 1136px, calc\\(100vw - 80px\\)";
@@ -419,16 +420,30 @@ describe("landing word caps (design.md section 13)", () => {
     expect(stage).toMatch(srcset("", "avif", "hero-viewer", [750, 1100, 1600, 2200], wide));
     expect(stage).toMatch(srcset("", "webp", "hero-viewer", [750, 1100, 1600], wide));
     // The sources run in order: the phone's AVIF and WebP, then the desktop's AVIF and WebP.
-    const order = ["hero-phone-600.avif", "hero-phone-600.webp", "hero-viewer-750.avif", "hero-viewer-750.webp"];
-    const at = order.map((name) => stage.indexOf(name));
+    const order = [
+      "hero-phone-600-\\w+\\.avif",
+      "hero-phone-600-\\w+\\.webp",
+      "hero-viewer-750-\\w+\\.avif",
+      "hero-viewer-750-\\w+\\.webp",
+    ];
+    const at = order.map((name) => stage.search(new RegExp(name)));
     expect(at).toEqual([...at].sort((a, b) => a - b));
     expect(at).not.toContain(-1);
     const img = /<img\b[^>]*>/.exec(stage)?.[0] ?? "";
-    expect(img).toContain('src="/img/hero-viewer-1100.webp" width="1440" height="828" fetchpriority="high"');
+    expect(img).toMatch(
+      /src="\/img\/hero-viewer-1100-[0-9a-f]{8}\.webp" width="1440" height="828" fetchpriority="high"/,
+    );
+    // /img is cached for days: a hero file's name carries the first 8 hex digits of its bytes' sha256, so new bytes mean a new name.
+    const named = [...stage.matchAll(/\/img\/(hero-[a-z]+-\d+)-([0-9a-f]{8})\.(avif|webp)/g)];
+    expect(named.length).toBe(12);
+    for (const [, stem, hash, ext] of named) {
+      const bytes = readFileSync(new URL(`../../public/img/${stem}-${hash}.${ext}`, import.meta.url));
+      expect(createHash("sha256").update(bytes).digest("hex").slice(0, 8), `${stem}.${ext}`).toBe(hash);
+    }
     expect(img).toContain('alt="The bloop viewer presenting a dog, full screen"');
     // The phone's picture has its own ratio, so the swap shifts nothing.
     expect(read("public/css/site.css")).toMatch(
-      /@media \(max-width: 639\.98px\) \{\s*\.stage \{\s*border-radius: 16px;\s*\}\s*\.stage img \{\s*aspect-ratio: 390 \/ 844;/,
+      /@media \(max-width: 639\.98px\) \{\s*\.stage,\s*\.close-panel \{\s*border-radius: 16px;\s*\}\s*\.stage img \{\s*aspect-ratio: 390 \/ 844;/,
     );
     expect(img).not.toMatch(/loading="lazy"/);
     expect(visibleText(stage)).toBe("");
