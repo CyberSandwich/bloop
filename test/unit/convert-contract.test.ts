@@ -40,7 +40,8 @@ describe("convert contract matches container/README.md", () => {
 
   it("stage timeouts", () => {
     for (const [stage, seconds] of Object.entries(STAGE_TIMEOUT_S)) {
-      expect(row(new RegExp(`^\\| ${stage} \\|.*\\| (\\d+) s \\|$`, "m"))[0]).toBe(String(seconds));
+      // The video row names its limit as "ceiling N s"; the others end their row with "| N s |".
+      expect(row(new RegExp(`^\\| ${stage} \\|.*?(?:\\| |ceiling )(\\d+) s(?: \\||;)`, "m"))[0]).toBe(String(seconds));
     }
   });
 
