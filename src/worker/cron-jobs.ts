@@ -1,6 +1,7 @@
 // The cron jobs by trigger. A stream adds its job to one list; every trigger in CRON must have a list.
-import { cronNotify } from "./auth/email.ts";
+
 import { dbOf } from "./auth/db.ts";
+import { cronNotify } from "./auth/email.ts";
 import type { Config } from "./config.ts";
 import { CRON, type CronJob, type CronTrigger } from "./cron.ts";
 import type { Env } from "./env.ts";
