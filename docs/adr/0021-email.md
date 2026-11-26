@@ -14,8 +14,9 @@ Status: accepted. Sign-in: ADR 0014. Spend: the spend guard's switches and meter
 - **Order:** the `email` switch (`off` sends nothing; `admin_only` sends only to `ADMIN_EMAILS`), then `take("email_code", ipHash)` for a code request, then `take("email")`.
 - **Guard outage:** a take answering `unavailable` fails open, at most 20 sends per isolate per 10 minutes, logged once per window as `{"evt":"spend","kind":"guard_down"}`. Code sign-in survives an outage; the switch still applies. This is the one exception to failing closed.
 - **Send errors** are logged by code only, never with an address. `E_RECIPIENT_SUPPRESSED` logs `{"evt":"email_suppressed"}` and the caller sees the same answer as for any other address.
-- **Breaker alerts** (`breakerNotify`) go through `EMAIL` to each `ADMIN_EMAILS` address and nobody else, under the `email` switch (`off` sends none). They skip the spend takes, which would call back into the guard the breaker is acting on. They hold the kind and numbers only.
-- **Local:** `DEV_MAILBOX=1` (refused on a non-local origin) keeps the newest 50 messages in memory, read and cleared at `/api/dev/mailbox`. Email preview is off in the dashboard.
+- **Breaker alerts** (`breakerNotify`) go through `EMAIL` to each `ADMIN_EMAILS` address and nobody else, under the `email` switch (`off` sends none). They skip the spend takes, which would call back into the guard the breaker is acting on. They hold the kind and numbers only. Each alert key (kind and rule) mails at most once a day: a guarded UPSERT on the `setting` row `alert.<kind>.<rule>` (its `updated_at` is the last send) claims the day before anything is sent, so overlapping cron runs send one.
+- **Addresses:** `mail()` admits only an address `normalizeEmail` accepts, under every switch.
+- **Local:** `DEV_MAILBOX=1` (refused on a non-local origin, and its route answers only a local request) keeps the newest 50 messages in memory, read and cleared at `/api/dev/mailbox`. Email preview is off in the dashboard.
 
 ### Verified against the Email Service docs
 - `env.EMAIL.send({to, from, subject, text, html})` resolves to `{messageId}`; `to` and `from` take a string or `{email, name}`; at most 50 recipients; 25 MiB per message.

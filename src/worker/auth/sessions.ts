@@ -218,7 +218,7 @@ export class Sessions {
     return res.meta.changes > 0;
   }
 
-  /** Ends every session of the user but `keepHash`. Returns the public ids that ended. */
+  /** Ends every session of the user but `keepHash`. Returns the public ids that ended. TRANSITIONAL(a-7): email change. */
   destroyOthers(userId: string, keepHash: string): Promise<string[]> {
     return this.deleteReturning("DELETE FROM phone_session WHERE user_id = ? AND id_hash != ? RETURNING public_id", [
       userId,
@@ -239,7 +239,10 @@ export class Sessions {
     return results.flatMap((r) => (r.public_id ? [r.public_id] : []));
   }
 
-  /** Records a fresh proof on this session without rotating it (passkey registration, which is already C+R). */
+  /**
+   * Records a fresh proof on this session without rotating it (passkey registration, which is already C+R).
+   * TRANSITIONAL(a-5): passkey registration calls it, and must record the method with the proof.
+   */
   async stampReauth(hash: string): Promise<void> {
     await this.db.prepare("UPDATE phone_session SET reauth_at = ? WHERE id_hash = ?").bind(this.now(), hash).run();
   }
@@ -253,30 +256,27 @@ export class Sessions {
     await this.db.prepare("DELETE FROM app_user WHERE id = ? AND tid != 'email'").bind(userId).run();
   }
 
-  /** The email of a member who may use the product now: active and not suspended (a deleting member only restores, ADR 0013). */
-  async activeMemberEmail(userId: string): Promise<string | null> {
-    const row = await this.db
-      .prepare(
-        "SELECT email_norm FROM app_user WHERE id = ? AND tid = 'email' AND status = 'active' AND suspended_at IS NULL",
-      )
-      .bind(userId)
-      .first<{ email_norm: string | null }>();
-    return row?.email_norm ?? null;
-  }
-
   /**
    * Starts the deletion grace for an email member: the daily purge deletes them after `deleteAfter`, and every other
    * session ends now; the session `keepHash` asked for the deletion and stays to restore it (ADR 0014). Zero changes on
-   * the row means the account was not active (already deleting or purging), which is fine to repeat.
+   * the row means the account was not active (already deleting or purging), which is fine to repeat. The status and the
+   * session ends are one batch; the ended ids are read just before it (a batch returns no rows), so a session signed
+   * in between the two is ended without its id, and its library sockets close at their next cookie check.
    */
   async requestDeletion(userId: string, deleteAfter: number, keepHash: string): Promise<string[]> {
-    await this.db
-      .prepare(
-        "UPDATE app_user SET status = 'deleting', delete_after = ? WHERE id = ? AND tid = 'email' AND status = 'active'",
-      )
-      .bind(deleteAfter, userId)
-      .run();
-    return this.destroyOthers(userId, keepHash);
+    const { results } = await this.db
+      .prepare("SELECT public_id FROM phone_session WHERE user_id = ? AND id_hash != ?")
+      .bind(userId, keepHash)
+      .all<{ public_id: string | null }>();
+    await this.db.batch([
+      this.db
+        .prepare(
+          "UPDATE app_user SET status = 'deleting', delete_after = ? WHERE id = ? AND tid = 'email' AND status = 'active'",
+        )
+        .bind(deleteAfter, userId),
+      this.db.prepare("DELETE FROM phone_session WHERE user_id = ? AND id_hash != ?").bind(userId, keepHash),
+    ]);
+    return results.flatMap((r) => (r.public_id ? [r.public_id] : []));
   }
 
   /** Cancels a requested deletion inside its grace (ADR 0013); false when it is too late or there was none. */

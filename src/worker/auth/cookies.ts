@@ -11,15 +11,17 @@ export const OAUTH_COOKIE = "__Host-bloop_oauth";
 export const HINT_COOKIE = "__Host-bloop_in";
 /** The known-device value (codes.ts `newDeviceValue`): kept across a plain sign-out, cleared by sign out everywhere. */
 export const DEVICE_COOKIE = "__Host-bloop_dev";
-/** The WebAuthn ceremony binder (ADR 0014), SameSite=Strict. */
+/** The WebAuthn ceremony binder (ADR 0014), SameSite=Strict. TRANSITIONAL(a-5): the passkey routes set it. */
 export const BIND_COOKIE = "__Host-bloop_bind";
 /** `open` while an admin previews the open site (ADR 0026); the page still checks the admin session per request. */
 export const VIEW_COOKIE = "__Host-bloop_view";
 
+/** TRANSITIONAL(a-5): the passkey routes set the binder with it. */
 export const BIND_MAX_AGE_SECONDS = 600;
 /** The longest Max-Age a browser keeps (Chrome caps a cookie at 400 days). */
 export const DEVICE_MAX_AGE_SECONDS = 400 * 86_400;
-export const VIEW_MAX_AGE_SECONDS = 86_400;
+/** One working session: a forgotten preview ends by itself the same day. */
+export const VIEW_MAX_AGE_SECONDS = 8 * 3_600;
 
 export function readCookie(request: Request, name: string): string | null {
   for (const part of (request.headers.get("Cookie") ?? "").split(";")) {
@@ -34,11 +36,14 @@ export const setCookie = (name: string, value: string, maxAgeSeconds: number): s
 
 export const clearCookie = (name: string): string => setCookie(name, "", 0);
 
-/** The same format with SameSite=Strict: a cross-site navigation never carries it. */
+/** The same format with SameSite=Strict: a cross-site navigation never carries it. TRANSITIONAL(a-5): the binder. */
 export const setStrict = (name: string, value: string, maxAgeSeconds: number): string =>
   `${name}=${value}; Max-Age=${maxAgeSeconds}; Path=/; Secure; HttpOnly; SameSite=Strict`;
 
-/** Every cookie a member sign-in sets, in one place. `deviceValue` is null when the device cookie stays as it is. */
+/**
+ * Every cookie a member sign-in sets, in one place. `deviceValue` is null when the device cookie stays as it is.
+ * TRANSITIONAL(a-4): code verify is the first caller.
+ */
 export const signedInCookies = (session: string, deviceValue: string | null): string[] => [
   setCookie(SESSION_COOKIE, session, SESSION_MAX_AGE_SECONDS),
   setCookie(HINT_COOKIE, "1", SESSION_MAX_AGE_SECONDS),

@@ -1,9 +1,10 @@
-// The account routes, /api/me*, for email members and Entra users alike (plan A.4.2; ADRs 0013, 0014). The Entra
-// sign-in and the grant's disconnect stay in auth.ts, behind the Graph configuration.
+// The account routes, /api/me*, for email members and Entra users alike (ADRs 0013, 0014). The Entra sign-in and the
+// grant's disconnect stay in auth.ts, behind the Graph configuration.
 import { type ZodType, z } from "zod";
 import { accountEvent } from "../audit.ts";
 import { readCookie, SESSION_COOKIE, signedOutCookies, withCookies } from "../auth/cookies.ts";
 import { dbOf } from "../auth/db.ts";
+import { isLocalRequest } from "../auth/local.ts";
 import {
   type Member,
   type MemberOptions,
@@ -12,11 +13,12 @@ import {
   requireFresh,
   resolveMember,
 } from "../auth/member.ts";
+import { displayName } from "../auth/names.ts";
 import { deletePasskey, listPasskeys, renamePasskey } from "../auth/passkeys.ts";
-import { type ScreenDeps, screenDeps } from "../auth/screens.ts";
+import { endSessions, type ScreenDeps, screenDeps } from "../auth/screens.ts";
 import { servicesFor } from "../auth/services.ts";
 import { PUBLIC_ID } from "../auth/sessions.ts";
-import type { Config } from "../config.ts";
+import { type Config, isLocalOrigin } from "../config.ts";
 import type { Env, RateLimitName } from "../env.ts";
 import { auditRecord } from "../export-format.ts";
 import { checkWrite, fail, json, readJson } from "../http.ts";
@@ -24,20 +26,11 @@ import { base64url } from "../ids.ts";
 import { launchState } from "../mode.ts";
 import { type Route, route } from "../router.ts";
 import { auditFor } from "../stores.ts";
-import { emptyBody, recordBestEffort } from "./auth.ts";
-import { limited, withConfig, write } from "./common.ts";
+import { recordBestEffort } from "./auth.ts";
+import { emptyBody, limited, withConfig, write } from "./common.ts";
 
 const CREDENTIAL_ID = /^[A-Za-z0-9_-]{1,1366}$/;
-const renameBody = z
-  .object({
-    name: z
-      .string()
-      .trim()
-      .min(1)
-      .max(40)
-      .regex(/^[^\p{Cc}]*$/u),
-  })
-  .strict();
+const renameBody = z.object({ name: displayName }).strict();
 
 /** Cursor paging for /api/me/audit: `beforeId` is the `id` of the last row of the previous page. */
 const pageQuery = z.object({
@@ -45,11 +38,14 @@ const pageQuery = z.object({
   beforeId: z.coerce.number().int().positive().optional(),
 });
 
-/** With FILE_SOURCE=mock and no session cookie, the demo account is the user, as before accounts. */
+/**
+ * With FILE_SOURCE=mock, no session cookie and a local origin and request, the demo account is the user, as before
+ * accounts. A deployed origin never answers it: there only a real session is signed in.
+ */
 const MOCK_ME = { source: "mock", signedIn: true, email: null } as const;
 
 export interface AccountDeps extends ScreenDeps {
-  /** The block list seam, filled by moderation's `isBlocked`. Until it lands no address is blocked. */
+  /** The block list seam. TRANSITIONAL(a-4): until a-4 fills it with moderation's `isBlocked`, no address is blocked. */
   isBlocked(env: Env, emailNorm: string): Promise<boolean>;
 }
 
@@ -57,6 +53,14 @@ const defaultDeps: AccountDeps = { ...screenDeps, isBlocked: async () => false }
 
 /** The WebAuthn user handle: the bytes of app_user.id, base64url (ADR 0014), for the signal API. */
 const userHandle = (userId: string): string => base64url(new TextEncoder().encode(userId));
+
+/** The session cookie and the live session it names, if any: the one lookup every account route starts from. */
+async function sessionView(request: Request, env: Env, config: Config) {
+  const cookie = readCookie(request, SESSION_COOKIE);
+  const { sessions, vault } = servicesFor(env, config);
+  const view = cookie ? await sessions.lookup(cookie) : null;
+  return { cookie, sessions, vault, view };
+}
 
 export interface MemberCall<T> {
   env: Env;
@@ -69,15 +73,20 @@ export interface MemberCall<T> {
 export interface MemberRouteOptions<T> extends MemberOptions {
   /** A write: the Origin, Sec-Fetch-Site and JSON checks, then this schema. Absent for a read. */
   body?: ZodType<T>;
-  /** A (ADR 0014): anyone but an admin, signed out included, gets `not_found` before the body is read. */
+  /**
+   * A (ADR 0014): anyone but an admin, signed out included, gets `not_found` before the write checks and the body, so
+   * a foreign Origin or a wrong content type looks exactly like a missing path.
+   */
   admin?: boolean;
-  /** The platform limit a write spends, keyed by the member, so a shared campus address is never one bucket. */
+  /** The platform limit the route spends after the member is known, keyed by the member (RL_AUTH when absent). */
   limit?: RateLimitName;
 }
 
 /**
- * A route for a signed-in member. A write checks Origin, Sec-Fetch-Site and the content type, then the member, then
- * its limit, then the body, so a refused caller learns nothing from the schema (an admin path stays `not_found`).
+ * A route for a signed-in member. A write checks Origin, Sec-Fetch-Site and the content type (an admin route only
+ * after the admin check), spends the IP-keyed RL_AUTH before the session read, then the member-keyed limit, then reads
+ * the body, so a refused caller learns nothing from the schema. A read spends only the member-keyed limit, so one
+ * shared campus address is never one bucket for its readers.
  */
 export function memberRoute<T = Record<string, never>>(
   methods: readonly string[],
@@ -87,16 +96,22 @@ export function memberRoute<T = Record<string, never>>(
 ): Route {
   return route(methods, path, "api", (request, env, match, ctx) =>
     withConfig(async (req, e, config) => {
-      const refused = options.body ? checkWrite(req, config.origin) : null;
-      if (refused) return refused;
+      const writes = options.body !== undefined;
+      const refusedWrite = () => (writes ? checkWrite(req, config.origin) : null);
+      const early = options.admin ? null : refusedWrite();
+      if (early) return early;
+      const flood = writes ? await limited(e, "RL_AUTH", req, config) : null;
+      if (flood) return flood;
       const who = await resolveMember(req, e, config, options);
       const hidden = options.admin ? (who.ok ? requireAdmin(who.member) : fail("not_found")) : null;
       if (hidden) return hidden;
       if (!who.ok) return who.response;
+      const late = options.admin ? refusedWrite() : null;
+      if (late) return late;
+      const tooMany = await limited(e, options.limit ?? "RL_AUTH", req, config, who.member.userId);
+      if (tooMany) return tooMany;
       let body = {} as T;
       if (options.body) {
-        const tooMany = await limited(e, options.limit ?? "RL_AUTH", req, config, who.member.userId);
-        if (tooMany) return tooMany;
         const parsed = await readJson(req, options.body);
         if (!parsed.ok) return parsed.response;
         body = parsed.value;
@@ -118,30 +133,30 @@ const param = (match: URLPatternResult, pattern: RegExp): string | null => {
 export function accountRoutesWith(deps: AccountDeps): readonly Route[] {
   /**
    * Sign out (this session) or sign out everywhere. Any live session may end itself, so an Entra user, a deleting
-   * member and one the lockout refuses can all sign out.
+   * member and one the lockout refuses can all sign out. A dead or missing session still gets the cookies cleared,
+   * so the hint never outlives the session it stood beside.
    */
   const signOut = (everywhere: boolean) =>
     withConfig(async (request, env, config) => {
       const body = await write(request, config, emptyBody);
       if (!body.ok) return body.response;
-      const cookie = readCookie(request, SESSION_COOKIE);
-      const { sessions } = servicesFor(env, config);
-      const view = cookie ? await sessions.lookup(cookie) : null;
-      if (!cookie || !view) return fail("auth_required");
+      const flood = await limited(env, "RL_AUTH", request, config);
+      if (flood) return flood;
+      const cleared = signedOutCookies({ everywhere });
+      const { cookie, sessions, view } = await sessionView(request, env, config);
+      if (!cookie || !view) return withCookies(fail("auth_required"), cleared);
       const tooMany = await limited(env, "RL_AUTH", request, config, view.userId);
       if (tooMany) return tooMany;
       if (everywhere) {
-        const ended = await sessions.destroyAll(view.userId);
-        await deps.endScreens(env, view.userId);
-        for (const id of ended) await deps.closeSession(env, view.userId, id);
+        // TRANSITIONAL(F): this also bumps app_user.device_epoch (codes.ts deviceMac) once that column exists.
+        await endSessions(deps, env, view.userId, await sessions.destroyAll(view.userId));
       } else {
         await sessions.destroy(cookie);
         if (view.publicId) {
-          await deps.endScreens(env, view.userId, { bySession: view.publicId });
-          await deps.closeSession(env, view.userId, view.publicId);
+          await endSessions(deps, env, view.userId, [view.publicId], { bySession: view.publicId });
         }
       }
-      return withCookies(json({ signedIn: false }), signedOutCookies({ everywhere }));
+      return withCookies(json({ signedIn: false }), cleared);
     });
 
   return [
@@ -151,16 +166,21 @@ export function accountRoutesWith(deps: AccountDeps): readonly Route[] {
       "api",
       withConfig(async (request, env, config) => {
         const cookie = readCookie(request, SESSION_COOKIE);
-        if (!cookie && !config.graph) return json({ ...MOCK_ME, launchMode: (await launchState(env)).mode });
-        const { sessions } = servicesFor(env, config);
-        const view = cookie ? await sessions.lookup(cookie) : null;
+        if (!cookie && !config.graph && isLocalOrigin(config.origin) && isLocalRequest(request)) {
+          return json({ ...MOCK_ME, launchMode: (await launchState(env)).mode });
+        }
+        const { sessions, view } = await sessionView(request, env, config);
         if (view && view.tid !== "email" && config.graph) {
           return json({ source: "graph", signedIn: true, email: view.email });
         }
         const { mode: launchMode } = await launchState(env);
         // C(d): a deleting member sees their deletion and can restore; every other refusal reads as signed out.
         const who = view ? await memberOf(view, env, config, sessions, { allowDeleting: true }) : null;
-        if (!who?.ok) return json({ source: config.fileSource, signedIn: false, launchMode });
+        if (!who?.ok) {
+          const signedOut = json({ source: config.fileSource, signedIn: false, launchMode });
+          // A cookie that names no live session goes, with the hint beside it.
+          return cookie && !view ? withCookies(signedOut, signedOutCookies({ everywhere: false })) : signedOut;
+        }
         const { member } = who;
         const summary = await sessions.summary(member.userId);
         return json({
@@ -191,8 +211,7 @@ export function accountRoutesWith(deps: AccountDeps): readonly Route[] {
       // This device signs out through /api/me/signout, which also clears its cookies.
       if (!id || id === member.session.publicId) return fail("bad_request");
       if (!(await servicesFor(env, config).sessions.destroyPublic(member.userId, id))) return fail("not_found");
-      await deps.endScreens(env, member.userId, { bySession: id });
-      await deps.closeSession(env, member.userId, id);
+      await endSessions(deps, env, member.userId, [id], { bySession: id });
       return noContent();
     }),
 
@@ -214,6 +233,7 @@ export function accountRoutesWith(deps: AccountDeps): readonly Route[] {
       if (!id) return fail("bad_request");
       const stale = requireFresh(member, config);
       if (stale) return stale;
+      // TRANSITIONAL(F): a removed passkey also bumps app_user.device_epoch once that column exists.
       return (await deletePasskey(dbOf(env.DB), member.userId, id)) ? noContent() : fail("not_found");
     }),
 
@@ -229,8 +249,8 @@ export function accountRoutesWith(deps: AccountDeps): readonly Route[] {
       },
     ),
 
-    // Subject access: the user's own audit rows, newest first, a page at a time (DATA-05). A member passes C; an
-    // Entra user needs the Graph configuration, as before accounts.
+    // Subject access: the user's own audit rows, most recently recorded first, a page at a time (DATA-05). A member
+    // passes C; an Entra user needs the Graph configuration, as before accounts.
     route(
       ["GET"],
       "/api/me/audit",
@@ -238,14 +258,14 @@ export function accountRoutesWith(deps: AccountDeps): readonly Route[] {
       withConfig(async (request, env, config) => {
         const query = pageQuery.safeParse(Object.fromEntries(new URL(request.url).searchParams));
         if (!query.success) return fail("bad_request");
-        const cookie = readCookie(request, SESSION_COOKIE);
-        const { sessions } = servicesFor(env, config);
-        const view = cookie ? await sessions.lookup(cookie) : null;
+        const { sessions, view } = await sessionView(request, env, config);
         if (!view) return fail("auth_required");
         if (view.tid === "email") {
           const who = await memberOf(view, env, config, sessions);
           if (!who.ok) return who.response;
         } else if (!config.graph) return fail("source_unavailable");
+        const tooMany = await limited(env, "RL_AUTH", request, config, view.userId);
+        if (tooMany) return tooMany;
         const { limit, beforeId } = query.data;
         const rows = await auditFor(env).forUser(view.userId, limit, beforeId);
         return json({ rows: rows.map(auditRecord), nextId: rows.length === limit ? (rows.at(-1)?.id ?? null) : null });
@@ -262,9 +282,9 @@ export function accountRoutesWith(deps: AccountDeps): readonly Route[] {
       withConfig(async (request, env, config) => {
         const body = await write(request, config, emptyBody);
         if (!body.ok) return body.response;
-        const cookie = readCookie(request, SESSION_COOKIE);
-        const { sessions, vault } = servicesFor(env, config);
-        const view = cookie ? await sessions.lookup(cookie) : null;
+        const flood = await limited(env, "RL_AUTH", request, config);
+        if (flood) return flood;
+        const { sessions, vault, view } = await sessionView(request, env, config);
         if (!view) return fail("auth_required");
         const { userId } = view;
         if (view.tid === "email") {
@@ -275,9 +295,9 @@ export function accountRoutesWith(deps: AccountDeps): readonly Route[] {
           const stale = requireFresh(who.member, config);
           if (stale) return stale;
           const deleteAfter = Date.now() + config.account.deleteGraceDays * 86_400_000;
+          // TRANSITIONAL(F): this also bumps app_user.device_epoch once that column exists.
           const ended = await sessions.requestDeletion(userId, deleteAfter, view.hash);
-          await deps.endScreens(env, userId);
-          for (const id of ended) await deps.closeSession(env, userId, id);
+          await endSessions(deps, env, userId, ended);
           return json({ signedIn: true, deleting: true });
         }
         if (!config.graph) return fail("source_unavailable");

@@ -1,6 +1,7 @@
 // Helpers every route module shares: configuration, the write checks, the platform rate limit, one
 // call into a Screen object. Each handler: config, CSRF checks and Zod for writes (`write`, PAIR-06), rate limit, work.
-import type { z } from "zod";
+import { z } from "zod";
+import { testRelaxed } from "../auth/local.ts";
 import { type Config, configFor } from "../config.ts";
 import type { Env, RateLimitName } from "../env.ts";
 import { bearer, checkWrite, fail, json, readJson } from "../http.ts";
@@ -9,6 +10,9 @@ import { network } from "../net.ts";
 import type { Handler } from "../router.ts";
 import type { Result } from "../seams/pairing.ts";
 import { screenStub } from "../stubs.ts";
+
+/** The body of a write that takes no input: `{}` or nothing, and no other key. */
+export const emptyBody = z.object({}).strict();
 
 export type WithConfig = (request: Request, env: Env, config: Config) => Response | Promise<Response>;
 
@@ -41,7 +45,7 @@ const reported = new Set<RateLimitName>();
 
 /**
  * Coarse platform limit, per pseudonymous IP unless the caller names another key (a session ref).
- * Skipped under TEST_TIMING. A missing binding fails closed for this route alone (the config-invalid 500), logged
+ * Skipped under TEST_TIMING on a local request. A missing binding fails closed for this route alone (the config-invalid 500), logged
  * once per name: the sweep and the Screen alarms never call this and must keep running.
  */
 export async function limited(
@@ -51,7 +55,7 @@ export async function limited(
   config: Config,
   key?: string,
 ): Promise<Response | null> {
-  if (config.testTiming) return null;
+  if (testRelaxed(request, config)) return null;
   const binding: RateLimit | undefined = env[name];
   if (typeof binding?.limit !== "function") {
     if (!reported.has(name)) console.error(`rate-limit binding missing: ${name}`);
