@@ -112,7 +112,11 @@ describe("OSA-02 hold", () => {
       NOW,
       ids,
     );
-    expect(out).toMatchObject({ held: [], missing: ["a"], more: false });
+    expect(out).toMatchObject({
+      held: [],
+      missing: ["nope", "a"],
+      more: false,
+    });
   });
 
   it("copies at most a batch per call and says more", async () => {
@@ -150,5 +154,41 @@ describe("OSA-02 hold", () => {
     });
     expect([...lib.objects.keys()]).toEqual(["h/live"]);
     expect(db.raw.prepare("SELECT id FROM hold").all()).toEqual([{ id: "live" }]);
+  });
+});
+
+describe("OSA-02 hold report", () => {
+  it("names every id it could not hold: unknown ids are missing, never dropped", async () => {
+    const db = libWith();
+    addFile(db, { id: "a" });
+    const out = await holdFiles(
+      {
+        DB: db,
+        LIBRARY: fakeBucket({ "u/u1/a/v1/orig": "x" }).bucket,
+        GUEST_FILES: fakeBucket().bucket,
+      },
+      { reportId: "r", target: { fileIds: ["a", "ghost"] } },
+      NOW,
+      ids,
+    );
+    expect(out.held.map((h) => h.fileId)).toEqual(["a"]);
+    expect(out.missing).toEqual(["ghost"]);
+  });
+
+  it("a file purged after it was held is still reported held, and one purged unheld is missing", async () => {
+    const db = libWith();
+    addFile(db, { id: "a" });
+    const lib = fakeBucket({ "u/u1/a/v1/orig": "x" });
+    const env = {
+      DB: db,
+      LIBRARY: lib.bucket,
+      GUEST_FILES: fakeBucket().bucket,
+    };
+    const first = await holdFiles(env, { reportId: "r", target: { fileIds: ["a"] } }, NOW, ids);
+    db.raw.prepare("UPDATE library_file SET status = 'purged' WHERE id = 'a'").run();
+    addFile(db, { id: "b", status: "purged" });
+    const again = await holdFiles(env, { reportId: "r", target: { fileIds: ["a", "b"] } }, NOW, ids);
+    expect(again.held).toEqual(first.held);
+    expect(again.missing).toEqual(["b"]);
   });
 });

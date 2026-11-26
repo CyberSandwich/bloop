@@ -118,7 +118,11 @@ describe("who may call", () => {
     expect([cross.status, cross.body.code]).toEqual([403, "forbidden_origin"]);
     const res = await fetch(`${wrangler.url}/api/library/a1/trash`, {
       method: "POST",
-      headers: { Origin: wrangler.url, Cookie: JAR("ann"), "Content-Type": "text/plain" },
+      headers: {
+        Origin: wrangler.url,
+        Cookie: JAR("ann"),
+        "Content-Type": "text/plain",
+      },
       body: "{}",
     });
     expect(res.status).toBe(415);
@@ -172,11 +176,16 @@ describe("list, rename and Up Next", () => {
   });
 
   it("renames keeping the extension, and refuses what LIB-06 names", async () => {
-    const ok = await call("ann", "PATCH", "/api/library/a2", { name: "Lecture 5" });
+    const ok = await call("ann", "PATCH", "/api/library/a2", {
+      name: "Lecture 5",
+    });
     expect([ok.status, ok.body.name]).toEqual([200, "Lecture 5.pptx"]);
     const bad = await call("ann", "PATCH", "/api/library/a2", { name: "a/b" });
     expect([bad.status, bad.body.code]).toEqual([400, "bad_request"]);
-    const both = await call("ann", "PATCH", "/api/library/a2", { name: "x", selected: true });
+    const both = await call("ann", "PATCH", "/api/library/a2", {
+      name: "x",
+      selected: true,
+    });
     expect(both.status).toBe(400);
   });
 
@@ -186,7 +195,9 @@ describe("list, rename and Up Next", () => {
       Array.from({ length: 12 }, (_, i) => call("bob", "PATCH", `/api/library/t${i}`, { selected: true })),
     );
     expect(ticks.map((t) => t.status)).toEqual(Array(12).fill(200));
-    const full = await call("bob", "PATCH", "/api/library/b1", { selected: true });
+    const full = await call("bob", "PATCH", "/api/library/b1", {
+      selected: true,
+    });
     expect([full.status, full.body.code]).toEqual([409, "up_next_full"]);
     expect((await call("bob", "PATCH", "/api/library/t0", { selected: true })).status).toBe(200);
     const after = await call("bob", "GET", "/api/library");
@@ -194,11 +205,21 @@ describe("list, rename and Up Next", () => {
   });
 
   it("reorders Up Next with one PUT and answers the order that resulted", async () => {
-    const put = await call("bob", "PUT", "/api/library/up-next", { ids: ["t2", "t0", "nope"] });
+    const put = await call("bob", "PUT", "/api/library/up-next", {
+      ids: ["t2", "t0", "nope"],
+    });
     expect([put.status, put.body.upNext]).toEqual([200, ["t2", "t0"]]);
-    const cleared = await call("bob", "PUT", "/api/library/up-next", { ids: [] });
+    const cleared = await call("bob", "PUT", "/api/library/up-next", {
+      ids: [],
+    });
     expect(cleared.body.upNext).toEqual([]);
-    expect((await call("bob", "PUT", "/api/library/up-next", { ids: Array(13).fill("x") })).status).toBe(400);
+    expect(
+      (
+        await call("bob", "PUT", "/api/library/up-next", {
+          ids: Array(13).fill("x"),
+        })
+      ).status,
+    ).toBe(400);
   });
 });
 
@@ -220,7 +241,9 @@ describe("trash, restore and Delete Now", () => {
     await call("ann", "POST", "/api/library/a2/trash", {});
     const socket = await Socket.open(wrangler.url, "/api/library/ws", wrangler.url, { Cookie: JAR("ann") });
     await socket.waitFor((f) => f.t === "hello");
-    const due = await call("ann", "POST", "/api/library/trash/delete", { ids: ["a2", "b1"] });
+    const due = await call("ann", "POST", "/api/library/trash/delete", {
+      ids: ["a2", "b1"],
+    });
     expect([due.status, due.body.due]).toEqual([202, 1]);
     expect((await call("ann", "POST", "/api/library/a2/restore", {})).status).toBe(404);
     await socket.waitFor((f) => f.t === "quota", 15_000);
@@ -232,7 +255,9 @@ describe("trash, restore and Delete Now", () => {
 
   it("empties the trash with all, and an empty body is refused", async () => {
     seed([file("e1", "bob", { trashed_at: now, purge_after: now + 86_400_000 })]);
-    const emptied = await call("bob", "POST", "/api/library/trash/delete", { all: true });
+    const emptied = await call("bob", "POST", "/api/library/trash/delete", {
+      all: true,
+    });
     expect([emptied.status, emptied.body.due]).toEqual([202, 1]);
     expect((await call("bob", "POST", "/api/library/trash/delete", {})).status).toBe(400);
   });
@@ -244,7 +269,9 @@ describe("the socket", () => {
     expect((await socket.waitFor((f) => f.t === "hello")).t).toBe("hello");
     socket.close();
     await expect(
-      Socket.open(wrangler.url, "/api/library/ws", "https://evil.example", { Cookie: JAR("bob") }),
+      Socket.open(wrangler.url, "/api/library/ws", "https://evil.example", {
+        Cookie: JAR("bob"),
+      }),
     ).rejects.toThrow();
     await expect(Socket.open(wrangler.url, "/api/library/ws", wrangler.url)).rejects.toThrow();
     expect((await call("bob", "GET", "/api/library/ws")).status).toBe(400);
@@ -260,6 +287,24 @@ describe("the socket", () => {
     expect(theirs.frames.map((f) => f.t)).toEqual(["hello"]);
     mine.close();
     theirs.close();
+  });
+});
+
+describe("the socket cap", () => {
+  it("LIB-11 hibernate: a seventh socket replaces the oldest with 4000, and the other six stay open", async () => {
+    const opened: Socket[] = [];
+    for (let i = 0; i < 7; i++) {
+      opened.push(
+        await Socket.open(wrangler.url, "/api/library/ws", wrangler.url, {
+          Cookie: JAR("ann"),
+        }),
+      );
+      await opened[i]?.waitFor((f) => f.t === "hello");
+    }
+    for (let i = 0; i < 150 && opened[0]?.closed === null; i++) await new Promise((r) => setTimeout(r, 100));
+    expect(opened[0]?.closed?.code).toBe(4000);
+    expect(opened.slice(1).map((s) => s.closed)).toEqual(Array(6).fill(null));
+    for (const s of opened) s.close();
   });
 });
 
@@ -282,7 +327,9 @@ describe("live screens", () => {
 
 describe("previews", () => {
   it("LIB-04 hmac: mints a token the verifier accepts, for this file and version only", async () => {
-    const res = await call("ann", "POST", "/api/library/a1/preview", { asset: "original" });
+    const res = await call("ann", "POST", "/api/library/a1/preview", {
+      asset: "original",
+    });
     expect(res.status).toBe(200);
     const base = String(res.body.base);
     expect(base.startsWith(`${wrangler.url}/p/p1.`)).toBe(true);
@@ -296,12 +343,30 @@ describe("previews", () => {
       file("d1", "ann", { disabled_at: now }),
       file("tr", "ann", { trashed_at: now, purge_after: now + 86_400_000 }),
     ]);
-    expect((await call("ann", "POST", "/api/library/d1/preview", { asset: "bundle" })).body.code).toBe("file_disabled");
-    expect((await call("ann", "POST", "/api/library/tr/preview", { asset: "bundle" })).status).toBe(404);
+    expect(
+      (
+        await call("ann", "POST", "/api/library/d1/preview", {
+          asset: "bundle",
+        })
+      ).body.code,
+    ).toBe("file_disabled");
+    expect(
+      (
+        await call("ann", "POST", "/api/library/tr/preview", {
+          asset: "bundle",
+        })
+      ).status,
+    ).toBe(404);
   });
 
   it("LIB-03 pinned: a signed-out session cannot mint", async () => {
     seed([`DELETE FROM phone_session WHERE public_id = 'pub-bob'`]);
-    expect((await call("bob", "POST", "/api/library/b1/preview", { asset: "bundle" })).status).toBe(401);
+    expect(
+      (
+        await call("bob", "POST", "/api/library/b1/preview", {
+          asset: "bundle",
+        })
+      ).status,
+    ).toBe(401);
   });
 });
