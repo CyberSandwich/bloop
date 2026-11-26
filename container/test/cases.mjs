@@ -3,7 +3,7 @@ import { spawn } from "node:child_process";
 import { mkdirSync, readFileSync, statSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { LINK_MARKER, LINK_PATH } from "../fixtures/lib.mjs";
+import { LINK_IMAGE_PATH, LINK_MARKER, LINK_PATH } from "../fixtures/lib.mjs";
 import {
   check,
   checkEarly,
@@ -333,69 +333,61 @@ export async function caseIsolation() {
   for (const f of ["carlito", "caladea", "liberation sans", "noto sans"]) check(fonts.includes(f), `image: font ${f}`);
 }
 
-/** The text of a PDF, read with the image's own pdftotext. */
-function pdfText(pdf) {
-  const dir = join(work, `text-${uniq()}`);
-  mkdirSync(dir, { recursive: true });
-  writeFileSync(join(dir, "doc.pdf"), pdf);
-  return docker("run", "--rm", "-v", `${dir}:/o:ro`, "--entrypoint", "pdftotext", IMAGE, "/o/doc.pdf", "-").out;
-}
-
 const LINK_FIXTURES = [
   ["linked.odt", "odt"],
   ["linked.docx", "docx"],
   ["linked.rtf", "rtf"],
 ];
-const LINK_VALUES = [0, 1, 2];
 
-/** The Writer link-update value the production registry sets. */
-function productionLinkValue() {
-  const xcu = readFileSync(join(here, "..", "lo-registry.xcu"), "utf8");
-  const m = xcu.match(/Office\.Writer\/Content\/Update"><prop oor:name="Link"[^>]*><value>(\d)<\/value>/);
-  if (!m) throw new Error("lo-registry.xcu sets no Writer Content/Update/Link");
-  return Number(m[1]);
+const STRACE_IMAGE = "bloop-converter-strace:corpus";
+
+/** The text and the number of images in a PDF, read with the image's own poppler tools. */
+function pdfFacts(pdf) {
+  const dir = join(work, `facts-${uniq()}`);
+  mkdirSync(dir, { recursive: true });
+  writeFileSync(join(dir, "doc.pdf"), pdf);
+  const script = 'pdftotext /o/doc.pdf -; echo "@@images $(pdfimages -list /o/doc.pdf | tail -n +3 | wc -l)"';
+  const out = docker("run", "--rm", "-v", `${dir}:/o:ro`, "--entrypoint", "bash", IMAGE, "-c", script).out;
+  const [text, images] = out.split("@@images ");
+  return { text, images: Number(images) };
 }
 
-const linkRegistry = (value) => `<?xml version="1.0" encoding="UTF-8"?>
+const registryWith = (items) => `<?xml version="1.0" encoding="UTF-8"?>
 <oor:items xmlns:oor="http://openoffice.org/2001/registry" xmlns:xs="http://www.w3.org/2001/XMLSchema" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">
-<item oor:path="/org.openoffice.Office.Common/Security/Scripting"><prop oor:name="BlockUntrustedRefererLinks" oor:op="fuse"><value>false</value></prop></item>
-<item oor:path="/org.openoffice.Office.Writer/Content/Update"><prop oor:name="Link" oor:op="fuse"><value>${value}</value></prop></item>
+${items}
 </oor:items>
 `;
 
+/** The one setting production and the control differ in: whether a document may pull in a file it links to. */
+const LINKS_ALLOWED = registryWith(
+  `<item oor:path="/org.openoffice.Office.Common/Security/Scripting"><prop oor:name="BlockUntrustedRefererLinks" oor:op="fuse"><value>false</value></prop></item>`,
+);
+
 /**
- * The positive control: which Writer link-update values make LibreOffice read the linked file on load. The
- * production value must not be one of them, and when no value does the format is reported unverified.
+ * Converts linked-image.odt under a registry, with strace on openat in a control-only image (the converter
+ * image plus strace; the image under test is unchanged). Returns how often the linked file was opened and how
+ * many images the PDF holds.
  */
-function linkControl() {
-  const dir = join(work, `link-control-${uniq()}`);
-  mkdirSync(dir, { recursive: true });
-  for (const v of LINK_VALUES) writeFileSync(join(dir, `link-${v}.xcu`), linkRegistry(v));
-  const flags = "--headless --norestore --nolockcheck --nodefault --nologo -env:UserInstallation=file://$P";
+function followTrial(registry) {
   const script = [
     "set -u",
-    `printf %s ${LINK_MARKER} > ${LINK_PATH}`,
-    ...LINK_FIXTURES.flatMap(([f]) =>
-      LINK_VALUES.map((v) =>
-        [
-          'P=$(mktemp -d); mkdir -p "$P/user" "$P/out"',
-          `cp /ctl/link-${v}.xcu "$P/user/registrymodifications.xcu"`,
-          `HOME="$P" soffice ${flags} --convert-to pdf --outdir "$P/out" /fx/${f} >/dev/null 2>&1`,
-          `t=$(pdftotext "$P/out/${f.replace(/\.[^.]+$/, "")}.pdf" - | tr '\\n' ' ')`,
-          `case "$t" in *${LINK_MARKER}*) echo "${f} ${v} UPDATED";; *) echo "${f} ${v} CACHED";; esac`,
-          `echo "# ${f} ${v} text: \${t:0:80}"`,
-        ].join("\n"),
-      ),
-    ),
+    `vips black ${LINK_IMAGE_PATH} 20 20`,
+    'P=$(mktemp -d); mkdir -p "$P/user" "$P/out"',
+    `cp ${registry} "$P/user/registrymodifications.xcu"`,
+    `HOME="$P" timeout 120 strace -f -qq -e trace=openat -o /tmp/st soffice --headless --norestore --nolockcheck --nodefault --nologo -env:UserInstallation=file://$P --convert-to pdf --outdir "$P/out" /fx/linked-image.odt >/dev/null 2>&1`,
+    `echo "opens=$(grep -c '${LINK_IMAGE_PATH}' /tmp/st) images=$(pdfimages -list "$P/out/linked-image.pdf" | tail -n +3 | wc -l)"`,
   ].join("\n");
-  const r = docker(
+  const dir = join(work, `trial-${uniq()}`);
+  mkdirSync(dir, { recursive: true });
+  writeFileSync(join(dir, "links-allowed.xcu"), LINKS_ALLOWED);
+  const out = docker(
     "run",
     "--rm",
     "--network",
     "none",
     "--read-only",
-    "--workdir",
-    "/tmp",
+    "--cap-add",
+    "SYS_PTRACE",
     "--tmpfs",
     "/tmp:rw,mode=1777,size=2g",
     "-v",
@@ -404,43 +396,70 @@ function linkControl() {
     `${dir}:/ctl:ro`,
     "--entrypoint",
     "bash",
-    IMAGE,
+    STRACE_IMAGE,
     "-c",
     script,
-  );
-  const updating = {};
-  for (const line of r.out.split("\n")) {
-    if (line.startsWith("#")) {
-      console.log(`  ${line}`);
-      continue;
-    }
-    const [f, v, state] = line.split(" ");
-    if (state === "UPDATED") updating[f] = [...(updating[f] ?? []), Number(v)];
-  }
-  return updating;
+  ).out;
+  const m = out.match(/opens=(\d+) images=(\d+)/);
+  if (!m) throw new Error(`link trial gave no result: ${out}`);
+  return { opens: Number(m[1]), images: Number(m[2]) };
 }
 
-/** Linked content must not be read on load: a marker file the links name must not reach doc.pdf. */
+/**
+ * DROP-14, the file half. LibreOffice follows a linked image's file:// target when the registry allows it and
+ * not under the production registry; the same fixture then goes through a real job. Section and INCLUDETEXT
+ * links are not followed under any registry setting tried, so for those the marker test below shows nothing
+ * beyond the converter finishing; they are reported unverified.
+ */
 export async function caseLinks() {
   console.log("links");
-  const updating = linkControl();
-  const prod = productionLinkValue();
+  const built = docker(
+    "build",
+    "--build-arg",
+    `BASE=${IMAGE}`,
+    "-t",
+    STRACE_IMAGE,
+    "-f",
+    join(here, "Dockerfile.strace"),
+    here,
+  );
+  check(built.code === 0, `links: the strace control image builds (${built.err.slice(-200)})`);
+  const allowed = followTrial("/ctl/links-allowed.xcu");
+  const production = followTrial("/opt/bloop/lo-registry.xcu");
+  console.log(`  linked image: allowed ${JSON.stringify(allowed)}, production ${JSON.stringify(production)}`);
+  check(
+    allowed.opens > 0 && allowed.images > 0,
+    `DROP-14 links: the control fires, LibreOffice opens the linked image when links are allowed (${JSON.stringify(allowed)})`,
+  );
+  check(
+    production.opens === 0 && production.images === 0,
+    `DROP-14 links: the production registry never opens the linked image (${JSON.stringify(production)})`,
+  );
+
+  const c = start();
+  try {
+    check(await healthy(c), "linked-image.odt: container is healthy");
+    docker("exec", c.name, "vips", "black", LINK_IMAGE_PATH, "20", "20");
+    const r = await runJob(c, join(GEN, "linked-image.odt"), "odt");
+    check(r.status.state === "done", `linked-image.odt: converts (status ${JSON.stringify(r.status)})`);
+    const facts = pdfFacts(r.files["doc.pdf"] ?? Buffer.alloc(0));
+    check(facts.images === 0, `DROP-14 links: the job's doc.pdf holds no linked image (${facts.images})`);
+  } finally {
+    stop(c);
+  }
+
   for (const [f, ext] of LINK_FIXTURES) {
-    const values = updating[f] ?? [];
-    console.log(
-      `  ${f}: Writer Link values that update on load: ${values.length ? values.join(",") : "none (control unverified)"}`,
-    );
-    check(!values.includes(prod), `DROP-14 links: the production Writer value ${prod} does not update ${f}`);
-    const c = start();
+    const c2 = start();
     try {
-      check(await healthy(c), `${f}: container is healthy`);
-      docker("exec", c.name, "sh", "-c", `printf %s ${LINK_MARKER} > ${LINK_PATH}`);
-      const r = await runJob(c, join(GEN, f), ext);
+      check(await healthy(c2), `${f}: container is healthy`);
+      docker("exec", c2.name, "sh", "-c", `printf %s ${LINK_MARKER} > ${LINK_PATH}`);
+      const r = await runJob(c2, join(GEN, f), ext);
       check(r.status.state === "done", `${f}: converts (status ${JSON.stringify(r.status)})`);
-      const text = r.files["doc.pdf"] ? pdfText(r.files["doc.pdf"]) : "";
+      const { text } = pdfFacts(r.files["doc.pdf"] ?? Buffer.alloc(0));
       check(text.length > 0 && !text.includes(LINK_MARKER), `DROP-14 links: ${f} did not read the file it links to`);
+      console.log(`  ${f}: no registry setting makes this link update, so the control is unverified`);
     } finally {
-      stop(c);
+      stop(c2);
     }
   }
 }
