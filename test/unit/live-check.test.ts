@@ -216,6 +216,15 @@ describe("live-check: files a build that drops dotfiles or leaks sources would g
     expect(find(preview(), "type file /js/types.d.ts is not served")).toMatchObject({ expect: { status: 404 } });
   });
 
+  it("MODE-01: the launch manifest is asked for in both modes and must be the noindex 404", () => {
+    for (const checks of [preview(), open()]) {
+      expect(find(checks, "launch manifest is not served")).toMatchObject({
+        url: `${ORIGIN}/_launch.json`,
+        expect: { status: 404, body: NOINDEX_META },
+      });
+    }
+  });
+
   it("the registry finds the repo's type declarations, vendored ones included", () => {
     const { typeFiles } = registryFrom();
     expect(typeFiles).toContain("/js/types.d.ts");

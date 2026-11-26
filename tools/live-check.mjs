@@ -242,6 +242,12 @@ export function checksFor(reg, mode) {
     url: `${origin}/.well-known/security.txt`,
     expect: { status: 200, contentType: "text/plain", body: "Contact:" },
   });
+  // The launch manifest is read by the Worker alone; a public request answers the plain 404 in both modes.
+  checks.push({
+    what: "launch manifest is not served",
+    url: `${origin}/_launch.json`,
+    expect: { status: 404, body: NOINDEX_META },
+  });
   for (const path of reg.typeFiles) {
     checks.push({ what: `type file ${path} is not served`, url: `${origin}${path}`, expect: { status: 404 } });
   }
