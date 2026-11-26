@@ -8,7 +8,7 @@ permissions:
   contents: write
 
 jobs:
-  deck:
+  shots:
     runs-on: ubuntu-latest
     timeout-minutes: 20
     steps:
@@ -16,16 +16,15 @@ jobs:
       - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
           node-version-file: .nvmrc
-      - run: sudo apt-get update && sudo apt-get install -y --no-install-recommends libreoffice-impress fonts-crosextra-carlito poppler-utils
-      - run: node tools/make-demo-deck.mjs
-      - run: |
-          mkdir -p shots
-          pdftoppm -png -scale-to-x 1280 -scale-to-y -1 src/worker/seams/file-source/demo-files/demo-handout.pdf shots/deck
-          pdffonts src/worker/seams/file-source/demo-files/demo-handout.pdf > shots/fonts.txt
+          cache: npm
+      - run: npm ci
+      - run: npx playwright install --with-deps chromium
+      - run: cp .dev.vars.example .dev.vars
+      - run: npx playwright test test/e2e/deck-shots.spec.ts
       - if: always()
         run: |
           git config user.name "shots"
           git config user.email "shots@users.noreply.github.com"
-          git add -f shots src/worker/seams/file-source/demo-files/demo-deck.pptx src/worker/seams/file-source/demo-files/demo-handout.pdf
-          git commit -m "shots: deck" || exit 0
+          mkdir -p shots && cp -r test-results/shots/. shots/ && git add -f shots
+          git commit -m "shots: images" || exit 0
           git push origin HEAD:ci/demo-deck-shots
