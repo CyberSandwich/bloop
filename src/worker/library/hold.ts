@@ -1,6 +1,7 @@
 // The NCA hold (OSA-02, LIB-11): a reported file is copied to the library bucket under `h/<holdId>`, outside the user's
-// prefix and every purge. The `hold` row is written first, so a copy is never untracked; the admin view shows "copy
-// pending" until a head of the copy succeeds. Never the guest bucket: its one-day expiry is bucket-wide.
+// prefix and every purge. The `hold` row is written once the source is known to exist and is pending (`copied_at` NULL)
+// until the copy is made, so a copy is never untracked and the purge claim refuses a file whose copy is pending. Never
+// the guest bucket: its one-day expiry is bucket-wide.
 import { newRef } from "../ids.ts";
 import { bucketOf, type LibraryBucket } from "./bucket.ts";
 import { libDbOf } from "./store.ts";
@@ -135,19 +136,29 @@ export async function holdFiles(
   let copies = 0;
   for (const source of sources) {
     const existing = await db
-      .prepare("SELECT id FROM hold WHERE file_id = ?1 AND report_id = ?2")
+      .prepare("SELECT id, copied_at FROM hold WHERE file_id = ?1 AND report_id = ?2")
       .bind(source.fileId, options.reportId)
-      .first<{ id: string }>();
-    const holdId = existing?.id ?? newId();
-    if (existing && (await buckets.library.head(holdKey(holdId)))) {
-      report.held.push({ fileId: source.fileId, holdId });
+      .first<{ id: string; copied_at: number | null }>();
+    if (existing && existing.copied_at !== null && (await buckets.library.head(holdKey(existing.id)))) {
+      report.held.push({ fileId: source.fileId, holdId: existing.id });
       continue;
     }
     if (copies === HOLD_BATCH) {
       report.more = true;
       break;
     }
-    if (!existing) {
+    // The source is read first: a file with nothing to copy leaves no row, since a pending row stops its purge.
+    const original = await buckets[source.bucket].get(source.key);
+    if (!original) {
+      if (existing) await db.prepare("DELETE FROM hold WHERE id = ?1").bind(existing.id).run();
+      report.missing.push(source.fileId);
+      continue;
+    }
+    const holdId = existing?.id ?? newId();
+    // The row is pending (`copied_at` NULL) from here until the copy exists, and the purge claim refuses a pending file.
+    if (existing) {
+      await db.prepare("UPDATE hold SET copied_at = NULL WHERE id = ?1").bind(holdId).run();
+    } else {
       await db
         .prepare(
           `INSERT INTO hold (id, file_id, owner_user_id, bucket, r2_key, sha256, report_id, created_at, release_after)
@@ -166,12 +177,15 @@ export async function holdFiles(
         )
         .run();
     }
-    const original = await buckets[source.bucket].get(source.key);
-    if (!original) {
+    try {
+      await buckets.library.put(holdKey(holdId), original.body);
+    } catch {
+      // A purge claimed the file after the read and its bytes went mid-copy: nothing is held, and no row may say so.
+      await db.prepare("DELETE FROM hold WHERE id = ?1").bind(holdId).run();
       report.missing.push(source.fileId);
       continue;
     }
-    await buckets.library.put(holdKey(holdId), original.body);
+    await db.prepare("UPDATE hold SET copied_at = ?2 WHERE id = ?1").bind(holdId, now).run();
     copies++;
     report.held.push({ fileId: source.fileId, holdId });
   }

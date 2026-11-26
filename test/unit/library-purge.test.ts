@@ -73,7 +73,7 @@ describe("LIB-08 erase: a due file's prefix is emptied by listing, in two passes
     expect(rows(db)).toEqual([]);
   });
 
-  it("resumes after a crash at any delete: the same end, bytes released once", async () => {
+  it("the claim comes first: a crash at any delete leaves the file purged and its bytes released once, and pass 2 finishes", async () => {
     for (let crashAt = 1; crashAt <= 3; crashAt++) {
       const db = libWith();
       addFile(db, { id: "a", ...due });
@@ -89,10 +89,16 @@ describe("LIB-08 erase: a due file's prefix is emptied by listing, in two passes
       await expect(purgeDueFiles({ DB: db, LIBRARY: r2.bucket }, { budget: { rounds: 10 } }, deps())).rejects.toThrow(
         "crash",
       );
-      expect(used(db)).toBe(100);
+      expect(used(db)).toBe(0);
+      expect(rows(db)).toEqual([{ id: "a", status: "purged" }]);
       r2.beforeDelete = () => {};
-      await purgeDueFiles({ DB: db, LIBRARY: r2.bucket }, { budget: { rounds: 10 } }, deps());
+      await purgeDueFiles(
+        { DB: db, LIBRARY: r2.bucket },
+        { budget: { rounds: 10 } },
+        deps({ now: () => NOW + LATE_WRITE_WINDOW_MS + 1 }),
+      );
       expect(r2.objects.size).toBe(0);
+      expect(rows(db)).toEqual([]);
       expect(used(db)).toBe(0);
     }
   });
@@ -105,10 +111,11 @@ describe("LIB-08 erase: a due file's prefix is emptied by listing, in two passes
     );
     const r2 = fakeBucket(many);
     const one = await purgeDueFiles({ DB: db, LIBRARY: r2.bucket }, { budget: { rounds: 2 } }, deps());
-    expect(one).toMatchObject({ more: true, purged: 0 });
+    expect(one).toMatchObject({ more: true, purged: 1 });
     expect(r2.objects.size).toBe(500);
-    expect(rows(db)).toEqual([{ id: "a", status: "ready" }]);
-    const two = await purgeDueFiles({ DB: db, LIBRARY: r2.bucket }, { budget: { rounds: 2 } }, deps());
+    expect(rows(db)).toEqual([{ id: "a", status: "purged" }]);
+    const later = deps({ now: () => NOW + LATE_WRITE_WINDOW_MS + 1 });
+    const two = await purgeDueFiles({ DB: db, LIBRARY: r2.bucket }, { budget: { rounds: 2 } }, later);
     expect(two.purged).toBe(1);
     expect(r2.objects.size).toBe(0);
   });
@@ -267,6 +274,7 @@ describe("LIB-09 trash: isolation between owners", () => {
     expect(r2.objects.has("u/u1/held/v1/orig")).toBe(true);
     expect(r2.objects.has("u/u1/plain/v1/orig")).toBe(false);
     await r2.bucket.put("h/hx", "copy");
+    db.raw.prepare("UPDATE hold SET copied_at = 5 WHERE id = 'hx'").run();
     await purgeDueFiles(env, { budget: { rounds: 10 } }, deps());
     expect(r2.objects.has("u/u1/held/v1/orig")).toBe(false);
     expect(r2.objects.has("h/hx")).toBe(true);

@@ -3,6 +3,7 @@
 // rename, trash, restore and purge can resurrect a row or leave a ghost (LIB-12). Bytes move only through U's quota
 // builders, never here.
 import type { Db, Statement } from "../auth/db.ts";
+import { base64url, fromBase64url } from "../ids.ts";
 import { renamed } from "./names.ts";
 
 /** D1's atomic batch, which the plain `Db` slice leaves out. */
@@ -253,47 +254,39 @@ const orders: Record<Sort, (a: FileRow, b: FileRow) => number> = {
 };
 const trashOrder = (a: FileRow, b: FileRow): number => (a.purgeAfter ?? 0) - (b.purgeAfter ?? 0) || byId(a.id, b.id);
 
-/** A cursor is the last row's sort values: it still works after that row is deleted. */
+/**
+ * A cursor is the last row's id and the one value its view sorts by, as UTF-8 JSON in base64url (`btoa` alone takes
+ * Latin-1 only): it still works after that row is deleted. A 200-character name is at most 600 bytes of it.
+ */
+export const CURSOR_MAX_CHARS = 1000;
+type KeyField = "updatedAt" | "name" | "bytes" | "purgeAfter";
+const keyField = (view: View, sort: Sort): KeyField =>
+  view === "trash" ? "purgeAfter" : sort === "updated" ? "updatedAt" : sort === "name" ? "name" : "bytes";
+
 interface Cursor {
   id: string;
-  updatedAt: number;
-  name: string;
-  bytes: number;
-  purgeAfter: number;
+  key: string | number;
 }
-const cursorOf = (r: FileRow): string =>
-  btoa(
-    JSON.stringify({
-      id: r.id,
-      updatedAt: r.updatedAt,
-      name: r.name,
-      bytes: r.bytes,
-      purgeAfter: r.purgeAfter ?? 0,
-    }),
-  );
+const cursorOf = (r: FileRow, field: KeyField): string => {
+  const key = field === "purgeAfter" ? (r.purgeAfter ?? 0) : r[field];
+  const wellFormed = typeof key === "string" ? key.toWellFormed() : key;
+  return base64url(new TextEncoder().encode(JSON.stringify([r.id, wellFormed])));
+};
 
-function readCursor(text: string): Cursor | null {
+function readCursor(text: string, field: KeyField): Cursor | null {
   try {
-    const c = JSON.parse(atob(text)) as Partial<Cursor>;
-    const ok =
-      typeof c.id === "string" &&
-      typeof c.name === "string" &&
-      [c.updatedAt, c.bytes, c.purgeAfter].every((n) => Number.isSafeInteger(n));
-    return ok ? (c as Cursor) : null;
+    const c: unknown = JSON.parse(new TextDecoder("utf-8", { fatal: true }).decode(fromBase64url(text)));
+    if (!Array.isArray(c) || c.length !== 2) return null;
+    const [id, key] = c as [unknown, unknown];
+    const keyOk = field === "name" ? typeof key === "string" : Number.isSafeInteger(key);
+    return typeof id === "string" && keyOk ? { id, key: key as string | number } : null;
   } catch {
     return null;
   }
 }
 
-/** A cursor's row stands in for the real one in the comparator: only the fields that order the view are read. */
-const asRow = (c: Cursor): FileRow =>
-  ({
-    id: c.id,
-    updatedAt: c.updatedAt,
-    name: c.name,
-    bytes: c.bytes,
-    purgeAfter: c.purgeAfter,
-  }) as FileRow;
+/** A cursor's row stands in for the real one in the comparator: only the field that orders the view is read. */
+const asRow = (c: Cursor, field: KeyField): FileRow => ({ id: c.id, [field]: c.key }) as unknown as FileRow;
 
 export type Page = { ok: true; files: FileRow[]; next: string | null } | { ok: false };
 
@@ -303,7 +296,8 @@ export type Page = { ok: true; files: FileRow[]; next: string | null } | { ok: f
  * cursor that is not ours.
  */
 export async function listFiles(db: Db, userId: string, view: View, sort: Sort, cursor: string | null): Promise<Page> {
-  const after = cursor === null ? null : readCursor(cursor);
+  const field = keyField(view, sort);
+  const after = cursor === null ? null : readCursor(cursor, field);
   if (cursor !== null && !after) return { ok: false };
   const { results } = await db
     .prepare(`${ROW_SQL} AND f.trashed_at IS ${view === "trash" ? "NOT " : ""}NULL`)
@@ -311,13 +305,13 @@ export async function listFiles(db: Db, userId: string, view: View, sort: Sort, 
     .all<DbFile>();
   const order = view === "trash" ? trashOrder : orders[sort];
   const sorted = results.map(rowOf).sort(order);
-  const rest = after ? sorted.filter((r) => order(r, asRow(after)) > 0) : sorted;
+  const rest = after ? sorted.filter((r) => order(r, asRow(after, field)) > 0) : sorted;
   const files = rest.slice(0, PAGE_SIZE);
   const last = files.at(-1);
   return {
     ok: true,
     files,
-    next: rest.length > PAGE_SIZE && last ? cursorOf(last) : null,
+    next: rest.length > PAGE_SIZE && last ? cursorOf(last, field) : null,
   };
 }
 

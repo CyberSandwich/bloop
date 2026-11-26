@@ -51,20 +51,18 @@ export interface PurgeReport {
 const MAX_SELECTS = 5;
 const MAX_SKIPPED = 90;
 
-/** Whether a live hold on this file still lacks its copy: the bytes must stay until it exists (OSA-02). */
-export async function holdPending(
-  env: { DB: unknown; LIBRARY: unknown },
-  where: "file" | "owner",
-  id: string,
-  now: number,
-) {
-  const { results } = await libDbOf(env.DB)
-    .prepare(`SELECT id FROM hold WHERE ${where === "file" ? "file_id" : "owner_user_id"} = ?1 AND release_after > ?2`)
+/** A live hold whose copy is not yet made: the bytes must stay until `copied_at` is set (OSA-02). */
+export const PENDING_HOLD_SQL = "release_after > ?2 AND copied_at IS NULL";
+
+/** Whether this file, or any file of this owner, has a pending hold. */
+export async function holdPending(env: { DB: unknown }, where: "file" | "owner", id: string, now: number) {
+  const row = await libDbOf(env.DB)
+    .prepare(
+      `SELECT 1 AS n FROM hold WHERE ${where === "file" ? "file_id" : "owner_user_id"} = ?1 AND ${PENDING_HOLD_SQL} LIMIT 1`,
+    )
     .bind(id, now)
-    .all<{ id: string }>();
-  const bucket = bucketOf(env.LIBRARY);
-  for (const { id: holdId } of results) if (!(await bucket.head(`h/${holdId}`))) return true;
-  return false;
+    .first<{ n: number }>();
+  return row !== null;
 }
 
 /**
@@ -134,10 +132,9 @@ export async function purgeDueFiles(
   const { batch, full } = await dueBatch(env, options.userId, now, deps);
   const report: PurgeReport = { purged: 0, more: full, freed: [] };
   for (const row of batch) {
-    if (row.status !== "purged") await deps.cancelConversion(row.id);
-    if (await deletePrefix(bucketOf(env.LIBRARY), filePrefix(row.user_id, row.id), options.budget))
-      return { ...report, more: true };
     if (row.status === "purged") {
+      if (await deletePrefix(bucketOf(env.LIBRARY), filePrefix(row.user_id, row.id), options.budget))
+        return { ...report, more: true };
       await db.batch([
         db.prepare("DELETE FROM derived WHERE file_id = ?1 AND owner_kind = 'library'").bind(row.id),
         db
@@ -146,23 +143,32 @@ export async function purgeDueFiles(
           )
           .bind(row.user_id, row.id, now),
       ]);
-    } else {
-      await db.batch([
-        db
-          .prepare(
-            `UPDATE app_user SET used_bytes = MAX(used_bytes - ?1, 0) WHERE id = ?2 AND EXISTS (
-               SELECT 1 FROM library_file WHERE user_id = ?2 AND id = ?3 AND status IN ('checking', 'ready') AND purge_after <= ?4)`,
-          )
-          .bind(row.bytes, row.user_id, row.id, now),
-        db
-          .prepare(
-            "UPDATE library_file SET status = 'purged', purge_after = ?4 WHERE user_id = ?1 AND id = ?2 AND status != 'purged' AND purge_after <= ?3",
-          )
-          .bind(row.user_id, row.id, now, now + LATE_WRITE_WINDOW_MS),
-      ]);
-      report.freed.push(row.user_id);
+      report.purged++;
+      continue;
     }
+    await deps.cancelConversion(row.id);
+    // The claim comes before any byte goes, and it refuses a file whose hold row was inserted since the batch was read:
+    // a hold that starts after the claim finds the row `purged` and reports the file missing instead (hold.ts).
+    const [, marked] = await db.batch([
+      db
+        .prepare(
+          `UPDATE app_user SET used_bytes = MAX(used_bytes - ?1, 0) WHERE id = ?2 AND EXISTS (
+             SELECT 1 FROM library_file WHERE user_id = ?2 AND id = ?3 AND status IN ('checking', 'ready') AND purge_after <= ?4)
+             AND NOT EXISTS (SELECT 1 FROM hold WHERE file_id = ?3 AND release_after > ?4 AND copied_at IS NULL)`,
+        )
+        .bind(row.bytes, row.user_id, row.id, now),
+      db
+        .prepare(
+          `UPDATE library_file SET status = 'purged', purge_after = ?4 WHERE user_id = ?1 AND id = ?2 AND status != 'purged'
+             AND purge_after <= ?3 AND NOT EXISTS (SELECT 1 FROM hold WHERE file_id = ?2 AND release_after > ?3 AND copied_at IS NULL)`,
+        )
+        .bind(row.user_id, row.id, now, now + LATE_WRITE_WINDOW_MS),
+    ]);
+    if (!marked || marked.meta.changes === 0) continue;
+    report.freed.push(row.user_id);
     report.purged++;
+    if (await deletePrefix(bucketOf(env.LIBRARY), filePrefix(row.user_id, row.id), options.budget))
+      return { ...report, more: true };
   }
   return report;
 }
