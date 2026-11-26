@@ -16,8 +16,8 @@
   },
   {
     "entry": "phone notes CSS, lazy",
-    "max": "0.58 kB",
-    "decision": "owner-approved overrun under 10 percent for the notes reveal and the box's own layout, 39 B over, 20 B for CI's zlib"
+    "max": "0.57 kB",
+    "decision": "owner-approved overrun under 10 percent for the notes reveal and the box's own layout, 29 B over, 20 B for CI's zlib"
   },
   {
     "entry": "library sheets CSS, lazy",
