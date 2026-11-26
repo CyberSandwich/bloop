@@ -567,7 +567,7 @@ function watch() {
 const inert = async () => null;
 /** @type {Record<string, () => Promise<Lazy | null>>} */
 const modules = {
-  menu: inert,
+  menu: () => import("./library/menu.js"),
   trash: inert,
   sort: inert,
   preview: inert,
