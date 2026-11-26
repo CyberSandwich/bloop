@@ -16,7 +16,7 @@ export interface FakeMultipart extends Multipart {
   open: Map<string, Map<number, Uint8Array>>;
   calls: string[];
   /** Makes the next call of this method throw once. */
-  failNext(method: "create" | "part" | "complete" | "head"): void;
+  failNext(method: "create" | "part" | "complete" | "head" | "delete"): void;
 }
 
 export function fakeMultipart(): FakeMultipart {
@@ -89,6 +89,7 @@ export function fakeMultipart(): FakeMultipart {
     },
     async delete(key) {
       calls.push(`delete ${key}`);
+      maybeFail("delete");
       objects.delete(key);
     },
   };
