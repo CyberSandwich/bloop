@@ -4,7 +4,7 @@
 
 /** @import {ClaimResponse, Entry, ErrorCode, Item, PhoneStateKey, PhoneView} from "../../src/shared/protocol.ts" */
 import { createApi } from "./core/api.js";
-import { bootCode, KEPT } from "./core/boot-code.js";
+import { bootCode, KEPT, takeClaim } from "./core/boot-code.js";
 import { openChannel, refusal } from "./core/channel.js";
 import { MAIL_SUBJECT, phoneCopy, REFUSED, refusedLine, uploadLine } from "./core/copy-phone.js";
 import { thumbOf } from "./core/demo.js";
@@ -553,11 +553,11 @@ const sendIo = {
 
 /** Send (core/send.js, in since the offer showed); if it cannot load, a toast with Reload. */
 function send() {
-  const file = c.file;
+  // The offer's "confirm", or null on a failed send's Try Again: a Cancel or Back while it loaded changes them.
+  const { file, drop: was } = c;
   loadSend().then(
-    // Only the offer still showing: a Cancel or Back while it loaded leaves nothing to send.
     (m) => {
-      if (c.file === file && c.drop === "confirm" && !c.canceling && !c.canceled) m.send(c, sendIo);
+      if (c.file === file && c.drop === was && !c.canceling && !c.canceled) m.send(c, sendIo);
     },
     () => toast({ ...RELOAD, title: "That Didn't Load" }),
   );
@@ -701,9 +701,9 @@ function nonce() {
 
 /**
  * One claim attempt is one Idempotency-Key, sent again by Try Again, so a lost answer replays (REL-14); api.js stays
- * as the room screen loads it. A live code refused signed out, or a code gone after sign-in, is core/early.js's, with
- * `/api/me` asked beside its load; if it cannot load, a dead code reads as expired and a live one goes the guest way,
- * which needs no sign-in.
+ * as the room screen loads it. A live code refused signed out, or a code gone (unknown or expired) after sign-in, is
+ * core/early.js's, with `/api/me` asked beside its load; if it cannot load, a dead code reads as its error and a live
+ * one goes the guest way, which needs no sign-in.
  * @param {string} code
  * @param {string} [key]
  * @returns {Promise<void>}
@@ -714,11 +714,12 @@ async function claim(code, kind = "owner", key = crypto.randomUUID(), resumed = 
     fetch: (url, init) => fetch(url, { ...init, headers: { ...init?.headers, ...headers } }),
   }).post("/api/claim", { code, kind });
   if (res.ok) return paired(res.value);
-  if (res.error === "auth_required" || (resumed && res.error === "code_unknown")) {
+  const auth = res.error === "auth_required";
+  if (auth || (resumed && (res.error === "code_unknown" || res.error === "code_expired"))) {
     const who = api.get("/api/me");
     return import("./core/early.js").then(
       (m) => m.refused(res.error, { c, render, code, key, who, store, claim }),
-      () => (res.error === "code_unknown" ? fail(res.error) : claim(code, "guest")),
+      () => (auth ? claim(code, "guest") : fail(res.error)),
     );
   }
   fail(res.error, () => claim(code, kind, key, resumed));
@@ -762,16 +763,11 @@ function start() {
   // A code kept across sign-in is fresher than a kept pid: this tab left for sign-in a moment ago. A scan drops it.
   if (bootCode) {
     store.remove(KEPT);
-    claim(bootCode);
-  } else if (store.get(KEPT))
-    import("./core/early.js").then(
-      (m) => m.resume(store, claim, next),
-      () => {
-        // Taken all the same, so a later load never replays it.
-        store.remove(KEPT);
-        next();
-      },
-    );
+    return claim(bootCode);
+  }
+  const kept = takeClaim(store);
+  // The owner claim again with its key, so a lost answer still replays.
+  if (kept) claim(kept.code, "owner", kept.key, true);
   else next();
 }
 
