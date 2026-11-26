@@ -6,8 +6,6 @@ import { VERIFIED } from "./verified.js";
 
 /** A claim's status, for screen readers only: the room screen shows the title and the match number alone. */
 const WAITING_LINE = "Waiting for Approval";
-/** Under Session Ended once a tap or Enter has asked for a new code. */
-export const FRESH_LINE = "Getting a new code.";
 export const CANT_PLAY = "This Video Can't Play Here";
 
 /**

@@ -4,7 +4,7 @@ import { SESSION_ENDED, WAITLIST_FORM } from "../../public/js/core/copy.js";
 import { CHECK } from "../../public/js/core/copy-check.js";
 import { TYPED_LETTERS, typedError } from "../../public/js/core/copy-code.js";
 import { phoneCopy, refusalToast, uploadLine, videoTime } from "../../public/js/core/copy-phone.js";
-import { endLine, FRESH_LINE, screenCopy } from "../../public/js/core/copy-screen.js";
+import { endLine, screenCopy } from "../../public/js/core/copy-screen.js";
 import { screenNet } from "../../public/js/core/net-states.js";
 import { RESULTS } from "../../public/js/core/states.js";
 import { SUPPORT } from "../../public/js/shared/errors.js";
@@ -325,9 +325,16 @@ describe("screen copy", () => {
     expect(phone.actions.map((a) => a.label)).toContain("Try Again");
   });
 
-  it("S7 screen is no named thing: Offline, Busy Right Now, a new code after Session Ended", () => {
+  it("a tap on Session Ended says nothing: the end line is set once, when the end arrives", () => {
+    const screen = readFileSync("public/js/screen.js", "utf8");
+    expect(screen).not.toContain("FRESH_LINE");
+    expect(readFileSync("public/js/core/copy-screen.js", "utf8")).not.toContain("Getting a new code");
+    // skipEnded only shortens the hold; the one place that sets the line is the transition into ended.
+    expect(screen.match(/^\s*ended = /gm)).toHaveLength(1);
+  });
+
+  it("S7 screen is no named thing: Offline, Busy Right Now", () => {
     expect(screenCopy("rate_limited", sf).heading).toBe("Busy Right Now");
-    expect(FRESH_LINE).toBe("Getting a new code.");
     // "The Room's Screen" is how people say it; no heading names a screen as a thing of bloop's.
     for (const key of SCREEN_KEYS.filter((k) => k !== "phone_width"))
       expect(screenCopy(key, { ...sf, demo: false }).heading, key).not.toMatch(/screen/i);
