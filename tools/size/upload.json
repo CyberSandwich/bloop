@@ -15,6 +15,16 @@
     "limit": "2.55 kB"
   },
   {
+    "name": "upload progress words, lazy",
+    "path": "dist/js/core/upload-format.js",
+    "limit": "0.4 kB"
+  },
+  {
+    "name": "upload sheet, lazy",
+    "path": "dist/js/core/upload-sheet.js",
+    "limit": "0.5 kB"
+  },
+  {
     "name": "upload refusal copy, lazy",
     "path": "dist/js/core/upload-refusals.js",
     "limit": "0.9 kB"

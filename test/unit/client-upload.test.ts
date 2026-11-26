@@ -1,16 +1,15 @@
 // The upload engine's pure parts: the fingerprint, the part plan, the pace, the time left and the byte units.
 import { describe, expect, it } from "vitest";
 import {
-  etaLabel,
   etaLeft,
   etaOf,
   etaStart,
   fingerprint,
-  formatBytes,
   nextConcurrency,
   PACE,
   planParts,
 } from "../../public/js/core/upload.js";
+import { etaLabel, formatBytes, progressLine } from "../../public/js/core/upload-format.js";
 
 const MIB = 1024 * 1024;
 const bytes = (size: number, fill = 1) => new Uint8Array(size).fill(fill);
@@ -18,51 +17,55 @@ const etaLabelAt = (eta: Parameters<typeof etaLeft>[0], now: number) => etaLabel
 
 describe("fingerprint", () => {
   it("is 64 lowercase hex characters, stable for the same file", async () => {
-    const a = await fingerprint(new File([bytes(300_000)], "Talk.pptx", { lastModified: 5 }));
+    const a = await fingerprint(new File([bytes(300_000)], "Talk.pptx"));
     expect(a).toMatch(/^[0-9a-f]{64}$/);
-    expect(await fingerprint(new File([bytes(300_000)], "Talk.pptx", { lastModified: 5 }))).toBe(a);
+    expect(await fingerprint(new File([bytes(300_000)], "Talk.pptx"))).toBe(a);
   });
 
-  it("changes with lastModified: an edited file of the same name, size and sampled bytes is another file", async () => {
+  it("ignores lastModified: a picker that stamps each copy with the time still resumes", async () => {
     const a = await fingerprint(new File([bytes(1000)], "Talk.pptx", { lastModified: 1 }));
     const b = await fingerprint(new File([bytes(1000)], "Talk.pptx", { lastModified: 2_000_000_000_000 }));
-    expect(a).not.toBe(b);
+    expect(a).toBe(b);
   });
 
   it("changes with the name, the size, and the first and last bytes", async () => {
-    const at = { lastModified: 5 };
-    const base = await fingerprint(new File([bytes(300_000)], "Talk.pptx", at));
-    expect(await fingerprint(new File([bytes(300_000)], "Other.pptx", at))).not.toBe(base);
-    expect(await fingerprint(new File([bytes(300_001)], "Talk.pptx", at))).not.toBe(base);
+    const base = await fingerprint(new File([bytes(300_000)], "Talk.pptx"));
+    expect(await fingerprint(new File([bytes(300_000)], "Other.pptx"))).not.toBe(base);
+    expect(await fingerprint(new File([bytes(300_001)], "Talk.pptx"))).not.toBe(base);
     const first = bytes(300_000);
     first[0] = 9;
-    expect(await fingerprint(new File([first], "Talk.pptx", at))).not.toBe(base);
+    expect(await fingerprint(new File([first], "Talk.pptx"))).not.toBe(base);
     const last = bytes(300_000);
     last[299_999] = 9;
-    expect(await fingerprint(new File([last], "Talk.pptx", at))).not.toBe(base);
+    expect(await fingerprint(new File([last], "Talk.pptx"))).not.toBe(base);
   });
 
-  it("reads 16 samples of 64 KiB at most, the first and last included, and never the middle of a big file whole", async () => {
+  it("names the file as the server keeps it: the same cleaned name is the same file", async () => {
+    const a = await fingerprint(new File([bytes(100)], "Caf\u00e9  Menu.pdf"));
+    expect(await fingerprint(new File([bytes(100)], "Cafe\u0301 Menu.pdf"))).toBe(a);
+    expect(await fingerprint(new File([bytes(100)], "Caf\u00e9 Menu.pdf"))).toBe(a);
+  });
+
+  it("reads the first and the last 64 KiB and nothing else, even of a huge file", async () => {
     const read: [number, number][] = [];
     const file = {
       name: "Big.pptx",
       size: 450 * MIB,
-      lastModified: 5,
       slice: (start: number, end: number) => {
         read.push([start, end]);
         return new Blob([new ArrayBuffer(end - start)]);
       },
     };
     await fingerprint(file);
-    expect(read).toHaveLength(16);
-    expect(read[0]).toEqual([0, 65_536]);
-    expect(read[15]).toEqual([450 * MIB - 65_536, 450 * MIB]);
-    expect(read.every(([s, e]) => e - s === 65_536)).toBe(true);
-    expect(read.map(([s]) => s)).toEqual([...read.map(([s]) => s)].sort((a, b) => a - b));
+    expect(read).toEqual([
+      [0, 65_536],
+      [450 * MIB - 65_536, 450 * MIB],
+    ]);
   });
 
-  it("works for a file smaller than one sample", async () => {
+  it("works for a file smaller than one sample, and an empty one", async () => {
     expect(await fingerprint(new File([bytes(10)], "a.txt"))).toMatch(/^[0-9a-f]{64}$/);
+    expect(await fingerprint(new File([], "a.txt"))).toMatch(/^[0-9a-f]{64}$/);
   });
 });
 
@@ -126,6 +129,11 @@ describe("formatBytes", () => {
   it("reads a file under 1 MB in KB, whole", () => {
     expect(formatBytes(340 * 1024, 900 * 1024)).toBe("340 of 900 KB");
     expect(formatBytes(10, 500)).toBe("0 of 1 KB");
+  });
+
+  it("joins the share and the time left, or the share alone", () => {
+    expect(progressLine(34 * MIB, 88 * MIB, 90_000)).toBe("34 of 88 MB \u00b7 2 min left");
+    expect(progressLine(34 * MIB, 88 * MIB, null)).toBe("34 of 88 MB");
   });
 
   it("reads a batch over 1 GB in GB", () => {

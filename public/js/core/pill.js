@@ -12,7 +12,6 @@ export const CLOSE = /** @type {import("../types.js").IconPart[]} */ (["M18 6 6 
  * @typedef {object} Face
  * @property {string} [title]
  * @property {string} [line]
- * @property {string} [say] announced beside the title, for a change the title does not carry ("Waiting for a Connection")
  * @property {number | null} [fill] 0 to 1; null while there is nothing to show yet
  * @property {import("../types.js").IconPart[] | null} [glyph] the tile's glyph
  * @property {string} [label] the progress bar's name, "Uploading Lecture 5.pptx"
@@ -32,8 +31,6 @@ export function pill({ host = document.body, ...first }) {
   const title = el("strong", { class: "up-title" });
   const line = el("span", { class: "up-line" });
   const slot = el("span", { class: "up-slot" });
-  // Announces a changed title only ("Checking Your File", "Saved"), never each percent.
-  const live = el("span", { class: "sr", role: "status" });
   const press = el("button", { class: "up-press", type: "button" });
   const node = el("div", { class: "up-pill glass" }, [
     bar,
@@ -41,7 +38,6 @@ export function pill({ host = document.body, ...first }) {
     el("span", { class: "up-text" }, [title, line]),
     press,
     slot,
-    live,
   ]);
   /** @type {(() => void) | null} */
   let onPress = null;
@@ -54,18 +50,13 @@ export function pill({ host = document.body, ...first }) {
 
   /** @param {Face} patch */
   function update(patch) {
-    let retitled = false;
     if (patch.title !== undefined && patch.title !== shownTitle) {
-      retitled = true;
       shownTitle = patch.title;
       // A long name ellipsizes in the middle: the head gives way, the end and extension stay.
       const [head, tail] = splitName(patch.title);
       title.replaceChildren(el("span", { class: "head" }, [head]), el("span", { class: "tail" }, [tail]));
-      setText(live, patch.title);
       press.setAttribute("aria-label", patch.title);
     }
-    // Said over the title; an empty one only clears what an earlier say left, never the title just announced.
-    if (patch.say !== undefined && (patch.say || !retitled)) setText(live, patch.say);
     if (patch.line !== undefined) setText(line, patch.line);
     if (patch.fill !== undefined) setProgress(bar, patch.fill);
     if (patch.label !== undefined) bar.setAttribute("aria-label", patch.label);
