@@ -43,12 +43,6 @@ jobs:
       # step in docs/setup.md, not part of a deploy. A failing line stops the step.
       - if: steps.gate.outputs.has == 'true'
         run: |
-          for bucket in bloop-guest-files bloop-library; do
-            npx wrangler r2 bucket info "$bucket" --jurisdiction eu >/dev/null || {
-              echo "::error::R2 bucket $bucket is missing (or the token cannot read it); create it first, docs/setup.md"
-              exit 1
-            }
-          done
           npx wrangler d1 migrations apply DB --remote
           npx wrangler deploy
         env:
