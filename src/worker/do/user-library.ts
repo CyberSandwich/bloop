@@ -24,6 +24,7 @@ import {
   putScreen,
   recordProgress,
   releaseLease,
+  renewLease,
   rowsLeft,
   type ScreenRow,
   screensMatching,
@@ -174,6 +175,11 @@ export class UserLibrary extends DurableObject<Env> {
     const taken = takeLease(this.ctx.storage.sql, EXPORT_LEASE, holder, Date.now(), EXPORT_LEASE_MS);
     await this.arm();
     return taken;
+  }
+
+  /** The download is still moving bytes: the lease runs on. False when it already lapsed. */
+  async exportBeat(holder: string): Promise<boolean> {
+    return renewLease(this.ctx.storage.sql, EXPORT_LEASE, holder, Date.now(), EXPORT_LEASE_MS);
   }
 
   async exportEnd(holder: string): Promise<void> {

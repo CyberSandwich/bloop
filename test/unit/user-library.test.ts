@@ -17,6 +17,7 @@ import {
   putScreen,
   recordProgress,
   releaseLease,
+  renewLease,
   rowsLeft,
   takeLease,
 } from "../../src/worker/do/user-library-rules.ts";
@@ -172,6 +173,17 @@ describe("the export lease", () => {
     expect(takeLease(sql, "export", "b", 500, 1000)).toBe(false);
     expect(leaseHeld(sql, "export", 999)).toBe(true);
     expect(takeLease(sql, "export", "b", 1000, 1000)).toBe(true);
+  });
+
+  it("is renewed by its holder while live, so a moving download keeps it and a vanished one loses it", () => {
+    const { sql } = open();
+    takeLease(sql, "export", "a", 0, 1000);
+    expect(renewLease(sql, "export", "b", 500, 1000)).toBe(false);
+    expect(renewLease(sql, "export", "a", 900, 1000)).toBe(true);
+    expect(leaseHeld(sql, "export", 1800)).toBe(true);
+    expect(leaseHeld(sql, "export", 1900)).toBe(false);
+    expect(renewLease(sql, "export", "a", 1900, 1000)).toBe(false);
+    expect(takeLease(sql, "export", "b", 1900, 1000)).toBe(true);
   });
 
   it("is released only by its holder", () => {
