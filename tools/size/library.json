@@ -53,5 +53,10 @@
     "name": "library sample, lazy",
     "path": "dist/js/library/sample.js",
     "limit": "0.2 kB"
+  },
+  {
+    "name": "library socket, lazy",
+    "path": "dist/js/library/socket.js",
+    "limit": "0.6 kB"
   }
 ]
