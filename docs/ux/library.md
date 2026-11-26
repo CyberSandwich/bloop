@@ -46,7 +46,7 @@ The signed-in user's files: add, see what is ready, pack Up Next, rename, trash,
 '--------------------------------------------'
 ```
 
-- **Row** (the item row, design.md section 6): the 40 px tile (the slide 1 thumbnail once prepared, contained; else the kind glyph: `presentation`, `file-text`, `file-spreadsheet`, `image`, `film`), the name (15/600, middle ellipsis keeps the extension), line 2 (13 `--muted` tabular): kind · size · the date ("Edited today", "Edited 3 Nov", "Presented 10:02" when it was the last thing done). Then the tick (a checkbox, the row's trailing Lucide `check` inside a 44 px hit area: ink check on, an empty `--g2` ring off) and More (Lucide `ellipsis`, 44 square, "More for Lecture 5.pptx").
+- **Row** (the item row, design.md section 6): the 40 px tile (the slide 1 thumbnail once prepared, contained; else the kind glyph: `presentation`, `file-text`, `file-spreadsheet`, `image`, `film`), the name (15/600, two lines, then an ellipsis), line 2 (13 `--muted` tabular): kind · size · the date ("Edited today", "Edited 3 Nov", "Presented 10:02" when it was the last thing done). Then the tick (a checkbox, the row's trailing Lucide `check` inside a 44 px hit area: ink check on, an empty `--g2` ring off) and More (Lucide `ellipsis`, 44 square, "More for Lecture 5.pptx").
 - **Row tap** (anywhere but the tick or More) opens the preview (section 5). Rows are buttons; the tick and More are their own controls beside it, never nested.
 - **No tick until Saved.** A row whose upload is still running or checking has no tick (the slot stays empty, so the name never shifts when it appears), and More holds only Cancel Upload. The tick appears in place when the pill says Saved. So Up Next, the match state and the chooser never hold an unfinished upload (present-live.md section 1), and the Saved pill offers the one shortcut, Add to Up Next (upload.md section 2).
 - **Status in line 2** (README.md additions, status chip on a row):
@@ -56,7 +56,7 @@ The signed-in user's files: add, see what is ready, pack Up Next, rename, trash,
   - A disabled file (admin): rose chip "Unavailable" and "This file was disabled after a report." No tick, no preview; More holds Delete only.
 - **Sort** (lazy): a menu sheet (the Session Expiry sheet's bubble) with three radio rows: Newest First (default), Name, Size. Remembered per device (`localStorage`).
 - **Order:** Up Next in Up Next order; All Files by the sort. All Files lists every file, Up Next ones too (ticked), so ticking several never moves a row from under the thumb; Up Next repeats them at the top. The phone mockup above leaves the repeats out to save lines. On a desktop Up Next is its own card, so the same rule holds.
-- **Long names:** the middle ellipsis; `minmax(0, 1fr)` columns (lessons: a grid list grows to a long name otherwise). Walked with a 120 character name in the shots.
+- **Long names:** two lines, then an end ellipsis; `minmax(0, 1fr)` columns (lessons: a grid list grows to a long name otherwise). Walked with a 120 character name in the shots.
 
 ### 2.1 Phone on its side (844x390)
 
