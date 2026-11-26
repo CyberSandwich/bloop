@@ -40,7 +40,7 @@ Complete takes a 120 s claim on the row (`completing_at`). A second complete, a 
 
 A library upload expires 20 h after create. Three things remove what a client leaves behind:
 
-- the hourly sweep (`sweepUploads`) finishes or releases a complete whose claim went stale, releases expired open uploads and those of an owner no longer active (a suspended member's routes answer 401, so the sweep returns the reservation within the hour), checks again a file left `checking` past the claim window (or refuses it after a day), and deletes closed rows after a day. A row that throws is logged (`upload_sweep_failed`, its id only) and skipped. A run stops at `SWEEP_WALL_MS` (240 s) or a full allotment and reports `more` to the cron dispatcher;
+- the hourly sweep (`sweepUploads`) finishes or releases a complete whose claim went stale, releases expired open uploads and those of an owner no longer active (a suspended member's routes answer 401, so the sweep returns the reservation within the hour), checks again a file left `checking` past the claim window (or refuses it after a day), starts the conversion of ready, servable files that have no `derived` row (oldest first, bounded by the allotment, and not at all while `CONVERT_MODE` is `off`, so the backlog is taken whole once it is on), and deletes closed rows after a day. A row that throws is logged (`upload_sweep_failed`, its id only) and skipped. A run stops at `SWEEP_WALL_MS` (240 s) or a full allotment and reports `more` to the cron dispatcher;
 - the bucket lifecycle rule aborts any incomplete multipart upload after one day, which also covers a multipart whose D1 row never got written (a Worker that died between the R2 call and the reserve);
 - the nightly reconcile heals a counter that drifted.
 

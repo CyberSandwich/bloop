@@ -1,5 +1,5 @@
-// The upload sweeps (ADR 0017): hourly, finish or release what a crash left and settle a check left `checking`;
-// nightly, heal the quota counters. Each row is taken under the claim rule of store.ts, so a sweep never races a live
+// The upload sweeps (ADR 0017): hourly, finish or release what a crash left, settle a check left `checking`, and start
+// the conversion of ready files that have none (never while CONVERT_MODE is off); nightly, heal the quota counters. Each row is taken under the claim rule of store.ts, so a sweep never races a live
 // complete or abort, and each row's failure is logged and skipped, so one bad row never stops the run.
 import type { BatchDb } from "../auth/db.ts";
 import { checkFile, type Deps, settleAndCheck } from "./pipeline.ts";
@@ -12,6 +12,7 @@ import {
   releaseLibrary,
   staleChecking,
   strandedKeys,
+  unconverted,
 } from "./quota.ts";
 import { reclaim } from "./reclaim.ts";
 import * as store from "./store.ts";
@@ -30,11 +31,13 @@ export interface SweepReport {
   deleted: number;
   rechecked: number;
   refused: number;
+  /** Ready files handed to the conversion start. */
+  converted: number;
   /** The allotment or the wall-time budget stopped the run with work left. */
   more: boolean;
 }
 
-type Counted = "finished" | "released" | "rechecked" | "refused";
+type Counted = "finished" | "released" | "rechecked" | "refused" | "converted";
 
 /** Closes one open upload and returns what it held: the reservation (library), the multipart and any object. */
 const giveUp = (d: Deps, row: store.UploadRow, claimToken = -1): Promise<boolean> =>
@@ -85,7 +88,15 @@ async function strandStep(d: Deps, allotment: number, report: SweepReport, start
  * within `SWEEP_WALL_MS`; closed rows past the keep window go too. A row that throws is logged by id and skipped.
  */
 export async function sweepUploads(d: Deps, allotment: number): Promise<SweepReport> {
-  const report: SweepReport = { finished: 0, released: 0, deleted: 0, rechecked: 0, refused: 0, more: false };
+  const report: SweepReport = {
+    finished: 0,
+    released: 0,
+    deleted: 0,
+    rechecked: 0,
+    refused: 0,
+    converted: 0,
+    more: false,
+  };
   const start = d.now();
   const each = async <T extends { id: string }>(
     step: string,
@@ -112,6 +123,13 @@ export async function sweepUploads(d: Deps, allotment: number): Promise<SweepRep
     (await giveUp(d, row)) ? "released" : "skipped",
   );
   await each("checking", await staleChecking(d.db, d.now(), allotment), (f) => recheck(d, f));
+  const convert = d.afterReady;
+  if (convert && d.config.library.convertMode !== "off") {
+    await each("convert", await unconverted(d.db, allotment), async (f) => {
+      await convert(f);
+      return "converted";
+    });
+  }
   await strandStep(d, allotment, report, start);
   report.deleted = await store.deleteClosed(d.db, d.now() - CLOSED_KEEP_MS, allotment);
   if (report.deleted >= allotment) report.more = true;

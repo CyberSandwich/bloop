@@ -5,9 +5,9 @@ import { startConversion } from "../convert/start.ts";
 import type { Env } from "../env.ts";
 import type { Deps } from "./pipeline.ts";
 
-/** A new library file is version 1; start.ts takes the owner from the file's row, so `scope` and `target` only fill the type. */
+/** A new library file is version 1. The owner comes from the file's row, so `scope` and `target` only fill the type. */
 export const convertWhenReady =
-  (env: Env, ctx?: Pick<ExecutionContext, "waitUntil">): NonNullable<Deps["afterReady"]> =>
+  (env: Env, ctx: Pick<ExecutionContext, "waitUntil"> | null): NonNullable<Deps["afterReady"]> =>
   async ({ id, userId }) => {
     // startConversion catches its own errors, not those of building its deps.
     const start = (async () =>

@@ -67,7 +67,10 @@ export const JOBS: Readonly<Record<CronTrigger, readonly CronJob<Env, Config>[]>
       name: "uploads",
       run: async (env, config, allotment) => {
         const report = await sweepUploads(await uploadDepsFor(env, config), allotment);
-        if (report.finished + report.released + report.deleted + report.rechecked + report.refused > 0) {
+        if (
+          report.finished + report.released + report.deleted + report.rechecked + report.refused + report.converted >
+          0
+        ) {
           console.log(JSON.stringify({ evt: "hourly", uploads: report }));
         }
         return { more: report.more };
