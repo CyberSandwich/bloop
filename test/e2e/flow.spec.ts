@@ -715,6 +715,29 @@ test.describe("pairing flow", () => {
     await phone.context.close();
   });
 
+  test("a code typed before the page's script runs still enables Continue", async ({ browser }) => {
+    const screen = await demoScreen(browser);
+    const code = await typedCodeOf(screen.page);
+    let release: () => void = () => {};
+    const held = new Promise<void>((done) => (release = done));
+    const phone = await open(browser, "phone", "about:blank");
+    await phone.page.route("**/js/code.js", async (route) => {
+      await held;
+      await route.continue();
+    });
+    // A held module holds the load event, so this load waits only for the markup.
+    await phone.page.goto("/code", { waitUntil: "commit" });
+    // The field is typed into while code.js is held: no listener hears it.
+    await phone.page.getByLabel("Code").fill(code);
+    const go = phone.page.getByRole("button", { name: "Continue" });
+    await expect(go).toBeDisabled();
+    release();
+    await expect(go).toBeEnabled();
+    await expect(phone.page.getByLabel("Code")).toHaveValue(`${code.slice(0, 3)} ${code.slice(3)}`);
+    await screen.context.close();
+    await phone.context.close();
+  });
+
   test("a wrong typed code shows the error beside the field", async ({ browser }) => {
     const phone = await open(browser, "phone", "/code");
     // The error line keeps its row: the first bad letter never moves Continue.
