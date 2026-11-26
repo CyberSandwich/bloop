@@ -126,7 +126,14 @@ async function expectThumbnail(row: Locator) {
   const picture = row.locator("img.thumb");
   await expect(picture).toHaveCount(1);
   await expect(picture).toHaveAttribute("src", THUMB);
-  await expect.poll(() => picture.evaluate("(img) => (img.complete ? img.naturalWidth : 0)")).toBeGreaterThan(0);
+  await expect
+    .poll(() =>
+      picture.evaluate((img) => {
+        const loaded = img as unknown as { complete: boolean; naturalWidth: number };
+        return loaded.complete ? loaded.naturalWidth : 0;
+      }),
+    )
+    .toBeGreaterThan(0);
 }
 
 /** The screen's list: a left rail from 760 wide, a bottom sheet behind the handle below it. */
