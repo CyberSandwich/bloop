@@ -109,6 +109,17 @@ export function liveScreens(sql: SqlLike): ScreenRow[] {
     }));
 }
 
+/** The live rows an end names: one phone session's, or those showing one file, or all when no filter is given. */
+export const screensMatching = (
+  rows: readonly ScreenRow[],
+  filter: { bySession?: string; fileId?: string },
+): ScreenRow[] =>
+  rows.filter(
+    (r) =>
+      (filter.bySession === undefined || r.bySession === filter.bySession) &&
+      (filter.fileId === undefined || r.fileIds.includes(filter.fileId)),
+  );
+
 export const dropScreens = (sql: SqlLike, sessionIds: readonly string[]): void => {
   for (const id of sessionIds) sql.exec("DELETE FROM screen WHERE session_id = ?", id);
 };
