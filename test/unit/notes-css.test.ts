@@ -29,6 +29,21 @@ describe("NOTES-01 notes box: one radius with the panel, ending above it", () =>
     expect(box).toContain("margin: 0 0 16px;");
   });
 
+  it("the reveal and the swap animate transform and opacity only, on the design's easing, with no fill mode", () => {
+    const keyframes = [...notes.matchAll(/@keyframes (notes-[a-z]+) \{([\s\S]*?)\n {2}\}/g)];
+    expect(keyframes.map((m) => m[1])).toEqual(["notes-in", "notes-swap"]);
+    for (const [, name, body] of keyframes) {
+      const props = [...(body ?? "").matchAll(/^\s+([a-z-]+):/gm)].map((m) => m[1]);
+      expect(props.length, name).toBeGreaterThan(0);
+      for (const prop of props) expect(["opacity", "transform"], `${name} animates ${prop}`).toContain(prop);
+    }
+    for (const selector of [".notes", ".notes.is-swap > :not([hidden])"]) {
+      const animation = /animation:\s*([^;]*);/.exec(rule(notes, selector))?.[1] ?? "";
+      expect(animation, selector).toContain("var(--ease-out)");
+      expect(animation, `${selector} leaves the animation list when it ends`).not.toMatch(/both|forwards/);
+    }
+  });
+
   it("the box stacks over the slide's shadow", () => {
     expect(rule(notes, ".notes")).toMatch(/position:\s*relative;[\s\S]*z-index:\s*1;/);
   });

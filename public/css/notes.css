@@ -40,6 +40,23 @@
     background: var(--surface);
     box-shadow: var(--sh-frame);
     font-size: 17px;
+    animation: notes-in 240ms var(--ease-out);
+  }
+  /* The box rises and fades in where it is placed; a new note fades in over the box, which never resizes. Transform and
+     opacity only, so nothing reflows and the slide above holds still. Reduced motion is base.css's global rule. */
+  @keyframes notes-in {
+    from {
+      opacity: 0;
+      transform: translateY(8px);
+    }
+  }
+  @keyframes notes-swap {
+    from {
+      opacity: 0;
+    }
+  }
+  .notes.is-swap > :not([hidden]) {
+    animation: notes-swap 140ms var(--ease-out);
   }
   .notes-text {
     margin: 0;
