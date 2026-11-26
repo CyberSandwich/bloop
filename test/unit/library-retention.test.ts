@@ -122,13 +122,17 @@ describe("LIB-09 trash and deletion through the cron", () => {
   });
 });
 
+const suspend = (db: LibTestDb, id: string, at: number) =>
+  db.raw.prepare("UPDATE app_user SET suspended_at = ? WHERE id = ?").run(at, id);
+
 describe("LIB-11 moderation: resumeClocks", () => {
   it("moves trash, deletion and last-seen later by the suspended time, never past now", async () => {
     const db = libWith(["u1"]);
     addFile(db, { id: "t", trashedAt: 1, purgeAfter: 5000 });
     addFile(db, { id: "k" });
     db.raw.prepare("UPDATE app_user SET delete_after = 9000, last_seen_at = ? WHERE id = 'u1'").run(NOW - 10);
-    await db.batch(resumeClocks(db, "u1", NOW - 100, NOW));
+    suspend(db, "u1", NOW - 100);
+    await db.batch(resumeClocks(db, "u1", NOW));
     expect(db.raw.prepare("SELECT id, purge_after AS p FROM library_file ORDER BY id").all()).toEqual([
       { id: "k", p: null },
       { id: "t", p: 5100 },
@@ -139,7 +143,8 @@ describe("LIB-11 moderation: resumeClocks", () => {
   it("leaves a user with no deletion time without one, and does not touch other users", async () => {
     const db = libWith(["u1", "u2"]);
     addFile(db, { id: "x", user: "u2", trashedAt: 1, purgeAfter: 5000 });
-    await db.batch(resumeClocks(db, "u1", NOW - 100, NOW));
+    suspend(db, "u1", NOW - 100);
+    await db.batch(resumeClocks(db, "u1", NOW));
     expect(user(db, "u1")).toMatchObject({ d: null });
     expect(db.raw.prepare("SELECT purge_after AS p FROM library_file WHERE id = 'x'").get()).toEqual({ p: 5000 });
   });
@@ -147,7 +152,29 @@ describe("LIB-11 moderation: resumeClocks", () => {
   it("a suspension time in the future adds nothing", async () => {
     const db = libWith(["u1"]);
     addFile(db, { id: "t", trashedAt: 1, purgeAfter: 5000 });
-    await db.batch(resumeClocks(db, "u1", NOW + 100, NOW));
+    suspend(db, "u1", NOW + 100);
+    await db.batch(resumeClocks(db, "u1", NOW));
+    expect(db.raw.prepare("SELECT purge_after AS p FROM library_file").get()).toEqual({ p: 5000 });
+  });
+
+  it("is idempotent: a retried or concurrent unsuspend shifts the clocks once", async () => {
+    const db = libWith(["u1"]);
+    addFile(db, { id: "t", trashedAt: 1, purgeAfter: 5000 });
+    suspend(db, "u1", NOW - 100);
+    const unsuspendBatch = () =>
+      db.batch([
+        ...resumeClocks(db, "u1", NOW),
+        db.prepare("UPDATE app_user SET suspended_at = NULL WHERE id = ?1").bind("u1"),
+      ]);
+    await Promise.all([unsuspendBatch(), unsuspendBatch()]);
+    await unsuspendBatch();
+    expect(db.raw.prepare("SELECT purge_after AS p FROM library_file").get()).toEqual({ p: 5100 });
+  });
+
+  it("a user who is not suspended is left alone", async () => {
+    const db = libWith(["u1"]);
+    addFile(db, { id: "t", trashedAt: 1, purgeAfter: 5000 });
+    await db.batch(resumeClocks(db, "u1", NOW));
     expect(db.raw.prepare("SELECT purge_after AS p FROM library_file").get()).toEqual({ p: 5000 });
   });
 });

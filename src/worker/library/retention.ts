@@ -11,6 +11,7 @@ const DAY_MS = 86_400_000;
 const ROUNDS_PER_JOB = 20;
 const USERS_PER_RUN = 5;
 const WARNINGS_PER_RUN = 50;
+const EMAILS_PER_QUERY = 90;
 
 export interface RetentionDeps extends AccountPurgeDeps {
   /**
@@ -60,7 +61,7 @@ export async function runLibraryRetention(
   let orphansMore = false;
   if (options.daily) {
     warned = await warnInactive(env, config, deps, now);
-    const found = await sweepOrphans(env, budget());
+    const found = await sweepOrphans(env, budget(), now);
     orphans = found.orphans;
     orphansMore = found.more;
   }
@@ -82,19 +83,25 @@ export async function runLibraryRetention(
  * pauses trash, inactivity and requested deletion). The statements join the caller's unsuspend batch, which clears
  * `suspended_at`; `last_seen_at` never passes `now`.
  */
-export function resumeClocks(db: LibDb, userId: string, suspendedAt: number, now: number): Statement[] {
-  const paused = Math.max(now - suspendedAt, 0);
+export function resumeClocks(db: LibDb, userId: string, now: number): Statement[] {
+  // The pause is read from the row itself and only while it is still suspended, so a retried or concurrent unsuspend
+  // shifts the clocks once. These statements must run before the one that clears `suspended_at`.
+  const paused = "MAX(?2 - suspended_at, 0)";
   return [
     db
       .prepare(
-        "UPDATE library_file SET purge_after = purge_after + ?2 WHERE user_id = ?1 AND purge_after IS NOT NULL AND status != 'purged'",
+        `UPDATE library_file SET purge_after = purge_after + (SELECT ${paused} FROM app_user WHERE id = ?1)
+         WHERE user_id = ?1 AND purge_after IS NOT NULL AND status != 'purged'
+           AND EXISTS (SELECT 1 FROM app_user WHERE id = ?1 AND suspended_at IS NOT NULL)`,
       )
-      .bind(userId, paused),
+      .bind(userId, now),
     db
       .prepare(
-        "UPDATE app_user SET delete_after = CASE WHEN delete_after IS NULL THEN NULL ELSE delete_after + ?2 END, last_seen_at = MIN(last_seen_at + ?2, ?3) WHERE id = ?1",
+        `UPDATE app_user SET delete_after = CASE WHEN delete_after IS NULL THEN NULL ELSE delete_after + ${paused} END,
+           last_seen_at = MIN(last_seen_at + ${paused}, ?2)
+         WHERE id = ?1 AND suspended_at IS NOT NULL`,
       )
-      .bind(userId, paused, now),
+      .bind(userId, now),
   ];
 }
 
@@ -113,16 +120,25 @@ export async function warnInactive(
   const cutoff = now - config.inactiveDays * DAY_MS;
   const only = deps.lockoutMembers;
   if (only !== null && only.length === 0) return 0;
-  const { results } = await db
-    .prepare(
-      `SELECT id, email_norm FROM app_user
-       WHERE email_norm IS NOT NULL AND tid = 'email' AND status = 'active' AND suspended_at IS NULL
-         AND inactive_warned_at IS NULL AND last_seen_at < ?1
-         ${only === null ? "" : `AND email_norm IN (${only.map((_, i) => `?${i + 3}`).join(", ")})`}
-       ORDER BY last_seen_at LIMIT ?2`,
-    )
-    .bind(cutoff, WARNINGS_PER_RUN, ...(only ?? []))
-    .all<{ id: string; email_norm: string }>();
+  // D1 allows 100 bound values a statement, so a long address list is asked in groups.
+  const groups: (readonly string[] | null)[] = [];
+  if (only === null) groups.push(null);
+  else for (let i = 0; i < only.length; i += EMAILS_PER_QUERY) groups.push(only.slice(i, i + EMAILS_PER_QUERY));
+  const results: { id: string; email_norm: string }[] = [];
+  for (const group of groups) {
+    const { results: found } = await db
+      .prepare(
+        `SELECT id, email_norm FROM app_user
+         WHERE email_norm IS NOT NULL AND tid = 'email' AND status = 'active' AND suspended_at IS NULL
+           AND inactive_warned_at IS NULL AND last_seen_at < ?1
+           ${group === null ? "" : `AND email_norm IN (${group.map((_, i) => `?${i + 3}`).join(", ")})`}
+         ORDER BY last_seen_at LIMIT ?2`,
+      )
+      .bind(cutoff, WARNINGS_PER_RUN - results.length, ...(group ?? []))
+      .all<{ id: string; email_norm: string }>();
+    results.push(...found);
+    if (results.length >= WARNINGS_PER_RUN) break;
+  }
   let warned = 0;
   for (const user of results) {
     if (!(await deps.warn({ id: user.id, emailNorm: user.email_norm }))) continue;
