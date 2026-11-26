@@ -1,5 +1,5 @@
 // Deletes old bloop-converter images from the Cloudflare registry; container/README.md (CI and publishing) owns the rules.
-// Usage, from the repository root: node container/prune-images.mjs <wrangler> <tag just pushed>
+// Usage, from the repository root: node container/prune-images.mjs <wrangler script run by node> <tag just pushed>
 import { execFileSync } from "node:child_process";
 
 const [wrangler, current] = process.argv.slice(2);
@@ -10,10 +10,12 @@ const TAG = /sha-[0-9a-f]{12}-\d+-\d+/;
 const ours = (tag) => new RegExp(`^${TAG.source}$`).test(tag);
 
 const run = (cmd, args) => execFileSync(cmd, args, { encoding: "utf8", stdio: ["ignore", "pipe", "inherit"] });
+/** The token reaches wrangler only through tools/pinned-wrangler.mjs in CI, so it is a script, never a binary on PATH. */
+const wranglerRun = (args) => run(process.execPath, [wrangler, ...args]);
 
 /** Exact repository name: `--filter` matches substrings, and another repository's tags are not ours to count. */
 const images = () =>
-  JSON.parse(run(wrangler, ["containers", "images", "list", "--json", "--filter", REPO]))
+  JSON.parse(wranglerRun(["containers", "images", "list", "--json", "--filter", REPO]))
     .filter((r) => r.name === REPO)
     .flatMap((r) => r.tags);
 
@@ -53,7 +55,7 @@ if (live && !before.includes(live.tag)) {
 const keep = new Set([current, live?.tag, previous?.tag]);
 for (const tag of before.filter((t) => ours(t) && !keep.has(t))) {
   console.log(`deleting ${REPO}:${tag}`);
-  run(wrangler, ["containers", "images", "delete", `${REPO}:${tag}`, "--skip-confirmation"]);
+  wranglerRun(["containers", "images", "delete", `${REPO}:${tag}`, "--skip-confirmation"]);
 }
 
 const after = images();
