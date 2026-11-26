@@ -333,15 +333,102 @@ for (const vp of VIEWPORTS) {
       await expect(sheen).toHaveClass(/is-paused/);
     });
 
-    test("the hover pause stays when the follower fails to load", async ({ page }) => {
+    test("the sheen keeps sweeping under a hovering pointer, also when the follower fails to load", async ({
+      page,
+    }) => {
       test.skip(vp.touch, "no hovering pointer");
       await page.route("**/js/sheen-follow.js", (route) => route.abort());
       await page.goto("/");
       const state = () => page.evaluate(`document.querySelector(".sheen").getAnimations()[0]?.playState`);
       await page.locator(".hero h1").hover();
-      await expect.poll(state).toBe("paused");
+      await page.waitForTimeout(300);
+      expect(await state()).toBe("running");
+    });
+
+    test("holding focus in the hero fades the band to ink while the sweep stops, and focus leaving fades it back", async ({
+      page,
+    }) => {
+      await page.goto("/");
+      await page.evaluate(`(() => {
+        const el = document.querySelector(".sheen");
+        const out = (window.sheenInk = []);
+        const tick = () => {
+          const m = getComputedStyle(el).color.match(/\\/\\s*([\\d.]+)|,\\s*([\\d.]+)\\)$/);
+          out.push(m ? parseFloat(m[1] ?? m[2]) : 1);
+          requestAnimationFrame(tick);
+        };
+        tick();
+      })()`);
+      const alphas = async () => (await page.evaluate("window.sheenInk.splice(0)")) as number[];
+      await page.locator(".hero").getByRole("link", { name: "Try the Demo" }).focus();
+      await page.waitForTimeout(700);
+      const fadeIn = await alphas();
+      // Every frame rises toward ink in several steps, never one: the band is not left frozen and visible.
+      const steps = (a: number[]) => a.filter((v, i) => i > 0 && v !== a[i - 1]).length;
+      expect(Math.min(...fadeIn)).toBeGreaterThanOrEqual(0);
+      expect(fadeIn.at(-1)).toBe(1);
+      expect(steps(fadeIn)).toBeGreaterThan(3);
+      for (const [i, v] of fadeIn.entries()) expect(v, `frame ${i}`).toBeGreaterThanOrEqual(fadeIn[i - 1] ?? 0);
+      await page.evaluate("document.activeElement.blur()");
+      await page.waitForTimeout(700);
+      const fadeOut = await alphas();
+      expect(fadeOut.at(-1)).toBe(0);
+      expect(steps(fadeOut)).toBeGreaterThan(3);
+    });
+
+    test("a pointer entering the word eases the band from its sweep to the pointer, with no jump", async ({ page }) => {
+      test.skip(vp.touch, "no hovering pointer");
+      await page.goto("/");
+      const [left, width, y, em] = (await page.evaluate(`(() => {
+        const r = document.querySelector(".sheen").getBoundingClientRect();
+        return [r.left, r.width, r.top + r.height / 2, parseFloat(getComputedStyle(document.querySelector(".sheen")).fontSize)];
+      })()`)) as [number, number, number, number];
+      const tile = 5 * em;
+      const x = left + width / 2;
+      const sheen = page.locator(".sheen");
+      // The first visit fetches the follower and leaves it loaded.
+      await expect(async () => {
+        await page.mouse.move(x, y);
+        await page.mouse.move(x + 2, y);
+        await expect(sheen).toHaveClass(/is-following/, { timeout: 250 });
+      }).toPass();
       await page.mouse.move(0, vp.height - 1);
-      await expect.poll(state).toBe("running");
+      await expect(sheen).not.toHaveClass(/is-following/);
+      // The band where the pointer will put it, in px of the tile (the module's own mapping).
+      const goal = ((((x - left) / tile - 0.66) % 1) + 1) % 1;
+      const wrap = (d: number) => ((((d + tile / 2) % tile) + tile) % tile) - tile / 2;
+      const position = () =>
+        page.evaluate(
+          `parseFloat(getComputedStyle(document.querySelector(".sheen")).backgroundPosition)`,
+        ) as Promise<number>;
+      // Wait until the sweep has the band far from the pointer, so a jump on entry cannot hide.
+      await expect
+        .poll(async () => Math.abs(wrap(goal * tile - (await position()))), { timeout: 5000 })
+        .toBeGreaterThan(0.3 * tile);
+      await page.evaluate(`(() => {
+        const out = (window.sheenFrames = []);
+        const tick = (now) => {
+          out.push([now, parseFloat(getComputedStyle(document.querySelector(".sheen")).backgroundPosition)]);
+          requestAnimationFrame(tick);
+        };
+        requestAnimationFrame(tick);
+      })()`);
+      await page.waitForTimeout(50);
+      const before = await position();
+      const gap = Math.abs(wrap(goal * tile - before));
+      await page.mouse.move(x, y);
+      await page.waitForTimeout(900);
+      const frames = (await page.evaluate("window.sheenFrames")) as [number, number][];
+      // No frame covers more than part of the way: a teleport covers all of it.
+      let moved = 0;
+      for (const [i, [t, p]] of frames.entries()) {
+        const [t0, p0] = frames[i - 1] ?? [t, p];
+        const step = Math.abs(wrap(p - p0));
+        moved = Math.max(moved, step);
+        expect(step, `frame ${i}`).toBeLessThan(0.6 * gap + 2.5 * em * ((t - t0) / 1000));
+      }
+      expect(moved).toBeGreaterThan(0);
+      expect(Math.abs(wrap(goal * tile - (await position())))).toBeLessThan(2);
     });
 
     test("the band follows the pointer over the h1 and resumes where it was left, with no jump", async ({ page }) => {
