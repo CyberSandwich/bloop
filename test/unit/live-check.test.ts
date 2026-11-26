@@ -457,8 +457,8 @@ describe("live-check: the CLI", () => {
     expect(await main(["https://bloop.here"], async () => ok({ status: 500 }))).toBe(1);
     const checks = checksFor(registryFrom(), "preview");
     // Fixed values from the repo, so a registry or an expectation gone empty or wrong fails here: /library and /open
-    // get 17 forms each, /account and /admin 16 (their hex code is digits only).
-    expect(checks.filter((c) => c.what.startsWith("gated ")).length).toBe(66);
+    // get 17 forms each, /account, /admin and the open-only /articles/features 16 (their hex code is digits only).
+    expect(checks.filter((c) => c.what.startsWith("gated ")).length).toBe(82);
     expect(find(checks, "page /").expect.header?.["content-security-policy"]).toBe(CSP.landing);
     expect(find(checks, "page /s").expect.header?.["content-security-policy"]).toContain(
       "https://bloop.dsap.workers.dev",

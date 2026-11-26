@@ -1,6 +1,6 @@
 // MODE-01 against a real wrangler dev: the site pages by launch mode, the account pill, and the revalidation rules.
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
-import { VARIANTS } from "../../src/worker/pages.ts";
+import { VARIANTS } from "../../src/worker/page-registry.ts";
 import { startPairing } from "./pairing-client.ts";
 import type { Wrangler } from "./wrangler.ts";
 

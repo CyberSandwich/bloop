@@ -1,8 +1,9 @@
-// MODE-01: the Worker's variant list (src/worker/pages.ts) is the set of pages the build emits under public/open/.
+// MODE-01: the Worker's variant list (src/worker/page-registry.ts) is the set of pages the build emits under public/open/.
 import { existsSync, readdirSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
-import { type PageEnv, servePage, VARIANTS } from "../../src/worker/pages.ts";
+import { VARIANTS } from "../../src/worker/page-registry.ts";
+import { type PageEnv, servePage } from "../../src/worker/pages.ts";
 import { buildAll } from "../../tools/build-pages.mjs";
 import { PROD_VARS } from "../env-vars.ts";
 import { testDb } from "./d1-shim.ts";
