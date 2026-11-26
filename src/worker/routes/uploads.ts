@@ -41,10 +41,17 @@ const completeBody = z.union([
   }),
 ]);
 
-/** The signed-in library member behind the session cookie: the C gate every member route uses. */
-async function memberOf(request: Request, env: Env, config: Config): Promise<string | null> {
+type Caller = { ok: true; userId: string } | { ok: false; response: Response };
+
+/**
+ * The signed-in library member behind the session cookie: the coarse per-IP meter first, so no D1 read goes unmetered
+ * (AUTH-19), then the C gate every member route uses, whose refusal is `auth_required`.
+ */
+async function memberOf(request: Request, env: Env, config: Config): Promise<Caller> {
+  const flood = await limited(env, "RL_MEMBER_IP", request, config);
+  if (flood) return { ok: false, response: flood };
   const who = await resolveMember(request, env, config);
-  return who.ok ? who.member.userId : null;
+  return who.ok ? { ok: true, userId: who.member.userId } : who;
 }
 
 const reply = <T>(out: pipeline.Out<T>, status = 200, map: (value: T) => unknown = (v) => v): Response =>
@@ -70,8 +77,9 @@ async function load(
   config: Config,
   rate: "RL_LIBRARY" | "RL_UPLOAD_PART",
 ): Promise<{ ok: true; row: store.UploadRow; n: number } | { ok: false; response: Response }> {
-  const userId = await memberOf(request, env, config);
-  if (!userId) return { ok: false, response: fail("unauthorized") };
+  const caller = await memberOf(request, env, config);
+  if (!caller.ok) return caller;
+  const { userId } = caller;
   const tooMany = await limited(env, rate, request, config, userId);
   if (tooMany) return { ok: false, response: tooMany };
   const segments = new URL(request.url).pathname.split("/");
@@ -124,8 +132,9 @@ const idemStore = (d: pipeline.Deps): IdemStore<store.UploadRow> => ({
 });
 
 const list = withConfig(async (request, env, config) => {
-  const userId = await memberOf(request, env, config);
-  if (!userId) return fail("unauthorized");
+  const caller = await memberOf(request, env, config);
+  if (!caller.ok) return caller.response;
+  const { userId } = caller;
   const tooMany = await limited(env, "RL_LIBRARY", request, config, userId);
   if (tooMany) return tooMany;
   return json({
@@ -136,8 +145,9 @@ const list = withConfig(async (request, env, config) => {
 const create = withConfig(async (request, env, config) => {
   const refused = guard(request, config, "json");
   if (refused) return refused;
-  const userId = await memberOf(request, env, config);
-  if (!userId) return fail("unauthorized");
+  const caller = await memberOf(request, env, config);
+  if (!caller.ok) return caller.response;
+  const { userId } = caller;
   const tooMany = await limited(env, "RL_LIBRARY", request, config, userId);
   if (tooMany) return tooMany;
   const { d, uploads } = await uploadContext(env, config);

@@ -93,12 +93,12 @@ export async function callRoute(
   if (!found) throw new Error(`no route for ${method} ${path}`);
   const headers: Record<string, string> = { Origin: ORIGIN };
   if (options.cookie) headers.Cookie = options.cookie;
-  if (method !== "GET") headers["Content-Type"] = "application/json";
-  const request = new Request(url, {
-    method,
-    headers,
-    ...(method === "GET" ? {} : { body: JSON.stringify(options.body ?? {}) }),
-  });
+  const body = method === "GET" ? undefined : JSON.stringify(options.body ?? {});
+  if (body !== undefined) {
+    headers["Content-Type"] = "application/json";
+    headers["Content-Length"] = String(new TextEncoder().encode(body).length);
+  }
+  const request = new Request(url, { method, headers, ...(body === undefined ? {} : { body }) });
   return found.handler(request, env, found.pattern.exec(url) as URLPatternResult, CTX);
 }
 

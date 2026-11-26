@@ -225,7 +225,7 @@ export async function staleChecking(db: Db, now: number, limit: number): Promise
   const { results } = await db
     .prepare(
       `SELECT id, user_id AS userId, r2_key AS r2Key, bytes, ext, created_at AS createdAt FROM library_file
-       WHERE status = 'checking' AND updated_at < ?1 - ${CLAIM_MS} ORDER BY id LIMIT ?2`,
+       WHERE status = 'checking' AND updated_at < ?1 - ${CLAIM_MS} ORDER BY created_at, id LIMIT ?2`,
     )
     .bind(now, limit)
     .all<CheckingFile>();

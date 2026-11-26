@@ -96,10 +96,13 @@ describe("who may call", () => {
       ["GET", "/api/uploads/x"],
       ["DELETE", "/api/uploads/x"],
     ] as const) {
-      expect(
-        (await call(null, method, path, method === "GET" || method === "DELETE" ? undefined : {})).status,
-        `${method} ${path}`,
-      ).toBe(401);
+      const res = await call<{ code?: string }>(
+        null,
+        method,
+        path,
+        method === "GET" || method === "DELETE" ? undefined : {},
+      );
+      expect([res.status, res.body.code], `${method} ${path}`).toEqual([401, "auth_required"]);
     }
   });
 
