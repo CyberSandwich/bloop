@@ -5,7 +5,7 @@
 //
 // Invariant: for each user, `reserved_bytes` is the sum of their open library uploads' bytes and `used_bytes` the sum of
 // their `checking` and `ready` files', and `used + reserved <= quota` after every committed batch.
-import type { BatchDb } from "../auth/db.ts";
+import type { BatchDb, Db } from "../auth/db.ts";
 import { CLAIM_MS, claimFree, INSERT_COLUMNS, INSERT_PLACEHOLDERS, insertValues, type NewUpload } from "./store.ts";
 
 export interface Limits {
@@ -48,21 +48,36 @@ export async function reserveLibrary(db: BatchDb, n: NewUpload, limits: Limits):
   return whyRefused(db, userId, n, limits);
 }
 
-/** What stopped a reserve, read after the fact: the first guard that fails now. */
-async function whyRefused(db: BatchDb, userId: string, n: NewUpload, limits: Limits): Promise<ReserveRefusal> {
+/**
+ * The cheap read of reserve's guards, before any R2 call: the refusal a reserve would meet now, or null. It is a
+ * courtesy, never the guard: reserve re-checks everything in its own batch.
+ */
+export async function precheckLibrary(
+  db: Db,
+  userId: string,
+  bytes: number,
+  limits: Limits,
+): Promise<Exclude<ReserveRefusal, "twin"> | null> {
   const user = await db
     .prepare(
-      "SELECT status, suspended_at AS suspendedAt, used_bytes + reserved_bytes + ?2 <= COALESCE(quota_bytes, ?3) AS fits FROM app_user WHERE id = ?1",
+      `SELECT status, suspended_at AS suspendedAt, used_bytes + reserved_bytes + ?2 <= COALESCE(quota_bytes, ?3) AS fits,
+         (SELECT count(*) FROM library_file WHERE user_id = ?1) + (SELECT count(*) FROM upload WHERE user_id = ?1 AND ${OPEN}) AS files
+       FROM app_user WHERE id = ?1`,
     )
-    .bind(userId, n.bytes, limits.quotaBytes)
-    .first<{ status: string; suspendedAt: number | null; fits: number }>();
+    .bind(userId, bytes, limits.quotaBytes)
+    .first<{ status: string; suspendedAt: number | null; fits: number; files: number }>();
   if (user?.status !== "active" || user.suspendedAt !== null) return "upload_gone";
   if (!user.fits) return "quota_exceeded";
+  return user.files >= limits.maxFiles ? "library_full" : null;
+}
+
+/** What stopped a reserve, read after the fact: a twin first (the answer is the resume), then the first guard that fails now. */
+async function whyRefused(db: BatchDb, userId: string, n: NewUpload, limits: Limits): Promise<ReserveRefusal> {
   const twin = await db
     .prepare(`SELECT 1 AS one FROM upload WHERE user_id = ? AND fingerprint = ? AND ${OPEN}`)
     .bind(userId, n.fingerprint)
     .first();
-  return twin ? "twin" : "library_full";
+  return twin ? "twin" : ((await precheckLibrary(db, userId, n.bytes, limits)) ?? "library_full");
 }
 
 /**
