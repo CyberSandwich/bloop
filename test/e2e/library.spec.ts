@@ -48,6 +48,9 @@ const members = {
     ["b", "Reading list.pdf"],
   ]),
   long: fixtures.member(Array.from({ length: 12 }, (_, i): [string, string] => [`f${i}`, `Lecture ${i + 1}.pptx`])),
+  wide: fixtures.member([
+    ["a", "Introduction to Corporate Financial Reporting Week 5.pptx", { selected_at: now - 10 }],
+  ]),
 };
 
 /** A refetch nobody asked for, as a poll, a socket frame or another tab would start one. */
@@ -355,6 +358,25 @@ test.describe("library", () => {
     await expect(page.locator("#file-list > li")).toHaveCount(2);
     await expect(page.getByRole("dialog")).toBeVisible();
   });
+
+  for (const [width, list] of [
+    [320, "#file-list"],
+    [1440, "#up-list"],
+  ] as const) {
+    test(`a long name takes two lines and no more at ${width}`, async ({ page, context }) => {
+      await page.setViewportSize({ width, height: 900 });
+      await signedIn(context, members.wide);
+      await page.goto("/library");
+      const name = page.locator(`${list} .row-name`).first();
+      await expect(name).toBeVisible();
+      // A 15px line at 1.3 is 19.5 high: two lines, never three, never one.
+      const box = await name.boundingBox();
+      expect(Math.round((box?.height ?? 0) / 19.5), "lines").toBe(2);
+      // The name stays clear of the More button beside it.
+      const more = await page.locator(`${list} .lib-more`).first().boundingBox();
+      expect((box?.x ?? 0) + (box?.width ?? 0), "name right edge").toBeLessThanOrEqual(more?.x ?? 0);
+    });
+  }
 
   test("a toast's Undo still works with the Empty Trash confirm open over the page", async ({ page, context }) => {
     await page.setViewportSize({ width: 390, height: 844 });
