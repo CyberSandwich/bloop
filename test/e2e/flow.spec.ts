@@ -3253,6 +3253,15 @@ test.describe("PAIR-13 remote: the phone commands the demo screen (design.md sec
     await expect(phone.page.locator("#ends-text .sr")).toHaveCount(0);
     await bubbles.getByRole("button", { name: "Next" }).click();
     await expect(dots).toHaveText("2 / 2");
+    // At the query's narrowest the bubbles keep their content: Next never runs under Ends in.
+    await phone.page.setViewportSize({ width: 640, height: 390 });
+    const [next, ends] = await Promise.all(
+      [bubbles.getByRole("button", { name: "Next" }), phone.page.locator("#ends")].map((b) => b.boundingBox()),
+    );
+    if (!next || !ends) throw new Error("no box");
+    expect(next.x + next.width <= ends.x || next.y + next.height <= ends.y || ends.y + ends.height <= next.y).toBe(
+      true,
+    );
     await close(screen, phone);
   });
 
