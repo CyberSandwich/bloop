@@ -143,9 +143,8 @@ export function createViewer(deps) {
     const resized = drawnIn > 0 && drawnIn !== win;
     const running = pill.getAnimations?.() ?? [];
     const from = running.length ? pill.getBoundingClientRect() : (drawn ?? pill.getBoundingClientRect());
-    const held = resized ? null : drawn;
-    // Lifted off to measure: a glide to the same target runs on, not restarts.
-    for (const a of running) /** @type {KeyframeEffect} */ (a.effect).target = null;
+    // A glide ends where it is drawn and the next starts there: none is ever detached and put back mid-flight.
+    for (const a of running) a.cancel();
     /** @type {any} a slide, a photo's canvas, a video, or their loader */
     const img = frame.querySelector(STAGED) ?? frame.querySelector(".stand-in:not([inert])");
     const item = frame.classList.contains("is-scroll") ? null : (img ?? frame.firstElementChild);
@@ -193,38 +192,29 @@ export function createViewer(deps) {
     drawnIn = win;
     const was = lastPlace;
     lastPlace = place;
-    // Only a change of place glides (FLIP: from where they were drawn). A new item in the same place moves it in the
-    // same frame as the stage, and its width changes by the page count alone (setDots), so its center holds.
-    const differs = (/** @type {"left" | "top" | "width" | "height"} */ k, a = from) => Math.abs(a[k] - now[k]) >= 1;
-    const reshaped = differs("width") || differs("height");
-    const holds =
-      held && !differs("left", held) && !differs("top", held) && !differs("width", held) && !differs("height", held);
-    for (const a of running)
-      if (holds) /** @type {KeyframeEffect} */ (a.effect).target = pill;
-      else a.cancel();
+    // Only a change of place glides, or a glide cut short goes on (FLIP: from where they were drawn). A new item in the
+    // same place moves it in the same frame as the stage, and its width changes by the page count alone (setDots), so
+    // its center holds. The glide is `transform`, never `translate`: app.css's centering is never animated, so a glide
+    // can never be what leaves the pill off center or drawn away from where it takes a click.
     if (
-      !holds &&
       !resized &&
       was &&
-      was !== place &&
-      (reshaped || differs("left") || differs("top")) &&
+      (was !== place || running.length) &&
+      /** @type {const} */ (["left", "top", "width", "height"]).some((k) => Math.abs(from[k] - now[k]) >= 1) &&
       from.width &&
       !presenting() &&
       !reduced.matches
-    ) {
-      const bx = place === "under" || place === "float" ? "-50%" : "0px";
+    )
       pill.animate(
         [
           {
-            translate: `calc(${bx} + ${from.left - now.left}px) ${from.top - now.top}px`,
-            scale: `${from.width / now.width} ${from.height / now.height}`,
+            transform: `translate(${from.left - now.left}px,${from.top - now.top}px) scale(${from.width / now.width},${from.height / now.height})`,
             transformOrigin: "0 0",
           },
-          { translate: `${bx} 0`, scale: "1 1", transformOrigin: "0 0" },
+          { transform: "none", transformOrigin: "0 0" },
         ],
         { duration: 300, easing: easeOut() },
       );
-    }
     if (!img) return;
     const box = { left: img.offsetLeft, top: img.offsetTop, width: img.offsetWidth, height: img.offsetHeight };
     for (const [i, part] of halves(box).entries()) {

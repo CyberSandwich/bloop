@@ -29,9 +29,9 @@ beforeAll(async () => {
       return popovers.filter((p) => p.open);
     },
   });
-  const { guardDismiss } = await import(DISMISS);
-  guardDismiss();
-  guardDismiss();
+  // Imported twice, as every paint of a session asks: the module runs once.
+  await import(DISMISS);
+  await import(DISMISS);
 });
 
 const sheet = { id: "side", inside: { closest: () => null } };
@@ -75,7 +75,7 @@ const tap = (target: unknown, t: number) => [
   !fire("click", target, t + 41),
 ];
 
-describe("guardDismiss", () => {
+describe("core/dismiss.js", () => {
   it("installs its three listeners once, however often a page asks", () => {
     expect([...listeners].map(([type, fns]) => `${type} ${fns.length}`).sort()).toEqual([
       "click 1",
