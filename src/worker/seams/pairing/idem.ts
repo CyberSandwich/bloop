@@ -56,22 +56,23 @@ export type Flights<A> = Map<string, { bodyHash: string; answer: Promise<A> }>;
 /**
  * One answer per Idempotency-Key, whatever the interleaving. A call while the key's first is in flight takes its
  * answer; one after it finished finds its row, read here again because the route's `find` may have run before the
- * row was saved, and `replay`s it. The row read and the flight's entry have no await between them, so no other call
- * slips in. Another body for the key is `conflict`.
+ * row was saved, and `replay`s it; a replay that answers null (the row no longer holds) runs inside the same flight.
+ * The row read and the flight's entry have no await between them, so no other call slips in. Another body for the key
+ * is `conflict`.
  */
 export function oneFlight<A>(
   kv: Kv,
   flights: Flights<A>,
   idem: { owner: string; keyHash: string; bodyHash: string },
   now: number,
-  calls: { run: () => Promise<A>; replay: (stored: unknown) => Promise<A>; conflict: A },
+  calls: { run: () => Promise<A>; replay: (stored: unknown) => Promise<A | null>; conflict: A },
 ): Promise<A> {
   const key = `${idem.owner} ${idem.keyHash}`;
   const first = flights.get(key);
   if (first) return first.bodyHash === idem.bodyHash ? first.answer : Promise.resolve(calls.conflict);
   const row = findRow(kv, idem.owner, idem.keyHash, now - IDEM_WINDOW_MS);
-  if (row) return row.bodyHash === idem.bodyHash ? calls.replay(row.stored) : Promise.resolve(calls.conflict);
-  const answer = calls.run();
+  if (row && row.bodyHash !== idem.bodyHash) return Promise.resolve(calls.conflict);
+  const answer = row ? calls.replay(row.stored).then((a) => a ?? calls.run()) : calls.run();
   flights.set(key, { bodyHash: idem.bodyHash, answer });
   const done = () => void flights.delete(key);
   answer.then(done, done);
