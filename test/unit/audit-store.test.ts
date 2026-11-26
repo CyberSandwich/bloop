@@ -127,8 +127,19 @@ describe("DATA-05 dsar: a user reads their own rows", () => {
     const rows = await log.forUser("u1", 3);
     expect(rows.map((r) => r.type)).toEqual(["ended", "link.fetched", "approved"]);
     expect(rows[0]).toMatchObject({ userEmail: "ada@example.test", mode: "live", kind: "owner" });
-    const older = await log.forUser("u1", 10, rows[2]?.at);
+    const older = await log.forUser("u1", 10, rows[2]?.id);
     expect(older.map((r) => r.type)).toEqual(["claimed"]);
+  });
+
+  it("DATA-05 cursor: rows sharing one millisecond are each returned exactly once across pages", async () => {
+    const { log } = setup();
+    const base = { sessionId: "s1", session: ctx({ userId: "u1" }) };
+    await log.record(ev("claimed", T0, base));
+    await log.record(ev("approved", T0, { ...base, detail: { source: "graph" } }));
+    await log.record(ev("ended", T0, { ...base, detail: { reason: "phone" } }));
+    const first = await log.forUser("u1", 2);
+    const second = await log.forUser("u1", 2, first.at(-1)?.id);
+    expect([...first, ...second].map((r) => r.type)).toEqual(["ended", "approved", "claimed"]);
   });
 });
 
