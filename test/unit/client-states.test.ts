@@ -1,7 +1,17 @@
 import { readFileSync } from "node:fs";
 import { describe, expect, it, vi } from "vitest";
-import { adopt, leave, liveClaim, onRefusal, phoneKey, retryStep } from "../../public/js/core/phone-states.js";
-import { guestOnStage, hasPdf, screenKey } from "../../public/js/core/states.js";
+import { withPick } from "../../public/js/core/copy-phone.js";
+import {
+  adopt,
+  guestOnStage,
+  hasPdf,
+  leave,
+  liveClaim,
+  onRefusal,
+  phoneKey,
+  retryStep,
+  screenKey,
+} from "../../public/js/core/states.js";
 import { ERRORS } from "../../public/js/shared/errors.js";
 import { IN_SESSION, PAIRING_OVER } from "../../public/js/shared/session.js";
 import type { PhoneCtx, ScreenCtx } from "../../public/js/types.js";
@@ -381,47 +391,61 @@ describe("PAIR-14 the live pick comes first", () => {
     ...over,
   });
   const unconfirmed = phoneView("claimed", { match: null, choices: ["17", "42", "86"], confirmed: false });
+  // What phone.js renders: core/states.js's key with the pick over it.
+  const key = (ctx: PhoneCtx) => withPick(ctx, phoneKey(ctx));
 
   it("from the claim's answer, before any view, and on an unconfirmed view (a reload too)", () => {
-    expect(phoneKey(c({}))).toBe("pick");
-    expect(phoneKey(c({ view: unconfirmed }))).toBe("pick");
+    expect(key(c({}))).toBe("pick");
+    expect(key(c({ view: unconfirmed }))).toBe("pick");
   });
 
   it("once confirmed, the chooser follows: the list loading, then choose", () => {
-    expect(phoneKey(c({ view: phoneView("claimed") }))).toBe("match");
-    expect(phoneKey(c({ view: phoneView("claimed"), files: [file("a")] }))).toBe("choose");
+    expect(key(c({ view: phoneView("claimed") }))).toBe("match");
+    expect(key(c({ view: phoneView("claimed"), files: [file("a")] }))).toBe("choose");
   });
 
   it("a wrong pick's dead end and a dropped claim win over the pick", () => {
-    expect(phoneKey(c({ error: "match_wrong", view: unconfirmed }))).toBe("match_wrong");
-    expect(phoneKey(c({ view: phoneView("waiting") }))).toBe("expired");
+    expect(key(c({ error: "match_wrong", view: unconfirmed }))).toBe("match_wrong");
+    expect(key(c({ view: phoneView("waiting") }))).toBe("expired");
   });
 
   it("a demo claim has no choices, so it never picks", () => {
-    expect(phoneKey(c({ info: { ...info, mode: "demo", choices: null, match: "42" } }))).toBe("match");
+    expect(key(c({ info: { ...info, mode: "demo", choices: null, match: "42" } }))).toBe("match");
   });
 });
 
-describe("the room screen's first load carries none of the phone's state code", () => {
-  it("states.js exports only the shared and screen helpers; the phone's live in phone-states.js", async () => {
-    const shared = await import("../../public/js/core/states.js");
-    expect(Object.keys(shared).sort()).toEqual([
-      "firstFile",
-      "guestOnStage",
-      "hasPdf",
-      "onStage",
-      "pdfKey",
-      "screenKey",
-    ]);
+describe("the room screen's first load carries none of the pick", () => {
+  it("core/states.js, in the screen's bundle, has no pick branch; the guest keys and the chooser pass through", () => {
+    const states = readFileSync(new URL("../../public/js/core/states.js", import.meta.url), "utf8");
+    for (const word of ['"pick"', "choices", "confirmed", "withPick"]) expect(states, word).not.toContain(word);
     const budgets = JSON.parse(readFileSync(new URL("../../tools/size/core.json", import.meta.url), "utf8")) as {
       name: string;
       path: string | string[];
     }[];
     const screen = budgets.find((b) => b.name === "room screen JS")?.path ?? [];
     expect(screen).toContain("dist/js/core/states.js");
-    expect(screen).not.toContain("dist/js/core/phone-states.js");
+    expect(screen).not.toContain("dist/js/core/copy-phone.js");
     const screenJs = readFileSync(new URL("../../public/js/screen.js", import.meta.url), "utf8");
-    expect(screenJs).not.toContain("phone-states.js");
+    expect(screenJs).not.toContain("copy-phone.js");
+  });
+
+  it("the pick never replaces a key outside the chooser", () => {
+    const live = { info: { choices: ["17", "42", "86"] }, view: null };
+    for (const k of [
+      "checking",
+      "expired",
+      "opening",
+      "open",
+      "canceled",
+      "ended",
+      "match_wrong",
+      "guest_sent",
+    ] as const)
+      expect(withPick(live, k), k).toBe(k);
+    for (const k of ["match", "choose", "approve", "unregistered", "guest_add"] as const)
+      expect(withPick(live, k), k).toBe("pick");
+    expect(withPick({ ...live, view: { confirmed: true } }, "match")).toBe("match");
+    expect(withPick({ info: { choices: null }, view: null }, "match")).toBe("match");
   });
 });
 
