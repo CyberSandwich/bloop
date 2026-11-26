@@ -65,6 +65,43 @@ describe("size ratchet: a budget only holds or drops", () => {
     ]);
   });
 
+  it("size ratchet: a removed entry whose file is under src/ passes once the file is deleted", () => {
+    const base = [entry("blob", "1 kB", "src/worker/blob.bin")];
+    expect(compare(base, [], files([], []))).toHaveLength(1);
+    expect(compare(base, [], files(["src/worker/blob.bin"], []))).toEqual([]);
+    expect(compare(base, [], files(["src/worker/blob.bin"], ["src/worker/blob.bin"]))).toHaveLength(1);
+  });
+
+  it("size ratchet: a listed raise passes up to its max; an unlisted raise or one over the max still fails", () => {
+    const raises = [{ entry: "app", max: "8 kB", decision: "approved" }];
+    expect(compare([entry("app", "7 kB")], [entry("app", "8 kB")], both("app"), raises)).toEqual([]);
+    expect(compare([entry("app", "7 kB")], [entry("app", "8.1 kB")], both("app"), raises)).toEqual([
+      '"app" limit raised from 7 kB to 8.1 kB',
+    ]);
+    expect(compare([entry("app", "7 kB")], [entry("app", "7.5 kB")], both("app"), [])).toHaveLength(1);
+    const base = [entry("app", "7 kB"), entry("site", "5 kB")];
+    const head = [entry("app", "7 kB"), entry("site", "5.5 kB")];
+    expect(compare(base, head, both("app", "site"), raises)).toEqual(['"site" limit raised from 5 kB to 5.5 kB']);
+  });
+
+  it("size ratchet: a listed new entry is exempt from the moved-bytes sum up to its max, an unlisted one is not", () => {
+    const base = [entry("old", "2 kB")];
+    const head = [entry("new", "2 kB"), entry("extra", "3 kB")];
+    const has = files([src("old")], [src("new"), src("extra")]);
+    const listed = [{ entry: "extra", max: "3 kB", decision: "approved" }];
+    expect(compare(base, head, has, listed)).toEqual([]);
+    expect(compare(base, head, has, [])).toHaveLength(1);
+    expect(compare(base, head, has, [{ entry: "extra", max: "2 kB", decision: "approved" }])).toHaveLength(1);
+  });
+
+  it("size ratchet: the committed raises name a decision and an entry that exists", () => {
+    const raises: { entry: string; decision: string }[] = JSON.parse(
+      readFileSync(new URL("../../tools/size-raises.json", import.meta.url), "utf8"),
+    );
+    const names = sizeEntries().map((e) => e.name);
+    expect(raises.filter((r) => !names.includes(r.entry) || !r.decision)).toEqual([]);
+  });
+
   it("size ratchet: a rename by name or by path cannot carry a raise", () => {
     const head = [{ ...entry("app2", "8 kB"), path: "dist/js/app.js" }];
     expect(compare([entry("app", "7.1 kB")], head, both("app"))).toEqual(['"app2" limit raised from 7.1 kB to 8 kB']);
@@ -142,7 +179,12 @@ describe("size ratchet: a budget only holds or drops", () => {
 describe("size ratchet: the base", () => {
   const sha = "a".repeat(40);
   const at = (branch: string, before: string, reachable = true) =>
-    baseRefFor({ branch, before, isCommit: () => reachable, mergeBase: () => "MERGE_BASE" });
+    baseRefFor({
+      branch,
+      before,
+      isCommit: () => reachable,
+      mergeBase: () => "MERGE_BASE",
+    });
 
   it("size ratchet: off main it is the merge-base with origin/main, whatever BEFORE says", () => {
     expect(at("ci/x", sha)).toBe("MERGE_BASE");

@@ -144,6 +144,25 @@ describe("tools/slim-deck.py", { timeout: SPAWN_TIMEOUT }, () => {
     expect(names[0]).toBe("[Content_Types].xml");
   });
 
+  it("takes --quality N and --quality=N, and refuses a bare, non-numeric or unknown flag", () => {
+    const usage = (...flags: string[]) => {
+      try {
+        execFileSync("python3", ["-I", TOOL, join(dir, "missing.pptx"), join(dir, "x.pptx"), ...flags], {
+          stdio: "pipe",
+        });
+        return "";
+      } catch (e) {
+        return String((e as { stderr: Buffer }).stderr);
+      }
+    };
+    expect(usage("--quality", "80")).not.toContain("usage:");
+    expect(usage("--quality=80")).not.toContain("usage:");
+    expect(usage("--quality")).toContain("usage:");
+    expect(usage("--quality=")).toContain("usage:");
+    expect(usage("--quality", "high")).toContain("usage:");
+    expect(usage("--qualty=80")).toContain("usage:");
+  });
+
   it("refuses a package whose relationship points at a missing part", () => {
     const broken = join(dir, "broken.pptx");
     writeFileSync(

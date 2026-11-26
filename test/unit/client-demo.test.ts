@@ -4,7 +4,6 @@ import {
   halves,
   isVideoLink,
   openTarget,
-  PHOTO_THUMBS,
   pageMode,
   pagesOf,
   placeControls,
@@ -77,12 +76,13 @@ describe("DEMO-01 the demo screen's own open", () => {
 
   it("every sample page is served same-origin as AVIF and WebP (tools/render-slides.py)", () => {
     expect(SLIDES).toHaveLength(DECK_PAGES);
-    expect(Object.keys(PHOTO_THUMBS).sort()).toEqual([DEMO_ITEMS.horizontal.name, DEMO_ITEMS.vertical.name]);
     for (const base of SLIDES) {
       expect(base).toMatch(/^\/img\/[a-z0-9-]+$/);
       for (const ext of ["avif", "webp"]) expect(existsSync(`public${base}.${ext}`), `${base}.${ext}`).toBe(true);
     }
-    for (const thumb of Object.values(PHOTO_THUMBS)) expect(existsSync(`public${thumb}`), thumb).toBe(true);
+    for (const { id } of [DEMO_ITEMS.horizontal, DEMO_ITEMS.vertical]) {
+      expect(existsSync(`public/img/${id}-thumb.webp`), id).toBe(true);
+    }
   });
 });
 
@@ -102,8 +102,8 @@ describe("DEMO-01 what the viewer shows per item", () => {
 
   it("thumbnails are page 1 and the photo's own; a link and a guest file get the type tile", () => {
     expect(thumbOf(deck, demo)).toBe(`${SLIDES[0]}.webp`);
-    expect(thumbOf(photo, demo)).toBe(PHOTO_THUMBS[DEMO_ITEMS.horizontal.name]);
-    expect(thumbOf(tall, demo)).toBe(PHOTO_THUMBS[DEMO_ITEMS.vertical.name]);
+    expect(thumbOf(photo, demo)).toBe(`/img/${DEMO_ITEMS.horizontal.id}-thumb.webp`);
+    expect(thumbOf(tall, demo)).toBe(`/img/${DEMO_ITEMS.vertical.id}-thumb.webp`);
     expect(thumbOf(pdf, demo)).toBeNull();
     expect(thumbOf(link, demo)).toBeNull();
     expect(thumbOf(deck, { mode: "demo", kind: "guest" })).toBeNull();

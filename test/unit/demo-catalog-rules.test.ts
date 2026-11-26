@@ -5,9 +5,15 @@ import { describe, expect, it } from "vitest";
 import { SLIDES } from "../../public/js/core/demo.js";
 import { DECK_PAGES, DEMO_IDS, DEMO_ITEMS, DEMO_NAMES } from "../../src/shared/demo-catalog.ts";
 
-const TEST = fileURLToPath(new URL("../", import.meta.url));
-/** Files that may name what they test without the catalog: the landing's static example is the landing's own copy. */
-const EXEMPT = new Set(["unit/site-pages.test.ts", "e2e/landing.spec.ts", "unit/demo-catalog-rules.test.ts"]);
+const ROOT = fileURLToPath(new URL("../../", import.meta.url));
+const ROOTS = ["test", "public/js", "src"];
+/** The catalog itself and this rule. */
+const EXEMPT = new Set([
+  "public/js/core/demo.js",
+  "test/unit/site-pages.test.ts",
+  "test/e2e/landing.spec.ts",
+  "test/unit/demo-catalog-rules.test.ts",
+]);
 const LITERALS: [RegExp, string][] = [
   [/["'`](Horizontal\.jpg|Vertical\.jpg)["'`]/, "a demo photo's name"],
   [/["'`]demo-(deck|dog|horizontal|vertical|vevox|pdf)["'`]/, "a demo item's id"],
@@ -27,10 +33,10 @@ const walk = (dir: string): string[] =>
         : [],
   );
 
-describe("the demo catalog has one owner (src/shared/demo-catalog.ts)", () => {
-  it("no test types a demo item's name, id or page count: it imports them", () => {
-    const found = walk(TEST).flatMap((file) => {
-      const rel = file.slice(TEST.length);
+describe("the demo catalog has one owner (public/js/core/demo.js)", () => {
+  it("no test or module types a demo item's name, id or page count: it imports them", () => {
+    const found = ROOTS.flatMap((r) => walk(join(ROOT, r))).flatMap((file) => {
+      const rel = file.slice(ROOT.length);
       if (EXEMPT.has(rel)) return [];
       const lines = readFileSync(file, "utf8").split("\n");
       return lines.flatMap((line, i) =>

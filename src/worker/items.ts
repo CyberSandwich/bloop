@@ -69,7 +69,7 @@ export const fileById = (items: readonly ItemRef[], id: string): FileItemRef | n
   return item?.kind === "file" ? item : null;
 };
 
-/** How many pages a file shows: the demo account's pre-rendered pages for a deck or PDF, else one. */
+/** How many pages a file shows: the demo account's pre-rendered pages for the deck, else one. */
 export const pageCount = (file: FileItemRef, view: { mode: Mode; kind: Kind | null }): number =>
   pagesOf(itemView(file), view)?.length ?? 1;
 

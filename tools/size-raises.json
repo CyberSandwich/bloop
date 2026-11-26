@@ -1,0 +1,12 @@
+[
+  {
+    "entry": "demo deck",
+    "max": "265 kB",
+    "decision": "owner-approved exception for the demo files, docs/design.md section 11"
+  },
+  {
+    "entry": "demo vertical photo",
+    "max": "229 kB",
+    "decision": "owner-approved exception for the demo files, docs/design.md section 11"
+  }
+]

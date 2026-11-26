@@ -2,7 +2,7 @@
 """render-hero-desktop: the landing hero, public/img/hero-viewer-{750,1100,1600,2200}.avif and {750,1100,1600}.webp (docs/design.md section 6, Hero stage).
 
 Use: python3 -I tools/render-hero-desktop.py SOURCE.png [AVIF_Q WEBP_Q]
-SOURCE is the viewer at 1440 x 828 and 2x (2880 x 1656), Dog.jpg selected: HERO_CAPTURE=1 npx playwright test hero-capture --project=preview.
+SOURCE is the viewer at 1440 x 828 and 2x (2880 x 1656), Horizontal.jpg selected: HERO_CAPTURE=1 npx playwright test hero-capture --project=preview.
 Needs ImageMagick, avifenc and cwebp. Metadata stripped; the qualities, the widths and why: design.md, Hero stage.
 """
 import subprocess

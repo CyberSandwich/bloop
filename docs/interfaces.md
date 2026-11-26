@@ -216,7 +216,7 @@ export declare function withIds(items: readonly (ItemDraft | ItemRef)[]): ItemRe
 export declare const shownSchema: z.ZodType<Shown>;   // the one shape check for `shown` (strict; `play` and `sound` optional): the remote's body extends it with `seq`, and schema step 6 repairs stored data with it (step 7 starts a missing or malformed `Machine.v` at 0)
 export declare function shownFault(items: readonly ItemRef[], shown: Shown, view: { mode: Mode; kind: Kind | null }): "file_not_found" | "bad_request" | null;   // not a FILE id in the list, or a page outside it
 export declare function fileById(items: readonly ItemRef[], id: string): FileItemRef | null;   // null for a link or an unknown id
-export declare function pageCount(file: FileItemRef, view: { mode: Mode; kind: Kind | null }): number;   // the demo owner's deck or PDF: the pre-rendered pages; else 1
+export declare function pageCount(file: FileItemRef, view: { mode: Mode; kind: Kind | null }): number;   // the demo owner's deck: the pre-rendered pages; else 1
 export declare function launchIndex(items: readonly ItemRef[]): number;    // the first file, -1 for links only
 export declare function fileAt(items: readonly ItemRef[], index: number): FileItemRef | null;
 export declare function itemView(item: ItemRef): Item;
