@@ -203,6 +203,15 @@ export async function claim(db: Db, id: string, now: number): Promise<boolean> {
   return res.meta.changes > 0;
 }
 
+/** Records R2's upload id on a row create reserved before it called R2. False: the row was released meanwhile. */
+export async function setUploadId(db: Db, id: string, r2UploadId: string): Promise<boolean> {
+  const res = await db
+    .prepare(`UPDATE upload SET r2_upload_id = ?2 WHERE id = ?1 AND r2_upload_id = '' AND ${OPEN}`)
+    .bind(id, r2UploadId)
+    .run();
+  return res.meta.changes > 0;
+}
+
 /** Gives the claim back when complete found it could not go on yet (parts missing, a cap refused its R2 call). */
 export async function unclaim(db: Db, id: string, claimToken: number): Promise<void> {
   await db
