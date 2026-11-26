@@ -56,7 +56,7 @@ bloop runs on Cloudflare Workers. Its database (D1), your Library and Guest File
 ## Who Can See Your Files {#access}
 
 - **You**, on any device where you are signed in.
-- **A Screen**, only the Items you approve, only during the Session. Speaker notes go only to your phone.
+- **A Screen**, only the Items you approve, only during the Session. bloop sends speaker notes only to your phone, though a .pptx opened on the Screen is your original file and still contains its own notes.
 - **The person who runs bloop** can technically open any file or record bloop stores. bloop's admin tools open a file only after it has been reported, and record every action with its reason. The full rule: [Privacy, Who Can See Your Data](/privacy#access).
 - **No one else.** bloop has no other staff, and does not sell or share files.
 

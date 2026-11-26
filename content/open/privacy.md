@@ -61,7 +61,7 @@ Caption: What bloop collects, where it comes from, and its status
 | Your work email and Microsoft account ID (tenant and object ID); never your name | Microsoft, when you sign in and allow access | Planned |
 | Your OneDrive access, encrypted, and the ID of the folder bloop reads | Microsoft, when you sign in and allow access | Planned |
 
-3.2 bloop stores the files you upload to your Library until you delete them ([section 5](#retention)). It does not look inside them except to check them and to make the copies it needs to show them, and it does not read your speaker notes for any other purpose: they are shown only on your phone, never on the Screen.
+3.2 bloop stores the files you upload to your Library until you delete them ([section 5](#retention)). It does not look inside them except to check them and to make the copies it needs to show them, and it does not read your speaker notes for any other purpose: bloop shows them only on your phone, though a .pptx opened on the Screen is your original file and still contains its own notes.
 
 3.3 bloop does not use your data for automated decisions about you, and does not build profiles. Its checks refuse some files automatically, such as decks with macros; you can ask for a person to look at a refusal ([section 9](#rights)).
 
