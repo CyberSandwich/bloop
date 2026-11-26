@@ -1,4 +1,4 @@
-// Throwaway: landing hero screenshots at the check widths. Never merged.
+// Throwaway: nav screenshots at the check widths, menu open under 640, and the popover-less fallback at 320. Never merged.
 import { test } from "@playwright/test";
 
 const SIZES = [
@@ -9,35 +9,42 @@ const SIZES = [
   [834, 1112],
   [1440, 900],
 ] as const;
-const TAG = process.env.SHOT_TAG ?? "x";
 
 for (const [width, height] of SIZES) {
-  test(`landing hero at ${width}x${height}`, async ({ browser }) => {
+  test(`nav at ${width}x${height}`, async ({ browser }) => {
     const context = await browser.newContext({ viewport: { width, height }, deviceScaleFactor: 2 });
     const page = await context.newPage();
     await page.goto("/");
     await page.evaluate(() => document.fonts.ready);
-    await page.locator(".stage img").evaluate((img: HTMLImageElement) => img.decode());
-    await page.screenshot({ path: `test-results/shots/${TAG}-${width}x${height}-top.png` });
-    await page.evaluate(() => {
-      const r = document.querySelector(".stage")?.getBoundingClientRect();
-      if (r) window.scrollBy(0, r.top - Math.max(0, (innerHeight - r.height) / 2) + 0);
+    await page.screenshot({
+      path: `test-results/shots/nav-${width}x${height}.png`,
+      clip: { x: 0, y: 0, width, height: Math.min(height, 200) },
     });
-    await page.waitForTimeout(1000);
-    await page.screenshot({ path: `test-results/shots/${TAG}-${width}x${height}-stage.png` });
-    // The Why paragraph: its top at 85% of the view (just started), at 55%, and its bottom at the center (done).
-    for (const [name, place] of [
-      ["start", "innerHeight * 0.85"],
-      ["mid", "innerHeight * 0.55"],
-      ["end", "innerHeight / 2 - r.height"],
-    ] as const) {
-      await page.evaluate(`(() => {
-        const r = document.querySelector(".why p").getBoundingClientRect();
-        scrollBy(0, r.top - (${place}));
-      })()`);
-      await page.waitForTimeout(600);
-      await page.screenshot({ path: `test-results/shots/${TAG}-${width}x${height}-why-${name}.png` });
+    if (width < 640) {
+      await page.getByRole("button", { name: "Menu" }).click();
+      await page.waitForTimeout(500);
+      await page.screenshot({ path: `test-results/shots/nav-${width}x${height}-menu.png` });
     }
     await context.close();
   });
 }
+
+test("nav fallback row at 320", async ({ browser }) => {
+  const context = await browser.newContext({ viewport: { width: 320, height: 568 }, deviceScaleFactor: 2 });
+  const page = await context.newPage();
+  await page.route(/\/$/, async (route) => {
+    const response = await route.fetch();
+    const body = (await response.text()).replace(" popover>", ">").replace(/ popovertarget="[^"]+"/, "");
+    await route.fulfill({ response, body });
+  });
+  await page.addInitScript(
+    `for (const m of ["showPopover", "hidePopover", "togglePopover"]) delete HTMLElement.prototype[m];`,
+  );
+  await page.goto("/");
+  await page.evaluate(() => document.fonts.ready);
+  await page.screenshot({
+    path: "test-results/shots/nav-320-fallback.png",
+    clip: { x: 0, y: 0, width: 320, height: 200 },
+  });
+  await context.close();
+});
