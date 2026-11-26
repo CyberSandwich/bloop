@@ -4,7 +4,7 @@ Rows start `planned` and flip to `mitigated` when their test lands; same columns
 
 | id | STRIDE | threat | L | I | mitigation | test | status |
 |---|---|---|---|---|---|---|---|
-| LIB-01 | I, E | IDOR: one user reads or changes another user's file | med | high | `user_id` is in the WHERE clause of every library query, and the user object is named by the session's user; no route takes either from the client. A foreign id and an unknown id get the same answer | `LIB-01 idor sql`, `LIB-01 idor` | planned |
+| LIB-01 | I, E | IDOR: one user reads or changes another user's file | med | high | `user_id` is in the WHERE clause of every library query, and the user object is named by the session's user; no route takes either from the client. A foreign id and an unknown id get the same answer | `LIB-01 idor sql`, `LIB-01 idor` | mitigated |
 | LIB-02 | T | A quota or Up Next race: bytes released twice, uploads past the limit, or more than 12 ticked | med | med | Quota moves in one guarded statement with its row; a tick counts in the same statement | `LIB-02 race` | mitigated |
 | LIB-03 | I | A trashed or disabled file is still served | med | high | One predicate re-checks owner, status, trash, disable, version and the pinned session at fetch time, not at approve time | `LIB-03 fetch-time`, `LIB-03 pinned` | planned |
 | LIB-04 | S, T | A forged or stale preview token | low | high | The token is an HMAC with `FILE_TOKEN_KEY` carrying the file version and a 300 s expiry; a changed version, a wrong key or a flipped byte refuses it | `LIB-04 hmac`, `LIB-04 version`, `LIB-04 expiry`, `LIB-04 rotation` | mitigated |
