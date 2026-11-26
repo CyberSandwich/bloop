@@ -121,17 +121,23 @@ export async function holdFiles(
   };
   const { sources, absent } = await sourcesOf(db, options.target);
   const report: HoldReport = { held: [], missing: [], more: false };
-  // A file already purged stays held when its copy was made; any other named id is reported, never dropped.
+  const markCopied = (holdId: string) =>
+    db.prepare("UPDATE hold SET copied_at = ?2 WHERE id = ?1 AND copied_at IS NULL").bind(holdId, now).run();
+  // A file already purged stays held when its copy was made; any other named id is reported, never dropped. A pending
+  // row whose copy exists is settled, and one with no copy and no file is deleted, since nothing is left to hold.
   for (const id of absent) {
     const existing = await db
-      .prepare("SELECT id FROM hold WHERE file_id = ?1 AND report_id = ?2")
+      .prepare("SELECT id, copied_at FROM hold WHERE file_id = ?1 AND report_id = ?2")
       .bind(id, options.reportId)
-      .first<{ id: string }>();
+      .first<{ id: string; copied_at: number | null }>();
     if (existing && (await buckets.library.head(holdKey(existing.id)))) {
+      await markCopied(existing.id);
       report.held.push({ fileId: id, holdId: existing.id });
-    } else {
-      report.missing.push(id);
+      continue;
     }
+    if (existing && existing.copied_at === null)
+      await db.prepare("DELETE FROM hold WHERE id = ?1").bind(existing.id).run();
+    report.missing.push(id);
   }
   let copies = 0;
   for (const source of sources) {
@@ -139,7 +145,9 @@ export async function holdFiles(
       .prepare("SELECT id, copied_at FROM hold WHERE file_id = ?1 AND report_id = ?2")
       .bind(source.fileId, options.reportId)
       .first<{ id: string; copied_at: number | null }>();
-    if (existing && existing.copied_at !== null && (await buckets.library.head(holdKey(existing.id)))) {
+    // A copy that is there is the hold, whether or not a crash left the row pending before it was marked.
+    if (existing && (await buckets.library.head(holdKey(existing.id)))) {
+      await markCopied(existing.id);
       report.held.push({ fileId: source.fileId, holdId: existing.id });
       continue;
     }
@@ -179,8 +187,10 @@ export async function holdFiles(
     }
     try {
       await buckets.library.put(holdKey(holdId), original.body);
-    } catch {
-      // A purge claimed the file after the read and its bytes went mid-copy: nothing is held, and no row may say so.
+    } catch (error) {
+      // A source that is gone (a guest file past its day) leaves nothing to hold, and no row may say so. Any other
+      // failure leaves the row pending, which keeps the file from a purge, and the retry copies again.
+      if (await buckets[source.bucket].head(source.key)) throw error;
       await db.prepare("DELETE FROM hold WHERE id = ?1").bind(holdId).run();
       report.missing.push(source.fileId);
       continue;

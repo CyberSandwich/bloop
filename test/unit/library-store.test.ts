@@ -437,6 +437,32 @@ describe("listFiles", () => {
     expect(await listFiles(db, "u1", "files", "name", "_w")).toEqual({ ok: false });
   });
 
+  it("B1 cursor: integer-keyed cursors do not cross sorts or views", async () => {
+    const live = libWith();
+    const trashed = libWith();
+    for (const [i, id] of ids(PAGE_SIZE + 1).entries()) {
+      addFile(live, { id, updatedAt: 5000 - i, bytes: 900 - i });
+      addFile(trashed, { id, updatedAt: 5000 - i, trashedAt: 1, purgeAfter: 5000 - i });
+    }
+    const byUpdated = await listFiles(live, "u1", "files", "updated", null);
+    const inTrash = await listFiles(trashed, "u1", "trash", "updated", null);
+    if (!byUpdated.ok || !inTrash.ok) throw new Error("page");
+    expect(await listFiles(live, "u1", "files", "size", byUpdated.next)).toEqual({ ok: false });
+    expect(await listFiles(trashed, "u1", "files", "updated", inTrash.next)).toEqual({ ok: false });
+  });
+
+  it("B1 cursor: the largest cursor, a 200-emoji name and a 64-character id, fits CURSOR_MAX_CHARS", async () => {
+    const db = libWith();
+    for (let i = 0; i <= PAGE_SIZE; i++)
+      addFile(db, { id: `${String(i).padStart(3, "0")}`.padEnd(64, "x"), name: "😀".repeat(200) });
+    const page = await listFiles(db, "u1", "files", "name", null);
+    if (!page.ok) throw new Error("page");
+    expect(page.files.at(-1)?.id).toHaveLength(64);
+    const length = (page.next as string).length;
+    expect(length).toBeLessThanOrEqual(CURSOR_MAX_CHARS);
+    expect(length).toBeGreaterThan(CURSOR_MAX_CHARS - 20);
+  });
+
   it("shows the trash by due time, soonest first, and files only in the files view", async () => {
     const db = libWith();
     addFile(db, { id: "live" });

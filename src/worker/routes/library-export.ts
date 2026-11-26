@@ -27,6 +27,7 @@ const KEY = z.string().regex(/^[A-Za-z0-9_-]{8,64}$/);
 const AUDIT_PAGE = 200;
 /** The audit trail in the archive stops here; a user with more reads the rest from the page. */
 const AUDIT_PAGES_MAX = 50;
+const DAY_MS = 86_400_000;
 const ETAG_LEASE_PREFIX = "export-etag:";
 const KEY_PREFIX = "export-k:";
 
@@ -83,8 +84,8 @@ async function start(s: Start): Promise<Response> {
   // same archive is laid out again however long the client was away; a resume from offset 0 is a new download below.
   const issued = rangeHeader !== null && ifRange !== null ? await stub.idemGet(`${ETAG_LEASE_PREFIX}${ifRange}`) : null;
   const issuedAt = issued === null ? Number.NaN : Number(issued.answer);
-  const resumes = Number.isSafeInteger(issuedAt);
-  const takenAt = resumes ? issuedAt : now;
+  const resumes = Number.isSafeInteger(issuedAt) && issuedAt <= now && issuedAt > now - DAY_MS;
+  let takenAt = resumes ? issuedAt : now;
   if (!resumes) {
     const cookie = readCookie(request, SESSION_COOKIE) ?? "";
     const fresh = await new Sessions(dbOf(env.DB), () => now).reauthedWithin(
@@ -110,18 +111,16 @@ async function start(s: Start): Promise<Response> {
       if (rows.length < AUDIT_PAGE) break;
       before = rows.at(-1)?.at;
     }
-    const built = await buildExport(
-      await takeSnapshot(db, userId, audit, config.library.quotaBytes, takenAt),
-      s.tokenKey,
-    );
-    const { archive, etag } = built;
+    const build = async (at: number) =>
+      buildExport(await takeSnapshot(db, userId, audit, config.library.quotaBytes, at), s.tokenKey);
+    let { archive, etag } = await build(takenAt);
     const matches = resumes && ifRange !== null && safeEqual(ifRange, etag);
-    const range = matches && rangeHeader !== null ? parseRange(rangeHeader, archive.length) : null;
+    let range = matches && rangeHeader !== null ? parseRange(rangeHeader, archive.length) : null;
     if (range === "unsatisfiable") {
       return new Response(null, { status: 416, headers: { "Content-Range": `bytes */${archive.length}` } });
     }
     // A resume that changed under the client, whose Range is ignored, or that starts again from byte 0, is a whole
-    // download and spends a start like one.
+    // new download: it spends a start and is laid out as of now, so the stored moment moves on with it.
     if (resumes && (range === null || range.offset === 0)) {
       const cookie = readCookie(request, SESSION_COOKIE) ?? "";
       const proof = await new Sessions(dbOf(env.DB), () => now).reauthedWithin(
@@ -130,6 +129,9 @@ async function start(s: Start): Promise<Response> {
       );
       if (!proof) return fail("reauth_required");
       if (!(await s.take(env, userId))) return fail("export_limit");
+      takenAt = now;
+      ({ archive, etag } = await build(takenAt));
+      range = null;
     }
     // The run is recorded before the first byte: an export nobody can later see is worse than a failed one.
     try {

@@ -126,7 +126,13 @@ describe("OSA-02 hold", () => {
     const db = libWith();
     addFile(db, { id: "a" });
     const lib = fakeBucket({ "u/u1/a/v1/orig": "bytes" });
-    const failing = { ...lib.bucket, put: async () => Promise.reject(new Error("gone")) };
+    const failing = {
+      ...lib.bucket,
+      put: async () => {
+        lib.objects.delete("u/u1/a/v1/orig");
+        return Promise.reject(new Error("gone"));
+      },
+    };
     const out = await holdFiles(
       { DB: db, LIBRARY: failing, GUEST_FILES: fakeBucket().bucket },
       { reportId: "r", target: { fileIds: ["a"] } },
@@ -135,6 +141,62 @@ describe("OSA-02 hold", () => {
     );
     expect(out).toMatchObject({ held: [], missing: ["a"] });
     expect(db.raw.prepare("SELECT count(*) AS n FROM hold").get()).toEqual({ n: 0 });
+  });
+
+  it("R5: a transient put failure on a file that still exists keeps the row pending and the retry copies it", async () => {
+    const db = libWith();
+    addFile(db, { id: "a" });
+    const lib = fakeBucket({ "u/u1/a/v1/orig": "bytes" });
+    const flaky = { ...lib.bucket, put: async () => Promise.reject(new Error("r2 busy")) };
+    const target = { fileIds: ["a"] };
+    await expect(
+      holdFiles({ DB: db, LIBRARY: flaky, GUEST_FILES: fakeBucket().bucket }, { reportId: "r", target }, NOW, ids),
+    ).rejects.toThrow("r2 busy");
+    expect(db.raw.prepare("SELECT copied_at FROM hold").all()).toEqual([{ copied_at: null }]);
+    const again = await holdFiles(
+      { DB: db, LIBRARY: lib.bucket, GUEST_FILES: fakeBucket().bucket },
+      { reportId: "r", target },
+      NOW + 5,
+      ids,
+    );
+    expect(again.held).toHaveLength(1);
+    expect(db.raw.prepare("SELECT copied_at FROM hold").all()).toEqual([{ copied_at: NOW + 5 }]);
+  });
+
+  it("R3: a crash after the copy and before it was marked, with the source since gone, still reports it held", async () => {
+    const db = libWith();
+    addFile(db, { id: "a" });
+    const lib = fakeBucket({ "u/u1/a/v1/orig": "bytes" });
+    const env = { DB: db, LIBRARY: lib.bucket, GUEST_FILES: fakeBucket().bucket };
+    const first = await holdFiles(env, { reportId: "r", target: { fileIds: ["a"] } }, NOW, ids);
+    const { holdId } = first.held[0] as { holdId: string };
+    db.raw.prepare("UPDATE hold SET copied_at = NULL WHERE id = ?").run(holdId);
+    lib.objects.delete("u/u1/a/v1/orig");
+    const again = await holdFiles(env, { reportId: "r", target: { fileIds: ["a"] } }, NOW + 9, ids);
+    expect(again.held).toEqual([{ fileId: "a", holdId }]);
+    expect(lib.objects.has(holdKey(holdId))).toBe(true);
+    expect(db.raw.prepare("SELECT copied_at FROM hold").get()).toEqual({ copied_at: NOW + 9 });
+  });
+
+  it("R4: a pending row on a purged file is settled when its copy exists and deleted when it does not", async () => {
+    const db = libWith();
+    addFile(db, { id: "p1", status: "purged" });
+    addFile(db, { id: "p2", status: "purged" });
+    const lib = fakeBucket({ "h/hc": "copy" });
+    const insert = db.raw.prepare(
+      `INSERT INTO hold (id, file_id, owner_user_id, bucket, r2_key, report_id, created_at, release_after, copied_at)
+       VALUES (?, ?, 'u1', 'library', ?, 'r', 1, ?, NULL)`,
+    );
+    insert.run("hc", "p1", "h/hc", NOW + YEAR);
+    insert.run("hn", "p2", "h/hn", NOW + YEAR);
+    const out = await holdFiles(
+      { DB: db, LIBRARY: lib.bucket, GUEST_FILES: fakeBucket().bucket },
+      { reportId: "r", target: { fileIds: ["p1", "p2"] } },
+      NOW,
+      ids,
+    );
+    expect(out).toMatchObject({ held: [{ fileId: "p1", holdId: "hc" }], missing: ["p2"] });
+    expect(db.raw.prepare("SELECT id, copied_at FROM hold").all()).toEqual([{ id: "hc", copied_at: NOW }]);
   });
 
   it("reports a file whose source object is gone as missing", async () => {

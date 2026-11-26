@@ -4,7 +4,7 @@
 // builders, never here.
 import type { Db, Statement } from "../auth/db.ts";
 import { base64url, fromBase64url } from "../ids.ts";
-import { renamed } from "./names.ts";
+import { MAX_NAME_CHARS, renamed } from "./names.ts";
 
 /** D1's atomic batch, which the plain `Db` slice leaves out. */
 export interface LibDb extends Db {
@@ -255,11 +255,17 @@ const orders: Record<Sort, (a: FileRow, b: FileRow) => number> = {
 const trashOrder = (a: FileRow, b: FileRow): number => (a.purgeAfter ?? 0) - (b.purgeAfter ?? 0) || byId(a.id, b.id);
 
 /**
- * A cursor is the last row's id and the one value its view sorts by, as UTF-8 JSON in base64url (`btoa` alone takes
- * Latin-1 only): it still works after that row is deleted. A 200-character name is at most 600 bytes of it.
+ * A cursor is the sort it was made for, the last row's id and the one value its view sorts by, as UTF-8 JSON in
+ * base64url (`btoa` alone takes Latin-1 only): it still works after that row is deleted.
  */
-export const CURSOR_MAX_CHARS = 1000;
-type KeyField = "updatedAt" | "name" | "bytes" | "purgeAfter";
+const KEY_FIELDS = ["updatedAt", "name", "bytes", "purgeAfter"] as const;
+type KeyField = (typeof KEY_FIELDS)[number];
+/** The longest id a route accepts. */
+export const ID_MAX_CHARS = 64;
+/** The base64 length of the largest cursor: the longest field tag, the longest id and a name at 4 UTF-8 bytes a character. */
+export const CURSOR_MAX_CHARS = Math.ceil(
+  ((2 + Math.max(...KEY_FIELDS.map((f) => f.length)) + 2 + 1 + ID_MAX_CHARS + 2 + 1 + MAX_NAME_CHARS * 4 + 2) * 4) / 3,
+);
 const keyField = (view: View, sort: Sort): KeyField =>
   view === "trash" ? "purgeAfter" : sort === "updated" ? "updatedAt" : sort === "name" ? "name" : "bytes";
 
@@ -269,7 +275,7 @@ interface Cursor {
 }
 const cursorOf = (r: FileRow, field: KeyField): string => {
   const key = field === "purgeAfter" ? (r.purgeAfter ?? 0) : r[field];
-  return base64url(new TextEncoder().encode(JSON.stringify([r.id, key])));
+  return base64url(new TextEncoder().encode(JSON.stringify([field, r.id, key])));
 };
 
 function readCursor(text: string, field: KeyField): Cursor | null {
@@ -277,8 +283,9 @@ function readCursor(text: string, field: KeyField): Cursor | null {
     const c: unknown = JSON.parse(
       new TextDecoder("utf-8", { fatal: true, ignoreBOM: true }).decode(fromBase64url(text)),
     );
-    if (!Array.isArray(c) || c.length !== 2) return null;
-    const [id, key] = c as [unknown, unknown];
+    if (!Array.isArray(c) || c.length !== 3) return null;
+    const [tag, id, key] = c as [unknown, unknown, unknown];
+    if (tag !== field) return null;
     const keyOk = field === "name" ? typeof key === "string" : Number.isSafeInteger(key);
     return typeof id === "string" && keyOk ? { id, key: key as string | number } : null;
   } catch {
