@@ -267,6 +267,9 @@ describe("DROP-02 polyglot: text that is another format", () => {
         "<!doctype HTML>",
         "GIF89a and text",
         "1234ftypisom text",
+        '<svg xmlns="http://www.w3.org/2000/svg"><script>alert(1)</script></svg>',
+        '\uFEFF  <?xml version="1.0"?><svg/>',
+        "\n<SVG onload=alert(1)>",
       ]) {
         expect(await check(enc.encode(text), type), JSON.stringify(text)).toEqual(refused("bad_structure"));
       }
@@ -274,7 +277,12 @@ describe("DROP-02 polyglot: text that is another format", () => {
   );
 
   it.each(["txt", "md", "csv"] as const)("accepts %s that only mentions those formats", async (type) => {
-    for (const text of ["notes about <html> and <script> tags", "a,b\nPK,zip\n", "PDF files end in %%EOF"]) {
+    for (const text of [
+      "notes about <html>, <svg> and <script> tags",
+      "a,b\nPK,zip\n",
+      "PDF files end in %%EOF",
+      "an <?xml?> prolog, mentioned",
+    ]) {
       expect(await check(enc.encode(text), type), text).toEqual({ ok: true, type });
     }
   });
@@ -306,17 +314,49 @@ describe("DROP-16 pixels: headers behind large metadata", () => {
         return file.slice(o, o + n);
       },
     };
+    const jpeg = WALK_LIMITS.jpeg;
     expect(await checkImageSize("jpg", counted, file.subarray(0, 1024))).toEqual({ ok: true });
-    expect(reads.length).toBe(6);
-    expect(Math.max(...reads)).toBeLessThanOrEqual(WALK_LIMITS.blockBytes);
-    expect(await check(behind(WALK_LIMITS.maxReads + 1, 65533), "jpg")).toEqual(refused("bad_structure"));
-    expect(await check(behind(WALK_LIMITS.maxSegments + 1, 4), "jpg")).toEqual(refused("bad_structure"));
+    expect(reads.length).toBeLessThanOrEqual(jpeg.maxReads);
+    expect(Math.max(...reads)).toBeLessThanOrEqual(jpeg.blockBytes);
+    const pastReads = Math.ceil((jpeg.maxReads * jpeg.blockBytes) / 65537) + 2;
+    expect(await check(behind(pastReads, 65533), "jpg")).toEqual(refused("bad_structure"));
+    expect(await check(behind(jpeg.maxSegments + 1, 4), "jpg")).toEqual(refused("bad_structure"));
     const fill = concat([
       new Uint8Array([0xff, 0xd8]),
-      new Uint8Array(WALK_LIMITS.maxSteps + 1).fill(0xff),
+      new Uint8Array(jpeg.maxSteps + 1).fill(0xff),
       validJpeg().subarray(2),
     ]);
     expect(await check(fill, "jpg")).toEqual(refused("bad_structure"));
+  });
+
+  it("DROP-16 pixels: a large JPEG's walk goes through the read plan and spends a few reads (no read loop)", async () => {
+    const photo = behind(5, 65533);
+    const size = 20 * 1024 * 1024;
+    const reads: [number, number][] = [];
+    const large = {
+      size,
+      read: async (o: number, n: number) => {
+        reads.push([o, n]);
+        const out = new Uint8Array(Math.max(0, Math.min(n, size - o)));
+        if (o < photo.length) out.set(photo.subarray(o, o + out.length));
+        return out;
+      },
+    };
+    expect(await validate(large, "jpg")).toEqual({ ok: true, type: "jpg" });
+    const walk = reads.filter(([o]) => o > 0 && o < photo.length);
+    expect(walk.length).toBeLessThanOrEqual(WALK_LIMITS.jpeg.maxReads);
+    expect(reads.length).toBeLessThanOrEqual(3 + WALK_LIMITS.jpeg.maxReads);
+    const small = {
+      ...reader(photo),
+      read: async (o: number, n: number) => {
+        reads.push([o, n]);
+        return photo.slice(o, o + n);
+      },
+    };
+    reads.length = 0;
+    expect(await validate(small, "jpg")).toEqual({ ok: true, type: "jpg" });
+    expect(reads.filter(([o, n]) => o === 0 && n === photo.length)).toHaveLength(1);
+    expect(reads.length).toBe(4);
   });
 
   it("passes the demo photo", async () => {
@@ -340,6 +380,26 @@ describe("DROP-16 pixels: headers behind large metadata", () => {
     });
     const noFrame = concat([enc.encode("GIF89a"), new Uint8Array([1, 0, 1, 0, 0, 0, 0, 0x3b])]);
     expect(await check(noFrame, "gif")).toEqual(refused("bad_structure"));
+  });
+
+  it("DROP-16 pixels: walks every GIF frame to the trailer and refuses one larger than the logical screen (first frame only)", async () => {
+    const frame = (w: number, h: number, data: Uint8Array = new Uint8Array([2, 0])) =>
+      concat([new Uint8Array([0x2c, 0, 0, 0, 0, w & 255, w >> 8, h & 255, h >> 8, 0]), data]);
+    const gif = (...frames: Uint8Array[]) =>
+      concat([enc.encode("GIF89a"), new Uint8Array([100, 0, 100, 0, 0, 0, 0]), ...frames, new Uint8Array([0x3b])]);
+    const lzw = concat([new Uint8Array([2, 255]), new Uint8Array(255).fill(1), new Uint8Array([3, 1, 2, 3, 0])]);
+    const gce = gifExtension(0xf9, new Uint8Array([4, 0, 0, 0, 0]));
+    expect(await check(gif(frame(100, 100, lzw), gce, frame(50, 50, lzw), gce, frame(100, 100)), "gif")).toEqual({
+      ok: true,
+      type: "gif",
+    });
+    expect(await check(gif(frame(100, 100), gce, frame(20000, 20000)), "gif")).toEqual(refused("too_large"));
+    expect(await check(gif(frame(100, 100, lzw), frame(101, 100)), "gif")).toEqual(refused("bad_structure"));
+    expect(await check(gif(frame(100, 100), frame(100, 100, new Uint8Array([2, 5, 1]))), "gif")).toEqual(
+      refused("bad_structure"),
+    );
+    const local = concat([new Uint8Array([0x2c, 0, 0, 0, 0, 10, 0, 10, 0, 0x81]), new Uint8Array(12), lzw]);
+    expect(await check(gif(local, frame(100, 100)), "gif")).toEqual({ ok: true, type: "gif" });
   });
 });
 
