@@ -3,6 +3,7 @@ package main
 import (
 	"archive/zip"
 	"bytes"
+	"context"
 	"encoding/binary"
 	"errors"
 	"strings"
@@ -88,7 +89,11 @@ func analyze(t *testing.T, b []byte) Analysis {
 	if err != nil {
 		t.Fatal(err)
 	}
-	return analyzeOOXML(newPkg(zr))
+	a, err := analyzeOOXML(context.Background(), newPkg(zr, 1<<30), 300)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return a
 }
 
 func TestAnalyzeNotesFollowPresentationOrderNotFileNames(t *testing.T) {
