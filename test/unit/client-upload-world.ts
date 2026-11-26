@@ -4,7 +4,7 @@ import { createUploader } from "../../public/js/core/upload.js";
 
 export const MARK = { "X-Bloop": "1" };
 export const NETWORK = Symbol("network");
-// The real timer, kept for flush: a test that fakes the global one (the api wrapper's request timeout) still settles.
+// The real timer, kept for flush: a test that fakes the global one still settles.
 const tick = globalThis.setTimeout;
 
 export interface Call {
@@ -107,7 +107,6 @@ class Events {
 }
 
 export interface Options {
-  kind?: "library" | "guest";
   mode?: "direct" | "proxy";
   partBytes?: number;
   /** Parts the create answer carries URLs for. */
@@ -121,7 +120,6 @@ export interface Options {
 export type World = ReturnType<typeof makeWorld>;
 
 export function makeWorld(options: Options = {}) {
-  const kind = options.kind ?? "library";
   const partBytes = options.partBytes ?? 20;
   const state = {
     now: 0,
@@ -205,9 +203,7 @@ export function makeWorld(options: Options = {}) {
         state.checking--;
         return json(200, { state: "checking", file: { id: "f1", status: "checking" } });
       }
-      return kind === "guest"
-        ? json(200, { state: "offered" })
-        : json(200, { state: "ready", file: { id: "f1", status: "ready" } });
+      return json(200, { state: "ready", file: { id: "f1", status: "ready" } });
     }
     if (method === "GET" && path === "/api/uploads/up1")
       return json(200, { id: "up1", state: "open", done: [...state.done] });
@@ -232,7 +228,6 @@ export function makeWorld(options: Options = {}) {
   };
 
   const world = {
-    kind,
     state,
     calls,
     puts,
@@ -316,10 +311,8 @@ export function makeWorld(options: Options = {}) {
     },
     pending: () => timers.length,
     uploader: undefined as undefined | ReturnType<typeof createUploader>,
-    start(pid = "ref.secret") {
+    start() {
       world.uploader = createUploader({
-        kind,
-        ...(kind === "guest" ? { pid } : {}),
         onChange: (batch) => snaps.push(structuredClone(batch)),
         deps: world.deps as never,
       });

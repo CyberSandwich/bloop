@@ -1,6 +1,6 @@
 // The upload engine end to end over a fake world (client-upload-world.ts): the wire, the parts loop, retries, waiting,
-// the fill, cancel, resume and the guest's send.
-import { describe, expect, it, vi } from "vitest";
+// the fill, cancel, resume and the check.
+import { describe, expect, it } from "vitest";
 import { makeWorld, NETWORK, type Put, type World } from "./client-upload-world.ts";
 
 /** Starts one file of `size` bytes and lets the create and the first parts go out. */
@@ -48,19 +48,11 @@ describe("a library upload over a direct URL", () => {
     expect(world.calls[2]?.body).toMatchObject({ n: 1, bytes: 3 * 1024 * 1024 });
   });
 
-  it("sends no credential to the storage host: the cookie is the library's, and a guest's pid stays with bloop", async () => {
-    const world = makeWorld({ kind: "guest" });
+  it("sends no header to the storage host: its signature is its credential, and the cookie is bloop's", async () => {
+    const world = makeWorld();
     await begin(world, 50);
     expect(world.puts.every((p) => p.url.startsWith("https://"))).toBe(true);
     expect(world.puts.flatMap((p) => Object.keys(p.headers))).toEqual([]);
-    expect(world.calls.every((c) => c.headers.Authorization === "Bearer ref.secret")).toBe(true);
-  });
-
-  it("the guest's complete resolves the view the phone page takes", async () => {
-    const world = makeWorld({ kind: "guest" });
-    await begin(world, 50);
-    expect(fileOf(world)).toMatchObject({ state: "sent", view: { state: "offered" } });
-    expect(world.calls[0]?.headers.Authorization).toBe("Bearer ref.secret");
   });
 
   it("a library request carries no Authorization header: the session cookie is its credential", async () => {
@@ -328,15 +320,39 @@ describe("failures", () => {
     expect(fileOf(world)).toMatchObject({ state: "refused", error: "rate_limited" });
   });
 
-  it("a row that is gone (404) pauses a library file and refuses a guest's", async () => {
-    const lib = makeWorld({ mode: "proxy", partBytes: 100 });
-    lib.onPut = (p) => p.reply(404, { text: JSON.stringify({ code: "not_found" }) });
-    await begin(lib, 50);
-    expect(fileOf(lib)).toMatchObject({ state: "paused", name: "Lecture 5.pptx" });
-    const guest = makeWorld({ kind: "guest", mode: "proxy", partBytes: 100 });
-    guest.onPut = (p) => p.reply(410);
-    await begin(guest, 50);
-    expect(fileOf(guest)).toMatchObject({ state: "refused", error: "upload_aborted" });
+  it("a row that is gone (404 or 410 from bloop) pauses the file, kept for choosing it again", async () => {
+    for (const status of [404, 410]) {
+      const world = makeWorld({ mode: "proxy", partBytes: 100 });
+      world.onPut = (p) => p.reply(status, { text: JSON.stringify({ code: "not_found" }) });
+      await begin(world, 50);
+      expect(fileOf(world)).toMatchObject({ state: "paused", name: "Lecture 5.pptx" });
+    }
+  });
+
+  it("a storage host's 404 is not bloop's word: bloop is asked first, and says the upload is gone", async () => {
+    const world = makeWorld({ partBytes: 100 });
+    world.onPut = (p) => p.reply(404);
+    world.intercept.push((c) =>
+      c.method === "GET" && c.path === "/api/uploads/up1"
+        ? world.json(200, { id: "up1", state: "aborted" })
+        : undefined,
+    );
+    await begin(world, 50);
+    expect(paths(world)).toContain("GET /api/uploads/up1");
+    expect(fileOf(world)).toMatchObject({ state: "paused" });
+    expect(world.puts).toHaveLength(1);
+  });
+
+  it("a storage host's 404 on an upload bloop still holds is retried on a fresh URL", async () => {
+    const world = makeWorld({ partBytes: 100 });
+    let n = 0;
+    world.onPut = (p) => (n++ === 0 ? p.reply(404) : p.ok());
+    await begin(world, 50);
+    await world.advance(1000);
+    expect(paths(world)).toContain("GET /api/uploads/up1");
+    expect(world.puts).toHaveLength(2);
+    expect(world.puts[1]?.url).not.toBe(world.puts[0]?.url);
+    expect(fileOf(world).state).toBe("saved");
   });
 
   it("a part the proxy refuses with a code is that code's refusal, and the rest is cut", async () => {
@@ -369,13 +385,10 @@ describe("direct uploads that cannot reach the storage host", () => {
     expect(world.calls.find((c) => c.path.endsWith("/complete"))?.body).toEqual({});
   });
 
-  it("a part sent through bloop carries the guest's credential, as a raw octet stream", async () => {
-    const world = makeWorld({ kind: "guest", mode: "proxy", partBytes: 100 });
+  it("a part sent through bloop is a raw octet stream, with no credential but the cookie", async () => {
+    const world = makeWorld({ mode: "proxy", partBytes: 100 });
     await begin(world, 50);
-    expect(world.puts[0]?.headers).toEqual({
-      Authorization: "Bearer ref.secret",
-      "Content-Type": "application/octet-stream",
-    });
+    expect(world.puts[0]?.headers).toEqual({ "Content-Type": "application/octet-stream" });
   });
 
   it("does not switch once a direct part has succeeded: errors then retry as usual", async () => {
@@ -562,6 +575,40 @@ describe("the fill and the time left", () => {
     expect(fileOf(world).state).toBe("waiting");
     expect(world.last.etaMs).toBeNull();
   });
+
+  it("starts the estimate afresh after an outage: none until 5 s of new samples", async () => {
+    const world = makeWorld({ mode: "proxy", partBytes: 100_000 });
+    world.onPut = () => {};
+    let down = false;
+    world.intercept.push((c) => (down && c.path.startsWith("/api/uploads/up1") ? NETWORK : undefined));
+    await begin(world, 200_000);
+    const first = world.puts[0] as Put;
+    for (let s = 1; s <= 7; s++) {
+      await world.advance(1000);
+      first.progress(s * 1000);
+    }
+    expect(world.last.etaMs).toBeGreaterThan(0);
+    down = true;
+    world.win.fire("offline");
+    await world.flush();
+    await world.advance(120_000);
+    down = false;
+    world.win.fire("online");
+    await world.flush();
+    expect(fileOf(world).state).toBe("uploading");
+    const second = world.puts.at(-1) as Put;
+    expect(second).not.toBe(first);
+    for (let s = 1; s <= 4; s++) {
+      await world.advance(1000);
+      second.progress(s * 10_000);
+      expect(world.last.etaMs, `sample ${s}`).toBeNull();
+    }
+    for (let s = 5; s <= 9; s++) {
+      await world.advance(1000);
+      second.progress(s * 10_000);
+    }
+    expect(world.last.etaMs).toBeGreaterThan(0);
+  });
 });
 
 describe("complete", () => {
@@ -637,10 +684,10 @@ describe("refusals at the create", () => {
     },
   );
 
-  it("a guest's unknown code is a bad request, and an empty file is never sent", async () => {
-    const world = makeWorld({ kind: "guest" });
+  it("an answer with no code is a bad request, and an empty file is never sent", async () => {
+    const world = makeWorld();
     world.intercept.push((c) =>
-      c.method === "POST" && c.path === "/api/uploads" ? world.problem(400, "made_up") : undefined,
+      c.method === "POST" && c.path === "/api/uploads" ? world.json(400, { status: 400 }) : undefined,
     );
     await begin(world, 50);
     expect(fileOf(world)).toMatchObject({ state: "refused", error: "bad_request" });
@@ -706,7 +753,7 @@ describe("a create answer the engine does not trust", () => {
     await begin(world, 50);
     // The create's URL is dropped, so the part mints its own, which is https.
     expect(world.puts.map((p) => p.url)).toEqual(["https://acct.eu.r2.cloudflarestorage.com/up1/1?sig=1"]);
-    const proxy = makeWorld({ kind: "guest", mode: "proxy", partBytes: 100 });
+    const proxy = makeWorld({ mode: "proxy", partBytes: 100 });
     proxy.intercept.push((c) =>
       c.path === "/api/uploads/up1/urls"
         ? proxy.json(200, { urls: [{ n: 1, url: "https://evil.test/steal" }] })
@@ -793,6 +840,38 @@ describe("cancel", () => {
     expect(world.calls.filter((c) => c.method === "POST" && c.path === "/api/uploads")).toHaveLength(2);
   });
 
+  it("retries the close once when the server could not take it", async () => {
+    const world = makeWorld({ mode: "proxy", partBytes: 100 });
+    world.onPut = () => {};
+    let tries = 0;
+    world.intercept.push((c) =>
+      c.method === "DELETE" && tries++ === 0 ? world.problem(503, "service_busy") : undefined,
+    );
+    const { up, id } = await begin(world, 50);
+    up.cancel(id);
+    await world.flush();
+    expect(paths(world, "DELETE")).toHaveLength(1);
+    await world.advance(1000);
+    expect(paths(world, "DELETE")).toHaveLength(2);
+    expect(fileOf(world).state).toBe("canceled");
+  });
+
+  it("closes once, not twice, when the server answers it, and gives up after the second try", async () => {
+    const answered = makeWorld({ mode: "proxy", partBytes: 100 });
+    answered.onPut = () => {};
+    const first = await begin(answered, 50);
+    first.up.cancel(first.id);
+    await answered.advance(5000);
+    expect(paths(answered, "DELETE")).toHaveLength(1);
+    const dropped = makeWorld({ mode: "proxy", partBytes: 100 });
+    dropped.onPut = () => {};
+    dropped.intercept.push((c) => (c.method === "DELETE" ? NETWORK : undefined));
+    const second = await begin(dropped, 50);
+    second.up.cancel(second.id);
+    await dropped.advance(60_000);
+    expect(paths(dropped, "DELETE")).toHaveLength(2);
+  });
+
   it("is too late once the file is checking", async () => {
     const world = makeWorld();
     let release: () => void = () => {};
@@ -821,17 +900,37 @@ describe("paused rows", () => {
     );
   const row = { id: "up1", name: "Lecture 5.pptx", bytes: 50, done: 1, parts: 3, createdAt: 1 };
 
-  it("lists the library's open uploads as paused on init, and a guest asks for none", async () => {
+  it("lists the library's open uploads as paused on init", async () => {
     const world = makeWorld();
     listing(world, [row]);
     world.start();
     await world.flush();
     expect(world.last.files).toMatchObject([{ state: "paused", name: "Lecture 5.pptx", size: 50, uploadId: "up1" }]);
     expect(world.last.active).toBe(false);
-    const guest = makeWorld({ kind: "guest" });
-    guest.start();
-    await guest.flush();
-    expect(guest.calls).toEqual([]);
+  });
+
+  it("choosing the file again by its raw name resumes: the row holds the name as the server cleaned it", async () => {
+    const world = makeWorld({ done: [1] });
+    listing(world, [{ ...row, name: "Caf\u00e9 Menu.pdf" }]);
+    const up = world.start();
+    await world.flush();
+    up.resume(world.last.files[0].id, world.file(50, "Cafe\u0301   Menu.pdf"));
+    await world.flush();
+    expect(paths(world, "DELETE")).toEqual([]);
+    expect(fileOf(world)).toMatchObject({ state: "saved", uploadId: "up1" });
+  });
+
+  it("a new file whose create names a paused row's upload takes the row's place: it is listed once", async () => {
+    const world = makeWorld();
+    listing(world, [row]);
+    const up = world.start();
+    await world.flush();
+    expect(world.last.files).toHaveLength(1);
+    up.add([world.file(50)]);
+    await world.flush();
+    expect(world.last.files).toHaveLength(1);
+    expect(world.last.files[0]).toMatchObject({ state: "saved", uploadId: "up1" });
+    expect(paths(world, "DELETE")).toEqual([]);
   });
 
   it("choosing the same file again resumes the same upload", async () => {
@@ -1123,18 +1222,12 @@ describe("a request that never answers", () => {
     expect(fileOf(world).state).toBe("waiting");
     offline = false;
     hang = true;
-    vi.useFakeTimers();
-    try {
-      await world.advance(15_000);
-      vi.advanceTimersByTime(29_999);
-      await world.flush();
-      expect(fileOf(world).state).toBe("waiting");
-      hang = false;
-      vi.advanceTimersByTime(1);
-      await world.advance(15_000);
-    } finally {
-      vi.useRealTimers();
-    }
+    await world.advance(15_000);
+    await world.advance(29_999);
+    expect(fileOf(world).state).toBe("waiting");
+    hang = false;
+    await world.advance(1);
+    await world.advance(15_000);
     expect(fileOf(world).state).toBe("saved");
   });
 });
@@ -1252,35 +1345,236 @@ describe("a file the server is still validating", () => {
     expect(fileOf(world)).toMatchObject({ state: "saved" });
   });
 
-  it("gives up by the clock, not a count: checking past 150 s is the service_busy refusal", async () => {
+  it("past 150 s of checking the file is kept, unsettled: never refused, and asked no more", async () => {
     const world = makeWorld({ mode: "proxy", partBytes: 100 });
     const asked = completes(world, () => checkingAnswer(world));
     await begin(world, 50);
     await world.advance(149_000);
     expect(fileOf(world).state).toBe("checking");
     await world.advance(12_000);
-    expect(fileOf(world)).toMatchObject({ state: "refused", error: "service_busy" });
-    expect(asked()).toBeGreaterThan(10);
+    expect(fileOf(world)).toMatchObject({ state: "unsettled", name: "Lecture 5.pptx" });
+    expect(fileOf(world).error).toBeUndefined();
+    expect(world.vibrations).toEqual([]);
+    const count = asked();
+    expect(count).toBeGreaterThan(10);
+    await world.advance(120_000);
+    expect(asked()).toBe(count);
     nothingRead(world);
   });
 
-  it("a claim that never ends is the same clock: the file is not refused before it", async () => {
+  it("a claim that never ends is the same clock: unsettled, not service_busy", async () => {
     const world = makeWorld({ mode: "proxy", partBytes: 100 });
     completes(world, () => world.problem(409, "upload_busy"));
     await begin(world, 50);
     await world.advance(149_000);
     expect(fileOf(world).state).toBe("checking");
     await world.advance(12_000);
-    expect(fileOf(world)).toMatchObject({ state: "refused", error: "service_busy" });
+    expect(fileOf(world)).toMatchObject({ state: "unsettled" });
+    expect(fileOf(world).error).toBeUndefined();
   });
 
-  it("a guest's send waits for the same answer before it is Sent", async () => {
-    const world = makeWorld({ kind: "guest", mode: "proxy", partBytes: 100 });
-    world.state.checking = 1;
+  it("the clock counts only the time spent waiting on a server it could reach: an outage does not run it", async () => {
+    const world = makeWorld({ mode: "proxy", partBytes: 100 });
+    let down = false;
+    completes(world, () => checkingAnswer(world));
+    world.intercept.unshift((c) => (down && c.path.startsWith("/api/uploads/up1") ? NETWORK : undefined));
     await begin(world, 50);
+    await world.advance(60_000);
+    down = true;
+    await world.advance(100_000);
     expect(fileOf(world).state).toBe("checking");
-    await world.advance(2000);
-    expect(fileOf(world)).toMatchObject({ state: "sent", view: { state: "offered" } });
+    down = false;
+    world.win.fire("online");
+    await world.flush();
+    expect(fileOf(world).state).toBe("checking");
+    // 240 s have passed on the wall clock, and under 150 s of them were spent on a reachable server.
+    await world.advance(40_000);
+    expect(fileOf(world).state).toBe("checking");
+    await world.advance(40_000);
+    expect(fileOf(world).state).toBe("unsettled");
+  });
+
+  it("a request that times out counts in full: a complete that hangs is not free time", async () => {
+    const world = makeWorld({ mode: "proxy", partBytes: 100 });
+    completes(world, () => checkingAnswer(world));
+    let hangs = 1;
+    const real = world.deps.fetch;
+    world.deps.fetch = (path: string, init: RequestInit = {}) =>
+      path.endsWith("/complete") && hangs-- > 0
+        ? new Promise<Response>((_, fail) => init.signal?.addEventListener("abort", () => fail(init.signal?.reason)))
+        : real(path, init);
+    await begin(world, 50);
+    await world.advance(145_000);
+    expect(fileOf(world).state).toBe("checking");
+    await world.advance(20_000);
+    expect(fileOf(world).state).toBe("unsettled");
+  });
+
+  it("Check Again repeats complete for another stretch, and a later ready is Saved with the file", async () => {
+    const world = makeWorld({ mode: "proxy", partBytes: 100 });
+    let ready = false;
+    const asked = completes(world, () =>
+      ready ? world.json(200, { state: "ready", file: { id: "f1", status: "ready" } }) : checkingAnswer(world),
+    );
+    const { up, id } = await begin(world, 50);
+    await world.advance(161_000);
+    expect(fileOf(world).state).toBe("unsettled");
+    const before = asked();
+    ready = true;
+    up.recheck(id);
+    await world.flush();
+    expect(asked()).toBe(before + 1);
+    expect(fileOf(world)).toMatchObject({ state: "saved", fileId: "f1" });
+    expect(world.vibrations).toEqual([12]);
+  });
+
+  it("Check Again that still finds it checking runs a fresh 150 s before it is unsettled again", async () => {
+    const world = makeWorld({ mode: "proxy", partBytes: 100 });
+    completes(world, () => checkingAnswer(world));
+    const { up, id } = await begin(world, 50);
+    await world.advance(161_000);
+    expect(fileOf(world).state).toBe("unsettled");
+    up.recheck(id);
+    await world.flush();
+    expect(fileOf(world).state).toBe("checking");
+    await world.advance(100_000);
+    expect(fileOf(world).state).toBe("checking");
+    await world.advance(61_000);
+    expect(fileOf(world).state).toBe("unsettled");
+  });
+
+  it("Check Again that finds a real refusal shows that refusal", async () => {
+    const world = makeWorld({ mode: "proxy", partBytes: 100 });
+    let refused = false;
+    completes(world, () =>
+      refused
+        ? world.json(200, { state: "refused", file: { id: "f1", status: "refused", refusal: "macro_content" } })
+        : checkingAnswer(world),
+    );
+    const { up, id } = await begin(world, 50);
+    await world.advance(161_000);
+    refused = true;
+    up.recheck(id);
+    await world.flush();
+    expect(fileOf(world)).toMatchObject({ state: "refused", error: "macro_content" });
+  });
+
+  it("Check Again does nothing for a file that is not unsettled", async () => {
+    const world = makeWorld({ mode: "proxy", partBytes: 100 });
+    const { up, id } = await begin(world, 50);
+    const before = world.calls.length;
+    up.recheck(id);
+    await world.flush();
+    expect(world.calls).toHaveLength(before);
+  });
+
+  it("an unsettled file stays in the list across the next batch", async () => {
+    const world = makeWorld({ mode: "proxy", partBytes: 100 });
+    completes(world, () => checkingAnswer(world));
+    const { up } = await begin(world, 50);
+    await world.advance(161_000);
+    up.add([world.file(50, "Next.pptx")]);
+    await world.flush();
+    expect(world.last.files.map((f: { state: string; name: string }) => f.name)).toContain("Lecture 5.pptx");
+  });
+});
+
+describe("a 5xx that carries a final code", () => {
+  it("quota_exceeded (a 507) on complete is that refusal at once, never retried as a failing service", async () => {
+    const world = makeWorld({ mode: "proxy", partBytes: 100 });
+    world.intercept.push((c) => (c.path.endsWith("/complete") ? world.problem(507, "quota_exceeded") : undefined));
+    await begin(world, 50);
+    expect(fileOf(world)).toMatchObject({ state: "refused", error: "quota_exceeded" });
+    await world.advance(13_000);
+    expect(paths(world, "POST").filter((p) => p.endsWith("/complete"))).toHaveLength(1);
+  });
+
+  it("quota_exceeded on the create is that refusal at once", async () => {
+    const world = makeWorld();
+    world.intercept.push((c) =>
+      c.method === "POST" && c.path === "/api/uploads" ? world.problem(507, "quota_exceeded") : undefined,
+    );
+    await begin(world, 50);
+    expect(fileOf(world)).toMatchObject({ state: "refused", error: "quota_exceeded" });
+    await world.advance(13_000);
+    expect(paths(world, "POST").filter((p) => p === "POST /api/uploads")).toHaveLength(1);
+  });
+
+  it("quota_exceeded on a part is that refusal at once, and the part is not sent again", async () => {
+    const world = makeWorld({ mode: "proxy", partBytes: 100 });
+    world.onPut = (p) => p.reply(507, { text: JSON.stringify({ code: "quota_exceeded" }) });
+    await begin(world, 50);
+    expect(fileOf(world)).toMatchObject({ state: "refused", error: "quota_exceeded" });
+    await world.advance(13_000);
+    expect(world.puts).toHaveLength(1);
+  });
+
+  it("service_busy and internal are still the failing service: retried, then service_busy", async () => {
+    for (const code of ["service_busy", "internal"]) {
+      const world = makeWorld({ mode: "proxy", partBytes: 100 });
+      world.intercept.push((c) => (c.path.endsWith("/complete") ? world.problem(503, code) : undefined));
+      await begin(world, 50);
+      await world.advance(13_000);
+      expect(fileOf(world)).toMatchObject({ state: "refused", error: "service_busy" });
+      expect(paths(world, "POST").filter((p) => p.endsWith("/complete"))).toHaveLength(4);
+    }
+  });
+});
+
+describe("a 503's Retry-After", () => {
+  it("is waited out when it is longer than the backoff: complete is not asked sooner", async () => {
+    const world = makeWorld({ mode: "proxy", partBytes: 100 });
+    let busy = 1;
+    world.intercept.push((c) =>
+      c.path.endsWith("/complete") && busy-- > 0
+        ? world.problem(503, "service_busy", { "Retry-After": "20" })
+        : undefined,
+    );
+    await begin(world, 50);
+    await world.advance(19_999);
+    expect(paths(world, "POST").filter((p) => p.endsWith("/complete"))).toHaveLength(1);
+    await world.advance(1);
+    expect(fileOf(world).state).toBe("saved");
+  });
+
+  it("never shortens the backoff: a Retry-After of 0 or 1 still waits the 1 s", async () => {
+    const world = makeWorld({ mode: "proxy", partBytes: 100 });
+    let busy = 1;
+    world.intercept.push((c) =>
+      c.path.endsWith("/complete") && busy-- > 0
+        ? world.problem(503, "service_busy", { "Retry-After": "0" })
+        : undefined,
+    );
+    await begin(world, 50);
+    await world.advance(999);
+    expect(fileOf(world).state).toBe("checking");
+    await world.advance(1);
+    expect(fileOf(world).state).toBe("saved");
+  });
+
+  it("is honored on a part's 503 too", async () => {
+    const world = makeWorld({ mode: "proxy", partBytes: 100 });
+    let n = 0;
+    world.onPut = (p) => (n++ === 0 ? p.reply(503, { retryAfter: "20" }) : p.ok());
+    await begin(world, 50);
+    await world.advance(19_999);
+    expect(world.puts).toHaveLength(1);
+    await world.advance(1);
+    expect(world.puts).toHaveLength(2);
+    expect(fileOf(world).state).toBe("saved");
+  });
+
+  it("is capped at two minutes: a longer one is not a wait", async () => {
+    const world = makeWorld({ mode: "proxy", partBytes: 100 });
+    let busy = 1;
+    world.intercept.push((c) =>
+      c.path.endsWith("/complete") && busy-- > 0
+        ? world.problem(503, "service_busy", { "Retry-After": "9999" })
+        : undefined,
+    );
+    await begin(world, 50);
+    await world.advance(120_000);
+    expect(fileOf(world).state).toBe("saved");
   });
 });
 

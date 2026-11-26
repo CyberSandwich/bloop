@@ -1,6 +1,9 @@
 // Just enough of an element for ui.js, loader.js, pill.js and the upload binding to build and touch.
 type Listener = (e?: unknown) => void;
 
+/** The element with the keyboard's focus; document.activeElement reads it. */
+export const focus: { on: FakeNode | null } = { on: null };
+
 export class FakeNode {
   tag: string;
   attrs = new Map<string, string>();
@@ -9,6 +12,7 @@ export class FakeNode {
   listeners = new Map<string, Listener[]>();
   hidden = false;
   removed = false;
+  parent: FakeNode | null = null;
   own = "";
   props = new Map<string, string>();
   // What loader.js writes the fill into.
@@ -41,7 +45,10 @@ export class FakeNode {
         const text = new FakeNode("#text");
         text.own = n;
         this.kids.push(text);
-      } else this.kids.push(n);
+      } else {
+        n.parent = this;
+        this.kids.push(n);
+      }
     }
   }
   replaceChildren(...nodes: (FakeNode | string)[]) {
@@ -62,20 +69,33 @@ export class FakeNode {
   click() {
     for (const fn of this.listeners.get("click") ?? []) fn();
   }
-  // A dialog's.
+  // A dialog's: closing a modal one gives focus back to what had it when it opened, as a browser does, whether or not
+  // focus was inside, and a removed element takes none.
   open = false;
+  opener: FakeNode | null = null;
   showModal() {
     this.open = true;
+    this.opener = focus.on;
   }
   close() {
+    if (!this.open) return;
     this.open = false;
+    const back = this.opener;
+    this.opener = null;
+    if (back && !back.gone) focus.on = back;
+    else if (focus.on && this.contains(focus.on)) focus.on = null;
   }
   remove() {
     this.removed = true;
   }
+  /** Removed itself, or inside something that was. */
+  get gone(): boolean {
+    return this.removed || (this.parent?.gone ?? false);
+  }
   focused = 0;
   focus() {
     this.focused++;
+    focus.on = this;
   }
   contains(other: FakeNode): boolean {
     return this === other || this.kids.some((k) => k.contains(other));

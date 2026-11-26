@@ -15,16 +15,22 @@ const STAMP = 1_700_000_000_000;
 let wrangler: Wrangler;
 /** A second server whose class B cap is below a large file's read budget, so its check stays `checking`. */
 let stuck: Wrangler;
+/** One upload an account may start a day: the second is answered 429, with a Retry-After far beyond a wait. */
+let limited: Wrangler;
+/** One file in a library: the second is answered 409 library_full. */
+let crowded: Wrangler;
 
 beforeAll(async () => {
   const vars = { LIBRARY_MAX_FILE_BYTES: String(512 * MIB), UPLOAD_MODE: "proxy", UPLOAD_PART_BYTES: String(PART) };
-  [wrangler, stuck] = await Promise.all([
+  [wrangler, stuck, limited, crowded] = await Promise.all([
     startPairing(vars, { migrate: true }),
     startPairing({ ...vars, CAP_R2_CLASS_B_MONTH: "3" }, { migrate: true }),
+    startPairing({ ...vars, CAP_UPLOAD_USER_DAY: "1" }, { migrate: true }),
+    startPairing({ ...vars, LIBRARY_MAX_FILES: "1" }, { migrate: true }),
   ]);
-}, 180_000);
+}, 240_000);
 afterAll(async () => {
-  await Promise.all([wrangler?.stop(), stuck?.stop()]);
+  await Promise.all([wrangler?.stop(), stuck?.stop(), limited?.stop(), crowded?.stop()]);
 });
 
 const sha = (value: string) => createHash("sha256").update(value).digest("hex");
@@ -120,7 +126,6 @@ function engine(
   });
   const Xhr = xhrFor(server, cookie, parts);
   const up: ReturnType<typeof createUploader> = createUploader({
-    kind: "library",
     onChange: (b) => {
       const batch = structuredClone(b) as Batch;
       snaps.push(batch);
@@ -254,6 +259,39 @@ describe("the engine against the real routes", () => {
     torn.up.add([new File([validDeck().slice(0, 120) as never], "torn.pptx", { lastModified: STAMP })]);
     expect((await torn.done).files[0]).toMatchObject({ state: "refused", error: "bad_structure" });
     expect(counters(wrangler, "ec-refuse")).toEqual({ used: 0, reserved: 0 });
+  }, 60_000);
+
+  it("a 507 quota_exceeded is that refusal at once: the create is asked once, never retried as a failing service", async () => {
+    const cookie = member(wrangler, "ec-quota");
+    wrangler.d1("UPDATE app_user SET quota_bytes = 10 WHERE id = 'ec-quota'");
+    const run = engine(wrangler, cookie);
+    run.up.add([mp4("big.mp4", 64)]);
+    const last = await run.done;
+    expect(last.files[0]).toMatchObject({ state: "refused", error: "quota_exceeded" });
+    expect(run.requests.filter((r) => r === "POST /api/uploads")).toHaveLength(1);
+    expect(run.parts).toEqual([]);
+    expect(counters(wrangler, "ec-quota")).toEqual({ used: 0, reserved: 0 });
+  }, 60_000);
+
+  it("a 429 whose Retry-After is far off is the rate_limited refusal, and the batch goes on: no wait, no retry loop", async () => {
+    const cookie = member(limited, "ec-rate");
+    const run = engine(limited, cookie);
+    run.up.add([mp4("first.mp4", 64), mp4("second.mp4", 65)]);
+    const last = await run.done;
+    expect(last.files.map((f) => f.state)).toEqual(["saved", "refused"]);
+    expect(last.files[1]).toMatchObject({ error: "rate_limited" });
+    expect(run.requests.filter((r) => r === "POST /api/uploads")).toHaveLength(2);
+  }, 60_000);
+
+  it("a 409 library_full is that refusal, not a claim to wait out: the next file is not held up", async () => {
+    const cookie = member(crowded, "ec-full");
+    const run = engine(crowded, cookie);
+    run.up.add([mp4("first.mp4", 64), mp4("second.mp4", 65)]);
+    const last = await run.done;
+    expect(last.files.map((f) => f.state)).toEqual(["saved", "refused"]);
+    expect(last.files[1]).toMatchObject({ error: "library_full" });
+    expect(run.requests.filter((r) => r === "POST /api/uploads")).toHaveLength(2);
+    expect(counters(crowded, "ec-full")).toEqual({ used: expect.any(Number), reserved: 0 });
   }, 60_000);
 
   it("a complete the server cannot settle yet is repeated, not read: the file stays Checking and is never refused", async () => {
