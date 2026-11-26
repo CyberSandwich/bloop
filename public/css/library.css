@@ -274,6 +274,12 @@ label.lib-tick::before {
 .is-empty .lib-panel {
   flex-direction: column-reverse;
 }
+/* A toast lifted over a sheet is a popover (library.js lift): these drop the popover defaults app.css's .toast keeps. */
+.toast[popover] {
+  top: auto;
+  border: 0;
+  color: inherit;
+}
 /* Just above the panel, whatever it holds: library.js measures it. */
 .page-library {
   --toast-lift: calc(var(--panel, 68px) + 8px);
