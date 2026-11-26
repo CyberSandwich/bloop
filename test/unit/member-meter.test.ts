@@ -33,7 +33,6 @@ describe("AUTH-19 meter: no D1 read before the per-IP meter", () => {
     const routes = await memberRoutes();
     const calls = routes.flatMap((r) => r.methods.map((m) => [r, m] as const));
     expect(calls.map(([r, m]) => `${m} ${r.pattern.pathname}`)).toContain("POST /api/me/disconnect");
-    let read = 0;
     for (const [r, method] of calls) {
       const path = r.pattern.pathname.replace(/:(\w+)/g, "A".repeat(22));
       for (const live of [true, false]) {
@@ -52,13 +51,12 @@ describe("AUTH-19 meter: no D1 read before the per-IP meter", () => {
         await callRoute([r], env, method, path, { cookie: sid(value) }).catch(() => undefined);
         const label = `${method} ${path} ${live ? "live" : "forged"} cookie`;
         const firstRead = seen.findIndex(([name]) => name === "D1");
-        if (firstRead < 0) continue;
-        read++;
+        // Each variant must reach D1, so a route that skips it under one cookie cannot hide behind the others.
+        expect(firstRead, label).toBeGreaterThanOrEqual(0);
         const meter = seen.findIndex(([name]) => name === "RL_MEMBER_IP");
         expect(meter, label).toBeGreaterThanOrEqual(0);
         expect(meter, label).toBeLessThan(firstRead);
       }
     }
-    expect(read).toBeGreaterThanOrEqual(calls.length);
   });
 });

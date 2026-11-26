@@ -1,9 +1,15 @@
 // The spend breaker's mail, end to end: the five-minute job with a tripped guard, G's once-a-day claim, and the
 // release that a failed send triggers.
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { ALERT_MAIL_TRIES, breakerNotify, cronNotify } from "../../src/worker/auth/email.ts";
+import { breakerNotify, cronNotify } from "../../src/worker/auth/email.ts";
 import type { CronJob } from "../../src/worker/cron.ts";
-import type { Alert } from "../../src/worker/spend/breaker.ts";
+import {
+  ALERT_MAIL_TRIES,
+  type Alert,
+  d1SwitchStore,
+  logNotify,
+  resetBreaker,
+} from "../../src/worker/spend/breaker.ts";
 import { testDb } from "./d1-shim.ts";
 import { fakeGuard, T0 } from "./spend-helpers.ts";
 
@@ -34,7 +40,7 @@ function world(vars: Record<string, string> = {}) {
     SPEND_GUARD: ns,
     ...vars,
   };
-  return { env, db, pub, send, sent };
+  return { env, db, global, pub, send, sent };
 }
 
 async function breakerJob(): Promise<CronJob<object, unknown>> {
@@ -71,6 +77,30 @@ describe("COST-14 the five-minute job mails a trip to the admins", () => {
     expect(trips(w.sent)[0]?.text).toContain("Spend alert: trip.");
     await job.run(w.env, undefined, 0);
     expect(trips(w.sent)).toHaveLength(2);
+  });
+
+  it("COST-14 a reset releases the trip's log and mail claims, so a same-day re-trip logs and mails again", async () => {
+    const w = world();
+    w.pub.ledger.record("email", 95, undefined, T0);
+    const job = await breakerJob();
+    await job.run(w.env, undefined, 0);
+    const [trip] = (await w.global.guard.snapshot()).trips;
+    expect(trip).toBeDefined();
+    const store = d1SwitchStore(w.db, Date.now);
+    expect(
+      await resetBreaker({ guard: w.global.guard, store, notify: logNotify }, trip?.switch ?? "email", "owner"),
+    ).toBe(true);
+    const later = T0 + 60_000;
+    vi.setSystemTime(later);
+    w.global.clock.now = later;
+    w.pub.clock.now = later;
+    await job.run(w.env, undefined, 0);
+    const tripLines = vi.mocked(console.log).mock.calls.filter(([line]) => {
+      const parsed = JSON.parse(String(line)) as { evt?: string; kind?: string };
+      return parsed.evt === "breaker" && parsed.kind === "trip";
+    });
+    expect(tripLines).toHaveLength(2);
+    expect(trips(w.sent).filter((m) => m.to === ADMIN)).toHaveLength(2);
   });
 
   it("COST-14 a send no admin received releases the day's claim, so the next run mails the trip", async () => {

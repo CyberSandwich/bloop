@@ -92,52 +92,75 @@ describe("display names: the one rule (passkeys, library names)", () => {
     expect(isDisplayName(char)).toBe(false);
   });
 
-  it("a worst-case 40-code-point name is decided in under 5 ms", () => {
-    const worst = [
-      `${"\u{1F600}\uFE0F\uFE0F".repeat(13)}!`,
-      `${"\u{1F600}\u{1F3FD}\uFE0F".repeat(13)}!`,
-      `${"a\u0301".repeat(19)}a!`,
-      `${"1\u20E3".repeat(19)}1!`,
-      `${"\u{1F469}\u200D".repeat(19)}\u{1F469}!`,
-      `${"\u{1F1E9}".repeat(39)}!`,
-      `${"a\u200C".repeat(19)}a!`,
-      `${"\u2139".repeat(39)}!`,
-      `${"\u2139\uFE0F".repeat(19)}\u2139!`,
-    ];
-    for (const name of worst) {
-      expect([...name].length, name).toBeLessThanOrEqual(40);
-      isDisplayName(name);
+  /**
+   * A regression must fail here, not hang the run: a synchronous regex cannot be interrupted, so the names stay near
+   * 20 code points, where an exponential blowup is still slow enough to see, and the bound is the fastest of 5 runs.
+   */
+  const decidedFast = (name: string, label: string) => {
+    expect([...name].length, label).toBeLessThanOrEqual(21);
+    const times = Array.from({ length: 5 }, () => {
       const start = performance.now();
-      expect(isDisplayName(name)).toBe(false);
-      expect(performance.now() - start, name).toBeLessThan(5);
-    }
-  });
+      expect(isDisplayName(name), label).toBe(false);
+      return performance.now() - start;
+    });
+    expect(Math.min(...times), label).toBeLessThan(50);
+  };
+  /** `unit` repeated to 20 code points, then a refused tail. */
+  const filled = (unit: string) => `${unit.repeat(Math.floor(20 / [...unit].length))}!`;
 
-  it("no code point alone matches two top-level pieces, nor continues an emoji and starts a piece", () => {
-    const pieces = NAME_PIECES.map((p) => new RegExp(`^(?:${p})$`, "u"));
-    const continues = /^(?:\p{Emoji_Modifier}|\uFE0F)$/u;
-    const overlaps: string[] = [];
-    for (let cp = 0; cp <= 0x10ffff; cp++) {
-      if (cp >= 0xd800 && cp <= 0xdfff) continue;
-      const char = String.fromCodePoint(cp);
-      const hits = pieces.filter((re) => re.test(char)).length + (continues.test(char) ? 1 : 0);
-      if (hits > 1) overlaps.push(cp.toString(16));
-    }
-    expect(overlaps).toEqual([]);
-  });
+  it.each([
+    "\u{1F600}\uFE0F\uFE0F",
+    "\u{1F600}\u{1F3FD}\uFE0F",
+    "a\u0301",
+    "1\u20E3",
+    "\u{1F469}\u200D",
+    "\u{1F1E9}",
+    "a\u200C",
+    "ℹ",
+    "ℹ\uFE0F",
+  ])("a worst-case name built from %j is refused fast", (unit) => decidedFast(filled(unit), unit));
 
-  it("each top-level piece, repeated to the limit with a refused tail, is decided in under 5 ms", () => {
+  it("each top-level piece, repeated with a refused tail, is refused fast", () => {
     const samples = ["1\uFE0F\u20E3", "a", "\u0301", "a\u200Ca", "\u{1F1E9}\u{1F1EA}", "\u{1F469}\u200D\u{1F469}"];
     expect(samples).toHaveLength(NAME_PIECES.length);
     NAME_PIECES.forEach((piece, i) => {
       const sample = samples[i] ?? "";
       expect(new RegExp(piece, "u").test(sample), piece).toBe(true);
-      const name = `${sample.repeat(Math.floor((NAME_MAX_CHARS - 1) / [...sample].length))}!`;
-      isDisplayName(name);
-      const start = performance.now();
-      expect(isDisplayName(name)).toBe(false);
-      expect(performance.now() - start, piece).toBeLessThan(5);
+      decidedFast(filled(sample), piece);
     });
+  });
+
+  /**
+   * The invariant: no string splits into top-level pieces two ways. So no code point may start two pieces, checked
+   * with a sticky match just after a letter and before the tails a piece can take (a letter, a keycap tail, a
+   * subdivision flag's tags), except a digit, which starts both a keycap and a word: harmless, since the keycap's
+   * FE0F starts no piece, so the word reading dead-ends. The characters that only continue a piece start none.
+   */
+  it("no string splits two ways: no code point starts two top-level pieces, and continuations start none", () => {
+    const pieces = NAME_PIECES.map((p) => new RegExp(p, "uy"));
+    const starts = (char: string) => {
+      const found = new Set<number>();
+      for (const s of [`a${char}a`, `a${char}\uFE0F\u20E3`, `a${char}\u{E0067}\u{E0062}\u{E007F}`])
+        pieces.forEach((re, i) => {
+          re.lastIndex = 1;
+          if (re.test(s)) found.add(i);
+        });
+      return [...found].sort();
+    };
+    const [KEYCAP, WORD, , ZWNJ] = [0, 1, 2, 3];
+    const overlaps: string[] = [];
+    for (let cp = 0; cp <= 0x10ffff; cp++) {
+      if (cp >= 0xd800 && cp <= 0xdfff) continue;
+      const char = String.fromCodePoint(cp);
+      const found = starts(char);
+      const digit = /^[0-9]$/.test(char) && found.join() === [KEYCAP, WORD].join();
+      if (found.length > 1 && !digit) overlaps.push(cp.toString(16));
+    }
+    expect(overlaps).toEqual([]);
+    const continuations = ["\u200D", "\uFE0F", "\u{1F3FB}", "\u{1F3FF}"];
+    for (let cp = 0xe0030; cp <= 0xe007f; cp++) continuations.push(String.fromCodePoint(cp));
+    for (const char of continuations) expect(starts(char), char.codePointAt(0)?.toString(16)).toEqual([]);
+    expect(starts("\u200C")).toEqual([ZWNJ]);
   });
 
   it("the schema stores the NFC, trimmed form", () => {
