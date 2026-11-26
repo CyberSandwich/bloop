@@ -520,6 +520,9 @@ func readJSON(dir, name string, v any) error {
 	if err := dec.Decode(v); err != nil {
 		return invalid("%s: %v", name, err)
 	}
+	if _, err := dec.Token(); err != io.EOF { // anything after the object, whitespace aside
+		return invalid("%s: trailing data after the object", name)
+	}
 	return nil
 }
 

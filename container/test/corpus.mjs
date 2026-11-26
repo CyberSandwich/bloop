@@ -14,6 +14,7 @@ import {
   casePdfActive,
   caseTimeoutAndCaps,
   caseUploadContract,
+  caseVideoRate,
   expectRefusal,
 } from "./cases.mjs";
 import { check, failures, GEN, timings } from "./lib.mjs";
@@ -76,6 +77,7 @@ async function main() {
   await caseOneCpuTiming("deck-300.pptx", 300);
   await casePdfActive();
   await caseMedia();
+  await caseVideoRate();
   for (const f of ["macro.odp", "macro.odt", "macro.ods"]) {
     await caseMacro(join(GEN, f), f.split(".")[1]);
     macroProof(join(GEN, f));

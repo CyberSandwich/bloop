@@ -1,30 +1,27 @@
 // A shared CI runner's speed varies by 25 percent or more, so no corpus check may pass or fail on elapsed
-// time. Timings are recorded to the job summary (`timings`); the properties asserted are that a job finishes
-// under its stage timeout and that its outputs validate.
+// time. runJob hands checks a result with no timing; timings are recorded to the job summary (`timings`) and
+// the properties asserted are that a job finishes under its stage timeout and that its outputs validate.
 import assert from "node:assert/strict";
-import { readdirSync, readFileSync } from "node:fs";
-import { join } from "node:path";
+import { readFileSync } from "node:fs";
 import { test } from "node:test";
-import { fileURLToPath } from "node:url";
+import { recordTiming, splitTiming, timingOf } from "./result.mjs";
 
-const dir = fileURLToPath(new URL(".", import.meta.url));
-const corpusFiles = readdirSync(dir).filter((f) => /^(cases|corpus|lib|macros)\.mjs$/.test(f));
-
-test("no corpus check compares elapsed time", () => {
-  assert.ok(corpusFiles.length === 4, `found ${corpusFiles}`);
-  const offenders = [];
-  for (const f of corpusFiles) {
-    readFileSync(join(dir, f), "utf8")
-      .split("\n")
-      .forEach((line, i) => {
-        if (/\bcheck\(/.test(line) && /(\.ms\b|stageDurations|stageAt|Date\.now\(\))/.test(line))
-          offenders.push(`${f}:${i + 1}`);
-      });
-  }
-  assert.deepEqual(offenders, [], "a check() compares wall-clock time; record it with timings.push instead");
+test("a job result carries no timing, and the timing is still reachable on its own", () => {
+  const raw = { status: { state: "done" }, ms: 1234, early: null, stageAt: { convert: 5 }, files: {}, manifest: null };
+  const { result, timing } = splitTiming(raw);
+  for (const key of ["ms", "stageAt"]) assert.ok(!(key in result), `result has ${key}`);
+  assert.deepEqual(Object.keys(result).sort(), ["early", "files", "manifest", "status"]);
+  assert.equal(recordTiming(result, timing), result);
+  assert.deepEqual(timingOf(result), { ms: 1234, stageAt: { convert: 5 } });
+  assert.equal(timingOf({}), undefined);
 });
 
-test("the guard catches a check on elapsed time", () => {
-  const line = "check(r.ms < 5000, 'fast enough');";
-  assert.ok(/\bcheck\(/.test(line) && /(\.ms\b|stageDurations|stageAt|Date\.now\(\))/.test(line));
+test("runJob builds its result through splitTiming", () => {
+  const lib = readFileSync(new URL("./lib.mjs", import.meta.url), "utf8");
+  const runJob = lib.slice(
+    lib.indexOf("export async function runJob"),
+    lib.indexOf("export function expectDeckOutputs"),
+  );
+  assert.match(runJob, /splitTiming\(/);
+  assert.doesNotMatch(runJob, /out\.(ms|stageAt)\b/);
 });

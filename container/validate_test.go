@@ -110,6 +110,12 @@ func TestValidateWholeJobRefusals(t *testing.T) {
 		"CONV-04 outputs meta sha": func(t *testing.T, dir string) {
 			put(t, dir, "meta.json", mustJSON(t, metaJSON{V: 1, SHA256: "short", Kind: kindDeck, FontsMissing: []string{}}))
 		},
+		"CONV-04 outputs meta trailing object": func(t *testing.T, dir string) {
+			put(t, dir, "meta.json", []byte(`{"v":1,"sha256":"`+hex64+`","kind":"deck","fontsMissing":[]}{"v":2}`))
+		},
+		"CONV-04 outputs meta trailing garbage": func(t *testing.T, dir string) {
+			put(t, dir, "meta.json", []byte(`{"v":1,"sha256":"`+hex64+`","kind":"deck","fontsMissing":[]} x`))
+		},
 		"CONV-04 outputs meta unknown key": func(t *testing.T, dir string) {
 			put(t, dir, "meta.json", []byte(`{"v":1,"sha256":"`+hex64+`","kind":"deck","fontsMissing":[],"extra":1}`))
 		},
