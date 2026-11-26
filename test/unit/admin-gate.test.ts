@@ -99,6 +99,43 @@ describe("AUTH-16 admin: the role comes only from ADMIN_EMAILS", () => {
       }
     }
   });
+
+  it("AUTH-16 admin: FF a foreign Origin, a cross-site fetch or a non-JSON body still gets not_found from a non-admin", async () => {
+    const world = memberWorld();
+    const member = await seedMember(world.db, "m1", "member@example.test");
+    const admin = await seedMember(world.db, "a1", ADMIN);
+    const routes = await routesOf("admin", "adminRoutes");
+    const writes = routes.flatMap((r) => r.methods.filter((m) => m !== "GET").map((m) => [r, m] as const));
+    expect(writes.length).toBeGreaterThan(0);
+    const odd: Record<string, string>[] = [
+      { Origin: "https://evil.example", "Content-Type": "application/json" },
+      { Origin: ORIGIN, "Sec-Fetch-Site": "cross-site", "Content-Type": "application/json" },
+      { Origin: ORIGIN, "Content-Type": "text/plain" },
+      { "Content-Type": "application/json" },
+    ];
+    const send = (r: (typeof routes)[number], method: string, headers: Record<string, string>, cookie?: string) => {
+      const url = `${ORIGIN}${r.pattern.pathname.replace(/:(\w+)/g, "x")}`;
+      const request = new Request(url, {
+        method,
+        headers: { ...headers, ...(cookie ? { Cookie: sid(cookie) } : {}) },
+        body: "{not json",
+      });
+      return r.handler(request, world.env, r.pattern.exec(url) as URLPatternResult, {});
+    };
+    for (const [r, method] of writes) {
+      for (const headers of odd) {
+        for (const who of [member, undefined]) {
+          const res = await send(r, method, headers, who);
+          expect(res.status, `${method} ${r.pattern.pathname} ${JSON.stringify(headers)} ${who ?? "signed out"}`).toBe(
+            404,
+          );
+          expect(await res.json()).toMatchObject({ code: "not_found" });
+        }
+        // An admin still gets the write checks' own answers.
+        expect((await send(r, method, headers, admin)).status).not.toBe(404);
+      }
+    }
+  });
 });
 
 describe("AUTH-16 passkey: A+R accepts only a UV passkey proof from a passkey at least a day old", () => {

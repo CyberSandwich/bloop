@@ -83,8 +83,11 @@ function bucketOf(input: IssueInput): { where: string; params: unknown[] } {
 }
 
 /**
- * Supersede and insert as one batch, both guarded by the bucket counts, so a full bucket writes nothing and answers
- * `limited`. Two parallel requests can both pass at the edge (one over, at worst); RL_CODE bounds that.
+ * TRANSITIONAL(a-4): the code and invite routes are the first callers.
+ *
+ * Supersede and insert as one batch, both guarded by the bucket counts. D1 runs batches one at a time and the INSERT
+ * carries its own count guard, so the check and the insert are atomic: a full bucket writes nothing and answers
+ * `limited`, however many requests race.
  */
 export async function issueCode(
   db: BatchDb,
@@ -172,7 +175,8 @@ export interface CodeRow {
 /**
  * Spends one attempt (guarded, so the 6th guess never reaches the compare), then compares the MAC, then marks the code
  * used (guarded, so a code works once even when two right guesses race). Null for every failure, which the route answers
- * as `code_invalid` and nothing more. `userId` pins reauth and email_change codes to the session's user.
+ * as `code_invalid` and nothing more. `userId` pins reauth and email_change codes to the session's user, and is
+ * required for them: a call without it is a programming error and throws. TRANSITIONAL(a-4): the verify route calls it.
  */
 export async function verifyCode(
   db: Db,
@@ -180,6 +184,9 @@ export async function verifyCode(
   input: { id: string; purpose: CodePurpose; code: string; userId?: string },
   now: number = Date.now(),
 ): Promise<CodeRow | null> {
+  if ((input.purpose === "reauth" || input.purpose === "email_change") && input.userId === undefined) {
+    throw new RangeError(`${input.purpose} verification needs userId`);
+  }
   const pinned = input.userId === undefined ? "" : " AND user_id = ?";
   const row = await db
     .prepare(
@@ -221,20 +228,40 @@ export async function verifyCode(
   };
 }
 
-const deviceMac = (pepper: string, userId: string, nonce: string): Promise<string> =>
-  hmacHex(pepper, `dev|${userId}|${nonce}`);
+/**
+ * The member's device epoch is in the MAC, so a bump (sign out everywhere, a passkey or email change, a deletion
+ * request) refuses every device value issued before it, on every device. TRANSITIONAL(F): the epoch needs
+ * `app_user.device_epoch INTEGER NOT NULL DEFAULT 0`; until that column exists callers pass 0 and nothing bumps it.
+ */
+const deviceMac = (pepper: string, userId: string, epoch: number, nonce: string): Promise<string> =>
+  hmacHex(pepper, `dev|${userId}|${epoch}|${nonce}`);
 
-/** The `__Host-bloop_dev` value: a fresh 128-bit nonce per device and its MAC for this member, so no table is needed. */
-export async function newDeviceValue(pepper: string, userId: string): Promise<string> {
+/**
+ * TRANSITIONAL(a-4): code verify sets it.
+ *
+ * The `__Host-bloop_dev` value: a fresh 128-bit nonce per device and its MAC for this member and epoch, so no table
+ * is needed.
+ */
+export async function newDeviceValue(pepper: string, userId: string, epoch: number): Promise<string> {
   const nonce = base64url(randomBytes(16));
-  return `${nonce}.${await deviceMac(pepper, userId, nonce)}`;
+  return `${nonce}.${await deviceMac(pepper, userId, epoch, nonce)}`;
 }
 
 const DEVICE = /^([A-Za-z0-9_-]{22})\.([0-9a-f]{64})$/;
 
-/** Whether a known-device value was issued to this member; false for a missing, malformed or forged one. */
-export async function isKnown(value: string | null, pepper: string, userId: string | null): Promise<boolean> {
+/**
+ * TRANSITIONAL(a-4): the code request reads it.
+ *
+ * Whether a known-device value was issued to this member at this epoch; false for a missing, malformed or forged one,
+ * or one issued before the epoch moved.
+ */
+export async function isKnown(
+  value: string | null,
+  pepper: string,
+  userId: string | null,
+  epoch: number,
+): Promise<boolean> {
   const m = value && userId ? DEVICE.exec(value) : null;
   if (!m || !userId) return false;
-  return safeEqual(await deviceMac(pepper, userId, m[1] as string), m[2] as string);
+  return safeEqual(await deviceMac(pepper, userId, epoch, m[1] as string), m[2] as string);
 }

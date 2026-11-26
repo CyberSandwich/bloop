@@ -86,7 +86,8 @@ async function matchRoute(
     const response = await r.handler(request, env, match, ctx);
     return { response, policy: policyOf(response, r.policy) };
   }
-  if (refused) {
+  // The admin surface never confirms a path exists: a wrong method there gets the 404 an unknown path gets (ADR 0014).
+  if (refused && !url.pathname.startsWith("/api/admin/")) {
     return {
       response: problem(405, "method_not_allowed", { Allow: [...refused.allow].join(", ") }),
       policy: refused.policy,

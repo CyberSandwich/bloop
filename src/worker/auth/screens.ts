@@ -1,5 +1,5 @@
-// What a session end asks of the live layer (plan A section 1, L's contract). The whole-account end goes through
-// live-screens.ts, L's seam; ending one session's screens or a file's screens do nothing until L lands.
+// What a session end asks of the live layer, the library's UserLibrary object (ADR 0015). The whole-account screen end
+// goes through live-screens.ts, the library's seam.
 import { isLocalOrigin } from "../config.ts";
 import type { Env } from "../env.ts";
 import { endLiveScreens } from "../live-screens.ts";
@@ -13,37 +13,59 @@ export interface ScreenScope {
 
 /** Ends the member's live screens: all of them, or the scope named. */
 export async function endScreens(env: Env, userId: string, scope: ScreenScope = {}): Promise<void> {
+  // TRANSITIONAL(a-4): a scoped end (one session's or one file's screens) does nothing until a-4 calls the library's
+  // UserLibrary.endScreens(scope).
   if (scope.bySession === undefined && scope.fileId === undefined) await endLiveScreens(env, userId);
 }
 
-/** The slice of L's UserLibrary (plan-l 3.2) a session end calls: it closes the sockets tagged `s:<publicId>`. */
+/** The slice of the library's UserLibrary a session end calls: it closes the sockets tagged `s:<publicId>`. */
 interface LibrarySessions {
-  closeSession(publicId: string): Promise<void>;
+  closeSessions(publicIds: string[]): Promise<void>;
 }
 
+type LibraryEnv = Pick<Env, "USER_LIBRARY" | "PUBLIC_ORIGIN">;
+
 /**
- * Closes the library sockets of a session that ended, on the member's UserLibrary (idFromName(userId), eu). Best
- * effort: the D1 row is already gone, so a socket that stays open fails its next cookie check and closes at 12 h.
- * Replace the namespace lookup with stubs.ts `userLibraryStub` once L adds it.
+ * TRANSITIONAL(L): false until the library stream's UserLibrary.closeSessions is on main. While false no object is
+ * woken (each wake is billed) and nothing is logged; set it true the day it lands.
  */
-export async function closeSession(
-  env: Pick<Env, "USER_LIBRARY" | "PUBLIC_ORIGIN">,
-  userId: string,
-  publicId: string,
-): Promise<void> {
-  const ns = isLocalOrigin(env.PUBLIC_ORIGIN) ? env.USER_LIBRARY : env.USER_LIBRARY.jurisdiction("eu");
-  const stub = ns.get(ns.idFromName(userId)) as unknown as LibrarySessions;
-  try {
-    await stub.closeSession(publicId);
-  } catch {
-    console.log(JSON.stringify({ evt: "library", kind: "close_session_failed" }));
-  }
-}
+export const LIBRARY_CLOSES_SESSIONS = false;
+
+/**
+ * Closes the library sockets of ended sessions in one call on the member's UserLibrary (idFromName(userId), eu).
+ * Best effort: the D1 rows are already gone, so a socket left open fails its next cookie check.
+ */
+export const librarySessions =
+  (enabled: boolean) =>
+  async (env: LibraryEnv, userId: string, publicIds: readonly string[]): Promise<void> => {
+    if (!enabled || publicIds.length === 0) return;
+    try {
+      const ns = isLocalOrigin(env.PUBLIC_ORIGIN) ? env.USER_LIBRARY : env.USER_LIBRARY.jurisdiction("eu");
+      const stub = ns.get(ns.idFromName(userId)) as unknown as LibrarySessions;
+      await stub.closeSessions([...publicIds]);
+    } catch {
+      console.log(JSON.stringify({ evt: "library", kind: "close_sessions_failed" }));
+    }
+  };
+
+export const closeSessions = librarySessions(LIBRARY_CLOSES_SESSIONS);
 
 /** The live-layer calls a route makes, injected so a test can watch them. */
 export interface ScreenDeps {
   endScreens: typeof endScreens;
-  closeSession: typeof closeSession;
+  closeSessions: typeof closeSessions;
 }
 
-export const screenDeps: ScreenDeps = { endScreens, closeSession };
+export const screenDeps: ScreenDeps = { endScreens, closeSessions };
+
+/** Every session end: the screens the ended sessions started (or all of the member's), then their library sockets. */
+export async function endSessions(
+  deps: ScreenDeps,
+  env: Env,
+  userId: string,
+  publicIds: readonly string[],
+  scope: ScreenScope = {},
+): Promise<void> {
+  await deps.endScreens(env, userId, scope);
+  await deps.closeSessions(env, userId, publicIds);
+}

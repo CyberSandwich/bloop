@@ -1,4 +1,4 @@
-// Who a request is, for every member route (plan A.4 labels): C, C(d), C+R, A and A+R. One JOIN read of session and
+// Who a request is, for every member route (the ADR 0014 labels): C, C(d), C+R, A and A+R. One JOIN read of session and
 // user, then the gates; a refused session is treated exactly as signed out.
 import type { Config } from "../config.ts";
 import { fail } from "../http.ts";
@@ -90,7 +90,7 @@ export const requireAdmin = (member: Member): Response | null => (member.admin ?
 /**
  * A+R in one call: admin, a fresh proof, and that proof a passkey assertion (`passkey:<credentialId>`, written only
  * after a UV-checked assertion) by a passkey of this member registered at least a day ago. An email code never
- * counts (NIST 800-63B-4 3.1.3.1).
+ * counts (NIST 800-63B-4 3.1.3.1). TRANSITIONAL(a-8): the admin A+R routes are the first callers.
  */
 export async function requireStepUp(
   member: Member,
