@@ -83,6 +83,9 @@ const FORMS = [
   "/%2Fopen/",
   "/%5Copen/",
   "/a/../open/",
+  "/open.html",
+  "/Open.html",
+  "/open/404",
 ];
 
 describe("MODE-01 pages: /open is 404 in both modes", () => {
