@@ -1,0 +1,81 @@
+// Calls to the container's job server: a timeout on every request, one retry for a GET (workerd#7597), and a body
+// that is always consumed or handed on. Faults here are the attempt's, not the file's.
+import { OUTPUT_CAPS } from "./contract.ts";
+import { collect, type Piece, type PieceCtx, pieceGuard } from "./outputs.ts";
+import type { ContainerPort } from "./port.ts";
+
+/** The container or its transport failed; `code` is the retry code to fail the attempt with. */
+export class ContainerFault extends Error {
+  constructor(
+    readonly code: "interrupted" | "store_failed" | "output_invalid",
+    message: string,
+  ) {
+    super(message);
+  }
+}
+
+export const SHORT_CALL_MS = 10_000;
+export const FILE_CALL_MS = 60_000;
+
+export interface CallInit {
+  body?: RequestInit["body"];
+  headers?: Record<string, string>;
+  timeoutMs?: number;
+}
+
+export class Courier {
+  constructor(private readonly port: ContainerPort) {}
+
+  async call(method: "GET" | "PUT" | "POST", path: string, init: CallInit = {}): Promise<Response> {
+    const once = () =>
+      this.port.fetch(path, {
+        method,
+        ...(init.body !== undefined ? { body: init.body } : {}),
+        ...(init.headers ? { headers: init.headers } : {}),
+        signal: AbortSignal.timeout(init.timeoutMs ?? SHORT_CALL_MS),
+      });
+    const unreachable = (e: unknown) =>
+      new ContainerFault("interrupted", `${path}: ${e instanceof Error ? e.message : "unreachable"}`);
+    try {
+      return await once();
+    } catch (e) {
+      if (method !== "GET") throw unreachable(e);
+      try {
+        return await once();
+      } catch (e2) {
+        throw unreachable(e2);
+      }
+    }
+  }
+
+  /** Reads and drops a body, so a pooled connection stays usable. */
+  drain(res: Response): Promise<string> {
+    return res.text().catch(() => "");
+  }
+
+  async getJson(path: string): Promise<unknown> {
+    const res = await this.call("GET", path);
+    const text = await this.drain(res);
+    if (!res.ok) throw new ContainerFault("interrupted", `${path}: ${res.status}`);
+    try {
+      return JSON.parse(text);
+    } catch {
+      throw new ContainerFault("interrupted", `${path}: not json`);
+    }
+  }
+
+  /** One output file's body, through the guard that checks its size, hash and shape as it streams. */
+  async pieceBody(path: string, piece: Piece, ctx: PieceCtx): Promise<ReadableStream<Uint8Array>> {
+    const res = await this.call("GET", `/out/${path}`, { timeoutMs: FILE_CALL_MS });
+    if (!res.ok || !res.body) {
+      await this.drain(res);
+      throw new ContainerFault("store_failed", `${path}: ${res.status}`);
+    }
+    return res.body.pipeThrough(pieceGuard(path, piece, ctx));
+  }
+
+  /** A small file (JSON), read whole. */
+  async readPiece(path: string, piece: Piece, ctx: PieceCtx = {}): Promise<Uint8Array> {
+    return collect(await this.pieceBody(path, piece, ctx), OUTPUT_CAPS.json);
+  }
+}

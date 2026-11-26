@@ -3,6 +3,8 @@
 import { dbOf } from "./auth/db.ts";
 import { cronNotify } from "./auth/email.ts";
 import type { Config } from "./config.ts";
+import { convertDepsFor } from "./convert/deps.ts";
+import { sweepConversions } from "./convert/sweep.ts";
 import { CRON, type CronJob, type CronTrigger } from "./cron.ts";
 import type { Env } from "./env.ts";
 import { runLibraryRetention } from "./library/retention.ts";
@@ -40,7 +42,18 @@ const libraryJob = (daily: boolean): CronJob<Env, Config> => ({
 });
 
 export const JOBS: Readonly<Record<CronTrigger, readonly CronJob<Env, Config>[]>> = {
-  [CRON.fiveMinutes]: [spendBreakerJob()],
+  [CRON.fiveMinutes]: [
+    spendBreakerJob(),
+    {
+      name: "convert_sweep",
+      run: async (env) => {
+        const swept = await sweepConversions(convertDepsFor(env));
+        if (swept.lost + swept.expired + swept.rearmed > 0)
+          console.log(JSON.stringify({ evt: "convert_sweep", ...swept }));
+        return { more: false };
+      },
+    },
+  ],
   [CRON.hourly]: [
     {
       name: "guest_files",
