@@ -322,6 +322,33 @@ export async function overview(db: Db, userId: string, defaultQuota: number): Pr
   };
 }
 
+export interface OpenUpload {
+  uploadId: string;
+  fileId: string;
+  name: string;
+  bytes: number;
+  createdAt: number;
+}
+
+/** The uploads still open, so a reloaded page shows a row for each (U's `saved` refetches the file's own row). */
+export async function openUploads(db: Db, userId: string, now: number): Promise<OpenUpload[]> {
+  const { results } = await db
+    .prepare(
+      `SELECT id, file_id, name, bytes, created_at FROM upload
+       WHERE user_id = ?1 AND owner_kind = 'library' AND completed_at IS NULL AND aborted_at IS NULL AND expires_at > ?2
+       ORDER BY created_at, id`,
+    )
+    .bind(userId, now)
+    .all<{ id: string; file_id: string; name: string; bytes: number; created_at: number }>();
+  return results.map((r) => ({
+    uploadId: r.id,
+    fileId: r.file_id,
+    name: r.name,
+    bytes: r.bytes,
+    createdAt: r.created_at,
+  }));
+}
+
 export type Change = "ok" | "not_found" | "bad_request" | "up_next_full";
 
 const OWNED = "user_id = ?1 AND id = ?2 AND status != 'purged'";

@@ -4,20 +4,27 @@
 // A socket's close needs no handler work: the runtime answers a Close itself.
 import { DurableObject } from "cloudflare:workers";
 import type { Env } from "../env.ts";
+import { purgeDueFiles } from "../library/purge.ts";
+import { purgeDepsFor } from "../library/wiring.ts";
 import {
   allProgress,
   clearProgress,
   dropScreens,
+  EXPORT_LEASE,
+  EXPORT_LEASE_MS,
   endScreenRow,
   idemGet,
   idemPut,
+  leaseHeld,
   liveScreens,
   type Progress,
   prune,
   putScreen,
   recordProgress,
+  releaseLease,
   rowsLeft,
   type ScreenRow,
+  takeLease,
 } from "./user-library-rules.ts";
 import { initUserLibraryStorage } from "./user-library-schema.ts";
 
@@ -29,6 +36,10 @@ const CLOSE_REPLACED = 4000;
 const CLOSE_SESSION_ENDED = 4001;
 const SOCKET_MAX_AGE_MS = 12 * 3_600_000;
 const SWEEP_MS = 3_600_000;
+/** While due files remain, the next purge round runs this soon. */
+const PURGE_ROUND_MS = 30_000;
+const PURGE_ROUNDS_PER_ALARM = 5;
+const USER_KEY = "uid";
 
 interface Attachment {
   /** The phone session's public id the socket was opened for. */
@@ -69,9 +80,14 @@ export class UserLibrary extends DurableObject<Env> {
     await this.arm();
   }
 
-  /** Page 1 is stored: the tile can show it before the rest. */
-  async pageReady(id: string, thumb: string): Promise<void> {
-    this.broadcast({ t: "first", id, thumb });
+  /** What the list answers for a file still preparing, for a page that polls because its socket is blocked. */
+  async currentProgress(): Promise<Progress[]> {
+    return allProgress(this.ctx.storage.sql);
+  }
+
+  /** Page 1 is stored: the page refetches the row, so its tile can show slide 1 before the rest. */
+  async pageReady(id: string): Promise<void> {
+    this.broadcast({ t: "first", id });
   }
 
   async derivedReady(id: string, version: number): Promise<void> {
@@ -131,6 +147,29 @@ export class UserLibrary extends DurableObject<Env> {
     await this.arm();
   }
 
+  // ---- Export lease and purge ----------------------------------------------------------------
+
+  /** One export at a time: true when `holder` took the 2-hour lease. */
+  async exportBegin(holder: string): Promise<boolean> {
+    const taken = takeLease(this.ctx.storage.sql, EXPORT_LEASE, holder, Date.now(), EXPORT_LEASE_MS);
+    await this.arm();
+    return taken;
+  }
+
+  async exportEnd(holder: string): Promise<void> {
+    releaseLease(this.ctx.storage.sql, EXPORT_LEASE, holder);
+  }
+
+  async exportActive(): Promise<boolean> {
+    return leaseHeld(this.ctx.storage.sql, EXPORT_LEASE, Date.now());
+  }
+
+  /** Delete Now or Empty Trash made files due: purge them now, and keep going in rounds while more are due. */
+  async kickPurge(userId: string): Promise<void> {
+    this.ctx.storage.kv.put(USER_KEY, userId);
+    await this.ctx.storage.setAlarm(Date.now());
+  }
+
   override async alarm(): Promise<void> {
     const now = Date.now();
     for (const ws of this.ctx.getWebSockets()) {
@@ -138,17 +177,30 @@ export class UserLibrary extends DurableObject<Env> {
       if (!att || now - att.at >= SOCKET_MAX_AGE_MS) ws.close(CLOSE_REPLACED, "refresh");
     }
     prune(this.ctx.storage.sql, now);
+    const more = await this.purgeRound();
     await this.ctx.storage.deleteAlarm();
-    await this.arm();
+    await this.arm(more ? [Date.now() + PURGE_ROUND_MS] : []);
   }
 
-  /** One alarm at the next need, or none: a socket's age limit, or the next sweep while ephemeral rows are left. */
-  private async arm(): Promise<void> {
+  /** The user's due files, a few R2 rounds at a time. True when more are due. */
+  private async purgeRound(): Promise<boolean> {
+    const userId = this.ctx.storage.kv.get<string>(USER_KEY);
+    if (!userId) return false;
+    const sql = this.ctx.storage.sql;
+    const deps = { ...purgeDepsFor(this.env), exporting: async () => leaseHeld(sql, EXPORT_LEASE, Date.now()) };
+    const report = await purgeDueFiles(this.env, { userId, budget: { rounds: PURGE_ROUNDS_PER_ALARM } }, deps);
+    if (report.freed.length > 0) this.broadcast({ t: "quota" });
+    return report.more;
+  }
+
+  /** One alarm at the next need, or none: a socket's age limit, the next sweep while ephemeral rows are left, `extra`. */
+  private async arm(extra: number[] = []): Promise<void> {
     const now = Date.now();
     const times = this.ctx.getWebSockets().flatMap((ws) => {
       const att = ws.deserializeAttachment() as Attachment | null;
       return att ? [att.at + SOCKET_MAX_AGE_MS] : [];
     });
+    times.push(...extra);
     if (rowsLeft(this.ctx.storage.sql)) times.push(now + SWEEP_MS);
     const current = await this.ctx.storage.getAlarm();
     if (times.length === 0) {

@@ -9,7 +9,11 @@ How a signed-in user's files are stored, listed, changed and served. The decisio
 | store | `src/worker/library/store.ts` | every `library_file` read and write, the serving predicate |
 | names | `src/worker/library/names.ts` | the rename rule |
 | preview tokens | `src/worker/library/preview.ts` | mint and verify `/p/` tokens |
-| user object | `src/worker/do/user-library.ts` | progress, the page socket, live screens, the export lease |
+| purge | `src/worker/library/purge.ts` | due files, in two passes |
+| answers | `src/worker/library/wire.ts` | a row and the list answer as the page reads them |
+| member | `src/worker/library/member.ts` | the session's member (label C) |
+| routes | `src/worker/routes/library.ts` | `/api/library*` |
+| user object | `src/worker/do/user-library.ts` | progress, the page socket, live screens, the export lease, the purge alarm |
 | its rows | `src/worker/do/user-library-rules.ts`, `src/worker/do/user-library-schema.ts` | the row logic and the storage shape |
 
 ## 2. The store
@@ -39,4 +43,31 @@ One per user, `idFromName(userId)` in the EU jurisdiction, reached only with a u
 
 - **Schema.** Version 1 is never edited. On every wake each table's columns are compared with the shipped shape; a table of another shape is dropped and recreated, and `user_library_schema_repaired` is logged once.
 - **Socket.** A page opens one hibernating WebSocket, tagged with its phone session's public id; at most 6 are open and the oldest is closed with 4000. The runtime answers pings itself. The object sends `hello` with the current progress, then `progress` frames (at most one a second per file, plus every stage change), `first` when page 1 is stored, `ready` or `failed`, and `quota` when a purge freed bytes. A client's frames are ignored.
-- **Alarm.** One alarm at the next need: a socket's 12-hour age limit, or an hourly sweep while any ephemeral row is left. The object sets no timer and holds no un-awaited promise, so it hibernates between frames.
+- **Alarm.** One alarm at the next need: a socket's 12-hour age limit, an hourly sweep while any ephemeral row is left, or the next purge round. The object sets no timer and holds no un-awaited promise, so it hibernates between frames.
+- **Export lease.** `exportBegin` takes a 2-hour lease or answers false; `exportEnd` frees it; `exportActive` is what the purge asks.
+
+## 5. Purge
+
+`purgeDueFiles` takes up to 50 rows with `purge_after <= now`, skipping suspended and purging owners and any owner whose export lease is live. Per file, by pass:
+- **Pass 1** (status not yet `purged`): stop the conversion, empty the prefix `u/<uid>/<fid>/` by listing it in rounds of 1,000, then one batch releases the owner's bytes (guarded by the row still being due and its status being `checking` or `ready`, so a refused file, whose bytes went at refusal, frees nothing) and marks the row `purged` with a later due time (31 minutes).
+- **Pass 2** (status `purged`, due again): empty the prefix once more, which catches a put that was already awaiting during pass 1, then delete the `derived` rows and the row.
+- A run has a budget of listing rounds; when it runs out the file stays due and the next run continues. A crash at any delete leaves the row over a part-emptied prefix, which the next run finishes; bytes are released once, whoever runs.
+
+Delete Now and Empty Trash make rows due and call `kickPurge`, whose alarm runs the user's rounds 30 seconds apart while more are due and pushes `quota` to open pages when bytes were freed.
+
+## 6. Routes
+
+All under `/api/library`, all for a member session (label C, ADR 0014) that the launch lockout admits; a request without one, from a suspended member or from a locked-out one gets the signed-out answer, and a member in the deletion grace gets `account_deleting` with the date. Each spends `RL_LIBRARY` keyed by the user and answers `no-store`.
+
+| method, path | body | answer |
+|---|---|---|
+| GET `/api/library?view&sort&cursor` | | the list: `files`, `next`, open `uploads`, `upNext`, `quota`, `trash`, `limits`, `switches`, `account`; a strong `ETag`, 304 on `If-None-Match` |
+| PATCH `/:id` | `{name}` or `{selected}`, never both | the row |
+| PUT `/up-next` | `{ids}`, at most 12 | `{upNext}`, the order that resulted |
+| POST `/:id/trash` | `{}` | `{file, leftScreens}`: the labels of live screens showing it |
+| POST `/:id/restore` | `{}` | the row; `not_found` once it is due or within 5 minutes of it |
+| POST `/trash/delete` | `{ids}` (at most 150) or `{all: true}` | 202 `{due}` |
+| POST `/:id/preview` | `{asset}` | `{base, exp}`; `file_disabled` for a disabled file; `service_busy` while previews are off |
+| GET `/ws` | an Upgrade from our own Origin | 101; the socket of section 4 |
+
+A thumbnail link in a row is a bundle token whose expiry lands on a 150 s boundary, so the list answer, and its ETag, holds still between refreshes. A row names only what is true of it: null fields are left out.

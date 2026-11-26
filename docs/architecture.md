@@ -339,7 +339,8 @@ test/
 | GET | `/api/dev/mailbox` | none; only when `DEV_MAILBOX` is set | planned (A): local and test harness only |
 | POST, PUT, GET, DELETE | `/api/uploads/*` | session, or Bearer pid for a guest | planned (U): multipart create, part URLs, part done, complete, resume; `PUT /api/drop` is removed when it lands |
 | any | `/api/dev/r2/*` | none; local only | planned (U): the proxy-mode bucket stand-in |
-| GET, POST, PATCH, DELETE | `/api/library*`, `/api/me/screens*`, `/api/me/export.zip` | session | planned (L): list, rename, trash, restore, preview link, socket, export |
+| GET, PUT, PATCH, POST | `/api/library*` | member session (C), `RL_LIBRARY` per user | list, rename, tick, Up Next order, trash, restore, Delete Now, preview link, socket: [library.md](library.md) section 5 |
+| GET, DELETE, POST | `/api/library/sample`, `/api/me/screens*`, `/api/me/export.zip` | session | planned (L): the sample deck, live screens, the export |
 | GET, POST | `/api/match`, `/api/notes`; `/api/claim`, `/api/files`, `/api/approve` extended | Bearer pid, session | planned (P1): the match pick, speaker notes, the library source |
 | GET | `/f/`, `/b/`, `/p/` on the file origin | the token | planned (P1): session links, bundles, owner previews |
 
