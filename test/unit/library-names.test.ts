@@ -1,8 +1,8 @@
 import { describe, expect, it } from "vitest";
-import { isValidName, NAME_MAX } from "../../public/js/shared/name-rule.js";
+import { isValidName, NAME_MAX } from "../../src/shared/name-rule.ts";
 import { renamed } from "../../src/worker/library/names.ts";
 
-describe("a name's length is counted in code points (shared/name-rule.js)", () => {
+describe("a name's length is counted in code points (src/shared/name-rule.ts)", () => {
   it("accepts 200 of them even when that is 400 UTF-16 units, and refuses the 201st", () => {
     const stem = "😀".repeat(NAME_MAX - ".pdf".length);
     expect(renamed(stem, "pdf")).toBe(`${stem}.pdf`);
