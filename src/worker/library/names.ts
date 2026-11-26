@@ -3,10 +3,20 @@
 
 export const MAX_NAME_CHARS = 200;
 
-/** C0 and C1 controls, the line and paragraph separators, bidi overrides and isolates, and both slashes. */
+/**
+ * C0 and C1 controls, the line and paragraph separators, every bidi control (overrides, isolates and the invisible
+ * LRM, RLM and ALM marks), the invisible zero-width space, word joiner and byte-order mark, and both slashes. The joiner
+ * and non-joiner stay: emoji sequences and several scripts need them.
+ */
 const refused = (c: number): boolean =>
   c <= 0x1f ||
   (c >= 0x7f && c <= 0x9f) ||
+  c === 0x061c ||
+  c === 0x200b ||
+  c === 0x200e ||
+  c === 0x200f ||
+  c === 0x2060 ||
+  c === 0xfeff ||
   c === 0x2028 ||
   c === 0x2029 ||
   (c >= 0x202a && c <= 0x202e) ||

@@ -25,23 +25,39 @@ interface Source {
 
 export const holdKey = (holdId: string): string => `h/${holdId}`;
 
-async function sourcesOf(db: ReturnType<typeof libDbOf>, target: HoldTarget): Promise<Source[]> {
+/** `absent` are named ids with no readable source: a purged or unknown file. */
+async function sourcesOf(
+  db: ReturnType<typeof libDbOf>,
+  target: HoldTarget,
+): Promise<{ sources: Source[]; absent: string[] }> {
   if ("fileIds" in target) {
     const found: Source[] = [];
+    const absent: string[] = [];
     for (const id of target.fileIds) {
       const lib = await db
         .prepare("SELECT id, user_id, r2_key, sha256 FROM library_file WHERE id = ?1 AND status != 'purged'")
         .bind(id)
-        .first<{ id: string; user_id: string; r2_key: string; sha256: string | null }>();
+        .first<{
+          id: string;
+          user_id: string;
+          r2_key: string;
+          sha256: string | null;
+        }>();
       if (lib) {
-        found.push({ fileId: lib.id, ownerId: lib.user_id, bucket: "library", key: lib.r2_key, sha256: lib.sha256 });
+        found.push({
+          fileId: lib.id,
+          ownerId: lib.user_id,
+          bucket: "library",
+          key: lib.r2_key,
+          sha256: lib.sha256,
+        });
         continue;
       }
       const guest = await db
         .prepare("SELECT session_id, r2_key, sha256 FROM guest_file WHERE session_id = ?1 AND deleted_at IS NULL")
         .bind(id)
         .first<{ session_id: string; r2_key: string; sha256: string }>();
-      if (guest)
+      if (guest) {
         found.push({
           fileId: guest.session_id,
           ownerId: null,
@@ -49,8 +65,11 @@ async function sourcesOf(db: ReturnType<typeof libDbOf>, target: HoldTarget): Pr
           key: guest.r2_key,
           sha256: guest.sha256,
         });
+      } else {
+        absent.push(id);
+      }
     }
-    return found;
+    return { sources: found, absent };
   }
   const { results } = await db
     .prepare(
@@ -58,8 +77,22 @@ async function sourcesOf(db: ReturnType<typeof libDbOf>, target: HoldTarget): Pr
          AND status != 'purged' ORDER BY created_at, id`,
     )
     .bind(target.userId, target.from, target.to)
-    .all<{ id: string; user_id: string; r2_key: string; sha256: string | null }>();
-  return results.map((r) => ({ fileId: r.id, ownerId: r.user_id, bucket: "library", key: r.r2_key, sha256: r.sha256 }));
+    .all<{
+      id: string;
+      user_id: string;
+      r2_key: string;
+      sha256: string | null;
+    }>();
+  return {
+    sources: results.map((r) => ({
+      fileId: r.id,
+      ownerId: r.user_id,
+      bucket: "library",
+      key: r.r2_key,
+      sha256: r.sha256,
+    })),
+    absent: [],
+  };
 }
 
 export interface HoldReport {
@@ -85,8 +118,20 @@ export async function holdFiles(
     library: bucketOf(env.LIBRARY),
     guest: bucketOf(env.GUEST_FILES),
   };
-  const sources = await sourcesOf(db, options.target);
+  const { sources, absent } = await sourcesOf(db, options.target);
   const report: HoldReport = { held: [], missing: [], more: false };
+  // A file already purged stays held when its copy was made; any other named id is reported, never dropped.
+  for (const id of absent) {
+    const existing = await db
+      .prepare("SELECT id FROM hold WHERE file_id = ?1 AND report_id = ?2")
+      .bind(id, options.reportId)
+      .first<{ id: string }>();
+    if (existing && (await buckets.library.head(holdKey(existing.id)))) {
+      report.held.push({ fileId: id, holdId: existing.id });
+    } else {
+      report.missing.push(id);
+    }
+  }
   let copies = 0;
   for (const source of sources) {
     const existing = await db

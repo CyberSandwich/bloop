@@ -36,6 +36,8 @@ import { initUserLibraryStorage } from "./user-library-schema.ts";
 const PING = '{"v":1,"t":"ping"}';
 const PONG = '{"v":1,"t":"pong"}';
 const MAX_SOCKETS = 6;
+/** `readyState` of an open socket; the Workers runtime has no `WebSocket.OPEN`. */
+const READY_OPEN = 1;
 /** Closed by a newer socket, or at its age limit: the client reconnects and the route checks the cookie again. */
 const CLOSE_REPLACED = 4000;
 const CLOSE_SESSION_ENDED = 4001;
@@ -56,7 +58,13 @@ export class UserLibrary extends DurableObject<Env> {
   constructor(ctx: DurableObjectState, env: Env) {
     super(ctx, env);
     const repaired = initUserLibraryStorage(ctx.storage.sql, ctx.storage.kv);
-    if (repaired.length > 0) console.warn(JSON.stringify({ evt: "user_library_schema_repaired", tables: repaired }));
+    if (repaired.length > 0)
+      console.warn(
+        JSON.stringify({
+          evt: "user_library_schema_repaired",
+          tables: repaired,
+        }),
+      );
     ctx.setWebSocketAutoResponse(new WebSocketRequestResponsePair(PING, PONG));
   }
 
@@ -64,12 +72,20 @@ export class UserLibrary extends DurableObject<Env> {
   override async fetch(request: Request): Promise<Response> {
     const session = request.headers.get("X-Session-Public");
     if (request.headers.get("Upgrade") !== "websocket" || !session) return new Response(null, { status: 426 });
-    const open = this.ctx.getWebSockets();
+    const open = this.openSockets();
     if (open.length >= MAX_SOCKETS) this.oldest(open)?.close(CLOSE_REPLACED, "replaced");
     const [client, server] = Object.values(new WebSocketPair()) as [WebSocket, WebSocket];
     this.ctx.acceptWebSocket(server, [`s:${session}`]);
-    server.serializeAttachment({ s: session, at: Date.now() } satisfies Attachment);
-    server.send(JSON.stringify({ t: "hello", progress: allProgress(this.ctx.storage.sql) }));
+    server.serializeAttachment({
+      s: session,
+      at: Date.now(),
+    } satisfies Attachment);
+    server.send(
+      JSON.stringify({
+        t: "hello",
+        progress: allProgress(this.ctx.storage.sql),
+      }),
+    );
     await this.arm();
     return new Response(null, { status: 101, webSocket: client });
   }
@@ -156,6 +172,7 @@ export class UserLibrary extends DurableObject<Env> {
   /** Account purge: every socket closes, then the storage and its alarm go. */
   async purge(): Promise<void> {
     for (const ws of this.ctx.getWebSockets()) ws.close(CLOSE_SESSION_ENDED, "account erased");
+    await this.ctx.storage.deleteAlarm();
     await this.ctx.storage.deleteAll();
   }
 
@@ -215,7 +232,10 @@ export class UserLibrary extends DurableObject<Env> {
     const userId = this.ctx.storage.kv.get<string>(USER_KEY);
     if (!userId) return false;
     const sql = this.ctx.storage.sql;
-    const deps = { ...purgeDepsFor(this.env), exporting: async () => leaseHeld(sql, EXPORT_LEASE, Date.now()) };
+    const deps = {
+      ...purgeDepsFor(this.env),
+      exporting: async () => leaseHeld(sql, EXPORT_LEASE, Date.now()),
+    };
     const report = await purgeDueFiles(this.env, { userId, budget: { rounds: PURGE_ROUNDS_PER_ALARM } }, deps);
     if (report.freed.length > 0) this.broadcast({ t: "quota" });
     return report.more;
@@ -224,7 +244,7 @@ export class UserLibrary extends DurableObject<Env> {
   /** One alarm at the next need, or none: a socket's age limit, the next sweep while ephemeral rows are left, `extra`. */
   private async arm(extra: number[] = []): Promise<void> {
     const now = Date.now();
-    const times = this.ctx.getWebSockets().flatMap((ws) => {
+    const times = this.openSockets().flatMap((ws) => {
       const att = ws.deserializeAttachment() as Attachment | null;
       return att ? [att.at + SOCKET_MAX_AGE_MS] : [];
     });
@@ -237,6 +257,11 @@ export class UserLibrary extends DurableObject<Env> {
     }
     const next = Math.max(Math.min(...times), now + 1000);
     if (current === null || current > next) await this.ctx.storage.setAlarm(next);
+  }
+
+  /** A closed socket can stay listed until the runtime lets go of it: only open ones count toward the cap and the alarm. */
+  private openSockets(): WebSocket[] {
+    return this.ctx.getWebSockets().filter((ws) => ws.readyState === READY_OPEN);
   }
 
   private oldest(sockets: WebSocket[]): WebSocket | undefined {

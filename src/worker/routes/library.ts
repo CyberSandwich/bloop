@@ -60,11 +60,22 @@ const deleteBody = z.union([
 ]);
 const previewBody = z.strictObject({ asset: z.enum(["bundle", "original"]) });
 
+/**
+ * Where preview links point: the file origin, which keeps a served file out of the app's own origin (LIB-05). Without one
+ * no link is minted; only the test harness may fall back to the app's origin.
+ */
+const fileBase = (config: Config): string | null =>
+  config.library.fileOrigin ?? (config.testTiming ? config.origin : null);
+
 /** A thumbnail's token expires on a 150 s boundary, so the list answer (and its ETag) holds still between refreshes. */
 const TOKEN_STEP_MS = 150_000;
 
 /** Until the spend guard's registry is wired, every switch reads as on. */
-const allOn = async (): Promise<Switches> => ({ uploads: "on", previews: "on", export: "on" });
+const allOn = async (): Promise<Switches> => ({
+  uploads: "on",
+  previews: "on",
+  export: "on",
+});
 
 export const defaultDeps: LibraryDeps = {
   resolve: (request, env, config, now) => resolveMember(request, env, config, now),
@@ -110,10 +121,12 @@ export function makeLibraryRoutes(deps: LibraryDeps): readonly Route[] {
   /** A thumbnail link once slides exist: a bundle token, so the browser may load it in an img. */
   async function thumbFor(ctx: Ctx, row: FileRow): Promise<string | null> {
     const key = ctx.config.secrets.fileTokenKey;
-    if (!key || row.derived.state !== "ready") return null;
+    const base = fileBase(ctx.config);
+    if (!key || !base || row.derived.state !== "ready" || row.trashedAt !== null || row.disabled) return null;
+    if ((await deps.switches(ctx.env)).previews !== "on") return null;
     const exp = (Math.floor(ctx.now / TOKEN_STEP_MS) + 2) * TOKEN_STEP_MS;
     const { token } = await mintPreview(key, { f: row.id, v: row.version, a: "bundle" }, ctx.now, exp - ctx.now);
-    return `${ctx.config.library.fileOrigin ?? ctx.config.origin}/p/${token}/t.webp`;
+    return `${base}/p/${token}/t.webp`;
   }
 
   const wireOf = async (
@@ -162,7 +175,7 @@ export function makeLibraryRoutes(deps: LibraryDeps): readonly Route[] {
     const changed =
       "name" in parsed.value
         ? await rename(db, userId, id, parsed.value.name)
-        : await setSelected(db, userId, id, parsed.value.selected);
+        : await setSelected(db, userId, id, parsed.value.selected, ctx.now);
     if (changed !== "ok") return fail(changed);
     const row = await fileRow(db, userId, id);
     return row ? json(await wireOf(ctx, row)) : fail("not_found");
@@ -171,7 +184,9 @@ export function makeLibraryRoutes(deps: LibraryDeps): readonly Route[] {
   const putUpNext: Handler = async (ctx) => {
     const parsed = await readJson(ctx.request, upNextBody);
     if (!parsed.ok) return parsed.response;
-    return json({ upNext: await setUpNext(libDbOf(ctx.env.DB), ctx.member.userId, parsed.value.ids, ctx.now) });
+    return json({
+      upNext: await setUpNext(libDbOf(ctx.env.DB), ctx.member.userId, parsed.value.ids, ctx.now),
+    });
   };
 
   const moveToTrash: Handler = async (ctx, match) => {
@@ -215,7 +230,8 @@ export function makeLibraryRoutes(deps: LibraryDeps): readonly Route[] {
     if (!parsed.ok) return parsed.response;
     const { userId, sessionPublicId } = ctx.member;
     const key = ctx.config.secrets.fileTokenKey;
-    if (!key || (await deps.switches(ctx.env)).previews !== "on") return fail("service_busy");
+    const base = fileBase(ctx.config);
+    if (!key || !base || (await deps.switches(ctx.env)).previews !== "on") return fail("service_busy");
     const db = libDbOf(ctx.env.DB);
     const row = await fileRow(db, userId, fileId(match));
     if (!row || row.trashedAt !== null) return fail("not_found");
@@ -225,7 +241,7 @@ export function makeLibraryRoutes(deps: LibraryDeps): readonly Route[] {
       return fail("not_found");
     }
     const { token, exp } = await mintPreview(key, { f: row.id, v: row.version, a: parsed.value.asset }, ctx.now);
-    return json({ base: `${ctx.config.library.fileOrigin ?? ctx.config.origin}/p/${token}`, exp });
+    return json({ base: `${base}/p/${token}`, exp });
   };
 
   /** The user's live screens: what the account page shows beside each Sign Out. Nothing internal leaves. */
@@ -254,7 +270,10 @@ export function makeLibraryRoutes(deps: LibraryDeps): readonly Route[] {
 
   const socket: Handler = async (ctx) => {
     if (ctx.request.headers.get("Upgrade")?.toLowerCase() !== "websocket") return fail("bad_request");
-    const headers = new Headers({ Upgrade: "websocket", "X-Session-Public": ctx.member.sessionPublicId });
+    const headers = new Headers({
+      Upgrade: "websocket",
+      "X-Session-Public": ctx.member.sessionPublicId,
+    });
     return userLibraryStub(ctx.env, ctx.member.userId).fetch(new Request(ctx.request.url, { headers }));
   };
 
