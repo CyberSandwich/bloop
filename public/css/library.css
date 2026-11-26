@@ -260,7 +260,7 @@ label.lib-tick::before {
 .is-empty .lib-up,
 .is-empty .lib-files > :not(.lib-trash-link),
 .page-library:not(.has-up) .lib-up,
-.is-trash :is(.lib-up, .lib-files, .lib-empty, .lib-panel, .lib-bar),
+.is-trash :is(.lib-up, .lib-files, .lib > .lib-empty, .lib-panel, .lib-bar),
 :is(.is-deleting, .is-failed) :is(.lib-up, .lib-files, .lib-empty, .lib-panel, .lib-quota, .lib-bar) {
   display: none;
 }
