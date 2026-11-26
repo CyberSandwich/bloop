@@ -254,6 +254,7 @@ html:has(.page-site) {
     /* One 3.15em band per 5em tile: under 2em of ink between, so the next band enters before the last leaves.
        Moving one tile is the first frame again: no seam. */
     .sheen {
+      /* The text fill is clear over the clipped band until the hero holds focus, when it eases to ink. */
       background:
         linear-gradient(
           100deg,
@@ -268,6 +269,7 @@ html:has(.page-site) {
       background-clip: text;
       color: transparent;
       animation: sweep 2s linear 0.3s infinite backwards;
+      transition: color 0.3s var(--ease-out);
     }
     /* sheen-follow.js sets --sheen-x, a fraction of the 5em tile, while the pointer is over the h1. */
     .sheen.is-following {
@@ -512,18 +514,15 @@ h3 {
     animation: drift 40s ease-in-out infinite alternate;
   }
 }
-/* Off screen, hidden tab, or the sheen on hover or focus (2.2.2): after every animated rule, which it outranks. */
+/* Off screen or hidden tab: instant, nobody sees it. After every animated rule, which it outranks. */
 .is-paused,
-.is-paused::before,
-.hero:focus-within .sheen {
+.is-paused::before {
   animation-play-state: paused;
 }
-/* A tap would leave :hover on, so only a pointer that hovers pauses it. Until sheen-follow.js loads, or if it
-   fails, this is the whole hover behavior; once it follows, the band has no animation to pause. */
-@media (hover: hover) {
-  .hero h1:hover .sheen {
-    animation-play-state: paused;
-  }
+/* Focus in the hero (2.2.2): the band fades out as it stops, so a frozen band is never seen. */
+.hero:focus-within .sheen {
+  color: var(--ink);
+  animation-play-state: paused;
 }
 @keyframes drift {
   from {

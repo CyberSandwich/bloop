@@ -41,51 +41,51 @@ export function follow() {
   let on = false;
   let em = 1;
   let target = 0;
-  let shown = 0;
+  // The band's place in tiles, unwrapped so an ease takes the shorter way round.
+  let cur = 0;
   let last = 0;
-  let offset = 0;
   let frame = 0;
-  /** @type {Animation | null} */
-  let ramp = null;
+  /** @type {Animation | undefined} */
+  let ramp;
 
   const measure = () => {
     em = parseFloat(getComputedStyle(el).fontSize);
   };
+  // Any number of tiles is a valid position: the background repeats.
+  const show = () => el.style.setProperty("--sheen-x", `${cur}`);
   // The box is read here, once a frame and only while the band moves, so a scroll or a reflow never leaves it stale.
-  const place = () => {
-    const r = el.getBoundingClientRect();
-    offset = offsetAt(shown - r.left, r.width, em);
-    el.style.setProperty("--sheen-x", `${offset}`);
-  };
   /** @param {number} now */
   const step = (now) => {
-    shown = easeTo(shown, target, now - last);
+    const r = el.getBoundingClientRect();
+    const d = offsetAt(target - r.left, r.width, em) - cur;
+    const gap = d - Math.round(d);
+    cur = easeTo(cur, cur + gap, now - last);
     last = now;
     // Under half a pixel it lands, and nothing runs until the pointer moves again.
-    if (Math.abs(target - shown) < 0.5) shown = target;
-    place();
-    frame = shown === target ? 0 : requestAnimationFrame(step);
+    const landed = Math.abs(gap) * TILE_EM * em < 0.5;
+    if (landed) cur += gap;
+    show();
+    frame = landed ? 0 : requestAnimationFrame(step);
   };
 
   h1.addEventListener("pointermove", (/** @type {PointerEvent} */ e) => {
     if (e.pointerType === "touch") return;
     target = e.clientX;
-    if (on) {
-      if (!frame) {
-        last = performance.now();
-        frame = requestAnimationFrame(step);
-      }
-      return;
+    if (!on) {
+      // Focus in the hero keeps its pause (2.2.2).
+      if (h1.closest(".hero")?.matches(":focus-within")) return;
+      ramp?.cancel();
+      on = true;
+      measure();
+      // The band eases from where the sweep has it to the pointer, so entry has no jump.
+      cur = parseFloat(getComputedStyle(el).backgroundPosition) / em / TILE_EM;
+      el.classList.add("is-following");
+      show();
     }
-    // Focus in the hero keeps its pause (2.2.2).
-    if (h1.closest(".hero")?.matches(":focus-within")) return;
-    ramp?.cancel();
-    ramp = null;
-    on = true;
-    shown = target;
-    measure();
-    el.classList.add("is-following");
-    place();
+    if (!frame) {
+      last = performance.now();
+      frame = requestAnimationFrame(step);
+    }
   });
 
   h1.addEventListener("pointerleave", () => {
@@ -93,18 +93,17 @@ export function follow() {
     on = false;
     cancelAnimationFrame(frame);
     frame = 0;
-    const to = offset + EASE_TILES;
+    const to = cur + EASE_TILES;
     const ease = el.animate(
-      { backgroundPosition: [`${offset * TILE_EM}em 0`, `${to * TILE_EM}em 0`] },
+      { backgroundPosition: [`${cur * TILE_EM}em 0`, `${to * TILE_EM}em 0`] },
       // t squared: speed climbs linearly from rest to the sweep's own.
-      { duration: EASE_MS, easing: "cubic-bezier(.33, 0, .67, .33)", fill: "forwards" },
+      { duration: EASE_MS, easing: "cubic-bezier(.33,0,.67,.33)", fill: "forwards" },
     );
     ramp = ease;
     ease.onfinish = () => {
       el.style.animationDelay = `${-timeAt(to - Math.floor(to))}ms`;
       el.classList.remove("is-following");
       ease.cancel();
-      ramp = null;
     };
   });
 
