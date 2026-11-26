@@ -46,7 +46,7 @@ bloop runs on Cloudflare Workers. Its database (D1), your Library and Guest File
 
 ## Your Files {#files}
 
-- **Uploads** go straight to storage in the EU over HTTPS, in parts that resume if your connection drops. Each upload link is for one part of one file, and expires after 15 minutes.
+- **Uploads** go to storage in the EU over HTTPS, in parts that resume if your connection drops. A part goes through bloop's own server, or straight to storage on a link made for that one part, which expires after 5 minutes.
 - **Checks.** Every file is checked by its bytes, not its name, once it arrives. Files with macros, ActiveX, embedded programs, scripts in a PDF or links to outside content are refused, and a file is never stored as a type other than the one its bytes prove.
 - **Conversion.** To show a file in the browser, bloop converts it in an isolated virtual machine with no internet access, destroyed after each job, with a time limit at every step; macros never run. Each output is checked before it is stored.
 - **Separate address.** Files reach a Screen from a separate bloop address that sets no cookies and runs no scripts of its own, so a file cannot reach your sign-in.

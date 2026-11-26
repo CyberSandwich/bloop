@@ -1,6 +1,7 @@
 // The conversion container's job contract as the Worker reads it. container/README.md owns it; a drift test
 // (test/unit/convert-contract.test.ts) fails when the two differ. Pure: no Workers types.
 import { z } from "zod";
+import { MAX_PIXELS } from "../seams/guest-drop/image.ts";
 
 export const KINDS = ["deck", "doc", "sheet", "pdf", "video", "image"] as const;
 export type Kind = (typeof KINDS)[number];
@@ -146,7 +147,7 @@ export const metaSchema = z.strictObject({
     .optional(),
   image: z
     .strictObject({ w: z.number().int().positive(), h: z.number().int().positive() })
-    .refine((i) => i.w * i.h <= 1e8)
+    .refine((i) => i.w * i.h <= MAX_PIXELS)
     .optional(),
 });
 export type Meta = z.infer<typeof metaSchema>;
