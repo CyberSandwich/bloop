@@ -167,13 +167,14 @@ describe("one file", () => {
     expect(heard()).toBe("Saved");
     const act = pillNode()?.byClass("up-act") as FakeNode;
     expect(act.textContent).toBe("Add to Up Next");
-    expect(act.getAttribute("aria-label")).toBe("Add Lecture 5.pptx to Up Next");
+    expect(act.getAttribute("aria-label")).toBe("Add to Up Next: Lecture 5.pptx");
     vi.advanceTimersByTime(7_999);
     expect(pillNode()?.removed).toBe(false);
     act.click();
     await vi.advanceTimersByTimeAsync(0);
     expect(upNext).toHaveBeenCalledWith("f1");
     expect(title()).toBe("Lecture 5.pptx · Added");
+    expect(heard()).toBe("Lecture 5.pptx Added to Up Next");
     expect(pillNode()?.byClass("up-act")).toBeUndefined();
     await vi.advanceTimersByTimeAsync(2200);
     expect(livePills()).toEqual([]);
@@ -199,7 +200,7 @@ describe("one file", () => {
     expect(toasts).toEqual([]);
     const again = pillNode()?.byClass("up-act") as FakeNode;
     expect(again.textContent).toBe("Check Again");
-    expect(again.getAttribute("aria-label")).toBe("Check Lecture 5.pptx again");
+    expect(again.getAttribute("aria-label")).toBe("Check Again: Lecture 5.pptx");
     vi.advanceTimersByTime(120_000);
     expect(livePills()).toHaveLength(1);
     again.click();
@@ -279,6 +280,7 @@ describe("several files", () => {
     emit(batch(saved));
     expect(title()).toBe("3 Files · Saved");
     expect(heard()).toBe("3 Files Saved");
+    expect(pillNode()?.byClass("up-press")?.getAttribute("aria-label")).toBe("3 Files Saved");
     emit(
       batch([saved[0] as Snap, saved[1] as Snap, file({ id: 3, name: "c.exe", state: "refused", error: "bad_type" })]),
     );
@@ -883,7 +885,7 @@ describe("every pill and toast state is one line", () => {
       pillNode()
         ?.byClass("up-slot")
         ?.kids.map((k) => k.getAttribute("aria-label")),
-    ).toEqual([`Add ${NAME} to Up Next`]);
+    ).toEqual([`Add to Up Next: ${NAME}`]);
     emit(batch(three, { total: 300, loaded: 140, fraction: 0.42 }));
     expect(oneLine()).toBe("3 Files · 42%");
     emit(batch(three.map((f) => ({ ...f, state: "saved", loaded: f.size, fraction: 1 }))));
