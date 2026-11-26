@@ -317,16 +317,17 @@ test.describe("library", () => {
 
   test("Download never replaces the library, even when the file shows inline", async ({ page, context }) => {
     await signedIn(context, members.preview);
-    // A link the browser shows rather than saves, as an inline PDF on the file host would be.
+    // A page on another origin, as the file host is, which the browser shows rather than saves: there `download` is
+    // ignored, as it is for an inline PDF on FILE_ORIGIN.
     await page.route(
       (url) => url.pathname.endsWith("/preview"),
-      (route) => route.fulfill({ json: { base: "/privacy", exp: Date.now() + 300_000 } }),
+      (route) => route.fulfill({ json: { base: "http://127.0.0.1:8787/privacy", exp: Date.now() + 300_000 } }),
     );
     await page.goto("/library");
     await page.getByRole("button", { name: "More for Reading list.pdf" }).click();
-    const opened = context.waitForEvent("page");
     await page.getByRole("dialog").getByRole("button", { name: "Download" }).click();
-    await opened;
-    await expect(page).toHaveURL(/\/library$/);
+    await page.waitForTimeout(1500);
+    await expect(page).toHaveURL(/localhost:8787\/library$/);
+    expect(context.pages()).toHaveLength(2);
   });
 });
