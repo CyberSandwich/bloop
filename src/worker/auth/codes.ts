@@ -94,6 +94,43 @@ export async function issueCode(
   ttlSeconds: number,
   now: number = Date.now(),
 ): Promise<Issued> {
+  return (await issue(db, pepper, input, ttlSeconds, now, null)) as Issued;
+}
+
+/**
+ * An invite code, inserted only while the invite still holds `tokenHash`: a reissue between the accept's lookup and
+ * this insert leaves no live code for the old link (the reissue's own supersede covers every later order). Null when
+ * the invite no longer holds that hash.
+ */
+export async function issueInviteCode(
+  db: BatchDb,
+  pepper: string,
+  input: { emailNorm: string; inviteId: string; tokenHash: string },
+  ttlSeconds: number,
+  now: number = Date.now(),
+): Promise<Issued | null> {
+  const guard = {
+    sql: "EXISTS (SELECT 1 FROM invite WHERE id = ? AND token_hash = ?)",
+    params: [input.inviteId, input.tokenHash],
+  };
+  return issue(
+    db,
+    pepper,
+    { purpose: "invite", emailNorm: input.emailNorm, inviteId: input.inviteId },
+    ttlSeconds,
+    now,
+    guard,
+  );
+}
+
+async function issue(
+  db: BatchDb,
+  pepper: string,
+  input: IssueInput,
+  ttlSeconds: number,
+  now: number,
+  guard: { sql: string; params: unknown[] } | null,
+): Promise<Issued | null> {
   const bucket = bucketOf(input);
   const windows = LIMITS[input.purpose];
   const below = windows
@@ -115,7 +152,7 @@ export async function issueCode(
     db
       .prepare(
         `INSERT INTO email_code (id, email_norm, purpose, known, user_id, invite_id, new_email_norm, code_mac, created_at,
-           expires_at) SELECT ?, ?, ?, ?, ?, ?, ?, ?, ?, ? WHERE ${below}`,
+           expires_at) SELECT ?, ?, ?, ?, ?, ?, ?, ?, ?, ? WHERE ${below}${guard ? ` AND ${guard.sql}` : ""}`,
       )
       .bind(
         id,
@@ -129,9 +166,20 @@ export async function issueCode(
         now,
         expiresAt,
         ...belowParams,
+        ...(guard?.params ?? []),
       ),
   ]);
   if (inserted?.meta.changes === 1) return { limited: false, challengeId: id, code, expiresAt };
+  if (
+    guard &&
+    !(
+      await db
+        .prepare(`SELECT ${guard.sql} AS held`)
+        .bind(...guard.params)
+        .first<{ held: number }>()
+    )?.held
+  )
+    return null;
   return { limited: true, retryAfterSeconds: await retryAfter(db, bucket, windows, now) };
 }
 
@@ -253,10 +301,13 @@ export async function newDeviceValue(pepper: string, userId: string, epoch: numb
 }
 
 const DEVICE = /^([A-Za-z0-9_-]{22})\.([0-9a-f]{64})$/;
+/** Not a `newRef` shape, so no user id equals it. */
+const NO_USER = "-";
 
 /**
  * Whether a known-device value was issued to this member at this epoch; false for a missing, malformed or forged one,
- * or one issued before the epoch moved.
+ * or one issued before the epoch moved. A well-formed value is MACed for a stranger too (against an id no user has),
+ * so the code request takes the same work whether the address names a member (AUTH-10).
  */
 export async function isKnown(
   value: string | null,
@@ -264,7 +315,8 @@ export async function isKnown(
   userId: string | null,
   epoch: number,
 ): Promise<boolean> {
-  const m = value && userId ? DEVICE.exec(value) : null;
-  if (!m || !userId) return false;
-  return safeEqual(await deviceMac(pepper, userId, epoch, m[1] as string), m[2] as string);
+  const m = value ? DEVICE.exec(value) : null;
+  if (!m) return false;
+  const mac = await deviceMac(pepper, userId ?? NO_USER, epoch, m[1] as string);
+  return userId !== null && safeEqual(mac, m[2] as string);
 }

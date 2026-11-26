@@ -11,9 +11,12 @@ export interface Db {
   prepare(sql: string): Statement;
 }
 
-/** D1's `batch`: the statements run in order as one transaction, so no other request sees a partial result. */
+/**
+ * D1's `batch`: the statements run in order as one transaction, so no other request sees a partial result. `results`
+ * holds a statement's RETURNING rows.
+ */
 export interface BatchDb extends Db {
-  batch(statements: Statement[]): Promise<{ meta: { changes: number } }[]>;
+  batch(statements: Statement[]): Promise<{ meta: { changes: number }; results?: Record<string, unknown>[] }[]>;
 }
 
 /** The guard of a statement batched with one that may not create the user: it runs only once the row exists. */

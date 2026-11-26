@@ -45,13 +45,14 @@ async function mailedCode(to: string): Promise<string> {
   throw new Error(`no code mailed to ${to}`);
 }
 
-/** Runs the SQL tools/invite.mjs --local prints for `email` and returns the link's token. */
+/** Runs, in order, the commands tools/invite.mjs --local prints for `email` and returns the link's token. */
 function seedInvite(email: string): string {
   const printed = spawnSync(process.execPath, [TOOL, email, "--local"], { encoding: "utf8" });
   expect(printed.status).toBe(0);
-  const [command, link] = printed.stdout.trim().split("\n");
-  wrangler.d1(/--command "(.*)"$/.exec(command ?? "")?.[1] ?? "");
-  return /#t=([A-Za-z0-9_-]{43})$/.exec(link ?? "")?.[1] ?? "";
+  const lines = printed.stdout.trim().split("\n");
+  const link = lines.pop() ?? "";
+  for (const command of lines) wrangler.d1(/--command "(.*)"$/.exec(command)?.[1] ?? "");
+  return /#t=([A-Za-z0-9_-]{43})$/.exec(link)?.[1] ?? "";
 }
 
 describe("the invite flow", () => {

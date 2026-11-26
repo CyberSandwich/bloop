@@ -35,9 +35,14 @@ class Prepared implements Statement {
     await Promise.resolve();
     return this.runNow();
   }
+  /** As D1 answers: a RETURNING statement's rows in `results`, one per changed row. */
   runNow() {
+    if (/\bRETURNING\b/i.test(this.sql)) {
+      const results = this.db.prepare(this.sql).all(...this.values) as Record<string, unknown>[];
+      return { meta: { changes: results.length }, results };
+    }
     const info = this.db.prepare(this.sql).run(...this.values);
-    return { meta: { changes: Number(info.changes) } };
+    return { meta: { changes: Number(info.changes) }, results: [] };
   }
   async all<T>() {
     await Promise.resolve();

@@ -286,7 +286,7 @@ tools/
   make-fixtures.mjs        writes the synthetic sample decks the tests use
   render-slides.py         the demo deck's PDF export to the demo screen's slide images
   change-tier.mjs          classifies the staged diff (T0 to T2) and enforces the commit-msg blocks
-  invite.mjs               the first admin's invite (ADR 0014): prints the D1 command and the link, runs nothing
+  invite.mjs               the first admin's invite (ADR 0014): prints the D1 commands and the link, runs nothing
   render-og.py og.svg      the social image and the touch icon, from the logo; og.svg is the image's SVG source
   subset-font.py           Inter to the Latin subset, wght 400 to 600, opsz kept
 test/

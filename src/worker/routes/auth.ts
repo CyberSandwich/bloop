@@ -3,7 +3,7 @@
 // settings present; otherwise each answers `source_unavailable` (docs/setup.md).
 import { type ZodType, z } from "zod";
 import { type AuditEvent, accountEvent } from "../audit.ts";
-import { isKnown, issueCode, newDeviceValue, verifyCode } from "../auth/codes.ts";
+import { isKnown, issueCode, issueInviteCode, newDeviceValue, verifyCode } from "../auth/codes.ts";
 import {
   clearCookie,
   DEVICE_COOKIE,
@@ -389,17 +389,19 @@ export function authRoutesWith(over: Partial<AuthDeps> = {}): readonly Route[] {
     codeWrite("/api/invite/accept", token, "RL_INVITE", async (call) => {
       const { env, config, body, pepper } = call;
       const db = dbOf(env.DB);
-      const { state, row } = await peekInvite(db, await inviteHash(body.token), Date.now());
+      const tokenHash = await inviteHash(body.token);
+      const { state, row } = await peekInvite(db, tokenHash, Date.now());
       const open = state === "open" && row !== null;
       if (!open || !inviteAdmitted(await launchState(env, { fresh: true }), config.account, row.emailNorm))
         return fail("invite_dead");
       if (await deps.isBlocked(env, pepper, row.emailNorm)) return fail("invite_dead");
-      const issued = await issueCode(
+      const issued = await issueInviteCode(
         db,
         pepper,
-        { purpose: "invite", emailNorm: row.emailNorm, inviteId: row.id },
+        { emailNorm: row.emailNorm, inviteId: row.id, tokenHash },
         config.account.codeTtlSeconds,
       );
+      if (!issued) return fail("invite_dead");
       if (issued.limited) return fail("rate_limited", undefined, issued.retryAfterSeconds);
       afterResponse(call, async () => ({
         to: row.email,

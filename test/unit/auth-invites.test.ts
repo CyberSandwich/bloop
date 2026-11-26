@@ -1,5 +1,6 @@
 // Invites (ADR 0014): auth/invites.ts and POST /api/invite/peek, /accept and /verify over the d1 shim.
 import { beforeEach, describe, expect, it } from "vitest";
+import { issueInviteCode } from "../../src/worker/auth/codes.ts";
 import { clearDevMailbox, readDevMailbox } from "../../src/worker/auth/email.ts";
 import {
   acceptBatch,
@@ -292,6 +293,53 @@ describe("the invite flow: accept, then the mailed code creates the member", () 
 });
 
 describe("INV-05 resend: a reissue kills the old link", () => {
+  it("INV-05 resend: a reissue between accept's lookup and its code insert leaves no live code; accept is invite_dead", async () => {
+    let reissue = async () => {};
+    // isBlocked runs between the lookup and the insert, so the reissue lands exactly there.
+    const w = await authWorld(
+      {},
+      {
+        isBlocked: async () => {
+          await reissue();
+          return false;
+        },
+      },
+    );
+    setMode(w.db, "open");
+    const old = await seedInvite(w.db, "invitee@example.test");
+    reissue = async () => {
+      await upsertInvite(w.db, {
+        id: "unused",
+        tokenHash: await inviteHash(newInviteToken()),
+        emailNorm: "invitee@example.test",
+        email: "invitee@example.test",
+        note: null,
+        createdBy: null,
+        waitlistId: null,
+        now: Date.now(),
+        expiresAt: Date.now() + 7 * DAY,
+      });
+    };
+    const raced = await accept(w, old);
+    expect(raced.body).toMatchObject({ code: "invite_dead" });
+    expect(w.db.raw.prepare("SELECT count(*) AS n FROM email_code").get()).toEqual({ n: 0 });
+    expect(readDevMailbox()).toEqual([]);
+  });
+
+  it("INV-05 resend: issueInviteCode inserts only while the invite holds the hash, and a full bucket is still limited", async () => {
+    const db = testDb();
+    const token = await seedInvite(db, "invitee@example.test");
+    const input = (tokenHash: string) => ({
+      emailNorm: "invitee@example.test",
+      inviteId: "i-invitee@example.test",
+      tokenHash,
+    });
+    expect(await issueInviteCode(db, PEPPER, input(await inviteHash("other")), 600)).toBeNull();
+    for (let i = 0; i < 5; i++)
+      expect(await issueInviteCode(db, PEPPER, input(await inviteHash(token)), 600)).toMatchObject({ limited: false });
+    expect(await issueInviteCode(db, PEPPER, input(await inviteHash(token)), 600)).toMatchObject({ limited: true });
+  });
+
   it("INV-05 resend: the same row id, the old hash refused, sends + 1; a replayed hash changes nothing", async () => {
     const db = testDb();
     const input = (token: string) => ({

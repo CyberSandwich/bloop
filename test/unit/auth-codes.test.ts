@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import {
   type CodePurpose,
   codeMac,
@@ -358,6 +358,23 @@ describe("AUTH-09 device", () => {
     expect(await isKnown(`${nonce}.${flip(mac, 63, "01")}`, PEPPER, "u1", 0)).toBe(false);
     expect(await isKnown(`${nonce}.${mac}x`, PEPPER, "u1", 0)).toBe(false);
     expect(await isKnown(value, "q".repeat(32), "u1", 0)).toBe(false);
+  });
+
+  it("AUTH-10 uniform: a well-formed device value is MACed once for a member and once for a stranger; a malformed one never", async () => {
+    const value = await newDeviceValue(PEPPER, "u1", 0);
+    const signs = async (v: string | null, userId: string | null) => {
+      const spy = vi.spyOn(crypto.subtle, "sign");
+      try {
+        await isKnown(v, PEPPER, userId, 0);
+        return spy.mock.calls.length;
+      } finally {
+        spy.mockRestore();
+      }
+    };
+    expect(await signs(value, "u2")).toBe(1);
+    expect(await signs(value, null)).toBe(1);
+    expect(await signs("not-a-device-value", "u2")).toBe(0);
+    expect(await signs("not-a-device-value", null)).toBe(0);
   });
 
   it("AUTH-18 epoch: a value minted before the epoch moved is refused, and one minted after it is known", async () => {

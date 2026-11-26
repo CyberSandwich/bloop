@@ -1,5 +1,5 @@
-// The first admin's invite (ADR 0014): no admin exists yet to create one through /admin, so this prints the D1 command
-// that writes it and the link to open. It runs nothing and writes nothing: the token lives only in the printed link.
+// The first admin's invite (ADR 0014): no admin exists yet to create one through /admin, so this prints the D1 commands
+// that write it and the link to open. It runs nothing and writes nothing: the token lives only in the printed link.
 //   node tools/invite.mjs <email> [--local]
 import { readFileSync, realpathSync } from "node:fs";
 import { fileURLToPath } from "node:url";
@@ -34,10 +34,13 @@ function inline(name, sql, values) {
 }
 
 /**
- * The command and the link for one address. `now`, `token` and `id` are fixed only by the tests.
+ * The commands, to run in order, and the link for one address. Two commands, because one `--command` holding two
+ * statements is not known to run atomically on remote D1; the supersede goes first, so a failure between them leaves
+ * the old link and no live code for it. Residual: an accept on the old link landing between the two keeps its code.
+ * `now`, `token` and `id` are fixed only by the tests.
  * @param {string} raw
  * @param {{local?: boolean, now?: number, token?: string, id?: string}} [options]
- * @returns {Promise<{command: string, link: string}>}
+ * @returns {Promise<{commands: string[], link: string}>}
  */
 export async function invite(raw, { local = false, now = Date.now(), token = newInviteToken(), id = newRef() } = {}) {
   const email = normalizeEmail(raw);
@@ -47,14 +50,14 @@ export async function invite(raw, { local = false, now = Date.now(), token = new
   const config = wranglerConfig(readFileSync(new URL("../wrangler.jsonc", import.meta.url), "utf8"));
   const expiresAt = now + accountVars.INVITE_TTL_DAYS.parse(undefined) * DAY_MS;
   const hash = await inviteHash(token);
-  const sql = [
-    inline("SUPERSEDE_INVITE_CODES", SUPERSEDE_INVITE_CODES, [now, now, email, hash]),
-    inline("UPSERT_INVITE", UPSERT_INVITE, [id, hash, email, email, null, null, null, now, expiresAt, now]),
-  ].join("; ");
   const database = config.d1_databases[0].database_name;
+  const target = local ? `--local --persist-to ${LOCAL_STATE}` : "--remote";
   const origin = local ? LOCAL_ORIGIN : new URL(config.vars.PUBLIC_ORIGIN).origin;
   return {
-    command: `npx wrangler d1 execute ${database} ${local ? `--local --persist-to ${LOCAL_STATE}` : "--remote"} --command "${sql}"`,
+    commands: [
+      inline("SUPERSEDE_INVITE_CODES", SUPERSEDE_INVITE_CODES, [now, now, email, hash]),
+      inline("UPSERT_INVITE", UPSERT_INVITE, [id, hash, email, email, null, null, null, now, expiresAt, now]),
+    ].map((sql) => `npx wrangler d1 execute ${database} ${target} --command "${sql}"`),
     link: `${origin}/invite#t=${token}`,
   };
 }
@@ -66,8 +69,8 @@ async function main() {
     process.exit(64);
   }
   try {
-    const { command, link } = await invite(positionals[0] ?? "", { local: values.local === true });
-    console.log(command);
+    const { commands, link } = await invite(positionals[0] ?? "", { local: values.local === true });
+    for (const command of commands) console.log(command);
     console.log(link);
   } catch (e) {
     console.error(`invite: ${e instanceof Error ? e.message : String(e)}`);

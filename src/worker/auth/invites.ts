@@ -82,7 +82,7 @@ export interface InviteInput {
 
 /**
  * TRANSITIONAL(a-8): invite create and resend call it. The supersede and the upsert in one batch; the row's id, or null
- * for a replayed hash (or a hash another reissue replaced before the read, whose link is dead too).
+ * for a replayed hash.
  */
 export async function upsertInvite(db: BatchDb, i: InviteInput): Promise<string | null> {
   const [, upserted] = await db.batch([
@@ -91,9 +91,8 @@ export async function upsertInvite(db: BatchDb, i: InviteInput): Promise<string 
       .prepare(UPSERT_INVITE)
       .bind(i.id, i.tokenHash, i.emailNorm, i.email, i.note, i.createdBy, i.waitlistId, i.now, i.expiresAt, i.now),
   ]);
-  if (upserted?.meta.changes !== 1) return null;
-  const row = await db.prepare("SELECT id FROM invite WHERE token_hash = ?").bind(i.tokenHash).first<{ id: string }>();
-  return row?.id ?? null;
+  const id = upserted?.results?.[0]?.id;
+  return typeof id === "string" ? id : null;
 }
 
 /**
