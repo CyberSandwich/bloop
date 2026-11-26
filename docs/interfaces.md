@@ -434,7 +434,8 @@ export interface CodeDirectory {
   put(code: string, screenRef: string, expiresAt: number, demo: boolean): Promise<"ok" | "collision">;
   /**
    * PAIR-15 (`directory-rules.ts` lookupVerdict): a live code claimed by a signed-out owner is `auth_required`, not
-   * routed, so not spent, and no miss; one claimed as a guest the drop refuses answers `guestRefusal` and is a miss.
+   * routed, so not spent, and no miss; a guest claim the drop refuses answers `guestRefusal` for any non-demo code,
+   * existing or not, and is no miss.
    */
   lookup(code: string, ipHash: string, now: number, who: { kind: Kind; signedIn: boolean; guestRefusal: GuestRefusal | null }):
     Promise<{ ok: true; screenRef: string; demo: boolean } | { ok: false; error: "code_unknown" | "rate_limited" | "auth_required" | GuestRefusal }>;
