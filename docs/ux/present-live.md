@@ -217,7 +217,7 @@ The landing's Present Live is a link to `/s` (live). The PC shows the waiting sc
 Open mode only. The claim answers `auth_required` before spending the code, so the code is still alive.
 
 ```
-390                                            1440 (centered column, buttons under the content)
+390 (all four in the glass panel, stacked)       1440 (centered column, one row under the content)
 
   <Back
                                                        Early Access Only
@@ -225,16 +225,18 @@ Open mode only. The claim answers `auth_required` before spending the code, so t
   Sign in to present your own files.                   No invite yet? You can still send
   No invite yet? You can still send one                one file to this screen.
   file to this screen.
-                                                       [ Send One File ]  [[ Sign In ]]
-  ( Try the Demo )   ( Join the Waitlist )             ( Try the Demo )  ( Join the Waitlist )
+                                                       ( Try the Demo ) ( Join the Waitlist )
+                                                       [ Send One File ] [[ Sign In ]]
 .--------------------------------------.
 | [[             Sign In            ]] |
 | [          Send One File         ]   |
+|          ( Join the Waitlist )       |
+|            ( Try the Demo )          |
 '--------------------------------------'
 ```
 
 - Title "Early Access Only"; line "Sign in to present your own files. No invite yet? You can still send one file to this screen." (owner's choice: it leads with what a signed-out member does, and the second sentence tells a guest the way on.)
-- Actions: Sign In (primary), Send One File (secondary; the guest path, today's guest add state, with the same code), then two text buttons in one row: Try the Demo (`/demo`) and Join the Waitlist (the Tally link, `source=phone`, `data-waitlist`).
+- Actions, in one action row like every state: Try the Demo (text, `/demo`), Join the Waitlist (text, the Tally link, `source=phone`, `data-waitlist`), Send One File (secondary; the guest path, today's guest add state, with the same code), Sign In (primary).
 - Focus: the title, then Try the Demo, Join the Waitlist, Send One File, Sign In (reading order, the primary last as in every state; stacked, the panel puts Sign In on top).
 - Lazy: `core/early.js` loads on `auth_required`, with `GET /api/me` asked beside it; the state shows only when that answers `launchMode: "open"`. If the module cannot load, the code goes the guest way.
 - Preview mode (or `/api/me` failed): there is no early-access state; the phone claims the same code as a guest at once (one more claim; the refused one spent nothing).

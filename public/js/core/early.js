@@ -70,7 +70,7 @@ export function resume(
   else none();
 }
 
-/** The refused claim the actions act on, while its state shows. @type {(EarlyIo & {at: number}) | null} */
+/** The refused claim the actions act on, while its state shows. @type {EarlyIo | null} */
 let shown = null;
 let listening = false;
 
@@ -92,7 +92,7 @@ export async function refused(error, io) {
   if (!(me.ok && me.value?.launchMode === "open")) return io.claim(io.code, "guest");
   if (!listening) document.getElementById("actions")?.addEventListener("click", act);
   listening = true;
-  shown = { ...io, at: Date.now() };
+  shown = io;
   show(io, "early");
 }
 
@@ -101,7 +101,8 @@ function act(/** @type {Event} */ e) {
   const io = shown;
   if (!io || (id !== "signin" && id !== "guest")) return;
   if (id === "signin") {
-    keepClaim(io.store, { code: io.code, key: io.key, at: io.at });
+    // The 5 minutes run from the tap: lingering on this state spends none of them.
+    keepClaim(io.store, { code: io.code, key: io.key, at: Date.now() });
     location.assign("/auth/start");
     return;
   }
