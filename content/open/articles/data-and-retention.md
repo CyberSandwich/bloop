@@ -4,6 +4,7 @@ order: 4
 title: Data and Retention
 description: What bloop keeps, where it is stored, how long each kind of data lasts, and who can see it. Written for IT and data protection teams.
 published: 2026-11-25
+datePending: true
 ---
 
 A data protection officer asks three questions about any tool: what does it keep, where, and for how long. This article explains how bloop answers them. The [Privacy Notice](/privacy) is the binding text, and it holds every period in one table: [How Long bloop Keeps It](/privacy#retention).

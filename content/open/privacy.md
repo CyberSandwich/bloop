@@ -9,6 +9,7 @@ binds: this notice
 summaryNote: This summary helps you read; the full text applies.
 effective: 2026-11-25
 version: 2.0
+datePending: true
 ---
 
 bloop is a new, free side project run by one person in the UK. If you have an account, bloop stores your files in the EU until you delete them, and deletes a guest's file when the session ends. It never sells data and runs no ads, analytics scripts or trackers. The person who runs bloop can technically open stored files; the admin tools open one only after a report, and record it ([who can see your data](#access)). How your files are protected is on [the Security page](/security). Write to <{{email}}> about anything here.

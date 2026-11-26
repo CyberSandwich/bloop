@@ -82,6 +82,8 @@ describe("MODE-01 landing and legal bodies differ by mode", () => {
     for (const mode of ["preview", "open"] as const) {
       wrangler.setLaunchMode(mode);
       expect((await hit("/404", HTML)).status, mode).toBe(404);
+      expect((await hit("/_launch.json")).status, mode).toBe(404);
+      expect((await hit("/open.html")).status, mode).toBe(404);
     }
   });
 

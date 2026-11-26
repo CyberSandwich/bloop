@@ -771,24 +771,18 @@ export function buildAll(mode = "preview") {
 /** Both modes' files: the whole of what the build owns. */
 export const buildEvery = () => new Map([...buildAll("preview"), ...buildAll("open")]);
 
-/** The date the open legal text carries until its final review stamps the real one. */
-export const PLACEHOLDER_DATE = "2026-11-25";
-
 /**
- * Open drafts (`content/open/**`) still dated with the placeholder, as `file: key`; the launch gate (`--launch`)
- * fails on any. A base document keeps its own real date, even when it falls on the same day.
+ * Open drafts (`content/open/**`) whose front matter says `datePending: true`: their date is a stand-in until the
+ * final legal review stamps the real one and removes the line. The launch gate (`--launch`) fails on any; a real
+ * date is never read as a placeholder.
  */
 export function placeholderDates() {
   return docsFor("open")
-    .filter((d) => d.file.startsWith("content/open/"))
-    .flatMap((d) =>
-      ["published", "effective", "updated"]
-        .filter((key) => d.meta[key] === PLACEHOLDER_DATE)
-        .map((key) => `${d.file}: ${key}`),
-    );
+    .filter((d) => d.file.startsWith("content/open/") && d.meta.datePending === true)
+    .map((d) => d.file);
 }
 
-/** `/_launch.json`: what the admin switch reads to refuse `open` while an open document is on the placeholder date. */
+/** `/_launch.json`: the build's note on whether every open draft's date is final. */
 export function launchManifest() {
   const placeholder = placeholderDates();
   return `${JSON.stringify({ launchReady: placeholder.length === 0, placeholder })}\n`;

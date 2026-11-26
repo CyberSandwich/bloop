@@ -11,7 +11,6 @@ import {
   faqOf,
   navHtml,
   openVariant,
-  PLACEHOLDER_DATE,
   parseSite,
   placeholderDates,
   site,
@@ -188,15 +187,17 @@ describe("one source for the form URL and the launch dates", () => {
     }
   });
 
-  it("the launch gate lists exactly the open drafts still dated with the placeholder, never a base document", () => {
+  it("the launch gate lists exactly the open drafts marked datePending, and a date that looks like one never counts", () => {
     const listed = placeholderDates();
-    expect(listed.every((entry) => entry.startsWith("content/open/"))).toBe(true);
-    const dated = docsFor("open")
-      .filter((d) => d.file.startsWith("content/open/"))
-      .flatMap((d) => ["published", "effective", "updated"].map((key) => [d, key] as const))
-      .filter(([d, key]) => d.meta[key] === PLACEHOLDER_DATE)
-      .map(([d, key]) => `${d.file}: ${key}`);
-    expect(listed).toEqual(dated);
+    expect(listed.every((file) => file.startsWith("content/open/"))).toBe(true);
+    const marked = docsFor("open")
+      .filter((d) => d.file.startsWith("content/open/") && d.meta.datePending === true)
+      .map((d) => d.file);
+    expect(listed).toEqual(marked);
+    // The base documents are dated the same day for real; they carry no marker, so they are never listed.
+    expect(docsFor("open").some((d) => !d.file.startsWith("content/open/") && d.meta.datePending !== undefined)).toBe(
+      false,
+    );
   });
 });
 
@@ -227,14 +228,19 @@ describe("launchReady: the manifest the admin switch reads, and the CLI, say the
     expect(m.launchReady).toBe(m.placeholder.length === 0);
   });
 
-  it("false while a document is on the placeholder date, true once every date is stamped, and the CLI follows", async () => {
+  it("false while a draft is marked datePending, true once the final review stamps it, and the CLI follows", async () => {
     stage();
     expect((await cli()).status).toBe(0);
     expect(manifest().launchReady).toBe(false);
     expect((await cli("--launch")).status).toBe(1);
-    for (const file of manifest().placeholder.map((p: string) => p.split(": ")[0])) {
+    for (const file of manifest().placeholder as string[]) {
       const path = join(copy, file);
-      writeFileSync(path, readFileSync(path, "utf8").replaceAll(PLACEHOLDER_DATE, "2026-12-01"));
+      writeFileSync(
+        path,
+        readFileSync(path, "utf8")
+          .replace(/^datePending: true\n/m, "")
+          .replaceAll("2026-11-25", "2026-12-01"),
+      );
     }
     expect((await cli()).status).toBe(0);
     expect(manifest()).toEqual({ launchReady: true, placeholder: [] });
