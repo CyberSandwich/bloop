@@ -4,8 +4,9 @@
 // Imports nothing third-party: it runs in the job that holds the token.
 //   node tools/prebuilt.mjs manifest  in the check job, after the build: dist/.build-manifest.json, every file's hash
 //   node tools/prebuilt.mjs rewrite   in the deploy job's checkout, before wrangler runs: the build command, and the
-//                                     account id (CLOUDFLARE_ACCOUNT_ID) and the digest (container/digest.txt) in the
-//                                     converter image reference
+//                                     digest (container/digest.txt) in the converter image reference
+//   node tools/prebuilt.mjs account   first line of the wrangler step, which holds CLOUDFLARE_ACCOUNT_ID: the account id
+//                                     in the converter image reference; refuses unset or malformed ids, writes nothing
 //   node tools/prebuilt.mjs assert    the command wrangler then runs: dist/ equals its manifest, dotfiles included
 import { createHash } from "node:crypto";
 import { existsSync, lstatSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
@@ -30,18 +31,22 @@ const NO_DIGEST = `sha256:${"0".repeat(64)}`;
 const IMAGE = (/** @type {string} */ account, /** @type {string} */ digest) =>
   `registry.cloudflare.com/${account}/bloop-converter@${digest}`;
 
-/**
- * wrangler.jsonc with the converter image reference filled in (CONV-06): the account id comes from the environment, so
- * the repo never holds it (without one, as in the CI rehearsal, it stays the zeros), and the digest from
- * container/digest.txt, the one place a pin is written.
- * @param {string} config @param {string | undefined} accountId @param {string} digest "sha256:<64 hex>"
- */
-export function withImage(config, accountId, digest) {
-  if (accountId !== undefined && !/^[0-9a-f]{32}$/.test(accountId))
-    throw new Error("CLOUDFLARE_ACCOUNT_ID is not a 32-character hex account id");
+/** wrangler.jsonc with the converter image's digest taken from container/digest.txt, the one place a pin is written
+ * (CONV-06). The account stays the zeros: only the wrangler step, which holds the secret, fills it.
+ * @param {string} config @param {string} digest "sha256:<64 hex>" */
+export function withDigest(config, digest) {
   if (!/^sha256:[0-9a-f]{64}$/.test(digest) || digest === NO_DIGEST)
     throw new Error("container/digest.txt is not a sha256 digest");
-  return config.replaceAll(IMAGE(NO_ACCOUNT, NO_DIGEST), IMAGE(accountId ?? NO_ACCOUNT, digest));
+  return config.replaceAll(IMAGE(NO_ACCOUNT, NO_DIGEST), IMAGE(NO_ACCOUNT, digest));
+}
+
+/** wrangler.jsonc with the converter image's account id filled in, so the repo never holds it. Refuses anything but 32
+ * lowercase hex that is not all zeros: the zeros are the placeholder, and a deploy must not ship them.
+ * @param {string} config @param {string | undefined} accountId */
+export function withAccount(config, accountId) {
+  if (!accountId || !/^[0-9a-f]{32}$/.test(accountId) || accountId === NO_ACCOUNT)
+    throw new Error("CLOUDFLARE_ACCOUNT_ID is unset or not a 32-character hex account id");
+  return config.replaceAll(`registry.cloudflare.com/${NO_ACCOUNT}/`, `registry.cloudflare.com/${accountId}/`);
 }
 
 /** Throws unless the parsed top-level build block, and any environment's, is exactly the assertion, so a deploy run in
@@ -57,7 +62,9 @@ export function requirePrebuilt(config) {
   if (!swapped || config.includes(BUILD))
     throw new Error("wrangler.jsonc still builds: run tools/prebuilt.mjs rewrite first");
   if (config.includes(NO_DIGEST))
-    throw new Error("wrangler.jsonc still has the image placeholder: run tools/prebuilt.mjs rewrite first");
+    throw new Error("wrangler.jsonc still has the image digest placeholder: run tools/prebuilt.mjs rewrite first");
+  if (config.includes(`registry.cloudflare.com/${NO_ACCOUNT}/`))
+    throw new Error("wrangler.jsonc still has the image account placeholder: run tools/prebuilt.mjs account first");
 }
 
 /** Every file under dir, dotfiles included, with its SHA-256; the manifest itself is not listed. Anything that is not
@@ -113,15 +120,19 @@ if (command === "manifest") {
 } else if (command === "rewrite") {
   writeFileSync(
     "wrangler.jsonc",
-    withImage(
+    withDigest(
       withPrebuilt(readFileSync("wrangler.jsonc", "utf8")),
-      process.env.CLOUDFLARE_ACCOUNT_ID || undefined,
       readFileSync("container/digest.txt", "utf8").trim(),
     ),
+  );
+} else if (command === "account") {
+  writeFileSync(
+    "wrangler.jsonc",
+    withAccount(readFileSync("wrangler.jsonc", "utf8"), process.env.CLOUDFLARE_ACCOUNT_ID),
   );
 } else if (command === "assert") {
   const problems = manifestProblems("dist");
   if (problems.length > 0) throw new Error(`dist/ is not the check job's build: ${problems.join("; ")}`);
 } else if (command) {
-  throw new Error("usage: node tools/prebuilt.mjs manifest|rewrite|assert");
+  throw new Error("usage: node tools/prebuilt.mjs manifest|rewrite|account|assert");
 }
