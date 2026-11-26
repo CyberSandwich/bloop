@@ -239,6 +239,31 @@ describe("list, rename and Up Next", () => {
   });
 });
 
+describe("paging by name past a long non-Latin-1 name", () => {
+  it("B1: a page ending on a 200-character emoji name hands a cursor the route accepts, and the next page follows", async () => {
+    const long = `z${"😀".repeat(195)}.pdf`;
+    const rows = Array.from({ length: 199 }, (_, i) =>
+      file(`p${String(i).padStart(3, "0")}`, "pam", { name: `a${String(i).padStart(3, "0")}.pptx` }),
+    );
+    seed([
+      ...member("pam"),
+      ...rows,
+      file("plong", "pam", { name: long, ext: "pdf" }),
+      file("pend", "pam", { name: "zz.pptx" }),
+    ]);
+    const first = await call("pam", "GET", "/api/library?sort=name");
+    expect(first.status).toBe(200);
+    expect((first.body.files as unknown[]).length).toBe(200);
+    expect((first.body.files as { id: string }[]).at(-1)?.id).toBe("plong");
+    const cursor = first.body.next as string;
+    expect(cursor.length).toBeGreaterThan(600);
+    const second = await call("pam", "GET", `/api/library?sort=name&cursor=${cursor}`);
+    expect([second.status, filesOf(second)]).toEqual([200, ["pend"]]);
+    const wrongSort = await call("pam", "GET", `/api/library?sort=size&cursor=${cursor}`);
+    expect(wrongSort.status).toBe(400);
+  });
+});
+
 describe("the Sample Deck", () => {
   const KEY = "3f1f8a52-7a0e-4d6b-9a55-1c2b3d4e5f60";
   it("adds one ready deck per Idempotency-Key, answers the same row on a replay, and lists it", async () => {
@@ -364,7 +389,7 @@ describe("live screens", () => {
     expect((await call(null, "GET", "/api/me/screens")).status).toBe(401);
   });
 
-  it("ends by session id, and a doubled or foreign id lands the same: nothing ended", async () => {
+  it("ends by session id, and a doubled, foreign or unknown id lands the same: nothing to end is success, ended 0", async () => {
     const first = await call("ann", "DELETE", "/api/me/screens/s-unknown", {});
     const again = await call("ann", "DELETE", "/api/me/screens/s-unknown", {});
     expect([first.status, first.body.ended, again.status, again.body.ended]).toEqual([200, 0, 200, 0]);
