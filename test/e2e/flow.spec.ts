@@ -1340,21 +1340,36 @@ test.describe("guest drop", () => {
         .map((e) => new URL(e.name).pathname)
         .filter((path) => path.startsWith("/js/core/")),
     );
-  /** Keeps the body XMLHttpRequest sends, so a test reads the bytes that left the phone. */
-  type Sending = { sent: File; XMLHttpRequest: { prototype: { send: (this: unknown, body: unknown) => void } } };
+  /**
+   * Keeps what left the phone: the name the upload's create declared, and every part body XMLHttpRequest sent, so a
+   * test reads the bytes in order.
+   */
+  type Sending = {
+    sent: { name: string; parts: Blob[] };
+    fetch: (input: unknown, init?: { method?: string; body?: unknown }) => Promise<unknown>;
+    XMLHttpRequest: { prototype: { send: (this: unknown, body: unknown) => void } };
+  };
   const keepSent = (page: Page) =>
     page.evaluate(() => {
       const w = globalThis as unknown as Sending;
+      w.sent = { name: "", parts: [] };
       const send = w.XMLHttpRequest.prototype.send;
       w.XMLHttpRequest.prototype.send = function (body) {
-        w.sent = body as File;
+        w.sent.parts.push(body as Blob);
         send.call(this, body);
+      };
+      const fetch = w.fetch;
+      w.fetch = (input, init) => {
+        if (String(input).endsWith("/api/guest/uploads") && init?.method === "POST") {
+          w.sent.name = (JSON.parse(String(init.body)) as { name: string }).name;
+        }
+        return fetch(input, init);
       };
     });
   const sent = (page: Page) =>
     page.evaluate(async () => {
-      const body = (globalThis as unknown as Sending).sent;
-      return { name: body.name, bytes: [...new Uint8Array(await body.arrayBuffer())] };
+      const { name, parts } = (globalThis as unknown as Sending).sent;
+      return { name, bytes: [...new Uint8Array(await new Blob(parts).arrayBuffer())] };
     });
 
   test("a photo loads photo.js only when it is sent, shows its row on the loader, and leaves as a JPEG", async ({

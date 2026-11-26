@@ -248,7 +248,7 @@ src/worker/
   stores.ts                the one place that picks the AuditLog and Metrics implementations
   auth/{oauth,vault,sessions,cookies,services,db}.ts   oauth4webapi flow; token vault; phone sessions; cookie format and AEAD seal; per-request objects and the daily job; the D1 slice
   auth/{codes,templates,email,turnstile}.ts   email codes and the known-device value; every email's text; the one mail sender (ADR 0021); siteverify (ADR 0022)
-  routes/{pairing,files,open,drop,control,auth,export,common}.ts
+  routes/{pairing,files,open,control,auth,export,common}.ts
   cron.ts                  the cron dispatcher; cron-jobs.ts lists each trigger's jobs
   retention.ts             closeStaleSessions (hourly), runRetention (daily)
 public/                    the assets' source, built into dist/ (each JS module minified, each stylesheet stripped of comments and whitespace, everything else as it is), which wrangler serves. Everything here is public: no secrets, no server-only logic
