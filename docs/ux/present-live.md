@@ -179,26 +179,26 @@ Change Files (before the tap) opens the same chooser over the match state, as a 
 ```
 390                                          1440 (two columns, as /a's desktop)
 
-  Approved for Room 2.14                       Approved for Room 2.14        +--------------------+
-  Ends in 59:12 >                              Ends in 59:12 >               | +--+ Lecture 5.pptx|
+  (h1 Room 2.14, screen readers only)          (h1 Room 2.14, sr only)       +--------------------+
+                                                                             | +--+ Lecture 5.pptx|
                                                                              |      On the Screen |
   +------------------------------------+       Notes                        | +--+ Reading list  |
   | +--+ Lecture 5.pptx    On the Screen|       +------------------------+  +--------------------+
   | +--+ Reading list.pdf               |       | Ask who has read ch. 2 |
   +------------------------------------+       | before the break.      |
                                                +------------------------+
-  Notes                                         [! Revoke !]
+  Notes                                         [Ends in 59:12 >] [! Revoke !]
   +------------------------------------+
   | Ask who has read chapter 2 before  |
   | the break.                         |
   |                                    |
   +------------------------------------+
 .--------------------------------------.
-| [!            Revoke            !]   |
+| [Ends in 59:12 >] [!   Revoke   !]   |
 '--------------------------------------'
 ```
 
-- Title "Approved for Room 2.14", "Ends in 59:12" with its chevron (opens Session Expiry, as today), the approved items read only. The item on the screen carries "On the Screen" in its line 2 (13 `--muted`), since a live screen can now hold several.
+- No visible title: the h1 "Room 2.14" is for screen readers only, so the list starts at the top (design.md section 7, Approved). "Ends in 59:12" with its chevron (opens Session Expiry, as today) is a glass button left of Revoke on the panel's bottom row. The approved items read only. The item on the screen carries "On the Screen" in its line 2 (13 `--muted`), since a live screen can now hold several.
 - **Notes** (lazy, fetched when an approved item has notes; `GET /api/notes?item=`, pid only): design.md section 7 (Phone page, Presenter's notes) owns the box. It follows the screen's page, instantly, with no "Slide n" label; a page with no note keeps the box and shows the pill "No Notes for This Slide"; a deck with none has no box.
   - When PowerPoint presents it, bloop cannot see the page: the box lists every slide's notes in order, each under its "Slide n" label, scrollable inside the page (README.md decision 7).
 - **Open in PowerPoint and Show Slides Here** sit on this state for the deck on the screen, in the action panel above Revoke as one row of two secondaries, on the same channel as Revoke (a phone command the screen follows, as Revoke ends it). Show Slides Here reads "Preparing Slides", disabled, until `derivedReady`, and enables in place (viewers.md section 4). The one that matches what the screen shows is hidden (bloop's viewer on: only Open in PowerPoint). Fallback if P1 can't carry them: the phone shows the line "Choose on the screen how to open it." and the choice stays on the PC alone (viewers.md section 4), as decision 10 falls back.
@@ -267,6 +267,6 @@ Sign In keeps the code, its `Idempotency-Key` and the time in `sessionStorage` (
 | wrong number | That Wasn't the Screen's Number / Scan the screen again, or type its code. / Enter the Code |
 | approve refused | toast A File Couldn't Be Added / {name} is no longer in your library. |
 | match module failed | Match Didn't Load / Reload |
-| approved | Approved for Room 2.14; On the Screen; Notes; No Notes for This Slide; Open in PowerPoint; Show Slides Here; Preparing Slides; fallback line: Choose on the screen how to open it. |
+| approved | Room 2.14 (screen readers only); Ends in 59:12; On the Screen; Notes; No Notes for This Slide; Open in PowerPoint; Show Slides Here; Preparing Slides; fallback line: Choose on the screen how to open it. |
 | early access | Early Access Only / Sign in to present your own files. No invite yet? You can still send one file to this screen. / Sign In, Send One File, Try the Demo, Join the Waitlist |
 | resume, expired | Scan the Screen Again / The code changed while you signed in. You're signed in now, so one scan is all it takes. (signed out: The code on the screen changed while you were away. One scan picks it up again.) / Enter the Code |

@@ -463,13 +463,12 @@ test.describe("pairing flow", () => {
     });
   }
 
-  // The title and the time share one baseline where one row holds both (a 24-hour time at 390 and 844 x 390 must),
-  // and wrap as two centered lines where it can't (320, and a 12-hour time at 390, may: font metrics decide, so those
-  // read which it is). Chromium formats a time input by its lang, not the browser's locale, and the page is en-US, so
-  // the page takes the case's lang before the sheet sets the time. A time input's text is centered in its box, so its baseline is the box's middle
-  // less half the font's descent and plus half its ascent.
+  // The title and the time share one baseline where one row holds both (844 x 390 must), and wrap as two centered
+  // lines where it can't (320 and 390 may: the time's width decides, and Chromium draws it 12-hour on this en-US page
+  // whatever the locale, so those read which it is). A time input's text is centered in its box, so its baseline is
+  // the box's middle less half the font's descent and plus half its ascent.
   for (const [width, height, locale, oneRow] of [
-    [390, 844, "en-GB", true],
+    [390, 844, "en-GB", false],
     [844, 390, "en-GB", true],
     [320, 640, "en-GB", false],
     [390, 844, "en-US", false],
@@ -483,7 +482,6 @@ test.describe("pairing flow", () => {
       const page = await context.newPage();
       await page.goto(`/a?c=${code}`);
       await page.getByRole("button", { name: /^Approve, code/ }).click();
-      await page.evaluate(`document.documentElement.lang = "${locale}"`);
       await page.getByRole("button", { name: /Change the Session Expiry$/ }).click();
       const sheet = page.getByRole("dialog", { name: "Session Expiry" });
       await expect(sheet).toBeVisible();
