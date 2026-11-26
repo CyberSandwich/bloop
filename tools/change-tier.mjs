@@ -101,13 +101,15 @@ export function blocks(files, deps, message) {
   return out;
 }
 
-/** @param {string} message git's commit-msg file holds `#` comment lines that are not part of the message; CRLF editors add `\r`. */
-const stripComments = (message) =>
-  message
-    .replaceAll("\r", "")
-    .split("\n")
-    .filter((line) => !line.startsWith("#"))
-    .join("\n");
+/**
+ * @param {string} message git's commit-msg file holds `#` comment lines that are not part of the message, and under
+ * `commit -v` the staged diff after a scissors line, whose text would read as the message's; CRLF editors add `\r`.
+ */
+const stripComments = (message) => {
+  const lines = message.replaceAll("\r", "").split("\n");
+  const scissors = lines.findIndex((line) => /^# -+ >8 -+$/.test(line));
+  return (scissors < 0 ? lines : lines.slice(0, scissors)).filter((line) => !line.startsWith("#")).join("\n");
+};
 
 /** @param {string[]} args */
 const git = (args) => execFileSync("git", args, { encoding: "utf8", maxBuffer: 64 * 1024 * 1024 });
