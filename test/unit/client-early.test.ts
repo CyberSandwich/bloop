@@ -129,9 +129,13 @@ describe("a live code refused signed out (auth_required)", () => {
     expect(r.io.c.error).toBe("early");
     expect(r.io.render).toHaveBeenCalled();
     expect(r.io.claim).not.toHaveBeenCalled();
+    // The 5 minutes run from the tap, not from the refusal.
+    const tapped = Date.now();
     click?.({ target: new FakeElement("signin") });
     expect(assign).toHaveBeenCalledWith("/auth/start");
-    expect(takeClaim(r.io.store)).toMatchObject({ code: "K7MQ9X", key: r.io.key });
+    const kept = takeClaim(r.io.store);
+    expect(kept).toMatchObject({ code: "K7MQ9X", key: r.io.key });
+    expect(kept?.at).toBeGreaterThanOrEqual(tapped);
   });
 
   it("open: Send One File hands the page back and claims the same code as a guest", async () => {
