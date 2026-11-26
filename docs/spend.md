@@ -145,7 +145,7 @@ Calls, by stream. A caller checks its switch first and calls the guard second. A
 4. sends one alert, at most once a UTC day, while analytics has failed 3 or more runs in a row; a dataset that fails keeps its last good figures (the report takes the larger of those and the counters) and the report's sources say so;
 5. on Mondays, sends the digest (section 7), once per ISO week.
 
-An alert holds numbers only: no file names, addresses or user data. Until email is wired the alert is a log line `{"evt":"breaker",...}`. Once email is wired the breaker sends its own email: no alert depends on a log rule or an observability query, because head sampling would drop the lines.
+An alert holds numbers only: no file names, addresses or user data. The alert is a log line `{"evt":"breaker",...}` plus an email to each `ADMIN_EMAILS` address (ADR 0021): no alert depends on a log rule or an observability query, because head sampling would drop the lines.
 
 Email bounces come from the GraphQL dataset `emailSendingAdaptive` (`deliveryFailed`); the breaker does not read it yet. Messages on open WebSockets are not stopped by the Durable Object spend limit, so P1's socket caps are the bound, and the breaker's Durable Object request line (`BREAKER_DO_REQ_DAY_WARN`) warns on growth.
 
