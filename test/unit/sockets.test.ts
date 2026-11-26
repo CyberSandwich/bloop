@@ -107,7 +107,30 @@ describe("OPEN-02 link binding", () => {
       { ip: "lectern", helloAt: T, heardAt: now - 1000 },
       { ip: "leak", helloAt: T + 50_000, heardAt: now },
     ];
-    expect(bindingIp(screens, now, "leak")).toBe("lectern");
+    expect(bindingIp(screens, now, "lectern")).toBe("lectern");
+    // Stored from neither (an old poll): the socket that verified first.
+    expect(bindingIp(screens, now, "old-poll")).toBe("lectern");
+  });
+
+  it("OPEN-02 reconnect: a lectern back from the bound address keeps it against an older live socket elsewhere", () => {
+    // B (a leaked sid, pinging) verified before the lectern's reconnect C; C comes from the bound address.
+    const now = T + 60_000;
+    const b = { ip: "attacker", helloAt: T, heardAt: now - 1000 };
+    const c = { ip: "lectern", helloAt: T + 30_000, heardAt: now };
+    expect(helloBinding("lectern", [b], T + 30_000)).toBeNull();
+    expect(bindingIp([b, c], now, "lectern")).toBe("lectern");
+    let stored: string | undefined = "lectern";
+    const store = {
+      get: () => stored,
+      set: (ip: string) => {
+        stored = ip;
+      },
+    };
+    expect(holdBinding([b, c], now, store)).toBe("lectern");
+    expect(stored).toBe("lectern");
+    // The lectern closed and came back from a new address with nobody else live: it roams there.
+    expect(helloBinding("new-net", [], now)).toBe("new-net");
+    expect(bindingIp([{ ip: "new-net", helloAt: now, heardAt: now }], now, "new-net")).toBe("new-net");
   });
 
   it("OPEN-02 binding: a holder that took over is written through, so when it closes it stays the fallback", () => {

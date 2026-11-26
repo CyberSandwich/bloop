@@ -94,6 +94,11 @@ function wake(edit: (s: ReturnType<typeof current>) => void, now = T0 + 1000) {
 
 /** A case's marker for a key deleted rather than set. */
 const GONE = Symbol("gone");
+/** A corrupt end with no code, no guest file and no session id left to purge: its audit row and push. */
+const END_FX = [
+  { fx: "audit", type: "ended", actor: "system" },
+  { fx: "push", to: "both" },
+];
 
 const m = (s: Record<string, unknown>) => s.machine as Record<string, unknown>;
 const session = (s: Record<string, unknown>) => m(s).session as Record<string, unknown>;
@@ -194,7 +199,7 @@ describe("schema-8", () => {
       }, T0 + 3000);
       const name = JSON.stringify(choices) ?? "missing";
       expect(r.machine, name).toMatchObject({ state: "ended", endReason: "error", endedAt: T0 + 3000 });
-      expect(r.after.corruptEnd, name).toEqual({ codes: { current: null, previous: null } });
+      expect(r.after.corruptEnd, name).toEqual({ sessionId: null, effects: END_FX });
       expect(r.again(), name).toEqual([]);
     }
   });
@@ -229,7 +234,7 @@ describe("schema-8", () => {
       expect(r.machine, ref).toMatchObject({ state: "ended", endReason: "error", endedAt: T0 + 2000, session: null });
       expect(r.machine.pairing, ref).toMatchObject({ userId: null, phoneSession: null, listed: [] });
       // The object finishes the end on wake: its audit row, the codes, the push, the demo slot, the alarm.
-      expect(r.after.corruptEnd, ref).toEqual({ codes: { current: null, previous: null } });
+      expect(r.after.corruptEnd, ref).toEqual({ sessionId: null, effects: END_FX });
       expect(
         r.links.every((l) => l.revoked),
         ref,
@@ -239,6 +244,23 @@ describe("schema-8", () => {
     // A non-library item keeps any ref: only a library ref names a stored version.
     const graph = wake((s) => Object.assign(item(s), { source: "mock", ref: "deck-1" }));
     expect(graph.machine.state).toBe("open");
+  });
+
+  it("schema-8 corruptEnd: a corrupt guest session leaves its session id, its codes and its file's purge for the wake", () => {
+    const guestFile = { kind: "file", id: "g1", source: "guest", ref: "guest/s1/g1", name: "Talk.pdf", type: "pdf" };
+    const r = wake((s) => {
+      Object.assign(m(s), { codes: { current: { value: "ABC123", expiresAt: T0 + 9 }, previous: null } });
+      Object.assign(pairing(s), { kind: "guest", userId: null, sessionId: "s1" });
+      // A guest file next to an item the build cannot serve: the session ends, and the file goes now, not at the sweep.
+      Object.assign(session(s), { items: [guestFile, null] });
+    }, T0 + 2000);
+    expect(r.machine).toMatchObject({ state: "ended", endReason: "error", session: null });
+    const { kind: _, id: __, ...file } = guestFile;
+    expect(r.after.corruptEnd).toEqual({
+      sessionId: "s1",
+      effects: [{ fx: "directory.remove", code: "ABC123" }, { fx: "purge", file }, ...END_FX],
+    });
+    expect(r.again()).toEqual([]);
   });
 
   it("schema-8: a link record with a purpose this build does not know is revoked; known ones are kept", () => {

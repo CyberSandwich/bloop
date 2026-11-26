@@ -153,18 +153,23 @@ export const pairingRoutes: readonly Route[] = [
       }
       const screen = screenStub(env, found.screenRef);
       // A replay answers the first claim, so a lost answer never reads as `code_taken` (REL-14). Routing a code
-      // spends nothing, so the replay is read after the lookup that names its screen.
-      const owner = userId ?? `ip:${hashed}`;
-      const idem = await idempotency(request, text, owner, {
-        find: (o, keyHash, since) => screen.idemFind(o, keyHash, since),
-      });
+      // spends nothing, so the replay is read after the lookup that names its screen. The key is scoped to a person:
+      // with no account there is none to scope it to (an address is shared), so a signed-out claim replays nothing.
+      const idem =
+        userId === null
+          ? ({ kind: "off" } as const)
+          : await idempotency(request, text, userId, {
+              find: (o, keyHash, since) => screen.idemFind(o, keyHash, since),
+            });
       if (idem.kind === "bad" || idem.kind === "conflict") return fail("bad_request");
       if (idem.kind === "replay") return json(idem.stored);
       const claimed = await screen.claim(
         code,
         // transitional: removed in A (the signed-in phone session's public id, once sessionUser lands)
         { kind, ipHash: hashed, userId, phoneSession: null, passHash: null },
-        idem.kind === "fresh" ? { owner, keyHash: idem.keyHash, bodyHash: idem.bodyHash } : undefined,
+        idem.kind === "fresh" && userId !== null
+          ? { owner: userId, keyHash: idem.keyHash, bodyHash: idem.bodyHash }
+          : undefined,
       );
       return respond(claimed);
     }),
