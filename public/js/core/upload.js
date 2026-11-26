@@ -3,12 +3,10 @@
 // through `deps`, so the unit tests drive it with fakes. XMLHttpRequest sends the parts because only it reports upload
 // progress in every phone browser.
 /** @import {Xhr} from "../types.js" */
-import { createApi, isErrorCode } from "./api.js";
+import { cleanName } from "../shared/names.js";
 
 const KIB = 1024;
-const MIB = KIB * KIB;
 const SAMPLE_BYTES = 64 * KIB;
-const SAMPLES = 16;
 const MAX_PARTS = 10_000;
 const MAX_URLS = 8;
 const MAX_CONCURRENT = 4;
@@ -29,7 +27,8 @@ const MAX_REJECTED = 3;
 // A request with no answer by then is the network; a complete may wait on the server's check.
 const CALL_MS = 30_000;
 const COMPLETE_MS = 120_000;
-// The server's check ends within 90 s of complete's 120 s claim: complete is repeated, by the clock, a little past it.
+// The server's check ends within 90 s of complete's 120 s claim: complete is repeated until then has passed in its
+// company (time out of reach does not count), and a request that hangs counts in full.
 const CHECK_MS = 150_000;
 const CHECK_WAIT_MS = 2000;
 const CHECK_WAIT_MAX_MS = 10_000;
@@ -41,10 +40,10 @@ const ETA_WEIGHT = 0.2;
 const END = { end: true };
 
 /**
- * @typedef {"queued" | "fingerprinting" | "starting" | "uploading" | "waiting" | "checking" | "saved" | "sent"
+ * @typedef {"queued" | "fingerprinting" | "starting" | "uploading" | "waiting" | "checking" | "unsettled" | "saved"
  *   | "refused" | "paused" | "canceled"} State
  * @typedef {{id: number, name: string, size: number, state: State, loaded: number, fraction: number,
- *   error?: string, view?: unknown, fileId?: string, fileStatus?: string, uploadId?: string}} FileSnap
+ *   error?: string, fileId?: string, fileStatus?: string, uploadId?: string}} FileSnap
  * @typedef {{files: FileSnap[], active: boolean, total: number, loaded: number, fraction: number,
  *   etaMs: number | null}} Batch
  * @typedef {{limit: number, fast: number}} Pace
@@ -90,20 +89,20 @@ function browserDeps() {
 }
 
 /**
- * SHA-256 over the name, the size and 16 evenly spaced 64 KiB samples, the first and last included. No
- * `lastModified`: an iOS picker stamps each copy with the current time, which would break resuming.
- * @param {{name: string, size: number, lastModified: number, slice: (start: number, end: number) => Blob}} file
+ * SHA-256 over the name as the server keeps it, the size, and the first and last 64 KiB. No `lastModified`: an iOS
+ * picker stamps each copy with the current time, which would break resuming.
+ * @param {{name: string, size: number, slice: (start: number, end: number) => Blob}} file
  * @param {Deps["subtle"]} [subtle]
  * @returns {Promise<string>} 64 lowercase hex characters
  */
 export async function fingerprint(file, subtle = globalThis.crypto.subtle) {
   const len = Math.min(SAMPLE_BYTES, file.size);
   /** @type {(string | Blob)[]} */
-  const parts = [JSON.stringify([file.name, file.size, file.lastModified])];
-  for (let i = 0; i < SAMPLES; i++) {
-    const at = Math.floor((i * (file.size - len)) / (SAMPLES - 1));
-    parts.push(file.slice(at, at + len));
-  }
+  const parts = [
+    JSON.stringify([cleanName(file.name), file.size]),
+    file.slice(0, len),
+    file.slice(file.size - len, file.size),
+  ];
   const digest = await subtle.digest("SHA-256", await new Blob(parts).arrayBuffer());
   return Array.from(new Uint8Array(digest), (b) => b.toString(16).padStart(2, "0")).join("");
 }
@@ -166,28 +165,6 @@ export function etaOf(s, loaded, total, now) {
   return shown === null || Math.abs(est - shown) >= ETA_MOVE * shown ? { ...next, est, estAt: now } : next;
 }
 
-/** @param {number} ms @returns {string} whole minutes rounded up, so it never counts by seconds */
-export const etaLabel = (ms) => (ms < 60_000 ? "Under a minute left" : `${Math.ceil(ms / 60_000)} min left`);
-
-/** @param {number} loaded @param {number} total @param {number | null} left the time left, when known @returns {string} "34 of 88 MB · 2 min left" */
-export const progressLine = (loaded, total, left) =>
-  `${formatBytes(loaded, total)}${left === null ? "" : ` · ${etaLabel(left)}`}`;
-
-/**
- * "34 of 88 MB": both numbers in the total's unit, one decimal under 10, whole above (UX: units). The sent share
- * rounds down, so it never reads ahead of the bytes.
- * @param {number} loaded
- * @param {number} total
- */
-export function formatBytes(loaded, total) {
-  const unit = total < MIB ? KIB : total < KIB * MIB ? MIB : KIB * MIB;
-  const name = unit === KIB ? "KB" : unit === MIB ? "MB" : "GB";
-  const scaled = total / unit;
-  if (Math.round(scaled * 10) >= 100 || unit === KIB)
-    return `${Math.floor(loaded / unit)} of ${Math.max(1, Math.round(scaled))} ${name}`;
-  return `${(Math.floor((loaded / unit) * 10) / 10).toFixed(1)} of ${scaled.toFixed(1)} ${name}`;
-}
-
 /** @param {string | null | undefined} header @returns {number | undefined} whole seconds (an HTTP date is not honored) */
 const seconds = (header) => {
   const n = Number.parseInt(header ?? "", 10);
@@ -206,7 +183,6 @@ const seconds = (header) => {
  * @property {string} [uploadId]
  * @property {string} [pausedId] the open upload this file was chosen to finish
  * @property {string} [error]
- * @property {unknown} [view]
  * @property {string} [fileId]
  * @property {string} [fileStatus]
  * @property {"direct" | "proxy"} mode
@@ -227,19 +203,16 @@ const seconds = (header) => {
  * @property {State} before the state a wait returns to
  * @property {number} rejected 4xx answers to direct PUTs since one succeeded
  * @property {Promise<void> | null} minting
+ * @property {number} lost ms spent waiting for the connection
  */
 
 /**
  * @param {object} args
- * @param {"library" | "guest"} args.kind a guest's requests carry its pairing credential; the library's, its cookie
- * @param {string} [args.pid] the guest credential
  * @param {(batch: Batch) => void} args.onChange a plain snapshot after every change
  * @param {Partial<Deps>} [args.deps] fakes, for the unit tests
  */
-export function createUploader({ kind, pid, onChange, deps }) {
+export function createUploader({ onChange, deps }) {
   const d = { ...browserDeps(), ...deps };
-  const api = createApi({ fetch: d.fetch });
-  const guest = kind === "guest";
   /** @type {Rec[]} */
   let records = [];
   let nextId = 1;
@@ -273,9 +246,10 @@ export function createUploader({ kind, pid, onChange, deps }) {
   };
 
   /** @param {Rec} r */
-  const saved = (r) => r.state === "saved" || r.state === "sent";
+  const saved = (r) => r.state === "saved";
   /** The file's run is over, one way or another; a paused row waits for a file. @param {Rec} r */
-  const ended = (r) => saved(r) || r.state === "refused" || r.state === "paused" || r.state === "canceled";
+  const ended = (r) =>
+    saved(r) || r.state === "refused" || r.state === "paused" || r.state === "canceled" || r.state === "unsettled";
   /** @param {Rec} r @returns {number} bytes counted toward the batch */
   const loadedOf = (r) => (saved(r) ? r.size : r.shown);
   /** @param {Rec} r @returns {FileSnap} */
@@ -291,7 +265,6 @@ export function createUploader({ kind, pid, onChange, deps }) {
       fraction: done ? 1 : r.size ? Math.min(0.99, r.shown / r.size) : 0,
     };
     if (r.error !== undefined) out.error = r.error;
-    if (r.view !== undefined) out.view = r.view;
     if (r.fileId !== undefined) out.fileId = r.fileId;
     if (r.fileStatus !== undefined) out.fileStatus = r.fileStatus;
     if (r.uploadId !== undefined) out.uploadId = r.uploadId;
@@ -390,12 +363,11 @@ export function createUploader({ kind, pid, onChange, deps }) {
   }
   /** @param {Rec} r @param {string} code @returns {never} */
   function refuse(r, code) {
-    finishRec(r, "refused", { error: guest && !isErrorCode(code) ? "bad_request" : code });
+    finishRec(r, "refused", { error: code });
     throw END;
   }
-  /** The row is gone: the library keeps the file's place as paused; a guest's send ends. @param {Rec} r @returns {never} */
+  /** The row is gone: the library keeps the file's place, as paused. @param {Rec} r @returns {never} */
   function gone(r) {
-    if (guest) return refuse(r, "upload_aborted");
     finishRec(r, "paused", { file: null });
     throw END;
   }
@@ -403,18 +375,40 @@ export function createUploader({ kind, pid, onChange, deps }) {
   /**
    * @param {"GET" | "POST" | "DELETE"} method @param {string} path @param {unknown} [body]
    * @param {Record<string, string>} [headers]
-   * @param {number} [ms] how long it may take
+   * @param {number} [ms] how long it may take: a half-open connection never answers, and past it the request is the network
    * @returns {Promise<Answer>} status 0 for the network, or for a 2xx that is not bloop's (a filter's page, REL-03)
    */
   async function call(method, path, body, headers = {}, ms = CALL_MS) {
-    // A half-open connection never answers: past the limit the request is the network.
-    const res = await api.call(method, path, { auth: guest ? pid : null, body, headers, timeout: ms });
-    if (res.ok) return { status: 200, body: res.value };
-    return {
-      status: res.status ?? 0,
-      body: { code: res.code },
-      ...(res.retryAfter ? { retryAfter: res.retryAfter } : {}),
-    };
+    const stop = new AbortController();
+    const timer = d.setTimeout(() => stop.abort(), ms);
+    /** @type {Response | undefined} */
+    let res;
+    /** @type {any} */
+    let json = null;
+    try {
+      res = await d.fetch(path, {
+        method,
+        headers: {
+          Accept: "application/json",
+          ...(method === "GET" ? {} : { "Content-Type": "application/json" }),
+          ...headers,
+        },
+        ...(method === "GET" ? {} : { body: JSON.stringify(body ?? {}) }),
+        cache: "no-store",
+        credentials: "same-origin",
+        signal: stop.signal,
+      });
+      json = JSON.parse((await res.text()) || "{}");
+    } catch {
+      // no answer, or one that is not JSON
+    } finally {
+      d.clearTimeout(timer);
+    }
+    if (!res) return { status: 0 };
+    const ours = res.headers.get("X-Bloop") === "1";
+    if (res.ok) return json !== null && ours ? { status: 200, body: json } : { status: 0 };
+    const retryAfter = seconds(res.headers.get("Retry-After"));
+    return { status: res.status, body: { code: json?.code }, ...(retryAfter ? { retryAfter } : {}) };
   }
 
   /** @param {string} id @returns {string} */
@@ -423,6 +417,11 @@ export function createUploader({ kind, pid, onChange, deps }) {
   const base = (r) => pathOf(/** @type {string} */ (r.uploadId));
   /** @param {Rec} r @param {number} n */
   const proxyPath = (r, n) => `${base(r)}/parts/${n}`;
+  /** A 5xx is the service failing, unless it names a code of its own (quota_exceeded is a 507): that is the answer. @param {Answer} res */
+  const isFinal = (res) =>
+    typeof res.body?.code === "string" && res.body.code !== "service_busy" && res.body.code !== "internal";
+  /** @param {Answer} res @param {number} ms @returns {number} ms: the backoff, or the server's Retry-After if longer */
+  const backoff = (res, ms) => Math.max(ms, Math.min(res.retryAfter ?? 0, MAX_WAIT_S) * 1000);
   /** @param {{body?: any}} res @returns {string} the code an answer carries, or a bad request */
   const codeOf = (res) => (typeof res.body?.code === "string" ? res.body.code : "bad_request");
 
@@ -448,9 +447,9 @@ export function createUploader({ kind, pid, onChange, deps }) {
         await wait429(r, res, ++limited);
         continue;
       }
-      if (res.status !== 0 && res.status < 500) return res;
+      if (res.status !== 0 && (res.status < 500 || isFinal(res))) return res;
       if (tries >= RETRY_MS.length) return res.status ? refuse(r, "service_busy") : null;
-      await pause(r, RETRY_MS[tries++] ?? 0);
+      await pause(r, backoff(res, RETRY_MS[tries++] ?? 0));
       if (r.stopped) throw END;
     }
   }
@@ -489,13 +488,15 @@ export function createUploader({ kind, pid, onChange, deps }) {
       if (r.state !== "checking") set(r, "waiting");
     }
     // The time left counted down while it was out; it is estimated afresh from the next samples.
-    eta = { ...eta, at: -1, est: null };
+    eta = etaStart();
+    const out = d.now();
     try {
       do {
         await pause(r, PROBE_MS, true);
         if (r.stopped) throw END;
       } while (!(await sync(r)));
     } finally {
+      r.lost += d.now() - out;
       if (--r.outages === 0 && r.state === "waiting") set(r, r.before);
     }
   }
@@ -581,9 +582,8 @@ export function createUploader({ kind, pid, onChange, deps }) {
         resolve(out);
       };
       x.open("PUT", u.url);
-      // The credential goes to bloop only: a direct URL is another host and carries its own signature.
+      // A direct URL is another host and carries its own signature: only bloop's gets a header.
       if (!u.direct) {
-        if (guest) x.setRequestHeader("Authorization", `Bearer ${pid}`);
         x.setRequestHeader("Content-Type", "application/octet-stream");
       }
       x.upload.onprogress = (e) => {
@@ -650,7 +650,12 @@ export function createUploader({ kind, pid, onChange, deps }) {
         return;
       }
       bump(r);
-      if (status === 404 || status === 410) return gone(r);
+      if (status === 404 || status === 410) {
+        if (!u.direct) return gone(r);
+        // A storage host's 404 is not bloop's word that the upload is gone: bloop is asked, which ends it if so.
+        await sync(r);
+        r.urls.delete(n);
+      }
       if (status === 429) {
         await wait429(r, res, ++limited);
         continue;
@@ -662,7 +667,11 @@ export function createUploader({ kind, pid, onChange, deps }) {
         continue;
       }
       // bloop's own answer to a part is final; a storage host's 4xx is retried a few times, then it is refused.
-      if (status >= 400 && status < 500 && (!u.direct || ++r.rejected > MAX_REJECTED)) return refuse(r, codeOf(res));
+      if (
+        (status >= 400 && status < 500 && (!u.direct || ++r.rejected > MAX_REJECTED)) ||
+        (status >= 500 && isFinal(res))
+      )
+        return refuse(r, codeOf(res));
       r.pace = nextConcurrency(r.pace, { ok: false, ms: 0 });
       if (tries >= RETRY_MS.length) {
         // The network is out (wait for it), or the service keeps failing (a refusal).
@@ -670,7 +679,7 @@ export function createUploader({ kind, pid, onChange, deps }) {
         r.halted = true;
         return;
       }
-      await pause(r, RETRY_MS[tries++] ?? 0);
+      await pause(r, backoff(res, RETRY_MS[tries++] ?? 0));
     }
   }
 
@@ -701,7 +710,7 @@ export function createUploader({ kind, pid, onChange, deps }) {
               // An ended file already has its state; anything else is a bug, shown as the service being down.
               r.halted = true;
               if (e !== END && !r.stopped) {
-                finishRec(r, "refused", { error: guest ? "service_down" : "internal" });
+                finishRec(r, "refused", { error: "internal" });
               }
             },
           );
@@ -734,7 +743,8 @@ export function createUploader({ kind, pid, onChange, deps }) {
   /** @param {Rec} r @returns {Promise<boolean>} true: complete answered; false: parts are missing, send the gaps */
   async function complete(r) {
     set(r, "checking");
-    const until = d.now() + CHECK_MS;
+    const began = d.now();
+    const lost = r.lost;
     for (let again = 0; ; again++) {
       const body = r.rider ? { n: r.rider.n, etag: r.rider.etag, bytes: r.rider.bytes } : {};
       const res = await ask(r, () => call("POST", `${base(r)}/complete`, body, {}, COMPLETE_MS));
@@ -745,23 +755,21 @@ export function createUploader({ kind, pid, onChange, deps }) {
         return false;
       }
       // Still checking, or another request holds the claim: the same complete again settles it (the check reruns
-      // there; a read of the upload would not). Only the server's own refusal refuses the file.
+      // there; a read of the upload would not). Only the server's own refusal refuses a file.
       const b = res.body;
       if (res.status === 200 ? b?.state === "checking" : res.status === 409 && codeOf(res) === "upload_busy") {
-        if (d.now() >= until) return refuse(r, "service_busy");
-        await pause(r, Math.min(CHECK_WAIT_MAX_MS, CHECK_WAIT_MS * 2 ** again));
+        // Past the cap the file stays, unsettled: it is the server's, and Check Again repeats this.
+        if (d.now() - began - (r.lost - lost) >= CHECK_MS) {
+          finishRec(r, "unsettled");
+          throw END;
+        }
+        await pause(r, backoff(res, Math.min(CHECK_WAIT_MAX_MS, CHECK_WAIT_MS * 2 ** again)));
         if (r.stopped) throw END;
         continue;
       }
       if (res.status !== 200) return failed(r, res);
-      if (guest) {
-        if (!b || typeof b !== "object") return refuse(r, "service_down");
-        finishRec(r, "sent", { view: b });
-      } else if (b?.state === "refused") {
-        return refuse(r, b.file?.refusal ?? "bad_structure");
-      } else {
-        finishRec(r, "saved", { fileId: b?.file?.id ?? r.fileId, fileStatus: b?.file?.status ?? b?.state });
-      }
+      if (b?.state === "refused") return refuse(r, b.file?.refusal ?? "bad_structure");
+      finishRec(r, "saved", { fileId: b?.file?.id ?? r.fileId, fileStatus: b?.file?.status ?? b?.state });
       d.vibrate?.(12);
       return true;
     }
@@ -806,11 +814,22 @@ export function createUploader({ kind, pid, onChange, deps }) {
     r.plan = planParts(r.size, partBytes);
     r.mode = b.mode === "proxy" ? "proxy" : "direct";
     for (const n of Array.isArray(b.done) ? b.done : []) if (Number.isInteger(n) && n >= 1 && n <= parts) r.done.add(n);
+    // The page listed this upload as a paused row before the file was chosen again: that row is this file now.
+    records = records.filter((x) => x === r || x.state !== "paused" || x.uploadId !== r.uploadId);
     if (typeof b.fileId === "string") r.fileId = b.fileId;
     keepUrls(r, b.urls, b.ttlMs);
     // A different file chosen over a paused row: that row is closed, which frees its reserved bytes.
-    if (r.pausedId && r.pausedId !== r.uploadId) void call("DELETE", pathOf(r.pausedId));
+    if (r.pausedId && r.pausedId !== r.uploadId) void close(r.pausedId);
     bump(r);
+  }
+
+  /** Closes an upload on the server: once more after a second if the first try did not get through. @param {string} id */
+  async function close(id) {
+    for (let i = 0; i < 2; i++) {
+      const res = await call("DELETE", pathOf(id));
+      if (res.status && res.status < 500) return;
+      await new Promise((resolve) => d.setTimeout(() => resolve(undefined), RETRY_MS[0] ?? 0));
+    }
   }
 
   /** @param {Rec} r */
@@ -824,7 +843,7 @@ export function createUploader({ kind, pid, onChange, deps }) {
       }
       return refuse(r, "bad_request");
     } catch (e) {
-      if (e !== END && !r.stopped) finishRec(r, "refused", { error: guest ? "service_down" : "internal" });
+      if (e !== END && !r.stopped) finishRec(r, "refused", { error: "internal" });
     }
   }
 
@@ -867,6 +886,7 @@ export function createUploader({ kind, pid, onChange, deps }) {
       before: "queued",
       rejected: 0,
       minting: null,
+      lost: 0,
       ...fields,
     };
   }
@@ -902,7 +922,7 @@ export function createUploader({ kind, pid, onChange, deps }) {
     }
     emit();
   }
-  if (!guest) void loadPaused();
+  void loadPaused();
 
   /** @param {number} id @returns {Rec | undefined} */
   const find = (id) => records.find((r) => r.id === id);
@@ -916,7 +936,7 @@ export function createUploader({ kind, pid, onChange, deps }) {
     add(files) {
       // A batch that has ended is replaced by the new one; paused rows stay.
       if (records.every(ended)) {
-        records = records.filter((r) => r.state === "paused");
+        records = records.filter((r) => r.state === "paused" || r.state === "unsettled");
         eta = etaStart();
         shown = 0;
       }
@@ -935,7 +955,7 @@ export function createUploader({ kind, pid, onChange, deps }) {
       if (!r || r.state === "checking" || (ended(r) && r.state !== "paused")) return;
       const open = r.uploadId;
       finishRec(r, "canceled");
-      if (open) void call("DELETE", pathOf(open));
+      if (open) void close(open);
     },
     /**
      * The file chosen again for a paused row: the same fingerprint resumes its upload; another file closes the row and
@@ -947,13 +967,27 @@ export function createUploader({ kind, pid, onChange, deps }) {
       const r = find(id);
       if (r?.state !== "paused") return;
       const paused = r.uploadId;
-      const same = file.name === r.name && file.size === r.size;
+      const same = cleanName(file.name) === r.name && file.size === r.size;
       const fields = { id: r.id, file, name: file.name, size: file.size, state: /** @type {const} */ ("queued") };
       records[records.indexOf(r)] = record(paused && same ? { ...fields, pausedId: paused } : fields);
       // A file that plainly is not the paused one frees the row before it asks for room of its own.
-      if (paused && !same) void call("DELETE", pathOf(paused));
+      if (paused && !same) void close(paused);
       emit();
       void drain();
+    },
+    /**
+     * Check Again on a file the server has not settled: the same complete, repeated for another stretch.
+     * @param {number} id
+     */
+    recheck(id) {
+      const r = find(id);
+      if (r?.state !== "unsettled") return;
+      r.stopped = false;
+      void complete(r)
+        .then((whole) => whole || run(r))
+        .catch((e) => {
+          if (e !== END && !r.stopped) finishRec(r, "refused", { error: "internal" });
+        });
     },
     /** Stops everything the page holds (the uploads stay open on the server, for the paused row to finish). */
     dispose() {

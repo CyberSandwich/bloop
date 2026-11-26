@@ -348,6 +348,8 @@ describe("size budgets", () => {
       "upload engine, lazy": "public/js/core/upload.js",
       "upload pill face, lazy": "public/js/core/pill.js",
       "upload pill binding, lazy": ["public/js/core/lazy.js", "public/js/core/upload-pill.js"],
+      "upload progress words, lazy": "public/js/core/upload-format.js",
+      "upload sheet, lazy": "public/js/core/upload-sheet.js",
       "upload refusal copy, lazy": "public/js/core/upload-refusals.js",
     });
     for (const entry of lazyEntries) {
