@@ -118,8 +118,12 @@ for (const vp of VIEWPORTS) {
       );
       const hero = imgs.find((i) => i.hero);
       expect(hero?.lazy).toBe(false);
-      // Under 640 the stage is hidden and its picture is the logo's own file (the phone test below counts requests).
-      expect(hero?.src).toMatch(vp.width < 640 ? /\/favicon\.svg$/ : /\/img\/hero-viewer-(750|1100|1600|2200)\./);
+      // Under 640 the phone's own picture; a phone never fetches the desktop screenshot.
+      expect(hero?.src).toMatch(
+        vp.width < 640
+          ? /\/img\/hero-phone-(600|900)\.[0-9a-f]{8}\./
+          : /\/img\/hero-viewer-(750|1100|1600|2200)\.[0-9a-f]{8}\./,
+      );
       const raster = imgs.filter((i) => !i.hero && !i.file.endsWith(".svg"));
       expect(raster.length).toBeGreaterThan(0);
       for (const i of raster) expect(i, i.file).toMatchObject({ lazy: true, below: true });
@@ -164,9 +168,7 @@ for (const vp of VIEWPORTS) {
       await expect(page).toHaveURL(/\/s\?mode=demo$/);
     });
 
-    test("the hero block sits in the middle of the first view, and the stage (640 up) starts at the fold", async ({
-      page,
-    }) => {
+    test("the hero block sits in the middle of the first view, and the stage starts at the fold", async ({ page }) => {
       await page.goto("/");
       await page.evaluate(() => document.fonts?.ready);
       const box = await page.evaluate(() => {
@@ -179,7 +181,7 @@ for (const vp of VIEWPORTS) {
       });
       // The nav's clearance is padded on both sides, so the block's middle is the hero's within a few px.
       expect(Math.abs(box.middle - vp.height / 2)).toBeLessThan(24);
-      if (vp.width >= 640) expect(Math.abs(box.stage - vp.height)).toBeLessThanOrEqual(1);
+      expect(Math.abs(box.stage - vp.height)).toBeLessThanOrEqual(1);
     });
 
     test("the logo pill and the links pill are separate and share one height", async ({ page }) => {
@@ -735,13 +737,25 @@ test.describe("reduced motion", () => {
 test.describe("phone hero", () => {
   test.use({ viewport: { width: 390, height: 844 }, hasTouch: true, isMobile: true });
 
-  test("the hero stage is hidden under 640 and no hero image is requested", async ({ page }) => {
+  test("the phone shows its own picture in a 16 px frame at the picture's ratio and fetches no desktop one", async ({
+    page,
+  }) => {
     const requested: string[] = [];
     page.on("request", (r) => requested.push(r.url()));
     await page.goto("/");
     await page.waitForLoadState("networkidle");
-    await expect(page.locator(".stage")).toBeHidden();
-    await expect(page.locator(".tilt")).toHaveCSS("display", "none");
+    const img = page.locator(".stage img");
+    await expect(page.locator(".stage")).toBeVisible();
+    await expect(page.locator(".stage")).toHaveCSS("border-radius", "16px");
+    await expect
+      .poll(() => img.evaluate((el) => (el as unknown as { currentSrc: string }).currentSrc))
+      .toMatch(/\/img\/hero-phone-(600|900)\.[0-9a-f]{8}\.(avif|webp)$/);
+    // The layout box, not the bounding box: the stage is tilted and scaled while it enters.
+    const [w = 0, h = 1] = await img.evaluate((el) => [
+      (el as unknown as { offsetWidth: number }).offsetWidth,
+      (el as unknown as { offsetHeight: number }).offsetHeight,
+    ]);
+    expect(Math.abs(w / h - 390 / 844)).toBeLessThan(0.01);
     expect(requested.filter((u) => u.includes("hero-viewer"))).toEqual([]);
   });
 });
