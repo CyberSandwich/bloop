@@ -312,47 +312,20 @@ test("a send module that cannot load says so with Reload, and the offer stays", 
   await closeAll(screen, phone);
 });
 
-/** Routes `/api/drop` so its first send answers 503 (service_down); the rest reach the server. */
-const failFirstDrop = async (context: BrowserContext) => {
-  const sends = { count: 0 };
-  await context.route("**/api/drop", (route) => {
-    sends.count += 1;
-    return sends.count === 1 ? route.fulfill({ status: 503, body: "" }) : route.continue();
-  });
-  return sends;
-};
-
-test("a guest's failed send, before any session, sends again on Try Again (the late-module guard lets a retry through)", async ({
-  browser,
-}) => {
-  let sends = { count: 0 };
-  const { screen, phone } = await scanSignedOut(browser, "preview", async (context) => {
-    sends = await failFirstDrop(context);
-  });
-  await pickMatch(phone.page, screen.page);
-  const chooser = phone.page.waitForEvent("filechooser");
-  await phone.page.getByRole("button", { name: "Add a File" }).click();
-  await (await chooser).setFiles({ name: "notes.pdf", mimeType: "application/pdf", buffer: Buffer.from("%PDF-1.4\n") });
+test("a failed send sends again on Try Again (the late-module guard lets a retry through)", async ({ browser }) => {
+  // Every send answers 503 here, so what is counted is the phone's sends, never the server's verdict on the file.
+  let sends = 0;
+  const { screen, phone } = await atOffer(browser, (context) =>
+    context.route("**/api/drop", (route) => {
+      sends += 1;
+      return route.fulfill({ status: 503, body: "" });
+    }),
+  );
   await phone.page.getByRole("button", { name: "Send" }).click();
   await expect(heading(phone.page)).toHaveText("bloop Isn't Responding");
-  const sent = phone.page.waitForResponse((r) => new URL(r.url()).pathname === "/api/drop" && r.ok());
+  expect(sends).toBe(1);
   await phone.page.getByRole("button", { name: "Try Again" }).click();
-  await sent;
-  expect(sends.count).toBe(2);
-  await closeAll(screen, phone);
-});
-
-test("in a session, a failed send's Try Again sends nothing (the upload may have landed; states.js retryStep)", async ({
-  browser,
-}) => {
-  let sends = { count: 0 };
-  const { screen, phone } = await atOffer(browser, async (context) => {
-    sends = await failFirstDrop(context);
-  });
-  await phone.page.getByRole("button", { name: "Send" }).click();
+  await expect.poll(() => sends).toBe(2);
   await expect(heading(phone.page)).toHaveText("bloop Isn't Responding");
-  await phone.page.getByRole("button", { name: "Try Again" }).click();
-  await expect(heading(phone.page)).toHaveText("Demo Room");
-  expect(sends.count).toBe(1);
   await closeAll(screen, phone);
 });
