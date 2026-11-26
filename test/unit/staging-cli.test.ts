@@ -8,6 +8,7 @@ import { SECRETS } from "../../tools/staging.mjs";
 import { SPAWN_TIMEOUT } from "./spawn.ts";
 
 const REPO = new URL("../../", import.meta.url).pathname;
+const PREBUILT_TEXT = '"build": { "command": "node tools/prebuilt.mjs assert" }';
 const D1_ID = "11111111-2222-3333-4444-555555555555";
 
 // A wrangler that records every call and fails the ones named in FAIL, so the CLI can be run without a network.
@@ -144,15 +145,29 @@ describe("tools/staging.mjs as the workflow runs it", () => {
     const calls = project(false);
     writeFileSync(calls, "");
     writeFileSync(`${calls}.token`, "");
-    const wrangler = (token: string) =>
-      spawnSync(process.execPath, [join(root, "tools/pinned-wrangler.mjs"), "deploy", "--dry-run"], {
-        cwd: root,
-        encoding: "utf8",
-        env: { ...process.env, CALLS: calls, CLOUDFLARE_API_TOKEN: token },
-      });
-    const refused = wrangler("token-under-test");
-    expect(refused.status).not.toBe(0);
-    expect(refused.stderr).toContain("still builds");
+    const wrangler = (token: string, ...args: string[]) =>
+      spawnSync(
+        process.execPath,
+        [join(root, "tools/pinned-wrangler.mjs"), ...(args.length ? args : ["deploy", "--dry-run"])],
+        {
+          cwd: root,
+          encoding: "utf8",
+          env: { ...process.env, CALLS: calls, CLOUDFLARE_API_TOKEN: token },
+        },
+      );
+    for (const args of [
+      ["deploy", "--dry-run"],
+      ["versions", "upload"],
+      ["d1", "migrations", "apply", "DB"],
+    ]) {
+      const refused = wrangler("token-under-test", ...args);
+      expect(refused.status, args.join(" ")).not.toBe(0);
+      expect(refused.stderr).toContain("still builds");
+    }
+    // The swapped text alone is not enough while the real build block is still there.
+    const config = join(root, "wrangler.jsonc");
+    writeFileSync(config, `// ${PREBUILT_TEXT}\n${readFileSync(config, "utf8")}`);
+    expect(wrangler("token-under-test").status).not.toBe(0);
     expect(readFileSync(calls, "utf8")).toBe("");
     // The rehearsal has no token: wrangler itself runs the build command, which is the point of the dry run.
     expect(wrangler("").status).toBe(0);
