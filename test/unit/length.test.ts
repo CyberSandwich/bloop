@@ -13,6 +13,7 @@ import {
   MAX_MINUTES,
   must,
   offered,
+  pastStart,
   sec,
   T0,
   waiting,
@@ -39,7 +40,7 @@ describe("SESS-01 length: the phone sets when the session ends", () => {
 
   it("sets endsAt to now plus the minutes, pushes both and moves the alarm, in approved, opening and open", () => {
     const at = APPROVED_AT + 5 * MIN;
-    const a = approved();
+    const a = pastStart(approved());
     const opening = must(a, { e: "launched", now: APPROVED_AT, mode: "protocol" }).next;
     const open = must(opening, { e: "fetched", now: APPROVED_AT }).next;
     for (const m of [a, opening, open]) {
@@ -150,7 +151,7 @@ describe("SESS-01 length: the phone sets when the session ends", () => {
 
   it("the timer ends the session at the new endsAt, not the old one", () => {
     const at = APPROVED_AT + MIN;
-    const m = must(approved(), length(at, 5)).next;
+    const m = must(pastStart(approved()), length(at, 5)).next;
     expect(must(m, { e: "timer", now: at + 5 * MIN - 1 }).next).toBe(m);
     const { next } = must(m, { e: "timer", now: at + 5 * MIN });
     expect(next.state).toBe("ended");

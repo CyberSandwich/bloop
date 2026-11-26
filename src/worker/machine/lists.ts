@@ -5,32 +5,27 @@ import {
   fileAt,
   type ItemDraft,
   type ItemRef,
+  isUpNext,
   launchIndex,
   MAX_ITEMS,
   orderItems,
+  validDerived,
+  validExtra,
   withIds,
 } from "../items.ts";
 import type { EventOf, Machine, Step } from "../machine.ts";
-import { type Actor, fail, MINUTE, newSession, ok } from "./step.ts";
+import { type Actor, fail, MINUTE, newSession, ok, SECOND, START_SECONDS, unconfirmed } from "./step.ts";
 
 const sameRefs = (a: readonly ItemRef[], b: readonly ItemDraft[]): boolean =>
   a.length === b.length && a.every((item, i) => item.ref === b[i]?.ref);
 
-/** `userId` is the account the approving phone is signed in as now, which may be newer than the claim's. */
-function approveItems(
-  m: Machine,
-  now: number,
-  items: readonly ItemDraft[],
-  minutes: number,
-  actor: Actor,
-  userId: string | null = null,
-): Step {
+/** The pairing's user is the claim's and never changes here: a pinned user is final (ADR 0015). */
+function approveItems(m: Machine, now: number, items: readonly ItemDraft[], minutes: number, actor: Actor): Step {
   const ordered = withIds(orderItems(items));
   const launch = launchIndex(ordered);
   const next: Machine = {
     ...m,
     state: "approved",
-    pairing: m.pairing && { ...m.pairing, userId: userId ?? m.pairing.userId },
     session: {
       ...newSession(
         ordered,
@@ -38,6 +33,9 @@ function approveItems(
       ),
       approvedAt: now,
       endsAt: now + minutes * MINUTE,
+      startedAt: null,
+      startBy: now + START_SECONDS * SECOND,
+      startCause: null,
     },
     uploadAt: null,
     offerAt: null,
@@ -55,6 +53,7 @@ const validItems = (items: readonly ItemDraft[]): boolean =>
 
 export function listed(m: Machine, ev: EventOf<"listed">): Step {
   if ((m.state !== "claimed" && m.state !== "choosing") || m.pairing?.kind !== "owner") return fail("wrong_state");
+  if (unconfirmed(m)) return fail("match_required");
   return ok({ ...m, state: "choosing", pairing: { ...m.pairing, listed: ev.ids } }, [{ fx: "push", to: "both" }]);
 }
 
@@ -65,11 +64,15 @@ export function approve(m: Machine, ev: EventOf<"approve">): Step {
   }
   if (m.state === "ended") return fail("session_ended");
   if ((m.state !== "claimed" && m.state !== "choosing") || m.pairing?.kind !== "owner") return fail("wrong_state");
-  const { listed } = m.pairing;
-  // A live screen has no viewer: it can show only the one file it launches, so a live session takes exactly one.
-  if (m.mode === "live" && (ev.items.length !== 1 || ev.items[0]?.kind !== "file")) return fail("bad_request");
-  if (m.mode === "live" && !ev.items.every((i) => listed.includes(i.ref))) return fail("file_not_found");
-  return approveItems(m, ev.now, ev.items, ev.minutes, "phone", ev.userId);
+  if (unconfirmed(m)) return fail("match_required");
+  // A live Up Next list was checked by the route's serving predicate; the machine holds no library to check it against.
+  if (m.mode === "live" && !isUpNext(ev.items)) {
+    // transitional: removed in P1 commit 5 (one listed mock or Graph file, until the library is the live source)
+    const { listed } = m.pairing;
+    if (ev.items.length !== 1 || ev.items[0]?.kind !== "file") return fail("bad_request");
+    if (!ev.items.every((i) => listed.includes(i.ref))) return fail("file_not_found");
+  }
+  return approveItems(m, ev.now, ev.items, ev.minutes, "phone");
 }
 
 export function openClick(m: Machine, ev: EventOf<"open.click">): Step {
@@ -103,4 +106,19 @@ export function fallback(m: Machine, ev: EventOf<"fallback">): Step {
     ...(relaunch ? [] : [{ fx: "metric" as const, name: "fallback" as const }]),
     { fx: "push", to: "both" },
   ]);
+}
+
+/**
+ * Conversion finished for the file with `ref`: its derived flags join the item, its phone-only extras join
+ * `session.extra`. A ref no item holds is a stale call and changes nothing.
+ */
+export function derivedReady(m: Machine, ev: EventOf<"derivedReady">): Step {
+  if (!validDerived(ev.derived) || !validExtra(ev.extra)) return fail("bad_request");
+  const { session } = m;
+  if (!IN_SESSION.includes(m.state) || !session) return fail("wrong_state");
+  const item = session.items.find((i) => i.kind === "file" && i.ref === ev.ref);
+  if (!item) return ok(m);
+  const items = session.items.map((i) => (i === item ? { ...i, derived: ev.derived } : i));
+  const extra = { ...session.extra, [item.id]: ev.extra };
+  return ok({ ...m, session: { ...session, items, extra } }, [{ fx: "push", to: "both" }]);
 }

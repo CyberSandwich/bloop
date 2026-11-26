@@ -220,13 +220,14 @@ describe("PAIR-13 control: only the pairing's phone commands the screen", () => 
     socket.close();
   });
 
-  it("PAIR-13 live: a live session has no viewer, so the remote is refused", async () => {
+  it("PAIR-13 live: the owner's remote and the screen's report apply for a deck; the page is within its pages", async () => {
     const { screen, socket, code } = await openScreen(api, "live");
     const { body } = await claim(api, code);
     await api.get("/api/files", body.pid);
     expect((await api.post("/api/approve", { ids: ["demo-deck"] }, { auth: body.pid })).status).toBe(200);
-    expect((await api.post("/api/control", cmd("i1"), { auth: body.pid })).body).toEqual(problem("wrong_state"));
-    expect((await api.post("/api/screen/shown", cmd("i1"), { auth: screen.sid })).body).toEqual(problem("wrong_state"));
+    expect((await api.post("/api/control", cmd("i1"), { auth: body.pid })).status).toBe(200);
+    expect((await api.post("/api/screen/shown", cmd("i1"), { auth: screen.sid })).status).toBe(200);
+    expect((await api.post("/api/control", cmd("i1", 2), { auth: body.pid })).body).toEqual(problem("bad_request"));
     socket.close();
   });
 });
