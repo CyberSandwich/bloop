@@ -1,6 +1,6 @@
 import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
-import { cleanName, MAX_DISPLAY } from "../../public/js/shared/names.js";
+import { cleanName, isValidName, NAME_MAX } from "../../public/js/shared/names.js";
 import { configFor } from "../../src/worker/config.ts";
 import { effectivePolicy } from "../../src/worker/seams/guest-drop/index.ts";
 import { RATE_LIMIT_STUBS } from "../env-vars.ts";
@@ -30,8 +30,20 @@ describe("DROP-08 xss: display names", () => {
     expect(cleanName("<img src=x onerror=alert(1)>.pptx")).toBe("<img src=x onerror=alert(1)>.pptx");
     const long = `${"a".repeat(300)}.pptx`;
     const cut = cleanName(long);
-    expect(Array.from(cut)).toHaveLength(MAX_DISPLAY);
+    expect(Array.from(cut)).toHaveLength(NAME_MAX);
     expect(cut.endsWith(".pptx")).toBe(true);
+  });
+
+  it("counts code points: 200 emoji stay whole, 201 are cut to 200 on upload and refused on rename", () => {
+    const at = "😀".repeat(200);
+    const over = "😀".repeat(201);
+    expect(cleanName(at)).toBe(at);
+    expect(Array.from(cleanName(over))).toHaveLength(NAME_MAX);
+    expect(cleanName(`${over}.pdf`).endsWith(".pdf")).toBe(true);
+    expect(isValidName(at)).toBe(true);
+    expect(isValidName(over)).toBe(false);
+    expect(isValidName("a/b")).toBe(false);
+    expect(isValidName("")).toBe(false);
   });
 
   it("is empty when nothing printable is left", () => {
