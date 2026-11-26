@@ -1345,14 +1345,10 @@ describe("landing motion and spacing (design.md sections 6 and 8)", () => {
     expect(js).toMatch(/querySelectorAll\("\.sheen, \.frag, \.panel, \.close-panel"\)\) watch\.observe\(el\)/);
     expect(js).toMatch(/addEventListener\("visibilitychange", pause\)/);
     expect(js).toMatch(/toggle\("is-paused", !on \|\| document\.hidden\)/);
-    const rule = css.search(
-      /^\.is-paused,\n\.is-paused::before,\n\.hero:focus-within \.sheen \{\n {2}animation-play-state: paused;/m,
-    );
-    // Hover pauses only where a pointer hovers: a tap would leave :hover stuck on, and the sheen paused.
-    expect(css).toMatch(/@media \(hover: hover\) \{\s*\.hero h1:hover \.sheen \{\s*animation-play-state: paused;/);
-    expect(css.replace(/@media \(hover: hover\) \{[^@]*?\n\}\n/g, "")).not.toContain("h1:hover .sheen");
-    // A hover that stops motion needs a user-driven replacement: the follower, fetched on the first pointerenter
-    // of the h1, only where a pointer hovers and motion is allowed, with no import before it (design.md section 8).
+    const rule = css.search(/^\.is-paused,\n\.is-paused::before \{\n {2}animation-play-state: paused;/m);
+    // A hover never pauses the sheen: the follower, fetched on the first pointerenter of the h1, only where a
+    // pointer hovers and motion is allowed, with no import before it, takes it over (design.md section 8).
+    expect(css).not.toContain("h1:hover .sheen");
     expect(js).toMatch(/querySelector\("\.hero h1"\)\?\.addEventListener\(\s*"pointerenter"/);
     expect(js).toMatch(
       /if \(tiltable\.matches && matchMedia\("\(hover: hover\)"\)\.matches\)\s*import\("\.\/sheen-follow\.js"\)/,
@@ -1367,6 +1363,25 @@ describe("landing motion and spacing (design.md sections 6 and 8)", () => {
     expect(legal).toMatch(/for \(const e of es\) on = e\.isIntersecting;/);
     expect(legal).toMatch(/toggle\("is-paused", !on \|\| document\.hidden\)/);
     expect(legal).toMatch(/addEventListener\("visibilitychange", pause\)/);
+  });
+
+  it("a hover or focus pause of a visible animation fades: its rule sets a property that a transition eases", () => {
+    const bare = css.replace(/\/\*[\s\S]*?\*\//g, "");
+    const pauses = [...bare.matchAll(/([^{}]+)\{([^{}]*animation-play-state: paused[^{}]*)\}/g)].filter((m) =>
+      /:hover|:focus/.test(m[1] ?? ""),
+    );
+    // The hero's focus pause is the one today; a second one needs the same pairing.
+    expect(pauses.length).toBeGreaterThan(0);
+    for (const [, selector = "", body = ""] of pauses) {
+      const name = selector.trim();
+      // The element that stops is the selector's last compound; its own rule carries the transition.
+      const target = (name.split(/\s+/).at(-1) ?? "").replace(".", "\\.");
+      const prop = /([\w-]+):/.exec(body.replace("animation-play-state: paused", ""))?.[1];
+      expect(prop, `${name} pauses with no fade`).toBeTruthy();
+      expect(bare, `${target} has no transition on ${prop}`).toMatch(
+        new RegExp(`${target} \\{[^{}]*transition: ${prop} [^;{}]*;`),
+      );
+    }
   });
 
   it("the steps sit 40 under the stage, 56 from 768", () => {
