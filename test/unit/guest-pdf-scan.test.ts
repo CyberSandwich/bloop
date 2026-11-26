@@ -232,6 +232,31 @@ describe("DROP-13 pdf-active: hostile input", () => {
     }
   });
 
+  it("DROP-13 pdf-active: refuses a reference /First whose object meets a stream before its endobj (reference bypass)", async () => {
+    const poc = HOSTILE.find(([name]) => name.includes("/First is a reference"))?.[1]() as Uint8Array;
+    for (const size of [1, 64, 4096, poc.length]) {
+      expect(await chunked(poc, size), `window ${size}`).toMatchObject({ ok: false, found: ["unscannable"] });
+    }
+    const unread = stream(`/First 2 0 R/Length 9${" ".repeat(5000)}`, enc.encode("123456789"));
+    expect(await scanPdf(unread)).toMatchObject({ ok: false, found: ["unscannable"] });
+    const unclosed = pdf("1 0 obj<</Type/Outlines/First 2 0 R/Last 2 0 R/Count 1>>");
+    expect(await scanPdf(unclosed)).toMatchObject({ ok: false, found: ["unscannable"] });
+    const named = pdf("1 0 obj<</First 2 0 R/X/endobj>>\n2 0 obj<</Length 1>>stream\nx\nendstream\nendobj");
+    expect(await scanPdf(named)).toMatchObject({ ok: false, found: ["unscannable"] });
+    const closed = pdf("1 0 obj<</First 2 0 R>>endobj\n2 0 obj<</Length 1>>stream\nx\nendstream\nendobj");
+    expect(await scanPdf(closed)).toEqual({ ok: true });
+    const inner = deflateSync(enc.encode("<<>>"));
+    const read = cat([
+      enc.encode(
+        `%PDF-1.5\n5 0 obj\n<< /Type /ObjStm /N 1 /First 6 0 R /Filter /FlateDecode /Length ${inner.length} >>`,
+      ),
+      enc.encode("\nstream\n"),
+      inner,
+      enc.encode("\nendstream\nendobj\n6 0 obj 4 endobj\n%%EOF\n"),
+    ]);
+    expect(await scanPdf(read)).toEqual({ ok: true });
+  });
+
   it("DROP-13 pdf-active: refuses a direct /First the scan cannot tie to an object stream it read (far or split dictionary)", async () => {
     const far = stream(`/N 1/First 4/Filter/FlateDecode${" ".repeat(5000)}/Length 9`, body);
     expect(await scanPdf(far)).toMatchObject({ ok: false, found: ["unscannable"] });
@@ -284,6 +309,13 @@ describe("DROP-13 pdf-active: hostile input", () => {
     expect(performance.now() - t).toBeLessThan(200);
   });
 
+  it("scans a hundred thousand endobj keywords, each closing a reference /First, in linear time", async () => {
+    const hostile = enc.encode(`1 0 obj ${"<</First 2 0 R>>endobj ".repeat(100_000)}${"endobj\n".repeat(100_000)}`);
+    const t = performance.now();
+    expect(await scanPdf(hostile)).toEqual({ ok: true });
+    expect(performance.now() - t).toBeLessThan(500);
+  });
+
   it("stops inflating at the first object stream it cannot read, however many follow", async () => {
     const hostile = enc.encode(`1 0 obj<</Type/ObjStm>>stream\n`.repeat(30_000));
     const t = performance.now();
@@ -303,6 +335,13 @@ describe("DROP-13 pdf-active: hostile input", () => {
     const t = performance.now();
     expect(await scanPdf(hostile)).toMatchObject({ ok: false, found: ["unscannable"] });
     expect(performance.now() - t).toBeLessThan(10_000);
+  }, 30_000);
+
+  it("inflates at most 32 MiB over all object streams, and refuses the stream that would pass it", async () => {
+    const seven = objStmOf(new Uint8Array(deflateSync(new Uint8Array(7 * 1024 * 1024).fill(0x20))));
+    const file = (n: number) => cat([enc.encode("%PDF-1.5\n"), ...Array.from({ length: n }, () => seven)]);
+    expect(await scanPdf(file(4))).toEqual({ ok: true });
+    expect(await scanPdf(file(5))).toMatchObject({ ok: false, found: ["unscannable"] });
   }, 30_000);
 });
 

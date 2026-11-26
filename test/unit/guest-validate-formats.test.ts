@@ -210,8 +210,9 @@ describe("DROP-13 pdf-active: through validate", () => {
     expect(await check(build(), "pdf")).toEqual({ ok: true, type: "pdf" });
   });
 
-  it.each(HOSTILE)("refuses %s as macro_content", async (_, build) => {
-    expect(await check(build(), "pdf")).toEqual(refused("macro_content"));
+  it.each(HOSTILE)("refuses %s as macro_content, or bad_structure when it cannot be read", async (_, build, found) => {
+    const error = found.join() === "unscannable" ? "bad_structure" : "macro_content";
+    expect(await check(build(), "pdf")).toEqual(refused(error));
   });
 });
 
@@ -355,8 +356,7 @@ describe("DROP-16 pixels: headers behind large metadata", () => {
     };
     reads.length = 0;
     expect(await validate(small, "jpg")).toEqual({ ok: true, type: "jpg" });
-    expect(reads.filter(([o, n]) => o === 0 && n === photo.length)).toHaveLength(1);
-    expect(reads.length).toBe(4);
+    expect(reads).toEqual([[0, photo.length]]);
   });
 
   it("passes the demo photo", async () => {

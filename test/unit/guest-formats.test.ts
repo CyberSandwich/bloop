@@ -292,21 +292,21 @@ describe("DROP-14 external: macro-enabled packages", () => {
         );
       const MIB = 1024 * 1024;
 
-      it("reads a small deck in two operations, the head and the whole object, however many parts it has", async () => {
+      it("reads a small deck in one operation, the whole object, however many parts it has", async () => {
         for (const count of [1, 300, 1024]) {
           const small = counted(validDeck(parts(count, 16)));
           expect(await validate(small, "pptx")).toEqual({ ok: true, type: "pptx" });
-          expect(small.seen.reads).toBe(2);
+          expect(small.seen.reads).toBe(1);
         }
       });
 
-      it("refuses, in two operations, a small deck with over 1024 parts or whose parts inflate past the budget", async () => {
+      it("refuses, in one operation, a small deck with over 1024 parts or whose parts inflate past the budget", async () => {
         const many = counted(validDeck(parts(1500, 100 * 1024, 0)));
         expect(await validate(many, "pptx")).toEqual({ ok: false, error: "bad_structure" });
-        expect(many.seen.reads).toBe(2);
+        expect(many.seen.reads).toBe(1);
         const heavy = counted(validDeck(parts(300, 250 * 1024, 0)));
         expect(await validate(heavy, "pptx")).toEqual({ ok: false, error: "bad_structure" });
-        expect(heavy.seen.reads).toBe(2);
+        expect(heavy.seen.reads).toBe(1);
       });
 
       const media = (mib: number): BuiltEntry => ({ name: "ppt/media/big.png", data: new Uint8Array(mib * MIB) });
@@ -380,7 +380,7 @@ describe("DROP-14 external: macro-enabled packages", () => {
       const spent = {
         size: deck.size,
         read: (at: number, n: number) => {
-          if (++reads > 1) throw new ReadBudgetExceeded();
+          if (++reads > 0) throw new ReadBudgetExceeded();
           return deck.read(at, n);
         },
       };

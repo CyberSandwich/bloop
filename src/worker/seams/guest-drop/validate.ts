@@ -1,7 +1,8 @@
 // What a stored object really is (DROP-02 to DROP-04, DROP-11 to DROP-16), for every format in `FORMATS`. Range reads
 // only: the head, the zip end record and central directory, the PDF or image tail, a JPEG's or GIF's headers in small
 // blocks. The one inflate in a package is its content types and relationships parts, capped at a few hundred KB; a
-// PDF is read whole when small, else in windows.
+// PDF is read whole when small, else in windows. Every validator reads through the one plan `validate` makes, so a
+// small object is one read and a large one at most `READ_PLAN.maxReads`.
 import { inflate, latin1 } from "./bytes.ts";
 import { scanCfb } from "./cfb.ts";
 import {
@@ -12,18 +13,22 @@ import {
   detect,
   FORMATS,
   type FormatType,
-  fail,
   isRefusedPart,
   isRelsPart,
   MAX_TEXT_BYTES,
   type Refusal,
 } from "./formats.ts";
 import { checkImageSize } from "./image.ts";
-import { type RangeReader, ZIP_LIMITS } from "./index.ts";
+import { type RangeReader, readExact, ShortRead, ZIP_LIMITS } from "./index.ts";
 import { PDF_WINDOW_BYTES, scanPdfChunks } from "./pdf-scan.ts";
 import { planReads, READ_PLAN, ReadBudgetExceeded, readParts } from "./read-plan.ts";
 import { checkSizes, hasEndRecord, readCentralDirectory, type ZipEntry } from "./zip.ts";
 
+/**
+ * The largest object validated, above the library's 500 MiB file cap; past it `too_large`. A PDF this size fits the
+ * read plan: its head, two tails and 64 windows.
+ */
+export const MAX_OBJECT_BYTES = 512 * 1024 * 1024;
 const HEAD_BYTES = 1024;
 /** Where a PDF's `%%EOF` must sit, and the window searched for `%%EOF` in an image or video. */
 const TAIL_BYTES = 1024;
@@ -42,7 +47,7 @@ export type Verdict<T extends FormatType = FormatType> = { ok: true; type: T } |
 const refuse = (error: Refusal): { ok: false; error: Refusal } => ({ ok: false, error });
 
 const readTail = (r: RangeReader): Promise<Uint8Array> =>
-  r.read(Math.max(0, r.size - TAIL_BYTES), Math.min(r.size, TAIL_BYTES));
+  readExact(r, Math.max(0, r.size - TAIL_BYTES), Math.min(r.size, TAIL_BYTES));
 
 /**
  * A PDF or a ZIP riding on a media file: `%PDF` in the head (a PDF reader looks there), a zip end record, or `%%EOF`
@@ -92,22 +97,12 @@ async function packageXml(
 }
 
 async function validatePackage<T extends FormatType>(
-  whole: RangeReader,
+  r: RangeReader,
   head: Uint8Array,
   type: T,
   part: string,
 ): Promise<Verdict<T>> {
   if (latin1.decode(head).includes("%PDF")) return refuse("bad_structure");
-  try {
-    return await checkPackage(planReads(whole), type, part);
-  } catch (error) {
-    if (!(error instanceof ReadBudgetExceeded)) throw error;
-    console.warn(JSON.stringify({ evt: "drop.refused", reason: "read_budget", bytes: whole.size }));
-    return refuse("bad_structure");
-  }
-}
-
-async function checkPackage<T extends FormatType>(r: RangeReader, type: T, part: string): Promise<Verdict<T>> {
   const dir = await readCentralDirectory(r);
   if (!dir.ok) return refuse(dir.error);
   const sizes = checkSizes(dir.entries);
@@ -130,29 +125,39 @@ async function checkPackage<T extends FormatType>(r: RangeReader, type: T, part:
 async function validatePdf(r: RangeReader): Promise<Verdict<"pdf">> {
   if (await hasEndRecord(r)) return refuse("bad_structure");
   if (!latin1.decode(await readTail(r)).includes("%%EOF")) return refuse("bad_structure");
-  const scan = await scanReads(r, r.size <= READ_PLAN.smallObjectBytes ? r.size : PDF_WINDOW_BYTES);
+  const scan =
+    r.size <= READ_PLAN.smallObjectBytes
+      ? await oneWholeScan(() => scanReads(r, r.size))
+      : await scanReads(r, PDF_WINDOW_BYTES);
   if (scan.ok) return { ok: true, type: "pdf" };
   const found = new Set("found" in scan ? scan.found : []);
   if (found.has("Encrypt")) return refuse("encrypted");
   return refuse(found.size === 1 && found.has("unscannable") ? "bad_structure" : scan.error);
 }
 
+/** The scans waiting for or running the whole-file scan, in order; each one starts when the one before it settles. */
+let wholeScans: Promise<unknown> = Promise.resolve();
+
 /**
- * The PDF scan over `r` read in order, `window` bytes at a time; each read is one metered class B read. A short read
- * (an object gone, a truncated range) is refused, never skipped.
+ * Runs `scan` once no other whole-file scan runs in this isolate. One holds the file, its Latin-1 text and its inflate
+ * buffers, tens of MB at the whole-read size, so two together could pass the 128 MB isolate; a windowed scan holds
+ * two windows and runs at once.
  */
-async function scanReads(r: RangeReader, window: number): Promise<Check & { found?: string[] }> {
+function oneWholeScan<T>(scan: () => Promise<T>): Promise<T> {
+  const run = wholeScans.then(scan);
+  wholeScans = run.catch(() => undefined);
+  return run;
+}
+
+/** The PDF scan over `r` read in order, `window` bytes at a time; each read is one metered class B read. */
+function scanReads(r: RangeReader, window: number): Promise<Check & { found?: string[] }> {
   let at = 0;
-  let short = false;
-  const scan = await scanPdfChunks(async () => {
-    if (at >= r.size || short) return null;
-    const want = Math.min(window, r.size - at);
-    const chunk = await r.read(at, want);
-    short = chunk.length !== want;
+  return scanPdfChunks(async () => {
+    if (at >= r.size) return null;
+    const chunk = await readExact(r, at, Math.min(window, r.size - at));
     at += chunk.length;
-    return short ? null : chunk;
+    return chunk;
   });
-  return short ? fail("bad_structure", "short read") : scan;
 }
 
 /**
@@ -168,7 +173,7 @@ async function validateImage<T extends "jpg" | "png" | "gif" | "webp">(
 ): Promise<Verdict<T>> {
   const tail = await readTail(r);
   if (await carriesAnother(r, head, tail)) return refuse("bad_structure");
-  const sized = await checkImageSize(type, planReads(r), head);
+  const sized = await checkImageSize(type, r, head);
   if (!sized.ok) return refuse(sized.error);
   if (type === "png") {
     const end = tail.subarray(-PNG_END_BYTES);
@@ -225,18 +230,33 @@ function carriesFormat(bytes: Uint8Array): boolean {
 
 async function validateText<T extends FormatType>(r: RangeReader, type: T): Promise<Verdict<T>> {
   if (r.size > MAX_TEXT_BYTES) return refuse("too_large");
-  const bytes = await r.read(0, r.size);
-  if (bytes.length !== r.size) return refuse("bad_structure");
+  const bytes = await readExact(r, 0, r.size);
   const checked = checkText(bytes);
   if (!checked.ok) return refuse(checked.error);
   return carriesFormat(bytes) ? refuse("bad_structure") : { ok: true, type };
 }
 
-/** The detected type must equal the declared one (the extension); anything else is `bad_type`. */
+/**
+ * The detected type must equal the declared one (the extension); anything else is `bad_type`. A short read or a spent
+ * read budget is `bad_structure`, never a throw, so the caller deletes the object.
+ */
 export async function validate<T extends FormatType>(r: RangeReader, declared: T): Promise<Verdict<T>> {
+  if (r.size > MAX_OBJECT_BYTES) return refuse("too_large");
+  try {
+    return await validatePlanned(planReads(r), declared);
+  } catch (error) {
+    const reason =
+      error instanceof ReadBudgetExceeded ? "read_budget" : error instanceof ShortRead ? "short_read" : null;
+    if (reason === null) throw error;
+    console.warn(JSON.stringify({ evt: "drop.refused", reason, bytes: r.size }));
+    return refuse("bad_structure");
+  }
+}
+
+async function validatePlanned<T extends FormatType>(r: RangeReader, declared: T): Promise<Verdict<T>> {
   const format = FORMATS[declared];
   if (format.family === null) return validateText(r, declared);
-  const head = await r.read(0, Math.min(r.size, HEAD_BYTES));
+  const head = await readExact(r, 0, Math.min(r.size, HEAD_BYTES));
   if (detect(head) !== format.family) return refuse("bad_type");
   switch (format.family) {
     case "zip":

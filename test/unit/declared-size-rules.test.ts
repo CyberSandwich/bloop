@@ -32,37 +32,33 @@ describe("a declared size in an untrusted container is a claim, never a measure"
 });
 
 describe("a validator reads through the read plan, never entry by entry", () => {
-  it("calls the range reader only where a fixed number of reads is spent", () => {
+  it("calls the range reader only in readExact and the read plan (raw reads in validators)", () => {
     expect(lines(/\br\.read\(/).sort()).toEqual(
       [
-        `${GUEST_DROP}cfb.ts: const head = await r.read(0, HEADER_BYTES);`,
-        `${GUEST_DROP}cfb.ts: const bytes = await r.read(offset, sectorSize);`,
+        `${GUEST_DROP}index.ts: const bytes = await r.read(offset, length);`,
         `${GUEST_DROP}read-plan.ts: whole ??= r.read(0, r.size);`,
         `${GUEST_DROP}read-plan.ts: return r.read(offset, length);`,
         `${GUEST_DROP}read-plan.ts: const bytes = await r.read(from, to - from);`,
         `${GUEST_DROP}read-plan.ts: const rest = await r.read(from + at, size);`,
-        `${GUEST_DROP}validate.ts: r.read(Math.max(0, r.size - TAIL_BYTES), Math.min(r.size, TAIL_BYTES));`,
-        `${GUEST_DROP}validate.ts: const head = await r.read(0, Math.min(r.size, HEAD_BYTES));`,
-        // a PDF's reads (one when small, else its windows), an image's header blocks (capped), and text (at most 5 MB)
-        `${GUEST_DROP}validate.ts: const chunk = await r.read(at, want);`,
-        `${GUEST_DROP}image.ts: const read = await r.read(at, want);`,
-        `${GUEST_DROP}validate.ts: const bytes = await r.read(0, r.size);`,
-        `${GUEST_DROP}zip.ts: const tailOf = (r: RangeReader) => r.read(Math.max(0, r.size - TAIL_BYTES), Math.min(r.size, TAIL_BYTES));`,
-        `${GUEST_DROP}zip.ts: const cd = await r.read(cdOffset, cdSize);`,
       ].sort(),
     );
+    const validators = ["validate", "zip", "cfb", "image", "pdf-scan", "formats"].map((f) => `${GUEST_DROP}${f}.ts`);
+    const all = sources(ROOT).map((f) => f.slice(ROOT.length));
+    expect(
+      lines(
+        /\.read\(/,
+        all.filter((f) => !validators.includes(f)),
+      ),
+    ).toEqual([]);
   });
 
-  it("sends every deck part through readParts and caps the CFB reads", () => {
+  it("plans the reads once, in validate, for every validator (one plan per object)", () => {
     const validate = readFileSync(`${ROOT}${GUEST_DROP}validate.ts`, "utf8");
+    expect(validate.match(/planReads\(/g)).toHaveLength(1);
+    expect(validate).toMatch(/validatePlanned\(planReads\(r\), declared\)/);
     expect(validate).toMatch(/readParts\(r, wanted, PART_LIMITS\)/);
-    expect(validate).toMatch(/planReads\(whole\)/);
+    expect(validate).toMatch(/checkImageSize\(type, r, head\)/);
     expect(readFileSync(`${ROOT}${GUEST_DROP}cfb.ts`, "utf8")).toMatch(/\+\+reads > CFB_LIMITS\.maxSectorReads/);
-  });
-
-  it("walks an image's headers through the read plan, a capped number of reads", () => {
-    const validate = readFileSync(`${ROOT}${GUEST_DROP}validate.ts`, "utf8");
-    expect(validate).toMatch(/checkImageSize\(type, planReads\(r\), head\)/);
     expect(readFileSync(`${ROOT}${GUEST_DROP}image.ts`, "utf8")).toMatch(/\+\+reads > limits\.maxReads/);
   });
 });

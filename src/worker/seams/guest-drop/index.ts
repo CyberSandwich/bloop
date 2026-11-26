@@ -69,6 +69,19 @@ export interface RangeReader {
   read(offset: number, length: number): Promise<Uint8Array>;
 }
 
+/** A read that came back shorter than asked: the object is gone or cut. `validate` refuses it as `bad_structure`. */
+export class ShortRead extends Error {}
+
+/**
+ * Exactly `length` bytes at `offset`, else `ShortRead`. A validator reads only through this or the read plan
+ * (read-plan.ts), so no check runs on fewer bytes than it asked for.
+ */
+export async function readExact(r: RangeReader, offset: number, length: number): Promise<Uint8Array> {
+  const bytes = await r.read(offset, length);
+  if (bytes.length !== length) throw new ShortRead();
+  return bytes;
+}
+
 export const ZIP_LIMITS = {
   maxEntries: 5000,
   maxCentralDirectoryBytes: 2 * 1024 * 1024,

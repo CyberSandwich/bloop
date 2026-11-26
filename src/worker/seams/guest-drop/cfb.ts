@@ -4,7 +4,7 @@
 // Limits: only what the directory shows. Legacy macros that live inside a stream (PowerPoint's VBA project record,
 // Excel 4 macro sheets) and RC4 encryption flagged in a stream header are not seen here.
 import { type Check, fail, OK } from "./formats.ts";
-import type { RangeReader } from "./index.ts";
+import { type RangeReader, readExact } from "./index.ts";
 
 const HEADER_BYTES = 512;
 const MAGIC = [0xd0, 0xcf, 0x11, 0xe0, 0xa1, 0xb1, 0x1a, 0xe1];
@@ -64,9 +64,9 @@ export async function scanCfb(r: RangeReader, requiredStream: readonly string[])
 }
 
 async function scan(r: RangeReader, requiredStream: readonly string[]): Promise<Check> {
-  const head = await r.read(0, HEADER_BYTES);
-  if (head.length < HEADER_BYTES || !MAGIC.every((m, i) => head[i] === m))
-    return fail("bad_type", "not a compound file");
+  if (r.size < HEADER_BYTES) return fail("bad_type", "not a compound file");
+  const head = await readExact(r, 0, HEADER_BYTES);
+  if (!MAGIC.every((m, i) => head[i] === m)) return fail("bad_type", "not a compound file");
   const hv = view(head);
   const major = u16(hv, 26);
   const shift = u16(hv, 30);
@@ -83,8 +83,7 @@ async function scan(r: RangeReader, requiredStream: readonly string[]): Promise<
     const offset = (id + 1) * sectorSize;
     if (id > MAX_REG_SECTOR || offset + sectorSize > r.size) return null;
     if (++reads > CFB_LIMITS.maxSectorReads) throw new ReadBudget();
-    const bytes = await r.read(offset, sectorSize);
-    return bytes.length === sectorSize ? view(bytes) : null;
+    return view(await readExact(r, offset, sectorSize));
   };
 
   const fatIds: number[] = [];
