@@ -62,7 +62,8 @@ The phone refuses what it can before a byte is sent, as a toast, and the page st
 | the library is full (too many files) | Your Library Is Full | Delete files you no longer need, then add this one. |
 | too many uploads (`rate_limited`) | Too Many Uploads Right Now | Wait a minute, then try again. |
 | bloop is busy (`service_busy`) | bloop Is Busy Right Now | Try again in a few minutes. |
-| signed out mid upload | Sign In to Add Files | Your sign-in ended. Sign in again, then add the file. |
+| signed out mid upload (`auth_required`) | Sign In to Add Files | Your sign-in ended. Sign in again, then add the file. |
+| a guest's pairing ended mid upload (`unauthorized`) | Lecture 5.pptx Can't Be Added | This phone's pairing ended. Pair it with the screen again, then add the file. |
 | the upload ended or changed (`upload_gone`, `upload_aborted`, `size_mismatch`, `not_found`, `bad_request`, `length_required`) | Lecture 5.pptx Can't Be Added | one line each: This upload ended before it finished. Add the file again. / The upload was stopped. Add the file again. / This file changed while it was being added. Add it again. / bloop can't find this upload. Add the file again. / bloop couldn't take this file as sent. Add it again. / bloop couldn't read this file's size. Choose it again. |
 | still finishing (`upload_busy`), or bloop answers something the page cannot use (`service_down`) | Lecture 5.pptx Can't Be Added | bloop is still finishing this upload. Wait a moment, then try again. / Something's wrong on bloop's side. Try again in a few minutes. |
 | the page cannot add files (`forbidden_origin`), or the server cannot read the request (`unsupported_media_type`), or hit a problem of its own (`internal`) | Lecture 5.pptx Can't Be Added | This page can't add files. Reload it, then try again. / bloop couldn't read this file as sent. Add it again. / bloop hit a problem adding this file. Try again in a few minutes. |

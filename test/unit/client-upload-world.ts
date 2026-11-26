@@ -3,7 +3,7 @@
 import { createUploader } from "../../public/js/core/upload.js";
 
 // The engine fetches the name rule on first use; loading it here keeps every flush as short as before.
-await import("../../public/js/shared/file-name.js");
+await import("../../public/js/shared/file-name.js").catch(() => undefined);
 
 export const MARK = { "X-Bloop": "1" };
 export const NETWORK = Symbol("network");

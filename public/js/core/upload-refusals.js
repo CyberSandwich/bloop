@@ -14,11 +14,12 @@ const OWN = {
   library_full: ["Your Library Is Full", "Delete files you no longer need, then add this one."],
   rate_limited: ["Too Many Uploads Right Now", "Wait a minute, then try again."],
   service_busy: ["bloop Is Busy Right Now", FEW_MINUTES],
-  unauthorized: ["Sign In to Add Files", "Your sign-in ended. Sign in again, then add the file."],
+  auth_required: ["Sign In to Add Files", "Your sign-in ended. Sign in again, then add the file."],
 };
 /** Refusals titled "{name} Can't Be Added": the line, or a function of the name. @type {Record<string, string | ((name: string) => string)>} */
 const CANT = {
   internal: `bloop hit a problem adding this file. ${FEW_MINUTES}`,
+  unauthorized: "This phone's pairing ended. Pair it with the screen again, then add the file.",
   forbidden_origin: "This page can't add files. Reload it, then try again.",
   unsupported_media_type: "bloop couldn't read this file as sent. Add it again.",
   service_down: `Something's wrong on bloop's side. ${FEW_MINUTES}`,

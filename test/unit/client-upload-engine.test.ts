@@ -953,6 +953,20 @@ describe("paused rows", () => {
     expect(paths(world, "DELETE")).toEqual([]);
   });
 
+  it("a pick that resolves after the engine is disposed changes nothing", async () => {
+    const world = makeWorld({ done: [1] });
+    listing(world, [row]);
+    const up = world.start();
+    await world.flush();
+    const seen = world.snaps.length;
+    const pending = up.resume(world.last.files[0].id, world.file(50, "Other.pptx"));
+    up.dispose();
+    await pending;
+    await world.flush();
+    expect(world.snaps.length).toBe(seen);
+    expect(paths(world, "DELETE")).toEqual([]);
+  });
+
   it("a different file closes the paused row and starts fresh", async () => {
     const world = makeWorld();
     listing(world, [{ ...row, id: "old", bytes: 999 }]);
