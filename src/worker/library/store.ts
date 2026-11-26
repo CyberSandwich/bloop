@@ -2,9 +2,11 @@
 // statement names the owner in its WHERE (LIB-01) and every write is one guarded UPDATE: none inserts, so no order of
 // rename, trash, restore and purge can resurrect a row or leave a ghost (LIB-12). Bytes move only through U's quota
 // builders, never here.
+
+import { NAME_MAX } from "../../../public/js/shared/name-rule.js";
 import type { Db, Statement } from "../auth/db.ts";
 import { base64url, fromBase64url } from "../ids.ts";
-import { MAX_NAME_CHARS, renamed } from "./names.ts";
+import { renamed } from "./names.ts";
 
 /** D1's atomic batch, which the plain `Db` slice leaves out. */
 export interface LibDb extends Db {
@@ -264,7 +266,7 @@ type KeyField = (typeof KEY_FIELDS)[number];
 export const ID_MAX_CHARS = 64;
 /** The base64 length of the largest cursor: the longest field tag, the longest id and a name at 4 UTF-8 bytes a character. */
 export const CURSOR_MAX_CHARS = Math.ceil(
-  ((2 + Math.max(...KEY_FIELDS.map((f) => f.length)) + 2 + 1 + ID_MAX_CHARS + 2 + 1 + MAX_NAME_CHARS * 4 + 2) * 4) / 3,
+  ((2 + Math.max(...KEY_FIELDS.map((f) => f.length)) + 2 + 1 + ID_MAX_CHARS + 2 + 1 + NAME_MAX * 4 + 2) * 4) / 3,
 );
 const keyField = (view: View, sort: Sort): KeyField =>
   view === "trash" ? "purgeAfter" : sort === "updated" ? "updatedAt" : sort === "name" ? "name" : "bytes";

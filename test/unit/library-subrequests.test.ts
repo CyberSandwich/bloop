@@ -123,7 +123,7 @@ describe("a library run stays inside the platform's subrequest limit", () => {
       lockoutMembers: null,
     });
     await runLibraryRetention(
-      { DB: counted(db, tick), LIBRARY: metered },
+      { DB: counted(db, tick), LIBRARY: metered, GUEST_FILES: metered },
       { inactiveDays: 730, inactiveGraceDays: 30 },
       deps(),
       { daily: true },

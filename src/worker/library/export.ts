@@ -241,6 +241,18 @@ export async function buildExport(s: Snapshot, tokenKey: string): Promise<BuiltE
   return { archive, etag: await etagFor(tokenKey, s.userId, archive.entries), snapshotAt };
 }
 
+const LEASE_MS = 86_400_000;
+
+/**
+ * The snapshot moment a stored resume lease names, or null when it does not name a usable one: nothing stored, not
+ * plain digits, in the future, or a day old or more (a lease kept without a moment reads as stale).
+ */
+export function leaseTakenAt(answer: string | null | undefined, now: number): number | null {
+  if (typeof answer !== "string" || !/^\d{1,16}$/.test(answer)) return null;
+  const at = Number(answer);
+  return at <= now && at > now - LEASE_MS ? at : null;
+}
+
 /** The download's name, from the day it was taken. */
 export const exportFilename = (now: number): string => `bloop-export-${new Date(now).toISOString().slice(0, 10)}.zip`;
 

@@ -112,7 +112,12 @@ describe("LIB-09 trash and deletion through the cron", () => {
     addFile(db, { id: "t", user: "u1", trashedAt: 1, purgeAfter: NOW - 1 });
     db.raw.prepare("UPDATE app_user SET status = 'deleting', delete_after = ? WHERE id = 'u2'").run(NOW - 1);
     const r2 = fakeBucket({ "u/u1/t/v1/orig": "x", "u/u2/a/v1/orig": "y" });
-    const report = await runLibraryRetention({ DB: db, LIBRARY: r2.bucket }, config, deps(), { daily: false });
+    const report = await runLibraryRetention(
+      { DB: db, LIBRARY: r2.bucket, GUEST_FILES: fakeBucket().bucket },
+      config,
+      deps(),
+      { daily: false },
+    );
     expect(report).toMatchObject({
       trashPurged: 1,
       accountsPurged: 1,
@@ -126,9 +131,19 @@ describe("LIB-09 trash and deletion through the cron", () => {
     const db = libWith(["old"]);
     asMember(db, "old", 1);
     const r2 = fakeBucket({ "u/gone/a/v1/orig": "x" });
-    const hourly = await runLibraryRetention({ DB: db, LIBRARY: r2.bucket }, config, deps(), { daily: false });
+    const hourly = await runLibraryRetention(
+      { DB: db, LIBRARY: r2.bucket, GUEST_FILES: fakeBucket().bucket },
+      config,
+      deps(),
+      { daily: false },
+    );
     expect(hourly).toMatchObject({ warned: 0, orphans: 0 });
-    const daily = await runLibraryRetention({ DB: db, LIBRARY: r2.bucket }, config, deps(), { daily: true });
+    const daily = await runLibraryRetention(
+      { DB: db, LIBRARY: r2.bucket, GUEST_FILES: fakeBucket().bucket },
+      config,
+      deps(),
+      { daily: true },
+    );
     expect(daily).toMatchObject({ warned: 1, orphans: 1 });
   });
 
@@ -136,12 +151,32 @@ describe("LIB-09 trash and deletion through the cron", () => {
     const db = libWith(["u1"]);
     db.raw.prepare("UPDATE app_user SET status = 'deleting', delete_after = ? WHERE id = 'u1'").run(NOW - 1);
     const report = await runLibraryRetention(
-      { DB: db, LIBRARY: fakeBucket().bucket },
+      { DB: db, LIBRARY: fakeBucket().bucket, GUEST_FILES: fakeBucket().bucket },
       config,
       deps({ abortUploads: async () => true }),
       { daily: false },
     );
     expect(report).toMatchObject({ accountsPending: 1, more: true });
+  });
+
+  it("R6: every hourly run settles a pending hold whose copy exists, so an old row stops blocking a purge", async () => {
+    const db = libWith(["u1"]);
+    addFile(db, { id: "a" });
+    db.raw
+      .prepare(
+        `INSERT INTO hold (id, file_id, owner_user_id, bucket, r2_key, report_id, created_at, release_after, copied_at)
+         VALUES ('h1', 'a', 'u1', 'library', 'h/h1', 'r', 1, ?, NULL)`,
+      )
+      .run(NOW + DAY);
+    const r2 = fakeBucket({ "h/h1": "copy" });
+    const report = await runLibraryRetention(
+      { DB: db, LIBRARY: r2.bucket, GUEST_FILES: fakeBucket().bucket },
+      config,
+      deps(),
+      { daily: false },
+    );
+    expect(report.holdsSettled).toBe(1);
+    expect(db.raw.prepare("SELECT copied_at FROM hold WHERE id = 'h1'").get()).toEqual({ copied_at: NOW });
   });
 });
 

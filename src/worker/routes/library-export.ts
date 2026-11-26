@@ -12,7 +12,14 @@ import { auditRecord } from "../export-format.ts";
 import { fail } from "../http.ts";
 import { newRef, safeEqual } from "../ids.ts";
 import { bucketOf } from "../library/bucket.ts";
-import { buildExport, exportFilename, exportStream, type Snapshot, takeSnapshot } from "../library/export.ts";
+import {
+  buildExport,
+  exportFilename,
+  exportStream,
+  leaseTakenAt,
+  type Snapshot,
+  takeSnapshot,
+} from "../library/export.ts";
 import { libDbOf } from "../library/store.ts";
 import { type Route, route } from "../router.ts";
 import { parseRange } from "../seams/open-path/range.ts";
@@ -27,7 +34,6 @@ const KEY = z.string().regex(/^[A-Za-z0-9_-]{8,64}$/);
 const AUDIT_PAGE = 200;
 /** The audit trail in the archive stops here; a user with more reads the rest from the page. */
 const AUDIT_PAGES_MAX = 50;
-const DAY_MS = 86_400_000;
 const ETAG_LEASE_PREFIX = "export-etag:";
 const KEY_PREFIX = "export-k:";
 
@@ -83,9 +89,9 @@ async function start(s: Start): Promise<Response> {
   // A resume names an ETag the server issued in the last day. The first run stored its snapshot moment with it, so the
   // same archive is laid out again however long the client was away; a resume from offset 0 is a new download below.
   const issued = rangeHeader !== null && ifRange !== null ? await stub.idemGet(`${ETAG_LEASE_PREFIX}${ifRange}`) : null;
-  const issuedAt = issued === null ? Number.NaN : Number(issued.answer);
-  const resumes = Number.isSafeInteger(issuedAt) && issuedAt <= now && issuedAt > now - DAY_MS;
-  let takenAt = resumes ? issuedAt : now;
+  const issuedAt = leaseTakenAt(issued?.answer, now);
+  const resumes = issuedAt !== null;
+  let takenAt = issuedAt ?? now;
   if (!resumes) {
     const cookie = readCookie(request, SESSION_COOKIE) ?? "";
     const fresh = await new Sessions(dbOf(env.DB), () => now).reauthedWithin(
