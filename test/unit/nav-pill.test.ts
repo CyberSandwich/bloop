@@ -174,7 +174,15 @@ describe("pill sets Vary: Cookie on every open HTML response and never on previe
     "%s: /_launch.json is never served, only read through the asset binding",
     async (mode) => {
       const { env, seen } = world(mode);
-      for (const path of ["/_launch.json", "/_Launch.json"]) {
+      for (const path of [
+        "/_launch.json",
+        "/_Launch.json",
+        "/%5Flaunch.json",
+        "//_launch.json",
+        "/_launch.json/",
+        "/a/../_launch.json",
+        "/_launch.json?x=1",
+      ]) {
         const res = await get(env, { Accept: "text/html" }, path);
         expect(res.status, path).toBe(404);
       }
