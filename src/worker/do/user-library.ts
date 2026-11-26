@@ -6,7 +6,7 @@ import { DurableObject } from "cloudflare:workers";
 import type { Env } from "../env.ts";
 import { purgeDueFiles } from "../library/purge.ts";
 import { purgeDepsFor } from "../library/wiring.ts";
-import { screenOwnerEnd } from "../live-screens.ts";
+import { screenStub } from "../stubs.ts";
 import {
   allProgress,
   clearProgress,
@@ -152,7 +152,7 @@ export class UserLibrary extends DurableObject<Env> {
       this.ctx.storage.sql,
       rows,
       async (row) => {
-        const ended = await screenOwnerEnd(this.env, row.screenRef).endFromOwner(userId);
+        const ended = await screenStub(this.env, row.screenRef).endFromOwner(userId);
         if (!ended.ok) console.error(JSON.stringify({ evt: "end_screen_failed", error: ended.error }));
         return ended.ok;
       },
