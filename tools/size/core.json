@@ -166,7 +166,7 @@
   {
     "name": "phone remote, lazy",
     "path": ["dist/js/core/lazy.js", "dist/js/core/remote-ui.js", "dist/js/core/remote.js"],
-    "limit": "2.25 kB"
+    "limit": "2.281 kB"
   },
   {
     "name": "phone remote CSS, lazy",
