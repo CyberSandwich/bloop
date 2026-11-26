@@ -250,8 +250,9 @@ export class Screen extends DurableObject<Env> implements PairingStore {
       choices,
       mode: meta.mode,
       kind: phone.kind,
-      // Only the Graph source has accounts, and a phone already signed in needs nothing more.
-      needsAuth: live && phone.kind === "owner" && this.config().graph !== null && userId === null,
+      // Auth-first refuses a signed-out owner before the claim (PAIR-15), so no claim ever needs it.
+      // transitional: removed in P1 commit 8 (the field goes once a deploy has shipped it false, Q.12)
+      needsAuth: false,
       dropMaxBytes: this.dropMaxBytes(),
     };
     if (idem && nonce && this.m) idemSave(this.ctx.storage.kv, idem.owner, idem, sealClaim(answer, nonce), now);

@@ -84,6 +84,29 @@ describe("pairing: the whole flow over WebSockets", () => {
     socket.close();
   });
 
+  it("REL-14 an Idempotency-Key replay returns the first answer and changes nothing: the same pid, the code consumed once", async () => {
+    const { socket, code } = await openScreen(api, "live");
+    const key = { "Idempotency-Key": "6f1c2a9e-3b4d-4c5e-8f70-112233445566" };
+    const first = await api.post<{ pid: string; choices: string[] }>("/api/claim", { code }, { headers: key });
+    expect(first.status).toBe(200);
+    // The answer was lost; the phone sends the same request again, after the code was consumed.
+    const again = await api.post("/api/claim", { code }, { headers: key });
+    expect(again.status).toBe(200);
+    expect(again.body).toEqual(first.body);
+    expect((await api.get("/api/pair/state", first.body.pid)).status).toBe(200);
+    // Without the key, or with another, the code is taken; the same key with another body is refused.
+    expect((await claimOnly(api, code)).body).toEqual(problem("code_taken"));
+    const other = { "Idempotency-Key": "6f1c2a9e-3b4d-4c5e-8f70-998877665544" };
+    expect((await api.post("/api/claim", { code }, { headers: other })).body).toEqual(problem("code_taken"));
+    expect((await api.post("/api/claim", { code, kind: "guest" }, { headers: key })).body).toEqual(
+      problem("bad_request"),
+    );
+    expect((await api.post("/api/claim", { code }, { headers: { "Idempotency-Key": "nope" } })).body).toEqual(
+      problem("bad_request"),
+    );
+    socket.close();
+  });
+
   it("PAIR-02 race: two phones claim one code at once, exactly one wins", async () => {
     const { socket, code } = await openScreen(api);
     const results = await Promise.all([claim(api, code), claim(api, code), claim(api, code)]);

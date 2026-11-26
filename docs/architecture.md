@@ -97,10 +97,10 @@ sequenceDiagram
   R-->>S: code K7MQ9X, expires in 60 s
   Note over S: QR encodes https://host/a?c=K7MQ9X
   P->>W: POST /api/claim {code}
-  W->>D: lookup(code, ipHash)
-  D-->>W: screenRef
+  W->>D: lookup(code, ipHash, kind, signedIn)
+  D-->>W: screenRef (a live owner signed out: auth_required, nothing spent)
   W->>R: claim(code, phone)
-  R-->>P: pid, room, match 42, mode, needsAuth
+  R-->>P: pid, room, match 42, mode
   R-->>S: state claimed, match 42
   alt no phone session yet
     P->>W: GET /auth/start
@@ -311,7 +311,7 @@ test/
 | POST                     | `/api/screen/link`                           | Bearer sid                            | one more link for an approved file `{purpose: protocol, download, pdf or view, item?}` to `{item, links}` (`item` defaults to the first file; a link item is `file_not_found`); an item's first link is free, then each counts against that item's `LINK_MINTS_PER_ITEM`; `protocol` only from `approved` (the screen lost its link) |
 | POST                     | `/api/screen/shown`                          | Bearer sid, Origin; `RL_CONTROL`      | the screen reports its own tap, `{item, page, present, seq}` (an item id, a 1-based page, the screen's own seq), so the phone's highlight stays true; the same rules as `/api/control`; demo sessions only |
 | POST                     | `/api/screen/end`                            | Bearer sid                            | end; from `waiting` it closes the screen at once (a demo slot is freed); response carries `Clear-Site-Data: "storage"` |
-| POST                     | `/api/claim`                                 | none; rate-limited                    | `{code, kind?}` to `{pid, room, match, mode, kind, needsAuth, dropMaxBytes}` |
+| POST                     | `/api/claim`                                 | cookie for a live owner (else `auth_required`, nothing spent, a miss); rate-limited | `{code, kind?}` to `{pid, room, match, choices, mode, kind, needsAuth: false, dropMaxBytes}`; `Idempotency-Key` replays the first answer |
 | GET                      | `/api/pair/ws?ref=<screenRef>`               | `hello{pid}`, Origin                  | phone socket                                                   |
 | GET                      | `/api/pair/state`                            | Bearer pid                            | polling fallback                                               |
 | GET                      | `/api/files`                                 | Bearer pid, plus session cookie when `FILE_SOURCE=graph` and the screen is live | up to 5 recent files, then the account's links, as `{items: Entry[]}`; tells the Screen object the ids shown |
