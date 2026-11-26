@@ -270,7 +270,7 @@ public/                    the assets' source, built into dist/ (each JS module 
   js/core/upload.js js/core/pill.js js/core/upload-pill.js css/upload.css   the upload engine (no DOM), the pill's face, their binding with the batch sheet, and the stylesheet; loaded on the first intent to add (docs/ux/upload.md)
   img/demo-slide-{n}.{avif,webp}   the sample deck's pages, shown for the deck and its PDF (tools/render-slides.py)
   img/hero-viewer-{750,1100,1600,2200}.avif, {750,1100,1600}.webp   the landing stage's screenshot of the Demo Room, 640 up
-  js/site.js               the landing: the nav's scrolled look, closing the menu on a same-page link, the stage tilt's spring, the FAQ's height tween where CSS cannot (no other site page runs a script)
+  js/site.js               the landing: the nav's scrolled look, closing the menu on a link click, the stage tilt's spring, the FAQ's height tween where CSS cannot (no other site page runs a script)
   og.png apple-touch-icon.png (tools/render-og.py); favicon.svg, the logo, drawn as paths
   fonts/inter-latin-cc089b5d.woff2  the one font file (tools/subset-font.py) + inter-90ef5e81.LICENSE.txt
   js/shared/               runtime code shared by browser and Worker: plain JSDoc-typed ES modules
