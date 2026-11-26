@@ -1,31 +1,47 @@
-// The upload sweeps (ADR 0017): hourly, finish or release what a crash left; nightly, heal the quota counters.
-// Each row is taken under the claim rule of store.ts, so a sweep never races a live complete or abort.
+// The upload sweeps (ADR 0017): hourly, finish or release what a crash left and settle a check left `checking`;
+// nightly, heal the quota counters. Each row is taken under the claim rule of store.ts, so a sweep never races a live
+// complete or abort, and each row's failure is logged and skipped, so one bad row never stops the run.
 import type { BatchDb } from "../auth/db.ts";
-import { type Deps, settleAndCheck } from "./pipeline.ts";
-import { type Drift, reconcileUser, releaseLibrary } from "./quota.ts";
+import { checkFile, type Deps, settleAndCheck } from "./pipeline.ts";
+import {
+  type CheckingFile,
+  claimCheck,
+  type Drift,
+  reconcileUser,
+  refuseLibrary,
+  releaseLibrary,
+  staleChecking,
+} from "./quota.ts";
+import { reclaim } from "./reclaim.ts";
 import * as store from "./store.ts";
 
 /** Closed upload rows are kept this long (the idempotent replay and the status read), then deleted. */
 const CLOSED_KEEP_MS = 86_400_000;
+/** A file still `checking` this long after it settled is refused (`service_busy`): its check can no longer be trusted to finish. */
+const CHECK_GIVE_UP_MS = 86_400_000;
+/** The wall time one hourly run may spend before it leaves the rest to the next (a check alone may take 90 s). */
+export const SWEEP_WALL_MS = 240_000;
 const PAGE = 100;
 
 export interface SweepReport {
   finished: number;
   released: number;
   deleted: number;
+  rechecked: number;
+  refused: number;
+  /** The allotment or the wall-time budget stopped the run with work left. */
+  more: boolean;
 }
 
+type Counted = "finished" | "released" | "rechecked" | "refused";
+
 /** Closes one open upload and returns what it held: the reservation (library), the multipart and any object. */
-async function giveUp(d: Deps, row: store.UploadRow, claimToken = -1): Promise<boolean> {
-  const closed =
+const giveUp = (d: Deps, row: store.UploadRow, claimToken = -1): Promise<boolean> =>
+  reclaim(d.mp, row, () =>
     row.ownerKind === "library"
-      ? await releaseLibrary(d.db, { id: row.id, userId: row.userId as string, bytes: row.bytes }, d.now(), claimToken)
-      : await store.closeGuest(d.db, row.id, d.now(), claimToken);
-  if (!closed) return false;
-  await d.mp.abort(row.r2Key, row.r2UploadId);
-  await d.mp.delete(row.r2Key).catch(() => {});
-  return true;
-}
+      ? releaseLibrary(d.db, { id: row.id, userId: row.userId as string, bytes: row.bytes }, d.now(), claimToken)
+      : store.closeGuest(d.db, row.id, d.now(), claimToken),
+  );
 
 /** A complete that died after its claim: the object is whole (settle and check) or it is not (release). */
 async function recover(d: Deps, row: store.UploadRow): Promise<"finished" | "released" | "skipped"> {
@@ -39,18 +55,52 @@ async function recover(d: Deps, row: store.UploadRow): Promise<"finished" | "rel
   return (await giveUp(d, row, token)) ? "released" : "skipped";
 }
 
-/** Hourly. At most `allotment` stale completes and as many expired opens; closed rows past the keep window go too. */
+/** A file a check left `checking`: checked again, or refused once it is past the give-up age. */
+async function recheck(d: Deps, f: CheckingFile): Promise<"rechecked" | "refused" | "skipped"> {
+  if (!(await claimCheck(d.db, f, d.now()))) return "skipped";
+  if (d.now() - f.createdAt < CHECK_GIVE_UP_MS) {
+    await checkFile(d, f);
+    return "rechecked";
+  }
+  return (await reclaim(d.mp, { r2Key: f.r2Key }, () => refuseLibrary(d.db, f, "service_busy", d.now())))
+    ? "refused"
+    : "skipped";
+}
+
+/**
+ * Hourly. At most `allotment` rows of each kind (stale completes, uploads nobody can finish, files left checking),
+ * within `SWEEP_WALL_MS`; closed rows past the keep window go too. A row that throws is logged by id and skipped.
+ */
 export async function sweepUploads(d: Deps, allotment: number): Promise<SweepReport> {
-  const report: SweepReport = { finished: 0, released: 0, deleted: 0 };
-  for (const row of await store.staleCompletes(d.db, d.now(), allotment)) {
-    const outcome = await recover(d, row);
-    if (outcome === "finished") report.finished += 1;
-    if (outcome === "released") report.released += 1;
-  }
-  for (const row of await store.expiredOpen(d.db, d.now(), allotment)) {
-    if (await giveUp(d, row)) report.released += 1;
-  }
+  const report: SweepReport = { finished: 0, released: 0, deleted: 0, rechecked: 0, refused: 0, more: false };
+  const start = d.now();
+  const each = async <T extends { id: string }>(
+    step: string,
+    rows: T[],
+    run: (row: T) => Promise<Counted | "skipped">,
+  ): Promise<void> => {
+    if (rows.length >= allotment) report.more = true;
+    for (const row of rows) {
+      if (d.now() - start >= SWEEP_WALL_MS) {
+        report.more = true;
+        return;
+      }
+      try {
+        const outcome = await run(row);
+        if (outcome !== "skipped") report[outcome] += 1;
+      } catch {
+        // The id only: an error's message can carry a key or a name.
+        console.error(JSON.stringify({ evt: "upload_sweep_failed", step, id: row.id }));
+      }
+    }
+  };
+  await each("stale_complete", await store.staleCompletes(d.db, d.now(), allotment), (row) => recover(d, row));
+  await each("expired", await store.expiredOpen(d.db, d.now(), allotment), async (row) =>
+    (await giveUp(d, row)) ? "released" : "skipped",
+  );
+  await each("checking", await staleChecking(d.db, d.now(), allotment), (f) => recheck(d, f));
   report.deleted = await store.deleteClosed(d.db, d.now() - CLOSED_KEEP_MS, allotment);
+  if (report.deleted >= allotment) report.more = true;
   return report;
 }
 
