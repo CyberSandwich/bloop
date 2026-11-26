@@ -12,6 +12,7 @@ import {
   caseMedia,
   caseOneCpuTiming,
   casePdfActive,
+  caseRemux,
   caseTimeoutAndCaps,
   caseUploadContract,
   caseVideoRate,
@@ -77,7 +78,11 @@ async function main() {
   await caseOneCpuTiming("deck-300.pptx", 300);
   await casePdfActive();
   await caseMedia();
-  await caseVideoRate();
+  await caseVideoRate(1);
+  await caseVideoRate(2);
+  await caseVideoRate(4);
+  await caseVideoRate(1, { width: 1280 });
+  await caseRemux();
   for (const f of ["macro.odp", "macro.odt", "macro.ods"]) {
     await caseMacro(join(GEN, f), f.split(".")[1]);
     macroProof(join(GEN, f));

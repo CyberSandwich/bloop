@@ -567,7 +567,7 @@ func TestRunCmdUsesOnlyTheGivenEnvironment(t *testing.T) {
 func TestLoadConfigDefaultsAndOverrides(t *testing.T) {
 	c := loadConfig(func(string) string { return "" })
 	if c.MaxPages != 300 || c.MaxChunk != 64<<20 || !slices.Equal(c.Widths, []int{3840, 1920, 480}) || c.Limits.MaxUnpacked != 2<<30 || c.Timeouts["convert"] != 180*time.Second ||
-		c.Timeouts["rasterize"] != 500*time.Second || c.Timeouts["video"] != 900*time.Second ||
+		c.Timeouts["rasterize"] != 500*time.Second || c.Timeouts["video"] != 1800*time.Second || c.MaxVideoSecs != 243 || c.VideoWidth != 1920 ||
 		c.Timeouts["inspect"] != 30*time.Second || c.Timeouts["heic"] != 60*time.Second || c.Addr != ":8080" {
 		t.Fatalf("defaults = %+v", c)
 	}
