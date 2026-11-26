@@ -103,7 +103,8 @@ export function registryFrom() {
       path: `/${rel}`,
       type: TYPES[/** @type {keyof typeof TYPES} */ (rel.slice(rel.lastIndexOf(".")))] ?? null,
     })),
-    // Type declarations are for the editor and the typecheck; the build leaves them out of dist/ (ADR 0011).
+    // Type declarations are for the editor and the typecheck; public/.assetsignore keeps them unserved, and the build
+    // copies them to dist/, so a lost .assetsignore serves them.
     typeFiles: files.filter((f) => f.endsWith(".d.ts")).map((f) => `/${f}`),
     headersFile: readFileSync(join(pub, "_headers"), "utf8"),
     publicOrigin: String(vars.PUBLIC_ORIGIN ?? ""),
