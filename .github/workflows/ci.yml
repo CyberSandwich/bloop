@@ -94,7 +94,7 @@ jobs:
       # The pairing routes fail closed without the fake secrets.
       - run: cp .dev.vars.example .dev.vars
       # Playwright starts `npm run dev` itself (playwright.config.ts); the axe specs run inside it.
-      - run: npx playwright test test/e2e/library.spec.ts --project preview -g "Download never"
+      - run: npx playwright test test/e2e/library.spec.ts --project preview -g "sheet blurs"
       # Lighthouse CI starts its own `npm run dev` and asserts the budgets in lighthouserc.json.
       # collect fails only when Lighthouse cannot record a run (a runtimeError such as NO_NAVSTART), never on a
       # score, so it gets one retry; assert, which judges the page, runs once.
