@@ -2,20 +2,20 @@
 // the screen reports its own taps so the phone's highlight stays true (`POST /api/screen/shown`, sid), demo sessions
 // only. The length: the phone sets when the session ends (`POST /api/session/length`, pid), in both modes. The live
 // pick: the phone's choice of the number on the screen (`POST /api/match`, pid).
-// Order: config, CSRF checks and Zod (`write`, PAIR-06), the per-IP and then the per-credential rate limit, one Screen
-// object call.
+// Order: config, CSRF checks (PAIR-06), the per-IP rate limit, the capped body and Zod, the per-credential rate limit,
+// one Screen object call.
 import { z } from "zod";
 import { MIN_LENGTH_SECONDS } from "../../../public/js/shared/length.js";
 import type { ShownCommand } from "../../shared/protocol.ts";
 import type { Config } from "../config.ts";
-import { json } from "../http.ts";
+import { checkWrite, json, readJson } from "../http.ts";
 import { idempotency } from "../idem.ts";
 import { sha256Hex } from "../ids.ts";
 import { shownSchema } from "../items.ts";
 import { type Route, route } from "../router.ts";
 import type { Result } from "../seams/pairing.ts";
 import type { screenStub } from "../stubs.ts";
-import { limited, withConfig, withScreen, write } from "./common.ts";
+import { limited, withConfig, withScreen } from "./common.ts";
 
 const commandBody = z
   .object({
@@ -59,11 +59,12 @@ const control = <B, T>(path: string, body: (config: Config) => z.ZodType<B>, cal
     path,
     "api",
     withConfig(async (request, env, config) => {
-      const text = await request.clone().text();
-      const parsed = await write(request, config, body(config));
+      // The CSRF checks and the per-IP limit before the body is read, so a refused request costs no read.
+      const refused = checkWrite(request, config.origin) ?? (await limited(env, "RL_CONTROL", request, config));
+      if (refused) return refused;
+      const parsed = await readJson(request, body(config));
       if (!parsed.ok) return parsed.response;
-      const tooMany = await limited(env, "RL_CONTROL", request, config);
-      if (tooMany) return tooMany;
+      const { text } = parsed;
       return withScreen(
         request,
         env,
