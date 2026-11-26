@@ -12,8 +12,63 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
+  # No secret and no third-party code: ships the dist/ of the ci.yml push run that already passed this exact commit, so
+  # check can skip (ADR 0031). The run match proves where dist/ came from and the manifest assert that it is intact;
+  # anything that fails leaves `reused` unset and check runs in full.
+  reuse:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: read
+      actions: read
+    outputs:
+      reused: ${{ steps.done.outputs.reused }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version-file: .nvmrc
+          package-manager-cache: false
+      - id: find
+        continue-on-error: true
+        run: node tools/ci-reuse.mjs find
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+      - id: get
+        if: steps.find.outputs.run_id != ''
+        continue-on-error: true
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: dist
+          path: dist
+          run-id: ${{ steps.find.outputs.run_id }}
+          github-token: ${{ github.token }}
+      - id: assert
+        if: steps.get.outcome == 'success'
+        continue-on-error: true
+        run: node tools/prebuilt.mjs assert
+      - id: put
+        if: steps.assert.outcome == 'success'
+        continue-on-error: true
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: dist
+          path: dist
+          include-hidden-files: true
+          if-no-files-found: error
+          retention-days: 1
+      - id: done
+        if: always()
+        run: node tools/ci-reuse.mjs done
+        env:
+          RUN_ID: ${{ steps.find.outputs.run_id }}
+          PUT: ${{ steps.put.outcome }}
   # Third-party code runs here (install, tests, the build) and the job has no environment, so no token.
   check:
+    needs: reuse
+    if: (success() || failure()) && needs.reuse.outputs.reused != 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 25
     steps:
@@ -35,10 +90,15 @@ jobs:
           include-hidden-files: true
           if-no-files-found: error
           retention-days: 1
+          # A reuse that uploaded part of dist/ and then failed leaves an artifact of this name.
+          overwrite: true
   # Only the lockfile's wrangler runs with the token: a fresh install with no scripts, the built dist/ from the check
-  # job, and no build of its own (docs/architecture.md section 12).
+  # or reuse job, and no build of its own (docs/architecture.md section 12).
   deploy:
-    needs: check
+    needs:
+      - reuse
+      - check
+    if: (success() || failure()) && (needs.check.result == 'success' || (needs.check.result == 'skipped' && needs.reuse.outputs.reused == 'true'))
     runs-on: ubuntu-latest
     timeout-minutes: 15
     environment: production
