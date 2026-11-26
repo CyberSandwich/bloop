@@ -553,8 +553,12 @@ const sendIo = {
 
 /** Send (core/send.js, in since the offer showed); if it cannot load, a toast with Reload. */
 function send() {
+  const file = c.file;
   loadSend().then(
-    (m) => m.send(c, sendIo),
+    // Only the offer still showing: a Cancel or Back while it loaded leaves nothing to send.
+    (m) => {
+      if (c.file === file && c.drop === "confirm" && !c.canceling && !c.canceled) m.send(c, sendIo);
+    },
     () => toast({ ...RELOAD, title: "That Didn't Load" }),
   );
 }
@@ -714,7 +718,7 @@ async function claim(code, kind = "owner", key = crypto.randomUUID(), resumed = 
     const who = api.get("/api/me");
     return import("./core/early.js").then(
       (m) => m.refused(res.error, { c, render, code, key, who, store, claim }),
-      () => (resumed ? fail(res.error) : claim(code, "guest")),
+      () => (res.error === "code_unknown" ? fail(res.error) : claim(code, "guest")),
     );
   }
   fail(res.error, () => claim(code, kind, key, resumed));
@@ -759,7 +763,15 @@ function start() {
   if (bootCode) {
     store.remove(KEPT);
     claim(bootCode);
-  } else if (store.get(KEPT)) import("./core/early.js").then((m) => m.resume(store, claim, next), next);
+  } else if (store.get(KEPT))
+    import("./core/early.js").then(
+      (m) => m.resume(store, claim, next),
+      () => {
+        // Taken all the same, so a later load never replays it.
+        store.remove(KEPT);
+        next();
+      },
+    );
   else next();
 }
 

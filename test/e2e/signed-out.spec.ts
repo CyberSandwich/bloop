@@ -191,18 +191,50 @@ test.describe("PAIR-15 a signed-out claim on a live code", () => {
   });
 });
 
-test("a send module that cannot load says so with Reload, and the offer stays", async ({ browser }) => {
+/** A demo phone at the offer of one PDF over its list; `prep` runs on the phone before its first load. */
+async function atOffer(browser: Parameters<typeof open>[0], prep: (c: BrowserContext) => Promise<unknown>) {
   const screen = await open(browser, "screen", "/s?mode=demo");
   await expect(screen.page.locator("#qr")).toBeVisible();
   const code = await typedCodeOf(screen.page);
-  const phone = await open(browser, "phone", `/a?c=${code}`, (context) =>
-    context.route("**/js/core/send.js", (route) => route.abort()),
-  );
+  const phone = await open(browser, "phone", `/a?c=${code}`, prep);
   await expect(heading(phone.page)).toHaveText("Demo Room");
   const chooser = phone.page.waitForEvent("filechooser");
   await phone.page.getByRole("button", { name: "Add a File" }).click();
   await (await chooser).setFiles({ name: "notes.pdf", mimeType: "application/pdf", buffer: Buffer.from("%PDF-1.4\n") });
   await expect(heading(phone.page)).toHaveText("Send notes.pdf to Demo Room?");
+  return { screen, phone };
+}
+
+test("a Cancel while the send module loads sends nothing when it lands", async ({ browser }) => {
+  let release: () => void = () => {};
+  const held = new Promise<void>((done) => (release = done));
+  const { screen, phone } = await atOffer(browser, (context) =>
+    context.route("**/js/core/send.js", async (route) => {
+      await held;
+      await route.continue();
+    }),
+  );
+  let drops = 0;
+  phone.page.on("request", (r) => {
+    if (new URL(r.url()).pathname === "/api/drop") drops += 1;
+  });
+  await phone.page.getByRole("button", { name: "Send" }).click();
+  await phone.page.getByRole("button", { name: "Cancel" }).click();
+  await expect(heading(phone.page)).toHaveText("Demo Room");
+  const landed = phone.page.waitForResponse("**/js/core/send.js");
+  release();
+  await landed;
+  // The same module record, so once this resolves the page's own then() has run too.
+  await phone.page.evaluate((url) => import(url).then(() => 0), "/js/core/send.js");
+  await expect(heading(phone.page)).toHaveText("Demo Room");
+  expect(drops).toBe(0);
+  await closeAll(screen, phone);
+});
+
+test("a send module that cannot load says so with Reload, and the offer stays", async ({ browser }) => {
+  const { screen, phone } = await atOffer(browser, (context) =>
+    context.route("**/js/core/send.js", (route) => route.abort()),
+  );
   await phone.page.getByRole("button", { name: "Send" }).click();
   const alert = phone.page.getByRole("alert");
   await expect(alert).toContainText("That Didn't Load");
