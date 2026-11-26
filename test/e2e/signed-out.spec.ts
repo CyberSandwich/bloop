@@ -131,6 +131,28 @@ test.describe("PAIR-15 a signed-out claim on a live code", () => {
     await closeAll(screen, phone);
   });
 
+  test("open: the four actions stay inside the action box at every width", async ({ browser }) => {
+    const { screen, phone } = await scanSignedOut(browser, "open");
+    await expect(heading(phone.page)).toHaveText("Early Access Only");
+    for (const size of [
+      { width: 320, height: 568 },
+      { width: 390, height: 844 },
+      { width: 430, height: 932 },
+      { width: 844, height: 390 },
+      { width: 1440, height: 900 },
+    ]) {
+      await phone.page.setViewportSize(size);
+      const box = await phone.page.locator(".actions").boundingBox();
+      for (const b of await phone.page.locator("#actions .btn").all()) {
+        const r = await b.boundingBox();
+        if (!box || !r) throw new Error("no box");
+        expect(Math.round(r.x), `${size.width}`).toBeGreaterThanOrEqual(Math.round(box.x));
+        expect(Math.round(r.x + r.width), `${size.width}`).toBeLessThanOrEqual(Math.round(box.x + box.width));
+      }
+    }
+    await closeAll(screen, phone);
+  });
+
   test("open: Send One File claims the same code as a guest, which picks then adds a file", async ({ browser }) => {
     const { screen, phone, state } = await scanSignedOut(browser, "open");
     await expect(heading(phone.page)).toHaveText("Early Access Only");
