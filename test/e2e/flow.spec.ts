@@ -932,14 +932,15 @@ test.describe("pairing flow", () => {
     await page.evaluate(
       `window.__asks = 0; const send = WebSocket.prototype.send; WebSocket.prototype.send = function (d) { if (String(d).includes('"code.next"')) window.__asks++; return send.call(this, d); }`,
     );
-    // Before the floor, a tap says at once that a fresh screen is on its way; a burst of taps (and the repaints between
-    // them) asks for one code, not one each.
+    // A tap says nothing: the line under the title stays as the end set it, and a burst of taps (and the repaints
+    // between them) asks for one code, not one each.
+    const line = (await page.locator("#line").textContent()) ?? "";
     await page.waitForTimeout(800);
     for (let i = 0; i < 3; i++) {
       await page.mouse.click(SCREEN.width / 2, 80);
       await page.waitForTimeout(100);
+      await expect(page.locator("#line")).toHaveText(line);
     }
-    await expect(page.locator("#line")).toHaveText("Getting a new code.");
     await expect(heading(page)).toHaveText(DEMO.room, { timeout: 6000 });
     expect(Date.now() - since).toBeLessThan(6000);
     expect(await page.evaluate("window.__asks")).toBe(1);
