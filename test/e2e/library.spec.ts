@@ -5,7 +5,6 @@ import { createHash, randomUUID } from "node:crypto";
 import AxeBuilder from "@axe-core/playwright";
 import { type BrowserContext, expect, type Page, test } from "@playwright/test";
 
-const ORIGIN = "http://localhost:8787";
 const now = Date.now();
 const sha = (text: string) => createHash("sha256").update(text).digest("hex");
 
@@ -56,10 +55,9 @@ function member(files: [string, string, Record<string, string | number>?][] = []
   return { user, cookie };
 }
 
+/** A header, not addCookies: Chrome's CDP refuses a Secure `__Host-` cookie for an http:// URL. */
 async function signedIn(context: BrowserContext, seeded: Seeded) {
-  await context.addCookies([
-    { name: "__Host-bloop_sid", value: seeded.cookie, url: ORIGIN, secure: true, httpOnly: true, sameSite: "Lax" },
-  ]);
+  await context.setExtraHTTPHeaders({ Cookie: `__Host-bloop_sid=${seeded.cookie}` });
 }
 
 const expectNoToast = async (page: Page) =>
