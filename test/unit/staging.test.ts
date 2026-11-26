@@ -1,15 +1,8 @@
 import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 import { parseConfig } from "../../src/worker/config.ts";
-import {
-  D1_NAME,
-  d1IdFrom,
-  lockedWranglerVersion,
-  missingSecrets,
-  PLACEHOLDER,
-  SECRETS,
-  withD1Id,
-} from "../../tools/staging.mjs";
+import { lockedWranglerVersion } from "../../tools/pinned-wrangler.mjs";
+import { D1_NAME, d1IdFrom, missingSecrets, PLACEHOLDER, SECRETS, withD1Id } from "../../tools/staging.mjs";
 import { wranglerConfig } from "../../tools/wrangler-config.mjs";
 
 const read = (rel: string) => readFileSync(new URL(`../../${rel}`, import.meta.url), "utf8");

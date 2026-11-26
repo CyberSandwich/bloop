@@ -20,7 +20,7 @@ Status: accepted. Page variants by mode: ADR 0026.
 | `/b`, `/p`, and the notes routes | `no-store`: the library can be opened on a shared computer |
 
 - **HTML is never immutable.** The two mode variants (ADR 0026) have different ETags, so after a switch the next revalidation returns the other page with a 200. No purge, no deploy.
-- **An immutable unit is named for its bytes.** The name ends in the first 8 hex of the SHA-256 of the unit's built files, so an upgrade, and a minifier upgrade, is a new name and the old one is deleted with the code that named it. A name is not known until its bytes are final; `_headers` rules apply to a 404 too, so the remaining risk is a 404 cached for a name between its push (public in the source) and its deploy. `node tools/rehash-immutable.mjs` renames a unit and follows its references.
+- **An immutable unit is named for its bytes.** The name ends in the first 8 hex of the SHA-256 of the unit's built files, so an upgrade, and a minifier upgrade, is a new name and the old one is deleted with the code that named it. A name stands for one content, so it is safe to cache forever, and a name that is not yet deployed is not cached as present. `node tools/rehash-immutable.mjs` renames a unit and follows its references.
 - **`/f` is `no-store`** (links are single-session secrets). **`/b` and `/p` are `no-store`**: the library can be opened on a shared computer, so a preview stays in memory.
 
 ### What the foundation change ships
