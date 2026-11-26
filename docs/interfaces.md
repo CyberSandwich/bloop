@@ -119,15 +119,16 @@ export interface LinkRequest { purpose: LinkPurpose; item?: number; }   // POST 
 export interface LinkResponse { item: number; links: LinkSet; }
 
 // The present additions (ADRs 0015, 0018).
-export type ItemKind = "deck" | "pdf" | "doc" | "sheet" | "text" | "image" | "video";   // FileItem.show: kindOf(type) in src/worker/items.ts, never sent by a client
+export const ITEM_KINDS = ["deck", "pdf", "doc", "sheet", "text", "image", "video"] as const;
+export type ItemKind = (typeof ITEM_KINDS)[number];   // FileItem.show: kindOf(type) in src/worker/items.ts, never sent by a client
 export interface DerivedFlags { slides: boolean; pdf: boolean; pages: number | null; motion: boolean; }   // FileItem.derived; exactly these keys (PAIR-16); null for a demo, Graph or unconverted guest file
 export interface PhoneItemExtra { notes: boolean; fontsMissing: string[]; }   // PhoneView.items[i].extra; never in a ScreenView
 // Shown.via ("viewer" | "app", live decks); LinkSet.bundle (the base `.../b/<token>/`);
 // PairingAccountError "match_required" | "service_busy" | "match_wrong" (a wrong pick canceled the claim); statuses in errors-app.js.
 // The pick's codes are phone-only, so the screen's ERRORS never carries them; the machine's MachineError and the
 // store's Result add them to ErrorCode (dropDone, after the gated upload.start, answers ErrorCode only).
-export interface MatchRequest { choice: string; ids?: string[]; }   // POST /api/match; ids: Up Next, approved in the same call
-export interface MatchResponse { view: PhoneView; approved: boolean; approveError: ErrorCode | null; }
+export interface MatchRequest { choice: string; }   // POST /api/match
+export interface MatchResponse { view: PhoneView; }
 export const LINK_PURPOSES = [...OPEN_MODES, "bundle"] as const;   // bundle is a link purpose, not an open mode
 export type LinkPurpose = (typeof LINK_PURPOSES)[number];
 
@@ -371,10 +372,10 @@ export interface PairingStore {
   nextCode(sid: string): Promise<Result<CodeView>>;
   /** Live: answers the three `choices` and `match: null`; a demo the match. With `idem`, the answer is kept for that key. */
   claim(code: string, phone: PhoneInfo, idem?: IdemKey): Promise<Result<ClaimResponse>>;
-  /** idem.ts's `IdemStore.find` over this object's rows (`seams/pairing/idem.ts`: at most 32, shape-checked on wake). */
-  idemFind(owner: string, keyHash: string, since: number): Promise<{ bodyHash: string; stored: unknown } | null>;
-  /** POST /api/match: the pick; a wrong one answers `match_wrong`. With `approve`, both commit in one write, and a refused approve keeps the pick and comes back as `approveError`. */
-  match(pid: string, choice: string, approve?: { items: ItemDraft[]; cookieUser: string | null }): Promise<Result<MatchResponse>>;
+  /** idem.ts's `IdemStore.find` over this object's rows (`seams/pairing/idem.ts`), the pid derived again from the row's nonce. */
+  idemFind(owner: string, keyHash: string, since: number): Promise<{ bodyHash: string; stored: ClaimResponse } | null>;
+  /** POST /api/match: the pick; a wrong one answers `match_wrong`; a repeat after a right one, in session too, is a no-op. */
+  match(pid: string, choice: string): Promise<Result<MatchResponse>>;
   listed(pid: string, ids: string[]): Promise<Result<PhoneView>>;
   /** A live pick not yet made is `match_required`. `cookieUser` (null signed out) must be the claim's pinned user, else `pairing_invalid`: a pinned user is final (ADR 0015). */
   approve(pid: string, items: ItemDraft[], cookieUser: string | null): Promise<Result<PhoneView>>;

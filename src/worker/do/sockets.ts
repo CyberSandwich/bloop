@@ -1,11 +1,5 @@
 import { SILENCE_MS } from "../../../public/js/core/timing.js";
 
-/**
- * MISSED_PINGS of the client's PING_MS (public/js/core/health.js, a browser module the Worker build cannot import; a
- * unit test pins the product).
- */
-export const TAKEOVER_MS = 50_000;
-
 /** Sockets waiting for their `hello`, per role: a full role evicts one for the next upgrade (admit). */
 export const MAX_PENDING_SOCKETS = 4;
 /** Of those, one network may hold this many per role; past it the network's own oldest goes, never another's. */
@@ -126,11 +120,10 @@ export function helloBinding(
 }
 
 /**
- * A screen socket holds the binding while it misses fewer than MISSED_PINGS pings in a row, so a lectern that roamed
- * to a new address takes it over in about 50 s rather than waiting out the silence window it still counts as open in.
+ * A screen socket holds the binding until it closes or stays silent for the full silence window: a throttled
+ * background tab pings late, so any shorter estimate would hand a live lectern's links to another address.
  */
-const holds = (s: Screen, now: number, silenceMs: number): boolean =>
-  isLive(s.heardAt, now, Math.min(TAKEOVER_MS, silenceMs));
+const holds = (s: Screen, now: number, silenceMs: number): boolean => isLive(s.heardAt, now, silenceMs);
 
 /** WebSocket readyState OPEN. */
 export const OPEN = 1;
@@ -190,49 +183,64 @@ const realTimers: Timers = {
  * Any other frame (error, open) flushes the held state first, so frames never pass each other.
  * Invariant: a pending timer keeps a hibernatable object awake for at most COALESCE_MS; with no timer pending nothing
  * is held, so hibernation (which drops this in-memory map) loses nothing.
+ * Slots are keyed by `keyOf`, not by the object: the runtime need not hand back the same wrapper for one socket from
+ * getWebSockets() and a handler, so the Screen object keys on the attachment's id. A held frame goes to the latest
+ * wrapper seen.
  */
 export class StateCoalescer<W extends { send(text: string): void }> {
-  private readonly slots = new Map<W, { sentAt: number; held: string | null; timer: unknown }>();
+  private readonly slots = new Map<unknown, { ws: W; sentAt: number; held: string | null; timer: unknown }>();
+  private readonly timers: Timers;
+  private readonly keyOf: (ws: W) => unknown;
 
-  constructor(private readonly timers: Timers = realTimers) {}
+  constructor(opts: { timers?: Timers; keyOf?: (ws: W) => unknown } = {}) {
+    this.timers = opts.timers ?? realTimers;
+    this.keyOf = opts.keyOf ?? ((ws) => ws);
+  }
 
   state(ws: W, text: string): void {
     const now = this.timers.now();
-    const slot = this.slots.get(ws);
+    const key = this.keyOf(ws);
+    const slot = this.slots.get(key);
     if (!slot || (slot.held === null && now - slot.sentAt >= COALESCE_MS)) {
-      this.slots.set(ws, { sentAt: now, held: null, timer: null });
+      this.slots.set(key, { ws, sentAt: now, held: null, timer: null });
       safeSend(ws, text);
       return;
     }
+    slot.ws = ws;
     slot.held = text;
-    slot.timer ??= this.timers.set(() => this.flush(ws), slot.sentAt + COALESCE_MS - now);
+    slot.timer ??= this.timers.set(() => this.flush(key), slot.sentAt + COALESCE_MS - now);
   }
 
   /** Any frame that must not be coalesced: the held state goes first. */
   other(ws: W, text: string): void {
-    this.flush(ws);
+    this.flush(this.keyOf(ws));
     safeSend(ws, text);
   }
 
   /** Before closing a socket: its held state goes out, and its timer goes. */
   closing(ws: W): void {
-    this.flush(ws);
-    this.gone(ws);
+    const key = this.keyOf(ws);
+    this.flush(key);
+    this.forget(key);
   }
 
   /** The socket is already closed: drop what it held, send nothing. */
   gone(ws: W): void {
-    const slot = this.slots.get(ws);
-    if (slot?.timer != null) this.timers.clear(slot.timer);
-    this.slots.delete(ws);
+    this.forget(this.keyOf(ws));
   }
 
-  private flush(ws: W): void {
-    const slot = this.slots.get(ws);
+  private forget(key: unknown): void {
+    const slot = this.slots.get(key);
+    if (slot?.timer != null) this.timers.clear(slot.timer);
+    this.slots.delete(key);
+  }
+
+  private flush(key: unknown): void {
+    const slot = this.slots.get(key);
     if (!slot || slot.held === null) return;
     if (slot.timer != null) this.timers.clear(slot.timer);
     const text = slot.held;
-    this.slots.set(ws, { sentAt: this.timers.now(), held: null, timer: null });
-    safeSend(ws, text);
+    this.slots.set(key, { ws: slot.ws, sentAt: this.timers.now(), held: null, timer: null });
+    safeSend(slot.ws, text);
   }
 }
