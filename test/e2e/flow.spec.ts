@@ -440,7 +440,7 @@ test.describe("pairing flow", () => {
         .locator("form")
         .evaluate((f) => Promise.all(f.getAnimations().map((a: { finished: Promise<unknown> }) => a.finished)));
       const field = sheet.getByLabel("Expires At");
-      // The whole time shows, inside the card: the input is as wide as its time, so the card holding it is the check.
+      // The whole time shows, inside the card: Chromium sizes the input to its time, so the card holding it is the check.
       const card = sheet.locator(".sheet-card");
       await expectWithin(field, card);
       // The presets share one row.
@@ -469,7 +469,7 @@ test.describe("pairing flow", () => {
   // The title and the time share one baseline where one row holds both (a 24-hour time at 390 and 844 x 390 must),
   // and wrap as two centered lines where it can't (320, and a 12-hour time at 390, may: font metrics decide, so those
   // read which it is). Chromium formats a time input by its lang, not the browser's locale, and the page is en-US, so
-  // the field takes the case's lang. A time input's text is centered in its box, so its baseline is the box's middle
+  // the page takes the case's lang before the sheet sets the time. A time input's text is centered in its box, so its baseline is the box's middle
   // less half the font's descent and plus half its ascent.
   for (const [width, height, locale, oneRow] of [
     [390, 844, "en-GB", true],
@@ -486,10 +486,10 @@ test.describe("pairing flow", () => {
       const page = await context.newPage();
       await page.goto(`/a?c=${code}`);
       await page.getByRole("button", { name: /^Approve, code/ }).click();
+      await page.evaluate(`document.documentElement.lang = "${locale}"`);
       await page.getByRole("button", { name: /Change the Session Expiry$/ }).click();
       const sheet = page.getByRole("dialog", { name: "Session Expiry" });
       await expect(sheet).toBeVisible();
-      await sheet.getByLabel("Expires At").evaluate((n, lang) => n.setAttribute("lang", lang), locale);
       await sheet
         .locator("form")
         .evaluate((f) => Promise.all(f.getAnimations().map((a: { finished: Promise<unknown> }) => a.finished)));
@@ -788,10 +788,11 @@ test.describe("pairing flow", () => {
       const panel = phone.page.locator(".column > .actions.glass");
       const revoke = panel.getByRole("button", { name: "Revoke" });
       await expect(revoke).toBeInViewport({ ratio: 1 });
-      // At 320 the row can't hold both labels, so the time alone shows; the name still says Ends in.
+      // At 320 the row can't hold both labels (measured, no breakpoint), so the time alone shows; the name still says
+      // Ends in.
       const ends = panel.getByRole("button", { name: /^Ends in \d+:\d{2}(:\d{2})?\. Change the Session Expiry$/ });
       await expect(ends).toBeVisible();
-      await expect(phone.page.locator("#ends-text .sr")).toHaveCount(width < 375 ? 1 : 0);
+      await expect(phone.page.locator("#ends-text .sr")).toHaveCount(width === 320 ? 1 : 0);
       const [e, r] = [await ends.boundingBox(), await revoke.boundingBox()];
       if (!e || !r) throw new Error("no box");
       expect(Math.round(e.y)).toBe(Math.round(r.y));
