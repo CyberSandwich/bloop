@@ -552,6 +552,8 @@ Stack and system architecture: `docs/architecture.md` and `docs/adr/`.
 | CLS | 0.02 [0.1] | 0 | 0.02 |
 | INP | 100 ms [200 ms] | 100 ms | 100 ms |
 
+A hashed hero file (`stem-WIDTH.HASH8.ext`) is budgeted by exact path, never a glob (`test/unit/size-ratchet.test.ts`), so a re-encode changes the path and the ratchet counts it as moved bytes: re-point the entry in the same commit with its limit unchanged or lower, and never add an entry in the commit that renames one; a renamed file and an added budget land separately.
+
 ## 12. Accessibility
 
 ### Contrast pairs
