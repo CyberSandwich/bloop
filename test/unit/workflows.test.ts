@@ -125,3 +125,27 @@ describe("SITE-05 deploy token scope", () => {
     for (const form of forms) expect(broadScopes(form, "CLOUDFLARE_API_TOKEN"), form).toEqual([3]);
   });
 });
+
+/** The `check` job's block in a workflow: from its key to the next job key. */
+function checkJob(text: string): string {
+  const match = /^ {2}check:\n(?:(?: {4}.*)?\n)*/m.exec(text);
+  if (!match) throw new Error("no check job");
+  return match[0];
+}
+
+describe("check job time", () => {
+  it("every check job has the same 25-minute timeout, and ci.yml warns at 70% of it", () => {
+    for (const f of ["ci.yml", "deploy.yml", "staging.yml"]) {
+      expect(checkJob(readFileSync(new URL(f, dir), "utf8")), f).toMatch(/^ {4}timeout-minutes: 25$/m);
+    }
+    const ci = checkJob(readFileSync(new URL("ci.yml", dir), "utf8"));
+    expect(ci).toMatch(/^ {6}- run: echo "CHECK_START=\$\(date \+%s\)" >> "\$GITHUB_ENV"$/m);
+    expect(ci).toContain("$(( 25 * 60 * 7 / 10 ))");
+  });
+
+  it("the check job reader stops at the next job", () => {
+    const text =
+      "jobs:\n  check:\n    timeout-minutes: 25\n\n    steps:\n      - run: a\n  next:\n    timeout-minutes: 9\n";
+    expect(checkJob(text)).toBe("  check:\n    timeout-minutes: 25\n\n    steps:\n      - run: a\n");
+  });
+});

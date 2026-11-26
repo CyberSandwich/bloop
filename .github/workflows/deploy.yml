@@ -15,7 +15,7 @@ jobs:
   # Third-party code runs here (install, tests, the build) and the job has no environment, so no token.
   check:
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    timeout-minutes: 25
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -60,6 +60,7 @@ jobs:
       # step in docs/setup.md, not part of a deploy. A failing line stops the step.
       - if: steps.gate.outputs.has == 'true'
         run: |
+          node tools/prebuilt.mjs account
           node tools/pinned-wrangler.mjs d1 migrations apply DB --remote
           node tools/pinned-wrangler.mjs deploy
         env:

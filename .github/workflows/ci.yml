@@ -16,8 +16,9 @@ concurrency:
 jobs:
   check:
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    timeout-minutes: 25
     steps:
+      - run: echo "CHECK_START=$(date +%s)" >> "$GITHUB_ENV"
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
@@ -44,6 +45,10 @@ jobs:
       - run: npm run html-validate
       # On failure, each result becomes an annotation (readable without the job log).
       - run: npm run size || { npx size-limit --json | node -e 'let s="";process.stdin.on("data",d=>s+=d).on("end",()=>{let r;try{r=JSON.parse(s)}catch{r=[{name:s.slice(0,500)}]}for(const e of [].concat(r))console.log("::error title=size::"+[e.name,e.size,e.sizeLimit,e.passed].join(" "))})'; exit 1; }
+      # A warning well before the timeout above cancels the job; the 25 must match its timeout-minutes.
+      - run: |
+          used=$(( $(date +%s) - CHECK_START ))
+          if [ "$used" -gt $(( 25 * 60 * 7 / 10 )) ]; then echo "::warning title=check time::the check job took ${used}s, past 70% of its timeout"; fi
       # The rehearsal job takes this dist/ the way a deploy job does.
       - run: node tools/prebuilt.mjs manifest
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
