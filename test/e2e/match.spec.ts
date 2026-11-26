@@ -16,8 +16,9 @@ async function atPick(browser: Browser, prep?: Parameters<typeof open>[3]) {
   return { screen, phone, code };
 }
 
-/** The three choices on the phone, in their order there. */
-const digits = async (phone: Page) => (await group(phone).getByRole("button").allTextContents()).map((t) => t.trim());
+/** The three choices on the phone, in their order there; the group keeps its id while its legend reads Approving. */
+const digits = async (phone: Page) =>
+  (await phone.locator("#pick").getByRole("button").allTextContents()).map((t) => t.trim());
 
 const closeAll = async (...all: Opened[]) => {
   for (const o of all) await o.context.close();
@@ -101,7 +102,7 @@ test.describe("PAIR-14 the match pick", () => {
     release();
     // The chooser: one file, radios, and Approve with no digits (the pick compared them).
     await expect(phone.page.locator("#file-list input[type=radio]:checked")).toHaveCount(1);
-    await expect(group(phone.page)).toBeHidden();
+    await expect(phone.page.locator("#pick")).toBeHidden();
     await expect(phone.page.getByRole("button", { name: "Approve", exact: true })).toHaveText("Approve");
     expect(await phone.page.evaluate(() => (globalThis as unknown as { __buzz: number[] }).__buzz)).toEqual([12]);
     await phone.page.getByRole("button", { name: "Approve", exact: true }).click();
@@ -125,7 +126,7 @@ test.describe("PAIR-14 the match pick", () => {
     await expect(enter).toBeVisible();
     // One exit: no Back, and no choice to guess again.
     await expect(phone.page.getByRole("link", { name: "Back", exact: true })).toBeHidden();
-    await expect(group(phone.page)).toBeHidden();
+    await expect(phone.page.locator("#pick")).toBeHidden();
     await expectNoAxeViolations(phone.page);
     // The screen shows a new code; the old pid is dead and dropped.
     const next = await typedCodeOf(screen.page);
@@ -191,6 +192,7 @@ test.describe("PAIR-14 the match pick", () => {
     browser,
   }) => {
     const { screen, phone } = await atPick(browser);
+    await expect(group(phone.page).getByRole("button")).toHaveCount(3);
     const three = await digits(phone.page);
     await phone.page.reload();
     await expect(heading(phone.page)).toHaveText("This Screen");
