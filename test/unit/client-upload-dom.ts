@@ -62,6 +62,14 @@ export class FakeNode {
   click() {
     for (const fn of this.listeners.get("click") ?? []) fn();
   }
+  // A dialog's.
+  open = false;
+  showModal() {
+    this.open = true;
+  }
+  close() {
+    this.open = false;
+  }
   remove() {
     this.removed = true;
   }
