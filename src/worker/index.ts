@@ -6,6 +6,7 @@ import { Directory } from "./do/directory.ts";
 import { Screen } from "./do/screen.ts";
 import { UserLibrary } from "./do/user-library.ts";
 import type { Env } from "./env.ts";
+import { withFaults } from "./fault.ts";
 import { type Policy, policyOf, withHeaders } from "./headers.ts";
 import { json, problem } from "./http.ts";
 import { offOrigin } from "./origin.ts";
@@ -86,13 +87,20 @@ async function matchRoute(request: Request, env: Env, url: URL): Promise<{ respo
 }
 
 export default {
-  async fetch(request, env): Promise<Response> {
-    const away = offOrigin(request, env.PUBLIC_ORIGIN, env.FILE_ORIGIN);
+  async fetch(request, platformEnv): Promise<Response> {
+    const away = offOrigin(request, platformEnv.PUBLIC_ORIGIN, platformEnv.FILE_ORIGIN);
     if (away) return away;
-    if (!DYNAMIC.test(new URL(request.url).pathname)) return servePage(request, env);
-    const { response, policy } = await dispatch(request, env);
-    // A WebSocket upgrade response must reach the runtime untouched.
-    return response.status === 101 ? response : withHeaders(response, policy);
+    const env = withFaults(platformEnv, request);
+    try {
+      if (!DYNAMIC.test(new URL(request.url).pathname)) return await servePage(request, env);
+      const { response, policy } = await dispatch(request, env);
+      // A WebSocket upgrade response must reach the runtime untouched.
+      return response.status === 101 ? response : withHeaders(response, policy);
+    } catch {
+      // A binding that throws is a 500 the client can read, never the platform's error page (section 13.7).
+      console.error(JSON.stringify({ evt: "unhandled" }));
+      return withHeaders(problem(500, "internal"), "api");
+    }
   },
 
   // The jobs of each trigger are listed in cron-jobs.ts.
