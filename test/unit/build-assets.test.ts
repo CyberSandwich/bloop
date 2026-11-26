@@ -15,7 +15,15 @@ import { dirname, join } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { build as esbuild } from "esbuild";
 import { afterEach, describe, expect, it } from "vitest";
-import { build, fileOriginModule, minify, minifyCss, unversioned } from "../../tools/build-assets.mjs";
+import {
+  build,
+  fileOriginModule,
+  importClosure,
+  minify,
+  minifyCss,
+  unversioned,
+  withModulePreload,
+} from "../../tools/build-assets.mjs";
 import { SPAWN_TIMEOUT } from "./spawn.ts";
 
 const REPO = fileURLToPath(new URL("../../", import.meta.url));
@@ -186,6 +194,53 @@ describe("immutable folders", () => {
     writeFileSync(join(root, "public/fonts/x.woff2"), "x");
     expect(() => build(root)).toThrow(/version in the name: fonts\/x\.woff2/);
     rmSync(root, { recursive: true, force: true });
+  });
+});
+
+describe("module preload", () => {
+  const sources: Record<string, string> = {
+    "js/page.js":
+      'import { a } from "./core/a.js";\nexport { z } from "./core/z.js";\nconst lazy = () => import("./core/lazy.js");\n',
+    "js/core/a.js": 'import "./b.js";\nimport { c } from "../shared/c.js";\n',
+    "js/core/b.js": "export const b = 1;\n",
+    "js/core/z.js": 'import { a } from "./a.js";\n',
+    "js/core/lazy.js": "export const l = 1;\n",
+    "js/shared/c.js": "export const c = 1;\n",
+  };
+  const read = (rel: string) => sources[rel] ?? "";
+
+  it("walks static imports and re-exports once each, and never an import()", () => {
+    expect(importClosure("js/page.js", read)).toEqual([
+      "js/core/a.js",
+      "js/core/b.js",
+      "js/core/z.js",
+      "js/page.js",
+      "js/shared/c.js",
+    ]);
+  });
+
+  it("puts a modulepreload for each imported module ahead of the page's script, with its indent", () => {
+    const html =
+      '<head>\n    <link rel="stylesheet" href="/css/a.css">\n    <script type="module" src="/js/page.js"></script>\n</head>';
+    const out = withModulePreload(html, read);
+    expect(out).toBe(
+      [
+        "<head>",
+        '    <link rel="stylesheet" href="/css/a.css">',
+        '    <link rel="modulepreload" href="/js/core/a.js">',
+        '    <link rel="modulepreload" href="/js/core/b.js">',
+        '    <link rel="modulepreload" href="/js/core/z.js">',
+        '    <link rel="modulepreload" href="/js/shared/c.js">',
+        '    <script type="module" src="/js/page.js"></script>',
+        "</head>",
+      ].join("\n"),
+    );
+  });
+
+  it("leaves a page with no module script, or a script with no imports, as it is", () => {
+    expect(withModulePreload("<p>hi</p>", read)).toBe("<p>hi</p>");
+    const bare = '<script type="module" src="/js/core/b.js"></script>';
+    expect(withModulePreload(bare, read)).toBe(bare);
   });
 });
 
