@@ -420,6 +420,57 @@ describe("sign-in, sessions and revocation", () => {
     live.socket.close();
   });
 
+  it("REL-14 claim owner: a replay answers the same person's first claim only; another account with the same key never gets the pid", async () => {
+    idp.oid = "oid-idem-a";
+    const a = (await signIn()).session as string;
+    idp.oid = "oid-idem-b";
+    const b = (await signIn()).session as string;
+    idp.oid = "oid-1";
+    const live = await openScreen(api, "live");
+    const key = "6f1c2a9e-3b4d-4c5e-8f70-112233445566";
+    const as = (session: string, k = key) => ({ headers: { ...sid(session), "Idempotency-Key": k } });
+    const first = await api.post<{ pid: string }>("/api/claim", { code: live.code }, as(a));
+    expect(first.status).toBe(200);
+    // The answer was lost; the phone sends the same request again, after the code was consumed.
+    const again = await api.post("/api/claim", { code: live.code }, as(a));
+    expect(again.status).toBe(200);
+    expect(again.body).toEqual(first.body);
+    // Same address, same key, same body, another account: its own key, so the code is taken.
+    expect((await api.post("/api/claim", { code: live.code }, as(b))).body).toEqual(problem("code_taken"));
+    expect((await api.post("/api/claim", { code: live.code }, { headers: sid(a) })).body).toEqual(
+      problem("code_taken"),
+    );
+    const other = "6f1c2a9e-3b4d-4c5e-8f70-998877665544";
+    expect((await api.post("/api/claim", { code: live.code }, as(a, other))).body).toEqual(problem("code_taken"));
+    expect((await api.post("/api/claim", { code: live.code, kind: "guest" }, as(a))).body).toEqual(
+      problem("bad_request"),
+    );
+    expect((await api.post("/api/claim", { code: live.code }, as(a, "nope"))).body).toEqual(problem("bad_request"));
+    live.socket.close();
+  });
+
+  it("REL-14 claim owner: an ended pairing never replays its pid; the same key on the next code claims afresh", async () => {
+    idp.oid = "oid-idem-end";
+    const a = (await signIn()).session as string;
+    idp.oid = "oid-1";
+    const live = await openScreen(api, "live");
+    const key = { ...sid(a), "Idempotency-Key": "2c4e6a8b-1d3f-4b5a-9c7e-0123456789ab" };
+    const first = await api.post<{ pid: string }>("/api/claim", { code: live.code }, { headers: key });
+    expect(first.status).toBe(200);
+    expect((await api.post("/api/cancel", {}, { auth: first.body.pid })).status).toBe(200);
+    const replay = await api.post<{ pid?: string }>("/api/claim", { code: live.code }, { headers: key });
+    expect(replay.status).not.toBe(200);
+    expect(replay.body.pid).toBeUndefined();
+    const codeOf = (v: Record<string, unknown>) => (v.code as { code: string } | null)?.code;
+    const next = await live.socket.stateWhere((v) => v.state === "waiting" && !!codeOf(v) && codeOf(v) !== live.code);
+    const nextCode = codeOf(next.view as Record<string, unknown>);
+    const fresh = await api.post<{ pid: string }>("/api/claim", { code: nextCode }, { headers: key });
+    expect(fresh.status).toBe(200);
+    expect(fresh.body.pid).not.toBe(first.body.pid);
+    expect((await api.get("/api/pair/state", first.body.pid)).status).toBe(401);
+    live.socket.close();
+  });
+
   it("AUTH-01 flow: a live listing without a session is auth_required, and a demo screen never asks for one", async () => {
     const { session } = await signIn();
     const live = await openScreen(api, "live");
