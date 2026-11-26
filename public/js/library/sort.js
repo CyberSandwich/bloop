@@ -22,7 +22,7 @@ export function start(page) {
       button.addEventListener("click", () => {
         dialog?.close();
         if (page.sort === key) return;
-        page.sort = key;
+        page.sort = "updated";
         void page.load();
       });
       return button;
