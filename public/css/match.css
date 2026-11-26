@@ -11,8 +11,10 @@
   align-items: center;
   gap: 8px;
 }
-/* The live region is in the page from the mount; empty, it is out of the grid, so it adds no row. */
+/* The live region is in the page from the mount; empty, it is out of the grid, so it adds no row. Shown, it is the
+   first row: the panel grows upward from its bottom edge and the choices stay where the finger is. */
 .pick-slow {
+  grid-row: 1;
   grid-column: 1 / -1;
   padding: 0 12px 4px;
 }
