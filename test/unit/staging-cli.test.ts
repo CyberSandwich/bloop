@@ -3,6 +3,7 @@ import { copyFileSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSy
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
+import { withPrebuilt } from "../../tools/prebuilt.mjs";
 import { SECRETS } from "../../tools/staging.mjs";
 import { SPAWN_TIMEOUT } from "./spawn.ts";
 
@@ -31,7 +32,7 @@ afterEach(() => rmSync(root, { recursive: true, force: true }));
 function project() {
   root = mkdtempSync(join(tmpdir(), "bloop-staging-cli-"));
   mkdirSync(join(root, "tools"));
-  for (const file of ["staging.mjs", "pinned-wrangler.mjs", "prebuilt.mjs"]) {
+  for (const file of ["staging.mjs", "pinned-wrangler.mjs"]) {
     copyFileSync(join(REPO, "tools", file), join(root, "tools", file));
   }
   mkdirSync(join(root, "node_modules/wrangler/bin"), { recursive: true });
@@ -44,7 +45,8 @@ function project() {
     }),
   );
   const config = readFileSync(join(REPO, "wrangler.jsonc"), "utf8");
-  writeFileSync(join(root, "wrangler.jsonc"), config);
+  // The prebuilt-dist action has already swapped the build command when the staging step runs.
+  writeFileSync(join(root, "wrangler.jsonc"), withPrebuilt(config));
   return join(root, "calls.log");
 }
 
