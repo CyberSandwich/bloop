@@ -1225,10 +1225,10 @@ a.row:focus-visible {
     flex-flow: wrap;
     align-items: center;
   }
-  .actions .btn.text {
+  .actions .text {
     flex: none;
   }
-  .buttons > .btn.text:first-child {
+  .buttons > .text:first-child {
     margin-left: -12px;
   }
 }
