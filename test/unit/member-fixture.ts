@@ -2,7 +2,8 @@
 // member with a live session, and a direct call into a route table.
 import { type SessionOptions, Sessions } from "../../src/worker/auth/sessions.ts";
 import { type Config, configFor } from "../../src/worker/config.ts";
-import { PROD_VARS } from "../env-vars.ts";
+import { sha256Hex } from "../../src/worker/ids.ts";
+import { declaredRateLimits, PROD_VARS } from "../env-vars.ts";
 import { type TestDb, testDb } from "./d1-shim.ts";
 
 export const ORIGIN = "http://localhost:8787";
@@ -91,3 +92,50 @@ export async function callRoute(
 }
 
 export const sid = (value: string) => `__Host-bloop_sid=${value}`;
+
+/** The account routes with spies in place of the live layer and the block list; `over` replaces any of them. */
+export async function spied(blocked = false, over: Record<string, unknown> = {}) {
+  const calls: unknown[][] = [];
+  const path = "../../src/worker/routes/account.ts";
+  const { accountRoutesWith } = (await import(path)) as { accountRoutesWith: (deps: object) => readonly AnyRoute[] };
+  const routes = accountRoutesWith({
+    endScreens: async (_env: unknown, userId: string, scope?: object) => {
+      calls.push(["endScreens", userId, scope ?? {}]);
+    },
+    closeSessions: async (_env: unknown, userId: string, publicIds: readonly string[]) => {
+      calls.push(["closeSessions", userId, [...publicIds].sort()]);
+    },
+    isBlocked: async () => blocked,
+    ...over,
+  });
+  return { calls, routes };
+}
+
+/** The public id of the session a cookie value names. */
+export const publicId = async (db: TestDb, value: string) =>
+  (
+    db.raw.prepare("SELECT public_id FROM phone_session WHERE id_hash = ?").get(await sha256Hex(value)) as {
+      public_id: string;
+    }
+  ).public_id;
+
+export const cookieNames = (res: Response) => res.headers.getSetCookie().map((c) => c.split("=")[0]);
+
+/**
+ * Every declared rate-limit binding, recording `[name, key]` into `seen` (share it with a recording DB to check the
+ * order) and refusing the names in `refuse`.
+ */
+export function recordingLimits(refuse: string[] = [], seen: [string, string][] = []) {
+  const bindings = Object.fromEntries(
+    Object.keys(declaredRateLimits()).map((name) => [
+      name,
+      {
+        limit: async ({ key }: { key: string }) => {
+          seen.push([name, key]);
+          return { success: !refuse.includes(name) };
+        },
+      },
+    ]),
+  );
+  return { seen, bindings };
+}

@@ -1,47 +1,19 @@
 import { describe, expect, it } from "vitest";
 import { deviceEpoch, isKnown, newDeviceValue } from "../../src/worker/auth/codes.ts";
 import { sha256Hex } from "../../src/worker/ids.ts";
-import { declaredRateLimits } from "../env-vars.ts";
-import type { TestDb } from "./d1-shim.ts";
 import {
   type AnyRoute,
   addSession,
   callRoute,
+  cookieNames,
   memberWorld,
   ORIGIN,
-  routesOf,
+  publicId,
+  recordingLimits,
   seedMember,
   sid,
+  spied,
 } from "./member-fixture.ts";
-
-type Deps = Record<string, unknown>;
-
-/** The account routes with spies in place of the live layer and the block list; `over` replaces any of them. */
-async function spied(blocked = false, over: Deps = {}) {
-  const calls: unknown[][] = [];
-  const path = "../../src/worker/routes/account.ts";
-  const { accountRoutesWith } = (await import(path)) as { accountRoutesWith: (deps: object) => readonly AnyRoute[] };
-  const routes = accountRoutesWith({
-    endScreens: async (_env: unknown, userId: string, scope?: object) => {
-      calls.push(["endScreens", userId, scope ?? {}]);
-    },
-    closeSessions: async (_env: unknown, userId: string, publicIds: readonly string[]) => {
-      calls.push(["closeSessions", userId, [...publicIds].sort()]);
-    },
-    isBlocked: async () => blocked,
-    ...over,
-  });
-  return { calls, routes };
-}
-
-const publicId = async (db: TestDb, value: string) =>
-  (
-    db.raw.prepare("SELECT public_id FROM phone_session WHERE id_hash = ?").get(await sha256Hex(value)) as {
-      public_id: string;
-    }
-  ).public_id;
-
-const cookieNames = (res: Response) => res.headers.getSetCookie().map((c) => c.split("=")[0]);
 
 describe("AUTH-13 signout-all: every session and every screen end", () => {
   it("AUTH-13 signout-all: both sessions die, endScreens covers the account and one call closes every session", async () => {
@@ -126,38 +98,6 @@ describe("sign-out", () => {
       }
     }
     expect(calls).toEqual([]);
-  });
-});
-
-describe("DATA-05 dsar: a deletion request", () => {
-  it("DATA-05 dsar: a deletion request ends every screen and closes every other session, in one batch with the status", async () => {
-    const world = memberWorld();
-    const { calls, routes } = await spied();
-    const a = await seedMember(world.db, "m1", "m@example.test");
-    const b = await addSession(world.db, "m1");
-    const otherId = await publicId(world.db, b);
-    const res = await callRoute(routes, world.env, "DELETE", "/api/me", { cookie: sid(a) });
-    expect(res.status).toBe(200);
-    expect(calls).toEqual([
-      ["endScreens", "m1", {}],
-      ["closeSessions", "m1", [otherId]],
-    ]);
-    expect(world.db.raw.prepare("SELECT status FROM app_user WHERE id = 'm1'").get()).toEqual({ status: "deleting" });
-    expect(world.db.raw.prepare("SELECT count(*) AS n FROM phone_session").get()).toEqual({ n: 1 });
-  });
-
-  it("DATA-05 dsar: a failed batch changes neither the status nor any session", async () => {
-    const world = memberWorld();
-    const { routes } = await spied();
-    const a = await seedMember(world.db, "m1", "m@example.test");
-    await addSession(world.db, "m1");
-    // The second statement fails inside the batch, so the first must roll back with it.
-    world.db.raw.exec(
-      "CREATE TRIGGER no_delete BEFORE DELETE ON phone_session BEGIN SELECT RAISE(ABORT, 'refused'); END",
-    );
-    await expect(callRoute(routes, world.env, "DELETE", "/api/me", { cookie: sid(a) })).rejects.toThrow(/refused/);
-    expect(world.db.raw.prepare("SELECT status FROM app_user WHERE id = 'm1'").get()).toEqual({ status: "active" });
-    expect(world.db.raw.prepare("SELECT count(*) AS n FROM phone_session").get()).toEqual({ n: 2 });
   });
 });
 
@@ -246,54 +186,6 @@ describe("AUTH-18 epoch: a known-device value dies with every change that forget
   });
 });
 
-describe("rate limits on GET /api/me, with real limits", () => {
-  const counting = (refuse: string[] = []) => {
-    const seen: [string, string][] = [];
-    const bindings = Object.fromEntries(
-      Object.keys(declaredRateLimits()).map((name) => [
-        name,
-        {
-          limit: async ({ key }: { key: string }) => {
-            seen.push([name, key]);
-            return { success: !refuse.includes(name) };
-          },
-        },
-      ]),
-    );
-    return { seen, bindings };
-  };
-
-  it("the per-IP meter comes before any read; the member's own only once a live session is read", async () => {
-    const world = memberWorld({ TEST_TIMING: "0" });
-    const { routes } = await spied();
-    const live = await seedMember(world.db, "m1", "m@example.test");
-    const none = counting();
-    await callRoute(routes, { ...world.env, ...none.bindings }, "GET", "/api/me");
-    expect(none.seen.map(([name]) => name)).toEqual(["RL_MEMBER_IP"]);
-    const member = counting();
-    await callRoute(routes, { ...world.env, ...member.bindings }, "GET", "/api/me", { cookie: sid(live) });
-    expect(member.seen).toEqual([
-      ["RL_MEMBER_IP", expect.any(String)],
-      ["RL_MEMBER", "m1"],
-    ]);
-  });
-
-  it("a refused per-IP meter answers 429 without touching D1", async () => {
-    const world = memberWorld({ TEST_TIMING: "0" });
-    const { routes } = await spied();
-    const refused = counting(["RL_MEMBER_IP"]);
-    const noDb = {
-      prepare: () => {
-        throw new Error("D1 read");
-      },
-    };
-    const res = await callRoute(routes, { ...world.env, ...refused.bindings, DB: noDb }, "GET", "/api/me", {
-      cookie: sid("A".repeat(43)),
-    });
-    expect(res.status).toBe(429);
-  });
-});
-
 describe("the devices list: DELETE /api/me/sessions/:id", () => {
   it("ends another of the member's sessions and its screens; refuses the current one, a stranger's and a bad id", async () => {
     const world = memberWorld();
@@ -314,137 +206,6 @@ describe("the devices list: DELETE /api/me/sessions/:id", () => {
     ]);
     const list = await callRoute(routes, world.env, "GET", "/api/me/sessions", { cookie: sid(mine) });
     expect(((await list.json()) as { current: boolean }[]).map((s) => s.current)).toEqual([true]);
-  });
-});
-
-describe("restore: POST /api/me/restore", () => {
-  const deleting = async (world: ReturnType<typeof memberWorld>, deleteAfter: number) => {
-    const cookie = await seedMember(world.db, "m1", "m@example.test");
-    world.db.raw.prepare("UPDATE app_user SET status = 'deleting', delete_after = ? WHERE id = 'm1'").run(deleteAfter);
-    return cookie;
-  };
-  const status = (world: ReturnType<typeof memberWorld>) =>
-    (world.db.raw.prepare("SELECT status FROM app_user WHERE id = 'm1'").get() as { status: string }).status;
-
-  it("cancels the deletion inside the grace", async () => {
-    const world = memberWorld();
-    const { routes } = await spied();
-    const cookie = await deleting(world, Date.now() + 86_400_000);
-    const res = await callRoute(routes, world.env, "POST", "/api/me/restore", { cookie: sid(cookie) });
-    expect(await res.json()).toEqual({ signedIn: true, deleting: false });
-    expect(status(world)).toBe("active");
-  });
-
-  it("is restore_too_late past the grace, and for a blocked address however early", async () => {
-    const late = memberWorld();
-    const lateCookie = await deleting(late, Date.now() - 1);
-    const res = await callRoute((await spied()).routes, late.env, "POST", "/api/me/restore", {
-      cookie: sid(lateCookie),
-    });
-    expect(res.status).toBe(410);
-    expect(await res.json()).toMatchObject({ code: "restore_too_late" });
-    const blocked = memberWorld();
-    const cookie = await deleting(blocked, Date.now() + 86_400_000);
-    const refused = await callRoute((await spied(true)).routes, blocked.env, "POST", "/api/me/restore", {
-      cookie: sid(cookie),
-    });
-    expect(await refused.json()).toMatchObject({ code: "restore_too_late" });
-    expect(status(blocked)).toBe("deleting");
-  });
-});
-
-describe("passkey names: PATCH /api/me/passkeys/:id", () => {
-  it("takes letters, digits, emoji with ZWJ, space, hyphen and apostrophe; refuses bidi, zero-width space and URLs", async () => {
-    const world = memberWorld();
-    const { routes } = await spied();
-    const cookie = await seedMember(world.db, "m1", "m@example.test");
-    world.db.raw
-      .prepare(
-        "INSERT INTO passkey (id, user_id, public_key, sign_count, backed_up, name, created_at) VALUES ('cred-1', 'm1', x'00', 0, 1, 'Passkey', 0)",
-      )
-      .run();
-    const rename = (name: string) =>
-      callRoute(routes, world.env, "PATCH", "/api/me/passkeys/cred-1", { cookie: sid(cookie), body: { name } });
-    for (const name of ["Duke's iPhone 15", "Büro-Laptop", "  MacBook  ", "👩\u200D💻 work", "x".repeat(40)]) {
-      expect((await rename(name)).status, name).toBe(200);
-    }
-    expect(world.db.raw.prepare("SELECT name FROM passkey").get()).toEqual({ name: "x".repeat(40) });
-    for (const name of [
-      "evil\u202Egnp.exe",
-      "a\u200Bb",
-      "\u2066x\u2069",
-      "https://evil.example",
-      "bloop.here/signin",
-      "x".repeat(41),
-      "",
-      "  ",
-      "line\nbreak",
-    ]) {
-      expect((await rename(name)).status, JSON.stringify(name)).toBe(400);
-    }
-    expect(world.db.raw.prepare("SELECT name FROM passkey").get()).toEqual({ name: "x".repeat(40) });
-  });
-});
-
-describe("the admin view cookie: POST /api/admin/view", () => {
-  it("an admin turns the view cookie on (8 hours) and off, each with its admin_action row; it is HttpOnly", async () => {
-    const world = memberWorld();
-    const admin = await seedMember(world.db, "a1", "admin@example.test");
-    const routes = await routesOf("admin", "adminRoutes");
-    const toggle = (body: unknown) =>
-      callRoute(routes, world.env, "POST", "/api/admin/view", { cookie: sid(admin), body });
-    const on = await toggle({ open: true, reason: "  check the open landing  " });
-    expect(await on.json()).toEqual({ viewing: true });
-    expect(on.headers.getSetCookie()).toEqual([
-      "__Host-bloop_view=open; Max-Age=28800; Path=/; Secure; HttpOnly; SameSite=Lax",
-    ]);
-    // Control and format characters are dropped before the reason is stored: it stays one plain line.
-    const off = await toggle({ open: false, reason: "do\u202Ene\r\n" });
-    expect(off.headers.getSetCookie()).toEqual([
-      "__Host-bloop_view=; Max-Age=0; Path=/; Secure; HttpOnly; SameSite=Lax",
-    ]);
-    const rows = world.db.raw
-      .prepare("SELECT admin_user_id, action, target_kind, target_id, reason FROM admin_action ORDER BY id")
-      .all();
-    expect(rows).toEqual([
-      {
-        admin_user_id: "a1",
-        action: "view.open",
-        target_kind: "user",
-        target_id: "a1",
-        reason: "check the open landing",
-      },
-      { admin_user_id: "a1", action: "view.close", target_kind: "user", target_id: "a1", reason: "done" },
-    ]);
-    for (const body of [
-      { open: "yes", reason: "x" },
-      { open: true },
-      { open: true, reason: "   " },
-      { open: true, reason: "\u200B\u202E\n" },
-      { open: true, reason: "r".repeat(501) },
-    ]) {
-      const bad = await toggle(body);
-      expect(bad.status, JSON.stringify(body)).toBe(400);
-      expect(await bad.json()).toMatchObject({ code: "bad_request" });
-      expect(bad.headers.getSetCookie()).toEqual([]);
-    }
-    expect(world.db.raw.prepare("SELECT count(*) AS n FROM admin_action").get()).toEqual({ n: 2 });
-  });
-
-  it("a reason is stored whole up to 500 characters and refused past it, never cut", async () => {
-    const world = memberWorld();
-    const admin = await seedMember(world.db, "a1", "admin@example.test");
-    const routes = await routesOf("admin", "adminRoutes");
-    const toggle = (reason: string) =>
-      callRoute(routes, world.env, "POST", "/api/admin/view", { cookie: sid(admin), body: { open: true, reason } });
-    expect((await toggle("r".repeat(500))).status).toBe(200);
-    // Control characters do not count toward the limit, since they are dropped first.
-    expect((await toggle(`${"s".repeat(500)}\u200B\n`)).status).toBe(200);
-    const tooLong = await toggle("t".repeat(501));
-    expect(tooLong.status).toBe(400);
-    expect(await tooLong.json()).toMatchObject({ code: "bad_request" });
-    const stored = world.db.raw.prepare("SELECT reason FROM admin_action ORDER BY id").all() as { reason: string }[];
-    expect(stored.map((r) => r.reason)).toEqual(["r".repeat(500), "s".repeat(500)]);
   });
 });
 
@@ -502,6 +263,38 @@ describe("GET /api/me: signed in only for a real session", () => {
     expect(((await res.json()) as { signedIn: boolean }).signedIn).toBe(false);
     expect(cookieNames(res)).toEqual([]);
     expect((await me(world, url, { Cookie: sid(fresh) })).body).toMatchObject({ signedIn: true });
+  });
+});
+
+describe("rate limits on GET /api/me, with real limits", () => {
+  it("the per-IP meter comes before any read; the member's own only once a live session is read", async () => {
+    const world = memberWorld({ TEST_TIMING: "0" });
+    const { routes } = await spied();
+    const live = await seedMember(world.db, "m1", "m@example.test");
+    const none = recordingLimits();
+    await callRoute(routes, { ...world.env, ...none.bindings }, "GET", "/api/me");
+    expect(none.seen.map(([name]) => name)).toEqual(["RL_MEMBER_IP"]);
+    const member = recordingLimits();
+    await callRoute(routes, { ...world.env, ...member.bindings }, "GET", "/api/me", { cookie: sid(live) });
+    expect(member.seen).toEqual([
+      ["RL_MEMBER_IP", expect.any(String)],
+      ["RL_MEMBER", "m1"],
+    ]);
+  });
+
+  it("a refused per-IP meter answers 429 without touching D1", async () => {
+    const world = memberWorld({ TEST_TIMING: "0" });
+    const { routes } = await spied();
+    const refused = recordingLimits(["RL_MEMBER_IP"]);
+    const noDb = {
+      prepare: () => {
+        throw new Error("D1 read");
+      },
+    };
+    const res = await callRoute(routes, { ...world.env, ...refused.bindings, DB: noDb }, "GET", "/api/me", {
+      cookie: sid("A".repeat(43)),
+    });
+    expect(res.status).toBe(429);
   });
 });
 
