@@ -21,11 +21,12 @@ const ALLOWED = [
   "src/worker/seams/file-source/library.ts: U",
   "src/worker/routes/library.ts: G",
   "src/worker/routes/library.ts: G",
+  "public/js/library.js: U",
 ];
 
 describe("library transitional seams", () => {
   it("every `transitional: <owner>:` marker is one still allowed, and each allowed one is present", () => {
-    const found = walk("src").flatMap((path) =>
+    const found = [...walk("src"), ...walk("public/js")].flatMap((path) =>
       [...readFileSync(join(root, path), "utf8").matchAll(/transitional: (A|G|U|V2|P1):/g)].map(
         (m) => `${path}: ${m[1]}`,
       ),
