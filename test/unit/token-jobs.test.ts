@@ -129,6 +129,8 @@ const PINNED: Record<string, string[]> = {
     "    runs-on: ubuntu-latest",
     "    timeout-minutes: 30",
     "    environment: production",
+    "    permissions:",
+    "      contents: read",
     "    steps:",
     "      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1",
     "        with:",

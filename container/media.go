@@ -4,10 +4,13 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"log"
+	"math"
 	"os"
 	"path/filepath"
 	"strconv"
 	"strings"
+	"time"
 )
 
 type probe struct {
@@ -76,7 +79,7 @@ func (s *Server) videoJob(job jobInfo, meta *metaJSON) error {
 		}
 		w, h, _, ok := p.video()
 		seconds := p.seconds()
-		if !ok || w > maxVideoDim || h > maxVideoDim || seconds <= 0 {
+		if !ok || w > maxVideoDim || h > maxVideoDim || !(seconds > 0) || math.IsInf(seconds, 0) {
 			return failed(errBadMedia, fmt.Errorf("video %dx%d, %.0f s, stream %v", w, h, seconds, ok))
 		}
 		// An index that cannot be read means a transcode: ffmpeg decides what the file is.
@@ -84,30 +87,47 @@ func (s *Server) videoJob(job jobInfo, meta *metaJSON) error {
 		remux := canRemux(p, demuxer, s.cfg.VideoWidth, boxes)
 		ceiling := s.cfg.Timeouts["video"]
 		budget := transcodeBudget(seconds, s.cfg.VideoRate, s.cfg.VideoFixed, ceiling)
+		st, err := os.Stat(orig)
+		if err != nil {
+			return failed(errInternal, err)
+		}
+		size := st.Size()
 		if remux {
-			st, err := os.Stat(orig)
-			if err != nil {
-				return failed(errInternal, err)
-			}
-			budget = remuxBudget(st.Size(), s.cfg.VideoFixed, ceiling)
+			budget = remuxBudget(size, s.cfg.VideoFixed, ceiling)
 		} else if seconds > s.cfg.MaxVideoSecs {
 			return failed(errBadMedia, fmt.Errorf("%.0f s of video to re-encode, at most %.0f s", seconds, s.cfg.MaxVideoSecs))
 		}
-		bctx, cancel := context.WithTimeout(ctx, budget)
-		defer cancel()
-		if remux {
-			err = s.remux(bctx, orig, dst, seconds)
-		} else {
-			err = s.transcode(bctx, demuxer, orig, dst, seconds)
+		run := func(copying bool, budget time.Duration) error {
+			bctx, cancel := context.WithTimeout(ctx, budget)
+			defer cancel()
+			var err error
+			if copying {
+				err = s.remux(bctx, orig, dst, size, seconds)
+			} else {
+				err = s.transcode(bctx, demuxer, orig, dst, seconds)
+			}
+			if err != nil && bctx.Err() != nil && ctx.Err() == nil {
+				return failed(errTimeout, fmt.Errorf("video (copy %v) over its %v budget", copying, budget))
+			}
+			return err
+		}
+		err = run(remux, budget)
+		if err != nil && remux && codeOf(err) != errTimeout && ctx.Err() == nil && seconds <= s.cfg.MaxVideoSecs {
+			// A copy ffmpeg could not finish may still encode, when the clip is within the encode cap.
+			log.Printf("remux failed, encoding instead: %v", err)
+			err = run(false, transcodeBudget(seconds, s.cfg.VideoRate, s.cfg.VideoFixed, ceiling))
+			remux = false
 		}
 		if err != nil {
-			if bctx.Err() != nil && ctx.Err() == nil {
-				return failed(errTimeout, fmt.Errorf("video (remux %v) over its %v budget", remux, budget))
-			}
 			return err
 		}
 		if err := checkFaststart(dst); err != nil {
 			return err
+		}
+		if remux {
+			if err := checkCopySize(dst, size); err != nil {
+				return err
+			}
 		}
 		out, err := s.probe(ctx, "mov", dst)
 		if err != nil {
@@ -116,6 +136,9 @@ func (s *Server) videoJob(job jobInfo, meta *metaJSON) error {
 		ow, oh, codec, ok := out.video()
 		if !ok || codec != "h264" || !strings.Contains(out.Format.FormatName, "mp4") {
 			return failed(errOutputInvalid, fmt.Errorf("video produced %q in %q", codec, out.Format.FormatName))
+		}
+		if remux && out.seconds() >= seconds+copySlackSeconds-1 {
+			return failed(errOutputInvalid, fmt.Errorf("copy ran to the %d s slack: %.0f s from %.0f s", copySlackSeconds, out.seconds(), seconds))
 		}
 		meta.Video = &VideoMeta{W: ow, H: oh, DurationMs: int(out.seconds() * 1000)}
 		return s.videoThumb(ctx, dst, out.seconds())
@@ -134,14 +157,23 @@ func (s *Server) ffmpeg(ctx context.Context, args []string, seconds float64) err
 	return convertErr(err)
 }
 
-// remux copies the first video and audio streams into a faststart mp4 without decoding them.
-func (s *Server) remux(ctx context.Context, in, dst string, seconds float64) error {
-	return s.ffmpeg(ctx, []string{
+// remuxArgs copies the first video and audio streams into a faststart mp4 without decoding them, stripping SEI
+// units (free-form user data) from the video, and stops at the input's size and the probed length plus a slack,
+// whatever the container claims.
+func remuxArgs(in, dst string, size int64, seconds float64) []string {
+	return []string{
 		"-nostdin", "-hide_banner", "-loglevel", "error", "-y",
 		"-protocol_whitelist", "file", "-f", "mov", "-i", in,
+		"-t", strconv.FormatFloat(seconds+copySlackSeconds, 'f', -1, 64),
+		"-fs", strconv.FormatInt(copyLimitBytes(size), 10),
 		"-map", "0:v:0", "-map", "0:a:0?", "-sn", "-dn", "-map_metadata", "-1",
-		"-c", "copy", "-movflags", "+faststart", "-progress", "pipe:1", "-nostats", dst,
-	}, seconds)
+		"-c", "copy", "-bsf:v", "filter_units=remove_types=6",
+		"-movflags", "+faststart", "-progress", "pipe:1", "-nostats", dst,
+	}
+}
+
+func (s *Server) remux(ctx context.Context, in, dst string, size int64, seconds float64) error {
+	return s.ffmpeg(ctx, remuxArgs(in, dst, size, seconds), seconds)
 }
 
 // transcode bounds the output at MaxVideoSecs with -t, whatever the input's header claims.
