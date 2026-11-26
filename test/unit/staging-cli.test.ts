@@ -187,6 +187,13 @@ describe("tools/staging.mjs as the workflow runs it", () => {
     expect(wrangler("token-under-test", "d1", "migrations", "apply", "DB").status).toBe(0);
     for (const command of ["whoami", "kv", "r2", "deployments", "tail"])
       expect(wrangler("token-under-test", command).status).toBe(0);
+    // The converter publish job pushes and prunes through this entry, so these run with the token on an unswapped config.
+    for (const args of [
+      ["push", "bloop-converter:t"],
+      ["images", "list", "--json"],
+      ["images", "delete", "bloop-converter:t"],
+    ])
+      expect(wrangler("token-under-test", "containers", ...args).status, args.join(" ")).toBe(0);
     // The other credential variables count as a token too.
     for (const name of ["CF_API_TOKEN", "CLOUDFLARE_API_KEY"]) {
       const res = spawnSync(process.execPath, [join(root, "tools/pinned-wrangler.mjs"), "deploy"], {
@@ -199,7 +206,9 @@ describe("tools/staging.mjs as the workflow runs it", () => {
     // The rehearsal has no token: wrangler itself runs the build command, which is the point of the dry run.
     expect(wrangler("").status).toBe(0);
     expect(readFileSync(calls, "utf8")).toBe(
-      "secret put X\nd1 migrations apply DB\nwhoami\nkv\nr2\ndeployments\ntail\ndeploy --dry-run\n",
+      "secret put X\nd1 migrations apply DB\nwhoami\nkv\nr2\ndeployments\ntail\n" +
+        "containers push bloop-converter:t\ncontainers images list --json\ncontainers images delete bloop-converter:t\n" +
+        "deploy --dry-run\n",
     );
   });
 
