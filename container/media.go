@@ -266,7 +266,9 @@ func (s *Server) keepPreview(full string, meta *metaJSON, video VideoMeta, cause
 	log.Printf("full encode after the 720p did not finish, keeping the 720p: %v", cause)
 	os.Remove(full)
 	meta.Video = &video
-	if err := copyFile(s.dir("out", "t.webp"), s.previewThumb()); err != nil {
+	thumb := s.dir("out", "t.webp")
+	os.Remove(thumb) // the full encode's own thumbnail, if it got that far; copyFile never overwrites
+	if err := copyFile(thumb, s.previewThumb()); err != nil {
 		return failed(errInternal, err)
 	}
 	return nil
