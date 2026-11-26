@@ -4,6 +4,8 @@
 import { type Browser, type BrowserContext, chromium, expect, type Page, test, webkit } from "@playwright/test";
 
 test.skip(!process.env.HERO_CAPTURE, "capture only: set HERO_CAPTURE=1");
+// Each test launches its own browser and WebKit starts slowly on a runner.
+test.setTimeout(120_000);
 
 const ENGINES = { chromium, webkit } as const;
 const SHOTS = "test-results/shots";
