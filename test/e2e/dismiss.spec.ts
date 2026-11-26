@@ -17,7 +17,10 @@ async function deck(page: Page) {
   await page.getByRole("button", { name: "Approve" }).tap();
   await expect(page.getByRole("heading", { level: 1 })).toHaveText("Dog.jpg");
   await page.locator("#handle").tap();
-  await page.locator("#items").getByRole("button", { name: /^Sample deck\.pptx/ }).tap();
+  await page
+    .locator("#items")
+    .getByRole("button", { name: /^Sample deck\.pptx/ })
+    .tap();
   await expect(page.getByRole("heading", { level: 1 })).toHaveText("Sample deck.pptx");
   await expect(page.locator("#dots")).toHaveText("1 / 2");
 }
