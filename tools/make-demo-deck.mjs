@@ -97,22 +97,22 @@ function builder() {
     shape({ name, x, y, w, h, text: paragraphs, anchor, txBox: true });
 
   /** A custGeom made of path commands in a w x h grid. Paths: [{ d: [["M", x, y], ["L", x, y], ["C", ...6]], close, stroke }] */
-  const cust = (w, h, paths) =>
-    `<a:custGeom><a:avLst/><a:gdLst/><a:ahLst/><a:cxnLst/><a:rect l="0" t="0" r="r" b="b"/><a:pathLst>${paths
-      .map(({ d, close = true, open = false }) => {
-        const pt = (x, y) => `<a:pt x="${x}" y="${y}"/>`;
-        const cmds = d
-          .map(([op, ...n]) =>
-            op === "M"
-              ? `<a:moveTo>${pt(n[0], n[1])}</a:moveTo>`
-              : op === "L"
-                ? `<a:lnTo>${pt(n[0], n[1])}</a:lnTo>`
-                : `<a:cubicBezTo>${pt(n[0], n[1])}${pt(n[2], n[3])}${pt(n[4], n[5])}</a:cubicBezTo>`,
-          )
-          .join("");
-        return `<a:path w="${w}" h="${h}"${open ? ' fill="none"' : ""}>${cmds}${close ? "<a:close/>" : ""}</a:path>`;
-      })
-      .join("")}</a:pathLst></a:custGeom>`;
+  const cust = (w, h, paths) => {
+    const pt = (x, y) => `<a:pt x="${x}" y="${y}"/>`;
+    const sub = ({ d, close = true }) =>
+      d
+        .map(([op, ...n]) =>
+          op === "M"
+            ? `<a:moveTo>${pt(n[0], n[1])}</a:moveTo>`
+            : op === "L"
+              ? `<a:lnTo>${pt(n[0], n[1])}</a:lnTo>`
+              : `<a:cubicBezTo>${pt(n[0], n[1])}${pt(n[2], n[3])}${pt(n[4], n[5])}</a:cubicBezTo>`,
+        )
+        .join("") + (close ? "<a:close/>" : "");
+    // One path: its subpaths wind opposite ways where a hole is wanted. Strokes (close: false) are not filled.
+    const open = paths.every((p) => p.close === false);
+    return `<a:custGeom><a:avLst/><a:gdLst/><a:ahLst/><a:cxnLst/><a:rect l="0" t="0" r="r" b="b"/><a:pathLst><a:path w="${w}" h="${h}"${open ? ' fill="none"' : ""}>${paths.map(sub).join("")}</a:path></a:pathLst></a:custGeom>`;
+  };
 
   /** The logo (public/favicon.svg) as native shapes: the disc is `size` wide, the "b" may stand a little above and below it. */
   const logo = (x, y, size, name = "bloop logo") => {
@@ -201,11 +201,11 @@ function slides() {
       [
         s.shape({ name: "Warm Circle", x: 8.6, y: -0.9, w: 7.6, h: 7.6, geom: "ellipse", fill: C.robin, alpha: 40 }),
         s.shape({ name: "Small Warm Circle", x: 7.6, y: 3.9, w: 4.2, h: 4.2, geom: "ellipse", fill: C.robin, alpha: 24 }),
-        s.logo(0.9, 1.0, 1.0),
-        s.textBox("Wordmark", 2.1, 1.12, 3, 0.8, [s.para([{ t: "bloop", sz: 34, b: true }])], "ctr"),
+        s.logo(0.8, 1.0, 1.0),
+        s.textBox("Wordmark", 2.0, 1.12, 3, 0.8, [s.para([{ t: "bloop", sz: 34, b: true }])], "ctr"),
         s.title("Welcome to bloop", { x: 0.8, y: 2.55, w: 8.2, h: 1.3, ph: "ctrTitle" }),
-        s.textBox("Subtitle", 0.9, 3.95, 7.4, 1.0, [s.para([{ t: "A short guide to presenting with bloop.", sz: 26, color: C.lead }])]),
-        s.textBox("Four Words", 0.9, 5.35, 7.4, 0.5, [s.para([{ t: "Scan. Approve. Show. End.", sz: 20, b: true, color: C.ink2 }])]),
+        s.textBox("Subtitle", 0.8, 3.95, 7.4, 1.0, [s.para([{ t: "A short guide to presenting with bloop.", sz: 26, color: C.lead }])]),
+        s.textBox("Four Words", 0.8, 5.35, 7.4, 0.5, [s.para([{ t: "Scan. Approve. Show. End.", sz: 20, b: true, color: C.ink2 }])]),
       ],
     ]);
   }
@@ -243,7 +243,7 @@ function slides() {
       ["Scan the code with your phone camera.", "Or type the code on your phone."],
       ["Match the number.", "Your phone and the screen show the same two digits."],
     ];
-    const shapes = [s.title("Scan the Screen's Code")];
+    const shapes = [s.title("Scan the Screen’s Code")];
     rows.forEach(([head, line], i) => {
       const y = 1.95 + i * 1.3;
       shapes.push(
@@ -315,7 +315,7 @@ function slides() {
     rows.forEach(([head, line], i) => {
       const y = 1.95 + i * 1.3;
       shapes.push(
-        s.shape({ name: `Dot ${i + 1}`, x: 0.85, y: y + 0.17, w: 0.2, h: 0.2, geom: "ellipse", fill: C.ink }),
+        s.shape({ name: `Dot ${i + 1}`, x: 0.85, y: y + 0.09, w: 0.2, h: 0.2, geom: "ellipse", fill: C.ink }),
         s.textBox(`Row ${i + 1}`, 1.4, y - 0.06, 6.3, 1.1, [
           s.para([{ t: head, sz: 22, b: true }]),
           s.para([{ t: line, sz: 18, color: C.muted }], { before: 3 }),
@@ -410,16 +410,16 @@ function slides() {
   {
     const s = builder();
     const ways = [
-      ["Revoke on Your Phone", "Tap Revoke. Each link stops working at once."],
-      ["End at the Screen", "Tap End. The screen clears its session."],
+      ["Revoke on Your Phone", "Tap Revoke. The screen loses access at once."],
+      ["End at the Screen", "Tap End. Every link stops working."],
       ["Let It Time Out", "It ends by itself, even if you forget."],
     ];
     const shapes = [s.title("End the Session")];
     ways.forEach(([head, line], i) => {
       const x = 0.8 + i * 4.01;
       shapes.push(
-        s.card(`Way ${i + 1}`, x, 1.75, 3.71, 1.95),
-        s.textBox(`Way ${i + 1} Text`, x + 0.3, 2.0, 3.15, 1.6, [
+        s.card(`Way ${i + 1}`, x, 1.75, 3.71, 1.65),
+        s.textBox(`Way ${i + 1} Text`, x + 0.3, 2.0, 3.15, 1.3, [
           s.para([{ t: head, sz: 22, b: true }]),
           s.para([{ t: line, sz: 17, color: C.muted }], { before: 6 }),
         ]),
@@ -428,7 +428,7 @@ function slides() {
     // Session length as a bar: 12 hours is the limit, 1 hour is where every session starts.
     const [bx, by, bw] = [0.8, 4.65, 11.73];
     shapes.push(
-      s.textBox("Length Title", bx, 3.95, 6, 0.45, [s.para([{ t: "Session Length", sz: 20, b: true }])]),
+      s.textBox("Length Title", bx, 3.9, 6, 0.45, [s.para([{ t: "Session Length", sz: 20, b: true }])]),
       s.shape({ name: "Track", x: bx, y: by, w: bw, h: 0.24, geom: "roundRect", radius: 0.12, fill: C.g1 }),
       s.shape({ name: "Default Length", x: bx, y: by, w: bw / 12, h: 0.24, geom: "roundRect", radius: 0.12, fill: C.ink }),
       s.textBox("Default Label", bx, by + 0.35, 4, 0.45, [s.para([{ t: "1 Hour to Start", sz: 17, b: true, color: C.ink2 }])]),
@@ -448,7 +448,7 @@ function slides() {
       const fill = kind === "tick" ? C.ink : C.rose;
       const ink = kind === "tick" ? C.white : C.roseInk;
       const shapes = [
-        s.card(`${head} Card`, x, 1.95, 5.86, 3.85),
+        s.card(`${head} Card`, x, 1.95, 5.715, 3.85),
         s.textBox(`${head} Title`, x + 0.4, 2.2, 5.1, 0.6, [s.para([{ t: head, sz: 26, b: true }])], "ctr"),
       ];
       items.forEach((t, i) => {
