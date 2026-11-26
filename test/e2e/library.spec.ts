@@ -372,9 +372,9 @@ test.describe("library", () => {
       // A 15px line at 1.3 is 19.5 high: two lines, never three, never one.
       const box = await name.boundingBox();
       expect(Math.round((box?.height ?? 0) / 19.5), "lines").toBe(2);
-      // The name stays clear of the More button beside it.
-      const more = await page.locator(`${list} .lib-more`).first().boundingBox();
-      expect((box?.x ?? 0) + (box?.width ?? 0), "name right edge").toBeLessThanOrEqual(more?.x ?? 0);
+      // The name stays clear of the tick beside it (More is hidden in Up Next on a fine pointer).
+      const tick = await page.locator(`${list} .lib-tick`).first().boundingBox();
+      expect((box?.x ?? 0) + (box?.width ?? 0), "name right edge").toBeLessThanOrEqual(tick?.x ?? 0);
     });
   }
 
