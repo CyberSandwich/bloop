@@ -644,6 +644,14 @@ Validation rules: a `.pptx` starts with `PK\x03\x04`, has no `%PDF` in its first
 
 `purgeGuest` (`seams/guest-drop/purge.ts`) is what the Screen object's `purge` seam runs: it skips a file from another source, deletes through `GuestDrop.purge`, audits `guest.deleted` when something existed, and never throws (a failed delete is logged and left to the sweep).
 
+**Planned: several guest files per session** (the Add a File slice; present-live.md section 6 is the UX). Not built; until it lands the contract above, section 2's `uploading` and `offered` rows and `PairingStore`'s drop methods hold.
+- `GuestDrop.settle(sessionId, {uploadId, fileId, kind, name, size})` applies `upload.done` for one upload: it appends one ready item to the session's guest items. It never answers `already_uploaded` and never moves the session to `offered`.
+- `upload.start` carries `name` and `size`, so the screen can show the arriving row before its first progress.
+- `Screen.uploadProgress({uploadId, fraction})`, as the upload stream proposes, replaces `uploadProgress(pid, bytes, total)`: a fraction from 0 to 1 that never moves back, pushed to the screen at most once per second per upload.
+- Caps, per session: 12 guest files and 3 uploads open at once; past either the server refuses.
+- The server makes no thumbnail for a guest's file; the phone draws its own.
+- Going when it lands: `PUT /api/drop` (replaced by the upload stream's multipart transport), the `uploading` and `offered` states with `open.click` and the screen's `guest_open`, the phone's `guest_confirm`, `guest_sending` and `guest_sent`, and the single-file viewer route (`guestOnStage` sending one guest file to `demo_open`). A guest's items are approved through `approve`, as any list.
+
 ## 6. `Residue` (`public/js/residue.js`; the server half is `revokeLinks` and `purge` in `do/effects.ts`)
 ```ts
 import type { FileRef } from "../machine.ts";

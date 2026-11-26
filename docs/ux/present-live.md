@@ -1,6 +1,6 @@
 # Picking files for a talk, then Present Live
 
-The core flow (README.md, "The core flow"): pack Up Next in the library, scan the room screen, tap the screen's number. This file covers the phone from the Present button to the slide on the wall, and the signed-out branch. The library list itself is library.md; the screen's side is viewers.md.
+The core flow (README.md, "The core flow"): pack Up Next in the library, scan the room screen, tap the screen's number. This file covers the phone from the Present button to the slide on the wall, the signed-out branch, Add a File with several files (section 6) and the phone-size layout rules for `/s` and `/a` (section 7). The library list itself is library.md; the screen's side is viewers.md.
 
 ## 1. Packing: Up Next in the library
 
@@ -252,7 +252,56 @@ Sign In keeps the code, its `Idempotency-Key` and the time in `sessionStorage` (
 - The stored code is taken on the next load of `/a` whatever follows, dropped by a new scan, and ignored after 5 minutes unused, so a later visit to `/a` never replays it.
 - Why tell the truth about the time: a code lives about a minute (design.md section 10), and an email round trip is longer; saying "one scan is all it takes" turns the miss into a promise the next scan keeps.
 
-## 6. Strings (this file)
+## 6. Add a File: several files, and picking is the confirmation
+
+Planned (the Add a File slice); the seam is interfaces.md section 5. Until a part lands, design.md section 7 describes the built page for it (the guest rows add, confirm, sending, refused and sent; the drop's "One File at a Time" toast; the screen's guest offer) and viewers.md section 6 the screen's single receiving pill; the commit that builds a part replaces its lines there.
+
+```
+390, demo, two files picked: one sending, one ready      the screen meanwhile (1440, scanned)
+
+  Demo Room                                              +----------+   Demo Room
+  +------------------------------------+                 |          |   .-----------------------------.
+  | +--+ Sample deck.pptx           [x] |                 |    42    |   | +--+ Talk.pptx          34% |
+  | +--+ Photo.jpg                  [x] |                 |          |   | +--+ Beach.jpg        Ready |
+  | +--+ Talk.pptx                  [x] |                 +----------+   '-----------------------------'
+  | |##| 34 of 88 MB                    |
+  | +--+ Beach.jpg                  [x] |
+  | +--+ Add a File                     |
+  +------------------------------------+
+  Uncheck a file that's still sending to go ahead without it.
+.--------------------------------------.
+| [ Cancel ]   [[ Approve (42) ]] (off)|
+'--------------------------------------'
+```
+
+- **The picker takes several.** Add a File opens the native picker with `multiple` (the same `accept`), and a drop of several files is taken the same way. Picking is the confirmation: the phone starts sending at once, and the confirm, sending and sent states go.
+- **One list.** Each picked file becomes a row of the list the phone already shows (the demo's items, an owner's chooser, a guest's landing), checked, in pick order above the Add a File row. It is the item row (design.md section 6) with its tick. Picked rows never reorder while the page shows them, so no row moves under the thumb; approved, the items take the one item order, as every list does.
+- **Thumbnail,** made on the phone from the local `File` after the row appears with its type tile, never delaying the send:
+  - an image: decoded and drawn down to the tile (at the pixel ratio), shown from an object URL that is revoked when the row goes or the page hides;
+  - a video: one frame drawn from a hidden, muted `<video>` on the file, only if that code costs a few bytes in the lazy upload module; otherwise the type tile;
+  - any other kind: the type tile, until the server's `t.webp` exists for the file (a deck the converter has derived).
+- **Row states,** in line 2 (13 `--muted`, as the upload sheet's rows, upload.md section 3):
+  - queued: "Waiting to Send"; sending: "34 of 88 MB", the loader's fill over the tile (design.md section 6); checking: "Checking the File";
+  - ready: the row's usual line 2, kind and size;
+  - refused: the refusal's one line in `--rose-ink` (upload.md section 4 and design.md section 7's guest refusals own the words), unchecked, its checkbox disabled, so it cannot be sent. It stays while the page does, so the reason can be read.
+  - A lost connection is the upload stream's (upload.md section 5), per row.
+- **Identity.** A row is keyed by the phone's own id for the file until the server says ready, then by its `fileId`. The row's element is kept across the change, so focus and the tick hold.
+- **Approve** is disabled while any checked row is queued, sending or checking, and the line over the buttons says why: "Uncheck a file that's still sending to go ahead without it." Unchecking such a row enables Approve (its upload goes on, and it can be checked again once ready). Approve sends the ready checked rows with the rest of the checked list, one approve of at most `MAX_ITEMS` (12) items; in the demo the match digits ride on it as today.
+- **Caps, per session** (interfaces.md section 5): 12 guest files. The 13th pick is refused on the phone before a byte is sent, with the one-line toast "A Session Takes Up to 12 Files"; a pick that crosses the cap takes the files that fit, in pick order, and toasts once. The server refuses past the cap too. At most 3 uploads are open at once; the phone queues the rest.
+- **Leaving.** Back or Cancel lets go of the claim as today; open uploads abort, and the server deletes what arrived with the session.
+- **The screen** stays in its scanned state ("Waiting for Approval", design.md section 7) until Approve. While files arrive, the hint's place under the room name lists the arriving rows, read only: the name, the type glyph and the fraction sent ("34%", then "Ready"), from `Screen.uploadProgress` (at most one push per second per upload). A refused or canceled file leaves that list. The screen's guest offer ("Sent by a Guest", Open) is deleted: a guest's items open through the normal approve path, as an owner's do.
+- **Announced:** `#polite` says a refused file's name and its line; progress is never announced.
+
+## 7. Phone sizes: `/s` held landscape, `/a` approved, the Session Expiry sheet, the control pill
+
+Planned; each rule replaces its design.md section 7 line in the commit that builds it.
+
+- **`/s` held landscape.** `/s` stacks below 900 wide, so a phone on its side (844 x 390, 932 x 430, 667 x 330) cuts the QR off. A landscape window under 600 tall takes the two columns from about 560 wide, and the QR card is sized from the viewport's height: the whole card, ring included, inside the viewport under the corner bar. Every `/s` and `/a` state fits at those three sizes with nothing clipped or scrolled off, and they join the sizes looked at by eye (design.md section 5).
+- **`/a` approved at 390.** The title and "Ends in 59:12" read as one unit: the line sits at the distance every title keeps to its line (8, the column's title pull), measured to its text rather than its 44 tall target, and the pair moves down one step of the column's rhythm (16) from where it sits now, `--inset` under the top.
+- **Session Expiry sheet.** The title "Session Expiry" and the time are centered in their card (the time's value too: WebKit aligns it on the input's inner value part, not on the input).
+- **The control pill** is centered on the stage pane (the area the item is centered in, beside the list from 760) at 1440 and 390, for every item kind (deck, PDF, image, video, link card) and every pill state (with or without Present, presenting, loading). Placement (design.md section 7, `fit()`) picks only its height, never its horizontal center.
+
+## 8. Strings (this file)
 
 | Slot | String |
 |---|---|
@@ -272,4 +321,5 @@ Sign In keeps the code, its `Idempotency-Key` and the time in `sessionStorage` (
 | match module failed | Match Didn't Load / Reload |
 | approved | Approved for Room 2.14; On the Screen; Notes; Slide 3; No notes on this slide.; Open in PowerPoint; Show Slides Here; Preparing Slides; fallback line: Choose on the screen how to open it. |
 | early access | Early Access Only / Sign in to present your own files. No invite yet? You can still send one file to this screen. / Sign In, Send One File, Try the Demo, Join the Waitlist |
+| Add a File rows | Waiting to Send; Checking the File; Uncheck a file that's still sending to go ahead without it.; toast A Session Takes Up to 12 Files; screen: 34%, Ready |
 | resume, expired | Scan the Screen Again / The code changed while you signed in. You're signed in now, so one scan is all it takes. (signed out: The code on the screen changed while you were away. One scan picks it up again.) / Enter the Code |
