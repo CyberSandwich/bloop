@@ -68,10 +68,11 @@ const KINDS: Readonly<Record<FileType, ItemKind>> = {
 };
 
 /** What a file of this type is shown as: derived on the server, never taken from a client. */
-export const kindOf = (type: FileType): ItemKind => KINDS[type];
+// Own keys only: a stored type such as "constructor" must not read Object.prototype.
+export const kindOf = (type: FileType): ItemKind | null => (Object.hasOwn(KINDS, type) ? KINDS[type] : null);
 
 /** The viewer an item opens in: the stored kind, or its type's for an item stored before kinds were. */
-export const showOf = (file: FileRef): ItemKind => file.show ?? kindOf(file.type);
+export const showOf = (file: FileRef): ItemKind | null => file.show ?? kindOf(file.type);
 
 const MAX_FONTS = 50;
 const MAX_FONT_CHARS = 100;
@@ -216,7 +217,7 @@ export const itemView = (i: ItemRef): Item => {
     name: i.name,
     type: i.type,
     size: i.size ?? null,
-    show: showOf(i),
+    show: showOf(i) ?? undefined,
     derived: d ? { slides: d.slides, pdf: d.pdf, pages: d.pages, motion: d.motion } : null,
   };
 };

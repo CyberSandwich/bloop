@@ -1,4 +1,5 @@
 // Codes, the claim and how a pairing ends: cancel, restart, timeouts, the close of an idle screen.
+import { IN_SESSION } from "../../../public/js/shared/session.js";
 import type { EndReason } from "../../shared/protocol.ts";
 import type { Code, Effect, EventOf, Machine, MachineConfig, Step } from "../machine.ts";
 import {
@@ -124,20 +125,22 @@ export function claim(m: Machine, ev: EventOf<"claim">, cfg: MachineConfig): Ste
   ]);
 }
 
-/** Three distinct two-digit strings, the match among them. */
-const validChoices = (choices: readonly string[], match: string): boolean =>
-  choices.length === 3 &&
-  new Set(choices).size === 3 &&
-  choices.every((c) => /^\d{2}$/.test(c)) &&
-  choices.includes(match);
+/** Three distinct two-digit strings, the match among them; also step 8's shape check of a stored list. */
+export const validChoices = (v: unknown, match: string): v is string[] =>
+  Array.isArray(v) &&
+  v.length === 3 &&
+  new Set(v).size === 3 &&
+  v.every((c) => typeof c === "string" && /^\d{2}$/.test(c)) &&
+  v.includes(match);
 
 /**
  * The phone's pick (PAIR-14). Right: the pairing is confirmed. Wrong: the claim drops to waiting as a cancel does, with
  * cause `match_wrong`, and the Screen object answers the phone `match_wrong`. One pick per claim: a confirmed pairing
- * and a demo one take any later pick as a no-op.
+ * and a demo one take any later pick as a no-op, in session too, so a retried match-and-approve answers as the first.
  */
 export function match(m: Machine, ev: EventOf<"match">, cfg: MachineConfig): Step {
   const { pairing } = m;
+  if (pairing && pairing.confirmed !== false && IN_SESSION.includes(m.state)) return ok(m);
   if (!pairing || (m.state !== "claimed" && m.state !== "choosing")) return fail("wrong_state");
   if (pairing.confirmed !== false) return ok(m);
   if (ev.choice !== pairing.match) return dropToWaiting(m, ev.now, cfg, "canceled", "phone", "match_wrong");

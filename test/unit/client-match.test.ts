@@ -31,14 +31,14 @@ function rig(answer: Answer | Promise<Answer>) {
 
 describe("PAIR-14 the match pick", () => {
   it("a tap sends the choice once, with the pid, and fills the tapped choice at once", async () => {
-    const r = rig({ ok: true, value: { view, approved: false, approveError: null } });
+    const r = rig({ ok: true, value: { view } });
     await r.pick("42");
     expect(r.io.post).toHaveBeenCalledWith("/api/match", { choice: "42" }, "ref.secret");
     expect(r.io.paint.mock.calls[0]).toEqual(["42", false]);
   });
 
   it("the right number: the tick lands on the answer, then the chooser follows with the confirmed view", async () => {
-    const r = rig({ ok: true, value: { view, approved: false, approveError: null } });
+    const r = rig({ ok: true, value: { view } });
     await r.pick("42");
     expect(r.io.buzz).toHaveBeenCalledTimes(1);
     expect(r.io.picked).toHaveBeenCalledWith(view);
@@ -89,7 +89,7 @@ describe("PAIR-14 the match pick", () => {
     const first = r.pick("42");
     await r.pick("17");
     expect(r.io.post).toHaveBeenCalledTimes(1);
-    settle({ ok: true, value: { view, approved: false, approveError: null } });
+    settle({ ok: true, value: { view } });
     await first;
     expect(r.io.picked).toHaveBeenCalledTimes(1);
   });
@@ -103,7 +103,7 @@ describe("PAIR-14 the match pick", () => {
     r.timers[0]?.();
     expect(r.io.paint.mock.calls.at(-1)).toEqual(["42", true]);
     expect(r.io.later).toHaveBeenCalledTimes(1);
-    settle({ ok: true, value: { view, approved: false, approveError: null } });
+    settle({ ok: true, value: { view } });
     await pending;
     expect(r.io.picked).toHaveBeenCalled();
   });

@@ -153,14 +153,74 @@ describe("schema-8", () => {
 
   it("schema-8: a valid value is kept as it is (choices, upload, derived, the start clock, the main origin)", () => {
     const r = wake((s) => {
-      Object.assign(pairing(s), { confirmed: false, choices: ["17", "42", "85"] });
       m(s).upload = { bytes: 0, total: 0 };
       (s.meta as Record<string, unknown>).linkOrigin = "main";
     });
-    expect(r.machine.pairing).toMatchObject({ confirmed: false, choices: ["17", "42", "85"] });
     expect(r.machine.upload).toEqual({ bytes: 0, total: 0 });
     expect(r.meta.linkOrigin).toBe("main");
     expect(r.writes).toEqual([]);
+    // A live claim waiting on its pick keeps it.
+    const waitingPick = wake((s) => {
+      Object.assign(m(s), { state: "claimed", session: null });
+      Object.assign(pairing(s), { confirmed: false, choices: ["17", "42", "85"] });
+    });
+    expect(waitingPick.machine.pairing).toMatchObject({ confirmed: false, choices: ["17", "42", "85"] });
+    expect(waitingPick.writes).toEqual([]);
+  });
+
+  it("schema-8 rollback: an unconfirmed pairing outside the pre-approval states, or on a demo, reads as confirmed", () => {
+    // A rolled-back build spread an old pairing over a newer one: an approved talk must not be stranded behind a pick.
+    for (const state of ["approved", "opening", "open"]) {
+      const r = wake((s) => {
+        m(s).state = state;
+        Object.assign(pairing(s), { confirmed: false, choices: ["17", "42", "85"] });
+      });
+      expect(r.machine.pairing, state).toMatchObject({ confirmed: true });
+      expect(r.machine.state, state).toBe(state);
+      expect(r.again(), state).toEqual([]);
+    }
+    const demo = wake((s) => {
+      Object.assign(m(s), { state: "claimed", mode: "demo", session: null });
+      Object.assign(pairing(s), { confirmed: false, choices: null });
+    });
+    expect(demo.machine).toMatchObject({ state: "claimed", pairing: { confirmed: true, choices: null } });
+  });
+
+  it("schema-8: a live claim waiting on its pick with no valid choices ends, so the phone is never stranded", () => {
+    for (const choices of [null, ["17", "18", "19"], "42", undefined]) {
+      const r = wake((s) => {
+        Object.assign(m(s), { state: "claimed", session: null, codes: { current: null, previous: null } });
+        Object.assign(pairing(s), { confirmed: false, choices });
+      }, T0 + 3000);
+      const name = JSON.stringify(choices) ?? "missing";
+      expect(r.machine, name).toMatchObject({ state: "ended", endReason: "error", endedAt: T0 + 3000 });
+      expect(r.after.corruptEnd, name).toEqual({ codes: { current: null, previous: null } });
+      expect(r.again(), name).toEqual([]);
+    }
+  });
+
+  it("schema-8: session items the build cannot serve end the session instead of throwing (null, constructor, junk)", () => {
+    const bad: [string, (s: Record<string, unknown>) => void][] = [
+      ["null items", (s) => Object.assign(session(s), { items: null })],
+      ["items not a list", (s) => Object.assign(session(s), { items: { 0: library } })],
+      ["a null item", (s) => Object.assign(session(s), { items: [null] })],
+      ["type constructor", (s) => Object.assign(item(s), { source: "mock", ref: "deck-1", type: "constructor" })],
+      ["type __proto__", (s) => Object.assign(item(s), { source: "mock", ref: "deck-1", type: "__proto__" })],
+      ["unknown kind", (s) => Object.assign(item(s), { kind: "widget" })],
+    ];
+    for (const [name, edit] of bad) {
+      let r: ReturnType<typeof wake> | undefined;
+      expect(() => {
+        r = wake(edit, T0 + 2000);
+      }, name).not.toThrow();
+      expect(r?.machine, name).toMatchObject({ state: "ended", endReason: "error", session: null });
+      expect(r?.after.corruptEnd, name).toBeDefined();
+      expect(
+        r?.links.every((l) => l.revoked),
+        name,
+      ).toBe(true);
+      expect(r?.again(), name).toEqual([]);
+    }
   });
 
   it("schema-8: a library item with a malformed ref ends the session with reason error and revokes every link", () => {
@@ -168,6 +228,8 @@ describe("schema-8", () => {
       const r = wake((s) => Object.assign(item(s), { ref }), T0 + 2000);
       expect(r.machine, ref).toMatchObject({ state: "ended", endReason: "error", endedAt: T0 + 2000, session: null });
       expect(r.machine.pairing, ref).toMatchObject({ userId: null, phoneSession: null, listed: [] });
+      // The object finishes the end on wake: its audit row, the codes, the push, the demo slot, the alarm.
+      expect(r.after.corruptEnd, ref).toEqual({ codes: { current: null, previous: null } });
       expect(
         r.links.every((l) => l.revoked),
         ref,

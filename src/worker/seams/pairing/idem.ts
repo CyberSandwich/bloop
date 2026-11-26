@@ -1,7 +1,9 @@
 // The pairing objects' Idempotency-Key adapter (R8): idem.ts owns the key check, the hashes, the window and the
 // verdict; this keeps the rows in a Screen's or the Directory's KV storage under one key, bounded and shape-checked.
+import type { ClaimResponse } from "../../../shared/protocol.ts";
 import type { Kv } from "../../do/ledger.ts";
 import { IDEM_WINDOW_MS, type IdemStore } from "../../idem.ts";
+import { base64url } from "../../ids.ts";
 
 const KEY = "idem";
 /** A screen sees a claim per pairing and a few link requests; past this the oldest row goes. */
@@ -59,12 +61,47 @@ export function idemSave(
 }
 
 /**
- * The wake-time shape check: anything that is not a list of valid rows becomes the valid rows it holds (none if it is
- * not a list). Writes only when something was malformed, so a clean store writes nothing.
+ * The wake-time check: anything that is not a list of valid rows inside the window becomes the ones it holds (none if
+ * it is not a list). Writes only when something was malformed or expired, so a clean store writes nothing.
  */
-export function idemRepair(kv: Kv): void {
+export function idemRepair(kv: Kv, now: number): void {
   const all = kv.get<unknown>(KEY);
   if (all === undefined) return;
-  if (Array.isArray(all) && all.every(validRow)) return;
-  kv.put(KEY, rows(kv));
+  const live = (r: Row) => r.at >= now - IDEM_WINDOW_MS;
+  if (Array.isArray(all) && all.every((r) => validRow(r) && live(r))) return;
+  kv.put(KEY, rows(kv).filter(live));
+}
+
+/** Drops every row: the pairing or session they answered for is gone. */
+export function idemPurge(kv: Kv): void {
+  const all = kv.get<unknown>(KEY);
+  if (all !== undefined && !(Array.isArray(all) && all.length === 0)) kv.put(KEY, []);
+}
+
+/**
+ * A claim's answer as a row keeps it: the pid's secret is never stored, only a nonce it is derived from under
+ * HASH_PEPPER, so a leaked row without the pepper reveals no credential.
+ */
+export interface SealedClaim {
+  nonce: string;
+  answer: Omit<ClaimResponse, "pid">;
+}
+
+const encoder = new TextEncoder();
+
+/** The pid secret for `nonce`: HMAC-SHA-256 under the pepper, in the 43-character form a fresh secret has. */
+export async function claimSecret(pepper: string, nonce: string): Promise<string> {
+  const key = await crypto.subtle.importKey("raw", encoder.encode(pepper), { name: "HMAC", hash: "SHA-256" }, false, [
+    "sign",
+  ]);
+  return base64url(new Uint8Array(await crypto.subtle.sign("HMAC", key, encoder.encode(`pid:${nonce}`))));
+}
+
+export const sealClaim = ({ pid: _, ...answer }: ClaimResponse, nonce: string): SealedClaim => ({ nonce, answer });
+
+/** The stored answer with its pid derived again, or null for a row not in the sealed shape. */
+export async function openClaim(v: unknown, screenRef: string, pepper: string): Promise<ClaimResponse | null> {
+  const s = v as Partial<SealedClaim> | null;
+  if (typeof s?.nonce !== "string" || typeof s.answer !== "object" || s.answer === null) return null;
+  return { ...s.answer, pid: `${screenRef}.${await claimSecret(pepper, s.nonce)}` };
 }
