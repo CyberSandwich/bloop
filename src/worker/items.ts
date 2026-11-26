@@ -61,11 +61,14 @@ const KINDS: Readonly<Record<FileType, ItemKind>> = {
 export const kindOf = (type: FileType): ItemKind => KINDS[type];
 
 /**
- * The order a session stores: a list of library files keeps the caller's order (Up Next's, ADR 0009); any other list
- * is files by name, then links by title.
+ * The order a session stores. A list whose files are all library files, links beside them or not, is Up Next's and
+ * keeps the caller's order (ADR 0009); any other list, links alone included, is files by name, then links by title.
  */
-export const orderItems = <T extends ItemDraft>(items: readonly T[]): T[] =>
-  items.every((i) => i.kind === "file" && i.source === "library") ? [...items] : byLabel(items);
+export function orderItems<T extends ItemDraft>(items: readonly T[]): T[] {
+  const upNext =
+    items.some((i) => i.kind === "file") && items.every((i) => i.kind === "link" || i.source === "library");
+  return upNext ? [...items] : byLabel(items);
+}
 
 /** The id an item holds from approval on: its place in the approved list, written once and never recomputed. */
 export const itemId = (index: number): string => `i${index + 1}`;
