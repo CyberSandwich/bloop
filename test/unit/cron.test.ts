@@ -1,6 +1,6 @@
 import { readFileSync } from "node:fs";
 import { describe, expect, it, vi } from "vitest";
-import { ALLOTMENT, CRON, type CronJob, runCron, runCronFor } from "../../src/worker/cron.ts";
+import { ALLOTMENT, CRON, type CronJob, invalidConfigJobs, runCron, runCronFor } from "../../src/worker/cron.ts";
 
 type Job = CronJob<object, object>;
 
@@ -77,6 +77,13 @@ describe("cron: a tick under an invalid config", () => {
     expect(whenInvalid).toHaveBeenCalledWith(["CAP_POOL_CONVERT: bad"]);
     expect(breaker?.run).toHaveBeenCalledTimes(1);
     for (const j of [hourly, daily, five]) expect(j?.run).not.toHaveBeenCalled();
+  });
+
+  it("COST-16 the invalid-config set holds the one job on the five-minute trigger and nothing else", () => {
+    const job = spy("breaker").job;
+    const set = invalidConfigJobs(job);
+    expect(Object.keys(set)).toEqual([CRON.fiveMinutes]);
+    expect(set[CRON.fiveMinutes]).toEqual([job]);
   });
 
   it("a valid config runs the trigger's own jobs and never asks for the invalid-config set", async () => {

@@ -45,6 +45,27 @@ describe("the first check is whether a spend block is active", () => {
     }
   });
 
+  it("the answer stays the first line above a DEPLOYS headline, set or undo", async () => {
+    for (const undo of [false, true]) {
+      const { deps: d } = deps(undefined, undefined, { GITHUB_TOKEN: undefined, GITHUB_REPOSITORY: undefined });
+      const { code, out } = await main(argvFor("L2", "--apply", ...(undo ? ["--undo"] : [])), d);
+      const lines = out.split("\n");
+      expect(code, `undo ${undo}`).toBe(3);
+      expect(lines[0], `undo ${undo}`).toContain("spend block: none seen");
+      expect(lines[1], `undo ${undo}`).toMatch(/^DEPLOYS (NOT|STILL) FROZEN/);
+    }
+  });
+
+  it("an apply with credentials missing makes no request at all, the probe included", async () => {
+    const { deps: d, api } = deps(undefined, undefined, {
+      LOCKDOWN_CF_TOKEN: undefined,
+      CLOUDFLARE_API_TOKEN: undefined,
+    });
+    const { code } = await main(argvFor("L2", "--apply"), d);
+    expect(code).toBe(2);
+    expect(api.calls).toHaveLength(0);
+  });
+
   it("a block does not stop the ladder: the API calls are not Worker invocations, so the rungs still run", async () => {
     const { deps: d, api, d1 } = deps();
     api.state.site = 503;
