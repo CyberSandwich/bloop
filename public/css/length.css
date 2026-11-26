@@ -23,7 +23,7 @@
   grid-template-columns: minmax(0, 1fr) 72px;
   gap: 8px;
   padding: 8px;
-  border-radius: 34px;
+  border-radius: var(--r-panel);
   animation: toast-in 250ms var(--ease-out) backwards;
 }
 /* The shapes: the pane's radius less its padding, so they sit concentric in it. */
