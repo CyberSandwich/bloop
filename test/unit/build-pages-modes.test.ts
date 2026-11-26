@@ -25,7 +25,9 @@ const under = (rel: string) => rel.replace(/^public\/open\//, "public/");
 
 describe("two modes emit the same relative paths, plus the open-only pages", () => {
   it("the open file set equals the preview set under public/open/, plus the Features article", () => {
-    expect([...open.keys()].map(under).sort()).toEqual([...preview.keys(), "public/articles/features.html"].sort());
+    // `_launch.json` is the one file with no open copy: it is about the open site, not a page of it.
+    const pages = [...preview.keys()].filter((rel) => rel !== "public/_launch.json");
+    expect([...open.keys()].map(under).sort()).toEqual([...pages, "public/articles/features.html"].sort());
     for (const rel of open.keys()) expect(rel.startsWith("public/open/"), rel).toBe(true);
   });
 
@@ -188,4 +190,46 @@ describe("one source for the form URL and the launch dates", () => {
       .map(([d, key]) => `${d.file}: ${key}`);
     expect(listed).toEqual(dated);
   });
+});
+
+describe("launchReady: the manifest the admin switch reads, and the CLI, say the same", () => {
+  let copy = "";
+  afterEach(() => rmSync(copy, { recursive: true, force: true }));
+
+  const stage = () => {
+    copy = mkdtempSync(join(tmpdir(), "build-pages-launch-"));
+    for (const dir of ["content", "tools/pages", "public"]) {
+      mkdirSync(join(copy, dir), { recursive: true });
+      cpSync(join(REPO, dir), join(copy, dir), { recursive: true });
+    }
+  };
+  const cli = async (...args: string[]) => {
+    const { spawnSync } = await import("node:child_process");
+    return spawnSync(process.execPath, [join(REPO, "tools/build-pages-cli.mjs"), ...args], {
+      env: { ...process.env, BUILD_PAGES_ROOT: `${copy}/` },
+      encoding: "utf8",
+    });
+  };
+  const manifest = () => JSON.parse(readFileSync(join(copy, "public/_launch.json"), "utf8"));
+
+  it("the committed manifest is the build's, and it lists exactly what placeholderDates() lists", () => {
+    expect(preview.get("public/_launch.json")).toBe(readFileSync(join(REPO, "public/_launch.json"), "utf8"));
+    const m = JSON.parse(preview.get("public/_launch.json") ?? "{}");
+    expect(m.placeholder).toEqual(placeholderDates());
+    expect(m.launchReady).toBe(m.placeholder.length === 0);
+  });
+
+  it("false while a document is on the placeholder date, true once every date is stamped, and the CLI follows", async () => {
+    stage();
+    expect((await cli()).status).toBe(0);
+    expect(manifest().launchReady).toBe(false);
+    expect((await cli("--launch")).status).toBe(1);
+    for (const file of manifest().placeholder.map((p: string) => p.split(": ")[0])) {
+      const path = join(copy, file);
+      writeFileSync(path, readFileSync(path, "utf8").replaceAll(PLACEHOLDER_DATE, "2026-12-01"));
+    }
+    expect((await cli()).status).toBe(0);
+    expect(manifest()).toEqual({ launchReady: true, placeholder: [] });
+    expect((await cli("--launch")).status).toBe(0);
+  }, 60_000);
 });

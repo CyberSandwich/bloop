@@ -13,6 +13,7 @@
       "!!playwright-report",
       "!public/js/vendor",
       "!test/fixtures/site-preview",
+      "!public/_launch.json",
       "!package-lock.json",
       "!worker-configuration.d.ts"
     ]
