@@ -1,6 +1,7 @@
-// Binds the upload engine to the pill (docs/ux/upload.md): titles and lines per state, Cancel, Check Again, Add to Up
-// Next, the batch's sheet, the paused row's Choose File, and the refusal toasts. All logic is in upload.js; this only
-// reads its snapshots.
+// Binds the upload engine to the pill (docs/ux/upload.md): one line per state (the name, a status word, one action),
+// Cancel, Check Again, Add to Up Next, the batch's sheet, the paused row's Resume, and the refusal toasts. The sentence
+// a line leaves out is the action's accessible name or the polite region. All logic is in upload.js; this only reads
+// its snapshots.
 /** @typedef {import("./upload.js").Batch} Batch */
 /** @typedef {import("./upload.js").FileSnap} FileSnap */
 import { ICONS } from "./icons.js";
@@ -11,6 +12,9 @@ import { el, icon, setText } from "./ui.js";
 const SAVED_MS = 2000;
 const ACTION_MS = 8000;
 const LONG_WAIT_MS = 120_000;
+/** What the polite region and the sheet's rows say of a file, by state. @type {Record<string, string>} */
+const SAID = { saved: "Saved", checking: "Checking Your File", unsettled: "Still Checking Your File" };
+const WAITING = "Waiting for a Connection";
 
 /** @param {string} name */
 const glyphOf = (name) =>
@@ -31,7 +35,7 @@ const glyphOf = (name) =>
  * @param {{focus: () => void} | null} [options.trigger] what opened the upload: it takes the focus when the pill leaves
  */
 export async function mountUploads({ maxMB, upNext = null, host = document.body, trigger = null } = {}) {
-  const [{ createUploader }, { formatBytes, progressLine }, { pill, CLOSE }] = await Promise.all([
+  const [{ createUploader }, { formatBytes }, { pill, CLOSE }] = await Promise.all([
     import("./upload.js"),
     import("./upload-format.js"),
     import("./pill.js"),
@@ -64,7 +68,10 @@ export async function mountUploads({ maxMB, upNext = null, host = document.body,
   const region = el("span", { class: "sr", role: "status" });
   host.append(region);
 
-  const picker = Object.assign(document.createElement("input"), { type: "file", hidden: true });
+  const picker = Object.assign(document.createElement("input"), {
+    type: "file",
+    hidden: true,
+  });
   picker.addEventListener("change", () => {
     const [file] = picker.files ?? [];
     if (file && picking !== null) void uploader.resume(picking, file);
@@ -85,9 +92,10 @@ export async function mountUploads({ maxMB, upNext = null, host = document.body,
     kept.set(key, node);
     return node;
   };
-  /** @param {string} label @param {() => void} run */
-  const button = (label, run) => {
+  /** @param {string} label @param {() => void} run @param {string} [name] the accessible name, when the label is not enough */
+  const button = (label, run, name) => {
     const b = el("button", { class: "btn text up-act", type: "button" }, [label]);
+    if (name) b.setAttribute("aria-label", name);
     b.addEventListener("click", run);
     return b;
   };
@@ -102,14 +110,19 @@ export async function mountUploads({ maxMB, upNext = null, host = document.body,
     return b;
   };
   /** @param {FileSnap} f */
-  const again = (f) => keep(`again:${f.id}`, () => button("Check Again", () => uploader.recheck(f.id)));
+  const again = (f) =>
+    keep(`again:${f.id}`, () => button("Check Again", () => uploader.recheck(f.id), `Check ${f.name} again`));
 
   /** What a refusal says: its words are loaded when there is one to say, and a plain line stands in if they cannot be.
-   * @param {string} name @param {string} code @returns {Promise<{title: string, body: string}>} */
+   * @param {string} name @param {string} code @returns {Promise<{title: string, status?: string, say: string}>} */
   const refusal = (name, code) =>
     import("./upload-refusals.js").then(
       ({ refusalToast }) => refusalToast(name, code, maxMB),
-      () => ({ title: `${name} Can't Be Added`, body: "Try again in a moment." }),
+      () => ({
+        title: name,
+        status: "Can't Be Added",
+        say: "Try again in a moment.",
+      }),
     );
 
   /** @param {Parameters<typeof pill>[0]} next @param {string} say what the polite region says, once */
@@ -119,7 +132,7 @@ export async function mountUploads({ maxMB, upNext = null, host = document.body,
       heard = say;
       setText(region, say);
     }
-    if (face) face.update({ wrap: false, ...next });
+    if (face) face.update(next);
     else {
       face = pill({ host, ...next });
       for (const type of ["pointerenter", "focusin"]) face.node.addEventListener(type, () => (held = true));
@@ -155,80 +168,77 @@ export async function mountUploads({ maxMB, upNext = null, host = document.body,
     return peak;
   }
 
-  /** @param {FileSnap} f no byte has moved yet */
-  const starting = (f) => f.state === "queued" || f.state === "fingerprinting" || f.state === "starting";
+  /** @param {number} fraction @returns {string} the whole percent, "42%" */
+  const percent = (fraction) => `${Math.round(fraction * 100)}%`;
 
-  /** @param {FileSnap} f @param {Batch} batch the line under a file's title, by its state */
-  function lineOf(f, batch) {
-    if (f.state === "uploading") return progressLine(f.loaded, f.size, batch.etaMs);
-    if (f.state === "waiting")
-      return waitingLong ? "Keep this page open. It finishes when you're back online." : "Waiting for a Connection";
-    return starting(f) ? "Starting" : f.name;
-  }
-
-  /** @param {FileSnap} f @param {Batch} batch */
-  function single(f, batch) {
+  /** @param {FileSnap} f */
+  function single(f) {
     const done = f.state === "saved";
     const settling = f.state === "checking" || f.state === "unsettled";
     const fileId = f.fileId;
     const action =
       done && upNext && fileId
         ? keep(`next:${f.id}`, () =>
-            button("Add to Up Next", async () => {
-              if (ticking) return;
-              ticking = true;
-              try {
-                await upNext(fileId);
-              } catch {
-                // the page that ticks says why it could not
-                return;
-              } finally {
-                ticking = false;
-              }
-              face?.update({ title: "Added to Up Next", slot: [] });
-              leaveIn(SAVED_MS);
-            }),
+            button(
+              "Add to Up Next",
+              async () => {
+                if (ticking) return;
+                ticking = true;
+                try {
+                  await upNext(fileId);
+                } catch {
+                  // the page that ticks says why it could not
+                  return;
+                } finally {
+                  ticking = false;
+                }
+                face?.update({ status: "Added", slot: [] });
+                leaveIn(SAVED_MS);
+              },
+              `Add ${f.name} to Up Next`,
+            ),
           )
         : null;
-    const text = lineOf(f, batch);
-    const title =
-      f.state === "checking"
-        ? "Checking Your File"
-        : f.state === "unsettled"
-          ? "Still Checking Your File"
-          : done
-            ? "Saved"
-            : f.name;
+    const status = {
+      uploading: percent(f.fraction),
+      waiting: "Waiting",
+      checking: "Checking",
+      unsettled: "Still Checking",
+      saved: "Saved",
+    }[/** @type {string} */ (f.state)];
+    // The polite region must not change on a percent tick: it says the name while bytes move.
+    const say =
+      SAID[f.state] ??
+      (f.state !== "waiting"
+        ? f.name
+        : waitingLong
+          ? "Keep this page open. It finishes when you're back online."
+          : WAITING);
     show(
       {
-        title,
-        wrap: f.state === "unsettled",
-        line: text,
+        title: f.name,
+        status: status ?? "Starting",
         label: `Uploading ${f.name}`,
         glyph: glyphOf(f.name),
-        fill: starting(f) ? level(null) : level(settling || done ? 1 : f.fraction),
+        // No status word yet: no byte has moved (queued, fingerprinting, starting).
+        fill: status ? level(settling || done ? 1 : f.fraction) : level(null),
         sheen: f.state !== "waiting" && f.state !== "unsettled" && !done,
         press: null,
         slot: f.state === "unsettled" ? [again(f)] : settling || done ? (action ? [action] : []) : [closer(f, "pill")],
       },
-      f.state === "waiting" ? text : title,
+      say,
     );
     if (done) leaveIn(action ? ACTION_MS : SAVED_MS);
   }
 
   /** @param {FileSnap} f a file's line in the sheet */
   const sheetLine = (f) =>
-    f.state === "saved"
-      ? "Saved"
-      : f.state === "uploading"
-        ? formatBytes(f.loaded, f.size)
-        : f.state === "checking"
-          ? "Checking Your File"
-          : f.state === "unsettled"
-            ? "Still Checking Your File"
-            : f.state === "refused"
-              ? (reasons.get(f.id) ?? "")
-              : "Waiting";
+    SAID[f.state] ??
+    (f.state === "uploading"
+      ? formatBytes(f.loaded, f.size)
+      : f.state === "refused"
+        ? (reasons.get(f.id) ?? "")
+        : "Waiting");
 
   /** @param {FileSnap} f the control on a file's row in the sheet */
   const control = (f) =>
@@ -257,48 +267,52 @@ export async function mountUploads({ maxMB, upNext = null, host = document.body,
   function several(files, batch) {
     const saved = files.filter((f) => f.state === "saved").length;
     const active = batch.active;
-    batchTitle = active ? `Uploading ${files.length} Files` : `${saved} ${saved === 1 ? "File" : "Files"} Saved`;
+    const up = `Uploading ${files.length} Files`;
+    batchTitle = active ? up : `${saved} ${saved === 1 ? "File" : "Files"} Saved`;
     const waiting = files.some((f) => f.state === "waiting");
     show(
       {
-        title: batchTitle,
-        label: `Uploading ${files.length} Files`,
-        line: active ? progressLine(batch.loaded, batch.total, batch.etaMs) : "",
+        title: active ? `${files.length} Files` : `${saved} ${saved === 1 ? "File" : "Files"}`,
+        status: active ? percent(batch.fraction) : "Saved",
+        label: up,
         glyph: ICONS["file-text"],
         fill: level(active ? batch.fraction : 1),
         sheen: active,
         press: openSheet,
         slot: [],
       },
-      waiting ? "Waiting for a Connection" : batchTitle,
+      waiting ? WAITING : batchTitle,
     );
     if (!active) leaveIn(SAVED_MS);
   }
 
   /** @param {FileSnap} f */
   function paused(f) {
-    const title = `${f.name} Is Paused`;
+    const say = `${f.name} Is Paused`;
     show(
       {
-        title,
-        wrap: true,
-        line: "Choose the file again to finish.",
-        label: title,
+        title: f.name,
+        status: "Paused",
+        label: say,
         glyph: glyphOf(f.name),
         fill: null,
         sheen: false,
         press: null,
         slot: [
           keep(`choose:${f.id}`, () =>
-            button("Choose File", () => {
-              picking = f.id;
-              picker.click();
-            }),
+            button(
+              "Resume",
+              () => {
+                picking = f.id;
+                picker.click();
+              },
+              `Resume ${f.name}: choose the file again to finish`,
+            ),
           ),
           closer(f, "pill"),
         ],
       },
-      title,
+      say,
     );
   }
 
@@ -312,15 +326,26 @@ export async function mountUploads({ maxMB, upNext = null, host = document.body,
     const canceled = fresh("canceled");
     const refused = batch.files.length > 1 && batch.active ? [] : fresh("refused");
     for (const f of [...canceled, ...refused]) told.add(f.id);
-    for (const f of canceled) toast({ title: "Upload Canceled", body: `${f.name} wasn't added.` });
+    for (const f of canceled)
+      toast({
+        title: f.name,
+        status: "Canceled",
+        say: `${f.name} wasn't added.`,
+      });
     if (!refused.length) return;
     const said = await Promise.all(refused.map((f) => refusal(f.name, f.error ?? "")));
-    for (const [i, f] of refused.entries()) reasons.set(f.id, said[i]?.body || said[i]?.title || "");
+    for (const [i, f] of refused.entries()) reasons.set(f.id, said[i]?.say || said[i]?.title || "");
     if (last) render(last);
     if (refused.length > 1) {
       batchTitle = `${refused.length} Files Couldn't Be Added`;
-      toast({ title: batchTitle, body: "", error: true, action: { label: "See Why", run: openSheet } });
-    } else toast({ ...(said[0] ?? { title: "", body: "" }), error: true });
+      toast({
+        title: `${refused.length} Files`,
+        status: "Can't Be Added",
+        say: batchTitle,
+        error: true,
+        action: { label: "See Why", run: openSheet },
+      });
+    } else toast({ ...(said[0] ?? { title: "", say: "" }), error: true });
   }
 
   /** @param {Batch} batch */
@@ -344,7 +369,7 @@ export async function mountUploads({ maxMB, upNext = null, host = document.body,
     }
     const [one] = live;
     const rest = batch.files.find((f) => f.state === "paused");
-    if (live.length === 1 && one) single(one, batch);
+    if (live.length === 1 && one) single(one);
     else if (live.length) several(live, batch);
     else if (rest) paused(rest);
     else hide();

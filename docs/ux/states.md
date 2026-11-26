@@ -53,10 +53,10 @@ One table per surface. The rules every row follows:
 
 | Case | Shows |
 |---|---|
-| slow link | the fill moves slowly; the time left appears after 5 s |
-| offline mid upload | "Waiting for a Connection"; resumes by itself |
+| slow link | the fill moves slowly and the percent climbs with it |
+| offline mid upload | "{name} · Waiting"; resumes by itself (the live region says "Waiting for a Connection") |
 | phone locked | Wake Lock where available; otherwise the waiting state on return, then resume |
-| tab reloaded | "{name} Is Paused" / "Choose the file again to finish." / Choose File |
+| tab reloaded | "{name} · Paused" / Resume (named "Resume {name}: choose the file again to finish") |
 | refused | the toasts in upload.md section 4 |
 | module failed | "Upload Didn't Load" / Reload |
 

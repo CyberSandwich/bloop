@@ -1,9 +1,6 @@
-// What the pill says about progress (docs/ux/upload.md section 2): the share sent, and the time left.
+// The sheet's byte counts (docs/ux/upload.md section 2).
 const KIB = 1024;
 const MIB = KIB * KIB;
-
-/** @param {number} ms @returns {string} whole minutes rounded up, so it never counts by seconds */
-export const etaLabel = (ms) => (ms < 60_000 ? "Under a minute left" : `${Math.ceil(ms / 60_000)} min left`);
 
 /**
  * "34 of 88 MB": both numbers in the total's unit, one decimal under 10, whole above. The sent share rounds down, so
@@ -19,7 +16,3 @@ export function formatBytes(loaded, total) {
     return `${Math.floor(loaded / unit)} of ${Math.max(1, Math.round(scaled))} ${name}`;
   return `${(Math.floor((loaded / unit) * 10) / 10).toFixed(1)} of ${scaled.toFixed(1)} ${name}`;
 }
-
-/** @param {number} loaded @param {number} total @param {number | null} left the time left, when known @returns {string} "34 of 88 MB · 2 min left" */
-export const progressLine = (loaded, total, left) =>
-  `${formatBytes(loaded, total)}${left === null ? "" : ` · ${etaLabel(left)}`}`;

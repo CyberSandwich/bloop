@@ -7,7 +7,6 @@
   bottom: calc(var(--inset) + env(safe-area-inset-bottom) + var(--toast-lift, 0px));
   left: 0;
   display: flex;
-  flex-wrap: wrap;
   align-items: center;
   gap: 12px;
   width: fit-content;
@@ -48,10 +47,11 @@
 }
 .up-text {
   display: flex;
-  flex: 1 0 8rem;
+  flex: 1;
   flex-direction: column;
   min-width: 0;
 }
+/* One line: the name gives way in the middle, the end of it and the status never shrink. */
 .up-title {
   display: flex;
   font-size: 15px;
@@ -64,45 +64,30 @@
   text-overflow: ellipsis;
   white-space: nowrap;
 }
-.up-title .tail {
+.up-title .tail,
+.up-status {
   flex: none;
   white-space: pre;
 }
-/* The paused and still-checking titles end in their own words ("Is Paused"), so they wrap rather than giving way in the
-   middle. A file name stays on one line, ending in an ellipsis; the advice of a pill with a Close wraps to three. */
-.up-line,
-.up-pill.wrap .up-title {
+.up-status {
+  color: var(--muted);
+  font-variant-numeric: tabular-nums;
+}
+/* A pill with an action has no room for the tile on a narrow screen. */
+@media (max-width: 360px) {
+  .up-pill:has(.up-act) .up-tile {
+    display: none;
+  }
+}
+/* The sheet's row text. */
+.up-line {
   display: -webkit-box;
   overflow: hidden;
   -webkit-box-orient: vertical;
   -webkit-line-clamp: 3;
-}
-.up-pill.wrap .up-title {
-  -webkit-line-clamp: 2;
-}
-.up-pill.wrap .up-title > * {
-  display: inline;
-  white-space: normal;
-  overflow-wrap: anywhere;
-}
-@media (max-width: 360px) {
-  .up-pill.wrap {
-    padding-left: 22px;
-  }
-  .up-pill.wrap .up-tile {
-    display: none;
-  }
-  .up-pill.wrap .up-title {
-    -webkit-line-clamp: 3;
-  }
-}
-.up-line {
   color: var(--muted);
   font-size: 13px;
   font-variant-numeric: tabular-nums;
-}
-.up-pill:not(:has(.up-close)) .up-line {
-  -webkit-line-clamp: 1;
 }
 .up-bad {
   color: var(--rose-ink);
@@ -117,7 +102,6 @@
   background: none;
   cursor: pointer;
 }
-/* A button too wide to sit beside the name drops to its own row: the name keeps the full width. */
 .up-slot {
   position: relative;
   display: flex;

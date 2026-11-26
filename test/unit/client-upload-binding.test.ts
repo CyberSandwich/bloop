@@ -33,13 +33,19 @@ const batch = (files: Snap[], more: object = {}) => ({
   total: files.reduce((n, f) => n + f.size, 0),
   loaded: files.reduce((n, f) => n + f.loaded, 0),
   fraction: 0.39,
-  etaMs: null,
   ...more,
 });
 
 let host: FakeNode;
 let emit: (b: unknown) => void;
-let toasts: { title: string; body: string; error?: boolean; action?: { label: string; run: () => void } }[];
+let toasts: {
+  title: string;
+  status?: string;
+  say?: string;
+  body?: string;
+  error?: boolean;
+  action?: { label: string; run: () => void };
+}[];
 let engine: { added: unknown[][]; canceled: number[]; resumed: unknown[][]; rechecked: number[]; disposed: number };
 
 async function mount(options: object = {}) {
@@ -69,7 +75,8 @@ async function mount(options: object = {}) {
 const pillNode = () => host.byClass("up-pill");
 const tap = (node: FakeNode | undefined) => node?.click();
 const title = () => pillNode()?.byClass("up-title")?.textContent;
-const line = () => pillNode()?.byClass("up-line")?.textContent;
+/** What the polite region says. */
+const heard = () => host.byClass("sr")?.textContent;
 const bar = () => pillNode()?.byClass("loader");
 const livePills = () => host.kids.filter((k) => k.classes.has("up-pill") && !k.removed);
 /** Lets the lazy modules a refusal or the sheet loads arrive, and what waited on them run. */
@@ -102,20 +109,20 @@ afterEach(() => {
 });
 
 describe("one file", () => {
-  it("reads Starting with no fill before the first byte, then the share and the time left", async () => {
+  it("reads Starting with no fill before the first byte, then the whole percent", async () => {
     await mount();
     emit(batch([file({ state: "starting", loaded: 0, fraction: 0 })]));
-    expect(title()).toBe("Lecture 5.pptx");
-    expect(line()).toBe("Starting");
+    expect(title()).toBe("Lecture 5.pptx · Starting");
     expect(bar()?.getAttribute("aria-valuenow")).toBeNull();
     expect(bar()?.getAttribute("aria-label")).toBe("Uploading Lecture 5.pptx");
-    emit(batch([file()], { etaMs: 90_000 }));
-    expect(line()).toBe("34 of 88 MB · 2 min left");
+    emit(batch([file()]));
+    expect(title()).toBe("Lecture 5.pptx · 39%");
     expect(bar()?.getAttribute("aria-valuenow")).toBe("39");
-    emit(batch([file({ loaded: 80 * 1024 * 1024 })], { etaMs: 30_000 }));
-    expect(line()).toBe("80 of 88 MB · Under a minute left");
-    emit(batch([file()], { etaMs: null }));
-    expect(line()).toBe("34 of 88 MB");
+    emit(batch([file({ fraction: 0.912 })]));
+    expect(title()).toBe("Lecture 5.pptx · 91%");
+    // The polite region says the name, and does not speak again on a percent tick.
+    expect(heard()).toBe("Lecture 5.pptx");
+    expect(pillNode()?.byClass("up-line")).toBeUndefined();
   });
 
   it("has a Cancel named for the file that cancels it", async () => {
@@ -130,21 +137,23 @@ describe("one file", () => {
   it("holds the fill and drops the sheen while waiting, and says what to do after two minutes", async () => {
     await mount();
     emit(batch([file({ state: "waiting" })]));
-    expect(line()).toBe("Waiting for a Connection");
+    expect(title()).toBe("Lecture 5.pptx · Waiting");
+    expect(heard()).toBe("Waiting for a Connection");
     expect(pillNode()?.classes.has("moving")).toBe(false);
     expect(bar()?.getAttribute("aria-valuenow")).toBe("39");
     vi.advanceTimersByTime(120_000);
-    expect(line()).toBe("Keep this page open. It finishes when you're back online.");
+    expect(title()).toBe("Lecture 5.pptx · Waiting");
+    expect(heard()).toBe("Keep this page open. It finishes when you're back online.");
     emit(batch([file()]));
     emit(batch([file({ state: "waiting" })]));
-    expect(line()).toBe("Waiting for a Connection");
+    expect(heard()).toBe("Waiting for a Connection");
   });
 
-  it("checking: the title says so, the file is the line, the fill is full, and there is no way to cancel", async () => {
+  it("checking: the status says so, the fill is full, and there is no way to cancel", async () => {
     await mount();
     emit(batch([file({ state: "checking", fraction: 0.99 })]));
-    expect(title()).toBe("Checking Your File");
-    expect(line()).toBe("Lecture 5.pptx");
+    expect(title()).toBe("Lecture 5.pptx · Checking");
+    expect(heard()).toBe("Checking Your File");
     expect(bar()?.getAttribute("aria-valuenow")).toBe("100");
     expect(pillNode()?.byClass("up-close")).toBeUndefined();
     expect(pillNode()?.classes.has("moving")).toBe(true);
@@ -154,16 +163,18 @@ describe("one file", () => {
     const upNext = vi.fn(async () => {});
     await mount({ upNext });
     emit(batch([file({ state: "saved", loaded: 88 * 1024 * 1024, fraction: 1, fileId: "f1" })]));
-    expect(title()).toBe("Saved");
-    expect(line()).toBe("Lecture 5.pptx");
+    expect(title()).toBe("Lecture 5.pptx · Saved");
+    expect(heard()).toBe("Saved");
     const act = pillNode()?.byClass("up-act") as FakeNode;
     expect(act.textContent).toBe("Add to Up Next");
+    expect(act.getAttribute("aria-label")).toBe("Add Lecture 5.pptx to Up Next");
     vi.advanceTimersByTime(7_999);
     expect(pillNode()?.removed).toBe(false);
     act.click();
     await vi.advanceTimersByTimeAsync(0);
     expect(upNext).toHaveBeenCalledWith("f1");
-    expect(title()).toBe("Added to Up Next");
+    expect(title()).toBe("Lecture 5.pptx · Added");
+    expect(pillNode()?.byClass("up-act")).toBeUndefined();
     await vi.advanceTimersByTimeAsync(2200);
     expect(livePills()).toEqual([]);
   });
@@ -176,19 +187,19 @@ describe("one file", () => {
     expect(host.kids.filter((k) => k.classes.has("up-pill") && !k.removed)).toEqual([]);
   });
 
-  it("a file the server has not settled reads Still Checking Your File: neutral, kept, with Check Again", async () => {
+  it("a file the server has not settled reads Still Checking: neutral, kept, with Check Again", async () => {
     await mount();
     emit(batch([file({ state: "checking", fraction: 0.99 })]));
     emit(batch([file({ state: "unsettled", fraction: 0.99 })]));
-    expect(title()).toBe("Still Checking Your File");
-    expect(line()).toBe("Lecture 5.pptx");
+    expect(title()).toBe("Lecture 5.pptx · Still Checking");
+    expect(heard()).toBe("Still Checking Your File");
     expect(pillNode()?.classes.has("moving")).toBe(false);
-    expect(pillNode()?.classes.has("wrap")).toBe(true);
     expect(bar()?.getAttribute("aria-valuenow")).toBe("100");
     expect(pillNode()?.byClass("up-close")).toBeUndefined();
     expect(toasts).toEqual([]);
     const again = pillNode()?.byClass("up-act") as FakeNode;
     expect(again.textContent).toBe("Check Again");
+    expect(again.getAttribute("aria-label")).toBe("Check Lecture 5.pptx again");
     vi.advanceTimersByTime(120_000);
     expect(livePills()).toHaveLength(1);
     again.click();
@@ -207,15 +218,14 @@ describe("one file", () => {
     await mount();
     emit(batch([file({ state: "unsettled", fraction: 0.99 })]));
     emit(batch([file({ state: "checking", fraction: 0.99 })]));
-    expect(title()).toBe("Checking Your File");
+    expect(title()).toBe("Lecture 5.pptx · Checking");
     emit(batch([file({ state: "saved", fraction: 1, fileId: "f1" })]));
-    expect(title()).toBe("Saved");
+    expect(title()).toBe("Lecture 5.pptx · Saved");
     expect(toasts).toEqual([]);
     emit(batch([file({ id: 2, state: "unsettled", fraction: 0.99 })]));
     emit(batch([file({ id: 2, state: "refused", error: "macro_content" })]));
     await settle();
-    expect(toasts.map((t) => t.title)).toEqual(["Lecture 5.pptx Can't Be Added"]);
-    expect(toasts[0]?.error).toBe(true);
+    expect(toasts).toMatchObject([{ title: "Lecture 5.pptx", status: "Can't Be Added", error: true }]);
   });
 
   it("an unsettled file is a row in the sheet with its own Check Again", async () => {
@@ -255,27 +265,29 @@ describe("several files", () => {
 
   it("is one pill for the batch, a button that opens the sheet", async () => {
     await mount();
-    emit(batch(three, { total: 300, loaded: 140, fraction: 140 / 300, etaMs: 120_000 }));
-    expect(title()).toBe("Uploading 3 Files");
-    expect(line()).toBe("0 of 1 KB · 2 min left");
+    emit(batch(three, { total: 300, loaded: 140, fraction: 140 / 300 }));
+    expect(title()).toBe("3 Files · 47%");
+    expect(heard()).toBe("Uploading 3 Files");
     expect(pillNode()?.byClass("up-press")?.hidden).toBe(false);
+    expect(pillNode()?.byClass("up-press")?.getAttribute("aria-label")).toBe("Uploading 3 Files");
     expect(pillNode()?.byClass("up-close")).toBeUndefined();
   });
 
-  it("ends as 3 Files Saved, and 2 Files Saved when one was refused, with a toast for the refusal", async () => {
+  it("ends as 3 Files · Saved, and 2 Files when one was refused, with a toast for the refusal", async () => {
     await mount();
     const saved = three.map((f) => ({ ...f, state: "saved", loaded: f.size, fraction: 1 }));
     emit(batch(saved));
-    expect(title()).toBe("3 Files Saved");
+    expect(title()).toBe("3 Files · Saved");
+    expect(heard()).toBe("3 Files Saved");
     emit(
       batch([saved[0] as Snap, saved[1] as Snap, file({ id: 3, name: "c.exe", state: "refused", error: "bad_type" })]),
     );
-    expect(title()).toBe("2 Files Saved");
+    expect(title()).toBe("2 Files · Saved");
     await settle();
     expect(toasts).toEqual([
       {
         title: "This File Type Isn't Supported",
-        body: "bloop takes decks, documents, PDFs, spreadsheets, text, photos and videos.",
+        say: "bloop takes decks, documents, PDFs, spreadsheets, text, photos and videos.",
         error: true,
       },
     ]);
@@ -296,12 +308,12 @@ describe("several files", () => {
 describe("a paused row", () => {
   const paused = file({ id: 4, state: "paused", loaded: 0, fraction: 0 });
 
-  it("reads Is Paused with Choose File, and shows nothing for a batch that is not there", async () => {
+  it("reads Paused with Resume, and shows nothing for a batch that is not there", async () => {
     await mount();
     emit(batch([paused]));
-    expect(title()).toBe("Lecture 5.pptx Is Paused");
-    expect(line()).toBe("Choose the file again to finish.");
-    expect(pillNode()?.byClass("up-act")?.textContent).toBe("Choose File");
+    expect(title()).toBe("Lecture 5.pptx · Paused");
+    expect(heard()).toBe("Lecture 5.pptx Is Paused");
+    expect(pillNode()?.byClass("up-act")?.textContent).toBe("Resume");
     expect(bar()?.getAttribute("aria-valuenow")).toBeNull();
   });
 
@@ -321,11 +333,11 @@ describe("a paused row", () => {
     expect(livePills()).toEqual([]);
   });
 
-  it("a canceled file is told once as Upload Canceled", async () => {
+  it("a canceled file is told once as its name and Canceled", async () => {
     await mount();
     emit(batch([file({ state: "canceled" })]));
     emit(batch([file({ state: "canceled" })]));
-    expect(toasts).toEqual([{ title: "Upload Canceled", body: "Lecture 5.pptx wasn't added." }]);
+    expect(toasts).toEqual([{ title: "Lecture 5.pptx", status: "Canceled", say: "Lecture 5.pptx wasn't added." }]);
   });
 });
 
@@ -359,7 +371,7 @@ describe("what holds still while the snapshots change", () => {
     emit(batch([file()]));
     const first = pillNode()?.byClass("up-close");
     emit(batch([file({ loaded: 50 * 1024 * 1024 })]));
-    emit(batch([file({ loaded: 60 * 1024 * 1024 })], { etaMs: 90_000 }));
+    emit(batch([file({ loaded: 60 * 1024 * 1024 })]));
     expect(pillNode()?.byClass("up-close")).toBe(first);
   });
 
@@ -368,11 +380,11 @@ describe("what holds still while the snapshots change", () => {
     const saved = file({ id: 1, state: "saved", loaded: 88 * 1024 * 1024, fraction: 1 });
     const paused = file({ id: 4, name: "Old.pptx", state: "paused", loaded: 0, fraction: 0 });
     emit(batch([saved, paused]));
-    expect(title()).toBe("Saved");
+    expect(title()).toBe("Lecture 5.pptx · Saved");
     vi.advanceTimersByTime(2000 + 200);
     emit(batch([saved, paused]));
     const live = host.kids.filter((k) => k.classes.has("up-pill") && !k.removed);
-    expect(live.map((k) => k.byClass("up-title")?.textContent)).toEqual(["Old.pptx Is Paused"]);
+    expect(live.map((k) => k.byClass("up-title")?.textContent)).toEqual(["Old.pptx · Paused"]);
   });
 
   it("the sheet's lines change in place while the files and their states hold, and are rebuilt when one changes", async () => {
@@ -459,30 +471,30 @@ describe("the refusal strings", () => {
   it("every upload error code has a string of its own, never the fallback and never another code's", async () => {
     await mount();
     const { refusalToast } = (await import(REFUSALS)) as {
-      refusalToast: (name: string, code: string, maxMB?: number) => { title: string; body: string };
+      refusalToast: (name: string, code: string, maxMB?: number) => { title: string; status?: string; say: string };
     };
     const fallback = refusalToast("Talk.pptx", "no_such_code", 500);
-    expect(fallback).toEqual({ title: "Talk.pptx Can't Be Added", body: "Try again in a moment." });
+    expect(fallback).toEqual({ title: "Talk.pptx", status: "Can't Be Added", say: "Try again in a moment." });
     const seen = new Set<string>();
     for (const code of await serverCodes()) {
       const t = refusalToast("Talk.pptx", code, 500);
       expect(t, code).not.toEqual(fallback);
       expect(seen.has(JSON.stringify(t)), `${code} repeats another code's string`).toBe(false);
       seen.add(JSON.stringify(t));
-      expect(`${t.title} ${t.body}`, code).not.toMatch(/\bchecked\b|[\u2013\u2014]/i);
+      expect(`${t.title} ${t.status ?? ""} ${t.say}`, code).not.toMatch(/\bchecked\b|[\u2013\u2014]/i);
     }
   });
 
   it("File Too Large names the library's cap, and still says something without it", async () => {
     await mount();
     const { refusalToast } = (await import(REFUSALS)) as {
-      refusalToast: (name: string, code: string, maxMB?: number) => { title: string; body: string };
+      refusalToast: (name: string, code: string, maxMB?: number) => { title: string; say: string };
     };
     expect(refusalToast("a.pptx", "too_large", 500)).toEqual({
       title: "File Too Large",
-      body: "bloop takes files up to 500 MB.",
+      say: "bloop takes files up to 500 MB.",
     });
-    expect(refusalToast("a.pptx", "too_large", undefined).body).not.toBe("");
+    expect(refusalToast("a.pptx", "too_large", undefined).say).not.toBe("");
   });
 });
 
@@ -500,7 +512,12 @@ describe("a batch's refusals", () => {
     await settle();
     expect(toasts).toHaveLength(1);
     const [one] = toasts;
-    expect(one).toMatchObject({ title: "3 Files Couldn't Be Added", error: true });
+    expect(one).toMatchObject({
+      title: "3 Files",
+      status: "Can't Be Added",
+      say: "3 Files Couldn't Be Added",
+      error: true,
+    });
     expect(one?.action?.label).toBe("See Why");
     expect(sheetOf()).toBeUndefined();
     one?.action?.run();
@@ -527,10 +544,10 @@ describe("a batch's refusals", () => {
     expect(toasts).toEqual([]);
     emit(batch([a, b, { ...waiting, state: "saved" }]));
     await settle();
-    expect(toasts.map((t) => t.title)).toEqual(["2 Files Couldn't Be Added"]);
+    expect(toasts.map((t) => t.title)).toEqual(["2 Files"]);
     emit(batch([a, b, c, { ...waiting, state: "saved" }]));
     await settle();
-    expect(toasts.map((t) => t.title)).toEqual(["2 Files Couldn't Be Added", "This File Is Empty"]);
+    expect(toasts.map((t) => t.title)).toEqual(["2 Files", "This File Is Empty"]);
     emit(batch([a, b, c, { ...waiting, state: "saved" }]));
     await settle();
     expect(toasts).toHaveLength(2);
@@ -573,7 +590,7 @@ describe("a batch's refusals", () => {
     await mount();
     emit(batch([file({ name: "x.exe", state: "refused", error: "bad_type" })]));
     await settle();
-    expect(toasts).toEqual([{ title: "x.exe Can't Be Added", body: "Try again in a moment.", error: true }]);
+    expect(toasts).toEqual([{ title: "x.exe", status: "Can't Be Added", say: "Try again in a moment.", error: true }]);
   });
 
   it("a batch of refusals still opens its sheet when the words cannot be loaded", async () => {
@@ -583,7 +600,7 @@ describe("a batch's refusals", () => {
     await mount();
     emit(batch(refusedThree()));
     await settle();
-    expect(toasts.map((t) => t.title)).toEqual(["3 Files Couldn't Be Added"]);
+    expect(toasts.map((t) => t.title)).toEqual(["3 Files"]);
     toasts[0]?.action?.run();
     await settle();
     const rows = sheetOf()?.byClass("up-list")?.kids ?? [];
@@ -628,10 +645,10 @@ describe("what the page keeps in hand", () => {
     const one = file({ id: 4, name: "One.pptx", state: "paused", loaded: 0, fraction: 0 });
     const two = file({ id: 5, name: "Two.pptx", state: "paused", loaded: 0, fraction: 0 });
     emit(batch([one, two]));
-    expect(title()).toBe("One.pptx Is Paused");
+    expect(title()).toBe("One.pptx · Paused");
     tap(pillNode()?.byClass("up-close"));
     emit(batch([{ ...one, state: "canceled" }, two]));
-    expect(title()).toBe("Two.pptx Is Paused");
+    expect(title()).toBe("Two.pptx · Paused");
     expect(pillNode()?.byClass("up-close")?.getAttribute("aria-label")).toBe("Cancel Upload of Two.pptx");
     tap(pillNode()?.byClass("up-close"));
     expect(engine.canceled).toEqual([4, 5]);
@@ -814,5 +831,97 @@ describe("the fill of a batch", () => {
     vi.advanceTimersByTime(2000 + 200);
     emit(batch([file({ id: 2, fraction: 0.1 })]));
     expect(livePills()[0]?.byClass("loader")?.getAttribute("aria-valuenow")).toBe("10");
+  });
+});
+
+describe("every pill and toast state is one line", () => {
+  const upNext = async () => {};
+  const NAME = "Old Deck.pptx";
+  const three = [
+    file({ id: 1, name: "a.pptx", size: 100, loaded: 100, state: "saved", fraction: 1 }),
+    file({ id: 2, name: "b.pdf", size: 100, loaded: 40, state: "uploading" }),
+    file({ id: 3, name: "c.pdf", size: 100, loaded: 0, state: "queued", fraction: 0 }),
+  ];
+
+  /** The pill's text is the title element (name plus status) and nothing else, and no sentence hides beside it. */
+  function oneLine() {
+    const pillEl = pillNode() as FakeNode;
+    const text = pillEl.byClass("up-text") as FakeNode;
+    const titleEl = pillEl.byClass("up-title") as FakeNode;
+    expect(text.kids).toHaveLength(1);
+    expect(text.kids[0]).toBe(titleEl);
+    expect(titleEl.kids.map((k) => [...k.classes])).toEqual([["head"], ["tail"], ["up-status"]]);
+    expect(pillEl.byClass("up-line")).toBeUndefined();
+    return titleEl.textContent;
+  }
+
+  /** A toast raised by the binding: no body, and a visible line that is a title and a status, never a sentence. */
+  function oneLineToast(t: (typeof toasts)[number]) {
+    expect(t.body ?? "").toBe("");
+    expect(Object.keys(t).filter((k) => !["title", "status", "say", "error", "action"].includes(k))).toEqual([]);
+    const visible = t.status === undefined ? t.title : `${t.title} · ${t.status}`;
+    expect(visible).not.toMatch(/[.!?]\s|[.!?]$/);
+    expect(visible.length).toBeLessThan(45);
+  }
+
+  it("the pill: starting, uploading, waiting, a long wait, checking, unsettled, saved, paused, a batch", async () => {
+    await mount({ upNext });
+    const run = (snap: Partial<Snap>, line: string) => {
+      emit(batch([file({ name: NAME, ...snap })]));
+      expect(oneLine()).toBe(`${NAME} · ${line}`);
+    };
+    run({ state: "starting", loaded: 0, fraction: 0 }, "Starting");
+    run({ state: "uploading", fraction: 0.42 }, "42%");
+    run({ state: "waiting", fraction: 0.42 }, "Waiting");
+    vi.advanceTimersByTime(120_000);
+    expect(oneLine()).toBe(`${NAME} · Waiting`);
+    expect(heard()).toBe("Keep this page open. It finishes when you're back online.");
+    run({ state: "checking", fraction: 0.99 }, "Checking");
+    run({ state: "unsettled", fraction: 0.99 }, "Still Checking");
+    run({ state: "saved", fraction: 1, fileId: "f1" }, "Saved");
+    expect(
+      pillNode()
+        ?.byClass("up-slot")
+        ?.kids.map((k) => k.getAttribute("aria-label")),
+    ).toEqual([`Add ${NAME} to Up Next`]);
+    emit(batch(three, { total: 300, loaded: 140, fraction: 0.42 }));
+    expect(oneLine()).toBe("3 Files · 42%");
+    emit(batch(three.map((f) => ({ ...f, state: "saved", loaded: f.size, fraction: 1 }))));
+    expect(oneLine()).toBe("3 Files · Saved");
+  });
+
+  it("the paused pill's buttons are exactly Resume and the close, each named for the file", async () => {
+    await mount();
+    emit(batch([file({ id: 4, name: NAME, state: "paused", loaded: 0, fraction: 0 })]));
+    expect(oneLine()).toBe(`${NAME} · Paused`);
+    const slot = pillNode()?.byClass("up-slot")?.kids ?? [];
+    expect(slot.map((k) => [k.tag, k.textContent, k.getAttribute("aria-label")])).toEqual([
+      ["button", "Resume", `Resume ${NAME}: choose the file again to finish`],
+      ["button", "", `Cancel Upload of ${NAME}`],
+    ]);
+  });
+
+  it("the toasts: a refusal of either kind, a batch of refusals, and a cancel", async () => {
+    await mount();
+    emit(batch([file({ id: 1, name: NAME, state: "refused", error: "internal" })]));
+    await settle();
+    emit(batch([file({ id: 2, name: NAME, state: "refused", error: "quota_exceeded" })]));
+    await settle();
+    emit(
+      batch([
+        file({ id: 3, name: "a.exe", state: "refused", error: "bad_type" }),
+        file({ id: 4, name: "b.pptm", state: "refused", error: "macro_content" }),
+      ]),
+    );
+    await settle();
+    emit(batch([file({ id: 5, name: NAME, state: "canceled" })]));
+    expect(toasts.map((t) => [t.title, t.status])).toEqual([
+      [NAME, "Can't Be Added"],
+      ["Not Enough Space", undefined],
+      ["2 Files", "Can't Be Added"],
+      [NAME, "Canceled"],
+    ]);
+    for (const t of toasts) oneLineToast(t);
+    expect(toasts[0]?.say).toBe("bloop hit a problem adding this file. Try again in a few minutes.");
   });
 });

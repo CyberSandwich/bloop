@@ -6,7 +6,11 @@ const calm = { matches: false };
 // Typed here, not by import: the node tsconfig has no DOM lib, so it must not follow these imports into page code.
 let pillModule: { pill: (face: object) => { node: unknown; update: (patch: object) => void; leave: () => void } };
 let bindingModule: {
-  refusalToast: (name: string, code: string, maxMB: number | undefined) => { title: string; body: string };
+  refusalToast: (
+    name: string,
+    code: string,
+    maxMB: number | undefined,
+  ) => { title: string; status?: string; say: string };
 };
 
 beforeAll(async () => {
@@ -30,21 +34,21 @@ afterEach(() => {
 
 const make = (face: object = {}) => {
   const host = new FakeNode("body");
-  const part = pillModule.pill({ host: host as never, title: "Lecture 5.pptx", line: "Starting", ...face });
+  const part = pillModule.pill({ host: host as never, title: "Lecture 5.pptx", status: "Starting", ...face });
   const node = part.node as unknown as FakeNode;
   return { host, part, node, bar: node.byClass("loader") as FakeNode };
 };
 
 describe("the pill's face", () => {
-  it("is a glass pill with a progress bar named for the upload, a title and a line, in the page", () => {
+  it("is a glass pill with a progress bar named for the upload, and a title with its status, in the page", () => {
     const { host, node, bar } = make({ label: "Uploading Lecture 5.pptx", fill: 0.5 });
     expect(host.kids).toEqual([node]);
     expect(node.classes.has("glass")).toBe(true);
     expect(bar.getAttribute("role")).toBe("progressbar");
     expect(bar.getAttribute("aria-label")).toBe("Uploading Lecture 5.pptx");
     expect(bar.getAttribute("aria-valuenow")).toBe("50");
-    expect(node.byClass("up-title")?.textContent).toBe("Lecture 5.pptx");
-    expect(node.byClass("up-line")?.textContent).toBe("Starting");
+    expect(node.byClass("up-title")?.textContent).toBe("Lecture 5.pptx \u00b7 Starting");
+    expect(node.byClass("up-line")).toBeUndefined();
   });
 
   it("shows the whole percent, and no value while there is nothing to show yet", () => {
@@ -56,30 +60,27 @@ describe("the pill's face", () => {
     expect(bar.getAttribute("aria-valuenow")).toBe("100");
   });
 
-  it("sweeps its sheen only while told to, and a line change leaves the title alone", () => {
+  it("sweeps its sheen only while told to, and a status change leaves the name alone", () => {
     const { part, node } = make({ sheen: true });
     expect(node.classes.has("moving")).toBe(true);
-    part.update({ sheen: false, line: "Waiting for a Connection" });
+    part.update({ sheen: false, status: "Waiting" });
     expect(node.classes.has("moving")).toBe(false);
-    expect(node.byClass("up-line")?.textContent).toBe("Waiting for a Connection");
-    expect(node.byClass("up-title")?.textContent).toBe("Lecture 5.pptx");
+    expect(node.byClass("up-status")?.textContent).toBe(" \u00b7 Waiting");
+    expect(node.byClass("tail")?.parent).toBe(node.byClass("up-title"));
+    expect(node.byClass("head")?.textContent).toBe("Lecture 5.pptx");
   });
 
-  it("wraps its title only while told to, and leaves it alone otherwise", () => {
+  it("is one line: the text holds the title and nothing else, and an empty status leaves no dot", () => {
     const { part, node } = make();
-    expect(node.classes.has("wrap")).toBe(false);
-    part.update({ wrap: true });
-    expect(node.classes.has("wrap")).toBe(true);
-    part.update({ line: "x" });
-    expect(node.classes.has("wrap")).toBe(true);
-    part.update({ wrap: false });
-    expect(node.classes.has("wrap")).toBe(false);
+    expect(node.byClass("up-text")?.kids).toEqual([node.byClass("up-title")]);
+    part.update({ status: "" });
+    expect(node.byClass("up-title")?.textContent).toBe("Lecture 5.pptx");
   });
 
   it("has no live region of its own: the page's one persistent region speaks for it", () => {
     const { part, node } = make();
     expect(node.find((n) => n.getAttribute("role") === "status")).toBeUndefined();
-    part.update({ title: "Checking Your File" });
+    part.update({ title: "Checking Your File", status: "" });
     expect(node.find((n) => n.getAttribute("role") === "status")).toBeUndefined();
     expect(node.byClass("up-title")?.textContent).toBe("Checking Your File");
   });
@@ -103,7 +104,8 @@ describe("the pill's face", () => {
     press.click();
     expect(open).toHaveBeenCalledOnce();
     // The progress bar keeps its own role: the button is a sibling, never its child.
-    expect(press.getAttribute("aria-label")).toBe("Lecture 5.pptx");
+    part.update({ label: "Uploading 3 Files" });
+    expect(press.getAttribute("aria-label")).toBe("Uploading 3 Files");
     expect(node.byClass("loader")?.find((n) => n === press)).toBeUndefined();
   });
 
@@ -139,38 +141,40 @@ describe("the refusal toasts", () => {
     const t = bindingModule.refusalToast;
     expect(t("a.exe", "bad_type", undefined)).toEqual({
       title: "This File Type Isn't Supported",
-      body: "bloop takes decks, documents, PDFs, spreadsheets, text, photos and videos.",
+      say: "bloop takes decks, documents, PDFs, spreadsheets, text, photos and videos.",
     });
     expect(t("a.pptx", "empty", undefined).title).toBe("This File Is Empty");
-    expect(t("a.pptx", "too_large", 500)).toEqual({ title: "File Too Large", body: "bloop takes files up to 500 MB." });
+    expect(t("a.pptx", "too_large", 500)).toEqual({ title: "File Too Large", say: "bloop takes files up to 500 MB." });
     expect(t("a.pptx", "quota_exceeded", undefined)).toEqual({
       title: "Not Enough Space",
-      body: "Delete files or empty the trash to add this one.",
+      say: "Delete files or empty the trash to add this one.",
     });
     expect(t("a.pptx", "library_full", undefined).title).toBe("Your Library Is Full");
     expect(t("Lecture 5.pptm", "macro_content", undefined)).toEqual({
-      title: "Lecture 5.pptm Can't Be Added",
-      body: "This file has macros. Save a copy without them as .pptx.",
+      title: "Lecture 5.pptm",
+      status: "Can't Be Added",
+      say: "This file has macros. Save a copy without them as .pptx.",
     });
-    expect(t("Notes.docm", "macro_content", undefined).body).toBe(
+    expect(t("Notes.docm", "macro_content", undefined).say).toBe(
       "This file has macros. Save a copy without them as .docx.",
     );
-    expect(t("a.pdf", "encrypted", undefined).body).toBe(
+    expect(t("a.pdf", "encrypted", undefined).say).toBe(
       "This file is password protected. Remove the password, then add it again.",
     );
-    expect(t("a.pdf", "bad_structure", undefined).body).toBe(
+    expect(t("a.pdf", "bad_structure", undefined).say).toBe(
       "This file is damaged. Open it on your computer and save it again.",
     );
   });
 
   it("never states a size cap it was not given", () => {
-    expect(bindingModule.refusalToast("a.pptx", "too_large", undefined).body).not.toMatch(/\d/);
+    expect(bindingModule.refusalToast("a.pptx", "too_large", undefined).say).not.toMatch(/\d/);
   });
 
   it("a code without a string of its own reads as the plain can't-be-added", () => {
     expect(bindingModule.refusalToast("a.pptx", "no_such_code", undefined)).toEqual({
-      title: "a.pptx Can't Be Added",
-      body: "Try again in a moment.",
+      title: "a.pptx",
+      status: "Can't Be Added",
+      say: "Try again in a moment.",
     });
   });
 });

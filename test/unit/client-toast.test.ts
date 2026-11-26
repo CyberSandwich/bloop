@@ -56,6 +56,33 @@ describe("toast", () => {
     expect(node?.kids.map((k) => k.textContent)).toEqual(["File Too Large", "The demo takes files up to 25 MB."]);
   });
 
+  it("a status makes the title one line: the name split head and tail, then the status, and the sentence is hidden text", () => {
+    const { show, live } = setup();
+    show({
+      title: "A very long lecture name for week 5.pptx",
+      status: "Can't Be Added",
+      say: "It is damaged.",
+      error: true,
+    });
+    const [node] = live();
+    expect(node?.attrs.role).toBe("alert");
+    const [head, ...rest] = node?.kids ?? [];
+    expect(head?.kids.map((k) => [k.className, k.textContent])).toEqual([
+      ["head", "A very long lecture name for w"],
+      ["tail", "eek 5.pptx"],
+      ["st", " · Can't Be Added"],
+    ]);
+    expect(rest.map((k) => [k.className, k.textContent])).toEqual([["sr", "It is damaged."]]);
+  });
+
+  it("renders a body only when it is a non-empty string", () => {
+    const { show, live } = setup();
+    show({ title: "T", status: "S" });
+    expect(live()[0]?.kids).toHaveLength(1);
+    show({ title: "T", body: "" });
+    expect(live().at(-1)?.kids).toHaveLength(1);
+  });
+
   it("announces an error as an alert", () => {
     const { show, live } = setup();
     show({ title: "T", body: "B", error: true });

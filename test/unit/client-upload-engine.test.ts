@@ -218,7 +218,6 @@ describe("failures", () => {
     await world.advance(9000);
     expect(world.puts).toHaveLength(4);
     expect(fileOf(world).state).toBe("waiting");
-    expect(world.last.etaMs).toBeNull();
     await world.advance(5000);
     expect(world.puts).toHaveLength(4);
   });
@@ -561,61 +560,6 @@ describe("the fill and the time left", () => {
     const fractions = world.snaps.map((s) => s.fraction);
     expect(fractions).toEqual([...fractions].sort((x, y) => x - y));
     expect(a).not.toBe(b);
-  });
-
-  it("shows the time left only after 5 s of samples, and none while waiting", async () => {
-    const world = makeWorld({ mode: "proxy", partBytes: 100_000 });
-    world.onPut = () => {};
-    await begin(world, 200_000);
-    const put = world.puts[0] as Put;
-    for (let s = 1; s <= 4; s++) {
-      await world.advance(1000);
-      put.progress(s * 10_000);
-    }
-    expect(world.last.etaMs).toBeNull();
-    for (let s = 5; s <= 7; s++) {
-      await world.advance(1000);
-      put.progress(s * 10_000);
-    }
-    expect(world.last.etaMs).toBeGreaterThan(0);
-    world.win.fire("offline");
-    await world.flush();
-    expect(fileOf(world).state).toBe("waiting");
-    expect(world.last.etaMs).toBeNull();
-  });
-
-  it("starts the estimate afresh after an outage: none until 5 s of new samples", async () => {
-    const world = makeWorld({ mode: "proxy", partBytes: 100_000 });
-    world.onPut = () => {};
-    let down = false;
-    world.intercept.push((c) => (down && c.path.startsWith("/api/uploads/up1") ? NETWORK : undefined));
-    await begin(world, 200_000);
-    const first = world.puts[0] as Put;
-    for (let s = 1; s <= 7; s++) {
-      await world.advance(1000);
-      first.progress(s * 1000);
-    }
-    expect(world.last.etaMs).toBeGreaterThan(0);
-    down = true;
-    world.win.fire("offline");
-    await world.flush();
-    await world.advance(120_000);
-    down = false;
-    world.win.fire("online");
-    await world.flush();
-    expect(fileOf(world).state).toBe("uploading");
-    const second = world.puts.at(-1) as Put;
-    expect(second).not.toBe(first);
-    for (let s = 1; s <= 4; s++) {
-      await world.advance(1000);
-      second.progress(s * 10_000);
-      expect(world.last.etaMs, `sample ${s}`).toBeNull();
-    }
-    for (let s = 5; s <= 9; s++) {
-      await world.advance(1000);
-      second.progress(s * 10_000);
-    }
-    expect(world.last.etaMs).toBeGreaterThan(0);
   });
 });
 

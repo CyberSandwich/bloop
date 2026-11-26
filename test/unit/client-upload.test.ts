@@ -1,19 +1,10 @@
-// The upload engine's pure parts: the fingerprint, the part plan, the pace, the time left and the byte units.
+// The upload engine's pure parts: the fingerprint, the part plan, the pace and the byte units.
 import { describe, expect, it, vi } from "vitest";
-import {
-  etaLeft,
-  etaOf,
-  etaStart,
-  fingerprint,
-  nextConcurrency,
-  PACE,
-  planParts,
-} from "../../public/js/core/upload.js";
-import { etaLabel, formatBytes, progressLine } from "../../public/js/core/upload-format.js";
+import { fingerprint, nextConcurrency, PACE, planParts } from "../../public/js/core/upload.js";
+import { formatBytes } from "../../public/js/core/upload-format.js";
 
 const MIB = 1024 * 1024;
 const bytes = (size: number, fill = 1) => new Uint8Array(size).fill(fill);
-const etaLabelAt = (eta: Parameters<typeof etaLeft>[0], now: number) => etaLabel(etaLeft(eta, now) ?? 0);
 
 describe("fingerprint", () => {
   it("rejects when the name rule cannot be fetched, so the file fails instead of resuming on a wrong name", async () => {
@@ -145,11 +136,6 @@ describe("formatBytes", () => {
     expect(formatBytes(10, 500)).toBe("0 of 1 KB");
   });
 
-  it("joins the share and the time left, or the share alone", () => {
-    expect(progressLine(34 * MIB, 88 * MIB, 90_000)).toBe("34 of 88 MB \u00b7 2 min left");
-    expect(progressLine(34 * MIB, 88 * MIB, null)).toBe("34 of 88 MB");
-  });
-
   it("reads a batch over 1 GB in GB", () => {
     expect(formatBytes(512 * MIB, 1.5 * 1024 * MIB)).toBe("0.5 of 1.5 GB");
     expect(formatBytes(20 * 1024 * MIB, 30 * 1024 * MIB)).toBe("20 of 30 GB");
@@ -158,73 +144,5 @@ describe("formatBytes", () => {
   it("rounds the sent share down and the total to nearest, so a share never reads ahead of the bytes", () => {
     expect(formatBytes(87.9 * MIB, 87.6 * MIB)).toBe("87 of 88 MB");
     expect(formatBytes(3.49 * MIB, 8.76 * MIB)).toBe("3.4 of 8.8 MB");
-  });
-});
-
-describe("the time left", () => {
-  /** Steady throughput of `rate` bytes a second, sampled each second for `secs`. */
-  function steady(rate: number, secs: number, total: number) {
-    let eta = etaStart();
-    let now = 1000;
-    let loaded = 0;
-    eta = etaOf(eta, loaded, total, now);
-    for (let i = 0; i < secs; i++) {
-      now += 1000;
-      loaded += rate;
-      eta = etaOf(eta, loaded, total, now);
-    }
-    return { eta, now, loaded };
-  }
-
-  it("UP-10 estimate shows after 5 s of samples, and not before", () => {
-    expect(steady(1000, 4, 1_000_000).eta.est).toBeNull();
-    const five = steady(1000, 5, 1_000_000);
-    expect(five.eta.est).toBeCloseTo(((1_000_000 - 5000) / 1000) * 1000, -1);
-  });
-
-  it("UP-10 throughput is an EWMA with 0.2 for the newest second", () => {
-    const { eta, now, loaded } = steady(1000, 6, 1_000_000);
-    expect(eta.rate).toBeCloseTo(1000, 6);
-    // One fast second: 0.2 * 2000 + 0.8 * 1000.
-    const next = etaOf(eta, loaded + 2000, 1_000_000, now + 1000);
-    expect(next.rate).toBeCloseTo(1200, 6);
-  });
-
-  it("UP-10 estimate hysteresis: a change under 20 percent keeps the shown value, 20 percent or more moves it", () => {
-    const now = 100_000;
-    // Showing 100 s at 1000 B/s; one second on, the shown value has counted down to 99 s.
-    const shown = { at: now, bytes: 0, rate: 1000, secs: 10, est: 100_000, estAt: now };
-    const at = now + 1000;
-    const shownAt = 99_000;
-    // Bytes left are chosen so the new estimate is a set share of the shown value, the rate holding at 1000 B/s.
-    const feed = (share: number) => etaOf(shown, 1000, 1000 + ((shownAt * share) / 1000) * 1000, at);
-    expect(feed(1.19).est).toBe(100_000);
-    expect(feed(0.81).est).toBe(100_000);
-    expect(feed(1.21).est).toBeCloseTo(shownAt * 1.21, 0);
-    expect(feed(0.79).est).toBeCloseTo(shownAt * 0.79, 0);
-  });
-
-  it("UP-10 the shown value counts down between changes, so minutes never tick back up", () => {
-    const eta = { at: 0, bytes: 0, rate: 1000, secs: 10, est: 600_000, estAt: 0 };
-    expect(etaOf(eta, 0, 1, 0).est).toBe(600_000);
-    expect(etaLabelAt(eta, 0)).toBe("10 min left");
-    expect(etaLabelAt(eta, 125_000)).toBe("8 min left");
-    expect(etaLabelAt(eta, 541_000)).toBe("Under a minute left");
-  });
-
-  it("UP-10 whole minutes round up, and under a minute reads Under a minute left", () => {
-    expect(etaLabel(59_999)).toBe("Under a minute left");
-    expect(etaLabel(60_000)).toBe("1 min left");
-    expect(etaLabel(60_001)).toBe("2 min left");
-    expect(etaLabel(0)).toBe("Under a minute left");
-    expect(etaLabel(3_600_000)).toBe("60 min left");
-  });
-
-  it("re-anchors after a gap, so waiting does not drag the mean to zero", () => {
-    const { eta, now, loaded } = steady(1000, 6, 1_000_000);
-    const gap = { ...eta, at: -1 };
-    const back = etaOf(gap, loaded, 1_000_000, now + 120_000);
-    expect(back.rate).toBeCloseTo(1000, 6);
-    expect(etaOf(back, loaded + 1000, 1_000_000, now + 121_000).rate).toBeCloseTo(1000, 6);
   });
 });

@@ -816,13 +816,16 @@ a.row:focus-visible {
   font-weight: 600;
   line-height: 1.3;
 }
-.row-name .head {
+.row-name .head,
+.toast .head {
   min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
-.row-name .tail {
+.row-name .tail,
+.toast .tail,
+.toast .st {
   flex: none;
   white-space: pre;
 }
@@ -1034,9 +1037,13 @@ a.row:focus-visible {
   box-shadow: var(--glass-edge), var(--sh-pill);
   animation: toast-in 250ms var(--ease-out) both;
 }
-.toast span {
+.toast > span,
+.toast .st {
   color: var(--muted);
   font-size: 15px;
+}
+.toast strong {
+  display: flex;
 }
 .toast .btn {
   margin-top: 8px;

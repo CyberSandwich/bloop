@@ -11,12 +11,11 @@ export const CLOSE = /** @type {import("../types.js").IconPart[]} */ (["M18 6 6 
 /**
  * @typedef {object} Face
  * @property {string} [title]
- * @property {string} [line]
+ * @property {string} [status] one short word after the title, "42%" or "Paused"; the sentence is an accessible name
  * @property {number | null} [fill] 0 to 1; null while there is nothing to show yet
  * @property {import("../types.js").IconPart[] | null} [glyph] the tile's glyph
  * @property {string} [label] the progress bar's name, "Uploading Lecture 5.pptx"
  * @property {boolean} [sheen] the sweep: while bytes move, or while the work is not measurable
- * @property {boolean} [wrap] the title wraps (to two lines) instead of giving way in the middle: it ends in its own words
  * @property {(() => void) | null} [press] the pill is a button (a batch opening its sheet)
  * @property {(Node | string)[]} [slot] the end of the pill: Cancel, an action
  */
@@ -29,13 +28,13 @@ export function pill({ host = document.body, ...first }) {
   const bar = loader("", null);
   const tile = el("span", { class: "thumb up-tile" });
   const title = el("strong", { class: "up-title" });
-  const line = el("span", { class: "up-line" });
+  const status = el("span", { class: "up-status" });
   const slot = el("span", { class: "up-slot" });
   const press = el("button", { class: "up-press", type: "button" });
   const node = el("div", { class: "up-pill glass" }, [
     bar,
     tile,
-    el("span", { class: "up-text" }, [title, line]),
+    el("span", { class: "up-text" }, [title]),
     press,
     slot,
   ]);
@@ -54,19 +53,20 @@ export function pill({ host = document.body, ...first }) {
       shownTitle = patch.title;
       // A long name ellipsizes in the middle: the head gives way, the end and extension stay.
       const [head, tail] = splitName(patch.title);
-      title.replaceChildren(el("span", { class: "head" }, [head]), el("span", { class: "tail" }, [tail]));
-      press.setAttribute("aria-label", patch.title);
+      title.replaceChildren(el("span", { class: "head" }, [head]), el("span", { class: "tail" }, [tail]), status);
     }
-    if (patch.line !== undefined) setText(line, patch.line);
+    if (patch.status !== undefined) setText(status, patch.status && ` \u00b7 ${patch.status}`);
     if (patch.fill !== undefined) setProgress(bar, patch.fill);
-    if (patch.label !== undefined) bar.setAttribute("aria-label", patch.label);
+    if (patch.label !== undefined) {
+      bar.setAttribute("aria-label", patch.label);
+      press.setAttribute("aria-label", patch.label);
+    }
     // Only what changed is touched: a button swapped under a finger between pointerdown and pointerup never clicks.
     if (patch.glyph !== undefined && patch.glyph !== shownGlyph) {
       shownGlyph = patch.glyph;
       tile.replaceChildren(...(patch.glyph ? [icon(patch.glyph)] : []));
     }
     if (patch.sheen !== undefined) node.classList.toggle("moving", patch.sheen);
-    if (patch.wrap !== undefined) node.classList.toggle("wrap", patch.wrap);
     if (patch.press !== undefined) {
       onPress = patch.press;
       press.hidden = !patch.press;
