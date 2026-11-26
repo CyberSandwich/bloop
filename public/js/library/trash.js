@@ -1,5 +1,5 @@
 // The trash view (library.md section 6), in place of the list: each file's countdown, Restore and Delete Now in its
-// menu, Empty Trash by the title. Deleting asks first in the `.leave` card, since nothing undoes it.
+// menu, Empty Trash by the title. Deleting asks first in a sheet, since nothing undoes it.
 /** @import {List, Row} from "./model.js" */
 import { deletesIn, emptyTrashLine, quotaLine, T, trashEmptyLine, trashRule, trashUses } from "../core/copy-library.js";
 import { el, focusTitle, setText, show } from "../core/ui.js";
@@ -13,25 +13,21 @@ export function start(page) {
   let trash = null;
 
   /** @param {string} title @param {string} line @param {string} action @returns {Promise<boolean>} */
-  function confirm(title, line, action) {
-    const dialog = el("dialog", { class: "leave", "aria-labelledby": "confirm-q" }, [
-      el("h2", { id: "confirm-q" }, [title]),
-      el("p", {}, [line]),
-      el("form", { class: "buttons", method: "dialog" }, [
-        el("button", { class: "btn secondary", type: "submit", value: "", autofocus: "" }, ["Cancel"]),
-        el("button", { class: "btn rose", type: "submit", value: "yes" }, [action]),
-      ]),
-    ]);
-    document.body.append(dialog);
-    const back = /** @type {HTMLElement | null} */ (document.activeElement);
-    return new Promise((done) => {
-      dialog.addEventListener("close", () => {
-        dialog.remove();
-        if (back?.isConnected) back.focus();
-        done(dialog.returnValue === "yes");
-      });
-      dialog.showModal();
-    });
+  async function confirm(title, line, action) {
+    // Cancel keeps focus (autofocus, no title stop): a delete is never one Enter from the dialog opening.
+    const dialog = await page.sheet(
+      "confirm-q",
+      [
+        el("h2", { id: "confirm-q" }, [title]),
+        el("p", {}, [line]),
+        el("form", { class: "buttons", method: "dialog" }, [
+          el("button", { class: "btn secondary", type: "submit", value: "", autofocus: "" }, ["Cancel"]),
+          el("button", { class: "btn rose", type: "submit", value: "yes" }, [action]),
+        ]),
+      ],
+      /** @type {HTMLElement | null} */ (document.activeElement),
+    );
+    return new Promise((done) => dialog.addEventListener("close", () => done(dialog.returnValue === "yes")));
   }
 
   /** @param {Row} row */
