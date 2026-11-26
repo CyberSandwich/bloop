@@ -11,7 +11,7 @@ export function start(page) {
   async function open(opener) {
     const list = page.list();
     if (!list) return;
-    const first = opensFirst(list);
+    const first = opensFirst({ ...list, upNext: [] });
     const uploading = allRows(list).filter((/** @type {Row} */ r) => pending(r));
     const done = el("button", { class: "btn primary", type: "button", "data-close": "" }, ["Done"]);
     const code = el("a", { class: "btn secondary", href: "/code" }, ["Enter the Code"]);
