@@ -5,7 +5,7 @@
 import type { EndReason, ErrorCode, FileType, Kind, Mode, OpenMode, SessionState, Shown } from "../shared/protocol.ts";
 import type { ItemDraft, ItemRef } from "./items.ts";
 import { control, end, fetched, launched, length } from "./machine/control.ts";
-import { approve, fallback, listed, openClick } from "./machine/items.ts";
+import { approve, fallback, listed, openClick } from "./machine/lists.ts";
 import { cancel, claim, codeNext, restart, socket, timer } from "./machine/pairing.ts";
 import { closeAtFor, fail, SECOND } from "./machine/step.ts";
 import { uploadDone, uploadFailed, uploadStart } from "./machine/upload.ts";

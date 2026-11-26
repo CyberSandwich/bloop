@@ -3,8 +3,7 @@ import { IN_SESSION } from "../../../public/js/shared/session.js";
 import type { EndReason } from "../../shared/protocol.ts";
 import { sameShown, shownFault } from "../items.ts";
 import type { Effect, EventOf, Machine, MachineConfig, Step } from "../machine.ts";
-import { close, endSession } from "./pairing.ts";
-import { fail, MINUTE, ok, PRE_APPROVAL, SECOND } from "./step.ts";
+import { close, endSession, fail, MINUTE, ok, PRE_APPROVAL, SECOND } from "./step.ts";
 
 export function control(m: Machine, ev: EventOf<"control">): Step {
   // A live screen has no viewer to follow a command.

@@ -1,6 +1,6 @@
 # ADR 0018: the file origin and the present links
 
-Status: proposed. Amends ADR 0003 (open path). The pairing rules and the serving predicate are ADR 0015's; cache headers are ADR 0023's.
+Status: accepted; it ships with the present server (plan P1). Amends ADR 0003 (open path). The pairing rules and the serving predicate are ADR 0015's; cache headers are ADR 0023's.
 
 ## Context
 - A user's own file is now served to a screen page that runs bloop's code. Served from the app's origin, a crafted file that a browser renders as a document would run with the app's cookies and storage.
