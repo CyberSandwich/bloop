@@ -1,17 +1,11 @@
 import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 import { parseConfig } from "../../src/worker/config.ts";
-import { BUCKETS, D1_NAME, d1IdFrom, missingSecrets, PLACEHOLDER, SECRETS, withD1Id } from "../../tools/staging.mjs";
+import { parseJsonc } from "../../tools/jsonc.mjs";
+import { D1_NAME, d1IdFrom, missingSecrets, PLACEHOLDER, SECRETS, withD1Id } from "../../tools/staging.mjs";
 
 const read = (rel: string) => readFileSync(new URL(`../../${rel}`, import.meta.url), "utf8");
-const parse = (text: string) =>
-  JSON.parse(
-    text
-      .split("\n")
-      .filter((line) => !line.trim().startsWith("//"))
-      .join("\n"),
-  );
-const live = parse(read("wrangler.jsonc"));
+const live = parseJsonc(read("wrangler.jsonc"));
 const staging = live.env.staging;
 
 /** The variables that differ from production on purpose: the origin, the test keys and the tiny caps. */
@@ -43,14 +37,13 @@ describe("staging: env.staging in wrangler.jsonc", () => {
       { binding: "GUEST_FILES", bucket_name: "bloop-staging-guest", jurisdiction: "eu" },
       { binding: "LIBRARY", bucket_name: "bloop-staging-library", jurisdiction: "eu" },
     ]);
-    expect(staging.r2_buckets.map((b: { bucket_name: string }) => b.bucket_name)).toEqual(BUCKETS);
     for (const bucket of live.r2_buckets) expect(JSON.stringify(staging)).not.toContain(bucket.bucket_name);
   });
 
-  it("repeats the bindings, migrations and cron triggers wrangler does not inherit, so the two cannot drift", () => {
+  it("repeats the bindings wrangler does not inherit, so the two cannot drift, and runs no crons", () => {
     expect(staging.durable_objects).toEqual(live.durable_objects);
-    expect(staging.migrations).toEqual(live.migrations);
-    expect(staging.triggers).toEqual(live.triggers);
+    expect(staging.triggers).toEqual({ crons: [] });
+    expect(staging.migrations).toBeUndefined();
     expect(staging.ratelimits.map((r: { name: string; simple: unknown }) => [r.name, r.simple])).toEqual(
       live.ratelimits.map((r: { name: string; simple: unknown }) => [r.name, r.simple]),
     );

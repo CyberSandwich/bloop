@@ -7,6 +7,7 @@ import { ERRORS } from "../../public/js/shared/errors.js";
 import { APP_ERRORS } from "../../public/js/shared/errors-app.js";
 import { CONFIG_VARS } from "../../src/worker/config.ts";
 import { importClosure, withModulePreload } from "../../tools/build-assets.mjs";
+import { stripJsonComments } from "../../tools/jsonc.mjs";
 import { sizeEntries } from "../size-entries.ts";
 
 const ROOT = fileURLToPath(new URL("../../", import.meta.url));
@@ -45,29 +46,6 @@ const REPO_FILES = execFileSync("git", ["ls-files", "-z", "--cached", "--others"
 })
   .split("\0")
   .filter(Boolean);
-
-/** Removes `//` and block comments from JSONC, leaving string contents (URLs hold `//`) alone. */
-function stripJsonComments(text: string): string {
-  let out = "";
-  let i = 0;
-  while (i < text.length) {
-    const c = text[i];
-    if (c === '"') {
-      let j = i + 1;
-      while (text[j] !== '"') j += text[j] === "\\" ? 2 : 1;
-      out += text.slice(i, j + 1);
-      i = j + 1;
-    } else if (text.startsWith("//", i)) {
-      while (i < text.length && text[i] !== "\n") i++;
-    } else if (text.startsWith("/*", i)) {
-      i = text.indexOf("*/", i) + 2;
-    } else {
-      out += c;
-      i++;
-    }
-  }
-  return out;
-}
 
 const CODE_EXT = "md|ts|js|mjs|json|jsonc|html|css|sql|py|yml|yaml|txt|example|bin|woff2|glb|svg";
 
@@ -276,7 +254,7 @@ describe("size budgets", () => {
   });
 
   it("the request budget names task pages that exist and have a module script, with whole-number limits", () => {
-    const budgets = JSON.parse(read("tools/size/requests.json")) as Record<string, Record<string, number>>;
+    const budgets = JSON.parse(read("tools/requests.json")) as Record<string, Record<string, number>>;
     expect(Object.keys(budgets).length).toBeGreaterThan(1);
     for (const [path, budget] of Object.entries(budgets)) {
       expect(read(`public${path}.html`), path).toContain('<script type="module"');

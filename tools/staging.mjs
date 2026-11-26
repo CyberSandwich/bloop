@@ -1,6 +1,7 @@
 // The staging deploy's steps (.github/workflows/staging.yml, docs/setup.md "Staging"). The pure helpers are unit
 // tested; `ready`, `prepare` and `secrets` run in the workflow only and never print a secret value.
-//   ready    prints one line and sets `ready=true|false`: false (a clean skip) until every staging resource exists
+//   ready    prints one line and sets `ready=true|false`: false (a clean skip) until the staging D1 exists. The buckets
+//            are not probed: a missing one fails the deploy, and the token then needs no R2 permission.
 //   prepare  writes the D1 id (STAGING_D1_ID in the environment) into wrangler.jsonc for this job's checkout
 //   secrets  sets every missing staging secret from a random value that is piped in, never shown
 import { spawnSync } from "node:child_process";
@@ -8,7 +9,6 @@ import { randomBytes } from "node:crypto";
 import { appendFileSync, readFileSync, writeFileSync } from "node:fs";
 
 export const D1_NAME = "bloop-staging";
-export const BUCKETS = ["bloop-staging-guest", "bloop-staging-library"];
 export const PLACEHOLDER = "STAGING_D1_ID";
 
 const b64url = () => randomBytes(32).toString("base64url");
@@ -57,14 +57,11 @@ function ready() {
     console.log(`Staging skipped: ${why}. Create the staging resources (docs/setup.md, Staging) and rerun.`);
     if (out) appendFileSync(out, "ready=false\n");
   };
+  // A failed list (a bad token, an outage) must fail the job, not look like "not created yet".
   const list = wrangler(["d1", "list", "--json"]);
-  const id = list.status === 0 ? d1IdFrom(list.stdout) : null;
+  if (list.status !== 0) throw new Error(`wrangler d1 list failed: ${list.stderr}`);
+  const id = d1IdFrom(list.stdout);
   if (!id) return skip(`D1 database ${D1_NAME} not found`);
-  for (const bucket of BUCKETS) {
-    if (wrangler(["r2", "bucket", "info", bucket, "--jurisdiction", "eu"]).status !== 0) {
-      return skip(`R2 bucket ${bucket} not found or not readable`);
-    }
-  }
   console.log("Staging resources found.");
   if (out) appendFileSync(out, `ready=true\nd1_id=${id}\n`);
 }
@@ -76,7 +73,8 @@ function prepare() {
 
 function secrets() {
   const list = wrangler(["secret", "list", "-e", "staging", "--format", "json"]);
-  const missing = list.status === 0 ? missingSecrets(list.stdout) : Object.keys(SECRETS);
+  if (list.status !== 0) throw new Error(`wrangler secret list failed: ${list.stderr}`);
+  const missing = missingSecrets(list.stdout);
   for (const name of missing) {
     const put = wrangler(["secret", "put", name, "-e", "staging"], SECRETS[name]?.());
     if (put.status !== 0) throw new Error(`could not set ${name}`);

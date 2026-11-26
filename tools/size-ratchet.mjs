@@ -33,7 +33,7 @@ export function entriesFrom(/** @type {Tree} */ tree) {
   for (const file of [
     ".size-limit",
     ".size-limit.json",
-    ...tree.list("tools/size").filter((f) => f.endsWith(".json") && !f.endsWith("/requests.json")),
+    ...tree.list("tools/size").filter((f) => f.endsWith(".json")),
   ]) {
     const text = tree.show(file);
     if (text != null) entries.push(...[].concat(JSON.parse(text)));

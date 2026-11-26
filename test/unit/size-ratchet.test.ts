@@ -122,7 +122,6 @@ describe("size ratchet: a budget only holds or drops", () => {
       ".size-limit.json": JSON.stringify([entry("b", "2 kB")]),
       "tools/size/extra.json": JSON.stringify(entry("c", "3 kB")),
       "tools/size/notes.txt": "not config",
-      "tools/size/requests.json": JSON.stringify({ "/s": { worker: 4 } }),
     };
     const at = {
       show: (f: string) => tree[f] ?? null,

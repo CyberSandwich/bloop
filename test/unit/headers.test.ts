@@ -14,6 +14,16 @@ import {
 } from "../../src/worker/headers.ts";
 import { VARIANTS } from "../../src/worker/pages.ts";
 
+/** A `_headers` rule as a regex: one `*` splat and `:name` placeholders only, as Cloudflare allows. */
+function rulePattern(rule: string): RegExp {
+  if (rule.split("*").length > 2) throw new Error(`${rule}: a rule may hold one splat`);
+  const source = rule
+    .split(/(:[A-Za-z]\w*|\*)/)
+    .map((part) => (part === "*" ? ".*" : part.startsWith(":") ? "[^/]+" : part.replace(/[.+?^${}()|[\]\\]/g, "\\$&")))
+    .join("");
+  return new RegExp(`^${source}$`);
+}
+
 /** Resolves public/_headers for one path the way Cloudflare does: matching blocks in order, `! Name` detaches. */
 function staticHeaders(path: string): Record<string, string> {
   const out = new Map<string, string>();
@@ -21,7 +31,7 @@ function staticHeaders(path: string): Record<string, string> {
   for (const line of readFileSync(new URL("../../public/_headers", import.meta.url), "utf8").split("\n")) {
     if (line.trim() === "") continue;
     if (!line.startsWith(" ")) {
-      applies = new RegExp(`^${line.replace(/[.+?^${}()|[\]\\]/g, "\\$&").replaceAll("*", ".*")}$`).test(path);
+      applies = rulePattern(line).test(path);
       continue;
     }
     if (!applies) continue;
