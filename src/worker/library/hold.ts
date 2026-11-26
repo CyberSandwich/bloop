@@ -260,7 +260,7 @@ export async function releaseHolds(
   const db = libDbOf(env.DB);
   const bucket = bucketOf(env.LIBRARY);
   const { results } = await db
-    .prepare("SELECT id FROM hold WHERE release_after <= ?1 ORDER BY release_after LIMIT ?2")
+    .prepare("SELECT id FROM hold WHERE release_after <= ?1 ORDER BY id LIMIT ?2")
     .bind(now, RELEASE_BATCH)
     .all<{ id: string }>();
   for (const { id } of results) {

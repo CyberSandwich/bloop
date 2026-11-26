@@ -19,7 +19,6 @@ const ALLOWED = [
   "src/worker/library/sample.ts: U",
   "src/worker/library/wire.ts: U",
   "src/worker/live-screens.ts: P1",
-  "src/worker/routes/library.ts: A",
   "src/worker/seams/file-source/library.ts: U",
   "src/worker/routes/library.ts: G",
   "src/worker/routes/library.ts: G",

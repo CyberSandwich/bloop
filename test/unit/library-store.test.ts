@@ -279,7 +279,8 @@ describe("LIB-12 race: rename, trash, restore and a due purge never leave a ghos
         }
       }
     }
-  });
+    // 48 databases, each built from every migration: the default 5 s is too tight as the migration list grows.
+  }, 30_000);
 });
 
 describe("LIB-03 fetch-time: servable is one predicate", () => {
