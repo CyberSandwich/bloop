@@ -1165,11 +1165,6 @@ a.row:focus-visible {
   font-size: 15px;
   font-weight: 600;
 }
-/* 64, a step over a page action's 52: read at arm's length, hit with a thumb while the eye is on the wall. */
-.choice {
-  min-height: 64px;
-  border-radius: var(--r-pill);
-}
 @media (orientation: landscape) and (max-height: 599.98px) and (max-width: 899.98px) {
   .pick {
     grid-template-columns: auto repeat(3, 1fr);
@@ -1222,6 +1217,12 @@ a.row:focus-visible {
 }
 .actions .btn.text {
   min-height: 44px;
+}
+/* 64, a step over a page action's 52: read at arm's length, hit with a thumb while the eye is on the wall. After
+   .actions .btn, which it outranks only by order. */
+.pick .choice {
+  min-height: 64px;
+  border-radius: var(--r-pill);
 }
 @media (min-width: 640px) {
   .buttons {

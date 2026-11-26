@@ -6,16 +6,15 @@
 import { createApi } from "./core/api.js";
 import { bootCode } from "./core/boot-code.js";
 import { openChannel, refusal } from "./core/channel.js";
-import { MAIL_SUBJECT, phoneCopy, REFUSED, refusedLine, uploadLine } from "./core/copy-phone.js";
+import { MAIL_SUBJECT, phoneCopy, REFUSED, refusedLine, uploadLine, withPick } from "./core/copy-phone.js";
 import { thumbOf } from "./core/demo.js";
 import { fileProblem, kindOf, prepareFile, sendFile, wholeMB } from "./core/drop.js";
 import { loadFiles } from "./core/files.js";
 import { ago, countdown } from "./core/format.js";
 import { ICONS } from "./core/icons.js";
 import { loader, setProgress } from "./core/loader.js";
-import { adopt, leave, liveClaim, onRefusal, phoneKey, retryStep } from "./core/phone-states.js";
 import { linkRow, rowFace, tile } from "./core/rows.js";
-import { firstFile } from "./core/states.js";
+import { adopt, firstFile, leave, liveClaim, onRefusal, phoneKey, retryStep } from "./core/states.js";
 import { dropPid, PID_KEY, pidStore, refOf, SID_KEY, sameScreen, sessionStore } from "./core/store.js";
 import { toast } from "./core/toast.js";
 import { ariaFlag, byId, el, focusTitle, icon, isFramed, reloadOnRestore, setText, show, wsUrl } from "./core/ui.js";
@@ -236,7 +235,7 @@ function renderActions(/** @type {import("./types.js").PhoneAction[]} */ actions
 const remoteOn = () => c.info?.mode === "demo" && ["opening", "open"].includes(phoneKey(c));
 
 function render() {
-  const key = phoneKey(c);
+  const key = withPick(c, phoneKey(c));
   const v = c.view;
   const demo = c.info?.mode === "demo";
   const copy = phoneCopy(key, {

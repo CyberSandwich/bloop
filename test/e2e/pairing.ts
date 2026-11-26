@@ -73,4 +73,4 @@ export async function pickMatch(phone: Page, screen: Page): Promise<string> {
 
 /** One of the pick's three choices on the phone, by its digits. */
 export const choice = (phone: Page, digits: string) =>
-  phone.getByRole("group", { name: "Tap the Screen's Number" }).getByRole("button", { name: digits, exact: true });
+  phone.locator("#pick").getByRole("button", { name: digits, exact: true });
