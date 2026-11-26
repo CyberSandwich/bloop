@@ -4,14 +4,34 @@
 /**
  * A page whose file differs by mode. `both`: the path exists in both modes with different files (the open one sits
  * under /open/ in the build output at the same relative path). `open-only`: 404 in preview. `preview-only`: 301 to `to`
- * in open. The site stream fills this list when it emits the open files; empty, no page differs and no mode is read.
+ * in open.
  */
 export interface Variant {
   readonly path: string;
   readonly kind: "both" | "open-only" | "preview-only";
   readonly to?: string;
 }
-export const VARIANTS: readonly Variant[] = Object.freeze([]);
+// Every site page differs by mode, because the nav does. A unit test holds this list to the files the build emits
+// under public/open/ (test/unit/pages-variants.test.ts); the open 404 page is not listed: `missing` serves it.
+const BOTH = [
+  "/",
+  "/privacy",
+  "/terms",
+  "/security",
+  "/accessibility",
+  "/articles",
+  "/articles/how-bloop-works",
+  "/articles/threat-model-for-it-teams",
+  "/articles/what-stays-on-the-pc",
+  "/articles/data-and-retention",
+  "/sitemap.xml",
+  "/robots.txt",
+  "/llms.txt",
+];
+export const VARIANTS: readonly Variant[] = Object.freeze([
+  ...BOTH.map((path): Variant => ({ path, kind: "both" })),
+  { path: "/articles/features", kind: "open-only" },
+]);
 
 /** Served and linked in open; in preview served unlinked and noindex, so test accounts reach them on the real host. */
 export const AUTH_SHELLS: readonly string[] = Object.freeze(["/signin", "/invite"]);
