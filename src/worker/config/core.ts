@@ -145,7 +145,9 @@ export const coreVars = {
     ),
   GUEST_MAX_BYTES: int(1, PLATFORM_BODY_CAP)
     .default(26_214_400)
-    .describe("Largest guest upload in bytes as one request body: 25 MB, past which a long streamed PUT is not served."),
+    .describe(
+      "Largest guest upload in bytes as one request body: 25 MB, past which a long streamed PUT is not served.",
+    ),
   DEMO_GUEST_MAX_BYTES: int(1, PLATFORM_BODY_CAP)
     .default(26_214_400)
     .describe("Largest guest upload in a demo room, in bytes."),
