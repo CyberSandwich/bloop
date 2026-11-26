@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"slices"
 	"strconv"
 	"strings"
 	"sync"
@@ -88,6 +89,7 @@ type fakeTools struct {
 	probeOut string        // ffprobe JSON for the mp4
 	delay    time.Duration // added to every call
 
+	failOnCopy     bool          // ffmpeg fails when it is asked to copy streams
 	failLaterPages bool          // pdftoppm fails for every page after the first
 	holdPages      chan struct{} // when set, pdftoppm for any page after the first waits for a receive or close
 }
@@ -140,6 +142,9 @@ func (f *fakeTools) run(ctx context.Context, spec cmdSpec) ([]byte, error) {
 	if spec.name == f.blockOn {
 		<-ctx.Done()
 		return nil, ctx.Err()
+	}
+	if spec.name == "ffmpeg" && f.failOnCopy && slices.Contains(spec.args, "copy") {
+		return nil, fmt.Errorf("ffmpeg: exit status 1")
 	}
 	if spec.name == f.failOn {
 		return nil, fmt.Errorf("%s: exit status 1", spec.name)
