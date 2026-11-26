@@ -38,7 +38,6 @@ export function start(page) {
       [el("div", { class: "lib-sheet-head" }, [title(row.name), page.closer()]), body],
       opener,
     );
-    anchor(dialog, opener);
     const close = () => dialog.close();
 
     /** The rows for the file as it is now; a move redraws them in place. */
@@ -132,14 +131,16 @@ export function start(page) {
 
     if (mode === "rename") renaming();
     else fill();
+    // Measured once filled and at its anchored width: the empty sheet is shorter than the menu it will hold.
+    anchor(dialog, opener);
   }
 
   /** From 640 the menu opens beside its More button, inside the window. @param {HTMLDialogElement} dialog @param {HTMLElement | null} opener */
   function anchor(dialog, opener) {
     if (!opener || !matchMedia("(min-width: 640px)").matches) return;
     const at = opener.getBoundingClientRect();
-    const height = dialog.getBoundingClientRect().height;
     dialog.classList.add("is-anchored");
+    const height = dialog.getBoundingClientRect().height;
     dialog.style.setProperty("--top", `${Math.max(12, Math.min(at.bottom + 4, innerHeight - height - 12))}px`);
     dialog.style.setProperty("--left", `${Math.max(12, Math.min(at.right - 320, innerWidth - 332))}px`);
   }
