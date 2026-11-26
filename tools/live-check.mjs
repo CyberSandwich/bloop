@@ -10,6 +10,7 @@ import { fileURLToPath } from "node:url";
 import sizeEntries from "../.size-limit.mjs";
 import { DYNAMIC_PAGES, pageCsp } from "../src/worker/headers.ts";
 import { AUTH_SHELLS, MEMBER_PAGES, VARIANTS } from "../src/worker/page-registry.ts";
+import { CLEAN, HOSTILE } from "../test/pdf-corpus.ts";
 import { paths } from "./size-ratchet.mjs";
 import { staticHeaders } from "./static-headers.mjs";
 import { wranglerConfig } from "./wrangler-config.mjs";
@@ -36,6 +37,8 @@ const TYPES = { ".js": "text/javascript", ".css": "text/css" };
  *   expect: Expect }} Check
  * @typedef {{ status: number, headers: Record<string, string>, body: string }} Observed
  * @typedef {(url: string, headers: Record<string, string>) => Promise<Observed>} Get
+ * @typedef {(method: string, url: string, headers: Record<string, string>, body: string | Uint8Array) => Promise<Observed>} Send
+ * @typedef {(url: string, origin: string, sid: string) => Promise<{ code: string, close: () => void }>} ScreenSocket
  */
 
 /** `articles/x.html` is `/articles/x`, `index.html` is `/`, a folder's `index.html` is the folder. */
@@ -466,8 +469,105 @@ export async function run(/** @type {Check[]} */ checks, /** @type {Get} */ get 
   return { checks: checks.length + links.size, misses };
 }
 
-/** The CLI. @param {string[]} args @param {Get} [get] @returns {Promise<number>} the exit code */
-export async function main(args, get = rawGet) {
+/** A request with a method and a body, judged like a GET. @type {Send} */
+async function fetchSend(method, url, headers, body) {
+  const res = await fetch(url, { method, headers, body, signal: AbortSignal.timeout(15_000) });
+  return { status: res.status, headers: Object.fromEntries(res.headers), body: await res.text() };
+}
+
+/** A screen's socket, said hello to with its sid, until the screen shows a pairing code. @type {ScreenSocket} */
+function screenSocket(url, origin, sid) {
+  const ws = new WebSocket(url, { headers: { Origin: origin } });
+  const close = () => ws.close();
+  return new Promise((resolve, reject) => {
+    const timer = setTimeout(() => {
+      close();
+      reject(new Error("no pairing code in 10 s"));
+    }, 10_000);
+    ws.addEventListener("open", () => ws.send(JSON.stringify({ v: 1, t: "hello", sid })));
+    ws.addEventListener("error", () => {
+      clearTimeout(timer);
+      reject(new Error("screen socket refused"));
+    });
+    ws.addEventListener("message", (e) => {
+      const f = JSON.parse(String(e.data));
+      if (f.t !== "state" || !f.view?.code?.code) return;
+      clearTimeout(timer);
+      resolve({ code: f.view.code.code, close });
+    });
+  });
+}
+
+/** The guest drops: each on its own demo screen, which is ended whatever the drop answers. */
+export const DROPS = [
+  { what: "a PDF with /JavaScript in an object stream", fixture: HOSTILE, name: "JS in an object stream" },
+  { what: "a clean PDF", fixture: CLEAN, name: "LaTeX hyperref" },
+].map(({ what, fixture, name }) => {
+  const build = fixture.find(([n]) => n === name)?.[1];
+  if (!build) throw new Error(`live-check: test/pdf-corpus.ts has no fixture "${name}"`);
+  /** @type {Expect} */
+  const expect =
+    fixture === HOSTILE ? { status: 422, body: '"code":"macro_content"' } : { status: 200, body: '"state":"offered"' };
+  return { what: `guest drop of ${what}`, bytes: build(), expect };
+});
+
+/**
+ * A guest drop through the public API on a demo screen, which needs no account: create the screen, take its code
+ * from the socket, claim as a guest, PUT the file. The screen is ended on every path, so a run leaves no session.
+ * @param {string} origin @param {typeof DROPS} drops @param {{ send: Send, socket: ScreenSocket }} io
+ * @returns {Promise<string[]>} the misses
+ */
+export async function dropMisses(origin, drops, io) {
+  const json = { Origin: origin, "Content-Type": "application/json" };
+  const misses = [];
+  for (const d of drops) {
+    /** @type {string | null} */
+    let sid = null;
+    /** @type {(() => void) | null} */
+    let close = null;
+    try {
+      const created = await io.send("POST", `${origin}/api/screens`, json, JSON.stringify({ mode: "demo" }));
+      if (created.status !== 201) throw new Error(`screen create answered ${created.status}`);
+      sid = String(JSON.parse(created.body).sid);
+      const ws = `${origin.replace(/^http/, "ws")}/api/screen/ws?ref=${sid.split(".")[0]}`;
+      const screen = await io.socket(ws, origin, sid);
+      close = screen.close;
+      const claimed = await io.send(
+        "POST",
+        `${origin}/api/claim`,
+        json,
+        JSON.stringify({ code: screen.code, kind: "guest" }),
+      );
+      if (claimed.status !== 200) throw new Error(`guest claim answered ${claimed.status}`);
+      const pid = String(JSON.parse(claimed.body).pid);
+      const headers = {
+        Origin: origin,
+        Authorization: `Bearer ${pid}`,
+        "Content-Type": "application/pdf",
+        "X-Bloop-Name": "Paper.pdf",
+      };
+      const o = await io.send("PUT", `${origin}/api/drop`, headers, d.bytes);
+      misses.push(...missesFor(d.expect, o).map((m) => `${d.what}: ${m}`));
+    } catch (e) {
+      misses.push(`${d.what}: ${/** @type {Error} */ (e).message}`);
+    } finally {
+      close?.();
+      if (sid) {
+        const ended = await io
+          .send("POST", `${origin}/api/screen/end`, { ...json, Authorization: `Bearer ${sid}` }, "{}")
+          .catch((/** @type {Error} */ e) => ({ status: 0, body: e.message }));
+        if (ended.status !== 200) misses.push(`${d.what}: screen end answered ${ended.status}`);
+      }
+    }
+  }
+  return misses;
+}
+
+/**
+ * The CLI. @param {string[]} args @param {Get} [get] @param {{ send: Send, socket: ScreenSocket }} [io]
+ * @returns {Promise<number>} the exit code
+ */
+export async function main(args, get = rawGet, io = { send: fetchSend, socket: screenSocket }) {
   const at = args.indexOf("--mode");
   const mode = at < 0 ? "preview" : args[at + 1];
   const rest = args.filter((_, i) => at < 0 || (i !== at && i !== at + 1));
@@ -482,9 +582,10 @@ export async function main(args, get = rawGet) {
     return 64;
   }
   const result = await run(checksFor(reg, mode), get);
-  for (const m of result.misses) console.error(`live-check: ${m}`);
-  console.log(`live-check: ${result.checks} checks, ${result.misses.length} misses`);
-  return result.misses.length > 0 ? 1 : 0;
+  const misses = [...result.misses, ...(await dropMisses(reg.publicOrigin, DROPS, io))];
+  for (const m of misses) console.error(`live-check: ${m}`);
+  console.log(`live-check: ${result.checks + DROPS.length} checks, ${misses.length} misses`);
+  return misses.length > 0 ? 1 : 0;
 }
 
 // Real paths on both sides: run through a symlink (macOS /tmp is one) a plain compare is false and nothing runs.

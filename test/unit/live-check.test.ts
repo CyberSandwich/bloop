@@ -6,6 +6,8 @@ import { CSP, pageCsp } from "../../src/worker/headers.ts";
 import { AUTH_SHELLS, MEMBER_PAGES } from "../../src/worker/page-registry.ts";
 import {
   checksFor,
+  DROPS,
+  dropMisses,
   expandLazy,
   globRegex,
   linksIn,
@@ -514,7 +516,7 @@ describe("live-check: the CLI", () => {
   });
 
   it("exits 1 on a miss, and 0 when every check passes against the real registry", async () => {
-    expect(await main(["https://bloop.here"], async () => ok({ status: 500 }))).toBe(1);
+    expect(await main(["https://bloop.here"], async () => ok({ status: 500 }), demo().io)).toBe(1);
     const checks = checksFor(registryFrom(), "preview");
     // Fixed values from the repo, so a registry or an expectation gone empty or wrong fails here: /library and /open
     // get 17 forms each, /account, /admin and the open-only /articles/features 16 (their hex code is digits only).
@@ -530,6 +532,109 @@ describe("live-check: the CLI", () => {
       if (e.contentType) h["content-type"] = e.contentType;
       return { status: e.status ?? 204, headers: h, body: e.body ?? "" };
     };
-    expect(await main(["https://bloop.here"], perfect)).toBe(0);
+    expect(await main(["https://bloop.here"], perfect, demo().io)).toBe(0);
+    expect(
+      await main(["https://bloop.here"], perfect, demo({ drop: () => ok({ body: '{"state":"offered"}' }) }).io),
+    ).toBe(1);
+  });
+});
+
+/** A demo site for the drop flow: each step answers as given, and every request is logged. */
+function demo(
+  over: {
+    create?: Observed;
+    claim?: Observed;
+    drop?: (bytes: Uint8Array) => Observed;
+    end?: Observed;
+    socket?: "fail";
+  } = {},
+) {
+  const log: string[] = [];
+  const closed: string[] = [];
+  const send = async (method: string, url: string, headers: Record<string, string>, body: string | Uint8Array) => {
+    const path = new URL(url).pathname;
+    log.push(`${method} ${path}${headers.Authorization ? ` ${headers.Authorization}` : ""}`);
+    if (path === "/api/screens") return over.create ?? ok({ status: 201, body: '{"sid":"ref1.secret"}' });
+    if (path === "/api/claim") return over.claim ?? ok({ body: '{"pid":"pid1"}' });
+    if (path === "/api/drop") {
+      const bytes = body as Uint8Array;
+      if (over.drop) return over.drop(bytes);
+      return bytes === DROPS[0]?.bytes
+        ? ok({ status: 422, body: '{"code":"macro_content"}' })
+        : ok({ body: '{"state":"offered"}' });
+    }
+    if (path === "/api/screen/end") return over.end ?? ok({ body: "{}" });
+    throw new Error(`unexpected ${method} ${path}`);
+  };
+  const socket = async (url: string, _origin: string, sid: string) => {
+    log.push(`WS ${new URL(url).pathname}${new URL(url).search} ${sid}`);
+    if (over.socket === "fail") throw new Error("screen socket refused");
+    return { code: "123456", close: () => closed.push(sid) };
+  };
+  return { io: { send, socket }, log, closed };
+}
+
+describe("live-check: guest drops on a demo screen", () => {
+  const one = (i: number) => [DROPS[i] as (typeof DROPS)[number]];
+
+  it("the hostile drop must be macro_content and the clean one offered, each on its own ended screen", async () => {
+    const d = demo();
+    expect(await dropMisses(ORIGIN, DROPS, d.io)).toEqual([]);
+    const flow = [
+      "POST /api/screens",
+      "WS /api/screen/ws?ref=ref1 ref1.secret",
+      "POST /api/claim",
+      "PUT /api/drop Bearer pid1",
+      "POST /api/screen/end Bearer ref1.secret",
+    ];
+    expect(d.log).toEqual([...flow, ...flow]);
+    expect(d.closed).toEqual(["ref1.secret", "ref1.secret"]);
+    expect(DROPS.map((x) => x.expect)).toEqual([
+      { status: 422, body: '"code":"macro_content"' },
+      { status: 200, body: '"state":"offered"' },
+    ]);
+  });
+
+  it("a hostile drop the site accepts is a miss", async () => {
+    const misses = await dropMisses(ORIGIN, one(0), demo({ drop: () => ok({ body: '{"state":"offered"}' }) }).io);
+    expect(misses).toEqual([
+      "guest drop of a PDF with /JavaScript in an object stream: status 200, want 422",
+      'guest drop of a PDF with /JavaScript in an object stream: body lacks "code":"macro_content"',
+    ]);
+  });
+
+  it("ends the screen when the socket, the claim or the drop fails, and names the step", async () => {
+    for (const [over, miss] of [
+      [{ socket: "fail" }, "screen socket refused"],
+      [{ claim: ok({ status: 429, body: "{}" }) }, "guest claim answered 429"],
+      [
+        {
+          drop: () => {
+            throw new Error("timed out");
+          },
+        },
+        "timed out",
+      ],
+    ] as const) {
+      const d = demo(over);
+      expect(await dropMisses(ORIGIN, one(1), d.io)).toEqual([`guest drop of a clean PDF: ${miss}`]);
+      expect(d.log.at(-1)).toBe("POST /api/screen/end Bearer ref1.secret");
+    }
+  });
+
+  it("a screen that could not be made has nothing to end; an end that fails is a miss", async () => {
+    const none = demo({ create: ok({ status: 503, body: "{}" }) });
+    expect(await dropMisses(ORIGIN, one(1), none.io)).toEqual([
+      "guest drop of a clean PDF: screen create answered 503",
+    ]);
+    expect(none.log).toEqual(["POST /api/screens"]);
+    const stuck = demo({ end: ok({ status: 500, body: "{}" }) });
+    expect(await dropMisses(ORIGIN, one(1), stuck.io)).toEqual(["guest drop of a clean PDF: screen end answered 500"]);
+  });
+
+  it("the drop bytes are the corpus fixtures: the hostile one hides its JavaScript in a compressed stream", () => {
+    const text = (b: Uint8Array) => new TextDecoder("latin1").decode(b);
+    expect(text(DROPS[0]?.bytes as Uint8Array)).not.toContain("JavaScript");
+    expect(text(DROPS[1]?.bytes as Uint8Array).startsWith("%PDF-")).toBe(true);
   });
 });
