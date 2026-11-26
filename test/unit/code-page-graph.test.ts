@@ -24,4 +24,9 @@ describe("/code import graph", () => {
     expect(files).not.toContain("core/icons.js");
     expect(files).not.toContain("core/format.js");
   });
+
+  it("loads Paste only on a tap", () => {
+    expect(names("code.js")).not.toContain("core/paste.js");
+    expect(readFileSync(resolve(JS, "code.js"), "utf8")).toContain('import("./core/paste.js")');
+  });
 });
