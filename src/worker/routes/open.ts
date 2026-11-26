@@ -122,8 +122,8 @@ async function serveLink(request: Request, env: Env, config: Config, match: URLP
 
 export const openRoutes: readonly Route[] = [
   // GET and HEAD only: the router answers every other method (OPTIONS, PROPFIND, writes) 405 with `Allow`.
-  route(["GET", "HEAD"], "/f/:token/:name", "api", (request, env, match) =>
-    withConfig((req, e, config) => serveLink(req, e, config, match))(request, env, match),
+  route(["GET", "HEAD"], "/f/:token/:name", "api", (request, env, match, ctx) =>
+    withConfig((req, e, config) => serveLink(req, e, config, match))(request, env, match, ctx),
   ),
 
   route(
