@@ -238,6 +238,7 @@ src/worker/
   do/demo-slots.ts         the global cap on concurrent demo screens (SQL in the Directory object)
   machine.ts machine/      pure session state machine: types and dispatcher, one reducer file per event group (interfaces.md 2.3)
   items.ts                 the session's items: types, MAX_ITEMS, order, the link allowlist (ADR 0009)
+  yt-thumb.ts  routes/thumb.ts   a link item's same-origin thumbnail: the pure id, URL and answer checks, and `GET /yt/<id>.jpg` (PREVIEW-01)
   do/schema.ts             the Screen object's numbered storage steps (schemaVersion) and `applySteps`, which every object's steps use
   do/directory-schema.ts   the Directory object's tables and numbered steps (the `code` expiry index)
   do/screen.ts  do/directory.ts
@@ -307,7 +308,7 @@ test/
 
 ## 6. Routes
 
-`run_worker_first` lists every path but the static trees (`/js`, `/css`, `/img`, `/fonts` and the two icons, which the asset layer answers itself): every other request reaches the Worker, which first redirects a GET or HEAD for a `*.workers.dev` host (except `/fo/ping`, which that host answers itself: section 13), or for the origin's own hostname over plain http, with a 301 (cacheable for an hour; `no-store` for `/f`, `/b`, `/p` and `/fo`, whose paths are secrets) to the same path and query on `PUBLIC_ORIGIN` (`origin.ts`); a write or WebSocket upgrade on those hosts is refused with 403 `forbidden_origin`, not redirected, and any other host is left to the Origin and config checks. Then `/api/*`, `/f/*` and `/auth/*` go to the routes, and everything else is served from the asset binding (`html_handling: "drop-trailing-slash"`, so `/s` serves `s.html`; `_headers` and `_redirects` still apply). `wrangler dev` needs `--infer-origin-from-routes=false`, or the Worker sees `bloop.here` as its host.
+`run_worker_first` lists every path but the static trees (`/js`, `/css`, `/img`, `/fonts` and the two icons, which the asset layer answers itself): every other request reaches the Worker, which first redirects a GET or HEAD for a `*.workers.dev` host (except `/fo/ping`, which that host answers itself: section 13), or for the origin's own hostname over plain http, with a 301 (cacheable for an hour; `no-store` for `/f`, `/b`, `/p` and `/fo`, whose paths are secrets) to the same path and query on `PUBLIC_ORIGIN` (`origin.ts`); a write or WebSocket upgrade on those hosts is refused with 403 `forbidden_origin`, not redirected, and any other host is left to the Origin and config checks. Then `/api/*`, `/f/*`, `/auth/*` and `/yt/*` go to the routes, and everything else is served from the asset binding (`html_handling: "drop-trailing-slash"`, so `/s` serves `s.html`; `_headers` and `_redirects` still apply). `wrangler dev` needs `--infer-origin-from-routes=false`, or the Worker sees `bloop.here` as its host.
 
 | method                   | path                                         | auth                                  | purpose                                                        |
 | ------------------------ | -------------------------------------------- | ------------------------------------- | -------------------------------------------------------------- |
@@ -361,6 +362,7 @@ test/
 | GET, DELETE | `/api/me/screens`, `/api/me/screens/:sessionId` | member session | the user's live screens, and ending one; `{ended}` is 0 for a screen already gone |
 | POST | `/api/library/sample` | session | planned (L): the sample deck |
 | GET | `/api/notes?item=<id>` | Bearer pid only (a sid is refused); `RL_CONTROL` | demo implemented: `{notes: string[]}`, one entry per page of the item, `[]` for an item with none; the item id is looked up in the Screen object's own session list (states `approved`, `opening`, `open`), the source's optional `notes` answers, `no-store`; never a link, never in a view or frame (NOTES-01). The library source is planned (P1) |
+| GET | `/yt/<id>.jpg` | none; `RL_FETCH` per IP | a link item's thumbnail (PREVIEW-01): only the ids of the demo catalog's own preview paths, else 404; the Worker fetches `i.ytimg.com` once a day per data center with a fixed request and keeps the checked JPEG in its cache; `image/jpeg`, `nosniff`, `Cache-Control: public, max-age=86400` under the `thumb` policy. Any failure is a 404 with `no-store` (the row shows its link glyph) |
 | GET, POST | `/api/match`; `/api/claim`, `/api/files`, `/api/approve` extended | Bearer pid, session | planned (P1): the match pick, the library source |
 | GET | `/f/`, `/b/`, `/p/` on the file origin | the token | planned (P1): session links, bundles, owner previews |
 
@@ -378,7 +380,7 @@ A regex that takes user text must not split any string into its top-level altern
 | `POST /api/claim`       | 20 per 60 s per IP (`RL_CLAIM`) | binding |
 | failed code lookups     | 10 per 10 min per hashed IP, then 429 until the window (10 min from the first miss) ends; a global alarm at 1,000 per 10 min across all hashes (one `pair.miss_alarm` log line; it blocks nobody) | exact, Directory DO |
 | next code on one screen | 6 per min                                                                            | exact, Screen DO    |
-| `/f/`                   | 60 per 60 s per IP (`RL_FETCH`); then 60 per 60 s per screen (`RL_FETCH` keyed by the screen ref), or per view link (keyed by its hash), between the Screen object's check and the counted fetch; per link: 10 fetches, none for a view link (VID-02) | binding; exact      |
+| `/f/`                   | 60 per 60 s per IP (`RL_FETCH`); then 60 per 60 s per screen (`RL_FETCH` keyed by the screen ref), or per view link (keyed by its hash), between the Screen object's check and the counted fetch; per link: 10 fetches, none for a view link (VID-02); `GET /yt/<id>.jpg` (PREVIEW-01) spends the per-IP one too, before it reads the id, so a scan for ids is limited | binding; exact      |
 | `PUT /api/drop`         | 5 per 60 s per IP (`RL_UPLOAD`; every attempt past the Origin and credential checks counts); one accepted file per session; live bytes under `GUEST_STORAGE_BUDGET_BYTES` | binding; exact; D1  |
 | `/auth/start`, `/auth/callback`, `POST /api/me/disconnect` | 10 per 60 s per IP (`RL_AUTH`); the disconnect then spends the member routes row's IP meter too | binding |
 | member routes (`/api/me/*`) | every route: 300 per 60 s per IP (`RL_MEMBER_IP`) before any D1 read, a flood guard sized for a shared campus NAT; then, on every route but `DELETE /api/me` (a fresh proof bounds it) and the disconnect (`RL_AUTH`), 120 per 60 s per member (`RL_MEMBER`), the real limiter, after the session read (ADR 0014) | binding |
@@ -558,7 +560,7 @@ Bindings in `wrangler.jsonc` (not env vars): `ASSETS`, `SCREEN` and `DIRECTORY` 
 
 ## 10. Security headers
 
-Static pages get their headers from `public/_headers`. The Worker runs first for dynamic routes (`/api/*`, `/f/*`, `/auth/*`) and sets headers on its own responses through `src/worker/headers.ts`, the one policy module. A unit test asserts that `public/_headers` matches what `headers.ts` produces for static pages, and `csp_evaluator` (dev only) fails CI on any high or medium finding.
+Static pages get their headers from `public/_headers`. The Worker runs first for dynamic routes (`/api/*`, `/f/*`, `/auth/*`, `/yt/*`) and sets headers on its own responses through `src/worker/headers.ts`, the one policy module. A unit test asserts that `public/_headers` matches what `headers.ts` produces for static pages, and `csp_evaluator` (dev only) fails CI on any high or medium finding.
 
 Every response:
 
@@ -582,6 +584,7 @@ CSP per page type. Every page uses no inline script or style and no HTML string 
 | screen `/s`                      | `default-src 'none'; script-src 'self'; style-src 'self'; img-src 'self'; font-src 'self'; connect-src 'self'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'; require-trusted-types-for 'script'; trusted-types 'none'; upgrade-insecure-requests`                      |
 | phone `/a`, `/code`              | same as `/s`                                                                                                                                                                                                                                                                          |
 | `/api/*`, `/auth/*`              | `default-src 'none'; frame-ancestors 'none'`, plus `Cache-Control: no-store`                                                                                                                                                                                                          |
+| `/yt/*` (the `thumb` policy)     | `default-src 'none'; frame-ancestors 'none'`; the handler sets `Cache-Control` (a picture one day, a failure `no-store`); no page CSP gains a source, since `img-src 'self'` covers it |
 | `/f/*` `.pptx`                   | `default-src 'none'; sandbox; frame-ancestors 'none'`, `Content-Disposition: attachment`, `Cache-Control: no-store`                                                                                                                                                                   |
 | `/f/*` PDF view (purpose `pdf`)  | `default-src 'none'; object-src 'self'; frame-ancestors 'none'`, `Content-Disposition: inline`, `Cache-Control: no-store`. `sandbox` is left out because Chromium does not render a PDF in a sandboxed document, and `object-src 'self'` is the one hole because its viewer is an embedded plugin that the `default-src` fallback would block (both unverified, field check F-PDF, ADR 0003) |
 
