@@ -130,7 +130,7 @@
   color: var(--muted);
 }
 .leave::backdrop {
-  background: rgba(0, 0, 0, 0.18);
+  background: #0000002e;
 }
 /* Stacked (the .buttons default, the rose primary on top) until two columns hold "End Session" with its 16 padding. */
 .leave .buttons {
@@ -150,7 +150,7 @@
 /* The page never scrolls: the bar is fixed, and only the side list scrolls inside its own box. */
 .page-screen {
   display: flex;
-  flex-direction: column;
+  flex-flow: column;
   height: 100vh;
   height: 100dvh;
   overflow: hidden;
@@ -174,7 +174,7 @@
 .pane {
   position: relative;
   display: flex;
-  flex-direction: column;
+  flex-flow: column;
   align-items: center;
   gap: 16px;
   width: 100%;
@@ -269,7 +269,6 @@ main:has(> .side:not([hidden])) #stage {
   font-size: calc(var(--qr) * 0.4);
   font-weight: 600;
   line-height: 1;
-  color: var(--ink);
 }
 .code-row,
 [data-mode="scanned"] #controls {
@@ -477,7 +476,7 @@ main:has(> .side:not([hidden])) #stage {
 /* A portrait document scrolls as one column at a readable width. */
 .frame.is-scroll {
   display: flex;
-  flex-direction: column;
+  flex-flow: column;
   align-items: center;
   gap: 24px;
   overflow: auto;
@@ -492,7 +491,6 @@ main:has(> .side:not([hidden])) #stage {
   position: absolute;
   border: 0;
   background: none;
-  color: var(--ink);
   cursor: w-resize;
 }
 #next {
@@ -639,7 +637,7 @@ main:has(> .side:not([hidden])) #stage {
 }
 .item-card {
   display: flex;
-  flex-direction: column;
+  flex-flow: column;
   align-items: center;
   gap: 4px;
   width: 100%;
@@ -812,7 +810,7 @@ a.row:focus-visible {
 }
 .row-text {
   display: flex;
-  flex-direction: column;
+  flex-flow: column;
   gap: 2px;
   flex: 1;
   min-width: 0;
@@ -848,8 +846,6 @@ a.row:focus-visible {
 .list {
   display: grid;
   gap: 2px;
-}
-.items {
   margin: 0;
   padding: 0;
   list-style: none;
@@ -926,7 +922,7 @@ a.row:focus-visible {
     background: var(--g1);
   }
   .side::backdrop {
-    background: rgba(0, 0, 0, 0.18);
+    background: #0000002e;
   }
   .handle:not([hidden]) {
     display: flex;
@@ -949,7 +945,7 @@ a.row:focus-visible {
 /* ---- /a and /code ---- */
 .column {
   display: flex;
-  flex-direction: column;
+  flex-flow: column;
   width: 100%;
   max-width: 480px;
   min-height: 100vh;
@@ -960,7 +956,7 @@ a.row:focus-visible {
 }
 .flow {
   display: flex;
-  flex-direction: column;
+  flex-flow: column;
   gap: 16px;
 }
 .title {
@@ -1010,7 +1006,6 @@ a.row:focus-visible {
   padding: 0;
   border: 0;
   background: none;
-  font-size: 17px;
   font-variant-numeric: tabular-nums;
   cursor: pointer;
 }
@@ -1025,7 +1020,7 @@ a.row:focus-visible {
   bottom: calc(var(--inset) + env(safe-area-inset-bottom) + var(--toast-lift, 0px));
   left: 0;
   display: flex;
-  flex-direction: column;
+  flex-flow: column;
   gap: 4px;
   width: min(calc(100% - 2 * var(--pad)), 360px);
   margin: 0 auto;
@@ -1061,7 +1056,6 @@ a.row:focus-visible {
   grid-template-columns: minmax(0, 1fr);
   margin: 16px 0 0;
   padding: var(--list-pad);
-  list-style: none;
   border-radius: var(--r-list);
   background: var(--surface);
 }
@@ -1097,12 +1091,12 @@ a.row:focus-visible {
 .actions,
 .buttons {
   display: flex;
-  flex-direction: column-reverse;
+  flex-flow: column-reverse;
   gap: 8px;
 }
 .actions {
   flex: none;
-  flex-direction: column;
+  flex-flow: column;
   margin-top: 24px;
 }
 /* The band (pages.test.ts pins both queries): /a's buttons stay in reach, a result above Done is centered. */
@@ -1277,7 +1271,7 @@ a.row:focus-visible {
 }
 .code-form {
   display: flex;
-  flex-direction: column;
+  flex-flow: column;
   flex: 1;
   margin-top: 24px;
 }
