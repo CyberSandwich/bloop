@@ -26,8 +26,10 @@ import type { Env } from "../env.ts";
 import { MAX_FRAME_BYTES, phoneFrame, screenFrame } from "../frames.ts";
 import { drawCode, drawMatch, newRef, newSecret, parseCredential, randomInt, safeEqual, sha256Hex } from "../ids.ts";
 import { fileAt, type ItemDraft } from "../items.ts";
+import { codeRemovals } from "../machine/step.ts";
 import {
   createMachine,
+  type Effect,
   type Event,
   type FileRef,
   type Machine,
@@ -56,7 +58,15 @@ import {
   type Pinned,
   pinnedUser,
 } from "../seams/open-path/lookups.ts";
-import { idemSave, idemStore } from "../seams/pairing/idem.ts";
+import {
+  claimSecret,
+  idemPurge,
+  idemSave,
+  idemStore,
+  openClaim,
+  type SealedClaim,
+  sealClaim,
+} from "../seams/pairing/idem.ts";
 import {
   drawChoices,
   type IdemKey,
@@ -71,7 +81,7 @@ import { directoryStub } from "../stubs.ts";
 import { type Meta, phoneView, roomView, screenView } from "../views.ts";
 import { bestEffort, closeObject, type EffectDeps, noopSeams, runEffects, type SessionSeams } from "./effects.ts";
 import { LinkLedger, type Use } from "./ledger.ts";
-import { migrate, SCHEMA_KEY, SCHEMA_VERSION } from "./schema.ts";
+import { CORRUPT_END_KEY, type CorruptEnd, migrate, SCHEMA_KEY, SCHEMA_VERSION } from "./schema.ts";
 import {
   admit,
   closeLateHellos,
@@ -92,6 +102,8 @@ const PONG = '{"v":1,"t":"pong"}';
 const ORIGIN_STATES: readonly Machine["state"][] = ["waiting", "claimed", "choosing", "uploading", "offered"];
 type Role = "screen" | "phone";
 interface SocketAttachment {
+  /** The coalescer's key (O10); absent on a socket hibernated from before ids were kept, which keys on itself. */
+  id?: string;
   role: Role;
   authed: boolean;
   /** Epoch ms by which `hello` must arrive. */
@@ -106,7 +118,7 @@ interface SocketAttachment {
 
 /** `next`: the machine the event committed, which outlives `this.m` when the event closed the object. */
 type Applied =
-  | { ok: true; collided: boolean; next: Machine; minted: LinkResponse | null; laterError: MachineError | null }
+  | { ok: true; collided: boolean; next: Machine; minted: LinkResponse | null }
   | { ok: false; error: MachineError };
 
 type LinkVia = { method: string; client: ClientClass };
@@ -119,7 +131,9 @@ export class Screen extends DurableObject<Env> implements PairingStore {
   private m: Machine | null;
   private readonly links: LinkLedger;
   /** Every frame to a socket goes through it, so a state burst coalesces and nothing passes a held state (O10). */
-  private readonly out = new StateCoalescer<WebSocket>();
+  private readonly out = new StateCoalescer<WebSocket>({
+    keyOf: (ws) => (ws.deserializeAttachment() as SocketAttachment | null)?.id ?? ws,
+  });
 
   constructor(ctx: DurableObjectState, env: Env) {
     super(ctx, env);
@@ -128,6 +142,32 @@ export class Screen extends DurableObject<Env> implements PairingStore {
     this.meta = ctx.storage.kv.get<Meta>("meta") ?? null;
     this.m = ctx.storage.kv.get<Machine>("machine") ?? null;
     ctx.setWebSocketAutoResponse(new WebSocketRequestResponsePair(PING, PONG));
+    if (ctx.storage.kv.get(CORRUPT_END_KEY)) void ctx.blockConcurrencyWhile(() => this.finishCorruptEnd());
+  }
+
+  /**
+   * The effects of the end step 8 made (schema.ts endCorrupt), run before any other event: its audit row, the codes'
+   * removal, the push and the demo slot, then the alarm, which closes an object with no socket. The marker is cleared
+   * last, so a wake that dies midway runs them again.
+   */
+  private async finishCorruptEnd(): Promise<void> {
+    const kv = this.ctx.storage.kv;
+    const pending = kv.get<CorruptEnd>(CORRUPT_END_KEY);
+    const { m, meta } = this;
+    if (pending && m && meta) {
+      const codes = pending.codes ?? { current: null, previous: null };
+      const effects: Effect[] = [
+        ...codeRemovals(codes),
+        { fx: "audit", type: "ended", actor: "system" },
+        { fx: "push", to: "both" },
+      ];
+      const now = Date.now();
+      await bestEffort(runEffects(effects, { meta, prev: m, next: m, now }, this.deps()).then(() => undefined));
+      idemPurge(kv);
+      if (meta.mode === "demo") await bestEffort(directoryStub(this.env).demoRelease(meta.screenRef));
+      await this.rearm();
+    }
+    kv.put(CORRUPT_END_KEY, null);
   }
 
   // ---- PairingStore -------------------------------------------------------------------------
@@ -177,7 +217,10 @@ export class Screen extends DurableObject<Env> implements PairingStore {
       if (policy === "off") return fail("drop_disabled");
       if (policy === "pass" && !phone.passHash) return fail("pass_required");
     }
-    const secret = newSecret();
+    // With a key, the secret is derived from a stored nonce so a replay can answer the same pid without storing it.
+    const pepper = this.config().hashPepper;
+    const nonce = idem ? newSecret() : null;
+    const secret = nonce ? await claimSecret(pepper, nonce) : newSecret();
     const secretHash = await sha256Hex(secret);
     const match = drawMatch();
     const live = this.meta.mode === "live";
@@ -211,47 +254,33 @@ export class Screen extends DurableObject<Env> implements PairingStore {
       needsAuth: live && phone.kind === "owner" && this.config().graph !== null && userId === null,
       dropMaxBytes: this.dropMaxBytes(),
     };
-    if (idem && this.m) idemSave(this.ctx.storage.kv, idem.owner, idem, answer, now);
+    if (idem && nonce && this.m) idemSave(this.ctx.storage.kv, idem.owner, idem, sealClaim(answer, nonce), now);
     return { ok: true, value: answer };
   }
 
-  /** The first answer stored for a key (idem.ts's `IdemStore.find`), for the route's verdict. */
-  async idemFind(owner: string, keyHash: string, since: number): Promise<{ bodyHash: string; stored: unknown } | null> {
-    return idemStore<unknown>(this.ctx.storage.kv).find(owner, keyHash, since);
+  /** The first answer stored for a key (idem.ts's `IdemStore.find`), for the route's verdict, its pid derived again. */
+  async idemFind(
+    owner: string,
+    keyHash: string,
+    since: number,
+  ): Promise<{ bodyHash: string; stored: ClaimResponse } | null> {
+    const row = await idemStore<SealedClaim>(this.ctx.storage.kv).find(owner, keyHash, since);
+    if (!row || !this.meta) return null;
+    const stored = await openClaim(row.stored, this.meta.screenRef, this.config().hashPepper);
+    return stored && { bodyHash: row.bodyHash, stored };
   }
 
-  /**
-   * The phone's pick (PAIR-14), and with `approve` the Up Next list in the same call: both events commit in one
-   * storage write. A wrong pick answers `match_wrong`. An approve the machine or the pin refuses leaves the pick
-   * made and answers its error as `approveError`.
-   */
-  async match(
-    pid: string,
-    choice: string,
-    approve?: { items: ItemDraft[]; cookieUser: string | null },
-  ): Promise<Result<MatchResponse>> {
+  /** The phone's pick (PAIR-14). A wrong pick answers `match_wrong`; a repeat after a right one is a no-op. */
+  async match(pid: string, choice: string): Promise<Result<MatchResponse>> {
     const auth = await this.phoneAuth(pid);
     if (!auth.ok) return auth;
     if (!this.m || !this.meta) return fail("screen_gone");
     if (!this.phoneMatches(auth.hash)) return fail("pairing_invalid");
-    const now = Date.now();
-    const pick: Event = { e: "match", now, choice };
-    const pinOk = approve !== undefined && !cookieMismatch(this.m, approve.cookieUser);
-    const then: Event | null = approve
-      ? { e: "approve", now, items: approve.items, minutes: this.sessionMinutes() }
-      : null;
-    const applied = await this.apply(pick, pinOk ? then : null);
+    const applied = await this.apply({ e: "match", now: Date.now(), choice });
     if (!applied.ok) return applied;
     if (!this.phoneMatches(auth.hash)) return { ok: false, error: "match_wrong" };
     const view = this.phoneResult(auth.hash);
-    if (!view.ok) return view;
-    const refused = approve && !pinOk ? "pairing_invalid" : applied.laterError;
-    // After a right pick no pick code can follow, so a refusal is always an ErrorCode.
-    const approveError = refused == null ? null : isErrorCode(refused) ? refused : "internal";
-    return {
-      ok: true,
-      value: { view: view.value, approved: approve !== undefined && approveError === null, approveError },
-    };
+    return view.ok ? { ok: true, value: { view: view.value } } : view;
   }
 
   async listed(pid: string, ids: string[]): Promise<Result<PhoneView>> {
@@ -269,6 +298,7 @@ export class Screen extends DurableObject<Env> implements PairingStore {
       from: "screen",
       seq,
       shown,
+      // transitional: removed in P2 (the screen sends `base` on every report, REL-13; then it is required)
       ...(base === undefined ? {} : { base }),
     };
     return this.screenEvent(sid, ev);
@@ -471,7 +501,15 @@ export class Screen extends DurableObject<Env> implements PairingStore {
     if (evict) evict.ws.serializeAttachment({ ...evict.att, helloBy: now });
     const [client, server] = Object.values(new WebSocketPair()) as [WebSocket, WebSocket];
     this.ctx.acceptWebSocket(server, [role]);
-    server.serializeAttachment({ role, authed: false, helloBy: now + HELLO_MS, ip, net } satisfies SocketAttachment);
+    const id = crypto.randomUUID();
+    server.serializeAttachment({
+      id,
+      role,
+      authed: false,
+      helloBy: now + HELLO_MS,
+      ip,
+      net,
+    } satisfies SocketAttachment);
     // Only the hello timeout: a bare upgrade is no socket event and never moves the close deadline.
     await this.rearm();
     return new Response(null, { status: 101, webSocket: client });
@@ -689,19 +727,12 @@ export class Screen extends DurableObject<Env> implements PairingStore {
     return { ok: true, value: screenView(meta, applied.next, this.config(), Date.now()) };
   }
 
-  /**
-   * Commits one event, runs its effects, re-arms the alarm. See the concurrency rule at the top. `then`, when the
-   * first applied, is applied over it in the same write; its refusal leaves the first committed (`laterError`).
-   */
-  private async apply(ev: Event, then: Event | null = null): Promise<Applied> {
+  /** Commits one event, runs its effects, re-arms the alarm. See the concurrency rule at the top. */
+  private async apply(ev: Event): Promise<Applied> {
     const { m, meta } = this;
     if (!m || !meta) return fail("screen_gone");
-    const cfg = this.config().machine;
-    const first = transition(m, ev, cfg);
-    if (!first.ok) return first;
-    const second = then ? transition(first.next, then, cfg) : null;
-    const step = second?.ok ? { next: second.next, effects: [...first.effects, ...second.effects] } : first;
-    const laterError = second && !second.ok ? second.error : null;
+    const step = transition(m, ev, this.config().machine);
+    if (!step.ok) return step;
     if (step.next !== m) {
       this.m = step.next;
       this.ctx.storage.kv.put("machine", step.next);
@@ -712,7 +743,11 @@ export class Screen extends DurableObject<Env> implements PairingStore {
       this.deps(),
     );
     const after = this.m;
-    if (!after) return { ok: true, collided, next: step.next, minted, laterError }; // closed: storage is gone
+    if (!after) return { ok: true, collided, next: step.next, minted }; // closed: storage is gone
+    // A replayed claim must not answer a pid that no longer pairs, so its row goes with the pairing or the session.
+    if ((m.pairing && !after.pairing) || (after.state === "ended" && m.state !== "ended")) {
+      idemPurge(this.ctx.storage.kv);
+    }
     // Only on the pairing's end: a socket opened later is still unauthed, and its hello earns pairing_invalid.
     if (m.pairing && !after.pairing) this.closePhoneSockets();
     // A demo session that ends gives its slot back at once; the screen may go on and show a new code.
@@ -724,7 +759,7 @@ export class Screen extends DurableObject<Env> implements PairingStore {
     if (!collided && after.state === "waiting" && !after.codes.current && m.state !== "waiting") {
       await this.issueCode();
     }
-    return { ok: true, collided, next: step.next, minted, laterError };
+    return { ok: true, collided, next: step.next, minted };
   }
 
   /** Issues a code; on a Directory collision (about 1 in 1e6) draws again. */

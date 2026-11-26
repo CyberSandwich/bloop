@@ -46,7 +46,8 @@ export interface FileItem {
   derived?: DerivedFlags | null | undefined;
 }
 /** What an item is shown as. */
-export type ItemKind = "deck" | "pdf" | "doc" | "sheet" | "text" | "image" | "video";
+export const ITEM_KINDS = ["deck", "pdf", "doc", "sheet", "text", "image", "video"] as const;
+export type ItemKind = (typeof ITEM_KINDS)[number];
 /** The screen-safe derived flags: exactly these keys (ADR 0015, PAIR-16). */
 export interface DerivedFlags {
   slides: boolean;
@@ -218,15 +219,12 @@ export type Entry = FileEntry | LinkEntry;
 export interface ApproveRequest {
   ids: string[];
 }
-/** `POST /api/match`: the phone's pick, plus Up Next's ids to approve in the same call. */
+/** `POST /api/match`: the phone's pick. */
 export interface MatchRequest {
   choice: string;
-  ids?: string[];
 }
 export interface MatchResponse {
   view: PhoneView;
-  approved: boolean;
-  approveError: ErrorCode | null;
 }
 /** What a screen may ask a link for: an open mode, or a viewer item's bundle. */
 export const LINK_PURPOSES = [...OPEN_MODES, "bundle"] as const;

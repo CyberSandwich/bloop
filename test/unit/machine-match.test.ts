@@ -106,8 +106,30 @@ describe("PAIR-14 match: the phone picks the number on the screen", () => {
     }
   });
 
-  it("PAIR-14 match: outside claimed and choosing it is wrong_state", () => {
+  it("PAIR-14 match: outside claimed and choosing it is wrong_state, except a confirmed pairing in session", () => {
     expect(refused(waiting("live"), { e: "match", now: T0, choice: "42" })).toBe("wrong_state");
+  });
+
+  it("PAIR-14 match retry: a resent match-and-approve after it approved is a no-op for both events", () => {
+    // The phone lost the answer and sends the same pick and the same Up Next again.
+    const listed = must(must(liveClaim(), { e: "match", now: T0 + sec(2), choice: "42" }).next, {
+      e: "listed",
+      now: T0 + sec(3),
+      ids: [lib.ref],
+    }).next;
+    const approve: Event = { e: "approve", now: T0 + sec(4), items: [lib], minutes: MAX_MINUTES };
+    const done = must(listed, approve).next;
+    expect(done.state).toBe("approved");
+    for (const choice of ["42", "17"]) {
+      const again = must(done, { e: "match", now: T0 + sec(5), choice });
+      expect(again.next, choice).toBe(done);
+      expect(again.effects, choice).toEqual([]);
+      const reapproved = must(again.next, { ...approve, now: T0 + sec(5) });
+      expect(reapproved.next, choice).toBe(done);
+      expect(reapproved.effects, choice).toEqual([]);
+    }
+    // Another list is still refused: the no-op covers only the same refs.
+    expect(refused(done, { ...approve, items: [asItem(DECK)] })).toBe("wrong_state");
   });
 });
 

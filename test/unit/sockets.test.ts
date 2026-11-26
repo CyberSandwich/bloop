@@ -16,7 +16,6 @@ import {
   OPEN,
   StateCoalescer,
   screensOf,
-  TAKEOVER_MS,
 } from "../../src/worker/do/sockets.ts";
 import { must, sec, T0, waiting } from "./machine-helpers.ts";
 
@@ -172,18 +171,25 @@ describe("OPEN-02 link binding", () => {
     expect(helloBinding("B", [], T)).toBe("B");
   });
 
-  it("OPEN-02 roaming: a new address takes over once the old socket has missed 2 pings, well before SILENCE_MS", () => {
-    // The lectern moved networks: its old socket (A) still counts as open, quiet since its last ping.
-    expect(TAKEOVER_MS).toBe(MISSED_PINGS * PING_MS);
-    const old = { ip: "A", helloAt: T, heardAt: T };
-    const missed = T + 2 * PING_MS + 1;
-    expect(missed).toBeLessThan(T + SILENCE_MS);
-    expect(helloBinding("B", [old], missed)).toBe("B");
-    expect(bindingIp([old, { ip: "B", helloAt: missed, heardAt: missed }], missed, "B")).toBe("B");
-    // One missed ping is not enough: a lectern that is still talking keeps it.
-    const once = T + 2 * PING_MS - 1;
-    expect(helloBinding("B", [old], once)).toBeNull();
-    expect(bindingIp([old, { ip: "B", helloAt: once, heardAt: once }], once, "A")).toBe("A");
+  it("OPEN-02 roaming: a throttled lectern pinging once a minute keeps the binding; another address takes over only on close or SILENCE_MS", () => {
+    // A background tab throttled to one ping a minute misses the client's own MISSED_PINGS estimate every time.
+    const MINUTE = 60_000;
+    expect(MINUTE).toBeGreaterThan(MISSED_PINGS * PING_MS);
+    expect(MINUTE).toBeLessThan(SILENCE_MS);
+    const attacker = (now: number) => ({ ip: "attacker", helloAt: now, heardAt: now });
+    for (let k = 1; k <= 10; k++) {
+      const lastPing = T + (k - 1) * MINUTE;
+      const now = T + k * MINUTE - 1;
+      const lectern = { ip: "lectern", helloAt: T, heardAt: lastPing };
+      expect(helloBinding("attacker", [lectern], now), `minute ${k}`).toBeNull();
+      expect(bindingIp([lectern, attacker(now)], now, "lectern"), `minute ${k}`).toBe("lectern");
+    }
+    // Silent for the full window: the next live socket takes it.
+    const lectern = { ip: "lectern", helloAt: T, heardAt: T };
+    expect(helloBinding("B", [lectern], T + SILENCE_MS - 1)).toBeNull();
+    expect(helloBinding("B", [lectern], T + SILENCE_MS)).toBe("B");
+    // Closed: the runtime no longer lists it, so the new address binds at once.
+    expect(helloBinding("B", [], T + 1)).toBe("B");
   });
 });
 
@@ -277,7 +283,7 @@ describe("O10 state frames coalesce per socket", () => {
 
   it("O10 leading edge: the first state after a quiet window goes at once; the latest of a burst goes when it closes", () => {
     const c = clock();
-    const s = new StateCoalescer(c.t);
+    const s = new StateCoalescer({ timers: c.t });
     const ws = socket();
     s.state(ws, "v1");
     expect(ws.sent).toEqual(["v1"]);
@@ -297,7 +303,7 @@ describe("O10 state frames coalesce per socket", () => {
 
   it("O10 order: an error or open frame flushes the held state first, so nothing reaches the socket out of order", () => {
     const c = clock();
-    const s = new StateCoalescer(c.t);
+    const s = new StateCoalescer({ timers: c.t });
     const ws = socket();
     s.state(ws, "v1");
     s.state(ws, "v2");
@@ -310,7 +316,7 @@ describe("O10 state frames coalesce per socket", () => {
 
   it("O10 close: closing flushes then clears the timer; a socket already gone gets nothing and leaves no timer", () => {
     const c = clock();
-    const s = new StateCoalescer(c.t);
+    const s = new StateCoalescer({ timers: c.t });
     const [a, b] = [socket(), socket()];
     s.state(a, "a1");
     s.state(a, "a2");
@@ -326,7 +332,7 @@ describe("O10 state frames coalesce per socket", () => {
 
   it("O10 sockets are independent, and a socket that throws on send never throws to the caller", () => {
     const c = clock();
-    const s = new StateCoalescer(c.t);
+    const s = new StateCoalescer({ timers: c.t });
     const [a, b] = [socket(), socket()];
     s.state(a, "a1");
     s.state(b, "b1");
@@ -339,5 +345,27 @@ describe("O10 state frames coalesce per socket", () => {
     expect(() => s.state(broken, "x")).not.toThrow();
     s.state(broken, "y");
     expect(() => c.tick(COALESCE_MS)).not.toThrow();
+  });
+
+  it("O10 key: two wrappers of one socket share a slot, so a burst through either still coalesces and close clears it", () => {
+    const c = clock();
+    // The runtime may hand back a new wrapper for the same socket; the attachment id is the stable key.
+    const wrap = (id: string, sent: string[]) => ({ id, send: (text: string) => void sent.push(text) });
+    const sent: string[] = [];
+    const [first, second] = [wrap("sock-1", sent), wrap("sock-1", sent)];
+    const s = new StateCoalescer<{ id: string; send(t: string): void }>({ timers: c.t, keyOf: (w) => w.id });
+    s.state(first, "v1");
+    s.state(second, "v2");
+    s.state(first, "v3");
+    expect(sent).toEqual(["v1"]);
+    c.tick(COALESCE_MS);
+    expect(sent).toEqual(["v1", "v3"]);
+    c.tick(COALESCE_MS);
+    s.state(second, "v4");
+    s.state(first, "v5");
+    s.gone(second);
+    expect(c.timers.size).toBe(0);
+    c.tick(COALESCE_MS * 2);
+    expect(sent).toEqual(["v1", "v3", "v4"]);
   });
 });
