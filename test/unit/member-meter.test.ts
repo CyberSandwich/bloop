@@ -20,7 +20,7 @@ import {
 vi.mock("cloudflare:workers", () => ({ DurableObject: class {} }));
 
 const ROUTES = fileURLToPath(new URL("../../src/worker/routes/", import.meta.url));
-const MEMBER_PATH = /^\/api\/(me|admin)(\/|$)/;
+const MEMBER_PATH = /^\/api\/(me|admin|uploads)(\/|$)/;
 
 const isRoute = (v: unknown): v is AnyRoute =>
   typeof v === "object" && v !== null && "pattern" in v && "methods" in v && "handler" in v;
@@ -31,7 +31,7 @@ const isRoute = (v: unknown): v is AnyRoute =>
  */
 async function memberRoutes(): Promise<AnyRoute[]> {
   const found: AnyRoute[] = [];
-  const named = (f: string) => /["'`]\/api\/(me|admin)\b/.test(readFileSync(`${ROUTES}${f}`, "utf8"));
+  const named = (f: string) => /["'`]\/api\/(me|admin|uploads)\b/.test(readFileSync(`${ROUTES}${f}`, "utf8"));
   for (const file of readdirSync(ROUTES).filter((f) => f.endsWith(".ts") && named(f))) {
     for (const value of Object.values(await import(`${ROUTES}${file}`)))
       if (Array.isArray(value)) found.push(...value.filter(isRoute));
