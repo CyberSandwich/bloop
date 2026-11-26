@@ -27,7 +27,8 @@ const demo = { mode: "demo", kind: "owner" } as const;
 describe("one list order", () => {
   it("files by name, then links by title, as the machine orders the approved items", () => {
     const items: Item[] = [
-      { kind: "link", id: "t5", url: "https://www.vevox.com/", title: "Vevox" },
+      { kind: "link", id: "t5", url: "https://www.vevox.com/", title: DEMO_ITEMS.link.name },
+      { kind: "link", id: "t10", url: "https://www.youtube.com/watch?v=x", title: DEMO_ITEMS.video.name },
       { kind: "file", id: "t6", name: DEMO_ITEMS.vertical.name, type: "jpg", size: 1 },
       { kind: "file", id: "t7", name: DEMO_ITEMS.horizontal.name, type: "jpg", size: 1 },
       { kind: "file", id: "t8", name: DEMO_ITEMS.deck.name, type: "pptx", size: 1 },
@@ -106,6 +107,11 @@ describe("DEMO-01 what the viewer shows per item", () => {
     expect(thumbOf(tall, demo)).toBe(`/img/${DEMO_ITEMS.vertical.id}-thumb.webp`);
     expect(thumbOf(pdf, demo)).toBeNull();
     expect(thumbOf(link, demo)).toBeNull();
+    // A link's preview is its thumbnail in any mode, whoever looks; a link without one shows the tile.
+    const preview = "/yt/AAAAAAAAAAA.jpg";
+    for (const view of [demo, { mode: "live", kind: "owner" }, { mode: "demo", kind: "guest" }] as const) {
+      expect(thumbOf({ ...link, preview }, view)).toBe(preview);
+    }
     expect(thumbOf(deck, { mode: "demo", kind: "guest" })).toBeNull();
     expect(thumbOf(photo, { mode: "live", kind: "owner" })).toBeNull();
   });

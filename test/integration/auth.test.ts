@@ -3,7 +3,7 @@
 import { createServer, type Server } from "node:http";
 import type { AddressInfo } from "node:net";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
-import { DEMO_ITEMS } from "../../src/shared/demo-catalog.ts";
+import { DEMO_IDS, DEMO_ITEMS } from "../../src/shared/demo-catalog.ts";
 import { MISS_LIMIT } from "../../src/worker/do/directory-rules.ts";
 import { inOneWindow } from "./open-client.ts";
 import { Api, claim, claimOnly, openScreen, startPairing } from "./pairing-client.ts";
@@ -537,12 +537,7 @@ describe("sign-in, sessions and revocation", () => {
       auth: claimed.body.pid,
       headers: sid(session as string),
     });
-    expect(files.body.items.map((f) => f.id)).toEqual([
-      DEMO_ITEMS.deck.id,
-      DEMO_ITEMS.horizontal.id,
-      DEMO_ITEMS.vertical.id,
-      DEMO_ITEMS.link.id,
-    ]);
+    expect(files.body.items.map((f) => f.id)).toEqual(DEMO_IDS);
     demo.socket.close();
   });
 

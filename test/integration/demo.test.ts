@@ -2,7 +2,7 @@
 // the off switch, the per-IP limits and the global cap. The flow runs with TEST_TIMING and a migrated D1; the
 // limits run on instances with the platform bindings live (no TEST_TIMING) or with a tiny cap.
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
-import { DEMO_ITEMS } from "../../src/shared/demo-catalog.ts";
+import { DEMO_IDS, DEMO_ITEMS, DEMO_VIDEO_ID } from "../../src/shared/demo-catalog.ts";
 import { approveDemo, fetchLink, inOneWindow, PROTOCOL_PREFIX, sleep } from "./open-client.ts";
 import { Api, claim, claimOnly, openScreen, PEPPER, startPairing } from "./pairing-client.ts";
 import { startWrangler, type Wrangler } from "./wrangler.ts";
@@ -44,14 +44,9 @@ describe("DEMO-01 isolation: the full demo flow, with no account", () => {
     expect(claimed.body.match).toMatch(/^[0-9]{2}$/);
     await socket.stateWhere((v) => v.state === "claimed" && v.match === claimed.body.match);
 
-    // The demo catalog: the deck, two photos and one link (LINK-01: it passed the allowlist to be listed).
+    // The demo catalog: the deck, two photos and the links (LINK-01: each passed the allowlist to be listed).
     const files = await api.get<{ items: { id: string }[] }>("/api/files", claimed.body.pid);
-    expect(files.body.items.map((f) => f.id)).toEqual([
-      DEMO_ITEMS.deck.id,
-      DEMO_ITEMS.horizontal.id,
-      DEMO_ITEMS.vertical.id,
-      DEMO_ITEMS.link.id,
-    ]);
+    expect(files.body.items.map((f) => f.id)).toEqual(DEMO_IDS);
 
     const approved = await api.post("/api/approve", { ids: [DEMO_ITEMS.deck.id] }, { auth: claimed.body.pid });
     expect(approved.status).toBe(200);
@@ -93,9 +88,9 @@ describe("DEMO-01 isolation: the full demo flow, with no account", () => {
     const { screen, socket, code } = await openScreen(api, "demo");
     const pid = (await claim(api, code)).body.pid;
     await api.get("/api/files", pid);
-    const ids = [DEMO_ITEMS.link.id, DEMO_ITEMS.vertical.id, DEMO_ITEMS.horizontal.id, DEMO_ITEMS.deck.id];
+    const ids = [...DEMO_IDS].reverse();
     expect((await api.post("/api/approve", { ids }, { auth: pid })).status).toBe(200);
-    // Items are files by name, then links: 0 the deck, 1 the horizontal photo, 2 the vertical photo, 3 the link. The first file launches.
+    // Items are files by name, then links by title: 0 the deck, 1 the horizontal photo, 2 the vertical photo, 3 the video link, 4 the other link. The first file launches.
     const first = await socket.waitFor((f) => f.t === "open");
     expect(first.item).toBe(0);
     const firstLinks = first.links as { protocol: string | null; view: string | null };
@@ -132,13 +127,23 @@ describe("DEMO-01 isolation: the full demo flow, with no account", () => {
     expect(deck.body.links.protocol).toMatch(/^ms-powerpoint:ofv\|u\|.*\.pptx$/);
 
     // A link item never becomes a /f/ link, and an index past the list names nothing (PAIR-11).
-    expect((await mint({ purpose: "protocol", item: 3 })).body).toMatchObject({ code: "file_not_found" });
+    for (const item of [3, 4]) {
+      expect((await mint({ purpose: "protocol", item })).body).toMatchObject({ code: "file_not_found" });
+      expect((await mint({ purpose: "view", item })).body).toMatchObject({ code: "file_not_found" });
+    }
     expect((await mint({ purpose: "protocol", item: 11 })).body).toMatchObject({ code: "file_not_found" });
     expect((await mint({ purpose: "download", item: 12 })).status).toBe(400);
 
     const state = await api.get<{ items: { kind: string }[] }>("/api/screen/state", screen.sid);
-    expect(state.body.items.map((i) => i.kind)).toEqual(["file", "file", "file", "link"]);
+    expect(state.body.items.map((i) => i.kind)).toEqual(["file", "file", "file", "link", "link"]);
     expect(state.body.items[3]).toEqual({
+      kind: "link",
+      id: DEMO_ITEMS.video.slot,
+      url: `https://www.youtube.com/watch?v=${DEMO_VIDEO_ID}`,
+      title: DEMO_ITEMS.video.name,
+      preview: `/yt/${DEMO_VIDEO_ID}.jpg`,
+    });
+    expect(state.body.items[4]).toEqual({
       kind: "link",
       id: DEMO_ITEMS.link.slot,
       url: "https://www.vevox.com/",

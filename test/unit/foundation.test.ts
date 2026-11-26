@@ -94,6 +94,16 @@ describe("v4 configuration", () => {
     expect(config().library.r2DevEndpoint).toBeNull();
   });
 
+  it("PREVIEW-01 YT_THUMB_ORIGIN is refused on a deployed origin, allowed on a local one, and defaults to i.ytimg.com", () => {
+    expect(problems({ YT_THUMB_ORIGIN: "http://127.0.0.1:9000" })).toEqual([
+      "YT_THUMB_ORIGIN: refused: PUBLIC_ORIGIN is not a local address",
+    ]);
+    const local = { PUBLIC_ORIGIN: "http://localhost:8787", TEST_TIMING: "0" };
+    expect(config({ ...local, YT_THUMB_ORIGIN: "http://127.0.0.1:9000" }).thumbOrigin).toBe("http://127.0.0.1:9000");
+    expect(config({ ...local, YT_THUMB_ORIGIN: "" }).thumbOrigin).toBe("https://i.ytimg.com");
+    expect(config().thumbOrigin).toBe("https://i.ytimg.com");
+  });
+
   it("no variable is declared in two config groups, where the later spread would silently win", () => {
     const keys = [coreVars, libraryVars, accountVars, spendVars].flatMap((group) => Object.keys(group));
     expect(keys.filter((key, i) => keys.indexOf(key) !== i)).toEqual([]);
@@ -101,7 +111,7 @@ describe("v4 configuration", () => {
 
   it("wrangler.jsonc never sets a test-only variable", () => {
     const live = stripJsonComments(readFileSync(new URL("../../wrangler.jsonc", import.meta.url), "utf8"));
-    expect(live).not.toMatch(/"(R2_DEV_ENDPOINT|DEV_MAILBOX|TEST_TIMING)"\s*:/);
+    expect(live).not.toMatch(/"(R2_DEV_ENDPOINT|DEV_MAILBOX|TEST_TIMING|YT_THUMB_ORIGIN)"\s*:/);
     expect(live).not.toMatch(/"CONVERT_MODE"\s*:\s*"stub"/);
   });
 

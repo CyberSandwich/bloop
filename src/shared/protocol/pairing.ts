@@ -66,6 +66,8 @@ export interface LinkItem {
   id: string; // as on FileItem
   url: string;
   title: string;
+  /** A same-origin path to a thumbnail picture (PREVIEW-01), never an absolute or third-party URL. */
+  preview?: string;
 }
 export type Item = FileItem | LinkItem;
 

@@ -3,10 +3,8 @@
 
 const PROTOCOL_PREFIX = "ms-powerpoint:ofv|u|";
 
-// The demo account's catalog: the one owner of its names and the deck's page count. src/shared/demo-catalog.ts derives
-// the ids and slots the Worker and the tests use; test/unit/demo-catalog-rules.test.ts fails a literal copy.
-/** In list order: files A to Z, then links. A phone is given slots i1.. in this order. */
-export const DEMO_NAMES = ["Deck.pptx", "Horizontal.jpg", "Vertical.jpg", "Vevox"];
+// The demo account's item names are owned by src/shared/demo-catalog.ts (kept out of the pages' first load); this
+// module owns the deck's page count and the id slug.
 /** The deck's pre-rendered page count: public/img/demo-slide-1..N (tools/render-slides.py). */
 export const DECK_PAGES = 5;
 export const demoId = (/** @type {string} */ name) => `demo-${name.split(".")[0]?.toLowerCase()}`;
@@ -68,11 +66,13 @@ export const pagesOf = (item, view) =>
   view.mode === "demo" && view.kind === "owner" && item.kind === "file" && item.type === "pptx" ? SLIDES : null;
 
 /**
- * A demo account's row thumbnail: page 1 of the deck, the photo's own thumbnail; null shows the type tile.
+ * A row's thumbnail: a link's same-origin preview; in a demo account page 1 of the deck, the photo's own thumbnail;
+ * null shows the type tile.
  * @param {Item} item
  * @param {{mode: Mode, kind: string | null}} view
  */
 export function thumbOf(item, view) {
+  if (item.kind === "link") return item.preview ?? null;
   if (pagesOf(item, view)) return `${SLIDES[0]}.webp`;
   return view.mode === "demo" && view.kind === "owner" && item.kind === "file" && item.type === "jpg"
     ? `/img/${demoId(item.name)}-thumb.webp`
