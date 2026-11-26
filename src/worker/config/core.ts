@@ -144,8 +144,8 @@ export const coreVars = {
       "Guest policy for live rooms: off, open (no host, no pass) or pass (a pass is required). Every drop waits for the Open click on the screen.",
     ),
   GUEST_MAX_BYTES: int(1, PLATFORM_BODY_CAP)
-    .default(94_371_840)
-    .describe("Largest guest upload in bytes; at most the platform's 100 MB request body cap."),
+    .default(26_214_400)
+    .describe("Largest guest upload in bytes as one request body: 25 MB, past which a long streamed PUT is not served."),
   DEMO_GUEST_MAX_BYTES: int(1, PLATFORM_BODY_CAP)
     .default(26_214_400)
     .describe("Largest guest upload in a demo room, in bytes."),

@@ -1,3 +1,4 @@
+import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 import { cleanName, MAX_DISPLAY } from "../../public/js/shared/names.js";
 import { configFor } from "../../src/worker/config.ts";
@@ -57,14 +58,21 @@ describe("DROP-01 size: configuration", () => {
   };
   const parse = (extra: Record<string, string>) => configFor({ ...env, ...extra });
 
-  it("DROP-01 defaults to 90 MB live and 25 MB demo for every type, and a 5 GiB budget", () => {
+  it("DROP-01 defaults to 25 MB live and demo for every type, and a 5 GiB budget", () => {
     const parsed = parse({});
     if (!parsed.ok) throw new Error(parsed.problems.join());
     expect(parsed.config).toMatchObject({
-      guestMaxBytes: 94_371_840,
+      guestMaxBytes: 26_214_400,
       demoGuestMaxBytes: 26_214_400,
       guestStorageBudgetBytes: 5_368_709_120,
     });
+  });
+
+  it("DROP-01 cap: the deployed single-PUT cap is at most 25 MB (a 60 MB streamed PUT was killed by the platform)", () => {
+    const vars = readFileSync(new URL("../../wrangler.jsonc", import.meta.url), "utf8");
+    const live = Number(/"GUEST_MAX_BYTES":\s*"(\d+)"/.exec(vars)?.[1]);
+    expect(live).toBeGreaterThan(0);
+    expect(live).toBeLessThanOrEqual(25 * 1024 * 1024);
   });
 
   it("refuses a cap over the platform's 100 MB body limit", () => {
