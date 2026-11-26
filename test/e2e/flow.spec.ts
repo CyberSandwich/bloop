@@ -3772,7 +3772,7 @@ test.describe("NOTES-01 phone-only: the presenter's notes on the phone (design.m
     await s.next();
     await expect(s.box).toContainText(opening(NOTES[1] ?? ""));
     const html = await s.screen.page.content();
-    const text = (await s.screen.page.locator("body").innerText()) + html;
+    const text = ((await s.screen.page.locator("body").textContent()) ?? "") + html;
     // A word or two could also be on the screen by chance: only notes long enough to be only a note.
     const openings = NOTES.filter((n) => n.length >= 24).map(opening);
     expect(openings.length).toBeGreaterThan(0);
