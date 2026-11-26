@@ -2,7 +2,7 @@ name: shots
 
 on:
   push:
-    branches: [ci/u-pill-shots]
+    branches: [ci/u-pill-shots2]
 
 permissions:
   contents: write
@@ -27,4 +27,4 @@ jobs:
           git config user.email "shots@users.noreply.github.com"
           mkdir -p shots && cp -r test-results/shots/. shots/ && git add -f shots
           git commit -m "shots: images" || exit 0
-          git push origin HEAD:ci/u-pill-shots
+          git push origin HEAD:ci/u-pill-shots2
