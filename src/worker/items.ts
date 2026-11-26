@@ -3,7 +3,17 @@
 import { z } from "zod";
 import { pagesOf } from "../../public/js/core/demo.js";
 import { orderItems as byLabel, tuneOf } from "../../public/js/shared/session.js";
-import type { FileType, Item, ItemKind, Kind, Mode, OpenMode, Shown } from "../shared/protocol.ts";
+import type {
+  DerivedFlags,
+  FileType,
+  Item,
+  ItemKind,
+  Kind,
+  Mode,
+  OpenMode,
+  PhoneItemExtra,
+  Shown,
+} from "../shared/protocol.ts";
 import type { FileRef } from "./machine.ts";
 
 /** A web link the source offered. `url` is what `allowedLink` answered, never the raw input (LINK-01). */
@@ -60,14 +70,43 @@ const KINDS: Readonly<Record<FileType, ItemKind>> = {
 /** What a file of this type is shown as: derived on the server, never taken from a client. */
 export const kindOf = (type: FileType): ItemKind => KINDS[type];
 
+/** The viewer an item opens in: the stored kind, or its type's for an item stored before kinds were. */
+export const showOf = (file: FileRef): ItemKind => file.show ?? kindOf(file.type);
+
+const MAX_FONTS = 50;
+const MAX_FONT_CHARS = 100;
+const isRecord = (v: unknown): v is Record<string, unknown> => typeof v === "object" && v !== null && !Array.isArray(v);
+const exactKeys = (v: Record<string, unknown>, keys: readonly string[]): boolean =>
+  Object.keys(v).length === keys.length && keys.every((k) => k in v);
+
+/** Exactly the four screen-safe flags (PAIR-16): any other key, or a value of another type, fails. */
+export const validDerived = (v: unknown): v is DerivedFlags =>
+  isRecord(v) &&
+  exactKeys(v, ["slides", "pdf", "pages", "motion"]) &&
+  typeof v.slides === "boolean" &&
+  typeof v.pdf === "boolean" &&
+  typeof v.motion === "boolean" &&
+  (v.pages === null || (Number.isSafeInteger(v.pages) && (v.pages as number) >= 1));
+
+/** The phone-only extras: a notes flag and at most 50 font names of at most 100 characters each. */
+export const validExtra = (v: unknown): v is PhoneItemExtra =>
+  isRecord(v) &&
+  exactKeys(v, ["notes", "fontsMissing"]) &&
+  typeof v.notes === "boolean" &&
+  Array.isArray(v.fontsMissing) &&
+  v.fontsMissing.length <= MAX_FONTS &&
+  v.fontsMissing.every((f) => typeof f === "string" && f.length <= MAX_FONT_CHARS);
+
+/** Up Next's list: at least one file, every file a library file, links beside them or not. */
+export const isUpNext = (items: readonly ItemDraft[]): boolean =>
+  items.some((i) => i.kind === "file") && items.every((i) => i.kind === "link" || i.source === "library");
+
 /**
- * The order a session stores. A list whose files are all library files, links beside them or not, is Up Next's and
- * keeps the caller's order (ADR 0009); any other list, links alone included, is files by name, then links by title.
+ * The order a session stores. Up Next's list keeps the caller's order (ADR 0009); any other list, links alone
+ * included, is files by name, then links by title.
  */
 export function orderItems<T extends ItemDraft>(items: readonly T[]): T[] {
-  const upNext =
-    items.some((i) => i.kind === "file") && items.every((i) => i.kind === "link" || i.source === "library");
-  return upNext ? [...items] : byLabel(items);
+  return isUpNext(items) ? [...items] : byLabel(items);
 }
 
 /** The id an item holds from approval on: its place in the approved list, written once and never recomputed. */
@@ -89,9 +128,9 @@ export const fileById = (items: readonly ItemRef[], id: string): FileItemRef | n
   return item?.kind === "file" ? item : null;
 };
 
-/** How many pages a file shows: the demo account's pre-rendered pages for a deck or PDF, else one. */
+/** How many pages a file shows: its converted pages, the demo account's pre-rendered ones for a deck or PDF, else one. */
 export const pageCount = (file: FileItemRef, view: { mode: Mode; kind: Kind | null }): number =>
-  pagesOf(itemView(file), view)?.length ?? 1;
+  file.derived?.pages ?? pagesOf(itemView(file), view)?.length ?? 1;
 
 /** A bound, not a page count: `shownFault` checks the item's real pages. */
 const MAX_PAGE = 1000;
@@ -104,13 +143,15 @@ export const shownSchema = z
     present: z.boolean(),
     play: z.boolean().optional(),
     sound: z.enum(["on", "off", "blocked"]).optional(),
+    via: z.enum(["viewer", "app"]).optional(),
   })
   .strict();
 
 /**
  * Why `shown` cannot stand in this session, or null when it can: the item must be a FILE in the list by id, so a link
  * (LINK-01) or an unknown id (PAIR-11) is `file_not_found`, and the page must be one of the item's. `link` also takes a
- * link's id, at page 1: the screen's own report that it shows a link card, never a command to open one.
+ * link's id, at page 1: the screen's own report that it shows a link card, never a command to open one. `via` is only
+ * for a deck that has converted slides, the one item a viewer and an app can both show.
  */
 export function shownFault(
   items: readonly ItemRef[],
@@ -121,6 +162,9 @@ export function shownFault(
   const item = items.find((i) => i.id === shown.item);
   if (!item || (item.kind === "link" && !link)) return "file_not_found";
   const { page } = shown;
+  if (shown.via !== undefined && !(item.kind === "file" && showOf(item) === "deck" && item.derived?.slides)) {
+    return "bad_request";
+  }
   return Number.isInteger(page) && page >= 1 && page <= (item.kind === "file" ? pageCount(item, view) : 1)
     ? null
     : "bad_request";
@@ -132,6 +176,7 @@ export const sameShown = (a: Shown | null, b: Shown): boolean =>
   a.item === b.item &&
   a.page === b.page &&
   a.present === b.present &&
+  a.via === b.via &&
   tuneOf(a).play === tuneOf(b).play &&
   tuneOf(a).sound === tuneOf(b).sound;
 

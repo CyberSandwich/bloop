@@ -1,7 +1,7 @@
 // What the sub-reducers share: the step constructors, the clock units, a new session and how a session ends.
-import type { EndReason, ErrorCode, SessionState } from "../../shared/protocol.ts";
+import type { EndReason, SessionState } from "../../shared/protocol.ts";
 import type { FileItemRef, ItemRef } from "../items.ts";
-import type { Effect, Machine, MachineConfig, Step } from "../machine.ts";
+import type { Effect, Machine, MachineConfig, MachineError, Step } from "../machine.ts";
 
 export type Actor = "screen" | "phone" | "system";
 export type Session = NonNullable<Machine["session"]>;
@@ -9,9 +9,27 @@ export type Session = NonNullable<Machine["session"]>;
 export const PRE_APPROVAL: readonly SessionState[] = ["claimed", "choosing", "uploading", "offered"];
 export const SECOND = 1000;
 export const MINUTE = 60 * SECOND;
+/** An approved session that shows or fetches nothing in this long is a failed start (REL-16). */
+export const START_SECONDS = 15;
+
+/** A live pairing whose phone has not picked the match yet: every owner or guest action waits for it (PAIR-14). */
+export const unconfirmed = (m: Machine): boolean => m.mode === "live" && m.pairing?.confirmed === false;
+
+/**
+ * The session's first sign of life: `startedAt` set once, and the one ok data point while the start was awaited. A
+ * start after a recorded failure sets `startedAt` and writes nothing, so a session writes at most one point.
+ */
+export function withStart(session: Session, now: number): { session: Session; effects: Effect[] } {
+  if (session.startedAt != null || session.approvedAt == null) return { session, effects: [] };
+  const awaited = session.startBy != null;
+  return {
+    session: { ...session, startedAt: now, startBy: null },
+    effects: awaited ? [{ fx: "start", ok: true, cause: null }] : [],
+  };
+}
 
 export const ok = (next: Machine, effects: Effect[] = []): Step => ({ ok: true, next, effects });
-export const fail = (error: ErrorCode): Step => ({ ok: false, error });
+export const fail = (error: MachineError): Step => ({ ok: false, error });
 export const closeAtFor = (sockets: number, now: number, cfg: MachineConfig): number | null =>
   sockets === 0 ? now + cfg.closeAfterSeconds * SECOND : null;
 
@@ -60,6 +78,7 @@ export function endSession(m: Machine, now: number, cfg: MachineConfig, reason: 
     codes: { current: null, previous: null },
     pairing: { ...m.pairing, listed: [], userId: null, passHash: null },
     session: null,
+    upload: null,
     uploadAt: null,
     offerAt: null,
     endedAt: now,

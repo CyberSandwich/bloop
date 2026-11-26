@@ -2,7 +2,7 @@
 // drive it with fakes. Each effect maps to one seam; the stubs are replaced by their modules.
 import type { LinkResponse, OpenMode } from "../../shared/protocol.ts";
 import type { AuditEvent, AuditLog } from "../audit.ts";
-import type { Effect, FileRef, Machine } from "../machine.ts";
+import type { Effect, FileRef, Machine, StartCause } from "../machine.ts";
 import type { Metrics } from "../metrics.ts";
 import type { CodeDirectory } from "../seams/pairing.ts";
 import type { Meta } from "../views.ts";
@@ -14,6 +14,8 @@ export interface SessionSeams {
   revokeLinks(): Promise<void>;
   /** Deletes a guest object and drops any in-memory access token. `file` is null when none was stored yet. */
   purge(input: { sessionId: string | null; file: FileRef | null }): Promise<void>;
+  /** One start data point (REL-16): the mode, ok and a cause, nothing that names a person. R's writer fills it (R9). */
+  start(input: { mode: Meta["mode"]; ok: boolean; cause: StartCause | null }): Promise<void>;
 }
 
 export const noopSeams: SessionSeams = {
@@ -22,6 +24,7 @@ export const noopSeams: SessionSeams = {
   },
   async revokeLinks() {},
   async purge() {},
+  async start() {},
 };
 
 export interface EffectDeps {
@@ -158,6 +161,9 @@ export async function runEffects(
             }),
           );
         }
+        break;
+      case "start":
+        await bestEffort(deps.seams.start({ mode: meta.mode, ok: fx.ok, cause: fx.cause }));
         break;
       case "deleteAll":
         await deps.deleteAll();
