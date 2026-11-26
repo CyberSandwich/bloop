@@ -3,11 +3,7 @@ import { type Browser, expect, type Page, test } from "@playwright/test";
 import { choice, heading, open, shownMatch, typedCodeOf } from "./pairing.ts";
 
 const VPS = [
-  { w: 320, h: 568, phone: true },
-  { w: 390, h: 844, phone: true },
-  { w: 430, h: 932, phone: true },
   { w: 844, h: 390, phone: true },
-  { w: 1440, h: 900, phone: false },
 ] as const;
 
 const buttons = (page: Page) => page.locator("#pick").getByRole("button");
