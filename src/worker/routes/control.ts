@@ -9,6 +9,7 @@ import { MIN_LENGTH_SECONDS } from "../../../public/js/shared/length.js";
 import type { ShownCommand } from "../../shared/protocol.ts";
 import type { Config } from "../config.ts";
 import { json } from "../http.ts";
+import { idempotency } from "../idem.ts";
 import { sha256Hex } from "../ids.ts";
 import { shownSchema } from "../items.ts";
 import { type Route, route } from "../router.ts";
@@ -39,7 +40,12 @@ const lengthBody = (config: Config) =>
     })
     .strict();
 
-type Call<B, T> = (stub: ReturnType<typeof screenStub>, credential: string, body: B) => Promise<Result<T>>;
+type Call<B, T> = (
+  stub: ReturnType<typeof screenStub>,
+  credential: string,
+  body: B,
+  sent: { request: Request; text: string },
+) => Promise<Result<T>>;
 
 /**
  * One session write from a credential holder. `RL_CONTROL` is the controls' own binding, so a video's range reads on
@@ -53,6 +59,7 @@ const control = <B, T>(path: string, body: (config: Config) => z.ZodType<B>, cal
     path,
     "api",
     withConfig(async (request, env, config) => {
+      const text = await request.clone().text();
       const parsed = await write(request, config, body(config));
       if (!parsed.ok) return parsed.response;
       const tooMany = await limited(env, "RL_CONTROL", request, config);
@@ -63,7 +70,7 @@ const control = <B, T>(path: string, body: (config: Config) => z.ZodType<B>, cal
         async (stub, credential): Promise<Result<T>> =>
           (await limited(env, "RL_CONTROL", request, config, await sha256Hex(credential)))
             ? { ok: false, error: "rate_limited" }
-            : call(stub, credential, parsed.value),
+            : call(stub, credential, parsed.value, { request, text }),
         (view) => json(view),
       );
     }),
@@ -78,6 +85,15 @@ export const controlRoutes: readonly Route[] = [
   control(
     "/api/match",
     () => matchBody,
-    (stub, pid, { choice }) => stub.match(pid, choice),
+    async (stub, pid, { choice }, { request, text }) => {
+      // A retried pick answers as the first did (REL-14); the Screen scopes the key to this pairing.
+      const idem = await idempotency(request, text, "pairing", {
+        find: (_owner, keyHash, since) => stub.matchIdemFind(pid, keyHash, since),
+      });
+      if (idem.kind === "bad" || idem.kind === "conflict") return { ok: false, error: "bad_request" };
+      if (idem.kind === "replay") return { ok: true, value: idem.stored };
+      const fresh = idem.kind === "fresh" ? { keyHash: idem.keyHash, bodyHash: idem.bodyHash } : undefined;
+      return stub.match(pid, choice, fresh);
+    },
   ),
 ];
