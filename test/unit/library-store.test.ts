@@ -29,12 +29,14 @@ const ids = (n: number, prefix = "f") => Array.from({ length: n }, (_, i) => `${
 describe("LIB-01 idor sql: every library_file statement binds the owner", () => {
   const dir = fileURLToPath(new URL("../../src/worker/library/", import.meta.url));
   const sources = readdirSync(dir)
-    .filter((f) => f.endsWith(".ts"))
+    // hold.ts is the one admin-side reader: a report names file ids across owners, so it selects by id alone.
+    .filter((f) => f.endsWith(".ts") && f !== "hold.ts")
     .map((f) => readFileSync(dir + f, "utf8"));
   const literals = sources.flatMap((s) => s.match(/`[^`]*library_file[^`]*`|"[^"\n]*library_file[^"\n]*"/g) ?? []);
   /** Constants that carry the owner's bind (user_id = ?1), which a statement may interpolate instead of naming it. */
   const OWNER_BOUND = ["OWNED", "SELECTED_SQL", "SELECTED_COUNT", "due", "SERVABLE_SQL"];
-  const holdsOwner = (l: string) => l.includes("user_id") || OWNER_BOUND.some((c) => l.includes(`\${${c}}`));
+  // `user_id = ?n` is the owner bound to a parameter; a column named in a select list or a join does not count.
+  const holdsOwner = (l: string) => /\buser_id = \?\d/.test(l) || OWNER_BOUND.some((c) => l.includes(`\${${c}}`));
 
   it("finds the statements it guards", () => {
     expect(literals.length).toBeGreaterThan(8);
@@ -489,6 +491,11 @@ describe("LIB-06 names: rename", () => {
     ["pair \u{1F468}‍\u{1F469}", "pdf", "pair \u{1F468}‍\u{1F469}.pdf"],
     ["x".repeat(195), "pdf", "x".repeat(195) + ".pdf"],
     ["x".repeat(197), "pdf", null],
+    ["lone\ud800", "pdf", null],
+    ["lone\udc00x", "pdf", null],
+    // The limit counts characters, not UTF-16 units: 150 emoji and ".pdf" are 154 characters, 304 units.
+    ["\u{1F600}".repeat(150), "pdf", `${"\u{1F600}".repeat(150)}.pdf`],
+    ["\u{1F600}".repeat(197), "pdf", null],
   ];
   it.each(table)("%j.%s -> %j", async (base, ext, want) => {
     const db = libWith();

@@ -21,6 +21,7 @@ const refused = (c: number): boolean =>
   c === 0x2029 ||
   (c >= 0x202a && c <= 0x202e) ||
   (c >= 0x2066 && c <= 0x2069) ||
+  (c >= 0xd800 && c <= 0xdfff) ||
   c === 0x2f ||
   c === 0x5c;
 
@@ -31,14 +32,16 @@ const refused = (c: number): boolean =>
 export function renamed(base: string, ext: string): string | null {
   const stem = base.normalize("NFC").trim();
   const name = `${stem}.${ext}`;
-  if (stem === "" || name.length > MAX_NAME_CHARS) return null;
-  for (let i = 0; i < stem.length; i++) if (refused(stem.charCodeAt(i))) return null;
+  if (stem === "" || Array.from(name).length > MAX_NAME_CHARS) return null;
+  for (const c of stem) if (refused(c.codePointAt(0) as number)) return null;
   return name;
 }
 
 /** Characters Windows refuses in a file name, besides the ones `refused` covers. */
 const WINDOWS_NAME_CHARS = new Set([":", "<", ">", '"', "|", "?", "*"]);
-const WINDOWS_RESERVED = /^(con|prn|aux|nul|com[1-9]|lpt[1-9])$/i;
+/** Windows reads the part before the first dot as the device name, so `CON.tar.gz` is one too. */
+const WINDOWS_RESERVED = /^(con|prn|aux|nul|com[1-9]|lpt[1-9]|conin\$|conout\$)$/i;
+const isReservedStem = (stem: string): boolean => WINDOWS_RESERVED.test((stem.split(".", 1)[0] ?? "").trim());
 export const EXPORT_NAME_BYTES = 200;
 const MAX_EXPORT_EXT = 10;
 const utf8 = new TextEncoder();
@@ -73,7 +76,7 @@ export function exportPath(folder: "Files" | "Trash", name: string, used: Set<st
   const stem = cleaned(hasExt ? normal.slice(0, dot) : normal)
     .replace(/^ +/, "")
     .replace(/[. ]+$/, "");
-  const base = WINDOWS_RESERVED.test(stem) ? `_${stem}` : stem === "" ? "file" : stem;
+  const base = isReservedStem(stem) ? `_${stem}` : stem === "" ? "file" : stem;
   for (let n = 1; ; n++) {
     const suffix = n === 1 ? "" : ` (${n})`;
     const room = EXPORT_NAME_BYTES - utf8.encode(ext + suffix).length;

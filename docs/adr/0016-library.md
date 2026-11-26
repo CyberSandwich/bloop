@@ -21,12 +21,12 @@ Status: proposed. Data model: ADR 0013. Serving and pairing: ADR 0015. Behavior 
 
 ### Trash and purge
 - Trash sets `trashed_at` and `purge_after`. The purge takes `purge_after <= now`; a restore needs `purge_after > now + 5 minutes`. The two sets never meet, so there is no claim column and clock skew under 5 minutes cannot resurrect a row whose bytes are gone. Delete Now and Empty Trash set `purge_after` to the past, which closes restore at once.
-- A purge pass deletes the file's R2 prefix `u/<uid>/<fid>/` in rounds of 1,000 (so unrecorded keys go too), releases the user's bytes once with a guarded batch, marks the row `purged`, and deletes the prefix a second time after the converter's lease window, because a put that was already awaiting can land after the first pass (arch 9b). Bytes go before rows.
-- The Durable Object alarm runs the user's due purges (`kickPurge`) and re-arms while more are due; the daily cron runs them for everyone. Both are idempotent.
+- A purge pass deletes the file's R2 prefix `u/<uid>/<fid>/` in rounds of 1,000 (so unrecorded keys go too), releases the user's bytes once with a guarded batch, marks the row `purged` in one guarded claim that a pending hold refuses, then deletes the prefix, and deletes it a second time after the converter's lease window, because a put that was already awaiting can land after the first pass (arch 9b). The claim comes before the bytes so a hold that starts later finds the file gone and says so; the rows go last.
+- The Durable Object alarm runs the user's due purges (`kickPurge`) and re-arms while more are due; the hourly cron runs them for everyone, and the daily run adds the scans. Both are idempotent.
 
 ### Account purge and the hold
-- ADR 0013's steps 0 to 5, resumed by the daily job, plus a second prefix delete once a tombstone passes its resweep time. A live NCA hold, or a suspension, blocks the claim.
-- A hold copies the original to the library bucket's `h/<holdId>`, never the guest bucket (its 1-day expiry is bucket-wide), after writing its `hold` row. Holds sit outside `u/` and `purged/`, so no purge touches them.
+- ADR 0013's steps 0 to 5, resumed by the hourly job, plus a second prefix delete once a tombstone passes its resweep time. A hold whose copy is still pending, or a suspension, blocks the claim; an inactivity deletion also needs the user to be unseen since the warning.
+- A hold copies the original to the library bucket's `h/<holdId>`, never the guest bucket (its 1-day expiry is bucket-wide). Its `hold` row is written once the source is known to exist, pending until the copy is made (`copied_at`), and a source that is gone leaves no row. Holds sit outside `u/` and `purged/`, so no purge touches them.
 
 ### Export
 - A STORE-only zip with each entry's real CRC and size in its local header (U computes the CRC at upload, so no file byte is hashed), no data descriptors, Zip64 only for offsets and the end records. The whole archive is a pure function of the snapshot, so `Content-Length`, `ETag` and `Range` resume are exact (O18). A disabled file is listed but its bytes are left out.

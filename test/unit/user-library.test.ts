@@ -5,6 +5,7 @@ import { SCHEMA_KEY } from "../../src/worker/do/schema.ts";
 import {
   allProgress,
   clearProgress,
+  closeSessionSockets,
   dropScreens,
   endScreenRow,
   endScreenRows,
@@ -139,6 +140,20 @@ describe("live screens", () => {
     fileIds: ["a", "b"],
     startedAt,
     endsAt: null,
+  });
+
+  it("closeSessions: closes every socket of each named session once, ignores repeats and unknown ids", () => {
+    const closed: string[] = [];
+    const sock = (name: string) => ({ close: (code: number) => void closed.push(`${name}:${code}`) });
+    const byTag: Record<string, ReturnType<typeof sock>[]> = {
+      "s:a": [sock("a1"), sock("a2")],
+      "s:b": [sock("b1")],
+    };
+    const sockets = { getWebSockets: (tag: string) => byTag[tag] ?? [] };
+    expect(closeSessionSockets(sockets, ["a", "a", "nope"], 4001)).toBe(2);
+    expect(closed).toEqual(["a1:4001", "a2:4001"]);
+    expect(closeSessionSockets(sockets, [], 4001)).toBe(0);
+    expect(closeSessionSockets(sockets, ["b"], 4001)).toBe(1);
   });
 
   it("S1: a row is ended only when its Screen confirms; a refusal or a throw leaves it live and counted out", async () => {
