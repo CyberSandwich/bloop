@@ -33,7 +33,7 @@ for (const [width, height] of SIZES) {
     await screen.waitForTimeout(600);
     await screen.screenshot({ path: `test-results/shots/deck-${width}-slide1.png` });
     for (let n = 2; n <= 7; n++) {
-      await screen.keyboard.press("ArrowRight");
+      await screen.getByRole("button", { name: "Next Slide" }).click();
       await expect(screen.getByRole("img", { name: new RegExp(`^Slide ${n} of 7$`) })).toBeVisible();
       await screen.waitForTimeout(400);
       if (n === 4 || n === 7) await screen.screenshot({ path: `test-results/shots/deck-${width}-slide${n}.png` });
