@@ -34,7 +34,7 @@ const glyphOf = (name) =>
  * @param {{focus: () => void} | null} [options.trigger] what opened the upload: it takes the focus when the pill leaves
  */
 export async function mountUploads({ maxMB, upNext = null, host = document.body, trigger = null } = {}) {
-  const [{ createUploader }, { formatBytes }, { pill, CLOSE }, { toast }] = await Promise.all([
+  const [{ createUploader }, { formatBytes, percent, statusWord }, { pill, CLOSE }, { toast }] = await Promise.all([
     import("./upload.js"),
     import("./upload-format.js"),
     import("./pill.js"),
@@ -93,9 +93,8 @@ export async function mountUploads({ maxMB, upNext = null, host = document.body,
     return node;
   };
   /** @param {string} label @param {() => void} run @param {string} [name] the accessible name, when the label is not enough */
-  const button = (label, run, name) => {
-    const b = el("button", { class: "btn text up-act", type: "button" }, [label]);
-    if (name) b.setAttribute("aria-label", name);
+  const button = (label, run, name = label) => {
+    const b = el("button", { class: "btn text up-act", type: "button", "aria-label": name }, [label]);
     b.addEventListener("click", run);
     return b;
   };
@@ -168,9 +167,6 @@ export async function mountUploads({ maxMB, upNext = null, host = document.body,
     return peak;
   }
 
-  /** @param {number} fraction @returns {string} the whole percent, "42%" */
-  const percent = (fraction) => `${Math.round(fraction * 100)}%`;
-
   /** @param {FileSnap} f */
   function single(f) {
     const done = f.state === "saved";
@@ -201,13 +197,7 @@ export async function mountUploads({ maxMB, upNext = null, host = document.body,
             ),
           )
         : null;
-    const status = {
-      uploading: percent(f.fraction),
-      waiting: "Waiting",
-      checking: "Checking",
-      unsettled: "Still Checking",
-      saved: "Saved",
-    }[/** @type {string} */ (f.state)];
+    const status = statusWord(f);
     // The polite region must not change on a percent tick: it says the name while bytes move.
     const say =
       SAID[f.state] ??

@@ -1,7 +1,7 @@
 // The upload engine's pure parts: the fingerprint, the part plan, the pace and the byte units.
 import { describe, expect, it, vi } from "vitest";
 import { fingerprint, nextConcurrency, PACE, planParts } from "../../public/js/core/upload.js";
-import { formatBytes } from "../../public/js/core/upload-format.js";
+import { formatBytes, statusWord } from "../../public/js/core/upload-format.js";
 
 const MIB = 1024 * 1024;
 const bytes = (size: number, fill = 1) => new Uint8Array(size).fill(fill);
@@ -121,6 +121,15 @@ describe("nextConcurrency", () => {
     expect(pace.limit).toBe(1);
     pace = nextConcurrency(nextConcurrency(pace, ok(1)), ok(1));
     expect(pace.limit).toBe(2);
+  });
+});
+
+describe("statusWord", () => {
+  it("is the whole percent while bytes move, a word per settling state, and nothing before a byte has moved", () => {
+    expect(statusWord({ state: "uploading", fraction: 0.426 })).toBe("43%");
+    expect(statusWord({ state: "unsettled", fraction: 1 })).toBe("Still Checking");
+    expect(statusWord({ state: "saved", fraction: 1 })).toBe("Saved");
+    expect(statusWord({ state: "starting", fraction: 0 })).toBeUndefined();
   });
 });
 
