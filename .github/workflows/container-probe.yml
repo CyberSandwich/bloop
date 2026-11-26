@@ -24,3 +24,5 @@ jobs:
       - run: node container/fixtures/make.mjs
       - name: Links with strace
         run: node tools/probe-v1/links2.mjs
+      - name: Render steps
+        run: node tools/probe-v1/render.mjs
