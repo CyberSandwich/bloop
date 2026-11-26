@@ -2,6 +2,9 @@
 // the test answers part by part, and the page's events. Nothing here is the engine's own logic.
 import { createUploader } from "../../public/js/core/upload.js";
 
+// The engine fetches the name rule on first use; loading it here keeps every flush as short as before.
+await import("../../public/js/shared/file-name.js");
+
 export const MARK = { "X-Bloop": "1" };
 export const NETWORK = Symbol("network");
 // The real timer, kept for flush: a test that fakes the global one still settles.

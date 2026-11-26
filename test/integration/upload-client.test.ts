@@ -221,7 +221,7 @@ describe("the engine against the real routes", () => {
     const second = engine(wrangler, cookie);
     await until("the paused row", () => second.snaps.some((b) => b.files.some((f) => f.state === "paused")));
     const paused = second.snaps.flatMap((b) => b.files).find((f) => f.state === "paused");
-    second.up.resume((paused as Snap).id, mp4("resume.mp4", 43 * MIB));
+    await second.up.resume((paused as Snap).id, mp4("resume.mp4", 43 * MIB));
     await until("saved", () => second.snaps.at(-1)?.files[0]?.state === "saved", 60_000);
     const parts = Number(rows(wrangler, "SELECT parts FROM upload WHERE user_id = 'ec-resume'")[0]?.parts);
     expect(second.parts.length).toBe(parts - stored);

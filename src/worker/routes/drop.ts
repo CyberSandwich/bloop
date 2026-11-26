@@ -3,6 +3,7 @@
 // budget, the streamed store with validation (DROP-02 to DROP-04), then the session moves to `offered`.
 // Every failure after the session began ends in `dropFailed` and a deleted object.
 
+import { cleanName } from "../../../public/js/shared/file-name.js";
 import { typeOfName } from "../../../public/js/shared/names.js";
 import type { ErrorCode, FileType } from "../../shared/protocol.ts";
 import type { Config } from "../config.ts";
@@ -10,7 +11,6 @@ import type { Env } from "../env.ts";
 import { checkOrigin, fail, json } from "../http.ts";
 import { type Route, route } from "../router.ts";
 import { guestDropFor } from "../seams/guest-drop/select.ts";
-import { cleanName } from "../uploads/file-name.ts";
 import { limited, screenFor, withConfig } from "./common.ts";
 
 /** What a phone's file input may declare; an unknown file type arrives as octet-stream or empty. */

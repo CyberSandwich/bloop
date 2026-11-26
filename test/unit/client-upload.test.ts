@@ -1,5 +1,5 @@
 // The upload engine's pure parts: the fingerprint, the part plan, the pace, the time left and the byte units.
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import {
   etaLeft,
   etaOf,
@@ -16,6 +16,20 @@ const bytes = (size: number, fill = 1) => new Uint8Array(size).fill(fill);
 const etaLabelAt = (eta: Parameters<typeof etaLeft>[0], now: number) => etaLabel(etaLeft(eta, now) ?? 0);
 
 describe("fingerprint", () => {
+  it("rejects when the name rule cannot be fetched, so the file fails instead of resuming on a wrong name", async () => {
+    vi.resetModules();
+    vi.doMock("../../public/js/shared/file-name.js", () => {
+      throw new Error("offline");
+    });
+    try {
+      const fresh = await import("../../public/js/core/upload.js");
+      await expect(fresh.fingerprint(new File([bytes(10)], "a.pdf"))).rejects.toThrow();
+    } finally {
+      vi.doUnmock("../../public/js/shared/file-name.js");
+      vi.resetModules();
+    }
+  });
+
   it("is 64 lowercase hex characters, stable for the same file", async () => {
     const a = await fingerprint(new File([bytes(300_000)], "Talk.pptx"));
     expect(a).toMatch(/^[0-9a-f]{64}$/);
