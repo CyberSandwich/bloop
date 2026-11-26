@@ -13,9 +13,16 @@ export interface NumberSpec {
   readonly reason: string;
   /** A zero or negative var would turn a line into zero (an instant trip) or divide by it: the default is used. */
   readonly positive?: true;
+  /** A deploy-time floor: a var below it fails the config. A row in /admin may still lower the cap at runtime, and a
+   * job whose deadline then exceeds it is refused at admission as too_large, so only the deploy is guarded. */
+  readonly min?: number;
 }
 
 const GIB = 1024 ** 3;
+
+/** The longest job's stage timeouts plus transfers (container/README.md "Stages and timeouts"); a shorter lease would
+ * expire under a job that is still inside its own limits. test/unit/container-lease.test.ts derives it. */
+export const CONVERT_LEASE_FLOOR_SECONDS = 1770;
 
 /** Hard ceilings the guard refuses past. A row `cap.<name>` in /admin can only lower one (the var is the maximum). */
 export const CAPS = {
@@ -34,6 +41,7 @@ export const CAPS = {
   lease_max_convert_seconds: {
     var: "CAP_LEASE_CONVERT_SECONDS",
     default: 1800,
+    min: CONVERT_LEASE_FLOOR_SECONDS,
     reason:
       "longest a conversion lease may be asked for: the longest chain is a video's, inspect 30 s plus the video stage's 1440 s plus 300 s for the transfers, 1770 s (test/unit/container-lease.test.ts holds every kind under it)",
   },
