@@ -403,7 +403,7 @@ describe("landing word caps (design.md section 13)", () => {
     expect(read("public/_redirects")).toMatch(/^\/demo \/s\?mode=demo 302$/m);
   });
 
-  it("the stage is one screenshot at every width: AVIF then WebP, four and three widths, sized, eager, with alt text and no text of its own", () => {
+  it("the stage is one screenshot from 640 up: AVIF then WebP, four and three widths, sized, eager, with alt text and no text of its own, and a phone fetches none of it", () => {
     const stage = between(html, /<div class="tilt">/, "</picture>");
     const srcset = (type: string, widths: number[]) =>
       new RegExp(
@@ -412,7 +412,10 @@ describe("landing word caps (design.md section 13)", () => {
     expect(stage).toMatch(srcset("avif", [750, 1100, 1600, 2200]));
     expect(stage).toMatch(srcset("webp", [750, 1100, 1600]));
     expect(stage.indexOf('<source type="image/avif"')).toBeLessThan(stage.indexOf('<source type="image/webp"'));
-    expect(stage).not.toMatch(/media="/);
+    // Under 640 the stage is display: none, which does not stop an img's fetch: a first source with that media picks
+    // the logo's own file (already loaded by the nav), so no hero bytes move.
+    expect(stage).toMatch(/<picture>\s*(?:<!--[^>]*-->\s*)?<source media="\(max-width: 639\.98px\)" srcset="\/favicon\.svg">\s*<source type/);
+    expect(read("public/css/site.css")).toMatch(/@media \(max-width: 639\.98px\) \{\s*\.tilt \{\s*display: none;/);
     const img = /<img\b[^>]*>/.exec(stage)?.[0] ?? "";
     expect(img).toContain('src="/img/hero-viewer-1100.webp" width="1440" height="828" fetchpriority="high"');
     expect(img).toContain(
