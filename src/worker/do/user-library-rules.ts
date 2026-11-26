@@ -96,6 +96,25 @@ export const endScreenRow = (sql: SqlLike, sessionId: string, now: number): void
 };
 
 /**
+ * Closes every socket opened for any of these phone sessions (tag `s:<publicId>`). A repeated or unknown id closes
+ * nothing more, so a retried sign-out is harmless. Returns how many sockets were closed.
+ */
+export function closeSessionSockets(
+  sockets: { getWebSockets(tag: string): { close(code: number, reason: string): void }[] },
+  publicIds: readonly string[],
+  code: number,
+): number {
+  let closed = 0;
+  for (const id of new Set(publicIds)) {
+    for (const ws of sockets.getWebSockets(`s:${id}`)) {
+      ws.close(code, "session ended");
+      closed++;
+    }
+  }
+  return closed;
+}
+
+/**
  * Ends each row through `end`, which answers true when its Screen confirmed the end; only a confirmed row is marked
  * ended, so a Screen that could not be reached stays listed and the next call retries it. Returns the confirmed count.
  */

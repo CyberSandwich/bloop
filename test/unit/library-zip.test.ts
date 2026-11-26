@@ -244,6 +244,20 @@ describe("LIB-07 exportPath", () => {
     ]);
   });
 
+  it("nit: a device name is judged by the part before the first dot, and CONIN$ and CONOUT$ are devices", () => {
+    expect(paths("Files", ["CON.tar.gz", "nul.backup.pdf", "CONIN$.pdf", "conout$.pdf", "com.ok.pdf"])).toEqual([
+      "Files/_CON.tar.gz",
+      "Files/_nul.backup.pdf",
+      "Files/_CONIN$.pdf",
+      "Files/_conout$.pdf",
+      "Files/com.ok.pdf",
+    ]);
+  });
+
+  it("nit: a lone surrogate becomes an underscore, and a whole emoji stays", () => {
+    expect(paths("Files", ["a\ud800b.pdf", "😀.pdf"])).toEqual(["Files/a_b.pdf", "Files/😀.pdf"]);
+  });
+
   it("holds the name to 200 UTF-8 bytes, cut on a character, keeping the extension, even when deduped", () => {
     const long = `${"é".repeat(150)}.pptx`;
     const [a, b] = paths("Files", [long, long]);

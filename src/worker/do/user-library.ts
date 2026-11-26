@@ -10,6 +10,7 @@ import { screenOwnerEnd } from "../live-screens.ts";
 import {
   allProgress,
   clearProgress,
+  closeSessionSockets,
   dropScreens,
   EXPORT_LEASE,
   EXPORT_LEASE_MS,
@@ -167,7 +168,12 @@ export class UserLibrary extends DurableObject<Env> {
 
   /** A session ended: its sockets go at once. */
   async closeSession(publicId: string): Promise<void> {
-    for (const ws of this.ctx.getWebSockets(`s:${publicId}`)) ws.close(CLOSE_SESSION_ENDED, "session ended");
+    await this.closeSessions([publicId]);
+  }
+
+  /** Several sessions ended at once (sign out everywhere, a deleted account): idempotent. */
+  async closeSessions(publicIds: string[]): Promise<void> {
+    closeSessionSockets(this.ctx, publicIds, CLOSE_SESSION_ENDED);
   }
 
   /** Account purge: every socket closes, then the storage and its alarm go. */
@@ -175,6 +181,8 @@ export class UserLibrary extends DurableObject<Env> {
     for (const ws of this.ctx.getWebSockets()) ws.close(CLOSE_SESSION_ENDED, "account erased");
     await this.ctx.storage.deleteAlarm();
     await this.ctx.storage.deleteAll();
+    // The instance keeps running after this call: a stream that is still ending calls exportEnd, which needs its tables.
+    initUserLibraryStorage(this.ctx.storage.sql, this.ctx.storage.kv);
   }
 
   // ---- Idempotency (the adapter behind idem.ts) ----------------------------------------------
@@ -190,7 +198,7 @@ export class UserLibrary extends DurableObject<Env> {
 
   // ---- Export lease and purge ----------------------------------------------------------------
 
-  /** One export at a time: true when `holder` took the 2-hour lease. */
+  /** One export at a time: true when `holder` took the lease (15 minutes, renewed while the client reads). */
   async exportBegin(holder: string): Promise<boolean> {
     const taken = takeLease(this.ctx.storage.sql, EXPORT_LEASE, holder, Date.now(), EXPORT_LEASE_MS);
     await this.arm();
