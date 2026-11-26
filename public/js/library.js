@@ -572,7 +572,7 @@ const modules = {
   sort: () => import("./library/sort.js"),
   preview: inert,
   present: () => import("./library/present.js"),
-  socket: inert,
+  socket: () => import("./library/socket.js"),
   reorder: inert,
   sample: () => import("./library/sample.js"),
 };
