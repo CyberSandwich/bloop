@@ -190,6 +190,19 @@ describe("DROP-13 pdf-active: an object stream inflates in workerd", () => {
   });
 });
 
+describe("DROP-13 pdf-active: forged marks are unscannable, bad_structure, and nothing is kept", () => {
+  for (const [name, build] of HOSTILE.filter(([n]) => n.startsWith("forged marks"))) {
+    it(name, async () => {
+      const { socket, pid } = await pairPhone(api);
+      const res = await putDrop(api, pid, build(), { name: "Paper.pdf" });
+      expect(res.status).toBe(422);
+      expect(await problemCode(res)).toBe("bad_structure");
+      expect(wrangler.r2Has(String(guestRow(wrangler.d1)?.r2_key))).toBe(false);
+      socket.close();
+    });
+  }
+});
+
 describe("DROP-02 wrong type and polyglot are refused and nothing is kept", () => {
   const cases: [string, Uint8Array, string, string, number][] = [
     [
