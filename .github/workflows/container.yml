@@ -39,8 +39,8 @@ jobs:
       - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
           node-version-file: .nvmrc
-      - name: Image pruning script tests
-        run: node --test container/test/prune.test.mjs
+      - name: Script tests (image pruning, corpus guard)
+        run: node --test container/test/prune.test.mjs container/test/guard.test.mjs
       - name: Go unit tests
         run: docker build --target test container
       - name: Build the image
