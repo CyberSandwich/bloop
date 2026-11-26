@@ -713,6 +713,7 @@ export function openVariant(html, override, where) {
   if (override !== undefined && used.size === 0)
     throw new Error(`${where}: an open override for a page with no mode regions`);
   for (const name of given.keys()) if (!used.has(name)) throw new Error(`${where}: no mode:${name} region in the page`);
+  if (/<!--\s*\/?mode:/.test(out)) throw new Error(`${where}: a mode marker is unmatched or malformed`);
   return out;
 }
 
