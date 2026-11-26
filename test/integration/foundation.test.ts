@@ -46,7 +46,11 @@ describe("MODE-01 gate: the launch mode against a real D1", () => {
       wrangler.setLaunchMode(mode, lockout);
       expect((await hit("/privacy")).status).toBe(200);
       expect((await hit("/")).status).toBe(200);
-      for (const path of ["/library", "/account", "/admin"]) expect((await hit(path)).status, path).toBeLessThan(500);
+      for (const path of ["/library", "/account", "/admin"]) {
+        const { status } = await hit(path);
+        if (mode === "preview") expect(status, path).toBe(404);
+        else expect(status, path).toBeLessThan(500);
+      }
     });
   }
 });
@@ -105,6 +109,21 @@ describe("LIB-08 erase: DELETE /api/me with FILE_SOURCE=mock", () => {
     const res = await api.call("DELETE", "/api/me", {}, { headers: { Cookie: `__Host-bloop_sid=${cookie}` } });
     expect(res.body).toEqual(expect.objectContaining({ code: "source_unavailable" }));
     expect(wrangler.d1("SELECT count(*) AS n FROM app_user WHERE id = 'en1'")[0]?.n).toBe(1);
+  });
+
+  it("LIB-08 erase: a suspended member with a fresh proof is refused and stays active", async () => {
+    wrangler.d1(
+      "INSERT INTO app_user (id, tid, oid, email, email_norm, created_at, last_seen_at, suspended_at) VALUES ('em2', 'email', 'em2', 's@example.test', 's@example.test', 0, 0, 1)",
+    );
+    const cookie = "S".repeat(43);
+    const now = Date.now();
+    wrangler.d1(
+      `INSERT INTO phone_session (id_hash, user_id, created_at, last_seen_at, expires_at, reauth_at) VALUES ('${sha(cookie)}', 'em2', ${now}, ${now}, ${now + 86_400_000}, ${now})`,
+    );
+    const res = await api.call("DELETE", "/api/me", {}, { headers: { Cookie: `__Host-bloop_sid=${cookie}` } });
+    expect(res.status).toBe(401);
+    expect(res.body).toEqual(expect.objectContaining({ code: "auth_required" }));
+    expect(wrangler.d1("SELECT status FROM app_user WHERE id = 'em2'")[0]?.status).toBe("active");
   });
 
   it("LIB-08 erase: needs a fresh proof, then marks the member deleting, ends their sessions and keeps their rows", async () => {
