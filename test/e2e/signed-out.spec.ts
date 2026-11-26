@@ -146,7 +146,8 @@ test.describe("PAIR-15 a signed-out claim on a live code", () => {
       for (const b of await phone.page.locator("#actions .btn").all()) {
         const r = await b.boundingBox();
         if (!box || !r) throw new Error("no box");
-        expect(Math.round(r.x), `${size.width}`).toBeGreaterThanOrEqual(Math.round(box.x));
+        // A leading text action sits 12 out, so its words line up with the column (app.css).
+        expect(Math.round(r.x), `${size.width}`).toBeGreaterThanOrEqual(Math.round(box.x) - 12);
         expect(Math.round(r.x + r.width), `${size.width}`).toBeLessThanOrEqual(Math.round(box.x + box.width));
       }
     }
