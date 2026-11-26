@@ -19,7 +19,7 @@ import { readSettings } from "../settings.ts";
 import { resolveCaps } from "../spend/caps.ts";
 import { spendFor } from "../spend/guard.ts";
 import { effectiveAll } from "../spend/switches.ts";
-import { screenStub, userLibraryStub } from "../stubs.ts";
+import { userLibraryStub } from "../stubs.ts";
 import type { EnqueueSpec } from "./converter-schema.ts";
 
 const bucketOf = (binding: R2Bucket): ConvBucket => binding as unknown as ConvBucket;
@@ -38,9 +38,7 @@ export class Converter extends DurableObject<Env> {
       spend: spendFor(env, () => ({})),
       db: dbOf(env.DB),
       bucket: (name) => bucketOf(env[name]),
-      notify: notifierFor((t) =>
-        t.kind === "library" ? userLibraryStub(env, t.userId) : screenStub(env, t.screenRef),
-      ),
+      notify: notifierFor((userId) => userLibraryStub(env, userId)),
       gates: async () => {
         const switches = effectiveAll(vars, await readSettings(env, { fresh: true }));
         return { mode, convert: switches.convert, convertVideo: switches.convert_video };

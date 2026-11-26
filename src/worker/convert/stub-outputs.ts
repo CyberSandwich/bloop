@@ -1,5 +1,6 @@
 // A complete set of container outputs, tiny and structurally valid, for CONVERT_MODE=stub and for tests: the bytes
-// satisfy the Worker's checks (types, sizes, hashes, widths) without a decodable image. Pure: no Workers types.
+// satisfy the Worker's checks (types, sizes, hashes, widths) and the WebPs decode; the JPEG, PDF and MP4 do not play.
+// Pure: no Workers types.
 import { isDocument, KIND_BY_EXT, type Manifest } from "./contract.ts";
 import { sha256Hex } from "./outputs.ts";
 import type { Profile } from "./profile.ts";
@@ -22,17 +23,43 @@ export interface StubOutputs {
 
 const enc = new TextEncoder();
 
-/** A lossless WebP container whose header says w by h; `salt` makes pieces differ. */
+/**
+ * A real, decodable lossless WebP: one solid color, w by h. Every prefix code has a single symbol, so the pixel data
+ * takes no bits at all. `salt` picks the color, so pages differ.
+ */
 export function stubWebp(w: number, h: number, salt = 0): Uint8Array {
-  const out = new Uint8Array(40);
-  const dv = new DataView(out.buffer);
+  const bits: number[] = [];
+  const put = (value: number, n: number) => {
+    for (let i = 0; i < n; i++) bits.push((value >> i) & 1);
+  };
+  put(0, 3); // no transform, no color cache, no meta prefix image
+  const color = [(salt * 67) & 255, (salt * 131 + 90) & 255, (salt * 29 + 160) & 255, 255]; // red, green, blue, alpha
+  // Group order: green, red, blue, alpha, distance. A simple code of one symbol: 1, 0, is_first_8bits, symbol.
+  for (const symbol of [color[1], color[0], color[2], color[3]] as number[]) {
+    put(1, 1);
+    put(0, 1);
+    put(1, 1);
+    put(symbol, 8);
+  }
+  put(1, 1);
+  put(0, 1);
+  put(0, 1);
+  put(0, 1);
+  const payload = new Uint8Array(5 + Math.ceil(bits.length / 8));
+  const dv = new DataView(payload.buffer);
+  payload[0] = 0x2f;
+  dv.setUint32(1, (w - 1) | ((h - 1) << 14), true); // alpha_is_used 0, version 0
+  bits.forEach((bit, i) => {
+    payload[5 + (i >> 3)] = (payload[5 + (i >> 3)] ?? 0) | (bit << (i & 7));
+  });
+  const padded = payload.length + (payload.length & 1);
+  const out = new Uint8Array(20 + padded);
+  const view = new DataView(out.buffer);
   out.set(enc.encode("RIFF"), 0);
-  dv.setUint32(4, out.length - 8, true);
+  view.setUint32(4, out.length - 8, true);
   out.set(enc.encode("WEBPVP8L"), 8);
-  dv.setUint32(16, 20, true);
-  out[20] = 0x2f;
-  dv.setUint32(21, (w - 1) | ((h - 1) << 14), true);
-  dv.setUint32(25, salt, true);
+  view.setUint32(16, payload.length, true);
+  out.set(payload, 20);
   return out;
 }
 
