@@ -125,6 +125,35 @@ describe("OPEN-02 binding", () => {
     socket.close();
   });
 
+  it("REL-16 fetch_refused: a refused /f/ request of the live session is audited and counted with its cause, and starts nothing", async () => {
+    const { screen, socket, url } = await approveDemo(api);
+    const session = String(
+      wrangler.d1("SELECT session_id FROM audit_event WHERE type = 'link.minted' ORDER BY at DESC LIMIT 1")[0]
+        ?.session_id,
+    );
+    const failures = () =>
+      Number(
+        wrangler.d1(
+          "SELECT count(*) AS n FROM metric_event WHERE name = 'failure' AND cause = 'link_binding_failed'",
+        )[0]?.n ?? 0,
+      );
+    const before = failures();
+    const stateOf = async () => (await api.get<{ state: string }>("/api/screen/state", screen.sid)).body.state;
+    expect(await stateOf()).toBe("approved");
+
+    const res = await fetchLink(url, { headers: { "CF-Connecting-IP": "203.0.113.9" } });
+    expect(res.status).toBe(403);
+    const refused = wrangler.d1(
+      `SELECT detail FROM audit_event WHERE type = 'link.refused' AND session_id = '${session}'`,
+    );
+    expect(refused).toHaveLength(1);
+    expect(JSON.parse(String(refused[0]?.detail))).toMatchObject({ cause: "link_binding_failed" });
+    expect(failures()).toBe(before + 1);
+    expect(await stateOf()).toBe("approved");
+    expect(wrangler.d1(`SELECT first_open_at FROM session WHERE id = '${session}'`)[0]?.first_open_at).toBeNull();
+    socket.close();
+  });
+
   it("VID-02 a refused view link writes one audit row, however often its player retries", async () => {
     const refusedRows = () =>
       Number(wrangler.d1("SELECT count(*) AS n FROM audit_event WHERE type = 'link.refused'")[0]?.n ?? 0);
