@@ -1,5 +1,6 @@
 // MODE-01 against a real wrangler dev: the site pages by launch mode, the account pill, and the revalidation rules.
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { VARIANTS } from "../../src/worker/pages.ts";
 import { startPairing } from "./pairing-client.ts";
 import type { Wrangler } from "./wrangler.ts";
 
@@ -115,6 +116,30 @@ describe("MODE-01 landing and legal bodies differ by mode", () => {
       expect(await (await hit("/no-such-page", HTML)).text(), `${mode} 404`).not.toContain("<!--");
     }
   });
+});
+
+describe("MODE-01 every .html form of every site page behaves the same in both modes", () => {
+  it("a page that exists in the mode redirects its file forms to the clean path; one that does not is 404", async () => {
+    const pages = VARIANTS.filter((v) => !/\.\w+$/.test(v.path));
+    for (const mode of ["preview", "open"] as const) {
+      wrangler.setLaunchMode(mode);
+      for (const v of pages) {
+        const exists = v.kind === "both" || mode === "open";
+        const forms = v.path === "/" ? ["/index.html"] : [`${v.path}.html`, `${v.path}/index.html`];
+        for (const form of forms) {
+          const res = await hit(`${form}?a=1`);
+          await res.arrayBuffer();
+          const where = `${mode} ${form}`;
+          if (exists) {
+            expect(res.status, where).toBe(307);
+            expect(new URL(res.headers.get("Location") ?? "", wrangler.url).pathname, where).toBe(v.path);
+          } else {
+            expect(res.status, where).toBe(404);
+          }
+        }
+      }
+    }
+  }, 120_000);
 });
 
 describe("pill Library with the hint cookie; the 304 round trip keeps the label", () => {
