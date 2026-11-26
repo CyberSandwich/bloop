@@ -1,6 +1,7 @@
 // Every email bloop sends (ADR 0021): pure functions from values to {subject, text, html}. Subjects are fixed
 // text plus at most a date or a meter kind, never a code or anything a user typed. Each value passes through `oneLine`,
 // and the HTML escapes it, so a file name cannot add a header line or markup. Links point only at the configured origin.
+import type { Alert, DigestMessage } from "../spend/breaker.ts";
 
 export interface Email {
   subject: string;
@@ -17,11 +18,14 @@ export interface TemplateConfig {
 const MAX_VALUE_CHARS = 120;
 
 /**
- * One line of at most 120 characters: CR, LF, every other control character and every format character (bidi
- * overrides, zero-width spaces) are dropped, so a value can neither add a line nor reorder the text around it.
+ * CR, LF, every other control character and every format character (bidi overrides, zero-width spaces) dropped, so a
+ * value can neither add a line nor reorder the text around it.
  */
+export const stripControls = (value: string): string => value.replace(/[\p{Cc}\p{Cf}\u2028\u2029]/gu, "");
+
+/** One line of at most 120 characters (`stripControls`). */
 export function oneLine(value: string): string {
-  return value.replace(/[\p{Cc}\p{Cf}\u2028\u2029]/gu, "").slice(0, MAX_VALUE_CHARS);
+  return stripControls(value).slice(0, MAX_VALUE_CHARS);
 }
 
 export function escapeHtml(value: string): string {
@@ -48,10 +52,10 @@ const formatTime = (ms: number): string => TIME.format(ms);
 /** A paragraph: plain text, or a code line whose code is its own node in the HTML. */
 type Para = string | { code: string; after: string };
 
-const host = (c: TemplateConfig) => new URL(c.origin).host;
+const host = (c: Pick<TemplateConfig, "origin">) => new URL(c.origin).host;
 const minutes = (c: TemplateConfig) => Math.round(c.codeTtlSeconds / 60);
 
-function render(c: TemplateConfig, subject: string, paras: Para[]): Email {
+function render(c: Pick<TemplateConfig, "origin">, subject: string, paras: Para[]): Email {
   const all: Para[] = [...paras, `bloop · ${host(c)}. Reply to this email to reach a person.`];
   const text = all.map((p) => (typeof p === "string" ? p : `${p.code}${p.after}`)).join("\n\n");
   const origin = escapeHtml(c.origin);
@@ -170,13 +174,16 @@ const numberLines = (v: Record<string, unknown>): string[] =>
       : [],
   );
 
-/**
- * To the admin, from the spend breaker: the kind and the message's numbers only, its top-level ones and those under
- * `readings` (the breaker's Alert shape); any other field is dropped.
- */
-export const spendAlert = (v: { kind: string } & Record<string, unknown>, c: TemplateConfig): Email => {
+/** To the admin, from the spend breaker: the kind and the numbers under `readings` only; any other field is dropped. */
+export const spendAlert = (v: Pick<Alert, "kind" | "readings">, c: Pick<TemplateConfig, "origin">): Email => {
   const kind = oneLine(v.kind).replace(/[^a-z_]/g, "");
-  const readings = typeof v.readings === "object" && v.readings !== null ? (v.readings as Record<string, unknown>) : {};
-  const lines = [...numberLines(v), ...numberLines(readings)];
-  return render(c, `bloop Spend: ${kind}`, [`Spend alert: ${kind}.`, ...lines]);
+  return render(c, `bloop Spend: ${kind}`, [`Spend alert: ${kind}.`, ...numberLines(v.readings)]);
 };
+
+/** To the admin, the breaker's Monday digest: spend/report.ts builds its text from numbers and fixed labels only. */
+export const spendDigest = (v: Pick<DigestMessage, "subject" | "text">, c: Pick<TemplateConfig, "origin">): Email =>
+  render(
+    c,
+    oneLine(v.subject),
+    v.text.split("\n").filter((line) => line.trim() !== ""),
+  );
