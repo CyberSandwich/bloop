@@ -3,7 +3,6 @@ import { spawnSync } from "node:child_process";
 import { createHash, randomUUID } from "node:crypto";
 import { test } from "@playwright/test";
 
-const ORIGIN = "http://localhost:8787";
 const now = Date.now();
 const MB = 1024 * 1024;
 const sha = (t: string) => createHash("sha256").update(t).digest("hex");
@@ -78,16 +77,9 @@ for (const [width, height] of SIZES) {
   for (const state of ["empty", "full"] as const) {
     test(`shot ${state} ${width}x${height}`, async ({ browser }) => {
       const context = await browser.newContext({ viewport: { width, height } });
-      await context.addCookies([
-        {
-          name: "__Host-bloop_sid",
-          value: seed(state === "full", state === "full" ? 1.2 * 1024 * MB : 0),
-          url: ORIGIN,
-          secure: true,
-          httpOnly: true,
-          sameSite: "Lax",
-        },
-      ]);
+      await context.setExtraHTTPHeaders({
+        Cookie: `__Host-bloop_sid=${seed(state === "full", state === "full" ? 1.2 * 1024 * MB : 0)}`,
+      });
       const page = await context.newPage();
       await page.goto("/library");
       await page
@@ -116,16 +108,7 @@ for (const [width, height] of SIZES) {
 
 test("shot near quota 390", async ({ browser }) => {
   const context = await browser.newContext({ viewport: { width: 390, height: 844 } });
-  await context.addCookies([
-    {
-      name: "__Host-bloop_sid",
-      value: seed(true, 4.6 * 1024 * MB),
-      url: ORIGIN,
-      secure: true,
-      httpOnly: true,
-      sameSite: "Lax",
-    },
-  ]);
+  await context.setExtraHTTPHeaders({ Cookie: `__Host-bloop_sid=${seed(true, 4.6 * 1024 * MB)}` });
   const page = await context.newPage();
   await page.goto("/library");
   await page.locator("#file-list > li.lib-item").first().waitFor();
