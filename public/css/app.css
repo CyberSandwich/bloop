@@ -1215,7 +1215,7 @@ a.row:focus-visible {
 @media (min-width: 640px) {
   /* Wraps: four overflow the 480 column in one row, so the text pair takes a row over the buttons. */
   .buttons {
-    flex-flow: row wrap;
+    flex-flow: wrap;
     align-items: center;
   }
   .actions .btn.text {
