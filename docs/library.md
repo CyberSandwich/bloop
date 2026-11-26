@@ -65,7 +65,8 @@ All under `/api/library` (and the two screen routes under `/api/me`), all for a 
 
 | method, path | body | answer |
 |---|---|---|
-| GET `/api/library?view&sort&cursor` | | the list: `files`, `next`, open `uploads`, `upNext`, `quota`, `trash`, `limits`, `switches`, `account`; a strong `ETag`, 304 on `If-None-Match` |
+| GET `/api/library?view&sort&cursor` | | the list: `files`, `next`, open `uploads`, `upNext`, `quota`, `trash`, `limits` (`upNext`, `trashDays`, `maxFileBytes`, `largeFileChoiceBytes`), `switches`, `account`; each row carries a `kind` (`deck`, `document`, `sheet`, `image`, `video`); a strong `ETag` through `revalidated()`, 304 on `If-None-Match` |
+| POST `/sample` | `{}`, `Idempotency-Key` | the Sample Deck added as a ready file (201); the same key again answers that row (200); `library_full` or `quota_exceeded` when it does not fit |
 | PATCH `/:id` | `{name}` or `{selected}`, never both | the row |
 | PUT `/up-next` | `{ids}`, at most 12 | `{upNext}`, the order that resulted |
 | POST `/:id/trash` | `{}` | `{file, leftScreens}`: the labels of live screens showing it |

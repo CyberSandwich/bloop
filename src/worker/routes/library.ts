@@ -4,9 +4,13 @@
 import { z } from "zod";
 import type { Config } from "../config.ts";
 import type { Env } from "../env.ts";
-import { checkOrigin, checkWrite, fail, json, readJson } from "../http.ts";
+import { checkOrigin, checkWrite, fail, json, readJson, revalidated } from "../http.ts";
+import { idempotency } from "../idem.ts";
+import { newRef } from "../ids.ts";
 import { type Member, type Resolved, resolveMember } from "../library/member.ts";
 import { mintPreview } from "../library/preview.ts";
+import { addSample } from "../library/sample.ts";
+import { sampleDeck } from "../library/sample-deck.ts";
 import {
   CURSOR_MAX_CHARS,
   type FileRow,
@@ -25,7 +29,7 @@ import {
   UP_NEXT_MAX,
   upNext,
 } from "../library/store.ts";
-import { etagOf, limitsWire, wireRow } from "../library/wire.ts";
+import { limitsWire, wireRow } from "../library/wire.ts";
 import { type Route, route } from "../router.ts";
 import { userLibraryStub } from "../stubs.ts";
 import { limited, withConfig } from "./common.ts";
@@ -50,7 +54,7 @@ const empty = z.strictObject({});
 const query = z.strictObject({
   view: z.enum(["files", "trash"]).default("files"),
   sort: z.enum(["updated", "name", "size"]).default("updated"),
-  cursor: z.string().min(1).max(600).optional(),
+  cursor: z.string().min(1).max(CURSOR_MAX_CHARS).optional(),
 });
 const patchBody = z.union([z.strictObject({ name: z.string().max(400) }), z.strictObject({ selected: z.boolean() })]);
 const upNextBody = z.strictObject({ ids: z.array(ID).max(UP_NEXT_MAX) });
@@ -167,11 +171,39 @@ export function makeLibraryRoutes(deps: LibraryDeps): readonly Route[] {
       switches,
       account: { state: "active" },
     };
-    const etag = await etagOf(JSON.stringify(answer));
-    if (ctx.request.headers.get("If-None-Match") === etag) {
-      return new Response(null, { status: 304, headers: { ETag: etag } });
+    return revalidated(ctx.request, answer);
+  };
+
+  /** The Sample Deck, once per Idempotency-Key: a replay answers the row the first request made. */
+  const sample: Handler = async (ctx) => {
+    const parsed = await readJson(ctx.request, empty);
+    if (!parsed.ok) return parsed.response;
+    const { userId } = ctx.member;
+    if ((await deps.switches(ctx.env)).uploads !== "on") return fail("service_busy");
+    const stub = userLibraryStub(ctx.env, userId);
+    const db = libDbOf(ctx.env.DB);
+    const idem = await idempotency<string>(
+      ctx.request,
+      "{}",
+      userId,
+      {
+        find: async (_owner, keyHash) => {
+          const hit = await stub.idemGet(`sample:${keyHash}`);
+          return hit ? { bodyHash: hit.bodyHash, stored: hit.answer } : null;
+        },
+      },
+      ctx.now,
+    );
+    if (idem.kind === "bad" || idem.kind === "conflict") return fail("bad_request");
+    if (idem.kind === "replay") {
+      const again = await fileRow(db, userId, idem.stored);
+      return again ? json(await wireOf(ctx, again)) : fail("not_found");
     }
-    return json(answer, 200, { ETag: etag });
+    const added = await addSample(ctx.env, userId, sampleDeck(), ctx.config.library, newRef(), ctx.now);
+    if (!added.ok) return fail(added.error);
+    if (idem.kind === "fresh") await stub.idemPut(`sample:${idem.keyHash}`, idem.bodyHash, added.id);
+    const row = await fileRow(db, userId, added.id);
+    return row ? json(await wireOf(ctx, row), 201) : fail("internal");
   };
 
   const patch: Handler = async (ctx, match) => {
@@ -291,6 +323,7 @@ export function makeLibraryRoutes(deps: LibraryDeps): readonly Route[] {
     route(["GET"], "/api/library", "api", member(list, "read")),
     route(["PUT"], "/api/library/up-next", "api", member(putUpNext, "write")),
     route(["POST"], "/api/library/trash/delete", "api", member(deleteNow, "write")),
+    route(["POST"], "/api/library/sample", "api", member(sample, "write")),
     route(["PATCH"], "/api/library/:id", "api", member(patch, "write")),
     route(["POST"], "/api/library/:id/trash", "api", member(moveToTrash, "write")),
     route(["POST"], "/api/library/:id/restore", "api", member(restoreFile, "write")),
