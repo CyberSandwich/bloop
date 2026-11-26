@@ -70,7 +70,7 @@ export function allProgress(sql: SqlLike): Progress[] {
     }));
 }
 
-/** A screen row goes in. Past 20 rows the oldest ended one goes first, then the oldest started. */
+/** A screen row goes in. Past 20 rows the oldest ended ones go; a live row is never dropped, or it could not be ended. */
 export function putScreen(sql: SqlLike, row: ScreenRow): void {
   sql.exec(
     "INSERT OR REPLACE INTO screen VALUES (?, ?, ?, ?, ?, ?, NULL)",
@@ -84,7 +84,7 @@ export function putScreen(sql: SqlLike, row: ScreenRow): void {
   const excess = (sql.exec("SELECT count(*) AS n FROM screen").toArray()[0]?.n as number) - MAX_SCREEN_ROWS;
   if (excess > 0) {
     sql.exec(
-      "DELETE FROM screen WHERE session_id IN (SELECT session_id FROM screen ORDER BY ends_at IS NULL, ends_at, started_at LIMIT ?)",
+      "DELETE FROM screen WHERE session_id IN (SELECT session_id FROM screen WHERE ends_at IS NOT NULL ORDER BY ends_at, started_at LIMIT ?)",
       excess,
     );
   }

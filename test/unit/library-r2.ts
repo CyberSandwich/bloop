@@ -34,10 +34,25 @@ export function fakeBucket(initial: Record<string, string | Uint8Array> = {}): F
             )
           : new Set<string>();
         const flat = keys.filter((k) => !options.delimiter || !k.includes(options.delimiter, prefix.length));
+        // Objects and folded prefixes share one ordered listing, and the cursor is the last name returned.
+        const all = [
+          ...flat.map((name) => ({ name, folded: false })),
+          ...[...folded].map((name) => ({ name, folded: true })),
+        ]
+          .sort((a, b) => (a.name < b.name ? -1 : 1))
+          .filter((e) => options.cursor === undefined || e.name > options.cursor);
+        const page = all.slice(0, limit);
+        const truncated = all.length > limit;
         return {
-          objects: flat.slice(0, limit).map((key) => ({ key, size: objects.get(key)?.length ?? 0 })),
-          truncated: flat.length > limit,
-          delimitedPrefixes: [...folded],
+          objects: page
+            .filter((e) => !e.folded)
+            .map((e) => ({
+              key: e.name,
+              size: objects.get(e.name)?.length ?? 0,
+            })),
+          truncated,
+          ...(truncated ? { cursor: page.at(-1)?.name ?? "" } : {}),
+          delimitedPrefixes: page.filter((e) => e.folded).map((e) => e.name),
         };
       },
       async delete(keys) {

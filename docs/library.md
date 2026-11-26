@@ -28,7 +28,7 @@ How a signed-in user's files are stored, listed, changed and served. The decisio
 - **Names.** NFC, trimmed, 1 to 200 characters with the extension. Control characters, line and paragraph separators, bidi overrides and isolates, and both slashes are refused. The extension is the file's and never changes; a rename leaves `updated_at` alone because it marks content.
 - **Up Next** is `selected_at` on at most 12 untrashed rows, in tick order. A tick is one guarded `UPDATE` that counts the ticked rows in the same statement, so 20 concurrent ticks leave 12. `setUpNext` clears the untrashed rows it does not name and stamps the named ones in one batch, which serves reorder, Clear and its Undo.
 - **Trash.** `trashed_at` and `purge_after` (now plus `TRASH_DAYS`); the tick stays. Restore needs `purge_after` more than 5 minutes ahead, and drops the tick when it would be the 13th. Delete Now and Empty Trash move `purge_after` into the past (`makeDue`), which closes restore at once.
-- **Presented.** `markPresented` returns the statement P1's approve batch runs.
+- **Presented.** `markPresented` returns the statements (one per 90 ids, under D1's bind limit) that P1's approve batch runs.
 
 ## 3. Preview tokens
 
@@ -84,10 +84,11 @@ A thumbnail link in a row is a bundle token whose expiry lands on a 150 s bounda
 
 - **Due trash** is section 5.
 - **Account purge** (`purgeUser`, ADR 0013 steps 0 to 5). The claim is one guarded `UPDATE` to `purging`: the user is due (`delete_after` passed), active or deleting, not suspended and under no live hold. From then no sign-in, restore or reservation succeeds. Then the live screens end, the sessions go and their sockets close, open uploads are aborted (an upload claimed within 120 s settles on its own, so the run stops and the next continues), conversions stop, the prefix `u/<uid>/` is emptied by listing, the `derived` rows and the user object go, the tombstone `purged/<uid>` is written, and last the invite, waitlist and user rows go in one batch. A crash leaves a `purging` row that the next run finishes; rows go last.
-- **Resweep.** A tombstone past its `resweepAfter` (31 minutes) has its prefix emptied once more, which catches a put that was already awaiting at purge time; the tombstone is then marked swept.
-- **Orphans.** Daily, the prefixes under `u/` are listed with a delimiter, and one whose owner row is gone is emptied.
+- **Resweep.** A tombstone past its `resweepAfter` (31 minutes) has its prefix emptied once more, which catches a put that was already awaiting at purge time; the tombstone is then deleted. A run reads 100 tombstones from a stored list cursor (the tombstone reads count against the run's budget), so a long list is reached over several runs.
+- **Orphans.** Daily, the prefixes under `u/` are listed with a delimiter, 1,000 a run from a stored cursor, and one whose owner row is gone is emptied.
+- **A pending hold stops the bytes.** A file whose hold copy is not yet made is skipped by the trash purge, and an account purge waits at step 4 while a hold on the user lacks its copy. Accounts under a live hold are left out of the due list, and owners with a live export or a pending hold are left out of the trash purge's window, so none of them can fill it.
 - **Inactivity.** Daily, members unused for `INACTIVE_DAYS` get the warning email; only after it was sent does one guarded update set `inactive_warned_at` and `delete_after`, so a sign-in in between wins and a failed send changes nothing. While the preview lockout is set only the members who could have signed in are considered, chosen in the query. A member's use clears the mark.
-- **Suspension** pauses every clock: `resumeClocks` shifts `purge_after`, `delete_after` and `last_seen_at` later by the time spent suspended, in the unsuspend batch.
+- **Suspension** pauses every clock: `resumeClocks` shifts `purge_after`, `delete_after` and `last_seen_at` later by the time spent suspended, in the unsuspend batch ahead of the statement that clears `suspended_at`. The pause is read from the row and applied only while the row is still suspended, so a retried or concurrent unsuspend shifts once.
 - **Holds.** `holdFiles` copies a reported file, library or guest, to `h/<holdId>` in the library bucket, never the guest bucket (its one-day expiry is bucket-wide). The `hold` row is written first, so a copy is never untracked, and a retry finishes a missing copy; at most 10 are copied per call. Neither purge lists or deletes `h/` or `purged/`. `releaseHolds` deletes the copy, then the row, once `release_after` (a year) has passed.
 
 ## 8. Export

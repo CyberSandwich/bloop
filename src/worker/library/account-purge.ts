@@ -4,7 +4,7 @@
 // deleted: holds (`h/`) and tombstones (`purged/`) sit outside it (OSA-02).
 import { type Db, dbOf } from "../auth/db.ts";
 import { bucketOf } from "./bucket.ts";
-import { type Budget, deletePrefix, LATE_WRITE_WINDOW_MS, type PurgeDeps } from "./purge.ts";
+import { type Budget, deletePrefix, holdPending, LATE_WRITE_WINDOW_MS, type PurgeDeps } from "./purge.ts";
 import { libDbOf } from "./store.ts";
 
 const MARKS_PER_STATEMENT = 90;
@@ -73,7 +73,8 @@ export async function purgeUser(
     .all<{ id: string }>();
   for (const f of running.results) await deps.cancelConversion(f.id);
 
-  // Step 4: bytes, then derived rows, then the user object.
+  // Step 4: bytes, then derived rows, then the user object. A hold placed after the claim waits for its copy first.
+  if (await holdPending(env, "owner", userId, now)) return "more";
   if (await deletePrefix(bucket, prefixOf(userId), budget)) return "more";
   await db
     .prepare("DELETE FROM derived WHERE file_id IN (SELECT id FROM library_file WHERE user_id = ?1)")
@@ -104,7 +105,8 @@ export async function dueUsers(env: { DB: unknown }, now: number, limit: number)
   const { results } = await dbOf(env.DB)
     .prepare(
       `SELECT id FROM app_user WHERE status = 'purging'
-         OR (delete_after IS NOT NULL AND delete_after <= ?1 AND status IN ('active', 'deleting') AND suspended_at IS NULL)
+         OR (delete_after IS NOT NULL AND delete_after <= ?1 AND status IN ('active', 'deleting') AND suspended_at IS NULL
+             AND NOT EXISTS (SELECT 1 FROM hold WHERE owner_user_id = app_user.id AND release_after > ?1))
        ORDER BY status = 'purging' DESC, delete_after LIMIT ?2`,
     )
     .bind(now, limit)
@@ -115,37 +117,80 @@ export async function dueUsers(env: { DB: unknown }, now: number, limit: number)
 interface Tombstone {
   purgedAt: number;
   resweepAfter: number;
-  sweptAt?: number;
 }
 
-/** Deletes `u/<uid>/` again for each tombstone past its resweep time, catching a put that was awaiting at purge time. */
+/** A background scan resumes where it stopped: its list cursor lives in `setting`, and none means start over. */
+const RESWEEP_CURSOR = "library_resweep_cursor";
+const ORPHAN_CURSOR = "library_orphan_cursor";
+const TOMBSTONES_PER_RUN = 100;
+/** One round pays for this many tombstone reads, so the reads count against the run's budget like the deletes do. */
+const READS_PER_ROUND = 25;
+
+async function readCursor(db: Db, key: string): Promise<string | undefined> {
+  const row = await db.prepare("SELECT value FROM setting WHERE key = ?1").bind(key).first<{ value: string }>();
+  return row?.value;
+}
+
+async function writeCursor(db: Db, key: string, cursor: string | undefined, now: number): Promise<void> {
+  if (cursor === undefined) {
+    await db.prepare("DELETE FROM setting WHERE key = ?1").bind(key).run();
+    return;
+  }
+  await db
+    .prepare("INSERT OR REPLACE INTO setting (key, value, updated_at) VALUES (?1, ?2, ?3)")
+    .bind(key, cursor, now)
+    .run();
+}
+
+/**
+ * Deletes `u/<uid>/` once more for each tombstone past its resweep time, catching a put that was awaiting at purge time,
+ * then deletes the tombstone. A run reads one page of tombstones from where the last stopped.
+ */
 export async function resweepTombstones(
-  env: { LIBRARY: unknown },
+  env: { DB: unknown; LIBRARY: unknown },
   budget: Budget,
   now: number,
 ): Promise<{ swept: number; more: boolean }> {
+  const db = dbOf(env.DB);
   const bucket = bucketOf(env.LIBRARY);
+  const cursor = await readCursor(db, RESWEEP_CURSOR);
+  const page = await bucket.list({
+    prefix: "purged/",
+    limit: TOMBSTONES_PER_RUN,
+    ...(cursor ? { cursor } : {}),
+  });
+  budget.rounds -= Math.ceil(page.objects.length / READS_PER_ROUND);
   let swept = 0;
-  const page = await bucket.list({ prefix: "purged/", limit: 1000 });
   for (const { key } of page.objects) {
     const body = await bucket.get(key);
     const mark = body ? (JSON.parse(await body.text()) as Tombstone) : null;
-    if (!mark || mark.sweptAt !== undefined || mark.resweepAfter > now) continue;
+    if (!mark || mark.resweepAfter > now) continue;
     if (await deletePrefix(bucket, prefixOf(key.slice("purged/".length)), budget)) return { swept, more: true };
-    await bucket.put(key, JSON.stringify({ ...mark, sweptAt: now }));
+    await bucket.delete(key);
     swept++;
   }
+  await writeCursor(db, RESWEEP_CURSOR, page.truncated ? page.cursor : undefined, now);
   return { swept, more: page.truncated };
 }
 
-/** Prefixes under `u/` whose owner row is gone (a purge that crashed after its row went): emptied like step 4. */
+/**
+ * Prefixes under `u/` whose owner row is gone (a purge that crashed after its row went): emptied like step 4. A run reads
+ * one page of prefixes from where the last stopped.
+ */
 export async function sweepOrphans(
   env: { DB: unknown; LIBRARY: unknown },
   budget: Budget,
+  now: number,
 ): Promise<{ orphans: number; more: boolean }> {
   const db: Db = dbOf(env.DB);
   const bucket = bucketOf(env.LIBRARY);
-  const page = await bucket.list({ prefix: "u/", delimiter: "/", limit: 1000 });
+  const cursor = await readCursor(db, ORPHAN_CURSOR);
+  const page = await bucket.list({
+    prefix: "u/",
+    delimiter: "/",
+    limit: 1000,
+    ...(cursor ? { cursor } : {}),
+  });
   const uids = page.delimitedPrefixes.map((p) => p.slice("u/".length, -1));
   let orphans = 0;
   for (let i = 0; i < uids.length; i += MARKS_PER_STATEMENT) {
@@ -160,5 +205,6 @@ export async function sweepOrphans(
       orphans++;
     }
   }
+  await writeCursor(db, ORPHAN_CURSOR, page.truncated ? page.cursor : undefined, now);
   return { orphans, more: page.truncated };
 }

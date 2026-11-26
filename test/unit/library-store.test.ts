@@ -153,7 +153,12 @@ describe("setUpNext", () => {
 
   it("leaves a trashed file's tick alone", async () => {
     const db = libWith();
-    addFile(db, { id: "a", selectedAt: 5, trashedAt: NOW, purgeAfter: NOW + DAY });
+    addFile(db, {
+      id: "a",
+      selectedAt: 5,
+      trashedAt: NOW,
+      purgeAfter: NOW + DAY,
+    });
     await setUpNext(db, "u1", [], NOW);
     expect(db.raw.prepare("SELECT selected_at FROM library_file WHERE id = 'a'").get()).toEqual({ selected_at: 5 });
   });
@@ -184,7 +189,12 @@ describe("trash and restore", () => {
 
   it("restore drops the tick when Up Next would reach 13", async () => {
     const db = libWith();
-    addFile(db, { id: "x", selectedAt: 1, trashedAt: NOW, purgeAfter: NOW + DAY });
+    addFile(db, {
+      id: "x",
+      selectedAt: 1,
+      trashedAt: NOW,
+      purgeAfter: NOW + DAY,
+    });
     for (const [i, id] of ids(12).entries()) addFile(db, { id, selectedAt: 10 + i });
     expect(await restore(db, "u1", "x", NOW)).toBe("ok");
     expect((await upNext(db, "u1")).length).toBe(12);
@@ -193,8 +203,16 @@ describe("trash and restore", () => {
 
   it("closes the restore margin before due, and Delete Now closes it at once", async () => {
     const db = libWith();
-    addFile(db, { id: "a", trashedAt: NOW, purgeAfter: NOW + RESTORE_MARGIN_MS });
-    addFile(db, { id: "b", trashedAt: NOW, purgeAfter: NOW + RESTORE_MARGIN_MS + 1 });
+    addFile(db, {
+      id: "a",
+      trashedAt: NOW,
+      purgeAfter: NOW + RESTORE_MARGIN_MS,
+    });
+    addFile(db, {
+      id: "b",
+      trashedAt: NOW,
+      purgeAfter: NOW + RESTORE_MARGIN_MS + 1,
+    });
     addFile(db, { id: "c", trashedAt: NOW, purgeAfter: NOW + DAY });
     expect(await restore(db, "u1", "a", NOW)).toBe("not_found");
     expect(await restore(db, "u1", "b", NOW)).toBe("ok");
@@ -208,7 +226,12 @@ describe("trash and restore", () => {
     addFile(db, { id: "a", trashedAt: NOW, purgeAfter: NOW + DAY });
     addFile(db, { id: "b", trashedAt: NOW, purgeAfter: NOW + DAY });
     addFile(db, { id: "live" });
-    addFile(db, { id: "other", user: "u2", trashedAt: NOW, purgeAfter: NOW + DAY });
+    addFile(db, {
+      id: "other",
+      user: "u2",
+      trashedAt: NOW,
+      purgeAfter: NOW + DAY,
+    });
     expect(await makeDue(db, "u1", "all", NOW)).toBe(2);
     expect(await makeDue(db, "u1", "all", NOW)).toBe(0);
     expect((await fileRow(db, "u1", "live"))?.purgeAfter).toBeNull();
@@ -395,7 +418,12 @@ describe("listFiles", () => {
     derived.run(1, "failed", 1, null);
     derived.run(2, "running", 40, '["Calibri","x"]');
     const row = await fileRow(db, "u1", "a");
-    expect(row?.derived).toEqual({ state: "preparing", stage: "render", pages: 40, fontsMissing: ["Calibri", "x"] });
+    expect(row?.derived).toEqual({
+      state: "preparing",
+      stage: "render",
+      pages: 40,
+      fontsMissing: ["Calibri", "x"],
+    });
     db.raw.prepare("UPDATE derived SET fonts_missing = 'not json'").run();
     expect((await fileRow(db, "u1", "a"))?.derived.fontsMissing).toEqual([]);
   });
@@ -418,6 +446,13 @@ describe("LIB-06 names: rename", () => {
     [`pa${String.fromCharCode(0x2029)}ra`, "pdf", null],
     ["bidi" + String.fromCharCode(0x202e), "pdf", null],
     ["iso" + String.fromCharCode(0x2066), "pdf", null],
+    ["lrm" + String.fromCharCode(0x200e), "pdf", null],
+    ["rlm" + String.fromCharCode(0x200f), "pdf", null],
+    ["alm" + String.fromCharCode(0x061c), "pdf", null],
+    ["zw" + String.fromCharCode(0x200b), "pdf", null],
+    ["wj" + String.fromCharCode(0x2060), "pdf", null],
+    ["b" + String.fromCharCode(0xfeff) + "om", "pdf", null],
+    ["pair \u{1F468}‍\u{1F469}", "pdf", "pair \u{1F468}‍\u{1F469}.pdf"],
     ["x".repeat(195), "pdf", "x".repeat(195) + ".pdf"],
     ["x".repeat(197), "pdf", null],
   ];
@@ -445,8 +480,20 @@ describe("markPresented", () => {
     addFile(db, { id: "a" });
     addFile(db, { id: "b" });
     addFile(db, { id: "x", user: "u2" });
-    await markPresented(db, "u1", ["a", "x"], NOW).run();
+    await db.batch(markPresented(db, "u1", ["a", "x"], NOW));
     const at = (id: string) => db.raw.prepare("SELECT last_presented_at AS t FROM library_file WHERE id = ?").get(id);
     expect([at("a"), at("b"), at("x")]).toEqual([{ t: NOW }, { t: null }, { t: null }]);
+  });
+
+  it("stays under D1's bind limit for a long list: one statement per 90 ids", async () => {
+    const db = libWith();
+    const names = Array.from({ length: 200 }, (_, i) => `f${i}`);
+    for (const id of names) addFile(db, { id });
+    const statements = markPresented(db, "u1", names, NOW);
+    expect(statements).toHaveLength(3);
+    await db.batch(statements);
+    expect(db.raw.prepare("SELECT count(*) AS n FROM library_file WHERE last_presented_at = ?").get(NOW)).toEqual({
+      n: 200,
+    });
   });
 });

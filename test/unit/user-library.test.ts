@@ -57,7 +57,9 @@ describe("schema", () => {
     const { db, sql, kv } = open();
     idemPut(sql, "k", "h", "a", 1);
     expect(initUserLibraryStorage(sql, kv)).toEqual([]);
-    expect(db.prepare("SELECT count(*) AS n FROM idem").get()).toEqual({ n: 1 });
+    expect(db.prepare("SELECT count(*) AS n FROM idem").get()).toEqual({
+      n: 1,
+    });
   });
 
   it("drops and recreates a table of the wrong shape, and says which", () => {
@@ -67,7 +69,9 @@ describe("schema", () => {
     db.exec("INSERT INTO lease VALUES ('export', 'x', 5, 'y')");
     expect(initUserLibraryStorage(sql, kv)).toEqual(["lease"]);
     expect(columns(db, "lease")).toEqual(["name", "holder", "expires_at"]);
-    expect(db.prepare("SELECT count(*) AS n FROM lease").get()).toEqual({ n: 0 });
+    expect(db.prepare("SELECT count(*) AS n FROM lease").get()).toEqual({
+      n: 0,
+    });
     expect(initUserLibraryStorage(sql, kv)).toEqual([]);
   });
 
@@ -80,7 +84,13 @@ describe("schema", () => {
 });
 
 describe("LIB-13 progress: frames are throttled to one a second per file", () => {
-  const step = (done: number) => ({ id: "f", version: 1, stage: "render", done, total: 40 });
+  const step = (done: number) => ({
+    id: "f",
+    version: 1,
+    stage: "render",
+    done,
+    total: 40,
+  });
 
   it("sends the first step, then at most one a second", () => {
     const { sql } = open();
@@ -145,17 +155,26 @@ describe("live screens", () => {
     endScreenRow(sql, "s5", 100);
     endScreenRow(sql, "s9", 90);
     putScreen(sql, row(21));
-    const ids = (db.prepare("SELECT session_id AS id FROM screen").all() as { id: string }[]).map((r) => r.id);
+    const ids = (
+      db.prepare("SELECT session_id AS id FROM screen").all() as {
+        id: string;
+      }[]
+    ).map((r) => r.id);
     expect(ids).toHaveLength(MAX_SCREEN_ROWS);
     expect(ids).not.toContain("s9");
     expect(ids).toContain("s5");
   });
 
-  it("with none ended, drops the oldest started", () => {
+  it("never drops a live row, so every live screen can still be ended", () => {
     const { sql, db } = open();
     for (let n = 1; n <= MAX_SCREEN_ROWS + 1; n++) putScreen(sql, row(n));
-    expect(db.prepare("SELECT count(*) AS n FROM screen").get()).toEqual({ n: MAX_SCREEN_ROWS });
-    expect(db.prepare("SELECT 1 FROM screen WHERE session_id = 's1'").get()).toBeUndefined();
+    expect(db.prepare("SELECT count(*) AS n FROM screen").get()).toEqual({
+      n: MAX_SCREEN_ROWS + 1,
+    });
+    endScreenRow(sql, "s3", 5);
+    putScreen(sql, row(99));
+    expect(db.prepare("SELECT 1 FROM screen WHERE session_id = 's3'").get()).toBeUndefined();
+    expect(db.prepare("SELECT 1 FROM screen WHERE session_id = 's1'").get()).toBeDefined();
   });
 
   it("an end names one screen, one phone session's screens, those showing a file, or all", () => {

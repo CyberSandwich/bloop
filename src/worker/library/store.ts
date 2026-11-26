@@ -220,7 +220,10 @@ export async function fileRow(db: Db, userId: string, id: string): Promise<FileR
   return row ? rowOf(row) : null;
 }
 
-const collator = new Intl.Collator(undefined, { numeric: true, sensitivity: "base" });
+const collator = new Intl.Collator(undefined, {
+  numeric: true,
+  sensitivity: "base",
+});
 const byId = (a: string, b: string): number => (a < b ? -1 : a > b ? 1 : 0);
 
 /** The sort a view uses. Trash is by due time, soonest first; `updated` is newest first, `size` largest first. */
@@ -241,7 +244,13 @@ interface Cursor {
 }
 const cursorOf = (r: FileRow): string =>
   btoa(
-    JSON.stringify({ id: r.id, updatedAt: r.updatedAt, name: r.name, bytes: r.bytes, purgeAfter: r.purgeAfter ?? 0 }),
+    JSON.stringify({
+      id: r.id,
+      updatedAt: r.updatedAt,
+      name: r.name,
+      bytes: r.bytes,
+      purgeAfter: r.purgeAfter ?? 0,
+    }),
   );
 
 function readCursor(text: string): Cursor | null {
@@ -259,7 +268,13 @@ function readCursor(text: string): Cursor | null {
 
 /** A cursor's row stands in for the real one in the comparator: only the fields that order the view are read. */
 const asRow = (c: Cursor): FileRow =>
-  ({ id: c.id, updatedAt: c.updatedAt, name: c.name, bytes: c.bytes, purgeAfter: c.purgeAfter }) as FileRow;
+  ({
+    id: c.id,
+    updatedAt: c.updatedAt,
+    name: c.name,
+    bytes: c.bytes,
+    purgeAfter: c.purgeAfter,
+  }) as FileRow;
 
 export type Page = { ok: true; files: FileRow[]; next: string | null } | { ok: false };
 
@@ -280,7 +295,11 @@ export async function listFiles(db: Db, userId: string, view: View, sort: Sort, 
   const rest = after ? sorted.filter((r) => order(r, asRow(after)) > 0) : sorted;
   const files = rest.slice(0, PAGE_SIZE);
   const last = files.at(-1);
-  return { ok: true, files, next: rest.length > PAGE_SIZE && last ? cursorOf(last) : null };
+  return {
+    ok: true,
+    files,
+    next: rest.length > PAGE_SIZE && last ? cursorOf(last) : null,
+  };
 }
 
 /** Up Next as ids, in tick order, trashed rows left out. */
@@ -304,7 +323,11 @@ export async function overview(db: Db, userId: string, defaultQuota: number): Pr
   const user = await db
     .prepare("SELECT used_bytes, reserved_bytes, quota_bytes FROM app_user WHERE id = ?1")
     .bind(userId)
-    .first<{ used_bytes: number; reserved_bytes: number; quota_bytes: number | null }>();
+    .first<{
+      used_bytes: number;
+      reserved_bytes: number;
+      quota_bytes: number | null;
+    }>();
   const trash = await db
     .prepare(
       `SELECT count(*) AS n, COALESCE(SUM(bytes), 0) AS b FROM library_file
@@ -339,7 +362,13 @@ export async function openUploads(db: Db, userId: string, now: number): Promise<
        ORDER BY created_at, id`,
     )
     .bind(userId, now)
-    .all<{ id: string; file_id: string; name: string; bytes: number; created_at: number }>();
+    .all<{
+      id: string;
+      file_id: string;
+      name: string;
+      bytes: number;
+      created_at: number;
+    }>();
   return results.map((r) => ({
     uploadId: r.id,
     fileId: r.file_id,
@@ -370,7 +399,13 @@ export async function rename(db: Db, userId: string, id: string, base: string): 
 }
 
 /** Absolute state: ticking a ticked row, or unticking an unticked one, is a success that changes nothing. */
-export async function setSelected(db: Db, userId: string, id: string, selected: boolean): Promise<Change> {
+export async function setSelected(
+  db: Db,
+  userId: string,
+  id: string,
+  selected: boolean,
+  now: number = Date.now(),
+): Promise<Change> {
   const row = await db
     .prepare(`SELECT selected_at FROM library_file WHERE ${OWNED} AND trashed_at IS NULL`)
     .bind(userId, id)
@@ -390,7 +425,7 @@ export async function setSelected(db: Db, userId: string, id: string, selected: 
        WHERE ${OWNED} AND trashed_at IS NULL AND status = 'ready' AND disabled_at IS NULL AND selected_at IS NULL
          AND ${SELECTED_COUNT} < ${UP_NEXT_MAX}`,
     )
-    .bind(userId, id, Date.now())
+    .bind(userId, id, now)
     .run();
   if (done.meta.changes === 1) return "ok";
   const again = await fileRow(db, userId, id);
@@ -423,10 +458,12 @@ export async function setUpNext(db: LibDb, userId: string, ids: readonly string[
 }
 
 /** P1's approve batch: the files a screen was just given are the last presented. Only this owner's rows can change. */
-export function markPresented(db: Db, userId: string, ids: readonly string[], now: number): Statement {
-  return db
-    .prepare(`UPDATE library_file SET last_presented_at = ?2 WHERE user_id = ?1 AND id IN (${marks(3, ids.length)})`)
-    .bind(userId, now, ...ids);
+export function markPresented(db: Db, userId: string, ids: readonly string[], now: number): Statement[] {
+  return chunks(ids).map((part) =>
+    db
+      .prepare(`UPDATE library_file SET last_presented_at = ?2 WHERE user_id = ?1 AND id IN (${marks(3, part.length)})`)
+      .bind(userId, now, ...part),
+  );
 }
 
 /** Into the trash, due `trashDays` on. The tick stays, so a restore puts the file back in its Up Next place. */

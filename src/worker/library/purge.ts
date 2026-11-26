@@ -48,6 +48,76 @@ export interface PurgeReport {
   freed: string[];
 }
 
+const MAX_SELECTS = 5;
+const MAX_SKIPPED = 90;
+
+/** Whether a live hold on this file still lacks its copy: the bytes must stay until it exists (OSA-02). */
+export async function holdPending(
+  env: { DB: unknown; LIBRARY: unknown },
+  where: "file" | "owner",
+  id: string,
+  now: number,
+) {
+  const { results } = await libDbOf(env.DB)
+    .prepare(`SELECT id FROM hold WHERE ${where === "file" ? "file_id" : "owner_user_id"} = ?1 AND release_after > ?2`)
+    .bind(id, now)
+    .all<{ id: string }>();
+  const bucket = bucketOf(env.LIBRARY);
+  for (const { id: holdId } of results) if (!(await bucket.head(`h/${holdId}`))) return true;
+  return false;
+}
+
+/**
+ * The due rows a run may act on. An owner with a live export, or a file whose hold copy is pending, is left out of the
+ * query and the window refilled, so one such owner can never fill the window and starve the rest.
+ */
+async function dueBatch(
+  env: { DB: unknown; LIBRARY: unknown },
+  userId: string | undefined,
+  now: number,
+  deps: PurgeDeps,
+): Promise<{ batch: Due[]; full: boolean }> {
+  const db = libDbOf(env.DB);
+  const skipUsers = new Set<string>();
+  const skipFiles = new Set<string>();
+  const cleared = new Set<string>();
+  for (let attempt = 1; ; attempt++) {
+    const fixed = userId === undefined ? 2 : 3;
+    const users = [...skipUsers];
+    const files = [...skipFiles];
+    const marks = (from: number, n: number) => Array.from({ length: n }, (_, i) => `?${from + i}`).join(", ");
+    const { results } = await db
+      .prepare(
+        `SELECT f.id, f.user_id, f.bytes, f.status FROM library_file f JOIN app_user u ON u.id = f.user_id
+         WHERE f.purge_after IS NOT NULL AND f.purge_after <= ?1 AND u.suspended_at IS NULL AND u.status != 'purging'
+           ${userId === undefined ? "" : "AND f.user_id = ?3"}
+           ${users.length ? `AND f.user_id NOT IN (${marks(fixed + 1, users.length)})` : ""}
+           ${files.length ? `AND f.id NOT IN (${marks(fixed + 1 + users.length, files.length)})` : ""}
+         ORDER BY f.purge_after, f.id LIMIT ?2`,
+      )
+      .bind(now, ROW_BATCH, ...(userId === undefined ? [] : [userId]), ...users, ...files)
+      .all<Due>();
+    const batch: Due[] = [];
+    for (const row of results) {
+      if (!cleared.has(row.user_id) && (await deps.exporting(row.user_id))) {
+        skipUsers.add(row.user_id);
+        continue;
+      }
+      cleared.add(row.user_id);
+      if (row.status !== "purged" && (await holdPending(env, "file", row.id, now))) {
+        skipFiles.add(row.id);
+        continue;
+      }
+      batch.push(row);
+    }
+    const full = results.length === ROW_BATCH;
+    const skipped = skipUsers.size + skipFiles.size;
+    if (batch.length === results.length || !full || attempt === MAX_SELECTS || skipped > MAX_SKIPPED) {
+      return { batch, full: full && batch.length > 0 };
+    }
+  }
+}
+
 /**
  * Pass 1 releases the owner's bytes once and marks the row `purged` with a later due time; pass 2, once that time
  * passes, empties the prefix again (a put already awaiting during pass 1 can still land) and deletes the rows. A racing
@@ -61,30 +131,15 @@ export async function purgeDueFiles(
 ): Promise<PurgeReport> {
   const db = libDbOf(env.DB);
   const now = deps.now();
-  const owner = options.userId !== undefined;
-  const { results } = await db
-    .prepare(
-      `SELECT f.id, f.user_id, f.bytes, f.status FROM library_file f JOIN app_user u ON u.id = f.user_id
-       WHERE f.purge_after IS NOT NULL AND f.purge_after <= ?1 AND u.suspended_at IS NULL AND u.status != 'purging'
-         ${owner ? "AND f.user_id = ?3" : ""} ORDER BY f.purge_after, f.id LIMIT ?2`,
-    )
-    .bind(now, ROW_BATCH, ...(owner ? [options.userId] : []))
-    .all<Due>();
-  const report: PurgeReport = { purged: 0, more: results.length === ROW_BATCH, freed: [] };
-  const exporting = new Map<string, boolean>();
-  for (const row of results) {
-    let busy = exporting.get(row.user_id);
-    if (busy === undefined) {
-      busy = await deps.exporting(row.user_id);
-      exporting.set(row.user_id, busy);
-    }
-    if (busy) continue;
+  const { batch, full } = await dueBatch(env, options.userId, now, deps);
+  const report: PurgeReport = { purged: 0, more: full, freed: [] };
+  for (const row of batch) {
     if (row.status !== "purged") await deps.cancelConversion(row.id);
     if (await deletePrefix(bucketOf(env.LIBRARY), filePrefix(row.user_id, row.id), options.budget))
       return { ...report, more: true };
     if (row.status === "purged") {
       await db.batch([
-        db.prepare("DELETE FROM derived WHERE file_id = ?1").bind(row.id),
+        db.prepare("DELETE FROM derived WHERE file_id = ?1 AND owner_kind = 'library'").bind(row.id),
         db
           .prepare(
             "DELETE FROM library_file WHERE user_id = ?1 AND id = ?2 AND status = 'purged' AND purge_after <= ?3",

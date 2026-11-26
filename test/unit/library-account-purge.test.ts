@@ -189,35 +189,122 @@ describe("dueUsers", () => {
     expect(await dueUsers({ DB: db }, NOW, 10)).toEqual(["b", "a"]);
     expect(await dueUsers({ DB: db }, NOW, 1)).toEqual(["b"]);
   });
+
+  it("OSA-02: users under a live hold never fill the window, so a due user behind five held ones is purged", async () => {
+    const held = ["h1", "h2", "h3", "h4", "h5"];
+    const db = libWith([...held, "free"]);
+    for (const id of [...held, "free"]) {
+      db.raw.prepare("UPDATE app_user SET status = 'deleting', delete_after = ? WHERE id = ?").run(NOW - 10, id);
+    }
+    for (const id of held) {
+      db.raw
+        .prepare(
+          "INSERT INTO hold (id, file_id, owner_user_id, bucket, r2_key, created_at, release_after) VALUES (?, 'f', ?, 'library', ?, 1, ?)",
+        )
+        .run(`hold-${id}`, id, `h/hold-${id}`, NOW + 1000);
+    }
+    expect(await dueUsers({ DB: db }, NOW, 5)).toEqual(["free"]);
+    expect(await purgeUser({ DB: db, LIBRARY: fakeBucket().bucket }, "free", budget(), deps())).toBe("purged");
+  });
+});
+
+describe("OSA-02 a hold placed after the claim", () => {
+  it("waits for its copy before the prefix is emptied, then the purge goes on", async () => {
+    const db = libWith();
+    dueUser(db);
+    db.raw
+      .prepare(
+        "INSERT INTO hold (id, file_id, owner_user_id, bucket, r2_key, created_at, release_after) VALUES ('hx', 'a', 'u1', 'library', 'h/hx', 1, ?)",
+      )
+      .run(NOW + 1000);
+    // The claim refused this user (a live hold), so claim it as an earlier run would have before the hold arrived.
+    db.raw.prepare("UPDATE app_user SET status = 'purging' WHERE id = 'u1'").run();
+    const r2 = fakeBucket({ "u/u1/a/v1/orig": "source" });
+    expect(await purgeUser({ DB: db, LIBRARY: r2.bucket }, "u1", budget(), deps())).toBe("more");
+    expect(r2.objects.has("u/u1/a/v1/orig")).toBe(true);
+    await r2.bucket.put("h/hx", "copy");
+    expect(await purgeUser({ DB: db, LIBRARY: r2.bucket }, "u1", budget(), deps())).toBe("purged");
+    expect(r2.objects.has("h/hx")).toBe(true);
+    expect(r2.objects.has("u/u1/a/v1/orig")).toBe(false);
+  });
 });
 
 describe("LIB-08 late-put: tombstone resweep", () => {
-  it("deletes a put that landed after the purge, once, and only past the resweep time", async () => {
+  const stone = (resweepAfter: number) => JSON.stringify({ purgedAt: 0, resweepAfter });
+
+  it("deletes a put that landed after the purge, once, only past the resweep time, and then the tombstone", async () => {
+    const db = libWith();
     const r2 = fakeBucket({
-      "purged/u1": JSON.stringify({ purgedAt: NOW, resweepAfter: NOW + 100 }),
+      "purged/u1": stone(NOW + 100),
       "u/u1/late/v1/orig": "late",
       "u/u2/keep/v1/orig": "keep",
     });
-    expect(await resweepTombstones({ LIBRARY: r2.bucket }, budget(), NOW + 50)).toEqual({ swept: 0, more: false });
+    const env = { DB: db, LIBRARY: r2.bucket };
+    expect(await resweepTombstones(env, budget(), NOW + 50)).toEqual({
+      swept: 0,
+      more: false,
+    });
     expect(r2.objects.has("u/u1/late/v1/orig")).toBe(true);
-    expect(await resweepTombstones({ LIBRARY: r2.bucket }, budget(), NOW + 100)).toEqual({ swept: 1, more: false });
-    expect([...r2.objects.keys()].sort()).toEqual(["purged/u1", "u/u2/keep/v1/orig"]);
-    await r2.bucket.put("u/u1/later/v1/orig", "x");
-    expect((await resweepTombstones({ LIBRARY: r2.bucket }, budget(), NOW + 200)).swept).toBe(0);
-    expect(r2.objects.has("u/u1/later/v1/orig")).toBe(true);
+    expect(await resweepTombstones(env, budget(), NOW + 100)).toEqual({
+      swept: 1,
+      more: false,
+    });
+    expect([...r2.objects.keys()].sort()).toEqual(["u/u2/keep/v1/orig"]);
   });
 
-  it("leaves a tombstone unswept when the budget runs out, so the next run continues", async () => {
+  it("leaves a tombstone in place when the budget runs out, so the next run continues", async () => {
+    const db = libWith();
     const many = Object.fromEntries(
       Array.from({ length: 2500 }, (_, i) => [`u/u1/a/p${String(i).padStart(4, "0")}`, "x"]),
     );
-    const r2 = fakeBucket({
-      "purged/u1": JSON.stringify({ purgedAt: 1, resweepAfter: 2 }),
-      ...many,
+    const r2 = fakeBucket({ "purged/u1": stone(2), ...many });
+    const env = { DB: db, LIBRARY: r2.bucket };
+    expect(await resweepTombstones(env, { rounds: 2 }, 10)).toMatchObject({
+      swept: 0,
+      more: true,
     });
-    expect(await resweepTombstones({ LIBRARY: r2.bucket }, { rounds: 1 }, 10)).toMatchObject({ swept: 0, more: true });
-    expect(await resweepTombstones({ LIBRARY: r2.bucket }, budget(), 10)).toMatchObject({ swept: 1 });
-    expect(JSON.parse(new TextDecoder().decode(r2.objects.get("purged/u1")))).toMatchObject({ sweptAt: 10 });
+    expect(r2.objects.has("purged/u1")).toBe(true);
+    expect(await resweepTombstones(env, budget(), 10)).toMatchObject({
+      swept: 1,
+    });
+    expect([...r2.objects.keys()]).toEqual([]);
+  });
+
+  it("past 100 tombstones the scan resumes from a stored cursor, so later ones are reached", async () => {
+    const db = libWith();
+    const initial: Record<string, string> = {};
+    for (let i = 0; i < 250; i++) {
+      const uid = `x${String(i).padStart(3, "0")}`;
+      initial[`purged/${uid}`] = stone(1);
+      initial[`u/${uid}/late`] = "late";
+    }
+    const r2 = fakeBucket(initial);
+    const env = { DB: db, LIBRARY: r2.bucket };
+    const big = () => ({ rounds: 5000 });
+    const first = await resweepTombstones(env, big(), 10);
+    expect(first).toEqual({ swept: 100, more: true });
+    expect(r2.objects.has("u/x249/late")).toBe(true);
+    expect(await resweepTombstones(env, big(), 10)).toEqual({
+      swept: 100,
+      more: true,
+    });
+    expect(await resweepTombstones(env, big(), 10)).toEqual({
+      swept: 50,
+      more: false,
+    });
+    expect(r2.objects.size).toBe(0);
+    expect(db.raw.prepare("SELECT count(*) AS n FROM setting").get()).toEqual({
+      n: 0,
+    });
+  });
+
+  it("counts its reads against the budget", async () => {
+    const db = libWith();
+    const initial: Record<string, string> = {};
+    for (let i = 0; i < 100; i++) initial[`purged/y${String(i).padStart(3, "0")}`] = stone(10 ** 12);
+    const budgetLeft = { rounds: 10 };
+    await resweepTombstones({ DB: db, LIBRARY: fakeBucket(initial).bucket }, budgetLeft, 10);
+    expect(budgetLeft.rounds).toBe(6);
   });
 });
 
@@ -230,7 +317,22 @@ describe("LIB-08 orphan: prefixes whose owner row is gone", () => {
       "u/gone/stray": "x",
       "h/hold": "h",
     });
-    expect(await sweepOrphans({ DB: db, LIBRARY: r2.bucket }, budget())).toEqual({ orphans: 1, more: false });
+    expect(await sweepOrphans({ DB: db, LIBRARY: r2.bucket }, budget(), NOW)).toEqual({ orphans: 1, more: false });
     expect([...r2.objects.keys()].sort()).toEqual(["h/hold", "u/u1/a/v1/orig"]);
+  });
+
+  it("past 1,000 prefixes the scan resumes from a stored cursor and reaches the last one", async () => {
+    const db = libWith(["live"]);
+    const initial: Record<string, string> = { "u/live/a": "keep" };
+    for (let i = 0; i < 1500; i++) initial[`u/o${String(i).padStart(4, "0")}/a`] = "x";
+    const r2 = fakeBucket(initial);
+    const env = { DB: db, LIBRARY: r2.bucket };
+    const bigBudget = () => ({ rounds: 5000 });
+    const first = await sweepOrphans(env, bigBudget(), NOW);
+    expect(first.more).toBe(true);
+    expect(r2.objects.has("u/o1499/a")).toBe(true);
+    const second = await sweepOrphans(env, bigBudget(), NOW);
+    expect(second.more).toBe(false);
+    expect([...r2.objects.keys()]).toEqual(["u/live/a"]);
   });
 });

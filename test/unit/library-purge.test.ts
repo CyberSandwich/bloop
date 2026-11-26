@@ -28,7 +28,12 @@ describe("LIB-08 erase: a due file's prefix is emptied by listing, in two passes
   it("removes the original, derived, notes and an unrecorded key, and nothing outside the prefix", async () => {
     const db = libWith();
     addFile(db, { id: "a", ...due });
-    const r2 = fakeBucket({ ...keysFor("u1", "a"), "u/u1/b/v1/orig": "keep", "h/hold1": "hold", "purged/u9": "t" });
+    const r2 = fakeBucket({
+      ...keysFor("u1", "a"),
+      "u/u1/b/v1/orig": "keep",
+      "h/hold1": "hold",
+      "purged/u9": "t",
+    });
     setUsed(db, "u1", 100);
     const first = await purgeDueFiles({ DB: db, LIBRARY: r2.bucket }, { budget: { rounds: 10 } }, deps());
     expect([...r2.objects.keys()].sort()).toEqual(["h/hold1", "purged/u9", "u/u1/b/v1/orig"]);
@@ -211,6 +216,79 @@ describe("LIB-09 trash: who is purged and who waits", () => {
       { budget: { rounds: 5 } },
       deps({ now: () => NOW + LATE_WRITE_WINDOW_MS + 1 }),
     );
-    expect(db.raw.prepare("SELECT count(*) AS n FROM derived").get()).toEqual({ n: 0 });
+    expect(db.raw.prepare("SELECT count(*) AS n FROM derived").get()).toEqual({
+      n: 0,
+    });
+  });
+});
+
+describe("LIB-09 trash: isolation between owners", () => {
+  it("an owner with a live export never fills the window, so another owner's due file still goes", async () => {
+    const db = libWith(["busy", "free"]);
+    for (let i = 0; i < 60; i++)
+      addFile(db, {
+        id: `b${String(i).padStart(2, "0")}`,
+        user: "busy",
+        trashedAt: 1,
+        purgeAfter: NOW - 100,
+      });
+    addFile(db, { id: "f1", user: "free", trashedAt: 1, purgeAfter: NOW - 1 });
+    const r2 = fakeBucket({
+      "u/busy/b00/v1/orig": "keep",
+      "u/free/f1/v1/orig": "x",
+    });
+    const report = await purgeDueFiles(
+      { DB: db, LIBRARY: r2.bucket },
+      { budget: { rounds: 10 } },
+      deps({ exporting: async (u) => u === "busy" }),
+    );
+    expect(report).toMatchObject({ purged: 1, more: false, freed: ["free"] });
+    expect(r2.objects.has("u/busy/b00/v1/orig")).toBe(true);
+    expect(
+      db.raw.prepare("SELECT count(*) AS n FROM library_file WHERE user_id = 'busy' AND status != 'purged'").get(),
+    ).toEqual({ n: 60 });
+  });
+
+  it("OSA-02: a file whose hold copy is not yet made keeps its bytes, and does not block the rest", async () => {
+    const db = libWith();
+    addFile(db, { id: "held", trashedAt: 1, purgeAfter: NOW - 100 });
+    addFile(db, { id: "plain", trashedAt: 1, purgeAfter: NOW - 50 });
+    db.raw
+      .prepare(
+        "INSERT INTO hold (id, file_id, owner_user_id, bucket, r2_key, created_at, release_after) VALUES ('hx', 'held', 'u1', 'library', 'h/hx', 1, ?)",
+      )
+      .run(NOW + 1000);
+    const r2 = fakeBucket({
+      "u/u1/held/v1/orig": "source",
+      "u/u1/plain/v1/orig": "x",
+    });
+    const env = { DB: db, LIBRARY: r2.bucket };
+    await purgeDueFiles(env, { budget: { rounds: 10 } }, deps());
+    expect(r2.objects.has("u/u1/held/v1/orig")).toBe(true);
+    expect(r2.objects.has("u/u1/plain/v1/orig")).toBe(false);
+    await r2.bucket.put("h/hx", "copy");
+    await purgeDueFiles(env, { budget: { rounds: 10 } }, deps());
+    expect(r2.objects.has("u/u1/held/v1/orig")).toBe(false);
+    expect(r2.objects.has("h/hx")).toBe(true);
+  });
+
+  it("a derived row of a guest file with the same id is not touched", async () => {
+    const db = libWith();
+    addFile(db, { id: "a", trashedAt: 1, purgeAfter: NOW - 1 });
+    db.raw
+      .prepare(
+        "INSERT INTO derived (file_id, version, owner_kind, status, created_at, updated_at) VALUES ('a', 1, 'guest', 'done', 0, 0)",
+      )
+      .run();
+    const r2 = fakeBucket();
+    await purgeDueFiles({ DB: db, LIBRARY: r2.bucket }, { budget: { rounds: 5 } }, deps());
+    await purgeDueFiles(
+      { DB: db, LIBRARY: r2.bucket },
+      { budget: { rounds: 5 } },
+      deps({ now: () => NOW + LATE_WRITE_WINDOW_MS + 1 }),
+    );
+    expect(db.raw.prepare("SELECT count(*) AS n FROM derived").get()).toEqual({
+      n: 1,
+    });
   });
 });
