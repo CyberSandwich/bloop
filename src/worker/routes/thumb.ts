@@ -7,7 +7,7 @@ import { withPolicy } from "../headers.ts";
 import { problem } from "../http.ts";
 import { type Route, route } from "../router.ts";
 import { DEMO_THUMB_IDS } from "../seams/file-source/demo.ts";
-import { fetchThumb, previewId, previewPath } from "../yt-thumb.ts";
+import { fetchThumb, previewId, previewPath, throughCache } from "../yt-thumb.ts";
 import { limited, withConfig } from "./common.ts";
 
 /** One day, in the browser and the shared cache alike. */
@@ -34,19 +34,24 @@ export const thumbRoutes: readonly Route[] = [
     "/yt/:file",
     "thumb",
     withConfig(async (request, env, config, ctx) => {
+      // The same per-IP meter as /f/ reads, on purpose: one budget for what a page pulls, no second binding.
       const tooMany = await limited(env, "RL_FETCH", request, config);
       if (tooMany) return tooMany;
       const id = previewId(new URL(request.url).pathname);
       if (!id || !DEMO_THUMB_IDS.has(id)) return notFound();
       // Keyed by the validated id alone, so nothing a request carries can pick or poison the entry.
       const key = new Request(new URL(previewPath(id), config.origin));
-      const cached = await caches.default.match(key);
-      if (cached) return image(await cached.arrayBuffer());
-      const thumb = await fetchThumb(id, (input, init) => fetch(input, init), config.thumbOrigin);
-      if (!thumb.ok) return notFound();
-      const good = image(thumb.bytes);
-      ctx.waitUntil(caches.default.put(key, good.clone()));
-      return good;
+      const bytes = await throughCache(
+        caches.default,
+        key,
+        async () => {
+          const thumb = await fetchThumb(id, (input, init) => fetch(input, init), config.thumbOrigin);
+          return thumb.ok ? thumb.bytes : null;
+        },
+        image,
+        (work) => ctx.waitUntil(work),
+      );
+      return bytes ? image(bytes) : notFound();
     }),
   ),
 ];
