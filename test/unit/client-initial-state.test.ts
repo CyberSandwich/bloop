@@ -18,8 +18,6 @@ const ALLOWED: Record<string, string> = {
   "core/length.js": "the Until field sits in a closed sheet until openLength, which fills it and runs refresh() first",
   "library.js":
     "the row ticks are created by this module and the file pick is an action, so neither is a gate on a typed value",
-  "library/menu.js":
-    "the rename field is created in the sheet this module opens, and sync() runs once right after its listener is added",
 };
 
 const LISTENER = /(?:addEventListener\(\s*"(?:input|change)"\s*,\s*([^,)]+)|\.on(?:input|change)\s*=\s*([^;\n]+))/g;
