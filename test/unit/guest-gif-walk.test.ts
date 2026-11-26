@@ -1,5 +1,6 @@
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { describe, expect, it } from "vitest";
 import { checkImageSize, WALK_LIMITS } from "../../src/worker/seams/guest-drop/image.ts";
+import { planReads, READ_PLAN } from "../../src/worker/seams/guest-drop/read-plan.ts";
 import { validate } from "../../src/worker/seams/guest-drop/validate.ts";
 import { concat, gifExtension, reader } from "../zip-builder.ts";
 
@@ -15,7 +16,7 @@ const gif = (...blocks: Uint8Array[]) =>
 const check = (bytes: Uint8Array) => validate(reader(bytes), "gif");
 
 describe("DROP-16 pixels: a GIF frame lies inside the logical screen", () => {
-  it("DROP-16 pixels: refuses a frame whose offset plus size passes the screen (offset ignored)", async () => {
+  it("DROP-16 pixels: refuses a frame whose offset plus size passes the screen (the offset was not checked)", async () => {
     expect(await check(gif(frame(50, 50, 50, 50)))).toEqual({ ok: true, type: "gif" });
     expect(await check(gif(frame(50, 50, 51, 0)))).toEqual(refused("bad_structure"));
     expect(await check(gif(frame(50, 50, 0, 51)))).toEqual(refused("bad_structure"));
@@ -31,14 +32,14 @@ describe("DROP-16 pixels: the GIF walk's caps", () => {
     expect(await check(gif(new Uint8Array([0x00])))).toEqual(refused("bad_structure"));
   });
 
-  it("refuses a GIF with more blocks than maxSegments (trailer included), and passes one at the cap", async () => {
+  it("passes a GIF whose blocks and trailer number maxSegments, and refuses one block more", async () => {
     const ext = gifExtension(0x01, new Uint8Array());
     const blocks = (n: number) => new Uint8Array(n * ext.length).map((_, i) => ext[i % ext.length] as number);
     expect(await check(gif(blocks(limits.maxSegments - 2), frame(10, 10)))).toEqual({ ok: true, type: "gif" });
     expect(await check(gif(blocks(limits.maxSegments - 1), frame(10, 10)))).toEqual(refused("bad_structure"));
   }, 60_000);
 
-  it("refuses a GIF with more sub-blocks than maxSteps, and passes one at the cap", async () => {
+  it("passes a GIF whose sub-blocks and terminator number maxSteps, and refuses one sub-block more", async () => {
     // One frame whose data is `n` one-byte sub-blocks, then the terminator: n + 1 steps.
     const data = (n: number) => {
       const out = new Uint8Array(1 + 2 * n + 1);
@@ -51,12 +52,12 @@ describe("DROP-16 pixels: the GIF walk's caps", () => {
     expect(await check(at(limits.maxSteps))).toEqual(refused("bad_structure"));
   }, 60_000);
 
-  it("stops after maxReads windows and refuses the GIF", async () => {
+  it("stops the walk at the reads the plan has left and refuses the GIF (a second read cap past the plan)", async () => {
     const head = gif(frame(10, 10)).subarray(0, 13 + 10 + 1);
-    const size = (limits.maxReads + 2) * limits.blockBytes;
     let reads = 0;
+    // A frame whose 255-byte sub-blocks run on past what the plan can read.
     const endless = {
-      size,
+      size: (READ_PLAN.maxReads + 2) * limits.blockBytes,
       read: async (o: number, n: number) => {
         reads++;
         const out = new Uint8Array(n);
@@ -66,25 +67,13 @@ describe("DROP-16 pixels: the GIF walk's caps", () => {
         return out;
       },
     };
-    expect(await checkImageSize("gif", endless, head)).toMatchObject({ ok: false, error: "bad_structure" });
-    expect(reads).toBe(limits.maxReads);
+    for (const spent of [3, 10]) {
+      reads = 0;
+      const plan = planReads(endless);
+      for (let i = 0; i < spent; i++) await plan.read(0, 1);
+      expect(plan.readsLeft()).toBe(READ_PLAN.maxReads - spent);
+      expect(await checkImageSize("gif", plan, head)).toMatchObject({ ok: false, error: "bad_structure" });
+      expect(reads, `${spent} spent first`).toBe(READ_PLAN.maxReads);
+    }
   }, 60_000);
-});
-
-describe("DROP-16 pixels: the GIF walk's wall time", () => {
-  afterEach(() => vi.restoreAllMocks());
-
-  it("DROP-16 pixels: refuses a walk past maxMs as service_busy, which a retry may clear (no wall time)", async () => {
-    const lzw = concat([
-      new Uint8Array([2]),
-      ...Array.from({ length: 50 }, () => new Uint8Array([1, 0])),
-      new Uint8Array([0]),
-    ]);
-    const file = gif(frame(10, 10, 0, 0, lzw));
-    let now = 0;
-    vi.spyOn(Date, "now").mockImplementation(() => (now += WALK_LIMITS.gif.maxMs / 10));
-    expect(await check(file)).toEqual(refused("service_busy"));
-    vi.restoreAllMocks();
-    expect(await check(file)).toEqual({ ok: true, type: "gif" });
-  });
 });

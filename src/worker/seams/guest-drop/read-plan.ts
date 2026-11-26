@@ -8,7 +8,7 @@
 //
 // The sizes a zip declares are claims (zip.ts): here `compressed` only sizes the bytes a read asks for, which are
 // bounded by `maxEach` and `maxTotal` and by the real object size, and are measured once they arrive.
-import type { RangeReader } from "./index.ts";
+import { type RangeReader, readExact } from "./index.ts";
 import { dataStart, LOCAL_HEADER_BYTES, type ZipEntry } from "./zip.ts";
 
 export const READ_PLAN = {
@@ -32,16 +32,23 @@ export const READ_PLAN = {
 
 export class ReadBudgetExceeded extends Error {}
 
+/** A reader from `planReads`: it tells a walk how many reads the plan has left, so the walk stops there itself. */
+export interface PlannedReader extends RangeReader {
+  readsLeft(): number;
+}
+
 /** A reader whose operations stay within the plan: one whole-object read, or at most `maxReads` range reads. */
-export function planReads(r: RangeReader): RangeReader {
+export function planReads(r: RangeReader): PlannedReader {
   if (r.size <= READ_PLAN.smallObjectBytes) {
     let whole: Promise<Uint8Array> | undefined;
     return {
       size: r.size,
       read: async (offset, length) => {
-        whole ??= r.read(0, r.size);
+        whole ??= readExact(r, 0, r.size);
         return (await whole).subarray(offset, offset + length);
       },
+      // Every read after the whole one is a slice of it.
+      readsLeft: () => Number.POSITIVE_INFINITY,
     };
   }
   let reads = 0;
@@ -51,6 +58,7 @@ export function planReads(r: RangeReader): RangeReader {
       if (++reads > READ_PLAN.maxReads) throw new ReadBudgetExceeded();
       return r.read(offset, length);
     },
+    readsLeft: () => READ_PLAN.maxReads - reads,
   };
 }
 

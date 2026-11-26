@@ -5,8 +5,8 @@
 // is not where the format puts it is a malformed file.
 import { ascii } from "./bytes.ts";
 import { type Check, fail, OK } from "./formats.ts";
-import { type RangeReader, readExact } from "./index.ts";
-import { READ_PLAN } from "./read-plan.ts";
+import { readExact } from "./index.ts";
+import { type PlannedReader, READ_PLAN } from "./read-plan.ts";
 
 /** A 48 MP phone photo passes; the decoded size of one frame stays near 400 MB at most. */
 export const MAX_PIXELS = 100_000_000;
@@ -14,28 +14,24 @@ export const MAX_PIXELS = 100_000_000;
 interface Limits {
   /** Bytes per read; a read lands on the header the walk needs next. */
   blockBytes: number;
-  maxReads: number;
+  /** Reads of its own, below what the plan has left; without one the walk may spend all the plan has left. */
+  maxReads?: number;
   /** Length-bearing JPEG segments, or GIF blocks (extensions and frames). */
   maxSegments: number;
   /** Every marker, fill byte or sub-block the walk steps over. */
   maxSteps: number;
-  /** Wall time for the walk (the GIF's, which reads to the trailer). */
-  maxMs?: number;
 }
 /**
  * Past any cap the file is malformed. A JPEG's headers sit in its first MiB (a segment is at most 64 KiB, an
- * extended XMP packet a few of them). A GIF is walked to its trailer, frame data included, so its caps follow the read
- * plan's (8 MiB windows, as many as the plan allows) and a sub-block per 255 bytes of that. Past its wall time a GIF
- * walk is `service_busy`, which a retry may clear: a slow store is not a malformed file.
+ * extended XMP packet a few of them). A GIF is walked to its trailer, frame data included, in 8 MiB windows, as many
+ * as the plan has left, and a sub-block per 255 bytes of what the plan could read; these caps bound its CPU.
  */
 export const WALK_LIMITS = {
   jpeg: { blockBytes: 256 * 1024, maxReads: 4, maxSegments: 256, maxSteps: 8192 },
   gif: {
     blockBytes: READ_PLAN.maxReadBytes,
-    maxReads: READ_PLAN.maxReads,
     maxSegments: 1_000_000,
     maxSteps: Math.ceil((READ_PLAN.maxReads * READ_PLAN.maxReadBytes) / 255),
-    maxMs: 10_000,
   },
 } as const satisfies Record<string, Limits>;
 
@@ -50,15 +46,16 @@ const bad = (reason: string) => fail("bad_structure", reason);
 
 type Bytes = (at: number, n: number) => Promise<Uint8Array | null>;
 
-/** The `n` bytes at `at` (n at most one block), read a block at a time; null past the end, a short read or the cap. */
-function walker(r: RangeReader, limits: Limits): Bytes {
+/** The `n` bytes at `at` (n at most one block), read a block at a time; null past the end or the read cap. */
+function walker(r: PlannedReader, limits: Limits): Bytes {
   let block: Uint8Array = new Uint8Array();
   let blockAt = 0;
   let reads = 0;
+  const maxReads = Math.min(limits.maxReads ?? Number.POSITIVE_INFINITY, r.readsLeft());
   return async (at, n) => {
     if (at + n > r.size) return null;
     if (at < blockAt || at + n > blockAt + block.length) {
-      if (++reads > limits.maxReads) return null;
+      if (++reads > maxReads) return null;
       const want = Math.min(limits.blockBytes, r.size - at);
       if (want < n) return null;
       const read = await readExact(r, at, want);
@@ -120,8 +117,6 @@ const colorTable = (packed: number) => (packed & 0x80 ? 3 * 2 ** ((packed & 7) +
  */
 async function gifFrames(bytes: Bytes, screen: Dimensions): Promise<Check> {
   const limits = WALK_LIMITS.gif;
-  // In a Worker the clock moves only across I/O, so the deadline bites at a read; the step cap bounds the CPU between.
-  const deadline = Date.now() + limits.maxMs;
   const packed = await bytes(10, 1);
   if (!packed) return bad("gif header");
   let at = 13 + colorTable(packed[0] as number);
@@ -148,7 +143,6 @@ async function gifFrames(bytes: Bytes, screen: Dimensions): Promise<Check> {
     for (let size = -1; size !== 0; steps++) {
       const sub = await bytes(at, 1);
       if (!sub || steps >= limits.maxSteps) return bad("gif data");
-      if (Date.now() > deadline) return fail("service_busy", "gif walk time");
       size = sub[0] as number;
       at += 1 + size;
     }
@@ -188,10 +182,10 @@ function checkPixels(size: Dimensions | null): Check {
   return size.width * size.height > MAX_PIXELS ? fail("too_large", "image pixels") : OK;
 }
 
-/** The size an image declares, within the cap: a GIF's logical screen and every frame. `r` comes from `planReads`. */
+/** The size an image declares, within the cap: a GIF's logical screen and every frame. */
 export async function checkImageSize(
   kind: "jpg" | "png" | "gif" | "webp",
-  r: RangeReader,
+  r: PlannedReader,
   head: Uint8Array,
 ): Promise<Check> {
   switch (kind) {
