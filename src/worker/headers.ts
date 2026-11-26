@@ -15,6 +15,7 @@ export type Policy =
   | "worker"
   | "api"
   | "api-revalidate"
+  | "thumb"
   | "file-origin"
   | "file-pptx"
   | "file-pdf"
@@ -105,6 +106,8 @@ export const CSP: Readonly<Record<Policy, string>> = {
   worker: "default-src 'none'; script-src 'self'",
   api: API_CSP,
   "api-revalidate": API_CSP,
+  // A same-origin link preview picture (PREVIEW-01): an image an <img> loads, never a frame.
+  thumb: API_CSP,
   // The workers.dev host answers only what it must (ADR 0018); a document there could run nothing.
   "file-origin": "default-src 'none'; sandbox; frame-ancestors 'none'",
   "file-pptx": "default-src 'none'; sandbox; frame-ancestors 'none'",
@@ -128,6 +131,8 @@ const EXTRA: Readonly<Record<Policy, Record<string, string>>> = {
   api: { "Cache-Control": "no-store", "X-Bloop": "1" },
   // A read the client revalidates with an ETag (the library list): kept private, never shared, never reused unasked.
   "api-revalidate": { "Cache-Control": "private, no-cache", "X-Bloop": "1" },
+  // The handler sets Cache-Control: a good picture is cached, a failure never is (it answers under `api`).
+  thumb: {},
   // A cross-origin probe from the app reads it (ADR 0018); the handler adds Access-Control-Allow-Origin.
   "file-origin": { "Cross-Origin-Resource-Policy": "cross-origin", "Cache-Control": "no-store" },
   "file-pptx": { "Content-Disposition": "attachment", "Cache-Control": "no-store" },
