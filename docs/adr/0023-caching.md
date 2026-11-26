@@ -14,7 +14,8 @@ Status: accepted. Page variants by mode: ADR 0026.
 |---|---|
 | HTML, and JS and CSS with unhashed names | `no-cache` with an ETag, so a browser revalidates and gets a 304 |
 | `/js/vendor/<lib>-<hash>/`, `/js/workers/<name>-<hash>/`, `/fonts/<name>-<hash>.<ext>` | `public, max-age=31536000, immutable` |
-| `/img` | `public, max-age=86400, stale-while-revalidate=604800` |
+| `/img`, a name with a hash (`stem.<8 hex>.ext`) | `public, max-age=31536000, immutable` |
+| `/img`, any other name | `no-cache` (an ETag check on every use) |
 | `/api`, `/f` | `no-store` |
 | the library list (`api-revalidate`) | `private, no-cache` with an ETag (`revalidated` in `http.ts`): a revisit sends `If-None-Match` and gets a 304 |
 | `/b`, `/p`, and the notes routes | `no-store`: the library can be opened on a shared computer |
@@ -25,7 +26,7 @@ Status: accepted. Page variants by mode: ADR 0026.
 
 ### What the foundation change ships
 - The vendored immutable rule and the file-origin classes (`/f`, `/b`, `/p`, `/fo/ping`) are set where their handlers and headers live (`_headers` and `src/worker/headers.ts`), so they apply when a stream adds the first vendored folder or file-origin route.
-- `/fonts` and `/js/vendor` are immutable in `_headers`, and the build refuses a unit whose name is not the hash of its bytes (`staleUnits` in `tools/build-assets.mjs`); a script directly in `/js/workers/` is not a unit; `/img` is cached a day. The workers.dev redirect of `/f`, `/b`, `/p` and `/fo` is `no-store`, since the path is the secret.
+- `/fonts` and `/js/vendor` are immutable in `_headers`, and the build refuses a unit whose name is not the hash of its bytes (`staleUnits` in `tools/build-assets.mjs`); a script directly in `/js/workers/` is not a unit; `/img` follows its name: a hash of the file's bytes in it is immutable, anything else is revalidated, so a replaced picture is never shown stale (test/unit/img-cache.test.ts). The workers.dev redirect of `/f`, `/b`, `/p` and `/fo` is `no-store`, since the path is the secret.
 
 ## Rejected
 - **Option C, asset-bypass for pages:** narrow `run_worker_first` to `/api`, `/f`, `/auth` and the new routes. The asset layer would then answer pages on the `workers.dev` host too, so the site itself would be served from the file origin, and the path normalizer and the variant choice would never run on pages. Only the static trees are bypassed.
