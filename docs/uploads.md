@@ -44,7 +44,7 @@ A library upload expires 20 h after create. Three things remove what a client le
 - the bucket lifecycle rule aborts any incomplete multipart upload after one day, which also covers a multipart whose D1 row never got written (a Worker that died between the R2 call and the reserve);
 - the nightly reconcile heals a counter that drifted.
 
-An object that never reached `ready` is deleted by whichever step refuses or releases it, under the ordering rule (section 3).
+An object that never reached `ready` is deleted by whichever step refuses or releases it, under the ordering rule (section 3). A Worker that dies between a won release or refusal and its delete leaves a joined object nothing counts; the closed row (or refused file) still names its key, so the hourly sweep deletes the key again for a day. The sweep's file lookups use `idx_library_file_status` (migration 0008).
 
 ## 6. Switches and limits
 
