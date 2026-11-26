@@ -156,10 +156,12 @@ function settle() {
 }
 
 /**
- * One write. Its answer clears the offline mark; another tab is told to refetch.
+ * One write. Its answer clears the offline mark; another tab is told to refetch. The list it changes in place is no
+ * longer the one the ETag names, so the next read asks without it: a 304 then would keep a list the server never had.
  * @param {"POST" | "PATCH" | "PUT" | "DELETE"} method @param {string} path @param {unknown} [body] @param {Record<string, string>} [extra]
  */
 async function send(method, path, body, extra) {
+  etag = null;
   generation++;
   const answer = await net.call(method, path, body, extra);
   generation++;
