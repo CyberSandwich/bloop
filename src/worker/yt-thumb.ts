@@ -88,3 +88,36 @@ export async function fetchThumb(
     return FAILED;
   }
 }
+
+/** What the route needs of a Cache, so this module stays free of Worker types. */
+export interface CacheLike {
+  match(key: Request): Promise<Response | undefined>;
+  put(key: Request, response: Response): Promise<void>;
+}
+type Picture = Uint8Array | ArrayBuffer;
+
+/**
+ * The picture from the cache, else from `load`, which is then kept as `keep` shapes it. A cache that throws is a
+ * miss and a failed put is dropped: the answer is a fresh fetch or null (the route's 404), never a 500.
+ */
+export async function throughCache(
+  cache: CacheLike,
+  key: Request,
+  load: () => Promise<Picture | null>,
+  keep: (bytes: Picture) => Response,
+  defer: (work: Promise<unknown>) => void,
+): Promise<Picture | null> {
+  const hit = await cache.match(key).then(
+    (r) => r?.arrayBuffer(),
+    () => undefined,
+  );
+  if (hit) return hit;
+  const bytes = await load();
+  if (bytes)
+    defer(
+      Promise.resolve()
+        .then(() => cache.put(key, keep(bytes)))
+        .catch(() => {}),
+    );
+  return bytes;
+}
