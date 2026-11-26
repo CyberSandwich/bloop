@@ -574,7 +574,7 @@ const modules = {
   present: () => import("./library/present.js"),
   socket: inert,
   reorder: inert,
-  sample: inert,
+  sample: () => import("./library/sample.js"),
 };
 /** @type {Record<string, Promise<any> | undefined>} */
 const loaded = {};
