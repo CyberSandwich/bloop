@@ -5,7 +5,18 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { afterEach, describe, expect, it } from "vitest";
-import { buildAll, docsFor, faqOf, navHtml, openVariant, parseSite, site, siteFor } from "../../tools/build-pages.mjs";
+import {
+  buildAll,
+  docsFor,
+  faqOf,
+  navHtml,
+  openVariant,
+  PLACEHOLDER_DATE,
+  parseSite,
+  placeholderDates,
+  site,
+  siteFor,
+} from "../../tools/build-pages.mjs";
 
 const REPO = fileURLToPath(new URL("../../", import.meta.url));
 const preview = buildAll();
@@ -160,4 +171,23 @@ describe("the CLI builds both modes and removes a stale open page", () => {
     expect(run().status).toBe(0);
     expect(existsSync(join(copy, "public/open/articles/x.html"))).toBe(false);
   }, 60_000);
+});
+
+describe("one source for the form URL and the launch dates", () => {
+  it("the open landing and Features take the waitlist URL from site.json, with no literal of their own", () => {
+    expect(open.get("public/open/index.html")).toContain(`href="${site.waitlist}?source=landing-end"`);
+    expect(open.get("public/open/articles/features.html")).toContain(`href="${site.waitlist}?source=features"`);
+    for (const rel of ["tools/pages/open/index.html", "content/open/articles/features.md"]) {
+      expect(readFileSync(join(REPO, rel), "utf8"), rel).not.toContain(site.waitlist);
+    }
+  });
+
+  it("the launch gate lists exactly the open documents still dated with the placeholder", () => {
+    const listed = placeholderDates();
+    const dated = docsFor("open")
+      .flatMap((d) => ["published", "effective", "updated"].map((key) => [d, key] as const))
+      .filter(([d, key]) => d.meta[key] === PLACEHOLDER_DATE)
+      .map(([d, key]) => `${d.file}: ${key}`);
+    expect(listed).toEqual(dated);
+  });
 });

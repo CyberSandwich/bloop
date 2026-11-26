@@ -7,6 +7,7 @@ import { existsSync, mkdirSync, readdirSync, readFileSync, unlinkSync, writeFile
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { Marked } from "marked";
+import { ACCOUNT_PILL_OUT } from "../src/shared/account-pill.ts";
 
 // BUILD_PAGES_ROOT points the build at a copy of the repo; the tests use it to drift a file without touching the real one.
 const ROOT = process.env.BUILD_PAGES_ROOT ?? fileURLToPath(new URL("../", import.meta.url));
@@ -136,16 +137,11 @@ function waitlistUrl(page) {
   return `${site.waitlist}?source=${page.source}`;
 }
 
-// Both labels share one grid cell, so the pill is as wide as the wider one in either state. The Worker (nav-pill.ts)
-// shows the other label by swapping aria-hidden and the href for a signed-in visitor; no script is involved.
-const ACCOUNT_PILL =
-  '<a class="btn account" href="/signin" data-account><span>Sign In</span><span aria-hidden="true">Library</span></a>';
-
 /** @param {Head} page */
 export function navHtml(page) {
   const cta =
     page.mode === "open"
-      ? ACCOUNT_PILL
+      ? ACCOUNT_PILL_OUT
       : `<a class="btn waitlist" href="${waitlistUrl(page)}" data-waitlist>Waitlist</a>`;
   return fill(read("tools/pages/nav.html"), { links: linkList("nav", page), cta }).trimEnd();
 }
@@ -369,8 +365,8 @@ export function loadDocs(base = "") {
     for (const name of readdirSync(join(ROOT, "content", base, dir)).filter((n) => n.endsWith(".md"))) {
       const file = join("content", base, dir, name);
       const slug = name.slice(0, -3);
-      // `{{email}}` keeps the one public address in site.json, not repeated by hand in every page.
-      const { meta, body } = splitFrontmatter(fillProse(read(file), { email: site.email }));
+      // `{{email}}` and `{{waitlist}}` keep the one public address and the one form URL in site.json, not repeated by hand.
+      const { meta, body } = splitFrontmatter(fillProse(read(file), { email: site.email, waitlist: site.waitlist }));
       const path = dir ? (slug === "index" ? `/${dir}` : `/${dir}/${slug}`) : `/${slug}`;
       docs.push({ file, path, out: `public${path}.html`, slug, dir, meta, body });
     }
@@ -733,7 +729,9 @@ function handPage(p, mode) {
   const rel = `public/${p.file}`;
   const source = read(rel);
   const overrideRel = `tools/pages/open/${p.file}`;
-  const override = existsSync(join(ROOT, overrideRel)) ? read(overrideRel) : undefined;
+  const override = existsSync(join(ROOT, overrideRel))
+    ? fill(read(overrideRel), { waitlist: site.waitlist })
+    : undefined;
   const variant = openVariant(source, override, rel);
   const html = mode === "open" ? variant : source;
   const page = injectChrome(html, chromeFor(headOfHand(p, mode, html)), rel);
@@ -770,6 +768,18 @@ export function buildAll(mode = "preview") {
 
 /** Both modes' files: the whole of what the build owns. */
 export const buildEvery = () => new Map([...buildAll("preview"), ...buildAll("open")]);
+
+/** The date the open legal text carries until its final review stamps the real one. */
+export const PLACEHOLDER_DATE = "2026-11-25";
+
+/** Open documents still dated with the placeholder, as `file: key`; the launch gate (`--launch`) fails on any. */
+export function placeholderDates() {
+  return docsFor("open").flatMap((d) =>
+    ["published", "effective", "updated"]
+      .filter((key) => d.meta[key] === PLACEHOLDER_DATE)
+      .map((key) => `${d.file}: ${key}`),
+  );
+}
 
 /** @param {Doc[]} docs */
 function sitemap(docs) {

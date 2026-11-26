@@ -182,6 +182,8 @@ export async function servePage(
   const variant = variants.find((v) => v.path === path);
   // The file forms of a gated page (`/library.html`, `/library/index.html`) and its other letter cases are the page.
   const key = path.replace(/(\/index)?\.html$/i, "").toLowerCase() || "/";
+  // The 404 page is no page of its own: asked for by name it answers as any unknown path does, in either mode.
+  if (key === "/404") return missing(env, request, await notFound(env, request));
   const shell = AUTH_SHELLS.has(key);
   const member = MEMBER_PAGES.has(key);
   if (!variant && !shell && !member) return asset(env, request, path);
