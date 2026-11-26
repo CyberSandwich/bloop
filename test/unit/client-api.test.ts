@@ -91,6 +91,29 @@ describe("api client", () => {
     expect(await createApi({ fetch: f.fetch }).get("/x")).toEqual({ ok: false, error: "bad_request" });
   });
 
+  it("an account page (appCodes) gets the Worker's own code, with Retry-After; a page without it never does", async () => {
+    const f = fakeFetch(() => problem(400, "code_invalid"));
+    expect(await createApi({ fetch: f.fetch, appCodes: true }).post("/x", {})).toEqual({
+      ok: false,
+      error: "code_invalid",
+    });
+    expect(await createApi({ fetch: f.fetch }).post("/x", {})).toEqual({ ok: false, error: "bad_request" });
+    const limited = fakeFetch(
+      () => new Response(JSON.stringify({ code: "rate_limited" }), { status: 429, headers: { "Retry-After": "900" } }),
+    );
+    expect(await createApi({ fetch: limited.fetch, appCodes: true }).post("/x", {})).toEqual({
+      ok: false,
+      error: "rate_limited",
+      retryAfter: 900,
+    });
+    // A body with no code is still the status's: a proxy's error page names nothing.
+    const bare = fakeFetch(() => new Response("<html>", { status: 502 }));
+    expect(await createApi({ fetch: bare.fetch, appCodes: true }).get("/x")).toEqual({
+      ok: false,
+      error: "service_down",
+    });
+  });
+
   it("a network failure is offline", async () => {
     const f = fakeFetch(() => new TypeError("Failed to fetch"));
     expect(await createApi({ fetch: f.fetch }).get("/x")).toEqual({ ok: false, error: "offline" });

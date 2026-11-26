@@ -6,7 +6,7 @@ import { sizeEntries } from "../size-entries.ts";
 import { contrast, luminance, type Rgb, token } from "./contrast.ts";
 
 const read = (rel: string) => readFileSync(fileURLToPath(new URL(`../../public/${rel}`, import.meta.url)), "utf8");
-const PAGES = ["s.html", "a.html", "code.html"] as const;
+const PAGES = ["s.html", "a.html", "code.html", "signin.html", "invite.html"] as const;
 
 describe.each(PAGES)("%s under the strict CSP", (page) => {
   const html = read(page);
@@ -51,6 +51,11 @@ describe("client code under the strict CSP", () => {
     "viewer.js",
     "phone.js",
     "code.js",
+    "signin.js",
+    "invite.js",
+    "auth/code-entry.js",
+    "auth/copy.js",
+    "auth/turnstile.js",
     "core/demo.js",
     "core/rows.js",
     "core/ui.js",
@@ -266,18 +271,18 @@ describe("the demo screen", () => {
   });
 
   it("one labeled Back pill in the house frame, first in the corner bar of every app page; no logo on the phone pages", () => {
-    for (const page of ["s.html", "a.html", "code.html"]) {
+    for (const page of ["s.html", "a.html", "code.html", "signin.html", "invite.html"]) {
       const html = read(page);
       expect(html, page).toMatch(
         /<header class="bar">\s*<a class="framed"[^>]* href="\/"><svg[\s\S]*?<\/svg>Back<\/a>/,
       );
     }
-    for (const page of ["a.html", "code.html"])
+    for (const page of ["a.html", "code.html", "signin.html", "invite.html"])
       expect(read(page), page).not.toMatch(/class="brand"|favicon\.svg" width/);
   });
 
   it("icons are Lucide as inlined: one 2 px stroke, round caps and joins, in the pages and in ui.js", () => {
-    for (const page of ["s.html", "a.html", "code.html"]) {
+    for (const page of ["s.html", "a.html", "code.html", "signin.html", "invite.html"]) {
       const icons = read(page).match(/<svg class="icon"[^>]*>/g) ?? [];
       expect(icons.length, page).toBeGreaterThan(0);
       for (const svg of icons) {

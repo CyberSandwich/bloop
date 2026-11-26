@@ -64,8 +64,19 @@ const me = async (value?: string) => (await api.call("GET", "/api/me", undefined
 
 describe("GET /api/me for email members", () => {
   it("with no cookie it keeps the demo answer; a dead cookie reads as signed out", async () => {
-    expect(await me()).toEqual({ source: "mock", signedIn: true, email: null, launchMode: "preview" });
-    expect(await me("A".repeat(43))).toEqual({ source: "mock", signedIn: false, launchMode: "preview" });
+    expect(await me()).toEqual({
+      source: "mock",
+      signedIn: true,
+      email: null,
+      launchMode: "preview",
+      turnstileSiteKey: expect.any(String),
+    });
+    expect(await me("A".repeat(43))).toEqual({
+      source: "mock",
+      signedIn: false,
+      launchMode: "preview",
+      turnstileSiteKey: expect.any(String),
+    });
   });
 
   it("a member gets the full answer; an admin is marked admin", async () => {
@@ -113,7 +124,12 @@ describe("GET /api/me for email members", () => {
     const res = await api.post("/api/me/restore", {}, cookie(late.sid));
     expect(res.body).toMatchObject({ code: "restore_too_late" });
     const suspended = member(undefined, { suspended_at: 1 });
-    expect(await me(suspended.sid)).toEqual({ source: "mock", signedIn: false, launchMode: "preview" });
+    expect(await me(suspended.sid)).toEqual({
+      source: "mock",
+      signedIn: false,
+      launchMode: "preview",
+      turnstileSiteKey: expect.any(String),
+    });
   });
 });
 

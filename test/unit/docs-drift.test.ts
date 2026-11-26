@@ -254,9 +254,11 @@ describe("size budgets", () => {
   it("each page script has one first-load entry holding exactly its static import closure", () => {
     expect(scripts).toEqual([
       "public/js/code.js",
+      "public/js/invite.js",
       "public/js/legal.js",
       "public/js/phone.js",
       "public/js/screen.js",
+      "public/js/signin.js",
       "public/js/site.js",
     ]);
     const held = (s: string) => pageEntries.filter((e) => [e.path].flat().includes(s)).map((e) => [e.path].flat());
@@ -335,6 +337,7 @@ describe("size budgets", () => {
       "sheen follow, lazy": "public/js/sheen-follow.js",
       "trusted types policy, lazy": "public/js/core/tt.js",
       "account errors, lazy": "public/js/shared/errors-app.js",
+      "turnstile loader, lazy": "public/js/auth/turnstile.js",
     });
     for (const entry of lazyEntries) {
       const own = [entry.path].flat();
@@ -370,11 +373,7 @@ describe("size budgets", () => {
       ),
     );
     // Modules the Worker or a later change imports first; the change that adds the browser importer deletes its line.
-    const awaitingImporter = new Set([
-      "public/js/core/copy-check.js",
-      "public/js/core/tt.js",
-      "public/js/shared/errors-app.js",
-    ]);
+    const awaitingImporter = new Set(["public/js/core/copy-check.js", "public/js/shared/errors-app.js"]);
     const lazyJs = entries.filter(
       (e) =>
         e.name.endsWith(", lazy") &&
