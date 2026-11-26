@@ -131,7 +131,8 @@
     "GRAPH_DOWNLOAD_HOSTS": "*.sharepoint.com,*.files.1drv.com,my.microsoftpersonalcontent.com",
     // Open: with no accounts yet, a guest send is how a real deck reaches a live screen (test/unit/config.test.ts).
     "GUEST_DROP": "open",
-    "GUEST_MAX_BYTES": "94371840",
+    // 25 MB: a single streamed PUT past it is not served reliably; larger guest files wait for the multipart pipeline.
+    "GUEST_MAX_BYTES": "26214400",
     "GUEST_STORAGE_BUDGET_BYTES": "5368709120",
     // R2 has no platform spending cap: these stop bloop at 50% of the free tier per UTC calendar month (1M class A, 10M class B), since the billing period may not align with calendar months.
     "R2_CLASS_A_MONTHLY_CAP": "500000",
