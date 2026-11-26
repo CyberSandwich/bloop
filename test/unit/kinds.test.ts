@@ -43,9 +43,9 @@ describe("orderItems", () => {
     expect(out).not.toBe(input);
   });
 
-  it("keeps the caller's order for library files with links among them", () => {
+  it("sorts library files with links among them: a live list holds library files only", () => {
     const input = [lib("c:1", "Zebra.pptx"), VEVOX, lib("a:1", "Apple.pptx")];
-    expect(orderItems(input).map((i) => i.ref)).toEqual(["c:1", "demo-vevox", "a:1"]);
+    expect(orderItems(input).map((i) => i.ref)).toEqual(["a:1", "c:1", "demo-vevox"]);
   });
 
   it("sorts as before when any file is not a library file, or when there are links only", () => {

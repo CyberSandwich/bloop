@@ -11,6 +11,7 @@ import {
   orderItems,
   validDerived,
   validExtra,
+  validLibraryRef,
   withIds,
 } from "../items.ts";
 import type { EventOf, Machine, Step } from "../machine.ts";
@@ -66,7 +67,11 @@ export function approve(m: Machine, ev: EventOf<"approve">): Step {
   if ((m.state !== "claimed" && m.state !== "choosing") || m.pairing?.kind !== "owner") return fail("wrong_state");
   if (unconfirmed(m)) return fail("match_required");
   // A live Up Next list was checked by the route's serving predicate; the machine holds no library to check it against.
-  if (m.mode === "live" && !isUpNext(ev.items)) {
+  if (m.mode === "live" && isUpNext(ev.items)) {
+    // A library file is read as the pinned user: with none pinned, no one may read it.
+    if (m.pairing.userId === null) return fail("auth_required");
+    if (!ev.items.every((i) => validLibraryRef(i.ref))) return fail("bad_request");
+  } else if (m.mode === "live") {
     // transitional: removed in P1 commit 5 (one listed mock or Graph file, until the library is the live source)
     const { listed } = m.pairing;
     if (ev.items.length !== 1 || ev.items[0]?.kind !== "file") return fail("bad_request");
@@ -115,7 +120,8 @@ export function fallback(m: Machine, ev: EventOf<"fallback">): Step {
 export function derivedReady(m: Machine, ev: EventOf<"derivedReady">): Step {
   if (!validDerived(ev.derived) || !validExtra(ev.extra)) return fail("bad_request");
   const { session } = m;
-  if (!IN_SESSION.includes(m.state) || !session) return fail("wrong_state");
+  // A guest's offered file converts before the Open tap, so its flags may land first.
+  if ((!IN_SESSION.includes(m.state) && m.state !== "offered") || !session) return fail("wrong_state");
   const item = session.items.find((i) => i.kind === "file" && i.ref === ev.ref);
   if (!item) return ok(m);
   const items = session.items.map((i) => (i === item ? { ...i, derived: ev.derived } : i));
