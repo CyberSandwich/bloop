@@ -9,18 +9,6 @@ import { VERIFIED } from "./verified.js";
 
 export const MAIL_SUBJECT = "bloop isn't responding";
 
-/** The chooser's keys, owner or guest: a live claim picks the screen's number before any of them. @type {PhoneStateKey[]} */
-const CHOOSER = ["match", "empty", "choose", "approving", "approve", "approve_demo", "unregistered", "guest_add"];
-
-/**
- * The live pick over core/states.js's key (present-live.md 3.2), kept here so the room screen's first load never
- * carries it. Pure.
- * @param {{info: {choices: string[] | null} | null, view: {confirmed: boolean} | null}} c
- * @param {PhoneStateKey} key
- * @returns {PhoneStateKey}
- */
-export const withPick = (c, key) => (c.info?.choices && !c.view?.confirmed && CHOOSER.includes(key) ? "pick" : key);
-
 const ENTER_CODE = { id: "code", label: "Enter the Code", kind: /** @type {const} */ ("primary"), href: "/code" };
 /** Revokes the stored OneDrive access (docs/architecture.md section 6, /api/me/disconnect). */
 const DISCONNECT = { id: "disconnect", label: "Disconnect OneDrive", kind: /** @type {const} */ ("text") };
@@ -99,7 +87,7 @@ export function phoneCopy(key, f) {
     loading: false,
   };
   const file = f.file ?? "your file";
-  // A room with no name (unregistered) has none here either: the match digits say which screen.
+  // A room with no name (unregistered) has none here either: the title says "This Screen".
   const to = (/** @type {string} */ word) => (f.room ? ` ${word} ${f.room}` : "");
   const disconnect = f.account ? [DISCONNECT] : [];
   // A demo's match digits ride on the button that commits: the person compares them with the screen. One device has

@@ -52,6 +52,7 @@
   --r-stage: 28px;
   --r-content: 24px;
   --r-pill: 9999px;
+  --choice-h: 64px;
 
   --sh-frame: 0 0 0 1px rgba(0, 0, 0, 0.06), 0 30px 60px -30px rgba(0, 0, 0, 0.35);
   --sh-nav: 0 0 0 0.5px rgba(0, 0, 0, 0.08), 0 4px 18px rgba(0, 0, 0, 0.05);
