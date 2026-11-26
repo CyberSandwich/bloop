@@ -120,7 +120,7 @@ describe("CONV-02 caps: profiles and the deadline", () => {
       90 + 31 + (30 + 180 + 30 + 500) + (120 + 150) + 60,
     );
     expect(deadlineSeconds("deck", "pptx", 4 * 1024 * 1024, demo)).toBe(90 + 31 + 740 + (120 + 20) + 60);
-    expect(deadlineSeconds("video", "mov", 4 * 1024 * 1024, full)).toBe(90 + 31 + (30 + 900) + 120 + 60);
+    expect(deadlineSeconds("video", "mov", 4 * 1024 * 1024, full)).toBe(90 + 31 + (30 + 1440) + 120 + 60);
     expect(deadlineSeconds("image", "heic", 4 * 1024 * 1024, full)).toBe(90 + 31 + (30 + 60) + 120 + 60);
   });
 
