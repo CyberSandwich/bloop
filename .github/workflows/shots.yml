@@ -1,0 +1,31 @@
+name: shots
+
+on:
+  push:
+    branches: [ci/demo-deck-shots]
+
+permissions:
+  contents: write
+
+jobs:
+  deck:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version-file: .nvmrc
+      - run: sudo apt-get update && sudo apt-get install -y --no-install-recommends libreoffice-impress fonts-crosextra-carlito poppler-utils
+      - run: node tools/make-demo-deck.mjs
+      - run: |
+          mkdir -p shots
+          pdftoppm -png -scale-to-x 1280 -scale-to-y -1 src/worker/seams/file-source/demo-files/demo-handout.pdf shots/deck
+          pdffonts src/worker/seams/file-source/demo-files/demo-handout.pdf > shots/fonts.txt
+      - if: always()
+        run: |
+          git config user.name "shots"
+          git config user.email "shots@users.noreply.github.com"
+          git add -f shots src/worker/seams/file-source/demo-files/demo-deck.pptx src/worker/seams/file-source/demo-files/demo-handout.pdf
+          git commit -m "shots: deck" || exit 0
+          git push origin HEAD:ci/demo-deck-shots
