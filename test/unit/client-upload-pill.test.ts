@@ -76,15 +76,12 @@ describe("the pill's face", () => {
     expect(node.classes.has("wrap")).toBe(false);
   });
 
-  it("announces a changed title to the page, and never a changed line", () => {
+  it("has no live region of its own: the page's one persistent region speaks for it", () => {
     const { part, node } = make();
-    const live = node.find((n) => n.getAttribute("role") === "status") as FakeNode;
-    expect(live.textContent).toBe("Lecture 5.pptx");
-    part.update({ line: "34 of 88 MB" });
-    part.update({ line: "35 of 88 MB" });
-    expect(live.textContent).toBe("Lecture 5.pptx");
+    expect(node.find((n) => n.getAttribute("role") === "status")).toBeUndefined();
     part.update({ title: "Checking Your File" });
-    expect(live.textContent).toBe("Checking Your File");
+    expect(node.find((n) => n.getAttribute("role") === "status")).toBeUndefined();
+    expect(node.byClass("up-title")?.textContent).toBe("Checking Your File");
   });
 
   it("holds the slot's controls at its end, and replaces them", () => {
