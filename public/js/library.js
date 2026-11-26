@@ -304,9 +304,9 @@ async function rename(id, base) {
 async function download(id) {
   const answer = await send("POST", `${path(id)}/preview`, { asset: "original" });
   if (!answer.ok) return refuse(answer);
-  // transitional: P1: the link is on FILE_ORIGIN, where `download` is ignored, so only the /p/ handler's
-  // `Content-Disposition: attachment` for an original keeps an inline PDF or picture from replacing this page.
-  const link = el("a", { href: String(answer.value.base), download: "" });
+  // transitional: P1: the link is on FILE_ORIGIN, where `download` is ignored: until the /p/ handler answers an
+  // original with `Content-Disposition: attachment`, an inline PDF or picture opens in a new tab, never over this page.
+  const link = el("a", { href: String(answer.value.base), download: "", target: "_blank", rel: "noopener" });
   document.body.append(link);
   link.click();
   link.remove();
