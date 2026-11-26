@@ -4,6 +4,7 @@ import { down } from "../shared/errors.js";
 import { TYPED_WRONG } from "./copy.js";
 
 export const TYPED_LETTERS = "Codes don't use 0, 1, I, L, O or U.";
+export const TYPED_PASTE = "Can't paste. Type the code.";
 /** The typed-code page's one sentence beside the field, per failure a claim can return. */
 const TYPED = /** @type {Partial<Record<PhoneStateKey, string>>} */ ({
   typed_wrong: TYPED_WRONG,
