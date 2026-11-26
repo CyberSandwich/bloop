@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -50,11 +51,12 @@ func TestMaxTranscodeSecondsFollowsTheCeiling(t *testing.T) {
 		rate    float64
 		want    float64
 	}{
-		{1800 * time.Second, 0.27, 243},
-		{900 * time.Second, 0.27, 121}, // 121.5, to the whole second below
-		{1800 * time.Second, 1, 900},
+		{1440 * time.Second, 0.27, 190}, // (1440 - 30) x 0.27 / 2 = 190.35
+		{900 * time.Second, 0.27, 117},  // 117.45
+		{1440 * time.Second, 1, 705},
+		{20 * time.Second, 1, 0}, // a ceiling under the fixed cost allows nothing
 	} {
-		if got := maxTranscodeSeconds(c.ceiling, c.rate); got != c.want {
+		if got := maxTranscodeSeconds(c.ceiling, 30*time.Second, c.rate); got != c.want {
 			t.Errorf("%v at %v: %v, want %v", c.ceiling, c.rate, got, c.want)
 		}
 	}
@@ -63,7 +65,7 @@ func TestMaxTranscodeSecondsFollowsTheCeiling(t *testing.T) {
 func TestVideoRateAndWidthComeFromTheEnvironment(t *testing.T) {
 	env := map[string]string{"BLOOP_VIDEO_RATE": "0.5", "BLOOP_VIDEO_WIDTH": "1280", "BLOOP_TIMEOUT_VIDEO": "1000"}
 	c := loadConfig(func(k string) string { return env[k] })
-	if c.VideoRate != 0.5 || c.VideoWidth != 1280 || c.MaxVideoSecs != 250 {
+	if c.VideoRate != 0.5 || c.VideoWidth != 1280 || c.MaxVideoSecs != 242 {
 		t.Fatalf("rate %v width %d cap %v", c.VideoRate, c.VideoWidth, c.MaxVideoSecs)
 	}
 	env["BLOOP_MAX_VIDEO_SECONDS"] = "99"
@@ -160,12 +162,12 @@ func TestFaststartedNeedsTheIndexBeforeTheMediaData(t *testing.T) {
 
 func probeOf(video, audio string) probe {
 	var p probe
-	p.Streams = []stream{{CodecType: "video", CodecName: "h264", Profile: "High", PixFmt: "yuv420p", Width: 1920, Height: 1080}}
+	p.Streams = []stream{{CodecType: "video", CodecName: "h264", Profile: "High", PixFmt: "yuv420p", Width: 1920, Height: 1080, Level: 40}}
 	if video != "" {
 		p.Streams[0].Profile = video
 	}
 	if audio != "" {
-		p.Streams = append(p.Streams, stream{CodecType: "audio", CodecName: audio})
+		p.Streams = append(p.Streams, stream{CodecType: "audio", CodecName: audio, Profile: "LC"})
 	}
 	return p
 }
@@ -176,21 +178,27 @@ func TestCanRemuxOnlyBrowserSafeH264InAnMP4OrMov(t *testing.T) {
 	if !ok(probeOf("", "aac")) || !ok(probeOf("", "")) {
 		t.Fatal("High H.264 with AAC or no audio must remux")
 	}
-	for _, profile := range []string{"Baseline", "Constrained Baseline", "Main", "High"} {
+	for _, profile := range []string{"Baseline", "Constrained Baseline", "Main", "High", "Constrained High"} {
 		if !ok(probeOf(profile, "aac")) {
 			t.Errorf("%s must remux", profile)
 		}
 	}
 	for name, p := range map[string]probe{
+		"Extended":              probeOf("Extended", "aac"),
 		"High 10":               probeOf("High 10", "aac"),
 		"High 4:2:2":            probeOf("High 4:2:2", "aac"),
 		"High 4:4:4":            probeOf("High 4:4:4 Predictive", "aac"),
 		"opus audio":            probeOf("", "opus"),
 		"mp3 audio":             probeOf("", "mp3"),
 		"no profile":            probeOf("none", "aac"),
-		"hevc":                  {Streams: []stream{{CodecType: "video", CodecName: "hevc", Profile: "Main", PixFmt: "yuv420p", Width: 1280}}},
-		"8-bit 4:2:2":           {Streams: []stream{{CodecType: "video", CodecName: "h264", Profile: "High", PixFmt: "yuv422p", Width: 1280}}},
-		"10-bit pixels":         {Streams: []stream{{CodecType: "video", CodecName: "h264", Profile: "High", PixFmt: "yuv420p10le", Width: 1280}}},
+		"hevc":                  {Streams: []stream{{CodecType: "video", CodecName: "hevc", Profile: "Main", PixFmt: "yuv420p", Width: 1280, Height: 720, Level: 40}}},
+		"8-bit 4:2:2":           {Streams: []stream{{CodecType: "video", CodecName: "h264", Profile: "High", PixFmt: "yuv422p", Width: 1280, Height: 720, Level: 40}}},
+		"10-bit pixels":         {Streams: []stream{{CodecType: "video", CodecName: "h264", Profile: "High", PixFmt: "yuv420p10le", Width: 1280, Height: 720, Level: 40}}},
+		"level 6.0":             {Streams: []stream{{CodecType: "video", CodecName: "h264", Profile: "High", PixFmt: "yuv420p", Width: 1280, Height: 720, Level: 60}}},
+		"no level":              {Streams: []stream{{CodecType: "video", CodecName: "h264", Profile: "High", PixFmt: "yuv420p", Width: 1280, Height: 720}}},
+		"too tall":              {Streams: []stream{{CodecType: "video", CodecName: "h264", Profile: "High", PixFmt: "yuv420p", Width: 1080, Height: 4000, Level: 40}}},
+		"xHE-AAC":               {Streams: []stream{{CodecType: "video", CodecName: "h264", Profile: "High", PixFmt: "yuv420p", Width: 1280, Height: 720, Level: 40}, {CodecType: "audio", CodecName: "aac", Profile: "USAC"}}},
+		"AAC Main":              {Streams: []stream{{CodecType: "video", CodecName: "h264", Profile: "High", PixFmt: "yuv420p", Width: 1280, Height: 720, Level: 40}, {CodecType: "audio", CodecName: "aac", Profile: "Main"}}},
 		"no video":              {Streams: []stream{{CodecType: "audio", CodecName: "aac"}}},
 		"wider than the output": {Streams: []stream{{CodecType: "video", CodecName: "h264", Profile: "High", PixFmt: "yuv420p", Width: 3840}}},
 	} {
@@ -208,6 +216,13 @@ func TestCanRemuxOnlyBrowserSafeH264InAnMP4OrMov(t *testing.T) {
 	two.Streams = append(two.Streams, stream{CodecType: "audio", CodecName: "aac"})
 	if ok(two) {
 		t.Error("the first audio stream decides")
+	}
+	for _, profile := range []string{"HE-AAC", "HE-AACv2"} {
+		he := probeOf("", "")
+		he.Streams = append(he.Streams, stream{CodecType: "audio", CodecName: "aac", Profile: profile})
+		if !ok(he) {
+			t.Errorf("%s audio must be copied", profile)
+		}
 	}
 	if canRemux(probeOf("", "aac"), "matroska", 1920, good) {
 		t.Error("a matroska input is not copied")
@@ -230,9 +245,9 @@ func TestCanRemuxOnlyBrowserSafeH264InAnMP4OrMov(t *testing.T) {
 func h264Probe(profile, pixFmt, audio, duration string) string {
 	a := ""
 	if audio != "" {
-		a = fmt.Sprintf(`,{"codec_type":"audio","codec_name":%q}`, audio)
+		a = fmt.Sprintf(`,{"codec_type":"audio","codec_name":%q,"profile":"LC"}`, audio)
 	}
-	return fmt.Sprintf(`{"streams":[{"codec_type":"video","codec_name":"h264","profile":%q,"pix_fmt":%q,"width":1280,"height":720}%s],"format":{"format_name":"mov,mp4,m4a,3gp,3g2,mj2","duration":%q}}`,
+	return fmt.Sprintf(`{"streams":[{"codec_type":"video","codec_name":"h264","profile":%q,"pix_fmt":%q,"width":1280,"height":720,"level":40}%s],"format":{"format_name":"mov,mp4,m4a,3gp,3g2,mj2","duration":%q}}`,
 		profile, pixFmt, a, duration)
 }
 
@@ -245,13 +260,19 @@ func TestALongBrowserH264VideoIsCopiedNotEncoded(t *testing.T) {
 	if !m.has("m/0.mp4") || !m.has("t.webp") {
 		t.Fatalf("files: %+v", m.Files)
 	}
-	enc := strings.Join(tools.called("ffmpeg")[0].args, " ")
-	for _, want := range []string{"-c copy", "-movflags +faststart", "-map 0:v:0", "-map_metadata -1", "-protocol_whitelist file", "-f mov -i"} {
+	args := tools.called("ffmpeg")[0].args
+	in := filepath.Join(h.srv.cfg.WorkDir, "in", "original.mp4")
+	if !slices.Equal(args, remuxArgs(in, h.srv.dir("out", "m", "0.mp4"), int64(len(fakeFaststartMP4)), 10800)) {
+		t.Errorf("remux args = %v", args)
+	}
+	enc := strings.Join(args, " ")
+	for _, want := range []string{"-c copy", "-movflags +faststart", "-map 0:v:0", "-map_metadata -1", "-protocol_whitelist file", "-f mov -i",
+		"-bsf:v filter_units=remove_types=6", "-t 10810", fmt.Sprintf("-fs %d", copyLimitBytes(int64(len(fakeFaststartMP4))))} {
 		if !strings.Contains(enc, want) {
 			t.Errorf("remux args lack %q: %s", want, enc)
 		}
 	}
-	for _, banned := range []string{"libx264", "libx265", "-vf", "-crf", "-preset", "-t "} {
+	for _, banned := range []string{"libx264", "libx265", "-vf", "-crf", "-preset", "-c:v", "-c:a"} {
 		if strings.Contains(enc, banned) {
 			t.Errorf("remux args hold %q: %s", banned, enc)
 		}
@@ -270,7 +291,7 @@ func TestVideoThatCannotBeCopiedIsEncodedUnderTheCap(t *testing.T) {
 		h.post("j1", "mp4", fakeFaststartMP4)
 		h.mustSucceed(h.wait())
 		enc := strings.Join(tools.called("ffmpeg")[0].args, " ")
-		if !strings.Contains(enc, "libx264") || strings.Contains(enc, "-c copy") || !strings.Contains(enc, "-t 243") {
+		if !strings.Contains(enc, "libx264") || strings.Contains(enc, "-c copy") || !strings.Contains(enc, "-t 190") {
 			t.Errorf("%s: must be encoded under the cap: %s", name, enc)
 		}
 	}

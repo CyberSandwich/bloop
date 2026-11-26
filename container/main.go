@@ -43,7 +43,7 @@ var stageDefaults = map[string]time.Duration{
 	"inspect":   30 * time.Second,
 	"convert":   180 * time.Second,
 	"rasterize": 500 * time.Second,
-	"video":     1800 * time.Second,
+	"video":     1440 * time.Second,
 	"heic":      60 * time.Second,
 }
 
@@ -85,7 +85,7 @@ func loadConfig(getenv func(string) string) Config {
 		secs := num("BLOOP_TIMEOUT_"+strings.ToUpper(stage), int64(def/time.Second))
 		c.Timeouts[stage] = time.Duration(secs) * time.Second
 	}
-	c.MaxVideoSecs = float64(num("BLOOP_MAX_VIDEO_SECONDS", int64(maxTranscodeSeconds(c.Timeouts["video"], c.VideoRate))))
+	c.MaxVideoSecs = float64(num("BLOOP_MAX_VIDEO_SECONDS", int64(maxTranscodeSeconds(c.Timeouts["video"], c.VideoFixed, c.VideoRate))))
 	return c
 }
 
