@@ -399,7 +399,13 @@ export class JobRunner {
     const loc = await this.located(j);
     if (!loc) return { cancelled: true };
     if (this.d.port.running()) await this.d.port.destroy();
-    if (!(await startAttempt(this.d.db, this.key(j), this.d.now()))) return { cancelled: true };
+    if (!(await startAttempt(this.d.db, this.key(j), this.d.now()))) {
+      const row = await readRun(this.d.db, j.fileId, j.version);
+      if (row?.run_id !== j.runId || row.attempts < MAX_ATTEMPTS) return { cancelled: true };
+      // The version used its starts in earlier runs: end this one for good.
+      j.attempt = MAX_ATTEMPTS;
+      return { fail: "start_failed" };
+    }
     try {
       this.d.port.start(containerEnv(PROFILES[j.profile], loc.bytes));
       await this.d.port.setInactivity(Math.max(1000, j.deadline - this.d.now()));
@@ -601,6 +607,9 @@ export class JobRunner {
       },
       this.d.now(),
     );
-    return published ? { done: true } : { cancelled: true };
+    if (published) return { done: true };
+    // A publish that committed before its caller saw it answers false on the retry: that is done, not cancelled.
+    const row = await readRun(this.d.db, j.fileId, j.version);
+    return row?.status === "done" && row.run_id === j.runId ? { done: true } : { cancelled: true };
   }
 }
