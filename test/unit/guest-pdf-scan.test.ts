@@ -1,6 +1,6 @@
 import { deflateSync } from "node:zlib";
 import { describe, expect, it } from "vitest";
-import { MAX_OBJECT_STREAMS, MAX_PDF_BYTES, scanPdf } from "../../src/worker/seams/guest-drop/pdf-scan.ts";
+import { MAX_OBJECT_STREAMS, scanPdf } from "../../src/worker/seams/guest-drop/pdf-scan.ts";
 
 const enc = new TextEncoder();
 const pdf = (body: string) => enc.encode(`%PDF-1.5\n${body}\n%%EOF\n`);
@@ -184,9 +184,4 @@ describe("DROP-13 pdf-active: hostile input", () => {
     expect(await scanPdf(hostile)).toMatchObject({ ok: false, found: ["unscannable"] });
     expect(performance.now() - t).toBeLessThan(10_000);
   }, 30_000);
-
-  it("answers a file over the in-memory cap with needs_stream_scan, not ok", async () => {
-    const huge = new Uint8Array(MAX_PDF_BYTES + 1);
-    expect(await scanPdf(huge)).toEqual({ ok: false, error: "too_large", reason: "needs_stream_scan" });
-  });
 });

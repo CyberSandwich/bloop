@@ -43,6 +43,11 @@ describe("a validator reads through the read plan, never entry by entry", () => 
         `${GUEST_DROP}read-plan.ts: const rest = await r.read(from + at, size);`,
         `${GUEST_DROP}validate.ts: r.read(Math.max(0, r.size - TAIL_BYTES), Math.min(r.size, TAIL_BYTES));`,
         `${GUEST_DROP}validate.ts: const head = await r.read(0, Math.min(r.size, HEAD_BYTES));`,
+        // a PDF whole (at most one small object), a PDF's windows, a JPEG's marker head, and text (at most 5 MB)
+        `${GUEST_DROP}validate.ts: const scan = r.size <= READ_PLAN.smallObjectBytes ? await scanPdf(await r.read(0, r.size)) : await scanWindows(r);`,
+        `${GUEST_DROP}validate.ts: const chunk = await r.read(at, PDF_WINDOW_BYTES);`,
+        `${GUEST_DROP}validate.ts: dimensions(type, type === "jpg" ? await r.read(0, Math.min(r.size, JPEG_SCAN_BYTES)) : head),`,
+        `${GUEST_DROP}validate.ts: const checked = checkText(await r.read(0, r.size));`,
         `${GUEST_DROP}zip.ts: const tailOf = (r: RangeReader) => r.read(Math.max(0, r.size - TAIL_BYTES), Math.min(r.size, TAIL_BYTES));`,
         `${GUEST_DROP}zip.ts: const cd = await r.read(cdOffset, cdSize);`,
       ].sort(),

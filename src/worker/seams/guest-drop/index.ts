@@ -68,10 +68,6 @@ export interface RangeReader {
   size: number;
   read(offset: number, length: number): Promise<Uint8Array>;
 }
-export type Validate = (
-  r: RangeReader,
-  declared: FileType,
-) => Promise<{ ok: true; type: FileType } | { ok: false; error: DropError }>;
 
 export const ZIP_LIMITS = {
   maxEntries: 5000,
@@ -82,7 +78,6 @@ export const ZIP_LIMITS = {
   ratioFloorBytes: 64 * 1024,
   /** The one entry inflated, to read its content types; never more than this. */
   maxContentTypesBytes: 256 * 1024,
-  requiredParts: ["[Content_Types].xml", "ppt/presentation.xml"],
   refusedParts: [/^ppt\/vbaProject\.bin$/i, /^ppt\/activeX\//i, /\.bin$/i],
   refusedContentTypes: [/macroEnabled/i, /vbaProject/i],
 } as const;

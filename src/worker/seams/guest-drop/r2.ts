@@ -4,6 +4,7 @@ import type { FileType } from "../../../shared/protocol.ts";
 import type { Db } from "../../auth/db.ts";
 import { newRef } from "../../ids.ts";
 import type { ByteRange } from "../open-path/range.ts";
+import { dropError } from "./formats.ts";
 import {
   type Accepted,
   type GuestDrop,
@@ -13,7 +14,7 @@ import {
   type Upload,
 } from "./index.ts";
 import { DEFAULT_OP_CAPS, type OpCaps, R2Meter } from "./meter.ts";
-import { validate } from "./validate.ts";
+import { type Verdict, validate } from "./validate.ts";
 
 /** The slice of an R2 bucket this file uses; the platform binding satisfies it (see `bucketOf`). */
 export interface Bucket {
@@ -93,7 +94,7 @@ export class R2GuestDrop implements GuestDrop {
   async accept(u: Upload, maxBytes: number): Promise<Accepted> {
     if (u.length > maxBytes) return { ok: false, error: "too_large" };
     let stored: { size: number; sha256: string } | null;
-    let checked: Awaited<ReturnType<typeof validate>> | null = null;
+    let checked: Verdict<FileType> | null = null;
     try {
       stored = await this.store(u);
       if (stored) checked = await validate(this.ranges(u.r2Key, stored.size), u.declaredType);
@@ -108,7 +109,7 @@ export class R2GuestDrop implements GuestDrop {
     }
     if (!checked.ok) {
       await this.delete(u.r2Key);
-      return checked;
+      return { ok: false, error: dropError(checked.error) };
     }
     await this.db
       .prepare("UPDATE guest_file SET bytes = ?, sha256 = ? WHERE session_id = ? AND r2_key = ?")

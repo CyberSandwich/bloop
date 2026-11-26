@@ -1,6 +1,6 @@
 # The upload pill
 
-One face for every upload: the library's Add Files (one file or many), a library drop, and a guest's send on `/a`. It is a user of the loader (design.md section 6), shaped as a pill, so there is still one loader in bloop (README.md additions, Upload pill). Client: core/upload.js (U); the multipart protocol is the uploads route (plan A.4).
+One face for every upload: the library's Add Files (one file or many), a library drop, and a guest's send on `/a`. It is a user of the loader (design.md section 6), shaped as a pill, so there is still one loader in bloop (README.md additions, Upload pill). Client: core/upload.js (U); what the server refuses and why is `docs/threats/uploads.md`.
 
 ## 1. The part
 

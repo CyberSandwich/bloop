@@ -1,33 +1,42 @@
-// What a stored object really is (DROP-02 to DROP-04). Range reads only: the head, the zip end record and
-// central directory, or the PDF or image tail. The one inflate is the content-types part, capped at a few hundred KB.
-import type { DropError, FileType } from "../../../shared/protocol.ts";
-import { inflate, latin1, majorBrand, startsWith } from "./bytes.ts";
-import { checkOoxml, decodeXml, isRefusedPart, isRelsPart } from "./formats.ts";
+// What a stored object really is (DROP-02 to DROP-04, DROP-11 to DROP-16), for every format in `FORMATS`. Range reads
+// only: the head, the zip end record and central directory, the PDF or image tail. The one inflate in a package is its
+// content types and relationships parts, capped at a few hundred KB; a PDF is read in windows.
+import { inflate, latin1 } from "./bytes.ts";
+import { scanCfb } from "./cfb.ts";
+import {
+  checkOoxml,
+  checkText,
+  decodeXml,
+  detect,
+  FORMATS,
+  type FormatType,
+  isRefusedPart,
+  isRelsPart,
+  MAX_TEXT_BYTES,
+  type Refusal,
+} from "./formats.ts";
+import { checkPixels, dimensions, JPEG_SCAN_BYTES } from "./image.ts";
 import { type RangeReader, ZIP_LIMITS } from "./index.ts";
-import { planReads, ReadBudgetExceeded, readParts } from "./read-plan.ts";
+import { PDF_WINDOW_BYTES, scanPdf, scanPdfChunks } from "./pdf-scan.ts";
+import { planReads, READ_PLAN, ReadBudgetExceeded, readParts } from "./read-plan.ts";
 import { checkSizes, hasEndRecord, readCentralDirectory, type ZipEntry } from "./zip.ts";
 
 const HEAD_BYTES = 1024;
 /** Where a PDF's `%%EOF` must sit, and the window searched for `%%EOF` in an image or video. */
 const TAIL_BYTES = 1024;
 const PNG_END_BYTES = 12; // the IEND chunk: length 0, "IEND", CRC
-const JPEG_MAGIC = [0xff, 0xd8, 0xff];
-const PNG_MAGIC = [0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a];
-const MOV_BRAND = "qt  ";
-const MP4_BRANDS: ReadonlySet<string> = new Set([
-  ...["isom", "iso2", "iso4", "iso5", "iso6", "mp41", "mp42", "mp71", "avc1", "dash"],
-  ...["M4V ", "M4VP", "3gp4", "3gp5", "XAVC"],
-]);
+const GIF_TRAILER = 0x3b;
+const MIN_FTYP_BYTES = 16;
 /** What may follow the `ftyp` box: a real file goes straight into its movie, data, fragment, index, metadata or padding boxes. */
 const BOX_AFTER_FTYP: ReadonlySet<string> = new Set([
   ...["moov", "mdat", "moof", "meta", "pdin", "sidx"],
   ...["free", "skip", "wide", "pnot", "uuid", "junk"],
 ]);
-const MIN_FTYP_BYTES = 16;
-const hasMagic = (b: Uint8Array, magic: number[]) => b.length >= magic.length && magic.every((m, i) => b[i] === m);
+/** A still or sequence in HEIF opens with its `meta` box (or a `moov` for a sequence). */
+const BOX_AFTER_HEIC_FTYP: ReadonlySet<string> = new Set(["meta", "moov"]);
 
-type Verdict = { ok: true; type: FileType } | { ok: false; error: DropError };
-const refuse = (error: DropError): Verdict => ({ ok: false, error });
+export type Verdict<T extends FormatType = FormatType> = { ok: true; type: T } | { ok: false; error: Refusal };
+const refuse = (error: Refusal): { ok: false; error: Refusal } => ({ ok: false, error });
 
 const readTail = (r: RangeReader): Promise<Uint8Array> =>
   r.read(Math.max(0, r.size - TAIL_BYTES), Math.min(r.size, TAIL_BYTES));
@@ -40,22 +49,12 @@ async function carriesAnother(r: RangeReader, head: Uint8Array, tail: Uint8Array
   return latin1.decode(head).includes("%PDF") || latin1.decode(tail).includes("%%EOF") || (await hasEndRecord(r));
 }
 
-/** What the first bytes say the file is, or null. HEIC and every other `ftyp` brand are none. */
-function detect(head: Uint8Array): FileType | null {
-  if (startsWith(head, "PK\x03\x04")) return "pptx";
-  if (startsWith(head, "%PDF-")) return "pdf";
-  if (hasMagic(head, JPEG_MAGIC)) return "jpg";
-  if (hasMagic(head, PNG_MAGIC)) return "png";
-  const brand = majorBrand(head);
-  if (brand === MOV_BRAND) return "mov";
-  return brand !== null && MP4_BRANDS.has(brand) ? "mp4" : null;
-}
-
 /** The relationships parts of a deck: how many, and how many inflated bytes in all. A real deck has one per slide. */
 const MAX_RELS_PARTS = 1024;
 const MAX_RELS_BYTES = 4 * 1024 * 1024;
 /** The most stored bytes one XML part, and all of them together, may ask the read plan for. */
 const PART_LIMITS = { maxEach: ZIP_LIMITS.maxContentTypesBytes, maxTotal: 8 * 1024 * 1024 } as const;
+const CONTENT_TYPES_PART = "[Content_Types].xml";
 
 /** The bytes of one stored part, inflated to at most `cap` when it is deflated; null when they cannot be read so. */
 async function unpack(stored: Uint8Array | null, method: number, cap: number): Promise<Uint8Array | null> {
@@ -65,7 +64,7 @@ async function unpack(stored: Uint8Array | null, method: number, cap: number): P
 }
 
 /** The text of the content types and of every relationships part, read in one plan; null when any cannot be read. */
-async function deckXml(
+async function packageXml(
   r: RangeReader,
   entries: readonly ZipEntry[],
   contentTypes: ZipEntry,
@@ -89,10 +88,15 @@ async function deckXml(
   return types === null ? null : { types, rels };
 }
 
-async function validateDeck(whole: RangeReader, head: Uint8Array): Promise<Verdict> {
+async function validatePackage<T extends FormatType>(
+  whole: RangeReader,
+  head: Uint8Array,
+  type: T,
+  part: string,
+): Promise<Verdict<T>> {
   if (latin1.decode(head).includes("%PDF")) return refuse("bad_structure");
   try {
-    return await checkDeck(planReads(whole));
+    return await checkPackage(planReads(whole), type, part);
   } catch (error) {
     if (!(error instanceof ReadBudgetExceeded)) throw error;
     console.warn(JSON.stringify({ evt: "drop.refused", reason: "read_budget", bytes: whole.size }));
@@ -100,7 +104,7 @@ async function validateDeck(whole: RangeReader, head: Uint8Array): Promise<Verdi
   }
 }
 
-async function checkDeck(r: RangeReader): Promise<Verdict> {
+async function checkPackage<T extends FormatType>(r: RangeReader, type: T, part: string): Promise<Verdict<T>> {
   const dir = await readCentralDirectory(r);
   if (!dir.ok) return refuse(dir.error);
   const sizes = checkSizes(dir.entries);
@@ -108,60 +112,119 @@ async function checkDeck(r: RangeReader): Promise<Verdict> {
   const names = new Map(dir.entries.map((e) => [e.name, e]));
   if (dir.entries.some((e) => e.method !== 0 && e.method !== 8)) return refuse("bad_structure");
   if (dir.entries.some((e) => isRefusedPart(e.name))) return refuse("macro_content");
-  if (!ZIP_LIMITS.requiredParts.every((p) => names.has(p))) return refuse("bad_structure");
-  const xml = await deckXml(r, dir.entries, names.get("[Content_Types].xml") as ZipEntry);
+  if (!names.has(CONTENT_TYPES_PART) || !names.has(part)) return refuse("bad_structure");
+  const xml = await packageXml(r, dir.entries, names.get(CONTENT_TYPES_PART) as ZipEntry);
   if (xml === null) return refuse("bad_structure");
   const verdict = checkOoxml(
     dir.entries.map((e) => e.name),
     xml.types,
     xml.rels,
   );
-  return verdict.ok ? { ok: true, type: "pptx" } : refuse(verdict.error);
+  return verdict.ok ? { ok: true, type } : refuse(verdict.error);
 }
 
-async function validatePdf(r: RangeReader): Promise<Verdict> {
+/** A PDF's active content, its encryption and its structure: the first refusal that applies. */
+async function validatePdf(r: RangeReader): Promise<Verdict<"pdf">> {
   if (await hasEndRecord(r)) return refuse("bad_structure");
-  const tail = await readTail(r);
-  return latin1.decode(tail).includes("%%EOF") ? { ok: true, type: "pdf" } : refuse("bad_structure");
+  if (!latin1.decode(await readTail(r)).includes("%%EOF")) return refuse("bad_structure");
+  const scan = r.size <= READ_PLAN.smallObjectBytes ? await scanPdf(await r.read(0, r.size)) : await scanWindows(r);
+  if (scan.ok) return { ok: true, type: "pdf" };
+  const found = new Set("found" in scan ? scan.found : []);
+  if (found.has("Encrypt")) return refuse("encrypted");
+  return refuse(found.size === 1 && found.has("unscannable") ? "bad_structure" : scan.error);
+}
+
+/** Windows read in order: a reader that serves them from one pass over the object makes this a single read. */
+function scanWindows(r: RangeReader) {
+  let at = 0;
+  return scanPdfChunks(async () => {
+    if (at >= r.size) return null;
+    const chunk = await r.read(at, PDF_WINDOW_BYTES);
+    at += PDF_WINDOW_BYTES;
+    return chunk;
+  });
 }
 
 /**
- * An image is drawn by an <img> under a fixed type, so it needs no deeper parse: it must end where its format ends
- * (JPEG end-of-image as the last two bytes, PNG IEND as the last chunk) and carry no PDF or ZIP (DROP-11).
- * Strict because only `core/photo.js`'s canvas re-encode reaches this route, and it ends every JPEG with the marker; a
- * client that sends an original (a Motion Photo, a maker trailer) must relax this first.
+ * An image is drawn by an <img> under a fixed type, so it needs no deeper parse: its header gives a size within the
+ * pixel cap (DROP-16), it ends where its format ends where that is checkable (PNG IEND, GIF trailer, WebP's RIFF
+ * length), and it carries no PDF or ZIP (DROP-11). A JPEG may carry bytes after its end marker (a Motion Photo's
+ * clip, a maker trailer): a browser ignores them, and the fixed type and `nosniff` keep them inert.
  */
-async function validateImage(r: RangeReader, head: Uint8Array, type: FileType): Promise<Verdict> {
+async function validateImage<T extends "jpg" | "png" | "gif" | "webp">(
+  r: RangeReader,
+  head: Uint8Array,
+  type: T,
+): Promise<Verdict<T>> {
   const tail = await readTail(r);
   if (await carriesAnother(r, head, tail)) return refuse("bad_structure");
+  const sized = checkPixels(
+    dimensions(type, type === "jpg" ? await r.read(0, Math.min(r.size, JPEG_SCAN_BYTES)) : head),
+  );
+  if (!sized.ok) return refuse(sized.error);
   if (type === "png") {
     const end = tail.subarray(-PNG_END_BYTES);
     return end.length === PNG_END_BYTES && latin1.decode(end.subarray(4, 8)) === "IEND"
       ? { ok: true, type }
       : refuse("bad_structure");
   }
-  return tail.at(-2) === 0xff && tail.at(-1) === 0xd9 ? { ok: true, type } : refuse("bad_structure");
+  if (type === "gif" && tail.at(-1) !== GIF_TRAILER) return refuse("bad_structure");
+  if (
+    type === "webp" &&
+    new DataView(head.buffer, head.byteOffset, head.byteLength).getUint32(4, true) + 8 !== r.size
+  ) {
+    return refuse("bad_structure");
+  }
+  return { ok: true, type };
 }
 
 /**
- * A video is played by a <video> under a fixed `video/mp4`, so it is not parsed: the `ftyp` box must be well
- * formed and be followed by a movie, data or padding box (not text, HTML or another format), with no `%PDF` in the
- * head, and no zip end record or PDF `%%EOF` in the tail (DROP-02, VID-01).
+ * A video or HEIC still is shown under a fixed type, so it is not parsed: the `ftyp` box must be well formed and be
+ * followed by an expected box (not text, HTML or another format), with no `%PDF` in the head, and no zip end record or
+ * PDF `%%EOF` in the tail (DROP-02, VID-01).
  */
-async function validateVideo(r: RangeReader, head: Uint8Array, type: FileType): Promise<Verdict> {
+async function validateIsoMedia<T extends "mp4" | "mov" | "heic">(
+  r: RangeReader,
+  head: Uint8Array,
+  type: T,
+): Promise<Verdict<T>> {
   const size = new DataView(head.buffer, head.byteOffset, head.byteLength).getUint32(0);
   if (size < MIN_FTYP_BYTES || size + 8 > head.length) return refuse("bad_structure");
-  if (!BOX_AFTER_FTYP.has(latin1.decode(head.subarray(size + 4, size + 8)))) return refuse("bad_structure");
+  const next = latin1.decode(head.subarray(size + 4, size + 8));
+  if (!(type === "heic" ? BOX_AFTER_HEIC_FTYP : BOX_AFTER_FTYP).has(next)) return refuse("bad_structure");
   return (await carriesAnother(r, head, await readTail(r))) ? refuse("bad_structure") : { ok: true, type };
 }
 
+async function validateText<T extends FormatType>(r: RangeReader, type: T): Promise<Verdict<T>> {
+  if (r.size > MAX_TEXT_BYTES) return refuse("too_large");
+  const checked = checkText(await r.read(0, r.size));
+  return checked.ok ? { ok: true, type } : refuse(checked.error);
+}
+
 /** The detected type must equal the declared one (the extension); anything else is `bad_type`. */
-export const validate = async (r: RangeReader, declared: FileType): Promise<Verdict> => {
+export async function validate<T extends FormatType>(r: RangeReader, declared: T): Promise<Verdict<T>> {
+  const format = FORMATS[declared];
+  if (format.family === null) return validateText(r, declared);
   const head = await r.read(0, Math.min(r.size, HEAD_BYTES));
-  const detected = detect(head);
-  if (detected === null || detected !== declared) return refuse("bad_type");
-  if (detected === "pptx") return validateDeck(r, head);
-  if (detected === "pdf") return validatePdf(r);
-  if (detected === "mp4" || detected === "mov") return validateVideo(r, head, detected);
-  return validateImage(r, head, detected);
-};
+  if (detect(head) !== format.family) return refuse("bad_type");
+  switch (format.family) {
+    case "zip":
+      return validatePackage(r, head, declared, format.part as string);
+    case "cfb": {
+      const scanned = await scanCfb(r, format.streams as readonly string[]);
+      return scanned.ok ? { ok: true, type: declared } : refuse(scanned.error);
+    }
+    case "pdf":
+      return validatePdf(r) as Promise<Verdict<T>>;
+    case "mp4":
+    case "mov":
+    case "heic":
+      return validateIsoMedia(r, head, format.family) as Promise<Verdict<T>>;
+    case "webm":
+      return (await carriesAnother(r, head, await readTail(r)))
+        ? refuse("bad_structure")
+        : { ok: true, type: declared };
+    default:
+      return validateImage(r, head, format.family) as Promise<Verdict<T>>;
+  }
+}
