@@ -343,8 +343,8 @@ html:has(.page-site) {
   height: auto;
 }
 @media (max-width: 639.98px) {
-  .stage {
-    border-radius: 16px;
+  .tilt {
+    display: none;
   }
 }
 @supports (animation-timeline: view()) {
