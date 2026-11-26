@@ -1,14 +1,18 @@
 // Codes, the claim and how a pairing ends: cancel, restart, timeouts, the close of an idle screen.
 import type { EndReason } from "../../shared/protocol.ts";
-import type { FileItemRef } from "../items.ts";
 import type { Code, Effect, EventOf, Machine, MachineConfig, Step } from "../machine.ts";
-import { type Actor, closeAtFor, fail, ok, PRE_APPROVAL, SECOND } from "./step.ts";
-
-function codeRemovals(codes: Machine["codes"]): Effect[] {
-  return [codes.current, codes.previous].flatMap((c) =>
-    c ? [{ fx: "directory.remove" as const, code: c.value }] : [],
-  );
-}
+import {
+  type Actor,
+  close,
+  closeAtFor,
+  codeRemovals,
+  endSession,
+  fail,
+  ok,
+  PRE_APPROVAL,
+  purgeEffects,
+  SECOND,
+} from "./step.ts";
 
 /** The claimed code, if `value` is still claimable. The previous code lives only until `grace` after its successor. */
 function findCode(m: Machine, value: string, now: number, cfg: MachineConfig): "current" | "previous" | null {
@@ -20,25 +24,6 @@ function findCode(m: Machine, value: string, now: number, cfg: MachineConfig): "
   }
   return null;
 }
-
-/**
- * Residue.server for a guest object: by key once the session holds the file, by session id while an upload is
- * in flight (no ref yet). An owner session never stored anything, so it purges nothing.
- */
-function purgeEffects(m: Machine): Effect[] {
-  if (m.state === "uploading") return [{ fx: "purge", file: null }];
-  const guest = m.session?.items.find((i): i is FileItemRef => i.kind === "file" && i.source === "guest");
-  if (!guest) return [];
-  const { kind: _, id: __, ...file } = guest;
-  return [{ fx: "purge", file }];
-}
-
-/** Terminal: both codes retired and storage deleted (`deleteAll` also releases a demo slot). No session, so no audit. */
-export const close = (m: Machine): Step =>
-  ok({ ...m, state: "closed", codes: { current: null, previous: null }, closeAt: null }, [
-    ...codeRemovals(m.codes),
-    { fx: "deleteAll" },
-  ]);
 
 /** Back to waiting with no code, no pairing and no file: cancel, restart and every claim timeout. */
 function dropToWaiting(m: Machine, now: number, cfg: MachineConfig, reason: EndReason, actor: Actor): Step {
@@ -56,30 +41,6 @@ function dropToWaiting(m: Machine, now: number, cfg: MachineConfig, reason: EndR
   };
   const effects: Effect[] = [...codeRemovals(m.codes), ...purgeEffects(m)];
   effects.push({ fx: "audit", type: "canceled", actor }, { fx: "push", to: "both" });
-  return ok(next, effects);
-}
-
-export function endSession(m: Machine, now: number, cfg: MachineConfig, reason: EndReason, actor: Actor): Step {
-  if (!m.pairing) return fail("wrong_state");
-  const next: Machine = {
-    ...m,
-    state: "ended",
-    codes: { current: null, previous: null },
-    pairing: { ...m.pairing, listed: [], userId: null, passHash: null },
-    session: null,
-    uploadAt: null,
-    offerAt: null,
-    endedAt: now,
-    endReason: reason,
-    closeAt: closeAtFor(m.sockets, now, cfg),
-  };
-  const effects: Effect[] = [...codeRemovals(m.codes)];
-  if (m.session?.approvedAt != null) effects.push({ fx: "revokeLinks" });
-  effects.push(...purgeEffects(m), { fx: "audit", type: "ended", actor });
-  if (m.session?.approvedAt != null) {
-    effects.push({ fx: "metric", name: "session_minutes", ms: now - m.session.approvedAt });
-  }
-  effects.push({ fx: "push", to: "both" });
   return ok(next, effects);
 }
 
