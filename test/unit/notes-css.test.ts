@@ -1,7 +1,8 @@
 // The phone's notes box and its floating panel are one family of glass-and-surface shapes, so they share one radius
 // token, and the box ends above the panel instead of running under it (design.md section 7, Phone page). The browser
 // side is in e2e (NOTES-01); this holds the rules that cannot drift apart in the source.
-import { readFileSync } from "node:fs";
+import { readdirSync, readFileSync } from "node:fs";
+import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 
 const read = (path: string) => readFileSync(path, "utf8");
@@ -20,6 +21,12 @@ describe("NOTES-01 notes box: one radius with the panel, ending above it", () =>
     expect(read("public/css/base.css")).toMatch(/--r-panel:\s*34px;/);
     expect(rule(notes, ".notes")).toContain("border-radius: var(--r-panel);");
     expect(rule(app, ".column > .actions")).toContain("border-radius: var(--r-panel);");
+  });
+
+  it("no stylesheet writes the panel's radius as 34px, except length.css (its owner moves it next)", () => {
+    const sheets = readdirSync("public/css").filter((f) => f.endsWith(".css") && f !== "length.css");
+    for (const sheet of sheets)
+      expect(read(join("public/css", sheet)), `${sheet} writes 34px`).not.toMatch(/border-radius:\s*34px/);
   });
 
   it("the box has no negative margin and no padding that stands in for the panel", () => {
