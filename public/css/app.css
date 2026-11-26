@@ -1223,6 +1223,15 @@ a.row:focus-visible {
   .buttons > .btn.text:first-child {
     margin-left: -12px;
   }
+  /* Four overflow the 480 column in one row: two rows, the text pair over the buttons. */
+  .buttons:has(> :nth-child(4)) {
+    flex-wrap: wrap;
+  }
+  .buttons:has(> :nth-child(4)) > .btn,
+  .buttons:has(> :nth-child(4)) > .btn.text {
+    flex: 1 1 40%;
+    margin-left: 0;
+  }
 }
 @media (min-width: 900px) {
   .column:has(> .list:not([hidden])) {
