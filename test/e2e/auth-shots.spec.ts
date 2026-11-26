@@ -17,7 +17,7 @@ async function mock(page: Page, peek: Record<string, unknown>, me: Record<string
   await page.route("**/api/auth/code/request", (r) =>
     json(r, 202, { challengeId: "c".repeat(22), expiresAt: Date.now() + 600_000 }),
   );
-  await page.route("**/api/*/verify", (r) => json(r, 400, { type: "about:blank", status: 400, code: "code_invalid" }));
+  await page.route(/\/api\/(auth\/code|invite)\/verify$/, (r) => json(r, 400, { type: "about:blank", status: 400, code: "code_invalid" }));
   await page.route("**/api/invite/peek", (r) => json(r, 200, peek));
   await page.route("**/api/invite/accept", (r) => json(r, 202, { challengeId: "c".repeat(22) }));
 }

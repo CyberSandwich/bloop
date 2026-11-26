@@ -46,6 +46,7 @@ function state(heading, line, values, exits, more = {}) {
   show(byId("until"), !!more.until);
   if (more.until) fill(byId("until"), AUTH.invite.until, { date: more.until });
   show(codeForm, !!more.code);
+  show(byId("exits"), exits.length > 0);
   show(byId("adult"), exits.includes("accept"));
   for (const id of ["to-library", "accept", "sign-out", "home", "to-signin", "retry", "resend"])
     show(byId(id), exits.includes(id));
