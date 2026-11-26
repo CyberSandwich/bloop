@@ -1907,7 +1907,7 @@ test.describe("demo viewer", () => {
     const first = await typedCodeOf(screen.page);
     const second = await screen.context.newPage();
     await second.goto("/s?mode=demo");
-    expect(await typedCodeOf(second)).not.toBe(first);
+    await expect.poll(() => typedCodeOf(second)).not.toBe(first);
     await screen.context.close();
   });
 });

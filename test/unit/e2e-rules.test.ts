@@ -38,3 +38,52 @@ describe("e2e specs", () => {
     }
   });
 });
+
+// A one-shot read takes whatever is drawn at that instant, which may be before the state it meant has landed. Each
+// rule names such a form; its fix is a wait on the state the page shows, never on time.
+describe("e2e specs wait on the state the page shows, never read it once", () => {
+  const code = (line: string) => !/^\s*(\/|\*)/.test(line);
+  const offending = (text: string, test: (line: string, next: string, before: string[]) => boolean) => {
+    const all = text.split("\n");
+    return all.filter((line, i) => code(line) && test(line, all[i + 1] ?? "", all.slice(Math.max(0, i - 3), i)));
+  };
+
+  it("a list of texts is read only after a toHaveCount wait, at most three lines above", () => {
+    for (const { f, text } of specs) {
+      const bad = offending(
+        text,
+        (line, _next, before) =>
+          /\.all(TextContents|InnerTexts)\(/.test(line) && !before.some((l) => l.includes(".toHaveCount(")),
+      );
+      expect(bad, f).toEqual([]);
+    }
+  });
+
+  it("a code that must change is polled (expect.poll), not read once and compared", () => {
+    for (const { f, text } of specs) expect(text, f).not.toMatch(/expect\(await typedCodeOf\([^)]*\)\)\.not\./);
+  });
+
+  it("the screen's number is read only through pairing.ts's shownMatch, which waits for two digits", () => {
+    for (const { f, text } of specs) {
+      if (f !== "pairing.ts") expect(text, f).not.toMatch(/"#match"\)\.(textContent|innerText)\(/);
+    }
+  });
+
+  it("a typed code goes with Continue once enabled (enterCode), never with Enter straight after the fill", () => {
+    // Before code.js has read the field, Enter submits nothing.
+    for (const { f, text } of specs) {
+      const bad = offending(text, (line, next) => /\.fill\(/.test(line) && /keyboard\.press\("Enter"\)/.test(next));
+      expect(bad, f).toEqual([]);
+    }
+  });
+
+  it("a choice is found through #pick, never by the group's name, which reads Approving once a number is tapped", () => {
+    for (const { f, text } of specs) {
+      expect(text, f).not.toMatch(
+        /(\bgroup\([^)]*\)|getByRole\("group", \{ name: (PICK|LEGEND|"Tap|\/Tap)[^)]*\))\.getByRole\("button", \{ name/,
+      );
+    }
+    const pairing = specs.find((s) => s.f === "pairing.ts")?.text ?? "";
+    expect(pairing).toMatch(/export const choice = \(phone: Page, digits: string\) =>\s*phone\.locator\("#pick"\)/);
+  });
+});
