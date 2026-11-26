@@ -2442,6 +2442,9 @@ test.describe("screen and phone layout", () => {
     // Download joins the pill once the session leaves `approved` (no mint before the first fetch); measure after it.
     await expect(page.getByRole("button", { name: "Download", exact: true })).toBeVisible();
     const { pill } = await settledPill(page);
+    const partsBefore = (await page.evaluate(
+      `[...document.getElementById("controls").children].filter((c) => !c.hidden).map((c) => c.id + ":" + Math.round(c.getBoundingClientRect().width))`,
+    )) as string[];
     const values: number[] = [];
     await expect
       .poll(async () => {
@@ -2453,7 +2456,12 @@ test.describe("screen and phone layout", () => {
     await expect(page.locator(STAGED)).toBeVisible({ timeout: 15_000 });
     await expect(page.getByRole("img", { name: DEMO_ITEMS.horizontal.name })).toBeVisible();
     await expect(present).toBeEnabled();
-    expect(Math.round((await settledPill(page)).pill.width)).toBe(Math.round(pill.width));
+    const parts = (await page.evaluate(
+      `[...document.getElementById("controls").children].filter((c) => !c.hidden).map((c) => c.id + ":" + Math.round(c.getBoundingClientRect().width))`,
+    )) as string[];
+    expect(Math.round((await settledPill(page)).pill.width), `the pill's parts ${partsBefore} then ${parts}`).toBe(
+      Math.round(pill.width),
+    );
     // It rose, never fell, and the loader left once the photo had faded in.
     expect(values.some((v) => v > 0 && v < 100)).toBe(true);
     expect(values).toEqual([...values].sort((a, b) => a - b));
