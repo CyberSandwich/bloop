@@ -1,6 +1,7 @@
 // Fails when a change raises a size-limit budget: a limit only ever holds or drops (design.md, budgets). Holds every
 // entry on HEAD to the base (baseRefFor). There is no override: a raise needs this script changed, in plain view.
 import { execFileSync } from "node:child_process";
+import { realpathSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 
 // size-limit's own parser (size-limit/bytes.js, not exported), copied exactly so both read a limit the same way.
@@ -136,7 +137,8 @@ const treeAt = (ref) => ({
       : [],
 });
 
-if (process.argv[1] === fileURLToPath(import.meta.url)) {
+// Real paths on both sides: run through a symlink (macOS /tmp is one) a plain compare is false and nothing runs.
+if (process.argv[1] && realpathSync(process.argv[1]) === realpathSync(fileURLToPath(import.meta.url))) {
   const base = baseRefFor({
     branch: process.env.GITHUB_REF_NAME ?? git(["rev-parse", "--abbrev-ref", "HEAD"]),
     before: process.env.BEFORE ?? "",

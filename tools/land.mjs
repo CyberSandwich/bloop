@@ -2,7 +2,7 @@
 //   node tools/land.mjs <sha> [--dry-run]
 // It never forces: a push that is not a fast-forward is refused here and again by the remote.
 import { execFileSync } from "node:child_process";
-import { readdirSync } from "node:fs";
+import { readdirSync, realpathSync } from "node:fs";
 import { basename, dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -101,4 +101,6 @@ export function main(args, cwd) {
   return 0;
 }
 
-if (process.argv[1] === fileURLToPath(import.meta.url)) process.exit(main(process.argv.slice(2), process.cwd()));
+// Real paths on both sides: run through a symlink (macOS /tmp is one) a plain compare is false and nothing runs.
+if (process.argv[1] && realpathSync(process.argv[1]) === realpathSync(fileURLToPath(import.meta.url)))
+  process.exit(main(process.argv.slice(2), process.cwd()));
