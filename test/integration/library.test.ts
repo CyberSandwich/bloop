@@ -264,6 +264,27 @@ describe("paging by name past a long non-Latin-1 name", () => {
   });
 });
 
+describe("an account purge erases the user's object and leaves it usable", () => {
+  it("purges a library through the hourly cron, and the same member id written again starts clean", async () => {
+    const key = "7c9e6679-7425-40de-944b-e07fc1f90ae7";
+    seed(member("gus"));
+    const first = await call("gus", "POST", "/api/library/sample", {}, { "Idempotency-Key": key });
+    expect(first.status).toBe(201);
+    seed([`UPDATE app_user SET status = 'deleting', delete_after = ${now - 1000} WHERE id = 'gus'`]);
+    const run = await fetch(`${wrangler.url}/cdn-cgi/handler/scheduled?cron=${encodeURIComponent("0 * * * *")}`);
+    expect(run.status).toBe(200);
+    expect(wrangler.d1("SELECT count(*) AS n FROM app_user WHERE id = 'gus'")[0]?.n).toBe(0);
+    expect(wrangler.d1("SELECT count(*) AS n FROM library_file WHERE user_id = 'gus'")[0]?.n).toBe(0);
+
+    seed(member("gus"));
+    expect(filesOf(await call("gus", "GET", "/api/library"))).toEqual([]);
+    const again = await call("gus", "POST", "/api/library/sample", {}, { "Idempotency-Key": key });
+    expect(again.status).toBe(201);
+    expect(again.body.id).not.toBe(first.body.id);
+    expect(filesOf(await call("gus", "GET", "/api/library"))).toEqual([again.body.id]);
+  });
+});
+
 describe("the Sample Deck", () => {
   const KEY = "3f1f8a52-7a0e-4d6b-9a55-1c2b3d4e5f60";
   it("adds one ready deck per Idempotency-Key, answers the same row on a replay, and lists it", async () => {

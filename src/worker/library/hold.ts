@@ -202,6 +202,56 @@ export async function holdFiles(
   return report;
 }
 
+const SETTLE_BATCH = 20;
+/** A pending row younger than this may be a copy still in flight; an older one with no copy was left by a crash. */
+const IN_FLIGHT_MS = 15 * 60_000;
+
+/**
+ * Settles pending rows nobody retried (a crash, or a row from before `copied_at`): a copy that exists is marked, a
+ * copy that is missing is made again from its source, and a row whose source is gone is deleted, since nothing is left
+ * to hold. Bounded per call; the hourly cron runs it.
+ */
+export async function settleHolds(
+  env: { DB: unknown; LIBRARY: unknown; GUEST_FILES: unknown },
+  now: number,
+): Promise<{ settled: number; more: boolean }> {
+  const db = libDbOf(env.DB);
+  const buckets: Record<Source["bucket"], LibraryBucket> = {
+    library: bucketOf(env.LIBRARY),
+    guest: bucketOf(env.GUEST_FILES),
+  };
+  const { results } = await db
+    .prepare("SELECT id, file_id, created_at FROM hold WHERE copied_at IS NULL ORDER BY created_at, id LIMIT ?1")
+    .bind(SETTLE_BATCH)
+    .all<{ id: string; file_id: string; created_at: number }>();
+  let settled = 0;
+  for (const row of results) {
+    const done = () =>
+      db.prepare("UPDATE hold SET copied_at = ?2 WHERE id = ?1 AND copied_at IS NULL").bind(row.id, now);
+    if (await buckets.library.head(holdKey(row.id))) {
+      await done().run();
+      settled++;
+      continue;
+    }
+    if (row.created_at > now - IN_FLIGHT_MS) continue;
+    const [source] = (await sourcesOf(db, { fileIds: [row.file_id] })).sources;
+    const original = source ? await buckets[source.bucket].get(source.key) : null;
+    if (!original) {
+      await db.prepare("DELETE FROM hold WHERE id = ?1 AND copied_at IS NULL").bind(row.id).run();
+      settled++;
+      continue;
+    }
+    try {
+      await buckets.library.put(holdKey(row.id), original.body);
+    } catch {
+      continue;
+    }
+    await done().run();
+    settled++;
+  }
+  return { settled, more: results.length === SETTLE_BATCH };
+}
+
 /** Holds past their release time: the copy first, then the row, so a crash leaves a row that names the copy. */
 export async function releaseHolds(
   env: { DB: unknown; LIBRARY: unknown },
