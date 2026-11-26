@@ -96,19 +96,23 @@ sequenceDiagram
   R->>D: put(code, screenRef, expiresAt)
   R-->>S: code K7MQ9X, expires in 60 s
   Note over S: QR encodes https://host/a?c=K7MQ9X
-  P->>W: POST /api/claim {code}
-  W->>D: lookup(code, ipHash, kind, signedIn)
-  D-->>W: screenRef (a live owner signed out: auth_required, nothing spent)
-  W->>R: claim(code, phone)
-  R-->>P: pid, room, match 42, mode
-  R-->>S: state claimed, match 42
+  P->>W: POST /api/claim {code} (cookie, Idempotency-Key, X-Bloop-Nonce)
+  W->>D: lookup(code, ipHash, kind, signedIn, guestRefusal)
   alt no phone session yet
+    D-->>W: auth_required (the code unspent, no miss)
+    W-->>P: 401 auth_required (the phone keeps the code in sessionStorage)
     P->>W: GET /auth/start
     W-->>P: 302 to Entra authorize (state, PKCE S256, nonce in AEAD cookie)
     P->>W: GET /auth/callback?code&state
     W->>W: exchange code, check iss and tid, encrypt refresh token
-    W-->>P: Set-Cookie session, 302 to /a (pairing resumes from sessionStorage)
+    W-->>P: Set-Cookie session, 302 to /a
+    P->>W: POST /api/claim {code} again (cookie)
+    W->>D: lookup(code, ipHash, kind, signedIn)
   end
+  D-->>W: screenRef
+  W->>R: claim(code, phone)
+  R-->>P: pid, room, three choices, mode
+  R-->>S: state claimed, match 42
   P->>W: GET /api/files (Bearer pid, cookie)
   W->>G: list recent decks (access token from vault)
   W->>R: listed(ids)
@@ -308,7 +312,7 @@ test/
 | POST                     | `/api/screen/link`                           | Bearer sid                            | one more link for an approved file `{purpose: protocol, download, pdf or view, item?}` to `{item, links}` (`item` defaults to the first file; a link item is `file_not_found`); an item's first link is free, then each counts against that item's `LINK_MINTS_PER_ITEM`; `protocol` only from `approved` (the screen lost its link) |
 | POST                     | `/api/screen/shown`                          | Bearer sid, Origin; `RL_CONTROL`      | the screen reports its own tap, `{item, page, present, seq}` (an item id, a 1-based page, the screen's own seq), so the phone's highlight stays true; the same rules as `/api/control`; demo sessions only |
 | POST                     | `/api/screen/end`                            | Bearer sid                            | end; from `waiting` it closes the screen at once (a demo slot is freed); response carries `Clear-Site-Data: "storage"` |
-| POST                     | `/api/claim`                                 | cookie for a live owner (else `auth_required`, nothing spent, a miss); rate-limited | `{code, kind?}` to `{pid, room, match, choices, mode, kind, needsAuth: false, dropMaxBytes}`; `Idempotency-Key` replays the first answer |
+| POST                     | `/api/claim`                                 | cookie for a live owner (else `auth_required`, nothing spent, no miss); a live guest only when the drop admits one (else its refusal, a miss); rate-limited | `{code, kind?}` to `{pid, room, match, choices, mode, kind, needsAuth: false, dropMaxBytes}`; `Idempotency-Key` replays the first answer for the account, else for the tab's `X-Bloop-Nonce` |
 | GET                      | `/api/pair/ws?ref=<screenRef>`               | `hello{pid}`, Origin                  | phone socket                                                   |
 | GET                      | `/api/pair/state`                            | Bearer pid                            | polling fallback                                               |
 | GET                      | `/api/files`                                 | Bearer pid, plus session cookie when `FILE_SOURCE=graph` and the screen is live | up to 5 recent files, then the account's links, as `{items: Entry[]}`; tells the Screen object the ids shown |
@@ -554,7 +558,7 @@ CSP per page type. Every page uses no inline script or style and no HTML string 
 
 The landing and legal pages fetch nothing and have no manifest, so their policy has no `connect-src` or `manifest-src`. `connect-src 'self'` on the app pages covers `wss:` to the same host under CSP Level 3. A Playwright test asserts that no CSP violation is reported on any page. COEP is not set: nothing on the site needs cross-origin isolation, and it would add a failure mode.
 
-Every `/auth/*` and `/api/me*` route (and the `/api/files` listing for a live Graph screen) answers `source_unavailable` (502) unless `FILE_SOURCE=graph` and the Entra settings are present; `config.ts` already refuses to start on `graph` with a partial configuration, so `source_unavailable` is what a mock deployment returns. With `FILE_SOURCE=mock` the demo account is the user: no sign-in, `needsAuth` is false, and live screens list the same sample decks as demo screens. With `graph`, only a live screen builds `GraphFileSource` and reads the phone cookie; a demo screen ignores a cookie it is sent and always uses the demo account (SRC-04). The claim route resolves the cookie only under `graph`, so a signed-in phone claims with `needsAuth` false.
+Every `/auth/*` and `/api/me*` route (and the `/api/files` listing for a live Graph screen) answers `source_unavailable` (502) unless `FILE_SOURCE=graph` and the Entra settings are present; `config.ts` already refuses to start on `graph` with a partial configuration, so `source_unavailable` is what a mock deployment returns. With `FILE_SOURCE=mock` the demo account is the user: no sign-in, `needsAuth` is false, and live screens list the same sample decks as demo screens. With `graph`, only a live screen builds `GraphFileSource` and reads the phone cookie; a demo screen ignores a cookie it is sent and always uses the demo account (SRC-04). The claim route resolves the cookie only under `graph`, where a live owner claim without a session answers `auth_required` before the code is spent (PAIR-15), so `needsAuth` is always false.
 
 Cookies: `__Host-bloop_sid` (phone session: a random 256-bit value, only its SHA-256 in `phone_session`; HttpOnly, Secure, SameSite=Lax, Path=/, 90 days; sign-in issues a new value and deletes the presented one), `__Host-bloop_oauth` (state, PKCE verifier and nonce, AES-GCM with `COOKIE_KEY` and the cookie name as AAD, 10 min, SameSite=Lax; cleared by the callback), and `__Host-bloop_room` (registered screens; HttpOnly, Secure, SameSite=Strict).
 

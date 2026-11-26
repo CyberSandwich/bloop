@@ -432,9 +432,12 @@ export interface UsedLink { file: FileRef; purpose: OpenMode; mode: Mode; userId
 export interface CodeDirectory {
   /** `demo` is the screen's mode: the claim route reads it back to apply the demo claim limit and the off switch. */
   put(code: string, screenRef: string, expiresAt: number, demo: boolean): Promise<"ok" | "collision">;
-  /** A live code claimed by a signed-out owner is `auth_required`, not routed, so not spent, and counts as a miss (PAIR-15). */
-  lookup(code: string, ipHash: string, now: number, who: { kind: Kind; signedIn: boolean }):
-    Promise<{ ok: true; screenRef: string; demo: boolean } | { ok: false; error: "code_unknown" | "rate_limited" | "auth_required" }>;
+  /**
+   * PAIR-15 (`directory-rules.ts` lookupVerdict): a live code claimed by a signed-out owner is `auth_required`, not
+   * routed, so not spent, and no miss; one claimed as a guest the drop refuses answers `guestRefusal` and is a miss.
+   */
+  lookup(code: string, ipHash: string, now: number, who: { kind: Kind; signedIn: boolean; guestRefusal: GuestRefusal | null }):
+    Promise<{ ok: true; screenRef: string; demo: boolean } | { ok: false; error: "code_unknown" | "rate_limited" | "auth_required" | GuestRefusal }>;
   remove(code: string): Promise<void>;
 }
 

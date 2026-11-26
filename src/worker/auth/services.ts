@@ -24,7 +24,10 @@ export function servicesFor(env: DbEnv, config: Config, now: () => number = Date
   };
 }
 
-/** The signed-in user behind the phone's session cookie, or null. Never called for a demo screen. */
+/**
+ * The signed-in user behind the phone's session cookie, or null. `/api/claim` asks before it knows the code's mode;
+ * a demo screen drops the answer (architecture 4.5).
+ */
 export async function phoneUser(request: Request, services: AuthServices): Promise<string | null> {
   const cookie = readCookie(request, SESSION_COOKIE);
   return cookie ? services.sessions.resolve(cookie) : null;
