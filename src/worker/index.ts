@@ -8,7 +8,7 @@ import { UserLibrary } from "./do/user-library.ts";
 import type { Env } from "./env.ts";
 import { withFaults } from "./fault.ts";
 import { type Policy, policyOf, withHeaders } from "./headers.ts";
-import { json, problem } from "./http.ts";
+import { fail, json, problem } from "./http.ts";
 import { offOrigin } from "./origin.ts";
 import { servePage } from "./pages.ts";
 import { type Route, route } from "./router.ts";
@@ -58,8 +58,13 @@ const routes: readonly Route[] = [
 /** Methods other than the route's own get 405 with Allow, as /f/ requires for PROPFIND and OPTIONS. */
 async function dispatch(request: Request, env: Env): Promise<{ response: Response; policy: Policy }> {
   const url = new URL(request.url);
-  const out = await matchRoute(request, env, url);
-  if (url.pathname.startsWith("/f/")) logFetch(request, out.response);
+  if (!url.pathname.startsWith("/f/")) return matchRoute(request, env, url);
+  // A store that throws on a file read is the existing "cannot serve it now" answer, and the fetch is logged either way.
+  const out = await matchRoute(request, env, url).catch(() => ({
+    response: fail("upstream_failed"),
+    policy: "api" as Policy,
+  }));
+  logFetch(request, out.response);
   return out;
 }
 

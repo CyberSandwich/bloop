@@ -4,7 +4,7 @@ Steps only the owner can do, because they need the owner's accounts. Everything 
 
 ## First deploy, in order
 
-1. **Cloudflare account** (free plan), then `npx wrangler login` on your own machine.
+1. **Cloudflare account** (Workers Paid), then `npx wrangler login` on your own machine.
 2. **D1:** `npx wrangler d1 create bloop --jurisdiction eu`; put the printed id into `wrangler.jsonc` `database_id` (it is all zeros now) and commit it. Then `npx wrangler d1 migrations apply bloop --remote`.
 3. **R2:** the bucket and its lifecycle rule, in the next section.
 4. **Worker secrets**, each with `npx wrangler secret put <NAME>` (the v4 secrets are in "Secrets for v4" below): `COOKIE_KEY`, `HASH_PEPPER`, `TOKEN_KEKS` (JSON of key id to base64 key, as in `.dev.vars.example`; `TOKEN_KEK_CURRENT` in `vars` names the current key), `IT_EXPORT_TOKEN` (optional; the export stays closed without it), `ENTRA_CLIENT_SECRET` (only with the Entra step). Generate each with `openssl rand -base64 32`; never reuse the `.dev.vars` values. If an earlier deploy set `ROOM_ENROLL_KEY`, delete it: `npx wrangler secret delete ROOM_ENROLL_KEY` (nothing reads it).
@@ -60,8 +60,8 @@ User files (v4) live in a second private bucket in the `eu` jurisdiction, bound 
 `env.staging` in `wrangler.jsonc` is a second Worker, `bloop-staging`, at `https://bloop-staging.dsap.workers.dev`: its own Durable Object namespaces, D1 `bloop-staging`, EU buckets `bloop-staging-guest` and `bloop-staging-library`, tiny caps, and Cloudflare's published Turnstile test keys as plain vars. Each stream's live checks run there; production gets only the post-deploy smoke.
 
 1. **Resources, once:** `npx wrangler r2 bucket create bloop-staging-guest --jurisdiction eu` and the same for `bloop-staging-library`, then `npx wrangler d1 create bloop-staging --jurisdiction eu`. The D1 goes last: the job skips until it exists and does not look for the buckets, so a missing bucket fails the deploy.
-2. **GitHub:** a `staging` environment with `CLOUDFLARE_API_TOKEN` and `CLOUDFLARE_ACCOUNT_ID`, and a deployment branch rule that allows `staging` only (protect that branch; allow `ci/*` only while testing the workflow itself), so no other branch can read the token. The token is the production one: Workers plus D1, no R2 permission. A separate Cloudflare account for staging is optional and removes the shared reach.
-3. **Deploy:** push the `staging` branch, or run the `staging` workflow from a `ci/*` branch where the rule allows it. Until step 1 and 2 are done the job prints `Staging skipped: ...` and passes.
+2. **GitHub:** a `staging` environment with `CLOUDFLARE_API_TOKEN` and `CLOUDFLARE_ACCOUNT_ID`, and a deployment branch rule that allows `staging` only, so no other branch can read the token (the drive's `repo-settings apply` sets it). The token is its own, not the production one: Workers Scripts Edit and D1 Edit on the account, no R2 permission. A token on one account still reaches production's scripts and database there; a separate Cloudflare account for staging is optional and removes that (ADR 0012).
+3. **Deploy:** fast-forward the `staging` branch to a commit that is green on its `ci/` branch; nothing else runs the job. Until step 1 and 2 are done the job prints `Staging skipped: ...` and passes.
 4. **Secrets:** the job generates every secret that is a random key (`tools/staging.mjs`, listed in `SECRETS`) and pipes it into `wrangler secret put -e staging` when it is missing; none is printed. `ADMIN_EMAILS` and `TEST_EMAILS` are addresses: set them once with `npx wrangler secret put <NAME> -e staging`. Staging sends no email until the mail change adds its admin-only mode.
 
 `STAGING_D1_ID` in the config is a placeholder the job replaces in its own checkout; it is never committed.
@@ -136,7 +136,7 @@ All outputs are committed; run these only when a source changes. Make one throwa
 | Change | Command | Writes |
 |---|---|---|
 | the name, the headline or the logo | edit `SITE_NAME`, `H1` or `SUB` in `tools/render-og.py` (the logo is `public/favicon.svg`), then run it with the venv's python, or with `--font` and a static Inter SemiBold file | `public/og.png`, `public/apple-touch-icon.png`, `tools/og.svg` |
-| page text with a new character | the venv's python: `-I tools/subset-font.py` | `public/fonts/inter-latin-4.1.woff2` |
+| page text with a new character | the venv's python: `-I tools/subset-font.py`, then `node tools/rehash-immutable.mjs` (the font's name carries its hash) | `public/fonts/inter-latin-<hash>.woff2` |
 
 
 ## Microsoft Entra app registration

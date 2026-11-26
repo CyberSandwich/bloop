@@ -293,6 +293,6 @@ describe("the demo screen", () => {
 
 describe("the font", () => {
   it("ships its license beside the file", () => {
-    expect(read("fonts/inter-4.1.LICENSE.txt")).toContain("SIL OPEN FONT LICENSE");
+    expect(read("fonts/inter-90ef5e81.LICENSE.txt")).toContain("SIL OPEN FONT LICENSE");
   });
 });
