@@ -84,15 +84,64 @@ describe("pairing: the whole flow over WebSockets", () => {
     socket.close();
   });
 
-  it("REL-14 claim owner: with no account a key is scoped to nobody, so a second phone on the same address never gets the first pid", async () => {
+  const KEY = "6f1c2a9e-3b4d-4c5e-8f70-112233445566";
+  /** A signed-out phone's claim headers: its key, its tab's nonce (X-Bloop-Nonce) and the address it comes from. */
+  const signedOut = (nonce: string | null, ip = "198.51.100.20", key = KEY) => ({
+    headers: { "Idempotency-Key": key, "CF-Connecting-IP": ip, ...(nonce === null ? {} : { "X-Bloop-Nonce": nonce }) },
+  });
+  const TAB_A = "A".repeat(43);
+  const TAB_B = "B".repeat(43);
+
+  it("REL-14 claim owner: a signed-out tab's replay follows its nonce across networks and changes nothing", async () => {
     const { socket, code } = await openScreen(api, "live");
-    const key = { "Idempotency-Key": "6f1c2a9e-3b4d-4c5e-8f70-112233445566" };
-    const first = await api.post<{ pid: string }>("/api/claim", { code }, { headers: key });
+    const first = await api.post<{ pid: string }>("/api/claim", { code }, signedOut(TAB_A));
     expect(first.status).toBe(200);
-    // Same address, same key, same body: only an account could tell this phone from the first, so it is taken.
-    const again = await api.post("/api/claim", { code }, { headers: key });
-    expect(again.body).toEqual(problem("code_taken"));
+    // The phone moved from the venue's Wi-Fi to mobile data; the same tab retries the lost answer.
+    const again = await api.post("/api/claim", { code }, signedOut(TAB_A, "203.0.113.50"));
+    expect(again.status).toBe(200);
+    expect(again.body).toEqual(first.body);
     expect((await api.get("/api/pair/state", first.body.pid)).status).toBe(200);
+    // The same key with another body is refused; a bad key with a nonce is refused too.
+    expect((await api.post("/api/claim", { code, kind: "guest" }, signedOut(TAB_A))).body).toEqual(
+      problem("bad_request"),
+    );
+    expect((await api.post("/api/claim", { code }, signedOut(TAB_A, undefined, "nope"))).body).toEqual(
+      problem("bad_request"),
+    );
+    socket.close();
+  });
+
+  it("REL-14 claim owner: two phones behind one address with the same key and other nonces share no answer", async () => {
+    const { socket, code } = await openScreen(api, "live");
+    const first = await api.post<{ pid: string }>("/api/claim", { code }, signedOut(TAB_A));
+    expect(first.status).toBe(200);
+    expect((await api.post("/api/claim", { code }, signedOut(TAB_B))).body).toEqual(problem("code_taken"));
+    socket.close();
+  });
+
+  it("REL-14 claim owner: with no nonce, or a malformed one, a key replays nothing and is no error", async () => {
+    for (const nonce of [null, "short", `${"A".repeat(42)}=`]) {
+      const { socket, code } = await openScreen(api, "live");
+      const first = await api.post<{ pid: string }>("/api/claim", { code }, signedOut(nonce));
+      expect(first.status, String(nonce)).toBe(200);
+      const again = await api.post("/api/claim", { code }, signedOut(nonce));
+      expect(again.body, String(nonce)).toEqual(problem("code_taken"));
+      // Without an owner the key is never read, so even a malformed one is no error.
+      const { socket: s2, code: c2 } = await openScreen(api, "live");
+      expect((await api.post("/api/claim", { code: c2 }, signedOut(nonce, undefined, "nope"))).status).toBe(200);
+      s2.close();
+      socket.close();
+    }
+  });
+
+  it("REL-14 claim single flight: two claims with one key at once both get the first claim's answer", async () => {
+    const { socket, code } = await openScreen(api, "live");
+    const [a, b] = await Promise.all([
+      api.post<{ pid: string }>("/api/claim", { code }, signedOut(TAB_A)),
+      api.post<{ pid: string }>("/api/claim", { code }, signedOut(TAB_A)),
+    ]);
+    expect([a.status, b.status]).toEqual([200, 200]);
+    expect(b.body.pid).toBe(a.body.pid);
     socket.close();
   });
 

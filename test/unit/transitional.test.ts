@@ -15,14 +15,12 @@ const walk = (dir: string): string[] =>
 const ALLOWED = [
   "src/worker/machine/lists.ts: P1 commit 5",
   "src/worker/do/screen.ts: P1 commit 6",
-  "src/worker/do/screen.ts: P1 commit 8",
+  "src/worker/do/screen.ts: P2",
   "src/worker/do/screen.ts: P2",
   "src/worker/do/schema.ts: P1 commit 6",
   "src/worker/do/effects.ts: R9",
-  "src/worker/routes/pairing.ts: P1 commit 8",
   "src/worker/routes/pairing.ts: P1 commit 5",
   "src/worker/routes/pairing.ts: A",
-  "src/worker/routes/open.ts: P1 commit 8",
   "src/worker/seams/open-path/lookups.ts: P1 commit 5",
 ];
 

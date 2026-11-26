@@ -30,8 +30,9 @@ export type Idem<A> =
 export const bodyDigest = (bodyText: string): Promise<string> => sha256Hex(bodyText);
 
 /**
- * `owner` scopes the key (a user id, or a session id for a guest), so one person's key never meets another's. A
- * refused request stores no row, so its retry is judged afresh.
+ * `owner` scopes the key to one person (an account, a device nonce's keyed hash, or a pairing), so one person's key
+ * never meets another's. Never an IP hash: one address is a whole room. A route with no such owner calls nothing and
+ * replays nothing. A refused request stores no row, so its retry is judged afresh.
  */
 export async function idempotency<A>(
   request: Request,

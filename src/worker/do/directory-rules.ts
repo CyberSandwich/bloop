@@ -1,4 +1,5 @@
 // Exact guess limits for typed codes (threat model PAIR-07). Pure, so the window logic is unit-tested.
+import type { ClaimWho, Lookup } from "../seams/pairing.ts";
 
 export const MISS_LIMIT = 10;
 export const MISS_WINDOW_MS = 10 * 60 * 1000;
@@ -23,6 +24,23 @@ export const GLOBAL_ALARM_MISSES = 1000;
 export function recordGlobalMiss(row: MissRow | null, now: number): { row: MissRow; alarm: boolean } {
   const next = recordMiss(row, now);
   return { row: next, alarm: next.count === GLOBAL_ALARM_MISSES };
+}
+
+/**
+ * What a lookup does with a code (PAIR-15): `route` it to its screen, or refuse it, counting a miss or not. A demo code
+ * routes anyone. A live one routes a signed-in owner and a guest the drop admits; a signed-out owner is refused
+ * unspent and uncounted, since the code is right and the phone signs in to claim it; a guest the drop refuses counts
+ * as a miss, like a wrong code, so a stranger cannot probe codes as a guest for free.
+ */
+export function lookupVerdict(
+  hit: { screenRef: string; demo: boolean } | null,
+  who: ClaimWho,
+): Extract<Lookup, { ok: true }> | { ok: false; miss: boolean; error: Exclude<Lookup, { ok: true }>["error"] } {
+  if (!hit) return { ok: false, miss: true, error: "code_unknown" };
+  const route = { ok: true, screenRef: hit.screenRef, demo: hit.demo } as const;
+  if (hit.demo) return route;
+  if (who.kind === "owner") return who.signedIn ? route : { ok: false, miss: false, error: "auth_required" };
+  return who.guestRefusal === null ? route : { ok: false, miss: true, error: who.guestRefusal };
 }
 
 /** The row after one more miss; a lapsed window starts over. */
