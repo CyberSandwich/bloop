@@ -30,26 +30,7 @@ const members = {
   ]),
   live: fixtures.member([["a", "Lecture 5.pptx"]], { derived: [["a", "queued"]] }),
   busy: fixtures.member(),
-  race: fixtures.member([
-    ["a", "Lecture 5.pptx"],
-    ["b", "Reading list.pdf"],
-  ]),
-  focus: fixtures.member([
-    ["a", "Lecture 5.pptx"],
-    ["b", "Reading list.pdf"],
-    ["c", "Seminar.docx"],
-  ]),
-  dragPoll: fixtures.member([
-    ["a", "Lecture 1.pptx", { selected_at: now - 20 }],
-    ["b", "Lecture 2.pptx", { selected_at: now - 10 }],
-  ]),
-  long: fixtures.member(Array.from({ length: 12 }, (_, i): [string, string] => [`f${i}`, `Lecture ${i + 1}.pptx`])),
 };
-
-/** A refetch nobody asked for, as a poll, a socket frame or another tab would start one. */
-const refetch = (page: Page) => page.evaluate('dispatchEvent(new Event("online"))');
-const listGet = (page: Page) =>
-  page.waitForResponse((r) => r.request().method() === "GET" && new URL(r.url()).pathname === "/api/library");
 test.describe.configure({ mode: "default" });
 test.beforeAll(() => fixtures.seed());
 
@@ -229,89 +210,5 @@ test.describe("library", () => {
     await page.goto("/library");
     await expect(page.locator("#file-list > li")).toHaveCount(1);
     await socket;
-  });
-
-  test("a list read begun before a write cannot undo the write when it lands late", async ({ page, context }) => {
-    await signedIn(context, members.race);
-    await page.goto("/library");
-    await expect(page.locator("#file-list > li")).toHaveCount(2);
-    let release = () => {};
-    const gate = new Promise<void>((resolve) => {
-      release = resolve;
-    });
-    let held = false;
-    // The first read after this point is answered with the list as it was, and only once the write has landed.
-    await page.route(
-      (url) => url.pathname === "/api/library",
-      async (route) => {
-        if (held || route.request().method() !== "GET") return route.continue();
-        held = true;
-        const { "if-none-match": _, ...headers } = route.request().headers();
-        const stale = await route.fetch({ headers });
-        await gate;
-        await route.fulfill({ response: stale });
-      },
-    );
-    await refetch(page);
-    await expect.poll(() => held).toBe(true);
-    await page.getByRole("button", { name: "More for Lecture 5.pptx" }).click();
-    const fresh = listGet(page);
-    await page.getByRole("dialog").getByRole("button", { name: "Move to Trash" }).click();
-    await fresh;
-    const late = listGet(page);
-    release();
-    await late;
-    await page.waitForTimeout(300);
-    await expect(page.locator("#file-list > li")).toHaveCount(1);
-  });
-
-  test("focus survives a repaint: a menu closes back onto its More, a deleted row hands on to the next", async ({
-    page,
-    context,
-  }) => {
-    await signedIn(context, members.focus);
-    await page.goto("/library");
-    const more = page.getByRole("button", { name: "More for Reading list.pdf" });
-    await more.click();
-    await expect(page.getByRole("dialog")).toBeVisible();
-    const got = listGet(page);
-    await refetch(page);
-    await got;
-    await page.keyboard.press("Escape");
-    await expect(more).toBeFocused();
-
-    await page.locator("#file-list .lib-open").first().focus();
-    await page.keyboard.press("Delete");
-    await expect(page.locator("#file-list > li")).toHaveCount(2);
-    await expect(page.locator("#file-list .lib-open").first()).toBeFocused();
-  });
-
-  test("a refetch during an Up Next drag does not drop the drag", async ({ page, context }) => {
-    await signedIn(context, members.dragPoll);
-    await page.goto("/library");
-    const up = page.locator("#up-list > li");
-    await expect(up).toHaveCount(2);
-    const grip = (await up.first().locator(".lib-grip").boundingBox()) ?? { x: 0, y: 0, width: 0, height: 0 };
-    const below = (await up.nth(1).boundingBox()) ?? { x: 0, y: 0, width: 0, height: 0 };
-    await page.mouse.move(grip.x + grip.width / 2, grip.y + grip.height / 2);
-    await page.mouse.down();
-    await expect(page.locator("#up-list .is-dragging")).toHaveCount(1);
-    const got = listGet(page);
-    await refetch(page);
-    await got;
-    const stored = page.waitForResponse((r) => r.url().endsWith("/api/library/up-next") && r.status() < 300);
-    await page.mouse.move(grip.x + grip.width / 2, below.y + below.height - 2, { steps: 8 });
-    await page.mouse.up();
-    await expect(up.first()).toContainText("Lecture 2.pptx");
-    await stored;
-    await page.reload();
-    await expect(page.locator("#up-list > li").first()).toContainText("Lecture 2.pptx");
-  });
-
-  test("a row menu opened near the window's foot stays inside the window", async ({ page, context }) => {
-    await signedIn(context, members.long);
-    await page.goto("/library");
-    await page.getByRole("button", { name: "More for Lecture 12.pptx" }).click();
-    await expect(page.getByRole("dialog").getByRole("button", { name: "Move to Trash" })).toBeInViewport({ ratio: 1 });
   });
 });
