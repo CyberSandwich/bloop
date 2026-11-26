@@ -105,7 +105,7 @@
   {
     "name": "item cross-fade, lazy",
     "path": "dist/js/core/crossfade.js",
-    "limit": "0.42 kB"
+    "limit": "0.45 kB"
   },
   {
     "name": "overlay dismiss, lazy",

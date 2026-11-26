@@ -628,7 +628,11 @@ export function createViewer(deps) {
     // Focus follows the layout, and on a video so Space plays it; not for the phone's command (focus-visible would pin
     // Stop over the slide).
     if (!on) opener?.focus?.({ preventScroll: true });
-    else if (!told) (frame.querySelector("video") ?? stop).focus?.({ preventScroll: true });
+    // Not the last video still fading out.
+    else if (!told) {
+      const video = /** @type {HTMLVideoElement | null} */ (frame.querySelector("video:not([inert])"));
+      (video ?? stop).focus?.({ preventScroll: true });
+    }
     if (on) {
       band = Math.max(BAND, stop.offsetHeight + 32);
       // A Stop that lands before the browser grants it must still leave full screen.
