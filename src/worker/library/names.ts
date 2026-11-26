@@ -1,11 +1,11 @@
 // The one place a library file name is judged (LIB-06). Names reach the page only through textContent, and downloads use
 // filename*; this file keeps the stored value free of characters that reorder, hide or break a line.
 
-import { isValidName, refusedChar } from "../../../public/js/shared/name-rule.js";
+import { isValidName, refusedChar } from "../../shared/name-rule.ts";
 
 /**
  * A rename's new name: `base` NFC-normalized and trimmed, joined to the file's unchanged extension. A typed extension
- * stays part of the base. Null when the base is empty or the whole name is not valid (shared/name-rule.js: NAME_MAX code
+ * stays part of the base. Null when the base is empty or the whole name is not valid (src/shared/name-rule.ts: NAME_MAX code
  * points, no refused character).
  */
 export function renamed(base: string, ext: string): string | null {
