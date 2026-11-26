@@ -8,6 +8,9 @@ import { fail } from "./http.ts";
 import { admitted, type LaunchState, launchState } from "./mode.ts";
 import { AUTH_SHELLS, MEMBER_PAGES, VARIANTS, type Variant } from "./page-registry.ts";
 
+const SHELLS: ReadonlySet<string> = new Set(AUTH_SHELLS);
+const MEMBERS: ReadonlySet<string> = new Set(MEMBER_PAGES);
+
 /** The slice of Env this module uses, so Node-side tests can import it (the Worker's Env needs the workers-types). */
 export interface PageEnv {
   ASSETS: { fetch(request: Request): Promise<Response> };
@@ -136,8 +139,8 @@ export async function servePage(
   const variant = variants.find((v) => v.path === path);
   // The file forms of a gated page (`/library.html`, `/library/index.html`) and its other letter cases are the page.
   const key = path.replace(/(\/index)?\.html$/i, "").toLowerCase() || "/";
-  const shell = AUTH_SHELLS.has(key);
-  const member = MEMBER_PAGES.has(key);
+  const shell = SHELLS.has(key);
+  const member = MEMBERS.has(key);
   if (!variant && !shell && !member) return asset(env, request, path);
   // /admin acts on the owner's word, so it never trusts a cached mode (ADR 0026).
   const state = await launchState(env, { fresh: key === "/admin" });

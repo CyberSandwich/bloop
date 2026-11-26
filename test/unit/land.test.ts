@@ -135,6 +135,13 @@ describe("land: what a fast-forward to main refuses", { timeout: SPAWN_TIMEOUT }
     expect(refusals({ cwd: clone, sha: edited })).toEqual([
       "Durable Object migration v1 was edited or removed: a shipped step never changes",
     ]);
+    git(clone, "reset", "-q", "--hard", "origin/main");
+    git(clone, "rm", "-q", "wrangler.jsonc");
+    git(clone, "commit", "-q", "-m", "config renamed away");
+    const gone = git(clone, "rev-parse", "HEAD");
+    expect(refusals({ cwd: clone, sha: gone })).toEqual([
+      `wrangler.jsonc is gone at ${gone}: its migrations cannot be checked`,
+    ]);
   });
 });
 
@@ -195,6 +202,11 @@ describe("land: Durable Object migration steps", () => {
     expect(migrationProblems([v(1), v(2)], [v(1), v(2), v(3), v(4)])).toEqual([]);
     expect(migrationProblems([v(1)], [v(1)])).toEqual([]);
     expect(migrationProblems([], [v(1)])).toEqual([]);
+  });
+
+  it("land: a shipped step whose keys were only reordered is the same step", () => {
+    const reordered = { new_sqlite_classes: ["C"], tag: "v1" };
+    expect(migrationProblems([v(1)], [reordered, v(2)])).toEqual([]);
   });
 
   it("land: a reused, skipped or out-of-order tag is refused once per wrong step", () => {

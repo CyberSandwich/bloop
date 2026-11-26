@@ -37,6 +37,12 @@ export function conflictCopies(gitDir) {
   return found.sort();
 }
 
+/** JSON with object keys sorted, so a reformatted step that says the same reads the same. */
+const canonical = (/** @type {unknown} */ value) =>
+  JSON.stringify(value, (_, v) =>
+    v && typeof v === "object" && !Array.isArray(v) ? Object.fromEntries(Object.entries(v).sort()) : v,
+  );
+
 /**
  * Why `head`'s Durable Object migration steps break the shipped ones, one line each: a shipped step is never edited,
  * removed or moved, and each new step's tag is the next `v<n>` after the last shipped one (wrangler applies tags in
@@ -45,7 +51,7 @@ export function conflictCopies(gitDir) {
  */
 export function migrationProblems(shipped, head) {
   const changed = shipped
-    .filter((step, i) => JSON.stringify(head[i]) !== JSON.stringify(step))
+    .filter((step, i) => canonical(head[i]) !== canonical(step))
     .map((step) => `Durable Object migration ${step.tag} was edited or removed: a shipped step never changes`);
   if (changed.length > 0) return changed;
   const last = shipped.at(-1)?.tag ?? "v0";
@@ -102,7 +108,9 @@ export function refusals({ cwd, sha, remote = "origin", branch = "main" }) {
   };
   try {
     const [shipped, head] = [steps(tip), steps(sha)];
-    if (shipped && head) problems.push(...migrationProblems(shipped, head));
+    // A removed or renamed config would carry its migrations past the check, so it is refused, never skipped.
+    if (shipped && !head) problems.push(`wrangler.jsonc is gone at ${sha}: its migrations cannot be checked`);
+    else if (head) problems.push(...migrationProblems(shipped ?? [], head));
   } catch (e) {
     problems.push(`cannot read wrangler.jsonc migrations: ${/** @type {Error} */ (e).message}`);
   }
