@@ -171,7 +171,7 @@ Headings `text-wrap:balance` (h1 and h2 in base.css, the site's h3 in site.css, 
 | `--r-field:14px` | the code field, the stage frame, the menu sheet's rows, the How It Works stills |
 | `--r-card:20px` | the house frame, the viewer's link card and the app's white cards |
 | `--r-list:24px` `--list-pad:8px` | a box of rows (the viewer sidebar, the phone's list, the sheet, the handle): the box is `--r-list` padded `--list-pad` on every side, so a row's fill is `--r-list` - `--list-pad` (16) and its thumbnail, 8 in, that - 8 (8): one chain of `calc()` from the box down (section 6) |
-| `--r-panel:34px` | the phone's floating action panel (a button's 26 plus its 8 padding) and the notes box over it; the other glass sheets still write 34 |
+| `--r-panel:34px` | a glass sheet or panel holding buttons (a button's 26 plus its 8 padding): the phone's floating action panel, the notes box over it, the library's sheets and panel, the upload pill's sheet (`length.css` still writes 34) |
 | `--r-stage:28px` | frames that hold inner cards or a picture: the hero stage (640 up), the privacy and security panel, the QR card and its ring |
 | `--r-content:24px` | every flat content card on the site: the How It Works steps, the feature cells, the FAQ items, the topic cards |
 | `--r-sheet:24px` | the top corners of the viewer's bottom sheet |
