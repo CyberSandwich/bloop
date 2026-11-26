@@ -4,7 +4,7 @@ import { tmpdir } from "node:os";
 import { basename, join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { attributed } from "../../tools/attribution.mjs";
-import { conflictCopies, main, migrationProblems, refusals } from "../../tools/land.mjs";
+import { conflictCopies, main, markerProblems, migrationProblems, refusals } from "../../tools/land.mjs";
 import { SPAWN_TIMEOUT } from "./spawn.ts";
 
 /** A bare remote with one commit on main, and a clone of it to land from. */
@@ -88,6 +88,26 @@ describe("land: what a fast-forward to main refuses", { timeout: SPAWN_TIMEOUT }
     expect(refusals({ cwd: clone, sha: noreply })).toHaveLength(1);
   });
 
+  it("land: a commit that adds conflict markers is refused, even when a later commit removes them", () => {
+    const write = (file: string, text: string, message: string) => {
+      writeFileSync(join(clone, file), text);
+      git(clone, "add", file);
+      git(clone, "commit", "-q", "-m", message);
+      return git(clone, "rev-parse", "HEAD");
+    };
+    const marked = write(
+      "w.ts",
+      "<<<<<<< HEAD\nconst a = 1;\n=======\nconst a = 2;\n>>>>>>> 1d2f4f08 (x)\n",
+      "resolve",
+    );
+    const sha = write("w.ts", "const a = 1;\n", "fix it after");
+    expect(refusals({ cwd: clone, sha })).toEqual([`${marked.slice(0, 7)} adds a conflict marker to w.ts`]);
+    // A heading underline, a longer rule or a marker-like word inside a line is not a marker.
+    git(clone, "reset", "-q", "--hard", "origin/main");
+    const fine = write("d.md", "Title\n=====\n\n========\n\nsee <<<<<<< in text\n", "docs");
+    expect(refusals({ cwd: clone, sha: fine })).toEqual([]);
+  });
+
   it("land: a sha that does not exist, or one that reads as an option, is refused", () => {
     expect(refusals({ cwd: clone, sha: "f".repeat(40) })).toEqual([`${"f".repeat(40)} is not a commit here`]);
     expect(refusals({ cwd: clone, sha: "--all" })).toEqual(["--all is not a commit here"]);
@@ -169,6 +189,31 @@ describe("land: the CLI", { timeout: SPAWN_TIMEOUT }, () => {
     expect(main([sha, sha], clone)).toBe(64);
     expect(main([before], clone)).toBe(0);
     expect(remoteTip()).toBe(before);
+  });
+});
+
+describe("land: conflict markers in a patch", () => {
+  const patch = (hash: string, file: string, ...added: string[]) =>
+    `\x01${hash}\n\ndiff --git a/${file} b/${file}\n--- a/${file}\n+++ b/${file}\n@@ -1,0 +1,${added.length} @@\n${added
+      .map((l) => `+${l}`)
+      .join("\n")}\n`;
+
+  it("names each commit and file once, for every marker kind, diff3's base included", () => {
+    expect(
+      markerProblems(patch("aaa1111", "x.ts", "<<<<<<< HEAD", "a", "||||||| base", "=======", ">>>>>>> b")),
+    ).toEqual(["aaa1111 adds a conflict marker to x.ts"]);
+    expect(markerProblems(patch("aaa1111", "x.ts", "=======") + patch("bbb2222", "y.md", ">>>>>>> c"))).toEqual([
+      "aaa1111 adds a conflict marker to x.ts",
+      "bbb2222 adds a conflict marker to y.md",
+    ]);
+  });
+
+  it("reads `+++` inside a hunk as content, and lets rules, underlines and words with angle runs pass", () => {
+    expect(markerProblems(patch("aaa1111", "x.md", "++ b/other", "<<<<<<< HEAD"))).toEqual([
+      "aaa1111 adds a conflict marker to x.md",
+    ]);
+    expect(markerProblems(patch("aaa1111", "x.md", "=====", "========", "a <<<<<<< b", "<<<<<<<<"))).toEqual([]);
+    expect(markerProblems("")).toEqual([]);
   });
 });
 

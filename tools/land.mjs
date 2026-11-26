@@ -52,6 +52,31 @@ export function migrationProblems(shipped, head) {
   });
 }
 
+/** An added line that opens, splits or closes a merge conflict (diff3's base marker included). */
+const MARKER = /^\+(?:<{7}|\|{7}|={7}|>{7})(?: |$)/;
+
+/**
+ * Each commit and file whose patch adds a conflict marker: a resolution that failed and was committed anyway. Read
+ * per commit, so a marker one commit adds and a later one removes is still caught.
+ * @param {string} log `git log --format=%x01%h -p -U0 --no-color` output @returns {string[]}
+ */
+export function markerProblems(log) {
+  const out = new Set();
+  for (const chunk of log.split("\x01").slice(1)) {
+    const [hash = "", ...lines] = chunk.split("\n");
+    let file = "";
+    // Between `diff --git` and the first hunk a `+++` line names the file; inside a hunk it is content.
+    let header = false;
+    for (const line of lines) {
+      if (line.startsWith("diff --git ")) header = true;
+      else if (line.startsWith("@@")) header = false;
+      else if (header && line.startsWith("+++ ")) file = line.replace(/^\+\+\+ (b\/)?/, "");
+      else if (!header && MARKER.test(line)) out.add(`${hash} adds a conflict marker to ${file}`);
+    }
+  }
+  return [...out];
+}
+
 /**
  * Why `sha` must not land on `branch` of `remote`; none means it may. Looks for conflict copies before anything else
  * touches git, then fetches, so the checks run against the remote's tip, never a stale local copy.
@@ -60,7 +85,13 @@ export function migrationProblems(shipped, head) {
  */
 export function refusals({ cwd, sha, remote = "origin", branch = "main" }) {
   const git = (/** @type {string[]} */ args) =>
-    execFileSync("git", args, { cwd, encoding: "utf8", stdio: ["ignore", "pipe", "pipe"] }).trim();
+    // A range's patch can run to many megabytes; the default 1 MiB buffer would throw.
+    execFileSync("git", args, {
+      cwd,
+      encoding: "utf8",
+      stdio: ["ignore", "pipe", "pipe"],
+      maxBuffer: 512 * 1024 * 1024,
+    }).trim();
   const copies = conflictCopies(git(["rev-parse", "--path-format=absolute", "--git-common-dir"]));
   if (copies.length > 0) return [`iCloud conflict copies in .git, move them out first: ${copies.join(", ")}`];
   if (sha.startsWith("-")) return [`${sha} is not a commit here`];
@@ -87,6 +118,9 @@ export function refusals({ cwd, sha, remote = "origin", branch = "main" }) {
     const [hash = "", body = ""] = line.trim().split("\0");
     if (hash && attributed(body)) problems.push(`${hash} carries AI attribution in its message`);
   }
+  problems.push(
+    ...markerProblems(git(["log", "--format=%x01%h", "-p", "-U0", "--no-color", "--no-ext-diff", `${tip}..${sha}`])),
+  );
   const steps = (/** @type {string} */ rev) => {
     try {
       git(["cat-file", "-e", `${rev}:wrangler.jsonc`]);
