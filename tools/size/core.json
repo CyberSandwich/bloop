@@ -189,7 +189,7 @@
     "name": "phone guest send, lazy",
     "path": "dist/js/core/send.js",
     "limit": "0.93 kB"
-    },
+  },
   {
     "name": "phone notes, lazy",
     "path": ["dist/js/core/lazy.js", "dist/js/core/notes.js"],
