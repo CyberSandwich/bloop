@@ -51,10 +51,10 @@ export const holdsToken = (env) => ["CLOUDFLARE_API_TOKEN", "CF_API_TOKEN", "CLO
  * treated as one that does. */
 const NEVER_BUILDS = ["d1", "secret", "whoami", "kv", "r2", "deployments", "tail"];
 
-/** Whether a wrangler command may run the build command: true unless its first non-flag word is on the safe list, so a
- * flag value in front of the subcommand (`-e staging deploy`) fails closed too.
+/** Whether a wrangler command may run the build command: true unless its first argument is on the safe list, so a
+ * leading flag or flag value (`-e d1 deploy`) fails closed.
  * @param {string[]} args */
-export const mayBuild = (args) => !NEVER_BUILDS.includes(args.find((arg) => !arg.startsWith("-")) ?? "");
+export const mayBuild = (args) => !NEVER_BUILDS.includes(args[0] ?? "");
 
 if (process.argv[1]?.endsWith("pinned-wrangler.mjs")) {
   const args = process.argv.slice(2);

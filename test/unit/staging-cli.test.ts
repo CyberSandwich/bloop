@@ -164,6 +164,7 @@ describe("tools/staging.mjs as the workflow runs it", () => {
     for (const args of [
       ["deploy", "--dry-run"],
       ["-e", "staging", "deploy"],
+      ["-e", "d1", "deploy"],
       ["versions", "upload"],
       ["versions", "deploy"],
       ["dev"],
