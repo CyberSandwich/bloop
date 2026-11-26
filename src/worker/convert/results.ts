@@ -96,13 +96,13 @@ export async function setStage(db: Db, k: RunKey, stage: string, now: number): P
   return r.meta.changes === 1;
 }
 
-/** One per container start: `attempts` never resets, so `skipped` rows never count and a failed version stops at 2. */
+/** One per container start: `attempts` never resets across runs, so a version never starts more than MAX_ATTEMPTS. */
 export async function startAttempt(db: Db, k: RunKey, now: number): Promise<boolean> {
   const r = await db
     .prepare(
-      `UPDATE derived SET attempts = attempts + 1, status = 'running', stage = 'starting', updated_at = ? WHERE ${GUARD} AND status IN (${LIVE_SQL})`,
+      `UPDATE derived SET attempts = attempts + 1, status = 'running', stage = 'starting', updated_at = ? WHERE ${GUARD} AND status IN (${LIVE_SQL}) AND attempts < ?`,
     )
-    .bind(now, k.fileId, k.version, k.runId)
+    .bind(now, k.fileId, k.version, k.runId, MAX_ATTEMPTS)
     .run();
   return r.meta.changes === 1;
 }
