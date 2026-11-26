@@ -383,6 +383,10 @@ label.lib-tick::before {
     color: var(--g2);
     cursor: grab;
     touch-action: none;
+    user-select: none;
+  }
+  .lib-item.is-dragging {
+    opacity: 0.6;
   }
 }
 /* A desk compares files: kind and size as columns beside the name, the date and status under it. */
