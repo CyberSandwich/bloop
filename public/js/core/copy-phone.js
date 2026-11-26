@@ -75,6 +75,7 @@ const revokeActions = (/** @type {PhoneFacts} */ f) =>
 export function phoneCopy(key, f) {
   const base = {
     title: "",
+    quiet: false,
     name: "",
     body: "",
     room: false,
@@ -225,7 +226,9 @@ export function phoneCopy(key, f) {
     case "open":
       return {
         ...base,
-        title: `Approved${to("for")}`,
+        // The page always names its room, for a screen reader alone: the list is what the eye wants.
+        title: f.room || "This Screen",
+        quiet: true,
         files: "items",
         ends: VERIFIED.autoEnd,
         actions: revokeActions(f),

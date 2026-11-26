@@ -973,7 +973,6 @@ a.row:focus-visible {
   width: 70%;
 }
 .body,
-.ends,
 .sub,
 .scope {
   color: var(--muted);
@@ -997,16 +996,15 @@ a.row:focus-visible {
   margin-top: 12px;
   font-size: 14px;
 }
-.ends {
-  display: flex;
-  align-items: center;
-  align-self: flex-start;
-  min-height: 44px;
-  padding: 0;
-  border: 0;
-  background: none;
+/* Approved: "Ends in" leads Revoke's row (phone.js), at its height; under 375 phone.js hides the words from the eye
+   alone, so the time and Revoke fit side by side. */
+.buttons:has(> .ends:not([hidden])) {
+  flex-flow: wrap;
+}
+#ends {
+  flex: none;
+  box-shadow: 0 0 0 1px var(--hairline);
   font-variant-numeric: tabular-nums;
-  cursor: pointer;
 }
 .ends.soon {
   color: var(--robin-ink);
