@@ -315,8 +315,32 @@ export const CLEAN: [string, () => Uint8Array][] = [
   ["Acrobat", acrobat],
 ];
 
+/**
+ * An object stream whose script is reachable only through its `/First` reference, with `hide` inside its dictionary:
+ * keywords in a string or comment there would steer a scan that read them as marks.
+ */
+export const forgedMarks = (hide: string): Uint8Array => {
+  const inner = deflateSync(new TextEncoder().encode("<</S/JavaScript>>"));
+  const text = (s: string) => new TextEncoder().encode(s);
+  return concat([
+    text(`%PDF-1.5\n5 0 obj\n<< /N 1 /First 4 0 R ${hide} /Filter /FlateDecode /Length ${inner.length} >>\nstream\n`),
+    inner,
+    text("\nendstream\nendobj\n4 0 obj 5 endobj\n%%EOF\n"),
+  ]);
+};
+
 /** Each carries one dangerous action, and must be refused with the name it shows. */
 export const HOSTILE: [string, () => Uint8Array, string[]][] = [
+  [
+    "forged marks in a string of an object stream dictionary",
+    () => forgedMarks("/X ( endobj ) /Y ( obj<< )"),
+    ["unscannable"],
+  ],
+  [
+    "forged marks in a string of an object stream dictionary, the string longer than the lookback",
+    () => forgedMarks(`/X (${"a".repeat(5000)} endobj obj<< )`),
+    ["unscannable"],
+  ],
   [
     "JS in OpenAction",
     () => malicious("/OpenAction << /S /JavaScript /JS (app.alert\\(1\\)) >>"),

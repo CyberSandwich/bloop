@@ -15,8 +15,8 @@
 //
 // Limits: the scan covers names, not stream payloads (an XFA form's XML, an embedded file's bytes, a content stream).
 // A name inside a string or comment also matches (fail closed). The keywords that steer the scan (`obj<<`, `endobj`)
-// are read outside strings and comments, and one inside a string or comment, or an object boundary inside a stream's
-// data, is `unscannable`: a reader reaches objects by offset, so a file that hides a keyword where the scan's reading
+// are read outside strings and comments, and one inside a string or comment, a string or comment too long to read
+// (over `DICT_LOOKBACK` bytes, outside stream data), or an object boundary inside a stream's data, is `unscannable`: a reader reaches objects by offset, so a file that hides a keyword where the scan's reading
 // order differs from the reader's is refused, not guessed at. An object stream is read only when its dictionary is
 // exactly the plain form (`/Type /ObjStm`, `/N`, `/First`, `/Length`, `/Extends` and one `/Filter /FlateDecode`), opens
 // within `DICT_LOOKBACK` bytes of its `stream` keyword and its data is at most `MAX_STREAM_BYTES`; anything else, and
@@ -125,13 +125,15 @@ function plainObjStm(dict: string): boolean {
 
 /**
  * The offset just past the literal string or comment that opens at `open` (a balanced `(...)` with backslash escapes,
- * or a `%` to its line end), or -1 when it does not end within `DICT_LOOKBACK` bytes: then it is not read as one.
+ * or a `%` to its line end), or -1 when it does not end within `DICT_LOOKBACK` bytes (the caller refuses the file).
+ * At the file's end (`atEof`) one still open runs to the end: `%%EOF` needs no line end, and nothing after it can steer.
  */
-function quotedEnd(text: string, open: number): number {
+function quotedEnd(text: string, open: number, atEof: boolean): number {
   const stop = Math.min(text.length, open + DICT_LOOKBACK);
+  const unended = atEof && stop === text.length ? text.length : -1;
   if (text[open] === "%") {
     for (let i = open + 1; i < stop; i++) if (text[i] === "\n" || text[i] === "\r") return i + 1;
-    return -1;
+    return unended;
   }
   let depth = 1;
   for (let i = open + 1; i < stop; i++) {
@@ -140,7 +142,7 @@ function quotedEnd(text: string, open: number): number {
     else if (c === "(") depth++;
     else if (c === ")" && --depth === 0) return i + 1;
   }
-  return -1;
+  return unended;
 }
 
 const join = (a: Uint8Array, b: Uint8Array): Uint8Array => {
@@ -154,11 +156,13 @@ const join = (a: Uint8Array, b: Uint8Array): Uint8Array => {
 /**
  * Every refused name in the file or its object streams, deduplicated and sorted; `unscannable` when a stream could
  * not be read or an `/ObjStm` token lies outside every dictionary read. Offsets are absolute (from the file's start);
- * the buffer `data` begins at `base`. `onBuffer` sees the buffer's size after each read (tests bound it).
+ * the buffer `data` begins at `base`. `onBuffer` sees the buffer's size after each read, `onQuote` the bytes each string
+ * or comment lookahead may read (tests bound both).
  */
 export async function scanPdfChunks(
   next: ChunkSource,
   onBuffer?: (bytes: number) => void,
+  onQuote?: (bytes: number) => void,
 ): Promise<Check & { found?: string[] }> {
   const found = new Set<string>();
   let data: Uint8Array = new Uint8Array();
@@ -301,11 +305,18 @@ export async function scanPdfChunks(
       const at = base + m.index;
       if (inData && at >= dataEnd) inData = false;
       if (m[0] === "(" || m[0] === "%") {
-        // Stream data is binary: its parentheses and percent signs are not strings or comments.
-        const end = inData ? -1 : quotedEnd(text, m.index);
-        if (end === -1) continue;
+        // Stream data is binary: its parentheses and percent signs are not strings or comments. Once the file is
+        // refused nothing steers, and skipping keeps a run of unclosed ones from costing a lookback each.
+        if (inData || !tracking()) continue;
+        onQuote?.(Math.min(text.length - m.index, DICT_LOOKBACK));
+        const end = quotedEnd(text, m.index, last);
+        if (end === -1) {
+          // Too long to read as a string or comment: the marks inside it could be forged, so none is trusted.
+          stray();
+          continue;
+        }
         // A string or comment holding a dictionary opening or an `endobj` is forging marks: fail closed.
-        if (tracking() && FORGEABLE.test(text.slice(m.index, end))) stray();
+        if (FORGEABLE.test(text.slice(m.index, end))) stray();
         marks.lastIndex = end;
         skipTo = base + end;
         continue;
