@@ -1,5 +1,5 @@
 import { configFor, problemVars } from "./config.ts";
-import { CRON, runCron } from "./cron.ts";
+import { CRON, runCronFor } from "./cron.ts";
 import { JOBS, spendBreakerJob } from "./cron-jobs.ts";
 import { Converter } from "./do/converter.ts";
 import { Directory } from "./do/directory.ts";
@@ -99,13 +99,11 @@ export default {
   // The jobs of each trigger are listed in cron-jobs.ts.
   async scheduled(controller, env) {
     const config = configFor(env);
-    if (!config.ok) {
-      console.error(`config invalid: ${config.problems.join("; ")}`);
-      // The breaker needs no config, so a bad var does not switch spend protection off; the other jobs do not run.
-      const jobs = { [CRON.fiveMinutes]: [spendBreakerJob(problemVars(config.problems))] };
-      return await runCron(controller.cron, env, undefined, jobs);
-    }
-    await runCron(controller.cron, env, config.config, JOBS);
+    if (!config.ok) console.error(`config invalid: ${config.problems.join("; ")}`);
+    // The breaker needs no config, so a bad var does not switch spend protection off; the other jobs do not run.
+    await runCronFor(controller.cron, env, config, JOBS, (problems) => ({
+      [CRON.fiveMinutes]: [spendBreakerJob(problemVars(problems))],
+    }));
   },
 } satisfies ExportedHandler<Env>;
 

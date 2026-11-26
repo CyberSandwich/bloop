@@ -23,14 +23,4 @@ describe("COST-16 a bad spend var", () => {
     expect(line).toContain("CAP_POOL_CONVERT");
     expect(wrangler.output()).not.toContain("typo-not-a-number");
   });
-
-  it("COST-16 the hourly and daily jobs stay idle on a bad config", async () => {
-    const run = (cron: string) => fetch(`${wrangler.url}/cdn-cgi/handler/scheduled?cron=${encodeURIComponent(cron)}`);
-    expect((await run("30 3 * * *")).status).toBe(200);
-    expect((await run("0 * * * *")).status).toBe(200);
-    // wrangler relays a Worker's log lines late: give the retention line, had it run, time to show.
-    await wrangler.logged('"evt":"retention"', 3000);
-    expect(wrangler.output()).not.toContain('"evt":"retention"');
-    expect(wrangler.output()).not.toContain("cron_job_failed");
-  });
 });

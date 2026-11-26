@@ -34,3 +34,19 @@ export async function runCron<Env, Config>(
     }
   }
 }
+
+/**
+ * One tick for a parsed config. A valid config runs the trigger's jobs; an invalid one runs only `whenInvalid`, the
+ * jobs that need no config (the spend breaker), and none of the others.
+ */
+export function runCronFor<Env, Config>(
+  cron: string,
+  env: Env,
+  config: { ok: true; config: Config } | { ok: false; problems: string[] },
+  jobs: CronJobs<Env, Config>,
+  whenInvalid: (problems: string[]) => CronJobs<Env, undefined>,
+): Promise<void> {
+  return config.ok
+    ? runCron(cron, env, config.config, jobs)
+    : runCron(cron, env, undefined, whenInvalid(config.problems));
+}
