@@ -37,4 +37,18 @@ describe("e2e specs", () => {
       expect(bad, f).toEqual([]);
     }
   });
+
+  it("settle a fixture page's route.fetch handlers before the test ends: unrouteAll waits for the one still in flight", () => {
+    // A page the test navigates to asks for the routed file after the last assertion; the handler then dies with
+    // "route.fetch: Test ended". Routes on a context-owned page (`phone.page`) are closed with their context.
+    const fixtureRoute = /(?<![.\w])page\.route\(/g;
+    for (const { f, text } of specs) {
+      const fetching = [...text.matchAll(fixtureRoute)].some((m) => {
+        const rest = text.slice(m.index, m.index + 400);
+        const next = rest.indexOf(".route(", 8);
+        return (next < 0 ? rest : rest.slice(0, next)).includes("route.fetch()");
+      });
+      if (fetching) expect(text, f).toContain('unrouteAll({ behavior: "wait" })');
+    }
+  });
 });
