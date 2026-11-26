@@ -48,7 +48,6 @@ function turnstile() {
     if (!me.ok) throw new Error(me.error);
     const key = me.value.turnstileSiteKey;
     const person = { pause: () => hold.pause?.(), resume: () => hold.resume?.() };
-    // No key configured (a local build): the request goes without a token and the server decides.
     return typeof key === "string" && key ? mod.widget(byId("ts-box"), key, "signin", person) : null;
   })().catch((e) => {
     guard = undefined;
@@ -75,11 +74,7 @@ function code() {
               codeRow,
               (path) => location.assign(path),
             ),
-          refused: (reply) => {
-            if (reply.error !== "turnstile_failed") return false;
-            blocked(codeRow);
-            return true;
-          },
+          refused: (reply) => turnstileRefusal(reply, codeRow),
         },
       ),
     )
@@ -112,14 +107,30 @@ function blocked(/** @type {Row} */ row) {
   show(retry, row === emailRow);
 }
 
-/** The code request, Turnstile first; a token that cannot be had answers as the server's `turnstile_failed`. */
-async function request() {
+/** A Turnstile refusal in `row`: a blocked script is content blocking, a timed-out challenge only took too long. */
+function turnstileRefusal(/** @type {{error: string}} */ reply, /** @type {Row} */ row) {
+  if (reply.error === "turnstile_failed") blocked(row);
+  else if (reply.error === "turnstile_timeout") row.alert(AUTH.slow.tooLong);
+  else return false;
+  return true;
+}
+
+/**
+ * The code request, Turnstile first. The server takes no request without a token, so with no site key configured
+ * nothing is sent and bloop reads as not responding; a script that cannot load answers as the server's
+ * `turnstile_failed`, and a challenge that timed out or expired as the slow rule's stop.
+ * @param {Hold} [held] the slow rule of the caller's watch, paused while a person solves a challenge
+ */
+async function request(held = hold) {
+  hold = held;
   let token = "";
   try {
     const ts = await turnstile();
-    if (ts) token = await ts.token();
-  } catch {
-    return { ok: /** @type {const} */ (false), error: "turnstile_failed" };
+    if (!ts) return { ok: /** @type {const} */ (false), error: "service_down" };
+    token = await ts.token();
+  } catch (e) {
+    const late = e instanceof Error && /timeout|expired/.test(e.message);
+    return { ok: /** @type {const} */ (false), error: late ? "turnstile_timeout" : "turnstile_failed" };
   }
   const reply = await api.post("/api/auth/code/request", { email: email.value.trim(), turnstile: token });
   if (reply.ok) challengeId = reply.value.challengeId;
@@ -164,15 +175,15 @@ emailForm.addEventListener("submit", async (e) => {
   show(retry, false);
   busy(true);
   const to = email.value.trim();
+  hold = {};
   if (inflight?.to !== to) {
-    const mine = { to, reply: request() };
+    const mine = { to, reply: request(hold) };
     inflight = mine;
     mine.reply.finally(() => {
       if (inflight === mine) inflight = null;
     });
   }
   let stopped = false;
-  hold = {};
   const reply = await watch(
     /** @type {NonNullable<typeof inflight>} */ (inflight).reply,
     {
@@ -207,8 +218,7 @@ emailForm.addEventListener("submit", async (e) => {
     emailRow.clear();
     email.setAttribute("aria-invalid", "true");
     email.focus();
-  } else if (reply.error === "turnstile_failed") blocked(emailRow);
-  else showFailure(reply, emailRow);
+  } else if (!turnstileRefusal(reply, emailRow)) showFailure(reply, emailRow);
 });
 
 // Back (or Forward into a step whose timers are gone) is the email step, the field filled and selected.

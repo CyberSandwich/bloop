@@ -112,7 +112,7 @@ type Reply = { ok: true; value: unknown } | { ok: false; error: string; retryAft
 function setup(
   options: {
     verify?: (code: string) => Promise<Reply>;
-    resend?: () => Promise<Reply>;
+    resend?: (hold?: { pause?: () => void }) => Promise<Reply>;
     done?: () => Promise<boolean>;
   } = {},
 ) {
@@ -384,6 +384,23 @@ describe("the code field", () => {
     s.clock.advance(STOP_MS - SLOW_MS);
     expect(s.line()).toBe(AUTH.slow.tooLong);
     expect([s.resend.textContent, s.resend.disabled]).toEqual([AUTH.code.resend, false]);
+  });
+
+  it("Send a New Code hands the page its hold: a challenge shown to a person pauses the slow rule", async () => {
+    let held: { pause?: () => void } = {};
+    const s = setup({
+      resend: (hold?: { pause?: () => void }) => {
+        held = hold ?? {};
+        return new Promise(() => {});
+      },
+    });
+    s.entry.start(null);
+    s.clock.advance(RESEND_MS);
+    s.resend.fire("click");
+    s.clock.advance(SLOW_MS - 1);
+    held.pause?.();
+    s.clock.advance(STOP_MS);
+    expect(s.line()).toBe(AUTH.code.hint);
   });
 
   it("stop() leaves no timer behind", () => {

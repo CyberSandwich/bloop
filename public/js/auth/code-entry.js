@@ -71,7 +71,8 @@ export async function land(me, next, row, go) {
 /**
  * @typedef {object} CodeHooks
  * @property {(code: string) => Promise<Reply>} verify
- * @property {() => Promise<Reply>} resend sends a new code; an ok answer carries `expiresIn`
+ * @property {(hold: import("./row.js").Hold) => Promise<Reply>} resend sends a new code (an ok answer carries
+ *   `expiresIn`); `hold` pauses the slow rule while a person solves a challenge
  * @property {(value: any) => Promise<boolean>} done the code verified; false when the page stays (cookies blocked)
  * @property {(reply: {error: string}) => boolean} [refused] a page-specific refusal; true when it handled it
  */
@@ -188,8 +189,10 @@ export function createCodeEntry({ input, row, resend, doc }, hooks, clock = CLOC
     if (resend.disabled || !active) return;
     resend.disabled = true;
     let stopped = false;
+    /** @type {import("./row.js").Hold} */
+    const hold = {};
     const reply = await watch(
-      hooks.resend(),
+      hooks.resend(hold),
       {
         slow: () => row.status(AUTH.slow.still, true),
         stop: () => {
@@ -199,6 +202,7 @@ export function createCodeEntry({ input, row, resend, doc }, hooks, clock = CLOC
         },
       },
       clock,
+      hold,
     );
     // A code sent after the stop is still on its way: the step opens for it.
     if (reply.ok) {

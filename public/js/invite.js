@@ -90,8 +90,6 @@ function open() {
   const until =
     typeof at === "number" ? new Date(at).toLocaleDateString(undefined, { day: "numeric", month: "short" }) : "";
   state(INVITE.title, INVITE.to, { masked: invite.emailMasked }, ["accept"], { about: true, until });
-  // The code step loads while the invitee reads.
-  code().catch(() => {});
 }
 
 /** Accept (and Send a New Code): a code goes to the invite's own address only (INV-02). */
@@ -101,7 +99,7 @@ async function send() {
   return reply;
 }
 
-/** The code step, loaded once the invite is open and bound once. */
+/** The code step, loaded on the intent to accept (a press on Accept, before its click) and bound once. */
 /** @type {Promise<{start: (answer: unknown) => void, stop: () => void}> | undefined} */
 let codeStep;
 function code() {
@@ -194,6 +192,8 @@ async function peek() {
   ]);
 }
 
+const preload = () => code().catch(() => {});
+for (const type of ["pointerdown", "keydown"]) accepting.addEventListener(type, preload, { once: true });
 accepting.addEventListener("click", accept);
 byId("sign-out").addEventListener("click", async () => {
   const reply = await api.post("/api/me/signout", {});

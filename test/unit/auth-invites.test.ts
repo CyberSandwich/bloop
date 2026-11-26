@@ -15,7 +15,17 @@ import { invite as inviteMail } from "../../src/worker/auth/templates.ts";
 import { headersFor } from "../../src/worker/headers.ts";
 import { hmacHex, SECRET_SHAPE, sha256Hex } from "../../src/worker/ids.ts";
 import { testDb } from "./d1-shim.ts";
-import { authWorld, callRoute, cookieNames, PEPPER, seedMember, setMode, sid, waitingCtx } from "./member-fixture.ts";
+import {
+  authWorld,
+  callRoute,
+  cookieNames,
+  PEPPER,
+  recordingLimits,
+  seedMember,
+  setMode,
+  sid,
+  waitingCtx,
+} from "./member-fixture.ts";
 
 type World = Awaited<ReturnType<typeof authWorld>>;
 const DAY = 86_400_000;
@@ -147,6 +157,57 @@ describe("INV-03 peek: opening a link changes nothing", () => {
     expect((await peek(w, token)).body).not.toHaveProperty("forYou");
     expect((await post(w, "/api/invite/peek", { token }, sid("A".repeat(43)))).body).not.toHaveProperty("forYou");
     expect(snapshot(w)).toEqual(before);
+  });
+
+  it("INV-03 peek: forYou writes nothing, not even a stale session's or member's activity clock", async () => {
+    const w = await authWorld();
+    setMode(w.db, "open");
+    const token = await seedInvite(w.db, "invitee@example.test");
+    const invitee = await seedMember(w.db, "u-invitee", "invitee@example.test");
+    const old = Date.now() - 3 * DAY;
+    w.db.raw.prepare("UPDATE phone_session SET last_seen_at = ?").run(old);
+    w.db.raw.prepare("UPDATE app_user SET last_seen_at = ?").run(old);
+    const clocks = () => ({
+      sessions: w.db.raw.prepare("SELECT last_seen_at FROM phone_session").all(),
+      users: w.db.raw.prepare("SELECT last_seen_at FROM app_user").all(),
+    });
+    const before = clocks();
+    expect((await post(w, "/api/invite/peek", { token }, sid(invitee))).body).toMatchObject({ forYou: true });
+    expect(clocks()).toEqual(before);
+  });
+
+  it("INV-03 peek: over RL_MEMBER_IP no session is read and forYou is absent; a database error is forYou false", async () => {
+    const w = await authWorld({ TEST_TIMING: "0" });
+    setMode(w.db, "open");
+    const token = await seedInvite(w.db, "invitee@example.test");
+    const invitee = await seedMember(w.db, "u-invitee", "invitee@example.test");
+    const reads: string[] = [];
+    const watched = {
+      ...w.db,
+      prepare: (sql: string) => {
+        reads.push(sql);
+        return w.db.prepare(sql);
+      },
+    };
+    const peekAs = async (env: object) => {
+      const res = await callRoute(w.routes, env, "POST", "/api/invite/peek", { body: { token }, cookie: sid(invitee) });
+      return { status: res.status, body: (await res.json()) as Record<string, unknown> };
+    };
+    const over = await peekAs({ ...w.env, ...recordingLimits(["RL_MEMBER_IP"]).bindings, DB: watched });
+    expect(over).toMatchObject({ status: 200, body: { state: "open" } });
+    expect(over.body).not.toHaveProperty("forYou");
+    expect(reads.filter((sql) => sql.includes("phone_session"))).toEqual([]);
+    const broken = {
+      ...w.db,
+      prepare: (sql: string) => {
+        if (sql.includes("phone_session")) throw new Error("D1_ERROR");
+        return w.db.prepare(sql);
+      },
+    };
+    expect(await peekAs({ ...w.env, ...recordingLimits().bindings, DB: broken })).toMatchObject({
+      status: 200,
+      body: { state: "open", forYou: false },
+    });
   });
 });
 

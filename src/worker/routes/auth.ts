@@ -22,7 +22,7 @@ import { emailSwitchOf, type Message, mail, type Sender } from "../auth/email.ts
 import { normalizeEmail } from "../auth/email-norm.ts";
 import { callbackErrorPage } from "../auth/error-page.ts";
 import { acceptBatch, inviteHash, maskEmail, peekInvite } from "../auth/invites.ts";
-import { resolveMember } from "../auth/member.ts";
+import { memberOf } from "../auth/member.ts";
 import { beginSignIn, finishSignIn, PENDING_SECONDS, type Pending } from "../auth/oauth.ts";
 import { MAX_PASSKEYS } from "../auth/passkeys.ts";
 import { endSessions, type ScreenDeps, screenDeps } from "../auth/screens.ts";
@@ -244,6 +244,26 @@ function codeWrite<T>(
   });
 }
 
+/**
+ * Whether the live member session on `request` is the invite's own address, or null with no such session. Read only
+ * (INV-03): no session or activity touch. A cookie of the wrong shape reads nothing, a well-formed one spends
+ * RL_MEMBER_IP first (AUTH-19), and a database error is false, never an error answer.
+ */
+async function forYou(request: Request, env: Env, config: Config, emailNorm: string): Promise<boolean | null> {
+  const cookie = readCookie(request, SESSION_COOKIE);
+  if (!cookie || !SECRET_SHAPE.test(cookie)) return null;
+  if (await limited(env, "RL_MEMBER_IP", request, config)) return null;
+  try {
+    const { sessions } = servicesFor(env, config);
+    const view = await sessions.lookup(cookie, { touch: false });
+    const who = view ? await memberOf(view, env, config, sessions, { touch: false }) : null;
+    return who?.ok ? who.member.emailNorm === emailNorm : null;
+  } catch {
+    logAuth("peek", "member_check_failed");
+    return false;
+  }
+}
+
 /** The email and invite sign-in routes (ADR 0014) and the Entra ones, with their outside calls injected. */
 export function authRoutesWith(over: Partial<AuthDeps> = {}): readonly Route[] {
   const deps: AuthDeps = { ...defaultDeps, ...over };
@@ -383,12 +403,12 @@ export function authRoutesWith(over: Partial<AuthDeps> = {}): readonly Route[] {
       if (!row || !inviteAdmitted(await launchState(env), config.account, row.emailNorm))
         return json({ state: "invalid" });
       if (state !== "open") return json({ state });
-      const who = readCookie(request, SESSION_COOKIE) ? await resolveMember(request, env, config) : null;
+      const mine = await forYou(request, env, config, row.emailNorm);
       return json({
         state,
         emailMasked: maskEmail(row.email),
         expiresAt: row.expiresAt,
-        ...(who?.ok ? { forYou: who.member.emailNorm === row.emailNorm } : {}),
+        ...(mine === null ? {} : { forYou: mine }),
       });
     }),
 

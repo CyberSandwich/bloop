@@ -157,8 +157,11 @@ export class Sessions {
     return value;
   }
 
-  /** The live session and its user, or null for an unknown, idle or expired value. Touches the session hourly. */
-  async lookup(value: string): Promise<SessionView | null> {
+  /**
+   * The live session and its user, or null for an unknown, idle or expired value. Touches the session hourly, unless
+   * `touch` is false (a read that must write nothing: the invite peek).
+   */
+  async lookup(value: string, { touch = true }: { touch?: boolean } = {}): Promise<SessionView | null> {
     const hash = await sha256Hex(value);
     const row = await this.db
       .prepare(
@@ -170,7 +173,7 @@ export class Sessions {
       .first<ViewRow>();
     const now = this.now();
     if (!row || row.expires_at <= now || row.last_seen_at + IDLE_DAYS * DAY_MS <= now) return null;
-    if (now - row.last_seen_at > TOUCH_MS) {
+    if (touch && now - row.last_seen_at > TOUCH_MS) {
       await this.db.prepare("UPDATE phone_session SET last_seen_at = ? WHERE id_hash = ?").bind(now, hash).run();
     }
     return {

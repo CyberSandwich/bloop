@@ -30,6 +30,8 @@ export interface MemberOptions {
   allowDeleting?: boolean;
   /** Read the mode uncached, for a step that creates state. */
   fresh?: boolean;
+  /** False for a read that must write nothing (the invite peek): the activity clock is left as it is. */
+  touch?: boolean;
 }
 
 const signedOut = (): Resolved => ({ ok: false, response: fail("auth_required") });
@@ -50,7 +52,7 @@ export async function memberOf(
   if (view.tid !== "email" || emailNorm === null || !statusOk || view.suspendedAt !== null) return signedOut();
   if (!admitted(await launchState(env, { fresh: options.fresh === true }), config.account, emailNorm))
     return signedOut();
-  await sessions.touchUser(view);
+  if (options.touch !== false) await sessions.touchUser(view);
   return {
     ok: true,
     member: {

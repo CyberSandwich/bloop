@@ -168,6 +168,32 @@ test.describe("/signin", () => {
     expect(reads).toBe(2);
   });
 
+  test("with no site key configured nothing is sent: bloop reads as not responding", async ({ page }) => {
+    const m = await mock(page);
+    m.me = { ...m.me, turnstileSiteKey: null };
+    await page.goto("/signin");
+    await page.getByLabel("Email").fill("you@example.test");
+    await page.getByRole("button", { name: "Email Me a Code" }).click();
+    await expect(alertLine(page, "email")).toHaveText("bloop isn't responding. Try again in a minute.");
+    expect(m.requests).toEqual([]);
+  });
+
+  test("a challenge that times out reads as taking too long, not as content blocking", async ({ page }) => {
+    const m = await mock(page);
+    await page.unroute(TURNSTILE);
+    await page.route(TURNSTILE, (r) =>
+      r.fulfill({
+        contentType: "text/javascript",
+        body: FAKE_TURNSTILE.replace("window.__ts.callback('tok')", "window.__ts['timeout-callback']()"),
+      }),
+    );
+    await page.goto("/signin");
+    await page.getByLabel("Email").fill("you@example.test");
+    await page.getByRole("button", { name: "Email Me a Code" }).click();
+    await expect(alertLine(page, "email")).toHaveText("That took too long. Try again.");
+    expect(m.requests).toEqual([]);
+  });
+
   test("a pasted '481 207' signs in, and ?next= lands where it asked", async ({ page }) => {
     await mock(page);
     await toCodeStep(page, "/signin?next=/account");
@@ -347,6 +373,21 @@ test.describe("/invite", () => {
     await page.getByLabel("Code").pressSequentially(CODE);
     await page.waitForURL("**/library");
     expect(seen).toEqual([]);
+  });
+
+  test("the code step loads on the intent to accept: no request for it before Accept is pressed", async ({ page }) => {
+    await mock(page);
+    const loads: string[] = [];
+    page.on("request", (r) => {
+      if (r.url().includes("/js/auth/code-entry.js")) loads.push(r.url());
+    });
+    await page.goto(`/invite#t=${TOKEN}`);
+    await expect(page.getByRole("heading", { name: "You're Invited" })).toBeVisible();
+    await page.waitForLoadState("networkidle");
+    expect(loads).toEqual([]);
+    await page.getByRole("button", { name: "Accept Invite" }).click();
+    await expect(page.getByRole("heading", { name: "Check Your Email" })).toBeVisible();
+    expect(loads).toHaveLength(1);
   });
 
   for (const [state, title] of [
