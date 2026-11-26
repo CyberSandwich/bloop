@@ -63,5 +63,10 @@
     "name": "library reorder, lazy",
     "path": "dist/js/library/reorder.js",
     "limit": "0.65 kB"
+  },
+  {
+    "name": "library preview, lazy",
+    "path": "dist/js/library/preview.js",
+    "limit": "1.65 kB"
   }
 ]
