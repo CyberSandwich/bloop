@@ -12,7 +12,8 @@ async function spied(blocked = false) {
     endScreens: async (_env: unknown, userId: string, scope?: object) => {
       calls.push(["endScreens", userId, scope ?? {}]);
     },
-    closeSession: async (_env: unknown, publicId: string) => {
+    closeSession: async (_env: unknown, userId: string, publicId: string) => {
+      expect(userId).toBe("m1");
       calls.push(["closeSession", publicId]);
     },
     isBlocked: async () => blocked,

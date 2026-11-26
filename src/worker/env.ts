@@ -12,8 +12,6 @@ export interface Env {
   LIBRARY: R2Bucket;
   /** Email Service, sender hi@bloop.here, any recipient (auth/email.ts). */
   EMAIL: SendEmail;
-  /** Email Service locked to one destination, the owner's inbox: the spend breaker's alerts. */
-  ALERT_EMAIL: SendEmail;
   RL_CREATE: RateLimit;
   RL_CLAIM: RateLimit;
   RL_FETCH: RateLimit;

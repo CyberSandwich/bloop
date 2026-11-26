@@ -15,6 +15,7 @@ import {
 import { deletePasskey, listPasskeys, renamePasskey } from "../auth/passkeys.ts";
 import { type ScreenDeps, screenDeps } from "../auth/screens.ts";
 import { servicesFor } from "../auth/services.ts";
+import { PUBLIC_ID } from "../auth/sessions.ts";
 import type { Config } from "../config.ts";
 import type { Env, RateLimitName } from "../env.ts";
 import { auditRecord } from "../export-format.ts";
@@ -26,7 +27,6 @@ import { auditFor } from "../stores.ts";
 import { emptyBody, recordBestEffort } from "./auth.ts";
 import { limited, withConfig, write } from "./common.ts";
 
-const PUBLIC_ID = /^[A-Za-z0-9_-]{22}$/;
 const CREDENTIAL_ID = /^[A-Za-z0-9_-]{1,1366}$/;
 const renameBody = z
   .object({
@@ -133,12 +133,12 @@ export function accountRoutesWith(deps: AccountDeps): readonly Route[] {
       if (everywhere) {
         const ended = await sessions.destroyAll(view.userId);
         await deps.endScreens(env, view.userId);
-        for (const id of ended) await deps.closeSession(env, id);
+        for (const id of ended) await deps.closeSession(env, view.userId, id);
       } else {
         await sessions.destroy(cookie);
         if (view.publicId) {
           await deps.endScreens(env, view.userId, { bySession: view.publicId });
-          await deps.closeSession(env, view.publicId);
+          await deps.closeSession(env, view.userId, view.publicId);
         }
       }
       return withCookies(json({ signedIn: false }), signedOutCookies({ everywhere }));
@@ -151,7 +151,7 @@ export function accountRoutesWith(deps: AccountDeps): readonly Route[] {
       "api",
       withConfig(async (request, env, config) => {
         const cookie = readCookie(request, SESSION_COOKIE);
-        if (!cookie && !config.graph) return json(MOCK_ME);
+        if (!cookie && !config.graph) return json({ ...MOCK_ME, launchMode: (await launchState(env)).mode });
         const { sessions } = servicesFor(env, config);
         const view = cookie ? await sessions.lookup(cookie) : null;
         if (view && view.tid !== "email" && config.graph) {
@@ -192,7 +192,7 @@ export function accountRoutesWith(deps: AccountDeps): readonly Route[] {
       if (!id || id === member.session.publicId) return fail("bad_request");
       if (!(await servicesFor(env, config).sessions.destroyPublic(member.userId, id))) return fail("not_found");
       await deps.endScreens(env, member.userId, { bySession: id });
-      await deps.closeSession(env, id);
+      await deps.closeSession(env, member.userId, id);
       return noContent();
     }),
 
@@ -277,7 +277,7 @@ export function accountRoutesWith(deps: AccountDeps): readonly Route[] {
           const deleteAfter = Date.now() + config.account.deleteGraceDays * 86_400_000;
           const ended = await sessions.requestDeletion(userId, deleteAfter, view.hash);
           await deps.endScreens(env, userId);
-          for (const id of ended) await deps.closeSession(env, id);
+          for (const id of ended) await deps.closeSession(env, userId, id);
           return json({ signedIn: true, deleting: true });
         }
         if (!config.graph) return fail("source_unavailable");
