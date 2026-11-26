@@ -138,6 +138,14 @@ export class FakeNode {
   focus() {
     doc.active = this;
   }
+  /** An img's decode, done at once: core/crossfade.js swaps the remote's page in after it. */
+  decode() {
+    return Promise.resolve();
+  }
+  /** The `data-*` attributes, as the DOM's dataset reads one-word names. */
+  get dataset(): Record<string, string> {
+    return Object.fromEntries([...this.attrs].filter(([k]) => k.startsWith("data-")).map(([k, v]) => [k.slice(5), v]));
+  }
   /** A click as the browser walks it: capture on the way down, then the bubble, each stoppable. */
   click() {
     const path: FakeNode[] = [];
