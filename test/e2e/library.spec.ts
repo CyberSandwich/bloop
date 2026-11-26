@@ -1,64 +1,29 @@
-// /library in a browser, against `npm run dev` (CI only: headless Chrome cannot start in the local sandbox). A member is
-// a seeded row with a session cookie, as test/integration/library.test.ts makes one, since sign-in is the accounts change's.
-import { spawnSync } from "node:child_process";
-import { createHash, randomUUID } from "node:crypto";
+// /library in a browser, against `npm run dev` (CI only: headless Chrome cannot start in the local sandbox).
 import AxeBuilder from "@axe-core/playwright";
-import { type BrowserContext, expect, type Page, test } from "@playwright/test";
+import { expect, type Page, test } from "@playwright/test";
+import { seeder, signedIn } from "./library-seed.ts";
 
 const now = Date.now();
-const sha = (text: string) => createHash("sha256").update(text).digest("hex");
-
-/** Runs SQL against the dev server's local D1 (playwright.config.ts starts it with `--persist-to .wrangler/state`). */
-function d1(sql: string): void {
-  const done = spawnSync(
-    "npx",
-    ["wrangler", "d1", "execute", "bloop", "--local", "--persist-to", ".wrangler/state", "--command", sql],
-    { encoding: "utf8" },
-  );
-  if (done.status !== 0) throw new Error(`d1 failed: ${done.stderr.slice(-400)}`);
-}
-
-interface Seeded {
-  user: string;
-  cookie: string;
-}
-
-/** A member with a live session, and `files` rows (id, name, extra columns) in their library. */
-function member(files: [string, string, Record<string, string | number>?][] = []): Seeded {
-  const user = `e2e-${randomUUID()}`;
-  const cookie = `${user}-cookie`;
-  const statements = [
-    `INSERT INTO app_user (id, tid, oid, email, created_at, last_seen_at, email_norm, status)
-       VALUES ('${user}', 'email', '${user}', '${user}@example.test', ${now}, ${now}, '${user}@example.test', 'active')`,
-    `INSERT INTO phone_session (id_hash, user_id, created_at, last_seen_at, expires_at, public_id)
-       VALUES ('${sha(cookie)}', '${user}', ${now}, ${now}, ${now + 86_400_000}, 'pub-${user}')`,
-    ...files.map(([id, name, over = {}], i) => {
-      const row: Record<string, string | number> = {
-        id: `${user}-${id}`,
-        user_id: user,
-        name,
-        ext: name.split(".").pop() ?? "",
-        bytes: (i + 1) * 3_000_000,
-        version: 1,
-        r2_key: `u/${user}/${id}/v1/orig`,
-        status: "ready",
-        created_at: now - i * 60_000,
-        updated_at: now - i * 60_000,
-        crc32: 0,
-        ...over,
-      };
-      const values = Object.values(row).map((v) => (typeof v === "string" ? `'${v}'` : v));
-      return `INSERT INTO library_file (${Object.keys(row).join(", ")}) VALUES (${values.join(", ")})`;
-    }),
-  ];
-  d1(statements.join("; "));
-  return { user, cookie };
-}
-
-/** A header, not addCookies: Chrome's CDP refuses a Secure `__Host-` cookie for an http:// URL. */
-async function signedIn(context: BrowserContext, seeded: Seeded) {
-  await context.setExtraHTTPHeaders({ Cookie: `__Host-bloop_sid=${seeded.cookie}` });
-}
+// Every member is seeded in one execute before the first test (library-seed.ts), so the tests run in order in one worker.
+const fixtures = seeder(now);
+const members = {
+  empty: fixtures.member(),
+  full: fixtures.member([
+    ["a", "Lecture 5.pptx", { selected_at: now - 10 }],
+    ["b", "Reading list.pdf"],
+    ["c", "Seminar.docx"],
+  ]),
+  trash: fixtures.member([
+    ["a", "Lecture 5.pptx"],
+    ["b", "Reading list.pdf"],
+  ]),
+  rename: fixtures.member([
+    ["a", "Lecture 10.pptx", { selected_at: now - 10 }],
+    ["b", "Lecture 2.pptx"],
+  ]),
+};
+test.describe.configure({ mode: "default" });
+test.beforeAll(() => fixtures.seed());
 
 const expectNoToast = async (page: Page) =>
   expect(await page.locator(".toast:not(.out)").count(), "a toast is up").toBe(0);
@@ -80,7 +45,7 @@ test.describe("library", () => {
   }) => {
     const csp: string[] = [];
     page.on("console", (m) => m.text().includes("Content Security Policy") && csp.push(m.text()));
-    await signedIn(context, member());
+    await signedIn(context, members.empty);
     await page.goto("/library");
     await expect(page.getByRole("heading", { level: 1, name: "Library" })).toBeVisible();
     await expect(page.getByRole("heading", { name: "Add Your First File" })).toBeVisible();
@@ -97,14 +62,7 @@ test.describe("library", () => {
     page,
     context,
   }) => {
-    await signedIn(
-      context,
-      member([
-        ["a", "Lecture 5.pptx", { selected_at: now - 10 }],
-        ["b", "Reading list.pdf"],
-        ["c", "Seminar.docx"],
-      ]),
-    );
+    await signedIn(context, members.full);
     await page.goto("/library");
     const all = page.locator("#file-list > li");
     await expect(all).toHaveCount(3);
@@ -128,13 +86,7 @@ test.describe("library", () => {
     page,
     context,
   }) => {
-    await signedIn(
-      context,
-      member([
-        ["a", "Lecture 5.pptx"],
-        ["b", "Reading list.pdf"],
-      ]),
-    );
+    await signedIn(context, members.trash);
     await page.goto("/library");
     await page.getByRole("button", { name: "More for Lecture 5.pptx" }).click();
     await page.getByRole("dialog").getByRole("button", { name: "Move to Trash" }).click();
@@ -160,13 +112,7 @@ test.describe("library", () => {
     page,
     context,
   }) => {
-    await signedIn(
-      context,
-      member([
-        ["a", "Lecture 10.pptx", { selected_at: now - 10 }],
-        ["b", "Lecture 2.pptx"],
-      ]),
-    );
+    await signedIn(context, members.rename);
     await page.goto("/library");
     await page.getByRole("button", { name: "More for Lecture 2.pptx" }).first().click();
     await page.getByRole("dialog").getByRole("button", { name: "Rename" }).click();
