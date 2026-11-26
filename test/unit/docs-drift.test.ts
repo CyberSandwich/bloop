@@ -310,6 +310,7 @@ describe("size budgets", () => {
       ],
       "session length words, lazy": ["public/js/core/length-extra.js", "public/js/shared/length.js"],
       "clicker keys, lazy": "public/js/core/clicker.js",
+      "check this room words, lazy": "public/js/core/copy-check.js",
       "room network states, lazy": "public/js/core/net-states.js",
       "channel polling, lazy": "public/js/core/poll.js",
       "channel health, lazy": "public/js/core/health.js",
@@ -354,7 +355,11 @@ describe("size budgets", () => {
       ),
     );
     // Modules the Worker or a later change imports first; the change that adds the browser importer deletes its line.
-    const awaitingImporter = new Set(["public/js/core/tt.js", "public/js/shared/errors-app.js"]);
+    const awaitingImporter = new Set([
+      "public/js/core/copy-check.js",
+      "public/js/core/tt.js",
+      "public/js/shared/errors-app.js",
+    ]);
     const lazyJs = entries.filter(
       (e) =>
         e.name.endsWith(", lazy") &&

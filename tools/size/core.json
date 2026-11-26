@@ -93,6 +93,11 @@
     "limit": "0.35 kB"
   },
   {
+    "name": "check this room words, lazy",
+    "path": "dist/js/core/copy-check.js",
+    "limit": "0.39 kB"
+  },
+  {
     "name": "room network states, lazy",
     "path": "dist/js/core/net-states.js",
     "limit": "0.21 kB"
@@ -129,10 +134,7 @@
   },
   {
     "name": "session length words, lazy",
-    "path": [
-      "dist/js/core/length-extra.js",
-      "dist/js/shared/length.js"
-    ],
+    "path": ["dist/js/core/length-extra.js", "dist/js/shared/length.js"],
     "limit": "0.7 kB"
   },
   {
