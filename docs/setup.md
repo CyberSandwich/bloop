@@ -139,7 +139,7 @@ All outputs are committed; run these only when a source changes. Make one throwa
 
 ## Microsoft Entra app registration
 
-Do this once per deployment. It turns on real OneDrive sign-in. Until then bloop runs on the demo account and every `/auth/*` and `/api/me*` route answers `source_unavailable`.
+Do this once per deployment. It turns on real OneDrive sign-in. Until then bloop runs on the demo account and every `/auth/*` route and `/api/me/disconnect` answer `source_unavailable`.
 
 Placeholders below: `<host>` is the deployment's host (for example `bloop.example`), `<client-id>` is the Application (client) ID Entra shows.
 
@@ -195,7 +195,7 @@ Apply the schema to the production database before the first sign-in: `wrangler 
 
 1. Set `FILE_SOURCE` to `graph` in `wrangler.jsonc` `vars` (locally, in `.dev.vars`) and deploy (or restart `npm run dev`).
 2. If anything in step 4 is missing or malformed, the Worker answers 500 `internal` on every route and logs `config invalid: ...` naming the variable. That is deliberate: it never runs half configured.
-3. Check: `GET /api/me` returns `{"source":"graph","signedIn":false,"email":null}`, and `GET /auth/start` redirects (302) to `login.microsoftonline.com`, whose address bar shows `scope=openid offline_access Files.Read`.
+3. Check: `GET /api/me` returns `{"source":"graph","signedIn":false,"launchMode":"preview"}` (or `"open"`), and `GET /auth/start` redirects (302) to `login.microsoftonline.com`, whose address bar shows `scope=openid offline_access Files.Read`.
 4. Sign in on a phone: scan a live screen's code, tap Connect OneDrive, consent, and the file list shows recent `.pptx` and `.pdf` files from the root of the user's OneDrive.
 5. To go back, set `FILE_SOURCE` to `mock`. Grants already stored stay (and are deleted when idle); nothing reads them.
 
