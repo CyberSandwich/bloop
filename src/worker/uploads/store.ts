@@ -40,7 +40,13 @@ export const COLUMNS = `id, owner_kind AS ownerKind, user_id AS userId, screen_r
   fingerprint, created_at AS createdAt, expires_at AS expiresAt, mints, idem_key AS idemKey,
   completing_at AS completingAt, completed_at AS completedAt, aborted_at AS abortedAt`;
 
-const OPEN = "completed_at IS NULL AND aborted_at IS NULL";
+/** Not completed and not aborted: what release, settle and the claim guard. */
+export const OPEN = "completed_at IS NULL AND aborted_at IS NULL";
+/**
+ * Open and unexpired: the one meaning of an upload that is still the client's, shared by resume, the listing and every
+ * reserve guard (twin and file count). Takes the number of the bound parameter that holds now.
+ */
+export const live = (nowParam: number): string => `${OPEN} AND expires_at > ?${nowParam}`;
 
 /** What create writes; the counters and the close times start empty. */
 export interface NewUpload {
@@ -107,8 +113,8 @@ export const findOpenBySession = (db: Db, sessionId: string): Promise<UploadRow 
 export const findOpen = (db: Db, owner: Owner, fingerprint: string, now: number): Promise<UploadRow | null> =>
   db
     .prepare(
-      `SELECT ${COLUMNS} FROM upload WHERE ${owner.kind === "library" ? "user_id" : "session_id"} = ? AND fingerprint = ?
-       AND ${OPEN} AND expires_at > ? ORDER BY created_at DESC LIMIT 1`,
+      `SELECT ${COLUMNS} FROM upload WHERE ${owner.kind === "library" ? "user_id" : "session_id"} = ?1 AND fingerprint = ?2
+       AND ${live(3)} ORDER BY created_at DESC LIMIT 1`,
     )
     .bind(ownerId(owner), fingerprint, now)
     .first<UploadRow>();
@@ -137,7 +143,7 @@ export async function listOpen(db: Db, userId: string, now: number, limit = 20):
     .prepare(
       `SELECT id, name, bytes, parts, created_at AS createdAt,
          (SELECT count(*) FROM upload_part p WHERE p.upload_id = upload.id) AS done
-       FROM upload WHERE user_id = ? AND ${OPEN} AND expires_at > ? ORDER BY created_at DESC LIMIT ?`,
+       FROM upload WHERE user_id = ?1 AND ${live(2)} ORDER BY created_at DESC LIMIT ?3`,
     )
     .bind(userId, now, limit)
     .all<OpenListing>();
@@ -181,13 +187,24 @@ export async function recordPart(
   return res.meta.changes > 0;
 }
 
-/** Adds `k` minted URLs to an open upload's count if that keeps it within three per part. False: over budget. */
-export async function chargeMints(db: Db, id: string, k: number): Promise<boolean> {
+/**
+ * Adds `k` minted URLs to an open upload's count if that keeps it within its budget: three per part, plus `refill`
+ * more for each URL lifetime (`ttlMs`) since create, so a resume past the budget waits instead of being locked out.
+ * False: over budget now.
+ */
+export async function chargeMints(
+  db: Db,
+  id: string,
+  k: number,
+  now: number,
+  budget: { ttlMs: number; refill: number },
+): Promise<boolean> {
   const res = await db
     .prepare(
-      `UPDATE upload SET mints = mints + ?2 WHERE id = ?1 AND ${OPEN} AND mints + ?2 <= parts * ${MINTS_PER_PART}`,
+      `UPDATE upload SET mints = mints + ?2 WHERE id = ?1 AND ${OPEN}
+         AND mints + ?2 <= parts * ${MINTS_PER_PART} + ?5 * CAST((?3 - created_at) / ?4 AS INTEGER)`,
     )
-    .bind(id, k)
+    .bind(id, k, now, budget.ttlMs, budget.refill)
     .run();
   return res.meta.changes > 0;
 }
@@ -231,10 +248,17 @@ export async function staleCompletes(db: Db, now: number, limit: number): Promis
   return results;
 }
 
-/** Open uploads past their expiry that no fresh claim protects. */
+/**
+ * Open uploads nobody can finish, with no claim on them: past their expiry, or a library upload whose owner is no longer
+ * active (suspended, deleting or purging), whose routes answer 401.
+ */
 export async function expiredOpen(db: Db, now: number, limit: number): Promise<UploadRow[]> {
   const { results } = await db
-    .prepare(`SELECT ${COLUMNS} FROM upload WHERE ${OPEN} AND expires_at < ?1 AND completing_at IS NULL LIMIT ?2`)
+    .prepare(
+      `SELECT ${COLUMNS} FROM upload WHERE ${OPEN} AND completing_at IS NULL AND (expires_at < ?1
+         OR (owner_kind = 'library' AND NOT EXISTS (SELECT 1 FROM app_user a WHERE a.id = upload.user_id
+           AND a.status = 'active' AND a.suspended_at IS NULL))) LIMIT ?2`,
+    )
     .bind(now, limit)
     .all<UploadRow>();
   return results;

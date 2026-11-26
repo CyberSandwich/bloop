@@ -1,5 +1,5 @@
 // An in-memory R2 for the pipeline tests: multipart uploads, whole objects, and a log of every call.
-import type { Multipart, PartRef } from "../../src/worker/uploads/multipart.ts";
+import { type Multipart, PartFailed, type PartRef } from "../../src/worker/uploads/multipart.ts";
 
 const concatAll = (chunks: Uint8Array[]): Uint8Array => {
   const out = new Uint8Array(chunks.reduce((n, c) => n + c.length, 0));
@@ -48,9 +48,9 @@ export function fakeMultipart(): FakeMultipart {
     },
     async part(key, uploadId, n, body, length) {
       calls.push(`part ${uploadId} ${n}`);
-      maybeFail("part");
+      if (failures.delete("part")) throw new PartFailed("fault");
       const parts = open.get(uploadId);
-      if (!parts) throw new Error("no such upload");
+      if (!parts) throw new PartFailed("gone");
       const chunks: Uint8Array[] = [];
       const reader = body.getReader();
       for (;;) {
@@ -59,7 +59,7 @@ export function fakeMultipart(): FakeMultipart {
         chunks.push(value);
       }
       const bytes = concatAll(chunks);
-      if (bytes.length !== length) throw new Error("length mismatch");
+      if (bytes.length !== length) throw new PartFailed("body");
       parts.set(n, bytes);
       return `"${(key.length * 1000 + n * 7919 + bytes.length).toString(16).padStart(32, "0")}"`;
     },
