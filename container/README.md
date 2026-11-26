@@ -50,7 +50,7 @@ Each stage has its own timeout. An overrun kills the tool's whole process group 
 | inspect | magic bytes; for zip packages, the unpack limits and a real inflate of every entry (CRC included); for OOXML, notes, fonts, motion, media | 30 s |
 | convert | office to PDF with `soffice --headless --convert-to pdf` and a fresh profile per call; every `doc.pdf`, uploaded or made by `soffice`, is rewritten with `pdftocairo -pdf`, which drops scripts, launch actions and attachments; `ppt`, `pps` and `odp` are also converted to a pptx so their notes, fonts and motion are read by the same code | 180 s |
 | rasterize | `pdfinfo` (page count, page sizes), then per page one `pdftoppm` render at the widest width, uncompressed (PPM), and `vips` to WebP (Q 80, effort 2) at each width from that one render (`BLOOP_WIDTHS`, default 3840, 1920, 480); page 1 first, published at once, then the rest with as many workers as the CPU quota allows, at most four (`BLOOP_WORKERS`) | 500 s |
-| video | `ffprobe`, then `ffmpeg` to H.264 high profile (CRF 23, `veryfast`), AAC stereo 128k, yuv420p, at most 1920 wide, `+faststart`, metadata dropped, input restricted to `-protocol_whitelist file`, the demuxer forced from the magic bytes (`-f mov` or `-f matroska`, never probed), output cut at `BLOOP_MAX_VIDEO_SECONDS` with `-t` whatever the header claims; then `ffprobe` of the result must say h264 in an mp4; then a thumbnail | 900 s |
+| video | `ffprobe`, then one of two paths, both with the input restricted to `-protocol_whitelist file` and the demuxer forced from the magic bytes (`-f mov` or `-f matroska`, never probed), metadata dropped, `+faststart`. **Copy** (`-c copy`, no decode, no duration cap): the first video stream is H.264 in Baseline, Main or High (8-bit 4:2:0, no wider than `BLOOP_VIDEO_WIDTH`), the first audio stream is AAC or absent, the input is mp4 or mov with one unfragmented `moov` of at most 64 MiB. **Encode** for everything else (High 10, 4:2:2 and 4:4:4, HEVC, other audio, matroska, a missing, oversized or fragmented index, a wider picture): H.264 high profile (CRF 23, `veryfast`), AAC stereo 128k, yuv420p, at most `BLOOP_VIDEO_WIDTH` wide (1920), cut at `BLOOP_MAX_VIDEO_SECONDS` with `-t`. Then `ffprobe` of the result must say h264 in an mp4 whose `moov` comes before its `mdat`; then a thumbnail. A copy that fails is not retried as an encode | ceiling 1800 s; budgets below |
 | heic | `vips thumbnail` to a 1920 JPEG (Q 85, orientation applied, all metadata dropped) and a 480 WebP | 60 s |
 
 Rasterize time is linear in pages. The page cap is 300 (`BLOOP_MAX_PAGES`). Measured on the CI runner, seconds a page in the rasterize stage, for text decks of 100 and 300 slides (`--cpus` is the container's CPU quota):
@@ -78,10 +78,21 @@ Always H.264 on output, even for an H.264 input: re-encoding is the sanitizer.
 | zip entries | 20000 | `BLOOP_MAX_ENTRIES` | `bomb` |
 | pages rendered | 300 | `BLOOP_MAX_PAGES` | none: later pages are not rendered and `pages` in the manifest says `{total, rendered}` |
 | page aspect (width over height) | 0.25 to 8 | none | `bad_page_size` |
-| video duration, dimensions | 122 s, 8192 px | `BLOOP_MAX_VIDEO_SECONDS` | `bad_media` |
+| video duration to encode, dimensions | 243 s, 8192 px | `BLOOP_MAX_VIDEO_SECONDS`, `BLOOP_VIDEO_RATE`, `BLOOP_TIMEOUT_VIDEO` | `bad_media` |
 | image pixels | 100 million | `BLOOP_MAX_IMAGE_PIXELS` | `bad_media` |
 
-The video cap comes from the measured encode rate, not from a product choice. The corpus encodes a 60 s 1080p30 clip with grain (a hard case) at one CPU under the default settings: 221.0 s, 0.27 s of video per second (CI run 45780852714). The video stage times out at 900 s, so a clip fits with a 2x margin up to 0.27 x 900 / 2 = 122 s. Footage that encodes faster than grain leaves room, and a deployment with more CPUs can raise `BLOOP_MAX_VIDEO_SECONDS`; the 900 s timeout is not raised to fit a longer cap. The number is recorded by `caseVideoRate` on every run, never asserted.
+A video that is copied has no duration cap: the input size quota bounds it, and its budget is 30 s plus twice the file size at 10 MiB/s. A video that is encoded runs under a budget of 30 s plus twice its probed length divided by the measured encode rate (`BLOOP_VIDEO_RATE`, default 0.27 seconds of video per second at one CPU), never over the video stage timeout (the ceiling, 1800 s, `BLOOP_TIMEOUT_VIDEO`); a budget that runs out fails the job with `timeout`. The encode cap follows from the ceiling: 1800 x 0.27 / 2 = 243 s. The default rate is the slowest measurement taken on a CI runner; the rates are recorded on every corpus run, never asserted (CI run 45794592474, `--cpus` limits on a 4-vCPU runner, 30 s of 1080p30 with grain as 4:2:2, which is never copied):
+
+| setting | wall time | seconds of video per second |
+|---|---|---|
+| 1 CPU, 1920 wide | 94.1 s | 0.32 |
+| 2 CPU, 1920 wide | 47.2 s | 0.64 |
+| 4 CPU, 1920 wide | 25.3 s | 1.19 |
+| 1 CPU, `BLOOP_VIDEO_WIDTH=1280` (a 720p target) | 41.5 s | 0.72 |
+
+The earlier run (45780852714) gave 0.27 at one CPU for the same kind of clip, so a runner varies by about 20 percent and the default keeps the lower figure. A 5-minute 720p H.264 clip (330 MB) was copied in 1.0 s at one CPU, and the output matched the input's size within 2 percent, so nothing was encoded.
+
+What an hour of video needs: a copy is seconds, at any length. An encode of 3600 s inside the 1800 s ceiling needs a rate of 3600 x 2 / (1800 - 30) = 4.1, which is about 13 CPUs at 1080p or 6 at a 720p target on these numbers (assuming the rate scales with the CPUs, as 1, 2 and 4 do). On one vCPU the ceiling allows 243 s at 1080p and 648 s (1800 x 0.72 / 2) at a 720p target; a longer encode needs a higher ceiling (`BLOOP_TIMEOUT_VIDEO`, bounded by the deadline of the Durable Object that waits for it) or more CPUs. The Cloudflare instance type is not measured here: its vCPU count decides which row applies.
 
 An entry that inflates past its declared size is refused (`bad_archive`).
 
