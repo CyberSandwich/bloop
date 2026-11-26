@@ -7,6 +7,7 @@ Status: accepted. Replaces the `size-limit` list in `package.json` as the place 
 - The first-load and lazy tests, and the doc-drift check that keeps budgets out of prose, read that one list.
 
 ## Decision
+- The request budget (requests that reach the Worker, and late module requests, per task page) is `tools/size/requests.json`: not a size entry, so the merge and the ratchet skip it, and `test/e2e/requests.spec.ts` reads it; raising a number is a reviewed diff.
 - Budgets live in `tools/size/<area>.json`, one file per area, and `.size-limit.mjs` merges them into the list `size-limit` runs. `tools/size/core.json` holds the existing entries; each stream adds its own area file for its own pages and modules.
 - The foundation change moves every existing entry unchanged into `tools/size/core.json`: same names, same paths, same limits.
 - **No limit is ever raised.** An over-budget file is made smaller, or split into a lazy module.

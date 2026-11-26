@@ -31,7 +31,11 @@ export interface CallOptions {
 }
 
 export class Api {
-  constructor(readonly base: string) {}
+  /** `send` is `fetch` unless a flow test passes a RequestCounter's (flow.ts). */
+  constructor(
+    readonly base: string,
+    private readonly send: typeof fetch = fetch,
+  ) {}
 
   async call<T = Record<string, unknown>>(
     method: string,
@@ -46,7 +50,7 @@ export class Api {
     if (contentType !== null && method !== "GET") headers["Content-Type"] = contentType;
     if (options.auth) headers.Authorization = `Bearer ${options.auth}`;
     const payload = options.raw ?? (body === undefined ? undefined : JSON.stringify(body));
-    const res = await fetch(`${this.base}${path}`, {
+    const res = await this.send(`${this.base}${path}`, {
       method,
       headers,
       ...(method === "GET" ? {} : { body: payload ?? "{}" }),
