@@ -12,6 +12,7 @@ export type Policy =
   | "library"
   | "auth"
   | "report"
+  | "worker"
   | "api"
   | "file-origin"
   | "file-pptx"
@@ -96,6 +97,9 @@ export const CSP: Readonly<Record<Policy, string>> = {
   // policy without the passkey permissions.
   auth: TURNSTILE_CSP,
   report: TURNSTILE_CSP,
+  // A viewer worker script (the SheetJS and CSV workers, the pdf.js worker) fetches nothing and loads only its own
+  // origin's scripts: a parsed file can never reach the network from inside it.
+  worker: "default-src 'none'; script-src 'self'",
   api: "default-src 'none'; frame-ancestors 'none'",
   // The workers.dev host answers only what it must (ADR 0018); a document there could run nothing.
   "file-origin": "default-src 'none'; sandbox; frame-ancestors 'none'",
@@ -115,6 +119,7 @@ const EXTRA: Readonly<Record<Policy, Record<string, string>>> = {
   library: {},
   auth: {},
   report: {},
+  worker: {},
   // X-Bloop marks an answer as ours, so the client can tell a campus filter's block page from a real reply.
   api: { "Cache-Control": "no-store", "X-Bloop": "1" },
   // A cross-origin probe from the app reads it (ADR 0018); the handler adds Access-Control-Allow-Origin.

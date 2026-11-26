@@ -15,7 +15,7 @@ import { dirname, join } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { build as esbuild } from "esbuild";
 import { afterEach, describe, expect, it } from "vitest";
-import { build, minify, minifyCss } from "../../tools/build-assets.mjs";
+import { build, fileOriginModule, minify, minifyCss, unversioned } from "../../tools/build-assets.mjs";
 import { SPAWN_TIMEOUT } from "./spawn.ts";
 
 const REPO = fileURLToPath(new URL("../../", import.meta.url));
@@ -163,6 +163,53 @@ describe("build", () => {
     expect(run.status, run.stderr).toBe(0);
     expect(run.stdout).toContain("dist: 2 written");
     expect(out("js/a.js").toString()).not.toContain("gone");
+  });
+});
+
+describe("immutable folders", () => {
+  it("names the files under fonts/ and js/vendor/ whose path has no version, and nothing else", () => {
+    expect(
+      unversioned([
+        "fonts/inter-latin-4.1.woff2",
+        "fonts/inter-latin.woff2",
+        "js/vendor/uqr-0.1.3/uqr.js",
+        "js/vendor/uqr.js",
+        "js/site.js",
+        "img/hero.jpg",
+      ]),
+    ).toEqual(["fonts/inter-latin.woff2", "js/vendor/uqr.js"]);
+  });
+
+  it("the build refuses an unversioned font", () => {
+    const root = mkdtempSync(join(tmpdir(), "bloop-vendor-"));
+    mkdirSync(join(root, "public/fonts"), { recursive: true });
+    writeFileSync(join(root, "public/fonts/x.woff2"), "x");
+    expect(() => build(root)).toThrow(/version in the name: fonts\/x\.woff2/);
+    rmSync(root, { recursive: true, force: true });
+  });
+});
+
+describe("the baked file origin", () => {
+  const live = (root: string, origin: string) =>
+    writeFileSync(join(root, "wrangler.jsonc"), `{\n  // a comment\n  "vars": { "FILE_ORIGIN": "${origin}" }\n}\n`);
+
+  it("is dist/js/shared/fo.js, from wrangler.jsonc, or from FILE_ORIGIN in the environment", () => {
+    project({ "js/a.js": "export const a = 1;\n" });
+    live(root, "https://files.example");
+    build(root);
+    expect(out("js/shared/fo.js").toString()).toBe('export const FILE_ORIGIN = "https://files.example";\n');
+    expect(fileOriginModule(root, { FILE_ORIGIN: "https://staging.example" })).toContain("https://staging.example");
+    expect(fileOriginModule(root, { FILE_ORIGIN: "" })).toBe('export const FILE_ORIGIN = "";\n');
+  });
+
+  it("is the FILE_ORIGIN the real wrangler.jsonc sets", () => {
+    expect(fileOriginModule(REPO, {})).toContain("https://bloop.dsap.workers.dev");
+  });
+
+  it("is not written for a folder with no wrangler.jsonc", () => {
+    project({ "js/a.js": "export const a = 1;\n" });
+    build(root);
+    expect(() => out("js/shared/fo.js")).toThrow();
   });
 });
 

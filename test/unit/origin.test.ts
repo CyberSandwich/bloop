@@ -33,10 +33,19 @@ describe("offOrigin", () => {
     expect(offOrigin(new Request("http://127.0.0.1:8787/s"), "http://127.0.0.1:8787")).toBeNull();
   });
 
+  it.each(["/f/token/name.pdf?x=1&y=2", "/b/token", "/p/token", "/fo/other"])(
+    "moves GET %s and stores nothing: its path is a secret",
+    (path) => {
+      const res = offOrigin(new Request(`${OLD}${path}`), ORIGIN);
+      expect(res?.status).toBe(301);
+      expect(res?.headers.get("Location")).toBe(`${ORIGIN}${path}`);
+      expect(res?.headers.get("Cache-Control")).toBe("no-store");
+    },
+  );
+
   it.each([
     [`${OLD}/`, `${ORIGIN}/`],
     [`${OLD}/a?c=ABC123`, `${ORIGIN}/a?c=ABC123`],
-    [`${OLD}/f/token/name.pdf?x=1&y=2`, `${ORIGIN}/f/token/name.pdf?x=1&y=2`],
     ["https://anything.workers.dev/privacy", `${ORIGIN}/privacy`],
     ["http://bloop.here/privacy?x=1", `${ORIGIN}/privacy?x=1`],
   ])("moves GET %s to %s, for an hour", async (from, to) => {

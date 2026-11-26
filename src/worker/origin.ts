@@ -4,12 +4,15 @@ import { fail } from "./http.ts";
 /** What the file-origin host serves itself. The present-server change adds /f/, /b/ and /p/ here. */
 const FILE_ORIGIN_PATHS: ReadonlySet<string> = new Set(["/fo/ping"]);
 
+/** Paths whose URL is itself a secret (view links, file tokens): their redirect is never stored. */
+const SECRET_PATHS = /^\/(f|b|p|fo)\//;
+
 /**
  * Two kinds of request move to PUBLIC_ORIGIN: one for a workers.dev host (the old address), and one for the origin's own
  * hostname over plain http. A GET or HEAD answers 301 to the same path and query; anything else (a write, a WebSocket
  * upgrade) is refused with 403, so a body is never replayed to another origin and an already-open old page gets a
  * definite answer. Every other host, a local address included, passes to the Origin and config checks. The redirect
- * expires after an hour, so a mistake cannot stick in a browser. It reads PUBLIC_ORIGIN alone, so it works even when the
+ * expires after an hour, so a mistake cannot stick in a browser, and a secret path's is not stored at all. It reads PUBLIC_ORIGIN alone, so it works even when the
  * rest of the config is invalid; null when PUBLIC_ORIGIN is not a URL (the config check reports that).
  * The file origin (ADR 0018) answers only FILE_ORIGIN_PATHS, whatever its hostname; every other path on it moves too.
  */
@@ -28,7 +31,10 @@ export function offOrigin(request: Request, publicOrigin: string, fileOrigin?: s
   return withHeaders(
     new Response(null, {
       status: 301,
-      headers: { Location: target.origin + url.pathname + url.search, "Cache-Control": "max-age=3600" },
+      headers: {
+        Location: target.origin + url.pathname + url.search,
+        "Cache-Control": SECRET_PATHS.test(url.pathname) ? "no-store" : "max-age=3600",
+      },
     }),
     "landing",
   );

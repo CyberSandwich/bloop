@@ -255,7 +255,7 @@ public/                    the assets' source, built into dist/ (each JS module 
   _redirects               /it answers 301 to /security; /demo 302 to /s?mode=demo
   css/base.css             what every page uses: tokens, reset, buttons, glass, the reduced-motion net; linked first
   css/site.css css/app.css   the site pages' rules (and the Worker's auth error page); the task pages' rules
-  js/{screen,phone,code,launcher,residue}.js   task pages; js/vendor/uqr.js (+ LICENSE)
+  js/{screen,phone,code,launcher,residue}.js   task pages; js/vendor/uqr-0.1.3/uqr.js (+ LICENSE)
   js/viewer.js js/core/demo.js   the screen's viewer, the demo's and a guest's photo or video (sidebar, stage, pager, link card, its own link fetch); its pure parts
   js/viewer-video.js   a guest's video on the stage, loaded by import() with the first video link
   js/core/length.js js/core/length-extra.js js/shared/length.js css/length.css   the phone's Session Expiry sheet, loaded on its first tap, with its time rules and words (Set stays off until they are in); the length floor the route shares
@@ -270,7 +270,7 @@ public/                    the assets' source, built into dist/ (each JS module 
   img/hero-phone-{600,900}.{avif,webp}      the landing stage's phone mockup, under 640 wide
   js/site.js               the landing: the nav's scrolled look, closing the menu on a same-page link, the stage tilt's spring, the FAQ's height tween where CSS cannot (no other site page runs a script)
   og.png apple-touch-icon.png (tools/render-og.py); favicon.svg, the logo, drawn as paths
-  fonts/inter-latin.woff2  the one font file (tools/subset-font.py) + Inter.LICENSE.txt
+  fonts/inter-latin-4.1.woff2  the one font file (tools/subset-font.py) + inter-4.1.LICENSE.txt
   js/shared/               runtime code shared by browser and Worker: plain JSDoc-typed ES modules
     codes.js               code alphabet, normalize, format "K7M Q9X" (pure)
     names.js               the /f/ link's name segment: an ASCII slug (pure)
@@ -296,7 +296,7 @@ test/
 
 ## 6. Routes
 
-`run_worker_first: true`: every request reaches the Worker, which first redirects a GET or HEAD for a `*.workers.dev` host (except `/fo/ping`, which that host answers itself: section 13), or for the origin's own hostname over plain http, with a 301 (cacheable for an hour) to the same path and query on `PUBLIC_ORIGIN` (`origin.ts`); a write or WebSocket upgrade on those hosts is refused with 403 `forbidden_origin`, not redirected, and any other host is left to the Origin and config checks. Then `/api/*`, `/f/*` and `/auth/*` go to the routes, and everything else is served from the asset binding (`html_handling: "drop-trailing-slash"`, so `/s` serves `s.html`; `_headers` and `_redirects` still apply). `wrangler dev` needs `--infer-origin-from-routes=false`, or the Worker sees `bloop.here` as its host.
+`run_worker_first` lists every path but the static trees (`/js`, `/css`, `/img`, `/fonts` and the two icons, which the asset layer answers itself): every other request reaches the Worker, which first redirects a GET or HEAD for a `*.workers.dev` host (except `/fo/ping`, which that host answers itself: section 13), or for the origin's own hostname over plain http, with a 301 (cacheable for an hour; `no-store` for `/f`, `/b`, `/p` and `/fo`, whose paths are secrets) to the same path and query on `PUBLIC_ORIGIN` (`origin.ts`); a write or WebSocket upgrade on those hosts is refused with 403 `forbidden_origin`, not redirected, and any other host is left to the Origin and config checks. Then `/api/*`, `/f/*` and `/auth/*` go to the routes, and everything else is served from the asset binding (`html_handling: "drop-trailing-slash"`, so `/s` serves `s.html`; `_headers` and `_redirects` still apply). `wrangler dev` needs `--infer-origin-from-routes=false`, or the Worker sees `bloop.here` as its host.
 
 | method                   | path                                         | auth                                  | purpose                                                        |
 | ------------------------ | -------------------------------------------- | ------------------------------------- | -------------------------------------------------------------- |

@@ -1,6 +1,6 @@
 // The QR as one SVG path (docs/design.md section 10): version 4, level M, 4 modules of quiet zone,
 // so the code is always 41 modules across and never changes size between refreshes.
-import { encode } from "../vendor/uqr.js";
+import { encode } from "../vendor/uqr-0.1.3/uqr.js";
 
 export const QR_MODULES = 41;
 
