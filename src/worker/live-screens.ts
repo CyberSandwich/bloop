@@ -5,6 +5,7 @@ import type { Env } from "./env.ts";
 import { userLibraryStub } from "./stubs.ts";
 
 /** What a Screen object offers the user's object: end the live session if it belongs to `userId`. */
+// transitional: P1: Screen's own `endFromOwner` type replaces this, and the cast in the user's object goes
 export interface OwnerEnd {
   endFromOwner(userId: string): Promise<unknown>;
 }

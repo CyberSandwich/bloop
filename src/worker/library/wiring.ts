@@ -7,16 +7,16 @@ import { userLibraryStub } from "../stubs.ts";
 import type { PurgeDeps } from "./purge.ts";
 import type { RetentionDeps } from "./retention.ts";
 
-/** V2 replaces `cancelConversion` with its Converter's stop when it lands. */
 export const purgeDepsFor = (env: Pick<Env, "USER_LIBRARY" | "PUBLIC_ORIGIN">): PurgeDeps => ({
+  // transitional: V2: the Converter's stop replaces this no-op
   cancelConversion: async () => {},
   exporting: (userId) => userLibraryStub(env, userId).exportActive(),
   now: Date.now,
 });
 
 /**
- * The cron's dependencies. Two are placeholders until their owners land: `abortUploads` (U's abortAllFor) and `warn`
- * (A's inactivity template). `warn` answers false, so no inactivity deletion can start without a sent warning.
+ * The cron's dependencies. `warn` answers false until A's inactivity email exists, so no inactivity deletion can start
+ * without a sent warning.
  */
 export async function retentionDepsFor(env: Env, config: Config): Promise<RetentionDeps> {
   const state = await launchState(env);
@@ -28,8 +28,10 @@ export async function retentionDepsFor(env: Env, config: Config): Promise<Retent
       const stub = userLibraryStub(env, userId);
       for (const id of publicIds) await stub.closeSession(id);
     },
+    // transitional: U: abortAllFor replaces this
     abortUploads: async () => false,
     eraseObject: (userId) => userLibraryStub(env, userId).purge(),
+    // transitional: A: the inactivity email replaces this
     warn: async () => false,
     lockoutMembers: state.lockout ? everyone : null,
   };
