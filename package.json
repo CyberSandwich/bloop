@@ -33,7 +33,7 @@
   "devDependencies": {
     "@axe-core/playwright": "4.14.0",
     "@biomejs/biome": "2.6.8",
-    "@cloudflare/workers-types": "5.20261122.2",
+    "@cloudflare/workers-types": "5.20261123.1",
     "@lhci/cli": "0.16.1",
     "@playwright/test": "1.65.1",
     "@size-limit/file": "14.3.0",
