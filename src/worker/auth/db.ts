@@ -11,6 +11,11 @@ export interface Db {
   prepare(sql: string): Statement;
 }
 
+/** D1's `batch`: the statements run in order as one transaction, so no other request sees a partial result. */
+export interface BatchDb extends Db {
+  batch(statements: Statement[]): Promise<{ meta: { changes: number } }[]>;
+}
+
 /** The one cast from the platform binding to the slice above. */
 export const dbOf = (binding: unknown): Db => binding as Db;
 

@@ -4,7 +4,7 @@ import { readdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { DatabaseSync, type SQLInputValue } from "node:sqlite";
 import { fileURLToPath } from "node:url";
-import type { Db, Statement } from "../../src/worker/auth/db.ts";
+import type { BatchDb, Statement } from "../../src/worker/auth/db.ts";
 
 const migrations = fileURLToPath(new URL("../../migrations", import.meta.url));
 
@@ -27,6 +27,9 @@ class Prepared implements Statement {
   }
   async run() {
     await Promise.resolve();
+    return this.runNow();
+  }
+  runNow() {
     const info = this.db.prepare(this.sql).run(...this.values);
     return { meta: { changes: Number(info.changes) } };
   }
@@ -36,9 +39,23 @@ class Prepared implements Statement {
   }
 }
 
-export interface TestDb extends Db {
+export interface TestDb extends BatchDb {
   /** Direct access for assertions and for tampering with stored rows. */
   raw: DatabaseSync;
+}
+
+/** One yield, then every statement in one transaction with no await between them, as D1 runs a batch. */
+async function batch(raw: DatabaseSync, statements: Statement[]) {
+  await Promise.resolve();
+  raw.exec("BEGIN");
+  try {
+    const out = statements.map((s) => (s as Prepared).runNow());
+    raw.exec("COMMIT");
+    return out;
+  } catch (e) {
+    raw.exec("ROLLBACK");
+    throw e;
+  }
 }
 
 export function testDb(): TestDb {
@@ -49,7 +66,7 @@ export function testDb(): TestDb {
     .sort()) {
     raw.exec(readFileSync(join(migrations, file), "utf8"));
   }
-  return { raw, prepare: (sql) => new Prepared(raw, sql) };
+  return { raw, prepare: (sql) => new Prepared(raw, sql), batch: (statements) => batch(raw, statements) };
 }
 
 /** An app_user row, which token_grant and phone_session reference. */
