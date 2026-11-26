@@ -714,8 +714,10 @@ describe("REL-03 and R11 what a failed poll says", () => {
     bootGate(false);
     expect(bootFailed("internal", "ok", 1, true).link).toBe("ok");
     expect(bootFailed("internal", "ok", 2, true).link).toBe("down");
-    expect(bootFailed("offline", "ok", 1, true).link).toBe("offline");
-    expect(bootFailed("network_blocked", "ok", 1, false).link).toBe("blocked");
+    for (const hasView of [true, false]) {
+      expect(bootFailed("offline", "ok", 1, hasView).link).toBe("offline");
+      expect(bootFailed("network_blocked", "ok", 1, hasView).link).toBe("blocked");
+    }
   });
 });
 
