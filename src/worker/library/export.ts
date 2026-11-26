@@ -13,7 +13,6 @@ export const EXPORT_VERSION = 1;
 interface AccountRow {
   email: string | null;
   created_at: number;
-  last_seen_at: number;
   terms_version: string | null;
   terms_accepted_at: number | null;
   quota_bytes: number | null;
@@ -25,6 +24,7 @@ interface FileRecord {
   name: string;
   ext: string;
   bytes: number;
+  r2_key: string;
   sha256: string | null;
   crc32: number | null;
   version: number;
@@ -45,12 +45,14 @@ interface FileRecord {
 export interface Snapshot {
   userId: string;
   account: AccountRow;
-  sessions: { label: string | null; method: string | null; created_at: number; last_seen_at: number }[];
+  sessions: { label: string | null; method: string | null; created_at: number }[];
   passkeys: { name: string; created_at: number; last_used_at: number | null; backed_up: number }[];
   files: FileRecord[];
   /** The rows `/api/me/audit` shows: `at` is the row's time, `record` the shape that route answers. */
   audit: readonly { at: number; record: unknown }[];
   defaultQuotaBytes: number;
+  /** The moment the snapshot stands for: a resume reuses the first run's, so the same archive comes out again. */
+  takenAt: number;
 }
 
 export async function takeSnapshot(
@@ -58,19 +60,18 @@ export async function takeSnapshot(
   userId: string,
   audit: Snapshot["audit"],
   defaultQuotaBytes: number,
+  takenAt: number,
 ): Promise<Snapshot> {
   const account = await db
     .prepare(
-      `SELECT email, created_at, last_seen_at, terms_version, terms_accepted_at, quota_bytes, used_bytes
+      `SELECT email, created_at, terms_version, terms_accepted_at, quota_bytes, used_bytes
        FROM app_user WHERE id = ?1`,
     )
     .bind(userId)
     .first<AccountRow>();
   if (!account) throw new Error("export: no such user");
   const sessions = await db
-    .prepare(
-      "SELECT label, method, created_at, last_seen_at FROM phone_session WHERE user_id = ?1 ORDER BY created_at, public_id",
-    )
+    .prepare("SELECT label, method, created_at FROM phone_session WHERE user_id = ?1 ORDER BY created_at, public_id")
     .bind(userId)
     .all<Snapshot["sessions"][number]>();
   const passkeys = await db
@@ -79,7 +80,7 @@ export async function takeSnapshot(
     .all<Snapshot["passkeys"][number]>();
   const files = await db
     .prepare(
-      `SELECT f.id, f.name, f.ext, f.bytes, f.sha256, f.crc32, f.version, f.status, f.created_at, f.updated_at,
+      `SELECT f.id, f.name, f.ext, f.bytes, f.r2_key, f.sha256, f.crc32, f.version, f.status, f.created_at, f.updated_at,
               f.last_presented_at, f.selected_at, f.trashed_at, f.purge_after, f.disabled_at,
               d.pages, d.has_notes, d.fonts_missing
        FROM library_file f LEFT JOIN derived d ON d.file_id = f.id AND d.version = f.version
@@ -93,13 +94,18 @@ export async function takeSnapshot(
     sessions: sessions.results,
     passkeys: passkeys.results,
     files: files.results,
-    audit,
+    audit: audit.filter((a) => a.at <= takenAt),
     defaultQuotaBytes,
+    takenAt,
   };
 }
 
-/** A file's bytes go in the archive when it has settled and is not disabled; a disabled file is listed without them. */
-const included = (f: FileRecord): boolean => f.status === "ready" && f.disabled_at === null;
+/**
+ * A file's bytes go in the archive when it has settled, is not disabled and is not already due for deletion at the
+ * snapshot's moment (its purge may be running); such a file is listed without them.
+ */
+const included = (f: FileRecord, takenAt: number): boolean =>
+  f.status === "ready" && f.disabled_at === null && !(f.purge_after !== null && f.purge_after <= takenAt);
 
 const parseList = (text: string | null): unknown => {
   if (text === null) return [];
@@ -145,7 +151,7 @@ export async function buildExport(s: Snapshot, tokenKey: string): Promise<BuiltE
   const snapshotAt = snapshotTime(s);
   const at = new Date(snapshotAt);
   const used = new Set<string>();
-  const live = s.files.filter((f) => included(f));
+  const live = s.files.filter((f) => included(f, s.takenAt));
   const paths = new Map<string, string>();
   const place = (folder: "Files" | "Trash", files: FileRecord[]) =>
     files.map((f): EntryInput => {
@@ -155,7 +161,7 @@ export async function buildExport(s: Snapshot, tokenKey: string): Promise<BuiltE
       return {
         name: path,
         modified: new Date(f.updated_at),
-        key: `u/${s.userId}/${f.id}/v${f.version}/orig`,
+        key: f.r2_key,
         size: f.bytes,
         crc: f.crc32,
       };
@@ -179,7 +185,6 @@ export async function buildExport(s: Snapshot, tokenKey: string): Promise<BuiltE
     account: {
       email: s.account.email,
       createdAt: s.account.created_at,
-      lastSeenAt: s.account.last_seen_at,
       termsVersion: s.account.terms_version,
       termsAcceptedAt: s.account.terms_accepted_at,
       quotaBytes: s.account.quota_bytes ?? s.defaultQuotaBytes,
@@ -189,7 +194,6 @@ export async function buildExport(s: Snapshot, tokenKey: string): Promise<BuiltE
       label: x.label,
       method: x.method,
       createdAt: x.created_at,
-      lastSeenAt: x.last_seen_at,
     })),
     passkeys: s.passkeys.map((x) => ({
       name: x.name,
