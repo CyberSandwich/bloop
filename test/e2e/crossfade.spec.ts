@@ -1,8 +1,12 @@
-// Another item cross-fades in over the last, on the screen's stage and the phone remote's preview (design.md section
-// 8): 200 ms of opacity on --ease-out, the new item decoded first; a page turn and reduced motion swap at once. Every
-// frame is sampled, so a blank frame or an undecoded first frame fails. CI only.
+// Another item cross-fades in over the last on the screen's stage (design.md section 8): 200 ms of opacity on
+// --ease-out, the new item decoded first; a page turn and reduced motion swap at once, there and on the phone's preview.
+// Every frame is sampled, so a blank frame or an undecoded first frame fails. CI only.
 import { type BrowserContext, expect, type Page, test } from "@playwright/test";
+import { DECK_PAGES, DEMO_ITEMS } from "../../src/shared/demo-catalog.ts";
 import { atRest, heading, oneDevice, PHONE, pick } from "./one-device.ts";
+
+const DECK = DEMO_ITEMS.deck.name;
+const PHOTO = DEMO_ITEMS.horizontal.name;
 
 type Part = { inert: boolean; opacity: number; area: number; decoded: boolean; timing: string[] };
 
@@ -76,28 +80,33 @@ test.describe("the screen's stage", () => {
     page,
   }) => {
     await oneDevice(page);
+    // The photo first, landed, so the change back to the deck (its pages fetched ahead) is one decoded item to another.
+    await pick(page, PHOTO);
+    await expect(page.getByRole("img", { name: PHOTO })).toBeVisible();
+    await expect.poll(() => page.locator("#frame > *").count()).toBe(1);
     await atRest(page.locator("main"));
 
     let stop = await sample(page, "#frame");
-    await pick(page, "Sample deck.pptx");
+    await pick(page, DECK);
     await faded(page, "#frame");
     await expectCrossfade(page, await stop());
 
     await atRest(page.locator("main"));
     stop = await sample(page, "#frame");
     await page.locator("#next").tap();
-    await expect(page.locator("#dots")).toHaveText("2 / 2");
+    await expect(page.locator("#dots")).toHaveText(`2 / ${DECK_PAGES}`);
     await pastFade(page);
     expectSwap(await stop());
 
     await page.emulateMedia({ reducedMotion: "reduce" });
     stop = await sample(page, "#frame");
-    await pick(page, "Dog.jpg");
+    await pick(page, PHOTO);
     await pastFade(page);
     expectSwap(await stop());
   });
 });
 
+// The demo has one paged item, so the preview never changes item while shown: its cross-fade is client-crossfade.test.ts's.
 test.describe("the phone remote's preview", () => {
   let contexts: BrowserContext[] = [];
   test.afterEach(async () => {
@@ -105,9 +114,7 @@ test.describe("the phone remote's preview", () => {
     contexts = [];
   });
 
-  test("an item change cross-fades with no blank frame; a page turn and reduced motion swap at once", async ({
-    browser,
-  }) => {
+  test("a page turn swaps at once, with motion and under reduced motion", async ({ browser }) => {
     const screenContext = await browser.newContext({ viewport: { width: 1440, height: 900 } });
     const phoneContext = await browser.newContext(PHONE);
     contexts = [screenContext, phoneContext];
@@ -119,33 +126,23 @@ test.describe("the phone remote's preview", () => {
     const phone = await phoneContext.newPage();
     await phone.goto(`/a?c=${code}`);
     await phone.getByRole("button", { name: /^Approve/ }).tap();
-    await expect(heading(screen)).toHaveText("Dog.jpg");
-    const row = (name: string) =>
-      phone.locator("#file-list").getByRole("button", { name: new RegExp(`^${name.replace(".", "\\.")}`) });
+    await expect(heading(screen)).toHaveText(DECK);
     const preview = phone.locator(".preview");
-
-    await row("Sample deck.pptx").tap();
-    await expect(preview).toHaveAttribute("aria-label", "Sample deck.pptx, Slide 1 of 2");
-    // The label is set at once; the first page lands after it decodes. A later tap before that has no last to fade.
+    await expect(preview).toHaveAttribute("aria-label", `${DECK}, Slide 1 of ${DECK_PAGES}`);
+    // The label is set at once; the first page lands after it decodes.
     await expect(preview.locator("picture")).toHaveCount(1);
     await atRest(preview);
 
     let stop = await sample(phone, ".preview");
-    await row("Sample deck.pdf").tap();
-    await expect(preview).toHaveAttribute("aria-label", "Sample deck.pdf, Page 1 of 2");
-    await faded(phone, ".preview");
-    await expectCrossfade(phone, await stop());
-
-    stop = await sample(phone, ".preview");
     await phone.locator(".bubbles [data-step='1']").tap();
-    await expect(preview).toHaveAttribute("aria-label", "Sample deck.pdf, Page 2 of 2");
+    await expect(preview).toHaveAttribute("aria-label", `${DECK}, Slide 2 of ${DECK_PAGES}`);
     await pastFade(phone);
     expectSwap(await stop());
 
     await phone.emulateMedia({ reducedMotion: "reduce" });
     stop = await sample(phone, ".preview");
-    await row("Sample deck.pptx").tap();
-    await expect(preview).toHaveAttribute("aria-label", /^Sample deck\.pptx, Slide/);
+    await phone.locator(".bubbles [data-step='-1']").tap();
+    await expect(preview).toHaveAttribute("aria-label", `${DECK}, Slide 1 of ${DECK_PAGES}`);
     await pastFade(phone);
     expectSwap(await stop());
   });
