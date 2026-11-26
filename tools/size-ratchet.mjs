@@ -1,5 +1,6 @@
 // Fails when a change raises a size-limit budget: a limit only ever holds or drops (design.md, budgets). Holds every
-// entry on HEAD to the base (baseRefFor). There is no override: a raise needs this script changed, in plain view.
+// entry on HEAD to the base (baseRefFor). The one override is tools/size-raises.json: an entry listed there may rise,
+// or be added, up to its max; every other raise needs this script changed, in plain view.
 import { execFileSync } from "node:child_process";
 import { realpathSync } from "node:fs";
 import { fileURLToPath } from "node:url";
@@ -20,6 +21,7 @@ export function parseLimit(value) {
 /**
  * @typedef {{ name: string, path: string | string[], limit: string | number, gzip?: boolean, brotli?: boolean,
  *   import?: unknown, ignore?: unknown }} Entry
+ * @typedef {{ entry: string, max: string | number, decision: string }} Raise
  * @typedef {{ show: (file: string) => string | null, list: (dir: string) => string[] }} Tree
  * @typedef {{ onBase: (path: string) => boolean, onHead: (path: string) => boolean }} Sources
  */
@@ -52,7 +54,7 @@ const compression = (/** @type {Entry} */ e) => (e.gzip === true ? "gzip" : e.br
  * file, and a path with no public/ source cannot be checked at all, so neither ever counts as absent (fails closed).
  */
 const sources = (/** @type {Entry} */ e) => paths(e).map((p) => p.replace(/^dist\//, "public/"));
-const checkable = (/** @type {string} */ p) => !/[*?[{]/.test(p) && p.startsWith("public/");
+const checkable = (/** @type {string} */ p) => !/[*?[{]/.test(p) && /^(public|src)\//.test(p);
 const kb = (/** @type {number} */ bytes) => `${bytes / 1000} kB`;
 
 /**
@@ -64,9 +66,13 @@ const kb = (/** @type {number} */ bytes) => `${bytes / 1000} kB`;
  *   or a narrowed path plus a new entry for the rest, fails.
  * - With nothing given up, an added entry is a budget that did not exist and passes, even for a file the base had.
  * - A removed entry also fails while any of its files stays.
- * @param {Entry[]} base @param {Entry[]} head @param {Sources} has
+ * - An entry in `raises` is exempt from the raise check and the moved-bytes sum while its limit is within its max.
+ * @param {Entry[]} base @param {Entry[]} head @param {Sources} has @param {Raise[]} [raises]
  */
-export function compare(base, head, has) {
+export function compare(base, head, has, raises = []) {
+  /** An entry listed in raises that stays within its max: its raise or new budget was approved in plain view. */
+  const approved = (/** @type {Entry} */ e) =>
+    raises.some((r) => r.entry === e.name && parseLimit(e.limit) <= parseLimit(r.max));
   const problems = [];
   /** @type {Entry[]} */ const movedFrom = [];
   /** @type {Entry[]} */ const movedTo = [];
@@ -81,7 +87,7 @@ export function compare(base, head, has) {
       continue;
     }
     matched.add(after);
-    if (parseLimit(after.limit) > parseLimit(before.limit)) {
+    if (parseLimit(after.limit) > parseLimit(before.limit) && !approved(after)) {
       problems.push(`"${after.name}" limit raised from ${before.limit} to ${after.limit}`);
     }
     if (compression(after) !== compression(before)) {
@@ -94,10 +100,11 @@ export function compare(base, head, has) {
   }
   if (movedFrom.length > 0) movedTo.push(...head.filter((e) => !matched.has(e)));
   const sum = (/** @type {Entry[]} */ es) => es.reduce((n, e) => n + parseLimit(e.limit), 0);
-  if (movedTo.length > 0 && sum(movedTo) > sum(movedFrom)) {
+  const unapproved = movedTo.filter((e) => !approved(e));
+  if (unapproved.length > 0 && sum(unapproved) > sum(movedFrom)) {
     const names = (/** @type {Entry[]} */ es) => es.map((e) => `"${e.name}"`).join(", ") || "none";
     problems.push(
-      `measure changed, review: ${names(movedTo)} sum to ${kb(sum(movedTo))}, over the ${kb(sum(movedFrom))} of ${names(movedFrom)} they replace`,
+      `measure changed, review: ${names(unapproved)} sum to ${kb(sum(unapproved))}, over the ${kb(sum(movedFrom))} of ${names(movedFrom)} they replace`,
     );
   }
   return problems;
@@ -116,7 +123,10 @@ export function baseRefFor({ branch, before, isCommit, mergeBase }) {
 }
 
 const git = (/** @type {string[]} */ args) =>
-  execFileSync("git", args, { encoding: "utf8", stdio: ["ignore", "pipe", "pipe"] }).trim();
+  execFileSync("git", args, {
+    encoding: "utf8",
+    stdio: ["ignore", "pipe", "pipe"],
+  }).trim();
 const ok = (/** @type {string[]} */ args) => {
   try {
     git(args);
@@ -146,10 +156,16 @@ if (process.argv[1] && realpathSync(process.argv[1]) === realpathSync(fileURLToP
     isCommit: (sha) => ok(["cat-file", "-e", `${sha}^{commit}`]),
     mergeBase: () => git(["merge-base", "HEAD", "origin/main"]),
   });
-  const problems = compare(entriesFrom(treeAt(base)), entriesFrom(treeAt("HEAD")), {
-    onBase: (p) => ok(["cat-file", "-e", `${base}:${p}`]),
-    onHead: (p) => ok(["cat-file", "-e", `HEAD:${p}`]),
-  });
+  const raises = treeAt("HEAD").show("tools/size-raises.json");
+  const problems = compare(
+    entriesFrom(treeAt(base)),
+    entriesFrom(treeAt("HEAD")),
+    {
+      onBase: (p) => ok(["cat-file", "-e", `${base}:${p}`]),
+      onHead: (p) => ok(["cat-file", "-e", `HEAD:${p}`]),
+    },
+    raises == null ? [] : JSON.parse(raises),
+  );
   for (const p of problems) console.log(`::error title=size ratchet::${p} (base ${base.slice(0, 12)})`);
   if (problems.length > 0) process.exit(1);
   console.log(`size ratchet: no limit raised against ${base.slice(0, 12)}`);

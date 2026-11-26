@@ -2,6 +2,7 @@ import { readdirSync, readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
 import { EXTENSION_TYPES } from "../../public/js/shared/names.js";
+import { DEMO_ITEMS } from "../../src/shared/demo-catalog.ts";
 import { contrast, type Rgb, token } from "./contrast.ts";
 import { NEVER_SAY } from "./never-say.ts";
 
@@ -502,9 +503,9 @@ describe("landing word caps (design.md section 13)", () => {
       ),
     ];
     expect(rows.map((m) => [visibleText(m[2] ?? ""), m[1]])).toEqual([
-      ["Sample deck.pptx", "true"],
-      ["Dog.jpg", "true"],
-      ["Vevox", "false"],
+      [DEMO_ITEMS.deck.name, "true"],
+      [DEMO_ITEMS.horizontal.name, "true"],
+      [DEMO_ITEMS.link.name, "false"],
     ]);
     // The deck's tile is its first page, shown whole, as rows.js draws it.
     expect(rows[0]?.[2]).toMatch(

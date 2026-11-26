@@ -2,7 +2,7 @@
 // tools/slim-deck.py, author fields stripped; size budgets in tools/size/core.json), plus one web link. The demo screen
 // shows the deck as pre-rendered images of its pages (public/img/demo-slide-*, tools/render-slides.py). Kept apart from mock.ts so unit tests can build a MockFileSource without the bundler.
 
-import { DEMO_ITEMS } from "../../../../src/shared/demo-catalog.ts";
+import { DEMO_ITEMS } from "../../../shared/demo-catalog.ts";
 import type { LinkEntry } from "../../../shared/protocol.ts";
 import deck from "./demo-files/demo-deck.pptx";
 import horizontal from "./demo-files/demo-horizontal.jpg";

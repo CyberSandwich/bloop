@@ -3,13 +3,16 @@
 
 const PROTOCOL_PREFIX = "ms-powerpoint:ofv|u|";
 
-/** The sample deck's pages, one AVIF and one WebP each (tools/render-slides.py). */
-export const SLIDES = Array.from({ length: 5 }, (_, i) => `/img/demo-slide-${i + 1}`);
-/** The catalog photos' 120 px square thumbnails by name, so a row has a picture before any link is minted. */
-export const PHOTO_THUMBS = /** @type {Record<string, string>} */ ({
-  "Horizontal.jpg": "/img/demo-horizontal-thumb.webp",
-  "Vertical.jpg": "/img/demo-vertical-thumb.webp",
-});
+// The demo account's catalog: the one owner of its names and the deck's page count. src/shared/demo-catalog.ts derives
+// the ids and slots the Worker and the tests use; test/unit/demo-catalog-rules.test.ts fails a literal copy.
+/** In list order: files A to Z, then links. A phone is given slots i1.. in this order. */
+export const DEMO_NAMES = ["Deck.pptx", "Horizontal.jpg", "Vertical.jpg", "Vevox"];
+/** The deck's pre-rendered page count: public/img/demo-slide-1..N (tools/render-slides.py). */
+export const DECK_PAGES = 5;
+export const demoId = (/** @type {string} */ name) => `demo-${name.split(".")[0]?.toLowerCase()}`;
+
+/** The demo deck's pages, one AVIF and one WebP each (tools/render-slides.py). */
+export const SLIDES = Array.from({ length: DECK_PAGES }, (_, i) => `/img/demo-slide-${i + 1}`);
 
 /** The https link inside a pushed link (protocol or plain), when it is on this origin; null otherwise. */
 export function openTarget(/** @type {string} */ link, /** @type {string} */ origin) {
@@ -72,6 +75,6 @@ export const pagesOf = (item, view) =>
 export function thumbOf(item, view) {
   if (pagesOf(item, view)) return `${SLIDES[0]}.webp`;
   return view.mode === "demo" && view.kind === "owner" && item.kind === "file" && item.type === "jpg"
-    ? (PHOTO_THUMBS[item.name] ?? null)
+    ? `/img/${demoId(item.name)}-thumb.webp`
     : null;
 }
