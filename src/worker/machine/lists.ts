@@ -11,19 +11,7 @@ import {
   withIds,
 } from "../items.ts";
 import type { EventOf, Machine, Step } from "../machine.ts";
-import { type Actor, fail, MINUTE, ok, type Session } from "./step.ts";
-
-/** A session nothing has happened in yet: not approved, nothing opened or shown. */
-export const newSession = (items: ItemRef[], minted: number[]): Session => ({
-  items,
-  approvedAt: null,
-  endsAt: null,
-  openMode: null,
-  firstOpenAt: null,
-  minted,
-  shown: null,
-  seq: { phone: 0, screen: 0 },
-});
+import { type Actor, fail, MINUTE, newSession, ok } from "./step.ts";
 
 const sameRefs = (a: readonly ItemRef[], b: readonly ItemDraft[]): boolean =>
   a.length === b.length && a.every((item, i) => item.ref === b[i]?.ref);

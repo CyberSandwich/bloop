@@ -1,8 +1,7 @@
 // A guest's send: from a claim to an offered file, or back to the claim when it fails.
 import { withIds } from "../items.ts";
 import type { EventOf, Machine, MachineConfig, Step } from "../machine.ts";
-import { newSession } from "./items.ts";
-import { fail, ok, SECOND } from "./step.ts";
+import { fail, newSession, ok, SECOND } from "./step.ts";
 
 export function uploadStart(m: Machine, ev: EventOf<"upload.start">): Step {
   // A scan does not say what the phone will do. A phone that claimed as an owner and now sends a file
