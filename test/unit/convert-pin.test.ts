@@ -1,6 +1,6 @@
 import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
-import { requirePrebuilt, withAccount, withDigest, withPrebuilt } from "../../tools/prebuilt.mjs";
+import { fillAccount, requirePrebuilt, withAccount, withDigest, withPrebuilt } from "../../tools/prebuilt.mjs";
 import { wranglerConfig } from "../../tools/wrangler-config.mjs";
 
 const wrangler = readFileSync(new URL("../../wrangler.jsonc", import.meta.url), "utf8");
@@ -40,6 +40,23 @@ describe("CONV-06 pin: the container the Converter starts is the image container
   it("a deploy that skipped rewrite or account is refused", () => {
     expect(() => requirePrebuilt(withPrebuilt(wrangler))).toThrow(/digest placeholder/);
     expect(() => requirePrebuilt(withDigest(withPrebuilt(wrangler), digest))).toThrow(/account placeholder/);
+  });
+
+  it("the account step runs only in GitHub Actions, so a local run cannot write the id into the tracked file", () => {
+    for (const actions of [undefined, "", "false", "1"])
+      expect(() => fillAccount(wrangler, { GITHUB_ACTIONS: actions, CLOUDFLARE_ACCOUNT_ID: ACCOUNT })).toThrow(
+        /only in GitHub Actions/,
+      );
+    const filled = fillAccount(wrangler, { GITHUB_ACTIONS: "true", CLOUDFLARE_ACCOUNT_ID: ACCOUNT });
+    expect(imageOf(filled)).toBe(`registry.cloudflare.com/${ACCOUNT}/bloop-converter@sha256:${"0".repeat(64)}`);
+  });
+
+  it("a fill that replaces nothing throws, and the filled image is exactly account plus digest", () => {
+    const pinned = withDigest(withPrebuilt(wrangler), digest);
+    expect(() => withDigest(pinned, digest)).toThrow(/no image placeholder/);
+    const filled = withAccount(pinned, ACCOUNT);
+    expect(() => withAccount(filled, ACCOUNT)).toThrow(/no account placeholder/);
+    expect(imageOf(filled)).toBe(`registry.cloudflare.com/${ACCOUNT}/bloop-converter@${digest}`);
   });
 
   it("account refuses an unset, short, non-hex, padded or all-zero id and rewrite refuses a bad digest", () => {

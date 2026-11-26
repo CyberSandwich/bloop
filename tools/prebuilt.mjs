@@ -6,7 +6,7 @@
 //   node tools/prebuilt.mjs rewrite   in the deploy job's checkout, before wrangler runs: the build command, and the
 //                                     digest (container/digest.txt) in the converter image reference
 //   node tools/prebuilt.mjs account   first line of the wrangler step, which holds CLOUDFLARE_ACCOUNT_ID: the account id
-//                                     in the converter image reference; refuses unset or malformed ids, writes nothing
+//                                     in the converter image reference; refuses outside GitHub Actions and unset or malformed ids
 //   node tools/prebuilt.mjs assert    the command wrangler then runs: dist/ equals its manifest, dotfiles included
 import { createHash } from "node:crypto";
 import { existsSync, lstatSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
@@ -37,6 +37,7 @@ const IMAGE = (/** @type {string} */ account, /** @type {string} */ digest) =>
 export function withDigest(config, digest) {
   if (!/^sha256:[0-9a-f]{64}$/.test(digest) || digest === NO_DIGEST)
     throw new Error("container/digest.txt is not a sha256 digest");
+  if (!config.includes(IMAGE(NO_ACCOUNT, NO_DIGEST))) throw new Error("wrangler.jsonc has no image placeholder to pin");
   return config.replaceAll(IMAGE(NO_ACCOUNT, NO_DIGEST), IMAGE(NO_ACCOUNT, digest));
 }
 
@@ -46,7 +47,18 @@ export function withDigest(config, digest) {
 export function withAccount(config, accountId) {
   if (!accountId || !/^[0-9a-f]{32}$/.test(accountId) || accountId === NO_ACCOUNT)
     throw new Error("CLOUDFLARE_ACCOUNT_ID is unset or not a 32-character hex account id");
+  if (!config.includes(`registry.cloudflare.com/${NO_ACCOUNT}/`))
+    throw new Error("wrangler.jsonc has no account placeholder to fill");
   return config.replaceAll(`registry.cloudflare.com/${NO_ACCOUNT}/`, `registry.cloudflare.com/${accountId}/`);
+}
+
+/** The `account` command's fill. Only a CI job may run it: a local run would write the real id into the tracked
+ * wrangler.jsonc of a public repo.
+ * @param {string} config @param {Record<string, string | undefined>} env */
+export function fillAccount(config, env) {
+  if (env.GITHUB_ACTIONS !== "true")
+    throw new Error("account runs only in GitHub Actions: it writes the account id into wrangler.jsonc");
+  return withAccount(config, env.CLOUDFLARE_ACCOUNT_ID);
 }
 
 /** Throws unless the parsed top-level build block, and any environment's, is exactly the assertion, so a deploy run in
@@ -126,10 +138,7 @@ if (command === "manifest") {
     ),
   );
 } else if (command === "account") {
-  writeFileSync(
-    "wrangler.jsonc",
-    withAccount(readFileSync("wrangler.jsonc", "utf8"), process.env.CLOUDFLARE_ACCOUNT_ID),
-  );
+  writeFileSync("wrangler.jsonc", fillAccount(readFileSync("wrangler.jsonc", "utf8"), process.env));
 } else if (command === "assert") {
   const problems = manifestProblems("dist");
   if (problems.length > 0) throw new Error(`dist/ is not the check job's build: ${problems.join("; ")}`);
