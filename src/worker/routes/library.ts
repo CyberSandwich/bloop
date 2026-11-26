@@ -121,21 +121,25 @@ export function makeLibraryRoutes(deps: LibraryDeps): readonly Route[] {
   const fileId = (match: URLPatternResult) => match.pathname.groups.id ?? "";
 
   /** A thumbnail link once slides exist: a bundle token, so the browser may load it in an img. */
-  async function thumbFor(ctx: Ctx, row: FileRow): Promise<string | null> {
+  async function thumbFor(ctx: Ctx, row: FileRow, previewsOn: boolean): Promise<string | null> {
     const key = ctx.config.secrets.fileTokenKey;
     const base = fileBase(ctx.config);
-    if (!key || !base || row.derived.state !== "ready" || row.trashedAt !== null || row.disabled) return null;
-    if ((await deps.switches(ctx.env)).previews !== "on") return null;
+    if (!previewsOn || !key || !base) return null;
+    if (row.derived.state !== "ready" || row.trashedAt !== null || row.disabled) return null;
     const exp = (Math.floor(ctx.now / TOKEN_STEP_MS) + 2) * TOKEN_STEP_MS;
     const { token } = await mintPreview(key, { f: row.id, v: row.version, a: "bundle" }, ctx.now, exp - ctx.now);
     return `${base}/p/${token}/t.webp`;
   }
 
+  /** A list reads the switches and the progress once and passes them to every row; a single row reads its own. */
   const wireOf = async (
     ctx: Ctx,
     row: FileRow,
-    progress: ReadonlyMap<string, { done: number; total: number }> = new Map(),
-  ) => wireRow(row, await thumbFor(ctx, row), progress.get(row.id));
+    shared?: { previewsOn: boolean; progress: ReadonlyMap<string, { done: number; total: number }> },
+  ) => {
+    const previewsOn = shared?.previewsOn ?? (await deps.switches(ctx.env)).previews === "on";
+    return wireRow(row, await thumbFor(ctx, row, previewsOn), shared?.progress.get(row.id));
+  };
 
   const list: Handler = async (ctx) => {
     const parsed = query.safeParse(Object.fromEntries(new URL(ctx.request.url).searchParams));
@@ -148,17 +152,19 @@ export function makeLibraryRoutes(deps: LibraryDeps): readonly Route[] {
     const preparing = page.files.some((f) => f.derived.state === "preparing");
     const live = preparing ? await userLibraryStub(ctx.env, userId).currentProgress() : [];
     const { quota, trash: trashed } = await overview(db, userId, ctx.config.library.quotaBytes);
+    const switches = await deps.switches(ctx.env);
+    const shared = { previewsOn: switches.previews === "on", progress: new Map(live.map((p) => [p.id, p])) };
     const answer = {
       view,
       sort,
-      files: await Promise.all(page.files.map((f) => wireOf(ctx, f, new Map(live.map((p) => [p.id, p]))))),
+      files: await Promise.all(page.files.map((f) => wireOf(ctx, f, shared))),
       next: page.next,
       uploads: await openUploads(db, userId, ctx.now),
       upNext: await upNext(db, userId),
       quota,
       trash: trashed,
       limits: limitsWire(ctx.config.library),
-      switches: await deps.switches(ctx.env),
+      switches,
       account: { state: "active" },
     };
     const etag = await etagOf(JSON.stringify(answer));
@@ -223,7 +229,8 @@ export function makeLibraryRoutes(deps: LibraryDeps): readonly Route[] {
     if (!parsed.ok) return parsed.response;
     const { userId } = ctx.member;
     const due = await makeDue(libDbOf(ctx.env.DB), userId, "all" in parsed.value ? "all" : parsed.value.ids, ctx.now);
-    if (due > 0) await userLibraryStub(ctx.env, userId).kickPurge(userId);
+    // A retry finds its files already due (due 0) and may still need the purge started, so the kick never depends on it.
+    await userLibraryStub(ctx.env, userId).kickPurge(userId);
     return json({ due }, 202);
   };
 
