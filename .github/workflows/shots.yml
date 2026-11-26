@@ -2,7 +2,7 @@ name: shots
 
 on:
   push:
-    branches: [ci/p1-ui3-shots]
+    branches: [ci/hero-img-shots]
 
 permissions:
   contents: write
@@ -20,11 +20,11 @@ jobs:
       - run: npm ci
       - run: npx playwright install --with-deps chromium
       - run: cp .dev.vars.example .dev.vars
-      - run: npx playwright test test/e2e/early-shots.spec.ts
+      - run: HERO_CAPTURE=1 SHOT_TAG=before npx playwright test hero-capture hero-landing-shots --project=preview
       - if: always()
         run: |
           git config user.name "shots"
           git config user.email "shots@users.noreply.github.com"
           mkdir -p shots && cp -r test-results/shots/. shots/ && git add -f shots
           git commit -m "shots: images" || exit 0
-          git push origin HEAD:ci/p1-ui3-shots
+          git push origin HEAD:ci/hero-img-shots
