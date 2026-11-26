@@ -22,5 +22,16 @@
     "path": "dist/css/library.css",
     "gzip": true,
     "limit": "2.5 kB"
+  },
+  {
+    "name": "library menu, lazy",
+    "path": "dist/js/library/menu.js",
+    "limit": "1.15 kB"
+  },
+  {
+    "name": "library sheets CSS, lazy",
+    "path": "dist/css/library-sheets.css",
+    "gzip": true,
+    "limit": "1.0 kB"
   }
 ]

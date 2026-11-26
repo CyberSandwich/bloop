@@ -359,6 +359,7 @@ describe("size budgets", () => {
       "upload progress words, lazy": "public/js/core/upload-format.js",
       "upload sheet, lazy": "public/js/core/upload-sheet.js",
       "upload refusal copy, lazy": "public/js/core/upload-refusals.js",
+      "library menu, lazy": "public/js/library/menu.js",
     });
     for (const entry of lazyEntries) {
       const own = [entry.path].flat();
