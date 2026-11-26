@@ -25,9 +25,9 @@ for (const [path, budget] of Object.entries(budgets)) {
   }) => {
     const cdp = await page.context().newCDPSession(page);
     await cdp.send("Network.enable");
-    const scripts = new Map<string, { start: number; end?: number }>();
+    const scripts = new Map<string, { path: string; start: number; end?: number }>();
     cdp.on("Network.requestWillBeSent", (e) => {
-      if (e.type === "Script") scripts.set(e.requestId, { start: e.timestamp });
+      if (e.type === "Script") scripts.set(e.requestId, { path: new URL(e.request.url).pathname, start: e.timestamp });
     });
     cdp.on("Network.responseReceived", (e) => {
       const script = scripts.get(e.requestId);
@@ -48,7 +48,13 @@ for (const [path, budget] of Object.entries(budgets)) {
     expect(worker.length, worker.join(", ")).toBeLessThanOrEqual(budget.worker);
     const ends = [...scripts.values()].flatMap((s) => (s.end === undefined ? [] : [s.end]));
     const firstEnd = Math.min(...ends);
-    const late = [...scripts.values()].filter((s) => s.start > firstEnd);
+    // Only the page's static graph is one wave; a lazy import() starts when its feature does.
+    const graph = new Set(
+      await page.$$eval('link[rel="modulepreload"], script[type="module"][src]', (nodes) =>
+        nodes.map((n) => n.getAttribute("src") ?? n.getAttribute("href") ?? ""),
+      ),
+    );
+    const late = [...scripts.values()].filter((s) => graph.has(s.path) && s.start > firstEnd);
     expect(late.length, "module requests that started after the first module response").toBeLessThanOrEqual(
       budget.lateModules,
     );
