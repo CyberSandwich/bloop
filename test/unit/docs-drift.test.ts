@@ -271,6 +271,7 @@ describe("size budgets", () => {
     expect(scripts).toEqual([
       "public/js/code.js",
       "public/js/legal.js",
+      "public/js/library.js",
       "public/js/phone.js",
       "public/js/screen.js",
       "public/js/site.js",

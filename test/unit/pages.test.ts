@@ -6,7 +6,13 @@ import { sizeEntries } from "../size-entries.ts";
 import { contrast, luminance, type Rgb, token } from "./contrast.ts";
 
 const read = (rel: string) => readFileSync(fileURLToPath(new URL(`../../public/${rel}`, import.meta.url)), "utf8");
-const PAGES = ["s.html", "a.html", "code.html"] as const;
+const PAGES = ["s.html", "a.html", "code.html", "library.html"] as const;
+/** The library page's script and every module under js/library/, lazy ones included. */
+const LIBRARY_JS = [
+  "library.js",
+  "core/copy-library.js",
+  ...readdirSync(fileURLToPath(new URL("../../public/js/library/", import.meta.url))).map((f) => `library/${f}`),
+];
 
 describe.each(PAGES)("%s under the strict CSP", (page) => {
   const html = read(page);
@@ -57,6 +63,7 @@ describe("client code under the strict CSP", () => {
     "core/channel.js",
     "core/api.js",
     "core/boot-code.js",
+    ...LIBRARY_JS,
   ];
 
   it.each(files)("%s never uses eval, innerHTML or script URLs (trusted types are off)", (file) => {
