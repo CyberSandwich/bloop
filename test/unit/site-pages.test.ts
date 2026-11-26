@@ -414,7 +414,9 @@ describe("landing word caps (design.md section 13)", () => {
     expect(stage.indexOf('<source type="image/avif"')).toBeLessThan(stage.indexOf('<source type="image/webp"'));
     // Under 640 the stage is display: none, which does not stop an img's fetch: a first source with that media picks
     // the logo's own file (already loaded by the nav), so no hero bytes move.
-    expect(stage).toMatch(/<picture>\s*(?:<!--[^>]*-->\s*)?<source media="\(max-width: 639\.98px\)" srcset="\/favicon\.svg">\s*<source type/);
+    expect(stage).toMatch(
+      /<picture>\s*(?:<!--[^>]*-->\s*)?<source media="\(max-width: 639\.98px\)" srcset="\/favicon\.svg">\s*<source type/,
+    );
     expect(read("public/css/site.css")).toMatch(/@media \(max-width: 639\.98px\) \{\s*\.tilt \{\s*display: none;/);
     const img = /<img\b[^>]*>/.exec(stage)?.[0] ?? "";
     expect(img).toContain('src="/img/hero-viewer-1100.webp" width="1440" height="828" fetchpriority="high"');
