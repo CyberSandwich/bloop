@@ -28,7 +28,6 @@
   padding: 4px 4px 4px 16px;
 }
 .lib-sheet-head h2 {
-  display: flex;
   flex: 1;
   min-width: 0;
   font-size: 17px;
