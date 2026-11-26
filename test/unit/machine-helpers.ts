@@ -71,6 +71,12 @@ export function approved(now = T0 + sec(10)): Machine {
   return must(claimedOwner(), { e: "approve", now, items: [asItem(DECK)], minutes: MAX_MINUTES }).next;
 }
 
+/** The start deadline spent (REL-16), so the next deadline is the session's end. */
+export function pastStart(m: Machine): Machine {
+  const by = m.session?.startBy;
+  return by == null ? m : must(m, { e: "timer", now: by }).next;
+}
+
 export function offered(now = T0 + sec(10)): Machine {
   const up = must(claimedGuest(), { e: "upload.start", now, timeoutSeconds: 900 }).next;
   return must(up, { e: "upload.done", now: now + sec(1), file: GUEST_FILE }).next;

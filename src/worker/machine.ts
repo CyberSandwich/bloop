@@ -2,13 +2,26 @@
 // randomness: the Screen object draws values, reads the clock and applies the effects, in order.
 // The types, the dispatcher and the deadlines live here; each event's reducer lives in machine/.
 
-import type { EndReason, ErrorCode, FileType, Kind, Mode, OpenMode, SessionState, Shown } from "../shared/protocol.ts";
+import type {
+  DerivedFlags,
+  EndReason,
+  ErrorCode,
+  FileType,
+  ItemKind,
+  Kind,
+  Mode,
+  OpenMode,
+  PairingAccountError,
+  PhoneItemExtra,
+  SessionState,
+  Shown,
+} from "../shared/protocol.ts";
 import type { ItemDraft, ItemRef } from "./items.ts";
-import { control, end, fetched, launched, length } from "./machine/control.ts";
-import { approve, fallback, listed, openClick } from "./machine/lists.ts";
-import { cancel, claim, codeNext, restart, socket, timer } from "./machine/pairing.ts";
+import { control, end, fetched, launched, length, started } from "./machine/control.ts";
+import { approve, derivedReady, fallback, listed, openClick } from "./machine/lists.ts";
+import { cancel, claim, codeNext, match, restart, socket, timer } from "./machine/pairing.ts";
 import { closeAtFor, fail, SECOND } from "./machine/step.ts";
-import { uploadDone, uploadFailed, uploadStart } from "./machine/upload.ts";
+import { uploadDone, uploadFailed, uploadProgress, uploadStart } from "./machine/upload.ts";
 
 export interface Code {
   value: string;
@@ -24,7 +37,14 @@ export interface FileRef {
   type: FileType;
   /** Bytes, when the source said; the demo screen shows it on the file card. */
   size?: number;
+  /** The viewer it opens in; absent on items stored before kinds, which read `kindOf(type)` (`showOf`). */
+  show?: ItemKind;
+  /** What conversion produced, set by `derivedReady`; absent or null until then. */
+  derived?: DerivedFlags | null;
 }
+
+/** Why an approved session never started (REL-16): the last cause seen before its start deadline. */
+export type StartCause = "launch_no_fetch" | "fetch_refused" | "fo_fallback" | "timeout";
 
 /** Who sent a `control`: the phone's remote (pid) or the screen's own tap (sid). */
 export type Sender = "phone" | "screen";
@@ -45,6 +65,10 @@ export interface Machine {
     listed: string[];
     userId: string | null;
     passHash: string | null;
+    /** Live: false until the phone picks the match from `choices`. Absent on a pairing stored before the pick: confirmed. */
+    confirmed?: boolean;
+    /** The three choices in display order, live and unconfirmed only. */
+    choices?: string[] | null;
   } | null;
   /** The approved items, in `orderItems` order. Exists from `offered` (guest) or from approval; approvedAt and endsAt are null while offered. */
   session: {
@@ -61,7 +85,19 @@ export interface Machine {
     shown: Shown | null;
     /** The last `control` seq applied from each sender (PAIR-13); 0 until then. */
     seq: Record<Sender, number>;
+    /** Phone-only data per item id, kept apart from the items so the screen's view cannot carry it. */
+    extra?: Record<string, PhoneItemExtra>;
+    /** When the first `shown` applied; never moved after. */
+    firstShownAt?: number | null;
+    /** When the screen first showed or fetched anything; null until then. */
+    startedAt?: number | null;
+    /** Approval plus START_SECONDS while nothing has started; null once started or once the failure is recorded. */
+    startBy?: number | null;
+    /** The last hint of why nothing started, read at `startBy`. */
+    startCause?: StartCause | null;
   } | null;
+  /** A guest upload's progress, while uploading. */
+  upload?: { bytes: number; total: number } | null;
   uploadAt: number | null;
   offerAt: number | null;
   endedAt: number | null;
@@ -86,10 +122,16 @@ export type Event =
       kind: Kind;
       userId: string | null;
       passHash: string | null;
+      /** Live: the three drawn choices, the match among them. Absent or null: no pick (demo). */
+      choices?: string[] | null;
     }
+  | { e: "match"; now: number; choice: string } // the phone's pick of the number on the screen
   | { e: "listed"; now: number; ids: string[] }
-  | { e: "approve"; now: number; items: ItemDraft[]; minutes: number; userId?: string | null } // minutes: the starting length
+  | { e: "approve"; now: number; items: ItemDraft[]; minutes: number } // minutes: the starting length
   | { e: "upload.start"; now: number; timeoutSeconds: number }
+  | { e: "upload.progress"; now: number; bytes: number; total: number }
+  | { e: "derivedReady"; now: number; ref: string; derived: DerivedFlags; extra: PhoneItemExtra }
+  | { e: "started"; now: number; cause: "fetch_refused" | "fo_fallback" } // a hint the Screen object saw
   | { e: "upload.done"; now: number; file: FileRef }
   | { e: "upload.failed"; now: number; error: ErrorCode }
   | { e: "open.click"; now: number; minutes: number } // the Open button on a guest offer
@@ -125,11 +167,14 @@ export type Effect =
   | { fx: "mint"; purpose: OpenMode; item: number }
   | { fx: "revokeLinks" }
   | { fx: "purge"; file: FileRef | null } // Residue.server
-  | { fx: "audit"; type: AuditType; actor: "screen" | "phone" | "system"; cause?: ErrorCode }
+  | { fx: "audit"; type: AuditType; actor: "screen" | "phone" | "system"; cause?: MachineError }
   | { fx: "metric"; name: MetricName; ms?: number; cause?: ErrorCode }
+  | { fx: "start"; ok: boolean; cause: StartCause | null } // one data point per session (REL-16): no name, email or IP
   | { fx: "deleteAll" };
 
-export type Step = { ok: true; next: Machine; effects: Effect[] } | { ok: false; error: ErrorCode };
+/** The live pick's codes are phone-only, so they are AppErrors (errors-app.js), not ErrorCodes. */
+export type MachineError = ErrorCode | PairingAccountError;
+export type Step = { ok: true; next: Machine; effects: Effect[] } | { ok: false; error: MachineError };
 
 export interface MachineConfig {
   codeTtlSeconds: number;
@@ -174,6 +219,8 @@ function apply(m: Machine, ev: Event, cfg: MachineConfig): Step {
       return codeNext(m, ev, cfg);
     case "claim":
       return claim(m, ev, cfg);
+    case "match":
+      return match(m, ev, cfg);
     case "cancel":
       return cancel(m, ev, cfg);
     case "restart":
@@ -190,8 +237,12 @@ function apply(m: Machine, ev: Event, cfg: MachineConfig): Step {
       return openClick(m, ev);
     case "fallback":
       return fallback(m, ev);
+    case "derivedReady":
+      return derivedReady(m, ev);
     case "upload.start":
       return uploadStart(m, ev);
+    case "upload.progress":
+      return uploadProgress(m, ev);
     case "upload.done":
       return uploadDone(m, ev, cfg);
     case "upload.failed":
@@ -204,6 +255,8 @@ function apply(m: Machine, ev: Event, cfg: MachineConfig): Step {
       return launched(m, ev);
     case "fetched":
       return fetched(m, ev);
+    case "started":
+      return started(m, ev);
     case "end":
       return end(m, ev, cfg);
   }
@@ -224,8 +277,11 @@ export function nextDeadline(m: Machine, cfg: MachineConfig): number | null {
       return m.offerAt;
     case "approved":
     case "opening":
-    case "open":
-      return m.session?.endsAt ?? null;
+    case "open": {
+      const ends = m.session?.endsAt ?? null;
+      const startBy = m.session?.startBy ?? null;
+      return startBy !== null && (ends === null || startBy < ends) ? startBy : ends;
+    }
     case "closed":
       return null;
   }
