@@ -1,0 +1,19 @@
+/* The match pick's look (core/match.js, loaded with it); its boxes are app.css's, so nothing moves when this lands. */
+/* No side padding: three share 256 at 320, and the 1fr columns must not grow to fit it. */
+.pick .choice {
+  padding: 0;
+  font-size: 28px;
+  font-variant-numeric: tabular-nums;
+  touch-action: manipulation;
+}
+.pick legend {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.pick-slow {
+  grid-column: 1 / -1;
+  padding: 0 12px 4px;
+  color: var(--muted);
+  font-size: 14px;
+}
