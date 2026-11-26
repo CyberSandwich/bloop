@@ -46,8 +46,16 @@ export function slugBase(name, max = MAX_BASE) {
 export const NAME_MAX = 200;
 
 /**
- * A file name safe to show and store: control and format characters (including bidi overrides) removed,
- * path separators turned into hyphens, spaces collapsed, cut to `max` code points with the extension kept.
+ * The refused characters: every control, format, unassigned and private-use character (bidi overrides among them)
+ * except the joiners emoji and Persian need (ZWJ, ZWNJ) and the tag characters a subdivision flag is built from.
+ */
+const REFUSED = "[\\p{C}--[\\u200C\\u200D\\u{E0020}-\\u{E007F}]]";
+const REFUSED_ALL = new RegExp(REFUSED, "gv");
+const REFUSED_ANY = new RegExp(REFUSED, "v");
+
+/**
+ * A file name safe to show and store: refused characters removed, path separators turned into hyphens,
+ * spaces collapsed, cut to `max` code points with the extension kept.
  * It is still untrusted text: pages set it with textContent only.
  * @param {string} raw
  * @param {number} [max]
@@ -56,7 +64,7 @@ export const NAME_MAX = 200;
 export function cleanName(raw, max = NAME_MAX) {
   const name = raw
     .normalize("NFC")
-    .replace(/\p{C}/gu, "")
+    .replace(REFUSED_ALL, "")
     .replace(/[\\/]+/g, "-")
     .replace(/\s+/g, " ")
     .trim();
@@ -68,11 +76,10 @@ export function cleanName(raw, max = NAME_MAX) {
 }
 
 /**
- * A typed name is refused, never cut: it must already be clean and 1 to NAME_MAX code points.
+ * A typed name is refused, never cut: 1 to NAME_MAX code points and no refused character.
  * @param {string} name
  */
-export const isValidName = (name) =>
-  name !== "" && cleanName(name, Infinity) === name && Array.from(name).length <= NAME_MAX;
+export const isValidName = (name) => name !== "" && !REFUSED_ANY.test(name) && Array.from(name).length <= NAME_MAX;
 
 /**
  * @param {string} name display name

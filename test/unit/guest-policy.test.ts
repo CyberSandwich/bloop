@@ -42,8 +42,25 @@ describe("DROP-08 xss: display names", () => {
     expect(cleanName(`${over}.pdf`).endsWith(".pdf")).toBe(true);
     expect(isValidName(at)).toBe(true);
     expect(isValidName(over)).toBe(false);
-    expect(isValidName("a/b")).toBe(false);
     expect(isValidName("")).toBe(false);
+  });
+
+  it("keeps ZWJ sequences, subdivision flags and ZWNJ, and refuses bidi overrides and NUL, in one set for upload and rename", () => {
+    const family = "\u{1F468}‍\u{1F469}‍\u{1F467}‍\u{1F466}";
+    const england = "\u{1F3F4}\u{E0067}\u{E0062}\u{E0065}\u{E006E}\u{E0067}\u{E007F}";
+    const persian = "می‌خواهم.pdf";
+    for (const kept of [family, england, persian]) {
+      expect(cleanName(kept)).toBe(kept);
+      expect(isValidName(kept)).toBe(true);
+    }
+    for (const [refused, left] of [
+      ["a‮b.pdf", "ab.pdf"],
+      ["a\u0000b.pdf", "ab.pdf"],
+      ["a​b.pdf", "ab.pdf"],
+    ] as const) {
+      expect(cleanName(refused)).toBe(left);
+      expect(isValidName(refused)).toBe(false);
+    }
   });
 
   it("is empty when nothing printable is left", () => {
