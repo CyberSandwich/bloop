@@ -170,6 +170,17 @@ describe("pill sets Vary: Cookie on every open HTML response and never on previe
     expect(new URL(seen.at(-1)?.url ?? "").pathname).toBe("/privacy");
   });
 
+  it("the .html forms of an open-only page redirect in open, like every other page, and are the asset layer's in preview", async () => {
+    const open = world("open").env;
+    for (const path of ["/articles/features.html", "/articles/features/index.html"]) {
+      const res = await get(open, {}, `${path}?a=1`);
+      expect(res.status, path).toBe(307);
+      expect(res.headers.get("Location"), path).toBe("/articles/features?a=1");
+    }
+    const preview = await get(world("preview").env, {}, "/articles/features.html");
+    expect(preview.status).not.toBe(307);
+  });
+
   it("a 304 for a variant is a revalidation, not a redirect fault", async () => {
     const { env } = world("open");
     const first = await get(env);

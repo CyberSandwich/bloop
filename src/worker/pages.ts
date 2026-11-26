@@ -184,6 +184,13 @@ export async function servePage(
   const key = path.replace(/(\/index)?\.html$/i, "").toLowerCase() || "/";
   // The 404 page is no page of its own: asked for by name it answers as any unknown path does, in either mode.
   if (key === "/404") return missing(env, request, await notFound(env, request));
+  // An open-only page has no file of its own in `public/`, so its `.html` forms redirect here, as the asset layer does for the rest.
+  const bare = path.replace(/(\/index)?\.html$/, "");
+  if (bare !== path && variants.some((v) => v.kind === "open-only" && v.path === bare)) {
+    return (await launchState(env)).mode === "open"
+      ? new Response(null, { status: 307, headers: { Location: `${bare}${url.search}`, "Cache-Control": "no-cache" } })
+      : asset(env, request, path);
+  }
   const shell = AUTH_SHELLS.has(key);
   const member = MEMBER_PAGES.has(key);
   if (!variant && !shell && !member) return asset(env, request, path);
