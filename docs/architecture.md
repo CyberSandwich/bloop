@@ -246,6 +246,7 @@ src/worker/
   export-format.ts         CSV with formula-injection protection, export columns, date range parsing
   stores.ts                the one place that picks the AuditLog and Metrics implementations
   auth/{oauth,vault,sessions,cookies,services,db}.ts   oauth4webapi flow; token vault; phone sessions; cookie format and AEAD seal; per-request objects and the daily job; the D1 slice
+  auth/{codes,templates,email,turnstile}.ts   email codes and the known-device value; every email's text; the one mail sender (ADR 0021); siteverify (ADR 0022)
   routes/{pairing,files,open,drop,control,auth,export,common}.ts
   cron.ts                  the cron dispatcher; cron-jobs.ts lists each trigger's jobs
   retention.ts             closeStaleSessions (hourly), runRetention (daily)
@@ -336,7 +337,7 @@ test/
 | GET, POST | `/api/admin/*` | admin session | planned (A): invites, waitlist, reports, users, files, launch mode and gate |
 | POST | `/api/hooks/tally` | signature, no Origin check | planned (A): the waitlist webhook |
 | POST | `/api/reports` | Turnstile | planned (A): a public report |
-| GET | `/api/dev/mailbox` | none; only when `DEV_MAILBOX` is set | planned (A): local and test harness only |
+| GET, DELETE | `/api/dev/mailbox` | none (DELETE: Origin); `not_found` unless `DEV_MAILBOX` is set | local and test harness only: `?to=` lists the kept mail, newest last; DELETE clears it |
 | POST, PUT, GET, DELETE | `/api/uploads/*` | session, or Bearer pid for a guest | planned (U): multipart create, part URLs, part done, complete, resume; `PUT /api/drop` is removed when it lands |
 | any | `/api/dev/r2/*` | none; local only | planned (U): the proxy-mode bucket stand-in |
 | GET, POST, PATCH, DELETE | `/api/library*`, `/api/me/screens*`, `/api/me/export.zip` | session | planned (L): list, rename, trash, restore, preview link, socket, export |
@@ -600,13 +601,14 @@ Each new module exports an empty route list (every path stays 404) until its str
 
 | module | owner stream | state |
 |---|---|---|
-| account, admin, hooks, reports, dev-mail | A (accounts and admin) | stub |
+| account, admin, hooks, reports | A (accounts and admin) | stub |
+| dev-mail | A (accounts and admin) | live |
 | uploads, dev-r2 | U (uploads) | stub |
 | library, and the `UserLibrary` object | L (library) | stub |
 | fileorigin, notes | P1 (present server) | stub |
 | the `Converter` object | V (conversion) | stub |
 
-The Durable Object bindings (`USER_LIBRARY`, `CONVERTER`), the library bucket and the new rate-limit bindings are in `wrangler.jsonc`. The `send_email` binding and the Converter `containers` entry are not: the account stream adds the first with its first email, and the conversion stream adds the second with its image digest. Variables and secrets are listed in `src/worker/config.ts` and `src/worker/config/` only. `UPLOAD_MODE` ships as proxy and `CONVERT_MODE` as off until their streams land.
+The Durable Object bindings (`USER_LIBRARY`, `CONVERTER`), the library bucket and the new rate-limit bindings are in `wrangler.jsonc`. So are the `send_email` bindings `EMAIL` and `ALERT_EMAIL` (ADR 0021). The Converter `containers` entry is not: the conversion stream adds it with its image digest. Variables and secrets are listed in `src/worker/config.ts` and `src/worker/config/` only. `UPLOAD_MODE` ships as proxy and `CONVERT_MODE` as off until their streams land.
 
 ### 13.4 Observability
 Workers Logs are on and invocation logs are off, because invocation logs keep full URLs, tokens included (SITE-03). Sampling is set in `wrangler.jsonc`. Code logs through the one `log()` shape. Turning on the Issues view is a dashboard step (`docs/setup.md`).
