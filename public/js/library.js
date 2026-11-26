@@ -641,7 +641,7 @@ const sheetStyles = () =>
  */
 async function sheet(labelledBy, parts, opener, cls = "") {
   await sheetStyles();
-  const dialog = el("dialog", { class: `lib-sheet ${cls}`.trim(), "aria-labelledby": labelledBy }, parts);
+  const dialog = el("dialog", { class: `lib-sheet glass ${cls}`.trim(), "aria-labelledby": labelledBy }, parts);
   dialog.addEventListener("click", (e) => {
     // The backdrop's click lands on the dialog itself, outside its box; the box's own padding is not the backdrop.
     const box = dialog.getBoundingClientRect();

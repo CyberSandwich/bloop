@@ -1,5 +1,6 @@
 /* The library's sheets (menu, rename, sort, Present, preview, trash), loaded with the first of them: a modal dialog
-   holding one glass bubble, --pad in and --inset above the foot under 640, centered from 640 (length.css's pattern). */
+   holding one glass bubble, --pad in and --inset above the foot under 640, centered from 640 (length.css's pattern).
+   Its fill is base.css's .glass: a fill set here would win over the blur's, and the page would read through. */
 .lib-sheet {
   width: min(calc(100% - 2 * var(--pad)), 432px);
   max-width: none;
@@ -8,7 +9,6 @@
   padding: 8px;
   border: 0;
   border-radius: 34px;
-  background: var(--glass-solid);
   box-shadow: var(--glass-edge), var(--sh-pill);
   color: var(--ink);
   overflow: auto;

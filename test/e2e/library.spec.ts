@@ -319,6 +319,13 @@ test.describe("library", () => {
     await expect(page.getByRole("dialog").getByRole("button", { name: "Move to Trash" })).toBeInViewport({ ratio: 1 });
   });
 
+  test("a sheet blurs the page behind it, so no row or toast reads through its copy", async ({ page, context }) => {
+    await signedIn(context, members.long);
+    await page.goto("/library");
+    await page.getByRole("button", { name: "More for Lecture 12.pptx" }).click();
+    await expect(page.getByRole("dialog")).toHaveCSS("backdrop-filter", /blur/);
+  });
+
   test("Download never replaces the library, even when the file shows inline", async ({ page, context }) => {
     await signedIn(context, members.preview);
     // A page on another origin, as the file host is, which the browser shows rather than saves: there `download` is
