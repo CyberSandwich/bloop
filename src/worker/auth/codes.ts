@@ -39,8 +39,12 @@ export interface MacInput {
   code: string;
 }
 
+/** Each field is length-prefixed, so no two field splits encode to the same input, whatever the fields contain. */
 export const codeMac = (pepper: string, m: MacInput): Promise<string> =>
-  hmacHex(pepper, [m.id, m.purpose, m.emailNorm, m.newEmailNorm ?? "", m.code].join("|"));
+  hmacHex(
+    pepper,
+    [m.id, m.purpose, m.emailNorm, m.newEmailNorm ?? "", m.code].map((f) => `${f.length}:${f}`).join("|"),
+  );
 
 export interface IssueInput {
   purpose: CodePurpose;

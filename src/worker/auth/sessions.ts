@@ -11,6 +11,8 @@ export const SESSION_MAX_AGE_SECONDS = ABSOLUTE_DAYS * 86_400;
 const TOUCH_MS = 3_600_000;
 /** app_user.last_seen_at, a member's inactivity clock (ADR 0013), at most this often. */
 const USER_TOUCH_MS = DAY_MS;
+/** phone_session.public_id as `create` writes it (newRef, 128 bits): what L's resolveMember and socket tags take. */
+export const PUBLIC_ID = /^[A-Za-z0-9_-]{22}$/;
 
 export interface Identity {
   tid: string;
