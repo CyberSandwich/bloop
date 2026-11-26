@@ -367,6 +367,9 @@ export function loadDocs(base = "") {
       const slug = name.slice(0, -3);
       // `{{email}}` and `{{waitlist}}` keep the one public address and the one form URL in site.json, not repeated by hand.
       const { meta, body } = splitFrontmatter(fillProse(read(file), { email: site.email, waitlist: site.waitlist }));
+      // The launch gate is only as strict as its marker: anything but `true` in an open draft, or the key anywhere else, fails.
+      if ("datePending" in meta && (meta.datePending !== true || base !== "open"))
+        throw new Error(`${file}: datePending must be \`true\`, and only in content/open/`);
       const path = dir ? (slug === "index" ? `/${dir}` : `/${dir}/${slug}`) : `/${slug}`;
       docs.push({ file, path, out: `public${path}.html`, slug, dir, meta, body });
     }

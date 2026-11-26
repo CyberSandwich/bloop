@@ -185,7 +185,7 @@ export async function servePage(
   // The file forms of a gated page (`/library.html`, `/library/index.html`) and its other letter cases are the page.
   const key = path.replace(/(\/index)?\.html$/i, "").toLowerCase() || "/";
   // The 404 page is no page of its own: asked for by name it answers as any unknown path does, in either mode.
-  // `/_launch.json` is the build's note to the admin switch, read through the asset binding and never served: it names unreleased pages.
+  // `/_launch.json` (tools/build-pages.mjs launchManifest) is read through the asset binding, never served: it names unreleased pages.
   if (key === "/404" || path.toLowerCase() === "/_launch.json") {
     return missing(env, request, await notFound(env, request));
   }

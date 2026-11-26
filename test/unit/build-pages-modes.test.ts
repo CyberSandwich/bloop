@@ -246,4 +246,19 @@ describe("launchReady: the manifest the admin switch reads, and the CLI, say the
     expect(manifest()).toEqual({ launchReady: true, placeholder: [] });
     expect((await cli("--launch")).status).toBe(0);
   }, 60_000);
+
+  it("a mistyped marker, or one outside content/open/, fails the build instead of reading as stamped", async () => {
+    stage();
+    const draft = join(copy, "content/open/privacy.md");
+    writeFileSync(draft, readFileSync(draft, "utf8").replace("datePending: true", "datePending: True"));
+    const typo = await cli();
+    expect(typo.status).toBe(1);
+    expect(typo.stderr).toContain("content/open/privacy.md: datePending must be `true`");
+    writeFileSync(draft, readFileSync(draft, "utf8").replace("datePending: True", "datePending: true"));
+    const base = join(copy, "content/terms.md");
+    writeFileSync(base, readFileSync(base, "utf8").replace("---\n", "---\ndatePending: true\n"));
+    const stray = await cli();
+    expect(stray.status).toBe(1);
+    expect(stray.stderr).toContain("content/terms.md: datePending must be `true`, and only in content/open/");
+  }, 60_000);
 });

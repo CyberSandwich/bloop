@@ -85,6 +85,9 @@ const FORMS = [
   "/a/../open/",
   "/open.html",
   "/Open.html",
+  "/open.html/",
+  "/%6Fpen.html",
+  "/x/../open.html",
   "/open/404",
 ];
 
