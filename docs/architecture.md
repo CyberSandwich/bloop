@@ -266,7 +266,8 @@ public/                    the assets' source, built into dist/ (each JS module 
   js/core/net-states.js   the room screen's words for a blocked network and a service that is down, loaded by the first of them
   js/core/drag.js   the phone's drop hint, loaded at its first file drag
   js/core/remote-ui.js js/core/remote.js css/remote.css   the phone's remote, fetched once its claim is a demo's; its state (seq, the tap shown before the answer)
-  js/core/lazy.js   what the length sheet and the remote share: their stylesheet's load, a refusal as a toast
+  js/core/notes.js css/notes.css   the phone's presenter's notes (box, scrolling, empty state, the list's fold), loaded by the remote at the first Present of a deck; the Worker's `GET /api/notes` is its only source (NOTES-01)
+  js/core/lazy.js   what the length sheet, the remote and the notes share: their stylesheet's load, a refusal as a toast
   js/core/upload.js js/core/pill.js js/core/upload-pill.js css/upload.css   the upload engine (no DOM), the pill's face, their binding with the batch sheet, and the stylesheet; loaded on the first intent to add (docs/ux/upload.md)
   img/demo-slide-{n}.{avif,webp}   the sample deck's pages (tools/render-slides.py, from a PDF export that is not kept), and the two photos' 120 px thumbnails
   img/hero-viewer-{750,1100,1600,2200}.avif, {750,1100,1600}.webp   the landing stage's screenshot of the Demo Room, 640 up

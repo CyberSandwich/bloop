@@ -347,6 +347,7 @@ describe("size budgets", () => {
       "channel polling, lazy": "public/js/core/poll.js",
       "channel health, lazy": "public/js/core/health.js",
       "phone remote, lazy": ["public/js/core/lazy.js", "public/js/core/remote-ui.js", "public/js/core/remote.js"],
+      "phone notes, lazy": ["public/js/core/lazy.js", "public/js/core/notes.js"],
       "drag and drop, lazy": "public/js/core/drag.js",
       "support mail, lazy": "public/js/shared/support.js",
       "sheen follow, lazy": "public/js/sheen-follow.js",
@@ -447,6 +448,22 @@ describe("size budgets", () => {
     }
     expect(read("public/a.html")).not.toContain("remote.css");
     expect(read("public/js/core/remote-ui.js")).toContain('await styled("/css/remote.css")');
+  });
+
+  it("NOTES-01 phone-only: the notes load only by import() from the remote, with their stylesheet, and set text only", () => {
+    for (const file of walk("public/js", (path) => path.endsWith(".js"))) {
+      for (const line of read(file)
+        .split("\n")
+        .filter((l) => /\bnotes\.js\b/.test(l) && /\b(import|from)\b/.test(l))) {
+        expect(file, line).toMatch(/core\/remote-ui\.js$/);
+        expect(line).toMatch(/import\("\.\/notes\.js"\)/);
+      }
+    }
+    expect(read("public/a.html")).not.toContain("notes.css");
+    expect(read("public/js/core/notes.js")).toContain('await styled("/css/notes.css")');
+    expect(read("public/js/core/notes.js")).not.toMatch(
+      /innerHTML|insertAdjacentHTML|outerHTML|createContextualFragment/,
+    );
   });
 
   it("the drop hint loads only by import(); phone.js claims a file drag and takes a drop inside the event", () => {
