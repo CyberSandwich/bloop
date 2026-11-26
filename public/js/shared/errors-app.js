@@ -36,5 +36,6 @@ export const APP_ERRORS = {
   export_paused: { status: 503 },
   // live pairing with accounts, and the spend guard's refusal
   match_required: { status: 409 },
+  match_wrong: { status: 409 },
   service_busy: { status: 503 },
 };
