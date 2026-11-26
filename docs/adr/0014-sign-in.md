@@ -23,7 +23,7 @@ Email code and passkey. Nothing else creates a session for an email user: no mag
 - **The acceptance page** says "By continuing you confirm you are 18 or over and accept the Terms", and verify writes `terms_version` and `terms_accepted_at` (ADR 0013).
 - **The code spends it.** A correct `invite` code, verified while the invite is still open, creates the user and accepts the invite in one D1 batch: insert `app_user` by `INSERT ... SELECT ... FROM invite WHERE id = ? AND accepted_at IS NULL AND revoked_at IS NULL AND expires_at > ?`, mark the invite accepted with the same guard, create the session. Zero rows from the insert means the invite died in between (`invite_dead`); the unique `email_norm` index stops a second account for the same address.
 - **Single use (INV-04):** an accepted, revoked or expired invite is refused at peek (state only), accept and verify.
-- **Create and resend (INV-05):** create is `INSERT ... ON CONFLICT (email_norm) WHERE accepted_at IS NULL AND revoked_at IS NULL DO UPDATE SET token_hash = excluded.token_hash, expires_at = excluded.expires_at, sends = invite.sends + 1`, so an email with an open row (expired or not) gets that row reissued, and the old link dies at once. Resend is the same reissue. Revoke sets `revoked_at`; open invite codes die with it because verify re-checks the invite.
+- **Create and resend (INV-05):** create is `INSERT ... ON CONFLICT (email_norm) WHERE accepted_at IS NULL AND revoked_at IS NULL DO UPDATE SET token_hash = excluded.token_hash, expires_at = excluded.expires_at, sends = invite.sends + 1`, so an email with an open row (expired or not) gets that row reissued, and the old link dies at once. Resend is the same reissue. The same batch first expires the codes already mailed for the old link, so an accept made before the reissue cannot finish after it. Revoke sets `revoked_at`; open invite codes die with it because verify re-checks the invite.
 - **Invite for a member:** refused at create (`already_member`).
 - **Bootstrap:** the first admin's invite is written by the owner's invite tool (tools/invite.mjs, owner A) through `wrangler d1 execute`, since no admin exists to create one.
 
@@ -99,6 +99,9 @@ State-creating steps (invite create, accept, code verify, passkey session creati
 - **The code's expiry is in the 202:** the code request and the invite accept answer `{challengeId, expiresAt}` (the accept adds `emailMasked`), the same for every address, so the page runs its own clock.
 - **The device cookie is set only when needed:** a verify sets `__Host-bloop_dev` unless the request already carries a value that verifies for this member at the current epoch, which stays as it is.
 - **The mail is decided after the response:** the code request answers once its row is written; the member, mode and block-list checks that choose whether a code is mailed run in `ctx.waitUntil` with the send, so none of them is on the response path.
+- **Invites and the block list:** invite accept and invite verify refuse a blocked address with `invite_dead`, so an invite written before a block cannot open an account after it.
+- **The order on the code request:** `RL_CODE` runs before Turnstile, so a flood spends no siteverify call; then a malformed address is `email_invalid`, also before Turnstile, which says nothing about any account; then Turnstile, then the bucket.
+- **A purge during a verify:** a member whose row is deleted between the verify's read and the session batch gets `code_invalid`, the same as every other verify failure; the session insert is guarded on the row.
 
 ## Rejected
 - **Magic links instead of codes:** mail scanners follow links, which would sign them in or spend the link, and a link signs in whichever device opens it, not the one waiting.

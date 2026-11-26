@@ -26,7 +26,7 @@ import { beginSignIn, finishSignIn, PENDING_SECONDS, type Pending } from "../aut
 import { MAX_PASSKEYS } from "../auth/passkeys.ts";
 import { endSessions, type ScreenDeps, screenDeps } from "../auth/screens.ts";
 import { phoneUser, servicesFor } from "../auth/services.ts";
-import { deviceLabel, SESSION_MAX_AGE_SECONDS } from "../auth/sessions.ts";
+import { deviceLabel, SESSION_MAX_AGE_SECONDS, UserGone } from "../auth/sessions.ts";
 import { signinCode } from "../auth/templates.ts";
 import {
   type TurnstileCheck,
@@ -43,7 +43,7 @@ import { type BlockCheck, blockCheck } from "../moderation/actions.ts";
 import { type Route, route } from "../router.ts";
 import { readSettings, type Settings } from "../settings.ts";
 import { capOverridesOf } from "../spend/caps.ts";
-import type { CallerMeter, Spend } from "../spend/client.ts";
+import type { Spend } from "../spend/client.ts";
 import { auditFor } from "../stores.ts";
 import { emptyBody, ipHash, limited, withConfig, write } from "./common.ts";
 
@@ -130,9 +130,9 @@ export interface AuthDeps extends ScreenDeps {
  * a route module imported outside workerd (the unit runner) cannot.
  */
 const guardSpend: AuthDeps["spend"] = (env, settings) => ({
-  take: (async (meter: CallerMeter, n: number, scope?: string) => {
+  take: (async (...args: Parameters<Spend["take"]>) => {
     const { spendFor } = await import("../spend/guard.ts");
-    return spendFor(env, () => capOverridesOf(settings)).take(meter as "email", n, scope);
+    return spendFor(env, () => capOverridesOf(settings)).take(...args);
   }) as Spend["take"],
 });
 
@@ -199,10 +199,16 @@ interface PublicCall<T> {
   config: Config;
   ctx: ExecutionContext;
   body: T;
+}
+
+interface CodeCall<T> extends PublicCall<T> {
   pepper: string;
 }
 
-/** A signed-out write: config, then the write checks and body, then the IP limit, then CODE_PEPPER, then the work. */
+/**
+ * A signed-out write: config, then the write checks and body, then the IP limit, then the work. The limit runs before
+ * anything the work calls out to (Turnstile, D1), so a flood spends neither.
+ */
 function publicWrite<T>(
   path: string,
   schema: ZodType<T>,
@@ -215,14 +221,26 @@ function publicWrite<T>(
       if (!body.ok) return body.response;
       const tooMany = await limited(e, limit, req, config);
       if (tooMany) return tooMany;
-      const pepper = config.secrets.codePepper;
-      if (!pepper) {
-        logAuth("config", "no_pepper");
-        return fail("internal");
-      }
-      return work({ request: req, env: e, config, ctx, body: body.value, pepper });
+      return work({ request: req, env: e, config, ctx, body: body.value });
     })(request, env, match, ctx),
   );
+}
+
+/** A signed-out write that issues, verifies or checks against a code: CODE_PEPPER unset fails closed. */
+function codeWrite<T>(
+  path: string,
+  schema: ZodType<T>,
+  limit: RateLimitName,
+  work: (call: CodeCall<T>) => Promise<Response>,
+): Route {
+  return publicWrite(path, schema, limit, async (call) => {
+    const pepper = call.config.secrets.codePepper;
+    if (!pepper) {
+      logAuth("config", "no_pepper");
+      return fail("internal");
+    }
+    return work({ ...call, pepper });
+  });
 }
 
 /** The email and invite sign-in routes (ADR 0014) and the Entra ones, with their outside calls injected. */
@@ -255,16 +273,25 @@ export function authRoutesWith(over: Partial<AuthDeps> = {}): readonly Route[] {
       })().catch(() => logAuth("mail", "error")),
     );
 
-  /** A verified member's session: rotation (AUTH-08), the device value unless this device already holds a live one. */
-  async function signIn(call: PublicCall<unknown>, user: EmailUser, emailNorm: string): Promise<Response> {
+  /**
+   * A verified member's session: rotation (AUTH-08), the device value unless this device already holds a live one. A
+   * member purged since the read is `code_invalid`, like every other verify failure.
+   */
+  async function signIn(call: CodeCall<unknown>, user: EmailUser, emailNorm: string): Promise<Response> {
     const { request, env, config, pepper } = call;
     const { sessions } = servicesFor(env, config);
     const known = await isKnown(readCookie(request, DEVICE_COOKIE), pepper, user.id, user.deviceEpoch);
-    const session = await sessions.create(user.id, readCookie(request, SESSION_COOKIE), {
-      method: "code",
-      label: deviceLabel(request.headers.get("User-Agent")),
-      reauthAt: Date.now(),
-    });
+    let session: string;
+    try {
+      session = await sessions.create(user.id, readCookie(request, SESSION_COOKIE), {
+        method: "code",
+        label: deviceLabel(request.headers.get("User-Agent")),
+        reauthAt: Date.now(),
+      });
+    } catch (e) {
+      if (e instanceof UserGone) return fail("code_invalid");
+      throw e;
+    }
     const { passkeys } = await sessions.summary(user.id);
     return withCookies(
       json({
@@ -305,7 +332,9 @@ export function authRoutesWith(over: Partial<AuthDeps> = {}): readonly Route[] {
 
     // AUTH-10: the same 202 for every well-formed address, a row written either way, and the mail decided after the
     // response; only an eligible member admitted by the mode and off the block list gets one.
-    publicWrite("/api/auth/code/request", codeRequest, "RL_CODE", async (call) => {
+    // The address is checked before Turnstile, so a malformed one spends no siteverify call; the answer says nothing
+    // about any account.
+    codeWrite("/api/auth/code/request", codeRequest, "RL_CODE", async (call) => {
       const { request, env, config, body, pepper } = call;
       const emailNorm = normalizeEmail(body.email);
       if (!emailNorm) return fail("email_invalid");
@@ -334,7 +363,7 @@ export function authRoutesWith(over: Partial<AuthDeps> = {}): readonly Route[] {
     }),
 
     // Every failure is `code_invalid`, including a member suspended, blocked or locked out since the code went.
-    publicWrite("/api/auth/code/verify", codeAnswer, "RL_AUTH", async (call) => {
+    codeWrite("/api/auth/code/verify", codeAnswer, "RL_AUTH", async (call) => {
       const { env, config, body, pepper } = call;
       const db = dbOf(env.DB);
       const code = await verifyCode(db, pepper, { id: body.challengeId, purpose: "signin", code: body.code });
@@ -357,7 +386,7 @@ export function authRoutesWith(over: Partial<AuthDeps> = {}): readonly Route[] {
     }),
 
     // INV-02: the code goes to the invite's own address; the body carries nothing else to send it to.
-    publicWrite("/api/invite/accept", token, "RL_INVITE", async (call) => {
+    codeWrite("/api/invite/accept", token, "RL_INVITE", async (call) => {
       const { env, config, body, pepper } = call;
       const db = dbOf(env.DB);
       const { state, row } = await peekInvite(db, await inviteHash(body.token), Date.now());
@@ -383,13 +412,15 @@ export function authRoutesWith(over: Partial<AuthDeps> = {}): readonly Route[] {
     }),
 
     // The code spends the invite: the user, the acceptance (with the Terms version) and the session in one batch.
-    publicWrite("/api/invite/verify", codeAnswer, "RL_AUTH", async (call) => {
+    // A block placed since the code went is invite_dead too.
+    codeWrite("/api/invite/verify", codeAnswer, "RL_AUTH", async (call) => {
       const { request, env, config, body, pepper } = call;
       const db = dbOf(env.DB);
       const code = await verifyCode(db, pepper, { id: body.challengeId, purpose: "invite", code: body.code });
       if (!code?.inviteId) return fail("code_invalid");
       if (!inviteAdmitted(await launchState(env, { fresh: true }), config.account, code.emailNorm))
         return fail("invite_dead");
+      if (await deps.isBlocked(env, pepper, code.emailNorm)) return fail("invite_dead");
       const userId = newRef();
       const now = Date.now();
       const session = await servicesFor(env, config).sessions.issue(userId, readCookie(request, SESSION_COOKIE), {

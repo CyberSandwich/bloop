@@ -55,10 +55,18 @@ export const maskEmail = (email: string): string => {
 /**
  * Create and reissue in one statement (ADR 0014): an address with an open row (expired or not) gets that row's id
  * back with a new hash, expiry and send count, so the old link dies at once (INV-05). A replay of the same hash
- * changes nothing and returns no row. tools/invite.mjs prints it with the values inlined. Binds: id, token_hash,
+ * changes nothing and returns no row. tools/invite.mjs prints it, after SUPERSEDE_INVITE_CODES, with the values
+ * inlined. Binds: id, token_hash,
  * email_norm, email, note, created_by, waitlist_id, created_at, expires_at, last_sent_at.
  */
 export const UPSERT_INVITE = `INSERT INTO invite (id, token_hash, email_norm, email, note, created_by, waitlist_id, created_at, expires_at, last_sent_at, sends) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1) ON CONFLICT (email_norm) WHERE accepted_at IS NULL AND revoked_at IS NULL DO UPDATE SET token_hash = excluded.token_hash, expires_at = excluded.expires_at, last_sent_at = excluded.last_sent_at, sends = invite.sends + 1 WHERE invite.token_hash != excluded.token_hash RETURNING id`;
+
+/**
+ * Runs just before UPSERT_INVITE, in its batch: when the upsert is about to reissue an open row (another hash for the
+ * same address), the codes already mailed for the old link die with it (INV-05). A replayed hash matches nothing.
+ * Binds: now, now, email_norm, token_hash (the new one).
+ */
+export const SUPERSEDE_INVITE_CODES = `UPDATE email_code SET expires_at = ? WHERE used_at IS NULL AND expires_at > ? AND invite_id = (SELECT id FROM invite WHERE email_norm = ? AND accepted_at IS NULL AND revoked_at IS NULL AND token_hash != ?)`;
 
 export interface InviteInput {
   id: string;
@@ -72,12 +80,19 @@ export interface InviteInput {
   expiresAt: number;
 }
 
-/** TRANSITIONAL(a-8): invite create and resend call it. The row's id, or null for a replayed hash. */
-export async function upsertInvite(db: Db, i: InviteInput): Promise<string | null> {
-  const row = await db
-    .prepare(UPSERT_INVITE)
-    .bind(i.id, i.tokenHash, i.emailNorm, i.email, i.note, i.createdBy, i.waitlistId, i.now, i.expiresAt, i.now)
-    .first<{ id: string }>();
+/**
+ * TRANSITIONAL(a-8): invite create and resend call it. The supersede and the upsert in one batch; the row's id, or null
+ * for a replayed hash (or a hash another reissue replaced before the read, whose link is dead too).
+ */
+export async function upsertInvite(db: BatchDb, i: InviteInput): Promise<string | null> {
+  const [, upserted] = await db.batch([
+    db.prepare(SUPERSEDE_INVITE_CODES).bind(i.now, i.now, i.emailNorm, i.tokenHash),
+    db
+      .prepare(UPSERT_INVITE)
+      .bind(i.id, i.tokenHash, i.emailNorm, i.email, i.note, i.createdBy, i.waitlistId, i.now, i.expiresAt, i.now),
+  ]);
+  if (upserted?.meta.changes !== 1) return null;
+  const row = await db.prepare("SELECT id FROM invite WHERE token_hash = ?").bind(i.tokenHash).first<{ id: string }>();
   return row?.id ?? null;
 }
 

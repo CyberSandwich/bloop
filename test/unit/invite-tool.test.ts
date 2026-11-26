@@ -2,6 +2,7 @@
 import { spawnSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
+import { issueCode } from "../../src/worker/auth/codes.ts";
 import { inviteHash, peekInvite } from "../../src/worker/auth/invites.ts";
 import { invite } from "../../tools/invite.mjs";
 import { testDb } from "./d1-shim.ts";
@@ -17,7 +18,9 @@ const sqlOf = (command: string) => /--command "(.*)"$/.exec(command)?.[1] ?? "";
 describe("tools/invite.mjs", () => {
   it("prints the remote command and the PUBLIC_ORIGIN link; --local names npm run dev's D1 and origin", async () => {
     const remote = await invite("Owner@Example.test", { now: NOW, token: TOKEN });
-    expect(remote.command).toMatch(/^npx wrangler d1 execute bloop --remote --command "INSERT INTO invite /);
+    expect(remote.command).toMatch(
+      /^npx wrangler d1 execute bloop --remote --command "UPDATE email_code .*; INSERT INTO invite /,
+    );
     expect(remote.link).toBe(`https://bloop.here/invite#t=${TOKEN}`);
     const local = await invite("owner@example.test", { local: true, now: NOW, token: TOKEN });
     expect(local.command).toMatch(/^npx wrangler d1 execute bloop --local --persist-to \.wrangler\/state --command /);
@@ -40,6 +43,24 @@ describe("tools/invite.mjs", () => {
     db.raw.exec(sqlOf((await invite("owner@example.test", { now: NOW, token: other, id: "i2" })).command));
     expect((await peekInvite(db, await inviteHash(TOKEN), NOW)).state).toBe("invalid");
     expect((await peekInvite(db, await inviteHash(other), NOW)).row?.id).toBe("i1");
+  });
+
+  it("INV-05 resend: a second run kills the codes already sent for the first link", async () => {
+    const db = testDb();
+    const now = Date.now();
+    db.raw.exec(sqlOf((await invite("owner@example.test", { now, token: TOKEN, id: "i1" })).command));
+    const sent = await issueCode(
+      db,
+      "C".repeat(43),
+      { purpose: "invite", emailNorm: "owner@example.test", inviteId: "i1" },
+      600,
+    );
+    if (sent.limited) throw new Error("limited");
+    const live = () =>
+      db.raw.prepare("SELECT count(*) AS n FROM email_code WHERE expires_at > ?").get(Date.now() + 1) as { n: number };
+    expect(live()).toEqual({ n: 1 });
+    db.raw.exec(sqlOf((await invite("owner@example.test", { now: Date.now(), token: "U".repeat(43) })).command));
+    expect(live()).toEqual({ n: 0 });
   });
 
   it("a quote in the address is doubled in the SQL, and what the shell would expand is refused", async () => {

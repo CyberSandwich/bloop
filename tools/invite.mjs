@@ -5,7 +5,7 @@ import { readFileSync, realpathSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { parseArgs } from "node:util";
 import { normalizeEmail } from "../src/worker/auth/email-norm.ts";
-import { inviteHash, newInviteToken, UPSERT_INVITE } from "../src/worker/auth/invites.ts";
+import { inviteHash, newInviteToken, SUPERSEDE_INVITE_CODES, UPSERT_INVITE } from "../src/worker/auth/invites.ts";
 import { accountVars } from "../src/worker/config/account.ts";
 import { newRef } from "../src/worker/ids.ts";
 import { wranglerConfig } from "./wrangler-config.mjs";
@@ -21,6 +21,19 @@ const SHELL_SPECIAL = /["$`\\!]/;
 const literal = (v) => (v === null ? "NULL" : typeof v === "number" ? String(v) : `'${v.replaceAll("'", "''")}'`);
 
 /**
+ * `sql` with each `?` replaced by the next value, refusing a count that does not match.
+ * @param {string} name
+ * @param {string} sql
+ * @param {(string | number | null)[]} values
+ */
+function inline(name, sql, values) {
+  let i = 0;
+  const out = sql.replaceAll("?", () => literal(values[i++] ?? null));
+  if (i !== values.length) throw new Error(`${name} has ${i} binds, the tool fills ${values.length}`);
+  return out;
+}
+
+/**
  * The command and the link for one address. `now`, `token` and `id` are fixed only by the tests.
  * @param {string} raw
  * @param {{local?: boolean, now?: number, token?: string, id?: string}} [options]
@@ -33,11 +46,11 @@ export async function invite(raw, { local = false, now = Date.now(), token = new
     throw new Error("the address holds a character the printed shell command cannot carry");
   const config = wranglerConfig(readFileSync(new URL("../wrangler.jsonc", import.meta.url), "utf8"));
   const expiresAt = now + accountVars.INVITE_TTL_DAYS.parse(undefined) * DAY_MS;
-  /** @type {(string | number | null)[]} */
-  const values = [id, await inviteHash(token), email, email, null, null, null, now, expiresAt, now];
-  let i = 0;
-  const sql = UPSERT_INVITE.replaceAll("?", () => literal(values[i++] ?? null));
-  if (i !== values.length) throw new Error(`UPSERT_INVITE has ${i} binds, the tool fills ${values.length}`);
+  const hash = await inviteHash(token);
+  const sql = [
+    inline("SUPERSEDE_INVITE_CODES", SUPERSEDE_INVITE_CODES, [now, now, email, hash]),
+    inline("UPSERT_INVITE", UPSERT_INVITE, [id, hash, email, email, null, null, null, now, expiresAt, now]),
+  ].join("; ");
   const database = config.d1_databases[0].database_name;
   const origin = local ? LOCAL_ORIGIN : new URL(config.vars.PUBLIC_ORIGIN).origin;
   return {

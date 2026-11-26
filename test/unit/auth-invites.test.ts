@@ -117,6 +117,14 @@ describe("INV-03 peek: opening a link changes nothing", () => {
     const open = (await peek(w, tokens.open)).body;
     expect(open).toEqual({ state: "open", emailMasked: "o**@example.test", expiresAt: expect.any(Number) });
   });
+
+  it("INV-03 peek: needs no CODE_PEPPER, which only accept and verify use", async () => {
+    const w = await authWorld({ CODE_PEPPER: "" });
+    setMode(w.db, "open");
+    const token = await seedInvite(w.db, "open@example.test");
+    expect((await peek(w, token)).body).toMatchObject({ state: "open" });
+    expect((await accept(w, token)).res.status).toBe(500);
+  });
 });
 
 describe("INV-02 bound: the code goes to the invite's own address", () => {
@@ -266,6 +274,21 @@ describe("the invite flow: accept, then the mailed code creates the member", () 
     expect((await accept(w, token)).body).toMatchObject({ code: "invite_dead" });
     expect(readDevMailbox()).toEqual([]);
   });
+
+  it("an address blocked between accept and verify is invite_dead at verify, creating nothing", async () => {
+    const w = await authWorld();
+    setMode(w.db, "open");
+    const token = await seedInvite(w.db, "closed@example.test");
+    const { challengeId } = (await accept(w, token)).body;
+    w.db.raw
+      .prepare("INSERT INTO email_block (email_hash, reason, created_at) VALUES (?, 'close', 0)")
+      .run(`v1:${await hmacHex(PEPPER, "closed@example.test")}`);
+    const dead = await verify(w, challengeId, mailedCode("closed@example.test"));
+    expect(dead.body).toMatchObject({ code: "invite_dead" });
+    expect(cookieNames(dead.res)).toEqual([]);
+    expect(w.db.raw.prepare("SELECT count(*) AS n FROM app_user").get()).toEqual({ n: 0 });
+    expect(w.db.raw.prepare("SELECT accepted_at FROM invite").get()).toEqual({ accepted_at: null });
+  });
 });
 
 describe("INV-05 resend: a reissue kills the old link", () => {
@@ -290,6 +313,35 @@ describe("INV-05 resend: a reissue kills the old link", () => {
     expect(db.raw.prepare("SELECT sends FROM invite").get()).toEqual({ sends: 2 });
     expect(await upsertInvite(db, input(await inviteHash("new")))).toBeNull();
     expect(db.raw.prepare("SELECT sends FROM invite").get()).toEqual({ sends: 2 });
+  });
+
+  it("INV-05 resend: a reissue kills the codes already mailed for the old link; a replayed hash kills none", async () => {
+    const w = await authWorld();
+    setMode(w.db, "open");
+    const old = await seedInvite(w.db, "invitee@example.test");
+    const before = (await accept(w, old)).body;
+    const beforeCode = mailedCode("invitee@example.test");
+    const reissue = async (token: string) =>
+      upsertInvite(w.db, {
+        id: "unused",
+        tokenHash: await inviteHash(token),
+        emailNorm: "invitee@example.test",
+        email: "invitee@example.test",
+        note: null,
+        createdBy: null,
+        waitlistId: null,
+        now: Date.now(),
+        expiresAt: Date.now() + 7 * DAY,
+      });
+    const fresh = newInviteToken();
+    expect(await reissue(fresh)).toBe("i-invitee@example.test");
+    const stale = await verify(w, before.challengeId, beforeCode);
+    expect(stale.body).toMatchObject({ code: "code_invalid" });
+    expect(cookieNames(stale.res)).toEqual([]);
+
+    const after = (await accept(w, fresh)).body;
+    expect(await reissue(fresh)).toBeNull();
+    expect((await verify(w, after.challengeId, mailedCode("invitee@example.test"))).res.status).toBe(200);
   });
 
   it("INV-05 resend: an expired open invite is reissued in place, an accepted one is not reopened", async () => {

@@ -1,8 +1,20 @@
 // The email sign-in routes over the d1 shim: POST /api/auth/code/request and /api/auth/code/verify (ADR 0014).
 import { beforeEach, describe, expect, it } from "vitest";
+import { issueCode } from "../../src/worker/auth/codes.ts";
 import { clearDevMailbox, readDevMailbox } from "../../src/worker/auth/email.ts";
 import { hmacHex, sha256Hex } from "../../src/worker/ids.ts";
-import { authWorld, callRoute, cookieNames, PEPPER, seedMember, setMode, sid, waitingCtx } from "./member-fixture.ts";
+import { readSettings } from "../../src/worker/settings.ts";
+import {
+  authWorld,
+  callRoute,
+  cookieNames,
+  PEPPER,
+  recordingLimits,
+  seedMember,
+  setMode,
+  sid,
+  waitingCtx,
+} from "./member-fixture.ts";
 import { fakeSpend } from "./spend-helpers.ts";
 
 type World = Awaited<ReturnType<typeof authWorld>>;
@@ -155,6 +167,38 @@ describe("AUTH-09 routes: the code request", () => {
     ]);
   });
 
+  it("AUTH-09 routes: RL_CODE runs before Turnstile, and a malformed address is email_invalid before it too", async () => {
+    const seen: [string, string][] = [];
+    // TEST_TIMING off, so the rate-limit bindings are spent.
+    const w = await authWorld(
+      { TEST_TIMING: "0" },
+      {
+        turnstile: async () => {
+          seen.push(["turnstile", ""]);
+          return { ok: true };
+        },
+      },
+    );
+    await seedMember(w.db, "m1", "member@example.test");
+    const call = async (refuse: string[], email: string) => {
+      seen.length = 0;
+      const env = { ...w.env, ...recordingLimits(refuse, seen).bindings };
+      const res = await callRoute(w.routes, env, "POST", "/api/auth/code/request", {
+        body: { email, turnstile: "tok" },
+        ctx: waitingCtx(),
+      });
+      return { res, order: seen.map(([name]) => name) };
+    };
+    const flood = await call(["RL_CODE"], "member@example.test");
+    expect(flood.res.status).toBe(429);
+    expect(flood.order).toEqual(["RL_CODE"]);
+    const malformed = await call([], "not-an-address");
+    expect(await malformed.res.json()).toMatchObject({ code: "email_invalid" });
+    expect(malformed.order).toEqual(["RL_CODE"]);
+    expect(w.db.raw.prepare("SELECT count(*) AS n FROM email_code").get()).toEqual({ n: 0 });
+    expect((await call([], "member@example.test")).order).toEqual(["RL_CODE", "turnstile"]);
+  });
+
   it("AUTH-09 routes: CODE_PEPPER unset fails closed before any row", async () => {
     const w = await authWorld({ CODE_PEPPER: "" });
     const res = await request(w, "member@example.test");
@@ -238,8 +282,13 @@ describe("AUTH-09 routes: code verify", () => {
     const bad = wrong.code === "000000" ? "111111" : "000000";
     expect(await (await verify(w, wrong.challengeId, bad)).json()).toMatchObject({ code: "code_invalid" });
 
-    const stranger = (await (await request(w, "stranger@example.test")).json()) as { challengeId: string };
-    expect((await verify(w, stranger.challengeId, "123456")).status).toBe(400);
+    // A stranger's challenge holds a real code nobody was sent; even the right one signs nobody in.
+    const stranger = await issueCode(w.db, PEPPER, { purpose: "signin", emailNorm: "stranger@example.test" }, 600);
+    if (stranger.limited) throw new Error("limited");
+    const none = await verify(w, stranger.challengeId, stranger.code);
+    expect(await none.json()).toMatchObject({ code: "code_invalid" });
+    expect(cookieNames(none)).toEqual([]);
+    expect(w.db.raw.prepare("SELECT count(*) AS n FROM app_user").get()).toEqual({ n: 1 });
 
     const refusals: [string, () => Promise<void> | void, () => void][] = [
       [
@@ -260,6 +309,61 @@ describe("AUTH-09 routes: code verify", () => {
     }
   });
 
+  it("AUTH-09 routes: a member purging since the code went is code_invalid; one deleting since is signed in to restore", async () => {
+    const w = await authWorld();
+    await seedMember(w.db, "m1", "member@example.test");
+    const purging = await codeFor(w, "member@example.test");
+    w.db.raw.prepare("UPDATE app_user SET status = 'purging' WHERE id = 'm1'").run();
+    const refused = await verify(w, purging.challengeId, purging.code);
+    expect(await refused.json()).toMatchObject({ code: "code_invalid" });
+    expect(cookieNames(refused)).toEqual([]);
+
+    w.db.raw.prepare("UPDATE app_user SET status = 'active' WHERE id = 'm1'").run();
+    const deleting = await codeFor(w, "member@example.test");
+    w.db.raw.prepare("UPDATE app_user SET status = 'deleting', delete_after = ? WHERE id = 'm1'").run(Date.now() + 1e6);
+    expect((await verify(w, deleting.challengeId, deleting.code)).status).toBe(200);
+  });
+
+  it("AUTH-09 routes: a member whose row is purged between the verify's read and its session batch is code_invalid, not a 500", async () => {
+    let purge = false;
+    const holder: { w?: World } = {};
+    const w = await authWorld(
+      {},
+      {
+        isBlocked: async () => {
+          if (purge) {
+            holder.w?.db.raw.prepare("DELETE FROM phone_session WHERE user_id = 'm1'").run();
+            holder.w?.db.raw.prepare("DELETE FROM app_user WHERE id = 'm1'").run();
+          }
+          return false;
+        },
+      },
+    );
+    holder.w = w;
+    await seedMember(w.db, "m1", "member@example.test");
+    const { challengeId, code } = await codeFor(w, "member@example.test");
+    purge = true;
+    const res = await verify(w, challengeId, code);
+    expect(res.status).toBe(400);
+    expect(await res.json()).toMatchObject({ code: "code_invalid" });
+    expect(cookieNames(res)).toEqual([]);
+    expect(w.db.raw.prepare("SELECT count(*) AS n FROM phone_session").get()).toEqual({ n: 0 });
+  });
+
+  it("MODE-01 gate: a switch to the lockout refuses the next code verify even with a warm cache", async () => {
+    // TEST_TIMING off: the 30 s settings cache is on, as in production. Without the fresh read this signs in.
+    const w = await authWorld({ TEST_TIMING: "0" });
+    await seedMember(w.db, "m1", "member@example.test");
+    setMode(w.db, "open");
+    await readSettings(w.env, { fresh: true });
+    const { challengeId, code } = await codeFor(w, "member@example.test");
+    setMode(w.db, "preview", true);
+    expect((await readSettings(w.env)).launch_mode).toBe("open");
+    const res = await verify(w, challengeId, code);
+    expect(await res.json()).toMatchObject({ code: "code_invalid" });
+    expect(cookieNames(res)).toEqual([]);
+  });
+
   it("AUTH-09 purpose: an invite challenge is refused by sign-in verify", async () => {
     const w = await authWorld();
     w.db.raw
@@ -268,7 +372,6 @@ describe("AUTH-09 routes: code verify", () => {
       )
       .run(Date.now() + 1e6);
     await seedMember(w.db, "m1", "member@example.test");
-    const { issueCode } = await import("../../src/worker/auth/codes.ts");
     const issued = await issueCode(
       w.db,
       PEPPER,
