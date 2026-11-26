@@ -25,7 +25,6 @@ const ALLOWED = [
   "public/js/library.js: A",
   "public/js/library.js: P1",
   "public/js/library.js: U",
-  "public/js/library.js: U",
   "public/js/library/net.js: U",
   "public/js/library/preview.js: P1",
 ];

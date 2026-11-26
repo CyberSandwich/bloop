@@ -674,11 +674,8 @@ let pill = null;
 function uploads() {
   if (!list) return Promise.resolve(null);
   const maxMB = Math.floor(list.limits.maxFileBytes / MB);
-  // @ts-expect-error transitional: U: core/upload-pill.js lands with U's client (ci/u-client); until then this import fails and the toast below is the fallback
   pill ??= import("./core/upload-pill.js")
-    .then((/** @type {any} */ m) =>
-      m.mountUploads({ kind: "library", maxMB, upNext: (/** @type {string} */ id) => setTick(id, true) }),
-    )
+    .then((m) => m.mountUploads({ maxMB, upNext: (/** @type {string} */ id) => setTick(id, true) }))
     .catch(() => {
       pill = null;
       say({ title: T.uploadNotLoaded, body: T.reloadLine, action: reloadAction, error: true });
