@@ -23,6 +23,7 @@ import {
   canTick,
   type List,
   move,
+  nameParts,
   type Row,
   rowLine,
   status,
@@ -179,6 +180,17 @@ describe("library words", () => {
 });
 
 describe("library rows", () => {
+  it("a name's ellipsis always keeps the extension, however short the name", () => {
+    expect(nameParts("Lecture 5.pptx")).toEqual(["Lecture 5", ".pptx"]);
+    expect(nameParts("A very long lecture title that goes on.pptx")).toEqual([
+      "A very long lecture title that go",
+      "es on.pptx",
+    ]);
+    expect(nameParts("README")).toEqual(["README", ""]);
+    expect(nameParts(".env")).toEqual([".env", ""]);
+    expect(nameParts("a.b.tar")).toEqual(["a.b", ".tar"]);
+  });
+
   it("only a ready, enabled, convertible, settled file gets a tick", () => {
     expect(canTick(row())).toBe(true);
     expect(canTick(row({ status: "checking" }))).toBe(false);
