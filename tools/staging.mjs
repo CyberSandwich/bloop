@@ -8,7 +8,7 @@
 import { spawnSync } from "node:child_process";
 import { randomBytes } from "node:crypto";
 import { appendFileSync, readFileSync, writeFileSync } from "node:fs";
-import { wranglerEntry } from "./pinned-wrangler.mjs";
+import { configArgs, wranglerEntry } from "./pinned-wrangler.mjs";
 import { requirePrebuilt } from "./prebuilt.mjs";
 
 export const D1_NAME = "bloop-staging";
@@ -52,7 +52,11 @@ export function withD1Id(config, id) {
 
 /** @param {string[]} args @param {string} [input] */
 const wrangler = (args, input) =>
-  spawnSync(process.execPath, [wranglerEntry(), ...args], { encoding: "utf8", input, env: process.env });
+  spawnSync(process.execPath, [wranglerEntry(), ...args, ...configArgs(args)], {
+    encoding: "utf8",
+    input,
+    env: process.env,
+  });
 
 /**
  * A failed wrangler call (a bad token, an outage) fails the job; it never reads as "not found".

@@ -1,5 +1,5 @@
 import { spawnSync } from "node:child_process";
-import { copyFileSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { copyFileSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
@@ -14,8 +14,11 @@ const D1_ID = "11111111-2222-3333-4444-555555555555";
 // A wrangler that records every call and fails the ones named in FAIL, so the CLI can be run without a network.
 const FAKE_WRANGLER = `
 const { appendFileSync, readFileSync } = require("node:fs");
-const args = process.argv.slice(2).join(" ");
+const raw = process.argv.slice(2);
+const at = raw.indexOf("--config");
+const args = (at < 0 ? raw : raw.slice(0, at)).join(" ");
 appendFileSync(process.env.CALLS, args + "\\n");
+appendFileSync(process.env.CALLS + ".config", (at < 0 ? "none" : raw[at + 1]) + "\\n");
 appendFileSync(process.env.CALLS + ".token", (process.env.CLOUDFLARE_API_TOKEN ?? "missing") + "\\n");
 if ((process.env.FAIL ?? "").split(",").some((prefix) => prefix && args.startsWith(prefix))) {
   console.error("fake wrangler: refused " + args);
@@ -55,6 +58,7 @@ function run(command: string, env: Record<string, string>, swapped = true) {
   const calls = project(swapped);
   writeFileSync(calls, "");
   writeFileSync(`${calls}.token`, "");
+  writeFileSync(`${calls}.config`, "");
   const result = spawnSync(process.execPath, [join(root, "tools/staging.mjs"), command], {
     cwd: root,
     encoding: "utf8",
@@ -67,7 +71,7 @@ function run(command: string, env: Record<string, string>, swapped = true) {
     },
   });
   const lines = (file: string) => readFileSync(file, "utf8").split("\n").filter(Boolean);
-  return { ...result, calls: lines(calls), tokens: lines(`${calls}.token`) };
+  return { ...result, calls: lines(calls), tokens: lines(`${calls}.token`), configs: lines(`${calls}.config`) };
 }
 
 describe("tools/staging.mjs as the workflow runs it", () => {
@@ -125,6 +129,8 @@ describe("tools/staging.mjs as the workflow runs it", () => {
     // Every call is the pinned wrangler, and each one carries the token through the environment, never an argument.
     expect(res.tokens).toEqual(res.calls.map(() => "token-under-test"));
     expect(res.calls.every((call) => !call.includes("token-under-test"))).toBe(true);
+    // Each call names wrangler.jsonc itself, so no other config file can stand in for it.
+    expect(res.configs).toEqual(res.calls.map(() => join(realpathSync(root), "wrangler.jsonc")));
     const config = readFileSync(join(root, "wrangler.jsonc"), "utf8");
     expect(config).toContain(`"database_id": "${D1_ID}"`);
     expect(config).toContain("node tools/prebuilt.mjs assert");
@@ -202,6 +208,36 @@ describe("tools/staging.mjs as the workflow runs it", () => {
       });
       expect(res.stderr).toContain("still builds");
     }
+  });
+
+  it("with the token, a stray wrangler config or a named --config is refused in both tools, and the config is passed explicitly", {
+    timeout: SPAWN_TIMEOUT,
+  }, () => {
+    const calls = project();
+    writeFileSync(calls, "");
+    const spawn = (tool: string, ...args: string[]) =>
+      spawnSync(process.execPath, [join(root, "tools", tool), ...args], {
+        cwd: root,
+        encoding: "utf8",
+        env: { ...process.env, CALLS: calls, CLOUDFLARE_API_TOKEN: "token-under-test", STAGING_D1_ID: D1_ID },
+      });
+    const named = spawn("pinned-wrangler.mjs", "d1", "list", "--config", "other.jsonc");
+    expect(named.status).not.toBe(0);
+    expect(named.stderr).toContain("the config is wrangler.jsonc");
+    expect(spawn("pinned-wrangler.mjs", "d1", "list", "-c", "other.jsonc").status).not.toBe(0);
+    expect(readFileSync(calls, "utf8")).toBe("");
+    for (const stray of ["wrangler.json", "wrangler.toml", ".wrangler/deploy/config.json"]) {
+      mkdirSync(join(root, stray, ".."), { recursive: true });
+      writeFileSync(join(root, stray), "{}");
+      for (const res of [spawn("pinned-wrangler.mjs", "d1", "list"), spawn("staging.mjs", "ready")]) {
+        expect(res.status, stray).not.toBe(0);
+        expect(res.stderr, stray).toContain("would replace wrangler.jsonc");
+      }
+      rmSync(join(root, stray));
+    }
+    expect(readFileSync(calls, "utf8")).toBe("");
+    expect(spawn("pinned-wrangler.mjs", "d1", "list").status).toBe(0);
+    expect(readFileSync(`${calls}.config`, "utf8")).toBe(`${join(realpathSync(root), "wrangler.jsonc")}\n`);
   });
 
   it("refuses a wrangler that is not the version the lockfile pins", {

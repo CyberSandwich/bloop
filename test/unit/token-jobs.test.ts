@@ -7,9 +7,10 @@ import { withPrebuilt } from "../../tools/prebuilt.mjs";
 const dir = new URL("../../.github/workflows/", import.meta.url);
 
 /**
- * The jobs that hold the Cloudflare token, and the composite action they run, are pinned byte for byte: nothing is
- * parsed, so no YAML form can slip a step past the guard. Any change to one fails this test until the block below is
- * updated on purpose, and that update is the review point (docs/architecture.md section 12).
+ * The jobs that hold the Cloudflare token, and the composite action they run, are pinned byte for byte, and what js-yaml
+ * parses is cross-checked against the pin and the text reader, so a YAML form the text cannot see still fails. Any
+ * change to a token job fails this test until the block below is updated on purpose, and that update is the review
+ * point (docs/architecture.md section 12).
  */
 const PINNED: Record<string, string[]> = {
   "deploy.yml deploy": [
@@ -155,6 +156,17 @@ interface Parsed {
   [key: string]: unknown;
 }
 
+/** Parsed mapping keys with an uppercase letter, other than the names under env, with and outputs, which are variables:
+ * every key GitHub reads is lower case, so a `Defaults` or `Uses` is refused rather than reasoned about. */
+function keyCaseProblems(f: string, node: unknown, parent = ""): string[] {
+  if (Array.isArray(node)) return node.flatMap((item) => keyCaseProblems(f, item, parent));
+  if (typeof node !== "object" || node === null) return [];
+  return Object.entries(node).flatMap(([key, value]) => [
+    ...(/[A-Z]/.test(key) && !["env", "with", "outputs"].includes(parent) ? [`${f}: parsed key ${key}`] : []),
+    ...keyCaseProblems(f, value, key),
+  ]);
+}
+
 /** What js-yaml reads, checked against the pins and the text reader, since the text reader cannot see every YAML form:
  * the job keys must be the ones it found, a job with an environment in any form or any mention of the secrets context
  * must parse to its pinned job, nothing sets defaults, container or services, and every uses is allowlisted. */
@@ -165,7 +177,7 @@ function parsedProblems(f: string, text: string, textJobs: string[]): string[] {
   } catch {
     return [`${f}: not valid YAML`];
   }
-  const problems: string[] = [];
+  const problems: string[] = keyCaseProblems(f, doc);
   const jobs = doc.jobs ?? {};
   const names = Object.keys(jobs).sort();
   if (!isDeepStrictEqual(names, [...textJobs].sort()))
@@ -240,9 +252,9 @@ function pinProblems(files: Record<string, string>, action: string): string[] {
   problems.push(...shapeProblems("action.yml", action), ...parsedProblems("action.yml", action, []));
   for (const [f, text] of [...Object.entries(files), ["action.yml", action] as const]) {
     if (/[\r\t]/.test(text)) problems.push(`${f}: carriage return or tab`);
-    if (/^\s*["']?(defaults|container|services)["']?\s*:/m.test(text))
+    if (/^\s*["']?(defaults|container|services)["']?\s*:/im.test(text))
       problems.push(`${f} has defaults, container or services`);
-    for (const use of text.matchAll(/["']?\buses["']?\s*:\s*["']?([^\s"'}]+)/g)) {
+    for (const use of text.matchAll(/["']?\buses["']?\s*:\s*["']?([^\s"'}]+)/gi)) {
       if (!ALLOWED_USES.includes(use[1] ?? "")) problems.push(`${f} uses ${use[1]}`);
     }
   }
@@ -454,6 +466,30 @@ describe("SITE-05 third-party code never shares a job with the token", () => {
           action,
         ).join("\n"),
         "new.yml go: parsed job differs from its pin",
+      ],
+      [
+        "workflow Defaults with a capital",
+        pinProblems(
+          { ...files, "new.yml": "Defaults:\n  run:\n    shell: x\njobs:\n  go:\n    steps: []\n" },
+          action,
+        ).join("\n"),
+        "new.yml: parsed key Defaults",
+      ],
+      [
+        "a job Container with a capital",
+        addJob("  go:\n    Container: evil:1\n    steps: []\n"),
+        "new.yml: parsed key Container",
+      ],
+      [
+        "a job Services with a capital",
+        addJob("  go:\n    Services:\n      x:\n        image: evil\n    steps: []\n"),
+        "new.yml: parsed key Services",
+      ],
+      ["a step Uses with a capital", addJob("  go:\n    steps:\n      - Uses: evil/x@1\n"), "new.yml: parsed key Uses"],
+      [
+        "a step Uses with a capital, read by the text layer too",
+        addJob("  go:\n    steps:\n      - Uses: evil/x@1\n"),
+        "new.yml uses evil/x@1",
       ],
       [
         "an anchor, refused by shape",
