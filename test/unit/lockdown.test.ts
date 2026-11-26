@@ -247,7 +247,13 @@ describe("safety: nothing is deleted, no script is deployed", () => {
       expect(() => assertSafeCall(c.method, path), `${c.method} ${path}`).not.toThrow();
       expect(path).not.toMatch(/\/workers\/scripts\/bloop$/);
     }
-    for (const argv of d1.argvs) expect(argv.slice(0, 4)).toEqual(["npx", "wrangler", "d1", "execute"]);
+    for (const argv of d1.argvs)
+      expect(argv.slice(0, 4)).toEqual([
+        "node",
+        expect.stringMatching(/tools\/pinned-wrangler\.mjs$/),
+        "d1",
+        "execute",
+      ]);
   });
 
   it("an op the code does not implement fails its step: a table row can name no request of its own", async () => {
@@ -295,7 +301,12 @@ describe("the lockdown token", () => {
     const out = (await main(["--level", "L2"], good.deps)).out;
     expect(out).toContain("wrangler: d1 execute reached the database (read-only SELECT 1)");
     expect(good.d1.argvs).toHaveLength(1);
-    expect(good.d1.argvs[0]?.slice(0, 4)).toEqual(["npx", "wrangler", "d1", "execute"]);
+    expect(good.d1.argvs[0]?.slice(0, 4)).toEqual([
+      "node",
+      expect.stringMatching(/tools\/pinned-wrangler\.mjs$/),
+      "d1",
+      "execute",
+    ]);
     expect(good.d1.argvs[0]).toContain("--remote");
     const bad = deps();
     bad.d1.failNext();
@@ -424,7 +435,15 @@ describe("apply", () => {
     await execute(table, planFor("L3"), d);
     expect(d1.argvs).toHaveLength(1);
     const argv = d1.argvs[0] ?? [];
-    expect(argv.slice(0, 7)).toEqual(["npx", "wrangler", "d1", "execute", "bloop", "--remote", "--json"]);
+    expect(argv.slice(0, 7)).toEqual([
+      "node",
+      expect.stringMatching(/tools\/pinned-wrangler\.mjs$/),
+      "d1",
+      "execute",
+      "bloop",
+      "--remote",
+      "--json",
+    ]);
     expect(argv[7]).toBe("--command");
     expect((argv[8] ?? "").split("\n")).toHaveLength(24);
   });

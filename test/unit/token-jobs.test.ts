@@ -27,7 +27,8 @@ const PINNED: Record<string, string[]> = {
     "      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0",
     "        with:",
     "          node-version-file: .nvmrc",
-    "          cache: npm",
+    "          # No restored npm cache: a cache saved by another job is written by third-party code.",
+    "          package-manager-cache: false",
     "      # No install scripts run here: the secrets are not in this step, and wrangler d1 execute needs none.",
     "      - run: npm ci --ignore-scripts",
     "      - name: Plan or apply",
@@ -625,6 +626,7 @@ describe("SITE-05 third-party code never shares a job with the token", () => {
     expect(rehearsal).toContain("node tools/prebuilt.mjs assert");
     expect(rehearsal).toContain("node tools/pinned-wrangler.mjs deploy --dry-run --outdir");
     expect(rehearsal).toContain("node tools/pinned-wrangler.mjs deploy --dry-run -e staging --outdir");
+    expect(rehearsal).toContain("node tools/pinned-wrangler.mjs d1 execute --help");
     expect(ci).not.toMatch(/^on:\n {2}push:\n {4}branches/m);
   });
 

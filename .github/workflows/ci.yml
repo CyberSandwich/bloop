@@ -73,6 +73,10 @@ jobs:
       - run: node tools/pinned-wrangler.mjs deploy --dry-run -e staging --outdir "$RUNNER_TEMP/staging"
         env:
           WRANGLER_SEND_METRICS: "false"
+      # The lockdown workflow's wrangler call (docs/lockdown.md), on the same install: it must start with no token.
+      - run: node tools/pinned-wrangler.mjs d1 execute --help
+        env:
+          WRANGLER_SEND_METRICS: "false"
 
   browser:
     runs-on: ubuntu-latest

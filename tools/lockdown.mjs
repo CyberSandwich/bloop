@@ -24,6 +24,7 @@ import { parseArgs } from "node:util";
 
 const TABLE_URL = new URL("./lockdown-rungs.json", import.meta.url);
 const WRANGLER_URL = new URL("../wrangler.jsonc", import.meta.url);
+const PINNED_WRANGLER = fileURLToPath(new URL("./pinned-wrangler.mjs", import.meta.url));
 const CF = "https://api.cloudflare.com/client/v4";
 const GH = "https://api.github.com";
 const SQL_TOKEN = /^[A-Za-z0-9_ =:.-]*$/;
@@ -238,12 +239,12 @@ export function writeSql(table, write, { level, undo, now }) {
 }
 
 /**
- * The wrangler argv for the whole write batch, one call. Only `d1 execute`, never a deploy: a forced Durable Object
+ * The node argv for the whole write batch, one call through tools/pinned-wrangler.mjs. Only `d1 execute`, never a deploy: a forced Durable Object
  * code update (`--durable-objects-code-update-mode immediate`) drops live sockets and resets a running conversion.
  * @param {Table} table @param {string[]} statements
  */
 const wranglerArgs = (table, statements) => [
-  "wrangler",
+  PINNED_WRANGLER,
   "d1",
   "execute",
   table.database,
@@ -375,7 +376,7 @@ export function renderPlan(table, plan, applying) {
   out.push(applying ? "mode: APPLY" : "mode: dry run (nothing changes; add --apply)");
   out.push("", `1. ${plan.freeze.action === "disable" ? "Freeze" : "Unfreeze"} deploys`);
   for (const l of freezeLines(plan)) out.push(`   ${l}`);
-  out.push("", "2. D1 setting rows (one npx wrangler d1 execute, remote)");
+  out.push("", "2. D1 setting rows (one wrangler d1 execute, remote)");
   if (plan.writes.length === 0) out.push("   none");
   const now = 1234567890123;
   for (const w of plan.writes) {
@@ -654,7 +655,7 @@ const redact = (env, text) =>
  * @returns {number[] | null}
  */
 function runD1(table, deps, statements, env) {
-  const res = deps.run("npx", wranglerArgs(table, statements), env);
+  const res = deps.run("node", wranglerArgs(table, statements), env);
   if (res.status !== 0) {
     const why = (res.stderr || res.stdout || "").trim().split("\n").find(Boolean) ?? "no output";
     throw new Error(`wrangler exited ${res.status}: ${why.slice(0, 300)}`);
@@ -923,8 +924,8 @@ export async function tokenReport(table, plan, deps) {
     }
   }
   if (plan.writes.length) {
-    // Proves the toolchain the writes depend on (npx, wrangler with no install scripts, D1 reachable) without writing.
-    const res = deps.run("npx", wranglerArgs(table, ["SELECT 1;"]), {
+    // Proves the toolchain the writes depend on (the pinned wrangler with no install scripts, D1 reachable) without writing.
+    const res = deps.run("node", wranglerArgs(table, ["SELECT 1;"]), {
       CLOUDFLARE_API_TOKEN: token,
       CLOUDFLARE_ACCOUNT_ID: account,
     });

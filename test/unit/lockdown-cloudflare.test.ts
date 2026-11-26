@@ -89,7 +89,12 @@ describe("no rung redeploys with a forced Durable Object code update", () => {
         const { deps: d, api, d1 } = deps();
         await main(argvFor(level, "--apply", ...(undo ? ["--undo"] : [])), d);
         for (const argv of d1.argvs)
-          expect(argv.slice(0, 4), `${level} ${undo}`).toEqual(["npx", "wrangler", "d1", "execute"]);
+          expect(argv.slice(0, 4), `${level} ${undo}`).toEqual([
+            "node",
+            expect.stringMatching(/tools\/pinned-wrangler\.mjs$/),
+            "d1",
+            "execute",
+          ]);
         const sent = JSON.stringify([d1.argvs, api.calls]);
         expect(sent, `${level} ${undo}`).not.toMatch(/code.update.mode|immediate/i);
       }
