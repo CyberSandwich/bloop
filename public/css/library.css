@@ -158,9 +158,29 @@ label.lib-tick::before {
   align-items: center;
   column-gap: 6px;
 }
-.lib-size::before,
+.lib-open .row-text {
+  container-type: inline-size;
+}
+.lib-kind::after {
+  content: " ·";
+}
 .lib-size + .lib-rest > .lib-date::before {
   content: "· ";
+}
+/* A narrow row puts the date on its own line rather than wrap a dot to a line's start; the narrowest drops the kind
+   word, which the tile's glyph already says. */
+@container (max-width: 280px) {
+  .lib-rest {
+    flex-basis: 100%;
+  }
+  .lib-size + .lib-rest > .lib-date::before {
+    content: none;
+  }
+}
+@container (max-width: 150px) {
+  .lib-kind {
+    display: none;
+  }
 }
 .lib-chip {
   padding: 0 8px;
@@ -194,6 +214,10 @@ label.lib-tick::before {
 .lib-trash-link {
   align-self: flex-start;
   margin: 8px 0 0 -12px;
+}
+.lib-back {
+  justify-self: start;
+  margin-left: -12px;
 }
 .lib-card {
   display: grid;
@@ -288,6 +312,9 @@ label.lib-tick::before {
   .lib-panel {
     grid-column: 1 / -1;
   }
+  .is-empty .lib-panel {
+    flex-direction: row;
+  }
 }
 @media (min-width: 900px) {
   .page-library {
@@ -332,8 +359,11 @@ label.lib-tick::before {
   .lib-up .lib-group {
     padding-left: 8px;
   }
-  .lib-first {
+  .lib-up .lib-first {
     margin: 12px 8px;
+  }
+  .lib-up .lib-line {
+    display: none;
   }
   .lib-present {
     display: flex;
@@ -366,14 +396,12 @@ label.lib-tick::before {
     display: none;
   }
   .is-empty .lib {
+    display: flex;
     max-width: calc(560px + 2 * var(--pad));
-    grid-template-columns: minmax(0, 1fr);
-    grid-template-areas: none;
   }
   .is-empty .lib-panel {
-    grid-area: auto;
+    align-self: center;
     flex-direction: row;
-    justify-content: center;
   }
 }
 @media (min-width: 900px) and (hover: hover) and (pointer: fine) {
@@ -388,6 +416,10 @@ label.lib-tick::before {
   .lib-item.is-dragging {
     opacity: 0.6;
   }
+  /* The grip and Alt+Arrow reorder here, and the row's other actions are in All Files; the 280 card needs the room. */
+  .lib-up .lib-more {
+    display: none;
+  }
 }
 /* A desk compares files: kind and size as columns beside the name, the date and status under it. */
 @media (min-width: 1024px) {
@@ -399,15 +431,19 @@ label.lib-tick::before {
   .lib-files .lib-line {
     display: contents;
   }
-  .lib-files :is(.lib-kind, .lib-size) {
-    grid-row: 1;
-    align-self: center;
-  }
-  .lib-files .lib-rest {
+  .lib-files :is(.row-name, .lib-rest) {
     grid-column: 1;
   }
-  .lib-files .lib-line ::before,
-  .lib-files .lib-size::before {
+  .lib-files .lib-kind {
+    grid-area: 1 / 2;
+    align-self: center;
+  }
+  .lib-files .lib-size {
+    grid-area: 1 / 3;
+    align-self: center;
+  }
+  .lib-files .lib-line .lib-date::before,
+  .lib-files .lib-line .lib-kind::after {
     content: none;
   }
 }
