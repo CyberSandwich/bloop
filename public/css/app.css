@@ -581,7 +581,8 @@ main:has(> .side:not([hidden])) #stage {
   background: none;
   box-shadow: none;
 }
-#b-stop {
+#b-stop,
+#b-link {
   position: absolute;
   top: calc(16px + env(safe-area-inset-top));
   left: 50%;
@@ -597,6 +598,9 @@ main:has(> .side:not([hidden])) #stage {
   opacity: var(--stop-o, 0);
   pointer-events: none;
   transition: opacity 300ms var(--ease-ui);
+}
+#b-stop:not([hidden]) ~ #b-link {
+  margin-top: 52px;
 }
 .is-reach #b-stop {
   pointer-events: auto;
