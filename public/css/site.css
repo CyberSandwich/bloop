@@ -123,12 +123,24 @@ html:has(.page-site) {
   }
 }
 /* The links' padding, so text to text is the links' own 36 px. */
-.btn.waitlist {
+.btn.waitlist,
+.btn.account {
   min-height: 44px;
   padding: 0 16px;
   background: var(--ink-2);
   color: var(--paper);
   font-size: 15px;
+}
+/* Both labels share one cell, so the pill keeps the wider one's width whichever the Worker shows (nav-pill.ts). */
+.btn.account {
+  display: grid;
+  justify-items: center;
+}
+.btn.account > * {
+  grid-area: 1 / 1;
+}
+.btn.account > [aria-hidden] {
+  visibility: hidden;
 }
 .nav-menu {
   display: none;
@@ -284,10 +296,25 @@ html:has(.page-site) {
   color: var(--lead);
   text-wrap: balance;
 }
+/* Two buttons sit side by side while both fit and stack at full width when they do not, at any font size. */
 .hero-actions {
   display: flex;
-  justify-content: center;
-  margin-top: 32px;
+  flex-wrap: wrap;
+  gap: 12px;
+  margin: 32px auto 0;
+}
+.hero-actions > * {
+  flex: auto;
+}
+.hint {
+  margin: 16px auto 0;
+  padding: 11px 0;
+  color: var(--muted);
+  font-size: 15px;
+  text-decoration: none;
+}
+.hint:hover {
+  text-decoration: underline;
 }
 .btn .arrow {
   margin-right: -4px;
@@ -349,7 +376,7 @@ html:has(.page-site) {
   }
 }
 
-:is(.features, .connect, .faq) > h2,
+:is(.features, .connect, .faq, .close-text) > h2,
 .doc h1 {
   font-size: 30px;
   line-height: 1.04;
@@ -359,13 +386,13 @@ html:has(.page-site) {
   text-align: center;
 }
 @media (min-width: 640px) {
-  :is(.features, .connect, .faq) > h2,
+  :is(.features, .connect, .faq, .close-text) > h2,
   .doc h1 {
     font-size: 38px;
   }
 }
 @media (min-width: 768px) {
-  :is(.features, .connect, .faq) > h2,
+  :is(.features, .connect, .faq, .close-text) > h2,
   .doc h1 {
     font-size: 54px;
   }
@@ -809,6 +836,7 @@ h3 {
   gap: 32px;
   padding: 40px 48px;
   border-radius: var(--r-content);
+  text-align: center;
 }
 .close-card .hero-actions {
   margin-top: 0;
