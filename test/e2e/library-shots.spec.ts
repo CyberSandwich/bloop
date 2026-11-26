@@ -40,7 +40,17 @@ const members = new Map(
   SIZES.flatMap(([w, h]) => [
     [`empty-${w}x${h}`, fixtures.member()],
     [`full-${w}x${h}`, full()],
-    ...(TOAST_SIZES.has(`${w}x${h}`) ? [[`toast-${w}x${h}`, full()] as const] : []),
+    ...(TOAST_SIZES.has(`${w}x${h}`)
+      ? [
+          [
+            `toast-${w}x${h}`,
+            fixtures.member([["u1", "Big lecture.pptx", { bytes: 40 * MB, status: "checking" }], ...files], {
+              used: 1.2 * 1024 * MB,
+              derived,
+            }),
+          ] as const,
+        ]
+      : []),
   ]),
 );
 const quota = fixtures.member(files, { used: 4.6 * 1024 * MB, derived });
@@ -85,20 +95,10 @@ for (const [width, height] of SIZES) {
     const context = await browser.newContext({ viewport: { width, height } });
     await signedIn(context, members.get(`toast-${size}`) ?? fixtures.member());
     const page = await context.newPage();
-    // Every part PUT is held, so the upload stays running for the shots.
-    await page.route("**/*", (route) =>
-      route.request().method() === "PUT" && !route.request().url().endsWith("/up-next")
-        ? new Promise(() => {})
-        : route.continue(),
-    );
     await page.goto("/library");
     await page.locator("#file-list > li.lib-item").first().waitFor();
-    await page.locator("#pick").setInputFiles({
-      name: "Big lecture.pptx",
-      mimeType: "application/vnd.openxmlformats-officedocument.presentationml.presentation",
-      buffer: Buffer.alloc(12 * MB, 1),
-    });
-    await expect(page.locator("#file-list > li.is-upload")).toHaveCount(1);
+    // U's upload client has not landed, so the row on its way is a file the server is still checking.
+    await expect(page.locator("#file-list")).toContainText("Big lecture.pptx");
     await page.getByRole("button", { name: "More for Reading list.pdf" }).first().click();
     await page.getByRole("dialog").getByRole("button", { name: "Move to Trash" }).click();
     await page.locator(".toast:not(.out)").waitFor();
