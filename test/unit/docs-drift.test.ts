@@ -363,6 +363,7 @@ describe("size budgets", () => {
       "library reorder, lazy": "public/js/library/reorder.js",
       "library socket, lazy": "public/js/library/socket.js",
       "library sample, lazy": "public/js/library/sample.js",
+      "library more, lazy": "public/js/library/more.js",
       "library present, lazy": "public/js/library/present.js",
       "library sort, lazy": "public/js/library/sort.js",
       "library trash, lazy": "public/js/library/trash.js",

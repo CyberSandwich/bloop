@@ -55,6 +55,11 @@
     "limit": "0.2 kB"
   },
   {
+    "name": "library more, lazy",
+    "path": "dist/js/library/more.js",
+    "limit": "0.25 kB"
+  },
+  {
     "name": "library socket, lazy",
     "path": "dist/js/library/socket.js",
     "limit": "0.6 kB"

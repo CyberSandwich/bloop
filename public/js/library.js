@@ -2,22 +2,12 @@
 // sessionStorage, then the fetch replaces it in place. Every write is optimistic and reverts in the frame its refusal
 // arrives. The rest loads by intent: each lazy module exports `start(page)` and gets the page object below.
 /** @import {List, Row} from "./library/model.js" */
-import {
-  dateText,
-  deletingLine,
-  fullLine,
-  isPaged,
-  positionText,
-  quotaLine,
-  quotaShare,
-  sizeText,
-  T,
-} from "./core/copy-library.js";
+import { deletingLine, fullLine, isPaged, positionText, quotaLine, quotaShare, T } from "./core/copy-library.js";
 import { ICONS } from "./core/icons.js";
 import { loader } from "./core/loader.js";
 import { sessionStore } from "./core/store.js";
 import { createToaster } from "./core/toast.js";
-import { ariaFlag, byId, el, focusTitle, icon, lostFocus, setText, show } from "./core/ui.js";
+import { byId, el, focusTitle, icon, lostFocus, setText, show } from "./core/ui.js";
 import { GLYPHS } from "./library/glyphs.js";
 import * as M from "./library/model.js";
 import { createNet } from "./library/net.js";
@@ -149,6 +139,8 @@ const notLoaded = () => say({ title: T.notLoaded, body: T.reloadLine, action: re
 const sayOffline = () => say({ title: T.offline, body: T.offlineBody });
 
 // ---- Writes ---------------------------------------------------------------------------------------------------------
+/** Moved by every list read and by each write's start and end: a read that sees it move was overtaken, and is dropped. */
+let generation = 0;
 const channel = "BroadcastChannel" in globalThis ? new BroadcastChannel("bloop-library") : null;
 
 /** Offline is known from a failed request: writes are refused up front, and nothing queues. */
@@ -168,7 +160,9 @@ function settle() {
  * @param {"POST" | "PATCH" | "PUT" | "DELETE"} method @param {string} path @param {unknown} [body] @param {Record<string, string>} [extra]
  */
 async function send(method, path, body, extra) {
+  generation++;
   const answer = await net.call(method, path, body, extra);
+  generation++;
   if (answer.ok) {
     offline = false;
     channel?.postMessage("changed");
@@ -262,11 +256,10 @@ async function clearUpNext() {
 async function trashFile(id) {
   if (!list) return;
   const at = list.upNext.indexOf(id);
-  const order = list.upNext;
   const next = focusAfter(id);
   const done = await optimistic(M.withoutRow(list, id), "POST", `${path(id)}/trash`, {});
   if (!done) return;
-  next?.focus();
+  byKey(next)?.focus();
   if (lostFocus()) focusTitle(els.title);
   /** @type {unknown[]} */
   const left = Array.isArray(done.leftScreens) ? done.leftScreens : [];
@@ -274,19 +267,23 @@ async function trashFile(id) {
   undoToast(T.movedTitle, labels.length ? `It also left ${labels.join(", ")}.` : "", async () => {
     const back = await send("POST", `${path(id)}/restore`, {});
     if (!back.ok) return refuse(back);
-    if (at >= 0) await send("PUT", "/api/library/up-next", { ids: order });
+    // Back at its old place in Up Next as it is now, so a tick or a move made since stays.
+    if (at >= 0 && list) await send("PUT", "/api/library/up-next", { ids: M.reinsert(list.upNext, id, at) });
     await load();
   });
   void load();
 }
 
-/** The control focus goes to when a row leaves: the next row's, else the one before. @param {string} id */
+/** The data-key focus goes to when a row leaves: the next row's, else the one before. @param {string} id */
 function focusAfter(id) {
   const item = document.activeElement?.closest("li");
   if (!item || item.getAttribute("data-id") !== id) return null;
-  const other = /** @type {HTMLElement | null} */ (item.nextElementSibling ?? item.previousElementSibling);
-  return /** @type {HTMLElement | null} */ (other?.querySelector(".lib-open") ?? null);
+  return (item.nextElementSibling ?? item.previousElementSibling)?.querySelector(".lib-open")?.getAttribute("data-key");
 }
+
+/** The control a repaint drew for `key`, standing in for the one it replaced. @param {string | null | undefined} key */
+const byKey = (key) =>
+  key ? /** @type {HTMLElement | null} */ (document.querySelector(`[data-key="${CSS.escape(key)}"]`)) : null;
 
 /** Renames in place; the extension stays the file's. @param {string} id @param {string} base */
 async function rename(id, base) {
@@ -305,6 +302,8 @@ async function rename(id, base) {
 async function download(id) {
   const answer = await send("POST", `${path(id)}/preview`, { asset: "original" });
   if (!answer.ok) return refuse(answer);
+  // transitional: P1: the link is on FILE_ORIGIN, where `download` is ignored, so only the /p/ handler's
+  // `Content-Disposition: attachment` for an original keeps an inline PDF or picture from replacing this page.
   const link = el("a", { href: String(answer.value.base), download: "" });
   document.body.append(link);
   link.click();
@@ -320,7 +319,9 @@ async function load(quiet = false) {
   const cold = !list;
   if (cold && !quiet) slowTimer ??= setTimeout(() => setText(els.note, T.slow), SLOW_MS);
   const query = `/api/library?sort=${sort}`;
+  const mine = ++generation;
   const answer = await net.call("GET", query, undefined, etag && list ? { "If-None-Match": etag } : {});
+  if (mine !== generation) return;
   clearTimeout(slowTimer);
   slowTimer = undefined;
   setText(els.note, "");
@@ -345,18 +346,6 @@ async function load(quiet = false) {
     if (list && !was) sayOffline();
   }
   if (!list && !quiet) failed();
-}
-
-/** Appends the next page of 200 when the last row comes into view. */
-async function more() {
-  if (!list?.next) return;
-  const cursor = list.next;
-  const answer = await net.call("GET", `/api/library?sort=${sort}&cursor=${encodeURIComponent(cursor)}`);
-  if (!answer.ok || !list || list.next !== cursor) return;
-  const have = new Set(list.files.map((f) => f.id));
-  const page = /** @type {List} */ (answer.value);
-  list = { ...list, files: [...list.files, ...page.files.filter((f) => !have.has(f.id))], next: page.next };
-  render();
 }
 
 /** @param {string} title @param {string} line @param {string} action @param {() => void} run @param {boolean} alert */
@@ -490,9 +479,7 @@ function rowItem(row, where, n) {
 function keep(/** @type {() => void} */ paintFn) {
   const key = document.activeElement?.getAttribute("data-key");
   paintFn();
-  if (!key) return;
-  const again = /** @type {HTMLElement | null} */ (document.querySelector(`[data-key="${CSS.escape(key)}"]`));
-  again?.focus({ preventScroll: true });
+  byKey(key)?.focus({ preventScroll: true });
 }
 
 /** @type {IntersectionObserver | null} */
@@ -529,7 +516,9 @@ function paint() {
   els.present.disabled = false;
   els.presentCard.disabled = false;
 
-  els.upList.replaceChildren(...upRows.map((r, i) => rowItem(r, "up", i + 1)));
+  // A live drag owns Up Next's rows until the drop, which paints the order it leaves (reorder.js).
+  if (!els.upList.querySelector(".is-dragging"))
+    els.upList.replaceChildren(...upRows.map((r, i) => rowItem(r, "up", i + 1)));
   show(els.clear, upRows.length > 0);
   const first = upRows[0];
   els.first.replaceChildren(...(first ? [T.opensFirst, el("strong", {}, [first.name])] : []));
@@ -542,7 +531,9 @@ function paint() {
   pager?.disconnect();
   const last = els.fileList.lastElementChild;
   if (list.next && last && "IntersectionObserver" in globalThis) {
-    pager = new IntersectionObserver((seen) => seen.some((e) => e.isIntersecting) && void more());
+    pager = new IntersectionObserver(
+      (seen) => seen.some((e) => e.isIntersecting) && void need("more").then((m) => m?.next()),
+    );
     pager.observe(last);
   }
 }
@@ -583,6 +574,7 @@ const modules = {
   socket: () => import("./library/socket.js"),
   reorder: () => import("./library/reorder.js"),
   sample: () => import("./library/sample.js"),
+  more: () => import("./library/more.js"),
 };
 /** @type {Record<string, Promise<any> | undefined>} */
 const loaded = {};
@@ -599,11 +591,16 @@ function need(name) {
   return loaded[name];
 }
 
+/** The started module for an action with no fallback; when it did not load, the toast says so. @param {string} name */
+async function ready(name) {
+  const started = await need(name);
+  if (!started) notLoaded();
+  return started;
+}
+
 /** A row's menu, or the rename field straight away (F2). @param {string} id @param {HTMLElement | null} opener @param {"menu" | "rename"} [mode] */
 async function openMenu(id, opener, mode = "menu") {
-  const menu = await need("menu");
-  if (menu) menu.open(id, opener, mode);
-  else notLoaded();
+  (await ready("menu"))?.open(id, opener, mode);
 }
 
 /** The lazy sheets' stylesheet, once; a failed load leaves the sheet unstyled and tries again next time. */
@@ -635,9 +632,12 @@ async function sheet(labelledBy, parts, opener, cls = "") {
     const outside = e.clientX < box.left || e.clientX > box.right || e.clientY < box.top || e.clientY > box.bottom;
     if ((e.target === dialog && outside) || /** @type {Element} */ (e.target).closest("[data-close]")) dialog.close();
   });
+  // A repaint while the sheet is open replaces a row's opener; its data-key finds the one drawn in its place.
+  const key = opener?.getAttribute("data-key");
   dialog.addEventListener("close", () => {
     dialog.remove();
-    if (opener?.isConnected) opener.focus();
+    const back = opener?.isConnected ? opener : byKey(key);
+    if (back) back.focus();
     else if (lostFocus()) focusTitle(els.title);
   });
   document.body.append(dialog);
@@ -787,10 +787,7 @@ els.pick.addEventListener("change", () => {
   els.pick.value = "";
 });
 els.sample.addEventListener("click", async () => {
-  if (!guard()) return;
-  const sample = await need("sample");
-  if (sample) sample.add();
-  else notLoaded();
+  if (guard()) (await ready("sample"))?.add();
 });
 for (const button of [els.present, els.presentCard]) {
   button.addEventListener("click", async () => {
@@ -800,16 +797,10 @@ for (const button of [els.present, els.presentCard]) {
     else location.assign("/code");
   });
 }
-byId("sort").addEventListener("click", async (e) => {
-  const sorter = await need("sort");
-  if (sorter) sorter.open(e.currentTarget);
-  else notLoaded();
-});
-els.trashLink.addEventListener("click", async () => {
-  const trash = await need("trash");
-  if (trash) trash.open();
-  else notLoaded();
-});
+// The button itself, not e.currentTarget: that is null by the time the module has loaded.
+const sortButton = byId("sort");
+sortButton.addEventListener("click", async () => (await ready("sort"))?.open(sortButton));
+els.trashLink.addEventListener("click", async () => (await ready("trash"))?.open());
 
 // Files dropped or pasted on the page join the uploads; a folder is refused (library.md section 3).
 /** @param {DataTransfer | null} data */
@@ -869,7 +860,6 @@ const PAGE = {
   render,
   polling,
   say,
-  undoToast,
   refuse,
   guard,
   send,
@@ -877,20 +867,14 @@ const PAGE = {
   closer,
   glyph,
   tile,
-  rowItem,
   setTick,
   moveBy,
-  setOrder,
   trashFile,
   rename,
   download,
-  notLoaded,
   openMenu,
   path,
   polite: (/** @type {string} */ text) => setText(els.polite, text),
-  dateText,
-  sizeText,
-  ariaFlag,
 };
 
 if (list) render();

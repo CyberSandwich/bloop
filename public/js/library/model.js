@@ -139,6 +139,14 @@ export function move(order, id, delta) {
   return out;
 }
 
+/**
+ * The order with `id` back at index `at` (clamped to the end), keeping whatever changed since it left; an `at` below 0
+ * (it was not in Up Next) or an id already there leaves the order as it is.
+ * @param {string[]} order @param {string} id @param {number} at
+ */
+export const reinsert = (order, id, at) =>
+  at < 0 || order.includes(id) ? order : [...order.slice(0, at), id, ...order.slice(at)];
+
 /** The list with every copy of `row` replaced, the selection mirrored into Up Next. @param {List} list @param {Row} row */
 export function withRow(list, row) {
   const files = list.files.map((f) => (f.id === row.id ? { ...f, ...row } : f));
