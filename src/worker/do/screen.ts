@@ -33,6 +33,7 @@ import {
   protocolUri,
   refusalSession,
 } from "../seams/open-path/links.ts";
+import { ownerEnd } from "../seams/open-path/lookups.ts";
 import type { PairingStore, PhoneInfo, Result, ScreenCreated, UsedLink } from "../seams/pairing.ts";
 import { auditFor, metricsFor } from "../stores.ts";
 import { directoryStub } from "../stubs.ts";
@@ -209,6 +210,17 @@ export class Screen extends DurableObject<Env> implements PairingStore {
 
   async endFromScreen(sid: string): Promise<Result<ScreenView>> {
     return this.screenEvent(sid, { e: "end", now: Date.now(), by: "screen" });
+  }
+
+  /**
+   * Ends the session `userId` owns here, as the phone's End would, by "system". Called object to object only (the
+   * library's endScreens): no route or frame reaches it, since the caller holds no credential of this screen.
+   * Idempotent: no pairing, another owner or an ended session changes nothing.
+   */
+  async endFromOwner(userId: string): Promise<Result<null>> {
+    const ev = ownerEnd(this.m, userId, Date.now());
+    const applied = ev ? await this.apply(ev) : null;
+    return !applied || applied.ok ? { ok: true, value: null } : applied;
   }
 
   /** Polling fallback. With no socket, a poll is also the rotation clock and keeps the screen open. */

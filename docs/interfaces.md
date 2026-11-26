@@ -397,6 +397,7 @@ export interface DemoCap {
   demoRelease(screenRef: string): Promise<void>;
 }
 ```
+`Screen.endFromOwner(userId: string): Promise<Result<null>>` is called object to object only (the library's endScreens). It is on the Screen class, not on `PairingStore`, and a test pins that no route, router, entry point or frame names it. It ends the session `userId` owns by "system" (links revoked, as `end`); no pairing, another owner or an ended session changes nothing. Its body is `ownerEnd` in `seams/open-path/lookups.ts`.
 
 ### 2.5 Codes (`public/js/shared/codes.js`, pure)
 ```js
