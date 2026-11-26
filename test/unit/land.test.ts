@@ -3,7 +3,8 @@ import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { basename, join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { attributed, conflictCopies, main, migrationProblems, refusals } from "../../tools/land.mjs";
+import { attributed } from "../../tools/attribution.mjs";
+import { conflictCopies, main, migrationProblems, refusals } from "../../tools/land.mjs";
 import { SPAWN_TIMEOUT } from "./spawn.ts";
 
 /** A bare remote with one commit on main, and a clone of it to land from. */
