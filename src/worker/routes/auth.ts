@@ -19,6 +19,7 @@ import type { Config, GraphConfig } from "../config.ts";
 import type { Env } from "../env.ts";
 import { auditRecord } from "../export-format.ts";
 import { fail, json } from "../http.ts";
+import { admitted, launchState } from "../mode.ts";
 import { type Route, route } from "../router.ts";
 import { auditFor } from "../stores.ts";
 import { limited, type WithConfig, withConfig, write } from "./common.ts";
@@ -189,7 +190,11 @@ export const authRoutes: readonly Route[] = [
     withConfig(
       accountWrite(async (userId, session, env, config) => {
         const { sessions, vault } = servicesFor(env, config);
-        if (await sessions.emailNorm(userId)) {
+        const email = await sessions.emailNorm(userId);
+        if (email) {
+          // C (ADR 0013) and the lockout (ADR 0026): a suspended or locked-out member is signed out here too.
+          const admittedNow = admitted(await launchState(env, { fresh: true }), config.account, email);
+          if (!admittedNow || !(await sessions.activeMemberEmail(userId))) return fail("auth_required");
           // C+R (ADR 0014): a stolen or shared session alone cannot start the deletion.
           if (!(await sessions.reauthedWithin(session, config.account.reauthSeconds * 1000))) {
             return fail("reauth_required");

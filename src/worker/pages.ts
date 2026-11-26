@@ -90,16 +90,20 @@ const privateCopy = (response: Response): Response => {
   return out;
 };
 
+/** The active member email of the request's session, or null. */
+async function memberEmail(request: Request, env: PageEnv, config: Config): Promise<string | null> {
+  const cookie = readCookie(request, SESSION_COOKIE);
+  const userId = cookie ? await servicesFor(env, config).sessions.resolve(cookie) : null;
+  return userId ? servicesFor(env, config).sessions.activeMemberEmail(userId) : null;
+}
+
 /** An admin's own preview of the open site: the view cookie plus a session that is an ADMIN_EMAILS member right now. */
 async function adminViewing(request: Request, env: PageEnv): Promise<boolean> {
   if (readCookie(request, VIEW_COOKIE) !== "open") return false;
   const config = configFor(env);
   if (!config.ok) return false;
   try {
-    const { sessions } = servicesFor(env, config.config);
-    const cookie = readCookie(request, SESSION_COOKIE);
-    const userId = cookie ? await sessions.resolve(cookie) : null;
-    const email = userId ? await sessions.activeMemberEmail(userId) : null;
+    const email = await memberEmail(request, env, config.config);
     return email !== null && config.config.account.adminEmails.has(email);
   } catch {
     console.error("admin_view_check_failed");
@@ -119,11 +123,7 @@ async function memberVisible(
   path: string,
 ): Promise<boolean> {
   try {
-    const { sessions } = servicesFor(env, config);
-    const cookie = readCookie(request, SESSION_COOKIE);
-    const userId = cookie ? await sessions.resolve(cookie) : null;
-    if (!userId) return false;
-    const email = await sessions.activeMemberEmail(userId);
+    const email = await memberEmail(request, env, config);
     if (email === null || !admitted(state, config.account, email)) return false;
     return path !== "/admin" || config.account.adminEmails.has(email);
   } catch {

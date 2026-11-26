@@ -1,6 +1,5 @@
 // The one reader of the `setting` table (ADR 0026): one SELECT, one cache per isolate, a `fresh` option for the steps
-// that create state. A consumer turns the snapshot into its own typed view (mode.ts is the first); the spend guard
-// wraps `readSettings` to overlay its own effective values on the same snapshot.
+// that create state. A consumer turns the snapshot into its own typed view (mode.ts is the first).
 import { type Db, dbOf } from "./auth/db.ts";
 import { configFor } from "./config.ts";
 
@@ -38,7 +37,7 @@ export function settingsReader(now: () => number = Date.now) {
       return good.settings;
     } catch {
       console.error("settings_read_failed");
-      return good && now() - good.at < STALE_MS ? good.settings : RESTRICTIVE;
+      return !options.fresh && good && now() - good.at < STALE_MS ? good.settings : RESTRICTIVE;
     }
   };
 }

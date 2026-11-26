@@ -41,7 +41,7 @@ const PERMISSION_FEATURES = [
   "xr-spatial-tracking",
 ];
 
-/** Features a page keeps for itself: the screen page `/s`, the phone and library pages (a wake lock keeps a long upload or a talk running), and the sign-in pages (passkeys, ADR 0014). */
+/** Features a page keeps for itself: the screen page `/s`, the phone and library pages (a wake lock keeps a long upload or a talk running), and the pages on the auth policy: sign-in and account pages (passkeys, ADR 0014), which /report shares for Turnstile. */
 const PAGE_FEATURES = {
   none: new Set<string>(),
   screen: new Set(["fullscreen", "screen-wake-lock"]),

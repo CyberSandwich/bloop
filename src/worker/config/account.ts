@@ -6,6 +6,8 @@ export const accountVars = {
   ACCOUNT_DELETE_GRACE_DAYS: int(1, 90)
     .default(7)
     .describe("A requested account deletion can be cancelled for this long, then the purge runs."),
+  INACTIVE_DAYS: int(30, 3650).default(365).describe("An account unused this long gets the inactivity warning."),
+  INACTIVE_GRACE_DAYS: int(1, 365).default(30).describe("An inactive account is deleted this long after its warning."),
   INVITE_TTL_DAYS: int(1, 30).default(7).describe("An invite link works this long."),
   EMAIL_CODE_TTL_SECONDS: int(60, 3600).default(600).describe("An emailed code works this long."),
   REAUTH_SECONDS: int(30, 3600)
