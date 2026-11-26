@@ -357,24 +357,30 @@ A regex that takes user text keeps its top-level alternatives disjoint, so no co
 
 | where                   | limit                                                                                | kind                |
 | ----------------------- | ------------------------------------------------------------------------------------ | ------------------- |
-| `POST /api/screens`     | 10 per 60 s per IP                                                                   | binding             |
-| `POST /api/claim`       | 20 per 60 s per IP                                                                   | binding             |
+| `POST /api/screens`     | 10 per 60 s per IP (`RL_CREATE`) | binding |
+| `POST /api/claim`       | 20 per 60 s per IP (`RL_CLAIM`) | binding |
 | failed code lookups     | 10 per 10 min per hashed IP, then 429 until the window (10 min from the first miss) ends; a global alarm at 1,000 per 10 min across all hashes (one `pair.miss_alarm` log line; it blocks nobody) | exact, Directory DO |
 | next code on one screen | 6 per min                                                                            | exact, Screen DO    |
-| `/f/`                   | 60 per 60 s per IP; then 60 per 60 s per screen (`RL_FETCH` keyed by the screen ref), or per view link (keyed by its hash), between the Screen object's check and the counted fetch; per link: 10 fetches, none for a view link (VID-02) | binding; exact      |
-| `PUT /api/drop`         | 5 per 60 s per IP (every attempt past the Origin and credential checks counts); one accepted file per session; live bytes under `GUEST_STORAGE_BUDGET_BYTES` | binding; exact; D1  |
-| `/auth/start`           | 10 per 60 s per IP                                                                   | binding             |
+| `/f/`                   | 60 per 60 s per IP (`RL_FETCH`); then 60 per 60 s per screen (`RL_FETCH` keyed by the screen ref), or per view link (keyed by its hash), between the Screen object's check and the counted fetch; per link: 10 fetches, none for a view link (VID-02) | binding; exact      |
+| `PUT /api/drop`         | 5 per 60 s per IP (`RL_UPLOAD`; every attempt past the Origin and credential checks counts); one accepted file per session; live bytes under `GUEST_STORAGE_BUDGET_BYTES` | binding; exact; D1  |
+| `/auth/start`, `/auth/callback`, `POST /api/me/disconnect` | 10 per 60 s per IP (`RL_AUTH`); the disconnect then spends the member routes row's IP meter too | binding |
 | member routes (`/api/me/*`) | every route: 300 per 60 s per IP (`RL_MEMBER_IP`) before any D1 read, a flood guard sized for a shared campus NAT; then 120 per 60 s per member (`RL_MEMBER`), the real limiter, after the session read (ADR 0014) | binding |
 | `GET /api/me`           | `RL_MEMBER_IP` before any read, then `RL_MEMBER` once a live session is read (limits: the member routes row) | binding |
 | `/api/admin/*`          | `RL_MEMBER_IP` (the member routes row) before the session read, a refusal answering the unknown path's 404 like everything else before the admin check; then 60 per 60 s per admin (`RL_ADMIN`) | binding |
 | `GET /api/screen/ws`, `GET /api/pair/ws` | 30 per 60 s per screen ref and network (IPv4 address or IPv6 /64) (`RL_UPGRADE`, its own binding so reconnect storms never refuse a tap), before the Screen object; then at most 4 sockets waiting for their `hello` per role and 2 per network, the network's own oldest evicted at its 2 and the oldest overall when a role is full, never a refusal (PAIR-10) | binding; exact |
 | `POST /api/control`, `POST /api/screen/shown`, `POST /api/session/length` | 120 per 60 s per IP (`RL_CONTROL`, its own binding so `/f/` range reads never refuse a tap), then 120 per 60 s per credential (keyed by the pid's or sid's hash, never the screen ref: every `/f/` token carries it) (PAIR-13) | binding |
 | `GET /api/files`        | 20 per 60 s per session (`RL_FILES`, keyed by the screen ref), after the credential check: each call is a Graph call | binding |
-| `/api/it/export`        | 10 per 60 s per IP, checked before the token (a per-token key would not slow guessing) | binding             |
-| demo screen creation    | per IP (`RL_DEMO_CREATE` in `wrangler.jsonc`), instead of the live limit             | binding             |
-| demo claims             | per IP (`RL_DEMO_CLAIM`), after the lookup says the code is a demo one; the live claim limit applies first, so the lower of the two binds | binding |
+| `/api/it/export`        | 10 per 60 s per IP (`RL_EXPORT`), checked before the token (a per-token key would not slow guessing) | binding             |
+| demo screen creation    | 12 per 60 s per IP (`RL_DEMO_CREATE`), instead of the live limit | binding |
+| demo claims             | 20 per 60 s per IP (`RL_DEMO_CLAIM`), after the lookup says the code is a demo one; the live claim limit applies first, so the lower of the two binds | binding |
 | concurrent demo screens | `DEMO_MAX_CONCURRENT` across all visitors, and `DEMO_MAX_PER_IP` per IP hash (values in `wrangler.jsonc`); the next create answers 429 `rate_limited` | exact, Directory DO |
 | demo screens            | plus a 60-min session and a 25 MB drop cap                                           | config              |
+| `POST /api/auth/code/request`, `POST /api/me/reauth/code`, `POST /api/me/email` | 5 per 60 s per IP (`RL_CODE`), before Turnstile and any D1 code bucket; planned (A) | binding |
+| `POST /api/invite/peek`, `POST /api/invite/accept`, `POST /api/email/revert` | 10 per 60 s per IP (`RL_INVITE`); planned (A) | binding |
+| `POST /api/auth/passkey/options`, `POST /api/auth/passkey/verify` | 20 per 60 s per IP (`RL_PASSKEY`); planned (A) | binding |
+| `POST /api/reports`, `POST /api/reports/context` | 5 per 60 s per IP (`RL_REPORT`), plus Turnstile on the report; planned (A) | binding |
+| `/api/library*`, `/api/uploads` | 120 per 60 s per member (`RL_LIBRARY`); planned (L, U) | binding |
+| `POST /api/uploads/:id/urls` | 240 per 60 s (`RL_UPLOAD_PART`); planned (U) | binding |
 | every `/api/` path      | edge rule: 300 per 10 s per IP, block for 10 s; `/f/` excluded (SITE-09, setup.md step 9) | Cloudflare dashboard |
 
 IPs are never stored. Limits use `HMAC(HASH_PEPPER, ip)` of `CF-Connecting-IP` (Cloudflare sets it; a local run has none and shares one key), kept only in DO storage until the window ends. The rate-limit bindings run in `wrangler dev` too. `TEST_TIMING=1` skips them so one integration run can create more screens than the per-IP limit allows; the exact limits in the objects stay on. Any other config answers the config-invalid 500 on a route whose binding is missing (`limited` in `routes/common.ts`; `RATE_LIMIT_BINDINGS` in `env.ts` is checked against `wrangler.jsonc` and `Env` by a test and the compiler), so a missing binding is never an open limit; the cron sweeps and the Screen alarms do not use the bindings and keep running.
