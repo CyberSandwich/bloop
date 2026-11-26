@@ -56,15 +56,20 @@ const routes: readonly Route[] = [
   ...noteRoutes,
 ];
 
+/** The error's name only: its message can carry a path, a query or a user's text. */
+function logUnhandled(error: unknown): void {
+  console.error(JSON.stringify({ evt: "unhandled", error: error instanceof Error ? error.name : typeof error }));
+}
+
 /** Methods other than the route's own get 405 with Allow, as /f/ requires for PROPFIND and OPTIONS. */
 async function dispatch(request: Request, env: Env): Promise<{ response: Response; policy: Policy }> {
   const url = new URL(request.url);
   if (!url.pathname.startsWith("/f/")) return matchRoute(request, env, url);
-  // A store that throws on a file read is the existing "cannot serve it now" answer, and the fetch is logged either way.
-  const out = await matchRoute(request, env, url).catch(() => ({
-    response: fail("upstream_failed"),
-    policy: "api" as Policy,
-  }));
+  // Anything that throws while a file is served is the existing "cannot serve it now" answer, and the fetch is logged either way.
+  const out = await matchRoute(request, env, url).catch((error) => {
+    logUnhandled(error);
+    return { response: fail("upstream_failed"), policy: "api" as Policy };
+  });
   logFetch(request, out.response);
   return out;
 }
@@ -104,8 +109,7 @@ export default {
       return response.status === 101 ? response : withHeaders(response, policy);
     } catch (error) {
       // A binding that throws is a 500 the client can read, never the platform's error page (section 13.7).
-      // The error's name only: its message can carry a path, a query or a user's text.
-      console.error(JSON.stringify({ evt: "unhandled", error: error instanceof Error ? error.name : typeof error }));
+      logUnhandled(error);
       return withHeaders(problem(500, "internal"), "api");
     }
   },

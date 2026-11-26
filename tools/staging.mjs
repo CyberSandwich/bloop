@@ -60,8 +60,8 @@ export function lockedWranglerVersion(lockJson) {
 
 /**
  * The installed wrangler's entry file, by absolute path. `npm ci --ignore-scripts` has checked the tarball against the
- * lockfile's integrity hash; this refuses a node_modules that holds another version, so the token only ever reaches the
- * pinned code and never a package found on PATH.
+ * lockfile's integrity hash; this refuses a node_modules that holds another version, so the token reaches the pinned
+ * wrangler and never a package found on PATH. No test runner or linter shares the job.
  * @param {string} root
  */
 export function wranglerEntry(root = ROOT) {

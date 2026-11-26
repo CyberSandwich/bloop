@@ -121,7 +121,7 @@ describe("caching and worker policy in _headers", () => {
   it("a viewer worker script is a no-network policy and keeps every base header", () => {
     expect(staticHeaders("/js/workers/sheet.js")).toEqual(lower(headersFor("worker")));
     // A hashed folder of workers is also immutable, which the worker policy does not say.
-    const { "cache-control": cache, ...hashed } = staticHeaders("/js/workers/1a2b3c4d/pdf.worker.min.mjs");
+    const { "cache-control": cache, ...hashed } = staticHeaders("/js/workers/pdf-1a2b3c4d/pdf.worker.min.mjs");
     expect(cache).toBe("public, max-age=31536000, immutable");
     expect(hashed).toEqual(lower(headersFor("worker")));
     expect(CSP.worker).toBe("default-src 'none'; script-src 'self'");
