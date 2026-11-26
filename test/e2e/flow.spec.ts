@@ -3884,6 +3884,116 @@ test.describe("NOTES-01 phone-only: the presenter's notes on the phone (design.m
     });
   }
 
+  /** One frame of the notes box and the slide above it: opacities as painted, tops as laid out (a transform never moves them). */
+  interface Frame {
+    box: number;
+    text: number;
+    boxTop: number;
+    previewTop: number;
+    previewHeight: number;
+  }
+  type Painted = { offsetTop: number; offsetHeight: number; querySelector(selector: string): Painted | null };
+  type Frames = {
+    __frames?: Frame[];
+    document: { querySelector(selector: string): Painted | null };
+    getComputedStyle(node: Painted): { opacity: string };
+    requestAnimationFrame(tick: () => void): void;
+  };
+  /** Records every frame from now on, once the box is on the page. */
+  const sampleFrames = (page: Page) =>
+    page.evaluate(() => {
+      const w = globalThis as unknown as Frames;
+      const frames: Frame[] = [];
+      w.__frames = frames;
+      const tick = () => {
+        const box = w.document.querySelector(".notes");
+        const preview = w.document.querySelector(".preview");
+        const live = box?.querySelector(".notes-text:not([hidden]), .notes-none:not([hidden])");
+        if (box && preview && live)
+          frames.push({
+            box: Number(w.getComputedStyle(box).opacity),
+            text: Number(w.getComputedStyle(live).opacity),
+            boxTop: box.offsetTop,
+            previewTop: preview.offsetTop,
+            previewHeight: preview.offsetHeight,
+          });
+        w.requestAnimationFrame(tick);
+      };
+      tick();
+    });
+  const framesOf = (page: Page) => page.evaluate(() => (globalThis as unknown as Frames).__frames ?? []);
+  const rises = (values: number[], what: string) => {
+    for (let i = 1; i < values.length; i++)
+      expect(values[i] ?? 0, `${what}, frame ${i}`).toBeGreaterThanOrEqual((values[i - 1] ?? 0) - 1e-6);
+  };
+  const holdsStill = (frames: Frame[]) => {
+    for (const key of ["boxTop", "previewTop", "previewHeight"] as const)
+      expect(new Set(frames.map((f) => f[key])).size, `${key} never changes while the notes animate`).toBe(1);
+  };
+
+  for (const size of SIZES) {
+    test(`the notes rise and fade in on transform and opacity alone, the slide holding still at ${size.width} x ${size.height}`, async ({
+      browser,
+    }) => {
+      const s = await session(browser, size);
+      await sampleFrames(s.page);
+      await s.present();
+      await expect(s.box).toContainText(opening(NOTES[0] ?? ""));
+      await expect.poll(async () => (await framesOf(s.page)).at(-1)?.box).toBe(1);
+      const frames = await framesOf(s.page);
+      expect(frames.length, "the reveal spans several frames").toBeGreaterThan(2);
+      expect(frames[0]?.box ?? 1, "it starts transparent").toBeLessThan(1);
+      rises(
+        frames.map((f) => f.box),
+        "the notes' opacity",
+      );
+      holdsStill(frames);
+      await close(s);
+    });
+
+    test(`a new note fades in inside the same box, the slide holding still at ${size.width} x ${size.height}`, async ({
+      browser,
+    }) => {
+      const s = await session(browser, size);
+      await sampleFrames(s.page);
+      await s.present();
+      await expect(s.box).toContainText(opening(NOTES[0] ?? ""));
+      await expect.poll(async () => (await framesOf(s.page)).at(-1)?.box).toBe(1);
+      const start = (await framesOf(s.page)).length;
+      await s.next();
+      await expect(s.box).toContainText(opening(NOTES[1] ?? ""));
+      await expect
+        .poll(async () => {
+          const frames = (await framesOf(s.page)).slice(start);
+          return frames.some((f) => f.text < 1) && frames.at(-1)?.text === 1;
+        })
+        .toBe(true);
+      const frames = (await framesOf(s.page)).slice(start);
+      rises(
+        frames.slice(frames.findIndex((f) => f.text < 1)).map((f) => f.text),
+        "the new note's opacity",
+      );
+      expect(
+        frames.every((f) => f.box === 1),
+        "the box itself never fades on a swap",
+      ).toBe(true);
+      holdsStill(frames);
+      await close(s);
+    });
+  }
+
+  test("reduced motion shows the notes at once", async ({ browser }) => {
+    const s = await session(browser, SIZES[0] as Size);
+    await s.page.emulateMedia({ reducedMotion: "reduce" });
+    await sampleFrames(s.page);
+    await s.present();
+    await expect(s.box).toContainText(opening(NOTES[0] ?? ""));
+    await expect.poll(async () => (await framesOf(s.page)).at(-1)?.box).toBe(1);
+    const frames = await framesOf(s.page);
+    expect(frames.filter((f) => f.box < 1).length, "at most the frame the animation starts in").toBeLessThanOrEqual(1);
+    await close(s);
+  });
+
   test("held landscape (844 x 390) shows no notes box", async ({ browser }) => {
     const s = await session(browser, { width: 844, height: 390 });
     await s.present();

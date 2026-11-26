@@ -193,13 +193,13 @@
   {
     "name": "phone notes, lazy",
     "path": ["dist/js/core/lazy.js", "dist/js/core/notes.js"],
-    "limit": "1.42 kB"
+    "limit": "1.43 kB"
   },
   {
     "name": "phone notes CSS, lazy",
     "path": "dist/css/notes.css",
     "gzip": true,
-    "limit": "0.52 kB"
+    "limit": "0.58 kB"
   },
   {
     "name": "drag and drop, lazy",
