@@ -3,6 +3,7 @@ package main
 import (
 	"archive/zip"
 	"bytes"
+	"context"
 	"encoding/xml"
 	"errors"
 	"fmt"
@@ -82,28 +83,39 @@ func verifyArchive(zr *zip.Reader, lim Limits) error {
 
 var errBombSize = errors.New("archive unpacks past the limit")
 
-// pkg indexes a package's entries by name.
+// pkg indexes a package's entries by name and meters every byte read from them, so a package that
+// makes the analyzer inflate the same part over and over still stops at the unpack limit.
 type pkg struct {
 	list   []*zip.File
 	byName map[string]*zip.File
+	left   int64 // inflate budget remaining
+	over   bool  // the budget ran out: every later read fails
 }
 
-func newPkg(zr *zip.Reader) *pkg {
-	p := &pkg{list: zr.File, byName: make(map[string]*zip.File, len(zr.File))}
+func newPkg(zr *zip.Reader, maxUnpacked int64) *pkg {
+	p := &pkg{list: zr.File, byName: make(map[string]*zip.File, len(zr.File)), left: maxUnpacked}
 	for _, f := range zr.File {
 		p.byName[f.Name] = f
 	}
 	return p
 }
 
-// readFile returns one entry, capped at maxPartBytes.
-func readFile(f *zip.File) ([]byte, bool) {
+// read returns one entry, capped at maxPartBytes and at what is left of the budget.
+func (p *pkg) read(f *zip.File) ([]byte, bool) {
+	if p.over {
+		return nil, false
+	}
 	rc, err := f.Open()
 	if err != nil {
 		return nil, false
 	}
 	defer rc.Close()
-	b, err := io.ReadAll(io.LimitReader(rc, maxPartBytes))
+	b, err := io.ReadAll(io.LimitReader(rc, min(maxPartBytes, p.left+1)))
+	p.left -= int64(len(b))
+	if p.left < 0 {
+		p.over = true
+		return nil, false
+	}
 	return b, err == nil
 }
 
@@ -113,7 +125,7 @@ func (p *pkg) part(name string) ([]byte, bool) {
 	if !ok {
 		return nil, false
 	}
-	return readFile(f)
+	return p.read(f)
 }
 
 type relationship struct{ id, typ, target string }
@@ -164,12 +176,14 @@ func relOfType(rels []relationship, suffix string) (relationship, bool) {
 	return relationship{}, false
 }
 
-// slideParts lists the slide part names in presentation order.
-func slideParts(p *pkg) []string {
+// slideParts lists the slide part names in presentation order, each once: a list that names one part
+// many times is not a longer deck. It stops when ctx ends.
+func slideParts(ctx context.Context, p *pkg) []string {
 	pres, ok := p.part("ppt/presentation.xml")
 	if !ok {
 		return nil
 	}
+	seen := map[string]bool{}
 	relsBytes, _ := p.part(relsName("ppt/presentation.xml"))
 	byID := map[string]string{}
 	for _, r := range parseRels(relsBytes) {
@@ -179,7 +193,7 @@ func slideParts(p *pkg) []string {
 	d := xml.NewDecoder(bytes.NewReader(pres))
 	for {
 		tok, err := d.Token()
-		if err != nil {
+		if err != nil || ctx.Err() != nil {
 			return out
 		}
 		el, ok := tok.(xml.StartElement)
@@ -188,7 +202,8 @@ func slideParts(p *pkg) []string {
 		}
 		for _, a := range el.Attr {
 			if a.Name.Space == nsR && a.Name.Local == "id" {
-				if part, ok := byID[a.Value]; ok {
+				if part, ok := byID[a.Value]; ok && !seen[part] {
+					seen[part] = true
 					out = append(out, part)
 				}
 			}
@@ -287,8 +302,10 @@ var mediaExts = map[string]bool{
 	".mp3": true, ".m4a": true, ".wav": true, ".wma": true, ".mid": true, ".midi": true, ".aac": true, ".flac": true, ".ogg": true,
 }
 
-// analyzeOOXML reads notes, fonts, motion and media out of a pptx, docx or xlsx.
-func analyzeOOXML(p *pkg) Analysis {
+// analyzeOOXML reads notes, fonts, motion and media out of a pptx, docx or xlsx. It stops with
+// ctx's error when ctx ends and with errBombSize when the parts it reads inflate past the budget
+// newPkg was given; notes are read for at most maxPages visible slides.
+func analyzeOOXML(ctx context.Context, p *pkg, maxPages int) (Analysis, error) {
 	var a Analysis
 	fonts := map[string]string{} // lower-case -> first spelling seen
 	add := func(name string) {
@@ -301,6 +318,9 @@ func analyzeOOXML(p *pkg) Analysis {
 		}
 	}
 	for _, f := range p.list {
+		if err := ctx.Err(); err != nil {
+			return a, err
+		}
 		name := f.Name
 		lower := strings.ToLower(name)
 		if mediaExts[path.Ext(lower)] && (strings.HasPrefix(lower, "ppt/media/") || strings.HasPrefix(lower, "ppt/embeddings/")) {
@@ -312,12 +332,12 @@ func analyzeOOXML(p *pkg) Analysis {
 		inDeck := strings.HasPrefix(name, "ppt/slides/") || strings.HasPrefix(name, "ppt/slideLayouts/") || strings.HasPrefix(name, "ppt/slideMasters/")
 		switch {
 		case strings.HasSuffix(lower, ".rels") && strings.HasPrefix(name, "ppt/slides/"):
-			b, _ := readFile(f)
+			b, _ := p.read(f)
 			if reMedia.Match(b) {
 				a.Media = true
 			}
 		case inDeck && strings.HasSuffix(lower, ".xml"):
-			b, _ := readFile(f)
+			b, _ := p.read(f)
 			if reMotion.Match(b) {
 				a.Motion = true
 			}
@@ -325,17 +345,17 @@ func analyzeOOXML(p *pkg) Analysis {
 				add(string(m[1]))
 			}
 		case strings.HasPrefix(name, "ppt/theme/") || strings.HasPrefix(name, "ppt/notesSlides/") || strings.HasPrefix(name, "ppt/notesMasters/"):
-			b, _ := readFile(f)
+			b, _ := p.read(f)
 			for _, m := range reLatin.FindAllSubmatch(b, -1) {
 				add(string(m[1]))
 			}
 		case name == "word/fontTable.xml":
-			b, _ := readFile(f)
+			b, _ := p.read(f)
 			for _, m := range reWFont.FindAllSubmatch(b, -1) {
 				add(string(m[1]))
 			}
 		case strings.HasPrefix(name, "word/") && strings.HasSuffix(lower, ".xml"):
-			b, _ := readFile(f)
+			b, _ := p.read(f)
 			for _, m := range reRFonts.FindAllSubmatch(b, -1) {
 				add(string(m[1]))
 			}
@@ -343,7 +363,7 @@ func analyzeOOXML(p *pkg) Analysis {
 				add(string(m[1]))
 			}
 		case name == "xl/styles.xml":
-			b, _ := readFile(f)
+			b, _ := p.read(f)
 			for _, m := range reXlsName.FindAllSubmatch(b, -1) {
 				add(string(m[1]))
 			}
@@ -354,7 +374,13 @@ func analyzeOOXML(p *pkg) Analysis {
 	}
 	sort.Strings(a.Fonts)
 	n := 0
-	for _, part := range slideParts(p) {
+	for _, part := range slideParts(ctx, p) {
+		if err := ctx.Err(); err != nil {
+			return a, err
+		}
+		if n >= maxPages {
+			break
+		}
 		if slide, ok := p.part(part); ok && slideHidden(slide) {
 			continue // LibreOffice leaves hidden slides out of the PDF, so they take no page number
 		}
@@ -372,7 +398,13 @@ func analyzeOOXML(p *pkg) Analysis {
 			a.Notes = append(a.Notes, Note{N: n, Text: capRunes(text, maxNoteRunes)})
 		}
 	}
-	return a
+	if err := ctx.Err(); err != nil {
+		return a, err
+	}
+	if p.over {
+		return a, errBombSize
+	}
+	return a, nil
 }
 
 // slideHidden reports whether a slide part's root says show="0".

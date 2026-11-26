@@ -142,7 +142,7 @@ func copyFile(dst, src string) error {
 
 // inspect checks the magic bytes and, for zip packages, the unpack limits; for OOXML it also
 // reads notes, fonts, motion and media.
-func (s *Server) inspect(job jobInfo, an *Analysis) error {
+func (s *Server) inspect(ctx context.Context, job jobInfo, an *Analysis) error {
 	path := inputPath(s.cfg, job.ext)
 	f, err := os.Open(path)
 	if err != nil {
@@ -169,9 +169,21 @@ func (s *Server) inspect(job jobInfo, an *Analysis) error {
 		return failed(errBadArchive, err)
 	}
 	if isOOXML(job.ext) {
-		*an = analyzeOOXML(newPkg(&zr.Reader))
+		var err error
+		*an, err = s.analyze(ctx, &zr.Reader)
+		return err
 	}
 	return nil
+}
+
+// analyze runs analyzeOOXML under the unpack limit and the page cap; a package that inflates past
+// the limit is a bomb, and ctx ending is the stage's timeout.
+func (s *Server) analyze(ctx context.Context, zr *zip.Reader) (Analysis, error) {
+	an, err := analyzeOOXML(ctx, newPkg(zr, s.cfg.Limits.MaxUnpacked), s.cfg.MaxPages)
+	if errors.Is(err, errBombSize) {
+		return an, failed(errBomb, err)
+	}
+	return an, err
 }
 
 func isOOXML(ext string) bool {
@@ -206,7 +218,7 @@ func (s *Server) missingFontNames(used []string) []string {
 
 func (s *Server) documentJob(job jobInfo, meta *metaJSON) error {
 	var an Analysis
-	if err := s.stage("inspect", 2, func(ctx context.Context) error { return s.inspect(job, &an) }); err != nil {
+	if err := s.stage("inspect", 2, func(ctx context.Context) error { return s.inspect(ctx, job, &an) }); err != nil {
 		return err
 	}
 	orig := inputPath(s.cfg, job.ext)
@@ -237,8 +249,8 @@ func (s *Server) documentJob(job jobInfo, meta *metaJSON) error {
 				return failed(errConvertFailed, err)
 			}
 			defer zr.Close()
-			an = analyzeOOXML(newPkg(&zr.Reader))
-			return nil
+			an, err = s.analyze(ctx, &zr.Reader)
+			return err
 		})
 		if err != nil {
 			return err
