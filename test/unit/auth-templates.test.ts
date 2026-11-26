@@ -16,6 +16,7 @@ import {
   reauthCode,
   signinCode,
   spendAlert,
+  spendDigest,
   type TemplateConfig,
 } from "../../src/worker/auth/templates.ts";
 import { NEVER_SAY } from "./never-say.ts";
@@ -38,7 +39,8 @@ const RENDERED: Record<string, Email> = {
   inactivityWarning: inactivityWarning({ months: 12, deleteAfter: AT }, CONFIG),
   accountDeleted: accountDeleted({ deletedAt: AT, backupDays: 30 }, CONFIG),
   newReport: newReport({ category: USER, at: AT }, CONFIG),
-  spendAlert: spendAlert({ kind: "trip", spentUsd: 12, note: USER }, CONFIG),
+  spendAlert: spendAlert({ kind: "trip", readings: { spentUsd: 12, note: USER as never } }, CONFIG),
+  spendDigest: spendDigest({ subject: "bloop spend digest 2026-W49", text: "Month to date: $1.00." }, CONFIG),
 };
 const CODE_TEMPLATES = ["signinCode", "reauthCode", "emailChangeCode"];
 
@@ -114,14 +116,19 @@ describe("templates", () => {
     expect(signinCode({ code: CODE }, { ...CONFIG, codeTtlSeconds: 300 }).text).toContain("5 minutes");
   });
 
-  it("templates: the spend alert keeps only the kind and numbers, top-level and under readings", () => {
+  it("templates: the spend alert keeps only the kind and the numbers under readings", () => {
     const email = RENDERED.spendAlert as Email;
     expect(email.subject).toBe("bloop Spend: trip");
     expect(email.text).toContain("spentUsd: 12");
     expect(email.text).not.toContain(USER);
-    const alert = spendAlert({ kind: "trip", rule: USER, readings: { monthUsd: 41.5, note: USER as never } }, CONFIG);
-    expect(alert.text).toContain("monthUsd: 41.5");
-    expect(alert.text).not.toContain(USER);
+    const alert = { kind: "trip", rule: USER, readings: { monthUsd: 41.5 } } as const;
+    expect(spendAlert(alert, CONFIG).text).not.toContain(USER);
+  });
+
+  it("templates: the spend digest keeps its subject and its lines, one paragraph each", () => {
+    const email = RENDERED.spendDigest as Email;
+    expect(email.subject).toBe("bloop spend digest 2026-W49");
+    expect(email.text.split("\n\n")[0]).toBe("Month to date: $1.00.");
   });
 
   it("templates: the passkey-added mail names no passkey, only that one was added, the device class and the time", () => {

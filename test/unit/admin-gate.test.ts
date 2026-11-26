@@ -8,6 +8,7 @@ import {
   STEP_UP_PASSKEY_AGE_MS,
 } from "../../src/worker/auth/member.ts";
 import { sha256Hex } from "../../src/worker/ids.ts";
+import { declaredRateLimits } from "../env-vars.ts";
 import type { TestDb } from "./d1-shim.ts";
 import { callRoute, memberWorld, ORIGIN, routesOf, seedMember, setMode, sid } from "./member-fixture.ts";
 
@@ -98,6 +99,29 @@ describe("AUTH-16 admin: the role comes only from ADMIN_EMAILS", () => {
         }
       }
     }
+  });
+
+  it("AUTH-16 admin: FF with real limits and every limiter refusing, a non-admin's admin write is still not_found", async () => {
+    const world = memberWorld({ TEST_TIMING: "0" });
+    const refusing = Object.fromEntries(
+      Object.keys(declaredRateLimits()).map((name) => [name, { limit: async () => ({ success: false }) }]),
+    );
+    const env = { ...world.env, ...refusing };
+    const member = await seedMember(world.db, "m1", "member@example.test");
+    const routes = await routesOf("admin", "adminRoutes");
+    const writes = routes.flatMap((r) => r.methods.filter((m) => m !== "GET").map((m) => [r, m] as const));
+    expect(writes.length).toBeGreaterThan(0);
+    for (const [r, method] of writes) {
+      const path = r.pattern.pathname.replace(/:(\w+)/g, "x");
+      for (const options of [{ cookie: sid(member) }, {}]) {
+        const res = await callRoute(routes, env, method, path, options);
+        expect(res.status, `${method} ${path}`).toBe(404);
+        expect(await res.json()).toMatchObject({ code: "not_found" });
+      }
+    }
+    // The same limiters do refuse a member's own write, so the stub is live.
+    const account = await routesOf("account", "accountRoutes");
+    expect((await callRoute(account, env, "POST", "/api/me/signout", { cookie: sid(member) })).status).toBe(429);
   });
 
   it("AUTH-16 admin: FF a foreign Origin, a cross-site fetch or a non-JSON body still gets not_found from a non-admin", async () => {

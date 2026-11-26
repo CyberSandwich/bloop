@@ -9,7 +9,7 @@ Status: proposed. Ships with `migrations/0005_accounts_library.sql`. It follows 
 - The daily job deletes any `app_user` row with no grant, no session and `last_seen_at` older than 30 days (`src/worker/retention.ts`). Written for Entra users who hold nothing, it would delete an email user, and by cascade their library rows, 30 days after their last session ends.
 - The existing erase route (`DELETE /api/me` in `src/worker/routes/auth.ts`, through `Sessions.deleteUser`) deletes the user row at once, which for an email user would cascade the D1 rows and orphan every R2 object.
 - D1 Time Travel keeps 30 days of restorable history, so a deleted row is recoverable by the operator for 30 days.
-- 0004 (indexes) lands before 0005., and data-hardening's identity and org migration is 0006 or later.
+- 0004 (indexes) lands before 0005, 0006 adds the known-device epoch (ADR 0014), and data-hardening's identity and org migration is 0007 or later.
 
 ## Decision
 

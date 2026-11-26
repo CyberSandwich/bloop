@@ -625,7 +625,7 @@ export interface AuditRow extends Omit<AuditEvent, "session"> { id: number; room
 
 export interface AuditLog {
   record(e: AuditEvent): Promise<void>;
-  /** The user's session rows and their account rows (`sessionId` = `userScope(userId)`), newest first. */
+  /** The user's session rows and their account rows (`sessionId` = `userScope(userId)`), most recently recorded first. */
   forUser(userId: string, limit: number, before?: number): Promise<AuditRow[]>;
   /** IT export of [from, to), paged out of D1 as a stream. CSV cells starting with = + - @ tab or CR get a leading apostrophe. */
   export(q: { orgId: string | null; from: number; to: number; format: "csv" | "json" }): Promise<ReadableStream<Uint8Array>>;

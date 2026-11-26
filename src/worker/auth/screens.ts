@@ -26,8 +26,8 @@ interface LibrarySessions {
 type LibraryEnv = Pick<Env, "USER_LIBRARY" | "PUBLIC_ORIGIN">;
 
 /**
- * TRANSITIONAL(L): false until the library stream's UserLibrary.closeSessions is on main. While false no object is
- * woken (each wake is billed) and nothing is logged; set it true the day it lands.
+ * TRANSITIONAL(L): false until UserLibrary.closeSessions exists. While false no object is woken (each wake is
+ * billed) and nothing is logged; set it true the day it lands.
  */
 export const LIBRARY_CLOSES_SESSIONS = false;
 

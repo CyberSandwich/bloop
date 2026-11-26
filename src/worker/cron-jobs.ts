@@ -1,4 +1,5 @@
 // The cron jobs by trigger. A stream adds its job to one list; every trigger in CRON must have a list.
+import { cronNotify } from "./auth/email.ts";
 import type { Config } from "./config.ts";
 import { CRON, type CronJob, type CronTrigger } from "./cron.ts";
 import type { Env } from "./env.ts";
@@ -8,12 +9,12 @@ import { runSpendBreaker } from "./spend/guard.ts";
 
 /**
  * The breaker's job. It needs no Config, so the same job runs when the config is invalid: `configProblems` (var
- * names) then makes it alert, and `notify` is the one place A wires email for both paths.
+ * names) then makes it alert, and `cronNotify` mails the admins on both paths.
  */
 export const spendBreakerJob = (configProblems?: readonly string[]): CronJob<Env, unknown> => ({
   name: "spend_breaker",
   run: async (env) => {
-    await runSpendBreaker(env, undefined, configProblems);
+    await runSpendBreaker(env, cronNotify(env), configProblems);
     return { more: false };
   },
 });

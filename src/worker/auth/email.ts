@@ -1,9 +1,14 @@
 // The one way mail leaves bloop (ADR 0021): the `email` switch, then the spend takes, then the Email Service binding,
 // all inside ctx.waitUntil so no response waits on mail or reveals by its timing whether mail was sent (AUTH-10).
-import type { AccountConfig } from "../config/account.ts";
-import type { Db } from "./db.ts";
-import { normalizeEmail } from "./email-norm.ts";
-import { type Email, spendAlert, type TemplateConfig } from "./templates.ts";
+import { z } from "zod";
+import { type AccountConfig, accountVars } from "../config/account.ts";
+import { coreVars, isLocalOrigin } from "../config/core.ts";
+import { readSettings } from "../settings.ts";
+import { logNotify, type Notify } from "../spend/breaker.ts";
+import type { Spend } from "../spend/client.ts";
+import { effectiveAll } from "../spend/switches.ts";
+import { emailSet, normalizeEmail } from "./email-norm.ts";
+import { type Email, spendAlert, spendDigest, type TemplateConfig } from "./templates.ts";
 
 /** A rendered email and its one recipient. `codeScope` (the IP hash) marks a code request, which also takes `email_code`. */
 export interface Message extends Email {
@@ -13,15 +18,6 @@ export interface Message extends Email {
 
 /** The `email` switch (docs/spend.md): admin_only mails ADMIN_EMAILS recipients only. */
 export type EmailSwitch = "on" | "admin_only" | "off";
-
-/** The slice of the spend client mail uses (src/worker/spend/client.ts); `unavailable` means the guard is unreachable. */
-export interface EmailSpend {
-  take(
-    meter: "email" | "email_code",
-    n: number,
-    scope?: string,
-  ): Promise<{ ok: true } | { ok: false; reason: string; retryAfterSeconds?: number }>;
-}
 
 /** The Email Service binding (env.EMAIL) as mail calls it. */
 export interface Sender {
@@ -35,24 +31,9 @@ export interface WaitUntil {
 export interface MailDeps {
   account: Pick<AccountConfig, "emailFrom" | "adminEmails" | "devMailbox">;
   sender: Sender | undefined;
-  spend: EmailSpend;
+  /** The email meters fail open, within a per-isolate cap, while their guard is unreachable (spend/client.ts). */
+  spend: Pick<Spend, "take">;
   emailSwitch: EmailSwitch;
-}
-
-/** Sends admitted while the spend guard is unreachable, per isolate per window: code sign-in survives an outage. */
-export const GUARD_DOWN_CAP = 20;
-export const GUARD_DOWN_WINDOW_MS = 600_000;
-const open = { since: 0, sent: 0 };
-
-function guardDownSlot(now: number): boolean {
-  if (now - open.since >= GUARD_DOWN_WINDOW_MS) {
-    open.since = now;
-    open.sent = 0;
-  }
-  if (open.sent >= GUARD_DOWN_CAP) return false;
-  if (open.sent === 0) console.log(JSON.stringify({ evt: "spend", kind: "guard_down" }));
-  open.sent++;
-  return true;
 }
 
 function switchAllows(deps: Pick<MailDeps, "account" | "emailSwitch">, to: string): boolean {
@@ -62,17 +43,10 @@ function switchAllows(deps: Pick<MailDeps, "account" | "emailSwitch">, to: strin
   return !!norm && deps.account.adminEmails.has(norm);
 }
 
-async function admit(deps: MailDeps, message: Message, now: number): Promise<boolean> {
+async function admit(deps: MailDeps, message: Message): Promise<boolean> {
   if (normalizeEmail(message.to) === null || !switchAllows(deps, message.to)) return false;
-  let guardDown = false;
-  const takes = message.codeScope === undefined ? [] : [() => deps.spend.take("email_code", 1, message.codeScope)];
-  for (const take of [...takes, () => deps.spend.take("email", 1)]) {
-    const r = await take();
-    if (r.ok) continue;
-    if (r.reason !== "unavailable") return false;
-    guardDown = true;
-  }
-  return !guardDown || guardDownSlot(now);
+  if (message.codeScope !== undefined && !(await deps.spend.take("email_code", 1, message.codeScope)).ok) return false;
+  return (await deps.spend.take("email", 1)).ok;
 }
 
 export interface DevMail {
@@ -95,20 +69,28 @@ export const clearDevMailbox = (): void => {
 
 const log = (fields: Record<string, string>) => console.log(JSON.stringify(fields));
 
-/** Errors are logged by code only, never with the address. A suppressed recipient is the unknown-address case. */
+/**
+ * True when the message was handed over. Never throws: errors are logged by code only, never with the address, and a
+ * suppressed recipient is the unknown-address case.
+ */
 async function deliver(account: MailDeps["account"], sender: Sender | undefined, m: Message, now: number) {
   if (account.devMailbox) {
     devMailbox.push({ to: m.to, subject: m.subject, text: m.text, at: now });
     if (devMailbox.length > DEV_MAILBOX_CAP) devMailbox.shift();
-    return;
+    return true;
   }
-  if (!sender) return log({ evt: "email", kind: "no_binding" });
+  if (!sender) {
+    log({ evt: "email", kind: "no_binding" });
+    return false;
+  }
   try {
     await sender.send({ to: m.to, from: account.emailFrom, subject: m.subject, text: m.text, html: m.html });
+    return true;
   } catch (e) {
     const code = (e as { code?: unknown } | null)?.code;
-    if (code === "E_RECIPIENT_SUPPRESSED") return log({ evt: "email_suppressed" });
-    log({ evt: "email", kind: "send_failed", code: typeof code === "string" ? code : "error" });
+    if (code === "E_RECIPIENT_SUPPRESSED") log({ evt: "email_suppressed" });
+    else log({ evt: "email", kind: "send_failed", code: typeof code === "string" ? code : "error" });
+    return false;
   }
 }
 
@@ -120,7 +102,7 @@ async function deliver(account: MailDeps["account"], sender: Sender | undefined,
  * A refusal sends nothing and is not an error.
  */
 export function mail(deps: MailDeps, ctx: WaitUntil, message: Message, now: number = Date.now()): Promise<boolean> {
-  const admitted = admit(deps, message, now).catch(() => {
+  const admitted = admit(deps, message).catch(() => {
     log({ evt: "email", kind: "admit_failed" });
     return false;
   });
@@ -128,47 +110,53 @@ export function mail(deps: MailDeps, ctx: WaitUntil, message: Message, now: numb
   return admitted;
 }
 
-/** One alert key mails at most once in this window. */
-export const ALERT_WINDOW_MS = 86_400_000;
-
-/** The kind and the rule name an alert: its `setting` row key, letters, digits and `_` only. */
-const alertKey = (message: { kind: string } & Record<string, unknown>): string =>
-  `alert.${[message.kind, typeof message.rule === "string" ? message.rule : ""]
-    .map((part) => part.replace(/[^A-Za-z0-9_]/g, ""))
-    .join(".")}`;
-
 /**
- * Claims the key's window in one guarded UPSERT (the row's `updated_at` is the last send), so overlapping runs and
- * retries send one mail per key per window. False when the window is already taken.
- */
-async function claimAlert(db: Db, key: string, now: number): Promise<boolean> {
-  const res = await db
-    .prepare(
-      `INSERT INTO setting (key, value, updated_at, updated_by) VALUES (?1, ?2, ?2, 'breaker')
-       ON CONFLICT (key) DO UPDATE SET value = excluded.value, updated_at = excluded.updated_at
-       WHERE setting.updated_at <= ?3`,
-    )
-    .bind(key, now, now - ALERT_WINDOW_MS)
-    .run();
-  return res.meta.changes === 1;
-}
-
-export interface NotifyDeps extends Pick<MailDeps, "account" | "sender" | "emailSwitch"> {
-  db: Db;
-}
-
-/**
- * TRANSITIONAL(G): the spend cron passes this as runSpendBreaker's `notify` once the spend guard is in this tree.
- *
- * The spend breaker's `notify`: one mail to each ADMIN_EMAILS address, never to anyone else, under the `email` switch,
- * at most once per alert key per window. It skips the spend takes, which would call back into the guard the breaker is
- * acting on. The breaker already runs inside the cron's waitUntil.
+ * The spend breaker's mail: one message to each ADMIN_EMAILS address, never to anyone else, under the `email` switch.
+ * It skips the spend takes, which would call back into the guard the breaker is acting on. The breaker sends each
+ * alert key once a UTC day (`alertOnce`); throwing when no address took the message releases that claim, so the next
+ * run tries again. Nothing to send (the switch, no admin address) is not a failure.
  */
 export const breakerNotify =
-  (deps: NotifyDeps, config: TemplateConfig, now: () => number = Date.now) =>
-  async (message: { kind: string } & Record<string, unknown>): Promise<void> => {
+  (deps: Pick<MailDeps, "account" | "sender" | "emailSwitch">, config: Pick<TemplateConfig, "origin">): Notify =>
+  async (message) => {
     const to = [...deps.account.adminEmails].filter((address) => switchAllows(deps, address));
-    if (to.length === 0 || !(await claimAlert(deps.db, alertKey(message), now()))) return;
-    const alert = spendAlert(message, config);
-    for (const address of to) await deliver(deps.account, deps.sender, { to: address, ...alert }, now());
+    if (to.length === 0) return;
+    const email = message.kind === "digest" ? spendDigest(message, config) : spendAlert(message, config);
+    let delivered = 0;
+    for (const address of to)
+      if (await deliver(deps.account, deps.sender, { to: address, ...email }, Date.now())) delivered++;
+    if (delivered === 0) throw new Error("alert_undelivered");
+  };
+
+/** The vars the breaker's mail needs, parsed alone: the config_invalid alert still mails when another var broke. */
+const alertVars = z.object({
+  PUBLIC_ORIGIN: coreVars.PUBLIC_ORIGIN,
+  EMAIL_FROM: accountVars.EMAIL_FROM,
+  ADMIN_EMAILS: accountVars.ADMIN_EMAILS,
+  DEV_MAILBOX: accountVars.DEV_MAILBOX,
+});
+
+/**
+ * The five-minute breaker's `notify` (cron-jobs.ts), valid config or not: the structured log line always (an Observability
+ * alert matches it), then the mail, with the `email` switch read fresh. An invalid alert var leaves the log line only.
+ */
+export const cronNotify =
+  (env: { DB: unknown; EMAIL?: Sender }): Notify =>
+  async (message) => {
+    await logNotify(message);
+    const parsed = alertVars.safeParse(env);
+    if (!parsed.success) return;
+    const v = parsed.data;
+    const vars = env as unknown as Readonly<Record<string, unknown>>;
+    const emailSwitch = effectiveAll(vars, await readSettings(env, { fresh: true })).email as EmailSwitch;
+    const account = {
+      emailFrom: v.EMAIL_FROM,
+      adminEmails: emailSet(v.ADMIN_EMAILS),
+      // Config refuses DEV_MAILBOX on a deployed origin; this parse does not, so the rule is repeated here.
+      devMailbox: v.DEV_MAILBOX === "1" && isLocalOrigin(v.PUBLIC_ORIGIN),
+    };
+    await breakerNotify(
+      { account, sender: env.EMAIL, emailSwitch },
+      { origin: new URL(v.PUBLIC_ORIGIN).origin },
+    )(message);
   };

@@ -1,6 +1,7 @@
 // Phone sessions: an opaque random cookie value, stored only as its SHA-256 (AUTH-05). Valid for 30 days
 // idle and 90 days absolute. Every authentication issues a new value and deletes the one it replaces (AUTH-08).
 import { newRef, newSecret, sha256Hex } from "../ids.ts";
+import { BUMP_DEVICE_EPOCH } from "./codes.ts";
 import type { BatchDb } from "./db.ts";
 
 const DAY_MS = 86_400_000;
@@ -226,8 +227,12 @@ export class Sessions {
     ]);
   }
 
-  /** Every session of the user (sign out everywhere, Entra disconnect). Returns the public ids that ended. */
-  destroyAll(userId: string): Promise<string[]> {
+  /**
+   * Every session of the user (sign out everywhere, Entra disconnect), and every known-device value with them (the
+   * epoch bump, first, so a failure in between errs toward forgetting devices). Returns the public ids that ended.
+   */
+  async destroyAll(userId: string): Promise<string[]> {
+    await this.db.prepare(BUMP_DEVICE_EPOCH).bind(userId).run();
     return this.deleteReturning("DELETE FROM phone_session WHERE user_id = ? RETURNING public_id", [userId]);
   }
 
@@ -259,9 +264,10 @@ export class Sessions {
   /**
    * Starts the deletion grace for an email member: the daily purge deletes them after `deleteAfter`, and every other
    * session ends now; the session `keepHash` asked for the deletion and stays to restore it (ADR 0014). Zero changes on
-   * the row means the account was not active (already deleting or purging), which is fine to repeat. The status and the
-   * session ends are one batch; the ended ids are read just before it (a batch returns no rows), so a session signed
-   * in between the two is ended without its id, and its library sockets close at their next cookie check.
+   * the row means the account was not active (already deleting or purging), which is fine to repeat. The status, the
+   * device epoch and the session ends are one batch. `BatchDb` declares no rows for a batch (D1 returns them; the test
+   * shim does not), so the ended ids are read just before it: a session signed in between the two is ended without its
+   * id, and its library sockets close at their next cookie check.
    */
   async requestDeletion(userId: string, deleteAfter: number, keepHash: string): Promise<string[]> {
     const { results } = await this.db
@@ -274,6 +280,7 @@ export class Sessions {
           "UPDATE app_user SET status = 'deleting', delete_after = ? WHERE id = ? AND tid = 'email' AND status = 'active'",
         )
         .bind(deleteAfter, userId),
+      this.db.prepare(BUMP_DEVICE_EPOCH).bind(userId),
       this.db.prepare("DELETE FROM phone_session WHERE user_id = ? AND id_hash != ?").bind(userId, keepHash),
     ]);
     return results.flatMap((r) => (r.public_id ? [r.public_id] : []));
