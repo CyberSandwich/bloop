@@ -379,10 +379,9 @@ function countDown() {
   const words = el("span", {}, ["Ends in"]);
   endsText.replaceChildren(words, ` ${countdown(left)}`, offline ? " · Reconnecting" : "");
   // Named outright: a name built from the words' span and the time runs them together wherever whitespace collapses.
-  ends.setAttribute("aria-label", `${endsText.textContent}. Change the Session Expiry`);
+  ends.ariaLabel = `${endsText.textContent}. Change the Session Expiry`;
   // Where Revoke (always next) wraps off the row, only the time shows: "Ends in" stays in the name.
-  const next = /** @type {HTMLElement | null} */ (ends.nextElementSibling);
-  if (next && ends.offsetTop !== next.offsetTop) words.className = "sr";
+  if (ends.offsetTop !== /** @type {HTMLElement} */ (ends.nextElementSibling).offsetTop) words.className = "sr";
   ends.classList.toggle("soon", left <= SOON_MS);
 }
 
