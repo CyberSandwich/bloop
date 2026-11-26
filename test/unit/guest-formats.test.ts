@@ -1,10 +1,9 @@
 import { describe, expect, it, vi } from "vitest";
 import {
-  checkMagic,
   checkOoxml,
   checkText,
   decodeXml,
-  detectMedia,
+  detect,
   isRelsPart,
   MAX_TEXT_BYTES,
   relationships,
@@ -418,33 +417,33 @@ describe("DROP-15 magic: image and video brands", () => {
   );
 
   it("accepts each format under its own kind", () => {
-    expect(checkMagic(webp, "webp")).toEqual({ ok: true });
-    expect(checkMagic(gif, "gif")).toEqual({ ok: true });
-    expect(checkMagic(bytes("GIF87a", [1, 0, 1, 0]), "gif")).toEqual({ ok: true });
-    expect(checkMagic(heic, "heic")).toEqual({ ok: true });
-    expect(checkMagic(webm, "webm")).toEqual({ ok: true });
+    expect(detect(webp)).toBe("webp");
+    expect(detect(gif)).toBe("gif");
+    expect(detect(bytes("GIF87a", [1, 0, 1, 0]))).toBe("gif");
+    expect(detect(heic)).toBe("heic");
+    expect(detect(webm)).toBe("webm");
   });
 
   it("accepts the other HEIF major brands", () => {
     for (const brand of ["heix", "hevc", "mif1", "msf1"]) {
-      expect(detectMedia(bytes([0, 0, 0, 24], `ftyp${brand}`, [0, 0, 0, 0]))).toBe("heic");
+      expect(detect(bytes([0, 0, 0, 24], `ftyp${brand}`, [0, 0, 0, 0]))).toBe("heic");
     }
   });
 
-  it("refuses a file whose bytes say another format", () => {
-    expect(checkMagic(gif, "webp")).toMatchObject({ ok: false, error: "bad_type" });
-    expect(checkMagic(webp, "gif")).toMatchObject({ ok: false, error: "bad_type" });
-    expect(checkMagic(webm, "heic")).toMatchObject({ ok: false, error: "bad_type" });
+  it("names each format by its own bytes, never by another's", () => {
+    expect(detect(gif)).not.toBe("webp");
+    expect(detect(webp)).not.toBe("gif");
+    expect(detect(webm)).not.toBe("heic");
   });
 
   it("refuses a RIFF file that is not WebP", () => {
-    expect(detectMedia(bytes("RIFF", [0x24, 0, 0, 0], "WAVEfmt "))).toBeNull();
+    expect(detect(bytes("RIFF", [0x24, 0, 0, 0], "WAVEfmt "))).toBeNull();
   });
 
-  it("refuses Matroska, which shares the WebM header, and an MP4 brand", () => {
+  it("refuses Matroska, which shares the WebM header; an MP4 brand is an MP4", () => {
     const mkv = bytes([0x1a, 0x45, 0xdf, 0xa3, 0x9f, 0x42, 0x86, 0x81, 1, 0x42, 0x82, 0x88], "matroska");
-    expect(detectMedia(mkv)).toBeNull();
-    expect(detectMedia(bytes([0, 0, 0, 24], "ftypisom", [0, 0, 0, 0], "isomiso2"))).toBeNull();
+    expect(detect(mkv)).toBeNull();
+    expect(detect(bytes([0, 0, 0, 24], "ftypisom", [0, 0, 0, 0], "isomiso2"))).toBe("mp4");
   });
 
   it("refuses short and empty input", () => {
@@ -455,13 +454,13 @@ describe("DROP-15 magic: image and video brands", () => {
       bytes([0, 0, 0, 24], "ftyp"),
       bytes([0x1a, 0x45]),
     ]) {
-      expect(detectMedia(head)).toBeNull();
+      expect(detect(head)).toBeNull();
     }
   });
 
   it("ignores a WebM doctype beyond the EBML header", () => {
     const late = bytes([0x1a, 0x45, 0xdf, 0xa3], new Array(80).fill(0), [0x42, 0x82, 0x84], "webm");
-    expect(detectMedia(late)).toBeNull();
+    expect(detect(late)).toBeNull();
   });
 });
 
@@ -475,11 +474,15 @@ describe("DROP-15 magic: text", () => {
   it("refuses bytes that are not UTF-8", () => {
     expect(checkText(Uint8Array.from([0x68, 0xff, 0xfe]))).toMatchObject({
       ok: false,
-      error: "bad_type",
+      error: "bad_structure",
       reason: "not UTF-8",
     });
     expect(checkText(Uint8Array.from([0xc3, 0x28]))).toMatchObject({ ok: false });
     expect(checkText(Uint8Array.from([0xed, 0xa0, 0x80]))).toMatchObject({ ok: false });
+  });
+
+  it("refuses a NUL byte", () => {
+    expect(checkText(bytes("a", [0], "b"))).toMatchObject({ ok: false, error: "bad_structure", reason: "NUL in text" });
   });
 
   it("allows exactly 5 MB and refuses one byte more", () => {
