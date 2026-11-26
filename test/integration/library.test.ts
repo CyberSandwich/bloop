@@ -87,6 +87,8 @@ beforeAll(async () => {
     ...member("bob"),
     ...member("dee", String(now + 5 * 86_400_000)),
     ...member("sue"),
+    ...member("sam"),
+    ...member("sal"),
     "UPDATE app_user SET suspended_at = 1 WHERE id = 'sue'",
     file("a1", "ann"),
     file("a2", "ann", { updated_at: now - 1000 }),
@@ -175,6 +177,20 @@ describe("list, rename and Up Next", () => {
     expect(again.status).toBe(304);
   });
 
+  it("answers 200 with a new ETag once the list has changed, and the old tag no longer matches", async () => {
+    const before = (await call("sam", "GET", "/api/library")).headers.get("etag") ?? "";
+    seed([file("s1", "sam")]);
+    const stale = await fetch(`${wrangler.url}/api/library`, {
+      headers: { Cookie: JAR("sam"), "If-None-Match": before },
+    });
+    expect(stale.status).toBe(200);
+    expect(stale.headers.get("etag")).not.toBe(before);
+    const body = (await stale.json()) as { files: { id: string; kind: string }[]; limits: Record<string, number> };
+    expect(body.files.map((f) => f.id)).toEqual(["s1"]);
+    expect(body.files[0]?.kind).toBe("deck");
+    expect(body.limits.largeFileChoiceBytes).toBeGreaterThan(0);
+  });
+
   it("renames keeping the extension, and refuses what LIB-06 names", async () => {
     const ok = await call("ann", "PATCH", "/api/library/a2", {
       name: "Lecture 5",
@@ -220,6 +236,26 @@ describe("list, rename and Up Next", () => {
         })
       ).status,
     ).toBe(400);
+  });
+});
+
+describe("the Sample Deck", () => {
+  const KEY = "3f1f8a52-7a0e-4d6b-9a55-1c2b3d4e5f60";
+  it("adds one ready deck per Idempotency-Key, answers the same row on a replay, and lists it", async () => {
+    const first = await call("sal", "POST", "/api/library/sample", {}, { "Idempotency-Key": KEY });
+    expect(first.status).toBe(201);
+    expect(first.body).toMatchObject({ name: "Sample deck.pptx", ext: "pptx", kind: "deck", status: "ready" });
+    const again = await call("sal", "POST", "/api/library/sample", {}, { "Idempotency-Key": KEY });
+    expect([again.status, again.body.id]).toEqual([200, first.body.id]);
+    expect(filesOf(await call("sal", "GET", "/api/library"))).toEqual([first.body.id]);
+    expect(wrangler.d1("SELECT count(*) AS n FROM library_file WHERE user_id = 'sal'")[0]?.n).toBe(1);
+  });
+
+  it("needs a member and refuses a key that is not a UUID", async () => {
+    const anon = await call(null, "POST", "/api/library/sample", {}, { "Idempotency-Key": KEY });
+    expect(anon.status).toBe(401);
+    const bad = await call("sal", "POST", "/api/library/sample", {}, { "Idempotency-Key": "not-a-uuid" });
+    expect(bad.status).toBe(400);
   });
 });
 
