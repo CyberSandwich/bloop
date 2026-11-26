@@ -4,3 +4,6 @@ import { codeFromSearch } from "./format.js";
 
 export const bootCode = codeFromSearch(location.search);
 if (location.search) history.replaceState(null, "", location.pathname);
+
+/** The sessionStorage key of a code kept across sign-in (core/early.js), the other way a code reaches /a. */
+export const KEPT = "bloop.resume";

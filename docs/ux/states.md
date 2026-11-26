@@ -67,8 +67,8 @@ One table per surface. The rules every row follows:
 | checking slow (4 s) | "Still checking. Keep this page open." under the skeleton |
 | checking, 15 s | "You're Offline" state (as today) with Try Again |
 | signed out, open mode | Early Access Only (present-live.md section 5) |
-| signed out, preview | today's flow |
-| `/api/me` fails but the claim works | treated as signed out only if the claim says `auth_required`; otherwise the claim's answer wins |
+| signed out, preview | the same code claimed as a guest: the pick, then today's guest add; a refusing drop reads "This Room Can't Take Files" or "Get a Guest Link First" |
+| `/api/me` fails | asked only after `auth_required`; a failure there reads as preview (the guest claim) |
 | match module slow | three skeleton pills of the same size |
 | approving slow (4 s) | "Still approving. Keep this page open." under the choices; no 15 s stop, since the approve may have landed |
 | answer lost between match and approve | a retap of the same number is a no-op success (match is idempotent for the confirmed number); the client resumes at approve |

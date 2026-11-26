@@ -171,6 +171,16 @@
     "limit": "0.5 kB"
   },
   {
+    "name": "phone early access, lazy",
+    "path": "dist/js/core/early.js",
+    "limit": "0.85 kB"
+  },
+  {
+    "name": "phone guest send, lazy",
+    "path": "dist/js/core/send.js",
+    "limit": "0.93 kB"
+  },
+  {
     "name": "drag and drop, lazy",
     "path": "dist/js/core/drag.js",
     "limit": "0.15 kB"

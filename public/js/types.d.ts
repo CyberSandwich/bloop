@@ -9,8 +9,9 @@ import type {
   PhoneView,
   ScreenView,
 } from "../../src/shared/protocol.ts";
-import type { Api } from "./core/api.js";
+import type { Api, Reply } from "./core/api.js";
 import type { openChannel } from "./core/channel.js";
+import type { createStore } from "./core/store.js";
 
 type Channel = ReturnType<typeof openChannel>;
 
@@ -56,6 +57,8 @@ export interface PhonePage extends PhoneCtx {
   leaving: boolean;
   /** The last failure's code, for the support mail. */
   fault: ErrorCode | null;
+  /** A lazy module's words, over the shared table for the keys it owns (core/early.js). */
+  words: Words | null;
 }
 
 /** The slice of WebSocket core/channel.js uses, so tests can fake it. */
@@ -228,6 +231,39 @@ export interface PhoneCopy {
   actions: PhoneAction[];
   /** The primary action shows its progress label. */
   loading: boolean;
+}
+
+/** What core/send.js reads and writes of the phone page. */
+export type SendCtx = Pick<PhonePage, "file" | "drop" | "progress" | "upload" | "maxBytes" | "pid">;
+
+/** What phone.js hands core/send.js. */
+export interface SendIo {
+  render: () => void;
+  setView: (view: PhoneView) => void;
+  fail: (code: ErrorCode, retry?: (() => void) | null) => void;
+  refuse: (problem: import("./core/refusal.js").Problem, file: File) => void;
+  /** Send again, for Try Again. */
+  retry: () => void;
+  /** The offer goes: back to the list under it, or to the page without one. */
+  leaveOffer: () => void;
+  /** The answer is in: the offer's history entry goes, unless a list is under it. */
+  sent: () => void;
+}
+
+/** A lazy module's words for the phone keys it owns (core/early.js); null for the shared table's. */
+export type Words = (key: PhoneStateKey) => PhoneCopy | null;
+
+/** What phone.js hands core/early.js with a claim refused signed out. */
+export interface EarlyIo {
+  c: PhonePage;
+  render: () => void;
+  code: string;
+  /** The refused attempt's Idempotency-Key, kept with the code across sign-in. */
+  key: string;
+  /** GET /api/me, asked beside the claim; its `launchMode` says whether the early-access state may show. */
+  who: Promise<Reply<{ launchMode?: string } | null>>;
+  store: ReturnType<typeof createStore>;
+  claim: (code: string, kind?: string, key?: string, resumed?: boolean) => Promise<void>;
 }
 
 export interface PhoneFacts {
