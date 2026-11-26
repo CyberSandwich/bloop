@@ -14,10 +14,14 @@ import { FETCH_TIMEOUT_MS } from "./timing.js";
 const isErrorCode = (code) => typeof code === "string" && Object.hasOwn(ERRORS, code);
 
 /**
- * @param {{fetch?: typeof fetch}} [deps]
+ * `appCodes`: pass on any code the Worker names, for the account pages, which carry their own copy per code
+ * (errors-app.js) and read `error` as a string; the phone and screen pages keep to errors.js's.
+ * @param {{fetch?: typeof fetch, appCodes?: boolean}} [deps]
  */
 export function createApi(deps = {}) {
   const doFetch = deps.fetch ?? ((/** @type {Parameters<typeof fetch>} */ ...args) => globalThis.fetch(...args));
+  /** @param {unknown} code @returns {code is ErrorCode} */
+  const known = (code) => isErrorCode(code) || (!!deps.appCodes && typeof code === "string");
 
   /**
    * @param {"GET" | "POST"} method
@@ -72,8 +76,7 @@ export function createApi(deps = {}) {
     const code = body?.code;
     // Retry-After in whole seconds (an HTTP date is not honored).
     const after = res.status === 429 ? Number.parseInt(res.headers.get("Retry-After") ?? "", 10) : Number.NaN;
-    if (isErrorCode(code))
-      return after > 0 ? { ok: false, error: code, retryAfter: after } : { ok: false, error: code };
+    if (known(code)) return after > 0 ? { ok: false, error: code, retryAfter: after } : { ok: false, error: code };
     return { ok: false, error: res.status >= 500 || body === null ? "service_down" : "bad_request" };
   }
 

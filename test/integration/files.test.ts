@@ -214,6 +214,7 @@ describe("OAuth and account routes while Entra is not configured", () => {
       signedIn: true,
       email: null,
       launchMode: "preview",
+      turnstileSiteKey: expect.any(String),
     });
     // Sign-out serves email members too, so it no longer depends on the Graph source.
     expect((await api.post("/api/me/signout", {})).body).toEqual(problem("auth_required"));

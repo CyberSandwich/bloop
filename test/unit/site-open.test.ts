@@ -4,6 +4,7 @@ import { existsSync, readdirSync, readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
 import { ACCOUNT_PILL_OUT as PILL_OUT } from "../../src/shared/account-pill.ts";
+import { AUTH_SHELLS, MEMBER_PAGES } from "../../src/worker/page-registry.ts";
 import { site } from "../../tools/build-pages.mjs";
 
 const ROOT = fileURLToPath(new URL("../../", import.meta.url));
@@ -30,6 +31,9 @@ const open = read("public/open/index.html");
 const preview = read("public/index.html");
 const openPages = pagesIn("public/open");
 const previewPages = pagesIn("public");
+// The account pages are that surface: preview serves them unlinked and noindex (pages.ts), so their own links
+// advertise nothing.
+const accountPages = new Set([...AUTH_SHELLS, ...MEMBER_PAGES].map((path) => `${path.slice(1)}.html`));
 
 describe("the open landing", () => {
   it("the hero holds Try the Demo, then Present Live, then the hint to the waitlist block", () => {
@@ -137,12 +141,15 @@ describe("the account pill and the open nav", () => {
 });
 
 describe("MODE-01 preview shows nothing of the open site", () => {
-  it.each(previewPages)("public/%s carries no pill and links no open-only or account path", (rel) => {
-    const html = read(`public/${rel}`);
-    expect(html).not.toContain("data-account");
-    expect(html).not.toMatch(/href="\/(signin|library|account|admin|invite|report|articles\/features)[/"#?]/);
-    expect(html).not.toContain("tools/pages/open");
-  });
+  it.each(previewPages.filter((p) => !accountPages.has(p)))(
+    "public/%s carries no pill and links no open-only or account path",
+    (rel) => {
+      const html = read(`public/${rel}`);
+      expect(html).not.toContain("data-account");
+      expect(html).not.toMatch(/href="\/(signin|library|account|admin|invite|report|articles\/features)[/"#?]/);
+      expect(html).not.toContain("tools/pages/open");
+    },
+  );
 
   it("the preview sitemap, llms.txt and Articles index name no open-only page", () => {
     for (const file of ["sitemap.xml", "llms.txt", "articles.html"]) {

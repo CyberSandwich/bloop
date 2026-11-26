@@ -1,0 +1,78 @@
+/* /signin and /invite, after app.css: /a's frame, with the email field, the code field and their sentence row. */
+.auth-form {
+  display: flex;
+  flex-direction: column;
+  margin-top: 8px;
+}
+/* An address is typed as written: no capitals, no tracking, 17 so iOS never zooms. */
+.field.email {
+  font-size: 17px;
+  font-weight: 400;
+  letter-spacing: 0;
+  text-transform: none;
+}
+/* One 24 px row under the field: the status line and the alert line take turns in it, so nothing below moves. */
+.say {
+  display: grid;
+  min-height: 24px;
+  margin-top: 12px;
+}
+.say > * {
+  grid-area: 1 / 1;
+}
+.say .field-error {
+  margin-top: 0;
+}
+.hint {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  line-height: 24px;
+  color: var(--muted);
+}
+.hint:not(.is-busy) .spinner {
+  display: none;
+}
+.auth-form .btn.text {
+  align-self: flex-start;
+  margin: 8px 0 0 -12px;
+}
+.page-auth .body strong {
+  color: var(--ink);
+  font-weight: 600;
+}
+.page-auth .name {
+  color: var(--robin-ink);
+  font-weight: 600;
+}
+#resend {
+  font-variant-numeric: tabular-nums;
+}
+/* Turnstile draws its own box here only when it needs a person. */
+.ts-box:empty {
+  display: none;
+}
+.consent {
+  padding: 4px 12px 12px;
+  font-size: 13px;
+  color: var(--muted);
+  text-align: center;
+}
+.waitlist {
+  margin-top: 16px;
+  font-size: 15px;
+  color: var(--muted);
+}
+/* The band (app.css): the panel sits at the foot, and the waitlist line under it. */
+@media (max-width: 639.98px), (max-height: 599.98px) and (max-width: 899.98px) {
+  .waitlist {
+    order: 3;
+    text-align: center;
+  }
+}
+@media (min-width: 640px) and (min-height: 600px), (min-width: 900px) {
+  .consent {
+    padding: 0 0 16px;
+    text-align: left;
+  }
+}

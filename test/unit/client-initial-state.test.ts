@@ -15,6 +15,7 @@ const ALLOWED: Record<string, string> = {
   "phone.js":
     "the item inputs are created by this module, so none changes before its listener; the file pick is an action, not a gate",
   "core/length.js": "the Until field sits in a closed sheet until openLength, which fills it and runs refresh() first",
+  "auth/code-entry.js": "the code field is hidden until start(), which empties it before anything can be typed",
 };
 
 const LISTENER = /(?:addEventListener\(\s*"(?:input|change)"\s*,\s*([^,)]+)|\.on(?:input|change)\s*=\s*([^;\n]+))/g;
