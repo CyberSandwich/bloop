@@ -3,8 +3,8 @@
 -- Enum columns carry no CHECK: zod in the route is the single check, so a new value never needs a table rebuild.
 -- Times are epoch ms. ids are 128-bit random base64url unless noted. *_hash and *_mac columns never hold the secret.
 -- Needs 0004 first: phone_session(user_id) and the guest_file indexes below are 0004's.
--- Ships with the retention change that limits the app_user sweep to tid != 'email' (ADR 0013), or that sweep deletes
--- an email user, and by cascade their library rows, 30 days after their last session.
+-- Depends on the app_user sweep skipping tid = 'email' (ADR 0013); without it the sweep deletes an email user, and by
+-- cascade their library rows, 30 days after their last session.
 -- Rehearse on a copy first, with a Time Travel bookmark recorded before the remote apply (ADR 0013).
 
 -- Email identities live in app_user beside Entra ones: tid = 'email', oid = id. An Entra tid is a GUID, so the
