@@ -396,6 +396,8 @@ function onView(/** @type {ScreenView} */ view) {
   // The credential is the screen's own, not the session's: it comes back so a reload resumes the waiting screen.
   else if (view.state === "waiting" && s.sid && store.get(SID_KEY) !== s.sid) store.set(SID_KEY, s.sid);
   launcher.onView(view);
+  // Lazy until the phone's first Open; if it never loads, the phone's own wait ends with its words (link-ask.js).
+  if (view.linkOpen) void import("./core/link-open.js").then((m) => m.follow(view, api, s.sid ?? ""));
   render();
 }
 
