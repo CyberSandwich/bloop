@@ -85,6 +85,18 @@
   content-visibility: auto;
   contain-intrinsic-size: auto 64px;
 }
+/* A name takes two lines before it is cut, so the narrow 320 row and the 280 Up Next card still show about 20 characters. */
+.lib .row-name {
+  align-items: last baseline;
+}
+.lib .row-name .head {
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  line-clamp: 2;
+  white-space: normal;
+  overflow-wrap: anywhere;
+}
 .lib-open {
   flex: 1;
   min-width: 0;

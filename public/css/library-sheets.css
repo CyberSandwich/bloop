@@ -150,6 +150,9 @@
   .lib-sheet {
     margin: auto;
   }
+  .lib-sheet .buttons {
+    justify-content: center;
+  }
   .lib-preview {
     width: min(100% - 2 * var(--inset), 1040px);
   }

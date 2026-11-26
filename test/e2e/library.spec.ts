@@ -48,6 +48,9 @@ const members = {
     ["b", "Reading list.pdf"],
   ]),
   long: fixtures.member(Array.from({ length: 12 }, (_, i): [string, string] => [`f${i}`, `Lecture ${i + 1}.pptx`])),
+  wide: fixtures.member([
+    ["a", "Introduction to Corporate Financial Reporting Week 5.pptx", { selected_at: now - 10 }],
+  ]),
 };
 
 /** A refetch nobody asked for, as a poll, a socket frame or another tab would start one. */
@@ -354,6 +357,41 @@ test.describe("library", () => {
     await page.getByRole("button", { name: "Undo" }).click({ timeout: 5000 });
     await expect(page.locator("#file-list > li")).toHaveCount(2);
     await expect(page.getByRole("dialog")).toBeVisible();
+  });
+
+  for (const [width, list] of [
+    [320, "#file-list"],
+    [1440, "#up-list"],
+  ] as const) {
+    test(`a long name takes two lines before it is cut at ${width}`, async ({ page, context }) => {
+      await page.setViewportSize({ width, height: 900 });
+      await signedIn(context, members.wide);
+      await page.goto("/library");
+      const head = page.locator(`${list} .row-name .head`).first();
+      await expect(head).toBeVisible();
+      const lines = await head.evaluate((n) =>
+        Math.round(n.getBoundingClientRect().height / Number.parseFloat(getComputedStyle(n).lineHeight)),
+      );
+      expect(lines, "two lines").toBe(2);
+    });
+  }
+
+  test("the Present sheet's buttons sit centered from 640", async ({ page, context }) => {
+    await page.setViewportSize({ width: 700, height: 900 });
+    await signedIn(context, members.undo);
+    await page.goto("/library");
+    await page.locator("#present:visible, #present-card:visible").first().click();
+    const dialog = page.getByRole("dialog");
+    await expect(dialog).toBeVisible();
+    const centers = await dialog.evaluate((d) => {
+      const mid = (r: DOMRect) => r.left + r.width / 2;
+      const buttons = [...d.querySelectorAll(".buttons > .btn")].map((b) => b.getBoundingClientRect());
+      return {
+        sheet: mid(d.getBoundingClientRect()),
+        buttons: (Math.min(...buttons.map((r) => r.left)) + Math.max(...buttons.map((r) => r.right))) / 2,
+      };
+    });
+    expect(Math.abs(centers.sheet - centers.buttons)).toBeLessThan(2);
   });
 
   test("a toast's Undo still works with the Empty Trash confirm open over the page", async ({ page, context }) => {
