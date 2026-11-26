@@ -76,6 +76,9 @@ const buttons = {
   pdf: byId("b-pdf"),
 };
 
+/** @type {Promise<typeof import("./core/link-open.js")> | undefined} */
+let links;
+
 /** @type {import("./types.js").ScreenPage} */
 const s = {
   view: null,
@@ -391,6 +394,18 @@ function onView(/** @type {ScreenView} */ view) {
   // The credential is the screen's own, not the session's: it comes back so a reload resumes the waiting screen.
   else if (view.state === "waiting" && s.sid && store.get(SID_KEY) !== s.sid) store.set(SID_KEY, s.sid);
   launcher.onView(view);
+  // Lazy until the phone's first Open; from then it sees every view, so its pill goes with the ask or the session.
+  if (view.linkOpen || links) {
+    links ??= import("./core/link-open.js");
+    const sid = s.sid ?? "";
+    // Without the module the answer still goes, so the phone is never left waiting.
+    void links
+      .then((m) => m.follow(view, api, sid))
+      .catch(() => {
+        if (view.linkOpen?.opened === null)
+          void api.post("/api/screen/opened", { n: view.linkOpen.n, opened: false }, sid);
+      });
+  }
   render();
 }
 

@@ -150,8 +150,9 @@ function buildItems(/** @type {Item[]} */ items) {
   fileList.replaceChildren(
     ...items.map((item) => {
       const face = rowFace(item, thumbOf(item, look()));
-      // A link opens here, in a new tab: never a command (LINK-01), never marked as on the screen.
-      if (item.kind === "link") return el("li", {}, [linkRow(item.url, "row", face)]);
+      // A link opens here, in a new tab: never a `shown` command (LINK-01), never marked as on the screen. With the
+      // remote, its tap asks the screen to open it instead (LINK-02, core/link-ask.js).
+      if (item.kind === "link") return el("li", { "data-link": item.id }, [linkRow(item.url, "row", face)]);
       const tap = remote && item.kind === "file";
       /** @type {Record<string, string>} */
       const attrs = tap ? { type: "button", class: "row", "data-id": item.id } : { class: "row" };

@@ -398,3 +398,52 @@ describe("SESS-01 length: the phone sets when the session ends", () => {
     socket.close();
   });
 });
+
+describe("LINK-02 the phone asks the screen to open an approved link", () => {
+  type Opened = { linkOpen?: { item: string; n: number; opened: boolean | null } | null };
+
+  it("LINK-02 ask: the link's id reaches both sockets, and the screen's answer reaches the phone", async () => {
+    const { screen, socket, pid } = await session();
+    const phone = await phoneSocket(api, pid);
+    const asked = await api.post<Opened>("/api/control/link", { item: LINK }, { auth: pid });
+    expect(asked.status).toBe(200);
+    const n = asked.body.linkOpen?.n ?? 0;
+    expect(asked.body.linkOpen).toEqual({ item: LINK, n, opened: null });
+    expect(n).toBeGreaterThan(0);
+    await socket.stateWhere((v) => (v as Opened).linkOpen?.n === n);
+    const answered = await api.post<Opened>("/api/screen/opened", { n, opened: false }, { auth: screen.sid });
+    expect(answered.status).toBe(200);
+    await phone.stateWhere((v) => (v as Opened).linkOpen?.opened === false);
+    // A second answer to the same ask changes nothing.
+    const again = await api.post<Opened>("/api/screen/opened", { n, opened: true }, { auth: screen.sid });
+    expect(again.body.linkOpen).toEqual({ item: LINK, n, opened: false });
+    socket.close();
+    phone.close();
+  });
+
+  it("LINK-02 id: an unknown id and a file's id are file_not_found, and nothing reaches the screen", async () => {
+    const { socket, pid } = await session();
+    for (const item of ["i9", DECK, "demo-vevox"]) {
+      expect((await api.post("/api/control/link", { item }, { auth: pid })).body, item).toEqual(
+        problem("file_not_found"),
+      );
+    }
+    const view = (await api.get<Opened>("/api/pair/state", pid)).body;
+    expect(view.linkOpen ?? null).toBeNull();
+    socket.close();
+  });
+
+  it("LINK-02 body: a URL in the body is a 400, and so is any credential but the right one", async () => {
+    const { screen, socket, pid } = await session();
+    const withUrl = await api.post("/api/control/link", { item: LINK, url: "https://www.vevox.com/" }, { auth: pid });
+    expect(withUrl.status).toBe(400);
+    expect((await api.post("/api/control/link", { item: LINK }, { auth: screen.sid })).body).toEqual(
+      problem("pairing_invalid"),
+    );
+    expect((await api.post("/api/screen/opened", { n: 1, opened: true }, { auth: pid })).status).toBeGreaterThanOrEqual(
+      400,
+    );
+    expect((await api.post("/api/control/link", { item: LINK })).body).toEqual(problem("unauthorized"));
+    socket.close();
+  });
+});

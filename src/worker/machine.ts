@@ -2,7 +2,17 @@
 // randomness: the Screen object draws values, reads the clock and applies the effects, in order.
 
 import { IN_SESSION } from "../../public/js/shared/session.js";
-import type { EndReason, ErrorCode, FileType, Kind, Mode, OpenMode, SessionState, Shown } from "../shared/protocol.ts";
+import type {
+  EndReason,
+  ErrorCode,
+  FileType,
+  Kind,
+  LinkOpen,
+  Mode,
+  OpenMode,
+  SessionState,
+  Shown,
+} from "../shared/protocol.ts";
 import {
   effectivePurpose,
   type FileItemRef,
@@ -68,6 +78,8 @@ export interface Machine {
     shown: Shown | null;
     /** The last `control` seq applied from each sender (PAIR-13); 0 until then. */
     seq: Record<Sender, number>;
+    /** The phone's last ask to open a link on the screen (LINK-02); absent until the first, so stored data stays valid. */
+    linkOpen?: LinkOpen | null;
   } | null;
   uploadAt: number | null;
   offerAt: number | null;
@@ -103,6 +115,8 @@ export type Event =
   | { e: "launched"; now: number; mode: OpenMode }
   | { e: "fetched"; now: number }
   | { e: "control"; now: number; from: Sender; seq: number; shown: Shown } // the phone's remote, or the screen's own tap
+  | { e: "link.open"; now: number; item: string } // the phone asks the screen to open a link item
+  | { e: "link.opened"; now: number; n: number; opened: boolean; refused?: true } // the screen's answer to ask `n`
   | { e: "length"; now: number; seconds: number; maxMinutes: number } // the phone sets the end; maxMinutes: the mode's cap
   | { e: "fallback"; now: number; mode: OpenMode; item: number | null; maxMints: number } // null: the launched item; maxMints: per item, after its first link
   | { e: "cancel"; now: number }
@@ -471,6 +485,26 @@ function apply(m: Machine, ev: Event, cfg: MachineConfig): Step {
       // Absolute: the same `shown` again is stored for its seq and pushes nothing.
       if (sameShown(m.session.shown, ev.shown)) return ok({ ...m, session });
       return ok({ ...m, session: { ...session, shown: ev.shown } }, [{ fx: "push", to: "both" }]);
+    }
+
+    case "link.open": {
+      // Like `control`, a demo's remote: a live screen has no viewer. Only an approved LINK item by id (LINK-02).
+      if (!IN_SESSION.includes(m.state) || !m.session || m.mode === "live") return fail("wrong_state");
+      if (!m.session.items.some((i) => i.kind === "link" && i.id === ev.item)) return fail("file_not_found");
+      // The clock keeps `n` above any earlier session's, so a screen page that outlives a session still acts on the new ask.
+      const n = Math.max((m.session.linkOpen?.n ?? 0) + 1, ev.now);
+      return ok({ ...m, session: { ...m.session, linkOpen: { item: ev.item, n, opened: null } } }, [
+        { fx: "push", to: "both" },
+      ]);
+    }
+
+    case "link.opened": {
+      const asked = m.session?.linkOpen;
+      if (!IN_SESSION.includes(m.state) || !m.session || !asked) return fail("wrong_state");
+      // One answer per ask: a stale ask, or a second answer to this one, changes nothing.
+      if (ev.n !== asked.n || asked.opened !== null) return ok(m);
+      const answer = { ...asked, opened: ev.opened, ...(ev.refused ? { refused: true as const } : {}) };
+      return ok({ ...m, session: { ...m.session, linkOpen: answer } }, [{ fx: "push", to: "both" }]);
     }
 
     case "length": {

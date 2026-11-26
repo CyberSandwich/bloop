@@ -72,6 +72,18 @@ export interface ShownCommand extends Shown {
   seq: number;
 }
 
+/**
+ * The phone's last Open on a link item and how the screen answered (LINK-02). `n` grows with each ask and with the
+ * clock, so a screen acts on one ask once, in any session; `opened` is null until the screen reports whether its browser
+ * let the tab open.
+ */
+export interface LinkOpen {
+  item: string; // a link item's id
+  n: number;
+  opened: boolean | null;
+  refused?: true; // the screen had no https link to open for this item
+}
+
 export interface ScreenView {
   state: SessionState;
   mode: Mode;
@@ -83,6 +95,8 @@ export interface ScreenView {
   items: Item[];
   /** Null until the remote or the screen's own tap sets it; null outside an approved session. */
   shown: Shown | null;
+  /** Absent or null until the phone asks the screen to open a link. */
+  linkOpen?: LinkOpen | null | undefined;
   openMode: OpenMode | null;
   endsAt: number | null;
   endReason: EndReason | null;
@@ -107,6 +121,7 @@ export interface PhoneView {
   confirmed?: boolean | undefined;
   items: Item[]; // as in ScreenView
   shown: Shown | null; // as in ScreenView
+  linkOpen?: LinkOpen | null | undefined; // as in ScreenView
   openMode: OpenMode | null;
   /** Epoch ms the session ends by itself; with `now`, the phone's countdown. */
   endsAt: number | null;
