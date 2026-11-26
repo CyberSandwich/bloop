@@ -73,10 +73,11 @@ export function screensOf(entries: readonly { att: Authed | null; pong: number }
 }
 
 /**
- * The address a link must come from (OPEN-02), read when the link is checked, so it never goes stale: the live
- * authed screen socket that verified first holds it (a leaked sid's later socket cannot take it from a screen that
- * is still talking), and once that one goes quiet the next live one does. With none live, `stored`: the last
- * verified proof, by `hello` or by poll.
+ * The address a link must come from (OPEN-02), read when the link is checked, so it never goes stale. A live authed
+ * screen socket from the stored binding's address keeps it, whatever its age: a lectern that reconnects from the
+ * bound address is the holder, not a younger rival to an older socket elsewhere. With none from there, the live
+ * socket that verified first takes it (a leaked sid's later socket cannot take it from a screen still talking).
+ * With none live, `stored`: the last verified proof, by `hello` or by poll.
  */
 export function bindingIp(
   screens: readonly Screen[],
@@ -85,7 +86,7 @@ export function bindingIp(
   silenceMs = SILENCE_MS,
 ): string | undefined {
   const live = screens.filter((s) => holds(s, now, silenceMs));
-  if (live.length === 0) return stored;
+  if (live.length === 0 || live.some((s) => s.ip === stored)) return stored;
   return live.reduce((a, b) => (a.helloAt <= b.helloAt ? a : b)).ip;
 }
 
