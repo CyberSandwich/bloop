@@ -1,8 +1,7 @@
 // Every cap, pool size and breaker threshold in one place, each with a default, a Worker var that can lower or raise
 // it at deploy time, and the reason for the number. docs/spend.md lists them; test/unit/spend-caps.test.ts pins each.
-// None of these vars is in config.ts or wrangler.jsonc yet: the default below is the value until a deploy sets the var.
-// F's config.ts declares one optional var per entry, generated from these registries, when it wires the guard
-// (docs/spend.md lists them, and docs-drift checks the list).
+// None of these vars is in wrangler.jsonc: the default below is the value until a deploy sets the var. config/spend.ts
+// declares one optional var per entry, generated from these registries.
 
 import type { SettingsSnapshot, SwitchName } from "./switches.ts";
 

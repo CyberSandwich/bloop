@@ -5,6 +5,7 @@ import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
 import { ERRORS } from "../../public/js/shared/errors.js";
 import { APP_ERRORS } from "../../public/js/shared/errors-app.js";
+import { spendVars } from "../../src/worker/config/spend.ts";
 import { CONFIG_VARS } from "../../src/worker/config.ts";
 import { sizeEntries } from "../size-entries.ts";
 
@@ -145,8 +146,11 @@ describe("worker vars", () => {
     expect(varKeys.filter((key) => !schemaKeys.includes(key))).toEqual([]);
   });
 
-  it("every other config.ts variable is a secret in .dev.vars.example, or TEST_TIMING", () => {
-    const rest = schemaKeys.filter((key) => !varKeys.includes(key) && !devVarKeys.includes(key));
+  it("every other config.ts variable is a secret in .dev.vars.example, a spend override, or TEST_TIMING", () => {
+    // A spend var is an optional override of a default the registry owns, so wrangler.jsonc ships none.
+    const rest = schemaKeys.filter(
+      (key) => !varKeys.includes(key) && !devVarKeys.includes(key) && !Object.hasOwn(spendVars, key),
+    );
     expect(rest).toEqual(["TEST_TIMING"]);
   });
 

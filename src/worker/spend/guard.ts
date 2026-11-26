@@ -4,8 +4,9 @@
 import { DurableObject } from "cloudflare:workers";
 import { dbOf } from "../auth/db.ts";
 import { isLocalOrigin } from "../config.ts";
+import { readSettings } from "../settings.ts";
 import { readAnalytics } from "./analytics.ts";
-import { type BreakerReport, d1Settings, d1SwitchStore, logNotify, type Notify, runBreaker } from "./breaker.ts";
+import { type BreakerReport, d1SwitchStore, logNotify, type Notify, runBreaker, settingsOf } from "./breaker.ts";
 import { CAPS, type CapName, type Caps, type MeterName, type PoolName, resolveCaps } from "./caps.ts";
 import { type Spend, SpendClient, type SpendOps, type SpendRpc } from "./client.ts";
 import { type AcquireResult, type History, Ledger, type Snapshot, type TakeResult } from "./meters.ts";
@@ -164,7 +165,7 @@ export function runSpendBreaker(env: BreakerEnv, notify: Notify = logNotify): Pr
     guard: spendStub(env),
     publicGuard: spendStub(env, "public"),
     store: d1SwitchStore(dbOf(env.DB), Date.now),
-    settings: d1Settings(dbOf(env.DB)),
+    settings: settingsOf(() => readSettings(env as { DB: unknown }, { fresh: true })),
     notify,
     // The switch and threshold vars are read by name; an Env interface has no index signature, hence the cast.
     vars: env as unknown as Vars,

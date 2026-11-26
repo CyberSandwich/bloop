@@ -4,9 +4,18 @@ import { CRON, type CronJob, type CronTrigger } from "./cron.ts";
 import type { Env } from "./env.ts";
 import { closeStaleSessions, runRetention } from "./retention.ts";
 import { sweepGuestFiles } from "./seams/guest-drop/select.ts";
+import { runSpendBreaker } from "./spend/guard.ts";
 
 export const JOBS: Readonly<Record<CronTrigger, readonly CronJob<Env, Config>[]>> = {
-  [CRON.fiveMinutes]: [],
+  [CRON.fiveMinutes]: [
+    {
+      name: "spend_breaker",
+      run: async (env) => {
+        await runSpendBreaker(env);
+        return { more: false };
+      },
+    },
+  ],
   [CRON.hourly]: [
     {
       name: "guest_files",

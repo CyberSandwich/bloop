@@ -1,5 +1,6 @@
 // The breaker's failure paths: a send that throws, overlapping runs, a failed analytics read, resets, and bad vars.
 import { describe, expect, it, vi } from "vitest";
+import { RESTRICTIVE } from "../../src/worker/settings.ts";
 import type { AnalyticsResult } from "../../src/worker/spend/analytics.ts";
 import {
   type Alert,
@@ -9,6 +10,7 @@ import {
   resetAllBreakers,
   resetBreaker,
   runBreaker,
+  settingsOf,
 } from "../../src/worker/spend/breaker.ts";
 import { resolveLines, resolveTrips } from "../../src/worker/spend/caps.ts";
 import { effectiveSwitch } from "../../src/worker/spend/switches.ts";
@@ -288,5 +290,21 @@ describe("analytics results are JSON-safe", () => {
       daily: result.daily,
       r2StorageBytes: 5,
     });
+  });
+});
+
+describe("the settings reader the breaker is wired to", () => {
+  it("a read that fell back to RESTRICTIVE is a failed read, so the guards keep the cap rows they hold", async () => {
+    await expect(settingsOf(async () => RESTRICTIVE)()).rejects.toThrow("settings unreadable");
+    const rows = { "cap.email_day": "10" };
+    await expect(settingsOf(async () => rows)()).resolves.toBe(rows);
+
+    const s = setup();
+    await s.g.guard.setOverrides({ email_day: 10 });
+    await s.run();
+    const failing: BreakerDeps = { ...s.deps, settings: settingsOf(async () => RESTRICTIVE) };
+    await runBreaker(failing);
+    expect(s.g.rig.caps.email_day).toBe(180);
+    expect((await s.g.guard.snapshot()).caps.email_day).toBe(10);
   });
 });

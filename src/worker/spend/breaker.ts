@@ -3,6 +3,7 @@
 // crossed; latches the flip until the owner resets it; sends one alert per trip and a digest on Mondays. Imports no
 // Workers module, so the unit tests run it as is.
 import type { Db } from "../auth/db.ts";
+import { RESTRICTIVE, type Settings } from "../settings.ts";
 import { type AnalyticsResult, type Readings, readingsOf } from "./analytics.ts";
 import {
   COSTLY_FLIPS,
@@ -96,11 +97,15 @@ export function d1SwitchStore(db: Db, now: () => number): SwitchStore {
   };
 }
 
-/** One read of the whole `setting` table, until F's settings reader (one query, one cache) replaces this. */
-export function d1Settings(db: Db): () => Promise<SettingsSnapshot> {
+/**
+ * The settings reader as the breaker uses it. F's reader serves RESTRICTIVE, not an error, when D1 cannot be read; the
+ * breaker must treat that as a failed read, or it would push empty cap rows and lift every lowered cap.
+ */
+export function settingsOf(read: () => Promise<Settings>): () => Promise<SettingsSnapshot> {
   return async () => {
-    const { results } = await db.prepare("SELECT key, value FROM setting").all<{ key: string; value: string }>();
-    return Object.fromEntries(results.map((r) => [r.key, r.value]));
+    const settings = await read();
+    if (settings === RESTRICTIVE) throw new Error("settings unreadable");
+    return settings;
   };
 }
 

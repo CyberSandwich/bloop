@@ -7,6 +7,7 @@ export interface Env {
   DIRECTORY: DurableObjectNamespace;
   USER_LIBRARY: DurableObjectNamespace;
   CONVERTER: DurableObjectNamespace;
+  SPEND_GUARD: DurableObjectNamespace;
   DB: D1Database;
   GUEST_FILES: R2Bucket;
   LIBRARY: R2Bucket;
@@ -30,6 +31,9 @@ export interface Env {
   RL_REPORT: RateLimit;
   PUBLIC_ORIGIN: string;
   FILE_ORIGIN?: string;
+  /** Secrets: both absent means the breaker reads counters only, and every alert says so. */
+  CF_ANALYTICS_TOKEN?: string;
+  CF_ACCOUNT_ID?: string;
 }
 
 /** The platform rate-limit bindings of wrangler.jsonc (a test pins the list to it); `limited` refuses a route lacking one. */

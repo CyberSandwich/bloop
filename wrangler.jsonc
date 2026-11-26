@@ -39,14 +39,16 @@
       { "name": "SCREEN", "class_name": "Screen" },
       { "name": "DIRECTORY", "class_name": "Directory" },
       { "name": "USER_LIBRARY", "class_name": "UserLibrary" },
-      { "name": "CONVERTER", "class_name": "Converter" }
+      { "name": "CONVERTER", "class_name": "Converter" },
+      { "name": "SPEND_GUARD", "class_name": "SpendGuard" }
     ]
   },
   // The Converter container entry (`containers`, with its image digest under `containers[0].images`) arrives with the
   // image, in the converter change: a container needs its image at deploy.
   "migrations": [
     { "tag": "v1", "new_sqlite_classes": ["Screen", "Directory"] },
-    { "tag": "v2", "new_sqlite_classes": ["UserLibrary", "Converter"] }
+    { "tag": "v2", "new_sqlite_classes": ["UserLibrary", "Converter"] },
+    { "tag": "v3", "new_sqlite_classes": ["SpendGuard"] }
   ],
   // Created with `wrangler d1 create bloop --jurisdiction eu`; a new account prints a new id.
   "d1_databases": [

@@ -27,6 +27,7 @@ Cloudflare's hard spend limits cover only Workers and Durable Objects. Container
 ## Consequences
 - Every costly path pays one Durable Object call. At the planned volumes that is far under the free allowance; an outage of the object stops uploads, conversions and exports, not presenting, sign-in or the demo.
 - A latched trip stays until the owner resets it, so a real abuse day does not reopen at 00:00 UTC. An owner who sets a row by hand without resetting sees the breaker put the flip back.
+- Wired as binding `SPEND_GUARD` with migration tag `v3` (`new_sqlite_classes`), the breaker as a job of the `*/5` cron in `cron-jobs.ts`, and one optional Worker var per registry entry, generated in `config/spend.ts`. The breaker reads cap rows through F's settings reader and treats its restrictive fallback as a failed read.
 - Refunds are bounded by the guard's own record: it mints the ticket id in `take` (refundable meters only) and stores meter, scope, amount and time, so no caller input can widen a refund.
 - The analytics dataset names are unverified until a token exists (docs/spend.md, section 12).
 - **New dependency:** none. **Remove:** delete `src/worker/spend/`, its tests and fixture, the `SPEND_GUARD` binding and migration tag, the `*/5` cron and the `setting` rows, and replace each caller's `spendFor` call with the in-Worker cap it needs; the switches would then be read straight from the `setting` lookup.

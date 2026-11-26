@@ -159,6 +159,14 @@ describe("config", () => {
     expect(problems({ ...PROD, IT_EXPORT_TOKEN: "short" }).join()).toContain("IT_EXPORT_TOKEN");
   });
 
+  it("the spend vars are optional overrides: unset or empty parse, a number must be one, a switch floor is read as the registry reads it", () => {
+    expect(problems(PROD)).toEqual([]);
+    expect(problems({ ...PROD, CAP_POOL_CONVERT: "2", BREAKER_TRIP_PCT: "", SWITCH_CONVERT: "off" })).toEqual([]);
+    expect(problems({ ...PROD, SWITCH_CONVERT: "typo" })).toEqual([]);
+    expect(problems({ ...PROD, CAP_POOL_CONVERT: "many" }).join()).toContain("CAP_POOL_CONVERT");
+    expect(problems({ ...PROD, BREAKER_FLOOR_EMAIL: "-1" }).join()).toContain("BREAKER_FLOOR_EMAIL");
+  });
+
   it("TEST_TIMING is refused on any non-local origin", () => {
     expect(problems({ ...PROD, TEST_TIMING: "1", CODE_TTL_SECONDS: "2" }).join()).toContain("TEST_TIMING");
     expect(problems({ ...PROD, TEST_TIMING: "1", PUBLIC_ORIGIN: "https://127.0.0.1.evil.example" }).join()).toContain(

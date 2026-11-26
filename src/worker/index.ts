@@ -28,6 +28,7 @@ import { logFetch, openRoutes } from "./routes/open.ts";
 import { pairingRoutes } from "./routes/pairing.ts";
 import { reportRoutes } from "./routes/reports.ts";
 import { uploadRoutes } from "./routes/uploads.ts";
+import { SpendGuard } from "./spend/guard.ts";
 
 /** Paths the routes own; everything else is a static asset. wrangler.jsonc sends every request to the Worker so the host check sees it. */
 const DYNAMIC = /^\/(api|f|auth)\/|^\/fo\/ping$/;
@@ -104,4 +105,4 @@ export default {
 } satisfies ExportedHandler<Env>;
 
 // Every class a binding or a migration names must be exported from here.
-export { Converter, Directory, Screen, UserLibrary };
+export { Converter, Directory, Screen, SpendGuard, UserLibrary };
