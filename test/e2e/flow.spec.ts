@@ -623,16 +623,26 @@ test.describe("pairing flow", () => {
     browser,
   }) => {
     const { screen, phone, lengthButton, sheet } = await approvedDemo(browser);
-    // Every view the phone gets says the latest end is an hour sooner, as it would an hour after approval: 90 minutes
-    // ahead is within 2 h of now but past it. (The phone corrects its clock by each view, so a faked clock cannot do this.)
+    // Every view the phone gets (socket frames, the state read and the length answer) says the latest end is an hour
+    // sooner, as it would an hour after approval: 90 minutes ahead is within 2 h of now but past it. (The phone corrects
+    // its clock by each view, so a faked clock cannot do this.)
+    const sooner = (view: { latestEnd?: number | null } | undefined) => {
+      if (view?.latestEnd != null) view.latestEnd -= 3600_000;
+    };
     await phone.page.routeWebSocket(/.*/, (ws) => {
       const server = ws.connectToServer();
       ws.onMessage((m) => server.send(m));
       server.onMessage((m) => {
         const frame = typeof m === "string" ? JSON.parse(m) : null;
-        if (frame?.t === "state" && frame.view.latestEnd != null) frame.view.latestEnd -= 3600_000;
+        if (frame?.t === "state") sooner(frame.view);
         ws.send(frame ? JSON.stringify(frame) : m);
       });
+    });
+    await phone.page.route(/\/api\/(pair\/state|session\/length)/, async (route) => {
+      const response = await route.fetch();
+      const view = await response.json();
+      sooner(view);
+      await route.fulfill({ response, json: view });
     });
     await phone.page.reload();
     await expect(phone.page.locator("#ends-text")).toHaveText(/^Ends in /);

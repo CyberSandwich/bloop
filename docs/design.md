@@ -353,7 +353,7 @@ Checked at 1440, 834 and the narrowest window. Model for the viewer: the iCloud 
 
 Each heading change is announced in a `role="status"` region; error uses `role="alert"`. A live screen keeps its PowerPoint launch ladder; the viewer is the demo's.
 
-**Check This Room (`/s?check`; strings in `CHECK`, `core/copy-screen.js`).** The link is a text button on the waiting screen's footer line, live mode only (never the Demo Room, never Use the Room's Screen). Numbers are arguments filled at runtime, so no string restates a limit. No row says whether PowerPoint is installed. The brand is set bold where it renders.
+**Check This Room (`/s?check`; strings in `CHECK`, `core/copy-check.js`).** The link is a text button on the waiting screen's footer line, live mode only (never the Demo Room, never Use the Room's Screen). Numbers are arguments filled at runtime, so no string restates a limit. No row says whether PowerPoint is installed. The brand is set bold where it renders.
 | Slot | String |
 |---|---|
 | footer link, title | Check This Room |
