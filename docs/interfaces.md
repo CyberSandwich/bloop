@@ -536,7 +536,7 @@ export type Reservation = { ok: true; r2Key: string } | { ok: false; error: Drop
 export interface Upload {
   sessionKey: string;          // the session id: ties the object to its session for deletion by session
   r2Key: string;               // from reserve()
-  name: string;                // the sanitized display name (X-Bloop-Name, percent-decoded, cleanName); its extension is the declared type
+  name: string;                // the sanitized display name (X-Bloop-Name, percent-decoded, cleanName: at most 200 code points, cut with the extension kept; a typed rename is refused, not cut, by isValidName); its extension is the declared type
   declaredType: FileType;
   length: number;              // Content-Length, required; the stream is fixed to it
   body: ReadableStream<Uint8Array>;
