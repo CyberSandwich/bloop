@@ -34,7 +34,8 @@ export const CAPS = {
   lease_max_convert_seconds: {
     var: "CAP_LEASE_CONVERT_SECONDS",
     default: 1800,
-    reason: "longest a conversion lease may be asked for: the longest chain is a video's, inspect 30 s plus the video stage's 1440 s plus 300 s for the transfers, 1770 s (container/test/lease.test.mjs holds every kind under it)",
+    reason:
+      "longest a conversion lease may be asked for: the longest chain is a video's, inspect 30 s plus the video stage's 1440 s plus 300 s for the transfers, 1770 s (test/unit/container-lease.test.ts holds every kind under it)",
   },
   lease_max_export_seconds: {
     var: "CAP_LEASE_EXPORT_SECONDS",
