@@ -36,7 +36,6 @@ export function mount(c, onView) {
   const column = /** @type {HTMLElement} */ (list.parentElement);
   let on = false;
   let drawn = "";
-  let drawnItem = "";
   /** A paged item: the one the preview shows. */
   let paged = false;
   /**
@@ -84,23 +83,24 @@ export function mount(c, onView) {
     // Only a paged item has a preview: a photo, video or link row already shows what the screen does.
     const key = `${at.item}:${at.page}`;
     if (pages && key !== drawn) {
-      const was = drawnItem;
       drawn = key;
-      drawnItem = at.item;
       const kind = item.kind === "file" && item.type === "pdf" ? "Page" : "Slide";
       preview.setAttribute("aria-label", `${itemName(item)}, ${kind} ${at.page} of ${pages.length}`);
       // A picture, so the browser fetches the format it picks.
       const p = pages[at.page - 1];
-      const pic = el("picture", {}, [
+      const pic = el("picture", { "data-item": at.item }, [
         el("source", { type: "image/avif", srcset: `${p}.avif` }),
         el("img", { src: `${p}.webp`, alt: "" }),
       ]);
       // Another item cross-fades over the last (core/crossfade.js); not loaded, the page swaps at once.
+      const tally = `${at.page} / ${pages.length}`;
       import("./crossfade.js").then(
-        (m) => m.swap(preview, pic, count, was !== at.item, () => drawn === key),
-        () => preview.replaceChildren(pic, count),
+        (m) => m.swap(preview, pic, count, tally, () => drawn === key),
+        () => {
+          preview.replaceChildren(pic, count);
+          setText(count, tally);
+        },
       );
-      setText(count, `${at.page} / ${pages.length}`);
     }
     paged = !!pages;
     if (at.present && pages)
