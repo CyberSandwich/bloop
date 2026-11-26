@@ -9,7 +9,7 @@ if (nav && sentinel)
 history.scrollRestoration = "manual";
 const dropHash = () => history.replaceState(0, "", location.href.split("#")[0]);
 addEventListener("click", (e) => {
-  if (e.target instanceof Element && e.target.closest('a[href^="/#"], a[href^="#"]')) setTimeout(dropHash);
+  if (e.target instanceof Element && e.target.closest('a[href^="/#"],a[href^="#"]')) setTimeout(dropHash);
 });
 addEventListener("pagehide", () => history.replaceState({ y: scrollY }, ""));
 const kept =
@@ -28,11 +28,11 @@ const watch = new IntersectionObserver((es) => {
   for (const e of es) shown.set(e.target, e.isIntersecting);
   pause();
 });
-for (const el of document.querySelectorAll(".sheen, .frag, .panel, .close-panel")) watch.observe(el);
+for (const el of document.querySelectorAll(".sheen,.frag,.panel,.close-panel")) watch.observe(el);
 addEventListener("visibilitychange", pause);
 
 // Each why word's index, for its slice of the fill (site.css).
-const words = /** @type {NodeListOf<HTMLElement>} */ (document.querySelectorAll(".why-words > *"));
+const words = /** @type {NodeListOf<HTMLElement>} */ (document.querySelectorAll(".why-words>*"));
 for (const [i, w] of words.entries()) {
   w.style.setProperty("--i", `${i}`);
   w.style.setProperty("--n", `${words.length}`);
@@ -51,14 +51,14 @@ menu?.addEventListener("click", (e) => {
 
 const tiltable = matchMedia("(prefers-reduced-motion: no-preference)");
 
-// A hovering pointer takes the sheen's band (design.md section 8); a failed load leaves the hover pause.
-document.querySelector(".hero h1")?.addEventListener(
+// A hovering pointer takes the sheen's band (design.md section 8); a failed load makes the word hover-still (site.css).
+/** @type {HTMLElement | null} */ (document.querySelector(".hero h1"))?.addEventListener(
   "pointerenter",
-  () => {
-    if (tiltable.matches && matchMedia("(hover: hover)").matches)
+  (e) => {
+    if (tiltable.matches && e.pointerType === "mouse")
       import("./sheen-follow.js").then(
         (m) => m.follow(),
-        () => {},
+        () => document.body.classList.add("still"),
       );
   },
   { once: true },
