@@ -67,6 +67,31 @@ describe("REL-03 marker: every API answer carries X-Bloop", () => {
   });
 });
 
+describe("failure matrix: a dependency that throws", () => {
+  const create = (headers: Record<string, string> = {}) => api.post("/api/screens", { mode: "demo" }, { headers });
+
+  it("a Directory object that throws is a 500 internal problem, not the platform page, and the next request is fine", async () => {
+    expect((await create()).status).toBe(201);
+    const down = await create({ "X-Bloop-Fault": "directory" });
+    expect(down.status).toBe(500);
+    expect(down.body).toEqual(expect.objectContaining({ code: "internal" }));
+    expect(down.headers.get("X-Bloop")).toBe("1");
+    expect((await create()).status).toBe(201);
+  });
+
+  it("the fault also arrives as a cookie, which a WebSocket upgrade carries", async () => {
+    expect((await create({ Cookie: "bloop_fault=directory" })).status).toBe(500);
+  });
+
+  it("D1 down: today's pages still answer, and a member page stays hidden", async () => {
+    wrangler.setLaunchMode("preview");
+    const fault = { "X-Bloop-Fault": "d1" };
+    expect((await fetch(`${wrangler.url}/privacy`, { headers: fault })).status).toBe(200);
+    expect((await fetch(`${wrangler.url}/library`, { headers: fault })).status).toBe(404);
+    wrangler.setLaunchMode("open");
+  });
+});
+
 describe("FO-01 host: /fo/ping", () => {
   it("FO-01 host: with no file origin configured the path answers 404 with no CORS header", async () => {
     const res = await hit("/fo/ping");
