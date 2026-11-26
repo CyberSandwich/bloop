@@ -8,5 +8,10 @@
     "entry": "demo vertical photo",
     "max": "229 kB",
     "decision": "owner-approved exception for the demo files, docs/design.md section 11"
+  },
+  {
+    "entry": "phone remote, lazy",
+    "max": "2.27 kB",
+    "decision": "owner ruling: an overrun up to 10% is raised by the overrun; 20 B for the link-ask import and mount"
   }
 ]
