@@ -125,6 +125,11 @@
       "limit": "0.35 kB"
     },
     {
+      "name": "check this room words, lazy",
+      "path": "dist/js/core/copy-check.js",
+      "limit": "0.39 kB"
+    },
+    {
       "name": "room network states, lazy",
       "path": "dist/js/core/net-states.js",
       "limit": "0.21 kB"
