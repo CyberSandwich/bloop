@@ -43,11 +43,3 @@ export function converterStub(
   const ns = inJurisdiction(env.CONVERTER as DurableObjectNamespace<Converter>, env.PUBLIC_ORIGIN);
   return ns.get(ns.idFromName(`${fileId}:v${version}`));
 }
-
-export function userLibraryStub(
-  env: Pick<Env, "USER_LIBRARY" | "PUBLIC_ORIGIN">,
-  userId: string,
-): DurableObjectStub<UserLibrary> {
-  const ns = inJurisdiction(env.USER_LIBRARY as DurableObjectNamespace<UserLibrary>, env.PUBLIC_ORIGIN);
-  return ns.get(ns.idFromName(userId));
-}
