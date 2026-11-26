@@ -8,5 +8,15 @@
     "entry": "demo vertical photo",
     "max": "229 kB",
     "decision": "owner-approved exception for the demo files, docs/design.md section 11"
+  },
+  {
+    "entry": "phone notes, lazy",
+    "max": "1.43 kB",
+    "decision": "owner-approved overrun under 10 percent for the notes reveal: the swap restart, 6 B over"
+  },
+  {
+    "entry": "phone notes CSS, lazy",
+    "max": "0.58 kB",
+    "decision": "owner-approved overrun under 10 percent for the notes reveal and the box's own layout, 39 B over, 20 B for CI's zlib"
   }
 ]
