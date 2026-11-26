@@ -1,23 +1,9 @@
 // Ending a member's live screens: a deletion request, a sign-out everywhere, a suspension and the purge all call
 // `endLiveScreens`. The user's object keeps the rows (who approved what, on which screen); each Screen object ends its
-// own session through `endFromOwner`, which ends it only when the pairing's user is the one named.
+// own session through `Screen.endFromOwner`, which ends it only when the pairing's user is the one named, and answers
+// ok when nothing live is left for that user, so a not-ok is a real failure and the caller retries it.
 import type { Env } from "./env.ts";
-import type { Result } from "./seams/pairing.ts";
-import { screenStub, userLibraryStub } from "./stubs.ts";
-
-/**
- * What a Screen object offers the user's object: end the live session if it belongs to `userId`. It answers ok when
- * nothing live is left for that user (already ended, another user's pairing, an unknown ref), so a not-ok is a real
- * failure and the caller retries it.
- */
-export interface OwnerEnd {
-  endFromOwner(userId: string): Promise<Result<null>>;
-}
-
-/** The Screen behind `screenRef`, as far as ending it from its owner goes. */
-// transitional: P1: commit 4 gives Screen `endFromOwner`; this cast and `OwnerEnd` go, and the stub is typed by Screen
-export const screenOwnerEnd = (env: Env, screenRef: string): OwnerEnd =>
-  screenStub(env, screenRef) as unknown as OwnerEnd;
+import { userLibraryStub } from "./stubs.ts";
 
 /** Every live screen of the member, or only those a session started (`bySession`, its public id) or showing a file. */
 export async function endLiveScreens(
