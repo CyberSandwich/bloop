@@ -27,6 +27,7 @@ type Config struct {
 	MaxVideoSecs float64       // the longest clip that is re-encoded; a remux has no cap
 	VideoRate    float64       // seconds of video the encoder finishes per second of wall time, measured
 	VideoWidth   int           // widest video output
+	PreviewWidth int           // an HEVC source wider than this is encoded at this width first
 	VideoFixed   time.Duration // probes and thumbnail, added to every video budget
 	MaxImagePx   int64
 	Workers      int
@@ -76,6 +77,7 @@ func loadConfig(getenv func(string) string) Config {
 		MaxPages:   int(num("BLOOP_MAX_PAGES", 300)),
 		VideoRate:  rate,
 		VideoWidth: int(num("BLOOP_VIDEO_WIDTH", 1920)),
+		PreviewWidth: int(num("BLOOP_VIDEO_PREVIEW_WIDTH", 1280)),
 		VideoFixed: 30 * time.Second,
 		MaxImagePx: num("BLOOP_MAX_IMAGE_PIXELS", 100_000_000),
 		Workers:    int(num("BLOOP_WORKERS", int64(min(4, runtime.GOMAXPROCS(0))))), // GOMAXPROCS follows the cgroup CPU quota; NumCPU counts the host

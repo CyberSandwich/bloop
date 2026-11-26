@@ -93,6 +93,7 @@ type Server struct {
 	uploading map[int]int64 // chunks being received, and the bytes each may use
 	status    Status
 	manifest  *Manifest
+	preview   *Manifest // a video's 720p listing while its full encode runs
 	byPath    map[string]OutFile
 
 	pages *PagesInfo // written by the pipeline goroutine only, read after it validates
@@ -173,6 +174,16 @@ func (s *Server) fail(code string) {
 	s.status.Error = &code
 	s.status.Ready = []string{} // a failed job publishes nothing, page 1 included
 	s.byPath = map[string]OutFile{}
+	s.preview = nil
+}
+
+// publishPreview lists a video's 720p files ready and serves their manifest at /out/preview.json: the same shape as
+// the finished job's, so the caller checks it the same way.
+func (s *Server) publishPreview(files []OutFile, m *Manifest) {
+	s.publish(files)
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.preview = m
 }
 
 // publish makes validated files fetchable before the job is done.
@@ -189,6 +200,7 @@ func (s *Server) finish(m *Manifest) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	s.manifest = m
+	s.preview = nil
 	s.byPath = make(map[string]OutFile, len(m.Files))
 	for _, f := range m.Files {
 		s.byPath[f.Path] = f
@@ -420,6 +432,17 @@ func (s *Server) handleManifest(w http.ResponseWriter, _ *http.Request) {
 // handleOut serves one published file: a manifest entry or one listed in status.ready. Nothing is
 // joined from the URL.
 func (s *Server) handleOut(w http.ResponseWriter, r *http.Request) {
+	if r.PathValue("path") == "preview.json" {
+		s.mu.Lock()
+		m := s.preview
+		s.mu.Unlock()
+		if m == nil {
+			apiError(w, http.StatusConflict, "not_ready")
+			return
+		}
+		writeJSON(w, http.StatusOK, m)
+		return
+	}
 	s.mu.Lock()
 	entry, ok := s.byPath[r.PathValue("path")]
 	done := s.manifest != nil
