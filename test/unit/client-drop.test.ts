@@ -1,17 +1,5 @@
-import { afterEach, describe, expect, it, vi } from "vitest";
-
-// A specifier in a variable: the node tsconfig has no DOM lib, so it must not follow drop.js into the pill's page code.
-const DROP = "../../public/js/core/drop.js";
-interface Drop {
-  fileProblem: (file: { name: string; size: number }, maxBytes: number) => string | null;
-  kindOf: (name: string) => string | null;
-  wholeMB: (bytes: number) => number;
-  sendFile: (args: { file: File; pid: string; onProgress: (fraction: number) => void }) => {
-    done: Promise<unknown>;
-    abort: () => void;
-  };
-}
-const { fileProblem, kindOf, wholeMB } = (await import(DROP)) as Drop;
+import { describe, expect, it } from "vitest";
+import { fileProblem, kindOf, prepareFile, sendFile, wholeMB } from "../../public/js/core/drop.js";
 
 const MB = 1024 * 1024;
 
@@ -56,108 +44,167 @@ describe("what a phone can check before sending", () => {
   });
 });
 
-const file = new File([new Uint8Array(10)], "Q3 plan: v2.pptx");
-const PILL = "../../public/js/core/upload-pill.js";
-const TOAST = "../../public/js/core/toast.js";
-
-/** The binding as the adapter sees it: it reports snapshots, the adapter turns them into the phone's result. */
-function fakeBinding() {
-  const made: { kind?: string; pid?: string; onChange: (b: unknown) => void }[] = [];
-  const calls: string[] = [];
-  const mountUploads = async (args: { kind: string; pid: string; onChange: (b: unknown) => void }) => {
-    made.push(args);
-    return {
-      add: (files: File[]) => {
-        calls.push(`add ${files[0]?.name}`);
-        return [7];
-      },
-      cancel: (id: number) => calls.push(`cancel ${id}`),
-      dispose: () => calls.push("dispose"),
-    };
+class FakeXhr {
+  headers: Record<string, string> = {};
+  method = "";
+  url = "";
+  sent: unknown = null;
+  status = 0;
+  responseText = "";
+  upload: { onprogress: ((e: { lengthComputable: boolean; loaded: number; total: number }) => void) | null } = {
+    onprogress: null,
   };
-  return { made, calls, mountUploads };
+  onload: (() => void) | null = null;
+  onerror: (() => void) | null = null;
+  onabort: (() => void) | null = null;
+  open(method: string, url: string) {
+    this.method = method;
+    this.url = url;
+  }
+  setRequestHeader(name: string, value: string) {
+    this.headers[name] = value;
+  }
+  send(body: unknown) {
+    this.sent = body;
+  }
+  abort() {
+    this.onabort?.();
+  }
+  marked = true;
+  getResponseHeader(name: string) {
+    return this.marked && name === "X-Bloop" ? "1" : null;
+  }
+  reply(status: number, body: string, marked = true) {
+    this.status = status;
+    this.responseText = body;
+    this.marked = marked;
+    this.onload?.();
+  }
 }
 
-async function start(onProgress: (fraction: number) => void = () => {}) {
-  vi.resetModules();
-  const binding = fakeBinding();
-  vi.doMock(PILL, () => ({ mountUploads: binding.mountUploads }));
-  const { sendFile } = (await import(DROP)) as Drop;
-  const sending = sendFile({ file, pid: "ref.secret", onProgress });
-  await vi.waitFor(() => expect(binding.calls).toContain("add Q3 plan: v2.pptx"));
-  const say = (state: string, more: object = {}) =>
-    binding.made[0]?.onChange({ files: [{ id: 7, state, fraction: 0.5, ...more }] });
-  return { ...binding, sending, say };
-}
+const file = { name: "Q3 plan: v2.pptx", size: 10 };
+const start = (xhr: FakeXhr, onProgress: (fraction: number) => void = () => {}) =>
+  sendFile({ file, pid: "ref.secret", onProgress, xhr: () => xhr });
 
 describe("sending a file", () => {
-  afterEach(() => {
-    vi.useRealTimers();
-    vi.doUnmock(PILL);
-    vi.doUnmock(TOAST);
+  it("REL-03 a 200 JSON answer without bloop's marker is a filter's page: network_blocked, not service_down", async () => {
+    const xhr = new FakeXhr();
+    const sending = start(xhr);
+    xhr.reply(200, "{}", false);
+    expect(await sending.done).toEqual({ ok: false, error: "network_blocked" });
+    const html = new FakeXhr();
+    const other = start(html);
+    html.reply(200, "<html>blocked</html>", false);
+    expect(await other.done).toEqual({ ok: false, error: "network_blocked" });
   });
 
-  it("mounts the pill as a guest with the pairing credential, adds the file, and reports its share", async () => {
-    const seen: number[] = [];
-    const { made, calls, say } = await start((f) => seen.push(f));
-    expect(made[0]).toMatchObject({ kind: "guest", pid: "ref.secret" });
-    expect(calls).toEqual(["add Q3 plan: v2.pptx"]);
-    say("uploading", { fraction: 0.25 });
-    say("waiting", { fraction: 0.25 });
-    expect(seen).toEqual([0.25, 0.25]);
-  });
-
-  it("resolves the pushed view when sent, and keeps the pill up for 2 s so Sent is read", async () => {
-    vi.useFakeTimers();
-    const { sending, say, calls } = await start();
-    say("sent", { view: { state: "offered" } });
-    expect(await sending.done).toEqual({ ok: true, view: { state: "offered" } });
-    await vi.advanceTimersByTimeAsync(1999);
-    expect(calls).not.toContain("dispose");
-    await vi.advanceTimersByTimeAsync(1);
-    expect(calls).toContain("dispose");
-  });
-
-  it("resolves the refusal's code and takes the pill down at once, so the page's own state is the only message", async () => {
-    vi.useFakeTimers();
-    const { sending, say, calls } = await start();
-    say("refused", { error: "bad_type" });
-    expect(await sending.done).toEqual({ ok: false, error: "bad_type" });
-    await vi.advanceTimersByTimeAsync(0);
-    expect(calls).toContain("dispose");
-  });
-
-  it("abort cancels the file, and its cancellation resolves upload_aborted", async () => {
-    const { sending, say, calls } = await start();
-    sending.abort();
-    expect(calls).toContain("cancel 7");
-    say("canceled");
-    expect(await sending.done).toEqual({ ok: false, error: "upload_aborted" });
-  });
-
-  it("an abort before the pill loaded sends nothing", async () => {
-    vi.resetModules();
-    const binding = fakeBinding();
-    vi.doMock(PILL, () => ({ mountUploads: binding.mountUploads }));
-    const { sendFile } = (await import(DROP)) as Drop;
-    const sending = sendFile({ file, pid: "ref.secret", onProgress: () => {} });
-    sending.abort();
-    expect(await sending.done).toEqual({ ok: false, error: "upload_aborted" });
-    expect(binding.calls).not.toContain("add Q3 plan: v2.pptx");
-  });
-
-  it("a pill that cannot load says so in a toast with Reload, resolves offline and sends nothing", async () => {
-    vi.resetModules();
-    vi.doMock(PILL, () => {
-      throw new Error("Failed to fetch dynamically imported module");
+  it("PUTs the raw file to /api/drop, never a member route, with the guest's credential and a percent-encoded name", () => {
+    const xhr = new FakeXhr();
+    start(xhr);
+    expect(xhr.method).toBe("PUT");
+    expect(xhr.url).toBe("/api/drop");
+    expect(xhr.headers).toEqual({
+      Authorization: "Bearer ref.secret",
+      "Content-Type": "application/octet-stream",
+      "X-Bloop-Name": "Q3%20plan%3A%20v2.pptx",
     });
-    const toasts: { title: string; body: string; action?: { label: string } }[] = [];
-    vi.doMock(TOAST, () => ({ toast: (t: (typeof toasts)[number]) => toasts.push(t) }));
-    const { sendFile } = (await import(DROP)) as Drop;
-    const sending = sendFile({ file, pid: "ref.secret", onProgress: () => {} });
-    expect(await sending.done).toEqual({ ok: false, error: "offline" });
-    expect(toasts).toMatchObject([
-      { title: "Upload Didn't Load", body: "Reload the page, then try again.", action: { label: "Reload" } },
-    ]);
+    expect(xhr.sent).toBe(file);
+  });
+
+  it("reports progress as a fraction, and ignores an unknown total", () => {
+    const xhr = new FakeXhr();
+    const seen: number[] = [];
+    start(xhr, (f) => seen.push(f));
+    xhr.upload.onprogress?.({ lengthComputable: true, loaded: 25, total: 100 });
+    xhr.upload.onprogress?.({ lengthComputable: false, loaded: 50, total: 0 });
+    xhr.upload.onprogress?.({ lengthComputable: true, loaded: 100, total: 100 });
+    expect(seen).toEqual([0.25, 1]);
+  });
+
+  it("resolves the pushed view on success", async () => {
+    const xhr = new FakeXhr();
+    const { done } = start(xhr);
+    xhr.reply(200, JSON.stringify({ state: "offered" }));
+    expect(await done).toEqual({ ok: true, view: { state: "offered" } });
+  });
+
+  it("maps a refusal to its error code, so the page can show the guest_refused state", async () => {
+    const xhr = new FakeXhr();
+    const { done } = start(xhr);
+    xhr.reply(415, JSON.stringify({ type: "about:blank", status: 415, code: "bad_type" }));
+    expect(await done).toEqual({ ok: false, error: "bad_type" });
+  });
+
+  it("treats an unknown code as a bad request, and a 5xx or a non-JSON body as the service being down", async () => {
+    const unknown = new FakeXhr();
+    const a = start(unknown);
+    unknown.reply(400, JSON.stringify({ code: "made_up" }));
+    expect(await a.done).toEqual({ ok: false, error: "bad_request" });
+    const down = new FakeXhr();
+    const b = start(down);
+    down.reply(502, "<html>bad gateway</html>");
+    expect(await b.done).toEqual({ ok: false, error: "service_down" });
+  });
+
+  it("reports offline when the request fails, and upload_aborted when the page aborts it", async () => {
+    const lost = new FakeXhr();
+    const a = start(lost);
+    lost.onerror?.();
+    expect(await a.done).toEqual({ ok: false, error: "offline" });
+    const stopped = new FakeXhr();
+    const b = start(stopped);
+    b.abort();
+    expect(await b.done).toEqual({ ok: false, error: "upload_aborted" });
+  });
+});
+
+describe("preparing a file", () => {
+  const file = (bytes: number[], name: string) => new File([new Uint8Array(bytes)], name);
+
+  it("sends a deck or PDF as it is", async () => {
+    const deck = file([1, 2, 3], "a.pptx");
+    expect(await prepareFile(deck, MB)).toEqual({ ok: true, file: deck });
+  });
+
+  it("refuses a video whose structure it cannot walk, with the video's problem", async () => {
+    expect(await prepareFile(file([0, 0, 0, 12, 1, 2, 3], "a.mov"), MB)).toEqual({ ok: false, problem: "video" });
+  });
+
+  it("refuses a photo this browser cannot decode, small or not", async () => {
+    expect(await prepareFile(file(new Array(200).fill(1), "a.png"), 100)).toEqual({ ok: false, problem: "photo" });
+    expect(await prepareFile(file([0xff, 0xd8, 0xff, 0xda], "a.jpg"), MB)).toEqual({ ok: false, problem: "photo" });
+  });
+
+  it("names a HEIC this browser cannot decode, and never sends it as it is", async () => {
+    expect(await prepareFile(file([0, 0, 0, 24], "IMG_1.HEIC"), MB)).toEqual({ ok: false, problem: "heic" });
+  });
+
+  /** Media modules whose photo step answers `reason`, and whose imports fail when `fail` names them. */
+  const modules = (reason: "decode" | "encode" | "large", fail: ("photo" | "video")[] = []) => {
+    const photo = { preparePhoto: async () => ({ ok: false as const, reason }) };
+    const video = { stripLocation: async () => ({ ok: false as const }) };
+    const load =
+      <T>(name: "photo" | "video", m: T) =>
+      async () => {
+        if (fail.includes(name)) throw new TypeError("Failed to fetch dynamically imported module");
+        return m;
+      };
+    return { photo: load("photo", photo), video: load("video", video) } as unknown as Parameters<typeof prepareFile>[2];
+  };
+
+  it("maps only a decode failure on a HEIC to heic: encode is photo, large is large", async () => {
+    const heic = file([1], "a.heic");
+    expect(await prepareFile(heic, MB, modules("decode"))).toEqual({ ok: false, problem: "heic" });
+    expect(await prepareFile(heic, MB, modules("encode"))).toEqual({ ok: false, problem: "photo" });
+    expect(await prepareFile(heic, MB, modules("large"))).toEqual({ ok: false, problem: "large" });
+    expect(await prepareFile(file([1], "a.jpg"), MB, modules("decode"))).toEqual({ ok: false, problem: "photo" });
+  });
+
+  it("never rejects: a media module that fails to load is the file kind's refusal", async () => {
+    const down = modules("decode", ["photo", "video"]);
+    expect(await prepareFile(file([1], "a.jpg"), MB, down)).toEqual({ ok: false, problem: "photo" });
+    expect(await prepareFile(file([1], "a.mov"), MB, down)).toEqual({ ok: false, problem: "video" });
+    const deck = file([1], "a.pdf");
+    expect(await prepareFile(deck, MB, down)).toEqual({ ok: true, file: deck });
   });
 });

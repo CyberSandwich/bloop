@@ -1,11 +1,11 @@
-// The guest's send: what the phone checks and prepares before a byte moves, and the adapter to the upload engine.
-/** @import {ErrorCode, PhoneView} from "../../../src/shared/protocol.ts" */
-/** @import {SendResult} from "../types.js" */
+// The guest upload: PUT /api/drop with the raw file (docs/architecture.md section 4.4). XMLHttpRequest, not
+// fetch, because only XHR reports upload progress in every phone browser.
+/** @import {ErrorCode} from "../../../src/shared/protocol.ts" */
+/** @import {SendResult, Xhr} from "../types.js" */
+import { ERRORS } from "../shared/errors.js";
 import { typeOfName } from "../shared/names.js";
-import { toast } from "./toast.js";
 
 const MB = 1024 * 1024;
-const SENT_MS = 2000;
 /** Not a type bloop stores: a HEIC is sent only as the JPEG this browser can make of it (design.md, Upload). */
 export const HEIC = /\.(heic|heif)$/i;
 
@@ -69,64 +69,49 @@ export async function prepareFile(file, maxBytes, load = MEDIA) {
   }
 }
 
+/** @param {unknown} code @returns {code is ErrorCode} */
+const isErrorCode = (code) => typeof code === "string" && Object.hasOwn(ERRORS, code);
+
+/** @returns {Xhr} */
+const browserXhr = () => new /** @type {any} */ (globalThis).XMLHttpRequest();
+
 /**
- * Starts the guest's upload through the engine and its pill (core/upload-pill.js), which load now: a page that sends
- * nothing never fetches them. `abort()` stops it; the result then says `upload_aborted`. If they cannot load nothing
- * was sent: a toast says so and the result is `offline`, so Try Again sends again.
+ * Starts the upload. `abort()` stops it; the result then says `upload_aborted`.
  * @param {object} args
- * @param {File} args.file
+ * @param {{name: string, size: number}} args.file a File
  * @param {string} args.pid
- * @param {(fraction: number) => void} args.onProgress 0 to 1, never more than 0.99 before the server answers
+ * @param {(fraction: number) => void} args.onProgress 0 to 1
+ * @param {() => Xhr} [args.xhr]
  * @returns {{done: Promise<SendResult>, abort: () => void}}
  */
-export function sendFile({ file, pid, onProgress }) {
-  let stopped = false;
-  let stop = () => {
-    stopped = true;
-  };
+export function sendFile({ file, pid, onProgress, xhr: make = browserXhr }) {
+  const req = make();
   /** @type {Promise<SendResult>} */
   const done = new Promise((resolve) => {
-    /** @type {{dispose: () => void} | null} */
-    let mounted = null;
-    let settled = false;
-    /** @param {SendResult} result @param {number} lingerMs how long the pill stays: "Sent" is read before it goes */
-    const settle = (result, lingerMs) => {
-      if (settled) return;
-      settled = true;
-      resolve(result);
-      setTimeout(() => mounted?.dispose(), lingerMs);
+    req.open("PUT", "/api/drop");
+    req.setRequestHeader("Authorization", `Bearer ${pid}`);
+    req.setRequestHeader("Content-Type", "application/octet-stream");
+    req.setRequestHeader("X-Bloop-Name", encodeURIComponent(file.name));
+    req.upload.onprogress = (e) => {
+      if (e.lengthComputable && e.total > 0) onProgress(e.loaded / e.total);
     };
-    import("./upload-pill.js")
-      .then(({ mountUploads }) =>
-        mountUploads({
-          kind: "guest",
-          pid,
-          onChange: ({ files: [mine] }) => {
-            if (!mine) return;
-            if (mine.state === "sent") settle({ ok: true, view: /** @type {PhoneView} */ (mine.view) }, SENT_MS);
-            else if (mine.state === "refused") settle({ ok: false, error: /** @type {ErrorCode} */ (mine.error) }, 0);
-            else if (mine.state === "canceled") settle({ ok: false, error: "upload_aborted" }, 0);
-            else onProgress(mine.fraction);
-          },
-        }),
-      )
-      .then(
-        (up) => {
-          mounted = up;
-          if (stopped) return settle({ ok: false, error: "upload_aborted" }, 0);
-          const [id] = up.add([file]);
-          stop = () => up.cancel(/** @type {number} */ (id));
-        },
-        () => {
-          toast({
-            title: "Upload Didn't Load",
-            body: "Reload the page, then try again.",
-            error: true,
-            action: { label: "Reload", run: () => /** @type {any} */ (globalThis).location.reload() },
-          });
-          resolve({ ok: false, error: "offline" });
-        },
-      );
+    req.onerror = () => resolve({ ok: false, error: "offline" });
+    req.onabort = () => resolve({ ok: false, error: "upload_aborted" });
+    req.onload = () => {
+      let body = null;
+      try {
+        body = JSON.parse(req.responseText);
+      } catch {
+        // an empty or non-JSON answer is handled below
+      }
+      const ours = req.getResponseHeader("X-Bloop") === "1";
+      if (req.status >= 200 && req.status < 300 && body && ours) return resolve({ ok: true, view: body });
+      // A 200 that is not bloop's (no marker) is a filter's page: the network, not bloop (REL-03).
+      if (req.status >= 200 && req.status < 300) return resolve({ ok: false, error: "network_blocked" });
+      if (isErrorCode(body?.code)) return resolve({ ok: false, error: body.code });
+      resolve({ ok: false, error: req.status >= 500 || body === null ? "service_down" : "bad_request" });
+    };
+    req.send(file);
   });
-  return { done, abort: () => stop() };
+  return { done, abort: () => req.abort() };
 }
