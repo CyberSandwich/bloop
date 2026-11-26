@@ -235,7 +235,8 @@ export class Sessions {
 
   /**
    * Every session of the user (sign out everywhere, Entra disconnect) and every known-device value with them: the
-   * epoch bump and the deletes are one batch. Returns the public ids, read just before it (see `requestDeletion`).
+   * epoch bump and the delete are one batch. The delete names the user, not the ids, so a session signed in between
+   * still ends; the ids, read just before it, only drive the live-screen close notices (see `requestDeletion`).
    */
   async destroyAll(userId: string): Promise<string[]> {
     const ended = await this.publicIds("SELECT public_id FROM phone_session WHERE user_id = ?", [userId]);

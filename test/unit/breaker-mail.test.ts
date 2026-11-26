@@ -105,7 +105,7 @@ describe("COST-14 the five-minute job mails a trip to the admins", () => {
     const w = world({ PUBLIC_ORIGIN: "not a url" });
     const log = vi.mocked(console.log);
     const alert: Alert = { kind: "config_invalid", rule: "config_invalid", readings: { problems: 1 }, sources: "x" };
-    await cronNotify(w.env, async () => true)(alert);
+    await cronNotify(w.env, async () => true)(alert, "config_invalid:PUBLIC_ORIGIN");
     expect(w.send).not.toHaveBeenCalled();
     expect(log).toHaveBeenCalledWith(JSON.stringify({ evt: "breaker", ...alert }));
   });
@@ -113,7 +113,7 @@ describe("COST-14 the five-minute job mails a trip to the admins", () => {
   it("COST-16 DEV_MAILBOX never applies on a deployed origin, though this parse skips the config's refusal", async () => {
     const w = world({ PUBLIC_ORIGIN: "https://bloop.example", DEV_MAILBOX: "1" });
     const alert: Alert = { kind: "trip", rule: "email_day", readings: { sends: 95 }, sources: "x" };
-    await cronNotify(w.env, async () => true)(alert);
+    await cronNotify(w.env, async () => true)(alert, "warn:email_day");
     expect(w.sent.map((m) => m.to).sort()).toEqual([ADMIN, OTHER].sort());
   });
 
@@ -133,12 +133,33 @@ describe("COST-14 the five-minute job mails a trip to the admins", () => {
     expect(toAdmin).toHaveLength(ALERT_MAIL_TRIES);
   });
 
+  it.each([
+    ["config_invalid", "config_invalid:EMAIL_FROM", "config_invalid:EMAIL_FROM,PUBLIC_ORIGIN"],
+    ["trip", "trip:email:admin_only:unapplied", "trip:email:admin_only"],
+  ] as const)(
+    "COST-14 two same-day %s variants each get their own log line and mail claims",
+    async (kind, first, second) => {
+      const w = world();
+      const claims = new Set<string>();
+      const claim = async (key: string) => !claims.has(key) && Boolean(claims.add(key));
+      const alert: Alert = { kind, rule: kind, readings: {}, sources: "x" };
+      const notify = cronNotify(w.env, claim);
+      for (const key of [first, second]) await notify(alert, key);
+      const lines = vi.mocked(console.log).mock.calls.filter(([line]) => String(line).includes('"evt":"breaker"'));
+      expect(lines).toHaveLength(2);
+      expect(w.sent.filter((m) => m.to === ADMIN)).toHaveLength(2);
+      expect([...claims].sort()).toEqual(
+        [`log:${first}`, `log:${second}`, `mail:${first}:1`, `mail:${second}:1`].sort(),
+      );
+    },
+  );
+
   it("COST-14 an unreachable claim store still logs and mails: the alert errs toward going out", async () => {
     const w = world();
     const alert: Alert = { kind: "trip", rule: "email_day", readings: { sends: 95 }, sources: "x" };
     await cronNotify(w.env, async () => {
       throw new Error("guard down");
-    })(alert);
+    })(alert, "warn:email_day");
     expect(vi.mocked(console.log)).toHaveBeenCalledWith(JSON.stringify({ evt: "breaker", ...alert }));
     expect(w.sent.map((m) => m.to).sort()).toEqual([ADMIN, OTHER].sort());
   });
