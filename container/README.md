@@ -49,9 +49,11 @@ Each stage has its own timeout. An overrun kills the tool's whole process group 
 |---|---|---|
 | inspect | magic bytes; for zip packages, the unpack limits and a real inflate of every entry (CRC included); for OOXML, notes, fonts, motion, media | 30 s |
 | convert | office to PDF with `soffice --headless --convert-to pdf` and a fresh profile per call; every `doc.pdf`, uploaded or made by `soffice`, is rewritten with `pdftocairo -pdf`, which drops scripts, launch actions and attachments; `ppt`, `pps` and `odp` are also converted to a pptx so their notes, fonts and motion are read by the same code | 180 s |
-| rasterize | `pdfinfo` (page count, page sizes), then per page `pdftoppm` at the widest width and `vips` to WebP (Q 80) at each width (`BLOOP_WIDTHS`, default 3840, 1920, 480); page 1 first, published at once, then the rest with four workers by default | 240 s |
+| rasterize | `pdfinfo` (page count, page sizes), then per page `pdftoppm` at the widest width and `vips` to WebP (Q 80) at each width (`BLOOP_WIDTHS`, default 3840, 1920, 480); page 1 first, published at once, then the rest with four workers by default | 1500 s |
 | video | `ffprobe`, then `ffmpeg` to H.264 high profile (CRF 23, `veryfast`), AAC stereo 128k, yuv420p, at most 1920 wide, `+faststart`, metadata dropped, input restricted to `-protocol_whitelist file`, the demuxer forced from the magic bytes (`-f mov` or `-f matroska`, never probed), output cut at `BLOOP_MAX_VIDEO_SECONDS` with `-t` whatever the header claims; then `ffprobe` of the result must say h264 in an mp4; then a thumbnail | 900 s |
 | heic | `vips thumbnail` to a 1920 JPEG (Q 85, orientation applied, all metadata dropped) and a 480 WebP | 60 s |
+
+Rasterize time is linear in pages. Measured in the corpus with `docker run --cpus 1`: 205 s for 100 pages and 614 s for 300 (2.05 s a page); on the 4 vCPU CI runner 55 s for 100 (0.55 s a page). A flat 240 s failed a 300-page deck on one CPU, so the default is 1500 s, 2.4 times the slowest measured deck at one CPU; the corpus requires each stage to use at most half its default. A caller that deploys on less than one CPU must raise `BLOOP_TIMEOUT_RASTERIZE` in proportion (about 2 s a page per CPU, so 600 s per 300 pages at one CPU) and its own deadline above the sum.
 
 Always H.264 on output, even for an H.264 input: re-encoding is the sanitizer.
 
