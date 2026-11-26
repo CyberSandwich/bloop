@@ -934,12 +934,14 @@ test.describe("pairing flow", () => {
     );
     // A tap says nothing: the line under the title stays as the end set it, and a burst of taps (and the repaints
     // between them) asks for one code, not one each.
-    const line = (await page.locator("#line").textContent()) ?? "";
+    // The screen's End by hand names no reason and the demo holds no PowerPoint or download: no line at all.
+    const line = page.locator("#line");
+    await expect(line).toBeEmpty();
     await page.waitForTimeout(800);
     for (let i = 0; i < 3; i++) {
       await page.mouse.click(SCREEN.width / 2, 80);
       await page.waitForTimeout(100);
-      await expect(page.locator("#line")).toHaveText(line);
+      await expect(line).toHaveText("");
     }
     await expect(heading(page)).toHaveText(DEMO.room, { timeout: 6000 });
     expect(Date.now() - since).toBeLessThan(6000);

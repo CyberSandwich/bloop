@@ -329,8 +329,10 @@ describe("screen copy", () => {
     const screen = readFileSync("public/js/screen.js", "utf8");
     expect(screen).not.toContain("FRESH_LINE");
     expect(readFileSync("public/js/core/copy-screen.js", "utf8")).not.toContain("Getting a new code");
-    // skipEnded only shortens the hold; the one place that sets the line is the transition into ended.
-    expect(screen.match(/^\s*ended = /gm)).toHaveLength(1);
+    // skipEnded only shortens the hold: it never sets the line.
+    const skip = /function skipEnded\(\) \{[\s\S]*?\n\}/.exec(screen)?.[0] ?? "";
+    expect(skip).toContain("endedHold = ENDED_QR_RETURN_MS");
+    expect(skip).not.toMatch(/\bended = /);
   });
 
   it("S7 screen is no named thing: Offline, Busy Right Now", () => {
