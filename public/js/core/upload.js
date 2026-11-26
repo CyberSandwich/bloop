@@ -764,6 +764,12 @@ export function createUploader({ onChange, deps }) {
   async function open(r) {
     const file = /** @type {NonNullable<Rec["file"]>} */ (r.file);
     set(r, "fingerprinting");
+    // The rule is a chunk fetched on first use: a failed fetch is the network's, so the file can be added again.
+    try {
+      await loadNameRule();
+    } catch {
+      return refuse(r, "service_busy");
+    }
     try {
       r.fp ??= await fingerprint(/** @type {any} */ (file), d.subtle);
     } catch {
@@ -950,12 +956,12 @@ export function createUploader({ onChange, deps }) {
      */
     async resume(id, file) {
       if (find(id)?.state !== "paused") return;
-      // Without the rule the file cannot be told from the paused one, so it starts fresh.
+      // Without the rule the file cannot be told from the paused one: the row stays paused, and a later pick retries.
       const rule = await loadNameRule().catch(() => null);
       const r = find(id);
-      if (r?.state !== "paused") return;
+      if (disposed || rule === null || r?.state !== "paused") return;
       const paused = r.uploadId;
-      const same = rule !== null && rule.cleanName(file.name) === r.name && file.size === r.size;
+      const same = rule.cleanName(file.name) === r.name && file.size === r.size;
       const fields = { id: r.id, file, name: file.name, size: file.size, state: /** @type {const} */ ("queued") };
       records[records.indexOf(r)] = record(paused && same ? { ...fields, pausedId: paused } : fields);
       // A file that plainly is not the paused one frees the row before it asks for room of its own.
