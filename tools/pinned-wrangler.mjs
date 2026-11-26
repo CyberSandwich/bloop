@@ -42,13 +42,24 @@ export function configArgs(args, root = ROOT) {
   return ["--config", join(root, "wrangler.jsonc")];
 }
 
+/** Whether the environment holds a Cloudflare credential wrangler reads.
+ * @param {NodeJS.ProcessEnv} env */
+export const holdsToken = (env) => ["CLOUDFLARE_API_TOKEN", "CF_API_TOKEN", "CLOUDFLARE_API_KEY"].some((k) => env[k]);
+
+/** The commands that never run wrangler.jsonc's build command. Everything else, including a command added later, is
+ * treated as one that does. */
+const NEVER_BUILDS = ["d1", "secret", "whoami", "kv", "r2"];
+
+/** Whether a wrangler command may run the build command: true unless its first non-flag word is on the safe list, so a
+ * flag value in front of the subcommand (`-e staging deploy`) fails closed too.
+ * @param {string[]} args */
+export const mayBuild = (args) => !NEVER_BUILDS.includes(args.find((arg) => !arg.startsWith("-")) ?? "");
+
 if (process.argv[1]?.endsWith("pinned-wrangler.mjs")) {
   const args = process.argv.slice(2);
-  const token = Boolean(process.env.CLOUDFLARE_API_TOKEN);
-  // A command that builds or ships code must not run wrangler.jsonc's build command (third-party code) with the token.
-  // Any word match, so a flag before the subcommand (`-e staging deploy`) cannot hide it.
-  const ships = args.some((arg) => ["deploy", "dev", "versions", "upload"].includes(arg));
-  if (ships && token) requirePrebuilt(readFileSync(join(ROOT, "wrangler.jsonc"), "utf8"));
+  const token = holdsToken(process.env);
+  // With the token, wrangler.jsonc's build command (third-party code) must not run.
+  if (token && mayBuild(args)) requirePrebuilt(readFileSync(join(ROOT, "wrangler.jsonc"), "utf8"));
   const run = spawnSync(process.execPath, [wranglerEntry(), ...args, ...(token ? configArgs(args) : [])], {
     stdio: "inherit",
   });

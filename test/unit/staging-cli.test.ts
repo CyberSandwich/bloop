@@ -167,6 +167,9 @@ describe("tools/staging.mjs as the workflow runs it", () => {
       ["versions", "upload"],
       ["versions", "deploy"],
       ["dev"],
+      ["types"],
+      ["preview"],
+      ["some-future-command"],
     ]) {
       const refused = wrangler("token-under-test", ...args);
       expect(refused.status, args.join(" ")).not.toBe(0);
@@ -180,9 +183,21 @@ describe("tools/staging.mjs as the workflow runs it", () => {
     // Commands that build and ship nothing work with the token on an unswapped config, as an owner's local one does.
     expect(wrangler("token-under-test", "secret", "put", "X").status).toBe(0);
     expect(wrangler("token-under-test", "d1", "migrations", "apply", "DB").status).toBe(0);
+    for (const command of ["whoami", "kv", "r2"]) expect(wrangler("token-under-test", command).status).toBe(0);
+    // The other credential variables count as a token too.
+    for (const name of ["CF_API_TOKEN", "CLOUDFLARE_API_KEY"]) {
+      const res = spawnSync(process.execPath, [join(root, "tools/pinned-wrangler.mjs"), "deploy"], {
+        cwd: root,
+        encoding: "utf8",
+        env: { ...process.env, CALLS: calls, CLOUDFLARE_API_TOKEN: "", [name]: "token-under-test" },
+      });
+      expect(res.stderr, name).toContain("still builds");
+    }
     // The rehearsal has no token: wrangler itself runs the build command, which is the point of the dry run.
     expect(wrangler("").status).toBe(0);
-    expect(readFileSync(calls, "utf8")).toBe("secret put X\nd1 migrations apply DB\ndeploy --dry-run\n");
+    expect(readFileSync(calls, "utf8")).toBe(
+      "secret put X\nd1 migrations apply DB\nwhoami\nkv\nr2\ndeploy --dry-run\n",
+    );
   });
 
   it("pinned-wrangler: an environment's own build command, or extra build keys, are refused too", {
