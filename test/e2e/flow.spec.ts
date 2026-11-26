@@ -9,8 +9,11 @@ import { crc32, deflateSync } from "node:zlib";
 import AxeBuilder from "@axe-core/playwright";
 import { type Browser, type BrowserContext, expect, type Locator, type Page, type Route, test } from "@playwright/test";
 
-/** The item on the stage: a page's picture, the photo's canvas or a video (never the loader's thumbnail). */
-const STAGED = "#frame :is(picture img, canvas, video)";
+/**
+ * The item on the stage: a page's picture, the photo's canvas or a video (never the loader's thumbnail, nor the last
+ * item fading out under it, which is inert).
+ */
+const STAGED = "#frame :is(picture:not([inert]) img, canvas:not([inert]), video:not([inert]))";
 
 /** A black PNG of the given size: the photo's stand-in for a test (the viewer decodes raster bytes, not SVG). */
 function png(width: number, height: number): Buffer {
