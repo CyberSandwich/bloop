@@ -6,11 +6,6 @@
   font-variant-numeric: tabular-nums;
   touch-action: manipulation;
 }
-.pick legend {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-}
 /* The live region is in the page from the mount; empty, it is out of the grid, so it adds no row. Shown, it is the
    first row: the panel grows upward from its bottom edge and the choices stay where the finger is. */
 .pick-slow {

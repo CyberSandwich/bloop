@@ -1314,7 +1314,9 @@ describe("landing motion and spacing (design.md sections 6 and 8)", () => {
   it("the word's sheen sweeps a tile every 2 s with no rest on its own keyframe; the loader keeps sheen's 2.2 s and rest", () => {
     expect(css).toMatch(/animation: sweep 2s linear 0\.3s infinite backwards;/);
     expect(css).not.toMatch(/animation: sheen/);
-    expect(between(read("public/css/base.css"), /@keyframes sheen \{/, "\n}\n")).toMatch(/\n {2}45%,\n {2}100% \{/);
+    // The loader is the task pages' alone, so its keyframe stays out of base.css and off the site's budget.
+    expect(read("public/css/base.css")).not.toContain("@keyframes sheen");
+    expect(between(read("public/css/app.css"), /@keyframes sheen \{/, "\n}\n")).toMatch(/\n {2}45%,\n {2}100% \{/);
     expect(read("public/css/app.css")).toMatch(/animation: sheen 2\.2s linear infinite;/);
   });
 
