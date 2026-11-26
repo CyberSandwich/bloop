@@ -335,58 +335,54 @@ describe("notify", () => {
   });
 
   type Space = { get(id: string): unknown; idFromName(n: string): string };
-  const receiverOf =
-    (env: { USER_LIBRARY: Space; SCREEN: Space }) =>
-    (t: { kind: "library"; userId: string } | { kind: "guest"; screenRef: string }) => {
-      const space = t.kind === "library" ? env.USER_LIBRARY : env.SCREEN;
-      return space.get(space.idFromName(t.kind === "library" ? t.userId : t.screenRef));
-    };
+  const libraryOf = (space: Space) => (userId: string) => space.get(space.idFromName(userId));
 
-  it("sends progress to the user's library and the end to its derived handlers; guests hear on the screen", async () => {
+  it("calls the UserLibrary methods with the arguments they take; a guest and a cancel say nothing", async () => {
     const calls: unknown[][] = [];
-    const library =
+    const record =
       (name: string) =>
       async (...args: unknown[]) =>
-        void calls.push(["library", name, ...args]);
-    const screen = async (...args: unknown[]) => void calls.push(["screen", ...args]);
-    const env = {
-      PUBLIC_ORIGIN: "http://127.0.0.1:8787",
-      USER_LIBRARY: ns(calls, {
-        progress: library("progress"),
-        pageReady: library("pageReady"),
-        derivedReady: library("derivedReady"),
-        derivedFailed: library("derivedFailed"),
-      }),
-      SCREEN: ns(calls, { derivedReady: screen }),
-    };
-    const n = notifierFor(receiverOf(env));
+        void calls.push([name, ...args]);
+    const n = notifierFor(
+      libraryOf(
+        ns(calls, {
+          progress: record("progress"),
+          pageReady: record("pageReady"),
+          derivedReady: record("derivedReady"),
+          derivedFailed: record("derivedFailed"),
+        }),
+      ),
+    );
     const me = { kind: "library", userId: "u1" } as const;
     await n.progress(me, "f1", 1, "rasterize", 3, 40);
+    await n.progress(me, "f1", 1, "convert", null, null);
     await n.pageReady(me, "f1", 1);
     await n.terminal(me, "f1", 1, "done", null);
     await n.terminal(me, "f1", 1, "failed", "bomb");
-    await n.terminal({ kind: "guest", screenRef: "s1" }, "g1", 1, "done", null);
+    await n.terminal(me, "f1", 1, "skipped", "off");
+    await n.terminal(me, "f1", 1, "cancelled", null);
+    const guest = { kind: "guest", screenRef: "s1" } as const;
+    await n.progress(guest, "g1", 1, "convert", 1, 3);
+    await n.pageReady(guest, "g1", 1);
+    await n.terminal(guest, "g1", 1, "done", null);
     expect(calls).toEqual([
-      ["library", "progress", "f1", 1, "rasterize", 3, 40],
-      ["library", "pageReady", "f1", 1, 1],
-      ["library", "derivedReady", "f1", 1, "done", null],
-      ["library", "derivedFailed", "f1", 1, "failed", "bomb"],
-      ["screen", "g1", 1, "done", null],
+      ["progress", "f1", 1, "rasterize", 3, 40],
+      ["progress", "f1", 1, "convert", 0, 0],
+      ["pageReady", "f1"],
+      ["derivedReady", "f1", 1],
+      ["derivedFailed", "f1", 1, "bomb"],
+      ["derivedFailed", "f1", 1, "off"],
     ]);
   });
 
   it("a receiver that throws is logged once and the conversion carries on", async () => {
     const logged: string[] = [];
-    const env = {
-      PUBLIC_ORIGIN: "http://127.0.0.1:8787",
-      USER_LIBRARY: ns([], {
-        progress: async () => {
-          throw new Error("no such method");
-        },
-      }),
-      SCREEN: ns([], {}),
-    };
-    const n = notifierFor(receiverOf(env), (l) => void logged.push(l));
+    const space = ns([], {
+      progress: async () => {
+        throw new Error("no such method");
+      },
+    });
+    const n = notifierFor(libraryOf(space), (l) => void logged.push(l));
     const me = { kind: "library", userId: "u1" } as const;
     await n.progress(me, "f1", 1, "convert", null, null);
     await n.progress(me, "f1", 1, "convert", null, null);
