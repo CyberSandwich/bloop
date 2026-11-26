@@ -15,6 +15,7 @@ const STAMP = 1_700_000_000_000;
 let wrangler: Wrangler;
 /** A second server whose class B cap is below a large file's read budget, so its check stays `checking`. */
 let stuck: Wrangler;
+// transitional: A limits option. These two servers and the midnight wait below go when startWrangler takes `limits`.
 /** One upload an account may start a day: the second is answered 429, with a Retry-After far beyond a wait. */
 let limited: Wrangler;
 /** One file in a library: the second is answered 409 library_full. */
@@ -274,10 +275,11 @@ describe("the engine against the real routes", () => {
   }, 60_000);
 
   it("a 429 whose Retry-After is far off is the rate_limited refusal, and the batch goes on: no wait, no retry loop", async () => {
-    // The cap's day ends at UTC midnight, and its Retry-After is the time left in it: within five minutes of the end
-    // that is a wait the engine would sit out, so the run starts in the next day.
+    // transitional: A limits option. The cap's day ends at UTC midnight and its Retry-After is the time left in it: in
+    // the last 135 s that is a wait the engine would sit out, so the run starts just after midnight (a wait of at most
+    // that long).
     const toMidnight = () => 86_400_000 - (Date.now() % 86_400_000);
-    if (toMidnight() < 300_000) await new Promise((resolve) => setTimeout(resolve, toMidnight() + 1000));
+    if (toMidnight() < 135_000) await new Promise((resolve) => setTimeout(resolve, toMidnight() + 1000));
     const cookie = member(limited, "ec-rate");
     const run = engine(limited, cookie);
     run.up.add([mp4("first.mp4", 64), mp4("second.mp4", 65)]);
@@ -285,7 +287,7 @@ describe("the engine against the real routes", () => {
     expect(last.files.map((f) => f.state)).toEqual(["saved", "refused"]);
     expect(last.files[1]).toMatchObject({ error: "rate_limited" });
     expect(run.requests.filter((r) => r === "POST /api/uploads")).toHaveLength(2);
-  }, 400_000);
+  }, 240_000);
 
   it("a 409 library_full is that refusal, not a claim to wait out: the next file is not held up", async () => {
     const cookie = member(crowded, "ec-full");
