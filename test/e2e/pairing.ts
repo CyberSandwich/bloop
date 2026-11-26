@@ -63,14 +63,31 @@ export async function expectNoAxeViolations(page: Page) {
   expect(results.violations).toEqual([]);
 }
 
+/** The number a live screen shows once claimed: read after it is there, never before the claim's push lands. */
+export async function shownMatch(screen: Page): Promise<string> {
+  await expect(screen.locator("#match")).toHaveText(/^\d{2}$/);
+  return ((await screen.locator("#match").textContent()) ?? "").trim();
+}
+
 /** The live pick (PAIR-14): reads the number the screen shows and taps it on the phone, as the person does. */
 export async function pickMatch(phone: Page, screen: Page): Promise<string> {
-  await expect(screen.locator("#match")).toHaveText(/^\d{2}$/);
-  const match = ((await screen.locator("#match").textContent()) ?? "").trim();
+  const match = await shownMatch(screen);
   await choice(phone, match).click();
   return match;
 }
 
-/** One of the pick's three choices on the phone, by its digits. */
+/**
+ * Types a code on /code and continues. Continue is enabled once code.js has read the field, so a press before then
+ * submits nothing: this waits on that state, never on time.
+ */
+export async function enterCode(phone: Page, code: string) {
+  await phone.getByLabel("Code").fill(code);
+  const go = phone.getByRole("button", { name: "Continue" });
+  await expect(go).toBeEnabled();
+  await go.click();
+}
+
+/** One of the pick's three choices on the phone, by its digits: through #pick, since its legend (the group's name)
+ * reads "Approving..." once a number is tapped. */
 export const choice = (phone: Page, digits: string) =>
   phone.locator("#pick").getByRole("button", { name: digits, exact: true });
