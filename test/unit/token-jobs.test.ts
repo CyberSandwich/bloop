@@ -58,7 +58,10 @@ const PINNED: Record<string, string[]> = {
   ],
   "deploy.yml deploy": [
     "  deploy:",
-    "    needs: check",
+    "    needs:",
+    "      - reuse",
+    "      - check",
+    "    if: (success() || failure()) && (needs.check.result == 'success' || (needs.check.result == 'skipped' && needs.reuse.outputs.reused == 'true'))",
     "    runs-on: ubuntu-latest",
     "    timeout-minutes: 15",
     "    environment: production",
