@@ -24,10 +24,7 @@ export async function retentionDepsFor(env: Env, config: Config): Promise<Retent
   return {
     ...purgeDepsFor(env),
     endScreens: async (userId) => void (await userLibraryStub(env, userId).endScreens(userId)),
-    closeSessions: async (userId, publicIds) => {
-      const stub = userLibraryStub(env, userId);
-      for (const id of publicIds) await stub.closeSession(id);
-    },
+    closeSessions: (userId, publicIds) => userLibraryStub(env, userId).closeSessions(publicIds),
     // transitional: U: abortAllFor replaces this
     abortUploads: async () => false,
     eraseObject: (userId) => userLibraryStub(env, userId).purge(),
