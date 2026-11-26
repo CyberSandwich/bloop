@@ -53,7 +53,8 @@ export interface DigestMessage {
   report: SpendReport;
 }
 
-export type Notify = (message: Alert | DigestMessage) => Promise<void>;
+/** `key` is the message's once-a-day identity (the announce key), so a consumer's own claims never merge two events. */
+export type Notify = (message: Alert | DigestMessage, key: string) => Promise<void>;
 
 /** The structured log line every message also gets (an Observability alert matches `evt`); the cron adds mail. */
 export const logNotify: Notify = async (message) => {
@@ -298,7 +299,7 @@ export async function runBreaker(d: BreakerDeps): Promise<BreakerReport> {
   const announce = async (key: string, message: Alert | DigestMessage): Promise<boolean> => {
     if (!(await d.guard.alertOnce(key))) return false;
     try {
-      await d.notify(message);
+      await d.notify(message, key);
       alerts++;
       return true;
     } catch (e) {
@@ -583,14 +584,17 @@ export async function resetBreaker(
     for (const key of [trippedKey(name, trip.value), trippedKey(name, trip.value) + UNAPPLIED])
       await d.guard.unalert(key);
   if (was)
-    await d.notify({
-      kind: "reset",
-      rule: "reset",
-      switch: name,
-      value: restored ?? "unchanged",
-      readings: {},
-      sources: actor,
-    });
+    await d.notify(
+      {
+        kind: "reset",
+        rule: "reset",
+        switch: name,
+        value: restored ?? "unchanged",
+        readings: {},
+        sources: actor,
+      },
+      `reset:${name}:${restored ?? "unchanged"}`,
+    );
   return was;
 }
 

@@ -106,7 +106,8 @@ export const authRoutesWith = (deps: ScreenDeps): readonly Route[] => [
     withGraph(async (request, env, config) => {
       const body = await write(request, config, emptyBody);
       if (!body.ok) return body.response;
-      const flood = await limited(env, "RL_AUTH", request, config);
+      const flood =
+        (await limited(env, "RL_AUTH", request, config)) ?? (await limited(env, "RL_MEMBER_IP", request, config));
       if (flood) return flood;
       const services = servicesFor(env, config);
       const { sessions, vault } = services;

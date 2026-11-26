@@ -171,6 +171,25 @@ describe("sessions: the devices list and its writes", () => {
     expect(await sessions.resolve(keep)).toBeNull();
   });
 
+  it("AUTH-13 signout-all: a session signed in between the id read and the batch is still ended", async () => {
+    const { db, now } = setup();
+    const first = await seedMember(db, "u1", "m@example.test", {}, { now });
+    const late: string[] = [];
+    const racing = {
+      ...db,
+      batch: async (statements: Parameters<TestDb["batch"]>[0]) => {
+        late.push(await new Sessions(db, now).create("u1", null, { method: "code", label: null, reauthAt: null }));
+        return db.batch(statements);
+      },
+    };
+    const firstId = (await row(db, first))?.public_id;
+    expect(await new Sessions(racing, now).destroyAll("u1")).toEqual([firstId]);
+    expect(late).toHaveLength(1);
+    const sessions = new Sessions(db, now);
+    for (const value of [first, ...late]) expect(await sessions.resolve(value)).toBeNull();
+    expect(db.raw.prepare("SELECT count(*) AS n FROM phone_session").get()).toEqual({ n: 0 });
+  });
+
   it("stampReauth records a proof on the session without rotating it", async () => {
     const { db, clock, now, sessions } = setup();
     const value = await seedMember(db, "u1", "m@example.test", { reauthAt: null }, { now });
