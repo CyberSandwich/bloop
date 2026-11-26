@@ -39,6 +39,15 @@ for (const vp of [
         .getByRole("button", { name: /^Sample deck\.pptx/ })
         .tap();
       await midFade(page);
+      console.log(
+        "MID",
+        n,
+        JSON.stringify(
+          await page.evaluate(
+            '[...document.querySelectorAll("#frame > *")].map((x) => { const f = x.localName === "picture" ? x.querySelector("img") : x; return [x.localName, x.className, x.inert, getComputedStyle(f).opacity, f.getAnimations().map((a) => a.playState + ":" + a.currentTime + "/" + a.effect.getTiming().duration)]; })',
+          ),
+        ),
+      );
       await shot(page, `${n}-1-midfade-photo-to-deck`);
       await atRest(page.locator("main"));
       await page.waitForTimeout(300);

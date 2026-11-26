@@ -133,8 +133,16 @@ test.describe("the phone remote's preview", () => {
     let stop = await sample(phone, ".preview");
     await row("Sample deck.pdf").tap();
     await expect(preview).toHaveAttribute("aria-label", "Sample deck.pdf, Page 1 of 2");
-    await faded(phone, ".preview");
-    await expectCrossfade(phone, await stop());
+    await phone.waitForTimeout(1200);
+    const diag = await phone.evaluate(`(() => {
+      const r = document.querySelector(".preview");
+      return { connected: r.isConnected, kids: [...r.children].map((n) => n.localName + ":" + (n.dataset.item || "") + ":" + n.inert),
+        col: [r.parentElement && r.parentElement.className], anims: document.getAnimations().map((a) => a.effect.getTiming().duration + "@" + (a.effect.target && a.effect.target.localName)) };
+    })()`);
+    const all = await stop();
+    console.log("DIAG", JSON.stringify(diag));
+    console.log("DIAGFRAMES", JSON.stringify(all.map((f) => f.map((p) => `${p.inert ? "i" : "l"}${p.opacity.toFixed(2)}/${Math.round(p.area)}`).join(","))));
+    await expectCrossfade(phone, all);
 
     stop = await sample(phone, ".preview");
     await phone.locator(".bubbles [data-step='1']").tap();
