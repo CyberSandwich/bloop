@@ -75,6 +75,10 @@ const ok = async <T>(read: () => Promise<T>): Promise<T | null> => {
   }
 };
 
+/** The checked manifest as parsed, so a container that answers differently later is caught (every claim is re-read). */
+const manifestDigest = (manifest: unknown): Promise<string> =>
+  sha256Hex(new TextEncoder().encode(JSON.stringify(manifest)));
+
 /** Unit 0: the manifest and the three JSON files, so every later unit reads only checked values. */
 export async function prepare(env: StoreEnv, j: JobRecord): Promise<{ fail: string } | null> {
   const loaded = await checkManifestFor(env.courier, { jobId: env.jobId, ext: env.loc.ext, profile: env.profile });
@@ -109,7 +113,17 @@ export async function prepare(env: StoreEnv, j: JobRecord): Promise<{ fail: stri
     else passed.delete("notes");
   }
   if (!decideGroups(kind, passed).ok) return { fail: "output_invalid" };
-  j.plan = { rendered, total, passed: [...passed], pages, noteCount, motion, media, fonts: meta.fontsMissing ?? [] };
+  j.plan = {
+    manifest: await manifestDigest(loaded.manifest),
+    rendered,
+    total,
+    passed: [...passed],
+    pages,
+    noteCount,
+    motion,
+    media,
+    fonts: meta.fontsMissing ?? [],
+  };
   j.unit = 0;
   await env.persist(j);
   return null;
@@ -164,6 +178,8 @@ export async function putUnit(env: StoreEnv, j: JobRecord, unit: string): Promis
   const plan = j.plan as Plan;
   const loaded = await checkManifestFor(env.courier, { jobId: env.jobId, ext: env.loc.ext, profile: env.profile });
   if ("fault" in loaded) throw new ContainerFault("output_invalid", loaded.fault);
+  if ((await manifestDigest(loaded.manifest)) !== plan.manifest)
+    throw new ContainerFault("output_invalid", "manifest changed after it was checked");
   const { pieces } = loaded;
   const widths = env.profile.widths;
   const dims = plan.pages.map(([w, h]) => ({ w, h }));
