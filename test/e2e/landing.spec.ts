@@ -632,7 +632,7 @@ const fills = (page: Page) =>
   page.evaluate(`[...document.querySelectorAll(".why-words > *")].map(
     (w) => 1 - parseFloat(getComputedStyle(w).backgroundPositionX) / 100)`) as Promise<number[]>;
 // Scrolls so the paragraph's top sits `progress` of its height above the view's center, plus `px` lower:
-// 0 is its top at the center, 1 its bottom at the center (the fill's range).
+// 0 is its top at the center, 1 its bottom at the center (the fill ends there; it starts with the top 0.4 views lower).
 const scrollWhyTo = (page: Page, progress: number, px = 0) =>
   page.evaluate(`(() => {
     const r = document.querySelector(".why p").getBoundingClientRect();
@@ -661,16 +661,20 @@ for (const vp of [VIEWPORTS[0], VIEWPORTS[2], { name: "844x390", width: 844, hei
       await ink(page);
     });
 
-    test("the fill starts as the paragraph's top reaches the view's center and ends, in view, as its bottom does", async ({
+    test("the fill starts as the paragraph's top is 10% above the view's bottom and ends, in view, as its bottom reaches the center", async ({
       page,
     }) => {
       await page.goto("/");
       // From mid-fill back, so the faint read is the timeline's, not the page's first frame.
       await scrollWhyTo(page, 0.5);
       await expect.poll(async () => (await fills(page))[0]).toBe(1);
-      await scrollWhyTo(page, 0, 10);
+      // The top at 10% above the view's bottom is the start; 10 px lower is still faint.
+      await scrollWhyTo(page, 0, 0.4 * vp.height + 10);
       await faint(page);
-      await scrollWhyTo(page, 0, -10);
+      // 20% above the bottom, the center line is still 30% of the view away: the fill is already under way.
+      await scrollWhyTo(page, 0, 0.3 * vp.height);
+      await expect.poll(async () => (await fills(page))[0]).toBeGreaterThan(0);
+      await scrollWhyTo(page, 0, 0);
       await expect.poll(async () => (await fills(page))[0]).toBeGreaterThan(0);
       await scrollWhyTo(page, 1, 10);
       await expect.poll(async () => (await fills(page)).at(-1)).toBeLessThan(1);
