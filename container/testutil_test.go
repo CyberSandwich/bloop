@@ -89,13 +89,14 @@ type fakeTools struct {
 	probeOut string        // ffprobe JSON for the mp4
 	delay    time.Duration // added to every call
 
-	firstAU        []byte        // what the first-access-unit read returns; nil is an IDR slice
-	encodeLeft     time.Duration // time the last encode had before its budget ended
+	firstAU        []byte             // what the first-access-unit read returns; nil is an IDR slice
+	encodeLeft     time.Duration      // time the last encode had before its budget ended
 	onRun          func(spec cmdSpec) // called for every tool run before it does anything
 	failWidth      string             // ffmpeg fails when its scale filter names this width ("min(1920,")
-	failOnCopy     bool          // ffmpeg fails when it is asked to copy streams
-	failLaterPages bool          // pdftoppm fails for every page after the first
-	holdPages      chan struct{} // when set, pdftoppm for any page after the first waits for a receive or close
+	thumbs         int                // thumbnails written so far; each gets its own bytes
+	failOnCopy     bool               // ffmpeg fails when it is asked to copy streams
+	failLaterPages bool               // pdftoppm fails for every page after the first
+	holdPages      chan struct{}      // when set, pdftoppm for any page after the first waits for a receive or close
 }
 
 func newFakeTools(pages int) *fakeTools {
@@ -246,7 +247,11 @@ func (f *fakeTools) run(ctx context.Context, spec cmdSpec) ([]byte, error) {
 			if w, err := strconv.Atoi(strings.TrimSuffix(filepath.Base(out), ".webp")); err == nil {
 				return nil, write(out, fakeWebP(w, w*9/16))
 			}
-			return nil, write(out, fakeWebP(480, 270))
+			f.mu.Lock()
+			f.thumbs++
+			n := f.thumbs
+			f.mu.Unlock()
+			return nil, write(out, fakeWebP(480, 270-n))
 		case "thumbnail":
 			out := stripOpts(a[2])
 			w, _ := strconv.Atoi(a[3])

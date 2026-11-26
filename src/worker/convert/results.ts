@@ -31,7 +31,7 @@ function safeJson(text: string): unknown {
 }
 
 /** A row whose run is still going: queued, running, or a ready720 whose full encode has not ended (it keeps a stage). */
-const liveWhere = (col = ""): string =>
+export const liveWhere = (col = ""): string =>
   `(${col}status IN ('queued', 'running') OR (${col}status = 'ready720' AND ${col}stage IS NOT NULL))`;
 
 export interface RunKey {

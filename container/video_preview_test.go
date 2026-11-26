@@ -16,14 +16,31 @@ func hevcProbe(w, h int, duration string) string {
 		w, h, duration)
 }
 
-// widthOf is the scale width an encode asked for, or 0 for any other ffmpeg run.
+// widthOf is the size cap an encode's scale filter names first (the width, or the long side of a 720p), or 0 for any
+// other ffmpeg run.
 func widthOf(spec cmdSpec) int {
 	joined := strings.Join(spec.args, " ")
 	var w int
-	if i := strings.Index(joined, "scale=w='min("); i >= 0 && strings.Contains(joined, "libx264") {
-		fmt.Sscanf(joined[i+len("scale=w='min("):], "%d", &w)
+	if i := strings.Index(joined, "scale="); i >= 0 && strings.Contains(joined, "libx264") {
+		if j := strings.Index(joined[i:], "min("); j >= 0 {
+			fmt.Sscanf(joined[i+j+len("min("):], "%d", &w)
+		}
 	}
 	return w
+}
+
+// scaleOf is the scale filter of an encode, or "" for any other ffmpeg run.
+func scaleOf(spec cmdSpec) string {
+	joined := strings.Join(spec.args, " ")
+	if i := strings.Index(joined, "scale="); i >= 0 && strings.Contains(joined, "libx264") {
+		return joined[i:]
+	}
+	return ""
+}
+
+// probeWithRotation is hevcProbe with a display matrix turning the picture a quarter.
+func probeWithRotation(w, h int, duration string, rotation int) string {
+	return strings.Replace(hevcProbe(w, h, duration), `"height":`+fmt.Sprint(h), fmt.Sprintf(`"height":%d,"side_data_list":[{"rotation":%d}]`, h, rotation), 1)
 }
 
 func encodeWidths(tools *fakeTools) []int {
@@ -44,6 +61,7 @@ func TestAnHEVCSourceWiderThanThePreviewIsEncodedAt720pFirstAndListedReadyBefore
 	var previewCode int
 	var preview Manifest
 	var fullSeen bool
+	served := map[string]string{}
 	tools.onRun = func(spec cmdSpec) {
 		if widthOf(spec) != 1920 || fullSeen {
 			return
@@ -53,6 +71,10 @@ func TestAnHEVCSourceWiderThanThePreviewIsEncodedAt720pFirstAndListedReadyBefore
 		code, body, _ := h.get("/out/preview.json")
 		previewCode = code
 		_ = json.Unmarshal(body, &preview)
+		for _, p := range readyAtFull.Ready {
+			_, b, _ := h.get("/out/" + p)
+			served[p] = sum(b)
+		}
 	}
 	h.post("j1", "mov", fakeFaststartMP4)
 	m := h.mustSucceed(h.wait())
@@ -77,12 +99,24 @@ func TestAnHEVCSourceWiderThanThePreviewIsEncodedAt720pFirstAndListedReadyBefore
 	if !slices.Equal(paths, []string{"m/720.mp4", "meta.json", "t.webp"}) {
 		t.Fatalf("preview files = %v", paths)
 	}
+	// What a caller fetches while the full encode runs is what the preview manifest says.
+	for _, f := range preview.Files {
+		if served[f.Path] != f.SHA256 {
+			t.Errorf("%s served with hash %s, manifest says %s", f.Path, served[f.Path], f.SHA256)
+		}
+	}
 	// The finished job replaces the 720p: one mp4, and nothing listed ready or left on disk.
 	if !m.has("m/0.mp4") || m.has("m/720.mp4") || !m.has("t.webp") || !m.has("meta.json") {
 		t.Fatalf("final files: %+v", m.Files)
 	}
 	if _, err := os.Stat(h.srv.dir("out", "m", "720.mp4")); !os.IsNotExist(err) {
-		t.Fatalf("the 720p is still on disk: %v", err)
+		t.Fatalf("the 720p is in the outputs: %v", err)
+	}
+	// The thumbnail of the full encode is its own file, not the preview's rewritten.
+	for _, f := range m.Files {
+		if f.Path == "t.webp" && f.SHA256 == served["t.webp"] {
+			t.Errorf("the final thumbnail has the preview thumbnail's bytes")
+		}
 	}
 	if st := h.status(); len(st.Ready) != 0 {
 		t.Fatalf("ready after done = %v", st.Ready)
@@ -97,10 +131,22 @@ func TestAFullEncodeThatFailsLeavesThe720pAsTheJobsOutput(t *testing.T) {
 	tools.probeIn = hevcProbe(1920, 1080, "100")
 	tools.failWidth = "min(1920,"
 	h := newHarness(t, tools)
+	var previewThumb string
+	tools.onRun = func(spec cmdSpec) {
+		if widthOf(spec) == 1920 && previewThumb == "" {
+			_, b, _ := h.get("/out/t.webp")
+			previewThumb = sum(b)
+		}
+	}
 	h.post("j1", "mov", fakeFaststartMP4)
 	m := h.mustSucceed(h.wait())
 	if !m.has("m/720.mp4") || m.has("m/0.mp4") || !m.has("t.webp") || !m.has("meta.json") {
 		t.Fatalf("a failed full encode must leave the 720p alone: %+v", m.Files)
+	}
+	for _, f := range m.Files {
+		if f.Path == "t.webp" && f.SHA256 != previewThumb {
+			t.Errorf("the kept thumbnail is not the 720p's")
+		}
 	}
 	if _, err := os.Stat(h.srv.dir("out", "m", "0.mp4")); !os.IsNotExist(err) {
 		t.Fatalf("a partial full encode is still on disk: %v", err)
@@ -119,6 +165,37 @@ func TestA720pThatFailsIsNotListedAndTheFullEncodeStillRuns(t *testing.T) {
 	}
 	if code, _, _ := h.get("/out/preview.json"); code != http.StatusConflict {
 		t.Fatalf("preview.json answers %d with no 720p", code)
+	}
+}
+
+func TestThe720pIsJudgedByTheDisplayedLongSideAndCapsIt(t *testing.T) {
+	for _, tc := range []struct {
+		name    string
+		probeIn string
+		preview bool
+	}{
+		{"a portrait 1080x1920 stored upright", hevcProbe(1080, 1920, "100"), true},
+		{"a landscape file turned a quarter", probeWithRotation(1920, 1080, "100", -90), true},
+		{"a 1280x720 file turned a quarter", probeWithRotation(1280, 720, "100", 90), false},
+		{"a portrait 720x1280 is no longer than 1280", hevcProbe(720, 1280, "100"), false},
+	} {
+		name := tc.name
+		tools := newFakeTools(0)
+		tools.probeIn = tc.probeIn
+		h := newHarness(t, tools)
+		h.post("j1", "mov", fakeFaststartMP4)
+		m := h.mustSucceed(h.wait())
+		var first string
+		for _, c := range tools.called("ffmpeg") {
+			if scaleOf(c) != "" {
+				first = scaleOf(c)
+				break
+			}
+		}
+		got := strings.Contains(first, "if(gte(iw,ih)")
+		if got != tc.preview || !m.has("m/0.mp4") {
+			t.Errorf("%s: 720p first = %v, want %v (first scale %q, files %+v)", name, got, tc.preview, first, m.Files)
+		}
 	}
 }
 

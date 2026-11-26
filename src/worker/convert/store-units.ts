@@ -90,6 +90,8 @@ export async function prepare(env: StoreEnv, j: JobRecord): Promise<{ fail: stri
     manifest: env.manifest,
   });
   if ("fault" in loaded) return { fail: "output_invalid" };
+  // Only a video with a 720p may use the early manifest.
+  if (env.manifest === "preview.json" && !loaded.preview) return { fail: "output_invalid" };
   const { pieces, rendered, total } = loaded;
   const passed = new Set<Group>(loaded.passed);
   const kind = loaded.manifest.kind;
@@ -184,9 +186,14 @@ export async function deleteRetiredPreview(bucket: ConvBucket, prefix: string, j
   j.written = j.written.filter((k) => k !== key);
 }
 
+/** What the early publish put in the row: the finished job's store neither rewrites nor deletes these. */
+const PUBLISHED_PREVIEW = ["m/720.mp4", "t.webp"];
+
 /** A group failed a check: its keys go and its later units are skipped. */
 async function dropGroup(env: StoreEnv, j: JobRecord, plan: Plan, group: Group): Promise<void> {
-  const names = new Set(storedPaths(group, env.profile.widths));
+  // Once the 720p is published its keys are the row's: only what this pass wrote goes.
+  const published = j.preview === "stored" ? PUBLISHED_PREVIEW : [];
+  const names = new Set(storedPaths(group, env.profile.widths).filter((p) => !published.includes(p)));
   const keys = [...names].map((rel) => outputKey(env.loc.prefix, rel));
   await env.bucket.delete(keys);
   j.stored = j.stored.filter((s) => !names.has(s.path));
@@ -208,6 +215,7 @@ export async function putUnit(env: StoreEnv, j: JobRecord, unit: string): Promis
     manifest: env.manifest,
   });
   if ("fault" in loaded) throw new ContainerFault("output_invalid", loaded.fault);
+  if (env.manifest === "preview.json" && !loaded.preview) throw new ContainerFault("output_invalid", "no 720p");
   if ((await manifestDigest(loaded.manifest)) !== plan.manifest)
     throw new ContainerFault("output_invalid", "manifest changed after it was checked");
   const { pieces } = loaded;
@@ -260,8 +268,13 @@ export async function putUnit(env: StoreEnv, j: JobRecord, unit: string): Promis
     } else if (unit === "pdf") kept = await singles(["doc.pdf"]);
     else if (unit === "media") {
       // The 720p stored early is the final output when the full encode did not finish; a full one replaces it.
-      const have720 = j.stored.some((s) => s.path === "m/720.mp4");
-      kept = plan.preview ? have720 || (await singles(["m/720.mp4", "t.webp"])) : await singles(["m/0.mp4", "t.webp"]);
+      // A published thumbnail is not written again: it is the row's, and a reader may be fetching it.
+      const unpublished = (paths: string[]) => (j.preview === "stored" ? paths.filter((p) => p !== "t.webp") : paths);
+      const mine720 = j.stored.find((s) => s.path === "m/720.mp4");
+      const have720 = !!mine720 && mine720.sha256 === pieces.get("m/720.mp4")?.sha256;
+      kept = plan.preview
+        ? have720 || (await singles(unpublished(["m/720.mp4", "t.webp"])))
+        : await singles(unpublished(["m/0.mp4", "t.webp"]));
       if (kept && !plan.preview) await retirePreview(env, j);
     } else if (unit === "image") kept = await singles(["i/1920.jpg", "t.webp"]);
     else if (unit === "notes") {

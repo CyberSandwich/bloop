@@ -48,7 +48,7 @@ const plan = z.strictObject({
   media: z.boolean(),
   fonts: z.array(z.string()),
   /** The video's mp4 is the 720p (the early publish, or the full encode did not finish). */
-  preview: z.boolean(),
+  preview: z.boolean().default(false),
 });
 
 export const jobRecordSchema = z.strictObject({
@@ -92,9 +92,9 @@ export const jobRecordSchema = z.strictObject({
   /** The end was counted for the breaker; set before the count so a repeated finish never counts twice. */
   recorded: z.boolean(),
   /** A video's 720p: `storing` while it is read from the container, `stored` once it is published and playable, `dropped` when it failed a check. */
-  preview: z.enum(["none", "storing", "stored", "dropped"]),
+  preview: z.enum(["none", "storing", "stored", "dropped"]).default("none"),
   /** Container seconds are metered in standard-2 seconds: this many per second of the instance the run uses. */
-  weight: z.number().positive(),
+  weight: z.number().positive().default(1),
   /** Set once: the run's end. `code` is set for failed and skipped. */
   end: z.strictObject({ state: z.enum(TERMINAL_STATES), code: z.string().nullable() }).nullable(),
 });
