@@ -179,12 +179,20 @@ export class Screen extends DurableObject<Env> implements PairingStore {
     return this.phoneEvent(pid, () => ({ e: "listed", now: Date.now(), ids }));
   }
 
-  async control(pid: string, { seq, ...shown }: ShownCommand): Promise<Result<PhoneView>> {
+  async control(pid: string, { seq, base: _, ...shown }: ShownCommand): Promise<Result<PhoneView>> {
     return this.phoneEvent(pid, () => ({ e: "control", now: Date.now(), from: "phone", seq, shown }));
   }
 
-  async reportShown(sid: string, { seq, ...shown }: ShownCommand): Promise<Result<ScreenView>> {
-    return this.screenEvent(sid, { e: "control", now: Date.now(), from: "screen", seq, shown });
+  async reportShown(sid: string, { seq, base, ...shown }: ShownCommand): Promise<Result<ScreenView>> {
+    const ev: Event = {
+      e: "control",
+      now: Date.now(),
+      from: "screen",
+      seq,
+      shown,
+      ...(base === undefined ? {} : { base }),
+    };
+    return this.screenEvent(sid, ev);
   }
 
   /** A change that arrives after the end ends the session (the machine's `length`), and says so: `session_ended`. */
@@ -696,6 +704,9 @@ export class Screen extends DurableObject<Env> implements PairingStore {
     }
     const session = refusalSession(record, m.pairing.sessionId);
     if (session) await this.auditLink(session, now, "link.refused", { cause: error, ...via });
+    // The likely cause if this session never starts (REL-16); outside a session the machine refuses it, harmlessly.
+    if (session === m.pairing.sessionId) await this.apply({ e: "started", now, cause: "fetch_refused" });
+    // transitional: removed in P1 commit 6 (the screen's hello `fo: "main"` sends started fo_fallback, FO-01)
     await bestEffort(
       metricsFor(this.env).record({
         at: now,

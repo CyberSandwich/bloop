@@ -24,6 +24,7 @@ export const noopSeams: SessionSeams = {
   },
   async revokeLinks() {},
   async purge() {},
+  // transitional: removed in R9 (R's Analytics Engine writer)
   async start() {},
 };
 

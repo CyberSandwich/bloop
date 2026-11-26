@@ -177,6 +177,11 @@ describe("PAIR-14 drawChoices", () => {
     );
   });
 
+  it("PAIR-14 drawChoices: a match that is not two digits is refused", () => {
+    for (const match of ["", "4", "420", "4a", " 4"])
+      expect(() => drawChoices(match, () => 0), match).toThrow(RangeError);
+  });
+
   it("PAIR-14 drawChoices: the match sits in each position about a third of the time (chi-square)", () => {
     const rand = seeded(7);
     const draws = 10_000;
