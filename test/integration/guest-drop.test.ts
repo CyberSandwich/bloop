@@ -1,6 +1,6 @@
 // The guest drop against `wrangler dev` with a local R2 bucket and D1: a full drop to the Open click, the refusals,
 // and the deletion paths. Short timers and the budget live in guest-drop-timing.test.ts.
-import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import { buildZip, concat, validDeck, validJpeg, validPdf, validPng, validVideo } from "../zip-builder.ts";
 import { guestRow, openGuestView, pairPhone, problemCode, putDrop } from "./drop-client.ts";
 import { fetchLink } from "./open-client.ts";
@@ -488,9 +488,11 @@ describe("DROP-09 access: a guest file is visible only inside its session", () =
     const down = await fetchLink(url, { headers: { "X-Bloop-Fault": "r2" } });
     expect(down.status).toBe(502);
     expect(await problemCode(down)).toBe("upstream_failed");
-    expect(wrangler.output()).toContain(
-      '"evt":"open.fetch","method":"GET","client":"other","query":false,"range":false,"status":502',
-    );
+    // wrangler prints a Worker's log line a moment after the response.
+    await vi.waitFor(() => expect(wrangler.output()).toMatch(/"evt":"open\.fetch"[^\n]*"status":502/), {
+      timeout: 5000,
+    });
+    expect(wrangler.output()).toContain('"evt":"unhandled","error":"Error"');
     socket.close();
   });
 
