@@ -569,7 +569,7 @@ const inert = async () => null;
 const modules = {
   menu: () => import("./library/menu.js"),
   trash: () => import("./library/trash.js"),
-  sort: inert,
+  sort: () => import("./library/sort.js"),
   preview: inert,
   present: inert,
   socket: inert,
