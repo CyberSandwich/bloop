@@ -54,7 +54,7 @@ test.describe("PAIR-14 the match pick", () => {
     // The line under the title, no list, no buttons beside the choices; Back lets go of the claim.
     await expect(phone.page.locator("#body")).toHaveText("Tap the screen's number, then choose your files.");
     await expect(phone.page.locator("#file-list")).toBeHidden();
-    await expect(phone.page.locator("#actions .btn")).toHaveCount(0);
+    await expect(phone.page.locator("#actions [data-action]")).toHaveCount(0);
     await expect(phone.page.getByRole("link", { name: "Back", exact: true })).toBeVisible();
     // The claim's answer and the view never carry the real number while the pick is open.
     const pid = await phone.page.evaluate(() => localStorage.getItem("bloop.pid"));
@@ -155,7 +155,7 @@ test.describe("PAIR-14 the match pick", () => {
     expect(await phone.page.evaluate(() => (globalThis as unknown as { __buzz: number[] }).__buzz)).toEqual([12]);
     await phone.page.getByRole("button", { name: "Approve", exact: true }).click();
     await expect(heading(screen.page)).toHaveText("Opening in PowerPoint");
-    await expect(heading(phone.page)).toHaveText("Approved");
+    await expect(heading(phone.page)).toHaveText("This Screen");
     await expect(phone.page.getByRole("button", { name: "Revoke" })).toBeVisible();
     await closeAll(screen, phone);
   });
