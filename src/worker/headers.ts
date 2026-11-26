@@ -11,6 +11,7 @@ export type Policy =
   | "screen"
   | "library"
   | "auth"
+  | "report"
   | "api"
   | "file-origin"
   | "file-pptx"
@@ -41,7 +42,7 @@ const PERMISSION_FEATURES = [
   "xr-spatial-tracking",
 ];
 
-/** Features a page keeps for itself: the screen page `/s`, the phone and library pages (a wake lock keeps a long upload or a talk running), and the pages on the auth policy: sign-in and account pages (passkeys, ADR 0014), which /report shares for Turnstile. */
+/** Features a page keeps for itself: the screen page `/s`, the phone and library pages (a wake lock keeps a long upload or a talk running), and the sign-in pages (passkeys, ADR 0014). */
 const PAGE_FEATURES = {
   none: new Set<string>(),
   screen: new Set(["fullscreen", "screen-wake-lock"]),
@@ -80,6 +81,8 @@ const WORKER_TAIL = `${PAGE_HEAD} trusted-types bloop-worker; upgrade-insecure-r
 const SELF = "script-src 'self'; style-src 'self'; img-src 'self'; font-src 'self'";
 const TURNSTILE = "https://challenges.cloudflare.com";
 
+const TURNSTILE_CSP = `default-src 'none'; script-src 'self' ${TURNSTILE}; style-src 'self'; img-src 'self'; font-src 'self'; connect-src 'self'; frame-src ${TURNSTILE}; ${PAGE_TAIL}`;
+
 export const CSP: Readonly<Record<Policy, string>> = {
   landing: `default-src 'none'; ${SELF}; ${PAGE_TAIL}`,
   app: `default-src 'none'; ${SELF}; connect-src 'self'; ${PAGE_TAIL}`,
@@ -89,8 +92,10 @@ export const CSP: Readonly<Record<Policy, string>> = {
   // The library page is the app policy plus what the screen page has, so previews play; the file origin and the R2
   // endpoint are added at serve time.
   library: `default-src 'none'; ${SELF}; media-src 'self'; connect-src 'self'; worker-src 'self'; ${WORKER_TAIL}`,
-  // Sign-in, invite, account, admin and report: the app policy plus the Turnstile widget (ADR 0022).
-  auth: `default-src 'none'; script-src 'self' ${TURNSTILE}; style-src 'self'; img-src 'self'; font-src 'self'; connect-src 'self'; frame-src ${TURNSTILE}; ${PAGE_TAIL}`,
+  // Sign-in, invite, account and admin: the app policy plus the Turnstile widget (ADR 0022); /report is the same
+  // policy without the passkey permissions.
+  auth: TURNSTILE_CSP,
+  report: TURNSTILE_CSP,
   api: "default-src 'none'; frame-ancestors 'none'",
   // The workers.dev host answers only what it must (ADR 0018); a document there could run nothing.
   "file-origin": "default-src 'none'; sandbox; frame-ancestors 'none'",
@@ -109,6 +114,7 @@ const EXTRA: Readonly<Record<Policy, Record<string, string>>> = {
   screen: {},
   library: {},
   auth: {},
+  report: {},
   // X-Bloop marks an answer as ours, so the client can tell a campus filter's block page from a real reply.
   api: { "Cache-Control": "no-store", "X-Bloop": "1" },
   // A cross-origin probe from the app reads it (ADR 0018); the handler adds Access-Control-Allow-Origin.

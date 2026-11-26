@@ -53,6 +53,25 @@ const get = (env: PageEnv, path: string, cookie?: string) =>
     env,
   );
 
+describe("MODE-01 gate: the path checked is the path served", () => {
+  it("MODE-01 gate: a non-normalized form of a page asks the asset layer for the normalized path", async () => {
+    const { db, env } = world();
+    setMode(db, "preview");
+    const asked: string[] = [];
+    const watching = {
+      ...env,
+      ASSETS: {
+        fetch: async (request: Request) => {
+          asked.push(new URL(request.url).pathname);
+          return new Response("ok");
+        },
+      },
+    } as unknown as PageEnv;
+    for (const path of ["//privacy", "/./privacy", "/x/../privacy", "/privacy/"]) await get(watching, path);
+    expect(asked).toEqual(["/privacy", "/privacy", "/privacy", "/privacy"]);
+  });
+});
+
 const FORMS = [
   "/open/",
   "/open",

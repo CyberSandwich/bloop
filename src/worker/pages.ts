@@ -138,13 +138,16 @@ async function memberVisible(
  * the account pages, else the plain asset. The mode is read only for a path that needs it.
  */
 export async function servePage(
-  request: Request,
+  original: Request,
   env: PageEnv,
   variants: readonly Variant[] = VARIANTS,
 ): Promise<Response> {
-  const url = new URL(request.url);
+  const url = new URL(original.url);
   const path = normalizePath(url.pathname);
-  if (path === null) return missing(env, request, await notFound(env, request));
+  if (path === null) return missing(env, original, await notFound(env, original));
+  // The path that was checked is the path that is served.
+  const request =
+    path === url.pathname ? original : new Request(new URL(`${path}${url.search}`, original.url), original);
   const variant = variants.find((v) => v.path === path);
   // The file forms of a gated page (`/library.html`, `/library/index.html`) and its other letter cases are the page.
   const key = path.replace(/(\/index)?\.html$/i, "").toLowerCase() || "/";

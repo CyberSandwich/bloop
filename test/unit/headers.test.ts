@@ -50,7 +50,7 @@ const pages: [string, Policy][] = [
   ["/invite", "auth"],
   ["/account", "auth"],
   ["/admin", "auth"],
-  ["/report", "auth"],
+  ["/report", "report"],
   ["/library", "library"],
   ["/security", "landing"],
   ["/privacy", "landing"],
@@ -72,8 +72,10 @@ describe("public/_headers matches headers.ts", () => {
     }
   });
 
-  it("no variant has a block of its own in _headers, so the /* landing policy covers the open subtree", () => {
-    expect(VARIANTS.filter(({ path }) => pages.some(([p, policy]) => p === path && policy !== "landing"))).toEqual([]);
+  it("MODE-01 headers: the report page keeps Turnstile and has no passkey permissions", () => {
+    const policy = staticHeaders("/report")["permissions-policy"] ?? "";
+    expect(policy).not.toContain("publickey-credentials-get=(self)");
+    expect(staticHeaders("/report")["content-security-policy"]).toContain("challenges.cloudflare.com");
   });
 });
 
