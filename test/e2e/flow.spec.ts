@@ -3318,11 +3318,15 @@ test.describe("PAIR-13 remote: the phone commands the demo screen (design.md sec
     await phone.page.setViewportSize({ width: 844, height: 390 });
     await expect(heading(screen.page)).toHaveText(DEMO_ITEMS.deck.name);
     await expect(preview).toHaveCount(0);
-    // The panel is one button tall: the bubbles, Ends in and Revoke on one row, Ends in with its words.
-    const tops = new Set<number>();
-    for (const name of ["Previous", "Next", "Revoke", /Change the Session Expiry$/])
-      tops.add(Math.round((await phone.page.getByRole("button", { name }).boundingBox())?.y ?? -1));
-    expect([...tops]).toHaveLength(1);
+    // As upright: the bubbles above, Ends in (with its words) and Revoke on one row under them, nothing overlapping.
+    const box = async (name: string | RegExp) => {
+      const b = await phone.page.getByRole("button", { name }).boundingBox();
+      if (!b) throw new Error(`no box: ${name}`);
+      return b;
+    };
+    const [next, ends, revoke] = [await box("Next"), await box(/Change the Session Expiry$/), await box("Revoke")];
+    expect(Math.round(next.y + next.height)).toBeLessThanOrEqual(Math.round(ends.y));
+    expect(Math.round(ends.y)).toBe(Math.round(revoke.y));
     await expect(phone.page.locator("#ends-text .sr")).toHaveCount(0);
     await bubbles.getByRole("button", { name: "Next" }).click();
     await expect(dots).toHaveText(`2 / ${DECK_PAGES}`);
