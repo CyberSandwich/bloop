@@ -1,0 +1,28 @@
+name: container-probe
+
+# Throwaway: measures render steps and link-following controls for the converter image.
+on:
+  push:
+    branches: [ci/v1-container-probe]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  probe:
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version-file: .nvmrc
+      - run: docker build --tag bloop-converter:ci container
+      - run: node container/fixtures/make.mjs
+      - name: Links
+        run: node tools/probe-v1/links.mjs
+      - name: Render steps
+        run: node tools/probe-v1/render.mjs
