@@ -74,7 +74,7 @@ Each cap has a default in `src/worker/spend/caps.ts` and a var that replaces it;
 | `CAP_POOL_CONVERT_PUBLIC` | 1 | guest and demo conversions at once, so the public cannot starve accounts |
 | `CAP_POOL_EXPORT` | 4 | exports at once account-wide; each streams a library in Worker CPU |
 | `CAP_POOL_EXPORT_PER_USER` | 1 | one export at a time per user |
-| `CAP_LEASE_CONVERT_SECONDS` | 1800 | longest a conversion lease may be asked for; the longest chain is a video's, inspect 30 s plus the video stage's 1440 s plus 300 s for the transfers, 1770 s (container/test/lease.test.mjs holds every kind under it) |
+| `CAP_LEASE_CONVERT_SECONDS` | 1800 | longest a conversion lease may be asked for; the longest chain is a video's, inspect 30 s plus the video stage's 1440 s plus 300 s for the transfers, 1770 s (test/unit/container-lease.test.ts holds every kind under it) |
 | `CAP_LEASE_EXPORT_SECONDS` | 900 | longest an export lease may be asked for |
 | `CAP_LEASE_GRACE_SECONDS` | 300 | an unreleased lease keeps its slot this long past its deadline |
 | `CAP_CONTAINER_SECONDS_DAY` | 21600 | 6 instance-hours a day: about $0.77 a day on standard-2 |
