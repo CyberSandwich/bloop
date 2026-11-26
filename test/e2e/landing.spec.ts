@@ -732,7 +732,7 @@ test.describe("phone hero", () => {
     await page.goto("/");
     await page.waitForLoadState("networkidle");
     await expect(page.locator(".stage")).toBeHidden();
-    expect(await page.locator(".tilt").evaluate((el) => getComputedStyle(el as unknown as El).display)).toBe("none");
+    await expect(page.locator(".tilt")).toHaveCSS("display", "none");
     expect(requested.filter((u) => u.includes("hero-viewer"))).toEqual([]);
   });
 });
