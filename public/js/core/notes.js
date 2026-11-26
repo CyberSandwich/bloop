@@ -143,6 +143,5 @@ export function mount(c, at, preview) {
     },
     true,
   );
-  addEventListener("resize", update);
   return update;
 }

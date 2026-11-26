@@ -38,12 +38,19 @@ export function mount(c, onView) {
   let drawn = "";
   /** A paged item: the one the preview shows. */
   let paged = false;
+  /**
+   * The notes (core/notes.js), loaded at the first Present of a paged item and told on every `place`, which every
+   * paint and resize ends in; a failed load leaves the plain layout.
+   * @type {Promise<(() => void) | void> | undefined}
+   */
+  let notes;
 
   // The preview sits over the panel only where the list above it keeps two rows (remote.css holds the list at two):
   // where the column would then overflow, it gives way, and Previous and Next still step.
-  const place = () => {
+  const place = async () => {
     if (paged && !preview.isConnected) panel.before(preview);
     if (!paged || column.scrollHeight > column.clientHeight) preview.remove();
+    (await notes)?.();
   };
   addEventListener("resize", place);
 
@@ -55,17 +62,7 @@ export function mount(c, onView) {
     paint,
   });
 
-  /**
-   * The notes (core/notes.js), loaded at the first Present of a paged item; a failed load leaves the plain layout.
-   * @type {Promise<(() => void) | void> | undefined}
-   */
-  let notes;
   function paint() {
-    draw();
-    notes?.then((update) => update?.());
-  }
-
-  function draw() {
     const v = c.view;
     const at = remote.at();
     const item = at && v?.items.find((x) => x.id === at.item);
@@ -102,7 +99,10 @@ export function mount(c, onView) {
     }
     paged = !!pages;
     if (at.present && pages)
-      notes ??= import("./notes.js").then((m) => m.mount(c, () => on && remote.at(), preview)).catch(() => {});
+      notes ??= import("./notes.js").then(
+        (m) => m.mount(c, () => on && remote.at(), preview),
+        () => {},
+      );
     // The screen holds sound until a tap there: the phone says so under the list.
     if (video && at.sound === "blocked") {
       if (!note.isConnected) list.after(note);
