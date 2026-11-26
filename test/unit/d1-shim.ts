@@ -4,17 +4,17 @@ import { readdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { DatabaseSync, type SQLInputValue } from "node:sqlite";
 import { fileURLToPath } from "node:url";
-import type { Db, Statement } from "../../src/worker/auth/db.ts";
+import type { BatchDb, Statement } from "../../src/worker/auth/db.ts";
 
 const migrations = fileURLToPath(new URL("../../migrations", import.meta.url));
 
 const toSql = (v: unknown): SQLInputValue => (v instanceof ArrayBuffer ? new Uint8Array(v) : (v as SQLInputValue));
 
 class Prepared implements Statement {
-  private values: SQLInputValue[] = [];
+  values: SQLInputValue[] = [];
   constructor(
     private readonly db: DatabaseSync,
-    private readonly sql: string,
+    readonly sql: string,
   ) {}
 
   bind(...values: unknown[]): Statement {
@@ -36,7 +36,7 @@ class Prepared implements Statement {
   }
 }
 
-export interface TestDb extends Db {
+export interface TestDb extends BatchDb {
   /** Direct access for assertions and for tampering with stored rows. */
   raw: DatabaseSync;
 }
@@ -49,7 +49,26 @@ export function testDb(): TestDb {
     .sort()) {
     raw.exec(readFileSync(join(migrations, file), "utf8"));
   }
-  return { raw, prepare: (sql) => new Prepared(raw, sql) };
+  return {
+    raw,
+    prepare: (sql) => new Prepared(raw, sql),
+    // Like D1: one transaction, rolled back whole when any statement throws.
+    async batch(statements) {
+      await Promise.resolve();
+      raw.exec("BEGIN");
+      try {
+        const results = statements.map((s) => {
+          const { sql, values } = s as Prepared;
+          return { meta: { changes: Number(raw.prepare(sql).run(...values).changes) } };
+        });
+        raw.exec("COMMIT");
+        return results;
+      } catch (error) {
+        raw.exec("ROLLBACK");
+        throw error;
+      }
+    },
+  };
 }
 
 /** An app_user row, which token_grant and phone_session reference. */
