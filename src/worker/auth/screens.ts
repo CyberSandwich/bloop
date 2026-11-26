@@ -13,9 +13,7 @@ export interface ScreenScope {
 
 /** Ends the member's live screens: all of them, or the scope named. */
 export async function endScreens(env: Env, userId: string, scope: ScreenScope = {}): Promise<void> {
-  // TRANSITIONAL(a-4): a scoped end (one session's or one file's screens) does nothing until a-4 calls the library's
-  // UserLibrary.endScreens(scope).
-  if (scope.bySession === undefined && scope.fileId === undefined) await endLiveScreens(env, userId);
+  await endLiveScreens(env, userId, scope);
 }
 
 /** The slice of the library's UserLibrary a session end calls: it closes the sockets tagged `s:<publicId>`. */
@@ -25,11 +23,8 @@ interface LibrarySessions {
 
 type LibraryEnv = Pick<Env, "USER_LIBRARY" | "PUBLIC_ORIGIN">;
 
-/**
- * TRANSITIONAL(L): false until UserLibrary.closeSessions exists. While false no object is woken (each wake is
- * billed) and nothing is logged; set it true the day it lands.
- */
-export const LIBRARY_CLOSES_SESSIONS = false;
+/** False would leave every object asleep (each wake is billed) and log nothing; it is on now that closeSessions exists. */
+export const LIBRARY_CLOSES_SESSIONS = true;
 
 /**
  * Closes the library sockets of ended sessions in one call on the member's UserLibrary (idFromName(userId), eu).

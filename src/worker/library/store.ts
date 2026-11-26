@@ -5,6 +5,7 @@
 
 import { NAME_MAX } from "../../shared/name-rule.ts";
 import type { Db, Statement } from "../auth/db.ts";
+import { IDLE_DAYS } from "../auth/sessions.ts";
 import { base64url, fromBase64url } from "../ids.ts";
 import { renamed } from "./names.ts";
 
@@ -34,9 +35,11 @@ const chunks = <T>(list: readonly T[]): T[][] =>
 export const SERVABLE_FROM = "library_file f JOIN app_user u ON u.id = f.user_id";
 export const SERVABLE_SQL =
   "f.user_id = ?1 AND f.status = 'ready' AND f.trashed_at IS NULL AND f.disabled_at IS NULL AND u.status = 'active' AND u.suspended_at IS NULL";
-/** A fetch on behalf of a screen also needs the pairing's session to be alive: ?2 is its public id, ?3 the time. */
-export const PINNED_SQL =
-  "EXISTS (SELECT 1 FROM phone_session s WHERE s.public_id = ?2 AND s.user_id = f.user_id AND s.expires_at > ?3)";
+/**
+ * A fetch on behalf of a screen also needs the pairing's session to be alive, neither expired nor idle as `lookup` reads
+ * it: ?2 is its public id, ?3 the time.
+ */
+export const PINNED_SQL = `EXISTS (SELECT 1 FROM phone_session s WHERE s.public_id = ?2 AND s.user_id = f.user_id AND s.expires_at > ?3 AND s.last_seen_at + ${IDLE_DAYS * 86_400_000} > ?3)`;
 
 /** `null` leaves the session out: only a `/p/` fetch, which carries no session and whose token lives 300 s. */
 export interface Pinned {
