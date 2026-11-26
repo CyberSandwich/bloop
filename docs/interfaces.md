@@ -9,7 +9,7 @@ export type Kind = "owner" | "guest";
 export type FileType = "pptx" | "pdf" | "jpg" | "png" | "mp4" | "mov";
 export const OPEN_MODES = ["protocol", "download", "pdf", "view"] as const;   // the launched frame and POST /api/screen/link both use it
 export type OpenMode = (typeof OPEN_MODES)[number];   // view: an image shown in the screen page
-export type EndReason = "phone" | "screen" | "auto" | "canceled" | "claim_timeout" | "error";
+export type EndReason = "phone" | "screen" | "auto" | "canceled" | "claim_timeout" | "error" | "account";   // account: endFromOwner
 export type Actor = "screen" | "phone" | "system" | "host" | "it";
 
 export type Result<T, E extends string> = { ok: true; value: T } | { ok: false; error: E };
@@ -207,7 +207,7 @@ export type ScreenStateKey =
 | approved | `fallback(protocol, item)` | as above | (same) | the screen lost its link, or shows another item: mint its protocol (or view) link, no mode change, no metric |
 | claimed, choosing, uploading, offered | `cancel` | from the phone | waiting | end reason `canceled`; audit; delete any object; both codes wiped, a fresh one issued; phone sockets get `error pairing_invalid` and close |
 | claimed, choosing, uploading, offered | `restart` | from the screen ("Start Over") | waiting | end reason `canceled`, actor screen; audit; delete any object; as cancel |
-| approved, opening, open | `end(by)` | | ended | revoke links; residue purge; audit `ended`; metric; push both |
+| approved, opening, open | `end(by)` | | ended | end reason `by`, except `system` is `auto`; revoke links; residue purge; audit `ended` (an `account` end by actor system); metric; push both |
 | claimed to offered | `end(by)` | | ended | as above, no session row change beyond `ended_at` |
 | any timer state | `timer(now)` | deadline passed | per 2.1 | per 2.1 |
 | ended, waiting | `timer(now)` | `closeAt` passed, no socket | closed | `deleteAll()` |
@@ -302,7 +302,7 @@ export type Event =
   | { e: "fallback"; now: number; mode: OpenMode; item: number | null; maxMints: number }   // null: the first file
   | { e: "cancel"; now: number }
   | { e: "restart"; now: number }
-  | { e: "end"; now: number; by: "phone" | "screen" | "system" }
+  | { e: "end"; now: number; by: "phone" | "screen" | "system" | "account" }   // account: endFromOwner, reason account, actor system
   | { e: "socket"; now: number; open: number }                          // open socket count
   | { e: "timer"; now: number };
 
@@ -424,7 +424,7 @@ export interface DemoCap {
   demoRelease(screenRef: string): Promise<void>;
 }
 ```
-`Screen.endFromOwner(userId: string): Promise<Result<null>>` is called object to object only (the library's endScreens). It is on the Screen class, not on `PairingStore`, and a test pins that no route, router, entry point or frame names it. It ends the session `userId` owns by "system" (links revoked, as `end`); no pairing, another owner or an ended session changes nothing. Its body is `ownerEnd` in `seams/open-path/lookups.ts`.
+`Screen.endFromOwner(userId: string): Promise<Result<null>>` is called object to object only (the library's endScreens). It is on the Screen class, not on `PairingStore`, and a test pins that no route, router, entry point or frame names it. It ends the session `userId` owns with reason `account` (actor system; links revoked, as `end`; the screen shows the phone-end line, never "Time's up."); no pairing or another owner changes nothing. The end is committed before its effects run, so a call on a screen an account end already ended re-runs its revoke and push (`accountEndRedo`, idempotent): a caller retries a revoke that threw by calling again. Its bodies are in `seams/open-path/lookups.ts`.
 
 ### 2.5 Codes (`public/js/shared/codes.js`, pure)
 ```js

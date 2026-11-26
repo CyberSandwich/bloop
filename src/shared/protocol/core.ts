@@ -25,7 +25,8 @@ export type PlannedFileType =
 /** `view` is a photo or video shown in the screen page; `pdf` a PDF file's own view or a deck's rendition. */
 export const OPEN_MODES = ["protocol", "download", "pdf", "view"] as const;
 export type OpenMode = (typeof OPEN_MODES)[number];
-export type EndReason = "phone" | "screen" | "auto" | "canceled" | "claim_timeout" | "error";
+/** `account`: the owner's account action ended it (endFromOwner); `auto`: its time ran out. */
+export type EndReason = "phone" | "screen" | "auto" | "canceled" | "claim_timeout" | "error" | "account";
 export type Actor = "screen" | "phone" | "system" | "host" | "it";
 
 export type Result<T, E extends string> = { ok: true; value: T } | { ok: false; error: E };

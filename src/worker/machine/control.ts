@@ -108,5 +108,5 @@ export function end(m: Machine, ev: EventOf<"end">, cfg: MachineConfig): Step {
   if (m.state === "waiting" && ev.by === "screen") return close(m);
   if (!PRE_APPROVAL.includes(m.state) && !IN_SESSION.includes(m.state)) return fail("wrong_state");
   const reason: EndReason = ev.by === "system" ? "auto" : ev.by;
-  return endSession(m, ev.now, cfg, reason, ev.by);
+  return endSession(m, ev.now, cfg, reason, ev.by === "account" ? "system" : ev.by);
 }
