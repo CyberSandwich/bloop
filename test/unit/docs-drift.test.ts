@@ -346,6 +346,7 @@ describe("size budgets", () => {
       "sheen follow, lazy": "public/js/sheen-follow.js",
       "trusted types policy, lazy": "public/js/core/tt.js",
       "account errors, lazy": "public/js/shared/errors-app.js",
+      "library sample, lazy": "public/js/library/sample.js",
       "library present, lazy": "public/js/library/present.js",
       "library sort, lazy": "public/js/library/sort.js",
       "library trash, lazy": "public/js/library/trash.js",
