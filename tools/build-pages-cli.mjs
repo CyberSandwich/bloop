@@ -1,11 +1,11 @@
 // `node tools/build-pages-cli.mjs` writes the generated pages; `--check` writes nothing and exits 1 on drift;
-// `--launch` writes nothing and exits 1 while an open document still carries the placeholder date.
+// `--launch` writes nothing and exits 1 while an open draft is still marked `datePending`.
 import { placeholderDates, sync } from "./build-pages.mjs";
 
 if (process.argv.includes("--launch")) {
   const left = placeholderDates();
   if (left.length === 0) process.exit(0);
-  console.error(`Open documents still carry the placeholder date:\n  ${left.join("\n  ")}`);
+  console.error(`Open drafts still marked datePending (the date is not final):\n  ${left.join("\n  ")}`);
   process.exit(1);
 }
 
