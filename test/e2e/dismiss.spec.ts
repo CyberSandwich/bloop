@@ -1,15 +1,18 @@
 // A tap outside an open popover only closes it (design.md section 6, Overlays): on a touch phone the platform's light
 // dismiss lets the tap's click land on what lies under it, so a tap beside the item sheet also turned the slide. CI only.
 import { expect, type Page, test } from "@playwright/test";
-import { atRest, oneDevice, PHONE, pick } from "./one-device.ts";
+import { DECK_PAGES, DEMO_ITEMS } from "../../src/shared/demo-catalog.ts";
+import { atRest, oneDevice, PHONE } from "./one-device.ts";
 
 test.use(PHONE);
 
-/** The one-device demo showing the sample deck: two landscape slides. */
+const DECK = DEMO_ITEMS.deck.name;
+const at = (n: number) => `${n} / ${DECK_PAGES}`;
+
+/** The one-device demo showing the deck's landscape slides, on the first. */
 async function deck(page: Page) {
   await oneDevice(page);
-  await pick(page, "Sample deck.pptx");
-  await expect(page.locator("#dots")).toHaveText("1 / 2");
+  await expect(page.locator("#dots")).toHaveText(at(1));
 }
 
 const open = (page: Page) => page.locator("#side").evaluate((n) => n.matches(":popover-open"));
@@ -45,21 +48,21 @@ test("a tap beside the open item sheet only closes it: no slide turns on either 
   await tapSlide(page, 0.9);
   await settle(page);
   expect(await open(page), "the sheet closed").toBe(false);
-  await expect(page.locator("#dots")).toHaveText("1 / 2");
-  await expect(page.getByRole("heading", { level: 1 })).toHaveText("Sample deck.pptx");
+  await expect(page.locator("#dots")).toHaveText(at(1));
+  await expect(page.getByRole("heading", { level: 1 })).toHaveText(DECK);
 
   // Closed, the same tap turns the slide.
   await tapSlide(page, 0.9);
-  await expect(page.locator("#dots")).toHaveText("2 / 2");
+  await expect(page.locator("#dots")).toHaveText(at(2));
 
   await openSheet(page);
   await tapSlide(page, 0.1);
   await settle(page);
   expect(await open(page), "the sheet closed").toBe(false);
-  await expect(page.locator("#dots")).toHaveText("2 / 2");
+  await expect(page.locator("#dots")).toHaveText(at(2));
 
   await tapSlide(page, 0.1);
-  await expect(page.locator("#dots")).toHaveText("1 / 2");
+  await expect(page.locator("#dots")).toHaveText(at(1));
 });
 
 test("a tap on End beside the open logo question only closes the question: the session goes on", async ({ page }) => {
@@ -74,5 +77,5 @@ test("a tap on End beside the open logo question only closes the question: the s
   await page.touchscreen.tap(box.x + box.width / 2, box.y + box.height / 2);
   await settle(page);
   await expect(question).toBeHidden();
-  await expect(page.getByRole("heading", { level: 1 })).toHaveText("Sample deck.pptx");
+  await expect(page.getByRole("heading", { level: 1 })).toHaveText(DECK);
 });
