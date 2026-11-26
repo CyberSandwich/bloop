@@ -6,6 +6,7 @@ const SIZES = [
   [390, 844],
   [430, 932],
   [1440, 900],
+  [844, 390],
 ] as const;
 
 for (const [width, height] of SIZES) {
@@ -13,8 +14,8 @@ for (const [width, height] of SIZES) {
     mkdirSync("test-results/shots", { recursive: true });
     const context = await browser.newContext({
       viewport: { width, height },
-      isMobile: width < 640,
-      hasTouch: width < 640,
+      isMobile: width < 900,
+      hasTouch: width < 900,
       deviceScaleFactor: 2,
     });
     const page = await context.newPage();
