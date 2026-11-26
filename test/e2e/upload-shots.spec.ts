@@ -2,7 +2,7 @@
 // The page is the real engine and binding against the real Worker; only the stuck states stub POST /complete.
 import { spawnSync } from "node:child_process";
 import { createHash, randomUUID } from "node:crypto";
-import { type BrowserContext, expect, type Page, test } from "@playwright/test";
+import { type BrowserContext, expect, type Locator, type Page, test } from "@playwright/test";
 
 const now = Date.now();
 const sha = (t: string) => createHash("sha256").update(t).digest("hex");
@@ -76,10 +76,23 @@ async function scene(
   await page.locator("body[data-ready]").waitFor({ state: "attached" });
   return { context, page };
 }
-/** Taken after the entrance animations and the fill's ease have settled. */
+/** Taken once every finite animation and transition (entrances, the fill's ease, the sheet) has finished. */
+const settled = (page: Page) =>
+  page.evaluate(async () => {
+    const finite = () =>
+      document.getAnimations().filter((a) => a.effect?.getComputedTiming().iterations !== Infinity);
+    do await Promise.allSettled(finite().map((a) => a.finished));
+    while (finite().some((a) => a.playState !== "finished"));
+  });
 const shot = async (page: Page, file: string) => {
-  await page.waitForTimeout(900);
+  await settled(page);
   await page.screenshot({ path: `test-results/shots/${file}.png` });
+};
+/** True when the two elements' boxes share any area. */
+const overlap = async (a: Locator, b: Locator) => {
+  const [x, y] = [await a.boundingBox(), await b.boundingBox()];
+  if (!x || !y) throw new Error("an element has no box");
+  return x.x < y.x + y.width && y.x < x.x + x.width && x.y < y.y + y.height && y.y < x.y + x.height;
 };
 /** The server keeps these answers `checking`, as a read budget past the cap does. */
 const stuck = (page: Page) =>
@@ -119,6 +132,10 @@ for (const [w, h] of SIZES) {
 
     const one = await scene(browser, w, h, "refusal");
     await expect(one.page.getByText("This File Type Isn't Supported")).toBeVisible({ timeout: 30_000 });
+    await settled(one.page);
+    // The toast, which stacks above the pill, never covers the page's primary control.
+    expect(await overlap(one.page.locator(".toast"), one.page.locator("#add"))).toBe(false);
+    expect(await overlap(one.page.locator(".up-pill"), one.page.locator("#add"))).toBe(false);
     await shot(one.page, `refusal-${at}`);
     await one.context.close();
 

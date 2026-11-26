@@ -27,6 +27,13 @@
 :root:has(.up-pill) .toast {
   bottom: calc(var(--inset) + env(safe-area-inset-bottom) + var(--toast-lift, 0px) + 64px);
 }
+/* A short landscape screen has no room under the page's centered column: the stack moves to its right edge. */
+@media (max-height: 500px) {
+  .up-pill,
+  :root:has(.up-pill) .toast {
+    margin: 0 var(--pad) 0 auto;
+  }
+}
 /* The loader is the pill's ground; the sheen sweeps only while bytes move. */
 .up-pill .loader {
   position: absolute;
@@ -63,11 +70,16 @@
   flex: none;
   white-space: pre;
 }
-/* The paused pill's title ends in its own words ("Is Paused"), so it wraps rather than giving way in the middle. */
+/* The paused and still-checking titles end in their own words ("Is Paused"), so they wrap rather than giving way in the
+   middle. A file name stays on one line, ending in an ellipsis; the advice of a pill with a Close wraps to three. */
+.up-line,
 .up-pill.wrap .up-title {
   display: -webkit-box;
   overflow: hidden;
   -webkit-box-orient: vertical;
+  -webkit-line-clamp: 3;
+}
+.up-pill.wrap .up-title {
   -webkit-line-clamp: 2;
 }
 .up-pill.wrap .up-title > * {
@@ -90,12 +102,9 @@
   color: var(--muted);
   font-size: 13px;
   font-variant-numeric: tabular-nums;
-  overflow: hidden;
-  overflow-wrap: anywhere;
-  /* a long line (the waiting advice, a file name) wraps to three lines, then ends in an ellipsis */
-  display: -webkit-box;
-  -webkit-box-orient: vertical;
-  -webkit-line-clamp: 3;
+}
+.up-pill:not(:has(.up-close)) .up-line {
+  -webkit-line-clamp: 1;
 }
 .up-bad {
   color: var(--rose-ink);
@@ -109,10 +118,6 @@
   border-radius: inherit;
   background: none;
   cursor: pointer;
-}
-.up-press:focus-visible {
-  outline: 2px solid var(--ink);
-  outline-offset: -2px;
 }
 .up-slot {
   position: relative;
@@ -133,12 +138,10 @@
   color: var(--ink);
   cursor: pointer;
 }
+.up-press:focus-visible,
 .up-close:focus-visible {
   outline: 2px solid var(--ink);
   outline-offset: -2px;
-}
-.up-act {
-  flex: none;
 }
 
 /* The batch's sheet: the Session Expiry sheet's bubble, one row per file. */
