@@ -18,7 +18,7 @@ func TestChunkedUploadIsAssembledInOrderAndHashed(t *testing.T) {
 		t.Fatalf("start: %d", res.StatusCode)
 	}
 	h.mustSucceed(h.wait())
-	got, _ := os.ReadFile(inputPath(h.srv.cfg, "pdf"))
+	got, _ := os.ReadFile(filepath.Join(h.srv.cfg.WorkDir, "in", "original.pdf"))
 	if !bytes.Equal(got, body) {
 		t.Fatal("the assembled input differs from what was sent")
 	}

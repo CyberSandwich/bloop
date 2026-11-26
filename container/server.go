@@ -79,6 +79,7 @@ type jobInfo struct {
 	ext    string
 	kind   string
 	sha256 string
+	input  string // the assembled upload, confined to WorkDir/in by inputPath
 }
 
 // Server runs at most one job in its lifetime.
@@ -219,8 +220,19 @@ func chunkPath(cfg Config, n int) string {
 	return filepath.Join(cfg.WorkDir, "in", "chunk-"+strconv.Itoa(n))
 }
 
-func inputPath(cfg Config, ext string) string {
-	return filepath.Join(cfg.WorkDir, "in", "original."+ext)
+func inputPath(cfg Config, ext string) (string, error) {
+	return within(filepath.Join(cfg.WorkDir, "in"), "original."+ext)
+}
+
+var errNotLocal = errors.New("name leaves its directory")
+
+// within joins name under dir, refusing a name that could resolve outside it: empty, absolute, or climbing
+// with "..". Every path built from a request value goes through it.
+func within(dir, name string) (string, error) {
+	if !filepath.IsLocal(name) {
+		return "", fmt.Errorf("%w: %q", errNotLocal, name)
+	}
+	return filepath.Join(dir, name), nil
 }
 
 // handleChunk stores one input chunk. A chunk may be sent again until the job starts.
@@ -316,8 +328,9 @@ func (s *Server) handleStart(w http.ResponseWriter, r *http.Request) {
 	}
 	ext := strings.ToLower(strings.TrimPrefix(req.Ext, "."))
 	kind, known := kindByExt[ext]
+	input, err := inputPath(s.cfg, ext)
 	switch {
-	case !known:
+	case !known || err != nil:
 		apiError(w, http.StatusUnsupportedMediaType, "unsupported_ext")
 		return
 	case req.Chunks > maxChunkIndex:
@@ -353,7 +366,7 @@ func (s *Server) handleStart(w http.ResponseWriter, r *http.Request) {
 	s.starting = true
 	s.mu.Unlock()
 
-	if err := s.assemble(ext, req); err != nil {
+	if err := s.assemble(input, req); err != nil {
 		s.mu.Lock()
 		s.starting = false
 		s.mu.Unlock()
@@ -371,15 +384,15 @@ func (s *Server) handleStart(w http.ResponseWriter, r *http.Request) {
 	s.starting = false
 	s.status = Status{State: stateRunning, Stage: "inspect", Ready: []string{}}
 	s.mu.Unlock()
-	go s.process(jobInfo{id: req.JobID, ext: ext, kind: kind, sha256: req.SHA256})
+	go s.process(jobInfo{id: req.JobID, ext: ext, kind: kind, sha256: req.SHA256, input: input})
 	writeJSON(w, http.StatusAccepted, map[string]string{"state": stateRunning})
 }
 
 var errDigest = errors.New("digest mismatch")
 
-// assemble verifies the chunks' SHA-256 in order, then joins them into original.<ext>, deleting each
+// assemble verifies the chunks' SHA-256 in order, then joins them into dst, deleting each
 // chunk as it goes so the disk holds the input about once.
-func (s *Server) assemble(ext string, req startRequest) error {
+func (s *Server) assemble(dst string, req startRequest) error {
 	h := sha256.New()
 	for i := range req.Chunks {
 		f, err := os.Open(chunkPath(s.cfg, i))
@@ -395,7 +408,6 @@ func (s *Server) assemble(ext string, req startRequest) error {
 	if hex.EncodeToString(h.Sum(nil)) != req.SHA256 {
 		return errDigest
 	}
-	dst := inputPath(s.cfg, ext)
 	if req.Chunks == 1 {
 		return os.Rename(chunkPath(s.cfg, 0), dst)
 	}

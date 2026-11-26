@@ -67,7 +67,7 @@ func (s *Server) videoJob(job jobInfo, meta *metaJSON) error {
 	if err := s.stage("inspect", 2, func(ctx context.Context) error { return s.inspect(ctx, job, &an) }); err != nil {
 		return err
 	}
-	orig := inputPath(s.cfg, job.ext)
+	orig := job.input
 	dst := s.dir("out", "m", "0.mp4")
 	if err := os.MkdirAll(filepath.Dir(dst), 0o700); err != nil {
 		return failed(errInternal, err)
@@ -409,7 +409,7 @@ func (s *Server) imageJob(job jobInfo, meta *metaJSON) error {
 	if err := s.stage("inspect", 2, func(ctx context.Context) error { return s.inspect(ctx, job, &an) }); err != nil {
 		return err
 	}
-	orig := inputPath(s.cfg, job.ext)
+	orig := job.input
 	dir := s.dir("out", "i")
 	if err := os.MkdirAll(dir, 0o700); err != nil {
 		return failed(errInternal, err)

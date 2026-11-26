@@ -143,7 +143,7 @@ func copyFile(dst, src string) error {
 // inspect checks the magic bytes and, for zip packages, the unpack limits; for OOXML it also
 // reads notes, fonts, motion and media.
 func (s *Server) inspect(ctx context.Context, job jobInfo, an *Analysis) error {
-	path := inputPath(s.cfg, job.ext)
+	path := job.input
 	f, err := os.Open(path)
 	if err != nil {
 		return failed(errInternal, err)
@@ -221,7 +221,7 @@ func (s *Server) documentJob(job jobInfo, meta *metaJSON) error {
 	if err := s.stage("inspect", 2, func(ctx context.Context) error { return s.inspect(ctx, job, &an) }); err != nil {
 		return err
 	}
-	orig := inputPath(s.cfg, job.ext)
+	orig := job.input
 	pdfPath := s.dir("out", "doc.pdf")
 	if err := s.stage("convert", 5, func(ctx context.Context) error {
 		// Every doc.pdf is rewritten by pdftocairo, the sanitizer: a PDF upload as is, an office

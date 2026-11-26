@@ -6,6 +6,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -200,7 +201,7 @@ func TestCONV07FreshOneJobPerContainer(t *testing.T) {
 		t.Fatalf("second start: %d", res.StatusCode)
 	}
 	// A refused upload must not have touched the first job's input.
-	b, _ := os.ReadFile(inputPath(h.srv.cfg, "pdf"))
+	b, _ := os.ReadFile(filepath.Join(h.srv.cfg.WorkDir, "in", "original.pdf"))
 	if !bytes.Equal(b, fakePDF) {
 		t.Fatal("the second upload overwrote the first")
 	}
@@ -576,5 +577,44 @@ func TestLoadConfigDefaultsAndOverrides(t *testing.T) {
 	})
 	if c.Timeouts["convert"] != 7*time.Second || c.MaxPages != 5 || c.MaxInput != 2<<30 {
 		t.Fatalf("overrides = %+v", c)
+	}
+}
+
+func TestLoadConfigIntFieldsPastInt32FallBack(t *testing.T) {
+	over := map[string]string{
+		"BLOOP_MAX_ENTRIES":         "2147483648",          // int32 max + 1
+		"BLOOP_MAX_PAGES":           "4294967596",          // 2^32 + 300: a 32-bit int would wrap it to 300
+		"BLOOP_VIDEO_WIDTH":         "9223372036854775808", // past int64: ParseInt fails
+		"BLOOP_VIDEO_PREVIEW_WIDTH": "2147483648",
+		"BLOOP_WORKERS":             "-1",
+		"BLOOP_MAX_IMAGE_PIXELS":    "4294967296", // an int64 field keeps a value past int32
+	}
+	c := loadConfig(func(k string) string { return over[k] })
+	if c.Limits.MaxEntries != 20000 || c.MaxPages != 300 || c.VideoWidth != 1920 || c.PreviewWidth != 1280 || c.Workers < 1 || c.Workers > 4 ||
+		c.MaxImagePx != 4294967296 {
+		t.Fatalf("config = %+v", c)
+	}
+	c = loadConfig(func(k string) string { return map[string]string{"BLOOP_MAX_PAGES": "2147483647"}[k] })
+	if c.MaxPages != 2147483647 {
+		t.Fatalf("MaxPages at int32 max = %d", c.MaxPages)
+	}
+}
+
+func TestWithinRefusesNamesThatLeaveTheDir(t *testing.T) {
+	dir := t.TempDir()
+	for _, name := range []string{"", "..", "../x", "a/../../x", "/etc/passwd", "original./../../x"} {
+		if p, err := within(dir, name); !errors.Is(err, errNotLocal) {
+			t.Errorf("within(%q) = %q, %v; want errNotLocal", name, p, err)
+		}
+	}
+	if p, err := within(dir, "original.pdf"); err != nil || p != filepath.Join(dir, "original.pdf") {
+		t.Fatalf("within(original.pdf) = %q, %v", p, err)
+	}
+	cfg := Config{WorkDir: dir}
+	if _, err := inputPath(cfg, "/../../etc/passwd"); !errors.Is(err, errNotLocal) {
+		t.Fatalf("inputPath with a climbing ext: %v", err)
+	}
+	if p, err := inputPath(cfg, "pdf"); err != nil || p != filepath.Join(dir, "in", "original.pdf") {
+		t.Fatalf("inputPath(pdf) = %q, %v", p, err)
 	}
 }

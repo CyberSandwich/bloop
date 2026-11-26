@@ -4,6 +4,7 @@ package main
 
 import (
 	"log"
+	"math"
 	"net/http"
 	"os"
 	"runtime"
@@ -61,6 +62,13 @@ func loadConfig(getenv func(string) string) Config {
 		}
 		return def
 	}
+	// count is num for an int field: a value past int32 (the narrowest int) falls back like any bad value.
+	count := func(key string, def int) int {
+		if n := num(key, int64(def)); n <= math.MaxInt32 {
+			return int(n)
+		}
+		return def
+	}
 	rate := defaultVideoRate
 	if r, err := strconv.ParseFloat(getenv("BLOOP_VIDEO_RATE"), 64); err == nil && r > 0 {
 		rate = r
@@ -73,14 +81,14 @@ func loadConfig(getenv func(string) string) Config {
 		MaxInput:     num("BLOOP_MAX_INPUT", 2<<30),
 		MaxChunk:     num("BLOOP_MAX_CHUNK", 64<<20),
 		Widths:       parseWidths(getenv("BLOOP_WIDTHS")),
-		Limits:       Limits{MaxUnpacked: num("BLOOP_MAX_UNPACKED", 2<<30), MaxEntries: int(num("BLOOP_MAX_ENTRIES", 20000))},
-		MaxPages:     int(num("BLOOP_MAX_PAGES", 300)),
+		Limits:       Limits{MaxUnpacked: num("BLOOP_MAX_UNPACKED", 2<<30), MaxEntries: count("BLOOP_MAX_ENTRIES", 20000)},
+		MaxPages:     count("BLOOP_MAX_PAGES", 300),
 		VideoRate:    rate,
-		VideoWidth:   int(num("BLOOP_VIDEO_WIDTH", 1920)),
-		PreviewWidth: int(num("BLOOP_VIDEO_PREVIEW_WIDTH", 1280)),
+		VideoWidth:   count("BLOOP_VIDEO_WIDTH", 1920),
+		PreviewWidth: count("BLOOP_VIDEO_PREVIEW_WIDTH", 1280),
 		VideoFixed:   30 * time.Second,
 		MaxImagePx:   num("BLOOP_MAX_IMAGE_PIXELS", 100_000_000),
-		Workers:      int(num("BLOOP_WORKERS", int64(min(4, runtime.GOMAXPROCS(0))))), // GOMAXPROCS follows the cgroup CPU quota; NumCPU counts the host
+		Workers:      count("BLOOP_WORKERS", min(4, runtime.GOMAXPROCS(0))), // GOMAXPROCS follows the cgroup CPU quota; NumCPU counts the host
 		Timeouts:     map[string]time.Duration{},
 	}
 	for stage, def := range stageDefaults {
