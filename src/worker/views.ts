@@ -62,6 +62,7 @@ export function screenView(meta: Meta, m: Machine, cfg: ViewConfig, now: number)
     confirmed: isConfirmed(m),
     items: m.session?.items.map(itemView) ?? [],
     shown: m.session?.shown ?? null,
+    ...(m.session?.linkOpen ? { linkOpen: m.session.linkOpen } : {}),
     openMode: m.session?.openMode ?? null,
     endsAt: m.session?.endsAt ?? null,
     endReason: m.state === "ended" || m.state === "waiting" ? m.endReason : null,
@@ -101,6 +102,7 @@ export function phoneView(meta: Meta, m: Machine, now: number, limits: PhoneLimi
         return Object.hasOwn(extra, i.id) ? { ...view, extra: extra[i.id] } : view;
       }) ?? [],
     shown: session?.shown ?? null,
+    ...(session?.linkOpen ? { linkOpen: session.linkOpen } : {}),
     openMode: session?.openMode ?? null,
     endsAt: session?.endsAt ?? null,
     endReason: m.state === "ended" ? m.endReason : null,
