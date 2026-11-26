@@ -243,10 +243,11 @@ Open mode only. The claim answers `auth_required` before spending the code, so t
 
 ### 5.1 Sign In, then resume
 
-Sign In keeps the code, its `Idempotency-Key` and the time in `sessionStorage` (`bloop.resume`) and goes to `/auth/start`, which takes no parameters; `/auth/callback` always lands on `/a` with no code, so `/a` takes the kept code (once: read and dropped) and claims it again as the owner, with the same key.
+Sign In keeps the code, its `Idempotency-Key` and the time in `sessionStorage` (`bloop.resume`) and goes to `/auth/start`, which takes no parameters; `/auth/callback` always lands on `/a` with no code, so `/a` takes the kept code (once: read and dropped; `core/boot-code.js`, on first load, so a failed lazy load never loses it) and claims it again as the owner, with the same key.
 
 - **Code still alive** (a passkey sign-in takes seconds): the match pick, as section 3. The lecturer never sees the camera again.
-- **Code expired** (the claim answers `code_unknown`; an email code usually takes longer than the code's life): title "Scan the Screen Again"; line "The code changed while you signed in. You're signed in now, so one scan is all it takes."; button Enter the Code (primary). No Back: one exit.
+- **Code expired** (the claim answers `code_expired` for the 5 minutes the screen keeps a dead code routing, `code_unknown` after; an email code usually takes longer than the code's life): title "Scan the Screen Again"; line "The code changed while you signed in. You're signed in now, so one scan is all it takes." when `/api/me` says signed in, otherwise (the sign-in failed or `/api/me` gave no answer) "The code on the screen changed while you were away. One scan picks it up again."; button Enter the Code (primary). No Back: one exit.
+- **Still signed out, code alive**: the claim answers `auth_required` again, so the early-access state again.
 - **Taken meanwhile** (someone else scanned): as today's taken state.
 - The stored code is taken on the next load of `/a` whatever follows, dropped by a new scan, and ignored after 5 minutes unused, so a later visit to `/a` never replays it.
 - Why tell the truth about the time: a code lives about a minute (design.md section 10), and an email round trip is longer; saying "one scan is all it takes" turns the miss into a promise the next scan keeps.
@@ -271,4 +272,4 @@ Sign In keeps the code, its `Idempotency-Key` and the time in `sessionStorage` (
 | match module failed | Match Didn't Load / Reload |
 | approved | Approved for Room 2.14; On the Screen; Notes; Slide 3; No notes on this slide.; Open in PowerPoint; Show Slides Here; Preparing Slides; fallback line: Choose on the screen how to open it. |
 | early access | Early Access Only / Sign in to present your own files. No invite yet? You can still send one file to this screen. / Sign In, Send One File, Try the Demo, Join the Waitlist |
-| resume, expired | Scan the Screen Again / The code changed while you signed in. You're signed in now, so one scan is all it takes. / Enter the Code |
+| resume, expired | Scan the Screen Again / The code changed while you signed in. You're signed in now, so one scan is all it takes. (signed out: The code on the screen changed while you were away. One scan picks it up again.) / Enter the Code |

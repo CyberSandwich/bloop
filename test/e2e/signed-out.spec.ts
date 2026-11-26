@@ -165,24 +165,70 @@ test.describe("PAIR-15 a signed-out claim on a live code", () => {
     await closeAll(screen, phone);
   });
 
-  test("open: a kept code that died while signing in reads Scan the Screen Again, one exit, no Back", async ({
-    browser,
-  }) => {
-    const phone = await open(browser, "phone", "/code");
-    // A code no screen holds: the claim answers code_unknown, as a code that expired meanwhile does.
+  // The claim and /api/me are routed, so no server counter (misses, rate limits) on the shared test IP can change these.
+  for (const [error, status, signedIn, body] of [
+    [
+      "code_expired",
+      410,
+      true,
+      "The code changed while you signed in. You're signed in now, so one scan is all it takes.",
+    ],
+    [
+      "code_unknown",
+      404,
+      true,
+      "The code changed while you signed in. You're signed in now, so one scan is all it takes.",
+    ],
+    ["code_unknown", 404, false, "The code on the screen changed while you were away. One scan picks it up again."],
+  ] as const) {
+    test(`a kept code that went while signing in (${error}, ${signedIn ? "signed in" : "still signed out"}) reads Scan the Screen Again, one exit`, async ({
+      browser,
+    }) => {
+      const phone = await open(browser, "phone", "/code", async (context) => {
+        await context.route("**/api/claim", (route) =>
+          route.fulfill({
+            status,
+            contentType: "application/problem+json",
+            body: JSON.stringify({ type: "about:blank", status, code: error }),
+          }),
+        );
+        await context.route("**/api/me", (route) =>
+          route.fulfill({
+            contentType: "application/json",
+            headers: { "X-Bloop": "1" },
+            body: JSON.stringify({ source: "graph", signedIn, email: null, launchMode: "open" }),
+          }),
+        );
+      });
+      await phone.page.evaluate(
+        (k) => sessionStorage.setItem(k, JSON.stringify({ code: "K7MQ9X", key: crypto.randomUUID(), at: Date.now() })),
+        KEPT,
+      );
+      await phone.page.goto("/a");
+      await expect(heading(phone.page)).toHaveText("Scan the Screen Again");
+      await expect(phone.page.locator("#body")).toHaveText(body);
+      await expect(phone.page.getByRole("link", { name: "Enter the Code" })).toBeVisible();
+      await expect(phone.page.getByRole("link", { name: "Back", exact: true })).toBeHidden();
+      expect(await phone.page.evaluate((k) => sessionStorage.getItem(k), KEPT)).toBeNull();
+      await closeAll(phone);
+    });
+  }
+
+  test("a kept live code resumes even when the early-access module cannot load", async ({ browser }) => {
+    const screen = await open(browser, "screen", "/s");
+    await expect(screen.page.locator("#qr")).toBeVisible();
+    const code = await typedCodeOf(screen.page);
+    const phone = await open(browser, "phone", "/code", (context) =>
+      context.route("**/js/core/early.js", (route) => route.abort()),
+    );
     await phone.page.evaluate(
-      (k) => sessionStorage.setItem(k, JSON.stringify({ code: "ZZZ9ZZ", key: crypto.randomUUID(), at: Date.now() })),
-      KEPT,
+      ({ k, c }) => sessionStorage.setItem(k, JSON.stringify({ code: c, key: crypto.randomUUID(), at: Date.now() })),
+      { k: KEPT, c: code },
     );
     await phone.page.goto("/a");
-    await expect(heading(phone.page)).toHaveText("Scan the Screen Again");
-    await expect(phone.page.locator("#body")).toHaveText(
-      "The code changed while you signed in. You're signed in now, so one scan is all it takes.",
-    );
-    await expect(phone.page.getByRole("link", { name: "Enter the Code" })).toBeVisible();
-    await expect(phone.page.getByRole("link", { name: "Back", exact: true })).toBeHidden();
-    expect(await phone.page.evaluate((k) => sessionStorage.getItem(k), KEPT)).toBeNull();
-    await closeAll(phone);
+    await expect(heading(phone.page)).toHaveText("This Screen");
+    await expect(pick(phone.page)).toHaveCount(3);
+    await closeAll(screen, phone);
   });
 
   test("a kept code older than 5 minutes is never replayed: /a reads as no code", async ({ browser }) => {
@@ -263,5 +309,25 @@ test("a send module that cannot load says so with Reload, and the offer stays", 
   await expect(alert).toContainText("That Didn't Load");
   await expect(alert.getByRole("button", { name: "Reload" })).toBeVisible();
   await expect(heading(phone.page)).toHaveText("Send notes.pdf to Demo Room?");
+  await closeAll(screen, phone);
+});
+
+test("a send that failed sends again on Try Again (the late-module guard lets a retry through)", async ({
+  browser,
+}) => {
+  let drops = 0;
+  const { screen, phone } = await atOffer(browser, (context) =>
+    context.route("**/api/drop", (route) => {
+      drops += 1;
+      if (drops === 1) return route.fulfill({ status: 503, body: "" });
+      return route.continue();
+    }),
+  );
+  await phone.page.getByRole("button", { name: "Send" }).click();
+  await expect(heading(phone.page)).toHaveText("bloop Isn't Responding");
+  const sent = phone.page.waitForResponse((r) => new URL(r.url()).pathname === "/api/drop" && r.ok());
+  await phone.page.getByRole("button", { name: "Try Again" }).click();
+  await sent;
+  expect(drops).toBe(2);
   await closeAll(screen, phone);
 });
