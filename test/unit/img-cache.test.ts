@@ -6,7 +6,7 @@ import { createHash } from "node:crypto";
 import { readdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
-import { DECK_PAGES, DEMO_NAMES, SLIDES, demoId } from "../../public/js/core/demo.js";
+import { DECK_PAGES, DEMO_NAMES, demoId, SLIDES } from "../../public/js/core/demo.js";
 import { staticHeaders as resolve } from "../../tools/static-headers.mjs";
 import { wranglerConfig } from "../../tools/wrangler-config.mjs";
 
