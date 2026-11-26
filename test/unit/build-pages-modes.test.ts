@@ -75,9 +75,7 @@ describe("the chrome by mode", () => {
       '<a class="btn waitlist" href="https://tally.so/r/Yj4KAN?source=landing" data-waitlist>Waitlist</a>',
     );
     const nav = navHtml({ ...head, mode: "open" });
-    expect(nav).toContain(
-      '<a class="btn account" href="/signin" data-account><span>Sign In</span><span aria-hidden="true">Library</span></a>',
-    );
+    expect(nav).toContain('<a class="btn account" href="/signin" data-account>Sign In</a>');
     expect(nav).not.toContain("waitlist");
   });
 
