@@ -22,7 +22,7 @@ export interface EmailSpend {
   ): Promise<{ ok: true } | { ok: false; reason: string; retryAfterSeconds?: number }>;
 }
 
-/** The Email Service binding (env.EMAIL, env.ALERT_EMAIL) as mail calls it. */
+/** The Email Service binding (env.EMAIL) as mail calls it. */
 export interface Sender {
   send(message: { to: string; from: string; subject: string; text: string; html: string }): Promise<unknown>;
 }
@@ -54,12 +54,15 @@ function guardDownSlot(now: number): boolean {
   return true;
 }
 
-async function admit(deps: MailDeps, message: Message, now: number): Promise<boolean> {
+function switchAllows(deps: Pick<MailDeps, "account" | "emailSwitch">, to: string): boolean {
   if (deps.emailSwitch === "off") return false;
-  if (deps.emailSwitch !== "on") {
-    const to = normalizeEmail(message.to);
-    if (!to || !deps.account.adminEmails.has(to)) return false;
-  }
+  if (deps.emailSwitch === "on") return true;
+  const norm = normalizeEmail(to);
+  return !!norm && deps.account.adminEmails.has(norm);
+}
+
+async function admit(deps: MailDeps, message: Message, now: number): Promise<boolean> {
+  if (!switchAllows(deps, message.to)) return false;
   let guardDown = false;
   const takes = message.codeScope === undefined ? [] : [() => deps.spend.take("email_code", 1, message.codeScope)];
   for (const take of [...takes, () => deps.spend.take("email", 1)]) {
@@ -123,11 +126,16 @@ export function mail(deps: MailDeps, ctx: WaitUntil, message: Message, now: numb
 }
 
 /**
- * The spend breaker's `notify` (g-wiring 1.2). Alerts go through the destination-locked ALERT_EMAIL binding to
- * EMAIL_FROM, the owner's inbox, never to a member. They skip the `email` switch and the spend takes: the breaker
- * trips switches, and its alert must still arrive. The breaker already runs inside the cron's waitUntil.
+ * The spend breaker's `notify` (g-wiring 1.2): one mail to each ADMIN_EMAILS address, never to anyone else, under the
+ * `email` switch. It skips the spend takes, which would call back into the guard the breaker is acting on. The
+ * breaker already runs inside the cron's waitUntil.
  */
 export const breakerNotify =
-  (account: MailDeps["account"], sender: Sender | undefined, config: TemplateConfig) =>
-  (message: { kind: string } & Record<string, unknown>): Promise<void> =>
-    deliver(account, sender, { to: account.emailFrom, ...spendAlert(message, config) }, Date.now());
+  (deps: Pick<MailDeps, "account" | "sender" | "emailSwitch">, config: TemplateConfig) =>
+  async (message: { kind: string } & Record<string, unknown>): Promise<void> => {
+    const alert = spendAlert(message, config);
+    const now = Date.now();
+    for (const to of deps.account.adminEmails) {
+      if (switchAllows(deps, to)) await deliver(deps.account, deps.sender, { to, ...alert }, now);
+    }
+  };

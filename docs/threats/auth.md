@@ -13,7 +13,7 @@ Rows start `planned` and flip to `mitigated` when their test lands; same columns
 | AUTH-13 | E | A revoked or suspended user keeps working | med | high | Sign out everywhere ends every session; suspension is checked when a session resolves | `AUTH-13 signout-all` | planned |
 | AUTH-14 | S, E | Account takeover through an email change | low | high | The change needs a session plus a recent reauth, and a code sent to the new address; the old address gets a notice | `AUTH-14 change` | planned |
 | AUTH-15 | T | CSRF on the new write routes | med | high | Every write passes the shared guard: Origin, fetch metadata, JSON content type, strict body | `AUTH-15 csrf` | planned |
-| AUTH-16 | E | Admin escalation | low | high | The admin role comes from the `ADMIN_EMAILS` secret and is checked on every request, never stored on the user | `AUTH-16 admin` | planned |
+| AUTH-16 | E | Admin escalation | low | high | The admin role comes from the `ADMIN_EMAILS` secret and is checked on every request, never stored on the user. Residual: whoever can write D1 directly can set a member's `email_norm` to an admin address no row holds (an admin not yet signed up, or one who changed address) and gain the role; the unique index stops it only while the admin's row holds the address | `AUTH-16 admin` | planned |
 | AUTH-17 | S | Mailbox compromise: whoever reads the mailbox can sign in by code | med | high | Residual, stated plainly: the email code is the fallback and recovery path; a passkey avoids it | none | planned |
 
 ## Invites
