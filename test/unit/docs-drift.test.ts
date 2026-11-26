@@ -343,6 +343,7 @@ describe("size budgets", () => {
       "session length words, lazy": ["public/js/core/length-extra.js", "public/js/shared/length.js"],
       "clicker keys, lazy": "public/js/core/clicker.js",
       "overlay dismiss, lazy": "public/js/core/dismiss.js",
+      "item cross-fade, lazy": "public/js/core/crossfade.js",
       "check this room words, lazy": "public/js/core/copy-check.js",
       "room network states, lazy": "public/js/core/net-states.js",
       "channel polling, lazy": "public/js/core/poll.js",

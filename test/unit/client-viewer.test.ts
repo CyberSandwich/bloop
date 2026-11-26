@@ -115,17 +115,27 @@ class Node {
   animate() {
     return { finished: Promise.resolve() };
   }
+  getAnimations() {
+    return [];
+  }
   remove() {
     if (this.parent) this.parent.children = this.parent.children.filter((c) => c !== this);
+  }
+  inert = false;
+  /** A tag or a .class, either maybe `:not([inert])`. */
+  matchesOne(part: string): boolean {
+    const live = part.endsWith(":not([inert])");
+    const own = live ? part.slice(0, -":not([inert])".length) : part;
+    if (live && this.inert) return false;
+    return own.startsWith(".") ? this.classes.has(own.slice(1)) : this.tag === own;
   }
   /** One compound selector: a tag or a .class, after any ancestor tags ("picture img"). */
   is(sel: string): boolean {
     const parts = sel.trim().split(/\s+/);
-    const own = parts.pop() ?? "";
-    if (!(own.startsWith(".") ? this.classes.has(own.slice(1)) : this.tag === own)) return false;
+    if (!this.matchesOne(parts.pop() ?? "")) return false;
     let up = this.parent;
     for (const want of parts.reverse()) {
-      while (up && up.tag !== want) up = up.parent;
+      while (up && !up.matchesOne(want)) up = up.parent;
       if (!up) return false;
       up = up.parent;
     }
@@ -367,11 +377,9 @@ describe("the photo's loader (design.md section 6, Loader)", () => {
     await settle();
     expect(part?.attrs.get("aria-valuenow")).toBe("100");
     v.render(view);
-    // The photo lands over its own loader, which leaves once the fade is done.
-    expect(el("frame").children.map((c) => c.tag)).toEqual(["div", "canvas"]);
-    expect(el("frame").children[1]?.attrs.get("aria-label")).toBe("Dog.jpg");
-    await settle();
+    // Under reduced motion (this suite's default) the photo takes its loader's place at once; the cross-fade is e2e.
     expect(el("frame").children.map((c) => c.tag)).toEqual(["canvas"]);
+    expect(el("frame").children[0]?.attrs.get("aria-label")).toBe("Dog.jpg");
     expect(v.presentable()).toBe(true);
   });
 
@@ -530,10 +538,8 @@ describe("a guest's photo and video on the stage (design.md section 7, Video)", 
     video?.emit("loadedmetadata");
     v.render(guestView(clip));
     expect(video?.style["--ratio"]).toBe(String(1080 / 1920));
-    expect(el("frame").children.map((c) => c.tag)).toEqual(["div", "video"]);
-    expect(video?.attrs.get("aria-label")).toBe("Talk.mov");
-    await settle();
     expect(el("frame").children.map((c) => c.tag)).toEqual(["video"]);
+    expect(video?.attrs.get("aria-label")).toBe("Talk.mov");
     expect(v.presentable()).toBe(true);
     // Presenting focuses the video, so Space plays and pauses it rather than pressing Stop Presenting.
     v.present(true);
