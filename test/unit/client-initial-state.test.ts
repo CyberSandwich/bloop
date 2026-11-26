@@ -14,6 +14,7 @@ const JS = resolve(import.meta.dirname, "../../public/js");
 const ALLOWED: Record<string, string> = {
   "phone.js":
     "the item inputs are created by this module, so none changes before its listener; the file pick is an action, not a gate",
+  "core/upload-pill.js": "the file pick is an action that resumes a paused row, not a gate on a control",
   "core/length.js": "the Until field sits in a closed sheet until openLength, which fills it and runs refresh() first",
 };
 
