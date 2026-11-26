@@ -343,7 +343,10 @@ test/
 | POST | `/api/hooks/tally` | signature, no Origin check | planned (A): the waitlist webhook |
 | POST | `/api/reports` | Turnstile | planned (A): a public report |
 | GET, DELETE | `/api/dev/mailbox` | none (DELETE: Origin); `not_found` unless `DEV_MAILBOX` is set | local and test harness only: `?to=` lists the kept mail, newest last; DELETE clears it |
-| POST, PUT, GET, DELETE | `/api/uploads/*` | session, or Bearer pid for a guest | planned (U): multipart create, part URLs, part done, complete, resume; `PUT /api/drop` is removed when it lands |
+| GET, POST | `/api/uploads`, `/api/uploads/:id/urls`, `/api/uploads/:id/parts/:n/done`, `/api/uploads/:id/complete` | member session; Origin on writes | live (U): list, create or resume, part URLs, part confirmation, complete ([uploads.md](uploads.md)) |
+| PUT | `/api/uploads/:id/parts/:n` | member session; Origin | live (U): one part through the Worker (proxy mode); `Content-Length` must equal the part's size |
+| GET, DELETE | `/api/uploads/:id` | member session | live (U): the upload's state, and cancel; another member's id is `not_found` |
+| any | `/api/uploads/*` for a guest | Bearer pid | planned (U): the guest drop moves onto this pipeline; `PUT /api/drop` is removed when it lands |
 | any | `/api/dev/r2/*` | none; local only | planned (U): the proxy-mode bucket stand-in |
 | GET, PUT, PATCH, POST | `/api/library*` | member session (C), `RL_LIBRARY` per user | list, rename, tick, Up Next order, trash, restore, Delete Now, preview link, socket: [library.md](library.md) section 5 |
 | GET | `/api/me/export.zip` | member session, same-origin, C+R for a new export | `?k=<idempotency key>`; the account export as a zip with exact `Content-Length`, `ETag` and `Range` resume (docs/library.md section 8); 409 `export_busy`, 429 `export_limit`, 503 `export_paused` |
@@ -623,7 +626,8 @@ Each new module exports an empty route list (every path stays 404) until its str
 | account, admin | A (accounts and admin) | live |
 | hooks, reports | A (accounts and admin) | stub |
 | dev-mail | A (accounts and admin) | live |
-| uploads, dev-r2 | U (uploads) | stub |
+| uploads | U (uploads) | live for library members; the guest drop follows |
+| dev-r2 | U (uploads) | stub |
 | library, and the `UserLibrary` object | L (library) | stub |
 | fileorigin, notes | P1 (present server) | stub |
 | the `Converter` object | V (conversion) | stub |

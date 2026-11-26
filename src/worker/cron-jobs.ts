@@ -1,5 +1,6 @@
 // The cron jobs by trigger. A stream adds its job to one list; every trigger in CRON must have a list.
 import { cronNotify } from "./auth/email.ts";
+import { dbOf } from "./auth/db.ts";
 import type { Config } from "./config.ts";
 import { CRON, type CronJob, type CronTrigger } from "./cron.ts";
 import type { Env } from "./env.ts";
@@ -8,6 +9,8 @@ import { retentionDepsFor } from "./library/wiring.ts";
 import { closeStaleSessions, runRetention } from "./retention.ts";
 import { sweepGuestFiles } from "./seams/guest-drop/select.ts";
 import { runSpendBreaker, spendStub } from "./spend/guard.ts";
+import { uploadDepsFor } from "./uploads/deps.ts";
+import { reconcileQuotas, sweepUploads } from "./uploads/sweep.ts";
 
 /**
  * The breaker's job. It needs no Config, so the same job runs when the config is invalid: `configProblems` (var
@@ -47,6 +50,16 @@ export const JOBS: Readonly<Record<CronTrigger, readonly CronJob<Env, Config>[]>
       },
     },
     {
+      name: "uploads",
+      run: async (env, config, allotment) => {
+        const report = await sweepUploads(await uploadDepsFor(env, config), allotment);
+        if (report.finished + report.released + report.deleted > 0) {
+          console.log(JSON.stringify({ evt: "hourly", uploads: report }));
+        }
+        return { more: false };
+      },
+    },
+    {
       name: "stale_sessions",
       run: async (env, config) => {
         const closed = await closeStaleSessions(env, config, Date.now());
@@ -58,9 +71,22 @@ export const JOBS: Readonly<Record<CronTrigger, readonly CronJob<Env, Config>[]>
   ],
   [CRON.daily]: [
     {
+      name: "quota_reconcile",
+      run: async (env, _config, allotment) => {
+        const { drifts, more } = await reconcileQuotas(dbOf(env.DB), allotment);
+        if (drifts.length > 0) console.log(JSON.stringify({ evt: "quota_drift", drifts }));
+        return { more };
+      },
+    },
+    {
       name: "retention",
       run: async (env, config) => {
-        console.log(JSON.stringify({ evt: "retention", ...(await runRetention(env, config)) }));
+        console.log(
+          JSON.stringify({
+            evt: "retention",
+            ...(await runRetention(env, config)),
+          }),
+        );
         return { more: false };
       },
     },
