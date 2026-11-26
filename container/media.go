@@ -23,10 +23,11 @@ type probe struct {
 	} `json:"format"`
 }
 
+// video is the first video stream, the one ffmpeg maps as 0:v:0; ok is false when it has no size.
 func (p probe) video() (w, h int, codec string, ok bool) {
 	for _, st := range p.Streams {
-		if st.CodecType == "video" && st.Width > 0 && st.Height > 0 {
-			return st.Width, st.Height, st.CodecName, true
+		if st.CodecType == "video" {
+			return st.Width, st.Height, st.CodecName, st.Width > 0 && st.Height > 0
 		}
 	}
 	return 0, 0, "", false
@@ -63,7 +64,7 @@ const maxVideoDim = 8192
 // videoJob probes the upload, re-encodes it to H.264/AAC mp4, and takes a thumbnail.
 func (s *Server) videoJob(job jobInfo, meta *metaJSON) error {
 	var an Analysis
-	if err := s.stage("inspect", 2, func(ctx context.Context) error { return s.inspect(job, &an) }); err != nil {
+	if err := s.stage("inspect", 2, func(ctx context.Context) error { return s.inspect(ctx, job, &an) }); err != nil {
 		return err
 	}
 	orig := inputPath(s.cfg, job.ext)
@@ -126,7 +127,7 @@ func (s *Server) videoThumb(ctx context.Context, mp4 string, seconds float64) er
 	png := s.dir("scratch", "t.png")
 	at := strconv.FormatFloat(min(1, seconds/2), 'f', 3, 64)
 	if _, err := s.tool(ctx, "ffmpeg", "-nostdin", "-hide_banner", "-loglevel", "error", "-y",
-		"-ss", at, "-i", mp4, "-frames:v", "1", "-vf", "scale=w='min(480,iw)':h=-2", png); err != nil {
+		"-protocol_whitelist", "file", "-f", "mov", "-ss", at, "-i", mp4, "-frames:v", "1", "-vf", "scale=w='min(480,iw)':h=-2", png); err != nil {
 		return convertErr(err)
 	}
 	_, err := s.tool(ctx, "vips", "copy", png, s.dir("out", "t.webp")+"[Q=80]")
@@ -136,7 +137,7 @@ func (s *Server) videoThumb(ctx context.Context, mp4 string, seconds float64) er
 // imageJob turns a HEIC into a 1920 JPEG (metadata stripped, orientation applied) and a 480 thumbnail.
 func (s *Server) imageJob(job jobInfo, meta *metaJSON) error {
 	var an Analysis
-	if err := s.stage("inspect", 2, func(ctx context.Context) error { return s.inspect(job, &an) }); err != nil {
+	if err := s.stage("inspect", 2, func(ctx context.Context) error { return s.inspect(ctx, job, &an) }); err != nil {
 		return err
 	}
 	orig := inputPath(s.cfg, job.ext)
