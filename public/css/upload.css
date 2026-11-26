@@ -7,16 +7,15 @@
   bottom: calc(var(--inset) + env(safe-area-inset-bottom) + var(--toast-lift, 0px));
   left: 0;
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
   gap: 12px;
   width: fit-content;
   min-width: 240px;
   max-width: min(calc(100% - 2 * var(--pad)), 360px);
-  min-height: 56px;
   margin: 0 auto;
   padding: 8px;
   overflow: hidden;
-  isolation: isolate;
   border-radius: var(--r-pill);
   box-shadow: var(--glass-edge), var(--sh-pill);
   animation: toast-in 250ms var(--ease-out) both;
@@ -30,7 +29,7 @@
 /* A short landscape screen has no room under the page's centered column: the stack moves to its right edge. */
 @media (max-height: 500px) {
   .up-pill,
-  :root:has(.up-pill) .toast {
+  .toast {
     margin: 0 var(--pad) 0 auto;
   }
 }
@@ -49,7 +48,7 @@
 }
 .up-text {
   display: flex;
-  flex: 1;
+  flex: 1 0 8rem;
   flex-direction: column;
   gap: 2px;
   min-width: 0;
@@ -119,6 +118,7 @@
   background: none;
   cursor: pointer;
 }
+/* A button too wide to sit beside the name drops to its own row: the name keeps the full width. */
 .up-slot {
   position: relative;
   display: flex;
