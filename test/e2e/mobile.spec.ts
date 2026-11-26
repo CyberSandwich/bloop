@@ -1,15 +1,22 @@
 // Every site page at phone widths, as a touch phone lays it out (docs/design.md section 5, Phones, by eye). CI only.
 import { readdirSync } from "node:fs";
 import { fileURLToPath } from "node:url";
-import { expect, test } from "@playwright/test";
+import { expect, test } from "./mode.ts";
 
-const ARTICLES = readdirSync(fileURLToPath(new URL("../../content/articles", import.meta.url)))
-  .filter((f) => f.endsWith(".md") && f !== "index.md")
-  .map((f) => `/articles/${f.slice(0, -3)}`);
-const PAGES = [
+// An open article is a file in either folder: the open one wins, and Features exists only there.
+const articles = (dirs: string[]) => [
+  ...new Set(
+    dirs.flatMap((dir) =>
+      readdirSync(fileURLToPath(new URL(`../../content/${dir}`, import.meta.url)))
+        .filter((f) => f.endsWith(".md") && f !== "index.md")
+        .map((f) => `/articles/${f.slice(0, -3)}`),
+    ),
+  ),
+];
+const pages = (mode: "preview" | "open") => [
   "/",
   "/articles",
-  ...ARTICLES,
+  ...articles(mode === "open" ? ["articles", "open/articles"] : ["articles"]),
   "/privacy",
   "/terms",
   "/security",
@@ -55,19 +62,23 @@ for (const width of WIDTHS) {
   test.describe(`site pages at ${width}`, () => {
     test.use({ viewport: { width, height: 740 }, isMobile: true, hasTouch: true });
 
-    for (const path of PAGES) {
-      test(`${path} fits the width, and every tap target is 44 tall`, async ({ page }) => {
-        await page.goto(path);
-        await page.evaluate("document.fonts.ready");
-        const { inner, wide, small } = (await page.evaluate(SCAN)) as {
-          inner: number;
-          wide: string[];
-          small: string[];
-        };
-        expect(inner).toBe(width);
-        expect(wide).toEqual([]);
-        expect(small).toEqual([]);
-      });
+    // The list is built before a project's mode is known, so each mode's pages are listed and the other mode skips.
+    for (const m of ["preview", "open"] as const) {
+      for (const path of pages(m)) {
+        test(`${m}: ${path} fits the width, and every tap target is 44 tall`, async ({ page, mode }) => {
+          test.skip(mode !== m);
+          await page.goto(path);
+          await page.evaluate("document.fonts.ready");
+          const { inner, wide, small } = (await page.evaluate(SCAN)) as {
+            inner: number;
+            wide: string[];
+            small: string[];
+          };
+          expect(inner).toBe(width);
+          expect(wide).toEqual([]);
+          expect(small).toEqual([]);
+        });
+      }
     }
   });
 }
