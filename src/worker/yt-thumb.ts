@@ -2,7 +2,8 @@
 // preview (ADR 0009, PREVIEW-01). Pure, so the unit tests run it with a fake fetch.
 
 /** A link item's `preview`: a same-origin path of this one shape, never an absolute or third-party URL. */
-export const PREVIEW_PATH = /^\/yt\/([A-Za-z0-9_-]{11})\.jpg$/;
+const ID = "[A-Za-z0-9_-]{11}";
+export const PREVIEW_PATH = new RegExp(`^/yt/(${ID})\\.jpg$`);
 
 /** The video id inside a preview path, or null for anything else. */
 export const previewId = (path: string): string | null => PREVIEW_PATH.exec(path)?.[1] ?? null;
@@ -18,7 +19,7 @@ export const THUMB_TIMEOUT_MS = 5000;
 
 /** The upstream URL of an id that passed `previewId`, built from the id alone; null for any other string. */
 export function upstreamUrl(id: string, origin: string = THUMB_ORIGIN): string | null {
-  return /^[A-Za-z0-9_-]{11}$/.test(id) ? `${origin}/vi/${id}/hqdefault.jpg` : null;
+  return new RegExp(`^${ID}$`).test(id) ? `${origin}/vi/${id}/hqdefault.jpg` : null;
 }
 
 export type Thumb = { ok: true; bytes: Uint8Array } | { ok: false };
