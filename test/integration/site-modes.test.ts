@@ -15,7 +15,7 @@ const HTML = { Accept: "text/html" };
 const IN = { Cookie: "__Host-bloop_in=1" };
 const hit = (path: string, headers: Record<string, string> = {}) =>
   fetch(`${wrangler.url}${path}`, { redirect: "manual", headers });
-const label = (html: string) => (html.includes("<span>Library</span>") ? "Library" : "Sign In");
+const label = (html: string) => (html.includes(">Library</a>") ? "Library" : "Sign In");
 
 describe("MODE-01 landing and legal bodies differ by mode", () => {
   it("preview is today's landing: one Waitlist pill, one hero button, a Features grid", async () => {
