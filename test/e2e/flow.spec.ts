@@ -3607,6 +3607,14 @@ test.describe("NOTES-01 phone-only: the presenter's notes on the phone (design.m
     page.on("request", (r) => {
       if (r.url().includes("/api/notes")) asked.push(r.url());
     });
+    // Each notes call, or the script that makes it, has ended: answered, or failed.
+    const done: string[] = [];
+    page.on("requestfinished", (r) => {
+      if (r.url().includes("/api/notes")) done.push(r.url());
+    });
+    page.on("requestfailed", (r) => {
+      if (/\/api\/notes|\/core\/notes\.js/.test(r.url())) done.push(r.url());
+    });
     await page.getByRole("button", { name: "Approve" }).click();
     await expectViewer(screen.page);
     const bubbles = page.getByRole("group", { name: "The Screen" });
@@ -3616,6 +3624,7 @@ test.describe("NOTES-01 phone-only: the presenter's notes on the phone (design.m
       phone,
       page,
       asked,
+      done,
       bubbles,
       list: page.locator("#file-list"),
       rows: page.locator("#file-list > li:visible"),
@@ -3647,12 +3656,14 @@ test.describe("NOTES-01 phone-only: the presenter's notes on the phone (design.m
         await expect(row.locator(".notes-chevron")).toBeVisible();
         await expect(s.box).toBeVisible();
         expect(s.asked).toEqual([expect.stringContaining(`/api/notes?item=${DEMO_ITEMS.deck.slot}`)]);
-        // The row opens the list and is no command: the screen keeps its slide.
+        // The row opens the list and is no command: the screen keeps slide 2, which "page 1 again" would not.
+        await s.next();
+        await expect(s.screen.page.getByRole("img", { name: `Slide 2 of ${DECK_PAGES}` })).toBeVisible();
         await row.click();
         await expect(s.rows).toHaveCount(DEMO_NAMES.length);
         await expect(row).toHaveAttribute("aria-expanded", "true");
         await expect(s.box).toHaveCount(0);
-        await expect(s.screen.page.getByRole("img", { name: `Slide 1 of ${DECK_PAGES}` })).toBeVisible();
+        await expect(s.screen.page.getByRole("img", { name: `Slide 2 of ${DECK_PAGES}` })).toBeVisible();
         await row.click();
         await expect(s.rows).toHaveCount(1);
         await expect(s.box).toBeVisible();
@@ -3701,7 +3712,7 @@ test.describe("NOTES-01 phone-only: the presenter's notes on the phone (design.m
         expect(await s.page.evaluate("window.scrollY"), "the notes scrolled, not the page").toBe(pageY);
         const lastLine = await s.box.evaluate((n) => {
           const range = n.ownerDocument.createRange();
-          range.selectNodeContents(n.querySelector(".notes-text") as Element);
+          range.selectNodeContents(n.querySelector(".notes-text") ?? n);
           const rects = range.getClientRects();
           return rects[rects.length - 1]?.bottom ?? Number.NaN;
         });
@@ -3790,9 +3801,9 @@ test.describe("NOTES-01 phone-only: the presenter's notes on the phone (design.m
           };
           await s.present();
           await expect(s.bubbles.getByRole("button", { name: "Stop" })).toBeVisible();
-          // Let the answer, or its failure, arrive before reading the layout.
-          if (what !== "a script that does not load") await expect.poll(() => s.asked.length).toBe(1);
-          await s.page.waitForTimeout(400);
+          // The answer, or its failure, has arrived and been painted before the layout is read.
+          await expect.poll(() => s.done.length).toBe(1);
+          await s.page.evaluate("new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r)))");
           await expect(s.list).not.toHaveClass(/\bnotes-folded\b/);
           await expect(s.rows).toHaveCount(DEMO_NAMES.length);
           await expect(s.box).toHaveCount(0);
@@ -3813,7 +3824,6 @@ test.describe("NOTES-01 phone-only: the presenter's notes on the phone (design.m
     await expect(heading(s.screen.page)).toHaveText(DEMO_ITEMS.horizontal.name);
     await s.present();
     await expect(s.bubbles.getByRole("button", { name: "Stop" })).toBeVisible();
-    await s.page.waitForTimeout(400);
     expect(s.asked).toEqual([]);
     await expect(s.list).not.toHaveClass(/\bnotes-folded\b/);
     await expect(s.box).toHaveCount(0);
