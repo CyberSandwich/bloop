@@ -22,7 +22,7 @@ import { limited, withConfig } from "./common.ts";
 /** An ETag as R2 hands it back: hex in production, URL-safe base64 in the local emulator; quotes optional. */
 const ETAG = /^"?[A-Za-z0-9_=+/-]{16,200}"?$/;
 const createBody = z.strictObject({
-  name: z.string().min(1).max(200),
+  name: z.string().min(1),
   bytes: z.number().int().min(1),
   fingerprint: z.string().regex(/^[0-9a-f]{64}$/),
 });
