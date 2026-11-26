@@ -62,6 +62,11 @@ describe("doc paths", () => {
     "tokens.css",
     "references/ai-tells.md",
     "ppt/presentation.xml",
+    // Names inside a converted bundle in R2 (docs/conversion.md).
+    "slides.json",
+    "meta.json",
+    "m/0.mp4",
+    "i/1920.jpg",
     "vbaProject.bin",
     "bloop.example",
   ]);
