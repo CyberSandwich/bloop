@@ -46,8 +46,9 @@
     ]
   },
   // The Converter's container (ADR 0019). The Object picks the image and the size when it starts one. The image is a
-  // placeholder in the shape wrangler checks (all zeros): `prebuilt.mjs rewrite` puts in the account id from
-  // CLOUDFLARE_ACCOUNT_ID (the repo never holds it) and the digest from container/digest.txt, so a pin is one file.
+  // placeholder in the shape wrangler checks (all zeros): `prebuilt.mjs rewrite` puts in the digest from
+  // container/digest.txt (a pin is one file) and `prebuilt.mjs account` the account id from CLOUDFLARE_ACCOUNT_ID,
+  // which the repo never holds.
   "containers": [
     {
       "class_name": "Converter",
