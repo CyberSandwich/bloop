@@ -10,11 +10,14 @@
 //
 // One scanner reads a PDF as a sequence of chunks of any size, and its verdict does not depend on how the file is cut:
 // every decision reads a bounded span past its offset, held back at the buffer's end, except an object stream's data,
-// which is read on to its `endstream` up to `MAX_STREAM_BYTES` (one window), the buffer cut to that data first. So the
-// buffer stays within `SCAN_BUFFER_BYTES`: two windows and the overlap.
+// which is read on to its `endstream` up to `MAX_STREAM_BYTES` (one window plus the `endstream` keyword), the buffer
+// cut to that data first. So the buffer stays within `SCAN_BUFFER_BYTES`: two windows and the overlap.
 //
 // Limits: the scan covers names, not stream payloads (an XFA form's XML, an embedded file's bytes, a content stream).
-// A name inside a string or comment also matches (fail closed). An object stream is read only when its dictionary is
+// A name inside a string or comment also matches (fail closed). The keywords that steer the scan (`obj<<`, `endobj`)
+// are read outside strings and comments, and one inside a string or comment, or an object boundary inside a stream's
+// data, is `unscannable`: a reader reaches objects by offset, so a file that hides a keyword where the scan's reading
+// order differs from the reader's is refused, not guessed at. An object stream is read only when its dictionary is
 // exactly the plain form (`/Type /ObjStm`, `/N`, `/First`, `/Length`, `/Extends` and one `/Filter /FlateDecode`), opens
 // within `DICT_LOOKBACK` bytes of its `stream` keyword and its data is at most `MAX_STREAM_BYTES`; anything else, and
 // any `/ObjStm` token or direct `/First` count outside every dictionary read so (a keyword followed by a space, a
@@ -69,7 +72,10 @@ const NAME = /\/[^\x00\t\n\f\r /<>[\](){}%]+/g;
  */
 const MARKS =
   // biome-ignore lint/suspicious/noControlCharactersInRegex: NUL is PDF white space
-  /(?<!end)obj[\x00\t\n\f\r ]{0,64}<<|(?<![^\x00\t\n\f\r >)\]])endobj(?![^\x00\t\n\f\r /<>[\](){}%])|(?<![^\x00\t\n\f\r >])stream(?:\r\n|\r|\n)?/g;
+  /(?<![^\x00\t\n\f\r 0-9])obj[\x00\t\n\f\r ]{0,64}<<|(?<![^\x00\t\n\f\r >)\]])endobj(?![^\x00\t\n\f\r /<>[\](){}%])|(?<![^\x00\t\n\f\r >])stream(?:\r\n|\r|\n)?|[(%]/g;
+/** A dictionary opening or an `endobj` as the marks pass reads them: inside a string or comment they would steer it. */
+// biome-ignore lint/suspicious/noControlCharactersInRegex: NUL is PDF white space
+const FORGEABLE = /endobj|obj[\x00\t\n\f\r ]{0,64}<</;
 /** What follows `/First` in an outline: a reference. Anything else is an object stream's count. */
 const REFERENCE =
   // biome-ignore lint/suspicious/noControlCharactersInRegex: NUL is PDF white space
@@ -115,6 +121,26 @@ function plainObjStm(dict: string): boolean {
   if (open === -1 || dict.indexOf("<<", open + 2) !== -1 || dict.includes("[") || dict.includes("(")) return false;
   const seen = [...names(dict)];
   return seen.every((n) => OBJSTM_KEYS.has(n)) && seen.filter((n) => n === "FlateDecode").length === 1;
+}
+
+/**
+ * The offset just past the literal string or comment that opens at `open` (a balanced `(...)` with backslash escapes,
+ * or a `%` to its line end), or -1 when it does not end within `DICT_LOOKBACK` bytes: then it is not read as one.
+ */
+function quotedEnd(text: string, open: number): number {
+  const stop = Math.min(text.length, open + DICT_LOOKBACK);
+  if (text[open] === "%") {
+    for (let i = open + 1; i < stop; i++) if (text[i] === "\n" || text[i] === "\r") return i + 1;
+    return -1;
+  }
+  let depth = 1;
+  for (let i = open + 1; i < stop; i++) {
+    const c = text[i];
+    if (c === "\\") i++;
+    else if (c === "(") depth++;
+    else if (c === ")" && --depth === 0) return i + 1;
+  }
+  return -1;
 }
 
 const join = (a: Uint8Array, b: Uint8Array): Uint8Array => {
@@ -251,16 +277,41 @@ export async function scanPdfChunks(
     }
   };
 
+  /** Between a stream keyword and its `endstream`: marks there are binary noise, except an object boundary. */
+  let inData = false;
+  let dataEnd = Number.POSITIVE_INFINITY;
+  /** Finds the `endstream` at or after `from` in the buffer; infinity when it has not arrived. */
+  const refind = (from: number): void => {
+    const end = findEnd(data, Math.max(0, from - base));
+    dataEnd = end === -1 ? Number.POSITIVE_INFINITY : base + end;
+  };
+
   for (let more = true; more; ) {
     if (!last) await pull();
+    if (inData && dataEnd === Number.POSITIVE_INFINITY) refind(marksDone - ENDSTREAM.length);
     let text = latin1.decode(data);
     const limit = safeEnd();
     let safe = limit;
     let pulled = false;
     const marks = new RegExp(MARKS);
     marks.lastIndex = Math.max(0, marksDone - base);
+    /** Where the last string or comment skipped ends: a pass cut at the buffer's limit resumes there, not inside it. */
+    let skipTo = 0;
     for (let m = failed ? null : marks.exec(text); m !== null && base + m.index < limit; m = marks.exec(text)) {
       const at = base + m.index;
+      if (inData && at >= dataEnd) inData = false;
+      if (m[0] === "(" || m[0] === "%") {
+        // Stream data is binary: its parentheses and percent signs are not strings or comments.
+        const end = inData ? -1 : quotedEnd(text, m.index);
+        if (end === -1) continue;
+        // A string or comment holding a dictionary opening or an `endobj` is forging marks: fail closed.
+        if (tracking() && FORGEABLE.test(text.slice(m.index, end))) stray();
+        marks.lastIndex = end;
+        skipTo = base + end;
+        continue;
+      }
+      // An object boundary inside a stream's data is an object a reader reaches by offset: fail closed.
+      if (inData && tracking() && (m[0].startsWith("obj") || m[0] === "endobj")) stray();
       if (m[0].startsWith("obj")) {
         dictAt = at;
         continue;
@@ -269,6 +320,7 @@ export async function scanPdfChunks(
       if (tracking()) scanNames(text, at);
       if (m[0] === "endobj") {
         refs = [];
+        dictAt = -1;
         continue;
       }
       if (m[0] === "stream") {
@@ -281,8 +333,13 @@ export async function scanPdfChunks(
       const dict = dictStart === -1 || at - dictStart > DICT_LOOKBACK ? "" : text.slice(dictStart - base, m.index);
       if (!isObjStm(dict)) {
         if (tracking()) streamMet(Number.POSITIVE_INFINITY);
+        if (!inData) {
+          inData = true;
+          refind(at + m[0].length);
+        }
         continue;
       }
+      inData = false;
       const from = at + m[0].length;
       let end = -1;
       if (streams < MAX_OBJECT_STREAMS && plainObjStm(dict)) {
@@ -326,7 +383,7 @@ export async function scanPdfChunks(
       text = latin1.decode(data);
       if (failed) safe = safeEnd();
     }
-    marksDone = Math.max(marksDone, safe);
+    marksDone = Math.max(marksDone, safe, skipTo);
     scanNames(text, safe);
     // A stream that read on stops the pass at its end: the bytes after it are still to do.
     more = !last || (pulled && !failed);
