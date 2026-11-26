@@ -344,13 +344,7 @@ html:has(.page-site) {
 }
 @media (max-width: 639.98px) {
   .stage {
-    overflow: visible;
-    border-radius: 0;
-    background: none;
-    box-shadow: none;
-  }
-  .stage img {
-    aspect-ratio: 1155 / 2366;
+    border-radius: 16px;
   }
 }
 @supports (animation-timeline: view()) {
