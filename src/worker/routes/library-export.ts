@@ -1,6 +1,7 @@
 // GET /api/me/export.zip: the account export as a download (ADR 0016, docs/library.md). A navigation, so the idempotency
 // key travels as `?k=`. A fresh export needs the session's recent proof (C+R); resuming one the server issued within a day
-// needs only the session (C). Every check that costs nothing runs before the first D1 read.
+// needs only the session (C). The per-IP meter and the session read come first (AUTH-19); then every check that costs
+// nothing, before the member's own limit and any file or Durable Object.
 import { z } from "zod";
 import { userScope } from "../audit.ts";
 import { readCookie, SESSION_COOKIE } from "../auth/cookies.ts";
@@ -58,12 +59,13 @@ export function makeExportRoute(deps: ExportDeps): Route {
       const who = await deps.resolve(request, env, config, now);
       if (!who.ok) return who.response;
       const { userId } = who.member;
-      const tooMany = await limited(env, "RL_LIBRARY", request, config, userId);
-      if (tooMany) return tooMany;
-      // Cross-site navigations are refused before any file or Durable Object is read (LIB-10).
+      // Cross-site navigations are refused before the member's own limit is spent and before any file or Durable Object
+      // is read (LIB-10): a hostile page cannot drain the limit of a member it sends here.
       if (request.headers.get("Sec-Fetch-Site") !== "same-origin") return fail("forbidden_origin");
       const key = KEY.safeParse(new URL(request.url).searchParams.get("k"));
       if (!key.success) return fail("bad_request");
+      const tooMany = await limited(env, "RL_LIBRARY", request, config, userId);
+      if (tooMany) return tooMany;
       const tokenKey = config.secrets.fileTokenKey;
       if (!tokenKey || (await deps.switches(env)).export !== "on") return fail("export_paused");
       return start({ request, env, config, userId, now, k: key.data, tokenKey, take: deps.take });
