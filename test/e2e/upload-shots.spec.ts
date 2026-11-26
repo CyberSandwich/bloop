@@ -32,6 +32,13 @@ function seed(): string {
   return cookie;
 }
 
+/** What the page's API calls answered, printed when a test fails. */
+const seen: string[] = [];
+test.afterEach(({}, info) => {
+  if (info.status !== info.expectedStatus) console.log(`seen:\n${seen.splice(0).join("\n")}`);
+  else seen.length = 0;
+});
+
 const SIZES: [number, number][] = [
   [320, 700],
   [390, 844],
@@ -52,6 +59,12 @@ async function scene(
   });
   await context.setExtraHTTPHeaders({ Cookie: `__Host-bloop_sid=${seed()}` });
   const page = await context.newPage();
+  page.on("response", (r) => {
+    if (r.url().includes("/api/")) seen.push(`${r.status()} ${r.request().method()} ${r.url()}`);
+  });
+  page.on("requestfailed", (r) => seen.push(`FAILED ${r.method()} ${r.url()} ${r.failure()?.errorText}`));
+  page.on("console", (m) => seen.push(`console ${m.type()} ${m.text()}`));
+  page.on("pageerror", (e) => seen.push(`pageerror ${e.message}`));
   await options.before?.(page);
   await page.goto(`/upload-shots.html?scene=${name}`);
   await page.locator("body[data-ready]").waitFor({ state: "attached" });
