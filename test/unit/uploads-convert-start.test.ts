@@ -1,8 +1,17 @@
 import { describe, expect, it, vi } from "vitest";
 
-const started = vi.hoisted(() => ({ calls: [] as unknown[], release: null as null | (() => void) }));
+const started = vi.hoisted(() => ({
+  calls: [] as unknown[],
+  release: null as null | (() => void),
+  depsThrow: false,
+}));
 
-vi.mock("../../src/worker/convert/deps.ts", () => ({ convertDepsFor: () => ({ deps: true }) }));
+vi.mock("../../src/worker/convert/deps.ts", () => ({
+  convertDepsFor: () => {
+    if (started.depsThrow) throw new Error("no deps");
+    return { deps: true };
+  },
+}));
 vi.mock("../../src/worker/convert/start.ts", () => ({
   startConversion: (deps: unknown, req: unknown) => {
     started.calls.push([deps, req]);
@@ -57,5 +66,22 @@ describe("a library file that turns ready starts its conversion", () => {
     started.release?.();
     await run;
     expect(finished).toBe(true);
+  });
+
+  it("never fails the ready file: deps that cannot be built are logged, in the request and in the sweep", async () => {
+    started.calls.length = 0;
+    started.depsThrow = true;
+    const logged = vi.spyOn(console, "error").mockImplementation(() => {});
+    try {
+      const waiting: Promise<unknown>[] = [];
+      await expect(convertWhenReady({}, { waitUntil: (p) => void waiting.push(p) })(file)).resolves.toBeUndefined();
+      await expect(Promise.all(waiting)).resolves.toBeDefined();
+      await expect(convertWhenReady({})(file)).resolves.toBeUndefined();
+      expect(started.calls).toEqual([]);
+      expect(logged).toHaveBeenCalledTimes(2);
+    } finally {
+      started.depsThrow = false;
+      logged.mockRestore();
+    }
   });
 });
