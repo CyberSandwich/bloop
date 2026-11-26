@@ -89,7 +89,7 @@ test.describe("PAIR-14 the match pick", () => {
     release();
     await expect(group(phone.page).getByRole("button")).toHaveCount(3);
     await expect(skels).toHaveCount(0);
-    expect(await boxes("#pick .choice")).toEqual(before);
+    expect(await boxes("#pick button.choice")).toEqual(before);
     expect(await heading(phone.page).boundingBox()).toEqual(title);
     await closeAll(screen, phone);
   });
@@ -107,7 +107,7 @@ test.describe("PAIR-14 the match pick", () => {
       const legend = await phone.page.locator("#pick legend").boundingBox();
       const pick = await phone.page.locator("#pick").boundingBox();
       const edge = Math.min(width, (pick?.x ?? 0) + (pick?.width ?? 0));
-      const boxes = await phone.page.locator("#pick .choice").evaluateAll((els) =>
+      const boxes = await phone.page.locator("#pick button.choice").evaluateAll((els) =>
         els.map((el) => {
           const r = el.getBoundingClientRect();
           return { top: r.top, right: r.right, height: r.height };
@@ -375,7 +375,7 @@ test.describe("PAIR-14 the match pick", () => {
     }) => {
       const { screen, phone } = await atPick(browser);
       await phone.page.setViewportSize(vp);
-      const choices = phone.page.locator("#pick .choice");
+      const choices = phone.page.locator("#pick button.choice");
       await expect(choices).toHaveCount(3);
       await phone.page.evaluate(() =>
         (globalThis as unknown as { document: { fonts: { ready: Promise<unknown> } } }).document.fonts.ready.then(
