@@ -16,6 +16,7 @@ import {
   rawGet,
   registryFrom,
   run,
+  unhashed,
 } from "../../tools/live-check.mjs";
 import { SPAWN_TIMEOUT } from "./spawn.ts";
 
@@ -49,8 +50,11 @@ const fixture: Reg = {
     { path: "/css/length.css", type: "text/css" },
   ],
   typeFiles: ["/js/types.d.ts"],
+  immutable: ["/fonts/a-0123abcd.woff2", "/js/vendor/q-89abcdef/q.js"],
   headersFile:
-    "/*\n  X-Frame-Options: DENY\n  Content-Security-Policy: default-src 'none'\n\n/s\n  ! Content-Security-Policy\n  Content-Security-Policy: static-s\n",
+    "/*\n  X-Frame-Options: DENY\n  Content-Security-Policy: default-src 'none'\n\n/s\n  ! Content-Security-Policy\n  Content-Security-Policy: static-s\n\n" +
+    "/fonts/*\n  Cache-Control: forever\n\n/js/vendor/*\n  Cache-Control: forever\n\n" +
+    "https://files.example/*\n  ! Content-Security-Policy\n  Content-Security-Policy: sandboxed\n",
   publicOrigin: ORIGIN,
   fileOrigin: FILES,
   uploadMode: "proxy",
@@ -229,6 +233,51 @@ describe("live-check: files a build that drops dotfiles or leaks sources would g
     const { typeFiles } = registryFrom();
     expect(typeFiles).toContain("/js/types.d.ts");
     expect(typeFiles.some((p) => p.startsWith("/js/vendor/") && p.endsWith(".d.ts"))).toBe(true);
+  });
+});
+
+describe("live-check: content-hashed names and the file origin's static answers", () => {
+  it("each immutable file answers its cache rule, and its unhashed name 404s", () => {
+    const checks = preview();
+    expect(find(checks, "immutable /fonts/a-0123abcd.woff2")).toEqual({
+      what: "immutable /fonts/a-0123abcd.woff2",
+      url: `${ORIGIN}/fonts/a-0123abcd.woff2`,
+      expect: { status: 200, header: { "cache-control": "forever" } },
+    });
+    expect(find(checks, "unhashed /fonts/a.woff2 is gone")).toMatchObject({
+      url: `${ORIGIN}/fonts/a.woff2`,
+      expect: { status: 404 },
+    });
+    expect(find(open(), "unhashed /js/vendor/q.js is gone").url).toBe(`${ORIGIN}/js/vendor/q.js`);
+  });
+
+  it("takes the hash out of a file name or drops a hashed folder, and refuses a name with no hash", () => {
+    expect(unhashed("/fonts/inter-latin-cc089b5d.woff2")).toBe("/fonts/inter-latin.woff2");
+    expect(unhashed("/fonts/inter-90ef5e81.LICENSE.txt")).toBe("/fonts/inter.LICENSE.txt");
+    expect(unhashed("/js/vendor/uqr-1289037a/uqr.js")).toBe("/js/vendor/uqr.js");
+    expect(unhashed("/js/vendor/x-1289037a/y-cc089b5d.js")).toBe("/js/vendor/y.js");
+    expect(() => unhashed("/fonts/inter-latin.woff2")).toThrow(/no content hash/);
+    expect(() => unhashed("/fonts/a-0123ABCD.woff2")).toThrow(/no content hash/);
+    expect(() => preview({ ...fixture, immutable: ["/fonts/plain.woff2"] })).toThrow(/no content hash/);
+  });
+
+  it("a static 404 on the file origin must carry the CSP _headers gives that host", () => {
+    expect(find(preview(), "file origin static 404 carries the file-origin CSP")).toEqual({
+      what: "file origin static 404 carries the file-origin CSP",
+      url: `${FILES}/js/live-check-missing.js`,
+      expect: { status: 404, header: { "content-security-policy": "sandboxed" } },
+    });
+    expect(preview({ ...fixture, fileOrigin: null }).some((c) => c.what.startsWith("file origin static"))).toBe(false);
+  });
+
+  it("the registry lists every immutable file but no type declaration, and the real file origin is sandboxed", () => {
+    const reg = registryFrom();
+    expect(reg.immutable).toEqual(
+      expect.arrayContaining(["/fonts/inter-latin-cc089b5d.woff2", "/js/vendor/uqr-1289037a/uqr.js"]),
+    );
+    expect(reg.immutable.some((p) => p.endsWith(".d.ts") || !/\.\w+$/.test(p))).toBe(false);
+    const fo = find(checksFor(reg, "preview"), "file origin static 404 carries the file-origin CSP");
+    expect(fo.expect.header?.["content-security-policy"]).toMatch(/\bsandbox\b/);
   });
 });
 

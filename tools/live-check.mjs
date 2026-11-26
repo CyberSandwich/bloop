@@ -2,7 +2,7 @@
 //   node tools/live-check.mjs <PUBLIC_ORIGIN> [--mode preview|open]
 // Paths go out exactly as written (node:https): fetch would resolve `/%2e/` and `/./` before sending. In the sandbox
 // Node needs NODE_USE_ENV_PROXY=1.
-import { readdirSync, readFileSync, realpathSync } from "node:fs";
+import { readdirSync, readFileSync, realpathSync, statSync } from "node:fs";
 import { request as httpRequest } from "node:http";
 import { request as httpsRequest } from "node:https";
 import { join } from "node:path";
@@ -27,7 +27,8 @@ const TYPES = { ".js": "text/javascript", ".css": "text/css" };
  * @typedef {{ path: string, exists: boolean }} Gated
  * @typedef {{ path: string, kind: "both" | "open-only" | "preview-only", to?: string }} Variant
  * @typedef {{ pages: { path: string, noindex: boolean }[], shells: Gated[], members: Gated[], variants: Variant[],
- *   lazy: { path: string, type: string | null }[], typeFiles: string[], headersFile: string, publicOrigin: string,
+ *   lazy: { path: string, type: string | null }[], typeFiles: string[], immutable: string[], headersFile: string,
+ *   publicOrigin: string,
  *   fileOrigin: string | null, uploadMode: string }} Registry
  * @typedef {{ status?: number, success?: boolean, header?: Record<string, string>, headerNot?: Record<string, string>,
  *   headerAbsent?: string[], cspIgnoringR2?: string, body?: string, bodyNot?: string, contentType?: string }} Expect
@@ -91,6 +92,8 @@ export function registryFrom() {
     .flatMap(paths)
     .flatMap((/** @type {string} */ p) => expandLazy(p, files));
   const vars = wranglerConfig(readFileSync(join(ROOT, "wrangler.jsonc"), "utf8")).vars ?? {};
+  const headersFile = readFileSync(join(pub, "_headers"), "utf8");
+  const publicHost = new URL(String(vars.PUBLIC_ORIGIN)).host;
   return {
     pages: [...html]
       .map((rel) => ({ path: pathOf(rel), noindex: readFileSync(join(pub, rel), "utf8").includes(NOINDEX_META) }))
@@ -106,7 +109,15 @@ export function registryFrom() {
     // Type declarations are for the editor and the typecheck; public/.assetsignore keeps them unserved, and the build
     // copies them to dist/, so a lost .assetsignore serves them.
     typeFiles: files.filter((f) => f.endsWith(".d.ts")).map((f) => `/${f}`),
-    headersFile: readFileSync(join(pub, "_headers"), "utf8"),
+    immutable: files
+      .map((f) => `/${f}`)
+      .filter(
+        (p) =>
+          !p.endsWith(".d.ts") &&
+          statSync(join(pub, p)).isFile() &&
+          /\bimmutable\b/.test(staticHeaders(headersFile, p, publicHost)["cache-control"] ?? ""),
+      ),
+    headersFile,
     publicOrigin: String(vars.PUBLIC_ORIGIN ?? ""),
     fileOrigin: vars.FILE_ORIGIN || null,
     uploadMode: vars.UPLOAD_MODE ?? "proxy",
@@ -144,6 +155,25 @@ export function probeForms(/** @type {string} */ path) {
       `/${cap}.HTML`,
     ]),
   ];
+}
+
+const HASHED_DIR = /-[0-9a-f]{8}$/;
+const HASH_IN_NAME = /-[0-9a-f]{8}(?=\.)/;
+
+/**
+ * A content-hashed path with the hash taken out: `-<8 hex>` dropped from the file name, a hashed folder dropped whole
+ * (`/js/vendor/uqr-1289037a/uqr.js` is `/js/vendor/uqr.js`). An immutable path with no hash throws: a name cached
+ * for a year must change when its bytes do.
+ */
+export function unhashed(/** @type {string} */ path) {
+  const parts = path.split("/");
+  const last = parts.length - 1;
+  const out = parts
+    .filter((seg, i) => i === last || !HASHED_DIR.test(seg))
+    .map((seg, i, kept) => (i === kept.length - 1 ? seg.replace(HASH_IN_NAME, "") : seg))
+    .join("/");
+  if (out === path) throw new Error(`live-check: ${path} is cached as immutable but its name holds no content hash`);
+  return out;
 }
 
 /** What a page's headers must be: _headers for the path, a dynamic page's CSP completed with the file origin. */
@@ -251,7 +281,27 @@ export function checksFor(reg, mode) {
   for (const path of reg.typeFiles) {
     checks.push({ what: `type file ${path} is not served`, url: `${origin}${path}`, expect: { status: 404 } });
   }
+  const host = new URL(origin).host;
+  for (const path of reg.immutable) {
+    const cacheControl = staticHeaders(reg.headersFile, path, host)["cache-control"] ?? "";
+    checks.push(
+      {
+        what: `immutable ${path}`,
+        url: `${origin}${path}`,
+        expect: { status: 200, header: { "cache-control": cacheControl } },
+      },
+      { what: `unhashed ${unhashed(path)} is gone`, url: `${origin}${unhashed(path)}`, expect: { status: 404 } },
+    );
+  }
   if (reg.fileOrigin) {
+    // The asset layer answers this path before the Worker, so only _headers can sandbox it.
+    const missing = "/js/live-check-missing.js";
+    const csp = staticHeaders(reg.headersFile, missing, new URL(reg.fileOrigin).host)["content-security-policy"] ?? "";
+    checks.push({
+      what: "file origin static 404 carries the file-origin CSP",
+      url: `${reg.fileOrigin}${missing}`,
+      expect: { status: 404, header: { "content-security-policy": csp } },
+    });
     const ping = `${reg.fileOrigin}/fo/ping`;
     checks.push(
       {
