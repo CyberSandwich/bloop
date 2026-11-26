@@ -260,8 +260,8 @@ export interface EarlyIo {
   code: string;
   /** The refused attempt's Idempotency-Key, kept with the code across sign-in. */
   key: string;
-  /** GET /api/me, asked beside the claim; its `launchMode` says whether the early-access state may show. */
-  who: Promise<Reply<{ launchMode?: string } | null>>;
+  /** GET /api/me, asked beside the claim; `launchMode` says whether early access may show, `signedIn` how rescan reads. */
+  who: Promise<Reply<{ launchMode?: string; signedIn?: boolean } | null>>;
   store: ReturnType<typeof createStore>;
   claim: (code: string, kind?: string, key?: string, resumed?: boolean) => Promise<void>;
 }

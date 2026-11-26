@@ -85,7 +85,7 @@ describe("client code under the strict CSP", () => {
 
   it("the phone page strips the code from the address when its modules load, before it makes a request", () => {
     const phone = read("js/phone.js");
-    expect(phone).toMatch(/import \{ bootCode, KEPT \} from "\.\/core\/boot-code\.js"/);
+    expect(phone).toMatch(/import \{ bootCode, KEPT, takeClaim \} from "\.\/core\/boot-code\.js"/);
     expect(read("js/core/boot-code.js")).toContain('history.replaceState(null, "", location.pathname)');
     // Modules only define things; the one top-level call that starts a request is `start()` at the end.
     expect(phone.trimEnd().endsWith("start();")).toBe(true);
