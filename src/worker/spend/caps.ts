@@ -21,7 +21,7 @@ export interface NumberSpec {
 const GIB = 1024 ** 3;
 
 /** The longest job's stage timeouts plus transfers (container/README.md "Stages and timeouts"); a shorter lease would
- * expire under a job that is still inside its own limits. test/unit/container-lease.test.ts derives it. */
+ * expire under a job that is still inside its own limits. test/unit/convert-lease-guard.test.ts pins it. */
 export const CONVERT_LEASE_FLOOR_SECONDS = 1770;
 
 /** Hard ceilings the guard refuses past. A row `cap.<name>` in /admin can only lower one (the var is the maximum). */
