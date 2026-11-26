@@ -14,6 +14,7 @@ export type Policy =
   | "report"
   | "worker"
   | "api"
+  | "api-revalidate"
   | "file-origin"
   | "file-pptx"
   | "file-pdf"
@@ -84,6 +85,8 @@ const TURNSTILE = "https://challenges.cloudflare.com";
 
 const TURNSTILE_CSP = `default-src 'none'; script-src 'self' ${TURNSTILE}; style-src 'self'; img-src 'self'; font-src 'self'; connect-src 'self'; frame-src ${TURNSTILE}; ${PAGE_TAIL}`;
 
+const API_CSP = "default-src 'none'; frame-ancestors 'none'";
+
 export const CSP: Readonly<Record<Policy, string>> = {
   landing: `default-src 'none'; ${SELF}; ${PAGE_TAIL}`,
   app: `default-src 'none'; ${SELF}; connect-src 'self'; ${PAGE_TAIL}`,
@@ -100,7 +103,8 @@ export const CSP: Readonly<Record<Policy, string>> = {
   // A viewer worker script (the SheetJS and CSV workers, the pdf.js worker) fetches nothing and loads only its own
   // origin's scripts: a parsed file can never reach the network from inside it.
   worker: "default-src 'none'; script-src 'self'",
-  api: "default-src 'none'; frame-ancestors 'none'",
+  api: API_CSP,
+  "api-revalidate": API_CSP,
   // The workers.dev host answers only what it must (ADR 0018); a document there could run nothing.
   "file-origin": "default-src 'none'; sandbox; frame-ancestors 'none'",
   "file-pptx": "default-src 'none'; sandbox; frame-ancestors 'none'",
@@ -122,6 +126,8 @@ const EXTRA: Readonly<Record<Policy, Record<string, string>>> = {
   worker: {},
   // X-Bloop marks an answer as ours, so the client can tell a campus filter's block page from a real reply.
   api: { "Cache-Control": "no-store", "X-Bloop": "1" },
+  // A read the client revalidates with an ETag (the library list): kept private, never shared, never reused unasked.
+  "api-revalidate": { "Cache-Control": "private, no-cache", "X-Bloop": "1" },
   // A cross-origin probe from the app reads it (ADR 0018); the handler adds Access-Control-Allow-Origin.
   "file-origin": { "Cross-Origin-Resource-Policy": "cross-origin", "Cache-Control": "no-store" },
   "file-pptx": { "Content-Disposition": "attachment", "Cache-Control": "no-store" },

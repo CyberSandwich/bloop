@@ -17,6 +17,7 @@ Status: accepted. Page variants by mode: ADR 0026.
 | fonts (version-suffixed names) | `public, max-age=31536000, immutable` |
 | `/img` | `public, max-age=86400, stale-while-revalidate=604800` |
 | `/api`, `/f` | `no-store` |
+| the library list (`api-revalidate`) | `private, no-cache` with an ETag (`revalidated` in `http.ts`): a revisit sends `If-None-Match` and gets a 304 |
 | `/b`, `/p`, and the notes routes | `no-store`: the library can be opened on a shared computer |
 
 - **HTML is never immutable.** The two mode variants (ADR 0026) have different ETags, so after a switch the next revalidation returns the other page with a 200. No purge, no deploy.
