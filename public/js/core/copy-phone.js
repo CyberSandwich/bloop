@@ -61,7 +61,7 @@ const BACK = {
 /** In an approved session a failure keeps Revoke. */
 const retryActions = (/** @type {PhoneFacts} */ f) =>
   /** @type {PhoneAction[]} */ (f.revoking ? [REVOKE] : f.live ? [REVOKE, TRY_AGAIN] : [TRY_AGAIN]);
-/** Revoke, or with the way back to the demo screen after it, which then takes the primary. */
+/** Revoke, or with the way back to the demo screen after it, which then takes the primary (app.css wraps it above). */
 const revokeActions = (/** @type {PhoneFacts} */ f) =>
   /** @type {PhoneAction[]} */ (f.back ? [REVOKE, BACK] : [REVOKE]);
 

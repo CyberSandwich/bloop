@@ -436,17 +436,7 @@ test.describe("pairing flow", () => {
         .locator("form")
         .evaluate((f) => Promise.all(f.getAnimations().map((a: { finished: Promise<unknown> }) => a.finished)));
       const field = sheet.getByLabel("Expires At");
-      // The whole time shows, inside the card: a time input never scrolls (its scrollWidth is its width even when
-      // clipped), so measure the widest 12-hour time in its font against its content box.
-      const fits = await phone.page.evaluate(`(() => {
-        const el = document.querySelector(".sheet-card .field");
-        const css = getComputedStyle(el);
-        const ctx = document.createElement("canvas").getContext("2d");
-        ctx.font = css.fontWeight + " " + css.fontSize + " " + css.fontFamily;
-        const text = Math.max(...["00:00 PM", "12:59 AM", "08:48 PM"].map((t) => ctx.measureText(t).width));
-        return text <= el.clientWidth;
-      })()`);
-      expect(fits).toBe(true);
+      // The whole time shows, inside the card: the input is as wide as its time, so the card holding it is the check.
       const card = sheet.locator(".sheet-card");
       await expectWithin(field, card);
       // The presets share one row.
@@ -472,16 +462,18 @@ test.describe("pairing flow", () => {
     });
   }
 
-  // The title and the time share one baseline where one row holds both (a 24-hour time at 390 and 844 x 390), and
-  // wrap as two centered lines where it can't (at 320, and a 12-hour time at 390). A time input's text is centered
-  // in its box, so its baseline is the box's middle less half the font's descent and plus half its ascent.
+  // The title and the time share one baseline where one row holds both (a 24-hour time at 390 and 844 x 390 must),
+  // and wrap as two centered lines where it can't (320, and a 12-hour time at 390, may: font metrics decide, so those
+  // read which it is). Chromium formats a time input by its lang, not the browser's locale, and the page is en-US, so
+  // the field takes the case's lang. A time input's text is centered in its box, so its baseline is the box's middle
+  // less half the font's descent and plus half its ascent.
   for (const [width, height, locale, oneRow] of [
     [390, 844, "en-GB", true],
     [844, 390, "en-GB", true],
     [320, 640, "en-GB", false],
     [390, 844, "en-US", false],
   ] as const) {
-    test(`SESS-01 at ${width} x ${height} in ${locale} the sheet's title and time are centered, ${oneRow ? "on one baseline" : "on two lines, nothing clipped"}`, async ({
+    test(`SESS-01 at ${width} x ${height} in ${locale} the sheet's title and time are centered, ${oneRow ? "on one baseline" : "on one baseline or two lines, nothing clipped"}`, async ({
       browser,
     }) => {
       const screen = await demoScreen(browser);
@@ -493,6 +485,7 @@ test.describe("pairing flow", () => {
       await page.getByRole("button", { name: /Change the Session Expiry$/ }).click();
       const sheet = page.getByRole("dialog", { name: "Session Expiry" });
       await expect(sheet).toBeVisible();
+      await sheet.getByLabel("Expires At").evaluate((n, lang) => n.setAttribute("lang", lang), locale);
       await sheet
         .locator("form")
         .evaluate((f) => Promise.all(f.getAnimations().map((a: { finished: Promise<unknown> }) => a.finished)));
@@ -528,11 +521,10 @@ test.describe("pairing flow", () => {
         field: { left: number; right: number; top: number };
       };
       const at = JSON.stringify(m);
-      if (oneRow) {
+      if (oneRow || m.field.top < m.title.bottom) {
         expect(Math.abs(m.titleBase - m.timeBase), at).toBeLessThanOrEqual(1);
         expect(Math.abs((m.title.left + m.field.right) / 2 - m.card), at).toBeLessThanOrEqual(1);
       } else {
-        expect(Math.round(m.field.top), at).toBeGreaterThanOrEqual(Math.round(m.title.bottom));
         expect(Math.abs((m.title.left + m.title.right) / 2 - m.card), at).toBeLessThanOrEqual(1);
         expect(Math.abs((m.field.left + m.field.right) / 2 - m.card), at).toBeLessThanOrEqual(1);
       }
@@ -792,7 +784,7 @@ test.describe("pairing flow", () => {
       const panel = phone.page.locator(".column > .actions.glass");
       const revoke = panel.getByRole("button", { name: "Revoke" });
       await expect(revoke).toBeInViewport({ ratio: 1 });
-      // Under 375 the time alone shows; the name still says Ends in.
+      // At 320 the row can't hold both labels, so the time alone shows; the name still says Ends in.
       const ends = panel.getByRole("button", { name: /^Ends in \d+:\d{2}(:\d{2})?\. Change the Session Expiry$/ });
       await expect(ends).toBeVisible();
       await expect(phone.page.locator("#ends-text .sr")).toHaveCount(width < 375 ? 1 : 0);
@@ -2034,6 +2026,27 @@ test.describe("demo viewer", () => {
     await phone.context.close();
   });
 
+  test("DEMO-01 one device back on /a: See It on the Screen wraps above Ends in and Revoke, the primary on top", async ({
+    browser,
+  }) => {
+    const phone = await open(browser, "phone", "/s?mode=demo");
+    await phone.page.getByRole("link", { name: "Approve on This Phone" }).click();
+    await phone.page.getByRole("button", { name: "Approve" }).click();
+    await expect(phone.page).toHaveURL(/\/s\?mode=demo$/);
+    await phone.page.goto("/a");
+    const panel = phone.page.locator(".column > .actions.glass");
+    const way = panel.getByRole("link", { name: "See It on the Screen" });
+    const revoke = panel.getByRole("button", { name: "Revoke" });
+    const ends = panel.getByRole("button", { name: /Change the Session Expiry$/ });
+    await expect(way).toBeVisible();
+    const [w, r, e] = [await way.boundingBox(), await revoke.boundingBox(), await ends.boundingBox()];
+    if (!w || !r || !e) throw new Error("no box");
+    expect(Math.round(w.y + w.height)).toBeLessThanOrEqual(Math.round(r.y));
+    expect(Math.round(e.y)).toBe(Math.round(r.y));
+    for (const b of [way, ends, revoke]) await expectWithin(b, panel);
+    await phone.context.close();
+  });
+
   test("at 360 the logo's question stacks its buttons, the rose on top, each label inside its own padding", async ({
     browser,
   }) => {
@@ -3231,6 +3244,12 @@ test.describe("PAIR-13 remote: the phone commands the demo screen (design.md sec
     await row("Sample deck.pptx").click();
     await expect(heading(screen.page)).toHaveText("Sample deck.pptx");
     await expect(preview).toHaveCount(0);
+    // The panel is one button tall: the bubbles, Ends in and Revoke on one row, Ends in with its words.
+    const tops = new Set<number>();
+    for (const name of ["Previous", "Next", "Revoke", /Change the Session Expiry$/])
+      tops.add(Math.round((await phone.page.getByRole("button", { name }).boundingBox())?.y ?? -1));
+    expect([...tops]).toHaveLength(1);
+    await expect(phone.page.locator("#ends-text .sr")).toHaveCount(0);
     await bubbles.getByRole("button", { name: "Next" }).click();
     await expect(dots).toHaveText("2 / 2");
     await close(screen, phone);

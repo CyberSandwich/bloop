@@ -996,10 +996,10 @@ a.row:focus-visible {
   margin-top: 12px;
   font-size: 14px;
 }
-/* Approved: "Ends in" leads Revoke's row (phone.js), at its height; under 375 phone.js hides the words from the eye
-   alone, so the time and Revoke fit side by side. */
+/* Approved: "Ends in" leads Revoke's row at its height (phone.js fits its words); a primary after them (the way back
+   to the screen) wraps above, so stacked it is on top. */
 .buttons:has(> .ends:not([hidden])) {
-  flex-flow: wrap;
+  flex-flow: wrap-reverse;
 }
 #ends {
   flex: none;
@@ -1084,7 +1084,7 @@ a.row:focus-visible {
 .row:has(input:checked) .tick {
   visibility: visible;
 }
-/* Side by side the primary is last; stacked, first. The countdown is status, so it reads above them. */
+/* Side by side the primary is last; stacked, first. */
 .actions,
 .buttons {
   display: flex;
@@ -1191,7 +1191,7 @@ a.row:focus-visible {
     pointer-events: none;
   }
 }
-/* Approved hides Back: the title at --inset, mirroring the panel. */
+/* Approved hides Back: its first content at --inset, mirroring the panel. */
 @media (max-width: 899.98px) {
   .page-phone:not(.is-ended):has(#back[hidden]) .column {
     justify-content: flex-start;
