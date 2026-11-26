@@ -5,6 +5,7 @@ import {
   mkdtempSync,
   readdirSync,
   readFileSync,
+  renameSync,
   rmSync,
   statSync,
   symlinkSync,
@@ -239,6 +240,46 @@ describe("immutable names", () => {
     const built = builtFiles(REPO);
     expect(immutableUnits([...built.keys()]).size).toBeGreaterThan(2);
     expect(staleBuilt(built)).toEqual([]);
+  });
+});
+
+describe("immutable names follow the served bytes", () => {
+  function lib(source: string, git = false) {
+    const dir = mkdtempSync(join(tmpdir(), "bloop-hash-"));
+    if (git) {
+      spawnSync("git", ["init", "-q"], { cwd: dir });
+      writeFileSync(join(dir, ".gitignore"), ".DS_Store\n");
+    }
+    mkdirSync(join(dir, "public/js/vendor/lib-00000000"), { recursive: true });
+    writeFileSync(join(dir, "public/js/vendor/lib-00000000/lib.js"), source);
+    return dir;
+  }
+  const named = (dir: string) => {
+    const [stale] = staleBuilt(builtFiles(dir));
+    return stale?.expected?.replace("public/", "") ?? "";
+  };
+
+  it("a change the minifier removes keeps the name, and one it keeps fails the build until rehashed", () => {
+    const dir = lib("export const a = 1; // note\n");
+    const expected = named(dir);
+    expect(expected).toMatch(/^js\/vendor\/lib-[0-9a-f]{8}$/);
+    renameSync(join(dir, "public/js/vendor/lib-00000000"), join(dir, "public", expected));
+    expect(() => build(dir)).not.toThrow();
+    const file = join(dir, "public", expected, "lib.js");
+    writeFileSync(file, "export const a = 1; // a different note\n");
+    expect(() => build(dir)).not.toThrow();
+    writeFileSync(file, "export const a = 2; // note\n");
+    expect(() => build(dir)).toThrow(/should be js\/vendor\/lib-[0-9a-f]{8}/);
+    rmSync(dir, { recursive: true, force: true });
+  });
+
+  it("a file git ignores inside a unit is not part of it", { timeout: SPAWN_TIMEOUT }, () => {
+    const dir = lib("export const a = 1;\n", true);
+    const before = named(dir);
+    writeFileSync(join(dir, "public/js/vendor/lib-00000000/.DS_Store"), "junk");
+    expect(named(dir)).toBe(before);
+    expect([...builtFiles(dir).keys()]).not.toContain("js/vendor/lib-00000000/.DS_Store");
+    rmSync(dir, { recursive: true, force: true });
   });
 });
 

@@ -2,6 +2,7 @@
 // own (no bundle), so the module graph, lazy import() specifiers and export names stay as written, and each
 // stylesheet stripped of comments and whitespace, and each page of its comments. ADR 0011.
 // The CLI is tools/build-assets-cli.mjs; wrangler.jsonc `build` runs it before `wrangler dev` and `wrangler deploy`.
+import { spawnSync } from "node:child_process";
 import { createHash } from "node:crypto";
 import { lstatSync, mkdirSync, readdirSync, readFileSync, renameSync, rmSync, writeFileSync } from "node:fs";
 import { basename, dirname, join, posix, relative, sep } from "node:path";
@@ -26,6 +27,27 @@ function walk(dir) {
     .filter((d) => d.isFile())
     .map((d) => relative(dir, join(d.parentPath, d.name)).split(sep).join("/"))
     .sort();
+}
+
+/**
+ * The files of `<root>/public` that git does not ignore: a `.DS_Store` inside an immutable unit must not change its hash,
+ * and the build and `tools/rehash-immutable.mjs` must list the same files. Outside a git work tree, every file.
+ * @param {string} root
+ */
+function publicFiles(root) {
+  const all = walk(join(root, "public"));
+  const listed = spawnSync("git", ["ls-files", "-z", "--cached", "--others", "--exclude-standard", "--", "public"], {
+    cwd: root,
+    encoding: "utf8",
+  });
+  if (listed.status !== 0) return all;
+  const keep = new Set(
+    listed.stdout
+      .split("\0")
+      .filter(Boolean)
+      .map((file) => file.slice("public/".length)),
+  );
+  return all.filter((rel) => keep.has(rel));
 }
 
 /**
@@ -194,8 +216,7 @@ function kind(path) {
  * The immutable units of public/ (ADR 0023): each file in fonts/ and js/vendor/, and each folder in js/vendor/ and
  * js/workers/ (a script directly in js/workers/ is not one). A unit is served `immutable`, so it changes only by
  * getting a new name: the name ends in `-<8 hex>`, the start of the SHA-256 of its built bytes, before any extension.
- * The hash is of what is served, so a minifier upgrade renames the unit too. A name is not known until its bytes are
- * final; once pushed it is public in the source, so the window to prime a cached 404 for it is the push-to-deploy gap.
+ * The hash is of what is served, so a minifier upgrade renames the unit too, and a name stands for one content.
  * @param {string[]} rels paths under dist/
  * @returns {Map<string, string[]>} unit path to the files it holds
  */
@@ -257,7 +278,7 @@ export function builtFiles(root = REPO) {
   const src = join(root, "public");
   /** @type {Map<string, Buffer | string>} */
   const files = new Map();
-  for (const rel of walk(src)) {
+  for (const rel of publicFiles(root)) {
     const bytes = readFileSync(join(src, rel));
     if (rel.endsWith(".css")) {
       files.set(rel, minifyCss(bytes.toString("utf8"), rel));

@@ -81,14 +81,11 @@ Names only; never put a value in a file, a commit or a chat. Set each with `npx 
 | `R2_ACCESS_KEY_ID`, `R2_SECRET_ACCESS_KEY` | an R2 API token with Object Read and Write on the two buckets only |
 | `R2_ACCOUNT_ID` | the Cloudflare account id; it fills the R2 endpoint in the CSP at serve time, so it never enters the repo |
 | `FILE_TOKEN_KEY`, `CODE_PEPPER` | 32 random bytes each, base64url, different from each other and from every older key |
-| `FILE_TOKEN_KEY_PREVIOUS` | optional, the same shape; set it only while rotating `FILE_TOKEN_KEY` (below) |
 | `TURNSTILE_SECRET_KEY` | the Turnstile widget's secret; the site key is a plain var (`TURNSTILE_SITE_KEY`), not a secret |
 | `TALLY_SIGNING_SECRET` | the Tally webhook signing secret; the hook refuses every request until it is set |
 | `ADMIN_EMAILS`, `TEST_EMAILS` | comma-separated addresses; entries are normalized (ADR 0013) and an invalid entry is skipped |
 
 To make a key without printing it, pipe it straight in: `openssl rand -base64 32 | tr '+/' '-_' | tr -d '=\n' | npx wrangler secret put FILE_TOKEN_KEY`. The value goes from the pipe to Cloudflare and is never printed or saved.
-
-To rotate `FILE_TOKEN_KEY` without breaking open previews: put the old value in `FILE_TOKEN_KEY_PREVIOUS`, set a new `FILE_TOKEN_KEY`, deploy, and delete the previous key after the longest preview token life. The library's token code signs with the current key only and verifies against the current key, then the previous one.
 
 ## Migrations 0004 and 0005 rollout
 

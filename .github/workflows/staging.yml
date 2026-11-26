@@ -16,7 +16,7 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
-  # The checks run test and lint tooling, so this job has no environment and no token.
+  # Third-party code runs here (install, tests, the build) and the job has no environment, so no token.
   check:
     if: github.ref_name == 'staging'
     runs-on: ubuntu-latest
@@ -31,7 +31,14 @@ jobs:
           cache: npm
       - run: npm ci --ignore-scripts
       - run: npm run check
-  # Only the lockfile's wrangler and esbuild (the deploy's build) run with the token: a fresh install, no scripts, no checks.
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: dist
+          path: dist
+          if-no-files-found: error
+          retention-days: 1
+  # Only the lockfile's wrangler runs with the token: a fresh install with no scripts, the built dist/ from the check
+  # job, and no build of its own.
   staging:
     if: github.ref_name == 'staging'
     needs: check
@@ -39,7 +46,7 @@ jobs:
     timeout-minutes: 15
     environment: staging
     steps:
-      # As in deploy.yml: a secret cannot be tested in an `if`, and the token is set on the wrangler steps alone.
+      # A secret cannot be tested in an `if`, so this step reads it and reports whether it exists.
       - name: Check for Cloudflare secrets
         id: gate
         env:
@@ -55,9 +62,13 @@ jobs:
         with:
           node-version-file: .nvmrc
           cache: npm
-      # No install script runs in a job that will hold the token; tools/staging.mjs runs the lockfile's wrangler by path.
       - if: steps.gate.outputs.has == 'true'
         run: npm ci --ignore-scripts
+      - if: steps.gate.outputs.has == 'true'
+        uses: actions/download-artifact@37930b1c2abaa49bbe596cd826c3c89aef350131 # v7.0.0
+        with:
+          name: dist
+          path: dist
       - name: Look for the staging resources
         id: resources
         if: steps.gate.outputs.has == 'true'

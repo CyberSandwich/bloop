@@ -51,9 +51,6 @@ export const libraryVars = {
   FILE_TOKEN_KEY: optional(z.string().min(32)).describe(
     "Secret. 32 random bytes that MAC preview tokens and the file-origin checks; at least 32 characters.",
   ),
-  FILE_TOKEN_KEY_PREVIOUS: optional(z.string().min(32)).describe(
-    "Secret. The retired FILE_TOKEN_KEY while it rotates: verifies tokens, never signs; docs/setup.md.",
-  ),
 };
 
 /** Library, upload and conversion settings (ADRs 0013, 0016, 0017, 0019). */

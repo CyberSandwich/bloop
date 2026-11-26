@@ -1,5 +1,6 @@
 import { readdirSync, readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
+import { withPrebuilt } from "../../tools/prebuilt.mjs";
 
 const dir = new URL("../../.github/workflows/", import.meta.url);
 
@@ -115,5 +116,79 @@ describe("SITE-05 deploy token scope", () => {
     expect(broadScopes(job, "CLOUDFLARE_API_TOKEN")).toEqual([3]);
     expect(broadScopes(flow, "CLOUDFLARE_API_TOKEN")).toEqual([1]);
     expect(broadScopes(step, "CLOUDFLARE_API_TOKEN")).toEqual([]);
+  });
+});
+
+/** Each job of a workflow: its name, whether it names an environment, and every command its steps run. */
+function jobs(text: string): { name: string; environment: boolean; runs: string[] }[] {
+  const lines = text.split("\n");
+  const found: { name: string; environment: boolean; runs: string[] }[] = [];
+  let job: { name: string; environment: boolean; runs: string[] } | undefined;
+  lines.forEach((line, i) => {
+    const head = /^ {2}([\w-]+):\s*$/.exec(line);
+    if (head && i > lines.indexOf("jobs:")) {
+      job = { name: head[1] ?? "", environment: false, runs: [] };
+      found.push(job);
+    }
+    if (!job) return;
+    if (/^ {4}environment:/.test(line)) job.environment = true;
+    const step = /^(\s*-?\s*)run:\s*(.*)$/.exec(line);
+    if (!step) return;
+    const value = (step[2] ?? "").trim();
+    if (!/^[|>][-+]?$/.test(value)) {
+      job.runs.push(value);
+      return;
+    }
+    const indent = (step[1] ?? "").length;
+    for (let j = i + 1; j < lines.length; j++) {
+      const next = lines[j] ?? "";
+      if (next.trim() !== "" && next.length - next.trimStart().length <= indent) break;
+      if (next.trim() !== "") job.runs.push(next.trim());
+    }
+  });
+  return found;
+}
+
+/** Commands a job that holds the Cloudflare token may run: first-party tools, the pinned wrangler, a scripted install. */
+const TOKEN_JOB_RUNS =
+  /^(node tools\/(pinned-wrangler|staging|prebuilt)\.mjs\b|npm ci --ignore-scripts$|if \[ -n "\$CLOUDFLARE_API_TOKEN" \])/;
+
+describe("SITE-05 third-party code never shares a job with the token", () => {
+  const files = ["deploy.yml", "staging.yml"];
+
+  it("SITE-05 token jobs: a job with an environment runs only first-party tools, the pinned wrangler and a scripted install", () => {
+    for (const f of files) {
+      const withEnvironment = jobs(readFileSync(new URL(f, dir), "utf8")).filter((j) => j.environment);
+      expect(withEnvironment.length, f).toBe(1);
+      for (const job of withEnvironment) {
+        for (const run of job.runs) expect(run, `${f} ${job.name}`).toMatch(TOKEN_JOB_RUNS);
+      }
+    }
+  });
+
+  it("SITE-05 token jobs: the check job has no environment and no secret, and hands dist/ over as an artifact", () => {
+    for (const f of files) {
+      const text = readFileSync(new URL(f, dir), "utf8");
+      const check = text.slice(text.indexOf("  check:\n"), text.search(/\n {2}(deploy|staging):\n/));
+      expect(check, f).toContain("npm run check");
+      expect(check, f).toContain("upload-artifact");
+      expect(check, f).not.toMatch(/environment:|secrets\./);
+      expect(text, f).toContain("download-artifact");
+      expect(text, f).toContain("needs: check");
+    }
+  });
+
+  it("SITE-05 token jobs: the guard sees a token job that runs a build or a test", () => {
+    const bad = "jobs:\n  deploy:\n    environment: production\n    steps:\n      - run: npm run check\n";
+    expect(jobs(bad)).toEqual([{ name: "deploy", environment: true, runs: ["npm run check"] }]);
+    expect("npm run check").not.toMatch(TOKEN_JOB_RUNS);
+    expect("node tools/pinned-wrangler.mjs deploy").toMatch(TOKEN_JOB_RUNS);
+  });
+
+  it("SITE-05 token jobs: wrangler.jsonc's build block is the one the deploy jobs know how to swap", () => {
+    const config = readFileSync(new URL("../../wrangler.jsonc", import.meta.url), "utf8");
+    expect(() => withPrebuilt(config)).not.toThrow();
+    expect(withPrebuilt(config)).toContain("node tools/prebuilt.mjs assert");
+    expect(() => withPrebuilt("{}")).toThrow(/no build block/);
   });
 });

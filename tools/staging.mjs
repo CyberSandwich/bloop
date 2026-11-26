@@ -2,17 +2,16 @@
 // tested; `ready` and `deploy` run in the workflow only and never print a secret value.
 //   ready    prints one line and sets `ready=true|false`: false (a clean skip) until the staging D1 exists. The buckets
 //            are not probed: a missing one fails the deploy, and the token then needs no R2 permission.
-//   deploy   writes the D1 id (STAGING_D1_ID in the environment) into wrangler.jsonc for this job's checkout, applies
-//            the migrations, deploys, then sets every missing staging secret from a random value that is piped in
+//   deploy   writes the D1 id (STAGING_D1_ID in the environment) into wrangler.jsonc for this job's checkout and
+//            swaps its build command for the check that dist/ was downloaded, applies the migrations, deploys, then sets every missing staging secret from a random value that is piped in
 import { spawnSync } from "node:child_process";
 import { randomBytes } from "node:crypto";
 import { appendFileSync, readFileSync, writeFileSync } from "node:fs";
-import { join } from "node:path";
-import { fileURLToPath } from "node:url";
+import { wranglerEntry } from "./pinned-wrangler.mjs";
+import { withPrebuilt } from "./prebuilt.mjs";
 
 export const D1_NAME = "bloop-staging";
 export const PLACEHOLDER = "STAGING_D1_ID";
-const ROOT = fileURLToPath(new URL("../", import.meta.url));
 
 const b64url = () => randomBytes(32).toString("base64url");
 /** Every staging secret and how its value is made; ADMIN_EMAILS and TEST_EMAILS are addresses, set by hand. */
@@ -50,27 +49,6 @@ export function withD1Id(config, id) {
   return config.replace(slot, () => `"database_id": "${id}"`);
 }
 
-/** The wrangler version package-lock.json pins.
- * @param {string} lockJson */
-export function lockedWranglerVersion(lockJson) {
-  const version = JSON.parse(lockJson).packages?.["node_modules/wrangler"]?.version;
-  if (typeof version !== "string") throw new Error("package-lock.json does not pin wrangler");
-  return version;
-}
-
-/**
- * The installed wrangler's entry file, by absolute path. `npm ci --ignore-scripts` has checked the tarball against the
- * lockfile's integrity hash; this refuses a node_modules that holds another version, so the token reaches the pinned
- * wrangler and never a package found on PATH. No test runner or linter shares the job.
- * @param {string} root
- */
-export function wranglerEntry(root = ROOT) {
-  const installed = JSON.parse(readFileSync(join(root, "node_modules/wrangler/package.json"), "utf8")).version;
-  const pinned = lockedWranglerVersion(readFileSync(join(root, "package-lock.json"), "utf8"));
-  if (installed !== pinned) throw new Error(`wrangler ${installed} is installed but the lockfile pins ${pinned}`);
-  return join(root, "node_modules/wrangler/bin/wrangler.js");
-}
-
 /** @param {string[]} args @param {string} [input] */
 const wrangler = (args, input) =>
   spawnSync(process.execPath, [wranglerEntry(), ...args], { encoding: "utf8", input, env: process.env });
@@ -101,7 +79,7 @@ function ready() {
 
 function deploy() {
   const file = "wrangler.jsonc";
-  writeFileSync(file, withD1Id(readFileSync(file, "utf8"), process.env.STAGING_D1_ID ?? ""));
+  writeFileSync(file, withPrebuilt(withD1Id(readFileSync(file, "utf8"), process.env.STAGING_D1_ID ?? "")));
   wranglerOk(["d1", "migrations", "apply", "DB", "--remote", "-e", "staging"]);
   wranglerOk(["deploy", "-e", "staging"]);
   for (const name of missingSecrets(wranglerOk(["secret", "list", "-e", "staging", "--format", "json"]))) {
