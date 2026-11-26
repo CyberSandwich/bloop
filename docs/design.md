@@ -178,7 +178,7 @@ Headings `text-wrap:balance` (h1 and h2 in base.css, the site's h3 in site.css, 
 | `--choice-h:64px` | the match pick's choices and the skeleton pills that hold their boxes: a step over a page action's 52 (Targets) |
 | `--sh-frame:0 0 0 1px rgba(0,0,0,.06),0 30px 60px -30px rgba(0,0,0,.35)` | the viewer's page or picture, the QR card, the hero stage (its screenshot's ground is the page's own paper, so only the frame says it is a picture) |
 | `--sh-nav:0 0 0 0.5px rgba(0,0,0,.08),0 4px 18px rgba(0,0,0,.05)` | the nav pills at the top of the page |
-| `--sh-pill:0 0 0 0.5px rgba(0,0,0,.08),0 10px 30px rgba(0,0,0,.12)` | glass at rest in the app (sidebar, sheet, handle, the viewer's control pill), the nav pills once scrolled, the menu sheet, the skip link |
+| `--sh-pill:0 0 0 0.5px rgba(0,0,0,.08),0 10px 30px rgba(0,0,0,.12)` | glass at rest in the app (sidebar, sheet, the viewer's control pill), the nav pills once scrolled, the menu sheet, the skip link |
 | `--nav-h:56px` | the height of both nav pills; every inset inside them is (56 - inner height) / 2 |
 | `--wordmark:22px` | the bloop beside the logo, wherever it stands: the nav, the footer and the app's logo button |
 | `--mark:32px` | the logo mark beside the wordmark, in the same three places; the nav's logo pill inset is (56 - 32) / 2 |
@@ -195,7 +195,7 @@ Headings `text-wrap:balance` (h1 and h2 in base.css, the site's h3 in site.css, 
 | `--section:80px` | section rhythm; 112 from 768 |
 
 ### Glass
-One recipe, named once (`.glass` in `base.css`; the nav pills carry the class in their markup, so `base.css` names no site selector), for every floating surface: the nav pills and their menu sheet, the viewer sidebar, its bottom sheet and handle, the viewer's control pill, the phone's sticky actions, and the components of the How It Works stills, the panels' group cards and the close card, over the warm backdrop (below), in its clearer liquid variant. Liquid, not frosted: a thin fill, a strong blur and saturation, so what passes under (the warm backdrop, the page as it scrolls) tints it, as opsis's green tints its nav. No refraction, shine or animated sheen (the loader, section 6, is the one exception); the border is the shadow's 0.5 px ring, never a CSS border.
+One recipe, named once (`.glass` in `base.css`; the nav pills carry the class in their markup, so `base.css` names no site selector), for every floating surface: the nav pills and their menu sheet, the viewer sidebar, its bottom sheet and handle, the viewer's control pill, the phone's sticky actions, and the components of the How It Works stills, the panels' group cards and the close card, over the warm backdrop (below), in its clearer liquid variant. Liquid, not frosted: a thin fill, a strong blur and saturation, so what passes under (the warm backdrop, the page as it scrolls) tints it, as opsis's green tints its nav. No refraction, shine or animated sheen (the loader, section 6, is the one exception); the border is the shadow's 0.5 px ring, never a CSS border. Glass docked at a phone window's bottom (the viewer's handle, `/a`'s button panel, the toast) has no drop shadow, only a 1 px `--hairline` ring (after `--glass-edge` where it has one): iOS Safari's floating toolbar sits over the strip beneath and tints itself from it, so a soft shadow there reads as a gray band; a modal over its own scrim keeps `--sh-pill`.
 | Token | Use |
 |---|---|
 | `--glass:rgba(255,255,255,.62)` | the fill where `backdrop-filter` is supported |
