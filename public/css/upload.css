@@ -86,11 +86,11 @@
   display: none;
 }
 .up-pill.bare .up-status {
-  margin-inline-start: -0.75em;
+  margin-inline-start: -0.8em;
 }
 @media (max-width: 360px) {
   .up-pill {
-    gap: 6px;
+    gap: 4px;
   }
   .up-act {
     padding-inline: 2px;
