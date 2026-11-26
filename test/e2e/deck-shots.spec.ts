@@ -31,10 +31,19 @@ for (const [width, height] of SIZES) {
     await phone.getByRole("button", { name: "Approve" }).click();
     await expect(screen.locator("#items > li .item")).toHaveCount(4);
 
-    const row = (name: string) => screen.locator("#items").getByRole("button", { name: new RegExp(`^${name}`) });
+    const pick = async (name: string) => {
+      if (width < 760) await screen.locator("#handle").click();
+      await screen.locator("#items").getByRole("button", { name: new RegExp(`^${name}`) }).click();
+    };
     await screen.waitForTimeout(800);
     await screen.screenshot({ path: `test-results/shots/open-${width}.png` });
-    await row("Deck.pptx").click();
+    if (width < 760) {
+      await screen.locator("#handle").click();
+      await screen.waitForTimeout(600);
+      await screen.screenshot({ path: `test-results/shots/sheet-${width}.png` });
+      await screen.locator("#handle").click();
+    }
+    await pick("Deck.pptx");
     await expect(screen.getByRole("img", { name: /^Slide 1 of 5$/ })).toBeVisible();
     await screen.waitForTimeout(600);
     await screen.screenshot({ path: `test-results/shots/deck-${width}-slide1.png` });
@@ -44,11 +53,11 @@ for (const [width, height] of SIZES) {
       await screen.waitForTimeout(400);
       if (n === 3 || n === 5) await screen.screenshot({ path: `test-results/shots/deck-${width}-slide${n}.png` });
     }
-    await row("Horizontal.jpg").click();
+    await pick("Horizontal.jpg");
     await expect(screen.getByRole("img", { name: "Horizontal.jpg" })).toBeVisible();
     await screen.waitForTimeout(800);
     await screen.screenshot({ path: `test-results/shots/horizontal-${width}.png` });
-    await row("Vertical.jpg").click();
+    await pick("Vertical.jpg");
     await expect(screen.getByRole("img", { name: "Vertical.jpg" })).toBeVisible();
     await screen.waitForTimeout(1200);
     await screen.screenshot({ path: `test-results/shots/vertical-${width}.png` });
