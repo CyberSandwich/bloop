@@ -1,9 +1,8 @@
 // The row menu (library.md section 4): Move Up and Down on an Up Next row, Rename, Download, Move to Trash; an upload's
 // row holds only Cancel Upload and a disabled file only Move to Trash. From 640 it sits by its More button.
 /** @import {Row} from "./model.js" */
-import { splitName } from "../core/format.js";
 import { el } from "../core/ui.js";
-import { allRows } from "./model.js";
+import { allRows, nameParts } from "./model.js";
 
 /** @param {any} page the page object library.js passes */
 export function start(page) {
@@ -22,7 +21,7 @@ export function start(page) {
 
   /** The file's name as the sheet's title, ellipsized in the middle so the extension stays. @param {string} name */
   const title = (name) => {
-    const [head, tail] = splitName(name);
+    const [head, tail] = nameParts(name);
     return el("h2", { id: "menu-title", tabindex: "-1", class: "row-name" }, [
       el("span", { class: "head" }, [head]),
       el("span", { class: "tail" }, [tail]),
