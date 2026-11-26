@@ -27,7 +27,7 @@ const { createBox, hasNotes, loadNotes, mount, noteFor } = (await import(NOTES_J
     pid: string | null,
     item: string,
   ) => Promise<string[] | null>;
-  mount: (c: Page, at: () => Shown | false | null, preview: FakeNode) => () => void;
+  mount: (c: Page, at: () => Shown | false | null, preview: FakeNode, place: () => void) => () => void;
   noteFor: (notes: string[], page: number) => string;
 };
 const { mount: mountRemote } = (await import(REMOTE_UI)) as {
@@ -273,10 +273,15 @@ describe("the notes layout", () => {
   async function run(shown: () => Shown | false, v = view()) {
     const s = scene();
     s.rows[0]?.setAttribute("aria-current", "true");
-    const update = mount(phone(v), shown, s.preview);
+    // The remote's own place ends in the notes' update; a tap on the row reaches it through here.
+    let places = 0;
+    const update = mount(phone(v), shown, s.preview, () => {
+      places++;
+      update();
+    });
     update();
     await flush();
-    return { ...s, update };
+    return { ...s, update, places: () => places };
   }
 
   it("fetches the deck's notes with the pid when Present is on, then folds the list and places the box", async () => {
@@ -426,11 +431,13 @@ describe("the notes layout", () => {
 
   describe("the row on screen is the fold's handle", () => {
     it("a tap opens the list, drops the box and sends no command; another tap folds it again", async () => {
-      const { column, list, rows } = await run(() => at(1));
+      const { column, list, rows, places } = await run(() => at(1));
       let commands = 0;
       list.addEventListener("click", () => commands++);
       (rows[0] as FakeNode).click();
       expect(commands).toBe(0);
+      // The fold changes the column's height, so the remote places the preview again.
+      expect(places()).toBe(1);
       expect(list.classList.contains("notes-folded")).toBe(false);
       expect(boxOf(column)).toBeNull();
       expect(rows[0]?.getAttribute("aria-expanded")).toBe("true");

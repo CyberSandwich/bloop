@@ -100,7 +100,7 @@ export function mount(c, onView) {
     paged = !!pages;
     if (at.present && pages)
       notes ??= import("./notes.js").then(
-        (m) => m.mount(c, () => on && remote.at(), preview),
+        (m) => m.mount(c, () => on && remote.at(), preview, place),
         () => {},
       );
     // The screen holds sound until a tap there: the phone says so under the list.
