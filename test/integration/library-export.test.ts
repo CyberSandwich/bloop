@@ -197,6 +197,25 @@ describe("LIB-07 export", () => {
     }
   });
 
+  it("S3: a resume after the account and its sessions were seen again still matches, and one from byte 0 needs the proof", async () => {
+    const whole = await download("eve", "key-sssssss1");
+    const etag = whole.res.headers.get("etag") as string;
+    wrangler.d1(
+      `UPDATE app_user SET last_seen_at = last_seen_at + 7200000 WHERE id = 'eve';
+       UPDATE phone_session SET last_seen_at = last_seen_at + 7200000 WHERE user_id = 'eve';
+       UPDATE phone_session SET reauth_at = NULL WHERE user_id = 'eve'`,
+    );
+    try {
+      const part = await download("eve", "key-sssssss2", { Range: "bytes=100-", "If-Range": etag });
+      expect(part.res.status).toBe(206);
+      expect(part.bytes).toEqual(whole.bytes.subarray(100));
+      const again = await download("eve", "key-sssssss3", { Range: "bytes=0-", "If-Range": etag });
+      expect([again.res.status, again.code]).toEqual([401, "reauth_required"]);
+    } finally {
+      wrangler.d1(`UPDATE phone_session SET reauth_at = ${Date.now()} WHERE user_id = 'eve'`);
+    }
+  });
+
   it("a stale If-Range with a fresh proof answers the whole archive, 200", async () => {
     const got = await download("eve", "key-oooooooo", {
       Range: "bytes=100-",

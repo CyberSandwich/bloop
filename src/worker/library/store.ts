@@ -269,13 +269,14 @@ interface Cursor {
 }
 const cursorOf = (r: FileRow, field: KeyField): string => {
   const key = field === "purgeAfter" ? (r.purgeAfter ?? 0) : r[field];
-  const wellFormed = typeof key === "string" ? key.toWellFormed() : key;
-  return base64url(new TextEncoder().encode(JSON.stringify([r.id, wellFormed])));
+  return base64url(new TextEncoder().encode(JSON.stringify([r.id, key])));
 };
 
 function readCursor(text: string, field: KeyField): Cursor | null {
   try {
-    const c: unknown = JSON.parse(new TextDecoder("utf-8", { fatal: true }).decode(fromBase64url(text)));
+    const c: unknown = JSON.parse(
+      new TextDecoder("utf-8", { fatal: true, ignoreBOM: true }).decode(fromBase64url(text)),
+    );
     if (!Array.isArray(c) || c.length !== 2) return null;
     const [id, key] = c as [unknown, unknown];
     const keyOk = field === "name" ? typeof key === "string" : Number.isSafeInteger(key);

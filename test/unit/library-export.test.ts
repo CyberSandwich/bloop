@@ -16,8 +16,9 @@ function settled(db: LibTestDb, objects: Record<string, string>, id: string, ove
   objects[`u/${user}/${id}/v1/orig`] = content;
 }
 
-const snapshotOf = (db: LibTestDb, audit: { at: number; record: unknown }[] = []) =>
-  takeSnapshot(db, "u1", audit, 1000);
+const TAKEN_AT = 10_000;
+const snapshotOf = (db: LibTestDb, audit: { at: number; record: unknown }[] = [], takenAt = TAKEN_AT) =>
+  takeSnapshot(db, "u1", audit, 1000, takenAt);
 
 const bytesOf = async (stream: ReadableStream<Uint8Array>) => new Uint8Array(await new Response(stream).arrayBuffer());
 
@@ -47,7 +48,7 @@ describe("LIB-07 export snapshot", () => {
     const objects: Record<string, string> = {};
     settled(db, objects, "b", { name: "Talk.pptx" });
     settled(db, objects, "a", { name: "Alpha.pdf", ext: "pdf" });
-    settled(db, objects, "t", { name: "Old.pptx", trashedAt: 5, purgeAfter: 99 });
+    settled(db, objects, "t", { name: "Old.pptx", trashedAt: 5, purgeAfter: 99_999 });
     settled(db, objects, "d", { name: "Bad.pptx", disabledAt: 7 });
     addFile(db, { id: "c", status: "checking" });
     const built = await render(db, objects);
@@ -72,7 +73,7 @@ describe("LIB-07 export snapshot", () => {
     const byId = Object.fromEntries(data.files.map((f: { id: string }) => [f.id, f]));
     expect(byId.d).toMatchObject({ path: null, disabled: true });
     expect(byId.c.path).toBeNull();
-    expect(byId.t).toMatchObject({ path: "Trash/Old.pptx", trashedAt: 5, purgeAfter: 99 });
+    expect(byId.t).toMatchObject({ path: "Trash/Old.pptx", trashedAt: 5, purgeAfter: 99_999 });
     expect(Object.keys(byId.a)).toEqual([
       "id",
       "path",
@@ -139,7 +140,7 @@ describe("LIB-07 export snapshot", () => {
     const data = new TextDecoder().decode(entryBytes(built, "data.json"));
     expect(data).not.toMatch(/SECRETHASH|PUBLICID|CREDID|deadbeef|sign_count/i);
     expect(JSON.parse(data)).toMatchObject({
-      sessions: [{ label: "Safari on iPhone", method: "passkey", createdAt: 1, lastSeenAt: 2 }],
+      sessions: [{ label: "Safari on iPhone", method: "passkey", createdAt: 1 }],
       passkeys: [{ name: "Phone", createdAt: 4, lastUsedAt: null, backedUp: true }],
     });
   });
@@ -189,6 +190,59 @@ describe("LIB-07 export snapshot", () => {
     db.raw.prepare("UPDATE app_user SET quota_bytes = 5 WHERE id = 'u1'").run();
     const again = await render(db, objects);
     expect(JSON.parse(new TextDecoder().decode(entryBytes(again, "data.json"))).account.quotaBytes).toBe(5);
+  });
+
+  it("S3: an hour of last-seen churn and a newer audit row leave the archive and its ETag as they were", async () => {
+    const db = libWith();
+    const objects: Record<string, string> = {};
+    settled(db, objects, "a", { updatedAt: 5000 });
+    db.raw
+      .prepare(
+        "INSERT INTO phone_session (id_hash, user_id, created_at, last_seen_at, expires_at, public_id) VALUES ('s', 'u1', 1, 100, 9, 'p')",
+      )
+      .run();
+    const first = await render(db, objects, [{ at: 6000, record: { type: "sign-in" } }]);
+    db.raw.prepare("UPDATE app_user SET last_seen_at = last_seen_at + 3600000 WHERE id = 'u1'").run();
+    db.raw.prepare("UPDATE phone_session SET last_seen_at = last_seen_at + 3600000").run();
+    const later = [
+      { at: 6000, record: { type: "sign-in" } },
+      { at: 12_000, record: { type: "sign-out" } },
+    ];
+    const again = await buildExport(await snapshotOf(db, later), KEY);
+    expect(again.etag).toBe(first.etag);
+    expect(new TextDecoder().decode(entryBytes(first, "data.json"))).not.toContain("lastSeenAt");
+  });
+
+  it("S4: a trashed file already due at the snapshot is listed without bytes and never read", async () => {
+    const db = libWith();
+    const objects: Record<string, string> = {};
+    settled(db, objects, "due", { name: "Due.pptx", trashedAt: 1, purgeAfter: TAKEN_AT - 1 });
+    settled(db, objects, "later", { name: "Later.pptx", trashedAt: 1, purgeAfter: TAKEN_AT + 1 });
+    const built = await render(db, objects);
+    expect(built.archive.entries.map((e) => e.name)).toEqual(["README.txt", "Trash/Later.pptx", "data.json"]);
+    expect(built.bucket.reads).toEqual(["u/u1/later/v1/orig"]);
+    const files = JSON.parse(new TextDecoder().decode(entryBytes(built, "data.json"))).files;
+    expect(files.find((f: { id: string }) => f.id === "due").path).toBeNull();
+  });
+
+  it("an entry reads the key its row holds, and one outside the user's prefix fails the stream", async () => {
+    const db = libWith();
+    const objects: Record<string, string> = {};
+    settled(db, objects, "a");
+    db.raw.prepare("UPDATE library_file SET r2_key = 'u/u2/a/v1/orig' WHERE id = 'a'").run();
+    objects["u/u2/a/v1/orig"] = "content of a";
+    const built = await buildExport(await snapshotOf(db), KEY);
+    await expect(
+      bytesOf(
+        exportStream(
+          built.archive,
+          0,
+          built.archive.length - 1,
+          { userId: "u1", bucket: fakeBucket(objects).bucket },
+          async () => {},
+        ),
+      ),
+    ).rejects.toThrow("outside");
   });
 
   it("names the download by the day", () => {
