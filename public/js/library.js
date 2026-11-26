@@ -67,6 +67,7 @@ const els = {
   trashView: byId("trash-view"),
   back: byId("back"),
   emptyTrash: byId("empty-trash"),
+  panel: byId("panel"),
   sample: byId("sample"),
   add: byId("add"),
   present: /** @type {HTMLButtonElement} */ (byId("present")),
@@ -74,6 +75,8 @@ const els = {
   polite: byId("polite"),
   pick: /** @type {HTMLInputElement} */ (byId("pick")),
 };
+// The bottom panel's height, so a toast sits just above it however its buttons stack (library.css --toast-lift).
+new ResizeObserver(() => document.body.style.setProperty("--panel", `${els.panel.offsetHeight}px`)).observe(els.panel);
 
 /** @type {List | null} */
 let list = M.cached(store.get(CACHE));
