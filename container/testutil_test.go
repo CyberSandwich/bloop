@@ -167,7 +167,7 @@ func (f *fakeTools) run(ctx context.Context, spec cmdSpec) ([]byte, error) {
 				return nil, ctx.Err()
 			}
 		}
-		return nil, write(last+".png", []byte("png"))
+		return nil, write(last+".ppm", []byte("ppm"))
 	case "vipsheader":
 		if after(a, "-f") == "width" {
 			return []byte("4032\n"), nil
