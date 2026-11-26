@@ -1,27 +1,14 @@
 // A tap outside an open popover only closes it (design.md section 6, Overlays): on a touch phone the platform's light
 // dismiss lets the tap's click land on what lies under it, so a tap beside the item sheet also turned the slide. CI only.
-import { expect, type Locator, type Page, test } from "@playwright/test";
+import { expect, type Page, test } from "@playwright/test";
+import { atRest, oneDevice, PHONE, pick } from "./one-device.ts";
 
-test.use({ viewport: { width: 390, height: 844 }, hasTouch: true, isMobile: true });
+test.use(PHONE);
 
-/** Ends every animation under `locator`, so a box read next is where it comes to rest. */
-const atRest = (locator: Locator) =>
-  locator.evaluate((el) => {
-    for (const a of el.getAnimations({ subtree: true })) a.finish();
-  });
-
-/** The one-device demo, approved on itself, showing the sample deck: two landscape slides. */
+/** The one-device demo showing the sample deck: two landscape slides. */
 async function deck(page: Page) {
-  await page.goto("/s?mode=demo");
-  await page.getByRole("link", { name: "Approve on This Phone" }).tap();
-  await page.getByRole("button", { name: "Approve" }).tap();
-  await expect(page.getByRole("heading", { level: 1 })).toHaveText("Dog.jpg");
-  await page.locator("#handle").tap();
-  await page
-    .locator("#items")
-    .getByRole("button", { name: /^Sample deck\.pptx/ })
-    .tap();
-  await expect(page.getByRole("heading", { level: 1 })).toHaveText("Sample deck.pptx");
+  await oneDevice(page);
+  await pick(page, "Sample deck.pptx");
   await expect(page.locator("#dots")).toHaveText("1 / 2");
 }
 
