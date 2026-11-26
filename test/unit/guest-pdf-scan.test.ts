@@ -265,6 +265,42 @@ describe("DROP-13 pdf-active: hostile input", () => {
     }
   });
 
+  it("DROP-13 pdf-active: keywords hidden in a string or comment cannot steer the scan off an object stream (forged marks, fail-open)", async () => {
+    const inner = deflateSync(enc.encode("<</S/JavaScript>>"));
+    const forged = (hide: string) =>
+      cat([
+        enc.encode(`%PDF-1.5\n5 0 obj\n<< /N 1 /First 4 0 R ${hide} /Filter /FlateDecode /Length ${inner.length} >>\n`),
+        enc.encode("stream\n"),
+        inner,
+        enc.encode("\nendstream\nendobj\n4 0 obj 5 endobj\n%%EOF\n"),
+      ]);
+    for (const hide of [
+      "/X ( endobj ) /Y ( obj<< )",
+      "/X (a \\( endobj ) /Y ((nested) obj<< )",
+      "% endobj obj<<\n/Z 1",
+      "/X ( endobj ) /Y 1 0 obj<< /Z",
+    ]) {
+      const poc = forged(hide);
+      for (const size of [1, 64, 4096, poc.length]) {
+        expect(await chunked(poc, size), `${hide} at ${size}`).toMatchObject({ ok: false, found: ["unscannable"] });
+      }
+    }
+    expect(await scanPdf(forged(""))).toMatchObject({ ok: false, found: ["JavaScript"] });
+  });
+
+  it("DROP-13 pdf-active: an object that begins inside another stream's data is refused, binary data with stray brackets passes", async () => {
+    const hosted = pdf(
+      "1 0 obj<</Length 99>>stream\nxx\n5 0 obj<< /Type /ObjStm /N 1 /First 4 0 R >>\nendstream\nendobj\n4 0 obj 5 endobj",
+    );
+    expect(await scanPdf(hosted)).toMatchObject({ ok: false, found: ["unscannable"] });
+    const binary = cat([
+      enc.encode("%PDF-1.5\n1 0 obj<</Length 9>>stream\n"),
+      enc.encode("(\x00%\x01( "),
+      enc.encode("\nendstream\nendobj\n2 0 obj<</First 3 0 R>>endobj\n3 0 obj 1 endobj\n%%EOF\n"),
+    ]);
+    for (const size of [1, 7, binary.length]) expect(await chunked(binary, size)).toEqual({ ok: true });
+  });
+
   it("passes a bare stream word with no reference /First pending (a title, a stray keyword)", async () => {
     const bare = pdf("1 0 obj<</Title (a stream of slides)>>endobj\n2 0 obj<</X 1>>stream endobj");
     expect(await scanPdf(bare)).toEqual({ ok: true });
