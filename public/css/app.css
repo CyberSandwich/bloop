@@ -581,11 +581,13 @@ main:has(> .side:not([hidden])) #stage {
   background: none;
   box-shadow: none;
 }
-#b-stop {
+#b-stop,
+#b-link {
   position: absolute;
   top: calc(16px + env(safe-area-inset-top));
   left: 50%;
-  z-index: 6;
+  /* Over the bar (20): its full-width box covers the stage's top, where the pill sits. */
+  z-index: 21;
   min-height: 44px;
   translate: -50%;
   /* Neutral over any slide: the saturating blur would tint it with the picture. */
@@ -597,6 +599,9 @@ main:has(> .side:not([hidden])) #stage {
   opacity: var(--stop-o, 0);
   pointer-events: none;
   transition: opacity 300ms var(--ease-ui);
+}
+#b-stop:not([hidden]) ~ #b-link {
+  margin-top: 52px;
 }
 .is-reach #b-stop {
   pointer-events: auto;
