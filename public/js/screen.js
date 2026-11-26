@@ -391,6 +391,7 @@ function onView(/** @type {ScreenView} */ view) {
   // The credential is the screen's own, not the session's: it comes back so a reload resumes the waiting screen.
   else if (view.state === "waiting" && s.sid && store.get(SID_KEY) !== s.sid) store.set(SID_KEY, s.sid);
   launcher.onView(view);
+  if (view.linkOpen?.opened === null) void import("./core/link-open.js").then((m) => m.follow(view, api, s.sid ?? ""));
   render();
 }
 

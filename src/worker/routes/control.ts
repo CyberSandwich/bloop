@@ -19,6 +19,11 @@ const commandBody = z
   .object({ ...shownSchema.shape, seq: z.number().int().min(1).max(Number.MAX_SAFE_INTEGER) })
   .strict();
 
+/** The phone's Open on a link item: an id, never a URL (LINK-02). */
+const linkBody = z.object({ item: shownSchema.shape.item }).strict();
+/** The screen's answer to ask `n`. */
+const answerBody = z.object({ n: z.number().int().min(1).max(Number.MAX_SAFE_INTEGER), opened: z.boolean() }).strict();
+
 /** Up to the live cap, the larger one: the Screen object clamps a demo session to its own. */
 const lengthBody = (config: Config) =>
   z
@@ -66,5 +71,7 @@ const command = () => commandBody;
 export const controlRoutes: readonly Route[] = [
   control("/api/control", command, (stub, pid, c: ShownCommand) => stub.control(pid, c)),
   control("/api/screen/shown", command, (stub, sid, c: ShownCommand) => stub.reportShown(sid, c)),
+  control("/api/control/link", () => linkBody, (stub, pid, { item }) => stub.openLink(pid, item)),
+  control("/api/screen/opened", () => answerBody, (stub, sid, { n, opened }) => stub.linkOpened(sid, n, opened)),
   control("/api/session/length", lengthBody, (stub, pid, { seconds }) => stub.setLength(pid, seconds)),
 ];

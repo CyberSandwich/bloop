@@ -587,7 +587,8 @@ main:has(> .side:not([hidden])) #stage {
   background: none;
   box-shadow: none;
 }
-#b-stop {
+#b-stop,
+#b-open {
   position: absolute;
   top: calc(16px + env(safe-area-inset-top));
   left: 50%;
