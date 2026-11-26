@@ -199,6 +199,8 @@ export function pptx(slides, { major = "Arial", minor = "Arial", runFont, extern
 /** The file the link fixtures point at (the corpus creates it inside the container) and the text it holds. */
 export const LINK_PATH = "/tmp/bloop-link-marker.txt";
 export const LINK_MARKER = "BLOOP-LINK-MARKER-7f3a91";
+/** The picture linked-image.odt points at; the corpus makes a real PNG there inside the container. */
+export const LINK_IMAGE_PATH = "/tmp/bloop-link-image.png";
 
 /** A one-paragraph .rtf with an INCLUDETEXT field that names LINK_PATH. */
 export const linkedRtf = () =>
@@ -295,10 +297,16 @@ const ODF_NS =
 export const macroModule = (sentinel) =>
   `${XML}<!DOCTYPE script:module PUBLIC "-//OpenOffice.org//DTD OfficeDocument 1.0//EN" "module.dtd"><script:module xmlns:script="http://openoffice.org/2000/script" script:name="Module1" script:language="StarBasic">Sub Main\n  Dim n As Integer\n  n = FreeFile\n  Open "${sentinel}" For Output As #n\n  Print #n, "the macro ran"\n  Close #n\nEnd Sub\n</script:module>`;
 
-/** An .odt with a section linked to LINK_PATH: updating the link replaces "cached text" with the file's content. */
-export function linkedOdt() {
+/**
+ * An .odt that links a file: a section whose source is LINK_PATH (updating it replaces "cached text" with the
+ * file's content), or with `image`, a picture whose target is `href`.
+ */
+export function linkedOdt({ href = `file://${LINK_PATH}`, image = false } = {}) {
   const mime = "application/vnd.oasis.opendocument.text";
-  const content = `${XML}<office:document-content ${ODF_NS} office:version="1.3"><office:body><office:text><text:p>Before the link.</text:p><text:section text:name="Linked1"><text:section-source xlink:href="file://${LINK_PATH}" xlink:type="simple" xlink:show="embed" text:filter-name="Text"/><text:p>cached text</text:p></text:section></office:text></office:body></office:document-content>`;
+  const body = image
+    ? `<text:p>Before the link.<draw:frame draw:name="img" text:anchor-type="as-char" svg:width="2cm" svg:height="2cm"><draw:image xlink:href="${href}" xlink:type="simple" xlink:show="embed" xlink:actuate="onLoad"/></draw:frame></text:p>`
+    : `<text:p>Before the link.</text:p><text:section text:name="Linked1"><text:section-source xlink:href="${href}" xlink:type="simple" xlink:show="embed" text:filter-name="Text"/><text:p>cached text</text:p></text:section>`;
+  const content = `${XML}<office:document-content ${ODF_NS} office:version="1.3"><office:body><office:text>${body}</office:text></office:body></office:document-content>`;
   const manifest = `${XML}<manifest:manifest xmlns:manifest="urn:oasis:names:tc:opendocument:xmlns:manifest:1.0" manifest:version="1.3"><manifest:file-entry manifest:full-path="/" manifest:media-type="${mime}"/><manifest:file-entry manifest:full-path="content.xml" manifest:media-type="text/xml"/></manifest:manifest>`;
   return zip(
     [
