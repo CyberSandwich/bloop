@@ -695,7 +695,7 @@ test.describe("pairing flow", () => {
     const phone = await open(browser, "phone", "/code");
     await expectNoAxeViolations(phone.page);
 
-    const field = phone.page.getByLabel("Code");
+    const field = phone.page.getByRole("textbox", { name: "Enter the Code" });
     const go = phone.page.getByRole("button", { name: "Continue" });
     await expect(go).toBeDisabled();
     await field.fill(code.toLowerCase());
@@ -723,12 +723,14 @@ test.describe("pairing flow", () => {
     // A held module holds the load event, so this load waits only for the markup.
     await phone.page.goto("/code", { waitUntil: "commit" });
     // The field is typed into while code.js is held: no listener hears it.
-    await phone.page.getByLabel("Code").fill(code);
+    await phone.page.getByRole("textbox", { name: "Enter the Code" }).fill(code);
     const go = phone.page.getByRole("button", { name: "Continue" });
     await expect(go).toBeDisabled();
     release();
     await expect(go).toBeEnabled();
-    await expect(phone.page.getByLabel("Code")).toHaveValue(`${code.slice(0, 3)} ${code.slice(3)}`);
+    await expect(phone.page.getByRole("textbox", { name: "Enter the Code" })).toHaveValue(
+      `${code.slice(0, 3)} ${code.slice(3)}`,
+    );
     await screen.context.close();
     await phone.context.close();
   });
@@ -737,18 +739,18 @@ test.describe("pairing flow", () => {
     const phone = await open(browser, "phone", "/code");
     // The error line keeps its row: the first bad letter never moves Continue.
     const before = await phone.page.getByRole("button", { name: "Continue" }).boundingBox();
-    await phone.page.getByLabel("Code").fill("K7O");
+    await phone.page.getByRole("textbox", { name: "Enter the Code" }).fill("K7O");
     await expect(phone.page.locator("#code-error")).toBeVisible();
     expect(await phone.page.getByRole("button", { name: "Continue" }).boundingBox()).toEqual(before);
-    await phone.page.getByLabel("Code").fill("222 222");
+    await phone.page.getByRole("textbox", { name: "Enter the Code" }).fill("222 222");
     await phone.page.getByRole("button", { name: "Continue" }).click();
     await expect(phone.page.locator("#code-error")).toContainText("Check the code on the screen.");
     // One line at 390: the refusal does not move Continue either.
     expect(await phone.page.getByRole("button", { name: "Continue" }).boundingBox()).toEqual(before);
-    await expect(phone.page.getByLabel("Code")).toHaveAttribute("aria-invalid", "true");
+    await expect(phone.page.getByRole("textbox", { name: "Enter the Code" })).toHaveAttribute("aria-invalid", "true");
     await expectNoAxeViolations(phone.page);
     // A look-alike the alphabet leaves out is named as soon as it is typed.
-    await phone.page.getByLabel("Code").fill("K7O");
+    await phone.page.getByRole("textbox", { name: "Enter the Code" }).fill("K7O");
     await expect(phone.page.locator("#code-error")).toContainText("Codes don't use 0, 1, I, L, O or U.");
     await phone.context.close();
   });
