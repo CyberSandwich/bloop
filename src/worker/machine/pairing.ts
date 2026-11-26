@@ -26,13 +26,21 @@ function findCode(m: Machine, value: string, now: number, cfg: MachineConfig): "
 }
 
 /** Back to waiting with no code, no pairing and no file: cancel, restart and every claim timeout. */
-function dropToWaiting(m: Machine, now: number, cfg: MachineConfig, reason: EndReason, actor: Actor): Step {
+function dropToWaiting(
+  m: Machine,
+  now: number,
+  cfg: MachineConfig,
+  reason: EndReason,
+  actor: Actor,
+  cause?: "match_wrong",
+): Step {
   const next: Machine = {
     ...m,
     state: "waiting",
     codes: { current: null, previous: null },
     pairing: null,
     session: null,
+    upload: null,
     uploadAt: null,
     offerAt: null,
     endedAt: null,
@@ -40,7 +48,7 @@ function dropToWaiting(m: Machine, now: number, cfg: MachineConfig, reason: EndR
     closeAt: closeAtFor(m.sockets, now, cfg),
   };
   const effects: Effect[] = [...codeRemovals(m.codes), ...purgeEffects(m)];
-  effects.push({ fx: "audit", type: "canceled", actor }, { fx: "push", to: "both" });
+  effects.push({ fx: "audit", type: "canceled", actor, ...(cause ? { cause } : {}) }, { fx: "push", to: "both" });
   return ok(next, effects);
 }
 
@@ -87,6 +95,9 @@ export function claim(m: Machine, ev: EventOf<"claim">, cfg: MachineConfig): Ste
   if (!slot || !code) return fail("code_expired");
   if (code.consumed) return fail("code_taken");
   if (now >= code.expiresAt) return fail("code_expired");
+  // transitional: removed in P1 commit 3 (a live claim with no choices is the passive match, confirmed at once)
+  const choices = m.mode === "live" ? (ev.choices ?? null) : null;
+  if (choices && !validChoices(choices, ev.match)) return fail("bad_request");
   const next: Machine = {
     ...m,
     state: "claimed",
@@ -100,6 +111,8 @@ export function claim(m: Machine, ev: EventOf<"claim">, cfg: MachineConfig): Ste
       listed: [],
       userId: ev.userId,
       passHash: ev.passHash,
+      confirmed: choices === null,
+      choices,
     },
     endReason: null,
     closeAt: null,
@@ -108,6 +121,26 @@ export function claim(m: Machine, ev: EventOf<"claim">, cfg: MachineConfig): Ste
     { fx: "push", to: "both" },
     { fx: "audit", type: "claimed", actor: "phone" },
   ]);
+}
+
+/** Three distinct two-digit strings, the match among them. */
+const validChoices = (choices: readonly string[], match: string): boolean =>
+  choices.length === 3 &&
+  new Set(choices).size === 3 &&
+  choices.every((c) => /^\d{2}$/.test(c)) &&
+  choices.includes(match);
+
+/**
+ * The phone's pick (PAIR-14). Right: the pairing is confirmed. Wrong: the claim drops to waiting as a cancel does, with
+ * cause `match_wrong`, and the Screen object answers the phone `match_wrong`. One pick per claim: a confirmed pairing
+ * and a demo one take any later pick as a no-op.
+ */
+export function match(m: Machine, ev: EventOf<"match">, cfg: MachineConfig): Step {
+  const { pairing } = m;
+  if (!pairing || (m.state !== "claimed" && m.state !== "choosing")) return fail("wrong_state");
+  if (pairing.confirmed !== false) return ok(m);
+  if (ev.choice !== pairing.match) return dropToWaiting(m, ev.now, cfg, "canceled", "phone", "match_wrong");
+  return ok({ ...m, pairing: { ...pairing, confirmed: true } }, [{ fx: "push", to: "both" }]);
 }
 
 export const cancel = (m: Machine, ev: EventOf<"cancel">, cfg: MachineConfig): Step =>
@@ -126,6 +159,19 @@ export function socket(m: Machine, ev: EventOf<"socket">, cfg: MachineConfig): S
   return ok({ ...m, sockets: ev.open, closeAt });
 }
 
+/**
+ * At the start deadline, before the session's end, with nothing started: one failed-start data point with the last
+ * cause seen (REL-16). The session goes on; only the deadline is spent.
+ */
+function startMissed(m: Machine, now: number): Step | null {
+  const session = m.session;
+  if (session?.startBy == null || now < session.startBy || (session.endsAt != null && now >= session.endsAt)) {
+    return null;
+  }
+  const cause = session.startCause ?? "timeout";
+  return ok({ ...m, session: { ...session, startBy: null } }, [{ fx: "start", ok: false, cause }]);
+}
+
 /** `due` is the machine's `nextDeadline`, which the dispatcher owns. */
 export function timer(m: Machine, ev: EventOf<"timer">, cfg: MachineConfig, due: number | null): Step {
   const { now } = ev;
@@ -137,7 +183,7 @@ export function timer(m: Machine, ev: EventOf<"timer">, cfg: MachineConfig, due:
     case "approved":
     case "opening":
     case "open":
-      return endSession(m, now, cfg, "auto", "system");
+      return startMissed(m, now) ?? endSession(m, now, cfg, "auto", "system");
     default:
       // claimed, choosing, uploading, offered
       return dropToWaiting(m, now, cfg, "claim_timeout", "system");

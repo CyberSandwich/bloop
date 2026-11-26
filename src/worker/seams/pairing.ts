@@ -7,6 +7,7 @@ import type {
   LinkResponse,
   Mode,
   OpenMode,
+  PairingAccountError,
   PhoneView,
   RoomView,
   ScreenView,
@@ -18,9 +19,10 @@ import type { ClientClass } from "./open-path/links.ts";
 
 /**
  * Errors are the PairError codes, plus `file_not_found` (approve), `unauthorized` (a bad sid) and
- * `internal`. A screen that never existed or has closed answers `screen_gone`.
+ * `internal`, and a live pick's `match_required` or `match_wrong` (phone-only AppErrors). A screen that never
+ * existed or has closed answers `screen_gone`.
  */
-export type Result<T> = { ok: true; value: T } | { ok: false; error: ErrorCode };
+export type Result<T, E = ErrorCode | PairingAccountError> = { ok: true; value: T } | { ok: false; error: E };
 
 export interface ScreenCreated {
   sid: string;
@@ -56,14 +58,14 @@ export interface PairingStore {
   claim(code: string, phone: PhoneInfo): Promise<Result<ClaimResponse>>;
   listed(pid: string, ids: string[]): Promise<Result<PhoneView>>;
   /**
-   * The Worker resolves `items` from the source's list; the object checks every ref against the listed ids (live)
-   * and refuses an empty list, a repeat or more than MAX_ITEMS (`bad_request`).
+   * The Worker resolves `items` from the source's list; the object refuses an empty list, a repeat or more than
+   * MAX_ITEMS (`bad_request`) and a live pick not yet made (`match_required`). The pairing's user stays the claim's.
    */
-  approve(pid: string, items: ItemDraft[], userId: string | null): Promise<Result<PhoneView>>;
+  approve(pid: string, items: ItemDraft[]): Promise<Result<PhoneView>>;
   /**
    * The phone's remote: what the screen should show. Absolute, so a repeat is a no-op, and a `seq` not above the
-   * phone's last applied one changes nothing. Demo sessions only; the item must be a file in the approved list and the
-   * page within its pages.
+   * phone's last applied one changes nothing. The item must be a file in the approved list and the page within its
+   * pages; live, the phone a confirmed owner and the item a deck, PDF or doc.
    */
   control(pid: string, command: ShownCommand): Promise<Result<PhoneView>>;
   /** The screen reports its own tap, so the phone's highlight stays true. Same rules as `control`, with its own `seq`. */
@@ -88,7 +90,7 @@ export interface PairingStore {
    */
   beginDrop(pid: string, length: number): Promise<Result<{ sessionId: string }>>;
   /** The object was stored and validated: the session is `offered`. */
-  dropDone(pid: string, file: FileRef): Promise<Result<PhoneView>>;
+  dropDone(pid: string, file: FileRef): Promise<Result<PhoneView, ErrorCode>>;
   /** The upload failed or was refused: back to `claimed`, and the object is purged. */
   dropFailed(pid: string, error: ErrorCode): Promise<Result<PhoneView>>;
   /**
@@ -131,4 +133,26 @@ export interface DemoCap {
    */
   demoReserve(screenRef: string, ipHash: string, holdMs: number, cap: number, perIp: number): Promise<boolean>;
   demoRelease(screenRef: string): Promise<void>;
+}
+
+/**
+ * The live pick's three choices (PAIR-14): the match and two decoys, in a uniform shuffle. A decoy differs from the
+ * match in both digits and is not its digit swap, so a glance at either digit tells them apart, and the two decoys
+ * differ. `rand(n)` answers a uniform integer in [0, n); the Screen object passes `randomInt` (ids.ts).
+ */
+export function drawChoices(match: string, rand: (n: number) => number): string[] {
+  const swap = `${match[1]}${match[0]}`;
+  const decoys: string[] = [];
+  for (let n = 0; n < 100; n++) {
+    const d = String(n).padStart(2, "0");
+    if (d[0] !== match[0] && d[1] !== match[1] && d !== swap) decoys.push(d);
+  }
+  const first = rand(decoys.length);
+  const second = rand(decoys.length - 1);
+  const picks = [match, decoys[first] as string, decoys[second >= first ? second + 1 : second] as string];
+  for (let i = picks.length - 1; i > 0; i--) {
+    const j = rand(i + 1);
+    [picks[i], picks[j]] = [picks[j] as string, picks[i] as string];
+  }
+  return picks;
 }

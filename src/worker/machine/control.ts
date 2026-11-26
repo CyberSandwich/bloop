@@ -1,25 +1,53 @@
 // An approved session: what the screen shows, its length, the launch and first fetch, and its end.
 import { IN_SESSION } from "../../../public/js/shared/session.js";
-import type { EndReason } from "../../shared/protocol.ts";
-import { sameShown, shownFault } from "../items.ts";
-import type { Effect, EventOf, Machine, MachineConfig, Step } from "../machine.ts";
-import { close, endSession, fail, MINUTE, ok, PRE_APPROVAL, SECOND } from "./step.ts";
+import type { EndReason, ItemKind } from "../../shared/protocol.ts";
+import { type ItemRef, sameShown, shownFault, showOf } from "../items.ts";
+import type { Effect, EventOf, Machine, MachineConfig, StartCause, Step } from "../machine.ts";
+import {
+  close,
+  endSession,
+  fail,
+  MINUTE,
+  ok,
+  PRE_APPROVAL,
+  SECOND,
+  type Session,
+  unconfirmed,
+  withStart,
+} from "./step.ts";
+
+/** The kinds a live screen pages through in its viewer; anything else it only opens. */
+const LIVE_VIEWER: readonly ItemKind[] = ["deck", "pdf", "doc"];
+
+/**
+ * A live session takes a command from a confirmed owner's phone, or the screen's own report (a reload resuming its
+ * page), and only for an item its viewer pages through (PAIR-13).
+ */
+function liveRefusal(m: Machine, ev: EventOf<"control">, items: readonly ItemRef[]): "wrong_state" | null {
+  if (ev.from === "phone" && (m.pairing?.kind !== "owner" || unconfirmed(m))) return "wrong_state";
+  const item = items.find((i) => i.id === ev.shown.item);
+  return item?.kind === "file" && LIVE_VIEWER.includes(showOf(item)) ? null : "wrong_state";
+}
 
 export function control(m: Machine, ev: EventOf<"control">): Step {
-  // A live screen has no viewer to follow a command.
-  if (!IN_SESSION.includes(m.state) || !m.session || !m.pairing || m.mode === "live") return fail("wrong_state");
+  if (!IN_SESSION.includes(m.state) || !m.session || !m.pairing) return fail("wrong_state");
   const fault = shownFault(m.session.items, ev.shown, { mode: m.mode, kind: m.pairing.kind }, ev.from === "screen");
   if (fault) return fail(fault);
+  const refused = m.mode === "live" ? liveRefusal(m, ev, m.session.items) : null;
+  if (refused) return fail(refused);
   // Per sender, only a newer command applies: a replay, or an older one that arrives late, changes nothing.
   // Between the phone and the screen, the last one applied wins.
   // A seq is a clock in ms: one far ahead would refuse every later command from this sender.
   if (ev.seq > ev.now + 24 * 3600 * SECOND) return fail("bad_request");
   const { seq } = m.session;
   if (ev.seq <= seq[ev.from]) return ok(m);
-  const session = { ...m.session, seq: { ...seq, [ev.from]: ev.seq } };
+  const withSeq = { ...m.session, seq: { ...seq, [ev.from]: ev.seq } };
+  // The screen's report is a sign the session started; the phone's command is not, since the screen may be dark.
+  const { session, effects } = ev.from === "screen" ? withStart(withSeq, ev.now) : { session: withSeq, effects: [] };
   // Absolute: the same `shown` again is stored for its seq and pushes nothing.
-  if (sameShown(m.session.shown, ev.shown)) return ok({ ...m, session });
-  return ok({ ...m, session: { ...session, shown: ev.shown } }, [{ fx: "push", to: "both" }]);
+  if (sameShown(m.session.shown, ev.shown)) return ok({ ...m, session }, effects);
+  const firstShownAt = session.firstShownAt ?? ev.now;
+  return ok({ ...m, session: { ...session, shown: ev.shown, firstShownAt } }, [...effects, { fx: "push", to: "both" }]);
 }
 
 export function length(m: Machine, ev: EventOf<"length">, cfg: MachineConfig): Step {
@@ -40,9 +68,11 @@ export function length(m: Machine, ev: EventOf<"length">, cfg: MachineConfig): S
   return ok({ ...m, session: { ...session, endsAt, auditedEndsAt: audited ? endsAt : base } }, effects);
 }
 
+/** A launch hands the file to an app, which has started nothing until it fetches: the cause if none comes. */
 export function launched(m: Machine, ev: EventOf<"launched">): Step {
   if (m.state !== "approved" || !m.session) return fail("wrong_state");
-  return ok({ ...m, state: "opening", session: { ...m.session, openMode: ev.mode } }, [{ fx: "push", to: "both" }]);
+  const session = { ...m.session, openMode: ev.mode, ...withCause(m.session, "launch_no_fetch") };
+  return ok({ ...m, state: "opening", session }, [{ fx: "push", to: "both" }]);
 }
 
 export function fetched(m: Machine, ev: EventOf<"fetched">): Step {
@@ -50,10 +80,26 @@ export function fetched(m: Machine, ev: EventOf<"fetched">): Step {
   if (m.state === "open") return ok(m);
   if ((m.state !== "approved" && m.state !== "opening") || !m.session || !m.pairing) return fail("wrong_state");
   const { approvedAt } = m.session;
-  const effects: Effect[] = [{ fx: "metric", name: "scan_to_open_ms", ms: now - m.pairing.claimedAt }];
+  const start = withStart(m.session, now);
+  const effects: Effect[] = [
+    ...start.effects,
+    { fx: "metric", name: "scan_to_open_ms", ms: now - m.pairing.claimedAt },
+  ];
   if (approvedAt !== null) effects.push({ fx: "metric", name: "approve_to_open_ms", ms: now - approvedAt });
   effects.push({ fx: "push", to: "both" });
-  return ok({ ...m, state: "open", session: { ...m.session, firstOpenAt: now } }, effects);
+  return ok({ ...m, state: "open", session: { ...start.session, firstOpenAt: now } }, effects);
+}
+
+/** The cause hint, kept only while the start is still awaited. */
+const withCause = (session: Session, cause: StartCause): Pick<Session, "startCause"> =>
+  session.startBy != null && session.startedAt == null ? { startCause: cause } : {};
+
+/** What the Screen object saw that the machine cannot (a refused link, links on the main origin): the latest wins. */
+export function started(m: Machine, ev: EventOf<"started">): Step {
+  if (!IN_SESSION.includes(m.state) || !m.session) return fail("wrong_state");
+  const hint = withCause(m.session, ev.cause);
+  if (hint.startCause === undefined || hint.startCause === m.session.startCause) return ok(m);
+  return ok({ ...m, session: { ...m.session, ...hint } });
 }
 
 export function end(m: Machine, ev: EventOf<"end">, cfg: MachineConfig): Step {
