@@ -1,8 +1,6 @@
 // The R2 slice uploads use: a multipart upload, a head, a range read and a delete, over the platform binding. The one
-// cast from the binding is `bucketFor`. Callers charge the spend meter (class A per mint request, class B per
+// cast from the binding is `bucketFor` (deps.ts). Callers charge the spend meter (class A per mint request, class B per
 // validation); nothing here counts. An upload id only ever comes from D1, never from a client.
-import type { Env } from "../env.ts";
-
 export interface PartRef {
   n: number;
   etag: string;
@@ -26,10 +24,6 @@ export interface UploadBucket {
   ): Promise<{ body: ReadableStream<Uint8Array>; size: number; arrayBuffer(): Promise<ArrayBuffer> } | null>;
   delete(key: string): Promise<void>;
 }
-
-/** The one cast from a binding to the slice above. */
-export const bucketFor = (env: Pick<Env, "LIBRARY" | "GUEST_FILES">, which: "library" | "guest"): UploadBucket =>
-  (which === "library" ? env.LIBRARY : env.GUEST_FILES) as unknown as UploadBucket;
 
 // Declared here because the Node tsconfig (tests) has no Workers types; undefined outside the Workers runtime.
 declare const FixedLengthStream: (new (length: number) => TransformStream<Uint8Array, Uint8Array>) | undefined;

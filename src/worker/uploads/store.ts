@@ -203,6 +203,14 @@ export async function claim(db: Db, id: string, now: number): Promise<boolean> {
   return res.meta.changes > 0;
 }
 
+/** Gives the claim back when complete found it could not go on yet (parts missing, a cap refused its R2 call). */
+export async function unclaim(db: Db, id: string, claimToken: number): Promise<void> {
+  await db
+    .prepare("UPDATE upload SET completing_at = NULL WHERE id = ? AND completing_at = ?")
+    .bind(id, claimToken)
+    .run();
+}
+
 /** Open uploads whose complete began and never finished: the claim has gone stale. */
 export async function staleCompletes(db: Db, now: number, limit: number): Promise<UploadRow[]> {
   const { results } = await db
