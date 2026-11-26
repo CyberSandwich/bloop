@@ -126,6 +126,8 @@ test.describe("the phone remote's preview", () => {
 
     await row("Sample deck.pptx").tap();
     await expect(preview).toHaveAttribute("aria-label", "Sample deck.pptx, Slide 1 of 2");
+    // The label is set at once; the first page lands after it decodes. A later tap before that has no last to fade.
+    await expect(preview.locator("picture")).toHaveCount(1);
     await atRest(preview);
 
     let stop = await sample(phone, ".preview");
