@@ -2,7 +2,7 @@
 // (docs/architecture.md 8.3, ADR 0002). Each step checks the data's shape and writes only what is still old, and every
 // step runs on every wake whatever the stored version: a rollback that wrote old-shape data under a newer version is
 // repaired by the next deploy.
-import { LINK_PURPOSES } from "../../shared/protocol.ts";
+import { ITEM_KINDS, type ItemKind, LINK_PURPOSES } from "../../shared/protocol.ts";
 import {
   type ItemDraft,
   type ItemRef,
@@ -15,6 +15,8 @@ import {
   validLibraryRef,
   withIds,
 } from "../items.ts";
+import { validChoices } from "../machine/pairing.ts";
+import { PRE_APPROVAL } from "../machine/step.ts";
 import type { FileRef, Machine } from "../machine.ts";
 import type { LinkRecord } from "../seams/open-path/links.ts";
 import { idemRepair } from "../seams/pairing/idem.ts";
@@ -59,7 +61,7 @@ const STEPS: Record<number, Step> = {
   3: (kv) => {
     const m = kv.get<Omit<Machine, "session"> & { session: OldMints | null }>("machine");
     const s = m?.session;
-    if (s && typeof s.mints === "number") {
+    if (s && typeof s.mints === "number" && isItemList(s.items)) {
       const count = s.mints;
       kv.put("machine", { ...m, session: { ...s, mints: s.items.map(() => count) } });
     }
@@ -69,7 +71,7 @@ const STEPS: Record<number, Step> = {
   4: (kv) => {
     const m = kv.get<Omit<Machine, "session"> & { session: OldMints | Session | null }>("machine");
     const s = m?.session;
-    if (s && "mints" in s && Array.isArray(s.mints)) {
+    if (s && "mints" in s && Array.isArray(s.mints) && isItemList(s.items)) {
       const { mints, ...rest } = s;
       const launch = launchIndex(s.items);
       kv.put("machine", { ...m, session: { ...rest, minted: mints.map((n, i) => (i === launch ? n + 1 : n)) } });
@@ -92,7 +94,7 @@ const STEPS: Record<number, Step> = {
   6: (kv) => {
     const m = kv.get<Omit<Machine, "session"> & { session: PreRemote | null }>("machine");
     const s = m?.session;
-    if (!m || !s) return;
+    if (!m || !s || !isItemList(s.items)) return;
     const hasIds = s.items.every((i) => typeof i.id === "string");
     const items = withIds(s.items);
     const shownOk =
@@ -109,6 +111,7 @@ const STEPS: Record<number, Step> = {
     if (m && !Number.isSafeInteger(m.v)) kv.put("machine", { ...m, v: 0 });
   },
   // 7 to 8: the live pick, kinds and conversion flags, upload progress, the start clock and the link origin.
+  // transitional: removed in P1 commit 6 (step 9: openMode "pdf" becomes "view", and "pdf" links are revoked)
   8: (kv, now) => {
     const meta = kv.get<Omit<Meta, "linkOrigin"> & { linkOrigin?: unknown }>("meta");
     if (meta && meta.linkOrigin !== "file" && meta.linkOrigin !== "main")
@@ -117,6 +120,10 @@ const STEPS: Record<number, Step> = {
     const repaired = m && repairMachine(m, now);
     if (m && repaired && repaired !== m) kv.put("machine", repaired);
     const endedNow = m?.state !== "ended" && repaired?.state === "ended";
+    // The end's effects need the object (audit, Directory, sockets): it runs them on wake and clears this.
+    if (m && endedNow) {
+      kv.put(CORRUPT_END_KEY, { codes: m.codes ?? { current: null, previous: null } } satisfies CorruptEnd);
+    }
     // A purpose this build does not know fails closed, so a record from a rolled-back build is never served.
     const purposes: readonly string[] = LINK_PURPOSES;
     const dead = (r: LinkRecord) => endedNow || !purposes.includes(r.purpose);
@@ -131,15 +138,15 @@ const STEPS: Record<number, Step> = {
 };
 
 const isNullableInt = (v: unknown): boolean => v === null || Number.isSafeInteger(v);
-const KINDS: readonly unknown[] = ["deck", "pdf", "doc", "sheet", "text", "image", "video"];
+/** A list of objects: the older steps read items only then, and step 8 ends a session holding anything else. */
+const isItemList = (v: unknown): boolean => Array.isArray(v) && v.every((i) => typeof i === "object" && i !== null);
+const KINDS: readonly unknown[] = ITEM_KINDS;
 
-/** Three distinct two-digit strings, the match among them. */
-const validChoices = (v: unknown, match: string): boolean =>
-  Array.isArray(v) &&
-  v.length === 3 &&
-  new Set(v).size === 3 &&
-  v.every((c) => typeof c === "string" && /^\d{2}$/.test(c)) &&
-  v.includes(match);
+/** What a corrupt end leaves for the Screen object to finish on wake (its effects), under CORRUPT_END_KEY. */
+export const CORRUPT_END_KEY = "corruptEnd";
+export interface CorruptEnd {
+  codes: Machine["codes"];
+}
 
 const validUpload = (v: unknown): boolean => {
   const u = v as { bytes?: unknown; total?: unknown } | null;
@@ -154,14 +161,30 @@ const validUpload = (v: unknown): boolean => {
   );
 };
 
+/**
+ * A stored item the build can serve: an object of a known kind, a file of a type it has a viewer for (own keys only,
+ * so "constructor" is no type) and, from the library, a well-formed ref.
+ */
+const servableItem = (i: unknown): boolean => {
+  const item = i as Partial<ItemRef> | null;
+  if (typeof item !== "object" || item === null) return false;
+  if (item.kind === "link") return true;
+  if (item.kind !== "file" || typeof item.type !== "string" || kindOf(item.type) === null) return false;
+  return item.source !== "library" || (typeof item.ref === "string" && validLibraryRef(item.ref));
+};
+
 /** Step 8 over one stored machine: the same object when nothing is old, so the caller writes only a change. */
 function repairMachine(m: Machine, now: number): Machine {
   let next = m;
   const p = m.pairing;
   if (p) {
-    // A pairing from before the pick was paired under the passive match: refusing it would strand an approved talk.
-    const confirmed = typeof p.confirmed === "boolean" ? p.confirmed : true;
-    const choices = p.choices === null || validChoices(p.choices, p.match) ? (p.choices ?? null) : null;
+    const choices = validChoices(p.choices, p.match) ? p.choices : null;
+    // A live claim still waiting on its pick with no valid choices could never confirm: it ends rather than strand
+    // the phone. Every other pairing counts as confirmed unless it is a valid one waiting on its pick: one from before
+    // the pick was paired under the passive match, and refusing it would strand an approved talk.
+    const awaiting = m.mode === "live" && PRE_APPROVAL.includes(m.state) && p.confirmed === false;
+    if (awaiting && choices === null) return endCorrupt(m, now);
+    const confirmed = !awaiting;
     const phoneSession = typeof p.phoneSession === "string" ? p.phoneSession : null;
     if (confirmed !== p.confirmed || choices !== p.choices || phoneSession !== p.phoneSession) {
       next = { ...next, pairing: { ...p, confirmed, choices, phoneSession } };
@@ -170,13 +193,11 @@ function repairMachine(m: Machine, now: number): Machine {
   if (!validUpload(m.upload ?? null) || m.upload === undefined) next = { ...next, upload: null };
   const s = m.session;
   if (!s) return next;
-  // A malformed library ref can never be served: the session ends rather than carry it.
-  if (s.items.some((i) => i.kind === "file" && i.source === "library" && !validLibraryRef(i.ref))) {
-    return endCorrupt(next, now);
-  }
+  // Items the build cannot serve (a malformed library ref, an unknown type, no list at all) end the session.
+  if (!Array.isArray(s.items) || !s.items.every(servableItem)) return endCorrupt(next, now);
   const items = s.items.map((i) => {
     if (i.kind !== "file") return i;
-    const show = i.show !== undefined && KINDS.includes(i.show) ? i.show : kindOf(i.type);
+    const show = i.show !== undefined && KINDS.includes(i.show) ? i.show : (kindOf(i.type) as ItemKind);
     const derived = i.derived === null || validDerived(i.derived) ? (i.derived ?? null) : null;
     return show === i.show && derived === i.derived ? i : { ...i, show, derived };
   });
@@ -203,12 +224,24 @@ function repairMachine(m: Machine, now: number): Machine {
   return same ? next : { ...next, session };
 }
 
-/** The end `endSession` makes, without its effects; step 8 revokes the links. A code left in the Directory just lapses. */
+/**
+ * The end `endSession` makes. Step 8 revokes the links; the effects that need the object (the audit row, the codes'
+ * removal, the push, the demo slot) run on wake from CORRUPT_END_KEY, and the alarm it arms closes an object with no
+ * socket.
+ */
 const endCorrupt = (m: Machine, now: number): Machine => ({
   ...m,
   state: "ended",
   codes: { current: null, previous: null },
-  pairing: m.pairing && { ...m.pairing, listed: [], userId: null, phoneSession: null, passHash: null },
+  pairing: m.pairing && {
+    ...m.pairing,
+    listed: [],
+    userId: null,
+    phoneSession: null,
+    passHash: null,
+    confirmed: true,
+    choices: null,
+  },
   session: null,
   upload: null,
   uploadAt: null,
@@ -246,5 +279,5 @@ export function applySteps(kv: Kv, steps: Record<number, Step>, version: number,
 export function migrate(kv: Kv, now = Date.now()): void {
   if (kv.get("meta") === undefined) return;
   applySteps(kv, STEPS, SCHEMA_VERSION, now);
-  idemRepair(kv);
+  idemRepair(kv, now);
 }

@@ -26,7 +26,8 @@ const LIVE_VIEWER: readonly ItemKind[] = ["deck", "pdf", "doc"];
 function liveRefusal(m: Machine, ev: EventOf<"control">, items: readonly ItemRef[]): "wrong_state" | null {
   if (ev.from === "phone" && (m.pairing?.kind !== "owner" || unconfirmed(m))) return "wrong_state";
   const item = items.find((i) => i.id === ev.shown.item);
-  return item?.kind === "file" && LIVE_VIEWER.includes(showOf(item)) ? null : "wrong_state";
+  const show = item?.kind === "file" ? showOf(item) : null;
+  return show !== null && LIVE_VIEWER.includes(show) ? null : "wrong_state";
 }
 
 export function control(m: Machine, ev: EventOf<"control">): Step {

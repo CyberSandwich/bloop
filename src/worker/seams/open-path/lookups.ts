@@ -23,7 +23,11 @@ export interface Pinned {
 export const pinnedUser = (m: Machine | null): Pinned | null =>
   m?.pairing ? { userId: m.pairing.userId, sessionPublicId: m.pairing.phoneSession ?? null } : null;
 
-/** The approve gate (ADR 0015): the cookie user must be the pinned one, signed out included. */
+/**
+ * The approve gate (ADR 0015): the cookie user must be the pinned one, signed out included.
+ * transitional: removed in P1 commit 4 (PAIR-15 auth-first: a live claim is then always signed in, so the
+ * signed-out pairing this lets through goes, and the gate reads the pinned phone session too)
+ */
 export const cookieMismatch = (m: Machine | null, cookieUser: string | null): boolean =>
   !m?.pairing || m.pairing.userId !== cookieUser;
 

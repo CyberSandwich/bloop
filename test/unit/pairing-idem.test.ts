@@ -1,7 +1,17 @@
 // The pairing objects' Idempotency-Key adapter over KV (seams/pairing/idem.ts), driven through idem.ts's contract.
 import { describe, expect, it } from "vitest";
+import type { ClaimResponse } from "../../src/shared/protocol.ts";
 import { IDEM_WINDOW_MS, idempotency } from "../../src/worker/idem.ts";
-import { idemRepair, idemSave, idemStore, MAX_IDEM_ROWS } from "../../src/worker/seams/pairing/idem.ts";
+import {
+  claimSecret,
+  idemPurge,
+  idemRepair,
+  idemSave,
+  idemStore,
+  MAX_IDEM_ROWS,
+  openClaim,
+  sealClaim,
+} from "../../src/worker/seams/pairing/idem.ts";
 import { memKv } from "./sqlite.ts";
 
 const KEY = "3f2b8c1e-6a4d-4e0b-9c7a-1d2e3f4a5b6c";
@@ -58,11 +68,54 @@ describe("REL-14 pairing idem adapter", () => {
     const hash = "b".repeat(64);
     const good = { owner: "o", keyHash: hash, bodyHash: hash, at: NOW, stored: 1 };
     const kv = memKv({ idem: [good, { owner: "o" }, 7] });
-    idemRepair(kv);
+    idemRepair(kv, NOW);
     expect(kv.data.get("idem")).toEqual([good]);
     const writes: string[] = [];
-    idemRepair({ get: kv.get, put: (k) => void writes.push(k) });
-    idemRepair({ get: memKv().get, put: (k) => void writes.push(k) });
+    idemRepair({ get: kv.get, put: (k) => void writes.push(k) }, NOW);
+    idemRepair({ get: memKv().get, put: (k) => void writes.push(k) }, NOW);
     expect(writes).toEqual([]);
+  });
+
+  it("REL-14 adapter purge: the wake drops rows past the 24 h window, and the end of a pairing drops them all", () => {
+    const hash = "c".repeat(64);
+    const row = (at: number) => ({ owner: "o", keyHash: hash, bodyHash: hash, at, stored: 1 });
+    expect(IDEM_WINDOW_MS).toBe(24 * 60 * 60 * 1000);
+    const kv = memKv({ idem: [row(NOW - IDEM_WINDOW_MS - 1), row(NOW - IDEM_WINDOW_MS), row(NOW)] });
+    idemRepair(kv, NOW);
+    expect(kv.data.get("idem")).toEqual([row(NOW - IDEM_WINDOW_MS), row(NOW)]);
+    idemPurge(kv);
+    expect(kv.data.get("idem")).toEqual([]);
+    const writes: string[] = [];
+    idemPurge({ get: kv.get, put: (k) => void writes.push(k) });
+    idemPurge({ get: memKv().get, put: (k) => void writes.push(k) });
+    expect(writes).toEqual([]);
+  });
+
+  it("REL-14 adapter no secret: a stored claim never holds its pid, and opening it derives the same pid again", async () => {
+    const pepper = "pepper-for-tests";
+    const nonce = "n".repeat(43);
+    const secret = await claimSecret(pepper, nonce);
+    expect(secret).toMatch(/^[A-Za-z0-9_-]{43}$/);
+    const ref = "R".repeat(22);
+    const answer: ClaimResponse = {
+      pid: `${ref}.${secret}`,
+      room: { name: null },
+      match: null,
+      choices: ["17", "42", "85"],
+      mode: "live",
+      kind: "owner",
+      needsAuth: false,
+      dropMaxBytes: 0,
+    } as unknown as ClaimResponse;
+    const sealed = sealClaim(answer, nonce);
+    const kv = memKv();
+    idemSave(kv, "u1", { keyHash: "d".repeat(64), bodyHash: "e".repeat(64) }, sealed, NOW);
+    const text = JSON.stringify(kv.data.get("idem"));
+    expect(text).not.toContain(secret);
+    expect(text).not.toContain(answer.pid);
+    expect(await openClaim(sealed, ref, pepper)).toEqual(answer);
+    // Another pepper derives another secret: the row alone names no credential.
+    expect((await openClaim(sealed, ref, "other"))?.pid).not.toBe(answer.pid);
+    expect(await openClaim({ answer }, ref, pepper)).toBeNull();
   });
 });

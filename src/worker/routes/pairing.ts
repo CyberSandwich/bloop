@@ -44,6 +44,7 @@ export const pairingRoutes: readonly Route[] = [
     ["POST"],
     "/api/screens",
     "api",
+    // transitional: removed in P1 commit 4 (the Idempotency-Key replay, REL-14)
     withConfig(async (request, env, config) => {
       const body = await write(request, config, createBody);
       if (!body.ok) return body.response;
@@ -143,6 +144,7 @@ export const pairingRoutes: readonly Route[] = [
         const slow = await limited(env, "RL_DEMO_CLAIM", request, config);
         if (slow) return slow;
       }
+      // transitional: removed in P1 commit 4 (auth-first PAIR-15, the Idempotency-Key replay, the phoneSession pin)
       // Only the Graph source has accounts. The Screen object drops the user for a demo screen.
       const userId = config.graph ? await phoneUser(request, servicesFor(env, config)) : null;
       const claimed = await screenStub(env, found.screenRef).claim(code, {
