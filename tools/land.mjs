@@ -5,19 +5,8 @@ import { execFileSync } from "node:child_process";
 import { readdirSync, realpathSync } from "node:fs";
 import { basename, dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
+import { attributed } from "./attribution.mjs";
 import { wranglerConfig } from "./wrangler-config.mjs";
-
-/** Trailers and footers that attribute a commit to an AI tool (CLAUDE.md: commits carry none). */
-const ATTRIBUTION = [
-  /^\s*co-authored-by:/im,
-  /^\s*claude-session:/im,
-  /^\s*generated-by:/im,
-  /noreply@anthropic\.com/i,
-  /generated with \[?claude/i,
-];
-
-/** @param {string} message @returns {boolean} */
-export const attributed = (message) => ATTRIBUTION.some((re) => re.test(message));
 
 /**
  * iCloud's conflict copies (`<name> 2`, `index 3`, `note 2.md`) under a git dir: a ref copy breaks fetch and holds a
