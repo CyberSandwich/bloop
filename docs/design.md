@@ -490,7 +490,7 @@ One language: `--ease-out` for anything that appears or moves, `--ease-ui` for p
 | QR refresh | every 60 s | 150 ms out, 150 ms in | linear opacity |
 | `/s` QR ring | each second | 1 s between steps | linear |
 | viewer page or item | select, step | 200 ms opacity 0 and scale .985 to rest | `--ease-out` |
-| loader sheen | while something loads, not under reduced motion | 2.2 s a cycle: a white band sweeps left to right in the first 1 s, then rests (`sheen` in `base.css`; the rest reads as loading's pacing, so it keeps it where the landing's word does not) | `--ease-out` on the sweep |
+| loader sheen | while something loads, not under reduced motion | 2.2 s a cycle: a white band sweeps left to right in the first 1 s, then rests (`sheen` in `app.css`; the rest reads as loading's pacing, so it keeps it where the landing's word does not) | `--ease-out` on the sweep |
 | loader fill | each chunk of bytes | 250 ms | `--ease-out` |
 | photo or video over its loader | decoded; a video's metadata | 200 ms opacity 0 to 1 | `--ease-out` |
 | New Code arrow | while the new screen loads | 0.8 s a turn | linear |
