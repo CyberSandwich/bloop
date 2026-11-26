@@ -163,6 +163,8 @@ func TestJobRequestValidation(t *testing.T) {
 		"long id":    {strings.Repeat("a", 65), "pptx", 400},
 		"bad ext":    {"j1", "exe", 415},
 		"no ext":     {"j1", "", 415},
+		"climbing":   {"j1", "../../x", 415},
+		"to a chunk": {"j1", "pdf/../chunk-0", 415},
 	} {
 		if res := h.post(c.id, c.ext, []byte("x")); res.StatusCode != c.want {
 			t.Errorf("%s: %d, want %d", name, res.StatusCode, c.want)
@@ -580,29 +582,42 @@ func TestLoadConfigDefaultsAndOverrides(t *testing.T) {
 	}
 }
 
-func TestLoadConfigIntFieldsPastInt32FallBack(t *testing.T) {
-	over := map[string]string{
-		"BLOOP_MAX_ENTRIES":         "2147483648",          // int32 max + 1
+func TestLoadConfigIntFieldsFallBackOrClamp(t *testing.T) {
+	bad := map[string]string{
+		"BLOOP_MAX_ENTRIES":         "2147483648",          // int32 max + 1: ParseInt at 32 bits fails
 		"BLOOP_MAX_PAGES":           "4294967596",          // 2^32 + 300: a 32-bit int would wrap it to 300
-		"BLOOP_VIDEO_WIDTH":         "9223372036854775808", // past int64: ParseInt fails
-		"BLOOP_VIDEO_PREVIEW_WIDTH": "2147483648",
+		"BLOOP_VIDEO_WIDTH":         "9223372036854775808", // past int64
+		"BLOOP_VIDEO_PREVIEW_WIDTH": "0",
 		"BLOOP_WORKERS":             "-1",
 		"BLOOP_MAX_IMAGE_PIXELS":    "4294967296", // an int64 field keeps a value past int32
 	}
-	c := loadConfig(func(k string) string { return over[k] })
+	c := loadConfig(func(k string) string { return bad[k] })
 	if c.Limits.MaxEntries != 20000 || c.MaxPages != 300 || c.VideoWidth != 1920 || c.PreviewWidth != 1280 || c.Workers < 1 || c.Workers > 4 ||
 		c.MaxImagePx != 4294967296 {
-		t.Fatalf("config = %+v", c)
+		t.Fatalf("bad values = %+v", c)
 	}
-	c = loadConfig(func(k string) string { return map[string]string{"BLOOP_MAX_PAGES": "2147483647"}[k] })
-	if c.MaxPages != 2147483647 {
-		t.Fatalf("MaxPages at int32 max = %d", c.MaxPages)
+	high := map[string]string{
+		"BLOOP_MAX_ENTRIES":         "2147483647",
+		"BLOOP_MAX_PAGES":           "1001",
+		"BLOOP_VIDEO_WIDTH":         "4096",
+		"BLOOP_VIDEO_PREVIEW_WIDTH": "100000",
+		"BLOOP_WORKERS":             "17",
+	}
+	c = loadConfig(func(k string) string { return high[k] })
+	if c.Limits.MaxEntries != maxEntriesCeiling || c.MaxPages != maxPagesCeiling || c.VideoWidth != maxWidth || c.PreviewWidth != maxWidth ||
+		c.Workers != maxWorkersCeiling {
+		t.Fatalf("values over the ceilings = %+v", c)
+	}
+	atCeiling := map[string]string{"BLOOP_MAX_PAGES": "1000", "BLOOP_WORKERS": "16", "BLOOP_VIDEO_WIDTH": "4095"}
+	c = loadConfig(func(k string) string { return atCeiling[k] })
+	if c.MaxPages != 1000 || c.Workers != 16 || c.VideoWidth != 4095 {
+		t.Fatalf("values at the ceilings = %+v", c)
 	}
 }
 
-func TestWithinRefusesNamesThatLeaveTheDir(t *testing.T) {
+func TestWithinAcceptsOnlyOneFileName(t *testing.T) {
 	dir := t.TempDir()
-	for _, name := range []string{"", "..", "../x", "a/../../x", "/etc/passwd", "original./../../x"} {
+	for _, name := range []string{"", "..", "../x", "a/../../x", "/etc/passwd", "original./../../x", "original.pdf/../chunk-0", "a/b"} {
 		if p, err := within(dir, name); !errors.Is(err, errNotLocal) {
 			t.Errorf("within(%q) = %q, %v; want errNotLocal", name, p, err)
 		}
@@ -611,8 +626,10 @@ func TestWithinRefusesNamesThatLeaveTheDir(t *testing.T) {
 		t.Fatalf("within(original.pdf) = %q, %v", p, err)
 	}
 	cfg := Config{WorkDir: dir}
-	if _, err := inputPath(cfg, "/../../etc/passwd"); !errors.Is(err, errNotLocal) {
-		t.Fatalf("inputPath with a climbing ext: %v", err)
+	for _, ext := range []string{"/../../etc/passwd", "pdf/../chunk-0"} {
+		if _, err := inputPath(cfg, ext); !errors.Is(err, errNotLocal) {
+			t.Errorf("inputPath(%q): %v; want errNotLocal", ext, err)
+		}
 	}
 	if p, err := inputPath(cfg, "pdf"); err != nil || p != filepath.Join(dir, "in", "original.pdf") {
 		t.Fatalf("inputPath(pdf) = %q, %v", p, err)

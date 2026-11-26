@@ -4,7 +4,6 @@ package main
 
 import (
 	"log"
-	"math"
 	"net/http"
 	"os"
 	"runtime"
@@ -41,6 +40,13 @@ const defaultVideoRate = 0.27
 // maxWidth keeps the tallest page (aspect 0.25, see minAspect) inside WebP's 16383 px side limit.
 const maxWidth = 4095
 
+// The most an int setting may raise its cap to (container/README.md, Caps).
+const (
+	maxEntriesCeiling = 100_000
+	maxPagesCeiling   = 1000
+	maxWorkersCeiling = 16
+)
+
 var stageDefaults = map[string]time.Duration{
 	"inspect":   30 * time.Second,
 	"convert":   180 * time.Second,
@@ -62,12 +68,14 @@ func loadConfig(getenv func(string) string) Config {
 		}
 		return def
 	}
-	// count is num for an int field: a value past int32 (the narrowest int) falls back like any bad value.
-	count := func(key string, def int) int {
-		if n := num(key, int64(def)); n <= math.MaxInt32 {
-			return int(n)
+	// count reads an int field: a bad, non-positive or past-int32 value is def, and one over ceiling is clamped
+	// to it, so no setting can switch a cap off.
+	count := func(key string, def, ceiling int) int {
+		n, err := strconv.ParseInt(getenv(key), 10, 32)
+		if err != nil || n < 1 {
+			return def
 		}
-		return def
+		return min(int(n), ceiling)
 	}
 	rate := defaultVideoRate
 	if r, err := strconv.ParseFloat(getenv("BLOOP_VIDEO_RATE"), 64); err == nil && r > 0 {
@@ -81,14 +89,14 @@ func loadConfig(getenv func(string) string) Config {
 		MaxInput:     num("BLOOP_MAX_INPUT", 2<<30),
 		MaxChunk:     num("BLOOP_MAX_CHUNK", 64<<20),
 		Widths:       parseWidths(getenv("BLOOP_WIDTHS")),
-		Limits:       Limits{MaxUnpacked: num("BLOOP_MAX_UNPACKED", 2<<30), MaxEntries: count("BLOOP_MAX_ENTRIES", 20000)},
-		MaxPages:     count("BLOOP_MAX_PAGES", 300),
+		Limits:       Limits{MaxUnpacked: num("BLOOP_MAX_UNPACKED", 2<<30), MaxEntries: count("BLOOP_MAX_ENTRIES", 20000, maxEntriesCeiling)},
+		MaxPages:     count("BLOOP_MAX_PAGES", 300, maxPagesCeiling),
 		VideoRate:    rate,
-		VideoWidth:   count("BLOOP_VIDEO_WIDTH", 1920),
-		PreviewWidth: count("BLOOP_VIDEO_PREVIEW_WIDTH", 1280),
+		VideoWidth:   count("BLOOP_VIDEO_WIDTH", 1920, maxWidth),
+		PreviewWidth: count("BLOOP_VIDEO_PREVIEW_WIDTH", 1280, maxWidth),
 		VideoFixed:   30 * time.Second,
 		MaxImagePx:   num("BLOOP_MAX_IMAGE_PIXELS", 100_000_000),
-		Workers:      count("BLOOP_WORKERS", min(4, runtime.GOMAXPROCS(0))), // GOMAXPROCS follows the cgroup CPU quota; NumCPU counts the host
+		Workers:      count("BLOOP_WORKERS", min(4, runtime.GOMAXPROCS(0)), maxWorkersCeiling), // GOMAXPROCS follows the cgroup CPU quota; NumCPU counts the host
 		Timeouts:     map[string]time.Duration{},
 	}
 	for stage, def := range stageDefaults {

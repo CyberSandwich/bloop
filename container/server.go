@@ -224,12 +224,13 @@ func inputPath(cfg Config, ext string) (string, error) {
 	return within(filepath.Join(cfg.WorkDir, "in"), "original."+ext)
 }
 
-var errNotLocal = errors.New("name leaves its directory")
+var errNotLocal = errors.New("name is not one file in its directory")
 
-// within joins name under dir, refusing a name that could resolve outside it: empty, absolute, or climbing
-// with "..". Every path built from a request value goes through it.
+// within joins name under dir, accepting only one plain file name: not empty, absolute or "..", and no
+// separator, since "x/../chunk-0" stays local yet names a sibling. Every path built from a request value
+// goes through it.
 func within(dir, name string) (string, error) {
-	if !filepath.IsLocal(name) {
+	if !filepath.IsLocal(name) || filepath.Base(name) != name {
 		return "", fmt.Errorf("%w: %q", errNotLocal, name)
 	}
 	return filepath.Join(dir, name), nil
@@ -328,9 +329,13 @@ func (s *Server) handleStart(w http.ResponseWriter, r *http.Request) {
 	}
 	ext := strings.ToLower(strings.TrimPrefix(req.Ext, "."))
 	kind, known := kindByExt[ext]
-	input, err := inputPath(s.cfg, ext)
+	var input string
+	err := errNotLocal
+	if known {
+		input, err = inputPath(s.cfg, ext)
+	}
 	switch {
-	case !known || err != nil:
+	case err != nil:
 		apiError(w, http.StatusUnsupportedMediaType, "unsupported_ext")
 		return
 	case req.Chunks > maxChunkIndex:
