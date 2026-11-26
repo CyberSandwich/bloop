@@ -275,6 +275,44 @@ func TestFailedJobWithdrawsPageOne(t *testing.T) {
 	}
 }
 
+// Every ffmpeg and ffprobe run, the thumbnail included, takes only local files and one named demuxer.
+func TestEveryMediaToolRunsWithOnlyFilesAndANamedDemuxer(t *testing.T) {
+	for _, ext := range []string{"mov", "webm"} {
+		tools := newFakeTools(0)
+		h := newHarness(t, tools)
+		body := fakeMP4
+		if ext == "webm" {
+			body = append([]byte{0x1A, 0x45, 0xDF, 0xA3}, make([]byte, 32)...)
+		}
+		h.post("j1", ext, body)
+		h.mustSucceed(h.wait())
+		runs := append(tools.called("ffmpeg"), tools.called("ffprobe")...)
+		if len(runs) < 4 { // probe, encode, probe of the output, thumbnail
+			t.Fatalf("%s: only %d media runs", ext, len(runs))
+		}
+		for _, r := range runs {
+			args := strings.Join(r.args, " ")
+			demuxer := after(r.args, "-f")
+			if !strings.Contains(args, "-protocol_whitelist file") || (demuxer != "mov" && demuxer != "matroska") {
+				t.Errorf("%s: %s lacks -protocol_whitelist file and a named -f: %s", ext, r.name, args)
+			}
+			if i := slices.Index(r.args, "-i"); r.name == "ffmpeg" && (i < 0 || slices.Index(r.args, "-f") > i) {
+				t.Errorf("%s: -f must come before -i: %s", ext, args)
+			}
+		}
+	}
+}
+
+func TestVideoIsTheFirstVideoStreamEvenWithoutASize(t *testing.T) {
+	p := probe{}
+	if err := json.Unmarshal([]byte(`{"streams":[{"codec_type":"video","codec_name":"mjpeg"},{"codec_type":"video","codec_name":"hevc","width":1280,"height":720}]}`), &p); err != nil {
+		t.Fatal(err)
+	}
+	if _, _, codec, ok := p.video(); ok || codec != "mjpeg" {
+		t.Fatalf("video() = %q, %v: ffmpeg maps 0:v:0, the first video stream", codec, ok)
+	}
+}
+
 func TestVideoDemuxerIsForcedByExtensionAndLengthIsBounded(t *testing.T) {
 	for ext, want := range map[string]string{"mp4": "-f mov -i", "mov": "-f mov -i", "m4v": "-f mov -i", "webm": "-f matroska -i"} {
 		tools := newFakeTools(0)
