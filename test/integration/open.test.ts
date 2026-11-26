@@ -1,6 +1,9 @@
 // The open path end to end against `wrangler dev` with the default config (redirect mode, mock source,
 // limits of 10 fetches, and each item's first link plus 5 more). Short link lifetimes live in open-timing.test.ts.
+import { readFileSync } from "node:fs";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { DEMO_ITEMS } from "../../src/shared/demo-catalog.ts";
+import { pairPhone, putDrop } from "./drop-client.ts";
 import { approveDemo, fetchLink, PROTOCOL_PREFIX, problemOf } from "./open-client.ts";
 import { Api, startPairing } from "./pairing-client.ts";
 import type { Wrangler } from "./wrangler.ts";
@@ -8,7 +11,8 @@ import type { Wrangler } from "./wrangler.ts";
 let wrangler: Wrangler;
 let api: Api;
 beforeAll(async () => {
-  wrangler = await startPairing();
+  // Migrated: the guest drop behind the PDF view link records its file in D1.
+  wrangler = await startPairing({}, { migrate: true });
   api = new Api(wrangler.url);
 });
 afterAll(() => wrangler?.stop());
@@ -21,7 +25,9 @@ describe("mint at approve", () => {
     expect(links.protocol).toBe(`${PROTOCOL_PREFIX}${url}`);
     expect(links.download).toBeNull();
     expect(links.pdf).toBeNull();
-    expect(url).toMatch(new RegExp(`^${wrangler.url}/f/[A-Za-z0-9_-]{54}/Sample-deck\\.pptx$`));
+    expect(url).toMatch(/\/f\/[A-Za-z0-9_-]{54}\/[^/]+\.pptx$/);
+    expect(url.startsWith(`${wrangler.url}/f/`)).toBe(true);
+    expect(url.endsWith(`/${DEMO_ITEMS.deck.name}`)).toBe(true);
     expect(url.length).toBeLessThanOrEqual(200);
     expect(links.protocol?.length).toBeLessThanOrEqual(256);
     // never repeated in a state frame
@@ -185,7 +191,7 @@ describe("fallback links", () => {
       { auth },
     );
 
-  it("a download link is an attachment, a PDF link is the inline view, and each moves the open mode both sides see", async () => {
+  it("a download link is an attachment, the demo deck has no PDF rendition to link, and the download moves the open mode both sides see", async () => {
     const { socket, screen, pid } = await approveDemo(api);
     socket.send({ t: "launched", mode: "protocol" });
     await socket.stateWhere((v) => v.state === "opening");
@@ -200,23 +206,35 @@ describe("fallback links", () => {
     expect((await api.get<{ openMode: string }>("/api/pair/state", pid)).body.openMode).toBe("download");
 
     const pdf = await link(screen.sid, "pdf");
+    expect(pdf.status).toBe(200);
     const view = await fetchLink(pdf.body.links.pdf as string);
+    expect(view.status).toBe(404);
+    expect((await problemOf(view)).code).toBe("pdf_unavailable");
+    socket.close();
+  });
+
+  it("a PDF's view link is served inline as a PDF, with headers that keep it a document and nothing else", async () => {
+    const bytes = new Uint8Array(readFileSync(new URL("../fixtures/decks/sample-handout.pdf", import.meta.url)));
+    const { socket, pid } = await pairPhone(api);
+    expect((await putDrop(api, pid, bytes, { name: "Handout.pdf", contentType: "application/pdf" })).status).toBe(200);
+    socket.send({ t: "open.click" });
+    const open = await socket.waitFor((f) => f.t === "open");
+    const view = await fetchLink((open.links as { pdf: string }).pdf);
     expect(view.status).toBe(200);
     expect(view.headers.get("Content-Type")).toBe("application/pdf");
     expect(view.headers.get("Content-Disposition")).toBe("inline");
+    expect(view.headers.get("X-Content-Type-Options")).toBe("nosniff");
     expect(view.headers.get("Content-Security-Policy")).toBe(
       "default-src 'none'; object-src 'self'; frame-ancestors 'none'",
     );
     expect(view.headers.get("Cache-Control")).toBe("no-store");
     expect(new TextDecoder().decode((await view.arrayBuffer()).slice(0, 5))).toBe("%PDF-");
-    // the new links arrived as open frames as well
-    await socket.waitFor((f) => f.t === "open" && (f.links as { pdf: string | null }).pdf !== null);
     socket.close();
   });
 
   it("PC-02 sid-powers: each item gets its first link plus five more, then mint_limit; a spent item leaves the others theirs", async () => {
-    // Ordered items: 0 Sample deck.pdf, 1 Sample deck.pptx.
-    const { socket, screen } = await approveDemo(api, ["demo-deck", "demo-pdf"]);
+    // Ordered items: 0 the deck, 1 the horizontal photo.
+    const { socket, screen } = await approveDemo(api, [DEMO_ITEMS.deck.id, DEMO_ITEMS.horizontal.id]);
     socket.send({ t: "launched", mode: "protocol" });
     await socket.stateWhere((v) => v.state === "opening");
     for (let i = 0; i < 5; i++) expect((await link(screen.sid, "download")).status).toBe(200);

@@ -1,6 +1,7 @@
 // /library in a browser, against `npm run dev` (CI only: headless Chrome cannot start in the local sandbox).
 import AxeBuilder from "@axe-core/playwright";
 import { expect, type Page, test } from "@playwright/test";
+import { DEMO_ITEMS } from "../../src/shared/demo-catalog.ts";
 import { seeder, signedIn } from "./library-seed.ts";
 
 const now = Date.now();
@@ -177,7 +178,7 @@ test.describe("library", () => {
     await page.goto("/library");
     await page.getByRole("button", { name: "Add the Sample Deck" }).click();
     await expect(page.locator("#file-list > li")).toHaveCount(1);
-    await expect(page.locator("#file-list")).toContainText("Sample deck.pptx");
+    await expect(page.locator("#file-list")).toContainText(DEMO_ITEMS.deck.name);
     await page.reload();
     await expect(page.locator("#file-list > li")).toHaveCount(1);
   });

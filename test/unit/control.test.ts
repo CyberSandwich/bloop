@@ -1,5 +1,7 @@
 import { createHash } from "node:crypto";
 import { describe, expect, it } from "vitest";
+import { SLIDES } from "../../public/js/core/demo.js";
+import { DEMO_ITEMS } from "../../src/shared/demo-catalog.ts";
 import type { Shown } from "../../src/shared/protocol.ts";
 import { fileById, itemId, pageCount, withIds } from "../../src/worker/items.ts";
 import { type Machine, type Sender, transition } from "../../src/worker/machine.ts";
@@ -47,7 +49,7 @@ describe("PAIR-13 item ids: server-assigned at approval, unique, never an index"
     expect(m.session?.items.map((i) => [i.id, i.ref])).toEqual([
       ["i1", "deck-1"],
       ["i2", "dog-1"],
-      ["i3", "demo-vevox"],
+      ["i3", DEMO_ITEMS.link.id],
     ]);
     const open = must(must(m, { e: "launched", now: at, mode: "protocol" }).next, { e: "fetched", now: at });
     expect(open.next.session?.items.map((i) => i.id)).toEqual(["i1", "i2", "i3"]);
@@ -190,8 +192,8 @@ describe("PAIR-13 control: only the pairing's phone commands the screen, absolut
     expect(refused(list(), { item: "deck-1", page: 1, present: false })).toBe("file_not_found");
   });
 
-  it("refuses a page outside the item's pages: the demo deck has two, a photo or a guest file one", () => {
-    expect(refused(list(), deckPage(3))).toBe("bad_request");
+  it("refuses a page outside the item's pages: the demo deck has SLIDES.length, a photo or a guest file one", () => {
+    expect(refused(list(), deckPage(SLIDES.length + 1))).toBe("bad_request");
     expect(refused(list(), deckPage(0))).toBe("bad_request");
     expect(refused(list(), deckPage(1.5))).toBe("bad_request");
     expect(refused(list(), { item: "i2", page: 2, present: false })).toBe("bad_request");
@@ -203,7 +205,7 @@ describe("PAIR-13 control: only the pairing's phone commands the screen, absolut
   it("counts a demo owner's deck and PDF as the pre-rendered pages and everything else as one", () => {
     const [deck, dog] = list().session?.items ?? [];
     if (deck?.kind !== "file" || dog?.kind !== "file") throw new Error("fixture");
-    expect(pageCount(deck, { mode: "demo", kind: "owner" })).toBe(2);
+    expect(pageCount(deck, { mode: "demo", kind: "owner" })).toBe(SLIDES.length);
     expect(pageCount(deck, { mode: "demo", kind: "guest" })).toBe(1);
     expect(pageCount(dog, { mode: "demo", kind: "owner" })).toBe(1);
   });

@@ -4,7 +4,6 @@ import {
   halves,
   isVideoLink,
   openTarget,
-  PHOTO_THUMB,
   pageMode,
   pagesOf,
   placeControls,
@@ -14,12 +13,14 @@ import {
 } from "../../public/js/core/demo.js";
 import { linkFileName } from "../../public/js/shared/names.js";
 import { orderItems } from "../../public/js/shared/session.js";
+import { DECK_PAGES, DEMO_ITEMS, DEMO_NAMES } from "../../src/shared/demo-catalog.ts";
 import type { Item } from "../../src/shared/protocol.ts";
 
 const ORIGIN = "https://bloop.example";
-const deck: Item = { kind: "file", id: "t1", name: "Sample deck.pptx", type: "pptx", size: 82_000 };
-const pdf: Item = { kind: "file", id: "t2", name: "Sample deck.pdf", type: "pdf", size: 83_000 };
-const photo: Item = { kind: "file", id: "t3", name: "Dog.jpg", type: "jpg", size: 70_000 };
+const deck: Item = { kind: "file", id: "t1", name: DEMO_ITEMS.deck.name, type: "pptx", size: 82_000 };
+const pdf: Item = { kind: "file", id: "t2", name: "Guest.pdf", type: "pdf", size: 83_000 };
+const photo: Item = { kind: "file", id: "t3", name: DEMO_ITEMS.horizontal.name, type: "jpg", size: 70_000 };
+const tall: Item = { kind: "file", id: "t9", name: DEMO_ITEMS.vertical.name, type: "jpg", size: 440_000 };
 const link: Item = { kind: "link", id: "t4", url: "https://www.vevox.com/", title: "Vevox" };
 const demo = { mode: "demo", kind: "owner" } as const;
 
@@ -27,22 +28,17 @@ describe("one list order", () => {
   it("files by name, then links by title, as the machine orders the approved items", () => {
     const items: Item[] = [
       { kind: "link", id: "t5", url: "https://www.vevox.com/", title: "Vevox" },
-      { kind: "file", id: "t6", name: "Sample deck.pptx", type: "pptx", size: 1 },
-      { kind: "file", id: "t7", name: "Dog.jpg", type: "jpg", size: 1 },
-      { kind: "file", id: "t8", name: "Sample deck.pdf", type: "pdf", size: 1 },
+      { kind: "file", id: "t6", name: DEMO_ITEMS.vertical.name, type: "jpg", size: 1 },
+      { kind: "file", id: "t7", name: DEMO_ITEMS.horizontal.name, type: "jpg", size: 1 },
+      { kind: "file", id: "t8", name: DEMO_ITEMS.deck.name, type: "pptx", size: 1 },
     ];
-    expect(orderItems(items).map((i) => (i.kind === "file" ? i.name : i.title))).toEqual([
-      "Dog.jpg",
-      "Sample deck.pdf",
-      "Sample deck.pptx",
-      "Vevox",
-    ]);
+    expect(orderItems(items).map((i) => (i.kind === "file" ? i.name : i.title))).toEqual(DEMO_NAMES);
   });
 });
 
 describe("DEMO-01 the demo screen's own open", () => {
   it("fetches the link PowerPoint would have fetched, on this origin only", () => {
-    const url = `${ORIGIN}/f/abc/Sample-deck.pptx`;
+    const url = `${ORIGIN}/f/abc/${DEMO_ITEMS.deck.name}`;
     expect(openTarget(`ms-powerpoint:ofv|u|${url}`, ORIGIN)).toBe(url);
     expect(openTarget(url, ORIGIN)).toBe(url);
     expect(openTarget("ms-powerpoint:ofv|u|https://evil.example/f/abc/x.pptx", ORIGIN)).toBeNull();
@@ -79,23 +75,26 @@ describe("DEMO-01 the demo screen's own open", () => {
   });
 
   it("every sample page is served same-origin as AVIF and WebP (tools/render-slides.py)", () => {
-    expect(SLIDES.length).toBeGreaterThan(1);
+    expect(SLIDES).toHaveLength(DECK_PAGES);
     for (const base of SLIDES) {
       expect(base).toMatch(/^\/img\/[a-z0-9-]+$/);
       for (const ext of ["avif", "webp"]) expect(existsSync(`public${base}.${ext}`), `${base}.${ext}`).toBe(true);
     }
-    expect(existsSync(`public${PHOTO_THUMB}`)).toBe(true);
+    for (const { id } of [DEMO_ITEMS.horizontal, DEMO_ITEMS.vertical]) {
+      expect(existsSync(`public/img/${id}-thumb.webp`), id).toBe(true);
+    }
   });
 });
 
 describe("DEMO-01 what the viewer shows per item", () => {
-  it("the demo account's deck and its PDF export show the same pre-rendered pages", () => {
+  it("the demo account's deck shows the pre-rendered pages", () => {
     expect(pagesOf(deck, demo)).toBe(SLIDES);
-    expect(pagesOf(pdf, demo)).toBe(SLIDES);
   });
 
   it("a photo, a link, a guest's own file and anything live have no pages", () => {
     expect(pagesOf(photo, demo)).toBeNull();
+    expect(pagesOf(tall, demo)).toBeNull();
+    expect(pagesOf(pdf, demo)).toBeNull();
     expect(pagesOf(link, demo)).toBeNull();
     expect(pagesOf(deck, { mode: "demo", kind: "guest" })).toBeNull();
     expect(pagesOf(deck, { mode: "live", kind: "owner" })).toBeNull();
@@ -103,8 +102,9 @@ describe("DEMO-01 what the viewer shows per item", () => {
 
   it("thumbnails are page 1 and the photo's own; a link and a guest file get the type tile", () => {
     expect(thumbOf(deck, demo)).toBe(`${SLIDES[0]}.webp`);
-    expect(thumbOf(pdf, demo)).toBe(`${SLIDES[0]}.webp`);
-    expect(thumbOf(photo, demo)).toBe(PHOTO_THUMB);
+    expect(thumbOf(photo, demo)).toBe(`/img/${DEMO_ITEMS.horizontal.id}-thumb.webp`);
+    expect(thumbOf(tall, demo)).toBe(`/img/${DEMO_ITEMS.vertical.id}-thumb.webp`);
+    expect(thumbOf(pdf, demo)).toBeNull();
     expect(thumbOf(link, demo)).toBeNull();
     expect(thumbOf(deck, { mode: "demo", kind: "guest" })).toBeNull();
     expect(thumbOf(photo, { mode: "live", kind: "owner" })).toBeNull();

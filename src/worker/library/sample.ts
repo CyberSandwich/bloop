@@ -6,7 +6,7 @@ import { bucketOf } from "./bucket.ts";
 import { filePrefix } from "./purge.ts";
 import { libDbOf } from "./store.ts";
 
-export const SAMPLE_NAME = "Sample deck.pptx";
+export const SAMPLE_NAME = "Deck.pptx";
 
 export type SampleOutcome = { ok: true; id: string } | { ok: false; error: "quota_exceeded" | "library_full" };
 

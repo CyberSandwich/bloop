@@ -1,4 +1,5 @@
 // Helpers for the open-path tests: an approved demo session, and /f/ requests that never follow a redirect.
+import { DEMO_ITEMS } from "../../src/shared/demo-catalog.ts";
 import { type Api, claim, openScreen, type Screen, type Socket } from "./pairing-client.ts";
 
 export interface Links {
@@ -20,7 +21,7 @@ export interface Approved {
 export const PROTOCOL_PREFIX = "ms-powerpoint:ofv|u|";
 
 /** Pairs a demo screen and phone, approves `ids`, and waits for the first `open` frame. */
-export async function approveDemo(api: Api, ids: string[] = ["demo-deck"]): Promise<Approved> {
+export async function approveDemo(api: Api, ids: string[] = [DEMO_ITEMS.deck.id]): Promise<Approved> {
   const { screen, socket, code } = await openScreen(api, "demo");
   const claimed = await claim(api, code);
   const pid = claimed.body.pid;

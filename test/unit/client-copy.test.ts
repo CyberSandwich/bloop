@@ -9,6 +9,7 @@ import { screenNet } from "../../public/js/core/net-states.js";
 import { refusalToast, videoTime } from "../../public/js/core/refusal.js";
 import { RESULTS } from "../../public/js/core/states.js";
 import { SUPPORT } from "../../public/js/shared/errors.js";
+import { DEMO_NAMES } from "../../src/shared/demo-catalog.ts";
 import type { PhoneStateKey, ScreenStateKey } from "../../src/shared/protocol.ts";
 
 const SCREEN_KEYS: ScreenStateKey[] = [
@@ -254,7 +255,7 @@ describe("screen copy", () => {
   });
 
   it("DEMO-01 the viewer is headed by the item on the stage, with End, and never claims a launch", () => {
-    for (const file of ["Sample deck.pptx", "Dog.jpg", "Vevox"]) {
+    for (const file of DEMO_NAMES) {
       expect(screenCopy("demo_open", { ...sf, file, demo: true })).toEqual({
         heading: file,
         line: "",

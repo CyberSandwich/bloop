@@ -3,10 +3,16 @@
 
 const PROTOCOL_PREFIX = "ms-powerpoint:ofv|u|";
 
-/** The sample deck's pages, one AVIF and one WebP each (tools/render-slides.py). The PDF is its export: same pages. */
-export const SLIDES = ["/img/demo-slide-1", "/img/demo-slide-2"];
-/** The catalog photo's 120 px square thumbnail, so its row has a picture before any link is minted. */
-export const PHOTO_THUMB = "/img/demo-dog-thumb.webp";
+// The demo account's catalog: the one owner of its names and the deck's page count. src/shared/demo-catalog.ts derives
+// the ids and slots the Worker and the tests use; test/unit/demo-catalog-rules.test.ts fails a literal copy.
+/** In list order: files A to Z, then links. A phone is given slots i1.. in this order. */
+export const DEMO_NAMES = ["Deck.pptx", "Horizontal.jpg", "Vertical.jpg", "Vevox"];
+/** The deck's pre-rendered page count: public/img/demo-slide-1..N (tools/render-slides.py). */
+export const DECK_PAGES = 5;
+export const demoId = (/** @type {string} */ name) => `demo-${name.split(".")[0]?.toLowerCase()}`;
+
+/** The demo deck's pages, one AVIF and one WebP each (tools/render-slides.py). */
+export const SLIDES = Array.from({ length: DECK_PAGES }, (_, i) => `/img/demo-slide-${i + 1}`);
 
 /** The https link inside a pushed link (protocol or plain), when it is on this origin; null otherwise. */
 export function openTarget(/** @type {string} */ link, /** @type {string} */ origin) {
@@ -54,23 +60,21 @@ export const halves = (box) => [
 ];
 
 /**
- * The pre-rendered pages of a demo account's deck or PDF; null for anything else (a guest's own file has none).
+ * The pre-rendered pages of a demo account's deck; null for anything else (a guest's own file has none).
  * @param {Item} item
  * @param {{mode: Mode, kind: string | null}} view
  */
 export const pagesOf = (item, view) =>
-  view.mode === "demo" && view.kind === "owner" && item.kind === "file" && (item.type === "pptx" || item.type === "pdf")
-    ? SLIDES
-    : null;
+  view.mode === "demo" && view.kind === "owner" && item.kind === "file" && item.type === "pptx" ? SLIDES : null;
 
 /**
- * A demo account's row thumbnail: page 1 of the deck or PDF, the photo's own thumbnail; null shows the type tile.
+ * A demo account's row thumbnail: page 1 of the deck, the photo's own thumbnail; null shows the type tile.
  * @param {Item} item
  * @param {{mode: Mode, kind: string | null}} view
  */
 export function thumbOf(item, view) {
   if (pagesOf(item, view)) return `${SLIDES[0]}.webp`;
   return view.mode === "demo" && view.kind === "owner" && item.kind === "file" && item.type === "jpg"
-    ? PHOTO_THUMB
+    ? `/img/${demoId(item.name)}-thumb.webp`
     : null;
 }

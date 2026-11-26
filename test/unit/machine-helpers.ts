@@ -1,3 +1,4 @@
+import { DEMO_ITEMS } from "../../src/shared/demo-catalog.ts";
 import type { Kind, Mode } from "../../src/shared/protocol.ts";
 import type { FileItemRef, LinkRef } from "../../src/worker/items.ts";
 import {
@@ -30,7 +31,7 @@ export const asItem = (file: FileRef): Omit<FileItemRef, "id"> => ({ kind: "file
 export const asStored = (file: FileRef, id = "i1"): FileItemRef => ({ kind: "file", id, ...file });
 export const VEVOX: Omit<LinkRef, "id"> = {
   kind: "link",
-  ref: "demo-vevox",
+  ref: DEMO_ITEMS.link.id,
   url: "https://www.vevox.com/",
   title: "Vevox",
 };

@@ -15,7 +15,7 @@ Status: proposed
   - per-IP rate limits of their own (`RL_DEMO_CREATE`, `RL_DEMO_CLAIM`), a global cap on concurrent demo screens (`DEMO_MAX_CONCURRENT`, held in the Directory) and a per-IP-hash cap (`DEMO_MAX_PER_IP`, same table; why: creates held for 15 minutes would otherwise fill the cap from one address; remove: delete the variable and the `ip_hash` check);
   - `DEMO_ENABLED=false` turns it off.
 - **Records:** demo sessions and audit rows have no user. They are kept 7 days, and metrics are tagged `mode = demo` so they never mix into product numbers.
-- **Visible:** the phone shows "Open Sample deck.pptx here?" with "This is a demo. You don't need an account."; the screen shows its demo room line, and after approval the file in the page with "On a room PC this opens in PowerPoint." (architecture.md 4.5).
+- **Visible:** the phone shows "Open Deck.pptx here?" with "This is a demo. You don't need an account."; the screen shows its demo room line, and after approval the file in the page with "On a room PC this opens in PowerPoint." (architecture.md 4.5).
 - **Code space:** demo and live codes share the Directory. Scanning a demo code from a signed-in phone runs the demo, and the cookie is ignored.
 
 ## Consequences

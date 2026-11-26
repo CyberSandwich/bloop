@@ -13,7 +13,7 @@
 | Kind | Viewer | Stage | Honesty toast |
 |---|---|---|---|
 | deck shown in bloop | slides: the converter's slide images, 1920 or 3840 wide by the screen's size and DPR | one slide at a time, as the demo deck | yes (section 5) |
-| PDF | pdf.js, self-hosted worker | wide pages step one at a time; tall pages scroll as one column, as the demo PDF | no (it is the file itself) |
+| PDF | pdf.js, self-hosted worker | wide pages step one at a time; tall pages scroll as one column | no (it is the file itself) |
 | document (docx, doc, odt, rtf) | pdf.js on the converter's PDF | as a portrait PDF | yes: "Showing a Copy as PDF" |
 | spreadsheet (xlsx, xls, ods, csv) | sheet: values in a table, capped | a white card filling the stage, sheet tabs at its foot | yes: "Showing Values Only" |
 | text (md, txt) | text: markdown rendered to DOM, txt preformatted | a white card, 860 max, scrolling | no |

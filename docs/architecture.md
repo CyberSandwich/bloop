@@ -203,7 +203,7 @@ Per-room policy (ADR 0005): `open` (default) is the flow above. `pass` is option
 
 `/s?mode=demo`, entered from the landing, opens a demo screen (`POST /api/screens {mode: "demo"}`). Differences from the live flow:
 
-- the file source is always `MockFileSource`, fixed at screen creation on the server. A client cannot switch it. The demo account lists Sample deck.pptx, Sample deck.pdf (the deck's export, and its rendition), Dog.jpg and one link, Vevox (interfaces.md section 3); the phone approves any of them as one list;
+- the file source is always `MockFileSource`, fixed at screen creation on the server. A client cannot switch it. The demo account lists Deck.pptx, Horizontal.jpg, Vertical.jpg and one link, Vevox (interfaces.md section 3); the phone approves any of them as one list;
 - the screen launches nothing: no `ms-powerpoint:` and no `window.open`. On the launch link it fetches the link itself (a HEAD, as PowerPoint would; an image's view link it shows as the image instead), which moves the session to `open`, and from `approved` to `open` it shows every approved item in a viewer in the page (`public/js/viewer.js`), built from the screen's state (`demo_open`), so a reload or a dropped socket shows it again: a sidebar of the items, and the chosen one on the stage. The sample deck and its PDF show as pre-rendered slide images (`public/img/demo-slide-*`, `tools/render-slides.py`; prev and next, arrow keys, Present), an image as itself (another item's view link is minted with `protocol` and that item), a link as a card that opens it in a new tab, a guest's photo as an image and a guest's video in a `<video>` (`public/js/viewer-video.js`, lazy), and a guest's deck or PDF as a card. A live screen shows a guest's photo or video in the same viewer (design.md section 7, The viewer). Download mints a fresh download link for the shown item on the click;
 - one device can play both parts: in the waiting state the demo screen offers "Approve on This Device", a same-tab link to `/a?c=<code>`; `/a` then offers "See It on the Screen" back to `/s?mode=demo`, which resumes the screen from the sid in that tab's `sessionStorage`. Only the tab that created a screen holds its sid, and a stored sid resumes only a screen of the page's mode. A demo screen runs at phone width; a live one asks for the room's screen;
 - the phone gets no OAuth step, and demo routes never read the phone session cookie;
@@ -272,7 +272,7 @@ public/                    the assets' source, built into dist/ (each JS module 
   js/core/remote-ui.js js/core/remote.js css/remote.css   the phone's remote, fetched once its claim is a demo's; its state (seq, the tap shown before the answer)
   js/core/lazy.js   what the length sheet and the remote share: their stylesheet's load, a refusal as a toast
   js/core/upload.js js/core/pill.js js/core/upload-pill.js css/upload.css   the upload engine (no DOM), the pill's face, their binding with the batch sheet, and the stylesheet; loaded on the first intent to add (docs/ux/upload.md)
-  img/demo-slide-{n}.{avif,webp}   the sample deck's pages, shown for the deck and its PDF (tools/render-slides.py)
+  img/demo-slide-{n}.{avif,webp}   the sample deck's pages (tools/render-slides.py, from a PDF export that is not kept), and the two photos' 120 px thumbnails
   img/hero-viewer-{750,1100,1600,2200}.avif, {750,1100,1600}.webp   the landing stage's screenshot of the Demo Room, 640 up
   js/site.js               the landing: the nav's scrolled look, closing the menu on a link click, the stage tilt's spring, the FAQ's height tween where CSS cannot (no other site page runs a script)
   og.png apple-touch-icon.png (tools/render-og.py); favicon.svg, the logo, drawn as paths
@@ -288,6 +288,7 @@ tools/
   build-assets.mjs build-assets-cli.mjs   public/ to dist/, each JS module minified on its own, CSS stripped of comments and whitespace (ADR 0011); wrangler runs the CLI before dev and deploy
   make-fixtures.mjs        writes the synthetic sample decks the tests use
   render-slides.py         the demo deck's PDF export to the demo screen's slide images
+  slim-deck.py             prunes a .pptx (unused layouts and media, thumbnail), strips its identity fields, jpegtran and deflate 9; the demo deck is its output
   change-tier.mjs          classifies the staged diff (T0 to T2) and enforces the commit-msg blocks
   render-og.py og.svg      the social image and the touch icon, from the logo; og.svg is the image's SVG source
   subset-font.py           Inter to the Latin subset, wght 400 to 600, opsz kept

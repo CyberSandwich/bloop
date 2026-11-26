@@ -1,4 +1,6 @@
 import { describe, expect, it } from "vitest";
+import { SLIDES } from "../../public/js/core/demo.js";
+import { DEMO_ITEMS } from "../../src/shared/demo-catalog.ts";
 import { migrate, SCHEMA_KEY, SCHEMA_VERSION } from "../../src/worker/do/schema.ts";
 import { policyOf, withHeaders } from "../../src/worker/headers.ts";
 import {
@@ -159,7 +161,7 @@ describe("SRC-01 screen-view: the view carries items, never a source ref", () =>
       { kind: "link", id: "i2", url: "https://www.vevox.com/", title: "Vevox" },
     ]);
     expect(JSON.stringify(view)).not.toContain("deck-1");
-    expect(JSON.stringify(view)).not.toContain("demo-vevox");
+    expect(JSON.stringify(view)).not.toContain(DEMO_ITEMS.link.id);
   });
 });
 
@@ -239,7 +241,7 @@ describe("Screen object schema steps", () => {
   });
 
   it("PAIR-13 version 6 keeps a `shown` this session could have set, and repairs any other to null", () => {
-    /** A demo owner's open session holding the deck (two pages) and a link, with this `shown` and `seq`. */
+    /** A demo owner's open session holding the deck (SLIDES.length pages) and a link, with this `shown` and `seq`. */
     const stored = (shown: unknown, items: unknown[] = [asStored(DECK), { ...VEVOX, id: "i2" }], s: unknown = seq) =>
       kv({
         meta: {},
@@ -259,7 +261,7 @@ describe("Screen object schema steps", () => {
     for (const bad of [
       { x: 1 },
       { ...good, page: 0 },
-      { ...good, page: 3 },
+      { ...good, page: SLIDES.length + 1 },
       { item: "i2", page: 2, present: false },
       { ...good, item: "i9" },
       { ...good, extra: true },
@@ -379,7 +381,7 @@ describe("machine: a session holds a list of items", () => {
   it("orders files by name, then links, and launches the first file", () => {
     const step = approve(claimedOwner(), [VEVOX, asItem(DECK), DOG, PDF]);
     if (!step.ok) throw new Error(step.error);
-    expect(step.next.session?.items.map((i) => i.ref)).toEqual(["pdf-1", "deck-1", "dog-1", "demo-vevox"]);
+    expect(step.next.session?.items.map((i) => i.ref)).toEqual(["pdf-1", "deck-1", "dog-1", DEMO_ITEMS.link.id]);
     expect(fx(step.effects, "mint")).toEqual([{ fx: "mint", purpose: "protocol", item: 0 }]);
   });
 
@@ -408,7 +410,7 @@ describe("machine: a session holds a list of items", () => {
     const listed = must(claimedOwner("live"), {
       e: "listed",
       now: T0 + sec(2),
-      ids: ["deck-1", "pdf-1", "demo-vevox"],
+      ids: ["deck-1", "pdf-1", DEMO_ITEMS.link.id],
     }).next;
     expect(approve(listed, [asItem(DECK), PDF])).toEqual({ ok: false, error: "bad_request" });
     expect(approve(listed, [VEVOX])).toEqual({ ok: false, error: "bad_request" });

@@ -221,18 +221,18 @@
     "path": "src/worker/seams/file-source/demo-files/demo-deck.pptx",
     "gzip": false,
     "brotli": false,
-    "limit": "85 kB"
+    "limit": "265 kB"
   },
   {
-    "name": "demo PDF",
-    "path": "src/worker/seams/file-source/demo-files/demo-handout.pdf",
+    "name": "demo vertical photo",
+    "path": "src/worker/seams/file-source/demo-files/demo-vertical.jpg",
     "gzip": false,
     "brotli": false,
-    "limit": "85 kB"
+    "limit": "229 kB"
   },
   {
     "name": "demo photo",
-    "path": "src/worker/seams/file-source/demo-files/demo-dog.jpg",
+    "path": "src/worker/seams/file-source/demo-files/demo-horizontal.jpg",
     "gzip": false,
     "brotli": false,
     "limit": "241 kB"

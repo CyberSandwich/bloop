@@ -179,20 +179,34 @@ describe("demo files (src/worker/seams/file-source/demo-files)", () => {
   const demo = new URL("../../src/worker/seams/file-source/demo-files/", import.meta.url);
   const readDemo = (name: string) => new Uint8Array(readFileSync(new URL(name, demo)));
 
-  it("demo-deck.pptx is a consistent 2-slide package with blank author fields", () => {
+  it("demo-deck.pptx is a consistent package with one slide per rendered page, its notes, and no identity or preview", () => {
     const parts = unzip(readDemo("demo-deck.pptx"));
     expect([...parts.keys()][0]).toBe("[Content_Types].xml");
-    expect(expectConsistentDeck(parts, 2)).toHaveLength(SLIDES.length);
+    expect(expectConsistentDeck(parts, SLIDES.length)).toHaveLength(SLIDES.length);
+    expect([...parts.keys()].filter((n) => /^ppt\/notesSlides\/notesSlide\d+\.xml$/.test(n))).toHaveLength(
+      SLIDES.length,
+    );
+    expect(parts.has("docProps/thumbnail.jpeg")).toBe(false);
     const core = parts.get("docProps/core.xml") as string;
     expect(core).not.toMatch(/<dc:creator>[^<]/);
     expect(core).not.toMatch(/<cp:lastModifiedBy>[^<]/);
+    const app = parts.get("docProps/app.xml") as string;
+    for (const field of ["Company", "Manager"]) expect(app, field).not.toMatch(new RegExp(`<${field}>[^<]`));
   });
 
-  it("demo-handout.pdf is a PDF with blank author fields", () => {
-    const text = Buffer.from(readDemo("demo-handout.pdf")).toString("latin1");
-    expect(text.startsWith("%PDF-")).toBe(true);
-    expect(text.trimEnd().endsWith("%%EOF")).toBe(true);
-    expect(text).not.toMatch(/\/Author\s*\((?!\))/);
-    expect(text).not.toMatch(/<dc:creator>\s*<rdf:Seq>\s*<rdf:li>[^<]/);
+  it("the demo photos carry no EXIF, XMP or comment: a JFIF header and picture data only", () => {
+    for (const name of ["demo-horizontal.jpg", "demo-vertical.jpg"]) {
+      const bytes = readDemo(name);
+      const markers: number[] = [];
+      for (let at = 2; at + 4 <= bytes.length && bytes[at] === 0xff && bytes[at + 1] !== 0xda; ) {
+        markers.push(bytes[at + 1] as number);
+        at += 2 + (((bytes[at + 2] as number) << 8) | (bytes[at + 3] as number));
+      }
+      // APP0 (JFIF) is allowed; APP1 (Exif, XMP), APP13 (IPTC) and COM (comment) are not.
+      expect(
+        markers.filter((m) => m === 0xe1 || m === 0xed || m === 0xfe),
+        name,
+      ).toEqual([]);
+    }
   });
 });

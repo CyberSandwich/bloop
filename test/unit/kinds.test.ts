@@ -1,6 +1,7 @@
 // What an item is shown as, and the order a session stores (src/worker/items.ts).
 import { describe, expect, it } from "vitest";
 import { EXTENSION_TYPES } from "../../public/js/shared/names.js";
+import { DEMO_ITEMS } from "../../src/shared/demo-catalog.ts";
 import type { FileType, ItemKind } from "../../src/shared/protocol.ts";
 import { type ItemDraft, kindOf, orderItems } from "../../src/worker/items.ts";
 import { transition } from "../../src/worker/machine.ts";
@@ -32,8 +33,8 @@ describe("orderItems", () => {
     const b = asItem({ ...DECK, ref: "b", name: "b.pptx" });
     const a = asItem({ ...DECK, ref: "a", name: "A.pdf", type: "pdf" });
     const input: ItemDraft[] = [VEVOX, b, a];
-    expect(orderItems(input).map((i) => i.ref)).toEqual(["a", "b", "demo-vevox"]);
-    expect(input.map((i) => i.ref)).toEqual(["demo-vevox", "b", "a"]);
+    expect(orderItems(input).map((i) => i.ref)).toEqual(["a", "b", DEMO_ITEMS.link.id]);
+    expect(input.map((i) => i.ref)).toEqual([DEMO_ITEMS.link.id, "b", "a"]);
   });
 
   it("keeps the caller's order when every item is a library file, in a new array", () => {
@@ -45,16 +46,16 @@ describe("orderItems", () => {
 
   it("sorts library files with links among them: a live list holds library files only", () => {
     const input = [lib("c:1", "Zebra.pptx"), VEVOX, lib("a:1", "Apple.pptx")];
-    expect(orderItems(input).map((i) => i.ref)).toEqual(["a:1", "c:1", "demo-vevox"]);
+    expect(orderItems(input).map((i) => i.ref)).toEqual(["a:1", "c:1", DEMO_ITEMS.link.id]);
   });
 
   it("sorts as before when any file is not a library file, or when there are links only", () => {
     const zebra = lib("c:1", "Zebra.pptx");
     const apple = lib("a:1", "Apple.pptx");
     expect(orderItems([zebra, asItem(GUEST_FILE), apple]).map((i) => i.ref)).toEqual(["a:1", "g/abc", "c:1"]);
-    expect(orderItems([VEVOX, asItem(DECK), zebra]).map((i) => i.ref)).toEqual(["deck-1", "c:1", "demo-vevox"]);
+    expect(orderItems([VEVOX, asItem(DECK), zebra]).map((i) => i.ref)).toEqual(["deck-1", "c:1", DEMO_ITEMS.link.id]);
     const poll = { ...VEVOX, ref: "a-poll", title: "A poll" };
-    expect(orderItems([VEVOX, poll]).map((i) => i.ref)).toEqual(["a-poll", "demo-vevox"]);
+    expect(orderItems([VEVOX, poll]).map((i) => i.ref)).toEqual(["a-poll", DEMO_ITEMS.link.id]);
   });
 
   it("an empty list stays empty", () => {

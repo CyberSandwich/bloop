@@ -1,7 +1,8 @@
 // The remote against `wrangler dev` (PAIR-13): POST /api/control (the phone's pid) and POST /api/screen/shown (the
-// screen's sid), both on the demo account. The demo catalog approves as Dog.jpg i1, Sample deck.pdf i2, Sample
-// deck.pptx i3 and the Vevox link i4: files by name, then links.
+// screen's sid), both on the demo account. The demo catalog (src/shared/demo-catalog.ts) approves as the deck, the two
+// photos and the link, in slots i1 to i4: files by name, then links.
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { DECK_PAGES, DEMO_IDS, DEMO_ITEMS } from "../../src/shared/demo-catalog.ts";
 import { approveDemo, sleep } from "./open-client.ts";
 import { Api, claim, openScreen, phoneSocket, startPairing } from "./pairing-client.ts";
 import type { Wrangler } from "./wrangler.ts";
@@ -15,9 +16,11 @@ beforeAll(async () => {
 afterAll(() => wrangler?.stop());
 
 const problem = (code: string) => expect.objectContaining({ code });
-const ALL = ["demo-deck", "demo-pdf", "demo-dog", "demo-vevox"];
-const DECK = "i3";
-const LINK = "i4";
+const ALL = DEMO_IDS;
+const SLOTS = Object.values(DEMO_ITEMS).map((i) => i.slot);
+const DECK = DEMO_ITEMS.deck.slot;
+const PHOTO = DEMO_ITEMS.horizontal.slot;
+const LINK = DEMO_ITEMS.link.slot;
 const shown = (item: string, page = 1, present = false) => ({ item, page, present });
 let clock = 0;
 /** A request body: `shown` plus a newer seq per call, as a sender's clock gives. */
@@ -30,11 +33,11 @@ describe("PAIR-13 item ids: both views carry a server id per item", () => {
   it("PAIR-13 ids: the screen and the phone see the same opaque ids, in list order, with no source id", async () => {
     const { socket, pid } = await session();
     const view = (await socket.stateWhere((v) => v.state === "approved")).view as { items: { id: string }[] };
-    expect(view.items.map((i) => i.id)).toEqual(["i1", "i2", "i3", "i4"]);
+    expect(view.items.map((i) => i.id)).toEqual(SLOTS);
     const phone = await api.get<{ items: { id: string }[]; shown: unknown }>("/api/pair/state", pid);
-    expect(phone.body.items.map((i) => i.id)).toEqual(["i1", "i2", "i3", "i4"]);
+    expect(phone.body.items.map((i) => i.id)).toEqual(SLOTS);
     expect(phone.body.shown).toBeNull();
-    expect(JSON.stringify(phone.body)).not.toContain("demo-deck");
+    expect(JSON.stringify(phone.body)).not.toContain(DEMO_ITEMS.deck.id);
     socket.close();
   });
 });
@@ -193,7 +196,7 @@ describe("PAIR-13 control: only the pairing's phone commands the screen", () => 
 
   it("PAIR-11 unknown: an id outside the list, and a list index, are file_not_found", async () => {
     const { socket, pid } = await session();
-    for (const item of ["i9", "0", "demo-deck"]) {
+    for (const item of ["i9", "0", DEMO_ITEMS.deck.id]) {
       expect((await api.post("/api/control", cmd(item), { auth: pid })).body, item).toEqual(problem("file_not_found"));
     }
     socket.close();
@@ -201,9 +204,11 @@ describe("PAIR-13 control: only the pairing's phone commands the screen", () => 
 
   it("PAIR-13 range: a page past the item's pages is bad_request, and the photo has one", async () => {
     const { socket, pid } = await session();
-    expect((await api.post("/api/control", cmd(DECK, 3), { auth: pid })).body).toEqual(problem("bad_request"));
-    expect((await api.post("/api/control", cmd("i1", 2), { auth: pid })).body).toEqual(problem("bad_request"));
-    expect((await api.post("/api/control", cmd("i1", 1), { auth: pid })).status).toBe(200);
+    const page = (item: string, n: number) => api.post("/api/control", cmd(item, n), { auth: pid });
+    expect((await page(DECK, DECK_PAGES + 1)).body).toEqual(problem("bad_request"));
+    expect((await page(DECK, DECK_PAGES)).status).toBe(200);
+    expect((await page(PHOTO, 2)).body).toEqual(problem("bad_request"));
+    expect((await page(PHOTO, 1)).status).toBe(200);
     socket.close();
   });
 
@@ -224,10 +229,10 @@ describe("PAIR-13 control: only the pairing's phone commands the screen", () => 
     const { screen, socket, code } = await openScreen(api, "live");
     const { body } = await claim(api, code);
     await api.get("/api/files", body.pid);
-    expect((await api.post("/api/approve", { ids: ["demo-deck"] }, { auth: body.pid })).status).toBe(200);
-    expect((await api.post("/api/control", cmd("i1"), { auth: body.pid })).status).toBe(200);
-    expect((await api.post("/api/screen/shown", cmd("i1"), { auth: screen.sid })).status).toBe(200);
-    expect((await api.post("/api/control", cmd("i1", 2), { auth: body.pid })).body).toEqual(problem("bad_request"));
+    expect((await api.post("/api/approve", { ids: [DEMO_ITEMS.deck.id] }, { auth: body.pid })).status).toBe(200);
+    expect((await api.post("/api/control", cmd(DECK), { auth: body.pid })).status).toBe(200);
+    expect((await api.post("/api/screen/shown", cmd(DECK), { auth: screen.sid })).status).toBe(200);
+    expect((await api.post("/api/control", cmd(DECK, 2), { auth: body.pid })).body).toEqual(problem("bad_request"));
     socket.close();
   });
 });
@@ -270,7 +275,7 @@ describe("PAIR-13 screen/shown: the screen reports its own taps", () => {
     expect(card.body.shown).toEqual(shown(LINK));
     expect((await api.get<{ shown: unknown }>("/api/pair/state", pid)).body.shown).toEqual(shown(LINK));
     expect((await post(cmd("i9"))).body).toEqual(problem("file_not_found"));
-    expect((await post(cmd(DECK, 3))).body).toEqual(problem("bad_request"));
+    expect((await post(cmd(DECK, DECK_PAGES + 1))).body).toEqual(problem("bad_request"));
     expect((await post({ ...cmd(DECK), extra: true })).body).toEqual(problem("bad_request"));
     expect(
       (await api.post("/api/screen/shown", cmd(DECK), { auth: screen.sid, origin: "https://evil.example" })).body,
@@ -293,7 +298,7 @@ describe("SESS-01 length: the phone sets when the session ends", () => {
     const opened = await openScreen(api, "live");
     const { body } = await claim(api, opened.code);
     await api.get("/api/files", body.pid);
-    const approved = await api.post<Ends>("/api/approve", { ids: ["demo-deck"] }, { auth: body.pid });
+    const approved = await api.post<Ends>("/api/approve", { ids: [DEMO_ITEMS.deck.id] }, { auth: body.pid });
     expect(approved.status).toBe(200);
     return { ...opened, pid: body.pid, approved: approved.body };
   }

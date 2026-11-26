@@ -1,6 +1,12 @@
 // The viewer's park over a fake DOM: just enough of the element API that viewer.js and ui.js touch.
+
 import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
+import { SLIDES } from "../../public/js/core/demo.js";
+import { DEMO_ITEMS } from "../../src/shared/demo-catalog.ts";
 import type { Item, ScreenView } from "../../src/shared/protocol.ts";
+
+/** The sample deck's page count. */
+const PAGES = SLIDES.length;
 
 type Listener = (e: {
   type: string;
@@ -221,7 +227,7 @@ class Sized extends Observer {
 
 const ORIGIN = "https://bloop.example";
 const photo: Item = { kind: "file", id: "t1", name: "Dog.jpg", type: "jpg", size: 70_000 };
-const deck: Item = { kind: "file", id: "t2", name: "Sample deck.pptx", type: "pptx", size: 82_000 };
+const deck: Item = { kind: "file", id: "t2", name: DEMO_ITEMS.deck.name, type: "pptx", size: 82_000 };
 const view = {
   state: "open",
   mode: "demo",
@@ -1033,7 +1039,7 @@ describe("DEMO-01 the viewer parks for a transient state", () => {
       const deckView = { ...view, items: [deck] } as ScreenView;
       v.render(deckView);
       expect(started).toBe(1);
-      expect(dots.textContent).toBe("1 / 2");
+      expect(dots.textContent).toBe(`1 / ${PAGES}`);
       // Every scroll and render repaints the count: mid-flight, the same target restarts nothing.
       v.render(deckView);
       expect(started).toBe(1);
@@ -1115,13 +1121,13 @@ describe("DEMO-01 the viewer parks for a transient state", () => {
       const e = press(key);
       const handled =
         what === "next"
-          ? el("dots").textContent === "2 / 2"
+          ? el("dots").textContent === `2 / ${PAGES}`
           : what === "present"
             ? doc.body.classes.has("is-presenting")
             : what === "stop"
               ? presenting && !doc.body.classes.has("is-presenting")
               : what === "prev"
-                ? el("dots").textContent === "1 / 2" && at === "2 / 2"
+                ? el("dots").textContent === `1 / ${PAGES}` && at === `2 / ${PAGES}`
                 : false;
       expect(handled, key).toBe(what !== "inert");
       if (what !== "stop" && what !== "inert") expect(e.preventDefault, key).toHaveBeenCalled();
@@ -1133,14 +1139,14 @@ describe("DEMO-01 the viewer parks for a transient state", () => {
     v.render(deckView());
     await vi.dynamicImportSettled();
     expect(press("End").preventDefault).toHaveBeenCalled();
-    expect(el("dots").textContent).toBe("2 / 2");
-    expect(v.shown()?.page).toBe(2);
+    expect(el("dots").textContent).toBe(`${PAGES} / ${PAGES}`);
+    expect(v.shown()?.page).toBe(PAGES);
     press("Home");
-    expect(el("dots").textContent).toBe("1 / 2");
+    expect(el("dots").textContent).toBe(`1 / ${PAGES}`);
     expect(v.shown()?.page).toBe(1);
   });
 
-  it("each item keeps its page: leaving a deck on its last page and coming back lands there; its own row starts over", () => {
+  it("each item keeps its page: leaving a deck on a later page and coming back lands there; its own row starts over", () => {
     const { v, el } = setup();
     v.render({ ...view, items: [photo, deck] } as ScreenView);
     tap(el("items").children[1]?.children[0] as Node);
@@ -1151,7 +1157,7 @@ describe("DEMO-01 the viewer parks for a transient state", () => {
     expect(v.shown()).toMatchObject({ item: "t1", page: 1 });
     tap(el("items").children[1]?.children[0] as Node);
     expect(v.shown()).toMatchObject({ item: "t2", page: 2 });
-    expect(el("dots").textContent).toBe("2 / 2");
+    expect(el("dots").textContent).toBe(`2 / ${PAGES}`);
     // The row of the item on stage is a restart, as before.
     tap(el("items").children[1]?.children[0] as Node);
     expect(v.shown()).toMatchObject({ item: "t2", page: 1 });
@@ -1173,12 +1179,12 @@ describe("DEMO-01 the viewer parks for a transient state", () => {
     const { v, el } = setup();
     const deckView = { ...view, items: [deck] } as ScreenView;
     v.render(deckView);
-    expect(el("dots").textContent).toBe("1 / 2");
+    expect(el("dots").textContent).toBe(`1 / ${PAGES}`);
     v.park("You're Offline");
     for (const f of docListeners.get("keydown") ?? []) f({ type: "keydown", key: "PageDown", preventDefault() {} });
     expect(el("view").hidden).toBe(true);
     v.render(deckView);
-    expect(el("dots").textContent).toBe("1 / 2");
+    expect(el("dots").textContent).toBe(`1 / ${PAGES}`);
     expect(el("frame").querySelector("img")?.getAttribute("data-page")).toBe("0");
   });
 
@@ -1451,13 +1457,13 @@ describe("PAIR-13 the screen follows the phone, and reports its own taps (design
     expect(v.at()).toBe(0);
     v.render(both({ item: "t2", page: 2, present: false }));
     expect(v.item()?.id).toBe("t2");
-    expect(el("dots").textContent).toBe("2 / 2");
+    expect(el("dots").textContent).toBe(`2 / ${PAGES}`);
     expect(v.shown()).toMatchObject({ item: "t2", page: 2, present: false });
     v.render(both({ item: "t2", page: 2, present: true }));
     expect(doc.body.classes.has("is-presenting")).toBe(true);
     v.render(both({ item: "t2", page: 1, present: false }));
     expect(doc.body.classes.has("is-presenting")).toBe(false);
-    expect(el("dots").textContent).toBe("1 / 2");
+    expect(el("dots").textContent).toBe(`1 / ${PAGES}`);
   });
 
   it("a guest file sorting in ahead keeps the commanded item on screen: the id, not the place", () => {
@@ -1474,12 +1480,12 @@ describe("PAIR-13 the screen follows the phone, and reports its own taps (design
     const { v, el } = setup({ tapped });
     v.render(both({ item: "t2", page: 1, present: false }));
     click(el("next"));
-    expect(el("dots").textContent).toBe("2 / 2");
+    expect(el("dots").textContent).toBe(`2 / ${PAGES}`);
     expect(tapped).toHaveBeenCalledTimes(1);
     expect(v.shown()).toMatchObject({ item: "t2", page: 2, present: false });
     // Another push (a list change, a length) still carries the old shown: the screen stays where it was tapped.
     v.render(both({ item: "t2", page: 1, present: false }, 2));
-    expect(el("dots").textContent).toBe("2 / 2");
+    expect(el("dots").textContent).toBe(`2 / ${PAGES}`);
   });
 
   it("while its own report is on its way, a push is not followed; once back, the stored shown is", () => {
@@ -1493,16 +1499,16 @@ describe("PAIR-13 the screen follows the phone, and reports its own taps (design
     click(el("next"));
     busy = true;
     v.render(both({ item: "t2", page: 1, present: false }, 3));
-    expect(el("dots").textContent).toBe("2 / 2");
+    expect(el("dots").textContent).toBe(`2 / ${PAGES}`);
     busy = false;
     v.render(both({ item: "t2", page: 2, present: false }, 4));
-    expect(el("dots").textContent).toBe("2 / 2");
+    expect(el("dots").textContent).toBe(`2 / ${PAGES}`);
   });
 
   it("reports a row, a step that moves, Present and Stop; a step held at the end, or a follow, reports nothing", () => {
     const tapped = vi.fn();
     const { v, el } = setup({ tapped });
-    v.render(both({ item: "t2", page: 2, present: false }));
+    v.render(both({ item: "t2", page: PAGES, present: false }));
     expect(tapped).not.toHaveBeenCalled();
     click(el("next"));
     expect(tapped).not.toHaveBeenCalled();

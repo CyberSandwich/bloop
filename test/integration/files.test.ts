@@ -1,5 +1,6 @@
 // /api/files and approve against the default mock source, and the OAuth routes while Entra is not configured.
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { DEMO_IDS, DEMO_ITEMS } from "../../src/shared/demo-catalog.ts";
 import { Api, claim, openScreen, startPairing } from "./pairing-client.ts";
 import type { Wrangler } from "./wrangler.ts";
 
@@ -12,6 +13,8 @@ beforeAll(async () => {
 afterAll(() => wrangler?.stop());
 
 const problem = (code: string) => expect.objectContaining({ code });
+/** A catalog file as an approved session lists it: its slot id and its name. */
+const slotted = (item: { slot: string; name: string }) => ({ id: item.slot, name: item.name });
 interface Files {
   items: (
     | { kind: "file"; id: string; name: string; type: string; modifiedAt: number; size: number | null }
@@ -23,7 +26,6 @@ interface Files {
       }
   )[];
 }
-const DEMO_IDS = ["demo-deck", "demo-pdf", "demo-dog", "demo-vevox"];
 
 /** A paired owner phone on a screen of the given mode. */
 async function paired(mode: "demo" | "live") {
@@ -33,21 +35,21 @@ async function paired(mode: "demo" | "live") {
 }
 
 describe("GET /api/files with the mock source", () => {
-  it("SRC-04 isolation: a demo screen lists the demo catalog, files newest first then links, in the documented shape", async () => {
+  it("SRC-04 isolation: a demo screen lists the demo catalog, files by name then links, in the documented shape", async () => {
     const { socket, pid } = await paired("demo");
     const res = await api.get<Files>("/api/files", pid);
     expect(res.status).toBe(200);
     expect(res.body.items.map((f) => f.id)).toEqual(DEMO_IDS);
     for (const f of res.body.items) {
       if (f.kind === "link") {
-        expect(f).toEqual({ kind: "link", id: "demo-vevox", url: "https://www.vevox.com/", title: "Vevox" });
+        expect(f).toEqual({ kind: "link", id: DEMO_ITEMS.link.id, url: "https://www.vevox.com/", title: "Vevox" });
         continue;
       }
       expect(Object.keys(f).sort()).toEqual(["id", "kind", "modifiedAt", "name", "size", "type"]);
       expect(f.modifiedAt).toBeLessThanOrEqual(Date.now());
       expect(f.size).toBeGreaterThan(0);
     }
-    expect(res.body.items.map((f) => (f.kind === "file" ? f.type : f.kind))).toEqual(["pptx", "pdf", "jpg", "link"]);
+    expect(res.body.items.map((f) => (f.kind === "file" ? f.type : f.kind))).toEqual(["pptx", "jpg", "jpg", "link"]);
     expect(res.headers.get("Cache-Control")).toBe("no-store");
     socket.close();
   });
@@ -80,15 +82,14 @@ describe("POST /api/approve resolves the file on the server", () => {
   it("SRC-01 approve: the id picks a listed file and the screen sees the server's name, not one from the client", async () => {
     const { screen, socket, pid } = await paired("live");
     await api.get("/api/files", pid);
-    const approved = await api.post<{ state: string }>("/api/approve", { ids: ["demo-deck"] }, { auth: pid });
+    const approved = await api.post<{ state: string }>("/api/approve", { ids: [DEMO_ITEMS.deck.id] }, { auth: pid });
     expect(approved.status).toBe(200);
-    expect(approved.body).toMatchObject({ state: "approved", items: [{ name: "Sample deck.pptx" }] });
+    expect(approved.body).toMatchObject({ state: "approved", items: [{ name: DEMO_ITEMS.deck.name }] });
     const onScreen = await socket.stateWhere((v) => v.state === "approved");
     expect((onScreen.view as { items: { name: string }[] }).items).toEqual([
       {
         kind: "file",
-        id: "i1",
-        name: "Sample deck.pptx",
+        ...slotted(DEMO_ITEMS.deck),
         type: "pptx",
         size: expect.any(Number),
         show: "deck",
@@ -106,7 +107,7 @@ describe("POST /api/approve resolves the file on the server", () => {
       for (const fileId of [
         "not-listed",
         "../../etc/passwd",
-        "demo-deck/../x",
+        `${DEMO_ITEMS.deck.id}/../x`,
         "constructor",
         "__proto__",
         "https://evil.example/a.pptx",
@@ -127,7 +128,7 @@ describe("POST /api/approve resolves the file on the server", () => {
       { url: "https://evil.example/a.pptx" },
       { ref: "x", source: "graph" },
     ]) {
-      const res = await api.post("/api/approve", { ids: ["demo-deck"], ...extra }, { auth: pid });
+      const res = await api.post("/api/approve", { ids: [DEMO_ITEMS.deck.id], ...extra }, { auth: pid });
       expect(res.body).toEqual(problem("bad_request"));
     }
     socket.close();
@@ -136,7 +137,7 @@ describe("POST /api/approve resolves the file on the server", () => {
   it("SRC-02 file: live approve of a listed file that this screen was never shown is refused by the screen", async () => {
     const { socket, pid } = await paired("live");
     // No GET /api/files first, so the screen object holds no listed ids.
-    const res = await api.post("/api/approve", { ids: ["demo-deck"] }, { auth: pid });
+    const res = await api.post("/api/approve", { ids: [DEMO_ITEMS.deck.id] }, { auth: pid });
     expect(res.body).toEqual(problem("file_not_found"));
     socket.close();
   });
@@ -144,16 +145,18 @@ describe("POST /api/approve resolves the file on the server", () => {
   it("approve with valid ids works once and a repeat of the same set is idempotent; another set is wrong_state", async () => {
     const { socket, pid } = await paired("demo");
     await api.get("/api/files", pid);
-    expect((await api.post("/api/approve", { ids: ["demo-deck"] }, { auth: pid })).status).toBe(200);
-    expect((await api.post("/api/approve", { ids: ["demo-deck"] }, { auth: pid })).status).toBe(200);
-    expect((await api.post("/api/approve", { ids: ["demo-pdf"] }, { auth: pid })).body).toEqual(problem("wrong_state"));
+    expect((await api.post("/api/approve", { ids: [DEMO_ITEMS.deck.id] }, { auth: pid })).status).toBe(200);
+    expect((await api.post("/api/approve", { ids: [DEMO_ITEMS.deck.id] }, { auth: pid })).status).toBe(200);
+    expect((await api.post("/api/approve", { ids: [DEMO_ITEMS.horizontal.id] }, { auth: pid })).body).toEqual(
+      problem("wrong_state"),
+    );
     socket.close();
   });
 
   it("a live session takes exactly one file: a list or a link is refused, one file approves", async () => {
     const { socket, pid } = await paired("live");
     await api.get("/api/files", pid);
-    for (const ids of [DEMO_IDS, ["demo-vevox"]]) {
+    for (const ids of [DEMO_IDS, [DEMO_ITEMS.link.id]]) {
       const res = await api.post("/api/approve", { ids }, { auth: pid });
       expect(res.body, JSON.stringify(ids)).toEqual(problem("bad_request"));
     }
@@ -164,7 +167,7 @@ describe("POST /api/approve resolves the file on the server", () => {
     expect((await api.post("/api/approve", { ids: ["nope-1"] }, { auth: pid })).body).not.toEqual(
       problem("bad_request"),
     );
-    expect((await api.post("/api/approve", { ids: ["demo-deck"] }, { auth: pid })).status).toBe(200);
+    expect((await api.post("/api/approve", { ids: [DEMO_ITEMS.deck.id] }, { auth: pid })).status).toBe(200);
     socket.close();
   });
 
@@ -174,26 +177,31 @@ describe("POST /api/approve resolves the file on the server", () => {
     const approved = await api.post<{ items: unknown[] }>("/api/approve", { ids: DEMO_IDS }, { auth: pid });
     expect(approved.status).toBe(200);
     const want = [
-      { kind: "file", id: "i1", name: "Dog.jpg", type: "jpg", size: expect.any(Number), show: "image", derived: null },
       {
         kind: "file",
-        id: "i2",
-        name: "Sample deck.pdf",
-        type: "pdf",
-        size: expect.any(Number),
-        show: "pdf",
-        derived: null,
-      },
-      {
-        kind: "file",
-        id: "i3",
-        name: "Sample deck.pptx",
+        ...slotted(DEMO_ITEMS.deck),
         type: "pptx",
         size: expect.any(Number),
         show: "deck",
         derived: null,
       },
-      { kind: "link", id: "i4", url: "https://www.vevox.com/", title: "Vevox" },
+      {
+        kind: "file",
+        ...slotted(DEMO_ITEMS.horizontal),
+        type: "jpg",
+        size: expect.any(Number),
+        show: "image",
+        derived: null,
+      },
+      {
+        kind: "file",
+        ...slotted(DEMO_ITEMS.vertical),
+        type: "jpg",
+        size: expect.any(Number),
+        show: "image",
+        derived: null,
+      },
+      { kind: "link", id: DEMO_ITEMS.link.slot, url: "https://www.vevox.com/", title: DEMO_ITEMS.link.name },
     ];
     expect(approved.body.items).toEqual(want);
     const onScreen = await socket.stateWhere((v) => v.state === "approved");
@@ -204,11 +212,16 @@ describe("POST /api/approve resolves the file on the server", () => {
   it("refuses an empty list, a repeated id and more than 12 ids before the source is read", async () => {
     const { socket, pid } = await paired("demo");
     await api.get("/api/files", pid);
-    for (const ids of [[], ["demo-deck", "demo-deck"], Array.from({ length: 13 }, (_, i) => `x${i}`), "demo-deck"]) {
+    for (const ids of [
+      [],
+      [DEMO_ITEMS.deck.id, DEMO_ITEMS.deck.id],
+      Array.from({ length: 13 }, (_, i) => `x${i}`),
+      DEMO_ITEMS.deck.id,
+    ]) {
       const res = await api.post("/api/approve", { ids }, { auth: pid });
       expect(res.body, JSON.stringify(ids)).toEqual(problem("bad_request"));
     }
-    expect((await api.post("/api/approve", { fileId: "demo-deck" }, { auth: pid })).body).toEqual(
+    expect((await api.post("/api/approve", { fileId: DEMO_ITEMS.deck.id }, { auth: pid })).body).toEqual(
       problem("bad_request"),
     );
     socket.close();

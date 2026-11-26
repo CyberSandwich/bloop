@@ -3,6 +3,7 @@
 import { createServer, type Server } from "node:http";
 import type { AddressInfo } from "node:net";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { DEMO_ITEMS } from "../../src/shared/demo-catalog.ts";
 import { MISS_LIMIT } from "../../src/worker/do/directory-rules.ts";
 import { inOneWindow } from "./open-client.ts";
 import { Api, claim, claimOnly, openScreen, startPairing } from "./pairing-client.ts";
@@ -519,7 +520,7 @@ describe("sign-in, sessions and revocation", () => {
     expect(demoClaim.body.needsAuth).toBe(false);
     const files = await api.get<{ items: { id: string }[] }>("/api/files", demoClaim.body.pid);
     expect(files.status).toBe(200);
-    expect(files.body.items.map((f) => f.id)).toContain("demo-deck");
+    expect(files.body.items.map((f) => f.id)).toContain(DEMO_ITEMS.deck.id);
     demo.socket.close();
   });
 
@@ -536,7 +537,12 @@ describe("sign-in, sessions and revocation", () => {
       auth: claimed.body.pid,
       headers: sid(session as string),
     });
-    expect(files.body.items.map((f) => f.id)).toEqual(["demo-deck", "demo-pdf", "demo-dog", "demo-vevox"]);
+    expect(files.body.items.map((f) => f.id)).toEqual([
+      DEMO_ITEMS.deck.id,
+      DEMO_ITEMS.horizontal.id,
+      DEMO_ITEMS.vertical.id,
+      DEMO_ITEMS.link.id,
+    ]);
     demo.socket.close();
   });
 
