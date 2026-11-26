@@ -199,7 +199,7 @@ test.describe("library", () => {
     const field = page.getByRole("textbox", { name: "Name" });
     await field.fill("\u200b");
     await field.press("Enter");
-    await expect(page.getByRole("status").filter({ hasText: "That Name Can't Be Used" })).toBeVisible();
+    await expect(page.getByRole("alert").filter({ hasText: "That Name Can't Be Used" })).toBeVisible();
     await expect(field).toBeVisible();
     await expect(page.locator("#file-list")).toContainText("Alpha.pptx");
   });
