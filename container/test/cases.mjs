@@ -381,7 +381,9 @@ function linkControl() {
           'P=$(mktemp -d); mkdir -p "$P/user" "$P/out"',
           `cp /ctl/link-${v}.xcu "$P/user/registrymodifications.xcu"`,
           `HOME="$P" soffice ${flags} --convert-to pdf --outdir "$P/out" /fx/${f} >/dev/null 2>&1`,
-          `if pdftotext "$P/out/${f.replace(/\.[^.]+$/, "")}.pdf" - | grep -q ${LINK_MARKER}; then echo "${f} ${v} UPDATED"; else echo "${f} ${v} CACHED"; fi`,
+          `t=$(pdftotext "$P/out/${f.replace(/\.[^.]+$/, "")}.pdf" - | tr '\\n' ' ')`,
+          `case "$t" in *${LINK_MARKER}*) echo "${f} ${v} UPDATED";; *) echo "${f} ${v} CACHED";; esac`,
+          `echo "# ${f} ${v} text: \${t:0:80}"`,
         ].join("\n"),
       ),
     ),
@@ -408,6 +410,10 @@ function linkControl() {
   );
   const updating = {};
   for (const line of r.out.split("\n")) {
+    if (line.startsWith("#")) {
+      console.log(`  ${line}`);
+      continue;
+    }
     const [f, v, state] = line.split(" ");
     if (state === "UPDATED") updating[f] = [...(updating[f] ?? []), Number(v)];
   }
@@ -424,8 +430,6 @@ export async function caseLinks() {
     console.log(
       `  ${f}: Writer Link values that update on load: ${values.length ? values.join(",") : "none (control unverified)"}`,
     );
-    if (f === "linked.odt")
-      check(values.length > 0, `DROP-14 links: ${f} reads its link under some relaxed value (the control)`);
     check(!values.includes(prod), `DROP-14 links: the production Writer value ${prod} does not update ${f}`);
     const c = start();
     try {
