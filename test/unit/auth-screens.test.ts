@@ -44,16 +44,36 @@ const P = "p".repeat(22);
 const Q = "q".repeat(22);
 
 describe("closeSessions: a session end closes its library sockets on the member's UserLibrary", () => {
-  it("is a no-op until the library's closeSessions lands: no object is looked up or woken, nothing is logged", async () => {
+  it("is on: the shipped closeSessions reaches the member's object with every ended id", async () => {
     const { LIBRARY_CLOSES_SESSIONS, closeSessions } = await screens();
-    expect(LIBRARY_CLOSES_SESSIONS).toBe(false);
-    const logs: string[] = [];
-    vi.spyOn(console, "log").mockImplementation((line: string) => void logs.push(line));
+    expect(LIBRARY_CLOSES_SESSIONS).toBe(true);
     const lib = fakeLibrary();
     await closeSessions({ USER_LIBRARY: lib.USER_LIBRARY, PUBLIC_ORIGIN: "https://bloop.here" }, "u1", [P, Q]);
-    expect(lib.lookups()).toBe(0);
-    expect(lib.calls).toEqual([]);
-    expect(logs).toEqual([]);
+    expect(lib.calls).toEqual([{ jurisdiction: "eu", user: "u1", publicIds: [P, Q] }]);
+  });
+
+  it("a scoped screen end reaches the object with its scope, and an unscoped one with none", async () => {
+    const path = "../../src/worker/auth/screens.ts";
+    const { endScreens } = (await import(path)) as {
+      endScreens: (env: unknown, userId: string, scope?: object) => Promise<void>;
+    };
+    const seen: unknown[][] = [];
+    const ns = {
+      idFromName: (name: string) => ({ name }),
+      get: ({ name }: { name: string }) => ({
+        endScreens: async (...args: unknown[]) => void seen.push([name, ...args]),
+      }),
+      jurisdiction: () => ns,
+    };
+    const env = { USER_LIBRARY: ns, PUBLIC_ORIGIN: "https://bloop.here" };
+    await endScreens(env, "u1", { bySession: P });
+    await endScreens(env, "u1", { fileId: "f1" });
+    await endScreens(env, "u1");
+    expect(seen).toEqual([
+      ["u1", "u1", { bySession: P }],
+      ["u1", "u1", { fileId: "f1" }],
+      ["u1", "u1", {}],
+    ]);
   });
 
   it("once enabled, one call carries every ended id, through eu on a deployed origin; none for no ids", async () => {

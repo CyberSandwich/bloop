@@ -1,6 +1,7 @@
 import { readdirSync, readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
+import { IDLE_DAYS } from "../../src/worker/auth/sessions.ts";
 import {
   CURSOR_MAX_CHARS,
   fileRow,
@@ -328,6 +329,19 @@ describe("LIB-03 fetch-time: servable is one predicate", () => {
     db.raw.prepare("DELETE FROM phone_session").run();
     expect((await servable(db, "u1", refs, live)).size).toBe(0);
     expect((await servable(db, "u1", refs, null)).size).toBe(1);
+  });
+
+  it("LIB-03 pinned: a session idle for the idle limit refuses, though it has not expired", async () => {
+    const db = libWith();
+    addFile(db, { id: "a" });
+    const day = 86_400_000;
+    db.raw
+      .prepare(
+        "INSERT INTO phone_session (id_hash, user_id, created_at, last_seen_at, expires_at, public_id) VALUES ('h', 'u1', 0, 0, ?, 'pub1')",
+      )
+      .run(100 * day);
+    expect((await servable(db, "u1", refs, { publicId: "pub1", now: IDLE_DAYS * day - 1 })).size).toBe(1);
+    expect((await servable(db, "u1", refs, { publicId: "pub1", now: IDLE_DAYS * day })).size).toBe(0);
   });
 
   it("answers more than 90 refs in several queries", async () => {

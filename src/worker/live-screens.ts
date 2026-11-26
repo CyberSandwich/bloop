@@ -19,6 +19,11 @@ export interface OwnerEnd {
 export const screenOwnerEnd = (env: Env, screenRef: string): OwnerEnd =>
   screenStub(env, screenRef) as unknown as OwnerEnd;
 
-export async function endLiveScreens(env: Env, userId: string): Promise<void> {
-  await userLibraryStub(env, userId).endScreens(userId);
+/** Every live screen of the member, or only those a session started (`bySession`, its public id) or showing a file. */
+export async function endLiveScreens(
+  env: Env,
+  userId: string,
+  filter: { bySession?: string; fileId?: string } = {},
+): Promise<void> {
+  await userLibraryStub(env, userId).endScreens(userId, filter);
 }
