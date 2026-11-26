@@ -183,19 +183,21 @@ describe("DROP-06 policy: off", () => {
     demo.socket.close();
   });
 
-  it("PAIR-15 guest refusal: a guest claim the drop refuses spends no live code and counts as a miss", async () => {
+  it("PAIR-15 guest refusal: a guest claim the drop refuses spends no code, counts no miss, and answers the same for a code that does not exist", async () => {
     await inOneWindow();
     const live = await openScreen(ctx.api, "live");
-    const probe = { headers: { "CF-Connecting-IP": "198.51.100.88" } };
+    const wrong = live.code.slice(0, -1) + (live.code.endsWith("2") ? "3" : "2");
+    const venue = { headers: { "CF-Connecting-IP": "198.51.100.88" } };
     const answers: string[] = [];
+    // Past the miss limit, a live code and a wrong one in turn: neither is told apart nor counted.
     for (let i = 0; i < MISS_LIMIT + 1; i++) {
-      const res = await ctx.api.post<{ code: string }>("/api/claim", { code: live.code, kind: "guest" }, probe);
-      answers.push(res.body.code);
+      const code = i % 2 === 0 ? live.code : wrong;
+      answers.push((await ctx.api.post<{ code: string }>("/api/claim", { code, kind: "guest" }, venue)).body.code);
     }
-    expect(answers.slice(0, MISS_LIMIT)).toEqual(Array(MISS_LIMIT).fill("drop_disabled"));
-    expect(answers.at(-1)).toBe("rate_limited");
-    // The code was never spent: an owner from another address still claims it.
-    expect((await claim(ctx.api, live.code, "owner")).status).toBe(200);
+    expect(answers).toEqual(Array(MISS_LIMIT + 1).fill("drop_disabled"));
+    // The code was never spent, and the address was never blocked: an owner behind it still claims it.
+    const owner = await ctx.api.post("/api/claim", { code: live.code }, venue);
+    expect(owner.status).toBe(200);
     live.socket.close();
   });
 });
