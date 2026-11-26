@@ -52,7 +52,7 @@ export function withD1Id(config, id) {
 
 /** @param {string[]} args @param {string} [input] */
 const wrangler = (args, input) =>
-  spawnSync(process.execPath, [wranglerEntry(), ...args, ...configArgs(args)], {
+  spawnSync(process.execPath, [wranglerEntry(), ...configArgs(args), ...args], {
     encoding: "utf8",
     input,
     env: process.env,

@@ -28,11 +28,12 @@ export function wranglerEntry(root = ROOT) {
   return join(root, "node_modules/wrangler/bin/wrangler.js");
 }
 
-/** The arguments that make wrangler read wrangler.jsonc and nothing else. Throws when another config could be found
- * first (wrangler picks up wrangler.json, wrangler.toml and a redirect file by itself), or the caller names one.
+/** The arguments that make wrangler read wrangler.jsonc and nothing else; put them before the caller's own. Throws when
+ * another config could be found first (wrangler picks up wrangler.json, wrangler.toml and a redirect file by itself),
+ * the caller names one (`-c`, `-cX`, `--config`), or passes `--`, after which flags are not flags.
  * @param {string[]} args @param {string} root */
 export function configArgs(args, root = ROOT) {
-  const named = args.find((arg) => arg === "-c" || arg === "--config" || arg.startsWith("--config="));
+  const named = args.find((arg) => /^-c/.test(arg) || arg === "--" || arg.startsWith("--config"));
   if (named) throw new Error(`${named}: the config is wrangler.jsonc, set by this tool`);
   for (const dir of new Set([root, process.cwd()])) {
     for (const stray of ["wrangler.json", "wrangler.toml", ".wrangler/deploy/config.json"]) {
@@ -48,7 +49,7 @@ export const holdsToken = (env) => ["CLOUDFLARE_API_TOKEN", "CF_API_TOKEN", "CLO
 
 /** The commands that never run wrangler.jsonc's build command. Everything else, including a command added later, is
  * treated as one that does. */
-const NEVER_BUILDS = ["d1", "secret", "whoami", "kv", "r2"];
+const NEVER_BUILDS = ["d1", "secret", "whoami", "kv", "r2", "deployments", "tail"];
 
 /** Whether a wrangler command may run the build command: true unless its first non-flag word is on the safe list, so a
  * flag value in front of the subcommand (`-e staging deploy`) fails closed too.
@@ -60,7 +61,7 @@ if (process.argv[1]?.endsWith("pinned-wrangler.mjs")) {
   const token = holdsToken(process.env);
   // With the token, wrangler.jsonc's build command (third-party code) must not run.
   if (token && mayBuild(args)) requirePrebuilt(readFileSync(join(ROOT, "wrangler.jsonc"), "utf8"));
-  const run = spawnSync(process.execPath, [wranglerEntry(), ...args, ...(token ? configArgs(args) : [])], {
+  const run = spawnSync(process.execPath, [wranglerEntry(), ...(token ? configArgs(args) : []), ...args], {
     stdio: "inherit",
   });
   process.exit(run.status ?? 1);

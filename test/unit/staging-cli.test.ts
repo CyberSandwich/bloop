@@ -15,10 +15,10 @@ const D1_ID = "11111111-2222-3333-4444-555555555555";
 const FAKE_WRANGLER = `
 const { appendFileSync, readFileSync } = require("node:fs");
 const raw = process.argv.slice(2);
-const at = raw.indexOf("--config");
-const args = (at < 0 ? raw : raw.slice(0, at)).join(" ");
+const first = raw[0] === "--config";
+const args = (first ? raw.slice(2) : raw).join(" ");
 appendFileSync(process.env.CALLS, args + "\\n");
-appendFileSync(process.env.CALLS + ".config", (at < 0 ? "none" : raw[at + 1]) + "\\n");
+appendFileSync(process.env.CALLS + ".config", (first ? raw[1] : "none") + "\\n");
 appendFileSync(process.env.CALLS + ".token", (process.env.CLOUDFLARE_API_TOKEN ?? "missing") + "\\n");
 if ((process.env.FAIL ?? "").split(",").some((prefix) => prefix && args.startsWith(prefix))) {
   console.error("fake wrangler: refused " + args);
@@ -183,7 +183,8 @@ describe("tools/staging.mjs as the workflow runs it", () => {
     // Commands that build and ship nothing work with the token on an unswapped config, as an owner's local one does.
     expect(wrangler("token-under-test", "secret", "put", "X").status).toBe(0);
     expect(wrangler("token-under-test", "d1", "migrations", "apply", "DB").status).toBe(0);
-    for (const command of ["whoami", "kv", "r2"]) expect(wrangler("token-under-test", command).status).toBe(0);
+    for (const command of ["whoami", "kv", "r2", "deployments", "tail"])
+      expect(wrangler("token-under-test", command).status).toBe(0);
     // The other credential variables count as a token too.
     for (const name of ["CF_API_TOKEN", "CLOUDFLARE_API_KEY"]) {
       const res = spawnSync(process.execPath, [join(root, "tools/pinned-wrangler.mjs"), "deploy"], {
@@ -196,7 +197,7 @@ describe("tools/staging.mjs as the workflow runs it", () => {
     // The rehearsal has no token: wrangler itself runs the build command, which is the point of the dry run.
     expect(wrangler("").status).toBe(0);
     expect(readFileSync(calls, "utf8")).toBe(
-      "secret put X\nd1 migrations apply DB\nwhoami\nkv\nr2\ndeploy --dry-run\n",
+      "secret put X\nd1 migrations apply DB\nwhoami\nkv\nr2\ndeployments\ntail\ndeploy --dry-run\n",
     );
   });
 
@@ -239,7 +240,14 @@ describe("tools/staging.mjs as the workflow runs it", () => {
     const named = spawn("pinned-wrangler.mjs", "d1", "list", "--config", "other.jsonc");
     expect(named.status).not.toBe(0);
     expect(named.stderr).toContain("the config is wrangler.jsonc");
-    expect(spawn("pinned-wrangler.mjs", "d1", "list", "-c", "other.jsonc").status).not.toBe(0);
+    for (const args of [
+      ["-c", "other.jsonc"],
+      ["-cother.jsonc"],
+      ["--config=other.jsonc"],
+      ["--", "--config", "other.jsonc"],
+    ]) {
+      expect(spawn("pinned-wrangler.mjs", "d1", "list", ...args).status, args.join(" ")).not.toBe(0);
+    }
     expect(readFileSync(calls, "utf8")).toBe("");
     for (const stray of ["wrangler.json", "wrangler.toml", ".wrangler/deploy/config.json"]) {
       mkdirSync(join(root, stray, ".."), { recursive: true });
