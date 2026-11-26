@@ -10,7 +10,8 @@ const dir = new URL("../../.github/workflows/", import.meta.url);
  * The jobs that hold the Cloudflare token, and the composite action they run, are pinned byte for byte, and what js-yaml
  * parses is cross-checked against the pin and the text reader, so a YAML form the text cannot see still fails. Any
  * change to a token job fails this test until the block below is updated on purpose, and that update is the review
- * point (docs/architecture.md section 12).
+ * point (docs/architecture.md section 12). The pinned text holds literal `${{ }}` expressions, which is why biome.json
+ * turns noTemplateCurlyInString off for this file only.
  */
 const PINNED: Record<string, string[]> = {
   "lockdown.yml lockdown": [

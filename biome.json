@@ -26,5 +26,11 @@
       "a11y": { "preset": "recommended" }
     }
   },
+  "overrides": [
+    {
+      "includes": ["test/unit/token-jobs.test.ts"],
+      "linter": { "rules": { "suspicious": { "noTemplateCurlyInString": "off" } } }
+    }
+  ],
   "assist": { "enabled": true, "actions": { "source": { "organizeImports": "on" } } }
 }
