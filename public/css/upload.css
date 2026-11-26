@@ -87,7 +87,11 @@
     padding-left: 20px;
   }
   .up-act {
-    padding-inline: 6px;
+    padding-inline: 4px;
+    font-size: 14px;
+  }
+  .up-pill:has(.up-act) .up-title {
+    font-size: 14px;
   }
   .up-pill:has(.up-act) .up-tile {
     display: none;
