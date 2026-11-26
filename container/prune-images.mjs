@@ -22,7 +22,7 @@ const images = () =>
 /**
  * What origin/main pinned, newest first, as {digest, tag}. The registry lists tags, not digests, so each
  * commit that wrote digest.txt names its tag in its message and the file at that commit holds the digest.
- * Read from origin/main, never the working tree: the job's checkout is the bump branch.
+ * Read from origin/main, never the working tree: the checkout is the commit that was built, not necessarily the pin.
  */
 function pins() {
   const commits = run("git", ["log", "--format=%H", "origin/main", "--", DIGEST_FILE]).split("\n").filter(Boolean);
