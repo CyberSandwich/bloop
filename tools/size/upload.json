@@ -5,6 +5,11 @@
     "limit": "5.2 kB"
   },
   {
+    "name": "file name rule, lazy",
+    "path": "dist/js/shared/file-name.js",
+    "limit": "0.7 kB"
+  },
+  {
     "name": "upload pill face, lazy",
     "path": "dist/js/core/pill.js",
     "limit": "0.7 kB"
