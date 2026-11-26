@@ -1,0 +1,20 @@
+name: prebuilt dist
+description: >-
+  Installs from the lockfile without scripts, downloads the check job's dist/ artifact and swaps wrangler.jsonc's build
+  command for the manifest assertion. The deploy jobs, the staging job and the CI rehearsal all use it, so the rehearsal
+  runs the steps a deploy runs (docs/architecture.md section 12). Run actions/checkout first.
+
+runs:
+  using: composite
+  steps:
+    - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+      with:
+        node-version-file: .nvmrc
+    - run: npm ci --ignore-scripts
+      shell: bash
+    - uses: actions/download-artifact@37930b1c2abaa49bbe596cd826c3c89aef350131 # v7.0.0
+      with:
+        name: dist
+        path: dist
+    - run: node tools/prebuilt.mjs rewrite
+      shell: bash

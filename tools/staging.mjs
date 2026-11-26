@@ -8,7 +8,6 @@ import { spawnSync } from "node:child_process";
 import { randomBytes } from "node:crypto";
 import { appendFileSync, readFileSync, writeFileSync } from "node:fs";
 import { wranglerEntry } from "./pinned-wrangler.mjs";
-import { withPrebuilt } from "./prebuilt.mjs";
 
 export const D1_NAME = "bloop-staging";
 export const PLACEHOLDER = "STAGING_D1_ID";
@@ -79,7 +78,7 @@ function ready() {
 
 function deploy() {
   const file = "wrangler.jsonc";
-  writeFileSync(file, withPrebuilt(withD1Id(readFileSync(file, "utf8"), process.env.STAGING_D1_ID ?? "")));
+  writeFileSync(file, withD1Id(readFileSync(file, "utf8"), process.env.STAGING_D1_ID ?? ""));
   wranglerOk(["d1", "migrations", "apply", "DB", "--remote", "-e", "staging"]);
   wranglerOk(["deploy", "-e", "staging"]);
   for (const name of missingSecrets(wranglerOk(["secret", "list", "-e", "staging", "--format", "json"]))) {

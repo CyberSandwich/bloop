@@ -55,18 +55,7 @@ jobs:
         with:
           persist-credentials: false
       - if: steps.gate.outputs.has == 'true'
-        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
-        with:
-          node-version-file: .nvmrc
-      - if: steps.gate.outputs.has == 'true'
-        run: npm ci --ignore-scripts
-      - if: steps.gate.outputs.has == 'true'
-        uses: actions/download-artifact@37930b1c2abaa49bbe596cd826c3c89aef350131 # v7.0.0
-        with:
-          name: dist
-          path: dist
-      - if: steps.gate.outputs.has == 'true'
-        run: node tools/prebuilt.mjs rewrite
+        uses: ./.github/actions/prebuilt-dist
       # One step holds the token, so it is in no other step's environment. The R2 lifecycle rules are a one-off
       # step in docs/setup.md, not part of a deploy. A failing line stops the step.
       - if: steps.gate.outputs.has == 'true'

@@ -172,23 +172,34 @@ const GATES = [
   'if [ -n "$CLOUDFLARE_API_TOKEN" ]; then echo "has=true" >> "$GITHUB_OUTPUT"; else echo "No CLOUDFLARE_API_TOKEN; skipping deploy."; fi',
   'if [ -n "$CLOUDFLARE_API_TOKEN" ]; then echo "has=true" >> "$GITHUB_OUTPUT"; else echo "Staging skipped: no CLOUDFLARE_API_TOKEN in the staging environment."; fi',
 ];
-/** The actions a token job may use, by pinned commit: checkout, setup-node, download-artifact. */
-const TOKEN_USES = [
-  "actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1",
-  "actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1",
-  "actions/download-artifact@37930b1c2abaa49bbe596cd826c3c89aef350131",
-];
+const SETUP_NODE = "actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1";
+const DOWNLOAD = "actions/download-artifact@37930b1c2abaa49bbe596cd826c3c89aef350131";
+const PREBUILT_DIST = "./.github/actions/prebuilt-dist";
+/** The actions a token job may use, by pinned commit, and the one local composite action (checked below). */
+const TOKEN_USES = ["actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1", SETUP_NODE, DOWNLOAD, PREBUILT_DIST];
+
+/** Why a job that holds the token (or the composite action it uses) could run third-party code. */
+function jobProblems(job: Job): string[] {
+  return [
+    ...job.runs.filter((run) => !TOKEN_RUN.test(run) && !GATES.includes(run)).map((run) => `${job.name}: run ${run}`),
+    ...job.uses.filter((use) => !TOKEN_USES.includes(use)).map((use) => `${job.name}: uses ${use}`),
+    ...job.shells.filter((shell) => shell !== "shell: bash").map((shell) => `${job.name}: ${shell}`),
+  ];
+}
+
+const isTokenJob = (job: Job) => job.environment || job.text.includes("CLOUDFLARE_API_TOKEN");
 
 /** Why a workflow's token jobs (any job naming an environment or CLOUDFLARE_API_TOKEN) could run third-party code. */
 function tokenJobProblems(workflow: string): string[] {
-  const problems: string[] = [];
-  for (const job of jobsOf(workflow).filter((j) => j.environment || j.text.includes("CLOUDFLARE_API_TOKEN"))) {
-    for (const run of job.runs)
-      if (!TOKEN_RUN.test(run) && !GATES.includes(run)) problems.push(`${job.name}: run ${run}`);
-    for (const use of job.uses) if (!TOKEN_USES.includes(use)) problems.push(`${job.name}: uses ${use}`);
-    for (const shell of job.shells) problems.push(`${job.name}: ${shell}`);
-  }
-  return problems;
+  return jobsOf(workflow).filter(isTokenJob).flatMap(jobProblems);
+}
+
+/** The steps of a composite action, read as the one job they run in. */
+function actionJob(action: string): Job {
+  const [, steps = ""] = action.split("\n  steps:\n");
+  const [job] = jobsOf(`jobs:\n  action:\n    steps:\n${steps}`);
+  if (!job) throw new Error("no steps");
+  return job;
 }
 
 describe("SITE-05 third-party code never shares a job with the token", () => {
@@ -200,9 +211,47 @@ describe("SITE-05 third-party code never shares a job with the token", () => {
     let tokenJobs = 0;
     for (const [f, text] of workflows) {
       expect(tokenJobProblems(text), f).toEqual([]);
-      tokenJobs += jobsOf(text).filter((j) => j.environment || j.text.includes("CLOUDFLARE_API_TOKEN")).length;
+      tokenJobs += jobsOf(text).filter(isTokenJob).length;
     }
     expect(tokenJobs).toBe(2);
+  });
+
+  it("SITE-05 token jobs: the prebuilt-dist action is the one place a deploy, staging and the rehearsal take dist/", () => {
+    const action = readFileSync(new URL("../actions/prebuilt-dist/action.yml", dir), "utf8");
+    const job = actionJob(action);
+    expect(jobProblems(job)).toEqual([]);
+    expect(job.uses).toEqual([SETUP_NODE, DOWNLOAD]);
+    expect(job.runs).toEqual(["npm ci --ignore-scripts", "node tools/prebuilt.mjs rewrite"]);
+    const users = [
+      ["deploy.yml", "deploy"],
+      ["staging.yml", "staging"],
+      ["ci.yml", "rehearsal"],
+    ] as const;
+    for (const [f, name] of users) {
+      const found = jobsOf(readFileSync(new URL(f, dir), "utf8")).find((j) => j.name === name);
+      expect(
+        found?.uses.filter((use) => use === PREBUILT_DIST),
+        `${f} ${name}`,
+      ).toHaveLength(1);
+      expect(found?.uses, `${f} ${name}`).not.toContain(DOWNLOAD);
+      expect(found?.runs, `${f} ${name}`).not.toContain("node tools/prebuilt.mjs rewrite");
+    }
+  });
+
+  it("SITE-05 token jobs: the rehearsal runs on every branch with no environment and no token, then dry-runs both configs", () => {
+    const ci = readFileSync(new URL("ci.yml", dir), "utf8");
+    const rehearsal = jobsOf(ci).find((j) => j.name === "rehearsal");
+    expect(rehearsal?.text).toContain("needs: check");
+    expect(rehearsal?.text).not.toMatch(/environment:|secrets\.|CLOUDFLARE/);
+    expect(rehearsal?.runs).toEqual([
+      "node tools/prebuilt.mjs assert",
+      'node tools/pinned-wrangler.mjs deploy --dry-run --outdir "$RUNNER_TEMP/production"',
+      'node tools/pinned-wrangler.mjs deploy --dry-run -e staging --outdir "$RUNNER_TEMP/staging"',
+    ]);
+    const check = jobsOf(ci).find((j) => j.name === "check");
+    expect(check?.runs).toContain("node tools/prebuilt.mjs manifest");
+    expect(check?.text).toContain("include-hidden-files: true");
+    expect(ci).not.toMatch(/^on:\n {2}push:\n {4}branches/m);
   });
 
   it("SITE-05 token jobs: the check job has no environment and no secret, and hands dist/ over with its hidden files", () => {
@@ -230,6 +279,7 @@ describe("SITE-05 third-party code never shares a job with the token", () => {
       "      - run: npm run check\n",
       "      - uses: someone/action@v1\n",
       "      - uses: actions/checkout@v4\n",
+      "      - uses: ./.github/actions/other\n",
       "      - run: node tools/staging.mjs ready\n        shell: npx foo {0}\n",
     ];
     for (const step of bad) expect(tokenJobProblems(job(step)), step).not.toEqual([]);
