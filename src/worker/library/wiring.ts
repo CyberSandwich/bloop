@@ -23,7 +23,7 @@ export async function retentionDepsFor(env: Env, config: Config): Promise<Retent
   const everyone = [...config.account.adminEmails, ...config.account.testEmails];
   return {
     ...purgeDepsFor(env),
-    endScreens: (userId) => userLibraryStub(env, userId).endScreens(userId),
+    endScreens: async (userId) => void (await userLibraryStub(env, userId).endScreens(userId)),
     closeSessions: async (userId, publicIds) => {
       const stub = userLibraryStub(env, userId);
       for (const id of publicIds) await stub.closeSession(id);

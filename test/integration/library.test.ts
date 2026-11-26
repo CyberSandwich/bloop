@@ -263,6 +263,23 @@ describe("the socket", () => {
   });
 });
 
+describe("live screens", () => {
+  it("lists nothing for a member with no screen, and needs a member", async () => {
+    const res = await call("ann", "GET", "/api/me/screens");
+    expect([res.status, res.body.screens]).toEqual([200, []]);
+    expect((await call(null, "GET", "/api/me/screens")).status).toBe(401);
+  });
+
+  it("ends by session id, and a doubled or foreign id lands the same: nothing ended", async () => {
+    const first = await call("ann", "DELETE", "/api/me/screens/s-unknown", {});
+    const again = await call("ann", "DELETE", "/api/me/screens/s-unknown", {});
+    expect([first.status, first.body.ended, again.status, again.body.ended]).toEqual([200, 0, 200, 0]);
+    expect((await call(null, "DELETE", "/api/me/screens/s-unknown", {})).status).toBe(401);
+    const cross = await call("ann", "DELETE", "/api/me/screens/s-unknown", {}, { Origin: "https://evil.example" });
+    expect([cross.status, cross.body.code]).toEqual([403, "forbidden_origin"]);
+  });
+});
+
 describe("previews", () => {
   it("LIB-04 hmac: mints a token the verifier accepts, for this file and version only", async () => {
     const res = await call("ann", "POST", "/api/library/a1/preview", { asset: "original" });
