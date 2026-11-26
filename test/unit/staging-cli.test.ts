@@ -14,6 +14,7 @@ const FAKE_WRANGLER = `
 const { appendFileSync, readFileSync } = require("node:fs");
 const args = process.argv.slice(2).join(" ");
 appendFileSync(process.env.CALLS, args + "\\n");
+appendFileSync(process.env.CALLS + ".token", (process.env.CLOUDFLARE_API_TOKEN ?? "missing") + "\\n");
 if ((process.env.FAIL ?? "").split(",").some((prefix) => prefix && args.startsWith(prefix))) {
   console.error("fake wrangler: refused " + args);
   process.exit(1);
@@ -38,7 +39,9 @@ function project() {
   writeFileSync(join(root, "node_modules/wrangler/bin/wrangler.js"), FAKE_WRANGLER);
   writeFileSync(
     join(root, "package-lock.json"),
-    JSON.stringify({ packages: { "node_modules/wrangler": { version: "9.9.9" } } }),
+    JSON.stringify({
+      packages: { "node_modules/wrangler": { version: "9.9.9" } },
+    }),
   );
   const config = readFileSync(join(REPO, "wrangler.jsonc"), "utf8");
   writeFileSync(join(root, "wrangler.jsonc"), config);
@@ -48,12 +51,20 @@ function project() {
 function run(command: string, env: Record<string, string>) {
   const calls = project();
   writeFileSync(calls, "");
+  writeFileSync(`${calls}.token`, "");
   const result = spawnSync(process.execPath, [join(root, "tools/staging.mjs"), command], {
     cwd: root,
     encoding: "utf8",
-    env: { ...process.env, CALLS: calls, STAGING_D1_ID: D1_ID, ...env },
+    env: {
+      ...process.env,
+      CALLS: calls,
+      STAGING_D1_ID: D1_ID,
+      CLOUDFLARE_API_TOKEN: "token-under-test",
+      ...env,
+    },
   });
-  return { ...result, calls: readFileSync(calls, "utf8").split("\n").filter(Boolean) };
+  const lines = (file: string) => readFileSync(file, "utf8").split("\n").filter(Boolean);
+  return { ...result, calls: lines(calls), tokens: lines(`${calls}.token`) };
 }
 
 describe("tools/staging.mjs as the workflow runs it", () => {
@@ -70,7 +81,9 @@ describe("tools/staging.mjs as the workflow runs it", () => {
     rmSync(output);
   });
 
-  it("ready: finds the database and writes its id for the next step", { timeout: SPAWN_TIMEOUT }, () => {
+  it("ready: finds the database and writes its id for the next step", {
+    timeout: SPAWN_TIMEOUT,
+  }, () => {
     const output = join(tmpdir(), `bloop-gh-output-ok-${process.pid}`);
     writeFileSync(output, "");
     const res = run("ready", { GITHUB_OUTPUT: output });
@@ -79,14 +92,18 @@ describe("tools/staging.mjs as the workflow runs it", () => {
     rmSync(output);
   });
 
-  it("deploy: a failed `secret list` fails the job and no secret is written", { timeout: SPAWN_TIMEOUT }, () => {
+  it("deploy: a failed `secret list` fails the job and no secret is written", {
+    timeout: SPAWN_TIMEOUT,
+  }, () => {
     const res = run("deploy", { FAIL: "secret list" });
     expect(res.status).not.toBe(0);
     expect(res.stderr).toContain("wrangler secret list failed");
     expect(res.calls.some((call) => call.startsWith("secret put"))).toBe(false);
   });
 
-  it("deploy: a failed deploy stops before the secrets are read or written", { timeout: SPAWN_TIMEOUT }, () => {
+  it("deploy: a failed deploy stops before the secrets are read or written", {
+    timeout: SPAWN_TIMEOUT,
+  }, () => {
     const res = run("deploy", { FAIL: "deploy" });
     expect(res.status).not.toBe(0);
     expect(res.calls.some((call) => call.startsWith("secret"))).toBe(false);
@@ -101,12 +118,18 @@ describe("tools/staging.mjs as the workflow runs it", () => {
     const puts = res.calls.filter((call) => call.startsWith("secret put")).map((call) => call.split(" ")[2]);
     expect(puts.sort()).toEqual(Object.keys(SECRETS).sort());
     expect(res.stdout).not.toMatch(/[A-Za-z0-9_-]{40,}/);
+    expect(res.stdout + res.stderr).not.toContain("token-under-test");
+    // Every call is the pinned wrangler, and each one carries the token through the environment, never an argument.
+    expect(res.tokens).toEqual(res.calls.map(() => "token-under-test"));
+    expect(res.calls.every((call) => !call.includes("token-under-test"))).toBe(true);
     const config = readFileSync(join(root, "wrangler.jsonc"), "utf8");
     expect(config).toContain(`"database_id": "${D1_ID}"`);
     expect(config).toContain("node tools/prebuilt.mjs assert");
   });
 
-  it("refuses a wrangler that is not the version the lockfile pins", { timeout: SPAWN_TIMEOUT }, () => {
+  it("refuses a wrangler that is not the version the lockfile pins", {
+    timeout: SPAWN_TIMEOUT,
+  }, () => {
     const calls = project();
     writeFileSync(join(root, "node_modules/wrangler/package.json"), JSON.stringify({ version: "1.0.0" }));
     const res = spawnSync(process.execPath, [join(root, "tools/staging.mjs"), "ready"], {
