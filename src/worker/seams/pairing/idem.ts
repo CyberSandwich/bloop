@@ -56,7 +56,7 @@ export type Flights<A> = Map<string, { bodyHash: string; answer: Promise<A> }>;
 /**
  * One answer per Idempotency-Key, whatever the interleaving. A call while the key's first is in flight takes its
  * answer; one after it finished finds its row, read here again because the route's `find` may have run before the
- * row was saved, and `replay`s it; a replay that answers null (the row no longer holds) runs inside the same flight.
+ * row was saved, and `replay`s it; when that answers null (the row no longer holds), `run` runs in the same flight.
  * The row read and the flight's entry have no await between them, so no other call slips in. Another body for the key
  * is `conflict`.
  */
