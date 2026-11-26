@@ -1,6 +1,7 @@
 // /api/uploads against a real wrangler dev: local D1, local R2 (the library bucket), the spend guard Durable Object.
 // Sessions are seeded straight into D1 (a member's cookie), as the account tests do.
 import { createHash, randomUUID } from "node:crypto";
+import { connect } from "node:net";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { concat, validVideo } from "../zip-builder.ts";
 import { inOneWindow } from "./open-client.ts";
@@ -273,6 +274,144 @@ describe("the switches and the refusal paths", () => {
     expect((await call(cookie, "POST", "/api/uploads", { ...body, bytes: 0 })).status).toBe(400);
     expect((await call(cookie, "POST", "/api/uploads", { ...body, fingerprint: "XYZ" })).status).toBe(400);
     expect(wrangler.d1("SELECT count(*) AS n FROM upload WHERE user_id = 'guard1'")[0]?.n).toBe(0);
+  });
+});
+
+/** A PUT of one part over a raw socket, so the declared Content-Length can differ from the body sent. */
+function rawPut(cookie: string, path: string, declared: number, body: Uint8Array): Promise<number | null> {
+  const url = new URL(wrangler.url);
+  return new Promise((resolve) => {
+    let data = "";
+    let settled = false;
+    const finish = () => {
+      if (settled) return;
+      settled = true;
+      socket.destroy();
+      const status = /^HTTP\/1\.[01] (\d{3})/.exec(data)?.[1];
+      resolve(status ? Number(status) : null);
+    };
+    const socket = connect(Number(url.port), url.hostname, () => {
+      socket.write(
+        [
+          `PUT ${path} HTTP/1.1`,
+          `Host: ${url.host}`,
+          `Origin: ${wrangler.url}`,
+          `Cookie: __Host-bloop_sid=${cookie}`,
+          "Content-Type: application/octet-stream",
+          `Content-Length: ${declared}`,
+          "Connection: close",
+          "",
+          "",
+        ].join("\r\n"),
+      );
+      socket.write(body);
+      socket.end();
+    });
+    socket.on("data", (chunk) => {
+      data += chunk.toString("latin1");
+      if (/\r\n\r\n/.test(data)) finish();
+    });
+    socket.on("error", finish);
+    socket.on("close", finish);
+    socket.setTimeout(20_000, finish);
+  });
+}
+
+const partsOf = (uploadId: string) =>
+  wrangler.d1(`SELECT n, bytes FROM upload_part WHERE upload_id = '${uploadId}' ORDER BY n`);
+
+describe("the write guard comes first", () => {
+  it("UP-03 owner: a wrong Origin on a part or a cancel is 403 and changes nothing, with a session or without", async () => {
+    const cookie = member("origin1");
+    const { bytes } = deck("o.mp4");
+    const made = await createOf(cookie, "o.mp4", bytes, "origin1");
+    const id = made.body.uploadId;
+    for (const who of [cookie, null]) {
+      const headers = { Origin: "https://evil.example", ...(who ? { Cookie: `__Host-bloop_sid=${who}` } : {}) };
+      const part = await fetch(`${wrangler.url}/api/uploads/${id}/parts/1`, { method: "PUT", headers, body: bytes });
+      expect(part.status).toBe(403);
+      const gone = await fetch(`${wrangler.url}/api/uploads/${id}`, { method: "DELETE", headers });
+      expect(gone.status).toBe(403);
+    }
+    expect(partsOf(id)).toEqual([]);
+    expect(counters("origin1")?.reserved).toBe(bytes.length);
+    expect(wrangler.d1(`SELECT aborted_at AS a FROM upload WHERE id = '${id}'`)[0]).toEqual({ a: null });
+  });
+
+  it("a JSON write must declare its length, at most 4096 bytes, before anything is read or written", async () => {
+    const cookie = member("len1");
+    const body = JSON.stringify({ name: "l.mp4", bytes: 10, fingerprint: fingerprint("len1") });
+    const chunked = await fetch(`${wrangler.url}/api/uploads`, {
+      method: "POST",
+      headers: { Origin: wrangler.url, Cookie: `__Host-bloop_sid=${cookie}`, "Content-Type": "application/json" },
+      body: new Blob([body]).stream(),
+      duplex: "half",
+    } as RequestInit);
+    expect(chunked.status).toBe(411);
+    const big = await call(cookie, "POST", "/api/uploads", {
+      name: "l.mp4",
+      bytes: 10,
+      fingerprint: fingerprint("len1"),
+      pad: "x".repeat(5000),
+    });
+    expect(big.status).toBe(413);
+    expect(wrangler.d1("SELECT count(*) AS n FROM upload WHERE user_id = 'len1'")[0]?.n).toBe(0);
+  });
+
+  it("UP-08 resume: proxy mode refuses a part confirmation and a last part on complete, and changes nothing", async () => {
+    const cookie = member("proxy1");
+    const { bytes } = deck("p.mp4");
+    const made = await createOf(cookie, "p.mp4", bytes, "proxy1");
+    const id = made.body.uploadId;
+    expect((await putPart(cookie, id, 1, bytes)).status).toBe(200);
+    const etag = "a".repeat(32);
+    expect((await call(cookie, "POST", `/api/uploads/${id}/parts/1/done`, { etag, bytes: bytes.length })).status).toBe(
+      400,
+    );
+    expect(
+      (await call(cookie, "POST", `/api/uploads/${id}/complete`, { n: 1, etag, bytes: bytes.length })).status,
+    ).toBe(400);
+    expect(counters("proxy1")).toEqual({ used: 0, reserved: bytes.length });
+    const done = await call<{ state: string }>(cookie, "POST", `/api/uploads/${id}/complete`, {});
+    expect(done.body.state).toBe("ready");
+  });
+});
+
+describe("UP-02 size: the proxy part's length through a real FixedLengthStream", () => {
+  it("UP-02 size: a body shorter than its Content-Length stores nothing; one longer is cut at the declared length", async () => {
+    const cookie = member("fixed1");
+    const { bytes } = deck("f.mp4");
+    const made = await createOf(cookie, "f.mp4", bytes, "fixed1");
+    const id = made.body.uploadId;
+    const path = `/api/uploads/${id}/parts/1`;
+    expect(await rawPut(cookie, path, bytes.length, bytes.subarray(0, bytes.length - 10))).not.toBe(200);
+    expect(partsOf(id)).toEqual([]);
+    expect(await rawPut(cookie, path, bytes.length, concat([bytes, new Uint8Array(50)]))).toBe(200);
+    expect(partsOf(id)).toEqual([{ n: 1, bytes: bytes.length }]);
+    const done = await call<{ state: string }>(cookie, "POST", `/api/uploads/${id}/complete`, {});
+    expect(done.body.state).toBe("ready");
+    expect(counters("fixed1")).toEqual({ used: bytes.length, reserved: 0 });
+  });
+});
+
+describe("a member suspended mid-upload", () => {
+  it("UP-04 abort: the next part and complete are 401, and the next sweep returns the reservation and aborts the multipart", async () => {
+    const cookie = member("susp1");
+    const { bytes } = deck("s.mp4", 20 * MIB);
+    const made = await createOf(cookie, "s.mp4", bytes, "susp1");
+    const id = made.body.uploadId;
+    expect(made.body.parts).toBe(2);
+    expect((await putPart(cookie, id, 1, bytes.subarray(0, PART))).status).toBe(200);
+    wrangler.d1("UPDATE app_user SET suspended_at = 1 WHERE id = 'susp1'");
+    expect((await putPart(cookie, id, 2, bytes.subarray(PART))).status).toBe(401);
+    expect((await call(cookie, "POST", `/api/uploads/${id}/complete`, {})).status).toBe(401);
+    expect(counters("susp1")?.reserved).toBe(bytes.length);
+    const res = await fetch(`${wrangler.url}/cdn-cgi/handler/scheduled?cron=${encodeURIComponent("0 * * * *")}`);
+    expect(res.status).toBe(200);
+    expect(counters("susp1")).toEqual({ used: 0, reserved: 0 });
+    expect(wrangler.d1(`SELECT aborted_at IS NOT NULL AS closed FROM upload WHERE id = '${id}'`)[0]?.closed).toBe(1);
+    const [row] = wrangler.d1(`SELECT r2_key AS key FROM upload WHERE id = '${id}'`);
+    expect(wrangler.r2Has(String(row?.key))).toBe(false);
   });
 });
 

@@ -13,17 +13,22 @@ import type { Deps } from "./pipeline.ts";
 export const bucketFor = (env: Pick<Env, "LIBRARY" | "GUEST_FILES">, which: "library" | "guest"): UploadBucket =>
   (which === "library" ? env.LIBRARY : env.GUEST_FILES) as unknown as UploadBucket;
 
-export async function uploadDepsFor(env: Env, config: Config): Promise<Deps> {
+/**
+ * The pipeline's deps and the `uploads` switch in force, from one settings read: on, readonly (no new upload, no new
+ * URL) or off (nothing but a cancel and a read).
+ */
+export async function uploadContext(env: Env, config: Config): Promise<{ d: Deps; uploads: string }> {
   const settings = await readSettings(env);
   return {
-    db: batchDbOf(env.DB),
-    mp: multipartOver(bucketFor(env, "library")),
-    spend: spendFor(env, () => capOverridesOf(settings)),
-    config,
-    now: Date.now,
+    d: {
+      db: batchDbOf(env.DB),
+      mp: multipartOver(bucketFor(env, "library")),
+      spend: spendFor(env, () => capOverridesOf(settings)),
+      config,
+      now: Date.now,
+    },
+    uploads: effectiveAll(env as unknown as Record<string, unknown>, settings).uploads,
   };
 }
 
-/** The `uploads` switch in force: on, readonly (no new upload, no new URL) or off (nothing but a cancel and a read). */
-export const uploadsSwitch = async (env: Env): Promise<string> =>
-  effectiveAll(env as unknown as Record<string, unknown>, await readSettings(env)).uploads;
+export const uploadDepsFor = async (env: Env, config: Config): Promise<Deps> => (await uploadContext(env, config)).d;
