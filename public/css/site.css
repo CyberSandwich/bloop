@@ -132,16 +132,9 @@ html:has(.page-site) {
   color: var(--paper);
   font-size: 15px;
 }
-/* Both labels share one cell, so the pill keeps the wider one's width whichever the Worker shows (nav-pill.ts). */
+/* Wider than either label (Sign In, Library), so the Worker's swap (nav-pill.ts) never moves the pair. */
 .btn.account {
-  display: grid;
-  justify-items: center;
-}
-.btn.account > * {
-  grid-area: 1 / 1;
-}
-.btn.account > [aria-hidden] {
-  visibility: hidden;
+  min-width: 96px;
 }
 .nav-menu {
   display: none;
@@ -312,10 +305,6 @@ html:has(.page-site) {
   padding: 11px 0;
   color: var(--muted);
   font-size: 15px;
-  text-decoration: none;
-}
-.hint:hover {
-  text-decoration: underline;
 }
 .btn .arrow {
   margin-right: -4px;

@@ -110,8 +110,8 @@ describe("the account pill and the open nav", () => {
     const html = read(`public/open/${rel}`);
     expect(html.split(PILL_OUT)).toHaveLength(2);
     expect(html.match(/data-account/g)).toHaveLength(1);
-    // Exactly one label is hidden from assistive technology, so the accessible name is the visible label only.
-    expect(PILL_OUT.match(/aria-hidden/g)).toHaveLength(1);
+    // One label: the accessible name is the visible name, in either state.
+    expect(PILL_OUT).not.toContain("<span");
   });
 
   it("the nav holds Articles, Privacy and Terms, then the pill, and no Waitlist or Features", () => {

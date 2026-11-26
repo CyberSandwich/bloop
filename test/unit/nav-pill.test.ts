@@ -11,7 +11,7 @@ const ORIGIN = "http://localhost:8787";
 const BODY = `<nav>${PILL_OUT}</nav>`;
 const request = (headers: Record<string, string> = {}) => new Request(`${ORIGIN}/privacy`, { headers });
 const IN = { Cookie: `${HINT_COOKIE}=1` };
-const label = (html: string) => (html.includes("<span>Library</span>") ? "Library" : "Sign In");
+const label = (html: string) => (html.includes(">Library</a>") ? "Library" : "Sign In");
 
 /** An asset layer with real ETag behavior: one body and one ETag per path, a 304 when the validator matches. */
 function world(mode: "preview" | "open") {
@@ -58,10 +58,8 @@ describe("pill rewrites href and label only for __Host-bloop_in=1", () => {
     const html = await res.text();
     expect(label(html)).toBe(shown);
     if (shown === "Library") {
-      expect(html).toContain(
-        '<a class="btn account" href="/library" data-account><span aria-hidden="true">Sign In</span><span>Library</span></a>',
-      );
-      expect(html.match(/aria-hidden/g)).toHaveLength(1);
+      expect(html).toContain('<a class="btn account" href="/library" data-account>Library</a>');
+      expect(html).not.toContain("Sign In");
     } else {
       expect(html).toBe(BODY);
     }
