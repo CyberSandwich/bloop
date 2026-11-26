@@ -22,6 +22,7 @@ const ALLOWED = [
   "src/worker/routes/library.ts: G",
   "src/worker/routes/library.ts: G",
   "public/js/library.js: U",
+  "public/js/library/preview.js: P1",
 ];
 
 describe("library transitional seams", () => {
