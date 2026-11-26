@@ -262,7 +262,10 @@ export async function putUnit(env: StoreEnv, j: JobRecord, unit: string): Promis
   } catch (e) {
     if (!failure && !(e instanceof OutputError)) {
       if (e instanceof ContainerFault) throw e;
-      throw new ContainerFault("store_failed", e instanceof Error ? e.message : "put failed");
+      throw new ContainerFault(
+        env.courier.pastDeadline() ? "deadline" : "store_failed",
+        e instanceof Error ? e.message : "put failed",
+      );
     }
     await dropGroup(env, j, plan, groupOfUnit(unit));
     if (!decideGroups(loaded.manifest.kind, new Set(plan.passed)).ok) throw new ContainerFault("output_invalid", unit);

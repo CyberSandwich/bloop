@@ -181,6 +181,39 @@ describe("DROP-07 audit of the delete", () => {
     ]);
   });
 
+  it("CONV-12 ends the session's conversion before it deletes, and a cancel that fails does not stop the delete", async () => {
+    const order: string[] = [];
+    const base = { audit: { record: vi.fn() }, now: () => 5 };
+    await purgeGuest(
+      {
+        ...base,
+        drop: {
+          purge: async () => {
+            order.push("purge");
+            return true;
+          },
+        },
+        cancelConversion: async (id) => void order.push(`cancel ${id}`),
+      },
+      { sessionId: "sess", file },
+    );
+    expect(order).toEqual(["cancel sess", "purge"]);
+    const error = vi.spyOn(console, "error").mockImplementation(() => {});
+    const purge = vi.fn(async () => true);
+    await purgeGuest(
+      {
+        ...base,
+        drop: { purge },
+        cancelConversion: async () => {
+          throw new Error("converter down");
+        },
+      },
+      { sessionId: "sess", file },
+    );
+    expect(purge).toHaveBeenCalledTimes(1);
+    error.mockRestore();
+  });
+
   it("records nothing when there was nothing to delete, and nothing for another source", async () => {
     const record = vi.fn();
     const purge = vi.fn(async () => false);

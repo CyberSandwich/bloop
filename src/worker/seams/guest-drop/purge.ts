@@ -9,6 +9,8 @@ export interface PurgeDeps {
   drop: Pick<GuestDrop, "purge">;
   audit: Pick<AuditLog, "record">;
   now(): number;
+  /** Ends the session's live conversion first, so a put in flight cannot land after the delete below. */
+  cancelConversion?(sessionId: string): Promise<void>;
 }
 
 /**
@@ -22,6 +24,7 @@ export async function purgeGuest(
   const { sessionId, file } = input;
   if (file && file.source !== "guest") return;
   try {
+    if (sessionId) await deps.cancelConversion?.(sessionId).catch(() => console.error("guest_cancel_failed"));
     const deleted = await deps.drop.purge(sessionId, file?.ref ?? null);
     if (deleted && sessionId) {
       await bestEffort(
