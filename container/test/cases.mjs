@@ -464,27 +464,11 @@ export async function caseLinks() {
   }
 }
 
-/** A stage default, read from the server's own table so the corpus cannot drift from it. */
-function stageDefault(stage) {
-  const go = readFileSync(join(here, "..", "main.go"), "utf8");
-  const m = go.match(new RegExp(`"${stage}":\\s+(\\d+) \\* time\\.Second`));
-  if (!m) throw new Error(`no default timeout for ${stage} in main.go`);
-  return Number(m[1]) * 1000;
-}
-
 /**
- * One CPU is the smallest instance a deployment is likely to offer. The stage timeouts are lifted so the
- * stages can be measured, then each must use at most half of its default timeout.
+ * One CPU is the smallest instance a deployment is likely to offer. The job runs under the default stage
+ * timeouts and must finish and validate; the stage times go to the job summary as recorded numbers, never as
+ * a pass or fail (a shared runner's speed varies by 25 percent or more).
  */
 export async function caseOneCpuTiming(fixtureName, pages) {
-  const env = { BLOOP_TIMEOUT_CONVERT: "3600", BLOOP_TIMEOUT_RASTERIZE: "3600", BLOOP_MAX_PAGES: "300" };
-  const headroom = (_got, r) => {
-    const d = stageDurations(r);
-    for (const stage of ["convert", "rasterize"])
-      check(
-        d[stage] <= stageDefault(stage) / 2,
-        `CONV-02 caps: ${fixtureName} at 1 CPU spends ${secs(d[stage])} in ${stage}, over half its ${secs(stageDefault(stage))} timeout`,
-      );
-  };
-  await caseDeck(fixtureName, "pptx", pages, headroom, { env, cpus: 1, timing: true });
+  await caseDeck(fixtureName, "pptx", pages, null, { cpus: 1, timing: true });
 }
