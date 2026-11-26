@@ -66,7 +66,7 @@ Email code and passkey. Nothing else creates a session for an email user: no mag
   - Sign out deletes this session and ends the live screens this session started (ADR 0015).
   - Sign out everywhere deletes every session of the user and ends all their live screens.
   - Suspension does both and refuses new sign-ins.
-  - A deletion request deletes every session of the account, the current one included; the member signs in again to restore.
+  - A deletion request ends all live screens and deletes every other session; the current one stays, limited to `/api/me` and restore.
   - An email change ends every other session.
 
 ### Reauth

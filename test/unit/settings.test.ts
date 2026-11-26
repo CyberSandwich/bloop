@@ -96,4 +96,14 @@ describe("MODE-01 settings: the one reader", () => {
     expect(await read(broken)).toEqual(RESTRICTIVE);
     vi.restoreAllMocks();
   });
+
+  it("MODE-01 settings: a failed fresh read is the restrictive values, never the cached snapshot", async () => {
+    vi.spyOn(console, "error").mockImplementation(() => {});
+    const read = settingsReader(() => NOW);
+    const raw = testDb();
+    set(raw, "launch_mode", "open");
+    expect((await read(raw)).launch_mode).toBe("open");
+    expect(await read(broken, { fresh: true })).toEqual(RESTRICTIVE);
+    vi.restoreAllMocks();
+  });
 });

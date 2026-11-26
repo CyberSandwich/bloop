@@ -603,4 +603,4 @@ What is stored outside the EU, and what each holds:
 Browser tests and `npm run dev` use a `localhost` base URL, because WebAuthn refuses IP addresses. Integration runs set `DEV_MAILBOX` (the dev mailbox route; refused on an https origin), `UPLOAD_MODE=proxy` and `CONVERT_MODE=stub`.
 
 ### 13.6 Cron seams
-Three crons exist: every five minutes (no job yet; the spend guard's breaker goes there), hourly and daily (section 9). `src/worker/cron-jobs.ts` lists each trigger's jobs, and a stream adds its sweep to one list. A job gets an allotment of rows or objects for the tick and returns whether more is left, so a backlog pages across ticks; one failing job does not stop the rest.
+Three crons exist: every five minutes (no job yet; the spend guard's breaker goes there), hourly (upload and guest sweeps) and daily (retention and the account and trash purges; section 9). `src/worker/cron-jobs.ts` lists each trigger's jobs, and a stream adds its sweep to one list. A job gets an allotment of rows or objects for the tick and returns whether more is left, so a backlog pages across ticks; one failing job does not stop the rest.

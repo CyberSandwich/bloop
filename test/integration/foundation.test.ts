@@ -126,6 +126,22 @@ describe("LIB-08 erase: DELETE /api/me with FILE_SOURCE=mock", () => {
     expect(wrangler.d1("SELECT status FROM app_user WHERE id = 'em2'")[0]?.status).toBe("active");
   });
 
+  it("LIB-08 erase: a member the preview lockout does not admit is refused and stays active", async () => {
+    wrangler.setLaunchMode("preview", true);
+    wrangler.d1(
+      "INSERT INTO app_user (id, tid, oid, email, email_norm, created_at, last_seen_at) VALUES ('em3', 'email', 'em3', 'late@example.test', 'late@example.test', 0, 0)",
+    );
+    const cookie = "L".repeat(43);
+    const now = Date.now();
+    wrangler.d1(
+      `INSERT INTO phone_session (id_hash, user_id, created_at, last_seen_at, expires_at, reauth_at) VALUES ('${sha(cookie)}', 'em3', ${now}, ${now}, ${now + 86_400_000}, ${now})`,
+    );
+    const res = await api.call("DELETE", "/api/me", {}, { headers: { Cookie: `__Host-bloop_sid=${cookie}` } });
+    expect(res.body).toEqual(expect.objectContaining({ code: "auth_required" }));
+    expect(wrangler.d1("SELECT status FROM app_user WHERE id = 'em3'")[0]?.status).toBe("active");
+    wrangler.setLaunchMode("open");
+  });
+
   it("LIB-08 erase: needs a fresh proof, then marks the member deleting, ends their sessions and keeps their rows", async () => {
     const day = 86_400_000;
     wrangler.d1(
@@ -146,9 +162,13 @@ describe("LIB-08 erase: DELETE /api/me with FILE_SOURCE=mock", () => {
     expect(wrangler.d1("SELECT status FROM app_user WHERE id = 'em1'")[0]?.status).toBe("active");
     wrangler.d1(`UPDATE phone_session SET reauth_at = ${Date.now()} WHERE user_id = 'em1'`);
 
+    wrangler.d1(
+      `INSERT INTO phone_session (id_hash, user_id, created_at, last_seen_at, expires_at) VALUES ('other-device', 'em1', ${now}, ${now}, ${now + 30 * day})`,
+    );
+
     const res = await api.call("DELETE", "/api/me", {}, { headers });
     expect(res.status).toBe(200);
-    expect(wrangler.d1("SELECT count(*) AS n FROM phone_session WHERE user_id = 'em1'")[0]?.n).toBe(0);
+    expect(wrangler.d1("SELECT id_hash FROM phone_session WHERE user_id = 'em1'")).toEqual([{ id_hash: sha(cookie) }]);
 
     const [user] = wrangler.d1("SELECT status, delete_after FROM app_user WHERE id = 'em1'");
     expect(user?.status).toBe("deleting");
