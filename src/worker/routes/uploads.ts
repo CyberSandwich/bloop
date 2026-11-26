@@ -105,12 +105,12 @@ const owned = (
   handler: Handler,
   options: { always?: boolean } = {},
 ) =>
-  withConfig(async (request, env, config) => {
+  withConfig(async (request, env, config, ctx) => {
     const refused = guard(request, config, kind);
     if (refused) return refused;
     const loaded = await load(request, env, config, rate);
     if (!loaded.ok) return loaded.response;
-    const { d, uploads } = await uploadContext(env, config);
+    const { d, uploads } = await uploadContext(env, config, ctx);
     if (!options.always && uploads === "off") return fail("service_busy");
     return handler({ request, config, row: loaded.row, n: loaded.n, d, uploads });
   });
