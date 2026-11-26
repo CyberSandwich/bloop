@@ -763,6 +763,7 @@ export function buildAll(mode = "preview") {
   files.set(at("public/sitemap.xml"), sitemap(docs));
   files.set(at("public/robots.txt"), robots());
   files.set(at("public/llms.txt"), llms(docs, s.about));
+  if (mode === "preview") files.set("public/_launch.json", launchManifest());
   return files;
 }
 
@@ -779,6 +780,12 @@ export function placeholderDates() {
       .filter((key) => d.meta[key] === PLACEHOLDER_DATE)
       .map((key) => `${d.file}: ${key}`),
   );
+}
+
+/** `/_launch.json`: what the admin switch reads to refuse `open` while an open document is on the placeholder date. */
+export function launchManifest() {
+  const placeholder = placeholderDates();
+  return `${JSON.stringify({ launchReady: placeholder.length === 0, placeholder })}\n`;
 }
 
 /** @param {Doc[]} docs */
