@@ -61,6 +61,12 @@
       "migrations_dir": "migrations"
     }
   ],
+  // Email Service (ADR 0021). The sender is EMAIL_FROM. ALERT_EMAIL can reach only that same inbox, so a breaker alert
+  // can never go to a member.
+  "send_email": [
+    { "name": "EMAIL", "allowed_sender_addresses": ["hi@bloop.here"] },
+    { "name": "ALERT_EMAIL", "destination_address": "hi@bloop.here", "allowed_sender_addresses": ["hi@bloop.here"] }
+  ],
   "r2_buckets": [
     { "binding": "GUEST_FILES", "bucket_name": "bloop-guest-files", "jurisdiction": "eu" },
     { "binding": "LIBRARY", "bucket_name": "bloop-library", "jurisdiction": "eu" }

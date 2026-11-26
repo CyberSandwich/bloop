@@ -1,7 +1,13 @@
 import type { Env } from "./env.ts";
 import type { Policy } from "./headers.ts";
 
-export type Handler = (request: Request, env: Env, match: URLPatternResult) => Response | Promise<Response>;
+/** `ctx` carries `waitUntil`, so work such as mail runs after the response (AUTH-10); most handlers ignore it. */
+export type Handler = (
+  request: Request,
+  env: Env,
+  match: URLPatternResult,
+  ctx: ExecutionContext,
+) => Response | Promise<Response>;
 
 export interface Route {
   methods: readonly string[];
