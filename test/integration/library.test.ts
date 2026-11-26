@@ -419,3 +419,20 @@ describe("previews", () => {
     ).toBe(401);
   });
 });
+
+describe("the page", () => {
+  it("serves /library to a member, privately, under the library policy, with its script and stylesheet", async () => {
+    const res = await call("ann", "GET", "/library", undefined, { Accept: "text/html" });
+    expect(res.status).toBe(200);
+    expect(res.headers.get("Cache-Control")).toBe("private, no-store");
+    expect(res.headers.get("Content-Security-Policy")).toContain("connect-src 'self'");
+    expect(res.text).toContain('<script type="module" src="/js/library.js">');
+    expect(res.text).toContain('href="/css/library.css"');
+  });
+
+  it("answers a signed-out request with the 404 any unknown path gets", async () => {
+    const res = await call(null, "GET", "/library", undefined, { Accept: "text/html" });
+    expect(res.status).toBe(404);
+    expect(res.text).not.toContain("library.js");
+  });
+});
