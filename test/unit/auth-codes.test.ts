@@ -323,17 +323,22 @@ describe("AUTH-09 draw", () => {
   it("AUTH-09 draw: 10^5 codes are 6 digits, each position within 1% of uniform, leading zeros kept", () => {
     const counts = Array.from({ length: 6 }, () => new Array<number>(10).fill(0));
     let leadingZero = false;
+    let malformed = 0;
+    // The bound is 10.5 standard deviations (about 1e-25 per cell over 60 cells), so a failure is a biased draw. The
+    // cost is the loop: an expect per draw took 3.4 s of the 5 s default on an idle machine, so only counters run in it.
     for (let i = 0; i < 100_000; i++) {
       const code = drawEmailCode();
-      expect(code).toMatch(/^\d{6}$/);
+      if (!/^\d{6}$/.test(code)) malformed++;
       if (code[0] === "0") leadingZero = true;
       for (let p = 0; p < 6; p++) {
         const row = counts[p] as number[];
         row[Number(code[p])] = (row[Number(code[p])] ?? 0) + 1;
       }
     }
+    expect(malformed).toBe(0);
     expect(leadingZero).toBe(true);
-    for (const position of counts) for (const n of position) expect(Math.abs(n / 100_000 - 0.1)).toBeLessThan(0.01);
+    const worst = Math.max(...counts.flatMap((position) => position.map((n) => Math.abs(n / 100_000 - 0.1))));
+    expect(worst).toBeLessThan(0.01);
   });
 });
 
