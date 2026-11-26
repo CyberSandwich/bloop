@@ -44,6 +44,18 @@ describe("DROP-12 cfb: refused storages", () => {
     expect(await scan(["PowerPoint Document"], {}, ["powerpoint document"])).toEqual({ ok: true });
   });
 
+  it("DROP-12 cfb: refuses a required stream name that is a storage, not a stream (type 2)", async () => {
+    expect(await scan(["WordDocument"], { storages: ["WordDocument"] })).toMatchObject({
+      ok: false,
+      error: "bad_structure",
+      reason: "cfb stream missing",
+    });
+    expect(await scan(["WordDocument", "Macros"], { storages: ["Macros"] })).toMatchObject({
+      reason: "macro storage",
+    });
+    expect(await scan(["Macros"], { storages: [] })).toMatchObject({ reason: "macro storage" });
+  });
+
   it("compares names without case", async () => {
     expect(await scan(["objectpool"])).toMatchObject({ ok: false, reason: "embedded object" });
     expect(await scan(["vba"])).toMatchObject({ ok: false, reason: "macro storage" });

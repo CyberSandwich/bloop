@@ -1,23 +1,26 @@
 // What a stored object really is (DROP-02 to DROP-04, DROP-11 to DROP-16), for every format in `FORMATS`. Range reads
-// only: the head, the zip end record and central directory, the PDF or image tail. The one inflate in a package is its
-// content types and relationships parts, capped at a few hundred KB; a PDF is read in windows.
+// only: the head, the zip end record and central directory, the PDF or image tail, a JPEG's or GIF's headers in small
+// blocks. The one inflate in a package is its content types and relationships parts, capped at a few hundred KB; a
+// PDF is read whole when small, else in windows.
 import { inflate, latin1 } from "./bytes.ts";
 import { scanCfb } from "./cfb.ts";
 import {
+  type Check,
   checkOoxml,
   checkText,
   decodeXml,
   detect,
   FORMATS,
   type FormatType,
+  fail,
   isRefusedPart,
   isRelsPart,
   MAX_TEXT_BYTES,
   type Refusal,
 } from "./formats.ts";
-import { checkPixels, dimensions, JPEG_SCAN_BYTES } from "./image.ts";
+import { checkImageSize } from "./image.ts";
 import { type RangeReader, ZIP_LIMITS } from "./index.ts";
-import { PDF_WINDOW_BYTES, scanPdf, scanPdfChunks } from "./pdf-scan.ts";
+import { PDF_WINDOW_BYTES, scanPdfChunks } from "./pdf-scan.ts";
 import { planReads, READ_PLAN, ReadBudgetExceeded, readParts } from "./read-plan.ts";
 import { checkSizes, hasEndRecord, readCentralDirectory, type ZipEntry } from "./zip.ts";
 
@@ -127,22 +130,29 @@ async function checkPackage<T extends FormatType>(r: RangeReader, type: T, part:
 async function validatePdf(r: RangeReader): Promise<Verdict<"pdf">> {
   if (await hasEndRecord(r)) return refuse("bad_structure");
   if (!latin1.decode(await readTail(r)).includes("%%EOF")) return refuse("bad_structure");
-  const scan = r.size <= READ_PLAN.smallObjectBytes ? await scanPdf(await r.read(0, r.size)) : await scanWindows(r);
+  const scan = await scanReads(r, r.size <= READ_PLAN.smallObjectBytes ? r.size : PDF_WINDOW_BYTES);
   if (scan.ok) return { ok: true, type: "pdf" };
   const found = new Set("found" in scan ? scan.found : []);
   if (found.has("Encrypt")) return refuse("encrypted");
   return refuse(found.size === 1 && found.has("unscannable") ? "bad_structure" : scan.error);
 }
 
-/** Windows read in order: a reader that serves them from one pass over the object makes this a single read. */
-function scanWindows(r: RangeReader) {
+/**
+ * The PDF scan over `r` read in order, `window` bytes at a time; each read is one metered class B read. A short read
+ * (an object gone, a truncated range) is refused, never skipped.
+ */
+async function scanReads(r: RangeReader, window: number): Promise<Check & { found?: string[] }> {
   let at = 0;
-  return scanPdfChunks(async () => {
-    if (at >= r.size) return null;
-    const chunk = await r.read(at, PDF_WINDOW_BYTES);
-    at += PDF_WINDOW_BYTES;
-    return chunk;
+  let short = false;
+  const scan = await scanPdfChunks(async () => {
+    if (at >= r.size || short) return null;
+    const want = Math.min(window, r.size - at);
+    const chunk = await r.read(at, want);
+    short = chunk.length !== want;
+    at += chunk.length;
+    return short ? null : chunk;
   });
+  return short ? fail("bad_structure", "short read") : scan;
 }
 
 /**
@@ -158,9 +168,7 @@ async function validateImage<T extends "jpg" | "png" | "gif" | "webp">(
 ): Promise<Verdict<T>> {
   const tail = await readTail(r);
   if (await carriesAnother(r, head, tail)) return refuse("bad_structure");
-  const sized = checkPixels(
-    dimensions(type, type === "jpg" ? await r.read(0, Math.min(r.size, JPEG_SCAN_BYTES)) : head),
-  );
+  const sized = await checkImageSize(type, r, head);
   if (!sized.ok) return refuse(sized.error);
   if (type === "png") {
     const end = tail.subarray(-PNG_END_BYTES);
@@ -195,10 +203,33 @@ async function validateIsoMedia<T extends "mp4" | "mov" | "heic">(
   return (await carriesAnother(r, head, await readTail(r))) ? refuse("bad_structure") : { ok: true, type };
 }
 
+/** A text file that starts as an HTML page or script, after any byte order mark and white space. */
+const HTML_START = /^(?:\xef\xbb\xbf)?[\t\n\f\r ]*<(?:!doctype[\t\n\f\r ]+html|html|script)\b/i;
+
+/**
+ * Text that a reader would take for another format (DROP-02): a binary format's magic, `%PDF` in the head (a PDF
+ * reader looks there), a zip local header or end record anywhere, or an HTML start.
+ */
+function carriesFormat(bytes: Uint8Array): boolean {
+  const head = bytes.subarray(0, HEAD_BYTES);
+  const headText = latin1.decode(head);
+  const all = latin1.decode(bytes);
+  return (
+    detect(head) !== null ||
+    headText.includes("%PDF") ||
+    HTML_START.test(headText) ||
+    all.includes("PK\x03\x04") ||
+    all.includes("PK\x05\x06")
+  );
+}
+
 async function validateText<T extends FormatType>(r: RangeReader, type: T): Promise<Verdict<T>> {
   if (r.size > MAX_TEXT_BYTES) return refuse("too_large");
-  const checked = checkText(await r.read(0, r.size));
-  return checked.ok ? { ok: true, type } : refuse(checked.error);
+  const bytes = await r.read(0, r.size);
+  if (bytes.length !== r.size) return refuse("bad_structure");
+  const checked = checkText(bytes);
+  if (!checked.ok) return refuse(checked.error);
+  return carriesFormat(bytes) ? refuse("bad_structure") : { ok: true, type };
 }
 
 /** The detected type must equal the declared one (the extension); anything else is `bad_type`. */
