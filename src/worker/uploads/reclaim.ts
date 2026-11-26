@@ -3,8 +3,8 @@
 // have settled a live file under the same key. The one other R2 delete or abort in src/worker/uploads/ is create's undo
 // of a multipart no row names (test/unit/uploads-guard.test.ts holds that).
 //
-// Trap: a Worker that dies between the move and the delete leaves an object nothing counts or names; the bucket's
-// one-day multipart rule covers an unjoined multipart, not a joined object.
+// Trap: a Worker that dies between the move and the delete leaves a joined object nothing counts. The closed rows
+// still name its key, so the hourly sweep (`strandStep`, the one delete outside this file) repeats the delete.
 import type { Multipart } from "./multipart.ts";
 
 /** What R2 holds for a row: the object key, and the multipart id while one may still be open. */

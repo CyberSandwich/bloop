@@ -339,7 +339,7 @@ test/
 | GET | `/api/dev/mailbox` | none; only when `DEV_MAILBOX` is set | planned (A): local and test harness only |
 | GET, POST | `/api/uploads`, `/api/uploads/:id/urls`, `/api/uploads/:id/parts/:n/done`, `/api/uploads/:id/complete` | member session; Origin on writes | live (U): list, create or resume, part URLs, part confirmation, complete ([uploads.md](uploads.md)) |
 | PUT | `/api/uploads/:id/parts/:n` | member session; Origin | live (U): one part through the Worker (proxy mode); `Content-Length` must equal the part's size |
-| GET, DELETE | `/api/uploads/:id` | member session | live (U): the upload's state, and cancel; another member's id is `not_found` |
+| GET, DELETE | `/api/uploads/:id` | member session; Origin on DELETE | live (U): the upload's state (a pure read), and cancel; another member's id is `not_found`. Every JSON write needs a numeric `Content-Length` of at most 4096 |
 | any | `/api/uploads/*` for a guest | Bearer pid | planned (U): the guest drop moves onto this pipeline; `PUT /api/drop` is removed when it lands |
 | any | `/api/dev/r2/*` | none; local only | planned (U): the proxy-mode bucket stand-in |
 | GET, POST, PATCH, DELETE | `/api/library*`, `/api/me/screens*`, `/api/me/export.zip` | session | planned (L): list, rename, trash, restore, preview link, socket, export |
