@@ -136,9 +136,9 @@ describe("PAIR-14 the pick's markup holds its boxes before the module lands", ()
   it("the pills' size is first-load CSS (app.css), not the lazy sheet's", () => {
     const app = readFileSync(new URL("../../public/css/app.css", import.meta.url), "utf8");
     const lazy = readFileSync(new URL("../../public/css/match.css", import.meta.url), "utf8");
-    // After `.actions .btn` (52), which shares its specificity: the order is what makes the choices 64.
-    expect(app).toMatch(/\.pick \.choice \{\n {2}min-height: 64px;/);
-    expect(app.indexOf(".pick .choice {")).toBeGreaterThan(app.indexOf(".actions .btn {"));
+    expect(app).toMatch(/\n\.choice \{\n {2}min-height: 64px;/);
+    // `.actions .btn` outranks `.choice`: a height there would shrink the choices to it.
+    expect(app.match(/\n\.actions \.btn \{[^}]*\}/)?.[0]).not.toContain("height");
     expect(lazy).not.toMatch(/height|grid-template|margin/);
   });
 });
