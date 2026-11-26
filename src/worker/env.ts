@@ -31,6 +31,8 @@ export interface Env {
   RL_LIBRARY: RateLimit;
   RL_ADMIN: RateLimit;
   RL_REPORT: RateLimit;
+  RL_MEMBER_IP: RateLimit;
+  RL_MEMBER: RateLimit;
   PUBLIC_ORIGIN: string;
   FILE_ORIGIN?: string;
   /** Secrets: both absent means the breaker reads counters only, and every alert says so. */
@@ -43,6 +45,7 @@ export const RATE_LIMIT_BINDINGS = [
   ...["RL_CREATE", "RL_CLAIM", "RL_FETCH", "RL_UPLOAD", "RL_AUTH"],
   ...["RL_EXPORT", "RL_DEMO_CREATE", "RL_DEMO_CLAIM", "RL_FILES", "RL_CONTROL", "RL_UPGRADE"],
   ...["RL_CODE", "RL_INVITE", "RL_PASSKEY", "RL_UPLOAD_PART", "RL_LIBRARY", "RL_ADMIN", "RL_REPORT"],
+  ...["RL_MEMBER_IP", "RL_MEMBER"],
 ] as const satisfies readonly (keyof Env)[];
 
 export type RateLimitName = (typeof RATE_LIMIT_BINDINGS)[number];

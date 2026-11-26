@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { deviceEpoch, isKnown, newDeviceValue } from "../../src/worker/auth/codes.ts";
 import { sha256Hex } from "../../src/worker/ids.ts";
 import type { TestDb } from "./d1-shim.ts";
 import {
@@ -159,6 +160,63 @@ describe("DATA-05 dsar: a deletion request", () => {
   });
 });
 
+describe("AUTH-18 epoch: a known-device value dies with every change that forgets devices", () => {
+  const PEPPER = "p".repeat(32);
+  const epoch = (world: ReturnType<typeof memberWorld>) => deviceEpoch(world.db, "m1");
+  const addPasskey = (world: ReturnType<typeof memberWorld>) =>
+    world.db.raw
+      .prepare(
+        "INSERT INTO passkey (id, user_id, public_key, sign_count, backed_up, name, created_at) VALUES ('cred-1', 'm1', x'00', 0, 1, 'Passkey', 0)",
+      )
+      .run();
+
+  it("AUTH-18 epoch: a device value minted before sign out everywhere is refused after it, on every device", async () => {
+    const world = memberWorld();
+    const { routes } = await spied();
+    const a = await seedMember(world.db, "m1", "m@example.test");
+    await addSession(world.db, "m1");
+    const before = await epoch(world);
+    const laptop = await newDeviceValue(PEPPER, "m1", before);
+    const phone = await newDeviceValue(PEPPER, "m1", before);
+    expect(await isKnown(laptop, PEPPER, "m1", before)).toBe(true);
+    expect((await callRoute(routes, world.env, "POST", "/api/me/signout-all", { cookie: sid(a) })).status).toBe(200);
+    const after = await epoch(world);
+    expect(after).toBe(before + 1);
+    for (const value of [laptop, phone]) expect(await isKnown(value, PEPPER, "m1", after)).toBe(false);
+    expect(await isKnown(await newDeviceValue(PEPPER, "m1", after), PEPPER, "m1", after)).toBe(true);
+  });
+
+  it("AUTH-18 epoch: a plain sign-out keeps the device known", async () => {
+    const world = memberWorld();
+    const a = await seedMember(world.db, "m1", "m@example.test");
+    await callRoute((await spied()).routes, world.env, "POST", "/api/me/signout", { cookie: sid(a) });
+    expect(await epoch(world)).toBe(0);
+  });
+
+  it("AUTH-18 epoch: removing a passkey moves it; a refused removal does not", async () => {
+    const world = memberWorld();
+    const { routes } = await spied();
+    const a = await seedMember(world.db, "m1", "m@example.test");
+    addPasskey(world);
+    const remove = (id: string) =>
+      callRoute(routes, world.env, "DELETE", `/api/me/passkeys/${id}`, { cookie: sid(a) }).then((r) => r.status);
+    expect(await remove("cred-2")).toBe(404);
+    expect(await epoch(world)).toBe(0);
+    expect(await remove("cred-1")).toBe(204);
+    expect(await epoch(world)).toBe(1);
+  });
+
+  it("AUTH-18 epoch: a deletion request moves it in the same batch as the status", async () => {
+    const world = memberWorld();
+    const a = await seedMember(world.db, "m1", "m@example.test");
+    await callRoute((await spied()).routes, world.env, "DELETE", "/api/me", { cookie: sid(a) });
+    expect(world.db.raw.prepare("SELECT status, device_epoch FROM app_user WHERE id = 'm1'").get()).toEqual({
+      status: "deleting",
+      device_epoch: 1,
+    });
+  });
+});
+
 describe("the devices list: DELETE /api/me/sessions/:id", () => {
   it("ends another of the member's sessions and its screens; refuses the current one, a stranger's and a bad id", async () => {
     const world = memberWorld();
@@ -263,7 +321,8 @@ describe("the admin view cookie: POST /api/admin/view", () => {
     expect(on.headers.getSetCookie()).toEqual([
       "__Host-bloop_view=open; Max-Age=28800; Path=/; Secure; HttpOnly; SameSite=Lax",
     ]);
-    const off = await toggle({ open: false, reason: "done" });
+    // Control and format characters are dropped before the reason is stored: it stays one plain line.
+    const off = await toggle({ open: false, reason: "do\u202Ene\r\n" });
     expect(off.headers.getSetCookie()).toEqual([
       "__Host-bloop_view=; Max-Age=0; Path=/; Secure; HttpOnly; SameSite=Lax",
     ]);
@@ -284,6 +343,7 @@ describe("the admin view cookie: POST /api/admin/view", () => {
       { open: "yes", reason: "x" },
       { open: true },
       { open: true, reason: "   " },
+      { open: true, reason: "\u200B\u202E\n" },
       { open: true, reason: "r".repeat(501) },
     ]) {
       const bad = await toggle(body);
@@ -316,15 +376,38 @@ describe("GET /api/me: signed in only for a real session", () => {
     }
   });
 
-  it("a cookie that names no live session reads as signed out and clears the session and hint cookies", async () => {
+  it("a cookie that names no live session reads as signed out and clears nothing", async () => {
     const world = memberWorld();
     const { res, body } = await me(world, "http://localhost:8787/api/me", { Cookie: sid("A".repeat(43)) });
     expect(body).toMatchObject({ signedIn: false });
-    expect(cookieNames(res)).toEqual(["__Host-bloop_sid", "__Host-bloop_in"]);
+    expect(cookieNames(res)).toEqual([]);
     const live = await seedMember(world.db, "m1", "m@example.test");
     const signedIn = await me(world, "http://localhost:8787/api/me", { Cookie: sid(live) });
     expect(signedIn.body).toMatchObject({ signedIn: true });
     expect(cookieNames(signedIn.res)).toEqual([]);
+  });
+
+  it("AUTH-08 rotate: a slow GET that answers after a sign-in rotated its cookie clears nothing, so the new one lives", async () => {
+    const world = memberWorld();
+    const old = await seedMember(world.db, "m1", "m@example.test");
+    const fresh = await addSession(world.db, "m1");
+    const oldHash = await sha256Hex(old);
+    const url = "http://localhost:8787/api/me";
+    const route = (await spied()).routes.find(
+      (x) => x.methods.includes("GET") && x.pattern.pathname === "/api/me",
+    ) as AnyRoute;
+    const slow = route.handler(
+      new Request(url, { headers: { Cookie: sid(old) } }),
+      world.env,
+      route.pattern.exec(url) as URLPatternResult,
+      {},
+    );
+    // The sign-in's rotation commits while the GET is in flight, before it reads the session table.
+    world.db.raw.prepare("DELETE FROM phone_session WHERE id_hash = ?").run(oldHash);
+    const res = await slow;
+    expect(((await res.json()) as { signedIn: boolean }).signedIn).toBe(false);
+    expect(cookieNames(res)).toEqual([]);
+    expect((await me(world, url, { Cookie: sid(fresh) })).body).toMatchObject({ signedIn: true });
   });
 });
 

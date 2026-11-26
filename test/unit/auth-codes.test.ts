@@ -360,7 +360,7 @@ describe("AUTH-09 device", () => {
     expect(await isKnown(value, "q".repeat(32), "u1", 0)).toBe(false);
   });
 
-  it("AUTH-09 device: a value minted before the epoch moved (sign out everywhere) is refused on every device", async () => {
+  it("AUTH-18 epoch: a value minted before the epoch moved is refused, and one minted after it is known", async () => {
     const before = await newDeviceValue(PEPPER, "u1", 0);
     expect(await isKnown(before, PEPPER, "u1", 0)).toBe(true);
     expect(await isKnown(before, PEPPER, "u1", 1)).toBe(false);

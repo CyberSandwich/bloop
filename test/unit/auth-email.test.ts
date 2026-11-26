@@ -2,17 +2,18 @@ import { readFileSync } from "node:fs";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type * as EmailModule from "../../src/worker/auth/email.ts";
 import { signinCode } from "../../src/worker/auth/templates.ts";
-import { testDb } from "./d1-shim.ts";
+import { resolveCaps } from "../../src/worker/spend/caps.ts";
+import { IsolateCounts, type Spend, SpendClient, type SpendRpc } from "../../src/worker/spend/client.ts";
+import { fakeSpend } from "./spend-helpers.ts";
 
 type Mod = typeof EmailModule;
-type Take = EmailModule.EmailSpend["take"];
 
 const ADMIN = "admin@example.test";
 const MEMBER = "member@example.test";
 const CONFIG = { origin: "https://bloop.here", codeTtlSeconds: 600 };
 const T0 = 1_800_000_000_000;
 
-/** A fresh module per test: the guard-down counter and the dev mailbox are per isolate, at module scope. */
+/** A fresh module per test: the dev mailbox is per isolate, at module scope. */
 let mod: Mod;
 let logs: string[];
 beforeEach(async () => {
@@ -30,12 +31,11 @@ function ctx() {
   return { waitUntil: (p: Promise<unknown>) => void pending.push(p), flush: () => Promise.all(pending) };
 }
 
-function deps(over: Partial<EmailModule.MailDeps> & { take?: Take } = {}): EmailModule.MailDeps {
-  const take: Take = over.take ?? (async () => ({ ok: true }));
+function deps(over: Partial<EmailModule.MailDeps> = {}): EmailModule.MailDeps {
   return {
     account: { emailFrom: "hi@bloop.here", adminEmails: new Set([ADMIN]), devMailbox: true },
     sender: undefined,
-    spend: { take },
+    spend: fakeSpend(),
     emailSwitch: "on",
     ...over,
   };
@@ -47,55 +47,68 @@ const message = (to = MEMBER, codeScope?: string): EmailModule.Message => ({
   ...(codeScope === undefined ? {} : { codeScope }),
 });
 
-const unavailable: Take = async () => ({ ok: false, reason: "unavailable", retryAfterSeconds: 30 });
+const refusing = (answer: Awaited<ReturnType<Spend["take"]>>) =>
+  fakeSpend({ take: (async () => answer) as Spend["take"] });
 
 describe("email guard-down", () => {
-  it("email guard-down: with the guard unavailable a code still mails, up to the per-isolate cap and no further", async () => {
+  it("email guard-down: with the guard unreachable the spend client fails the email meters open, up to its isolate cap", async () => {
     const c = ctx();
-    const d = deps({ take: unavailable });
+    const down = () =>
+      ({
+        take: async () => {
+          throw new Error("unreachable");
+        },
+      }) as unknown as SpendRpc;
+    const caps = () => resolveCaps({ CAP_ISOLATE_OPEN_EMAIL_DAY: "3" });
+    const spend = new SpendClient(
+      { global: down, public: down },
+      caps,
+      () => {},
+      new IsolateCounts(() => T0),
+      () => T0,
+    );
     const admitted = [];
-    for (let i = 0; i < mod.GUARD_DOWN_CAP + 5; i++) admitted.push(await mod.mail(d, c, message(MEMBER, "ip"), T0 + i));
+    for (let i = 0; i < 5; i++) admitted.push(await mod.mail(deps({ spend }), c, message(), T0 + i));
     await c.flush();
-    expect(admitted.filter(Boolean)).toHaveLength(mod.GUARD_DOWN_CAP);
-    expect(mod.readDevMailbox()).toHaveLength(mod.GUARD_DOWN_CAP);
-    expect(logs.filter((l) => l === JSON.stringify({ evt: "spend", kind: "guard_down" }))).toHaveLength(1);
-    // A new window opens the cap again.
-    expect(await mod.mail(d, c, message(), T0 + mod.GUARD_DOWN_WINDOW_MS)).toBe(true);
+    expect(admitted).toEqual([true, true, true, false, false]);
+    expect(mod.readDevMailbox()).toHaveLength(3);
   });
 
-  it("email guard-down: the email=off switch still stops mail, with the guard down or up", async () => {
+  it("email guard-down: the email=off switch still stops mail, and takes nothing", async () => {
     const c = ctx();
-    const take = vi.fn(unavailable);
-    expect(await mod.mail(deps({ take, emailSwitch: "off" }), c, message(), T0)).toBe(false);
-    expect(await mod.mail(deps({ emailSwitch: "off" }), c, message(), T0)).toBe(false);
+    const spend = fakeSpend();
+    expect(await mod.mail(deps({ spend, emailSwitch: "off" }), c, message(), T0)).toBe(false);
     await c.flush();
-    expect(take).not.toHaveBeenCalled();
+    expect(spend.calls).toEqual([]);
     expect(mod.readDevMailbox()).toEqual([]);
   });
 
-  it("email guard-down: a real refusal (not an outage) sends nothing and does not use the cap", async () => {
+  it("email guard-down: a refusal of either take, a cap or an unreachable guard, sends nothing", async () => {
     const c = ctx();
-    const refused: Take = async () => ({ ok: false, reason: "cap", retryAfterSeconds: 60 });
-    for (let i = 0; i < mod.GUARD_DOWN_CAP + 1; i++)
-      expect(await mod.mail(deps({ take: refused }), c, message(), T0)).toBe(false);
+    const answers = [
+      { ok: false, reason: "cap_hit", meter: "email", period: "day", scope: "all", retryAfterSeconds: 60 },
+      { ok: false, reason: "unavailable", retryAfterSeconds: 30 },
+    ] as Awaited<ReturnType<Spend["take"]>>[];
+    for (const answer of answers) {
+      expect(await mod.mail(deps({ spend: refusing(answer) }), c, message(MEMBER, "ip"), T0)).toBe(false);
+    }
     await c.flush();
     expect(mod.readDevMailbox()).toEqual([]);
-    expect(logs).toEqual([]);
   });
 });
 
 describe("email", () => {
   it("email: a code request takes email_code with its scope, then email; other mail takes email only", async () => {
     const c = ctx();
-    const take = vi.fn<Take>(async () => ({ ok: true }));
-    await mod.mail(deps({ take }), c, message(MEMBER, "iphash"), T0);
-    expect(take.mock.calls).toEqual([
-      ["email_code", 1, "iphash"],
-      ["email", 1],
+    const spend = fakeSpend();
+    await mod.mail(deps({ spend }), c, message(MEMBER, "iphash"), T0);
+    expect(spend.calls).toEqual([
+      { method: "take", args: ["email_code", 1, "iphash"] },
+      { method: "take", args: ["email", 1, undefined] },
     ]);
-    take.mockClear();
-    await mod.mail(deps({ take }), c, message(), T0);
-    expect(take.mock.calls).toEqual([["email", 1]]);
+    spend.calls.length = 0;
+    await mod.mail(deps({ spend }), c, message(), T0);
+    expect(spend.calls).toEqual([{ method: "take", args: ["email", 1, undefined] }]);
   });
 
   it("email: admin_only mails ADMIN_EMAILS recipients only", async () => {
@@ -156,56 +169,6 @@ describe("email", () => {
     ]);
     mod.clearDevMailbox();
     expect(mod.readDevMailbox()).toEqual([]);
-  });
-
-  it("email: the breaker's notify mails each ADMIN_EMAILS address and nobody else, without a spend take", async () => {
-    const send = vi.fn(async (_m: { to: string }) => ({ messageId: "m" }));
-    const take = vi.fn<Take>(async () => ({ ok: true }));
-    const other = "admin2@example.test";
-    const account = { ...deps({ take }).account, adminEmails: new Set([ADMIN, other]), devMailbox: false };
-    for (const emailSwitch of ["on", "admin_only"] as const) {
-      send.mockClear();
-      const notify = mod.breakerNotify({ account, sender: { send }, emailSwitch, db: testDb() }, CONFIG);
-      await notify({ kind: "trip", spentUsd: 9 });
-      expect(send.mock.calls.map(([m]) => m.to).sort()).toEqual([ADMIN, other].sort());
-      for (const [m] of send.mock.calls)
-        expect(m).toMatchObject({ from: "hi@bloop.here", subject: "bloop Spend: trip" });
-    }
-    expect(take).not.toHaveBeenCalled();
-  });
-
-  it("email: the breaker's notify sends nothing under email off, or with no admin address", async () => {
-    const send = vi.fn(async () => ({ messageId: "m" }));
-    const account = { ...deps().account, devMailbox: false };
-    const db = testDb();
-    await mod.breakerNotify({ account, sender: { send }, emailSwitch: "off", db }, CONFIG)({ kind: "trip" });
-    const noAdmins = { ...account, adminEmails: new Set<string>() };
-    await mod.breakerNotify({ account: noAdmins, sender: { send }, emailSwitch: "on", db }, CONFIG)({ kind: "trip" });
-    expect(send).not.toHaveBeenCalled();
-    // Nothing sent claims nothing: the next run with the switch on still mails.
-    expect(db.raw.prepare("SELECT count(*) AS n FROM setting").get()).toEqual({ n: 0 });
-  });
-
-  it("email: each alert key mails each admin at most once a window, across runs, and again once the window passes", async () => {
-    const send = vi.fn(async (_m: { to: string }) => ({ messageId: "m" }));
-    const account = { ...deps().account, devMailbox: false };
-    const db = testDb();
-    const clock = { t: T0 };
-    const notify = () => mod.breakerNotify({ account, sender: { send }, emailSwitch: "on", db }, CONFIG, () => clock.t);
-    const trip = { kind: "trip", rule: "month_budget", readings: { spentUsd: 9 } };
-    await notify()(trip);
-    await notify()(trip);
-    await Promise.all([notify()(trip), notify()(trip)]);
-    await notify()({ ...trip, rule: "r2_class_a" });
-    await notify()({ kind: "warn", rule: "month_budget", readings: {} });
-    expect(send.mock.calls.map(([m]) => m.to)).toEqual([ADMIN, ADMIN, ADMIN]);
-    expect(send.mock.calls[0]?.[0]).toMatchObject({ text: expect.stringContaining("spentUsd: 9") });
-    clock.t += mod.ALERT_WINDOW_MS - 1;
-    await notify()(trip);
-    expect(send).toHaveBeenCalledTimes(3);
-    clock.t += 1;
-    await notify()(trip);
-    expect(send).toHaveBeenCalledTimes(4);
   });
 
   it("email: an address normalizeEmail refuses is never admitted or sent, under any switch", async () => {
