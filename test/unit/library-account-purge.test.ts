@@ -93,6 +93,30 @@ describe("LIB-08 account purge", () => {
     }
   });
 
+  it("S7: an inactivity deletion stands only while the user is unseen since the warning; a requested one does not need it", async () => {
+    const warned = (db: LibTestDb, seen: number, status = "active") =>
+      db.raw
+        .prepare(
+          "UPDATE app_user SET status = ?, delete_after = ?, inactive_warned_at = 100, last_seen_at = ?, email_norm = 'u1@x.test' WHERE id = 'u1'",
+        )
+        .run(status, NOW - 1, seen);
+    const r2 = fakeBucket({ "u/u1/a/v1/orig": "x" });
+    const back = libWith();
+    warned(back, 150);
+    expect(await dueUsers({ DB: back }, NOW, 5)).toEqual([]);
+    expect(await purgeUser({ DB: back, LIBRARY: r2.bucket }, "u1", budget(), deps())).toBe("skipped");
+    expect(r2.objects.size).toBe(1);
+    const idle = libWith();
+    warned(idle, 50);
+    expect(await dueUsers({ DB: idle }, NOW, 5)).toEqual(["u1"]);
+    const unwarned = libWith();
+    unwarned.raw.prepare("UPDATE app_user SET delete_after = ?, last_seen_at = 5 WHERE id = 'u1'").run(NOW - 1);
+    expect(await dueUsers({ DB: unwarned }, NOW, 5)).toEqual([]);
+    const requested = libWith();
+    warned(requested, 150, "deleting");
+    expect(await dueUsers({ DB: requested }, NOW, 5)).toEqual(["u1"]);
+  });
+
   it("OSA-02: a hold already released no longer blocks the purge", async () => {
     const db = libWith();
     dueUser(db);
@@ -182,7 +206,9 @@ describe("LIB-08 account purge", () => {
 describe("dueUsers", () => {
   it("lists purging rows first, then due ones; skips suspended and not-yet-due", async () => {
     const db = libWith(["a", "b", "c", "d"]);
-    db.raw.prepare("UPDATE app_user SET delete_after = ?, status = 'active' WHERE id = 'a'").run(NOW - 5);
+    db.raw
+      .prepare("UPDATE app_user SET delete_after = ?, status = 'active', inactive_warned_at = 1 WHERE id = 'a'")
+      .run(NOW - 5);
     db.raw.prepare("UPDATE app_user SET status = 'purging' WHERE id = 'b'").run();
     db.raw.prepare("UPDATE app_user SET delete_after = ?, suspended_at = 1 WHERE id = 'c'").run(NOW - 5);
     db.raw.prepare("UPDATE app_user SET delete_after = ? WHERE id = 'd'").run(NOW + 5);

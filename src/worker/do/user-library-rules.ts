@@ -95,6 +95,26 @@ export const endScreenRow = (sql: SqlLike, sessionId: string, now: number): void
   sql.exec("UPDATE screen SET ends_at = ? WHERE session_id = ? AND ends_at IS NULL", now, sessionId);
 };
 
+/**
+ * Ends each row through `end`, which answers true when its Screen confirmed the end; only a confirmed row is marked
+ * ended, so a Screen that could not be reached stays listed and the next call retries it. Returns the confirmed count.
+ */
+export async function endScreenRows(
+  sql: SqlLike,
+  rows: readonly ScreenRow[],
+  end: (row: ScreenRow) => Promise<boolean>,
+  now: number,
+): Promise<number> {
+  let ended = 0;
+  for (const row of rows) {
+    const confirmed = await end(row).catch(() => false);
+    if (!confirmed) continue;
+    endScreenRow(sql, row.sessionId, now);
+    ended++;
+  }
+  return ended;
+}
+
 export function liveScreens(sql: SqlLike): ScreenRow[] {
   return sql
     .exec("SELECT * FROM screen WHERE ends_at IS NULL ORDER BY started_at")
