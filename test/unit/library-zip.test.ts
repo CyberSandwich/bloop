@@ -258,6 +258,16 @@ describe("LIB-07 exportPath", () => {
     expect(paths("Files", ["a\ud800b.pdf", "😀.pdf"])).toEqual(["Files/a_b.pdf", "Files/😀.pdf"]);
   });
 
+  it("keeps the joiners of an emoji sequence and the tags of a flag, and replaces a line separator", () => {
+    const family = "\u{1F468}‍\u{1F469}‍\u{1F467}";
+    const flag = "\u{1F3F4}\u{E0067}\u{E0062}\u{E0065}\u{E006E}\u{E0067}\u{E007F}";
+    expect(paths("Files", [`${family}.pdf`, `${flag}.pdf`, "a b.pdf"])).toEqual([
+      `Files/${family}.pdf`,
+      `Files/${flag}.pdf`,
+      "Files/a_b.pdf",
+    ]);
+  });
+
   it("holds the name to 200 UTF-8 bytes, cut on a character, keeping the extension, even when deduped", () => {
     const long = `${"é".repeat(150)}.pptx`;
     const [a, b] = paths("Files", [long, long]);

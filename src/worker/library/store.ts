@@ -3,7 +3,7 @@
 // rename, trash, restore and purge can resurrect a row or leave a ghost (LIB-12). Bytes move only through U's quota
 // builders, never here.
 
-import { NAME_MAX } from "../../shared/name-rule.ts";
+import { NAME_MAX } from "../../../public/js/shared/file-name.js";
 import type { Db, Statement } from "../auth/db.ts";
 import { IDLE_DAYS } from "../auth/sessions.ts";
 import { isPlayable } from "../convert/results.ts";
