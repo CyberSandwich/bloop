@@ -105,12 +105,10 @@ export class D1AuditLog implements AuditLog {
     }
   }
 
-  async forUser(userId: string, limit: number, before?: number): Promise<AuditRow[]> {
+  async forUser(userId: string, limit: number, beforeId?: number): Promise<AuditRow[]> {
     const { results } = await this.db
-      .prepare(
-        `${SELECT} WHERE (s.user_id = ?1 OR a.session_id = ?4) AND a.at < ?2 ORDER BY a.at DESC, a.id DESC LIMIT ?3`,
-      )
-      .bind(userId, before ?? Number.MAX_SAFE_INTEGER, limit, userScope(userId))
+      .prepare(`${SELECT} WHERE (s.user_id = ?1 OR a.session_id = ?4) AND a.id < ?2 ORDER BY a.id DESC LIMIT ?3`)
+      .bind(userId, beforeId ?? Number.MAX_SAFE_INTEGER, limit, userScope(userId))
       .all<RawRow>();
     return results.map(toRow);
   }
