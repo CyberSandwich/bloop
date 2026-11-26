@@ -21,7 +21,7 @@ import {
 import { checkImageSize } from "./image.ts";
 import { type RangeReader, readExact, ShortRead, ZIP_LIMITS } from "./index.ts";
 import { PDF_WINDOW_BYTES, scanPdfChunks } from "./pdf-scan.ts";
-import { type PlannedReader, planReads, ReadBudgetExceeded, readParts } from "./read-plan.ts";
+import { type PlannedReader, planReads, READ_PLAN, ReadBudgetExceeded, readParts } from "./read-plan.ts";
 import { checkSizes, hasEndRecord, readCentralDirectory, type ZipEntry } from "./zip.ts";
 
 /**
@@ -133,9 +133,12 @@ async function validatePdf(r: RangeReader): Promise<Verdict<"pdf">> {
 }
 
 /**
- * The PDF scan over `r` in order, one `PDF_WINDOW_BYTES` window at a time, whatever the size: a small object's windows
- * are slices of the one read the plan made, a large one's are one metered read each. So no scan holds more than two
- * windows of text, and none waits on another.
+ * The PDF scan over `r` in order, one `PDF_WINDOW_BYTES` window at a time: a PDF of one window is the one read the
+ * plan made, a larger one's windows are one metered read each. A scan's buffer stays within `SCAN_BUFFER_BYTES`
+ * (16 MiB); with its Latin-1 text, the window in flight and an object stream's inflate, one scan measured 25 to 45 MiB
+ * of live buffers on a worst-case file (four 8 MiB incompressible object streams). Nothing waits on another scan, so a
+ * few hostile near-cap PDFs validating at once in one isolate can pass 128 MB: accepted, since the isolate is reset,
+ * no file is accepted, and the hourly sweep deletes the stored objects.
  */
 function scanWindows(r: RangeReader): Promise<Check & { found?: string[] }> {
   let at = 0;
@@ -230,7 +233,9 @@ async function validateText<T extends FormatType>(r: RangeReader, type: T): Prom
 export async function validate<T extends FormatType>(r: RangeReader, declared: T): Promise<Verdict<T>> {
   if (r.size > MAX_OBJECT_BYTES) return refuse("too_large");
   try {
-    return await validatePlanned(planReads(r), declared);
+    // A PDF is read whole only up to one window, so its scan never holds a whole read beside its window buffer.
+    const whole = FORMATS[declared].family === "pdf" ? PDF_WINDOW_BYTES : READ_PLAN.smallObjectBytes;
+    return await validatePlanned(planReads(r, whole), declared);
   } catch (error) {
     const reason =
       error instanceof ReadBudgetExceeded ? "read_budget" : error instanceof ShortRead ? "short_read" : null;

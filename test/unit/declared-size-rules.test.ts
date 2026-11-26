@@ -55,7 +55,7 @@ describe("a validator reads through the read plan, never entry by entry", () => 
   it("plans the reads once, in validate, for every validator (each validator made its own plan)", () => {
     const validate = readFileSync(`${ROOT}${GUEST_DROP}validate.ts`, "utf8");
     expect(validate.match(/planReads\(/g)).toHaveLength(1);
-    expect(validate).toMatch(/validatePlanned\(planReads\(r\), declared\)/);
+    expect(validate).toMatch(/validatePlanned\(planReads\(r, whole\), declared\)/);
     expect(validate).toMatch(/readParts\(r, wanted, PART_LIMITS\)/);
     expect(validate).toMatch(/checkImageSize\(type, r, head\)/);
     expect(readFileSync(`${ROOT}${GUEST_DROP}cfb.ts`, "utf8")).toMatch(/\+\+reads > CFB_LIMITS\.maxSectorReads/);

@@ -36,28 +36,48 @@ describe("no PDF validation waits on another", () => {
     expect(await within(validate(reader(validPdf()), "pdf"))).toEqual({ ok: true, type: "pdf" });
   });
 
-  it("lets a second validation finish while a first one's store read never settles", async () => {
-    const pdf = validPdf();
-    void validate({ size: pdf.length, read: () => never }, "pdf");
-    expect(await within(validate(reader(pdf), "pdf"))).toEqual({ ok: true, type: "pdf" });
+  it("lets a second validation finish while a first one's window read never settles inside its scan (a scan gate)", async () => {
+    const large = spaced(PDF_WINDOW_BYTES + 1000);
+    // The head and tails arrive; the first window, read from inside the scan, never does.
+    const stuck = {
+      size: large.length,
+      read: (o: number, n: number) => (n === PDF_WINDOW_BYTES ? never : Promise.resolve(large.slice(o, o + n))),
+    };
+    void validate(stuck, "pdf");
+    expect(await within(validate(reader(validPdf()), "pdf"))).toEqual({ ok: true, type: "pdf" });
   });
 
-  it("scans a small PDF in PDF_WINDOW_BYTES windows sliced from its one read (it was scanned as one chunk)", async () => {
-    const size = PDF_WINDOW_BYTES + 1000;
-    const pdf = new Uint8Array(size).fill(0x20);
-    pdf.set(new TextEncoder().encode("%PDF-1.5\n"));
-    pdf.set(new TextEncoder().encode("%%EOF\n"), size - 6);
-    let reads = 0;
-    const counted = {
-      size,
-      read: async (o: number, n: number) => {
-        reads++;
-        return pdf.slice(o, o + n);
-      },
+  it("reads a PDF of one window whole, and scans a larger one in window reads (a whole read beside the buffer)", async () => {
+    const counted = (pdf: Uint8Array) => {
+      const reads: number[] = [];
+      return {
+        reads,
+        size: pdf.length,
+        read: async (o: number, n: number) => {
+          reads.push(n);
+          return pdf.slice(o, o + n);
+        },
+      };
     };
+    const one = counted(spaced(PDF_WINDOW_BYTES));
     scans.windows = [];
-    expect(await validate(counted, "pdf")).toEqual({ ok: true, type: "pdf" });
+    expect(await validate(one, "pdf")).toEqual({ ok: true, type: "pdf" });
+    expect(one.reads).toEqual([PDF_WINDOW_BYTES]);
+    expect(scans.windows).toEqual([PDF_WINDOW_BYTES]);
+    const more = counted(spaced(PDF_WINDOW_BYTES + 1000));
+    scans.windows = [];
+    expect(await validate(more, "pdf")).toEqual({ ok: true, type: "pdf" });
+    // The head, the zip end record's tail, the PDF tail, then two windows.
+    expect(more.reads.slice(3)).toEqual([PDF_WINDOW_BYTES, 1000]);
+    expect(more.reads).toHaveLength(5);
     expect(scans.windows).toEqual([PDF_WINDOW_BYTES, 1000]);
-    expect(reads).toBe(1);
   }, 30_000);
 });
+
+/** A PDF of `size` bytes: header, spaces, `%%EOF`. */
+function spaced(size: number): Uint8Array {
+  const pdf = new Uint8Array(size).fill(0x20);
+  pdf.set(new TextEncoder().encode("%PDF-1.5\n"));
+  pdf.set(new TextEncoder().encode("%%EOF\n"), size - 6);
+  return pdf;
+}

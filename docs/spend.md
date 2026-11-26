@@ -129,7 +129,7 @@ Calls, by stream. A caller checks its switch first and calls the guard second. A
 
 | stream | calls |
 |---|---|
-| uploads | `take("upload_user", 1, userId)` and `take("upload_user_bytes", bytes, userId)` at create; `take("guest_drop", 1, ipHash)` per guest drop; `charge("A", n)` once per part-URL mint request; `charge("B", n)` once per validation, where `n` is the reads that validation makes (1 for an object up to 16 MiB, at most 72 for a larger one) |
+| uploads | `take("upload_user", 1, userId)` and `take("upload_user_bytes", bytes, userId)` at create; `take("guest_drop", 1, ipHash)` per guest drop; `charge("A", n)` once per part-URL mint request; `charge("B", n)` once per validation, where `n` is the reads that validation makes (1 for an object up to 16 MiB, a PDF up to 8 MiB, at most 72 for a larger one) |
 | conversion | per request: `take("convert_user", 1, userId)`, `take("convert_guest", 1, ipHash)` or `take("convert_demo", 1, ipHash)`: 429. In the Converter: `acquire("convert" or "convert_public", ttlSeconds, scope)`; busy means set the alarm for `retryAfterSeconds` and try again, never a loop; `take("container_seconds", stageTimeoutSum)` before `start()` and `refund(ticket, unused)` of the unused part; a refusal marks the derived row failed once. `release(leaseId)` in `finally` (idempotent, retried once by the client). `record("conversion_done" or "conversion_failed", 1)` |
 | accounts | `take("email", 1)` and `take("email_code", 1, ipHash)` before a send: 429, and the code route says "Try Your Passkey or Ask for a Sign-In Link". The per-recipient limit is A's `email_code` buckets, not a guard meter. Also the admin spend panel and routes (section 8) |
 | library | `acquire("export", 900, userId)` and `take("export_user", 1, userId)` |

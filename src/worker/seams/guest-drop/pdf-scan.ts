@@ -11,7 +11,7 @@
 // One scanner reads a PDF as a sequence of chunks of any size, and its verdict does not depend on how the file is cut:
 // every decision reads a bounded span past its offset, held back at the buffer's end, except an object stream's data,
 // which is read on to its `endstream` up to `MAX_STREAM_BYTES` (one window), the buffer cut to that data first. So the
-// buffer stays under two windows plus the hold-back.
+// buffer stays within `SCAN_BUFFER_BYTES`: two windows and the overlap.
 //
 // Limits: the scan covers names, not stream payloads (an XFA form's XML, an embedded file's bytes, a content stream).
 // A name inside a string or comment also matches (fail closed). An object stream is read only when its dictionary is
@@ -52,6 +52,11 @@ const DICT_LOOKBACK = 4096;
 const HOLD_BACK = 2 * DICT_LOOKBACK;
 /** A real file has a handful of object streams; each one costs an inflate. */
 export const MAX_OBJECT_STREAMS = 4096;
+/**
+ * The most bytes the scan buffer holds, whatever chunks it is fed (it takes at most a window of one at a time): a
+ * window, the overlap kept past a cut (the hold-back and a dictionary's lookback), and an object stream's data read on.
+ */
+export const SCAN_BUFFER_BYTES = PDF_WINDOW_BYTES + HOLD_BACK + DICT_LOOKBACK + MAX_STREAM_BYTES;
 
 // PDF white space includes NUL; delimiters end a name.
 // biome-ignore lint/suspicious/noControlCharactersInRegex: NUL is PDF white space
@@ -153,10 +158,21 @@ export async function scanPdfChunks(
    */
   let refs: number[] = [];
 
+  /** What is left of the source's last chunk: the buffer takes at most a window of it per pull. */
+  let spare: Uint8Array = new Uint8Array();
+  let ended = false;
   const pull = async (): Promise<void> => {
-    const chunk = last ? null : await next();
-    if (chunk === null) last = true;
-    else data = join(data, chunk);
+    while (spare.length === 0 && !ended) {
+      const chunk = await next();
+      if (chunk === null) ended = true;
+      else spare = chunk;
+    }
+    if (spare.length === 0) last = true;
+    else {
+      const take = spare.subarray(0, PDF_WINDOW_BYTES);
+      spare = spare.subarray(take.length);
+      data = join(data, take);
+    }
     onBuffer?.(data.length);
   };
   const cut = (to: number): void => {
