@@ -63,15 +63,16 @@ export function createBox() {
  * @param {PhonePage} c
  * @param {() => Shown | null | false} at the slide on screen; false while the remote is away
  * @param {HTMLElement} preview
+ * @param {() => void} place the remote's own: the fold changes the column, so a tap runs it like a paint does
  * @returns {() => void}
  */
-export function mount(c, at, preview) {
+export function mount(c, at, preview, place) {
   const api = createApi();
   const list = /** @type {HTMLElement} */ (document.getElementById("file-list"));
   const panel = /** @type {HTMLElement} */ (document.querySelector(".column > .actions"));
   const { box, show } = createBox();
   const narrow = matchMedia(NARROW);
-  /** @type {Map<string, string[]>} */
+  /** Per session and item: a note read for one pairing is never shown for another. @type {Map<string, string[]>} */
   const held = new Map();
   /** Asked during this Present: a failed call is asked again at the next one, not at every paint. */
   const asked = new Set();
@@ -97,11 +98,12 @@ export function mount(c, at, preview) {
     if (!now?.present) asked.clear();
     const it = now && now.present ? view?.items.find((x) => x.id === now.item) : undefined;
     const paged = !!it && !!view && narrow.matches && !!pagesOf(it, view);
-    const notes = it && paged ? held.get(it.id) : undefined;
-    if (it && paged && !notes && !asked.has(it.id)) {
-      asked.add(it.id);
+    const key = it ? `${c.pid}:${it.id}` : "";
+    const notes = it && paged ? held.get(key) : undefined;
+    if (it && paged && !notes && !asked.has(key)) {
+      asked.add(key);
       loadNotes(api, c.pid, it.id).then((got) => {
-        if (got) held.set(it.id, got);
+        if (got) held.set(key, got);
         update();
       });
     }
@@ -112,7 +114,6 @@ export function mount(c, at, preview) {
       folded = true;
     }
     const row = list.querySelector("[aria-current]");
-    const focused = list.contains(document.activeElement);
     list.classList.toggle("notes-folded", folded);
     for (const x of list.querySelectorAll(".notes-chevron")) if (!row?.contains(x)) x.remove();
     for (const x of list.querySelectorAll("[aria-expanded]")) x.removeAttribute("aria-expanded");
@@ -123,8 +124,6 @@ export function mount(c, at, preview) {
         chevron.classList.add("notes-chevron");
         row.append(chevron);
       }
-      // A row hidden by the fold takes its focus with it.
-      if (focused && !list.contains(document.activeElement)) /** @type {HTMLElement} */ (row).focus();
     }
     if (folded) {
       if (!box.isConnected || preview.nextElementSibling !== box) panel.before(preview, box);
@@ -139,7 +138,7 @@ export function mount(c, at, preview) {
       if (!on || !(e.target instanceof Element) || !e.target.closest("[aria-current]")) return;
       e.stopPropagation();
       folded = !folded;
-      update();
+      place();
     },
     true,
   );
