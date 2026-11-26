@@ -26,6 +26,8 @@ const LEVELS = ["L1", "L2", "L3", "L4", "L5"];
 const planFor = (level: string, undo = false) =>
   buildPlan(table, { level, undo, meter: level === "L1" ? "convert" : undefined });
 const text = (r: { lines: string[] }) => r.lines.join("\n");
+/** The Cloudflare and GitHub requests, without the site probe that opens every run. */
+const apiCalls = (api: ReturnType<typeof fakeApi>) => api.calls.filter((c) => !c.url.endsWith("/api/health"));
 
 // ---------- the table ----------
 
@@ -267,7 +269,7 @@ describe("the lockdown token", () => {
       const { code, out } = await main(["--level", level, "--apply"], d);
       expect(code, level).toBe(2);
       expect(out).toContain("LOCKDOWN_CF_TOKEN");
-      expect(api.calls).toHaveLength(0);
+      expect(apiCalls(api)).toHaveLength(0);
       expect(d1.argvs).toHaveLength(0);
     }
   });
@@ -334,7 +336,7 @@ describe("the lockdown token", () => {
 
     const missing = deps(undefined, undefined, { LOCKDOWN_CF_TOKEN: undefined });
     expect((await main(["--level", "L3"], missing.deps)).out).toMatch(/L3 WILL FAIL: LOCKDOWN_CF_TOKEN is not set/);
-    expect(missing.api.calls).toHaveLength(0);
+    expect(apiCalls(missing.api)).toHaveLength(0);
   });
 
   it("no credentials in the environment: the dry run says so and makes no call", async () => {
@@ -344,7 +346,7 @@ describe("the lockdown token", () => {
     });
     const { out } = await main(["--level", "L2"], d);
     expect(out).toContain("token: not checked");
-    expect(api.calls).toHaveLength(0);
+    expect(apiCalls(api)).toHaveLength(0);
   });
 });
 

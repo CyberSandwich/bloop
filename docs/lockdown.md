@@ -4,7 +4,11 @@ How the owner cuts cost or locks the service from the GitHub phone app or a Mac,
 
 This lands after the settings table and the spend guard (streams F and G). L1 to L3 write rows those streams read, so migration 0005 (the `setting` and `admin_action` tables) must be applied first; L4 and L5 need neither.
 
-Nothing here deletes anything. No rung deletes the Worker, a Durable Object class, a bucket, a database or any data, and none deploys a script (a deploy without the Durable Object classes erases their storage). The script refuses such a request in code (`assertSafeCall`) and a test pins it.
+Nothing here deletes anything. No rung deletes the Worker, a Durable Object class, a bucket, a database or any data, and none deploys a script (a deploy without the Durable Object classes erases their storage). The script refuses such a request in code (`assertSafeCall`) and a test pins it. A redeploy never uses `--durable-objects-code-update-mode immediate`: it drops live sockets and resets a running conversion, and ADR 0012 keeps the 300 s default.
+
+## First check: is a spend block active?
+
+Every run, dry or applied, opens with one unauthenticated `GET /api/health` on the production host and puts the answer on the first line. A site that does not answer is either a Workers or Durable Objects spend block (what that stops is in [the spend guard doc](spend.md)), an L4 or L5 already in force, or an outage. The run still goes on, because its calls go to the Cloudflare API and not to the Worker. What it cannot do is lift a spend limit: that is the dashboard, Billing, Spend limits.
 
 ## Step 0: a leaked deploy token
 

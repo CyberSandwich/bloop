@@ -106,6 +106,8 @@ export function fakeApi() {
     /** Path fragments that answer 403. */
     denied: [] as string[],
     githubFails: false,
+    /** What the live site's /api/health answers; 0 means the request fails outright. */
+    site: 200,
   };
   const reply = (status: number, body: unknown, headers: Record<string, string> = {}) =>
     new Response(JSON.stringify(body), { status, headers });
@@ -118,6 +120,10 @@ export function fakeApi() {
     calls.push({ method, url, body, auth });
     const u = new URL(url);
     const path = u.pathname.replace("/client/v4", "");
+    if (u.host === table.zone) {
+      if (!state.site) throw new TypeError("fetch failed");
+      return state.site === 200 ? reply(200, { status: "ok" }) : reply(state.site, { error: "blocked" });
+    }
     if (u.host === "api.github.com") {
       if (state.githubFails) return reply(500, { message: "down" });
       const cancel = path.match(/\/actions\/runs\/(\d+)\/cancel$/);
