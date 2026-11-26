@@ -359,6 +359,7 @@ describe("size budgets", () => {
       "upload progress words, lazy": "public/js/core/upload-format.js",
       "upload sheet, lazy": "public/js/core/upload-sheet.js",
       "upload refusal copy, lazy": "public/js/core/upload-refusals.js",
+      "library sample, lazy": "public/js/library/sample.js",
       "library present, lazy": "public/js/library/present.js",
       "library sort, lazy": "public/js/library/sort.js",
       "library trash, lazy": "public/js/library/trash.js",
