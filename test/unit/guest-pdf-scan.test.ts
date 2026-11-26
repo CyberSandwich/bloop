@@ -9,7 +9,7 @@ import {
   scanPdf,
   scanPdfChunks,
 } from "../../src/worker/seams/guest-drop/pdf-scan.ts";
-import { CLEAN, concat as cat, HOSTILE } from "../pdf-corpus.ts";
+import { CLEAN, concat as cat, forgedMarks, HOSTILE } from "../pdf-corpus.ts";
 
 const enc = new TextEncoder();
 const pdf = (body: string) => enc.encode(`%PDF-1.5\n${body}\n%%EOF\n`);
@@ -266,31 +266,43 @@ describe("DROP-13 pdf-active: hostile input", () => {
   });
 
   it("DROP-13 pdf-active: keywords hidden in a string or comment cannot steer the scan off an object stream (forged marks, fail-open)", async () => {
-    const inner = deflateSync(enc.encode("<</S/JavaScript>>"));
-    const forged = (hide: string) =>
-      cat([
-        enc.encode(`%PDF-1.5\n5 0 obj\n<< /N 1 /First 4 0 R ${hide} /Filter /FlateDecode /Length ${inner.length} >>\n`),
-        enc.encode("stream\n"),
-        inner,
-        enc.encode("\nendstream\nendobj\n4 0 obj 5 endobj\n%%EOF\n"),
-      ]);
+    const long = "a".repeat(5000);
     for (const hide of [
       "/X ( endobj ) /Y ( obj<< )",
       "/X (a \\( endobj ) /Y ((nested) obj<< )",
       "% endobj obj<<\n/Z 1",
       "/X ( endobj ) /Y 1 0 obj<< /Z",
+      `/X (${long} endobj obj<< )`,
+      `% ${long} endobj obj<<\n/Z 1`,
     ]) {
-      const poc = forged(hide);
+      const poc = forgedMarks(hide);
       for (const size of [1, 64, 4096, poc.length]) {
-        expect(await chunked(poc, size), `${hide} at ${size}`).toMatchObject({ ok: false, found: ["unscannable"] });
+        expect(await chunked(poc, size), `${hide.slice(0, 40)} at ${size}`).toMatchObject({
+          ok: false,
+          found: ["unscannable"],
+        });
       }
     }
-    expect(await scanPdf(forged(""))).toMatchObject({ ok: false, found: ["JavaScript"] });
+    expect(await scanPdf(forgedMarks(""))).toMatchObject({ ok: false, found: ["JavaScript"] });
+  });
+
+  it("DROP-13 pdf-active: a run of unclosed strings and comments costs one lookback, not one per byte (scan stays linear)", async () => {
+    for (const run of ["(", "%", "(%", "((((\\"]) {
+      const poc = pdf(`1 0 obj<<${run.repeat(200_000)}`);
+      let lookaheads = 0;
+      const out = await scanPdfChunks(pieces(poc, [poc.length]), undefined, (bytes) => {
+        expect(bytes).toBeLessThanOrEqual(4096);
+        lookaheads++;
+      });
+      expect(out).toMatchObject({ ok: false, found: ["unscannable"] });
+      // The header comment and the first unclosed one; every later one is skipped.
+      expect(lookaheads, `run ${run}`).toBe(2);
+    }
   });
 
   it("DROP-13 pdf-active: an object that begins inside another stream's data is refused, binary data with stray brackets passes", async () => {
     const hosted = pdf(
-      "1 0 obj<</Length 99>>stream\nxx\n5 0 obj<< /Type /ObjStm /N 1 /First 4 0 R >>\nendstream\nendobj\n4 0 obj 5 endobj",
+      "1 0 obj<</Length 99>>stream\nxx\n5 0 obj<< /N 1 /First 4 0 R >>\nendstream\nendobj\n4 0 obj 5 endobj",
     );
     expect(await scanPdf(hosted)).toMatchObject({ ok: false, found: ["unscannable"] });
     const binary = cat([
