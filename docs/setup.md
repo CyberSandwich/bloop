@@ -69,6 +69,7 @@ Names only; never put a value in a file, a commit or a chat. Set each with `npx 
 | `R2_ACCESS_KEY_ID`, `R2_SECRET_ACCESS_KEY` | an R2 API token with Object Read and Write on the two buckets only |
 | `R2_ACCOUNT_ID` | the Cloudflare account id; it fills the R2 endpoint in the CSP at serve time, so it never enters the repo |
 | `FILE_TOKEN_KEY`, `CODE_PEPPER` | 32 random bytes each, base64url, different from each other and from every older key |
+| `FILE_TOKEN_KEY_PREVIOUS` | set only while rotating `FILE_TOKEN_KEY`: put the old value here, then the new one in `FILE_TOKEN_KEY`; previews signed with the old key keep verifying for their 300 s, and the secret is deleted five minutes later. It never signs |
 | `TURNSTILE_SECRET_KEY` | the Turnstile widget's secret; the site key is a plain var (`TURNSTILE_SITE_KEY`), not a secret |
 | `TALLY_SIGNING_SECRET` | the Tally webhook signing secret; the hook refuses every request until it is set |
 | `ADMIN_EMAILS`, `TEST_EMAILS` | comma-separated addresses; entries are normalized (ADR 0013) and an invalid entry is skipped |
