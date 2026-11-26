@@ -3834,6 +3834,7 @@ test.describe("NOTES-01 phone-only: the presenter's notes on the phone (design.m
     await page.getByRole("button", { name: "Approve" }).click();
     await expectViewer(screen.page);
     const bubbles = page.getByRole("group", { name: "The Screen" });
+    const box = page.locator(".notes");
     await expect(bubbles).toBeVisible();
     return {
       screen,
@@ -3844,10 +3845,12 @@ test.describe("NOTES-01 phone-only: the presenter's notes on the phone (design.m
       bubbles,
       list: page.locator("#file-list"),
       rows: page.locator("#file-list > li:visible"),
-      box: page.locator(".notes"),
+      box,
       preview: page.locator(".preview"),
       panel: page.locator(".column > .actions"),
       present: () => bubbles.getByRole("button", { name: "Present" }).click(),
+      /** The box's own entry has ended: its transform no longer shifts a measured box. */
+      arrived: () => expect.poll(() => box.evaluate((n) => n.getAnimations().length)).toBe(0),
       next: () => bubbles.getByRole("button", { name: "Next" }).click(),
     };
   }
@@ -3864,6 +3867,7 @@ test.describe("NOTES-01 phone-only: the presenter's notes on the phone (design.m
       const s = await session(browser, size);
       await s.present();
       await expect(s.box).toContainText(opening(NOTES[0] ?? ""));
+      await s.arrived();
       expect(await s.box.evaluate((n) => n.scrollHeight - n.clientHeight), "the notes overflow").toBeGreaterThan(0);
       // The page at its end, where the floating panel rides its natural place under the box.
       await s.page.evaluate("window.scrollTo(0, document.documentElement.scrollHeight)");
@@ -3927,8 +3931,12 @@ test.describe("NOTES-01 phone-only: the presenter's notes on the phone (design.m
       expect(values[i] ?? 0, `${what}, frame ${i}`).toBeGreaterThanOrEqual((values[i - 1] ?? 0) - 1e-6);
   };
   const holdsStill = (frames: Frame[]) => {
-    for (const key of ["boxTop", "previewTop", "previewHeight"] as const)
-      expect(new Set(frames.map((f) => f[key])).size, `${key} never changes while the notes animate`).toBe(1);
+    // Laid-out tops and the slide's height, to the pixel: a transform never moves them, and the slide's own picture
+    // may settle its height by a rounding step as a page turns.
+    for (const key of ["boxTop", "previewTop", "previewHeight"] as const) {
+      const values = frames.map((f) => f[key]);
+      expect(Math.max(...values) - Math.min(...values), `${key} while the notes animate`).toBeLessThanOrEqual(1);
+    }
   };
 
   for (const size of SIZES) {
@@ -3939,6 +3947,7 @@ test.describe("NOTES-01 phone-only: the presenter's notes on the phone (design.m
       await sampleFrames(s.page);
       await s.present();
       await expect(s.box).toContainText(opening(NOTES[0] ?? ""));
+      await s.arrived();
       await expect.poll(async () => (await framesOf(s.page)).at(-1)?.box).toBe(1);
       const frames = await framesOf(s.page);
       expect(frames.length, "the reveal spans several frames").toBeGreaterThan(2);
@@ -3958,6 +3967,7 @@ test.describe("NOTES-01 phone-only: the presenter's notes on the phone (design.m
       await sampleFrames(s.page);
       await s.present();
       await expect(s.box).toContainText(opening(NOTES[0] ?? ""));
+      await s.arrived();
       await expect.poll(async () => (await framesOf(s.page)).at(-1)?.box).toBe(1);
       const start = (await framesOf(s.page)).length;
       await s.next();
@@ -3988,6 +3998,7 @@ test.describe("NOTES-01 phone-only: the presenter's notes on the phone (design.m
     await sampleFrames(s.page);
     await s.present();
     await expect(s.box).toContainText(opening(NOTES[0] ?? ""));
+    await s.arrived();
     await expect.poll(async () => (await framesOf(s.page)).at(-1)?.box).toBe(1);
     const frames = await framesOf(s.page);
     expect(frames.filter((f) => f.box < 1).length, "at most the frame the animation starts in").toBeLessThanOrEqual(1);
@@ -4045,6 +4056,7 @@ test.describe("NOTES-01 phone-only: the presenter's notes on the phone (design.m
         const s = await session(browser, size);
         await s.present();
         await expect(s.box).toContainText(opening(NOTES[0] ?? ""));
+        await s.arrived();
         await expect(s.preview).toBeVisible();
         const list = await boxOf(s.list);
         const preview = await boxOf(s.preview);
@@ -4081,6 +4093,7 @@ test.describe("NOTES-01 phone-only: the presenter's notes on the phone (design.m
         const s = await session(browser, size);
         await s.present();
         await expect(s.box).toContainText(opening(NOTES[0] ?? ""));
+        await s.arrived();
         await s.box.evaluate((n) => {
           n.scrollTop = n.scrollHeight;
         });
@@ -4093,6 +4106,7 @@ test.describe("NOTES-01 phone-only: the presenter's notes on the phone (design.m
         });
         await s.bubbles.getByRole("button", { name: "Previous" }).click();
         await expect(s.box).toContainText(opening(NOTES[0] ?? ""));
+        await s.arrived();
         await expect.poll(() => s.box.evaluate((n) => n.scrollTop)).toBe(0);
         await close(s);
       });
@@ -4104,6 +4118,7 @@ test.describe("NOTES-01 phone-only: the presenter's notes on the phone (design.m
         const s = await session(browser, size, answerWith(NOTES.map((n, i) => (i === 1 ? "" : n))));
         await s.present();
         await expect(s.box).toContainText(opening(NOTES[0] ?? ""));
+        await s.arrived();
         // The box runs below the fold on a short phone: its pill is read with the page at its end, where the floating pill rides.
         await s.page.evaluate("window.scrollTo(0, document.documentElement.scrollHeight)");
         const before = {
@@ -4187,6 +4202,7 @@ test.describe("NOTES-01 phone-only: the presenter's notes on the phone (design.m
     const s = await session(browser, SIZES[0] as Size);
     await s.present();
     await expect(s.box).toContainText(opening(NOTES[0] ?? ""));
+    await s.arrived();
     await s.next();
     await expect(s.box).toContainText(opening(NOTES[1] ?? ""));
     const html = await s.screen.page.content();
