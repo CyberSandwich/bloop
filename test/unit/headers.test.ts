@@ -1,4 +1,5 @@
-import { readFileSync } from "node:fs";
+import { readdirSync, readFileSync } from "node:fs";
+import { join, relative } from "node:path";
 import { describe, expect, it } from "vitest";
 import {
   BASE_HEADERS,
@@ -55,6 +56,48 @@ describe("public/_headers matches headers.ts", () => {
     const policy = staticHeaders("/report")["permissions-policy"] ?? "";
     expect(policy).not.toContain("publickey-credentials-get=(self)");
     expect(staticHeaders("/report")["content-security-policy"]).toContain("challenges.cloudflare.com");
+  });
+});
+
+describe("caching and worker policy in _headers", () => {
+  const immutable = "public, max-age=31536000, immutable";
+  const files = (dir: string): string[] =>
+    readdirSync(new URL(`../../public/${dir}`, import.meta.url), { recursive: true, withFileTypes: true })
+      .filter((d) => d.isFile())
+      .map(
+        (d) =>
+          `/${dir}/${relative(new URL(`../../public/${dir}`, import.meta.url).pathname, join(d.parentPath, d.name))}`,
+      );
+
+  it("every file under /fonts and /js/vendor is immutable, and a version is in its name", () => {
+    const all = [...files("fonts"), ...files("js/vendor")];
+    expect(all.length).toBeGreaterThan(2);
+    for (const path of all) {
+      expect(staticHeaders(path)["cache-control"], path).toBe(immutable);
+      expect(path, path).toMatch(/\d+\.\d+/);
+    }
+  });
+
+  it("pages, scripts and styles carry no Cache-Control or Vary here, so the asset layer revalidates them with an ETag", () => {
+    for (const path of ["/", "/s", "/js/site.js", "/css/base.css", "/favicon.svg"]) {
+      expect(staticHeaders(path)["cache-control"], path).toBeUndefined();
+      expect(staticHeaders(path).vary, path).toBeUndefined();
+    }
+  });
+
+  it("images are cached for a day and may be served stale for a week", () => {
+    expect(staticHeaders("/img/hero.jpg")["cache-control"]).toBe(
+      "public, max-age=86400, stale-while-revalidate=604800",
+    );
+  });
+
+  it("a viewer worker script is a no-network policy and keeps every base header", () => {
+    expect(staticHeaders("/js/workers/sheet.js")).toEqual(lower(headersFor("worker")));
+    // The vendored copy is also immutable, which the worker policy does not say.
+    const { "cache-control": cache, ...vendored } = staticHeaders("/js/vendor/pdfjs-5.4.1/pdf.worker.min.mjs");
+    expect(cache).toBe("public, max-age=31536000, immutable");
+    expect(vendored).toEqual(lower(headersFor("worker")));
+    expect(CSP.worker).toBe("default-src 'none'; script-src 'self'");
   });
 });
 

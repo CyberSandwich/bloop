@@ -98,7 +98,7 @@ describe("site assets", () => {
     ["/og.png", /image\/png/],
     ["/favicon.svg", /image\/svg\+xml/],
     ["/apple-touch-icon.png", /image\/png/],
-    ["/fonts/inter-latin.woff2", /font\/woff2|octet-stream/],
+    ["/fonts/inter-latin-4.1.woff2", /font\/woff2|octet-stream/],
   ])("serves %s", async (path, type) => {
     const res = await fetch(`${wrangler.url}${path}`);
     expect(res.status, path).toBe(200);

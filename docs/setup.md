@@ -123,7 +123,7 @@ All outputs are committed; run these only when a source changes. Make one throwa
 | Change | Command | Writes |
 |---|---|---|
 | the name, the headline or the logo | edit `SITE_NAME`, `H1` or `SUB` in `tools/render-og.py` (the logo is `public/favicon.svg`), then run it with the venv's python, or with `--font` and a static Inter SemiBold file | `public/og.png`, `public/apple-touch-icon.png`, `tools/og.svg` |
-| page text with a new character | the venv's python: `-I tools/subset-font.py` | `public/fonts/inter-latin.woff2` |
+| page text with a new character | the venv's python: `-I tools/subset-font.py` | `public/fonts/inter-latin-4.1.woff2` |
 
 
 ## Microsoft Entra app registration
