@@ -1,9 +1,10 @@
 import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 import { SESSION_ENDED, WAITLIST_FORM } from "../../public/js/core/copy.js";
+import { CHECK } from "../../public/js/core/copy-check.js";
 import { TYPED_LETTERS, typedError } from "../../public/js/core/copy-code.js";
 import { phoneCopy, refusalToast, uploadLine, videoTime } from "../../public/js/core/copy-phone.js";
-import { CHECK, endLine, FRESH_LINE, screenCopy } from "../../public/js/core/copy-screen.js";
+import { endLine, FRESH_LINE, screenCopy } from "../../public/js/core/copy-screen.js";
 import { screenNet } from "../../public/js/core/net-states.js";
 import { RESULTS } from "../../public/js/core/states.js";
 import { SUPPORT } from "../../public/js/shared/errors.js";
