@@ -46,14 +46,17 @@ describe("the old workers.dev host", () => {
     },
   );
 
-  it.each(["/js/site.js", "/css/base.css", "/fonts/inter-latin-4.1.woff2", "/favicon.svg", "/apple-touch-icon.png"])(
-    "run_worker_first leaves %s to the asset layer: 200 on the old host, no redirect",
-    async (path) => {
-      const res = await asOldHost(path);
-      expect(res.status).toBe(200);
-      expect(res.location).toBeUndefined();
-    },
-  );
+  it.each([
+    "/js/site.js",
+    "/css/base.css",
+    "/fonts/inter-latin-cc089b5d.woff2",
+    "/favicon.svg",
+    "/apple-touch-icon.png",
+  ])("run_worker_first leaves %s to the asset layer: 200 on the old host, no redirect", async (path) => {
+    const res = await asOldHost(path);
+    expect(res.status).toBe(200);
+    expect(res.location).toBeUndefined();
+  });
 
   it.each(["/f/token/name.pdf?x=1", "/b/token", "/p/token", "/fo/other"])(
     "the 301 for %s is no-store, since the path is the secret",

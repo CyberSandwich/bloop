@@ -1,8 +1,8 @@
 name: staging
 
-# A push to the `staging` branch, or a manual run from a `ci/*` branch, deploys that commit to the bloop-staging Worker
-# (docs/setup.md, Staging). It skips with a log line until the staging resources and the `staging` environment's
-# Cloudflare secrets exist, so it never fails the repo.
+# A push to the `staging` branch deploys that commit to the bloop-staging Worker (docs/setup.md, Staging). No other
+# branch runs this job: it holds a Cloudflare token, and the `staging` environment allows that branch only. It skips
+# with a log line until the staging D1 and the environment's secrets exist, so it never fails the repo.
 on:
   push:
     branches: [staging]
@@ -17,7 +17,7 @@ concurrency:
 
 jobs:
   staging:
-    if: github.ref_name == 'staging' || startsWith(github.ref_name, 'ci/')
+    if: github.ref_name == 'staging'
     runs-on: ubuntu-latest
     timeout-minutes: 15
     environment: staging
@@ -38,8 +38,9 @@ jobs:
         with:
           node-version-file: .nvmrc
           cache: npm
+      # No install script runs in a job that will hold the token; tools/staging.mjs runs the lockfile's wrangler by path.
       - if: steps.gate.outputs.has == 'true'
-        run: npm ci
+        run: npm ci --ignore-scripts
       - if: steps.gate.outputs.has == 'true'
         run: npm run check
       - name: Look for the staging resources
@@ -49,16 +50,10 @@ jobs:
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
-      # The build bakes the staging file origin (none yet) into js/shared/fo.js.
       - name: Deploy
         if: steps.resources.outputs.ready == 'true'
-        run: |
-          node tools/staging.mjs prepare
-          npx wrangler d1 migrations apply DB --remote -e staging
-          npx wrangler deploy -e staging
-          node tools/staging.mjs secrets
+        run: node tools/staging.mjs deploy
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
           STAGING_D1_ID: ${{ steps.resources.outputs.d1_id }}
-          FILE_ORIGIN: ""

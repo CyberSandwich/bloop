@@ -65,15 +65,18 @@
   ! Content-Security-Policy
   Content-Security-Policy: default-src 'none'; script-src 'self'
 
-/js/vendor/:lib/pdf.worker.*
-  ! Content-Security-Policy
-  Content-Security-Policy: default-src 'none'; script-src 'self'
-
 /fonts/*
   Cache-Control: public, max-age=31536000, immutable
 
 /js/vendor/*
   Cache-Control: public, max-age=31536000, immutable
 
+/js/workers/:unit/*
+  Cache-Control: public, max-age=31536000, immutable
+
 /img/*
   Cache-Control: public, max-age=86400, stale-while-revalidate=604800
+
+https://bloop.dsap.workers.dev/*
+  ! Content-Security-Policy
+  Content-Security-Policy: default-src 'none'; sandbox; frame-ancestors 'none'

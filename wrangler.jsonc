@@ -146,7 +146,7 @@
     "TOKEN_KEK_CURRENT": "k1"
   },
   // Staging (docs/setup.md): its own script, Durable Object namespaces, D1 and EU buckets, tiny caps, Cloudflare's published
-  // Turnstile test keys, no crons. Bindings, vars and ratelimits are not inherited, so they are repeated; test/unit/staging.test.ts keeps them in step.
+  // Turnstile test keys, the */5 breaker cron only. Bindings, vars and ratelimits are not inherited, so they are repeated; test/unit/staging.test.ts keeps them in step.
   // routes is emptied so it does not inherit the custom domain; migrations and workers_dev are inherited.
   // STAGING_D1_ID is replaced inside the CI job (tools/staging.mjs), never committed.
   "env": {
@@ -339,7 +339,7 @@
           }
         }
       ],
-      "triggers": { "crons": [] },
+      "triggers": { "crons": ["*/5 * * * *"] },
       "vars": {
         "PUBLIC_ORIGIN": "https://bloop-staging.dsap.workers.dev",
         "FILE_ORIGIN": "",

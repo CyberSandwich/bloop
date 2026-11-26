@@ -2,7 +2,15 @@ import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 import { parseConfig } from "../../src/worker/config.ts";
 import { wranglerConfig } from "../../tools/wrangler-config.mjs";
-import { D1_NAME, d1IdFrom, missingSecrets, PLACEHOLDER, SECRETS, withD1Id } from "../../tools/staging.mjs";
+import {
+  D1_NAME,
+  d1IdFrom,
+  lockedWranglerVersion,
+  missingSecrets,
+  PLACEHOLDER,
+  SECRETS,
+  withD1Id,
+} from "../../tools/staging.mjs";
 
 const read = (rel: string) => readFileSync(new URL(`../../${rel}`, import.meta.url), "utf8");
 const live = wranglerConfig(read("wrangler.jsonc"));
@@ -40,9 +48,10 @@ describe("staging: env.staging in wrangler.jsonc", () => {
     for (const bucket of live.r2_buckets) expect(JSON.stringify(staging)).not.toContain(bucket.bucket_name);
   });
 
-  it("repeats the bindings wrangler does not inherit, so the two cannot drift, and runs no crons", () => {
+  it("repeats the bindings wrangler does not inherit, so the two cannot drift, and runs only the */5 breaker cron", () => {
     expect(staging.durable_objects).toEqual(live.durable_objects);
-    expect(staging.triggers).toEqual({ crons: [] });
+    expect(staging.triggers).toEqual({ crons: ["*/5 * * * *"] });
+    expect(live.triggers.crons).toContain("*/5 * * * *");
     expect(staging.migrations).toBeUndefined();
     expect(staging.ratelimits.map((r: { name: string; simple: unknown }) => [r.name, r.simple])).toEqual(
       live.ratelimits.map((r: { name: string; simple: unknown }) => [r.name, r.simple]),
@@ -123,16 +132,26 @@ describe("staging: tools/staging.mjs", () => {
 describe("staging: .github/workflows/staging.yml", () => {
   const yml = read(".github/workflows/staging.yml");
 
-  it("runs for the staging branch or a ci/* branch only, and skips with a log line until the resources exist", () => {
+  it("runs for the staging branch only, and skips with a log line until the resources exist", () => {
     expect(yml).toContain("branches: [staging]");
-    expect(yml).toContain("workflow_dispatch:");
-    expect(yml).toContain("github.ref_name == 'staging' || startsWith(github.ref_name, 'ci/')");
+    expect(yml).toContain("if: github.ref_name == 'staging'\n");
+    expect(yml).not.toContain("ci/");
     expect(yml).toContain("Staging skipped: no CLOUDFLARE_API_TOKEN");
     expect(yml).toContain("steps.resources.outputs.ready == 'true'");
   });
 
+  it("installs without scripts and runs wrangler from the lockfile by path, never npx", () => {
+    expect(yml).toContain("npm ci --ignore-scripts");
+    expect(yml).not.toMatch(/npx|npm ci(?! --ignore-scripts)/);
+    expect(read("tools/staging.mjs")).not.toContain("npx");
+    expect(lockedWranglerVersion(read("package-lock.json"))).toBe(
+      JSON.parse(read("node_modules/wrangler/package.json")).version,
+    );
+    expect(() => lockedWranglerVersion("{}")).toThrow(/does not pin/);
+  });
+
   it("generates secrets in the job and never writes one to the log", () => {
-    expect(yml).toContain("node tools/staging.mjs secrets");
+    expect(yml).toContain("node tools/staging.mjs deploy");
     expect(yml).not.toMatch(/echo[^\n]*\$\{\{ *secrets\./);
     expect(read("tools/staging.mjs")).not.toMatch(/console\.log\([^)]*(SECRETS\[|value)/);
   });

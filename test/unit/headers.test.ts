@@ -1,4 +1,4 @@
-import { readdirSync, readFileSync } from "node:fs";
+import { existsSync, readdirSync, readFileSync } from "node:fs";
 import { join, relative } from "node:path";
 import { describe, expect, it } from "vitest";
 import {
@@ -14,9 +14,10 @@ import {
 } from "../../src/worker/headers.ts";
 import { VARIANTS } from "../../src/worker/page-registry.ts";
 import { staticHeaders as resolve } from "../../tools/static-headers.mjs";
+import { wranglerConfig } from "../../tools/wrangler-config.mjs";
 
 const HEADERS_FILE = readFileSync(new URL("../../public/_headers", import.meta.url), "utf8");
-const staticHeaders = (path: string): Record<string, string> => resolve(HEADERS_FILE, path);
+const staticHeaders = (path: string, host?: string): Record<string, string> => resolve(HEADERS_FILE, path, host);
 
 const lower = (headers: Record<string, string>) =>
   Object.fromEntries(Object.entries(headers).map(([k, v]) => [k.toLowerCase(), v]));
@@ -62,20 +63,31 @@ describe("public/_headers matches headers.ts", () => {
 describe("caching and worker policy in _headers", () => {
   const immutable = "public, max-age=31536000, immutable";
   const files = (dir: string): string[] =>
-    readdirSync(new URL(`../../public/${dir}`, import.meta.url), { recursive: true, withFileTypes: true })
+    (existsSync(new URL(`../../public/${dir}`, import.meta.url))
+      ? readdirSync(new URL(`../../public/${dir}`, import.meta.url), { recursive: true, withFileTypes: true })
+      : []
+    )
       .filter((d) => d.isFile())
       .map(
         (d) =>
           `/${dir}/${relative(new URL(`../../public/${dir}`, import.meta.url).pathname, join(d.parentPath, d.name))}`,
       );
 
-  it("every file under /fonts and /js/vendor is immutable, and a version is in its name", () => {
-    const all = [...files("fonts"), ...files("js/vendor")];
+  it("every file under /fonts and /js/vendor, and in a folder of /js/workers, is immutable and has a content hash in its name", () => {
+    const all = [
+      ...files("fonts"),
+      ...files("js/vendor"),
+      ...files("js/workers").filter((p) => /^\/js\/workers\/[^/]+\//.test(p)),
+    ];
     expect(all.length).toBeGreaterThan(2);
     for (const path of all) {
       expect(staticHeaders(path)["cache-control"], path).toBe(immutable);
-      expect(path, path).toMatch(/\d+\.\d+/);
+      expect(path, path).toMatch(/-[0-9a-f]{8}(\.|\/)/);
     }
+  });
+
+  it("a script directly in /js/workers is not immutable", () => {
+    expect(staticHeaders("/js/workers/sheet.js")["cache-control"]).toBeUndefined();
   });
 
   it("pages, scripts and styles carry no Cache-Control or Vary here, so the asset layer revalidates them with an ETag", () => {
@@ -96,12 +108,22 @@ describe("caching and worker policy in _headers", () => {
     );
   });
 
+  it("a static 404 on the file origin carries the file origin's sandbox CSP, and the site's host does not", () => {
+    const fileHost = new URL(
+      wranglerConfig(readFileSync(new URL("../../wrangler.jsonc", import.meta.url), "utf8")).vars.FILE_ORIGIN,
+    ).host;
+    expect(staticHeaders("/js/no-such.js", fileHost)["content-security-policy"]).toBe(
+      headersFor("file-origin")["Content-Security-Policy"],
+    );
+    expect(staticHeaders("/js/no-such.js")["content-security-policy"]).not.toContain("sandbox");
+  });
+
   it("a viewer worker script is a no-network policy and keeps every base header", () => {
     expect(staticHeaders("/js/workers/sheet.js")).toEqual(lower(headersFor("worker")));
-    // The vendored copy is also immutable, which the worker policy does not say.
-    const { "cache-control": cache, ...vendored } = staticHeaders("/js/vendor/pdfjs-5.4.1/pdf.worker.min.mjs");
+    // A hashed folder of workers is also immutable, which the worker policy does not say.
+    const { "cache-control": cache, ...hashed } = staticHeaders("/js/workers/1a2b3c4d/pdf.worker.min.mjs");
     expect(cache).toBe("public, max-age=31536000, immutable");
-    expect(vendored).toEqual(lower(headersFor("worker")));
+    expect(hashed).toEqual(lower(headersFor("worker")));
     expect(CSP.worker).toBe("default-src 'none'; script-src 'self'");
   });
 });

@@ -479,6 +479,21 @@ describe("DROP-09 access: a guest file is visible only inside its session", () =
     two.socket.close();
   });
 
+  it("a bucket that throws on a guest file read is 502 upstream_failed, and the fetch is still logged", async () => {
+    const { socket, pid } = await pairPhone(api);
+    await putDrop(api, pid, deck);
+    socket.send({ t: "open.click" });
+    const open = await socket.waitFor((f) => f.t === "open");
+    const url = ((open.links as { protocol: string }).protocol ?? "").replace("ms-powerpoint:ofv|u|", "");
+    const down = await fetchLink(url, { headers: { "X-Bloop-Fault": "r2" } });
+    expect(down.status).toBe(502);
+    expect(await problemCode(down)).toBe("upstream_failed");
+    expect(wrangler.output()).toContain(
+      '"evt":"open.fetch","method":"GET","client":"other","query":false,"range":false,"status":502',
+    );
+    socket.close();
+  });
+
   it("DROP-09 an upload with another session's credential is refused", async () => {
     const one = await pairPhone(api);
     const two = await pairPhone(api);

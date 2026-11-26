@@ -19,9 +19,12 @@ Status: accepted. Applies to every migration, Durable Object schema step, Worker
 - **The migration lands in the same commit as the code change it requires.** Because every push to `main` applies migrations, a migration that needs a code change to stay safe cannot be separated from it. Migration 0005 ships with two changes: the user-row sweep skips email users (`tid != 'email'`), and the erase route hands email users to the purge (ADR 0013). Without them, the first deploy would let the daily job delete members.
 - **A rebuild is rehearsed.** Before an apply that rebuilds a table: apply the migration to a copy restored from a Time Travel point, check the result, and record a Time Travel bookmark immediately before the remote apply. The steps are in `docs/setup.md`.
 
+- **A staging Worker, never synced** (`env.staging`, `docs/setup.md`): its own D1, buckets and Durable Object namespaces, tiny caps and the */5 breaker as its only cron. Its job holds a Cloudflare token, so it runs for the `staging` branch only (an environment branch rule), installs with `npm ci --ignore-scripts` and runs the lockfile's wrangler by path. The token is Workers Scripts plus D1, with no R2 permission.
+- **Residual risk of staging:** a token scoped to one account still reaches production's scripts and database in that account. The branch rule and the pinned toolchain narrow who can run code with it; only a separate Cloudflare account removes it, which is an optional owner step.
+
 ## Rejected
 - **Applying migrations by hand after review:** a second path that drifts from `main`, and a deploy that waits on a person.
-- **Blue-green or a staging database:** a second D1 and a sync problem for one operator; the rehearsal copy gives the same check for the rare rebuild.
+- **Blue-green, or a staging database synced from production:** a sync problem for one operator; the rehearsal copy gives the same check for the rare rebuild.
 - **Enum CHECK constraints with a rebuild per value:** each rebuild is a risk window; zod already checks every write.
 - **Versioned wire frames:** more machinery than optional fields need.
 

@@ -2,11 +2,11 @@
 // own (no bundle), so the module graph, lazy import() specifiers and export names stay as written, and each
 // stylesheet stripped of comments and whitespace, and each page of its comments. ADR 0011.
 // The CLI is tools/build-assets-cli.mjs; wrangler.jsonc `build` runs it before `wrangler dev` and `wrangler deploy`.
+import { createHash } from "node:crypto";
 import { lstatSync, mkdirSync, readdirSync, readFileSync, renameSync, rmSync, writeFileSync } from "node:fs";
 import { basename, dirname, join, posix, relative, sep } from "node:path";
 import { fileURLToPath } from "node:url";
 import { transformSync } from "esbuild";
-import { wranglerConfig } from "./wrangler-config.mjs";
 
 const REPO = fileURLToPath(new URL("../", import.meta.url));
 // The browser floor (design.md): syntax past it is lowered, and syntax that cannot be lowered fails the build.
@@ -191,24 +191,61 @@ function kind(path) {
 }
 
 /**
- * The file origin (ADR 0018) as a module, so a page that needs it stays a plain asset with a stable ETag. It is
- * FILE_ORIGIN from the environment (a staging build), else the `vars` entry of wrangler.jsonc.
- * @param {string} root
- * @param {Record<string, string | undefined>} env
+ * The immutable units of public/ (ADR 0023): each file in fonts/ and js/vendor/, and each folder in js/vendor/ and
+ * js/workers/ (a script directly in js/workers/ is not one). A unit is served `immutable`, so it changes only by
+ * getting a new name: the name ends in `-<8 hex>`, the start of the SHA-256 of its bytes, before any extension, so
+ * a URL cannot be guessed before the file is published.
+ * @param {string[]} rels paths under public/
+ * @returns {Map<string, string[]>} unit path to the files it holds
  */
-export function fileOriginModule(root, env = process.env) {
-  const origin =
-    env.FILE_ORIGIN ?? wranglerConfig(readFileSync(join(root, "wrangler.jsonc"), "utf8")).vars?.FILE_ORIGIN ?? "";
-  return `export const FILE_ORIGIN = ${JSON.stringify(origin)};\n`;
+export function immutableUnits(rels) {
+  /** @type {Map<string, string[]>} */
+  const units = new Map();
+  for (const rel of rels) {
+    const unit = /^(fonts\/[^/]+|js\/vendor\/[^/]+|js\/workers\/[^/]+(?=\/))/.exec(rel)?.[1];
+    if (unit) units.set(unit, [...(units.get(unit) ?? []), rel]);
+  }
+  return units;
+}
+
+const UNIT_NAME = /^(.+)-([0-9a-f]{8})(\.[^/]*)?$/;
+
+/**
+ * The 8 hex a unit's name must carry: its files' paths inside it and bytes, in path order.
+ * @param {string} unit
+ * @param {string[]} files
+ * @param {(rel: string) => Buffer | string} read
+ */
+export function unitHash(unit, files, read) {
+  const hash = createHash("sha256");
+  for (const rel of [...files].sort())
+    hash
+      .update(`${rel.slice(unit.length)}\0`)
+      .update(read(rel))
+      .update("\0");
+  return hash.digest("hex").slice(0, 8);
 }
 
 /**
- * The files under fonts/ and js/vendor/ whose path carries no version (`4.1`, `0.1.3`). Those two folders are served
- * `immutable` (ADR 0023), so a file changes only by getting a new name.
- * @param {string[]} rels paths under public/
+ * The units whose name does not carry their bytes' hash, with the name each should have (null when the name has no hash
+ * to replace; add `-00000000` before the extension and rehash).
+ * @param {string[]} rels
+ * @param {(rel: string) => Buffer | string} read
+ * @returns {{ unit: string, expected: string | null }[]}
  */
-export function unversioned(rels) {
-  return rels.filter((rel) => /^(fonts|js\/vendor)\//.test(rel) && !/\d+\.\d+/.test(rel));
+export function staleUnits(rels, read) {
+  /** @type {{ unit: string, expected: string | null }[]} */
+  const stale = [];
+  for (const [unit, files] of immutableUnits(rels)) {
+    const name = unit.slice(unit.lastIndexOf("/") + 1);
+    const hash = unitHash(unit, files, read);
+    const parts = UNIT_NAME.exec(name);
+    if (!parts) stale.push({ unit, expected: null });
+    else if (parts[2] !== hash) {
+      stale.push({ unit, expected: `${unit.slice(0, unit.length - name.length)}${parts[1]}-${hash}${parts[3] ?? ""}` });
+    }
+  }
+  return stale;
 }
 
 /**
@@ -225,8 +262,13 @@ export function build(root = REPO) {
   /** @type {Map<string, Buffer | string>} */
   const files = new Map();
   const sources = walk(src);
-  const bare = unversioned(sources);
-  if (bare.length > 0) throw new Error(`immutable folders need a version in the name: ${bare.join(", ")}`);
+  const stale = staleUnits(sources, (rel) => readFileSync(join(src, rel)));
+  if (stale.length > 0) {
+    const list = stale.map((s) => (s.expected ? `${s.unit} should be ${s.expected}` : `${s.unit} has no hash`));
+    throw new Error(
+      `an immutable name must end in the hash of its bytes (node tools/rehash-immutable.mjs): ${list.join("; ")}`,
+    );
+  }
   for (const rel of sources) {
     const bytes = readFileSync(join(src, rel));
     if (rel.endsWith(".css")) {
@@ -249,9 +291,6 @@ export function build(root = REPO) {
     files.set(rel, code);
     files.set(`${rel}.map`, map);
   }
-
-  // Only a real project has a wrangler.jsonc: a build of a bare folder bakes nothing.
-  if (kind(join(root, "wrangler.jsonc")) === "file") files.set("js/shared/fo.js", fileOriginModule(root));
 
   const deleted = walk(out).filter((rel) => !files.has(rel) && !IN_FLIGHT.test(rel));
   for (const rel of deleted) rmSync(join(out, rel), { force: true });

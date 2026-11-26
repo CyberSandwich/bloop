@@ -130,7 +130,7 @@ describe.each(BOTH)("%s under the strict CSP", (page) => {
 
   it("preloads the one font subset, never the full file", () => {
     expect(html).toContain(
-      '<link rel="preload" href="/fonts/inter-latin-4.1.woff2" as="font" type="font/woff2" crossorigin>',
+      '<link rel="preload" href="/fonts/inter-latin-cc089b5d.woff2" as="font" type="font/woff2" crossorigin>',
     );
     expect(html).not.toContain("InterVariable");
   });
@@ -252,7 +252,7 @@ describe("every page's text", () => {
     const range = /unicode-range:\s*([^;]+);/.exec(css)?.[1]?.replace(/\s+/g, " ").trim() ?? "";
     const list = range.split(",").map((r) => r.trim());
     for (const r of list) expect(py, r).toContain(r);
-    expect(css).toContain('url("/fonts/inter-latin-4.1.woff2")');
+    expect(css).toContain('url("/fonts/inter-latin-cc089b5d.woff2")');
   });
 });
 

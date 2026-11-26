@@ -17,11 +17,12 @@ import { build as esbuild } from "esbuild";
 import { afterEach, describe, expect, it } from "vitest";
 import {
   build,
-  fileOriginModule,
+  immutableUnits,
   importClosure,
   minify,
   minifyCss,
-  unversioned,
+  staleUnits,
+  unitHash,
   withModulePreload,
 } from "../../tools/build-assets.mjs";
 import { SPAWN_TIMEOUT } from "./spawn.ts";
@@ -174,26 +175,70 @@ describe("build", () => {
   });
 });
 
-describe("immutable folders", () => {
-  it("names the files under fonts/ and js/vendor/ whose path has no version, and nothing else", () => {
-    expect(
-      unversioned([
-        "fonts/inter-latin-4.1.woff2",
-        "fonts/inter-latin.woff2",
-        "js/vendor/uqr-0.1.3/uqr.js",
-        "js/vendor/uqr.js",
-        "js/site.js",
-        "img/hero.jpg",
-      ]),
-    ).toEqual(["fonts/inter-latin.woff2", "js/vendor/uqr.js"]);
+describe("immutable names", () => {
+  const bytes: Record<string, string> = {
+    "fonts/inter.woff2": "font",
+    "js/vendor/lib/a.js": "a",
+    "js/vendor/lib/b.js": "b",
+    "js/workers/sheet.js": "plain",
+    "js/workers/pdf/pdf.worker.mjs": "w",
+    "js/site.js": "s",
+  };
+  const read = (rel: string) => bytes[rel] ?? "";
+
+  it("units are each file in fonts/ and js/vendor/, and each folder in js/vendor/ and js/workers/", () => {
+    expect([...immutableUnits(Object.keys(bytes)).keys()]).toEqual([
+      "fonts/inter.woff2",
+      "js/vendor/lib",
+      "js/workers/pdf",
+    ]);
   });
 
-  it("the build refuses an unversioned font", () => {
+  it("names the hash a unit's bytes call for, over every file in it and its paths", () => {
+    const lib = ["js/vendor/lib/a.js", "js/vendor/lib/b.js"];
+    const hash = unitHash("js/vendor/lib", lib, read);
+    expect(hash).toMatch(/^[0-9a-f]{8}$/);
+    expect(unitHash("js/vendor/lib", lib, (rel) => (rel.endsWith("b.js") ? "changed" : "a"))).not.toBe(hash);
+    expect(unitHash("js/vendor/lib", ["js/vendor/lib/a.js", "js/vendor/lib/c.js"], read)).not.toBe(hash);
+  });
+
+  it("flags a unit with no hash, or the wrong one, and passes a unit named for its bytes", () => {
+    const rels = ["fonts/inter.woff2", "js/vendor/lib/a.js", "js/vendor/lib/b.js"];
+    const lib = unitHash("js/vendor/lib", rels.slice(1), read);
+    const font = unitHash("fonts/inter.woff2", ["fonts/inter.woff2"], read);
+    expect(staleUnits(rels, read)).toEqual([
+      { unit: "fonts/inter.woff2", expected: null },
+      { unit: "js/vendor/lib", expected: null },
+    ]);
+    const named: Record<string, string> = {
+      [`fonts/inter-${font}.woff2`]: "font",
+      [`js/vendor/lib-${lib}/a.js`]: "a",
+      [`js/vendor/lib-${lib}/b.js`]: "b",
+    };
+    expect(staleUnits(Object.keys(named), (rel) => named[rel] ?? "")).toEqual([]);
+    const edited = { ...named, [`fonts/inter-${font}.woff2`]: "changed" };
+    expect(staleUnits(Object.keys(edited), (rel) => edited[rel] ?? "")).toEqual([
+      {
+        unit: `fonts/inter-${font}.woff2`,
+        expected: `fonts/inter-${unitHash(`fonts/inter-${font}.woff2`, [`fonts/inter-${font}.woff2`], () => "changed")}.woff2`,
+      },
+    ]);
+  });
+
+  it("the build refuses an unhashed font and says how to fix it", () => {
     const root = mkdtempSync(join(tmpdir(), "bloop-vendor-"));
     mkdirSync(join(root, "public/fonts"), { recursive: true });
     writeFileSync(join(root, "public/fonts/x.woff2"), "x");
-    expect(() => build(root)).toThrow(/version in the name: fonts\/x\.woff2/);
+    expect(() => build(root)).toThrow(/rehash-immutable.*fonts\/x\.woff2 has no hash/);
     rmSync(root, { recursive: true, force: true });
+  });
+
+  it("every immutable unit in public/ carries the hash of its bytes", () => {
+    const rels = readdirSync(join(REPO, "public"), { recursive: true, withFileTypes: true })
+      .filter((d) => d.isFile())
+      .map((d) => join(d.parentPath, d.name).slice(join(REPO, "public").length + 1));
+    expect(immutableUnits(rels).size).toBeGreaterThan(2);
+    expect(staleUnits(rels, (rel) => readFileSync(join(REPO, "public", rel)))).toEqual([]);
   });
 });
 
@@ -241,30 +286,6 @@ describe("module preload", () => {
     expect(withModulePreload("<p>hi</p>", read)).toBe("<p>hi</p>");
     const bare = '<script type="module" src="/js/core/b.js"></script>';
     expect(withModulePreload(bare, read)).toBe(bare);
-  });
-});
-
-describe("the baked file origin", () => {
-  const live = (root: string, origin: string) =>
-    writeFileSync(join(root, "wrangler.jsonc"), `{\n  // a comment\n  "vars": { "FILE_ORIGIN": "${origin}" }\n}\n`);
-
-  it("is dist/js/shared/fo.js, from wrangler.jsonc, or from FILE_ORIGIN in the environment", () => {
-    project({ "js/a.js": "export const a = 1;\n" });
-    live(root, "https://files.example");
-    build(root);
-    expect(out("js/shared/fo.js").toString()).toBe('export const FILE_ORIGIN = "https://files.example";\n');
-    expect(fileOriginModule(root, { FILE_ORIGIN: "https://staging.example" })).toContain("https://staging.example");
-    expect(fileOriginModule(root, { FILE_ORIGIN: "" })).toBe('export const FILE_ORIGIN = "";\n');
-  });
-
-  it("is the FILE_ORIGIN the real wrangler.jsonc sets", () => {
-    expect(fileOriginModule(REPO, {})).toContain("https://bloop.dsap.workers.dev");
-  });
-
-  it("is not written for a folder with no wrangler.jsonc", () => {
-    project({ "js/a.js": "export const a = 1;\n" });
-    build(root);
-    expect(() => out("js/shared/fo.js")).toThrow();
   });
 });
 
