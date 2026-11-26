@@ -155,7 +155,7 @@
   color: var(--ink);
 }
 .up-sheet::backdrop {
-  background: rgba(30, 30, 28, 0.24);
+  background: #1e1e1c3d;
 }
 .up-list {
   display: grid;
