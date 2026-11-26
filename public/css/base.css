@@ -4,7 +4,7 @@
 /* biome-ignore-all lint/suspicious/noDuplicateProperties: 100vh is the fallback for browsers without 100dvh */
 @font-face {
   font-family: "Inter";
-  src: url("/fonts/inter-latin-4.1.woff2") format("woff2");
+  src: url("/fonts/inter-latin-cc089b5d.woff2") format("woff2");
   font-weight: 400 600;
   font-style: normal;
   font-display: swap;

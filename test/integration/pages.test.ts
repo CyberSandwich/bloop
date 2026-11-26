@@ -69,8 +69,8 @@ describe("shared assets", () => {
       ["/css/base.css", /text\/css/],
       ["/css/site.css", /text\/css/],
       ["/css/app.css", /text\/css/],
-      ["/fonts/inter-latin-4.1.woff2", /font\/woff2|application\/octet-stream/],
-      ["/js/vendor/uqr-0.1.3/uqr.js", /javascript/],
+      ["/fonts/inter-latin-cc089b5d.woff2", /font\/woff2|application\/octet-stream/],
+      ["/js/vendor/uqr-62028138/uqr.js", /javascript/],
     ] as const) {
       const res = await fetch(`${wrangler.url}${path}`);
       expect(res.status, path).toBe(200);
@@ -101,7 +101,7 @@ describe("shared assets", () => {
   });
 
   it("does not serve the type declaration shipped beside the vendored file", async () => {
-    const res = await fetch(`${wrangler.url}/js/vendor/uqr-0.1.3/uqr.d.ts`);
+    const res = await fetch(`${wrangler.url}/js/vendor/uqr-62028138/uqr.d.ts`);
     expect(res.status).toBe(404);
   });
 });

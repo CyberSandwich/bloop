@@ -1,18 +1,18 @@
-// Vendors a fresh uqr dist/index.mjs into public/js/vendor/uqr-<version>/uqr.js (ADR 0001, QR row) as a trimmed copy. Line based
+// Vendors a fresh uqr dist/index.mjs into public/js/vendor/uqr-<hash>/uqr.js (ADR 0001, QR row) as a trimmed copy. Line based
 // only: a line goes when it is wholly a `//` comment or wholly one `/* ... */` comment; every other line stays byte for
 // byte, and the license block at the top of the vendored file is kept.
-// usage: node tools/trim-uqr.mjs <path to uqr dist/index.mjs> <version>
+// usage: node tools/trim-uqr.mjs <path to uqr dist/index.mjs> <version>, then node tools/rehash-immutable.mjs
 import { spawnSync } from "node:child_process";
-import { readdirSync, readFileSync, renameSync, writeFileSync } from "node:fs";
+import { readdirSync, readFileSync, writeFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 
 const [source, version] = process.argv.slice(2);
 if (!source || !version) throw new Error("usage: node tools/trim-uqr.mjs <dist/index.mjs> <version>");
-// The vendored folder carries its version (immutable caching, ADR 0023): a new version renames the folder, and the
-// import in core/qr.js, the size budget and the docs follow it.
+// The vendored folder carries the hash of its bytes (immutable caching, ADR 0023); rehash-immutable.mjs renames it
+// and follows the import in core/qr.js, the size budget and the docs.
 const vendor = fileURLToPath(new URL("../public/js/vendor/", import.meta.url));
 const folder = readdirSync(vendor).find((name) => name.startsWith("uqr-"));
-if (!folder) throw new Error("no uqr-<version> folder under public/js/vendor");
+if (!folder) throw new Error("no uqr-<hash> folder under public/js/vendor");
 const target = `${vendor}${folder}/uqr.js`;
 const current = readFileSync(target, "utf8");
 const lines = readFileSync(source, "utf8").split("\n");
@@ -43,7 +43,7 @@ const code = [...kept.slice(0, from), "export { encode };", ...kept.slice(to + 1
 
 // The license block: everything after the first line of the vendored header, up to its end.
 const license = current.slice(current.indexOf("\n"), current.indexOf("*/") + 2);
-const head = `/*! uqr ${version} (https://github.com/unjs/uqr), vendored from dist/index.mjs by tools/trim-uqr.mjs (the room screen's JS budget): whole-line comments and the text renderers removed; every other line unmodified.`;
+const head = `/*! uqr ${version} (https://github.com/unjs/uqr), trimmed by tools/trim-uqr.mjs`;
 writeFileSync(target, `${head}${license}\n${code.join("\n")}`);
 
 // Read back: the header slicing kept the body whole, and the file parses (node --check is the guard that matters).
@@ -54,4 +54,3 @@ if (body !== code.join("\n") || !parses) {
   writeFileSync(target, current);
   throw new Error("the trimmed file changed a code line or does not parse; restored the old one");
 }
-if (folder !== `uqr-${version}`) renameSync(`${vendor}${folder}`, `${vendor}uqr-${version}`);

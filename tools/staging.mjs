@@ -1,15 +1,18 @@
 // The staging deploy's steps (.github/workflows/staging.yml, docs/setup.md "Staging"). The pure helpers are unit
-// tested; `ready`, `prepare` and `secrets` run in the workflow only and never print a secret value.
+// tested; `ready` and `deploy` run in the workflow only and never print a secret value.
 //   ready    prints one line and sets `ready=true|false`: false (a clean skip) until the staging D1 exists. The buckets
 //            are not probed: a missing one fails the deploy, and the token then needs no R2 permission.
-//   prepare  writes the D1 id (STAGING_D1_ID in the environment) into wrangler.jsonc for this job's checkout
-//   secrets  sets every missing staging secret from a random value that is piped in, never shown
+//   deploy   writes the D1 id (STAGING_D1_ID in the environment) into wrangler.jsonc for this job's checkout, applies
+//            the migrations, deploys, then sets every missing staging secret from a random value that is piped in
 import { spawnSync } from "node:child_process";
 import { randomBytes } from "node:crypto";
 import { appendFileSync, readFileSync, writeFileSync } from "node:fs";
+import { join } from "node:path";
+import { fileURLToPath } from "node:url";
 
 export const D1_NAME = "bloop-staging";
 export const PLACEHOLDER = "STAGING_D1_ID";
+const ROOT = fileURLToPath(new URL("../", import.meta.url));
 
 const b64url = () => randomBytes(32).toString("base64url");
 /** Every staging secret and how its value is made; ADMIN_EMAILS and TEST_EMAILS are addresses, set by hand. */
@@ -47,44 +50,68 @@ export function withD1Id(config, id) {
   return config.replace(slot, () => `"database_id": "${id}"`);
 }
 
+/** The wrangler version package-lock.json pins.
+ * @param {string} lockJson */
+export function lockedWranglerVersion(lockJson) {
+  const version = JSON.parse(lockJson).packages?.["node_modules/wrangler"]?.version;
+  if (typeof version !== "string") throw new Error("package-lock.json does not pin wrangler");
+  return version;
+}
+
+/**
+ * The installed wrangler's entry file, by absolute path. `npm ci --ignore-scripts` has checked the tarball against the
+ * lockfile's integrity hash; this refuses a node_modules that holds another version, so the token only ever reaches the
+ * pinned code and never a package found on PATH.
+ * @param {string} root
+ */
+export function wranglerEntry(root = ROOT) {
+  const installed = JSON.parse(readFileSync(join(root, "node_modules/wrangler/package.json"), "utf8")).version;
+  const pinned = lockedWranglerVersion(readFileSync(join(root, "package-lock.json"), "utf8"));
+  if (installed !== pinned) throw new Error(`wrangler ${installed} is installed but the lockfile pins ${pinned}`);
+  return join(root, "node_modules/wrangler/bin/wrangler.js");
+}
+
 /** @param {string[]} args @param {string} [input] */
 const wrangler = (args, input) =>
-  spawnSync("npx", ["wrangler", ...args], { encoding: "utf8", input, env: process.env });
+  spawnSync(process.execPath, [wranglerEntry(), ...args], { encoding: "utf8", input, env: process.env });
+
+/**
+ * A failed wrangler call (a bad token, an outage) fails the job; it never reads as "not found".
+ * @param {string[]} args
+ */
+function wranglerOk(args) {
+  const run = wrangler(args);
+  if (run.status !== 0) throw new Error(`wrangler ${args.slice(0, 2).join(" ")} failed: ${run.stderr}`);
+  return run.stdout;
+}
 
 function ready() {
   const out = process.env.GITHUB_OUTPUT;
-  const skip = (/** @type {string} */ why) => {
-    console.log(`Staging skipped: ${why}. Create the staging resources (docs/setup.md, Staging) and rerun.`);
+  const id = d1IdFrom(wranglerOk(["d1", "list", "--json"]));
+  if (!id) {
+    console.log(
+      `Staging skipped: D1 database ${D1_NAME} not found. Create the staging resources (docs/setup.md, Staging) and rerun.`,
+    );
     if (out) appendFileSync(out, "ready=false\n");
-  };
-  // A failed list (a bad token, an outage) must fail the job, not look like "not created yet".
-  const list = wrangler(["d1", "list", "--json"]);
-  if (list.status !== 0) throw new Error(`wrangler d1 list failed: ${list.stderr}`);
-  const id = d1IdFrom(list.stdout);
-  if (!id) return skip(`D1 database ${D1_NAME} not found`);
+    return;
+  }
   console.log("Staging resources found.");
   if (out) appendFileSync(out, `ready=true\nd1_id=${id}\n`);
 }
 
-function prepare() {
+function deploy() {
   const file = "wrangler.jsonc";
   writeFileSync(file, withD1Id(readFileSync(file, "utf8"), process.env.STAGING_D1_ID ?? ""));
-}
-
-function secrets() {
-  const list = wrangler(["secret", "list", "-e", "staging", "--format", "json"]);
-  if (list.status !== 0) throw new Error(`wrangler secret list failed: ${list.stderr}`);
-  const missing = missingSecrets(list.stdout);
-  for (const name of missing) {
+  wranglerOk(["d1", "migrations", "apply", "DB", "--remote", "-e", "staging"]);
+  wranglerOk(["deploy", "-e", "staging"]);
+  for (const name of missingSecrets(wranglerOk(["secret", "list", "-e", "staging", "--format", "json"]))) {
     const put = wrangler(["secret", "put", name, "-e", "staging"], SECRETS[name]?.());
     if (put.status !== 0) throw new Error(`could not set ${name}`);
     console.log(`Set staging secret ${name}.`);
   }
-  if (missing.length === 0) console.log("Every staging secret is set.");
 }
 
 const command = process.argv[1]?.endsWith("staging.mjs") ? process.argv[2] : undefined;
 if (command === "ready") ready();
-else if (command === "prepare") prepare();
-else if (command === "secrets") secrets();
-else if (command) throw new Error("usage: node tools/staging.mjs ready|prepare|secrets");
+else if (command === "deploy") deploy();
+else if (command) throw new Error("usage: node tools/staging.mjs ready|deploy");
