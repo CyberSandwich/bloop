@@ -1,0 +1,30 @@
+name: shots
+
+on:
+  push:
+    branches: [ci/hero-hash3-shots]
+
+permissions:
+  contents: write
+
+jobs:
+  shots:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+      - run: npm ci
+      - run: npx playwright install --with-deps chromium
+      - run: cp .dev.vars.example .dev.vars
+      - run: SHOT_TAG=hero npx playwright test hero-landing-shots --project=preview
+      - if: always()
+        run: |
+          git config user.name "shots"
+          git config user.email "shots@users.noreply.github.com"
+          mkdir -p shots && cp -r test-results/shots/. shots/ && git add -f shots
+          git commit -m "shots: images" || exit 0
+          git push origin HEAD:ci/hero-hash3-shots
