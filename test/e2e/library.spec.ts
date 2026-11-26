@@ -29,6 +29,7 @@ const members = {
     ["b", "Lecture 2.pptx", { selected_at: now - 10 }],
   ]),
   live: fixtures.member([["a", "Lecture 5.pptx"]], { derived: [["a", "queued"]] }),
+  busy: fixtures.member(),
 };
 test.describe.configure({ mode: "default" });
 test.beforeAll(() => fixtures.seed());
@@ -185,6 +186,22 @@ test.describe("library", () => {
     await stored;
     await page.reload();
     await expect(page.locator("#up-list > li").first()).toContainText("Lecture 2.pptx");
+  });
+
+  test("on a phone, a toast sits above the bottom panel even when its buttons stack", async ({ page, context }) => {
+    await page.setViewportSize({ width: 390, height: 844 });
+    await signedIn(context, members.busy);
+    await page.route("**/api/library/sample", (route) =>
+      route.fulfill({ status: 503, contentType: "application/json", body: JSON.stringify({ code: "service_busy" }) }),
+    );
+    await page.goto("/library");
+    await page.getByRole("button", { name: "Add the Sample Deck" }).click();
+    const toast = page.locator(".toast:not(.out)");
+    await expect(toast).toBeVisible();
+    // The toast slides in; its resting place is what has to clear the panel.
+    await page.waitForTimeout(400);
+    const [t, p] = [await toast.boundingBox(), await page.locator("#panel").boundingBox()];
+    expect(t && p && t.y + t.height <= p.y, `toast ${JSON.stringify(t)} over panel ${JSON.stringify(p)}`).toBe(true);
   });
 
   test("a file still preparing opens the library socket", async ({ page, context }) => {
