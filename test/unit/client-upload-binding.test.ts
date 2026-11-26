@@ -183,6 +183,7 @@ describe("one file", () => {
     expect(title()).toBe("Still Checking Your File");
     expect(line()).toBe("Lecture 5.pptx");
     expect(pillNode()?.classes.has("moving")).toBe(false);
+    expect(pillNode()?.classes.has("wrap")).toBe(true);
     expect(bar()?.getAttribute("aria-valuenow")).toBe("100");
     expect(pillNode()?.byClass("up-close")).toBeUndefined();
     expect(toasts).toEqual([]);
