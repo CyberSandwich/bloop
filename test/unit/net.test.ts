@@ -27,4 +27,19 @@ describe("PAIR-10 per-address cap keys an IPv6 host by its /64", () => {
     expect(network("::cb00:7109")).toBe("0:0:0:0");
     expect(network("64:ff9b::cb00:7109")).toBe("64:ff9b:0:0");
   });
+
+  it("PAIR-10 network: a dotted tail that is not mapped keys by its /64, as the hex form does", () => {
+    expect(network("64:ff9b::203.0.113.9")).toBe("64:ff9b:0:0");
+    expect(network("::203.0.113.9")).toBe("0:0:0:0");
+    expect(network("2001:db8:1:2::203.0.113.9")).toBe("2001:db8:1:2");
+    expect(network("2001:db8:1:2:0:0:203.0.113.9")).toBe("2001:db8:1:2");
+  });
+
+  it("PAIR-10 network: the unspecified address and a zone id", () => {
+    expect(network("::")).toBe("0:0:0:0");
+    expect(network("fe80::1%eth0")).toBe("fe80:0:0:0");
+    expect(network("fe80::2%25en0")).toBe("fe80:0:0:0");
+    expect(network("::ffff:203.0.113.9%eth0")).toBe("203.0.113.9");
+    expect(network("::ffff:cb00:7109%1")).toBe("203.0.113.9");
+  });
 });
