@@ -86,16 +86,16 @@ button.row {
     grid-area: preview;
   }
 }
-/* Held landscape: the bubbles and Revoke share one row. */
+/* Held landscape: the bubbles, Ends in and Revoke share one row; the buttons as wide as their labels. */
 @media (min-width: 640px) and (max-height: 599.98px) {
   .column > .actions:has(> .bubbles) {
     flex-direction: row;
   }
   .actions > .bubbles {
-    flex: 2;
+    flex: 1;
   }
   .actions > .buttons {
-    flex: 1;
+    flex: none;
   }
 }
 /* The row the screen shows: the sidebar's selected fill. */
