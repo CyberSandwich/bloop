@@ -36,8 +36,21 @@ async function sample(page: Page, root: string): Promise<() => Promise<Part[][]>
 const easeOut = async (page: Page) =>
   (await page.evaluate('getComputedStyle(document.documentElement).getPropertyValue("--ease-out").trim()')) as string;
 
-/** Past the 200 ms fade, so its last frames are in the sample. */
+/** Long enough that a fade, had one started, would show in the sample. */
 const pastFade = (page: Page) => page.waitForTimeout(400);
+
+/** Until the sample holds a cross-fade run to its end: two items seen, then one left and no 200 ms fade running. */
+const faded = (page: Page, root: string) =>
+  expect
+    .poll(() =>
+      page.evaluate(`(() => {
+        const r = document.querySelector(${JSON.stringify(root)});
+        const one = [...r.children].filter((n) => n.matches("picture, canvas, video, .item-card, .stand-in")).length === 1;
+        const running = r.getAnimations({ subtree: true }).some((a) => a.effect.getTiming().duration === 200);
+        return window.sampled.some((f) => f.length === 2) && one && !running;
+      })()`),
+    )
+    .toBe(true);
 
 /** The change cross-faded: both items in one frame, the new one mid-fade on the token, never a blank frame. */
 async function expectCrossfade(page: Page, frames: Part[][]) {
@@ -67,7 +80,7 @@ test.describe("the screen's stage", () => {
 
     let stop = await sample(page, "#frame");
     await pick(page, "Sample deck.pptx");
-    await pastFade(page);
+    await faded(page, "#frame");
     await expectCrossfade(page, await stop());
 
     await atRest(page.locator("main"));
@@ -118,7 +131,7 @@ test.describe("the phone remote's preview", () => {
     let stop = await sample(phone, ".preview");
     await row("Sample deck.pdf").tap();
     await expect(preview).toHaveAttribute("aria-label", "Sample deck.pdf, Page 1 of 2");
-    await pastFade(phone);
+    await faded(phone, ".preview");
     await expectCrossfade(phone, await stop());
 
     stop = await sample(phone, ".preview");
