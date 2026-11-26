@@ -14,7 +14,6 @@ import {
   sizeText,
   T,
 } from "./core/copy-library.js";
-import { splitName } from "./core/format.js";
 import { ICONS } from "./core/icons.js";
 import { loader } from "./core/loader.js";
 import { sessionStore } from "./core/store.js";
@@ -408,9 +407,12 @@ const glyph = (/** @type {string} */ name) =>
 /** The 40 px tile: slide 1 once prepared, the kind glyph before, the loader over it while uploading. @param {Row} row */
 function tile(row) {
   if (row.upload !== undefined) return el("span", { class: "thumb lib-loading" }, [loader(row.name, null)]);
-  if (row.thumb && list?.switches.previews === "on")
-    return el("img", { class: `thumb${isPaged(row.ext) ? " fit" : ""}`, src: row.thumb, alt: "" });
-  return el("span", { class: "thumb" }, [glyph(kindOf(row.ext).glyph)]);
+  const plain = () => el("span", { class: "thumb" }, [glyph(kindOf(row.ext).glyph)]);
+  if (!row.thumb || list?.switches.previews !== "on") return plain();
+  const img = el("img", { class: `thumb${isPaged(row.ext) ? " fit" : ""}`, src: row.thumb, alt: "" });
+  // A link that lapsed or a thumbnail not written yet shows the glyph, never the broken-image box.
+  img.addEventListener("error", () => img.replaceWith(plain()), { once: true });
+  return img;
 }
 
 /** Line 2: kind · size · date, then the chip and its reason, or the fonts note. @param {Row} row */
@@ -437,7 +439,7 @@ function line(row) {
  * @param {Row} row @param {"up" | "all"} where @param {number} [n] the Up Next number
  */
 function rowItem(row, where, n) {
-  const [head, tail] = splitName(row.name);
+  const [head, tail] = M.nameParts(row.name);
   const key = `${where}:${row.id}`;
   const open = el("button", { class: "row lib-open", type: "button", "data-key": `${key}:open` }, [
     ...(n ? [el("span", { class: "lib-n", "aria-hidden": "true" }, [String(n)])] : []),
@@ -527,7 +529,7 @@ function paint() {
 
   const trash = list.trash.count;
   show(els.trashLink, trash > 0);
-  els.trashLink.replaceChildren(`${T.trashTitle} · `, el("span", { class: "lib-num" }, [String(trash)]));
+  els.trashLink.replaceChildren(el("span", { class: "lib-num" }, [`${T.trashTitle} · ${trash}`]));
 
   pager?.disconnect();
   const last = els.fileList.lastElementChild;

@@ -10,6 +10,7 @@ import {
   sizeText,
   T,
 } from "../core/copy-library.js";
+import { splitName } from "../core/format.js";
 
 /**
  * @typedef {{id: string, name: string, ext: string, bytes: number, status: string, refusal?: string, updatedAt: number,
@@ -24,6 +25,17 @@ import {
  *   limits: {upNext: number, trashDays: number, maxFileBytes: number},
  *   switches: {uploads: Switch, previews: Switch, export: Switch}, account: {state: string}}} List
  */
+
+/**
+ * A name as the head that may take the ellipsis and the tail that never does: splitName's, or for a name too short
+ * for it to split, the extension, so a narrow row still says the file's kind (library.md section 2).
+ * @param {string} name @returns {[string, string]}
+ */
+export function nameParts(name) {
+  const [head, tail] = splitName(name);
+  const dot = name.lastIndexOf(".");
+  return tail || dot < 1 ? [head, tail] : [name.slice(0, dot), name.slice(dot)];
+}
 
 /** A row still on its way: an open upload, or a settled file the server is still checking. @param {Row} row */
 export const pending = (row) => row.upload !== undefined || row.status === "checking";

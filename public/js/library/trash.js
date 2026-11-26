@@ -2,8 +2,8 @@
 // menu, Empty Trash by the title. Deleting asks first in the `.leave` card, since nothing undoes it.
 /** @import {List, Row} from "./model.js" */
 import { deletesIn, emptyTrashLine, quotaLine, T, trashEmptyLine, trashRule, trashUses } from "../core/copy-library.js";
-import { splitName } from "../core/format.js";
 import { el, focusTitle, setText, show } from "../core/ui.js";
+import { nameParts } from "./model.js";
 
 /** @param {any} page the page object library.js passes */
 export function start(page) {
@@ -36,7 +36,7 @@ export function start(page) {
 
   /** @param {Row} row */
   function rowItem(row) {
-    const [head, tail] = splitName(row.name);
+    const [head, tail] = nameParts(row.name);
     const left = deletesIn(row.purgeAfter ?? Date.now(), Date.now());
     const more = el(
       "button",
@@ -63,7 +63,7 @@ export function start(page) {
   async function menu(row, opener) {
     const restore = el("button", { type: "button" }, [page.glyph("rotate-ccw"), "Restore"]);
     const remove = el("button", { type: "button", class: "lib-danger" }, [page.glyph("trash-2"), "Delete Now"]);
-    const [head, tail] = splitName(row.name);
+    const [head, tail] = nameParts(row.name);
     const dialog = await page.sheet(
       "trash-menu",
       [
