@@ -11,6 +11,7 @@ import {
   previewId,
   previewPath,
   THUMB_ORIGIN,
+  throughCache,
   upstreamUrl,
 } from "../../src/worker/yt-thumb.ts";
 import { asItem, CFG, claimedOwner, DECK, MAX_MINUTES, sec, T0, VEVOX } from "./machine-helpers.ts";
@@ -335,5 +336,60 @@ describe("PREVIEW-01 link items carry the preview through the views", () => {
     expect(Object.keys(screen).some((k) => /preview|thumb/i.test(k))).toBe(false);
     expect(JSON.stringify(screen)).not.toContain(DEMO_ITEMS.link.id);
     expect(JSON.stringify(screen).match(/yt\//g)).toHaveLength(1);
+  });
+});
+
+describe("PREVIEW-01 itemView re-checks a stored preview", () => {
+  it("drops a preview that is not a same-origin /yt/ path, whatever was stored", () => {
+    for (const bad of [
+      "https://i.ytimg.com/vi/aaaaaaaaaaa/mqdefault.jpg",
+      "//evil.example/yt/aaaaaaaaaaa.jpg",
+      "/yt/short.jpg",
+    ]) {
+      expect(itemView({ ...VEVOX, id: "i1", preview: bad })).toEqual({
+        kind: "link",
+        id: "i1",
+        url: VEVOX.url,
+        title: VEVOX.title,
+      });
+    }
+  });
+});
+
+describe("PREVIEW-01 the cache never turns an answer into a 500", () => {
+  const key = new Request("https://bloop.test/yt/aaaaaaaaaaa.jpg");
+  const bytes = new Uint8Array([0xff, 0xd8, 0xff, 1]);
+  const deferred: Promise<unknown>[] = [];
+  const defer = (work: Promise<unknown>) => deferred.push(work);
+  const keep = (b: Uint8Array | ArrayBuffer) => new Response(b as ArrayBuffer);
+
+  it("a cache that throws on match is a miss: the picture is loaded fresh", async () => {
+    const cache = {
+      match: () => Promise.reject(new Error("cache down")),
+      put: () => Promise.resolve(),
+    };
+    expect(await throughCache(cache, key, async () => bytes, keep, defer)).toBe(bytes);
+  });
+
+  it("a cache that throws on put still answers, and the failed put is not an unhandled rejection", async () => {
+    const cache = {
+      match: () => Promise.resolve(undefined),
+      put: () => Promise.reject(new Error("quota")),
+    };
+    expect(await throughCache(cache, key, async () => bytes, keep, defer)).toBe(bytes);
+    await expect(Promise.all(deferred)).resolves.toBeDefined();
+  });
+
+  it("a hit is served without loading, and a failed load is null (the route's 404)", async () => {
+    let loads = 0;
+    const hit = {
+      match: () => Promise.resolve(new Response(bytes)),
+      put: () => Promise.resolve(),
+    };
+    const got = await throughCache(hit, key, async () => (loads++, bytes), keep, defer);
+    expect(new Uint8Array(got as ArrayBuffer)).toEqual(bytes);
+    expect(loads).toBe(0);
+    const miss = { match: () => Promise.resolve(undefined), put: () => Promise.resolve() };
+    expect(await throughCache(miss, key, async () => null, keep, defer)).toBeNull();
   });
 });
