@@ -1,0 +1,21 @@
+# bloop
+
+> Scan the QR code, approve on your phone, and present.
+
+bloop puts your files on a shared screen, such as a room PC, from your phone. You scan the QR code the screen shows and approve on your phone; the screen gets a link to each item you approve, never your account, and you can end it from your phone. It shows slides, documents, PDFs, spreadsheets, photos, videos and links. bloop is in early access with invite-only accounts, and the demo is at https://bloop.here/demo.
+
+## Articles
+
+- [Articles](https://bloop.here/articles): Plain explainers for university IT teams and lecturers: how bloop works, its threat model, what stays on a room PC, and how long data is kept.
+- [Features](https://bloop.here/articles/features): What bloop does: present from your phone, keep your files ready in your Library, and stay in charge of the screen.
+- [How bloop Works](https://bloop.here/articles/how-bloop-works): How a phone pairs with a shared screen, what the screen is given, and how a session ends. Written for IT teams and lecturers.
+- [Threat Model for IT Teams](https://bloop.here/articles/threat-model-for-it-teams): What could go wrong with bloop on a shared PC, what stops it, what is accepted, and what is still open. Written for IT and security teams.
+- [What Stays on the PC](https://bloop.here/articles/what-stays-on-the-pc): What bloop clears on a room PC when a session ends, what a web page cannot reach, and what an IT team can do about the rest.
+- [Data and Retention](https://bloop.here/articles/data-and-retention): What bloop keeps, where it is stored, how long each kind of data lasts, and who can see it. Written for IT and data protection teams.
+- [Security](https://bloop.here/security): How bloop protects your files, where they live, who can see them, what can stay on a PC, and how to report a problem.
+
+## Policies
+
+- [Privacy Notice](https://bloop.here/privacy): What bloop collects, why, how long it keeps it, who can see it, and your rights.
+- [Terms of Use](https://bloop.here/terms): The terms for using bloop, a free early-access side project with invite-only Accounts.
+- [Accessibility](https://bloop.here/accessibility): How accessible bloop is, the problems we know about, and how to report one.

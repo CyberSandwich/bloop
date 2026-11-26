@@ -1,10 +1,9 @@
 ---
-kind: legal
-order: 3
+kind: article
+order: 5
 title: Security
 description: How bloop protects your files, where they live, who can see them, what can stay on a PC, and how to report a problem.
-effective: 2026-11-25
-version: 2.0
+published: 2026-11-25
 ---
 
 bloop puts a file on a shared screen without putting your account there. This page is for the people who use it and the people who look after those screens: how files are stored and shown, where they live, who can see them, what can stay on a PC, and how to reach bloop. The articles explain each part in more depth, starting with [How bloop Works](/articles/how-bloop-works).

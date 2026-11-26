@@ -16,9 +16,17 @@ const ARTICLES = [
 // The contracts (design.md section 6, Legal pages).
 const LEGAL = ["privacy.html", "terms.html", "security.html", "accessibility.html"] as const;
 const SITE = ["index.html", ...LEGAL, "404.html", ...ARTICLES];
+// The open site (content/open/, tools/pages/open/) is the same set of pages under public/open/, plus the Features
+// article; Security is an article there, which changes its layout and nothing else a generic rule reads.
+const OPEN = [
+  "open/index.html",
+  ...[...LEGAL, "404.html", ...ARTICLES, "articles/features.html"].map((p) => `open/${p}`),
+];
 // Every doc page also loads legal.css and legal.js.
-const isDoc = (page: string) => (LEGAL as readonly string[]).includes(page) || ARTICLES.includes(page);
-const ALL = [...SITE, "s.html", "a.html", "code.html"];
+const isDoc = (page: string) =>
+  ([...LEGAL, ...ARTICLES, "articles/features.html"] as readonly string[]).includes(page.replace(/^open\//, ""));
+const BOTH = [...SITE, ...OPEN];
+const ALL = [...BOTH, "s.html", "a.html", "code.html"];
 const VOID = new Set(["meta", "link", "img", "source", "input", "br", "hr", "wbr"]);
 const CSS_FILES = ["base.css", "site.css", "legal.css", "app.css"] as const;
 const SKIP_TAGS = new Set(["head", "script", "style", "svg", "noscript", "template"]);
@@ -89,7 +97,7 @@ const between = (html: string, start: RegExp, end: string) => {
   return html.slice(from, to + end.length);
 };
 
-describe.each(SITE)("%s under the strict CSP", (page) => {
+describe.each(BOTH)("%s under the strict CSP", (page) => {
   const html = read(`public/${page}`);
 
   it("has no inline script, inline style, style attribute or event handler", () => {
@@ -200,10 +208,13 @@ describe("every page's text", () => {
   });
 
   // The doc pages define Session and name tokens and tenants where the law or IT needs them (design.md section 3).
-  it.each(["index.html", "404.html"])("%s keeps session, token and tenant off the page", (page) => {
-    const text = visibleText(read(`public/${page}`)).toLowerCase();
-    expect(text).not.toMatch(/\b(session|token|tenant)s?\b/);
-  });
+  it.each(["index.html", "404.html", "open/index.html", "open/404.html"])(
+    "%s keeps session, token and tenant off the page",
+    (page) => {
+      const text = visibleText(read(`public/${page}`)).toLowerCase();
+      expect(text).not.toMatch(/\b(session|token|tenant)s?\b/);
+    },
+  );
 
   it.each(ALL)("%s uses only characters inside the font subset", (page) => {
     // The @font-face unicode-range in base.css and tools/subset-font.py.
@@ -527,7 +538,7 @@ describe("landing word caps (design.md section 13)", () => {
     expect(residue.toLowerCase()).not.toMatch(/nothing (is )?left|leaves nothing/);
     expect(read("public/security.html")).toContain('id="stay"');
     expect(faq).toMatch(
-      /<\/details>\s*<!-- build:ask -->\s*<p class="faq-more">Another question\? Email <a href="mailto:hi@bloop\.here">hi@bloop\.here<\/a><\/p>\s*<!-- \/build:ask -->\s*<\/section>$/,
+      /<\/details>\s*<!-- \/mode:faq-files -->\s*<!-- build:ask -->\s*<p class="faq-more">Another question\? Email <a href="mailto:hi@bloop\.here">hi@bloop\.here<\/a><\/p>\s*<!-- \/build:ask -->\s*<\/section>$/,
     );
   });
 
@@ -660,9 +671,11 @@ describe("site scripts under the strict CSP", () => {
   });
 
   it("every site page loads only its own script: the landing site.js, the doc pages legal.js, the 404 none", () => {
-    for (const page of SITE) {
+    for (const page of BOTH) {
       const scripts = [...read(`public/${page}`).matchAll(/<script[^>]*src="([^"]+)"/g)].map((m) => m[1]);
-      expect(scripts, page).toEqual(page === "index.html" ? ["/js/site.js"] : isDoc(page) ? ["/js/legal.js"] : []);
+      expect(scripts, page).toEqual(
+        page.endsWith("index.html") ? ["/js/site.js"] : isDoc(page) ? ["/js/legal.js"] : [],
+      );
     }
   });
 });
@@ -673,19 +686,25 @@ describe("site chrome: one nav and one footer on every site page", () => {
       (part) => part.replace(/ aria-current="page"/g, "").replace(/\?source=\w+/g, "?source=page"),
     );
   const [nav, footer] = chrome(read("public/index.html"));
+  const [openNav, openFooter] = chrome(read("public/open/index.html"));
 
-  it.each(SITE)("%s carries the landing's nav and footer, and marks at most its own link current", (page) => {
+  it.each(BOTH)("%s carries its landing's nav and footer, and marks at most its own link current", (page) => {
     const html = read(`public/${page}`);
-    expect(chrome(html)).toEqual([nav, footer]);
+    expect(chrome(html)).toEqual(page.startsWith("open/") ? [openNav, openFooter] : [nav, footer]);
     expect(html.match(/<nav\b/g)).toHaveLength(1);
     expect(html).toContain('<nav class="nav-pill glass" aria-label="Primary">');
     const current = [...html.matchAll(/href="([^"]+)" aria-current="page"/g)].map((m) => m[1]);
     expect(new Set(current).size).toBeLessThanOrEqual(1);
-    // An article marks the Articles link: the section it sits in.
-    if (current[0]) expect(current[0]).toBe(ARTICLES.includes(page) ? "/articles" : `/${page.replace(".html", "")}`);
+    // An article marks the Articles link: the section it sits in (in open, Security and Features are articles).
+    const bare = page.replace(/^open\//, "");
+    const article =
+      ARTICLES.includes(bare) ||
+      bare === "articles/features.html" ||
+      (page.startsWith("open/") && bare === "security.html");
+    if (current[0]) expect(current[0]).toBe(article ? "/articles" : `/${bare.replace(".html", "")}`);
   });
 
-  it.each(SITE)("%s lists Terms and Articles in the menu and the footer", (page) => {
+  it.each(BOTH)("%s lists Terms and Articles in the menu and the footer", (page) => {
     const html = read(`public/${page}`);
     for (const part of [
       between(html, /<ul class="nav-links/, "</ul>"),
@@ -696,7 +715,7 @@ describe("site chrome: one nav and one footer on every site page", () => {
     }
   });
 
-  it.each(SITE)("%s links no Source repository and no /it", (page) => {
+  it.each(BOTH)("%s links no Source repository and no /it", (page) => {
     const html = read(`public/${page}`);
     expect(html).not.toMatch(/github\.com|>Source</);
     expect(html).not.toMatch(/href="\/it[/"#?]/);
@@ -725,7 +744,7 @@ describe("site chrome: one nav and one footer on every site page", () => {
     },
   );
 
-  it.each(SITE)("%s names only hi@bloop.here, and no placeholder", (page) => {
+  it.each(BOTH)("%s names only hi@bloop.here, and no placeholder", (page) => {
     const html = read(`public/${page}`);
     expect(html).not.toMatch(/bloop\.example/);
     for (const m of html.matchAll(/[\w.+-]+@[\w-]+(\.[\w-]+)+/g)) expect(m[0]).toBe("hi@bloop.here");
@@ -805,7 +824,7 @@ describe("the stylesheets: base.css, then the page's own (design.md section 11)"
   // A class names a rule in a file when it appears as a selector token there.
   const defines = (file: string, cls: string) => new RegExp(`\\.${cls}(?![\\w-])`).test(css[file] ?? "");
 
-  it.each(SITE)("%s links base.css then site.css (then legal.css on a doc page), and nothing else", (page) => {
+  it.each(BOTH)("%s links base.css then site.css (then legal.css on a doc page), and nothing else", (page) => {
     const own = isDoc(page) ? ["/css/legal.css"] : [];
     expect(links(read(`public/${page}`))).toEqual(["/css/base.css", "/css/site.css", ...own]);
   });
@@ -818,7 +837,7 @@ describe("the stylesheets: base.css, then the page's own (design.md section 11)"
     expect(links(read("src/worker/auth/error-page.ts"))).toEqual(["/css/base.css", "/css/site.css"]);
   });
 
-  it.each(SITE)("every class on %s is styled by base.css, site.css or legal.css, never only by app.css", (page) => {
+  it.each(BOTH)("every class on %s is styled by base.css, site.css or legal.css, never only by app.css", (page) => {
     // Names for the markup's reader, with no rule of their own.
     const unstyled = new Set(["frag-name"]);
     const classes = new Set(
@@ -929,7 +948,7 @@ describe("the stylesheets: base.css, then the page's own (design.md section 11)"
 describe("stage 1 wording and pictures", () => {
   const index = read("public/index.html");
 
-  it.each(SITE)("%s titles itself bloop: X", (page) => {
+  it.each(BOTH)("%s titles itself bloop: X", (page) => {
     expect(read(`public/${page}`)).toMatch(/<title>bloop: [A-Z][^<]*<\/title>/);
   });
 
@@ -969,8 +988,8 @@ describe("stage 1 wording and pictures", () => {
   it("the hero centers its block in the whole first view, and Security to Waitlist is the links' gap", () => {
     const site = read("public/css/site.css");
     expect(site).toMatch(/^\.hero \{[^}]*min-height: 100vh;\s*min-height: 100svh;/m);
-    expect(site).toMatch(/^\.btn\.waitlist \{[^}]*padding: 0 16px;/m);
-    expect(site).not.toMatch(/\.btn\.waitlist \{[^}]*margin-left/);
+    expect(site).toMatch(/^\.btn\.waitlist,\n\.btn\.account \{[^}]*padding: 0 16px;/m);
+    expect(site).not.toMatch(/\.btn\.waitlist,\n\.btn\.account \{[^}]*margin-left/);
   });
 
   it.each(["security.html", "privacy.html"])("%s draws the split with a check and a muted Never, no switch", (page) => {
