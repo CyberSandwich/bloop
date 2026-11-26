@@ -6,6 +6,7 @@ import { type Member, type MemberOptions, resolveMember } from "./auth/member.ts
 import { type Config, configFor } from "./config.ts";
 import { DYNAMIC_PAGES, pageCsp, withHeaders } from "./headers.ts";
 import { fail } from "./http.ts";
+import { SECRET_SHAPE } from "./ids.ts";
 import { launchState } from "./mode.ts";
 import { pillRequest, withAccountPill } from "./nav-pill.ts";
 import { AUTH_SHELLS, MEMBER_PAGES, VARIANTS, type Variant } from "./page-registry.ts";
@@ -21,9 +22,6 @@ export interface PageEnv {
   RL_MEMBER_IP?: Limiter;
 }
 
-/** A session cookie of the shape `newSecret` makes (32 bytes, base64url); any other value reads nothing. */
-const SESSION_VALUE = /^[A-Za-z0-9_-]{43}$/;
-
 /**
  * The member a page shows for, or null as for a signed-out visitor. A cookie of the wrong shape is dropped before
  * any D1 read; a well-formed one spends the coarse per-IP RL_MEMBER_IP before the session lookup (AUTH-19), and
@@ -31,7 +29,7 @@ const SESSION_VALUE = /^[A-Za-z0-9_-]{43}$/;
  */
 async function pageMember(request: Request, env: PageEnv, config: Config, options: MemberOptions = {}) {
   const cookie = readCookie(request, SESSION_COOKIE);
-  if (!cookie || !SESSION_VALUE.test(cookie)) return null;
+  if (!cookie || !SECRET_SHAPE.test(cookie)) return null;
   if (await spendLimit(env.RL_MEMBER_IP, "RL_MEMBER_IP", request, config)) return null;
   const who = await resolveMember(request, env, config, options);
   return who.ok ? who.member : null;

@@ -109,6 +109,30 @@ describe("COST-14 the five-minute job mails a trip to the admins", () => {
     expect(trips(w.sent).filter((m) => m.to === ADMIN)).toHaveLength(2);
   });
 
+  it("COST-14 a reset whose claim release fails leaves the trip latched, so a retried reset still releases them", async () => {
+    const w = world();
+    w.pub.ledger.record("email", 95, undefined, T0);
+    await (await breakerJob()).run(w.env, undefined, 0);
+    const [trip] = (await w.global.guard.snapshot()).trips;
+    const name = trip?.switch ?? "email";
+    const store = d1SwitchStore(w.db, Date.now);
+    const failing = {
+      ...w.global.guard,
+      unalertMany: async () => {
+        throw new Error("guard down");
+      },
+    };
+    await expect(resetBreaker({ guard: failing, store, notify: logNotify }, name, "owner")).rejects.toThrow(
+      "guard down",
+    );
+    expect((await w.global.guard.snapshot()).trips.map((t) => t.switch)).toEqual([name]);
+    expect(await resetBreaker({ guard: w.global.guard, store, notify: logNotify }, name, "owner")).toBe(true);
+    const key = `trip:${name}:${trip?.value}`;
+    const held = (w.global.rig.db.prepare("SELECT key FROM alert").all() as { key: string }[]).map((r) => r.key);
+    const { log, mail } = deliveryClaims(key);
+    expect(held.filter((claim) => [key, log, ...mail].includes(claim))).toEqual([]);
+  });
+
   it("COST-14 a send no admin received releases the day's claim, so the next run mails the trip", async () => {
     const w = world();
     w.pub.ledger.record("email", 95, undefined, T0);

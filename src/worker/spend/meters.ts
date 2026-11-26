@@ -117,6 +117,9 @@ export function checkAcquire(pool: PoolName, ttlSeconds: number, scope: string |
 }
 const retrySeconds = (ms: number) => Math.max(1, Math.ceil(ms / 1000));
 
+/** The platform caps a Durable Object SQLite statement at 100 bound parameters. */
+const MAX_BOUND_PARAMETERS = 100;
+
 export class Ledger {
   constructor(
     private readonly sql: SqlLike,
@@ -454,10 +457,10 @@ export class Ledger {
     this.sql.exec("DELETE FROM alert WHERE key = ?", key);
   }
 
-  /** Forgets several claims, one statement per 100 keys (SQLite's bind limit is far above it). */
+  /** Forgets several claims, one statement per `MAX_BOUND_PARAMETERS` keys. */
   unalertMany(keys: readonly string[]): void {
-    for (let i = 0; i < keys.length; i += 100) {
-      const chunk = keys.slice(i, i + 100);
+    for (let i = 0; i < keys.length; i += MAX_BOUND_PARAMETERS) {
+      const chunk = keys.slice(i, i + MAX_BOUND_PARAMETERS);
       this.sql.exec(`DELETE FROM alert WHERE key IN (${chunk.map(() => "?").join(", ")})`, ...chunk);
     }
   }

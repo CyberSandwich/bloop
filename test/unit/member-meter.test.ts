@@ -124,4 +124,45 @@ describe("AUTH-19 meter: the member page gate", () => {
     expect(await page(env, "/privacy", viewer, PRIVACY)).toEqual({ status: 200, text: "asset /privacy" });
     expect(sessionReads(seen)).toEqual([]);
   });
+
+  it("AUTH-19 meter: over RL_MEMBER_IP an admin's /admin is the unknown path's 404, as for a signed-out visitor", async () => {
+    const { world, cookie, env } = await metered(["RL_MEMBER_IP"]);
+    setMode(world.db, "preview");
+    const signedOut = await page(env, "/admin");
+    expect(signedOut.status).toBe(404);
+    expect(await page(env, "/admin", sid(cookie))).toEqual(signedOut);
+  });
+
+  it("AUTH-19 meter: with the limits live, a non-admin member's /admin spends the meter and is the 404", async () => {
+    const { world, seen, env } = await metered();
+    setMode(world.db, "preview");
+    const member = await seedMember(world.db, "m2", "member@example.test");
+    expect(await page(env, "/admin", sid(member))).toEqual(await page(env, "/admin"));
+    expect(seen.some(([name]) => name === "RL_MEMBER_IP")).toBe(true);
+  });
+
+  it("AUTH-19 meter: a missing RL_MEMBER_IP binding hides the page, logs once, and never answers 500", async () => {
+    const { world, cookie, env } = await metered();
+    setMode(world.db, "preview");
+    const { RL_MEMBER_IP: _gone, ...bare } = env as Record<string, unknown>;
+    const errors = vi.spyOn(console, "error").mockImplementation(() => {});
+    try {
+      const signedOut = await page(bare, "/library");
+      for (let i = 0; i < 2; i++) expect(await page(bare, "/library", sid(cookie))).toEqual(signedOut);
+      expect(signedOut.status).toBe(404);
+      const missing = errors.mock.calls.filter(([line]) => String(line) === "rate-limit binding missing: RL_MEMBER_IP");
+      expect(missing).toHaveLength(1);
+    } finally {
+      errors.mockRestore();
+    }
+  });
+
+  it("AUTH-19 meter: the admin open view with a malformed session cookie spends no meter and shows today's page", async () => {
+    const { world, seen, env } = await metered();
+    setMode(world.db, "preview");
+    const viewer = `${sid("not-a-session")}; __Host-bloop_view=open`;
+    expect(await page(env, "/privacy", viewer, PRIVACY)).toEqual({ status: 200, text: "asset /privacy" });
+    expect(seen.some(([name]) => name === "RL_MEMBER_IP")).toBe(false);
+    expect(sessionReads(seen)).toEqual([]);
+  });
 });

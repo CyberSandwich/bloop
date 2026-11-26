@@ -111,6 +111,7 @@ function limitedConfig(state: string, limits: Readonly<Record<string, number>>):
  * wrangler reads `.dev.vars`, else `.env` then `.env.local`, from its config's directory, so a config in the state
  * directory points it at the repo's own files instead (read in place, never copied). Trap: with `--env-file` it
  * reads only the files named, so the `.env.<environment>` forms are not passed; the harness selects no environment.
+ * `--env-file` also loads the values into wrangler's own process env, so its build command sees them too.
  */
 export function devVarsArgs(dir = root): string[] {
   const at = (name: string) => join(dir, name);
