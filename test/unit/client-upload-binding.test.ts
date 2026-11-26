@@ -421,21 +421,36 @@ describe("the refusal strings", () => {
       "src/worker/origin.ts",
       "src/worker/http.ts",
       "src/worker/routes/common.ts",
+      // The check's verdicts (macros, a password, a damaged file) and the spend guard's refusals.
+      "src/worker/seams/guest-drop/validate.ts",
+      "src/worker/seams/guest-drop/formats.ts",
+      "src/worker/seams/guest-drop/cfb.ts",
+      "src/worker/seams/guest-drop/zip.ts",
+      "src/worker/spend/client.ts",
     ];
     const found = new Set<string>();
     for (const path of sources)
       for (const [, code] of read(path).matchAll(/["']([a-z]+(?:_[a-z]+)*)["']/g))
         if (known.has(code as string)) found.add(code as string);
+    // The engine's own refusals, as it spells them: refuse(r, "empty"), { error: "internal" }.
+    for (const [, code] of read("public/js/core/upload.js").matchAll(/(?:refuse\(\w+,\s*|error:\s*)"([a-z_]+)"/g))
+      found.add(code as string);
     return found;
   }
-  /** Codes the check's verdict and the engine itself produce, which no route source spells as a code. */
-  const OTHER_CODES = ["macro_content", "encrypted", "empty", "storage_full", "service_down"];
-  /** Codes that never end an upload: the HTTP layer's own, which a JSON POST cannot meet. */
-  const NOT_UPLOAD = ["method_not_allowed"];
 
   it("the sources really name the codes the test counts on", async () => {
     const codes = await serverCodes();
-    for (const code of ["bad_type", "quota_exceeded", "internal", "forbidden_origin", "unsupported_media_type"])
+    for (const code of [
+      "bad_type",
+      "quota_exceeded",
+      "internal",
+      "forbidden_origin",
+      "unsupported_media_type",
+      "macro_content",
+      "encrypted",
+      "empty",
+      "service_busy",
+    ])
       expect(codes.has(code), code).toBe(true);
     expect(codes.size).toBeGreaterThan(15);
   });
@@ -448,8 +463,7 @@ describe("the refusal strings", () => {
     const fallback = refusalToast("Talk.pptx", "no_such_code", 500);
     expect(fallback).toEqual({ title: "Talk.pptx Can't Be Added", body: "Try again in a moment." });
     const seen = new Set<string>();
-    const codes = [...(await serverCodes()), ...OTHER_CODES].filter((c) => !NOT_UPLOAD.includes(c));
-    for (const code of codes) {
+    for (const code of await serverCodes()) {
       const t = refusalToast("Talk.pptx", code, 500);
       expect(t, code).not.toEqual(fallback);
       expect(seen.has(JSON.stringify(t)), `${code} repeats another code's string`).toBe(false);
