@@ -43,6 +43,10 @@ const members = {
     ["a", "Lecture 1.pptx", { selected_at: now - 20 }],
     ["b", "Lecture 2.pptx", { selected_at: now - 10 }],
   ]),
+  undo: fixtures.member([
+    ["a", "Lecture 5.pptx", { selected_at: now - 10 }],
+    ["b", "Reading list.pdf"],
+  ]),
   long: fixtures.member(Array.from({ length: 12 }, (_, i): [string, string] => [`f${i}`, `Lecture ${i + 1}.pptx`])),
 };
 
@@ -329,5 +333,19 @@ test.describe("library", () => {
     await page.waitForTimeout(1500);
     await expect(page).toHaveURL(/localhost:8787\/library$/);
     expect(context.pages()).toHaveLength(2);
+  });
+
+  test("a toast's Undo still works with the Present sheet open over the page", async ({ page, context }) => {
+    await page.setViewportSize({ width: 390, height: 844 });
+    await signedIn(context, members.undo);
+    await page.goto("/library");
+    await page.getByRole("button", { name: "More for Reading list.pdf" }).click();
+    await page.getByRole("dialog").getByRole("button", { name: "Move to Trash" }).click();
+    await expect(page.locator("#file-list > li")).toHaveCount(1);
+    await page.locator("#present:visible, #present-card:visible").first().click();
+    await expect(page.getByRole("dialog")).toBeVisible();
+    await page.getByRole("button", { name: "Undo" }).click({ timeout: 5000 });
+    await expect(page.locator("#file-list > li")).toHaveCount(2);
+    await expect(page.getByRole("dialog")).toBeVisible();
   });
 });
