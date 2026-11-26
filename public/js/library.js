@@ -43,6 +43,8 @@ const prefs = (() => {
   }
 })();
 
+// transitional: A: /account is the accounts change's page; until it exists library.html's bar has no Account link
+// (library.md section 1), since every preview page's links must resolve (site-open.test.ts).
 const els = {
   body: document.body,
   title: byId("title"),
