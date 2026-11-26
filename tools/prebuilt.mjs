@@ -24,7 +24,8 @@ export function withPrebuilt(config) {
  * instead of building in the job that holds the token.
  * @param {string} config */
 export function requirePrebuilt(config) {
-  if (!config.includes(PREBUILT)) throw new Error("wrangler.jsonc still builds: run tools/prebuilt.mjs rewrite first");
+  if (config.includes(BUILD) || !config.includes(PREBUILT))
+    throw new Error("wrangler.jsonc still builds: run tools/prebuilt.mjs rewrite first");
 }
 
 /** Every file under dir, dotfiles included, with its SHA-256; the manifest itself is not listed. Anything that is not

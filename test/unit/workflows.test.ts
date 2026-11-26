@@ -9,8 +9,10 @@ function broadScopes(text: string, secret: string): number[] {
   const lines = text.split("\n");
   const found: number[] = [];
   lines.forEach((line, i) => {
-    const env = /^( {0,4})env:\s*$/.exec(line);
+    const env = /^( {0,4})["']?env["']?\s*:(.*)$/.exec(line);
     if (!env) return;
+    // A flow-style `env: { NAME: x }` holds its names on the key's own line.
+    if ((env[2] ?? "").replace(/#.*/, "").includes(secret)) found.push(i + 1);
     const indent = (env[1] ?? "").length;
     for (let j = i + 1; j < lines.length; j++) {
       const next = lines[j] ?? "";
@@ -116,6 +118,12 @@ describe("SITE-05 deploy token scope", () => {
     expect(broadScopes(job, "CLOUDFLARE_API_TOKEN")).toEqual([3]);
     expect(broadScopes(flow, "CLOUDFLARE_API_TOKEN")).toEqual([1]);
     expect(broadScopes(step, "CLOUDFLARE_API_TOKEN")).toEqual([]);
+    const forms = [
+      "jobs:\n  deploy:\n    env: # c\n      CLOUDFLARE_API_TOKEN: x\n",
+      'jobs:\n  deploy:\n    "env":\n      CLOUDFLARE_API_TOKEN: x\n',
+      "jobs:\n  deploy:\n    env: { CLOUDFLARE_API_TOKEN: x }\n",
+    ];
+    for (const form of forms) expect(broadScopes(form, "CLOUDFLARE_API_TOKEN"), form).toEqual([3]);
   });
 });
 
@@ -226,20 +234,35 @@ const ALLOWED_USES = [
   "./.github/actions/prebuilt-dist",
 ];
 
-/** The text of job `name`: its key line up to the next job key or comment at the same indent. */
-function jobBlock(text: string, name: string): string {
-  const lines = text.split("\n");
-  const from = lines.indexOf(`  ${name}:`);
-  if (from < 0) return "";
-  let to = from + 1;
-  while (to < lines.length && !/^ {2}(#|[\w-]+:\s*$)/.test(lines[to] ?? "")) to++;
-  return lines.slice(from, to).join("\n").trimEnd();
-}
+/** What makes a job a token job: an environment, the token, or any use of the secrets context. */
+const TOKEN_JOB = /environment["']?\s*:|CLOUDFLARE|\$\{\{[^}]*secrets/i;
 
-/** Every job key of a workflow. */
-function jobNames(text: string): string[] {
+/** A job key: the only line shape allowed at two spaces of indent under `jobs:`. */
+const JOB_KEY = /^ {2}([\w-]+):$/;
+
+/** Every job of a workflow with its text, from its key line to the next job key (comments in between belong to it), and
+ * the lines that are not in a plain block-style layout. Nothing is parsed: a form this does not read is a problem. */
+function jobsOf(text: string): { jobs: Record<string, string>; problems: string[] } {
   const lines = text.split("\n");
-  return lines.slice(lines.indexOf("jobs:") + 1).flatMap((line) => /^ {2}([\w-]+):\s*$/.exec(line)?.[1] ?? []);
+  const jobs: Record<string, string> = {};
+  const problems: string[] = [];
+  if (/[\r\t]/.test(text)) problems.push("carriage return or tab");
+  const start = lines.indexOf("jobs:");
+  if (start < 0) return { jobs, problems: [...problems, "no `jobs:` line"] };
+  let name = "";
+  for (const line of lines.slice(start + 1)) {
+    const key = JOB_KEY.exec(line);
+    const indent = line.length - line.trimStart().length;
+    if (key) {
+      name = key[1] ?? "";
+      jobs[name] = line;
+      continue;
+    }
+    if (line.trim() !== "" && !line.trimStart().startsWith("#") && indent <= 2) problems.push(`not a job key: ${line}`);
+    if (name) jobs[name] += `\n${line}`;
+  }
+  for (const [job, body] of Object.entries(jobs)) jobs[job] = body.trimEnd();
+  return { jobs, problems };
 }
 
 /** Why the workflows and the action could run code other than what is pinned beside the token. */
@@ -247,13 +270,13 @@ function pinProblems(files: Record<string, string>, action: string): string[] {
   const problems: string[] = [];
   const found = new Set<string>();
   for (const [f, text] of Object.entries(files)) {
-    for (const name of jobNames(text)) {
-      const body = jobBlock(text, name);
-      if (!/CLOUDFLARE_API_TOKEN|^ {4}environment:/m.test(body)) continue;
+    const { jobs, problems: layout } = jobsOf(text);
+    problems.push(...layout.map((p) => `${f}: ${p}`));
+    for (const [name, body] of Object.entries(jobs)) {
+      if (!TOKEN_JOB.test(body)) continue;
       found.add(`${f} ${name}`);
       if (body !== PINNED[`${f} ${name}`]?.join("\n")) problems.push(`${f} ${name} differs from its pin`);
     }
-    if (/^ {0,4}(defaults|container|services):/m.test(text)) problems.push(`${f} has defaults, container or services`);
   }
   for (const pin of Object.keys(PINNED)) {
     if (pin !== "action.yml" && !found.has(pin)) problems.push(`${pin} is pinned but no longer a token job`);
@@ -261,12 +284,18 @@ function pinProblems(files: Record<string, string>, action: string): string[] {
   for (const key of found) if (!(key in PINNED)) problems.push(`${key} holds the token and is not pinned`);
   if (action.trimEnd() !== PINNED["action.yml"]?.join("\n")) problems.push("action.yml differs from its pin");
   for (const [f, text] of [...Object.entries(files), ["action.yml", action] as const]) {
-    for (const use of text.matchAll(/\buses:\s*(\S+)/g)) {
+    if (/[\r\t]/.test(text)) problems.push(`${f}: carriage return or tab`);
+    if (/^\s*["']?(defaults|container|services)["']?\s*:/m.test(text))
+      problems.push(`${f} has defaults, container or services`);
+    for (const use of text.matchAll(/["']?\buses["']?\s*:\s*["']?([^\s"'}]+)/g)) {
       if (!ALLOWED_USES.includes(use[1] ?? "")) problems.push(`${f} uses ${use[1]}`);
     }
   }
   return problems;
 }
+
+/** The text of job `name` in a workflow. */
+const jobBlock = (text: string, name: string): string => jobsOf(text).jobs[name] ?? "";
 
 describe("SITE-05 third-party code never shares a job with the token", () => {
   const files = Object.fromEntries(
@@ -281,88 +310,138 @@ describe("SITE-05 third-party code never shares a job with the token", () => {
     expect(Object.keys(PINNED)).toHaveLength(3);
   });
 
-  it("SITE-05 token jobs: the guard refuses each change to a token job, the action, or a workflow's defaults and uses", () => {
+  it("SITE-05 token jobs: the guard refuses each way to change a token job, add one, or run another action", () => {
     const deploy = files["deploy.yml"] ?? "";
-    const withFiles = (name: string, text: string) => pinProblems({ ...files, [name]: text }, action);
-    const cases: [string, string[]][] = [
+    const ci = files["ci.yml"] ?? "";
+    const edit = (name: string, text: string, replace: [string, string]) => {
+      const changed = text.replace(...replace);
+      expect(changed, `${name} edit applies`).not.toBe(text);
+      return pinProblems({ ...files, [name.split(" ")[0] ?? ""]: changed }, action).join("\n");
+    };
+    const addJob = (job: string) => pinProblems({ ...files, "new.yml": `jobs:\n${job}` }, action).join("\n");
+    const sha = "actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1";
+    const cases: [string, string, string][] = [
       [
         "a command appended to a run",
-        withFiles("deploy.yml", deploy.replace("mjs deploy\n", "mjs deploy && npx evil\n")),
+        edit("deploy.yml", deploy, ["mjs deploy\n", "mjs deploy && npx evil\n"]),
+        "deploy.yml deploy differs",
+      ],
+      [
+        "a step after a two-space comment",
+        edit("deploy.yml", deploy, ["mjs deploy\n", "mjs deploy\n  # end\n      - run: npx evil\n"]),
+        "deploy.yml deploy differs",
       ],
       [
         "a changed indentation",
-        withFiles("deploy.yml", deploy.replace("    environment: production", "     environment: production")),
+        edit("deploy.yml", deploy, ["    environment: production", "     environment: production"]),
+        "deploy.yml deploy differs",
       ],
       [
         "a working-directory",
-        withFiles(
-          "deploy.yml",
-          deploy.replace(
-            "        uses: ./.github/actions/prebuilt-dist",
-            "        uses: ./.github/actions/prebuilt-dist\n        working-directory: dist",
-          ),
-        ),
+        edit("deploy.yml", deploy, [
+          "        uses: ./.github/actions/prebuilt-dist",
+          "        uses: ./.github/actions/prebuilt-dist\n        working-directory: dist",
+        ]),
+        "deploy.yml deploy differs",
       ],
       [
         "a job container",
-        withFiles(
-          "deploy.yml",
-          deploy.replace("    environment: production", "    environment: production\n    container: evil:1"),
-        ),
+        edit("deploy.yml", deploy, [
+          "    environment: production",
+          "    environment: production\n    container: evil:1",
+        ]),
+        "has defaults, container or services",
       ],
       [
         "workflow defaults",
-        withFiles("deploy.yml", deploy.replace("jobs:", "defaults:\n  run:\n    shell: npx foo {0}\njobs:")),
+        edit("deploy.yml", deploy, ["jobs:", "defaults:\n  run:\n    shell: npx foo {0}\njobs:"]),
+        "has defaults, container or services",
+      ],
+      [
+        "quoted workflow defaults",
+        edit("deploy.yml", deploy, ["jobs:", '"defaults":\n  run:\n    shell: npx foo {0}\njobs:']),
+        "has defaults, container or services",
+      ],
+      [
+        "defaults with a space before the colon",
+        edit("deploy.yml", deploy, ["jobs:", "defaults :\n  run:\n    shell: npx foo {0}\njobs:"]),
+        "has defaults, container or services",
       ],
       [
         "a service",
-        withFiles(
-          "ci.yml",
-          `${files["ci.yml"]}`.replace("  rehearsal:", "  rehearsal:\n    services:\n      x:\n        image: evil"),
-        ),
+        edit("ci.yml", ci, ["  rehearsal:", "  rehearsal:\n    services:\n      x:\n        image: evil"]),
+        "has defaults, container or services",
       ],
       [
-        "a third-party action in any job",
-        withFiles(
-          "ci.yml",
-          `${files["ci.yml"]}`.replace(
-            "actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1",
-            "evil/action@3d3c42e5aac5ba805825da76410c181273ba90b1",
-          ),
-        ),
+        "a third-party action",
+        edit("ci.yml", ci, [sha, "evil/action@3d3c42e5aac5ba805825da76410c181273ba90b1"]),
+        "ci.yml uses evil/action@",
       ],
       [
         "a tag instead of a commit",
-        withFiles(
-          "ci.yml",
-          `${files["ci.yml"]}`.replace(
-            "actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1",
-            "actions/checkout@v4",
-          ),
-        ),
+        edit("ci.yml", ci, [sha, "actions/checkout@v4"]),
+        "ci.yml uses actions/checkout@v4",
+      ],
+      [
+        "a quoted uses key",
+        edit("ci.yml", ci, ["  rehearsal:\n", '  rehearsal:\n    steps:\n      - "uses": evil/x@1\n']),
+        "ci.yml uses evil/x@1",
+      ],
+      [
+        "a flow-style step",
+        edit("ci.yml", ci, ["  rehearsal:\n", "  rehearsal:\n    steps:\n      - { uses: evil/y@1 }\n"]),
+        "ci.yml uses evil/y@1",
       ],
       [
         "a reusable workflow job",
-        withFiles("ci.yml", `${files["ci.yml"]}\n  more:\n    uses: org/repo/.github/workflows/x.yml@main\n`),
+        addJob("  more:\n    uses: org/repo/.github/workflows/x.yml@main\n"),
+        "uses org/repo/.github/workflows/x.yml@main",
       ],
       [
-        "a token job in a new workflow",
-        withFiles(
-          "new.yml",
-          "jobs:\n  go:\n    runs-on: ubuntu-latest\n    steps:\n      - run: echo ${{ secrets.CLOUDFLARE_API_TOKEN }}\n",
+        "a job using the token secret",
+        addJob(
+          "  go:\n    runs-on: ubuntu-latest\n    steps:\n      - run: echo ${{ secrets.CLOUDFLARE_API_TOKEN }}\n",
         ),
+        "new.yml go holds the token and is not pinned",
+      ],
+      [
+        "toJSON of all secrets",
+        addJob("  go:\n    steps:\n      - run: echo ${{ toJSON(secrets) }}\n"),
+        "new.yml go holds the token and is not pinned",
       ],
       [
         "an environment in a new job",
-        withFiles(
-          "new.yml",
-          "jobs:\n  go:\n    runs-on: ubuntu-latest\n    environment: production\n    steps:\n      - run: npx evil\n",
-        ),
+        addJob("  go:\n    environment: production\n    steps:\n      - run: npx evil\n"),
+        "new.yml go holds the token and is not pinned",
+      ],
+      [
+        "an environment indented six spaces",
+        addJob("  go:\n    steps:\n      - run: npx evil\n      environment: production\n"),
+        "new.yml go holds the token and is not pinned",
+      ],
+      [
+        "a quoted environment key",
+        addJob('  go:\n    "environment": production\n    steps:\n      - run: npx evil\n'),
+        "new.yml go holds the token and is not pinned",
+      ],
+      [
+        "a space before the environment colon",
+        addJob("  go:\n    environment : production\n    steps:\n      - run: npx evil\n"),
+        "new.yml go holds the token and is not pinned",
+      ],
+      ["a comment after the job key", addJob("  go: # x\n    environment: production\n"), "not a job key:   go: # x"],
+      ["a quoted job key", addJob('  "go":\n    environment: production\n'), 'not a job key:   "go":'],
+      ["a flow-style job", addJob("  go: { environment: production, steps: [] }\n"), "not a job key"],
+      [
+        "a CRLF workflow",
+        pinProblems({ ...files, "deploy.yml": deploy.replaceAll("\n", "\r\n") }, action).join("\n"),
+        "carriage return or tab",
       ],
     ];
-    for (const [name, problems] of cases) expect(problems, name).not.toEqual([]);
-    const changedAction = action.replace("npm ci --ignore-scripts", "npm ci");
-    expect(pinProblems(files, changedAction)).toEqual(["action.yml differs from its pin"]);
+    for (const [name, problems, expected] of cases) expect(problems, name).toContain(expected);
+    expect(pinProblems(files, action.replace("npm ci --ignore-scripts", "npm ci"))).toEqual([
+      "action.yml differs from its pin",
+    ]);
   });
 
   it("SITE-05 token jobs: the check job has no environment and no secret and hands dist/ over with its hidden files", () => {

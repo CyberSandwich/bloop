@@ -30,10 +30,8 @@ export function wranglerEntry(root = ROOT) {
 
 if (process.argv[1]?.endsWith("pinned-wrangler.mjs")) {
   const args = process.argv.slice(2);
-  // A deploy that holds the token must not run wrangler.jsonc's build command (third-party code).
-  if (args[0] === "deploy" && process.env.CLOUDFLARE_API_TOKEN) {
-    requirePrebuilt(readFileSync(join(ROOT, "wrangler.jsonc"), "utf8"));
-  }
+  // Whatever wrangler command holds the token, it must not run wrangler.jsonc's build command (third-party code).
+  if (process.env.CLOUDFLARE_API_TOKEN) requirePrebuilt(readFileSync(join(ROOT, "wrangler.jsonc"), "utf8"));
   const run = spawnSync(process.execPath, [wranglerEntry(), ...args], { stdio: "inherit" });
   process.exit(run.status ?? 1);
 }
