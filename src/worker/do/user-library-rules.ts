@@ -7,7 +7,8 @@ const DAY_MS = 86_400_000;
 export const PROGRESS_FRAME_MS = 1000;
 export const MAX_SCREEN_ROWS = 20;
 export const EXPORT_LEASE = "export";
-export const EXPORT_LEASE_MS = 7_200_000;
+/** Short, and renewed while bytes flow: a client that vanished mid-download is not always noticed, so the lease must lapse by itself. */
+export const EXPORT_LEASE_MS = 900_000;
 
 export interface Progress {
   id: string;
@@ -131,6 +132,16 @@ export function takeLease(sql: SqlLike, name: string, holder: string, now: numbe
     | undefined;
   if (held && held.expires_at > now) return false;
   sql.exec("INSERT OR REPLACE INTO lease VALUES (?, ?, ?)", name, holder, now + ttlMs);
+  return true;
+}
+
+/** Moves this holder's live lease on to `now + ttlMs`. An expired lease, or one another holder took, is not renewed. */
+export function renewLease(sql: SqlLike, name: string, holder: string, now: number, ttlMs: number): boolean {
+  const mine = sql
+    .exec("SELECT 1 FROM lease WHERE name = ? AND holder = ? AND expires_at > ?", name, holder, now)
+    .toArray();
+  if (mine.length === 0) return false;
+  sql.exec("UPDATE lease SET expires_at = ? WHERE name = ? AND holder = ?", now + ttlMs, name, holder);
   return true;
 }
 

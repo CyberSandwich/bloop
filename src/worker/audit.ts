@@ -23,7 +23,14 @@ export interface AuditEvent {
   sessionId: string;
   at: number;
   actor: Actor;
-  type: AuditType | "grant.created" | "grant.deleted" | "user.erased" | "export.run" | "pass.created";
+  type:
+    | AuditType
+    | "grant.created"
+    | "grant.deleted"
+    | "user.erased"
+    | "export.run"
+    | "library.export"
+    | "pass.created";
   /** Allowed keys only. Never tokens, codes, URLs, IPs or Graph ids. */
   detail: {
     fileName?: string;
