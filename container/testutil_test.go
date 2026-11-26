@@ -261,7 +261,7 @@ func (f *fakeTools) run(ctx context.Context, spec cmdSpec) ([]byte, error) {
 			return nil, write(out, fakeWebP(w, w*9/16))
 		}
 	case "ffprobe":
-		if strings.Contains(last, "/out/m/") {
+		if strings.Contains(last, "/out/m/") || strings.Contains(last, "/preview/m/") {
 			return []byte(f.probeOut), nil
 		}
 		return []byte(f.probeIn), nil
