@@ -3,10 +3,11 @@ import { describe, expect, it } from "vitest";
 import { SESSION_ENDED, WAITLIST_FORM } from "../../public/js/core/copy.js";
 import { CHECK } from "../../public/js/core/copy-check.js";
 import { TYPED_LETTERS, typedError } from "../../public/js/core/copy-code.js";
-import { phoneCopy, refusalToast, uploadLine, videoTime } from "../../public/js/core/copy-phone.js";
+import { phoneCopy, REFUSED, refusedLine, uploadLine } from "../../public/js/core/copy-phone.js";
 import { endLine, screenCopy } from "../../public/js/core/copy-screen.js";
 import { screenNet } from "../../public/js/core/net-states.js";
-import { RESULTS } from "../../public/js/core/states.js";
+import { RESULTS } from "../../public/js/core/phone-states.js";
+import { refusalToast, videoTime } from "../../public/js/core/refusal.js";
 import { SUPPORT } from "../../public/js/shared/errors.js";
 import type { PhoneStateKey, ScreenStateKey } from "../../src/shared/protocol.ts";
 
@@ -32,6 +33,8 @@ const SCREEN_KEYS: ScreenStateKey[] = [
 ];
 const PHONE_KEYS: PhoneStateKey[] = [
   "checking",
+  "pick",
+  "match_wrong",
   "match",
   "choose",
   "approve",
@@ -388,20 +391,56 @@ describe("phone copy", () => {
     expect(phoneCopy("approving", { ...pf, demo: true }).scope).toBe("");
   });
 
-  it("the match digits ride on the button that commits, so the person compares them with the screen", () => {
+  it("a demo's match digits ride on the button that commits, so the person compares them with the screen", () => {
     for (const key of ["approve", "approve_demo", "unregistered"] as const) {
-      expect(phoneCopy(key, { ...pf, match: "42" }).actions.at(-1)).toEqual({
+      expect(phoneCopy(key, { ...pf, demo: true, match: "42" }).actions.at(-1)).toEqual({
         id: "approve",
         label: "Approve (42)",
         kind: "primary",
         aria: "Approve, code 42 on the screen",
       });
     }
-    expect(phoneCopy("guest_confirm", { ...pf, match: "42" }).actions.at(-1)).toMatchObject({
+    expect(phoneCopy("guest_confirm", { ...pf, demo: true, match: "42" }).actions.at(-1)).toMatchObject({
       label: "Send (42)",
       aria: "Send, code 42 on the screen",
     });
     expect(phoneCopy("approve", pf).actions.at(-1)).toEqual({ id: "approve", label: "Approve", kind: "primary" });
+  });
+
+  it("PAIR-14 a live phone compared the digits in the pick, so no button carries them", () => {
+    for (const key of ["approve", "unregistered", "approving"] as const)
+      expect(phoneCopy(key, { ...pf, match: "42" }).actions.at(-1)?.label, key).toMatch(/^Approv(e|ing\.\.\.)$/);
+    expect(phoneCopy("guest_confirm", { ...pf, match: "42" }).actions.at(-1)).toEqual({
+      id: "send",
+      label: "Send",
+      kind: "primary",
+    });
+  });
+
+  it("PAIR-14 the pick: the room over the line, no list and no buttons, so the panel holds the choices alone", () => {
+    expect(phoneCopy("pick", pf)).toMatchObject({
+      title: "Room 2.14",
+      room: true,
+      body: "Tap the screen's number, then choose your files.",
+      files: "none",
+      add: false,
+      actions: [],
+    });
+  });
+
+  it("PAIR-14 a wrong number is a dead end with Enter the Code alone: no second guess on this code", () => {
+    expect(phoneCopy("match_wrong", pf)).toMatchObject({
+      title: "That Wasn't the Screen's Number",
+      body: "Scan the screen again, or type its code.",
+      files: "none",
+      actions: [{ id: "code", label: "Enter the Code", kind: "primary", href: "/code" }],
+    });
+  });
+
+  it("the general refusal (and the toast when the refusal words cannot load) names the types and the cap", () => {
+    expect(REFUSED).toBe("This File Can't Be Sent");
+    expect(refusedLine(90)).toBe("Choose a .pptx, .pdf, .jpg, .png, .mp4 or .mov file under 90 MB.");
+    expect(phoneCopy("guest_refused", { ...pf, maxMB: 90 })).toMatchObject({ title: REFUSED, body: refusedLine(90) });
   });
 
   it("one device has nothing to compare: plain Approve when this tab is also the screen", () => {
@@ -461,7 +500,7 @@ describe("phone copy", () => {
     expect(refusalToast("large", { demo: false, maxMB: 90, video: true }).body).toBe(
       "bloop takes videos up to about 90\u00a0seconds (90 MB). Trim it and try again.",
     );
-    for (const file of ["js/core/copy-phone.js", "js/core/drop.js", "js/phone.js"]) {
+    for (const file of ["js/core/copy-phone.js", "js/core/refusal.js", "js/core/drop.js", "js/phone.js"]) {
       expect(readFileSync(new URL(`../../public/${file}`, import.meta.url), "utf8"), file).not.toMatch(/\b(25|90) ?MB/);
     }
   });
@@ -583,10 +622,10 @@ describe("phone copy", () => {
     );
   });
 
-  it("S7 an unregistered room has no name: the list's title is the match digits, and no title names a room", () => {
+  it("S7 an unregistered room has no name: the pick's and the list's title is This Screen, and no title names a room", () => {
     const nameless = { ...pf, room: "", match: "42" };
-    for (const key of ["match", "choose", "approve", "unregistered", "approving"] as const)
-      expect(phoneCopy(key, nameless).title, key).toBe("42");
+    for (const key of ["pick", "match", "choose", "approve", "unregistered", "approving"] as const)
+      expect(phoneCopy(key, nameless).title, key).toBe("This Screen");
     expect(phoneCopy("open", nameless).title).toBe("Approved");
     expect(phoneCopy("guest_sent", nameless).title).toBe("Sent");
     expect(phoneCopy("guest_confirm", nameless).title).toBe("Send Lecture 4.pptx?");
