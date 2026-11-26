@@ -1948,6 +1948,46 @@ test.describe("demo viewer", () => {
     await context.close();
   });
 
+  test("at 390 x 844 the handle docks on a hairline ring: no drop shadow reaches below it, no band under it", async ({
+    browser,
+  }) => {
+    // iOS Safari tints its floating toolbar from the strip under the handle, so a soft shadow there reads as a gray
+    // band. Chromium has no such toolbar; the computed values are what can be checked.
+    const context = await browser.newContext({ viewport: { width: 390, height: 844 } });
+    const page = await context.newPage();
+    const cdp = await context.newCDPSession(page);
+    await cdp.send("Emulation.setSafeAreaInsetsOverride", { insets: { bottom: 34, bottomMax: 34 } });
+    await page.goto("/s?mode=demo");
+    await page.getByRole("link", { name: "Approve on This Phone" }).click();
+    await page.getByRole("button", { name: "Approve" }).click();
+    await expect(heading(page)).toHaveText("Dog.jpg");
+    await expect(page.locator("#handle")).toBeVisible();
+    const dock = await page.evaluate(`(() => {
+      const handle = document.getElementById("handle");
+      // Each outer layer's reach under the box: y offset + blur + spread.
+      const reach = Math.max(0, ...getComputedStyle(handle).boxShadow.split(/,(?![^(]*\\))/)
+        .filter((layer) => !layer.includes("inset") && layer.trim() !== "none")
+        .map((layer) => {
+          const [, y = 0, blur = 0, spread = 0] = (layer.replace(/rgba?\\([^)]*\\)/, "").match(/-?[\\d.]+px/g) ?? [])
+            .map(parseFloat);
+          return y + blur + spread;
+        }));
+      const page = getComputedStyle(document.body).backgroundColor;
+      const band = [];
+      for (let y = Math.ceil(handle.getBoundingClientRect().bottom) + 1; y < innerHeight; y += 2) {
+        for (const el of document.elementsFromPoint(innerWidth / 2, y)) {
+          const s = getComputedStyle(el);
+          const fill = s.backgroundColor;
+          if (s.backgroundImage !== "none" || (fill !== "rgba(0, 0, 0, 0)" && fill !== page)) band.push(el.tagName + " " + y);
+        }
+      }
+      return { reach, band };
+    })()`);
+    expect(dock).toEqual({ reach: expect.any(Number), band: [] });
+    expect((dock as { reach: number }).reach).toBeLessThanOrEqual(1);
+    await context.close();
+  });
+
   test("DEMO-01 isolation: a second tab of the same browser starts its own demo screen, never the first one's", async ({
     browser,
   }) => {

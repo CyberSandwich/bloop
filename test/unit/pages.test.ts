@@ -178,6 +178,27 @@ describe("the phone's dialogs", () => {
     expect(read("css/length.css")).not.toMatch(/glass-edge|--glass\b|backdrop-filter/);
   });
 
+  it("glass docked at a phone window's bottom has a hairline ring, never a drop shadow (design.md, Glass)", () => {
+    // Docked: offset from the bottom by the safe area, or, for the handle, last in the viewer's column.
+    const css = read("css/app.css").replace(/\/\*[\s\S]*?\*\//g, "");
+    const rules = [...css.matchAll(/([^{}]+)\{([^{}]*)\}/g)].map(([, selector = "", body = ""]) => ({
+      selector: selector.trim(),
+      body,
+    }));
+    const docked = rules.filter(
+      ({ selector, body }) =>
+        /(^|\n)\s*(bottom|inset):[^;]*env\(safe-area-inset-bottom\)/.test(body) || selector === ".handle",
+    );
+    expect(docked.map((r) => r.selector)).toEqual([".handle", ".toast", ".column > .actions"]);
+    for (const { selector, body } of docked) {
+      const shadow = body
+        .match(/box-shadow:([^;]*);/)?.[1]
+        ?.replace(/\s+/g, " ")
+        .trim();
+      expect(shadow, selector).toMatch(/^(var\(--glass-edge\), )?0 0 0 1px var\(--hairline\)$/);
+    }
+  });
+
   it("Revoke's question is the title and its two buttons: no line under it", () => {
     const revoke = /<dialog[^>]* id="revoke"[\s\S]*?<\/dialog>/.exec(read("a.html"))?.[0] ?? "";
     expect(revoke).toContain("End This Session?");
