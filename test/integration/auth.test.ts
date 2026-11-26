@@ -3,7 +3,9 @@
 import { createServer, type Server } from "node:http";
 import type { AddressInfo } from "node:net";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
-import { Api, claim, openScreen, startPairing } from "./pairing-client.ts";
+import { MISS_LIMIT } from "../../src/worker/do/directory-rules.ts";
+import { inOneWindow } from "./open-client.ts";
+import { Api, claim, claimOnly, openScreen, startPairing } from "./pairing-client.ts";
 import type { Wrangler } from "./wrangler.ts";
 
 const TID = "11111111-2222-3333-4444-555555555555";
@@ -82,6 +84,15 @@ afterAll(async () => {
 });
 
 const problem = (code: string) => expect.objectContaining({ code });
+/** Waits for a write the Screen object makes after the response that caused it. */
+async function until<T>(read: () => T, ok: (v: T) => boolean): Promise<T> {
+  for (let i = 0; i < 40; i++) {
+    const v = read();
+    if (ok(v)) return v;
+    await new Promise((resolve) => setTimeout(resolve, 100));
+  }
+  return read();
+}
 const hit = (path: string, cookie?: string) =>
   fetch(`${wrangler.url}${path}`, { redirect: "manual", headers: cookie ? { Cookie: cookie } : {} });
 
@@ -344,29 +355,80 @@ describe("sign-in, sessions and revocation", () => {
     expect(request?.get("redirect_uri")).toBe(`${wrangler.url}/auth/callback`);
   });
 
-  it("the session identifies the user, and a live phone with it needs no sign-in while one without does", async () => {
+  it("PAIR-15 auth-first: a signed-out owner claim on a live code is auth_required and spends nothing; signed in, the same code claims and pins the user", async () => {
     const { session } = await signIn();
     expect(await me(session)).toEqual({ source: "graph", signedIn: true, email: "someone@example.test" });
     expect(await me()).toEqual({ source: "graph", signedIn: false, launchMode: "preview" });
 
     const live = await openScreen(api, "live");
-    const without = await claim(api, live.code);
-    expect(without.body.needsAuth).toBe(true);
-    live.socket.close();
+    const without = await claimOnly(api, live.code);
+    expect(without.status).toBe(401);
+    expect(without.body).toEqual(problem("auth_required"));
+    // Nothing was spent: the screen still waits on the same code, and no session row exists for it.
+    const view = await api.get<{ state: string; code: { code: string } | null }>("/api/screen/state", live.screen.sid);
+    expect(view.body.state).toBe("waiting");
+    expect(view.body.code?.code).toBe(live.code);
+    expect(wrangler.d1(`SELECT count(*) AS n FROM session WHERE screen_ref = '${live.screen.ref}'`)[0]?.n).toBe(0);
 
-    const second = await openScreen(api, "live");
-    const withSession = await api.post<{ needsAuth: boolean }>(
+    const inside = await api.post<{ pid: string; choices: string[] | null; needsAuth: boolean }>(
       "/api/claim",
-      { code: second.code },
+      { code: live.code },
       { headers: sid(session as string) },
     );
-    expect(withSession.body.needsAuth).toBe(false);
-    second.socket.close();
+    expect(inside.status).toBe(200);
+    expect(inside.body.needsAuth).toBe(false);
+    expect(inside.body.choices).toHaveLength(3);
+    const row = await until(
+      () => wrangler.d1(`SELECT user_id FROM session WHERE screen_ref = '${live.screen.ref}'`)[0],
+      (r) => r !== undefined,
+    );
+    expect(row?.user_id).toEqual(expect.any(String));
+    live.socket.close();
+  });
+
+  it("PAIR-15 auth-first: each refused signed-out claim counts as a miss, so probing live codes is rate limited", async () => {
+    // The Directory's miss window starts at the first miss; the window guards RL_CLAIM, which follows the clock.
+    await inOneWindow();
+    const live = await openScreen(api, "live");
+    const probe = { "CF-Connecting-IP": "198.51.100.77" };
+    const answers: string[] = [];
+    for (let i = 0; i < MISS_LIMIT + 1; i++) {
+      const res = await api.post<{ code: string }>("/api/claim", { code: live.code }, { headers: probe });
+      answers.push(res.body.code);
+    }
+    expect(answers.slice(0, MISS_LIMIT)).toEqual(Array(MISS_LIMIT).fill("auth_required"));
+    expect(answers.at(-1)).toBe("rate_limited");
+    live.socket.close();
+  });
+
+  it("ADR 0015 pin: claim as A, sign in as B, and B's cookie is refused pairing_invalid before any source call", async () => {
+    idp.oid = "oid-pin-a";
+    const a = (await signIn()).session as string;
+    idp.oid = "oid-pin-b";
+    const b = (await signIn()).session as string;
+    idp.oid = "oid-1";
+    const live = await openScreen(api, "live");
+    const claimed = await api.post<{ pid: string }>("/api/claim", { code: live.code }, { headers: sid(a) });
+    expect(claimed.status).toBe(200);
+    const { pid } = claimed.body;
+    const asB = { auth: pid, headers: sid(b) };
+    expect((await api.call("GET", "/api/files", undefined, asB)).body).toEqual(problem("pairing_invalid"));
+    expect((await api.post("/api/approve", { ids: ["x"] }, asB)).body).toEqual(problem("pairing_invalid"));
+    expect((await api.call("GET", "/api/files", undefined, { auth: pid })).body).toEqual(problem("auth_required"));
+    const asA = await api.call("GET", "/api/files", undefined, { auth: pid, headers: sid(a) });
+    expect(asA.body).not.toEqual(problem("pairing_invalid"));
+    live.socket.close();
   });
 
   it("AUTH-01 flow: a live listing without a session is auth_required, and a demo screen never asks for one", async () => {
+    const { session } = await signIn();
     const live = await openScreen(api, "live");
-    const liveClaim = await claim(api, live.code);
+    const liveClaim = await api.post<{ pid: string }>(
+      "/api/claim",
+      { code: live.code },
+      { headers: sid(session as string) },
+    );
+    // The cookie dropped after the claim: the listing asks for it again.
     const unauth = await api.get("/api/files", liveClaim.body.pid);
     expect(unauth.status).toBe(401);
     expect(unauth.body).toEqual(problem("auth_required"));

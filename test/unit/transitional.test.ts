@@ -15,19 +15,21 @@ const walk = (dir: string): string[] =>
 const ALLOWED = [
   "src/worker/machine/lists.ts: P1 commit 5",
   "src/worker/do/screen.ts: P1 commit 6",
+  "src/worker/do/screen.ts: P1 commit 8",
   "src/worker/do/screen.ts: P2",
   "src/worker/do/schema.ts: P1 commit 6",
   "src/worker/do/effects.ts: R9",
-  "src/worker/routes/pairing.ts: P1 commit 4",
-  "src/worker/routes/pairing.ts: P1 commit 4",
-  "src/worker/routes/open.ts: P1 commit 4",
-  "src/worker/seams/open-path/lookups.ts: P1 commit 4",
+  "src/worker/routes/pairing.ts: P1 commit 8",
+  "src/worker/routes/pairing.ts: P1 commit 5",
+  "src/worker/routes/pairing.ts: A",
+  "src/worker/routes/open.ts: P1 commit 8",
+  "src/worker/seams/open-path/lookups.ts: P1 commit 5",
 ];
 
 describe("transitional seams", () => {
   it("every `transitional: removed in <owner>` marker is one still allowed, and each allowed one is present", () => {
     const found = walk("src").flatMap((path) =>
-      [...readFileSync(join(root, path), "utf8").matchAll(/transitional: removed in (P1 commit \d+|P\d|R\d+)/g)].map(
+      [...readFileSync(join(root, path), "utf8").matchAll(/transitional: removed in (P1 commit \d+|[A-Z]\d*)\b/g)].map(
         (m) => `${path}: ${m[1]}`,
       ),
     );

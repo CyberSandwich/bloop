@@ -41,7 +41,11 @@ async function phoneAccess(
   // Guests have no account to list; their file arrives through the drop.
   if (view.value.kind !== "owner") return { ok: false, response: fail("wrong_state") };
   const access = await accessFor(request, env, config, view.value.mode);
-  return access.ok ? { ok: true, screen, access, mode: view.value.mode } : access;
+  if (!access.ok) return access;
+  // The pin before the source: another signed-in user's cookie never lists or resolves a file (ADR 0015).
+  const pinned = await screen.stub.pinnedUser(screen.credential);
+  if (!pinned.ok || pinned.value.userId !== access.ctx.userId) return { ok: false, response: fail("pairing_invalid") };
+  return { ok: true, screen, access, mode: view.value.mode };
 }
 
 export const fileRoutes: readonly Route[] = [
