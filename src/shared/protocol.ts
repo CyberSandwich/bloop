@@ -3,7 +3,6 @@
 // Source of truth for the wire format: docs/interfaces.md section 1.
 
 export * from "./protocol/account.ts";
-export * from "./protocol/convert.ts";
 export * from "./protocol/core.ts";
 export * from "./protocol/library.ts";
 export * from "./protocol/pairing.ts";
