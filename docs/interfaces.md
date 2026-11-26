@@ -197,6 +197,7 @@ export type ScreenStateKey =
 An event the table does not list for a state returns `wrong_state` and changes nothing; approve in `ended` returns `session_ended`. Approve (the same set of items, in any order), open.click, fetched, control and end are idempotent: a repeat in the target state returns the current view. Cancel is not: it drops the pairing, so a repeat fails with `pairing_invalid` before it reaches the machine.
 
 ### 2.3 The pure machine (`src/worker/machine.ts`)
+`machine.ts` holds the types, `transition` (one `switch` that dispatches by event) and `nextDeadline`. The 2.2 rows are reduced in `src/worker/machine/`: `pairing.ts` (code.next, claim, cancel, restart, socket, timer), `items.ts` (listed, approve, open.click, fallback), `upload.ts` (upload.start, upload.done, upload.failed) and `control.ts` (control, length, launched, fetched, end); `step.ts` holds what they share.
 ```ts
 import type { EndReason, ErrorCode, FileType, Kind, Mode, OpenMode, SessionState } from "../shared/protocol.ts";
 
