@@ -6,15 +6,76 @@ import { IDEM_WINDOW_MS, idempotency } from "../../src/worker/idem.ts";
 import {
   claimOwner,
   claimSecret,
+  type Flights,
   idemPurge,
   idemRepair,
   idemSave,
   idemStore,
   MAX_IDEM_ROWS,
+  oneFlight,
   openClaim,
   sealClaim,
 } from "../../src/worker/seams/pairing/idem.ts";
 import { memKv } from "./sqlite.ts";
+
+describe("REL-14 claim single flight", () => {
+  const idem = { owner: "device:x", keyHash: "d".repeat(64), bodyHash: "e".repeat(64) };
+  /** A claim the test holds open: it saves its row, as the Screen's claim does, only when released. */
+  function harness() {
+    const kv = memKv();
+    const flights: Flights<string> = new Map();
+    const log: string[] = [];
+    let release: (v: string) => void = () => {};
+    const calls = (body = idem.bodyHash) => ({
+      run: () => {
+        log.push("run");
+        return new Promise<string>((resolve) => {
+          release = (v) => {
+            idemSave(kv, idem.owner, { keyHash: idem.keyHash, bodyHash: body }, v, NOW);
+            resolve(v);
+          };
+        });
+      },
+      replay: async (stored: unknown) => {
+        log.push("replay");
+        return `replayed ${String(stored)}`;
+      },
+      conflict: "conflict",
+    });
+    const call = (body = idem.bodyHash) => oneFlight(kv, flights, { ...idem, bodyHash: body }, NOW, calls(body));
+    return { flights, log, call, release: (v: string) => release(v) };
+  }
+
+  it("REL-14 claim single flight: a call while the first is held open takes its answer; another body is a conflict", async () => {
+    const h = harness();
+    const a = h.call();
+    const b = h.call();
+    expect(await h.call("f".repeat(64))).toBe("conflict");
+    h.release("pid-1");
+    expect([await a, await b]).toEqual(["pid-1", "pid-1"]);
+    expect(h.log).toEqual(["run"]);
+  });
+
+  it("REL-14 claim single flight: a claim that reaches the object after the first finished (its route's find ran too early) replays it, never claiming again", async () => {
+    const h = harness();
+    const a = h.call();
+    h.release("pid-1");
+    expect(await a).toBe("pid-1");
+    expect(h.flights.size).toBe(0);
+    // B's route found no row before A saved; B's claim arrives now. It must not run (that would be code_taken).
+    expect(await h.call()).toBe("replayed pid-1");
+    expect(await h.call("f".repeat(64))).toBe("conflict");
+    expect(h.log).toEqual(["run", "replay"]);
+  });
+
+  it("REL-14 claim single flight: a first call that fails leaves no flight behind", async () => {
+    const kv = memKv();
+    const flights: Flights<string> = new Map();
+    const failing = { run: () => Promise.reject(new Error("down")), replay: async () => "x", conflict: "conflict" };
+    await expect(oneFlight(kv, flights, idem, NOW, failing)).rejects.toThrow("down");
+    expect(flights.size).toBe(0);
+  });
+});
 
 const KEY = "3f2b8c1e-6a4d-4e0b-9c7a-1d2e3f4a5b6c";
 const NOW = 1_800_000_000_000;
