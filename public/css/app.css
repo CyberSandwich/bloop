@@ -1114,7 +1114,7 @@ a.row:focus-visible {
     bottom: calc(var(--inset) + env(safe-area-inset-bottom));
     margin: auto 0 0;
     padding: 8px;
-    border-radius: 34px;
+    border-radius: var(--r-panel);
     box-shadow:
       var(--glass-edge),
       0 0 0 1px var(--hairline);
