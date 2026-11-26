@@ -70,6 +70,16 @@ const KINDS: Readonly<Record<FileType, ItemKind>> = {
   mov: "video",
 };
 
+/**
+ * A source's link as the phone may list it, or null: its URL as `allowedLink` normalized it (LINK-01), and a preview
+ * only when it is a same-origin thumbnail path, else the link is not listed at all (PREVIEW-01).
+ */
+export function listedLink<L extends { url: string; preview?: string }>(l: L): L | null {
+  const url = allowedLink(l.url);
+  const previewOk = l.preview === undefined || allowedPreview(l.preview) !== null;
+  return url && previewOk ? { ...l, url } : null;
+}
+
 /** A link's preview path when it is a same-origin `/yt/<id>.jpg` (PREVIEW-01), else null: never an absolute URL. */
 export const allowedPreview = (raw: string): string | null => (previewId(raw) ? raw : null);
 

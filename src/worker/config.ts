@@ -223,7 +223,7 @@ export function parseConfig(env: Record<string, unknown>): ConfigResult {
       r2ClassAMonthlyCap: v.R2_CLASS_A_MONTHLY_CAP,
       r2ClassBMonthlyCap: v.R2_CLASS_B_MONTHLY_CAP,
       testTiming: v.TEST_TIMING === "1",
-      thumbOrigin: v.YT_THUMB_ORIGIN ?? THUMB_ORIGIN,
+      thumbOrigin: v.YT_THUMB_ORIGIN ? new URL(v.YT_THUMB_ORIGIN).origin : THUMB_ORIGIN,
       library: {
         fileOrigin: v.FILE_ORIGIN ?? null,
         uploadMode: v.UPLOAD_MODE,
