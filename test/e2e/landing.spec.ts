@@ -292,6 +292,14 @@ for (const vp of VIEWPORTS) {
       await expect.poll(() => page.evaluate("location.hash")).toBe("");
     });
 
+    test("a reload opens at the top, from further down", async ({ page }) => {
+      await page.goto("/");
+      await page.evaluate("scrollTo(0, 800)");
+      expect(Number(await page.evaluate("scrollY"))).toBeGreaterThan(0);
+      await page.reload();
+      expect(Number(await page.evaluate("scrollY"))).toBe(0);
+    });
+
     test("a page opened with a hash jumps there once and drops it", async ({ page }) => {
       await page.goto("/#features");
       await expect(page.locator("#features h2")).toBeInViewport();

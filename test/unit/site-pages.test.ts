@@ -417,6 +417,7 @@ describe("landing word caps (design.md section 13)", () => {
     expect(stage).toMatch(
       /<picture>\s*(?:<!--[^>]*-->\s*)?<source media="\(max-width: 639\.98px\)" srcset="\/favicon\.svg">\s*<source type/,
     );
+    expect(read("public/open/index.html")).toContain('<source media="(max-width: 639.98px)" srcset="/favicon.svg">');
     expect(read("public/css/site.css")).toMatch(/@media \(max-width: 639\.98px\) \{\s*\.tilt \{\s*display: none;/);
     const img = /<img\b[^>]*>/.exec(stage)?.[0] ?? "";
     expect(img).toContain('src="/img/hero-viewer-1100.webp" width="1440" height="828" fetchpriority="high"');
