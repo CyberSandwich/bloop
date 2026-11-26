@@ -623,7 +623,7 @@ function attach(/** @type {string} */ pid) {
 
 /** What a claim or a resumed view says about the room; a guest's list is just its Add a File row. */
 function learn(/** @type {ClaimResponse | PhoneView} */ x) {
-  c.info = { roomName: x.room.name, registered: x.room.registered, match: x.match, mode: x.mode, kind: x.kind };
+  c.info = { roomName: x.room.name, registered: x.room.registered, match: x.match ?? "", mode: x.mode, kind: x.kind };
   c.maxBytes = x.dropMaxBytes;
   if (x.kind === "guest") c.files = [];
 }

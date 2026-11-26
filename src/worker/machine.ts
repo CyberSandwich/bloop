@@ -69,6 +69,8 @@ export interface Machine {
     confirmed?: boolean;
     /** The three choices in display order, live and unconfirmed only. */
     choices?: string[] | null;
+    /** The claiming sign-in's `phone_session.public_id`, pinned with `userId` (ADR 0015); null with no user. */
+    phoneSession?: string | null;
   } | null;
   /** The approved items, in `orderItems` order. Exists from `offered` (guest) or from approval; approvedAt and endsAt are null while offered. */
   session: {
@@ -123,8 +125,10 @@ export type Event =
       match: string;
       kind: Kind;
       userId: string | null;
+      /** The claiming sign-in's public id, kept only with a user. */
+      phoneSession?: string | null;
       passHash: string | null;
-      /** Live: the three drawn choices, the match among them. Absent or null: no pick (demo). */
+      /** Live: the three drawn choices, the match among them; a live claim without them is `bad_request`. Demo: none. */
       choices?: string[] | null;
     }
   | { e: "match"; now: number; choice: string } // the phone's pick of the number on the screen

@@ -29,9 +29,11 @@ function ownedBy(userId: string, approve = true): Machine {
     kind: "owner",
     userId,
     passHash: null,
+    choices: ["17", "42", "85"],
   }).next;
   if (!approve) return claimed;
-  const listed = must(claimed, { e: "listed", now: T0 + sec(2), ids: [DECK.ref] }).next;
+  const picked = must(claimed, { e: "match", now: T0 + sec(2), choice: "42" }).next;
+  const listed = must(picked, { e: "listed", now: T0 + sec(2), ids: [DECK.ref] }).next;
   return must(listed, { e: "approve", now: T0 + sec(3), items: [asItem(DECK)], minutes: MAX_MINUTES }).next;
 }
 
@@ -73,6 +75,7 @@ describe("endFromOwner", () => {
       roomName: null,
       screenSecretHash: "x",
       createdAt: T0,
+      linkOrigin: "file",
     };
     let revokes = 0;
     let revoked = false;

@@ -79,7 +79,8 @@ export const fileRoutes: readonly Route[] = [
       if (phone.mode === "live" && body.value.ids.length !== 1) return fail("bad_request");
       const resolved = await resolveListed(phone.access, body.value.ids);
       if (!resolved.ok) return fail(resolved.error);
-      return respond(await phone.screen.stub.approve(phone.screen.credential, resolved.items));
+      const { userId } = phone.access.ctx;
+      return respond(await phone.screen.stub.approve(phone.screen.credential, resolved.items, userId));
     }),
   ),
 ];

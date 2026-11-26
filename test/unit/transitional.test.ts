@@ -13,7 +13,6 @@ const walk = (dir: string): string[] =>
 
 /** `<file>: <owner>` for every marker still allowed: a P1 commit, or the stream that fills a seam. */
 const ALLOWED = [
-  "src/worker/machine/pairing.ts: P1 commit 3",
   "src/worker/machine/lists.ts: P1 commit 5",
   "src/worker/do/screen.ts: P1 commit 6",
   "src/worker/do/effects.ts: R9",

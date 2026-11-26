@@ -9,7 +9,7 @@ const frame = <T extends string>(t: T) => z.object({ v: z.literal(1), t: z.liter
 const openMode = z.enum(OPEN_MODES);
 
 export const screenFrame = z.discriminatedUnion("t", [
-  frame("hello").extend({ sid: z.string().max(128) }),
+  frame("hello").extend({ sid: z.string().max(128), fo: z.enum(["file", "main"]).optional() }),
   frame("code.next"),
   frame("open.click"),
   frame("launched").extend({ mode: openMode }),

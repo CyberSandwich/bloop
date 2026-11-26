@@ -203,8 +203,20 @@ export function fileAt(items: readonly ItemRef[], index: number): FileItemRef | 
   return item?.kind === "file" ? item : null;
 }
 
-/** What a page may see of an item: no source id, no ref (SRC-01). */
-export const itemView = (i: ItemRef): Item =>
-  i.kind === "file"
-    ? { kind: "file", id: i.id, name: i.name, type: i.type, size: i.size ?? null }
-    : { kind: "link", id: i.id, url: i.url, title: i.title };
+/**
+ * What a page may see of an item: no source id, no ref (SRC-01). Of conversion only the four screen-safe flags, picked
+ * by name, so a stored object holding more can never pass it through (PAIR-16).
+ */
+export const itemView = (i: ItemRef): Item => {
+  if (i.kind === "link") return { kind: "link", id: i.id, url: i.url, title: i.title };
+  const d = i.derived;
+  return {
+    kind: "file",
+    id: i.id,
+    name: i.name,
+    type: i.type,
+    size: i.size ?? null,
+    show: showOf(i),
+    derived: d ? { slides: d.slides, pdf: d.pdf, pages: d.pages, motion: d.motion } : null,
+  };
+};

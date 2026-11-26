@@ -3,7 +3,7 @@
 // limits run on instances with the platform bindings live (no TEST_TIMING) or with a tiny cap.
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { approveDemo, fetchLink, inOneWindow, sleep } from "./open-client.ts";
-import { Api, claim, openScreen, PEPPER, startPairing } from "./pairing-client.ts";
+import { Api, claim, claimOnly, openScreen, PEPPER, startPairing } from "./pairing-client.ts";
 import { startWrangler, type Wrangler } from "./wrangler.ts";
 
 const ip = (address: string) => ({ headers: { "CF-Connecting-IP": address } });
@@ -210,7 +210,7 @@ describe("DEMO-03 off: DEMO_ENABLED=false turns every demo route off", () => {
     const res = await api.post("/api/screens", { mode: "live" });
     expect(res.status).toBe(201);
     const state = await api.get<{ code: { code: string } }>("/api/screen/state", (res.body as { sid: string }).sid);
-    expect((await claim(api, state.body.code.code)).status).toBe(200);
+    expect((await claimOnly(api, state.body.code.code)).status).toBe(200);
   });
 
   it("DEMO-03 off: the demo screen page and the landing still serve, so the stage can say it could not start", async () => {
