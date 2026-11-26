@@ -230,8 +230,9 @@ export async function putUnit(env: StoreEnv, j: JobRecord, unit: string): Promis
     else if (unit === "image") kept = await singles(["i/1920.jpg", "t.webp"]);
     else if (unit === "notes") {
       const piece = pieces.get("notes.json") as Piece;
-      const text = new TextDecoder().decode(await env.courier.readPiece("notes.json", piece, ctx));
-      kept = await put("notes.json", text, piece.size, piece.sha256, false);
+      const bytes = (await env.courier.readPiece("notes.json", piece, ctx)) as Uint8Array<ArrayBuffer>;
+      checkNotes(bytes, { rendered: plan.rendered });
+      kept = await put("notes.json", new Blob([bytes]).stream(), bytes.length, piece.sha256, false);
     } else if (unit === "slides.json") {
       const slides = {
         v: 1 as const,

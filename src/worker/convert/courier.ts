@@ -23,16 +23,27 @@ export interface CallInit {
   timeoutMs?: number;
 }
 
+/** A status, manifest or error body is small; a container that sends more is not trusted to stop. */
+export const BODY_CAP = 2 * 1024 * 1024;
+
 export class Courier {
-  constructor(private readonly port: ContainerPort) {}
+  /** The run's deadline (ms): no call, however slow its container, outlives it. Null before the lease is taken. */
+  limitAt: number | null = null;
+
+  constructor(
+    private readonly port: ContainerPort,
+    private readonly now: () => number = Date.now,
+  ) {}
 
   async call(method: "GET" | "PUT" | "POST", path: string, init: CallInit = {}): Promise<Response> {
+    const left = this.limitAt === null ? Number.POSITIVE_INFINITY : this.limitAt - this.now();
+    if (left <= 0) throw new ContainerFault("interrupted", `${path}: past the deadline`);
     const once = () =>
       this.port.fetch(path, {
         method,
         ...(init.body !== undefined ? { body: init.body } : {}),
         ...(init.headers ? { headers: init.headers } : {}),
-        signal: AbortSignal.timeout(init.timeoutMs ?? SHORT_CALL_MS),
+        signal: AbortSignal.timeout(Math.min(init.timeoutMs ?? SHORT_CALL_MS, left)),
       });
     const unreachable = (e: unknown) =>
       new ContainerFault("interrupted", `${path}: ${e instanceof Error ? e.message : "unreachable"}`);
@@ -48,9 +59,14 @@ export class Courier {
     }
   }
 
-  /** Reads and drops a body, so a pooled connection stays usable. */
-  drain(res: Response): Promise<string> {
-    return res.text().catch(() => "");
+  /** Reads a small body (capped, so a pooled connection stays usable); an over-long or broken one reads as empty. */
+  async drain(res: Response): Promise<string> {
+    if (!res.body) return "";
+    try {
+      return new TextDecoder().decode(await collect(res.body, BODY_CAP));
+    } catch {
+      return "";
+    }
   }
 
   async getJson(path: string): Promise<unknown> {
