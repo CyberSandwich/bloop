@@ -162,6 +162,22 @@ describe("the small file path", () => {
     expect(state.body.state).toBe("completed");
   });
 
+  it("names count code points: 200 stay whole, 201 are cut to 200 with the extension, never refused", async () => {
+    const cookie = member("names1");
+    const { bytes } = deck("clip.mp4");
+    const stored = async (name: string, seed: string) => {
+      const made = await createOf(cookie, name, bytes, seed);
+      expect(made.status).toBe(201);
+      const [row] = wrangler.d1(`SELECT name FROM upload WHERE id = '${made.body.uploadId}'`);
+      return String(row?.name);
+    };
+    const at = `${"😀".repeat(196)}.mp4`;
+    expect(await stored(at, "names-at")).toBe(at);
+    const cut = await stored(`${"😀".repeat(197)}.mp4`, "names-over");
+    expect(Array.from(cut)).toHaveLength(200);
+    expect(cut.endsWith(".mp4")).toBe(true);
+  });
+
   it("REL-14 idem: the same key and body replays the first answer, another body is refused, a new key resumes", async () => {
     const cookie = member("idem1");
     const { bytes } = deck("idem.mp4");
