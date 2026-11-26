@@ -234,7 +234,7 @@ describe("F12 DATA-05 dsar: /api/me/audit and DELETE /api/me", () => {
     idp.oid = "oid-audit";
     const { session } = await signIn();
     expect(await auditTypes(session as string)).toContain("grant.created");
-    const res = await api.call<{ rows: Record<string, unknown>[]; next: number | null }>(
+    const res = await api.call<{ rows: Record<string, unknown>[]; nextId: number | null }>(
       "GET",
       "/api/me/audit?limit=1",
       undefined,
