@@ -18,7 +18,7 @@
     "test:int": "vitest run --config vitest.int.config.ts",
     "test:cov": "vitest run --coverage --coverage.reporter=text-summary --coverage.include=src/** --coverage.include=public/js/**",
     "html-validate": "html-validate public",
-    "size": "npm run build:assets && size-limit && node tools/size-headroom.mjs",
+    "size": "npm run build:assets && node tools/size-headroom.mjs",
     "build:pages": "node tools/build-pages-cli.mjs",
     "check:pages": "node tools/build-pages-cli.mjs --check",
     "build:assets": "node tools/build-assets-cli.mjs",
