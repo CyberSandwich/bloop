@@ -232,7 +232,7 @@ src/worker/
   origin.ts                the 301 from a workers.dev host or plain http to PUBLIC_ORIGIN (or the 403 for a write)
   config.ts                Zod schema for env, fails closed at startup
   do/demo-slots.ts         the global cap on concurrent demo screens (SQL in the Directory object)
-  machine.ts               pure session state machine (interfaces.md)
+  machine.ts machine/      pure session state machine: types and dispatcher, one reducer file per event group (interfaces.md 2.3)
   items.ts                 the session's items: types, MAX_ITEMS, order, the link allowlist (ADR 0009)
   do/schema.ts             the Screen object's numbered storage steps (schemaVersion) and `applySteps`, which every object's steps use
   do/directory-schema.ts   the Directory object's tables and numbered steps (the `code` expiry index)
