@@ -19,9 +19,9 @@ describe("a library upload over a direct URL", () => {
     const world = makeWorld();
     await begin(world, 50);
     expect(world.puts.map((p) => p.url)).toEqual([
-      "https://r2.test/up1/1?sig=1",
-      "https://r2.test/up1/2?sig=2",
-      "https://r2.test/up1/3?sig=3",
+      "https://acct.eu.r2.cloudflarestorage.com/up1/1?sig=1",
+      "https://acct.eu.r2.cloudflarestorage.com/up1/2?sig=2",
+      "https://acct.eu.r2.cloudflarestorage.com/up1/3?sig=3",
     ]);
     const create = world.calls.find((c) => c.method === "POST" && c.path === "/api/uploads");
     expect(create?.body).toMatchObject({ name: "Lecture 5.pptx", bytes: 50 });
@@ -187,7 +187,7 @@ describe("the parts loop", () => {
     expect(mint).toHaveLength(1);
     expect(mint[0]?.body).toEqual({ parts: [3, 4] });
     expect(world.puts.at(-1)?.url).toMatch(/\/3\?sig=\d+$/);
-    expect(world.puts.at(-1)?.url).not.toBe("https://r2.test/up1/3?sig=3");
+    expect(world.puts.at(-1)?.url).not.toBe("https://acct.eu.r2.cloudflarestorage.com/up1/3?sig=3");
   });
 
   it("mints more URLs ahead of need, up to 8 at a time, never for a part that is done", async () => {
@@ -349,19 +349,22 @@ describe("failures", () => {
 });
 
 describe("direct uploads that cannot reach the storage host", () => {
-  it("switches to proxy URLs after two network errors on direct PUTs before any direct part succeeded", async () => {
+  it("never goes through bloop by itself: a storage host that does not answer is retried, then waited for", async () => {
     const world = makeWorld({ partBytes: 100 });
-    world.onPut = (p) => (p.url.startsWith("https://") ? p.fail() : p.ok());
+    world.onPut = (p) => p.fail();
     await begin(world, 50);
-    // The first network error retries after 1 s; the second switches, with no wait.
-    await world.advance(1000);
-    const direct = world.puts.filter((p) => p.url.startsWith("https://"));
-    expect(direct).toHaveLength(2);
-    const mint = world.calls.find((c) => c.path.endsWith("/urls"));
-    expect(mint?.body).toEqual({ parts: [1], mode: "proxy" });
-    expect(world.puts.at(-1)?.url).toBe("/api/uploads/up1/parts/1");
+    await world.advance(1000 + 3000 + 9000);
+    expect(world.puts).toHaveLength(4);
+    expect(world.puts.every((p) => p.url.startsWith("https://"))).toBe(true);
+    expect(fileOf(world).state).toBe("waiting");
+    expect(world.calls.some((c) => c.path.endsWith("/urls") && "mode" in c.body)).toBe(false);
+  });
+
+  it("a proxied part is recorded by the server: no done call, and complete carries no part", async () => {
+    const world = makeWorld({ mode: "proxy", partBytes: 100 });
+    await begin(world, 50);
+    expect(world.puts.map((p) => p.url)).toEqual(["/api/uploads/up1/parts/1"]);
     expect(fileOf(world).state).toBe("saved");
-    // A proxied part is recorded by the server: no done call, and complete carries no part.
     expect(world.calls.some((c) => c.path.endsWith("/done"))).toBe(false);
     expect(world.calls.find((c) => c.path.endsWith("/complete"))?.body).toEqual({});
   });
@@ -432,8 +435,8 @@ describe("direct uploads that cannot reach the storage host", () => {
     world.onPut = (p) => (p.url.startsWith("https://") ? p.reply(200) : p.ok());
     await begin(world, 50);
     await world.advance(1000);
-    expect(world.calls.find((c) => c.path.endsWith("/urls"))?.body.mode).toBe("proxy");
-    expect(fileOf(world).state).toBe("saved");
+    expect(world.puts).toHaveLength(2);
+    expect(fileOf(world).error).toBeUndefined();
   });
 });
 
@@ -687,6 +690,7 @@ describe("a create answer the engine does not trust", () => {
 
   it("never sends a part to a URL that is not https, nor to a proxy path other than the part's own", async () => {
     const world = makeWorld({ partBytes: 100 });
+    world.state.bytes = 50;
     world.intercept.push((c) =>
       c.path === "/api/uploads" && c.method === "POST"
         ? world.json(201, {
@@ -701,7 +705,7 @@ describe("a create answer the engine does not trust", () => {
     );
     await begin(world, 50);
     // The create's URL is dropped, so the part mints its own, which is https.
-    expect(world.puts.map((p) => p.url)).toEqual(["https://r2.test/up1/1?sig=1"]);
+    expect(world.puts.map((p) => p.url)).toEqual(["https://acct.eu.r2.cloudflarestorage.com/up1/1?sig=1"]);
     const proxy = makeWorld({ kind: "guest", mode: "proxy", partBytes: 100 });
     proxy.intercept.push((c) =>
       c.path === "/api/uploads/up1/urls"
@@ -1008,13 +1012,14 @@ describe("a part the storage host keeps refusing", () => {
     expect(world.puts).toHaveLength(4);
   });
 
-  it("a direct 403 on a fresh URL counts toward the proxy switch, so a proxy that refuses the host goes through bloop", async () => {
+  it("a direct 403 that outlasts a fresh URL is refused like a 400, and never sent through bloop", async () => {
     const world = makeWorld({ partBytes: 100 });
     world.onPut = (p) => (p.url.startsWith("https://") ? p.reply(403) : p.ok());
     await begin(world, 50);
-    await world.advance(1000);
-    expect(world.calls.find((c) => c.path.endsWith("/urls") && c.body.mode === "proxy")).toBeDefined();
-    expect(fileOf(world).state).toBe("saved");
+    await world.advance(13_000);
+    expect(fileOf(world).state).toBe("refused");
+    expect(world.puts.every((p) => p.url.startsWith("https://"))).toBe(true);
+    expect(world.calls.some((c) => c.path.endsWith("/urls") && "mode" in c.body)).toBe(false);
   });
 
   it("a part's 429 is bounded like any request's: too many, or too long, is the rate_limited refusal", async () => {
@@ -1027,30 +1032,6 @@ describe("a part the storage host keeps refusing", () => {
     long.onPut = (p) => p.reply(429, { retryAfter: "3600" });
     await begin(long, 50);
     expect(fileOf(long)).toMatchObject({ state: "refused", error: "rate_limited" });
-  });
-});
-
-describe("the proxy switch while a direct mint is on the wire", () => {
-  it("does not refuse the file: the part mints again through bloop", async () => {
-    const world = makeWorld({ partBytes: 20, firstUrls: 1 });
-    let release: () => void = () => {};
-    const held = new Promise<void>((resolve) => {
-      release = resolve;
-    });
-    world.intercept.push(async (c) => {
-      if (c.path.endsWith("/urls") && c.body.mode === undefined) {
-        await held;
-        return world.json(200, { urls: [{ n: 2, url: "https://r2.test/up1/2?late" }], ttlMs: 300000 });
-      }
-    });
-    world.onPut = (p) => (p.url.startsWith("https://") ? p.fail() : p.ok());
-    await begin(world, 40);
-    await world.advance(5000);
-    release();
-    await world.advance(1000);
-    expect(world.calls.some((c) => c.body?.mode === "proxy")).toBe(true);
-    expect(fileOf(world).state).toBe("saved");
-    expect(world.puts.every((p) => !p.url.includes("late"))).toBe(true);
   });
 });
 
@@ -1112,9 +1093,7 @@ describe("waiting before there is an upload", () => {
   it("a create that has to wait never reads as uploading, and the file returns to Starting", async () => {
     const world = makeWorld();
     let down = true;
-    world.intercept.push((c) =>
-      down && c.method === "POST" && c.path === "/api/uploads" ? world.problem(503, "internal") : undefined,
-    );
+    world.intercept.push((c) => (down && c.method === "POST" && c.path === "/api/uploads" ? NETWORK : undefined));
     await begin(world, 50);
     await world.advance(13_000);
     expect(fileOf(world).state).toBe("waiting");
@@ -1201,6 +1180,7 @@ describe("what the server lists and sends", () => {
 
   it("never sends a part to bloop's own origin as if it were storage", async () => {
     const world = makeWorld({ partBytes: 100 });
+    world.state.bytes = 50;
     world.intercept.push((c) =>
       c.path === "/api/uploads" && c.method === "POST"
         ? world.json(201, {
@@ -1214,74 +1194,119 @@ describe("what the server lists and sends", () => {
         : undefined,
     );
     await begin(world, 50);
-    expect(world.puts.map((p) => p.url)).toEqual(["https://r2.test/up1/1?sig=1"]);
+    expect(world.puts.map((p) => p.url)).toEqual(["https://acct.eu.r2.cloudflarestorage.com/up1/1?sig=1"]);
   });
 });
 
 describe("a file the server is still validating", () => {
-  const checking = (world: World, then: (n: number) => unknown) => {
+  /** Complete answers from `answers` in turn (then the world's own); GET of the upload is never how checking ends. */
+  const completes = (world: World, answers: (n: number) => Response | undefined) => {
     let asked = 0;
-    world.intercept.push((c) => {
-      if (c.method === "POST" && c.path === "/api/uploads/up1/complete") return world.json(200, { state: "checking" });
-      if (c.method === "GET" && c.path === "/api/uploads/up1") return world.json(200, then(++asked));
-    });
+    world.intercept.push((c) =>
+      c.method === "POST" && c.path === "/api/uploads/up1/complete" ? answers(++asked) : undefined,
+    );
     return () => asked;
   };
+  const checkingAnswer = (world: World) =>
+    world.json(200, { state: "checking", file: { id: "f1", status: "checking" } });
+  const nothingRead = (world: World) => expect(paths(world, "GET")).not.toContain("GET /api/uploads/up1");
 
-  it("stays Checking until the server says ready, then Saved with the file", async () => {
+  it("repeats complete, backing off 2, 4, 8 and 10 s, until it answers ready: then Saved with the file", async () => {
     const world = makeWorld({ mode: "proxy", partBytes: 100 });
-    const asked = checking(world, (n) =>
-      n < 2 ? { state: "checking", done: [] } : { state: "ready", done: [], file: { id: "f9", status: "ready" } },
-    );
+    world.state.checking = 2;
     await begin(world, 50);
     expect(fileOf(world).state).toBe("checking");
+    expect(paths(world, "POST").filter((p) => p.endsWith("/complete"))).toHaveLength(1);
     await world.advance(2000);
     expect(fileOf(world).state).toBe("checking");
-    await world.advance(2000);
-    expect(fileOf(world)).toMatchObject({ state: "saved", fileId: "f9", fileStatus: "ready" });
-    expect(asked()).toBe(2);
+    expect(paths(world, "POST").filter((p) => p.endsWith("/complete"))).toHaveLength(2);
+    await world.advance(3999);
+    expect(fileOf(world).state).toBe("checking");
+    await world.advance(1);
+    expect(fileOf(world)).toMatchObject({ state: "saved", fileId: "f1", fileStatus: "ready" });
     expect(states(world).indexOf("saved")).toBeGreaterThan(states(world).lastIndexOf("checking"));
     expect(world.vibrations).toEqual([12]);
+    nothingRead(world);
   });
 
-  it("is refused with the server's reason when validation fails, and never shows Saved", async () => {
+  it("is refused with the server's reason when the repeated complete says so, and never shows Saved", async () => {
     const world = makeWorld({ mode: "proxy", partBytes: 100 });
-    checking(world, (n) =>
+    completes(world, (n) =>
       n < 2
-        ? { state: "checking", done: [] }
-        : { state: "refused", done: [], file: { id: "f1", refusal: "macro_content" } },
+        ? checkingAnswer(world)
+        : world.json(200, { state: "refused", file: { id: "f1", status: "refused", refusal: "macro_content" } }),
     );
     await begin(world, 50);
-    await world.advance(4000);
+    await world.advance(2000);
     expect(fileOf(world)).toMatchObject({ state: "refused", error: "macro_content" });
     expect(states(world)).not.toContain("saved");
     expect(world.vibrations).toEqual([]);
   });
 
-  it("gives up after five minutes of checking, as the service being down, so the queue never wedges", async () => {
+  it("a 409 upload_busy is a claim another request holds: it keeps waiting, and settles when the claim ends", async () => {
     const world = makeWorld({ mode: "proxy", partBytes: 100 });
-    checking(world, () => ({ state: "checking", done: [] }));
+    const asked = completes(world, (n) => (n <= 6 ? world.problem(409, "upload_busy") : undefined));
     await begin(world, 50);
-    await world.advance(299_000);
-    expect(fileOf(world).state).toBe("checking");
-    await world.advance(2000);
-    expect(fileOf(world)).toMatchObject({ state: "refused", error: "service_down" });
+    await world.advance(60_000);
+    expect(asked()).toBe(7);
+    expect(fileOf(world)).toMatchObject({ state: "saved" });
   });
 
-  it("a canceled-elsewhere upload found while checking is paused, not Saved", async () => {
+  it("gives up by the clock, not a count: checking past 150 s is the service_busy refusal", async () => {
     const world = makeWorld({ mode: "proxy", partBytes: 100 });
-    checking(world, () => ({ state: "aborted", done: [] }));
+    const asked = completes(world, () => checkingAnswer(world));
     await begin(world, 50);
-    await world.advance(2000);
-    expect(fileOf(world).state).toBe("paused");
+    await world.advance(149_000);
+    expect(fileOf(world).state).toBe("checking");
+    await world.advance(12_000);
+    expect(fileOf(world)).toMatchObject({ state: "refused", error: "service_busy" });
+    expect(asked()).toBeGreaterThan(10);
+    nothingRead(world);
+  });
+
+  it("a claim that never ends is the same clock: the file is not refused before it", async () => {
+    const world = makeWorld({ mode: "proxy", partBytes: 100 });
+    completes(world, () => world.problem(409, "upload_busy"));
+    await begin(world, 50);
+    await world.advance(149_000);
+    expect(fileOf(world).state).toBe("checking");
+    await world.advance(12_000);
+    expect(fileOf(world)).toMatchObject({ state: "refused", error: "service_busy" });
   });
 
   it("a guest's send waits for the same answer before it is Sent", async () => {
     const world = makeWorld({ kind: "guest", mode: "proxy", partBytes: 100 });
-    checking(world, (n) => (n < 2 ? { state: "checking", done: [] } : { state: "offered", done: [] }));
+    world.state.checking = 1;
     await begin(world, 50);
     expect(fileOf(world).state).toBe("checking");
-    await world.advance(4000);
+    await world.advance(2000);
     expect(fileOf(world)).toMatchObject({ state: "sent", view: { state: "offered" } });
+  });
+});
+
+describe("a service that keeps failing", () => {
+  it("a 5xx on complete is retried 1, 3 and 9 s, then is the service_busy refusal, not a wait for the connection", async () => {
+    const world = makeWorld({ mode: "proxy", partBytes: 100 });
+    world.intercept.push((c) => (c.path.endsWith("/complete") ? world.problem(503, "internal") : undefined));
+    await begin(world, 50);
+    await world.advance(13_000);
+    expect(fileOf(world)).toMatchObject({ state: "refused", error: "service_busy" });
+  });
+
+  it("a part the service keeps failing with a 5xx is the same refusal", async () => {
+    const world = makeWorld({ mode: "proxy", partBytes: 100 });
+    world.onPut = (p) => p.reply(503);
+    await begin(world, 50);
+    await world.advance(13_000);
+    expect(fileOf(world)).toMatchObject({ state: "refused", error: "service_busy" });
+  });
+
+  it("a dropped connection is not: the file stays Checking, unrefused, until the network is back", async () => {
+    const world = makeWorld({ mode: "proxy", partBytes: 100 });
+    world.intercept.push((c) => (c.path.endsWith("/complete") ? NETWORK : undefined));
+    await begin(world, 50);
+    await world.advance(13_000);
+    expect(fileOf(world).state).toBe("checking");
+    expect(fileOf(world).error).toBeUndefined();
   });
 });

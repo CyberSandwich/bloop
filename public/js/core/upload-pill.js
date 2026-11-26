@@ -22,60 +22,6 @@ const glyphOf = (name) =>
         ? ICONS.image
         : ICONS["file-text"];
 
-/** @param {string} name "Talk.pptm" @returns {string} the extension of its macro-free twin, ".pptx" */
-const plain = (name) => `.${/\.(\w{3})m$/i.exec(name)?.[1] ?? "ppt"}x`;
-
-const FEW_MINUTES = "Try again in a few minutes.";
-/** Refusals with a title of their own (docs/ux/upload.md section 4): the title, then the line. @type {Record<string, [string, string]>} */
-const OWN = {
-  bad_type: [
-    "This File Type Isn't Supported",
-    "bloop takes decks, documents, PDFs, spreadsheets, text, photos and videos.",
-  ],
-  empty: ["This File Is Empty", ""],
-  quota_exceeded: ["Not Enough Space", "Delete files or empty the trash to add this one."],
-  library_full: ["Your Library Is Full", "Delete files you no longer need, then add this one."],
-  storage_full: ["bloop Can't Take Files Now", FEW_MINUTES],
-  rate_limited: ["Too Many Uploads Right Now", "Wait a minute, then try again."],
-  service_busy: ["bloop Is Busy Right Now", FEW_MINUTES],
-  unauthorized: ["Sign In to Add Files", "Your sign-in ended. Sign in again, then add the file."],
-};
-/** Refusals titled "{name} Can't Be Added": the line, or a function of the name. @type {Record<string, string | ((name: string) => string)>} */
-const CANT = {
-  service_down: `Something's wrong on bloop's side. ${FEW_MINUTES}`,
-  upload_busy: "bloop is still finishing this upload. Wait a moment, then try again.",
-  upload_gone: "This upload ended before it finished. Add the file again.",
-  upload_aborted: "The upload was stopped. Add the file again.",
-  size_mismatch: "This file changed while it was being added. Add it again.",
-  length_required: "bloop couldn't read this file's size. Choose it again.",
-  bad_request: "bloop couldn't take this file as sent. Add it again.",
-  not_found: "bloop can't find this upload. Add the file again.",
-  macro_content: (name) => `This file has macros. Save a copy without them as ${plain(name)}.`,
-  encrypted: "This file is password protected. Remove the password, then add it again.",
-  bad_structure: "This file is damaged. Open it on your computer and save it again.",
-};
-
-/**
- * The toast for a refused file. A code with no string reads as the plain "Can't Be Added".
- * @param {string} name
- * @param {string} code
- * @param {number | undefined} maxMB the library's file cap, from the API
- * @returns {{title: string, body: string}}
- */
-export function refusalToast(name, code, maxMB) {
-  if (code === "too_large")
-    return {
-      title: "File Too Large",
-      body: maxMB ? `bloop takes files up to ${maxMB} MB.` : "This file is over bloop's size limit.",
-    };
-  if (Object.hasOwn(OWN, code)) {
-    const [title, body] = /** @type {[string, string]} */ (OWN[code]);
-    return { title, body };
-  }
-  const line = (Object.hasOwn(CANT, code) && CANT[code]) || "Try again in a moment.";
-  return { title: `${name} Can't Be Added`, body: typeof line === "function" ? line(name) : line };
-}
-
 /**
  * Starts the engine and its pill on a page.
  * @param {object} [options]
@@ -84,6 +30,7 @@ export function refusalToast(name, code, maxMB) {
  * @param {number} [options.maxMB] the file cap the "File Too Large" line names
  * @param {((fileId: string) => Promise<unknown>) | null} [options.upNext] ticks a file; null where Up Next is full
  * @param {{append: (node: Node) => void}} [options.host]
+ * @param {{focus: () => void} | null} [options.trigger] what opened the upload: it takes the focus when the pill leaves
  * @param {(batch: Batch) => void} [options.onChange] the page's own view of each snapshot (a guest's send)
  */
 export async function mountUploads({
@@ -92,12 +39,14 @@ export async function mountUploads({
   maxMB,
   upNext = null,
   host = document.body,
+  trigger = null,
   onChange,
 } = {}) {
   const guest = kind === "guest";
-  const [{ createUploader, formatBytes, etaLabel }, { pill, CLOSE }] = await Promise.all([
+  const [{ createUploader, formatBytes, progressLine }, { pill, CLOSE }, { refusalToast }] = await Promise.all([
     import("./upload.js"),
     import("./pill.js"),
+    import("./upload-refusals.js"),
     styled("/css/upload.css"),
   ]);
   /** @type {ReturnType<typeof pill> | null} */
@@ -112,8 +61,7 @@ export async function mountUploads({
   let sheet = null;
   /** @type {Batch | null} */
   let last = null;
-  /** Files whose pill has come and gone. @type {Set<number>} */
-  const gone = new Set();
+  /** Files whose pill has come and gone, and refusals and cancels already told. @type {Set<number>} */
   const told = new Set();
   /** @type {number | null} */
   let picking = null;
@@ -151,14 +99,15 @@ export async function mountUploads({
     return b;
   };
   /** @param {FileSnap} f @param {string} where the pill or the sheet */
-  const closer = (f, where) =>
-    keep(`close:${where}:${f.id}`, () => {
-      const b = el("button", { class: "up-close", type: "button", "aria-label": `Cancel Upload of ${f.name}` }, [
-        icon(CLOSE),
-      ]);
-      b.addEventListener("click", () => uploader.cancel(f.id));
-      return b;
+  const closer = (f, where) => {
+    const b = keep(`close:${where}:${f.id}`, () => {
+      const made = el("button", { class: "up-close", type: "button" }, [icon(CLOSE)]);
+      made.addEventListener("click", () => uploader.cancel(f.id));
+      return made;
     });
+    b.setAttribute("aria-label", `Cancel Upload of ${f.name}`);
+    return b;
+  };
 
   /** @param {Parameters<typeof pill>[0]} next */
   function show(next) {
@@ -175,28 +124,29 @@ export async function mountUploads({
     clearTimeout(/** @type {any} */ (leaveTimer));
     leaveTimer = setTimeout(() => {
       if (held) return leaveIn(1000);
-      for (const f of last?.files ?? []) if (f.state !== "paused") gone.add(f.id);
-      face?.leave();
-      face = null;
+      for (const f of last?.files ?? []) if (f.state !== "paused") told.add(f.id);
+      hide();
       sheet?.close();
     }, ms);
   }
+  /** The pill goes; focus inside it (Cancel, Add to Up Next) goes back to what opened the upload, not to the page. */
   function hide() {
     clearTimeout(/** @type {any} */ (leaveTimer));
+    const at = document.activeElement;
+    if (at && (face?.node.contains(at) || sheet?.contains(at))) trigger?.focus();
     face?.leave();
     face = null;
   }
 
+  /** @param {FileSnap} f no byte has moved yet */
+  const starting = (f) => f.state === "queued" || f.state === "fingerprinting" || f.state === "starting";
+
   /** @param {FileSnap} f @param {Batch} batch the line under a file's title, by its state */
   function lineOf(f, batch) {
-    if (f.state === "uploading") {
-      const left = batch.etaMs;
-      return `${formatBytes(f.loaded, f.size)}${left === null ? "" : ` · ${etaLabel(left)}`}`;
-    }
+    if (f.state === "uploading") return progressLine(f.loaded, f.size, batch.etaMs);
     if (f.state === "waiting")
       return waitingLong ? "Keep this page open. It finishes when you're back online." : "Waiting for a Connection";
-    if (f.state === "checking") return f.name;
-    return f.state === "saved" || f.state === "sent" ? f.name : "Starting";
+    return starting(f) ? "Starting" : f.name;
   }
 
   /** @param {FileSnap} f @param {Batch} batch */
@@ -214,25 +164,23 @@ export async function mountUploads({
                 await upNext(fileId);
               } catch {
                 // the page that ticks says why it could not
-                ticking = false;
                 return;
+              } finally {
+                ticking = false;
               }
               face?.update({ title: "Added to Up Next", slot: [] });
               leaveIn(SAVED_MS);
             }),
           )
         : null;
+    const text = lineOf(f, batch);
     show({
       title: checking ? "Checking Your File" : f.state === "saved" ? "Saved" : f.state === "sent" ? "Sent" : f.name,
-      line: lineOf(f, batch),
+      line: text,
+      say: f.state === "waiting" ? text : "",
       label: `Uploading ${f.name}`,
       glyph: glyphOf(f.name),
-      fill:
-        f.state === "queued" || f.state === "fingerprinting" || f.state === "starting"
-          ? null
-          : checking || done
-            ? 1
-            : f.fraction,
+      fill: starting(f) ? null : checking || done ? 1 : f.fraction,
       sheen: f.state !== "waiting" && !done,
       press: null,
       slot: checking || done ? (action ? [action] : []) : [closer(f, "pill")],
@@ -249,8 +197,14 @@ export async function mountUploads({
         : f.state === "checking"
           ? "Checking Your File"
           : f.state === "refused"
-            ? "Can't Be Added"
+            ? reasonOf(f)
             : "Waiting";
+
+  /** @param {FileSnap} f the sheet's line for a refused file: its reason, or its title where it has no more to say */
+  function reasonOf(f) {
+    const { title, body } = refusalToast(f.name, f.error ?? "", maxMB);
+    return body || title;
+  }
 
   /** @param {FileSnap[]} files */
   function rows(files) {
@@ -293,10 +247,9 @@ export async function mountUploads({
     batchTitle = active ? `Uploading ${files.length} Files` : `${saved} ${saved === 1 ? "File" : "Files"} Saved`;
     show({
       title: batchTitle,
-      line: active
-        ? `${formatBytes(batch.loaded, batch.total)}${batch.etaMs === null ? "" : ` · ${etaLabel(batch.etaMs)}`}`
-        : "",
       label: `Uploading ${files.length} Files`,
+      line: active ? progressLine(batch.loaded, batch.total, batch.etaMs) : "",
+      say: files.some((f) => f.state === "waiting") ? "Waiting for a Connection" : "",
       glyph: ICONS["file-text"],
       fill: active ? batch.fraction : 1,
       sheen: active,
@@ -308,11 +261,12 @@ export async function mountUploads({
 
   /** @param {FileSnap} f */
   function paused(f) {
+    const title = `${f.name} Is Paused`;
     show({
-      title: `${f.name} Is Paused`,
+      title,
       wrap: true,
       line: "Choose the file again to finish.",
-      label: `${f.name} Is Paused`,
+      label: title,
       glyph: glyphOf(f.name),
       fill: null,
       sheen: false,
@@ -329,19 +283,36 @@ export async function mountUploads({
     });
   }
 
+  /**
+   * Each cancel, and each refusal once. A batch's refusals wait for its end and are one toast that opens the sheet,
+   * where each file has its own line. A guest's refusal is the page's own state ("This File Can't Be Sent"), no toast.
+   * @param {Batch} batch
+   */
+  function tell(batch) {
+    const fresh = (/** @type {string} */ state) => batch.files.filter((f) => f.state === state && !told.has(f.id));
+    const canceled = fresh("canceled");
+    const refused = batch.files.length > 1 && batch.active ? [] : fresh("refused");
+    for (const f of [...canceled, ...refused]) told.add(f.id);
+    for (const f of canceled) toast({ title: "Upload Canceled", body: `${f.name} wasn't added.` });
+    const [one] = refused;
+    if (refused.length > 1) {
+      batchTitle = `${refused.length} Files Couldn't Be Added`;
+      toast({
+        title: batchTitle,
+        body: "",
+        error: true,
+        action: { label: "See Why", run: openSheet },
+      });
+    } else if (one) toast({ ...refusalToast(one.name, one.error ?? "", maxMB), error: true });
+  }
+
   /** @param {Batch} batch */
   function render(batch) {
     last = batch;
     onChange?.(batch);
-    for (const f of batch.files) {
-      // A guest's refusal is the page's own state ("This File Can't Be Sent"), never a toast.
-      if (guest || told.has(f.id) || (f.state !== "refused" && f.state !== "canceled")) continue;
-      told.add(f.id);
-      if (f.state === "canceled") toast({ title: "Upload Canceled", body: `${f.name} wasn't added.` });
-      else toast({ ...refusalToast(f.name, f.error ?? "", maxMB), error: true });
-    }
+    if (!guest) tell(batch);
     const live = batch.files.filter(
-      (f) => f.state !== "paused" && f.state !== "refused" && f.state !== "canceled" && !gone.has(f.id),
+      (f) => f.state !== "paused" && f.state !== "refused" && f.state !== "canceled" && !told.has(f.id),
     );
     const waiting = live.some((f) => f.state === "waiting");
     if (waiting && !longWait && !waitingLong)
