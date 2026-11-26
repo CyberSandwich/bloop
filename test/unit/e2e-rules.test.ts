@@ -16,4 +16,14 @@ describe("e2e specs", () => {
       expect(bad, f).toEqual([]);
     }
   });
+
+  it("never go back or forward straight after a click or tap: wait for the page it opened first", () => {
+    // A click returns before its navigation commits; history read mid-swap fails "not attached to an active page".
+    const travel = /\.go(Back|Forward)\(/;
+    for (const { f, text } of specs) {
+      const lines = text.split("\n").filter((line) => line.trim() !== "" && !line.trim().startsWith("/"));
+      const bad = lines.filter((line, i) => travel.test(line) && /\.(click|tap)\(/.test(lines[i - 1] ?? ""));
+      expect(bad, f).toEqual([]);
+    }
+  });
 });

@@ -301,7 +301,9 @@ for (const vp of VIEWPORTS) {
       await page.goto("/");
       await page.evaluate("scrollTo(0, 1500)");
       await page.getByRole("contentinfo").getByRole("link", { name: "Privacy" }).click();
+      await expect(page.getByRole("heading", { level: 1 })).toHaveText("Privacy Notice");
       await page.goBack();
+      await expect(page).toHaveURL("/");
       await expect.poll(() => page.evaluate("scrollY")).toBeGreaterThan(0);
     });
 
