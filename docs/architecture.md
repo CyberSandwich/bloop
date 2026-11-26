@@ -341,7 +341,8 @@ test/
 | any | `/api/dev/r2/*` | none; local only | planned (U): the proxy-mode bucket stand-in |
 | GET, PUT, PATCH, POST | `/api/library*` | member session (C), `RL_LIBRARY` per user | list, rename, tick, Up Next order, trash, restore, Delete Now, preview link, socket: [library.md](library.md) section 5 |
 | GET | `/api/me/export.zip` | member session, same-origin, C+R for a new export | `?k=<idempotency key>`; the account export as a zip with exact `Content-Length`, `ETag` and `Range` resume (docs/library.md section 8); 409 `export_busy`, 429 `export_limit`, 503 `export_paused` |
-| GET, DELETE, POST | `/api/library/sample`, `/api/me/screens*` | session | planned (L): the sample deck and live screens |
+| GET, DELETE | `/api/me/screens`, `/api/me/screens/:sessionId` | member session | the user's live screens, and ending one; `{ended}` is 0 for a screen already gone |
+| POST | `/api/library/sample` | session | planned (L): the sample deck |
 | GET, POST | `/api/match`, `/api/notes`; `/api/claim`, `/api/files`, `/api/approve` extended | Bearer pid, session | planned (P1): the match pick, speaker notes, the library source |
 | GET | `/f/`, `/b/`, `/p/` on the file origin | the token | planned (P1): session links, bundles, owner previews |
 

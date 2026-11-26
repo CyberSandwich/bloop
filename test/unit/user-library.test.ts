@@ -19,6 +19,7 @@ import {
   releaseLease,
   renewLease,
   rowsLeft,
+  screensMatching,
   takeLease,
 } from "../../src/worker/do/user-library-rules.ts";
 import { initUserLibraryStorage, USER_LIBRARY_SCHEMA_VERSION } from "../../src/worker/do/user-library-schema.ts";
@@ -155,6 +156,22 @@ describe("live screens", () => {
     for (let n = 1; n <= MAX_SCREEN_ROWS + 1; n++) putScreen(sql, row(n));
     expect(db.prepare("SELECT count(*) AS n FROM screen").get()).toEqual({ n: MAX_SCREEN_ROWS });
     expect(db.prepare("SELECT 1 FROM screen WHERE session_id = 's1'").get()).toBeUndefined();
+  });
+
+  it("an end names one screen, one phone session's screens, those showing a file, or all", () => {
+    const rows = [
+      { ...row(1), bySession: "p1", fileIds: ["a"] },
+      { ...row(2), bySession: "p1", fileIds: ["b"] },
+      { ...row(3), bySession: "p2", fileIds: ["a", "b"] },
+    ];
+    const ids = (filter: Parameters<typeof screensMatching>[1]) =>
+      screensMatching(rows, filter).map((r) => r.sessionId);
+    expect(ids({ sessionId: "s2" })).toEqual(["s2"]);
+    expect(ids({ sessionId: "nope" })).toEqual([]);
+    expect(ids({ bySession: "p1" })).toEqual(["s1", "s2"]);
+    expect(ids({ fileId: "a" })).toEqual(["s1", "s3"]);
+    expect(ids({ bySession: "p1", fileId: "a" })).toEqual(["s1"]);
+    expect(ids({})).toEqual(["s1", "s2", "s3"]);
   });
 
   it("forgets the rows it is told to", () => {

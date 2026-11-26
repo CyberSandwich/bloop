@@ -61,7 +61,7 @@ Delete Now and Empty Trash make rows due and call `kickPurge`, whose alarm runs 
 
 ## 6. Routes
 
-All under `/api/library`, all for a member session (label C, ADR 0014) that the launch lockout admits; a request without one, from a suspended member or from a locked-out one gets the signed-out answer, and a member in the deletion grace gets `account_deleting` with the date. Each spends `RL_LIBRARY` keyed by the user and answers `no-store`.
+All under `/api/library` (and the two screen routes under `/api/me`), all for a member session (label C, ADR 0014) that the launch lockout admits; a request without one, from a suspended member or from a locked-out one gets the signed-out answer, and a member in the deletion grace gets `account_deleting` with the date. Each spends `RL_LIBRARY` keyed by the user and answers `no-store`.
 
 | method, path | body | answer |
 |---|---|---|
@@ -73,6 +73,8 @@ All under `/api/library`, all for a member session (label C, ADR 0014) that the 
 | POST `/trash/delete` | `{ids}` (at most 150) or `{all: true}` | 202 `{due}` |
 | POST `/:id/preview` | `{asset}` | `{base, exp}`; `file_disabled` for a disabled file; `service_busy` while previews are off |
 | GET `/ws` | an Upgrade from our own Origin | 101; the socket of section 4 |
+| GET `/api/me/screens` | | `{screens: [{sessionId, label, fileIds, startedAt}]}`: the live ones |
+| DELETE `/api/me/screens/:sessionId` | `{}` | `{ended}`: the screen is told to end through its own object, which ends it only when the pairing's user is this one; 0 when it was already gone |
 
 A thumbnail link in a row is a bundle token whose expiry lands on a 150 s boundary, so the list answer, and its ETag, holds still between refreshes. A row names only what is true of it: null fields are left out.
 
