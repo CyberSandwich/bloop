@@ -568,7 +568,7 @@ const inert = async () => null;
 /** @type {Record<string, () => Promise<Lazy | null>>} */
 const modules = {
   menu: () => import("./library/menu.js"),
-  trash: inert,
+  trash: () => import("./library/trash.js"),
   sort: inert,
   preview: inert,
   present: inert,
