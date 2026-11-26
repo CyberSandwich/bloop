@@ -4,11 +4,11 @@
 
 /** @import {ClaimResponse, Entry, ErrorCode, Item, PhoneStateKey, PhoneView} from "../../src/shared/protocol.ts" */
 import { createApi } from "./core/api.js";
-import { bootCode } from "./core/boot-code.js";
+import { bootCode, KEPT } from "./core/boot-code.js";
 import { openChannel, refusal } from "./core/channel.js";
 import { MAIL_SUBJECT, phoneCopy, REFUSED, refusedLine, uploadLine } from "./core/copy-phone.js";
 import { thumbOf } from "./core/demo.js";
-import { fileProblem, kindOf, prepareFile, sendFile, wholeMB } from "./core/drop.js";
+import { fileProblem, kindOf, wholeMB } from "./core/drop.js";
 import { loadFiles } from "./core/files.js";
 import { ago, countdown } from "./core/format.js";
 import { ICONS } from "./core/icons.js";
@@ -101,6 +101,7 @@ const c = {
   progress: null,
   leaving: false,
   fault: null,
+  words: null,
 };
 
 /** Failed calls become the state key the shared error table names; offline and generic errors can retry. */
@@ -204,6 +205,14 @@ function showUpload() {
   );
 }
 
+/** The send (core/send.js): asked for when the offer shows, so it is in before Send; a failed load asks again. */
+let sender = /** @type {Promise<typeof import("./core/send.js")> | null} */ (null);
+const loadSend = () =>
+  (sender ??= import("./core/send.js").catch((e) => {
+    sender = null;
+    throw e;
+  }));
+
 /** Rebuilds the action buttons only when the set changes, so a button keeps focus while it shows progress. */
 function renderActions(/** @type {import("./types.js").PhoneAction[]} */ actions, /** @type {boolean} */ loading) {
   const ids = actions.map((a) => a.id).join();
@@ -251,19 +260,21 @@ function render() {
   const key = withPick(phoneKey(c));
   const v = c.view;
   const demo = c.info?.mode === "demo";
-  const copy = phoneCopy(key, {
-    room: c.info?.roomName ?? v?.room.name ?? "",
-    file: c.drop ? (c.file?.name ?? null) : (firstFile(v?.items ?? [])?.name ?? null),
-    account: c.account,
-    demo,
-    maxMB: wholeMB(c.maxBytes),
-    match: c.info?.match ?? null,
-    back: home(),
-    nocode,
-    live: !!v && IN_SESSION.includes(v.state),
-    revoking: c.retry === endSession,
-    list: fromList(),
-  });
+  const copy =
+    c.words?.(key) ??
+    phoneCopy(key, {
+      room: c.info?.roomName ?? v?.room.name ?? "",
+      file: c.drop ? (c.file?.name ?? null) : (firstFile(v?.items ?? [])?.name ?? null),
+      account: c.account,
+      demo,
+      maxMB: wholeMB(c.maxBytes),
+      match: c.info?.match ?? null,
+      back: home(),
+      nocode,
+      live: !!v && IN_SESSION.includes(v.state),
+      revoking: c.retry === endSession,
+      list: fromList(),
+    });
 
   canAdd = copy.add || key === "guest_confirm" || copy.actions.some((a) => a.id === "send-file" || a.id === "pick");
   back.setAttribute("href", home() ? "/s?mode=demo" : "/");
@@ -333,6 +344,8 @@ function render() {
       .then((m) => m.mount(c, { picked, wrong, fail }))
       .catch(() => toast({ ...RELOAD, title: "Match Didn't Load" }));
   }
+
+  if (key === "guest_confirm" && !sender) loadSend().catch(() => {});
 
   // The pick's own sending state writes here too (core/match.js), so a render mid-pick leaves it.
   if (key !== "pick") setText(polite, key === "approving" ? "Approving" : "");
@@ -526,50 +539,24 @@ function pickFile() {
   filePick.click();
 }
 
-async function send() {
-  const file = c.file;
-  if (!file || c.drop === "sending") return;
-  let stopped = false;
-  /** @type {{abort: () => void} | null} */
-  let up = null;
-  c.drop = "sending";
-  c.progress = kindOf(file.name) === "file" ? 0 : null;
-  c.upload = {
-    abort: () => {
-      stopped = true;
-      up?.abort();
-    },
-  };
-  render();
-  const ready = await prepareFile(file, c.maxBytes);
-  if (stopped) return;
-  if (!ready.ok) {
-    // The file cannot be made safe to send, so its offer goes too, with or without a list under it.
-    c.upload = null;
-    c.drop = "confirm";
-    if (fromList()) toList();
-    else showList();
-    return refuse(ready.problem, file);
-  }
-  c.progress = 0;
-  render();
-  const sending = sendFile({
-    file: ready.file,
-    pid: /** @type {string} */ (c.pid),
-    onProgress: (fraction) => {
-      c.progress = fraction;
-      render();
-    },
-  });
-  up = sending;
-  const res = await sending.done;
-  c.upload = null;
-  if (stopped) return;
-  c.drop = null;
-  if (res.ok) setView(res.view);
-  else fail(res.error, send);
+/** What core/send.js needs of the page. @type {import("./types.js").SendIo} */
+const sendIo = {
+  render,
+  setView,
+  fail,
+  refuse,
+  retry: send,
+  leaveOffer: () => (fromList() ? toList() : showList()),
   // A refusal over the list keeps the entry: Back returns to the list, as Cancel does.
-  if (!fromList()) forgetEntry();
+  sent: () => fromList() || forgetEntry(),
+};
+
+/** Send (core/send.js, in since the offer showed); if it cannot load, a toast with Reload. */
+function send() {
+  loadSend().then(
+    (m) => m.send(c, sendIo),
+    () => toast({ ...RELOAD, title: "That Didn't Load" }),
+  );
 }
 
 /** On an offer or a refusal over a list, Cancel goes back to the list; Back is the one way out of that. */
@@ -697,10 +684,40 @@ function paired(claim) {
   if (!claim.choices) listOwn(claim.kind);
 }
 
-async function claim(/** @type {string} */ code) {
-  const res = await api.post("/api/claim", { code });
-  if (!res.ok) return fail(res.error, () => claim(code));
-  paired(res.value);
+/** The tab's X-Bloop-Nonce: 32 random bytes as unpadded base64url, the owner of a signed-out claim's key (REL-14). */
+function nonce() {
+  let n = store.get("bloop.nonce");
+  if (!n) {
+    const b64 = btoa(String.fromCharCode(...crypto.getRandomValues(new Uint8Array(32))));
+    n = b64.replace(/\+/g, "-").replace(/\//g, "_").slice(0, 43);
+    store.set("bloop.nonce", n);
+  }
+  return n;
+}
+
+/**
+ * One claim attempt is one Idempotency-Key, sent again by Try Again, so a lost answer replays (REL-14); api.js stays
+ * as the room screen loads it. A live code refused signed out, or a code gone after sign-in, is core/early.js's, with
+ * `/api/me` asked beside its load; if it cannot load, a dead code reads as expired and a live one goes the guest way,
+ * which needs no sign-in.
+ * @param {string} code
+ * @param {string} [key]
+ * @returns {Promise<void>}
+ */
+async function claim(code, kind = "owner", key = crypto.randomUUID(), resumed = false) {
+  const headers = { "Idempotency-Key": key, "X-Bloop-Nonce": nonce() };
+  const res = await createApi({
+    fetch: (url, init) => fetch(url, { ...init, headers: { ...init?.headers, ...headers } }),
+  }).post("/api/claim", { code, kind });
+  if (res.ok) return paired(res.value);
+  if (res.error === "auth_required" || (resumed && res.error === "code_unknown")) {
+    const who = api.get("/api/me");
+    return import("./core/early.js").then(
+      (m) => m.refused(res.error, { c, render, code, key, who, store, claim }),
+      () => (resumed ? fail(res.error) : claim(code, "guest")),
+    );
+  }
+  fail(res.error, () => claim(code, kind, key, resumed));
 }
 
 async function resume(/** @type {string} */ pid) {
@@ -733,12 +750,17 @@ function start() {
   reloadOnRestore();
   setInterval(countDown, 1000);
   const pid = pids.get(PID_KEY);
-  if (bootCode) claim(bootCode);
-  else if (pid) resume(pid);
-  else {
+  const next = () => {
+    if (pid) return resume(pid);
     nocode = true;
     fail("pairing_invalid");
-  }
+  };
+  // A code kept across sign-in is fresher than a kept pid: this tab left for sign-in a moment ago. A scan drops it.
+  if (bootCode) {
+    store.remove(KEPT);
+    claim(bootCode);
+  } else if (store.get(KEPT)) import("./core/early.js").then((m) => m.resume(store, claim, next), next);
+  else next();
 }
 
 start();
