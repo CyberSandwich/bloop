@@ -9,6 +9,7 @@ import {
   d1SwitchStore,
   deliveryClaims,
   logNotify,
+  type Notify,
   resetBreaker,
 } from "../../src/worker/spend/breaker.ts";
 import { testDb } from "./d1-shim.ts";
@@ -115,6 +116,11 @@ describe("COST-14 the five-minute job mails a trip to the admins", () => {
     await (await breakerJob()).run(w.env, undefined, 0);
     const [trip] = (await w.global.guard.snapshot()).trips;
     const name = trip?.switch ?? "email";
+    const key = `trip:${name}:${trip?.value}`;
+    const { log, mail } = deliveryClaims(key);
+    const held = () => (w.global.rig.db.prepare("SELECT key FROM alert").all() as { key: string }[]).map((r) => r.key);
+    // Present before the reset, so their absence after it is the release, not claims that were never taken.
+    expect(held()).toEqual(expect.arrayContaining([key, log, mail[0]]));
     const store = d1SwitchStore(w.db, Date.now);
     const failing = {
       ...w.global.guard,
@@ -126,11 +132,14 @@ describe("COST-14 the five-minute job mails a trip to the admins", () => {
       "guard down",
     );
     expect((await w.global.guard.snapshot()).trips.map((t) => t.switch)).toEqual([name]);
-    expect(await resetBreaker({ guard: w.global.guard, store, notify: logNotify }, name, "owner")).toBe(true);
-    const key = `trip:${name}:${trip?.value}`;
-    const held = (w.global.rig.db.prepare("SELECT key FROM alert").all() as { key: string }[]).map((r) => r.key);
-    const { log, mail } = deliveryClaims(key);
-    expect(held.filter((claim) => [key, log, ...mail].includes(claim))).toEqual([]);
+    const notices: Parameters<Notify>[0][] = [];
+    const notify: Notify = async (message) => void notices.push(message);
+    expect(await resetBreaker({ guard: w.global.guard, store, notify }, name, "owner")).toBe(true);
+    expect(held().filter((claim) => [key, log, ...mail].includes(claim))).toEqual([]);
+    // The first attempt restored the row before it failed: the retry's notice names the value, not "unchanged".
+    const restored = await store.get(name);
+    expect(restored).not.toBe("unchanged");
+    expect(notices).toEqual([expect.objectContaining({ kind: "reset", value: restored })]);
   });
 
   it("COST-14 a send no admin received releases the day's claim, so the next run mails the trip", async () => {

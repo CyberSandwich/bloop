@@ -79,7 +79,6 @@ function render(c: Pick<TemplateConfig, "origin">, subject: string, paras: Para[
 const preheader = (c: TemplateConfig) => `Your bloop code is inside. Enter it only at ${host(c)}.`;
 const ignoreLine = "Didn't ask for it? You can ignore this email. Nobody can sign in without the code.";
 
-// TRANSITIONAL(a-4): the code request sends it.
 /** 1 and 2: a sign-in or invite code. Line 1 is the preheader, line 2 the code unspaced, for mail apps' code detection. */
 export const signinCode = (v: { code: string }, c: TemplateConfig): Email =>
   render(c, "Your bloop Sign-In Code", [
@@ -88,7 +87,7 @@ export const signinCode = (v: { code: string }, c: TemplateConfig): Email =>
     ignoreLine,
   ]);
 
-// TRANSITIONAL(a-4): the reauth code request sends it.
+// TRANSITIONAL(a-7): the reauth code request sends it.
 export const reauthCode = (v: { code: string }, c: TemplateConfig): Email =>
   render(c, "Your bloop Confirmation Code", [
     preheader(c),
@@ -124,7 +123,7 @@ export const emailBack = (_v: Record<string, never>, c: TemplateConfig): Email =
     `Your bloop account signs in with this address again, and every device was signed out. Sign in at ${host(c)}/signin.`,
   ]);
 
-// TRANSITIONAL(a-4): invite create and resend send it.
+// TRANSITIONAL(a-8): invite create and resend send it.
 export const invite = (v: { email: string; token: string; expiresAt: number }, c: TemplateConfig): Email =>
   render(c, "You're Invited to bloop", [
     `Early access to bloop for ${oneLine(v.email)}.`,

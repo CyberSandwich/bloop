@@ -1,6 +1,14 @@
 import { describe, expect, it } from "vitest";
-import { deviceEpoch } from "../../src/worker/auth/codes.ts";
-import { type AnyRoute, addSession, callRoute, GRAPH, memberWorld, seedMember, sid } from "./member-fixture.ts";
+import {
+  type AnyRoute,
+  addSession,
+  callRoute,
+  deviceEpoch,
+  GRAPH,
+  memberWorld,
+  seedMember,
+  sid,
+} from "./member-fixture.ts";
 
 async function watched() {
   const calls: unknown[][] = [];

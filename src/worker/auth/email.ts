@@ -3,7 +3,7 @@
 import { z } from "zod";
 import { type AccountConfig, accountVars } from "../config/account.ts";
 import { coreVars, isLocalOrigin } from "../config/core.ts";
-import { readSettings } from "../settings.ts";
+import { readSettings, type Settings } from "../settings.ts";
 import { deliveryClaims, logNotify, type Notify } from "../spend/breaker.ts";
 import type { Spend } from "../spend/client.ts";
 import { effectiveAll } from "../spend/switches.ts";
@@ -94,9 +94,11 @@ async function deliver(account: MailDeps["account"], sender: Sender | undefined,
   }
 }
 
+/** The `email` switch in force: the Worker's var floor and the settings row, whichever is more restrictive. */
+export const emailSwitchOf = (env: object, settings: Settings): EmailSwitch =>
+  effectiveAll(env as Readonly<Record<string, unknown>>, settings).email as EmailSwitch;
+
 /**
- * TRANSITIONAL(a-4): the code and invite routes are the first callers.
- *
  * Queues one email. Resolves to whether it was admitted (a valid address, the switch and spend), never to whether it
  * was delivered, so a caller may await it (an invite's `mailed`) or ignore it (a code request, which must not wait).
  * A refusal sends nothing and is not an error.
@@ -158,8 +160,7 @@ export const cronNotify =
     const parsed = alertVars.safeParse(env);
     if (!parsed.success) return;
     const v = parsed.data;
-    const vars = env as unknown as Readonly<Record<string, unknown>>;
-    const emailSwitch = effectiveAll(vars, await readSettings(env, { fresh: true })).email as EmailSwitch;
+    const emailSwitch = emailSwitchOf(env, await readSettings(env, { fresh: true }));
     const account = {
       emailFrom: v.EMAIL_FROM,
       adminEmails: emailSet(v.ADMIN_EMAILS),

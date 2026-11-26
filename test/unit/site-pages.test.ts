@@ -1041,7 +1041,7 @@ describe("stage 1 wording and pictures", () => {
     const text = visibleText(read("public/security.html"));
     // The claim's ground: the phone's button, and a route that deletes the grant and every session at once.
     expect(read("public/js/core/copy-phone.js")).toMatch(/id: "disconnect", label: "Disconnect OneDrive"/);
-    const route = between(read("src/worker/routes/auth.ts"), /"\/api\/me\/disconnect"/, "),\n  ),");
+    const route = between(read("src/worker/routes/auth.ts"), /"\/api\/me\/disconnect"/, "signedOutCookies(");
     expect(route).toMatch(/vault\.delete\(userId\)/);
     expect(route).toMatch(/sessions\.destroyAll\(userId\)/);
     // One pair of sentences for the same claim on both pages.

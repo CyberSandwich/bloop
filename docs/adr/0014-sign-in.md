@@ -95,6 +95,10 @@ State-creating steps (invite create, accept, code verify, passkey session creati
 - **`DELETE /api/me` spends only the IP limit:** an email member's deletion request needs a fresh proof, which already bounds it per member, so it spends `RL_MEMBER_IP` and no member-keyed limit.
 - **A dead session signs out too:** sign-out with a missing or dead session answers `auth_required` and still clears the session and hint cookies. A read never clears a cookie: `GET /api/me` with a cookie naming no live session answers signed out and sets nothing, so a slow read that lands after a sign-in rotated the cookie cannot clear the new one.
 - **The MAC input is length-prefixed:** each field of the `code_mac` input above is written `len:value` before the `|` join (`auth/codes.ts` `codeMac`), so no two field splits, even ones containing `|`, give the same input.
+- **One purpose per endpoint:** invite codes verify at `POST /api/invite/verify`, sign-in codes at `POST /api/auth/code/verify`.
+- **The code's expiry is in the 202:** the code request and the invite accept answer `{challengeId, expiresAt}` (the accept adds `emailMasked`), the same for every address, so the page runs its own clock.
+- **The device cookie is set only when needed:** a verify sets `__Host-bloop_dev` unless the request already carries a value that verifies for this member at the current epoch, which stays as it is.
+- **The mail is decided after the response:** the code request answers once its row is written; the member, mode and block-list checks that choose whether a code is mailed run in `ctx.waitUntil` with the send, so none of them is on the response path.
 
 ## Rejected
 - **Magic links instead of codes:** mail scanners follow links, which would sign them in or spend the link, and a link signs in whichever device opens it, not the one waiting.

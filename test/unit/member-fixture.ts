@@ -5,6 +5,7 @@ import { type Config, configFor } from "../../src/worker/config.ts";
 import { sha256Hex } from "../../src/worker/ids.ts";
 import { declaredRateLimits, PROD_VARS } from "../env-vars.ts";
 import { type TestDb, testDb } from "./d1-shim.ts";
+import { fakeSpend } from "./spend-helpers.ts";
 
 export const ORIGIN = "http://localhost:8787";
 
@@ -80,13 +81,23 @@ export async function routesOf(module: "account" | "admin", name: string): Promi
 
 const CTX = { waitUntil() {}, passThroughOnException() {} };
 
+/** A ctx whose `waitUntil` work a test can wait for, as the runtime does after the response. */
+export function waitingCtx() {
+  const pending: Promise<unknown>[] = [];
+  return {
+    waitUntil: (p: Promise<unknown>) => void pending.push(p),
+    passThroughOnException() {},
+    flush: () => Promise.all(pending),
+  };
+}
+
 /** Calls the first route matching method and path, as the Worker would, with a same-origin JSON request. */
 export async function callRoute(
   routes: readonly AnyRoute[],
   env: object,
   method: string,
   path: string,
-  options: { cookie?: string; body?: unknown } = {},
+  options: { cookie?: string; body?: unknown; ctx?: object } = {},
 ): Promise<Response> {
   const url = `${ORIGIN}${path}`;
   const found = routes.find((r) => r.methods.includes(method) && r.pattern.test(url));
@@ -99,8 +110,12 @@ export async function callRoute(
     headers["Content-Length"] = String(new TextEncoder().encode(body).length);
   }
   const request = new Request(url, { method, headers, ...(body === undefined ? {} : { body }) });
-  return found.handler(request, env, found.pattern.exec(url) as URLPatternResult, CTX);
+  return found.handler(request, env, found.pattern.exec(url) as URLPatternResult, options.ctx ?? CTX);
 }
+
+/** The member's known-device epoch (migration 0006). */
+export const deviceEpoch = (db: TestDb, userId: string): number =>
+  (db.raw.prepare("SELECT device_epoch AS epoch FROM app_user WHERE id = ?").get(userId) as { epoch: number }).epoch;
 
 export const sid = (value: string) => `__Host-bloop_sid=${value}`;
 
@@ -120,6 +135,29 @@ export async function spied(blocked = false, over: Record<string, unknown> = {})
     ...over,
   });
   return { calls, routes };
+}
+
+export const PEPPER = "C".repeat(43);
+
+/**
+ * The sign-in and invite routes over a member world with CODE_PEPPER set and mail kept in the dev mailbox. Turnstile
+ * passes and records each check's action; spend is `fakeSpend` unless `deps` replaces it, as it may any other dep.
+ */
+export async function authWorld(vars: Record<string, string> = {}, deps: Record<string, unknown> = {}) {
+  const world = memberWorld({ CODE_PEPPER: PEPPER, DEV_MAILBOX: "1", ...vars });
+  const spend = fakeSpend();
+  const actions: string[] = [];
+  const path = "../../src/worker/routes/auth.ts";
+  const { authRoutesWith } = (await import(path)) as { authRoutesWith: (deps: object) => readonly AnyRoute[] };
+  const routes = authRoutesWith({
+    spend: () => spend,
+    turnstile: async (_config: unknown, _token: string, check: { action: string }) => {
+      actions.push(check.action);
+      return { ok: true };
+    },
+    ...deps,
+  });
+  return { ...world, routes, spend, actions };
 }
 
 /** The public id of the session a cookie value names. */

@@ -3,6 +3,9 @@
 import { bumpDeviceEpochIf } from "./codes.ts";
 import type { BatchDb, Db } from "./db.ts";
 
+/** Passkeys a member may hold; a sign-in offers another only below it. */
+export const MAX_PASSKEYS = 10;
+
 /** The epoch bump while the user still has the passkey the removal names. Binds: user, passkey id, user. */
 const BUMP_IF_PASSKEY = bumpDeviceEpochIf("SELECT 1 FROM passkey WHERE id = ? AND user_id = ?");
 
