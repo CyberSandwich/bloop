@@ -787,7 +787,15 @@ describe("site chrome: one nav and one footer on every site page", () => {
     expect(pill).toMatch(/<\/ul>\s*<a class="btn waitlist"[^>]*>Waitlist<\/a>\s*<button class="nav-menu"/);
   });
 
-  it.each(["privacy.html", "security.html"])("%s marks its own nav link as the current page", (page) => {
+  it("the preview nav is Articles, Privacy, Terms and Waitlist on every page; Security is a footer link", () => {
+    const links = (html: string) =>
+      [...between(html, /<nav class="nav-pill glass"/, "</nav>").matchAll(/<a [^>]*>([^<]+)<\/a>/g)].map((m) => m[1]);
+    for (const page of ["index", "privacy", "terms", "security", "articles", "404"])
+      expect(links(read(`public/${page}.html`)), page).toEqual(["Articles", "Privacy", "Terms", "Waitlist"]);
+    expect(between(read("public/index.html"), /<footer/, "</footer>")).toContain('<a href="/security">Security</a>');
+  });
+
+  it.each(["privacy.html", "terms.html"])("%s marks its own nav link as the current page", (page) => {
     const html = read(`public/${page}`);
     const own = `/${page.replace(".html", "")}`;
     expect(between(html, /<nav class="nav-pill glass"/, "</nav>")).toContain(`<a href="${own}" aria-current="page">`);

@@ -192,19 +192,17 @@ for (const vp of VIEWPORTS) {
       expect(logo.top).toBe(pill.top);
     });
 
-    test("the text gap from Terms to Security equals the text gap from Security to Waitlist, within 1 px", async ({
-      page,
-    }) => {
+    test("the text gaps from Articles to Privacy to Terms to Waitlist are one gap, within 1 px", async ({ page }) => {
       test.skip(vp.width < 640, "the links fold into the menu");
       await page.goto("/");
       await page.evaluate(() => document.fonts?.ready);
       // A string, since Range is a DOM type this tsconfig lacks; text edges, not link boxes, are what the eye sees.
-      const [termsToSecurity = 0, securityToWaitlist = 99] = (await page.evaluate(`(() => {
+      const gaps = (await page.evaluate(`(() => {
         const text = (s) => { const r = document.createRange(); r.selectNodeContents(document.querySelector(s)); return r.getBoundingClientRect(); };
-        const t = text('.nav-links a[href="/terms"]'), s = text('.nav-links a[href="/security"]'), w = text(".nav .waitlist");
-        return [s.left - t.right, w.left - s.right];
+        const t = ['.nav-links a[href="/articles"]', '.nav-links a[href="/privacy"]', '.nav-links a[href="/terms"]', ".nav .waitlist"].map(text);
+        return [t[1].left - t[0].right, t[2].left - t[1].right, t[3].left - t[2].right];
       })()`)) as number[];
-      expect(Math.abs(termsToSecurity - securityToWaitlist)).toBeLessThanOrEqual(1);
+      expect(Math.max(...gaps) - Math.min(...gaps)).toBeLessThanOrEqual(1);
     });
 
     test("the nav's Waitlist is visible and inside the viewport, on a phone too", async ({ page }) => {
@@ -262,28 +260,33 @@ for (const vp of VIEWPORTS) {
       await expect(nav.getByRole("link", { name: "bloop" })).toBeInViewport();
     });
 
-    test("the nav reaches Features, Articles, Privacy, Terms and Security", async ({ page }) => {
+    test("the nav is Articles, Privacy, Terms and Waitlist; Features is a section and Security a footer link", async ({
+      page,
+    }) => {
       await page.goto("/");
       const nav = page.getByRole("navigation", { name: "Primary" });
       if (vp.width < 640) {
         await expect(nav.getByRole("link", { name: "Privacy" })).toBeHidden();
         await nav.getByRole("button", { name: "Menu" }).click();
       }
-      for (const name of ["Features", "Articles", "Privacy", "Terms", "Security"])
+      for (const name of ["Articles", "Privacy", "Terms", "Waitlist"])
         await expect(nav.getByRole("link", { name })).toBeVisible();
-      await nav.getByRole("link", { name: "Features" }).click();
+      await expect(nav.getByRole("link")).toHaveCount(4);
+      await expect(nav.getByRole("link", { name: "Features" })).toHaveCount(0);
+      await expect(nav.getByRole("link", { name: "Security" })).toHaveCount(0);
+      await expect(page.getByRole("contentinfo").getByRole("link", { name: "Security" })).toHaveAttribute(
+        "href",
+        "/security",
+      );
+      await page.locator("#features h2").scrollIntoViewIfNeeded();
       await expect(page.locator("#features h2")).toBeInViewport();
-      await expect(nav.getByRole("link", { name: "Security" })).toBeVisible({ visible: vp.width >= 640 });
     });
 
-    test("a nav jump leaves no hash behind, so a reload opens at the top", async ({ page }) => {
+    test("a same-page jump leaves no hash behind, so a reload opens at the top", async ({ page }) => {
       await page.goto("/");
-      const nav = page.getByRole("navigation", { name: "Primary" });
-      if (vp.width < 640) await nav.getByRole("button", { name: "Menu" }).click();
-      await nav.getByRole("link", { name: "Features" }).click();
-      await expect(page.locator("#features h2")).toBeInViewport();
+      await page.keyboard.press("Tab");
+      await page.getByRole("link", { name: "Skip to Content" }).press("Enter");
       await expect.poll(() => page.evaluate("location.hash")).toBe("");
-      expect(Number(await page.evaluate("scrollY"))).toBeGreaterThan(0);
       await page.reload();
       expect(Number(await page.evaluate("scrollY"))).toBe(0);
     });
@@ -880,7 +883,7 @@ test.describe("no popover (Safari 15, 16)", () => {
     await page.goto("/");
     const nav = page.getByRole("navigation", { name: "Primary" });
     await expect(nav.getByRole("button", { name: "Menu" })).toBeHidden();
-    for (const name of ["Features", "Articles", "Privacy", "Waitlist"])
+    for (const name of ["Articles", "Privacy", "Terms", "Waitlist"])
       await expect(nav.getByRole("link", { name })).toBeVisible();
     // The row sits under the pills, inside the view, and scrolls itself rather than the page.
     const [pillBottom, rowTop, rowLeft, rowRight, scrollWidth] = (await page.evaluate(`(() => {
@@ -896,8 +899,7 @@ test.describe("no popover (Safari 15, 16)", () => {
     // Solid glass on the row and the links pill, with no backdrop filter, scrolled or not.
     const fills = `["nav-links", "nav-pill"].map((c) => getComputedStyle(document.querySelector("." + c)).backgroundColor)`;
     expect(await page.evaluate(fills)).toEqual(["rgba(255, 255, 255, 0.92)", "rgba(255, 255, 255, 0.92)"]);
-    await nav.getByRole("link", { name: "Features" }).click();
-    await expect(page.locator("#features h2")).toBeInViewport();
+    await page.locator("#features h2").scrollIntoViewIfNeeded();
     await expect(page.locator(".nav")).toHaveClass(/is-scrolled/);
     expect(await page.evaluate(fills)).toEqual(["rgba(255, 255, 255, 0.92)", "rgba(255, 255, 255, 0.92)"]);
     expect(errors).toEqual([]);
@@ -907,7 +909,7 @@ test.describe("no popover (Safari 15, 16)", () => {
 test.describe("site nav", () => {
   test.use({ viewport: { width: 1440, height: 900 } });
 
-  for (const path of ["/privacy", "/security"]) {
+  for (const path of ["/privacy", "/terms"]) {
     test(`${path} shows its own link as the selected pill`, async ({ page }) => {
       await page.goto(path);
       const current = page.getByRole("navigation", { name: "Primary" }).locator('a[aria-current="page"]');
