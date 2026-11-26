@@ -59,8 +59,8 @@ for (const vp of VIEWPORTS) {
     test("the hero pair sits side by side or stacked, never overlapping, and inside the view", async ({ page }) => {
       await page.goto("/");
       await page.evaluate("document.fonts.ready");
-      const a = (await page.evaluate(BOX(".hero-actions .primary"))) as Box;
-      const b = (await page.evaluate(BOX(".hero-actions .secondary"))) as Box;
+      const a = (await page.evaluate(BOX(".hero .hero-actions .primary"))) as Box;
+      const b = (await page.evaluate(BOX(".hero .hero-actions .secondary"))) as Box;
       const side = Math.round(a.top) === Math.round(b.top);
       if (side) expect(Math.round(a.right)).toBeLessThanOrEqual(Math.round(b.left));
       else expect(Math.round(a.bottom)).toBeLessThanOrEqual(Math.round(b.top));
@@ -73,11 +73,14 @@ for (const vp of VIEWPORTS) {
     test("the hint jumps to the waitlist block, whose heading lands below the nav", async ({ page }) => {
       await page.goto("/");
       await page.locator(".hint").click();
-      await expect(page).toHaveURL(/#waitlist$/);
+      // site.js drops the hash after a jump, so the scroll is the proof; it may still be moving when the click returns.
       const nav = (await page.evaluate(BOX(".nav"))) as Box;
-      const h2 = (await page.evaluate(BOX("#waitlist-h"))) as Box;
-      expect(h2.top).toBeGreaterThanOrEqual(nav.bottom);
-      expect(h2.bottom).toBeLessThanOrEqual(vp.height);
+      await expect
+        .poll(async () => {
+          const h2 = (await page.evaluate(BOX("#waitlist-h"))) as Box;
+          return h2.top >= nav.bottom && h2.bottom <= vp.height;
+        })
+        .toBe(true);
     });
 
     test("the pill keeps the same two gaps with and without the Library hint", async ({ page, context }) => {
@@ -106,11 +109,11 @@ test.describe("open landing actions", () => {
 
   test("Try the Demo opens the demo and Present Live goes to /s", async ({ page }) => {
     await page.goto("/");
-    await expect(page.locator(".hero-actions .primary")).toHaveAttribute("href", "/demo");
-    await page.locator(".hero-actions .primary").click();
+    await expect(page.locator(".hero .hero-actions .primary")).toHaveAttribute("href", "/demo");
+    await page.locator(".hero .hero-actions .primary").click();
     await expect(page).toHaveURL(/\/s\?mode=demo$/);
     await page.goto("/");
-    await page.locator(".hero-actions .secondary").click();
+    await page.locator(".hero .hero-actions .secondary").click();
     await expect(page).toHaveURL(/\/s$/);
   });
 
@@ -157,7 +160,7 @@ test.describe("open forced colors", () => {
     await page.goto("/");
     const borders = (await page.evaluate(`(() => {
       const of = (s) => { const c = getComputedStyle(document.querySelector(s)); return c.borderTopWidth + " " + c.borderTopStyle; };
-      return [".hero-actions .secondary", ".nav .account"].map(of);
+      return [".hero .hero-actions .secondary", ".nav .account"].map(of);
     })()`)) as string[];
     expect(borders).toEqual(["1px solid", "1px solid"]);
   });
