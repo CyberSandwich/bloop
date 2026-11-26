@@ -170,6 +170,26 @@ describe("pill sets Vary: Cookie on every open HTML response and never on previe
     expect(new URL(seen.at(-1)?.url ?? "").pathname).toBe("/privacy");
   });
 
+  it.each(["open", "preview"] as const)(
+    "%s: /_launch.json is never served, only read through the asset binding",
+    async (mode) => {
+      const { env, seen } = world(mode);
+      for (const path of ["/_launch.json", "/_Launch.json"]) {
+        const res = await get(env, { Accept: "text/html" }, path);
+        expect(res.status, path).toBe(404);
+      }
+      expect(seen.some((r) => new URL(r.url).pathname.toLowerCase() === "/_launch.json")).toBe(false);
+    },
+  );
+
+  it("a ranged request for the open 404 still gets the open 404 page", async () => {
+    const { env, seen } = world("open");
+    const res = await get(env, { Accept: "text/html", Range: "bytes=0-9", "If-Range": '"x"' }, "/nope");
+    expect(res.status).toBe(404);
+    expect(await res.text()).toContain("404");
+    expect(seen.at(-1)?.headers.get("Range")).toBeNull();
+  });
+
   it("the .html forms of an open-only page redirect in open, like every other page, and are the asset layer's in preview", async () => {
     const open = world("open").env;
     for (const path of ["/articles/features.html", "/articles/features/index.html"]) {

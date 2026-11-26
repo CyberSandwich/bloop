@@ -696,9 +696,10 @@ const OVERRIDE_REGION = /^<!-- mode:([\w-]+) -->\n([\s\S]*?)^<!-- \/mode:\1 -->$
  * @param {string} where for errors
  */
 export function openVariant(html, override, where) {
-  const given = new Map(
-    [...(override ?? "").matchAll(OVERRIDE_REGION)].map((m) => [m[1] ?? "", (m[2] ?? "").trimEnd()]),
-  );
+  const found = [...(override ?? "").matchAll(OVERRIDE_REGION)];
+  const repeated = found.find((m, i) => found.findIndex((n) => n[1] === m[1]) !== i);
+  if (repeated) throw new Error(`${where}: the open override names mode:${repeated[1]} twice`);
+  const given = new Map(found.map((m) => [m[1] ?? "", (m[2] ?? "").trimEnd()]));
   const used = new Set();
   const out = html.replace(MODE_REGION, (_m, indent, name, trail) => {
     const body = given.get(name);
@@ -773,13 +774,18 @@ export const buildEvery = () => new Map([...buildAll("preview"), ...buildAll("op
 /** The date the open legal text carries until its final review stamps the real one. */
 export const PLACEHOLDER_DATE = "2026-11-25";
 
-/** Open documents still dated with the placeholder, as `file: key`; the launch gate (`--launch`) fails on any. */
+/**
+ * Open drafts (`content/open/**`) still dated with the placeholder, as `file: key`; the launch gate (`--launch`)
+ * fails on any. A base document keeps its own real date, even when it falls on the same day.
+ */
 export function placeholderDates() {
-  return docsFor("open").flatMap((d) =>
-    ["published", "effective", "updated"]
-      .filter((key) => d.meta[key] === PLACEHOLDER_DATE)
-      .map((key) => `${d.file}: ${key}`),
-  );
+  return docsFor("open")
+    .filter((d) => d.file.startsWith("content/open/"))
+    .flatMap((d) =>
+      ["published", "effective", "updated"]
+        .filter((key) => d.meta[key] === PLACEHOLDER_DATE)
+        .map((key) => `${d.file}: ${key}`),
+    );
 }
 
 /** `/_launch.json`: what the admin switch reads to refuse `open` while an open document is on the placeholder date. */

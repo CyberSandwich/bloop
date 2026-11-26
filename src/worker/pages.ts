@@ -42,7 +42,7 @@ export function normalizePath(pathname: string): string | null {
     if (part === "..") segments.pop();
     else segments.push(part);
   }
-  if (segments[0]?.toLowerCase() === "open") return null;
+  if (/^open(\.html)?$/i.test(segments[0] ?? "")) return null;
   return `/${segments.join("/")}`;
 }
 
@@ -66,6 +66,8 @@ async function missing(env: PageEnv, request: Request, plain: Response): Promise
   const headers = new Headers(request.headers);
   headers.delete("If-None-Match");
   headers.delete("If-Modified-Since");
+  headers.delete("Range");
+  headers.delete("If-Range");
   const page = await fetchAs(env, request, "/open/404", headers);
   return page.status === 200
     ? withAccountPill(request, new Response(page.body, { status: 404, headers: page.headers }))
@@ -151,7 +153,10 @@ export async function servePage(
   // The file forms of a gated page (`/library.html`, `/library/index.html`) and its other letter cases are the page.
   const key = path.replace(/(\/index)?\.html$/i, "").toLowerCase() || "/";
   // The 404 page is no page of its own: asked for by name it answers as any unknown path does, in either mode.
-  if (key === "/404") return missing(env, request, await notFound(env, request));
+  // `/_launch.json` is the build's note to the admin switch, read through the asset binding and never served: it names unreleased pages.
+  if (key === "/404" || path.toLowerCase() === "/_launch.json") {
+    return missing(env, request, await notFound(env, request));
+  }
   // An open-only page has no file of its own in `public/`, so its `.html` forms redirect here, as the asset layer does for the rest.
   const bare = path.replace(/(\/index)?\.html$/, "");
   if (bare !== path && variants.some((v) => v.kind === "open-only" && v.path === bare)) {
