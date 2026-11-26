@@ -26,7 +26,7 @@ const READY = "../../src/worker/uploads/convert-ready.ts";
 const { convertWhenReady } = (await import(READY)) as {
   convertWhenReady: (
     env: unknown,
-    ctx?: { waitUntil: (p: Promise<unknown>) => void },
+    ctx: { waitUntil: (p: Promise<unknown>) => void } | null,
   ) => (file: { id: string; userId: string; ext: string }) => Promise<void>;
 };
 
@@ -57,7 +57,10 @@ describe("a library file that turns ready starts its conversion", () => {
   it("runs it inline where there is no request to outlive, as the sweep does", async () => {
     started.calls.length = 0;
     let finished = false;
-    const run = convertWhenReady({})(file).then(() => {
+    const run = convertWhenReady(
+      {},
+      null,
+    )(file).then(() => {
       finished = true;
     });
     await Promise.resolve();
@@ -76,7 +79,7 @@ describe("a library file that turns ready starts its conversion", () => {
       const waiting: Promise<unknown>[] = [];
       await expect(convertWhenReady({}, { waitUntil: (p) => void waiting.push(p) })(file)).resolves.toBeUndefined();
       await expect(Promise.all(waiting)).resolves.toBeDefined();
-      await expect(convertWhenReady({})(file)).resolves.toBeUndefined();
+      await expect(convertWhenReady({}, null)(file)).resolves.toBeUndefined();
       expect(started.calls).toEqual([]);
       expect(logged).toHaveBeenCalledTimes(2);
     } finally {

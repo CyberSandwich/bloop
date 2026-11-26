@@ -142,7 +142,7 @@ const list = withConfig(async (request, env, config) => {
   });
 });
 
-const create = withConfig(async (request, env, config) => {
+const create = withConfig(async (request, env, config, ctx) => {
   const refused = guard(request, config, "json");
   if (refused) return refused;
   const caller = await memberOf(request, env, config);
@@ -150,7 +150,7 @@ const create = withConfig(async (request, env, config) => {
   const { userId } = caller;
   const tooMany = await limited(env, "RL_LIBRARY", request, config, userId);
   if (tooMany) return tooMany;
-  const { d, uploads } = await uploadContext(env, config);
+  const { d, uploads } = await uploadContext(env, config, ctx);
   if (uploads !== "on") return fail("service_busy");
   const body = await readJson(request, createBody);
   if (!body.ok) return body.response;

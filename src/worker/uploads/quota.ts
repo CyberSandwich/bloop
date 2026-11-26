@@ -6,6 +6,7 @@
 // Invariant: for each user, `reserved_bytes` is the sum of their open library uploads' bytes and `used_bytes` the sum of
 // their `checking` and `ready` files', and `used + reserved <= quota` after every committed batch.
 import type { BatchDb, Db } from "../auth/db.ts";
+import { LIBRARY_FROM, LIBRARY_SERVABLE } from "../convert/keys.ts";
 import {
   CLAIM_MS,
   claimFree,
@@ -229,6 +230,30 @@ export async function staleChecking(db: Db, now: number, limit: number): Promise
     )
     .bind(now, limit)
     .all<CheckingFile>();
+  return results;
+}
+
+export interface ReadyFile {
+  id: string;
+  userId: string;
+  ext: string;
+}
+
+/**
+ * Servable `ready` files whose current version has no conversion row (`derived`): a file made before conversion was on,
+ * or one whose start never landed. A start leaves a row, so a file leaves this list once it is tried, except where it
+ * is busy. Oldest first.
+ */
+export async function unconverted(db: Db, limit: number): Promise<ReadyFile[]> {
+  const { results } = await db
+    .prepare(
+      `SELECT f.id, f.user_id AS userId, f.ext FROM ${LIBRARY_FROM}
+       WHERE f.status = 'ready' AND ${LIBRARY_SERVABLE}
+         AND NOT EXISTS (SELECT 1 FROM derived d WHERE d.file_id = f.id AND d.version = f.version)
+       ORDER BY f.created_at, f.id LIMIT ?1`,
+    )
+    .bind(limit)
+    .all<ReadyFile>();
   return results;
 }
 

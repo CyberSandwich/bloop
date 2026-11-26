@@ -58,6 +58,7 @@ describe("UP-04 abort: the hourly sweep", () => {
       deleted: 0,
       rechecked: 0,
       refused: 0,
+      converted: 0,
       more: false,
     });
     expect(r.counters().reserved).toBe(DECK.length);

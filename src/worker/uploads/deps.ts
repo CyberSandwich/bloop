@@ -16,12 +16,13 @@ export const bucketFor = (env: Pick<Env, "LIBRARY" | "GUEST_FILES">, which: "lib
 
 /**
  * The pipeline's deps and the `uploads` switch in force, from one settings read: on, readonly (no new upload, no new
- * URL) or off (nothing but a cancel and a read). `ctx` is the request's, where there is one.
+ * URL) or off (nothing but a cancel and a read). `ctx` is the request's; null only where no request waits (the sweep),
+ * so a route cannot forget it and hold its answer for a conversion start.
  */
 export async function uploadContext(
   env: Env,
   config: Config,
-  ctx?: Pick<ExecutionContext, "waitUntil">,
+  ctx: Pick<ExecutionContext, "waitUntil"> | null,
 ): Promise<{ d: Deps; uploads: string }> {
   const settings = await readSettings(env);
   return {
@@ -37,4 +38,5 @@ export async function uploadContext(
   };
 }
 
-export const uploadDepsFor = async (env: Env, config: Config): Promise<Deps> => (await uploadContext(env, config)).d;
+export const uploadDepsFor = async (env: Env, config: Config): Promise<Deps> =>
+  (await uploadContext(env, config, null)).d;

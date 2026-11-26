@@ -81,6 +81,17 @@ const deck = (name: string, size = 64) => ({ name, bytes: validVideo("isom", siz
 const createOf = (cookie: string, name: string, bytes: Uint8Array, seed: string, headers = {}) =>
   call<Created>(cookie, "POST", "/api/uploads", { name, bytes: bytes.length, fingerprint: fingerprint(seed) }, headers);
 
+/** The conversion rows of a file, waiting up to 5 s for a start that runs after the response. */
+async function derivedRows(fileId: string) {
+  const select = `SELECT file_id AS fileId, version, owner_kind AS ownerKind FROM derived WHERE file_id = '${fileId}'`;
+  let rows = wrangler.d1(select);
+  for (let tries = 0; tries < 50 && rows.length === 0; tries++) {
+    await new Promise((resolve) => setTimeout(resolve, 100));
+    rows = wrangler.d1(select);
+  }
+  return rows;
+}
+
 const counters = (id: string) =>
   wrangler.d1(`SELECT used_bytes AS used, reserved_bytes AS reserved FROM app_user WHERE id = '${id}'`)[0];
 
@@ -172,15 +183,24 @@ describe("the small file path", () => {
     expect((await putPart(cookie, made.body.uploadId, 1, bytes)).status).toBe(200);
     const done = await call<{ state: string }>(cookie, "POST", `/api/uploads/${made.body.uploadId}/complete`, {});
     expect(done.body.state).toBe("ready");
-    const select = `SELECT owner_kind AS ownerKind, status FROM derived WHERE file_id = '${made.body.fileId}' AND version = 1`;
-    let rows = wrangler.d1(select);
-    // The start runs in waitUntil, so the row may land just after the answer.
-    for (let tries = 0; tries < 50 && rows.length === 0; tries++) {
-      await new Promise((resolve) => setTimeout(resolve, 100));
-      rows = wrangler.d1(select);
-    }
+    // The start runs in waitUntil, so the row may land just after the answer. Its owner comes from the file's row; the
+    // rest of the request (version 1, profile full, scope, target) is asserted in uploads-convert-start.test.ts.
+    const rows = await derivedRows(made.body.fileId);
     expect(rows).toHaveLength(1);
-    expect(rows[0]).toMatchObject({ ownerKind: "library" });
+    expect(rows[0]).toMatchObject({ fileId: made.body.fileId, version: 1, ownerKind: "library" });
+  });
+
+  it("the hourly sweep starts the conversion of a ready file that has none (its deps carry the hook)", async () => {
+    member("conv2");
+    const id = "backfill-file";
+    wrangler.d1(
+      `INSERT INTO library_file (id, user_id, name, ext, bytes, version, r2_key, status, created_at, updated_at)
+       VALUES ('${id}', 'conv2', 'old.mp4', 'mp4', 10, 1, 'u/conv2/${id}/v1/orig', 'ready', 1, 1)`,
+    );
+    expect(wrangler.d1(`SELECT 1 FROM derived WHERE file_id = '${id}'`)).toEqual([]);
+    const res = await fetch(`${wrangler.url}/cdn-cgi/handler/scheduled?cron=${encodeURIComponent("0 * * * *")}`);
+    expect(res.status).toBe(200);
+    expect(await derivedRows(id)).toMatchObject([{ fileId: id, version: 1, ownerKind: "library" }]);
   });
 
   it("names count code points: 200 stay whole, 201 are cut to 200 with the extension, never refused", async () => {
