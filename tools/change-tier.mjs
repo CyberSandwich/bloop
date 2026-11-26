@@ -1,9 +1,10 @@
-// Classifies the staged change into a tier and, with --msg-file, enforces two hard blocks.
+// Classifies the staged change into a tier and, with --msg-file, enforces three hard blocks.
 // Run: node tools/change-tier.mjs --staged [--msg-file PATH]. The tiers and gates are defined in CLAUDE.md "change loop".
 // The decisions are pure functions over data so test/unit/change-tier.test.ts needs no git.
 import { execFileSync } from "node:child_process";
 import { readFileSync, realpathSync } from "node:fs";
 import { fileURLToPath } from "node:url";
+import { attributed } from "./attribution.mjs";
 
 /** @typedef {{path: string, status: "A" | "M" | "D" | "T", added: number, deleted: number}} ChangedFile */
 /** @typedef {Record<string, string>} Deps */
@@ -71,7 +72,7 @@ export function classify(files, deps = {}) {
 }
 
 /**
- * The two hard blocks, applied to a commit message.
+ * The three hard blocks, applied to a commit message.
  * @param {ChangedFile[]} files
  * @param {{before?: Deps | undefined, after?: Deps | undefined}} deps
  * @param {string} message
@@ -90,6 +91,11 @@ export function blocks(files, deps, message) {
   if (touchesSrc && !touchesDocsOrTest && !NO_DOCS_TRAILER.test(stripComments(message))) {
     out.push(
       "src/ changed but no docs/ or test/ file is staged: stage them, or end the message with the line `Docs: none needed`.",
+    );
+  }
+  if (attributed(stripComments(message))) {
+    out.push(
+      "the message carries AI attribution (Co-Authored-By, Claude-Session or the like): remove it; commits carry none.",
     );
   }
   return out;

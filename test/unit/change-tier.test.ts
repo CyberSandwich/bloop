@@ -165,6 +165,12 @@ describe("the CLI against a real repository", { timeout: SPAWN_TIMEOUT }, () => 
 
       writeFileSync(msg, "change\r\n\r\nDocs: none needed\r\n");
       expect(run(dir, TOOL, "--msg-file", msg).status).toBe(0);
+
+      // The commit-msg hook refuses attribution before the commit exists, so a land never rewrites history.
+      writeFileSync(msg, "change\n\nDocs: none needed\n\nClaude-Session: https://example.test/s\n");
+      const attributed = run(dir, TOOL, "--msg-file", msg);
+      expect(attributed.status).toBe(1);
+      expect(attributed.stderr).toContain("AI attribution");
     } finally {
       rmSync(dir, { recursive: true, force: true });
     }
@@ -209,7 +215,7 @@ describe("blocks", () => {
   it("the trailer bypasses the src/ block, only as a whole line outside comments", () => {
     const src = [file("src/worker/http.ts")];
     expect(blocks(src, SAME, "tweak\n\nDocs: none needed\n")).toEqual([]);
-    expect(blocks(src, SAME, "tweak\n\nDocs: none needed\nClaude-Session: x\n")).toEqual([]);
+    expect(blocks(src, SAME, "tweak\n\nDocs: none needed\nRefs: x\n")).toEqual([]);
     expect(blocks(src, SAME, "tweak, Docs: none needed")).toHaveLength(1);
     expect(blocks(src, SAME, "tweak\n# Docs: none needed\n")).toHaveLength(1);
   });
@@ -219,7 +225,24 @@ describe("blocks", () => {
     expect(out).toHaveLength(1);
   });
 
-  it("reports both blocks at once", () => {
+  it("reports every block at once", () => {
     expect(blocks([file("package.json", 2), file("src/worker/http.ts")], ADDED_DEP, "x")).toHaveLength(2);
+    expect(blocks([file("src/worker/http.ts")], ADDED_DEP, "x\n\nCo-Authored-By: A <a@example.test>")).toHaveLength(3);
+  });
+
+  it("blocks AI attribution in any change, outside git's comment lines only", () => {
+    const docs = [file("docs/architecture.md")];
+    for (const line of [
+      "Co-Authored-By: A <a@example.test>",
+      "Claude-Session: https://example.test/s",
+      "Generated with [Claude Code](https://example.test)",
+    ]) {
+      const out = blocks(docs, SAME, `tweak\n\n${line}\n`);
+      expect(out, line).toHaveLength(1);
+      expect(out[0]).toContain("AI attribution");
+    }
+    expect(blocks(docs, SAME, "tweak\r\n\r\nClaude-Session: x\r\n")).toHaveLength(1);
+    expect(blocks(docs, SAME, "tweak\n# Co-Authored-By: a template comment\n")).toEqual([]);
+    expect(blocks(docs, SAME, "Update the CLAUDE.md pointer")).toEqual([]);
   });
 });
