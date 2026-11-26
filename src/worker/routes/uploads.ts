@@ -4,7 +4,6 @@
 // unknown id is the same 404), then one settings read for the switch and the deps. The one raw body is a proxy part,
 // whose declared length must equal the part's before a byte is read.
 import { z } from "zod";
-import { cleanName } from "../../../public/js/shared/names.js";
 import { readCookie, SESSION_COOKIE } from "../auth/cookies.ts";
 import { dbOf } from "../auth/db.ts";
 import { phoneUser, servicesFor } from "../auth/services.ts";
@@ -15,6 +14,7 @@ import { bodyDigest, type IdemStore, idempotency } from "../idem.ts";
 import type { Route } from "../router.ts";
 import { route } from "../router.ts";
 import { uploadContext } from "../uploads/deps.ts";
+import { cleanName } from "../uploads/file-name.ts";
 import * as pipeline from "../uploads/pipeline.ts";
 import * as store from "../uploads/store.ts";
 import { limited, withConfig } from "./common.ts";

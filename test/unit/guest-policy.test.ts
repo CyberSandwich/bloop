@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
-import { cleanName, isValidName, NAME_MAX } from "../../public/js/shared/names.js";
 import { configFor } from "../../src/worker/config.ts";
 import { effectivePolicy } from "../../src/worker/seams/guest-drop/index.ts";
+import { cleanName, isValidName, NAME_MAX } from "../../src/worker/uploads/file-name.ts";
 import { RATE_LIMIT_STUBS } from "../env-vars.ts";
 
 describe("DROP-06 policy: which rooms take a drop", () => {
