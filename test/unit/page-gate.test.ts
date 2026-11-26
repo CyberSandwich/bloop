@@ -263,7 +263,7 @@ describe("MODE-01 pages: variants", () => {
         throw new Error("read");
       },
     };
-    expect((await get(env, "/privacy")).status).toBe(200);
+    expect((await get(env, "/s")).status).toBe(200);
   });
 });
 
