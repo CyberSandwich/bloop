@@ -5,6 +5,7 @@ import {
   type ChunkSource,
   MAX_OBJECT_STREAMS,
   PDF_WINDOW_BYTES,
+  SCAN_BUFFER_BYTES,
   scanPdf,
   scanPdfChunks,
 } from "../../src/worker/seams/guest-drop/pdf-scan.ts";
@@ -264,6 +265,24 @@ describe("DROP-13 pdf-active: hostile input", () => {
     }
   });
 
+  it("passes a bare stream word with no reference /First pending (a title, a stray keyword)", async () => {
+    const bare = pdf("1 0 obj<</Title (a stream of slides)>>endobj\n2 0 obj<</X 1>>stream endobj");
+    expect(await scanPdf(bare)).toEqual({ ok: true });
+  });
+
+  it("refuses a reference /First followed in its object by a stream word with no EOL (endobj released it)", async () => {
+    const spaced = pdf("1 0 obj<</First 2 0 R/Length 1>>stream x\nendstream\nendobj");
+    expect(await scanPdf(spaced)).toMatchObject({ ok: false, found: ["unscannable"] });
+    // Read from right after the word, the bytes inflate as a clean object stream: only the word itself refuses it.
+    const data = deflateSync(enc.encode("<<>>"));
+    const glued = cat([
+      enc.encode(`%PDF-1.5\n5 0 obj<</Type/ObjStm/N 1/First 6 0 R/Filter/FlateDecode/Length ${data.length}>>stream`),
+      data,
+      enc.encode("\nendstream\nendobj\n6 0 obj 4 endobj\n%%EOF\n"),
+    ]);
+    expect(await scanPdf(glued)).toMatchObject({ ok: false, found: ["unscannable"] });
+  });
+
   it("DROP-13 pdf-active: refuses a direct /First the scan cannot tie to an object stream it read (far or split dictionary)", async () => {
     const far = stream(`/N 1/First 4/Filter/FlateDecode${" ".repeat(5000)}/Length 9`, body);
     expect(await scanPdf(far)).toMatchObject({ ok: false, found: ["unscannable"] });
@@ -353,16 +372,30 @@ describe("DROP-13 pdf-active: hostile input", () => {
 });
 
 describe("DROP-13 pdf-active: bounded memory", () => {
-  it("DROP-13 pdf-active: the chunked buffer stays under two windows over a chain of 8 MiB object streams (unbounded growth)", async () => {
-    const link = objStmOf(storedPadding(PDF_WINDOW_BYTES - 64));
-    const file = cat([enc.encode("%PDF-1.5\n"), ...Array.from({ length: 5 }, () => link), enc.encode("%%EOF\n")]);
+  const link = objStmOf(storedPadding(PDF_WINDOW_BYTES - 64));
+  const chain = cat([enc.encode("%PDF-1.5\n"), ...Array.from({ length: 5 }, () => link), enc.encode("%%EOF\n")]);
+  const peakOf = async (source: ChunkSource) => {
     let peak = 0;
-    const verdict = await scanPdfChunks(pieces(file, [PDF_WINDOW_BYTES]), (bytes) => {
+    const verdict = await scanPdfChunks(source, (bytes) => {
       peak = Math.max(peak, bytes);
     });
+    return { verdict, peak };
+  };
+
+  it("DROP-13 pdf-active: the chunked buffer stays within SCAN_BUFFER_BYTES over a chain of 8 MiB object streams (unbounded growth)", async () => {
+    const { verdict, peak } = await peakOf(pieces(chain, [PDF_WINDOW_BYTES]));
     expect(verdict).toEqual({ ok: true });
     expect(peak).toBeGreaterThan(PDF_WINDOW_BYTES);
-    expect(peak).toBeLessThanOrEqual(2 * PDF_WINDOW_BYTES + 3 * 4096);
+    expect(peak).toBeLessThanOrEqual(SCAN_BUFFER_BYTES);
+    expect(SCAN_BUFFER_BYTES).toBe(2 * PDF_WINDOW_BYTES + 3 * 4096);
+  }, 60_000);
+
+  it("DROP-13 pdf-active: takes a chunk larger than a window a window at a time (the join copied the whole chunk)", async () => {
+    for (const size of [chain.length, 3 * PDF_WINDOW_BYTES + 5]) {
+      const { verdict, peak } = await peakOf(pieces(chain, [size]));
+      expect(verdict, `chunks of ${size}`).toEqual({ ok: true });
+      expect(peak, `chunks of ${size}`).toBeLessThanOrEqual(SCAN_BUFFER_BYTES);
+    }
   }, 60_000);
 });
 

@@ -16,10 +16,14 @@ export async function inflate(
   limit: number,
   format: "deflate" | "deflate-raw",
 ): Promise<Uint8Array | null> {
-  const reader = new Blob([data as Uint8Array<ArrayBuffer>])
-    .stream()
-    .pipeThrough(new DecompressionStream(format))
-    .getReader();
+  // A stream over `data` itself and one copy of the output: a Blob on either side would copy the bytes again.
+  const source = new ReadableStream<Uint8Array<ArrayBuffer>>({
+    start(controller) {
+      controller.enqueue(data as Uint8Array<ArrayBuffer>);
+      controller.close();
+    },
+  });
+  const reader = source.pipeThrough(new DecompressionStream(format)).getReader();
   const chunks: Uint8Array[] = [];
   let size = 0;
   try {
@@ -36,5 +40,11 @@ export async function inflate(
   } catch {
     return null;
   }
-  return new Uint8Array(await new Blob(chunks as Uint8Array<ArrayBuffer>[]).arrayBuffer());
+  const out = new Uint8Array(size);
+  let at = 0;
+  for (const chunk of chunks) {
+    out.set(chunk, at);
+    at += chunk.length;
+  }
+  return out;
 }

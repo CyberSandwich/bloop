@@ -37,9 +37,12 @@ export interface PlannedReader extends RangeReader {
   readsLeft(): number;
 }
 
-/** A reader whose operations stay within the plan: one whole-object read, or at most `maxReads` range reads. */
-export function planReads(r: RangeReader): PlannedReader {
-  if (r.size <= READ_PLAN.smallObjectBytes) {
+/**
+ * A reader whose operations stay within the plan: one whole-object read up to `wholeBytes` (at most
+ * `smallObjectBytes`), or at most `maxReads` range reads.
+ */
+export function planReads(r: RangeReader, wholeBytes: number = READ_PLAN.smallObjectBytes): PlannedReader {
+  if (r.size <= Math.min(wholeBytes, READ_PLAN.smallObjectBytes)) {
     let whole: Promise<Uint8Array> | undefined;
     return {
       size: r.size,
