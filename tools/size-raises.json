@@ -8,5 +8,10 @@
     "entry": "demo vertical photo",
     "max": "229 kB",
     "decision": "owner-approved exception for the demo files, docs/design.md section 11"
+  },
+  {
+    "entry": "phone JS",
+    "max": "16.715 kB",
+    "decision": "owner-approved 15 B raise for the /a layout fixes (no visible title, Ends in beside Revoke)"
   }
 ]
