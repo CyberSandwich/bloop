@@ -208,9 +208,10 @@ describe("OAuth and account routes while Entra is not configured", () => {
     expect(res.headers.get("Allow")).toBe("GET");
   });
 
-  it("/api/me says the demo account is signed in, and sign-out and disconnect are unavailable", async () => {
+  it("/api/me says the demo account is signed in, sign-out needs a session and disconnect is unavailable", async () => {
     expect((await api.get("/api/me")).body).toEqual({ source: "mock", signedIn: true, email: null });
-    expect((await api.post("/api/me/signout", {})).body).toEqual(problem("source_unavailable"));
+    // Sign-out serves email members too, so it no longer depends on the Graph source.
+    expect((await api.post("/api/me/signout", {})).body).toEqual(problem("auth_required"));
     expect((await api.post("/api/me/disconnect", {})).body).toEqual(problem("source_unavailable"));
   });
 });
