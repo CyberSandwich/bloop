@@ -78,8 +78,10 @@ Always H.264 on output, even for an H.264 input: re-encoding is the sanitizer.
 | zip entries | 20000 | `BLOOP_MAX_ENTRIES` | `bomb` |
 | pages rendered | 300 | `BLOOP_MAX_PAGES` | none: later pages are not rendered and `pages` in the manifest says `{total, rendered}` |
 | page aspect (width over height) | 0.25 to 8 | none | `bad_page_size` |
-| video duration, dimensions | 4 h, 8192 px | `BLOOP_MAX_VIDEO_SECONDS` | `bad_media` |
+| video duration, dimensions | 122 s, 8192 px | `BLOOP_MAX_VIDEO_SECONDS` | `bad_media` |
 | image pixels | 100 million | `BLOOP_MAX_IMAGE_PIXELS` | `bad_media` |
+
+The video cap comes from the measured encode rate, not from a product choice. The corpus encodes a 60 s 1080p30 clip with grain (a hard case) at one CPU under the default settings: 221.0 s, 0.27 s of video per second (CI run 45780852714). The video stage times out at 900 s, so a clip fits with a 2x margin up to 0.27 x 900 / 2 = 122 s. Footage that encodes faster than grain leaves room, and a deployment with more CPUs can raise `BLOOP_MAX_VIDEO_SECONDS`; the 900 s timeout is not raised to fit a longer cap. The number is recorded by `caseVideoRate` on every run, never asserted.
 
 An entry that inflates past its declared size is refused (`bad_archive`).
 

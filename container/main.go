@@ -64,7 +64,7 @@ func loadConfig(getenv func(string) string) Config {
 		Widths:       parseWidths(getenv("BLOOP_WIDTHS")),
 		Limits:       Limits{MaxUnpacked: num("BLOOP_MAX_UNPACKED", 2<<30), MaxEntries: int(num("BLOOP_MAX_ENTRIES", 20000))},
 		MaxPages:     int(num("BLOOP_MAX_PAGES", 300)),
-		MaxVideoSecs: float64(num("BLOOP_MAX_VIDEO_SECONDS", 4*3600)),
+		MaxVideoSecs: float64(num("BLOOP_MAX_VIDEO_SECONDS", 122)),
 		MaxImagePx:   num("BLOOP_MAX_IMAGE_PIXELS", 100_000_000),
 		Workers:      int(num("BLOOP_WORKERS", int64(min(4, runtime.GOMAXPROCS(0))))), // GOMAXPROCS follows the cgroup CPU quota; NumCPU counts the host
 		Timeouts:     map[string]time.Duration{},
