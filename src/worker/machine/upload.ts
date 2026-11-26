@@ -10,7 +10,7 @@ export function uploadStart(m: Machine, ev: EventOf<"upload.start">): Step {
   if (!pairing || (m.state !== "claimed" && m.state !== "choosing")) return fail("wrong_state");
   if (m.state === "choosing" && pairing.kind !== "owner") return fail("wrong_state");
   if (unconfirmed(m)) return fail("match_required");
-  const guest = { ...pairing, kind: "guest" as const, listed: [], userId: null };
+  const guest = { ...pairing, kind: "guest" as const, listed: [], userId: null, phoneSession: null };
   return ok({ ...m, pairing: guest, state: "uploading", upload: null, uploadAt: ev.now + ev.timeoutSeconds * SECOND }, [
     { fx: "push", to: "both" },
   ]);

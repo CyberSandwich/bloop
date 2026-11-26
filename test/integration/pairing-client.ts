@@ -221,18 +221,45 @@ export async function openScreen(
   socket.send({ t: "hello", sid });
   const state = await socket.stateWhere((v) => v.code !== null);
   const code = ((state.view as { code: { code: string } }).code as { code: string }).code;
+  sids.set(ref, sid);
   return { screen: { sid, ref, view }, socket, code };
 }
 
+/** Each opened screen's sid by its ref, so `claim` can read the number a live screen shows, as the person would. */
+const sids = new Map<string, string>();
+
 export interface Claimed {
   pid: string;
-  match: string;
+  match: string | null;
+  choices: string[] | null;
   kind: string;
   needsAuth: boolean;
 }
 
+/** The claim alone: a live pairing stays unconfirmed until `pick`. */
+export const claimOnly = (api: Api, code: string, kind: "owner" | "guest" = "owner"): Promise<Reply<Claimed>> =>
+  api.post<Claimed>("/api/claim", { code, kind });
+
+/** The live pick (PAIR-14): the number the screen shows, read over its poll, chosen on the phone. */
+export async function pick(api: Api, pid: string, choice?: string): Promise<Reply> {
+  const sid = sids.get(pid.split(".")[0] as string);
+  if (choice === undefined) {
+    if (!sid) throw new Error("pick: the screen was not opened with openScreen");
+    const view = await api.get<{ match: string | null }>("/api/screen/state", sid);
+    if (!view.body.match) throw new Error(`pick: the screen shows no match (${view.status})`);
+    return api.post("/api/match", { choice: view.body.match }, { auth: pid });
+  }
+  return api.post("/api/match", { choice }, { auth: pid });
+}
+
+/** A claim, and on a live screen the right pick after it: the pairing every later live step starts from. */
 export async function claim(api: Api, code: string, kind: "owner" | "guest" = "owner"): Promise<Reply<Claimed>> {
-  return api.post<Claimed>("/api/claim", { code, kind });
+  const claimed = await claimOnly(api, code, kind);
+  if (claimed.status === 200 && claimed.body.choices) {
+    const picked = await pick(api, claimed.body.pid);
+    if (picked.status !== 200) throw new Error(`pick failed: ${picked.status} ${JSON.stringify(picked.body)}`);
+  }
+  return claimed;
 }
 
 export async function phoneSocket(api: Api, pid: string): Promise<Socket> {

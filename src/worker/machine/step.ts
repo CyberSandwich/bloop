@@ -76,7 +76,7 @@ export function endSession(m: Machine, now: number, cfg: MachineConfig, reason: 
     ...m,
     state: "ended",
     codes: { current: null, previous: null },
-    pairing: { ...m.pairing, listed: [], userId: null, passHash: null },
+    pairing: { ...m.pairing, listed: [], userId: null, phoneSession: null, passHash: null },
     session: null,
     upload: null,
     uploadAt: null,
