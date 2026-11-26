@@ -1,6 +1,7 @@
 // The library page's rules, without the DOM: what a row shows, who may be ticked, and how Up Next changes.
 // The server decides; these only shape the optimistic step and the words (docs/ux/library.md sections 2 and 4).
 import {
+  choiceTail,
   DISABLED_REASON,
   dateText,
   fontsNote,
@@ -16,15 +17,37 @@ import { splitName } from "../core/format.js";
  * @typedef {{id: string, name: string, ext: string, bytes: number, status: string, refusal?: string, updatedAt: number,
  *   lastPresentedAt?: number, selected: boolean, trashedAt?: number, purgeAfter?: number, disabled: boolean,
  *   derived: {state: string, done?: number, total?: number, pages?: number, fontsMissing?: string[]}, thumb?: string,
- *   upload?: string}} Row
- * `upload` is set on a row the page made from an open upload: its upload id.
+ *   upload?: string, kind?: "deck" | "document" | "sheet" | "image" | "video"}} Row
+ * `upload` is set on a row the page made from an open upload: its upload id. `kind` is the server's; a row made here
+ * has none, and the extension stands in.
  * @typedef {{uploadId: string, fileId: string, name: string, bytes: number, createdAt: number}} OpenUpload
  * @typedef {"on" | "readonly" | "off"} Switch
  * @typedef {{view: string, sort: string, files: Row[], next: string | null, uploads: OpenUpload[], upNext: string[],
  *   quota: {used: number, reserved: number, limit: number}, trash: {count: number, bytes: number},
- *   limits: {upNext: number, trashDays: number, maxFileBytes: number},
+ *   limits: {upNext: number, trashDays: number, maxFileBytes: number, largeFileChoiceBytes?: number},
  *   switches: {uploads: Switch, previews: Switch, export: Switch}, account: {state: string}}} List
  */
+
+const GLYPH_OF_KIND = {
+  deck: "presentation",
+  document: "file-text",
+  sheet: "file-spreadsheet",
+  image: "image",
+  video: "film",
+};
+
+/** The row's Lucide glyph: the server's kind, else the extension's. @param {Row} row */
+export const glyphOf = (row) => (row.kind ? GLYPH_OF_KIND[row.kind] : kindOf(row.ext).glyph);
+
+/**
+ * The size the Present sheet names when the screen will ask how to open the first file (a deck over the server's
+ * largeFileChoiceBytes, viewers.md section 4), else null; null too while the list does not carry the number.
+ * @param {Row} row @param {List} list
+ */
+export function choiceSize(row, list) {
+  const over = list.limits.largeFileChoiceBytes;
+  return over !== undefined && glyphOf(row) === "presentation" && row.bytes > over ? sizeText(row.bytes) : null;
+}
 
 /**
  * A name as the head that may take the ellipsis and the tail that never does: splitName's, or for a name too short
@@ -80,6 +103,17 @@ export function upNextRows(list) {
     const row = byId.get(id);
     return row && !row.trashedAt ? [row] : [];
   });
+}
+
+/**
+ * What the Present sheet says opens first: Up Next's first file, and the line after its name when the screen will ask
+ * how to open it; null with Up Next empty. @param {List} list @returns {{name: string, tail: string} | null}
+ */
+export function opensFirst(list) {
+  const first = upNextRows(list)[0];
+  if (!first) return null;
+  const size = choiceSize(first, list);
+  return { name: first.name, tail: size ? choiceTail(size) : "" };
 }
 
 /**

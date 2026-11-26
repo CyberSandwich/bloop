@@ -1,6 +1,8 @@
 // The library's fetch wrapper: cookie credentials, JSON both ways, the server's own code on a refusal, and 304 kept as
 // "nothing changed". core/api.js is the pairing pages' (Bearer, their error table); the library needs PATCH, PUT,
 // If-None-Match and the app codes, and only reads the code it is given.
+// transitional: U: U's core/api.js replaces this once it lands, if it passes a failure's body and drops shared/errors.js,
+// which alone would put this page over its size limit.
 import { FETCH_TIMEOUT_MS } from "../core/timing.js";
 
 /**

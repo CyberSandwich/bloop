@@ -1,6 +1,7 @@
 // The library page's pure parts: its words, its rules for rows and Up Next, and its fetch wrapper.
 import { describe, expect, it } from "vitest";
 import {
+  choiceTail,
   dateText,
   deletesIn,
   emptyTrashLine,
@@ -21,9 +22,12 @@ import {
   allRows,
   cached,
   canTick,
+  choiceSize,
+  glyphOf,
   type List,
   move,
   nameParts,
+  opensFirst,
   type Row,
   rowLine,
   status,
@@ -176,6 +180,39 @@ describe("library words", () => {
       ).toEqual([]);
       expect(text.endsWith("."), text).toBe(false);
     }
+  });
+});
+
+describe("the server's kind and large-file size", () => {
+  it("a row's glyph is the server's kind when it sends one, else the extension's", () => {
+    expect(glyphOf(row({ ext: "key", kind: "deck" }))).toBe("presentation");
+    expect(glyphOf(row({ ext: "pages", kind: "document" }))).toBe("file-text");
+    expect(glyphOf(row({ ext: "numbers", kind: "sheet" }))).toBe("file-spreadsheet");
+    expect(glyphOf(row({ ext: "avif", kind: "image" }))).toBe("image");
+    expect(glyphOf(row({ ext: "mkv", kind: "video" }))).toBe("film");
+    expect(glyphOf(row({ ext: "mp4" }))).toBe("film");
+    expect(glyphOf(row({ ext: "xlsx" }))).toBe("file-spreadsheet");
+  });
+
+  it("the screen asks how to open a first deck over largeFileChoiceBytes, and never without the number", () => {
+    const limits = { upNext: 12, trashDays: 30, maxFileBytes: 500 * MB, largeFileChoiceBytes: 30 * MB };
+    expect(choiceSize(row({ bytes: 88 * MB, kind: "deck" }), list({ limits }))).toBe("88 MB");
+    expect(choiceSize(row({ bytes: 30 * MB, kind: "deck" }), list({ limits }))).toBeNull();
+    expect(choiceSize(row({ bytes: 88 * MB, ext: "pdf", kind: "document" }), list({ limits }))).toBeNull();
+    expect(choiceSize(row({ bytes: 88 * MB }), list())).toBeNull();
+    expect(choiceTail("88 MB")).toBe(". The screen asks how to open it, since it's 88 MB.");
+  });
+
+  it("the Present sheet's first file: Up Next's first, with the choice line when it is a large deck", () => {
+    const limits = { upNext: 12, trashDays: 30, maxFileBytes: 500 * MB, largeFileChoiceBytes: 30 * MB };
+    const files = [row({ id: "a", bytes: 88 * MB, kind: "deck" }), row({ id: "b", name: "Notes.pdf", ext: "pdf" })];
+    expect(opensFirst(list({ files, upNext: [] }))).toBeNull();
+    expect(opensFirst(list({ files, upNext: ["b", "a"], limits }))).toEqual({ name: "Notes.pdf", tail: "" });
+    expect(opensFirst(list({ files, upNext: ["a"], limits }))).toEqual({
+      name: "Lecture 5.pptx",
+      tail: ". The screen asks how to open it, since it's 88 MB.",
+    });
+    expect(opensFirst(list({ files, upNext: ["a"] }))).toEqual({ name: "Lecture 5.pptx", tail: "" });
   });
 });
 

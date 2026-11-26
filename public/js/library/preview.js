@@ -5,7 +5,7 @@
 import { fontSentence, kindOf, pagesWord, reasonOf, sizeText, T } from "../core/copy-library.js";
 import { loader } from "../core/loader.js";
 import { el, setText } from "../core/ui.js";
-import { canTick } from "./model.js";
+import { canTick, glyphOf } from "./model.js";
 
 /** A link refreshes this long before it lapses, so a step never fetches with a dead one. */
 const EARLY_MS = 15_000;
@@ -26,7 +26,7 @@ export function start(page) {
   const links = new Map();
 
   /** @param {Row} row */
-  const assetOf = (row) => (["image", "film"].includes(kindOf(row.ext).glyph) ? "original" : "bundle");
+  const assetOf = (row) => (["image", "film"].includes(glyphOf(row)) ? "original" : "bundle");
   /** @param {Row} row */
   const showable = (row) =>
     page.list()?.switches.previews === "on" &&
@@ -98,14 +98,17 @@ export function start(page) {
       const now = page.row(id);
       if (!now) return gone();
       shownState = now.derived.state;
-      const kind = kindOf(now.ext);
+      const kind = glyphOf(now);
       const pages = now.derived.pages ?? 0;
-      setText(line, [kind.word, sizeText(now.bytes), ...(pages ? [pagesWord(now.ext, pages)] : [])].join(" · "));
+      setText(
+        line,
+        [kindOf(now.ext).word, sizeText(now.bytes), ...(pages ? [pagesWord(now.ext, pages)] : [])].join(" · "),
+      );
       const fonts = now.derived.fontsMissing ?? [];
       notes.replaceChildren(
         ...(fonts.length ? [el("p", { class: "lib-fonts" }, [page.glyph("triangle-alert"), fontSentence(fonts)])] : []),
       );
-      if (now.derived.state === "preparing" && kind.glyph !== "image" && kind.glyph !== "film") {
+      if (now.derived.state === "preparing" && kind !== "image" && kind !== "film") {
         const slow = Date.now() - started > LONG_MS || Date.now() - now.updatedAt > LONG_MS;
         return stage.replaceChildren(
           loader(now.name, now.thumb ?? null),
@@ -123,9 +126,9 @@ export function start(page) {
       }
       const got = await fresh();
       if (!got) return;
-      if (kind.glyph === "film")
+      if (kind === "film")
         return stage.replaceChildren(el("video", { src: got.base, controls: "", preload: "metadata" }));
-      if (kind.glyph === "image") return stage.replaceChildren(el("img", { src: got.base, alt: now.name }));
+      if (kind === "image") return stage.replaceChildren(el("img", { src: got.base, alt: now.name }));
       const img = el("img", {
         src: pageUrl(got.base, n, wide),
         alt: `${pagesWord(now.ext, 1).replace(/^1 /, "")} ${n}`,

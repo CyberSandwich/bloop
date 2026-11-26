@@ -3,7 +3,7 @@
 /** @import {Row} from "./model.js" */
 import { presentLine, stillUploading } from "../core/copy-library.js";
 import { el } from "../core/ui.js";
-import { allRows, pending, upNextRows } from "./model.js";
+import { allRows, opensFirst, pending } from "./model.js";
 
 /** @param {any} page the page object library.js passes */
 export function start(page) {
@@ -11,7 +11,7 @@ export function start(page) {
   async function open(opener) {
     const list = page.list();
     if (!list) return;
-    const first = /** @type {Row | undefined} */ (upNextRows(list)[0]);
+    const first = opensFirst(list);
     const uploading = allRows(list).filter((/** @type {Row} */ r) => pending(r));
     const done = el("button", { class: "btn primary", type: "button", "data-close": "" }, ["Done"]);
     const code = el("a", { class: "btn secondary", href: "/code" }, ["Enter the Code"]);
@@ -27,7 +27,9 @@ export function start(page) {
           el(
             "p",
             { class: "lib-first" },
-            first ? ["Opens first: ", el("strong", {}, [first.name])] : ["Choose your files after you scan."],
+            first
+              ? ["Opens first: ", el("strong", {}, [first.name]), first.tail]
+              : ["Choose your files after you scan."],
           ),
           ...uploading.map((/** @type {Row} */ r) => el("p", {}, [stillUploading(r.name)])),
         ]),
