@@ -126,7 +126,7 @@ describe.skipIf(!online)("AUTH-10 uniform against siteverify", () => {
       });
       return { status: res.status, keys: Object.keys(res.body).sort(), cookies: res.headers.getSetCookie() };
     };
-    const want = { status: 202, keys: ["challengeId", "expiresAt"], cookies: [] };
+    const want = { status: 202, keys: ["challengeId", "expiresAt", "expiresIn"], cookies: [] };
     expect(await ask("member@example.test")).toEqual(want);
     expect(await ask("stranger@example.test")).toEqual(want);
     expect(await mailedCode("member@example.test")).toMatch(/^\d{6}$/);

@@ -22,6 +22,7 @@ import { emailSwitchOf, type Message, mail, type Sender } from "../auth/email.ts
 import { normalizeEmail } from "../auth/email-norm.ts";
 import { callbackErrorPage } from "../auth/error-page.ts";
 import { acceptBatch, inviteHash, maskEmail, peekInvite } from "../auth/invites.ts";
+import { resolveMember } from "../auth/member.ts";
 import { beginSignIn, finishSignIn, PENDING_SECONDS, type Pending } from "../auth/oauth.ts";
 import { MAX_PASSKEYS } from "../auth/passkeys.ts";
 import { endSessions, type ScreenDeps, screenDeps } from "../auth/screens.ts";
@@ -40,6 +41,7 @@ import { fail, json } from "../http.ts";
 import { newRef, SECRET_SHAPE } from "../ids.ts";
 import { admitted, type LaunchState, launchOf, launchState } from "../mode.ts";
 import { type BlockCheck, blockCheck } from "../moderation/actions.ts";
+import { signinNext } from "../page-registry.ts";
 import { type Route, route } from "../router.ts";
 import { readSettings, type Settings } from "../settings.ts";
 import { capOverridesOf } from "../spend/caps.ts";
@@ -149,12 +151,11 @@ const codeAnswer = z
   .strict();
 const codeRequest = z.object({ email: z.string().max(254), turnstile: z.string().min(1).max(2048) }).strict();
 
-/** Where a sign-in may land: exact paths only, `/admin` only for an admin; anything else is the library. */
-const NEXT = new Set(["/library", "/a", "/account", "/admin"]);
-function nextPath(request: Request, admin: boolean): string {
-  const next = new URL(request.url).searchParams.get("next") ?? "";
-  return NEXT.has(next) && (next !== "/admin" || admin) ? next : "/library";
-}
+const nextPath = (request: Request, admin: boolean): string =>
+  signinNext(new URL(request.url).searchParams.get("next"), admin);
+
+/** A code's lifetime as the 202 states it: the absolute expiry, and the time left, so no device clock reads it. */
+const lifetime = (expiresAt: number) => ({ expiresAt, expiresIn: Math.max(0, expiresAt - Date.now()) });
 
 /** A line only on refusal or error, by code: never an address, code, token or user agent. */
 const logAuth = (kind: string, code: string) => console.log(JSON.stringify({ evt: "auth", kind, code }));
@@ -359,7 +360,7 @@ export function authRoutesWith(over: Partial<AuthDeps> = {}): readonly Route[] {
         const codeScope = await ipHash(request, config);
         return { to: user.email ?? emailNorm, ...signinCode({ code: issued.code }, templateConfig(config)), codeScope };
       });
-      return json({ challengeId: issued.challengeId, expiresAt: issued.expiresAt }, 202);
+      return json({ challengeId: issued.challengeId, ...lifetime(issued.expiresAt) }, 202);
     }),
 
     // Every failure is `code_invalid`, including a member suspended, blocked or locked out since the code went.
@@ -375,14 +376,20 @@ export function authRoutesWith(over: Partial<AuthDeps> = {}): readonly Route[] {
       return signIn(call, user, code.emailNorm);
     }),
 
-    // INV-03: reads only. Revoked, unknown and (in preview) a non-test invite all read `invalid` (MODE-01).
-    publicWrite("/api/invite/peek", token, "RL_INVITE", async ({ env, config, body }) => {
+    // INV-03: reads only. Revoked, unknown and (in preview) a non-test invite all read `invalid` (MODE-01). A live
+    // session learns only whether the invite is its own (`forYou`), never the address.
+    publicWrite("/api/invite/peek", token, "RL_INVITE", async ({ request, env, config, body }) => {
       const { state, row } = await peekInvite(dbOf(env.DB), await inviteHash(body.token), Date.now());
       if (!row || !inviteAdmitted(await launchState(env), config.account, row.emailNorm))
         return json({ state: "invalid" });
-      return json(
-        state === "open" ? { state, emailMasked: maskEmail(row.email), expiresAt: row.expiresAt } : { state },
-      );
+      if (state !== "open") return json({ state });
+      const who = readCookie(request, SESSION_COOKIE) ? await resolveMember(request, env, config) : null;
+      return json({
+        state,
+        emailMasked: maskEmail(row.email),
+        expiresAt: row.expiresAt,
+        ...(who?.ok ? { forYou: who.member.emailNorm === row.emailNorm } : {}),
+      });
     }),
 
     // INV-02: the code goes to the invite's own address; the body carries nothing else to send it to.
@@ -408,7 +415,7 @@ export function authRoutesWith(over: Partial<AuthDeps> = {}): readonly Route[] {
         ...signinCode({ code: issued.code }, templateConfig(config)),
       }));
       return json(
-        { challengeId: issued.challengeId, emailMasked: maskEmail(row.email), expiresAt: issued.expiresAt },
+        { challengeId: issued.challengeId, emailMasked: maskEmail(row.email), ...lifetime(issued.expiresAt) },
         202,
       );
     }),

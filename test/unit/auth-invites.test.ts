@@ -126,6 +126,28 @@ describe("INV-03 peek: opening a link changes nothing", () => {
     expect((await peek(w, token)).body).toMatchObject({ state: "open" });
     expect((await accept(w, token)).res.status).toBe(500);
   });
+
+  it("INV-03 peek: a live session learns only whether the invite is its own (forYou), never the address", async () => {
+    const w = await authWorld();
+    setMode(w.db, "open");
+    const token = await seedInvite(w.db, "invitee@example.test");
+    const invitee = await seedMember(w.db, "u-invitee", "invitee@example.test");
+    const other = await seedMember(w.db, "u-other", "other@example.test");
+    const before = snapshot(w);
+    expect((await post(w, "/api/invite/peek", { token }, sid(invitee))).body).toMatchObject({ forYou: true });
+    const theirs = (await post(w, "/api/invite/peek", { token }, sid(other))).body;
+    expect(theirs).toEqual({
+      state: "open",
+      emailMasked: "i**@example.test",
+      expiresAt: expect.any(Number),
+      forYou: false,
+    });
+    expect(JSON.stringify(theirs)).not.toContain("invitee@");
+    // No session, or one that names nothing live: no forYou at all.
+    expect((await peek(w, token)).body).not.toHaveProperty("forYou");
+    expect((await post(w, "/api/invite/peek", { token }, sid("A".repeat(43)))).body).not.toHaveProperty("forYou");
+    expect(snapshot(w)).toEqual(before);
+  });
 });
 
 describe("INV-02 bound: the code goes to the invite's own address", () => {
@@ -142,7 +164,11 @@ describe("INV-02 bound: the code goes to the invite's own address", () => {
       challengeId: expect.any(String),
       emailMasked: "i**@example.test",
       expiresAt: expect.any(Number),
+      expiresIn: expect.any(Number),
     });
+    // The time left, so the page's deadline needs no device clock: the code's TTL, less the request's own time.
+    expect(ok.body.expiresIn).toBeGreaterThan(590_000);
+    expect(ok.body.expiresIn).toBeLessThanOrEqual(600_000);
     expect(readDevMailbox().map((m) => m.to)).toEqual(["invitee@example.test"]);
   });
 

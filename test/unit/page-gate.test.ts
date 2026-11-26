@@ -348,3 +348,27 @@ describe("MODE-01 pages: the open site", () => {
     expect(await gone.text()).toBe("asset /privacy");
   });
 });
+
+describe("a signed-in /signin goes on to its next", () => {
+  it("a member's /signin redirects to the allowlisted next, /admin only for an admin; signed out, the form", async () => {
+    const { db, env } = world();
+    for (const mode of ["preview", "open"] as const) {
+      setMode(db, mode);
+      const member = await signIn(db, `m-${mode}`, "test@example.test");
+      const admin = await signIn(db, `a-${mode}`, "admin@example.test");
+      const to = async (path: string, cookie?: string) => {
+        const res = await get(env, path, cookie);
+        return res.status === 302 ? res.headers.get("Location") : res.status;
+      };
+      expect(await to("/signin?next=/account", member), mode).toBe("/account");
+      expect(await to("/signin?next=https://evil.example/", member), mode).toBe("/library");
+      expect(await to("/signin?next=/admin", member), mode).toBe("/library");
+      expect(await to("/signin?next=/admin", admin), mode).toBe("/admin");
+      expect(await to("/signin", member), mode).toBe("/library");
+      expect((await get(env, "/signin?next=/account", member)).headers.get("Cache-Control")).toBe("no-store");
+      expect(await to("/signin?next=/account"), mode).toBe(200);
+      expect(await to("/signin", "A".repeat(43)), mode).toBe(200);
+      db.raw.prepare("DELETE FROM app_user").run();
+    }
+  });
+});

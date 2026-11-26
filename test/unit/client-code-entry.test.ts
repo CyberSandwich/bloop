@@ -1,23 +1,30 @@
-// The code step (public/js/auth/code-entry.js) on DOM fakes and a hand-driven clock.
-import { describe, expect, it, vi } from "vitest";
+// The code step (public/js/auth/code-entry.js) and the row and slow rule before it (auth/row.js), on DOM fakes and a
+// hand-driven clock.
+import { afterEach, describe, expect, it, vi } from "vitest";
 import {
-  type Clock,
   createCodeEntry,
-  createRow,
+  deadlineOf,
   digitsOf,
   grouped,
   land,
   MAX_TRIES,
-  NEXT_PATHS,
-  nextFrom,
   RESEND_MS,
   refusal,
+} from "../../public/js/auth/code-entry.js";
+import { AUTH } from "../../public/js/auth/copy.js";
+import {
+  CLOCK,
+  type Clock,
+  createRow,
+  NEXT_PATHS,
+  nextFrom,
+  quietSkip,
   SLOW_MS,
   STOP_MS,
   showFailure,
   watch,
-} from "../../public/js/auth/code-entry.js";
-import { AUTH } from "../../public/js/auth/copy.js";
+} from "../../public/js/auth/row.js";
+import { SIGNIN_NEXT } from "../../src/worker/page-registry.ts";
 
 type Listener = (e: FakeEvent) => void;
 interface FakeEvent {
@@ -102,7 +109,13 @@ function fakeClock(start = 1_000_000): Clock & { advance: (ms: number) => void; 
 const flush = () => new Promise((done) => setImmediate(done));
 type Reply = { ok: true; value: unknown } | { ok: false; error: string; retryAfter?: number };
 
-function setup(options: { verify?: (code: string) => Promise<Reply>; resend?: () => Promise<Reply> } = {}) {
+function setup(
+  options: {
+    verify?: (code: string) => Promise<Reply>;
+    resend?: () => Promise<Reply>;
+    done?: () => Promise<boolean>;
+  } = {},
+) {
   const clock = fakeClock();
   const input = new FakeEl();
   const resend = new FakeEl();
@@ -111,9 +124,9 @@ function setup(options: { verify?: (code: string) => Promise<Reply>; resend?: ()
   const row = createRow(parts as never);
   const verify = vi.fn(options.verify ?? (async (): Promise<Reply> => ({ ok: false, error: "code_invalid" })));
   const resendHook = vi.fn(
-    options.resend ?? (async (): Promise<Reply> => ({ ok: true, value: { expiresAt: clock.now() + 600_000 } })),
+    options.resend ?? (async (): Promise<Reply> => ({ ok: true, value: { expiresIn: 600_000 } })),
   );
-  const done = vi.fn();
+  const done = vi.fn(options.done ?? (async () => true));
   const refused = vi.fn((reply: { error: string }) => reply.error === "invite_dead");
   const entry = createCodeEntry(
     { input: input as never, row, resend: resend as never, doc: doc as never },
@@ -133,8 +146,9 @@ function setup(options: { verify?: (code: string) => Promise<Reply>; resend?: ()
 }
 
 describe("code digits", () => {
-  it("keeps digits only, at most 6, and shows them 3 and 3", () => {
-    expect(digitsOf("4a8-1 2\t0 7 9")).toBe("481207");
+  it("keeps every digit and nothing else, and shows six 3 and 3", () => {
+    expect(digitsOf("4a8-1 2\t0 7")).toBe("481207");
+    expect(digitsOf("4a8-1 2\t0 7 9")).toBe("4812079");
     expect(digitsOf("")).toBe("");
     expect(grouped("481207")).toBe("481 207");
     expect(grouped("4812")).toBe("481 2");
@@ -149,7 +163,7 @@ describe("code digits", () => {
 describe("the code field", () => {
   it("typed one digit at a time, it groups as it goes and sends on the 6th digit, once", async () => {
     const s = setup();
-    s.entry.start(s.clock.now() + 600_000);
+    s.entry.start({ expiresIn: 600_000 });
     await s.type("4812");
     expect(s.input.value).toBe("481 2");
     expect(s.verify).not.toHaveBeenCalled();
@@ -172,6 +186,18 @@ describe("the code field", () => {
     expect(s.verify).not.toHaveBeenCalled();
   });
 
+  it("more than 6 digits, pasted or filled in, is not a code: the field clears and nothing is sent", async () => {
+    const s = setup();
+    s.entry.start(null);
+    s.input.value = "48";
+    expect(s.input.fire("paste", event("4812079")).prevented).toBe(true);
+    s.input.value = "481 2079";
+    s.input.fire("input");
+    await flush();
+    expect(s.verify).not.toHaveBeenCalled();
+    expect([s.input.value, s.line()]).toEqual(["", AUTH.code.hint]);
+  });
+
   it("while verifying, the field is disabled and the row reads Checking... with the spinner", async () => {
     let answer: (r: Reply) => void = () => {};
     const s = setup({ verify: () => new Promise((done) => (answer = done)) });
@@ -187,7 +213,7 @@ describe("the code field", () => {
 
   it("a wrong code says didn't match, keeps the digits selected, and re-enables the field", async () => {
     const s = setup();
-    s.entry.start(s.clock.now() + 600_000);
+    s.entry.start({ expiresIn: 600_000 });
     await s.type("111111");
     expect(s.line()).toBe(AUTH.code.wrong);
     expect(s.input.disabled).toBe(false);
@@ -197,7 +223,7 @@ describe("the code field", () => {
 
   it(`after ${MAX_TRIES} wrong codes it says Too many tries, and a 6th code sends nothing`, async () => {
     const s = setup();
-    s.entry.start(s.clock.now() + 600_000);
+    s.entry.start({ expiresIn: 600_000 });
     const lines: string[] = [];
     for (let i = 0; i < MAX_TRIES; i++) {
       s.input.value = "";
@@ -211,27 +237,27 @@ describe("the code field", () => {
     expect(s.line()).toBe(AUTH.code.tooMany);
   });
 
-  it("the local clock says expired at expiresAt, and a code typed after it sends nothing", async () => {
+  it("the deadline (expiresIn after the answer) says expired; a code typed after it is still sent, and its refusal reads expired", async () => {
     const s = setup();
-    s.entry.start(s.clock.now() + 600_000);
+    s.entry.start({ expiresIn: 600_000 });
     s.clock.advance(599_999);
     expect(s.line()).toBe(AUTH.code.hint);
     s.clock.advance(1);
     expect(s.line()).toBe(AUTH.code.expired);
     s.input.value = "";
     await s.type("481207");
-    expect(s.verify).not.toHaveBeenCalled();
+    expect(s.verify.mock.calls).toEqual([["481207"]]);
     expect(s.line()).toBe(AUTH.code.expired);
   });
 
-  it("a code refused after expiresAt reads expired, not didn't match", () => {
+  it("a code refused after the deadline reads expired, not didn't match", () => {
     expect(refusal(1, 1000, 999)).toBe(AUTH.code.wrong);
     expect(refusal(1, 1000, 1000)).toBe(AUTH.code.expired);
     expect(refusal(MAX_TRIES, 1000, 1000)).toBe(AUTH.code.expired);
     expect(refusal(MAX_TRIES, null, 10 ** 15)).toBe(AUTH.code.tooMany);
   });
 
-  it("with no expiresAt (an answer without one) there is no local clock: only the count", async () => {
+  it("with no expiresIn (an answer without one) there is no deadline: only the count", async () => {
     const s = setup();
     s.entry.start(null);
     s.clock.advance(24 * 3600_000);
@@ -252,7 +278,7 @@ describe("the code field", () => {
 
   it("Send a New Code sends one, resets the count and the clock, and focuses the field", async () => {
     const s = setup();
-    s.entry.start(s.clock.now() + 600_000);
+    s.entry.start({ expiresIn: 600_000 });
     for (let i = 0; i < MAX_TRIES; i++) {
       s.input.value = "";
       await s.type("111111");
@@ -337,16 +363,86 @@ describe("the code field", () => {
     expect(s.input.focused).toBe(before + 1);
   });
 
+  it("a session cookie that did not stick gives the field back, so a new code can be typed", async () => {
+    const s = setup({ verify: async () => ({ ok: true, value: {} }), done: async () => false });
+    s.entry.start(null);
+    await s.type("481207");
+    expect(s.done).toHaveBeenCalledTimes(1);
+    expect(s.input.disabled).toBe(false);
+    s.input.value = "";
+    await s.type("222222");
+    expect(s.verify).toHaveBeenCalledTimes(2);
+  });
+
+  it("Send a New Code runs under the slow rule: Still working, then Try again with the button back", async () => {
+    const s = setup({ resend: () => new Promise(() => {}) });
+    s.entry.start(null);
+    s.clock.advance(RESEND_MS);
+    s.resend.fire("click");
+    s.clock.advance(SLOW_MS);
+    expect(s.line()).toBe(AUTH.slow.still);
+    s.clock.advance(STOP_MS - SLOW_MS);
+    expect(s.line()).toBe(AUTH.slow.tooLong);
+    expect([s.resend.textContent, s.resend.disabled]).toEqual([AUTH.code.resend, false]);
+  });
+
   it("stop() leaves no timer behind", () => {
     const s = setup();
-    s.entry.start(s.clock.now() + 600_000);
+    s.entry.start({ expiresIn: 600_000 });
     expect(s.clock.pending()).toBeGreaterThan(0);
     s.entry.stop();
     expect(s.clock.pending()).toBe(0);
   });
 });
 
+describe("the deadline reads no device clock (H2)", () => {
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  it("H2: a device clock 10 minutes fast neither expires a fresh code nor blocks its verify", async () => {
+    const serverNow = Date.now();
+    vi.spyOn(Date, "now").mockReturnValue(serverNow + 600_000);
+    const answer = { challengeId: "c", expiresAt: serverNow + 600_000, expiresIn: 600_000 };
+    const left = (deadlineOf(answer) as number) - performance.now();
+    expect(left).toBeGreaterThan(599_000);
+    expect(left).toBeLessThanOrEqual(600_000);
+    const input = new FakeEl();
+    const parts = { hint: new FakeEl(), hintText: new FakeEl(), error: new FakeEl(), errorText: new FakeEl() };
+    const verify = vi.fn(async (): Promise<Reply> => ({ ok: false, error: "code_invalid" }));
+    const entry = createCodeEntry(
+      {
+        input: input as never,
+        row: createRow(parts as never),
+        resend: new FakeEl() as never,
+        doc: Object.assign(new FakeEl(), { hidden: false }) as never,
+      },
+      { verify, resend: async () => ({ ok: true, value: {} }), done: async () => true },
+    );
+    entry.start(answer);
+    for (const ch of "481207") {
+      input.value += ch;
+      input.fire("input");
+    }
+    await flush();
+    entry.stop();
+    expect(verify.mock.calls).toEqual([["481207"]]);
+    expect(parts.errorText.textContent).toBe(AUTH.code.wrong);
+  });
+
+  it("the page's clock is monotonic, and an answer without expiresIn has no deadline", () => {
+    expect(CLOCK.now).not.toBe(Date.now);
+    expect(deadlineOf({ expiresAt: 10 ** 13 })).toBeNull();
+    expect(deadlineOf(null)).toBeNull();
+    expect(deadlineOf({ expiresIn: "600000" })).toBeNull();
+  });
+});
+
 describe("after the code", () => {
+  it("the page's next list is the Worker's (page-registry.ts SIGNIN_NEXT)", () => {
+    expect(NEXT_PATHS).toEqual([...SIGNIN_NEXT]);
+  });
+
   it("next is one of the exact paths, else the library", () => {
     for (const path of NEXT_PATHS) expect(nextFrom(`?next=${encodeURIComponent(path)}`)).toBe(path);
     for (const bad of ["//evil.example", "https://evil.example/library", "/library?x=1", "/Library", "/admin/", ""])
@@ -357,7 +453,7 @@ describe("after the code", () => {
   it("a session that did not stick shows the cookies line and stays; a signed-in one goes to next", async () => {
     const row = { alert: vi.fn(), status: vi.fn(), clear: vi.fn() };
     const go = vi.fn();
-    await land(async () => ({ ok: true, value: { signedIn: false } }), "/account", row, go);
+    expect(await land(async () => ({ ok: true, value: { signedIn: false } }), "/account", row, go)).toBe(false);
     expect(row.alert).toHaveBeenCalledWith(AUTH.code.cookies);
     expect(go).not.toHaveBeenCalled();
     await land(async () => ({ ok: true, value: { signedIn: true, admin: false } }), "/account", row, go);
@@ -408,6 +504,33 @@ describe("failures and the slow rule", () => {
     ]);
     row.clear();
     expect([parts.hintText.textContent, parts.errorText.textContent]).toEqual(["", ""]);
+  });
+
+  it("a held watch keeps its clock still while a person solves a challenge, then runs the rule again", async () => {
+    const clock = fakeClock();
+    const on = { slow: vi.fn(), stop: vi.fn() };
+    const hold: { pause?: () => void; resume?: () => void } = {};
+    let answer: (v: number) => void = () => {};
+    const request = watch(new Promise<number>((done) => (answer = done)), on, clock, hold);
+    clock.advance(SLOW_MS - 1);
+    hold.pause?.();
+    clock.advance(60_000);
+    expect([on.slow.mock.calls.length, on.stop.mock.calls.length]).toEqual([0, 0]);
+    hold.resume?.();
+    clock.advance(SLOW_MS);
+    expect(on.slow).toHaveBeenCalledTimes(1);
+    answer(1);
+    await request;
+    hold.resume?.();
+    expect(clock.pending()).toBe(0);
+  });
+
+  it("the skip link focuses the title and writes no #title into the address", () => {
+    const link = new FakeEl();
+    const focus = vi.fn();
+    quietSkip({ querySelector: (selector: string) => (selector === ".skip" ? link : null) } as never, focus);
+    expect(link.fire("click").prevented).toBe(true);
+    expect(focus).toHaveBeenCalledTimes(1);
   });
 
   it("watch cancels both timers when the request settles", async () => {

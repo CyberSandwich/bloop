@@ -94,6 +94,7 @@ describe("GET /api/me for email members", () => {
       passkeys: 0,
       quota: { used: 5, total: expect.any(Number) },
       userHandle: Buffer.from(m.id).toString("base64url"),
+      turnstileSiteKey: expect.any(String),
     });
     expect((await me(admin().sid)).admin).toBe(true);
   });

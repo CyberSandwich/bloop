@@ -346,7 +346,12 @@ describe("sign-in, sessions and revocation", () => {
 
   it("the session identifies the user, and a live phone with it needs no sign-in while one without does", async () => {
     const { session } = await signIn();
-    expect(await me(session)).toEqual({ source: "graph", signedIn: true, email: "someone@example.test" });
+    expect(await me(session)).toEqual({
+      source: "graph",
+      signedIn: true,
+      email: "someone@example.test",
+      turnstileSiteKey: expect.any(String),
+    });
     expect(await me()).toEqual({
       source: "graph",
       signedIn: false,

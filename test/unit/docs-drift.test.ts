@@ -371,6 +371,7 @@ describe("size budgets", () => {
       "library trash, lazy": "public/js/library/trash.js",
       "library menu, lazy": "public/js/library/menu.js",
       "turnstile loader, lazy": "public/js/auth/turnstile.js",
+      "code step, lazy": "public/js/auth/code-entry.js",
     });
     for (const entry of lazyEntries) {
       const own = [entry.path].flat();
