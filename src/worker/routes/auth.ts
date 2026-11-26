@@ -33,10 +33,10 @@ const pendingShape = z.object({
   expiresAt: z.number(),
 });
 
-/** Cursor paging for /api/me/audit: `before` is the `at` of the last row of the previous page. */
+/** Cursor paging for /api/me/audit: `beforeId` is the `id` of the last row of the previous page. */
 const pageQuery = z.object({
   limit: z.coerce.number().int().min(1).max(200).default(50),
-  before: z.coerce.number().int().positive().optional(),
+  beforeId: z.coerce.number().int().positive().optional(),
 });
 
 const redirectUri = (config: Config) => `${config.origin}/auth/callback`;
@@ -176,9 +176,9 @@ export const authRoutes: readonly Route[] = [
       if (!query.success) return fail("bad_request");
       const who = await signedIn(request, env, config);
       if (!who.ok) return who.response;
-      const { limit, before } = query.data;
-      const rows = await auditFor(env).forUser(who.userId, limit, before);
-      return json({ rows: rows.map(auditRecord), next: rows.length === limit ? (rows.at(-1)?.at ?? null) : null });
+      const { limit, beforeId } = query.data;
+      const rows = await auditFor(env).forUser(who.userId, limit, beforeId);
+      return json({ rows: rows.map(auditRecord), nextId: rows.length === limit ? (rows.at(-1)?.id ?? null) : null });
     }),
   ),
 
