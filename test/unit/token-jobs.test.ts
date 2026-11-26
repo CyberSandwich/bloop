@@ -182,15 +182,19 @@ function parsedProblems(f: string, text: string, textJobs: string[]): string[] {
   const names = Object.keys(jobs).sort();
   if (!isDeepStrictEqual(names, [...textJobs].sort()))
     problems.push(`${f}: parsed jobs [${names}] differ from the jobs read from the text [${textJobs}]`);
-  for (const key of ["defaults", "container", "services"]) if (key in doc) problems.push(`${f}: parsed ${key}`);
+  // Keys are compared lower-cased, so a differently-cased spelling is read as the key it imitates.
+  const get = (node: object, key: string): unknown =>
+    Object.entries(node).find(([name]) => name.toLowerCase() === key)?.[1];
+  for (const key of ["defaults", "container", "services"])
+    if (get(doc, key) !== undefined) problems.push(`${f}: parsed ${key}`);
   if (JSON.stringify(doc.env ?? "").includes("CLOUDFLARE"))
     problems.push(`${f}: parsed workflow-level env holds the token`);
-  const uses = (steps: { uses?: string }[] = []) => steps.map((step) => step.uses);
+  const uses = (steps: unknown) => (Array.isArray(steps) ? steps.map((step) => get(step, "uses")) : []);
   for (const [name, job] of Object.entries(jobs)) {
     for (const key of ["defaults", "container", "services"])
-      if (key in job) problems.push(`${f} ${name}: parsed ${key}`);
-    for (const use of [job.uses, ...uses(job.steps)])
-      if (use !== undefined && !ALLOWED_USES.includes(use)) problems.push(`${f} ${name}: parsed uses ${use}`);
+      if (get(job, key) !== undefined) problems.push(`${f} ${name}: parsed ${key}`);
+    for (const use of [get(job, "uses"), ...uses(get(job, "steps"))])
+      if (use !== undefined && !ALLOWED_USES.includes(String(use))) problems.push(`${f} ${name}: parsed uses ${use}`);
     // Anywhere in the job's JSON, so a merge key or an alias cannot carry an environment in.
     if (!/"environment"\s*:|secrets|CLOUDFLARE/i.test(JSON.stringify(job))) continue;
     const pin = PINNED[`${f} ${name}`];
@@ -198,7 +202,7 @@ function parsedProblems(f: string, text: string, textJobs: string[]): string[] {
     if (!isDeepStrictEqual(job, pinned)) problems.push(`${f} ${name}: parsed job differs from its pin`);
   }
   for (const use of uses(doc.runs?.steps))
-    if (use !== undefined && !ALLOWED_USES.includes(use)) problems.push(`${f}: parsed uses ${use}`);
+    if (use !== undefined && !ALLOWED_USES.includes(String(use))) problems.push(`${f}: parsed uses ${use}`);
   return problems;
 }
 
