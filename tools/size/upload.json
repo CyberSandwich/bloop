@@ -12,7 +12,12 @@
   {
     "name": "upload pill binding, lazy",
     "path": ["dist/js/core/lazy.js", "dist/js/core/upload-pill.js"],
-    "limit": "3.15 kB"
+    "limit": "2.55 kB"
+  },
+  {
+    "name": "upload refusal copy, lazy",
+    "path": "dist/js/core/upload-refusals.js",
+    "limit": "0.9 kB"
   },
   {
     "name": "upload CSS, lazy",
