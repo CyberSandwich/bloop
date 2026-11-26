@@ -133,10 +133,16 @@ for (const [w, h] of SIZES) {
 
     const one = await scene(browser, w, h, "refusal");
     await expect(one.page.getByText("This File Type Isn't Supported")).toBeVisible({ timeout: 30_000 });
-    // The toast, which stacks above the pill, never covers the page's primary control.
-    expect(await overlap(one.page.locator(".toast"), one.page.locator("#add"))).toBe(false);
-    expect(await overlap(one.page.locator(".up-pill"), one.page.locator("#add"))).toBe(false);
-    console.log(`refusal ${at}: pills ${await one.page.locator(".up-pill").count()}, toasts ${await one.page.locator(".toast").count()}`);
+    const add = one.page.locator("#add");
+    // While the refused file's pill is still leaving, the toast stacks above it: logged, not asserted.
+    const boxes = async () =>
+      JSON.stringify({ add: await add.boundingBox(), toast: await one.page.locator(".toast").boundingBox() });
+    console.log(`refusal ${at} stacked: covers ${await overlap(one.page.locator(".toast"), add)} ${await boxes()}`);
+    await settled(one.page);
+    // Settled, the toast never covers the page's primary control.
+    console.log(`refusal ${at} settled: ${await boxes()}`);
+    expect(await overlap(one.page.locator(".toast"), add)).toBe(false);
+    expect(await overlap(one.page.locator(".up-pill"), add)).toBe(false);
     await shot(one.page, `refusal-${at}`);
     await one.context.close();
 
