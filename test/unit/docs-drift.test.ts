@@ -349,6 +349,7 @@ describe("size budgets", () => {
       "file name rule, lazy": "public/js/shared/file-name.js",
       "upload pill face, lazy": "public/js/core/pill.js",
       "upload pill binding, lazy": ["public/js/core/lazy.js", "public/js/core/upload-pill.js"],
+      "upload toast, lazy": "public/js/core/upload-toast.js",
       "upload progress words, lazy": "public/js/core/upload-format.js",
       "upload sheet, lazy": "public/js/core/upload-sheet.js",
       "upload refusal copy, lazy": "public/js/core/upload-refusals.js",

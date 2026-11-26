@@ -1,13 +1,11 @@
 // One toast at a time: a title and a line, gone after 5 s or on a tap. An error is announced at once (role alert).
-// The toast showing, passed again, stays as it is. With a `status` the title is one line (the name ellipsized, then
-// " · status") and `say` is the sentence only a screen reader gets.
-
-import { splitName } from "./format.js";
+// The toast showing, passed again, stays as it is. A title may be a node (core/upload-toast.js builds the one-line
+// status title), and a toast without a body has no line.
 
 const SHOW_MS = 5000;
 const OUT_MS = 200;
 
-/** `tappedAway` runs when a tap dismisses it, never when it times out or another takes its place. @typedef {{title: string, status?: string, say?: string, body?: string, error?: boolean, action?: {label: string, run: () => void}, tappedAway?: () => void}} Toast */
+/** `tappedAway` runs when a tap dismisses it, never when it times out or another takes its place. @typedef {{title: string | object, body?: string, error?: boolean, action?: {label: string, run: () => void}, tappedAway?: () => void}} Toast */
 
 /** The slice of Document it uses, so the unit tests (no DOM) can fake it. @typedef {{createElement: (tag: string) => any, body: {append: (node: any) => void}}} Host */
 
@@ -47,27 +45,19 @@ export function createToaster(
   return (t) => {
     if (node && t === last) return;
     last = t;
-    const { title, status, say, body, error = false, action } = t;
+    const { title, body, error = false, action } = t;
     remove();
     const made = doc.createElement("div");
     made.className = "toast glass";
     made.setAttribute("role", error ? "alert" : "status");
-    /** @param {string} className @param {string} text */
-    const span = (className, text) => {
-      const node = doc.createElement("span");
-      node.className = className;
-      node.textContent = text;
-      return node;
-    };
     const head = doc.createElement("strong");
-    if (status === undefined) head.textContent = title;
-    else {
-      const [start, end] = splitName(title);
-      head.append(span("head", start), span("tail", end), span("st", ` \u00b7 ${status}`));
-    }
+    head.append(title);
     made.append(head);
-    if (body) made.append(span("", body));
-    if (say) made.append(span("sr", say));
+    if (body) {
+      const line = doc.createElement("span");
+      line.textContent = body;
+      made.append(line);
+    }
     if (action) {
       const button = doc.createElement("button");
       button.className = "btn secondary";

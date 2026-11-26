@@ -65,7 +65,7 @@ async function mount(options: object = {}) {
     },
   }));
   vi.doMock("../../public/js/core/lazy.js", () => ({ styled: async () => {} }));
-  vi.doMock("../../public/js/core/toast.js", () => ({ toast: (t: (typeof toasts)[number]) => toasts.push(t) }));
+  vi.doMock("../../public/js/core/upload-toast.js", () => ({ toast: (t: (typeof toasts)[number]) => toasts.push(t) }));
   // A specifier in a variable: the node tsconfig has no DOM lib, so it must not follow this import into page code.
   const { mountUploads } = (await import(BINDING)) as {
     mountUploads: (options: object) => Promise<{ add: (files: never[]) => unknown; dispose: () => void }>;
@@ -104,7 +104,7 @@ afterEach(() => {
   vi.useRealTimers();
   vi.doUnmock(ENGINE);
   vi.doUnmock("../../public/js/core/lazy.js");
-  vi.doUnmock("../../public/js/core/toast.js");
+  vi.doUnmock("../../public/js/core/upload-toast.js");
   vi.doUnmock(REFUSALS);
 });
 

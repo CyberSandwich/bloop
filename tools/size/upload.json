@@ -20,6 +20,11 @@
     "limit": "2.55 kB"
   },
   {
+    "name": "upload toast, lazy",
+    "path": "dist/js/core/upload-toast.js",
+    "limit": "0.3 kB"
+  },
+  {
     "name": "upload progress words, lazy",
     "path": "dist/js/core/upload-format.js",
     "limit": "0.4 kB"

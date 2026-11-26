@@ -6,7 +6,6 @@
 /** @typedef {import("./upload.js").FileSnap} FileSnap */
 import { ICONS } from "./icons.js";
 import { styled } from "./lazy.js";
-import { toast } from "./toast.js";
 import { el, icon, setText } from "./ui.js";
 
 const SAVED_MS = 2000;
@@ -35,10 +34,11 @@ const glyphOf = (name) =>
  * @param {{focus: () => void} | null} [options.trigger] what opened the upload: it takes the focus when the pill leaves
  */
 export async function mountUploads({ maxMB, upNext = null, host = document.body, trigger = null } = {}) {
-  const [{ createUploader }, { formatBytes }, { pill, CLOSE }] = await Promise.all([
+  const [{ createUploader }, { formatBytes }, { pill, CLOSE }, { toast }] = await Promise.all([
     import("./upload.js"),
     import("./upload-format.js"),
     import("./pill.js"),
+    import("./upload-toast.js"),
     styled("/css/upload.css"),
   ]);
   /** @type {ReturnType<typeof pill> | null} */
