@@ -100,6 +100,12 @@ describe("a hand page's open variant", () => {
     expect(openVariant(page, over, "x")).toBe("<main>\n  <p>ONE</p>\n\n</main>\n");
   });
 
+  it("a region named twice in the override throws, not last-wins", () => {
+    expect(() => openVariant(page, `${over}<!-- mode:a -->\n<p>again</p>\n<!-- /mode:a -->\n`, "x")).toThrow(
+      /mode:a twice/,
+    );
+  });
+
   it("a mode region missing on either side throws", () => {
     expect(() => openVariant(page, "<!-- mode:a -->\n<p>x</p>\n<!-- /mode:a -->\n", "x")).toThrow(/no mode:b region/);
     expect(() => openVariant(page, `${over}<!-- mode:c -->\n<!-- /mode:c -->\n`, "x")).toThrow(
@@ -182,9 +188,11 @@ describe("one source for the form URL and the launch dates", () => {
     }
   });
 
-  it("the launch gate lists exactly the open documents still dated with the placeholder", () => {
+  it("the launch gate lists exactly the open drafts still dated with the placeholder, never a base document", () => {
     const listed = placeholderDates();
+    expect(listed.every((entry) => entry.startsWith("content/open/"))).toBe(true);
     const dated = docsFor("open")
+      .filter((d) => d.file.startsWith("content/open/"))
       .flatMap((d) => ["published", "effective", "updated"].map((key) => [d, key] as const))
       .filter(([d, key]) => d.meta[key] === PLACEHOLDER_DATE)
       .map(([d, key]) => `${d.file}: ${key}`);

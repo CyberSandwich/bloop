@@ -1,7 +1,16 @@
 // MODE-01 end to end, in both projects: the mode picks the page, and no /open form is ever a page of its own.
 import { expect, test } from "./mode.ts";
 
-for (const path of ["/open", "/open/", "/open/index.html", "/Open/privacy", "/open/privacy"]) {
+for (const path of [
+  "/open",
+  "/open/",
+  "/open.html",
+  "/open/index.html",
+  "/open/404",
+  "/Open/privacy",
+  "/open/privacy",
+  "/_launch.json",
+]) {
   test(`MODE-01 ${path} is 404`, async ({ request }) => {
     expect((await request.get(path, { maxRedirects: 0 })).status()).toBe(404);
   });
