@@ -3,7 +3,7 @@
 // stylesheet stripped of comments and whitespace, and each page of its comments. ADR 0011.
 // The CLI is tools/build-assets-cli.mjs; wrangler.jsonc `build` runs it before `wrangler dev` and `wrangler deploy`.
 import { lstatSync, mkdirSync, readdirSync, readFileSync, renameSync, rmSync, writeFileSync } from "node:fs";
-import { basename, dirname, join, relative, sep } from "node:path";
+import { basename, dirname, join, posix, relative, sep } from "node:path";
 import { fileURLToPath } from "node:url";
 import { transformSync } from "esbuild";
 
@@ -133,6 +133,44 @@ export function stripComments(html, rel) {
   return out + html.slice(i);
 }
 
+/**
+ * The modules a module script downloads before any import(): itself and everything its static imports reach, as
+ * paths under public/. Static imports only, as written in the source (relative specifiers in double quotes).
+ * @param {string} entry a path under public/, such as "js/screen.js"
+ * @param {(rel: string) => string} read the source of a path under public/
+ */
+export function importClosure(entry, read) {
+  const seen = new Set();
+  const stack = [entry];
+  while (stack.length) {
+    const file = /** @type {string} */ (stack.pop());
+    if (seen.has(file)) continue;
+    seen.add(file);
+    for (const m of read(file).matchAll(/^\s*(?:(?:import|export)\s[^;'"]*?from\s*|import\s+)"(\.[^"]+)"/gm)) {
+      stack.push(posix.join(posix.dirname(file), m[1] ?? ""));
+    }
+  }
+  return [...seen].sort();
+}
+
+const MODULE_SCRIPT = /^([ \t]*)<script type="module" src="\/(js\/[^"]+)"><\/script>/m;
+
+/**
+ * The page with a `<link rel="modulepreload">` for each module its script imports, ahead of the script, so the browser
+ * fetches the whole graph at once instead of one import level per round trip. The script itself is already found.
+ * @param {string} html
+ * @param {(rel: string) => string} read the source of a path under public/
+ */
+export function withModulePreload(html, read) {
+  const found = MODULE_SCRIPT.exec(html);
+  if (!found) return html;
+  const [tag, indent = "", entry = ""] = found;
+  const links = importClosure(entry, read)
+    .filter((rel) => rel !== entry)
+    .map((rel) => `${indent}<link rel="modulepreload" href="/${rel}">\n`);
+  return html.replace(tag, () => `${links.join("")}${tag}`);
+}
+
 /** @param {string} path @param {Buffer | string} data */
 function same(path, data) {
   try {
@@ -198,7 +236,11 @@ export function build(root = REPO) {
       continue;
     }
     if (rel.endsWith(".html")) {
-      files.set(rel, stripComments(bytes.toString("utf8"), rel));
+      const html = stripComments(bytes.toString("utf8"), rel);
+      files.set(
+        rel,
+        withModulePreload(html, (path) => readFileSync(join(src, path), "utf8")),
+      );
       continue;
     }
     if (!rel.endsWith(".js")) {
