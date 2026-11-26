@@ -1,0 +1,35 @@
+// The phone's notes box and its floating panel are one family of glass-and-surface shapes, so they share one radius
+// token, and the box ends above the panel instead of running under it (design.md section 7, Phone page). The browser
+// side is in e2e (NOTES-01); this holds the rules that cannot drift apart in the source.
+import { readFileSync } from "node:fs";
+import { describe, expect, it } from "vitest";
+
+const read = (path: string) => readFileSync(path, "utf8");
+/** The declarations of the first rule whose selector is exactly `selector`. */
+const rule = (css: string, selector: string) => {
+  const at = css.indexOf(`${selector} {`);
+  expect(at, `${selector} has a rule`).toBeGreaterThanOrEqual(0);
+  return css.slice(at, css.indexOf("}", at));
+};
+
+describe("NOTES-01 notes box: one radius with the panel, ending above it", () => {
+  const notes = read("public/css/notes.css");
+  const app = read("public/css/app.css");
+
+  it("the box and the panel take the radius from one token", () => {
+    expect(read("public/css/base.css")).toMatch(/--r-panel:\s*34px;/);
+    expect(rule(notes, ".notes")).toContain("border-radius: var(--r-panel);");
+    expect(rule(app, ".column > .actions")).toContain("border-radius: var(--r-panel);");
+  });
+
+  it("the box has no negative margin and no padding that stands in for the panel", () => {
+    const box = rule(notes, ".notes");
+    expect(box).not.toMatch(/margin:[^;]*calc\(-/);
+    expect(box).not.toContain("--panel");
+    expect(box).toContain("margin: 0 0 16px;");
+  });
+
+  it("the box stacks over the slide's shadow", () => {
+    expect(rule(notes, ".notes")).toMatch(/position:\s*relative;[\s\S]*z-index:\s*1;/);
+  });
+});
