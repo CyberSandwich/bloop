@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { displayName, isDisplayName, NAME_MAX_CHARS } from "../../src/worker/auth/names.ts";
+import { displayName, isDisplayName, NAME_MAX_CHARS, NAME_PIECES } from "../../src/worker/auth/names.ts";
 
 const ZWJ = "\u200D";
 const ZWNJ = "\u200C";
@@ -101,6 +101,8 @@ describe("display names: the one rule (passkeys, library names)", () => {
       `${"\u{1F469}\u200D".repeat(19)}\u{1F469}!`,
       `${"\u{1F1E9}".repeat(39)}!`,
       `${"a\u200C".repeat(19)}a!`,
+      `${"\u2139".repeat(39)}!`,
+      `${"\u2139\uFE0F".repeat(19)}\u2139!`,
     ];
     for (const name of worst) {
       expect([...name].length, name).toBeLessThanOrEqual(40);
@@ -109,6 +111,33 @@ describe("display names: the one rule (passkeys, library names)", () => {
       expect(isDisplayName(name)).toBe(false);
       expect(performance.now() - start, name).toBeLessThan(5);
     }
+  });
+
+  it("no code point alone matches two top-level pieces, nor continues an emoji and starts a piece", () => {
+    const pieces = NAME_PIECES.map((p) => new RegExp(`^(?:${p})$`, "u"));
+    const continues = /^(?:\p{Emoji_Modifier}|\uFE0F)$/u;
+    const overlaps: string[] = [];
+    for (let cp = 0; cp <= 0x10ffff; cp++) {
+      if (cp >= 0xd800 && cp <= 0xdfff) continue;
+      const char = String.fromCodePoint(cp);
+      const hits = pieces.filter((re) => re.test(char)).length + (continues.test(char) ? 1 : 0);
+      if (hits > 1) overlaps.push(cp.toString(16));
+    }
+    expect(overlaps).toEqual([]);
+  });
+
+  it("each top-level piece, repeated to the limit with a refused tail, is decided in under 5 ms", () => {
+    const samples = ["1\uFE0F\u20E3", "a", "\u0301", "a\u200Ca", "\u{1F1E9}\u{1F1EA}", "\u{1F469}\u200D\u{1F469}"];
+    expect(samples).toHaveLength(NAME_PIECES.length);
+    NAME_PIECES.forEach((piece, i) => {
+      const sample = samples[i] ?? "";
+      expect(new RegExp(piece, "u").test(sample), piece).toBe(true);
+      const name = `${sample.repeat(Math.floor((NAME_MAX_CHARS - 1) / [...sample].length))}!`;
+      isDisplayName(name);
+      const start = performance.now();
+      expect(isDisplayName(name)).toBe(false);
+      expect(performance.now() - start, piece).toBeLessThan(5);
+    });
   });
 
   it("the schema stores the NFC, trimmed form", () => {
