@@ -138,6 +138,8 @@ export class Screen extends DurableObject<Env> implements PairingStore {
   private meta: Meta | null;
   private m: Machine | null;
   private readonly links: LinkLedger;
+  /** Claims in flight by Idempotency-Key owner and hash, for `claim`'s single flight. */
+  private readonly claiming = new Map<string, { bodyHash: string; answer: Promise<Result<ClaimResponse>> }>();
   /** Every frame to a socket goes through it, so a state burst coalesces and nothing passes a held state (O10). */
   private readonly out = new StateCoalescer<WebSocket>({
     keyOf: (ws) => (ws.deserializeAttachment() as SocketAttachment | null)?.id ?? ws,
@@ -202,9 +204,24 @@ export class Screen extends DurableObject<Env> implements PairingStore {
 
   /**
    * A live claim stores the three choices and answers them, never the match (PAIR-14); a demo answers the match. With
-   * `idem`, the answer is kept for the key, so the route's replay (`idemFind`) returns this pid, not `code_taken`.
+   * `idem`, the answer is kept for the key, so the route's replay (`idemFind`) returns this pid, not `code_taken`; a
+   * second call with the key while the first is in flight (both missed the row) takes the first's answer: one flight.
    */
   async claim(code: string, phone: PhoneInfo, idem?: IdemKey): Promise<Result<ClaimResponse>> {
+    if (!idem) return this.claimOnce(code, phone);
+    const key = `${idem.owner} ${idem.keyHash}`;
+    const first = this.claiming.get(key);
+    if (first) return first.bodyHash === idem.bodyHash ? first.answer : fail("bad_request");
+    const answer = this.claimOnce(code, phone, idem);
+    this.claiming.set(key, { bodyHash: idem.bodyHash, answer });
+    try {
+      return await answer;
+    } finally {
+      this.claiming.delete(key);
+    }
+  }
+
+  private async claimOnce(code: string, phone: PhoneInfo, idem?: IdemKey): Promise<Result<ClaimResponse>> {
     if (!this.m || !this.meta) return fail("screen_gone");
     if (phone.kind === "guest" && this.meta.mode === "live") {
       const policy = this.config().guestDrop;
@@ -245,7 +262,7 @@ export class Screen extends DurableObject<Env> implements PairingStore {
       mode: meta.mode,
       kind: phone.kind,
       // Auth-first refuses a signed-out owner before the claim (PAIR-15), so no claim ever needs it.
-      // transitional: removed in P1 commit 8 (the field goes once a deploy has shipped it false, Q.12)
+      // transitional: removed in P2 (its last commit: the field goes once a deploy has shipped it false, Q.12)
       needsAuth: false,
       dropMaxBytes: this.dropMaxBytes(),
     };

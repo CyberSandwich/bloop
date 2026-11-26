@@ -1,6 +1,7 @@
 // Guest-drop behavior that needs its own configuration: short timers (expired offer, auto-end), the storage
 // budget, the R2 operation caps, the `pass` policy, and the platform rate limit. Each describe starts its own wrangler dev.
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { MISS_LIMIT } from "../../src/worker/do/directory-rules.ts";
 import { validDeck } from "../zip-builder.ts";
 import { guestRow, pairPhone, problemCode, putDrop } from "./drop-client.ts";
 import { fetchLink, inOneWindow, sleep } from "./open-client.ts";
@@ -180,6 +181,22 @@ describe("DROP-06 policy: off", () => {
     expect((await putDrop(ctx.api, claimed.body.pid, deck)).status).toBe(200);
     live.socket.close();
     demo.socket.close();
+  });
+
+  it("PAIR-15 guest refusal: a guest claim the drop refuses spends no live code and counts as a miss", async () => {
+    await inOneWindow();
+    const live = await openScreen(ctx.api, "live");
+    const probe = { headers: { "CF-Connecting-IP": "198.51.100.88" } };
+    const answers: string[] = [];
+    for (let i = 0; i < MISS_LIMIT + 1; i++) {
+      const res = await ctx.api.post<{ code: string }>("/api/claim", { code: live.code, kind: "guest" }, probe);
+      answers.push(res.body.code);
+    }
+    expect(answers.slice(0, MISS_LIMIT)).toEqual(Array(MISS_LIMIT).fill("drop_disabled"));
+    expect(answers.at(-1)).toBe("rate_limited");
+    // The code was never spent: an owner from another address still claims it.
+    expect((await claim(ctx.api, live.code, "owner")).status).toBe(200);
+    live.socket.close();
   });
 });
 

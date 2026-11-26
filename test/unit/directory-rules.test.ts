@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   GLOBAL_ALARM_MISSES,
   isBlocked,
+  lookupVerdict,
   MISS_LIMIT,
   MISS_WINDOW_MS,
   type MissRow,
@@ -64,5 +65,30 @@ describe("PAIR-07 limits: exact miss counting per IP hash", () => {
   it("does not extend the window with later misses", () => {
     const row = recordMiss({ count: 3, windowStart: T }, T + MISS_WINDOW_MS - 1);
     expect(row.windowStart).toBe(T);
+  });
+});
+
+describe("PAIR-15 lookup who", () => {
+  it("PAIR-15 lookup who: who each code routes, and which refusal counts as a miss", () => {
+    const live = { screenRef: "r", demo: false };
+    const demo = { screenRef: "r", demo: true };
+    const route = (hit: typeof live) => ({ ok: true, ...hit });
+    const owner = (signedIn: boolean) => ({ kind: "owner", signedIn, guestRefusal: null }) as const;
+    const guest = (guestRefusal: "drop_disabled" | "pass_required" | null, signedIn = false) =>
+      ({ kind: "guest", signedIn, guestRefusal }) as const;
+    // [hit, who, verdict]: a dead, consumed or never-issued code has no row, so it is a hit of null.
+    const cases: [typeof live | null, Parameters<typeof lookupVerdict>[1], unknown][] = [
+      [live, owner(true), route(live)],
+      [live, owner(false), { ok: false, miss: false, error: "auth_required" }],
+      [live, guest(null), route(live)],
+      [live, guest("drop_disabled"), { ok: false, miss: true, error: "drop_disabled" }],
+      [live, guest("pass_required", true), { ok: false, miss: true, error: "pass_required" }],
+      [demo, owner(false), route(demo)],
+      [demo, guest("drop_disabled"), route(demo)],
+      [null, owner(false), { ok: false, miss: true, error: "code_unknown" }],
+      [null, owner(true), { ok: false, miss: true, error: "code_unknown" }],
+      [null, guest(null), { ok: false, miss: true, error: "code_unknown" }],
+    ];
+    for (const [hit, who, want] of cases) expect(lookupVerdict(hit, who), JSON.stringify([hit, who])).toEqual(want);
   });
 });
