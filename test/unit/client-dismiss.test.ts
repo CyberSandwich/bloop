@@ -95,6 +95,18 @@ describe("guardDismiss", () => {
     expect(fire("click", slide, 1040 + 351)).toBe(false);
   });
 
+  it("a new tap ends the quiet: a fast tap back on the handle, or a key's click after it, still lands", () => {
+    tap(slide, 1000);
+    popovers = [];
+    expect(tap(invoker, 1100)).toEqual([true, true, true]);
+  });
+
+  it("a tap in any open popover is that one's, even when another popover is open beside it", () => {
+    const other = { closest: () => null };
+    popovers.push({ ...popovers[0], id: "leave", contains: (t: unknown) => t === other } as (typeof popovers)[0]);
+    expect(tap(other, 1000)).toEqual([true, true, true]);
+  });
+
   it("with the sheet closed, a tap reaches the page", () => {
     popovers = [];
     expect(tap(slide, 5000)).toEqual([true, true, true]);
@@ -121,28 +133,39 @@ const files = walk("");
 const read = (f: string) => readFileSync(`${PUBLIC}${f}`, "utf8");
 /** The site menu: the landing's JS has no bytes left for the import (tools/size/core.json, landing JS). */
 const PENDING = new Set(["nav-links"]);
+const LOAD = 'import("./core/dismiss.js")';
+/** The ids of a page's light-dismiss popovers: any `popover` value but manual, attributes in any order. */
+const popoversOf = (html: string) =>
+  [...html.matchAll(/<[a-z]+\s([^>]*)>/g)].flatMap(([, attrs = ""]) => {
+    const value = attrs.match(/(?:^|\s)popover(?:="([^"]*)")?(?=\s|$)/);
+    const id = attrs.match(/(?:^|\s)id="([^"]+)"/)?.[1];
+    return value && value[1] !== "manual" && id ? [id] : [];
+  });
+const scriptsOf = (html: string) =>
+  [...html.matchAll(/<script type="module" src="\/(js\/[^"]+)"/g)].map((m) => read(m[1] ?? ""));
 
 describe("every overlay", () => {
   it("a light-dismiss popover's page loads the dismiss from its module script", () => {
     const missing: string[] = [];
     for (const page of files.filter((f) => f.endsWith(".html"))) {
       const html = read(page);
-      const ids = [...html.matchAll(/<[a-z]+ [^>]*\bid="([^"]+)"[^>]*\spopover(?:="(?:auto)?")?[\s>]/g)].map(
-        (m) => m[1],
-      );
-      const scripts = [...html.matchAll(/<script type="module" src="\/(js\/[^"]+)"/g)].map((m) => read(m[1] ?? ""));
-      const loads = scripts.some((js) => js.includes('import("./core/dismiss.js")'));
-      for (const id of ids) if (!loads && !PENDING.has(id ?? "")) missing.push(`${page} #${id}`);
+      const loads = popoversOf(html).length > 0 && scriptsOf(html).some((js) => js.includes(LOAD));
+      for (const id of popoversOf(html)) if (!loads && !PENDING.has(id)) missing.push(`${page} #${id}`);
     }
     expect(missing).toEqual([]);
-    // The check finds the room screen's two.
-    expect(read("s.html").match(/\spopover[\s>]/g)?.length).toBe(2);
+    // The check finds the room screen's two, whatever order a tag's attributes come in.
+    expect(popoversOf(read("s.html")).sort()).toEqual(["leave", "side"]);
+    expect(popoversOf('<p popover="hint" id="a"></p><p id="b" popover="manual"></p>')).toEqual(["a"]);
   });
 
   it("a popover made by script is a manual one: only markup popovers light-dismiss", () => {
     const bad = files
       .filter((f) => f.endsWith(".js"))
-      .flatMap((f) => [...read(f).matchAll(/\.popover = ([^;]+);/g)].map((m) => `${f}: ${m[1]}`))
+      .flatMap((f) =>
+        [...read(f).matchAll(/\.popover = ([^;]+);|setAttribute\("popover", ([^)]+)\)|\bpopover: ([^,}]+)/g)].map(
+          (m) => `${f}: ${m[1] ?? m[2] ?? m[3]}`,
+        ),
+      )
       .filter((line) => !line.includes('"manual"'));
     expect(bad).toEqual([]);
   });

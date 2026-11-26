@@ -1,7 +1,10 @@
 // The one outside-tap dismiss for every popover (design.md section 6, Overlays), loaded by a page once one can open.
 // The platform's light dismiss closes a popover but lets the tap's click land on whatever lies under it.
 
-/** A click this soon after the closing tap's pointerup is that tap's: iOS can send it after a late touchend. */
+/**
+ * A click this soon after the closing tap's pointerup, before the next pointerdown, is that tap's: iOS can send it
+ * after a late touchend.
+ */
 const QUIET_MS = 350;
 let on = false;
 
@@ -20,10 +23,10 @@ export function guardDismiss() {
     "pointerdown",
     (e) => {
       const t = /** @type {Element} */ (e.target);
-      // Its own invoker toggles it, so a tap there is the popover's, not a dismiss.
-      shut = /** @type {HTMLElement[]} */ ([...document.querySelectorAll(":popover-open:not([popover=manual])")]).find(
-        (p) => !p.contains(t) && !t.closest(`[popovertarget="${p.id}"]`),
-      );
+      const open = /** @type {HTMLElement[]} */ ([...document.querySelectorAll(":popover-open:not([popover=manual])")]);
+      quiet = 0;
+      // A tap in any open popover is that one's; its own invoker toggles it, so a tap there is no dismiss either.
+      shut = open.some((p) => p.contains(t)) ? undefined : open.find((p) => !t.closest(`[popovertarget="${p.id}"]`));
       if (shut) eat(e);
     },
     true,
