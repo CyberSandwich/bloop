@@ -60,9 +60,9 @@ User files (v4) live in a second private bucket in the `eu` jurisdiction, bound 
 
 `env.staging` in `wrangler.jsonc` is a second Worker, `bloop-staging`, at `https://bloop-staging.dsap.workers.dev`: its own Durable Object namespaces, D1 `bloop-staging`, EU buckets `bloop-staging-guest` and `bloop-staging-library`, tiny caps, and Cloudflare's published Turnstile test keys as plain vars. Each stream's live checks run there; production gets only the post-deploy smoke.
 
-1. **Resources, once:** `npx wrangler d1 create bloop-staging --jurisdiction eu`, then `npx wrangler r2 bucket create bloop-staging-guest --jurisdiction eu` and the same for `bloop-staging-library`.
-2. **GitHub:** a `staging` environment with `CLOUDFLARE_API_TOKEN` and `CLOUDFLARE_ACCOUNT_ID`. The token is the production one plus R2 Storage Read, because the job looks for the buckets before it deploys.
-3. **Deploy:** push the `staging` branch, or run the `staging` workflow from a `ci/*` branch. Until step 1 and 2 are done the job prints `Staging skipped: ...` and passes.
+1. **Resources, once:** `npx wrangler r2 bucket create bloop-staging-guest --jurisdiction eu` and the same for `bloop-staging-library`, then `npx wrangler d1 create bloop-staging --jurisdiction eu`. The D1 goes last: the job skips until it exists and does not look for the buckets, so a missing bucket fails the deploy.
+2. **GitHub:** a `staging` environment with `CLOUDFLARE_API_TOKEN` and `CLOUDFLARE_ACCOUNT_ID`, and a deployment branch rule that allows `staging` only (protect that branch; allow `ci/*` only while testing the workflow itself), so no other branch can read the token. The token is the production one: Workers plus D1, no R2 permission. A separate Cloudflare account for staging is optional and removes the shared reach.
+3. **Deploy:** push the `staging` branch, or run the `staging` workflow from a `ci/*` branch where the rule allows it. Until step 1 and 2 are done the job prints `Staging skipped: ...` and passes.
 4. **Secrets:** the job generates every secret that is a random key (`tools/staging.mjs`, listed in `SECRETS`) and pipes it into `wrangler secret put -e staging` when it is missing; none is printed. `ADMIN_EMAILS` and `TEST_EMAILS` are addresses: set them once with `npx wrangler secret put <NAME> -e staging`. Staging sends no email until the mail change adds its admin-only mode.
 
 `STAGING_D1_ID` in the config is a placeholder the job replaces in its own checkout; it is never committed.

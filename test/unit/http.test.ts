@@ -82,6 +82,16 @@ describe("revalidated", () => {
     expect(changed.status).toBe(200);
     expect(changed.headers.get("ETag")).not.toBe(etag);
   });
+
+  it("matches a weak tag, a tag inside a list, and *, and nothing else", async () => {
+    const etag = (await revalidated(get(), { a: 1 })).headers.get("ETag") ?? "";
+    for (const sent of [`W/${etag}`, `"other", ${etag}`, `W/"other",W/${etag}`, "*"]) {
+      expect((await revalidated(get({ "If-None-Match": sent }), { a: 1 })).status, sent).toBe(304);
+    }
+    for (const sent of ["", `"other"`, etag.slice(0, -1), `W/"other", "x"`]) {
+      expect((await revalidated(get({ "If-None-Match": sent }), { a: 1 })).status, sent).toBe(200);
+    }
+  });
 });
 
 describe("http helpers", () => {

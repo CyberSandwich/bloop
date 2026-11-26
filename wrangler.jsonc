@@ -146,13 +146,12 @@
     "TOKEN_KEK_CURRENT": "k1"
   },
   // Staging (docs/setup.md): its own script, Durable Object namespaces, D1 and EU buckets, tiny caps, Cloudflare's published
-  // Turnstile test keys. Keys a wrangler environment does not inherit are repeated; test/unit/staging.test.ts keeps them in step.
+  // Turnstile test keys, no crons. Bindings, vars and ratelimits are not inherited, so they are repeated; test/unit/staging.test.ts keeps them in step.
+  // routes is emptied so it does not inherit the custom domain; migrations and workers_dev are inherited.
   // STAGING_D1_ID is replaced inside the CI job (tools/staging.mjs), never committed.
   "env": {
     "staging": {
       "name": "bloop-staging",
-      "workers_dev": true,
-      "preview_urls": false,
       "routes": [],
       "durable_objects": {
         "bindings": [
@@ -174,16 +173,6 @@
           }
         ]
       },
-      "migrations": [
-        {
-          "tag": "v1",
-          "new_sqlite_classes": ["Screen", "Directory"]
-        },
-        {
-          "tag": "v2",
-          "new_sqlite_classes": ["UserLibrary", "Converter"]
-        }
-      ],
       "d1_databases": [
         {
           "binding": "DB",
@@ -350,9 +339,7 @@
           }
         }
       ],
-      "triggers": {
-        "crons": ["*/5 * * * *", "0 * * * *", "30 3 * * *"]
-      },
+      "triggers": { "crons": [] },
       "vars": {
         "PUBLIC_ORIGIN": "https://bloop-staging.dsap.workers.dev",
         "FILE_ORIGIN": "",
