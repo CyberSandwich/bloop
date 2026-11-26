@@ -1,10 +1,13 @@
 package main
 
 import (
+	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/http"
 	"os"
+	"path/filepath"
 	"slices"
 	"strings"
 	"testing"
@@ -222,6 +225,28 @@ func TestACopyAndAnH264EncodeNeverProduceA720p(t *testing.T) {
 		if slices.Contains(encodeWidths(tools), 1280) {
 			t.Errorf("%s: encoded at the preview width", name)
 		}
+	}
+}
+
+func TestAJobThatEndsCancelledDoesNotKeepThe720p(t *testing.T) {
+	s := testServer(t, newFakeTools(0))
+	for _, rel := range []string{"m/720.mp4", "t.webp"} {
+		p := filepath.Join(s.dir("preview"), filepath.FromSlash(rel))
+		if err := os.MkdirAll(filepath.Dir(p), 0o700); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(p, fakeFaststartMP4, 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	err := s.keepPreview(ctx, s.dir("out", "m", "0.mp4"), &metaJSON{}, VideoMeta{}, errors.New("full encode killed"))
+	if !errors.Is(err, context.Canceled) {
+		t.Fatalf("keepPreview on a cancelled job = %v, want the cancellation", err)
+	}
+	if _, statErr := os.Stat(s.dir("out", "m", "720.mp4")); !os.IsNotExist(statErr) {
+		t.Fatalf("the 720p was copied into the outputs of a cancelled job: %v", statErr)
 	}
 }
 

@@ -309,6 +309,22 @@ describe("the published 720p is the row's: nothing later in the run may take it 
     expect((derived(h) as { status: string }).status).toBe("done");
   });
 
+  it("a run past its deadline while the 720p is 'storing' but already committed keeps the 720p", async () => {
+    const h = harness({ ext: "mp4", bytes: 4000 });
+    await videoContainer(h, { readyAfter: 0, endAfter: 50, ending: "full" });
+    await begin(h, { ext: "mp4" });
+    await untilReady720(h);
+    // The early publish committed, then the Converter lost the write that records it.
+    const rec = (await h.store.get(RECORD_KEY)) as Record<string, unknown>;
+    await h.store.put(RECORD_KEY, { ...rec, preview: "storing", deadline: h.clock.t - 1 });
+    h.store.alarmAt = h.clock.t;
+    await h.runner.alarm();
+    expect(derived(h)).toMatchObject({ status: "ready720", stage: null, error: null });
+    expect(h.bucket.keys(`${PREFIX}/d/`)).toEqual([key("m/720.mp4"), key("t.webp")]);
+    expect(h.starts).toHaveLength(1);
+    expect(h.spend.calls).toContain("record:conversion_done");
+  });
+
   it("a record stored before the 720p existed still parses, with no preview and a weight of one", async () => {
     const h = harness({ ext: "mp4", bytes: 4000 });
     await begin(h, { ext: "mp4" });
