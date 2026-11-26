@@ -106,21 +106,16 @@ export function start(page) {
       field.value = base;
       const save = /** @type {HTMLButtonElement} */ (el("button", { class: "btn primary", type: "submit" }, ["Save"]));
       const form = el("form", { class: "lib-form" }, [field, save]);
-      const sync = () => {
-        save.disabled = field.value.trim() === "";
-      };
-      field.addEventListener("input", sync);
       form.addEventListener("submit", async (e) => {
         e.preventDefault();
         // The one file-name rule cleans what was typed (doubled spaces, stray joiners), so the server never refuses it.
         const { cleanName, NAME_MAX } = await import("../shared/file-name.js");
         const name = cleanName(field.value, NAME_MAX - now.name.length + base.length);
-        if (!name) return;
+        if (!name) return page.say({ title: "That Name Can't Be Used", body: "", error: true });
         close();
         if (name !== base) await page.rename(id, name);
       });
       body.replaceWith(form);
-      sync();
       field.focus();
       field.select();
     };

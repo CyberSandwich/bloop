@@ -17,8 +17,14 @@ describe("a rename is judged by the shared file name rule", () => {
     expect(renamed("講義 😀", "pdf")).toBe("講義 😀.pdf");
   });
 
-  it("refuses a name the upload path would have cleaned: a doubled space", () => {
-    expect(renamed("a  b", "pdf")).toBeNull();
+  it("refuses a name the upload path would have cleaned: a doubled space, a tab, a no-break space, a Hangul filler", () => {
+    for (const bad of ["a  b", "a\tb", "a\u00a0b", "a\u3164b", "a\u200d b"]) {
+      expect(renamed(bad, "pdf"), JSON.stringify(bad)).toBeNull();
+    }
+  });
+
+  it("accepts a decomposed base, since a rename is normalized to NFC first", () => {
+    expect(renamed("e\u0301", "pdf")).toBe("\u00e9.pdf");
   });
 
   it("the route's UTF-16 cap on the body admits every name this accepts", () => {

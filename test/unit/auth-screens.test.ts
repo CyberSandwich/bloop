@@ -127,6 +127,8 @@ describe("endSessions: a failing screen end never skips the library close", () =
     };
     await expect(endSessions(deps, {}, "u1", [P])).resolves.toBeUndefined();
     expect(closed).toEqual(["closed"]);
-    expect(logs).toEqual([JSON.stringify({ evt: "auth", kind: "end_screens_failed" })]);
+    expect(logs).toEqual([
+      JSON.stringify({ evt: "auth", kind: "end_screens_failed", error: "Error: live layer unavailable" }),
+    ]);
   });
 });

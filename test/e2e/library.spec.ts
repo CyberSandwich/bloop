@@ -23,6 +23,7 @@ const members = {
     ["c", "Alpha.pptx"],
   ]),
   renameSpaces: fixtures.member([["a", "Alpha.pptx"]]),
+  renameBad: fixtures.member([["a", "Alpha.pptx"]]),
   sample: fixtures.member(),
   preview: fixtures.member([["a", "Reading list.pdf"]]),
   drag: fixtures.member([
@@ -173,18 +174,34 @@ test.describe("library", () => {
     await expect(sheet).toBeHidden();
   });
 
-  test("a typed name with a doubled space is cleaned before it is sent, never refused", async ({ page, context }) => {
+  test("a typed name with a doubled and a no-break space is cleaned before it is sent, never refused", async ({
+    page,
+    context,
+  }) => {
     await signedIn(context, members.renameSpaces);
     await page.goto("/library");
     await page.getByRole("button", { name: "More for Alpha.pptx" }).first().click();
     await page.getByRole("dialog").getByRole("button", { name: "Rename" }).click();
     const field = page.getByRole("textbox", { name: "Name" });
-    await field.fill("  Alpha   Beta  ");
+    await field.fill("  Alpha \u00a0 Beta\t");
     await field.press("Enter");
     await expect(page.locator("#file-list")).toContainText("Alpha Beta.pptx");
     await page.reload();
     await expect(page.locator("#file-list")).toContainText("Alpha Beta.pptx");
     await expectNoToast(page);
+  });
+
+  test("a name that cleans to nothing says so, and the field stays", async ({ page, context }) => {
+    await signedIn(context, members.renameBad);
+    await page.goto("/library");
+    await page.getByRole("button", { name: "More for Alpha.pptx" }).first().click();
+    await page.getByRole("dialog").getByRole("button", { name: "Rename" }).click();
+    const field = page.getByRole("textbox", { name: "Name" });
+    await field.fill("\u200b");
+    await field.press("Enter");
+    await expect(page.getByRole("status").filter({ hasText: "That Name Can't Be Used" })).toBeVisible();
+    await expect(field).toBeVisible();
+    await expect(page.locator("#file-list")).toContainText("Alpha.pptx");
   });
 
   test("Add the Sample Deck adds the deck as a row that a reload keeps", async ({ page, context }) => {

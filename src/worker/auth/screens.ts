@@ -66,8 +66,10 @@ export async function endSessions(
 ): Promise<void> {
   try {
     await deps.endScreens(env, userId, scope);
-  } catch {
-    console.log(JSON.stringify({ evt: "auth", kind: "end_screens_failed" }));
+  } catch (e) {
+    // The error's name and message only: no stack and nothing of the member's.
+    const error = e instanceof Error ? `${e.name}: ${e.message}` : "unknown";
+    console.log(JSON.stringify({ evt: "auth", kind: "end_screens_failed", error }));
   }
   await deps.closeSessions(env, userId, publicIds);
 }
