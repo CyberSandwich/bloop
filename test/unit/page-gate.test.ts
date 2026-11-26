@@ -45,7 +45,7 @@ async function signIn(db: TestDb, id: string, emailNorm: string | null) {
       "INSERT INTO app_user (id, tid, oid, email, email_norm, created_at, last_seen_at) VALUES (?, ?, ?, ?, ?, ?, ?)",
     )
     .run(id, emailNorm ? "email" : "tenant-a", id, emailNorm, emailNorm, Date.now(), Date.now());
-  return new Sessions(db).create(id, null);
+  return new Sessions(db).create(id, null, { method: "code", label: null, reauthAt: null });
 }
 
 const get = (env: PageEnv, path: string, cookie?: string) =>

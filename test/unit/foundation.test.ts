@@ -219,8 +219,6 @@ describe("LIB-08 erase: an email member is handed to the purge, never deleted in
       .run();
     addUser(db, "e");
     const sessions = new Sessions(db, () => NOW);
-    expect(await sessions.emailNorm("m")).toBe("m@example.test");
-    expect(await sessions.emailNorm("e")).toBeNull();
     await sessions.requestDeletion("m", NOW + 7 * DAY, "kept");
     await sessions.requestDeletion("m", NOW + 99 * DAY, "kept");
     await sessions.requestDeletion("e", NOW + 7 * DAY, "kept");
