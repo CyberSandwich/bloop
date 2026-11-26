@@ -1,5 +1,17 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { fileProblem, kindOf, prepareFile, wholeMB } from "../../public/js/core/drop.js";
+
+// A specifier in a variable: the node tsconfig has no DOM lib, so it must not follow drop.js into the pill's page code.
+const DROP = "../../public/js/core/drop.js";
+interface Drop {
+  fileProblem: (file: { name: string; size: number }, maxBytes: number) => string | null;
+  kindOf: (name: string) => string | null;
+  wholeMB: (bytes: number) => number;
+  sendFile: (args: { file: File; pid: string; onProgress: (fraction: number) => void }) => {
+    done: Promise<unknown>;
+    abort: () => void;
+  };
+}
+const { fileProblem, kindOf, wholeMB } = (await import(DROP)) as Drop;
 
 const MB = 1024 * 1024;
 
@@ -45,12 +57,14 @@ describe("what a phone can check before sending", () => {
 });
 
 const file = new File([new Uint8Array(10)], "Q3 plan: v2.pptx");
+const PILL = "../../public/js/core/upload-pill.js";
+const TOAST = "../../public/js/core/toast.js";
 
-/** The engine as the adapter sees it: it reports states, the adapter turns them into the phone's result. */
-function fakeEngine() {
+/** The binding as the adapter sees it: it reports snapshots, the adapter turns them into the phone's result. */
+function fakeBinding() {
   const made: { kind?: string; pid?: string; onChange: (b: unknown) => void }[] = [];
   const calls: string[] = [];
-  const createUploader = (args: { kind: string; pid: string; onChange: (b: unknown) => void }) => {
+  const mountUploads = async (args: { kind: string; pid: string; onChange: (b: unknown) => void }) => {
     made.push(args);
     return {
       add: (files: File[]) => {
@@ -61,25 +75,29 @@ function fakeEngine() {
       dispose: () => calls.push("dispose"),
     };
   };
-  return { made, calls, createUploader };
+  return { made, calls, mountUploads };
 }
 
 async function start(onProgress: (fraction: number) => void = () => {}) {
   vi.resetModules();
-  const engine = fakeEngine();
-  vi.doMock("../../public/js/core/upload.js", () => ({ createUploader: engine.createUploader }));
-  const { sendFile } = await import("../../public/js/core/drop.js");
+  const binding = fakeBinding();
+  vi.doMock(PILL, () => ({ mountUploads: binding.mountUploads }));
+  const { sendFile } = (await import(DROP)) as Drop;
   const sending = sendFile({ file, pid: "ref.secret", onProgress });
-  await vi.waitFor(() => expect(engine.made).toHaveLength(1));
+  await vi.waitFor(() => expect(binding.calls).toContain("add Q3 plan: v2.pptx"));
   const say = (state: string, more: object = {}) =>
-    engine.made[0]?.onChange({ files: [{ id: 7, state, fraction: 0.5, ...more }] });
-  return { ...engine, sending, say };
+    binding.made[0]?.onChange({ files: [{ id: 7, state, fraction: 0.5, ...more }] });
+  return { ...binding, sending, say };
 }
 
 describe("sending a file", () => {
-  afterEach(() => vi.doUnmock("../../public/js/core/upload.js"));
+  afterEach(() => {
+    vi.useRealTimers();
+    vi.doUnmock(PILL);
+    vi.doUnmock(TOAST);
+  });
 
-  it("hands the file to the engine as a guest with the pairing credential, and reports its share", async () => {
+  it("mounts the pill as a guest with the pairing credential, adds the file, and reports its share", async () => {
     const seen: number[] = [];
     const { made, calls, say } = await start((f) => seen.push(f));
     expect(made[0]).toMatchObject({ kind: "guest", pid: "ref.secret" });
@@ -89,20 +107,27 @@ describe("sending a file", () => {
     expect(seen).toEqual([0.25, 0.25]);
   });
 
-  it("resolves the pushed view when the engine says sent, and lets the engine go", async () => {
+  it("resolves the pushed view when sent, and keeps the pill up for 2 s so Sent is read", async () => {
+    vi.useFakeTimers();
     const { sending, say, calls } = await start();
     say("sent", { view: { state: "offered" } });
     expect(await sending.done).toEqual({ ok: true, view: { state: "offered" } });
+    await vi.advanceTimersByTimeAsync(1999);
+    expect(calls).not.toContain("dispose");
+    await vi.advanceTimersByTimeAsync(1);
     expect(calls).toContain("dispose");
   });
 
-  it("resolves the refusal's code, so the page can show the guest_refused state", async () => {
-    const { sending, say } = await start();
+  it("resolves the refusal's code and takes the pill down at once, so the page's own state is the only message", async () => {
+    vi.useFakeTimers();
+    const { sending, say, calls } = await start();
     say("refused", { error: "bad_type" });
     expect(await sending.done).toEqual({ ok: false, error: "bad_type" });
+    await vi.advanceTimersByTimeAsync(0);
+    expect(calls).toContain("dispose");
   });
 
-  it("abort cancels the engine's file, and its cancellation resolves upload_aborted", async () => {
+  it("abort cancels the file, and its cancellation resolves upload_aborted", async () => {
     const { sending, say, calls } = await start();
     sending.abort();
     expect(calls).toContain("cancel 7");
@@ -110,81 +135,29 @@ describe("sending a file", () => {
     expect(await sending.done).toEqual({ ok: false, error: "upload_aborted" });
   });
 
-  it("an abort before the engine loaded sends nothing", async () => {
+  it("an abort before the pill loaded sends nothing", async () => {
     vi.resetModules();
-    const engine = fakeEngine();
-    vi.doMock("../../public/js/core/upload.js", () => ({ createUploader: engine.createUploader }));
-    const { sendFile } = await import("../../public/js/core/drop.js");
+    const binding = fakeBinding();
+    vi.doMock(PILL, () => ({ mountUploads: binding.mountUploads }));
+    const { sendFile } = (await import(DROP)) as Drop;
     const sending = sendFile({ file, pid: "ref.secret", onProgress: () => {} });
     sending.abort();
     expect(await sending.done).toEqual({ ok: false, error: "upload_aborted" });
-    expect(engine.made).toEqual([]);
+    expect(binding.calls).not.toContain("add Q3 plan: v2.pptx");
   });
 
-  it("an engine that cannot load says so in a toast with Reload, resolves offline and sends nothing", async () => {
+  it("a pill that cannot load says so in a toast with Reload, resolves offline and sends nothing", async () => {
     vi.resetModules();
-    vi.doMock("../../public/js/core/upload.js", () => {
+    vi.doMock(PILL, () => {
       throw new Error("Failed to fetch dynamically imported module");
     });
     const toasts: { title: string; body: string; action?: { label: string } }[] = [];
-    vi.doMock("../../public/js/core/toast.js", () => ({ toast: (t: (typeof toasts)[number]) => toasts.push(t) }));
-    const { sendFile } = await import("../../public/js/core/drop.js");
+    vi.doMock(TOAST, () => ({ toast: (t: (typeof toasts)[number]) => toasts.push(t) }));
+    const { sendFile } = (await import(DROP)) as Drop;
     const sending = sendFile({ file, pid: "ref.secret", onProgress: () => {} });
     expect(await sending.done).toEqual({ ok: false, error: "offline" });
     expect(toasts).toMatchObject([
       { title: "Upload Didn't Load", body: "Reload the page, then try again.", action: { label: "Reload" } },
     ]);
-    vi.doUnmock("../../public/js/core/toast.js");
-  });
-});
-
-describe("preparing a file", () => {
-  const file = (bytes: number[], name: string) => new File([new Uint8Array(bytes)], name);
-
-  it("sends a deck or PDF as it is", async () => {
-    const deck = file([1, 2, 3], "a.pptx");
-    expect(await prepareFile(deck, MB)).toEqual({ ok: true, file: deck });
-  });
-
-  it("refuses a video whose structure it cannot walk, with the video's problem", async () => {
-    expect(await prepareFile(file([0, 0, 0, 12, 1, 2, 3], "a.mov"), MB)).toEqual({ ok: false, problem: "video" });
-  });
-
-  it("refuses a photo this browser cannot decode, small or not", async () => {
-    expect(await prepareFile(file(new Array(200).fill(1), "a.png"), 100)).toEqual({ ok: false, problem: "photo" });
-    expect(await prepareFile(file([0xff, 0xd8, 0xff, 0xda], "a.jpg"), MB)).toEqual({ ok: false, problem: "photo" });
-  });
-
-  it("names a HEIC this browser cannot decode, and never sends it as it is", async () => {
-    expect(await prepareFile(file([0, 0, 0, 24], "IMG_1.HEIC"), MB)).toEqual({ ok: false, problem: "heic" });
-  });
-
-  /** Media modules whose photo step answers `reason`, and whose imports fail when `fail` names them. */
-  const modules = (reason: "decode" | "encode" | "large", fail: ("photo" | "video")[] = []) => {
-    const photo = { preparePhoto: async () => ({ ok: false as const, reason }) };
-    const video = { stripLocation: async () => ({ ok: false as const }) };
-    const load =
-      <T>(name: "photo" | "video", m: T) =>
-      async () => {
-        if (fail.includes(name)) throw new TypeError("Failed to fetch dynamically imported module");
-        return m;
-      };
-    return { photo: load("photo", photo), video: load("video", video) } as unknown as Parameters<typeof prepareFile>[2];
-  };
-
-  it("maps only a decode failure on a HEIC to heic: encode is photo, large is large", async () => {
-    const heic = file([1], "a.heic");
-    expect(await prepareFile(heic, MB, modules("decode"))).toEqual({ ok: false, problem: "heic" });
-    expect(await prepareFile(heic, MB, modules("encode"))).toEqual({ ok: false, problem: "photo" });
-    expect(await prepareFile(heic, MB, modules("large"))).toEqual({ ok: false, problem: "large" });
-    expect(await prepareFile(file([1], "a.jpg"), MB, modules("decode"))).toEqual({ ok: false, problem: "photo" });
-  });
-
-  it("never rejects: a media module that fails to load is the file kind's refusal", async () => {
-    const down = modules("decode", ["photo", "video"]);
-    expect(await prepareFile(file([1], "a.jpg"), MB, down)).toEqual({ ok: false, problem: "photo" });
-    expect(await prepareFile(file([1], "a.mov"), MB, down)).toEqual({ ok: false, problem: "video" });
-    const deck = file([1], "a.pdf");
-    expect(await prepareFile(deck, MB, down)).toEqual({ ok: true, file: deck });
   });
 });

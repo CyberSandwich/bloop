@@ -12,7 +12,7 @@
   width: fit-content;
   min-width: 240px;
   max-width: min(calc(100% - 2 * var(--pad)), 360px);
-  height: 56px;
+  min-height: 56px;
   margin: 0 auto;
   padding: 8px;
   overflow: hidden;
@@ -63,13 +63,39 @@
   flex: none;
   white-space: pre;
 }
-.up-line {
+/* The paused pill's title ends in its own words ("Is Paused"), so it wraps rather than giving way in the middle. */
+.up-pill.wrap .up-title {
+  display: -webkit-box;
   overflow: hidden;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+}
+.up-pill.wrap .up-title > * {
+  display: inline;
+  white-space: normal;
+  overflow-wrap: anywhere;
+}
+@media (max-width: 360px) {
+  .up-pill.wrap {
+    padding-left: 22px;
+  }
+  .up-pill.wrap .up-tile {
+    display: none;
+  }
+  .up-pill.wrap .up-title {
+    -webkit-line-clamp: 3;
+  }
+}
+.up-line {
   color: var(--muted);
   font-size: 13px;
   font-variant-numeric: tabular-nums;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+  overflow: hidden;
+  overflow-wrap: anywhere;
+  /* a long line (the waiting advice, a file name) wraps to three lines, then ends in an ellipsis */
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 3;
 }
 .up-bad {
   color: var(--rose-ink);

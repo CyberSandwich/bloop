@@ -3,7 +3,7 @@
 // through `deps`, so the unit tests drive it with fakes. XMLHttpRequest sends the parts because only it reports upload
 // progress in every phone browser.
 /** @import {Xhr} from "../types.js" */
-import { ERRORS } from "../shared/errors.js";
+import { createApi, isErrorCode } from "./api.js";
 
 const KIB = 1024;
 const MIB = KIB * KIB;
@@ -27,6 +27,9 @@ const MAX_REJECTED = 3;
 // A request with no answer by then is the network; a complete may wait on the server's check.
 const CALL_MS = 30_000;
 const COMPLETE_MS = 120_000;
+// The server's validation after complete: asked every 2 s, for 5 minutes.
+const POLL_MS = 2000;
+const MAX_POLLS = 150;
 const ETA_AFTER_S = 5;
 const ETA_MOVE = 0.2;
 const ETA_WEIGHT = 0.2;
@@ -86,27 +89,20 @@ function browserDeps() {
 /**
  * SHA-256 over the name, the size and 16 evenly spaced 64 KiB samples, the first and last included. No
  * `lastModified`: an iOS picker stamps each copy with the current time, which would break resuming.
- * @param {{name: string, size: number, slice: (start: number, end: number) => {arrayBuffer: () => Promise<ArrayBuffer>}}} file
+ * @param {{name: string, size: number, slice: (start: number, end: number) => Blob}} file
  * @param {Deps["subtle"]} [subtle]
  * @returns {Promise<string>} 64 lowercase hex characters
  */
 export async function fingerprint(file, subtle = globalThis.crypto.subtle) {
-  const head = new TextEncoder().encode(JSON.stringify([file.name, file.size]));
   const len = Math.min(SAMPLE_BYTES, file.size);
-  const chunks = [head];
+  /** @type {(string | Blob)[]} */
+  const parts = [JSON.stringify([file.name, file.size])];
   for (let i = 0; i < SAMPLES; i++) {
     const at = Math.floor((i * (file.size - len)) / (SAMPLES - 1));
-    chunks.push(new Uint8Array(await file.slice(at, at + len).arrayBuffer()));
+    parts.push(file.slice(at, at + len));
   }
-  const all = new Uint8Array(new ArrayBuffer(chunks.reduce((sum, c) => sum + c.length, 0)));
-  let offset = 0;
-  for (const c of chunks) {
-    all.set(c, offset);
-    offset += c.length;
-  }
-  return Array.from(new Uint8Array(await subtle.digest("SHA-256", all)), (b) => b.toString(16).padStart(2, "0")).join(
-    "",
-  );
+  const digest = await subtle.digest("SHA-256", await new Blob(parts).arrayBuffer());
+  return Array.from(new Uint8Array(digest), (b) => b.toString(16).padStart(2, "0")).join("");
 }
 
 /**
@@ -185,9 +181,6 @@ export function formatBytes(loaded, total) {
   return `${(Math.floor((loaded / unit) * 10) / 10).toFixed(1)} of ${scaled.toFixed(1)} ${name}`;
 }
 
-/** @param {unknown} code @returns {boolean} */
-const isGuestCode = (code) => typeof code === "string" && Object.hasOwn(ERRORS, code);
-
 /** @param {string | null | undefined} header @returns {number | undefined} whole seconds (an HTTP date is not honored) */
 const seconds = (header) => {
   const n = Number.parseInt(header ?? "", 10);
@@ -240,6 +233,7 @@ const seconds = (header) => {
  */
 export function createUploader({ kind, pid, onChange, deps }) {
   const d = { ...browserDeps(), ...deps };
+  const api = createApi({ fetch: d.fetch });
   const guest = kind === "guest";
   /** @type {Rec[]} */
   let records = [];
@@ -387,7 +381,7 @@ export function createUploader({ kind, pid, onChange, deps }) {
   }
   /** @param {Rec} r @param {string} code @returns {never} */
   function refuse(r, code) {
-    finishRec(r, "refused", { error: guest && !isGuestCode(code) ? "bad_request" : code });
+    finishRec(r, "refused", { error: guest && !isErrorCode(code) ? "bad_request" : code });
     throw END;
   }
   /** The row is gone: the library keeps the file's place as paused; a guest's send ends. @param {Rec} r @returns {never} */
@@ -398,46 +392,20 @@ export function createUploader({ kind, pid, onChange, deps }) {
   }
 
   /**
-   * @param {string} method @param {string} path @param {unknown} [body] @param {Record<string, string>} [headers]
+   * @param {"GET" | "POST" | "DELETE"} method @param {string} path @param {unknown} [body]
+   * @param {Record<string, string>} [headers]
    * @param {number} [ms] how long it may take
    * @returns {Promise<Answer>} status 0 for the network, or for a 2xx that is not bloop's (a filter's page, REL-03)
    */
   async function call(method, path, body, headers = {}, ms = CALL_MS) {
-    /** @type {Record<string, string>} */
-    const h = { Accept: "application/json", ...headers };
-    if (guest) h.Authorization = `Bearer ${pid}`;
-    if (body !== undefined) h["Content-Type"] = "application/json";
-    const stop = new AbortController();
-    /** @type {RequestInit} */
-    const init = { method, headers: h, cache: "no-store", credentials: "same-origin", signal: stop.signal };
-    if (body !== undefined) init.body = JSON.stringify(body);
     // A half-open connection never answers: past the limit the request is the network.
-    /** @type {unknown} */
-    let timer;
-    const late = new Promise((_, reject) => {
-      timer = d.setTimeout(() => {
-        stop.abort();
-        reject(new Error("timeout"));
-      }, ms);
-    });
-    try {
-      const res = await Promise.race([d.fetch(path, init), late]);
-      let json = null;
-      try {
-        const text = await Promise.race([res.text(), late]);
-        json = text ? JSON.parse(text) : {};
-      } catch (e) {
-        if (e instanceof Error && e.message === "timeout") return { status: 0 };
-        // an empty or non-JSON answer: handled below
-      }
-      if (res.ok && (json === null || res.headers.get("X-Bloop") !== "1")) return { status: 0 };
-      const retryAfter = seconds(res.headers.get("Retry-After"));
-      return retryAfter ? { status: res.status, body: json, retryAfter } : { status: res.status, body: json };
-    } catch {
-      return { status: 0 };
-    } finally {
-      d.clearTimeout(timer);
-    }
+    const res = await api.call(method, path, { auth: guest ? pid : null, body, headers, timeout: ms });
+    if (res.ok) return { status: 200, body: res.value };
+    return {
+      status: res.status ?? 0,
+      body: { code: res.code },
+      ...(res.retryAfter ? { retryAfter: res.retryAfter } : {}),
+    };
   }
 
   /** @param {string} id @returns {string} */
@@ -451,7 +419,7 @@ export function createUploader({ kind, pid, onChange, deps }) {
 
   /** A 429: wait out its Retry-After, or refuse when it asks for too long or comes too often. @param {Rec} r @param {Answer} res @param {number} times 429s so far in this request */
   async function wait429(r, res, times) {
-    const wait = res.retryAfter ?? 5;
+    const wait = res.retryAfter && res.retryAfter > 0 ? res.retryAfter : 5;
     if (wait > MAX_WAIT_S || times > MAX_429) refuse(r, res.body?.code ?? "rate_limited");
     await pause(r, wait * 1000);
     if (r.stopped) throw END;
@@ -788,7 +756,17 @@ export function createUploader({ kind, pid, onChange, deps }) {
         continue;
       }
       if (res.status !== 200) return failed(r, res);
-      const b = res.body;
+      let b = res.body;
+      // The server is still validating: ask until it says ready or refused.
+      for (let polls = 0; b?.state === "checking"; polls++) {
+        if (polls >= MAX_POLLS) return refuse(r, "service_down");
+        await pause(r, POLL_MS);
+        if (r.stopped) throw END;
+        const again = await ask(r, () => call("GET", base(r)));
+        if (again.status !== 200) return failed(r, again);
+        if (again.body?.state === "aborted") return gone(r);
+        b = again.body;
+      }
       if (guest) {
         if (!b || typeof b !== "object") return refuse(r, "service_down");
         finishRec(r, "sent", { view: b });
