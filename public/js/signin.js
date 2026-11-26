@@ -129,7 +129,7 @@ async function request(held = hold) {
     if (!ts) return { ok: /** @type {const} */ (false), error: "service_down" };
     token = await ts.token();
   } catch (e) {
-    const late = e instanceof Error && /timeout|expired/.test(e.message);
+    const late = /timeout|expired/.test(String(e));
     return { ok: /** @type {const} */ (false), error: late ? "turnstile_timeout" : "turnstile_failed" };
   }
   const reply = await api.post("/api/auth/code/request", { email: email.value.trim(), turnstile: token });
@@ -155,9 +155,10 @@ function showStep(/** @type {"email" | "code"} */ step) {
 
 /** Intent, not focus: the page focuses the field itself, and a visit that only looks loads nothing from Cloudflare. */
 const INTENT = ["pointerdown", "keydown", "input"];
+const arm = () => turnstile().catch(() => blocked(emailRow));
 function intent() {
   for (const type of INTENT) email.removeEventListener(type, intent);
-  turnstile().catch(() => blocked(emailRow));
+  arm();
   code().catch(() => {});
 }
 for (const type of INTENT) email.addEventListener(type, intent);
@@ -165,7 +166,7 @@ email.addEventListener("input", gate);
 retry.addEventListener("click", () => {
   show(retry, false);
   emailRow.clear();
-  turnstile().catch(() => blocked(emailRow));
+  arm();
 });
 
 emailForm.addEventListener("submit", async (e) => {

@@ -6,6 +6,15 @@ import { INVITE } from "../../public/js/auth/copy-invite.js";
 import { SIGNIN } from "../../public/js/auth/copy-signin.js";
 import { NEVER_SAY } from "./never-say.ts";
 
+/** The strings only the pages' HTML shows: no script reads them, so they ship once, in the page. */
+const PAINT = {
+  email: "Email",
+  waitlist: "No invite? Join the waitlist.",
+  retry: "Try Again",
+  codeLabel: "Code",
+  other: "Use a Different Email",
+};
+
 const read = (path: string) => readFileSync(new URL(`../../${path}`, import.meta.url), "utf8");
 
 /** Every string in the object; a function is called with the example the UX tables use. */
@@ -15,7 +24,7 @@ function strings(value: unknown): string[] {
   if (value && typeof value === "object") return Object.values(value).flatMap(strings);
   return [];
 }
-const ALL = strings([AUTH, SIGNIN, INVITE]).filter((s) => !["home", "signin", "retry"].includes(s));
+const ALL = strings([AUTH, SIGNIN, INVITE, PAINT]).filter((s) => !["home", "signin", "retry"].includes(s));
 // A time or a count is one token, as a name is (design.md section 3).
 const words = (text: string) => text.split(/\s+/).filter((w) => w && !/\d/.test(w)).length;
 const SMALL = new Set("a an the and but or nor for as at by in of on to with bloop".split(" "));
@@ -28,10 +37,10 @@ const titles = [
   ...Object.values(INVITE.dead).map((d) => d.title),
 ];
 const labels = [
-  SIGNIN.email,
-  AUTH.code.label,
+  PAINT.email,
+  PAINT.codeLabel,
   SIGNIN.send,
-  AUTH.code.other,
+  PAINT.other,
   AUTH.code.resend,
   AUTH.code.resendIn(24_000),
   INVITE.accept,
@@ -40,7 +49,7 @@ const labels = [
   INVITE.home,
   INVITE.signIn,
   INVITE.retry,
-  SIGNIN.retry,
+  PAINT.retry,
 ];
 
 describe("sign-in copy", () => {
@@ -110,13 +119,13 @@ describe("the pages' first paint says what the copy modules say", () => {
     for (const s of [
       SIGNIN.title,
       SIGNIN.lead,
-      SIGNIN.email,
+      PAINT.email,
       SIGNIN.send,
-      SIGNIN.waitlist,
-      AUTH.code.label,
-      AUTH.code.other,
+      PAINT.waitlist,
+      PAINT.codeLabel,
+      PAINT.other,
       AUTH.code.resend,
-      SIGNIN.retry,
+      PAINT.retry,
     ])
       expect(page, s).toContain(s);
   });
@@ -133,7 +142,7 @@ describe("the pages' first paint says what the copy modules say", () => {
       INVITE.home,
       INVITE.signIn,
       INVITE.retry,
-      AUTH.code.label,
+      PAINT.codeLabel,
       AUTH.code.resend,
     ])
       expect(page, s).toContain(s);

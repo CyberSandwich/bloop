@@ -1,6 +1,7 @@
 // The strings both sign-in pages share: the code step and the failure lines (docs/ux/signin.md, docs/ux/states.md).
 // Each page's own strings sit beside it (copy-signin.js, copy-invite.js), so a page ships only what it shows; the
-// pages' first paint repeats a few in the HTML, and test/unit/client-auth-copy.test.ts holds them equal.
+// pages' first paint repeats a few in the HTML, and test/unit/client-auth-copy.test.ts holds them equal. A string
+// only the HTML shows stays out of the modules, so no page ships it twice; that test holds those too.
 
 /** "0:24": the resend countdown, from milliseconds left (rounded up, so it never shows 0:00). */
 export const clock = (/** @type {number} */ ms) => {
@@ -13,10 +14,8 @@ export const AUTH = {
     title: "Check Your Email",
     ifSent: "If {email} has early access, a code is on its way.",
     sentTo: "A code is on its way to {masked}.",
-    label: "Code",
     hint: "Enter the 6 digits from the email.",
     checking: "Checking...",
-    other: "Use a Different Email",
     resend: "Send a New Code",
     resendIn: (/** @type {number} */ ms) => `Send a New Code in ${clock(ms)}`,
     wrong: "That code didn't match. Try again.",
