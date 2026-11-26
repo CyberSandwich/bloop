@@ -33,13 +33,16 @@ export function start(page) {
     !row.disabled &&
     (assetOf(row) === "original" || (row.derived.state === "ready" && (row.derived.pages ?? 0) > 0));
 
-  /** @param {string} id @param {boolean} [fresh] @returns {Promise<{base: string, exp: number} | {code: string}>} */
-  function link(id, fresh = false) {
+  /**
+   * A minted link, reused while it has more than EARLY_MS left; a refusal is never kept, so the next tap asks again.
+   * @param {string} id @param {boolean} [fresh] @returns {Promise<{base: string, exp: number} | {code: string}>}
+   */
+  async function link(id, fresh = false) {
     const row = page.row(id);
-    if (!row) return Promise.resolve({ code: "not_found" });
+    if (!row) return { code: "not_found" };
     const key = `${id}:${assetOf(row)}`;
-    const held = links.get(key);
-    if (held && !fresh) return held;
+    const held = fresh ? null : await links.get(key);
+    if (held && "exp" in held && held.exp - Date.now() > EARLY_MS) return held;
     const made = page.net
       .call("POST", `${page.path(id)}/preview`, { asset: assetOf(row) })
       .then((/** @type {any} */ a) =>
