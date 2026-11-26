@@ -13,6 +13,10 @@ export function base64url(bytes: Uint8Array): string {
     .replaceAll("=", "");
 }
 
+/** The bytes of unpadded base64url text; throws on text that is not base64. */
+export const fromBase64url = (text: string): Uint8Array =>
+  Uint8Array.from(atob(text.replaceAll("-", "+").replaceAll("_", "/")), (c) => c.charCodeAt(0));
+
 export const randomBytes = (n: number): Uint8Array<ArrayBuffer> => crypto.getRandomValues(new Uint8Array(n));
 
 /** Uniform integer in [0, max) for max <= 256, by rejection sampling: `byte % max` alone is biased. */

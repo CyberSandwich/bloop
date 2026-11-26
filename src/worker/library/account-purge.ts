@@ -26,7 +26,7 @@ const prefixOf = (userId: string) => `u/${userId}/`;
 const tombstone = (userId: string) => `purged/${userId}`;
 
 /**
- * Purges one user. `skipped` is a user the claim refused (not due, suspended, or under a live hold). `more` ran out of
+ * Purges one user. `skipped` is a user the claim refused (not due, suspended, or with a hold whose copy is pending). `more` ran out of
  * budget or met an upload still settling; the row stays `purging` and the next run continues.
  */
 export async function purgeUser(
@@ -42,7 +42,7 @@ export async function purgeUser(
   await db
     .prepare(
       `UPDATE app_user SET status = 'purging' WHERE id = ?1 AND delete_after <= ?2 AND status IN ('active', 'deleting')
-         AND suspended_at IS NULL AND NOT EXISTS (SELECT 1 FROM hold WHERE owner_user_id = ?1 AND release_after > ?2)`,
+         AND suspended_at IS NULL AND NOT EXISTS (SELECT 1 FROM hold WHERE owner_user_id = ?1 AND release_after > ?2 AND copied_at IS NULL)`,
     )
     .bind(userId, now)
     .run();
@@ -106,7 +106,7 @@ export async function dueUsers(env: { DB: unknown }, now: number, limit: number)
     .prepare(
       `SELECT id FROM app_user WHERE status = 'purging'
          OR (delete_after IS NOT NULL AND delete_after <= ?1 AND status IN ('active', 'deleting') AND suspended_at IS NULL
-             AND NOT EXISTS (SELECT 1 FROM hold WHERE owner_user_id = app_user.id AND release_after > ?1))
+             AND NOT EXISTS (SELECT 1 FROM hold WHERE owner_user_id = app_user.id AND release_after > ?1 AND copied_at IS NULL))
        ORDER BY status = 'purging' DESC, delete_after LIMIT ?2`,
     )
     .bind(now, limit)

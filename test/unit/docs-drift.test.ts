@@ -196,6 +196,16 @@ describe("dependency budget", () => {
   });
 });
 
+describe("btoa is Latin-1 only", () => {
+  // These two encode random bytes, which are always below U+0100. Text (a name, a cursor) goes through TextEncoder and
+  // `base64url` in ids.ts.
+  const BYTES_ONLY = new Set(["src/worker/ids.ts", "src/worker/spend/meters.ts"]);
+  it("src calls btoa( only on bytes", () => {
+    const users = walk("src", (path) => path.endsWith(".ts")).filter((path) => /\bbtoa\(/.test(read(path)));
+    expect(users.filter((path) => !BYTES_ONLY.has(path))).toEqual([]);
+  });
+});
+
 describe("doc size", () => {
   const WARN_LINES = 400;
   const FAIL_LINES = 800;

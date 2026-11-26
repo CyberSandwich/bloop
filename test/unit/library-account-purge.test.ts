@@ -208,6 +208,22 @@ describe("dueUsers", () => {
   });
 });
 
+describe("OSA-02 a finished hold does not hold the account", () => {
+  it("S2: a user whose hold copy exists is due and purged, and the copy stays", async () => {
+    const db = libWith();
+    dueUser(db);
+    db.raw
+      .prepare(
+        "INSERT INTO hold (id, file_id, owner_user_id, bucket, r2_key, created_at, release_after, copied_at) VALUES ('hx', 'a', 'u1', 'library', 'h/hx', 1, ?, 5)",
+      )
+      .run(NOW + 1000);
+    expect(await dueUsers({ DB: db }, NOW, 5)).toEqual(["u1"]);
+    const r2 = fakeBucket({ "u/u1/a/v1/orig": "source", "h/hx": "copy" });
+    expect(await purgeUser({ DB: db, LIBRARY: r2.bucket }, "u1", budget(), deps())).toBe("purged");
+    expect([...r2.objects.keys()].filter((k) => k.startsWith("h/") || k.startsWith("u/"))).toEqual(["h/hx"]);
+  });
+});
+
 describe("OSA-02 a hold placed after the claim", () => {
   it("waits for its copy before the prefix is emptied, then the purge goes on", async () => {
     const db = libWith();
@@ -223,6 +239,7 @@ describe("OSA-02 a hold placed after the claim", () => {
     expect(await purgeUser({ DB: db, LIBRARY: r2.bucket }, "u1", budget(), deps())).toBe("more");
     expect(r2.objects.has("u/u1/a/v1/orig")).toBe(true);
     await r2.bucket.put("h/hx", "copy");
+    db.raw.prepare("UPDATE hold SET copied_at = 5 WHERE id = 'hx'").run();
     expect(await purgeUser({ DB: db, LIBRARY: r2.bucket }, "u1", budget(), deps())).toBe("purged");
     expect(r2.objects.has("h/hx")).toBe(true);
     expect(r2.objects.has("u/u1/a/v1/orig")).toBe(false);
