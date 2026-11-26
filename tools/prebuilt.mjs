@@ -8,6 +8,7 @@
 import { createHash } from "node:crypto";
 import { existsSync, lstatSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
+import { wranglerConfig } from "./wrangler-config.mjs";
 
 const BUILD = '"build": { "command": "node tools/build-assets-cli.mjs", "watch_dir": "public" }';
 const PREBUILT = '"build": { "command": "node tools/prebuilt.mjs assert" }';
@@ -20,11 +21,17 @@ export function withPrebuilt(config) {
   return config.replace(BUILD, () => PREBUILT);
 }
 
-/** Throws unless wrangler.jsonc's build command is the assertion, so a deploy run in the wrong order fails closed
- * instead of building in the job that holds the token.
+/** Throws unless the parsed top-level build block, and any environment's, is exactly the assertion, so a deploy run in
+ * the wrong order fails closed instead of building in the job that holds the token.
  * @param {string} config */
 export function requirePrebuilt(config) {
-  if (config.includes(BUILD) || !config.includes(PREBUILT))
+  const assertion = JSON.stringify({ command: "node tools/prebuilt.mjs assert" });
+  const parsed = wranglerConfig(config);
+  const envs = Object.values(parsed.env ?? {});
+  const swapped =
+    JSON.stringify(parsed.build) === assertion &&
+    envs.every((env) => env.build === undefined || JSON.stringify(env.build) === assertion);
+  if (!swapped || config.includes(BUILD))
     throw new Error("wrangler.jsonc still builds: run tools/prebuilt.mjs rewrite first");
 }
 
