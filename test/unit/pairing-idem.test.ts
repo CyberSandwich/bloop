@@ -1,4 +1,5 @@
 // The pairing objects' Idempotency-Key adapter over KV (seams/pairing/idem.ts), driven through idem.ts's contract.
+import { createHmac, hkdfSync } from "node:crypto";
 import { describe, expect, it } from "vitest";
 import type { ClaimResponse } from "../../src/shared/protocol.ts";
 import { IDEM_WINDOW_MS, idempotency } from "../../src/worker/idem.ts";
@@ -117,5 +118,16 @@ describe("REL-14 pairing idem adapter", () => {
     // Another pepper derives another secret: the row alone names no credential.
     expect((await openClaim(sealed, ref, "other"))?.pid).not.toBe(answer.pid);
     expect(await openClaim({ answer }, ref, pepper)).toBeNull();
+  });
+
+  it("REL-14 pepper domains: the pid secret is an HMAC under an HKDF sub-key of the pepper, never under the pepper itself", async () => {
+    const pepper = "pepper-for-tests";
+    const nonce = "n".repeat(43);
+    const sub = Buffer.from(hkdfSync("sha256", pepper, Buffer.alloc(0), "bloop pid", 32));
+    const expected = createHmac("sha256", sub).update(`pid:${nonce}`).digest("base64url");
+    const secret = await claimSecret(pepper, nonce);
+    expect(secret).toBe(expected);
+    // Any HMAC keyed by the pepper directly (the IP, network and user hashes) cannot meet it, whatever its message.
+    expect(secret).not.toBe(createHmac("sha256", pepper).update(`pid:${nonce}`).digest("base64url"));
   });
 });

@@ -79,8 +79,8 @@ export function idemPurge(kv: Kv): void {
 }
 
 /**
- * A claim's answer as a row keeps it: the pid's secret is never stored, only a nonce it is derived from under
- * HASH_PEPPER, so a leaked row without the pepper reveals no credential.
+ * A claim's answer as a row keeps it: the pid's secret is never stored, only a nonce it is derived from under a
+ * sub-key of HASH_PEPPER, so a leaked row without the pepper reveals no credential.
  */
 export interface SealedClaim {
   nonce: string;
@@ -89,11 +89,19 @@ export interface SealedClaim {
 
 const encoder = new TextEncoder();
 
-/** The pid secret for `nonce`: HMAC-SHA-256 under the pepper, in the 43-character form a fresh secret has. */
+/**
+ * The pid secret for `nonce`, in the 43-character form a fresh secret has: HMAC-SHA-256 under a sub-key HKDF derives
+ * from the pepper (info "bloop pid"), so the pepper's other HMACs (IP, network, user pseudonym) share no key with it.
+ */
 export async function claimSecret(pepper: string, nonce: string): Promise<string> {
-  const key = await crypto.subtle.importKey("raw", encoder.encode(pepper), { name: "HMAC", hash: "SHA-256" }, false, [
-    "sign",
-  ]);
+  const ikm = await crypto.subtle.importKey("raw", encoder.encode(pepper), "HKDF", false, ["deriveKey"]);
+  const key = await crypto.subtle.deriveKey(
+    { name: "HKDF", hash: "SHA-256", salt: new Uint8Array(0), info: encoder.encode("bloop pid") },
+    ikm,
+    { name: "HMAC", hash: "SHA-256", length: 256 },
+    false,
+    ["sign"],
+  );
   return base64url(new Uint8Array(await crypto.subtle.sign("HMAC", key, encoder.encode(`pid:${nonce}`))));
 }
 

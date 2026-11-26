@@ -16,8 +16,8 @@ import {
   withIds,
 } from "../items.ts";
 import { validChoices } from "../machine/pairing.ts";
-import { PRE_APPROVAL } from "../machine/step.ts";
-import type { FileRef, Machine } from "../machine.ts";
+import { codeRemovals, PRE_APPROVAL, purgeEffects } from "../machine/step.ts";
+import type { Effect, FileRef, Machine } from "../machine.ts";
 import type { LinkRecord } from "../seams/open-path/links.ts";
 import { idemRepair } from "../seams/pairing/idem.ts";
 import type { Meta } from "../views.ts";
@@ -120,10 +120,8 @@ const STEPS: Record<number, Step> = {
     const repaired = m && repairMachine(m, now);
     if (m && repaired && repaired !== m) kv.put("machine", repaired);
     const endedNow = m?.state !== "ended" && repaired?.state === "ended";
-    // The end's effects need the object (audit, Directory, sockets): it runs them on wake and clears this.
-    if (m && endedNow) {
-      kv.put(CORRUPT_END_KEY, { codes: m.codes ?? { current: null, previous: null } } satisfies CorruptEnd);
-    }
+    // The end's effects need the object (audit, Directory, R2, sockets): it runs them on wake and deletes this.
+    if (m && endedNow) kv.put(CORRUPT_END_KEY, corruptEndOf(m));
     // A purpose this build does not know fails closed, so a record from a rolled-back build is never served.
     const purposes: readonly string[] = LINK_PURPOSES;
     const dead = (r: LinkRecord) => endedNow || !purposes.includes(r.purpose);
@@ -142,10 +140,31 @@ const isNullableInt = (v: unknown): boolean => v === null || Number.isSafeIntege
 const isItemList = (v: unknown): boolean => Array.isArray(v) && v.every((i) => typeof i === "object" && i !== null);
 const KINDS: readonly unknown[] = ITEM_KINDS;
 
-/** What a corrupt end leaves for the Screen object to finish on wake (its effects), under CORRUPT_END_KEY. */
+/** What a corrupt end leaves for the Screen object to run on wake, under CORRUPT_END_KEY. */
 export const CORRUPT_END_KEY = "corruptEnd";
 export interface CorruptEnd {
-  codes: Machine["codes"];
+  sessionId: string | null;
+  effects: Effect[];
+}
+
+/**
+ * The end's effects from the machine before repair, read defensively since it is the corrupt one: its codes leave
+ * the Directory, a guest's file is deleted at once rather than at the sweep, then the audit row and the push.
+ */
+function corruptEndOf(m: Machine): CorruptEnd {
+  const items: unknown = m.session?.items;
+  const objects = Array.isArray(items) ? items.filter((i) => typeof i === "object" && i !== null) : [];
+  const readable = { ...m, session: m.session && { ...m.session, items: objects } } as Machine;
+  const codes = m.codes && typeof m.codes === "object" ? m.codes : { current: null, previous: null };
+  return {
+    sessionId: typeof m.pairing?.sessionId === "string" ? m.pairing.sessionId : null,
+    effects: [
+      ...codeRemovals(codes),
+      ...purgeEffects(readable),
+      { fx: "audit", type: "ended", actor: "system" },
+      { fx: "push", to: "both" },
+    ],
+  };
 }
 
 const validUpload = (v: unknown): boolean => {
