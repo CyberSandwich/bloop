@@ -11,7 +11,7 @@
   color: var(--ink);
 }
 .sheet::backdrop {
-  background: rgba(30, 30, 28, 0.24);
+  background: #1e1e1c3d;
 }
 /* As app.css's .leave: focus the opening moved rings only after a key. */
 .sheet h2:focus-visible,
@@ -30,6 +30,7 @@
 .sheet-card,
 .sheet-x,
 .chips {
+  display: flex;
   min-width: 0;
   margin: 0;
   padding: 0;
@@ -43,7 +44,6 @@
    time wraps under the title, centered too. The picker glyph would crowd the row: a phone opens its picker on a tap on the time, and a
    keyboard types it. */
 .sheet-card {
-  display: flex;
   flex-flow: wrap;
   justify-content: center;
   align-items: baseline;
@@ -63,8 +63,11 @@
   letter-spacing: 0;
   text-transform: none;
 }
-.sheet-card .field::-webkit-calendar-picker-indicator {
+.sheet-card ::-webkit-calendar-picker-indicator {
   display: none;
+}
+.sheet-card ::-webkit-date-and-time-value {
+  margin: 0;
 }
 /* Why Set is off: a short line under the time. */
 .sheet-hint {
@@ -82,9 +85,6 @@
   display: grid;
   place-items: center;
   cursor: pointer;
-}
-.chips {
-  display: flex;
 }
 .chips button {
   flex: 1;
