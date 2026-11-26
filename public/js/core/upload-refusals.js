@@ -20,6 +20,9 @@ const OWN = {
 /** Refusals titled "{name} Can't Be Added": the line, or a function of the name. @type {Record<string, string | ((name: string) => string)>} */
 const CANT = {
   service_down: `Something's wrong on bloop's side. ${FEW_MINUTES}`,
+  internal: `bloop hit a problem adding this file. ${FEW_MINUTES}`,
+  forbidden_origin: "This page can't add files. Reload it, then try again.",
+  unsupported_media_type: "bloop couldn't read this file as sent. Add it again.",
   upload_busy: "bloop is still finishing this upload. Wait a moment, then try again.",
   upload_gone: "This upload ended before it finished. Add the file again.",
   upload_aborted: "The upload was stopped. Add the file again.",
