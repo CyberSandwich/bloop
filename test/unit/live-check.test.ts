@@ -267,6 +267,8 @@ describe("live-check: content-hashed names and the file origin's static answers"
     expect(unhashed("/fonts/inter-90ef5e81.LICENSE.txt")).toBe("/fonts/inter.LICENSE.txt");
     expect(unhashed("/js/vendor/uqr-1289037a/uqr.js")).toBe("/js/vendor/uqr.js");
     expect(unhashed("/js/vendor/x-1289037a/y-cc089b5d.js")).toBe("/js/vendor/y.js");
+    expect(unhashed("/img/hero-viewer-1100.4f0f53d6.webp")).toBe("/img/hero-viewer-1100.webp");
+    expect(() => unhashed("/img/hero-viewer-1100.webp")).toThrow(/no content hash/);
     expect(() => unhashed("/fonts/inter-latin.woff2")).toThrow(/no content hash/);
     expect(() => unhashed("/fonts/a-0123ABCD.woff2")).toThrow(/no content hash/);
     expect(() => preview({ ...fixture, immutable: ["/fonts/plain.woff2"] })).toThrow(/no content hash/);

@@ -165,10 +165,10 @@ export function probeForms(/** @type {string} */ path) {
 }
 
 const HASHED_DIR = /-[0-9a-f]{8}$/;
-const HASH_IN_NAME = /-[0-9a-f]{8}(?=\.)/;
+const HASH_IN_NAME = /[-.][0-9a-f]{8}(?=\.)/;
 
 /**
- * A content-hashed path with the hash taken out: `-<8 hex>` dropped from the file name, a hashed folder dropped whole
+ * A content-hashed path with the hash taken out: `-<8 hex>` or `.<8 hex>` dropped from the file name, a hashed folder dropped whole
  * (`/js/vendor/uqr-1289037a/uqr.js` is `/js/vendor/uqr.js`). An immutable path with no hash throws: a name cached
  * for a year must change when its bytes do.
  */
