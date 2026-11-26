@@ -104,10 +104,9 @@ describe("caching and worker policy in _headers", () => {
     expect(headersFor("api")["Cache-Control"]).toBe("no-store");
   });
 
-  it("images are cached for a day and may be served stale for a week", () => {
-    expect(staticHeaders("/img/hero.jpg")["cache-control"]).toBe(
-      "public, max-age=86400, stale-while-revalidate=604800",
-    );
+  it("an image with a hash in its name is immutable, any other is revalidated", () => {
+    expect(staticHeaders("/img/hero.3fa9c21b.avif")["cache-control"]).toBe("public, max-age=31536000, immutable");
+    expect(staticHeaders("/img/hero.avif")["cache-control"]).toBe("no-cache");
   });
 
   it("a static 404 on the file origin carries the file origin's sandbox CSP, and the site's host does not", () => {
