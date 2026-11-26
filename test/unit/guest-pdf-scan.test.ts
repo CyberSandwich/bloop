@@ -107,7 +107,7 @@ describe("DROP-13 pdf-active: clean files", () => {
 describe("DROP-13 pdf-active: refused action types", () => {
   it.each([
     ...["JS", "JavaScript", "Launch", "EmbeddedFile", "EmbeddedFiles", "XFA"],
-    ...["GoToR", "GoToE", "SubmitForm", "ImportData", "RichMedia"],
+    ...["GoToR", "GoToE", "SubmitForm", "ImportData", "RichMedia", "EF", "FileAttachment", "RF"],
   ])("refuses /%s", async (name) => {
     const verdict = await scanPdf(pdf(`1 0 obj\n<< /${name} 4 0 R >>\nendobj`));
     expect(verdict).toMatchObject({ ok: false, error: "macro_content", found: [name] });
@@ -217,9 +217,28 @@ describe("DROP-13 pdf-active: hostile input", () => {
     expect(await scanPdf(stream(dict, body))).toMatchObject({ ok: false, found: ["unscannable"] });
   });
 
-  it("refuses an object stream whose keyword ends in a bare CR, which a reader may still take", async () => {
-    const data = stream("/Type/ObjStm/Filter/FlateDecode", body, "\r");
-    expect(await scanPdf(data)).toMatchObject({ ok: false, found: ["unscannable"] });
+  it("DROP-13 pdf-active: reads an object stream whose keyword ends in a bare CR, which a reader takes (stream\\r skipped)", async () => {
+    const data = stream("/Type/ObjStm/N 1/First 4/Filter/FlateDecode", body, "\r");
+    expect(await scanPdf(data)).toMatchObject({ ok: false, found: ["JS", "JavaScript"] });
+    const untyped = stream("/N 1/First 4/Filter/FlateDecode", body, "\r");
+    expect(await scanPdf(untyped)).toMatchObject({ ok: false, found: ["JS", "JavaScript"] });
+  });
+
+  it("DROP-13 pdf-active: reads an object stream with /N and /First but no /Type through both scans (untyped bypass)", async () => {
+    const poc = HOSTILE.find(([name]) => name.includes("no /Type"))?.[1]() as Uint8Array;
+    expect(await scanPdf(poc)).toMatchObject({ ok: false, found: ["JS", "JavaScript"] });
+    for (const size of [1, 64, 4096, poc.length]) {
+      expect(await chunked(poc, size), `window ${size}`).toMatchObject({ ok: false, found: ["JS", "JavaScript"] });
+    }
+  });
+
+  it("DROP-13 pdf-active: refuses a direct /First the scan cannot tie to an object stream it read (far or split dictionary)", async () => {
+    const far = stream(`/N 1/First 4/Filter/FlateDecode${" ".repeat(5000)}/Length 9`, body);
+    expect(await scanPdf(far)).toMatchObject({ ok: false, found: ["unscannable"] });
+    const split = stream("/N 1/First 4/Filter/FlateDecode 9 0 obj<</Length 9", body);
+    expect(await scanPdf(split)).toMatchObject({ ok: false, found: ["unscannable"] });
+    const outline = pdf("1 0 obj<</Type/Outlines/First 2 0 R/Last 2 0 R/Count 1>>endobj");
+    expect(await scanPdf(outline)).toEqual({ ok: true });
   });
 
   it("refuses an object stream whose keyword is followed by a space", async () => {

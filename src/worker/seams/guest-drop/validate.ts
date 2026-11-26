@@ -168,7 +168,7 @@ async function validateImage<T extends "jpg" | "png" | "gif" | "webp">(
 ): Promise<Verdict<T>> {
   const tail = await readTail(r);
   if (await carriesAnother(r, head, tail)) return refuse("bad_structure");
-  const sized = await checkImageSize(type, r, head);
+  const sized = await checkImageSize(type, planReads(r), head);
   if (!sized.ok) return refuse(sized.error);
   if (type === "png") {
     const end = tail.subarray(-PNG_END_BYTES);
@@ -203,12 +203,12 @@ async function validateIsoMedia<T extends "mp4" | "mov" | "heic">(
   return (await carriesAnother(r, head, await readTail(r))) ? refuse("bad_structure") : { ok: true, type };
 }
 
-/** A text file that starts as an HTML page or script, after any byte order mark and white space. */
-const HTML_START = /^(?:\xef\xbb\xbf)?[\t\n\f\r ]*<(?:!doctype[\t\n\f\r ]+html|html|script)\b/i;
+/** A text file that starts as an HTML page, a script, SVG or XML, after any byte order mark and white space. */
+const HTML_START = /^(?:\xef\xbb\xbf)?[\t\n\f\r ]*<(?:!doctype[\t\n\f\r ]+html|html|script|svg|\?xml)\b/i;
 
 /**
  * Text that a reader would take for another format (DROP-02): a binary format's magic, `%PDF` in the head (a PDF
- * reader looks there), a zip local header or end record anywhere, or an HTML start.
+ * reader looks there), a zip local header or end record anywhere, or an HTML, SVG or XML start.
  */
 function carriesFormat(bytes: Uint8Array): boolean {
   const head = bytes.subarray(0, HEAD_BYTES);

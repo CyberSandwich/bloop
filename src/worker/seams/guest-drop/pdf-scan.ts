@@ -1,6 +1,7 @@
 // PDF active-content scan (DROP-13): a name-token scan, not a parser. The bytes are read as Latin-1, every `/Name`
 // token is decoded (`#xx` escapes, so `/J#61vaScript` is `/JavaScript`) and compared with the refused set. Object
-// streams (`/ObjStm`), where a PDF 1.5 file hides its dictionaries, are inflated and scanned the same way.
+// streams, where a PDF 1.5 file hides its dictionaries, are inflated and scanned the same way. A stream is an object
+// stream when its dictionary names `/ObjStm` or holds both `/N` and `/First`: a reader takes it by those keys alone.
 //
 // The refused set is action types, not the keys that hold actions: an `/OpenAction` or `/AA` that goes to a page or
 // a destination passes (LaTeX hyperref and the Office exporters write them), and one holding a script, a launch, a
@@ -16,8 +17,9 @@
 // A name inside a string or comment also matches (fail closed). An object stream is read only when its dictionary is
 // exactly the plain form (`/Type /ObjStm`, `/N`, `/First`, `/Length`, `/Extends` and one `/Filter /FlateDecode`), opens
 // within `DICT_LOOKBACK` bytes of its `stream` keyword and its data is at most `MAX_STREAM_BYTES`; anything else, and
-// any `/ObjStm` token outside every dictionary read so (a `stream\r` keyword, a dictionary too far back), is refused
-// as `unscannable`, as is any `/Encrypt` (its streams are ciphertext). After the first object stream it cannot read the
+// any `/ObjStm` token or direct `/First` count (an outline's `/First` is a reference) outside every dictionary read so
+// (a keyword followed by a space, a dictionary too far back or split by a second `obj<<`), is refused as
+// `unscannable`, as is any `/Encrypt` (its streams are ciphertext). After the first object stream it cannot read the
 // scan inflates no more, but reads every name to the end. Names built at run time by a script are the script's own
 // business: `/JS` and `/JavaScript` already refuse the script.
 import { inflate, latin1 } from "./bytes.ts";
@@ -32,7 +34,7 @@ export const PDF_WINDOW_BYTES = 8 * 1024 * 1024;
 /** Action types that run code, start a program, send data, play rich media or leave the file; and what hides content. */
 const REFUSED: ReadonlySet<string> = new Set([
   ...["JS", "JavaScript", "Launch", "SubmitForm", "ImportData", "RichMedia", "GoToR", "GoToE"],
-  ...["EmbeddedFile", "EmbeddedFiles", "XFA", "Encrypt"],
+  ...["EmbeddedFile", "EmbeddedFiles", "EF", "FileAttachment", "RF", "XFA", "Encrypt"],
 ]);
 /** The keys of a plain object stream dictionary, and the one filter it may name. */
 const OBJSTM_KEYS: ReadonlySet<string> = new Set([
@@ -55,11 +57,15 @@ export const MAX_OBJECT_STREAMS = 4096;
 const NAME = /\/[^\x00\t\n\f\r /<>[\](){}%]+/g;
 /**
  * A dictionary opening (`obj<<`, white space bounded so every scan sees the whole match) or a stream keyword with its
- * EOL after white space or `>>`, found in one pass. The left boundary keeps `/ObjStmstream` one name, not a name and a
- * keyword.
+ * EOL (CR LF, LF, or the CR alone a reader also takes) after white space or `>>`, found in one pass. The left
+ * boundary keeps `/ObjStmstream` one name, not a name and a keyword.
  */
 // biome-ignore lint/suspicious/noControlCharactersInRegex: NUL is PDF white space
-const MARKS = /(?<!end)obj[\x00\t\n\f\r ]{0,64}<<|(?<![^\x00\t\n\f\r >])stream\r?\n/g;
+const MARKS = /(?<!end)obj[\x00\t\n\f\r ]{0,64}<<|(?<![^\x00\t\n\f\r >])stream(?:\r\n|\r|\n)/g;
+/** What follows `/First` in an outline: a reference. Anything else is an object stream's count. */
+const REFERENCE =
+  // biome-ignore lint/suspicious/noControlCharactersInRegex: NUL is PDF white space
+  /[\x00\t\n\f\r ]{0,64}\d{1,10}[\x00\t\n\f\r ]{1,64}\d{1,5}[\x00\t\n\f\r ]{1,64}R(?![^\x00\t\n\f\r /<>[\](){}%])/y;
 const ENDSTREAM = Uint8Array.from("endstream", (c) => c.charCodeAt(0));
 
 const decodeName = (token: string): string =>
@@ -83,6 +89,17 @@ function findEnd(b: Uint8Array, from: number): number {
   }
   return -1;
 }
+
+/** A dictionary a reader takes for an object stream's: typed `/ObjStm`, or holding both `/N` and `/First`. */
+function isObjStm(dict: string): boolean {
+  const keys = new Set(names(dict));
+  return keys.has("ObjStm") || (keys.has("N") && keys.has("First"));
+}
+
+const followedByReference = (text: string, at: number): boolean => {
+  REFERENCE.lastIndex = at;
+  return REFERENCE.test(text);
+};
 
 /** True when `dict` is the plain object stream dictionary: allowed keys only, one Flate filter, no array or nesting. */
 function plainObjStm(dict: string): boolean {
@@ -174,7 +191,9 @@ export async function scanPdfChunks(
     for (let m = tokens.exec(text); m !== null && base + m.index < to; m = tokens.exec(text)) {
       const n = decodeName(m[0]);
       if (REFUSED.has(n)) found.add(n);
-      if (n === "ObjStm" && tracking()) objStmAt(base + m.index);
+      if (tracking() && (n === "ObjStm" || (n === "First" && !followedByReference(text, m.index + m[0].length)))) {
+        objStmAt(base + m.index);
+      }
     }
     namesDone = Math.max(namesDone, to);
   };
@@ -210,7 +229,7 @@ export async function scanPdfChunks(
       dictAt = -1;
       if (dictStart === -1 || at - dictStart > DICT_LOOKBACK) continue;
       const dict = text.slice(dictStart - base, m.index);
-      if (![...names(dict)].includes("ObjStm")) continue;
+      if (!isObjStm(dict)) continue;
       const from = at + m[0].length;
       let end = -1;
       if (streams < MAX_OBJECT_STREAMS && plainObjStm(dict)) {

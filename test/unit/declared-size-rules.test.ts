@@ -59,4 +59,10 @@ describe("a validator reads through the read plan, never entry by entry", () => 
     expect(validate).toMatch(/planReads\(whole\)/);
     expect(readFileSync(`${ROOT}${GUEST_DROP}cfb.ts`, "utf8")).toMatch(/\+\+reads > CFB_LIMITS\.maxSectorReads/);
   });
+
+  it("walks an image's headers through the read plan, a capped number of reads", () => {
+    const validate = readFileSync(`${ROOT}${GUEST_DROP}validate.ts`, "utf8");
+    expect(validate).toMatch(/checkImageSize\(type, planReads\(r\), head\)/);
+    expect(readFileSync(`${ROOT}${GUEST_DROP}image.ts`, "utf8")).toMatch(/\+\+reads > limits\.maxReads/);
+  });
 });

@@ -24,6 +24,8 @@ export interface PdfSpec {
   trailer: string;
   /** Bytes between objects, for padding tests. */
   gap?: string;
+  /** Leave `/Type /ObjStm` out of the object stream's dictionary: a reader takes it by `/N` and `/First` alone. */
+  untyped?: boolean;
 }
 
 const latin1 = (s: string): Uint8Array => Uint8Array.from(s, (c) => c.charCodeAt(0) & 0xff);
@@ -94,7 +96,7 @@ export function writePdf(spec: PdfSpec): Uint8Array {
       data += `${spec.objects[num] as string}\n`;
       inStream.set(num, [stm, i]);
     });
-    const dict = `/Type /ObjStm /N ${members.length} /First ${header.length}`;
+    const dict = `${spec.untyped ? "" : "/Type /ObjStm "}/N ${members.length} /First ${header.length}`;
     push(stm, streamBytes(stm, { dict, data: header + data, flate: true }));
   }
   const size = next + (spec.xref === "table" ? 0 : 1);
@@ -359,5 +361,37 @@ export const HOSTILE: [string, () => Uint8Array, string[]][] = [
     "an embedded file",
     () => malicious("/Names << /EmbeddedFiles 5 0 R >>", "", { 5: "<< /Names [ ] >>" }),
     ["EmbeddedFiles"],
+  ],
+  [
+    "JS in an object stream with no /Type, which pdf.js still reads",
+    () =>
+      writePdf({
+        version: "1.7",
+        objects: {
+          1: "<< /Type /Catalog /Pages 2 0 R /OpenAction 4 0 R >>",
+          2: "<< /Type /Pages /Kids [ 3 0 R ] /Count 1 >>",
+          3: "<< /Type /Page /Parent 2 0 R /MediaBox [ 0 0 100 100 ] >>",
+          4: "<< /S /JavaScript /JS (app.alert\\(1\\)) >>",
+        },
+        packed: [4],
+        untyped: true,
+        xref: "stream",
+        trailer: "/Root 1 0 R",
+      }),
+    ["JS", "JavaScript"],
+  ],
+  [
+    "a file attachment annotation carrying an executable",
+    () =>
+      malicious("", "/Annots [ 5 0 R ]", {
+        5: "<< /Type /Annot /Subtype /FileAttachment /Rect [ 10 10 40 40 ] /FS << /Type /Filespec /F (invoice.exe) /UF (invoice.exe) /EF << /F 6 0 R >> >> >>",
+        6: { dict: "", data: "MZ fake executable bytes" },
+      }),
+    ["EF", "FileAttachment"],
+  ],
+  [
+    "a related-files array",
+    () => malicious("", "", { 5: "<< /Type /Filespec /F (a.pdf) /RF << /F 6 0 R >> >>", 6: "[ 0 7 0 R ]" }),
+    ["RF"],
   ],
 ];
