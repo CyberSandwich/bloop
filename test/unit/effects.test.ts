@@ -13,6 +13,7 @@ const META: Meta = {
   roomName: null,
   screenSecretHash: "x",
   createdAt: T0,
+  linkOrigin: "file",
 };
 
 function fakes(over: Partial<EffectDeps> = {}) {

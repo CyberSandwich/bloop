@@ -150,10 +150,12 @@ describe("SRC-01 screen-view: the view carries items, never a source ref", () =>
       roomName: null,
       screenSecretHash: "h",
       createdAt: T0,
+      linkOrigin: "file" as const,
     };
-    const view = screenView(meta, step.next, { origin: "https://bloop.test", machine: CFG }, T0 + sec(6));
+    const cfg = { origin: "https://bloop.test", machine: CFG, library: { largeFileChoiceBytes: 1 } };
+    const view = screenView(meta, step.next, cfg, T0 + sec(6));
     expect(view.items).toEqual([
-      { kind: "file", id: "i1", name: "Deck.pptx", type: "pptx", size: 10 },
+      { kind: "file", id: "i1", name: "Deck.pptx", type: "pptx", size: 10, show: "deck", derived: null },
       { kind: "link", id: "i2", url: "https://www.vevox.com/", title: "Vevox" },
     ]);
     expect(JSON.stringify(view)).not.toContain("deck-1");
@@ -168,16 +170,20 @@ describe("Screen object schema steps", () => {
   const { mints: _mints, ...current } = rest;
   const link = { tokenHash: "h", purpose: "protocol", mintedAt: 0, firstFetchAt: null, fetches: 0, revoked: false };
   const seq = { phone: 0, screen: 0 };
+  /** What step 8 adds: a session's phone extras and start clock, and a stored deck's kind and flags. */
+  const S8 = { extra: {}, firstShownAt: null, startedAt: null, startBy: null };
+  const deck8 = { ...asStored(DECK), show: "deck" as const, derived: null };
 
   it("turns a stored single file into a one-item list and gives each link record item 0", () => {
     const store = kv({ meta: { mode: "demo" }, machine: { state: "approved", session: v1Session }, links: [link] });
     migrate(store);
     expect((store.map.get("machine") as Machine).session).toEqual({
       ...current,
-      items: [asStored(DECK)],
+      items: [deck8],
       minted: [1],
       shown: null,
       seq,
+      ...S8,
     });
     expect(store.map.get("links")).toEqual([{ ...link, item: 0, ips: [], refused: false }]);
     expect(store.map.get(SCHEMA_KEY)).toBe(SCHEMA_VERSION);
@@ -186,8 +192,13 @@ describe("Screen object schema steps", () => {
   it("leaves a machine with no session alone, and runs once", () => {
     const store = kv({ meta: {}, machine: { state: "waiting", session: null } });
     migrate(store);
-    expect(store.map.get("machine")).toEqual({ state: "waiting", session: null, v: 0 });
-    const current = { state: "approved", v: 0, session: { items: [{ ...VEVOX, id: "i1" }], shown: null, seq } };
+    expect(store.map.get("machine")).toEqual({ state: "waiting", session: null, v: 0, upload: null });
+    const current = {
+      state: "approved",
+      v: 0,
+      upload: null,
+      session: { items: [{ ...VEVOX, id: "i1" }], shown: null, seq, ...S8 },
+    };
     store.put("machine", current);
     migrate(store);
     expect(store.map.get("machine")).toBe(current);
@@ -266,7 +277,7 @@ describe("Screen object schema steps", () => {
   });
 
   it("PAIR-13 rollback: a link `shown` run through a link=false validator is null, and the current migrate leaves null alone", () => {
-    const items = [asStored(DECK), { ...VEVOX, id: "i2" }];
+    const items = [deck8, { ...VEVOX, id: "i2" }];
     const view = { mode: "demo" as const, kind: "owner" as const };
     const card = { item: "i2", page: 1, present: false };
     // What a build that refused every link would do to the stored report: it cannot stand there.
@@ -280,8 +291,9 @@ describe("Screen object schema steps", () => {
         state: "open",
         mode: "demo",
         v: 2,
-        pairing: { kind: "owner" },
-        session: { ...current, items, minted: [1, 0], shown: null, seq },
+        upload: null,
+        pairing: { kind: "owner", match: "42", confirmed: true, choices: null, phoneSession: null },
+        session: { ...current, items, minted: [1, 0], shown: null, seq, ...S8 },
       },
     });
     const before = store.map.get("machine");
@@ -311,10 +323,11 @@ describe("Screen object schema steps", () => {
     migrate(store);
     expect((store.map.get("machine") as Machine).session).toEqual({
       ...current,
-      items: [asStored(DECK)],
+      items: [deck8],
       minted: [1],
       shown: null,
       seq,
+      ...S8,
     });
     expect(store.map.get("links")).toEqual([{ ...link, item: 0, ips: [], refused: false }]);
   });
@@ -329,12 +342,13 @@ describe("Screen object schema steps", () => {
 
   it("a current-shape object writes nothing on wake", () => {
     const store = kv({
-      meta: {},
+      meta: { linkOrigin: "file" },
       schemaVersion: SCHEMA_VERSION,
       machine: {
         state: "open",
         v: 3,
-        session: { ...current, items: [asStored(DECK)], minted: [1], shown: null, seq },
+        upload: null,
+        session: { ...current, items: [deck8], minted: [1], shown: null, seq, ...S8 },
       },
       links: [{ ...link, item: 0, ips: [], refused: false }],
     });
