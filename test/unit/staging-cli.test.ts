@@ -157,21 +157,26 @@ describe("tools/staging.mjs as the workflow runs it", () => {
       );
     for (const args of [
       ["deploy", "--dry-run"],
+      ["-e", "staging", "deploy"],
       ["versions", "upload"],
-      ["d1", "migrations", "apply", "DB"],
+      ["versions", "deploy"],
+      ["dev"],
     ]) {
       const refused = wrangler("token-under-test", ...args);
       expect(refused.status, args.join(" ")).not.toBe(0);
-      expect(refused.stderr).toContain("still builds");
+      expect(refused.stderr, args.join(" ")).toContain("still builds");
     }
     // The swapped text alone is not enough while the real build block is still there.
     const config = join(root, "wrangler.jsonc");
     writeFileSync(config, `// ${PREBUILT_TEXT}\n${readFileSync(config, "utf8")}`);
     expect(wrangler("token-under-test").status).not.toBe(0);
     expect(readFileSync(calls, "utf8")).toBe("");
+    // Commands that build and ship nothing work with the token on an unswapped config, as an owner's local one does.
+    expect(wrangler("token-under-test", "secret", "put", "X").status).toBe(0);
+    expect(wrangler("token-under-test", "d1", "migrations", "apply", "DB").status).toBe(0);
     // The rehearsal has no token: wrangler itself runs the build command, which is the point of the dry run.
     expect(wrangler("").status).toBe(0);
-    expect(readFileSync(calls, "utf8")).toBe("deploy --dry-run\n");
+    expect(readFileSync(calls, "utf8")).toBe("secret put X\nd1 migrations apply DB\ndeploy --dry-run\n");
   });
 
   it("pinned-wrangler: an environment's own build command, or extra build keys, are refused too", {

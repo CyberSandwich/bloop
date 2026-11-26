@@ -190,13 +190,42 @@ function parsedProblems(f: string, text: string, textJobs: string[]): string[] {
   return problems;
 }
 
+/** The second layer, by allowed line shape: outside block scalars every line is a comment, a plain `key: value` or
+ * `key:` line, or a `- ` list item, with no backslash in a double-quoted string, no anchor, alias, tag or explicit
+ * key, and no flow map. js-yaml decodes escapes and aliases that the text reader does not, so these forms fail here. */
+function shapeProblems(f: string, text: string): string[] {
+  const problems: string[] = [];
+  let scalarColumn = -1;
+  for (const line of text.split("\n")) {
+    const indent = line.length - line.trimStart().length;
+    if (scalarColumn >= 0 && (line.trim() === "" || indent > scalarColumn)) continue;
+    scalarColumn = -1;
+    const body = line.trim();
+    if (body === "" || body.startsWith("#")) continue;
+    const rest = body.replace(/^(- )+/, "");
+    const key = /^[A-Za-z_][\w.-]*:(?: (.*))?$/.exec(rest);
+    const value = key ? (key[1] ?? "") : rest;
+    const block = key !== null && /^[|>][-+0-9]*(\s+#.*)?$/.test(value);
+    const plain = key !== null || (rest !== body && !/^[&*!?{|>%@`]/.test(rest));
+    const odd =
+      /(^|[\s[,])[&*!][\w!<-]/.test(value) || (!block && /^[{?|>%@`]/.test(value)) || /"[^"\n]*\\/.test(value);
+    if (!plain || odd) problems.push(`${f}: not a plain line: ${body}`);
+    if (block) scalarColumn = indent + (body.length - rest.length);
+  }
+  return problems;
+}
+
 /** Why the workflows and the action could run code other than what is pinned beside the token. */
 function pinProblems(files: Record<string, string>, action: string): string[] {
   const problems: string[] = [];
   const found = new Set<string>();
   for (const [f, text] of Object.entries(files)) {
     const { jobs, problems: layout } = jobsOf(text);
-    problems.push(...layout.map((p) => `${f}: ${p}`), ...parsedProblems(f, text, Object.keys(jobs)));
+    problems.push(
+      ...layout.map((p) => `${f}: ${p}`),
+      ...shapeProblems(f, text),
+      ...parsedProblems(f, text, Object.keys(jobs)),
+    );
     for (const [name, body] of Object.entries(jobs)) {
       if (!TOKEN_JOB.test(body)) continue;
       found.add(`${f} ${name}`);
@@ -208,7 +237,7 @@ function pinProblems(files: Record<string, string>, action: string): string[] {
   }
   for (const key of found) if (!(key in PINNED)) problems.push(`${key} holds the token and is not pinned`);
   if (action.trimEnd() !== PINNED["action.yml"]?.join("\n")) problems.push("action.yml differs from its pin");
-  problems.push(...parsedProblems("action.yml", action, []));
+  problems.push(...shapeProblems("action.yml", action), ...parsedProblems("action.yml", action, []));
   for (const [f, text] of [...Object.entries(files), ["action.yml", action] as const]) {
     if (/[\r\t]/.test(text)) problems.push(`${f}: carriage return or tab`);
     if (/^\s*["']?(defaults|container|services)["']?\s*:/m.test(text))
@@ -383,6 +412,58 @@ describe("SITE-05 third-party code never shares a job with the token", () => {
         "the secrets context over several lines",
         addJob("  go:\n    steps:\n      - run: echo ${{\n          secrets.X }}\n"),
         "new.yml go: parsed job differs from its pin",
+      ],
+      // YAML escapes and aliases: the parse decodes them, and the shape layer refuses the spelling.
+      [
+        "an environment key written with a \\u escape",
+        addJob('  go:\n    "\\u0065nvironment": production\n    steps: []\n'),
+        "new.yml go: parsed job differs from its pin",
+      ],
+      [
+        "an environment key written with a \\x escape, refused by shape",
+        addJob('  go:\n    "\\x65nvironment": production\n    steps: []\n'),
+        'new.yml: not a plain line: "\\x65nvironment": production',
+      ],
+      [
+        "workflow defaults written with an escape",
+        pinProblems(
+          { ...files, "new.yml": '"\\u0064efaults": { run: { shell: x } }\njobs:\n  go:\n    steps: []\n' },
+          action,
+        ).join("\n"),
+        "new.yml: parsed defaults",
+      ],
+      [
+        "a uses key written with an escape",
+        addJob('  go:\n    steps:\n      - "\\u0075ses": evil/x@sha\n'),
+        "new.yml go: parsed uses evil/x@sha",
+      ],
+      [
+        "the secrets context with an escaped dollar",
+        addJob('  go:\n    steps:\n      - run: "\\x24{{ toJSON(secrets) }}"\n'),
+        "new.yml go: parsed job differs from its pin",
+      ],
+      [
+        "the secrets context after a closing brace",
+        addJob("  go:\n    steps:\n      - run: echo ${{ '}' && toJSON(secrets) }}\n"),
+        "new.yml go: parsed job differs from its pin",
+      ],
+      [
+        "an alias used as a key",
+        pinProblems(
+          { ...files, "new.yml": "env:\n  K: &k environment\njobs:\n  go:\n    *k : production\n    steps: []\n" },
+          action,
+        ).join("\n"),
+        "new.yml go: parsed job differs from its pin",
+      ],
+      [
+        "an anchor, refused by shape",
+        addJob("  go:\n    steps: []\n    env:\n      K: &k x\n"),
+        "new.yml: not a plain line: K: &k x",
+      ],
+      [
+        "an explicit key, a tag and a second document, refused by shape",
+        addJob("  go:\n    ? steps\n    : []\n    t: !!str x\n---\n"),
+        "new.yml: not a plain line: ? steps",
       ],
       [
         "a flow-style step with a quoted uses key",
