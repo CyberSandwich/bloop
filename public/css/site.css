@@ -25,7 +25,8 @@ html:has(.page-site) {
 .page-site {
   background: var(--paper);
 }
-.page-site :where(.doc, .faq) a:not(.btn) {
+.page-site :where(.doc, .faq) a:not(.btn),
+.cell a {
   text-decoration: underline;
   text-underline-offset: 3px;
 }
@@ -813,10 +814,6 @@ h3 {
 }
 .cell p {
   font-size: 16px;
-}
-.cell a {
-  text-decoration: underline;
-  text-underline-offset: 3px;
 }
 
 .close {

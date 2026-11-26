@@ -1,7 +1,8 @@
 // The open site's account pill (src/worker/nav-pill.ts): the Worker shows Library to a visitor holding the hint
 // cookie. The cache rules matter more than the swap: a copy kept by the browser must never show the other label.
 import { describe, expect, it } from "vitest";
-import { HINT_COOKIE, PILL_OUT, pillRequest, withAccountPill } from "../../src/worker/nav-pill.ts";
+import { ACCOUNT_PILL_OUT as PILL_OUT } from "../../src/shared/account-pill.ts";
+import { HINT_COOKIE, pillRequest, withAccountPill } from "../../src/worker/nav-pill.ts";
 import { type PageEnv, servePage } from "../../src/worker/pages.ts";
 import { PROD_VARS } from "../env-vars.ts";
 import { testDb } from "./d1-shim.ts";
@@ -176,6 +177,14 @@ describe("pill sets Vary: Cookie on every open HTML response and never on previe
     const first = await get(env);
     const res = await get(env, { "If-None-Match": first.headers.get("ETag") ?? "" });
     expect(res.status).toBe(304);
+  });
+
+  it.each(["open", "preview"] as const)("%s: asking for /404 by name answers 404, and /404.html too", async (mode) => {
+    const { env } = world(mode);
+    for (const path of ["/404", "/404.html"]) {
+      const res = await get(env, { Accept: "text/html" }, path);
+      expect(res.status, path).toBe(404);
+    }
   });
 
   it("the open 404 page carries the pill state too, and is never revalidated into today's 404", async () => {

@@ -35,7 +35,7 @@ The screen shows slides, PDFs, spreadsheets, documents, photos and videos in its
 
 ## Sign In With an Invite {#sign-in}
 
-Accounts are by invite during early access. You sign in with a code from your email, and you can add a passkey if your device offers one. [Join the waitlist](https://tally.so/r/Yj4KAN?source=features) to get an invite.
+Accounts are by invite during early access. You sign in with a code from your email, and you can add a passkey if your device offers one. [Join the waitlist]({{waitlist}}?source=features) to get an invite.
 
 ## Coming Soon {#soon}
 
