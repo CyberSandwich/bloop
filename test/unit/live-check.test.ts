@@ -48,6 +48,7 @@ const fixture: Reg = {
     { path: "/js/core/poll.js", type: "text/javascript" },
     { path: "/css/length.css", type: "text/css" },
   ],
+  typeFiles: ["/js/types.d.ts"],
   headersFile:
     "/*\n  X-Frame-Options: DENY\n  Content-Security-Policy: default-src 'none'\n\n/s\n  ! Content-Security-Policy\n  Content-Security-Policy: static-s\n",
   publicOrigin: ORIGIN,
@@ -201,6 +202,24 @@ describe("live-check: what each page kind answers, by mode", () => {
     });
     expect(find(preview(), "the site has no /fo/ping").expect).toEqual({ status: 404 });
     expect(preview({ ...fixture, fileOrigin: null }).some((c) => c.url.includes("/fo/"))).toBe(false);
+  });
+});
+
+describe("live-check: files a build that drops dotfiles or leaks sources would get wrong", () => {
+  it("security.txt is always asked for, as text with a Contact line; each type declaration must 404", () => {
+    expect(find(preview(), "security.txt")).toEqual({
+      what: "security.txt",
+      url: `${ORIGIN}/.well-known/security.txt`,
+      expect: { status: 200, contentType: "text/plain", body: "Contact:" },
+    });
+    expect(find(open({ ...fixture, typeFiles: [] }), "security.txt").expect.body).toBe("Contact:");
+    expect(find(preview(), "type file /js/types.d.ts is not served")).toMatchObject({ expect: { status: 404 } });
+  });
+
+  it("the registry finds the repo's type declarations, vendored ones included", () => {
+    const { typeFiles } = registryFrom();
+    expect(typeFiles).toContain("/js/types.d.ts");
+    expect(typeFiles.some((p) => p.startsWith("/js/vendor/") && p.endsWith(".d.ts"))).toBe(true);
   });
 });
 

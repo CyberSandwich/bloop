@@ -27,7 +27,7 @@ const TYPES = { ".js": "text/javascript", ".css": "text/css" };
  * @typedef {{ path: string, exists: boolean }} Gated
  * @typedef {{ path: string, kind: "both" | "open-only" | "preview-only", to?: string }} Variant
  * @typedef {{ pages: { path: string, noindex: boolean }[], shells: Gated[], members: Gated[], variants: Variant[],
- *   lazy: { path: string, type: string | null }[], headersFile: string, publicOrigin: string,
+ *   lazy: { path: string, type: string | null }[], typeFiles: string[], headersFile: string, publicOrigin: string,
  *   fileOrigin: string | null, uploadMode: string }} Registry
  * @typedef {{ status?: number, success?: boolean, header?: Record<string, string>, headerNot?: Record<string, string>,
  *   headerAbsent?: string[], cspIgnoringR2?: string, body?: string, bodyNot?: string, contentType?: string }} Expect
@@ -103,6 +103,8 @@ export function registryFrom() {
       path: `/${rel}`,
       type: TYPES[/** @type {keyof typeof TYPES} */ (rel.slice(rel.lastIndexOf(".")))] ?? null,
     })),
+    // Type declarations are for the editor and the typecheck; the build leaves them out of dist/ (ADR 0011).
+    typeFiles: files.filter((f) => f.endsWith(".d.ts")).map((f) => `/${f}`),
     headersFile: readFileSync(join(pub, "_headers"), "utf8"),
     publicOrigin: String(vars.PUBLIC_ORIGIN ?? ""),
     fileOrigin: vars.FILE_ORIGIN || null,
@@ -232,6 +234,15 @@ export function checksFor(reg, mode) {
       url: `${origin}${l.path}`,
       expect: l.type ? { status: 200, contentType: l.type } : { status: 200 },
     });
+  }
+  // Asked for whatever public/ holds: a build that drops dotfiles loses it.
+  checks.push({
+    what: "security.txt",
+    url: `${origin}/.well-known/security.txt`,
+    expect: { status: 200, contentType: "text/plain", body: "Contact:" },
+  });
+  for (const path of reg.typeFiles) {
+    checks.push({ what: `type file ${path} is not served`, url: `${origin}${path}`, expect: { status: 404 } });
   }
   if (reg.fileOrigin) {
     const ping = `${reg.fileOrigin}/fo/ping`;
