@@ -85,10 +85,13 @@ function film(url, onChange) {
   return shot;
 }
 
-const STAGED = "picture img, canvas, video";
+/** The item on the stage, never the inert last one fading out over it. */
+const STAGED = "picture:not([inert]) img, canvas:not([inert]), video:not([inert])";
 
-/** The --ease-out token, for the pill's glide and the photo's fade. */
+/** The --ease-out token, for the pill's glide. */
 const easeOut = () => getComputedStyle(document.documentElement).getPropertyValue("--ease-out").trim();
+/** The cross-fade, once loaded. @type {typeof import("./core/crossfade.js") | null} */
+let fader = null;
 
 /** The fetch PowerPoint would make: a HEAD, on this origin only. @returns {boolean} */
 export function fetchOpen(/** @type {string} */ link) {
@@ -144,7 +147,7 @@ export function createViewer(deps) {
     // Lifted off to measure: a glide to the same target runs on, not restarts.
     for (const a of running) /** @type {KeyframeEffect} */ (a.effect).target = null;
     /** @type {any} a slide, a photo's canvas, a video, or their loader */
-    const img = frame.querySelector(STAGED) ?? frame.querySelector(".stand-in");
+    const img = frame.querySelector(STAGED) ?? frame.querySelector(".stand-in:not([inert])");
     const item = frame.classList.contains("is-scroll") ? null : (img ?? frame.firstElementChild);
     const css = getComputedStyle(view);
     const inset = parseFloat(css.getPropertyValue("--inset"));
@@ -248,6 +251,8 @@ export function createViewer(deps) {
   let page = 0;
   /** @type {string | null} */
   let framed = null;
+  /** The item the frame holds, by server id: another one cross-fades in. */
+  let stagedKey = "";
   /** The nodes waiting on an image decode: a stale swap must not land. @type {unknown} */
   let building = null;
   /** The stage's content just changed. */
@@ -494,25 +499,27 @@ export function createViewer(deps) {
         building = null;
         seen.disconnect();
         view.classList.toggle("is-card", !p && !img && !loading);
+        // Another item, or a photo after its loader, cross-fades over the last (core/crossfade.js); a page turn or a
+        // document scrolling as one column (to or from; its pages are many) swaps at once. One still fading out from an
+        // earlier change leaves now.
+        const last = /** @type {HTMLElement[]} */ ([...frame.children]).filter((n) => !nodes.includes(n) && !n.inert);
+        const cross = fader && !fader.still() && last.length === 1 && !scroll && !(p && stagedKey === key);
         frame.classList.toggle("is-scroll", scroll);
-        // A photo replacing its own loader fades in over it; anything else swaps at once.
-        const over = img && waiting?.key === key && frame.firstElementChild === waiting.part ? waiting.part : null;
         const leaving = frame.querySelector("video");
         if (!nodes.some((n) => n === leaving || n.contains?.(leaving))) hush(leaving);
-        frame.replaceChildren(...(over ? [over] : []), ...nodes);
+        for (const n of nodes) n.inert = false;
+        frame.replaceChildren(...nodes, ...(cross ? last : []));
+        stagedKey = key;
         if (!loading) waiting = null;
-        if (img && over)
-          img
-            .animate({ opacity: [0, 1] }, { duration: reduced.matches ? 0 : 200, easing: easeOut() })
-            .finished.catch(() => {})
-            .then(() => over.remove());
+        if (cross) fader?.crossfade(nodes, last);
         if (scroll && p) {
           frame.querySelector(`[data-page="${page}"]`)?.scrollIntoView({ block: "start" });
           for (const one of frame.querySelectorAll("img")) seen.observe(one);
         }
         sized.disconnect();
-        // The picture over its fading loader: the loader leaves, the picture's box is the one fit() reads.
-        const target = frame.querySelector(STAGED) ?? frame.querySelector(".stand-in") ?? frame.firstElementChild;
+        // Under the last item fading out, the new one's box is the one fit() reads.
+        const target =
+          frame.querySelector(STAGED) ?? frame.querySelector(".stand-in:not([inert])") ?? frame.firstElementChild;
         // The pill (its buttons appear after the item) and the list (it grows with a guest's file) set the place too.
         for (const box of [target, view, pill, side, end]) if (box) sized.observe(box);
         // A swap moves or replaces the video: it is set again.
@@ -596,6 +603,7 @@ export function createViewer(deps) {
     list.replaceChildren();
     frame.replaceChildren();
     built = framed = null;
+    stagedKey = "";
     at = page = 0;
     parked = want = false;
     followed = tuned = "";
@@ -754,6 +762,11 @@ export function createViewer(deps) {
         clicker = true;
         void import("./core/clicker.js").then((m) =>
           m.clickerKeys({ live: () => !!shown && !parked, typing, presenting, can, pages: () => !!pages(), ask, jump }),
+        );
+        // Failed, an item swaps at once.
+        void import("./core/crossfade.js").then(
+          (m) => (fader = m),
+          () => {},
         );
       }
       for (const [i, img] of early) images.set(keyOf(i), img);
