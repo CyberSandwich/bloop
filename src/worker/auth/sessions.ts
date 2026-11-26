@@ -80,6 +80,9 @@ interface ViewRow {
   user_seen: number;
 }
 
+/** A session asked for a user whose row no longer exists. */
+export class UserGone extends Error {}
+
 export class Sessions {
   constructor(
     private readonly db: BatchDb,
@@ -143,11 +146,14 @@ export class Sessions {
     return { value, statements: [...drop, insert] };
   }
 
-  /** `issue` as its own batch, so the presented value never outlives the new one. Returns the cookie value. */
+  /**
+   * `issue` as its own batch, so the presented value never outlives the new one. Returns the cookie value; throws
+   * `UserGone` when the user row went first (a purge between the caller's read and this batch).
+   */
   async create(userId: string, replacing: string | null, options: SessionOptions): Promise<string> {
     const { value, statements } = await this.issue(userId, replacing, options);
     const results = await this.db.batch(statements);
-    if (results.at(-1)?.meta.changes !== 1) throw new Error("user row missing for the session");
+    if (results.at(-1)?.meta.changes !== 1) throw new UserGone("user row missing for the session");
     return value;
   }
 
