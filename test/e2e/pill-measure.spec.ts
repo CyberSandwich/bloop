@@ -82,6 +82,15 @@ for (const width of [SCREEN.width, 390]) {
       await expect(screen.page.locator("#items > li .item")).toHaveCount(4);
       await expect(screen.page.getByRole("img", { name: "Dog.jpg" })).toBeVisible();
       out.push(await measure(screen.page, `multi ${width}`));
+      await screen.page.evaluate(
+        `[...document.querySelectorAll("#items .item")].find((b) => b.textContent.startsWith("Sample deck.pdf")).click()`,
+      );
+      await screen.page.waitForTimeout(1500);
+      await screen.page
+        .locator("#dots")
+        .waitFor({ state: "visible", timeout: 30000 })
+        .catch(() => undefined);
+      out.push(await measure(screen.page, `pdf ${width}`));
       await screen.context.close();
       await phone.context.close();
     }
