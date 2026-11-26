@@ -21,8 +21,10 @@
       <noscript><p class="nojs">Entering a code needs JavaScript. Turn it on, then try again.</p></noscript>
       <h1 class="title" id="title" tabindex="-1">Enter the Code</h1>
       <form class="code-form" id="code-form" novalidate>
-        <label class="field-label" for="code">Code</label>
-        <input class="field" id="code" name="code" type="text" inputmode="text" autocapitalize="characters" autocomplete="one-time-code" autocorrect="off" spellcheck="false" maxlength="8" aria-describedby="code-error">
+        <div class="code-row">
+          <input class="field" id="code" name="code" type="text" inputmode="text" autocapitalize="characters" autocomplete="one-time-code" autocorrect="off" spellcheck="false" maxlength="8" aria-labelledby="title" aria-describedby="code-error">
+          <button type="button" class="paste" id="paste" aria-label="Paste"><svg class="icon" viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M11 14h10"/><path d="M16 4h2a2 2 0 0 1 2 2v1.344"/><path d="m17 18 4-4-4-4"/><path d="M8 4H6a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h12a2 2 0 0 0 1.793-1.113"/><rect x="8" y="2" width="8" height="4" rx="1"/></svg></button>
+        </div>
         <p class="field-error" id="code-error">
           <svg class="icon" viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="m21.73 18-8-14a2 2 0 0 0-3.48 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3"/><path d="M12 9v4"/><path d="M12 17h.01"/></svg>
           <span id="code-error-text"></span>
