@@ -61,10 +61,10 @@ The phone refuses what it can before a byte is sent, as a toast, and the page st
 | macros, password, damaged (server, after checking) | Lecture 5.pptm Can't Be Added | This file has macros. Save a copy without them as .pptx. / This file is password protected. Remove the password, then add it again. / This file is damaged. Open it on your computer and save it again. |
 | the library is full (too many files) | Your Library Is Full | Delete files you no longer need, then add this one. |
 | too many uploads (`rate_limited`) | Too Many Uploads Right Now | Wait a minute, then try again. |
-| bloop is busy, or has no room (`service_busy`, `storage_full`) | bloop Is Busy Right Now; bloop Can't Take Files Now | Try again in a few minutes. |
+| bloop is busy (`service_busy`) | bloop Is Busy Right Now | Try again in a few minutes. |
 | signed out mid upload | Sign In to Add Files | Your sign-in ended. Sign in again, then add the file. |
 | the upload ended or changed (`upload_gone`, `upload_aborted`, `size_mismatch`, `not_found`, `bad_request`, `length_required`) | Lecture 5.pptx Can't Be Added | one line each: This upload ended before it finished. Add the file again. / The upload was stopped. Add the file again. / This file changed while it was being added. Add it again. / bloop can't find this upload. Add the file again. / bloop couldn't take this file as sent. Add it again. / bloop couldn't read this file's size. Choose it again. |
-| still finishing (`upload_busy`), or bloop is down (`service_down`) | Lecture 5.pptx Can't Be Added | bloop is still finishing this upload. Wait a moment, then try again. / Something's wrong on bloop's side. Try again in a few minutes. |
+| still finishing (`upload_busy`), or bloop answers something the page cannot use (`service_down`) | Lecture 5.pptx Can't Be Added | bloop is still finishing this upload. Wait a moment, then try again. / Something's wrong on bloop's side. Try again in a few minutes. |
 | the page cannot add files (`forbidden_origin`), or the server cannot read the request (`unsupported_media_type`), or hit a problem of its own (`internal`) | Lecture 5.pptx Can't Be Added | This page can't add files. Reload it, then try again. / bloop couldn't read this file as sent. Add it again. / bloop hit a problem adding this file. Try again in a few minutes. |
 | a guest's caps (the demo's 25 MB, a live guest's limit) | as design.md section 8 | as design.md section 8 |
 

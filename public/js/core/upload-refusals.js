@@ -12,17 +12,16 @@ const OWN = {
   empty: ["This File Is Empty", ""],
   quota_exceeded: ["Not Enough Space", "Delete files or empty the trash to add this one."],
   library_full: ["Your Library Is Full", "Delete files you no longer need, then add this one."],
-  storage_full: ["bloop Can't Take Files Now", FEW_MINUTES],
   rate_limited: ["Too Many Uploads Right Now", "Wait a minute, then try again."],
   service_busy: ["bloop Is Busy Right Now", FEW_MINUTES],
   unauthorized: ["Sign In to Add Files", "Your sign-in ended. Sign in again, then add the file."],
 };
 /** Refusals titled "{name} Can't Be Added": the line, or a function of the name. @type {Record<string, string | ((name: string) => string)>} */
 const CANT = {
-  service_down: `Something's wrong on bloop's side. ${FEW_MINUTES}`,
   internal: `bloop hit a problem adding this file. ${FEW_MINUTES}`,
   forbidden_origin: "This page can't add files. Reload it, then try again.",
   unsupported_media_type: "bloop couldn't read this file as sent. Add it again.",
+  service_down: `Something's wrong on bloop's side. ${FEW_MINUTES}`,
   upload_busy: "bloop is still finishing this upload. Wait a moment, then try again.",
   upload_gone: "This upload ended before it finished. Add the file again.",
   upload_aborted: "The upload was stopped. Add the file again.",
