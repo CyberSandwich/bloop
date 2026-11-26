@@ -349,6 +349,8 @@ export interface PairingStore {
   dropDone(pid: string, file: FileRef): Promise<Result<PhoneView>>;
   /** The upload failed or was refused: `uploading` to `claimed`, the object purged, `guest.refused` audited with the cause. */
   dropFailed(pid: string, error: ErrorCode): Promise<Result<PhoneView>>;
+  /** The session a paired phone's upload belongs to, and whether its pairing is a guest's yet; changes nothing (`pairing_invalid`, `session_ended`). Every guest upload route but create needs `guest`. */
+  dropSession(pid: string): Promise<Result<{ sessionId: string; guest: boolean }>>;
   /** A guest upload's fraction (0 to 1) as the `upload.progress` frame to the screen: one a second per upload at most, a lower one dropped, nothing stored (`do/progress.ts`). */
   uploadProgress(pid: string, p: { uploadId: string; fraction: number }): Promise<Result<null>>;
   /** Mints one more link for an approved file (a download, the PDF or image view, a relaunch) and pushes it; `item` null is the first file. */
@@ -534,24 +536,19 @@ export type GuestPolicy = "off" | "pass" | "open";
 /** A demo screen always takes drops; a live room uses its own policy, else the configured GUEST_DROP. */
 export const effectivePolicy: (room: GuestPolicy | null, mode: Mode, configured: GuestPolicy) => GuestPolicy;
 
-export type Reservation = { ok: true; r2Key: string } | { ok: false; error: DropError };
-
-export interface Upload {
-  sessionKey: string;          // the session id: ties the object to its session for deletion by session
-  r2Key: string;               // from reserve()
-  name: string;                // the sanitized display name (X-Bloop-Name, percent-decoded, cleanName: at most 200 code points, cut with the extension kept; a typed rename is refused, not cut, by isValidName); its extension is the declared type
-  declaredType: FileType;
-  length: number;              // Content-Length, required; the stream is fixed to it
-  body: ReadableStream<Uint8Array>;
-}
-export interface GuestFile { r2Key: string; name: string; type: FileType; bytes: number; sha256: string; }
+/** A guest object's key: `g/<128-bit random>`; the key is the capability (DROP-09). */
+export const newGuestKey: () => string;
+/** A guest file the check passed (src/worker/uploads/guest.ts): kind is the validated type, never the name's. */
+export interface SettledFile { uploadId: string; fileId: string; r2Key: string; kind: FileType; name: string; size: number; sha256: string; }
 
 export interface GuestDrop {
-  /** Picks the key (`g/<128-bit random>`) and reserves budget in one statement: `storage_full` when live bytes would pass the budget. */
-  reserve(sessionId: string, bytes: number, name: string, type: FileType): Promise<Reservation>;
-  /** Streams to storage through a fixed-length stream and a digest, then validates by range reads. Deletes on any failure. */
-  accept(u: Upload, maxBytes: number): Promise<{ ok: true; file: GuestFile } | { ok: false; error: DropError }>;
-  /** Throws `QuotaExhausted` (exported here) when the month's R2 class B cap is reached; reserve answers `storage_full` at either cap. */
+  /** Reserves budget for the session's file under its key in one statement: `storage_full` when live bytes would pass the budget or either R2 cap is reached, `already_uploaded` while the session's row is live. */
+  reserve(sessionId: string, r2Key: string, bytes: number, name: string, type: FileType): Promise<DropError | null>;
+  /** The file is ready: its ledger row takes the stored size, digest and validated type. False when the row was closed (the session ended). */
+  settle(sessionId: string, file: SettledFile): Promise<boolean>;
+  /** Counts `n` R2 operations of a guest upload on the guest meter; false at the month's cap or when the count fails. */
+  charge(cls: "A" | "B", n: number): Promise<boolean>;
+  /** Throws `QuotaExhausted` (exported here) when the month's R2 class B cap is reached. */
   read(r2Key: string): Promise<{ body: ReadableStream<Uint8Array>; size: number } | null>;
   delete(r2Key: string): Promise<void>;          // idempotent
   /** Deletes the session's object and closes its ledger row, by key and by session id. True when something existed. Idempotent. */
@@ -577,7 +574,9 @@ export const ZIP_LIMITS = {
 ```
 Validation rules: a `.pptx` starts with `PK\x03\x04`, has no `%PDF` in its first 1 KB, has an EOCD record (its comment length reaching the end of the file) whose central directory is inside the file and within the limits, uses only stored or deflate entries, and passes the part, content-type and relationship rules (`checkOoxml`: no macro or control part or relationship, no external relationship but a hyperlink, no two parts of one name, no `\` or `%` in a name). A `.pdf` starts with `%PDF-`, has `%%EOF` in its last 1 KB, has no plausible ZIP EOCD in its last 64 KB, and passes the active-content scan (DROP-13: no script, launch, form submission or import, rich media or jump to another file anywhere, `/OpenAction` and `/AA` included, and no embedded or attached file or XFA form, else `macro_content`; a stream with `/N` and `/First` is an object stream typed or not, and one it cannot read, past 32 MiB inflated in all, or a reference `/First` whose object reaches a stream word of any form before its `endobj`, is `bad_structure`); a file with `/Encrypt` is `encrypted`. Every validator reads through one read plan (`READ_PLAN` in `read-plan.ts`): an object up to 16 MiB (a PDF up to 8 MiB) is one read, a larger one at most 72; an object over 512 MiB (`MAX_OBJECT_BYTES`) is `too_large`, and a short read or a spent budget is `bad_structure`. The extension must match the detected type (`bad_type` otherwise; a structure failure is `bad_structure`, a macro part or content type `macro_content`). A `.jpg` or `.jpeg` starts with `FF D8 FF`, has a frame header reached by walking its marker segments through the read plan (at most 4 reads of 256 KiB, 256 segments and 8,192 steps; `WALK_LIMITS` in `image.ts`, past them `bad_structure`) and no ZIP EOCD in its last 64 KB (bytes after the end marker are allowed); a `.png` starts with the 8-byte PNG signature, ends with its `IEND` chunk and has no ZIP EOCD. Every image's declared size (PNG, JPEG, GIF and WebP headers; a GIF's logical screen and every frame up to its trailer, each frame with its offset inside the screen) is at most 100 megapixels: one over is `too_large`, a missing or zero size `bad_structure` (DROP-16). A `.txt`, `.md` or `.csv` is valid UTF-8 with no NUL, at most 5 MB, and is not another format: no magic a binary type is detected by, no `%PDF` or markup start (`<!doctype html`, `<html`, `<script`, `<svg`, `<?xml` after any byte order mark and white space) in its first 1 KB, and no zip local header or end record anywhere (`bad_structure`, DROP-02). HEIC (a `.heic` name, or `ftyp` bytes under an image name) is `bad_type`, as is any pair of declared and detected types that differ; no error code is added. The phone re-encodes a guest's photo to JPEG before upload (it drops metadata and shrinks the body); the server never relies on it for safety and checks the bytes and the size cap on every upload. A JPEG or PNG with `%PDF` in its first 1 KB or `%%EOF` in its last KB is `bad_structure` too (DROP-11). A `.mp4` or `.mov` has an `ftyp` box at offset 4 whose major brand is `isom`, `iso2`, `iso4`, `iso5`, `iso6`, `mp41`, `mp42`, `mp71`, `avc1`, `dash`, `M4V `, `M4VP`, `3gp4`, `3gp5` or `XAVC` (`.mp4`), or `qt  ` (`.mov`); the box is well formed and followed by a movie, data, fragment, index or metadata box (`moov`, `mdat`, `moof`, `sidx`, `pdin`, `meta`) or a padding box, with no `%PDF` in the first 1 KB, and no ZIP EOCD in the last 64 KB or `%%EOF` in the last KB. `/f/` answers a video's single `Range` (206; 416 for a well-formed range out of bounds; a malformed or multiple range is ignored and answered 200 whole) and HEAD, through `Resolved.body(range?)` and `GuestDrop.read(key, range?)`; every other type is answered whole. `Content-Type` on the way out comes from the detected type (video is always `video/mp4`), never from the upload.
 
-`purgeGuest` (`seams/guest-drop/purge.ts`) is what the Screen object's `purge` seam runs: it skips a file from another source, deletes through `GuestDrop.purge`, audits `guest.deleted` when something existed, and never throws (a failed delete is logged and left to the sweep).
+The bytes arrive through the upload pipeline's guest routes ([uploads.md](uploads.md) section 7), which name the file (`cleanName`: at most 200 code points, cut with the extension kept; its extension is the declared type) and call `reserve` at create and `settle` once the check passed.
+
+`purgeGuest` (`seams/guest-drop/purge.ts`) is what the Screen object's `purge` seam runs: it skips a file from another source, aborts the session's open uploads (`abortUploads`, so no multipart outlives its session), deletes through `GuestDrop.purge`, audits `guest.deleted` when something existed, and never throws (a failed delete or abort is logged and left to the sweep).
 
 ## 6. `Residue` (`public/js/residue.js`; the server half is `revokeLinks` and `purge` in `do/effects.ts`)
 ```ts

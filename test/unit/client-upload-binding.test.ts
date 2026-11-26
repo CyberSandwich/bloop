@@ -408,6 +408,8 @@ describe("the refusal strings", () => {
   const root = new URL("../../", import.meta.url);
   const read = (path: string) => readFileSync(new URL(path, root), "utf8");
   /** The codes the server's upload routes can answer: every quoted key of the error tables in their sources. */
+  /** Codes only a guest's upload answers (the session's file cap, the guest storage); the phone says them, never the library page. */
+  const GUEST_ONLY = new Set(["already_uploaded", "storage_full"]);
   async function serverCodes() {
     const known = new Set([
       ...Object.keys((await import("../../public/js/shared/errors.js")).ERRORS),
@@ -432,7 +434,7 @@ describe("the refusal strings", () => {
     const found = new Set<string>();
     for (const path of sources)
       for (const [, code] of read(path).matchAll(/["']([a-z]+(?:_[a-z]+)*)["']/g))
-        if (known.has(code as string)) found.add(code as string);
+        if (known.has(code as string) && !GUEST_ONLY.has(code as string)) found.add(code as string);
     // The engine's own refusals, as it spells them: refuse(r, "empty"), { error: "internal" }.
     for (const [, code] of read("public/js/core/upload.js").matchAll(/(?:refuse\(\w+,\s*|error:\s*)"([a-z_]+)"/g))
       found.add(code as string);

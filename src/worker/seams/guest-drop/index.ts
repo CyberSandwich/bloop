@@ -2,7 +2,9 @@
 // a Node or Screen-object chunk store (ADR 0005 fallback) replaces one file.
 import type { DropError, FileType, Mode } from "../../../shared/protocol.ts";
 import type { Config } from "../../config.ts";
+import { newRef } from "../../ids.ts";
 import type { ByteRange } from "../open-path/range.ts";
+import type { OpClass } from "./meter.ts";
 
 export type GuestPolicy = "off" | "pass" | "open";
 
@@ -20,45 +22,37 @@ export const sweepAgeMs = (config: Pick<Config, "longestSessionMs">): number =>
 export const effectivePolicy = (room: GuestPolicy | null, mode: Mode, configured: GuestPolicy): GuestPolicy =>
   mode === "demo" ? "open" : (room ?? configured);
 
-/** Thrown by `read` when this month's R2 operation cap is reached (meter.ts); the bytes stay in the bucket. */
+/** Thrown by `read`, or by a guest upload's charge, when this month's R2 operation cap is reached (meter.ts). */
 export class QuotaExhausted extends Error {}
 
-export type Reservation = { ok: true; r2Key: string } | { ok: false; error: DropError };
+/** A guest object's key: `g/` and 128 random bits. The key is the capability (DROP-09). */
+export const newGuestKey = (): string => `g/${newRef()}`;
 
-export interface Upload {
-  /** The session id: ties the object to its session for deletion by session when no file ref exists yet. */
-  sessionKey: string;
-  /** From `reserve`. */
+/** A guest file the check passed: what the ledger keeps and the Screen's item shows. */
+export interface SettledFile {
+  uploadId: string;
+  fileId: string;
   r2Key: string;
-  /** The display name, already sanitized; its extension is the declared type. */
+  /** The validated type, never the name's. */
+  kind: FileType;
   name: string;
-  declaredType: FileType;
-  /** Content-Length, required. */
-  length: number;
-  body: ReadableStream<Uint8Array>;
-}
-
-export interface GuestFile {
-  r2Key: string;
-  name: string;
-  type: FileType;
-  bytes: number;
+  size: number;
   sha256: string;
 }
 
-export type Accepted = { ok: true; file: GuestFile } | { ok: false; error: DropError };
-
 export interface GuestDrop {
-  /** Streams to storage, then validates by range reads. Deletes the object on any failure. */
-  accept(u: Upload, maxBytes: number): Promise<Accepted>;
+  /** Reserves budget for one session's file before R2 is asked: `storage_full` past the budget or the month's R2 operation caps, `already_uploaded` while the session's row is live. */
+  reserve(sessionId: string, r2Key: string, bytes: number, name: string, type: FileType): Promise<DropError | null>;
+  /** The file is ready: its ledger row takes the stored size, digest and validated type. False: the row was closed (the session ended). */
+  settle(sessionId: string, file: SettledFile): Promise<boolean>;
+  /** Counts `n` operations of a guest upload against the month's caps; false at the cap or when the count fails. */
+  charge(cls: OpClass, n: number): Promise<boolean>;
   /** Throws `QuotaExhausted` when the month's class B cap is reached. */
   read(r2Key: string, range?: ByteRange): Promise<{ body: ReadableStream<Uint8Array>; size: number } | null>;
   /** Idempotent. */
   delete(r2Key: string): Promise<void>;
   /** Deletes the session's object and ledger row: by its key when known, else by session. Returns whether an object existed. */
   purge(sessionId: string | null, r2Key: string | null): Promise<boolean>;
-  /** Picks the object key and reserves budget for one session's file before any byte is stored: `storage_full` when it would pass the budget or the month's R2 operation caps are reached. */
-  reserve(sessionId: string, bytes: number, name: string, type: FileType): Promise<Reservation>;
   /** Hourly backstop: deletes objects older than the given age. Returns the count. */
   sweep(olderThanMs: number): Promise<number>;
 }

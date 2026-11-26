@@ -1,6 +1,6 @@
 # Uploads
 
-How a library file gets into R2 and what each step guarantees. Decision record: [ADR 0017](adr/0017-multipart-uploads.md). Quota rules: [ADR 0013](adr/0013-data-model.md). Threats: [threats/uploads.md](threats/uploads.md). Code: `src/worker/uploads/` (steps), `src/worker/routes/uploads.ts` (HTTP).
+How a library or guest file gets into R2 and what each step guarantees. Decision record: [ADR 0017](adr/0017-multipart-uploads.md). Quota rules: [ADR 0013](adr/0013-data-model.md). Threats: [threats/uploads.md](threats/uploads.md). Code: `src/worker/uploads/` (steps), `src/worker/routes/uploads.ts` (HTTP).
 
 ## 1. The flow
 
@@ -49,3 +49,15 @@ An object that never reached `ready` is deleted by whichever step refuses or rel
 ## 6. Switches and limits
 
 The `uploads` switch: `on` allows everything; `readonly` refuses a new upload and new part URLs but lets a started upload store parts and complete; `off` refuses every write but a cancel, and a read always works. A refusal is 503 `service_busy`. Every route answers 401 `auth_required` without a signed-in, active member. A write is checked on its headers before anything else: Origin and Sec-Fetch-Site (403), and on a JSON write its type and a declared `Content-Length` of at most 4096 bytes (411 without one, 413 over it); only then come the per-IP meter (`RL_MEMBER_IP`, before any D1 read), the session, the per-user rate limit and the row, and one settings read for the switch and the spend overrides. In direct mode a part may be minted three times, plus 8 more per URL lifetime since create, so a resume past the budget waits (`rate_limited` with a Retry-After) and is never locked out. The routes use `RL_LIBRARY` and `RL_UPLOAD_PART`, keyed by user. Each create takes from the per-user byte and count meters, and each R2 operation is charged to the monthly class A or class B cap once per request ([spend.md](spend.md)).
+
+## 7. Guests
+
+A guest (a phone paired to a room screen) uploads on the same pipeline under `/api/guest/uploads`: the same handlers, write guard, idempotency and part rules as `/api/uploads`, with the owner taken from the Bearer pid alone. No cookie is read there, so a member signed in on the same phone writes nothing to their library (UP-03). Code: `src/worker/uploads/guest.ts`; the storage side is `GuestDrop` ([interfaces.md](interfaces.md) section 5).
+
+- **Owner and bucket**: a guest row is `owner_kind` `guest` with `session_id` and `screen_ref` and no `user_id`, in the guest bucket at `g/<random 128 bits>` (DROP-09). Guests are proxy mode only: their part URLs are the Worker's.
+- **Create**: the name's type and `GUEST_MAX_BYTES` (or the demo's cap) first, then the live upload of the same file (a resume, UP-09), then for a new file the Screen object's begin (policy, state, the move to `uploading`), then the session's caps in the insert's own guard: 12 uploads a session, a cancelled or refused one excepted (`already_uploaded`), and 3 open at once (`upload_busy`; the phone queues the rest), then the guest storage budget (`storage_full`). A refusal returns the Screen to `claimed`. The Screen offers one file a session for now, so a second file is refused at its begin.
+- **Complete**: under the claim, join, size, then the check. A pass settles the ledger row (`GuestDrop.settle`) and the Screen's item (`dropDone`) before the row closes and answers `ready`; the conversion starts after the response. A guest file never waits `checking`: a check that cannot finish now is refused `service_busy`, which the phone may send again. A refusal closes the row first, then deletes (the ordering rule).
+- **Meters**: no quota. Each R2 operation is charged to the spend guard as a library one is, and to the guest meter (`r2_ops`, DROP-05), whose cap answers `storage_full`; a part past it cancels the upload.
+- **End**: a session's purge aborts its open uploads before it deletes its files, so no multipart outlives its session (UP-04). The hourly sweep picks the bucket by the row's `bucket`, releases an expired guest upload as it does a library one, and gives up a guest complete whose claim went stale rather than finishing it: its Screen item comes only from its own complete.
+- **Progress**: each stored part sends the room screen `upload.progress` with the stored fraction, at most once a second per upload (`Screen.uploadProgress`).
+- **Residual**: a Worker that dies after the settle and before the row closes leaves an offered file whose stale claim the sweep gives up, deleting the object the screen offers; the screen's Open then fails and the guest sends again.

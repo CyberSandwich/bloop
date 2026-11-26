@@ -1,24 +1,43 @@
-// A library file that turns `ready` starts its conversion (docs/conversion.md): after the response when there is a
-// request (`ctx`), inline in the sweep. Nothing here can fail the upload: the file is already ready.
+// A file that turns `ready` starts its conversion (docs/conversion.md): after the response when there is a request
+// (`ctx`), inline in the sweep. Nothing here can fail the upload: the file is already ready.
 import { convertDepsFor } from "../convert/deps.ts";
-import { startConversion } from "../convert/start.ts";
+import { type StartRequest, startConversion } from "../convert/start.ts";
 import type { Env } from "../env.ts";
 import type { Deps } from "./pipeline.ts";
+
+async function startAfter(env: Env, ctx: Pick<ExecutionContext, "waitUntil"> | null, req: StartRequest): Promise<void> {
+  // startConversion catches its own errors, not those of building its deps.
+  const start = (async () => startConversion(convertDepsFor(env), req))().catch((e) =>
+    console.error(JSON.stringify({ evt: "convert_start_error", error: String(e) })),
+  );
+  if (ctx) ctx.waitUntil(start);
+  else await start;
+}
 
 /** A new library file is version 1. The owner comes from the file's row, so `scope` and `target` only fill the type. */
 export const convertWhenReady =
   (env: Env, ctx: Pick<ExecutionContext, "waitUntil"> | null): NonNullable<Deps["afterReady"]> =>
-  async ({ id, userId }) => {
-    // startConversion catches its own errors, not those of building its deps.
-    const start = (async () =>
-      startConversion(convertDepsFor(env), {
-        ownerKind: "library",
-        fileId: id,
-        version: 1,
-        profile: "full",
-        scope: userId,
-        target: { kind: "library", userId },
-      }))().catch((e) => console.error(JSON.stringify({ evt: "convert_start_error", error: String(e) })));
-    if (ctx) ctx.waitUntil(start);
-    else await start;
-  };
+  ({ id, userId }) =>
+    startAfter(env, ctx, {
+      ownerKind: "library",
+      fileId: id,
+      version: 1,
+      profile: "full",
+      scope: userId,
+      target: { kind: "library", userId },
+    });
+
+/** A guest file converts under its session id (the guest conversion key), counted per IP hash, after the response. */
+export const convertGuest = (
+  env: Env,
+  ctx: Pick<ExecutionContext, "waitUntil">,
+  g: { sessionId: string; screenRef: string; ipHash: string },
+): Promise<void> =>
+  startAfter(env, ctx, {
+    ownerKind: "guest",
+    fileId: g.sessionId,
+    version: 1,
+    profile: "full",
+    scope: g.ipHash,
+    target: { kind: "guest", screenRef: g.screenRef },
+  });

@@ -1224,7 +1224,7 @@ test.describe("guest drop", () => {
   }) => {
     const screen = await demoScreen(browser);
     const { phone } = await scan(browser, screen.page);
-    await phone.page.route("**/api/drop", (route) =>
+    await phone.page.route("**/api/guest/uploads", (route) =>
       route.fulfill({
         status: 507,
         contentType: "application/problem+json",
@@ -1369,7 +1369,7 @@ test.describe("guest drop", () => {
     const held = new Promise<void>((done) => {
       release = done;
     });
-    await phone.page.route("**/api/drop", async (route) => {
+    await phone.page.route("**/api/guest/uploads", async (route) => {
       await held;
       await route.continue();
     });
@@ -1461,28 +1461,50 @@ test.describe("a guest's photo and video on the screen (design.md section 7, Vid
     ]);
   })();
 
-  /** The phone's claim becomes a guest at the first byte: the drop API the phone's picker sends through. */
+  /** The phone's claim becomes a guest at its first upload: the guest routes the phone's picker sends through. */
   async function sendAsGuest(phone: Page, name: string, bytes: Buffer) {
-    const status = await phone.evaluate(
+    const state = await phone.evaluate(
       async ([n, b]) => {
+        type Res = { status: number; json(): Promise<Record<string, unknown>> };
         const g = globalThis as unknown as {
           localStorage: { getItem(k: string): string | null };
-          fetch: (u: string, i: object) => Promise<{ status: number }>;
+          fetch: (u: string, i: object) => Promise<Res>;
+          crypto: { subtle: { digest(a: string, d: Uint8Array): Promise<ArrayBuffer> } };
         };
-        const res = await g.fetch("/api/drop", {
-          method: "PUT",
-          headers: {
-            Authorization: `Bearer ${g.localStorage.getItem("bloop.pid")}`,
-            "Content-Type": "application/octet-stream",
-            "X-Bloop-Name": encodeURIComponent(n),
-          },
-          body: new Uint8Array(b),
+        const body = new Uint8Array(b);
+        const auth = { Authorization: `Bearer ${g.localStorage.getItem("bloop.pid")}` };
+        const json = { ...auth, "Content-Type": "application/json" };
+        const digest = new Uint8Array(await g.crypto.subtle.digest("SHA-256", body));
+        const fingerprint = Array.from(digest, (x) => x.toString(16).padStart(2, "0")).join("");
+        const made = await g.fetch("/api/guest/uploads", {
+          method: "POST",
+          headers: json,
+          body: JSON.stringify({ name: n, bytes: body.length, fingerprint }),
         });
-        return res.status;
+        if (made.status !== 201) return `create ${made.status}`;
+        const { uploadId, parts, partBytes } = (await made.json()) as {
+          uploadId: string;
+          parts: number;
+          partBytes: number;
+        };
+        for (let i = 1; i <= parts; i++) {
+          const put = await g.fetch(`/api/guest/uploads/${uploadId}/parts/${i}`, {
+            method: "PUT",
+            headers: { ...auth, "Content-Type": "application/octet-stream" },
+            body: body.subarray((i - 1) * partBytes, i * partBytes),
+          });
+          if (put.status !== 200) return `part ${put.status}`;
+        }
+        const done = await g.fetch(`/api/guest/uploads/${uploadId}/complete`, {
+          method: "POST",
+          headers: json,
+          body: "{}",
+        });
+        return String((await done.json()).state);
       },
       [name, [...bytes]] as const,
     );
-    expect(status).toBe(200);
+    expect(state).toBe("ready");
   }
 
   /** A demo screen showing one guest file, opened by the screen's Open click. */

@@ -2,7 +2,7 @@
 // the conversion of ready files that have none (never while CONVERT_MODE is off); nightly, heal the quota counters. Each row is taken under the claim rule of store.ts, so a sweep never races a live
 // complete or abort, and each row's failure is logged and skipped, so one bad row never stops the run.
 import type { BatchDb } from "../auth/db.ts";
-import { checkFile, type Deps, settleAndCheck } from "./pipeline.ts";
+import { checkFile, type Deps, mpOf, settleAndCheck } from "./pipeline.ts";
 import {
   type CheckingFile,
   claimCheck,
@@ -39,20 +39,26 @@ export interface SweepReport {
 
 type Counted = "finished" | "released" | "rechecked" | "refused" | "converted";
 
-/** Closes one open upload and returns what it held: the reservation (library), the multipart and any object. */
+/**
+ * Closes one open upload and returns what it held: the reservation (library), the multipart and any object, in the
+ * row's own bucket. A guest's ledger row is the guest sweep's (sweepGuestFiles).
+ */
 const giveUp = (d: Deps, row: store.UploadRow, claimToken = -1): Promise<boolean> =>
-  reclaim(d.mp, row, () =>
+  reclaim(mpOf(d, row), row, () =>
     row.ownerKind === "library"
       ? releaseLibrary(d.db, { id: row.id, userId: row.userId as string, bytes: row.bytes }, d.now(), claimToken)
       : store.closeGuest(d.db, row.id, d.now(), claimToken),
   );
 
-/** A complete that died after its claim: the object is whole (settle and check) or it is not (release). */
+/**
+ * A complete that died after its claim: a whole library object is settled and checked, anything else released. A guest
+ * file is never finished here: its Screen item comes only from its own complete, so the guest sends it again.
+ */
 async function recover(d: Deps, row: store.UploadRow): Promise<"finished" | "released" | "skipped"> {
   const token = d.now();
   if (!(await store.claim(d.db, row.id, token))) return "skipped";
-  const head = await d.mp.head(row.r2Key);
-  if (row.ownerKind === "library" && head && head.size === row.bytes) {
+  const head = row.ownerKind === "library" ? await d.mp.head(row.r2Key) : null;
+  if (head && head.size === row.bytes) {
     await settleAndCheck(d, row, token);
     return "finished";
   }
@@ -74,12 +80,14 @@ async function recheck(d: Deps, f: CheckingFile): Promise<"rechecked" | "refused
 /** Deletes objects a crash stranded between a won release or refusal and its delete (see reclaim.ts). */
 async function strandStep(d: Deps, allotment: number, report: SweepReport, start: number): Promise<void> {
   const keys = await strandedKeys(d.db, d.now() - CLOSED_KEEP_MS, allotment);
-  for (const key of keys) {
+  const failed = () => console.error(JSON.stringify({ evt: "upload_sweep_failed", step: "stranded" }));
+  for (const held of keys) {
     if (d.now() - start >= SWEEP_WALL_MS) {
       report.more = true;
       return;
     }
-    await d.mp.delete(key).catch(() => console.error(JSON.stringify({ evt: "upload_sweep_failed", step: "stranded" })));
+    const mp = mpOf(d, held);
+    await mp.delete(held.r2Key).catch(failed);
   }
 }
 

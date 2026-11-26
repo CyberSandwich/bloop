@@ -85,7 +85,7 @@ The phone refuses what it can before a byte is sent, as a toast, and the page st
 
 ## 6. On `/a` for a guest
 
-Until the guest routes of the upload stream exist, `/a` sends through `PUT /api/drop` as before, and nothing of a guest's goes to the member routes or carries a member's cookie: the engine has no guest kind. When the routes land, the guest gets its own routes, requests that omit credentials, and a test through the real engine that a member's cookie writes nothing; this section then returns with the guest's sending state (design.md section 7, Phone page) and its "Sent" pill.
+A guest on `/a` sends through the same engine on its own routes (`/api/guest/uploads`, the pairing's Bearer credential on every request and part, [uploads.md](../uploads.md) section 7); nothing of a guest's goes to the member routes, and a member's cookie on the phone writes nothing to that member's library (a test drives the real engine). The guest's sending state and its "Sent" pill are design.md section 7, Phone page.
 
 ## 7. Focus, targets, lazy
 

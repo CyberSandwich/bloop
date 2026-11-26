@@ -262,15 +262,21 @@ export async function unconverted(db: Db, limit: number): Promise<ReadyFile[]> {
  * took its claim (the only uploads that can hold a joined object). A delete of a key already gone is free, so the sweep
  * repeats it until the rows age out.
  */
-export async function strandedKeys(db: Db, since: number, limit: number): Promise<string[]> {
+export async function strandedKeys(db: Db, since: number, limit: number): Promise<Stranded[]> {
   const { results } = await db
     .prepare(
-      `SELECT r2_key AS key FROM library_file WHERE status = 'refused' AND updated_at >= ?1
-       UNION SELECT r2_key FROM upload WHERE aborted_at >= ?1 AND completing_at IS NOT NULL LIMIT ?2`,
+      `SELECT r2_key AS r2Key, 'library' AS bucket FROM library_file WHERE status = 'refused' AND updated_at >= ?1
+       UNION SELECT r2_key, bucket FROM upload WHERE aborted_at >= ?1 AND completing_at IS NOT NULL LIMIT ?2`,
     )
     .bind(since, limit)
-    .all<{ key: string }>();
-  return results.map((r) => r.key);
+    .all<Stranded>();
+  return results;
+}
+
+/** A key the sweep deletes again, with the bucket it is in (a guest upload's is the guest bucket). */
+export interface Stranded {
+  r2Key: string;
+  bucket: "library" | "guest";
 }
 
 export interface Drift {

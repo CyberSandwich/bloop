@@ -33,12 +33,12 @@ const CHECK_WALL_MS = 90_000;
 export type Out<T> =
   | { ok: true; value: T }
   | { ok: false; error: ErrorCode | AppError; retryAfter?: number | undefined };
-const no = (error: ErrorCode | AppError, retryAfter?: number): Out<never> => ({
+export const no = (error: ErrorCode | AppError, retryAfter?: number): Out<never> => ({
   ok: false,
   error,
   retryAfter,
 });
-const yes = <T>(value: T): Out<T> => ({ ok: true, value });
+export const yes = <T>(value: T): Out<T> => ({ ok: true, value });
 
 export interface Presigner {
   part(row: store.UploadRow, n: number, bytes: number): Promise<{ url: string; expiresAt: number }>;
@@ -46,7 +46,10 @@ export interface Presigner {
 
 export interface Deps {
   db: BatchDb;
+  /** The library bucket. */
   mp: Multipart;
+  /** The guest bucket: a guest row's steps and the sweep of one (`mpOf`). */
+  guestMp?: Multipart;
   spend: Pick<Spend, "take" | "charge" | "refund">;
   config: Config;
   now: () => number;
@@ -85,7 +88,20 @@ export interface CompleteAnswer {
   file: FileState;
 }
 
-const modeOf = (d: Deps): "direct" | "proxy" => (d.presigner ? d.config.library.uploadMode : "proxy");
+/** The bucket a row's bytes live in, by the row's own `bucket`; a guest row with no guest bucket wired is a bug. */
+export function mpOf(d: Pick<Deps, "mp" | "guestMp">, held: { bucket: store.UploadRow["bucket"] }): Multipart {
+  if (held.bucket === "library") return d.mp;
+  if (!d.guestMp) throw new Error("a guest row needs the guest bucket");
+  return d.guestMp;
+}
+
+/** The route of one upload: the library's, or a guest's (routes/uploads.ts). */
+export const uploadPath = (row: Pick<store.UploadRow, "id" | "ownerKind">): string =>
+  `${row.ownerKind === "guest" ? "/api/guest/uploads" : "/api/uploads"}/${row.id}`;
+
+/** Direct mode is the library's alone: the presigner signs for the library bucket, so a guest's parts go through the Worker. */
+const modeOf = (d: Deps, row: Pick<store.UploadRow, "ownerKind">): "direct" | "proxy" =>
+  d.presigner && row.ownerKind === "library" ? d.config.library.uploadMode : "proxy";
 const ttlMs = (d: Deps): number => d.config.library.urlTtlSeconds * 1000;
 
 /** The size of part `n`: every part is `partBytes` but the last, which holds the remainder. */
@@ -99,7 +115,7 @@ const validPart = (u: Pick<store.UploadRow, "parts">, n: number): boolean =>
 const cleanEtag = (etag: string): string => etag.replaceAll('"', "");
 
 /** A refused spend take or charge as the error the route answers. */
-function spendFailure(result: Parameters<typeof refusal>[0]): Out<never> {
+export function spendFailure(result: Parameters<typeof refusal>[0]): Out<never> {
   const r = refusal(result);
   return no(r.code, r.retryAfterSeconds);
 }
@@ -126,14 +142,14 @@ export async function answerFor(d: Deps, row: store.UploadRow): Promise<Out<Crea
     partBytes: row.partBytes,
     parts: row.parts,
     done,
-    mode: modeOf(d),
+    mode: modeOf(d, row),
     expiresAt: row.expiresAt,
     urls: minted.value,
     ttlMs: ttlMs(d),
   });
 }
 
-type Created = Out<{ created: boolean; answer: CreateAnswer }>;
+export type Created = Out<{ created: boolean; answer: CreateAnswer }>;
 
 /** Creates a library upload, or resumes the live one of the same file. */
 export async function createLibrary(d: Deps, userId: string, req: CreateRequest): Promise<Created> {
@@ -253,7 +269,7 @@ async function afterThrownReserve(
  * The live upload of the same file, answered as it stands; null when there is none. The fingerprint is the file's
  * key, so one of another name or size is the client's mistake: `bad_request`, before any reserve or take.
  */
-async function resume(d: Deps, owner: store.Owner, req: CreateRequest): Promise<Created | null> {
+export async function resume(d: Deps, owner: store.Owner, req: CreateRequest): Promise<Created | null> {
   const found = await store.findOpen(d.db, owner, req.fingerprint, d.now());
   if (!found) return null;
   if (found.bytes !== req.bytes || found.name !== req.name) return no("bad_request");
@@ -267,8 +283,9 @@ async function resume(d: Deps, owner: store.Owner, req: CreateRequest): Promise<
 /** URLs for the given pending parts: the Worker's own path in proxy mode, presigned R2 URLs in direct mode. */
 export async function mint(d: Deps, row: store.UploadRow, parts: number[]): Promise<Out<PartUrl[]>> {
   if (parts.length === 0) return yes([]);
-  if (!d.presigner || d.config.library.uploadMode === "proxy") {
-    return yes(parts.map((n) => ({ n, url: `/api/uploads/${row.id}/parts/${n}` })));
+  const signer = d.presigner;
+  if (!signer || modeOf(d, row) === "proxy") {
+    return yes(parts.map((n) => ({ n, url: `${uploadPath(row)}/parts/${n}` })));
   }
   const now = d.now();
   const ttl = ttlMs(d);
@@ -277,7 +294,6 @@ export async function mint(d: Deps, row: store.UploadRow, parts: number[]): Prom
   }
   const classA = await d.spend.charge("A", parts.length);
   if (!classA.ok) return spendFailure(classA);
-  const signer = d.presigner;
   return yes(
     await Promise.all(
       parts.map(async (n) => ({
@@ -320,7 +336,7 @@ export async function putPart(
   if (!classA.ok) return spendFailure(classA);
   let etag: string;
   try {
-    etag = cleanEtag(await d.mp.part(row.r2Key, row.r2UploadId, n, body, length));
+    etag = cleanEtag(await mpOf(d, row).part(row.r2Key, row.r2UploadId, n, body, length));
   } catch (error) {
     return no(PART_ERRORS[error instanceof PartFailed ? error.why : "fault"]);
   }
@@ -339,7 +355,7 @@ export async function confirmPart(
   etag: string,
   bytes: number,
 ): Promise<Out<{ n: number; confirmed: number; total: number }>> {
-  if (modeOf(d) !== "direct") return no("bad_request");
+  if (modeOf(d, row) !== "direct") return no("bad_request");
   if (!store.isOpen(row)) return no("upload_gone");
   if (!validPart(row, n) || bytes !== partSize(row, n)) return no("bad_request");
   if (!(await store.recordPart(d.db, row.id, n, cleanEtag(etag), bytes, d.now()))) return no("upload_gone");
@@ -403,7 +419,7 @@ export async function completeLibrary(
   row: store.UploadRow,
   last?: { n: number; etag: string; bytes: number },
 ): Promise<Out<CompleteAnswer>> {
-  if (last && (modeOf(d) !== "direct" || last.n !== row.parts || last.bytes !== partSize(row, last.n))) {
+  if (last && (modeOf(d, row) !== "direct" || last.n !== row.parts || last.bytes !== partSize(row, last.n))) {
     return no("bad_request");
   }
   const now = d.now();
@@ -417,6 +433,19 @@ export async function completeLibrary(
     (await reclaim(d.mp, row, () => releaseLibrary(d.db, owned, d.now(), now))) ? no(error) : outcomeOf(d, row);
 
   if (last) await store.recordPart(d.db, row.id, last.n, cleanEtag(last.etag), last.bytes, now);
+  return (await joinParts(d, row, now, give)) ?? settleAndCheck(d, row, now);
+}
+
+/**
+ * Under complete's claim (`now` its token): the parts D1 holds are whole, R2 joins them, and the object is the declared
+ * size (UP-02). Null: joined. Otherwise the answer: parts missing or a cap refused (the claim given back), or `give`'s.
+ */
+export async function joinParts<T>(
+  d: Deps,
+  row: store.UploadRow,
+  now: number,
+  give: (error: ErrorCode | AppError) => Promise<Out<T>>,
+): Promise<Out<T> | null> {
   const done = await store.doneParts(d.db, row.id);
   const whole = done.length === row.parts && done.every((p, i) => p.n === i + 1 && p.bytes === partSize(row, p.n));
   if (!whole) {
@@ -429,8 +458,9 @@ export async function completeLibrary(
     await store.unclaim(d.db, row.id, now);
     return spendFailure(classA);
   }
+  const mp = mpOf(d, row);
   try {
-    await d.mp.complete(
+    await mp.complete(
       row.r2Key,
       row.r2UploadId,
       done.map((p) => ({ n: p.n, etag: p.etag })),
@@ -438,9 +468,8 @@ export async function completeLibrary(
   } catch {
     return give("size_mismatch");
   }
-  const head = await d.mp.head(row.r2Key);
-  if (!head || head.size !== row.bytes) return give("size_mismatch");
-  return settleAndCheck(d, row, now);
+  const head = await mp.head(row.r2Key);
+  return !head || head.size !== row.bytes ? give("size_mismatch") : null;
 }
 
 /**
@@ -520,7 +549,13 @@ export async function stateOf(d: Pick<Deps, "db" | "now">, row: store.UploadRow)
         : row.completingAt !== null && d.now() - row.completingAt < store.CLAIM_MS
           ? "completing"
           : "open";
-  const file = state === "completed" ? await fileState(d, row.fileId, row.userId as string) : null;
+  // A guest upload completes only once its file is ready (guest.ts); it has no library_file row.
+  const file =
+    state !== "completed"
+      ? null
+      : row.ownerKind === "guest"
+        ? ({ id: row.fileId, status: "ready" } as const)
+        : await fileState(d, row.fileId, row.userId as string);
   return {
     id: row.id,
     name: row.name,

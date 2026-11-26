@@ -1,4 +1,4 @@
-// The composition root of the upload pipeline: the real D1, the library bucket and the spend client behind `Deps`.
+// The composition root of the upload pipeline: the real D1, both buckets and the spend client behind `Deps`.
 import { dbOf } from "../auth/db.ts";
 import type { Config } from "../config.ts";
 import type { Env } from "../env.ts";
@@ -15,26 +15,30 @@ export const bucketFor = (env: Pick<Env, "LIBRARY" | "GUEST_FILES">, which: "lib
   (which === "library" ? env.LIBRARY : env.GUEST_FILES) as unknown as UploadBucket;
 
 /**
- * The pipeline's deps and the `uploads` switch in force, from one settings read: on, readonly (no new upload, no new
- * URL) or off (nothing but a cancel and a read). `ctx` is the request's; null only where no request waits (the sweep),
- * so a route cannot forget it and hold its answer for a conversion start.
+ * The pipeline's deps and the switches in force, from one settings read: `uploads` (the library's: on, readonly, no new
+ * upload or URL, or off, nothing but a cancel and a read) and `guestFiles` (`stopped` refuses a guest's new upload).
+ * `ctx` is the request's; null only where no request waits (the sweep), so a route cannot forget it and hold its
+ * answer for a conversion start.
  */
 export async function uploadContext(
   env: Env,
   config: Config,
   ctx: Pick<ExecutionContext, "waitUntil"> | null,
-): Promise<{ d: Deps; uploads: string }> {
+): Promise<{ d: Deps; uploads: string; guestFiles: string }> {
   const settings = await readSettings(env);
+  const switches = effectiveAll(env as unknown as Record<string, unknown>, settings);
   return {
     d: {
       db: dbOf(env.DB),
       mp: multipartOver(bucketFor(env, "library")),
+      guestMp: multipartOver(bucketFor(env, "guest")),
       spend: spendFor(env, () => capOverridesOf(settings)),
       config,
       now: Date.now,
       afterReady: convertWhenReady(env, ctx),
     },
-    uploads: effectiveAll(env as unknown as Record<string, unknown>, settings).uploads,
+    uploads: switches.uploads,
+    guestFiles: switches.guest_files,
   };
 }
 

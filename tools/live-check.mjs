@@ -2,6 +2,7 @@
 //   node tools/live-check.mjs <PUBLIC_ORIGIN> [--mode preview|open]
 // Paths go out exactly as written (node:https): fetch would resolve `/%2e/` and `/./` before sending. In the sandbox
 // Node needs NODE_USE_ENV_PROXY=1.
+import { createHash } from "node:crypto";
 import { readdirSync, readFileSync, realpathSync, statSync } from "node:fs";
 import { request as httpRequest } from "node:http";
 import { request as httpsRequest } from "node:https";
@@ -514,15 +515,15 @@ function screenSocket(url, origin, sid) {
 
 const FORGED = "forged marks in a string of an object stream dictionary";
 
-const PDF = { name: "Paper.pdf", type: "application/pdf" };
-const DECK = { name: "Deck.pptx", type: "application/vnd.openxmlformats-officedocument.presentationml.presentation" };
+const PDF = "Paper.pdf";
+const DECK = "Deck.pptx";
 /** @type {Expect} */
-const OFFERED = { status: 200, body: '"state":"offered"' };
+const READY = { status: 200, body: '"state":"ready"' };
 
 /**
  * The guest drops: each on its own demo screen, which is ended whatever the drop answers. A refused action name is
- * macro_content; a scan that can only answer "unscannable" is bad_structure (validate.ts). The 5 MiB deck is a
- * mid-size single PUT, the control beside the single-PUT cap.
+ * macro_content; a scan that can only answer "unscannable" is bad_structure (validate.ts). Each is judged by the
+ * upload's complete. The 5 MiB deck is a mid-size file in one part, the control beside the small PDFs.
  */
 export const DROPS = [
   {
@@ -544,19 +545,47 @@ export const DROPS = [
     const build = fixture.find(([n]) => n === name)?.[1];
     if (!build) throw new Error(`live-check: test/pdf-corpus.ts has no fixture "${name}"`);
     /** @type {Expect} */
-    const expect = code ? { status: 422, body: `"code":"${code}"` } : OFFERED;
-    return { what: `guest drop of ${what}`, bytes: build(), file: PDF, expect };
+    const expect = code ? { status: 200, body: `"refusal":"${code}"` } : READY;
+    return { what: `guest drop of ${what}`, bytes: build(), name: PDF, expect };
   })
   .concat({
     what: "guest drop of a 5 MiB deck (one stored image)",
     bytes: validDeck([{ name: "ppt/media/image1.jpg", data: new Uint8Array(5 * 1024 * 1024).fill(7), method: 0 }]),
-    file: DECK,
-    expect: OFFERED,
+    name: DECK,
+    expect: READY,
   });
 
 /**
+ * One guest file over the guest upload routes, as the phone's engine sends it: create, each part, complete. Answers
+ * the complete, or the first step that was not a success.
+ * @param {string} origin @param {string} pid @param {{ name: string, bytes: Uint8Array }} file @param {Send} send
+ * @returns {Promise<Observed>}
+ */
+export async function sendGuestFile(origin, pid, file, send) {
+  const base = `${origin}/api/guest/uploads`;
+  const auth = { Origin: origin, Authorization: `Bearer ${pid}` };
+  const json = { ...auth, "Content-Type": "application/json" };
+  const fingerprint = createHash("sha256").update(file.name).update(file.bytes).digest("hex");
+  const body = JSON.stringify({ name: file.name, bytes: file.bytes.length, fingerprint });
+  const made = await send("POST", base, json, body);
+  if (made.status !== 201 && made.status !== 200) return made;
+  const { uploadId, parts, partBytes } = JSON.parse(made.body);
+  for (let n = 1; n <= parts; n++) {
+    const part = file.bytes.subarray((n - 1) * partBytes, n * partBytes);
+    const put = await send(
+      "PUT",
+      `${base}/${uploadId}/parts/${n}`,
+      { ...auth, "Content-Type": "application/octet-stream" },
+      part,
+    );
+    if (put.status !== 200) return put;
+  }
+  return send("POST", `${base}/${uploadId}/complete`, json, "{}");
+}
+
+/**
  * A guest drop through the public API on a demo screen, which needs no account: create the screen, take its code
- * from the socket, claim as a guest, PUT the file. The screen is ended on every path, so a run leaves no session.
+ * from the socket, claim as a guest, send the file. The screen is ended on every path, so a run leaves no session.
  * @param {string} origin @param {typeof DROPS} drops @param {{ send: Send, socket: ScreenSocket }} io
  * @returns {Promise<string[]>} the misses
  */
@@ -583,13 +612,7 @@ export async function dropMisses(origin, drops, io) {
       );
       if (claimed.status !== 200) throw new Error(`guest claim answered ${claimed.status}`);
       const pid = String(JSON.parse(claimed.body).pid);
-      const headers = {
-        Origin: origin,
-        Authorization: `Bearer ${pid}`,
-        "Content-Type": d.file.type,
-        "X-Bloop-Name": d.file.name,
-      };
-      const o = await io.send("PUT", `${origin}/api/drop`, headers, d.bytes);
+      const o = await sendGuestFile(origin, pid, d, io.send);
       misses.push(...missesFor(d.expect, o).map((m) => `${d.what}: ${m}`));
     } catch (e) {
       misses.push(`${d.what}: ${/** @type {Error} */ (e).message}`);

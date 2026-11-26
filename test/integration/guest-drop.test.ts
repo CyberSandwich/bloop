@@ -1,9 +1,9 @@
 // The guest drop against `wrangler dev` with a local R2 bucket and D1: a full drop to the Open click, the refusals,
-// and the deletion paths. Short timers and the budget live in guest-drop-timing.test.ts.
+// and the deletion paths. Short timers and the budget live in guest-drop-limits.test.ts.
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import { HOSTILE, latexHyperref } from "../pdf-corpus.ts";
 import { buildZip, concat, validDeck, validJpeg, validPdf, validPng, validVideo } from "../zip-builder.ts";
-import { guestRow, openGuestView, pairPhone, problemCode, putDrop } from "./drop-client.ts";
+import { guestHeaders, guestRow, type Opened, openGuestView, pairPhone, problemCode, sendDrop } from "./drop-client.ts";
 import { fetchLink } from "./open-client.ts";
 import { Api, startPairing } from "./pairing-client.ts";
 import type { Wrangler } from "./wrangler.ts";
@@ -23,7 +23,7 @@ const PPTX = "application/vnd.openxmlformats-officedocument.presentationml.prese
 describe("DROP-06 open-click: a guest drop waits for the click on the screen", () => {
   it("offers the upload, mints nothing until the Open click, serves it from R2 over /f/, then deletes it at End", async () => {
     const { screen, socket, pid } = await pairPhone(api);
-    const res = await putDrop(api, pid, deck, { name: "Talk.pptx" });
+    const res = await sendDrop(api, pid, deck, { name: "Talk.pptx" });
     expect(res.status).toBe(200);
     expect(await res.json()).toMatchObject({ state: "offered", kind: "guest", items: [{ name: "Talk.pptx" }] });
 
@@ -63,7 +63,7 @@ describe("DROP-06 open-click: a guest drop waits for the click on the screen", (
 
   it("a phone that scanned as an owner can still send a file: the drop turns it into a guest", async () => {
     const { socket, pid } = await pairPhone(api, "owner");
-    const res = await putDrop(api, pid, validPdf(), { name: "Notes.pdf" });
+    const res = await sendDrop(api, pid, validPdf(), { name: "Notes.pdf" });
     expect(res.status).toBe(200);
     expect(await res.json()).toMatchObject({ state: "offered", kind: "guest", items: [{ name: "Notes.pdf" }] });
     socket.close();
@@ -72,7 +72,7 @@ describe("DROP-06 open-click: a guest drop waits for the click on the screen", (
   it("a PDF drop is served inline as a PDF after the click", async () => {
     const { socket, pid } = await pairPhone(api);
     const pdf = validPdf();
-    expect((await putDrop(api, pid, pdf, { name: "Notes.pdf" })).status).toBe(200);
+    expect((await sendDrop(api, pid, pdf, { name: "Notes.pdf" })).status).toBe(200);
     socket.send({ t: "open.click" });
     const open = await socket.waitFor((f) => f.t === "open");
     const links = open.links as { protocol: string | null; pdf: string | null };
@@ -89,7 +89,7 @@ describe("DROP-06 open-click: a guest drop waits for the click on the screen", (
 describe("DROP-07 deletion at the end of a session", () => {
   it("Start Over on the screen deletes the offered object", async () => {
     const { screen, socket, pid } = await pairPhone(api);
-    await putDrop(api, pid, deck);
+    await sendDrop(api, pid, deck);
     const key = String(guestRow(wrangler.d1)?.r2_key);
     expect(wrangler.r2Has(key)).toBe(true);
     const restarted = await api.post("/api/screen/restart", {}, { auth: screen.sid });
@@ -101,7 +101,7 @@ describe("DROP-07 deletion at the end of a session", () => {
 
   it("the phone's Cancel deletes the offered object", async () => {
     const { socket, pid } = await pairPhone(api);
-    await putDrop(api, pid, deck);
+    await sendDrop(api, pid, deck);
     const key = String(guestRow(wrangler.d1)?.r2_key);
     expect((await api.post("/api/cancel", {}, { auth: pid })).status).toBe(200);
     expect(wrangler.r2Has(key)).toBe(false);
@@ -110,7 +110,7 @@ describe("DROP-07 deletion at the end of a session", () => {
 
   it("the End on the screen deletes it after an opened drop", async () => {
     const { screen, socket, pid } = await pairPhone(api);
-    await putDrop(api, pid, deck);
+    await sendDrop(api, pid, deck);
     const key = String(guestRow(wrangler.d1)?.r2_key);
     socket.send({ t: "open.click" });
     await socket.waitFor((f) => f.t === "open");
@@ -124,37 +124,34 @@ describe("DROP-07 deletion at the end of a session", () => {
 describe("DROP-01 size", () => {
   it("refuses a declared length over GUEST_MAX_BYTES before reading, and leaves the session able to send again", async () => {
     const { socket, pid } = await pairPhone(api);
-    const res = await putDrop(api, pid, new Uint8Array(MAX + 1));
+    const res = await sendDrop(api, pid, new Uint8Array(MAX + 1));
     expect(res.status).toBe(413);
     expect(await problemCode(res)).toBe("too_large");
-    expect((await putDrop(api, pid, deck)).status).toBe(200);
+    expect((await sendDrop(api, pid, deck)).status).toBe(200);
     socket.close();
   });
 
   it("DROP-01 refuses an image over the cap by its declared length, the same as a deck", async () => {
     const { socket, pid } = await pairPhone(api);
     const big = concat([validJpeg(), new Uint8Array(MAX)]);
-    const res = await putDrop(api, pid, big, { name: "Big.jpg", contentType: "image/jpeg" });
+    const res = await sendDrop(api, pid, big, { name: "Big.jpg" });
     expect([res.status, await problemCode(res)]).toEqual([413, "too_large"]);
     socket.close();
   });
 
-  it("refuses a body with no Content-Length (chunked)", async () => {
+  it("refuses a part with no Content-Length (chunked)", async () => {
     const { socket, pid } = await pairPhone(api);
+    const made = await sendDrop(api, pid, deck, { openOnly: true });
+    const { uploadId } = (await made.json()) as Opened;
     const stream = new ReadableStream<Uint8Array>({
       start(c) {
         c.enqueue(deck);
         c.close();
       },
     });
-    const res = await fetch(`${api.base}/api/drop`, {
+    const res = await fetch(`${api.base}/api/guest/uploads/${uploadId}/parts/1`, {
       method: "PUT",
-      headers: {
-        Origin: api.base,
-        Authorization: `Bearer ${pid}`,
-        "Content-Type": "application/octet-stream",
-        "X-Bloop-Name": "Talk.pptx",
-      },
+      headers: { ...guestHeaders(api, pid), "Content-Type": "application/octet-stream" },
       body: stream,
       duplex: "half",
     } as RequestInit);
@@ -173,7 +170,7 @@ describe("DROP-13 pdf-active: an object stream inflates in workerd", () => {
     const { socket, pid } = await pairPhone(api);
     const pdf = latexHyperref();
     expect(pdf.length).toBeLessThan(MAX);
-    const res = await putDrop(api, pid, pdf, { name: "Paper.pdf" });
+    const res = await sendDrop(api, pid, pdf, { name: "Paper.pdf" });
     expect(res.status).toBe(200);
     expect(await res.json()).toMatchObject({ state: "offered", items: [{ name: "Paper.pdf" }] });
     socket.close();
@@ -182,7 +179,7 @@ describe("DROP-13 pdf-active: an object stream inflates in workerd", () => {
   it("refuses a PDF whose /JavaScript action sits inside a compressed object stream, and keeps nothing", async () => {
     const { socket, pid } = await pairPhone(api);
     expect(new TextDecoder("latin1").decode(hostile)).not.toContain("JavaScript");
-    const res = await putDrop(api, pid, hostile, { name: "Paper.pdf" });
+    const res = await sendDrop(api, pid, hostile, { name: "Paper.pdf" });
     expect(res.status).toBe(422);
     expect(await problemCode(res)).toBe("macro_content");
     expect(wrangler.r2Has(String(guestRow(wrangler.d1)?.r2_key))).toBe(false);
@@ -194,7 +191,7 @@ describe("DROP-13 pdf-active: forged marks are unscannable, bad_structure, and n
   for (const [name, build] of HOSTILE.filter(([n]) => n.startsWith("forged marks"))) {
     it(name, async () => {
       const { socket, pid } = await pairPhone(api);
-      const res = await putDrop(api, pid, build(), { name: "Paper.pdf" });
+      const res = await sendDrop(api, pid, build(), { name: "Paper.pdf" });
       expect(res.status).toBe(422);
       expect(await problemCode(res)).toBe("bad_structure");
       expect(wrangler.r2Has(String(guestRow(wrangler.d1)?.r2_key))).toBe(false);
@@ -233,7 +230,7 @@ describe("DROP-02 wrong type and polyglot are refused and nothing is kept", () =
   for (const [label, bytes, name, code, status] of cases) {
     it(`DROP-02 ${label}: ${code}`, async () => {
       const { socket, pid } = await pairPhone(api);
-      const res = await putDrop(api, pid, bytes, { name });
+      const res = await sendDrop(api, pid, bytes, { name });
       expect(res.status).toBe(status);
       expect(await problemCode(res)).toBe(code);
       const phone = await api.get<{ state: string }>("/api/pair/state", pid);
@@ -244,7 +241,7 @@ describe("DROP-02 wrong type and polyglot are refused and nothing is kept", () =
 
   it("DROP-02 leaves no object behind after a refusal", async () => {
     const { socket, pid } = await pairPhone(api);
-    await putDrop(api, pid, concat([new TextEncoder().encode("MZ"), new Uint8Array(400)]));
+    await sendDrop(api, pid, concat([new TextEncoder().encode("MZ"), new Uint8Array(400)]));
     const row = guestRow(wrangler.d1);
     // A refusal before any byte is read (wrong extension) reserves nothing; this one reserved, stored, then deleted.
     expect(row?.deleted_at).not.toBeNull();
@@ -252,18 +249,10 @@ describe("DROP-02 wrong type and polyglot are refused and nothing is kept", () =
     socket.close();
   });
 
-  it("refuses a declared type the browser would not send", async () => {
-    const { socket, pid } = await pairPhone(api);
-    const res = await putDrop(api, pid, deck, { contentType: "text/html" });
-    expect(res.status).toBe(415);
-    expect(await problemCode(res)).toBe("unsupported_media_type");
-    socket.close();
-  });
-
   it("DROP-08 xss: a hostile name is stored as text and the path keeps no markup", async () => {
     const { socket, pid } = await pairPhone(api);
     const name = "<img src=x onerror=alert(1)>‮.pptx";
-    const res = await putDrop(api, pid, deck, { name });
+    const res = await sendDrop(api, pid, deck, { name });
     expect(res.status).toBe(200);
     const view = (await res.json()) as { items: { name: string }[] };
     expect(view.items[0]?.name).not.toContain("‮");
@@ -283,7 +272,7 @@ describe("DROP-02 images: a guest photo is stored, offered and served under a fi
   for (const [label, bytes, name, type, ext] of cases) {
     it(`DROP-02 ${label}: round trip from the drop to the screen's fetch`, async () => {
       const { socket, pid } = await pairPhone(api);
-      const res = await putDrop(api, pid, bytes, { name, contentType: type });
+      const res = await sendDrop(api, pid, bytes, { name });
       expect(res.status).toBe(200);
       expect(await res.json()).toMatchObject({ state: "offered", kind: "guest", items: [{ name, type: ext }] });
       expect(guestRow(wrangler.d1)).toMatchObject({ type: ext, bytes: bytes.length, deleted_at: null });
@@ -308,27 +297,25 @@ describe("DROP-02 images: a guest photo is stored, offered and served under a fi
   it("DROP-02 refuses a HEIC file: by name, and by bytes under a JPEG name", async () => {
     const heic = concat([new Uint8Array([0, 0, 0, 0x18]), new TextEncoder().encode("ftypheic"), new Uint8Array(64)]);
     const { socket, pid } = await pairPhone(api);
-    const byName = await putDrop(api, pid, heic, { name: "IMG_1.heic" });
+    const byName = await sendDrop(api, pid, heic, { name: "IMG_1.heic" });
     expect([byName.status, await problemCode(byName)]).toEqual([415, "bad_type"]);
-    const byBytes = await putDrop(api, pid, heic, { name: "IMG_1.jpg", contentType: "image/jpeg" });
+    const byBytes = await sendDrop(api, pid, heic, { name: "IMG_1.jpg" });
     expect([byBytes.status, await problemCode(byBytes)]).toEqual([415, "bad_type"]);
     expect(guestRow(wrangler.d1)?.deleted_at).not.toBeNull();
-    expect((await putDrop(api, pid, validJpeg(), { name: "IMG_1.jpg" })).status).toBe(200);
+    expect((await sendDrop(api, pid, validJpeg(), { name: "IMG_1.jpg" })).status).toBe(200);
     socket.close();
   });
 
   it("DROP-02 refuses a PNG sent as a JPEG and a deck sent as a PNG", async () => {
     const { socket, pid } = await pairPhone(api);
-    expect(await problemCode(await putDrop(api, pid, validPng(), { name: "a.jpg" }))).toBe("bad_type");
-    expect(await problemCode(await putDrop(api, pid, deck, { name: "a.png", contentType: "image/png" }))).toBe(
-      "bad_type",
-    );
+    expect(await problemCode(await sendDrop(api, pid, validPng(), { name: "a.jpg" }))).toBe("bad_type");
+    expect(await problemCode(await sendDrop(api, pid, deck, { name: "a.png" }))).toBe("bad_type");
     socket.close();
   });
 
   it("DROP-11 image polyglot: a JPEG that ends in a zip is refused and nothing is kept", async () => {
     const { socket, pid } = await pairPhone(api);
-    const res = await putDrop(api, pid, concat([validJpeg(), deck]), { name: "Photo.jpg" });
+    const res = await sendDrop(api, pid, concat([validJpeg(), deck]), { name: "Photo.jpg" });
     expect([res.status, await problemCode(res)]).toEqual([422, "bad_structure"]);
     const row = guestRow(wrangler.d1);
     expect(row?.deleted_at).not.toBeNull();
@@ -339,7 +326,7 @@ describe("DROP-02 images: a guest photo is stored, offered and served under a fi
   it("DROP-11 image polyglot: a JPEG that is also HTML is served as a JPEG, nosniff and sandboxed", async () => {
     const html = validJpeg("<html><script>alert(document.domain)</script></html>");
     const { socket, pid } = await pairPhone(api);
-    expect((await putDrop(api, pid, html, { name: "Photo.jpg" })).status).toBe(200);
+    expect((await sendDrop(api, pid, html, { name: "Photo.jpg" })).status).toBe(200);
     socket.send({ t: "open.click" });
     const open = await socket.waitFor((f) => f.t === "open");
     const fetched = await fetchLink((open.links as { view: string }).view);
@@ -355,15 +342,14 @@ describe("VID-01 video: a guest recording is stored, offered and served as video
   const clip = validVideo("isom", 3000);
   const mov = validVideo("qt  ", 3000);
 
-  const openVideo = (bytes: Uint8Array, name: string, contentType: string) =>
-    openGuestView(api, bytes, name, contentType);
+  const openVideo = (bytes: Uint8Array, name: string) => openGuestView(api, bytes, name);
 
-  for (const [label, bytes, name, ext, contentType] of [
-    ["an mp4", clip, "Clip.mp4", "mp4", "video/mp4"],
-    ["a mov", mov, "Clip.MOV", "mov", "video/quicktime"],
+  for (const [label, bytes, name, ext] of [
+    ["an mp4", clip, "Clip.mp4", "mp4"],
+    ["a mov", mov, "Clip.MOV", "mov"],
   ] as const) {
     it(`VID-01 ${label}: round trip, served as video/mp4 with the fixed headers`, async () => {
-      const { socket, url } = await openVideo(bytes, name, contentType);
+      const { socket, url } = await openVideo(bytes, name);
       expect(guestRow(wrangler.d1)).toMatchObject({ type: ext, bytes: bytes.length, deleted_at: null });
       const fetched = await fetchLink(url);
       expect(fetched.status).toBe(200);
@@ -391,7 +377,7 @@ describe("VID-01 video: a guest recording is stored, offered and served as video
       [concat([clip, deck]), "Clip.mp4", "bad_structure"],
     ];
     for (const [bytes, name, code] of cases) {
-      const res = await putDrop(api, pid, bytes, { name });
+      const res = await sendDrop(api, pid, bytes, { name });
       const body = await res.text();
       expect([name, bytes.length, res.status, JSON.parse(body || "{}").code ?? body]).toEqual([
         name,
@@ -401,12 +387,12 @@ describe("VID-01 video: a guest recording is stored, offered and served as video
       ]);
       expect(wrangler.r2Has(String(guestRow(wrangler.d1)?.r2_key))).toBe(false);
     }
-    expect((await putDrop(api, pid, clip, { name: "Clip.mp4" })).status).toBe(200);
+    expect((await sendDrop(api, pid, clip, { name: "Clip.mp4" })).status).toBe(200);
     socket.close();
-  });
+  }, 90_000);
 
   it("VID-02 answers a range with 206, a suffix and an open end, and meters one read each", async () => {
-    const { socket, url } = await openVideo(clip, "Clip.mp4", "video/mp4");
+    const { socket, url } = await openVideo(clip, "Clip.mp4");
     const before = classB();
     const part = await fetchLink(url, { headers: { Range: "bytes=100-199" } });
     expect(part.status).toBe(206);
@@ -427,7 +413,7 @@ describe("VID-01 video: a guest recording is stored, offered and served as video
   });
 
   it("VID-02 answers 416 for an out-of-bounds range without reading R2, and a malformed or multi-range one whole", async () => {
-    const { socket, url } = await openVideo(clip, "Clip.mp4", "video/mp4");
+    const { socket, url } = await openVideo(clip, "Clip.mp4");
     const before = classB();
     for (const range of [`bytes=${clip.length}-`, "bytes=-0"]) {
       const res = await fetchLink(url, { headers: { Range: range } });
@@ -444,7 +430,7 @@ describe("VID-01 video: a guest recording is stored, offered and served as video
   });
 
   it("VID-02 answers HEAD with the size and no body, without reading R2", async () => {
-    const { socket, url } = await openVideo(clip, "Clip.mp4", "video/mp4");
+    const { socket, url } = await openVideo(clip, "Clip.mp4");
     const before = classB();
     const head = await fetchLink(url, { method: "HEAD" });
     expect(head.status).toBe(200);
@@ -457,7 +443,7 @@ describe("VID-01 video: a guest recording is stored, offered and served as video
   it("VID-02 keeps answering a view link past ten reads; audits its first fetch and each foreign address once", async () => {
     const fetchedRows = () =>
       Number(wrangler.d1("SELECT count(*) AS n FROM audit_event WHERE type = 'link.fetched'")[0]?.n ?? 0);
-    const { socket, url } = await openVideo(clip, "Clip.mp4", "video/mp4");
+    const { socket, url } = await openVideo(clip, "Clip.mp4");
     const before = fetchedRows();
     const range = { Range: "bytes=0-9" };
     for (let i = 0; i < 15; i++) expect((await fetchLink(url, { headers: range })).status).toBe(206);
@@ -473,8 +459,8 @@ describe("VID-01 video: a guest recording is stored, offered and served as video
 describe("DROP-05 one file per session", () => {
   it("refuses a second file once one is offered, and the first stays", async () => {
     const { socket, pid } = await pairPhone(api);
-    expect((await putDrop(api, pid, deck, { name: "One.pptx" })).status).toBe(200);
-    const second = await putDrop(api, pid, deck, { name: "Two.pptx" });
+    expect((await sendDrop(api, pid, deck, { name: "One.pptx" })).status).toBe(200);
+    const second = await sendDrop(api, pid, deck, { name: "Two.pptx" });
     expect(second.status).toBe(409);
     expect(await problemCode(second)).toBe("already_uploaded");
     const phone = await api.get<{ state: string }>("/api/pair/state", pid);
@@ -482,10 +468,23 @@ describe("DROP-05 one file per session", () => {
     socket.close();
   });
 
-  it("refuses two uploads that start together: one wins", async () => {
+  it("refuses two files that start together: one wins", async () => {
     const { socket, pid } = await pairPhone(api);
-    const both = await Promise.all([putDrop(api, pid, deck), putDrop(api, pid, deck)]);
+    const both = await Promise.all([
+      sendDrop(api, pid, deck, { name: "One.pptx" }),
+      sendDrop(api, pid, deck, { name: "Two.pptx" }),
+    ]);
     expect(both.map((r) => r.status).sort()).toEqual([200, 409]);
+    socket.close();
+  });
+
+  it("UP-09 the same file sent twice at once is one upload: both sends end on the one offered file", async () => {
+    const { socket, pid } = await pairPhone(api);
+    const both = await Promise.all([sendDrop(api, pid, deck), sendDrop(api, pid, deck)]);
+    expect(both.map((r) => r.status)).toEqual([200, 200]);
+    expect(
+      wrangler.d1(`SELECT count(*) AS n FROM upload WHERE session_id = '${guestRow(wrangler.d1)?.session_id}'`),
+    ).toEqual([{ n: 1 }]);
     socket.close();
   });
 });
@@ -493,7 +492,7 @@ describe("DROP-05 one file per session", () => {
 describe("DROP-09 access: a guest file is visible only inside its session", () => {
   it("has no list route and no read route, and a key is no token", async () => {
     const { socket, pid } = await pairPhone(api);
-    await putDrop(api, pid, deck);
+    await sendDrop(api, pid, deck);
     const key = String(guestRow(wrangler.d1)?.r2_key);
     for (const path of ["/api/drop", "/api/files", "/api/guest-files", `/${key}`, `/f/${key.slice(2)}/Talk.pptx`]) {
       const res = await fetch(`${api.base}${path}`, { headers: { Authorization: `Bearer ${pid}` } });
@@ -506,8 +505,8 @@ describe("DROP-09 access: a guest file is visible only inside its session", () =
   it("DROP-09 another session's link does not read this session's file", async () => {
     const one = await pairPhone(api);
     const two = await pairPhone(api);
-    await putDrop(api, one.pid, deck, { name: "One.pptx" });
-    await putDrop(api, two.pid, validPdf(), { name: "Two.pdf" });
+    await sendDrop(api, one.pid, deck, { name: "One.pptx" });
+    await sendDrop(api, two.pid, validPdf(), { name: "Two.pdf" });
     one.socket.send({ t: "open.click" });
     const open = await one.socket.waitFor((f) => f.t === "open");
     const url = ((open.links as { protocol: string }).protocol ?? "").replace("ms-powerpoint:ofv|u|", "");
@@ -521,7 +520,7 @@ describe("DROP-09 access: a guest file is visible only inside its session", () =
 
   it("a bucket that throws on a guest file read is 502 upstream_failed, and the fetch is still logged", async () => {
     const { socket, pid } = await pairPhone(api);
-    await putDrop(api, pid, deck);
+    await sendDrop(api, pid, deck);
     socket.send({ t: "open.click" });
     const open = await socket.waitFor((f) => f.t === "open");
     const url = ((open.links as { protocol: string }).protocol ?? "").replace("ms-powerpoint:ofv|u|", "");
@@ -541,11 +540,11 @@ describe("DROP-09 access: a guest file is visible only inside its session", () =
     const two = await pairPhone(api);
     const secretOne = one.pid.split(".")[1];
     const forged = `${two.screen.ref}.${secretOne}`;
-    const res = await putDrop(api, forged, deck);
+    const res = await sendDrop(api, forged, deck);
     expect(res.status).toBe(401);
     expect(await problemCode(res)).toBe("pairing_invalid");
     expect((await api.get<{ state: string }>("/api/pair/state", two.pid)).body.state).toBe("claimed");
-    const noAuth = await putDrop(api, null, deck);
+    const noAuth = await sendDrop(api, null, deck);
     expect(noAuth.status).toBe(401);
     one.socket.close();
     two.socket.close();
@@ -554,7 +553,7 @@ describe("DROP-09 access: a guest file is visible only inside its session", () =
   it("an upload to an ended session is refused", async () => {
     const { socket, pid } = await pairPhone(api);
     await api.post("/api/cancel", {}, { auth: pid });
-    const res = await putDrop(api, pid, deck);
+    const res = await sendDrop(api, pid, deck);
     expect([401, 410]).toContain(res.status);
     socket.close();
   });
@@ -564,21 +563,22 @@ describe("PAIR-06 csrf on the drop", () => {
   it("refuses a cross-origin upload, a missing Origin and a cross-site fetch, and stores nothing", async () => {
     const { socket, pid } = await pairPhone(api);
     const before = wrangler.d1("SELECT COUNT(*) AS n FROM guest_file")[0]?.n;
-    const foreign = await putDrop(api, pid, deck, { origin: "https://evil.example" });
+    const foreign = await sendDrop(api, pid, deck, { origin: "https://evil.example" });
     expect(foreign.status).toBe(403);
     expect(await problemCode(foreign)).toBe("forbidden_origin");
-    expect((await putDrop(api, pid, deck, { origin: null })).status).toBe(403);
-    const site = await putDrop(api, pid, deck, { headers: { "Sec-Fetch-Site": "cross-site" } });
+    expect((await sendDrop(api, pid, deck, { origin: null })).status).toBe(403);
+    const site = await sendDrop(api, pid, deck, { headers: { "Sec-Fetch-Site": "cross-site" } });
     expect(site.status).toBe(403);
     expect(wrangler.d1("SELECT COUNT(*) AS n FROM guest_file")[0]?.n).toBe(before);
     // the session is untouched and still takes a file
-    expect((await putDrop(api, pid, deck)).status).toBe(200);
+    expect((await sendDrop(api, pid, deck)).status).toBe(200);
     socket.close();
   });
 
-  it("only PUT reaches the route", async () => {
-    const res = await fetch(`${api.base}/api/drop`, { method: "POST", headers: { Origin: api.base } });
-    expect(res.status).toBe(405);
-    expect(res.headers.get("Allow")).toBe("PUT");
+  it("the old one-request drop is gone", async () => {
+    const { socket, pid } = await pairPhone(api);
+    const res = await fetch(`${api.base}/api/drop`, { method: "PUT", headers: guestHeaders(api, pid), body: deck });
+    expect(res.status).toBe(404);
+    socket.close();
   });
 });

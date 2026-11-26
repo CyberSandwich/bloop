@@ -1,9 +1,9 @@
-// The guest upload: PUT /api/drop with the raw file (docs/architecture.md section 4.4). XMLHttpRequest, not
-// fetch, because only XHR reports upload progress in every phone browser.
+// The guest upload: what the phone checks and prepares before a byte goes, and an adapter over the upload engine
+// (core/upload.js) on the guest routes, by the pairing credential (docs/uploads.md).
 /** @import {ErrorCode} from "../../../src/shared/protocol.ts" */
-/** @import {SendResult, Xhr} from "../types.js" */
-import { ERRORS } from "../shared/errors.js";
+/** @import {SendResult} from "../types.js" */
 import { typeOfName } from "../shared/names.js";
+import { createApi, isErrorCode } from "./api.js";
 
 const MB = 1024 * 1024;
 /** Not a type bloop stores: a HEIC is sent only as the JPEG this browser can make of it (design.md, Upload). */
@@ -69,49 +69,86 @@ export async function prepareFile(file, maxBytes, load = MEDIA) {
   }
 }
 
-/** @param {unknown} code @returns {code is ErrorCode} */
-const isErrorCode = (code) => typeof code === "string" && Object.hasOwn(ERRORS, code);
+/** @typedef {{upload: () => Promise<Pick<typeof import("./upload.js"), "createUploader">>, view: (pid: string) => Promise<import("./api.js").Reply<any>>}} SendModules */
+/** @type {SendModules} */
+const SEND = {
+  upload: () => import("./upload.js"),
+  view: (pid) => createApi().get("/api/pair/state", pid),
+};
 
-/** @returns {Xhr} */
-const browserXhr = () => new /** @type {any} */ (globalThis).XMLHttpRequest();
+/** @param {string | undefined} code @returns {ErrorCode} a code the phone can say; the engine's own are the service */
+const sayable = (code) => (isErrorCode(code) ? code : "service_down");
 
 /**
- * Starts the upload. `abort()` stops it; the result then says `upload_aborted`.
+ * Sends one file through the upload engine on the guest routes (docs/uploads.md), which loads only now. `abort()`
+ * stops it; the result then says `upload_aborted`. Once the file is ready, the answer is the phone's view.
  * @param {object} args
- * @param {{name: string, size: number}} args.file a File
+ * @param {{name: string, size: number, slice: (s: number, e: number) => Blob}} args.file a File
  * @param {string} args.pid
  * @param {(fraction: number) => void} args.onProgress 0 to 1
- * @param {() => Xhr} [args.xhr]
+ * @param {SendModules} [args.load] the unit tests pass fakes
  * @returns {{done: Promise<SendResult>, abort: () => void}}
  */
-export function sendFile({ file, pid, onProgress, xhr: make = browserXhr }) {
-  const req = make();
+export function sendFile({ file, pid, onProgress, load = SEND }) {
+  let aborted = false;
+  /** @type {(() => void) | null} */
+  let stop = null;
   /** @type {Promise<SendResult>} */
   const done = new Promise((resolve) => {
-    req.open("PUT", "/api/drop");
-    req.setRequestHeader("Authorization", `Bearer ${pid}`);
-    req.setRequestHeader("Content-Type", "application/octet-stream");
-    req.setRequestHeader("X-Bloop-Name", encodeURIComponent(file.name));
-    req.upload.onprogress = (e) => {
-      if (e.lengthComputable && e.total > 0) onProgress(e.loaded / e.total);
+    /** @param {SendResult} result */
+    const end = (result) => {
+      stop = null;
+      resolve(result);
     };
-    req.onerror = () => resolve({ ok: false, error: "offline" });
-    req.onabort = () => resolve({ ok: false, error: "upload_aborted" });
-    req.onload = () => {
-      let body = null;
-      try {
-        body = JSON.parse(req.responseText);
-      } catch {
-        // an empty or non-JSON answer is handled below
-      }
-      const ours = req.getResponseHeader("X-Bloop") === "1";
-      if (req.status >= 200 && req.status < 300 && body && ours) return resolve({ ok: true, view: body });
-      // A 200 that is not bloop's (no marker) is a filter's page: the network, not bloop (REL-03).
-      if (req.status >= 200 && req.status < 300) return resolve({ ok: false, error: "network_blocked" });
-      if (isErrorCode(body?.code)) return resolve({ ok: false, error: body.code });
-      resolve({ ok: false, error: req.status >= 500 || body === null ? "service_down" : "bad_request" });
-    };
-    req.send(file);
+    load.upload().then(
+      ({ createUploader }) => {
+        if (aborted) return end({ ok: false, error: "upload_aborted" });
+        let settled = false;
+        /** @type {number | undefined} */
+        let id;
+        const up = createUploader({
+          pid,
+          onChange: (batch) => {
+            const f = batch.files.find((x) => x.id === id);
+            if (!f || settled) return;
+            if (f.state === "uploading") onProgress(f.fraction);
+            const out = outcome(f);
+            if (!out) return;
+            settled = true;
+            // Disposed after the snapshot is read: the engine calls back from inside its own run.
+            queueMicrotask(() => up.dispose());
+            if (out === "saved") {
+              load.view(pid).then(
+                (res) => end(res.ok ? { ok: true, view: res.value } : { ok: false, error: res.error }),
+                () => end({ ok: false, error: "offline" }),
+              );
+            } else end({ ok: false, error: out });
+          },
+        });
+        [id] = up.add([file]);
+        stop = () => (id === undefined ? undefined : up.cancel(id));
+      },
+      // The engine could not load (the venue's Wi-Fi dropped): the same as no connection.
+      () => end({ ok: false, error: "offline" }),
+    );
   });
-  return { done, abort: () => req.abort() };
+  return {
+    done,
+    abort: () => {
+      aborted = true;
+      stop?.();
+    },
+  };
+}
+
+/**
+ * Where a file's run ended, or null while it runs.
+ * @param {import("./upload.js").FileSnap} f
+ * @returns {"saved" | ErrorCode | null}
+ */
+function outcome(f) {
+  if (f.state === "saved") return "saved";
+  if (f.state === "refused") return sayable(f.error);
+  if (f.state === "canceled" || f.state === "paused") return "upload_aborted";
+  return f.state === "unsettled" ? "service_down" : null;
 }

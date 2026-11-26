@@ -2,7 +2,7 @@
 // writes the rows, the export reads them back. Rate limits run on a second instance with production timing.
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { validDeck } from "../zip-builder.ts";
-import { pairPhone, putDrop } from "./drop-client.ts";
+import { pairPhone, sendDrop } from "./drop-client.ts";
 import { approveDemo, fetchLink, inOneWindow, sleep } from "./open-client.ts";
 import { Api, PEPPER, startPairing } from "./pairing-client.ts";
 import { startWrangler, type Wrangler } from "./wrangler.ts";
@@ -65,7 +65,7 @@ describe("audit rows: one per session event, in D1", () => {
 
   it("records a guest upload with its source, and a hostile file name reaches the CSV neutralized (SITE-06 csv)", async () => {
     const { socket, pid } = await pairPhone(api);
-    const res = await putDrop(api, pid, validDeck(), { name: "=HYPERLINK(1).pptx" });
+    const res = await sendDrop(api, pid, validDeck(), { name: "=HYPERLINK(1).pptx" });
     expect(res.status).toBe(200);
     await socket.stateWhere((v) => v.state === "offered");
     await api.post("/api/end", {}, { auth: pid });
@@ -82,7 +82,7 @@ describe("audit rows: one per session event, in D1", () => {
 
   it("records the failure cause of a refused upload as a metric", async () => {
     const { pid } = await pairPhone(api);
-    expect((await putDrop(api, pid, "not a deck")).status).toBeGreaterThanOrEqual(400);
+    expect((await sendDrop(api, pid, "not a deck")).status).toBeGreaterThanOrEqual(400);
     const csv = await until(
       async () => (await get("?data=metrics&format=csv")).text(),
       (t) => t.includes("failure"),

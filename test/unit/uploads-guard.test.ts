@@ -11,7 +11,7 @@ import { fakeMultipart } from "./fake-multipart.ts";
 const DIR = fileURLToPath(new URL("../../src/worker/uploads/", import.meta.url));
 
 describe("the ordering rule lives in one place", () => {
-  it("only reclaim.ts deletes an object or aborts a multipart, but for create's undo of a multipart no row names", () => {
+  it("only reclaim.ts deletes an object or aborts a multipart, but for a create's undo of a multipart no row names", () => {
     const calls = readdirSync(DIR)
       .filter((f) => f.endsWith(".ts") && f !== "reclaim.ts")
       .flatMap((f) =>
@@ -21,8 +21,9 @@ describe("the ordering rule lives in one place", () => {
           .map((line) => `${f}: ${line.trim()}`),
       );
     expect(calls).toEqual([
+      "guest.ts: await mp.abort(row.r2Key, r2UploadId);",
       "pipeline.ts: await d.mp.abort(key, r2UploadId);",
-      'sweep.ts: await d.mp.delete(key).catch(() => console.error(JSON.stringify({ evt: "upload_sweep_failed", step: "stranded" })));',
+      "sweep.ts: await mp.delete(held.r2Key).catch(failed);",
     ]);
   });
 });

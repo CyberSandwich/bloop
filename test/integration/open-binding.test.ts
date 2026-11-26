@@ -128,7 +128,7 @@ describe("OPEN-02 binding", () => {
   it("VID-02 a refused view link writes one audit row, however often its player retries", async () => {
     const refusedRows = () =>
       Number(wrangler.d1("SELECT count(*) AS n FROM audit_event WHERE type = 'link.refused'")[0]?.n ?? 0);
-    const { socket, url } = await openGuestView(api, validVideo("isom", 3000), "Clip.mp4", "video/mp4");
+    const { socket, url } = await openGuestView(api, validVideo("isom", 3000), "Clip.mp4");
     const before = refusedRows();
     for (let i = 0; i < 4; i++) {
       const res = await fetchLink(url, { headers: { Range: "bytes=0-9", "CF-Connecting-IP": "203.0.113.9" } });

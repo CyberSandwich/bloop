@@ -1,5 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { fileProblem, kindOf, prepareFile, sendFile, wholeMB } from "../../public/js/core/drop.js";
+import { createUploader } from "../../public/js/core/upload.js";
+import { makeWorld } from "./client-upload-world.ts";
 
 const MB = 1024 * 1024;
 
@@ -44,117 +46,105 @@ describe("what a phone can check before sending", () => {
   });
 });
 
-class FakeXhr {
-  headers: Record<string, string> = {};
-  method = "";
-  url = "";
-  sent: unknown = null;
-  status = 0;
-  responseText = "";
-  upload: { onprogress: ((e: { lengthComputable: boolean; loaded: number; total: number }) => void) | null } = {
-    onprogress: null,
-  };
-  onload: (() => void) | null = null;
-  onerror: (() => void) | null = null;
-  onabort: (() => void) | null = null;
-  open(method: string, url: string) {
-    this.method = method;
-    this.url = url;
-  }
-  setRequestHeader(name: string, value: string) {
-    this.headers[name] = value;
-  }
-  send(body: unknown) {
-    this.sent = body;
-  }
-  abort() {
-    this.onabort?.();
-  }
-  marked = true;
-  getResponseHeader(name: string) {
-    return this.marked && name === "X-Bloop" ? "1" : null;
-  }
-  reply(status: number, body: string, marked = true) {
-    this.status = status;
-    this.responseText = body;
-    this.marked = marked;
-    this.onload?.();
-  }
+/** The adapter over the real engine in a fake world on the guest routes; `view` answers the phone's view. */
+function guestSend(options: { view?: () => Promise<any>; failLoad?: boolean } = {}) {
+  const world = makeWorld({ mode: "proxy", pid: "ref.secret" });
+  const seen: number[] = [];
+  const views: string[] = [];
+  const load = {
+    upload: async () => {
+      if (options.failLoad) throw new TypeError("Failed to fetch dynamically imported module");
+      return {
+        createUploader: (args: Parameters<typeof createUploader>[0]) =>
+          createUploader({ ...args, deps: world.deps as never }),
+      };
+    },
+    view: async (pid: string) => {
+      views.push(pid);
+      return options.view ? options.view() : { ok: true, value: { state: "offered" }, headers: new Headers() };
+    },
+  } as unknown as NonNullable<Parameters<typeof sendFile>[0]["load"]>;
+  const sending = sendFile({
+    file: world.file(50, "Q3 plan: v2.pptx"),
+    pid: "ref.secret",
+    onProgress: (f) => seen.push(f),
+    load,
+  });
+  return { world, sending, seen, views };
 }
 
-const file = { name: "Q3 plan: v2.pptx", size: 10 };
-const start = (xhr: FakeXhr, onProgress: (fraction: number) => void = () => {}) =>
-  sendFile({ file, pid: "ref.secret", onProgress, xhr: () => xhr });
-
 describe("sending a file", () => {
-  it("REL-03 a 200 JSON answer without bloop's marker is a filter's page: network_blocked, not service_down", async () => {
-    const xhr = new FakeXhr();
-    const sending = start(xhr);
-    xhr.reply(200, "{}", false);
-    expect(await sending.done).toEqual({ ok: false, error: "network_blocked" });
-    const html = new FakeXhr();
-    const other = start(html);
-    html.reply(200, "<html>blocked</html>", false);
-    expect(await other.done).toEqual({ ok: false, error: "network_blocked" });
+  it("UP-09 goes through the upload engine on the guest routes, every request and part with the pid, never a member route", async () => {
+    const { world, sending } = guestSend();
+    await world.advance(0);
+    expect(await sending.done).toEqual({ ok: true, view: { state: "offered" } });
+    const paths = world.calledPaths();
+    expect(paths).toContain("POST /api/guest/uploads");
+    expect(paths).toContain("POST /api/guest/uploads/up1/complete");
+    expect(paths.every((p) => p.includes("/api/guest/uploads"))).toBe(true);
+    for (const call of world.calls) expect(call.headers.Authorization).toBe("Bearer ref.secret");
+    expect(world.puts.length).toBe(3);
+    for (const put of world.puts) {
+      expect(put.url).toMatch(/^\/api\/guest\/uploads\/up1\/parts\/\d$/);
+      expect(put.headers.Authorization).toBe("Bearer ref.secret");
+    }
   });
 
-  it("PUTs the raw file to /api/drop, never a member route, with the guest's credential and a percent-encoded name", () => {
-    const xhr = new FakeXhr();
-    start(xhr);
-    expect(xhr.method).toBe("PUT");
-    expect(xhr.url).toBe("/api/drop");
-    expect(xhr.headers).toEqual({
-      Authorization: "Bearer ref.secret",
-      "Content-Type": "application/octet-stream",
-      "X-Bloop-Name": "Q3%20plan%3A%20v2.pptx",
-    });
-    expect(xhr.sent).toBe(file);
+  it("reports the file's fill while its parts move, and answers the phone's view once it is ready", async () => {
+    const { world, sending, seen, views } = guestSend();
+    world.onPut = (put) => {
+      put.progress(10);
+      put.ok();
+    };
+    await world.advance(0);
+    expect((await sending.done).ok).toBe(true);
+    expect(seen.length).toBeGreaterThan(0);
+    expect(seen.every((f, i) => f >= 0 && f < 1 && (i === 0 || f >= (seen[i - 1] ?? 0)))).toBe(true);
+    expect(views).toEqual(["ref.secret"]);
   });
 
-  it("reports progress as a fraction, and ignores an unknown total", () => {
-    const xhr = new FakeXhr();
-    const seen: number[] = [];
-    start(xhr, (f) => seen.push(f));
-    xhr.upload.onprogress?.({ lengthComputable: true, loaded: 25, total: 100 });
-    xhr.upload.onprogress?.({ lengthComputable: false, loaded: 50, total: 0 });
-    xhr.upload.onprogress?.({ lengthComputable: true, loaded: 100, total: 100 });
-    expect(seen).toEqual([0.25, 1]);
+  it("maps the server's refusal of the file to its code, so the page can show the guest_refused state", async () => {
+    const { world, sending } = guestSend();
+    world.intercept.push((c) =>
+      c.path.endsWith("/complete")
+        ? world.json(200, { state: "refused", file: { id: "f1", status: "refused", refusal: "bad_type" } })
+        : undefined,
+    );
+    await world.advance(0);
+    expect(await sending.done).toEqual({ ok: false, error: "bad_type" });
   });
 
-  it("resolves the pushed view on success", async () => {
-    const xhr = new FakeXhr();
-    const { done } = start(xhr);
-    xhr.reply(200, JSON.stringify({ state: "offered" }));
-    expect(await done).toEqual({ ok: true, view: { state: "offered" } });
+  it("names a create refusal by its code, and the engine's own codes as the service being down", async () => {
+    const a = guestSend();
+    a.world.intercept.push((c) =>
+      c.method === "POST" && c.path === "/api/guest/uploads" ? a.world.problem(413, "too_large") : undefined,
+    );
+    await a.world.advance(0);
+    expect(await a.sending.done).toEqual({ ok: false, error: "too_large" });
+    const b = guestSend();
+    b.world.intercept.push((c) =>
+      c.method === "POST" && c.path === "/api/guest/uploads" ? b.world.problem(409, "upload_busy") : undefined,
+    );
+    await b.world.advance(0);
+    expect(await b.sending.done).toEqual({ ok: false, error: "service_down" });
   });
 
-  it("maps a refusal to its error code, so the page can show the guest_refused state", async () => {
-    const xhr = new FakeXhr();
-    const { done } = start(xhr);
-    xhr.reply(415, JSON.stringify({ type: "about:blank", status: 415, code: "bad_type" }));
-    expect(await done).toEqual({ ok: false, error: "bad_type" });
+  it("answers upload_aborted when the page aborts it, and closes the upload on the server", async () => {
+    const { world, sending } = guestSend();
+    world.onPut = () => {};
+    await world.advance(0);
+    sending.abort();
+    expect(await sending.done).toEqual({ ok: false, error: "upload_aborted" });
+    await world.advance(0);
+    expect(world.calledPaths("DELETE")).toEqual(["DELETE /api/guest/uploads/up1"]);
   });
 
-  it("treats an unknown code as a bad request, and a 5xx or a non-JSON body as the service being down", async () => {
-    const unknown = new FakeXhr();
-    const a = start(unknown);
-    unknown.reply(400, JSON.stringify({ code: "made_up" }));
-    expect(await a.done).toEqual({ ok: false, error: "bad_request" });
-    const down = new FakeXhr();
-    const b = start(down);
-    down.reply(502, "<html>bad gateway</html>");
-    expect(await b.done).toEqual({ ok: false, error: "service_down" });
-  });
-
-  it("reports offline when the request fails, and upload_aborted when the page aborts it", async () => {
-    const lost = new FakeXhr();
-    const a = start(lost);
-    lost.onerror?.();
-    expect(await a.done).toEqual({ ok: false, error: "offline" });
-    const stopped = new FakeXhr();
-    const b = start(stopped);
-    b.abort();
-    expect(await b.done).toEqual({ ok: false, error: "upload_aborted" });
+  it("reports offline when the engine cannot load or the view cannot be read", async () => {
+    const down = guestSend({ failLoad: true });
+    expect(await down.sending.done).toEqual({ ok: false, error: "offline" });
+    const lost = guestSend({ view: async () => ({ ok: false, error: "offline" }) });
+    await lost.world.advance(0);
+    expect(await lost.sending.done).toEqual({ ok: false, error: "offline" });
   });
 });
 

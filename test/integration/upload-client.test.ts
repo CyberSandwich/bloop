@@ -5,7 +5,7 @@ import { createHash } from "node:crypto";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { createUploader } from "../../public/js/core/upload.js";
 import { validDeck, validVideo } from "../zip-builder.ts";
-import { pairPhone, putDrop } from "./drop-client.ts";
+import { pairPhone, sendDrop } from "./drop-client.ts";
 import { Api, startPairing } from "./pairing-client.ts";
 import type { Wrangler } from "./wrangler.ts";
 
@@ -313,11 +313,11 @@ describe("the engine against the real routes", () => {
 });
 
 describe("a guest's file is never a library file", () => {
-  it("a member's cookie on a guest drop writes nothing to that member's library", async () => {
+  it("UP-03 owner: a member's cookie on a guest drop writes nothing to that member's library or quota", async () => {
     const cookie = member(wrangler, "ec-guest");
     const api = new Api(wrangler.url);
     const { pid } = await pairPhone(api);
-    const res = await putDrop(api, pid, validDeck() as Uint8Array, {
+    const res = await sendDrop(api, pid, validDeck() as Uint8Array, {
       name: "Talk.pptx",
       headers: { Cookie: `__Host-bloop_sid=${cookie}` },
     });

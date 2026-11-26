@@ -91,6 +91,8 @@ export interface PairingStore {
   dropDone(pid: string, file: FileRef): Promise<Result<PhoneView>>;
   /** The upload failed or was refused: back to `claimed`, and the object is purged. */
   dropFailed(pid: string, error: ErrorCode): Promise<Result<PhoneView>>;
+  /** The session a paired phone's upload belongs to, and whether it is a guest's yet; changes nothing. */
+  dropSession(pid: string): Promise<Result<{ sessionId: string; guest: boolean }>>;
   /** A guest upload's fraction to the screen sockets: at most one frame a second per upload, never backward, not stored. */
   uploadProgress(pid: string, p: { uploadId: string; fraction: number }): Promise<Result<null>>;
   /**

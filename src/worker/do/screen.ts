@@ -39,6 +39,8 @@ import {
 import type { PairingStore, PhoneInfo, Result, ScreenCreated, UsedLink } from "../seams/pairing.ts";
 import { auditFor, metricsFor } from "../stores.ts";
 import { directoryStub } from "../stubs.ts";
+import { uploadDepsFor } from "../uploads/deps.ts";
+import { abortSession } from "../uploads/guest.ts";
 import { type Meta, phoneView, roomView, screenView } from "../views.ts";
 import { bestEffort, closeObject, type EffectDeps, noopSeams, runEffects, type SessionSeams } from "./effects.ts";
 import { LinkLedger, type Use } from "./ledger.ts";
@@ -262,6 +264,15 @@ export class Screen extends DurableObject<Env> implements PairingStore {
 
   async dropFailed(pid: string, error: ErrorCode): Promise<Result<PhoneView>> {
     return this.phoneEvent(pid, () => ({ e: "upload.failed", now: Date.now(), error }));
+  }
+
+  async dropSession(pid: string): Promise<Result<{ sessionId: string; guest: boolean }>> {
+    const auth = await this.phoneAuth(pid);
+    if (!auth.ok) return auth;
+    const pairing = this.m?.pairing;
+    if (!pairing || !this.phoneMatches(auth.hash)) return fail("pairing_invalid");
+    if (this.m?.state === "ended") return fail("session_ended");
+    return { ok: true, value: { sessionId: pairing.sessionId, guest: pairing.kind === "guest" } };
   }
 
   async uploadProgress(pid: string, p: { uploadId: string; fraction: number }): Promise<Result<null>> {
@@ -742,6 +753,7 @@ export class Screen extends DurableObject<Env> implements PairingStore {
             audit: auditFor(this.env),
             now: Date.now,
             cancelConversion: (sessionId) => cancelConversion(convertDepsFor(this.env), sessionId, 1, "guest_end"),
+            abortUploads: async (sessionId) => abortSession(await uploadDepsFor(this.env, this.config()), sessionId),
           },
           input,
         ),

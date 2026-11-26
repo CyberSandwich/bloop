@@ -1,28 +1,14 @@
 // GuestDrop over an R2 bucket (private, `eu`) and the D1 `guest_file` ledger (ADR 0005). Objects live at
-// `g/<128-bit random>`: the key is the capability, and it is only ever handed to /f/ through the session.
-import type { FileType } from "../../../shared/protocol.ts";
+// `g/<128-bit random>`: the key is the capability, and it is only ever handed to /f/ through the session. The bytes
+// arrive through the multipart pipeline (src/worker/uploads/guest.ts); this file holds the budget, reads and deletes.
+import type { DropError, FileType } from "../../../shared/protocol.ts";
 import type { Db } from "../../auth/db.ts";
-import { newRef } from "../../ids.ts";
 import type { ByteRange } from "../open-path/range.ts";
-import { dropError } from "./formats.ts";
-import {
-  type Accepted,
-  type GuestDrop,
-  QuotaExhausted,
-  type RangeReader,
-  type Reservation,
-  type Upload,
-} from "./index.ts";
-import { DEFAULT_OP_CAPS, type OpCaps, R2Meter } from "./meter.ts";
-import { type Verdict, validate } from "./validate.ts";
+import { type GuestDrop, QuotaExhausted, type SettledFile } from "./index.ts";
+import { DEFAULT_OP_CAPS, type OpCaps, type OpClass, R2Meter } from "./meter.ts";
 
 /** The slice of an R2 bucket this file uses; the platform binding satisfies it (see `bucketOf`). */
 export interface Bucket {
-  put(
-    key: string,
-    value: ReadableStream<Uint8Array>,
-    options?: { customMetadata?: Record<string, string> },
-  ): Promise<{ size: number }>;
   get(
     key: string,
     options?: { range?: { offset: number; length: number } },
@@ -38,15 +24,8 @@ export interface Bucket {
 /** The one cast from the platform binding to the slice above. */
 export const bucketOf = (binding: unknown): Bucket => binding as Bucket;
 
-// Declared here because the Node tsconfig (tests) has no Workers types; undefined outside the Workers runtime.
-declare const FixedLengthStream: (new (length: number) => TransformStream<Uint8Array, Uint8Array>) | undefined;
-declare const crypto: Crypto & {
-  DigestStream?: new (algorithm: string) => WritableStream<Uint8Array> & { digest: Promise<ArrayBuffer> };
-};
-
 const PREFIX = "g/";
 const MAX_SWEEP_PAGES = 20;
-const hex = (buf: ArrayBuffer) => Array.from(new Uint8Array(buf), (b) => b.toString(16).padStart(2, "0")).join("");
 
 export class R2GuestDrop implements GuestDrop {
   constructor(
@@ -67,9 +46,18 @@ export class R2GuestDrop implements GuestDrop {
     return op();
   }
 
-  async reserve(sessionId: string, bytes: number, name: string, type: FileType): Promise<Reservation> {
-    if (!(await this.meter.hasRoom())) return { ok: false, error: "storage_full" };
-    const r2Key = `${PREFIX}${newRef()}`;
+  charge(cls: OpClass, n: number): Promise<boolean> {
+    return this.meter.charge(cls, n).catch(() => false);
+  }
+
+  async reserve(
+    sessionId: string,
+    r2Key: string,
+    bytes: number,
+    name: string,
+    type: FileType,
+  ): Promise<DropError | null> {
+    if (!(await this.meter.hasRoom())) return "storage_full";
     // One statement, so concurrent drops cannot both pass the budget check. Only a closed row is replaced: a live
     // row may own an object, and overwriting it would leave that object untracked by the budget.
     const res = await this.db
@@ -83,77 +71,22 @@ export class R2GuestDrop implements GuestDrop {
       )
       .bind(sessionId, r2Key, bytes, type, name, this.now(), this.budgetBytes)
       .run();
-    if (res.meta.changes > 0) return { ok: true, r2Key };
+    if (res.meta.changes > 0) return null;
     const live = await this.db
       .prepare("SELECT 1 AS one FROM guest_file WHERE session_id = ? AND deleted_at IS NULL")
       .bind(sessionId)
       .first();
-    return { ok: false, error: live ? "already_uploaded" : "storage_full" };
+    return live ? "already_uploaded" : "storage_full";
   }
 
-  async accept(u: Upload, maxBytes: number): Promise<Accepted> {
-    if (u.length > maxBytes) return { ok: false, error: "too_large" };
-    let stored: { size: number; sha256: string } | null;
-    let checked: Verdict<FileType> | null = null;
-    try {
-      stored = await this.store(u);
-      if (stored) checked = await validate(this.ranges(u.r2Key, stored.size), u.declaredType);
-    } catch (e) {
-      if (!(e instanceof QuotaExhausted)) throw e;
-      await this.delete(u.r2Key);
-      return { ok: false, error: "storage_full" };
-    }
-    if (!stored || !checked) {
-      await this.delete(u.r2Key);
-      return { ok: false, error: "upload_aborted" };
-    }
-    if (!checked.ok) {
-      await this.delete(u.r2Key);
-      return { ok: false, error: dropError(checked.error) };
-    }
-    await this.db
-      .prepare("UPDATE guest_file SET bytes = ?, sha256 = ? WHERE session_id = ? AND r2_key = ?")
-      .bind(stored.size, stored.sha256, u.sessionKey, u.r2Key)
+  async settle(sessionId: string, file: SettledFile): Promise<boolean> {
+    const res = await this.db
+      .prepare(
+        "UPDATE guest_file SET bytes = ?3, sha256 = ?4, type = ?5 WHERE session_id = ?1 AND r2_key = ?2 AND deleted_at IS NULL",
+      )
+      .bind(sessionId, file.r2Key, file.size, file.sha256, file.kind)
       .run();
-    return {
-      ok: true,
-      file: { r2Key: u.r2Key, name: u.name, type: checked.type, bytes: stored.size, sha256: stored.sha256 },
-    };
-  }
-
-  /**
-   * Streams the body into the bucket through a fixed-length stream (the declared length is the cap: a longer or
-   * shorter body errors) and a digest. Null when the body did not match or the bucket refused it.
-   */
-  private async store(u: Upload): Promise<{ size: number; sha256: string } | null> {
-    if (typeof FixedLengthStream === "undefined" || !crypto.DigestStream) throw new Error("needs the Workers runtime");
-    if (!(await this.meter.charge("A"))) throw new QuotaExhausted();
-    const fixed = new FixedLengthStream(u.length);
-    const digest = new crypto.DigestStream("SHA-256");
-    const hasher = digest.getWriter();
-    const tap = new TransformStream<Uint8Array, Uint8Array>({
-      async transform(chunk, controller) {
-        await hasher.write(chunk);
-        controller.enqueue(chunk);
-      },
-      flush: () => hasher.close(),
-    });
-    const piped = u.body.pipeThrough(tap).pipeTo(fixed.writable);
-    const put = this.bucket.put(u.r2Key, fixed.readable, { customMetadata: { session: u.sessionKey } });
-    const [pipe, object] = await Promise.allSettled([piped, put]);
-    if (pipe.status === "rejected" || object.status === "rejected") return null;
-    return { size: object.value.size, sha256: hex(await digest.digest) };
-  }
-
-  private ranges(key: string, size: number): RangeReader {
-    return {
-      size,
-      read: async (offset, length) => {
-        if (length <= 0 || offset >= size) return new Uint8Array();
-        const part = await this.metered("B", () => this.bucket.get(key, { range: { offset, length } }));
-        return part ? new Uint8Array(await part.arrayBuffer()) : new Uint8Array();
-      },
-    };
+    return res.meta.changes > 0;
   }
 
   async read(r2Key: string, range?: ByteRange) {

@@ -542,7 +542,7 @@ describe("live-check: the CLI", () => {
     };
     expect(await main(["https://bloop.here"], perfect, demo().io)).toBe(0);
     expect(
-      await main(["https://bloop.here"], perfect, demo({ drop: () => ok({ body: '{"state":"offered"}' }) }).io),
+      await main(["https://bloop.here"], perfect, demo({ drop: () => ok({ body: '{"state":"ready"}' }) }).io),
     ).toBe(1);
   });
 });
@@ -560,18 +560,28 @@ function demo(
   const log: string[] = [];
   const closed: string[] = [];
   const files: string[] = [];
+  let sent: Uint8Array = new Uint8Array();
   const send = async (method: string, url: string, headers: Record<string, string>, body: string | Uint8Array) => {
     const path = new URL(url).pathname;
     log.push(`${method} ${path}${headers.Authorization ? ` ${headers.Authorization}` : ""}`);
     if (path === "/api/screens") return over.create ?? ok({ status: 201, body: '{"sid":"ref1.secret"}' });
     if (path === "/api/claim") return over.claim ?? ok({ body: '{"pid":"pid1"}' });
-    if (path === "/api/drop") {
-      files.push(`${headers["X-Bloop-Name"]} ${headers["Content-Type"]}`);
-      const bytes = body as Uint8Array;
-      if (over.drop) return over.drop(bytes);
-      // A site that answers each drop as it should: the code its expectation names, or offered.
-      const code = /"code":"(\w+)"/.exec(DROPS.find((x) => x.bytes === bytes)?.expect.body ?? "")?.[1];
-      return code ? ok({ status: 422, body: `{"code":"${code}"}` }) : ok({ body: '{"state":"offered"}' });
+    // One upload in one part: the create names the file, the part carries its bytes, the complete judges them.
+    if (path === "/api/guest/uploads") {
+      files.push(JSON.parse(body as string).name);
+      return ok({ status: 201, body: '{"uploadId":"up1","parts":1,"partBytes":67108864}' });
+    }
+    if (path === "/api/guest/uploads/up1/parts/1") {
+      sent = body as Uint8Array;
+      return ok({ body: '{"n":1}' });
+    }
+    if (path === "/api/guest/uploads/up1/complete") {
+      if (over.drop) return over.drop(sent);
+      // A site that answers each drop as it should: the refusal its expectation names, or ready.
+      const code = /"refusal":"(\w+)"/.exec(
+        DROPS.find((x) => Buffer.from(x.bytes).equals(sent))?.expect.body ?? "",
+      )?.[1];
+      return ok({ body: code ? `{"state":"refused","file":{"refusal":"${code}"}}` : '{"state":"ready"}' });
     }
     if (path === "/api/screen/end") return over.end ?? ok({ body: "{}" });
     throw new Error(`unexpected ${method} ${path}`);
@@ -599,23 +609,24 @@ describe("live-check: guest drops on a demo screen", () => {
       "POST /api/screens",
       "WS /api/screen/ws?ref=ref1 ref1.secret",
       "POST /api/claim",
-      "PUT /api/drop Bearer pid1",
+      "POST /api/guest/uploads Bearer pid1",
+      "PUT /api/guest/uploads/up1/parts/1 Bearer pid1",
+      "POST /api/guest/uploads/up1/complete Bearer pid1",
       "POST /api/screen/end Bearer ref1.secret",
     ];
     expect(d.log).toEqual(DROPS.flatMap(() => flow));
     expect(d.closed).toEqual(DROPS.map(() => "ref1.secret"));
     expect(DROPS.map((x) => x.expect)).toEqual([
-      { status: 422, body: '"code":"macro_content"' },
-      { status: 422, body: '"code":"bad_structure"' },
-      { status: 422, body: '"code":"bad_structure"' },
-      { status: 200, body: '"state":"offered"' },
-      { status: 200, body: '"state":"offered"' },
+      { status: 200, body: '"refusal":"macro_content"' },
+      { status: 200, body: '"refusal":"bad_structure"' },
+      { status: 200, body: '"refusal":"bad_structure"' },
+      { status: 200, body: '"state":"ready"' },
+      { status: 200, body: '"state":"ready"' },
     ]);
-    const deck = "application/vnd.openxmlformats-officedocument.presentationml.presentation";
-    expect(d.files).toEqual([...DROPS.slice(0, -1).map(() => "Paper.pdf application/pdf"), `Deck.pptx ${deck}`]);
+    expect(d.files).toEqual([...DROPS.slice(0, -1).map(() => "Paper.pdf"), "Deck.pptx"]);
   });
 
-  it("the deck drop is a valid 5 MiB deck: a mid-size single PUT the site must still offer", async () => {
+  it("the deck drop is a valid 5 MiB deck: a mid-size file the site must still take", async () => {
     const deck = drop("a 5 MiB deck (one stored image)").bytes;
     expect(deck.length).toBeGreaterThan(5 * 1024 * 1024);
     expect(deck.length).toBeLessThan(6 * 1024 * 1024);
@@ -625,15 +636,19 @@ describe("live-check: guest drops on a demo screen", () => {
 
   it("a hostile drop the site accepts, or refuses with another code, is a miss", async () => {
     const js = "a PDF with /JavaScript in an object stream";
-    const accepted = demo({ drop: () => ok({ body: '{"state":"offered"}' }) });
+    const accepted = demo({ drop: () => ok({ body: '{"state":"ready"}' }) });
     expect(await dropMisses(ORIGIN, one(js), accepted.io)).toEqual([
-      `guest drop of ${js}: status 200, want 422`,
-      `guest drop of ${js}: body lacks "code":"macro_content"`,
+      `guest drop of ${js}: body lacks "refusal":"macro_content"`,
     ]);
     const padded = "a PDF with forged object marks in a string past the lookback";
-    const otherCode = demo({ drop: () => ok({ status: 422, body: '{"code":"macro_content"}' }) });
+    const otherCode = demo({ drop: () => ok({ body: '{"state":"refused","file":{"refusal":"macro_content"}}' }) });
     expect(await dropMisses(ORIGIN, one(padded), otherCode.io)).toEqual([
-      `guest drop of ${padded}: body lacks "code":"bad_structure"`,
+      `guest drop of ${padded}: body lacks "refusal":"bad_structure"`,
+    ]);
+    const busy = demo({ drop: () => ok({ status: 503, body: '{"code":"service_busy"}' }) });
+    expect(await dropMisses(ORIGIN, one("a clean PDF"), busy.io)).toEqual([
+      "guest drop of a clean PDF: status 503, want 200",
+      'guest drop of a clean PDF: body lacks "state":"ready"',
     ]);
   });
 

@@ -23,18 +23,18 @@ export class R2Meter {
   private capOf = (cls: OpClass) => (cls === "A" ? this.caps.classA : this.caps.classB);
 
   /**
-   * Counts one operation, atomically. False, with nothing counted, when the month's cap is reached. Throws when
+   * Counts `n` operations, atomically. False, with nothing counted, when they would pass the month's cap. Throws when
    * the counter cannot be written: callers must treat that as a refusal too (fail closed).
    */
-  async charge(cls: OpClass): Promise<boolean> {
-    // The upsert's WHERE makes a refused charge return no row, so the counter stops at the cap.
+  async charge(cls: OpClass, n = 1): Promise<boolean> {
+    // Both WHEREs make a refused charge return no row, so the counter never passes the cap.
     const row = await this.db
       .prepare(
-        `INSERT INTO r2_ops (month, class, n) VALUES (?1, ?2, 1)
-         ON CONFLICT (month, class) DO UPDATE SET n = n + 1 WHERE n < ?3
+        `INSERT INTO r2_ops (month, class, n) SELECT ?1, ?2, ?4 WHERE ?4 <= ?3
+         ON CONFLICT (month, class) DO UPDATE SET n = n + ?4 WHERE n + ?4 <= ?3
          RETURNING n`,
       )
-      .bind(this.month(), cls, this.capOf(cls))
+      .bind(this.month(), cls, this.capOf(cls), n)
       .first<{ n: number }>();
     return row !== null;
   }

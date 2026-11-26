@@ -12,6 +12,8 @@ import {
   CLAIM_MS,
   chargeMints,
   claim,
+  closeGuest,
+  completeGuest,
   deleteClosed,
   doneParts,
   expiredOpen,
@@ -379,7 +381,7 @@ describe("UP-02 mints, UP-08 parts, claims and sweeps (store statements)", () =>
     const db = setup();
     const n = await open(db);
     await recordPart(db, n.id, 1, '"aa"', 20, NOW);
-    expect(await listOpen(db, "u1", NOW)).toEqual([
+    expect(await listOpen(db, { kind: "library", userId: "u1" }, NOW)).toEqual([
       { id: n.id, name: n.name, bytes: 40, parts: 2, done: 1, createdAt: NOW },
     ]);
   });
@@ -417,25 +419,78 @@ describe("UP-02 mints, UP-08 parts, claims and sweeps (store statements)", () =>
   });
 });
 
-describe("a guest upload shares the table: one open row per session", () => {
+describe("a guest upload shares the table under the session's caps", () => {
+  const CAPS = { maxFiles: 12, maxOpen: 3 };
   const guest = (sessionId: string, over: Partial<NewUpload> = {}): NewUpload => ({
     ...upload("x"),
     owner: { kind: "guest", sessionId, screenRef: "screen1" },
-    r2Key: "g/abc/orig",
+    r2Key: "g/abc",
     ...over,
   });
 
-  it("inserts once per open session and again after it closes", async () => {
+  it("inserts a guest row with the session and screen and no user, in the guest bucket", async () => {
     const db = setup();
     const a = guest("s1");
-    expect(await insertGuest(db, a)).toBe(true);
-    expect(await insertGuest(db, guest("s1"))).toBe(false);
-    expect(await insertGuest(db, guest("s2"))).toBe(true);
+    expect(await insertGuest(db, a, CAPS)).toBeNull();
     expect(await get(db, a.id)).toMatchObject({
       ownerKind: "guest",
       userId: null,
       sessionId: "s1",
       screenRef: "screen1",
+      bucket: "guest",
     });
+  });
+
+  it("holds 3 open at once per session, and takes another once one closes; another session has its own", async () => {
+    const db = setup();
+    const open = [guest("s1"), guest("s1"), guest("s1")];
+    for (const g of open) expect(await insertGuest(db, g, CAPS)).toBeNull();
+    expect(await insertGuest(db, guest("s1"), CAPS)).toBe("upload_busy");
+    expect(await insertGuest(db, guest("s2"), CAPS)).toBeNull();
+    await claim(db, open[0]?.id ?? "", NOW);
+    expect(await completeGuest(db, open[0]?.id ?? "", NOW, NOW)).toBe(true);
+    expect(await insertGuest(db, guest("s1"), CAPS)).toBeNull();
+  });
+
+  it("an expired open upload no longer holds an open slot", async () => {
+    const db = setup();
+    for (let i = 0; i < 3; i++) expect(await insertGuest(db, guest("s1", { expiresAt: NOW - 1 }), CAPS)).toBeNull();
+    expect(await insertGuest(db, guest("s1"), CAPS)).toBeNull();
+  });
+
+  it("holds 12 files in all per session: a completed one counts, an aborted one gives its slot back", async () => {
+    const db = setup();
+    const rows: NewUpload[] = [];
+    for (let i = 0; i < 12; i++) {
+      const g = guest("s1");
+      expect(await insertGuest(db, g, CAPS)).toBeNull();
+      await claim(db, g.id, NOW);
+      expect(await completeGuest(db, g.id, NOW, NOW)).toBe(true);
+      rows.push(g);
+    }
+    expect(await insertGuest(db, guest("s1"), CAPS)).toBe("already_uploaded");
+    expect(await closeGuest(db, rows[0]?.id ?? "", NOW)).toBe(false);
+    db.raw.prepare("UPDATE upload SET completed_at = NULL, completing_at = NULL WHERE id = ?").run(rows[0]?.id ?? "");
+    expect(await closeGuest(db, rows[0]?.id ?? "", NOW)).toBe(true);
+    expect(await insertGuest(db, guest("s1"), CAPS)).toBeNull();
+  });
+
+  it("UP-09 a second insert of the same file while one is live is the twin, never a second row", async () => {
+    const db = setup();
+    const a = guest("s1");
+    expect(await insertGuest(db, a, CAPS)).toBeNull();
+    expect(await insertGuest(db, guest("s1", { fingerprint: a.fingerprint }), CAPS)).toBe("twin");
+    expect(db.raw.prepare("SELECT count(*) AS c FROM upload WHERE session_id = 's1'").get()).toEqual({ c: 1 });
+  });
+
+  it("lists a session's live uploads and none of another owner", async () => {
+    const db = setup();
+    const a = guest("s1");
+    await insertGuest(db, a, CAPS);
+    await insertGuest(db, guest("s2"), CAPS);
+    expect(
+      (await listOpen(db, { kind: "guest", sessionId: "s1", screenRef: "screen1" }, NOW)).map((u) => u.id),
+    ).toEqual([a.id]);
+    expect(await listOpen(db, { kind: "library", userId: "u1" }, NOW)).toEqual([]);
   });
 });

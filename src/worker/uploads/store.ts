@@ -102,18 +102,14 @@ export const isOpen = (u: Pick<UploadRow, "completedAt" | "abortedAt">): boolean
 export const get = (db: Db, id: string): Promise<UploadRow | null> =>
   db.prepare(`SELECT ${COLUMNS} FROM upload WHERE id = ?`).bind(id).first<UploadRow>();
 
-/** A guest's upload, by the guest session and screen; the one that ties a purge to its multipart. */
-export const findOpenBySession = (db: Db, sessionId: string): Promise<UploadRow | null> =>
-  db
-    .prepare(`SELECT ${COLUMNS} FROM upload WHERE session_id = ? AND ${OPEN} ORDER BY created_at DESC LIMIT 1`)
-    .bind(sessionId)
-    .first<UploadRow>();
+/** The column that ties a row to its owner. */
+const ownerColumn = (o: Owner): string => (o.kind === "library" ? "user_id" : "session_id");
 
 /** The owner's open, unexpired upload of this file (the resume key), or null. */
 export const findOpen = (db: Db, owner: Owner, fingerprint: string, now: number): Promise<UploadRow | null> =>
   db
     .prepare(
-      `SELECT ${COLUMNS} FROM upload WHERE ${owner.kind === "library" ? "user_id" : "session_id"} = ?1 AND fingerprint = ?2
+      `SELECT ${COLUMNS} FROM upload WHERE ${ownerColumn(owner)} = ?1 AND fingerprint = ?2
        AND ${live(3)} ORDER BY created_at DESC LIMIT 1`,
     )
     .bind(ownerId(owner), fingerprint, now)
@@ -137,16 +133,25 @@ export interface OpenListing {
   createdAt: number;
 }
 
-/** A user's open, unexpired library uploads, newest first, at most `limit`. */
-export async function listOpen(db: Db, userId: string, now: number, limit = 20): Promise<OpenListing[]> {
+/** An owner's open, unexpired uploads (a user's library, or a guest session's), newest first, at most `limit`. */
+export async function listOpen(db: Db, owner: Owner, now: number, limit = 20): Promise<OpenListing[]> {
   const { results } = await db
     .prepare(
       `SELECT id, name, bytes, parts, created_at AS createdAt,
          (SELECT count(*) FROM upload_part p WHERE p.upload_id = upload.id) AS done
-       FROM upload WHERE user_id = ?1 AND ${live(2)} ORDER BY created_at DESC LIMIT ?3`,
+       FROM upload WHERE ${ownerColumn(owner)} = ?1 AND ${live(2)} ORDER BY created_at DESC LIMIT ?3`,
     )
-    .bind(userId, now, limit)
+    .bind(ownerId(owner), now, limit)
     .all<OpenListing>();
+  return results;
+}
+
+/** A guest session's uploads still open, expired or not: what its end aborts. */
+export async function openOfSession(db: Db, sessionId: string): Promise<UploadRow[]> {
+  const { results } = await db
+    .prepare(`SELECT ${COLUMNS} FROM upload WHERE session_id = ? AND ${OPEN}`)
+    .bind(sessionId)
+    .all<UploadRow>();
   return results;
 }
 
@@ -276,16 +281,43 @@ export async function deleteClosed(db: Db, before: number, limit: number): Promi
   return res.meta.changes;
 }
 
-/** A guest upload: one open row per session, so a double tap cannot open two. Zero changes: one is already open. */
-export async function insertGuest(db: Db, n: NewUpload): Promise<boolean> {
+/** A guest session's caps, both held by the insert that opens an upload. */
+export interface GuestCaps {
+  /** Files a session may send in all: every upload not aborted counts, open or completed. */
+  maxFiles: number;
+  /** Uploads open at once; the client queues the rest. */
+  maxOpen: number;
+}
+
+export type GuestRefusal = "twin" | "already_uploaded" | "upload_busy";
+
+/**
+ * Opens a guest upload in one statement, so a double tap or a race cannot pass a cap: the session has sent fewer than
+ * `maxFiles`, has fewer than `maxOpen` live, and no live upload of the same fingerprint. Null: inserted; else the cap
+ * it met, read after the fact (a twin first: its answer is the resume).
+ */
+export async function insertGuest(db: Db, n: NewUpload, caps: GuestCaps): Promise<GuestRefusal | null> {
+  if (n.owner.kind !== "guest") throw new TypeError("a guest upload needs a session");
+  const { sessionId } = n.owner;
   const res = await db
     .prepare(
       `INSERT INTO upload (${INSERT_COLUMNS}) SELECT ${INSERT_PLACEHOLDERS()}
-       WHERE NOT EXISTS (SELECT 1 FROM upload WHERE session_id = ?19 AND ${OPEN})`,
+       WHERE (SELECT count(*) FROM upload WHERE session_id = ?19 AND aborted_at IS NULL) < ?20
+         AND (SELECT count(*) FROM upload WHERE session_id = ?19 AND ${live(16)}) < ?21
+         AND NOT EXISTS (SELECT 1 FROM upload WHERE session_id = ?19 AND fingerprint = ?15 AND ${live(16)})`,
     )
-    .bind(...insertValues(n), n.owner.kind === "guest" ? n.owner.sessionId : "")
+    .bind(...insertValues(n), sessionId, caps.maxFiles, caps.maxOpen)
     .run();
-  return res.meta.changes > 0;
+  if (res.meta.changes > 0) return null;
+  const seen = await db
+    .prepare(
+      `SELECT EXISTS (SELECT 1 FROM upload WHERE session_id = ?1 AND fingerprint = ?2 AND ${live(3)}) AS twin,
+         (SELECT count(*) FROM upload WHERE session_id = ?1 AND aborted_at IS NULL) AS sent`,
+    )
+    .bind(sessionId, n.fingerprint, n.createdAt)
+    .first<{ twin: number; sent: number }>();
+  if (seen?.twin) return "twin";
+  return (seen?.sent ?? 0) >= caps.maxFiles ? "already_uploaded" : "upload_busy";
 }
 
 /** SQL true of a row nobody holds: no claim, the caller's own, or one gone stale. Takes the numbers of two bound parameters. */

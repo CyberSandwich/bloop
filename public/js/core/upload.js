@@ -1,4 +1,4 @@
-// The upload engine: a queue of files, each fingerprinted, opened with POST /api/uploads and sent as multipart parts
+// The upload engine: a queue of files, each fingerprinted, opened with POST /api/uploads (a guest's on /api/guest/uploads, by its pid) and sent as multipart parts
 // (docs/uploads.md for the wire, docs/ux/upload.md for what the person reads). No DOM: every browser effect comes
 // through `deps`, so the unit tests drive it with fakes. XMLHttpRequest sends the parts because only it reports upload
 // progress in every phone browser.
@@ -219,11 +219,14 @@ const seconds = (header) => {
 /**
  * @param {object} args
  * @param {(batch: Batch) => void} args.onChange a plain snapshot after every change
+ * @param {string} [args.pid] a guest's pairing credential: the guest routes, with it as the Bearer on every request
+ *   (a part included); none is a member's library, by its cookie
  * @param {Partial<Deps>} [args.deps] fakes, for the unit tests
  */
-export function createUploader({ onChange, deps }) {
+export function createUploader({ onChange, pid, deps }) {
   const d = { ...browserDeps(), ...deps };
   const api = createApi({ fetch: d.fetch });
+  const root = pid ? "/api/guest/uploads" : "/api/uploads";
   /** @type {Rec[]} */
   let records = [];
   let nextId = 1;
@@ -390,14 +393,14 @@ export function createUploader({ onChange, deps }) {
    * @returns {Promise<Answer>} status 0 for the network, or for a 2xx that is not bloop's (a filter's page, REL-03)
    */
   async function call(method, path, body, headers = {}, ms = CALL_MS) {
-    const res = await api.call(method, path, { body, headers, timeout: ms });
+    const res = await api.call(method, path, { auth: pid, body, headers, timeout: ms });
     if (res.ok) return { status: 200, body: res.value };
     if (!res.status) return { status: 0 };
     return { status: res.status, body: { code: res.code }, ...(res.retryAfter ? { retryAfter: res.retryAfter } : {}) };
   }
 
   /** @param {string} id @returns {string} */
-  const pathOf = (id) => `/api/uploads/${encodeURIComponent(id)}`;
+  const pathOf = (id) => `${root}/${encodeURIComponent(id)}`;
   /** @param {Rec} r @returns {string} */
   const base = (r) => pathOf(/** @type {string} */ (r.uploadId));
   /** @param {Rec} r @param {number} n */
@@ -570,6 +573,7 @@ export function createUploader({ onChange, deps }) {
       // A direct URL is another host and carries its own signature: only bloop's gets a header.
       if (!u.direct) {
         x.setRequestHeader("Content-Type", "application/octet-stream");
+        if (pid) x.setRequestHeader("Authorization", `Bearer ${pid}`);
       }
       x.upload.onprogress = (e) => {
         arm();
@@ -779,8 +783,7 @@ export function createUploader({ onChange, deps }) {
     set(r, "starting");
     const res = await ask(
       r,
-      () =>
-        call("POST", "/api/uploads", { name: r.name, bytes: r.size, fingerprint: r.fp }, { "Idempotency-Key": r.key }),
+      () => call("POST", root, { name: r.name, bytes: r.size, fingerprint: r.fp }, { "Idempotency-Key": r.key }),
       true,
     );
     const b = res.body;
@@ -901,9 +904,9 @@ export function createUploader({ onChange, deps }) {
   d.win.addEventListener("offline", halt);
   d.doc.addEventListener("visibilitychange", visible);
 
-  /** The library's open uploads this page holds no file for, as paused rows. */
+  /** The open uploads (the library's, or the guest session's) this page holds no file for, as paused rows. */
   async function loadPaused() {
-    const res = await call("GET", "/api/uploads");
+    const res = await call("GET", root);
     if (disposed || res.status !== 200 || !Array.isArray(res.body?.uploads)) return;
     for (const u of res.body.uploads) {
       if (typeof u?.id !== "string" || typeof u.name !== "string" || !Number.isSafeInteger(u.bytes) || u.bytes < 1)

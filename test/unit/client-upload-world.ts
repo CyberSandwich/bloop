@@ -118,12 +118,15 @@ export interface Options {
   ttlMs?: number;
   done?: number[];
   wakeLock?: boolean;
+  /** A guest's pairing credential: the engine runs on the guest routes with it as the Bearer. */
+  pid?: string;
 }
 
 export type World = ReturnType<typeof makeWorld>;
 
 export function makeWorld(options: Options = {}) {
   const partBytes = options.partBytes ?? 20;
+  const root = options.pid ? "/api/guest/uploads" : "/api/uploads";
   const state = {
     now: 0,
     id: 0,
@@ -157,13 +160,13 @@ export function makeWorld(options: Options = {}) {
       n,
       url:
         mode === "proxy"
-          ? `/api/uploads/up1/parts/${n}`
+          ? `${root}/up1/parts/${n}`
           : `https://acct.eu.r2.cloudflarestorage.com/up1/${n}?sig=${++state.mints}`,
     }));
 
   const server = (call: Call): Response => {
     const { method, path, body } = call;
-    if (method === "POST" && path === "/api/uploads") {
+    if (method === "POST" && path === root) {
       state.bytes = body.bytes;
       // One upload row: another file starts it afresh.
       if (state.fingerprint !== undefined && state.fingerprint !== body.fingerprint) state.done.clear();
@@ -182,18 +185,18 @@ export function makeWorld(options: Options = {}) {
         urls: urlsFor(first.slice(0, options.firstUrls ?? 8)),
       });
     }
-    if (method === "GET" && path === "/api/uploads") return json(200, { uploads: [] });
+    if (method === "GET" && path === root) return json(200, { uploads: [] });
     // The routes' bodies are strict (zod): a key the server does not know is a 400, as here.
-    if (method === "POST" && path === "/api/uploads/up1/urls")
+    if (method === "POST" && path === `${root}/up1/urls`)
       return Object.keys(body ?? {}).join() === "parts" && Array.isArray(body.parts)
         ? json(200, { urls: urlsFor(body.parts), ttlMs: options.ttlMs ?? 300000 })
         : problem(400, "invalid_body");
-    const done = /^\/api\/uploads\/up1\/parts\/(\d+)\/done$/.exec(path);
+    const done = new RegExp(`^${root}/up1/parts/(\\d+)/done$`).exec(path);
     if (method === "POST" && done) {
       state.done.add(Number(done[1]));
       return json(200, { n: Number(done[1]), confirmed: state.done.size, total: 0 });
     }
-    if (method === "POST" && path === "/api/uploads/up1/complete") {
+    if (method === "POST" && path === `${root}/up1/complete`) {
       const keys = Object.keys(body ?? {})
         .sort()
         .join();
@@ -208,9 +211,9 @@ export function makeWorld(options: Options = {}) {
       }
       return json(200, { state: "ready", file: { id: "f1", status: "ready" } });
     }
-    if (method === "GET" && path === "/api/uploads/up1")
+    if (method === "GET" && path === `${root}/up1`)
       return json(200, { id: "up1", state: "open", done: [...state.done] });
-    if (method === "DELETE" && path === "/api/uploads/up1") return json(204, null);
+    if (method === "DELETE" && path === `${root}/up1`) return json(204, null);
     return problem(404, "not_found");
   };
 
@@ -317,6 +320,7 @@ export function makeWorld(options: Options = {}) {
     start() {
       world.uploader = createUploader({
         onChange: (batch) => snaps.push(structuredClone(batch)),
+        ...(options.pid ? { pid: options.pid } : {}),
         deps: world.deps as never,
       });
       return world.uploader;

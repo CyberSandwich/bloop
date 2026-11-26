@@ -1,6 +1,7 @@
 // The R2 free-tier hard stop: operations are counted in D1 before they run, per UTC month and class.
 import { describe, expect, it } from "vitest";
-import { QuotaExhausted } from "../../src/worker/seams/guest-drop/index.ts";
+import type { FileType } from "../../src/shared/protocol.ts";
+import { newGuestKey, QuotaExhausted } from "../../src/worker/seams/guest-drop/index.ts";
 import { R2Meter } from "../../src/worker/seams/guest-drop/meter.ts";
 import { type Bucket, R2GuestDrop } from "../../src/worker/seams/guest-drop/r2.ts";
 import { testDb } from "./d1-shim.ts";
@@ -11,7 +12,6 @@ class CountingBucket implements Bucket {
   async put(key: string) {
     this.calls.put++;
     this.objects.add(key);
-    return { size: 1 };
   }
   async get() {
     this.calls.get++;
@@ -52,6 +52,13 @@ const counts = (db: ReturnType<typeof testDb>) =>
     ),
   );
 
+/** A reserve under a fresh key, as the pipeline makes one: the key, or the refusal. */
+async function reserve(drop: R2GuestDrop, sessionId: string, bytes: number, name: string, type: FileType) {
+  const r2Key = newGuestKey();
+  const error = await drop.reserve(sessionId, r2Key, bytes, name, type);
+  return error ? ({ ok: false, error } as const) : ({ ok: true, r2Key } as const);
+}
+
 function setup(caps = { classA: 2, classB: 2 }, start = JAN) {
   const bucket = new CountingBucket();
   const db = testDb();
@@ -69,6 +76,17 @@ describe("DROP-10 R2 cap: the meter", () => {
     expect(await meter.charge("A")).toBe(false);
     expect(await meter.charge("A")).toBe(false);
     expect(counts(db)).toEqual({ "2026-01/A": 2 });
+  });
+
+  it("counts several at once only when all fit under the cap", async () => {
+    const db = testDb();
+    const meter = new R2Meter(db, { classA: 5, classB: 5 }, () => JAN);
+    expect(await meter.charge("B", 6)).toBe(false);
+    expect(counts(db)).toEqual({});
+    expect(await meter.charge("B", 4)).toBe(true);
+    expect(await meter.charge("B", 2)).toBe(false);
+    expect(await meter.charge("B", 1)).toBe(true);
+    expect(counts(db)).toEqual({ "2026-01/B": 5 });
   });
 
   it("keeps the classes apart, and a month rollover starts from zero", async () => {
@@ -110,26 +128,26 @@ describe("R2 cap: the guest drop", () => {
 
   it("refuses a new reservation with storage_full once either class is at its cap", async () => {
     const a = setup({ classA: 1, classB: 5 });
-    expect((await a.drop.reserve("s1", 10, "a.pdf", "pdf")).ok).toBe(true);
+    expect((await reserve(a.drop, "s1", 10, "a.pdf", "pdf")).ok).toBe(true);
     await new R2Meter(a.db, { classA: 1, classB: 5 }, () => JAN).charge("A");
-    expect(await a.drop.reserve("s2", 10, "b.pdf", "pdf")).toEqual({ ok: false, error: "storage_full" });
+    expect(await reserve(a.drop, "s2", 10, "b.pdf", "pdf")).toEqual({ ok: false, error: "storage_full" });
     const b = setup({ classA: 5, classB: 1 });
     await b.drop.read("g/x");
-    expect(await b.drop.reserve("s1", 10, "a.pdf", "pdf")).toEqual({ ok: false, error: "storage_full" });
+    expect(await reserve(b.drop, "s1", 10, "a.pdf", "pdf")).toEqual({ ok: false, error: "storage_full" });
   });
 
   it("takes reservations again in the next month", async () => {
     const { drop, setNow } = setup({ classA: 5, classB: 1 });
     await drop.read("g/x");
-    expect((await drop.reserve("s1", 10, "a.pdf", "pdf")).ok).toBe(false);
+    expect((await reserve(drop, "s1", 10, "a.pdf", "pdf")).ok).toBe(false);
     setNow(FEB);
-    expect((await drop.reserve("s1", 10, "a.pdf", "pdf")).ok).toBe(true);
+    expect((await reserve(drop, "s1", 10, "a.pdf", "pdf")).ok).toBe(true);
     await drop.read("g/x");
   });
 
   it("still deletes at the cap: a purge skips only its existence check", async () => {
     const { drop, bucket } = setup({ classA: 5, classB: 1 });
-    const r = await drop.reserve("s1", 10, "a.pdf", "pdf");
+    const r = await reserve(drop, "s1", 10, "a.pdf", "pdf");
     if (!r.ok) throw new Error("reserve");
     await bucket.put(r.r2Key);
     await drop.read("g/x"); // class B now at the cap
@@ -140,7 +158,7 @@ describe("R2 cap: the guest drop", () => {
 
   it("the sweep lists only while class A has room, and leaves its rows open when it cannot", async () => {
     const { drop, bucket, db } = setup({ classA: 1, classB: 5 });
-    await drop.reserve("old", 10, "a.pdf", "pdf");
+    await reserve(drop, "old", 10, "a.pdf", "pdf");
     await drop.sweep(0);
     expect(bucket.calls.list).toBe(1);
     db.raw.exec("UPDATE guest_file SET deleted_at = NULL");
@@ -151,7 +169,7 @@ describe("R2 cap: the guest drop", () => {
 
   it("purge deletes its keys one at a time, never in a bulk call", async () => {
     const { drop, bucket } = setup({ classA: 5, classB: 9 });
-    const r = await drop.reserve("s1", 10, "a.pdf", "pdf");
+    const r = await reserve(drop, "s1", 10, "a.pdf", "pdf");
     if (!r.ok) throw new Error("reserve");
     await drop.purge("s1", "g/other");
     expect(bucket.calls.delete).toBe(2);
@@ -160,7 +178,7 @@ describe("R2 cap: the guest drop", () => {
 
   it("the sweep counts its bulk delete as a class A operation and stops when it is refused", async () => {
     const { drop, bucket, db } = setup({ classA: 1, classB: 5 });
-    const r = await drop.reserve("old", 10, "a.pdf", "pdf");
+    const r = await reserve(drop, "old", 10, "a.pdf", "pdf");
     if (!r.ok) throw new Error("reserve");
     bucket.listing = [r.r2Key];
     expect(await drop.sweep(0)).toBe(0);
@@ -173,7 +191,7 @@ describe("R2 cap: the guest drop", () => {
     const { drop, bucket, db } = setup({ classA: 1000, classB: 5 });
     const keys: string[] = [];
     for (let i = 0; i < 21; i++) {
-      const r = await drop.reserve(`s${i}`, 1, "a.pdf", "pdf");
+      const r = await reserve(drop, `s${i}`, 1, "a.pdf", "pdf");
       if (r.ok) keys.push(r.r2Key);
     }
     bucket.listing = keys;
@@ -185,10 +203,10 @@ describe("R2 cap: the guest drop", () => {
 
   it("a reservation never overwrites a live row, and a closed row can be replaced", async () => {
     const { drop } = setup({ classA: 5, classB: 5 });
-    expect((await drop.reserve("s1", 10, "a.pdf", "pdf")).ok).toBe(true);
-    expect(await drop.reserve("s1", 10, "a.pdf", "pdf")).toEqual({ ok: false, error: "already_uploaded" });
+    expect((await reserve(drop, "s1", 10, "a.pdf", "pdf")).ok).toBe(true);
+    expect(await reserve(drop, "s1", 10, "a.pdf", "pdf")).toEqual({ ok: false, error: "already_uploaded" });
     await drop.purge("s1", null);
-    expect((await drop.reserve("s1", 10, "a.pdf", "pdf")).ok).toBe(true);
+    expect((await reserve(drop, "s1", 10, "a.pdf", "pdf")).ok).toBe(true);
   });
 
   it("fails closed: with no counter table a read is refused and the bucket is never called", async () => {
@@ -196,6 +214,6 @@ describe("R2 cap: the guest drop", () => {
     db.raw.exec("DROP TABLE r2_ops");
     await expect(drop.read("g/x")).rejects.toThrow();
     expect(bucket.calls.get).toBe(0);
-    await expect(drop.reserve("s1", 10, "a.pdf", "pdf")).rejects.toThrow();
+    await expect(reserve(drop, "s1", 10, "a.pdf", "pdf")).rejects.toThrow();
   });
 });

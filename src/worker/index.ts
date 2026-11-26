@@ -18,7 +18,6 @@ import { authRoutes } from "./routes/auth.ts";
 import { controlRoutes } from "./routes/control.ts";
 import { devMailRoutes } from "./routes/dev-mail.ts";
 import { devR2Routes } from "./routes/dev-r2.ts";
-import { dropRoutes } from "./routes/drop.ts";
 import { exportRoutes } from "./routes/export.ts";
 import { fileOriginRoutes } from "./routes/fileorigin.ts";
 import { fileRoutes } from "./routes/files.ts";
@@ -40,7 +39,6 @@ const routes: readonly Route[] = [
   ...pairingRoutes,
   ...fileRoutes,
   ...controlRoutes,
-  ...dropRoutes,
   ...authRoutes,
   ...openRoutes,
   ...exportRoutes,
