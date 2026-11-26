@@ -6,6 +6,7 @@ import { type Config, configFor } from "./config.ts";
 import { DYNAMIC_PAGES, pageCsp, withHeaders } from "./headers.ts";
 import { fail } from "./http.ts";
 import { admitted, type LaunchState, launchState } from "./mode.ts";
+import { pillRequest, withAccountPill } from "./nav-pill.ts";
 import { AUTH_SHELLS, MEMBER_PAGES, VARIANTS, type Variant } from "./page-registry.ts";
 
 const SHELLS: ReadonlySet<string> = new Set(AUTH_SHELLS);
@@ -45,8 +46,12 @@ export function normalizePath(pathname: string): string | null {
   return `/${segments.join("/")}`;
 }
 
-const fetchAs = (env: Pick<PageEnv, "ASSETS">, request: Request, path: string): Promise<Response> =>
-  env.ASSETS.fetch(new Request(new URL(path, request.url), { method: request.method, headers: request.headers }));
+const fetchAs = (
+  env: Pick<PageEnv, "ASSETS">,
+  request: Request,
+  path: string,
+  headers: Headers = request.headers,
+): Promise<Response> => env.ASSETS.fetch(new Request(new URL(path, request.url), { method: request.method, headers }));
 
 const notFound = (env: Pick<PageEnv, "ASSETS">, request: Request): Promise<Response> => fetchAs(env, request, MISSING);
 
@@ -57,8 +62,14 @@ const notFound = (env: Pick<PageEnv, "ASSETS">, request: Request): Promise<Respo
 async function missing(env: PageEnv, request: Request, plain: Response): Promise<Response> {
   if (!(request.headers.get("Accept") ?? "").includes("text/html")) return plain;
   if ((await launchState(env)).mode !== "open") return plain;
-  const page = await fetchAs(env, request, "/open/404");
-  return page.status === 200 ? new Response(page.body, { status: 404, headers: page.headers }) : plain;
+  // The 404 is never a 304: a revalidation would hand back today's page.
+  const headers = new Headers(request.headers);
+  headers.delete("If-None-Match");
+  headers.delete("If-Modified-Since");
+  const page = await fetchAs(env, request, "/open/404", headers);
+  return page.status === 200
+    ? withAccountPill(request, new Response(page.body, { status: 404, headers: page.headers }))
+    : plain;
 }
 
 /** The build output path of a variant's open file: `/` is `/open`, because `/open/` would be redirected. */
@@ -167,10 +178,12 @@ export async function servePage(
 /** A variant's open file. A redirect from the asset layer would leak the build path, so it is a fault, never passed on. */
 async function openFile(env: PageEnv, request: Request, variant: Variant, search: string): Promise<Response> {
   const target = new URL(`${openAsset(variant.path)}${search}`, request.url);
-  const response = await asset(env, new Request(target, request), variant.path);
-  if (response.status < 300 || response.status > 399) return response;
-  console.error("variant_redirect");
-  return withHeaders(fail("internal"), "api");
+  const response = await asset(env, new Request(target, pillRequest(request)), variant.path);
+  if (response.status >= 300 && response.status <= 399 && response.status !== 304) {
+    console.error("variant_redirect");
+    return withHeaders(fail("internal"), "api");
+  }
+  return withAccountPill(request, response);
 }
 
 /** The asset, with the policy of a page whose sources come from configuration completed (headers.ts `pageCsp`). */
