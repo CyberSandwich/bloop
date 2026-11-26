@@ -182,7 +182,7 @@ The corpus (`container/test/`: `corpus.mjs` lists the cases, `cases.mjs` and `ma
 
 Dependabot raises weekly PRs for the base image digests and `go.mod`; why, what it replaces and how to remove it: ADR 0001.
 
-The deployed reference is `registry.cloudflare.com/<account>/bloop-converter@sha256:<digest>`. `wrangler.jsonc` holds it with the account as `{ACCOUNT_ID}` (the repo never holds the id; `tools/prebuilt.mjs rewrite` fills it from `CLOUDFLARE_ACCOUNT_ID` in the deploy job), and a unit test (`CONV-06 pin`) fails unless its digest equals `container/digest.txt`. So a pinning commit writes the new digest to both files.
+The deployed reference is `registry.cloudflare.com/<account>/bloop-converter@sha256:<digest>`. `wrangler.jsonc` holds it as `registry.cloudflare.com/{ACCOUNT_ID}/bloop-converter@{DIGEST}`: `tools/prebuilt.mjs rewrite` (a step of the deploy job) fills the account from `CLOUDFLARE_ACCOUNT_ID`, which the repo never holds, and the digest from `container/digest.txt`, so a pinning commit still touches that one file. A deploy that skipped the rewrite refuses to run, and `CONV-06 pin` keeps the entry to a digest and never a tag.
 
 ## Run it by hand
 
