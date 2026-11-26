@@ -317,8 +317,9 @@ function render() {
   show(scope, copy.scope !== "");
   setText(scope, copy.scope);
   show(ends, copy.ends && !!v?.endsAt);
-  countDown();
   renderActions(copy.actions, copy.loading);
+  // After the row is built: it measures Revoke beside it.
+  countDown();
   // An end pushed meanwhile closes Revoke's question.
   if (!copy.actions.some((a) => a.id === "end")) revokeAsk.close();
   // The remote (core/remote-ui.js, lazy): fetched on a demo claim, so it is ready at the approval.
@@ -374,9 +375,10 @@ function countDown() {
   const at = c.view?.endsAt;
   if (ends.hidden || !at) return;
   const left = at - (Date.now() + c.skew);
-  // The space outside the words' span: a name trims each element's text, so "Ends in" would run into the time.
   const words = el("span", {}, ["Ends in"]);
   endsText.replaceChildren(words, ` ${countdown(left)}`, offline ? " · Reconnecting" : "");
+  // Named outright: a name built from the words' span and the time runs them together wherever whitespace collapses.
+  ends.setAttribute("aria-label", `${endsText.textContent}. Change the Session Expiry`);
   // Where Revoke (always next) wraps off the row, only the time shows: "Ends in" stays in the name.
   const next = /** @type {HTMLElement | null} */ (ends.nextElementSibling);
   if (next && ends.offsetTop !== next.offsetTop) words.className = "sr";
@@ -753,7 +755,11 @@ async function resume(/** @type {string} */ pid) {
 function start() {
   // The floating panel's height, so the toast sits just above it (app.css --toast-lift).
   const panel = /** @type {HTMLElement} */ (actionsEl.parentElement);
-  new ResizeObserver(() => document.body.style.setProperty("--panel", `${panel.offsetHeight}px`)).observe(panel);
+  // A new width refits Ends in at once, not at the next second.
+  new ResizeObserver(() => {
+    countDown();
+    document.body.style.setProperty("--panel", `${panel.offsetHeight}px`);
+  }).observe(panel);
   if (isFramed()) {
     c.error = "framed";
     render();
