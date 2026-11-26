@@ -77,7 +77,7 @@ const MAX_FONTS = 50;
 const MAX_FONT_CHARS = 100;
 const isRecord = (v: unknown): v is Record<string, unknown> => typeof v === "object" && v !== null && !Array.isArray(v);
 const exactKeys = (v: Record<string, unknown>, keys: readonly string[]): boolean =>
-  Object.keys(v).length === keys.length && keys.every((k) => k in v);
+  Object.keys(v).length === keys.length && keys.every((k) => Object.hasOwn(v, k));
 
 /** Exactly the four screen-safe flags (PAIR-16): any other key, or a value of another type, fails. */
 export const validDerived = (v: unknown): v is DerivedFlags =>
@@ -97,9 +97,12 @@ export const validExtra = (v: unknown): v is PhoneItemExtra =>
   v.fontsMissing.length <= MAX_FONTS &&
   v.fontsMissing.every((f) => typeof f === "string" && f.length <= MAX_FONT_CHARS);
 
-/** Up Next's list: at least one file, every file a library file, links beside them or not. */
+/** Up Next's list: at least one item, every one a library file (a live list holds nothing else, so no link). */
 export const isUpNext = (items: readonly ItemDraft[]): boolean =>
-  items.some((i) => i.kind === "file") && items.every((i) => i.kind === "link" || i.source === "library");
+  items.length > 0 && items.every((i) => i.kind === "file" && i.source === "library");
+
+/** A library file's ref: its 22-character id and its version. */
+export const validLibraryRef = (ref: string): boolean => /^[A-Za-z0-9_-]{22}:\d{1,6}$/.test(ref);
 
 /**
  * The order a session stores. Up Next's list keeps the caller's order (ADR 0009); any other list, links alone

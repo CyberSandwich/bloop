@@ -43,12 +43,13 @@ const refused = (m: Machine, ev: Event) => {
   const step = transition(m, ev, CFG);
   return step.ok ? null : step.error;
 };
-const control = (from: "phone" | "screen", seq: number, shown: Shown, now = NOW + sec(1)): Event => ({
+const control = (from: "phone" | "screen", seq: number, shown: Shown, now = NOW + sec(1), base?: number): Event => ({
   e: "control",
   now,
   from,
   seq,
   shown,
+  ...(base === undefined ? {} : { base }),
 });
 
 describe("machine-live approve", () => {
@@ -60,10 +61,29 @@ describe("machine-live approve", () => {
     expect(approve(confirmedLive(), thirteen)).toEqual({ ok: false, error: "bad_request" });
   });
 
-  it("library files with links among them keep their order; the pinned user never changes", () => {
-    const m = approvedLive([lib(2), VEVOX, lib(1)]);
-    expect(m.session?.items.map((i) => i.ref)).toEqual([ref(2), "demo-vevox", ref(1)]);
-    expect(m.pairing?.userId).toBe("u1");
+  it("a live list holds library files only: a link beside them is refused; the pinned user never changes", () => {
+    expect(approve(confirmedLive(), [lib(2), VEVOX, lib(1)])).toEqual({ ok: false, error: "bad_request" });
+    expect(approve(confirmedLive(), [VEVOX])).toEqual({ ok: false, error: "bad_request" });
+    expect(approvedLive().pairing?.userId).toBe("u1");
+  });
+
+  it("library files need a pinned user, and each ref has the library's shape", () => {
+    const signedOut = confirmedLive();
+    const noUser = {
+      ...signedOut,
+      pairing: { ...(signedOut.pairing as NonNullable<Machine["pairing"]>), userId: null },
+    };
+    expect(approve(noUser, [lib(1)])).toEqual({ ok: false, error: "auth_required" });
+    for (const bad of [
+      "short:1",
+      `${"A".repeat(22)}:`,
+      `${"A".repeat(22)}:1234567`,
+      `${"A".repeat(21)}/:1`,
+      `${"A".repeat(22)}`,
+    ]) {
+      expect(approve(confirmedLive(), [lib(1, { ref: bad })]), bad).toEqual({ ok: false, error: "bad_request" });
+    }
+    expect(approve(confirmedLive(), [lib(1, { ref: `${"a-_Z".repeat(5)}09:123456` })]).ok).toBe(true);
   });
 
   it("transitional: a live list that is not Up Next takes one listed file, as before", () => {
@@ -110,11 +130,37 @@ describe("machine-live derivedReady", () => {
     expect(ready(m, ref(1), { ...SLIDES, email: "x" })).toEqual({ ok: false, error: "bad_request" });
     expect(ready(m, ref(1), { ...SLIDES, pages: 0 })).toEqual({ ok: false, error: "bad_request" });
     expect(ready(m, ref(1), SLIDES, { notes: "yes", fontsMissing: [] })).toEqual({ ok: false, error: "bad_request" });
+    expect(
+      ready(
+        m,
+        ref(1),
+        Object.assign(Object.create({ motion: false }), { slides: true, pdf: true, pages: 4, email: "x" }),
+      ),
+    ).toEqual({
+      ok: false,
+      error: "bad_request",
+    });
     const fonts = Array.from({ length: 51 }, (_, i) => `F${i}`);
     expect(ready(m, ref(1), SLIDES, { notes: false, fontsMissing: fonts })).toEqual({
       ok: false,
       error: "bad_request",
     });
+  });
+});
+
+describe("machine-live derivedReady offered", () => {
+  it("a guest's offered file takes its flags before the Open tap", () => {
+    const up = must(confirmedLive("guest"), { e: "upload.start", now: NOW, timeoutSeconds: 900 }).next;
+    const file: FileRef = { source: "guest", ref: "g/abc", name: "Talk.pptx", type: "pptx" };
+    const offered = must(up, { e: "upload.done", now: NOW + sec(1), file }).next;
+    expect(offered.state).toBe("offered");
+    const extra = { notes: false, fontsMissing: [] };
+    const ready = must(offered, { e: "derivedReady", now: NOW + sec(2), ref: "g/abc", derived: SLIDES, extra }).next;
+    const [item] = ready.session?.items ?? [];
+    expect(item?.kind === "file" && item.derived).toEqual(SLIDES);
+    expect(refused(confirmedLive(), { e: "derivedReady", now: NOW, ref: "g/abc", derived: SLIDES, extra })).toBe(
+      "wrong_state",
+    );
   });
 });
 
@@ -145,6 +191,13 @@ describe("machine-live upload.progress", () => {
       expect(progress(up, bytes, total), `${bytes}/${total}`).toEqual({ ok: false, error: "bad_request" });
     }
     expect(refused(confirmedLive(), { e: "upload.progress", now: NOW, bytes: 1, total: 2 })).toBe("wrong_state");
+  });
+
+  it("the first report fixes the total: another total is bad_request", () => {
+    const up = must(uploading(), { e: "upload.progress", now: NOW, bytes: 40, total: 100 }).next;
+    expect(progress(up, 50, 200)).toEqual({ ok: false, error: "bad_request" });
+    expect(progress(up, 10, 50)).toEqual({ ok: false, error: "bad_request" });
+    expect(up.upload).toEqual({ bytes: 40, total: 100 });
   });
 
   it("UP-09 resume: a failed send goes back to the claim with the pick, code and pairing kept, and can start again", () => {
@@ -232,6 +285,36 @@ describe("machine-live control", () => {
     expect(late.ok && late.next).toBe(at17);
     expect(at17.session?.shown?.page).toBe(17);
   });
+
+  it("REL-13 cross-sender: a screen report built before the phone's latest turn never rewinds it", () => {
+    const m = must(approvedLive(), {
+      e: "derivedReady",
+      now: NOW,
+      ref: ref(1),
+      derived: SLIDES,
+      extra: { notes: false, fontsMissing: [] },
+    }).next;
+    const at5 = must(m, control("screen", 100, deck(5), NOW + sec(1), m.v)).next;
+    const turned = must(at5, control("phone", 1, deck(6), NOW + sec(2))).next;
+    expect(turned.session?.phoneV).toBe(turned.v);
+    // The screen settled on 4 before it saw the turn: its report carries the older view's v.
+    const late = transition(turned, control("screen", 101, deck(4), NOW + sec(3), at5.v), CFG);
+    expect(late.ok && late.next).toBe(turned);
+    // Built on the turned view (a tap after it, or the reload resume), the report applies.
+    const tap = must(turned, control("screen", 102, deck(7), NOW + sec(4), turned.v)).next;
+    expect(tap.session?.shown?.page).toBe(7);
+    const resumed = must(tap, control("screen", 103, deck(8), NOW + sec(5), tap.v + 5)).next;
+    expect(resumed.session?.shown?.page).toBe(8);
+    // A screen's own taps never fence each other: a later tap on a view from before its last report still applies.
+    expect(must(tap, control("screen", 104, deck(9), NOW + sec(6), turned.v)).next.session?.shown?.page).toBe(9);
+  });
+
+  it("REL-13 cross-sender: a report with no base, from a client before it, is ordered per sender only", () => {
+    const m = approvedLive();
+    const turned = must(m, control("phone", 1, deck(1, undefined), NOW + sec(2))).next;
+    const late = must(turned, control("screen", 50, { item: "i2", page: 1, present: true }, NOW + sec(3))).next;
+    expect(late.session?.shown?.item).toBe("i2");
+  });
 });
 
 describe("REL-16 the start", () => {
@@ -259,6 +342,16 @@ describe("REL-16 the start", () => {
         m.state === "opening" || m.state === "approved" ? must(next, { e: "fetched", now: by(m) + 1 }) : null;
       if (after) expect(start(after.effects), cause).toEqual([]);
     }
+  });
+
+  it("REL-16 a session that ends before its start deadline writes no start point", () => {
+    const short = must(approvedLive(), { e: "length", now: NOW + sec(1), seconds: 5, maxMinutes: MAX_MINUTES }).next;
+    expect(nextDeadline(short, CFG)).toBe(short.session?.endsAt);
+    const ended = must(short, { e: "timer", now: NOW + sec(6) });
+    expect(ended.next.state).toBe("ended");
+    expect(start(ended.effects)).toEqual([]);
+    const after = transition(ended.next, { e: "timer", now: NOW + sec(20) }, CFG);
+    expect(after.ok && start(after.effects)).toEqual([]);
   });
 
   it("REL-16 start ok on the first fetch or the screen's first report, once, and no deadline after", () => {

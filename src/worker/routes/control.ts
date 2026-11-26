@@ -16,7 +16,11 @@ import type { screenStub } from "../stubs.ts";
 import { limited, withConfig, withScreen, write } from "./common.ts";
 
 const commandBody = z
-  .object({ ...shownSchema.shape, seq: z.number().int().min(1).max(Number.MAX_SAFE_INTEGER) })
+  .object({
+    ...shownSchema.shape,
+    seq: z.number().int().min(1).max(Number.MAX_SAFE_INTEGER),
+    base: z.number().int().min(0).max(Number.MAX_SAFE_INTEGER).optional(),
+  })
   .strict();
 
 /** Up to the live cap, the larger one: the Screen object clamps a demo session to its own. */

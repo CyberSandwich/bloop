@@ -267,7 +267,10 @@ describe("machine properties", () => {
             expect((session?.endsAt as number) - (session?.approvedAt as number)).toBeLessThanOrEqual(
               MAX_MINUTES * 60_000,
             );
-            expect(nextDeadline(after, CFG)).toBe(session?.endsAt);
+            // The start deadline comes first while nothing has started (REL-16), never past the end.
+            const startBy = session?.startBy ?? null;
+            const endsAt = session?.endsAt as number;
+            expect(nextDeadline(after, CFG)).toBe(startBy !== null && startBy < endsAt ? startBy : endsAt);
           }
         });
         if (["approved", "opening", "open"].includes(last.state)) {

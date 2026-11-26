@@ -41,13 +41,20 @@ export function control(m: Machine, ev: EventOf<"control">): Step {
   if (ev.seq > ev.now + 24 * 3600 * SECOND) return fail("bad_request");
   const { seq } = m.session;
   if (ev.seq <= seq[ev.from]) return ok(m);
+  // Seqs order one sender only. A screen report built on a view from before the phone's latest turn is older than
+  // it, so it changes nothing (REL-13); a report with no base (a client from before it) is not ordered.
+  if (ev.from === "screen" && ev.base !== undefined && ev.base < (m.session.phoneV ?? 0)) return ok(m);
   const withSeq = { ...m.session, seq: { ...seq, [ev.from]: ev.seq } };
   // The screen's report is a sign the session started; the phone's command is not, since the screen may be dark.
   const { session, effects } = ev.from === "screen" ? withStart(withSeq, ev.now) : { session: withSeq, effects: [] };
   // Absolute: the same `shown` again is stored for its seq and pushes nothing.
   if (sameShown(m.session.shown, ev.shown)) return ok({ ...m, session }, effects);
   const firstShownAt = session.firstShownAt ?? ev.now;
-  return ok({ ...m, session: { ...session, shown: ev.shown, firstShownAt } }, [...effects, { fx: "push", to: "both" }]);
+  const phoneV = ev.from === "phone" ? { phoneV: m.v + 1 } : {};
+  return ok({ ...m, session: { ...session, shown: ev.shown, firstShownAt, ...phoneV } }, [
+    ...effects,
+    { fx: "push", to: "both" },
+  ]);
 }
 
 export function length(m: Machine, ev: EventOf<"length">, cfg: MachineConfig): Step {
