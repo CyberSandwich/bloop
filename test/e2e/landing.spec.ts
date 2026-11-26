@@ -860,6 +860,8 @@ test.describe("forced colors on a phone", () => {
 
 test.describe("no popover (Safari 15, 16)", () => {
   test.use({ viewport: { width: 390, height: 844 }, hasTouch: true, isMobile: true });
+  // A request the page makes after the last assertion can still sit in a route.fetch when the test ends.
+  test.afterEach(({ page }) => page.unrouteAll({ behavior: "wait" }));
 
   test("the links show as a row of their own, the dead menu button hides, and a link still works", async ({ page }) => {
     // As those engines parse it: :popover-open is an unknown pseudo-class and the popover attributes mean nothing.

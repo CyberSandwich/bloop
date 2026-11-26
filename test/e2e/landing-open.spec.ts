@@ -168,6 +168,8 @@ test.describe("open forced colors", () => {
 
 test.describe("open without popover (Safari 15, 16)", () => {
   test.use({ viewport: { width: 390, height: 844 }, hasTouch: true, isMobile: true });
+  // The next page's stylesheet request can still sit in a route.fetch when the last assertion passes.
+  test.afterEach(({ page }) => page.unrouteAll({ behavior: "wait" }));
 
   test("the links show as a row, the pill is still there, and a link works", async ({ page }) => {
     await page.route(/\/css\/site\.css$/, async (route) => {
