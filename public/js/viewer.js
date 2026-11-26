@@ -366,7 +366,7 @@ export function createViewer(deps) {
         const split = item.kind === "link" && files > 0 && files === i;
         if (item.kind === "file") files += 1;
         const p = pagesOf(item, v);
-        for (const s of p ?? []) new Image().src = `${s}.avif`;
+        p?.map((s) => (new Image().src = `${s}.avif`));
         return el("li", split ? { class: "split" } : {}, [row]);
       }),
     );
