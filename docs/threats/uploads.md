@@ -8,12 +8,14 @@ Rows start `planned` and flip to `mitigated` when their test lands; same columns
 | UP-01 | E | A presigned URL broader than one part | low | high | Each URL is one part, one key, PUT only, and short-lived | `UP-01 scope` | planned |
 | UP-02 | D | Oversize upload or a part count beyond the bound | med | med | The declared size must equal the head size at complete; the part count is bounded | `UP-02 size` | mitigated |
 | UP-03 | E | Using another user's upload id | med | high | Every upload route checks the owner; another member's id is the same `not_found` as an unknown one | `UP-03 owner` | mitigated |
-| UP-04 | D | Stale multipart uploads keep storage | med | low | A bucket lifecycle rule plus an hourly sweep that aborts expired and crashed uploads | `UP-04 abort` | mitigated |
+| UP-04 | D | Stale multipart uploads keep storage | med | low | A bucket lifecycle rule plus an hourly sweep that aborts expired and crashed uploads and those of a suspended or departing owner; a cancel also deletes an object R2 already joined | `UP-04 abort` | mitigated |
 | UP-05 | T | Type confusion between the declared and the real kind | med | high | The stored type comes from the validated kind, never the name or the client | `UP-05 type` | mitigated |
 | UP-06 | T | Cross-origin writes to the bucket | low | med | CORS allows only the bloop.here origin; checked live | `UP-06 cors` | planned |
 | UP-07 | E | Misuse of the S3 credentials | low | high | The R2 token is scoped to the two buckets, Object Read and Write only (an owner setup step) | none | planned |
-| UP-08 | T | Tampering with resume state | low | med | The part list is read only from D1; the one ETag a client may send (the last part's, on complete) must match R2's join or the upload is released | `UP-08 resume` | mitigated |
+| UP-08 | T | Tampering with resume state | low | med | The part list is read only from D1; proxy mode takes no ETag from a client; in direct mode the one ETag sent on complete must be the final part's (checked before the claim) and match R2's join or the upload is released | `UP-08 resume` | mitigated |
 | UP-09 | D | A retry on the same guest code duplicates or wedges a send | med | low | The same fingerprint resumes the same upload | `UP-09 retry` | planned |
+| UP-12 | D | A check that never settles (deadline, the class B cap, a crash) leaves a file `checking` and counted in `used_bytes` forever | med | med | A repeat of complete or the hourly sweep checks it again once the claim window passed, even after its upload row is gone; past a day it is refused (`service_busy`), its bytes returned and its object deleted under the ordering rule; a read never reruns a check | `UP-12 unsettled` | mitigated |
+| UP-13 | T | The stored file is not the bytes the library vouches for (a digest of other bytes, a check that read less than the file) | low | med | One read of the stored object gives both its SHA-256 and its CRC-32, kept on the file row; the validator runs over the same object and is held to the reads charged for it, past which the file is refused | `UP-13 crc32` | mitigated |
 
 ## Refused content
 | id | STRIDE | threat | L | I | mitigation | test | status |
