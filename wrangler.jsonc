@@ -170,6 +170,10 @@
           {
             "name": "CONVERTER",
             "class_name": "Converter"
+          },
+          {
+            "name": "SPEND_GUARD",
+            "class_name": "SpendGuard"
           }
         ]
       },

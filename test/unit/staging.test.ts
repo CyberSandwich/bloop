@@ -1,7 +1,6 @@
 import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 import { parseConfig } from "../../src/worker/config.ts";
-import { wranglerConfig } from "../../tools/wrangler-config.mjs";
 import {
   D1_NAME,
   d1IdFrom,
@@ -11,6 +10,7 @@ import {
   SECRETS,
   withD1Id,
 } from "../../tools/staging.mjs";
+import { wranglerConfig } from "../../tools/wrangler-config.mjs";
 
 const read = (rel: string) => readFileSync(new URL(`../../${rel}`, import.meta.url), "utf8");
 const live = wranglerConfig(read("wrangler.jsonc"));
