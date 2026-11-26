@@ -87,6 +87,7 @@ State-creating steps (invite create, accept, code verify, passkey session creati
 - **Reauth keeps `public_id`:** a reauth rotates the cookie value and deletes the presented row, but carries `public_id` over, because a live screen is keyed to the claiming session's `public_id` (ADR 0015) and a reauth changes no privilege. Every sign-in still mints a new one. The delete and the insert are one batch.
 - **The hint cookie is HttpOnly:** `__Host-bloop_in` has the session cookie's attributes and only the server reads it; no page script reads any bloop cookie. It still grants nothing.
 - **Sign-out and the device cookie:** a plain sign-out clears the session and hint cookies and keeps `__Host-bloop_dev`, so the device stays known; sign out everywhere clears all three. Any live session may sign itself out, including a deleting or locked-out member's and an Entra user's.
+- **The MAC input is length-prefixed:** each field of the `code_mac` input above is written `len:value` before the `|` join (`auth/codes.ts` `codeMac`), so no two field splits, even ones containing `|`, give the same input.
 
 ## Rejected
 - **Magic links instead of codes:** mail scanners follow links, which would sign them in or spend the link, and a link signs in whichever device opens it, not the one waiting.

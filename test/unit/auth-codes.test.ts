@@ -94,6 +94,25 @@ describe("AUTH-09 mac", () => {
     expect(await codeMac("q".repeat(32), base)).not.toBe(mac);
   });
 
+  it("AUTH-09 mac: two field splits that join to the same string give different MACs", async () => {
+    type Mac = Parameters<typeof codeMac>[1];
+    const joined = (m: Mac) => [m.id, m.purpose, m.emailNorm, m.newEmailNorm ?? "", m.code].join("|");
+    const pairs: [Mac, Mac][] = [
+      [
+        { ...base, emailNorm: "x|y@example.test" },
+        { ...base, purpose: "signin|x", emailNorm: "y@example.test" },
+      ],
+      [
+        { ...base, newEmailNorm: "n@example.test|1", code: "23456" },
+        { ...base, newEmailNorm: "n@example.test", code: "1|23456" },
+      ],
+    ];
+    for (const [a, b] of pairs) {
+      expect(joined(a)).toBe(joined(b));
+      expect(await codeMac(PEPPER, a)).not.toBe(await codeMac(PEPPER, b));
+    }
+  });
+
   it("AUTH-09 mac: no column holds the code, and code_mac is the HMAC over the bound fields", async () => {
     const db = setup();
     const r = await issued(db, {
