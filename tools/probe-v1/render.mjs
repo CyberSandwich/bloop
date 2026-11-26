@@ -16,8 +16,8 @@ for (const cpus of [1, 2]) {
   console.log(r.out, r.err);
 }
 
-for (const [cpus, workers] of [[1, 4], [1, 1], [2, 4], [2, 2]]) {
-  const env = { BLOOP_WORKERS: String(workers), BLOOP_TIMEOUT_RASTERIZE: "3600", BLOOP_TIMEOUT_CONVERT: "3600" };
+for (const [cpus, workers] of [[1, "auto"], [2, "auto"]]) {
+  const env = { BLOOP_TIMEOUT_RASTERIZE: "3600", BLOOP_TIMEOUT_CONVERT: "3600" };
   const c = start({ cpus, env });
   try {
     await healthy(c);
