@@ -35,6 +35,8 @@ export const drawMatch = (): string => String(randomInt(100)).padStart(2, "0");
 export const newRef = (): string => base64url(randomBytes(16));
 /** 256-bit secret. Only its hash is stored. */
 export const newSecret = (): string => base64url(randomBytes(32));
+/** The shape `newSecret` makes: a value of any other shape was never issued. */
+export const SECRET_SHAPE = /^[A-Za-z0-9_-]{43}$/;
 
 export async function sha256Hex(text: string): Promise<string> {
   return toHex(new Uint8Array(await crypto.subtle.digest("SHA-256", encoder.encode(text))));

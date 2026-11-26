@@ -585,9 +585,8 @@ export async function resetBreaker(
       await d.store.set(name, restored, actor, "breaker reset");
     }
   }
-  const was = await d.guard.resetTrip(name);
-  // The same trip later the same day is a new event and gets its own alert, log line and mail tries. One call, not
-  // caught: a failure reaches the owner's reset instead of leaving claims held unseen.
+  // The same trip later the same day is a new event and gets its own alert, log line and mail tries. The claims go
+  // before the latch, so a failed release throws with the trip still latched and a retried reset releases them.
   if (trip) {
     const keys = [trippedKey(name, trip.value), trippedKey(name, trip.value) + UNAPPLIED];
     await d.guard.unalertMany(
@@ -597,6 +596,7 @@ export async function resetBreaker(
       }),
     );
   }
+  const was = await d.guard.resetTrip(name);
   if (was)
     await d.notify(
       {

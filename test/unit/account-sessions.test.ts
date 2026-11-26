@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { deviceEpoch, isKnown, newDeviceValue } from "../../src/worker/auth/codes.ts";
 import { sha256Hex } from "../../src/worker/ids.ts";
+import { readSettings } from "../../src/worker/settings.ts";
 import {
   type AnyRoute,
   addSession,
@@ -11,6 +12,7 @@ import {
   publicId,
   recordingLimits,
   seedMember,
+  setMode,
   sid,
   spied,
 } from "./member-fixture.ts";
@@ -229,6 +231,40 @@ describe("GET /api/me: signed in only for a real session", () => {
       const { body } = await me(world, url, headers);
       expect(body, url).toEqual({ source: "mock", signedIn: false, launchMode: "preview" });
     }
+  });
+
+  // The mock (no cookie), signed-out (a cookie naming no session) and member shapes, each with its launchMode.
+  const shapes = async (world: ReturnType<typeof memberWorld>, env = world.env) => {
+    const url = "http://localhost:8787/api/me";
+    const live = await seedMember(world.db, "m1", "m@example.test");
+    const at = { ...world, env };
+    const pick = async (headers: Record<string, string> = {}) => {
+      const { body } = await me(at, url, headers);
+      return [body.source, body.signedIn, body.launchMode];
+    };
+    return [await pick(), await pick({ Cookie: sid("A".repeat(43)) }), await pick({ Cookie: sid(live) })];
+  };
+
+  it("launchMode is open only when the launch_mode row is open, in the mock, signed-out and member shapes", async () => {
+    for (const row of [null, "preview", "open"] as const) {
+      const world = memberWorld();
+      if (row) setMode(world.db, row);
+      const mode = row === "open" ? "open" : "preview";
+      expect(await shapes(world), String(row)).toEqual([
+        ["mock", true, mode],
+        ["mock", false, mode],
+        ["mock", true, mode],
+      ]);
+    }
+  });
+
+  it("launchMode is the cached read, not a fresh one: a switch within the cache window is not seen yet", async () => {
+    const world = memberWorld({ TEST_TIMING: "0" });
+    setMode(world.db, "open");
+    await readSettings(world.env, { fresh: true });
+    setMode(world.db, "preview");
+    const modes = (await shapes(world, { ...world.env, ...recordingLimits().bindings })).map(([, , m]) => m);
+    expect(modes).toEqual(["open", "open", "open"]);
   });
 
   it("a cookie that names no live session reads as signed out and clears nothing", async () => {
