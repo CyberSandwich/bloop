@@ -41,9 +41,6 @@ const COMPLETE_MS = 120_000;
 const CHECK_MS = 150_000;
 const CHECK_WAIT_MS = 2000;
 const CHECK_WAIT_MAX_MS = 10_000;
-const ETA_AFTER_S = 5;
-const ETA_MOVE = 0.2;
-const ETA_WEIGHT = 0.2;
 
 /** Ends a file's run: its state is already set. @type {{end: true}} */
 const END = { end: true };
@@ -53,10 +50,8 @@ const END = { end: true };
  *   | "refused" | "paused" | "canceled"} State
  * @typedef {{id: number, name: string, size: number, state: State, loaded: number, fraction: number,
  *   error?: string, fileId?: string, fileStatus?: string, uploadId?: string}} FileSnap
- * @typedef {{files: FileSnap[], active: boolean, total: number, loaded: number, fraction: number,
- *   etaMs: number | null}} Batch
+ * @typedef {{files: FileSnap[], active: boolean, total: number, loaded: number, fraction: number}} Batch
  * @typedef {{limit: number, fast: number}} Pace
- * @typedef {{at: number, bytes: number, rate: number, secs: number, est: number | null, estAt: number}} Eta
  * @typedef {{url: string, direct: boolean, expires: number}} PartUrl
  * @typedef {{status: number, body?: any, retryAfter?: number}} Answer
  * @typedef {{status: number, aborted?: boolean, etag?: string | null, ours?: boolean, body?: any,
@@ -144,37 +139,6 @@ export function nextConcurrency(pace, part) {
   return fast >= 2 && pace.limit < MAX_CONCURRENT ? { limit: pace.limit + 1, fast: 0 } : { limit: pace.limit, fast };
 }
 
-/** @returns {Eta} */
-export const etaStart = () => ({ at: -1, bytes: 0, rate: 0, secs: 0, est: null, estAt: 0 });
-
-/** @param {Eta} s @param {number} now @returns {number | null} the time left as shown, counting down between changes */
-export const etaLeft = (s, now) => (s.est === null ? null : Math.max(0, s.est - (now - s.estAt)));
-
-/**
- * The time left (UP-10). Throughput is an EWMA of the bytes moved per second, 0.2 for the newest second; the estimate
- * is bytes left over that mean; it shows after 5 s of samples and moves only when it differs from what is shown by
- * 20 percent or more.
- * @param {Eta} s
- * @param {number} loaded bytes moved so far (confirmed plus in flight, never going back)
- * @param {number} total
- * @param {number} now ms
- * @returns {Eta}
- */
-export function etaOf(s, loaded, total, now) {
-  if (s.at < 0) return { ...s, at: now, bytes: loaded };
-  const dt = now - s.at;
-  if (dt < 1000) return s;
-  // A file leaving the batch lowers the bytes counted; that is no negative throughput.
-  const rate = (Math.max(0, loaded - s.bytes) * 1000) / dt;
-  const weight = s.secs ? 1 - (1 - ETA_WEIGHT) ** (dt / 1000) : 1;
-  const mean = s.secs ? weight * rate + (1 - weight) * s.rate : rate;
-  const next = { ...s, at: now, bytes: loaded, rate: mean, secs: s.secs + dt / 1000 };
-  if (next.secs < ETA_AFTER_S || mean <= 0) return next;
-  const est = ((total - loaded) * 1000) / mean;
-  const shown = etaLeft(s, now);
-  return shown === null || Math.abs(est - shown) >= ETA_MOVE * shown ? { ...next, est, estAt: now } : next;
-}
-
 /** @param {string | null | undefined} header @returns {number | undefined} whole seconds (an HTTP date is not honored) */
 const seconds = (header) => {
   const n = Number.parseInt(header ?? "", 10);
@@ -227,7 +191,6 @@ export function createUploader({ onChange, deps }) {
   /** @type {Rec[]} */
   let records = [];
   let nextId = 1;
-  let eta = etaStart();
   let shown = 0;
   let moving = false;
   let disposed = false;
@@ -292,7 +255,6 @@ export function createUploader({ onChange, deps }) {
     const loaded = members.reduce((sum, r) => sum + loadedOf(r), 0);
     const active = !records.every(ended);
     const nowMoving = records.some((r) => r.state === "uploading");
-    if (nowMoving) eta = etaOf(eta, loaded, total, d.now());
     if (nowMoving !== moving) {
       moving = nowMoving;
       effects();
@@ -300,14 +262,7 @@ export function createUploader({ onChange, deps }) {
     // A file leaving the batch shrinks its total; the fill still never goes back (UP-11).
     shown = active ? Math.max(shown, total ? Math.min(0.99, loaded / total) : 0) : 0;
     const fraction = active ? shown : total ? 1 : 0;
-    onChange({
-      files: records.map(snap),
-      active,
-      total,
-      loaded,
-      fraction,
-      etaMs: moving ? etaLeft(eta, d.now()) : null,
-    });
+    onChange({ files: records.map(snap), active, total, loaded, fraction });
   }
 
   /** @param {{preventDefault: () => void, returnValue?: unknown}} e */
@@ -472,8 +427,6 @@ export function createUploader({ onChange, deps }) {
       r.before = r.state;
       if (r.state !== "checking") set(r, "waiting");
     }
-    // The time left counted down while it was out; it is estimated afresh from the next samples.
-    eta = etaStart();
     const out = d.now();
     try {
       do {
@@ -928,7 +881,6 @@ export function createUploader({ onChange, deps }) {
       // A batch that has ended is replaced by the new one; paused rows stay.
       if (records.every(ended)) {
         records = records.filter((r) => r.state === "paused" || r.state === "unsettled");
-        eta = etaStart();
         shown = 0;
       }
       const made = files.map((file) => record({ file, name: file.name, size: file.size, state: "queued" }));

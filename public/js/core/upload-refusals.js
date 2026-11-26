@@ -1,9 +1,10 @@
 // What each refusal says (docs/ux/upload.md section 4): one string per error code the upload routes can answer.
+// `say` is the sentence, for the live region and the sheet; the toast shows one line.
 /** @param {string} name "Talk.pptm" @returns {string} the extension of its macro-free twin, ".pptx" */
 const plain = (name) => `.${/\.(\w{3})m$/i.exec(name)?.[1] ?? "ppt"}x`;
 
 const FEW_MINUTES = "Try again in a few minutes.";
-/** Refusals with a title of their own (docs/ux/upload.md section 4): the title, then the line. @type {Record<string, [string, string]>} */
+/** Refusals with a title of their own (docs/ux/upload.md section 4): the title, then the sentence. @type {Record<string, [string, string]>} */
 const OWN = {
   bad_type: [
     "This File Type Isn't Supported",
@@ -16,7 +17,7 @@ const OWN = {
   service_busy: ["bloop Is Busy Right Now", FEW_MINUTES],
   auth_required: ["Sign In to Add Files", "Your sign-in ended. Sign in again, then add the file."],
 };
-/** Refusals titled "{name} Can't Be Added": the line, or a function of the name. @type {Record<string, string | ((name: string) => string)>} */
+/** Refusals read "{name} · Can't Be Added": the sentence, or a function of the name. @type {Record<string, string | ((name: string) => string)>} */
 const CANT = {
   internal: `bloop hit a problem adding this file. ${FEW_MINUTES}`,
   unauthorized: "This phone's pairing ended. Pair it with the screen again, then add the file.",
@@ -40,18 +41,22 @@ const CANT = {
  * @param {string} name
  * @param {string} code
  * @param {number | undefined} maxMB the library's file cap, from the API
- * @returns {{title: string, body: string}}
+ * @returns {{title: string, status?: string, say: string}}
  */
 export function refusalToast(name, code, maxMB) {
   if (code === "too_large")
     return {
       title: "File Too Large",
-      body: maxMB ? `bloop takes files up to ${maxMB} MB.` : "This file is over bloop's size limit.",
+      say: maxMB ? `bloop takes files up to ${maxMB} MB.` : "This file is over bloop's size limit.",
     };
   if (Object.hasOwn(OWN, code)) {
-    const [title, body] = /** @type {[string, string]} */ (OWN[code]);
-    return { title, body };
+    const [title, say] = /** @type {[string, string]} */ (OWN[code]);
+    return { title, say };
   }
   const line = (Object.hasOwn(CANT, code) && CANT[code]) || "Try again in a moment.";
-  return { title: `${name} Can't Be Added`, body: typeof line === "function" ? line(name) : line };
+  return {
+    title: name,
+    status: "Can't Be Added",
+    say: typeof line === "function" ? line(name) : line,
+  };
 }
