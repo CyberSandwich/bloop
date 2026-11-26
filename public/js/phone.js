@@ -6,7 +6,7 @@
 import { createApi } from "./core/api.js";
 import { bootCode } from "./core/boot-code.js";
 import { openChannel, refusal } from "./core/channel.js";
-import { MAIL_SUBJECT, phoneCopy, REFUSED, refusedLine, uploadLine, withPick } from "./core/copy-phone.js";
+import { MAIL_SUBJECT, phoneCopy, REFUSED, refusedLine, uploadLine } from "./core/copy-phone.js";
 import { thumbOf } from "./core/demo.js";
 import { fileProblem, kindOf, prepareFile, sendFile, wholeMB } from "./core/drop.js";
 import { loadFiles } from "./core/files.js";
@@ -58,6 +58,7 @@ const revokeAsk = /** @type {HTMLDialogElement} */ (byId("revoke"));
 const pickEl = byId("pick");
 /** The match pick's module (core/match.js), asked for once. */
 let picker = false;
+let listing = false;
 /** @type {((on: boolean) => void) | null} */
 let remote = null;
 let remoteAsked = false;
@@ -219,6 +220,8 @@ function renderActions(/** @type {import("./types.js").PhoneAction[]} */ actions
         return a.href ? el("a", { ...attrs, href: a.href }) : el("button", { ...attrs, type: "button" });
       }),
     );
+    // A row of none takes no gap in the panel (the pick's state has none).
+    actionsEl.hidden = !actions.length;
     fillMail();
   }
   for (const [i, a] of actions.entries()) {
@@ -231,11 +234,21 @@ function renderActions(/** @type {import("./types.js").PhoneAction[]} */ actions
   }
 }
 
+/** The chooser's keys, owner or guest: a live claim picks the screen's number before any of them. @type {PhoneStateKey[]} */
+const CHOOSER = ["match", "empty", "choose", "approving", "approve", "approve_demo", "unregistered", "guest_add"];
+
+/**
+ * core/states.js's key with the live pick over it (present-live.md 3.2): here, so the room screen's first load never
+ * carries the pick.
+ */
+const withPick = (/** @type {PhoneStateKey} */ key) =>
+  c.info?.choices && !c.view?.confirmed && CHOOSER.includes(key) ? "pick" : key;
+
 /** Where the remote shows (a demo, opening or open), and so its Reload toast. */
 const remoteOn = () => c.info?.mode === "demo" && ["opening", "open"].includes(phoneKey(c));
 
 function render() {
-  const key = withPick(c, phoneKey(c));
+  const key = withPick(phoneKey(c));
   const v = c.view;
   const demo = c.info?.mode === "demo";
   const copy = phoneCopy(key, {
@@ -315,13 +328,14 @@ function render() {
   show(pickEl, key === "pick");
   if (key === "pick" && !picker) {
     picker = true;
-    import("./core/match.js").then(
-      (m) => m.mount(c, { picked, wrong, fail }),
-      () => toast({ ...RELOAD, title: "Match Didn't Load" }),
-    );
+    // A module that loads but fails to draw lands here too.
+    import("./core/match.js")
+      .then((m) => m.mount(c, { picked, wrong, fail }))
+      .catch(() => toast({ ...RELOAD, title: "Match Didn't Load" }));
   }
 
-  setText(polite, key === "approving" ? "Approving" : "");
+  // The pick's own sending state writes here too (core/match.js), so a render mid-pick leaves it.
+  if (key !== "pick") setText(polite, key === "approving" ? "Approving" : "");
   // A dead end (Done or Enter the Code, no list) centers as one group; a session with Revoke alone does not.
   document.body.classList.toggle(
     "is-ended",
@@ -593,7 +607,12 @@ function wrong() {
 /** A right pick: the chooser follows (present-live.md 3.4). */
 function picked(/** @type {PhoneView} */ view) {
   setView(view);
-  listFiles();
+  listOwn(view.kind);
+}
+
+/** The list is an owner's (a guest's is its Add a File row), and asked for once: a confirmed push can beat the answer. */
+function listOwn(/** @type {PhoneView["kind"]} */ kind) {
+  if (kind !== "guest" && !c.files && !listing) listFiles();
 }
 
 byId("revoke-end").addEventListener("click", endSession);
@@ -608,7 +627,9 @@ async function listFiles() {
   c.files = null;
   c.selected = [];
   render();
+  listing = true;
   const res = await loadFiles(api, /** @type {string} */ (c.pid));
+  listing = false;
   if (!res.ok) return fail(res.error, listFiles);
   c.files = res.files;
   c.selected = (c.info?.mode === "demo" ? res.files : res.files.slice(0, 1)).map((e) => e.id);
@@ -673,7 +694,7 @@ function paired(claim) {
   learn(claim);
   attach(claim.pid);
   render();
-  if (claim.kind !== "guest" && !claim.choices) listFiles();
+  if (!claim.choices) listOwn(claim.kind);
 }
 
 async function claim(/** @type {string} */ code) {
@@ -696,7 +717,7 @@ async function resume(/** @type {string} */ pid) {
   learn(view);
   setView(view, pid);
   attach(pid);
-  if (view.kind === "owner" && view.confirmed && LIVE_CLAIM.includes(view.state)) listFiles();
+  if (view.confirmed && LIVE_CLAIM.includes(view.state)) listOwn(view.kind);
 }
 
 function start() {

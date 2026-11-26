@@ -622,6 +622,17 @@ describe("phone copy", () => {
     );
   });
 
+  it("PAIR-14 the unregistered warning, which follows the pick, says nothing the pick said", () => {
+    const sentences = (t: string) => t.split(/(?<=[.!?])\s+/).map((x) => x.toLowerCase().replace(/[.!?]$/, ""));
+    const pick = phoneCopy("pick", { ...pf, room: "" });
+    const said = [...sentences(pick.body), "tap the screen's number"];
+    const warned = phoneCopy("unregistered", { ...pf, room: "" });
+    for (const line of [warned.warn, warned.body, warned.scope].filter(Boolean).flatMap(sentences)) {
+      expect(said, line).not.toContain(line);
+      expect(line, line).not.toMatch(/screen's number|tap the/);
+    }
+  });
+
   it("S7 an unregistered room has no name: the pick's and the list's title is This Screen, and no title names a room", () => {
     const nameless = { ...pf, room: "", match: "42" };
     for (const key of ["pick", "match", "choose", "approve", "unregistered", "approving"] as const)
