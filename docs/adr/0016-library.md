@@ -21,7 +21,7 @@ Status: proposed. Data model: ADR 0013. Serving and pairing: ADR 0015. Behavior 
 
 ### Trash and purge
 - Trash sets `trashed_at` and `purge_after`. The purge takes `purge_after <= now`; a restore needs `purge_after > now + 5 minutes`. The two sets never meet, so there is no claim column and clock skew under 5 minutes cannot resurrect a row whose bytes are gone. Delete Now and Empty Trash set `purge_after` to the past, which closes restore at once.
-- A purge pass deletes the file's R2 prefix `u/<uid>/<fid>/` in rounds of 1,000 (so unrecorded keys go too), releases the user's bytes once with a guarded batch, marks the row `purged` in one guarded claim that a pending hold refuses, then deletes the prefix, and deletes it a second time after the converter's lease window, because a put that was already awaiting can land after the first pass (arch 9b). The claim comes before the bytes so a hold that starts later finds the file gone and says so; the rows go last.
+- A purge pass first claims the file: one guarded batch marks the row `purged` and releases the user's bytes once, and a pending hold refuses it. Only then does it delete the file's R2 prefix `u/<uid>/<fid>/` in rounds of 1,000 (so unrecorded keys go too), and it deletes the prefix a second time after the converter's lease window, because a put that was already awaiting can land after the first pass (arch 9b). The claim comes before the bytes so a hold that starts later finds the file gone and says so; the rows go last.
 - The Durable Object alarm runs the user's due purges (`kickPurge`) and re-arms while more are due; the hourly cron runs them for everyone, and the daily run adds the scans. Both are idempotent.
 
 ### Account purge and the hold

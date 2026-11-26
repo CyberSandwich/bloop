@@ -15,6 +15,7 @@ import {
   CURSOR_MAX_CHARS,
   type FileRow,
   fileRow,
+  ID_MAX_CHARS,
   libDbOf,
   listFiles,
   makeDue,
@@ -49,7 +50,7 @@ export interface LibraryDeps {
   now(): number;
 }
 
-const ID = z.string().min(1).max(64);
+const ID = z.string().min(1).max(ID_MAX_CHARS);
 const empty = z.strictObject({});
 const query = z.strictObject({
   view: z.enum(["files", "trash"]).default("files"),

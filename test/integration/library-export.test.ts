@@ -235,6 +235,12 @@ describe("LIB-07 export", () => {
     });
     expect(after.res.status).toBe(200);
     expect(listZip(after.bytes).names).toContain("Files/Renamed.pptx");
+    const rest = await download("fay", "key-qqqqqqq2", {
+      Range: "bytes=50-",
+      "If-Range": after.res.headers.get("etag") as string,
+    });
+    expect(rest.res.status).toBe(206);
+    expect(rest.bytes).toEqual(after.bytes.subarray(50));
   });
 
   it("a missing object fails the download visibly instead of writing a short archive", async () => {

@@ -5,7 +5,11 @@ import type { Env } from "./env.ts";
 import type { Result } from "./seams/pairing.ts";
 import { screenStub, userLibraryStub } from "./stubs.ts";
 
-/** What a Screen object offers the user's object: end the live session if it belongs to `userId`. */
+/**
+ * What a Screen object offers the user's object: end the live session if it belongs to `userId`. It answers ok when
+ * nothing live is left for that user (already ended, another user's pairing, an unknown ref), so a not-ok is a real
+ * failure and the caller retries it.
+ */
 export interface OwnerEnd {
   endFromOwner(userId: string): Promise<Result<null>>;
 }
