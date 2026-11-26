@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"log"
 	"math"
@@ -110,12 +111,28 @@ func (s *Server) videoJob(job jobInfo, meta *metaJSON) error {
 			if copying {
 				err = s.remux(bctx, orig, dst, size, seconds)
 			} else {
-				err = s.transcode(bctx, demuxer, orig, dst, seconds)
+				err = s.transcode(bctx, demuxer, orig, dst, seconds, s.cfg.VideoWidth)
 			}
 			if err != nil && bctx.Err() != nil && ctx.Err() == nil {
 				return failed(errTimeout, fmt.Errorf("video (copy %v) over its %v budget", copying, budget))
 			}
 			return err
+		}
+		// An HEVC source wider than the preview is encoded twice: a 720p mp4 first, listed ready at once so it can play,
+		// then the full one, which is best-effort once the 720p stands.
+		previewed := false
+		var previewVideo VideoMeta
+		if !remux && isHEVC(p) && w > s.cfg.PreviewWidth {
+			if v, err := s.encodePreview(ctx, job.id, demuxer, orig, seconds, transcodeBudget(seconds, s.cfg.VideoRate, s.cfg.VideoFixed, ceiling), meta); err != nil {
+				log.Printf("720p encode failed, encoding the full size alone: %v", err)
+			} else {
+				previewed, previewVideo = true, v
+				if left, ok := stageTimeLeft(ctx, s.cfg.VideoFixed); ok {
+					budget = min(budget, left)
+				} else {
+					return s.keepPreview(dst, meta, previewVideo, errors.New("no time left for the full encode"))
+				}
+			}
 		}
 		err = run(remux, budget)
 		if err != nil && remux && codeOf(err) != errTimeout && ctx.Err() == nil && seconds <= s.cfg.MaxVideoSecs {
@@ -127,31 +144,132 @@ func (s *Server) videoJob(job jobInfo, meta *metaJSON) error {
 				remux = false
 			}
 		}
+		if err == nil {
+			err = s.checkVideoOutput(ctx, dst, remux, size, seconds, meta)
+		}
+		if previewed {
+			// The 720p stands whatever the full encode did: a failure keeps it, a success replaces it.
+			if err != nil {
+				return s.keepPreview(dst, meta, previewVideo, err)
+			}
+			return os.Remove(s.dir("out", "m", "720.mp4"))
+		}
+		return err
+	})
+}
+
+// checkVideoOutput checks the finished mp4, records its size in meta and takes the thumbnail.
+func (s *Server) checkVideoOutput(ctx context.Context, dst string, copied bool, size int64, seconds float64, meta *metaJSON) error {
+	if err := checkFaststart(dst); err != nil {
+		return err
+	}
+	if copied {
+		if err := checkCopySize(dst, size); err != nil {
+			return err
+		}
+	}
+	out, err := s.probe(ctx, "mov", dst)
+	if err != nil {
+		return err
+	}
+	ow, oh, codec, ok := out.video()
+	if !ok || codec != "h264" || !strings.Contains(out.Format.FormatName, "mp4") {
+		return failed(errOutputInvalid, fmt.Errorf("video produced %q in %q", codec, out.Format.FormatName))
+	}
+	if copied && out.seconds() >= seconds+copySlackSeconds-1 {
+		return failed(errOutputInvalid, fmt.Errorf("copy ran to the %d s slack: %.0f s from %.0f s", copySlackSeconds, out.seconds(), seconds))
+	}
+	meta.Video = &VideoMeta{W: ow, H: oh, DurationMs: int(out.seconds() * 1000)}
+	return s.videoThumb(ctx, dst, out.seconds())
+}
+
+func isHEVC(p probe) bool {
+	v, ok := p.first("video")
+	return ok && v.CodecName == "hevc"
+}
+
+// previewThumb is where the 720p's thumbnail waits while the full encode may overwrite t.webp.
+func (s *Server) previewThumb() string { return s.dir("scratch", "t720.webp") }
+
+// encodePreview writes out/m/720.mp4, its thumbnail and a meta.json, checks all three the way the finished job's
+// outputs are checked, and lists them ready with a manifest of their own. On any failure nothing is left behind.
+func (s *Server) encodePreview(ctx context.Context, jobID, demuxer, orig string, seconds float64, budget time.Duration, meta *metaJSON) (VideoMeta, error) {
+	mp4 := s.dir("out", "m", "720.mp4")
+	cleanup := func() {
+		for _, p := range []string{mp4, s.dir("out", "t.webp"), s.dir("out", "meta.json"), s.previewThumb()} {
+			os.Remove(p)
+		}
+	}
+	bctx, cancel := context.WithTimeout(ctx, budget)
+	defer cancel()
+	if err := s.transcode(bctx, demuxer, orig, mp4, seconds, s.cfg.PreviewWidth); err != nil {
+		cleanup()
+		return VideoMeta{}, err
+	}
+	if err := checkFaststart(mp4); err != nil {
+		cleanup()
+		return VideoMeta{}, err
+	}
+	out, err := s.probe(ctx, "mov", mp4)
+	if err != nil {
+		cleanup()
+		return VideoMeta{}, err
+	}
+	ow, oh, codec, ok := out.video()
+	if !ok || codec != "h264" || !strings.Contains(out.Format.FormatName, "mp4") {
+		cleanup()
+		return VideoMeta{}, failed(errOutputInvalid, fmt.Errorf("720p produced %q in %q", codec, out.Format.FormatName))
+	}
+	video := VideoMeta{W: ow, H: oh, DurationMs: int(out.seconds() * 1000)}
+	if err := s.videoThumb(ctx, mp4, out.seconds()); err != nil {
+		cleanup()
+		return VideoMeta{}, err
+	}
+	m := *meta
+	m.Video = &video
+	if err := writeJSONFile(s.dir("out", "meta.json"), m); err != nil {
+		cleanup()
+		return VideoMeta{}, failed(errInternal, err)
+	}
+	if err := copyFile(s.previewThumb(), s.dir("out", "t.webp")); err != nil {
+		cleanup()
+		return VideoMeta{}, failed(errInternal, err)
+	}
+	var files []OutFile
+	for _, rel := range []string{"m/720.mp4", "t.webp", "meta.json"} {
+		p := filepath.Join(s.dir("out"), filepath.FromSlash(rel))
+		info, err := os.Stat(p)
 		if err != nil {
-			return err
+			cleanup()
+			return VideoMeta{}, failed(errInternal, err)
 		}
-		if err := checkFaststart(dst); err != nil {
-			return err
-		}
-		if remux {
-			if err := checkCopySize(dst, size); err != nil {
-				return err
+		typ := "application/json"
+		if rel != "meta.json" {
+			if typ, _, _, err = checkFile(p, rel, info.Size(), s.cfg.Widths); err != nil {
+				cleanup()
+				return VideoMeta{}, failed(errOutputInvalid, err)
 			}
 		}
-		out, err := s.probe(ctx, "mov", dst)
+		sum, err := fileSHA256(p)
 		if err != nil {
-			return err
+			cleanup()
+			return VideoMeta{}, failed(errInternal, err)
 		}
-		ow, oh, codec, ok := out.video()
-		if !ok || codec != "h264" || !strings.Contains(out.Format.FormatName, "mp4") {
-			return failed(errOutputInvalid, fmt.Errorf("video produced %q in %q", codec, out.Format.FormatName))
-		}
-		if remux && out.seconds() >= seconds+copySlackSeconds-1 {
-			return failed(errOutputInvalid, fmt.Errorf("copy ran to the %d s slack: %.0f s from %.0f s", copySlackSeconds, out.seconds(), seconds))
-		}
-		meta.Video = &VideoMeta{W: ow, H: oh, DurationMs: int(out.seconds() * 1000)}
-		return s.videoThumb(ctx, dst, out.seconds())
-	})
+		files = append(files, OutFile{Path: rel, Size: info.Size(), SHA256: sum, Type: typ})
+	}
+	s.publishPreview(files, &Manifest{V: 1, JobID: jobID, Kind: kindVideo, Groups: map[string]GroupResult{groupMedia: {OK: true}}, Files: files})
+	return video, nil
+}
+
+// keepPreview ends a job whose full encode did not finish: the 720p, its thumbnail and its meta.json are the outputs.
+func (s *Server) keepPreview(full string, meta *metaJSON, video VideoMeta, cause error) error {
+	log.Printf("full encode after the 720p did not finish, keeping the 720p: %v", cause)
+	os.Remove(full)
+	meta.Video = &video
+	if err := copyFile(s.dir("out", "t.webp"), s.previewThumb()); err != nil {
+		return failed(errInternal, err)
+	}
+	return nil
 }
 
 // idrProbeBudget bounds the one-packet read that decides whether a copy starts on an IDR picture.
@@ -230,13 +348,13 @@ func (s *Server) remux(ctx context.Context, in, dst string, size int64, seconds 
 }
 
 // transcode bounds the output at MaxVideoSecs with -t, whatever the input's header claims.
-func (s *Server) transcode(ctx context.Context, demuxer, in, dst string, seconds float64) error {
+func (s *Server) transcode(ctx context.Context, demuxer, in, dst string, seconds float64, width int) error {
 	return s.ffmpeg(ctx, []string{
 		"-nostdin", "-hide_banner", "-loglevel", "error", "-y",
 		"-protocol_whitelist", "file", "-f", demuxer, "-i", in,
 		"-t", strconv.FormatFloat(s.cfg.MaxVideoSecs, 'f', -1, 64),
 		"-map", "0:v:0", "-map", "0:a:0?", "-sn", "-dn", "-map_metadata", "-1",
-		"-vf", fmt.Sprintf("scale=w='min(%d,trunc(iw/2)*2)':h=-2,format=yuv420p", s.cfg.VideoWidth),
+		"-vf", fmt.Sprintf("scale=w='min(%d,trunc(iw/2)*2)':h=-2,format=yuv420p", width),
 		"-c:v", "libx264", "-preset", "veryfast", "-crf", "23", "-profile:v", "high",
 		"-c:a", "aac", "-b:a", "128k", "-ac", "2",
 		"-movflags", "+faststart", "-progress", "pipe:1", "-nostats", dst,

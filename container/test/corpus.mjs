@@ -7,6 +7,7 @@ import { join } from "node:path";
 import {
   caseDeck,
   caseExternal,
+  caseHevcPreview,
   caseIsolation,
   caseLinks,
   caseMedia,
@@ -78,6 +79,7 @@ async function main() {
   await caseOneCpuTiming("deck-300.pptx", 300);
   await casePdfActive();
   await caseMedia();
+  await caseHevcPreview();
   await caseVideoRate(1);
   await caseVideoRate(2);
   await caseVideoRate(4);

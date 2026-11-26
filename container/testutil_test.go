@@ -91,6 +91,8 @@ type fakeTools struct {
 
 	firstAU        []byte        // what the first-access-unit read returns; nil is an IDR slice
 	encodeLeft     time.Duration // time the last encode had before its budget ended
+	onRun          func(spec cmdSpec) // called for every tool run before it does anything
+	failWidth      string             // ffmpeg fails when its scale filter names this width ("min(1920,")
 	failOnCopy     bool          // ffmpeg fails when it is asked to copy streams
 	failLaterPages bool          // pdftoppm fails for every page after the first
 	holdPages      chan struct{} // when set, pdftoppm for any page after the first waits for a receive or close
@@ -159,6 +161,12 @@ func (f *fakeTools) run(ctx context.Context, spec cmdSpec) ([]byte, error) {
 	f.mu.Lock()
 	f.calls = append(f.calls, spec)
 	f.mu.Unlock()
+	if f.onRun != nil {
+		f.onRun(spec)
+	}
+	if spec.name == "ffmpeg" && f.failWidth != "" && strings.Contains(strings.Join(spec.args, " "), f.failWidth) {
+		return nil, fmt.Errorf("ffmpeg: exit status 1")
+	}
 	if isIDRProbe(spec) {
 		if f.firstAU != nil {
 			return f.firstAU, nil
@@ -248,7 +256,7 @@ func (f *fakeTools) run(ctx context.Context, spec cmdSpec) ([]byte, error) {
 			return nil, write(out, fakeWebP(w, w*9/16))
 		}
 	case "ffprobe":
-		if strings.HasSuffix(last, "m/0.mp4") {
+		if strings.Contains(last, "/out/m/") {
 			return []byte(f.probeOut), nil
 		}
 		return []byte(f.probeIn), nil

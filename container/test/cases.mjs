@@ -187,6 +187,46 @@ export async function caseMedia() {
   }
 }
 
+/**
+ * An HEVC source wider than 1280 px is encoded at 720p first and listed ready, then the full encode replaces it.
+ * One CPU makes the full encode last long enough for a poll to see the 720p. The same job on an H.264 clip never
+ * lists a 720p. A full encode that fails keeps the 720p, which the Go tests cover (a real encode cannot be made to
+ * fail on demand here).
+ */
+export async function caseHevcPreview() {
+  console.log("video hevc-1080p.mov (720p first)");
+  let c = start({ cpus: 1 });
+  try {
+    check(await healthy(c), "hevc-1080p.mov: container is healthy");
+    const r = await runJob(c, join(MEDIA, "hevc-1080p.mov"), "mov");
+    check(r.status.state === "done", `hevc-1080p.mov: done (status ${JSON.stringify(r.status)})`);
+    check(
+      JSON.stringify(r.early?.status.ready) === JSON.stringify(["m/720.mp4", "t.webp", "meta.json"]),
+      `hevc-1080p.mov: the first ready list is the 720p, thumbnail and meta (${JSON.stringify(r.early?.status.ready)})`,
+    );
+    const mp4 = r.files["m/0.mp4"];
+    check(mp4 && mp4.toString("latin1", 4, 8) === "ftyp", "hevc-1080p.mov: the full encode is m/0.mp4");
+    check(!r.files["m/720.mp4"], "hevc-1080p.mov: the 720p is gone once the full encode is stored");
+    const meta = JSON.parse(r.files["meta.json"] ?? "{}");
+    check(meta.video?.w === 1920 && meta.video?.h === 1080, `hevc-1080p.mov: meta.video ${JSON.stringify(meta.video)}`);
+    const { ms } = timingOf(r);
+    timings.push(`video hevc-1080p.mov at 1 CPU: 8 s of 1080p HEVC, 720p then full, in ${(ms / 1000).toFixed(1)} s`);
+  } finally {
+    stop(c);
+  }
+  console.log("video h264.mp4 (no 720p)");
+  c = start();
+  try {
+    check(await healthy(c), "h264.mp4: container is healthy");
+    const r = await runJob(c, join(MEDIA, "h264.mp4"), "mp4");
+    check(r.status.state === "done", `h264.mp4: done (status ${JSON.stringify(r.status)})`);
+    check(!r.early?.status.ready.includes("m/720.mp4"), "h264.mp4: no 720p is listed ready");
+    check(r.files["m/0.mp4"] && !r.files["m/720.mp4"], "h264.mp4: the output is m/0.mp4 alone");
+  } finally {
+    stop(c);
+  }
+}
+
 export async function casePdfActive() {
   console.log("pdf-js.pdf");
   const c = start();

@@ -385,7 +385,16 @@ func validateOutputs(dir string, want expectation) ([]OutFile, map[string]GroupR
 				}
 			}
 		case groupMedia:
-			need(g, "m/0.mp4", "t.webp")
+			// The full encode, or the 720p when the full encode did not finish; both is a leftover.
+			mp4 := "m/0.mp4"
+			if !have(g, mp4) && have(g, "m/720.mp4") {
+				mp4 = "m/720.mp4"
+			}
+			need(g, mp4, "t.webp")
+			if have(g, "m/0.mp4") && have(g, "m/720.mp4") {
+				log.Printf("group media: both the 720p and the full encode are present")
+				failed[g] = errOutputInvalid
+			}
 		case groupImage:
 			need(g, "i/1920.jpg", "t.webp")
 		}
