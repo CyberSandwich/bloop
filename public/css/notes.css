@@ -1,8 +1,10 @@
 /* The presenter's notes on /a (core/notes.js, design.md section 7, Phone page): a phone held upright only, as the script is. */
 @media (max-width: 639.98px) {
-  /* The page grows with its parts instead of holding one window, so the floating panel stays over the box's end. */
+  /* The page is at least the window, and grows past it only where the box's minimum does not fit: the box takes what
+     is left above the panel. */
   .column:has(> .actions > .bubbles):has(> .notes) {
     height: auto;
+    min-height: 100dvh;
   }
   /* The list folds to the row on screen; its chevron opens it again. */
   .column:has(> .actions > .bubbles) > .list.notes-folded {
@@ -22,17 +24,19 @@
   .column > .preview:has(+ .notes) {
     margin-bottom: 16px;
   }
-  /* From under the slide down to the window's foot, behind the floating panel: the bottom padding and the negative
-     margin are the panel's own height (phone.js sets --panel), so the last line scrolls clear above it. */
+  /* From under the slide down to 16 above the floating panel, the gap the slide leaves above it; the slide's shadow
+     falls on the page, so the box stacks over it. The panel's radius is the box's. */
   .notes {
+    position: relative;
+    z-index: 1;
     order: 2;
     flex: 1 1 0;
-    min-height: calc(var(--panel, 128px) + 6em + 16px);
-    margin: 0 0 calc(-1 * var(--panel, 128px));
-    padding: 16px 20px var(--panel, 128px);
+    min-height: 6em;
+    margin: 0 0 16px;
+    padding: 16px 20px;
     overflow-y: auto;
     overscroll-behavior: contain;
-    border-radius: var(--r-list);
+    border-radius: var(--r-panel);
     background: var(--surface);
     box-shadow: var(--sh-frame);
     font-size: 17px;

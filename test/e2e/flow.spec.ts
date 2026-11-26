@@ -3866,6 +3866,40 @@ test.describe("NOTES-01 phone-only: the presenter's notes on the phone (design.m
     await s.phone.context.close();
   };
 
+  for (const size of [...SIZES, { width: 430, height: 932 }]) {
+    test(`the long notes end 16 above the panel, over the slide's shadow, in the panel's radius at ${size.width} x ${size.height}`, async ({
+      browser,
+    }) => {
+      const s = await session(browser, size);
+      await s.present();
+      await expect(s.box).toContainText(opening(NOTES[0] ?? ""));
+      expect(await s.box.evaluate((n) => n.scrollHeight - n.clientHeight), "the notes overflow").toBeGreaterThan(0);
+      // The page at its end, where the floating panel rides its natural place under the box.
+      await s.page.evaluate("window.scrollTo(0, document.documentElement.scrollHeight)");
+      const preview = await boxOf(s.preview);
+      const box = await boxOf(s.box);
+      const panel = await boxOf(s.panel);
+      expect(Math.abs(box.y - (preview.y + preview.height) - 16), "16 from the slide to the notes").toBeLessThanOrEqual(
+        1,
+      );
+      expect(box.y + box.height + 16, "the notes end 16 above the panel").toBeLessThanOrEqual(panel.y + 1);
+      // The slide's shadow falls on the page, not on the notes.
+      await expect(s.box).toHaveCSS("position", "relative");
+      expect(await px(s.box, "zIndex"), "the notes stack over the slide").toBeGreaterThan(0);
+      const radius = await px(s.box, "borderTopLeftRadius");
+      expect(radius).toBeGreaterThan(0);
+      expect(radius, "the notes' radius is the panel's").toBe(await px(s.panel, "borderTopLeftRadius"));
+      await close(s);
+    });
+  }
+
+  test("held landscape (844 x 390) shows no notes box", async ({ browser }) => {
+    const s = await session(browser, { width: 844, height: 390 });
+    await s.present();
+    await expect(s.box).toBeHidden();
+    await close(s);
+  });
+
   for (const size of SIZES) {
     test.describe(`at ${size.width} x ${size.height}`, () => {
       test("Present folds the list to one row with a chevron that opens it again", async ({ browser }) => {
@@ -3922,10 +3956,6 @@ test.describe("NOTES-01 phone-only: the presenter's notes on the phone (design.m
         const text = s.box.locator(".notes-text");
         await expect(text).toHaveCSS("white-space", "pre-wrap");
         expect(await px(text, "fontSize")).toBeGreaterThanOrEqual(17);
-        // The bottom padding is the pill's height, so the pill never covers text.
-        const pill = await boxOf(s.panel);
-        const padding = await px(s.box, "paddingBottom");
-        expect(Math.abs(padding - pill.height), "padding under the notes equals the pill").toBeLessThanOrEqual(1);
         // The page at its end (the floating pill rides its foot), the notes scrolled to theirs.
         await s.page.evaluate("window.scrollTo(0, document.documentElement.scrollHeight)");
         const pageY = await s.page.evaluate("window.scrollY");
@@ -3943,9 +3973,6 @@ test.describe("NOTES-01 phone-only: the presenter's notes on the phone (design.m
         });
         const pillAtEnd = await boxOf(s.panel);
         expect(lastLine, "the last line ends above the pill").toBeLessThanOrEqual(pillAtEnd.y + 1);
-        // The notes run to the window's foot, under the pill.
-        const boxAtEnd = await boxOf(s.box);
-        expect(Math.abs(boxAtEnd.y + boxAtEnd.height - (size.height - (await insetOf(s.page))))).toBeLessThanOrEqual(1);
         await close(s);
       });
 
