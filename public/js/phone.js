@@ -1,19 +1,21 @@
-// The phone page (/a): claims the QR's code (it leaves the address bar first, core/boot-code.js), lists the items to
-// select and approves them with the match digits on the button; then the items, the time left and Revoke.
+// The phone page (/a): claims the QR's code (it leaves the address bar first, core/boot-code.js); live, picks the
+// screen's number (core/match.js); lists the items to select and approves them (a demo's match digits on the
+// button); then the items, the time left and Revoke.
 
 /** @import {ClaimResponse, Entry, ErrorCode, Item, PhoneStateKey, PhoneView} from "../../src/shared/protocol.ts" */
 import { createApi } from "./core/api.js";
 import { bootCode } from "./core/boot-code.js";
 import { openChannel, refusal } from "./core/channel.js";
-import { MAIL_SUBJECT, phoneCopy, refusalToast, uploadLine } from "./core/copy-phone.js";
+import { MAIL_SUBJECT, phoneCopy, REFUSED, refusedLine, uploadLine } from "./core/copy-phone.js";
 import { thumbOf } from "./core/demo.js";
 import { fileProblem, kindOf, prepareFile, sendFile, wholeMB } from "./core/drop.js";
 import { loadFiles } from "./core/files.js";
 import { ago, countdown } from "./core/format.js";
 import { ICONS } from "./core/icons.js";
 import { loader, setProgress } from "./core/loader.js";
+import { adopt, leave, liveClaim, onRefusal, phoneKey, retryStep } from "./core/phone-states.js";
 import { linkRow, rowFace, tile } from "./core/rows.js";
-import { adopt, firstFile, leave, liveClaim, onRefusal, phoneKey, retryStep } from "./core/states.js";
+import { firstFile } from "./core/states.js";
 import { dropPid, PID_KEY, pidStore, refOf, SID_KEY, sameScreen, sessionStore } from "./core/store.js";
 import { toast } from "./core/toast.js";
 import { ariaFlag, byId, el, focusTitle, icon, isFramed, reloadOnRestore, setText, show, wsUrl } from "./core/ui.js";
@@ -54,6 +56,9 @@ const actionsEl = byId("actions");
 const polite = byId("polite");
 const filePick = /** @type {HTMLInputElement} */ (byId("file-pick"));
 const revokeAsk = /** @type {HTMLDialogElement} */ (byId("revoke"));
+const pickEl = byId("pick");
+/** The match pick's module (core/match.js), asked for once. */
+let picker = false;
 /** @type {((on: boolean) => void) | null} */
 let remote = null;
 let remoteAsked = false;
@@ -306,6 +311,16 @@ function render() {
     );
   }
   remote?.(on);
+  // The pick (core/match.js, lazy) on a claim with choices; a.html's skeleton pills hold its boxes until it lands.
+  // A live phone never loads the remote, so the Reload toast's tappedAway touches nothing here.
+  show(pickEl, key === "pick");
+  if (key === "pick" && !picker) {
+    picker = true;
+    import("./core/match.js").then(
+      (m) => m.mount(c, { picked, wrong, fail }),
+      () => toast({ ...RELOAD, title: "Match Didn't Load" }),
+    );
+  }
 
   setText(polite, key === "approving" ? "Approving" : "");
   // A dead end (Done or Enter the Code, no list) centers as one group; a session with Revoke alone does not.
@@ -412,14 +427,15 @@ addEventListener("dragover", onDrag);
 addEventListener("dragleave", onDrag);
 addEventListener("drop", onDrag);
 
-const refuse = (/** @type {Parameters<typeof refusalToast>[0]} */ problem, /** @type {File} */ file) =>
-  toast(
-    refusalToast(problem, {
-      demo: c.info?.mode === "demo",
-      maxMB: wholeMB(c.maxBytes),
-      video: kindOf(file.name) === "video",
-    }),
+/** Its words are lazy (core/refusal.js, a rare path); if they cannot load, the general refusal says it. */
+const refuse = (/** @type {import("./core/refusal.js").Problem} */ problem, /** @type {File} */ file) => {
+  const maxMB = wholeMB(c.maxBytes);
+  import("./core/refusal.js").then(
+    (m) =>
+      toast(m.refusalToast(problem, { demo: c.info?.mode === "demo", maxMB, video: kindOf(file.name) === "video" })),
+    () => toast({ title: REFUSED, body: refusedLine(maxMB), error: true }),
   );
+};
 
 /** A picked or dropped file: what the phone can refuse is a toast and the page stays; otherwise the offer. */
 function choose(/** @type {ArrayLike<File>} */ files) {
@@ -558,10 +574,27 @@ async function cancelPairing() {
   if (!res.ok) return fail(res.error);
   c.canceled = true;
   forgetEntry();
+  letGo();
+}
+
+/** The pairing is over on the server: its channel and its pid go. */
+function letGo() {
   c.channel?.stop();
   c.channel = null;
   drop(c.pid);
   render();
+}
+
+/** A wrong pick canceled the claim server side (PAIR-14); no second guess on this code. */
+function wrong() {
+  c.error = "match_wrong";
+  letGo();
+}
+
+/** A right pick: the chooser follows (present-live.md 3.4). */
+function picked(/** @type {PhoneView} */ view) {
+  setView(view);
+  listFiles();
 }
 
 byId("revoke-end").addEventListener("click", endSession);
@@ -623,7 +656,14 @@ function attach(/** @type {string} */ pid) {
 
 /** What a claim or a resumed view says about the room; a guest's list is just its Add a File row. */
 function learn(/** @type {ClaimResponse | PhoneView} */ x) {
-  c.info = { roomName: x.room.name, registered: x.room.registered, match: x.match ?? "", mode: x.mode, kind: x.kind };
+  c.info = {
+    roomName: x.room.name,
+    registered: x.room.registered,
+    match: x.match,
+    choices: x.choices,
+    mode: x.mode,
+    kind: x.kind,
+  };
   c.maxBytes = x.dropMaxBytes;
   if (x.kind === "guest") c.files = [];
 }
@@ -634,7 +674,7 @@ function paired(claim) {
   learn(claim);
   attach(claim.pid);
   render();
-  if (claim.kind !== "guest") listFiles();
+  if (claim.kind !== "guest" && !claim.choices) listFiles();
 }
 
 async function claim(/** @type {string} */ code) {
@@ -657,7 +697,7 @@ async function resume(/** @type {string} */ pid) {
   learn(view);
   setView(view, pid);
   attach(pid);
-  if (view.kind === "owner" && LIVE_CLAIM.includes(view.state)) listFiles();
+  if (view.kind === "owner" && view.confirmed && LIVE_CLAIM.includes(view.state)) listFiles();
 }
 
 function start() {

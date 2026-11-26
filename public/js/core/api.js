@@ -7,7 +7,9 @@ import { FETCH_TIMEOUT_MS } from "./timing.js";
 
 /**
  * @template T
- * @typedef {{ok: true, value: T, headers: {get(name: string): string | null}} | {ok: false, error: ErrorCode, retryAfter?: number}} Reply
+ * `code`: the body's code when it is not one of this page's (an AppError such as match_wrong), for a lazy module that
+ * knows it, so the page's own table never carries it.
+ * @typedef {{ok: true, value: T, headers: {get(name: string): string | null}} | {ok: false, error: ErrorCode, retryAfter?: number, code?: unknown}} Reply
  */
 
 /** @param {unknown} code @returns {code is ErrorCode} */
@@ -74,7 +76,7 @@ export function createApi(deps = {}) {
     const after = res.status === 429 ? Number.parseInt(res.headers.get("Retry-After") ?? "", 10) : Number.NaN;
     if (isErrorCode(code))
       return after > 0 ? { ok: false, error: code, retryAfter: after } : { ok: false, error: code };
-    return { ok: false, error: res.status >= 500 || body === null ? "service_down" : "bad_request" };
+    return { ok: false, error: res.status >= 500 || body === null ? "service_down" : "bad_request", code };
   }
 
   return {
