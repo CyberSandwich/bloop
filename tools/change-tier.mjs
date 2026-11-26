@@ -45,6 +45,22 @@ export function depsChanged(before, after) {
 /** @param {Deps} deps */
 const sorted = (deps) => Object.entries(deps).sort(([a], [b]) => a.localeCompare(b));
 
+/** A spec that names its own source (`npm:other@1`, `git+https:`, `file:`, `user/repo`) can swap the package under a kept name. */
+const OTHER_SOURCE = /[:/]/;
+
+/**
+ * Whether the change brings in or drops a package, the case that needs an ADR line: a name added, removed or moved
+ * between sections, or a spec that points at another source. A registry version bump of a kept name is not one.
+ * @param {Deps | undefined} before
+ * @param {Deps | undefined} after
+ */
+export function depsAddedOrRemoved(before, after) {
+  const [b, a] = [before ?? {}, after ?? {}];
+  const names = (/** @type {Deps} */ d) => JSON.stringify(Object.keys(d).sort());
+  if (names(b) !== names(a)) return true;
+  return Object.keys(a).some((k) => a[k] !== b[k] && (OTHER_SOURCE.test(a[k] ?? "") || OTHER_SOURCE.test(b[k] ?? "")));
+}
+
 /**
  * @param {ChangedFile[]} files
  * @param {{before?: Deps | undefined, after?: Deps | undefined}} [deps] both dependency sections of package.json (see `dependencySections`) before and after.
@@ -81,9 +97,9 @@ export function classify(files, deps = {}) {
 export function blocks(files, deps, message) {
   /** @type {string[]} */
   const out = [];
-  if (depsChanged(deps.before, deps.after) && !files.some((f) => f.path.startsWith("docs/adr/"))) {
+  if (depsAddedOrRemoved(deps.before, deps.after) && !files.some((f) => f.path.startsWith("docs/adr/"))) {
     out.push(
-      "`dependencies` or `devDependencies` changed but no docs/adr/ file is staged: add the ADR line (why, what it replaces, how to remove it).",
+      "a package was added to or removed from `dependencies` or `devDependencies` but no docs/adr/ file is staged: add the ADR line (why, what it replaces, how to remove it).",
     );
   }
   const touchesSrc = files.some((f) => f.path.startsWith("src/"));

@@ -102,18 +102,38 @@ describe("classify", () => {
 describe("dev dependencies", () => {
   const before = dependencySections('{"dependencies":{"zod":"1"},"devDependencies":{"vitest":"1"}}');
 
-  it("a new or bumped devDependency is T2 and needs an ADR like a dependency", () => {
-    const after = dependencySections('{"dependencies":{"zod":"1"},"devDependencies":{"vitest":"2"}}');
+  it("a new devDependency is T2 and needs an ADR like a dependency", () => {
+    const after = dependencySections('{"dependencies":{"zod":"1"},"devDependencies":{"vitest":"1","left":"1"}}');
     expect(classify([file("package.json", 2)], { before, after }).tier).toBe(2);
-    expect(blocks([file("package.json", 2)], { before, after }, "bump")).toHaveLength(1);
-    expect(blocks([file("package.json", 2), file("docs/adr/0009-x.md", 5, "A")], { before, after }, "bump")).toEqual(
-      [],
-    );
+    expect(blocks([file("package.json", 2)], { before, after }, "add left")).toHaveLength(1);
+    expect(
+      blocks([file("package.json", 2), file("docs/adr/0009-x.md", 5, "A")], { before, after }, "add left"),
+    ).toEqual([]);
   });
 
-  it("moving a package between the sections counts", () => {
+  it("a version-only bump of a kept package is T2 but needs no ADR", () => {
+    const after = dependencySections('{"dependencies":{"zod":"^1.2"},"devDependencies":{"vitest":"2.0.0-beta.1"}}');
+    expect(classify([file("package.json", 2)], { before, after }).tier).toBe(2);
+    expect(blocks([file("package.json", 2)], { before, after }, "bump")).toEqual([]);
+  });
+
+  it("a removed package needs an ADR", () => {
+    const after = dependencySections('{"dependencies":{"zod":"1"},"devDependencies":{}}');
+    expect(blocks([file("package.json", 2)], { before, after }, "drop vitest")).toHaveLength(1);
+  });
+
+  it("a spec that swaps the source under a kept name needs an ADR, either way round", () => {
+    for (const spec of ["npm:other@1", "git+https://example.test/x.git", "file:../x", "user/repo"]) {
+      const after = dependencySections(`{"dependencies":{"zod":"${spec}"},"devDependencies":{"vitest":"1"}}`);
+      expect(blocks([file("package.json", 2)], { before, after }, "swap"), spec).toHaveLength(1);
+      expect(blocks([file("package.json", 2)], { before: after, after: before }, "swap back"), spec).toHaveLength(1);
+    }
+  });
+
+  it("moving a package between the sections counts, and needs an ADR", () => {
     const after = dependencySections('{"dependencies":{"zod":"1","vitest":"1"},"devDependencies":{}}');
     expect(depsChanged(before, after)).toBe(true);
+    expect(blocks([file("package.json", 2)], { before, after }, "move")).toHaveLength(1);
   });
 
   it("scripts-only edits to package.json change nothing", () => {
