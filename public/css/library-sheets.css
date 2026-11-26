@@ -1,0 +1,162 @@
+/* The library's sheets (menu, rename, sort, Present, preview, trash), loaded with the first of them: a modal dialog
+   holding one glass bubble, --pad in and --inset above the foot under 640, centered from 640 (length.css's pattern). */
+.lib-sheet {
+  width: min(calc(100% - 2 * var(--pad)), 432px);
+  max-width: none;
+  max-height: calc(100dvh - 2 * var(--inset));
+  margin: auto auto calc(var(--inset) + env(safe-area-inset-bottom));
+  padding: 8px;
+  border: 0;
+  border-radius: 34px;
+  background: var(--glass-solid);
+  box-shadow: var(--glass-edge), var(--sh-pill);
+  color: var(--ink);
+  overflow: auto;
+  animation: toast-in 250ms var(--ease-out) backwards;
+}
+.lib-sheet::backdrop {
+  background: rgba(30, 30, 28, 0.24);
+}
+:root:not(.keyed) .lib-sheet :focus-visible,
+.lib-sheet h2:focus-visible {
+  outline: none;
+}
+.lib-sheet-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 4px 4px 4px 16px;
+}
+.lib-sheet-head h2 {
+  display: flex;
+  flex: 1;
+  min-width: 0;
+  font-size: 17px;
+}
+.lib-x {
+  flex: none;
+  display: grid;
+  place-items: center;
+  width: 44px;
+  height: 44px;
+  padding: 0;
+  border: 0;
+  border-radius: 50%;
+  background: none;
+  cursor: pointer;
+}
+.lib-menu {
+  display: grid;
+  margin-top: 4px;
+  border-radius: 26px;
+  background: var(--surface);
+  overflow: hidden;
+}
+.lib-menu > button {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-height: 52px;
+  padding: 0 16px;
+  border: 0;
+  background: none;
+  text-align: left;
+  cursor: pointer;
+}
+.lib-menu > * + * {
+  border-top: 1px solid var(--hairline);
+}
+.lib-menu .icon {
+  color: var(--muted);
+}
+.lib-menu [aria-checked="false"] .icon {
+  visibility: hidden;
+}
+:is(.lib-menu > button, .lib-x):active {
+  background: var(--wash);
+}
+.lib-menu .lib-danger {
+  color: var(--rose-ink);
+}
+.lib-form {
+  display: grid;
+  gap: 8px;
+  margin-top: 4px;
+}
+.lib-form .field {
+  height: 52px;
+  border-radius: var(--r-pill);
+  font-size: 17px;
+  letter-spacing: 0;
+  text-transform: none;
+}
+.lib-body {
+  display: grid;
+  gap: 12px;
+  padding: 8px 16px 16px;
+  color: var(--ink-2);
+}
+.lib-body .icon {
+  vertical-align: -6px;
+}
+.lib-sheet .buttons {
+  margin-top: 4px;
+}
+/* The preview: the phone's full-height sheet, a centered stage panel from 640. */
+.lib-preview {
+  width: calc(100% - 2 * var(--inset));
+  border-radius: var(--r-stage);
+}
+.lib-preview > .small {
+  padding: 0 16px;
+}
+.lib-stage {
+  position: relative;
+  display: grid;
+  place-items: center;
+  margin: 8px 0;
+  aspect-ratio: 16 / 9;
+  border-radius: var(--r-card);
+  background: var(--surface);
+  overflow: hidden;
+}
+.lib-stage > :is(img, video, .loader) {
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+}
+.lib-half {
+  position: absolute;
+  inset: 0 50% 0 0;
+  border: 0;
+  background: none;
+  cursor: w-resize;
+}
+.lib-half.next {
+  inset: 0 0 0 50%;
+  cursor: e-resize;
+}
+.lib-count {
+  position: absolute;
+  bottom: 8px;
+  font-variant-numeric: tabular-nums;
+}
+@media (hover: hover) {
+  :is(.lib-menu > button, .lib-x):hover {
+    background: var(--wash);
+  }
+}
+@media (min-width: 640px) {
+  .lib-sheet {
+    margin: auto;
+  }
+  .lib-preview {
+    width: min(100% - 2 * var(--inset), 1040px);
+  }
+  .lib-sheet.is-anchored {
+    position: fixed;
+    inset: var(--top, 0) auto auto var(--left, 0);
+    width: 320px;
+    margin: 0;
+  }
+}

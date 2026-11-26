@@ -346,6 +346,7 @@ describe("size budgets", () => {
       "sheen follow, lazy": "public/js/sheen-follow.js",
       "trusted types policy, lazy": "public/js/core/tt.js",
       "account errors, lazy": "public/js/shared/errors-app.js",
+      "library menu, lazy": "public/js/library/menu.js",
     });
     for (const entry of lazyEntries) {
       const own = [entry.path].flat();
