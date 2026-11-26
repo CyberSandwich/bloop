@@ -56,6 +56,25 @@ var fakePDF = []byte("%PDF-1.4\n1 0 obj\n<< /Type /Catalog >>\nendobj\ntrailer\n
 
 var fakeMP4 = append([]byte{0, 0, 0, 0x18}, []byte("ftypisom\x00\x00\x02\x00isomiso2")...)
 
+// mkBoxes builds a file of top-level boxes with the given types in order: an ftyp of 24 bytes, any other box of 16.
+func mkBoxes(types ...string) []byte {
+	var b []byte
+	for _, typ := range types {
+		n := 16
+		if typ == "ftyp" {
+			n = 24
+		}
+		box := make([]byte, n)
+		binary.BigEndian.PutUint32(box, uint32(n))
+		copy(box[4:], typ)
+		b = append(b, box...)
+	}
+	return b
+}
+
+// fakeFaststartMP4 is an mp4 whose index comes before its media data.
+var fakeFaststartMP4 = mkBoxes("ftyp", "moov", "mdat")
+
 // fakeTools stands in for every external tool, writing plausible outputs.
 type fakeTools struct {
 	mu       sync.Mutex
@@ -199,7 +218,7 @@ func (f *fakeTools) run(ctx context.Context, spec cmdSpec) ([]byte, error) {
 			spec.onLine("out_time_us=1500000")
 		}
 		if strings.HasSuffix(last, ".mp4") {
-			return nil, write(last, fakeMP4)
+			return nil, write(last, fakeFaststartMP4)
 		}
 		return nil, write(last, []byte("png"))
 	}

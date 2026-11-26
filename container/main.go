@@ -22,13 +22,19 @@ type Config struct {
 	MaxInput     int64
 	MaxChunk     int64
 	Limits       Limits
-	MaxPages     int   // pages beyond this are not rendered; the manifest records the true count
-	Widths       []int // rendered widths, widest first; the smallest is the thumbnail source
-	MaxVideoSecs float64
+	MaxPages     int           // pages beyond this are not rendered; the manifest records the true count
+	Widths       []int         // rendered widths, widest first; the smallest is the thumbnail source
+	MaxVideoSecs float64       // the longest clip that is re-encoded; a remux has no cap
+	VideoRate    float64       // seconds of video the encoder finishes per second of wall time, measured
+	VideoWidth   int           // widest video output
+	VideoFixed   time.Duration // probes and thumbnail, added to every video budget
 	MaxImagePx   int64
 	Workers      int
-	Timeouts     map[string]time.Duration
+	Timeouts     map[string]time.Duration // the video stage's is the ceiling every video budget stays under
 }
+
+// defaultVideoRate is the 1080p30 encode rate measured at one CPU on a hard clip (container/README.md, Limits).
+const defaultVideoRate = 0.27
 
 // maxWidth keeps the tallest page (aspect 0.25, see minAspect) inside WebP's 16383 px side limit.
 const maxWidth = 4095
@@ -37,7 +43,7 @@ var stageDefaults = map[string]time.Duration{
 	"inspect":   30 * time.Second,
 	"convert":   180 * time.Second,
 	"rasterize": 500 * time.Second,
-	"video":     900 * time.Second,
+	"video":     1800 * time.Second,
 	"heic":      60 * time.Second,
 }
 
@@ -54,25 +60,32 @@ func loadConfig(getenv func(string) string) Config {
 		}
 		return def
 	}
+	rate := defaultVideoRate
+	if r, err := strconv.ParseFloat(getenv("BLOOP_VIDEO_RATE"), 64); err == nil && r > 0 {
+		rate = r
+	}
 	c := Config{
-		Addr:         str("BLOOP_ADDR", ":8080"),
-		WorkDir:      str("BLOOP_WORK", "/work"),
-		TmpDir:       str("BLOOP_TMP", "/tmp"),
-		LORegistry:   str("BLOOP_LO_REGISTRY", "/opt/bloop/lo-registry.xcu"),
-		MaxInput:     num("BLOOP_MAX_INPUT", 2<<30),
-		MaxChunk:     num("BLOOP_MAX_CHUNK", 64<<20),
-		Widths:       parseWidths(getenv("BLOOP_WIDTHS")),
-		Limits:       Limits{MaxUnpacked: num("BLOOP_MAX_UNPACKED", 2<<30), MaxEntries: int(num("BLOOP_MAX_ENTRIES", 20000))},
-		MaxPages:     int(num("BLOOP_MAX_PAGES", 300)),
-		MaxVideoSecs: float64(num("BLOOP_MAX_VIDEO_SECONDS", 122)),
-		MaxImagePx:   num("BLOOP_MAX_IMAGE_PIXELS", 100_000_000),
-		Workers:      int(num("BLOOP_WORKERS", int64(min(4, runtime.GOMAXPROCS(0))))), // GOMAXPROCS follows the cgroup CPU quota; NumCPU counts the host
-		Timeouts:     map[string]time.Duration{},
+		Addr:       str("BLOOP_ADDR", ":8080"),
+		WorkDir:    str("BLOOP_WORK", "/work"),
+		TmpDir:     str("BLOOP_TMP", "/tmp"),
+		LORegistry: str("BLOOP_LO_REGISTRY", "/opt/bloop/lo-registry.xcu"),
+		MaxInput:   num("BLOOP_MAX_INPUT", 2<<30),
+		MaxChunk:   num("BLOOP_MAX_CHUNK", 64<<20),
+		Widths:     parseWidths(getenv("BLOOP_WIDTHS")),
+		Limits:     Limits{MaxUnpacked: num("BLOOP_MAX_UNPACKED", 2<<30), MaxEntries: int(num("BLOOP_MAX_ENTRIES", 20000))},
+		MaxPages:   int(num("BLOOP_MAX_PAGES", 300)),
+		VideoRate:  rate,
+		VideoWidth: int(num("BLOOP_VIDEO_WIDTH", 1920)),
+		VideoFixed: 30 * time.Second,
+		MaxImagePx: num("BLOOP_MAX_IMAGE_PIXELS", 100_000_000),
+		Workers:    int(num("BLOOP_WORKERS", int64(min(4, runtime.GOMAXPROCS(0))))), // GOMAXPROCS follows the cgroup CPU quota; NumCPU counts the host
+		Timeouts:   map[string]time.Duration{},
 	}
 	for stage, def := range stageDefaults {
 		secs := num("BLOOP_TIMEOUT_"+strings.ToUpper(stage), int64(def/time.Second))
 		c.Timeouts[stage] = time.Duration(secs) * time.Second
 	}
+	c.MaxVideoSecs = float64(num("BLOOP_MAX_VIDEO_SECONDS", int64(maxTranscodeSeconds(c.Timeouts["video"], c.VideoRate))))
 	return c
 }
 

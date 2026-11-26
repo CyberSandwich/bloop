@@ -471,61 +471,78 @@ export async function caseOneCpuTiming(fixtureName, pages) {
   await caseDeck(fixtureName, "pptx", pages, null, { cpus: 1, timing: true });
 }
 
-const RATE_SECONDS = 60;
+/** Makes an mp4 with the image's own ffmpeg (no network) and copies it to the host. Returns its path, or null. */
+function makeClip(label, { size, seconds, grain, pixFmt }) {
+  const gen = `bloop-gen-${process.pid}-${uniq()}`;
+  const file = join(work, `${label}-${uniq()}.mp4`);
+  const source = `testsrc2=size=${size}:rate=30${grain ? ",noise=alls=12:allf=t" : ""}`;
+  const made = docker(
+    ...["run", "--name", gen, "--network", "none", "--entrypoint", "ffmpeg", IMAGE],
+    ...["-nostdin", "-loglevel", "error", "-f", "lavfi", "-i", source, "-f", "lavfi", "-i", "sine=frequency=440"],
+    ...["-t", String(seconds), "-c:v", "libx264", "-preset", "ultrafast", "-crf", "20", "-pix_fmt", pixFmt],
+    ...["-c:a", "aac", "/tmp/clip.mp4"],
+  );
+  const copied = made.code === 0 ? docker("cp", `${gen}:/tmp/clip.mp4`, file) : made;
+  docker("rm", "-f", gen);
+  return check(copied.code === 0, `${label}: clip made (${copied.err})`) ? file : null;
+}
+
+const RATE_SECONDS = 30;
 
 /**
- * The encode rate behind BLOOP_MAX_VIDEO_SECONDS: a 1080p30 clip with grain (hard to encode, so the rate is
- * low) is made by the image's own ffmpeg and run as a job at one CPU. The job must finish and validate; the
- * seconds of video per second of wall time go to the job summary as a recorded number, never as a pass or fail.
+ * The encode rate behind the video budgets: a 1080p30 clip with grain (hard to encode, so the rate is low) in
+ * 4:2:2, which the image never copies, is made by the image's own ffmpeg and run as a job at `cpus`. The job must
+ * finish and validate; the seconds of video per second of wall time go to the job summary as a recorded number,
+ * never as a pass or fail. `width` sets BLOOP_VIDEO_WIDTH, so 1280 measures a 720p target.
  */
-export async function caseVideoRate() {
-  console.log(`video rate (${RATE_SECONDS} s of 1080p at 1 CPU)`);
-  const gen = `bloop-gen-${process.pid}-${uniq()}`;
-  const file = join(work, `rate-${uniq()}.mp4`);
-  const made = docker(
-    "run",
-    "--name",
-    gen,
-    "--network",
-    "none",
-    "--entrypoint",
-    "ffmpeg",
-    IMAGE,
-    "-nostdin",
-    "-loglevel",
-    "error",
-    "-f",
-    "lavfi",
-    "-i",
-    `testsrc2=size=1920x1080:rate=30,noise=alls=12:allf=t`,
-    "-f",
-    "lavfi",
-    "-i",
-    "sine=frequency=440",
-    "-t",
-    String(RATE_SECONDS),
-    "-c:v",
-    "libx264",
-    "-preset",
-    "ultrafast",
-    "-crf",
-    "20",
-    "-c:a",
-    "aac",
-    "/tmp/rate.mp4",
-  );
-  const copied = made.code === 0 ? docker("cp", `${gen}:/tmp/rate.mp4`, file) : made;
-  docker("rm", "-f", gen);
-  if (!check(copied.code === 0, `video rate: clip made (${copied.err})`)) return;
-  const c = start({ cpus: 1 });
+export async function caseVideoRate(cpus, { width } = {}) {
+  const label = `${cpus} CPU${width ? `, ${width} px target` : ""}`;
+  console.log(`video rate (${RATE_SECONDS} s of 1080p, ${label})`);
+  const file = makeClip("rate", { size: "1920x1080", seconds: RATE_SECONDS, grain: true, pixFmt: "yuv422p" });
+  if (!file) return;
+  const c = start({ cpus, env: width ? { BLOOP_VIDEO_WIDTH: String(width) } : {} });
   try {
-    check(await healthy(c), "video rate: container is healthy");
+    check(await healthy(c), `video rate (${label}): container is healthy`);
     const r = await runJob(c, file, "mp4");
-    check(r.status.state === "done", `video rate: done (status ${JSON.stringify(r.status)})`);
+    check(r.status.state === "done", `video rate (${label}): done (status ${JSON.stringify(r.status)})`);
     const { ms } = timingOf(r);
     timings.push(
-      `video rate at 1 CPU: ${RATE_SECONDS} s of 1080p30 with grain in ${(ms / 1000).toFixed(1)} s, ` +
+      `video encode at ${label}: ${RATE_SECONDS} s of 1080p30 with grain in ${(ms / 1000).toFixed(1)} s, ` +
         `${(RATE_SECONDS / (ms / 1000)).toFixed(2)} s of video per second`,
+    );
+  } finally {
+    stop(c);
+  }
+}
+
+const REMUX_SECONDS = 300;
+
+/**
+ * A browser-safe H.264 clip longer than the encode cap is copied, not encoded and not refused: the job finishes,
+ * the output is about as long and as big as the input (an encode would change the size), and the copy's seconds
+ * go to the job summary.
+ */
+export async function caseRemux() {
+  console.log(`remux (${REMUX_SECONDS} s of 720p H.264 at 1 CPU)`);
+  const file = makeClip("remux", { size: "1280x720", seconds: REMUX_SECONDS, grain: false, pixFmt: "yuv420p" });
+  if (!file) return;
+  const c = start({ cpus: 1 });
+  try {
+    check(await healthy(c), "remux: container is healthy");
+    const r = await runJob(c, file, "mp4");
+    check(r.status.state === "done", `remux: done (status ${JSON.stringify(r.status)})`);
+    const mp4 = r.files["m/0.mp4"];
+    const input = statSync(file).size;
+    check(mp4 && mp4.toString("latin1", 4, 8) === "ftyp", "remux: m/0.mp4 is an mp4");
+    check(mp4 && Math.abs(mp4.length - input) / input < 0.02, `remux: ${mp4?.length} bytes out for ${input} in`);
+    const meta = JSON.parse(r.files["meta.json"] ?? "{}");
+    check(
+      Math.abs((meta.video?.durationMs ?? 0) - REMUX_SECONDS * 1000) < REMUX_SECONDS * 10,
+      `remux: meta.video ${JSON.stringify(meta.video)}`,
+    );
+    const { ms } = timingOf(r);
+    timings.push(
+      `video remux at 1 CPU: ${REMUX_SECONDS} s of 720p H.264 (${(input / 1e6).toFixed(0)} MB) in ${(ms / 1000).toFixed(1)} s`,
     );
   } finally {
     stop(c);
