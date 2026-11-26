@@ -124,6 +124,7 @@ The link from the invite email. The token is in the fragment, so it never reache
 ```
 
 - Title "You're Invited"; line "Early access to **bloop** for y**@university.ac.uk." (masked by the server); the footer's one sentence of what bloop is, restated as the landing's, so an invitee who never saw the site knows what they accept; "The invite works until 2 Dec." (`--muted`, the date from `expiresAt`, the user's locale, day and short month).
+- Above Accept Invite: "By continuing you confirm you are 18 or over and accept the Terms." (13 `--muted`, in the panel). Terms opens `/terms` in place; the token waits in `sessionStorage` (`bloop.invite`) for this tab only, so Back resumes the invite.
 - Accept Invite sends the code to the invited address and goes to the code step (section 2), with the line "A code is on its way to y**@university.ac.uk." (no "if": the address is known). Verifying the code creates the account and consumes the invite in one step; then the passkey offer; then `next` is `/library`, whose empty state starts the user off (library.md section 8).
 - **Peek states** (each laid out as a dead end, centered, one exit):
 
@@ -163,7 +164,7 @@ The link from the invite email. The token is in the fragment, so it never reache
 | code errors | That code didn't match. Check the email and try again. / That code has expired. Send a new one. / Too many tries. Send a new code. / Too many codes for now. Try again in 15 minutes. / You're offline. Check your connection, then try again. |
 | passkey | Sign In Faster Next Time / Save a passkey on this phone. Your email code still works if you lose it. / Save a Passkey / Not Now / Passkey Saved / Next time, choose it when you sign in. / The passkey wasn't saved. Try again, or continue without it. |
 | refused | This account can't sign in right now. Email hi@bloop.here. |
-| invite | You're Invited / Early access to bloop for {masked}. / The invite works until {date}. / Accept Invite, and the peek states in section 5 |
+| invite | You're Invited / Early access to bloop for {masked}. / bloop puts your files on the room screen from your phone. The screen never gets your account. / The invite works until {date}. / By continuing you confirm you are 18 or over and accept the Terms. / Accept Invite; You're Signed In as {masked} / This invite is for {masked}.; and the peek states in section 5 |
 | slow | Still working. Keep this page open. / That took too long. Try again. |
 
 ## 9. Preview mode

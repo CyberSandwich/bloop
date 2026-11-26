@@ -230,7 +230,7 @@ describe("GET /api/me: signed in only for a real session", () => {
       [local, "http://localhost:8787/api/me", { "CF-Connecting-IP": "203.0.113.7" }],
     ] as const) {
       const { body } = await me(world, url, headers);
-      expect(body, url).toEqual({ source: "mock", signedIn: false, launchMode: "preview" });
+      expect(body, url).toEqual({ source: "mock", signedIn: false, launchMode: "preview", turnstileSiteKey: null });
     }
   });
 

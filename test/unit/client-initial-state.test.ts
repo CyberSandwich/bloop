@@ -20,6 +20,7 @@ const ALLOWED: Record<string, string> = {
     "the row ticks are created by this module and the file pick is an action, so neither is a gate on a typed value",
   "library/menu.js":
     "the rename field is created in the sheet this module opens, and sync() runs once right after its listener is added",
+  "auth/code-entry.js": "the code field is hidden until start(), which empties it before anything can be typed",
 };
 
 const LISTENER = /(?:addEventListener\(\s*"(?:input|change)"\s*,\s*([^,)]+)|\.on(?:input|change)\s*=\s*([^;\n]+))/g;

@@ -78,12 +78,15 @@ export const BASE_HEADERS: Readonly<Record<string, string>> = {
 
 const PAGE_HEAD = "base-uri 'none'; form-action 'none'; frame-ancestors 'none'; require-trusted-types-for 'script';";
 const PAGE_TAIL = `${PAGE_HEAD} trusted-types 'none'; upgrade-insecure-requests`;
-/** The one Trusted Types policy (public/js/core/tt.js): the viewers' worker URLs, an exact allowlist (ADR 0020). */
+/**
+ * The one Trusted Types policy (public/js/core/tt.js): the viewers' worker URLs and Turnstile's loader, an exact
+ * allowlist (ADRs 0020, 0022).
+ */
 const WORKER_TAIL = `${PAGE_HEAD} trusted-types bloop-worker; upgrade-insecure-requests`;
 const SELF = "script-src 'self'; style-src 'self'; img-src 'self'; font-src 'self'";
 const TURNSTILE = "https://challenges.cloudflare.com";
 
-const TURNSTILE_CSP = `default-src 'none'; script-src 'self' ${TURNSTILE}; style-src 'self'; img-src 'self'; font-src 'self'; connect-src 'self'; frame-src ${TURNSTILE}; ${PAGE_TAIL}`;
+const TURNSTILE_CSP = `default-src 'none'; script-src 'self' ${TURNSTILE}; style-src 'self'; img-src 'self'; font-src 'self'; connect-src 'self'; frame-src ${TURNSTILE}; ${WORKER_TAIL}`;
 
 const API_CSP = "default-src 'none'; frame-ancestors 'none'";
 

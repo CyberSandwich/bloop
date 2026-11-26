@@ -270,10 +270,12 @@ describe("size budgets", () => {
   it("each page script has one first-load entry holding exactly its static import closure", () => {
     expect(scripts).toEqual([
       "public/js/code.js",
+      "public/js/invite.js",
       "public/js/legal.js",
       "public/js/library.js",
       "public/js/phone.js",
       "public/js/screen.js",
+      "public/js/signin.js",
       "public/js/site.js",
     ]);
     const held = (s: string) => pageEntries.filter((e) => [e.path].flat().includes(s)).map((e) => [e.path].flat());
@@ -368,6 +370,7 @@ describe("size budgets", () => {
       "library sort, lazy": "public/js/library/sort.js",
       "library trash, lazy": "public/js/library/trash.js",
       "library menu, lazy": "public/js/library/menu.js",
+      "turnstile loader, lazy": "public/js/auth/turnstile.js",
     });
     for (const entry of lazyEntries) {
       const own = [entry.path].flat();
@@ -405,7 +408,6 @@ describe("size budgets", () => {
     // Modules the Worker or a later change imports first; the change that adds the browser importer deletes its line.
     const awaitingImporter = new Set([
       "public/js/core/copy-check.js",
-      "public/js/core/tt.js",
       "public/js/core/upload-pill.js",
       "public/js/shared/errors-app.js",
     ]);

@@ -23,10 +23,10 @@ One table per surface. The rules every row follows:
 |---|---|
 | first paint | the email step immediately (no fetch needed); `/invite` shows a skeleton title until peek answers |
 | slow request | "Still working. Keep this page open." at 4 s; "That took too long. Try again." at 15 s |
-| offline | "You're offline. Check your connection, then try again." in the sentence row |
+| offline | "You're offline. Check your connection, then try again." in the sentence row; `/invite` before its first answer: "You're Offline" / "Check your connection, then try again." / Try Again |
 | Turnstile blocked | "Turn off content blocking for bloop.here to sign in." / Try Again |
 | rate limited | code: "Too many codes for now. Try again in 15 minutes."; invite: "Too Many Tries Right Now" |
-| server error | "Something went wrong on bloop's side. Try again in a minute." / Try Again |
+| server error (`internal`, `service_busy`, an answer that is not bloop's) | "bloop isn't responding. Try again in a minute." in the sentence row; `/invite` before its first answer: "bloop Isn't Responding" / "Try again in a minute." / Try Again |
 | cookies blocked (the session cookie did not stick after verify) | "Your browser blocked sign-in. Allow cookies for bloop.here, then try again." |
 | passkey sheet canceled | nothing changes |
 | invite expired, used, revoked | signin.md section 5 table |
@@ -133,4 +133,4 @@ One table per surface. The rules every row follows:
 
 ## 11. Strings (only in this file)
 
-Something went wrong on bloop's side. Try again in a minute.; Your browser blocked sign-in. Allow cookies for bloop.here, then try again.; Still loading your library.; Your Library Didn't Load / Check your connection, then try again.; This one is taking longer than usual.; Still checking. Keep this page open.; Your Library Is Empty / Add files in your library, or send one file now.; This File Can't Be Shown Here / Download it, or open it from your phone.; No passkeys yet.; Your download is taking a while. It starts by itself.; That Didn't Save / Check your connection, then try again.; This Tab Didn't Load; Switching...; Sending...; You're offline. Your report is still here, so try again when you're back.; Too many reports from here right now. Try again in an hour, or email hi@bloop.here.
+bloop isn't responding. Try again in a minute.; bloop Isn't Responding / Try again in a minute.; Your browser blocked sign-in. Allow cookies for bloop.here, then try again.; Still loading your library.; Your Library Didn't Load / Check your connection, then try again.; This one is taking longer than usual.; Still checking. Keep this page open.; Your Library Is Empty / Add files in your library, or send one file now.; This File Can't Be Shown Here / Download it, or open it from your phone.; No passkeys yet.; Your download is taking a while. It starts by itself.; That Didn't Save / Check your connection, then try again.; This Tab Didn't Load; Switching...; Sending...; You're offline. Your report is still here, so try again when you're back.; Too many reports from here right now. Try again in an hour, or email hi@bloop.here.

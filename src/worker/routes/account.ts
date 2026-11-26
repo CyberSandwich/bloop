@@ -169,8 +169,11 @@ export function accountRoutesWith(deps: AccountDeps): readonly Route[] {
         const flood = await limited(env, "RL_MEMBER_IP", request, config);
         if (flood) return flood;
         const cookie = readCookie(request, SESSION_COOKIE);
+        // The public Turnstile key rides on the signed-out answers: the sign-in and report forms are static pages
+        // and read it here on intent (ADR 0022).
+        const { turnstileSiteKey } = config.account;
         if (!cookie && !config.graph && isLocalOrigin(config.origin) && isLocalRequest(request)) {
-          return json({ ...MOCK_ME, launchMode: (await launchState(env)).mode });
+          return json({ ...MOCK_ME, launchMode: (await launchState(env)).mode, turnstileSiteKey });
         }
         const { sessions, view } = await sessionView(request, env, config);
         const tooMany = view ? await limited(env, "RL_MEMBER", request, config, view.userId) : null;
@@ -183,7 +186,7 @@ export function accountRoutesWith(deps: AccountDeps): readonly Route[] {
         const who = view ? await memberOf(view, env, config, sessions, { allowDeleting: true }) : null;
         // A read never clears a cookie: a slow GET that resolved before a sign-in rotated the session would otherwise
         // clear the new one. Only a write or an explicit sign-out clears.
-        if (!who?.ok) return json({ source: config.fileSource, signedIn: false, launchMode });
+        if (!who?.ok) return json({ source: config.fileSource, signedIn: false, launchMode, turnstileSiteKey });
         const { member } = who;
         const summary = await sessions.summary(member.userId);
         return json({

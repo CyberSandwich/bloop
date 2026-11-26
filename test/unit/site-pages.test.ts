@@ -26,7 +26,7 @@ const OPEN = [
 const isDoc = (page: string) =>
   ([...LEGAL, ...ARTICLES, "articles/features.html"] as readonly string[]).includes(page.replace(/^open\//, ""));
 const BOTH = [...SITE, ...OPEN];
-const ALL = [...BOTH, "s.html", "a.html", "code.html"];
+const ALL = [...BOTH, "s.html", "a.html", "code.html", "signin.html", "invite.html"];
 const VOID = new Set(["meta", "link", "img", "source", "input", "br", "hr", "wbr"]);
 const CSS_FILES = ["base.css", "site.css", "legal.css", "app.css"] as const;
 const SKIP_TAGS = new Set(["head", "script", "style", "svg", "noscript", "template"]);
