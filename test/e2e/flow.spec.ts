@@ -1791,9 +1791,13 @@ test.describe("demo viewer", () => {
     await expect(heading(screen.page)).toHaveText(DEMO_ITEMS.horizontal.name);
     await expectNoAxeViolations(screen.page);
 
-    await sidebarItem(screen.page, DEMO_ITEMS.deck.name).click();
+    // A reload keeps the catalog and the item last shown.
     await screen.page.reload();
-    await expectViewer(screen.page);
+    await expect(screen.page.locator("#items > li .item")).toHaveCount(CATALOG.length);
+    await expect(sidebarLink(screen.page, DEMO_ITEMS.link.name)).toBeVisible();
+    await expect(heading(screen.page)).toHaveText(DEMO_ITEMS.horizontal.name);
+    await expect(screen.page.getByRole("img", { name: DEMO_ITEMS.horizontal.name })).toBeVisible();
+    await expect(screen.page.getByRole("button", { name: "End", exact: true })).toBeVisible();
 
     await screen.page.getByRole("button", { name: "End", exact: true }).click();
     await expect(heading(screen.page)).toHaveText("Session Ended");
