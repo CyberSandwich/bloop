@@ -1,6 +1,8 @@
 // The cron jobs by trigger. A stream adds its job to one list; every trigger in CRON must have a list.
 import { cronNotify } from "./auth/email.ts";
 import type { Config } from "./config.ts";
+import { convertDepsFor } from "./convert/deps.ts";
+import { sweepConversions } from "./convert/sweep.ts";
 import { CRON, type CronJob, type CronTrigger } from "./cron.ts";
 import type { Env } from "./env.ts";
 import { closeStaleSessions, runRetention } from "./retention.ts";
@@ -24,7 +26,18 @@ export const spendBreakerJob = (configProblems?: readonly string[]): CronJob<Env
 });
 
 export const JOBS: Readonly<Record<CronTrigger, readonly CronJob<Env, Config>[]>> = {
-  [CRON.fiveMinutes]: [spendBreakerJob()],
+  [CRON.fiveMinutes]: [
+    spendBreakerJob(),
+    {
+      name: "convert_sweep",
+      run: async (env) => {
+        const swept = await sweepConversions(convertDepsFor(env));
+        if (swept.lost + swept.expired + swept.rearmed > 0)
+          console.log(JSON.stringify({ evt: "convert_sweep", ...swept }));
+        return { more: false };
+      },
+    },
+  ],
   [CRON.hourly]: [
     {
       name: "guest_files",
