@@ -498,6 +498,9 @@ export interface FileSource {
   resolve(ctx: SourceContext, fileId: string): Promise<{ ok: true; file: Resolved } | { ok: false; error: SourceError }>;
   /** A PDF rendition, for the last fallback. Graph converts it; mock serves a fixture. */
   resolvePdf(ctx: SourceContext, fileId: string): Promise<{ ok: true; file: Resolved } | { ok: false; error: SourceError | "pdf_unavailable" }>;
+  /** Optional. Speaker notes, one entry per page, "" for a page with none; `[]` for a file that has none. Phone-only:
+   *  `GET /api/notes` is the one reader (NOTES-01, ADR 0015). Only the demo source implements it today; the library adds its own. */
+  notes?(ctx: SourceContext, fileId: string): Promise<{ ok: true; notes: string[] } | { ok: false; error: SourceError }>;
 }
 
 /** The demo account and local runs. Default. `demo.ts` builds it from a deck and two photos in
@@ -508,6 +511,7 @@ export interface MockFixture {
   id: string; name: string; type: FileType; bytes: Uint8Array;
   editedMinutesAgo: number;     // listed relative to now, so the list always looks recent
   pdfId: string | null;         // the fixture served as this file's PDF; a PDF is its own rendition
+  notes?: string[];             // speaker notes per page; the demo deck's are demo-files/demo-notes.json
 }
 export declare class MockFileSource implements FileSource {
   readonly kind: "mock";
@@ -515,6 +519,7 @@ export declare class MockFileSource implements FileSource {
   listRecent(ctx: SourceContext, limit: number): Promise<{ ok: true; files: FileEntry[] } | { ok: false; error: SourceError }>;
   resolve(ctx: SourceContext, fileId: string): Promise<{ ok: true; file: Resolved } | { ok: false; error: SourceError }>;
   resolvePdf(ctx: SourceContext, fileId: string): Promise<{ ok: true; file: Resolved } | { ok: false; error: SourceError | "pdf_unavailable" }>;
+  notes(ctx: SourceContext, fileId: string): Promise<{ ok: true; notes: string[] } | { ok: false; error: SourceError }>;
 }
 
 /** Off until the Entra app exists (FILE_SOURCE=graph). Maps Graph 401 to auth_required, 403 with

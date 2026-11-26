@@ -11,6 +11,8 @@ export interface MockFixture {
   editedMinutesAgo: number;
   /** The fixture served as this file's PDF rendition; null means none. A PDF fixture is its own rendition. */
   pdfId: string | null;
+  /** Speaker notes per page; absent: the fixture has none. */
+  notes?: string[];
 }
 
 const streamOf = (bytes: Uint8Array): ReadableStream<Uint8Array> =>
@@ -52,6 +54,13 @@ export class MockFileSource implements FileSource {
     const fixture = this.byId.get(fileId);
     return fixture
       ? ({ ok: true, file: toResolved(fixture) } as const)
+      : ({ ok: false, error: "file_not_found" } as const);
+  }
+
+  async notes(_ctx: SourceContext, fileId: string) {
+    const fixture = this.byId.get(fileId);
+    return fixture
+      ? { ok: true as const, notes: [...(fixture.notes ?? [])] }
       : ({ ok: false, error: "file_not_found" } as const);
   }
 
