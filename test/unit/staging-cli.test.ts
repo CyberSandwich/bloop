@@ -3,7 +3,7 @@ import { copyFileSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSyn
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
-import { withPrebuilt } from "../../tools/prebuilt.mjs";
+import { withAccount, withPrebuilt } from "../../tools/prebuilt.mjs";
 import { SECRETS } from "../../tools/staging.mjs";
 import { SPAWN_TIMEOUT } from "./spawn.ts";
 
@@ -49,8 +49,8 @@ function project(swapped = true) {
     }),
   );
   const config = readFileSync(join(REPO, "wrangler.jsonc"), "utf8");
-  // The prebuilt-dist action has already swapped the build command when the staging step runs.
-  writeFileSync(join(root, "wrangler.jsonc"), swapped ? withPrebuilt(config) : config);
+  // The prebuilt-dist action has already swapped the build command and the account placeholder when the staging step runs.
+  writeFileSync(join(root, "wrangler.jsonc"), swapped ? withAccount(withPrebuilt(config), undefined) : config);
   return join(root, "calls.log");
 }
 
