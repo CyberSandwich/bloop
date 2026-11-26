@@ -1,9 +1,8 @@
-// The guest upload: PUT /api/drop with the raw file (docs/architecture.md section 4.4). XMLHttpRequest, not
-// fetch, because only XHR reports upload progress in every phone browser.
-/** @import {ErrorCode} from "../../../src/shared/protocol.ts" */
-/** @import {SendResult, Xhr} from "../types.js" */
-import { ERRORS } from "../shared/errors.js";
+// The guest's send: what the phone checks and prepares before a byte moves, and the adapter to the upload engine.
+/** @import {ErrorCode, PhoneView} from "../../../src/shared/protocol.ts" */
+/** @import {SendResult} from "../types.js" */
 import { typeOfName } from "../shared/names.js";
+import { toast } from "./toast.js";
 
 const MB = 1024 * 1024;
 /** Not a type bloop stores: a HEIC is sent only as the JPEG this browser can make of it (design.md, Upload). */
@@ -69,49 +68,50 @@ export async function prepareFile(file, maxBytes, load = MEDIA) {
   }
 }
 
-/** @param {unknown} code @returns {code is ErrorCode} */
-const isErrorCode = (code) => typeof code === "string" && Object.hasOwn(ERRORS, code);
-
-/** @returns {Xhr} */
-const browserXhr = () => new /** @type {any} */ (globalThis).XMLHttpRequest();
-
 /**
- * Starts the upload. `abort()` stops it; the result then says `upload_aborted`.
+ * Starts the guest's upload through the engine (core/upload.js), which loads now: a page that sends nothing never
+ * fetches it. `abort()` stops it; the result then says `upload_aborted`. If the engine cannot load nothing was sent:
+ * a toast says so and the result is `offline`, so Try Again sends again.
  * @param {object} args
- * @param {{name: string, size: number}} args.file a File
+ * @param {File} args.file
  * @param {string} args.pid
- * @param {(fraction: number) => void} args.onProgress 0 to 1
- * @param {() => Xhr} [args.xhr]
+ * @param {(fraction: number) => void} args.onProgress 0 to 1, never more than 0.99 before the server answers
  * @returns {{done: Promise<SendResult>, abort: () => void}}
  */
-export function sendFile({ file, pid, onProgress, xhr: make = browserXhr }) {
-  const req = make();
+export function sendFile({ file, pid, onProgress }) {
+  let stopped = false;
+  let stop = () => {
+    stopped = true;
+  };
   /** @type {Promise<SendResult>} */
-  const done = new Promise((resolve) => {
-    req.open("PUT", "/api/drop");
-    req.setRequestHeader("Authorization", `Bearer ${pid}`);
-    req.setRequestHeader("Content-Type", "application/octet-stream");
-    req.setRequestHeader("X-Bloop-Name", encodeURIComponent(file.name));
-    req.upload.onprogress = (e) => {
-      if (e.lengthComputable && e.total > 0) onProgress(e.loaded / e.total);
-    };
-    req.onerror = () => resolve({ ok: false, error: "offline" });
-    req.onabort = () => resolve({ ok: false, error: "upload_aborted" });
-    req.onload = () => {
-      let body = null;
-      try {
-        body = JSON.parse(req.responseText);
-      } catch {
-        // an empty or non-JSON answer is handled below
-      }
-      const ours = req.getResponseHeader("X-Bloop") === "1";
-      if (req.status >= 200 && req.status < 300 && body && ours) return resolve({ ok: true, view: body });
-      // A 200 that is not bloop's (no marker) is a filter's page: the network, not bloop (REL-03).
-      if (req.status >= 200 && req.status < 300) return resolve({ ok: false, error: "network_blocked" });
-      if (isErrorCode(body?.code)) return resolve({ ok: false, error: body.code });
-      resolve({ ok: false, error: req.status >= 500 || body === null ? "service_down" : "bad_request" });
-    };
-    req.send(file);
-  });
-  return { done, abort: () => req.abort() };
+  const done = import("./upload.js").then(
+    ({ createUploader }) =>
+      new Promise((resolve) => {
+        if (stopped) return resolve({ ok: false, error: "upload_aborted" });
+        const up = createUploader({
+          kind: "guest",
+          pid,
+          onChange: ({ files: [mine] }) => {
+            if (!mine) return;
+            if (mine.state === "sent") resolve({ ok: true, view: /** @type {PhoneView} */ (mine.view) });
+            else if (mine.state === "refused") resolve({ ok: false, error: /** @type {ErrorCode} */ (mine.error) });
+            else if (mine.state === "canceled") resolve({ ok: false, error: "upload_aborted" });
+            else return onProgress(mine.fraction);
+            up.dispose();
+          },
+        });
+        const [id] = up.add([file]);
+        stop = () => up.cancel(/** @type {number} */ (id));
+      }),
+    () => {
+      toast({
+        title: "Upload Didn't Load",
+        body: "Reload the page, then try again.",
+        error: true,
+        action: { label: "Reload", run: () => /** @type {any} */ (globalThis).location.reload() },
+      });
+      return { ok: false, error: "offline" };
+    },
+  );
+  return { done, abort: () => stop() };
 }

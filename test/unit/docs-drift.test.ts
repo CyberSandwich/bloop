@@ -345,6 +345,9 @@ describe("size budgets", () => {
       "sheen follow, lazy": "public/js/sheen-follow.js",
       "trusted types policy, lazy": "public/js/core/tt.js",
       "account errors, lazy": "public/js/shared/errors-app.js",
+      "upload engine, lazy": "public/js/core/upload.js",
+      "upload pill face, lazy": "public/js/core/pill.js",
+      "upload pill binding, lazy": ["public/js/core/lazy.js", "public/js/core/upload-pill.js"],
     });
     for (const entry of lazyEntries) {
       const own = [entry.path].flat();
@@ -383,6 +386,7 @@ describe("size budgets", () => {
     const awaitingImporter = new Set([
       "public/js/core/copy-check.js",
       "public/js/core/tt.js",
+      "public/js/core/upload-pill.js",
       "public/js/shared/errors-app.js",
     ]);
     const lazyJs = entries.filter(
