@@ -218,7 +218,9 @@ function renderActions(/** @type {import("./types.js").PhoneAction[]} */ actions
   const ids = actions.map((a) => a.id).join();
   if (ids !== c.actionIds) {
     c.actionIds = ids;
+    // "Ends in" (a.html) leads the row, so it sits on the left of Revoke.
     actionsEl.replaceChildren(
+      ends,
       ...actions.map((a) => {
         const attrs = {
           class: `btn ${a.kind}`,
@@ -234,7 +236,7 @@ function renderActions(/** @type {import("./types.js").PhoneAction[]} */ actions
     fillMail();
   }
   for (const [i, a] of actions.entries()) {
-    const node = actionsEl.children[i];
+    const node = actionsEl.children[i + 1];
     if (!node) continue;
     const busy = loading && a.id === "approve";
     node.replaceChildren(...(busy ? [el("span", { class: "spinner", "aria-hidden": "true" }), a.label] : [a.label]));
@@ -284,6 +286,7 @@ function render() {
   show(skelTitle, key === "checking");
   show(title, key !== "checking");
   setText(title, copy.title);
+  title.classList.toggle("sr", copy.quiet);
   show(fileName, copy.name !== "");
   setText(fileName, copy.name);
   setText(body, copy.body);
@@ -371,7 +374,9 @@ function countDown() {
   const at = c.view?.endsAt;
   if (ends.hidden || !at) return;
   const left = at - (Date.now() + c.skew);
-  setText(endsText, `Ends in ${countdown(left)}${offline ? " · Reconnecting" : ""}`);
+  // Under 375 the row holds only the time beside Revoke: "Ends in" stays in the name, for screen readers.
+  const words = el("span", innerWidth < 375 ? { class: "sr" } : {}, ["Ends in "]);
+  endsText.replaceChildren(words, countdown(left), offline ? " · Reconnecting" : "");
   ends.classList.toggle("soon", left <= SOON_MS);
 }
 
