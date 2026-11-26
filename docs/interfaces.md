@@ -374,8 +374,10 @@ export interface PairingStore {
   claim(code: string, phone: PhoneInfo, idem?: IdemKey): Promise<Result<ClaimResponse>>;
   /** idem.ts's `IdemStore.find` over this object's rows (`seams/pairing/idem.ts`), the pid derived again from the row's nonce. */
   idemFind(owner: string, keyHash: string, since: number): Promise<{ bodyHash: string; stored: ClaimResponse } | null>;
-  /** POST /api/match: the pick; a wrong one answers `match_wrong`; a repeat after a right one, in session too, is a no-op. */
-  match(pid: string, choice: string): Promise<Result<MatchResponse>>;
+  /** POST /api/match: the pick; a wrong one answers `match_wrong`; a repeat after a right one, in session too, is a no-op. With `idem` (the route's Idempotency-Key), a right pick's answer is kept for the key, scoped to the pairing. */
+  match(pid: string, choice: string, idem?: { keyHash: string; bodyHash: string }): Promise<Result<MatchResponse>>;
+  /** The first match answer kept for a key of this pid's pairing, for the route's replay. */
+  matchIdemFind(pid: string, keyHash: string, since: number): Promise<{ bodyHash: string; stored: MatchResponse } | null>;
   listed(pid: string, ids: string[]): Promise<Result<PhoneView>>;
   /** A live pick not yet made is `match_required`. `cookieUser` (null signed out) must be the claim's pinned user, else `pairing_invalid`: a pinned user is final (ADR 0015). */
   approve(pid: string, items: ItemDraft[], cookieUser: string | null): Promise<Result<PhoneView>>;
