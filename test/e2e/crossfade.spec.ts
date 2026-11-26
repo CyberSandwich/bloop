@@ -58,7 +58,9 @@ async function expectCrossfade(page: Page, frames: Part[][]) {
   expect(frames.some((f) => f.length === 2 && f.filter((p) => p.inert).length === 1)).toBe(true);
   expect(frames.some((f) => f.some((p) => !p.inert && p.opacity > 0.05 && p.opacity < 0.95))).toBe(true);
   expect(frames.some((f) => f.some((p) => !p.inert && p.timing.includes(timing)))).toBe(true);
-  expect(frames.filter((f) => !f.some((p) => p.area > 0 && p.opacity >= 0.5)).length, "a blank frame").toBe(0);
+  const blank = frames.flatMap((f, i) => (f.some((p) => p.area > 0 && p.opacity >= 0.5) ? [] : [i]));
+  const near = blank.flatMap((i) => [i - 1, i, i + 1]).map((i) => [i, frames[i]]);
+  expect(blank.length, `a blank frame of ${frames.length}: ${JSON.stringify(near)}`).toBe(0);
   expect(frames.filter((f) => f.some((p) => !p.inert && !p.decoded)).length, "an undecoded first frame").toBe(0);
   expect(frames.at(-1)?.length, "the last item left at the end").toBe(1);
 }
