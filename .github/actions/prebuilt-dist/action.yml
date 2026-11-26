@@ -10,6 +10,8 @@ runs:
     - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
       with:
         node-version-file: .nvmrc
+        # No restored npm cache: the check job's saved cache is written by third-party code.
+        package-manager-cache: false
     - run: npm ci --ignore-scripts
       shell: bash
     - uses: actions/download-artifact@37930b1c2abaa49bbe596cd826c3c89aef350131 # v7.0.0
