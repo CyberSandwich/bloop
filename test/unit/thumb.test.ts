@@ -319,8 +319,14 @@ describe("PREVIEW-01 link items carry the preview through the views", () => {
       roomName: null,
       screenSecretHash: "h",
       createdAt: T0,
+      linkOrigin: "file" as const,
     };
-    const screen = screenView(meta, step.next, { origin: "https://bloop.test", machine: CFG }, T0 + sec(6));
+    const screen = screenView(
+      meta,
+      step.next,
+      { origin: "https://bloop.test", machine: CFG, library: { largeFileChoiceBytes: 1 } },
+      T0 + sec(6),
+    );
     const phone = phoneView(meta, step.next, T0 + sec(6), { dropMaxBytes: 1, maxMinutes: 1 });
     const want = { kind: "link", id: "i2", url: VEVOX.url, title: VEVOX.title, preview };
     expect(screen.items[1]).toEqual(want);
