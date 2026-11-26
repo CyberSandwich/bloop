@@ -337,7 +337,10 @@ test/
 | POST | `/api/hooks/tally` | signature, no Origin check | planned (A): the waitlist webhook |
 | POST | `/api/reports` | Turnstile | planned (A): a public report |
 | GET | `/api/dev/mailbox` | none; only when `DEV_MAILBOX` is set | planned (A): local and test harness only |
-| POST, PUT, GET, DELETE | `/api/uploads/*` | session, or Bearer pid for a guest | planned (U): multipart create, part URLs, part done, complete, resume; `PUT /api/drop` is removed when it lands |
+| GET, POST | `/api/uploads`, `/api/uploads/:id/urls`, `/api/uploads/:id/parts/:n/done`, `/api/uploads/:id/complete` | member session; Origin on writes | live (U): list, create or resume, part URLs, part confirmation, complete ([uploads.md](uploads.md)) |
+| PUT | `/api/uploads/:id/parts/:n` | member session; Origin | live (U): one part through the Worker (proxy mode); `Content-Length` must equal the part's size |
+| GET, DELETE | `/api/uploads/:id` | member session | live (U): the upload's state, and cancel; another member's id is `not_found` |
+| any | `/api/uploads/*` for a guest | Bearer pid | planned (U): the guest drop moves onto this pipeline; `PUT /api/drop` is removed when it lands |
 | any | `/api/dev/r2/*` | none; local only | planned (U): the proxy-mode bucket stand-in |
 | GET, POST, PATCH, DELETE | `/api/library*`, `/api/me/screens*`, `/api/me/export.zip` | session | planned (L): list, rename, trash, restore, preview link, socket, export |
 | GET, POST | `/api/match`, `/api/notes`; `/api/claim`, `/api/files`, `/api/approve` extended | Bearer pid, session | planned (P1): the match pick, speaker notes, the library source |
@@ -601,7 +604,8 @@ Each new module exports an empty route list (every path stays 404) until its str
 | module | owner stream | state |
 |---|---|---|
 | account, admin, hooks, reports, dev-mail | A (accounts and admin) | stub |
-| uploads, dev-r2 | U (uploads) | stub |
+| uploads | U (uploads) | live for library members; the guest drop follows |
+| dev-r2 | U (uploads) | stub |
 | library, and the `UserLibrary` object | L (library) | stub |
 | fileorigin, notes | P1 (present server) | stub |
 | the `Converter` object | V (conversion) | stub |
