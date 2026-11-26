@@ -122,6 +122,54 @@ describe("LIB-02 reserve: every guard in the one batch", () => {
     expect(counters(db).reserved).toBe(GIB);
   });
 
+  it("LIB-02 reserve: an expired upload is no twin and takes no file slot, as resume already holds", async () => {
+    const db = setup();
+    const old = upload("u1", { bytes: 1, expiresAt: NOW });
+    expect(await reserveLibrary(db, old, LIMITS)).toBeNull();
+    expect(await findOpen(db, { kind: "library", userId: "u1" }, old.fingerprint, NOW)).toBeNull();
+    expect(await reserveLibrary(db, upload("u1", { bytes: 1, fingerprint: old.fingerprint }), LIMITS)).toBeNull();
+    expect(await reserveLibrary(db, upload("u1", { bytes: 1 }), { ...LIMITS, maxFiles: 2 })).toBeNull();
+  });
+
+  it("LIB-02 reserve: a refused file takes no file slot", async () => {
+    const db = setup();
+    for (const [id, status] of [
+      ["f1", "refused"],
+      ["f2", "refused"],
+      ["f3", "ready"],
+    ]) {
+      db.raw
+        .prepare(
+          "INSERT INTO library_file (id, user_id, name, ext, bytes, r2_key, status, created_at, updated_at) VALUES (?, 'u1', 'a', 'pdf', 1, ?, ?, 0, 0)",
+        )
+        .run(id as string, `k-${id}`, status as string);
+    }
+    expect(await reserveLibrary(db, upload("u1", { bytes: 1 }), LIMITS)).toBeNull();
+    expect(await reserveLibrary(db, upload("u1", { bytes: 1 }), LIMITS)).toBeNull();
+    expect(await reserveLibrary(db, upload("u1", { bytes: 1 }), LIMITS)).toBe("library_full");
+  });
+
+  it("LIB-02 reserve: a refusal whose cause is gone when it is read is retried, never guessed", async () => {
+    const db = setup();
+    const full = upload("u1", { bytes: 5 * GIB });
+    expect(await reserveLibrary(db, full, LIMITS)).toBeNull();
+    let first = true;
+    const racing = {
+      prepare: (sql: string) => db.prepare(sql),
+      batch: async (statements: Parameters<typeof db.batch>[0]) => {
+        const out = await db.batch(statements);
+        if (first) {
+          first = false;
+          await releaseLibrary(db, { id: full.id, userId: "u1", bytes: full.bytes }, NOW);
+        }
+        return out;
+      },
+    };
+    const next = upload("u1", { bytes: GIB });
+    expect(await reserveLibrary(racing, next, LIMITS)).toBeNull();
+    expect(counters(db).reserved).toBe(GIB);
+  });
+
   it("LIB-02 race: concurrent reserves of 1 GiB against 5 GiB admit exactly five", async () => {
     const db = setup();
     const results = await Promise.all(
@@ -282,14 +330,17 @@ describe("UP-02 mints, UP-08 parts, claims and sweeps (store statements)", () =>
     return n;
   }
 
-  it("UP-02 mints: at most three URLs per part in all, and none once closed", async () => {
+  it("UP-02 mints: three URLs per part, a batch more per URL lifetime, and none once closed", async () => {
     const db = setup();
     const n = await open(db);
-    expect(await chargeMints(db, n.id, 6)).toBe(true);
-    expect(await chargeMints(db, n.id, 1)).toBe(false);
+    const budget = { ttlMs: 300_000, refill: 8 };
+    expect(await chargeMints(db, n.id, 6, NOW, budget)).toBe(true);
+    expect(await chargeMints(db, n.id, 1, NOW + 299_999, budget)).toBe(false);
     expect((await get(db, n.id))?.mints).toBe(6);
+    expect(await chargeMints(db, n.id, 8, NOW + 300_000, budget)).toBe(true);
+    expect(await chargeMints(db, n.id, 1, NOW + 300_000, budget)).toBe(false);
     await releaseLibrary(db, { id: n.id, userId: "u1", bytes: n.bytes }, NOW);
-    expect(await chargeMints(db, n.id, 0)).toBe(false);
+    expect(await chargeMints(db, n.id, 0, NOW + 10 * 300_000, budget)).toBe(false);
   });
 
   it("UP-08 resume: a part is recorded once per number, a repeat replaces it, a closed upload takes none", async () => {
