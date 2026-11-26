@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { deviceEpoch, isKnown, newDeviceValue } from "../../src/worker/auth/codes.ts";
+import { isKnown, newDeviceValue } from "../../src/worker/auth/codes.ts";
 import { sha256Hex } from "../../src/worker/ids.ts";
 import { readSettings } from "../../src/worker/settings.ts";
 import {
@@ -7,6 +7,7 @@ import {
   addSession,
   callRoute,
   cookieNames,
+  deviceEpoch,
   memberWorld,
   ORIGIN,
   publicId,

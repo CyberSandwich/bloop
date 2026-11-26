@@ -83,8 +83,6 @@ function bucketOf(input: IssueInput): { where: string; params: unknown[] } {
 }
 
 /**
- * TRANSITIONAL(a-4): the code and invite routes are the first callers.
- *
  * Supersede and insert as one batch, both guarded by the bucket counts. D1 runs batches one at a time and the INSERT
  * carries its own count guard, so the check and the insert are atomic: a full bucket writes nothing and answers
  * `limited`, however many requests race.
@@ -176,7 +174,7 @@ export interface CodeRow {
  * Spends one attempt (guarded, so the 6th guess never reaches the compare), then compares the MAC, then marks the code
  * used (guarded, so a code works once even when two right guesses race). Null for every failure, which the route answers
  * as `code_invalid` and nothing more. `userId` pins reauth and email_change codes to the session's user, and is
- * required for them: a call without it is a programming error and throws. TRANSITIONAL(a-4): the verify route calls it.
+ * required for them: a call without it is a programming error and throws.
  */
 export async function verifyCode(
   db: Db,
@@ -236,19 +234,6 @@ const deviceMac = (pepper: string, userId: string, epoch: number, nonce: string)
   hmacHex(pepper, `dev|${userId}|${epoch}|${nonce}`);
 
 /**
- * TRANSITIONAL(a-4): code verify and the code request read it.
- *
- * The epoch to mint and check device values at; 0 for no row, whose values verify for nobody anyway.
- */
-export async function deviceEpoch(db: Db, userId: string): Promise<number> {
-  const row = await db
-    .prepare("SELECT device_epoch FROM app_user WHERE id = ?")
-    .bind(userId)
-    .first<{ device_epoch: number }>();
-  return row?.device_epoch ?? 0;
-}
-
-/**
  * The bump, in one batch with the change that calls for it: sign out everywhere (sessions.ts `destroyAll`), ending one
  * session, a passkey removal and a deletion request. TRANSITIONAL(a-5): passkey registration batches it too.
  * TRANSITIONAL(a-7): so does an email change.
@@ -259,8 +244,6 @@ export const BUMP_DEVICE_EPOCH = "UPDATE app_user SET device_epoch = device_epoc
 export const bumpDeviceEpochIf = (exists: string): string => `${BUMP_DEVICE_EPOCH} AND EXISTS (${exists})`;
 
 /**
- * TRANSITIONAL(a-4): code verify sets it.
- *
  * The `__Host-bloop_dev` value: a fresh 128-bit nonce per device and its MAC for this member and epoch, so no table
  * is needed.
  */
@@ -272,8 +255,6 @@ export async function newDeviceValue(pepper: string, userId: string, epoch: numb
 const DEVICE = /^([A-Za-z0-9_-]{22})\.([0-9a-f]{64})$/;
 
 /**
- * TRANSITIONAL(a-4): the code request reads it.
- *
  * Whether a known-device value was issued to this member at this epoch; false for a missing, malformed or forged one,
  * or one issued before the epoch moved.
  */

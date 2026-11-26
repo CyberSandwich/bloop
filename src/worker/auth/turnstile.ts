@@ -27,8 +27,6 @@ export interface TurnstileCheck {
 }
 
 /**
- * TRANSITIONAL(a-4): the code request route is the first caller.
- *
  * `action` must match the widget's (a token made for the report form cannot sign in), and `hostname` must be
  * PUBLIC_ORIGIN's. Cloudflare's test secret answers hostname example.com and no action (its docs), so under TEST_TIMING
  * on a local request the hostname check is skipped and a missing or empty action is accepted, never a different one.

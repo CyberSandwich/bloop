@@ -30,7 +30,7 @@ Invite-only accounts. An invite link proves the email; a 6-digit email code sign
 - **Email Me a Code** (primary) is enabled once the field holds something shaped like an email; Enter submits.
 - **Sign In with a Passkey** (secondary under 640, text button from 640 where the primary sits beside it) only where `PublicKeyCredential` exists; it opens the browser's passkey sheet (a modal get). Hidden when the browser has no passkey support (the plan's rule), so nobody taps a dead button.
 - "No invite? Join the waitlist." (15 `--muted`, the link on "Join the waitlist", Tally, `source=signin`, `data-waitlist`), under the panel on a phone, under the buttons on a desktop.
-- **Turnstile:** the managed widget in its invisible mode, loaded on the field's first focus (lazy), run on submit. Only when it needs a human does it show its own box, in the line's place under the field; the button reads "Checking..." meanwhile. If its script cannot load (a blocker): the line "Turn off content blocking for bloop.here to sign in." with Try Again; the code request needs it (plan A.9).
+- **Turnstile:** the managed widget in its invisible mode, loaded on the first keystroke or tap in the field (lazy; the page's own focus loads nothing), run on submit. Only when it needs a human does it show its own box, in the line's place under the field; the button reads "Checking..." meanwhile. If its script cannot load (a blocker): the line "Turn off content blocking for bloop.here to sign in." with Try Again; the code request needs it (plan A.9).
 - **Focus order:** Back, the title (focused on load only when arriving from a redirect; otherwise the field, so a typed visit starts typing), Email, Sign In with a Passkey, Email Me a Code, the waitlist link.
 - **Next.** `?next=` is one of `/library`, `/a`, `/account`, `/admin`; anything else is `/library`. Signed in already: the page redirects to `next` at once (server side), so Library is one tap from the landing for a signed-in user.
 
@@ -61,9 +61,9 @@ The code request always answers the same, whether or not the email has an accoun
 ```
 
 - Title "Check Your Email"; line "If you@university.ac.uk has early access, a code is on its way." (the address as typed, `--ink` 600).
-- **Field:** label "Code", `inputmode="numeric"`, `autocomplete="one-time-code"` (iOS offers the code from Mail; Android from the notification), 6 digits shown in two groups of 3, as `/code` (22/600, tracked +0.06em). No button: the 6th digit submits. A paste of the whole code submits. The sentence row under the field (24 tall, kept while empty, as `/code`) holds "Enter the 6 digits from the email." and, on failure, the error.
+- **Field:** label "Code", `inputmode="numeric"`, `autocomplete="one-time-code"` (iOS offers the code from Mail; Android from the notification), 6 digits shown in two groups of 3, as `/code` (22/600, tracked +0.06em). No button: the 6th digit submits. A paste of the whole code submits; more than 6 digits is not a code, and the field clears. The sentence row under the field (24 tall, kept while empty, as `/code`) holds "Enter the 6 digits from the email." and, on failure, the error.
 - **Errors** (one line each at 390, `role="alert"`, the field keeps its digits selected so retyping replaces them):
-  - wrong code: "That code didn't match. Check the email and try again."
+  - wrong code: "That code didn't match. Try again."
   - expired (10 minutes): "That code has expired. Send a new one."
   - too many tries (the attempt cap): "Too many tries. Send a new code."
   - offline: "You're offline. Check your connection, then try again."
@@ -136,7 +136,7 @@ The link from the invite email. The token is in the fragment, so it never reache
 | revoked or unknown | This Invite Isn't Valid | Check you opened the newest invite email. | Go to the Home Page |
 | no fragment (opened as a bare `/invite`) | Open Your Invite Email | Tap the link in the email to accept. | Go to the Home Page |
 | signed in as someone else | You're Signed In as a**@other.com | This invite is for y**@university.ac.uk. | Sign Out and Continue (primary), Go to Your Library (text) |
-| signed in as the invitee already | (redirect to `/library`) | | |
+| signed in as the invitee already (the peek answers `forYou`) | (redirect to `/library`) | | |
 | rate limited | Too Many Tries Right Now | Wait a minute, then open the link again. | none |
 
 - Preview mode: `/invite` works only for invites to `TEST_EMAILS` (MODE-01); any other token peeks as "This Invite Isn't Valid", so preview leaks nothing.
@@ -161,7 +161,7 @@ The link from the invite email. The token is in the fragment, so it never reache
 | email step | Sign In / Early access is by invite. Use the email your invite went to. / Email / Email Me a Code / Sign In with a Passkey / No invite? Join the waitlist. |
 | Turnstile | Checking...; Turn off content blocking for bloop.here to sign in. / Try Again |
 | code step | Check Your Email / If {email} has early access, a code is on its way. / A code is on its way to {masked}. / Code / Enter the 6 digits from the email. / Use a Different Email / Send a New Code / Send a New Code in 0:24 |
-| code errors | That code didn't match. Check the email and try again. / That code has expired. Send a new one. / Too many tries. Send a new code. / Too many codes for now. Try again in 15 minutes. / You're offline. Check your connection, then try again. |
+| code errors | That code didn't match. Try again. / That code has expired. Send a new one. / Too many tries. Send a new code. / Too many codes for now. Try again in 15 minutes. / You're offline. Check your connection, then try again. |
 | passkey | Sign In Faster Next Time / Save a passkey on this phone. Your email code still works if you lose it. / Save a Passkey / Not Now / Passkey Saved / Next time, choose it when you sign in. / The passkey wasn't saved. Try again, or continue without it. |
 | refused | This account can't sign in right now. Email hi@bloop.here. |
 | invite | You're Invited / Early access to bloop for {masked}. / bloop puts your files on the room screen from your phone. The screen never gets your account. / The invite works until {date}. / By continuing you confirm you are 18 or over and accept the Terms. / Accept Invite; You're Signed In as {masked} / This invite is for {masked}.; and the peek states in section 5 |

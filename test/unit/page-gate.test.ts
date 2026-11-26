@@ -4,8 +4,7 @@ import type { Variant } from "../../src/worker/page-registry.ts";
 import { normalizePath, type PageEnv, servePage } from "../../src/worker/pages.ts";
 import { PROD_VARS } from "../env-vars.ts";
 import { type TestDb, testDb } from "./d1-shim.ts";
-
-const NOW = 1_800_000_000_000;
+import { setMode } from "./member-fixture.ts";
 
 /** Every path the fake asset layer knows answers 200 with its own path; anything else is its 404 page. */
 function world(over: Record<string, string> = {}, answer?: (path: string) => Response | undefined) {
@@ -29,14 +28,6 @@ function world(over: Record<string, string> = {}, answer?: (path: string) => Res
   } as unknown as PageEnv;
   return { db, env };
 }
-
-const setting = (db: TestDb, key: string, value: string) =>
-  db.raw.prepare("INSERT OR REPLACE INTO setting (key, value, updated_at) VALUES (?, ?, ?)").run(key, value, NOW);
-const setMode = (db: TestDb, mode: "preview" | "open", lockout = false) => {
-  setting(db, "launch_mode", mode);
-  if (lockout) setting(db, "preview_lockout", "1");
-  else db.raw.prepare("DELETE FROM setting WHERE key = 'preview_lockout'").run();
-};
 
 /** A user and a live session cookie for them. `tid` email makes a member; anything else is an Entra user. */
 async function signIn(db: TestDb, id: string, emailNorm: string | null) {
@@ -355,5 +346,29 @@ describe("MODE-01 pages: the open site", () => {
     db.raw.prepare("UPDATE app_user SET status = 'deleting' WHERE id = 'a1'").run();
     const gone = await nav(env, "/privacy", { Cookie: `__Host-bloop_sid=${admin}; __Host-bloop_view=open` }, all);
     expect(await gone.text()).toBe("asset /privacy");
+  });
+});
+
+describe("a signed-in /signin goes on to its next", () => {
+  it("a member's /signin redirects to the allowlisted next, /admin only for an admin; signed out, the form", async () => {
+    const { db, env } = world();
+    for (const mode of ["preview", "open"] as const) {
+      setMode(db, mode);
+      const member = await signIn(db, `m-${mode}`, "test@example.test");
+      const admin = await signIn(db, `a-${mode}`, "admin@example.test");
+      const to = async (path: string, cookie?: string) => {
+        const res = await get(env, path, cookie);
+        return res.status === 302 ? res.headers.get("Location") : res.status;
+      };
+      expect(await to("/signin?next=/account", member), mode).toBe("/account");
+      expect(await to("/signin?next=https://evil.example/", member), mode).toBe("/library");
+      expect(await to("/signin?next=/admin", member), mode).toBe("/library");
+      expect(await to("/signin?next=/admin", admin), mode).toBe("/admin");
+      expect(await to("/signin", member), mode).toBe("/library");
+      expect((await get(env, "/signin?next=/account", member)).headers.get("Cache-Control")).toBe("no-store");
+      expect(await to("/signin?next=/account"), mode).toBe(200);
+      expect(await to("/signin", "A".repeat(43)), mode).toBe(200);
+      db.raw.prepare("DELETE FROM app_user").run();
+    }
   });
 });

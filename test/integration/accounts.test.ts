@@ -10,7 +10,7 @@ let api: Api;
 
 beforeAll(async () => {
   wrangler = await startPairing(
-    { ADMIN_EMAILS: "admin@example.test", TEST_EMAILS: "test@example.test" },
+    { ADMIN_EMAILS: "admin@example.test", TEST_EMAILS: "test@example.test", CODE_PEPPER: "C".repeat(43) },
     { migrate: true },
   );
   api = new Api(wrangler.url);
@@ -94,6 +94,7 @@ describe("GET /api/me for email members", () => {
       passkeys: 0,
       quota: { used: 5, total: expect.any(Number) },
       userHandle: Buffer.from(m.id).toString("base64url"),
+      turnstileSiteKey: expect.any(String),
     });
     expect((await me(admin().sid)).admin).toBe(true);
   });

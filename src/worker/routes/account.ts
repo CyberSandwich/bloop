@@ -24,6 +24,7 @@ import { auditRecord } from "../export-format.ts";
 import { checkWrite, fail, json, readJson } from "../http.ts";
 import { base64url } from "../ids.ts";
 import { launchState } from "../mode.ts";
+import { type BlockCheck, blockCheck } from "../moderation/actions.ts";
 import { type Route, route } from "../router.ts";
 import { auditFor } from "../stores.ts";
 import { recordBestEffort } from "./auth.ts";
@@ -45,11 +46,10 @@ const pageQuery = z.object({
 const MOCK_ME = { source: "mock", signedIn: true, email: null } as const;
 
 export interface AccountDeps extends ScreenDeps {
-  /** The block list seam. TRANSITIONAL(a-4): until a-4 fills it with moderation's `isBlocked`, no address is blocked. */
-  isBlocked(env: Env, emailNorm: string): Promise<boolean>;
+  isBlocked: BlockCheck;
 }
 
-const defaultDeps: AccountDeps = { ...screenDeps, isBlocked: async () => false };
+const defaultDeps: AccountDeps = { ...screenDeps, isBlocked: blockCheck };
 
 /** The WebAuthn user handle: the bytes of app_user.id, base64url (ADR 0014), for the signal API. */
 const userHandle = (userId: string): string => base64url(new TextEncoder().encode(userId));
@@ -169,8 +169,8 @@ export function accountRoutesWith(deps: AccountDeps): readonly Route[] {
         const flood = await limited(env, "RL_MEMBER_IP", request, config);
         if (flood) return flood;
         const cookie = readCookie(request, SESSION_COOKIE);
-        // The public Turnstile key rides on the signed-out answers: the sign-in and report forms are static pages
-        // and read it here on intent (ADR 0022).
+        // The public Turnstile key rides on every answer: the sign-in and report forms are static pages and read it
+        // here on intent (ADR 0022), signed in or not.
         const { turnstileSiteKey } = config.account;
         if (!cookie && !config.graph && isLocalOrigin(config.origin) && isLocalRequest(request)) {
           return json({ ...MOCK_ME, launchMode: (await launchState(env)).mode, turnstileSiteKey });
@@ -179,7 +179,7 @@ export function accountRoutesWith(deps: AccountDeps): readonly Route[] {
         const tooMany = view ? await limited(env, "RL_MEMBER", request, config, view.userId) : null;
         if (tooMany) return tooMany;
         if (view && view.tid !== "email" && config.graph) {
-          return json({ source: "graph", signedIn: true, email: view.email });
+          return json({ source: "graph", signedIn: true, email: view.email, turnstileSiteKey });
         }
         const { mode: launchMode } = await launchState(env);
         // C(d): a deleting member sees their deletion and can restore; every other refusal reads as signed out.
@@ -200,6 +200,7 @@ export function accountRoutesWith(deps: AccountDeps): readonly Route[] {
           passkeys: summary.passkeys,
           quota: { used: summary.usedBytes, total: summary.quotaBytes ?? config.library.quotaBytes },
           userHandle: userHandle(member.userId),
+          turnstileSiteKey,
         });
       }),
     ),
@@ -248,7 +249,7 @@ export function accountRoutesWith(deps: AccountDeps): readonly Route[] {
       "/api/me/restore",
       { body: emptyBody, allowDeleting: true },
       async ({ env, config, member }) => {
-        if (await deps.isBlocked(env, member.emailNorm)) return fail("restore_too_late");
+        if (await deps.isBlocked(env, config.secrets.codePepper, member.emailNorm)) return fail("restore_too_late");
         const restored = member.status === "active" || (await servicesFor(env, config).sessions.restore(member.userId));
         return restored ? json({ signedIn: true, deleting: false }) : fail("restore_too_late");
       },
