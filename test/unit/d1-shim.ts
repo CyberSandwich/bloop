@@ -10,6 +10,9 @@ const migrations = fileURLToPath(new URL("../../migrations", import.meta.url));
 
 const toSql = (v: unknown): SQLInputValue => (v instanceof ArrayBuffer ? new Uint8Array(v) : (v as SQLInputValue));
 
+/** D1 refuses a statement with more bound values than this; a list that can outgrow it must be chunked. */
+const D1_MAX_BINDS = 100;
+
 class Prepared implements Statement {
   private values: SQLInputValue[] = [];
   constructor(
@@ -18,6 +21,9 @@ class Prepared implements Statement {
   ) {}
 
   bind(...values: unknown[]): Statement {
+    if (values.length > D1_MAX_BINDS) {
+      throw new Error(`D1 allows ${D1_MAX_BINDS} bound values a statement, got ${values.length}`);
+    }
     this.values = values.map(toSql);
     return this;
   }

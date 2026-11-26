@@ -2,6 +2,7 @@ import { readdirSync, readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
 import {
+  CURSOR_MAX_CHARS,
   fileRow,
   listFiles,
   makeDue,
@@ -395,6 +396,39 @@ describe("listFiles", () => {
     expect(second.ok && second.files).toHaveLength(30);
     expect(second.ok && second.next).toBeNull();
     expect(await listFiles(db, "u1", "files", "updated", "not a cursor")).toEqual({ ok: false });
+  });
+
+  it("B1 cursor: a name that is not Latin-1 pages under every sort, and its cursor fits the route's cap", async () => {
+    const names = ["講義", "😀 deck", `${"講".repeat(190)}\ud800x`, '"'.repeat(200)];
+    for (const sort of ["updated", "name", "size"] as const) {
+      const db = libWith();
+      for (const [i, id] of ids(PAGE_SIZE + 1).entries()) {
+        const name = names[i % names.length] as string;
+        addFile(db, {
+          id,
+          name: i === PAGE_SIZE - 1 ? `${"講".repeat(200)}` : name,
+          updatedAt: 5000 - i,
+          bytes: 1000 - i,
+        });
+      }
+      const first = await listFiles(db, "u1", "files", sort, null);
+      if (!first.ok) throw new Error("page");
+      expect(first.next).not.toBeNull();
+      expect((first.next as string).length).toBeLessThanOrEqual(CURSOR_MAX_CHARS);
+      const second = await listFiles(db, "u1", "files", sort, first.next);
+      expect(second.ok && second.files.length).toBeGreaterThanOrEqual(1);
+      const seen = new Set([...first.files, ...(second.ok ? second.files : [])].map((f) => f.id));
+      expect(seen.size).toBe(PAGE_SIZE + 1);
+    }
+  });
+
+  it("B1 cursor: a cursor of another sort or view is refused, as is one that is not UTF-8 JSON", async () => {
+    const db = libWith();
+    for (const [i, id] of ids(PAGE_SIZE + 1).entries()) addFile(db, { id, name: `n${i}`, updatedAt: 5000 - i });
+    const byName = await listFiles(db, "u1", "files", "name", null);
+    if (!byName.ok) throw new Error("page");
+    expect(await listFiles(db, "u1", "files", "size", byName.next)).toEqual({ ok: false });
+    expect(await listFiles(db, "u1", "files", "name", "_w")).toEqual({ ok: false });
   });
 
   it("shows the trash by due time, soonest first, and files only in the files view", async () => {

@@ -8,6 +8,7 @@ import { checkOrigin, checkWrite, fail, json, readJson } from "../http.ts";
 import { type Member, type Resolved, resolveMember } from "../library/member.ts";
 import { mintPreview } from "../library/preview.ts";
 import {
+  CURSOR_MAX_CHARS,
   type FileRow,
   fileRow,
   libDbOf,

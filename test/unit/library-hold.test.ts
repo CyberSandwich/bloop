@@ -99,7 +99,45 @@ describe("OSA-02 hold", () => {
     });
   });
 
-  it("reports a file whose source object is gone as missing, with its hold row kept for the retry", async () => {
+  it("S2: a file whose source object is gone leaves no hold row, so it never stalls its owner's purge", async () => {
+    const db = libWith();
+    addFile(db, { id: "a" });
+    const env = { DB: db, LIBRARY: fakeBucket().bucket, GUEST_FILES: fakeBucket().bucket };
+    await holdFiles(env, { reportId: "r", target: { fileIds: ["a"] } }, NOW, ids);
+    expect(db.raw.prepare("SELECT count(*) AS n FROM hold").get()).toEqual({ n: 0 });
+  });
+
+  it("S2: a pending row whose source has since gone is removed, and a finished copy is marked with its time", async () => {
+    const db = libWith();
+    addFile(db, { id: "a" });
+    const lib = fakeBucket({ "u/u1/a/v1/orig": "bytes" });
+    const env = { DB: db, LIBRARY: lib.bucket, GUEST_FILES: fakeBucket().bucket };
+    const out = await holdFiles(env, { reportId: "r", target: { fileIds: ["a"] } }, NOW, ids);
+    const { holdId } = out.held[0] as { holdId: string };
+    expect(db.raw.prepare("SELECT copied_at FROM hold").get()).toEqual({ copied_at: NOW });
+    db.raw.prepare("UPDATE hold SET copied_at = NULL WHERE id = ?").run(holdId);
+    lib.objects.delete(holdKey(holdId));
+    lib.objects.delete("u/u1/a/v1/orig");
+    expect((await holdFiles(env, { reportId: "r", target: { fileIds: ["a"] } }, NOW, ids)).missing).toEqual(["a"]);
+    expect(db.raw.prepare("SELECT count(*) AS n FROM hold").get()).toEqual({ n: 0 });
+  });
+
+  it("S2: a copy that fails because the bytes went mid-copy leaves no row and reports the file missing", async () => {
+    const db = libWith();
+    addFile(db, { id: "a" });
+    const lib = fakeBucket({ "u/u1/a/v1/orig": "bytes" });
+    const failing = { ...lib.bucket, put: async () => Promise.reject(new Error("gone")) };
+    const out = await holdFiles(
+      { DB: db, LIBRARY: failing, GUEST_FILES: fakeBucket().bucket },
+      { reportId: "r", target: { fileIds: ["a"] } },
+      NOW,
+      ids,
+    );
+    expect(out).toMatchObject({ held: [], missing: ["a"] });
+    expect(db.raw.prepare("SELECT count(*) AS n FROM hold").get()).toEqual({ n: 0 });
+  });
+
+  it("reports a file whose source object is gone as missing", async () => {
     const db = libWith();
     addFile(db, { id: "a" });
     const out = await holdFiles(
