@@ -42,18 +42,18 @@ export function slugBase(name, max = MAX_BASE) {
   return ascii.slice(0, Math.max(1, max)).replace(/-+$/, "") || "file";
 }
 
-/** Longest display name, in characters, extension included. */
-export const MAX_DISPLAY = 120;
+/** Longest stored file name, in code points, extension included. Display length is CSS ellipsis, never a cut. */
+export const NAME_MAX = 200;
 
 /**
  * A file name safe to show and store: control and format characters (including bidi overrides) removed,
- * path separators turned into hyphens, spaces collapsed, cut to `max` characters with the extension kept.
+ * path separators turned into hyphens, spaces collapsed, cut to `max` code points with the extension kept.
  * It is still untrusted text: pages set it with textContent only.
  * @param {string} raw
  * @param {number} [max]
  * @returns {string} empty when nothing printable is left
  */
-export function cleanName(raw, max = MAX_DISPLAY) {
+export function cleanName(raw, max = NAME_MAX) {
   const name = raw
     .normalize("NFC")
     .replace(/\p{C}/gu, "")
@@ -66,6 +66,13 @@ export function cleanName(raw, max = MAX_DISPLAY) {
   const ext = dot > 0 && name.length - dot <= 6 ? name.slice(dot) : "";
   return `${chars.slice(0, max - Array.from(ext).length).join("")}${ext}`;
 }
+
+/**
+ * A typed name is refused, never cut: it must already be clean and 1 to NAME_MAX code points.
+ * @param {string} name
+ */
+export const isValidName = (name) =>
+  name !== "" && cleanName(name, Infinity) === name && Array.from(name).length <= NAME_MAX;
 
 /**
  * @param {string} name display name
