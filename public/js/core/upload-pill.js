@@ -15,16 +15,6 @@ const LONG_WAIT_MS = 120_000;
 const SAID = { saved: "Saved", checking: "Checking Your File", unsettled: "Still Checking Your File" };
 const WAITING = "Waiting for a Connection";
 
-/** @param {string} name */
-const glyphOf = (name) =>
-  /\.pptx?$/i.test(name)
-    ? ICONS.presentation
-    : /\.(mp4|mov|webm)$/i.test(name)
-      ? ICONS.film
-      : /\.(jpe?g|png|gif|webp|heic)$/i.test(name)
-        ? ICONS.image
-        : ICONS["file-text"];
-
 /**
  * Starts the engine and its pill on a page.
  * @param {object} [options]
@@ -34,13 +24,15 @@ const glyphOf = (name) =>
  * @param {{focus: () => void} | null} [options.trigger] what opened the upload: it takes the focus when the pill leaves
  */
 export async function mountUploads({ maxMB, upNext = null, host = document.body, trigger = null } = {}) {
-  const [{ createUploader }, { formatBytes, percent, statusWord }, { pill, CLOSE }, { toast }] = await Promise.all([
-    import("./upload.js"),
-    import("./upload-format.js"),
-    import("./pill.js"),
-    import("./upload-toast.js"),
-    styled("/css/upload.css"),
-  ]);
+  const [{ createUploader }, { formatBytes, percent, statusWord }, { pill, CLOSE }, { toast }, { fitName, glyphOf }] =
+    await Promise.all([
+      import("./upload.js"),
+      import("./upload-format.js"),
+      import("./pill.js"),
+      import("./upload-toast.js"),
+      import("./upload-face.js"),
+      styled("/css/upload.css"),
+    ]);
   /** @type {ReturnType<typeof pill> | null} */
   let face = null;
   /** @type {unknown} */
@@ -134,6 +126,7 @@ export async function mountUploads({ maxMB, upNext = null, host = document.body,
     if (face) face.update(next);
     else {
       face = pill({ host, ...next });
+      fitName(face.node);
       for (const type of ["pointerenter", "focusin"]) face.node.addEventListener(type, () => (held = true));
       for (const type of ["pointerleave", "focusout"]) face.node.addEventListener(type, () => (held = false));
     }

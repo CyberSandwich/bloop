@@ -46,11 +46,14 @@ let toasts: {
   error?: boolean;
   action?: { label: string; run: () => void };
 }[];
+/** The pills handed to the name fit, once each. */
+let fitted: unknown[] = [];
 let engine: { added: unknown[][]; canceled: number[]; resumed: unknown[][]; rechecked: number[]; disposed: number };
 
 async function mount(options: object = {}) {
   vi.resetModules();
   toasts = [];
+  fitted = [];
   engine = { added: [], canceled: [], resumed: [], rechecked: [], disposed: 0 };
   vi.doMock(ENGINE, () => ({
     createUploader: ({ onChange }: { onChange: (b: unknown) => void }) => {
@@ -66,6 +69,10 @@ async function mount(options: object = {}) {
   }));
   vi.doMock("../../public/js/core/lazy.js", () => ({ styled: async () => {} }));
   vi.doMock("../../public/js/core/upload-toast.js", () => ({ toast: (t: (typeof toasts)[number]) => toasts.push(t) }));
+  vi.doMock("../../public/js/core/upload-face.js", async (original) => ({
+    ...(await original<object>()),
+    fitName: (node: unknown) => fitted.push(node),
+  }));
   // A specifier in a variable: the node tsconfig has no DOM lib, so it must not follow this import into page code.
   const { mountUploads } = (await import(BINDING)) as {
     mountUploads: (options: object) => Promise<{ add: (files: never[]) => unknown; dispose: () => void }>;
@@ -105,6 +112,7 @@ afterEach(() => {
   vi.doUnmock(ENGINE);
   vi.doUnmock("../../public/js/core/lazy.js");
   vi.doUnmock("../../public/js/core/upload-toast.js");
+  vi.doUnmock("../../public/js/core/upload-face.js");
   vi.doUnmock(REFUSALS);
 });
 
@@ -123,6 +131,13 @@ describe("one file", () => {
     // The polite region says the name, and does not speak again on a percent tick.
     expect(heard()).toBe("Lecture 5.pptx");
     expect(pillNode()?.byClass("up-line")).toBeUndefined();
+  });
+
+  it("hands each pill it makes to the name fit once, not on every update", async () => {
+    await mount();
+    emit(batch([file()]));
+    emit(batch([file({ fraction: 0.5 })]));
+    expect(fitted).toEqual([pillNode()]);
   });
 
   it("has a Cancel named for the file that cancels it", async () => {
