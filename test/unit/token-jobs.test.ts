@@ -13,6 +13,47 @@ const dir = new URL("../../.github/workflows/", import.meta.url);
  * point (docs/architecture.md section 12).
  */
 const PINNED: Record<string, string[]> = {
+  "lockdown.yml lockdown": [
+    "  lockdown:",
+    "    # The production secrets run only code that is on main, started by the repository owner (set or undo alike).",
+    "    if: github.ref == 'refs/heads/main' && github.triggering_actor == github.repository_owner",
+    "    runs-on: ubuntu-latest",
+    "    timeout-minutes: 25",
+    "    environment: production",
+    "    steps:",
+    "      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1",
+    "        with:",
+    "          persist-credentials: false",
+    "      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0",
+    "        with:",
+    "          node-version-file: .nvmrc",
+    "          cache: npm",
+    "      # No install scripts run here: the secrets are not in this step, and wrangler d1 execute needs none.",
+    "      - run: npm ci --ignore-scripts",
+    "      - name: Plan or apply",
+    "        env:",
+    "          LOCKDOWN_CF_TOKEN: ${{ secrets.LOCKDOWN_CF_TOKEN }}",
+    "          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}",
+    "          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}",
+    "          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}",
+    "          LEVEL: ${{ inputs.level }}",
+    "          METER: ${{ inputs.meter }}",
+    "          UNDO: ${{ inputs.undo }}",
+    "          APPLY: ${{ inputs.apply }}",
+    "        run: |",
+    "          set -o pipefail",
+    '          args=(--level "$LEVEL")',
+    '          if [ "$METER" != "none" ]; then args+=(--meter "$METER"); fi',
+    '          if [ "$UNDO" = "true" ]; then args+=(--undo); fi',
+    '          if [ "$APPLY" = "true" ]; then args+=(--apply); fi',
+    '          node tools/lockdown.mjs "${args[@]}" 2>&1 | tee "$RUNNER_TEMP/lockdown.txt"',
+    "      - name: Summary",
+    "        if: always()",
+    "        run: |",
+    '          if [ -f "$RUNNER_TEMP/lockdown.txt" ]; then',
+    "            { echo '### lockdown'; echo '```text'; cat \"$RUNNER_TEMP/lockdown.txt\"; echo '```'; } >> \"$GITHUB_STEP_SUMMARY\"",
+    "          fi",
+  ],
   "deploy.yml deploy": [
     "  deploy:",
     "    needs: check",
@@ -283,7 +324,7 @@ describe("SITE-05 third-party code never shares a job with the token", () => {
 
   it("SITE-05 token jobs: every job that names an environment or the token, and the action they run, is exactly its pinned text", () => {
     expect(pinProblems(files, action)).toEqual([]);
-    expect(Object.keys(PINNED)).toHaveLength(3);
+    expect(Object.keys(PINNED)).toHaveLength(4);
   });
 
   it("SITE-05 token jobs: the guard refuses each way to change a token job, add one, or run another action", () => {
