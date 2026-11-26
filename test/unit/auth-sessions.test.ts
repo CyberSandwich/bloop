@@ -1,3 +1,4 @@
+import { readdirSync, readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 import {
   BIND_COOKIE,
@@ -9,7 +10,7 @@ import {
   signedInCookies,
   signedOutCookies,
 } from "../../src/worker/auth/cookies.ts";
-import { deviceLabel, SESSION_MAX_AGE_SECONDS, Sessions } from "../../src/worker/auth/sessions.ts";
+import { deviceLabel, PUBLIC_ID, SESSION_MAX_AGE_SECONDS, Sessions } from "../../src/worker/auth/sessions.ts";
 import { sha256Hex } from "../../src/worker/ids.ts";
 import { type TestDb, testDb } from "./d1-shim.ts";
 import { seedMember } from "./member-fixture.ts";
@@ -89,6 +90,39 @@ describe("AUTH-08 rotate: every authentication issues a new value and deletes th
       sessions.create("u1", mine, { method: "code", label: null, publicId: taken, reauthAt: T0 }),
     ).rejects.toThrow();
     expect(await sessions.resolve(mine)).toBe("u1");
+  });
+});
+
+describe("sessions: every created session carries the public id L's resolveMember needs", () => {
+  it("each sign-in method, with or without a presented value, writes a non-null, distinct PUBLIC_ID", async () => {
+    const { db, now, sessions } = setup();
+    await seedMember(db, "u1", "m@example.test", {}, { now });
+    const ids = new Set<string>();
+    for (const method of ["code", "passkey:cred-1", "entra"] as const) {
+      for (const replacing of [null, "never-issued"]) {
+        const value = await sessions.create("u1", replacing, { method, label: null, reauthAt: T0 });
+        const id = (await row(db, value))?.public_id;
+        expect(id, method).toMatch(PUBLIC_ID);
+        ids.add(id as string);
+      }
+    }
+    expect(ids.size).toBe(6);
+    expect(db.raw.prepare("SELECT count(*) AS n FROM phone_session WHERE public_id IS NULL").get()).toEqual({ n: 0 });
+  });
+
+  it("Sessions.create is the only writer of phone_session rows, so no sign-in path can skip the public id", () => {
+    const root = new URL("../../src/", import.meta.url);
+    const writers = readdirSync(root, { recursive: true, encoding: "utf8" })
+      .filter((f) => f.endsWith(".ts"))
+      .filter((f) =>
+        /INSERT\s+(OR\s+\w+\s+)?INTO\s+phone_session|public_id\s*=\s*NULL/i.test(
+          readFileSync(new URL(f, root), "utf8"),
+        ),
+      );
+    expect(writers).toEqual(["worker/auth/sessions.ts"]);
+    const sessions = readFileSync(new URL("worker/auth/sessions.ts", root), "utf8");
+    expect(sessions.match(/INSERT INTO phone_session/g)).toHaveLength(1);
+    expect(sessions).toContain("options.publicId ?? newRef()");
   });
 });
 

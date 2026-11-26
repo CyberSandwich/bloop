@@ -64,7 +64,7 @@ const me = async (value?: string) => (await api.call("GET", "/api/me", undefined
 
 describe("GET /api/me for email members", () => {
   it("with no cookie it keeps the demo answer; a dead cookie reads as signed out", async () => {
-    expect(await me()).toEqual({ source: "mock", signedIn: true, email: null });
+    expect(await me()).toEqual({ source: "mock", signedIn: true, email: null, launchMode: "preview" });
     expect(await me("A".repeat(43))).toEqual({ source: "mock", signedIn: false, launchMode: "preview" });
   });
 

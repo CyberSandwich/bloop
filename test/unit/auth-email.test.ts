@@ -157,21 +157,34 @@ describe("email", () => {
     expect(mod.readDevMailbox()).toEqual([]);
   });
 
-  it("email: the breaker's notify mails EMAIL_FROM only, past the switch and the spend takes", async () => {
-    const send = vi.fn(async () => ({ messageId: "m" }));
-    const account = { ...deps().account, devMailbox: false };
-    await mod.breakerNotify(account, { send }, CONFIG)({ kind: "trip", spentUsd: 9, meter: "convert" });
-    expect(send).toHaveBeenCalledTimes(1);
-    expect(send).toHaveBeenCalledWith(expect.objectContaining({ to: "hi@bloop.here", subject: "bloop Spend: trip" }));
+  it("email: the breaker's notify mails each ADMIN_EMAILS address and nobody else, without a spend take", async () => {
+    const send = vi.fn(async (_m: { to: string }) => ({ messageId: "m" }));
+    const take = vi.fn<Take>(async () => ({ ok: true }));
+    const other = "admin2@example.test";
+    const account = { ...deps({ take }).account, adminEmails: new Set([ADMIN, other]), devMailbox: false };
+    for (const emailSwitch of ["on", "admin_only"] as const) {
+      send.mockClear();
+      await mod.breakerNotify({ account, sender: { send }, emailSwitch }, CONFIG)({ kind: "trip", spentUsd: 9 });
+      expect(send.mock.calls.map(([m]) => m.to).sort()).toEqual([ADMIN, other].sort());
+      for (const [m] of send.mock.calls)
+        expect(m).toMatchObject({ from: "hi@bloop.here", subject: "bloop Spend: trip" });
+    }
+    expect(take).not.toHaveBeenCalled();
   });
 
-  it("email: wrangler.jsonc locks ALERT_EMAIL to EMAIL_FROM, and both bindings send only as it", () => {
+  it("email: the breaker's notify sends nothing under email off, or with no admin address", async () => {
+    const send = vi.fn(async () => ({ messageId: "m" }));
+    const account = { ...deps().account, devMailbox: false };
+    await mod.breakerNotify({ account, sender: { send }, emailSwitch: "off" }, CONFIG)({ kind: "trip" });
+    const noAdmins = { ...account, adminEmails: new Set<string>() };
+    await mod.breakerNotify({ account: noAdmins, sender: { send }, emailSwitch: "on" }, CONFIG)({ kind: "trip" });
+    expect(send).not.toHaveBeenCalled();
+  });
+
+  it("email: wrangler.jsonc has the one EMAIL binding, which sends only as EMAIL_FROM", () => {
     const live = readFileSync(new URL("../../wrangler.jsonc", import.meta.url), "utf8");
     const from = live.match(/"EMAIL_FROM": "([^"]+)"/)?.[1];
     expect(from).toBe("hi@bloop.here");
-    expect(live).toContain(`{ "name": "EMAIL", "allowed_sender_addresses": ["${from}"] }`);
-    expect(live).toContain(
-      `{ "name": "ALERT_EMAIL", "destination_address": "${from}", "allowed_sender_addresses": ["${from}"] }`,
-    );
+    expect(live).toContain(`"send_email": [{ "name": "EMAIL", "allowed_sender_addresses": ["${from}"] }]`);
   });
 });

@@ -1,5 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { SITEVERIFY_URL, type TurnstileConfig, verifyTurnstile } from "../../src/worker/auth/turnstile.ts";
+import { parseConfig } from "../../src/worker/config.ts";
+import { PROD_VARS } from "../env-vars.ts";
 
 const CONFIG: TurnstileConfig = {
   origin: "https://bloop.here",
@@ -84,5 +86,30 @@ describe("turnstile", () => {
     expect(await verifyTurnstile(test, "tok", REQUEST, answering({ ...PASS, action: "x" }).fetcher)).toMatchObject({
       ok: false,
     });
+  });
+
+  it("turnstile: the missing-action relaxation never reaches a deployed origin, since config refuses TEST_TIMING and DEV_MAILBOX there", async () => {
+    const vars = { ...PROD_VARS, TURNSTILE_SECRET_KEY: "s3cret" };
+    for (const origin of [
+      PROD_VARS.PUBLIC_ORIGIN,
+      "https://127.0.0.1.evil.example",
+      "https://localhost.evil.example",
+    ]) {
+      for (const flag of ["TEST_TIMING", "DEV_MAILBOX"]) {
+        const r = parseConfig({ ...vars, PUBLIC_ORIGIN: origin, [flag]: "1" });
+        expect(r.ok, `${flag} on ${origin}`).toBe(false);
+        expect(r.ok ? "" : r.problems.join(), origin).toContain(flag);
+      }
+      const deployed = parseConfig({ ...vars, PUBLIC_ORIGIN: origin });
+      if (!deployed.ok) throw new Error(deployed.problems.join());
+      expect(deployed.config.testTiming).toBe(false);
+      const testKeys = answering({ success: true, hostname: "example.com" });
+      expect(await verifyTurnstile(deployed.config, "tok", REQUEST, testKeys.fetcher)).toEqual({
+        ok: false,
+        reason: "action",
+      });
+    }
+    const local = parseConfig({ ...vars, PUBLIC_ORIGIN: "http://127.0.0.1:8787", TEST_TIMING: "1" });
+    expect(local.ok && local.config.testTiming).toBe(true);
   });
 });
