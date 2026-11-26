@@ -1,14 +1,11 @@
 // The open site's account pill: "Sign In" for a visitor, "Library" for one who holds the `__Host-bloop_in` hint cookie.
 // The Worker swaps the label while serving the page, not a script, so a signed-in visitor never sees Sign In flash
-// (docs/ux/landing.md section 2.1). The pill's markup is the build's (tools/build-pages.mjs ACCOUNT_PILL); a unit test
-// holds every open page to it, and a page that does not match is served as written: the Sign In state, never broken.
+// (docs/ux/landing.md section 2.1). The markup is src/shared/account-pill.ts, which the build writes too; a page that
+// does not hold it is served as written: the Sign In state, never broken.
+import { ACCOUNT_PILL_IN, ACCOUNT_PILL_OUT } from "../shared/account-pill.ts";
 import { readCookie } from "./auth/cookies.ts";
 
 export const HINT_COOKIE = "__Host-bloop_in";
-export const PILL_OUT =
-  '<a class="btn account" href="/signin" data-account><span>Sign In</span><span aria-hidden="true">Library</span></a>';
-const PILL_IN =
-  '<a class="btn account" href="/library" data-account><span aria-hidden="true">Sign In</span><span>Library</span></a>';
 // The signed-in copy of a page is a different body under the same file, so it gets its own ETag. Without this a
 // browser holding the signed-out copy would send that ETag after signing in, the asset layer would answer 304, and
 // the visitor would keep seeing Sign In.
@@ -51,6 +48,6 @@ export async function withAccountPill(request: Request, response: Response): Pro
   if (response.status === 304) return new Response(null, { status: 304, headers });
   // The new body's length is not the asset's.
   headers.delete("Content-Length");
-  const body = request.method === "HEAD" ? null : (await response.text()).replace(PILL_OUT, PILL_IN);
+  const body = request.method === "HEAD" ? null : (await response.text()).replace(ACCOUNT_PILL_OUT, ACCOUNT_PILL_IN);
   return new Response(body, { status: response.status, headers });
 }

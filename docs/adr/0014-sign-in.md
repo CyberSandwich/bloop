@@ -62,6 +62,7 @@ Email code and passkey. Nothing else creates a session for an email user: no mag
 - **Rotation (AUTH-08 rotate):** every successful authentication (email code, passkey, reauth) issues a new value and a new `public_id`, and deletes the presented session. A value set before sign-in can therefore never become a signed-in session.
 - **Stored per session:** `public_id` (the only id shown or sent anywhere), `method` (`code`, `passkey`, `entra`), a coarse `label` from the User-Agent class (never the raw string), `reauth_at`.
 - **Sign-in hint:** `__Host-bloop_in=1`, readable by page script, carries no secret and only lets the landing page show Library instead of Sign In. The server never reads it. It is set and cleared beside the session cookie.
+  - Amended: the cookie is HttpOnly like every cookie (the one format in `src/worker/auth/cookies.ts`), so page script cannot read it, and the Worker does: it swaps the open pages' pill to Library while serving them (`src/worker/nav-pill.ts`), with `Vary: Cookie` and its own ETag. Its value only ever selects a label.
 - **Revocation (AUTH-13 signout-all):**
   - Sign out deletes this session and ends the live screens this session started (ADR 0015).
   - Sign out everywhere deletes every session of the user and ends all their live screens.

@@ -1,5 +1,13 @@
-// `node tools/build-pages-cli.mjs` writes the generated pages; `--check` writes nothing and exits 1 on drift.
-import { sync } from "./build-pages.mjs";
+// `node tools/build-pages-cli.mjs` writes the generated pages; `--check` writes nothing and exits 1 on drift;
+// `--launch` writes nothing and exits 1 while an open document still carries the placeholder date.
+import { placeholderDates, sync } from "./build-pages.mjs";
+
+if (process.argv.includes("--launch")) {
+  const left = placeholderDates();
+  if (left.length === 0) process.exit(0);
+  console.error(`Open documents still carry the placeholder date:\n  ${left.join("\n  ")}`);
+  process.exit(1);
+}
 
 const check = process.argv.includes("--check");
 const { written, deleted } = sync({ check });
