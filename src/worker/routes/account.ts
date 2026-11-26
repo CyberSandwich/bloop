@@ -86,8 +86,9 @@ export interface MemberRouteOptions<T> extends MemberOptions {
  * A route for a signed-in member. A write checks Origin, Sec-Fetch-Site and the content type and spends the coarse
  * IP-keyed RL_MEMBER_IP before the session read; then every route spends the member-keyed limit and a write reads the
  * body, so a refused caller learns nothing from the schema. A read spends only the member-keyed limit, so one shared
- * campus address is never one bucket for its readers. An admin route spends nothing and checks nothing before the
- * admin check, so a non-admin's answer is the unknown path's at every request count.
+ * campus address is never one bucket for its readers. An admin route, read or write, spends RL_MEMBER_IP before the
+ * session read too, so no D1 read goes unmetered, but checks nothing else before the admin check and answers a refusal
+ * of that limit with `not_found`, so a non-admin's answer is the unknown path's at every request count.
  */
 export function memberRoute<T = Record<string, never>>(
   methods: readonly string[],
@@ -101,8 +102,8 @@ export function memberRoute<T = Record<string, never>>(
       const refusedWrite = () => (writes ? checkWrite(req, config.origin) : null);
       const early = options.admin ? null : refusedWrite();
       if (early) return early;
-      const flood = writes && !options.admin ? await limited(e, "RL_MEMBER_IP", req, config) : null;
-      if (flood) return flood;
+      const flood = writes || options.admin ? await limited(e, "RL_MEMBER_IP", req, config) : null;
+      if (flood) return options.admin ? fail("not_found") : flood;
       const who = await resolveMember(req, e, config, options);
       const hidden = options.admin ? (who.ok ? requireAdmin(who.member) : fail("not_found")) : null;
       if (hidden) return hidden;
@@ -165,11 +166,16 @@ export function accountRoutesWith(deps: AccountDeps): readonly Route[] {
       "/api/me",
       "api",
       withConfig(async (request, env, config) => {
+        // The coarse per-IP meter first, so no settings or session read goes unmetered; the member's own after it.
+        const flood = await limited(env, "RL_MEMBER_IP", request, config);
+        if (flood) return flood;
         const cookie = readCookie(request, SESSION_COOKIE);
         if (!cookie && !config.graph && isLocalOrigin(config.origin) && isLocalRequest(request)) {
           return json({ ...MOCK_ME, launchMode: (await launchState(env)).mode });
         }
         const { sessions, view } = await sessionView(request, env, config);
+        const tooMany = view ? await limited(env, "RL_MEMBER", request, config, view.userId) : null;
+        if (tooMany) return tooMany;
         if (view && view.tid !== "email" && config.graph) {
           return json({ source: "graph", signedIn: true, email: view.email });
         }

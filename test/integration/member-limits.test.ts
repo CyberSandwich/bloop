@@ -36,4 +36,21 @@ describe("AUTH-16 admin and the member limits, with real limits", () => {
     expect(statuses.slice(0, 60).every((s) => s === 401)).toBe(true);
     expect(statuses[60]).toBe(429);
   });
+
+  it("GET /api/me spends the same per-IP meter before any read: 60 a minute, then 429", async () => {
+    await inOneWindow();
+    const statuses: number[] = [];
+    for (let i = 0; i < 61; i++) {
+      const res = await fetch(`${wrangler.url}/api/me`, { headers: { "CF-Connecting-IP": "203.0.113.22" } });
+      statuses.push(res.status);
+    }
+    expect(statuses.slice(0, 60).every((s) => s === 200)).toBe(true);
+    expect(statuses[60]).toBe(429);
+  });
+
+  it("AUTH-16 admin: past the per-IP meter an admin path still answers the unknown path's 404", async () => {
+    await inOneWindow();
+    for (let i = 1; i <= 61; i++)
+      expect((await post("/api/admin/view", "203.0.113.23")).status, `request ${i}`).toBe(404);
+  });
 });
