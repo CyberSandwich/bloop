@@ -160,6 +160,9 @@ export const preparingText = (done, total) => (total ? `${done ?? 0} of ${total}
 /** "Open bloop.here/s on the room PC, then scan its code with your camera." @param {string} host */
 export const presentLine = (host) => `Open ${host}/s on the room PC, then scan its code with your camera.`;
 
+/** After "Opens first: <name>" for a deck the screen will ask about (present-live.md section 2). @param {string} size */
+export const choiceTail = (size) => `. The screen asks how to open it, since it's ${size}.`;
+
 /** @param {string} name */
 export const stillUploading = (name) => `${name} is still uploading. Keep this page open until it says Saved.`;
 

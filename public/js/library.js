@@ -7,7 +7,6 @@ import {
   deletingLine,
   fullLine,
   isPaged,
-  kindOf,
   positionText,
   quotaLine,
   quotaShare,
@@ -183,6 +182,10 @@ function refuse(answer) {
   if (answer.code === "account_deleting") return void load();
   if (answer.code === "not_found") return say({ title: T.gone, body: "" });
   if (answer.code === "up_next_full") return say({ title: T.fullTitle, body: fullLine(list?.limits.upNext ?? 0) });
+  // The Sample Deck's refusals (docs/library.md, POST /sample): it is a file like any other.
+  if (answer.code === "library_full" || answer.code === "quota_exceeded")
+    return say({ title: T.noSpace, body: T.noSpaceBody, error: true });
+  if (answer.code === "service_busy") return say({ title: T.paused, body: T.pausedBody });
   say({ title: T.notSaved, body: T.checkConnection, error: true });
 }
 
@@ -409,7 +412,7 @@ const glyph = (/** @type {string} */ name) =>
 /** The 40 px tile: slide 1 once prepared, the kind glyph before, the loader over it while uploading. @param {Row} row */
 function tile(row) {
   if (row.upload !== undefined) return el("span", { class: "thumb lib-loading" }, [loader(row.name, null)]);
-  const plain = () => el("span", { class: "thumb" }, [glyph(kindOf(row.ext).glyph)]);
+  const plain = () => el("span", { class: "thumb" }, [glyph(M.glyphOf(row))]);
   if (!row.thumb || list?.switches.previews !== "on") return plain();
   const img = el("img", { class: `thumb${isPaged(row.ext) ? " fit" : ""}`, src: row.thumb, alt: "" });
   // A link that lapsed or a thumbnail not written yet shows the glyph, never the broken-image box.
@@ -567,8 +570,6 @@ function watch() {
 
 // ---- Lazy modules: one import() each, fetched on the first intent; a failed one falls back (library.md section 10) --
 /** @typedef {{start: (page: typeof PAGE) => any}} Lazy */
-// A placeholder holds each module's place until its own commit puts the module's import() there.
-const inert = async () => null;
 /** @type {Record<string, () => Promise<Lazy | null>>} */
 const modules = {
   menu: () => import("./library/menu.js"),
@@ -603,6 +604,8 @@ async function openMenu(id, opener, mode = "menu") {
 }
 
 /** The lazy sheets' stylesheet, once; a failed load leaves the sheet unstyled and tries again next time. */
+// transitional: U: core/lazy.js `styled` is this loader, but importing it costs this first load more than its size
+// limit leaves; the switch is measured again with the move to U's core/api.js.
 let sheetsCss = /** @type {Promise<void> | null} */ (null);
 const sheetStyles = () =>
   (sheetsCss ??= new Promise((done) => {
