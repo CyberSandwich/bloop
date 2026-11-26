@@ -6,6 +6,7 @@
 import { NAME_MAX } from "../../shared/name-rule.ts";
 import type { Db, Statement } from "../auth/db.ts";
 import { IDLE_DAYS } from "../auth/sessions.ts";
+import { isPlayable } from "../convert/results.ts";
 import { base64url, fromBase64url } from "../ids.ts";
 import { renamed } from "./names.ts";
 
@@ -201,10 +202,10 @@ const ROW_SQL = `SELECT f.id, f.version, f.name, f.ext, f.bytes, f.status, f.ref
   FROM library_file f LEFT JOIN derived d ON d.file_id = f.id AND d.version = f.version
   WHERE f.user_id = ?1 AND f.status != 'purged'`;
 
+/** Playable is the conversion contract's call (isPlayable), so a ready720 video reads ready; these are the rest. */
 const DERIVED_STATE: Record<string, DerivedState["state"]> = {
   queued: "preparing",
   running: "preparing",
-  done: "ready",
   failed: "failed",
 };
 
@@ -232,7 +233,7 @@ const rowOf = (r: DbFile): FileRow => ({
   purgeAfter: r.purge_after,
   disabled: r.disabled_at !== null,
   derived: {
-    state: DERIVED_STATE[r.d_status ?? ""] ?? "none",
+    state: isPlayable(r.d_status) ? "ready" : (DERIVED_STATE[r.d_status ?? ""] ?? "none"),
     stage: r.d_stage,
     pages: r.d_pages,
     fontsMissing: fontsOf(r.d_fonts),

@@ -508,6 +508,29 @@ describe("listFiles", () => {
     db.raw.prepare("UPDATE derived SET fonts_missing = 'not json'").run();
     expect((await fileRow(db, "u1", "a"))?.derived.fontsMissing).toEqual([]);
   });
+
+  it("maps every derived status through the conversion contract: ready720 is playable, so ready", async () => {
+    const db = libWith();
+    const expected: Record<string, string> = {
+      queued: "preparing",
+      running: "preparing",
+      ready720: "ready",
+      done: "ready",
+      failed: "failed",
+      skipped: "none",
+      cancelled: "none",
+    };
+    for (const [status, state] of Object.entries(expected)) {
+      const id = `f-${status}`;
+      addFile(db, { id });
+      db.raw
+        .prepare(
+          "INSERT INTO derived (file_id, version, owner_kind, status, stage, created_at, updated_at) VALUES (?, 1, 'library', ?, 'render', 0, 0)",
+        )
+        .run(id, status);
+      expect((await fileRow(db, "u1", id))?.derived.state, status).toBe(state);
+    }
+  });
 });
 
 describe("LIB-06 names: rename", () => {
