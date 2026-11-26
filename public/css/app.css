@@ -815,7 +815,6 @@ a.row:focus-visible {
   -webkit-box-orient: vertical;
   -webkit-line-clamp: 2;
   overflow: hidden;
-  word-break: break-word;
   font-size: 15px;
   font-weight: 600;
   line-height: 1.3;
