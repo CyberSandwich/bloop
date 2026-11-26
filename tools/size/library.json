@@ -32,7 +32,7 @@
     "name": "library sheets CSS, lazy",
     "path": "dist/css/library-sheets.css",
     "gzip": true,
-    "limit": "1.01 kB"
+    "limit": "1.0 kB"
   },
   {
     "name": "library trash, lazy",
