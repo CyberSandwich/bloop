@@ -7,6 +7,7 @@ import {
   clearProgress,
   dropScreens,
   endScreenRow,
+  endScreenRows,
   idemGet,
   idemPut,
   leaseHeld,
@@ -138,6 +139,26 @@ describe("live screens", () => {
     fileIds: ["a", "b"],
     startedAt,
     endsAt: null,
+  });
+
+  it("S1: a row is ended only when its Screen confirms; a refusal or a throw leaves it live and counted out", async () => {
+    const { sql } = open();
+    for (const n of [1, 2, 3]) putScreen(sql, row(n));
+    const answers: Record<string, boolean | "throw"> = { s1: true, s2: false, s3: "throw" };
+    const count = await endScreenRows(
+      sql,
+      liveScreens(sql),
+      async (r) => {
+        const a = answers[r.sessionId];
+        if (a === "throw") throw new Error("unreachable");
+        return a === true;
+      },
+      99,
+    );
+    expect(count).toBe(1);
+    expect(liveScreens(sql).map((r) => r.sessionId)).toEqual(["s2", "s3"]);
+    expect(await endScreenRows(sql, liveScreens(sql), async () => true, 100)).toBe(2);
+    expect(liveScreens(sql)).toEqual([]);
   });
 
   it("holds a row until it ends, and lists only the live ones", () => {

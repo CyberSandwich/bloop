@@ -6,8 +6,7 @@ import { DurableObject } from "cloudflare:workers";
 import type { Env } from "../env.ts";
 import { purgeDueFiles } from "../library/purge.ts";
 import { purgeDepsFor } from "../library/wiring.ts";
-import type { OwnerEnd } from "../live-screens.ts";
-import { screenStub } from "../stubs.ts";
+import { screenOwnerEnd } from "../live-screens.ts";
 import {
   allProgress,
   clearProgress,
@@ -15,6 +14,7 @@ import {
   EXPORT_LEASE,
   EXPORT_LEASE_MS,
   endScreenRow,
+  endScreenRows,
   idemGet,
   idemPut,
   leaseHeld,
@@ -142,20 +142,21 @@ export class UserLibrary extends DurableObject<Env> {
 
   /**
    * Ends the user's live screens, all of them or those of one phone session or showing one file. Each Screen ends its own
-   * session, and only if the pairing's user is `userId`; the row is marked ended either way. A Screen that cannot be
-   * reached is logged: the serving predicate already refuses its fetches for a signed-out or purging owner.
+   * session, and only if the pairing's user is `userId`; a row is marked ended only once its Screen confirmed, so a
+   * Screen that could not be reached stays listed. Returns how many were ended.
    */
   async endScreens(userId: string, filter: ScreenFilter = {}): Promise<number> {
     const rows = screensMatching(liveScreens(this.ctx.storage.sql), filter);
-    for (const row of rows) {
-      try {
-        await (screenStub(this.env, row.screenRef) as unknown as OwnerEnd).endFromOwner(userId);
-      } catch {
-        console.error(JSON.stringify({ evt: "end_screen_failed" }));
-      }
-      endScreenRow(this.ctx.storage.sql, row.sessionId, Date.now());
-    }
-    return rows.length;
+    return endScreenRows(
+      this.ctx.storage.sql,
+      rows,
+      async (row) => {
+        const ended = await screenOwnerEnd(this.env, row.screenRef).endFromOwner(userId);
+        if (!ended.ok) console.error(JSON.stringify({ evt: "end_screen_failed", error: ended.error }));
+        return ended.ok;
+      },
+      Date.now(),
+    );
   }
 
   async forgetScreens(sessionIds: string[]): Promise<void> {
