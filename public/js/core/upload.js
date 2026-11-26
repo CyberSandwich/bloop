@@ -4,6 +4,7 @@
 // progress in every phone browser.
 /** @import {Xhr} from "../types.js" */
 import { cleanName } from "../shared/names.js";
+import { createApi } from "./api.js";
 
 const KIB = 1024;
 const SAMPLE_BYTES = 64 * KIB;
@@ -213,6 +214,7 @@ const seconds = (header) => {
  */
 export function createUploader({ onChange, deps }) {
   const d = { ...browserDeps(), ...deps };
+  const api = createApi({ fetch: d.fetch });
   /** @type {Rec[]} */
   let records = [];
   let nextId = 1;
@@ -379,36 +381,10 @@ export function createUploader({ onChange, deps }) {
    * @returns {Promise<Answer>} status 0 for the network, or for a 2xx that is not bloop's (a filter's page, REL-03)
    */
   async function call(method, path, body, headers = {}, ms = CALL_MS) {
-    const stop = new AbortController();
-    const timer = d.setTimeout(() => stop.abort(), ms);
-    /** @type {Response | undefined} */
-    let res;
-    /** @type {any} */
-    let json = null;
-    try {
-      res = await d.fetch(path, {
-        method,
-        headers: {
-          Accept: "application/json",
-          ...(method === "GET" ? {} : { "Content-Type": "application/json" }),
-          ...headers,
-        },
-        ...(method === "GET" ? {} : { body: JSON.stringify(body ?? {}) }),
-        cache: "no-store",
-        credentials: "same-origin",
-        signal: stop.signal,
-      });
-      json = JSON.parse((await res.text()) || "{}");
-    } catch {
-      // no answer, or one that is not JSON
-    } finally {
-      d.clearTimeout(timer);
-    }
-    if (!res) return { status: 0 };
-    const ours = res.headers.get("X-Bloop") === "1";
-    if (res.ok) return json !== null && ours ? { status: 200, body: json } : { status: 0 };
-    const retryAfter = seconds(res.headers.get("Retry-After"));
-    return { status: res.status, body: { code: json?.code }, ...(retryAfter ? { retryAfter } : {}) };
+    const res = await api.call(method, path, { body, headers, timeout: ms });
+    if (res.ok) return { status: 200, body: res.value };
+    if (!res.status) return { status: 0 };
+    return { status: res.status, body: { code: res.code }, ...(res.retryAfter ? { retryAfter: res.retryAfter } : {}) };
   }
 
   /** @param {string} id @returns {string} */

@@ -1,6 +1,6 @@
 // The upload engine end to end over a fake world (client-upload-world.ts): the wire, the parts loop, retries, waiting,
 // the fill, cancel, resume and the check.
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { makeWorld, NETWORK, type Put, type World } from "./client-upload-world.ts";
 
 /** Starts one file of `size` bytes and lets the create and the first parts go out. */
@@ -13,6 +13,14 @@ async function begin(world: World, size: number, name?: string) {
 const fileOf = (world: World) => world.last.files[0];
 const states = (world: World) => world.snaps.map((b) => b.files[0]?.state);
 const paths = (world: World, method?: string) => world.calledPaths(method);
+/** The request timeout is api.js's own global timer: it and the world's clock move together, a second at a time. */
+async function both(world: World, ms: number) {
+  for (let left = ms; left > 0; left -= 1000) {
+    vi.advanceTimersByTime(Math.min(1000, left));
+    await world.advance(Math.min(1000, left));
+  }
+}
+const fakeTimeouts = () => vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
 
 describe("a library upload over a direct URL", () => {
   it("creates, sends each part, confirms all but the last, and completes with the last part riding on it", async () => {
@@ -1222,12 +1230,17 @@ describe("a request that never answers", () => {
     expect(fileOf(world).state).toBe("waiting");
     offline = false;
     hang = true;
-    await world.advance(15_000);
-    await world.advance(29_999);
-    expect(fileOf(world).state).toBe("waiting");
-    hang = false;
-    await world.advance(1);
-    await world.advance(15_000);
+    fakeTimeouts();
+    try {
+      await both(world, 15_000);
+      await both(world, 29_000);
+      expect(fileOf(world).state).toBe("waiting");
+      hang = false;
+      await both(world, 1000);
+      await both(world, 15_000);
+    } finally {
+      vi.useRealTimers();
+    }
     expect(fileOf(world).state).toBe("saved");
   });
 });
@@ -1403,10 +1416,15 @@ describe("a file the server is still validating", () => {
       path.endsWith("/complete") && hangs-- > 0
         ? new Promise<Response>((_, fail) => init.signal?.addEventListener("abort", () => fail(init.signal?.reason)))
         : real(path, init);
-    await begin(world, 50);
-    await world.advance(145_000);
-    expect(fileOf(world).state).toBe("checking");
-    await world.advance(20_000);
+    fakeTimeouts();
+    try {
+      await begin(world, 50);
+      await both(world, 145_000);
+      expect(fileOf(world).state).toBe("checking");
+      await both(world, 20_000);
+    } finally {
+      vi.useRealTimers();
+    }
     expect(fileOf(world).state).toBe("unsettled");
   });
 

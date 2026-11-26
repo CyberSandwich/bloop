@@ -274,6 +274,10 @@ describe("the engine against the real routes", () => {
   }, 60_000);
 
   it("a 429 whose Retry-After is far off is the rate_limited refusal, and the batch goes on: no wait, no retry loop", async () => {
+    // The cap's day ends at UTC midnight, and its Retry-After is the time left in it: within five minutes of the end
+    // that is a wait the engine would sit out, so the run starts in the next day.
+    const toMidnight = () => 86_400_000 - (Date.now() % 86_400_000);
+    if (toMidnight() < 300_000) await new Promise((resolve) => setTimeout(resolve, toMidnight() + 1000));
     const cookie = member(limited, "ec-rate");
     const run = engine(limited, cookie);
     run.up.add([mp4("first.mp4", 64), mp4("second.mp4", 65)]);
@@ -281,7 +285,7 @@ describe("the engine against the real routes", () => {
     expect(last.files.map((f) => f.state)).toEqual(["saved", "refused"]);
     expect(last.files[1]).toMatchObject({ error: "rate_limited" });
     expect(run.requests.filter((r) => r === "POST /api/uploads")).toHaveLength(2);
-  }, 60_000);
+  }, 400_000);
 
   it("a 409 library_full is that refusal, not a claim to wait out: the next file is not held up", async () => {
     const cookie = member(crowded, "ec-full");
