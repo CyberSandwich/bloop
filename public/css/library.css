@@ -12,9 +12,6 @@
   padding: calc(var(--inset) + var(--frame-h) + 24px) max(var(--pad), env(safe-area-inset-right))
     calc(var(--inset) + env(safe-area-inset-bottom)) max(var(--pad), env(safe-area-inset-left));
 }
-#b-account {
-  margin-left: auto;
-}
 .lib-head {
   display: grid;
   gap: 8px;
