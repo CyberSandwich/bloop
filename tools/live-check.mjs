@@ -60,6 +60,21 @@ export function globRegex(/** @type {string} */ glob) {
   return new RegExp(`^${body}$`);
 }
 
+/**
+ * A lazy entry's dist/ path as the public/ files it names (dist/ is built from public/, ADR 0011). A glob that names
+ * nothing throws: it would add no check and pass.
+ * @param {string} p @param {string[]} files public/ paths @returns {string[]}
+ */
+export function expandLazy(p, files) {
+  if (!p.startsWith("dist/")) throw new Error(`live-check: lazy entry ${p} is not under dist/`);
+  const rel = p.slice("dist/".length);
+  if (!/[*?{}[\]]/.test(rel)) return [rel];
+  const re = globRegex(rel);
+  const hits = files.filter((f) => re.test(f));
+  if (hits.length === 0) throw new Error(`live-check: lazy entry ${p} matches no file`);
+  return hits;
+}
+
 /** What the live site must answer: the page registry (page-registry.ts), public/, the size budgets and wrangler. */
 export function registryFrom() {
   const pub = join(ROOT, "public");
@@ -74,13 +89,7 @@ export function registryFrom() {
   const lazy = sizeEntries
     .filter((/** @type {{ name: string }} */ e) => e.name.endsWith(", lazy"))
     .flatMap(paths)
-    .flatMap((/** @type {string} */ p) => {
-      if (!p.startsWith("dist/")) throw new Error(`live-check: lazy entry ${p} is not under dist/`);
-      const rel = p.slice("dist/".length);
-      if (!/[*?{}[\]]/.test(rel)) return [rel];
-      const re = globRegex(rel);
-      return files.filter((f) => re.test(f));
-    });
+    .flatMap((/** @type {string} */ p) => expandLazy(p, files));
   const vars = wranglerConfig(readFileSync(join(ROOT, "wrangler.jsonc"), "utf8")).vars ?? {};
   return {
     pages: [...html]

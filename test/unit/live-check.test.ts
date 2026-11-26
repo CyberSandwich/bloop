@@ -6,6 +6,7 @@ import { CSP, pageCsp } from "../../src/worker/headers.ts";
 import { AUTH_SHELLS, MEMBER_PAGES } from "../../src/worker/page-registry.ts";
 import {
   checksFor,
+  expandLazy,
   globRegex,
   linksIn,
   main,
@@ -265,6 +266,14 @@ describe("live-check: the registry is the repo's, not a list in the tool", { tim
     expect(globRegex("js/*.js").test("js/core/a.js")).toBe(false);
     expect(globRegex("css/?.css").test("css/a.css")).toBe(true);
     expect(() => globRegex("js/{a,b}.js")).toThrow(/cannot expand/);
+  });
+
+  it("a lazy entry maps dist/ to public/; a glob that names no file, or a path outside dist/, throws", () => {
+    const files = ["js/core/a.js", "js/core/b.js", "css/c.css"];
+    expect(expandLazy("dist/css/c.css", files)).toEqual(["css/c.css"]);
+    expect(expandLazy("dist/js/core/*.js", files)).toEqual(["js/core/a.js", "js/core/b.js"]);
+    expect(() => expandLazy("dist/js/typo/*.js", files)).toThrow(/matches no file/);
+    expect(() => expandLazy("public/js/core/a.js", files)).toThrow(/not under dist/);
   });
 
   it("the registry lists cannot be changed at run time", () => {
