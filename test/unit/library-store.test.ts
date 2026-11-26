@@ -237,6 +237,10 @@ describe("trash and restore", () => {
     });
     expect(await makeDue(db, "u1", "all", NOW)).toBe(2);
     expect(await makeDue(db, "u1", "all", NOW)).toBe(0);
+    const many = ids(150, "m");
+    for (const id of many) addFile(db, { id, trashedAt: NOW, purgeAfter: NOW + DAY });
+    // The route accepts 150 ids; D1 binds at most 100 values a statement, which the test database now enforces.
+    expect(await makeDue(db, "u1", many, NOW)).toBe(150);
     expect((await fileRow(db, "u1", "live"))?.purgeAfter).toBeNull();
     expect((await fileRow(db, "u2", "other"))?.purgeAfter).toBe(NOW + DAY);
   });

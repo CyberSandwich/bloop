@@ -71,6 +71,29 @@ describe("LIB-09 inactive warning", () => {
     expect(await warnInactive({ DB: db }, config, deps(), NOW)).toBe(0);
   });
 
+  it("a lockout list longer than D1's bind limit is asked in groups and still reaches the last member", async () => {
+    const members = Array.from({ length: 250 }, (_, i) => `m${i}`);
+    const db = libWith(members);
+    for (const id of members) asMember(db, id, 1);
+    const warned: string[] = [];
+    const warn = async (u: { id: string }) => (warned.push(u.id), true);
+    const lockoutMembers = members.map((id) => `${id}@x.test`);
+    await warnInactive({ DB: db }, config, deps({ warn, lockoutMembers }), NOW);
+    expect(warned).toHaveLength(50);
+    expect(warned).toContain("m0");
+    // The last group is reached when the earlier ones hold no one to warn.
+    const lastOnly = libWith(members);
+    asMember(lastOnly, "m249", 1);
+    const seen: string[] = [];
+    await warnInactive(
+      { DB: lastOnly },
+      config,
+      deps({ warn: async (u) => (seen.push(u.id), true), lockoutMembers }),
+      NOW,
+    );
+    expect(seen).toEqual(["m249"]);
+  });
+
   it("in the preview lockout considers only listed members, chosen in the query", async () => {
     const db = libWith(["a", "b"]);
     asMember(db, "a", 1);
