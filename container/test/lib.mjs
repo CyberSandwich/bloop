@@ -8,6 +8,7 @@ import { closeSync, mkdirSync, mkdtempSync, openSync, readFileSync, readSync, st
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
+import { recordTiming, splitTiming } from "./result.mjs";
 
 export const IMAGE = process.env.IMAGE ?? "bloop-converter:ci";
 export const here = fileURLToPath(new URL(".", import.meta.url));
@@ -189,7 +190,8 @@ export async function runJob(c, file, ext, { id = "corpus-job", chunk } = {}) {
   const code = post(c, id, ext, file, { chunk });
   if (code !== 202) throw new Error(`upload answered ${code}`);
   const { status, ms, early, stageAt } = await finish(c);
-  const out = { status, ms, early, stageAt, files: {}, manifest: null };
+  const { result: out, timing } = splitTiming({ status, ms, early, stageAt, files: {}, manifest: null });
+  recordTiming(out, timing);
   if (status.state === "done") {
     const dir = join(work, `out-${uniq()}`);
     mkdirSync(dir, { recursive: true });
