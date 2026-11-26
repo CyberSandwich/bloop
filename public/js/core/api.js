@@ -7,11 +7,12 @@ import { FETCH_TIMEOUT_MS } from "./timing.js";
 
 /**
  * @template T
- * @typedef {{ok: true, value: T, headers: {get(name: string): string | null}} | {ok: false, error: ErrorCode, retryAfter?: number}} Reply
+ * @typedef {{ok: true, value: T, headers: {get(name: string): string | null}}
+ *   | {ok: false, error: ErrorCode, status?: number, code?: unknown, retryAfter?: number | undefined}} Reply status: bloop's HTTP answer, if any
  */
 
 /** @param {unknown} code @returns {code is ErrorCode} */
-const isErrorCode = (code) => typeof code === "string" && Object.hasOwn(ERRORS, code);
+export const isErrorCode = (code) => typeof code === "string" && Object.hasOwn(ERRORS, code);
 
 /**
  * @param {{fetch?: typeof fetch}} [deps]
@@ -20,14 +21,15 @@ export function createApi(deps = {}) {
   const doFetch = deps.fetch ?? ((/** @type {Parameters<typeof fetch>} */ ...args) => globalThis.fetch(...args));
 
   /**
-   * @param {"GET" | "POST"} method
+   * @param {"GET" | "POST" | "DELETE"} method
    * @param {string} path
-   * @param {{auth?: string | null | undefined, body?: unknown, keepalive?: boolean, timeout?: boolean}} [options]
+   * @param {{auth?: string | null | undefined, body?: unknown, headers?: Record<string, string>, keepalive?: boolean,
+   *   timeout?: boolean | number}} [options] true for FETCH_TIMEOUT_MS, or the milliseconds (true counts as 1)
    * @returns {Promise<Reply<any>>}
    */
   async function call(method, path, options = {}) {
     /** @type {Record<string, string>} */
-    const headers = { Accept: "application/json" };
+    const headers = { Accept: "application/json", ...options.headers };
     if (options.auth) headers.Authorization = `Bearer ${options.auth}`;
     /** @type {RequestInit} */
     const init = {
@@ -41,7 +43,7 @@ export function createApi(deps = {}) {
     const stop = new AbortController();
     let timer;
     if (method === "GET" || options.timeout) {
-      timer = setTimeout(() => stop.abort(), FETCH_TIMEOUT_MS);
+      timer = setTimeout(() => stop.abort(), typeof options.timeout === "number" ? options.timeout : FETCH_TIMEOUT_MS);
       init.signal = stop.signal;
     }
     if (method !== "GET") {
@@ -49,18 +51,13 @@ export function createApi(deps = {}) {
       init.body = JSON.stringify(options.body ?? {});
     }
     let res;
-    try {
-      res = await doFetch(path, init);
-    } catch {
-      clearTimeout(timer);
-      return { ok: false, error: "offline" };
-    }
     let body = null;
     try {
-      const text = await res.text();
-      body = text ? JSON.parse(text) : {};
+      res = await doFetch(path, init);
+      body = JSON.parse((await res.text()) || "{}");
     } catch {
-      body = null;
+      // No answer, or one that is not JSON (body stays null)
+      if (!res) return { ok: false, error: "offline" };
     } finally {
       clearTimeout(timer);
     }
@@ -71,10 +68,10 @@ export function createApi(deps = {}) {
         : { ok: true, value: body, headers: res.headers };
     const code = body?.code;
     // Retry-After in whole seconds (an HTTP date is not honored).
-    const after = res.status === 429 ? Number.parseInt(res.headers.get("Retry-After") ?? "", 10) : Number.NaN;
-    if (isErrorCode(code))
-      return after > 0 ? { ok: false, error: code, retryAfter: after } : { ok: false, error: code };
-    return { ok: false, error: res.status >= 500 || body === null ? "service_down" : "bad_request" };
+    const after = Number(res.headers.get("Retry-After"));
+    const error = isErrorCode(code) ? code : res.status >= 500 || body === null ? "service_down" : "bad_request";
+    // The library's own codes are not in ERRORS: their pages read `code`.
+    return { ok: false, error, status: res.status, code, retryAfter: after || undefined };
   }
 
   return {
