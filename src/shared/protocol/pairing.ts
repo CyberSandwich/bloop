@@ -1,5 +1,5 @@
 // Pairing, the screen and phone views, items, WebSocket frames and the file list (docs/interfaces.md section 1).
-import type { Actor, EndReason, ErrorCode, FileType, Kind, Mode, OpenMode } from "./core.ts";
+import type { EndReason, ErrorCode, FileType, Kind, Mode, OpenMode } from "./core.ts";
 
 /** Session states owned by the Screen object (section 2). */
 export type SessionState =
