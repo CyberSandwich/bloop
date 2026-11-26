@@ -53,9 +53,41 @@ describe("readJson", () => {
   const read = (body: string) => readJson(post(GOOD, body), schema);
 
   it("parses a valid body and treats an empty body as {}", async () => {
-    expect(await read('{"fileId":"a"}')).toEqual({ ok: true, value: { fileId: "a" } });
+    expect(await read('{"fileId":"a"}')).toMatchObject({ ok: true, value: { fileId: "a" } });
     const empty = await readJson(post(GOOD, ""), z.object({}).strict());
     expect(empty.ok).toBe(true);
+  });
+
+  it("answers the body text it read, so a route hashing it never reads the body again", async () => {
+    expect(await read('{"fileId":"a"}')).toEqual({ ok: true, value: { fileId: "a" }, text: '{"fileId":"a"}' });
+  });
+
+  it("PAIR-06 cap: a body over 4 KB is refused before parsing: a declared length unread, a stream once past the cap", async () => {
+    const declared = post({ ...GOOD, "Content-Length": "5000" }, "x".repeat(5000));
+    const refused = await readJson(declared, schema);
+    expect(!refused.ok && refused.response.status).toBe(400);
+    expect(declared.bodyUsed).toBe(false);
+    // No length: chunks of 1 KB, pulled only until the cap is passed, then the stream is canceled.
+    let pulls = 0;
+    let canceled = false;
+    const body = new ReadableStream<Uint8Array>({
+      pull(c) {
+        pulls++;
+        c.enqueue(new Uint8Array(1024).fill(0x20));
+      },
+      cancel() {
+        canceled = true;
+      },
+    });
+    const chunked = new Request(`${ORIGIN}/api/approve`, { method: "POST", headers: GOOD, body, duplex: "half" });
+    const streamed = await readJson(chunked, schema);
+    expect(!streamed.ok && streamed.response.status).toBe(400);
+    expect(canceled).toBe(true);
+    expect(pulls).toBeLessThanOrEqual(6);
+    // Exactly at the cap is read; multi-byte text counts in bytes.
+    const atCap = `{"fileId":"${"a".repeat(4096 - 13)}"}`;
+    expect((await read(atCap)).ok).toBe(true);
+    expect((await read(`{"fileId":"${"é".repeat(2100)}"}`)).ok).toBe(false);
   });
 
   it("refuses unknown keys, wrong types, bad JSON and oversized bodies with 400", async () => {
