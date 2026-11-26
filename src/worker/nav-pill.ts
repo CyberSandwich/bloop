@@ -32,6 +32,9 @@ export function pillRequest(request: Request): Request {
   if (own.length > 0) headers.set("If-None-Match", own.join(", "));
   else headers.delete("If-None-Match");
   headers.delete("If-Modified-Since");
+  // A byte range of the asset is not a range of the rewritten body.
+  headers.delete("Range");
+  headers.delete("If-Range");
   return new Request(request, { headers });
 }
 
@@ -43,9 +46,11 @@ export async function withAccountPill(request: Request, response: Response): Pro
   if (!signedIn(request)) return new Response(response.body, { status: response.status, headers });
   const etag = headers.get("ETag");
   if (etag) headers.set("ETag", etag.replace(/"$/, `${IN}"`));
+  // Some shared caches ignore Vary: Cookie, so the signed-in copy is never stored by one.
+  headers.set("Cache-Control", "private, no-cache");
   if (response.status === 304) return new Response(null, { status: 304, headers });
-  // A new body is plain text: its length and encoding are no longer the asset's.
+  // The new body's length is not the asset's.
   headers.delete("Content-Length");
-  headers.delete("Content-Encoding");
-  return new Response((await response.text()).replace(PILL_OUT, PILL_IN), { status: response.status, headers });
+  const body = request.method === "HEAD" ? null : (await response.text()).replace(PILL_OUT, PILL_IN);
+  return new Response(body, { status: response.status, headers });
 }

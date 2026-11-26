@@ -134,14 +134,33 @@ describe("pill 304 never serves the other label: the validator follows the copy"
 });
 
 describe("pill sets Vary: Cookie on every open HTML response and never on preview", () => {
-  it("open pages vary by cookie, signed in or not, and keep no-cache", async () => {
+  it("open pages vary by cookie, signed in or not; the signed-in copy is private, always revalidated", async () => {
     const { env } = world("open");
     for (const headers of [{}, IN]) {
       const res = await get(env, headers);
       expect(res.headers.get("Vary")).toMatch(/\bCookie\b/);
-      expect(res.headers.get("Cache-Control")).toBe("no-cache");
+      expect(res.headers.get("Cache-Control")).toBe(headers === IN ? "private, no-cache" : "no-cache");
       expect(res.headers.get("Content-Length")).toBeNull();
     }
+  });
+
+  it("a signed-in range request is answered whole, and a signed-in HEAD has no body", async () => {
+    const { env, seen } = world("open");
+    const ranged = await get(env, { ...IN, Range: "bytes=0-9", "If-Range": '"x"' });
+    expect(ranged.status).toBe(200);
+    expect(label(await ranged.text())).toBe("Library");
+    expect(seen.at(-1)?.headers.get("Range")).toBeNull();
+    expect(seen.at(-1)?.headers.get("If-Range")).toBeNull();
+    const head = await servePage(new Request(`${ORIGIN}/privacy`, { method: "HEAD", headers: IN }), env);
+    expect(head.status).toBe(200);
+    expect(await head.text()).toBe("");
+  });
+
+  it("the open 404 has one -in suffix on its ETag", async () => {
+    const { env } = world("open");
+    const res = await get(env, { ...IN, Accept: "text/html" }, "/nope");
+    expect(res.status).toBe(404);
+    expect(res.headers.get("ETag")).toMatch(/[^n]-in"$/);
   });
 
   it("preview serves today's file with no Vary and no rewrite, even for a visitor with the hint", async () => {

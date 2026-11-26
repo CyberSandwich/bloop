@@ -97,6 +97,11 @@ describe("a hand page's open variant", () => {
     expect(() => openVariant(page, undefined, "x")).toThrow(/no mode:a region/);
   });
 
+  it("a mode marker that is unclosed or mistyped throws", () => {
+    expect(() => openVariant(`${page}<!-- mode:z -->\n`, over, "x")).toThrow(/unmatched or malformed/);
+    expect(() => openVariant(`${page}<!-- /mode:z -->\n`, over, "x")).toThrow(/unmatched or malformed/);
+  });
+
   it("an override for a page with no regions throws, and a page with none and no override is fine", () => {
     expect(() => openVariant("<p>x</p>\n", over, "x")).toThrow(/page with no mode regions/);
     expect(openVariant("<p>x</p>\n", undefined, "x")).toBe("<p>x</p>\n");
