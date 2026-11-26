@@ -10,7 +10,7 @@ let api: Api;
 
 beforeAll(async () => {
   wrangler = await startPairing(
-    { ADMIN_EMAILS: "admin@example.test", TEST_EMAILS: "test@example.test" },
+    { ADMIN_EMAILS: "admin@example.test", TEST_EMAILS: "test@example.test", CODE_PEPPER: "C".repeat(43) },
     { migrate: true },
   );
   api = new Api(wrangler.url);

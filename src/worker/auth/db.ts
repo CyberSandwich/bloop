@@ -16,6 +16,9 @@ export interface BatchDb extends Db {
   batch(statements: Statement[]): Promise<{ meta: { changes: number } }[]>;
 }
 
+/** The guard of a statement batched with one that may not create the user: it runs only once the row exists. */
+export const USER_EXISTS = "EXISTS (SELECT 1 FROM app_user WHERE id = ?)";
+
 /** The one cast from the platform binding to the slice above. */
 export const dbOf = (binding: unknown): BatchDb => binding as BatchDb;
 

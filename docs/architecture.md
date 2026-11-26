@@ -247,7 +247,8 @@ src/worker/
   export-format.ts         CSV with formula-injection protection, export columns, date range parsing
   stores.ts                the one place that picks the AuditLog and Metrics implementations
   auth/{oauth,vault,sessions,cookies,services,db}.ts   oauth4webapi flow; token vault; phone sessions; cookie format and AEAD seal; per-request objects and the daily job; the D1 slice
-  auth/{codes,templates,email,turnstile}.ts   email codes and the known-device value; every email's text; the one mail sender (ADR 0021); siteverify (ADR 0022)
+  auth/{codes,invites,templates,email,turnstile}.ts   email codes and the known-device value; invite tokens, peek and the acceptance batch; every email's text; the one mail sender (ADR 0021); siteverify (ADR 0022)
+  moderation/actions.ts    the email block list check (ADR 0013)
   routes/{pairing,files,open,drop,control,auth,export,common}.ts
   cron.ts                  the cron dispatcher; cron-jobs.ts lists each trigger's jobs
   retention.ts             closeStaleSessions (hourly), runRetention (daily)
@@ -285,6 +286,7 @@ tools/
   make-fixtures.mjs        writes the synthetic sample decks the tests use
   render-slides.py         the demo deck's PDF export to the demo screen's slide images
   change-tier.mjs          classifies the staged diff (T0 to T2) and enforces the commit-msg blocks
+  invite.mjs               the first admin's invite (ADR 0014): prints the D1 command and the link, runs nothing
   render-og.py og.svg      the social image and the touch icon, from the logo; og.svg is the image's SVG source
   subset-font.py           Inter to the Latin subset, wght 400 to 600, opsz kept
 test/
@@ -338,7 +340,12 @@ test/
 | OPTIONS, PROPFIND, other | `/f/*`                                       | none                                  | 405 `Allow: GET, HEAD`                                         |
 | GET | `/fo/ping` | none; file-origin host only | live now: 204 for the file-origin probe (section 13) |
 | GET | `/signin`, `/invite`, `/library`, `/account`, `/admin`, `/report` | pages | gated by launch mode (section 13); the forms and APIs behind them are planned |
-| POST, GET, PATCH, DELETE | `/api/invite/*`, `/api/auth/*`, `/api/me/*` additions | none, or session | planned (A): invites, email code, passkey sign-in and registration, reauth, email change and revert |
+| POST | `/api/auth/code/request` | none, Origin; `RL_CODE`, then Turnstile (action `signin`) | `{email, turnstile}`: 202 `{challengeId, expiresAt}` for every well-formed address, with a code row written either way (AUTH-10). Whether mail goes out is decided after the response: only to an active or deleting, unsuspended member whom the mode admits and the block list does not hold. `email_invalid`, `turnstile_failed`; a full D1 bucket is `rate_limited` with `Retry-After` (ADR 0014) |
+| POST | `/api/auth/code/verify` | none, Origin; `RL_AUTH` | `{challengeId, code}`: 200 `{next, offerPasskey}` plus the session and hint cookies, and the device cookie unless this device already holds a live one. `next` is the request's `?next=` when it is `/library`, `/a`, `/account` or, for an admin, `/admin`; else `/library`. Every failure is `code_invalid`; the mode is read fresh |
+| POST | `/api/invite/peek` | none, Origin; `RL_INVITE` | `{token}`: `{state: open, used, expired or invalid, emailMasked?, expiresAt?}`, the last two only when open. Writes nothing (INV-03). Revoked, unknown and, in preview, an invite outside `ADMIN_EMAILS` and `TEST_EMAILS` read `invalid` |
+| POST | `/api/invite/accept` | none, Origin; `RL_INVITE` | `{token}`: 202 `{challengeId, emailMasked, expiresAt}`, and an `invite` code mailed to the invite's own address (INV-02), at most 5 a day per invite (`rate_limited`). A dead, mode-gated or blocked invite is `invite_dead`; the mode is read fresh |
+| POST | `/api/invite/verify` | none, Origin; `RL_AUTH` | `{challengeId, code}`: 200 `{next: "/library", offerPasskey: true}` plus the cookies. One batch creates the user with `terms_version`, accepts the invite and creates the session. A bad code is `code_invalid`; an invite dead since the code went, or an address that already has an account, is `invite_dead` |
+| POST, GET, PATCH, DELETE | `/api/auth/passkey/*`, `/api/me/*` additions | none, or session | planned (A): passkey sign-in and registration, reauth, email change and revert |
 | GET, POST | `/api/admin/*` other than `/api/admin/view` | admin session | planned (A): invites, waitlist, reports, users, files, launch mode and gate |
 | POST | `/api/hooks/tally` | signature, no Origin check | planned (A): the waitlist webhook |
 | POST | `/api/reports` | Turnstile | planned (A): a public report |
@@ -365,7 +372,7 @@ A regex that takes user text must not split any string into its top-level altern
 | next code on one screen | 6 per min                                                                            | exact, Screen DO    |
 | `/f/`                   | 60 per 60 s per IP (`RL_FETCH`); then 60 per 60 s per screen (`RL_FETCH` keyed by the screen ref), or per view link (keyed by its hash), between the Screen object's check and the counted fetch; per link: 10 fetches, none for a view link (VID-02) | binding; exact      |
 | `PUT /api/drop`         | 5 per 60 s per IP (`RL_UPLOAD`; every attempt past the Origin and credential checks counts); one accepted file per session; live bytes under `GUEST_STORAGE_BUDGET_BYTES` | binding; exact; D1  |
-| `/auth/start`, `/auth/callback`, `POST /api/me/disconnect` | 10 per 60 s per IP (`RL_AUTH`); the disconnect then spends the member routes row's IP meter too | binding |
+| `/auth/start`, `/auth/callback`, `POST /api/me/disconnect`, `POST /api/auth/code/verify`, `POST /api/invite/verify` | 10 per 60 s per IP (`RL_AUTH`); the disconnect then spends the member routes row's IP meter too | binding |
 | member routes (`/api/me/*`) | every route: 300 per 60 s per IP (`RL_MEMBER_IP`) before any D1 read, a flood guard sized for a shared campus NAT; then, on every route but `DELETE /api/me` (a fresh proof bounds it) and the disconnect (`RL_AUTH`), 120 per 60 s per member (`RL_MEMBER`), the real limiter, after the session read (ADR 0014) | binding |
 | `GET /api/me`           | `RL_MEMBER_IP` before any read, then `RL_MEMBER` once a live session is read (limits: the member routes row) | binding |
 | `/api/admin/*`          | `RL_MEMBER_IP` (the member routes row) before the session read, a refusal answering the unknown path's 404 like everything else before the admin check; then 60 per 60 s per admin (`RL_ADMIN`) | binding |
@@ -377,8 +384,8 @@ A regex that takes user text must not split any string into its top-level altern
 | demo claims             | 20 per 60 s per IP (`RL_DEMO_CLAIM`), after the lookup says the code is a demo one; the live claim limit applies first, so the lower of the two binds | binding |
 | concurrent demo screens | `DEMO_MAX_CONCURRENT` across all visitors, and `DEMO_MAX_PER_IP` per IP hash (values in `wrangler.jsonc`); the next create answers 429 `rate_limited` | exact, Directory DO |
 | demo screens            | plus a 60-min session and a 25 MB drop cap                                           | config              |
-| `POST /api/auth/code/request`, `POST /api/me/reauth/code`, `POST /api/me/email` | 5 per 60 s per IP (`RL_CODE`), before Turnstile and any D1 code bucket; planned (A) | binding |
-| `POST /api/invite/peek`, `POST /api/invite/accept`, `POST /api/email/revert` | 10 per 60 s per IP (`RL_INVITE`); planned (A) | binding |
+| `POST /api/auth/code/request`, `POST /api/me/reauth/code`, `POST /api/me/email` | 5 per 60 s per IP (`RL_CODE`), before Turnstile and any D1 code bucket; the two `/api/me/*` routes planned (A) | binding |
+| `POST /api/invite/peek`, `POST /api/invite/accept`, `POST /api/email/revert` | 10 per 60 s per IP (`RL_INVITE`); the revert planned (A) | binding |
 | `POST /api/auth/passkey/options`, `POST /api/auth/passkey/verify` | 20 per 60 s per IP (`RL_PASSKEY`); planned (A) | binding |
 | `POST /api/reports`, `POST /api/reports/context` | 5 per 60 s per IP (`RL_REPORT`), plus Turnstile on the report; planned (A) | binding |
 | `/api/library*`, `/api/uploads` | 120 per 60 s per member (`RL_LIBRARY`); planned (L, U) | binding |
@@ -629,7 +636,7 @@ The Durable Object bindings (`USER_LIBRARY`, `CONVERTER`), the library bucket an
 
 A `TRANSITIONAL(<slice>)` comment marks an export that ships before its caller or its counterpart: the comment says what wires it, and that change removes the marker. A slice is a later accounts change (`a-<n>`) or a stream's letter. A docs-drift test refuses any other slice and any marker that names a plan, a section or a stream instead of code.
 
-Transitional slices: `a-4`, `a-5`, `a-7`, `a-8`, `a-9`, `L`.
+Transitional slices: `a-5`, `a-7`, `a-8`, `a-9`, `L`.
 
 ### 13.4 Observability
 Workers Logs are on and invocation logs are off, because invocation logs keep full URLs, tokens included (SITE-03). Sampling is set in `wrangler.jsonc`. Code logs through the one `log()` shape. Turning on the Issues view is a dashboard step (`docs/setup.md`).

@@ -40,10 +40,7 @@ export const clearCookie = (name: string): string => setCookie(name, "", 0);
 export const setStrict = (name: string, value: string, maxAgeSeconds: number): string =>
   `${name}=${value}; Max-Age=${maxAgeSeconds}; Path=/; Secure; HttpOnly; SameSite=Strict`;
 
-/**
- * Every cookie a member sign-in sets, in one place. `deviceValue` is null when the device cookie stays as it is.
- * TRANSITIONAL(a-4): code verify is the first caller.
- */
+/** Every cookie a member sign-in sets, in one place. `deviceValue` is null when the device cookie stays as it is. */
 export const signedInCookies = (session: string, deviceValue: string | null): string[] => [
   setCookie(SESSION_COOKIE, session, SESSION_MAX_AGE_SECONDS),
   setCookie(HINT_COOKIE, "1", SESSION_MAX_AGE_SECONDS),

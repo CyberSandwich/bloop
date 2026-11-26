@@ -24,6 +24,7 @@ import { auditRecord } from "../export-format.ts";
 import { checkWrite, fail, json, readJson } from "../http.ts";
 import { base64url } from "../ids.ts";
 import { launchState } from "../mode.ts";
+import { type BlockCheck, blockCheck } from "../moderation/actions.ts";
 import { type Route, route } from "../router.ts";
 import { auditFor } from "../stores.ts";
 import { recordBestEffort } from "./auth.ts";
@@ -45,11 +46,10 @@ const pageQuery = z.object({
 const MOCK_ME = { source: "mock", signedIn: true, email: null } as const;
 
 export interface AccountDeps extends ScreenDeps {
-  /** The block list seam. TRANSITIONAL(a-4): until a-4 fills it with moderation's `isBlocked`, no address is blocked. */
-  isBlocked(env: Env, emailNorm: string): Promise<boolean>;
+  isBlocked: BlockCheck;
 }
 
-const defaultDeps: AccountDeps = { ...screenDeps, isBlocked: async () => false };
+const defaultDeps: AccountDeps = { ...screenDeps, isBlocked: blockCheck };
 
 /** The WebAuthn user handle: the bytes of app_user.id, base64url (ADR 0014), for the signal API. */
 const userHandle = (userId: string): string => base64url(new TextEncoder().encode(userId));
@@ -245,7 +245,7 @@ export function accountRoutesWith(deps: AccountDeps): readonly Route[] {
       "/api/me/restore",
       { body: emptyBody, allowDeleting: true },
       async ({ env, config, member }) => {
-        if (await deps.isBlocked(env, member.emailNorm)) return fail("restore_too_late");
+        if (await deps.isBlocked(env, config.secrets.codePepper, member.emailNorm)) return fail("restore_too_late");
         const restored = member.status === "active" || (await servicesFor(env, config).sessions.restore(member.userId));
         return restored ? json({ signedIn: true, deleting: false }) : fail("restore_too_late");
       },

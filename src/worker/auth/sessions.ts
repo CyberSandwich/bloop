@@ -2,7 +2,7 @@
 // idle and 90 days absolute. Every authentication issues a new value and deletes the one it replaces (AUTH-08).
 import { newRef, newSecret, sha256Hex } from "../ids.ts";
 import { BUMP_DEVICE_EPOCH, bumpDeviceEpochIf } from "./codes.ts";
-import type { BatchDb } from "./db.ts";
+import { type BatchDb, type Statement, USER_EXISTS } from "./db.ts";
 
 const DAY_MS = 86_400_000;
 export const IDLE_DAYS = 30;
@@ -105,16 +105,21 @@ export class Sessions {
   }
 
   /**
-   * Issues a session and deletes the one the browser presented, in one batch, so the presented value never outlives
-   * the new one and a carried `publicId` passes the unique index. Returns the cookie value.
+   * The statements that delete the session the browser presented and issue the new one, for a batch, with the new
+   * cookie value. The delete comes first, so a carried `publicId` passes the unique index. Both run only while the user
+   * row exists, so a batch that may not create the user (an invite's acceptance) creates no session either.
    */
-  async create(userId: string, replacing: string | null, options: SessionOptions): Promise<string> {
+  async issue(
+    userId: string,
+    replacing: string | null,
+    options: SessionOptions,
+  ): Promise<{ value: string; statements: Statement[] }> {
     const value = newSecret();
     const now = this.now();
     const insert = this.db
       .prepare(
         `INSERT INTO phone_session (id_hash, user_id, created_at, last_seen_at, expires_at, public_id, method, label,
-           reauth_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+           reauth_at) SELECT ?, ?, ?, ?, ?, ?, ?, ?, ? WHERE ${USER_EXISTS}`,
       )
       .bind(
         await sha256Hex(value),
@@ -126,11 +131,23 @@ export class Sessions {
         options.method,
         options.label,
         options.reauthAt,
+        userId,
       );
     const drop = replacing
-      ? [this.db.prepare("DELETE FROM phone_session WHERE id_hash = ?").bind(await sha256Hex(replacing))]
+      ? [
+          this.db
+            .prepare(`DELETE FROM phone_session WHERE id_hash = ? AND ${USER_EXISTS}`)
+            .bind(await sha256Hex(replacing), userId),
+        ]
       : [];
-    await this.db.batch([...drop, insert]);
+    return { value, statements: [...drop, insert] };
+  }
+
+  /** `issue` as its own batch, so the presented value never outlives the new one. Returns the cookie value. */
+  async create(userId: string, replacing: string | null, options: SessionOptions): Promise<string> {
+    const { value, statements } = await this.issue(userId, replacing, options);
+    const results = await this.db.batch(statements);
+    if (results.at(-1)?.meta.changes !== 1) throw new Error("user row missing for the session");
     return value;
   }
 

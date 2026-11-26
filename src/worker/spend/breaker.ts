@@ -578,12 +578,14 @@ export async function resetBreaker(
   const trip = (await d.guard.snapshot()).trips.find((t) => t.switch === name);
   let restored: string | undefined;
   const row = trip ? await d.store.row(name) : undefined;
-  if (trip && row?.value === trip.value && row.by === BREAKER_ACTOR) {
-    // An unknown prior (the row could not be read at latch) restores nothing: the default could loosen the owner's row.
-    if (trip.prior !== PRIOR_UNKNOWN) {
-      restored = trip.prior || SWITCHES[name].default;
-      await d.store.set(name, restored, actor, "breaker reset");
-    }
+  // An unknown prior (the row could not be read at latch) restores nothing: the default could loosen the owner's row.
+  const prior = trip && trip.prior !== PRIOR_UNKNOWN ? trip.prior || SWITCHES[name].default : undefined;
+  if (trip && prior !== undefined && row?.value === trip.value && row.by === BREAKER_ACTOR) {
+    restored = prior;
+    await d.store.set(name, restored, actor, "breaker reset");
+  } else if (prior !== undefined && row?.value === prior && row.by === actor) {
+    // A retried reset: the first attempt restored the row, then failed before the latch, so the notice still says so.
+    restored = prior;
   }
   // The same trip later the same day is a new event and gets its own alert, log line and mail tries. The claims go
   // before the latch, so a failed release throws with the trip still latched and a retried reset releases them.

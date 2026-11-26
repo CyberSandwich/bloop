@@ -13,8 +13,8 @@ export interface ScreenScope {
 
 /** Ends the member's live screens: all of them, or the scope named. */
 export async function endScreens(env: Env, userId: string, scope: ScreenScope = {}): Promise<void> {
-  // TRANSITIONAL(a-4): a scoped end (one session's or one file's screens) does nothing until a-4 calls the library's
-  // UserLibrary.endScreens(scope).
+  // TRANSITIONAL(L): a scoped end (one session's or one file's screens) does nothing until UserLibrary.endScreens(scope)
+  // exists and this calls it.
   if (scope.bySession === undefined && scope.fileId === undefined) await endLiveScreens(env, userId);
 }
 
