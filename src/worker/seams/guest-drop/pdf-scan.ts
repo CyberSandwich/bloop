@@ -17,11 +17,12 @@
 // A name inside a string or comment also matches (fail closed). An object stream is read only when its dictionary is
 // exactly the plain form (`/Type /ObjStm`, `/N`, `/First`, `/Length`, `/Extends` and one `/Filter /FlateDecode`), opens
 // within `DICT_LOOKBACK` bytes of its `stream` keyword and its data is at most `MAX_STREAM_BYTES`; anything else, and
-// any `/ObjStm` token or direct `/First` count (an outline's `/First` is a reference) outside every dictionary read so
-// (a keyword followed by a space, a dictionary too far back or split by a second `obj<<`), is refused as
-// `unscannable`, as is any `/Encrypt` (its streams are ciphertext). After the first object stream it cannot read the
-// scan inflates no more, but reads every name to the end. Names built at run time by a script are the script's own
-// business: `/JS` and `/JavaScript` already refuse the script.
+// any `/ObjStm` token or direct `/First` count outside every dictionary read so (a keyword followed by a space, a
+// dictionary too far back or split by a second `obj<<`), is refused as `unscannable`, as is a reference `/First` (an
+// outline's, or a count a reader resolves) whose object reaches a stream keyword before its `endobj` without that
+// stream's dictionary being read, and any `/Encrypt` (its streams are ciphertext). After the first object stream it
+// cannot read the scan inflates no more, but reads every name to the end. Names built at run time by a script are the
+// script's own business: `/JS` and `/JavaScript` already refuse the script.
 import { inflate, latin1 } from "./bytes.ts";
 import { type Check, fail, OK } from "./formats.ts";
 
@@ -56,12 +57,13 @@ export const MAX_OBJECT_STREAMS = 4096;
 // biome-ignore lint/suspicious/noControlCharactersInRegex: NUL is PDF white space
 const NAME = /\/[^\x00\t\n\f\r /<>[\](){}%]+/g;
 /**
- * A dictionary opening (`obj<<`, white space bounded so every scan sees the whole match) or a stream keyword with its
- * EOL (CR LF, LF, or the CR alone a reader also takes) after white space or `>>`, found in one pass. The left
- * boundary keeps `/ObjStmstream` one name, not a name and a keyword.
+ * A dictionary opening (`obj<<`, white space bounded so every scan sees the whole match), an `endobj` keyword, or a
+ * stream keyword with its EOL (CR LF, LF, or the CR alone a reader also takes) after white space or `>>`, found in one
+ * pass. The left boundaries keep `/ObjStmstream` and `/endobj` names, not keywords.
  */
-// biome-ignore lint/suspicious/noControlCharactersInRegex: NUL is PDF white space
-const MARKS = /(?<!end)obj[\x00\t\n\f\r ]{0,64}<<|(?<![^\x00\t\n\f\r >])stream(?:\r\n|\r|\n)/g;
+const MARKS =
+  // biome-ignore lint/suspicious/noControlCharactersInRegex: NUL is PDF white space
+  /(?<!end)obj[\x00\t\n\f\r ]{0,64}<<|(?<![^\x00\t\n\f\r >)\]])endobj(?![^\x00\t\n\f\r /<>[\](){}%])|(?<![^\x00\t\n\f\r >])stream(?:\r\n|\r|\n)/g;
 /** What follows `/First` in an outline: a reference. Anything else is an object stream's count. */
 const REFERENCE =
   // biome-ignore lint/suspicious/noControlCharactersInRegex: NUL is PDF white space
@@ -143,6 +145,12 @@ export async function scanPdfChunks(
   let dictIndex = 0;
   /** `/ObjStm` offsets no dictionary read holds yet, ascending; a later dictionary may still. */
   let pending: number[] = [];
+  /**
+   * Reference-form `/First` offsets whose object has not closed: an `endobj` releases them, a stream keyword first
+   * (a reader resolves the reference as an object stream's count) makes the file unscannable unless that stream's
+   * dictionary was read and holds them.
+   */
+  let refs: number[] = [];
 
   const pull = async (): Promise<void> => {
     const chunk = last ? null : await next();
@@ -158,6 +166,7 @@ export async function scanPdfChunks(
   const stray = (): void => {
     found.add("unscannable");
     pending = [];
+    refs = [];
   };
   const tracking = () => !failed && !found.has("unscannable");
 
@@ -181,21 +190,35 @@ export async function scanPdfChunks(
   const settle = (done: boolean): void => {
     const first = pending[0];
     if (first !== undefined && (done || first + DICT_LOOKBACK < marksDone)) stray();
+    else if (done && refs.length > 0) stray();
+  };
+  /** A stream keyword whose dictionary was read from `from` (`Infinity` when it was not read). */
+  const streamMet = (from: number): void => {
+    if (refs.some((at) => at < from)) stray();
+    else refs = [];
   };
   const safeEnd = () => (last ? base + data.length : base + Math.max(0, data.length - HOLD_BACK));
 
+  const tokens = new RegExp(NAME);
+  /** No name starts in `[namesDone, nameAhead)`: a scan up to each keyword is then not a search to the buffer's end. */
+  let nameAhead = 0;
   /** Scans the names that start before `to`; `text` must hold the bytes past `to` that the hold-back promises. */
   const scanNames = (text: string, to: number): void => {
-    const tokens = new RegExp(NAME);
-    tokens.lastIndex = namesDone - base;
-    for (let m = tokens.exec(text); m !== null && base + m.index < to; m = tokens.exec(text)) {
-      const n = decodeName(m[0]);
-      if (REFUSED.has(n)) found.add(n);
-      if (tracking() && (n === "ObjStm" || (n === "First" && !followedByReference(text, m.index + m[0].length)))) {
-        objStmAt(base + m.index);
+    if (to <= namesDone) return;
+    if (nameAhead < to) {
+      tokens.lastIndex = namesDone - base;
+      let m = tokens.exec(text);
+      for (; m !== null && base + m.index < to; m = tokens.exec(text)) {
+        const n = decodeName(m[0]);
+        if (REFUSED.has(n)) found.add(n);
+        if (!tracking() || (n !== "ObjStm" && n !== "First")) continue;
+        if (n === "First" && followedByReference(text, m.index + m[0].length)) refs.push(base + m.index);
+        else objStmAt(base + m.index);
       }
+      // With no match, a name may yet start at the last byte, once the bytes after it arrive.
+      nameAhead = base + (m === null ? text.length - 1 : m.index);
     }
-    namesDone = Math.max(namesDone, to);
+    namesDone = to;
   };
 
   /** Reads on until `endstream` after `from` arrives or the data is past one stream's cap; its offset, or -1. */
@@ -221,15 +244,23 @@ export async function scanPdfChunks(
     marks.lastIndex = Math.max(0, marksDone - base);
     for (let m = failed ? null : marks.exec(text); m !== null && base + m.index < limit; m = marks.exec(text)) {
       const at = base + m.index;
-      if (!m[0].startsWith("stream")) {
+      if (m[0].startsWith("obj")) {
         dictAt = at;
+        continue;
+      }
+      // Names before a keyword are scanned first, so a reference `/First` before it is in `refs`.
+      if (tracking()) scanNames(text, at);
+      if (m[0] === "endobj") {
+        refs = [];
         continue;
       }
       const dictStart = dictAt;
       dictAt = -1;
-      if (dictStart === -1 || at - dictStart > DICT_LOOKBACK) continue;
-      const dict = text.slice(dictStart - base, m.index);
-      if (!isObjStm(dict)) continue;
+      const dict = dictStart === -1 || at - dictStart > DICT_LOOKBACK ? "" : text.slice(dictStart - base, m.index);
+      if (!isObjStm(dict)) {
+        if (tracking()) streamMet(Number.POSITIVE_INFINITY);
+        continue;
+      }
       const from = at + m[0].length;
       let end = -1;
       if (streams < MAX_OBJECT_STREAMS && plainObjStm(dict)) {
@@ -260,6 +291,7 @@ export async function scanPdfChunks(
       streams++;
       for (const n of names(latin1.decode(inflated))) if (REFUSED.has(n)) found.add(n);
       if (tracking()) dictRead(dictStart, at);
+      if (tracking()) streamMet(dictStart);
       marksDone = Math.max(marksDone, end);
       if (pulled) {
         // Back to the outer loop from the stream's end, so one stream never makes room for the next.

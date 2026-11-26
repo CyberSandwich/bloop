@@ -17,8 +17,11 @@ export const READ_PLAN = {
    * room for the inflate buffers, and covers nearly every deck; a larger one pays for ranges.
    */
   smallObjectBytes: 16 * 1024 * 1024,
-  /** Reads one validation may spend on a large object: head, end record, directory, then the coalesced parts. */
-  maxReads: 64,
+  /**
+   * Reads one validation may spend on a large object: a deck's head, end record, directory and coalesced parts, or a
+   * PDF at `MAX_OBJECT_BYTES` (validate.ts): its head, two tails and 64 windows of 8 MiB.
+   */
+  maxReads: 72,
   /** Wanted entries closer than this share a read, so a deck's slide and rels parts (small, adjacent) cost one. */
   coalesceGapBytes: 1024 * 1024,
   /** A shared read never grows past this (one entry larger than it still gets its own). */

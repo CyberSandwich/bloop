@@ -1,7 +1,7 @@
 // Zip structure reading from byte ranges: the end record and the central directory only. Nothing here
 // inflates an entry; `dataStart` locates an entry's stored bytes for the read plan (read-plan.ts).
 import type { DropError } from "../../../shared/protocol.ts";
-import { type RangeReader, ZIP_LIMITS } from "./index.ts";
+import { type RangeReader, readExact, ZIP_LIMITS } from "./index.ts";
 
 const EOCD_SIG = 0x06054b50;
 const EOCD64_LOCATOR_SIG = 0x07064b50;
@@ -39,7 +39,7 @@ export function findEndRecord(tail: Uint8Array): number {
   return -1;
 }
 
-const tailOf = (r: RangeReader) => r.read(Math.max(0, r.size - TAIL_BYTES), Math.min(r.size, TAIL_BYTES));
+const tailOf = (r: RangeReader) => readExact(r, Math.max(0, r.size - TAIL_BYTES), Math.min(r.size, TAIL_BYTES));
 
 /** True when the end of the file carries a zip end record (a polyglot when the file claims to be a PDF). */
 export async function hasEndRecord(r: RangeReader): Promise<boolean> {
@@ -68,8 +68,7 @@ export async function readCentralDirectory(r: RangeReader): Promise<ZipRead> {
   const endRecordOffset = r.size - (tail.length - at);
   if (cdOffset + cdSize > endRecordOffset) return refuse();
 
-  const cd = await r.read(cdOffset, cdSize);
-  if (cd.length !== cdSize) return refuse();
+  const cd = await readExact(r, cdOffset, cdSize);
   const cv = view(cd);
   const decoder = new TextDecoder("utf-8");
   const entries: ZipEntry[] = [];

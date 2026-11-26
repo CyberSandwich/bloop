@@ -5,7 +5,7 @@
 // is not where the format puts it is a malformed file.
 import { ascii } from "./bytes.ts";
 import { type Check, fail, OK } from "./formats.ts";
-import type { RangeReader } from "./index.ts";
+import { type RangeReader, readExact } from "./index.ts";
 import { READ_PLAN } from "./read-plan.ts";
 
 /** A 48 MP phone photo passes; the decoded size of one frame stays near 400 MB at most. */
@@ -19,11 +19,14 @@ interface Limits {
   maxSegments: number;
   /** Every marker, fill byte or sub-block the walk steps over. */
   maxSteps: number;
+  /** Wall time for the walk (the GIF's, which reads to the trailer). */
+  maxMs?: number;
 }
 /**
  * Past any cap the file is malformed. A JPEG's headers sit in its first MiB (a segment is at most 64 KiB, an
  * extended XMP packet a few of them). A GIF is walked to its trailer, frame data included, so its caps follow the read
- * plan's (64 windows of 8 MiB, the largest library file) and a sub-block per 255 bytes of that.
+ * plan's (8 MiB windows, as many as the plan allows) and a sub-block per 255 bytes of that. Past its wall time a GIF
+ * walk is `service_busy`, which a retry may clear: a slow store is not a malformed file.
  */
 export const WALK_LIMITS = {
   jpeg: { blockBytes: 256 * 1024, maxReads: 4, maxSegments: 256, maxSteps: 8192 },
@@ -32,6 +35,7 @@ export const WALK_LIMITS = {
     maxReads: READ_PLAN.maxReads,
     maxSegments: 1_000_000,
     maxSteps: Math.ceil((READ_PLAN.maxReads * READ_PLAN.maxReadBytes) / 255),
+    maxMs: 10_000,
   },
 } as const satisfies Record<string, Limits>;
 
@@ -56,8 +60,8 @@ function walker(r: RangeReader, limits: Limits): Bytes {
     if (at < blockAt || at + n > blockAt + block.length) {
       if (++reads > limits.maxReads) return null;
       const want = Math.min(limits.blockBytes, r.size - at);
-      const read = await r.read(at, want);
-      if (read.length !== want || want < n) return null;
+      if (want < n) return null;
+      const read = await readExact(r, at, want);
       [block, blockAt] = [read, at];
     }
     return block.subarray(at - blockAt, at - blockAt + n);
@@ -110,12 +114,14 @@ function gif(head: Uint8Array): Dimensions | null {
 const colorTable = (packed: number) => (packed & 0x80 ? 3 * 2 ** ((packed & 7) + 1) : 0);
 
 /**
- * Every image descriptor up to the trailer: each frame within the pixel cap and no larger than the logical screen
- * (a browser decodes the frame, not the screen). Extension and image data sub-blocks are stepped over. A file with no
- * frame, or anything but an extension, a frame or the trailer where a block starts, is malformed.
+ * Every image descriptor up to the trailer: each frame within the pixel cap and, offset included, inside the logical
+ * screen (a browser decodes the frame, not the screen). Extension and image data sub-blocks are stepped over. A file
+ * with no frame, or anything but an extension, a frame or the trailer where a block starts, is malformed.
  */
 async function gifFrames(bytes: Bytes, screen: Dimensions): Promise<Check> {
   const limits = WALK_LIMITS.gif;
+  // In a Worker the clock moves only across I/O, so the deadline bites at a read; the step cap bounds the CPU between.
+  const deadline = Date.now() + limits.maxMs;
   const packed = await bytes(10, 1);
   if (!packed) return bad("gif header");
   let at = 13 + colorTable(packed[0] as number);
@@ -126,10 +132,14 @@ async function gifFrames(bytes: Bytes, screen: Dimensions): Promise<Check> {
     if (intro === 0x2c) {
       const d = await bytes(at, 10);
       if (!d) return bad("gif frame");
-      const frame = { width: view(d).getUint16(5, true), height: view(d).getUint16(7, true) };
+      const v = view(d);
+      const [left, top] = [v.getUint16(1, true), v.getUint16(3, true)];
+      const frame = { width: v.getUint16(5, true), height: v.getUint16(7, true) };
       const sized = checkPixels(frame);
       if (!sized.ok) return sized;
-      if (frame.width > screen.width || frame.height > screen.height) return bad("gif frame outside the screen");
+      if (left + frame.width > screen.width || top + frame.height > screen.height) {
+        return bad("gif frame outside the screen");
+      }
       frames++;
       at += 10 + colorTable(d[9] as number) + 1; // descriptor, local color table, LZW code size
     } else if (intro === 0x21)
@@ -138,6 +148,7 @@ async function gifFrames(bytes: Bytes, screen: Dimensions): Promise<Check> {
     for (let size = -1; size !== 0; steps++) {
       const sub = await bytes(at, 1);
       if (!sub || steps >= limits.maxSteps) return bad("gif data");
+      if (Date.now() > deadline) return fail("service_busy", "gif walk time");
       size = sub[0] as number;
       at += 1 + size;
     }

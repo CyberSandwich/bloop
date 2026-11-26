@@ -26,6 +26,10 @@ export interface PdfSpec {
   gap?: string;
   /** Leave `/Type /ObjStm` out of the object stream's dictionary: a reader takes it by `/N` and `/First` alone. */
   untyped?: boolean;
+  /** Write the object stream's `/First` as a reference to an object holding the count: a reader resolves it. */
+  firstRef?: boolean;
+  /** Spaces at the end of the object stream's dictionary, to open it out of a scanner's lookback. */
+  dictPad?: number;
 }
 
 const latin1 = (s: string): Uint8Array => Uint8Array.from(s, (c) => c.charCodeAt(0) & 0xff);
@@ -96,8 +100,12 @@ export function writePdf(spec: PdfSpec): Uint8Array {
       data += `${spec.objects[num] as string}\n`;
       inStream.set(num, [stm, i]);
     });
-    const dict = `${spec.untyped ? "" : "/Type /ObjStm "}/N ${members.length} /First ${header.length}`;
+    const count = spec.firstRef ? next++ : 0;
+    const first = count ? `${count} 0 R` : `${header.length}`;
+    const pad = " ".repeat(spec.dictPad ?? 0);
+    const dict = `${spec.untyped ? "" : "/Type /ObjStm "}/N ${members.length} /First ${first}${pad}`;
     push(stm, streamBytes(stm, { dict, data: header + data, flate: true }));
+    if (count) push(count, latin1(`${count} 0 obj\n${header.length}\nendobj\n`));
   }
   const size = next + (spec.xref === "table" ? 0 : 1);
   const entry = (num: number) => {
@@ -379,6 +387,26 @@ export const HOSTILE: [string, () => Uint8Array, string[]][] = [
         trailer: "/Root 1 0 R",
       }),
     ["JS", "JavaScript"],
+  ],
+  [
+    "JS in an untyped object stream whose /First is a reference and whose dictionary opens out of the lookback",
+    () =>
+      writePdf({
+        version: "1.7",
+        objects: {
+          1: "<< /Type /Catalog /Pages 2 0 R /OpenAction 4 0 R >>",
+          2: "<< /Type /Pages /Kids [ 3 0 R ] /Count 1 >>",
+          3: "<< /Type /Page /Parent 2 0 R /MediaBox [ 0 0 100 100 ] >>",
+          4: "<< /S /JavaScript /JS (app.alert\\(1\\)) >>",
+        },
+        packed: [4],
+        untyped: true,
+        firstRef: true,
+        dictPad: 5000,
+        xref: "stream",
+        trailer: "/Root 1 0 R",
+      }),
+    ["unscannable"],
   ],
   [
     "a file attachment annotation carrying an executable",

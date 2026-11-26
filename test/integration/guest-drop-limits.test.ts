@@ -119,7 +119,9 @@ describe("DROP-05 R2 cap: reads that pass the cap mid-upload", () => {
 
   it("answers storage_full, deletes the object and returns the session to claimed", async () => {
     const { socket, pid } = await pairPhone(ctx.api);
-    const res = await putDrop(ctx.api, pid, deck);
+    // A small deck is one read; one past the whole-read size spends its head, then its end record passes the cap.
+    const large = validDeck([{ name: "ppt/media/big.png", data: new Uint8Array(17 * 1024 * 1024) }]);
+    const res = await putDrop(ctx.api, pid, large);
     expect(res.status).toBe(507);
     expect(await problemCode(res)).toBe("storage_full");
     const key = String(guestRow(ctx.w.d1)?.r2_key);
