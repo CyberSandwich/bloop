@@ -65,9 +65,11 @@ async function mock(page: Page, over: Partial<Mock> = {}): Promise<Mock> {
     json(r, 202, { challengeId: CHALLENGE, emailMasked: "y**@example.test" }),
   );
   await page.route("**/api/me/signout", (r) => json(r, 200, { signedIn: false }));
+  // By pathname: a glob would also catch /signin?next=/account.
   for (const path of ["/library", "/account"])
-    await page.route(`**${path}`, (r) =>
-      r.fulfill({ contentType: "text/html", body: `<!DOCTYPE html><title>${path}</title><h1>${path}</h1>` }),
+    await page.route(
+      (url) => url.pathname === path,
+      (r) => r.fulfill({ contentType: "text/html", body: `<!DOCTYPE html><title>${path}</title><h1>${path}</h1>` }),
     );
   return m;
 }
@@ -323,6 +325,8 @@ test.describe("/invite", () => {
     await expect(page.getByRole("heading", { name: "Check Your Email" })).toBeVisible();
     expect((await new AxeBuilder({ page }).analyze()).violations).toEqual([]);
     m.peek = { state: "expired" };
+    // A goto that differs only by the fragment would not reload the page.
+    await page.goto("about:blank");
     await page.goto(`/invite#t=${TOKEN}`);
     await expect(page.getByRole("heading", { name: "This Invite Has Expired" })).toBeVisible();
     expect((await new AxeBuilder({ page }).analyze()).violations).toEqual([]);
