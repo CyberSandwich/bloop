@@ -3,7 +3,7 @@
 // and rows, so one backlog never starves the rest; a job that finds more says so and the next tick continues.
 import { dbOf, type Statement } from "../auth/db.ts";
 import { type AccountPurgeDeps, dueUsers, purgeUser, resweepTombstones, sweepOrphans } from "./account-purge.ts";
-import { releaseHolds } from "./hold.ts";
+import { releaseHolds, settleHolds } from "./hold.ts";
 import { purgeDueFiles } from "./purge.ts";
 import type { LibDb } from "./store.ts";
 
@@ -31,18 +31,21 @@ export interface RetentionReport {
   warned: number;
   orphans: number;
   holdsReleased: number;
+  holdsSettled: number;
   more: boolean;
 }
 
 /** `daily` adds the scans that need no more than a day's cadence: the warning and the orphan prefixes. */
 export async function runLibraryRetention(
-  env: { DB: unknown; LIBRARY: unknown },
+  env: { DB: unknown; LIBRARY: unknown; GUEST_FILES: unknown },
   config: { inactiveDays: number; inactiveGraceDays: number },
   deps: RetentionDeps,
   options: { daily: boolean },
 ): Promise<RetentionReport> {
   const now = deps.now();
   const budget = () => ({ rounds: ROUNDS_PER_JOB });
+  // Pending holds settle first: a file's purge and an owner's deletion wait on them.
+  const settledHolds = await settleHolds(env, now);
   const files = await purgeDueFiles(env, { budget: budget() }, deps);
 
   let accountsPurged = 0;
@@ -73,8 +76,15 @@ export async function runLibraryRetention(
     warned,
     orphans,
     holdsReleased: holds.released,
+    holdsSettled: settledHolds.settled,
     more:
-      files.more || users.length === USERS_PER_RUN || accountsPending > 0 || swept.more || holds.more || orphansMore,
+      settledHolds.more ||
+      files.more ||
+      users.length === USERS_PER_RUN ||
+      accountsPending > 0 ||
+      swept.more ||
+      holds.more ||
+      orphansMore,
   };
 }
 

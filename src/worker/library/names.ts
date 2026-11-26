@@ -1,40 +1,17 @@
 // The one place a library file name is judged (LIB-06). Names reach the page only through textContent, and downloads use
 // filename*; this file keeps the stored value free of characters that reorder, hide or break a line.
 
-export const MAX_NAME_CHARS = 200;
-
-/**
- * C0 and C1 controls, the line and paragraph separators, every bidi control (overrides, isolates and the invisible
- * LRM, RLM and ALM marks), the invisible zero-width space, word joiner and byte-order mark, and both slashes. The joiner
- * and non-joiner stay: emoji sequences and several scripts need them.
- */
-const refused = (c: number): boolean =>
-  c <= 0x1f ||
-  (c >= 0x7f && c <= 0x9f) ||
-  c === 0x061c ||
-  c === 0x200b ||
-  c === 0x200e ||
-  c === 0x200f ||
-  c === 0x2060 ||
-  c === 0xfeff ||
-  c === 0x2028 ||
-  c === 0x2029 ||
-  (c >= 0x202a && c <= 0x202e) ||
-  (c >= 0x2066 && c <= 0x2069) ||
-  (c >= 0xd800 && c <= 0xdfff) ||
-  c === 0x2f ||
-  c === 0x5c;
+import { isValidName, refusedChar } from "../../../public/js/shared/name-rule.js";
 
 /**
  * A rename's new name: `base` NFC-normalized and trimmed, joined to the file's unchanged extension. A typed extension
- * stays part of the base. Null when the base is empty, holds a refused character or the whole name passes 200.
+ * stays part of the base. Null when the base is empty or the whole name is not valid (shared/name-rule.js: NAME_MAX code
+ * points, no refused character).
  */
 export function renamed(base: string, ext: string): string | null {
   const stem = base.normalize("NFC").trim();
   const name = `${stem}.${ext}`;
-  if (stem === "" || Array.from(name).length > MAX_NAME_CHARS) return null;
-  for (const c of stem) if (refused(c.codePointAt(0) as number)) return null;
-  return name;
+  return stem !== "" && isValidName(name) ? name : null;
 }
 
 /** Characters Windows refuses in a file name, besides the ones `refused` covers. */
@@ -47,7 +24,7 @@ const MAX_EXPORT_EXT = 10;
 const utf8 = new TextEncoder();
 
 const cleaned = (s: string): string =>
-  Array.from(s, (c) => (refused(c.codePointAt(0) as number) || WINDOWS_NAME_CHARS.has(c) ? "_" : c)).join("");
+  Array.from(s, (c) => (refusedChar(c) || WINDOWS_NAME_CHARS.has(c) ? "_" : c)).join("");
 
 /** At most `bytes` UTF-8 bytes of `s`, cut on a code point. */
 function fitBytes(s: string, bytes: number): string {
