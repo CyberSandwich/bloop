@@ -6,6 +6,7 @@ import { lstatSync, mkdirSync, readdirSync, readFileSync, renameSync, rmSync, wr
 import { basename, dirname, join, posix, relative, sep } from "node:path";
 import { fileURLToPath } from "node:url";
 import { transformSync } from "esbuild";
+import { wranglerConfig } from "./wrangler-config.mjs";
 
 const REPO = fileURLToPath(new URL("../", import.meta.url));
 // The browser floor (design.md): syntax past it is lowered, and syntax that cannot be lowered fails the build.
@@ -196,11 +197,8 @@ function kind(path) {
  * @param {Record<string, string | undefined>} env
  */
 export function fileOriginModule(root, env = process.env) {
-  const live = readFileSync(join(root, "wrangler.jsonc"), "utf8")
-    .split("\n")
-    .filter((line) => !line.trim().startsWith("//"))
-    .join("\n");
-  const origin = env.FILE_ORIGIN ?? JSON.parse(live).vars?.FILE_ORIGIN ?? "";
+  const origin =
+    env.FILE_ORIGIN ?? wranglerConfig(readFileSync(join(root, "wrangler.jsonc"), "utf8")).vars?.FILE_ORIGIN ?? "";
   return `export const FILE_ORIGIN = ${JSON.stringify(origin)};\n`;
 }
 

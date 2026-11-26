@@ -14,14 +14,15 @@ export function json(body: unknown, status = 200, headers?: Record<string, strin
 }
 
 /**
- * A GET answer the client revalidates (policy `api-revalidate`, ADR 0023): a strong ETag of the body, and 304 with no
- * body when If-None-Match carries it.
+ * A GET answer the client revalidates (policy `api-revalidate`, ADR 0023): an ETag of the body, and 304 with no body
+ * when If-None-Match lists it, weak or strong (RFC 9110 weak comparison, which a proxy's W/ prefix needs).
  */
 export async function revalidated(request: Request, body: unknown): Promise<Response> {
   const text = JSON.stringify(body);
   const digest = new Uint8Array(await crypto.subtle.digest("SHA-256", new TextEncoder().encode(text)));
   const etag = `"${[...digest.slice(0, 16)].map((b) => b.toString(16).padStart(2, "0")).join("")}"`;
-  if (request.headers.get("If-None-Match") === etag)
+  const listed = (request.headers.get("If-None-Match") ?? "").split(",").map((tag) => tag.trim().replace(/^W\//, ""));
+  if (listed.includes(etag) || listed.includes("*"))
     return new Response(null, { status: 304, headers: { ETag: etag } });
   return json(body, 200, { ETag: etag });
 }

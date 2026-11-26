@@ -1,19 +1,16 @@
-// The request budget (docs/design.md section 11, tools/size/requests.json): how many requests reach the Worker while a
+// The request budget (docs/design.md section 11, tools/requests.json): how many requests reach the Worker while a
 // task page loads, and whether the module graph arrives in one wave. Runs in CI only, like every Playwright test.
 import { readFileSync } from "node:fs";
 import { expect, test } from "@playwright/test";
+import { wranglerConfig } from "../../tools/wrangler-config.mjs";
 
 const budgets: Record<string, { worker: number; lateModules: number }> = JSON.parse(
-  readFileSync("tools/size/requests.json", "utf8"),
+  readFileSync("tools/requests.json", "utf8"),
 );
 
 /** The paths the asset layer answers without the Worker: the negated entries of wrangler.jsonc `run_worker_first`. */
 const staticPaths = (() => {
-  const text = readFileSync("wrangler.jsonc", "utf8")
-    .split("\n")
-    .filter((line) => !line.trim().startsWith("//"))
-    .join("\n");
-  const list: string[] = JSON.parse(text).assets.run_worker_first;
+  const list: string[] = wranglerConfig(readFileSync("wrangler.jsonc", "utf8")).assets.run_worker_first;
   return list.filter((p) => p.startsWith("!")).map((p) => p.slice(1));
 })();
 const reachesWorker = (pathname: string) =>

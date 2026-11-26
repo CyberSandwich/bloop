@@ -31,7 +31,7 @@ import { reportRoutes } from "./routes/reports.ts";
 import { uploadRoutes } from "./routes/uploads.ts";
 import { SpendGuard } from "./spend/guard.ts";
 
-/** Paths the routes own; everything else is a static asset. wrangler.jsonc sends every request to the Worker so the host check sees it. */
+/** Paths the routes own; everything else is a page. wrangler.jsonc `run_worker_first` sends every path to the Worker except the static trees, so the host check sees every page. */
 const DYNAMIC = /^\/(api|f|auth)\/|^\/fo\/ping$/;
 
 /** First match wins. Later modules add their routes here, one line each. */
@@ -97,9 +97,10 @@ export default {
       const { response, policy } = await dispatch(request, env);
       // A WebSocket upgrade response must reach the runtime untouched.
       return response.status === 101 ? response : withHeaders(response, policy);
-    } catch {
+    } catch (error) {
       // A binding that throws is a 500 the client can read, never the platform's error page (section 13.7).
-      console.error(JSON.stringify({ evt: "unhandled" }));
+      // The error's name only: its message can carry a path, a query or a user's text.
+      console.error(JSON.stringify({ evt: "unhandled", error: error instanceof Error ? error.name : typeof error }));
       return withHeaders(problem(500, "internal"), "api");
     }
   },

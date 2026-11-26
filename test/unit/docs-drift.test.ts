@@ -267,7 +267,7 @@ describe("size budgets", () => {
   });
 
   it("the request budget names task pages that exist and have a module script, with whole-number limits", () => {
-    const budgets = JSON.parse(read("tools/size/requests.json")) as Record<string, Record<string, number>>;
+    const budgets = JSON.parse(read("tools/requests.json")) as Record<string, Record<string, number>>;
     expect(Object.keys(budgets).length).toBeGreaterThan(1);
     for (const [path, budget] of Object.entries(budgets)) {
       expect(read(`public${path}.html`), path).toContain('<script type="module"');

@@ -1,5 +1,6 @@
-// Which static page answers a path, by launch mode (ADR 0026). Every non-dynamic request passes through `servePage`,
-// so the rules below hold whatever the asset layer would do with the raw path.
+// Which static page answers a path, by launch mode (ADR 0026). Every non-dynamic request outside the static trees
+// (wrangler.jsonc `run_worker_first`) passes through `servePage`, so the rules below hold whatever the asset layer
+// would do with the raw path.
 import { readCookie, SESSION_COOKIE } from "./auth/cookies.ts";
 import { servicesFor } from "./auth/services.ts";
 import { type Config, configFor } from "./config.ts";
