@@ -106,6 +106,11 @@ describe("caching and worker policy in _headers", () => {
     }
   });
 
+  it("a revalidated read is private and no-cache, never no-store", () => {
+    expect(headersFor("api-revalidate")["Cache-Control"]).toBe("private, no-cache");
+    expect(headersFor("api")["Cache-Control"]).toBe("no-store");
+  });
+
   it("images are cached for a day and may be served stale for a week", () => {
     expect(staticHeaders("/img/hero.jpg")["cache-control"]).toBe(
       "public, max-age=86400, stale-while-revalidate=604800",
