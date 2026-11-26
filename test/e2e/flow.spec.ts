@@ -3279,6 +3279,25 @@ test.describe("PAIR-13 remote: the phone commands the demo screen (design.md sec
     await close(screen, phone);
   });
 
+  test("the preview takes the shown page's own shape: no bands above or below the slide", async ({ browser }) => {
+    const { screen, phone, preview } = await remote(browser);
+    await expect(preview).toBeVisible();
+    const img = preview.locator("img");
+    await expect.poll(() => img.evaluate((i: { naturalWidth: number }) => i.naturalWidth)).toBeGreaterThan(0);
+    // The box's height is its width at the page's natural ratio, to the pixel: object-fit contain then fills it.
+    await expect
+      .poll(async () => {
+        const [box, nw, nh] = await Promise.all([
+          preview.boundingBox(),
+          img.evaluate((i: { naturalWidth: number }) => i.naturalWidth),
+          img.evaluate((i: { naturalHeight: number }) => i.naturalHeight),
+        ]);
+        return box ? Math.round(box.height) - Math.round((box.width * nh) / nw) : null;
+      })
+      .toBe(0);
+    await close(screen, phone);
+  });
+
   test("a long list stops over the preview with the section gap and scrolls inside itself", async ({ browser }) => {
     const { screen, phone, row, preview } = await remote(browser);
     const page = phone.page;
