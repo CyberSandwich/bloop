@@ -24,6 +24,7 @@ const ALLOWED = [
   "src/worker/routes/library.ts: G",
   "src/worker/routes/library.ts: G",
   "public/js/library.js: A",
+  "public/js/library.js: P1",
   "public/js/library.js: U",
   "public/js/library.js: U",
   "public/js/library/net.js: U",

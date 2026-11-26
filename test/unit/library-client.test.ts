@@ -29,6 +29,7 @@ import {
   nameParts,
   opensFirst,
   type Row,
+  reinsert,
   rowLine,
   status,
   tick,
@@ -358,5 +359,19 @@ describe("library fetch wrapper", () => {
         init.signal?.addEventListener("abort", () => reject(new Error("abort"))),
       )) as unknown as typeof fetch;
     expect(await createNet({ fetch: hang, timeoutMs: 5 }).call("GET", "/x")).toMatchObject({ code: "offline" });
+  });
+});
+
+describe("Trash Undo's place in Up Next", () => {
+  it("puts the file back at its old index in the order as it is now", () => {
+    expect(reinsert(["b", "c"], "a", 0)).toEqual(["a", "b", "c"]);
+    expect(reinsert(["b", "c", "d"], "a", 1)).toEqual(["b", "a", "c", "d"]);
+  });
+  it("puts it last when the order has shrunk past its old index", () => {
+    expect(reinsert(["b"], "a", 5)).toEqual(["b", "a"]);
+  });
+  it("leaves the order alone for a file that was not in Up Next, or is back in it already", () => {
+    expect(reinsert(["b"], "a", -1)).toEqual(["b"]);
+    expect(reinsert(["a", "b"], "a", 1)).toEqual(["a", "b"]);
   });
 });
