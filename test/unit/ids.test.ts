@@ -10,6 +10,7 @@ import {
   newSecret,
   parseCredential,
   randomInt,
+  SECRET_SHAPE,
   safeEqual,
   sha256Hex,
 } from "../../src/worker/ids.ts";
@@ -20,6 +21,8 @@ describe("PAIR-08 ids: handle format, length and entropy source", () => {
     expect(refs.size).toBe(200);
     for (const r of refs) expect(r).toMatch(/^[A-Za-z0-9_-]{22}$/);
     for (const s of [newSecret(), newSecret()]) expect(s).toMatch(/^[A-Za-z0-9_-]{43}$/);
+    // The page gate drops any session cookie off this shape, so a change to newSecret must change it too.
+    for (let i = 0; i < 200; i++) expect(SECRET_SHAPE.test(newSecret())).toBe(true);
   });
 
   it("parseCredential accepts ref.secret and nothing else", () => {
