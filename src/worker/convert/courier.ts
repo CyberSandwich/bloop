@@ -43,16 +43,21 @@ export class Courier {
   async call(method: "GET" | "PUT" | "POST", path: string, init: CallInit = {}): Promise<Response> {
     const left = this.limitAt === null ? Number.POSITIVE_INFINITY : this.limitAt - this.now();
     if (left <= 0) throw new ContainerFault("deadline", `${path}: past the deadline`);
-    const once = () =>
-      this.port.fetch(path, {
+    const timeoutMs = init.timeoutMs ?? SHORT_CALL_MS;
+    let signal: AbortSignal | undefined;
+    const once = () => {
+      signal = AbortSignal.timeout(Math.min(timeoutMs, left));
+      return this.port.fetch(path, {
         method,
         ...(init.body !== undefined ? { body: init.body } : {}),
         ...(init.headers ? { headers: init.headers } : {}),
-        signal: AbortSignal.timeout(Math.min(init.timeoutMs ?? SHORT_CALL_MS, left)),
+        signal,
       });
+    };
+    // The timer can fire a millisecond before `now` reaches limitAt: a timeout the deadline set is the deadline.
     const unreachable = (e: unknown) =>
       new ContainerFault(
-        this.pastDeadline() ? "deadline" : "interrupted",
+        this.pastDeadline() || (left <= timeoutMs && signal?.aborted) ? "deadline" : "interrupted",
         `${path}: ${e instanceof Error ? e.message : "unreachable"}`,
       );
     try {
