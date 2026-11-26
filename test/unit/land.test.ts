@@ -77,7 +77,36 @@ describe("land: what a fast-forward to main refuses", { timeout: SPAWN_TIMEOUT }
   it("land: an attribution trailer below the tip is refused, naming that commit", () => {
     const tagged = commit("work\n\nCo-Authored-By: Someone <someone@example.test>");
     const sha = commit("clean on top", "b.txt");
-    expect(refusals({ cwd: clone, sha })).toEqual([`${tagged.slice(0, 7)} carries AI attribution in its message`]);
+    const out = refusals({ cwd: clone, sha });
+    expect(out).toHaveLength(1);
+    expect(out[0]).toMatch(new RegExp(`^${tagged.slice(0, 7)}: the message carries AI attribution`));
+  });
+
+  it("land: the commit-msg blocks run on every commit in the range, since cherry-pick and rebase skip the hook", () => {
+    const write = (files: Record<string, string>, message: string) => {
+      for (const [path, text] of Object.entries(files)) {
+        mkdirSync(join(clone, path, ".."), { recursive: true });
+        writeFileSync(join(clone, path), text);
+        git(clone, "add", path);
+      }
+      git(clone, "commit", "-q", "-m", message);
+      return git(clone, "rev-parse", "--short", "HEAD");
+    };
+    const pkg = (dev: Record<string, string>) => `${JSON.stringify({ devDependencies: dev })}\n`;
+    write({ "package.json": pkg({ vitest: "1.0.0" }) }, "base package");
+    git(clone, "push", "-q", "origin", "main");
+
+    const bare = write({ "src/a.ts": "export const a = 1;\n" }, "src alone");
+    const added = write({ "package.json": pkg({ vitest: "1.0.0", left: "1.0.0" }) }, "add left");
+    const bumped = write({ "package.json": pkg({ vitest: "2.0.0", left: "1.0.0" }) }, "bump vitest");
+    const trailer = write({ "src/b.ts": "export const b = 1;\n" }, "src b\n\nDocs: none needed");
+    const tested = write({ "src/c.ts": "export const c = 1;\n", "test/c.test.ts": "// c\n" }, "src c with a test");
+    const out = refusals({ cwd: clone, sha: tested });
+    expect(out).toHaveLength(2);
+    expect(out[0]).toMatch(new RegExp(`^${bare}: src/ changed but no docs/ or test/ file`));
+    expect(out[1]).toMatch(new RegExp(`^${added}: a package was added to or removed from`));
+    expect(out.join("\n")).not.toContain(bumped);
+    expect(out.join("\n")).not.toContain(trailer);
   });
 
   it("land: a range of one with only a Claude-Session line, or only the noreply address, is refused", () => {

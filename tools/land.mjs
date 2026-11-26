@@ -5,7 +5,7 @@ import { execFileSync } from "node:child_process";
 import { readdirSync, realpathSync } from "node:fs";
 import { basename, dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { attributed } from "./attribution.mjs";
+import { blocks, dependencySections, parseDiff } from "./change-tier.mjs";
 import { wranglerConfig } from "./wrangler-config.mjs";
 
 /**
@@ -79,6 +79,34 @@ export function markerProblems(log) {
 }
 
 /**
+ * The commit-msg hook's blocks (`change-tier.mjs`), run on each commit in `range`: cherry-pick and rebase commit
+ * without running the hook, so a commit made that way is checked here or nowhere.
+ * @param {(args: string[]) => string} git @param {string} range @returns {string[]}
+ */
+function commitMsgProblems(git, range) {
+  /** @param {string} rev */
+  const deps = (rev) => {
+    try {
+      return dependencySections(git(["show", `${rev}:package.json`]));
+    } catch {
+      return undefined;
+    }
+  };
+  const diff = (/** @type {string} */ hash, /** @type {string} */ mode) =>
+    git(["diff-tree", "--root", "--no-commit-id", "-r", "--no-renames", "-z", mode, hash]);
+  return git(["rev-list", "--reverse", "--abbrev-commit", range])
+    .split("\n")
+    .filter(Boolean)
+    .flatMap((hash) =>
+      blocks(
+        parseDiff(diff(hash, "--numstat"), diff(hash, "--name-status")),
+        { before: deps(`${hash}^`), after: deps(hash) },
+        git(["log", "-1", "--format=%B", hash]),
+      ).map((problem) => `${hash}: ${problem}`),
+    );
+}
+
+/**
  * Why `sha` must not land on `branch` of `remote`; none means it may. Looks for conflict copies before anything else
  * touches git, then fetches, so the checks run against the remote's tip, never a stale local copy.
  * @param {{ cwd: string, sha: string, remote?: string, branch?: string }} at
@@ -115,10 +143,7 @@ export function refusals({ cwd, sha, remote = "origin", branch = "main" }) {
   const problems = [];
   const merges = git(["log", "--merges", "--format=%h", `${tip}..${sha}`]);
   if (merges) problems.push(`merge commits in ${tip}..${sha} (main takes none): ${merges.split("\n").join(", ")}`);
-  for (const line of git(["log", "--format=%h%x00%B%x01", `${tip}..${sha}`]).split("\x01")) {
-    const [hash = "", body = ""] = line.trim().split("\0");
-    if (hash && attributed(body)) problems.push(`${hash} carries AI attribution in its message`);
-  }
+  problems.push(...commitMsgProblems(git, `${tip}..${sha}`));
   problems.push(
     ...markerProblems(git(["log", "--format=%x01%h", "-p", "-U0", "--no-color", "--no-ext-diff", `${tip}..${sha}`])),
   );
