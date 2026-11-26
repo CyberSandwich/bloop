@@ -1,6 +1,7 @@
 // OPEN-02 binding: with LINK_BINDING_DEFAULT=enforce a fetch from another address than the screen's is refused.
 // Migrated: the view-link case stores a guest drop.
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { DEMO_ITEMS } from "../../src/shared/demo-catalog.ts";
 import { TEST_SILENCE_MS } from "../../src/worker/config.ts";
 import { validVideo } from "../zip-builder.ts";
 import { openGuestView } from "./drop-client.ts";
@@ -48,7 +49,9 @@ describe("OPEN-02 binding", () => {
     const state = await api.get<{ code: { code: string } }>("/api/screen/state", sid);
     const claimed = await claim(api, state.body.code.code);
     await api.get("/api/files", claimed.body.pid);
-    expect((await api.post("/api/approve", { ids: ["demo-deck"] }, { auth: claimed.body.pid })).status).toBe(200);
+    expect((await api.post("/api/approve", { ids: [DEMO_ITEMS.deck.id] }, { auth: claimed.body.pid })).status).toBe(
+      200,
+    );
     const minted = await api.post<{ links: Record<string, string | null> }>(
       "/api/screen/link",
       { purpose: "protocol" },

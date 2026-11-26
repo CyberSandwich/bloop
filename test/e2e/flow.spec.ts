@@ -8,6 +8,7 @@ import { readFileSync } from "node:fs";
 import { crc32, deflateSync } from "node:zlib";
 import AxeBuilder from "@axe-core/playwright";
 import { type Browser, type BrowserContext, expect, type Locator, type Page, type Route, test } from "@playwright/test";
+import { DECK_PAGES, DEMO_ITEMS, DEMO_NAMES } from "../../src/shared/demo-catalog.ts";
 
 /** The item on the stage: a page's picture, the photo's canvas or a video (never the loader's thumbnail). */
 const STAGED = "#frame :is(picture img, canvas, video)";
@@ -100,7 +101,7 @@ async function addFile(page: Page, file: string | { name: string; mimeType: stri
   await (await chooser).setFiles(file);
 }
 /** The demo catalog as the viewer orders it: files by name, then links by title. */
-const CATALOG = ["Dog.jpg", "Sample deck.pdf", "Sample deck.pptx", "Vevox"];
+const CATALOG = DEMO_NAMES;
 
 async function typedCodeOf(page: Page): Promise<string> {
   // A new code replaces the old one 150 ms into its swap: until then the card still reads the old, spent code.
@@ -139,13 +140,13 @@ const sidebarItem = (page: Page, name: string) =>
   page.locator("#items").getByRole("button", { name: startsWith(name) });
 const sidebarLink = (page: Page, name: string) => page.locator("#items").getByRole("link", { name: startsWith(name) });
 
-/** The demo viewer from approval: the sidebar with the whole catalog, and the first item (the photo) on the stage. */
+/** The demo viewer from approval: the sidebar with the whole catalog, and the first item (the deck) on the stage. */
 async function expectViewer(page: Page) {
   await expect(page.locator("#items > li .item")).toHaveCount(CATALOG.length);
-  await expect(sidebarLink(page, "Vevox")).toBeVisible();
+  await expect(sidebarLink(page, DEMO_ITEMS.link.name)).toBeVisible();
   for (const name of CATALOG.slice(0, 3)) await expect(sidebarItem(page, name)).toBeVisible();
-  await expect(heading(page)).toHaveText("Dog.jpg");
-  await expect(page.getByRole("img", { name: "Dog.jpg" })).toBeVisible();
+  await expect(heading(page)).toHaveText(DEMO_ITEMS.deck.name);
+  await expect(page.getByRole("img", { name: `Slide 1 of ${DECK_PAGES}` })).toBeVisible();
   await expect(page.getByRole("button", { name: "End", exact: true })).toBeVisible();
 }
 
@@ -197,9 +198,9 @@ async function expectPillUnder(page: Page, item: Locator) {
   }).toPass();
 }
 
-/** The pill is as wide as its contents: "1 / 2" stays one line and the pill keeps its 60. */
+/** The pill is as wide as its contents: "1 / N" stays one line and the pill keeps its 60. */
 async function expectOneLinePill(page: Page) {
-  await expect(page.locator("#dots")).toHaveText("1 / 2");
+  await expect(page.locator("#dots")).toHaveText(`1 / ${DECK_PAGES}`);
   const { dots, pill } = await settledPill(page);
   expect(dots.height).toBeLessThanOrEqual(24);
   // Boxes are sub-pixel (59.99997 on CI runners): compare to the nearest pixel, never exactly.
@@ -1681,12 +1682,12 @@ test.describe("open path", () => {
     await expect(phone.page.locator("#file-list input[type=radio]").first()).toBeVisible();
     await expect(phone.page.locator("#file-list input[type=checkbox]")).toHaveCount(0);
     await expect(phone.page.locator("#file-list input:checked")).toHaveCount(1);
-    await expect(phone.page.locator("#file-list").getByText("Vevox")).toHaveCount(0);
+    await expect(phone.page.locator("#file-list").getByText(DEMO_ITEMS.link.name)).toHaveCount(0);
     await phone.page.getByRole("button", { name: "Approve" }).click();
 
     // PowerPoint is not installed here: no fetch arrives, so after the launch timeout Download appears.
     await expect(heading(screen.page)).toHaveText("Opening in PowerPoint");
-    await expect(screen.page.locator("#line")).toContainText("Sample deck.pptx");
+    await expect(screen.page.locator("#line")).toContainText(/sample.deck\.pptx/i);
     await expect(screen.page.getByRole("button", { name: "End", exact: true })).toBeVisible();
     await expect(phone.page.getByRole("button", { name: "Revoke" })).toBeVisible();
     const download = screen.page.getByRole("button", { name: "Download It Instead" });
@@ -1740,25 +1741,22 @@ test.describe("demo viewer", () => {
     const launches = await watchLaunches(screen.page);
     await phone.page.getByRole("button", { name: "Approve" }).click();
     await expectViewer(screen.page);
-    // The page's own fetch of the launched link (the photo's view) stands in for PowerPoint's, so the session opens.
+    // The page's own fetch of the launched link (the deck's view) stands in for PowerPoint's, so the session opens.
     await expect(heading(phone.page)).toHaveText("Approved for Demo Room");
     await expect(phone.page.locator("#file-list .row")).toHaveCount(CATALOG.length);
     expect(await launches()).toEqual({ opened: 0, left: [] });
     await expectNoAxeViolations(screen.page);
 
-    // The deck: next and prev on the stage, then the arrow keys.
-    await sidebarItem(screen.page, "Sample deck.pptx").click();
-    await expect(heading(screen.page)).toHaveText("Sample deck.pptx");
-    await expect(sidebarItem(screen.page, "Sample deck.pptx")).toHaveAttribute("aria-current", "true");
-    await expect(screen.page.getByRole("img", { name: "Slide 1 of 2" })).toBeVisible();
+    // The deck opens first: next and prev on the stage, then the arrow keys.
+    await expect(sidebarItem(screen.page, DEMO_ITEMS.deck.name)).toHaveAttribute("aria-current", "true");
+    await expect(screen.page.getByRole("img", { name: `Slide 1 of ${DECK_PAGES}` })).toBeVisible();
     await expect(screen.page.getByRole("button", { name: "Previous Slide" })).toBeHidden();
-    await expect(screen.page.locator("#dots")).toHaveText("1 / 2");
+    await expect(screen.page.locator("#dots")).toHaveText(`1 / ${DECK_PAGES}`);
     await screen.page.getByRole("button", { name: "Next Slide" }).click();
-    await expect(screen.page.getByRole("img", { name: "Slide 2 of 2" })).toBeVisible();
-    await expect(screen.page.locator("#dots")).toHaveText("2 / 2");
-    await expect(screen.page.getByRole("button", { name: "Next Slide" })).toBeHidden();
+    await expect(screen.page.getByRole("img", { name: `Slide 2 of ${DECK_PAGES}` })).toBeVisible();
+    await expect(screen.page.locator("#dots")).toHaveText(`2 / ${DECK_PAGES}`);
     await screen.page.getByRole("button", { name: "Previous Slide" }).click();
-    await expect(screen.page.getByRole("img", { name: "Slide 1 of 2" })).toBeVisible();
+    await expect(screen.page.getByRole("img", { name: `Slide 1 of ${DECK_PAGES}` })).toBeVisible();
     // The arrow shows only in the outer 20% of the slide's width, which is the outer 40% of a half.
     const nextZone = screen.page.locator("#next");
     const half = await nextZone.boundingBox();
@@ -1769,30 +1767,39 @@ test.describe("demo viewer", () => {
     await screen.page.mouse.move(half.x + half.width * 0.8, half.y + half.height / 2);
     await expect(disc).toHaveCSS("opacity", "1");
     await screen.page.keyboard.press("ArrowRight");
-    await expect(screen.page.getByRole("img", { name: "Slide 2 of 2" })).toBeVisible();
+    await expect(screen.page.getByRole("img", { name: `Slide 2 of ${DECK_PAGES}` })).toBeVisible();
     await expect(screen.page.getByRole("button", { name: "Present" })).toBeVisible();
+    // The last slide has no Next.
+    for (let n = 3; n <= DECK_PAGES; n++) {
+      await screen.page.keyboard.press("ArrowRight");
+      await expect(screen.page.getByRole("img", { name: `Slide ${n} of ${DECK_PAGES}` })).toBeVisible();
+    }
+    await expect(screen.page.getByRole("button", { name: "Next Slide" })).toBeHidden();
 
-    // The PDF: the same pages, named as pages.
-    await sidebarItem(screen.page, "Sample deck.pdf").click();
-    await expect(heading(screen.page)).toHaveText("Sample deck.pdf");
-    await expect(screen.page.getByRole("img", { name: "Page 1 of 2" })).toBeVisible();
-
-    // Download of the PDF mints that item's link.
+    // Download of the deck mints that item's link.
     const saved = screen.page.waitForEvent("download");
     await screen.page.getByRole("button", { name: "Download" }).click();
-    expect((await saved).suggestedFilename()).toMatch(/\.pdf$/);
+    expect((await saved).suggestedFilename()).toBe(DEMO_ITEMS.deck.name);
 
     // The image, contained on the stage.
-    await sidebarItem(screen.page, "Dog.jpg").click();
-    await expect(screen.page.getByRole("img", { name: "Dog.jpg" })).toBeVisible();
+    await sidebarItem(screen.page, DEMO_ITEMS.horizontal.name).click();
+    await expect(heading(screen.page)).toHaveText(DEMO_ITEMS.horizontal.name);
+    await expect(screen.page.getByRole("img", { name: DEMO_ITEMS.horizontal.name })).toBeVisible();
+
+    // The portrait image too.
+    await sidebarItem(screen.page, DEMO_ITEMS.vertical.name).click();
+    await expect(heading(screen.page)).toHaveText(DEMO_ITEMS.vertical.name);
+    await expect(screen.page.getByRole("img", { name: DEMO_ITEMS.vertical.name })).toBeVisible();
+    await sidebarItem(screen.page, DEMO_ITEMS.horizontal.name).click();
+    await expect(heading(screen.page)).toHaveText(DEMO_ITEMS.horizontal.name);
 
     // The link row: a new tab with no opener or referrer, never a frame; the stage keeps the photo.
-    const vevox = sidebarLink(screen.page, "Vevox");
+    const vevox = sidebarLink(screen.page, DEMO_ITEMS.link.name);
     await expect(vevox).toHaveAttribute("href", "https://www.vevox.com/");
     await expect(vevox).toHaveAttribute("target", "_blank");
     await expect(vevox).toHaveAttribute("rel", "noopener noreferrer");
     await expect(screen.page.locator("iframe")).toHaveCount(0);
-    await expect(heading(screen.page)).toHaveText("Dog.jpg");
+    await expect(heading(screen.page)).toHaveText(DEMO_ITEMS.horizontal.name);
     await expectNoAxeViolations(screen.page);
 
     await screen.page.reload();
@@ -1813,8 +1820,7 @@ test.describe("demo viewer", () => {
     const { phone } = await scan(browser, screen.page);
     await phone.page.getByRole("button", { name: "Approve" }).click();
     await expectViewer(screen.page);
-    await sidebarItem(screen.page, "Sample deck.pdf").click();
-    await expect(screen.page.getByRole("img", { name: "Page 1 of 2" })).toBeVisible();
+    await expect(screen.page.getByRole("img", { name: `Slide 1 of ${DECK_PAGES}` })).toBeVisible();
     await screen.page.route("**/api/screen/link", (route) => route.fulfill({ status: 500, body: "" }));
     await screen.page.getByRole("button", { name: "Download" }).click();
     await expect(heading(screen.page)).toHaveText("Unable to Open Your File");
@@ -1826,8 +1832,8 @@ test.describe("demo viewer", () => {
     await expect(screen.page.getByRole("link", { name: "Back", exact: true })).toBeHidden();
     await screen.page.unroute("**/api/screen/link");
     // The error clears by itself, and the viewer comes back where it was: the key moved nothing.
-    await expect(heading(screen.page)).toHaveText("Sample deck.pdf", { timeout: 15_000 });
-    await expect(screen.page.getByRole("img", { name: "Page 1 of 2" })).toBeVisible();
+    await expect(heading(screen.page)).toHaveText(DEMO_ITEMS.deck.name, { timeout: 15_000 });
+    await expect(screen.page.getByRole("img", { name: `Slide 1 of ${DECK_PAGES}` })).toBeVisible();
     await screen.context.close();
     await phone.context.close();
   });
@@ -1840,7 +1846,7 @@ test.describe("demo viewer", () => {
     }
     await phone.page.getByRole("button", { name: "Approve" }).click();
     await expect(heading(phone.page)).toHaveText("Approved for Demo Room");
-    await expect(heading(screen.page)).toHaveText("Vevox");
+    await expect(heading(screen.page)).toHaveText(DEMO_ITEMS.link.name);
     await expect(screen.page.getByRole("link", { name: "Open vevox.com" })).toBeVisible();
     await expect(screen.page.locator("#items")).toBeHidden();
     await screen.context.close();
@@ -1902,14 +1908,14 @@ test.describe("demo viewer", () => {
     await phone.page.getByRole("button", { name: "Approve" }).click();
     await expect(phone.page).toHaveURL(/\/s\?mode=demo$/);
     // Under 760 the sidebar is a bottom sheet behind a handle.
-    await expect(heading(phone.page)).toHaveText("Dog.jpg");
+    await expect(heading(phone.page)).toHaveText(DEMO_ITEMS.deck.name);
     await expectPillUnder(phone.page, phone.page.locator(STAGED).first());
+    await expectOneLinePill(phone.page);
     await expect(phone.page.locator("#items")).toBeHidden();
     await phone.page.locator("#handle").click();
-    await sidebarItem(phone.page, "Sample deck.pptx").click();
-    await expect(heading(phone.page)).toHaveText("Sample deck.pptx");
+    await sidebarItem(phone.page, DEMO_ITEMS.horizontal.name).click();
+    await expect(heading(phone.page)).toHaveText(DEMO_ITEMS.horizontal.name);
     await expect(phone.page.locator("#items")).toBeHidden();
-    await expectOneLinePill(phone.page);
     await expectNoAxeViolations(phone.page);
 
     await phone.page.getByRole("button", { name: "End", exact: true }).click();
@@ -1926,7 +1932,7 @@ test.describe("demo viewer", () => {
     await page.goto("/s?mode=demo");
     await page.getByRole("link", { name: "Approve on This Phone" }).click();
     await page.getByRole("button", { name: "Approve" }).click();
-    await expect(heading(page)).toHaveText("Dog.jpg");
+    await expect(heading(page)).toHaveText(DEMO_ITEMS.deck.name);
     await page.getByRole("button", { name: /^bloop/ }).click();
     const question = page.getByRole("dialog", { name: "End This Session?" });
     await expect(question).toBeVisible();
@@ -1974,11 +1980,11 @@ test.describe("screen and phone layout", () => {
       const code = await typedCodeOf(page);
       const phone = await open(browser, "phone", `/a?c=${code}`);
       await phone.page.getByRole("button", { name: "Approve" }).click();
-      for (const name of ["Sample deck.pptx", "Sample deck.pdf", "Dog.jpg"]) {
+      for (const name of [DEMO_ITEMS.deck.name, DEMO_ITEMS.horizontal.name, DEMO_ITEMS.vertical.name]) {
         await sidebarItem(page, name).click();
         await expectPillUnder(page, page.locator(STAGED).first());
       }
-      await sidebarItem(page, "Sample deck.pptx").click();
+      await sidebarItem(page, DEMO_ITEMS.deck.name).click();
       await expectOneLinePill(page);
       await context.close();
       await phone.context.close();
@@ -2021,7 +2027,7 @@ test.describe("screen and phone layout", () => {
       await expect(page.locator("#match")).toBeVisible();
       await still();
       await phone.page.getByRole("button", { name: "Approve" }).click();
-      await expect(heading(page)).toHaveText("Dog.jpg");
+      await expect(heading(page)).toHaveText(DEMO_ITEMS.deck.name);
       await still();
       await page.getByRole("button", { name: "Present", exact: true }).click();
       await expect(page.locator("body")).toHaveClass(/is-presenting/);
@@ -2047,14 +2053,16 @@ test.describe("screen and phone layout", () => {
   /** The demo photo's answer, swapped for a portrait picture before the viewer asks for it. */
   const PORTRAIT = png(600, 900);
 
-  /** A demo screen with its viewer open on the 4-item list, the photo swapped for `body` when given. */
+  /** A demo screen with its viewer open on the 4-item list and the horizontal photo on the stage, swapped for `body` when given. */
   async function viewerWith(browser: Browser, body?: Buffer) {
     const screen = await demoScreen(browser);
     if (body) await screen.page.route("**/f/**", (route) => route.fulfill({ contentType: "image/png", body }));
     const code = await typedCodeOf(screen.page);
     const phone = await open(browser, "phone", `/a?c=${code}`);
     await phone.page.getByRole("button", { name: "Approve" }).click();
-    await expect(heading(screen.page)).toHaveText("Dog.jpg");
+    await expect(heading(screen.page)).toHaveText(DEMO_ITEMS.deck.name);
+    await sidebarItem(screen.page, DEMO_ITEMS.horizontal.name).click();
+    await expect(heading(screen.page)).toHaveText(DEMO_ITEMS.horizontal.name);
     await expect(screen.page.locator(STAGED)).toBeVisible();
     return { screen, phone, pane: screen.page.locator("#pane") };
   }
@@ -2195,7 +2203,9 @@ test.describe("screen and phone layout", () => {
     const code = await typedCodeOf(page);
     const phone = await open(browser, "phone", `/a?c=${code}`);
     await phone.page.getByRole("button", { name: "Approve" }).click();
-    await expect(heading(page)).toHaveText("Dog.jpg");
+    await expect(heading(page)).toHaveText(DEMO_ITEMS.deck.name);
+    await sidebarItem(page, DEMO_ITEMS.horizontal.name).click();
+    await expect(heading(page)).toHaveText(DEMO_ITEMS.horizontal.name);
     await expect(page.locator(STAGED)).toBeVisible();
     await expect(page.locator("#pane")).not.toHaveClass(/is-stacked|is-under/);
     expect(await page.locator("#side").evaluate((n) => n.scrollHeight > n.clientHeight)).toBe(true);
@@ -2247,7 +2257,7 @@ test.describe("screen and phone layout", () => {
   }) => {
     const { screen, phone } = await viewerWith(browser);
     const page = screen.page;
-    await expect(heading(page)).toHaveText("Dog.jpg");
+    await expect(heading(page)).toHaveText(DEMO_ITEMS.horizontal.name);
     await page.waitForTimeout(600);
     /** Per frame for 1.2 s from now: [left, width, center, top] of the pill. */
     const sample = async (act: () => Promise<void>) => {
@@ -2267,8 +2277,8 @@ test.describe("screen and phone layout", () => {
       }
     };
     for (const [to, grows] of [
-      ["Sample deck.pptx", true],
-      ["Dog.jpg", false],
+      [DEMO_ITEMS.deck.name, true],
+      [DEMO_ITEMS.horizontal.name, false],
     ] as const) {
       const frames = await sample(() => sidebarItem(page, to).click());
       const last = frames.at(-1) ?? [0, 0, 0];
@@ -2290,7 +2300,7 @@ test.describe("screen and phone layout", () => {
     }
     // Under reduced motion it changes at once.
     await page.emulateMedia({ reducedMotion: "reduce" });
-    await sidebarItem(page, "Sample deck.pptx").click();
+    await sidebarItem(page, DEMO_ITEMS.deck.name).click();
     await expect(page.locator("#dots")).toBeVisible();
     expect(await page.evaluate("document.getElementById('dots').getAnimations().length")).toBe(0);
     await screen.context.close();
@@ -2312,15 +2322,20 @@ test.describe("screen and phone layout", () => {
     // Each item's image arrives after its click and reshapes the frame (a legitimate glide): load both first,
     // so the measured switch is between two ready items.
     const loaded = page.locator("#frame .loader");
-    await sidebarItem(page, "Sample deck.pdf").click();
+    await sidebarItem(page, DEMO_ITEMS.deck.name).click();
+    await expect(heading(page)).toHaveText(DEMO_ITEMS.deck.name);
     await expect(page.locator(STAGED)).toBeVisible();
     await expect(loaded).toHaveCount(0);
     await settle("pane");
     await page.evaluate(
       "window.__paneStarts = 0; document.getElementById('pane').addEventListener('animationstart', () => window.__paneStarts++)",
     );
-    await sidebarItem(page, "Sample deck.pptx").click();
-    await expect(heading(page)).toHaveText("Sample deck.pptx");
+    await sidebarItem(page, DEMO_ITEMS.horizontal.name).click();
+    await expect(heading(page)).toHaveText(DEMO_ITEMS.horizontal.name);
+    await expect(page.locator(STAGED)).toBeVisible();
+    await expect(loaded).toHaveCount(0);
+    await sidebarItem(page, DEMO_ITEMS.deck.name).click();
+    await expect(heading(page)).toHaveText(DEMO_ITEMS.deck.name);
     await expect(page.locator("#dots")).toBeVisible();
     await expect(page.locator(STAGED)).toBeVisible();
     await expect(loaded).toHaveCount(0);
@@ -2329,8 +2344,8 @@ test.describe("screen and phone layout", () => {
     // The page count appearing is a shape change: that glide may still run when the next switch comes.
     await settle("controls");
     await page.evaluate("window.__controls = document.getElementById('controls')");
-    await sidebarItem(page, "Sample deck.pdf").click();
-    await expect(heading(page)).toHaveText("Sample deck.pdf");
+    await sidebarItem(page, DEMO_ITEMS.horizontal.name).click();
+    await expect(heading(page)).toHaveText(DEMO_ITEMS.horizontal.name);
     await expect(page.locator(STAGED)).toBeVisible();
     // Nothing starts later either: poll over the swap's settle, then read once more.
     for (let i = 0; i < 5; i++) {
@@ -2393,7 +2408,11 @@ test.describe("screen and phone layout", () => {
     const screen = await demoScreen(browser);
     const page = screen.page;
     const code = await typedCodeOf(page);
-    // About 4 s for the demo photo's 232 KB, so the in-between states can be read.
+    const phone = await open(browser, "phone", `/a?c=${code}`);
+    await phone.page.getByRole("button", { name: "Approve" }).click();
+    await expect(heading(page)).toHaveText(DEMO_ITEMS.deck.name);
+    await expect(page.locator(STAGED)).toBeVisible();
+    // About 4 s for the demo photo's 232 KB, so the in-between states can be read; the deck's slide is already here.
     const cdp = await page.context().newCDPSession(page);
     await cdp.send("Network.enable");
     await cdp.send("Network.emulateNetworkConditions", {
@@ -2402,12 +2421,11 @@ test.describe("screen and phone layout", () => {
       downloadThroughput: 60 * 1024,
       uploadThroughput: -1,
     });
-    const phone = await open(browser, "phone", `/a?c=${code}`);
-    await phone.page.getByRole("button", { name: "Approve" }).click();
+    await sidebarItem(page, DEMO_ITEMS.horizontal.name).click();
     const loader = page.locator("#frame .loader.stand-in");
     await expect(loader).toBeVisible();
     await expect(loader).toHaveAttribute("role", "progressbar");
-    await expect(loader).toHaveAttribute("aria-label", "Loading Dog.jpg");
+    await expect(loader).toHaveAttribute("aria-label", `Loading ${DEMO_ITEMS.horizontal.name}`);
     await expect(loader).toHaveCSS("filter", "none");
     // Present holds its place in the pill, disabled, so the pill keeps one shape when the photo lands.
     const present = page.getByRole("button", { name: "Present", exact: true });
@@ -2425,7 +2443,7 @@ test.describe("screen and phone layout", () => {
       })
       .toBe(true);
     await expect(page.locator(STAGED)).toBeVisible({ timeout: 15_000 });
-    await expect(page.getByRole("img", { name: "Dog.jpg" })).toBeVisible();
+    await expect(page.getByRole("img", { name: DEMO_ITEMS.horizontal.name })).toBeVisible();
     await expect(present).toBeEnabled();
     expect(Math.round((await settledPill(page)).pill.width)).toBe(Math.round(pill.width));
     // It rose, never fell, and the loader left once the photo had faded in.
@@ -2507,7 +2525,10 @@ test.describe("screen and phone layout", () => {
     const phone = await open(browser, "phone", "/s?mode=demo");
     await phone.page.getByRole("link", { name: "Approve on This Phone" }).click();
     await phone.page.getByRole("button", { name: "Approve" }).click();
-    await expect(heading(phone.page)).toHaveText("Dog.jpg");
+    await expect(heading(phone.page)).toHaveText(DEMO_ITEMS.deck.name);
+    await phone.page.locator("#handle").click();
+    await sidebarItem(phone.page, DEMO_ITEMS.horizontal.name).click();
+    await expect(heading(phone.page)).toHaveText(DEMO_ITEMS.horizontal.name);
     await expect(phone.page.getByRole("button", { name: "Present", exact: true })).toBeVisible();
     await phone.page.getByRole("button", { name: "Present", exact: true }).click();
     const chrome = ["#controls", "#handle", ".bar"].map((sel) => phone.page.locator(sel));
@@ -2888,10 +2909,12 @@ test.describe("PAIR-13 remote: the phone commands the demo screen (design.md sec
   }) => {
     const { screen, phone, row, preview } = await remote(browser);
     // Before any command the screen shows its first file: that row is marked.
-    await expect(row("Dog.jpg")).toHaveAttribute("aria-current", "true");
-    await expect(phone.page.locator("#file-list").getByRole("button", { name: startsWith("Vevox") })).toHaveCount(0);
+    await expect(row(DEMO_ITEMS.deck.name)).toHaveAttribute("aria-current", "true");
+    await expect(
+      phone.page.locator("#file-list").getByRole("button", { name: startsWith(DEMO_ITEMS.link.name) }),
+    ).toHaveCount(0);
     // A link row opens its link in a new tab here: no command, never marked as on the screen, no preview.
-    const link = phone.page.locator("#file-list").getByRole("link", { name: startsWith("Vevox") });
+    const link = phone.page.locator("#file-list").getByRole("link", { name: startsWith(DEMO_ITEMS.link.name) });
     await expect(link).toHaveAttribute("target", "_blank");
     await expect(link).toHaveAttribute("rel", "noopener noreferrer");
     await expect(link).toContainText("New Tab");
@@ -2906,15 +2929,20 @@ test.describe("PAIR-13 remote: the phone commands the demo screen (design.md sec
     await phone.page.waitForTimeout(300);
     expect(commands).toBe(0);
     await expect(link).not.toHaveAttribute("aria-current", "true");
-    await expect(preview).toHaveCount(0);
+    await expect(preview).toHaveAttribute("aria-label", `${DEMO_ITEMS.deck.name}, Slide 1 of ${DECK_PAGES}`);
+    await expect(heading(screen.page)).toHaveText(DEMO_ITEMS.deck.name);
     await phone.page.unroute("**/api/control");
-    await row("Sample deck.pptx").click();
+    await row(DEMO_ITEMS.horizontal.name).click();
     // The mark moves at the tap, before the answer.
-    await expect(row("Sample deck.pptx")).toHaveAttribute("aria-current", "true");
-    await expect(row("Dog.jpg")).not.toHaveAttribute("aria-current", "true");
-    await expect(heading(screen.page)).toHaveText("Sample deck.pptx");
-    await expect(screen.page.locator(STAGED)).toHaveAttribute("alt", "Slide 1 of 2");
-    await expect(preview).toHaveAttribute("aria-label", "Sample deck.pptx, Slide 1 of 2");
+    await expect(row(DEMO_ITEMS.horizontal.name)).toHaveAttribute("aria-current", "true");
+    await expect(row(DEMO_ITEMS.deck.name)).not.toHaveAttribute("aria-current", "true");
+    await expect(heading(screen.page)).toHaveText(DEMO_ITEMS.horizontal.name);
+    await expect(preview).toHaveCount(0);
+    await row(DEMO_ITEMS.deck.name).click();
+    await expect(row(DEMO_ITEMS.deck.name)).toHaveAttribute("aria-current", "true");
+    await expect(heading(screen.page)).toHaveText(DEMO_ITEMS.deck.name);
+    await expect(screen.page.locator(STAGED)).toHaveAttribute("alt", `Slide 1 of ${DECK_PAGES}`);
+    await expect(preview).toHaveAttribute("aria-label", `${DEMO_ITEMS.deck.name}, Slide 1 of ${DECK_PAGES}`);
     await expectNoAxeViolations(phone.page);
     expect([...screen.csp, ...phone.csp]).toEqual([]);
     await close(screen, phone);
@@ -2922,35 +2950,37 @@ test.describe("PAIR-13 remote: the phone commands the demo screen (design.md sec
 
   test("a screen tap marks the phone's row and its preview", async ({ browser }) => {
     const { screen, row, preview, phone, dots } = await remote(browser);
-    await sidebarItem(screen.page, "Sample deck.pdf").click();
-    await expect(row("Sample deck.pdf")).toHaveAttribute("aria-current", "true");
+    await sidebarItem(screen.page, DEMO_ITEMS.horizontal.name).click();
+    await expect(row(DEMO_ITEMS.horizontal.name)).toHaveAttribute("aria-current", "true");
+    await expect(preview).toHaveCount(0);
+    await sidebarItem(screen.page, DEMO_ITEMS.deck.name).click();
+    await expect(row(DEMO_ITEMS.deck.name)).toHaveAttribute("aria-current", "true");
     await screen.page.locator("#next").click();
-    await expect(dots).toHaveText("2 / 2");
-    await expect(preview).toHaveAttribute("aria-label", "Sample deck.pdf, Page 2 of 2");
-    await expect(preview.locator(".count")).toHaveText("2 / 2");
+    await expect(dots).toHaveText(`2 / ${DECK_PAGES}`);
+    await expect(preview).toHaveAttribute("aria-label", `${DEMO_ITEMS.deck.name}, Slide 2 of ${DECK_PAGES}`);
+    await expect(preview.locator(".count")).toHaveText(`2 / ${DECK_PAGES}`);
     await close(screen, phone);
   });
 
   test("the preview's right half steps on and its left half back; a swipe steps too", async ({ browser }) => {
-    const { screen, phone, row, preview, dots } = await remote(browser);
-    await row("Sample deck.pptx").click();
-    await expect(heading(screen.page)).toHaveText("Sample deck.pptx");
+    const { screen, phone, preview, dots } = await remote(browser);
+    await expect(heading(screen.page)).toHaveText(DEMO_ITEMS.deck.name);
     const box = await preview.boundingBox();
     const w = box?.width ?? 0;
     const h = box?.height ?? 0;
     await preview.click({ position: { x: w * 0.8, y: h / 2 } });
-    await expect(dots).toHaveText("2 / 2");
+    await expect(dots).toHaveText(`2 / ${DECK_PAGES}`);
     await preview.click({ position: { x: w * 0.2, y: h / 2 } });
-    await expect(dots).toHaveText("1 / 2");
+    await expect(dots).toHaveText(`1 / ${DECK_PAGES}`);
     // A swipe to the left is Next, and is not also a tap on the half it ends on.
     const x0 = (box?.x ?? 0) + w * 0.3;
     const y = (box?.y ?? 0) + h / 2;
     await preview.dispatchEvent("pointerdown", { clientX: x0 + 80, clientY: y });
     await preview.dispatchEvent("pointerup", { clientX: x0, clientY: y });
-    await expect(dots).toHaveText("2 / 2");
+    await expect(dots).toHaveText(`2 / ${DECK_PAGES}`);
     await preview.dispatchEvent("pointerdown", { clientX: x0, clientY: y });
     await preview.dispatchEvent("pointerup", { clientX: x0 + 80, clientY: y });
-    await expect(dots).toHaveText("1 / 2");
+    await expect(dots).toHaveText(`1 / ${DECK_PAGES}`);
     await close(screen, phone);
   });
 
@@ -2963,19 +2993,26 @@ test.describe("PAIR-13 remote: the phone commands the demo screen (design.md sec
     const r = await panel.getByRole("button", { name: "Revoke" }).boundingBox();
     expect(Math.round((b?.y ?? 0) + (b?.height ?? 0))).toBeLessThan(Math.round(r?.y ?? 0));
     // A photo has no pages: both arrows are off, Present is on.
+    await row(DEMO_ITEMS.horizontal.name).click();
+    await expect(heading(screen.page)).toHaveText(DEMO_ITEMS.horizontal.name);
     await expect(bubbles.getByRole("button", { name: "Previous" })).toBeDisabled();
     await expect(bubbles.getByRole("button", { name: "Next" })).toBeDisabled();
-    await row("Sample deck.pptx").click();
+    await expect(bubbles.getByRole("button", { name: "Present" })).toBeEnabled();
+    // The deck steps from its first slide to its last.
+    await row(DEMO_ITEMS.deck.name).click();
     await expect(bubbles.getByRole("button", { name: "Previous" })).toBeDisabled();
     await bubbles.getByRole("button", { name: "Next" }).click();
-    await expect(dots).toHaveText("2 / 2");
+    await expect(dots).toHaveText(`2 / ${DECK_PAGES}`);
+    await expect(bubbles.getByRole("button", { name: "Previous" })).toBeEnabled();
+    for (let n = 3; n <= DECK_PAGES; n++) await bubbles.getByRole("button", { name: "Next" }).click();
+    await expect(dots).toHaveText(`${DECK_PAGES} / ${DECK_PAGES}`);
     await expect(bubbles.getByRole("button", { name: "Next" })).toBeDisabled();
     await bubbles.getByRole("button", { name: "Present" }).click();
     await expect(screen.page.locator("body")).toHaveClass(/is-presenting/);
     await expect(bubbles.getByRole("button", { name: "Stop" })).toBeVisible();
     // A new item while presenting keeps presenting.
-    await row("Dog.jpg").click();
-    await expect(heading(screen.page)).toHaveText("Dog.jpg");
+    await row(DEMO_ITEMS.horizontal.name).click();
+    await expect(heading(screen.page)).toHaveText(DEMO_ITEMS.horizontal.name);
     await expect(screen.page.locator("body")).toHaveClass(/is-presenting/);
     // Stop on the screen itself reaches the phone.
     await screen.page.keyboard.press("Escape");
@@ -2992,11 +3029,12 @@ test.describe("PAIR-13 remote: the phone commands the demo screen (design.md sec
     const list = page.locator("#file-list");
     const panel = page.locator(".column > .actions");
     const inset = await insetOf(page);
-    // The screen shows Dog.jpg first: its row already says what the screen shows.
-    await expect(row("Dog.jpg")).toHaveAttribute("aria-current", "true");
+    // The screen shows the deck first: its row already says what the screen shows.
+    await expect(row(DEMO_ITEMS.deck.name)).toHaveAttribute("aria-current", "true");
+    await row(DEMO_ITEMS.horizontal.name).click();
     await expect(preview).toHaveCount(0);
     const top = (await list.boundingBox())?.y;
-    await row("Sample deck.pptx").click();
+    await row(DEMO_ITEMS.deck.name).click();
     await expect(preview).toBeVisible();
     const l = await list.boundingBox();
     const p = await preview.boundingBox();
@@ -3006,7 +3044,7 @@ test.describe("PAIR-13 remote: the phone commands the demo screen (design.md sec
     expect(l && p && Math.round(p.y - (l.y + l.height)) >= 24).toBe(true);
     // The list never moves as the preview comes and goes.
     expect(l?.y).toBe(top);
-    await row("Dog.jpg").click();
+    await row(DEMO_ITEMS.horizontal.name).click();
     await expect(preview).toHaveCount(0);
     expect((await list.boundingBox())?.y).toBe(top);
     await close(screen, phone);
@@ -3016,7 +3054,7 @@ test.describe("PAIR-13 remote: the phone commands the demo screen (design.md sec
     const { screen, phone, row, preview } = await remote(browser);
     const page = phone.page;
     const list = page.locator("#file-list");
-    await row("Sample deck.pptx").click();
+    await expect(row(DEMO_ITEMS.deck.name)).toHaveAttribute("aria-current", "true");
     await expect(preview).toBeVisible();
     // Copies of the demo's rows stand in for a long list: layout only, the next push draws the list again.
     await list.evaluate((ul) => {
@@ -3036,13 +3074,12 @@ test.describe("PAIR-13 remote: the phone commands the demo screen (design.md sec
   });
 
   test("held landscape at 844 x 390 a paged item has no preview, and Next still steps", async ({ browser }) => {
-    const { screen, phone, row, preview, bubbles, dots } = await remote(browser);
+    const { screen, phone, preview, bubbles, dots } = await remote(browser);
     await phone.page.setViewportSize({ width: 844, height: 390 });
-    await row("Sample deck.pptx").click();
-    await expect(heading(screen.page)).toHaveText("Sample deck.pptx");
+    await expect(heading(screen.page)).toHaveText(DEMO_ITEMS.deck.name);
     await expect(preview).toHaveCount(0);
     await bubbles.getByRole("button", { name: "Next" }).click();
-    await expect(dots).toHaveText("2 / 2");
+    await expect(dots).toHaveText(`2 / ${DECK_PAGES}`);
     await close(screen, phone);
   });
 
@@ -3073,7 +3110,7 @@ test.describe("PAIR-13 remote: the phone commands the demo screen (design.md sec
     await phone.page.keyboard.press("Escape");
     await expect(ask).toBeHidden();
     await expect(heading(phone.page)).toHaveText("Approved for Demo Room");
-    await expect(heading(screen.page)).toHaveText("Dog.jpg");
+    await expect(heading(screen.page)).toHaveText(DEMO_ITEMS.deck.name);
     // The screen's End while the question is open: it goes with Revoke, never floating over Session Ended.
     await phone.page.getByRole("button", { name: "Revoke" }).click();
     await expect(ask).toBeVisible();
@@ -3089,18 +3126,18 @@ test.describe("PAIR-13 remote: the phone commands the demo screen (design.md sec
     browser,
   }) => {
     const { screen, phone, row } = await remote(browser);
-    await row("Sample deck.pptx").click();
-    await expect(heading(screen.page)).toHaveText("Sample deck.pptx");
+    await row(DEMO_ITEMS.horizontal.name).click();
+    await expect(heading(screen.page)).toHaveText(DEMO_ITEMS.horizontal.name);
     // The next command goes out with a seq below the last applied one: the server changes nothing.
     await phone.page.route("**/api/control", (route) =>
       route.continue({ postData: JSON.stringify({ ...route.request().postDataJSON(), seq: 1 }) }),
     );
     const answered = phone.page.waitForResponse("**/api/control");
-    await row("Sample deck.pdf").click();
+    await row(DEMO_ITEMS.deck.name).click();
     await answered;
-    await expect(row("Sample deck.pptx")).toHaveAttribute("aria-current", "true");
-    await expect(row("Sample deck.pdf")).not.toHaveAttribute("aria-current", "true");
-    await expect(heading(screen.page)).toHaveText("Sample deck.pptx");
+    await expect(row(DEMO_ITEMS.horizontal.name)).toHaveAttribute("aria-current", "true");
+    await expect(row(DEMO_ITEMS.deck.name)).not.toHaveAttribute("aria-current", "true");
+    await expect(heading(screen.page)).toHaveText(DEMO_ITEMS.horizontal.name);
     await phone.page.waitForTimeout(300);
     await expectNoToast(phone.page);
     await close(screen, phone);
@@ -3110,32 +3147,31 @@ test.describe("PAIR-13 remote: the phone commands the demo screen (design.md sec
     browser,
   }) => {
     const { screen, row } = await remote(browser);
-    const kept = row("Sample deck.pptx");
+    const kept = row(DEMO_ITEMS.deck.name);
     await kept.focus();
     await kept.evaluate((n) => n.setAttribute("data-kept", "1"));
     // A tap on the screen pushes a new view with the same items.
-    await sidebarItem(screen.page, "Sample deck.pdf").click();
-    await expect(row("Sample deck.pdf")).toHaveAttribute("aria-current", "true");
+    await sidebarItem(screen.page, DEMO_ITEMS.horizontal.name).click();
+    await expect(row(DEMO_ITEMS.horizontal.name)).toHaveAttribute("aria-current", "true");
     await expect(kept).toHaveAttribute("data-kept", "1");
     await expect(kept).toBeFocused();
   });
 
   test("PAIR-13 reload: a phone reloaded mid-session still moves the screen with its next tap", async ({ browser }) => {
     const { screen, phone, row } = await remote(browser);
-    await row("Sample deck.pptx").click();
-    await expect(heading(screen.page)).toHaveText("Sample deck.pptx");
+    await row(DEMO_ITEMS.horizontal.name).click();
+    await expect(heading(screen.page)).toHaveText(DEMO_ITEMS.horizontal.name);
     await phone.page.reload();
-    await expect(row("Sample deck.pptx")).toHaveAttribute("aria-current", "true");
-    await row("Sample deck.pdf").click();
-    await expect(heading(screen.page)).toHaveText("Sample deck.pdf");
-    await expect(row("Sample deck.pdf")).toHaveAttribute("aria-current", "true");
+    await expect(row(DEMO_ITEMS.horizontal.name)).toHaveAttribute("aria-current", "true");
+    await row(DEMO_ITEMS.deck.name).click();
+    await expect(heading(screen.page)).toHaveText(DEMO_ITEMS.deck.name);
+    await expect(row(DEMO_ITEMS.deck.name)).toHaveAttribute("aria-current", "true");
     await close(screen, phone);
   });
 
   test("a vertical drag over the preview is no tap, a tap still is", async ({ browser }) => {
-    const { screen, phone, row, preview, dots } = await remote(browser);
-    await row("Sample deck.pptx").click();
-    await expect(dots).toHaveText("1 / 2");
+    const { screen, phone, preview, dots } = await remote(browser);
+    await expect(dots).toHaveText(`1 / ${DECK_PAGES}`);
     const box = await preview.boundingBox();
     const x = (box?.x ?? 0) + (box?.width ?? 0) * 0.8;
     const y = (box?.y ?? 0) + (box?.height ?? 0) * 0.25;
@@ -3144,21 +3180,21 @@ test.describe("PAIR-13 remote: the phone commands the demo screen (design.md sec
     await phone.page.mouse.move(x, y + 30, { steps: 4 });
     await phone.page.mouse.up();
     await phone.page.waitForTimeout(400);
-    await expect(dots).toHaveText("1 / 2");
+    await expect(dots).toHaveText(`1 / ${DECK_PAGES}`);
     await preview.click({ position: { x: (box?.width ?? 0) * 0.8, y: (box?.height ?? 0) * 0.5 } });
-    await expect(dots).toHaveText("2 / 2");
+    await expect(dots).toHaveText(`2 / ${DECK_PAGES}`);
     await close(screen, phone);
   });
 
   test("a command that never answers times out into the offline toast, and the mark goes back", async ({ browser }) => {
     const { screen, phone, row } = await remote(browser);
     await phone.page.route("**/api/control", () => {});
-    await row("Sample deck.pptx").click();
-    await expect(row("Sample deck.pptx")).toHaveAttribute("aria-current", "true");
+    await row(DEMO_ITEMS.horizontal.name).click();
+    await expect(row(DEMO_ITEMS.horizontal.name)).toHaveAttribute("aria-current", "true");
     await expect(phone.page.getByRole("alert")).toContainText("Check the connection, then try again.", {
       timeout: 20_000,
     });
-    await expect(row("Dog.jpg")).toHaveAttribute("aria-current", "true");
+    await expect(row(DEMO_ITEMS.deck.name)).toHaveAttribute("aria-current", "true");
     await close(screen, phone);
   });
 
@@ -3205,22 +3241,21 @@ test.describe("PAIR-13 remote: the phone commands the demo screen (design.md sec
       "(() => { window.exits = 0; const exit = document.exitFullscreen?.bind(document); document.exitFullscreen = (...a) => { window.exits += 1; return exit?.(...a); }; })()",
     );
     const row = (name: string) => phone.page.locator("#file-list").getByRole("button", { name: startsWith(name) });
-    await row("Sample deck.pptx").click();
-    await expect(heading(screen.page)).toHaveText("Sample deck.pptx");
+    await expect(heading(screen.page)).toHaveText(DEMO_ITEMS.deck.name);
     await phone.page
       .getByRole("group", { name: "The Screen" })
       .getByRole("button", { name: "Present", exact: true })
       .click();
     const body = screen.page.locator("body");
     await expect(body).toHaveClass(/is-presenting/);
-    await row("Dog.jpg").click();
-    await expect(heading(screen.page)).toHaveText("Dog.jpg");
+    await row(DEMO_ITEMS.horizontal.name).click();
+    await expect(heading(screen.page)).toHaveText(DEMO_ITEMS.horizontal.name);
     await expect(screen.page.locator("#frame .loader")).toBeVisible();
     await screen.page.waitForTimeout(400);
     await expect(body).toHaveClass(/is-presenting/);
     expect(await screen.page.evaluate("window.exits")).toBe(0);
     release();
-    await expect(screen.page.getByRole("img", { name: "Dog.jpg" })).toBeVisible();
+    await expect(screen.page.getByRole("img", { name: DEMO_ITEMS.horizontal.name })).toBeVisible();
     await expect(body).toHaveClass(/is-presenting/);
     expect(await screen.page.evaluate("window.exits")).toBe(0);
     await close(screen, phone);
@@ -3238,7 +3273,7 @@ test.describe("PAIR-13 remote: the phone commands the demo screen (design.md sec
     await expectViewer(screen.page);
     await phone.page
       .locator("#file-list")
-      .getByRole("button", { name: startsWith("Sample deck.pdf") })
+      .getByRole("button", { name: startsWith(DEMO_ITEMS.deck.name) })
       .click();
     const frame = screen.page.locator("#frame");
     await expect(frame).toHaveClass(/is-scroll/);
@@ -3247,7 +3282,7 @@ test.describe("PAIR-13 remote: the phone commands the demo screen (design.md sec
     await expect(screen.page.locator('#frame [data-page="1"]')).toBeInViewport({ ratio: 0.5 });
     // Scrolling back here is a step: the phone's preview follows.
     await frame.evaluate((n) => n.scrollTo(0, 0));
-    await expect(phone.page.locator(".preview .count")).toHaveText("1 / 2");
+    await expect(phone.page.locator(".preview .count")).toHaveText(`1 / ${DECK_PAGES}`);
     await close(screen, phone);
   });
 
@@ -3256,16 +3291,16 @@ test.describe("PAIR-13 remote: the phone commands the demo screen (design.md sec
     await phone.page.route("**/api/control", (route) =>
       route.fulfill({ status: 429, contentType: "application/json", body: JSON.stringify({ code: "rate_limited" }) }),
     );
-    await row("Sample deck.pptx").click();
+    await row(DEMO_ITEMS.horizontal.name).click();
     await expect(phone.page.getByRole("alert")).toContainText("The Screen Didn't Change");
     await expect(phone.page.getByRole("alert")).toContainText("Wait a minute, then try again.");
-    await expect(row("Dog.jpg")).toHaveAttribute("aria-current", "true");
-    await expect(heading(screen.page)).toHaveText("Dog.jpg");
+    await expect(row(DEMO_ITEMS.deck.name)).toHaveAttribute("aria-current", "true");
+    await expect(heading(screen.page)).toHaveText(DEMO_ITEMS.deck.name);
     await phone.page.unroute("**/api/control");
     await phone.page.route("**/api/control", (route) => route.abort());
-    await row("Sample deck.pdf").click();
+    await row(DEMO_ITEMS.vertical.name).click();
     await expect(phone.page.getByRole("alert")).toContainText("Check the connection, then try again.");
-    await expect(row("Dog.jpg")).toHaveAttribute("aria-current", "true");
+    await expect(row(DEMO_ITEMS.deck.name)).toHaveAttribute("aria-current", "true");
     await expect(heading(phone.page)).toHaveText("Approved for Demo Room");
     await close(screen, phone);
   });
@@ -3443,13 +3478,13 @@ test.describe("the phone page at phone widths (design.md section 7, Phone page)"
       .click();
     await expect(toast(phone.page)).toContainText("The Session Expiry Didn't Change");
     // The screen's own tap is the next view the phone gets.
-    await sidebarItem(screen.page, "Sample deck.pdf").click();
+    await sidebarItem(screen.page, DEMO_ITEMS.horizontal.name).click();
     await expect(toast(phone.page)).toContainText("Remote Didn't Load");
     await expect(toast(phone.page).getByRole("button", { name: "Reload" })).toBeVisible();
     // Tapped away, the views after it leave it away.
     await toast(phone.page).locator("strong").click();
     await expect(toast(phone.page)).toBeHidden();
-    await sidebarItem(screen.page, "Dog.jpg").click();
+    await sidebarItem(screen.page, DEMO_ITEMS.deck.name).click();
     await phone.page.waitForTimeout(1500);
     await expect(toast(phone.page)).toBeHidden();
     await screen.context.close();
