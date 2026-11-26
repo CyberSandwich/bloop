@@ -107,7 +107,7 @@ describe("PAIR-14 the match pick", () => {
     expect(r.io.picked).toHaveBeenCalledTimes(1);
   });
 
-  it("slow (4 s): the line under the choices, the spinner stays, and no stop: the pick may have landed", async () => {
+  it("slow (4 s): the line over the choices, the spinner stays, and no stop: the pick may have landed", async () => {
     let settle: (a: Answer) => void = () => {};
     const r = rig(new Promise<Answer>((done) => (settle = done)));
     const pending = r.pick("42");
