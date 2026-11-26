@@ -29,8 +29,8 @@
 /* A short landscape screen has no room under the page's centered column: the stack moves to its right edge. */
 @media (max-height: 500px) {
   .up-pill,
-  .toast {
-    margin: 0 var(--pad) 0 auto;
+  :root .toast {
+    margin-inline: auto var(--pad);
   }
 }
 /* The loader is the pill's ground; the sheen sweeps only while bytes move. */
