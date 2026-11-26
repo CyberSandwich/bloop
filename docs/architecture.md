@@ -263,6 +263,7 @@ public/                    the assets' source, built into dist/ (each JS module 
   js/core/length.js js/core/length-extra.js js/shared/length.js css/length.css   the phone's Session Expiry sheet, loaded on its first tap, with its time rules and words (Set stays off until they are in); the length floor the route shares
   js/core/poll.js js/core/health.js   the channel's polling loop and ping rule, loaded on first need
   js/core/clicker.js   a presenter's clicker keys (F5, Home, End), loaded when the viewer first shows an item
+  js/core/crossfade.js   another item over the last on the stage and the phone's preview, loaded with the viewer's first item or the preview's first page
   js/core/dismiss.js   a popover's outside tap closes it and reaches nothing else, loaded once a session can open one
   js/core/net-states.js   the room screen's words for a blocked network and a service that is down, loaded by the first of them
   js/core/drag.js   the phone's drop hint, loaded at its first file drag
