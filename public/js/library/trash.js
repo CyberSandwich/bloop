@@ -18,8 +18,8 @@ export function start(page) {
     const dialog = await page.sheet(
       "confirm-q",
       [
-        el("h2", { id: "confirm-q" }, [title]),
-        el("p", {}, [line]),
+        el("div", { class: "lib-sheet-head" }, [el("h2", { id: "confirm-q" }, [title])]),
+        el("div", { class: "lib-body" }, [el("p", {}, [line])]),
         el("form", { class: "buttons", method: "dialog" }, [
           el("button", { class: "btn secondary", type: "submit", value: "", autofocus: "" }, ["Cancel"]),
           el("button", { class: "btn rose", type: "submit", value: "yes" }, [action]),
