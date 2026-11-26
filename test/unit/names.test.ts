@@ -2,7 +2,7 @@ import { readdirSync, readFileSync, statSync } from "node:fs";
 import { join } from "node:path";
 import fc from "fast-check";
 import { describe, expect, it } from "vitest";
-import { cleanName, isValidName, NAME_MAX } from "../../public/js/shared/names.js";
+import { cleanName, isValidName, NAME_MAX } from "../../src/worker/uploads/file-name.ts";
 
 const ZWJ = "\u200d";
 const ZWNJ = "\u200c";
