@@ -215,8 +215,10 @@ export function fileAt(items: readonly ItemRef[], index: number): FileItemRef | 
  * by name, so a stored object holding more can never pass it through (PAIR-16).
  */
 export const itemView = (i: ItemRef): Item => {
-  if (i.kind === "link")
-    return { kind: "link", id: i.id, url: i.url, title: i.title, ...(i.preview ? { preview: i.preview } : {}) };
+  if (i.kind === "link") {
+    const preview = i.preview ? allowedPreview(i.preview) : null;
+    return { kind: "link", id: i.id, url: i.url, title: i.title, ...(preview ? { preview } : {}) };
+  }
   const d = i.derived;
   return {
     kind: "file",
