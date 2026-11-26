@@ -348,9 +348,26 @@ describe("the admin view cookie: POST /api/admin/view", () => {
     ]) {
       const bad = await toggle(body);
       expect(bad.status, JSON.stringify(body)).toBe(400);
+      expect(await bad.json()).toMatchObject({ code: "bad_request" });
       expect(bad.headers.getSetCookie()).toEqual([]);
     }
     expect(world.db.raw.prepare("SELECT count(*) AS n FROM admin_action").get()).toEqual({ n: 2 });
+  });
+
+  it("a reason is stored whole up to 500 characters and refused past it, never cut", async () => {
+    const world = memberWorld();
+    const admin = await seedMember(world.db, "a1", "admin@example.test");
+    const routes = await routesOf("admin", "adminRoutes");
+    const toggle = (reason: string) =>
+      callRoute(routes, world.env, "POST", "/api/admin/view", { cookie: sid(admin), body: { open: true, reason } });
+    expect((await toggle("r".repeat(500))).status).toBe(200);
+    // Control characters do not count toward the limit, since they are dropped first.
+    expect((await toggle(`${"s".repeat(500)}\u200B\n`)).status).toBe(200);
+    const tooLong = await toggle("t".repeat(501));
+    expect(tooLong.status).toBe(400);
+    expect(await tooLong.json()).toMatchObject({ code: "bad_request" });
+    const stored = world.db.raw.prepare("SELECT reason FROM admin_action ORDER BY id").all() as { reason: string }[];
+    expect(stored.map((r) => r.reason)).toEqual(["r".repeat(500), "s".repeat(500)]);
   });
 });
 

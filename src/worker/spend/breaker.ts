@@ -45,7 +45,7 @@ export interface Alert {
   sources: string;
 }
 
-/** The Monday email. A sends it; until then it is logged. */
+/** The Monday email: logged and mailed to ADMIN_EMAILS like every alert (ADR 0021). */
 export interface DigestMessage {
   kind: "digest";
   subject: string;
@@ -55,7 +55,7 @@ export interface DigestMessage {
 
 export type Notify = (message: Alert | DigestMessage) => Promise<void>;
 
-/** Until email exists the message is a structured log line (an Observability alert matches `evt`). */
+/** The structured log line every message also gets (an Observability alert matches `evt`); the cron adds mail. */
 export const logNotify: Notify = async (message) => {
   console.log(JSON.stringify({ evt: "breaker", ...message }));
 };
