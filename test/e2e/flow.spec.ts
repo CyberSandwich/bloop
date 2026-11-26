@@ -3005,6 +3005,10 @@ test.describe("PAIR-13 remote: the phone commands the demo screen (design.md sec
     await bubbles.getByRole("button", { name: "Present" }).click();
     await expect(screen.page.locator("body")).toHaveClass(/is-presenting/);
     await expect(bubbles.getByRole("button", { name: "Stop" })).toBeVisible();
+    // The deck has notes, so presenting folds the list to the row on screen; that row opens it again.
+    await expect(phone.page.locator("#file-list")).toHaveClass(/\bnotes-folded\b/);
+    await row(DEMO_ITEMS.deck.name).click();
+    await expect(phone.page.locator("#file-list")).not.toHaveClass(/\bnotes-folded\b/);
     // A new item while presenting keeps presenting.
     await row(DEMO_ITEMS.horizontal.name).click();
     await expect(heading(screen.page)).toHaveText(DEMO_ITEMS.horizontal.name);
@@ -3502,6 +3506,327 @@ test.describe("the phone page at phone widths (design.md section 7, Phone page)"
     await expect(heading(phone.page)).toHaveText("Session Ended");
     await phone.page.waitForTimeout(500);
     await expectNoToast(phone.page);
+    await screen.context.close();
+    await phone.context.close();
+  });
+});
+
+test.describe("NOTES-01 phone-only: the presenter's notes on the phone (design.md section 7, Phone page)", () => {
+  /** The demo deck's notes, one per page, as the server reads them (page 1 and 2 are long enough to scroll). */
+  const NOTES: string[] = JSON.parse(readFileSync("src/worker/seams/file-source/demo-files/demo-notes.json", "utf8"));
+  const SIZES = [
+    { width: 390, height: 844 },
+    { width: 320, height: 568 },
+  ];
+  type Size = (typeof SIZES)[number];
+  /** How a note opens: enough to find it, short enough to survive the page's whitespace. */
+  const opening = (note: string) => note.slice(0, 24);
+  const boxOf = (target: Locator): Promise<Box> =>
+    target.evaluate((n) => {
+      const r = n.getBoundingClientRect();
+      return { x: r.x, y: r.y, width: r.width, height: r.height };
+    });
+  /** A computed length of `target`, in px. */
+  const px = async (target: Locator, prop: string) =>
+    Number(await target.evaluate(`(n) => parseFloat(getComputedStyle(n).${prop})`));
+  const expectSameBox = (a: Box, b: Box, what: string) => {
+    for (const k of ["x", "y", "width", "height"] as const)
+      expect(Math.abs(a[k] - b[k]), `${what} ${k}`).toBeLessThanOrEqual(1);
+  };
+  const answerWith = (notes: unknown) => (page: Page) =>
+    page.route("**/api/notes*", (route) =>
+      route.fulfill({
+        status: 200,
+        contentType: "application/json",
+        headers: { "X-Bloop": "1" },
+        body: JSON.stringify({ notes }),
+      }),
+    );
+
+  /** A demo session with the phone at `size`: the screen on the deck, the remote ready, nothing presented yet. */
+  async function session(browser: Browser, size: Size, prep?: (page: Page) => Promise<unknown>) {
+    const screen = await demoScreen(browser);
+    const { phone } = await scan(browser, screen.page);
+    const page = phone.page;
+    await page.setViewportSize(size);
+    await prep?.(page);
+    const asked: string[] = [];
+    page.on("request", (r) => {
+      if (r.url().includes("/api/notes")) asked.push(r.url());
+    });
+    await page.getByRole("button", { name: "Approve" }).click();
+    await expectViewer(screen.page);
+    const bubbles = page.getByRole("group", { name: "The Screen" });
+    await expect(bubbles).toBeVisible();
+    return {
+      screen,
+      phone,
+      page,
+      asked,
+      bubbles,
+      list: page.locator("#file-list"),
+      rows: page.locator("#file-list > li:visible"),
+      box: page.locator(".notes"),
+      preview: page.locator(".preview"),
+      panel: page.locator(".column > .actions"),
+      present: () => bubbles.getByRole("button", { name: "Present" }).click(),
+      next: () => bubbles.getByRole("button", { name: "Next" }).click(),
+    };
+  }
+  type Session = Awaited<ReturnType<typeof session>>;
+  const close = async (s: Session) => {
+    await s.screen.context.close();
+    await s.phone.context.close();
+  };
+
+  for (const size of SIZES) {
+    test.describe(`at ${size.width} x ${size.height}`, () => {
+      test("Present folds the list to one row with a chevron that opens it again", async ({ browser }) => {
+        const s = await session(browser, size);
+        await expect(s.rows).toHaveCount(DEMO_NAMES.length);
+        await expect(s.box).toHaveCount(0);
+        expect(s.asked, "notes asked before Present").toEqual([]);
+        await s.present();
+        await expect(s.list).toHaveClass(/\bnotes-folded\b/);
+        await expect(s.rows).toHaveCount(1);
+        const row = s.rows.getByRole("button", { name: startsWith(DEMO_ITEMS.deck.name) });
+        await expect(row).toHaveAttribute("aria-expanded", "false");
+        await expect(row.locator(".notes-chevron")).toBeVisible();
+        await expect(s.box).toBeVisible();
+        expect(s.asked).toEqual([expect.stringContaining(`/api/notes?item=${DEMO_ITEMS.deck.slot}`)]);
+        // The row opens the list and is no command: the screen keeps its slide.
+        await row.click();
+        await expect(s.rows).toHaveCount(DEMO_NAMES.length);
+        await expect(row).toHaveAttribute("aria-expanded", "true");
+        await expect(s.box).toHaveCount(0);
+        await expect(s.screen.page.getByRole("img", { name: `Slide 1 of ${DECK_PAGES}` })).toBeVisible();
+        await row.click();
+        await expect(s.rows).toHaveCount(1);
+        await expect(s.box).toBeVisible();
+        // A keyboard opens it too.
+        await row.focus();
+        await s.page.keyboard.press("Enter");
+        await expect(s.rows).toHaveCount(DEMO_NAMES.length);
+        // Stop gives today's layout back whole.
+        await s.page.locator(".bubbles").getByRole("button", { name: "Stop" }).click();
+        await expect(s.list).not.toHaveClass(/\bnotes-folded\b/);
+        await expect(s.box).toHaveCount(0);
+        await expect(s.rows.locator(".notes-chevron")).toHaveCount(0);
+        await close(s);
+      });
+
+      test("the slide sits above the notes, which scroll on their own and end clear of the pill", async ({
+        browser,
+      }) => {
+        const s = await session(browser, size);
+        await s.present();
+        await expect(s.box).toContainText(opening(NOTES[0] ?? ""));
+        await expect(s.preview).toBeVisible();
+        const list = await boxOf(s.list);
+        const preview = await boxOf(s.preview);
+        const box = await boxOf(s.box);
+        expect(preview.y, "the slide under the list").toBeGreaterThanOrEqual(list.y + list.height - 1);
+        expect(box.y, "the notes under the slide, not over it").toBeGreaterThanOrEqual(preview.y + preview.height - 1);
+        expect(Math.abs(box.width - preview.width), "the notes as wide as the slide").toBeLessThanOrEqual(1);
+        expect(Math.abs(box.x - preview.x)).toBeLessThanOrEqual(1);
+        // Body text, kept with its line breaks.
+        const text = s.box.locator(".notes-text");
+        await expect(text).toHaveCSS("white-space", "pre-wrap");
+        expect(await px(text, "fontSize")).toBeGreaterThanOrEqual(17);
+        // The bottom padding is the pill's height, so the pill never covers text.
+        const pill = await boxOf(s.panel);
+        const padding = await px(s.box, "paddingBottom");
+        expect(Math.abs(padding - pill.height), "padding under the notes equals the pill").toBeLessThanOrEqual(1);
+        // The page at its end (the floating pill rides its foot), the notes scrolled to theirs.
+        await s.page.evaluate("window.scrollTo(0, document.documentElement.scrollHeight)");
+        const pageY = await s.page.evaluate("window.scrollY");
+        expect(await s.box.evaluate((n) => n.scrollHeight - n.clientHeight), "the notes overflow").toBeGreaterThan(0);
+        await s.box.evaluate((n) => {
+          n.scrollTop = n.scrollHeight;
+        });
+        expect(await s.box.evaluate((n) => n.scrollTop)).toBeGreaterThan(0);
+        expect(await s.page.evaluate("window.scrollY"), "the notes scrolled, not the page").toBe(pageY);
+        const lastLine = (await s.box.evaluate(`(n) => {
+          const range = document.createRange();
+          range.selectNodeContents(n.querySelector(".notes-text"));
+          const rects = range.getClientRects();
+          return rects[rects.length - 1].bottom;
+        }`)) as number;
+        const pillAtEnd = await boxOf(s.panel);
+        expect(lastLine, "the last line ends above the pill").toBeLessThanOrEqual(pillAtEnd.y + 1);
+        // The notes run to the window's foot, under the pill.
+        const boxAtEnd = await boxOf(s.box);
+        expect(Math.abs(boxAtEnd.y + boxAtEnd.height - (size.height - (await insetOf(s.page))))).toBeLessThanOrEqual(1);
+        await close(s);
+      });
+
+      test("a slide change sends the notes back to the top", async ({ browser }) => {
+        const s = await session(browser, size);
+        await s.present();
+        await expect(s.box).toContainText(opening(NOTES[0] ?? ""));
+        await s.box.evaluate((n) => {
+          n.scrollTop = n.scrollHeight;
+        });
+        expect(await s.box.evaluate((n) => n.scrollTop)).toBeGreaterThan(0);
+        await s.next();
+        await expect(s.box).toContainText(opening(NOTES[1] ?? ""));
+        await expect.poll(() => s.box.evaluate((n) => n.scrollTop)).toBe(0);
+        await s.box.evaluate((n) => {
+          n.scrollTop = n.scrollHeight;
+        });
+        await s.bubbles.getByRole("button", { name: "Previous" }).click();
+        await expect(s.box).toContainText(opening(NOTES[0] ?? ""));
+        await expect.poll(() => s.box.evaluate((n) => n.scrollTop)).toBe(0);
+        await close(s);
+      });
+
+      test("a slide with no note keeps the box where it is, with the glass pill centered in it", async ({
+        browser,
+      }) => {
+        // The demo deck has a note on every page: the server's answer is changed so page 2 has none.
+        const s = await session(browser, size, answerWith(NOTES.map((n, i) => (i === 1 ? "" : n))));
+        await s.present();
+        await expect(s.box).toContainText(opening(NOTES[0] ?? ""));
+        const before = {
+          list: await boxOf(s.list),
+          preview: await boxOf(s.preview),
+          box: await boxOf(s.box),
+          panel: await boxOf(s.panel),
+        };
+        await s.next();
+        const pill = s.box.locator(".notes-none");
+        await expect(pill).toBeVisible();
+        await expect(pill).toHaveText("No Notes for This Slide");
+        await expect(pill).toHaveClass(/\bglass\b/);
+        await expect(s.box.locator(".notes-text")).toBeHidden();
+        await expect(s.box).toHaveCount(1);
+        expectSameBox(await boxOf(s.box), before.box, "the notes box");
+        expectSameBox(await boxOf(s.preview), before.preview, "the slide");
+        expectSameBox(await boxOf(s.list), before.list, "the list");
+        expectSameBox(await boxOf(s.panel), before.panel, "the pill");
+        // Centered in what shows above the floating pill.
+        const box = await boxOf(s.box);
+        const at = await boxOf(pill);
+        const top = await px(s.box, "paddingTop");
+        const bottom = await px(s.box, "paddingBottom");
+        expect(Math.abs(at.x + at.width / 2 - (box.x + box.width / 2))).toBeLessThanOrEqual(1);
+        expect(Math.abs(at.y + at.height / 2 - (box.y + top + (box.height - top - bottom) / 2))).toBeLessThanOrEqual(2);
+        expect(at.y + at.height, "the pill clears the floating pill").toBeLessThanOrEqual(before.panel.y + 1);
+        // The next page has its note again, in the same box.
+        await s.next();
+        await expect(s.box).toContainText(opening(NOTES[2] ?? ""));
+        await expect(pill).toBeHidden();
+        expectSameBox(await boxOf(s.box), before.box, "the notes box");
+        await close(s);
+      });
+
+      for (const [what, prep] of [
+        ["an empty list", answerWith([])],
+        ["only empty notes", answerWith(NOTES.map(() => ""))],
+        ["a failed request", (page: Page) => page.route("**/api/notes*", (route) => route.abort())],
+        ["a script that does not load", (page: Page) => page.route("**/js/core/notes.js", (route) => route.abort())],
+      ] as const) {
+        test(`a deck with ${what} keeps today's layout`, async ({ browser }) => {
+          const s = await session(browser, size, prep);
+          const before = {
+            list: await boxOf(s.list),
+            panel: await boxOf(s.panel),
+            previews: await s.preview.count(),
+          };
+          await s.present();
+          await expect(s.bubbles.getByRole("button", { name: "Stop" })).toBeVisible();
+          // Let the answer, or its failure, arrive before reading the layout.
+          if (what !== "a script that does not load") await expect.poll(() => s.asked.length).toBe(1);
+          await s.page.waitForTimeout(400);
+          await expect(s.list).not.toHaveClass(/\bnotes-folded\b/);
+          await expect(s.rows).toHaveCount(DEMO_NAMES.length);
+          await expect(s.box).toHaveCount(0);
+          await expect(s.page.locator(".notes-chevron")).toHaveCount(0);
+          expectSameBox(await boxOf(s.list), before.list, "the list");
+          expectSameBox(await boxOf(s.panel), before.panel, "the pill");
+          expect(await s.preview.count()).toBe(before.previews);
+          await expectNoToast(s.page);
+          await close(s);
+        });
+      }
+    });
+  }
+
+  test("a photo asks for no notes and keeps its layout", async ({ browser }) => {
+    const s = await session(browser, SIZES[0] as Size);
+    await s.rows.getByRole("button", { name: startsWith(DEMO_ITEMS.horizontal.name) }).click();
+    await expect(heading(s.screen.page)).toHaveText(DEMO_ITEMS.horizontal.name);
+    await s.present();
+    await expect(s.bubbles.getByRole("button", { name: "Stop" })).toBeVisible();
+    await s.page.waitForTimeout(400);
+    expect(s.asked).toEqual([]);
+    await expect(s.list).not.toHaveClass(/\bnotes-folded\b/);
+    await expect(s.box).toHaveCount(0);
+    await close(s);
+  });
+
+  test("the screen never carries a note: not in its text, not in its markup", async ({ browser }) => {
+    const s = await session(browser, SIZES[0] as Size);
+    await s.present();
+    await expect(s.box).toContainText(opening(NOTES[0] ?? ""));
+    await s.next();
+    await expect(s.box).toContainText(opening(NOTES[1] ?? ""));
+    const html = await s.screen.page.content();
+    const text = (await s.screen.page.locator("body").innerText()) + html;
+    // A word or two could also be on the screen by chance: only notes long enough to be only a note.
+    const openings = NOTES.filter((n) => n.length >= 24).map(opening);
+    expect(openings.length).toBeGreaterThan(0);
+    for (const note of openings) expect(text, "the screen carries a note").not.toContain(note);
+    await close(s);
+  });
+});
+
+test.describe("a page turn on a slow screen", () => {
+  test("never shows a blank frame: every frame of the turn holds a decoded slide", async ({ browser, browserName }) => {
+    test.skip(browserName !== "chromium", "CDP network emulation is Chromium only");
+    const screen = await demoScreen(browser);
+    const { phone } = await scan(browser, screen.page);
+    await phone.page.getByRole("button", { name: "Approve" }).click();
+    await expectViewer(screen.page);
+    const page = screen.page;
+    await expect(page.locator(STAGED)).toBeVisible();
+    // The screen warms every page of the deck after the first; once it is quiet, the network goes slow.
+    await page.waitForLoadState("networkidle");
+    const cdp = await page.context().newCDPSession(page);
+    await cdp.send("Network.enable");
+    await cdp.send("Network.emulateNetworkConditions", {
+      offline: false,
+      latency: 400,
+      downloadThroughput: 30 * 1024,
+      uploadThroughput: -1,
+    });
+    // One check per animation frame: a stage with no decoded, visible, sized slide is a blank frame.
+    await page.evaluate(`(() => {
+      const state = { frames: 0, on: true, blank: [] };
+      globalThis.sampled = state;
+      const sample = () => {
+        const img = document.querySelector("#frame picture img");
+        const box = img && img.getBoundingClientRect();
+        const css = img && getComputedStyle(img);
+        const shown = !!img && img.complete && img.naturalWidth > 0 && box.width > 0 && box.height > 0 &&
+          css.visibility === "visible" && Number(css.opacity) > 0;
+        state.frames++;
+        if (!shown) state.blank.push("frame " + state.frames + ": " + (img ? img.complete + " " + img.naturalWidth : "no image"));
+        if (state.on) requestAnimationFrame(sample);
+      };
+      requestAnimationFrame(sample);
+    })()`);
+    const bubbles = phone.page.getByRole("group", { name: "The Screen" });
+    for (let n = 2; n <= DECK_PAGES; n++) {
+      await bubbles.getByRole("button", { name: "Next" }).click();
+      await expect(page.getByRole("img", { name: `Slide ${n} of ${DECK_PAGES}` })).toBeVisible({ timeout: 20_000 });
+    }
+    const sampled = (await page.evaluate("(globalThis.sampled.on = false, globalThis.sampled)")) as {
+      frames: number;
+      blank: string[];
+    };
+    expect(sampled.frames, "frames sampled across the turns").toBeGreaterThan(10);
+    expect(sampled.blank).toEqual([]);
     await screen.context.close();
     await phone.context.close();
   });
