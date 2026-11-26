@@ -30,7 +30,7 @@ export interface Flip {
 }
 
 export interface Alert {
-  kind: "trip" | "warn" | "would_trip" | "analytics_down" | "public_unreadable" | "reset";
+  kind: "trip" | "warn" | "would_trip" | "analytics_down" | "public_unreadable" | "config_invalid" | "reset";
   /** The rule that fired; stable, so an alert rule can match it. */
   rule: string;
   switch?: SwitchName;
@@ -262,6 +262,8 @@ export interface BreakerDeps {
   adminUrl: string;
   /** Absent when `CF_ANALYTICS_TOKEN` or the account id is unset: the run uses counters only and says so. */
   analytics?: () => Promise<AnalyticsResult>;
+  /** Names (never values) of the Worker vars that failed validation: the run still protects, and one alert a day says so. */
+  configProblems?: readonly string[];
 }
 
 export interface BreakerReport {
@@ -374,6 +376,10 @@ export async function runBreaker(d: BreakerDeps): Promise<BreakerReport> {
       readings: {},
       sources,
     });
+  }
+  if (d.configProblems?.length) {
+    sources += `; config invalid (${d.configProblems.join(", ")})`;
+    await announce("config_invalid", { kind: "config_invalid", rule: "config_invalid", readings: {}, sources });
   }
   const report = buildReport({
     now,

@@ -1,5 +1,5 @@
-import { configFor } from "./config.ts";
-import { runCron } from "./cron.ts";
+import { configFor, problemVars } from "./config.ts";
+import { CRON, runCron } from "./cron.ts";
 import { JOBS } from "./cron-jobs.ts";
 import { Converter } from "./do/converter.ts";
 import { Directory } from "./do/directory.ts";
@@ -28,7 +28,7 @@ import { logFetch, openRoutes } from "./routes/open.ts";
 import { pairingRoutes } from "./routes/pairing.ts";
 import { reportRoutes } from "./routes/reports.ts";
 import { uploadRoutes } from "./routes/uploads.ts";
-import { SpendGuard } from "./spend/guard.ts";
+import { runSpendBreaker, SpendGuard } from "./spend/guard.ts";
 
 /** Paths the routes own; everything else is a static asset. wrangler.jsonc sends every request to the Worker so the host check sees it. */
 const DYNAMIC = /^\/(api|f|auth)\/|^\/fo\/ping$/;
@@ -99,7 +99,16 @@ export default {
   // The jobs of each trigger are listed in cron-jobs.ts.
   async scheduled(controller, env) {
     const config = configFor(env);
-    if (!config.ok) return console.error(`config invalid: ${config.problems.join("; ")}`);
+    if (!config.ok) {
+      console.error(`config invalid: ${config.problems.join("; ")}`);
+      // The breaker needs only the bindings and the registry defaults, so a bad var does not switch spend protection off.
+      if (controller.cron === CRON.fiveMinutes) {
+        await runSpendBreaker(env, undefined, problemVars(config.problems)).catch(() =>
+          console.error(JSON.stringify({ evt: "cron_job_failed", job: "spend_breaker" })),
+        );
+      }
+      return;
+    }
     await runCron(controller.cron, env, config.config, JOBS);
   },
 } satisfies ExportedHandler<Env>;

@@ -157,8 +157,15 @@ export async function spendReportFor(env: SpendEnv): Promise<SpendReport | null>
 
 type BreakerEnv = SpendEnv & { DB: unknown; CF_ANALYTICS_TOKEN?: string; CF_ACCOUNT_ID?: string };
 
-/** The cron's one call. `notify` defaults to a log line until A wires email. */
-export function runSpendBreaker(env: BreakerEnv, notify: Notify = logNotify): Promise<BreakerReport> {
+/**
+ * The cron's one call. `notify` defaults to a log line until A wires email. `configProblems` (var names) is set when the
+ * Worker's config is invalid: the run needs only the bindings and the registry defaults, so it still protects.
+ */
+export function runSpendBreaker(
+  env: BreakerEnv,
+  notify: Notify = logNotify,
+  configProblems?: readonly string[],
+): Promise<BreakerReport> {
   const token = env.CF_ANALYTICS_TOKEN;
   const accountId = env.CF_ACCOUNT_ID;
   return runBreaker({
@@ -171,6 +178,7 @@ export function runSpendBreaker(env: BreakerEnv, notify: Notify = logNotify): Pr
     vars: env as unknown as Vars,
     now: Date.now,
     adminUrl: `${env.PUBLIC_ORIGIN}/admin`,
+    ...(configProblems ? { configProblems } : {}),
     ...(token && accountId
       ? { analytics: () => readAnalytics({ token, accountId, now: Date.now(), fetch: (...a) => fetch(...a) }) }
       : {}),

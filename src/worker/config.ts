@@ -155,6 +155,10 @@ export const TEST_SILENCE_MS = 4000;
 
 export type ConfigResult = { ok: true; config: Config } | { ok: false; problems: string[] };
 
+/** The variable names behind `problems`, sorted, with no message text: a value can reach a message, so an alert gets only these. */
+export const problemVars = (problems: readonly string[]): string[] =>
+  [...new Set(problems.map((p) => p.split(":")[0] ?? ""))].filter(Boolean).sort();
+
 export function parseConfig(env: Record<string, unknown>): ConfigResult {
   const parsed = schema.safeParse(env);
   if (!parsed.success) {

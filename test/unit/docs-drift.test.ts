@@ -6,7 +6,7 @@ import { describe, expect, it } from "vitest";
 import { ERRORS } from "../../public/js/shared/errors.js";
 import { APP_ERRORS } from "../../public/js/shared/errors-app.js";
 import { spendVars } from "../../src/worker/config/spend.ts";
-import { CONFIG_VARS } from "../../src/worker/config.ts";
+import { CONFIG_VARS, parseConfig } from "../../src/worker/config.ts";
 import { sizeEntries } from "../size-entries.ts";
 
 const ROOT = fileURLToPath(new URL("../../", import.meta.url));
@@ -152,6 +152,15 @@ describe("worker vars", () => {
       (key) => !varKeys.includes(key) && !devVarKeys.includes(key) && !Object.hasOwn(spendVars, key),
     );
     expect(rest).toEqual(["TEST_TIMING"]);
+  });
+
+  it("the shipped vars and .dev.vars.example pass the schema, so a typo fails here and not at deploy", () => {
+    const shipped = JSON.parse(stripJsonComments(read("wrangler.jsonc"))).vars;
+    const dev = Object.fromEntries(
+      [...read(".dev.vars.example").matchAll(/^([A-Z0-9_]+)=(.*)$/gm)].map((m) => [m[1], m[2]]),
+    );
+    const result = parseConfig({ ...shipped, ...dev });
+    expect(result.ok ? [] : result.problems).toEqual([]);
   });
 
   it(".dev.vars.example sets only variables config.ts parses", () => {

@@ -293,6 +293,20 @@ describe("analytics results are JSON-safe", () => {
   });
 });
 
+describe("an invalid Worker config", () => {
+  it("COST-16 the run still trips and says once a day which vars are invalid, by name", async () => {
+    const s = setup();
+    s.g.ledger.record("demo_session", 2000, undefined, T0);
+    const deps: BreakerDeps = { ...s.deps, configProblems: ["CAP_POOL_CONVERT"] };
+    await runBreaker(deps);
+    await runBreaker(deps);
+    const alerts = s.alerts().filter((a) => a.kind === "config_invalid");
+    expect(alerts).toHaveLength(1);
+    expect(alerts[0]?.sources).toContain("config invalid (CAP_POOL_CONVERT)");
+    expect(s.store.rows.get("demo")).toBe("off");
+  });
+});
+
 describe("the settings reader the breaker is wired to", () => {
   it("a read that fell back to RESTRICTIVE is a failed read, so the guards keep the cap rows they hold", async () => {
     await expect(settingsOf(async () => RESTRICTIVE)()).rejects.toThrow("settings unreadable");

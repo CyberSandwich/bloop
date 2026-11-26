@@ -1,6 +1,6 @@
 import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
-import { parseConfig } from "../../src/worker/config.ts";
+import { parseConfig, problemVars } from "../../src/worker/config.ts";
 import { declaredRateLimits, PROD_VARS as PROD } from "../env-vars.ts";
 
 const problems = (env: Record<string, unknown>) => {
@@ -165,6 +165,22 @@ describe("config", () => {
     expect(problems({ ...PROD, SWITCH_CONVERT: "typo" })).toEqual([]);
     expect(problems({ ...PROD, CAP_POOL_CONVERT: "many" }).join()).toContain("CAP_POOL_CONVERT");
     expect(problems({ ...PROD, BREAKER_FLOOR_EMAIL: "-1" }).join()).toContain("BREAKER_FLOOR_EMAIL");
+  });
+
+  it("a var the registry reads as above zero refuses 0, and a cap may be 0", () => {
+    for (const name of [
+      "BREAKER_BUDGET_MONTH_USD",
+      "BREAKER_LINE_GROWTH_MULTIPLE",
+      "BREAKER_FLOOR_EMAIL",
+      "BREAKER_SHARE_D1",
+    ])
+      expect(problems({ ...PROD, [name]: "0" }).join(), name).toContain(name);
+    expect(problems({ ...PROD, CAP_POOL_CONVERT: "0" })).toEqual([]);
+  });
+
+  it("the names of the invalid vars come without their values", () => {
+    const bad = parseConfig({ ...PROD, CAP_POOL_CONVERT: "secret-looking-value", HASH_PEPPER: "short" });
+    expect(bad.ok ? [] : problemVars(bad.problems)).toEqual(["HASH_PEPPER", "CAP_POOL_CONVERT"].sort());
   });
 
   it("TEST_TIMING is refused on any non-local origin", () => {
