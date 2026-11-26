@@ -35,6 +35,8 @@ const target = z.discriminatedUnion("kind", [
 
 /** What the store learned from the manifest and the three JSON files; units after it only read this. */
 const plan = z.strictObject({
+  /** sha256 of the manifest the plan was checked against; a later unit that sees another manifest fails. */
+  manifest: z.string(),
   rendered: int,
   total: int,
   /** Groups that passed every check so far. A failing unit removes its group. */
