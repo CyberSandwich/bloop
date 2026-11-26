@@ -3,13 +3,13 @@
 // header sits behind metadata of any length and a GIF holds a frame descriptor per frame, so those are walked under
 // `WALK_LIMITS`, through a reader from `planReads` (the caller's), so a small object costs its one read. A header that
 // is not where the format puts it is a malformed file.
+import { MAX_PIXELS } from "../../../shared/limits.ts";
 import { ascii } from "./bytes.ts";
 import { type Check, fail, OK } from "./formats.ts";
 import { readExact } from "./index.ts";
 import { type PlannedReader, READ_PLAN } from "./read-plan.ts";
 
-/** A 48 MP phone photo passes; the decoded size of one frame stays near 400 MB at most. */
-export const MAX_PIXELS = 100_000_000;
+export { MAX_PIXELS };
 
 interface Limits {
   /** Bytes per read; a read lands on the header the walk needs next. */

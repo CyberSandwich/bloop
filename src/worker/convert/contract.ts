@@ -1,7 +1,7 @@
 // The conversion container's job contract as the Worker reads it. container/README.md owns it; a drift test
 // (test/unit/convert-contract.test.ts) fails when the two differ. Pure: no Workers types.
 import { z } from "zod";
-import { MAX_PIXELS } from "../seams/guest-drop/image.ts";
+import { MAX_PIXELS } from "../../shared/limits.ts";
 
 export const KINDS = ["deck", "doc", "sheet", "pdf", "video", "image"] as const;
 export type Kind = (typeof KINDS)[number];

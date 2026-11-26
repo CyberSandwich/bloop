@@ -3,7 +3,7 @@ import { readdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
-import { MAX_PIXELS } from "../../src/worker/seams/guest-drop/image.ts";
+import { MAX_PIXELS } from "../../src/shared/limits.ts";
 import { wranglerConfig } from "../../tools/wrangler-config.mjs";
 
 const ROOT = fileURLToPath(new URL("../../", import.meta.url));
@@ -31,7 +31,7 @@ interface Fact {
 const FACTS: Fact[] = [
   {
     name: "image pixel cap",
-    owner: "src/worker/seams/guest-drop/image.ts",
+    owner: "src/shared/limits.ts",
     literal: /\b100_?000_?000\b|\b1e8\b/,
     mirrors: ["container/main.go"],
   },
