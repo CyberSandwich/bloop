@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import { z } from "zod";
 import { OPEN_MODES } from "../../src/shared/protocol.ts";
 import { MAX_FRAME_BYTES, phoneFrame, screenFrame } from "../../src/worker/frames.ts";
-import { bearer, checkWrite, fail, readJson } from "../../src/worker/http.ts";
+import { bearer, checkWrite, fail, readJson, revalidated } from "../../src/worker/http.ts";
 
 const ORIGIN = "https://bloop.example";
 const post = (headers: Record<string, string>, body = "{}") =>
@@ -64,6 +64,23 @@ describe("readJson", () => {
       expect(r.ok, body.slice(0, 20)).toBe(false);
       expect(!r.ok && r.response.status).toBe(400);
     }
+  });
+});
+
+describe("revalidated", () => {
+  const get = (headers: Record<string, string> = {}) => new Request("https://bloop.here/api/library", { headers });
+
+  it("answers the body with an ETag, and 304 with no body when the client's ETag matches", async () => {
+    const first = await revalidated(get(), { files: [1, 2] });
+    const etag = first.headers.get("ETag") ?? "";
+    expect(etag).toMatch(/^"[0-9a-f]{32}"$/);
+    expect(await first.json()).toEqual({ files: [1, 2] });
+    const again = await revalidated(get({ "If-None-Match": etag }), { files: [1, 2] });
+    expect(again.status).toBe(304);
+    expect(await again.text()).toBe("");
+    const changed = await revalidated(get({ "If-None-Match": etag }), { files: [1, 2, 3] });
+    expect(changed.status).toBe(200);
+    expect(changed.headers.get("ETag")).not.toBe(etag);
   });
 });
 
