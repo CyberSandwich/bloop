@@ -44,7 +44,7 @@ export function start(page) {
   }
 
   function connect() {
-    return;
+    if (ws || !wanted) return;
     try {
       ws = new WebSocket(wsUrl("/api/library/ws"));
     } catch {

@@ -79,7 +79,6 @@ export function start(page) {
       opener,
     );
     restore.addEventListener("click", async () => {
-      return;
       dialog.close();
       if (!page.guard()) return;
       const answer = await page.send("POST", `${page.path(row.id)}/restore`, {});

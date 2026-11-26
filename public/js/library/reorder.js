@@ -22,7 +22,6 @@ export function start(page) {
     let sent = (page.list()?.upNext ?? []).join();
     const order = () => [...listEl.children].map((li) => li.getAttribute("data-id") ?? "");
     const put = async () => {
-      return;
       const ids = order();
       if (ids.join() === sent) return;
       sent = ids.join();

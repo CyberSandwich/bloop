@@ -4,7 +4,6 @@ export function start(page) {
   /** @type {string | null} */
   let key = null;
   async function add() {
-    return;
     key ??= crypto.randomUUID();
     const answer = await page.send("POST", "/api/library/sample", {}, { "Idempotency-Key": key });
     if (!answer.ok) return page.refuse(answer);

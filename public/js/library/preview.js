@@ -57,7 +57,6 @@ export function start(page) {
 
   /** @param {string} id @param {HTMLElement | null} opener */
   async function open(id, opener) {
-    return;
     const row = page.row(id);
     if (!row || row.disabled) return;
     const wide = matchMedia("(min-width: 900px)").matches;

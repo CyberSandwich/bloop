@@ -215,7 +215,7 @@ async function optimistic(next, method, url, body) {
 
 /** Ticks or unticks a file; the 13th stays off with its toast. @param {string} id @param {boolean} on */
 async function setTick(id, on) {
-  if (list) return;
+  if (!list) return;
   const result = M.tick(list.upNext, id, on, list.limits.upNext);
   if (result.full) {
     render();
