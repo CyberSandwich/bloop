@@ -573,7 +573,7 @@ const modules = {
   preview: inert,
   present: () => import("./library/present.js"),
   socket: () => import("./library/socket.js"),
-  reorder: inert,
+  reorder: () => import("./library/reorder.js"),
   sample: () => import("./library/sample.js"),
 };
 /** @type {Record<string, Promise<any> | undefined>} */
