@@ -1,5 +1,5 @@
 import { type ChildProcess, spawn, spawnSync } from "node:child_process";
-import { mkdtempSync, rmSync } from "node:fs";
+import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { createServer } from "node:net";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -17,8 +17,10 @@ export interface Wrangler {
   d1(sql: string): Record<string, unknown>[];
   /** Writes the launch mode (and the preview lockout) the next request sees. Needs TEST_TIMING=1, which turns the Worker's 30 s cache off. */
   setLaunchMode(mode: "preview" | "open", lockout?: boolean): void;
-  /** Whether the local R2 bucket holds an object under `key`. */
-  r2Has(key: string): boolean;
+  /** Whether a local R2 bucket (the guest bucket unless named) holds an object under `key`. */
+  r2Has(key: string, bucket?: string): boolean;
+  /** Writes an object into a local R2 bucket, for a test that needs bytes the Worker would otherwise get from an upload. */
+  r2Put(bucket: string, key: string, content: string): void;
 }
 
 /**
@@ -159,14 +161,24 @@ async function startOnce(
     if (done.status !== 0) throw new Error(`d1 execute failed:\n${done.stdout}${done.stderr}`);
     return (JSON.parse(done.stdout) as { results: Record<string, unknown>[] }[])[0]?.results ?? [];
   };
-  const r2Has = (key: string): boolean => {
+  const r2Has = (key: string, bucket = "bloop-guest-files"): boolean => {
     const out = join(state, "r2-probe");
     const done = spawnSync(
       bin,
-      ["r2", "object", "get", `bloop-guest-files/${key}`, "--local", "--persist-to", state, "--file", out],
+      ["r2", "object", "get", `${bucket}/${key}`, "--local", "--persist-to", state, "--file", out],
       { cwd: root, env, encoding: "utf8" },
     );
     return done.status === 0;
+  };
+  const r2Put = (bucket: string, key: string, content: string): void => {
+    const source = join(state, "r2-source");
+    writeFileSync(source, content);
+    const done = spawnSync(
+      bin,
+      ["r2", "object", "put", `${bucket}/${key}`, "--local", "--persist-to", state, "--file", source],
+      { cwd: root, env, encoding: "utf8" },
+    );
+    if (done.status !== 0) throw new Error(`r2 put failed:\n${done.stdout}${done.stderr}`);
   };
 
   const setLaunchMode = (mode: "preview" | "open", lockout = false) => {
@@ -191,7 +203,7 @@ async function startOnce(
       throw new Failure(`wrangler dev exited early (code ${child.exitCode}):\n${all.slice(-1500)}`);
     }
     try {
-      if ((await fetch(`${url}/api/health`)).ok) return { url, output, logged, stop, d1, setLaunchMode, r2Has };
+      if ((await fetch(`${url}/api/health`)).ok) return { url, output, logged, stop, d1, setLaunchMode, r2Has, r2Put };
     } catch {
       // not listening yet
     }

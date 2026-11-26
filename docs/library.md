@@ -10,6 +10,10 @@ How a signed-in user's files are stored, listed, changed and served. The decisio
 | names | `src/worker/library/names.ts` | the rename rule |
 | preview tokens | `src/worker/library/preview.ts` | mint and verify `/p/` tokens |
 | purge | `src/worker/library/purge.ts` | due files, in two passes |
+| account purge | `src/worker/library/account-purge.ts` | a user's erasure, the tombstone resweep, the orphan scan |
+| hold | `src/worker/library/hold.ts` | the NCA copy of a reported file |
+| retention | `src/worker/library/retention.ts` | the cron's clocks, the inactivity warning, `resumeClocks` |
+| export | `src/worker/library/export.ts`, `zip.ts`, `src/worker/routes/library-export.ts` | the snapshot, the archive layout, the download |
 | answers | `src/worker/library/wire.ts` | a row and the list answer as the page reads them |
 | member | `src/worker/library/member.ts` | the session's member (label C) |
 | routes | `src/worker/routes/library.ts` | `/api/library*` |
@@ -38,13 +42,13 @@ One per user, `idFromName(userId)` in the EU jurisdiction, reached only with a u
 |---|---|---|
 | `progress` | per file and version: stage, done, total | deleted on ready or failed, else after a day |
 | `screen` | a live screen the user approved: its session, the phone session, a label, the file ids | at most 20 rows, the oldest ended one goes first |
-| `lease` | the export lease | 2 hours |
+| `lease` | the export lease | 15 minutes, renewed while read |
 | `idem` | the first answer stored for an Idempotency-Key | 24 hours |
 
 - **Schema.** Version 1 is never edited. On every wake each table's columns are compared with the shipped shape; a table of another shape is dropped and recreated, and `user_library_schema_repaired` is logged once.
 - **Socket.** A page opens one hibernating WebSocket, tagged with its phone session's public id; at most 6 are open and the oldest is closed with 4000. The runtime answers pings itself. The object sends `hello` with the current progress, then `progress` frames (at most one a second per file, plus every stage change), `first` when page 1 is stored, `ready` or `failed`, and `quota` when a purge freed bytes. A client's frames are ignored.
 - **Alarm.** One alarm at the next need: a socket's 12-hour age limit, an hourly sweep while any ephemeral row is left, or the next purge round. The object sets no timer and holds no un-awaited promise, so it hibernates between frames.
-- **Export lease.** `exportBegin` takes a 2-hour lease or answers false; `exportEnd` frees it; `exportActive` is what the purge asks.
+- **Export lease.** `exportBegin` takes a 15-minute lease or answers false; `exportBeat` renews it while the download is read (at most once a minute); `exportEnd` frees it; `exportActive` is what the purge asks. The runtime does not always report a client that vanished mid-download, so the lease must lapse by itself: a download nobody reads stops beating and frees the next export within 15 minutes.
 
 ## 5. Purge
 
@@ -71,3 +75,27 @@ All under `/api/library`, all for a member session (label C, ADR 0014) that the 
 | GET `/ws` | an Upgrade from our own Origin | 101; the socket of section 4 |
 
 A thumbnail link in a row is a bundle token whose expiry lands on a 150 s boundary, so the list answer, and its ETag, holds still between refreshes. A row names only what is true of it: null fields are left out.
+
+## 7. Retention, account purge and holds
+
+`runLibraryRetention` runs from the cron (`cron-jobs.ts`): hourly it does the due work, daily it adds the scans. Each job has its own allotment of listing rounds and rows, so one backlog never starves another, and a job that finds more says so.
+
+- **Due trash** is section 5.
+- **Account purge** (`purgeUser`, ADR 0013 steps 0 to 5). The claim is one guarded `UPDATE` to `purging`: the user is due (`delete_after` passed), active or deleting, not suspended and under no live hold. From then no sign-in, restore or reservation succeeds. Then the live screens end, the sessions go and their sockets close, open uploads are aborted (an upload claimed within 120 s settles on its own, so the run stops and the next continues), conversions stop, the prefix `u/<uid>/` is emptied by listing, the `derived` rows and the user object go, the tombstone `purged/<uid>` is written, and last the invite, waitlist and user rows go in one batch. A crash leaves a `purging` row that the next run finishes; rows go last.
+- **Resweep.** A tombstone past its `resweepAfter` (31 minutes) has its prefix emptied once more, which catches a put that was already awaiting at purge time; the tombstone is then marked swept.
+- **Orphans.** Daily, the prefixes under `u/` are listed with a delimiter, and one whose owner row is gone is emptied.
+- **Inactivity.** Daily, members unused for `INACTIVE_DAYS` get the warning email; only after it was sent does one guarded update set `inactive_warned_at` and `delete_after`, so a sign-in in between wins and a failed send changes nothing. While the preview lockout is set only the members who could have signed in are considered, chosen in the query. A member's use clears the mark.
+- **Suspension** pauses every clock: `resumeClocks` shifts `purge_after`, `delete_after` and `last_seen_at` later by the time spent suspended, in the unsuspend batch.
+- **Holds.** `holdFiles` copies a reported file, library or guest, to `h/<holdId>` in the library bucket, never the guest bucket (its one-day expiry is bucket-wide). The `hold` row is written first, so a copy is never untracked, and a retry finishes a missing copy; at most 10 are copied per call. Neither purge lists or deletes `h/` or `purged/`. `releaseHolds` deletes the copy, then the row, once `release_after` (a year) has passed.
+
+## 8. Export
+
+`GET /api/me/export.zip?k=<key>`, a navigation, so the idempotency key is a query parameter. It needs a member session, `Sec-Fetch-Site: same-origin` (checked before any storage is read) and, for a new export, a session that proved itself within the re-authentication window (C+R). The `export` switch must be on.
+
+- **Archive.** STORE only, names UTF-8 (bit 11), no data descriptors: every CRC and size is known before the first byte, the file CRCs coming from `library_file.crc32`, so no stored byte is hashed. Order: the README, `Files/` by id, `Trash/` by id, then the data file. Names are NFC, with controls, bidi characters, separators and Windows' forbidden characters replaced, device names prefixed, at most 200 bytes with the extension kept, and de-duplicated without regard to case (`Lecture (2).pptx`). A disabled file, or one that has not settled, is listed in the data file with `path: null` and its bytes are left out. Entry times are each file's `updated_at` and, for the README and the data file, the newest change in the snapshot, in UTC. An export's own audit row is left out of the trail, so the same library always gives the same bytes. Zip64 covers offsets and the end record only; an entry's size always fits 32 bits.
+- **Snapshot.** Account, sessions (label, method, times; never an id), passkeys (name, times, backed up; never a key), every library row of the user, and the audit rows `/api/me/audit` shows, at most 10,000.
+- **ETag** is an HMAC with `FILE_TOKEN_KEY` over the user and every entry's name, size and CRC, so it changes with anything the archive holds and cannot be computed by anyone else. `Content-Length` is exact (`FixedLengthStream`), so a cut download fails visibly and never reads as a short zip.
+- **Order of checks.** Same-origin, key shape, member, `RL_LIBRARY`, switch; then the proof (unless resuming), the lease (`export_busy`, also for a retry of the same key while it is live) and the daily start (`export_limit`); then the snapshot, the audit row `library.export` (a failure refuses the export), and the first byte.
+- **Resume.** `Range: bytes=a-` or `a-b` with an `If-Range` equal to an ETag issued in the last day needs only the session, and no new daily start. The snapshot is rebuilt: if its ETag still matches, the answer is 206 with `Content-Range`, the pump starting at the segment holding `a` with a ranged read for a partial file. If anything changed, or the range is not a single one, the answer is a whole new download under the full rules (proof and daily start). A range past the end is 416.
+- **Pump.** Each file's key is checked to be under `u/<uid>/` before it is read; a missing object or a size that differs from the row is a stream error, never a skipped entry. The lease is freed on the end, a cancel or an error, and renewed every minute while the client reads.
+- **Races.** Purges skip a user with a live lease, so every object in the snapshot exists until the stream ends. The account purge does not wait: its deletes fail the next read, so the download fails visibly. A rename during the download changes nothing: the snapshot's names win.

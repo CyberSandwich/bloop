@@ -28,6 +28,7 @@ import { etagOf, limitsWire, wireRow } from "../library/wire.ts";
 import { type Route, route } from "../router.ts";
 import { userLibraryStub } from "../stubs.ts";
 import { limited, withConfig } from "./common.ts";
+import { makeExportRoute } from "./library-export.ts";
 
 /** A switch's value in force: `on`, `readonly` (reads work, writes stop) or `off`. G's registry decides it. */
 export type SwitchValue = "on" | "readonly" | "off";
@@ -245,4 +246,10 @@ export function makeLibraryRoutes(deps: LibraryDeps): readonly Route[] {
   ];
 }
 
-export const libraryRoutes: readonly Route[] = makeLibraryRoutes(defaultDeps);
+/** G's exact daily `take("export", 1, uid)` replaces this when the spend guard lands; the lease and RL_LIBRARY bound it until then. */
+const takeExport = async (): Promise<boolean> => true;
+
+export const libraryRoutes: readonly Route[] = [
+  ...makeLibraryRoutes(defaultDeps),
+  makeExportRoute({ ...defaultDeps, take: takeExport }),
+];
