@@ -19,6 +19,7 @@ import type { Config, GraphConfig } from "../config.ts";
 import type { Env } from "../env.ts";
 import { auditRecord } from "../export-format.ts";
 import { fail, json } from "../http.ts";
+import { endLiveScreens } from "../live-screens.ts";
 import { admitted, launchState } from "../mode.ts";
 import { type Route, route } from "../router.ts";
 import { auditFor } from "../stores.ts";
@@ -199,8 +200,9 @@ export const authRoutes: readonly Route[] = [
           if (!(await sessions.reauthedWithin(session, config.account.reauthSeconds * 1000))) {
             return fail("reauth_required");
           }
-          await sessions.requestDeletion(userId, Date.now() + config.account.deleteGraceDays * 86_400_000);
-          return;
+          await sessions.requestDeletion(userId, Date.now() + config.account.deleteGraceDays * 86_400_000, session);
+          await endLiveScreens(env, userId);
+          return json({ signedIn: true, deleting: true });
         }
         if (!config.graph) return fail("source_unavailable");
         const audit = auditFor(env);
