@@ -2,7 +2,7 @@
 /** @import {ScreenView} from "../../src/shared/protocol.ts" */
 import { createApi } from "./core/api.js";
 import { openChannel } from "./core/channel.js";
-import { endLine, FRESH_LINE, screenCopy } from "./core/copy-screen.js";
+import { endLine, screenCopy } from "./core/copy-screen.js";
 import { nextSeq } from "./core/demo.js";
 import { clock, itemName, qrLabel } from "./core/format.js";
 import { qrMatrix, qrPath, qrSize } from "./core/qr.js";
@@ -461,8 +461,8 @@ buttons.present.addEventListener("click", () => viewer.present(true));
 // A tap anywhere but a link, or Enter, cuts Session Ended to the server's floor (design.md section 7, Ended).
 function skipEnded() {
   if (keyNow() !== "ended" || Date.now() - endedSince < ENDED_SKIP_GRACE_MS) return;
+  // The line under the title stays what the end set: a tap only shortens the hold.
   endedHold = ENDED_QR_RETURN_MS;
-  ended = FRESH_LINE;
   render();
 }
 document.addEventListener("click", (e) => {
