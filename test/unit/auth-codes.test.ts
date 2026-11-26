@@ -305,6 +305,18 @@ describe("AUTH-09 purpose", () => {
     await expect(issueCode(db, PEPPER, { purpose: "invite", emailNorm: EMAIL }, TTL, T0)).rejects.toThrow(RangeError);
     expect(db.raw.prepare("SELECT count(*) AS n FROM email_code").get()).toEqual({ n: 0 });
   });
+
+  it("AUTH-09 purpose: verifying a reauth or email_change code without the session's user throws, and spends nothing", async () => {
+    const db = setup();
+    for (const purpose of ["reauth", "email_change"] as const) {
+      const r = await issued(db, { purpose, emailNorm: EMAIL, newEmailNorm: "new@example.test", userId: "u1" });
+      await expect(verifyCode(db, PEPPER, { id: r.challengeId, purpose, code: r.code }, T0)).rejects.toThrow(
+        RangeError,
+      );
+      const row = db.raw.prepare("SELECT attempts FROM email_code WHERE id = ?").get(r.challengeId);
+      expect(row).toEqual({ attempts: 0 });
+    }
+  });
 });
 
 describe("AUTH-09 draw", () => {
@@ -327,24 +339,31 @@ describe("AUTH-09 draw", () => {
 
 describe("AUTH-09 device", () => {
   it("AUTH-09 device: two devices get different values, and both are known for their member only", async () => {
-    const a = await newDeviceValue(PEPPER, "u1");
-    const b = await newDeviceValue(PEPPER, "u1");
+    const a = await newDeviceValue(PEPPER, "u1", 0);
+    const b = await newDeviceValue(PEPPER, "u1", 0);
     expect(a).not.toBe(b);
-    expect(await isKnown(a, PEPPER, "u1")).toBe(true);
-    expect(await isKnown(b, PEPPER, "u1")).toBe(true);
-    expect(await isKnown(a, PEPPER, "u2")).toBe(false);
-    expect(await isKnown(a, PEPPER, null)).toBe(false);
-    expect(await isKnown(null, PEPPER, "u1")).toBe(false);
+    expect(await isKnown(a, PEPPER, "u1", 0)).toBe(true);
+    expect(await isKnown(b, PEPPER, "u1", 0)).toBe(true);
+    expect(await isKnown(a, PEPPER, "u2", 0)).toBe(false);
+    expect(await isKnown(a, PEPPER, null, 0)).toBe(false);
+    expect(await isKnown(null, PEPPER, "u1", 0)).toBe(false);
   });
 
   it("AUTH-09 device: a forged nonce or MAC, or another pepper, is unknown", async () => {
-    const value = await newDeviceValue(PEPPER, "u1");
+    const value = await newDeviceValue(PEPPER, "u1", 0);
     const [nonce, mac] = value.split(".") as [string, string];
     const flip = (s: string, i: number, alphabet: string) =>
       s.slice(0, i) + (s[i] === alphabet[0] ? alphabet[1] : alphabet[0]) + s.slice(i + 1);
-    expect(await isKnown(`${flip(nonce, 0, "AB")}.${mac}`, PEPPER, "u1")).toBe(false);
-    expect(await isKnown(`${nonce}.${flip(mac, 63, "01")}`, PEPPER, "u1")).toBe(false);
-    expect(await isKnown(`${nonce}.${mac}x`, PEPPER, "u1")).toBe(false);
-    expect(await isKnown(value, "q".repeat(32), "u1")).toBe(false);
+    expect(await isKnown(`${flip(nonce, 0, "AB")}.${mac}`, PEPPER, "u1", 0)).toBe(false);
+    expect(await isKnown(`${nonce}.${flip(mac, 63, "01")}`, PEPPER, "u1", 0)).toBe(false);
+    expect(await isKnown(`${nonce}.${mac}x`, PEPPER, "u1", 0)).toBe(false);
+    expect(await isKnown(value, "q".repeat(32), "u1", 0)).toBe(false);
+  });
+
+  it("AUTH-09 device: a value minted before the epoch moved (sign out everywhere) is refused on every device", async () => {
+    const before = await newDeviceValue(PEPPER, "u1", 0);
+    expect(await isKnown(before, PEPPER, "u1", 0)).toBe(true);
+    expect(await isKnown(before, PEPPER, "u1", 1)).toBe(false);
+    expect(await isKnown(await newDeviceValue(PEPPER, "u1", 1), PEPPER, "u1", 1)).toBe(true);
   });
 });
