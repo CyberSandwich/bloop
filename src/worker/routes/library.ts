@@ -228,6 +228,30 @@ export function makeLibraryRoutes(deps: LibraryDeps): readonly Route[] {
     return json({ base: `${ctx.config.library.fileOrigin ?? ctx.config.origin}/p/${token}`, exp });
   };
 
+  /** The user's live screens: what the account page shows beside each Sign Out. Nothing internal leaves. */
+  const screens: Handler = async (ctx) => {
+    const rows = await userLibraryStub(ctx.env, ctx.member.userId).listScreens();
+    return json({
+      screens: rows.map((r) => ({
+        sessionId: r.sessionId,
+        label: r.label,
+        fileIds: r.fileIds,
+        startedAt: r.startedAt,
+      })),
+    });
+  };
+
+  /** Ends one live screen. Absolute: a screen that is already gone answers `ended: 0`, so a doubled request lands alike. */
+  const endScreen: Handler = async (ctx, match) => {
+    const parsed = await readJson(ctx.request, empty);
+    if (!parsed.ok) return parsed.response;
+    const { userId } = ctx.member;
+    const ended = await userLibraryStub(ctx.env, userId).endScreens(userId, {
+      sessionId: match.pathname.groups.sessionId ?? "",
+    });
+    return json({ ended });
+  };
+
   const socket: Handler = async (ctx) => {
     if (ctx.request.headers.get("Upgrade")?.toLowerCase() !== "websocket") return fail("bad_request");
     const headers = new Headers({ Upgrade: "websocket", "X-Session-Public": ctx.member.sessionPublicId });
@@ -243,6 +267,8 @@ export function makeLibraryRoutes(deps: LibraryDeps): readonly Route[] {
     route(["POST"], "/api/library/:id/trash", "api", member(moveToTrash, "write")),
     route(["POST"], "/api/library/:id/restore", "api", member(restoreFile, "write")),
     route(["POST"], "/api/library/:id/preview", "api", member(preview, "write")),
+    route(["GET"], "/api/me/screens", "api", member(screens, "read")),
+    route(["DELETE"], "/api/me/screens/:sessionId", "api", member(endScreen, "write")),
   ];
 }
 

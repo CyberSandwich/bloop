@@ -26,6 +26,7 @@ import {
   releaseLease,
   renewLease,
   rowsLeft,
+  type ScreenFilter,
   type ScreenRow,
   screensMatching,
   takeLease,
@@ -128,7 +129,7 @@ export class UserLibrary extends DurableObject<Env> {
    * session, and only if the pairing's user is `userId`; the row is marked ended either way. A Screen that cannot be
    * reached is logged: the serving predicate already refuses its fetches for a signed-out or purging owner.
    */
-  async endScreens(userId: string, filter: { bySession?: string; fileId?: string } = {}): Promise<void> {
+  async endScreens(userId: string, filter: ScreenFilter = {}): Promise<number> {
     const rows = screensMatching(liveScreens(this.ctx.storage.sql), filter);
     for (const row of rows) {
       try {
@@ -138,6 +139,7 @@ export class UserLibrary extends DurableObject<Env> {
       }
       endScreenRow(this.ctx.storage.sql, row.sessionId, Date.now());
     }
+    return rows.length;
   }
 
   async forgetScreens(sessionIds: string[]): Promise<void> {

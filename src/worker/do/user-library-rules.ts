@@ -110,13 +110,17 @@ export function liveScreens(sql: SqlLike): ScreenRow[] {
     }));
 }
 
-/** The live rows an end names: one phone session's, or those showing one file, or all when no filter is given. */
-export const screensMatching = (
-  rows: readonly ScreenRow[],
-  filter: { bySession?: string; fileId?: string },
-): ScreenRow[] =>
+/** What an end names: one screen session, one phone session's screens, those showing one file; no field names all. */
+export interface ScreenFilter {
+  sessionId?: string;
+  bySession?: string;
+  fileId?: string;
+}
+
+export const screensMatching = (rows: readonly ScreenRow[], filter: ScreenFilter): ScreenRow[] =>
   rows.filter(
     (r) =>
+      (filter.sessionId === undefined || r.sessionId === filter.sessionId) &&
       (filter.bySession === undefined || r.bySession === filter.bySession) &&
       (filter.fileId === undefined || r.fileIds.includes(filter.fileId)),
   );
