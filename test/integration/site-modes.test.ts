@@ -68,6 +68,19 @@ describe("MODE-01 landing and legal bodies differ by mode", () => {
     }
   });
 
+  it("MODE-01 in preview no /open form answers, a view cookie without a session changes nothing, and /404 is a 404", async () => {
+    wrangler.setLaunchMode("preview");
+    for (const form of ["/open", "/open/", "/open/privacy", "/Open/privacy", "/%6Fpen/privacy"]) {
+      expect((await hit(form)).status, form).toBe(404);
+    }
+    const viewing = await hit("/", { Cookie: "__Host-bloop_view=open" });
+    expect(await viewing.text()).not.toContain("data-account");
+    for (const mode of ["preview", "open"] as const) {
+      wrangler.setLaunchMode(mode);
+      expect((await hit("/404", HTML)).status, mode).toBe(404);
+    }
+  });
+
   it("MODE-01 open 404 carries the open nav: an unknown page is 404 with Sign In in open, the Waitlist pill in preview", async () => {
     wrangler.setLaunchMode("open");
     const open = await hit("/no-such-page", HTML);

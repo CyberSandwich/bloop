@@ -3,7 +3,7 @@
 import { existsSync, readdirSync, readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
-import { PILL_OUT } from "../../src/worker/nav-pill.ts";
+import { ACCOUNT_PILL_OUT as PILL_OUT } from "../../src/shared/account-pill.ts";
 import { site } from "../../tools/build-pages.mjs";
 
 const ROOT = fileURLToPath(new URL("../../", import.meta.url));
