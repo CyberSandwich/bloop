@@ -3699,12 +3699,12 @@ test.describe("NOTES-01 phone-only: the presenter's notes on the phone (design.m
         });
         expect(await s.box.evaluate((n) => n.scrollTop)).toBeGreaterThan(0);
         expect(await s.page.evaluate("window.scrollY"), "the notes scrolled, not the page").toBe(pageY);
-        const lastLine = (await s.box.evaluate(`(n) => {
-          const range = document.createRange();
-          range.selectNodeContents(n.querySelector(".notes-text"));
+        const lastLine = await s.box.evaluate((n) => {
+          const range = n.ownerDocument.createRange();
+          range.selectNodeContents(n.querySelector(".notes-text") as Element);
           const rects = range.getClientRects();
-          return rects[rects.length - 1].bottom;
-        }`)) as number;
+          return rects[rects.length - 1]?.bottom ?? Number.NaN;
+        });
         const pillAtEnd = await boxOf(s.panel);
         expect(lastLine, "the last line ends above the pill").toBeLessThanOrEqual(pillAtEnd.y + 1);
         // The notes run to the window's foot, under the pill.
@@ -3740,6 +3740,8 @@ test.describe("NOTES-01 phone-only: the presenter's notes on the phone (design.m
         const s = await session(browser, size, answerWith(NOTES.map((n, i) => (i === 1 ? "" : n))));
         await s.present();
         await expect(s.box).toContainText(opening(NOTES[0] ?? ""));
+        // The box runs below the fold on a short phone: its pill is read with the page at its end, where the floating pill rides.
+        await s.page.evaluate("window.scrollTo(0, document.documentElement.scrollHeight)");
         const before = {
           list: await boxOf(s.list),
           preview: await boxOf(s.preview),
