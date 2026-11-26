@@ -1,4 +1,4 @@
-// /library (docs/ux/library.md, plan section 7): the list, Up Next, quota and the panel paint from the last answer kept in
+// /library (docs/ux/library.md): the list, Up Next, quota and the panel paint from the last answer kept in
 // sessionStorage, then the fetch replaces it in place. Every write is optimistic and reverts in the frame its refusal
 // arrives. The rest loads by intent: each lazy module exports `start(page)` and gets the page object below.
 /** @import {List, Row} from "./library/model.js" */
