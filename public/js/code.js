@@ -1,6 +1,6 @@
 // Typed code entry (/code): for a phone whose camera did not open the link.
 import { createApi } from "./core/api.js";
-import { TYPED_LETTERS, typedError } from "./core/copy-code.js";
+import { TYPED_LETTERS, TYPED_PASTE, typedError } from "./core/copy-code.js";
 import { PID_KEY, pidStore } from "./core/store.js";
 import { typedCode, typedValid } from "./core/typed.js";
 import { ariaFlag, byId, focusTitle, isFramed, setText } from "./core/ui.js";
@@ -16,10 +16,10 @@ const errorLine = byId("code-error");
 const errorText = byId("code-error-text");
 let busy = false;
 
-function showError(/** @type {string} */ text) {
+function showError(/** @type {string} */ text, invalid = text !== "") {
   setText(errorText, text);
   errorLine.classList.toggle("is-on", text !== "");
-  ariaFlag(input, "aria-invalid", text !== "");
+  ariaFlag(input, "aria-invalid", invalid);
 }
 
 function check() {
@@ -32,6 +32,19 @@ function check() {
 input.addEventListener("input", check);
 // A code typed, pasted or restored before this module ran fired no input event this listener heard: read it once.
 check();
+
+// The clipboard text goes through check(), the path typed text takes. It never submits.
+const paste = byId("paste");
+paste.hidden = !navigator.clipboard?.readText;
+paste.addEventListener("click", async () => {
+  try {
+    input.value = await navigator.clipboard.readText();
+  } catch {
+    showError(TYPED_PASTE, false);
+    return;
+  }
+  check();
+});
 
 form.addEventListener("submit", async (e) => {
   e.preventDefault();
