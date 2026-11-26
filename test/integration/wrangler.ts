@@ -57,7 +57,7 @@ function exited(child: ChildProcess): Promise<void> {
  * `migrate` applies migrations/ to the throwaway D1 first, for tests that touch the database.
  * `config` serves a test-only Worker from another wrangler config (a path under the repo) instead of wrangler.jsonc.
  * `limits` serves wrangler.jsonc with those rate-limit bindings lowered, so a burst test crosses a limit in a few
- * requests; use it rather than a copied config.
+ * requests; use it rather than a copied config. `devVars` reads that dev vars file instead of the repo's.
  */
 export async function startWrangler(vars: Record<string, string> = {}, options: StartOptions = {}): Promise<Wrangler> {
   try {
@@ -74,6 +74,7 @@ interface StartOptions {
   migrate?: boolean;
   config?: string;
   limits?: Readonly<Record<string, number>>;
+  devVars?: string;
 }
 
 class PortTaken extends Error {}
@@ -158,7 +159,7 @@ async function startOnce(vars: Record<string, string>, options: StartOptions): P
     bin,
     [
       "dev",
-      ...(options.limits ? devVarsArgs() : []),
+      ...(options.devVars ? ["--env-file", options.devVars] : options.limits ? devVarsArgs() : []),
       // No Docker in the harness: the converter container is replaced by CONVERT_MODE=stub.
       "--enable-containers=false",
       ...(config ? ["--config", config] : []),
