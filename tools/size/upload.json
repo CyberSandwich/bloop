@@ -1,0 +1,23 @@
+[
+  {
+    "name": "upload engine, lazy",
+    "path": "dist/js/core/upload.js",
+    "limit": "5.4 kB"
+  },
+  {
+    "name": "upload pill face, lazy",
+    "path": "dist/js/core/pill.js",
+    "limit": "0.7 kB"
+  },
+  {
+    "name": "upload pill binding, lazy",
+    "path": ["dist/js/core/lazy.js", "dist/js/core/upload-pill.js"],
+    "limit": "2.75 kB"
+  },
+  {
+    "name": "upload CSS, lazy",
+    "path": "dist/css/upload.css",
+    "gzip": true,
+    "limit": "0.9 kB"
+  }
+]
