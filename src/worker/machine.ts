@@ -85,6 +85,8 @@ export interface Machine {
     shown: Shown | null;
     /** The last `control` seq applied from each sender (PAIR-13); 0 until then. */
     seq: Record<Sender, number>;
+    /** The machine's `v` after the phone last changed `shown`: a screen report on an older view would rewind it. */
+    phoneV?: number;
     /** Phone-only data per item id, kept apart from the items so the screen's view cannot carry it. */
     extra?: Record<string, PhoneItemExtra>;
     /** When the first `shown` applied; never moved after. */
@@ -137,7 +139,7 @@ export type Event =
   | { e: "open.click"; now: number; minutes: number } // the Open button on a guest offer
   | { e: "launched"; now: number; mode: OpenMode }
   | { e: "fetched"; now: number }
-  | { e: "control"; now: number; from: Sender; seq: number; shown: Shown } // the phone's remote, or the screen's own tap
+  | { e: "control"; now: number; from: Sender; seq: number; shown: Shown; base?: number } // the phone's remote, or the screen's own tap; base: the v of the screen's last view
   | { e: "length"; now: number; seconds: number; maxMinutes: number } // the phone sets the end; maxMinutes: the mode's cap
   | { e: "fallback"; now: number; mode: OpenMode; item: number | null; maxMints: number } // null: the launched item; maxMints: per item, after its first link
   | { e: "cancel"; now: number }
