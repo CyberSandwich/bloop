@@ -218,10 +218,9 @@ export type Entry = FileEntry | LinkEntry;
 export interface ApproveRequest {
   ids: string[];
 }
-/** `POST /api/match`: the phone's pick, plus Up Next's ids to approve in the same call. */
+/** `POST /api/match`: the phone's pick. */
 export interface MatchRequest {
   choice: string;
-  ids?: string[];
 }
 export interface MatchResponse {
   view: PhoneView;
