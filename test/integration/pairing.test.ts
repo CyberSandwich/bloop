@@ -292,6 +292,38 @@ describe("PAIR-14 match: the live pick over the Screen object", () => {
     socket.close();
   });
 
+  it("REL-14 match replay: a retried pick with the same Idempotency-Key gets the first answer; the key is the pairing's own", async () => {
+    const { socket, code, screen } = await openScreen(api, "live");
+    const { pid } = (await claimOnly(api, code)).body;
+    const shown = (await api.get<{ match: string }>("/api/screen/state", screen.sid)).body.match;
+    const key = { "Idempotency-Key": "0b7d3c1a-2e4f-4a6b-8c9d-aabbccddeeff" };
+    const first = await api.post("/api/match", { choice: shown }, { auth: pid, headers: key });
+    expect(first.status).toBe(200);
+    // A control in between moves `v`; the replay still answers the first view, changing nothing.
+    await api.get("/api/files", pid);
+    const again = await api.post("/api/match", { choice: shown }, { auth: pid, headers: key });
+    expect(again.body).toEqual(first.body);
+    // The same key with another choice is a conflict; a new key after the right pick is the one-pick no-op.
+    const other = shown === "00" ? "01" : "00";
+    expect((await api.post("/api/match", { choice: other }, { auth: pid, headers: key })).body).toEqual(
+      problem("bad_request"),
+    );
+    const next = { "Idempotency-Key": "0b7d3c1a-2e4f-4a6b-8c9d-001122334455" };
+    const later = await api.post<{ view: { confirmed: boolean } }>(
+      "/api/match",
+      { choice: other },
+      { auth: pid, headers: next },
+    );
+    expect(later.status).toBe(200);
+    expect(later.body.view.confirmed).toBe(true);
+    // Another pid's request with the same key is its own: it never reads this pairing's row.
+    const forged = `${pid.split(".")[0]}.${"x".repeat(43)}`;
+    const stranger = await api.post("/api/match", { choice: shown }, { auth: forged, headers: key });
+    expect(stranger.status).not.toBe(200);
+    expect(stranger.body).not.toEqual(first.body);
+    socket.close();
+  });
+
   it("PAIR-14 match: a wrong pick cancels the claim, answers match_wrong, and the old pid is pairing_invalid", async () => {
     const { socket, code } = await openScreen(api, "live");
     const claimed = await claimOnly(api, code);
