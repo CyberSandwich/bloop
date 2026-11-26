@@ -111,7 +111,7 @@ export async function mountUploads({ maxMB, upNext = null, host = document.body,
   };
   /** @param {FileSnap} f */
   const again = (f) =>
-    keep(`again:${f.id}`, () => button("Check Again", () => uploader.recheck(f.id), `Check ${f.name} again`));
+    keep(`again:${f.id}`, () => button("Check Again", () => uploader.recheck(f.id), `Check Again: ${f.name}`));
 
   /** What a refusal says: its words are loaded when there is one to say, and a plain line stands in if they cannot be.
    * @param {string} name @param {string} code @returns {Promise<{title: string, status?: string, say: string}>} */
@@ -192,10 +192,12 @@ export async function mountUploads({ maxMB, upNext = null, host = document.body,
                 } finally {
                   ticking = false;
                 }
-                face?.update({ status: "Added", slot: [] });
+                // The button that had the focus is about to go: the focus returns to what opened the upload.
+                if (face?.node.contains(document.activeElement)) trigger?.focus();
+                show({ status: "Added", slot: [] }, `${f.name} Added to Up Next`);
                 leaveIn(SAVED_MS);
               },
-              `Add ${f.name} to Up Next`,
+              `Add to Up Next: ${f.name}`,
             ),
           )
         : null;
@@ -274,7 +276,7 @@ export async function mountUploads({ maxMB, upNext = null, host = document.body,
       {
         title: active ? `${files.length} Files` : `${saved} ${saved === 1 ? "File" : "Files"}`,
         status: active ? percent(batch.fraction) : "Saved",
-        label: up,
+        label: batchTitle,
         glyph: ICONS["file-text"],
         fill: level(active ? batch.fraction : 1),
         sheen: active,
