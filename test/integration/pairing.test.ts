@@ -260,7 +260,7 @@ describe("PAIR-14 match: the live pick over the Screen object", () => {
     expect((await api.get("/api/files", pid)).body).toEqual(problem("match_required"));
     const picked = await pick(api, pid);
     expect(picked.status).toBe(200);
-    expect(picked.body).toMatchObject({ approved: false, approveError: null, view: { match: shown, confirmed: true } });
+    expect(picked.body).toEqual({ view: expect.objectContaining({ match: shown, confirmed: true }) });
     await socket.stateWhere((v) => v.confirmed === true);
     // One pick per claim: a later one, right or wrong, changes nothing.
     const wrong = choices.find((c) => c !== shown) as string;
