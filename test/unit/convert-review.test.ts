@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { BODY_CAP, ContainerFault, Courier } from "../../src/worker/convert/courier.ts";
 import type { ContainerPort } from "../../src/worker/convert/port.ts";
 import { PROFILES } from "../../src/worker/convert/profile.ts";
@@ -84,6 +84,30 @@ describe("CONV-02 no container call outlives the run's deadline", () => {
     const courier = new Courier(port, () => 1_000);
     courier.limitAt = 1_000 + 60_000;
     await expect(courier.call("PUT", "/job/input/0", { timeoutMs: 5 })).rejects.toMatchObject({ code: "interrupted" });
+  });
+
+  it("CONV-02 a GET retry gets what is left of the run, and none once the first attempt used it all", async () => {
+    let t = 1_000;
+    const spy = vi.spyOn(AbortSignal, "timeout");
+    let fetches = 0;
+    const courier = new Courier(
+      portOf(async () => {
+        fetches++;
+        t += fetches === 1 ? 90 : 20;
+        throw new Error("reset");
+      }),
+      () => t,
+    );
+    courier.limitAt = 1_100;
+    await expect(courier.call("GET", "/healthz")).rejects.toMatchObject({ code: "deadline" });
+    expect(spy.mock.calls.map(([ms]) => ms)).toEqual([100, 10]);
+    spy.mockRestore();
+
+    fetches = 0;
+    t = 1_000;
+    courier.limitAt = 1_050;
+    await expect(courier.call("GET", "/healthz")).rejects.toMatchObject({ code: "deadline" });
+    expect(fetches).toBe(1);
   });
 
   it("a call cut by something other than the deadline stays a retryable interruption", async () => {

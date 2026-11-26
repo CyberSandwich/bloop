@@ -41,11 +41,13 @@ export class Courier {
   }
 
   async call(method: "GET" | "PUT" | "POST", path: string, init: CallInit = {}): Promise<Response> {
-    const left = this.limitAt === null ? Number.POSITIVE_INFINITY : this.limitAt - this.now();
-    if (left <= 0) throw new ContainerFault("deadline", `${path}: past the deadline`);
     const timeoutMs = init.timeoutMs ?? SHORT_CALL_MS;
     let signal: AbortSignal | undefined;
+    let left = 0;
     const once = () => {
+      // Per attempt: a retry gets what is left of the run, not what the first attempt started with.
+      left = this.limitAt === null ? Number.POSITIVE_INFINITY : this.limitAt - this.now();
+      if (left <= 0) throw new ContainerFault("deadline", `${path}: past the deadline`);
       signal = AbortSignal.timeout(Math.min(timeoutMs, left));
       return this.port.fetch(path, {
         method,
@@ -56,14 +58,17 @@ export class Courier {
     };
     // The timer can fire a millisecond before `now` reaches limitAt: a timeout the deadline set is the deadline.
     const unreachable = (e: unknown) =>
-      new ContainerFault(
-        this.pastDeadline() || (left <= timeoutMs && signal?.aborted) ? "deadline" : "interrupted",
-        `${path}: ${e instanceof Error ? e.message : "unreachable"}`,
-      );
+      e instanceof ContainerFault
+        ? e
+        : new ContainerFault(
+            this.pastDeadline() || (left <= timeoutMs && signal?.aborted) ? "deadline" : "interrupted",
+            `${path}: ${e instanceof Error ? e.message : "unreachable"}`,
+          );
     try {
       return await once();
     } catch (e) {
-      if (method !== "GET") throw unreachable(e);
+      const fault = unreachable(e);
+      if (method !== "GET" || fault.code === "deadline") throw fault;
       try {
         return await once();
       } catch (e2) {

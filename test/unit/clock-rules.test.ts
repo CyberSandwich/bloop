@@ -6,17 +6,20 @@ const DIR = fileURLToPath(new URL("./", import.meta.url));
 
 describe("unit tests that decide an outcome by a deadline", () => {
   it("never set one a few ms after the real clock: a loaded runner outruns it, so inject the clock", () => {
-    // `x = Date.now() + 40` leaves a real-time gap that decides which of two causes wins; a clock the test owns does not.
-    const short = /\b(?:Date|performance)\.now\(\)\s*\+\s*\d{1,2}\b(?!\s*\*|\s*_)/;
-    const bad = readdirSync(DIR)
-      .filter((f) => f.endsWith(".test.ts") && f !== "clock-rules.test.ts")
-      .flatMap((f) =>
-        readFileSync(`${DIR}${f}`, "utf8")
-          .split("\n")
-          .map((line, i) => ({ at: `${f}:${i + 1}`, line }))
-          .filter(({ line }) => short.test(line) && !line.trim().startsWith("//")),
-      )
-      .map(({ at }) => at);
+    // A real-time gap decides which of two causes wins; a clock the test owns does not. A constant is read as a gap
+    // too (a SCREAMING_CASE name), except where vi.setSystemTime owns the clock. Known gap: a sum split across lines
+    // (`const t = Date.now(); ... t + 40`) is not seen.
+    const short = /\b(?:Date|performance)\.now\(\)\s*\+\s*(?:\d{1,2}\b(?!\s*\*)|[A-Z][A-Z0-9_]*\b(?!\s*[(*.]))/;
+    const files = readdirSync(DIR, { recursive: true, encoding: "utf8" }).filter(
+      (f) => f.endsWith(".test.ts") && f !== "clock-rules.test.ts",
+    );
+    const bad = files.flatMap((f) =>
+      readFileSync(`${DIR}${f}`, "utf8")
+        .split("\n")
+        .map((line, i) => ({ at: `${f}:${i + 1}`, line }))
+        .filter(({ line }) => short.test(line) && !line.includes("setSystemTime") && !line.trim().startsWith("//"))
+        .map(({ at }) => at),
+    );
     expect(bad).toEqual([]);
   });
 });
