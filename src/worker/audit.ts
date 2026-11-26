@@ -34,7 +34,7 @@ export interface AuditEvent {
   /** Allowed keys only. Never tokens, codes, URLs, IPs or Graph ids. */
   detail: {
     fileName?: string;
-    source?: "mock" | "graph" | "guest";
+    source?: "mock" | "graph" | "guest" | "library";
     purpose?: string;
     cause?: ErrorCode;
     reason?: string;

@@ -55,6 +55,7 @@ export interface Servable {
   r2Key: string;
   sha256: string | null;
   crc32: number | null;
+  updatedAt: number;
 }
 
 interface ServableRow {
@@ -66,9 +67,10 @@ interface ServableRow {
   r2_key: string;
   sha256: string | null;
   crc32: number | null;
+  updated_at: number;
 }
 
-const SERVABLE_COLUMNS = "f.id, f.version, f.name, f.ext, f.bytes, f.r2_key, f.sha256, f.crc32";
+const SERVABLE_COLUMNS = "f.id, f.version, f.name, f.ext, f.bytes, f.r2_key, f.sha256, f.crc32, f.updated_at";
 const servableOf = (r: ServableRow): Servable => ({
   id: r.id,
   version: r.version,
@@ -78,6 +80,7 @@ const servableOf = (r: ServableRow): Servable => ({
   r2Key: r.r2_key,
   sha256: r.sha256,
   crc32: r.crc32,
+  updatedAt: r.updated_at,
 });
 
 const pinnedSql = (pinned: Pinned | null) => (pinned ? ` AND ${PINNED_SQL}` : "");
@@ -104,6 +107,22 @@ export async function servable(
     for (const row of results) if (wanted.get(row.id) === row.version) found.set(row.id, servableOf(row));
   }
   return found;
+}
+
+/** One file as it is now, when servable: a fetch names no version. */
+export async function servableById(
+  db: Db,
+  userId: string,
+  id: string,
+  pinned: Pinned | null,
+): Promise<Servable | null> {
+  const { results } = await db
+    .prepare(
+      `SELECT ${SERVABLE_COLUMNS} FROM ${SERVABLE_FROM} WHERE ${SERVABLE_SQL}${pinnedSql(pinned)} AND f.id = ?${pinned ? 4 : 2}`,
+    )
+    .bind(userId, ...pinnedBinds(pinned), id)
+    .all<ServableRow>();
+  return results[0] ? servableOf(results[0]) : null;
 }
 
 /** What the library source lists: Up Next first in its order, then the newest, at most `limit`. */
