@@ -92,6 +92,7 @@ export type ScreenMsgIn =
 export type ScreenMsgOut =
   | { v: 1; t: "state"; view: ScreenView }
   | { v: 1; t: "open"; item: number; links: LinkSet; now: number }   // item: index into ScreenView.items
+  | { v: 1; t: "upload.progress"; uploadId: string; fraction: number }   // a guest upload, at most once a second each, never backward; not stored
   | { v: 1; t: "error"; code: ErrorCode; now: number }
   | { v: 1; t: "pong" };
 export type PhoneMsgIn = { v: 1; t: "hello"; pid: string } | { v: 1; t: "ping" };
@@ -348,6 +349,8 @@ export interface PairingStore {
   dropDone(pid: string, file: FileRef): Promise<Result<PhoneView>>;
   /** The upload failed or was refused: `uploading` to `claimed`, the object purged, `guest.refused` audited with the cause. */
   dropFailed(pid: string, error: ErrorCode): Promise<Result<PhoneView>>;
+  /** A guest upload's fraction (0 to 1) as the `upload.progress` frame to the screen: one a second per upload at most, a lower one dropped, nothing stored (`do/progress.ts`). */
+  uploadProgress(pid: string, p: { uploadId: string; fraction: number }): Promise<Result<null>>;
   /** Mints one more link for an approved file (a download, the PDF or image view, a relaunch) and pushes it; `item` null is the first file. */
   mintFallback(sid: string, mode: OpenMode, item: number | null): Promise<Result<LinkResponse>>;
   /** An /f/ request arrived. Applies the link rules without counting, audits a refusal, and answers the purpose: the route rate-limits next. */

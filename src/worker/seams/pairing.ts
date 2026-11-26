@@ -91,6 +91,8 @@ export interface PairingStore {
   dropDone(pid: string, file: FileRef): Promise<Result<PhoneView>>;
   /** The upload failed or was refused: back to `claimed`, and the object is purged. */
   dropFailed(pid: string, error: ErrorCode): Promise<Result<PhoneView>>;
+  /** A guest upload's fraction to the screen sockets: at most one frame a second per upload, never backward, not stored. */
+  uploadProgress(pid: string, p: { uploadId: string; fraction: number }): Promise<Result<null>>;
   /**
    * Mints one more link for an approved file (a download, the PDF or image view, or a relaunch) and pushes it to the
    * screen. `item` null is the launched item; a link item or an index out of range is `file_not_found`.

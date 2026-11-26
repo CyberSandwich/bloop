@@ -147,6 +147,7 @@ export type ScreenMsgIn =
 export type ScreenMsgOut =
   | { v: 1; t: "state"; view: ScreenView }
   | { v: 1; t: "open"; item: number; links: LinkSet; now: number } // item: index into ScreenView.items
+  | { v: 1; t: "upload.progress"; uploadId: string; fraction: number } // a guest upload, at most once a second each
   | { v: 1; t: "error"; code: ErrorCode; now: number }
   | { v: 1; t: "pong" };
 export type PhoneMsgIn = { v: 1; t: "hello"; pid: string } | { v: 1; t: "ping" };

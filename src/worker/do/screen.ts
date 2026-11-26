@@ -11,6 +11,7 @@ import type {
   LinkSet,
   OpenMode,
   PhoneView,
+  ScreenMsgOut,
   ScreenView,
   ShownCommand,
 } from "../../shared/protocol.ts";
@@ -41,6 +42,7 @@ import { directoryStub } from "../stubs.ts";
 import { type Meta, phoneView, roomView, screenView } from "../views.ts";
 import { bestEffort, closeObject, type EffectDeps, noopSeams, runEffects, type SessionSeams } from "./effects.ts";
 import { LinkLedger, type Use } from "./ledger.ts";
+import { admitProgress, type Sent } from "./progress.ts";
 import { migrate, SCHEMA_KEY, SCHEMA_VERSION } from "./schema.ts";
 import { admit, countAuthed, holdBinding, isLive, screensOf } from "./sockets.ts";
 
@@ -78,6 +80,8 @@ export class Screen extends DurableObject<Env> implements PairingStore {
   private meta: Meta | null;
   private m: Machine | null;
   private readonly links: LinkLedger;
+  /** In memory only: a lost wake forgets it, and the next report goes out at once. */
+  private readonly progressSent = new Map<string, Sent>();
 
   constructor(ctx: DurableObjectState, env: Env) {
     super(ctx, env);
@@ -258,6 +262,16 @@ export class Screen extends DurableObject<Env> implements PairingStore {
 
   async dropFailed(pid: string, error: ErrorCode): Promise<Result<PhoneView>> {
     return this.phoneEvent(pid, () => ({ e: "upload.failed", now: Date.now(), error }));
+  }
+
+  async uploadProgress(pid: string, p: { uploadId: string; fraction: number }): Promise<Result<null>> {
+    const auth = await this.phoneAuth(pid);
+    if (!auth.ok) return auth;
+    if (!this.phoneMatches(auth.hash)) return fail("pairing_invalid");
+    const admitted = admitProgress(this.progressSent, p.uploadId, p.fraction, Date.now());
+    if (admitted === null) return fail("bad_request");
+    if (admitted) this.toScreens({ v: 1, t: "upload.progress", uploadId: p.uploadId, fraction: p.fraction });
+    return { ok: true, value: null };
   }
 
   async mintFallback(sid: string, mode: OpenMode, item: number | null): Promise<Result<LinkResponse>> {
@@ -736,7 +750,12 @@ export class Screen extends DurableObject<Env> implements PairingStore {
 
   /** The `open` frame: sent once per mint to the screen sockets, never repeated in `state`. */
   private sendOpen(item: number, links: LinkSet): void {
-    const frame = JSON.stringify({ v: 1, t: "open", item, links, now: Date.now() });
+    this.toScreens({ v: 1, t: "open", item, links, now: Date.now() });
+  }
+
+  /** A frame outside `state`, to the authenticated screen sockets. */
+  private toScreens(message: ScreenMsgOut): void {
+    const frame = JSON.stringify(message);
     for (const ws of this.ctx.getWebSockets("screen")) {
       const att = ws.deserializeAttachment() as SocketAttachment | null;
       if (!att?.authed) continue;
