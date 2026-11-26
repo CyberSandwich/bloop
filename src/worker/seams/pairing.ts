@@ -70,8 +70,17 @@ export interface PairingStore {
   claim(code: string, phone: PhoneInfo, idem?: IdemKey): Promise<Result<ClaimResponse>>;
   /** The first claim answer stored for an Idempotency-Key hash (idem.ts `IdemStore.find`), its pid derived again. */
   idemFind(owner: string, keyHash: string, since: number): Promise<{ bodyHash: string; stored: ClaimResponse } | null>;
-  /** The phone's pick; a wrong one cancels the claim and answers `match_wrong`; a repeat after a right one is a no-op. */
-  match(pid: string, choice: string): Promise<Result<MatchResponse>>;
+  /**
+   * The phone's pick; a wrong one cancels the claim and answers `match_wrong`; a repeat after a right one is a no-op.
+   * With `idem`, the answer is kept for the key, scoped to the pairing.
+   */
+  match(pid: string, choice: string, idem?: Omit<IdemKey, "owner">): Promise<Result<MatchResponse>>;
+  /** The first match answer kept for a key of this pid's pairing (idem.ts `IdemStore.find`), or null. */
+  matchIdemFind(
+    pid: string,
+    keyHash: string,
+    since: number,
+  ): Promise<{ bodyHash: string; stored: MatchResponse } | null>;
   listed(pid: string, ids: string[]): Promise<Result<PhoneView>>;
   /**
    * The Worker resolves `items` from the source's list; the object refuses an empty list, a repeat or more than

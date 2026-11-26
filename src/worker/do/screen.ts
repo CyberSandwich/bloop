@@ -125,6 +125,8 @@ type LinkVia = { method: string; client: ClientClass };
 
 const fail = (error: ErrorCode): { ok: false; error: ErrorCode } => ({ ok: false, error });
 const isErrorCode = (error: string): error is ErrorCode => Object.hasOwn(ERRORS, error);
+/** Match keys are one pairing's own: a new claim's pick never replays the last one's answer. */
+const matchOwner = (m: Machine | null): string | null => (m?.pairing ? `match:${m.pairing.sessionId}` : null);
 
 export class Screen extends DurableObject<Env> implements PairingStore {
   private meta: Meta | null;
@@ -271,17 +273,37 @@ export class Screen extends DurableObject<Env> implements PairingStore {
     return stored && { bodyHash: row.bodyHash, stored };
   }
 
-  /** The phone's pick (PAIR-14). A wrong pick answers `match_wrong`; a repeat after a right one is a no-op. */
-  async match(pid: string, choice: string): Promise<Result<MatchResponse>> {
+  /**
+   * The phone's pick (PAIR-14). A wrong pick answers `match_wrong`; a repeat after a right one is a no-op. With
+   * `idem`, a right pick's answer is kept for the key, scoped to this pairing (a wrong one drops the pairing and its
+   * rows).
+   */
+  async match(pid: string, choice: string, idem?: Omit<IdemKey, "owner">): Promise<Result<MatchResponse>> {
     const auth = await this.phoneAuth(pid);
     if (!auth.ok) return auth;
     if (!this.m || !this.meta) return fail("screen_gone");
     if (!this.phoneMatches(auth.hash)) return fail("pairing_invalid");
-    const applied = await this.apply({ e: "match", now: Date.now(), choice });
+    const owner = matchOwner(this.m);
+    const now = Date.now();
+    const applied = await this.apply({ e: "match", now, choice });
     if (!applied.ok) return applied;
     if (!this.phoneMatches(auth.hash)) return { ok: false, error: "match_wrong" };
     const view = this.phoneResult(auth.hash);
-    return view.ok ? { ok: true, value: { view: view.value } } : view;
+    if (!view.ok) return view;
+    const answer: MatchResponse = { view: view.value };
+    if (idem && owner) idemSave(this.ctx.storage.kv, owner, idem, answer, now);
+    return { ok: true, value: answer };
+  }
+
+  /** The first match answer kept for a key of this pid's pairing, for the route's verdict. */
+  async matchIdemFind(
+    pid: string,
+    keyHash: string,
+    since: number,
+  ): Promise<{ bodyHash: string; stored: MatchResponse } | null> {
+    const auth = await this.phoneAuth(pid);
+    const owner = auth.ok && this.phoneMatches(auth.hash) ? matchOwner(this.m) : null;
+    return owner ? idemStore<MatchResponse>(this.ctx.storage.kv).find(owner, keyHash, since) : null;
   }
 
   async listed(pid: string, ids: string[]): Promise<Result<PhoneView>> {
