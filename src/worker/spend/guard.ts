@@ -157,7 +157,7 @@ export async function spendReportFor(env: SpendEnv): Promise<SpendReport | null>
 
 type BreakerEnv = SpendEnv & { DB: unknown; CF_ANALYTICS_TOKEN?: string; CF_ACCOUNT_ID?: string };
 
-/** The cron's one call (`spendBreakerJob`). `notify` defaults to a log line until A wires email. */
+/** The cron's one call (`spendBreakerJob`, which passes `cronNotify`: the log line plus mail to ADMIN_EMAILS). */
 export function runSpendBreaker(
   env: BreakerEnv,
   notify: Notify = logNotify,
