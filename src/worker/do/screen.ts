@@ -24,10 +24,8 @@ import type { Env } from "../env.ts";
 import { MAX_FRAME_BYTES, phoneFrame, screenFrame } from "../frames.ts";
 import { drawCode, drawMatch, newRef, newSecret, parseCredential, randomInt, safeEqual, sha256Hex } from "../ids.ts";
 import { fileAt, type ItemDraft } from "../items.ts";
-import { codeRemovals } from "../machine/step.ts";
 import {
   createMachine,
-  type Effect,
   type Event,
   type FileRef,
   type Machine,
@@ -77,9 +75,17 @@ import {
 import { auditFor, metricsFor } from "../stores.ts";
 import { directoryStub } from "../stubs.ts";
 import { type Meta, phoneView, roomView, screenView } from "../views.ts";
-import { bestEffort, closeObject, type EffectDeps, noopSeams, runEffects, type SessionSeams } from "./effects.ts";
+import {
+  bestEffort,
+  closeObject,
+  type EffectDeps,
+  finishCorruptEnd,
+  noopSeams,
+  runEffects,
+  type SessionSeams,
+} from "./effects.ts";
 import { LinkLedger, type Use } from "./ledger.ts";
-import { CORRUPT_END_KEY, type CorruptEnd, migrate, SCHEMA_KEY, SCHEMA_VERSION } from "./schema.ts";
+import { CORRUPT_END_KEY, migrate, SCHEMA_KEY, SCHEMA_VERSION } from "./schema.ts";
 import {
   admit,
   closeLateHellos,
@@ -142,32 +148,18 @@ export class Screen extends DurableObject<Env> implements PairingStore {
     this.meta = ctx.storage.kv.get<Meta>("meta") ?? null;
     this.m = ctx.storage.kv.get<Machine>("machine") ?? null;
     ctx.setWebSocketAutoResponse(new WebSocketRequestResponsePair(PING, PONG));
-    if (ctx.storage.kv.get(CORRUPT_END_KEY)) void ctx.blockConcurrencyWhile(() => this.finishCorruptEnd());
+    // The ended machine is already stored, so nothing needs to wait: the end's effects run from the alarm, now.
+    if (ctx.storage.kv.get(CORRUPT_END_KEY) !== undefined) {
+      void ctx.blockConcurrencyWhile(() => ctx.storage.setAlarm(Date.now()));
+    }
   }
 
-  /**
-   * The effects of the end step 8 made (schema.ts endCorrupt), run before any other event: its audit row, the codes'
-   * removal, the push and the demo slot, then the alarm, which closes an object with no socket. The marker is cleared
-   * last, so a wake that dies midway runs them again.
-   */
+  /** Runs first in the alarm, before its timer can close the object (effects.ts finishCorruptEnd). */
   private async finishCorruptEnd(): Promise<void> {
-    const kv = this.ctx.storage.kv;
-    const pending = kv.get<CorruptEnd>(CORRUPT_END_KEY);
-    const { m, meta } = this;
-    if (pending && m && meta) {
-      const codes = pending.codes ?? { current: null, previous: null };
-      const effects: Effect[] = [
-        ...codeRemovals(codes),
-        { fx: "audit", type: "ended", actor: "system" },
-        { fx: "push", to: "both" },
-      ];
-      const now = Date.now();
-      await bestEffort(runEffects(effects, { meta, prev: m, next: m, now }, this.deps()).then(() => undefined));
-      idemPurge(kv);
-      if (meta.mode === "demo") await bestEffort(directoryStub(this.env).demoRelease(meta.screenRef));
-      await this.rearm();
-    }
-    kv.put(CORRUPT_END_KEY, null);
+    const { meta } = this;
+    await finishCorruptEnd(this.ctx.storage.kv, { m: this.m, meta, now: Date.now() }, this.deps(), () =>
+      meta ? directoryStub(this.env).demoRelease(meta.screenRef) : Promise.resolve(),
+    );
   }
 
   // ---- PairingStore -------------------------------------------------------------------------
@@ -255,7 +247,10 @@ export class Screen extends DurableObject<Env> implements PairingStore {
       needsAuth: false,
       dropMaxBytes: this.dropMaxBytes(),
     };
-    if (idem && nonce && this.m) idemSave(this.ctx.storage.kv, idem.owner, idem, sealClaim(answer, nonce), now);
+    // Only while this claim still pairs: an event during apply's awaits may have dropped it, and its purge ran.
+    if (idem && nonce && this.m?.pairing?.secretHash === secretHash) {
+      idemSave(this.ctx.storage.kv, idem.owner, idem, sealClaim(answer, nonce), now);
+    }
     return { ok: true, value: answer };
   }
 
@@ -268,7 +263,11 @@ export class Screen extends DurableObject<Env> implements PairingStore {
     const row = await idemStore<SealedClaim>(this.ctx.storage.kv).find(owner, keyHash, since);
     if (!row || !this.meta) return null;
     const stored = await openClaim(row.stored, this.meta.screenRef, this.config().hashPepper);
-    return stored && { bodyHash: row.bodyHash, stored };
+    const secret = stored && parseCredential(stored.pid)?.secret;
+    if (!stored || !secret) return null;
+    // The derivation awaited: answer only a pid the current pairing still holds.
+    const hash = await sha256Hex(secret);
+    return this.m?.pairing?.secretHash === hash ? { bodyHash: row.bodyHash, stored } : null;
   }
 
   /**
@@ -598,6 +597,7 @@ export class Screen extends DurableObject<Env> implements PairingStore {
   }
 
   override async alarm(): Promise<void> {
+    await this.finishCorruptEnd();
     if (!this.m) return;
     const now = Date.now();
     closeLateHellos(
@@ -757,6 +757,10 @@ export class Screen extends DurableObject<Env> implements PairingStore {
     if (step.next !== m) {
       this.m = step.next;
       this.ctx.storage.kv.put("machine", step.next);
+      // In the same synchronous step as the write: a replay must never answer a pid that no longer pairs.
+      if ((m.pairing && !step.next.pairing) || (step.next.state === "ended" && m.state !== "ended")) {
+        idemPurge(this.ctx.storage.kv);
+      }
     }
     const { collided, minted } = await runEffects(
       step.effects,
@@ -765,10 +769,6 @@ export class Screen extends DurableObject<Env> implements PairingStore {
     );
     const after = this.m;
     if (!after) return { ok: true, collided, next: step.next, minted }; // closed: storage is gone
-    // A replayed claim must not answer a pid that no longer pairs, so its row goes with the pairing or the session.
-    if ((m.pairing && !after.pairing) || (after.state === "ended" && m.state !== "ended")) {
-      idemPurge(this.ctx.storage.kv);
-    }
     // Only on the pairing's end: a socket opened later is still unauthed, and its hello earns pairing_invalid.
     if (m.pairing && !after.pairing) this.closePhoneSockets();
     // A demo session that ends gives its slot back at once; the screen may go on and show a new code.
@@ -997,6 +997,8 @@ export class Screen extends DurableObject<Env> implements PairingStore {
   private async rearm(): Promise<void> {
     if (!this.m) return;
     const times = [nextDeadline(this.m, this.config().machine)];
+    // A corrupt end still to finish keeps the alarm due, whatever else re-arms it first.
+    if (this.ctx.storage.kv.get(CORRUPT_END_KEY) !== undefined) times.push(Date.now());
     for (const ws of this.ctx.getWebSockets()) {
       const att = ws.deserializeAttachment() as SocketAttachment | null;
       if (att && !att.authed && ws.readyState === OPEN) times.push(att.helloBy);

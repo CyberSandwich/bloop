@@ -1,10 +1,11 @@
 import { describe, expect, it } from "vitest";
 import type { AuditEvent } from "../../src/worker/audit.ts";
-import { closeObject, type EffectDeps, runEffects } from "../../src/worker/do/effects.ts";
-import type { Effect } from "../../src/worker/machine.ts";
+import { closeObject, type EffectDeps, finishCorruptEnd, runEach, runEffects } from "../../src/worker/do/effects.ts";
+import type { Effect, Machine } from "../../src/worker/machine.ts";
 import type { MetricEvent } from "../../src/worker/metrics.ts";
 import type { Meta } from "../../src/worker/views.ts";
 import { approved, CFG, claimedOwner, DECK, must, offered, sec, T0 } from "./machine-helpers.ts";
+import { memKv } from "./sqlite.ts";
 
 const META: Meta = {
   screenRef: "ref",
@@ -73,6 +74,82 @@ describe("closing an object", () => {
     );
     expect(closed).toEqual([1000, 1000]);
     expect(cleared).toBe(true);
+  });
+
+  it("corruptEnd runEach: a first effect that throws still runs the purge, the audit row and the push", async () => {
+    const { deps, log, audits } = fakes({
+      directory: {
+        put: async () => "ok",
+        remove: async () => {
+          throw new Error("directory down");
+        },
+      },
+    });
+    const m = claimedOwner();
+    const ctx = { meta: META, prev: m, next: m, now: T0 };
+    const effects: Effect[] = [
+      { fx: "directory.remove", code: "ABC123" },
+      { fx: "purge", file: null },
+      { fx: "audit", type: "ended", actor: "system" },
+      { fx: "push", to: "both" },
+    ];
+    await runEach(effects, (fx) => runEffects([fx], ctx, deps));
+    expect(log).toEqual(["purge none", "push both"]);
+    expect(audits.map((a) => a.type)).toEqual(["ended"]);
+  });
+
+  /** A Screen's KV after step 8 ended a corrupt guest session, with an idempotency row left from its claim. */
+  function corruptStore(pending: unknown) {
+    const kv = memKv({ corruptEnd: pending, idem: [{ owner: "u1" }] });
+    return { kv, store: { ...kv, delete: (k: string) => kv.data.delete(k) } };
+  }
+  const file = { source: "guest", ref: "guest/s1/g1", name: "Talk.pdf", type: "pdf" } as const;
+  const PENDING = {
+    sessionId: "s1",
+    effects: [
+      { fx: "directory.remove", code: "ABC123" },
+      { fx: "purge", file },
+      { fx: "audit", type: "ended", actor: "system" },
+      { fx: "push", to: "both" },
+    ],
+  };
+
+  it("corruptEnd wake: the stored end deletes the guest object by the corrupt session's id, audits, pushes, frees the demo slot, then goes", async () => {
+    const { kv, store } = corruptStore(PENDING);
+    const purged: unknown[] = [];
+    const { deps, log, audits } = fakes();
+    deps.seams.purge = async (i) => void purged.push(i);
+    deps.directory.remove = async () => {
+      throw new Error("directory down");
+    };
+    let released = 0;
+    const m = { ...claimedOwner(), state: "ended" } as Machine;
+    await finishCorruptEnd(store, { m, meta: { ...META, mode: "demo" }, now: T0 }, deps, async () => {
+      released++;
+      throw new Error("directory down");
+    });
+    expect(purged).toEqual([{ sessionId: "s1", file }]);
+    expect(audits.map((a) => a.type)).toEqual(["ended"]);
+    expect(log).toEqual(["push both"]);
+    expect(released).toBe(1);
+    expect(kv.data.get("idem")).toEqual([]);
+    // Deleted, not written null: every effect was tried, so the next wake has nothing to finish.
+    expect(kv.data.has("corruptEnd")).toBe(false);
+  });
+
+  it("corruptEnd wake: no marker runs nothing; a malformed one is dropped without running anything", async () => {
+    for (const pending of [undefined, null]) {
+      const { kv, store } = corruptStore(pending);
+      if (pending === undefined) kv.data.delete("corruptEnd");
+      const { deps, log, audits } = fakes();
+      await finishCorruptEnd(store, { m: claimedOwner(), meta: META, now: T0 }, deps, async () => {
+        log.push("release");
+      });
+      expect(log, String(pending)).toEqual([]);
+      expect(audits, String(pending)).toEqual([]);
+      expect(kv.data.has("corruptEnd"), String(pending)).toBe(false);
+      expect(kv.data.get("idem"), String(pending)).toEqual([{ owner: "u1" }]);
+    }
   });
 });
 
