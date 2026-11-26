@@ -32,7 +32,8 @@ export const thumbRoutes: readonly Route[] = [
   route(
     ["GET"],
     "/yt/:file",
-    "thumb",
+    // Under `api`, so a 405, a 429 or a 500 is `no-store`; only `image()` picks the `thumb` policy.
+    "api",
     withConfig(async (request, env, config, ctx) => {
       // The same per-IP meter as /f/ reads, on purpose: one budget for what a page pulls, no second binding.
       const tooMany = await limited(env, "RL_FETCH", request, config);

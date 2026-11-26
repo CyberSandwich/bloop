@@ -150,6 +150,7 @@ describe("PREVIEW-01 thumbnail route: allowlist, fixed upstream, validated answe
       const res = await get(PATH, { method });
       expect(res.status, method).toBe(405);
       expect(res.headers.get("Allow")).toBe("GET");
+      expect(res.headers.get("Cache-Control"), method).toBe("no-store");
     }
     expect(hits()).toBe(before);
   });
@@ -189,6 +190,8 @@ describe("PREVIEW-01 rate limit: the route spends RL_FETCH per IP", () => {
     const statuses: number[] = [];
     for (let i = 0; i < 4; i++) statuses.push((await from("203.0.113.40")).status);
     expect(statuses).toEqual([200, 200, 200, 429]);
+    // The refusal is never cached, like every other failure.
+    expect((await from("203.0.113.40")).headers.get("Cache-Control")).toBe("no-store");
     expect((await from("203.0.113.41")).status).toBe(200);
     // Unlisted ids spend it too, so a scan for ids is limited before it is answered.
     for (let i = 0; i < 3; i++) await from("203.0.113.42", `/yt/${OTHER}.jpg`);

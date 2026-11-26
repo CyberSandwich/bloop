@@ -1,7 +1,7 @@
 // PREVIEW-01: a link item's preview is a same-origin thumbnail path, served by the one upstream fetch in yt-thumb.ts.
 import { describe, expect, it } from "vitest";
-import { DEMO_ITEMS } from "../../src/shared/demo-catalog.ts";
-import { allowedLink, allowedPreview, itemView, LINK_HOSTS } from "../../src/worker/items.ts";
+import { DEMO_ITEMS, DEMO_VIDEO_ID } from "../../src/shared/demo-catalog.ts";
+import { allowedLink, allowedPreview, itemView, LINK_HOSTS, listedLink } from "../../src/worker/items.ts";
 import { transition } from "../../src/worker/machine.ts";
 import { phoneView, screenView } from "../../src/worker/views.ts";
 import {
@@ -391,5 +391,26 @@ describe("PREVIEW-01 the cache never turns an answer into a 500", () => {
     expect(loads).toBe(0);
     const miss = { match: () => Promise.resolve(undefined), put: () => Promise.resolve() };
     expect(await throughCache(miss, key, async () => null, keep, defer)).toBeNull();
+  });
+});
+
+describe("PREVIEW-01 the phone's list drops a link whose preview is not a same-origin thumbnail", () => {
+  const good = `/yt/${DEMO_VIDEO_ID}.jpg`;
+
+  it("keeps a link with no preview or a same-origin one, with the URL as normalized", () => {
+    expect(listedLink({ ...VEVOX })).toEqual({ ...VEVOX, url: allowedLink(VEVOX.url) });
+    expect(listedLink({ ...VEVOX, preview: good })?.preview).toBe(good);
+  });
+
+  it("lists nothing for an absolute, protocol-relative or malformed preview, or a refused URL", () => {
+    for (const preview of [
+      "https://i.ytimg.com/vi/aaaaaaaaaaa/hqdefault.jpg",
+      "//evil.example/yt/aaaaaaaaaaa.jpg",
+      "/yt/x.jpg",
+      "",
+    ]) {
+      expect(listedLink({ ...VEVOX, preview }), preview).toBeNull();
+    }
+    expect(listedLink({ ...VEVOX, url: "http://not-allowed.example/" })).toBeNull();
   });
 });
