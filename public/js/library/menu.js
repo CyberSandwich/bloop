@@ -2,7 +2,7 @@
 // row holds only Cancel Upload and a disabled file only Move to Trash. From 640 it sits by its More button.
 /** @import {Row} from "./model.js" */
 import { el } from "../core/ui.js";
-import { allRows, nameParts } from "./model.js";
+import { allRows } from "./model.js";
 
 /** @param {any} page the page object library.js passes */
 export function start(page) {
@@ -19,14 +19,8 @@ export function start(page) {
     return list ? (allRows(list).find((/** @type {Row} */ r) => r.id === id) ?? null) : null;
   };
 
-  /** The file's name as the sheet's title, ellipsized in the middle so the extension stays. @param {string} name */
-  const title = (name) => {
-    const [head, tail] = nameParts(name);
-    return el("h2", { id: "menu-title", tabindex: "-1", class: "row-name" }, [
-      el("span", { class: "head" }, [head]),
-      el("span", { class: "tail" }, [tail]),
-    ]);
-  };
+  /** The file's name as the sheet's title, two lines at most like a row's. @param {string} name */
+  const title = (name) => el("h2", { id: "menu-title", tabindex: "-1", class: "row-name" }, [name]);
 
   /** @param {string} id @param {HTMLElement | null} opener @param {"menu" | "rename"} [mode] */
   async function open(id, opener, mode = "menu") {
@@ -118,7 +112,9 @@ export function start(page) {
       field.addEventListener("input", sync);
       form.addEventListener("submit", async (e) => {
         e.preventDefault();
-        const name = field.value.trim();
+        // The one file-name rule cleans what was typed (doubled spaces, stray joiners), so the server never refuses it.
+        const { cleanName, NAME_MAX } = await import("../shared/file-name.js");
+        const name = cleanName(field.value, NAME_MAX - now.name.length + base.length);
         if (!name) return;
         close();
         if (name !== base) await page.rename(id, name);
