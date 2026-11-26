@@ -18,7 +18,7 @@ One face for every upload: the library's Add Files (one file or many), a library
 
 - **Place.** Phone: centered, `--inset` above the bottom action panel (the toast's place; a toast that arrives meanwhile stacks above the pill, never over it). Desktop: bottom center of the content column, `--inset` above the window's foot. Max 360, min 240, as wide as its text.
 - **Face.** The tile (40, `--r-pill` concentric: radius 20 for the tile, since 28 - 8) shows the kind glyph; the title (15/600 `--ink`, middle ellipsis) and the line (13 `--muted` tabular). Close (`x`, 44 hit area) at the end, named "Cancel Upload of Lecture 5.pptx".
-- **Fill.** The loader's glass fill grows from the left with confirmed bytes (each part's done), `scaleX` over 250 ms `--ease-out`; the sheen sweeps while bytes move. Bytes count when a part is confirmed, not when it leaves, so the fill never runs ahead and stalls at 100.
+- **Fill.** The loader's glass fill grows from the left with the bytes confirmed plus the bytes the parts on the wire have sent, `scaleX` over 250 ms `--ease-out`; the sheen sweeps while bytes move. It never moves back (a part that retries holds the fill where it was) and stops at 99 percent until the server has answered, so it never stalls at 100 (UP-11).
 - **Role.** `role="progressbar"` named "Uploading Lecture 5.pptx", `aria-valuenow` whole percent; title changes go to the page's polite region ("Checking Your File", "Saved"), never every percent.
 - **Motion.** Enters with the toast's 250 ms rise; leaves 2 s after its final state with the toast's 200 ms exit. Reduced motion: appears and leaves at once, no sheen, fill only.
 
@@ -30,14 +30,15 @@ One face for every upload: the library's Add Files (one file or many), a library
 | starting (create, quota reserved) | Lecture 5.pptx | Starting | none, sheen | Cancel |
 | uploading | Lecture 5.pptx | 34 of 88 MB; after 5 s of samples: 34 of 88 MB · 1 min left (minutes rounded up; under a minute: · Under a minute left) | bytes | Cancel |
 | waiting (offline mid upload) | Lecture 5.pptx | Waiting for a Connection | held where it was, no sheen | Cancel |
-| checking (complete, then validation) | Checking Your File | Lecture 5.pptx | full, sheen | none (too late to cancel) |
-| done, library | Saved | Lecture 5.pptx | full, then leaves | Add to Up Next (text button, in Close's place) |
-| done, guest | Sent | Lecture 5.pptx | full, then leaves | none |
+| checking (complete, then the server validates) | Checking Your File | Lecture 5.pptx | full, sheen | none (too late to cancel) |
+| done, library (the server says ready) | Saved | Lecture 5.pptx | full, then leaves | Add to Up Next (text button, in Close's place) |
+| done, guest (the server says ready) | Sent | Lecture 5.pptx | full, then leaves | none |
 
 - **Add to Up Next** on the library's Saved pill ticks the file (the same PATCH as the row's tick) and the pill reads "Added to Up Next" for 2 s, then leaves. Holding an action, the Saved pill stays 8 s (the toast-with-action rule, README.md additions), paused while hovered or focused. Absent when Up Next is full, and on a batch's "3 Files Saved" (one action cannot name three files; the rows' ticks are right there). A row gains its tick only at Saved (library.md section 2), so this is the earliest a file can join a talk.
 - **Units.** Under 1 MB: "340 of 900 KB". Both numbers in the same unit as the total, one decimal under 10 ("3.4 of 8.8 MB"), whole above. Tabular, so the line never jitters.
-- **Time left** is shown only after 5 s of samples and only while over 20 s remain; it is a moving average over the last 10 s, rounded up to the minute, so it never counts up and down by seconds.
-- **Waiting** resumes by itself on `online`, from the last confirmed part (the same fingerprint resumes, plan A.4). Waiting over 2 minutes adds the line "Keep this page open. It finishes when you're back online."
+- **Time left** (UP-10) is bytes left over a smoothed rate, an exponentially weighted average (weight 0.2 for the newest second). It shows after 5 s of samples and changes only when it differs from the shown value by 20 percent or more; between changes it counts down with the clock. Whole minutes rounded up ("2 min left"); under 60 s it reads "Under a minute left"; nothing is shown while waiting, and the estimate starts afresh once bytes move again.
+- **Checking** lasts until the server says the file is ready or refused: the page asks every 2 s, for up to 5 minutes. "Saved" and "Sent" appear only then; a refusal found there is a toast in the library (section 4) and the full "This File Can't Be Sent" state on `/a`.
+- **Waiting** resumes by itself on `online` or a 15 s probe, from the last confirmed part (the same fingerprint resumes, plan A.4). Waiting over 2 minutes adds the line "Keep this page open. It finishes when you're back online."
 - **Saved, then what.** The library row appears at the top of All Files as soon as the upload is created (with the loader over its tile, no fill: the pill carries the progress), turns to "Preparing Slides" after checking, then to its thumbnail. For a guest, the screen's receiving pill ends with it (viewers.md).
 
 ## 3. Several files
@@ -55,9 +56,15 @@ The phone refuses what it can before a byte is sent, as a toast, and the page st
 |---|---|---|
 | type not supported | This File Type Isn't Supported | bloop takes decks, documents, PDFs, spreadsheets, text, photos and videos. |
 | empty | This File Is Empty | (none) |
-| over the file cap | File Too Large | bloop takes files up to 500 MB. (from the API, never restated) |
+| over the file cap | File Too Large | bloop takes files up to 500 MB. (from the API, never restated; without the number: This file is over bloop's size limit.) |
 | over the quota | Not Enough Space | Delete files or empty the trash to add this one. |
 | macros, password, damaged (server, after checking) | Lecture 5.pptm Can't Be Added | This file has macros. Save a copy without them as .pptx. / This file is password protected. Remove the password, then add it again. / This file is damaged. Open it on your computer and save it again. |
+| the library is full (too many files) | Your Library Is Full | Delete files you no longer need, then add this one. |
+| too many uploads (`rate_limited`) | Too Many Uploads Right Now | Wait a minute, then try again. |
+| bloop is busy, or has no room (`service_busy`, `storage_full`) | bloop Is Busy Right Now; bloop Can't Take Files Now | Try again in a few minutes. |
+| signed out mid upload | Sign In to Add Files | Your sign-in ended. Sign in again, then add the file. |
+| the upload ended or changed (`upload_gone`, `upload_aborted`, `size_mismatch`, `not_found`, `bad_request`, `length_required`) | Lecture 5.pptx Can't Be Added | one line each: This upload ended before it finished. Add the file again. / The upload was stopped. Add the file again. / This file changed while it was being added. Add it again. / bloop can't find this upload. Add the file again. / bloop couldn't take this file as sent. Add it again. / bloop couldn't read this file's size. Choose it again. |
+| still finishing (`upload_busy`), or bloop is down (`service_down`) | Lecture 5.pptx Can't Be Added | bloop is still finishing this upload. Wait a moment, then try again. / Something's wrong on bloop's side. Try again in a few minutes. |
 | a guest's caps (the demo's 25 MB, a live guest's limit) | as design.md section 8 | as design.md section 8 |
 
 - A refused library file never becomes a row; its reserved bytes come back (the quota bar drops the `--g2` part).
@@ -75,7 +82,7 @@ The phone refuses what it can before a byte is sent, as a toast, and the page st
 
 ## 6. On `/a` for a guest
 
-The guest's sending state (design.md section 7, Phone page) keeps the file's row as its face, without the loader; the pill floats `--inset` above the action panel, which holds Cancel. The pill's done state is "Sent", then the page goes to the guest's sent state. The screen shows its receiving pill (viewers.md) from the same `upload.progress` events.
+The guest's sending state (design.md section 7, Phone page) keeps the file's row as its face, without the loader; the pill floats `--inset` above the action panel, which holds Cancel. `sendFile` mounts it, so a guest who goes offline sees "Waiting for a Connection" instead of silence. The pill's done state is "Sent" (it stays 2 s), and the page goes to the guest's sent state at once. A guest's refusal is the page's own state, never a toast. The screen shows its receiving pill (viewers.md) from the same `upload.progress` events.
 
 ```
 390, guest sending
@@ -101,4 +108,4 @@ The guest's sending state (design.md section 7, Phone page) keeps the file's row
 
 ## 8. Strings (this file)
 
-Preparing Your Photo; Removing Location; Starting; 34 of 88 MB; 34 of 88 MB · 1 min left; · Under a minute left; 340 of 900 KB; Waiting for a Connection; Keep this page open. It finishes when you're back online.; Checking Your File; Saved; Add to Up Next; Added to Up Next; Sent; Uploading 3 Files; 3 Files Saved; Can't Be Added; Uploading {name} (progress name); Cancel Upload of {name}; {name} Is Paused / Choose the file again to finish. / Choose File; Upload Canceled / {name} wasn't added.; Upload Didn't Load / Reload the page, then try again. / Reload; the refusal toasts in section 4.
+Preparing Your Photo; Removing Location; Starting; 34 of 88 MB; 34 of 88 MB · 1 min left; · Under a minute left; 340 of 900 KB; Waiting for a Connection; Keep this page open. It finishes when you're back online.; Checking Your File; Saved; Add to Up Next; Added to Up Next; Sent; Uploading 3 Files; 3 Files Saved; Can't Be Added; Uploading {name} (progress name); Cancel Upload of {name}; {name} Is Paused / Choose the file again to finish. / Choose File; Upload Canceled / {name} wasn't added.; Upload Didn't Load / Reload the page, then try again. / Reload; the refusal toasts in section 4 (each upload error code has a string of its own, tested).

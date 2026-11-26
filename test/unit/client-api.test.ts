@@ -70,6 +70,19 @@ describe("api client", () => {
     expect(init.credentials).toBe("same-origin");
   });
 
+  it("carries the status, extra headers, a DELETE's JSON body and a timeout in milliseconds, and keeps the library's own codes", async () => {
+    const f = fakeFetch(() => problem(409, "upload_busy"));
+    const api = createApi({ fetch: f.fetch });
+    const res = await api.call("DELETE", "/api/uploads/up1", { headers: { "Idempotency-Key": "k1" }, timeout: 5000 });
+    const init = f.calls[0]?.init as RequestInit;
+    expect(init.method).toBe("DELETE");
+    expect((init.headers as Record<string, string>)["Idempotency-Key"]).toBe("k1");
+    expect(init.body).toBe("{}");
+    expect(init.signal).toBeInstanceOf(AbortSignal);
+    // upload_busy is not a phone code: error collapses, the code stays readable
+    expect(res).toEqual({ ok: false, status: 409, error: "bad_request", code: "upload_busy" });
+  });
+
   it("returns the parsed value", async () => {
     const f = fakeFetch(() => ok({ pid: "a.b" }));
     expect(await createApi({ fetch: f.fetch }).post("/api/claim", { code: "K7MQ9X" })).toMatchObject({
@@ -82,13 +95,20 @@ describe("api client", () => {
     const f = fakeFetch(() => problem(410, "code_expired"));
     expect(await createApi({ fetch: f.fetch }).post("/api/claim", { code: "K7MQ9X" })).toEqual({
       ok: false,
+      status: 410,
       error: "code_expired",
+      code: "code_expired",
     });
   });
 
   it("an unknown code in a problem body is not trusted", async () => {
     const f = fakeFetch(() => problem(400, "made_up"));
-    expect(await createApi({ fetch: f.fetch }).get("/x")).toEqual({ ok: false, error: "bad_request" });
+    expect(await createApi({ fetch: f.fetch }).get("/x")).toEqual({
+      ok: false,
+      status: 400,
+      error: "bad_request",
+      code: "made_up",
+    });
   });
 
   it("a network failure is offline", async () => {
@@ -171,7 +191,7 @@ describe("api client", () => {
 
   it("a 5xx without a problem body is service_down", async () => {
     const down = fakeFetch(() => new Response("<html>bad gateway</html>", { status: 502 }));
-    expect(await createApi({ fetch: down.fetch }).get("/x")).toEqual({ ok: false, error: "service_down" });
+    expect(await createApi({ fetch: down.fetch }).get("/x")).toEqual({ ok: false, status: 502, error: "service_down" });
   });
 
   it("O19 a 429 carries Retry-After in seconds; no header, a date or a non-429 carries none", async () => {
@@ -179,23 +199,38 @@ describe("api client", () => {
       fakeFetch(() => new Response(JSON.stringify({ code: "rate_limited" }), { status, headers }));
     expect(await createApi({ fetch: limited({ "Retry-After": "30" }).fetch }).get("/x")).toEqual({
       ok: false,
+      status: 429,
       error: "rate_limited",
+      code: "rate_limited",
       retryAfter: 30,
     });
     for (const h of [{}, { "Retry-After": "Wed, 21 Oct 2026 07:28:00 GMT" }, { "Retry-After": "0" }]) {
-      expect(await createApi({ fetch: limited(h).fetch }).get("/x")).toEqual({ ok: false, error: "rate_limited" });
+      expect(await createApi({ fetch: limited(h).fetch }).get("/x")).toEqual({
+        ok: false,
+        status: 429,
+        error: "rate_limited",
+        code: "rate_limited",
+      });
     }
     expect(await createApi({ fetch: limited({ "Retry-After": "30" }, 400).fetch }).get("/x")).toEqual({
       ok: false,
+      status: 400,
       error: "rate_limited",
+      code: "rate_limited",
     });
   });
 
   it("REL-03 a 200 block page reads as network_blocked, not service_down: HTML, or JSON without the marker", async () => {
     const page = fakeFetch(() => new Response("<html>Blocked by your network</html>", { status: 200 }));
-    expect(await createApi({ fetch: page.fetch }).get("/x")).toEqual({ ok: false, error: "network_blocked" });
+    expect(await createApi({ fetch: page.fetch }).get("/x")).toEqual({
+      ok: false,
+      error: "network_blocked",
+    });
     const bare = fakeFetch(() => new Response("{}", { status: 200 }));
-    expect(await createApi({ fetch: bare.fetch }).get("/x")).toEqual({ ok: false, error: "network_blocked" });
+    expect(await createApi({ fetch: bare.fetch }).get("/x")).toEqual({
+      ok: false,
+      error: "network_blocked",
+    });
     const empty = fakeFetch(() => new Response("", { status: 200, headers: { "X-Bloop": "1" } }));
     expect(await createApi({ fetch: empty.fetch }).get("/x")).toEqual({
       ok: true,
@@ -220,12 +255,12 @@ describe("file list", () => {
 
   it("has no stub fallback: a missing route is an error", async () => {
     const f = fakeFetch(() => problem(404, "not_found"));
-    expect(await loadFiles(createApi({ fetch: f.fetch }), "p.q")).toEqual({ ok: false, error: "not_found" });
+    expect(await loadFiles(createApi({ fetch: f.fetch }), "p.q")).toMatchObject({ ok: false, error: "not_found" });
   });
 
   it("passes every other failure through", async () => {
     const f = fakeFetch(() => problem(401, "auth_required"));
-    expect(await loadFiles(createApi({ fetch: f.fetch }), "p.q")).toEqual({ ok: false, error: "auth_required" });
+    expect(await loadFiles(createApi({ fetch: f.fetch }), "p.q")).toMatchObject({ ok: false, error: "auth_required" });
   });
 });
 

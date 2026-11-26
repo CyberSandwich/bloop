@@ -48,7 +48,7 @@ describe("fingerprint", () => {
       size: 450 * MIB,
       slice: (start: number, end: number) => {
         read.push([start, end]);
-        return { arrayBuffer: async () => new ArrayBuffer(end - start) };
+        return new Blob([new ArrayBuffer(end - start)]);
       },
     };
     await fingerprint(file);
