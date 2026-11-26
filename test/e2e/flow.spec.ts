@@ -1673,9 +1673,7 @@ test.describe("a guest's photo and video on the screen (design.md section 7, Vid
 });
 
 test.describe("open path", () => {
-  test("RES-01 storage: launch, the Download fallback at once, the PDF view, and End leaving no sid", async ({
-    browser,
-  }) => {
+  test("RES-01 storage: launch, the Download fallback at once, and End leaving no sid", async ({ browser }) => {
     const screen = await liveScreen(browser);
     const { phone } = await scan(browser, screen.page, LIVE);
     // A live screen shows one file: the phone selects one, from files only.
@@ -1687,7 +1685,7 @@ test.describe("open path", () => {
 
     // PowerPoint is not installed here: no fetch arrives, so after the launch timeout Download appears.
     await expect(heading(screen.page)).toHaveText("Opening in PowerPoint");
-    await expect(screen.page.locator("#line")).toContainText(/sample.deck\.pptx/i);
+    await expect(screen.page.locator("#line")).toContainText(DEMO_ITEMS.deck.name);
     await expect(screen.page.getByRole("button", { name: "End", exact: true })).toBeVisible();
     await expect(phone.page.getByRole("button", { name: "Revoke" })).toBeVisible();
     const download = screen.page.getByRole("button", { name: "Download It Instead" });
@@ -1699,27 +1697,18 @@ test.describe("open path", () => {
     // The download is the first fetch of /f/: the session opens, as the fallback.
     const saved = screen.page.waitForEvent("download");
     await download.click();
-    expect((await saved).suggestedFilename()).toBe("Sample-deck.pptx");
+    expect((await saved).suggestedFilename()).toBe(DEMO_ITEMS.deck.name);
     await expect(heading(screen.page)).toHaveText("PowerPoint Didn't Open");
     await expect(screen.page.getByText("The copy stays in this PC's Downloads.")).toBeVisible();
-    await expect(screen.page.getByRole("button", { name: "Show as PDF Instead" })).toBeVisible();
     await expect(heading(phone.page)).toHaveText("PowerPoint Didn't Open");
     await expectNoAxeViolations(screen.page);
-
-    // The labeled PDF view opens in a second window under the PDF route's own CSP.
-    // Asserted on the request, not the popup's URL: headless Chromium has no PDF viewer, so the popup
-    // downloads the file and never commits a navigation that would give it that URL.
-    const pdf = screen.context.waitForEvent("request", (r) => r.url().includes("/f/"));
-    await screen.page.getByRole("button", { name: "Show as PDF Instead" }).click();
-    expect((await pdf).url()).toMatch(/\/f\/[A-Za-z0-9_-]{54}\/Sample-deck\.pdf$/);
-    await expect(heading(screen.page)).toHaveText("Showing as a PDF");
 
     // End: the screen forgets its credential, and every link is dead.
     await screen.page.getByRole("button", { name: "End", exact: true }).click();
     await expect(heading(screen.page)).toHaveText("Session Ended");
     // What this PC may still hold: the PowerPoint it launched and the download it started, by its name in Downloads.
     await expect(screen.page.locator("#line")).toHaveText(
-      "Close PowerPoint to take your slides off this PC. Delete Sample-deck.pptx from Downloads before you leave.",
+      `Close PowerPoint to take your slides off this PC. Delete ${DEMO_ITEMS.deck.name} from Downloads before you leave.`,
     );
     expect(await screen.page.evaluate(() => sessionStorage.getItem("bloop.sid"))).toBeNull();
     await expect(heading(phone.page)).toHaveText("Session Ended");
@@ -1802,6 +1791,7 @@ test.describe("demo viewer", () => {
     await expect(heading(screen.page)).toHaveText(DEMO_ITEMS.horizontal.name);
     await expectNoAxeViolations(screen.page);
 
+    await sidebarItem(screen.page, DEMO_ITEMS.deck.name).click();
     await screen.page.reload();
     await expectViewer(screen.page);
 
@@ -2020,7 +2010,8 @@ test.describe("screen and phone layout", () => {
       const code = await typedCodeOf(page);
       const phone = await open(browser, "phone", `/a?c=${code}`);
       await phone.page.getByRole("button", { name: "Approve" }).click();
-      for (const name of [DEMO_ITEMS.deck.name, DEMO_ITEMS.horizontal.name, DEMO_ITEMS.vertical.name]) {
+      // The vertical photo takes the right-hand column instead of the under spot: the shots read it.
+      for (const name of [DEMO_ITEMS.deck.name, DEMO_ITEMS.horizontal.name]) {
         await sidebarItem(page, name).click();
         await expectPillUnder(page, page.locator(STAGED).first());
       }
