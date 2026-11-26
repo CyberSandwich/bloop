@@ -58,9 +58,11 @@ import {
 } from "../seams/open-path/lookups.ts";
 import {
   claimSecret,
+  type Flights,
   idemPurge,
   idemSave,
   idemStore,
+  oneFlight,
   openClaim,
   type SealedClaim,
   sealClaim,
@@ -138,8 +140,7 @@ export class Screen extends DurableObject<Env> implements PairingStore {
   private meta: Meta | null;
   private m: Machine | null;
   private readonly links: LinkLedger;
-  /** Claims in flight by Idempotency-Key owner and hash, for `claim`'s single flight. */
-  private readonly claiming = new Map<string, { bodyHash: string; answer: Promise<Result<ClaimResponse>> }>();
+  private readonly claiming: Flights<Result<ClaimResponse>> = new Map();
   /** Every frame to a socket goes through it, so a state burst coalesces and nothing passes a held state (O10). */
   private readonly out = new StateCoalescer<WebSocket>({
     keyOf: (ws) => (ws.deserializeAttachment() as SocketAttachment | null)?.id ?? ws,
@@ -204,21 +205,20 @@ export class Screen extends DurableObject<Env> implements PairingStore {
 
   /**
    * A live claim stores the three choices and answers them, never the match (PAIR-14); a demo answers the match. With
-   * `idem`, the answer is kept for the key, so the route's replay (`idemFind`) returns this pid, not `code_taken`; a
-   * second call with the key while the first is in flight (both missed the row) takes the first's answer: one flight.
+   * `idem`, the answer is kept for the key and every call with it gets the first's answer and pid, not `code_taken`
+   * (`oneFlight`): the route's `idemFind` only spares the trip.
    */
   async claim(code: string, phone: PhoneInfo, idem?: IdemKey): Promise<Result<ClaimResponse>> {
     if (!idem) return this.claimOnce(code, phone);
-    const key = `${idem.owner} ${idem.keyHash}`;
-    const first = this.claiming.get(key);
-    if (first) return first.bodyHash === idem.bodyHash ? first.answer : fail("bad_request");
-    const answer = this.claimOnce(code, phone, idem);
-    this.claiming.set(key, { bodyHash: idem.bodyHash, answer });
-    try {
-      return await answer;
-    } finally {
-      this.claiming.delete(key);
-    }
+    return oneFlight(this.ctx.storage.kv, this.claiming, idem, Date.now(), {
+      run: () => this.claimOnce(code, phone, idem),
+      // A row whose pairing has gone answers nothing, so the claim runs as a new one.
+      replay: async (stored) => {
+        const opened = await this.openClaimRow(stored);
+        return opened ? { ok: true, value: opened } : this.claimOnce(code, phone, idem);
+      },
+      conflict: fail("bad_request"),
+    });
   }
 
   private async claimOnce(code: string, phone: PhoneInfo, idem?: IdemKey): Promise<Result<ClaimResponse>> {
@@ -280,13 +280,18 @@ export class Screen extends DurableObject<Env> implements PairingStore {
     since: number,
   ): Promise<{ bodyHash: string; stored: ClaimResponse } | null> {
     const row = await idemStore<SealedClaim>(this.ctx.storage.kv).find(owner, keyHash, since);
-    if (!row || !this.meta) return null;
-    const stored = await openClaim(row.stored, this.meta.screenRef, this.config().hashPepper);
+    const stored = row && (await this.openClaimRow(row.stored));
+    return row && stored ? { bodyHash: row.bodyHash, stored } : null;
+  }
+
+  /** A stored claim answer with its pid derived again, or null unless the current pairing still holds that pid. */
+  private async openClaimRow(sealed: unknown): Promise<ClaimResponse | null> {
+    if (!this.meta) return null;
+    const stored = await openClaim(sealed, this.meta.screenRef, this.config().hashPepper);
     const secret = stored && parseCredential(stored.pid)?.secret;
     if (!stored || !secret) return null;
     // The derivation awaited: answer only a pid the current pairing still holds.
-    const hash = await sha256Hex(secret);
-    return this.m?.pairing?.secretHash === hash ? { bodyHash: row.bodyHash, stored } : null;
+    return this.m?.pairing?.secretHash === (await sha256Hex(secret)) ? stored : null;
   }
 
   /**
