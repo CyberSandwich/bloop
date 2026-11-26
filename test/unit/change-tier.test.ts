@@ -245,4 +245,17 @@ describe("blocks", () => {
     expect(blocks(docs, SAME, "tweak\n# Co-Authored-By: a template comment\n")).toEqual([]);
     expect(blocks(docs, SAME, "Update the CLAUDE.md pointer")).toEqual([]);
   });
+
+  it("reads the message only above `commit -v`'s scissors line, where the staged diff begins", () => {
+    const scissors = "# ------------------------ >8 ------------------------";
+    const diff = "+    expect(attributed('x\\n\\nCo-Authored-By: A')).toBe(true);\nCo-Authored-By: in the diff text\n";
+    expect(
+      blocks([file("docs/architecture.md")], SAME, `tweak\n\n${scissors}\n# Do not modify this line.\n${diff}`),
+    ).toEqual([]);
+    expect(
+      blocks([file("docs/architecture.md")], SAME, `tweak\n\nClaude-Session: x\n${scissors}\n${diff}`),
+    ).toHaveLength(1);
+    // The src/ trailer below the scissors is diff text, not the message's.
+    expect(blocks([file("src/worker/http.ts")], SAME, `tweak\n${scissors}\nDocs: none needed\n`)).toHaveLength(1);
+  });
 });
