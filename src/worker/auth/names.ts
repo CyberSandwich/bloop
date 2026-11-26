@@ -11,7 +11,8 @@ export const NAME_MAX_CHARS = 40;
 
 /**
  * Trap: each piece below can match a character in one way only. FE0F is a mark, so the top-level mark excludes it and
- * only an emoji or a keycap takes it; were both allowed, a long refused name would backtrack exponentially.
+ * only an emoji or a keycap takes it; were both allowed, a long refused name would backtrack exponentially. The same
+ * holds for a letter that is also pictographic (U+2139), so WORD excludes those.
  */
 const MARK = String.raw`(?!\uFE0F)\p{M}`;
 const PICTO = String.raw`\p{Extended_Pictographic}(?:\p{Emoji_Modifier}|\uFE0F)*`;
@@ -19,10 +20,17 @@ const PICTO = String.raw`\p{Extended_Pictographic}(?:\p{Emoji_Modifier}|\uFE0F)*
 const SUBFLAG = String.raw`\u{1F3F4}[\u{E0030}-\u{E0039}\u{E0061}-\u{E007A}]{2,6}\u{E007F}`;
 const EMOJI = `(?:${SUBFLAG}|${PICTO})`;
 const KEYCAP = String.raw`[0-9#*]\uFE0F\u20E3`;
-const ALLOWED = new RegExp(
-  String.raw`^(?:${KEYCAP}|[\p{L}\p{N} '’-]|${MARK}|(?<=\p{L}\p{M}*)\u200C(?=\p{L})|\p{Regional_Indicator}{2}|${EMOJI}(?:\u200D${EMOJI})*)+$`,
-  "u",
-);
+const WORD = String.raw`(?!\p{Extended_Pictographic})[\p{L}\p{N}]|[ '’-]`;
+/** The top-level alternatives, exported so a test can prove no code point alone matches two of them. */
+export const NAME_PIECES = [
+  KEYCAP,
+  WORD,
+  MARK,
+  String.raw`(?<=\p{L}\p{M}*)\u200C(?=\p{L})`,
+  String.raw`\p{Regional_Indicator}{2}`,
+  String.raw`${EMOJI}(?:\u200D${EMOJI})*`,
+] as const;
+const ALLOWED = new RegExp(`^(?:${NAME_PIECES.join("|")})+$`, "u");
 /**
  * Letters and marks refused anywhere: the Hangul fillers, which render as nothing and would pad or blank a name, and
  * the ones that pass for ".", ":" or "/" (Lisu tone letters, Canadian syllabics finals, the modifier colons, the

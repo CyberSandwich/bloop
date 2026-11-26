@@ -1,16 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { deviceEpoch } from "../../src/worker/auth/codes.ts";
-import { type AnyRoute, addSession, callRoute, memberWorld, seedMember, sid } from "./member-fixture.ts";
-
-const key = Buffer.alloc(32, 5).toString("base64");
-const GRAPH = {
-  FILE_SOURCE: "graph",
-  ENTRA_CLIENT_ID: "client-id",
-  ENTRA_CLIENT_SECRET: "x".repeat(12),
-  TOKEN_KEKS: JSON.stringify({ k1: key }),
-  TOKEN_KEK_CURRENT: "k1",
-  COOKIE_KEY: key,
-};
+import { type AnyRoute, addSession, callRoute, GRAPH, memberWorld, seedMember, sid } from "./member-fixture.ts";
 
 async function watched() {
   const calls: unknown[][] = [];

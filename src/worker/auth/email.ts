@@ -117,7 +117,10 @@ export function mail(deps: MailDeps, ctx: WaitUntil, message: Message, now: numb
  * run tries again. Nothing to send (the switch, no admin address) is not a failure.
  */
 export const breakerNotify =
-  (deps: Pick<MailDeps, "account" | "sender" | "emailSwitch">, config: Pick<TemplateConfig, "origin">): Notify =>
+  (
+    deps: Pick<MailDeps, "account" | "sender" | "emailSwitch">,
+    config: Pick<TemplateConfig, "origin">,
+  ): ((message: Parameters<Notify>[0]) => Promise<void>) =>
   async (message) => {
     const to = [...deps.account.adminEmails].filter((address) => switchAllows(deps, address));
     if (to.length === 0) return;
@@ -139,10 +142,6 @@ const alertVars = z.object({
 /** Mail tries per message per UTC day; past them the alert stays a log line until tomorrow. */
 export const ALERT_MAIL_TRIES = 6;
 
-/** A message's identity for its own claims: the same alert on a later run maps to the same keys. */
-const messageId = (m: Parameters<Notify>[0]): string =>
-  m.kind === "digest" ? `digest:${m.subject}` : [m.kind, m.rule, m.switch ?? "", m.value ?? ""].join(":");
-
 /** The guard's once-a-UTC-day claim (`alertOnce`). An unreachable guard counts as claimed, so the alert still goes out. */
 export type Claim = (key: string) => Promise<boolean>;
 
@@ -154,10 +153,9 @@ export type Claim = (key: string) => Promise<boolean>;
  */
 export const cronNotify =
   (env: { DB: unknown; EMAIL?: Sender }, claim: Claim): Notify =>
-  async (message) => {
-    const claimed = (key: string) => claim(key).catch(() => true);
-    const id = messageId(message);
-    if (await claimed(`log:${id}`)) await logNotify(message);
+  async (message, key) => {
+    const claimed = (claimKey: string) => claim(claimKey).catch(() => true);
+    if (await claimed(`log:${key}`)) await logNotify(message, key);
     const parsed = alertVars.safeParse(env);
     if (!parsed.success) return;
     const v = parsed.data;
@@ -170,7 +168,7 @@ export const cronNotify =
       devMailbox: v.DEV_MAILBOX === "1" && isLocalOrigin(v.PUBLIC_ORIGIN),
     };
     let tried = false;
-    for (let n = 1; n <= ALERT_MAIL_TRIES && !tried; n++) tried = await claimed(`mail:${id}:${n}`);
+    for (let n = 1; n <= ALERT_MAIL_TRIES && !tried; n++) tried = await claimed(`mail:${key}:${n}`);
     if (!tried) return;
     await breakerNotify(
       { account, sender: env.EMAIL, emailSwitch },
