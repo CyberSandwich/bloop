@@ -51,10 +51,11 @@ const measure = (/** @type {Entry} */ e) => JSON.stringify([paths(e), e.import ?
 const compression = (/** @type {Entry} */ e) => (e.gzip === true ? "gzip" : e.brotli === false ? "none" : "brotli");
 /**
  * The files an entry measures, as sources: dist/ is built from public/ (ADR 0011). A glob cannot be checked file by
- * file, and a path with no public/ source cannot be checked at all, so neither ever counts as absent (fails closed).
+ * file, so it never counts as absent (fails closed). A path counts as absent only when HEAD no longer holds it, in any
+ * folder; a dist/ file with no public/ source was never on the base either, so it stays too.
  */
 const sources = (/** @type {Entry} */ e) => paths(e).map((p) => p.replace(/^dist\//, "public/"));
-const checkable = (/** @type {string} */ p) => !/[*?[{]/.test(p) && /^(public|src)\//.test(p);
+const checkable = (/** @type {string} */ p) => !/[*?[{]/.test(p);
 const kb = (/** @type {number} */ bytes) => `${bytes / 1000} kB`;
 
 /**
