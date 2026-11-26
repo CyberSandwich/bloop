@@ -39,13 +39,44 @@ const rows = (kv: Kv): Row[] => {
   return Array.isArray(all) ? all.filter(validRow) : [];
 };
 
+const findRow = (kv: Kv, owner: string, keyHash: string, since: number): Row | undefined =>
+  rows(kv).find((r) => r.owner === owner && r.keyHash === keyHash && r.at >= since);
+
 /** `find` for idem.ts's `idempotency()`. */
 export const idemStore = <A>(kv: Kv): IdemStore<A> => ({
   find: async (owner, keyHash, since) => {
-    const row = rows(kv).find((r) => r.owner === owner && r.keyHash === keyHash && r.at >= since);
+    const row = findRow(kv, owner, keyHash, since);
     return row ? { bodyHash: row.bodyHash, stored: row.stored as A } : null;
   },
 });
+
+/** Calls in flight by Idempotency-Key owner and hash, for `oneFlight`. */
+export type Flights<A> = Map<string, { bodyHash: string; answer: Promise<A> }>;
+
+/**
+ * One answer per Idempotency-Key, whatever the interleaving. A call while the key's first is in flight takes its
+ * answer; one after it finished finds its row, read here again because the route's `find` may have run before the
+ * row was saved, and `replay`s it. The row read and the flight's entry have no await between them, so no other call
+ * slips in. Another body for the key is `conflict`.
+ */
+export function oneFlight<A>(
+  kv: Kv,
+  flights: Flights<A>,
+  idem: { owner: string; keyHash: string; bodyHash: string },
+  now: number,
+  calls: { run: () => Promise<A>; replay: (stored: unknown) => Promise<A>; conflict: A },
+): Promise<A> {
+  const key = `${idem.owner} ${idem.keyHash}`;
+  const first = flights.get(key);
+  if (first) return first.bodyHash === idem.bodyHash ? first.answer : Promise.resolve(calls.conflict);
+  const row = findRow(kv, idem.owner, idem.keyHash, now - IDEM_WINDOW_MS);
+  if (row) return row.bodyHash === idem.bodyHash ? calls.replay(row.stored) : Promise.resolve(calls.conflict);
+  const answer = calls.run();
+  flights.set(key, { bodyHash: idem.bodyHash, answer });
+  const done = () => void flights.delete(key);
+  answer.then(done, done);
+  return answer;
+}
 
 /** Stores a fresh key's answer, dropping rows past the window and the oldest past MAX_IDEM_ROWS. */
 export function idemSave(

@@ -81,13 +81,16 @@ describe("PAIR-15 lookup who", () => {
       [live, owner(true), route(live)],
       [live, owner(false), { ok: false, miss: false, error: "auth_required" }],
       [live, guest(null), route(live)],
-      [live, guest("drop_disabled"), { ok: false, miss: true, error: "drop_disabled" }],
-      [live, guest("pass_required", true), { ok: false, miss: true, error: "pass_required" }],
+      [live, guest("drop_disabled"), { ok: false, miss: false, error: "drop_disabled" }],
+      [live, guest("pass_required", true), { ok: false, miss: false, error: "pass_required" }],
       [demo, owner(false), route(demo)],
       [demo, guest("drop_disabled"), route(demo)],
       [null, owner(false), { ok: false, miss: true, error: "code_unknown" }],
       [null, owner(true), { ok: false, miss: true, error: "code_unknown" }],
       [null, guest(null), { ok: false, miss: true, error: "code_unknown" }],
+      // Guests refused: the same answer for a code that exists and one that does not, so no oracle, and no miss.
+      [null, guest("drop_disabled"), { ok: false, miss: false, error: "drop_disabled" }],
+      [null, guest("pass_required"), { ok: false, miss: false, error: "pass_required" }],
     ];
     for (const [hit, who, want] of cases) expect(lookupVerdict(hit, who), JSON.stringify([hit, who])).toEqual(want);
   });

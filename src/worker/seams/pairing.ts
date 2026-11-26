@@ -151,8 +151,8 @@ export interface CodeDirectory {
   put(code: string, screenRef: string, expiresAt: number, demo: boolean): Promise<"ok" | "collision">;
   /**
    * Routes a typed code (PAIR-15). A live code claimed by a signed-out owner answers `auth_required` without routing,
-   * so the code is never spent, and is no miss: the phone signs in and claims it. A live code claimed as a guest the
-   * drop refuses answers that refusal unrouted and counts as a miss, like a wrong code.
+   * so the code is never spent, and is no miss: the phone signs in and claims it. A guest claim the drop refuses
+   * answers that refusal unrouted for any code but a demo one, whether it exists or not, and is no miss.
    */
   lookup(code: string, ipHash: string, now: number, who: ClaimWho): Promise<Lookup>;
   remove(code: string): Promise<void>;
