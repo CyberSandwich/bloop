@@ -344,13 +344,7 @@ html:has(.page-site) {
 }
 @media (max-width: 639.98px) {
   .stage {
-    overflow: visible;
-    border-radius: 0;
-    background: none;
-    box-shadow: none;
-  }
-  .stage img {
-    aspect-ratio: 1155 / 2366;
+    border-radius: 16px;
   }
 }
 @supports (animation-timeline: view()) {
@@ -427,11 +421,11 @@ html:has(.page-site) {
 }
 @supports (animation-timeline: view()) {
   @media (prefers-reduced-motion: no-preference) and (forced-colors: none) {
-    /* --why runs 0 to 1 as the paragraph crosses the view's center line (the 50% insets; design.md, Why);
-       word --i of --n (site.js) fills over its own slice. */
+    /* --why runs 0 to 1 from the paragraph's top reaching 10% above the view's bottom to its bottom reaching the
+       center (the 50% 10% insets; design.md, Why); word --i of --n (site.js) fills over its own slice. */
     .why p {
       view-timeline: --why-view;
-      view-timeline-inset: 50%;
+      view-timeline-inset: 50% 10%;
     }
     .why-words {
       animation: why linear both;

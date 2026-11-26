@@ -334,9 +334,9 @@ describe("landing word caps (design.md section 13)", () => {
     );
     expect(block).toMatch(/\.why-words > \* \{[^}]*background-clip: text;[^}]*-webkit-text-fill-color: transparent;/);
     // One progress for the paragraph; a word moves only inside its own slice (index --i of --n, from site.js).
-    // The port is the view's center line: the fill starts as the paragraph's top reaches eye level and ends as its
-    // bottom does, at any paragraph height.
-    expect(block).toMatch(/\.why p \{\s*view-timeline: --why-view;\s*view-timeline-inset: 50%;\s*\}/);
+    // The port runs from the view's center down to 10% above its bottom: the fill starts as the paragraph's top
+    // reaches that lower edge and ends as its bottom reaches eye level, at any paragraph height.
+    expect(block).toMatch(/\.why p \{\s*view-timeline: --why-view;\s*view-timeline-inset: 50% 10%;\s*\}/);
     expect(block).toMatch(
       /\.why-words \{\s*animation: why linear both;\s*animation-timeline: --why-view;\s*animation-range: cover;/,
     );
@@ -403,30 +403,21 @@ describe("landing word caps (design.md section 13)", () => {
     expect(read("public/_redirects")).toMatch(/^\/demo \/s\?mode=demo 302$/m);
   });
 
-  it("the stage is one screenshot: AVIF then WebP at 1000 and 1440 wide, sized, eager, with alt text and no text of its own", () => {
+  it("the stage is one screenshot at every width: AVIF then WebP, four and three widths, sized, eager, with alt text and no text of its own", () => {
     const stage = between(html, /<div class="tilt">/, "</picture>");
-    const srcset = (type: string) =>
+    const srcset = (type: string, widths: number[]) =>
       new RegExp(
-        `<source type="image/${type}" srcset="/img/hero-viewer-1000\\.${type} 1000w, /img/hero-viewer-1440\\.${type} 1440w" sizes="[^"]+">`,
+        `<source type="image/${type}" srcset="${widths.map((w) => `/img/hero-viewer-${w}\\.${type} ${w}w`).join(", ")}" sizes="[^"]+">`,
       );
-    // Under 640 the phone mockup replaces the screenshot: its own sources come first, AVIF then WebP.
-    const phone = (type: string) =>
-      new RegExp(
-        `<source media="\\(max-width: 639\\.98px\\)" type="image/${type}" srcset="/img/hero-phone-600\\.${type} 600w, /img/hero-phone-900\\.${type} 900w" sizes="calc\\(100vw - 48px\\)">`,
-      );
-    expect(stage).toMatch(phone("avif"));
-    expect(stage).toMatch(phone("webp"));
-    expect(stage.indexOf("hero-phone-900.webp")).toBeLessThan(stage.indexOf('<source type="image/avif"'));
-    expect(stage).toMatch(srcset("avif"));
-    expect(stage).toMatch(srcset("webp"));
+    expect(stage).toMatch(srcset("avif", [750, 1100, 1600, 2200]));
+    expect(stage).toMatch(srcset("webp", [750, 1100, 1600]));
     expect(stage.indexOf('<source type="image/avif"')).toBeLessThan(stage.indexOf('<source type="image/webp"'));
+    expect(stage).not.toMatch(/media="/);
     const img = /<img\b[^>]*>/.exec(stage)?.[0] ?? "";
-    expect(img).toContain('src="/img/hero-viewer-1440.webp" width="1440" height="828" fetchpriority="high"');
+    expect(img).toContain('src="/img/hero-viewer-1100.webp" width="1440" height="828" fetchpriority="high"');
     expect(img).toContain(
       'alt="The bloop viewer showing a dog, with Present and Download buttons and a list of files"',
     );
-    // The phone picture's ratio is set in CSS, so the swap shifts nothing.
-    expect(read("public/css/site.css")).toMatch(/\.stage img \{\s*aspect-ratio: 1155 \/ 2366;/);
     expect(img).not.toMatch(/loading="lazy"/);
     expect(visibleText(stage)).toBe("");
     expect(stage).not.toMatch(/<(video|svg|iframe)\b/);

@@ -25,6 +25,19 @@ for (const [width, height] of SIZES) {
     });
     await page.waitForTimeout(1000);
     await page.screenshot({ path: `test-results/shots/${TAG}-${width}x${height}-stage.png` });
+    // The Why paragraph: its top at 85% of the view (just started), at 55%, and its bottom at the center (done).
+    for (const [name, place] of [
+      ["start", "innerHeight * 0.85"],
+      ["mid", "innerHeight * 0.55"],
+      ["end", "innerHeight / 2 - r.height"],
+    ] as const) {
+      await page.evaluate(`(() => {
+        const r = document.querySelector(".why p").getBoundingClientRect();
+        scrollBy(0, r.top - (${place}));
+      })()`);
+      await page.waitForTimeout(600);
+      await page.screenshot({ path: `test-results/shots/${TAG}-${width}x${height}-why-${name}.png` });
+    }
     await context.close();
   });
 }
