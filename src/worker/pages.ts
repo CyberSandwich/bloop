@@ -215,7 +215,8 @@ async function openFile(env: PageEnv, request: Request, variant: Variant, search
     console.error("variant_redirect");
     return withHeaders(fail("internal"), "api");
   }
-  return withAccountPill(request, response);
+  // A 404 is missing()'s, which already carries the pill.
+  return response.status === 404 ? response : withAccountPill(request, response);
 }
 
 /** The asset, with the policy of a page whose sources come from configuration completed (headers.ts `pageCsp`). */
