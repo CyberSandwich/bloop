@@ -12,8 +12,8 @@ import {
   spied,
 } from "./member-fixture.ts";
 
-describe("member routes: no D1 read before the per-IP meter", () => {
-  it("every account and admin route, signed in or not, spends RL_MEMBER_IP before it touches D1", async () => {
+describe("AUTH-19 meter: no D1 read before the per-IP meter", () => {
+  it("AUTH-19 meter: every account and admin route, signed in or not, spends RL_MEMBER_IP before it touches D1", async () => {
     const tables: readonly AnyRoute[] = [...(await spied()).routes, ...(await routesOf("admin", "adminRoutes"))];
     const calls = tables.flatMap((r) => r.methods.map((m) => [r, m] as const));
     expect(calls.length).toBeGreaterThanOrEqual(12);
