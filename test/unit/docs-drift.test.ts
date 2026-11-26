@@ -275,6 +275,16 @@ describe("size budgets", () => {
     expect(pageEntries).toHaveLength(scripts.length);
   });
 
+  it("the request budget names task pages that exist and have a module script, with whole-number limits", () => {
+    const budgets = JSON.parse(read("tools/size/requests.json")) as Record<string, Record<string, number>>;
+    expect(Object.keys(budgets).length).toBeGreaterThan(1);
+    for (const [path, budget] of Object.entries(budgets)) {
+      expect(read(`public${path}.html`), path).toContain('<script type="module"');
+      expect(Object.keys(budget).sort(), path).toEqual(["lateModules", "worker"]);
+      for (const n of Object.values(budget)) expect(Number.isInteger(n) && n >= 0, path).toBe(true);
+    }
+  });
+
   it("O1: each page preloads exactly the modules its first-load budget holds, less the script itself", () => {
     const pages = walk("public", (path) => path.endsWith(".html"));
     let checked = 0;

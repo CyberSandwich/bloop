@@ -1,0 +1,4 @@
+{
+  "/s": { "worker": 4, "lateModules": 0 },
+  "/a": { "worker": 4, "lateModules": 0 }
+}
