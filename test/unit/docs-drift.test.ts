@@ -332,6 +332,7 @@ describe("size budgets", () => {
       (e) => e.name.endsWith(", lazy") && [e.path].flat().every((path) => path.endsWith(".js")),
     );
     expect(Object.fromEntries(lazyEntries.map((e) => [e.name, e.path]))).toEqual({
+      "typed code paste, lazy": "public/js/core/paste.js",
       "phone photo, lazy": "public/js/core/photo.js",
       "phone video, lazy": "public/js/core/video.js",
       "screen video, lazy": "public/js/viewer-video.js",
