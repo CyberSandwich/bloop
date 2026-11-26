@@ -53,6 +53,27 @@ const REFUSED: [string, string][] = [
   ["tab", "a\tb"],
   ["no-break space", "a\u00A0b"],
   ["angle brackets", "<b>x</b>"],
+  ["tags after an emoji that is not the black flag", "\u{1F511}\u{E0067}\u{E0062}\u{E007F}"],
+  ["tags with no cancel tag", "\u{1F3F4}\u{E0067}\u{E0062}"],
+  ["a presentation selector after a letter", "a\uFE0F"],
+  ["a keycap with no presentation selector on a symbol", "#\u20E3"],
+];
+
+/** Letters and marks that pass for the characters a URL needs; each is refused inside an otherwise good name. */
+const CONFUSABLES: [string, string][] = [
+  ["Lisu tone mya ti (.)", "\uA4F8"],
+  ["Lisu tone na po (,)", "\uA4F9"],
+  ["Lisu tone mya cya (..)", "\uA4FA"],
+  ["Lisu tone mya bo (.,)", "\uA4FB"],
+  ["Lisu tone mya na (;)", "\uA4FC"],
+  ["Lisu tone mya jeu (:)", "\uA4FD"],
+  ["Canadian syllabics final acute (/)", "\u141F"],
+  ["Canadian syllabics final grave (\\)", "\u1420"],
+  ["Canadian syllabics final middle dot (.)", "\u1427"],
+  ["modifier triangular colon (:)", "\u02D0"],
+  ["modifier half triangular colon", "\u02D1"],
+  ["combining short solidus overlay (/)", "\u0337"],
+  ["combining long solidus overlay (/)", "\u0338"],
 ];
 
 describe("display names: the one rule (passkeys, library names)", () => {
@@ -64,6 +85,30 @@ describe("display names: the one rule (passkeys, library names)", () => {
   it.each(REFUSED)("refuses %s", (_label, value) => {
     expect(isDisplayName(value)).toBe(false);
     expect(displayName.safeParse(value).success).toBe(false);
+  });
+
+  it.each(CONFUSABLES)("refuses the lookalike %s", (_label, char) => {
+    expect(isDisplayName(`bloop${char}here${char}signin`)).toBe(false);
+    expect(isDisplayName(char)).toBe(false);
+  });
+
+  it("a worst-case 40-code-point name is decided in under 5 ms", () => {
+    const worst = [
+      `${"\u{1F600}\uFE0F\uFE0F".repeat(13)}!`,
+      `${"\u{1F600}\u{1F3FD}\uFE0F".repeat(13)}!`,
+      `${"a\u0301".repeat(19)}a!`,
+      `${"1\u20E3".repeat(19)}1!`,
+      `${"\u{1F469}\u200D".repeat(19)}\u{1F469}!`,
+      `${"\u{1F1E9}".repeat(39)}!`,
+      `${"a\u200C".repeat(19)}a!`,
+    ];
+    for (const name of worst) {
+      expect([...name].length, name).toBeLessThanOrEqual(40);
+      isDisplayName(name);
+      const start = performance.now();
+      expect(isDisplayName(name)).toBe(false);
+      expect(performance.now() - start, name).toBeLessThan(5);
+    }
   });
 
   it("the schema stores the NFC, trimmed form", () => {

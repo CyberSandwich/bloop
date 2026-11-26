@@ -363,7 +363,8 @@ Every state-changing route checks four things: `Origin` equals `PUBLIC_ORIGIN`; 
 | `PUT /api/drop`         | 5 per 60 s per IP (every attempt past the Origin and credential checks counts); one accepted file per session; live bytes under `GUEST_STORAGE_BUDGET_BYTES` | binding; exact; D1  |
 | `/auth/start`           | 10 per 60 s per IP                                                                   | binding             |
 | member routes (`/api/me/*`) | a write: 60 per 60 s per IP (`RL_MEMBER_IP`) before the session read; every route: 120 per 60 s per member (`RL_MEMBER`) after it (ADR 0014) | binding |
-| `/api/admin/*`          | none before the admin check, so a non-admin always gets the unknown path's 404; then 60 per 60 s per admin (`RL_ADMIN`) | binding |
+| `GET /api/me`           | 60 per 60 s per IP (`RL_MEMBER_IP`) before any read; then 120 per 60 s per member (`RL_MEMBER`) once a live session is read | binding |
+| `/api/admin/*`          | 60 per 60 s per IP (`RL_MEMBER_IP`) before the session read, a refusal answering the unknown path's 404 like everything else before the admin check; then 60 per 60 s per admin (`RL_ADMIN`) | binding |
 | `GET /api/screen/ws`, `GET /api/pair/ws` | 30 per 60 s per screen ref and network (IPv4 address or IPv6 /64) (`RL_UPGRADE`, its own binding so reconnect storms never refuse a tap), before the Screen object; then at most 4 sockets waiting for their `hello` per role and 2 per network, the network's own oldest evicted at its 2 and the oldest overall when a role is full, never a refusal (PAIR-10) | binding; exact |
 | `POST /api/control`, `POST /api/screen/shown`, `POST /api/session/length` | 120 per 60 s per IP (`RL_CONTROL`, its own binding so `/f/` range reads never refuse a tap), then 120 per 60 s per credential (keyed by the pid's or sid's hash, never the screen ref: every `/f/` token carries it) (PAIR-13) | binding |
 | `GET /api/files`        | 20 per 60 s per session (`RL_FILES`, keyed by the screen ref), after the credential check: each call is a Graph call | binding |
@@ -526,7 +527,7 @@ The Worker's variables are listed once, in `src/worker/config.ts`: the Zod schem
 `TEST_TIMING=1` is test-only and never set in a deployment (`config.ts` refuses it unless `PUBLIC_ORIGIN` is a local address). The integration tests set it through `startPairing()` in `test/integration/pairing-client.ts`, with short timings such as `CODE_TTL_SECONDS=2` and `SESSION_MAX_MINUTES=0.05`. It also skips the platform rate-limit bindings and shortens how long an authed screen socket stays live with nothing heard (`TEST_SILENCE_MS` in `config.ts`, `SILENCE_MS` otherwise), so a test can watch the link binding hand over (OPEN-02).
 
 Deploy-only values (`CLOUDFLARE_ACCOUNT_ID`, `CLOUDFLARE_API_TOKEN`) are GitHub environment secrets read by `.github/workflows/deploy.yml`, never by the Worker; there is no `.env` file. `BLOOP_PREVIEW_URL`, for the post-deploy header grade, is not wired yet: `deploy.yml` does not read it. Token scopes: `docs/setup.md`.
-Bindings in `wrangler.jsonc` (not env vars): `ASSETS`, `SCREEN` and `DIRECTORY` (Durable Objects, SQLite classes), `DB` (D1, `eu`), `GUEST_FILES` (R2, `jurisdiction: "eu"`), `RL_CREATE`, `RL_CLAIM`, `RL_FETCH`, `RL_UPLOAD`, `RL_AUTH`, `RL_EXPORT`, `RL_FILES`, `RL_DEMO_CREATE`, `RL_DEMO_CLAIM`, `RL_CONTROL`, `RL_UPGRADE` (rate limits), the v4 bindings in section 13, and two crons (`0 * * * *` hourly backstop, `30 3 * * *` daily retention). The D1 database id in `wrangler.jsonc` is not a secret.
+Bindings in `wrangler.jsonc` (not env vars): `ASSETS`, `SCREEN` and `DIRECTORY` (Durable Objects, SQLite classes), `DB` (D1, `eu`), `GUEST_FILES` (R2, `jurisdiction: "eu"`), `RL_CREATE`, `RL_CLAIM`, `RL_FETCH`, `RL_UPLOAD`, `RL_AUTH`, `RL_EXPORT`, `RL_FILES`, `RL_DEMO_CREATE`, `RL_DEMO_CLAIM`, `RL_CONTROL`, `RL_UPGRADE` (rate limits), the v4 bindings in section 13, and three crons (`*/5 * * * *` the spend breaker, `0 * * * *` hourly backstop, `30 3 * * *` daily retention). The D1 database id in `wrangler.jsonc` is not a secret.
 
 ## 10. Security headers
 
@@ -606,7 +607,8 @@ Each new module exports an empty route list (every path stays 404) until its str
 
 | module | owner stream | state |
 |---|---|---|
-| account, admin, hooks, reports | A (accounts and admin) | stub |
+| account, admin | A (accounts and admin) | live |
+| hooks, reports | A (accounts and admin) | stub |
 | dev-mail | A (accounts and admin) | live |
 | uploads, dev-r2 | U (uploads) | stub |
 | library, and the `UserLibrary` object | L (library) | stub |

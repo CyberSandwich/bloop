@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { deviceEpoch, isKnown, newDeviceValue } from "../../src/worker/auth/codes.ts";
 import { sha256Hex } from "../../src/worker/ids.ts";
+import { declaredRateLimits } from "../env-vars.ts";
 import type { TestDb } from "./d1-shim.ts";
 import {
   type AnyRoute,
@@ -214,6 +215,82 @@ describe("AUTH-18 epoch: a known-device value dies with every change that forget
       status: "deleting",
       device_epoch: 1,
     });
+  });
+
+  it("AUTH-18 epoch: ending one other session moves it; a refused id does not", async () => {
+    const world = memberWorld();
+    const { routes } = await spied();
+    const mine = await seedMember(world.db, "m1", "m@example.test");
+    const other = await addSession(world.db, "m1");
+    const end = (id: string) =>
+      callRoute(routes, world.env, "DELETE", `/api/me/sessions/${id}`, { cookie: sid(mine) }).then((r) => r.status);
+    expect(await end("A".repeat(22))).toBe(404);
+    expect(await epoch(world)).toBe(0);
+    expect(await end(await publicId(world.db, other))).toBe(204);
+    expect(await epoch(world)).toBe(1);
+  });
+
+  it("AUTH-18 epoch: sign out everywhere is one batch: a failed delete leaves the epoch and every session", async () => {
+    const world = memberWorld();
+    const { routes } = await spied();
+    const a = await seedMember(world.db, "m1", "m@example.test");
+    await addSession(world.db, "m1");
+    world.db.raw.exec(
+      "CREATE TRIGGER no_delete BEFORE DELETE ON phone_session BEGIN SELECT RAISE(ABORT, 'refused'); END",
+    );
+    await expect(callRoute(routes, world.env, "POST", "/api/me/signout-all", { cookie: sid(a) })).rejects.toThrow(
+      /refused/,
+    );
+    expect(await epoch(world)).toBe(0);
+    expect(world.db.raw.prepare("SELECT count(*) AS n FROM phone_session").get()).toEqual({ n: 2 });
+  });
+});
+
+describe("rate limits on GET /api/me, with real limits", () => {
+  const counting = (refuse: string[] = []) => {
+    const seen: [string, string][] = [];
+    const bindings = Object.fromEntries(
+      Object.keys(declaredRateLimits()).map((name) => [
+        name,
+        {
+          limit: async ({ key }: { key: string }) => {
+            seen.push([name, key]);
+            return { success: !refuse.includes(name) };
+          },
+        },
+      ]),
+    );
+    return { seen, bindings };
+  };
+
+  it("the per-IP meter comes before any read; the member's own only once a live session is read", async () => {
+    const world = memberWorld({ TEST_TIMING: "0" });
+    const { routes } = await spied();
+    const live = await seedMember(world.db, "m1", "m@example.test");
+    const none = counting();
+    await callRoute(routes, { ...world.env, ...none.bindings }, "GET", "/api/me");
+    expect(none.seen.map(([name]) => name)).toEqual(["RL_MEMBER_IP"]);
+    const member = counting();
+    await callRoute(routes, { ...world.env, ...member.bindings }, "GET", "/api/me", { cookie: sid(live) });
+    expect(member.seen).toEqual([
+      ["RL_MEMBER_IP", expect.any(String)],
+      ["RL_MEMBER", "m1"],
+    ]);
+  });
+
+  it("a refused per-IP meter answers 429 without touching D1", async () => {
+    const world = memberWorld({ TEST_TIMING: "0" });
+    const { routes } = await spied();
+    const refused = counting(["RL_MEMBER_IP"]);
+    const noDb = {
+      prepare: () => {
+        throw new Error("D1 read");
+      },
+    };
+    const res = await callRoute(routes, { ...world.env, ...refused.bindings, DB: noDb }, "GET", "/api/me", {
+      cookie: sid("A".repeat(43)),
+    });
+    expect(res.status).toBe(429);
   });
 });
 
