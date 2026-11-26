@@ -89,7 +89,7 @@ The deadline is `90 boot + (30 + bytes / 4 MiB/s) input + the stages + (120 + 0.
 
 ## 6. Progress
 
-Each frame is an upsert keyed by `(fileId, version)`: an older version is ignored, a terminal state is never overwritten, and the D1 row is the truth on reconnect. Frames go out at most once a second, `done` only rises, and `pageReady` is sent after page 1 is stored and before the first pack. A watcher that lacks a method is logged once (`convert_notify_missing`) and the job goes on.
+Each frame is an upsert keyed by `(fileId, version)`: an older version is ignored, a terminal state is never overwritten, and the D1 row is the truth on reconnect. Frames go out at most once a second, `done` only rises, and `pageReady` is sent after page 1 is stored and before the first pack. A watcher that lacks a method is logged once (`convert_notify_missing`) and the job goes on. The Converter calls the user's `UserLibrary`: `progress(id, version, stage, done, total)`, `pageReady(id)`, then `derivedReady(id, version)` or `derivedFailed(id, version, code)`; a cancelled run sends nothing. A guest's screen has no push method and reads the row.
 
 ## 7. Stub mode
 

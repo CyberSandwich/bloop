@@ -35,19 +35,29 @@ async function send(stub: unknown, method: string, args: unknown[], log: (line: 
   }
 }
 
-/** `receiver` resolves the Durable Object stub to tell; the Workers wiring is do/converter.ts. */
-export function notifierFor(receiver: (t: Target) => unknown, log: (line: string) => void = console.error): Notifier {
+/**
+ * Tells a library's UserLibrary: `progress(id, version, stage, done, total)`, `pageReady(id)`, then `derivedReady(id,
+ * version)` or `derivedFailed(id, version, code)`. A cancelled run says nothing (the trash or purge that cancelled it
+ * already told the page). A guest's screen reads the row; it has no push method to call.
+ * `library` resolves a user's stub; the Workers wiring is do/converter.ts.
+ */
+export function notifierFor(
+  library: (userId: string) => unknown,
+  log: (line: string) => void = console.error,
+): Notifier {
   return {
     progress: (t, fileId, version, stage, done, total) =>
       t.kind === "library"
-        ? send(receiver(t), "progress", [fileId, version, stage, done, total], log)
-        : send(receiver(t), "derivedReady", [fileId, version, stage], log),
-    pageReady: (t, fileId, version) =>
-      t.kind === "library" ? send(receiver(t), "pageReady", [fileId, version, 1], log) : Promise.resolve(),
-    terminal: (t, fileId, version, state, code) =>
-      t.kind === "library"
-        ? send(receiver(t), state === "done" ? "derivedReady" : "derivedFailed", [fileId, version, state, code], log)
-        : send(receiver(t), "derivedReady", [fileId, version, state, code], log),
+        ? send(library(t.userId), "progress", [fileId, version, stage, done ?? 0, total ?? 0], log)
+        : Promise.resolve(),
+    pageReady: (t, fileId) =>
+      t.kind === "library" ? send(library(t.userId), "pageReady", [fileId], log) : Promise.resolve(),
+    terminal: (t, fileId, version, state, code) => {
+      if (t.kind !== "library" || state === "cancelled") return Promise.resolve();
+      return state === "done"
+        ? send(library(t.userId), "derivedReady", [fileId, version], log)
+        : send(library(t.userId), "derivedFailed", [fileId, version, code ?? state], log);
+    },
   };
 }
 
