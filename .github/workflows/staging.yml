@@ -1,0 +1,64 @@
+name: staging
+
+# A push to the `staging` branch, or a manual run from a `ci/*` branch, deploys that commit to the bloop-staging Worker
+# (docs/setup.md, Staging). It skips with a log line until the staging resources and the `staging` environment's
+# Cloudflare secrets exist, so it never fails the repo.
+on:
+  push:
+    branches: [staging]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: staging
+  cancel-in-progress: false
+
+jobs:
+  staging:
+    if: github.ref_name == 'staging' || startsWith(github.ref_name, 'ci/')
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    environment: staging
+    steps:
+      # As in deploy.yml: a secret cannot be tested in an `if`, and the token is set on the wrangler steps alone.
+      - name: Check for Cloudflare secrets
+        id: gate
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+        run: |
+          if [ -n "$CLOUDFLARE_API_TOKEN" ]; then echo "has=true" >> "$GITHUB_OUTPUT"; else echo "Staging skipped: no CLOUDFLARE_API_TOKEN in the staging environment."; fi
+      - if: steps.gate.outputs.has == 'true'
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - if: steps.gate.outputs.has == 'true'
+        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+      - if: steps.gate.outputs.has == 'true'
+        run: npm ci
+      - if: steps.gate.outputs.has == 'true'
+        run: npm run check
+      - name: Look for the staging resources
+        id: resources
+        if: steps.gate.outputs.has == 'true'
+        run: node tools/staging.mjs ready
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+      # The build bakes the staging file origin (none yet) into js/shared/fo.js.
+      - name: Deploy
+        if: steps.resources.outputs.ready == 'true'
+        run: |
+          node tools/staging.mjs prepare
+          npx wrangler d1 migrations apply DB --remote -e staging
+          npx wrangler deploy -e staging
+          node tools/staging.mjs secrets
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          STAGING_D1_ID: ${{ steps.resources.outputs.d1_id }}
+          FILE_ORIGIN: ""

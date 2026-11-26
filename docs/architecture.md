@@ -278,6 +278,7 @@ public/                    the assets' source, built into dist/ (each JS module 
   .well-known/security.txt
 src/fonts/InterVariable.woff2   the source of the font subset, never served
 tools/
+  staging.mjs              the staging deploy's resource check, D1 id and secret steps (.github/workflows/staging.yml)
   build-assets.mjs build-assets-cli.mjs   public/ to dist/, each JS module minified on its own, CSS stripped of comments and whitespace (ADR 0011); wrangler runs the CLI before dev and deploy
   make-fixtures.mjs        writes the synthetic sample decks the tests use
   render-slides.py         the demo deck's PDF export to the demo screen's slide images

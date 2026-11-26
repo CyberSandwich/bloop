@@ -56,6 +56,17 @@ Create it before the first deploy that carries the v4 bindings: migrations apply
 
 User files (v4) live in a second private bucket in the `eu` jurisdiction, bound as `LIBRARY`: `npx wrangler r2 bucket create bloop-library --jurisdiction eu`. It has no public URL. Its one lifecycle rule aborts incomplete multipart uploads after 1 day, set once with the same token as above (dashboard: R2, the bucket, Settings, Object lifecycle rules). Never add an expiry rule to this bucket: files stay until the user deletes them. CORS on both buckets allows only the `https://bloop.here` origin, the PUT method, the `content-type` header, exposes `ETag`, and has a 3600 s max age.
 
+## Staging
+
+`env.staging` in `wrangler.jsonc` is a second Worker, `bloop-staging`, at `https://bloop-staging.dsap.workers.dev`: its own Durable Object namespaces, D1 `bloop-staging`, EU buckets `bloop-staging-guest` and `bloop-staging-library`, tiny caps, and Cloudflare's published Turnstile test keys as plain vars. Each stream's live checks run there; production gets only the post-deploy smoke.
+
+1. **Resources, once:** `npx wrangler d1 create bloop-staging --jurisdiction eu`, then `npx wrangler r2 bucket create bloop-staging-guest --jurisdiction eu` and the same for `bloop-staging-library`.
+2. **GitHub:** a `staging` environment with `CLOUDFLARE_API_TOKEN` and `CLOUDFLARE_ACCOUNT_ID`. The token is the production one plus R2 Storage Read, because the job looks for the buckets before it deploys.
+3. **Deploy:** push the `staging` branch, or run the `staging` workflow from a `ci/*` branch. Until step 1 and 2 are done the job prints `Staging skipped: ...` and passes.
+4. **Secrets:** the job generates every secret that is a random key (`tools/staging.mjs`, listed in `SECRETS`) and pipes it into `wrangler secret put -e staging` when it is missing; none is printed. `ADMIN_EMAILS` and `TEST_EMAILS` are addresses: set them once with `npx wrangler secret put <NAME> -e staging`. Staging sends no email until the mail change adds its admin-only mode.
+
+`STAGING_D1_ID` in the config is a placeholder the job replaces in its own checkout; it is never committed.
+
 ## Observability
 
 - `wrangler.jsonc` turns Workers Logs on and invocation logs off, with the sampling rate set there. Invocation logs keep each request's full URL, including `/f/`, `/b/`, `/p/` and invite tokens, for days and possibly outside the EU, so they stay off (threat model SITE-03). Only the Worker's own `log()` lines are kept.
