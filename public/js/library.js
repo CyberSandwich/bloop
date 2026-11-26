@@ -571,7 +571,7 @@ const modules = {
   trash: () => import("./library/trash.js"),
   sort: () => import("./library/sort.js"),
   preview: inert,
-  present: inert,
+  present: () => import("./library/present.js"),
   socket: inert,
   reorder: inert,
   sample: inert,

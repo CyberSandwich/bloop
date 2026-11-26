@@ -43,5 +43,10 @@
     "name": "library sort, lazy",
     "path": "dist/js/library/sort.js",
     "limit": "0.35 kB"
+  },
+  {
+    "name": "library present, lazy",
+    "path": "dist/js/library/present.js",
+    "limit": "0.45 kB"
   }
 ]
