@@ -18,6 +18,8 @@ export interface BatchDb extends Db {
 
 /** The one cast from the platform binding to the slice above. */
 export const dbOf = (binding: unknown): Db => binding as Db;
+/** The same binding for code that needs `batch` (the quota moves). */
+export const batchDbOf = (binding: unknown): BatchDb => binding as BatchDb;
 
 export function bytes(value: unknown): Uint8Array<ArrayBuffer> {
   if (value instanceof Uint8Array) return Uint8Array.from(value);
