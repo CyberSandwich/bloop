@@ -631,7 +631,7 @@ Each new module exports an empty route list (every path stays 404) until its str
 | dev-r2 | U (uploads) | stub |
 | library, and the `UserLibrary` object | L (library) | stub |
 | fileorigin, notes | P1 (present server) | stub |
-| the `Converter` object | V (conversion) | stub |
+| the `Converter` object | V (conversion) | live |
 
 The Durable Object bindings (`USER_LIBRARY`, `CONVERTER`), the library bucket and the new rate-limit bindings are in `wrangler.jsonc`. So is the `send_email` binding `EMAIL` (ADR 0021). The Converter `containers` entry is not: the conversion stream adds it with its image digest. Variables and secrets are listed in `src/worker/config.ts` and `src/worker/config/` only. `UPLOAD_MODE` ships as proxy and `CONVERT_MODE` as off until their streams land.
 
