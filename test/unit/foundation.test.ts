@@ -11,6 +11,7 @@ import { spendVars } from "../../src/worker/config/spend.ts";
 import { parseConfig } from "../../src/worker/config.ts";
 import { offOrigin } from "../../src/worker/origin.ts";
 import { runRetention } from "../../src/worker/retention.ts";
+import { stripJsonComments } from "../../tools/wrangler-config.mjs";
 import { PROD_VARS } from "../env-vars.ts";
 import { addUser, testDb } from "./d1-shim.ts";
 
@@ -99,10 +100,7 @@ describe("v4 configuration", () => {
   });
 
   it("wrangler.jsonc never sets a test-only variable", () => {
-    const live = readFileSync(new URL("../../wrangler.jsonc", import.meta.url), "utf8")
-      .split("\n")
-      .filter((line) => !line.trim().startsWith("//"))
-      .join("\n");
+    const live = stripJsonComments(readFileSync(new URL("../../wrangler.jsonc", import.meta.url), "utf8"));
     expect(live).not.toMatch(/"(R2_DEV_ENDPOINT|DEV_MAILBOX|TEST_TIMING)"\s*:/);
     expect(live).not.toMatch(/"CONVERT_MODE"\s*:\s*"stub"/);
   });
@@ -128,10 +126,7 @@ describe("v4 configuration", () => {
 });
 
 describe("wrangler.jsonc: platform features that must stay off", () => {
-  const live = readFileSync(new URL("../../wrangler.jsonc", import.meta.url), "utf8")
-    .split("\n")
-    .filter((line) => !line.trim().startsWith("//"))
-    .join("\n");
+  const live = stripJsonComments(readFileSync(new URL("../../wrangler.jsonc", import.meta.url), "utf8"));
 
   it("ADR 0023: Workers Cache is not configured and no Workflow is bound", () => {
     expect(live).not.toMatch(/"cache"\s*:/);

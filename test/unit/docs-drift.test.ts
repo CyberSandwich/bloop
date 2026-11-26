@@ -7,6 +7,7 @@ import { ERRORS } from "../../public/js/shared/errors.js";
 import { APP_ERRORS } from "../../public/js/shared/errors-app.js";
 import { spendVars } from "../../src/worker/config/spend.ts";
 import { CONFIG_VARS, parseConfig } from "../../src/worker/config.ts";
+import { wranglerConfig } from "../../tools/wrangler-config.mjs";
 import { sizeEntries } from "../size-entries.ts";
 
 const ROOT = fileURLToPath(new URL("../../", import.meta.url));
@@ -45,29 +46,6 @@ const REPO_FILES = execFileSync("git", ["ls-files", "-z", "--cached", "--others"
 })
   .split("\0")
   .filter(Boolean);
-
-/** Removes `//` and block comments from JSONC, leaving string contents (URLs hold `//`) alone. */
-function stripJsonComments(text: string): string {
-  let out = "";
-  let i = 0;
-  while (i < text.length) {
-    const c = text[i];
-    if (c === '"') {
-      let j = i + 1;
-      while (text[j] !== '"') j += text[j] === "\\" ? 2 : 1;
-      out += text.slice(i, j + 1);
-      i = j + 1;
-    } else if (text.startsWith("//", i)) {
-      while (i < text.length && text[i] !== "\n") i++;
-    } else if (text.startsWith("/*", i)) {
-      i = text.indexOf("*/", i) + 2;
-    } else {
-      out += c;
-      i++;
-    }
-  }
-  return out;
-}
 
 const CODE_EXT = "md|ts|js|mjs|json|jsonc|html|css|sql|py|yml|yaml|txt|example|bin|woff2|glb|svg";
 
@@ -137,7 +115,7 @@ describe("architecture layout", () => {
 describe("worker vars", () => {
   const schemaKeys = Object.keys(CONFIG_VARS);
   const varKeys = (() => {
-    return Object.keys(JSON.parse(stripJsonComments(read("wrangler.jsonc"))).vars);
+    return Object.keys(wranglerConfig(read("wrangler.jsonc")).vars);
   })();
   const devVarKeys = read(".dev.vars.example")
     .split("\n")
@@ -155,7 +133,7 @@ describe("worker vars", () => {
   });
 
   it("the shipped vars and .dev.vars.example pass the schema, so a typo fails here and not at deploy", () => {
-    const shipped = JSON.parse(stripJsonComments(read("wrangler.jsonc"))).vars;
+    const shipped = wranglerConfig(read("wrangler.jsonc")).vars;
     const dev = Object.fromEntries(
       [...read(".dev.vars.example").matchAll(/^([A-Z0-9_]+)=(.*)$/gm)].map((m) => [m[1], m[2]]),
     );

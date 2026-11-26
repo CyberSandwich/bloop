@@ -41,7 +41,8 @@ export function entriesFrom(/** @type {Tree} */ tree) {
   return entries;
 }
 
-const paths = (/** @type {Entry} */ e) => [].concat(/** @type {any} */ (e.path)).map(String);
+/** The files an entry names, always as a list. */
+export const paths = (/** @type {Entry} */ e) => [].concat(/** @type {any} */ (e.path)).map(String);
 /** What an entry measures besides its compression: a different value moves bytes between entries. */
 const measure = (/** @type {Entry} */ e) => JSON.stringify([paths(e), e.import ?? null, e.ignore ?? null]);
 /** size-limit's precedence (@size-limit/file): gzip first, then brotli off, else brotli. */
