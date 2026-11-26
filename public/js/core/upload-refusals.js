@@ -6,10 +6,7 @@ const plain = (name) => `.${/\.(\w{3})m$/i.exec(name)?.[1] ?? "ppt"}x`;
 const FEW_MINUTES = "Try again in a few minutes.";
 /** Refusals with a title of their own (docs/ux/upload.md section 4): the title, then the sentence. @type {Record<string, [string, string]>} */
 const OWN = {
-  bad_type: [
-    "This File Type Isn't Supported",
-    "bloop takes decks, documents, PDFs, spreadsheets, text, photos and videos.",
-  ],
+  bad_type: ["File Type Not Supported", "bloop takes decks, documents, PDFs, spreadsheets, text, photos and videos."],
   empty: ["This File Is Empty", ""],
   quota_exceeded: ["Not Enough Space", "Delete files or empty the trash to add this one."],
   library_full: ["Your Library Is Full", "Delete files you no longer need, then add this one."],
