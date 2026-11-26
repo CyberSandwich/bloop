@@ -16,6 +16,7 @@ Rows start `planned` and flip to `mitigated` when their test lands; same columns
 | AUTH-16 | E | Admin escalation | low | high | The admin role comes from the `ADMIN_EMAILS` secret and is checked on every request, never stored on the user. Residual: whoever can write D1 directly can set a member's `email_norm` to an admin address no row holds (an admin not yet signed up, or one who changed address) and gain the role; the unique index stops it only while the admin's row holds the address | `AUTH-16 admin`, `AUTH-16 passkey` | planned |
 | AUTH-17 | S | Mailbox compromise: whoever reads the mailbox can sign in by code | med | high | Residual, stated plainly: the email code is the fallback and recovery path; a passkey avoids it | none | planned |
 | AUTH-18 | S | A copied or old known-device cookie outlives sign out everywhere, so a former device keeps the member's trusted code bucket | low | med | The member's device epoch is in the cookie's MAC; sign out everywhere, ending one session, a passkey removal and a deletion request move it in one batch with the change, refusing every earlier value on every device | `AUTH-18 epoch` | mitigated |
+| AUTH-19 | D | Unmetered D1 reads through member and admin routes: a flood of requests reads D1 with no limit spent | med | med | Every member and admin route spends the per-IP `RL_MEMBER_IP` before its first D1 read, then the member-keyed limit | `AUTH-19 meter` | mitigated |
 
 ## Invites
 | id | STRIDE | threat | L | I | mitigation | test | status |
