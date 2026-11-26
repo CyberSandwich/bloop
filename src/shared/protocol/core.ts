@@ -96,6 +96,8 @@ export interface Problem {
 // User-facing state keys: the slots in the shared state strings (design.md section 7).
 export type PhoneStateKey =
   | "checking"
+  | "pick" // the live match pick (present-live.md 3.2)
+  | "match_wrong"
   | "match"
   | "choose"
   | "approve"

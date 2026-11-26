@@ -36,7 +36,7 @@
     text-decoration: underline;
   }
 }
-.btn .spinner {
+.spinner {
   width: 16px;
   height: 16px;
   border: 2px solid currentColor;
@@ -1098,6 +1098,10 @@ a.row:focus-visible {
   flex-direction: column;
   margin-top: 24px;
 }
+/* Beside the match pick, no gap for a row of none. */
+.buttons:empty {
+  display: none;
+}
 /* The band (pages.test.ts pins both queries): /a's buttons stay in reach, a result above Done is centered. */
 @media (max-width: 639.98px), (max-height: 599.98px) and (max-width: 899.98px) {
   .is-ended .flow {
@@ -1121,7 +1125,7 @@ a.row:focus-visible {
       var(--glass-edge),
       0 0 0 1px var(--hairline);
   }
-  .column > .actions:has(> .buttons:empty) {
+  .column > .actions:not(:has(.btn, .pick:not([hidden]))) {
     display: none;
   }
   .page-phone .column::after {
@@ -1131,8 +1135,42 @@ a.row:focus-visible {
     height: 24px;
   }
   /* Just above the panel, whatever it holds: phone.js measures it. */
-  .page-phone:has(.actions .btn) {
+  .page-phone:has(.actions .btn, .pick:not([hidden])) {
     --toast-lift: calc(var(--panel, 68px) + 8px);
+  }
+  .actions .pick legend {
+    padding: 0 12px;
+  }
+}
+/* The match pick (present-live.md 3.2): the legend over three choices sharing a row, one row held landscape. Its
+   boxes are here, so a.html's skeleton pills and core/match.js's choices are the same size. */
+.pick {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  align-items: center;
+  gap: 8px;
+  margin: 0;
+  padding: 0;
+  border: 0;
+}
+/* Floated, a legend is laid out as any grid item, so it can share the row. */
+.pick legend {
+  float: left;
+  grid-column: 1 / -1;
+  font-size: 15px;
+  font-weight: 600;
+}
+/* 64, a step over a page action's 52: read at arm's length, hit with a thumb while the eye is on the wall. */
+.choice {
+  min-height: 64px;
+  border-radius: var(--r-pill);
+}
+@media (orientation: landscape) and (max-height: 599.98px) and (max-width: 899.98px) {
+  .pick {
+    grid-template-columns: auto repeat(3, 1fr);
+  }
+  .pick legend {
+    grid-column: auto;
   }
 }
 /* A file dragged over /a, from 640 wide (core/drag.js); it never takes the pointer. */
