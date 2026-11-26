@@ -26,7 +26,9 @@ export function staticHeaders(text, path, host = "bloop.here") {
     if (line.trim() === "") continue;
     if (!line.startsWith(" ")) {
       const ruleHost = /^https:\/\/([^/]+)(\/.*)$/.exec(line);
-      applies = ruleHost ? ruleHost[1] === host && rulePattern(ruleHost[2] ?? "").test(path) : rulePattern(line).test(path);
+      applies = ruleHost
+        ? ruleHost[1] === host && rulePattern(ruleHost[2] ?? "").test(path)
+        : rulePattern(line).test(path);
       continue;
     }
     if (!applies) continue;
