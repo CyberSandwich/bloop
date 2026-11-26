@@ -132,8 +132,25 @@ describe("PAIR-14 gate: a live pairing acts only after the pick", () => {
     expect(must(old, { e: "listed", now, ids: [DECK.ref] }).next.state).toBe("choosing");
   });
 
-  it("transitional: a live claim with no choices is confirmed at once (until the Screen object draws them)", () => {
-    expect(liveClaim("owner", null).pairing).toMatchObject({ confirmed: true, choices: null });
+  it("PAIR-14 match: every live claim carries the choices; one without them is refused and spends no code", () => {
+    for (const kind of ["owner", "guest"] as const) {
+      const m = waiting("live");
+      const claim: Event = {
+        e: "claim",
+        now: T0 + sec(1),
+        code: "AAAAAA",
+        sessionId: "s1",
+        secretHash: "hash",
+        match: "42",
+        kind,
+        userId: null,
+        passHash: null,
+      };
+      expect(refused(m, claim), kind).toBe("bad_request");
+      expect(refused(m, { ...claim, choices: null }), kind).toBe("bad_request");
+      expect(m.codes.current?.consumed).toBe(false);
+      expect(liveClaim(kind).pairing?.confirmed).toBe(false);
+    }
   });
 });
 

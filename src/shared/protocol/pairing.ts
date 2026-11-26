@@ -107,8 +107,8 @@ export interface ScreenView {
   room: RoomView;
   code: CodeView | null; // only in "waiting" and "ended"
   match: string | null; // 2 digits, from "claimed" to "open"
-  /** The phone picked the match; the ring closes on it. */
-  confirmed?: boolean | undefined;
+  /** The phone picked the match (always true for a demo or a pairing stored before the pick); the ring closes on it. */
+  confirmed: boolean;
   /** From "offered" (guest) or "approved"; files by name, then links by title. A link or mint names an item by its index here. */
   items: Item[];
   /** Null until the remote or the screen's own tap sets it; null outside an approved session. */
@@ -116,9 +116,10 @@ export interface ScreenView {
   openMode: OpenMode | null;
   endsAt: number | null;
   endReason: EndReason | null;
-  /** Wave 2 fills these: the upload in progress, and LARGE_FILE_CHOICE_BYTES for the choice sheet. */
-  upload?: UploadView | null | undefined;
-  choiceBytes?: number | undefined;
+  /** A guest's upload in progress, while uploading only. */
+  upload: UploadView | null;
+  /** LARGE_FILE_CHOICE_BYTES, for the choice sheet. */
+  choiceBytes: number;
   /** The last `control` seq applied from this screen (0 before any). */
   seq: number;
   /** Applied changes so far: of two views, the one with the larger `v` is the newer; equal ones are one state. */
@@ -131,12 +132,13 @@ export interface PhoneView {
   mode: Mode;
   kind: Kind;
   room: RoomView;
-  match: string;
-  /** Live and unconfirmed only: the three shuffled two-digit choices; the phone never holds the real match then (ADR 0015). */
-  choices?: string[] | null | undefined;
-  confirmed?: boolean | undefined;
+  /** Null while a live pick is open: the phone never holds the real match before it is picked (ADR 0015). */
+  match: string | null;
+  /** Live and unconfirmed only: the three shuffled two-digit choices. */
+  choices: string[] | null;
+  confirmed: boolean;
   /** Server epoch ms the first item was shown, so the elapsed time survives a reload. */
-  firstShownAt?: number | null | undefined;
+  firstShownAt: number | null;
   items: (Item & { extra?: PhoneItemExtra | undefined })[]; // as in ScreenView, plus the phone-only extras
   shown: Shown | null; // as in ScreenView
   openMode: OpenMode | null;
@@ -195,12 +197,13 @@ export interface ClaimRequest {
 export interface ClaimResponse {
   pid: string;
   room: RoomView;
-  match: string;
+  /** A demo's match; null live, where the phone picks from `choices`. */
+  match: string | null;
   mode: Mode;
   kind: Kind;
   needsAuth: boolean;
   dropMaxBytes: number;
-  choices?: string[] | null | undefined;
+  choices: string[] | null;
 }
 /** A row of the phone's list (`GET /api/files` answers `{items: Entry[]}`); approve names entries by id. */
 export interface FileEntry extends Omit<FileItem, "id"> {

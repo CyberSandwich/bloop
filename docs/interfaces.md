@@ -23,7 +23,7 @@ export interface RoomView { name: string | null; registered: boolean; }   // nam
 export interface CodeView { code: string; expiresAt: number; qrUrl: string; }
 
 /** What a page may show of an approved item: no source id or URL (SRC-01). */
-export interface FileItem { kind: "file"; id: string; name: string; type: FileType; size: number | null; }   // id: server-assigned at approval ("i1", "i2", ... in list order), opaque, unique in the session, never an index or derived from the source; size: bytes, when the source gave one
+export interface FileItem { kind: "file"; id: string; name: string; type: FileType; size: number | null; show?: ItemKind; derived?: DerivedFlags | null; }   // a view always sets show and derived; id: server-assigned at approval ("i1", "i2", ... in list order), opaque, unique in the session, never an index or derived from the source; size: bytes, when the source gave one
 /** https on an allowed host only (LINK-01); the screen shows a card with the host, opened by a click, never a frame. */
 export interface LinkItem { kind: "link"; id: string; url: string; title: string; }   // id: as on FileItem
 export type Item = FileItem | LinkItem;
@@ -43,11 +43,14 @@ export interface ScreenView {
   room: RoomView;
   code: CodeView | null;       // only in "waiting" and "ended"
   match: string | null;        // 2 digits, from "claimed" to "open"
-  items: Item[];               // from "offered" (guest) or "approved", else []; files by name, then links by title; a link or mint names an item by its index here, the remote by its `id`
+  confirmed: boolean;          // the phone picked the match (a demo, or a pairing stored before the pick: true); the ring closes on it
+  items: Item[];               // from "offered" (guest) or "approved", else []; files by name, then links by title; a link or mint names an item by its index here, the remote by its `id`. Exactly these keys at every depth (PAIR-16)
   shown: Shown | null;         // set by the phone's remote or the screen's own tap; null until then and outside a session
   openMode: OpenMode | null;   // an original PDF shown as a PDF is the `pdf_file` state, not `pdf_fallback`
   endsAt: number | null;
   endReason: EndReason | null;
+  upload: { bytes: number; total: number } | null;   // a guest's upload, while uploading only
+  choiceBytes: number;         // LARGE_FILE_CHOICE_BYTES, for the choice sheet
   seq: number;                 // the last `control` seq applied from this screen; 0 before any
   v: number;                   // applied changes so far (`Machine.v`): of two views of one session the larger `v` is the newer, equal ones are one state; a client adopts only a larger one
   now: number;
@@ -58,8 +61,11 @@ export interface PhoneView {
   mode: Mode;
   kind: Kind;
   room: RoomView;
-  match: string;
-  items: Item[];               // as in ScreenView
+  match: string | null;        // null while a live pick is open: the phone never holds the match before it (ADR 0015)
+  choices: string[] | null;    // the three shuffled choices, live and unconfirmed only
+  confirmed: boolean;
+  firstShownAt: number | null; // server ms the first item was shown, so elapsed time survives a reload
+  items: (Item & { extra?: PhoneItemExtra })[];   // as in ScreenView, plus each item's phone-only extras
   shown: Shown | null;         // as in ScreenView
   openMode: OpenMode | null;
   endsAt: number | null;       // with `now`, the phone's countdown to the session's own end
@@ -84,7 +90,7 @@ export interface LinkSet {
 // (`/api/screen/ws?ref=<screenRef>`, `/api/pair/ws?ref=<screenRef>`): the first frame is the credential.
 // The exact text {"v":1,"t":"ping"} is answered with {"v":1,"t":"pong"} by the runtime without waking the object.
 export type ScreenMsgIn =
-  | { v: 1; t: "hello"; sid: string }
+  | { v: 1; t: "hello"; sid: string; fo?: "file" | "main" }   // fo: the origin the screen's links use, kept only before approval (FO-01)
   | { v: 1; t: "code.next" }
   | { v: 1; t: "open.click" }      // the Open button on a guest offer
   | { v: 1; t: "launched"; mode: OpenMode }
@@ -102,8 +108,8 @@ export type PhoneMsgOut =
 
 export interface ClaimRequest { code: string; kind?: Kind; }   // kind defaults to "owner"; "guest" asks for the drop path
 export interface ClaimResponse {
-  pid: string; room: RoomView; match: string; mode: Mode; kind: Kind; needsAuth: boolean; dropMaxBytes: number;
-}
+  pid: string; room: RoomView; match: string | null; choices: string[] | null; mode: Mode; kind: Kind; needsAuth: boolean; dropMaxBytes: number;
+}   // live: choices and no match; demo: the match and no choices
 /** A row of the phone's list: `GET /api/files` answers `{items: Entry[]}`, files first, then links. */
 export interface FileEntry extends Omit<FileItem, "id"> { id: string; modifiedAt: number; }   // id: the source's entry id, not an item id; opaque to the phone; never a Graph URL
 export interface LinkEntry extends Omit<LinkItem, "id"> { id: string; }
@@ -112,13 +118,11 @@ export interface ApproveRequest { ids: string[]; }                     // POST /
 export interface LinkRequest { purpose: LinkPurpose; item?: number; }   // POST /api/screen/link: item defaults to the launched one
 export interface LinkResponse { item: number; links: LinkSet; }
 
-// The present additions (ADRs 0015, 0018), all optional until the present server fills them.
+// The present additions (ADRs 0015, 0018).
 export type ItemKind = "deck" | "pdf" | "doc" | "sheet" | "text" | "image" | "video";   // FileItem.show: kindOf(type) in src/worker/items.ts, never sent by a client
 export interface DerivedFlags { slides: boolean; pdf: boolean; pages: number | null; motion: boolean; }   // FileItem.derived; exactly these keys (PAIR-16); null for a demo, Graph or unconverted guest file
 export interface PhoneItemExtra { notes: boolean; fontsMissing: string[]; }   // PhoneView.items[i].extra; never in a ScreenView
-// Shown.via ("viewer" | "app", live decks); ScreenView.confirmed, upload {bytes, total}, choiceBytes;
-// PhoneView.choices (the three shuffled, live and unconfirmed), confirmed, firstShownAt; ClaimResponse.choices;
-// LinkSet.bundle (the base `.../b/<token>/`); the screen's hello `fo: "file" | "main"` (FO-01);
+// Shown.via ("viewer" | "app", live decks); LinkSet.bundle (the base `.../b/<token>/`);
 // PairingAccountError "match_required" | "service_busy" | "match_wrong" (a wrong pick canceled the claim); statuses in errors-app.js.
 // The pick's codes are phone-only, so the screen's ERRORS never carries them; the machine's MachineError and the
 // store's Result add them to ErrorCode (dropDone, after the gated upload.start, answers ErrorCode only).
@@ -187,7 +191,7 @@ export type ScreenStateKey =
 | from | event | guard | to | effects |
 |---|---|---|---|---|
 | waiting, ended | `code.next` | at most 6 per min (`rate_limited`); ended for at least 3 s | waiting | issue code, Directory put (the previous-but-one code is removed), push screen `state` |
-| waiting | `claim(code, choices)` | code is current or previous, unconsumed, unexpired. In any other state the answer is `code_taken` for a code the screen still holds and `code_expired` otherwise. Live `choices`: three distinct two-digit strings holding the match, else `bad_request` (a demo claim ignores them) | claimed | consume code (the Directory keeps it, so a replay answers `code_taken`); session id, pairing secret, match code; a live claim stores the choices unconfirmed (one with none, until the Screen object draws them, is confirmed at once); push both; audit `claimed` |
+| waiting | `claim(code, choices)` | code is current or previous, unconsumed, unexpired. In any other state the answer is `code_taken` for a code the screen still holds and `code_expired` otherwise. Live `choices` (the Screen object draws them, `drawChoices`): three distinct two-digit strings holding the match, else `bad_request`, so every live claim carries the pick (a demo claim ignores them) | claimed | consume code (the Directory keeps it, so a replay answers `code_taken`); session id, pairing secret, match code; the pinned user and sign-in (`userId`, `phoneSession`); a live claim stores the choices unconfirmed; push both; audit `claimed` |
 | waiting | `claim(code, pass)` | as above, plus a pass valid for this room | claimed (kind guest) | as above; mark the pass used |
 | claimed, choosing | `match(choice)` | a confirmed or demo pairing takes it as a no-op (one pick per claim) | claimed, choosing; or waiting | the match: confirmed, push both. Any other choice: as cancel, with cause `match_wrong`, and the phone is answered `match_wrong` (PAIR-14) |
 | claimed | `listed(ids)` | owner kind; a live pairing before its pick is `match_required` | choosing | store ids; push both |
@@ -261,6 +265,7 @@ export interface Machine {
     listed: string[]; userId: string | null; passHash: string | null;
     confirmed?: boolean;             // live: false until the pick; absent (stored before the pick): confirmed
     choices?: string[] | null;       // the three, in display order; live and unconfirmed only
+    phoneSession?: string | null;    // the claiming sign-in's public id, kept only with a user; the end drops it
   } | null;
   session: {                         // the approved items, ordered; approvedAt and endsAt are null while "offered" (one guest file)
     items: ItemRef[]; approvedAt: number | null; endsAt: number | null;
@@ -286,7 +291,7 @@ export interface Machine {
 export type Event =
   | { e: "code.next"; now: number; value: string }                      // value drawn by the caller
   | { e: "claim"; now: number; code: string; sessionId: string; secretHash: string; match: string;
-      kind: Kind; userId: string | null; passHash: string | null; choices?: string[] | null }
+      kind: Kind; userId: string | null; phoneSession?: string | null; passHash: string | null; choices?: string[] | null }
   | { e: "match"; now: number; choice: string }
   | { e: "listed"; now: number; ids: string[] }
   | { e: "approve"; now: number; items: ItemDraft[]; minutes: number }   // minutes: the starting length
@@ -352,7 +357,8 @@ import type { FileRef } from "../machine.ts";
 export type Result<T, E = ErrorCode | PairingAccountError> = { ok: true; value: T } | { ok: false; error: E };
 
 export interface ScreenCreated { sid: string; room: RoomView; view: ScreenView; }
-export interface PhoneInfo { kind: Kind; ipHash: string; userId: string | null; passHash: string | null; }
+export interface PhoneInfo { kind: Kind; ipHash: string; userId: string | null; phoneSession?: string | null; passHash: string | null; }   // phoneSession: the sign-in's public id, pinned with userId
+export interface IdemKey { owner: string; keyHash: string; bodyHash: string; }   // idem.ts's `fresh` hashes plus the key's owner
 
 /**
  * One per screen. sid = screenRef + "." + screenSecret; pid = screenRef + "." + pairingSecret.
@@ -363,10 +369,21 @@ export interface PhoneInfo { kind: Kind; ipHash: string; userId: string | null; 
 export interface PairingStore {
   create(input: { screenRef: string; mode: Mode; roomId: string | null; roomName: string | null }): Promise<Result<ScreenCreated>>;
   nextCode(sid: string): Promise<Result<CodeView>>;
-  claim(code: string, phone: PhoneInfo): Promise<Result<ClaimResponse>>;
+  /** Live: answers the three `choices` and `match: null`; a demo the match. With `idem`, the answer is kept for that key. */
+  claim(code: string, phone: PhoneInfo, idem?: IdemKey): Promise<Result<ClaimResponse>>;
+  /** idem.ts's `IdemStore.find` over this object's rows (`seams/pairing/idem.ts`: at most 32, shape-checked on wake). */
+  idemFind(owner: string, keyHash: string, since: number): Promise<{ bodyHash: string; stored: unknown } | null>;
+  /** POST /api/match: the pick; a wrong one answers `match_wrong`. With `approve`, both commit in one write, and a refused approve keeps the pick and comes back as `approveError`. */
+  match(pid: string, choice: string, approve?: { items: ItemDraft[]; cookieUser: string | null }): Promise<Result<MatchResponse>>;
   listed(pid: string, ids: string[]): Promise<Result<PhoneView>>;
-  /** A live pick not yet made is `match_required`. The pairing's user stays the claim's: a pinned user is final (ADR 0015). */
-  approve(pid: string, items: ItemDraft[]): Promise<Result<PhoneView>>;
+  /** A live pick not yet made is `match_required`. `cookieUser` (null signed out) must be the claim's pinned user, else `pairing_invalid`: a pinned user is final (ADR 0015). */
+  approve(pid: string, items: ItemDraft[], cookieUser: string | null): Promise<Result<PhoneView>>;
+  /** A guest upload's bytes so far (U's caller): the machine's `upload.progress`. */
+  uploadProgress(pid: string, bytes: number, total: number): Promise<Result<PhoneView>>;
+  /** For the paired phone only (a sid fails the pid hash): an approved library item of this session whose extras say notes; any miss is null (NOTES-01). */
+  notesTarget(pid: string, itemId: string): Promise<{ bucket: "LIBRARY"; prefix: string; userId: string } | null>;
+  /** Whom the pairing is pinned to, for the routes' cookie check. */
+  pinnedUser(pid: string): Promise<Result<{ userId: string | null; sessionPublicId: string | null }>>;
   /** The phone's remote (POST /api/control): what the screen shows. Absolute, so a repeat is a no-op, and a seq not above the phone's last applied one changes nothing. Live: a confirmed owner, a deck, PDF or doc. */
   control(pid: string, command: ShownCommand): Promise<Result<PhoneView>>;
   /** The screen reports its own tap (POST /api/screen/shown), so the phone's highlight stays true. Same rules as `control`, with its own seq. */
@@ -425,7 +442,7 @@ export interface DemoCap {
   demoRelease(screenRef: string): Promise<void>;
 }
 ```
-`Screen.endFromOwner(userId: string): Promise<Result<null>>` is called object to object only (the library's endScreens). It is on the Screen class, not on `PairingStore`, and a test pins that no route, router, entry point or frame names it. It ends the session `userId` owns with reason `account` (actor system; links revoked, as `end`; the screen shows the phone-end line, never "Time's up."); no pairing or another owner changes nothing. The end is committed before its effects run, so a call on a screen an account end already ended re-runs its revoke and push (`accountEndRedo`, idempotent): a caller retries a revoke that threw by calling again. Its bodies are in `seams/open-path/lookups.ts`.
+`Screen.endFromOwner(userId: string): Promise<Result<null>>` is called object to object only (the library's endScreens). It is on the Screen class, not on `PairingStore`, and a test pins that no route, router, entry point or frame names it. It ends the session `userId` owns with reason `account` (actor system; links revoked, as `end`; the screen shows the phone-end line, never "Time's up."); no pairing or another owner changes nothing. The end is committed before its effects run, so a call on a screen an account end already ended re-runs its revoke and push (`accountEndRedo`, idempotent): a caller retries a revoke that threw by calling again. Its bodies are in `seams/open-path/lookups.ts`, with `notesTarget`'s, `pinnedUser`'s and the approve pin's (`cookieMismatch`). `Screen.derivedReady(ref, derived, extra): Promise<Result<null>>` is object to object too (L's UserLibrary; V2 for a demo guest): the machine's `derivedReady`, and with no session, or one past it, nothing changes.
 
 ### 2.5 Codes (`public/js/shared/codes.js`, pure)
 ```js

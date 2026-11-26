@@ -5,6 +5,7 @@ import type {
   ErrorCode,
   Kind,
   LinkResponse,
+  MatchResponse,
   Mode,
   OpenMode,
   PairingAccountError,
@@ -16,6 +17,14 @@ import type {
 import type { ItemDraft } from "../items.ts";
 import type { FileRef } from "../machine.ts";
 import type { ClientClass } from "./open-path/links.ts";
+import type { NotesTarget, Pinned } from "./open-path/lookups.ts";
+
+/** What a route hands a creating call for its Idempotency-Key: idem.ts's `fresh` hashes, plus the key's owner. */
+export interface IdemKey {
+  owner: string;
+  keyHash: string;
+  bodyHash: string;
+}
 
 /**
  * Errors are the PairError codes, plus `file_not_found` (approve), `unauthorized` (a bad sid) and
@@ -40,6 +49,8 @@ export interface PhoneInfo {
   kind: Kind;
   ipHash: string;
   userId: string | null;
+  /** The sign-in's `phone_session.public_id`, pinned with `userId` (ADR 0015). */
+  phoneSession?: string | null;
   passHash: string | null;
 }
 
@@ -55,13 +66,32 @@ export interface PairingStore {
     roomName: string | null;
   }): Promise<Result<ScreenCreated>>;
   nextCode(sid: string): Promise<Result<CodeView>>;
-  claim(code: string, phone: PhoneInfo): Promise<Result<ClaimResponse>>;
+  /** Live: answers the three `choices` and no match (PAIR-14). `idem` keeps the answer for the route's replay. */
+  claim(code: string, phone: PhoneInfo, idem?: IdemKey): Promise<Result<ClaimResponse>>;
+  /** The first answer stored for an Idempotency-Key hash (idem.ts `IdemStore.find`). */
+  idemFind(owner: string, keyHash: string, since: number): Promise<{ bodyHash: string; stored: unknown } | null>;
+  /**
+   * The phone's pick; a wrong one cancels the claim and answers `match_wrong`. With `approve`, Up Next is approved in
+   * the same write, and a refusal comes back as `approveError` with the pick kept.
+   */
+  match(
+    pid: string,
+    choice: string,
+    approve?: { items: ItemDraft[]; cookieUser: string | null },
+  ): Promise<Result<MatchResponse>>;
   listed(pid: string, ids: string[]): Promise<Result<PhoneView>>;
   /**
    * The Worker resolves `items` from the source's list; the object refuses an empty list, a repeat or more than
-   * MAX_ITEMS (`bad_request`) and a live pick not yet made (`match_required`). The pairing's user stays the claim's.
+   * MAX_ITEMS (`bad_request`), a live pick not yet made (`match_required`), and a `cookieUser` other than the
+   * claim's pinned user (`pairing_invalid`, signed out included).
    */
-  approve(pid: string, items: ItemDraft[]): Promise<Result<PhoneView>>;
+  approve(pid: string, items: ItemDraft[], cookieUser: string | null): Promise<Result<PhoneView>>;
+  /** A guest upload's bytes so far, for the screen's pill; monotonic (a lower count changes nothing). */
+  uploadProgress(pid: string, bytes: number, total: number): Promise<Result<PhoneView>>;
+  /** Where an item's notes live, for the paired phone only, or null for any miss (NOTES-01). */
+  notesTarget(pid: string, itemId: string): Promise<NotesTarget | null>;
+  /** The pinned user and sign-in, for the routes' cookie check. */
+  pinnedUser(pid: string): Promise<Result<Pinned>>;
   /**
    * The phone's remote: what the screen should show. Absolute, so a repeat is a no-op, and a `seq` not above the
    * phone's last applied one changes nothing. The item must be a file in the approved list and the page within its

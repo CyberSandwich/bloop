@@ -1,6 +1,7 @@
 // The phone's session controls. The remote: the phone commands what the screen shows (`POST /api/control`, pid), and
 // the screen reports its own taps so the phone's highlight stays true (`POST /api/screen/shown`, sid), demo sessions
-// only. The length: the phone sets when the session ends (`POST /api/session/length`, pid), in both modes.
+// only. The length: the phone sets when the session ends (`POST /api/session/length`, pid), in both modes. The live
+// pick: the phone's choice of the number on the screen (`POST /api/match`, pid).
 // Order: config, CSRF checks and Zod (`write`, PAIR-06), the per-IP and then the per-credential rate limit, one Screen
 // object call.
 import { z } from "zod";
@@ -22,6 +23,9 @@ const commandBody = z
     base: z.number().int().min(0).max(Number.MAX_SAFE_INTEGER).optional(),
   })
   .strict();
+
+/** The live pick (PAIR-14). */
+const matchBody = z.object({ choice: z.string().regex(/^\d{2}$/) }).strict();
 
 /** Up to the live cap, the larger one: the Screen object clamps a demo session to its own. */
 const lengthBody = (config: Config) =>
@@ -71,4 +75,9 @@ export const controlRoutes: readonly Route[] = [
   control("/api/control", command, (stub, pid, c: ShownCommand) => stub.control(pid, c)),
   control("/api/screen/shown", command, (stub, sid, c: ShownCommand) => stub.reportShown(sid, c)),
   control("/api/session/length", lengthBody, (stub, pid, { seconds }) => stub.setLength(pid, seconds)),
+  control(
+    "/api/match",
+    () => matchBody,
+    (stub, pid, { choice }) => stub.match(pid, choice),
+  ),
 ];

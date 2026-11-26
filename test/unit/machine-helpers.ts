@@ -50,8 +50,10 @@ export function waiting(mode: Mode = "demo", code = "AAAAAA", now = T0): Machine
   return must(m, { e: "code.next", now, value: code }).next;
 }
 
+/** A claim, and for a live screen the right pick after it: the pairing every later live test starts from. */
 export function claim(m: Machine, kind: Kind = "owner", now = T0 + sec(1), code = "AAAAAA", sessionId = "s1"): Machine {
-  return must(m, {
+  const live = m.mode === "live";
+  const claimed = must(m, {
     e: "claim",
     now,
     code,
@@ -61,7 +63,9 @@ export function claim(m: Machine, kind: Kind = "owner", now = T0 + sec(1), code 
     kind,
     userId: null,
     passHash: null,
+    choices: live ? ["17", "42", "85"] : null,
   }).next;
+  return live ? must(claimed, { e: "match", now, choice: "42" }).next : claimed;
 }
 
 export const claimedOwner = (mode: Mode = "demo") => claim(waiting(mode));
