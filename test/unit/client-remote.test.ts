@@ -1,6 +1,6 @@
 // The phone's remote state (core/remote.js) and the seq every sender sends (core/demo.js nextSeq), PAIR-13.
 import { describe, expect, it } from "vitest";
-import { nextSeq } from "../../public/js/core/demo.js";
+import { nextSeq, SLIDES } from "../../public/js/core/demo.js";
 import { canPresent, command, createRemote, current } from "../../public/js/core/remote.js";
 import type { ErrorCode, Item, PhoneView, Shown, ShownCommand } from "../../src/shared/protocol.ts";
 
@@ -102,7 +102,7 @@ describe("the remote's commands", () => {
       page: 2,
       present: false,
     });
-    expect(command(v, { item: "i3", page: 2, present: false }, { step: 1 })).toBeNull();
+    expect(command(v, { item: "i3", page: SLIDES.length, present: false }, { step: 1 })).toBeNull();
     expect(command(v, { item: "i3", page: 1, present: false }, { step: -1 })).toBeNull();
     expect(command(v, { item: "i1", page: 1, present: false }, { step: 1 })).toBeNull();
   });
@@ -304,7 +304,7 @@ describe("the remote's state: a tap shows at once, and the server's shown is the
   });
 
   it("a tap that changes nothing sends nothing", async () => {
-    const h = harness(viewOf({ shown: { item: "i3", page: 2, present: false } }));
+    const h = harness(viewOf({ shown: { item: "i3", page: SLIDES.length, present: false } }));
     void h.remote.tap({ step: 1 });
     void h.remote.tap({ item: "i4" });
     expect(h.sent).toEqual([]);
