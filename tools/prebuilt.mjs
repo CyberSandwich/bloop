@@ -23,21 +23,25 @@ export function withPrebuilt(config) {
   return config.replace(BUILD, () => PREBUILT);
 }
 
-const ACCOUNT = "{ACCOUNT_ID}";
-const DIGEST = "{DIGEST}";
-/** What the account placeholder becomes where there is no secret (the CI rehearsal's dry run): a value no account has. */
+/** wrangler checks the image reference's shape wherever it loads the config (dev, tests), so the repo's placeholders are
+ * all zeros in the exact shape: no account has that id and no image that digest. */
 const NO_ACCOUNT = "0".repeat(32);
+const NO_DIGEST = `sha256:${"0".repeat(64)}`;
+const IMAGE = (/** @type {string} */ account, /** @type {string} */ digest) =>
+  `registry.cloudflare.com/${account}/bloop-converter@${digest}`;
 
 /**
  * wrangler.jsonc with the converter image reference filled in (CONV-06): the account id comes from the environment, so
- * the repo never holds it, and the digest from container/digest.txt, the one place a pin is written.
+ * the repo never holds it (without one, as in the CI rehearsal, it stays the zeros), and the digest from
+ * container/digest.txt, the one place a pin is written.
  * @param {string} config @param {string | undefined} accountId @param {string} digest "sha256:<64 hex>"
  */
 export function withImage(config, accountId, digest) {
   if (accountId !== undefined && !/^[0-9a-f]{32}$/.test(accountId))
     throw new Error("CLOUDFLARE_ACCOUNT_ID is not a 32-character hex account id");
-  if (!/^sha256:[0-9a-f]{64}$/.test(digest)) throw new Error("container/digest.txt is not a sha256 digest");
-  return config.replaceAll(ACCOUNT, accountId ?? NO_ACCOUNT).replaceAll(DIGEST, digest);
+  if (!/^sha256:[0-9a-f]{64}$/.test(digest) || digest === NO_DIGEST)
+    throw new Error("container/digest.txt is not a sha256 digest");
+  return config.replaceAll(IMAGE(NO_ACCOUNT, NO_DIGEST), IMAGE(accountId ?? NO_ACCOUNT, digest));
 }
 
 /** Throws unless the parsed top-level build block, and any environment's, is exactly the assertion, so a deploy run in
@@ -52,8 +56,8 @@ export function requirePrebuilt(config) {
     envs.every((env) => env.build === undefined || JSON.stringify(env.build) === assertion);
   if (!swapped || config.includes(BUILD))
     throw new Error("wrangler.jsonc still builds: run tools/prebuilt.mjs rewrite first");
-  if (config.includes(ACCOUNT) || config.includes(DIGEST))
-    throw new Error("wrangler.jsonc still has an image placeholder: run tools/prebuilt.mjs rewrite first");
+  if (config.includes(NO_DIGEST))
+    throw new Error("wrangler.jsonc still has the image placeholder: run tools/prebuilt.mjs rewrite first");
 }
 
 /** Every file under dir, dotfiles included, with its SHA-256; the manifest itself is not listed. Anything that is not
