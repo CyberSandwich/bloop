@@ -65,11 +65,13 @@ describe("size ratchet: a budget only holds or drops", () => {
     ]);
   });
 
-  it("size ratchet: a removed entry whose file is under src/ passes once the file is deleted", () => {
-    const base = [entry("blob", "1 kB", "src/worker/blob.bin")];
-    expect(compare(base, [], files([], []))).toHaveLength(1);
-    expect(compare(base, [], files(["src/worker/blob.bin"], []))).toEqual([]);
-    expect(compare(base, [], files(["src/worker/blob.bin"], ["src/worker/blob.bin"]))).toHaveLength(1);
+  it("size ratchet: a removed entry passes once HEAD no longer holds its file, in any folder", () => {
+    for (const path of ["src/worker/blob.bin", "tools/blob.bin"]) {
+      const base = [entry("blob", "1 kB", path)];
+      expect(compare(base, [], files([], []))).toHaveLength(1);
+      expect(compare(base, [], files([path], []))).toEqual([]);
+      expect(compare(base, [], files([path], [path]))).toHaveLength(1);
+    }
   });
 
   it("size ratchet: a listed raise passes up to its max; an unlisted raise or one over the max still fails", () => {
