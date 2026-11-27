@@ -54,6 +54,49 @@ function androidMp4(location: string): Buffer {
   ]);
 }
 
+/** The room screen's viewports: iPads both ways, laptops, a portrait TV, and phones on their side (Safari's bars on). */
+const SCREENS = [
+  { width: 1180, height: 820 },
+  { width: 1024, height: 768 },
+  { width: 834, height: 1112 },
+  { width: 1366, height: 1024 },
+  { width: 1440, height: 900 },
+  { width: 844, height: 390 },
+  { width: 932, height: 430 },
+  { width: 667, height: 330 },
+  { width: 1080, height: 1920 },
+];
+
+/** Each box lies whole inside the viewport, `--inset` in from every edge, and clear of every corner pill shown. */
+async function expectInView(page: Page, selectors: string[]) {
+  const { width, height } = page.viewportSize() ?? { width: 0, height: 0 };
+  const inset = await insetOf(page);
+  const pills = await Promise.all((await page.locator(".bar > :visible").all()).map((p) => p.boundingBox()));
+  const edges = (b: { x: number; y: number; width: number; height: number }) => ({
+    l: Math.round(b.x),
+    t: Math.round(b.y),
+    r: Math.round(b.x + b.width),
+    b: Math.round(b.y + b.height),
+  });
+  for (const selector of selectors) {
+    const box = await page.locator(selector).boundingBox();
+    expect(box, selector).not.toBeNull();
+    if (!box) continue;
+    const at = `${selector} at ${width} x ${height}: ${JSON.stringify(box)}`;
+    const e = edges(box);
+    expect(e.l, at).toBeGreaterThanOrEqual(inset);
+    expect(e.t, at).toBeGreaterThanOrEqual(inset);
+    expect(e.r, at).toBeLessThanOrEqual(width - inset);
+    expect(e.b, at).toBeLessThanOrEqual(height - inset);
+    for (const pill of pills) {
+      if (!pill) continue;
+      const p = edges(pill);
+      const apart = e.l >= p.r || e.r <= p.l || e.t >= p.b || e.b <= p.t;
+      expect(apart, `${at} meets a corner pill ${JSON.stringify(pill)}`).toBe(true);
+    }
+  }
+}
+
 /** No toast now, read once: a retrying toHaveCount(0) passes once a toast leaves by itself (5 s). */
 const expectNoToast = async (page: Page) =>
   expect(await page.locator(".toast:not(.out)").count(), "a toast is up").toBe(0);
@@ -131,6 +174,17 @@ const insetOf = async (page: Page) =>
   (await page.evaluate("parseFloat(getComputedStyle(document.documentElement).getPropertyValue('--inset'))")) as number;
 
 type Box = { x: number; y: number; width: number; height: number };
+
+/** `inner`'s box lies whole inside `outer`'s, to the nearest pixel: nothing clipped. */
+async function expectWithin(inner: Locator, outer: Locator) {
+  const [i, o] = [await inner.boundingBox(), await outer.boundingBox()];
+  if (!i || !o) throw new Error("no box");
+  const at = `${JSON.stringify(i)} in ${JSON.stringify(o)}`;
+  expect(Math.round(i.x), at).toBeGreaterThanOrEqual(Math.round(o.x));
+  expect(Math.round(i.y), at).toBeGreaterThanOrEqual(Math.round(o.y));
+  expect(Math.round(i.x + i.width), at).toBeLessThanOrEqual(Math.round(o.x + o.width));
+  expect(Math.round(i.y + i.height), at).toBeLessThanOrEqual(Math.round(o.y + o.height));
+}
 
 /**
  * The pill and its count, read in one frame once nothing finite animates in the pill. A change of place glides it
@@ -271,7 +325,7 @@ test.describe("pairing flow", () => {
     await expectNoAxeViolations(screen.page);
 
     await phone.page.getByRole("button", { name: "Approve" }).click();
-    await expect(heading(phone.page)).toHaveText("Approved for Demo Room");
+    await expect(heading(phone.page)).toHaveText("Demo Room");
     await expect(phone.page.locator("#ends-text")).toHaveText(/^Ends in \d+:\d{2}$/);
     // The approved items are a record, not controls: no ticks.
     await expect(phone.page.locator("#file-list .row")).toHaveCount(CATALOG.length);
@@ -386,22 +440,9 @@ test.describe("pairing flow", () => {
         .locator("form")
         .evaluate((f) => Promise.all(f.getAnimations().map((a: { finished: Promise<unknown> }) => a.finished)));
       const field = sheet.getByLabel("Expires At");
-      // The whole time shows: a time input never scrolls (its scrollWidth is its width even when clipped), so measure
-      // the widest 12-hour time in its font, beside its picker icon (about one em), against its content box.
-      const fits = await phone.page.evaluate(`(() => {
-        const el = document.querySelector(".sheet-card .field");
-        const css = getComputedStyle(el);
-        const ctx = document.createElement("canvas").getContext("2d");
-        ctx.font = css.fontWeight + " " + css.fontSize + " " + css.fontFamily;
-        const text = Math.max(...["00:00 PM", "12:59 AM", "08:48 PM"].map((t) => ctx.measureText(t).width));
-        const room = el.clientWidth - parseFloat(css.paddingLeft) - parseFloat(css.paddingRight);
-        return text + parseFloat(css.fontSize) <= room;
-      })()`);
-      expect(fits).toBe(true);
-      // The input spans its row of the card.
+      // The whole time shows, inside the card: Chromium sizes the input to its time, so the card holding it is the check.
       const card = sheet.locator(".sheet-card");
-      const inner = await card.evaluate((n) => n.clientWidth);
-      expect(Math.round((await field.boundingBox())?.width ?? 0)).toBe(Math.round(inner));
+      await expectWithin(field, card);
       // The presets share one row.
       const tops = new Set<number>();
       for (const chip of await sheet.locator("[data-minutes]").all())
@@ -425,6 +466,102 @@ test.describe("pairing flow", () => {
     });
   }
 
+  // The title and the time share one baseline where one row holds both (844 x 390 must), and wrap as two centered
+  // lines where it can't (320 and 390 may: the time's width decides, and Chromium draws it 12-hour on this en-US page
+  // whatever the locale, so those read which it is). A time input's text is centered in its box, so its baseline is
+  // the box's middle less half the font's descent and plus half its ascent.
+  for (const [width, height, locale, oneRow] of [
+    [390, 844, "en-GB", false],
+    [844, 390, "en-GB", true],
+    [320, 640, "en-GB", false],
+    [390, 844, "en-US", false],
+  ] as const) {
+    test(`SESS-01 at ${width} x ${height} in ${locale} the sheet's title and time are centered, ${oneRow ? "on one baseline" : "on one baseline or two lines, nothing clipped"}`, async ({
+      browser,
+    }) => {
+      const screen = await demoScreen(browser);
+      const code = await typedCodeOf(screen.page);
+      const context = await browser.newContext({ viewport: { width, height }, locale, isMobile: true, hasTouch: true });
+      const page = await context.newPage();
+      await page.goto(`/a?c=${code}`);
+      await page.getByRole("button", { name: /^Approve, code/ }).click();
+      await page.getByRole("button", { name: /Change the Session Expiry$/ }).click();
+      const sheet = page.getByRole("dialog", { name: "Session Expiry" });
+      await expect(sheet).toBeVisible();
+      await sheet
+        .locator("form")
+        .evaluate((f) => Promise.all(f.getAnimations().map((a: { finished: Promise<unknown> }) => a.finished)));
+      await page.evaluate("document.fonts.ready.then(() => true)");
+      const m = (await page.evaluate(`(() => {
+        const card = document.querySelector(".sheet-card");
+        const h2 = card.querySelector("h2");
+        const field = card.querySelector(".field");
+        const probe = document.createElement("span");
+        probe.style.cssText = "display:inline-block;width:0;height:0";
+        h2.append(probe);
+        const titleBase = probe.getBoundingClientRect().bottom;
+        probe.remove();
+        const css = getComputedStyle(field);
+        const ctx = document.createElement("canvas").getContext("2d");
+        ctx.font = css.fontWeight + " " + css.fontSize + " " + css.fontFamily;
+        const t = ctx.measureText("0");
+        const f = field.getBoundingClientRect();
+        const h = h2.getBoundingClientRect();
+        const c = card.getBoundingClientRect();
+        return {
+          titleBase,
+          timeBase: f.top + (f.height + t.fontBoundingBoxAscent - t.fontBoundingBoxDescent) / 2,
+          card: (c.left + c.right) / 2,
+          title: { left: h.left, right: h.right, bottom: h.bottom },
+          field: { left: f.left, right: f.right, top: f.top },
+        };
+      })()`)) as {
+        titleBase: number;
+        timeBase: number;
+        card: number;
+        title: { left: number; right: number; bottom: number };
+        field: { left: number; right: number; top: number };
+      };
+      const at = JSON.stringify(m);
+      if (oneRow || m.field.top < m.title.bottom) {
+        expect(Math.abs(m.titleBase - m.timeBase), at).toBeLessThanOrEqual(1);
+        expect(Math.abs((m.title.left + m.field.right) / 2 - m.card), at).toBeLessThanOrEqual(1);
+      } else {
+        expect(Math.abs((m.title.left + m.title.right) / 2 - m.card), at).toBeLessThanOrEqual(1);
+        expect(Math.abs((m.field.left + m.field.right) / 2 - m.card), at).toBeLessThanOrEqual(1);
+      }
+      await expectWithin(sheet.getByLabel("Expires At"), sheet.locator(".sheet-card"));
+      await context.close();
+      await screen.context.close();
+    });
+  }
+
+  test("SESS-01 at 390 x 844 the sheet's time value is vertically centered in its field", async ({ browser }) => {
+    const { screen, phone, lengthButton, sheet } = await approvedDemo(browser);
+    await phone.page.setViewportSize({ width: 390, height: 844 });
+    await lengthButton.click();
+    await expect(sheet).toBeVisible();
+    await sheet
+      .locator("form")
+      .evaluate((f) => Promise.all(f.getAnimations().map((a: { finished: Promise<unknown> }) => a.finished)));
+    await phone.page.evaluate("document.fonts.ready.then(() => true)");
+    const gap = (await phone.page.evaluate(`(() => {
+      const field = document.querySelector(".sheet-card .field");
+      const css = getComputedStyle(field);
+      const ctx = document.createElement("canvas").getContext("2d");
+      ctx.font = css.fontWeight + " " + css.fontSize + " " + css.fontFamily;
+      const t = ctx.measureText("21:09");
+      const glyph = t.fontBoundingBoxAscent + t.fontBoundingBoxDescent;
+      const box = field.getBoundingClientRect();
+      const content = box.height - parseFloat(css.paddingTop) - parseFloat(css.paddingBottom);
+      const above = parseFloat(css.paddingTop) + (content - glyph) / 2;
+      return above - (box.height - above - glyph);
+    })()`)) as number;
+    expect(Math.round(gap)).toBe(0);
+    await screen.context.close();
+    await phone.context.close();
+  });
+
   test("SESS-01 a refused length is a toast over the running session: the countdown, Revoke and the sheet stay", async ({
     browser,
   }) => {
@@ -435,7 +572,7 @@ test.describe("pairing flow", () => {
     await lengthButton.click();
     await sheet.getByRole("button", { name: "30 minutes" }).click();
     await expect(phone.page.getByRole("alert")).toContainText("Wait a minute, then try again.");
-    await expect(heading(phone.page)).toHaveText("Approved for Demo Room");
+    await expect(heading(phone.page)).toHaveText("Demo Room");
     await expect(phone.page.locator("#ends-text")).toHaveText(/^Ends in (59|1:00):\d{2}$/);
     await expect(phone.page.getByRole("button", { name: "Revoke" })).toBeVisible();
     // The sheet still works once the server takes changes again.
@@ -653,23 +790,46 @@ test.describe("pairing flow", () => {
     await phone.context.close();
   });
 
-  test("P1 Approved at 390 x 844: Revoke sits in the floating glass panel and the title is one inset from the top", async ({
-    browser,
-  }) => {
-    const screen = await demoScreen(browser);
-    const { phone } = await scan(browser, screen.page);
-    await phone.page.getByRole("button", { name: "Approve" }).click();
-    await expect(heading(phone.page)).toHaveText("Approved for Demo Room");
-    const revoke = phone.page.locator(".column > .actions.glass").getByRole("button", { name: "Revoke" });
-    await expect(revoke).toBeInViewport({ ratio: 1 });
-    const inset = await insetOf(phone.page);
-    await expect(async () => {
-      const title = await heading(phone.page).boundingBox();
-      expect(Math.round(title?.y ?? -1)).toBe(Math.round(inset));
-    }).toPass();
-    await screen.context.close();
-    await phone.context.close();
-  });
+  for (const width of [320, 390, 430]) {
+    test(`P1 Approved at ${width} x 844: the h1 names the room for screen readers alone, the list is one inset from the top, and Ends in sits left of Revoke in the glass panel`, async ({
+      browser,
+    }) => {
+      const screen = await demoScreen(browser);
+      const { phone } = await scan(browser, screen.page);
+      await phone.page.setViewportSize({ width, height: 844 });
+      await phone.page.getByRole("button", { name: "Approve" }).click();
+      const h1 = heading(phone.page);
+      await expect(h1).toHaveText("Demo Room");
+      await expect(h1).toHaveClass(/\bsr\b/);
+      expect(Math.round((await h1.boundingBox())?.width ?? 9)).toBeLessThanOrEqual(1);
+      const inset = await insetOf(phone.page);
+      await expect(async () => {
+        const top = await phone.page.evaluate(
+          "(() => { const n = document.getElementById('file-list'); return n.getBoundingClientRect().top - parseFloat(getComputedStyle(n).marginTop); })()",
+        );
+        expect(Math.round(Number(top))).toBe(Math.round(inset));
+      }).toPass();
+      const panel = phone.page.locator(".column > .actions.glass");
+      const revoke = panel.getByRole("button", { name: "Revoke" });
+      await expect(revoke).toBeInViewport({ ratio: 1 });
+      // At 320 the row can't hold both labels (measured, no breakpoint), so the time alone shows; the name still says
+      // Ends in.
+      const ends = panel.getByRole("button", { name: /^Ends in \d+:\d{2}(:\d{2})?\. Change the Session Expiry$/ });
+      await expect(ends).toBeVisible();
+      await expect(phone.page.locator("#ends-text .sr")).toHaveCount(width === 320 ? 1 : 0);
+      const [e, r] = [await ends.boundingBox(), await revoke.boundingBox()];
+      if (!e || !r) throw new Error("no box");
+      expect(Math.round(e.y)).toBe(Math.round(r.y));
+      expect(Math.round(e.height)).toBe(Math.round(r.height));
+      expect(Math.round(e.x + e.width)).toBeLessThanOrEqual(Math.round(r.x));
+      // Both labels whole: neither box is narrower than its words.
+      for (const b of [ends, revoke]) expect(await b.evaluate((n) => n.scrollWidth <= n.clientWidth)).toBe(true);
+      await expectWithin(ends, panel);
+      await expectWithin(revoke, panel);
+      await screen.context.close();
+      await phone.context.close();
+    });
+  }
 
   test("P2 the picker opens the chooser directly: its accept list, and no capture attribute to skip the library", async ({
     browser,
@@ -1179,7 +1339,7 @@ test.describe("guest drop", () => {
     await expectPillUnder(screen.page, screen.page.locator(".item-card"));
     await expect(heading(screen.page)).toHaveText("sample-deck.pptx");
     await expect(screen.page.locator("#items")).toBeHidden();
-    await expect(heading(phone.page)).toHaveText("Approved for Demo Room");
+    await expect(heading(phone.page)).toHaveText("Demo Room");
     expect(await launches()).toEqual({ opened: 0, left: [] });
     await expectNoAxeViolations(screen.page);
 
@@ -1713,7 +1873,7 @@ test.describe("open path", () => {
     expect(await screen.page.evaluate(() => sessionStorage.getItem("bloop.sid"))).toBeNull();
     await expect(heading(phone.page)).toHaveText("Session Ended");
     // A live phone's end is Done alone.
-    await expect(phone.page.locator("#actions").locator(".btn")).toHaveCount(1);
+    await expect(phone.page.locator("#actions").locator("[data-action]")).toHaveCount(1);
     await expect(phone.page.locator("#actions").getByRole("button", { name: "Done" })).toBeVisible();
     await expect(phone.page.locator("[data-waitlist]")).toHaveCount(0);
     await screen.context.close();
@@ -1731,7 +1891,7 @@ test.describe("demo viewer", () => {
     await phone.page.getByRole("button", { name: "Approve" }).click();
     await expectViewer(screen.page);
     // The page's own fetch of the launched link (the deck's view) stands in for PowerPoint's, so the session opens.
-    await expect(heading(phone.page)).toHaveText("Approved for Demo Room");
+    await expect(heading(phone.page)).toHaveText("Demo Room");
     await expect(phone.page.locator("#file-list .row")).toHaveCount(CATALOG.length);
     expect(await launches()).toEqual({ opened: 0, left: [] });
     await expectNoAxeViolations(screen.page);
@@ -1843,7 +2003,7 @@ test.describe("demo viewer", () => {
       await phone.page.getByRole("checkbox", { name: startsWith(name) }).uncheck();
     }
     await phone.page.getByRole("button", { name: "Approve" }).click();
-    await expect(heading(phone.page)).toHaveText("Approved for Demo Room");
+    await expect(heading(phone.page)).toHaveText("Demo Room");
     await expect(heading(screen.page)).toHaveText(DEMO_ITEMS.link.name);
     await expect(screen.page.getByRole("link", { name: "Open vevox.com" })).toBeVisible();
     await expect(screen.page.locator("#items")).toBeHidden();
@@ -1919,6 +2079,27 @@ test.describe("demo viewer", () => {
     await phone.page.getByRole("button", { name: "End", exact: true }).click();
     await expect(heading(phone.page)).toHaveText("Session Ended");
     expect(phone.csp).toEqual([]);
+    await phone.context.close();
+  });
+
+  test("DEMO-01 one device back on /a: See It on the Screen wraps above Ends in and Revoke, the primary on top", async ({
+    browser,
+  }) => {
+    const phone = await open(browser, "phone", "/s?mode=demo");
+    await phone.page.getByRole("link", { name: "Approve on This Phone" }).click();
+    await phone.page.getByRole("button", { name: "Approve" }).click();
+    await expect(phone.page).toHaveURL(/\/s\?mode=demo$/);
+    await phone.page.goto("/a");
+    const panel = phone.page.locator(".column > .actions.glass");
+    const way = panel.getByRole("link", { name: "See It on the Screen" });
+    const revoke = panel.getByRole("button", { name: "Revoke" });
+    const ends = panel.getByRole("button", { name: /Change the Session Expiry$/ });
+    await expect(way).toBeVisible();
+    const [w, r, e] = [await way.boundingBox(), await revoke.boundingBox(), await ends.boundingBox()];
+    if (!w || !r || !e) throw new Error("no box");
+    expect(Math.round(w.y + w.height)).toBeLessThanOrEqual(Math.round(r.y));
+    expect(Math.round(e.y)).toBe(Math.round(r.y));
+    for (const b of [way, ends, revoke]) await expectWithin(b, panel);
     await phone.context.close();
   });
 
@@ -2047,7 +2228,41 @@ test.describe("screen and phone layout", () => {
     await screen.context.close();
   });
 
-  for (const viewport of [PHONE, { width: 1280, height: 720 }]) {
+  for (const viewport of SCREENS) {
+    test(`the whole QR and the code are in view at ${viewport.width} x ${viewport.height}, beside the title when landscape`, async ({
+      browser,
+    }) => {
+      const context = await browser.newContext({ viewport });
+      const page = await context.newPage();
+      await page.goto("/s?mode=demo");
+      await typedCodeOf(page);
+      await page.evaluate("document.fonts.ready.then(() => true)");
+      await expectInView(page, ["#qr-panel", "#b-new", "#b-copy", "#heading"]);
+      const card = await page.locator("#qr-panel").boundingBox();
+      const title = await heading(page).boundingBox();
+      // Landscape holds the QR at least as large beside the title; upright, the title stacks over it.
+      if (viewport.width > viewport.height)
+        expect(title?.x ?? 0).toBeGreaterThanOrEqual((card?.x ?? 0) + (card?.width ?? 0));
+      else expect((title?.y ?? 0) + (title?.height ?? 0)).toBeLessThanOrEqual(card?.y ?? 0);
+      expect(await page.evaluate("document.scrollingElement.scrollHeight <= innerHeight")).toBe(true);
+      // A claim keeps the card in place, the match number in it.
+      const { phone } = await scan(browser, page);
+      await expect(page.locator("#match")).toBeVisible();
+      await expectInView(page, ["#qr-panel", "#heading"]);
+      // A live room's screen has no title: the same card and code row.
+      const liveContext = await browser.newContext({ viewport });
+      const live = await liveContext.newPage();
+      await live.goto("/s");
+      await typedCodeOf(live);
+      await expectInView(live, ["#qr-panel", "#b-new", "#b-copy"]);
+      await liveContext.close();
+      await context.close();
+      await phone.context.close();
+    });
+  }
+
+  // Every /s state in the states table the demo reaches, at every room screen size: the page never scrolls.
+  for (const viewport of [PHONE, { width: 1280, height: 720 }, ...SCREENS]) {
     test(`/s never scrolls the page, at ${viewport.width} x ${viewport.height}: waiting, claimed, viewer, presenting, ended`, async ({
       browser,
     }) => {
@@ -2688,7 +2903,7 @@ test.describe("screen and phone layout", () => {
     const approve = page.getByRole("button", { name: /^Approve/ });
     await expect(approve).toBeInViewport({ ratio: 1 });
     await approve.click();
-    await expect(heading(page)).toHaveText("Approved for Demo Room");
+    await expect(heading(page)).toHaveText("Demo Room");
     await page.setViewportSize({ width: 834, height: 560 });
     await expect(page.getByRole("button", { name: "Revoke" })).toBeInViewport({ ratio: 1 });
     await context.close();
@@ -2968,10 +3183,10 @@ test.describe("PAIR-13 remote: the phone commands the demo screen (design.md sec
       commands += 1;
       return route.continue();
     });
-    const tab = phone.context.waitForEvent("page");
+    // The tap asks the screen to open it (link-open.spec.ts): this phone opens no tab and sends no command.
     await link.click();
-    await (await tab).close();
     await phone.page.waitForTimeout(300);
+    expect(phone.context.pages()).toHaveLength(1);
     expect(commands).toBe(0);
     await expect(link).not.toHaveAttribute("aria-current", "true");
     await expect(preview).toHaveAttribute("aria-label", `${DEMO_ITEMS.deck.name}, Slide 1 of ${DECK_PAGES}`);
@@ -3099,6 +3314,25 @@ test.describe("PAIR-13 remote: the phone commands the demo screen (design.md sec
     await close(screen, phone);
   });
 
+  test("the preview takes the shown page's own shape: no bands above or below the slide", async ({ browser }) => {
+    const { screen, phone, preview } = await remote(browser);
+    await expect(preview).toBeVisible();
+    const img = preview.locator("img");
+    await expect.poll(() => img.evaluate((i: { naturalWidth: number }) => i.naturalWidth)).toBeGreaterThan(0);
+    // The box's height is its width at the page's natural ratio, to the pixel: object-fit contain then fills it.
+    await expect
+      .poll(async () => {
+        const [box, nw, nh] = await Promise.all([
+          preview.boundingBox(),
+          img.evaluate((i: { naturalWidth: number }) => i.naturalWidth),
+          img.evaluate((i: { naturalHeight: number }) => i.naturalHeight),
+        ]);
+        return box ? Math.round(box.height) - Math.round((box.width * nh) / nw) : null;
+      })
+      .toBe(0);
+    await close(screen, phone);
+  });
+
   test("a long list stops over the preview with the section gap and scrolls inside itself", async ({ browser }) => {
     const { screen, phone, row, preview } = await remote(browser);
     const page = phone.page;
@@ -3127,6 +3361,16 @@ test.describe("PAIR-13 remote: the phone commands the demo screen (design.md sec
     await phone.page.setViewportSize({ width: 844, height: 390 });
     await expect(heading(screen.page)).toHaveText(DEMO_ITEMS.deck.name);
     await expect(preview).toHaveCount(0);
+    // As upright: the bubbles above, Ends in (with its words) and Revoke on one row under them, nothing overlapping.
+    const box = async (name: string | RegExp) => {
+      const b = await phone.page.getByRole("button", { name }).boundingBox();
+      if (!b) throw new Error(`no box: ${name}`);
+      return b;
+    };
+    const [next, ends, revoke] = [await box("Next"), await box(/Change the Session Expiry$/), await box("Revoke")];
+    expect(Math.round(next.y + next.height)).toBeLessThanOrEqual(Math.round(ends.y));
+    expect(Math.round(ends.y)).toBe(Math.round(revoke.y));
+    await expect(phone.page.locator("#ends-text .sr")).toHaveCount(0);
     await bubbles.getByRole("button", { name: "Next" }).click();
     await expect(dots).toHaveText(`2 / ${DECK_PAGES}`);
     await close(screen, phone);
@@ -3158,7 +3402,7 @@ test.describe("PAIR-13 remote: the phone commands the demo screen (design.md sec
     await expect(cancel).not.toHaveCSS("outline-style", "none");
     await phone.page.keyboard.press("Escape");
     await expect(ask).toBeHidden();
-    await expect(heading(phone.page)).toHaveText("Approved for Demo Room");
+    await expect(heading(phone.page)).toHaveText("Demo Room");
     await expect(heading(screen.page)).toHaveText(DEMO_ITEMS.deck.name);
     // The screen's End while the question is open: it goes with Revoke, never floating over Session Ended.
     await phone.page.getByRole("button", { name: "Revoke" }).click();
@@ -3353,7 +3597,7 @@ test.describe("PAIR-13 remote: the phone commands the demo screen (design.md sec
     await row(DEMO_ITEMS.vertical.name).click();
     await expect(phone.page.getByRole("alert")).toContainText("Check the connection, then try again.");
     await expect(row(DEMO_ITEMS.deck.name)).toHaveAttribute("aria-current", "true");
-    await expect(heading(phone.page)).toHaveText("Approved for Demo Room");
+    await expect(heading(phone.page)).toHaveText("Demo Room");
     await close(screen, phone);
   });
 });
@@ -3430,9 +3674,9 @@ test.describe("the phone page at phone widths (design.md section 7, Phone page)"
       await page.getByRole("button", { name: "Cancel" }).click();
 
       await page.getByRole("button", { name: /^Approve/ }).click();
-      await expect(heading(page)).toHaveText("Approved for Demo Room");
+      await expect(heading(page)).toHaveText("Demo Room");
       await expect(page.getByRole("group", { name: "The Screen" })).toBeVisible();
-      await expect(page.locator("#ends")).toHaveCSS("min-height", "44px");
+      await expect(page.locator("#ends")).toHaveCSS("min-height", "52px");
       await guard(page, width, "approved");
       await lastRowClear(page, "approved");
 
@@ -3625,6 +3869,7 @@ test.describe("NOTES-01 phone-only: the presenter's notes on the phone (design.m
     await page.getByRole("button", { name: "Approve" }).click();
     await expectViewer(screen.page);
     const bubbles = page.getByRole("group", { name: "The Screen" });
+    const box = page.locator(".notes");
     await expect(bubbles).toBeVisible();
     return {
       screen,
@@ -3635,10 +3880,12 @@ test.describe("NOTES-01 phone-only: the presenter's notes on the phone (design.m
       bubbles,
       list: page.locator("#file-list"),
       rows: page.locator("#file-list > li:visible"),
-      box: page.locator(".notes"),
+      box,
       preview: page.locator(".preview"),
       panel: page.locator(".column > .actions"),
       present: () => bubbles.getByRole("button", { name: "Present" }).click(),
+      /** The box's own entry has ended: its transform no longer shifts a measured box. */
+      arrived: () => expect.poll(() => box.evaluate((n) => n.getAnimations().length)).toBe(0),
       next: () => bubbles.getByRole("button", { name: "Next" }).click(),
     };
   }
@@ -3647,6 +3894,157 @@ test.describe("NOTES-01 phone-only: the presenter's notes on the phone (design.m
     await s.screen.context.close();
     await s.phone.context.close();
   };
+
+  for (const size of [...SIZES, { width: 430, height: 932 }]) {
+    test(`the long notes end 16 above the panel, over the slide's shadow, in the panel's radius at ${size.width} x ${size.height}`, async ({
+      browser,
+    }) => {
+      const s = await session(browser, size);
+      await s.present();
+      await expect(s.box).toContainText(opening(NOTES[0] ?? ""));
+      await s.arrived();
+      expect(await s.box.evaluate((n) => n.scrollHeight - n.clientHeight), "the notes overflow").toBeGreaterThan(0);
+      // The page at its end, where the floating panel rides its natural place under the box.
+      await s.page.evaluate("window.scrollTo(0, document.documentElement.scrollHeight)");
+      const preview = await boxOf(s.preview);
+      const box = await boxOf(s.box);
+      const panel = await boxOf(s.panel);
+      expect(Math.abs(box.y - (preview.y + preview.height) - 16), "16 from the slide to the notes").toBeLessThanOrEqual(
+        1,
+      );
+      expect(box.y + box.height + 16, "the notes end 16 above the panel").toBeLessThanOrEqual(panel.y + 1);
+      // The slide's shadow falls on the page, not on the notes.
+      await expect(s.box).toHaveCSS("position", "relative");
+      expect(await px(s.box, "zIndex"), "the notes stack over the slide").toBeGreaterThan(0);
+      const radius = await px(s.box, "borderTopLeftRadius");
+      expect(radius).toBeGreaterThan(0);
+      expect(radius, "the notes' radius is the panel's").toBe(await px(s.panel, "borderTopLeftRadius"));
+      await close(s);
+    });
+  }
+
+  /** One frame of the notes box and the slide above it: opacities as painted, tops as laid out (a transform never moves them). */
+  interface Frame {
+    box: number;
+    text: number;
+    boxTop: number;
+    previewTop: number;
+    previewHeight: number;
+  }
+  type Painted = { offsetTop: number; offsetHeight: number; querySelector(selector: string): Painted | null };
+  type Frames = {
+    __frames?: Frame[];
+    document: { querySelector(selector: string): Painted | null };
+    getComputedStyle(node: Painted): { opacity: string };
+    requestAnimationFrame(tick: () => void): void;
+  };
+  /** Records every frame from now on, once the box is on the page. */
+  const sampleFrames = (page: Page) =>
+    page.evaluate(() => {
+      const w = globalThis as unknown as Frames;
+      const frames: Frame[] = [];
+      w.__frames = frames;
+      const tick = () => {
+        const box = w.document.querySelector(".notes");
+        const preview = w.document.querySelector(".preview");
+        const live = box?.querySelector(".notes-text:not([hidden]), .notes-none:not([hidden])");
+        if (box && preview && live)
+          frames.push({
+            box: Number(w.getComputedStyle(box).opacity),
+            text: Number(w.getComputedStyle(live).opacity),
+            boxTop: box.offsetTop,
+            previewTop: preview.offsetTop,
+            previewHeight: preview.offsetHeight,
+          });
+        w.requestAnimationFrame(tick);
+      };
+      tick();
+    });
+  const framesOf = (page: Page) => page.evaluate(() => (globalThis as unknown as Frames).__frames ?? []);
+  const rises = (values: number[], what: string) => {
+    for (let i = 1; i < values.length; i++)
+      expect(values[i] ?? 0, `${what}, frame ${i}`).toBeGreaterThanOrEqual((values[i - 1] ?? 0) - 1e-6);
+  };
+  const holdsStill = (frames: Frame[]) => {
+    // Laid-out tops and the slide's height, to the pixel: a transform never moves them, and the slide's own picture
+    // may settle its height by a rounding step as a page turns.
+    for (const key of ["boxTop", "previewTop", "previewHeight"] as const) {
+      const values = frames.map((f) => f[key]);
+      expect(Math.max(...values) - Math.min(...values), `${key} while the notes animate`).toBeLessThanOrEqual(1);
+    }
+  };
+
+  for (const size of SIZES) {
+    test(`the notes rise and fade in on transform and opacity alone, the slide holding still at ${size.width} x ${size.height}`, async ({
+      browser,
+    }) => {
+      const s = await session(browser, size);
+      await sampleFrames(s.page);
+      await s.present();
+      await expect(s.box).toContainText(opening(NOTES[0] ?? ""));
+      await s.arrived();
+      await expect.poll(async () => (await framesOf(s.page)).at(-1)?.box).toBe(1);
+      const frames = await framesOf(s.page);
+      expect(frames.length, "the reveal spans several frames").toBeGreaterThan(2);
+      expect(frames[0]?.box ?? 1, "it starts transparent").toBeLessThan(1);
+      rises(
+        frames.map((f) => f.box),
+        "the notes' opacity",
+      );
+      holdsStill(frames);
+      await close(s);
+    });
+
+    test(`a new note fades in inside the same box, the slide holding still at ${size.width} x ${size.height}`, async ({
+      browser,
+    }) => {
+      const s = await session(browser, size);
+      await sampleFrames(s.page);
+      await s.present();
+      await expect(s.box).toContainText(opening(NOTES[0] ?? ""));
+      await s.arrived();
+      await expect.poll(async () => (await framesOf(s.page)).at(-1)?.box).toBe(1);
+      const start = (await framesOf(s.page)).length;
+      await s.next();
+      await expect(s.box).toContainText(opening(NOTES[1] ?? ""));
+      await expect
+        .poll(async () => {
+          const frames = (await framesOf(s.page)).slice(start);
+          return frames.some((f) => f.text < 1) && frames.at(-1)?.text === 1;
+        })
+        .toBe(true);
+      const frames = (await framesOf(s.page)).slice(start);
+      rises(
+        frames.slice(frames.findIndex((f) => f.text < 1)).map((f) => f.text),
+        "the new note's opacity",
+      );
+      expect(
+        frames.every((f) => f.box === 1),
+        "the box itself never fades on a swap",
+      ).toBe(true);
+      holdsStill(frames);
+      await close(s);
+    });
+  }
+
+  test("reduced motion shows the notes at once", async ({ browser }) => {
+    const s = await session(browser, SIZES[0] as Size);
+    await s.page.emulateMedia({ reducedMotion: "reduce" });
+    await s.present();
+    await expect(s.box).toContainText(opening(NOTES[0] ?? ""));
+    await s.arrived();
+    // The rule, not a count of frames that a loaded runner may stretch: the entry runs for a hundredth of a millisecond.
+    expect(await px(s.box, "animationDuration"), "the entry's duration in seconds").toBeLessThan(0.001);
+    await expect(s.box).toHaveCSS("opacity", "1");
+    await close(s);
+  });
+
+  test("held landscape (844 x 390) shows no notes box", async ({ browser }) => {
+    const s = await session(browser, { width: 844, height: 390 });
+    await s.present();
+    await expect(s.box).toBeHidden();
+    await close(s);
+  });
 
   for (const size of SIZES) {
     test.describe(`at ${size.width} x ${size.height}`, () => {
@@ -3692,6 +4090,7 @@ test.describe("NOTES-01 phone-only: the presenter's notes on the phone (design.m
         const s = await session(browser, size);
         await s.present();
         await expect(s.box).toContainText(opening(NOTES[0] ?? ""));
+        await s.arrived();
         await expect(s.preview).toBeVisible();
         const list = await boxOf(s.list);
         const preview = await boxOf(s.preview);
@@ -3704,10 +4103,6 @@ test.describe("NOTES-01 phone-only: the presenter's notes on the phone (design.m
         const text = s.box.locator(".notes-text");
         await expect(text).toHaveCSS("white-space", "pre-wrap");
         expect(await px(text, "fontSize")).toBeGreaterThanOrEqual(17);
-        // The bottom padding is the pill's height, so the pill never covers text.
-        const pill = await boxOf(s.panel);
-        const padding = await px(s.box, "paddingBottom");
-        expect(Math.abs(padding - pill.height), "padding under the notes equals the pill").toBeLessThanOrEqual(1);
         // The page at its end (the floating pill rides its foot), the notes scrolled to theirs.
         await s.page.evaluate("window.scrollTo(0, document.documentElement.scrollHeight)");
         const pageY = await s.page.evaluate("window.scrollY");
@@ -3725,9 +4120,6 @@ test.describe("NOTES-01 phone-only: the presenter's notes on the phone (design.m
         });
         const pillAtEnd = await boxOf(s.panel);
         expect(lastLine, "the last line ends above the pill").toBeLessThanOrEqual(pillAtEnd.y + 1);
-        // The notes run to the window's foot, under the pill.
-        const boxAtEnd = await boxOf(s.box);
-        expect(Math.abs(boxAtEnd.y + boxAtEnd.height - (size.height - (await insetOf(s.page))))).toBeLessThanOrEqual(1);
         await close(s);
       });
 
@@ -3735,6 +4127,7 @@ test.describe("NOTES-01 phone-only: the presenter's notes on the phone (design.m
         const s = await session(browser, size);
         await s.present();
         await expect(s.box).toContainText(opening(NOTES[0] ?? ""));
+        await s.arrived();
         await s.box.evaluate((n) => {
           n.scrollTop = n.scrollHeight;
         });
@@ -3747,6 +4140,7 @@ test.describe("NOTES-01 phone-only: the presenter's notes on the phone (design.m
         });
         await s.bubbles.getByRole("button", { name: "Previous" }).click();
         await expect(s.box).toContainText(opening(NOTES[0] ?? ""));
+        await s.arrived();
         await expect.poll(() => s.box.evaluate((n) => n.scrollTop)).toBe(0);
         await close(s);
       });
@@ -3758,6 +4152,7 @@ test.describe("NOTES-01 phone-only: the presenter's notes on the phone (design.m
         const s = await session(browser, size, answerWith(NOTES.map((n, i) => (i === 1 ? "" : n))));
         await s.present();
         await expect(s.box).toContainText(opening(NOTES[0] ?? ""));
+        await s.arrived();
         // The box runs below the fold on a short phone: its pill is read with the page at its end, where the floating pill rides.
         await s.page.evaluate("window.scrollTo(0, document.documentElement.scrollHeight)");
         const before = {
@@ -3841,6 +4236,7 @@ test.describe("NOTES-01 phone-only: the presenter's notes on the phone (design.m
     const s = await session(browser, SIZES[0] as Size);
     await s.present();
     await expect(s.box).toContainText(opening(NOTES[0] ?? ""));
+    await s.arrived();
     await s.next();
     await expect(s.box).toContainText(opening(NOTES[1] ?? ""));
     const html = await s.screen.page.content();

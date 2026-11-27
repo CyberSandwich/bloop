@@ -638,7 +638,7 @@ describe("phone copy", () => {
     const nameless = { ...pf, room: "", match: "42" };
     for (const key of ["pick", "match", "choose", "approve", "unregistered", "approving"] as const)
       expect(phoneCopy(key, nameless).title, key).toBe("This Screen");
-    expect(phoneCopy("open", nameless).title).toBe("Approved");
+    expect(phoneCopy("open", nameless)).toMatchObject({ title: "This Screen", quiet: true });
     expect(phoneCopy("guest_sent", nameless).title).toBe("Sent");
     expect(phoneCopy("guest_confirm", nameless).title).toBe("Send Lecture 4.pptx?");
     expect(phoneCopy("pdf_fallback", nameless).title).toBe("Showing a PDF");
@@ -686,10 +686,11 @@ describe("phone copy", () => {
     ]);
   });
 
-  it("approved is Approved for the room, the items read only, the time left and Revoke in rose", () => {
+  it("approved names the room for screen readers only, the items read only, the time left and Revoke in rose", () => {
     for (const key of ["opening", "open"] as const) {
       expect(phoneCopy(key, pf)).toMatchObject({
-        title: "Approved for Room 2.14",
+        title: "Room 2.14",
+        quiet: true,
         files: "items",
         add: false,
         ends: true,

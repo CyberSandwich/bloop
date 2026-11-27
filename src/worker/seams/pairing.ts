@@ -103,6 +103,13 @@ export interface PairingStore {
   /** The screen reports its own tap, so the phone's highlight stays true. Same rules as `control`, with its own `seq`. */
   reportShown(sid: string, command: ShownCommand): Promise<Result<ScreenView>>;
   /**
+   * The phone asks the screen to open a link item in a new tab (LINK-02): the item's id only, never a URL. Demo
+   * sessions only; an id that is not an approved link is `file_not_found`. Each ask counts in `linkOpen.n`.
+   */
+  openLink(pid: string, item: string): Promise<Result<PhoneView>>;
+  /** The screen's answer to ask `n`: whether its browser opened the tab. A stale `n` or a second answer changes nothing. */
+  linkOpened(sid: string, n: number, opened: boolean, refused?: true): Promise<Result<ScreenView>>;
+  /**
    * The session ends `seconds` from now, but never past its approval plus the mode's cap. Absolute, so a repeat sets
    * about the same end again. Approved, opening and open only (`wrong_state` otherwise), in both modes; one that
    * arrives at or after the end ends the session and answers `session_ended`.

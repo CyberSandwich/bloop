@@ -437,7 +437,7 @@ describe("landing word caps (design.md section 13)", () => {
     );
     // The phone's picture has its own ratio, so the swap shifts nothing.
     expect(read("public/css/site.css")).toMatch(
-      /@media \(max-width: 639\.98px\) \{\s*\.stage,\s*\.close-panel \{\s*border-radius: 16px;\s*\}\s*\.stage img \{\s*aspect-ratio: 390 \/ 711;/,
+      /@media \(max-width: 639\.98px\) \{\s*\.stage,\s*\.close-panel \{\s*border-radius: 16px;\s*\}\s*\.stage img \{\s*aspect-ratio: auto 390 \/ 711;/,
     );
     expect(img).not.toMatch(/loading="lazy"/);
     expect(visibleText(stage)).toBe("");

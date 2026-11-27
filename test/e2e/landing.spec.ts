@@ -725,7 +725,7 @@ test.describe("reduced motion", () => {
     await page.goto("/");
     const stage = page.locator(".stage");
     await expect(stage).toHaveText("");
-    await expect(stage.getByRole("img")).toHaveAttribute("alt", /^The bloop viewer/);
+    await expect(stage.getByRole("img")).toHaveAttribute("alt", /^The bloop room screen/);
     expect(await stage.evaluate((el) => getComputedStyle(el as unknown as El).transform)).toBe("none");
     await stage.scrollIntoViewIfNeeded();
     expect(await stage.evaluate((el) => (el as unknown as { getAnimations(): unknown[] }).getAnimations().length)).toBe(

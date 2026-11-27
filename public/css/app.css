@@ -326,40 +326,39 @@ main:has(> .side:not([hidden])) #stage {
   position: absolute;
   clip-path: inset(50%);
 }
-@media (min-width: 900px) and (min-aspect-ratio: 1 / 1) {
-  :is([data-mode="waiting"], [data-mode="scanned"]) .pane {
-    grid-template: 1fr auto auto auto 1fr / auto fit-content(600px);
-    grid-template-areas: "qr ." "qr stage" "qr hint" "qr code" "qr .";
-    column-gap: clamp(48px, 6vw, 112px);
-    row-gap: 24px;
-    justify-content: center;
-    justify-items: stretch;
-    text-align: left;
-  }
-  :is([data-mode="waiting"], [data-mode="scanned"]) .qr-card {
-    align-self: center;
-  }
-  :is([data-mode="waiting"], [data-mode="scanned"]) :is(.hint, .awaiting) {
-    font-size: 22px;
-    line-height: 1.35;
-    color: var(--ink-2);
-  }
-  [data-mode="scanned"] #controls {
-    justify-content: start;
-  }
-  /* Another phone's claim: the title alone, centered on the card. The hidden hint and code row share its cell, so
-     the column keeps its width and the card never moves. */
-  .is-pending .pane {
-    grid-template-rows: 1fr auto 1fr;
-    grid-template-areas: "qr ." "qr stage" "qr .";
-  }
-  .is-pending :is(#stage, .hint, .code-row) {
-    grid-area: stage;
-    align-self: center;
-  }
-  :is([data-mode="waiting"], [data-mode="scanned"], [data-mode="ended"]) h1 {
-    font-size: var(--display);
-  }
+/* Beside, where fitQr's slot check finds it holds the QR at least as large as stacking. The gap and the lines shrink
+   with a short window, so a phone held on its side keeps the title, the lines and the code row beside the card. Each
+   item starts the column at its own width, so the code row and Continue's row sit on its left edge. */
+.is-beside .pane {
+  grid-template: 1fr auto auto auto 1fr / auto fit-content(600px);
+  grid-template-areas: "qr ." "qr stage" "qr hint" "qr code" "qr .";
+  column-gap: clamp(48px, 6vw, 112px);
+  row-gap: min(24px, 3vh);
+  justify-content: center;
+  justify-items: start;
+  text-align: left;
+}
+.is-beside .qr-card {
+  align-self: center;
+}
+.is-beside :is(.hint, .awaiting) {
+  font-size: clamp(13px, 3vh, 22px);
+  line-height: 1.35;
+  color: var(--ink-2);
+}
+/* Another phone's claim: the title alone, centered on the card. The hidden hint and code row share its cell, so
+   the column keeps its width and the card never moves. */
+.is-pending.is-beside .pane {
+  grid-template-rows: 1fr auto 1fr;
+  grid-template-areas: "qr ." "qr stage" "qr .";
+}
+.is-pending.is-beside :is(#stage, .hint, .code-row) {
+  grid-area: stage;
+  align-self: center;
+}
+.is-beside h1,
+[data-mode="ended"] h1 {
+  font-size: var(--display);
 }
 /* Session Ended sits at the true center of the viewport, whatever the bar and footer take. */
 [data-mode="ended"] .pane {
@@ -581,11 +580,13 @@ main:has(> .side:not([hidden])) #stage {
   background: none;
   box-shadow: none;
 }
-#b-stop {
+#b-stop,
+#b-link {
   position: absolute;
   top: calc(16px + env(safe-area-inset-top));
   left: 50%;
-  z-index: 6;
+  /* Over the bar (20): its full-width box covers the stage's top, where the pill sits. */
+  z-index: 21;
   min-height: 44px;
   translate: -50%;
   /* Neutral over any slide: the saturating blur would tint it with the picture. */
@@ -597,6 +598,9 @@ main:has(> .side:not([hidden])) #stage {
   opacity: var(--stop-o, 0);
   pointer-events: none;
   transition: opacity 300ms var(--ease-ui);
+}
+#b-stop:not([hidden]) ~ #b-link {
+  margin-top: 52px;
 }
 .is-reach #b-stop {
   pointer-events: auto;
@@ -974,7 +978,6 @@ a.row:focus-visible {
   width: 70%;
 }
 .body,
-.ends,
 .sub,
 .scope {
   color: var(--muted);
@@ -998,16 +1001,15 @@ a.row:focus-visible {
   margin-top: 12px;
   font-size: 14px;
 }
-.ends {
-  display: flex;
-  align-items: center;
-  align-self: flex-start;
-  min-height: 44px;
-  padding: 0;
-  border: 0;
-  background: none;
+/* Approved: "Ends in" leads Revoke's row at its height (phone.js fits its words); a primary after them (the way back
+   to the screen) wraps above, so stacked it is on top. */
+.buttons:has(> .ends:not([hidden])) {
+  flex-flow: wrap-reverse;
+}
+#ends {
+  flex: none;
+  box-shadow: 0 0 0 1px var(--hairline);
   font-variant-numeric: tabular-nums;
-  cursor: pointer;
 }
 .ends.soon {
   color: var(--robin-ink);
@@ -1087,7 +1089,7 @@ a.row:focus-visible {
 .row:has(input:checked) .tick {
   visibility: visible;
 }
-/* Side by side the primary is last; stacked, first. The countdown is status, so it reads above them. */
+/* Side by side the primary is last; stacked, first. */
 .actions,
 .buttons {
   display: flex;
@@ -1117,7 +1119,7 @@ a.row:focus-visible {
     bottom: calc(var(--inset) + env(safe-area-inset-bottom));
     margin: auto 0 0;
     padding: 8px;
-    border-radius: 34px;
+    border-radius: var(--r-panel);
     box-shadow:
       var(--glass-edge),
       0 0 0 1px var(--hairline);
@@ -1194,7 +1196,7 @@ a.row:focus-visible {
     pointer-events: none;
   }
 }
-/* Approved hides Back: the title at --inset, mirroring the panel. */
+/* Approved hides Back: its first content at --inset, mirroring the panel. */
 @media (max-width: 899.98px) {
   .page-phone:not(.is-ended):has(#back[hidden]) .column {
     justify-content: flex-start;

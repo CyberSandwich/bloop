@@ -10,10 +10,9 @@ import { refused, styled } from "./lazy.js";
 import { canPresent, createRemote } from "./remote.js";
 import { el, setText } from "./ui.js";
 
-/** Speaker notes are held off until their box is fixed. */
-const NOTES = false;
-
 await styled("/css/remote.css");
+// A link row's tap asks the screen (LINK-02); without it the row still opens the link on the phone.
+const links = await import("./link-ask.js").catch(() => null);
 
 const api = createApi();
 const SWIPE = 50;
@@ -38,6 +37,7 @@ export function mount(c, onView) {
   const panel = /** @type {HTMLElement} */ (document.querySelector(".column > .actions"));
   const column = /** @type {HTMLElement} */ (list.parentElement);
   let on = false;
+  const answered = links?.mount(c, onView, () => on);
   let drawn = "";
   /** A paged item: the one the preview shows. */
   let paged = false;
@@ -66,6 +66,7 @@ export function mount(c, onView) {
   });
 
   function paint() {
+    answered?.();
     const v = c.view;
     const at = remote.at();
     const item = at && v?.items.find((x) => x.id === at.item);
@@ -106,7 +107,7 @@ export function mount(c, onView) {
       );
     }
     paged = !!pages;
-    if (NOTES && at.present && pages)
+    if (at.present && pages)
       notes ??= import("./notes.js").then(
         (m) => m.mount(c, () => on && remote.at(), preview, place),
         () => {},

@@ -43,10 +43,18 @@ export function createBox() {
   const none = el("p", { class: "notes-none glass" }, ["No Notes for This Slide"]);
   const box = el("div", { class: "notes", role: "region", "aria-label": "Notes", tabindex: "0" }, [text, none]);
   let held = "";
+  let shown = "";
   return {
     box,
     /** @param {string} note "" for none @param {string} slide names the slide: a different one starts at the top */
     show(note, slide) {
+      // A new note fades in over a box already placed (an arriving box has its own entry); a restart needs the class off.
+      if (note !== shown && box.isConnected) {
+        box.classList.remove("is-swap");
+        box.getBoundingClientRect();
+        box.classList.add("is-swap");
+      }
+      shown = note;
       text.textContent = note;
       text.hidden = note === "";
       none.hidden = note !== "";
@@ -126,8 +134,8 @@ export function mount(c, at, preview, place) {
       }
     }
     if (folded) {
-      if (!box.isConnected || preview.nextElementSibling !== box) panel.before(preview, box);
       show(noteFor(notes, now.page), `${it.id}:${now.page}`);
+      if (!box.isConnected || preview.nextElementSibling !== box) panel.before(preview, box);
     } else box.remove();
   }
 
