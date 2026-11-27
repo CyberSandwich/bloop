@@ -82,13 +82,10 @@ test.describe("LINK-02 the phone opens a link on the screen", () => {
       `(() => { const r = document.getElementById("b-link").getBoundingClientRect();
         return document.elementFromPoint(r.x + r.width / 2, r.y + r.height / 2)?.closest("#b-link")?.id; })()`,
     );
-    console.log(
-      "DBG",
-      await screen.evaluate(
-        `(() => { const r = document.getElementById("b-link").getBoundingClientRect(); const e = document.elementFromPoint(r.x + r.width / 2, r.y + r.height / 2); return JSON.stringify([r, e?.outerHTML.slice(0, 300)]); })()`,
-      ),
+    const dbg = await screen.evaluate(
+      `(() => { const p = document.getElementById("b-link"); const r = p.getBoundingClientRect(); const e = document.elementFromPoint(r.x + r.width / 2, r.y + r.height / 2); const cs = getComputedStyle(p); return JSON.stringify([innerWidth, innerHeight, r, cs.opacity, cs.pointerEvents, cs.visibility, p.parentElement?.id, p.parentElement?.hidden, e?.tagName, e?.id, e?.className]); })()`,
     );
-    expect(top).toBe("b-link");
+    expect(top, `DBG ${dbg}`).toBe("b-link");
     const popup = screenContext.waitForEvent("page");
     await pill.click();
     await (await popup).waitForURL(VEVOX);
