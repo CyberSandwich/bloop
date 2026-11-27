@@ -20,7 +20,14 @@ export class FakeNode {
   hidden = false;
   scrollTop = 0;
   own = "";
+  /** How often a script forced a layout: a restarted animation needs one between the class off and on. */
+  reflows = 0;
   constructor(public tag: string) {}
+
+  getBoundingClientRect() {
+    this.reflows++;
+    return { x: 0, y: 0, width: 0, height: 0 };
+  }
 
   get classes(): string[] {
     return (this.attrs.get("class") ?? "").split(" ").filter(Boolean);

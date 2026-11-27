@@ -8,7 +8,7 @@
   margin: auto auto calc(var(--inset) + env(safe-area-inset-bottom));
   padding: 8px;
   border: 0;
-  border-radius: 34px;
+  border-radius: var(--r-panel);
   box-shadow: var(--glass-edge), var(--sh-pill);
   color: var(--ink);
   overflow: auto;

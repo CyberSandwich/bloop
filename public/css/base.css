@@ -74,6 +74,7 @@
   --side: 280px;
   --row: 56px;
   --r-list: 24px;
+  --r-panel: 34px;
   --list-pad: 8px;
   --display: clamp(44px, 5.5vw, 96px);
   --inset: 10px;

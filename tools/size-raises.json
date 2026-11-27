@@ -11,7 +11,32 @@
   },
   {
     "entry": "phone remote, lazy",
-    "max": "2.287 kB",
-    "decision": "owner-approved 31 B raise for the phone preview cross-fade hook, then 6 B for the flag that holds the speaker notes off"
+    "max": "2.32 kB",
+    "decision": "owner-approved raises: 31 B for the phone preview cross-fade hook, 39 B more for the link-ask import and mount"
+  },
+  {
+    "entry": "phone JS",
+    "max": "16.727 kB",
+    "decision": "owner-approved raises: 15 B for the /a layout fixes, 12 B more where they meet the link-ask code"
+  },
+  {
+    "entry": "phone notes, lazy",
+    "max": "1.43 kB",
+    "decision": "owner-approved overrun under 10 percent for the notes reveal: the swap restart, 6 B over"
+  },
+  {
+    "entry": "phone notes CSS, lazy",
+    "max": "0.55 kB",
+    "decision": "owner-approved overrun under 10 percent for the notes reveal and the box's own layout, 29 B over"
+  },
+  {
+    "entry": "room screen JS",
+    "max": "24.584 kB",
+    "decision": "owner-approved 34 B raise where the /s QR fit meets the link-open code"
+  },
+  {
+    "entry": "app page CSS",
+    "max": "7.104 kB",
+    "decision": "owner-approved 4 B raise for the /a layout and notes rules (CI gzip measure)"
   }
 ]
