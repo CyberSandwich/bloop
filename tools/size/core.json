@@ -294,7 +294,7 @@
     "name": "app page CSS",
     "path": ["dist/css/base.css", "dist/css/app.css"],
     "gzip": true,
-    "limit": "7.1 kB"
+    "limit": "7.104 kB"
   },
   {
     "name": "hero image 2000",

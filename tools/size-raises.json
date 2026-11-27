@@ -33,5 +33,10 @@
     "entry": "room screen JS",
     "max": "24.584 kB",
     "decision": "owner-approved 34 B raise where the /s QR fit meets the link-open code"
+  },
+  {
+    "entry": "app page CSS",
+    "max": "7.104 kB",
+    "decision": "owner-approved 4 B raise for the /a layout and notes rules (CI gzip measure)"
   }
 ]
