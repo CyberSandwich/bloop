@@ -38,5 +38,10 @@
     "entry": "app page CSS",
     "max": "7.104 kB",
     "decision": "owner-approved 4 B raise for the /a layout and notes rules (CI gzip measure)"
+  },
+  {
+    "entry": "session length sheet, lazy",
+    "max": "1.356 kB",
+    "decision": "owner-approved overrun under 10 percent for the one-line Set Session Expiry card, 6 B over"
   }
 ]

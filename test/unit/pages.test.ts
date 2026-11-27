@@ -199,10 +199,10 @@ describe("the phone's dialogs", () => {
     expect(read("css/length.css")).not.toMatch(/glass-edge|--glass\b|backdrop-filter/);
   });
 
-  it("the sheet's time field has an explicit height and WebKit's inner value box has no margin", () => {
+  it("the sheet's time field is the card's invisible cover, at 16 px or more so iOS never zooms into it", () => {
     const css = read("css/length.css");
-    expect(css).toMatch(/\.sheet-card \.field \{[^}]*\bheight: \d+px;/);
-    expect(css).toMatch(/::-webkit-date-and-time-value \{\s*margin: 0;\s*\}/);
+    expect(css).toMatch(/\.sheet-card \.field \{[^}]*\bposition: absolute;[^}]*\binset: 0;[^}]*\bopacity: 0;/);
+    expect(Number(/\.sheet-card \.field \{[^}]*\bfont-size: (\d+)px;/.exec(css)?.[1])).toBeGreaterThanOrEqual(16);
   });
 
   it("glass docked at a phone window's bottom has a hairline ring, never a drop shadow (design.md, Glass)", () => {

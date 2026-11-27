@@ -466,101 +466,51 @@ test.describe("pairing flow", () => {
     });
   }
 
-  // The title and the time share one baseline where one row holds both (844 x 390 must), and wrap as two centered
-  // lines where it can't (320 and 390 may: the time's width decides, and Chromium draws it 12-hour on this en-US page
-  // whatever the locale, so those read which it is). A time input's text is centered in its box, so its baseline is
-  // the box's middle less half the font's descent and plus half its ascent.
-  for (const [width, height, locale, oneRow] of [
-    [390, 844, "en-GB", false],
-    [844, 390, "en-GB", true],
-    [320, 640, "en-GB", false],
-    [390, 844, "en-US", false],
+  // One line, "Set Session Expiry (HH:MM)", one font size, centered both ways in its card; the invisible time input
+  // covers the card, so a tap anywhere on it reaches the native picker.
+  for (const [width, height] of [
+    [320, 640],
+    [390, 844],
+    [844, 390],
   ] as const) {
-    test(`SESS-01 at ${width} x ${height} in ${locale} the sheet's title and time are centered, ${oneRow ? "on one baseline" : "on one baseline or two lines, nothing clipped"}`, async ({
+    test(`SESS-01 at ${width} x ${height} the sheet's line is one text at one size, centered, with the time input over the card`, async ({
       browser,
     }) => {
-      const screen = await demoScreen(browser);
-      const code = await typedCodeOf(screen.page);
-      const context = await browser.newContext({ viewport: { width, height }, locale, isMobile: true, hasTouch: true });
-      const page = await context.newPage();
-      await page.goto(`/a?c=${code}`);
-      await page.getByRole("button", { name: /^Approve, code/ }).click();
-      await page.getByRole("button", { name: /Change the Session Expiry$/ }).click();
-      const sheet = page.getByRole("dialog", { name: "Session Expiry" });
+      const { screen, phone, lengthButton, sheet } = await approvedDemo(browser);
+      await phone.page.setViewportSize({ width, height });
+      await lengthButton.click();
       await expect(sheet).toBeVisible();
       await sheet
         .locator("form")
         .evaluate((f) => Promise.all(f.getAnimations().map((a: { finished: Promise<unknown> }) => a.finished)));
-      await page.evaluate("document.fonts.ready.then(() => true)");
-      const m = (await page.evaluate(`(() => {
+      const value = await sheet.getByLabel("Expires At").inputValue();
+      await expect(sheet.locator("h2")).toHaveText(`Set Session Expiry (${value})`);
+      await expect(sheet.getByRole("heading", { name: "Set Session Expiry", exact: true })).toBeVisible();
+      const m = (await phone.page.evaluate(`(() => {
         const card = document.querySelector(".sheet-card");
         const h2 = card.querySelector("h2");
-        const field = card.querySelector(".field");
-        const probe = document.createElement("span");
-        probe.style.cssText = "display:inline-block;width:0;height:0";
-        h2.append(probe);
-        const titleBase = probe.getBoundingClientRect().bottom;
-        probe.remove();
-        const css = getComputedStyle(field);
-        const ctx = document.createElement("canvas").getContext("2d");
-        ctx.font = css.fontWeight + " " + css.fontSize + " " + css.fontFamily;
-        const t = ctx.measureText("0");
-        const f = field.getBoundingClientRect();
-        const h = h2.getBoundingClientRect();
         const c = card.getBoundingClientRect();
+        const h = h2.getBoundingClientRect();
+        const f = card.querySelector(".field").getBoundingClientRect();
         return {
-          titleBase,
-          timeBase: f.top + (f.height + t.fontBoundingBoxAscent - t.fontBoundingBoxDescent) / 2,
-          card: (c.left + c.right) / 2,
-          title: { left: h.left, right: h.right, bottom: h.bottom },
-          field: { left: f.left, right: f.right, top: f.top },
+          sizes: [getComputedStyle(h2).fontSize, getComputedStyle(document.getElementById("length-shown")).fontSize],
+          dy: (h.top + h.bottom) / 2 - (c.top + c.bottom) / 2,
+          dx: (h.left + h.right) / 2 - (c.left + c.right) / 2,
+          cover: [f.left - c.left, f.top - c.top, f.width - c.width, f.height - c.height],
         };
-      })()`)) as {
-        titleBase: number;
-        timeBase: number;
-        card: number;
-        title: { left: number; right: number; bottom: number };
-        field: { left: number; right: number; top: number };
-      };
+      })()`)) as { sizes: string[]; dy: number; dx: number; cover: number[] };
       const at = JSON.stringify(m);
-      if (oneRow || m.field.top < m.title.bottom) {
-        expect(Math.abs(m.titleBase - m.timeBase), at).toBeLessThanOrEqual(1);
-        expect(Math.abs((m.title.left + m.field.right) / 2 - m.card), at).toBeLessThanOrEqual(1);
-      } else {
-        expect(Math.abs((m.title.left + m.title.right) / 2 - m.card), at).toBeLessThanOrEqual(1);
-        expect(Math.abs((m.field.left + m.field.right) / 2 - m.card), at).toBeLessThanOrEqual(1);
-      }
-      await expectWithin(sheet.getByLabel("Expires At"), sheet.locator(".sheet-card"));
-      await context.close();
+      expect(m.sizes[0], at).toBe(m.sizes[1]);
+      expect(Math.abs(m.dy), at).toBeLessThanOrEqual(1);
+      expect(Math.abs(m.dx), at).toBeLessThanOrEqual(1);
+      for (const d of m.cover) expect(Math.abs(d), at).toBeLessThanOrEqual(1);
+      // The line follows the input.
+      await sheet.getByLabel("Expires At").fill("23:59");
+      await expect(sheet.locator("#length-shown")).toHaveText("(23:59)");
       await screen.context.close();
+      await phone.context.close();
     });
   }
-
-  test("SESS-01 at 390 x 844 the sheet's time value is vertically centered in its field", async ({ browser }) => {
-    const { screen, phone, lengthButton, sheet } = await approvedDemo(browser);
-    await phone.page.setViewportSize({ width: 390, height: 844 });
-    await lengthButton.click();
-    await expect(sheet).toBeVisible();
-    await sheet
-      .locator("form")
-      .evaluate((f) => Promise.all(f.getAnimations().map((a: { finished: Promise<unknown> }) => a.finished)));
-    await phone.page.evaluate("document.fonts.ready.then(() => true)");
-    const gap = (await phone.page.evaluate(`(() => {
-      const field = document.querySelector(".sheet-card .field");
-      const css = getComputedStyle(field);
-      const ctx = document.createElement("canvas").getContext("2d");
-      ctx.font = css.fontWeight + " " + css.fontSize + " " + css.fontFamily;
-      const t = ctx.measureText("21:09");
-      const glyph = t.fontBoundingBoxAscent + t.fontBoundingBoxDescent;
-      const box = field.getBoundingClientRect();
-      const content = box.height - parseFloat(css.paddingTop) - parseFloat(css.paddingBottom);
-      const above = parseFloat(css.paddingTop) + (content - glyph) / 2;
-      return above - (box.height - above - glyph);
-    })()`)) as number;
-    expect(Math.round(gap)).toBe(0);
-    await screen.context.close();
-    await phone.context.close();
-  });
 
   test("SESS-01 a refused length is a toast over the running session: the countdown, Revoke and the sheet stay", async ({
     browser,

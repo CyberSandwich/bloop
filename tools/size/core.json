@@ -155,7 +155,7 @@
   {
     "name": "session length sheet, lazy",
     "path": ["dist/js/core/lazy.js", "dist/js/core/length.js", "dist/js/shared/length.js"],
-    "limit": "1.35 kB"
+    "limit": "1.356 kB"
   },
   {
     "name": "session length words, lazy",

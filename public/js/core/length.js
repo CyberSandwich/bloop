@@ -11,6 +11,7 @@ const at = /** @type {HTMLInputElement} */ (document.getElementById("length-at")
 const ends = /** @type {HTMLElement} */ (document.getElementById("ends"));
 const setButton = /** @type {HTMLButtonElement} */ (sheet.querySelector("button[type=submit]"));
 const hint = /** @type {HTMLElement} */ (document.getElementById("length-hint"));
+const shown = /** @type {HTMLElement} */ (document.getElementById("length-shown"));
 /** The phone page the sheet is open for. @type {PhonePage} */
 let page;
 /** @type {(view: PhoneView) => void} */
@@ -29,6 +30,7 @@ const clockOf = (at) => (at == null ? "" : clock(new Date(at - page.skew)));
 const room = () => ((page.view?.latestEnd ?? Infinity) - page.skew - Date.now()) / 1000;
 
 const refresh = () => {
+  shown.textContent = at.value && `(${at.value})`;
   // A disabled control cannot hold focus.
   if (
     !rules.refresh({ set: setButton, hint, at }, room(), clockOf(page.view?.latestEnd)) &&
@@ -54,6 +56,8 @@ sheet.addEventListener("click", (e) => {
   if (chip) choose(clampLength(Number(chip.getAttribute("data-minutes")) * 60, (page.view?.maxMinutes ?? 0) * 60));
   // Close is a plain button: a submit in the time's form would ask for a valid time first.
   else if (t === sheet || t?.closest(".sheet-x")) sheet.close();
+  // The input is the card's invisible cover: a phone opens its picker on the tap itself, a desktop browser on this.
+  else if (t === at) at.showPicker?.();
 });
 sheet.querySelector("form")?.addEventListener("submit", (e) => {
   e.preventDefault();

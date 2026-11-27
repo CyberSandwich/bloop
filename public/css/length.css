@@ -40,34 +40,32 @@
   box-shadow: 0 0 0 1px var(--hairline);
   overflow: hidden;
 }
-/* The title and the time on one baseline, centered as a pair over the presets; where one row can't hold both, the
-   time wraps under the title, centered too. The picker glyph would crowd the row: a phone opens its picker on a tap on the time, and a
-   keyboard types it. */
+/* One line, "Set Session Expiry (11:53)", at the title's size, centered both ways. The time input covers the whole card,
+   invisible, so a tap anywhere on it opens the native picker; the line shows its value. */
 .sheet-card {
-  flex-flow: wrap;
+  position: relative;
+  flex-direction: column;
   justify-content: center;
-  align-items: baseline;
-  column-gap: 8px;
+  min-height: 60px;
 }
 .sheet h2 {
-  padding: 14px 0 12px;
+  padding: 8px 16px;
   font-size: 17px;
+  text-align: center;
+}
+#length-shown {
+  font-variant-numeric: tabular-nums;
 }
 .sheet-card .field {
-  width: auto;
-  height: 60px;
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
   padding: 0;
-  background: none;
-  box-shadow: none;
-  font-size: 28px;
-  letter-spacing: 0;
-  text-transform: none;
-}
-.sheet-card ::-webkit-calendar-picker-indicator {
-  display: none;
-}
-.sheet-card ::-webkit-date-and-time-value {
-  margin: 0;
+  opacity: 0;
+  /* At least 16: iOS zooms the page into a smaller field on focus. */
+  font-size: 17px;
+  cursor: pointer;
 }
 /* Why Set is off: a short line under the time. */
 .sheet-hint {
