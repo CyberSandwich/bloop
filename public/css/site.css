@@ -348,7 +348,7 @@ html:has(.page-site) {
     border-radius: 16px;
   }
   .stage img {
-    aspect-ratio: 390 / 711;
+    aspect-ratio: auto 390 / 711;
   }
 }
 @supports (animation-timeline: view()) {
