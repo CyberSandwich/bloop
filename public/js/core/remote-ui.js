@@ -10,6 +10,9 @@ import { refused, styled } from "./lazy.js";
 import { canPresent, createRemote } from "./remote.js";
 import { el, setText } from "./ui.js";
 
+/** Speaker notes are held off until their box is fixed. */
+const NOTES = false;
+
 await styled("/css/remote.css");
 
 const api = createApi();
@@ -103,6 +106,11 @@ export function mount(c, onView) {
       );
     }
     paged = !!pages;
+    if (NOTES && at.present && pages)
+      notes ??= import("./notes.js").then(
+        (m) => m.mount(c, () => on && remote.at(), preview, place),
+        () => {},
+      );
     // The screen holds sound until a tap there: the phone says so under the list.
     if (video && at.sound === "blocked") {
       if (!note.isConnected) list.after(note);
