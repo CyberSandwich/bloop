@@ -11,7 +11,7 @@
   },
   {
     "entry": "phone remote, lazy",
-    "max": "2.281 kB",
-    "decision": "owner-approved 31 B raise for the phone preview cross-fade hook"
+    "max": "2.287 kB",
+    "decision": "owner-approved 31 B raise for the phone preview cross-fade hook, then 6 B for the flag that holds the speaker notes off"
   }
 ]
