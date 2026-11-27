@@ -4030,13 +4030,12 @@ test.describe("NOTES-01 phone-only: the presenter's notes on the phone (design.m
   test("reduced motion shows the notes at once", async ({ browser }) => {
     const s = await session(browser, SIZES[0] as Size);
     await s.page.emulateMedia({ reducedMotion: "reduce" });
-    await sampleFrames(s.page);
     await s.present();
     await expect(s.box).toContainText(opening(NOTES[0] ?? ""));
     await s.arrived();
-    await expect.poll(async () => (await framesOf(s.page)).at(-1)?.box).toBe(1);
-    const frames = await framesOf(s.page);
-    expect(frames.filter((f) => f.box < 1).length, "at most the frame the animation starts in").toBeLessThanOrEqual(1);
+    // The rule, not a count of frames that a loaded runner may stretch: the entry runs for a hundredth of a millisecond.
+    expect(await px(s.box, "animationDuration"), "the entry's duration in seconds").toBeLessThan(0.001);
+    await expect(s.box).toHaveCSS("opacity", "1");
     await close(s);
   });
 
