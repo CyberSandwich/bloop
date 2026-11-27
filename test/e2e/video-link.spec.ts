@@ -41,7 +41,7 @@ async function paired(browser: Browser, width: number, phonePrep?: PrepFn) {
 const videoRow = (list: Locator) => list.locator(".row, .item").filter({ hasText: DEMO_ITEMS.video.name });
 
 /**
- * A long title keeps its row whole: two lines at most with an ellipsis, the thumbnail and the arrow inside the row, the
+ * A long title keeps its row whole: one line with an ellipsis, the thumbnail and the arrow inside the row, the
  * text clear of the arrow, and no horizontal overflow of the row, its list or the page.
  */
 async function expectWholeRow(row: Locator, trailing: Locator) {
@@ -93,11 +93,11 @@ async function expectWholeRow(row: Locator, trailing: Locator) {
   expect(geometry.scrollWidth).toBeLessThanOrEqual(geometry.clientWidth);
   expect(geometry.listScroll).toBeLessThanOrEqual(geometry.listClient);
   expect(geometry.pageScroll).toBeLessThanOrEqual(geometry.pageClient);
-  // The title clamps to two lines at most (never taller), and shows at least one whole line.
-  expect(name.height).toBeLessThanOrEqual(geometry.lineHeight * 2 + 1);
+  // The title clamps to one whole line.
+  expect(name.height).toBeLessThanOrEqual(geometry.lineHeight + 1);
   expect(name.height).toBeGreaterThanOrEqual(geometry.lineHeight - 1);
-  // A row of two text lines is at most a name of two lines and the small line over its padding: never a tall slab.
-  expect(box.height).toBeLessThanOrEqual(geometry.lineHeight * 2 + 80);
+  // A row of two text lines: the name's one line and the small line over its padding, never a tall slab.
+  expect(box.height).toBeLessThanOrEqual(geometry.lineHeight + 80);
   // The thumbnail, the text and the trailing icon sit inside the row, in order, with the text clear of the icon.
   for (const part of [thumb, text]) {
     expect(part.left).toBeGreaterThanOrEqual(box.left - 1);

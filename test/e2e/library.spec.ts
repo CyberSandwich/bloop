@@ -364,15 +364,15 @@ test.describe("library", () => {
     [320, "#file-list"],
     [1440, "#up-list"],
   ] as const) {
-    test(`a long name takes two lines and no more at ${width}`, async ({ page, context }) => {
+    test(`a long name takes one line at ${width}`, async ({ page, context }) => {
       await page.setViewportSize({ width, height: 900 });
       await signedIn(context, members.wide);
       await page.goto("/library");
       const name = page.locator(`${list} .row-name`).first();
       await expect(name).toBeVisible();
-      // A 15px line at 1.3 is 19.5 high: two lines, never three, never one.
+      // A 15px line at 1.3 is 19.5 high: one line, an ellipsis ending it.
       const box = await name.boundingBox();
-      expect(Math.round((box?.height ?? 0) / 19.5), "lines").toBe(2);
+      expect(Math.round((box?.height ?? 0) / 19.5), "lines").toBe(1);
       // The name stays clear of the tick beside it (More is hidden in Up Next on a fine pointer).
       const tick = await page.locator(`${list} .lib-tick`).first().boundingBox();
       expect((box?.x ?? 0) + (box?.width ?? 0), "name right edge").toBeLessThanOrEqual(tick?.x ?? 0);

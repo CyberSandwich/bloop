@@ -287,7 +287,7 @@ test.describe("pairing flow", () => {
     await phone.context.close();
   });
 
-  test("a long file name on the phone list takes two lines and stays inside the row at 320 and 390", async ({
+  test("a long file name on the phone list takes one line and stays inside the row at 320 and 390", async ({
     browser,
   }) => {
     const screen = await demoScreen(browser);
@@ -300,8 +300,8 @@ test.describe("pairing flow", () => {
     for (const width of [320, 390]) {
       await phone.page.setViewportSize({ width, height: 844 });
       const box = await name.boundingBox();
-      // A 15px line at 1.3 is 19.5 high: two lines, never three.
-      expect(Math.round((box?.height ?? 0) / 19.5), `lines at ${width}`).toBe(2);
+      // A 15px line at 1.3 is 19.5 high: one line, an ellipsis ending it.
+      expect(Math.round((box?.height ?? 0) / 19.5), `lines at ${width}`).toBe(1);
       expect((box?.x ?? 0) + (box?.width ?? 0), `right edge at ${width}`).toBeLessThanOrEqual(width);
     }
     await screen.context.close();
