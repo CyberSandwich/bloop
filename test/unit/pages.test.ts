@@ -199,12 +199,6 @@ describe("the phone's dialogs", () => {
     expect(read("css/length.css")).not.toMatch(/glass-edge|--glass\b|backdrop-filter/);
   });
 
-  it("the sheet's time field has an explicit height and WebKit's inner value box has no margin", () => {
-    const css = read("css/length.css");
-    expect(css).toMatch(/\.sheet-card \.field \{[^}]*\bheight: \d+px;/);
-    expect(css).toMatch(/::-webkit-date-and-time-value \{\s*margin: 0;\s*\}/);
-  });
-
   it("glass docked at a phone window's bottom has a hairline ring, never a drop shadow (design.md, Glass)", () => {
     // Docked: offset from the bottom by the safe area, or, for the handle, last in the viewer's column.
     const css = read("css/app.css").replace(/\/\*[\s\S]*?\*\//g, "");

@@ -213,8 +213,6 @@ export interface PhoneAction {
 
 export interface PhoneCopy {
   title: string;
-  /** The title is for screen readers only: the list it would push down is the page. */
-  quiet: boolean;
   /** A long name the title cut, whole, in a line of its own. */
   name: string;
   body: string;

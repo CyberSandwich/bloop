@@ -158,30 +158,16 @@ function after(/** @type {string} */ name, /** @type {number} */ ms, /** @type {
 }
 const cancel = (/** @type {string} */ name) => clearTimeout(s.timers[name]);
 
-/** The card's size, its QR's and the ring's: the card is the QR. */
-const sizeQr = (/** @type {number} */ n) => ["width", "height"].map((k) => qrSvg.setAttribute(k, String(n)));
-
-/**
- * The layout from the room each one leaves the QR, a slot check as the viewer's pill takes (placeControls), never a
- * viewport media query: beside the text where that holds it as large as stacking would (a tie goes beside), else
- * stacked under the title. Each is measured with the card at 0, inside main's padding; beside, the block is centered,
- * so twice the card's left is the width the text leaves it. No card on the page, no layout. The ring is the card's
- * edge (radius 28, as app.css): its dash starts at the top center and runs clockwise.
- */
+/** The ring is the card's edge (radius 28, as app.css): its dash starts at the top center and runs clockwise. */
 function fitQr() {
-  if (!qrPanel.offsetParent) return main.classList.remove("is-beside");
-  sizeQr(0);
-  main.classList.add("is-beside");
-  const side = 2 * qrPanel.offsetLeft;
-  main.classList.remove("is-beside");
-  const room = innerHeight - 2 * parseFloat(getComputedStyle(main).paddingTop);
-  // Half the height, and at least 205 (5 px a module, about 5.4 cm: a camera reads it from arm's length) where it fits.
-  const want = Math.max(205, innerHeight / 2);
-  const under = Math.min(want, pane.clientWidth, room - pane.offsetHeight);
-  const beside = Math.min(want, side, room);
-  main.classList.toggle("is-beside", beside >= under);
-  const size = qrSize(Math.max(beside, under), devicePixelRatio);
-  sizeQr(size);
+  // Half the height at most, and stacked no more than the title, hint and code row leave: the page never scrolls.
+  const rest = pane.offsetHeight - qrPanel.offsetHeight + 2 * parseFloat(getComputedStyle(main).paddingTop);
+  // At most the column; at least 205 (5 px a module, about 5.4 cm: a camera reads it from arm's length), even where
+  // that leaves the page short of room.
+  const room = Math.min(innerHeight / 2, innerHeight - rest, pane.clientWidth);
+  const size = qrSize(Math.max(205, room), devicePixelRatio || 1);
+  qrSvg.setAttribute("width", String(size));
+  qrSvg.setAttribute("height", String(size));
   pane.style.setProperty("--qr", `${size}px`);
   const r = 28;
   const perimeter = 4 * (size - 2 * r) + 2 * Math.PI * r;
@@ -356,7 +342,7 @@ function paint() {
   const row = document.querySelector("#items [aria-current]");
   const title = row instanceof HTMLElement && row.offsetParent ? row : copy.heading ? heading : null;
   if (changed && title && lostFocus()) focusTitle(title);
-  fitQr();
+  if (mode === "waiting" || mode === "scanned") fitQr();
   if (mode === "waiting") updateRing();
   schedule(key);
 }
@@ -410,8 +396,6 @@ function onView(/** @type {ScreenView} */ view) {
   // The credential is the screen's own, not the session's: it comes back so a reload resumes the waiting screen.
   else if (view.state === "waiting" && s.sid && store.get(SID_KEY) !== s.sid) store.set(SID_KEY, s.sid);
   launcher.onView(view);
-  // Lazy until the phone's first Open; if it never loads, the phone's own wait ends with its words (link-ask.js).
-  if (view.linkOpen) void import("./core/link-open.js").then((m) => m.follow(view, api, s.sid ?? ""));
   render();
 }
 

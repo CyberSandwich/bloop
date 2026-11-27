@@ -265,21 +265,6 @@ describe("the notes box", () => {
     show("x", "i2:3");
     expect(box.scrollTop).toBe(0);
   });
-  it("a new note fades in over a placed box, once per change; an arriving box and a repaint get no fade", () => {
-    const { box, show } = createBox();
-    show("first", "i1:1");
-    expect(box.classList.contains("is-swap"), "not placed yet: the box's own entry plays").toBe(false);
-    doc.root = new FakeNode("div");
-    doc.root.append(box);
-    show("first", "i1:1");
-    expect(box.classList.contains("is-swap"), "the same note painted again").toBe(false);
-    show("second", "i1:2");
-    expect(box.classList.contains("is-swap")).toBe(true);
-    expect(box.reflows, "the animation restarts, so a layout sits between class off and on").toBe(1);
-    show("third", "i1:3");
-    expect(box.reflows).toBe(2);
-    doc.root = null;
-  });
 });
 
 describe("the notes layout", () => {

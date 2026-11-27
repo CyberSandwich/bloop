@@ -105,7 +105,7 @@ test.describe("PAIR-15 a signed-out claim on a live code", () => {
     await expect(phone.page.locator("#body")).toHaveText(
       "Sign in to present your own files. No invite yet? You can still send one file to this screen.",
     );
-    const actions = phone.page.locator("#actions [data-action]");
+    const actions = phone.page.locator("#actions .btn");
     await expect(actions).toHaveCount(4);
     await expect(actions).toHaveText(["Try the Demo", "Join the Waitlist", "Send One File", "Sign In"]);
     await expect(phone.page.getByRole("link", { name: "Try the Demo" })).toHaveAttribute("href", "/demo");
@@ -143,7 +143,7 @@ test.describe("PAIR-15 a signed-out claim on a live code", () => {
     ]) {
       await phone.page.setViewportSize(size);
       const box = await phone.page.locator(".actions").boundingBox();
-      for (const b of await phone.page.locator("#actions [data-action]").all()) {
+      for (const b of await phone.page.locator("#actions .btn").all()) {
         const r = await b.boundingBox();
         if (!box || !r) throw new Error("no box");
         // A leading text action sits 12 out, so its words line up with the column (app.css).

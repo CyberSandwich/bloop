@@ -46,7 +46,7 @@
       "dist/js/vendor/uqr-1289037a/uqr.js",
       "dist/js/viewer.js"
     ],
-    "limit": "24.584 kB"
+    "limit": "24.55 kB"
   },
   {
     "name": "phone JS",
@@ -74,7 +74,7 @@
       "dist/js/shared/names.js",
       "dist/js/shared/session.js"
     ],
-    "limit": "16.727 kB"
+    "limit": "16.7 kB"
   },
   {
     "name": "typed code JS",
@@ -171,17 +171,7 @@
   {
     "name": "phone remote, lazy",
     "path": ["dist/js/core/lazy.js", "dist/js/core/remote-ui.js", "dist/js/core/remote.js"],
-    "limit": "2.32 kB"
-  },
-  {
-    "name": "phone link ask, lazy",
-    "path": "dist/js/core/link-ask.js",
-    "limit": "0.52 kB"
-  },
-  {
-    "name": "screen link open, lazy",
-    "path": "dist/js/core/link-open.js",
-    "limit": "0.49 kB"
+    "limit": "2.281 kB"
   },
   {
     "name": "phone remote CSS, lazy",
@@ -218,13 +208,13 @@
   {
     "name": "phone notes, lazy",
     "path": ["dist/js/core/lazy.js", "dist/js/core/notes.js"],
-    "limit": "1.43 kB"
+    "limit": "1.42 kB"
   },
   {
     "name": "phone notes CSS, lazy",
     "path": "dist/css/notes.css",
     "gzip": true,
-    "limit": "0.55 kB"
+    "limit": "0.52 kB"
   },
   {
     "name": "drag and drop, lazy",
@@ -294,7 +284,7 @@
     "name": "app page CSS",
     "path": ["dist/css/base.css", "dist/css/app.css"],
     "gzip": true,
-    "limit": "7.104 kB"
+    "limit": "7.1 kB"
   },
   {
     "name": "hero image 2000",

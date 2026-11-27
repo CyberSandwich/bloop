@@ -1,7 +1,7 @@
 /* The Session Expiry sheet (design.md section 7): one glass pane (app.css .glass-pane), a 2 x 2 grid of shapes. Left,
    the title and time card over the presets; right, Close and Set in one column. */
 .sheet {
-  width: min(100% - 2 * var(--pad), 432px);
+  width: min(calc(100% - 2 * var(--pad)), 432px);
   max-width: none;
   margin: auto auto calc(var(--inset) + env(safe-area-inset-bottom));
   padding: 0;
@@ -11,7 +11,7 @@
   color: var(--ink);
 }
 .sheet::backdrop {
-  background: #1e1e1c3d;
+  background: rgba(30, 30, 28, 0.24);
 }
 /* As app.css's .leave: focus the opening moved rings only after a key. */
 .sheet h2:focus-visible,
@@ -23,14 +23,13 @@
   grid-template-columns: minmax(0, 1fr) 72px;
   gap: 8px;
   padding: 8px;
-  border-radius: var(--r-panel);
+  border-radius: 34px;
   animation: toast-in 250ms var(--ease-out) backwards;
 }
 /* The shapes: the pane's radius less its padding, so they sit concentric in it. */
 .sheet-card,
 .sheet-x,
 .chips {
-  display: flex;
   min-width: 0;
   margin: 0;
   padding: 0;
@@ -40,38 +39,28 @@
   box-shadow: 0 0 0 1px var(--hairline);
   overflow: hidden;
 }
-/* The title and the time on one baseline, centered as a pair over the presets; where one row can't hold both, the
-   time wraps under the title, centered too. The picker glyph would crowd the row: a phone opens its picker on a tap on the time, and a
-   keyboard types it. */
-.sheet-card {
-  flex-flow: wrap;
-  justify-content: center;
-  align-items: baseline;
-  column-gap: 8px;
-}
 .sheet h2 {
-  padding: 14px 0 12px;
+  padding: 14px 16px 12px;
   font-size: 17px;
 }
+/* The whole row is the time's target; the hairline parts it from the title. */
 .sheet-card .field {
-  width: auto;
+  display: block;
   height: 60px;
-  padding: 0;
+  border-top: 1px solid var(--hairline);
+  border-radius: 0;
   background: none;
   box-shadow: none;
   font-size: 28px;
   letter-spacing: 0;
+  text-align: left;
   text-transform: none;
 }
-.sheet-card ::-webkit-calendar-picker-indicator {
-  display: none;
-}
-.sheet-card ::-webkit-date-and-time-value {
-  margin: 0;
+.sheet-card .field::-webkit-date-and-time-value {
+  text-align: left;
 }
 /* Why Set is off: a short line under the time. */
 .sheet-hint {
-  flex-basis: 100%;
   margin: 0;
   padding: 10px 16px;
   border-top: 1px solid var(--hairline);
@@ -85,6 +74,9 @@
   display: grid;
   place-items: center;
   cursor: pointer;
+}
+.chips {
+  display: flex;
 }
 .chips button {
   flex: 1;
@@ -118,6 +110,12 @@
   .sheet {
     max-height: calc(100dvh - 2 * var(--inset));
     overflow-y: auto;
+  }
+}
+/* Under 360 wide the card is about 180 wide: at 28px a 12-hour time and its picker icon clip. */
+@media (max-width: 359.98px) {
+  .sheet-card .field {
+    font-size: 22px;
   }
 }
 @media (min-width: 640px) {

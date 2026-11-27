@@ -9,7 +9,6 @@ import type {
   FileType,
   ItemKind,
   Kind,
-  LinkOpen,
   Mode,
   OpenMode,
   PairingAccountError,
@@ -19,7 +18,6 @@ import type {
 } from "../shared/protocol.ts";
 import type { ItemDraft, ItemRef } from "./items.ts";
 import { control, end, fetched, launched, length, started } from "./machine/control.ts";
-import { linkOpen, linkOpened } from "./machine/link.ts";
 import { approve, derivedReady, fallback, listed, openClick } from "./machine/lists.ts";
 import { cancel, claim, codeNext, match, restart, socket, timer } from "./machine/pairing.ts";
 import { closeAtFor, fail, SECOND } from "./machine/step.ts";
@@ -89,8 +87,6 @@ export interface Machine {
     shown: Shown | null;
     /** The last `control` seq applied from each sender (PAIR-13); 0 until then. */
     seq: Record<Sender, number>;
-    /** The phone's last ask to open a link on the screen (LINK-02); absent until the first, so stored data stays valid. */
-    linkOpen?: LinkOpen | null;
     /** The machine's `v` after the phone last changed `shown`: a screen report on an older view would rewind it. */
     phoneV?: number;
     /** Phone-only data per item id, kept apart from the items so the screen's view cannot carry it. */
@@ -148,8 +144,6 @@ export type Event =
   | { e: "launched"; now: number; mode: OpenMode }
   | { e: "fetched"; now: number }
   | { e: "control"; now: number; from: Sender; seq: number; shown: Shown; base?: number } // the phone's remote, or the screen's own tap; base: the v of the screen's last view
-  | { e: "link.open"; now: number; item: string } // the phone asks the screen to open a link item
-  | { e: "link.opened"; now: number; n: number; opened: boolean; refused?: true } // the screen's answer to ask `n`
   | { e: "length"; now: number; seconds: number; maxMinutes: number } // the phone sets the end; maxMinutes: the mode's cap
   | { e: "fallback"; now: number; mode: OpenMode; item: number | null; maxMints: number } // null: the launched item; maxMints: per item, after its first link
   | { e: "cancel"; now: number }
@@ -261,10 +255,6 @@ function apply(m: Machine, ev: Event, cfg: MachineConfig): Step {
       return uploadFailed(m, ev);
     case "control":
       return control(m, ev);
-    case "link.open":
-      return linkOpen(m, ev);
-    case "link.opened":
-      return linkOpened(m, ev);
     case "length":
       return length(m, ev, cfg);
     case "launched":

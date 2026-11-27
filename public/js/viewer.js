@@ -288,6 +288,8 @@ export function createViewer(deps) {
     const pdf = it?.kind === "file" && it.type === "pdf";
     const img = el("img", {
       src: `${base}.webp`,
+      width: "1920",
+      height: "1200",
       decoding: "async",
       alt: `${pdf ? "Page" : "Slide"} ${n + 1} of ${of}`,
       "data-page": String(n),

@@ -263,7 +263,7 @@ label.lib-tick::before {
   gap: 8px;
   margin-top: auto;
   padding: 8px;
-  border-radius: var(--r-panel);
+  border-radius: 34px;
   box-shadow: var(--glass-edge), var(--sh-pill);
 }
 .lib-panel .btn {

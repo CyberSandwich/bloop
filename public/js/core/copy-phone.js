@@ -61,7 +61,7 @@ const BACK = {
 /** In an approved session a failure keeps Revoke. */
 const retryActions = (/** @type {PhoneFacts} */ f) =>
   /** @type {PhoneAction[]} */ (f.revoking ? [REVOKE] : f.live ? [REVOKE, TRY_AGAIN] : [TRY_AGAIN]);
-/** Revoke, or with the way back to the demo screen after it, which then takes the primary (app.css wraps it above). */
+/** Revoke, or with the way back to the demo screen after it, which then takes the primary. */
 const revokeActions = (/** @type {PhoneFacts} */ f) =>
   /** @type {PhoneAction[]} */ (f.back ? [REVOKE, BACK] : [REVOKE]);
 
@@ -75,7 +75,6 @@ const revokeActions = (/** @type {PhoneFacts} */ f) =>
 export function phoneCopy(key, f) {
   const base = {
     title: "",
-    quiet: false,
     name: "",
     body: "",
     room: false,
@@ -226,9 +225,7 @@ export function phoneCopy(key, f) {
     case "open":
       return {
         ...base,
-        // The page always names its room, for a screen reader alone: the list is what the eye wants.
-        title: f.room || "This Screen",
-        quiet: true,
+        title: `Approved${to("for")}`,
         files: "items",
         ends: VERIFIED.autoEnd,
         actions: revokeActions(f),

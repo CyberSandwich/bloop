@@ -156,9 +156,8 @@ function buildItems(/** @type {Item[]} */ items) {
   fileList.replaceChildren(
     ...items.map((item) => {
       const face = rowFace(item, thumbOf(item, look()));
-      // A link opens here, in a new tab: never a `shown` command (LINK-01), never marked as on the screen. With the
-      // remote, its tap asks the screen to open it instead (LINK-02, core/link-ask.js).
-      if (item.kind === "link") return el("li", { "data-link": item.id }, [linkRow(item.url, "row", face)]);
+      // A link opens here, in a new tab: never a command (LINK-01), never marked as on the screen.
+      if (item.kind === "link") return el("li", {}, [linkRow(item.url, "row", face)]);
       const tap = remote && item.kind === "file";
       /** @type {Record<string, string>} */
       const attrs = tap ? { type: "button", class: "row", "data-id": item.id } : { class: "row" };
@@ -219,9 +218,7 @@ function renderActions(/** @type {import("./types.js").PhoneAction[]} */ actions
   const ids = actions.map((a) => a.id).join();
   if (ids !== c.actionIds) {
     c.actionIds = ids;
-    // "Ends in" (a.html) leads the row, left of Revoke, and is never detached, so it keeps focus too.
-    while (ends.nextSibling) ends.nextSibling.remove();
-    ends.after(
+    actionsEl.replaceChildren(
       ...actions.map((a) => {
         const attrs = {
           class: `btn ${a.kind}`,
@@ -237,7 +234,7 @@ function renderActions(/** @type {import("./types.js").PhoneAction[]} */ actions
     fillMail();
   }
   for (const [i, a] of actions.entries()) {
-    const node = actionsEl.children[i + 1];
+    const node = actionsEl.children[i];
     if (!node) continue;
     const busy = loading && a.id === "approve";
     node.replaceChildren(...(busy ? [el("span", { class: "spinner", "aria-hidden": "true" }), a.label] : [a.label]));
@@ -287,7 +284,6 @@ function render() {
   show(skelTitle, key === "checking");
   show(title, key !== "checking");
   setText(title, copy.title);
-  title.classList.toggle("sr", copy.quiet);
   show(fileName, copy.name !== "");
   setText(fileName, copy.name);
   setText(body, copy.body);
@@ -318,9 +314,8 @@ function render() {
   show(scope, copy.scope !== "");
   setText(scope, copy.scope);
   show(ends, copy.ends && !!v?.endsAt);
-  renderActions(copy.actions, copy.loading);
-  // After the row is built: it measures Revoke beside it.
   countDown();
+  renderActions(copy.actions, copy.loading);
   // An end pushed meanwhile closes Revoke's question.
   if (!copy.actions.some((a) => a.id === "end")) revokeAsk.close();
   // The remote (core/remote-ui.js, lazy): fetched on a demo claim, so it is ready at the approval.
@@ -376,12 +371,7 @@ function countDown() {
   const at = c.view?.endsAt;
   if (ends.hidden || !at) return;
   const left = at - (Date.now() + c.skew);
-  const words = el("span", {}, ["Ends in"]);
-  endsText.replaceChildren(words, ` ${countdown(left)}`, offline ? " · Reconnecting" : "");
-  // Named outright: a name built from the words' span and the time runs them together wherever whitespace collapses.
-  ends.ariaLabel = `${endsText.textContent}. Change the Session Expiry`;
-  // Where Revoke (always next) wraps off the row, only the time shows: "Ends in" stays in the name.
-  if (ends.offsetTop !== /** @type {HTMLElement} */ (ends.nextElementSibling).offsetTop) words.className = "sr";
+  setText(endsText, `Ends in ${countdown(left)}${offline ? " · Reconnecting" : ""}`);
   ends.classList.toggle("soon", left <= SOON_MS);
 }
 
@@ -755,11 +745,7 @@ async function resume(/** @type {string} */ pid) {
 function start() {
   // The floating panel's height, so the toast sits just above it (app.css --toast-lift).
   const panel = /** @type {HTMLElement} */ (actionsEl.parentElement);
-  // A new width refits Ends in at once, not at the next second.
-  new ResizeObserver(() => {
-    countDown();
-    document.body.style.setProperty("--panel", `${panel.offsetHeight}px`);
-  }).observe(panel);
+  new ResizeObserver(() => document.body.style.setProperty("--panel", `${panel.offsetHeight}px`)).observe(panel);
   if (isFramed()) {
     c.error = "framed";
     render();

@@ -1,7 +1,6 @@
 // The phone's session controls. The remote: the phone commands what the screen shows (`POST /api/control`, pid), and
 // the screen reports its own taps so the phone's highlight stays true (`POST /api/screen/shown`, sid), demo sessions
-// only; a link item's Open asks the screen to open it (`POST /api/control/link`, pid) and the screen answers
-// (`POST /api/screen/opened`, sid), LINK-02. The length: the phone sets when the session ends (`POST /api/session/length`, pid), in both modes. The live
+// only. The length: the phone sets when the session ends (`POST /api/session/length`, pid), in both modes. The live
 // pick: the phone's choice of the number on the screen (`POST /api/match`, pid).
 // Order: config, CSRF checks (PAIR-06), the per-IP rate limit, the capped body and Zod, the per-credential rate limit,
 // one Screen object call.
@@ -18,19 +17,13 @@ import type { Result } from "../seams/pairing.ts";
 import type { screenStub } from "../stubs.ts";
 import { limited, withConfig, withScreen } from "./common.ts";
 
-const counter = z.number().int().min(1).max(Number.MAX_SAFE_INTEGER);
 const commandBody = z
   .object({
     ...shownSchema.shape,
-    seq: counter,
+    seq: z.number().int().min(1).max(Number.MAX_SAFE_INTEGER),
     base: z.number().int().min(0).max(Number.MAX_SAFE_INTEGER).optional(),
   })
   .strict();
-
-/** The phone's Open on a link item: an id, never a URL (LINK-02). */
-const linkBody = z.object({ item: shownSchema.shape.item }).strict();
-/** The screen's answer to ask `n`; `refused` when it had no https link to open. */
-const answerBody = z.object({ n: counter, opened: z.boolean(), refused: z.literal(true).optional() }).strict();
 
 /** The live pick (PAIR-14). */
 const matchBody = z.object({ choice: z.string().regex(/^\d{2}$/) }).strict();
@@ -89,16 +82,6 @@ const command = () => commandBody;
 export const controlRoutes: readonly Route[] = [
   control("/api/control", command, (stub, pid, c: ShownCommand) => stub.control(pid, c)),
   control("/api/screen/shown", command, (stub, sid, c: ShownCommand) => stub.reportShown(sid, c)),
-  control(
-    "/api/control/link",
-    () => linkBody,
-    (stub, pid, { item }) => stub.openLink(pid, item),
-  ),
-  control(
-    "/api/screen/opened",
-    () => answerBody,
-    (stub, sid, a) => stub.linkOpened(sid, a.n, a.opened, a.refused),
-  ),
   control("/api/session/length", lengthBody, (stub, pid, { seconds }) => stub.setLength(pid, seconds)),
   control(
     "/api/match",
