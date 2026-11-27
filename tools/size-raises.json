@@ -16,8 +16,8 @@
   },
   {
     "entry": "phone JS",
-    "max": "16.715 kB",
-    "decision": "owner-approved 15 B raise for the /a layout fixes (no visible title, Ends in beside Revoke)"
+    "max": "16.727 kB",
+    "decision": "owner-approved raises: 15 B for the /a layout fixes, 12 B more where they meet the link-ask code"
   },
   {
     "entry": "phone notes, lazy",
@@ -28,5 +28,10 @@
     "entry": "phone notes CSS, lazy",
     "max": "0.55 kB",
     "decision": "owner-approved overrun under 10 percent for the notes reveal and the box's own layout, 29 B over"
+  },
+  {
+    "entry": "room screen JS",
+    "max": "24.584 kB",
+    "decision": "owner-approved 34 B raise where the /s QR fit meets the link-open code"
   }
 ]
